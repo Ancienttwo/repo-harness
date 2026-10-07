@@ -152,7 +152,7 @@ function acquireFixture(): AcquireFixture {
   mkdirSync(home, { recursive: true });
   cpSync(join(CWD, '.claude/templates/contract.template.md'), join(repo, '.claude/templates/contract.template.md'));
   writeFileSync(join(repo, '.ai/harness/policy.json'), JSON.stringify({
-    worktree_strategy: { merge_back: { target: 'main' }, review_base: 'main', branch_prefix: 'codex/' },
+    worktree_strategy: { worktree_dir_template: join(root, 'worktrees', '{{repo}}-wt-{{slug}}'), merge_back: { target: 'main' }, review_base: 'main', branch_prefix: 'codex/' },
   }));
   writeFileSync(join(repo, '.ai/harness/sprint/active-sprint'), `${sprintPath}\n`);
   writeFileSync(join(repo, sprintPath), [

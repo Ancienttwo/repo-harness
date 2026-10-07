@@ -163,3 +163,13 @@ export function deleteUnpublishedTrash(directory: string, deadline: number): voi
   checkDeadline(deadline);
   rmdirSync(directory);
 }
+
+/** A failed preflight has not moved data. Its unused approval must not block other work. */
+export function discardWorktreeTrashApproval(receipt: WorktreeTrashReceipt, deadline: number): void {
+  if (present(trashPayload(receipt))) throw new Error('renamed approval cannot be discarded');
+  if (readdirSync(receipt.directory).some(name => name !== RECEIPT)) throw new Error('approval container has unknown contents');
+  checkDeadline(deadline);
+  unlinkSync(join(receipt.directory, RECEIPT));
+  checkDeadline(deadline);
+  rmdirSync(receipt.directory);
+}

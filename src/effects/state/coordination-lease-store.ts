@@ -46,7 +46,7 @@ import {
   type LeaseState,
 } from '../../core/state/coordination-identity';
 import { syncDirectoryDurably, writeFileDurably } from '../evidence/atomic-append';
-import { resolveGitCommonDirectory } from '../git/common-directory';
+import { configuredGitBinary, resolveGitCommonDirectory } from '../git/common-directory';
 import { withExclusiveDirectoryLock } from '../locking/exclusive-directory-lock';
 
 /** Relative to the git common directory. */
@@ -98,8 +98,8 @@ function assertTaskId(taskId: string): void {
   }
 }
 
-export function coordinationRoot(cwd: string, gitTimeoutMs?: number): string {
-  return join(resolveGitCommonDirectory(cwd, 'git', gitTimeoutMs), COORDINATION_ROOT_RELATIVE_PATH);
+export function coordinationRoot(cwd: string, gitTimeoutMs?: number, gitBin = configuredGitBinary()): string {
+  return join(resolveGitCommonDirectory(cwd, gitBin, gitTimeoutMs), COORDINATION_ROOT_RELATIVE_PATH);
 }
 
 export function taskLockRelativePath(taskId: string): string {
@@ -291,8 +291,8 @@ function readLeaseAt(directory: string, taskId: string): LeaseRead {
  * unrelated filesystem residue. Valid task-id entries are returned even when
  * their owner record is unknown so safety callers can fail closed.
  */
-export function listLeaseReads(cwd: string, gitTimeoutMs?: number): readonly LeaseRead[] {
-  const leasesRoot = join(coordinationRoot(cwd, gitTimeoutMs), 'leases');
+export function listLeaseReads(cwd: string, gitTimeoutMs?: number, gitBin = configuredGitBinary()): readonly LeaseRead[] {
+  const leasesRoot = join(coordinationRoot(cwd, gitTimeoutMs, gitBin), 'leases');
   let entries: string[];
   try {
     entries = readdirSync(leasesRoot);

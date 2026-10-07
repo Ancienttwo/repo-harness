@@ -1,12 +1,12 @@
 import { execFileSync } from 'child_process';
-import { existsSync, lstatSync, readFileSync, realpathSync, readdirSync } from 'fs';
+import { existsSync, lstatSync, readFileSync, realpathSync, readdirSync, unlinkSync } from 'fs';
 import { basename, dirname, isAbsolute, join, resolve, sep } from 'path';
 import { listLeaseReads } from './coordination-lease-store';
-import { resolveGitCommonDirectory } from '../git/common-directory';
+import { configuredGitBinary, resolveGitCommonDirectory } from '../git/common-directory';
 import { withExclusiveDirectoryLock } from '../locking/exclusive-directory-lock';
 import { taskWorktreeRuntimeClosed } from '../terminal/task-session';
 import { parseWorktreeTopology } from '../git/worktree-topology';
-import { assertOwnedTrashDirectory, deleteUnpublishedTrash, deleteWorktreeTrash, prepareWorktreeTrash, readWorktreeTrash, renameWorktreeToTrash, trashPayload, worktreeTrashNames, type WorktreeRemovalOptions, type WorktreeTrashReceipt } from './worktree-trash';
+import { assertOwnedTrashDirectory, discardWorktreeTrashApproval, deleteUnpublishedTrash, deleteWorktreeTrash, prepareWorktreeTrash, readWorktreeTrash, renameWorktreeToTrash, trashPayload, worktreeTrashNames, type WorktreeRemovalOptions, type WorktreeTrashReceipt } from './worktree-trash';
 
 /** Locate the owning package in source and in the shipped hook bundle. */
 function mergeLibraryPath(): string {
@@ -28,7 +28,8 @@ function mergeLibraryPath(): string {
     directory = parent;
   }
 }
-type Limits = { deadline?: number };
+type Limits = { deadline?: number; gitBin?: string; closeout?: boolean };
+function gitBinary(limits: Limits): string { return limits.gitBin ?? configuredGitBinary(); }
 function timeout(limits: Limits): number | undefined {
   if (limits.deadline === undefined) return undefined;
   const remaining = limits.deadline - Date.now();
@@ -36,12 +37,12 @@ function timeout(limits: Limits): number | undefined {
   return remaining;
 }
 function git(root: string, args: string[], limits: Limits = {}): string {
-  return execFileSync('git', args, { cwd: root, encoding: 'utf8', timeout: timeout(limits), stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  return execFileSync(gitBinary(limits), args, { cwd: root, encoding: 'utf8', timeout: timeout(limits), stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 }
 
 /** Bind and destructive cleanup serialize across every worktree of this clone. */
 export function withWorktreeTopologyLock<T>(root: string, action: () => T, limits: Limits = {}): T {
-  return withExclusiveDirectoryLock(resolveGitCommonDirectory(root, 'git', timeout(limits)), 'repo-harness/coordination/locks/worktree-topology.lock', action,
+  return withExclusiveDirectoryLock(resolveGitCommonDirectory(root, gitBinary(limits), timeout(limits)), 'repo-harness/coordination/locks/worktree-topology.lock', action,
     { waitTimeoutMs: limits.deadline ? Math.max(1, Math.min(50, timeout(limits)!)) : undefined });
 }
 
@@ -62,8 +63,9 @@ function entries(root: string, limits: Limits = {}) {
 
 export function assertWorktreeBinding(root: string, worktree: string, branch: string, limits: Limits = {}): void {
   const canonical = checkoutPath(worktree);
+  if (canonical !== worktree) throw new Error('execution worktree path is not canonical');
   if (!entries(root, limits).some(entry => checkoutPath(entry.path) === canonical && entry.branch === `refs/heads/${branch}`)) throw new Error('execution worktree is not registered in this clone');
-  if (resolveGitCommonDirectory(root, 'git', timeout(limits)) !== resolveGitCommonDirectory(worktree, 'git', timeout(limits))) throw new Error('execution worktree is not in this clone');
+  if (resolveGitCommonDirectory(root, gitBinary(limits), timeout(limits)) !== resolveGitCommonDirectory(worktree, gitBinary(limits), timeout(limits))) throw new Error('execution worktree is not in this clone');
   if (git(worktree, ['symbolic-ref', '--quiet', 'HEAD'], limits) !== `refs/heads/${branch}`) throw new Error('execution branch changed before bind');
 }
 
@@ -79,14 +81,15 @@ export interface ExactWorktreeCleanup {
 function mergeMode(root: string, head: string, target: string, limits: Limits): string {
   const output = execFileSync('bash', [mergeLibraryPath(), '--target', target, head], {
     cwd: root, encoding: 'utf8', timeout: timeout(limits), stdio: ['ignore', 'pipe', 'pipe'],
+    env: { ...process.env, REPO_HARNESS_GIT_BIN: gitBinary(limits) },
   }).trim();
   const mode = output.split('\t')[1];
   if (mode !== 'ancestor' && mode !== 'absorbed') throw new Error('cleanup merge is unproven');
   return mode;
 }
 
-function assertNoOwner(root: string, worktree: string, branch: string, limits: Limits): void {
-  for (const lease of listLeaseReads(root, timeout(limits))) {
+function assertNoOwner(root: string, worktree: string, branch: string, limits: Limits, allowSelfMarker = false): void {
+  for (const lease of listLeaseReads(root, timeout(limits), gitBinary(limits))) {
     if (!lease.record) throw new Error('cleanup has unknown Lease ownership');
     if (lease.record.branch === branch || (lease.record.execution_worktree !== null && checkoutPath(lease.record.execution_worktree) === worktree)) throw new Error('cleanup has an active Lease reference');
   }
@@ -99,8 +102,17 @@ function assertNoOwner(root: string, worktree: string, branch: string, limits: L
     if (!stat.isFile() || stat.isSymbolicLink()) throw new Error('cleanup has unknown active-worktree marker');
     const owner = readFileSync(marker, 'utf8').trim();
     if (!owner) throw new Error('cleanup has unknown active-worktree marker');
+    if (allowSelfMarker && owner === worktree && checkoutPath(entry.path) === worktree) continue;
     if (checkoutPath(resolve(entry.path, owner)) === worktree) throw new Error('cleanup has an active-worktree marker reference');
   }
+}
+
+/** The caller holds the topology lock while it validates and re-marks recovery. */
+export function assertReusableWorktree(root: string, worktree: string, branch: string): void {
+  assertWorktreeBinding(root, worktree, branch);
+  const entry = entries(root).find(item => checkoutPath(item.path) === worktree);
+  if (entry?.locked) throw new Error('recovery worktree is locked');
+  assertNoOwner(root, worktree, branch, {}, true);
 }
 
 /** The actuator runs inside the same barrier as final bind, including readback. */
@@ -108,7 +120,7 @@ export function cleanupExactWorktree(root: string, expected: ExactWorktreeCleanu
   return withWorktreeTopologyLock(root, () => {
     let renamed: WorktreeTrashReceipt | null = null;
     if (renamedApproval) {
-      const common = resolveGitCommonDirectory(root, 'git', timeout(limits));
+      const common = resolveGitCommonDirectory(root, gitBinary(limits), timeout(limits));
       renamed = readWorktreeTrash(common, dirname(renamedApproval.directory), renamedApproval.directory);
       if (!renamed || !existsSync(trashPayload(renamed)) || renamed.expected.branch !== expected.branch
         || renamed.expected.head_sha !== expected.head_sha || renamed.expected.target_ref !== expected.target_ref
@@ -118,7 +130,7 @@ export function cleanupExactWorktree(root: string, expected: ExactWorktreeCleanu
     // A renamed receipt binds the original inode. Its old name may now belong
     // to another user; registration cleanup must never traverse that new data.
     const path = expected.worktree ? (renamed ? expected.worktree : checkoutPath(expected.worktree)) : '';
-    assertNoOwner(root, path, expected.branch, limits);
+    assertNoOwner(root, path, expected.branch, limits, limits.closeout === true);
     if (git(root, ['rev-parse', `${expected.target_ref}^{commit}`], limits) !== expected.target_oid) throw new Error('cleanup target moved');
     git(root, ['merge-base', '--is-ancestor', expected.merge_commit_sha, expected.target_oid], limits);
     if (git(root, ['rev-parse', `refs/heads/${expected.branch}`], limits) !== expected.head_sha) throw new Error('cleanup execution head moved');
@@ -139,6 +151,14 @@ export function cleanupExactWorktree(root: string, expected: ExactWorktreeCleanu
       const runs = join(path, '.ai/harness/runs');
       if (existsSync(runs) && readdirSync(runs).some(name => /^verification-.*\.json$/.test(name))) throw new Error('native verification evidence retention is unavailable');
     }
+    if (limits.closeout && path) {
+      const marker = join(path, '.ai/harness/active-worktree');
+      try {
+        const stat = lstatSync(marker);
+        if (stat.isFile() && !stat.isSymbolicLink() && readFileSync(marker, 'utf8').trim() === path) unlinkSync(marker);
+      } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+      assertNoOwner(root, path, expected.branch, limits);
+    }
     const result = actuator();
     if (!renamed && path && existsSync(path)) throw new Error('cleanup worktree removal is unproven');
     if (entries(root, limits).some(entry => entry.branch === `refs/heads/${expected.branch}`)) throw new Error('cleanup registration removal is unproven');
@@ -150,7 +170,7 @@ export function cleanupExactWorktree(root: string, expected: ExactWorktreeCleanu
 function deleteCheckedBranch(root: string, expected: ExactWorktreeCleanup, limits: Limits): void {
   const ref = git(root, ['rev-parse', '--symbolic-full-name', expected.target_ref], limits);
   if (!ref.startsWith('refs/')) throw new Error('cleanup target must be a local ref');
-  execFileSync('git', ['update-ref', '--stdin'], {
+  execFileSync(gitBinary(limits), ['update-ref', '--stdin'], {
     cwd: root, encoding: 'utf8', timeout: timeout(limits), stdio: ['pipe', 'pipe', 'pipe'],
     input: `start\nverify ${ref} ${expected.target_oid}\ndelete refs/heads/${expected.branch} ${expected.head_sha}\nprepare\ncommit\n`,
   });
@@ -231,6 +251,24 @@ function branchExists(context: SweepContext, branch: string): boolean {
   return git(context.main, ['for-each-ref', '--format=%(refname)', ref], context.limits).split('\n').includes(ref);
 }
 
+function assertBranchHasCommits(context: SweepContext, branch: string): void {
+  const ref = `refs/heads/${branch}`;
+  let history;
+  try {
+    git(context.main, ['reflog', 'exists', ref], context.limits);
+    history = git(context.main, ['reflog', 'show', '--format=%H', ref], context.limits);
+  } catch { throw new Error('branch reflog is unavailable'); }
+  if (history.split('\n').filter(Boolean).length <= 1) throw new Error('branch has no commits of its own');
+}
+function pathExists(path: string): boolean {
+  try { lstatSync(path); return true; }
+  catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false; throw error; }
+}
+function assertNoSubmodules(context: SweepContext, path: string): void {
+  const directory = git(context.main, ['-C', path, 'rev-parse', '--absolute-git-dir'], context.limits);
+  if (pathExists(join(path, '.gitmodules')) || pathExists(join(directory, 'modules'))) throw new Error('submodules present');
+}
+
 /** Both the first attempt and recovery execute through the exact cleanup barrier. */
 function commitSweepRemoval(context: SweepContext, expected: ExactWorktreeCleanup, pending?: WorktreeTrashReceipt): WorktreeTrashReceipt {
   let receipt = pending;
@@ -242,6 +280,10 @@ function commitSweepRemoval(context: SweepContext, expected: ExactWorktreeCleanu
     if (receipt) assertTrashIsUnregistered(context, receipt.directory);
     // Refuse a whole-prune conflict before renaming any visible checkout.
     assertPruneScope(context, receipt);
+    if (!receipt || !existsSync(trashPayload(receipt))) {
+      assertBranchHasCommits(context, expected.branch);
+      assertNoSubmodules(context, expected.worktree);
+    }
     if (!receipt) {
       const gitDirectory = git(context.main, ['-C', expected.worktree, 'rev-parse', '--absolute-git-dir'], context.limits);
       receipt = prepareWorktreeTrash(context.common, context.managedRoot, expected, gitDirectory);
@@ -260,7 +302,7 @@ function commitSweepRemoval(context: SweepContext, expected: ExactWorktreeCleanu
   }, context.limits, payloadExists ? pending : undefined);
   return receipt!;
 }
-function resumeSweepTrash(context: SweepContext, directory: string): void {
+function resumeSweepTrashAttempt(context: SweepContext, directory: string): void {
   let receipt: WorktreeTrashReceipt | null = null;
   withWorktreeTopologyLock(context.main, () => {
     assertTrashIsUnregistered(context, directory);
@@ -283,9 +325,26 @@ function resumeSweepTrash(context: SweepContext, directory: string): void {
   }, context.limits);
 }
 
+function resumeSweepTrash(context: SweepContext, directory: string): 'resumed' | 'approval discarded' {
+  try { resumeSweepTrashAttempt(context, directory); return 'resumed'; }
+  catch (error) {
+    if (pathExists(join(directory, 'worktree'))) throw error;
+    let discarded = false;
+    withWorktreeTopologyLock(context.main, () => {
+      const receipt = readWorktreeTrash(context.common, context.managedRoot, directory);
+      if (receipt && !pathExists(trashPayload(receipt))) {
+        discardWorktreeTrashApproval(receipt, context.limits.deadline);
+        discarded = true;
+      }
+    }, context.limits);
+    if (discarded) return 'approval discarded';
+    throw error;
+  }
+}
+
 /** Local refs and this clone's Git inventory are the only live worktree inputs. */
 export function sweepManagedWorktrees(root: string, sessionCwd: string, env: NodeJS.ProcessEnv = process.env, options: WorktreeRemovalOptions = {}): string | null {
-  const limits = { deadline: Date.now() + 2_000 };
+  const limits = { deadline: Date.now() + 2_000, gitBin: configuredGitBinary(env) };
   const notes: string[] = [];
   let removed = 0, pruned = 0, resumed = 0, deferred = 0;
   try {
@@ -297,13 +356,16 @@ export function sweepManagedWorktrees(root: string, sessionCwd: string, env: Nod
     const managedRoot = realpathSync(env.REPO_HARNESS_WORKTREE_ROOT ?? '/tmp');
     const prefix = `${basename(main)}-wt-`;
     const managed = (path: string) => dirname(path) === managedRoot && basename(path).startsWith(prefix) && basename(path).length > prefix.length;
-    const common = resolveGitCommonDirectory(main, 'git', timeout(limits));
+    const common = resolveGitCommonDirectory(main, gitBinary(limits), timeout(limits));
     const context: SweepContext = { main, cwd, common, managedRoot, managed, limits, options };
     // Recovery precedes live selection, so an interrupted registration is not mistaken for reboot loss.
     const trash = worktreeTrashNames(common, managedRoot);
     let trashBlocked = false;
+    let ignoredTrash = false;
     for (const directory of trash.slice(0, 8)) {
-      try { timeout(limits); resumeSweepTrash(context, directory); resumed++; notes.push(`${directory}: resumed`); }
+      try { assertOwnedTrashDirectory(directory); }
+      catch (error) { ignoredTrash = true; notes.push(`${directory}: ignored; ${error instanceof Error ? error.message : String(error)}`); continue; }
+      try { timeout(limits); const outcome = resumeSweepTrash(context, directory); if (outcome === 'resumed') resumed++; notes.push(`${directory}: ${outcome}`); }
       catch (error) { trashBlocked = true; notes.push(`${directory}: kept; ${error instanceof Error ? error.message.split('\n')[0] : String(error)}`); }
     }
     deferred += Math.max(0, trash.length - 8);
@@ -328,8 +390,10 @@ export function sweepManagedWorktrees(root: string, sessionCwd: string, env: Nod
         if (!entry.branch?.startsWith('refs/heads/') || !entry.head) throw new Error('no local branch');
         const branch = entry.branch.slice('refs/heads/'.length);
         assertNoOwner(main, path, branch, limits);
+        assertBranchHasCommits(context, branch);
         if (!taskWorktreeRuntimeClosed({ repository_id: common, primary_root: main, execution_root: path })) throw new Error('runtime is open');
         if (!existsSync(path)) {
+          if (ignoredTrash) throw new Error('missing entry retained while trash ownership is unknown');
           withWorktreeTopologyLock(main, () => { pruned += pruneManagedWorktrees(context); }, limits);
           try { mergeMode(main, entry.head, target, limits); }
           catch { notes.push(`${path}: pruned; unmerged branch kept (${branch})`); continue; }
@@ -350,7 +414,7 @@ export function sweepManagedWorktrees(root: string, sessionCwd: string, env: Nod
       }
     }
     deferred += Math.max(0, candidates.length - 8);
-    return `[WorktreeSweep] removed=${removed} pruned=${pruned} kept=${candidates.length - removed} resumed=${resumed} deferred=${deferred}\n${notes.join('\n')}`;
+    return `[WorktreeSweep] removed=${removed} pruned=${pruned} kept=${Math.min(candidates.length, 8) - removed} resumed=${resumed} deferred=${deferred}\n${notes.join('\n')}`;
   } catch (error) {
     return `${notes.length ? notes.join('\n') + '\n' : ''}worktree sweep skipped: ${error instanceof Error ? error.message.split('\n')[0] : String(error)}`;
   }

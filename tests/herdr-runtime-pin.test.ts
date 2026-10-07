@@ -579,7 +579,9 @@ describe('shipped Herdr notify event handler', () => {
     } finally { fixture.cleanup(); }
   });
 
-  test('temporary workspaces reached through a durable symlink are filtered', async () => {
+  // A checkout under system tmp cannot provide a lexically durable alias.
+  const aliasCheckoutIsTemporary = realpathSync(ROOT).startsWith(realpathSync('/tmp') + '/') || realpathSync(ROOT) === realpathSync('/tmp');
+  test.skipIf(aliasCheckoutIsTemporary)('temporary workspaces reached through a durable symlink are filtered (requires checkout outside system tmp)', async () => {
     for (const field of ['workspace_cwd', 'focused_pane_cwd', 'worktree']) {
       const fixture = eventFixture();
       const aliasRoot = mkdtempSync(join(ROOT, '.notify-alias-'));

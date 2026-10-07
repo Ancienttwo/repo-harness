@@ -88,7 +88,7 @@ function schedulingFixture(): { repoRoot: string; home: string; repositoryId: st
       boundary_ref: `plans/rollback/${id}.json`, boundary_revision: engineerSha256(rollback),
     },
   });
-  writeFileSync(join(repoRoot, '.ai/harness/policy.json'), '{"worktree_strategy":{"merge_back":{"target":"main"}}}\n');
+  writeFileSync(join(repoRoot, '.ai/harness/policy.json'), JSON.stringify({ worktree_strategy: { worktree_dir_template: join(repoRoot, '.ai/harness/test-worktrees', '{{repo}}-wt-{{slug}}'), merge_back: { target: 'main' } } }) + '\n');
   writeFileSync(join(repoRoot, '.ai/harness/sprint/active-sprint'), `${sprintPath}\n`);
   writeFileSync(join(repoRoot, sprintPath), [
     '# Sprint: demo', '', '> **Status**: Executing', '> **Backlog Schema**: 2', '', '## Backlog', '',

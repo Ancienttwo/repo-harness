@@ -34,6 +34,7 @@ if [[ -n "$BUN_BIN" ]] && ! is_trusted_regular_file "$WORKFLOW_STATE_LIB"; then
   echo "contract-worktree: trusted workflow-state library is unavailable" >&2
   exit 1
 fi
+export REPO_HARNESS_GIT_BIN="$GIT_BIN"
 git() { "$GIT_BIN" "$@"; }
 bash() { "$BASH_BIN" "$@"; }
 
@@ -298,11 +299,11 @@ default_worktree_path() {
   local repo_name template
   repo_name="$(basename "$REPO_ROOT")"
   template="$(policy_get '.worktree_strategy.worktree_dir_template' '/tmp/{{repo}}-wt-{{slug}}')"
+  if [[ -n "${REPO_HARNESS_WORKTREE_ROOT:-}" && "$template" == '/tmp/{{repo}}-wt-{{slug}}' ]]; then
+    template="${REPO_HARNESS_WORKTREE_ROOT}/{{repo}}-wt-{{slug}}"
+  fi
   template="${template//\{\{repo\}\}/$repo_name}"
   template="${template//\{\{slug\}\}/$slug}"
-  if [[ -n "${REPO_HARNESS_WORKTREE_ROOT:-}" && "$template" == /tmp/* ]]; then
-    template="${REPO_HARNESS_WORKTREE_ROOT}/${template#/tmp/}"
-  fi
   printf '%s' "$template"
 }
 
@@ -515,7 +516,9 @@ start_worktree() {
     return 1
   fi
   # The existing Bun adapter uses lstat. It never follows the target leaf.
-  if ! run_contract_runtime assert-unused-path --worktree "$worktree_path"; then
+  local freshness_args=()
+  [[ "$require_fresh" -eq 0 ]] || freshness_args+=(--fresh)
+  if ! run_contract_runtime check-start-path --repo "$REPO_ROOT" --worktree "$worktree_path" --branch "$branch_name" "${freshness_args[@]}"; then
     if [[ "$require_fresh" -eq 1 ]]; then
       echo "contract-worktree: --fresh refuses residual worktree path: $worktree_path" >&2
     else

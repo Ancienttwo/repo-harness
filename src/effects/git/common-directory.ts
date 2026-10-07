@@ -2,7 +2,11 @@ import { execFileSync } from 'child_process';
 import { realpathSync } from 'fs';
 import { isAbsolute, resolve } from 'path';
 
-export function resolveGitCommonDirectory(cwd: string, gitBin = 'git', timeoutMs?: number): string {
+export function configuredGitBinary(env: NodeJS.ProcessEnv = process.env): string {
+  return env.REPO_HARNESS_GIT_BIN ?? 'git';
+}
+
+export function resolveGitCommonDirectory(cwd: string, gitBin = configuredGitBinary(), timeoutMs?: number): string {
   const raw = execFileSync(gitBin, ['rev-parse', '--git-common-dir'], {
     cwd,
     timeout: timeoutMs,

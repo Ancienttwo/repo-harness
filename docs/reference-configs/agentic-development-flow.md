@@ -1,7 +1,8 @@
 # Agentic development flow
 
-
-- Default task worktrees use `/tmp/<repo>-wt-<slug>`. Stored downstream location templates stay unchanged. Closeout removes merged, clean worktrees and their local branches. SessionStart sweeps registered worktrees under this default root. Both paths refuse unproven merge, dirty content, locks, moved revisions, active Leases and active-worktree markers. The sweep also keeps the session cwd and its parent worktree. Commit or push work before a reboot. A reboot can clear `/tmp`. The sweep prunes missing entries and keeps unmerged branches.
+- Default task worktrees use `/tmp/<repo>-wt-<slug>`. Stored downstream templates stay unchanged. Commit or push work before a reboot or age-based tmp cleanup, such as `systemd-tmpfiles`. These cleaners can remove checkouts. Missing entries are pruned. Unmerged branches remain.
+- Closeout removes a merged, clean checkout and its branch. It releases only that checkout's own canonical marker after merge proof under the topology lock. The sweep keeps dirty, locked, marked or leased worktrees. It keeps creation-only, missing or unreadable branch reflogs. Dispatch must establish a first unmerged commit or keep the worktree dirty, marked or leased. A merged, clean, unowned branch with its own commits can be swept.
+- `start` recovers only a real target directory registered by this clone on the expected branch, under the topology lock, with no lock or other owner. Files, symlinks, unregistered paths and other branches are refused. Cleanup refuses a registered worktree whose branch is missing. MCP cleanup also refuses active markers and retained native verification evidence. Sweep reports name processed paths. Deferred entries are reported as counts. `kept` excludes deferred entries. A command timeout sends SIGTERM to the direct child only. A grandchild can briefly extend the deadline. No detached cleanup process starts.
 
 ## Daily Flow
 1. Read the current request and `AGENTS.md`; load architecture or worker techniques only when relevant.

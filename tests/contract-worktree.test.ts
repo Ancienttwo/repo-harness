@@ -255,3 +255,54 @@ describe('task worktree location', () => {
     } finally { rmSync(parent, { recursive: true, force: true }); }
   }, 15000);
 });
+
+describe('W2/W3/W4 start and closeout ownership', () => {
+  function fixture() {
+    const parent = tmpWorkspace('start-closeout'); const cwd = join(parent, 'repo'); const target = join(parent, 'linked');
+    mkdirSync(cwd); copyHelpers(cwd); initGitRepo(cwd); mkdirSync(join(cwd, 'plans'));
+    const plan = 'plans/plan-20261008-0000-owned.md'; writeFileSync(join(cwd, plan), '# Owned task\n');
+    writeFileSync(join(cwd, '.gitignore'), '.ai/\nnode_modules\n'); commitAll(cwd, 'base');
+    return { parent, cwd, target, plan, args: ['scripts/contract-worktree.sh', 'start', '--plan', plan, '--path', target, '--branch', 'codex/owned'], cleanup: () => rmSync(parent, { recursive: true, force: true }) };
+  }
+  test.each([false, true])('real start, task commit, merge and cleanup releases only the self marker; planning=%s', planning => {
+    const f = fixture(); try {
+      const started = run('bash', [...f.args, ...(planning ? [] : ['--no-plan-to-todo'])], f.cwd);
+      expect(started.status, started.stderr).toBe(0);
+      if (planning) {
+        const selected = run('bash', ['scripts/switch-plan.sh', '--plan', f.plan], f.target);
+        expect(selected.status, selected.stderr).toBe(0);
+      }
+      expect(readFileSync(join(f.target, '.ai/harness/active-worktree'), 'utf8').trim()).toBe(f.target);
+      writeFileSync(join(f.target, 'change'), 'task change'); commitAll(f.target, 'task change');
+      expect(run('git', ['merge', '--ff-only', 'codex/owned'], f.cwd).status).toBe(0);
+      const result = run('bash', ['scripts/contract-worktree.sh', 'cleanup', '--slug', 'owned', '--target', 'main'], f.cwd);
+      expect(result.status, result.stderr).toBe(0); expect(existsSync(f.target)).toBe(false);
+      expect(run('git', ['branch', '--list', 'codex/owned'], f.cwd).stdout.trim()).toBe('');
+    } finally { f.cleanup(); }
+  }, 15000);
+  test('retry recovers the same registered branch and marker', () => {
+    const f = fixture(); try {
+      expect(run('bash', [...f.args, '--no-plan-to-todo'], f.cwd).status).toBe(0);
+      const retry = run('bash', [...f.args, '--no-plan-to-todo', '--json'], f.cwd);
+      expect(retry.status, retry.stderr).toBe(0); expect(JSON.parse(retry.stdout).disposition).toBe('reused_existing_worktree');
+      expect(readFileSync(join(f.target, '.ai/harness/active-worktree'), 'utf8').trim()).toBe(f.target);
+    } finally { f.cleanup(); }
+  }, 15000);
+  test('an existing target on another branch is refused', () => {
+    const f = fixture(); try {
+      expect(run('git', ['worktree', 'add', '-b', 'other', f.target], f.cwd).status).toBe(0);
+      const result = run('bash', [...f.args, '--no-plan-to-todo'], f.cwd);
+      expect(result.status).toBe(1); expect(existsSync(f.target)).toBe(true);
+      expect(run('git', ['branch', '--show-current'], f.target).stdout.trim()).toBe('other');
+    } finally { f.cleanup(); }
+  });
+  test('a failed Git add rolls back only its empty exclusive claim', () => {
+    const f = fixture(); try {
+      const binary = join(f.parent, 'git-fail-add');
+      writeFileSync(binary, '#!/bin/sh\nif [ "$1" = worktree ] && [ "$2" = add ]; then exit 42; fi\nexec /usr/bin/git "$@"\n', { mode: 0o755 });
+      const failed = run('bash', [...f.args, '--no-plan-to-todo'], f.cwd, { REPO_HARNESS_GIT_BIN: binary });
+      expect(failed.status).toBe(1); expect(existsSync(f.target)).toBe(false);
+      expect(run('bash', [...f.args, '--no-plan-to-todo'], f.cwd).status).toBe(0);
+    } finally { f.cleanup(); }
+  }, 15000);
+});

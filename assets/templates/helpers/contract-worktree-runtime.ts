@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { execFileSync } from 'child_process';
-import { lstatSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'fs';
+import { lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmdirSync, writeFileSync } from 'fs';
 import { basename, dirname, join, resolve } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 const scriptDir = dirname(fileURLToPath(import.meta.url));
@@ -8,6 +8,7 @@ const packageRoot = basename(scriptDir) === 'helpers' ? resolve(scriptDir, '../.
 const { readSessionArtifact, cleanupTaskWorktree, registerTaskWorktree } = await import(pathToFileURL(join(packageRoot, 'src/effects/terminal/task-session.ts')).href) as typeof import('../src/effects/terminal/task-session');
 import type { HerdrEndpoint } from '../src/effects/terminal/herdr';
 
+const { configuredGitBinary } = await import(pathToFileURL(join(packageRoot, 'src/effects/git/common-directory.ts')).href) as typeof import('../src/effects/git/common-directory');
 const [action, ...args] = process.argv.slice(2);
 const value = (key: string) => { const at = args.indexOf(key); if (at < 0 || !args[at + 1]) throw new Error(`runtime requires ${key}`); return args[at + 1]!; };
 function markActiveWorktree(worktree: string): void {
@@ -30,12 +31,18 @@ function markActiveWorktree(worktree: string): void {
   }
 }
 try {
-  if (action === 'assert-unused-path') {
-    try {
-      lstatSync(value('--worktree'));
-      throw new Error('target worktree path already exists');
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+  if (action === 'assert-unused-path' || action === 'check-start-path') {
+    let stat;
+    try { stat = lstatSync(value('--worktree')); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+    if (stat) {
+      if (action === 'assert-unused-path' || args.includes('--fresh') || !stat.isDirectory() || stat.isSymbolicLink()) throw new Error('target worktree path already exists');
+      const { withWorktreeTopologyLock, assertReusableWorktree } = await import(pathToFileURL(join(packageRoot, 'src/effects/state/coordination-worktree-topology.ts')).href) as typeof import('../src/effects/state/coordination-worktree-topology');
+      withWorktreeTopologyLock(value('--repo'), () => {
+        const canonical = realpathSync(value('--worktree'));
+        assertReusableWorktree(value('--repo'), canonical, value('--branch'));
+        markActiveWorktree(canonical);
+      });
     }
   } else if (action === 'add-worktree') {
     const { withWorktreeTopologyLock } = await import(pathToFileURL(join(packageRoot, 'src/effects/state/coordination-worktree-topology.ts')).href) as typeof import('../src/effects/state/coordination-worktree-topology');
@@ -47,13 +54,21 @@ try {
       const gitArgs = args.includes('--new-branch')
         ? ['worktree', 'add', '-b', value('--branch'), worktree, value('--base')]
         : ['worktree', 'add', worktree, value('--branch')];
-      execFileSync('git', gitArgs, { cwd: value('--repo'), stdio: 'inherit' });
+      const claim = lstatSync(worktree);
+      try { execFileSync(configuredGitBinary(), gitArgs, { cwd: value('--repo'), stdio: 'inherit' }); }
+      catch (error) {
+        try {
+          const current = lstatSync(worktree);
+          if (current.isDirectory() && !current.isSymbolicLink() && current.dev === claim.dev && current.ino === claim.ino && readdirSync(worktree).length === 0) rmdirSync(worktree);
+        } catch (rollbackError) { if ((rollbackError as NodeJS.ErrnoException).code !== 'ENOENT') console.error('worktree claim rollback incomplete: ' + String(rollbackError)); }
+        throw error;
+      }
       markActiveWorktree(worktree);
     });
   } else if (action === 'mark-active') {
-    const { withWorktreeTopologyLock, assertWorktreeBinding } = await import(pathToFileURL(join(packageRoot, 'src/effects/state/coordination-worktree-topology.ts')).href) as typeof import('../src/effects/state/coordination-worktree-topology');
+    const { withWorktreeTopologyLock, assertReusableWorktree } = await import(pathToFileURL(join(packageRoot, 'src/effects/state/coordination-worktree-topology.ts')).href) as typeof import('../src/effects/state/coordination-worktree-topology');
     withWorktreeTopologyLock(value('--repo'), () => {
-      assertWorktreeBinding(value('--repo'), value('--worktree'), value('--branch'));
+      assertReusableWorktree(value('--repo'), realpathSync(value('--worktree')), value('--branch'));
       markActiveWorktree(value('--worktree'));
     });
   } else if (action === 'register') {
@@ -69,6 +84,6 @@ try {
       worktree: value('--worktree') === '(absent)' ? '' : value('--worktree'),
       branch: value('--branch'), head_sha: value('--head'), target_ref: value('--target'),
       target_oid: value('--target-oid'), merge_commit_sha: value('--merge'),
-    });
+    }, { closeout: true });
   } else throw new Error('unknown worktree runtime action');
 } catch (error) { console.error(String(error)); process.exitCode = 1; }

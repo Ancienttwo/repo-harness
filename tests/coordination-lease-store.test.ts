@@ -1857,6 +1857,9 @@ describe('exact cleanup and SessionStart worktree sweep', () => {
     git('add', '.'); git('commit', '-qm', 'base');
     git('update-ref', 'refs/remotes/origin/main', 'HEAD');
     const path = join(managed, 'repo-wt-demo'); git('worktree', 'add', '-q', '-b', 'codex/demo', path);
+    writeFileSync(join(path, '.gitignore'), '.ai/\n# merged task change\n');
+    git('-C', path, 'add', '.gitignore'); git('-C', path, 'commit', '-qm', 'task change');
+    git('merge', '--ff-only', 'codex/demo'); git('update-ref', 'refs/remotes/origin/main', 'HEAD');
     const head = git('rev-parse', 'HEAD');
     const expected = { worktree: path, branch: 'codex/demo', head_sha: head, target_ref: 'refs/remotes/origin/main', target_oid: head, merge_commit_sha: head };
     const env = { ...process.env, REPO_HARNESS_WORKTREE_ROOT: managed, REPO_HARNESS_TOOLING_ADVISORY: '0', HOME: join(parent, 'home') };
@@ -1945,6 +1948,8 @@ describe('exact cleanup and SessionStart worktree sweep', () => {
       const outside = join(f.parent, 'outside'); f.git('worktree', 'add', '-q', '-b', 'outside', outside);
       expect(sweepManagedWorktrees(f.root, f.root, f.env)).toContain('removed=1'); expect(existsSync(outside)).toBe(true);
       f.git('worktree', 'add', '-q', '-b', 'codex/demo', f.path);
+      f.git('-C', f.path, 'commit', '--allow-empty', '-qm', 'recreated task');
+      f.git('merge', '--ff-only', 'codex/demo'); f.git('update-ref', 'refs/remotes/origin/main', 'HEAD');
       if (condition === 'missing-directory') rmSync(outside, { recursive: true });
       else rmSync(join(outside, '.git'));
       rmSync(f.path, { recursive: true });
@@ -1982,6 +1987,8 @@ describe('exact cleanup and SessionStart worktree sweep', () => {
       expect(result.status).toBe(0); expect(result.stdout + result.stderr).toContain('removed=1');
       expect(existsSync(f.path)).toBe(false); expect(f.git('branch', '--list', 'codex/demo')).toBe('');
       f.git('worktree', 'add', '-q', '-b', 'codex/demo', f.path);
+      f.git('-C', f.path, 'commit', '--allow-empty', '-qm', 'recreated task');
+      f.git('merge', '--ff-only', 'codex/demo'); f.git('update-ref', 'refs/remotes/origin/main', 'HEAD');
       rmSync(join(packageRoot, 'scripts/worktree-merge-lib.sh'));
       const missing = spawnSync(process.execPath, [bundle, 'SessionStart', '--route', 'default'], {
         cwd: f.root, encoding: 'utf8', input: '{}', env: { ...f.env, HOOK_REPO_ROOT: f.root, HOOK_HOST: 'codex' },
@@ -2141,6 +2148,87 @@ describe('exact cleanup and SessionStart worktree sweep', () => {
       expect(existsSync(f.path)).toBe(true); expect(worktreeTrashNames(join(f.root, '.git'), f.managed)).toEqual([]);
       expect(f.git('worktree', 'list', '--porcelain')).toContain(outside);
     } finally { f.cleanup(); }
+  });
+
+  test('W3 a creation-only branch and a missing reflog are kept, while a merged task commit qualifies', () => {
+    const f = fixture(); try {
+      f.git('worktree', 'remove', f.path); f.git('branch', '-D', 'codex/demo');
+      f.git('worktree', 'add', '-q', '-b', 'codex/demo', f.path);
+      expect(sweepManagedWorktrees(f.root, f.root, f.env)).toContain('no commits of its own'); expect(existsSync(f.path)).toBe(true);
+      f.git('-C', f.path, 'commit', '--allow-empty', '-qm', 'task commit'); f.git('merge', '--ff-only', 'codex/demo'); f.git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+      expect(sweepManagedWorktrees(f.root, f.root, f.env)).toContain('removed=1'); expect(existsSync(f.path)).toBe(false);
+      f.git('worktree', 'add', '-q', '-b', 'codex/demo', f.path);
+      const log = f.git('rev-parse', '--git-path', 'logs/refs/heads/codex/demo'); rmSync(join(f.root, log));
+      expect(sweepManagedWorktrees(f.root, f.root, f.env)).toContain('reflog is unavailable'); expect(existsSync(f.path)).toBe(true);
+    } finally { f.cleanup(); }
+  });
+
+  test.each(['head', 'dirty'])('W3 an unused approval is discarded after %s preflight fails, and another live task is swept', async change => {
+    const f = fixture(); try {
+      const directory = await interruptSweep(f, 'intent');
+      writeFileSync(join(f.path, 'new'), 'new work');
+      if (change === 'head') { f.git('-C', f.path, 'add', '.'); f.git('-C', f.path, 'commit', '-qm', 'new work'); }
+      const other = join(f.managed, 'repo-wt-other'); f.git('worktree', 'add', '-q', '-b', 'other', other);
+      f.git('-C', other, 'commit', '--allow-empty', '-qm', 'other task'); f.git('merge', '--ff-only', 'other'); f.git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+      const result = sweepManagedWorktrees(f.root, f.root, f.env);
+      expect(result).toContain('approval discarded'); expect(existsSync(directory)).toBe(false); expect(existsSync(f.path)).toBe(true);
+      expect(existsSync(other)).toBe(false); expect(readFileSync(join(f.path, 'new'), 'utf8')).toBe('new work');
+    } finally { f.cleanup(); }
+  }, 20000);
+
+  test('W3 bind rejects a non-canonical alias', async () => {
+    const f = fixture(); try {
+      const alias = join(f.parent, 'alias'); symlinkSync(f.managed, alias);
+      const { assertWorktreeBinding } = await import('../src/effects/state/coordination-worktree-topology');
+      expect(() => assertWorktreeBinding(f.root, join(alias, 'repo-wt-demo'), 'codex/demo')).toThrow('not canonical');
+      expect(() => assertWorktreeBinding(f.root, f.path, 'codex/demo')).not.toThrow();
+    } finally { f.cleanup(); }
+  });
+
+  test.each(['gitmodules', 'modules-store'])('W3 sweep keeps submodules: %s', condition => {
+    const f = fixture(); try {
+      if (condition === 'gitmodules') { writeFileSync(join(f.path, '.gitmodules'), ''); f.git('-C', f.path, 'add', '.gitmodules'); f.git('-C', f.path, 'commit', '-qm', 'submodule config'); f.git('merge', '--ff-only', 'codex/demo'); f.git('update-ref', 'refs/remotes/origin/main', 'HEAD'); }
+      else mkdirSync(join(f.git('-C', f.path, 'rev-parse', '--absolute-git-dir'), 'modules'));
+      expect(sweepManagedWorktrees(f.root, f.root, f.env)).toContain('submodules present'); expect(existsSync(f.path)).toBe(true);
+    } finally { f.cleanup(); }
+  });
+
+  test.each(['file', 'symlink'])('W3 a matching non-owned trash %s is ignored while a live task is swept', kind => {
+    const f = fixture(); try {
+      const name = '.repo-harness-wt-trash-' + require('crypto').createHash('sha256').update(join(f.root, '.git')).digest('hex').slice(0, 32) + '-00000000-0000-0000-0000-000000000000';
+      const path = join(f.managed, name); if (kind === 'file') writeFileSync(path, 'not trash'); else symlinkSync(f.parent, path);
+      const result = sweepManagedWorktrees(f.root, f.root, f.env);
+      expect(result).toContain('ignored;'); expect(result).toContain('removed=1'); expect(existsSync(f.path)).toBe(false);
+      expect(fs.lstatSync(path).isSymbolicLink()).toBe(kind === 'symlink'); if (kind === 'file') expect(readFileSync(path, 'utf8')).toBe('not trash');
+    } finally { f.cleanup(); }
+  });
+
+  test('W3 kept counts exclude deferred entries', () => {
+    const f = fixture(); try {
+      f.git('worktree', 'lock', f.path);
+      for (let index = 0; index < 8; index++) {
+        const path = join(f.managed, 'repo-wt-locked-' + index);
+        f.git('worktree', 'add', '-q', '-b', 'locked-' + index, path); f.git('worktree', 'lock', path);
+      }
+      const result = sweepManagedWorktrees(f.root, f.root, f.env);
+      expect(result).toContain('kept=8'); expect(result).toContain('deferred=1'); expect(existsSync(f.path)).toBe(true);
+    } finally { f.cleanup(); }
+  });
+
+  test('W2 every sweep Git boundary uses the configured binary', () => {
+    const f = fixture(); const prior = process.env.W23_GIT_LOG;
+    try {
+      const log = join(f.parent, 'git.log'); const binary = join(f.parent, 'git-wrapper'); process.env.W23_GIT_LOG = log;
+      writeFileSync(binary, `#!/bin/sh
+printf '%s\\n' "$*" >> "$W23_GIT_LOG"
+exec /usr/bin/git "$@"
+`, { mode: 0o755 });
+      expect(sweepManagedWorktrees(f.root, f.root, { ...f.env, REPO_HARNESS_GIT_BIN: binary })).toContain('removed=1');
+      const commands = readFileSync(log, 'utf8');
+      expect(commands).toContain('rev-parse --git-common-dir'); expect(commands).toContain('reflog exists');
+      expect(commands).toContain('merge-base --is-ancestor'); expect(commands).toContain('worktree prune --expire now');
+      expect(commands).toContain('update-ref --stdin'); expect(existsSync(f.path)).toBe(false);
+    } finally { if (prior === undefined) delete process.env.W23_GIT_LOG; else process.env.W23_GIT_LOG = prior; f.cleanup(); }
   });
 
   test('real SessionStart reports sweep failure and still returns zero', () => {

@@ -30,6 +30,7 @@
  * would break the board on a git upgrade that changed nothing it reads.
  */
 import { execFileSync } from 'child_process';
+import { configuredGitBinary } from './common-directory';
 
 export interface WorktreeEntry {
   /** Absolute path exactly as git reports it; never re-derived. */
@@ -99,7 +100,7 @@ export function parseWorktreeTopology(raw: string): WorktreeTopology {
 }
 
 /** Read this clone's worktree topology. Read-only; git is the sole authority. */
-export function readWorktreeTopology(cwd: string, gitBin = 'git'): WorktreeTopology {
+export function readWorktreeTopology(cwd: string, gitBin = configuredGitBinary()): WorktreeTopology {
   const raw = execFileSync(gitBin, ['worktree', 'list', '--porcelain'], {
     cwd,
     encoding: 'utf-8',
