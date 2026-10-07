@@ -416,6 +416,7 @@ export function runHook(opts: RunHookOptions): RunHookResult {
       event: opts.event,
       routeId: opts.routeId,
       repoRoot,
+      sessionCwd: cwd,
       input: opts.input,
       env,
       now: startedAt,

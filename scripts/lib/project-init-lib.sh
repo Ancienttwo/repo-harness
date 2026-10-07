@@ -1630,7 +1630,7 @@ pi_write_harness_policy() {
     "branch_prefix": "codex/",
     "base_branch": "main",
     "review_base": "main",
-    "worktree_dir_template": "../{{repo}}-wt-{{slug}}",
+    "worktree_dir_template": "/tmp/{{repo}}-wt-{{slug}}",
     "start_script": "repo-harness run contract-worktree start --plan <plan-file>",
     "finish_script": "repo-harness run contract-worktree finish",
     "cleanup_script": "repo-harness run contract-worktree cleanup --slug <slug>",

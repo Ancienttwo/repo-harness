@@ -83,6 +83,7 @@ export interface HookHandlerContext {
   readonly event: HookEvent;
   readonly routeId: RouteId;
   readonly repoRoot: string;
+  readonly sessionCwd?: string;
   readonly input?: string | Buffer;
   readonly env: NodeJS.ProcessEnv;
   readonly now: Date;

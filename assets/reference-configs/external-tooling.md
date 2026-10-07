@@ -237,6 +237,9 @@ dialect. This repo does not vendor either skill body.
 
 For Bot and human notification setup, see [Herdr notify](herdr-notify.md).
 
+- Default task worktrees use `/tmp/<repo>-wt-<slug>`. Stored downstream location templates stay unchanged. Closeout removes merged, clean worktrees and their local branches. SessionStart sweeps registered worktrees under this default root. Both paths refuse unproven merge, dirty content, locks, moved revisions, active Leases and active-worktree markers. The sweep also keeps the session cwd and its parent worktree. Commit or push work before a reboot. A reboot can clear `/tmp`. The sweep prunes missing entries and keeps unmerged branches.
+
+
 - GitHub operations (PRs, reviews, merges, labels, releases, comments) go only through the gh/git CLI or the GitHub API. Never use simulated browser clicks on github.com: the account can be banned.
 - Suggested model split: when both are available, Claude (deep tier) drafts the architecture and Codex executes against the agreed plan; with only one, that model does both (plan first, then execute).
 - Route all cross-model dispatch and review through herdr panes (OAR runs the worker, herdr owns panes and visibility); never start direct subprocesses or hand-written CLI calls.

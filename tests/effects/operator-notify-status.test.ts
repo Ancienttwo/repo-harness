@@ -1,7 +1,7 @@
 import { describe, expect, spyOn, test } from 'bun:test';
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { readNotifyStatus } from '../../src/effects/operator/notify-status';
@@ -239,8 +239,8 @@ describe('notify plugin status', () => {
       const f = fixture();
       const state = join(f.root, 'state');
       mkdirSync(state);
-      // The plugin skips temporary workspaces, so this one lives in the git-ignored repository path #508 uses.
-      const workspace = mkdtempSync(join(import.meta.dir, '../../.notify-workspace-'));
+      // Event context is an existing non-temporary directory. The test does not write there.
+      const workspace = dirname(realpathSync('/tmp'));
       writeFileSync(join(f.config, '.env'), `WEBHOOK_URL='https://bot.example/routine'\nWEBHOOK_KEY='${SECRET}'\nNOTIFY_SESSION='notify-test'\nTELEGRAM_BOT_TOKEN='123:token'\nTELEGRAM_CHAT_ID='-42'\n`, { mode: 0o600 });
       const stderr: string[] = [];
       const spy = spyOn(console, 'error').mockImplementation((line: unknown) => { stderr.push(String(line)); });
@@ -254,7 +254,7 @@ describe('notify plugin status', () => {
         expect(stderr).toHaveLength(2);
         f.env.FIXTURE_LOGS = JSON.stringify({ result: { logs: [{ finished_unix_ms: 1_700_000_000_000, status: 'succeeded', stderr: stderr.join('\n') + '\n' }] } });
         expect((await readNotifyStatus({ env: f.env })).last_delivery).toEqual({ at: '2023-11-14T22:13:20.000Z', result });
-      } finally { f.cleanup(); rmSync(workspace, { recursive: true, force: true }); }
+      } finally { f.cleanup(); }
     }
   });
 
@@ -267,7 +267,7 @@ describe('notify plugin status', () => {
     const state = join(f.root, 'state');
     mkdirSync(state);
     writeFileSync(join(state, 'debounce-state.json'), 'not json');
-    const workspace = mkdtempSync(join(import.meta.dir, '../../.notify-workspace-'));
+    const workspace = dirname(realpathSync('/tmp'));
     writeFileSync(join(f.config, '.env'), `WEBHOOK_URL='https://bot.example/routine'\nWEBHOOK_KEY='${SECRET}'\nNOTIFY_SESSION='notify-test'\n`, { mode: 0o600 });
     const stderr: string[] = [];
     const spy = spyOn(console, 'error').mockImplementation((line: unknown) => { stderr.push(String(line)); });
@@ -281,7 +281,7 @@ describe('notify plugin status', () => {
       expect(stderr).toEqual(['[webhook-notify] Cannot read debounce state. Using empty state.', '[webhook-notify] WEBHOOK: HTTP 200']);
       f.env.FIXTURE_LOGS = JSON.stringify({ result: { logs: [{ finished_unix_ms: 1_700_000_000_000, status: 'succeeded', stderr: stderr.join('\n') + '\n' }] } });
       expect((await readNotifyStatus({ env: f.env })).last_delivery).toEqual({ at: '2023-11-14T22:13:20.000Z', result: 'succeeded' });
-    } finally { f.cleanup(); rmSync(workspace, { recursive: true, force: true }); }
+    } finally { f.cleanup(); }
   });
 
   test('the reader performs no synchronous filesystem or process call on the server request path', async () => {

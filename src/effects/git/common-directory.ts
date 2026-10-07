@@ -2,9 +2,10 @@ import { execFileSync } from 'child_process';
 import { realpathSync } from 'fs';
 import { isAbsolute, resolve } from 'path';
 
-export function resolveGitCommonDirectory(cwd: string, gitBin = 'git'): string {
+export function resolveGitCommonDirectory(cwd: string, gitBin = 'git', timeoutMs?: number): string {
   const raw = execFileSync(gitBin, ['rev-parse', '--git-common-dir'], {
     cwd,
+    timeout: timeoutMs,
     encoding: 'utf-8',
     stdio: ['ignore', 'pipe', 'ignore'],
   }).trim();

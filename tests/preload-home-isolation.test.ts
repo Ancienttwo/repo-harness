@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { delimiter, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { basename, delimiter, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 const ROOT = resolve(import.meta.dir, "..");
 const TMP_ROOT = realpathSync(resolve("/tmp"));
@@ -17,14 +17,13 @@ function fixture() {
   const home = mkdtempSync(join(TMP_ROOT, "home-iso-fixture-"));
   const temp = mkdtempSync(join(TMP_ROOT, "tmp-iso-fixture-"));
   const env: NodeJS.ProcessEnv = { ...process.env, HOME: home, USERPROFILE: home, TMPDIR: temp, TEMP: temp, TMP: temp };
-  let unsafeRoot: string | undefined;
+  // Name an unavailable path outside system tmp. Do not allocate it.
   return {
     home, temp, env,
-    unsafe: () => unsafeRoot ??= mkdtempSync(join(ROOT, ".home-iso-unsafe-")),
+    unsafe: () => join(dirname(TMP_ROOT), "repo-harness-outside-" + basename(home)),
     close: () => {
       rmSync(home, { recursive: true, force: true });
       rmSync(temp, { recursive: true, force: true });
-      if (unsafeRoot) rmSync(unsafeRoot, { recursive: true, force: true });
     },
   };
 }
@@ -94,7 +93,7 @@ describe("test HOME and TMPDIR isolation", () => {
     let replacement: string | undefined;
     try {
       const link = join(f.home, "outside-link");
-      symlinkSync(f.unsafe(), link, process.platform === "win32" ? "junction" : "dir");
+      symlinkSync(dirname(TMP_ROOT), link, process.platform === "win32" ? "junction" : "dir");
       const code = 'require("node:os").homedir(); process.env.HOME=' + JSON.stringify(link) + "; await import(" + JSON.stringify(PRELOAD) + "); console.log(process.env.HOME);";
       const result = Bun.spawnSync([process.execPath, "-e", code], { env: f.env, stdout: "pipe", stderr: "pipe" });
       expect(result.exitCode).toBe(0);
@@ -207,7 +206,7 @@ describe("test HOME and TMPDIR isolation", () => {
         }
         env[name] = f.unsafe();
       }
-      // The shell config fixture names only a missing path in this worktree.
+      // The shell config fixture names a missing path. It never writes there.
       const result = spawnSync("bash", ["--noprofile", "--norc", "-c", 'source "$1"; run_bun_test_file "$2"', "test-home", join(ROOT, "scripts/lib/ci-run-tests.sh"), probe], {
         cwd: ROOT, env, encoding: "utf8",
       });

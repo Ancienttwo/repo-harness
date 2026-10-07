@@ -1,6 +1,8 @@
 import { describe, expect, setDefaultTimeout, test } from "bun:test";
 import {
   existsSync,
+  lstatSync,
+  symlinkSync,
   mkdirSync,
   readFileSync,
   realpathSync,
@@ -9,6 +11,7 @@ import {
 } from "fs";
 import { join } from "path";
 
+import { sweepManagedWorktrees } from '../src/effects/state/coordination-worktree-topology';
 import { copyHelpers, ROOT } from "./helpers/helper-script-fixture";
 import { commitAll, initGitRepo, run, tmpWorkspace } from "./helpers/repo-fixture";
 
@@ -192,5 +195,63 @@ describe("contract-worktree helper integration", () => {
       }
       rmSync(cwd, { recursive: true, force: true });
     }
+  }, 15000);
+});
+
+describe('task worktree location', () => {
+  test('the policy default and helper default agree, and start uses the managed test root', () => {
+    const init = readFileSync(join(ROOT, 'scripts/lib/project-init-lib.sh'), 'utf8');
+    const helper = readFileSync(join(ROOT, 'scripts/contract-worktree.sh'), 'utf8');
+    expect(init).toContain('"worktree_dir_template": "/tmp/{{repo}}-wt-{{slug}}"');
+    expect(helper).toContain("'/tmp/{{repo}}-wt-{{slug}}'");
+    const parent = tmpWorkspace('worktree-default');
+    const cwd = join(parent, 'repo');
+    const managed = join(parent, 'managed');
+    mkdirSync(cwd); mkdirSync(managed);
+    try {
+      copyHelpers(cwd); initGitRepo(cwd);
+      mkdirSync(join(cwd, 'plans'));
+      writeFileSync(join(cwd, 'plans/plan-20261008-0000-location.md'), '# Location\n');
+      commitAll(cwd, 'location fixture');
+      run('git', ['update-ref', 'refs/remotes/origin/main', 'HEAD'], cwd);
+      const result = run('bash', ['scripts/contract-worktree.sh', 'start', '--plan', 'plans/plan-20261008-0000-location.md', '--json', '--no-plan-to-todo'], cwd, { REPO_HARNESS_WORKTREE_ROOT: managed });
+      expect(result.status).toBe(0);
+      const path = join(managed, 'repo-wt-location');
+      expect(JSON.parse(result.stdout).worktree_path).toBe(path);
+      expect(readFileSync(join(path, '.ai/harness/active-worktree'), 'utf8').trim()).toBe(path);
+      expect(sweepManagedWorktrees(cwd, cwd, { ...process.env, REPO_HARNESS_WORKTREE_ROOT: managed })).toContain('marker reference');
+      expect(existsSync(path)).toBe(true);
+    } finally { rmSync(parent, { recursive: true, force: true }); }
+  }, 15000);
+
+  test('start keeps a stored downstream location template', () => {
+    const parent = tmpWorkspace('worktree-stored'); const cwd = join(parent, 'repo'); mkdirSync(cwd);
+    try {
+      copyHelpers(cwd); initGitRepo(cwd); mkdirSync(join(cwd, 'plans'));
+      writeFileSync(join(cwd, 'plans/plan-20261008-0000-location.md'), '# Location\n');
+      writeFileSync(join(cwd, '.ai/harness/policy.json'), JSON.stringify({ worktree_strategy: { worktree_dir_template: '../stored-{{repo}}-{{slug}}' } }));
+      commitAll(cwd, 'stored location fixture');
+      const result = run('bash', ['scripts/contract-worktree.sh', 'start', '--plan', 'plans/plan-20261008-0000-location.md', '--json', '--no-plan-to-todo'], cwd);
+      expect(result.status).toBe(0); expect(JSON.parse(result.stdout).worktree_path).toBe(join(parent, 'stored-repo-location'));
+      expect(JSON.parse(readFileSync(join(cwd, '.ai/harness/policy.json'), 'utf8')).worktree_strategy.worktree_dir_template).toBe('../stored-{{repo}}-{{slug}}');
+    } finally { rmSync(parent, { recursive: true, force: true }); }
+  }, 15000);
+
+  test.each(['directory', 'file', 'symlink'])('start refuses an existing %s at the default target', kind => {
+    const parent = tmpWorkspace('worktree-existing');
+    const cwd = join(parent, 'repo'); const managed = join(parent, 'managed');
+    mkdirSync(cwd); mkdirSync(managed);
+    const target = join(managed, 'repo-wt-location');
+    try {
+      copyHelpers(cwd); initGitRepo(cwd); mkdirSync(join(cwd, 'plans'));
+      writeFileSync(join(cwd, 'plans/plan-20261008-0000-location.md'), '# Location\n'); commitAll(cwd, 'location fixture');
+      if (kind === 'directory') mkdirSync(target);
+      else if (kind === 'file') writeFileSync(target, 'keep');
+      else symlinkSync(join(parent, 'absent'), target);
+      const result = run('bash', ['scripts/contract-worktree.sh', 'start', '--plan', 'plans/plan-20261008-0000-location.md', '--no-plan-to-todo'], cwd, { REPO_HARNESS_WORKTREE_ROOT: managed });
+      expect(result.status).toBe(1); expect(result.stderr).toContain('target worktree path already exists');
+      expect(lstatSync(target)).toBeDefined();
+      expect(run('git', ['show-ref', '--verify', 'refs/heads/codex/location'], cwd).status).not.toBe(0);
+    } finally { rmSync(parent, { recursive: true, force: true }); }
   }, 15000);
 });

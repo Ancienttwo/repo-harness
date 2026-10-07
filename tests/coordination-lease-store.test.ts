@@ -9,7 +9,7 @@
 import { afterAll, describe, expect, spyOn, test } from 'bun:test';
 import * as fs from 'fs';
 import * as childProcess from 'child_process';
-import { spawn, spawnSync } from 'child_process';
+import { execFileSync, spawn, spawnSync } from 'child_process';
 import {
   chmodSync,
   existsSync,
@@ -1835,4 +1835,170 @@ test('a lease this completion could not release is refused before any write', ()
     expect(ambiguousToken.stderr).toContain('not readable as a single capability');
     expect(readFileSync(join(repo, RACE_SPRINT), 'utf-8')).toContain(`| 1 | ${RACE_ID} | [ ] |`);
   }, 60_000);
+});
+
+import { cleanupExactWorktree, removeExactWorktree, sweepManagedWorktrees } from '../src/effects/state/coordination-worktree-topology';
+
+describe('exact cleanup and SessionStart worktree sweep', () => {
+  function fixture() {
+    const parent = realpathSync(mkdtempSync(join(tmpdir(), 'worktree-sweep-')));
+    const root = join(parent, 'repo'); const managed = join(parent, 'managed');
+    mkdirSync(root); mkdirSync(managed);
+    const git = (...args: string[]) => {
+      const result = spawnSync('git', args, { cwd: root, encoding: 'utf8', env: { ...process.env, HOME: join(parent, 'home') } });
+      if (result.status !== 0) throw new Error(result.stderr);
+      return result.stdout.trim();
+    };
+    mkdirSync(join(parent, 'home'));
+    git('init', '-q', '-b', 'main'); git('config', 'user.name', 'Test'); git('config', 'user.email', 'test@example.test');
+    writeFileSync(join(root, '.gitignore'), '.ai/\n'); writeFileSync(join(root, 'source'), 'base\n');
+    git('add', '.'); git('commit', '-qm', 'base');
+    git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+    const path = join(managed, 'repo-wt-demo'); git('worktree', 'add', '-q', '-b', 'codex/demo', path);
+    const head = git('rev-parse', 'HEAD');
+    const expected = { worktree: path, branch: 'codex/demo', head_sha: head, target_ref: 'refs/remotes/origin/main', target_oid: head, merge_commit_sha: head };
+    const env = { ...process.env, REPO_HARNESS_WORKTREE_ROOT: managed, REPO_HARNESS_TOOLING_UPDATE_CHECK: '0', HOME: join(parent, 'home') };
+    return { parent, root, managed, path, git, expected, env, cleanup: () => rmSync(parent, { recursive: true, force: true }) };
+  }
+
+  test('sweep removes a merged clean checkout and branch', () => {
+    const f = fixture(); try {
+      expect(sweepManagedWorktrees(f.root, f.root, f.env)).toContain('removed=1');
+      expect(existsSync(f.path)).toBe(false); expect(f.git('branch', '--list', 'codex/demo')).toBe('');
+    } finally { f.cleanup(); }
+  });
+
+  test('sweep compares the managed root through its realpath', () => {
+    const f = fixture(); try {
+      const alias = join(f.parent, 'tmp-alias'); symlinkSync(f.managed, alias);
+      expect(sweepManagedWorktrees(f.root, f.root, { ...f.env, REPO_HARNESS_WORKTREE_ROOT: alias })).toContain('removed=1');
+      expect(existsSync(f.path)).toBe(false);
+    } finally { f.cleanup(); }
+  });
+
+  test('exact cleanup refuses an existing directory after its Git registration is removed', () => {
+    const f = fixture(); try {
+      f.git('worktree', 'remove', f.path); mkdirSync(f.path); writeFileSync(join(f.path, 'keep'), 'unknown');
+      expect(() => cleanupExactWorktree(f.root, f.expected, () => { throw new Error('actuator called'); })).toThrow('not registered');
+      expect(readFileSync(join(f.path, 'keep'), 'utf8')).toBe('unknown');
+    } finally { f.cleanup(); }
+  });
+
+  test('sweep accepts a squash absorbed branch through the shared merge authority', () => {
+    const f = fixture(); try {
+      writeFileSync(join(f.path, 'change'), 'absorbed\n');
+      execFileSync('git', ['add', '.'], { cwd: f.path }); execFileSync('git', ['commit', '-qm', 'feature'], { cwd: f.path });
+      f.git('merge', '--squash', 'codex/demo'); f.git('commit', '-qm', 'squash'); f.git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+      expect(sweepManagedWorktrees(f.root, f.root, f.env)).toContain('removed=1');
+      expect(existsSync(f.path)).toBe(false); expect(f.git('branch', '--list', 'codex/demo')).toBe('');
+    } finally { f.cleanup(); }
+  });
+
+  test.each(['dirty', 'unmerged', 'locked', 'leased', 'unknown-lease', 'marker', 'session-cwd', 'nested-cwd', 'evidence', 'runtime'])('sweep keeps %s checkout and reports the path', condition => {
+    const f = fixture(); try {
+      let cwd = f.root;
+      if (condition === 'dirty') writeFileSync(join(f.path, 'untracked'), 'keep');
+      if (condition === 'unmerged') { writeFileSync(join(f.path, 'new'), 'keep'); execFileSync('git', ['add', '.'], { cwd: f.path }); execFileSync('git', ['commit', '-qm', 'unmerged'], { cwd: f.path }); }
+      if (condition === 'locked') f.git('worktree', 'lock', f.path);
+      if (condition === 'leased' || condition === 'unknown-lease') {
+        const record = recordFor('sweep', 'sweep-claim');
+        createLeaseDirectory(f.root, record.task_id);
+        if (condition === 'leased') {
+          const transition = bindLeaseRecord(record, { claimId: record.claim_id, executionWorktree: f.path, branch: 'codex/demo', unitRef: 'fixture' });
+          if (!transition.ok) throw new Error(transition.error);
+          writeLeaseOwnerDurably(f.root, record.task_id, transition.record);
+        }
+      }
+      if (condition === 'marker') { mkdirSync(join(f.root, '.ai/harness'), { recursive: true }); writeFileSync(join(f.root, '.ai/harness/active-worktree'), f.path); }
+      if (condition === 'session-cwd') cwd = f.path;
+      if (condition === 'nested-cwd') { cwd = join(f.path, 'nested'); mkdirSync(cwd); }
+      if (condition === 'evidence') { mkdirSync(join(f.path, '.ai/harness/evidence/events'), { recursive: true }); writeFileSync(join(f.path, '.ai/harness/evidence/events/log.jsonl'), '{}\n'); }
+      if (condition === 'runtime') {
+        const key = require('crypto').createHash('sha256').update(JSON.stringify([join(f.root, '.git'), f.path])).digest('hex');
+        mkdirSync(join(f.root, '.ai/harness/runs/task-workspaces', key), { recursive: true });
+      }
+      const result = sweepManagedWorktrees(f.root, cwd, f.env);
+      const reasons: Record<string, string> = { dirty: 'dirty_worktree', unmerged: 'merge is unproven', locked: 'locked', leased: 'active Lease',
+        'unknown-lease': 'unknown Lease', marker: 'marker reference', 'session-cwd': 'session cwd', 'nested-cwd': 'session cwd',
+        evidence: 'evidence retention', runtime: 'runtime is open' };
+      expect(result).toContain(f.path); expect(result).toContain('kept;'); expect(result).toContain(reasons[condition]!); expect(existsSync(f.path)).toBe(true);
+      expect(f.git('branch', '--list', 'codex/demo')).toContain('codex/demo');
+      if (condition === 'leased') expect(() => removeExactWorktree(f.root, f.expected)).toThrow('active Lease');
+    } finally { f.cleanup(); }
+  });
+
+  test.each([false, true])('sweep prunes a missing checkout and keeps its branch only when unmerged=%s', unmerged => {
+    const f = fixture(); try {
+      if (unmerged) { writeFileSync(join(f.path, 'new'), 'keep'); execFileSync('git', ['add', '.'], { cwd: f.path }); execFileSync('git', ['commit', '-qm', 'unmerged'], { cwd: f.path }); }
+      rmSync(f.path, { recursive: true });
+      const result = sweepManagedWorktrees(f.root, f.root, f.env);
+      expect(result).toContain('pruned=1'); expect(f.git('worktree', 'list', '--porcelain')).not.toContain(f.path);
+      expect(f.git('branch', '--list', 'codex/demo').includes('codex/demo')).toBe(unmerged);
+      if (unmerged) expect(result).toContain('unmerged branch kept');
+    } finally { f.cleanup(); }
+  });
+
+  test.each(['missing-directory', 'missing-git-file'])('sweep leaves outside paths and protects outside prunable registrations: %s', condition => {
+    const f = fixture(); try {
+      const outside = join(f.parent, 'outside'); f.git('worktree', 'add', '-q', '-b', 'outside', outside);
+      expect(sweepManagedWorktrees(f.root, f.root, f.env)).toContain('removed=1'); expect(existsSync(outside)).toBe(true);
+      f.git('worktree', 'add', '-q', '-b', 'codex/demo', f.path);
+      if (condition === 'missing-directory') rmSync(outside, { recursive: true });
+      else rmSync(join(outside, '.git'));
+      rmSync(f.path, { recursive: true });
+      expect(sweepManagedWorktrees(f.root, f.root, f.env)).toContain('prune would affect a protected path');
+      expect(f.git('worktree', 'list', '--porcelain')).toContain(outside); expect(f.git('worktree', 'list', '--porcelain')).toContain(f.path);
+    } finally { f.cleanup(); }
+  });
+
+  test.each(['head', 'target', 'path', 'unregistered', 'symlink'])('exact cleanup refuses a changed %s before the actuator runs', change => {
+    const f = fixture(); try {
+      if (change === 'head') f.expected.head_sha = 'a'.repeat(40);
+      if (change === 'target') f.expected.target_oid = 'a'.repeat(40);
+      if (change === 'path') f.expected.worktree = f.root;
+      if (change === 'unregistered') f.expected.branch = 'outside';
+      if (change === 'symlink') { const alias = join(f.managed, 'alias'); symlinkSync(f.path, alias); f.expected.worktree = alias; }
+      let called = false;
+      expect(() => cleanupExactWorktree(f.root, f.expected, () => { called = true; })).toThrow();
+      expect(called).toBe(false); expect(existsSync(f.path)).toBe(true);
+    } finally { f.cleanup(); }
+  });
+
+  test('the shipped single-file SessionStart bundle uses its package merge library', () => {
+    const f = fixture(); try {
+      mkdirSync(join(f.root, '.ai/harness'), { recursive: true });
+      writeFileSync(join(f.root, '.ai/harness/workflow-contract.json'), '{}');
+      const packageRoot = join(f.parent, 'package'); mkdirSync(join(packageRoot, 'dist'), { recursive: true }); mkdirSync(join(packageRoot, 'scripts'));
+      writeFileSync(join(packageRoot, 'package.json'), JSON.stringify({ name: 'repo-harness', version: '0.21.1' }));
+      writeFileSync(join(packageRoot, 'scripts/worktree-merge-lib.sh'), readFileSync(join(import.meta.dir, '../scripts/worktree-merge-lib.sh')));
+      const bundle = join(packageRoot, 'dist/hook-entry.js');
+      const built = spawnSync(process.execPath, ['build', join(import.meta.dir, '../src/cli/hook-entry.ts'), '--target=bun', '--outfile', bundle, '--define', 'REPO_HARNESS_BUNDLED_CLI_VERSION="0.21.1"'], { encoding: 'utf8', env: f.env });
+      expect(built.status, built.stderr).toBe(0);
+      const result = spawnSync(process.execPath, [bundle, 'SessionStart', '--route', 'default'], {
+        cwd: f.root, encoding: 'utf8', input: '{}', env: { ...f.env, HOOK_REPO_ROOT: f.root, HOOK_HOST: 'codex' },
+      });
+      expect(result.status).toBe(0); expect(result.stdout + result.stderr).toContain('removed=1');
+      expect(existsSync(f.path)).toBe(false); expect(f.git('branch', '--list', 'codex/demo')).toBe('');
+      f.git('worktree', 'add', '-q', '-b', 'codex/demo', f.path);
+      rmSync(join(packageRoot, 'scripts/worktree-merge-lib.sh'));
+      const missing = spawnSync(process.execPath, [bundle, 'SessionStart', '--route', 'default'], {
+        cwd: f.root, encoding: 'utf8', input: '{}', env: { ...f.env, HOOK_REPO_ROOT: f.root, HOOK_HOST: 'codex' },
+      });
+      expect(missing.status).toBe(0); expect(missing.stdout + missing.stderr).toContain('worktree merge library is unavailable');
+      expect(existsSync(f.path)).toBe(true); expect(f.git('branch', '--list', 'codex/demo')).toContain('codex/demo');
+    } finally { f.cleanup(); }
+  }, 15000);
+
+  test('real SessionStart reports sweep failure and still returns zero', () => {
+    const f = fixture(); try {
+      mkdirSync(join(f.root, '.ai/harness'), { recursive: true });
+      writeFileSync(join(f.root, '.ai/harness/workflow-contract.json'), '{}');
+      f.git('update-ref', '-d', 'refs/remotes/origin/main');
+      const result = spawnSync(process.execPath, [join(import.meta.dir, '../src/cli/hook-entry.ts'), 'SessionStart', '--route', 'default'], {
+        cwd: f.root, encoding: 'utf8', input: JSON.stringify({ cwd: f.root }), env: { ...f.env, HOOK_REPO_ROOT: f.root, HOOK_HOST: 'codex' },
+      });
+      expect(result.status).toBe(0); expect(result.stdout + result.stderr).toContain('worktree sweep skipped: local integration target is unavailable');
+      expect(existsSync(f.path)).toBe(true);
+    } finally { f.cleanup(); }
+  }, 15000);
 });

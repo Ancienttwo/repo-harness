@@ -1,7 +1,7 @@
 import { defaultPolicy } from "../src/core/adoption/standard-plan";
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "fs";
-import { join } from "path";
+import { dirname, join } from "path";
 import { configureRequiredHerdrSkill } from "../src/cli/commands/herdr-skill";
 
 /**
@@ -279,7 +279,8 @@ import { askMasked } from '../src/cli/commands/herdr';
 
 function notifyFixture() {
   const root = mkdtempSync(join(tmpdir(), 'rh-herdr-notify-'));
-  const workspace = mkdtempSync(join(ROOT, '.notify-workspace-'));
+  // Use an existing non-temporary directory as read-only event context.
+  const workspace = dirname(realpathSync('/tmp'));
   const home = join(root, 'home');
   const config = join(root, 'config');
   const state = join(root, 'state');
@@ -297,7 +298,6 @@ function notifyFixture() {
     { env: { ...env, ...extra }, encoding: 'utf8', timeout: 20_000 });
   return { root, workspace, home, config, state, env, run, cleanup: () => {
     rmSync(root, { recursive: true, force: true });
-    rmSync(workspace, { recursive: true, force: true });
   } };
 }
 
@@ -582,8 +582,9 @@ describe('shipped Herdr notify event handler', () => {
   test('temporary workspaces reached through a durable symlink are filtered', async () => {
     for (const field of ['workspace_cwd', 'focused_pane_cwd', 'worktree']) {
       const fixture = eventFixture();
+      const aliasRoot = mkdtempSync(join(ROOT, '.notify-alias-'));
       try {
-        const alias = join(fixture.workspace, 'temporary'); symlinkSync(fixture.root, alias);
+        const alias = join(aliasRoot, 'temporary'); symlinkSync(fixture.root, alias);
         expect(realpathSync(alias)).toBe(realpathSync(fixture.root));
         const context = { workspace_cwd: fixture.workspace, focused_pane_cwd: fixture.workspace, worktree: { path: fixture.workspace } };
         if (field === 'worktree') context.worktree.path = alias;
@@ -591,7 +592,7 @@ describe('shipped Herdr notify event handler', () => {
         fixture.env.HERDR_PLUGIN_CONTEXT_JSON = JSON.stringify(context);
         await notify(fixture.env, fixture.send);
         expect(fixture.calls).toHaveLength(0);
-      } finally { fixture.cleanup(); }
+      } finally { fixture.cleanup(); rmSync(aliasRoot, { recursive: true, force: true }); }
     }
   });
 

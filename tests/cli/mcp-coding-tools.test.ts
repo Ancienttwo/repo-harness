@@ -632,3 +632,9 @@ describe('coding MCP workspace and file tools', () => {
     }
   }, 30_000);
 });
+
+ test('coding worktrees use system tmp by default and keep the root override', async () => {
+  const { codingWorktreeRoot } = await import('../../src/cli/mcp/coding-workspaces');
+  expect(codingWorktreeRoot({ HOME: '/unused', TMPDIR: '/unused-tmp' })).toBe('/tmp/repo-harness-mcp-worktrees');
+  expect(codingWorktreeRoot({ REPO_HARNESS_MCP_WORKTREE_ROOT: '/custom' })).toBe('/custom');
+});

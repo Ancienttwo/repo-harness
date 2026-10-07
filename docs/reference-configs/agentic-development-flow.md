@@ -1,5 +1,8 @@
 # Agentic development flow
 
+
+- Default task worktrees use `/tmp/<repo>-wt-<slug>`. Stored downstream location templates stay unchanged. Closeout removes merged, clean worktrees and their local branches. SessionStart sweeps registered worktrees under this default root. Both paths refuse unproven merge, dirty content, locks, moved revisions, active Leases and active-worktree markers. The sweep also keeps the session cwd and its parent worktree. Commit or push work before a reboot. A reboot can clear `/tmp`. The sweep prunes missing entries and keeps unmerged branches.
+
 ## Daily Flow
 1. Read the current request and `AGENTS.md`; load architecture or worker techniques only when relevant.
 2. Open a branch; isolate a worktree when concurrent edits overlap. Preserve unrelated work.

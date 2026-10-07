@@ -98,8 +98,8 @@ function assertTaskId(taskId: string): void {
   }
 }
 
-export function coordinationRoot(cwd: string): string {
-  return join(resolveGitCommonDirectory(cwd), COORDINATION_ROOT_RELATIVE_PATH);
+export function coordinationRoot(cwd: string, gitTimeoutMs?: number): string {
+  return join(resolveGitCommonDirectory(cwd, 'git', gitTimeoutMs), COORDINATION_ROOT_RELATIVE_PATH);
 }
 
 export function taskLockRelativePath(taskId: string): string {
@@ -291,8 +291,8 @@ function readLeaseAt(directory: string, taskId: string): LeaseRead {
  * unrelated filesystem residue. Valid task-id entries are returned even when
  * their owner record is unknown so safety callers can fail closed.
  */
-export function listLeaseReads(cwd: string): readonly LeaseRead[] {
-  const leasesRoot = join(coordinationRoot(cwd), 'leases');
+export function listLeaseReads(cwd: string, gitTimeoutMs?: number): readonly LeaseRead[] {
+  const leasesRoot = join(coordinationRoot(cwd, gitTimeoutMs), 'leases');
   let entries: string[];
   try {
     entries = readdirSync(leasesRoot);

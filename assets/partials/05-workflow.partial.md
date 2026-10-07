@@ -49,6 +49,7 @@ Core rules (canonical source: see Workflow Orchestration section below):
 - `docs/spec.md` is product truth; an explicit plan is execution truth for its task.
 - For an explicit contract, use its exit criteria and review as done gates. Write notes only for non-obvious decisions.
 - Treat `.ai/harness/active-plan` as authoritative only for its owning worktree; `.ai/harness/active-worktree` records that owner.
+- Default task worktrees use `/tmp/<repo>-wt-<slug>`. Stored downstream location templates stay unchanged. Closeout removes merged, clean worktrees and their local branches. SessionStart sweeps registered worktrees under this default root. Both paths refuse unproven merge, dirty content, locks, moved revisions, active Leases and active-worktree markers. The sweep also keeps the session cwd and its parent worktree. Commit or push work before a reboot. A reboot can clear `/tmp`. The sweep prunes missing entries and keeps unmerged branches.
 - Keep optional plans in their owning worktrees. For an explicit contract, check workflow inventory before implementation: owning worktree, contract, exit criteria and verification inputs.
 - Mark done only with verification evidence.
 - Durable progress lives in `tasks/workstreams/`; release history belongs in `docs/CHANGELOG.md`.

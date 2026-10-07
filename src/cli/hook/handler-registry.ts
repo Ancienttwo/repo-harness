@@ -9,6 +9,7 @@ import { runTraceObserver } from './trace-observer';
 import { runTaskInboxHandler } from './task-inbox-handler';
 import { getRoute, ROUTES, type HookEvent, type HookHandlerId, type Route, type RouteId } from './route-registry';
 import type { HookEffectContract, HookHandlerContext, HookHandlerResult, TypedHookHandler } from './handler-contract';
+import { sweepManagedWorktrees } from '../../effects/state/coordination-worktree-topology';
 import { architectureProjectionQueueState } from '../../effects/architecture/projection-jobs';
 
 const MUTATION_OBSERVED_EFFECT_CONTRACT: HookEffectContract = Object.freeze({
@@ -50,6 +51,8 @@ const handlers: Readonly<Record<HookHandlerId, TypedHookHandler>> = Object.freez
     run(context: HookHandlerContext): HookHandlerResult {
       ensureSessionRunIdentity(context.repoRoot, context.input, context.env, context.now);
       const sections = [];
+      const sweep = sweepManagedWorktrees(context.repoRoot, context.sessionCwd ?? context.repoRoot, context.env);
+      if (sweep) sections.push({ id: 'worktree-sweep', priority: 1 as const, content: sweep, mandatory: true, actionable: true });
       const stateSection = context.collector.getSessionEffectiveState();
       if (stateSection) sections.push(stateSection);
       const pending = pendingPostEditJournalSection(context.repoRoot);

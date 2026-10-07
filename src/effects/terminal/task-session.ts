@@ -242,6 +242,16 @@ function workspaceDirectory(repository: TaskRepository): string {
   const key = createHash('sha256').update(JSON.stringify([repository.repository_id, repository.execution_root])).digest('hex');
   return join(repository.primary_root, '.ai/harness/runs/task-workspaces', key);
 }
+/** The session sweep cannot close an open runtime or contact Herdr. */
+export function taskWorktreeRuntimeClosed(repository: TaskRepository): boolean {
+  const dir = workspaceDirectory(repository);
+  try { lstatSync(dir); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return true; throw error; }
+  assertSessionDirectory(repository.primary_root, dir);
+  if (!existsSync(join(dir, 'closed.json'))) return false;
+  const closed = readSessionArtifact<{ repository_id: string; checkout: string }>(join(dir, 'closed.json'));
+  return closed.repository_id === repository.repository_id && closed.checkout === repository.execution_root;
+}
 function assertWorkspace(binding: TaskWorkspaceBinding): void {
   const value = info(binding.endpoint, ['workspace', 'get', binding.workspace_id]).workspace;
   if (value?.workspace_id !== binding.workspace_id || value.worktree?.repo_key !== binding.repository.repository_id

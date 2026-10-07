@@ -24,7 +24,7 @@
  * detached
  * ```
  *
- * Unknown keys (`bare`, `locked`, `prunable`, and whatever git adds next) are
+ * Lock and prune advisories are read for cleanup. Other keys (`bare` and new keys) are
  * ignored rather than rejected: this reader is a topology probe, not a
  * validator of git's own output, and failing closed on a new advisory key
  * would break the board on a git upgrade that changed nothing it reads.
@@ -38,6 +38,8 @@ export interface WorktreeEntry {
   readonly branch: string | null;
   readonly head: string | null;
   readonly detached: boolean;
+  readonly locked?: boolean;
+  readonly prunable?: boolean;
 }
 
 export interface WorktreeTopology {
@@ -52,14 +54,18 @@ export function parseWorktreeTopology(raw: string): WorktreeTopology {
   let branch: string | null = null;
   let head: string | null = null;
   let detached = false;
+  let locked = false;
+  let prunable = false;
 
   const flush = (): void => {
     if (path === null) return;
-    worktrees.push({ path, branch, head, detached });
+    worktrees.push({ path, branch, head, detached, ...(locked ? { locked: true } : {}), ...(prunable ? { prunable: true } : {}) });
     path = null;
     branch = null;
     head = null;
     detached = false;
+    locked = false;
+    prunable = false;
   };
 
   for (const line of raw.split('\n')) {
@@ -80,6 +86,10 @@ export function parseWorktreeTopology(raw: string): WorktreeTopology {
       head = value;
     } else if (key === 'branch') {
       branch = value;
+    } else if (key === 'prunable') {
+      prunable = true;
+    } else if (key === 'locked') {
+      locked = true;
     } else if (key === 'detached') {
       detached = true;
     }

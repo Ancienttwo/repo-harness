@@ -321,6 +321,7 @@ export function defaultPolicy(documentationProfile: string, documentationLanguag
       capability_source_rule: "single authority selected by capability_source; registry reads .ai/context/capabilities.json, archcontext reads .archcontext/model/nodes/*.yaml; no dual-read and no fallback",
     },
     worktree_strategy: {
+      worktree_dir_template: "/tmp/{{repo}}-wt-{{slug}}",
       base_branch: "main",
       review_base: "main",
       merge_back: {

@@ -8,7 +8,6 @@ import {
   realpathSync,
   readdirSync,
   renameSync,
-  rmSync,
   statSync,
   writeFileSync,
 } from 'fs';
@@ -20,6 +19,7 @@ import {
   type RepoHarnessRegisteredRepo,
 } from '../../effects/repo-registry';
 import { globMatches, isPathInside } from './paths';
+import { cleanupExactWorktree } from '../../effects/state/coordination-worktree-topology';
 import { cleanupTaskWorktree } from '../../effects/terminal/task-session';
 
 export type CodingWorkspaceMode = 'checkout' | 'worktree';
@@ -116,7 +116,7 @@ export function codingWorkspaceStatePath(env: NodeJS.ProcessEnv = process.env): 
 }
 
 export function codingWorktreeRoot(env: NodeJS.ProcessEnv = process.env): string {
-  return resolve(env.REPO_HARNESS_MCP_WORKTREE_ROOT ?? join(repoHarnessHome(env), 'mcp-worktrees'));
+  return resolve(env.REPO_HARNESS_MCP_WORKTREE_ROOT ?? '/tmp/repo-harness-mcp-worktrees');
 }
 
 function toPosix(value: string): string {
@@ -547,7 +547,22 @@ export class CodingWorkspaceManager {
       const suffix = randomBytes(4).toString('hex');
       branch = `codex/mcp-${sanitizeBranchPart(basename(sourceRoot))}-${suffix}`;
       root = join(codingWorktreeRoot(this.env), sanitizeBranchPart(basename(sourceRoot)), id);
-      mkdirSync(dirname(root), { recursive: true, mode: 0o700 });
+      const managedRoot = codingWorktreeRoot(this.env);
+      mkdirSync(managedRoot, { recursive: true, mode: 0o700 });
+      for (const directory of [managedRoot, dirname(root)]) {
+        if (directory !== managedRoot) mkdirSync(directory, { mode: 0o700, recursive: true });
+        const stat = lstatSync(directory);
+        if (!stat.isDirectory() || stat.isSymbolicLink() || (process.getuid && stat.uid !== process.getuid()) || (stat.mode & 0o022)) {
+          throw new CodingWorkspaceError('WORKTREE_ROOT_UNSAFE', 'managed worktree root must be owned and private');
+        }
+      }
+      try {
+        lstatSync(root);
+        throw new CodingWorkspaceError('WORKTREE_PATH_EXISTS', 'target worktree path already exists');
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      }
+      mkdirSync(root, { mode: 0o700 });
       git(sourceRoot, ['worktree', 'add', '-b', branch, root, baseSha]);
       root = realpathSync(root);
       managed = true;
@@ -691,11 +706,15 @@ export async function cleanupManagedCodingWorkspace(
     || workspaceBranchSnapshot(workspace.sourceRoot, workspace.branch).branchCommit !== branchCommit) {
     throw new CodingWorkspaceError('WORKTREE_REVISION_CHANGED', 'workspace or target changed during runtime cleanup', { workspace_id: workspaceId });
   }
-  if (existsSync(workspace.root)) git(workspace.sourceRoot, ['worktree', 'remove', workspace.root]);
-  deleteCodingWorkspaceBranchAtSnapshot(workspace.sourceRoot, branchRef, branchCommit, targetRef, targetCommit);
+  cleanupExactWorktree(workspace.sourceRoot, {
+    worktree: workspace.root, branch: workspace.branch, head_sha: branchCommit,
+    target_ref: targetRef, target_oid: targetCommit, merge_commit_sha: targetCommit,
+  }, () => {
+    if (existsSync(workspace.root)) git(workspace.sourceRoot, ['worktree', 'remove', workspace.root]);
+    deleteCodingWorkspaceBranchAtSnapshot(workspace.sourceRoot, branchRef, branchCommit, targetRef, targetCommit);
+  });
   state.workspaces = currentState.workspaces.filter((entry) => entry.id !== workspaceId);
   writeState(env, state);
-  if (existsSync(workspace.root)) rmSync(workspace.root, { recursive: true, force: true });
   return {
     workspace_id: workspaceId,
     removed: true,
