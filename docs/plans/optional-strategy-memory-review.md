@@ -297,3 +297,50 @@ pass. The baseline timeout remains an environment-dependent validation limit.
 No real provider, credential change, merge or deployment ran. The published
 20ccf865 evidence remains preserved. This repair commit stays local for parent
 independent review before publication to the existing draft PR.
+
+## Coordination fixture handoff repair on dd17046c
+
+CI run 37688338249, job 113021930669, tested merge 62610b2f against main
+3ea2f7b. Previous routing and bundle failures cleared. The only failed file was
+coordination-lease-store.test.ts. The failure was Unexpected EOF at the parent
+JSON.parse of outcome.json, before any lease outcome assertion ran.
+
+The child published JSON directly to its final path with writeFileSync. The
+parent waited only for path existence. Opening/truncating that path can make it
+visible before its JSON payload is written. This is a fixture handoff defect.
+The test file blob is identical on dd17046c and main 3ea2f7b:
+32f2213d11e2b856b0d065fed49f85bad1d16ef3. This is source comparison evidence,
+not a claim that the unmodified main test reproduced the random CI interleaving.
+
+The deterministic probe expands the write into open, write and close, with an
+explicit child/parent barrier between open and write. With the direct final-path
+producer, the parent observes the empty final file, JSON parsing fails, and the
+new publication assertion fails. This recreates the exact unsafe handoff window
+without depending on random timing. The two red probe logs remain preserved.
+
+The fixture now opens a sibling .pending file, writes JSON, closes the file and
+renames it to the final path. The same barrier proves the final path stays absent
+while the pending file is empty. After release, the final file parses as the
+actual completion outcome. The pending file is gone. The additional regression
+also checks successful row completion and lease release. Existing theft,
+release/reclaim, late claim and uncontended completion assertions are unchanged.
+There are no changes to product lease code, existing delays, deadlines, polling
+intervals, skips, workflows or provider behavior. The new barrier is test-only.
+
+### Checks
+
+- Red probe with direct final-path publication: failed as expected. The strict
+  probe first confirmed empty content and JSON parse failure, then failed the
+  final-path-absence assertion. One test, four assertions before failure.
+- `bun run test:files tests/coordination-lease-store.test.ts --test-name-pattern 'complete-row is one locked transaction' --timeout 60000 --max-concurrency 1`:
+  13 passed, 89 assertions, 62 explicitly filtered unrelated tests.
+- `bun run test:files tests/coordination-lease-store.test.ts --timeout 60000 --max-concurrency 1`:
+  75 passed, 397 assertions, no skips or filtered tests.
+- `bun run check:type`: passed.
+- `git diff --check`: passed.
+
+The full suite was not rerun locally. Remote CI is still required after parent
+review and publication. Original CI logs, direct-publication probe failures and
+successful repaired checks remain in the artifact. No product behavior change,
+real provider, credential change, merge or deployment occurred. The repair is
+local and awaits parent review before push to the existing Draft PR 599.

@@ -1467,16 +1467,22 @@ describe('complete-row is one locked transaction', () => {
     );
   }
 
-  function completionChildSource(repo: string, signals: string): string {
+  function completionChildSource(repo: string, signals: string, beforeOutcomeWrite = ""): string {
     return [
-      "import { writeFileSync } from 'fs';",
+      "import { closeSync, existsSync, openSync, renameSync, writeFileSync } from 'fs';",
       `import { completeRowSprintCommand, processSprintDependencies } from '${join(REPO_ROOT, 'src/effects/state/coordination-sprint')}';`,
       `writeFileSync(${JSON.stringify(join(signals, 'started'))}, 'go');`,
       'const outcome = completeRowSprintCommand(',
       `  { sprint: ${JSON.stringify(RACE_SPRINT)}, task: ${JSON.stringify(RACE_TASK)}, targetRef: 'main' },`,
       `  processSprintDependencies(${JSON.stringify(repo)}),`,
       ');',
-      `writeFileSync(${JSON.stringify(join(signals, 'outcome.json'))}, JSON.stringify(outcome));`,
+      `const outcomePath = ${JSON.stringify(join(signals, 'outcome.json'))};`,
+      'const output = openSync(`${outcomePath}.pending`, "w");',
+      'try {',
+      beforeOutcomeWrite,
+      '  writeFileSync(output, JSON.stringify(outcome));',
+      '} finally { closeSync(output); }',
+      'renameSync(`${outcomePath}.pending`, outcomePath);',
     ].join('\n');
   }
 
@@ -1514,6 +1520,41 @@ describe('complete-row is one locked transaction', () => {
       child.kill();
     }
   }
+
+  test('completion fixture publishes JSON only after the payload is complete', () => {
+    const repo = raceRepo(); claimRow(repo, 'claim-original');
+    const signals = join(repo, '.signals'); mkdirSync(signals, { recursive: true });
+    const opened = join(signals, 'publishing'); const proceed = join(signals, 'publish-continue');
+    const outcomePath = join(signals, 'outcome.json');
+    const childPath = join(repo, 'publication-child.ts');
+    writeFileSync(childPath, completionChildSource(repo, signals, [
+      `writeFileSync(${JSON.stringify(opened)}, 'ready');`,
+      'const deadline = Date.now() + 30_000;',
+      `while (!existsSync(${JSON.stringify(proceed)})) {`,
+      '  if (Date.now() > deadline) throw new Error("publication barrier timed out");',
+      '  Bun.sleepSync(10);',
+      '}',
+    ].join('\n')));
+    const child = spawn('bun', [childPath], { cwd: repo, stdio: ['ignore', 'pipe', 'pipe'] });
+    try {
+      waitForFile(opened, 'the open fixture output');
+      // The barrier holds the writer before any payload bytes. Existence must
+      // not expose that empty file at the parent reader's final path.
+      if (existsSync(outcomePath)) {
+        expect(readFileSync(outcomePath, 'utf8')).toBe('');
+        expect(() => JSON.parse(readFileSync(outcomePath, 'utf8'))).toThrow();
+      }
+      expect(existsSync(outcomePath)).toBe(false);
+      expect(readFileSync(`${outcomePath}.pending`, 'utf8')).toBe('');
+      writeFileSync(proceed, 'continue');
+      waitForFile(outcomePath, 'the published fixture output');
+      const outcome = JSON.parse(readFileSync(outcomePath, 'utf8'));
+      expect(outcome.exitCode).toBe(0); expect(outcome.stderr).toBe('');
+      expect(existsSync(`${outcomePath}.pending`)).toBe(false);
+      expect(readFileSync(join(repo, RACE_SPRINT), 'utf8')).toContain(`| 1 | ${RACE_ID} | [x] |`);
+      expect(readLease(repo, RACE_ID).classification).toBe('available');
+    } finally { child.kill(); }
+  }, 60_000);
 
   test('a steal that lands mid-completion wins, and the row is not marked done', () => {
     const repo = raceRepo();

@@ -114,3 +114,17 @@ through the existing generator. Retain the isolated bundle execution tests.
 Update only eval expected sets and assert the explicit-setup reason. Keep the
 existing default profile exclusion tests. Run bounded local mock checks, then
 return a local commit for parent review. Do not push the changed candidate.
+
+## Coordination fixture publication repair on dd17046c
+
+P1: CI run 37688338249 failed only coordination-lease-store.test.ts.
+P2: The child writes outcome.json directly. The parent waits for existence,
+not write completion. Creating/truncating the file precedes payload publication.
+The same producer/consumer code exists on main 3ea2f7b. Lease outcome assertions
+are downstream of JSON parsing. There is no evidence of a product lease defect.
+P3: Publish fixture JSON through a sibling temporary file and rename after its
+write closes. Add a deterministic barrier in the child to observe the open,
+empty pending file. Prove the final path remains absent until publication.
+Keep the lease assertions, timeout bounds and polling intervals unchanged.
+Run a red/green regression and isolated synthetic checks. Return a local commit
+and delta for parent review before another push. No product lease changes.
