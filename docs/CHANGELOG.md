@@ -22,6 +22,9 @@ All notable changes to this skill are documented here.
 - Pin `archctx` and `archctx-contracts` to exact version `0.6.3`.
   Align architecture and refactor policies, init defaults, and clean-room
   verification with these dependencies. (#586)
+- Upgrade `@botiverse/oar` from `0.18.0` to `0.33.1`. The Generic review
+  host keeps its API surface, provider defaults and Seatbelt isolation. The
+  lockfile no longer installs the Cursor SDK. (#595)
 - `repo-harness module review-prompt` now fails with `secret_detected` when
   the prompt contains a URL with a filled `token`, `key`, `auth`, `code`,
   `sig` or `signature` query field. MCP redaction uses the same patterns. (#590)

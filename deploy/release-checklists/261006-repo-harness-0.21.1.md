@@ -12,6 +12,7 @@
   tests, so the changelog does not list it.
 - Add #593 and #594 to the 0.21.1 changelog. #592 changes only a test
   fixture, so the changelog does not list it.
+- Add the OAR `0.33.1` upgrade (#595) to the 0.21.1 changelog.
 - Keep published release history unchanged.
 
 ## Verification
