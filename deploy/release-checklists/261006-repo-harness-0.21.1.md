@@ -13,6 +13,8 @@
 - Add #593 and #594 to the 0.21.1 changelog. #592 changes only a test
   fixture, so the changelog does not list it.
 - Add the OAR `0.33.1` upgrade (#595) to the 0.21.1 changelog.
+- Upgrade OAR to `0.37.0` (#598) and update the OAR changelog entry. Add the
+  #596 prompt hook boundary text change.
 - Keep published release history unchanged.
 
 ## Verification
