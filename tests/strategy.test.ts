@@ -1,3 +1,7 @@
+import { observationReadFileSync, withReadonlyObservation, ObservationViolation } from '../src/effects/state/readonly-observation';
+import { resolveEffectiveStateReadOnly } from '../src/effects/state/resolve-effective-state';
+import { captureGitVirtualTreeSnapshot } from '../src/effects/evidence/verification-execution';
+import { readAcceptedEvents } from '../src/effects/evidence/event-log';
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
@@ -150,8 +154,8 @@ describe('optional strategy and progressive memory', () => {
     const packet = JSON.parse(context.stdout) as StrategyPacket;
     write(root, '.ai/harness/strategy/proposal.json', JSON.stringify(proposal(packet)));
     const before = snapshot(root); const validated = call('validate', '.ai/harness/strategy/proposal.json');
-    expect(validated.status).toBe(1); expect(JSON.parse(validated.stdout).status).toBe('blocked');
-    expect(packet.unknowns).toContain('Effective state unavailable: no bounded state observer');
+    expect(validated.status).toBe(0); expect(JSON.parse(validated.stdout).status).toBe('reviewable');
+    expect(packet.unknowns).toEqual([]);
     expect(snapshot(root)).toEqual(before); expect(snapshot(home)).toEqual({});
     const error = call('context', '--load', 'missing'); expect(error.status).toBe(1);
     expect(snapshot(root)).toEqual(before); expect(snapshot(home)).toEqual({});
@@ -216,9 +220,7 @@ describe('optional strategy and progressive memory', () => {
     expect(observations).toBe(2);
     write(root, 'tasks/current.md', 'x'.repeat(65537));
     expect(() => collect(root, { nowMs })).toThrow('byte limit');
-    const production = collectStrategyContext(root, { nowMs });
-    expect(production.stateRevision).toBe('unavailable');
-    expect(validateProposal(proposal(production), production).status).toBe('blocked');
+    expect(() => collectStrategyContext(root, { nowMs })).toThrow('byte limit');
   });
   test('proposal bytes and all confirmations share the state and history budget', () => {
     const { root } = fixture();
@@ -235,6 +237,97 @@ describe('optional strategy and progressive memory', () => {
     expect(() => validateStrategyRequest(root, path, { nowMs }, effects)).toThrow('byte limit');
     write(root, path, 'x'.repeat(65537));
     expect(() => validateStrategyRequest(root, path, { nowMs })).toThrow('byte limit');
+  });
+  test('production state observation matches canonical state without durable changes', () => {
+    const { root } = fixture(); const ordinary = resolveEffectiveStateReadOnly(root, nowMs, { targetPaths: [], operationKind: 'inspect' });
+    const before = snapshot(root); const reader = new StrategyReader(root);
+    const bounded = resolveEffectiveStateReadOnly(root, nowMs, { targetPaths: [], operationKind: 'inspect' }, reader.observationIO());
+    expect(bounded).toEqual(ordinary); expect(snapshot(root)).toEqual(before);
+    const packet = collectStrategyContext(root, { nowMs });
+    expect(packet.stateRevision).toBe(ordinary.state_revision.replace('sha256:', ''));
+    expect(validateProposal(proposal(packet), packet).status).toBe('reviewable');
+  });
+  test('production collector rejects a deterministic state change after initial observation', () => {
+    const { root } = fixture(); write(root, 'tasks/current.md', 'Before');
+    const reader = new StrategyReader(root); const original = reader.observationIO();
+    let currentReads = 0;
+    const io = { ...original, readFile: (path: string) => {
+      const bytes = original.readFile(path);
+      if (path === join(root, 'tasks/current.md') && ++currentReads === 1) write(root, 'tasks/current.md', 'After');
+      return bytes;
+    } };
+    // This traverses the actual state owner and its stability retry. A changing
+    // source cannot produce the old state revision; retries use the same budget.
+    const stable = resolveEffectiveStateReadOnly(root, nowMs, { targetPaths: [], operationKind: 'inspect' }, io);
+    const latest = resolveEffectiveStateReadOnly(root, nowMs, { targetPaths: [], operationKind: 'inspect' }, original);
+    expect(stable.state_revision).toBe(latest.state_revision);
+    let observations = 0;
+    expect(() => collectStrategyContext(root, { nowMs }, { observeReadOnlyState: request => {
+      const revision = resolveEffectiveStateReadOnly(root, nowMs, { targetPaths: [], operationKind: 'inspect' }, request.observationIO()).state_revision.replace('sha256:', '');
+      if (++observations === 1) write(root, 'tasks/current.md', 'Changed after state owner');
+      return revision;
+    } })).toThrow('Effective state changed');
+  });
+  test('scoped malformed evidence reads do not repair but the default owner still does', () => {
+    const { root } = fixture(); const path = '.ai/harness/evidence/events/log.jsonl'; write(root, path, '{broken\n');
+    const before = snapshot(root); const reader = new StrategyReader(root);
+    expect(() => withReadonlyObservation(reader.observationIO(), () => readAcceptedEvents(root))).toThrow('cannot repair');
+    expect(snapshot(root)).toEqual(before);
+    const repaired = readAcceptedEvents(root); expect(repaired.quarantinedPath).not.toBeNull();
+    expect(readFileSync(join(root, path), 'utf8')).toBe('');
+  });
+  test('production active verification observes a corrupt tail without repair or Git writes', () => {
+    const { root } = fixture(); const plan = 'plans/plan-20261007-1901-strategy-fixture.md'; const contract = 'tasks/contracts/20261007-1901-strategy-fixture.contract.md';
+    write(root, '.ai/harness/active-plan', plan);
+    write(root, plan, `# Plan\n> **Status**: Executing\n> **Task Contract**: ${contract}\n`);
+    const checks = { protocol: 1, checks: [{ id: 'synthetic-check', kind: 'command', command: 'exit 0', cwd: '.', phase: 'verification', cost: 'normal', evidence_policy: 'current_exact', necessity: 'Synthetic fixture', inputs: { env: [] } }] };
+    write(root, contract, `# Contract\n> **Plan**: ${plan}\n\n## Verification Plan\n\n\`\`\`json\n${JSON.stringify(checks)}\n\`\`\`\n`);
+    const beforeClean = snapshot(root);
+    const clean = collectStrategyContext(root, { nowMs });
+    expect(clean.stateRevision).not.toBe('unavailable');
+    expect(validateProposal(proposal(clean), clean).status).toBe('reviewable');
+    expect(snapshot(root)).toEqual(beforeClean);
+    const path = '.ai/harness/evidence/events/log.jsonl'; write(root, path, '{broken\n');
+    const before = snapshot(root); const packet = collectStrategyContext(root, { nowMs });
+    expect(packet.stateRevision).toBe('unavailable');
+    expect(validateProposal(proposal(packet), packet).status).toBe('blocked');
+    expect(snapshot(root)).toEqual(before);
+  });
+  test('read-only virtual tree matches the default identity and writes no objects', () => {
+    const { root } = fixture(); write(root, 'new.txt', 'Untracked'); write(root, 'docs/goal.md', 'Edited');
+    const defaultTree = captureGitVirtualTreeSnapshot(root);
+    const before = snapshot(root); const reader = new StrategyReader(root);
+    const readonlyTree = withReadonlyObservation(reader.observationIO(), () => captureGitVirtualTreeSnapshot(root));
+    expect(readonlyTree).toEqual(defaultTree); expect(snapshot(root)).toEqual(before);
+    const io = reader.observationIO();
+    expect(() => withReadonlyObservation(io, () => io.exec('git', ['add', '-A'], {}))).toThrow(ObservationViolation);
+  });
+  test('state scope and quota errors cannot be hidden by owner fallback catches', () => {
+    const { root } = fixture(); const outside = temp(); write(outside, 'current.md', 'Foreign');
+    symlinkSync(join(outside, 'current.md'), join(root, 'foreign.md'));
+    write(root, '.ai/harness/policy.json', 'x'.repeat(65537));
+    expect(() => collectStrategyContext(root, { nowMs })).toThrow('byte limit');
+    write(root, '.ai/harness/policy.json', '{}');
+    const reader = new StrategyReader(root); const io = reader.observationIO();
+    expect(() => withReadonlyObservation(io, () => { try { observationReadFileSync(join(root, 'foreign.md')); } catch {} })).toThrow(ObservationViolation);
+    // Owner wrappers latch violations even when a legacy owner catches them.
+    const packet = collectStrategyContext(root, { nowMs });
+    expect(packet.stateRevision).toBe('unavailable');
+    expect(validateProposal(proposal(packet), packet).status).toBe('blocked');
+  });
+  test('observation permits only current-project authority and fixed package inputs', () => {
+    const { root } = fixture(); const savedHome = process.env.HOME; const home = temp(); process.env.HOME = home;
+    try {
+      const allowed = join(home, '.repo-harness/gates', strategyHash(root), 'user-waiver-grant.latest.json');
+      write(home, allowed.slice(home.length + 1), 'Synthetic authority');
+      const foreign = join(home, '.repo-harness/gates', strategyHash('another-project'), 'acceptance.latest.json');
+      write(home, foreign.slice(home.length + 1), 'Foreign authority');
+      const io = new StrategyReader(root).observationIO();
+      expect(io.readFile(allowed).toString()).toBe('Synthetic authority');
+      expect(() => io.readFile(foreign)).toThrow(ObservationViolation);
+      expect(() => io.readFile(join(import.meta.dir, '../README.md'))).toThrow(ObservationViolation);
+      expect(() => io.exec('git', ['diff', '--output=forbidden.txt'], {})).toThrow(ObservationViolation);
+    } finally { if (savedHome === undefined) delete process.env.HOME; else process.env.HOME = savedHome; }
   });
   test('strict schemas reject extra authority and malformed references', () => {
     const { doc } = fixture(); expect(() => parseStrategyDocument({ ...doc, dispatch: true })).toThrow();

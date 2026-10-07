@@ -1,4 +1,5 @@
-import { lstatSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'fs';
+import { currentReadonlyObservation, observationReadFileSync as readFileSync } from './readonly-observation';
+import { lstatSync, renameSync, statSync, unlinkSync, writeFileSync } from 'fs';
 import { dirname, join, resolve } from 'path';
 import { resolveGitCommonDirectory } from '../git/common-directory';
 import { withExclusiveDirectoryLock } from '../locking/exclusive-directory-lock';
@@ -106,6 +107,7 @@ export function currentStateVersion(cwd: string): number {
     if (!hasGitDiscoveryMetadata(cwd)) return 0;
     throw error;
   }
+  if (currentReadonlyObservation()) return readVersionRecord(join(commonDir, VERSION_OWNER_RELATIVE_PATH))?.version ?? 0;
   return withExclusiveDirectoryLock(commonDir, VERSION_LOCK_RELATIVE_PATH, () => {
     const current = readVersionRecord(join(commonDir, VERSION_OWNER_RELATIVE_PATH));
     return current?.version ?? 0;

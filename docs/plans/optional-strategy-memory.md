@@ -58,3 +58,34 @@ Do not claim a partial projection is the full effective state. An internal
 injectable observer must use the same bounded reader. Synthetic tests prove
 its budget and final revision comparison. A future bounded state-owner adapter
 can restore readiness. This is a consistency check, not an atomic snapshot.
+
+## Approved bounded state observation expansion
+
+Authorization: 2026-10-07 19:01 UTC, Sentinel_443e7cbc32708191b39e83bf3df4abf3.
+Base candidate: 702e8c3576714a92e94c089ddbc24b3bf5d3e0cf.
+
+P1: Eight existing owners supply state, subject, verification and acceptance.
+P2: State retries repeat source reads. Verification preparation captures Git
+objects through a temporary index. Evidence reads can repair a corrupt tail.
+Acceptance reads project-specific authority outside the worktree. These paths
+must share the strategy request reader and must retain canonical semantics.
+P3: Add an opt-in synchronous observation IO scope. Ordinary callers keep their
+existing IO behavior. The scope wraps source reads and read-only Git output.
+Its failures remain latched even when an owner converts an exception to an
+unavailable result. Scoped evidence reads never repair. Scoped verification
+captures the same Git tree identity in memory without writing objects. Reject
+unsupported transformations rather than substitute another identity. Permit
+only exact package source and project authority paths needed by the owners.
+
+Steps:
+1. Add scoped observation IO and connect the eight mapped owners.
+2. Add non-repairing log reads and pure Git-visible tree hashing for observation.
+3. Connect production strategy observation and its final confirmation.
+4. Add fixtures for stable production validation, bounds, corrupt tails,
+   mid-collection changes and unchanged default owner behavior.
+5. Run inspected affected checks. Preserve the prior Library version. Commit
+   and deliver full and delta artifacts for parent independent review.
+
+No new ledger, provider, durable state publication or goal authority is added.
+Existing version locks may remain transient. No Git objects may be written by
+observation. A bounded unsupported input leaves state unavailable, not success.

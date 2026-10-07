@@ -134,3 +134,69 @@ production state adapter, semantic entailment, concurrent hostile directory
 replacement, same-size writes during a read, output-envelope truncation edge
 coverage, Unicode truncation edge coverage and injected host-install rollback
 failure coverage. The confirmation pass is not an atomic filesystem snapshot.
+
+## Approved production observation expansion on 702e8c3
+
+The owner approved the eight-owner scope on 2026-10-07 at 19:01 UTC.
+See the plan for the authorization reference and source trace. This section
+supersedes the unavailable-production-adapter limitation above.
+
+The production adapter now uses the canonical stable read-only resolver.
+All source payload reads and Git output share the strategy request budget.
+File sizes are checked before allocation. Directory names are charged as read.
+The scope latches safety failures even when an owner catches the exception.
+The final observation compares the canonical state revision again.
+
+Ordinary callers retain their defaults. Scoped state-version reads observe the
+existing owner file without acquiring or reclaiming locks. Scoped evidence
+reads reject corrupt tails without repair. Scoped virtual Git trees hash blobs
+and trees in memory. They do not write an index or Git objects. The identity
+matches the existing default capture for supported files. Git transforms,
+non-SHA1 repositories, symlinks, submodules and invalid UTF-8 paths fail closed.
+Commands cannot launch providers, external diff programs or content filters.
+Only current-project authority and exact package inputs are permitted outside
+the worktree. These exceptions have no cross-project retrieval authority.
+
+Two additional transitive owners need separate approval: change-assessment
+recomputation and benchmark validation. Acceptance branches needing those
+owners fail closed before they run. They never launch the benchmark grader.
+Useful stable production context and active verification context now validate
+as reviewable. Complete acceptance replay is still limited by these adapters.
+
+### Checks and review evidence
+
+- `bun run check:type`: passed on the final source.
+- `bun run test:files tests/strategy.test.ts tests/effective-state.test.ts tests/state/effective-state-stability.test.ts tests/effects/verification-execution.test.ts tests/acceptance-receipt.test.ts tests/acceptance-receipt-evidence-fingerprint.test.ts --timeout 60000 --max-concurrency 1`:
+  passed, 122 tests, 936 assertions, nine existing gated skips across six files.
+- After the authority allowlist, Git flag restriction and directory quota
+  refinements, `bun run test:files tests/strategy.test.ts --timeout 60000 --max-concurrency 1`:
+  passed, 25 tests, 144 assertions on the final source.
+- `bun run check:state-boundaries`: passed, 324 source files.
+- `bun run check:hooks`: passed, three projections.
+- `bun run check:helpers`: passed, 59 projections.
+- `bun run check:reference-configs`: passed, 26 projections.
+- `bun run check:context-map`: passed, ten entries.
+- `git diff --check`: passed.
+
+Earlier failures exposed a generated-helper import path, unsupported literal
+pathspec flags on check-ignore, a malformed fixture plan name and an overly
+broad no-index restriction. They were corrected. Logs retain diagnostic
+failures and successful final checks. No assertions were removed. The real CLI
+readiness assertion changed from blocked to reviewable because the production
+adapter now works. The test still checks unchanged repository and HOME files.
+Fixtures compare canonical state and Git tree identity with the default owners.
+They cover corrupt-tail refusal, default repair behavior, scope/quota failures,
+mutation during collection and unchanged code, Git objects, index and state.
+
+The nine skips are existing generic review/orchestration, cancellation and
+credential cleanup cases. They require host/provider integration. The full
+suite, broad host lifecycle tests, live providers, publication and deployment
+were not run. The task excludes those actions. Herdr is unavailable in this
+saved environment. Parent independent read-only review is pending, including
+the changed readiness assertion and the expanded owners.
+
+Remaining limits: the two acceptance adapters above, semantic entailment,
+concurrent hostile directory replacement, same-size writes during a payload
+read, output-envelope and Unicode truncation edge coverage, and injected
+host-install rollback failure coverage. Confirmation is not an atomic snapshot.
+No business goal or owner was fabricated. No push, PR or live provider ran.

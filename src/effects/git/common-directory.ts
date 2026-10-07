@@ -1,4 +1,4 @@
-import { execFileSync } from 'child_process';
+import { observationExecFileSync as execFileSync } from '../state/readonly-observation';
 import { realpathSync } from 'fs';
 import { isAbsolute, resolve } from 'path';
 

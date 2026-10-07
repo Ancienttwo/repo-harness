@@ -4,11 +4,11 @@ Strategy is off by default. No hook or install profile calls it.
 The CLI only exports a packet. It does not launch a strategic agent.
 The host owns wake behavior. Human owns goals and values. Bot coordinates.
 
-Current readiness limit: production state observation is unavailable. The full
-read-only state resolver has unbounded transitive reads. Strategy does not call
-it. Context packets report this unknown and production validation blocks all
-otherwise valid proposals. A bounded state-owner adapter is required before
-production reviewable status is possible. There is no CLI bypass for this limit.
+Production state observation uses resolveEffectiveStateReadOnly through an
+opt-in bounded IO scope. Stable complete context can be reviewable. Oversized,
+out-of-scope, corrupt or unsupported state inputs fail closed. Ordinary state
+callers retain their current behavior. The scope never repairs evidence or
+writes a Git object. It confirms state again after all source confirmations.
 
 ## Commands
 
@@ -123,18 +123,31 @@ Actions: `continue`, `investigate`, `adjust`, `request_owner_decision`,
 `suggest_pause`. The digest binds repository, HEAD, read-only state revision,
 context bytes, verified source hashes, eligible memory and explicit retrieval.
 Evidence revisions must identify commit objects. Tree objects are rejected.
-An internal test seam supplies state observation through the request reader.
+The production adapter supplies state observation through the request reader.
 It re-observes state after all source, body and proposal confirmation reads.
 A changed state revision is stale. This is a bounded consistency check, not
-an atomic filesystem snapshot. The seam has no production CLI adapter.
+an atomic filesystem snapshot. Synthetic fixtures use the same production state owner.
 Goal or evidence edits invalidate the previous proposal. Missing or forged
 provenance is invalid. Structured contradictions are blocked. Incomplete
 context is blocked. Remaining semantic consistency is unknown even when
 reviewable. Validation never dispatches work or changes goal authority.
 
 Successful and failed reads do not write code, tasks, leases, caches or state
-versions. This strategy path does not call the full state resolver or observe a state
-version. It uses no state lock. A future bounded adapter must retain read-only
-state authority and must not allocate a version. Filesystem races cannot
+versions. Scoped state version reads observe the existing version file without a lock or
+allocation. Ordinary callers retain their existing locking behavior. State
+retries, historical content, selected bodies and final observations share the
+same quota. Package runner inputs use an exact source allowlist. Git version
+metadata and project acceptance authority have explicit scopes.
+
+Bounded virtual tree capture computes Git identities in memory. It does not
+write an index or objects. It currently requires SHA-1 Git, regular files and
+no content-conversion attributes or autocrlf. Unsupported source types or
+transformations leave state unavailable. A corrupt evidence tail also leaves
+state unavailable; only the ordinary evidence owner can repair it.
+
+Acceptance branches that need change-assessment recomputation or benchmark
+validation are unavailable in this scoped adapter. Those transitive owners
+need a separate approved adapter; observation never launches their grader.
+ Filesystem races cannot
 be fully excluded without operating-system directory handles. Do not run this
 reader against a concurrently hostile mutable worktree.

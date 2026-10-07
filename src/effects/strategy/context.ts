@@ -1,7 +1,10 @@
+import { fileURLToPath } from 'node:url';
+import { ObservationViolation, type ReadonlyObservationIO } from '../state/readonly-observation';
+import { resolveEffectiveStateReadOnly } from '../state/resolve-effective-state';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { existsSync, lstatSync, realpathSync, openSync, readSync, closeSync, fstatSync, constants } from 'node:fs';
-import { isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { existsSync, lstatSync, opendirSync, realpathSync, openSync, readSync, closeSync, fstatSync, constants } from 'node:fs';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { activeMemory, parseStrategyDocument, validateProposal, type Evidence, type StrategyPacket } from '../../core/strategy/contracts';
 
 export const STRATEGY_DOCUMENT = 'docs/strategy/context.json';
@@ -17,25 +20,30 @@ function requestReader(repo: string): StrategyReader {
 }
 export function strategyRoot(repo: string): string { return requestReader(repo).root; }
 /** Reject every symlink component and every nested repository before reading. */
-function scopedPath(root: string, path: string): string {
+function scopedPath(root: string, path: string, metadata = false): string {
+  if (metadata && !path) return root;
   if (isAbsolute(path) || /^[A-Za-z]:/.test(path) || /[\0\r\n]/.test(path) || path.includes('\\') || path.split('/').some(p => !p || p === '.' || p === '..' || p === '.git')) throw new Error('Invalid repository-relative source path');
   let current = root;
   const parts = path.split('/');
   for (let i = 0; i < parts.length; i++) {
     current = join(current, parts[i]!);
-    const stat = lstatSync(current);
+    let stat;
+    try { stat = lstatSync(current); } catch (error) {
+      if (metadata && (error as NodeJS.ErrnoException).code === 'ENOENT') return resolve(root, path);
+      throw error;
+    }
     if (stat.isSymbolicLink()) throw new Error('Symlink sources are forbidden');
     if (i < parts.length - 1 && (!stat.isDirectory() || existsSync(join(current, '.git')))) throw new Error('Nested repository or non-directory source');
   }
   const actual = realpathSync(current);
   const rel = relative(root, actual);
-  if (!rel || rel.startsWith(`..${sep}`) || isAbsolute(rel) || !lstatSync(actual).isFile()) throw new Error('Source escapes repository or is not a file');
+  if (!rel || rel.startsWith(`..${sep}`) || isAbsolute(rel) || (!metadata && !lstatSync(actual).isFile())) throw new Error('Source escapes repository or is not a file');
   return actual;
 }
 
 export class StrategySourceDriftError extends Error {}
 
-export class StrategyBudgetError extends Error {}
+export class StrategyBudgetError extends ObservationViolation {}
 
 export class StrategyReader {
   private bytes = 0;
@@ -66,22 +74,90 @@ export class StrategyReader {
     if (realpathSync(this.git(['rev-parse', '--show-toplevel']).trim()) !== this.root) throw new Error('Strategy requires the exact repository worktree root');
   }
   head(): string { return this.git(['rev-parse', 'HEAD']).trim(); }
-  read(path: string): string {
-    const file = scopedPath(this.root, path);
+  private readBytes(file: string): Buffer {
     const fd = openSync(file, constants.O_RDONLY | constants.O_NOFOLLOW);
     try {
-      const size = fstatSync(fd).size;
-      this.reserve(size);
-      const buffer = Buffer.alloc(size);
-      let length = 0;
+      const stat = fstatSync(fd);
+      if (!stat.isFile()) throw new ObservationViolation('Observation source is not a regular file');
+      const size = stat.size; this.reserve(size);
+      const buffer = Buffer.alloc(size); let length = 0;
       while (length < size) {
         const count = readSync(fd, buffer, length, size - length, length);
         this.charge(count); length += count;
         if (!count) throw new StrategySourceDriftError('Source changed during read');
       }
       if (fstatSync(fd).size !== size) throw new StrategySourceDriftError('Source changed during read');
-      return new TextDecoder('utf-8', { fatal: true }).decode(buffer);
+      return buffer;
     } finally { closeSync(fd); }
+  }
+  read(path: string): string {
+    return new TextDecoder('utf-8', { fatal: true }).decode(this.readBytes(scopedPath(this.root, path)));
+  }
+  observationIO(): ReadonlyObservationIO {
+    const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
+    const packaged = new Set(['package.json', 'src/effects/evidence/verification-execution.ts', 'src/core/evidence/verification-plan.ts',
+      'src/core/evidence/redaction.ts', 'src/effects/evidence/secret-env.ts', 'src/effects/process-runner.ts',
+      'src/effects/process-supervisor.ts', 'src/effects/expensive-run-lock.ts', 'src/effects/process-group-launcher.ts',
+      'src/effects/git/common-directory.ts', 'src/effects/locking/exclusive-directory-lock.ts'].map(p => join(packageRoot, p)));
+    const rawCommon = this.git(['rev-parse', '--git-common-dir']).trim();
+    const common = realpathSync(resolve(this.root, rawCommon));
+    const version = join(common, 'repo-harness/effective-state-version.json');
+    const home = process.env.HOME ? realpathSync(process.env.HOME) : null;
+    const authority = home ? join(home, '.repo-harness/gates', strategyHash(this.root)) : null;
+    const validatePath = (path: string): void => {
+      const absolute = resolve(path);
+      try {
+        if (absolute === version) { scopedPath(common, relative(common, absolute), true); return; }
+        if (packaged.has(absolute)) { scopedPath(packageRoot, relative(packageRoot, absolute), true); return; }
+        if (authority && absolute.startsWith(`${authority}${sep}`)) {
+          const leaf = relative(authority, absolute).split(sep).join('/');
+          if (!/^(acceptance\.latest|acceptance\.review-result|archive-projection\.latest|user-waiver-grant\.latest)\.json$/.test(leaf)
+            && !/^acceptance-observations\/[a-f0-9]{64}\.json$/.test(leaf)) throw new Error('Unrecognized project authority file');
+          scopedPath(home!, relative(home!, absolute), true); return;
+        }
+        const rel = relative(this.root, absolute).split(sep).join('/');
+        scopedPath(this.root, rel, true);
+      } catch (error) { throw new ObservationViolation(`Observation source scope rejected: ${error instanceof Error ? error.message : String(error)}`); }
+    };
+    return {
+      validatePath,
+      readFile: path => { validatePath(path); return this.readBytes(resolve(path)); },
+      readDirectory: path => {
+        validatePath(path); const entries: string[] = []; const directory = opendirSync(path);
+        try {
+          this.charge(2); let entry;
+          while ((entry = directory.readSync())) {
+            this.charge(Buffer.byteLength(JSON.stringify(entry.name)) + 1); entries.push(entry.name);
+          }
+          return entries;
+        } finally { directory.closeSync(); }
+      },
+      exec: (file, inputArgs, options) => {
+        const args = [...inputArgs]; let cwd = typeof options.cwd === 'string' ? resolve(options.cwd) : this.root;
+        if (args[0] === '-C') { cwd = resolve(args[1]!); args.splice(0, 2); }
+        if (cwd !== this.root) throw new ObservationViolation('Observation command escapes repository');
+        while (args[0]?.startsWith('--literal-pathspecs')) args.shift();
+        const gitBinary = file === 'git' || file === '/usr/bin/git' || file === '/bin/git' || file === '/usr/local/bin/git';
+        if (gitBinary) {
+          if (args.some(arg => /^(--output|--ext-diff|--textconv|--filters|--follow-symlinks)(=|$)/.test(arg))) throw new ObservationViolation('Observation cannot redirect output, run filters or read outside Git scope');
+          if (args.includes('--no-index') && args[0] !== 'check-ignore') throw new ObservationViolation('Observation cannot compare files outside Git scope');
+          if (!['rev-parse', 'status', 'diff', 'merge-base', 'ls-files', 'ls-tree', 'cat-file', 'show', 'config', 'check-ignore', 'check-attr', '--version'].includes(args[0]!)) throw new ObservationViolation('Observation Git operation is not read-only');
+          if (args[0] === 'config' && !['--get', '--get-regexp'].includes(args[1]!)) throw new ObservationViolation('Observation cannot change Git config');
+          if (args[0] === 'status' && !args.includes('--porcelain=v1') && !args.includes('--porcelain=v2')) throw new ObservationViolation('Unsupported observation Git status');
+        } else if (!((file === '/bin/bash' || file === '/usr/bin/bash' || file === process.execPath) && args.length === 1 && args[0] === '--version')) throw new ObservationViolation('Observation cannot execute a tool or provider');
+        this.reserve(1);
+        const env: NodeJS.ProcessEnv = { ...process.env, ...options.env, GIT_OPTIONAL_LOCKS: '0' };
+        for (const key of ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_OBJECT_DIRECTORY', 'GIT_ALTERNATE_OBJECT_DIRECTORIES']) delete env[key];
+        let bytes: Buffer;
+        try { bytes = execFileSync(file, gitBinary ? ['-C', this.root, '-c', 'core.fsmonitor=false', '-c', 'maintenance.auto=false', ...(['check-ignore', 'check-attr'].includes(args[0]!) ? [] : ['--literal-pathspecs']), ...args.slice(0, 1), ...(args[0] === 'diff' ? ['--no-ext-diff', '--no-textconv'] : []), ...args.slice(1)] : args, {
+          env, maxBuffer: Math.min(FILE_LIMIT, TOTAL_LIMIT - this.bytes), timeout: 5000, stdio: ['ignore', 'pipe', 'pipe'],
+        }); } catch (error) {
+          const failed = error as { stdout?: Buffer; stderr?: Buffer };
+          this.charge((failed.stdout?.length ?? 0) + (failed.stderr?.length ?? 0)); throw error;
+        }
+        this.charge(bytes.length); return bytes;
+      },
+    };
   }
   optional(path: string): string | null {
     try { return this.read(path); }
@@ -105,13 +181,15 @@ export class StrategyReader {
 export interface StrategyCollectionOptions { nowMs?: number; load?: string[]; topics?: string[] }
 export interface StrategyCollectionEffects {
   /** Internal dependency seam. An observer must use only this request reader.
-   * No production observer exists until the full state owner supports bounded reads.
+   * Production uses the existing state owner through scoped bounded IO.
    */
   observeReadOnlyState?: (reader: StrategyReader, nowMs: number) => string | null;
 }
 function observeState(reader: StrategyReader, nowMs: number, effects: StrategyCollectionEffects): string | null {
   try {
-    const revision = effects.observeReadOnlyState?.(reader, nowMs) ?? null;
+    const revision = effects.observeReadOnlyState
+      ? effects.observeReadOnlyState(reader, nowMs)
+      : resolveEffectiveStateReadOnly(reader.root, nowMs, { targetPaths: [], operationKind: 'inspect' }, reader.observationIO()).state_revision.replace(/^sha256:/, '');
     if (revision !== null && !/^[a-f0-9]{64}$/.test(revision)) throw new Error('Invalid state revision');
     return revision;
   } catch (error) { if (error instanceof StrategyBudgetError) throw error; return null; }
@@ -148,7 +226,7 @@ function collectContext(reader: StrategyReader, opts: StrategyCollectionOptions,
   }
   const observedState = observeState(reader, nowMs, effects);
   const stateRevision = observedState ?? 'unavailable';
-  if (observedState === null) unknowns.push('Effective state unavailable: no bounded state observer');
+  if (observedState === null) unknowns.push('Effective state unavailable: bounded observation failed');
   const eligible = activeMemory(doc, nowMs, revision, topics);
   const memory = eligible.map(m => ({ ...m, authority: 'unverified_summary' as const }));
   const bodies: StrategyPacket['bodies'] = [];
