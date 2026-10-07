@@ -15,7 +15,10 @@ describe('Module 10 evidence-gated activation ladder', () => {
   test('replays each historical event from its own receipts after later canary runs are recorded', () => {
     const root = mkdtempSync(join(tmpdir(), 'refactor-activation-replay-')); roots.push(root);
     const git = (args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
-    git(['init', '-q']); git(['config', 'user.email', 'fixture@example.com']); git(['config', 'user.name', 'Fixture']); git(['commit', '--allow-empty', '-qm', 'baseline']);
+    git(['init', '-q']); git(['config', 'user.email', 'fixture@example.com']); git(['config', 'user.name', 'Fixture']);
+    // Fix the commit SHA so all three bounded receipt searches find a later digest.
+    const commitDate = '2026-09-04T00:00:00.000Z';
+    execFileSync('git', ['-c', 'commit.gpgsign=false', 'commit', '--allow-empty', '-qm', 'baseline'], { cwd: root, env: { ...process.env, GIT_AUTHOR_NAME: 'Fixture', GIT_AUTHOR_EMAIL: 'fixture@example.com', GIT_COMMITTER_NAME: 'Fixture', GIT_COMMITTER_EMAIL: 'fixture@example.com', GIT_AUTHOR_DATE: commitDate, GIT_COMMITTER_DATE: commitDate } });
     const head = git(['rev-parse', 'HEAD']); const canaryId = 'version_mismatch_fail_closed' as const;
     const run = (targetRevision: string, passed: boolean, observed: string) => ({ canaryId, repositoryId: 'repo.activation', targetRevision, passed, evidenceRefs: [{ locator: `tests/canaries/${canaryId}`, sha256: digest(`${canaryId}:${observed}`) }], observedAt: observed });
     const promoted = appendRefactorCanaryReceipt(root, run(head, true, observedAt));
