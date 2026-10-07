@@ -19,7 +19,7 @@ The bot selects scope, worker and verification by risk. Use independent gatekeep
 A worker gets Goal, Scope, Verify, Rollback and a timebox, then loads concrete techniques on demand. Do not put routing catalogs or every technology guide in its brief.
 
 The bot measures progress by side effects only: commits, pushes, evidence events and PR or check changes. It does not resume a worker to check liveness. A worker past its timebox with no new side effect is stalled; stop it or ask the user.
-Retry by failure mode. Reduce scope after a limit or out-of-memory stop. Retry a network drop once unchanged. Move a tool error to another model. Retry an unknown failure once. After two failures of one task, stop and ask the user.
+Retry by failure mode. Reduce scope after a limit or out-of-memory stop. Move a tool error to another model. A network drop or an unknown failure gets one retry only for a read-only or idempotent call. For a call that can change remote state, check the original request and the provider receipt first; do not retry an unknown effect. After two failures of one task, stop and ask the user.
 Clear PR blockers in this order: conflicts, review threads, then CI. Classify a CI failure before a retry. A suspected flake gets one fresh build; an identical second failure is not a flake.
 Stop and ask the user when a command reports `reconciliation_required`, `task_agent_delivery_unknown`, `launch-unknown`, `cleanup_pending`, `liveness_unproven` or `publication_recovery_required`; when a result reports `side_effects=unknown`; when a lease directory is empty or malformed; before a third review round; when a review thread concerns security, authentication, data or migrations; or when a written rule conflicts with observed state.
 
