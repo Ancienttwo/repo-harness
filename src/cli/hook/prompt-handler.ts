@@ -36,6 +36,6 @@ export function runPromptHandler(opts: PromptHandlerInput): PromptHandlerResult 
   if (isReviewReleaseIntent(context)) out.push('[ReviewAdvice] Review is on demand for large changes, security/permissions or model uncertainty. Consume existing check evidence once; no re-gate loop.');
   else if (isBugOrHuntIntent(context)) out.push('[DiagnosisAdvice] Trace and reproduce the actual failure, then verify the affected behavior; no fixed pre-fix artifact is required.');
   else if (isPlanCreationIntent(context)) out.push('[PlanningAdvice] Capture an optional reference only when it helps. Ordinary work uses Goal/Scope/Verify/Rollback in the PR or delegation brief.');
-  out.push('[OperationBoundaries] Main merge requires current automated checks; only merged clean inactive worktrees/branches may be deleted automatically. Other deletion, credential/permission settings and release/production effects require the user.');
+  out.push('[OperationBoundaries] Main merge requires explicit current-task authorization and current automated checks; only merged clean inactive worktrees/branches may be deleted automatically. Other deletion, credential/permission settings and release/production effects require the user.');
   return { exitCode: 0, stdout: out.length ? `${out.join('\n')}\n` : '', stderr };
 }
