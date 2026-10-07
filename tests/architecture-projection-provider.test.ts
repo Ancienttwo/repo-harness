@@ -969,6 +969,59 @@ describe('package-local ArchContext projection provider', () => {
     ]);
   });
 
+  test('enumerates versioned Homebrew keg symlinks after home-scoped candidates in numeric order', () => {
+    if (process.platform === 'win32') return;
+    const f = fixture();
+    const home = join(f.root, 'home');
+    const nvmNode = join(home, '.nvm', 'versions', 'node', 'v20.11.0', 'bin', 'node');
+    mkdirSync(join(nvmNode, '..'), { recursive: true });
+    const prefix = join(f.root, 'homebrew');
+    mkdirSync(join(prefix, 'opt'), { recursive: true });
+    for (const name of ['node@24', 'node@20', 'node', 'node@24-old', 'nodejs@24']) {
+      const kegRoot = join(prefix, 'Cellar', name, 'test-version');
+      mkdirSync(join(kegRoot, 'bin'), { recursive: true });
+      const node = join(kegRoot, 'bin', 'node');
+      writeFileSync(node, `#!/bin/sh\necho v${name === 'node@20' ? '20.11.0' : '24.21.0'}\n`);
+      chmodSync(node, 0o755);
+      symlinkSync(kegRoot, join(prefix, 'opt', name));
+    }
+    const candidates = trustedNodeCandidates(home, [prefix]);
+    expect(candidates.slice(3, 7)).toEqual([
+      join(home, '.local', 'bin', 'node'),
+      nvmNode,
+      join(prefix, 'opt', 'node@20', 'bin', 'node'),
+      join(prefix, 'opt', 'node@24', 'bin', 'node'),
+    ]);
+    expect(candidates.filter((candidate) => candidate.startsWith(`${prefix}/`))).toEqual([
+      join(prefix, 'opt', 'node@20', 'bin', 'node'),
+      join(prefix, 'opt', 'node@24', 'bin', 'node'),
+    ]);
+  });
+
+  test('resolves a scrubbed-env Node runtime through a Homebrew keg real path', () => {
+    if (process.platform === 'win32') return;
+    const f = fixture();
+    const fakeBin = join(f.root, 'bin');
+    mkdirSync(fakeBin, { recursive: true });
+    writeFileSync(join(fakeBin, 'node'), '#!/bin/sh\necho v26.10.0\n');
+    chmodSync(join(fakeBin, 'node'), 0o755);
+    const prefix = join(f.root, 'homebrew');
+    mkdirSync(join(prefix, 'opt'), { recursive: true });
+    for (const major of [20, 24]) {
+      const kegRoot = join(prefix, 'Cellar', `node@${major}`, `${major}.21.0`);
+      mkdirSync(join(kegRoot, 'bin'), { recursive: true });
+      writeFileSync(join(kegRoot, 'bin', 'node'), `#!/bin/sh\necho v${major}.21.0\n`);
+      chmodSync(join(kegRoot, 'bin', 'node'), 0o755);
+      symlinkSync(kegRoot, join(prefix, 'opt', `node@${major}`));
+    }
+    const home = join(f.root, 'home');
+    const scrubbedEnv: NodeJS.ProcessEnv = { PATH: fakeBin, HOME: home };
+    const scoped = () => trustedNodeCandidates(home, [prefix])
+      .filter((candidate) => candidate.startsWith(`${f.root}/`));
+    expect(resolveCompatibleNodeRuntime(scrubbedEnv, scoped))
+      .toBe(realpathSync(join(prefix, 'opt', 'node@24', 'bin', 'node')));
+  });
+
   test('resolves a scrubbed-env Node runtime through the shared nvm scan when PATH has none', () => {
     const f = fixture();
     const fakeBin = join(f.root, 'bin');

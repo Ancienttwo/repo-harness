@@ -8,7 +8,8 @@ import { join } from 'path';
  * architecture projection provider (`src/effects/architecture/archctx-provider.ts`)
  * need the same list of locations where a compatible Node runtime may live when
  * `PATH` cannot be trusted or carries no compatible runtime. The scan is a pure
- * filesystem enumeration; version filtering stays with each caller because they
+ * filesystem enumeration, including Homebrew versioned keg symlinks on POSIX;
+ * version filtering stays with each caller because they
  * execute candidates under different process authorities.
  */
 function childDirectories(root: string): string[] {
@@ -19,7 +20,10 @@ function childDirectories(root: string): string[] {
     .sort();
 }
 
-export function trustedNodeCandidates(home: string): string[] {
+export function trustedNodeCandidates(
+  home: string,
+  homebrewPrefixes: readonly string[] = ['/opt/homebrew', '/usr/local'],
+): string[] {
   const nvmVersions = join(home, '.nvm', 'versions', 'node');
   const candidates = [
     '/usr/bin/node',
@@ -30,6 +34,16 @@ export function trustedNodeCandidates(home: string): string[] {
     join(home, '.local', 'bin', 'node'),
     ...childDirectories(nvmVersions).map((versionRoot) => join(versionRoot, 'bin', 'node')),
   ];
+  if (process.platform !== 'win32') {
+    for (const prefix of homebrewPrefixes) {
+      const optRoot = join(prefix, 'opt');
+      if (!existsSync(optRoot)) continue;
+      const kegNames = readdirSync(optRoot)
+        .filter((name) => /^node@[0-9]+$/.test(name))
+        .sort((a, b) => Number(a.slice(5)) - Number(b.slice(5)) || a.localeCompare(b));
+      candidates.push(...kegNames.map((name) => join(optRoot, name, 'bin', 'node')));
+    }
+  }
   const toolcacheRoots = process.platform === 'win32'
     ? ['C:\\hostedtoolcache\\windows\\node']
     : ['/opt/hostedtoolcache/node', '/Users/runner/hostedtoolcache/node', '/Users/runner/work/_tool/node'];
