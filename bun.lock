@@ -5,7 +5,7 @@
     "": {
       "name": "repo-harness",
       "dependencies": {
-        "@botiverse/oar": "0.33.1",
+        "@botiverse/oar": "0.37.0",
         "@modelcontextprotocol/sdk": "^1.31.0",
         "archctx": "0.6.3",
         "archctx-contracts": "0.6.3",
@@ -76,7 +76,7 @@
 
     "@babel/runtime": ["@babel/runtime@7.29.7", "", {}, "sha512-Nq8OhGWiZIZGV6hLHoyAKLLcJihP/xFeBMGJoUrxTX2psI8dCifzLhZISFb+VWS3wFMRDmCGw5R+dOySCqPLhw=="],
 
-    "@botiverse/oar": ["@botiverse/oar@0.33.1", "", { "dependencies": { "@agentclientprotocol/sdk": "^1.4.0", "@earendil-works/pi-ai": "^1.0.2", "@earendil-works/pi-coding-agent": "^1.0.2", "cross-spawn": "^7.0.6", "undici": "8.10.2", "which": "^2.0.2" }, "peerDependencies": { "@cursor/sdk": "1.0.36" }, "optionalPeers": ["@cursor/sdk"] }, "sha512-aOuqdJ5yKK4YEEQrnY2G7glstzAhlI3s6ouICSI7pY0PFBO7E8c7dFRfwxcGeRjhQkwYAHItHvtbAx6sWd7piw=="],
+    "@botiverse/oar": ["@botiverse/oar@0.37.0", "", { "dependencies": { "@agentclientprotocol/sdk": "^1.4.0", "@earendil-works/pi-ai": "^1.0.2", "@earendil-works/pi-coding-agent": "^1.0.2", "cross-spawn": "^7.0.6", "undici": "8.10.2", "which": "^2.0.2" }, "peerDependencies": { "@cursor/sdk": "1.0.36" }, "optionalPeers": ["@cursor/sdk"] }, "sha512-fdvgvxUDnYvQIad27eVm8MbF5G5tVIfZrm/+sI7UWWTFYK5Gfne2egRO5msRmP1BLk2BzvfQokJ8hlb8PNOEbg=="],
 
     "@colbymchenry/codegraph": ["@colbymchenry/codegraph@1.6.1", "", { "optionalDependencies": { "@colbymchenry/codegraph-darwin-arm64": "1.6.1", "@colbymchenry/codegraph-darwin-x64": "1.6.1", "@colbymchenry/codegraph-linux-arm64": "1.6.1", "@colbymchenry/codegraph-linux-x64": "1.6.1", "@colbymchenry/codegraph-win32-arm64": "1.6.1", "@colbymchenry/codegraph-win32-x64": "1.6.1" }, "bin": { "codegraph": "npm-shim.js" } }, "sha512-kdyJ7Y9Q7oAMioThrNlRvm/23JRMMTlfydqsUx07eYK6EZIKlOLPgX9yA/h0TGaorQ6sWkrvzqocpoY7DgFUQw=="],
 
