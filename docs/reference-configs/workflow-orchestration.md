@@ -8,8 +8,9 @@
 
 ## Repo Role
 
-Concrete project execution still flows through plans, contracts, tasks,
-workstreams, checks, and handoff files. The general multi-phase orchestration
+Ordinary tasks use the PR description, per root `AGENTS.md`. Plans, contracts,
+workstreams, and handoff files apply only when the Promotion Gate below applies.
+Checks stay required for every change. The general multi-phase orchestration
 pattern belongs in the external pattern page.
 
 ## Promotion Gate
