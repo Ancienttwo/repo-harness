@@ -62,12 +62,12 @@
   "evidence": [
     {
       "path": "README.md",
-      "revision": "84c225c1ebfe9ce34f4e6268662714241ca0b33b",
-      "sha256": "8ca524394b63eaa63a6229fb3271ec880d09bbabca9211c19ebfbb030d010eb9"
+      "revision": "f4ed93d91575c470d72560c1bab3d2fb14e117ab",
+      "sha256": "a4e6e09041964e198e1952d705b11946766163b9299f6a384f56aba8372c8291"
     },
     {
       "path": "docs/plans/optional-strategy-memory.md",
-      "revision": "84c225c1ebfe9ce34f4e6268662714241ca0b33b",
+      "revision": "f4ed93d91575c470d72560c1bab3d2fb14e117ab",
       "sha256": "df15c55f0bac2e23ab3827c83d8e99fa6b81fe46ad29b9cd214b28ddca0866d3"
     }
   ],
@@ -79,7 +79,7 @@
       "lifecycle": "active",
       "body": {
         "path": "docs/plans/optional-strategy-memory.md",
-        "revision": "84c225c1ebfe9ce34f4e6268662714241ca0b33b",
+        "revision": "f4ed93d91575c470d72560c1bab3d2fb14e117ab",
         "sha256": "df15c55f0bac2e23ab3827c83d8e99fa6b81fe46ad29b9cd214b28ddca0866d3"
       },
       "provenance": [
