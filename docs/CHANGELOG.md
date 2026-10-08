@@ -36,8 +36,9 @@ All notable changes to this skill are documented here.
   `../{{repo}}-wt-{{slug}}` to keep the old location. (#600)
 - `start` refuses an existing target path. It reuses the path only when this
   clone registers it on the expected branch, unlocked, with no other owner,
-  and the directory and its `.git` file are yours, not group or other
-  writable, and match the identity that `start` recorded at creation. A
+  and it matches the identity that `start` recorded at creation. The
+  checkout directory must be yours and not group or other writable. Its
+  `.git` file and Git metadata must be yours and not other-writable. A
   replaced directory with a copied `.git` file is refused. An older worktree
   without that record is refused with a recovery instruction. This works
   with umask 002 and shared Git metadata. On a platform without a user id,

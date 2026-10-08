@@ -33,24 +33,28 @@
 
 - Command: `bun run check:release`. Exit 0. Output ends with
   `[release] OK: npm package gate passed.`
-- Tree: `f52c63ea` on branch `chore/oar-0.37.0` (#598). It is main
-  `659818c3` plus the OAR `0.37.0` pin and this changelog update.
+- Tree: `940679f2` on branch `feat/worktree-tmp-default` (#600). It is main
+  `3ea2f7b7` plus #600. The later commit on that branch changes only this
+  checklist and one changelog sentence.
+- Location: the gate ran from a worktree under `/tmp`, the new default.
 - Result: 409 test files ran with 0 failures. The shared tarball smoke
   installed `repo-harness-0.21.1.tgz`, served the packaged Operator and
-  started the packaged CLI bins.
-- Environment: macOS arm64, Bun 1.4.2, fresh temporary HOME.
-  `PATH` starts with `/opt/homebrew/opt/node@24/bin`, and `CLAUDECODE` and
-  `AGENT` are unset. The OAR fixtures require Node 24 as the first `node` on
-  `PATH`. Bun agent mode hides the `(pass)` lines that one generic review
-  case reads.
-- An earlier gate on `03c238fb` (OAR `0.33.1`, before #596) also passed with
-  409 test files and 0 failures.
+  started the packaged CLI bins. No `/tmp/*-wt-*` path was left.
+- Environment: macOS arm64, Bun 1.4.2, Git 2.50.1, fresh temporary HOME,
+  `caffeinate -dimsu`. `PATH` starts with `/opt/homebrew/opt/node@24/bin`,
+  and `CLAUDECODE` and `AGENT` are unset.
+- Earlier gates: `f52c63ea` (OAR `0.37.0`) passed. Runs on `739dfe02`,
+  `40fabd87` and `0ce0ca30` failed. The `40fabd87` run is not valid because
+  the host slept during it. The other failures were fixed in #600.
+- Independent review of #600: NO-GO on `739dfe02`, `40fabd87` and
+  `0ce0ca30`, then GO WITH FIXES on `940679f2`. The two remaining items were
+  this changelog sentence and the test changes listed in the PR body.
 
 ## Publication status
 
-Merge #598 before the tag. The tag must point to the main commit that
-contains #598. If main changes after this gate, compare that commit with
-`f52c63ea` before the tag.
+Merge #600 before the tag. The owner approved moving tag `v0.21.1` from
+`3ea2f7b7` to the main commit that contains #600. If main changes after this
+gate, compare that commit with `940679f2` before the tag.
 Tag creation and npm publication remain pending.
 
 Skill eval evidence is unavailable. `full_test_count`, `dry_run_ratio`,
