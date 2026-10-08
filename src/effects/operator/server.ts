@@ -1,3 +1,5 @@
+import { startHerdrRuntimeService } from './runtime-service';
+import { decodeRuntimeOverlay, unavailableRuntimeOverlay, type RuntimeOverlay } from '../../core/operator/runtime-status';
 import { ARCHITECTURE_FAILURES, parseArchitectureRequest, decodeArchitectureModuleIndex, decodeArchitectureModuleDetail, decodeArchitectureReviewPrompt, OPERATOR_ARCHITECTURE_MODULES_ROUTE, OPERATOR_ARCHITECTURE_MODULE_ROUTE, OPERATOR_ARCHITECTURE_REVIEW_PROMPT_ROUTE } from '../../core/operator/architecture';
 export { OPERATOR_ARCHITECTURE_MODULES_ROUTE, OPERATOR_ARCHITECTURE_MODULE_ROUTE, OPERATOR_ARCHITECTURE_REVIEW_PROMPT_ROUTE } from '../../core/operator/architecture';
 import { decodePipelineBoard, type PipelineBoardV2 } from '../../core/pipeline/board';
@@ -73,6 +75,7 @@ export const OPERATOR_TASK_DIFF_ROUTE = /^\/api\/v1\/fleet\/tasks\/([A-Za-z0-9][
  * exist, and duplicating its shape here would be a second opinion about it.
  */
 export const OPERATOR_COLLABORATION_SNAPSHOT_ROUTE = /^\/api\/v1\/collaboration\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/snapshot$/u;
+export const OPERATOR_RUNTIME_STATUS_PATH = '/api/v1/runtime/status' as const;
 export const OPERATOR_PIPELINES_PATH = '/api/v1/pipelines' as const;
 export const OPERATOR_NOTIFY_STATUS_PATH = '/api/v1/notify/status' as const;
 const DEFAULT_STATIC_ROOT = resolve(
@@ -105,6 +108,7 @@ export const OPERATOR_ROUTES: readonly OperatorRouteV1[] = Object.freeze([
   Object.freeze({ id: 'task_context', method: 'GET', pattern: OPERATOR_TASK_CONTEXT_ROUTE.source, write: false }),
   Object.freeze({ id: 'task_activity', method: 'GET', pattern: OPERATOR_TASK_ACTIVITY_ROUTE.source, write: false }),
   Object.freeze({ id: 'task_diff', method: 'GET', pattern: OPERATOR_TASK_DIFF_ROUTE.source, write: false }),
+  Object.freeze({ id: 'runtime_status', method: 'GET', pattern: OPERATOR_RUNTIME_STATUS_PATH, write: false }),
   Object.freeze({ id: 'pipelines', method: 'GET', pattern: OPERATOR_PIPELINES_PATH, write: false }),
   Object.freeze({ id: 'notify_status', method: 'GET', pattern: OPERATOR_NOTIFY_STATUS_PATH, write: false }),
   Object.freeze({ id: 'architecture_modules', method: 'GET', pattern: OPERATOR_ARCHITECTURE_MODULES_ROUTE.source, write: false }),
@@ -121,6 +125,9 @@ export type OperatorCollaborationSnapshotReaderInput = ReadOperatorCollaboration
 };
 
 export interface OperatorServerOptions {
+  /** Cache read only. Observation lifecycle runs outside the HTTP request. */
+  readonly read_runtime_status?: () => RuntimeOverlay;
+  readonly runtime_status_config?: string;
   readonly read_automation_summary?: (input: AutomationSummaryReadInput & { readonly signal: AbortSignal }) => OperatorAutomationSummary | Promise<OperatorAutomationSummary>;
   readonly read_task_history?: (input: OperatorTaskHistoryRequest & { readonly signal: AbortSignal }) => Promise<OperatorTaskHistory>;
   readonly read_task_context?: (input: OperatorTaskContextRequest & { readonly signal: AbortSignal }) => Promise<OperatorTaskContext>;
@@ -1511,6 +1518,19 @@ export async function startOperatorServer(
       return;
     }
 
+    if (pathname === OPERATOR_RUNTIME_STATUS_PATH) {
+      if (url.search !== '') {
+        sendRefusal(request, response, 400, errorBody('invalid_request', 'Runtime status takes no query parameters.', 'Remove query parameters.'), headOnly);
+        return;
+      }
+      try {
+        sendJson(response, 200, decodeRuntimeOverlay((options.read_runtime_status ?? runtimeService?.read ?? unavailableRuntimeOverlay)()), headOnly);
+      } catch {
+        sendJson(response, 200, unavailableRuntimeOverlay(), headOnly);
+      }
+      return;
+    }
+
     if (pathname === OPERATOR_PIPELINES_PATH) {
       if (url.search !== '') {
         sendRefusal(request, response, 400, errorBody('invalid_request', 'Pipeline board accepts no query selectors.'), headOnly);
@@ -1647,6 +1667,8 @@ export async function startOperatorServer(
     else response.end(body);
   };
 
+  if (options.runtime_status_config && options.read_runtime_status) throw new OperatorServerError('invalid_argument', 'Select runtime config or cache reader.', 400);
+  const runtimeService = options.runtime_status_config ? await startHerdrRuntimeService(options.runtime_status_config) : null;
   const pipelineReader = createPipelineStatusReader();
   const server: Server = createServer((request, response) => {
     void handleRequest(request, response).catch((_error) => {
@@ -1661,6 +1683,7 @@ export async function startOperatorServer(
   await new Promise<void>((resolveListen, rejectListen) => {
     const onError = (error: Error) => {
       server.removeListener('listening', onListening);
+      runtimeService?.close();
       rejectListen(error);
     };
     const onListening = () => {
@@ -1684,6 +1707,7 @@ export async function startOperatorServer(
   const close = (): Promise<void> => {
     if (closeCompletion) return closeCompletion;
     closed = true;
+    runtimeService?.close();
     fleetClosing = true;
     closeCompletion = Promise.resolve().then(async () => {
       // Close admission and cancel every owner before waiting for any one of
