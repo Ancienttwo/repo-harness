@@ -39,8 +39,11 @@ All notable changes to this skill are documented here.
   and the directory and its `.git` file are yours, not group or other
   writable, and match the identity that `start` recorded at creation. A
   replaced directory with a copied `.git` file is refused. An older worktree
-  without that record is refused. A failed `git worktree add` releases only
-  the empty path that it claimed. (#600)
+  without that record is refused with a recovery instruction. This works
+  with umask 002 and shared Git metadata. On a platform without a user id,
+  `start` still creates worktrees but cannot reuse them. A failed
+  `git worktree add` releases only the empty path that it claimed. Removal
+  also deletes the identity record. (#600)
 - Closeout removes a merged, clean worktree and its branch through the exact
   cleanup checks. It releases only that worktree's own marker. MCP cleanup now
   also refuses marked worktrees and retained verification evidence. Cleanup of
@@ -55,7 +58,9 @@ All notable changes to this skill are documented here.
   can remove worktrees; commit or push work first. (#600)
 - `test:files` and `check-ci.sh` now run each test file in its own Bun
   process and fail a file that leaves a new `/tmp/*-wt-*` path owned by the
-  current user. The check never deletes the path. (#600)
+  current user. The check never deletes the path. A directory argument runs
+  only its own test files, and `--coverage` keeps one combined summary.
+  (#600)
 - `repo-harness module review-prompt` now fails with `secret_detected` when
   the prompt contains a URL with a filled `token`, `key`, `auth`, `code`,
   `sig` or `signature` query field. MCP redaction uses the same patterns. (#590)
