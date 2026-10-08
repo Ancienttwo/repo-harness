@@ -31,15 +31,16 @@ describe("AXR7 repo-harness architecture consumer", () => {
     expect(capabilities.length).toBeGreaterThan(0);
     expect(new Set(capabilities.map(node => node.id)).size).toBe(capabilities.length);
     expect(new Set(components.map(node => node.parent))).toEqual(new Set(capabilities.map(node => node.id)));
-    expect(components).toHaveLength(29);
+    expect(components).toHaveLength(30);
     // C4 declared the collaboration -> delegated-runs relation and the
     // delegated-contribution flow; C6 adds the collaboration -> bound-task-freezes
     // relation its read-time succession proof crosses, and the context-delivery
     // flow. Both counts are inventory pins: a legitimate model addition is a red
     // test until the pin moves with it, which is the point. Multiple flows per
     // capability was already the norm.
-    expect(relations).toHaveLength(53);
-    expect(flows).toHaveLength(35);
+    // PM adds one component, its request relation and one required flow.
+    expect(relations).toHaveLength(54);
+    expect(flows).toHaveLength(36);
     expect(flows.every((flow) => flow.schemaVersion === "archcontext.flow/v1")).toBe(true);
     expect(flows.every((flow) => flow.applicability === "required")).toBe(true);
     expect(new Set(flows.map((flow) => flow.capabilityId))).toEqual(new Set(capabilities.map((node) => node.id)));
@@ -86,7 +87,7 @@ describe("AXR7 repo-harness architecture consumer", () => {
       };
     };
     expect(manifest.profile).toBe("repo-harness/v1");
-    expect(manifest.targetCount).toBe(33);
+    expect(manifest.targetCount).toBe(34);
     expect(manifest.provenance?.rendererVersion).toBe("archcontext.docs-renderer/v4");
     expect(manifest.provenance?.layoutVersion).toBe("archcontext.docs-layout/v1");
     expect(manifest.provenance?.generatedFrom).toMatchObject({ codeGraphVersion: "1.6.1", codeGraphStatus: "ready" });

@@ -258,7 +258,8 @@ describe('hook-entry single-file bundle', () => {
     expect(pkg.files).toContain('dist/hook-entry.js');
     // All redirects are load-bearing: `npm pack --json` parses prepack's stdout
     // as part of its own JSON, so any build's chatter would break release tooling.
-    expect(pkg.scripts.prepack).toBe('bun run build:hook-bundle 1>&2 && bun run build:oar-review-host 1>&2 && bun run build:operator-web 1>&2');
+    expect(pkg.scripts.prepack).toBe('bun run build:hook-bundle 1>&2 && bun run build:oar-hosts 1>&2 && bun run build:operator-web 1>&2');
+    expect(pkg.scripts['build:oar-hosts']).toBe('bun run build:oar-review-host && bun run build:oar-coding-host');
     expect(pkg.files).toContain('dist/oar-review-host.js');
     expect(pkg.scripts['build:hook-bundle']).toContain('--define REPO_HARNESS_BUNDLED_CLI_VERSION');
     expect(readFileSync(join(ROOT, '.gitignore'), 'utf-8')).toMatch(/^dist\/$/m);

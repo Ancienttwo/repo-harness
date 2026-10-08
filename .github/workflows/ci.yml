@@ -69,7 +69,7 @@ jobs:
         run: |
           source scripts/lib/ci-run-tests.sh
           run_bun_test_file tests/preload-home-isolation.test.ts
-      - name: Run native review acceptance tests
+      - name: Run native OAR acceptance tests
         if: matrix.os == 'macos-latest'
         shell: bash
         env:
@@ -82,9 +82,11 @@ jobs:
           test -x /usr/bin/sandbox-exec
           bun install --frozen-lockfile
           test ! -e dist/oar-review-host.js
+          test ! -e dist/oar-coding-host.js
           bun run build:oar-hosts
           test -s dist/oar-review-host.js
-          bun run test:files tests/generic-review.test.ts tests/acceptance-receipt.test.ts tests/cli/cross-review.test.ts --timeout 60000 --max-concurrency 1
+          test -s dist/oar-coding-host.js
+          bun run test:files tests/generic-review.test.ts tests/acceptance-receipt.test.ts tests/cli/cross-review.test.ts tests/herdr-task-lifecycle.test.ts --timeout 60000 --max-concurrency 1
 
   verify:
     name: Typecheck and affected tests
