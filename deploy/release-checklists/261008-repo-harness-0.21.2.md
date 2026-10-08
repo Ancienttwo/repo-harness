@@ -5,7 +5,10 @@
 - Remote base: `e7c86c553f229a0068dba7bef727192c8a93220c` (#600).
 - Include #599 at `84c225c1ebfe9ce34f4e6268662714241ca0b33b` and
   #601 at `f5ee55b1dd69f5fc51cf20f78c4d6b995b69cfcd`.
-- Include the parent's exact published Kanban candidate after its Draft handoff.
+- Kanban published head: `9afef1ee21f1f8b5993026de2066cad33a4cfeb5`.
+  Verified tree: `ee017b14ba31ef21c1ddc9123c2cfc9f26ee5653`.
+  Parent: `3ea2f7b71c4eef95e158788b8564179034eef9a2`.
+  This is the exact reviewed tree of source `8b289bac`.
 - Set package, skill, template and README versions to `0.21.2`.
 - Keep strategy default-off, export-only and human-owned. No automatic memory
   edits or dispatch. Proposals keep `executionAuthorized: false`.
