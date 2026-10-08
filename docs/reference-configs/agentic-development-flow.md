@@ -11,6 +11,15 @@
 4. Freeze the candidate and verify once: typecheck plus affected tests. Reviewers and closeout consume the same evidence.
 5. A model may squash-merge into main only when the current task explicitly authorizes main publication, automatic checks pass, and GitHub has no outstanding change requests or unresolved review threads. An explicit no-merge instruction always wins. Record the GitHub merge SHA and parent SHA. Record `git revert --no-edit <squash-commit>`. Do not create rollback tags.
 6. Run the full suite daily, automatically open a repair task on failure, and produce the daily merge/check/rollback report.
+7. Use the [Report SOP](#report-sop) for formal progress, phase and final reports to the user, including the daily report.
+
+## Report SOP
+- Give a Feynman report: explain the work to a reader who does not know this project. Use plain language. Explain the goal, user value, how it works, completed work and remaining gaps. Explain each technical term at first use.
+- State the conclusion, changes, reasons, verification and remaining risks. Link each claim to its source or label it as an inference. Use observed results. Name failed, incomplete and omitted checks.
+- Include a PlantUML progress diagram. Supply an editable `.puml` file or the complete PlantUML code. Use the same evidence snapshot for the report and diagram. State the snapshot date and relevant revision. Do not invent percentages or dates.
+- Keep planned, dispatched, implemented, verified, merged and released states distinct. Mark unknown and failed states as such. A worker report or an Agent `done` signal is not proof of verification, merge or release.
+- Render the diagram when a permitted renderer is available. If rendering fails or is unavailable, state the limit and keep the source. Do not upload private material to an external renderer without user authorization.
+- Keep the report proportional to the work. Routine confirmations, short updates and tool logs do not require a full report. This SOP adds no approval gate or separate status store. Use existing task, PR and verification sources.
 
 ## Four operation boundaries
 - Main merge requires explicit current-task authorization, current automated checks, no outstanding change requests or unresolved review threads, exact head/base and conflict safety.
