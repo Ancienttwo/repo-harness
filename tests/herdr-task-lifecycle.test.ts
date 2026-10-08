@@ -1165,3 +1165,120 @@ const spec=JSON.parse(readFileSync(process.argv[1],'utf8')),request=JSON.parse(r
     await exited(server);rmSync(fixture,{recursive:true,force:true});
   }
 }, 60000);
+
+test.skipIf(process.platform !== 'darwin')('OAR coding host waits for request publication and can close or cancel inside that window', async () => {
+  const api = await import('../src/effects/terminal/task-session');
+  const fixture = realpathSync(mkdtempSync('/tmp/cp-'));
+  const home = join(fixture,'h'), repo = join(fixture,'p'), checkout = join(fixture,'w');
+  mkdirSync(home); mkdirSync(repo);
+  const session = `task-proof-${randomUUID().replaceAll('-','').slice(0,16)}`;
+  const configPath = join(fixture,'herdr.toml'), endpoint = {session,configPath,home};
+  requireFixtureSession(session);
+  const env = {...herdrEnvironment(endpoint),GIT_CONFIG_GLOBAL:'/dev/null',GIT_CONFIG_NOSYSTEM:'1'};
+  const node = realpathSync('/opt/homebrew/opt/node@24/bin/node');
+  const herdr = Bun.which('herdr'); if(!herdr)throw new Error('real_herdr_required_for_publication_proof');
+  writeFileSync(configPath,'onboarding=false\n[terminal]\ndefault_shell="/bin/sh"\nshell_mode="non_login"\n[update]\nversion_check=false\nmanifest_check=false\n');
+  run('git',['init','-qb','main'],repo,env);
+  run('git',['-c','user.name=fixture','-c','user.email=fixture@localhost','commit','--allow-empty','-qm','fixture'],repo,env);
+  run('git',['worktree','add','-qb','publication-proof',checkout],repo,env);
+  const execute=(args:string[])=>{requireFixtureSession(session);return run(herdr,['--session',session,...args],repo,env)};
+  const call=(args:string[])=>JSON.parse(execute(args)).result;
+  const server=spawn(herdr,['--session',session,'server'],{env,stdio:'ignore'});server.on('error',()=>{});
+  const owned: import('../src/effects/terminal/task-session').TaskPaneBinding[]=[];
+  const driver=join(fixture,'publication-host.mjs');
+  writeFileSync(driver,`
+import {existsSync,readFileSync,writeFileSync,renameSync} from 'node:fs';
+import {join} from 'node:path';
+import {openScriptedCodingHost,serveCodingHostRequests} from ${JSON.stringify(new URL('../dist/oar-coding-host.js',import.meta.url).href)};
+const spec=JSON.parse(readFileSync(process.argv[2],'utf8')),control=spec.control_directory;
+let prompts=0,closing,state='pending',failure=null;
+const host=await openScriptedCodingHost(spec.admission.execution_root,({input,say})=>{
+ prompts++;writeFileSync(join(control,'prompts.json'),JSON.stringify({prompts}));
+ const request=JSON.parse(input.split('\\n')[0].slice('TASK REQUEST: '.length));say('publication fixture');
+ writeFileSync(request.result_ref+'.tmp',JSON.stringify({request_id:request.request_id,context_sha256:request.context_sha256,value:'publication result'}));renameSync(request.result_ref+'.tmp',request.result_ref);
+},()=>{});
+const close=()=>closing??=host.dispose();process.once('SIGTERM',()=>{void close()});
+writeFileSync(join(control,'ready.json'),JSON.stringify({pid:process.pid,session_id:host.sessionId}));
+while(!existsSync(join(control,'serve.request')))await new Promise(resolve=>setTimeout(resolve,5));
+const serving=serveCodingHostRequests(host,spec,close,()=>closing!==undefined).then(()=>{state='ended'},error=>{state='failed';failure=String(error);writeFileSync(join(control,'serving-error.json'),JSON.stringify({error:failure}))});
+// The first serve iteration has run. A microtask rejection from reading the
+// absent context settles before this event-loop acknowledgement.
+await new Promise(resolve=>setImmediate(resolve));
+writeFileSync(join(control,'publication-observed.json'),JSON.stringify({state,prompts,failure}));
+try{await serving}finally{await close();writeFileSync(join(control,'disposed.json'),JSON.stringify({disposed:true,session_id:host.sessionId}));}
+`);
+  try{
+    await until(()=>{try{return call(['workspace','list']).type==='workspace_list'}catch{return false}});
+    const workspace=call(['workspace','create','--cwd',repo,'--no-focus']);
+    for(const mode of ['release','close','cancel','identity'] as const){
+      const spec={task:'publication-fixture',role:`publish-${mode}`,harness_kind:'codex',endpoint,parent_pane:workspace.root_pane.pane_id,args:[],max_requests:1};
+      const dir=api.taskSessionDirectory(repo,spec.task,spec.role),control=join(dir,'coding-host');
+      api.ensureSessionDirectory(repo,control);
+      const hostSpec={task:spec.task,role:spec.role,primary_root:repo,request_directory:dir,control_directory:control,max_requests:1,
+        admission:{execution_root:checkout},installation:{kind:'available',via:'bundled'},launcher:'fixture-not-used',policy_file:'fixture-not-used'};
+      const specFile=join(control,'spec.json');api.writeSessionArtifact(specFile,hostSpec);
+      const binding=await api.startTaskAgent(checkout,spec,{start:async(_endpoint,name,pane,kind)=>{
+        execute(['pane','run',pane,`${quote(node)} ${quote(driver)} ${quote(specFile)}`]);
+        await until(()=>existsSync(join(control,'ready.json')));
+        execute(['pane','report-agent',pane,'--source','publication-fixture','--agent',kind,'--state','working','--seq','1']);
+        execute(['pane','report-agent',pane,'--source','publication-fixture','--agent',kind,'--state','idle','--seq','2']);
+        execute(['agent','rename',pane,name]);
+      }});owned.push(binding);
+      writeFileSync(join(checkout,'context.md'),`publication ${mode}`);
+      const request=await api.sendTaskRequest(checkout,spec.task,spec.role,'context.md','repeatable',async value=>{
+        if(mode==='release'){
+          await until(()=>existsSync(join(control,'ack-1.json')));
+          expect(api.readSessionArtifact<{request_id:string}>(join(control,'ack-1.json')).request_id).toBe(value.request_id);
+        }
+      },async value=>{
+        expect(existsSync(join(dir,'request-1.json'))).toBe(true);
+        expect(existsSync(value.context_ref)).toBe(false);
+        expect(existsSync(join(dir,'started-1.json'))).toBe(false);
+        writeFileSync(join(control,'serve.request'),'start');
+        await until(()=>existsSync(join(control,'publication-observed.json')));
+        expect(api.readSessionArtifact(join(control,'publication-observed.json'))).toEqual({state:'pending',prompts:0,failure:null});
+        expect(live(binding.provider.pid)).toBe(true);
+        expect(existsSync(join(control,'attempt-1.json'))).toBe(false);
+        expect(existsSync(join(control,'serving-error.json'))).toBe(false);
+        if(mode==='close')writeFileSync(join(control,'close.request'),'close');
+        if(mode==='cancel')process.kill(binding.provider.pid,'SIGTERM');
+        if(mode==='identity'){
+          api.beginSessionRound(dir,1,{request_id:'another-request',provider:binding.provider});
+          await until(()=>existsSync(join(control,'serving-error.json')));
+          expect(api.readSessionArtifact<{error:string}>(join(control,'serving-error.json')).error).toContain('OAR_CODING_REQUEST_IDENTITY_MISMATCH');
+          (await import('node:fs')).unlinkSync(join(dir,'started-1.json'));
+        }
+        if(mode!=='release'){
+          await until(()=>existsSync(join(control,'disposed.json')));
+          expect(existsSync(value.context_ref)).toBe(false);
+          expect(existsSync(join(control,'prompts.json'))).toBe(false);
+          expect(existsSync(join(control,'attempt-1.json'))).toBe(false);
+        }
+      });
+      if(mode==='release'){
+        await until(()=>existsSync(join(control,'observed-1.json')));
+        expect(api.readSessionArtifact(join(control,'prompts.json'))).toEqual({prompts:1});
+        expect((await api.collectTaskResult(repo,spec.task,spec.role,1))?.value).toBe('publication result');
+        expect((await api.closeTaskAgent(repo,spec.task,spec.role)).status).toBe('closed');
+        expect(api.readSessionArtifact(join(control,'prompts.json'))).toEqual({prompts:1});
+      }else{
+        expect(await api.collectTaskResult(repo,spec.task,spec.role,1)).toBeNull();
+        expect((await api.cancelTaskAgent(repo,spec.task,spec.role)).status).toBe('closed');
+      }
+      expect(existsSync(join(control,'disposed.json'))).toBe(true);
+      expect(request.request_id).toBe(api.readSessionArtifact<{request_id:string}>(join(dir,'started-1.json')).request_id);
+      expect(live(binding.provider.pid)).toBe(false);
+    }
+  }finally{
+    for(const binding of owned){
+      if(live(binding.provider.pid)){
+        const {dir}=api.readTaskAgent(repo,binding.task,binding.role),control=join(dir,'coding-host');
+        if(!existsSync(join(control,'serve.request')))writeFileSync(join(control,'serve.request'),'start');
+        if(!existsSync(join(control,'close.request')))writeFileSync(join(control,'close.request'),'close');
+        await until(()=>!live(binding.provider.pid));
+      }
+    }
+    try{execute(['server','stop'])}catch{if(server.exitCode===null&&server.signalCode===null)server.kill('SIGTERM')}
+    await exited(server);rmSync(fixture,{recursive:true,force:true});
+  }
+},60000);

@@ -596,7 +596,9 @@ export async function submitTaskResult(repoRoot: string, task: string, role: str
     return result;
   });
 }
-export async function sendTaskRequest(repoRoot: string, task: string, role: string, contextRef: string, contextPolicy: 'repeatable' | 'changed_only' = 'repeatable', applicationDelivery?: (request: TaskRequest) => Promise<void>): Promise<TaskRequest> {
+export async function sendTaskRequest(repoRoot: string, task: string, role: string, contextRef: string, contextPolicy: 'repeatable' | 'changed_only' = 'repeatable', applicationDelivery?: (request: TaskRequest) => Promise<void>,
+  /** Internal fixture barrier. It is never accepted from CLI or PM input. */
+  publicationBoundary?: (request: TaskRequest) => Promise<void>): Promise<TaskRequest> {
   const repository = taskRepository(repoRoot); const root = repository.primary_root; const { dir, binding } = readTaskAgent(root, task, role);
   if (binding.host) throw new Error('task_agent_host_domain_delivery_required');
   return locked(root, dir, async () => {
@@ -622,6 +624,7 @@ export async function sendTaskRequest(repoRoot: string, task: string, role: stri
         submission: { command: 'repo-harness task-agent result', repo: binding.execution_root, task, role, round } } };
     const requestPath = join(dir, `request-${round}.json`);
     writeSessionArtifact(requestPath, request);
+    if (publicationBoundary) await publicationBoundary(request);
     writeSessionBytes(request.context_ref, content);
     beginSessionRound(dir, round, { request_id: request.request_id, provider: binding.provider });
     // Once this marker exists, a crash/nonzero/timeout can mean input was sent.

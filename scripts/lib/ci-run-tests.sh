@@ -356,7 +356,7 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
     exit 2
   fi
   cd "$(dirname "${BASH_SOURCE[0]}")/../.."
-  bun run build:oar-review-host
+  bun run build:oar-hosts
   unset BUN_TEST_FILES
   BUN_TEST_ISOLATE_FILES=1
   BUN_TEST_SCHEDULE_FILES=1
