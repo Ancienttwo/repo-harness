@@ -395,6 +395,24 @@
       "summary": "Explicit-opt-in official Obsidian CLI companion Skill. Does not install or require the Obsidian executable or desktop App.",
       "retirementCandidate": null,
       "audience": "worker"
+    },
+    {
+      "name": "repo-harness-strategy",
+      "kind": "integration",
+      "source": "assets/skills/repo-harness-strategy",
+      "provider": null,
+      "hosts": [
+        "claude",
+        "codex"
+      ],
+      "profiles": [],
+      "discoverability": "explicit-setup",
+      "component": "adaptive-workflow",
+      "requires": [],
+      "mutatesRepoByDefault": false,
+      "summary": "Explicit project-local strategic reflection and progressive lesson recall. Context packet only; no dispatch or automatic goal edits.",
+      "retirementCandidate": null,
+      "audience": "bot"
     }
   ],
   "expectedProjections": {
