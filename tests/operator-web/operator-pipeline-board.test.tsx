@@ -8,6 +8,7 @@ import { PipelineBoardPanel, pipelineCardKey, type PipelineBoardReader } from '.
 import { stableSnapshot } from '../../src/operator-web/fixture';
 import { translate } from '../../src/operator-web/i18n';
 import { projectSnapshotViewState } from '../../src/operator-web/types';
+import { decodeRuntimeOverlay, projectRuntimeOverlay, unavailableRuntimeOverlay, type RuntimeIdentity, type RuntimeObservation, type RuntimeOverlay } from '../../src/core/operator/runtime-status';
 import type { PipelineBoardV2, PipelineCard } from '../../src/core/pipeline/board';
 
 const t = (key: Parameters<typeof translate>[1], values?: Parameters<typeof translate>[2]) => translate('en', key, values);
@@ -60,6 +61,13 @@ const render = (node: ReactNode) => renderToStaticMarkup(node);
 beforeEach(() => {
   delete (globalThis as { window?: unknown }).window;
 });
+
+function runtimeOverlay(state: RuntimeObservation['state'] = 'working', reason: RuntimeObservation['reason'] = 'unknown'): RuntimeOverlay {
+  const identity: RuntimeIdentity = { source_host: 'max', repository_id: REPOSITORY_ID, task: 'task-pipeline-observer', role: 'implementer', round: 1,
+    pipeline_state_version: 7, request_id: 'request-1', context_sha256: `sha256:${'b'.repeat(64)}`, runtime_session: 'runtime-1', attempt: 1,
+    generation: 'intent-1', source_epoch: 0, herdr_session: 'fixture', terminal_id: 'terminal-1', pane_id: 'pane-1', agent_session: 'agent-1' };
+  return projectRuntimeOverlay([identity], [{ identity, revision: 1, state, reason, changed_at: null, source: ['settled','error','cancelled','clear'].includes(state) || reason !== 'unknown' ? 'program-v1' : 'herdr-agent' }], minutesAgo(1), 0, 'v1', Date.now());
+}
 
 describe('pipeline board panel', () => {
   test('renders board facts, coverage, source times and one card from the served snapshot', () => {
@@ -142,6 +150,54 @@ describe('pipeline board panel', () => {
     expect(unavailable).toContain('Pipeline board unavailable');
   });
 
+  test('runtime badges distinguish source activity, typed reasons and result acceptance without changing the ledger', () => {
+    const served = board(), before = JSON.stringify(served);
+    for (const [state, label] of [['working','Working'],['idle','Idle'],['blocked','Blocked'],['done-unseen','Idle · not seen'],['settled','Agent settled'],['error','Reported error'],['cancelled','Reported cancellation'],['clear','Status cleared']] as const) {
+      const markup = render(<PipelineBoardPanel initialBoard={served} initialRuntimeOverlay={runtimeOverlay(state)} t={t} />);
+      expect(markup).toContain(`data-runtime-state="${state}"`); expect(markup).toContain(label);
+      expect(markup).toContain('result validated'); expect(markup).toContain('merge ask');
+      expect(markup).not.toContain('/private/'); expect(markup).not.toContain('<button');
+    }
+    for (const [reason, label] of [['permission','Permission needed'],['question','Answer needed'],['auth','Sign-in needed'],['unknown','Reason unknown']] as const) {
+      expect(render(<PipelineBoardPanel initialBoard={served} initialRuntimeOverlay={runtimeOverlay('blocked', reason)} t={t} />)).toContain(label);
+    }
+    expect(JSON.stringify(served)).toBe(before);
+  });
+
+  test('runtime age, disconnect and ambiguous or changed card identity remain separate from state', () => {
+    const served = board(), current = runtimeOverlay();
+    const old = { ...current, observed_at: '2020-01-01T00:00:00.000Z' };
+    const stale = render(<PipelineBoardPanel initialBoard={served} initialRuntimeOverlay={old} t={t} />);
+    expect(stale).toContain('data-runtime-state="working"'); expect(stale).toContain('data-runtime-freshness="stale"');
+    const disconnected = { ...current, status: 'unavailable' as const, badges: current.badges.map(b => ({ ...b, freshness: 'disconnected' as const })) };
+    expect(render(<PipelineBoardPanel initialBoard={served} initialRuntimeOverlay={disconnected} t={t} />)).toContain('Source disconnected');
+    for (const change of [{ source_host: 'other' }, { repository_id: `sha256:${'c'.repeat(64)}` }, { task: 'other' }, { state_version: 8 }, { runs: [{ role: 'reviewer', round: 1, status: 'running', result_state: 'missing' }] }]) {
+      const markup = render(<PipelineBoardPanel initialBoard={board({ cards: [card(change)] })} initialRuntimeOverlay={current} t={t} />);
+      expect(markup).toContain('data-runtime-state="unknown"'); expect(markup).not.toContain('data-runtime-state="working"');
+    }
+    const ambiguous = { ...current, badges: [...current.badges, { ...current.badges[0], identity: { ...current.badges[0].identity, request_id: 'request-2', attempt: 2 } }] };
+    expect(render(<PipelineBoardPanel initialBoard={served} initialRuntimeOverlay={ambiguous} t={t} />)).toContain('data-runtime-state="unknown"');
+    expect(render(<PipelineBoardPanel initialBoard={served} initialRuntimeOverlay={{ ...current, unclaimed: 3 }} t={t} />)).toContain('3 unclaimed panes');
+  });
+
+  test('suppresses obsolete role rounds even when card state version and terminal identity are unchanged', () => {
+    const currentBoard = board({ cards: [card({ runs: [
+      { role: 'implementer', round: 1, status: 'ended', result_state: 'validated' },
+      { role: 'implementer', round: 2, status: 'running', result_state: 'missing' },
+    ] })] });
+    const old = runtimeOverlay('working');
+    const oldOnly = render(<PipelineBoardPanel initialBoard={currentBoard} initialRuntimeOverlay={old} t={t} />);
+    expect(oldOnly).toContain('data-runtime-state="unknown"');
+    expect(oldOnly).not.toContain('data-runtime-state="working"');
+    const latest = runtimeOverlay('blocked');
+    latest.badges[0].identity = { ...latest.badges[0].identity, round: 2, attempt: 2, request_id: 'request-2' };
+    const both = { ...latest, badges: [...old.badges, ...latest.badges] };
+    const markup = render(<PipelineBoardPanel initialBoard={currentBoard} initialRuntimeOverlay={both} t={t} />);
+    expect(markup).toContain('data-runtime-state="blocked"');
+    expect(markup).not.toContain('data-runtime-state="working"');
+    expect(markup).toContain('merge ask');
+  });
+
   test('mounts in the organization tab panel', () => {
     const markup = render(
       <OperatorApp initialLocale="en" initialState={projectSnapshotViewState(stableSnapshot)} initialPipelineBoard={board()} />,
@@ -202,16 +258,17 @@ describe('pipeline board refresh', () => {
     let body: unknown = board();
     globalThis.fetch = (async (input: string) => {
       requested.push(input);
-      return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
+      return new Response(JSON.stringify(input === '/api/v1/runtime/status' ? unavailableRuntimeOverlay() : body), { status: 200, headers: { 'content-type': 'application/json' } });
     }) as unknown as typeof fetch;
     try {
       await act(async () => root.render(<PipelineBoardPanel t={t} />));
-      expect(requested).toEqual(['/api/v1/pipelines']);
+      expect(requested).toEqual(['/api/v1/pipelines', '/api/v1/runtime/status']);
       expect(panel().getAttribute('data-pipeline-state')).toBe('ready');
 
       body = board({ cards: [card({ repository_id: '/Users/someone/private-repo' })] });
       await visibilityChange();
-      expect(requested).toHaveLength(2);
+      expect(requested.filter(path => path === '/api/v1/pipelines')).toHaveLength(2);
+      expect(requested.filter(path => path === '/api/v1/runtime/status')).toHaveLength(2);
       expect(panel().getAttribute('data-pipeline-state')).toBe('refresh-failed');
       expect(panel().textContent).not.toContain('/Users/');
     } finally {
@@ -245,4 +302,31 @@ describe('pipeline board refresh', () => {
       globalThis.fetch = originalFetch;
     }
   });
+  test('runtime refresh failure keeps badge age; obsolete HTTP response cannot replace a newer observation', async () => {
+    const served = runtimeOverlay(), pending: ((value: RuntimeOverlay) => void)[] = [];
+    let calls = 0;
+    const read = () => { calls++; return new Promise<RuntimeOverlay>(resolve => pending.push(resolve)); };
+    await act(async () => root.render(<PipelineBoardPanel initialBoard={board()} readRuntimeStatus={read} t={t} />));
+    expect(calls).toBe(1);
+    await act(async () => root.render(<PipelineBoardPanel initialBoard={board()} readRuntimeStatus={read} refreshGeneration={1} t={t} />));
+    await act(async () => pending[0](runtimeOverlay('idle')));
+    expect(panel().querySelector('[data-runtime-state="idle"]')).toBeNull();
+    await act(async () => pending.at(-1)!(served));
+    expect(panel().querySelector('[data-runtime-state="working"]')).not.toBeNull();
+    const fail = async () => { throw new Error('fixture'); };
+    await act(async () => root.render(<PipelineBoardPanel initialBoard={board()} readRuntimeStatus={fail} refreshGeneration={2} t={t} />));
+    expect(panel().querySelector('[data-runtime-state="working"]')).not.toBeNull();
+    expect(panel().querySelector(`[datetime="${served.observed_at}"]`)).not.toBeNull();
+    expect(panel().textContent).toContain('Runtime refresh failed');
+  });
+
+  test('runtime decoder rejects private payloads and preserves the last good observation', async () => {
+    let value: unknown = runtimeOverlay();
+    const read = async () => decodeRuntimeOverlay(value);
+    await act(async () => root.render(<PipelineBoardPanel initialBoard={board()} readRuntimeStatus={read} t={t} />));
+    expect(panel().querySelector('[data-runtime-state="working"]')).not.toBeNull();
+    value = { ...runtimeOverlay(), raw_terminal: '/private/auth-secret' }; await visibilityChange();
+    expect(panel().textContent).not.toContain('auth-secret'); expect(panel().textContent).toContain('Runtime refresh failed');
+  });
+
 });
