@@ -1,3 +1,4 @@
+import { isAbsolute } from 'node:path';
 import { Command } from 'commander';
 
 import {
@@ -15,6 +16,7 @@ export interface OperatorServeRawOptions {
   readonly port?: string;
   readonly maxConcurrency?: string;
   readonly timeoutMs?: string;
+  readonly runtimeStatusConfig?: string;
 }
 
 export interface OperatorServeOptions extends OperatorServerOptions {
@@ -65,7 +67,9 @@ export function parseOperatorServeOptions(raw: OperatorServeRawOptions): Operato
   const timeoutMs = raw.timeoutMs === undefined
     ? OPERATOR_DEFAULT_TIMEOUT_MS
     : integerOption(raw.timeoutMs, 'timeout-ms', 1_000, 30_000);
+  if (raw.runtimeStatusConfig !== undefined && !isAbsolute(raw.runtimeStatusConfig)) throw new OperatorArgumentError('--runtime-status-config must be an absolute path');
   return {
+    ...(raw.runtimeStatusConfig ? { runtime_status_config: raw.runtimeStatusConfig } : {}),
     host,
     port,
     max_concurrency: maxConcurrency,
@@ -114,6 +118,7 @@ export function buildOperatorCommand(): Command {
     .option('--port <port>', 'TCP port (0 selects an ephemeral test port)', String(OPERATOR_DEFAULT_PORT))
     .option('--max-concurrency <count>', 'Bounded Fleet collection concurrency (1-16)', String(OPERATOR_DEFAULT_MAX_CONCURRENCY))
     .option('--timeout-ms <milliseconds>', 'Fleet collection deadline (1000-30000)', String(OPERATOR_DEFAULT_TIMEOUT_MS))
+    .option('--runtime-status-config <path>', 'Explicit read-only Herdr runtime observation configuration; disabled when absent')
     .action(async (raw: OperatorServeRawOptions) => {
       try {
         await runOperatorServe(parseOperatorServeOptions(raw));

@@ -1,3 +1,5 @@
+import { fetchRuntimeOverlay, useRuntimeOverlay, RuntimeSummary, RuntimeCardBadges, type RuntimeOverlayReader, type RuntimeView } from './RuntimeBadges';
+import type { RuntimeOverlay } from '../core/operator/runtime-status';
 import { useCallback, useState, type ReactNode } from 'react';
 import { decodePipelineBoard, PIPELINE_STALE_AFTER_MS, type PipelineBoardV2, type PipelineCard } from '../core/pipeline/board';
 import { Icon } from './icons';
@@ -127,12 +129,16 @@ type BoardView =
 export function PipelineBoardPanel({
   readBoard = fetchPipelineBoard,
   initialBoard,
+  initialRuntimeOverlay,
+  readRuntimeStatus = fetchRuntimeOverlay,
   refreshGeneration = 0,
   active = true,
   t,
 }: {
   readonly readBoard?: PipelineBoardReader;
   readonly initialBoard?: PipelineBoardV2;
+  readonly initialRuntimeOverlay?: RuntimeOverlay;
+  readonly readRuntimeStatus?: RuntimeOverlayReader;
   /** The page-level explicit refresh generation; a change re-requests now. */
   readonly refreshGeneration?: number;
   /** False while the owning panel is hidden; polling pauses and the last result stays. */
@@ -158,6 +164,7 @@ export function PipelineBoardPanel({
   // An explicit refresh must re-request now even when initial data seeded the
   // panel, so the generation participates in both identity and immediacy.
   useObservationRefresh(read, JSON.stringify(['pipeline-board', refreshGeneration]), { enabled: active, immediate: initialBoard === undefined || refreshGeneration > 0 });
+  const runtimeView = useRuntimeOverlay(readRuntimeStatus, initialRuntimeOverlay, active, refreshGeneration);
   const now = Date.now();
   const state = view.kind === 'ready' ? displayState(view.board, view.refreshFailed, now) : view.kind;
   return (
@@ -173,7 +180,8 @@ export function PipelineBoardPanel({
       {view.kind === 'unavailable' && (
         <Notice tone="danger" title={t('pipeline.notice.unavailableTitle')} body={t('pipeline.notice.unavailableBody')} />
       )}
-      {view.kind === 'ready' && <BoardBody board={view.board} refreshFailed={view.refreshFailed} now={now} t={t} />}
+      <RuntimeSummary view={runtimeView} now={now} t={t} />
+      {view.kind === 'ready' && <BoardBody runtimeView={runtimeView} board={view.board} refreshFailed={view.refreshFailed} now={now} t={t} />}
     </section>
   );
 }
@@ -195,9 +203,10 @@ function StatusNotice({ board, staleByAge, t }: {
   return null;
 }
 
-function BoardBody({ board, refreshFailed, now, t }: {
+function BoardBody({ board, refreshFailed, runtimeView, now, t }: {
   readonly board: PipelineBoardV2;
   readonly refreshFailed: boolean;
+  readonly runtimeView: RuntimeView;
   readonly now: number;
   readonly t: OperatorTranslate;
 }) {
@@ -244,7 +253,7 @@ function BoardBody({ board, refreshFailed, now, t }: {
             {t('pipeline.cards.heading')} <span>{board.cards.length}</span>
           </h3>
           <ul className="pipeline-cards">
-            {board.cards.map((card) => <PipelineCardItem key={pipelineCardKey(card)} card={card} now={now} t={t} />)}
+            {board.cards.map((card) => <PipelineCardItem key={pipelineCardKey(card)} runtimeView={runtimeView} card={card} now={now} t={t} />)}
           </ul>
         </section>
       )}
@@ -252,8 +261,9 @@ function BoardBody({ board, refreshFailed, now, t }: {
   );
 }
 
-function PipelineCardItem({ card, now, t }: {
+function PipelineCardItem({ card, runtimeView, now, t }: {
   readonly card: PipelineCard;
+  readonly runtimeView: RuntimeView;
   readonly now: number;
   readonly t: OperatorTranslate;
 }) {
@@ -276,6 +286,7 @@ function PipelineCardItem({ card, now, t }: {
         <span className="mono-value" title={card.task}>{card.task}</span>
         <span>{t('pipeline.runs.count', { count: card.runs.length })}</span>
       </p>
+      <RuntimeCardBadges card={card} view={runtimeView} now={now} t={t} />
       {card.blocked !== null && (
         <p className="pipeline-card__blocked">
           <Icon name="alert" size={13} />
