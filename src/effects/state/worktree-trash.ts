@@ -6,6 +6,7 @@ import type { ExactWorktreeCleanup } from './coordination-worktree-topology';
 
 export type WorktreeRemovalStep = 'intent' | 'renamed' | 'unregistered' | 'branch-deleted' | 'trash-entry-deleted';
 export interface WorktreeRemovalOptions {
+  readonly deadlineMs?: number;
   readonly afterRemovalStep?: (step: WorktreeRemovalStep, path: string) => void;
 }
 export interface WorktreeTrashReceipt {

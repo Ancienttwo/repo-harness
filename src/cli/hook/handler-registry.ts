@@ -51,7 +51,7 @@ const handlers: Readonly<Record<HookHandlerId, TypedHookHandler>> = Object.freez
     run(context: HookHandlerContext): HookHandlerResult {
       ensureSessionRunIdentity(context.repoRoot, context.input, context.env, context.now);
       const sections = [];
-      const sweep = sweepManagedWorktrees(context.repoRoot, context.sessionCwd ?? context.repoRoot, context.env);
+      const sweep = sweepManagedWorktrees(context.repoRoot, context.sessionCwd ?? context.repoRoot, context.env, { deadlineMs: context.worktreeSweepDeadlineMs });
       if (sweep) sections.push({ id: 'worktree-sweep', priority: 1 as const, content: sweep, mandatory: true, actionable: true });
       const stateSection = context.collector.getSessionEffectiveState();
       if (stateSection) sections.push(stateSection);

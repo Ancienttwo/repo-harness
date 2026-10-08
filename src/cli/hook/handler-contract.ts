@@ -80,6 +80,7 @@ export interface HookHandlerDependencies {
 
 /** The single context boundary shared by all route handlers. */
 export interface HookHandlerContext {
+  readonly worktreeSweepDeadlineMs?: number;
   readonly event: HookEvent;
   readonly routeId: RouteId;
   readonly repoRoot: string;

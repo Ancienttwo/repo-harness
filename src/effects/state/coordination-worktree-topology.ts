@@ -1,6 +1,8 @@
+import { createHash, randomUUID } from 'crypto';
 import { execFileSync } from 'child_process';
-import { existsSync, lstatSync, readFileSync, realpathSync, readdirSync, unlinkSync } from 'fs';
+import { existsSync, lstatSync, readFileSync, realpathSync, readdirSync, unlinkSync, mkdirSync, renameSync } from 'fs';
 import { basename, dirname, isAbsolute, join, resolve, sep } from 'path';
+import { createFileExclusiveDurably, syncDirectoryDurably } from '../evidence/atomic-append';
 import { listLeaseReads } from './coordination-lease-store';
 import { configuredGitBinary, resolveGitCommonDirectory } from '../git/common-directory';
 import { withExclusiveDirectoryLock } from '../locking/exclusive-directory-lock';
@@ -107,8 +109,51 @@ function assertNoOwner(root: string, worktree: string, branch: string, limits: L
   }
 }
 
+/** Recovery must bind the original directory, not only its reusable Git pointer. */
+function recoveryIdentity(root: string, worktree: string) {
+  const uid = process.getuid?.();
+  if (uid === undefined) throw new Error('recovery uid is unavailable');
+  const directory = lstatSync(worktree);
+  if (!directory.isDirectory() || directory.isSymbolicLink() || directory.uid !== uid || (directory.mode & 0o022)) throw new Error('recovery directory ownership is unsafe');
+  const pointer = join(worktree, '.git');
+  const file = lstatSync(pointer);
+  if (!file.isFile() || file.isSymbolicLink() || file.uid !== uid || (file.mode & 0o022)) throw new Error('recovery Git pointer is unsafe');
+  const text = readFileSync(pointer, 'utf8').trim();
+  if (!text.startsWith('gitdir: ')) throw new Error('recovery Git pointer is invalid');
+  const admin = realpathSync(resolve(worktree, text.slice(8)));
+  const common = resolveGitCommonDirectory(root);
+  if (dirname(admin) !== join(common, 'worktrees')) throw new Error('recovery Git admin entry is outside this clone');
+  const adminStat = lstatSync(admin);
+  const backpointer = lstatSync(join(admin, 'gitdir'));
+  if (adminStat.uid !== uid || (adminStat.mode & 0o022) || !backpointer.isFile() || backpointer.isSymbolicLink() || backpointer.uid !== uid || (backpointer.mode & 0o022)) throw new Error('recovery Git admin ownership is unsafe');
+  if (readFileSync(join(admin, 'gitdir'), 'utf8').trim() !== pointer) throw new Error('recovery Git backpointer changed');
+  const record = join(common, 'repo-harness/coordination/worktree-identities', createHash('sha256').update(admin).digest('hex') + '.json');
+  return { record, value: JSON.stringify({ worktree, admin, uid, dev: directory.dev, ino: directory.ino, birthtime: directory.birthtimeMs }) };
+}
+
+/** Record identity only after this invocation creates the checkout under the lock. */
+export function recordCreatedWorktree(root: string, worktree: string): void {
+  const identity = recoveryIdentity(root, realpathSync(worktree));
+  const common = resolveGitCommonDirectory(root);
+  let directory = common;
+  for (const part of ['repo-harness', 'coordination', 'worktree-identities']) {
+    directory = join(directory, part);
+    try { mkdirSync(directory, { mode: 0o700 }); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
+    const stat = lstatSync(directory);
+    if (!stat.isDirectory() || stat.isSymbolicLink() || stat.uid !== process.getuid?.() || (stat.mode & 0o022)) throw new Error('recovery identity store is unsafe');
+  }
+  // Git can reuse an admin name after an explicit removal. Only the create route replaces this record.
+  const temporary = identity.record + '.' + randomUUID();
+  createFileExclusiveDurably(temporary, Buffer.from(identity.value));
+  renameSync(temporary, identity.record);
+  syncDirectoryDurably(dirname(identity.record));
+}
+
 /** The caller holds the topology lock while it validates and re-marks recovery. */
 export function assertReusableWorktree(root: string, worktree: string, branch: string): void {
+  const identity = recoveryIdentity(root, worktree);
+  const saved = lstatSync(identity.record);
+  if (!saved.isFile() || saved.isSymbolicLink() || saved.uid !== process.getuid?.() || (saved.mode & 0o022) || readFileSync(identity.record, 'utf8') !== identity.value) throw new Error('recovery directory identity changed');
   assertWorktreeBinding(root, worktree, branch);
   const entry = entries(root).find(item => checkoutPath(item.path) === worktree);
   if (entry?.locked) throw new Error('recovery worktree is locked');
@@ -256,9 +301,9 @@ function assertBranchHasCommits(context: SweepContext, branch: string): void {
   let history;
   try {
     git(context.main, ['reflog', 'exists', ref], context.limits);
-    history = git(context.main, ['reflog', 'show', '--format=%H', ref], context.limits);
+    history = git(context.main, ['reflog', 'show', '--format=%gs', ref], context.limits);
   } catch { throw new Error('branch reflog is unavailable'); }
-  if (history.split('\n').filter(Boolean).length <= 1) throw new Error('branch has no commits of its own');
+  if (!history.split('\n').some(message => /^(?:commit(?: \(amend\)| \(merge\)| \(initial\))?|cherry-pick|revert|rebase(?: -i)? \(pick\))(?::|$)/.test(message) || /^merge .+: Merge made by /.test(message))) throw new Error('branch has no commits of its own');
 }
 function pathExists(path: string): boolean {
   try { lstatSync(path); return true; }
@@ -344,7 +389,7 @@ function resumeSweepTrash(context: SweepContext, directory: string): 'resumed' |
 
 /** Local refs and this clone's Git inventory are the only live worktree inputs. */
 export function sweepManagedWorktrees(root: string, sessionCwd: string, env: NodeJS.ProcessEnv = process.env, options: WorktreeRemovalOptions = {}): string | null {
-  const limits = { deadline: Date.now() + 2_000, gitBin: configuredGitBinary(env) };
+  const limits = { deadline: Date.now() + (options.deadlineMs ?? 2_000), gitBin: configuredGitBinary(env) };
   const notes: string[] = [];
   let removed = 0, pruned = 0, resumed = 0, deferred = 0;
   try {

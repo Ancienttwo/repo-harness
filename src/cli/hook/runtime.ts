@@ -24,6 +24,7 @@ import { createHookEffectTracker, hookEffectFailureMetadata, type HookHandlerRes
 const OPT_IN_MARKER = '.ai/harness/workflow-contract.json';
 
 export interface RunHookOptions {
+  readonly worktreeSweepDeadlineMs?: number;
   readonly event: HookEvent;
   readonly routeId: RouteId;
   readonly cwd?: string;
@@ -417,6 +418,7 @@ export function runHook(opts: RunHookOptions): RunHookResult {
       routeId: opts.routeId,
       repoRoot,
       sessionCwd: cwd,
+      worktreeSweepDeadlineMs: opts.worktreeSweepDeadlineMs,
       input: opts.input,
       env,
       now: startedAt,

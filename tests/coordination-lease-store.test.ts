@@ -1839,7 +1839,9 @@ test('a lease this completion could not release is refused before any write', ()
 
 import { dirname } from 'path';
 import { assertOwnedTrashDirectory, worktreeTrashNames } from '../src/effects/state/worktree-trash';
-import { cleanupExactWorktree, removeExactWorktree, sweepManagedWorktrees } from '../src/effects/state/coordination-worktree-topology';
+import { cleanupExactWorktree, removeExactWorktree, sweepManagedWorktrees as productionSweep } from '../src/effects/state/coordination-worktree-topology';
+
+const sweepManagedWorktrees: typeof productionSweep = (root, cwd, env, options) => productionSweep(root, cwd, env, { deadlineMs: 60_000, ...options });
 
 describe('exact cleanup and SessionStart worktree sweep', () => {
   function fixture() {
@@ -1981,7 +1983,7 @@ describe('exact cleanup and SessionStart worktree sweep', () => {
       const bundle = join(packageRoot, 'dist/hook-entry.js');
       const built = spawnSync(process.execPath, ['build', join(import.meta.dir, '../src/cli/hook-entry.ts'), '--target=bun', '--outfile', bundle, '--define', 'REPO_HARNESS_BUNDLED_CLI_VERSION="0.21.1"'], { encoding: 'utf8', env: f.env });
       expect(built.status, built.stderr).toBe(0);
-      const result = spawnSync(process.execPath, [bundle, 'SessionStart', '--route', 'default'], {
+      const result = spawnSync(process.execPath, ['-e', `const {runHookEntry}=await import(${JSON.stringify(bundle)});process.exitCode=runHookEntry({event:'SessionStart',routeId:'default',input:'{}',worktreeSweepDeadlineMs:60000}).exitCode;`], {
         cwd: f.root, encoding: 'utf8', input: '{}', env: { ...f.env, HOOK_REPO_ROOT: f.root, HOOK_HOST: 'codex' },
       });
       expect(result.status).toBe(0); expect(result.stdout + result.stderr).toContain('removed=1');
@@ -1990,7 +1992,7 @@ describe('exact cleanup and SessionStart worktree sweep', () => {
       f.git('-C', f.path, 'commit', '--allow-empty', '-qm', 'recreated task');
       f.git('merge', '--ff-only', 'codex/demo'); f.git('update-ref', 'refs/remotes/origin/main', 'HEAD');
       rmSync(join(packageRoot, 'scripts/worktree-merge-lib.sh'));
-      const missing = spawnSync(process.execPath, [bundle, 'SessionStart', '--route', 'default'], {
+      const missing = spawnSync(process.execPath, ['-e', `const {runHookEntry}=await import(${JSON.stringify(bundle)});process.exitCode=runHookEntry({event:'SessionStart',routeId:'default',input:'{}',worktreeSweepDeadlineMs:60000}).exitCode;`], {
         cwd: f.root, encoding: 'utf8', input: '{}', env: { ...f.env, HOOK_REPO_ROOT: f.root, HOOK_HOST: 'codex' },
       });
       expect(missing.status).toBe(0); expect(missing.stdout + missing.stderr).toContain('worktree merge library is unavailable');
@@ -2005,7 +2007,7 @@ describe('exact cleanup and SessionStart worktree sweep', () => {
       `import { sweepManagedWorktrees } from ${JSON.stringify(module)};`,
       `import { writeFileSync } from 'fs';`,
       `let stopped = false;`,
-      `const result = sweepManagedWorktrees(${JSON.stringify(f.root)}, ${JSON.stringify(f.root)}, process.env, { afterRemovalStep(step, path) {`,
+      `const result = sweepManagedWorktrees(${JSON.stringify(f.root)}, ${JSON.stringify(f.root)}, process.env, { deadlineMs: 60_000, afterRemovalStep(step, path) {`,
       `if (!stopped && step === ${JSON.stringify(step)}) { stopped = true; writeFileSync(${JSON.stringify(signal)}, JSON.stringify({ step, path })); process.kill(process.pid, 'SIGSTOP'); }`,
       `} }); console.log(result);`,
     ].join('\n'));
@@ -2046,12 +2048,16 @@ describe('exact cleanup and SessionStart worktree sweep', () => {
     } finally { f.cleanup(); }
   }, 20000);
 
-  test('W1 a real deadline during trash deletion leaves data that the next sweep finishes', () => {
+  test('W1 deadline expiry during trash deletion leaves data that the next sweep finishes', () => {
     const f = fixture(); try {
       let delayed = false;
-      const timed = sweepManagedWorktrees(f.root, f.root, f.env, { afterRemovalStep(step) {
-        if (step === 'trash-entry-deleted' && !delayed) { delayed = true; Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 2100); }
-      } });
+      const realNow = Date.now;
+      let timed: string | null;
+      try {
+        timed = sweepManagedWorktrees(f.root, f.root, f.env, { afterRemovalStep(step) {
+          if (step === 'trash-entry-deleted' && !delayed) { delayed = true; const expired = realNow() + 60_001; Date.now = () => expired; }
+        } });
+      } finally { Date.now = realNow; }
       expect(delayed).toBe(true); expect(timed).toContain('trash deletion will resume');
       expect(existsSync(f.path)).toBe(false); expect(f.git('branch', '--list', 'codex/demo')).toBe('');
       const directory = worktreeTrashNames(join(f.root, '.git'), f.managed)[0]!;
@@ -2231,12 +2237,41 @@ exec /usr/bin/git "$@"
     } finally { if (prior === undefined) delete process.env.W23_GIT_LOG; else process.env.W23_GIT_LOG = prior; f.cleanup(); }
   });
 
+  test.each(['fast-forward', 'reset', 'rebase'])('W5 refresh without a task commit stays protected: %s', operation => {
+    const f = fixture(); try {
+      f.git('worktree', 'remove', f.path); f.git('branch', '-D', 'codex/demo');
+      f.git('worktree', 'add', '-q', '-b', 'codex/demo', f.path, 'origin/main');
+      f.git('commit', '--allow-empty', '-qm', 'unrelated main change');
+      f.git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+      if (operation === 'fast-forward') f.git('-C', f.path, 'merge', '--ff-only', 'origin/main');
+      else if (operation === 'reset') f.git('-C', f.path, 'reset', '--hard', 'origin/main');
+      else f.git('-C', f.path, 'rebase', 'origin/main');
+      expect(sweepManagedWorktrees(f.root, f.root, f.env)).toContain('no commits of its own');
+      expect(existsSync(f.path)).toBe(true);
+    } finally { f.cleanup(); }
+  });
+
+  test('W5 production deadline expiry does not fail SessionStart', () => {
+    const f = fixture(); try {
+      mkdirSync(join(f.root, '.ai/harness'), { recursive: true });
+      writeFileSync(join(f.root, '.ai/harness/workflow-contract.json'), '{}');
+      const binary = join(f.parent, 'slow-git');
+      // Delay only the first sweep query. Hook repository discovery still uses normal Git.
+      writeFileSync(binary, '#!/bin/sh\nsleep 3\nexec /usr/bin/git "$@"\n', { mode: 0o755 });
+      const result = spawnSync(process.execPath, [join(import.meta.dir, '../src/cli/hook-entry.ts'), 'SessionStart', '--route', 'default'], {
+        cwd: f.root, encoding: 'utf8', input: '{}', env: { ...f.env, REPO_HARNESS_GIT_BIN: binary, HOOK_REPO_ROOT: f.root, HOOK_HOST: 'codex' },
+      });
+      expect(result.status).toBe(0); expect(result.stdout + result.stderr).toContain('worktree sweep skipped:');
+      expect(result.stdout + result.stderr).toContain('ETIMEDOUT'); expect(existsSync(f.path)).toBe(true);
+    } finally { f.cleanup(); }
+  }, 15000);
+
   test('real SessionStart reports sweep failure and still returns zero', () => {
     const f = fixture(); try {
       mkdirSync(join(f.root, '.ai/harness'), { recursive: true });
       writeFileSync(join(f.root, '.ai/harness/workflow-contract.json'), '{}');
       f.git('update-ref', '-d', 'refs/remotes/origin/main');
-      const result = spawnSync(process.execPath, [join(import.meta.dir, '../src/cli/hook-entry.ts'), 'SessionStart', '--route', 'default'], {
+      const result = spawnSync(process.execPath, ['-e', `const {runHookEntry}=await import(${JSON.stringify(join(import.meta.dir, '../src/cli/hook-entry.ts'))});process.exitCode=runHookEntry({event:'SessionStart',routeId:'default',input:'{}',worktreeSweepDeadlineMs:60000}).exitCode;`], {
         cwd: f.root, encoding: 'utf8', input: JSON.stringify({ cwd: f.root }), env: { ...f.env, HOOK_REPO_ROOT: f.root, HOOK_HOST: 'codex' },
       });
       expect(result.status).toBe(0); expect(result.stdout + result.stderr).toContain('worktree sweep skipped: local integration target is unavailable');

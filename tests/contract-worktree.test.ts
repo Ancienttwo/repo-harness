@@ -2,6 +2,7 @@ import { describe, expect, setDefaultTimeout, test } from "bun:test";
 import {
   existsSync,
   lstatSync,
+  chmodSync,
   symlinkSync,
   mkdirSync,
   readFileSync,
@@ -219,7 +220,7 @@ describe('task worktree location', () => {
       const path = join(managed, 'repo-wt-location');
       expect(JSON.parse(result.stdout).worktree_path).toBe(path);
       expect(readFileSync(join(path, '.ai/harness/active-worktree'), 'utf8').trim()).toBe(path);
-      expect(sweepManagedWorktrees(cwd, cwd, { ...process.env, REPO_HARNESS_WORKTREE_ROOT: managed })).toContain('marker reference');
+      expect(sweepManagedWorktrees(cwd, cwd, { ...process.env, REPO_HARNESS_WORKTREE_ROOT: managed }, { deadlineMs: 60_000 })).toContain('marker reference');
       expect(existsSync(path)).toBe(true);
     } finally { rmSync(parent, { recursive: true, force: true }); }
   }, 15000);
@@ -286,6 +287,38 @@ describe('W2/W3/W4 start and closeout ownership', () => {
       const retry = run('bash', [...f.args, '--no-plan-to-todo', '--json'], f.cwd);
       expect(retry.status, retry.stderr).toBe(0); expect(JSON.parse(retry.stdout).disposition).toBe('reused_existing_worktree');
       expect(readFileSync(join(f.target, '.ai/harness/active-worktree'), 'utf8').trim()).toBe(f.target);
+    } finally { f.cleanup(); }
+  }, 15000);
+  test('W5 start and recovery accept the system tmp canonical alias', () => {
+    const f = fixture(); try {
+      const alias = f.target.replace(/^\/private\/tmp\//, '/tmp/');
+      const args = f.args.map(value => value === f.target ? alias : value);
+      expect(run('bash', [...args, '--no-plan-to-todo'], f.cwd).status).toBe(0);
+      const retry = run('bash', [...args, '--no-plan-to-todo', '--json'], f.cwd);
+      expect(retry.status, retry.stderr).toBe(0);
+      expect(JSON.parse(retry.stdout).disposition).toBe('reused_existing_worktree');
+      expect(readFileSync(join(f.target, '.ai/harness/active-worktree'), 'utf8').trim()).toBe(f.target);
+    } finally { f.cleanup(); }
+  }, 15000);
+  test.each(['replacement', 'deleted-replacement', 'writable', 'git-symlink'])('W5 recovery refuses %s', change => {
+    const f = fixture(); try {
+      expect(run('bash', [...f.args, '--no-plan-to-todo'], f.cwd).status).toBe(0);
+      const pointer = readFileSync(join(f.target, '.git'), 'utf8');
+      if (change === 'replacement' || change === 'deleted-replacement') {
+        // Rename keeps the old inode allocated, as a cleaner or another process can.
+        const old = join(f.parent, 'old-checkout');
+        if (change === 'replacement') require('fs').renameSync(f.target, old);
+        else rmSync(f.target, { recursive: true });
+        mkdirSync(f.target, { mode: 0o700 });
+        writeFileSync(join(f.target, '.git'), pointer); writeFileSync(join(f.target, 'planted'), 'unsafe');
+      } else if (change === 'writable') chmodSync(f.target, 0o777);
+      else {
+        const copy = join(f.parent, 'copied-pointer'); writeFileSync(copy, pointer);
+        rmSync(join(f.target, '.git')); symlinkSync(copy, join(f.target, '.git'));
+      }
+      const retry = run('bash', [...f.args, '--no-plan-to-todo'], f.cwd);
+      expect(retry.status).toBe(1); expect(existsSync(f.target)).toBe(true);
+      if (change === 'replacement' || change === 'deleted-replacement') expect(readFileSync(join(f.target, 'planted'), 'utf8')).toBe('unsafe');
     } finally { f.cleanup(); }
   }, 15000);
   test('an existing target on another branch is refused', () => {

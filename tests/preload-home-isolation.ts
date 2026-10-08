@@ -4,7 +4,7 @@
  * The CI runner supplies safe startup values. Direct bun test calls must too.
  * Mutable tool roots must also stay under /tmp. OS account APIs are unchanged.
  */
-import { linkSync, mkdirSync, mkdtempSync, realpathSync, readdirSync, rmSync, watch, writeFileSync } from "node:fs";
+import { linkSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { temporaryPath, unsafeTestToolRoot } from "../scripts/lib/test-home-isolation.mjs";
@@ -74,21 +74,3 @@ try {
 if (!process.env.REPO_HARNESS_HOME) {
   process.env.REPO_HARNESS_HOME = mkdtempSync(join(process.env.TMPDIR, "repo-harness-test-home-"));
 }
-
-// Watch only direct system-tmp task names. Test worktrees belong below their
-// own disposable roots. Never delete a leaked or concurrently created path.
-const taskName = /.+-wt-.+/;
-const existingTaskNames = new Set(readdirSync(temporaryRoot).filter(name => taskName.test(name)));
-const newTaskNames = new Set<string>();
-const taskWatch = watch(temporaryRoot, (_event, name) => {
-  if (name && taskName.test(String(name)) && !existingTaskNames.has(String(name))) newTaskNames.add(String(name));
-});
-taskWatch.unref();
-process.on("exit", () => {
-  taskWatch.close();
-  for (const name of readdirSync(temporaryRoot)) if (taskName.test(name) && !existingTaskNames.has(name)) newTaskNames.add(name);
-  if (newTaskNames.size) {
-    console.error('test created worktree paths outside its disposable root: ' + [...newTaskNames].map(name => join(temporaryRoot, name)).join(', '));
-    process.exitCode = 1;
-  }
-});

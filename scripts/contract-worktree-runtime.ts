@@ -45,15 +45,16 @@ try {
       });
     }
   } else if (action === 'add-worktree') {
-    const { withWorktreeTopologyLock } = await import(pathToFileURL(join(packageRoot, 'src/effects/state/coordination-worktree-topology.ts')).href) as typeof import('../src/effects/state/coordination-worktree-topology');
+    const { withWorktreeTopologyLock, recordCreatedWorktree } = await import(pathToFileURL(join(packageRoot, 'src/effects/state/coordination-worktree-topology.ts')).href) as typeof import('../src/effects/state/coordination-worktree-topology');
     withWorktreeTopologyLock(value('--repo'), () => {
       const worktree = value('--worktree');
       mkdirSync(dirname(worktree), { recursive: true });
       // mkdir is the exclusive path claim. It refuses files and all symlinks.
       mkdirSync(worktree, { mode: 0o700 });
+      const canonical = realpathSync(worktree);
       const gitArgs = args.includes('--new-branch')
-        ? ['worktree', 'add', '-b', value('--branch'), worktree, value('--base')]
-        : ['worktree', 'add', worktree, value('--branch')];
+        ? ['worktree', 'add', '-b', value('--branch'), canonical, value('--base')]
+        : ['worktree', 'add', canonical, value('--branch')];
       const claim = lstatSync(worktree);
       try { execFileSync(configuredGitBinary(), gitArgs, { cwd: value('--repo'), stdio: 'inherit' }); }
       catch (error) {
@@ -63,6 +64,7 @@ try {
         } catch (rollbackError) { if ((rollbackError as NodeJS.ErrnoException).code !== 'ENOENT') console.error('worktree claim rollback incomplete: ' + String(rollbackError)); }
         throw error;
       }
+      recordCreatedWorktree(value('--repo'), worktree);
       markActiveWorktree(worktree);
     });
   } else if (action === 'mark-active') {
