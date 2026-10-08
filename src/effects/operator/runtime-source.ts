@@ -1,4 +1,4 @@
-import { decodeRuntimeIdentity, runtimeId, runtimeInteger, runtimeBindingKeys, runtimeIdentityKey, RUNTIME_LIMIT, type RuntimeIdentity } from '../../core/operator/runtime-status';
+import { decodeRuntimeIdentity, decodeRuntimePaneObservation, runtimeId, runtimeInteger, runtimeBindingKeys, runtimeIdentityKey, RUNTIME_LIMIT, type RuntimeIdentity, type RuntimePaneObservation } from '../../core/operator/runtime-status';
 import { observeHerdrPane, observeProgramStatus, type ProgramStatusV1, type RuntimeInvalidation, type RuntimeSource } from './runtime-status';
 
 /** Normalized adapter contract, not a claim about Herdr's socket envelope. */
@@ -87,14 +87,27 @@ export async function configureRuntimeSource(config: ConfiguredRuntimeSource): P
         const keys = (values: RuntimeIdentity[]) => JSON.stringify(values.map(runtimeIdentityKey).sort());
         if (keys(bindings) !== keys(after)) throw new Error('runtime_binding_changed');
         const observations = [];
+        const pane_observations: RuntimePaneObservation[] = [];
+        const bound = runtimeBindingKeys(bindings);
         let unclaimed = 0;
         for (const pane of frame.panes) {
           const matched = bindings.map(binding => observeHerdrPane(pane, binding)).filter(value => value !== null);
-          if (!matched.length) unclaimed++;
+          const root = pane && typeof pane === 'object' ? (pane as Record<string, unknown>).program_status : undefined;
+          const routes = matched.filter(value => bound.has(runtimeIdentityKey(value.identity)));
+          if (root !== undefined) {
+            if (program_status !== 'v1') throw new Error('runtime_source_capability');
+            const p = pane as Record<string, unknown>, status = object(root, ['protocol','revision','source_epoch','changed_at','state','reason']);
+            if (status.protocol !== 'repo-harness.program-status.v1') throw new Error('runtime_source_program');
+            pane_observations.push(decodeRuntimePaneObservation({ scope: 'pane', source: 'osc7501',
+              pane: { source_host: config.source_host, herdr_session: config.herdr_session, terminal_id: p.terminal_id, pane_id: p.pane_id, agent_session: p.agent_session },
+              binding: routes.length === 1 ? routes[0].identity : null, source_epoch: status.source_epoch, revision: status.revision,
+              state: status.state, reason: status.reason, changed_at: status.changed_at }));
+          }
+          if (!routes.length) unclaimed++;
           if (program_status === 'unsupported') observations.push(...matched);
         }
         observations.push(...frame.program_status.map(value => observeProgramStatus(value as ProgramStatusV1)));
-        return { bindings, observations, unclaimed };
+        return { bindings, observations, pane_observations, unclaimed };
       });
     },
   };

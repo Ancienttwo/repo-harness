@@ -1,6 +1,6 @@
 import { describe, expect, test, spyOn } from 'bun:test';
 import * as childProcess from 'node:child_process';
-import { decodeRuntimeOverlay, projectRuntimeOverlay, RUNTIME_LIMIT, unavailableRuntimeOverlay, type RuntimeIdentity, type RuntimeObservation } from '../../src/core/operator/runtime-status';
+import { decodeRuntimeOverlay, projectRuntimeOverlay, RUNTIME_LIMIT, unavailableRuntimeOverlay, type RuntimeIdentity, type RuntimeObservation, type RuntimePaneObservation } from '../../src/core/operator/runtime-status';
 import { createRuntimeStatusObserver, observeHerdrPane, observeProgramStatus, type RuntimeInvalidation, type RuntimeSnapshot } from '../../src/effects/operator/runtime-status';
 import { configureRuntimeSource, RUNTIME_SOURCE_EVENTS, RUNTIME_SOURCE_PROTOCOL, type ConfiguredRuntimeSource } from '../../src/effects/operator/runtime-source';
 import { startOperatorServer } from '../../src/effects/operator/server';
@@ -13,6 +13,9 @@ const identity: RuntimeIdentity = {
 };
 const pane = { pane_id: 'pane-1', terminal_id: 'terminal-1', agent_session: 'agent-1', revision: 1, agent_status: 'working' };
 const observation = (changes: Partial<RuntimeObservation> = {}): RuntimeObservation => ({ identity, revision: 1, state: 'working', reason: 'unknown', changed_at: null, source: 'herdr-agent', ...changes });
+const paneReport = (changes: Partial<RuntimePaneObservation> = {}): RuntimePaneObservation => ({ scope: 'pane', source: 'osc7501',
+  pane: { source_host: identity.source_host, herdr_session: identity.herdr_session, terminal_id: identity.terminal_id, pane_id: identity.pane_id, agent_session: identity.agent_session },
+  binding: identity, source_epoch: 2, revision: 1, state: 'working', reason: 'unknown', changed_at: at, ...changes });
 const snapshot = (o = observation()): RuntimeSnapshot => ({ bindings: [o.identity], observations: [o] });
 const project = (observations: RuntimeObservation[], bindings: RuntimeIdentity[] = [identity]) => projectRuntimeOverlay(bindings, observations, at, 0, 'v1', Date.parse(at));
 function deferred<T>() { let resolve!: (v: T) => void; const promise = new Promise<T>(r => { resolve = r; }); return { promise, resolve }; }
@@ -51,6 +54,23 @@ describe('structured runtime overlay', () => {
     expect(project([observation()], [identity, { ...identity, request_id: 'request-2' }]).badges).toEqual([]);
   });
 
+  test('clear removes the badge and does not turn into completion or cancellation', () => {
+    const cleared = observation({ source: 'program-v1', state: 'clear', revision: 3 });
+    expect(project([cleared])).toMatchObject({ status: 'ready', unclaimed: 0, badges: [] });
+    expect(project([cleared, { ...cleared, state: 'working', revision: 2 }]).badges).toEqual([]);
+    expect(project([cleared, { ...cleared, state: 'working' }])).toMatchObject({ unclaimed: 1, badges: [] });
+  });
+
+  test('pane scope is separate from task identity and rejects forged bindings and cancellation', () => {
+    const overlay = projectRuntimeOverlay([identity], [], at, 0, 'v1', Date.parse(at), true, 0, [paneReport()]);
+    expect(overlay).toMatchObject({ projection_version: 'repo-harness.runtime-overlay.v3', badges: [], pane_observations: [{ scope: 'pane', source: 'osc7501', state: 'working', binding: identity }] });
+    for (const change of [{ scope: 'task' }, { state: 'cancelled' }, { source: 'program-v1' }, { msg: 'private' }, { binding: { ...identity, pane_id: 'wrong' } }]) {
+      expect(() => projectRuntimeOverlay([identity], [], at, 0, 'v1', Date.parse(at), true, 0, [{ ...paneReport(), ...change } as RuntimePaneObservation])).toThrow();
+    }
+    expect(projectRuntimeOverlay([identity], [], at, 0, 'unsupported', Date.parse(at), true, 0, [paneReport()])).toMatchObject({ unclaimed: 1, pane_observations: [] });
+    expect(projectRuntimeOverlay([identity], [], at, 0, 'v1', Date.parse(at), true, 0, [paneReport({ state: 'clear' })]).pane_observations).toEqual([]);
+  });
+
   test('same-revision identity key permutations are semantic duplicates, not conflicts', () => {
     const reordered = Object.fromEntries(Object.entries(identity).reverse()) as unknown as RuntimeIdentity;
     const result = project([observation(), observation({ identity: reordered })]);
@@ -77,6 +97,38 @@ describe('structured runtime overlay', () => {
 });
 
 describe('snapshot lifecycle', () => {
+  test('pane observations keep epoch/revision fences and snapshot freshness independent of progress', async () => {
+    let clock = Date.parse(at), current = [paneReport()], bindings = [identity], fail = false;
+    const observer = createRuntimeStatusObserver({ program_status: 'v1', async subscribe() { return () => {}; }, async snapshot() {
+      if (fail) throw new Error('fixture'); return { bindings, observations: [], pane_observations: current };
+    } }, () => clock);
+    try {
+      await observer.start(); expect(observer.read().pane_observations[0]).toMatchObject({ scope: 'pane', state: 'working', freshness: 'fresh' });
+      clock += 600_000; expect(observer.read().pane_observations[0]).toMatchObject({ freshness: 'stale', changed_at: at });
+      fail = true; await observer.refresh(); expect(observer.read().observed_at).toBe(at); fail = false;
+      current = [paneReport({ state: 'clear', revision: 3 })]; await observer.refresh(); expect(observer.read().pane_observations).toEqual([]);
+      current = []; await observer.refresh();
+      current = [paneReport({ revision: 2 })]; await observer.refresh(); expect(observer.read().pane_observations).toEqual([]);
+      current = [paneReport({ revision: 4 })]; await observer.refresh(); expect(observer.read().pane_observations[0].state).toBe('working');
+      current = [paneReport({ source_epoch: 3, revision: 5, state: 'blocked', reason: 'permission' })]; await observer.refresh();
+      current = [paneReport({ source_epoch: 2, revision: 100, state: 'settled' })]; await observer.refresh();
+      expect(observer.read().pane_observations[0]).toMatchObject({ source_epoch: 3, revision: 5, state: 'blocked', reason: 'permission' });
+      bindings = [{ ...identity, round: 2, request_id: 'request-2', attempt: 2, generation: 'generation-2' }];
+      current = [paneReport({ source_epoch: 3, revision: 5, state: 'blocked', reason: 'permission', binding: bindings[0] })]; await observer.refresh();
+      expect(observer.read().pane_observations[0]).toMatchObject({ scope: 'pane', binding: bindings[0] }); expect(observer.read().badges).toEqual([]);
+      observer.invalidate('disconnected'); expect(observer.read().pane_observations[0].freshness).toBe('disconnected');
+    } finally { observer.stop(); }
+  });
+
+  test('same-revision pane conflicts stay hidden until a new report', async () => {
+    let current = [paneReport(), paneReport({ state: 'idle' })];
+    const observer = createRuntimeStatusObserver({ program_status: 'v1', async subscribe() { return () => {}; }, async snapshot() { return { bindings: [identity], observations: [], pane_observations: current }; } }, () => Date.parse(at));
+    try {
+      await observer.start(); expect(observer.read()).toMatchObject({ unclaimed: 1, pane_observations: [] });
+      current = [paneReport()]; await observer.refresh(); expect(observer.read().pane_observations).toEqual([]);
+      current = [paneReport({ revision: 2 })]; await observer.refresh(); expect(observer.read().pane_observations[0].state).toBe('working');
+    } finally { observer.stop(); }
+  });
   test('subscribes before snapshot; events during read force a serialized second read', async () => {
     const first = deferred<RuntimeSnapshot>(), second = deferred<RuntimeSnapshot>();
     let event!: (e: RuntimeInvalidation) => void, calls = 0, subscribed = false;
@@ -117,6 +169,43 @@ describe('snapshot lifecycle', () => {
     expect(observer.read().badges[0].state).toBe('error'); o = { ...o, state: 'working', revision: 2 }; await observer.refresh();
     expect(observer.read().badges[0].state).toBe('working');
     o = { ...o, state: 'idle', revision: 1 }; await observer.refresh(); expect(observer.read().badges[0].state).toBe('working'); observer.stop();
+  });
+
+  test('clear keeps its revision fence across missing data and permits a newer observation', async () => {
+    let current = [observation({ source: 'program-v1', state: 'working', revision: 1 })];
+    const observer = createRuntimeStatusObserver({ program_status: 'v1', async subscribe() { return () => {}; },
+      async snapshot() { return { bindings: [identity], observations: current }; } }, () => Date.parse(at));
+    try {
+      await observer.start(); expect(observer.read().badges[0].state).toBe('working');
+      current = [{ ...current[0], state: 'clear', revision: 3 }]; await observer.refresh();
+      expect(observer.read()).toMatchObject({ status: 'ready', unclaimed: 0, badges: [] });
+      current = []; await observer.refresh(); expect(observer.read().badges).toEqual([]);
+      current = [observation({ source: 'program-v1', state: 'working', revision: 2 })]; await observer.refresh();
+      expect(observer.read().badges).toEqual([]);
+      current = [{ ...current[0], revision: 4 }]; await observer.refresh();
+      expect(observer.read().badges[0].state).toBe('working');
+    } finally { observer.stop(); }
+  });
+
+  test('a newer clear hides cancellation without accepting an older or ambiguous clear', async () => {
+    let current = [observation({ source: 'program-v1', state: 'cancelled', revision: 3 })];
+    const observer = createRuntimeStatusObserver({ program_status: 'v1', async subscribe() { return () => {}; },
+      async snapshot() { return { bindings: [current[0].identity], observations: current }; } }, () => Date.parse(at));
+    try {
+      await observer.start();
+      current = [{ ...current[0], state: 'clear', revision: 2 }]; await observer.refresh();
+      expect(observer.read().badges[0].state).toBe('cancelled');
+      current = [{ ...current[0], revision: 4 }, { ...current[0], state: 'working', revision: 4 }]; await observer.refresh();
+      expect(observer.read().badges[0].state).toBe('cancelled');
+      current = [observation({ source: 'program-v1', state: 'clear', revision: 5 })]; await observer.refresh();
+      expect(observer.read()).toMatchObject({ status: 'ready', unclaimed: 0, badges: [] });
+      current = [observation({ source: 'program-v1', state: 'settled', revision: 4 })]; await observer.refresh();
+      expect(observer.read().badges).toEqual([]);
+      current = [observation({ source: 'program-v1', state: 'working', revision: 6 })]; await observer.refresh();
+      expect(observer.read().badges).toEqual([]);
+      current = [observation({ identity: { ...identity, attempt: 2, generation: 'generation-2' }, source: 'program-v1', state: 'working', revision: 1 })];
+      await observer.refresh(); expect(observer.read().badges[0].state).toBe('working');
+    } finally { observer.stop(); }
   });
 
   test('conflicting revision stays unclaimed until a higher revision; cancellation fence survives an absent pane', async () => {
@@ -303,6 +392,21 @@ describe('configured synthetic source adapter', () => {
     const source = await configureRuntimeSource(enabled), observed = await source.snapshot(0);
     expect(observed.observations).toHaveLength(1); expect(observed.observations[0]).toMatchObject({ state: 'blocked', reason: 'question', source: 'program-v1' });
     expect(projectRuntimeOverlay(observed.bindings, observed.observations, at, 0, 'v1', Date.parse(at)).badges[0].state).toBe('blocked');
+  });
+
+  test('root terminal facts route only through stable unique bindings and never become task observations', async () => {
+    const config = fixture('v1'), original = config.transport.snapshot;
+    config.transport.snapshot = async signal => ({ ...await original(signal) as object, panes: [{ ...pane, program_status: {
+      protocol: 'repo-harness.program-status.v1', source_epoch: 2, revision: 1, state: 'blocked', reason: 'question', changed_at: at,
+    } }] });
+    const source = await configureRuntimeSource(config);
+    let result = await source.snapshot(0);
+    expect(result.observations).toEqual([]); expect(result.pane_observations?.[0]).toMatchObject({ scope: 'pane', binding: identity, state: 'blocked', reason: 'question' });
+    config.bindings = async () => [identity, { ...identity, task: 'task-2' }];
+    const ambiguous = await configureRuntimeSource(config); result = await ambiguous.snapshot(0);
+    expect(result).toMatchObject({ observations: [], unclaimed: 1, pane_observations: [{ scope: 'pane', binding: null }] });
+    config.bindings = async () => []; const unbound = await configureRuntimeSource(config);
+    expect(await unbound.snapshot(0)).toMatchObject({ unclaimed: 1, pane_observations: [{ binding: null }] });
   });
 
   test('capability deadlines abort and late subscription completion closes its resource', async () => {

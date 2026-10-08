@@ -1,6 +1,8 @@
 import { createConnection, type Socket } from 'node:net';
 import { randomUUID, createHash } from 'node:crypto';
 import { isAbsolute } from 'node:path';
+import { runtimeInteger, runtimeTime } from '../../core/operator/runtime-status';
+import type { ProgramStatusV1 } from '../operator/runtime-status';
 
 /** Official herdrdev/herdr schema at this immutable source revision. */
 export const HERDR_OBSERVATION_REVISION = '4dc23bb15d4a2fd2c093abfb509f903c3015bf56';
@@ -18,6 +20,24 @@ export function validateObservationEndpoint(endpoint: HerdrObservationEndpoint):
 }
 export function verifyHerdrVersion(value: HerdrJson): void {
   if (value.version !== HERDR_OBSERVATION_VERSION || value.protocol !== HERDR_OBSERVATION_PROTOCOL) throw new Error('herdr_observation_version');
+}
+/** Terminal facts only. OSC has no dispatch identity or cancellation state. */
+export type HerdrProgramStatus = Omit<ProgramStatusV1, 'identity'> & { source_epoch: number };
+export function herdrProgramStatus(value: unknown): HerdrProgramStatus {
+  const v = herdrObject(value);
+  if (Object.keys(v).sort().join() !== 'record,revision,source,source_epoch,updated_at_ms' || v.source !== 'osc7501') throw new Error('herdr_program_status_shape');
+  const revision = runtimeInteger(v.revision), source_epoch = runtimeInteger(v.source_epoch), updated = runtimeInteger(v.updated_at_ms);
+  if (updated > 8_640_000_000_000_000) throw new Error('herdr_program_status_time');
+  const changed_at = runtimeTime(new Date(updated).toISOString());
+  if (v.record === null) return { protocol: 'repo-harness.program-status.v1', revision, source_epoch, changed_at, state: 'clear', reason: 'unknown' };
+  const record = herdrObject(v.record);
+  if (Object.keys(record).some(key => !['state','kind','app','progress'].includes(key)) || !['idle','working','blocked','done','error'].includes(record.state as string) ||
+      (record.kind !== undefined && !['permission','question','auth'].includes(record.kind as string)) ||
+      (record.kind !== undefined && record.state !== 'blocked') ||
+      (record.app !== undefined && (typeof record.app !== 'string' || !/^[A-Za-z0-9_.+-]{1,32}$/.test(record.app))) ||
+      (record.progress !== undefined && (!['working','blocked'].includes(record.state as string) || !Number.isInteger(record.progress) || (record.progress as number) < 0 || (record.progress as number) > 100))) throw new Error('herdr_program_status_record');
+  return { protocol: 'repo-harness.program-status.v1', revision, source_epoch, changed_at,
+    state: record.state === 'done' ? 'settled' : record.state as HerdrProgramStatus['state'], reason: record.kind as HerdrProgramStatus['reason'] ?? 'unknown' };
 }
 export function herdrAgentSessionKey(value: unknown): string | null {
   if (value === undefined || value === null) return null;

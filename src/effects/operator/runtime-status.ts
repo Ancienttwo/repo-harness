@@ -1,5 +1,5 @@
-import { decodeRuntimeIdentity, decodeRuntimeObservation, projectRuntimeOverlay, runtimeIdentityKey, runtimeBindingKeys, runtimeInteger,
-  unavailableRuntimeOverlay, RUNTIME_LIMIT, type RuntimeIdentity, type RuntimeObservation, type RuntimeOverlay } from '../../core/operator/runtime-status';
+import { decodeRuntimeIdentity, decodeRuntimeObservation, decodeRuntimePaneObservation, runtimePaneKey, projectRuntimeOverlay, runtimeIdentityKey, runtimeBindingKeys, runtimeInteger,
+  unavailableRuntimeOverlay, RUNTIME_LIMIT, type RuntimeIdentity, type RuntimeObservation, type RuntimeOverlay, type RuntimePaneObservation } from '../../core/operator/runtime-status';
 
 /** Select only documented structured pane fields. No title, cwd or text inference. */
 export function observeHerdrPane(value: unknown, binding: RuntimeIdentity): RuntimeObservation | null {
@@ -25,7 +25,7 @@ export function observeProgramStatus(value: ProgramStatusV1): RuntimeObservation
 }
 export type RuntimeInvalidation = 'updated' | 'reconnect' | 'events_lost' | 'disconnected';
 export interface RuntimeSnapshot {
-  bindings: readonly RuntimeIdentity[]; observations: readonly RuntimeObservation[]; unclaimed?: number;
+  bindings: readonly RuntimeIdentity[]; observations: readonly RuntimeObservation[]; pane_observations?: readonly RuntimePaneObservation[]; unclaimed?: number;
 }
 /** A configured transport supplies bounded structured data, never subprocess output. */
 export interface RuntimeSource {
@@ -42,11 +42,13 @@ export function createRuntimeStatusObserver(source: RuntimeSource, now: () => nu
   let pending: Promise<void> | null = null;
   let failed = false;
   const revisions = new Map<string, RuntimeObservation[]>();
+  const cancelled = new Set<string>();
+  const paneRevisions = new Map<string, RuntimePaneObservation[]>();
   function invalidate(event: RuntimeInvalidation) {
     if (!started) return;
     version++;
     failed = true;
-    if (event === 'reconnect' || event === 'events_lost') { epoch++; last = null; revisions.clear(); }
+    if (event === 'reconnect' || event === 'events_lost') { epoch++; last = null; revisions.clear(); cancelled.clear(); paneRevisions.clear(); }
     connected = event !== 'disconnected';
     if (subscribed && connected) void Promise.resolve().then(refresh);
   }
@@ -59,7 +61,7 @@ export function createRuntimeStatusObserver(source: RuntimeSource, now: () => nu
         if (readVersion !== version || readEpoch !== epoch || !connected || !started || owner !== lifecycle) continue;
         const at = new Date(now()).toISOString();
         // Validate all input before updating the cache or revision fence.
-        projectRuntimeOverlay(snapshot.bindings, snapshot.observations, at, epoch, source.program_status, now(), true, snapshot.unclaimed ?? 0);
+        projectRuntimeOverlay(snapshot.bindings, snapshot.observations, at, epoch, source.program_status, now(), true, snapshot.unclaimed ?? 0, snapshot.pane_observations);
         const next = new Map<string, RuntimeObservation[]>();
         const bound = runtimeBindingKeys(snapshot.bindings), unclaimed: RuntimeObservation[] = [];
         for (const raw of snapshot.observations) {
@@ -77,19 +79,36 @@ export function createRuntimeStatusObserver(source: RuntimeSource, now: () => nu
           const old = revisions.get(key);
           if (!old) continue;
           if (old[0].source !== incoming[0].source) throw new Error('runtime_source_conflict');
-          // Only an unambiguous cancel is terminal for this exact attempt.
-          if ((old.length === 1 && old[0].state === 'cancelled') || old[0].revision > incoming[0].revision) next.set(key, old);
+          // Cancel blocks revival of this attempt. A newer clear can hide it.
+          const clearsCancel = incoming.length === 1 && incoming[0].state === 'clear' && incoming[0].revision > old[0].revision;
+          if (((cancelled.has(key) || (old.length === 1 && old[0].state === 'cancelled')) && !clearsCancel) || old[0].revision > incoming[0].revision) next.set(key, old);
           else if (old[0].revision === incoming[0].revision) {
             const variants = [...old, ...incoming].filter((item, index, all) => all.findIndex(other => JSON.stringify(other) === JSON.stringify(item)) === index);
             next.set(key, variants.slice(0, 2));
           }
         }
         const observations = [...unclaimed, ...[...next.values()].flat()];
-        projectRuntimeOverlay(snapshot.bindings, observations, at, epoch, source.program_status, now(), true, snapshot.unclaimed ?? 0);
+        const nextPanes = new Map<string, RuntimePaneObservation[]>();
+        for (const raw of snapshot.pane_observations ?? []) {
+          const incoming = decodeRuntimePaneObservation(raw), key = runtimePaneKey(incoming.pane);
+          const old = nextPanes.get(key) ?? paneRevisions.get(key);
+          if (!old || incoming.source_epoch > old[0].source_epoch || (incoming.source_epoch === old[0].source_epoch && incoming.revision > old[0].revision)) nextPanes.set(key, [incoming]);
+          else {
+            // The binding routes the current card. It does not identify the emitter.
+            const retained = old.map(item => ({ ...item, binding: incoming.binding }));
+            if (incoming.source_epoch === old[0].source_epoch && incoming.revision === old[0].revision && !retained.some(item => JSON.stringify(item) === JSON.stringify(incoming))) retained.push(incoming);
+            nextPanes.set(key, retained.slice(0, 2));
+          }
+        }
+        const pane_observations = [...nextPanes.values()].flat();
+        projectRuntimeOverlay(snapshot.bindings, observations, at, epoch, source.program_status, now(), true, snapshot.unclaimed ?? 0, pane_observations);
         const retained = new Map([...revisions, ...next]);
-        if (retained.size > RUNTIME_LIMIT) throw new Error('runtime_revision_limit');
-        last = { snapshot: { bindings: snapshot.bindings.map(decodeRuntimeIdentity), observations, unclaimed: snapshot.unclaimed ?? 0 }, at };
+        const retainedPanes = new Map([...paneRevisions, ...nextPanes]);
+        if (retained.size + retainedPanes.size > RUNTIME_LIMIT) throw new Error('runtime_revision_limit');
+        last = { snapshot: { bindings: snapshot.bindings.map(decodeRuntimeIdentity), observations, pane_observations, unclaimed: snapshot.unclaimed ?? 0 }, at };
         revisions.clear(); for (const [key, group] of retained) revisions.set(key, group);
+        paneRevisions.clear(); for (const [key, group] of retainedPanes) paneRevisions.set(key, group);
+        for (const [key, group] of next) if (group.length === 1 && group[0].state === 'cancelled') cancelled.add(key);
         failed = false; return;
       } catch { if (owner === lifecycle && started) failed = true; return; }
     }
@@ -106,7 +125,7 @@ export function createRuntimeStatusObserver(source: RuntimeSource, now: () => nu
   return {
     async start() {
       if (started) throw new Error('runtime_already_started');
-      if (lifecycle > 0) { epoch++; version++; last = null; revisions.clear(); }
+      if (lifecycle > 0) { epoch++; version++; last = null; revisions.clear(); cancelled.clear(); paneRevisions.clear(); }
       const owner = ++lifecycle;
       started = true; connected = true; subscribed = false;
       try {
@@ -121,7 +140,7 @@ export function createRuntimeStatusObserver(source: RuntimeSource, now: () => nu
     invalidate,
     read(): RuntimeOverlay {
       if (!last) return unavailableRuntimeOverlay(epoch);
-      const overlay = projectRuntimeOverlay(last.snapshot.bindings, last.snapshot.observations, last.at, epoch, source.program_status, now(), connected, last.snapshot.unclaimed ?? 0);
+      const overlay = projectRuntimeOverlay(last.snapshot.bindings, last.snapshot.observations, last.at, epoch, source.program_status, now(), connected, last.snapshot.unclaimed ?? 0, last.snapshot.pane_observations);
       return failed ? { ...overlay, status: 'unavailable' } : overlay;
     },
     stop() { lifecycle++; version++; started = false; subscribed = false; connected = false; failed = true; pending = null; stopSubscription?.(); stopSubscription = null; },

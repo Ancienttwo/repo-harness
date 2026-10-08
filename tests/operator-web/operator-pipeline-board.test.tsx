@@ -152,12 +152,16 @@ describe('pipeline board panel', () => {
 
   test('runtime badges distinguish source activity, typed reasons and result acceptance without changing the ledger', () => {
     const served = board(), before = JSON.stringify(served);
-    for (const [state, label] of [['working','Working'],['idle','Idle'],['blocked','Blocked'],['done-unseen','Idle · not seen'],['settled','Agent settled'],['error','Reported error'],['cancelled','Reported cancellation'],['clear','Status cleared']] as const) {
+    for (const [state, label] of [['working','Working'],['idle','Idle'],['blocked','Blocked'],['done-unseen','Idle · not seen'],['settled','Agent settled'],['error','Reported error'],['cancelled','Reported cancellation']] as const) {
       const markup = render(<PipelineBoardPanel initialBoard={served} initialRuntimeOverlay={runtimeOverlay(state)} t={t} />);
       expect(markup).toContain(`data-runtime-state="${state}"`); expect(markup).toContain(label);
       expect(markup).toContain('result validated'); expect(markup).toContain('merge ask');
       expect(markup).not.toContain('/private/'); expect(markup).not.toContain('<button');
     }
+    const cleared = render(<PipelineBoardPanel initialBoard={served} initialRuntimeOverlay={runtimeOverlay('clear')} t={t} />);
+    expect(cleared).toContain('data-runtime-state="unknown"');
+    expect(cleared).not.toContain('data-runtime-state="clear"'); expect(cleared).not.toContain('Status cleared');
+    expect(cleared).toContain('result validated'); expect(cleared).toContain('merge ask');
     for (const [reason, label] of [['permission','Permission needed'],['question','Answer needed'],['auth','Sign-in needed'],['unknown','Reason unknown']] as const) {
       expect(render(<PipelineBoardPanel initialBoard={served} initialRuntimeOverlay={runtimeOverlay('blocked', reason)} t={t} />)).toContain(label);
     }

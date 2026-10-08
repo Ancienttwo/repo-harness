@@ -1,5 +1,5 @@
 /** An observation projection. It has no task transition authority. */
-export const RUNTIME_OVERLAY_VERSION = 'repo-harness.runtime-overlay.v2' as const;
+export const RUNTIME_OVERLAY_VERSION = 'repo-harness.runtime-overlay.v3' as const;
 export const RUNTIME_STALE_AFTER_MS = 300_000;
 export const RUNTIME_LIMIT = 512;
 export interface RuntimeIdentity {
@@ -17,14 +17,24 @@ export interface RuntimeObservation {
 export interface RuntimeBadge extends RuntimeObservation {
   badge: RuntimeState; freshness: 'fresh' | 'stale' | 'disconnected';
 }
+export interface RuntimePaneObservation {
+  scope: 'pane'; source: 'osc7501';
+  pane: Pick<RuntimeIdentity, 'source_host' | 'herdr_session' | 'terminal_id' | 'pane_id'> & { agent_session: string | null };
+  /** Current card-to-pane routing only. This is not the report producer identity. */
+  binding: RuntimeIdentity | null;
+  source_epoch: number; revision: number;
+  state: 'idle' | 'working' | 'blocked' | 'settled' | 'error' | 'clear';
+  reason: BlockReason; changed_at: string | null;
+}
+export interface RuntimePaneBadge extends RuntimePaneObservation { freshness: RuntimeBadge['freshness'] }
 export interface RuntimeOverlay {
   projection_version: typeof RUNTIME_OVERLAY_VERSION; status: 'ready' | 'unavailable';
   observed_at: string | null; source_epoch: number; program_status: 'unsupported' | 'v1';
-  unclaimed: number; badges: RuntimeBadge[];
+  unclaimed: number; badges: RuntimeBadge[]; pane_observations: RuntimePaneBadge[];
 }
 export function unavailableRuntimeOverlay(epoch = 0): RuntimeOverlay {
   return { projection_version: RUNTIME_OVERLAY_VERSION, status: 'unavailable', observed_at: null,
-    source_epoch: epoch, program_status: 'unsupported', unclaimed: 0, badges: [] };
+    source_epoch: epoch, program_status: 'unsupported', unclaimed: 0, badges: [], pane_observations: [] };
 }
 function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('runtime_invalid');
@@ -67,10 +77,24 @@ export function decodeRuntimeObservation(value: unknown): RuntimeObservation {
   return { identity: decodeRuntimeIdentity(v.identity), revision: runtimeInteger(v.revision), state: v.state as RuntimeState,
     reason: v.reason as BlockReason, changed_at: runtimeTime(v.changed_at), source: v.source as RuntimeObservation['source'] };
 }
+export function runtimePaneKey(pane: RuntimePaneObservation['pane']): string {
+  return JSON.stringify(['source_host','herdr_session','terminal_id','pane_id','agent_session'].map(key => key === 'agent_session' && pane.agent_session === null ? null : runtimeId(pane[key as keyof typeof pane])));
+}
+export function decodeRuntimePaneObservation(value: unknown): RuntimePaneObservation {
+  const v = record(value);
+  exact(v, ['scope','source','pane','binding','source_epoch','revision','state','reason','changed_at']);
+  if (v.scope !== 'pane' || v.source !== 'osc7501' || !['idle','working','blocked','settled','error','clear'].includes(v.state as string) || !['permission','question','auth','unknown'].includes(v.reason as string) || (v.state !== 'blocked' && v.reason !== 'unknown')) throw new Error('runtime_pane_state_invalid');
+  const rawPane = record(v.pane); exact(rawPane, ['source_host','herdr_session','terminal_id','pane_id','agent_session']);
+  const pane = Object.fromEntries(Object.entries(rawPane).sort(([a], [b]) => a.localeCompare(b)).map(([key, value]) => [key, key === 'agent_session' && value === null ? null : runtimeId(value)])) as RuntimePaneObservation['pane'];
+  const binding = v.binding === null ? null : decodeRuntimeIdentity(v.binding);
+  if (binding && runtimePaneKey(binding) !== runtimePaneKey(pane)) throw new Error('runtime_pane_binding_invalid');
+  return { scope: 'pane', source: 'osc7501', pane, binding, source_epoch: runtimeInteger(v.source_epoch), revision: runtimeInteger(v.revision),
+    state: v.state as RuntimePaneObservation['state'], reason: v.reason as BlockReason, changed_at: runtimeTime(v.changed_at) };
+}
 export function decodeRuntimeOverlay(value: unknown): RuntimeOverlay {
   const v = record(value);
-  exact(v, ['projection_version','status','observed_at','source_epoch','program_status','unclaimed','badges']);
-  if (v.projection_version !== RUNTIME_OVERLAY_VERSION || !['ready','unavailable'].includes(v.status as string) || !['unsupported','v1'].includes(v.program_status as string) || !Array.isArray(v.badges) || v.badges.length > RUNTIME_LIMIT) throw new Error('runtime_overlay_invalid');
+  exact(v, ['projection_version','status','observed_at','source_epoch','program_status','unclaimed','badges','pane_observations']);
+  if (v.projection_version !== RUNTIME_OVERLAY_VERSION || !['ready','unavailable'].includes(v.status as string) || !['unsupported','v1'].includes(v.program_status as string) || !Array.isArray(v.badges) || !Array.isArray(v.pane_observations) || v.badges.length + v.pane_observations.length > RUNTIME_LIMIT) throw new Error('runtime_overlay_invalid');
   const epoch = runtimeInteger(v.source_epoch), seen = new Set<string>();
   const badges = v.badges.map(raw => {
     const b = record(raw);
@@ -81,10 +105,17 @@ export function decodeRuntimeOverlay(value: unknown): RuntimeOverlay {
     seen.add(key);
     return { ...decoded, badge: decoded.state, freshness: freshness as RuntimeBadge['freshness'] };
   });
+  const paneSeen = new Set<string>();
+  const pane_observations = v.pane_observations.map(raw => {
+    const p = record(raw), { freshness, ...observation } = p;
+    const decoded = decodeRuntimePaneObservation(observation), key = runtimePaneKey(decoded.pane);
+    if (paneSeen.has(key) || v.program_status !== 'v1' || (decoded.binding && decoded.binding.source_epoch !== epoch) || !['fresh','stale','disconnected'].includes(freshness as string) || decoded.state === 'clear') throw new Error('runtime_pane_badge_invalid');
+    paneSeen.add(key); return { ...decoded, freshness: freshness as RuntimePaneBadge['freshness'] };
+  });
   const observed_at = runtimeTime(v.observed_at);
-  if ((v.status === 'ready' && observed_at === null) || (badges.length && observed_at === null)) throw new Error('runtime_age_invalid');
+  if ((v.status === 'ready' && observed_at === null) || ((badges.length || pane_observations.length) && observed_at === null)) throw new Error('runtime_age_invalid');
   return { projection_version: RUNTIME_OVERLAY_VERSION, status: v.status as RuntimeOverlay['status'], observed_at,
-    source_epoch: epoch, program_status: v.program_status as RuntimeOverlay['program_status'], unclaimed: runtimeInteger(v.unclaimed), badges };
+    source_epoch: epoch, program_status: v.program_status as RuntimeOverlay['program_status'], unclaimed: runtimeInteger(v.unclaimed), badges, pane_observations };
 }
 /** Only current, unique dispatch-to-pane bindings can claim an observation. */
 export function runtimeBindingKeys(bindings: readonly RuntimeIdentity[]): Set<string> {
@@ -99,8 +130,8 @@ export function runtimeBindingKeys(bindings: readonly RuntimeIdentity[]): Set<st
 }
 /** Exact binding only. Ambiguous identities and pane reuse cannot claim a card. */
 export function projectRuntimeOverlay(bindings: readonly RuntimeIdentity[], observations: readonly RuntimeObservation[], observedAt: string,
-  epoch: number, program: RuntimeOverlay['program_status'], now: number, connected = true, unclaimedCount = 0): RuntimeOverlay {
-  if (bindings.length > RUNTIME_LIMIT || observations.length > RUNTIME_LIMIT) throw new Error('runtime_limit');
+  epoch: number, program: RuntimeOverlay['program_status'], now: number, connected = true, unclaimedCount = 0, paneObservations: readonly RuntimePaneObservation[] = []): RuntimeOverlay {
+  if (bindings.length > RUNTIME_LIMIT || observations.length + paneObservations.length > RUNTIME_LIMIT) throw new Error('runtime_limit');
   runtimeTime(observedAt); runtimeInteger(epoch);
   const bound = runtimeBindingKeys(bindings);
   const latest = new Map<string, RuntimeObservation>(), conflicts = new Set<string>(), sources = new Map<string, string>(), mixedSources = new Set<string>();
@@ -118,8 +149,23 @@ export function projectRuntimeOverlay(bindings: readonly RuntimeIdentity[], obse
   const badges: RuntimeBadge[] = [];
   for (const [key, observation] of latest) {
     if (conflicts.has(key) || mixedSources.has(key)) { unclaimed++; continue; }
+    // Clear keeps its revision fence but removes the visible observation.
+    if (observation.state === 'clear') continue;
     badges.push({ ...observation, badge: observation.state, freshness });
   }
+  const paneLatest = new Map<string, RuntimePaneObservation>(), paneConflicts = new Set<string>();
+  for (const raw of paneObservations) {
+    const observation = decodeRuntimePaneObservation(raw), key = runtimePaneKey(observation.pane);
+    if (program !== 'v1' || (observation.binding && (!bound.has(runtimeIdentityKey(observation.binding)) || observation.binding.source_epoch !== epoch))) { unclaimed++; continue; }
+    const old = paneLatest.get(key);
+    if (!old || observation.source_epoch > old.source_epoch || (observation.source_epoch === old.source_epoch && observation.revision > old.revision)) { paneLatest.set(key, observation); paneConflicts.delete(key); }
+    else if (observation.source_epoch === old.source_epoch && observation.revision === old.revision && JSON.stringify(observation) !== JSON.stringify(old)) paneConflicts.add(key);
+  }
+  const pane_observations: RuntimePaneBadge[] = [];
+  for (const [key, observation] of paneLatest) {
+    if (paneConflicts.has(key)) { unclaimed++; continue; }
+    if (observation.state !== 'clear') pane_observations.push({ ...observation, freshness });
+  }
   return decodeRuntimeOverlay({ projection_version: RUNTIME_OVERLAY_VERSION, status: connected ? 'ready' : 'unavailable', observed_at: observedAt,
-    source_epoch: epoch, program_status: program, unclaimed, badges });
+    source_epoch: epoch, program_status: program, unclaimed, badges, pane_observations });
 }
