@@ -1,8 +1,8 @@
 import { Command } from 'commander';
-import { collectStrategyContext, validateStrategyRequest, strategyStatus, StrategySourceDriftError } from '../../effects/strategy/context';
+import { collectStrategyContext, validateStrategyRequest, strategyStatus, StrategySourceDriftError, REPOSITORY_PILOT_DOCUMENT, REPOSITORY_PILOT_READ_LIMITS } from '../../effects/strategy/context';
 import { projectStrategySkill } from '../../effects/strategy/skill';
 
-interface Options { repo: string; load?: string[]; topic?: string[]; target?: string; dryRun?: boolean }
+interface Options { repo: string; document?: string; load?: string[]; topic?: string[]; target?: string; dryRun?: boolean }
 function run(action: () => unknown): void {
   try { process.stdout.write(`${JSON.stringify(action())}\n`); }
   catch (error) {
@@ -19,10 +19,19 @@ export function buildStrategyCommand(): Command {
   const strategy = new Command('strategy').description('Explicit read-only strategic reflection; proposals never authorize execution');
   strategy.command('status').option('--repo <path>', 'Exact project worktree root', '.')
     .action((o: Options) => run(() => strategyStatus(o.repo)));
+  contextOptions(strategy.command('pilot').argument('[proposal]', 'Optional project-local proposal to validate against the canonical pilot'))
+    .action((path: string | undefined, o: Options) => run(() => {
+      const options = { documentPath: REPOSITORY_PILOT_DOCUMENT,
+        load: o.load, topics: o.topic, limits: REPOSITORY_PILOT_READ_LIMITS };
+      if (!path) return collectStrategyContext(o.repo, options);
+      const result = validateStrategyRequest(o.repo, path, options);
+      if (result.status !== 'reviewable') process.exitCode = 1;
+      return result;
+    }));
   contextOptions(strategy.command('context')).action((o: Options) => run(() => collectStrategyContext(o.repo, { load: o.load, topics: o.topic })));
-  contextOptions(strategy.command('validate').argument('<proposal>', 'Repository-relative proposal JSON'))
+  contextOptions(strategy.command('validate').argument('<proposal>', 'Repository-relative proposal JSON').option('--document <path>', 'Explicit project-local context document'))
     .action((path: string, o: Options) => run(() => {
-      const result = validateStrategyRequest(o.repo, path, { load: o.load, topics: o.topic });
+      const result = validateStrategyRequest(o.repo, path, { documentPath: o.document, load: o.load, topics: o.topic });
       if (result.status !== 'reviewable') process.exitCode = 1;
       return result;
     }));
