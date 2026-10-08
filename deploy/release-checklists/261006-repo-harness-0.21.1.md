@@ -65,8 +65,16 @@
 - Scope change: the owner first approved moving the tag to include #600,
   then decided to publish 0.21.1 without it. #600 moves to the next release.
   The tag never moved.
-- Rollback: revert each squash commit with `git revert <squash-commit>`.
-  A Git revert does not undo an npm publication.
+- Release #598 merge commit: `3ea2f7b71c4eef95e158788b8564179034eef9a2`.
+  Parent: `659818c3c3338e162f14e6725b8a4145eeb7ace1`.
+  Exact source rollback: `git revert --no-edit 3ea2f7b71c4eef95e158788b8564179034eef9a2`.
+- #600 is outside the 0.21.1 release. Its merge commit is
+  `e7c86c553f229a0068dba7bef727192c8a93220c`, with parent
+  `3ea2f7b71c4eef95e158788b8564179034eef9a2`.
+  Exact worktree-change rollback:
+  `git revert --no-edit e7c86c553f229a0068dba7bef727192c8a93220c`.
+  Let an active sweep finish pending trash first. A revert cannot restore
+  removed checkouts or undo an npm publication.
 
 Skill eval evidence is unavailable. `full_test_count`, `dry_run_ratio`,
 `grader_pass_rate`, and `effectiveness_authority` are unavailable.

@@ -4,6 +4,17 @@ All notable changes to this skill are documented here.
 
 ## Unreleased
 
+## [0.21.2] - Unreleased
+
+### Added
+
+- Add default-off strategy context and proposal validation. Human-owned project
+  documents remain canonical. Context reads do not dispatch agents or edit memory.
+  The optional Skill requires an explicit install. (#599)
+- Add the export-only wake contract and explicit repository pilot. The pilot
+  keeps its 128 KiB file and 4 MiB request limits. Global limits stay at
+  64 KiB and 1 MiB. Proposals grant no execution authority. (#601)
+
 ### Changed
 
 - New task worktrees default to `/tmp/<repo>-wt-<slug>`, and MCP coding
