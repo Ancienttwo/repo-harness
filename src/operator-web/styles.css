@@ -509,3 +509,8 @@ code, .mono-value { font-family: var(--font-mono); }
 .module-graph__group button { min-height: 32px; padding: 0 8px; border: 1px solid var(--border-default); border-radius: var(--radius-sm); background: var(--surface-card); cursor: pointer; }
 .module-graph__relations { display: grid; gap: 4px; margin-top: 12px; color: var(--text-muted); font-size: 12px; }
 .module-graph__intent { margin: 0 8px; color: var(--text-body); }
+
+.pipeline-runtime-summary, .pipeline-runtime-badges, .pipeline-runtime-run { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
+.pipeline-runtime-summary { margin: .8rem 0; font-size: .8rem; color: var(--ink-500); }
+.pipeline-runtime-summary > span + span, .pipeline-runtime-summary > time { padding-left: .4rem; }
+.pipeline-runtime-badges { margin: .6rem 0; }
