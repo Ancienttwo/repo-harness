@@ -8,13 +8,15 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { activeMemory, parseStrategyDocument, validateProposal, type Evidence, type StrategyPacket } from '../../core/strategy/contracts';
 
 export const STRATEGY_DOCUMENT = 'docs/strategy/context.json';
+export const REPOSITORY_PILOT_DOCUMENT = 'docs/strategy/repository-pilot.json';
+export const REPOSITORY_PILOT_READ_LIMITS = Object.freeze({ profile: 'repository_pilot' as const, fileBytes: 131072, totalBytes: 4194304, durationMs: 5000 });
 const FILE_LIMIT = 65536;
 const TOTAL_LIMIT = 1048576;
 const OUTPUT_LIMIT = 131072;
 export const strategyHash = (text: string | Buffer): string => createHash('sha256').update(text).digest('hex');
 
-function requestReader(repo: string): StrategyReader {
-  const reader = new StrategyReader(realpathSync(resolve(repo)));
+function requestReader(repo: string, limits?: StrategyReadLimits, clock?: () => number): StrategyReader {
+  const reader = new StrategyReader(realpathSync(resolve(repo)), limits, clock);
   reader.assertRoot();
   return reader;
 }
@@ -45,6 +47,7 @@ export class StrategySourceDriftError extends Error {}
 
 export class StrategyBudgetError extends ObservationViolation {}
 
+export interface StrategyReadLimits { profile?: 'repository_pilot'; fileBytes?: number; totalBytes?: number; durationMs?: number }
 export class StrategyReader {
   private bytes = 0;
   private unselectedMemoryBodies = new Set<string>();
@@ -55,7 +58,7 @@ export class StrategyReader {
   private capture(file: string, args: string[], env: NodeJS.ProcessEnv): Buffer {
     this.reserve(1);
     const result = spawnSync(file, args, {
-      maxBuffer: Math.min(FILE_LIMIT, TOTAL_LIMIT - this.bytes), timeout: 5000,
+      maxBuffer: Math.min(this.fileLimit, this.totalLimit - this.bytes), timeout: Math.max(1, Math.min(5000, Math.ceil(this.deadline - this.clock()))),
       env, stdio: ['ignore', 'pipe', 'pipe'],
     });
     const stdout = result.stdout ?? Buffer.alloc(0); const stderr = result.stderr ?? Buffer.alloc(0);
@@ -67,10 +70,28 @@ export class StrategyReader {
     }
     return stdout;
   }
-  constructor(readonly root: string) {}
+  private readonly fileLimit: number;
+  private readonly totalLimit: number;
+  private readonly deadline: number;
+  constructor(readonly root: string, limits: StrategyReadLimits = {}, private readonly clock: () => number = () => performance.now()) {
+    if (!limits || typeof limits !== 'object' || Array.isArray(limits)
+      || Object.keys(limits).some(key => !['profile', 'fileBytes', 'totalBytes', 'durationMs'].includes(key))
+      || (limits.profile !== undefined && limits.profile !== 'repository_pilot')
+      || ['fileBytes', 'totalBytes', 'durationMs'].some(key => limits[key as keyof StrategyReadLimits] !== undefined && typeof limits[key as keyof StrategyReadLimits] !== 'number')) throw new Error('Invalid strategy read limits');
+    this.fileLimit = limits.fileBytes ?? FILE_LIMIT;
+    this.totalLimit = limits.totalBytes ?? TOTAL_LIMIT;
+    const fileCap = limits.profile === 'repository_pilot' ? REPOSITORY_PILOT_READ_LIMITS.fileBytes : FILE_LIMIT;
+    const totalCap = limits.profile === 'repository_pilot' ? REPOSITORY_PILOT_READ_LIMITS.totalBytes : TOTAL_LIMIT;
+    const duration = limits.durationMs ?? (limits.profile === 'repository_pilot' ? REPOSITORY_PILOT_READ_LIMITS.durationMs : Infinity);
+    if (!Number.isSafeInteger(this.fileLimit) || this.fileLimit < 1 || this.fileLimit > fileCap
+      || !Number.isSafeInteger(this.totalLimit) || this.totalLimit < 1 || this.totalLimit > totalCap
+      || (limits.durationMs !== undefined && (!Number.isSafeInteger(duration) || duration < 1 || duration > (limits.profile === 'repository_pilot' ? REPOSITORY_PILOT_READ_LIMITS.durationMs : 60000)))) throw new Error('Invalid strategy read limits');
+    this.deadline = this.clock() + duration;
+  }
   get bytesRead(): number { return this.bytes; }
   private reserve(length: number): void {
-    if (length > FILE_LIMIT || length > TOTAL_LIMIT - this.bytes) throw new StrategyBudgetError('Strategy source byte limit exceeded');
+    if (this.clock() >= this.deadline) throw new StrategyBudgetError('Strategy observation deadline exceeded');
+    if (length > this.fileLimit || length > this.totalLimit - this.bytes) throw new StrategyBudgetError('Strategy source byte limit exceeded');
   }
   private charge(length: number): void { this.reserve(length); this.bytes += length; }
   /** Count both Git metadata and historical payload output in this request. */
@@ -182,8 +203,10 @@ export class StrategyReader {
   }
 }
 
-export interface StrategyCollectionOptions { nowMs?: number; load?: string[]; topics?: string[] }
+export interface StrategyCollectionOptions {
+  documentPath?: string; stateObservation?: 'canonical' | 'unavailable_export'; limits?: StrategyReadLimits; nowMs?: number; load?: string[]; topics?: string[] }
 export interface StrategyCollectionEffects {
+  clock?: () => number;
   /** Internal dependency seam. An observer must use only this request reader.
    * Production uses the existing state owner through scoped bounded IO.
    */
@@ -207,19 +230,22 @@ export function strategyStatus(repo: string): { enabled: boolean; mode: 'context
 
 function collectContext(reader: StrategyReader, opts: StrategyCollectionOptions, effects: StrategyCollectionEffects, proposal?: { path: string; raw: string }): StrategyPacket {
   const root = reader.root;
+  if (opts.stateObservation !== undefined && !['canonical', 'unavailable_export'].includes(opts.stateObservation)) throw new Error('Invalid state observation mode');
+  const observe = () => opts.stateObservation === 'unavailable_export' ? null : observeState(reader, nowMs, effects);
   const nowMs = opts.nowMs ?? Date.now();
   if (!Number.isFinite(nowMs)) throw new Error('Invalid clock');
   const load = opts.load ?? [];
   const topics = opts.topics ?? [];
   if (load.length > 8 || new Set(load).size !== load.length || topics.length > 16 || topics.some(t => !t || t.length > 500)) throw new Error('Invalid retrieval selection');
-  const raw = reader.read(STRATEGY_DOCUMENT);
+  const documentPath = opts.documentPath ?? STRATEGY_DOCUMENT;
+  const raw = reader.read(documentPath);
   const doc = parseStrategyDocument(JSON.parse(raw));
   const revision = reader.head();
   const eligible = activeMemory(doc, nowMs, revision, topics);
   reader.restrictStateMemoryBodies(doc.memory.flatMap(m => m.body ? [m.body.path] : []),
     eligible.filter(m => load.includes(m.id)).flatMap(m => m.body ? [m.body.path] : []));
   const unknowns: string[] = [];
-  const sources: Evidence[] = [{ path: STRATEGY_DOCUMENT, sha256: strategyHash(raw), revision }];
+  const sources: Evidence[] = [{ path: documentPath, sha256: strategyHash(raw), revision }];
   for (const e of [...doc.evidence].sort((a, b) => a.path.localeCompare(b.path, 'en'))) {
     try { reader.verify(e); sources.push(e); }
     catch (error) { if (error instanceof StrategyBudgetError) throw error; unknowns.push(`Unverified evidence: ${e.path}`); }
@@ -231,9 +257,9 @@ function collectContext(reader: StrategyReader, opts: StrategyCollectionOptions,
   for (const c of doc.realityConstraints) {
     if (!c.evidence.length || c.evidence.some(p => !proved.has(p))) unknowns.push(`Unsupported constraint: ${c.key}`);
   }
-  const observedState = observeState(reader, nowMs, effects);
+  const observedState = observe();
   const stateRevision = observedState ?? 'unavailable';
-  if (observedState === null) unknowns.push('Effective state unavailable: bounded observation failed');
+  if (observedState === null) unknowns.push(opts.stateObservation === 'unavailable_export' ? 'Effective state unavailable: explicit intent-evidence export' : 'Effective state unavailable: bounded observation failed');
   const memory = eligible.map(m => ({ ...m, authority: 'unverified_summary' as const }));
   const bodies: StrategyPacket['bodies'] = [];
   for (const id of [...load].sort()) {
@@ -256,22 +282,28 @@ function collectContext(reader: StrategyReader, opts: StrategyCollectionOptions,
   if (Buffer.byteLength(JSON.stringify(packet)) > OUTPUT_LIMIT - 64) throw new Error('Context summary exceeds output limit');
   // Digest includes all binding and selection fields, excludes only itself.
   // Re-read every proved source and selected body. Fail if collection crossed edits.
-  if (reader.read(STRATEGY_DOCUMENT) !== raw || reader.head() !== revision) throw new StrategySourceDriftError('Strategy sources changed during collection');
+  if (reader.read(documentPath) !== raw || reader.head() !== revision) throw new StrategySourceDriftError('Strategy sources changed during collection');
   for (const e of sources.slice(1)) if (strategyHash(reader.read(e.path)) !== e.sha256) throw new StrategySourceDriftError('Strategy evidence changed during collection');
   for (const id of load) { const m = eligible.find(m => m.id === id)!; if (strategyHash(reader.read(m.body!.path)) !== m.body!.sha256) throw new StrategySourceDriftError('Memory changed during collection'); }
   if (proposal && reader.read(proposal.path) !== proposal.raw) throw new StrategySourceDriftError('Proposal changed during collection');
-  if (observeState(reader, nowMs, effects) !== observedState) throw new StrategySourceDriftError('Effective state changed during collection');
+  if (observe() !== observedState) throw new StrategySourceDriftError('Effective state changed during collection');
   packet.digest = strategyHash(JSON.stringify(packet));
   return packet;
 }
 
+function assertReadProfile(opts: StrategyCollectionOptions): void {
+  if (opts.limits?.profile === 'repository_pilot' && opts.documentPath !== REPOSITORY_PILOT_DOCUMENT) throw new Error('Pilot limits require the explicit repository-pilot document');
+}
+
 export function collectStrategyContext(repo: string, opts: StrategyCollectionOptions = {}, effects: StrategyCollectionEffects = {}): StrategyPacket {
-  return collectContext(requestReader(repo), opts, effects);
+  assertReadProfile(opts);
+  return collectContext(requestReader(repo, opts.limits, effects.clock), opts, effects);
 }
 
 /** Proposal, context, history, state and confirmations share one IO budget. */
 export function validateStrategyRequest(repo: string, path: string, opts: StrategyCollectionOptions = {}, effects: StrategyCollectionEffects = {}) {
-  const reader = requestReader(repo);
+  assertReadProfile(opts);
+  const reader = requestReader(repo, opts.limits, effects.clock);
   const raw = reader.read(path);
   const proposal: unknown = JSON.parse(raw);
   const packet = collectContext(reader, opts, effects, { path, raw });

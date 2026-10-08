@@ -1,14 +1,16 @@
+import { coalesceStrategyWakes, createStrategyWakeSession, STRATEGY_WAKE_LIMITS } from '../src/core/strategy/wake';
+import { exportStrategyWakePacket } from '../src/effects/strategy/wake';
 import { observationReadFileSync, withReadonlyObservation, ObservationViolation } from '../src/effects/state/readonly-observation';
 import { resolveEffectiveStateReadOnly } from '../src/effects/state/resolve-effective-state';
 import { captureGitVirtualTreeSnapshot } from '../src/effects/evidence/verification-execution';
 import { readAcceptedEvents } from '../src/effects/evidence/event-log';
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, lstatSync, utimesSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseStrategyDocument, validateProposal, type StrategyDocument, type StrategyPacket } from '../src/core/strategy/contracts';
-import { collectStrategyContext, validateStrategyRequest, StrategySourceDriftError, StrategyReader, strategyHash, strategyStatus } from '../src/effects/strategy/context';
+import { collectStrategyContext, validateStrategyRequest, StrategySourceDriftError, StrategyReader, strategyHash, strategyStatus, REPOSITORY_PILOT_READ_LIMITS } from '../src/effects/strategy/context';
 import { projectStrategySkill } from '../src/effects/strategy/skill';
 import { buildStrategyCommand } from '../src/cli/commands/strategy';
 import { facadesForProfile, hostSkillPlacements, parseSkillSurfaceCatalog } from '../src/core/skill-surface/catalog';
@@ -35,6 +37,10 @@ function fixture() {
   };
   const save = () => write(root, 'docs/strategy/context.json', JSON.stringify(doc)); save();
   return { root, doc, save };
+}
+function capabilityText(name: string): string {
+  return JSON.stringify({ schemaVersion: 'archcontext.node/v2', id: 'capability.test.fixture', kind: 'capability',
+    name, status: 'active', source: { include: ['docs/**'] } });
 }
 function activateVerification(root: string): void {
   const plan = 'plans/plan-20261007-1901-strategy-fixture.md'; const contract = 'tasks/contracts/20261007-1901-strategy-fixture.contract.md';
@@ -65,7 +71,7 @@ describe('optional strategy and progressive memory', () => {
     const { root } = fixture(); const other = temp(); git(other, 'init', '-b', 'main');
     expect(strategyStatus(other).enabled).toBe(false);
     expect(strategyStatus(root).enabled).toBe(true);
-    expect(buildStrategyCommand().commands.map(c => c.name())).toEqual(['status', 'context', 'validate', 'install-skill', 'uninstall-skill']);
+    expect(buildStrategyCommand().commands.map(c => c.name())).toEqual(['status', 'pilot', 'context', 'validate', 'install-skill', 'uninstall-skill']);
     expect(() => collect(other)).toThrow();
   });
   test('fixed-clock projection is deterministic and read-only on success and error', () => {
@@ -254,6 +260,65 @@ describe('optional strategy and progressive memory', () => {
     expect(packet.stateRevision).toBe(ordinary.state_revision.replace('sha256:', ''));
     expect(validateProposal(proposal(packet), packet).status).toBe('reviewable');
   });
+  test('read-only passes parse and hash the same policy and capability bytes', () => {
+    const { root } = fixture(); const policy = '.ai/harness/policy.json';
+    const node = '.archcontext/model/nodes/capability.fixture.yaml';
+    write(root, policy, JSON.stringify({ context: { capability_source: 'archcontext' } }));
+    write(root, node, capabilityText('Fixture'));
+    git(root, 'add', node); git(root, 'commit', '-m', 'Synthetic capability source');
+    write(root, 'tasks/current.md', 'Fixture current');
+    const originalText = new Map([policy, node].map(path => [path, readFileSync(join(root, path), 'utf8')]));
+    const reader = new StrategyReader(root); const original = reader.observationIO();
+    const before = snapshot(root);
+    const baseline = resolveEffectiveStateReadOnly(root, nowMs, { targetPaths: [], operationKind: 'inspect' }, original);
+    const counts = new Map<string, number>();
+    const io = { ...original, readFile: (path: string) => {
+      const bytes = original.readFile(path);
+      for (const source of [policy, node]) if (path === join(root, source)) {
+        counts.set(source, (counts.get(source) ?? 0) + 1);
+        // Change the disk after capture, before later authority/source hashing.
+        write(root, source, source === policy ? '{invalid' : capabilityText('Changed'));
+      }
+      // This late source is collected after policy/node revision facts.
+      if (path === join(root, 'tasks/current.md')) for (const [source, text] of originalText) write(root, source, text);
+      return bytes;
+    } };
+    const observed = resolveEffectiveStateReadOnly(root, nowMs, { targetPaths: [], operationKind: 'inspect' }, io);
+    expect(observed.profile_reasons).not.toContain('capability_registry:invalid');
+    expect(observed).toEqual(baseline);
+    for (const source of [policy, node]) {
+      expect(counts.get(source)).toBe(2); // one fresh read per independent pass
+      expect(observed.source_hashes[source]).toBe(`sha256:${strategyHash(originalText.get(source)!)}`);
+    }
+    expect(snapshot(root)).toEqual(before);
+  });
+  test('policy and capability edits between passes invalidate old context bindings', () => {
+    for (const source of ['.ai/harness/policy.json', '.archcontext/model/nodes/capability.fixture.yaml']) {
+      const { root } = fixture();
+      write(root, '.ai/harness/policy.json', JSON.stringify({ context: { capability_source: 'archcontext' } }));
+      write(root, '.archcontext/model/nodes/capability.fixture.yaml', capabilityText('Before'));
+      const before = collectStrategyContext(root, { nowMs });
+      let reads = 0;
+      const after = collectStrategyContext(root, { nowMs }, { observeReadOnlyState: request => {
+        const original = request.observationIO();
+        const io = { ...original, readFile: (path: string) => {
+          if (path === join(root, '.ai/harness/policy.json') && ++reads === 2) {
+            const metadata = lstatSync(join(root, source));
+            write(root, source, source.endsWith('.json')
+              ? JSON.stringify({ context: { capability_source: 'archcontext' }, name: 'Changed' })
+              : capabilityText('After!'));
+            utimesSync(join(root, source), metadata.atime, metadata.mtime);
+          }
+          return original.readFile(path);
+        } };
+        return resolveEffectiveStateReadOnly(root, nowMs, { targetPaths: [], operationKind: 'inspect' }, io).state_revision.replace('sha256:', '');
+      } });
+      expect(reads).toBe(5); // three passes to settle, then two final passes
+      expect(after.stateRevision).not.toBe(before.stateRevision);
+      expect(validateProposal(proposal(before), after).status).toBe('stale');
+      expect(after.stateRevision).toBe(collectStrategyContext(root, { nowMs }).stateRevision);
+    }
+  });
   test('production collector rejects a deterministic state change after initial observation', () => {
     const { root } = fixture(); write(root, 'tasks/current.md', 'Before');
     const reader = new StrategyReader(root); const original = reader.observationIO();
@@ -395,6 +460,122 @@ describe('optional strategy and progressive memory', () => {
       expect(() => io.readFile(join(import.meta.dir, '../README.md'))).toThrow(ObservationViolation);
       expect(() => io.exec('git', ['diff', '--output=forbidden.txt'], {})).toThrow(ObservationViolation);
     } finally { if (savedHome === undefined) delete process.env.HOME; else process.env.HOME = savedHome; }
+  });
+  test('wake coalescing is order independent, bounded and rejects conflicting identities', () => {
+    const session = createStrategyWakeSession('a'.repeat(64), 'host-1');
+    const event = (sequence: number) => ({ eventId: `event-${sequence}`, sequence, contextDigest: 'b'.repeat(64), reason: 'sources_changed' });
+    const input = (events: unknown[]) => JSON.stringify({ version: 1, repositoryId: session.repositoryId, epoch: session.epoch, events, proposal: null, capabilityClaims: { readOnly: true, resume: true } });
+    const a = coalesceStrategyWakes(session, input([event(3), event(1), event(3), event(2)]));
+    const b = coalesceStrategyWakes(session, input([event(2), event(3), event(1), event(3)]));
+    expect(a).toEqual(b); expect(a.selected?.sequence).toBe(3); expect(a.coalesced).toBe(2); expect(a.ignored).toBe(1);
+    expect(session.watermark).toBe(-1); expect(session.seen).toEqual([]);
+    const replay = coalesceStrategyWakes(a.session, input([event(3), event(2)]));
+    expect(replay.selected).toBeNull(); expect(replay.ignored).toBe(2);
+    expect(() => coalesceStrategyWakes(session, input([event(1), { ...event(1), contextDigest: 'c'.repeat(64) }]))).toThrow('Conflicting');
+    expect(() => coalesceStrategyWakes(session, input(Array.from({ length: 33 }, (_, i) => event(i))))).toThrow('event limit');
+    expect(() => coalesceStrategyWakes(session, ' '.repeat(STRATEGY_WAKE_LIMITS.requestBytes + 1))).toThrow('byte limit');
+    expect(() => coalesceStrategyWakes(session, input([{ ...event(1), dispatch: true }]))).toThrow('fields');
+    expect(a.capabilityStatus).toBe('unverified'); expect(a.executionAuthorized).toBe(false);
+  });
+  test('wake restart refuses old epochs and models safe replay without durable dedup', () => {
+    const first = createStrategyWakeSession('a'.repeat(64), 'boot-1');
+    const raw = (epoch: string) => JSON.stringify({ version: 1, repositoryId: first.repositoryId, epoch, events: [{ eventId: 'same', sequence: 1, contextDigest: 'b'.repeat(64), reason: 'resume' }], proposal: null, capabilityClaims: { readOnly: false, resume: false } });
+    const beforeRestart = coalesceStrategyWakes(first, raw('boot-1'));
+    const next = createStrategyWakeSession(first.repositoryId, 'boot-2');
+    expect(() => coalesceStrategyWakes(next, raw('boot-1'))).toThrow('epoch');
+    expect(coalesceStrategyWakes(next, raw('boot-2')).selected?.eventId).toBe('same');
+    expect(coalesceStrategyWakes(beforeRestart.session, raw('boot-1')).selected).toBeNull();
+    let retained = first;
+    for (let i = 0; i < 100; i++) {
+      const input = JSON.parse(raw('boot-1')); input.events[0].eventId = `e-${i}`; input.events[0].sequence = i;
+      retained = coalesceStrategyWakes(retained, JSON.stringify(input)).session;
+    }
+    expect(retained.seen.length).toBe(64); expect(retained.watermark).toBe(99);
+  });
+  test('one-shot wake adapter uses fresh production context and never trusts capability claims', () => {
+    const { root, doc, save } = fixture(); const packet = collectStrategyContext(root, { nowMs });
+    const session = createStrategyWakeSession(strategyHash(root), 'synthetic-host');
+    const raw = (digest: string, p: unknown = proposal(packet)) => JSON.stringify({ version: 1, repositoryId: session.repositoryId, epoch: session.epoch,
+      events: [{ eventId: 'one', sequence: 1, contextDigest: digest, reason: 'owner_request' }], proposal: p, capabilityClaims: { readOnly: true, resume: true } });
+    const before = snapshot(root);
+    const exported = exportStrategyWakePacket(root, session, raw(packet.digest), { nowMs });
+    expect(exported.status).toBe('exported'); expect(exported.packet?.digest).toBe(packet.digest);
+    expect(exported.validation?.status).toBe('reviewable'); expect(exported.mode).toBe('context_packet_only');
+    expect(exported.capabilityStatus).toBe('unverified'); expect(exported.executionAuthorized).toBe(false);
+    expect(snapshot(root)).toEqual(before);
+    expect(exportStrategyWakePacket(root, exported.session, raw(packet.digest), { nowMs }).status).toBe('empty');
+    doc.goal.text = 'Owner changed the intended result'; save();
+    expect(exportStrategyWakePacket(root, session, raw(packet.digest), { nowMs }).status).toBe('stale');
+    const changed = collectStrategyContext(root, { nowMs });
+    expect(exportStrategyWakePacket(root, session, raw(changed.digest), { nowMs }).validation?.status).toBe('stale');
+    write(root, 'docs/goal.md', 'Changed source');
+    expect(exportStrategyWakePacket(root, session, raw(changed.digest), { nowMs }).status).toBe('stale');
+    expect(() => exportStrategyWakePacket(temp(), session, raw(packet.digest), { nowMs })).toThrow('worktree');
+    expect(() => exportStrategyWakePacket(root, session, raw(packet.digest), { nowMs, limits: { totalBytes: 128 } })).toThrow();
+    let tick = 0;
+    expect(() => exportStrategyWakePacket(root, session, raw(packet.digest), { nowMs }, { clock: () => tick += 1000 })).toThrow('deadline');
+  });
+  test('explicit pilot document selection leaves the default marker disabled', () => {
+    const { root, doc } = fixture(); rmSync(join(root, 'docs/strategy/context.json'));
+    write(root, 'docs/strategy/repository-pilot.json', JSON.stringify({ ...doc, owner: 'Aimpact' }));
+    const before = snapshot(root);
+    expect(strategyStatus(root).enabled).toBe(false);
+    const packet = collectStrategyContext(root, { nowMs, documentPath: 'docs/strategy/repository-pilot.json', stateObservation: 'unavailable_export' });
+    expect(packet.stateRevision).toBe('unavailable');
+    expect(validateProposal(proposal(packet), packet).status).toBe('blocked');
+    expect(packet.document.owner).toBe('Aimpact'); expect(packet.sources[0]?.path).toBe('docs/strategy/repository-pilot.json');
+    expect(packet.executionAuthorized).toBe(false); expect(snapshot(root)).toEqual(before);
+    const cli = join(import.meta.dir, '../src/cli/index.ts');
+    const runPilot = (...args: string[]) => spawnSync(process.execPath, [cli, 'strategy', 'pilot', '--repo', root, ...args],
+      { encoding: 'utf8', env: { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: '0' } });
+    const exported = runPilot(); expect(exported.status).toBe(0);
+    const cliPacket = JSON.parse(exported.stdout); expect(cliPacket.stateRevision).not.toBe('unavailable');
+    write(root, '.ai/harness/pilot-proposal.json', JSON.stringify(proposal(cliPacket)));
+    const checked = runPilot('.ai/harness/pilot-proposal.json'); expect(checked.status).toBe(0);
+    expect(JSON.parse(checked.stdout).status).toBe('reviewable');
+    expect(JSON.parse(checked.stdout).executionAuthorized).toBe(false);
+    expect(() => collectStrategyContext(root, { nowMs, documentPath: '../foreign.json' })).toThrow();
+    expect(() => new StrategyReader(root, { durationMs: Infinity })).toThrow('limits');
+    expect(() => new StrategyReader(root, { totalBytes: 1048577 })).toThrow('limits');
+  });
+  test('pilot budgets are explicit, scoped and bounded; standard defaults stay unchanged', () => {
+    const root = temp(); write(root, 'payload.txt', 'x'.repeat(131072));
+    const before = snapshot(root);
+    let tick = 0;
+    const deadlineReader = new StrategyReader(root, { profile: 'repository_pilot', fileBytes: 131072 }, () => tick += 5000);
+    expect(() => deadlineReader.read('payload.txt')).toThrow('deadline');
+    expect(() => new StrategyReader(root).read('payload.txt')).toThrow('byte limit');
+    expect(() => new StrategyReader(root, { profile: 'repository_pilot' }).read('payload.txt')).toThrow('byte limit');
+    const reader = new StrategyReader(root, REPOSITORY_PILOT_READ_LIMITS);
+    for (let i = 0; i < 32; i++) expect(reader.read('payload.txt').length).toBe(131072);
+    expect(reader.bytesRead).toBe(4194304);
+    expect(() => reader.read('payload.txt')).toThrow('byte limit');
+    expect(reader.bytesRead).toBe(4194304);
+    write(root, 'payload.txt', 'x'.repeat(131073));
+    expect(() => new StrategyReader(root, REPOSITORY_PILOT_READ_LIMITS).read('payload.txt')).toThrow('byte limit');
+    write(root, 'payload.txt', 'x'.repeat(65536));
+    const standard = new StrategyReader(root);
+    for (let i = 0; i < 16; i++) standard.read('payload.txt');
+    expect(standard.bytesRead).toBe(1048576);
+    expect(() => standard.read('payload.txt')).toThrow('byte limit');
+    write(root, 'payload.txt', 'x'.repeat(65537));
+    expect(() => new StrategyReader(root).read('payload.txt')).toThrow('byte limit');
+    write(root, 'payload.txt', 'x'.repeat(131072)); expect(snapshot(root)).toEqual(before);
+    const { root: repository } = fixture(); const repositoryBefore = snapshot(repository);
+    expect(() => collectStrategyContext(repository, { nowMs, limits: REPOSITORY_PILOT_READ_LIMITS })).toThrow('pilot document');
+    expect(() => validateStrategyRequest(repository, 'proposal.json', { nowMs, documentPath: 'docs/strategy/context.json', limits: REPOSITORY_PILOT_READ_LIMITS })).toThrow('pilot document');
+    expect(snapshot(repository)).toEqual(repositoryBefore);
+  });
+  test('read-limit configuration rejects malformed and above-cap values', () => {
+    const root = temp();
+    const invalid: unknown[] = [null, [], { extra: 1 }, { profile: 'other' }, { fileBytes: 65537 },
+      { totalBytes: 1048577 }, { profile: 'repository_pilot', fileBytes: 131073 },
+      { profile: 'repository_pilot', totalBytes: 4194305 }];
+    for (const key of ['fileBytes', 'totalBytes', 'durationMs']) {
+      for (const value of [0, -1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1, '1', null]) invalid.push({ [key]: value });
+    }
+    invalid.push({ durationMs: 60001 }, { profile: 'repository_pilot', durationMs: 5001 });
+    for (const limits of invalid) expect(() => new StrategyReader(root, limits as never)).toThrow('limits');
   });
   test('strict schemas reject extra authority and malformed references', () => {
     const { doc } = fixture(); expect(() => parseStrategyDocument({ ...doc, dispatch: true })).toThrow();

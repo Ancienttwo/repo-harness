@@ -160,3 +160,40 @@ still requires current provenance and matching hashes. Sparse checkout is
 unsupported and fails closed. Git file modes use normalized booleans and the
 owner execute bit. Both command output streams count in the shared budget on
 success and failure.
+
+## Repository pilot and fixture Host wake contract
+
+`repo-harness strategy pilot --repo <root>` explicitly reads
+`docs/strategy/repository-pilot.json` with canonical state observation. The
+repository pilot owner is Aimpact. README and the approved first-scope plan are
+pinned evidence. The command does not create docs/strategy/context.json or
+change ordinary activation. Its explicit repository-pilot profile permits
+128 KiB per file, 4 MiB per request and a 5 second observation deadline.
+Ordinary context and wake reads keep their 64 KiB/1 MiB defaults. Larger limits
+are rejected, and this profile requires the fixed pilot document path.
+`strategy pilot <proposal>` validates against a fresh canonical pilot context.
+Use `--load strategy-boundaries` to select the pilot's memory body. A source-budget violation fails closed. Within each canonical read-only pass,
+policy and capability text is shared with its hash projection. Each subsequent
+pass reopens those sources. All four passes and final comparisons remain. There is no business-success verdict.
+
+The one-shot export adapter in src/effects/strategy/wake.ts has no CLI scheduler
+or live host integration. Its pure contract consumes at most 32 events in a
+16 KiB JSON request. The host assigns an epoch and monotonic sequence. Exact
+repeats deduplicate, old sequences are ignored, conflicts fail and the newest
+sequence wins independent of batch order. It retains at most 64 event identities
+in caller memory. Restart requires a new epoch. Old-epoch events fail. A replay
+in a fresh epoch can produce another export; no durable exactly-once guarantee
+is claimed. The host owns coalescing intervals, waking and any persistence.
+
+The adapter compares the selected wake digest with fresh context and validates
+proposals against that context. It can only return packets. Host capability
+claims remain unverified, including readOnly=true or resume=true. They unlock
+no provider, resume, controller call, task claim or intent mutation. Real
+integration needs a chosen host, verified capability and separate approval.
+
+Source IO defaults to a 1 MiB request limit, 64 KiB per payload and a 128 KiB
+packet bound. Wake observation adds a five-second cooperative deadline and
+shortens each command timeout to the remaining time. Smaller byte/time limits
+are allowed. Synchronous filesystem IO cannot be interrupted in-process; the
+host must enforce a hard whole-invocation deadline. No new execution ledger,
+daemon, scheduler or automatic memory edit is added.
