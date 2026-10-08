@@ -26,6 +26,9 @@ const ZH_REOBSERVE_ACTION = '刷新看板重新读一次任务，然后重试。
 const ZH_COLLABORATION_ACTION = '检查仓库的协作 store，然后刷新看板。';
 
 const en = {
+  "runtimePane.heading": "Linked terminal report",
+  "runtimePane.boundary": "This is the terminal's latest report. It does not prove progress or acceptance for this task round.",
+  "runtimePane.settled": "Activity ended · review needed",
   "runtimeObservation.heading": "Runtime",
   "runtimeObservation.readOnly": "Runtime observations \u00b7 read only",
   "runtimeObservation.unavailable": "Runtime observations unavailable",
@@ -868,6 +871,9 @@ export function isOperatorMessageKey(value: string): value is OperatorMessageKey
 }
 
 const zh: Readonly<Record<OperatorMessageKey, string>> = {
+  "runtimePane.heading": "关联终端报告",
+  "runtimePane.boundary": "这是该终端最近的报告。它不证明本轮任务进度或验收结果。",
+  "runtimePane.settled": "活动已结束 · 待查看",
   "runtimeObservation.heading": "运行状态",
   "runtimeObservation.readOnly": "运行状态观测 · 只读",
   "runtimeObservation.unavailable": "运行状态观测不可用",

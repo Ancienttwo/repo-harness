@@ -8,7 +8,7 @@ import { PipelineBoardPanel, pipelineCardKey, type PipelineBoardReader } from '.
 import { stableSnapshot } from '../../src/operator-web/fixture';
 import { translate } from '../../src/operator-web/i18n';
 import { projectSnapshotViewState } from '../../src/operator-web/types';
-import { decodeRuntimeOverlay, projectRuntimeOverlay, unavailableRuntimeOverlay, type RuntimeIdentity, type RuntimeObservation, type RuntimeOverlay } from '../../src/core/operator/runtime-status';
+import { decodeRuntimeOverlay, projectRuntimeOverlay, unavailableRuntimeOverlay, type RuntimeIdentity, type RuntimeObservation, type RuntimeOverlay, type RuntimePaneObservation } from '../../src/core/operator/runtime-status';
 import type { PipelineBoardV2, PipelineCard } from '../../src/core/pipeline/board';
 
 const t = (key: Parameters<typeof translate>[1], values?: Parameters<typeof translate>[2]) => translate('en', key, values);
@@ -67,6 +67,13 @@ function runtimeOverlay(state: RuntimeObservation['state'] = 'working', reason: 
     pipeline_state_version: 7, request_id: 'request-1', context_sha256: `sha256:${'b'.repeat(64)}`, runtime_session: 'runtime-1', attempt: 1,
     generation: 'intent-1', source_epoch: 0, herdr_session: 'fixture', terminal_id: 'terminal-1', pane_id: 'pane-1', agent_session: 'agent-1' };
   return projectRuntimeOverlay([identity], [{ identity, revision: 1, state, reason, changed_at: null, source: ['settled','error','cancelled','clear'].includes(state) || reason !== 'unknown' ? 'program-v1' : 'herdr-agent' }], minutesAgo(1), 0, 'v1', Date.now());
+}
+
+function paneOverlay(state: RuntimePaneObservation['state'] = 'working', reason: RuntimePaneObservation['reason'] = 'unknown', binding: RuntimeIdentity | null = runtimeOverlay().badges[0].identity): RuntimeOverlay {
+  const identity = binding ?? runtimeOverlay().badges[0].identity;
+  const pane = { source_host: identity.source_host, herdr_session: identity.herdr_session, terminal_id: identity.terminal_id, pane_id: identity.pane_id, agent_session: identity.agent_session };
+  return projectRuntimeOverlay(binding ? [binding] : [], [], minutesAgo(1), 0, 'v1', Date.now(), true, binding ? 0 : 1,
+    [{ scope: 'pane', source: 'osc7501', pane, binding, source_epoch: 4, revision: 1, state, reason, changed_at: '2020-01-01T00:00:00.000Z' }]);
 }
 
 describe('pipeline board panel', () => {
@@ -200,6 +207,87 @@ describe('pipeline board panel', () => {
     expect(markup).toContain('data-runtime-state="blocked"');
     expect(markup).not.toContain('data-runtime-state="working"');
     expect(markup).toContain('merge ask');
+  });
+
+  test('shows the first terminal report as a separate fact without changing task results', () => {
+    const served = board(), before = JSON.stringify(served);
+    for (const [state, label] of [['working', 'Working'], ['idle', 'Idle'], ['settled', 'Activity ended · review needed'], ['error', 'Reported error']] as const) {
+      const markup = render(<PipelineBoardPanel initialBoard={served} initialRuntimeOverlay={paneOverlay(state)} t={t} />);
+      expect(markup).toContain('Linked terminal report');
+      expect(markup).toContain("This is the terminal&#x27;s latest report. It does not prove progress or acceptance for this task round.");
+      expect(markup).toContain(`data-runtime-pane-state="${state}"`);
+      expect(markup).toContain(label);
+      expect(markup).toContain('data-runtime-state="unknown"');
+      expect(markup).toContain('result validated');
+      expect(markup).toContain('merge ask');
+      expect(markup).not.toContain('Reported cancellation');
+      expect(markup).not.toContain('<button');
+      expect(markup).not.toContain('<form');
+      expect(markup).not.toContain('request-1');
+      expect(markup).not.toContain('runtime-1');
+      expect(markup).not.toContain('/private/');
+    }
+    expect(JSON.stringify(served)).toBe(before);
+    const taskRuntime = runtimeOverlay('idle');
+    const both = { ...taskRuntime, pane_observations: paneOverlay().pane_observations };
+    const markup = render(<PipelineBoardPanel initialBoard={served} initialRuntimeOverlay={both} t={t} />);
+    expect(markup).toContain('data-runtime-state="idle"');
+    expect(markup).toContain('data-runtime-pane-state="working"');
+    const cleared = render(<PipelineBoardPanel initialBoard={served} initialRuntimeOverlay={paneOverlay('clear')} t={t} />);
+    expect(cleared).not.toContain('Linked terminal report');
+    expect(cleared).not.toContain('data-runtime-pane-state');
+    expect(cleared).toContain('result validated');
+    expect(cleared).toContain('merge ask');
+  });
+
+  test('shows terminal block reasons and both locales without task acceptance claims', () => {
+    for (const [reason, label] of [['permission', 'Permission needed'], ['question', 'Answer needed'], ['auth', 'Sign-in needed'], ['unknown', 'Reason unknown']] as const) {
+      const markup = render(<PipelineBoardPanel initialBoard={board()} initialRuntimeOverlay={paneOverlay('blocked', reason)} t={t} />);
+      expect(markup).toContain('data-runtime-pane-state="blocked"');
+      expect(markup).toContain(label);
+      expect(markup).toContain('result validated');
+      expect(markup).toContain('merge ask');
+    }
+    const zh: typeof t = (key, values) => translate('zh', key, values);
+    const markup = render(<PipelineBoardPanel initialBoard={board()} initialRuntimeOverlay={paneOverlay('settled')} t={zh} />);
+    expect(markup).toContain('关联终端报告');
+    expect(markup).toContain('这是该终端最近的报告。它不证明本轮任务进度或验收结果。');
+    expect(markup).toContain('活动已结束 · 待查看');
+  });
+
+  test('uses terminal snapshot freshness and does not treat an old change time as loss of connection', () => {
+    const overlay = paneOverlay();
+    for (const freshness of ['fresh', 'stale', 'disconnected'] as const) {
+      const snapshot = { ...overlay, pane_observations: overlay.pane_observations.map(report => ({ ...report, freshness })) };
+      const markup = render(<PipelineBoardPanel initialBoard={board()} initialRuntimeOverlay={snapshot} t={t} />);
+      expect(markup).toContain('data-runtime-pane-state="working"');
+      expect(markup).toContain(`data-runtime-pane-freshness="${freshness}"`);
+      expect(markup).toContain('result validated');
+      expect(markup).toContain('merge ask');
+    }
+  });
+
+  test('does not attach unbound, ambiguous or obsolete terminal reports to a card', () => {
+    const current = paneOverlay();
+    for (const change of [{ source_host: 'other' }, { repository_id: `sha256:${'c'.repeat(64)}` }, { task: 'other' }, { state_version: 8 }, { runs: [{ role: 'reviewer', round: 1, status: 'running', result_state: 'missing' }] }, { runs: [
+      { role: 'implementer', round: 1, status: 'ended', result_state: 'validated' },
+      { role: 'implementer', round: 2, status: 'running', result_state: 'missing' },
+    ] }]) {
+      const markup = render(<PipelineBoardPanel initialBoard={board({ cards: [card(change)] })} initialRuntimeOverlay={current} t={t} />);
+      expect(markup).not.toContain('Linked terminal report');
+      expect(markup).not.toContain('data-runtime-pane-state');
+    }
+    const unbound = render(<PipelineBoardPanel initialBoard={board()} initialRuntimeOverlay={paneOverlay('working', 'unknown', null)} t={t} />);
+    expect(unbound).not.toContain('Linked terminal report');
+    expect(unbound).toContain('1 unclaimed panes');
+    const first = current.pane_observations[0];
+    const second = { ...first, pane: { ...first.pane, pane_id: 'pane-2' }, binding: { ...first.binding!, pane_id: 'pane-2', request_id: 'request-2', attempt: 2 } };
+    const ambiguous = render(<PipelineBoardPanel initialBoard={board()} initialRuntimeOverlay={{ ...current, pane_observations: [first, second] }} t={t} />);
+    expect(ambiguous).not.toContain('Linked terminal report');
+    expect(ambiguous).not.toContain('data-runtime-pane-state');
+    const latest = { ...first.binding!, round: 2 };
+    const latestMarkup = render(<PipelineBoardPanel initialBoard={board({ cards: [card({ runs: [{ role: 'implementer', round: 2, status: 'running', result_state: 'missing' }] })] })} initialRuntimeOverlay={paneOverlay('working', 'unknown', latest)} t={t} />);
+    expect(latestMarkup).toContain('data-runtime-pane-state="working"');
   });
 
   test('mounts in the organization tab panel', () => {
