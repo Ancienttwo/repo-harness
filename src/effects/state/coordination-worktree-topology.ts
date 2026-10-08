@@ -1,14 +1,17 @@
+import { tmpdir } from 'os';
+import { systemWorktreeRoot } from '../../core/worktree-location.mjs';
 import { createHash, randomUUID } from 'crypto';
 import { execFileSync } from 'child_process';
 import { existsSync, lstatSync, readFileSync, realpathSync, readdirSync, unlinkSync, mkdirSync, renameSync } from 'fs';
 import { basename, dirname, isAbsolute, join, resolve, sep } from 'path';
 import { createFileExclusiveDurably, syncDirectoryDurably } from '../evidence/atomic-append';
+import { readPrunedWorktreeIntents, writePrunedWorktreeIntents, prunedIntentKey, type PrunedWorktreeIntent } from './pruned-worktree-intents';
 import { listLeaseReads } from './coordination-lease-store';
 import { configuredGitBinary, resolveGitCommonDirectory } from '../git/common-directory';
 import { withExclusiveDirectoryLock } from '../locking/exclusive-directory-lock';
 import { taskWorktreeRuntimeClosed } from '../terminal/task-session';
 import { parseWorktreeTopology } from '../git/worktree-topology';
-import { assertOwnedTrashDirectory, discardWorktreeTrashApproval, deleteUnpublishedTrash, deleteWorktreeTrash, prepareWorktreeTrash, readWorktreeTrash, renameWorktreeToTrash, trashPayload, worktreeTrashNames, type WorktreeRemovalOptions, type WorktreeTrashReceipt } from './worktree-trash';
+import { worktreeUid, assertOwnedTrashDirectory, discardWorktreeTrashApproval, deleteUnpublishedTrash, deleteWorktreeTrash, prepareWorktreeTrash, readWorktreeTrash, renameWorktreeToTrash, trashPayload, worktreeTrashNames, type WorktreeRemovalOptions, type WorktreeTrashReceipt } from './worktree-trash';
 
 /** Locate the owning package in source and in the shipped hook bundle. */
 function mergeLibraryPath(): string {
@@ -114,7 +117,7 @@ function assertNoOwner(root: string, worktree: string, branch: string, limits: L
 }
 
 function identityStore(common: string): string | null {
-  const uid = process.getuid?.();
+  const uid = worktreeUid();
   if (uid === undefined) return null;
   let directory = common;
   for (const part of ['repo-harness', 'coordination', 'worktree-identities']) {
@@ -135,7 +138,7 @@ function cleanIdentityTemporaryFiles(common: string, acquiredAt: number, limits:
     if (!/^[a-f0-9]{64}\.json\.[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(name)) continue;
     timeout(limits);
     const path = join(store, name); const stat = lstatSync(path);
-    if (stat.isFile() && !stat.isSymbolicLink() && stat.uid === process.getuid?.() && !(stat.mode & 0o002) && stat.mtimeMs < acquiredAt) unlinkSync(path);
+    if (stat.isFile() && !stat.isSymbolicLink() && stat.uid === worktreeUid() && !(stat.mode & 0o002) && stat.mtimeMs < acquiredAt) unlinkSync(path);
   }
 }
 
@@ -147,11 +150,11 @@ function retireWorktreeIdentity(common: string, worktree: string, limits: Limits
     if (!/^[a-f0-9]{64}\.json$/.test(name)) continue;
     timeout(limits);
     const path = join(store, name); const stat = lstatSync(path);
-    if (!stat.isFile() || stat.isSymbolicLink() || stat.uid !== process.getuid?.() || (stat.mode & 0o002)) continue;
+    if (!stat.isFile() || stat.isSymbolicLink() || stat.uid !== worktreeUid() || (stat.mode & 0o002)) continue;
     let saved;
     try { saved = JSON.parse(readFileSync(path, 'utf8')); } catch { continue; }
     if (!saved || typeof saved !== 'object' || Array.isArray(saved)) continue;
-    if (saved.worktree !== worktree || saved.uid !== process.getuid?.() || typeof saved.admin !== 'string' || dirname(saved.admin) !== join(common, 'worktrees')) continue;
+    if (saved.worktree !== worktree || saved.uid !== worktreeUid() || typeof saved.admin !== 'string' || dirname(saved.admin) !== join(common, 'worktrees')) continue;
     if (name !== createHash('sha256').update(saved.admin).digest('hex') + '.json') continue;
     unlinkSync(path);
     syncDirectoryDurably(store);
@@ -160,7 +163,7 @@ function retireWorktreeIdentity(common: string, worktree: string, limits: Limits
 
 /** Recovery must bind the original directory, not only its reusable Git pointer. */
 function recoveryIdentity(root: string, worktree: string) {
-  const uid = process.getuid?.();
+  const uid = worktreeUid();
   if (uid === undefined) throw new Error('recovery uid is unavailable: start can create a checkout, but this platform cannot verify recovery ownership');
   const directory = lstatSync(worktree);
   if (!directory.isDirectory() || directory.isSymbolicLink() || directory.uid !== uid || (directory.mode & 0o022)) throw new Error('recovery directory ownership is unsafe');
@@ -183,7 +186,7 @@ function recoveryIdentity(root: string, worktree: string) {
 
 /** Record identity only after this invocation creates the checkout under the lock. */
 export function recordCreatedWorktree(root: string, worktree: string): void {
-  if (process.getuid?.() === undefined) return;
+  if (worktreeUid() === undefined) return;
   const identity = recoveryIdentity(root, realpathSync(worktree));
   const common = resolveGitCommonDirectory(root);
   let directory = common;
@@ -191,7 +194,7 @@ export function recordCreatedWorktree(root: string, worktree: string): void {
     directory = join(directory, part);
     try { mkdirSync(directory, { mode: 0o700 }); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
     const stat = lstatSync(directory);
-    if (!stat.isDirectory() || stat.isSymbolicLink() || stat.uid !== process.getuid?.() || (stat.mode & 0o002)) throw new Error('recovery identity store is unsafe');
+    if (!stat.isDirectory() || stat.isSymbolicLink() || stat.uid !== worktreeUid() || (stat.mode & 0o002)) throw new Error('recovery identity store is unsafe');
   }
   // Git can reuse an admin name after an explicit removal. Only the create route replaces this record.
   const temporary = identity.record + '.' + randomUUID();
@@ -209,7 +212,7 @@ export function assertReusableWorktree(root: string, worktree: string, branch: s
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new Error('no start identity record: this checkout was not created by contract-worktree start; finish or clean it up, or start with a new slug');
     throw error;
   }
-  if (!saved.isFile() || saved.isSymbolicLink() || saved.uid !== process.getuid?.() || (saved.mode & 0o002) || readFileSync(identity.record, 'utf8') !== identity.value) throw new Error('recovery directory identity changed');
+  if (!saved.isFile() || saved.isSymbolicLink() || saved.uid !== worktreeUid() || (saved.mode & 0o002) || readFileSync(identity.record, 'utf8') !== identity.value) throw new Error('recovery directory identity changed');
   assertWorktreeBinding(root, worktree, branch);
   const entry = entries(root).find(item => checkoutPath(item.path) === worktree);
   if (entry?.locked) throw new Error('recovery worktree is locked');
@@ -302,9 +305,11 @@ function protectsCwd(path: string, cwd: string): boolean {
 
 /** Git documents these backpointers. They are read only to fence whole prune,
  * never as a second worktree inventory or to reconstruct a missing value. */
-function assertPruneMetadata(context: SweepContext, approval?: WorktreeTrashReceipt): void {
+function assertPruneMetadata(context: SweepContext, approval?: WorktreeTrashReceipt): Map<string, Omit<PrunedWorktreeIntent, 'worktree' | 'branch' | 'head'>> {
+  const proofs = new Map<string, Omit<PrunedWorktreeIntent, 'worktree' | 'branch' | 'head'>>();
+  const pending = readPrunedWorktreeIntents(context.common);
   const directory = join(context.common, 'worktrees');
-  if (!existsSync(directory)) return;
+  if (!existsSync(directory)) return proofs;
   assertOwnedTrashDirectory(directory);
   const observed = entries(context.main, context.limits).slice(1);
   const paths = observed.map(entry => checkoutPath(entry.path));
@@ -314,6 +319,24 @@ function assertPruneMetadata(context: SweepContext, approval?: WorktreeTrashRece
     const path = join(directory, name);
     const stat = assertOwnedTrashDirectory(path);
     if (approval?.git_directory === path && stat.dev === approval.git_directory_dev && stat.ino === approval.git_directory_ino) continue;
+    const known = pending.find(item => item.git_directory === path && item.git_directory_dev === stat.dev && item.git_directory_ino === stat.ino);
+    if (known && !pathExists(known.worktree) && !pathExists(join(path, 'locked'))) {
+      if (!context.managed(known.worktree) || protectsCwd(known.worktree, context.cwd)) throw new Error('prune would affect a protected path');
+      for (const [name, allowed] of [['gitdir', [join(known.worktree, '.git')]], ['HEAD', [`ref: refs/heads/${known.branch}`, known.head]]] as const) {
+        const field = join(path, name);
+        if (!pathExists(field)) continue;
+        const file = lstatSync(field);
+        if (!file.isFile() || file.isSymbolicLink() || !(allowed as readonly string[]).includes(readFileSync(field, 'utf8').trim())) throw new Error('prune has changed Git registration metadata');
+      }
+      const commonFile = join(path, 'commondir');
+      if (pathExists(commonFile)) {
+        const file = lstatSync(commonFile);
+        if (!file.isFile() || file.isSymbolicLink() || realpathSync(resolve(path, readFileSync(commonFile, 'utf8').trim())) !== context.common) throw new Error('prune has changed Git registration metadata');
+      }
+      assertNoOwner(context.main, known.worktree, known.branch, context.limits);
+      if (!taskWorktreeRuntimeClosed({ repository_id: context.common, primary_root: context.main, execution_root: known.worktree })) throw new Error('missing runtime is open');
+      continue;
+    }
     const backpointer = join(path, 'gitdir');
     let link;
     try { link = lstatSync(backpointer); }
@@ -321,13 +344,15 @@ function assertPruneMetadata(context: SweepContext, approval?: WorktreeTrashRece
     if (!link.isFile() || link.isSymbolicLink()) throw new Error('prune has unsafe Git registration metadata');
     const value = readFileSync(backpointer, 'utf8').trim();
     if (!isAbsolute(value) || basename(value) !== '.git' || !paths.includes(checkoutPath(dirname(value)))) throw new Error('prune has unknown Git registration metadata');
+    proofs.set(checkoutPath(dirname(value)), { git_directory: path, git_directory_dev: stat.dev, git_directory_ino: stat.ino });
   }
+  return proofs;
 }
 
 /** Git has no registration-only remove option. Prune cannot traverse an old path reoccupied by another user. */
 function assertPruneScope(context: SweepContext, approval?: WorktreeTrashReceipt) {
   const { main, cwd, common, managed, limits } = context;
-  assertPruneMetadata(context, approval);
+  const proofs = assertPruneMetadata(context, approval);
   const missing = entries(main, limits).filter(item => item.prunable && !item.locked);
   for (const item of missing) {
     const path = checkoutPath(item.path);
@@ -337,11 +362,25 @@ function assertPruneScope(context: SweepContext, approval?: WorktreeTrashReceipt
     assertNoOwner(main, path, branch, limits);
     if (!taskWorktreeRuntimeClosed({ repository_id: common, primary_root: main, execution_root: path })) throw new Error('missing runtime is open');
   }
-  return missing;
+  return { missing, proofs };
 }
 function pruneManagedWorktrees(context: SweepContext, approval?: WorktreeTrashReceipt): number {
-  const missing = assertPruneScope(context, approval);
+  const { missing, proofs } = assertPruneScope(context, approval);
+  const pending = readPrunedWorktreeIntents(context.common);
+  for (const entry of missing) {
+    const worktree = checkoutPath(entry.path);
+    if (pathExists(worktree) || worktree === approval?.expected.worktree || !entry.branch?.startsWith('refs/heads/') || !entry.head) continue;
+    const proof = proofs.get(worktree);
+    if (!proof) { if (pending.some(item => item.worktree === worktree)) continue; throw new Error('missing registration identity is unavailable'); }
+    const intent = { worktree, branch: entry.branch.slice('refs/heads/'.length), head: entry.head, ...proof };
+    if (!pending.some(item => prunedIntentKey(item) === prunedIntentKey(intent))) pending.push(intent);
+  }
+  if (pending.length) {
+    writePrunedWorktreeIntents(context.common, pending);
+    context.options.afterRemovalStep?.('prune-intent', context.common);
+  }
   git(context.main, ['worktree', 'prune', '--expire', 'now'], context.limits);
+  context.options.afterRemovalStep?.('pruned-registrations', context.common);
   return missing.length;
 }
 function assertTrashIsUnregistered(context: SweepContext, directory: string): void {
@@ -456,7 +495,7 @@ export function sweepManagedWorktrees(root: string, sessionCwd: string, env: Nod
     if (!primary) return null;
     const main = checkoutPath(primary.path);
     const cwd = realpathSync(sessionCwd);
-    const managedRoot = realpathSync(env.REPO_HARNESS_WORKTREE_ROOT ?? '/tmp');
+    const managedRoot = realpathSync(env.REPO_HARNESS_WORKTREE_ROOT ?? systemWorktreeRoot(process.platform, tmpdir()));
     const prefix = `${basename(main)}-wt-`;
     const managed = (path: string) => dirname(path) === managedRoot && basename(path).startsWith(prefix) && basename(path).length > prefix.length;
     const common = resolveGitCommonDirectory(main, gitBinary(limits), timeout(limits));
@@ -474,7 +513,7 @@ export function sweepManagedWorktrees(root: string, sessionCwd: string, env: Nod
     deferred += Math.max(0, trash.length - 8);
     if (trashBlocked || trash.length > 8) return `[WorktreeSweep] removed=0 pruned=0 resumed=${resumed} deferred=${deferred}\n${notes.join('\n')}`;
     const candidates = entries(main, limits).slice(1).filter(entry => managed(checkoutPath(entry.path)));
-    if (!candidates.length) return notes.length ? `[WorktreeSweep] removed=${removed} pruned=${pruned} resumed=${resumed} deferred=${deferred}\n${notes.join('\n')}` : null;
+    if (!candidates.length && !readPrunedWorktreeIntents(common).length) return notes.length ? `[WorktreeSweep] removed=${removed} pruned=${pruned} resumed=${resumed} deferred=${deferred}\n${notes.join('\n')}` : null;
     let policy: { worktree_strategy?: { merge_back?: { target?: unknown } } } = {};
     const policyPath = join(main, '.ai/harness/policy.json');
     if (existsSync(policyPath)) policy = JSON.parse(readFileSync(policyPath, 'utf8'));
@@ -484,7 +523,53 @@ export function sweepManagedWorktrees(root: string, sessionCwd: string, env: Nod
     let target: string;
     try { target = git(main, ['rev-parse', '--verify', `${targetRef}^{commit}`], limits); }
     catch { throw new Error(`local integration target is unavailable: ${targetRef}`); }
-    for (const entry of candidates.slice(0, 8)) {
+    // Save every missing registration before global prune, including deferred refs.
+    const beforePrune = readPrunedWorktreeIntents(common);
+    if (!ignoredTrash && (candidates.some(entry => !pathExists(checkoutPath(entry.path))) || beforePrune.some(entry => pathExists(entry.git_directory)))) {
+      withWorktreeTopologyLock(main, () => { pruned += pruneManagedWorktrees(context); }, limits);
+    }
+    const pending = readPrunedWorktreeIntents(common);
+    const liveAvailable = entries(main, limits).slice(1).filter(entry => managed(checkoutPath(entry.path))).length;
+    const pendingBatch = pending.slice(0, 8 - Math.min(4, liveAvailable));
+    for (const intent of pendingBatch) {
+      let complete = false;
+      try {
+        timeout(limits);
+        if (ignoredTrash) throw new Error('missing entry retained while trash ownership is unknown');
+        if (!managed(intent.worktree) || protectsCwd(intent.worktree, cwd)) throw new Error('pruned intent is outside the managed scope');
+        if (pathExists(intent.worktree) || pathExists(intent.git_directory)) throw new Error('pruned worktree path or registration reappeared');
+        if (branchExists(context, intent.branch)) {
+          let merged = true;
+          try { mergeMode(main, intent.head, target, limits); } catch { merged = false; }
+          if (!merged) {
+            notes.push(`${intent.worktree}: pruned; unmerged branch kept (${intent.branch})`);
+            continue;
+          }
+          cleanupExactWorktree(main, { worktree: '', branch: intent.branch, head_sha: intent.head, target_ref: targetRef, target_oid: target, merge_commit_sha: target }, () => {
+            if (pathExists(intent.worktree) || pathExists(intent.git_directory)) throw new Error('pruned worktree path or registration reappeared');
+            assertNoOwner(main, intent.worktree, intent.branch, limits);
+            assertBranchHasCommits(context, intent.branch);
+            if (!taskWorktreeRuntimeClosed({ repository_id: common, primary_root: main, execution_root: intent.worktree })) throw new Error('runtime is open');
+            deleteCheckedBranch(main, { worktree: '', branch: intent.branch, head_sha: intent.head, target_ref: targetRef, target_oid: target, merge_commit_sha: target }, limits);
+          }, limits);
+        }
+        withWorktreeTopologyLock(main, () => {
+          if (branchExists(context, intent.branch) || entries(main, limits).some(entry => checkoutPath(entry.path) === intent.worktree || entry.branch === `refs/heads/${intent.branch}`)) throw new Error('pruned removal readback failed');
+          retireWorktreeIdentity(common, intent.worktree, limits);
+          writePrunedWorktreeIntents(common, readPrunedWorktreeIntents(common).filter(item => prunedIntentKey(item) !== prunedIntentKey(intent)));
+        }, limits);
+        complete = true; removed++; notes.push(`${intent.worktree}: removed`);
+      } catch (error) { notes.push(`${intent.worktree}: kept; ${error instanceof Error ? error.message.split('\n')[0] : String(error)}`); }
+      finally {
+        if (!complete) withWorktreeTopologyLock(main, () => {
+          const current = readPrunedWorktreeIntents(common);
+          writePrunedWorktreeIntents(common, [...current.filter(item => prunedIntentKey(item) !== prunedIntentKey(intent)), intent]);
+        }, limits);
+      }
+    }
+    const liveCandidates = entries(main, limits).slice(1).filter(entry => managed(checkoutPath(entry.path)));
+    const liveBudget = 8 - pendingBatch.length;
+    for (const entry of liveCandidates.slice(0, liveBudget)) {
       const path = checkoutPath(entry.path);
       try {
         timeout(limits);
@@ -498,9 +583,8 @@ export function sweepManagedWorktrees(root: string, sessionCwd: string, env: Nod
         if (!existsSync(path)) {
           if (ignoredTrash) throw new Error('missing entry retained while trash ownership is unknown');
           withWorktreeTopologyLock(main, () => { pruned += pruneManagedWorktrees(context); }, limits);
-          try { mergeMode(main, entry.head, target, limits); }
-          catch { notes.push(`${path}: pruned; unmerged branch kept (${branch})`); continue; }
-          removeExactWorktree(main, { worktree: path, branch, head_sha: entry.head, target_ref: targetRef, target_oid: target, merge_commit_sha: target }, limits);
+          notes.push(`${path}: pruned; branch cleanup deferred (${branch})`);
+          continue;
         } else {
           const receipt = commitSweepRemoval(context, { worktree: path, branch, head_sha: entry.head, target_ref: targetRef, target_oid: target, merge_commit_sha: target });
           removed++;
@@ -516,8 +600,8 @@ export function sweepManagedWorktrees(root: string, sessionCwd: string, env: Nod
         notes.push(`${path}: kept; ${error instanceof Error ? error.message.split('\n')[0] : String(error)}`);
       }
     }
-    deferred += Math.max(0, candidates.length - 8);
-    return `[WorktreeSweep] removed=${removed} pruned=${pruned} kept=${Math.min(candidates.length, 8) - removed} resumed=${resumed} deferred=${deferred}\n${notes.join('\n')}`;
+    deferred += Math.max(0, pending.length - pendingBatch.length) + Math.max(0, liveCandidates.length - liveBudget);
+    return `[WorktreeSweep] removed=${removed} pruned=${pruned} kept=${pendingBatch.length + Math.min(liveCandidates.length, liveBudget) - removed} resumed=${resumed} deferred=${deferred}\n${notes.join('\n')}`;
   } catch (error) {
     return `${notes.length ? notes.join('\n') + '\n' : ''}worktree sweep skipped: ${error instanceof Error ? error.message.split('\n')[0] : String(error)}`;
   }

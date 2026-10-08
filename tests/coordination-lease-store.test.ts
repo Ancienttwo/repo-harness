@@ -1930,6 +1930,140 @@ describe('exact cleanup and SessionStart worktree sweep', () => {
     } finally { f.cleanup(); }
   }, 15000);
 
+  function missingBatch() {
+    const f = fixture(); const merged = ['codex/demo'];
+    for (let index = 0; index < 9; index++) {
+      const branch = `codex/missing-${index}`, path = join(f.managed, `repo-wt-missing-${index}`);
+      f.git('worktree', 'add', '-q', '-b', branch, path, 'main');
+      f.git('-C', path, 'commit', '--allow-empty', '-qm', 'task commit');
+      f.git('merge', '--ff-only', branch); f.git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+      merged.push(branch);
+    }
+    const unmerged = join(f.managed, 'repo-wt-unmerged');
+    f.git('worktree', 'add', '-q', '-b', 'codex/unmerged', unmerged, 'main');
+    writeFileSync(join(unmerged, 'unmerged'), 'real task data'); f.git('-C', unmerged, 'add', 'unmerged'); f.git('-C', unmerged, 'commit', '-qm', 'unmerged task');
+    for (const name of readdirSync(f.managed)) rmSync(join(f.managed, name), { recursive: true });
+    return { ...f, merged };
+  }
+
+  test('W7 ignored trash with a missing entry does not block eligible live worktrees', () => {
+    const f = fixture(); try {
+      const missing = join(f.managed, 'repo-wt-missing');
+      f.git('worktree', 'add', '-q', '-b', 'codex/missing', missing, 'main');
+      f.git('-C', missing, 'commit', '--allow-empty', '-qm', 'task commit');
+      f.git('merge', '--ff-only', 'codex/missing'); f.git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+      rmSync(missing, { recursive: true });
+      const name = '.repo-harness-wt-trash-' + require('crypto').createHash('sha256').update(join(f.root, '.git')).digest('hex').slice(0, 32) + '-00000000-0000-0000-0000-000000000000';
+      const invalid = join(f.managed, name); writeFileSync(invalid, 'not trash');
+      const first = sweepManagedWorktrees(f.root, f.root, f.env);
+      expect(first).toContain('ignored;'); expect(first).toContain('removed=1');
+      expect(existsSync(f.path)).toBe(false);
+      expect(f.git('branch', '--list', 'codex/missing')).toContain('codex/missing');
+      expect(sweepManagedWorktrees(f.root, f.root, f.env)).toContain('missing entry retained while trash ownership is unknown');
+      expect(f.git('branch', '--list', 'codex/missing')).toContain('codex/missing');
+      expect(readFileSync(invalid, 'utf8')).toBe('not trash');
+    } finally { f.cleanup(); }
+  });
+
+  test('W7 missing merged registrations survive the eight-entry batch boundary', () => {
+    const f = missingBatch(); try {
+      const first = sweepManagedWorktrees(f.root, f.root, f.env);
+      expect(first).toContain('removed=8'); expect(first).toContain('deferred=3');
+      expect(sweepManagedWorktrees(f.root, f.root, f.env)).toContain('removed=2');
+      for (const branch of f.merged) expect(f.git('branch', '--list', branch)).toBe('');
+      expect(f.git('branch', '--list', 'codex/unmerged')).toContain('codex/unmerged');
+    } finally { f.cleanup(); }
+  });
+
+  test('W7 a kill after global prune leaves branch cleanup identities for later sweeps', async () => {
+    const f = missingBatch(); try {
+      await interruptSweep(f, 'pruned-registrations');
+      expect(f.git('worktree', 'list', '--porcelain')).not.toContain('codex/missing-');
+      sweepManagedWorktrees(f.root, f.root, f.env); sweepManagedWorktrees(f.root, f.root, f.env);
+      for (const branch of f.merged) expect(f.git('branch', '--list', branch)).toBe('');
+      expect(f.git('branch', '--list', 'codex/unmerged')).toContain('codex/unmerged');
+    } finally { f.cleanup(); }
+  }, 30000);
+
+  test('W7 a partial native prune resumes from the saved admin identity', async () => {
+    const f = fixture(); try {
+      rmSync(f.path, { recursive: true });
+      await interruptSweep(f, 'prune-intent');
+      const directory = join(f.root, '.git/repo-harness/coordination');
+      const state = JSON.parse(readFileSync(join(directory, 'pruned-worktrees.json'), 'utf8'));
+      // Git documents this backpointer. This simulates interruption inside its prune.
+      rmSync(join(state.entries[0].git_directory, 'gitdir'));
+      const stale = join(directory, 'pruned-worktrees.json.12345678-1234-4123-8123-123456789abc.tmp');
+      writeFileSync(stale, 'unpublished', { mode: 0o600 }); require('fs').utimesSync(stale, new Date(0), new Date(0));
+      expect(sweepManagedWorktrees(f.root, f.root, f.env)).toContain('removed=1');
+      expect(f.git('branch', '--list', 'codex/demo')).toBe('');
+      expect(existsSync(stale)).toBe(false); expect(existsSync(join(directory, 'pruned-worktrees.json'))).toBe(false);
+    } finally { f.cleanup(); }
+  }, 20000);
+
+  test('W7 a reappeared path keeps its pending branch and all new data', async () => {
+    const f = fixture(); try {
+      rmSync(f.path, { recursive: true }); await interruptSweep(f, 'pruned-registrations');
+      mkdirSync(f.path); writeFileSync(join(f.path, 'new-data'), 'keep');
+      expect(sweepManagedWorktrees(f.root, f.root, f.env)).toContain('reappeared');
+      expect(f.git('branch', '--list', 'codex/demo')).toContain('codex/demo');
+      expect(readFileSync(join(f.path, 'new-data'), 'utf8')).toBe('keep');
+    } finally { f.cleanup(); }
+  }, 20000);
+
+  test('W7 changed pending admin metadata cannot authorize global prune', async () => {
+    const f = fixture(); try {
+      rmSync(f.path, { recursive: true }); await interruptSweep(f, 'prune-intent');
+      const state = JSON.parse(readFileSync(join(f.root, '.git/repo-harness/coordination/pruned-worktrees.json'), 'utf8'));
+      const backpointer = join(state.entries[0].git_directory, 'gitdir');
+      const outside = join(f.parent, 'outside/.git'); writeFileSync(backpointer, outside);
+      expect(sweepManagedWorktrees(f.root, f.root, f.env)).toContain('changed Git registration metadata');
+      expect(f.git('branch', '--list', 'codex/demo')).toContain('codex/demo');
+      expect(readFileSync(backpointer, 'utf8')).toBe(outside);
+    } finally { f.cleanup(); }
+  }, 20000);
+
+  test('W7 a changed managed root cannot prune a partial registration outside its scope', async () => {
+    const f = fixture(); try {
+      rmSync(f.path, { recursive: true }); await interruptSweep(f, 'prune-intent');
+      const state = JSON.parse(readFileSync(join(f.root, '.git/repo-harness/coordination/pruned-worktrees.json'), 'utf8'));
+      const admin = state.entries[0].git_directory; rmSync(join(admin, 'gitdir'));
+      const other = join(f.parent, 'other-managed'); mkdirSync(other);
+      expect(sweepManagedWorktrees(f.root, f.root, { ...f.env, REPO_HARNESS_WORKTREE_ROOT: other })).toContain('protected path');
+      expect(existsSync(admin)).toBe(true); expect(f.git('branch', '--list', 'codex/demo')).toContain('codex/demo');
+    } finally { f.cleanup(); }
+  }, 20000);
+
+  test('W7 the removal barrier rechecks a path recreated during merge proof', () => {
+    const f = fixture(); const keys = ['W7_OLD_PATH', 'W7_RACE_MARK', 'W7_INTENT_PATH'];
+    const previous = keys.map(key => process.env[key]);
+    try {
+      rmSync(f.path, { recursive: true });
+      const binary = join(f.parent, 'race-git');
+      writeFileSync(binary, '#!/bin/sh\nif [ "$1" = merge-base ] && [ -f "$W7_INTENT_PATH" ] && [ ! -e "$W7_RACE_MARK" ]; then : > "$W7_RACE_MARK"; mkdir "$W7_OLD_PATH"; printf keep > "$W7_OLD_PATH/new-data"; fi\nexec /usr/bin/git "$@"\n', { mode: 0o755 });
+      process.env.W7_OLD_PATH = f.path; process.env.W7_RACE_MARK = join(f.parent, 'race-entered');
+      process.env.W7_INTENT_PATH = join(f.root, '.git/repo-harness/coordination/pruned-worktrees.json');
+      expect(sweepManagedWorktrees(f.root, f.root, { ...f.env, REPO_HARNESS_GIT_BIN: binary })).toContain('reappeared');
+      expect(f.git('branch', '--list', 'codex/demo')).toContain('codex/demo');
+      expect(readFileSync(join(f.path, 'new-data'), 'utf8')).toBe('keep');
+    } finally { keys.forEach((key, index) => { if (previous[index] === undefined) delete process.env[key]; else process.env[key] = previous[index]; }); f.cleanup(); }
+  });
+
+  test('W7 kept missing branches do not starve eligible live worktrees', () => {
+    const f = fixture(); try {
+      for (let index = 0; index < 9; index++) {
+        const branch = `codex/pending-${index}`, path = join(f.managed, `repo-wt-pending-${index}`);
+        f.git('worktree', 'add', '-q', '-b', branch, path, 'main');
+        writeFileSync(join(path, `pending-${index}`), 'unmerged task');
+        f.git('-C', path, 'add', '.'); f.git('-C', path, 'commit', '-qm', 'unmerged task'); rmSync(path, { recursive: true });
+      }
+      const result = sweepManagedWorktrees(f.root, f.root, f.env);
+      expect(result).toContain('removed=1'); expect(result).toContain('kept=7'); expect(result).toContain('deferred=2'); expect(existsSync(f.path)).toBe(false);
+      expect(f.git('branch', '--list', 'codex/demo')).toBe('');
+      for (let index = 0; index < 9; index++) expect(f.git('branch', '--list', `codex/pending-${index}`)).toContain(`codex/pending-${index}`);
+    } finally { f.cleanup(); }
+  });
+
   test('sweep compares the managed root through its realpath', () => {
     const f = fixture(); try {
       const alias = join(f.parent, 'tmp-alias'); symlinkSync(f.managed, alias);

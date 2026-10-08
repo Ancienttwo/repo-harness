@@ -4,7 +4,12 @@ import { basename, dirname, join } from 'path';
 import { createFileExclusiveDurably, syncDirectoryDurably } from '../evidence/atomic-append';
 import type { ExactWorktreeCleanup } from './coordination-worktree-topology';
 
-export type WorktreeRemovalStep = 'intent' | 'renamed' | 'unregistered' | 'branch-deleted' | 'trash-entry-deleted';
+/** Windows has no POSIX uid proof, even if a runtime exposes a compatibility method. */
+export function worktreeUid(platform: NodeJS.Platform = process.platform, probe: () => number | undefined = () => process.getuid?.()): number | undefined {
+  return platform === 'win32' ? undefined : probe();
+}
+
+export type WorktreeRemovalStep = 'prune-intent' | 'pruned-registrations' | 'intent' | 'renamed' | 'unregistered' | 'branch-deleted' | 'trash-entry-deleted';
 export interface WorktreeRemovalOptions {
   readonly deadlineMs?: number;
   readonly afterRemovalStep?: (step: WorktreeRemovalStep, path: string) => void;
@@ -41,10 +46,11 @@ export function worktreeTrashNames(common: string, managedRoot: string): string[
 
 /** No ownership guess is permitted when the host does not expose a uid. */
 export function assertOwnedTrashDirectory(path: string) {
-  if (!process.getuid) throw new Error('trash ownership is unavailable on this host');
+  const uid = worktreeUid();
+  if (uid === undefined) throw new Error('trash ownership is unavailable on this host');
   const stat = lstatSync(path);
   if (stat.isSymbolicLink() || !stat.isDirectory()) throw new Error('trash is not a real directory');
-  if (stat.uid !== process.getuid()) throw new Error('trash is foreign-owned');
+  if (stat.uid !== uid) throw new Error('trash is foreign-owned');
   return stat;
 }
 function present(path: string): ReturnType<typeof lstatSync> | null {

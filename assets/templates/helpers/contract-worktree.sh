@@ -296,10 +296,11 @@ worktree_status_for_cleanup() {
 
 default_worktree_path() {
   local slug="$1"
-  local repo_name template
+  local repo_name template default_template
+  default_template="$(run_contract_runtime default-template)" || return $?
   repo_name="$(basename "$REPO_ROOT")"
-  template="$(policy_get '.worktree_strategy.worktree_dir_template' '/tmp/{{repo}}-wt-{{slug}}')"
-  if [[ -n "${REPO_HARNESS_WORKTREE_ROOT:-}" && "$template" == '/tmp/{{repo}}-wt-{{slug}}' ]]; then
+  template="$(policy_get '.worktree_strategy.worktree_dir_template' "$default_template")"
+  if [[ -n "${REPO_HARNESS_WORKTREE_ROOT:-}" && "$template" == "$default_template" ]]; then
     template="${REPO_HARNESS_WORKTREE_ROOT}/{{repo}}-wt-{{slug}}"
   fi
   template="${template//\{\{repo\}\}/$repo_name}"

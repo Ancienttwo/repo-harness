@@ -1,15 +1,21 @@
 #!/usr/bin/env bun
+import { tmpdir } from 'os';
 import { execFileSync } from 'child_process';
 import { lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmdirSync, writeFileSync } from 'fs';
 import { basename, dirname, join, resolve } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const packageRoot = basename(scriptDir) === 'helpers' ? resolve(scriptDir, '../../..') : resolve(scriptDir, '..');
+const [action, ...args] = process.argv.slice(2);
+if (action === 'default-template') {
+  const { defaultWorktreeTemplate } = await import(pathToFileURL(join(packageRoot, 'src/core/worktree-location.mjs')).href);
+  console.log(defaultWorktreeTemplate(process.platform, tmpdir()));
+  process.exit(0);
+}
 const { readSessionArtifact, cleanupTaskWorktree, registerTaskWorktree } = await import(pathToFileURL(join(packageRoot, 'src/effects/terminal/task-session.ts')).href) as typeof import('../src/effects/terminal/task-session');
 import type { HerdrEndpoint } from '../src/effects/terminal/herdr';
 
 const { configuredGitBinary } = await import(pathToFileURL(join(packageRoot, 'src/effects/git/common-directory.ts')).href) as typeof import('../src/effects/git/common-directory');
-const [action, ...args] = process.argv.slice(2);
 const value = (key: string) => { const at = args.indexOf(key); if (at < 0 || !args[at + 1]) throw new Error(`runtime requires ${key}`); return args[at + 1]!; };
 function markActiveWorktree(worktree: string): void {
   const canonical = realpathSync(worktree);
@@ -36,7 +42,10 @@ try {
     try { stat = lstatSync(value('--worktree')); }
     catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
     if (stat) {
-      if (action === 'assert-unused-path' || args.includes('--fresh') || !stat.isDirectory() || stat.isSymbolicLink()) throw new Error('target worktree path already exists');
+      if (action === 'default-template') {
+    const { defaultWorktreeTemplate } = await import(pathToFileURL(join(packageRoot, 'src/core/worktree-location.mjs')).href);
+    console.log(defaultWorktreeTemplate(process.platform, tmpdir()));
+  } else if (action === 'assert-unused-path' || args.includes('--fresh') || !stat.isDirectory() || stat.isSymbolicLink()) throw new Error('target worktree path already exists');
       const { withWorktreeTopologyLock, assertReusableWorktree } = await import(pathToFileURL(join(packageRoot, 'src/effects/state/coordination-worktree-topology.ts')).href) as typeof import('../src/effects/state/coordination-worktree-topology');
       withWorktreeTopologyLock(value('--repo'), () => {
         const canonical = realpathSync(value('--worktree'));

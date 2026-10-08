@@ -1406,6 +1406,7 @@ pi_write_harness_policy() {
   local output_file="$target_dir/.ai/harness/policy.json"
   local default_file
   local merged_file
+  local worktree_template
 
   if [[ "$mode" != "apply" ]]; then
     echo "[dry-run] write $output_file"
@@ -1415,6 +1416,7 @@ pi_write_harness_policy() {
   mkdir -p "$(dirname "$output_file")"
   default_file="$(mktemp)"
   merged_file="$(mktemp)"
+  worktree_template="$(bun -e 'import {tmpdir} from "node:os"; import {pathToFileURL} from "node:url"; const {defaultWorktreeTemplate}=await import(pathToFileURL(process.argv[1]).href); console.log(JSON.stringify(defaultWorktreeTemplate(process.platform,tmpdir())));' "${BASH_SOURCE[0]%/*}/../../src/core/worktree-location.mjs")" || return $?
   cat > "$default_file" <<EOF_POLICY
 {
   "version": 1,
@@ -1630,7 +1632,7 @@ pi_write_harness_policy() {
     "branch_prefix": "codex/",
     "base_branch": "main",
     "review_base": "main",
-    "worktree_dir_template": "/tmp/{{repo}}-wt-{{slug}}",
+    "worktree_dir_template": $worktree_template,
     "start_script": "repo-harness run contract-worktree start --plan <plan-file>",
     "finish_script": "repo-harness run contract-worktree finish",
     "cleanup_script": "repo-harness run contract-worktree cleanup --slug <slug>",

@@ -394,7 +394,7 @@ describe('Herdr notify install', () => {
         ['--session', 'notify-test', 'plugin', 'enable', 'aimpact.webhook-notify'],
       ]);
       expect(calls.every(call => call.secret === null)).toBe(true);
-      for (const name of ['herdr-plugin.toml', 'notify.mjs']) expect(readFileSync(join(fixture.config, 'source', name), 'utf8')).toBe(readFileSync(join(ROOT, 'assets/herdr/webhook-notify', name), 'utf8'));
+      for (const name of ['herdr-plugin.toml', 'notify.mjs', 'worktree-location.mjs']) expect(readFileSync(join(fixture.config, 'source', name), 'utf8')).toBe(readFileSync(join(ROOT, 'assets/herdr/webhook-notify', name), 'utf8'));
       const { notify: installedNotify } = await import(join(fixture.config, 'source/notify.mjs'));
       const delivered: string[] = [];
       await installedNotify({ ...fixture.env, HERDR_SESSION: 'notify-test', HERDR_PLUGIN_CONFIG_DIR: fixture.config,
@@ -508,7 +508,7 @@ await installNotify({ session: 'notify-test', nonInteractive: true,
 });
 
 const pluginPath = join(ROOT, 'assets/herdr/webhook-notify/notify.mjs');
-const { notify } = await import(pluginPath) as { notify: (env: NodeJS.ProcessEnv, send: typeof fetch) => Promise<void> };
+const { notify } = await import(pluginPath) as { notify: (env: NodeJS.ProcessEnv, send: typeof fetch, options?: { managedRoot?: string }) => Promise<void> };
 
 describe('shipped Herdr notify event handler', () => {
   function eventFixture(status = 'blocked') {
@@ -525,6 +525,47 @@ describe('shipped Herdr notify event handler', () => {
     }) as typeof fetch;
     return { ...fixture, env, calls, send };
   }
+
+  test.each(['cwd', 'nested-cwd', 'worktree-path'])('managed default task notifications are delivered: %s', async field => {
+    for (const status of ['done', 'blocked']) {
+      const f = eventFixture(status); try {
+        const repo = join(f.root, 'repo'), managed = join(f.root, 'managed'); mkdirSync(repo); mkdirSync(managed);
+        const git = (...args: string[]) => { const result = spawnSync('git', args, { cwd: repo, env: f.env, encoding: 'utf8' }); expect(result.status, result.stderr).toBe(0); };
+        git('init', '-q', '-b', 'main'); git('-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '--allow-empty', '-qm', 'base');
+        const task = join(managed, 'repo-wt-notify'); git('worktree', 'add', '-q', '-b', 'codex/notify', task);
+        const nested = join(task, 'nested'); mkdirSync(nested);
+        const context = { workspace_cwd: f.workspace, focused_pane_cwd: f.workspace, worktree: { path: f.workspace }, workspace_label: 'project' };
+        if (field === 'worktree-path') context.worktree.path = task;
+        else { context.workspace_cwd = field === 'cwd' ? task : nested; context.focused_pane_cwd = context.workspace_cwd; }
+        f.env.HERDR_PLUGIN_CONTEXT_JSON = JSON.stringify(context);
+        if (status === 'done') writeFileSync(join(f.config, '.env'), readFileSync(join(f.config, '.env'), 'utf8') + 'WEBHOOK_NOTIFY_DONE=1\n');
+        await notify(f.env, f.send, { managedRoot: managed }); expect(f.calls).toHaveLength(status === 'done' ? 1 : 4);
+        f.calls.length = 0;
+        f.env.HERDR_PLUGIN_CONTEXT_JSON = JSON.stringify({ ...context, workspace_label: 'rh-herdr-fixture' });
+        await notify(f.env, f.send, { managedRoot: managed }); expect(f.calls).toHaveLength(0);
+      } finally { f.cleanup(); }
+    }
+  });
+
+  test.each(['ordinary', 'unregistered', 'copied-pointer', 'fake-admin'])('temporary notification contexts remain filtered: %s', async kind => {
+    const f = eventFixture(); try {
+      const managed = join(f.root, 'managed'); mkdirSync(managed);
+      const fake = kind === 'ordinary' ? join(f.root, 'ordinary') : join(managed, 'repo-wt-fake'); mkdirSync(fake);
+      if (kind === 'fake-admin') {
+        const admin = join(f.root, 'fake-git/worktrees/fake'); mkdirSync(admin, { recursive: true });
+        writeFileSync(join(fake, '.git'), 'gitdir: ' + admin); writeFileSync(join(admin, 'gitdir'), join(fake, '.git')); writeFileSync(join(admin, 'commondir'), '../..');
+      }
+      if (kind === 'copied-pointer') {
+        const repo = join(f.root, 'repo'); mkdirSync(repo);
+        for (const args of [['init', '-q', '-b', 'main'], ['-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '--allow-empty', '-qm', 'base'], ['worktree', 'add', '-q', '-b', 'codex/real', join(managed, 'repo-wt-real')]]) {
+          const result = spawnSync('git', args, { cwd: repo, env: f.env, encoding: 'utf8' }); expect(result.status, result.stderr).toBe(0);
+        }
+        writeFileSync(join(fake, '.git'), readFileSync(join(managed, 'repo-wt-real/.git')));
+      }
+      f.env.HERDR_PLUGIN_CONTEXT_JSON = JSON.stringify({ workspace_cwd: fake, focused_pane_cwd: fake, worktree: { path: fake } });
+      await notify(f.env, f.send, { managedRoot: managed }); expect(f.calls).toHaveLength(0);
+    } finally { f.cleanup(); }
+  });
 
   test('blocked reaches Bot and all selected human channels with native request bodies', async () => {
     const fixture = eventFixture();

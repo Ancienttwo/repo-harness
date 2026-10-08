@@ -17,7 +17,7 @@ _ci_run_bun_tests_in_temporary_home() {
     for (const runArgs of runs) {
       const { env, home, temp } = createTemporaryTestEnvironment(process.env);
       // The parent runs this check after Bun exits. Bun exit hooks are not reliable.
-      const roots = [...new Set(["/tmp", "/private/tmp"].filter(p => fs.existsSync(p)).map(p => fs.realpathSync(p)))];
+      const roots = [...new Set((process.platform === "win32" ? [require("node:os").tmpdir(), "/tmp", "/private/tmp"] : ["/tmp", "/private/tmp"]).filter(p => fs.existsSync(p)).map(p => fs.realpathSync(p)))];
       const snapshot = () => roots.flatMap(root => fs.readdirSync(root).filter(name => /-wt-/.test(name) && !name.startsWith(".repo-harness-wt-trash-")).map(name => require("node:path").join(root, name)));
       const before = new Set(snapshot());
       const started = Date.now();
@@ -69,7 +69,7 @@ _ci_run_bun_test_pool() {
   local total="${#files[@]}"
 
   local tmpdir
-  if ! tmpdir="$(mktemp -d "/tmp/rh-ci-jobs.XXXXXX" 2>/dev/null)"; then
+  if ! tmpdir="$(mktemp -d "${TMPDIR:-/tmp}/rh-ci-jobs.XXXXXX" 2>/dev/null)"; then
     echo "[ci] job pool could not create a temporary directory" >&2
     return 1
   fi

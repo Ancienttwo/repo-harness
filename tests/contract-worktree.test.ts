@@ -13,6 +13,8 @@ import {
   writeFileSync
 } from "fs";
 import { join } from "path";
+import { tmpdir } from "os";
+import { defaultWorktreeTemplate } from "../src/core/worktree-location.mjs";
 
 import { sweepManagedWorktrees } from '../src/effects/state/coordination-worktree-topology';
 import { copyHelpers, ROOT } from "./helpers/helper-script-fixture";
@@ -203,16 +205,18 @@ describe("contract-worktree helper integration", () => {
 
 describe('task worktree location', () => {
   test('the policy default and helper default agree, and start uses the managed test root', () => {
-    const init = readFileSync(join(ROOT, 'scripts/lib/project-init-lib.sh'), 'utf8');
-    const helper = readFileSync(join(ROOT, 'scripts/contract-worktree.sh'), 'utf8');
-    expect(init).toContain('"worktree_dir_template": "/tmp/{{repo}}-wt-{{slug}}"');
-    expect(helper).toContain("'/tmp/{{repo}}-wt-{{slug}}'");
+    const expectedTemplate = defaultWorktreeTemplate(process.platform, tmpdir());
     const parent = tmpWorkspace('worktree-default');
     const cwd = join(parent, 'repo');
     const managed = join(parent, 'managed');
     mkdirSync(cwd); mkdirSync(managed);
     try {
       copyHelpers(cwd); initGitRepo(cwd);
+      const policy = run('bash', ['-c', 'source "$1"; pi_write_harness_policy "$PWD" apply', 'policy', join(ROOT, 'scripts/lib/project-init-lib.sh')], cwd);
+      expect(policy.status, policy.stderr).toBe(0);
+      expect(JSON.parse(readFileSync(join(cwd, '.ai/harness/policy.json'), 'utf8')).worktree_strategy.worktree_dir_template).toBe(expectedTemplate);
+      const helperTemplate = run(process.execPath, ['scripts/contract-worktree-runtime.ts', 'default-template'], cwd);
+      expect(helperTemplate.status, helperTemplate.stderr).toBe(0); expect(helperTemplate.stdout.trim()).toBe(expectedTemplate);
       mkdirSync(join(cwd, 'plans'));
       writeFileSync(join(cwd, 'plans/plan-20261008-0000-location.md'), '# Location\n');
       commitAll(cwd, 'location fixture');
@@ -222,6 +226,9 @@ describe('task worktree location', () => {
       const path = join(managed, 'repo-wt-location');
       expect(JSON.parse(result.stdout).worktree_path).toBe(path);
       expect(readFileSync(join(path, '.ai/harness/active-worktree'), 'utf8').trim()).toBe(path);
+      const retry = run('bash', ['scripts/contract-worktree.sh', 'start', '--plan', 'plans/plan-20261008-0000-location.md', '--json', '--no-plan-to-todo'], cwd, { REPO_HARNESS_WORKTREE_ROOT: managed });
+      expect(retry.status, retry.stderr).toBe(0);
+      expect(JSON.parse(retry.stdout)).toMatchObject({ disposition: 'reused_existing_worktree', worktree_path: path });
       expect(sweepManagedWorktrees(cwd, cwd, { ...process.env, REPO_HARNESS_WORKTREE_ROOT: managed }, { deadlineMs: 60_000 })).toContain('marker reference');
       expect(existsSync(path)).toBe(true);
     } finally { rmSync(parent, { recursive: true, force: true }); }

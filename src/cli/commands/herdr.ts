@@ -150,7 +150,7 @@ export async function installNotify(options: NotifyOptions): Promise<void> {
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   mkdirSync(source, { recursive: true, mode: 0o700 });
   if (lstatSync(dir).isSymbolicLink() || lstatSync(source).isSymbolicLink()) throw new Error('Plugin directories must not be symbolic links.');
-  for (const name of ['herdr-plugin.toml', 'notify.mjs']) {
+  for (const name of ['worktree-location.mjs', 'herdr-plugin.toml', 'notify.mjs']) {
     const target = join(source, name);
     try {
       const stat = lstatSync(target);

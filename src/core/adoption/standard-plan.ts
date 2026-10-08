@@ -1,3 +1,5 @@
+import { tmpdir } from "os";
+import { defaultWorktreeTemplate } from "../worktree-location.mjs";
 import { createHash } from "crypto";
 import { existsSync, lstatSync, readdirSync, readFileSync } from "fs";
 import { basename, dirname, join, relative, resolve, sep } from "path";
@@ -321,7 +323,7 @@ export function defaultPolicy(documentationProfile: string, documentationLanguag
       capability_source_rule: "single authority selected by capability_source; registry reads .ai/context/capabilities.json, archcontext reads .archcontext/model/nodes/*.yaml; no dual-read and no fallback",
     },
     worktree_strategy: {
-      worktree_dir_template: "/tmp/{{repo}}-wt-{{slug}}",
+      worktree_dir_template: defaultWorktreeTemplate(process.platform, tmpdir()),
       base_branch: "main",
       review_base: "main",
       merge_back: {

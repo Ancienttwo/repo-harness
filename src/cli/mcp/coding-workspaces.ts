@@ -11,7 +11,8 @@ import {
   statSync,
   writeFileSync,
 } from 'fs';
-import { homedir } from 'os';
+import { homedir, tmpdir } from 'os';
+import { systemWorktreeRoot } from '../../core/worktree-location.mjs';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'path';
 import {
   isRepoHarnessAdoptedPath,
@@ -117,7 +118,7 @@ export function codingWorkspaceStatePath(env: NodeJS.ProcessEnv = process.env): 
 }
 
 export function codingWorktreeRoot(env: NodeJS.ProcessEnv = process.env): string {
-  return resolve(env.REPO_HARNESS_MCP_WORKTREE_ROOT ?? '/tmp/repo-harness-mcp-worktrees');
+  return resolve(env.REPO_HARNESS_MCP_WORKTREE_ROOT ?? join(systemWorktreeRoot(process.platform, tmpdir()), 'repo-harness-mcp-worktrees'));
 }
 
 function toPosix(value: string): string {
@@ -555,7 +556,7 @@ export class CodingWorkspaceManager {
       for (const directory of [managedRoot, dirname(root)]) {
         if (directory !== managedRoot) mkdirSync(directory, { mode: 0o700, recursive: true });
         const stat = lstatSync(directory);
-        if (!stat.isDirectory() || stat.isSymbolicLink() || (process.getuid && stat.uid !== process.getuid()) || (stat.mode & 0o022)) {
+        if (!stat.isDirectory() || stat.isSymbolicLink() || (process.platform !== 'win32' && ((process.getuid && stat.uid !== process.getuid()) || (stat.mode & 0o022)))) {
           throw new CodingWorkspaceError('WORKTREE_ROOT_UNSAFE', 'managed worktree root must be owned and private');
         }
       }
