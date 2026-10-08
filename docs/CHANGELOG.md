@@ -4,33 +4,11 @@ All notable changes to this skill are documented here.
 
 ## Unreleased
 
-## [0.21.1] - Unreleased
-
-### Added
-
-- Add a read-only Architecture workspace to the operator board. It groups
-  modules by domain and shows model validity, generated summary and §3 state
-  separately. A module page shows a one-hop graph, model facts, flows, §3 text
-  and the review prompt, with a copy button for the exact Bot command. The
-  board serves three new GET/HEAD architecture routes with ETag support. (#590)
-- Add the operator capability to the architecture model. (#590)
-- Add a typed document handoff envelope, its validation and canonical
-  rendering, and a short SOP. (#587)
-
 ### Changed
 
-- Pin `archctx` and `archctx-contracts` to exact version `0.6.3`.
-  Align architecture and refactor policies, init defaults, and clean-room
-  verification with these dependencies. (#586)
-- Upgrade `@botiverse/oar` from `0.18.0` to `0.37.0`. The Generic review
-  host keeps its API surface, provider defaults and Seatbelt isolation. OAR
-  now stops a provider turn within 10 seconds after an abort and cleans up
-  the provider process tree. The lockfile no longer installs the Cursor SDK.
-  (#595, #598)
-- The prompt hook boundary text now says that a main merge needs explicit
-  current-task authorization. (#596)
 - New task worktrees default to `/tmp/<repo>-wt-<slug>`, and MCP coding
-  workspaces default to `/tmp/repo-harness-mcp-worktrees`.
+  workspaces default to `/tmp/repo-harness-mcp-worktrees`. Native Windows
+  uses its system temp directory instead of `/tmp`.
   `contract-worktree` now reads the stored `worktree_dir_template`, so
   existing downstream policies keep their value. Set it to
   `../{{repo}}-wt-{{slug}}` to keep the old location. (#600)
@@ -56,12 +34,44 @@ All notable changes to this skill are documented here.
   The sweep has a time limit and reports processed paths and deferred counts.
   The next session resumes an interrupted removal. Removal also deletes
   Git-ignored files in that worktree. A reboot or an age-based `/tmp` cleaner
-  can remove worktrees; commit or push work first. (#600)
+  can remove worktrees; commit or push work first. When more worktrees are
+  missing than one sweep can handle, the sweep records them first, and later
+  sessions finish the merged branches. (#600)
+- The Herdr webhook notifier sends `done` and `blocked` notifications for a
+  registered task worktree under the system temp directory. Other temporary
+  paths stay filtered. An installed notifier that points to its own source
+  directory must be updated there. (#600)
 - `test:files` and `check-ci.sh` now run each test file in its own Bun
   process and fail a file that leaves a new `/tmp/*-wt-*` path owned by the
   current user. The check never deletes the path. A directory argument runs
   only its own test files, and `--coverage` keeps one combined summary.
   (#600)
+
+## [0.21.1] - Unreleased
+
+### Added
+
+- Add a read-only Architecture workspace to the operator board. It groups
+  modules by domain and shows model validity, generated summary and §3 state
+  separately. A module page shows a one-hop graph, model facts, flows, §3 text
+  and the review prompt, with a copy button for the exact Bot command. The
+  board serves three new GET/HEAD architecture routes with ETag support. (#590)
+- Add the operator capability to the architecture model. (#590)
+- Add a typed document handoff envelope, its validation and canonical
+  rendering, and a short SOP. (#587)
+
+### Changed
+
+- Pin `archctx` and `archctx-contracts` to exact version `0.6.3`.
+  Align architecture and refactor policies, init defaults, and clean-room
+  verification with these dependencies. (#586)
+- Upgrade `@botiverse/oar` from `0.18.0` to `0.37.0`. The Generic review
+  host keeps its API surface, provider defaults and Seatbelt isolation. OAR
+  now stops a provider turn within 10 seconds after an abort and cleans up
+  the provider process tree. The lockfile no longer installs the Cursor SDK.
+  (#595, #598)
+- The prompt hook boundary text now says that a main merge needs explicit
+  current-task authorization. (#596)
 - `repo-harness module review-prompt` now fails with `secret_detected` when
   the prompt contains a URL with a filled `token`, `key`, `auth`, `code`,
   `sig` or `signature` query field. MCP redaction uses the same patterns. (#590)
