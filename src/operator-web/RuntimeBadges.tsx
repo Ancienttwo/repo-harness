@@ -46,18 +46,24 @@ export function runtimePaneReportsForCard(card: PipelineCard, overlay: RuntimeOv
   // A card run with more than one linked pane is ambiguous. Show neither report.
   return matches.filter(report => matches.filter(other => other.binding!.role === report.binding!.role && other.binding!.round === report.binding!.round).length === 1);
 }
-function RuntimePaneReports({ reports, t }: { reports: RuntimePaneBadge[]; t: OperatorTranslate }) {
+function snapshotFreshness(freshness: RuntimeBadge['freshness'], overlay: RuntimeOverlay, now: number): RuntimeBadge['freshness'] {
+  return freshness === 'disconnected' ? 'disconnected' : overlay.observed_at && now - Date.parse(overlay.observed_at) > RUNTIME_STALE_AFTER_MS ? 'stale' : freshness;
+}
+function RuntimePaneReports({ reports, overlay, now, t }: { reports: RuntimePaneBadge[]; overlay: RuntimeOverlay; now: number; t: OperatorTranslate }) {
   if (reports.length === 0) return null;
   return <div className="pipeline-runtime-badges" aria-label={t('runtimePane.heading')} data-runtime-pane-reports>
     <span>{t('runtimePane.heading')}</span>
     <span>{t('runtimePane.boundary')}</span>
-    {reports.map(report => <span className="pipeline-runtime-run" key={JSON.stringify(report.pane)}>
+    {reports.map(report => {
+      const freshness = snapshotFreshness(report.freshness, overlay, now);
+      return <span className="pipeline-runtime-run" key={JSON.stringify(report.pane)}>
       <span className={`operator-badge ${['blocked', 'error'].includes(report.state) ? 'tone-danger' : report.state === 'working' ? 'tone-agent' : 'tone-neutral'}`} data-runtime-pane-state={report.state}>
         {report.binding!.role} · {t(report.state === 'settled' ? 'runtimePane.settled' : LABELS[report.state])}
       </span>
       {report.state === 'blocked' && <span className="operator-badge tone-user">{t(`runtimeObservation.reason.${report.reason}`)}</span>}
-      <span className={`operator-badge ${report.freshness === 'fresh' ? 'tone-neutral' : 'tone-danger'}`} data-runtime-pane-freshness={report.freshness}>{t(`runtimeObservation.freshness.${report.freshness}`)}</span>
-    </span>)}
+      <span className={`operator-badge ${freshness === 'fresh' ? 'tone-neutral' : 'tone-danger'}`} data-runtime-pane-freshness={freshness}>{t(`runtimeObservation.freshness.${freshness}`)}</span>
+    </span>;
+    })}
   </div>;
 }
 export function RuntimeSummary({ view, now, t }: { view: RuntimeView; now: number; t: OperatorTranslate }) {
@@ -72,7 +78,7 @@ export function RuntimeCardBadges({ card, view, now, t }: { card: PipelineCard; 
   const badges = runtimeBadgesForCard(card, view.overlay);
   return <><div className="pipeline-runtime-badges" aria-label={t('runtimeObservation.heading')}>
     {badges.length === 0 ? <span className="operator-badge tone-neutral" data-runtime-state="unknown">{t('runtimeObservation.heading')}: {t('runtimeObservation.state.unknown')}</span> : badges.map(b => {
-      const freshness = b.freshness === 'disconnected' ? 'disconnected' : view.overlay.observed_at && now - Date.parse(view.overlay.observed_at) > RUNTIME_STALE_AFTER_MS ? 'stale' : b.freshness;
+      const freshness = snapshotFreshness(b.freshness, view.overlay, now);
       const tone = ['blocked','error'].includes(b.state) ? 'tone-danger' : b.state === 'working' ? 'tone-agent' : 'tone-neutral';
       return <span className="pipeline-runtime-run" key={JSON.stringify(b.identity)}>
         <span className={`operator-badge ${tone}`} data-runtime-state={b.state}>{b.identity.role} · {t(LABELS[b.state])}</span>
@@ -81,6 +87,6 @@ export function RuntimeCardBadges({ card, view, now, t }: { card: PipelineCard; 
       </span>;
     })}
   </div>
-    <RuntimePaneReports reports={runtimePaneReportsForCard(card, view.overlay)} t={t} />
+    <RuntimePaneReports reports={runtimePaneReportsForCard(card, view.overlay)} overlay={view.overlay} now={now} t={t} />
   </>;
 }

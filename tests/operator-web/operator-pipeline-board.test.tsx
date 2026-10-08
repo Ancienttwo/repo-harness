@@ -267,6 +267,18 @@ describe('pipeline board panel', () => {
     }
   });
 
+  test('ages a retained terminal snapshot while preserving source disconnection', () => {
+    const retained = { ...paneOverlay(), observed_at: minutesAgo(6) };
+    const markup = render(<PipelineBoardPanel initialBoard={board()} initialRuntimeOverlay={retained} t={t} />);
+    expect(markup).toContain('data-runtime-pane-state="working"');
+    expect(markup).toContain('data-runtime-pane-freshness="stale"');
+    expect(markup).not.toContain('data-runtime-pane-freshness="fresh"');
+    const disconnected = { ...retained, pane_observations: retained.pane_observations.map(report => ({ ...report, freshness: 'disconnected' as const })) };
+    const offline = render(<PipelineBoardPanel initialBoard={board()} initialRuntimeOverlay={disconnected} t={t} />);
+    expect(offline).toContain('data-runtime-pane-freshness="disconnected"');
+    expect(offline).not.toContain('data-runtime-pane-freshness="stale"');
+  });
+
   test('does not attach unbound, ambiguous or obsolete terminal reports to a card', () => {
     const current = paneOverlay();
     for (const change of [{ source_host: 'other' }, { repository_id: `sha256:${'c'.repeat(64)}` }, { task: 'other' }, { state_version: 8 }, { runs: [{ role: 'reviewer', round: 1, status: 'running', result_state: 'missing' }] }, { runs: [
