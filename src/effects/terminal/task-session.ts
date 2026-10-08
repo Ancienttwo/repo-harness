@@ -2,6 +2,7 @@ import { constants, closeSync, existsSync, fsyncSync, linkSync, lstatSync, mkdir
 import { execFileSync } from 'child_process';
 import { createHash, randomUUID } from 'crypto';
 import { dirname, isAbsolute, join, relative } from 'path';
+import { configuredGitBinary } from '../git/common-directory';
 import { taskRepository, type TaskRepository } from './task-worktree';
 import { canonicalize } from '../../core/evidence/canonical-json';
 import { acquireExclusiveDirectoryLock, ExclusiveLockContentionError } from '../locking/exclusive-directory-lock';
@@ -241,6 +242,16 @@ interface TaskWorkspaceBinding {
 function workspaceDirectory(repository: TaskRepository): string {
   const key = createHash('sha256').update(JSON.stringify([repository.repository_id, repository.execution_root])).digest('hex');
   return join(repository.primary_root, '.ai/harness/runs/task-workspaces', key);
+}
+/** The session sweep cannot close an open runtime or contact Herdr. */
+export function taskWorktreeRuntimeClosed(repository: TaskRepository): boolean {
+  const dir = workspaceDirectory(repository);
+  try { lstatSync(dir); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return true; throw error; }
+  assertSessionDirectory(repository.primary_root, dir);
+  if (!existsSync(join(dir, 'closed.json'))) return false;
+  const closed = readSessionArtifact<{ repository_id: string; checkout: string }>(join(dir, 'closed.json'));
+  return closed.repository_id === repository.repository_id && closed.checkout === repository.execution_root;
 }
 function assertWorkspace(binding: TaskWorkspaceBinding): void {
   const value = info(binding.endpoint, ['workspace', 'get', binding.workspace_id]).workspace;
@@ -794,8 +805,8 @@ export function taskAgentStatus(repoRoot: string, task: string, role: string) {
 }
 
 /** Git publication/dirty/merge checks remain the caller's authority. */
-export async function cleanupTaskWorktree(repoRoot: string, checkoutPath: string, dryRun = false): Promise<TaskCleanupResult | { status: 'not_registered'; pids: number[] }> {
-  const repository = taskRepository(repoRoot);
+export async function cleanupTaskWorktree(repoRoot: string, checkoutPath: string, dryRun = false, gitBin = configuredGitBinary()): Promise<TaskCleanupResult | { status: 'not_registered'; pids: number[] }> {
+  const repository = taskRepository(repoRoot, gitBin);
   const expected = { ...repository, execution_root: checkoutPath };
   const dir = workspaceDirectory(expected);
   if (!existsSync(dir)) return { status: 'not_registered', pids: [] };

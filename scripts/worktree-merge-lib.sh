@@ -64,6 +64,7 @@ worktree_merge_mode() {
 # Batch rather than per-branch: a scan of N worktrees costs one process spawn,
 # not N.
 worktree_merge_lib_main() {
+  git() { command "${REPO_HARNESS_GIT_BIN:-git}" "$@"; }
   local target=""
   while [[ $# -gt 0 ]]; do
     case "$1" in

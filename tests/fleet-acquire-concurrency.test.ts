@@ -179,7 +179,7 @@ function createFleetRaceFixture(): FleetRaceFixture {
   chmodSync(join(repo, 'scripts/contract-worktree.sh'), 0o755);
   chmodSync(join(repo, 'scripts/plan-to-todo.sh'), 0o755);
   writeFileSync(join(repo, '.ai/harness/policy.json'), JSON.stringify({
-    worktree_strategy: { merge_back: { target: 'main' }, branch_prefix: 'codex/' },
+    worktree_strategy: { worktree_dir_template: join(repo, '.ai/harness/test-worktrees', '{{repo}}-wt-{{slug}}'), merge_back: { target: 'main' }, branch_prefix: 'codex/' },
   }));
   writeFileSync(join(repo, '.ai/harness/sprint/active-sprint'), `${sprintPath}\n`);
   writeFileSync(join(repo, sprintPath), [

@@ -34,6 +34,7 @@ if [[ -n "$BUN_BIN" ]] && ! is_trusted_regular_file "$WORKFLOW_STATE_LIB"; then
   echo "ship-worktrees: trusted workflow-state library is unavailable" >&2
   exit 1
 fi
+export REPO_HARNESS_GIT_BIN="$GIT_BIN"
 git() { "$GIT_BIN" "$@"; }
 bash() { "$BASH_BIN" "$@"; }
 

@@ -1,8 +1,9 @@
 // Adapted from ~/herdr-plugins/webhook-notify. Config and identity come from Herdr.
-import { existsSync, readFileSync, realpathSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, readFileSync, realpathSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
+import { systemWorktreeRoot } from './worktree-location.mjs';
 import { randomUUID } from 'node:crypto';
 import { hostname, tmpdir } from 'node:os';
-import { isAbsolute, join, sep } from 'node:path';
+import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import { parseEnv } from 'node:util';
 import { pathToFileURL } from 'node:url';
 
@@ -16,15 +17,48 @@ function objectJson(raw) {
   return value;
 }
 
-function isTemporary(path) {
+function isManagedTaskPath(absolute, managedRoot) {
+  let worktree = absolute;
+  while (dirname(worktree) !== managedRoot) {
+    const parent = dirname(worktree);
+    if (parent === worktree) return false;
+    worktree = parent;
+  }
+  if (!/^.+-wt-.+$/.test(basename(worktree))) return false;
+  try {
+    const pointer = join(worktree, '.git');
+    const file = lstatSync(pointer);
+    if (!file.isFile() || file.isSymbolicLink()) return false;
+    const content = readFileSync(pointer, 'utf8').trim();
+    if (!content.startsWith('gitdir: ')) return false;
+    const namedAdmin = resolve(worktree, content.slice(8));
+    const stat = lstatSync(namedAdmin);
+    if (!stat.isDirectory() || stat.isSymbolicLink() || (process.platform !== 'win32' && stat.uid !== process.getuid?.())) return false;
+    const admin = realpathSync(namedAdmin);
+    const commonPointer = join(admin, 'commondir');
+    const commonFile = lstatSync(commonPointer);
+    if (!commonFile.isFile() || commonFile.isSymbolicLink()) return false;
+    const common = realpathSync(resolve(admin, readFileSync(commonPointer, 'utf8').trim()));
+    const head = lstatSync(join(common, 'HEAD')), objects = lstatSync(join(common, 'objects')), refs = lstatSync(join(common, 'refs'));
+    if (dirname(admin) !== join(common, 'worktrees') || !head.isFile() || head.isSymbolicLink()
+      || !objects.isDirectory() || objects.isSymbolicLink() || !refs.isDirectory() || refs.isSymbolicLink()) return false;
+    const backpointer = join(admin, 'gitdir');
+    const back = lstatSync(backpointer);
+    return back.isFile() && !back.isSymbolicLink()
+      && realpathSync(readFileSync(backpointer, 'utf8').trim()) === realpathSync(pointer);
+  } catch { return false; }
+}
+
+function isTemporary(path, managedRoot) {
   const absolute = realpathSync(path);
+  if (isManagedTaskPath(absolute, managedRoot)) return false;
   return [tmpdir(), '/tmp', '/private/tmp', '/var/folders', '/private/var/folders'].filter(existsSync).some((root) => {
     const normalized = realpathSync(root);
     return absolute === normalized || absolute.startsWith(normalized + sep);
   });
 }
 
-export async function notify(env = process.env, send = fetch) {
+export async function notify(env = process.env, send = fetch, options = {}) {
   const event = objectJson(env.HERDR_PLUGIN_EVENT_JSON);
   const context = objectJson(env.HERDR_PLUGIN_CONTEXT_JSON);
   if (event.event !== 'pane.agent_status_changed') return;
@@ -33,7 +67,8 @@ export async function notify(env = process.env, send = fetch) {
   if (typeof data.pane_id !== 'string' || !data.pane_id || typeof data.workspace_id !== 'string') throw new Error('Invalid event identity.');
   const paths = [context.workspace_cwd, context.focused_pane_cwd, context.worktree?.path].filter((path) => typeof path === 'string' && path);
   if (!paths.length || paths.some((path) => !isAbsolute(path))) throw new Error('Workspace path is missing or invalid.');
-  if (paths.some(isTemporary) || String(context.workspace_label ?? '').startsWith('rh-herdr-')) return;
+  const managedRoot = realpathSync(options.managedRoot ?? systemWorktreeRoot(process.platform, tmpdir()));
+  if (paths.some(path => isTemporary(path, managedRoot)) || String(context.workspace_label ?? '').startsWith('rh-herdr-')) return;
   if (!env.HERDR_PLUGIN_CONFIG_DIR || !env.HERDR_PLUGIN_STATE_DIR) throw new Error('Herdr plugin directories are missing.');
   const config = parseEnv(readFileSync(join(env.HERDR_PLUGIN_CONFIG_DIR, '.env'), 'utf8'));
   if (!config.NOTIFY_SESSION) throw new Error('Session filter is missing.');

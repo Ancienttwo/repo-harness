@@ -4,6 +4,51 @@ All notable changes to this skill are documented here.
 
 ## Unreleased
 
+### Changed
+
+- New task worktrees default to `/tmp/<repo>-wt-<slug>`, and MCP coding
+  workspaces default to `/tmp/repo-harness-mcp-worktrees`. Native Windows
+  uses its system temp directory instead of `/tmp`. New policies store the
+  portable value `{{system_tmp}}/{{repo}}-wt-{{slug}}`, and each host
+  resolves `{{system_tmp}}` at run time. Older repo-harness versions do not
+  understand this token. `contract-worktree` now reads the stored
+  `worktree_dir_template`, so existing downstream policies keep their value.
+  Set it to `../{{repo}}-wt-{{slug}}` to keep the old location. (#600)
+- `start` refuses an existing target path. It reuses the path only when this
+  clone registers it on the expected branch, unlocked, with no other owner,
+  and it matches the identity that `start` recorded at creation. The
+  checkout directory must be yours and not group or other writable. Its
+  `.git` file and Git metadata must be yours and not other-writable. A
+  replaced directory with a copied `.git` file is refused. An older worktree
+  without that record is refused with a recovery instruction. This works
+  with umask 002 and shared Git metadata. On a platform without a user id,
+  `start` still creates worktrees but cannot reuse them. A failed
+  `git worktree add` releases only the empty path that it claimed. Removal
+  also deletes the identity record. (#600)
+- Closeout removes a merged, clean worktree and its branch through the exact
+  cleanup checks. It releases only that worktree's own marker. MCP cleanup now
+  also refuses marked worktrees and retained verification evidence. Cleanup of
+  a registered worktree whose branch is missing is refused. (#600)
+- Each SessionStart removes left-behind worktrees under the managed root that
+  are merged, clean and unowned and whose reflog shows a commit made on the
+  branch. A fast-forward, reset or rebase entry alone does not count. It keeps
+  untouched new branches, unreadable reflogs and worktrees with submodules.
+  The sweep has a time limit and reports processed paths and deferred counts.
+  The next session resumes an interrupted removal. Removal also deletes
+  Git-ignored files in that worktree. A reboot or an age-based `/tmp` cleaner
+  can remove worktrees; commit or push work first. When more worktrees are
+  missing than one sweep can handle, the sweep records them first, and later
+  sessions finish the merged branches. (#600)
+- The Herdr webhook notifier sends `done` and `blocked` notifications for a
+  registered task worktree under the system temp directory. Other temporary
+  paths stay filtered. An installed notifier that points to its own source
+  directory must be updated there. (#600)
+- `test:files` and `check-ci.sh` now run each test file in its own Bun
+  process and fail a file that leaves a new `/tmp/*-wt-*` path owned by the
+  current user. The check never deletes the path. A directory argument runs
+  only its own test files, and `--coverage` keeps one combined summary.
+  (#600)
+
 ## [0.21.1] - Unreleased
 
 ### Added

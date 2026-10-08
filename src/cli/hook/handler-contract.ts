@@ -80,9 +80,11 @@ export interface HookHandlerDependencies {
 
 /** The single context boundary shared by all route handlers. */
 export interface HookHandlerContext {
+  readonly worktreeSweepDeadlineMs?: number;
   readonly event: HookEvent;
   readonly routeId: RouteId;
   readonly repoRoot: string;
+  readonly sessionCwd?: string;
   readonly input?: string | Buffer;
   readonly env: NodeJS.ProcessEnv;
   readonly now: Date;

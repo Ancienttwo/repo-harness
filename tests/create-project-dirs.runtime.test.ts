@@ -490,6 +490,8 @@ describe("create-project-dirs runtime smoke", () => {
       expect(policy.workstreams.projection).toBe("local-contract-active-pointer-and-current-slice");
       expect(policy.documentation.on_demand).toContain("docs/architecture.md");
       expect(policy.lsp_profiles.selection).toBe("functional-block-first");
+      expect(policy.worktree_strategy.worktree_dir_template).toBe('{{system_tmp}}/{{repo}}-wt-{{slug}}');
+      expect(policy.worktree_strategy.worktree_dir_template).toBe(tsDefaultPolicy.worktree_strategy.worktree_dir_template);
       expect(policy.worktree_strategy.auto_on_conflict).toBe(true);
       expect(policy.worktree_strategy.auto_for_contract_tasks).toBe(true);
       expect(policy.worktree_strategy.start_script).toBe("repo-harness run contract-worktree start --plan <plan-file>");

@@ -8,11 +8,11 @@ import {
   realpathSync,
   readdirSync,
   renameSync,
-  rmSync,
   statSync,
   writeFileSync,
 } from 'fs';
-import { homedir } from 'os';
+import { homedir, tmpdir } from 'os';
+import { systemWorktreeRoot } from '../../core/worktree-location.mjs';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'path';
 import {
   isRepoHarnessAdoptedPath,
@@ -20,6 +20,8 @@ import {
   type RepoHarnessRegisteredRepo,
 } from '../../effects/repo-registry';
 import { globMatches, isPathInside } from './paths';
+import { configuredGitBinary } from '../../effects/git/common-directory';
+import { cleanupExactWorktree } from '../../effects/state/coordination-worktree-topology';
 import { cleanupTaskWorktree } from '../../effects/terminal/task-session';
 
 export type CodingWorkspaceMode = 'checkout' | 'worktree';
@@ -116,7 +118,7 @@ export function codingWorkspaceStatePath(env: NodeJS.ProcessEnv = process.env): 
 }
 
 export function codingWorktreeRoot(env: NodeJS.ProcessEnv = process.env): string {
-  return resolve(env.REPO_HARNESS_MCP_WORKTREE_ROOT ?? join(repoHarnessHome(env), 'mcp-worktrees'));
+  return resolve(env.REPO_HARNESS_MCP_WORKTREE_ROOT ?? join(systemWorktreeRoot(process.platform, tmpdir()), 'repo-harness-mcp-worktrees'));
 }
 
 function toPosix(value: string): string {
@@ -294,8 +296,8 @@ function writeState(env: NodeJS.ProcessEnv, state: CodingWorkspaceStateFile): vo
   renameSync(temporary, path);
 }
 
-function git(root: string, args: string[], opts: { allowFailure?: boolean } = {}): string {
-  const result = spawnSync('git', ['-C', root, ...args], { encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 });
+function git(root: string, args: string[], opts: { allowFailure?: boolean; gitBin?: string } = {}): string {
+  const result = spawnSync(opts.gitBin ?? configuredGitBinary(), ['-C', root, ...args], { encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 });
   if (result.status !== 0 && !opts.allowFailure) {
     throw new CodingWorkspaceError('GIT_COMMAND_FAILED', (result.stderr || result.stdout || `git exited ${result.status}`).trim(), {
       operation: args[0],
@@ -317,7 +319,7 @@ function resolveIntegrationTargetRef(root: string, value: string): string {
   const args = requested === 'HEAD'
     ? ['-C', root, 'symbolic-ref', '--quiet', 'HEAD']
     : ['-C', root, 'rev-parse', '--symbolic-full-name', '--verify', requested];
-  const result = spawnSync('git', args, { encoding: 'utf-8', maxBuffer: 1024 * 1024 });
+  const result = spawnSync(configuredGitBinary(), args, { encoding: 'utf-8', maxBuffer: 1024 * 1024 });
   const targetRef = result.status === 0 ? result.stdout.trim() : '';
   if (!targetRef || targetRef.includes('\n') || (!targetRef.startsWith('refs/heads/') && !targetRef.startsWith('refs/remotes/'))) {
     throw new CodingWorkspaceError(
@@ -329,7 +331,7 @@ function resolveIntegrationTargetRef(root: string, value: string): string {
   return targetRef;
 }
 
-function worktreeMergeMode(sourceRoot: string, branchCommit: string, targetCommit: string): WorktreeMergeMode {
+function worktreeMergeMode(sourceRoot: string, branchCommit: string, targetCommit: string, gitBin = configuredGitBinary()): WorktreeMergeMode {
   if (!existsSync(WORKTREE_MERGE_LIB)) {
     throw new CodingWorkspaceError('MERGE_CHECK_UNAVAILABLE', 'the packaged worktree merge authority is unavailable');
   }
@@ -337,6 +339,7 @@ function worktreeMergeMode(sourceRoot: string, branchCommit: string, targetCommi
     cwd: sourceRoot,
     encoding: 'utf-8',
     maxBuffer: 1024 * 1024,
+    env: { ...process.env, REPO_HARNESS_GIT_BIN: gitBin },
   });
   if (result.status !== 0) {
     throw new CodingWorkspaceError('MERGE_CHECK_UNAVAILABLE', 'the worktree merge authority could not classify the workspace branch', {
@@ -355,9 +358,9 @@ function worktreeMergeMode(sourceRoot: string, branchCommit: string, targetCommi
   return mode;
 }
 
-function workspaceBranchSnapshot(sourceRoot: string, branch: string): { branchRef: string; branchCommit: string } {
+function workspaceBranchSnapshot(sourceRoot: string, branch: string, gitBin = configuredGitBinary()): { branchRef: string; branchCommit: string } {
   const branchRef = `refs/heads/${branch}`;
-  const result = spawnSync('git', ['-C', sourceRoot, 'rev-parse', '--symbolic-full-name', '--verify', branchRef], {
+  const result = spawnSync(gitBin, ['-C', sourceRoot, 'rev-parse', '--symbolic-full-name', '--verify', branchRef], {
     encoding: 'utf-8',
     maxBuffer: 1024 * 1024,
   });
@@ -368,7 +371,7 @@ function workspaceBranchSnapshot(sourceRoot: string, branch: string): { branchRe
   }
   return {
     branchRef,
-    branchCommit: git(sourceRoot, ['rev-parse', '--verify', `${branchRef}^{commit}`]),
+    branchCommit: git(sourceRoot, ['rev-parse', '--verify', `${branchRef}^{commit}`], { gitBin }),
   };
 }
 
@@ -378,6 +381,7 @@ export function deleteCodingWorkspaceBranchAtSnapshot(
   branchCommit: string,
   targetRef: string,
   targetCommit: string,
+  gitBin = configuredGitBinary(),
 ): void {
   const transaction = [
     'start',
@@ -387,7 +391,7 @@ export function deleteCodingWorkspaceBranchAtSnapshot(
     'commit',
     '',
   ].join('\n');
-  const result = spawnSync('git', ['-C', sourceRoot, 'update-ref', '--stdin'], {
+  const result = spawnSync(gitBin, ['-C', sourceRoot, 'update-ref', '--stdin'], {
     input: transaction,
     encoding: 'utf-8',
     maxBuffer: 1024 * 1024,
@@ -449,8 +453,8 @@ function registeredRepo(repoId: string, env: NodeJS.ProcessEnv): RepoHarnessRegi
   return repo;
 }
 
-function isDirty(root: string): boolean {
-  return git(root, ['status', '--porcelain=v1']).length > 0;
+function isDirty(root: string, gitBin = configuredGitBinary()): boolean {
+  return git(root, ['status', '--porcelain=v1'], { gitBin }).length > 0;
 }
 
 function rootInstructions(root: string): Array<{ path: string; content: string }> {
@@ -547,7 +551,22 @@ export class CodingWorkspaceManager {
       const suffix = randomBytes(4).toString('hex');
       branch = `codex/mcp-${sanitizeBranchPart(basename(sourceRoot))}-${suffix}`;
       root = join(codingWorktreeRoot(this.env), sanitizeBranchPart(basename(sourceRoot)), id);
-      mkdirSync(dirname(root), { recursive: true, mode: 0o700 });
+      const managedRoot = codingWorktreeRoot(this.env);
+      mkdirSync(managedRoot, { recursive: true, mode: 0o700 });
+      for (const directory of [managedRoot, dirname(root)]) {
+        if (directory !== managedRoot) mkdirSync(directory, { mode: 0o700, recursive: true });
+        const stat = lstatSync(directory);
+        if (!stat.isDirectory() || stat.isSymbolicLink() || (process.platform !== 'win32' && ((process.getuid && stat.uid !== process.getuid()) || (stat.mode & 0o022)))) {
+          throw new CodingWorkspaceError('WORKTREE_ROOT_UNSAFE', 'managed worktree root must be owned and private');
+        }
+      }
+      try {
+        lstatSync(root);
+        throw new CodingWorkspaceError('WORKTREE_PATH_EXISTS', 'target worktree path already exists');
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      }
+      mkdirSync(root, { mode: 0o700 });
       git(sourceRoot, ['worktree', 'add', '-b', branch, root, baseSha]);
       root = realpathSync(root);
       managed = true;
@@ -652,16 +671,18 @@ export async function cleanupManagedCodingWorkspace(
   env: NodeJS.ProcessEnv = process.env,
   options: { targetRef?: string } = {},
 ): Promise<{ workspace_id: string; removed: true; branch: string; integration_target_ref: string; merge_mode: Exclude<WorktreeMergeMode, 'unmerged'> }> {
+  const gitBin = configuredGitBinary(env);
+  const cleanupGit = (root: string, args: string[]) => git(root, args, { gitBin });
   const state = stateFile(env);
   const workspace = state.workspaces.find((entry) => entry.id === workspaceId);
   if (!workspace || !workspace.managed) throw new CodingWorkspaceError('WORKSPACE_NOT_FOUND', 'managed workspace is unknown', { workspace_id: workspaceId });
-  if (existsSync(workspace.root) && isDirty(workspace.root)) {
+  if (existsSync(workspace.root) && isDirty(workspace.root, gitBin)) {
     throw new CodingWorkspaceError('WORKTREE_DIRTY', 'refusing to remove a dirty managed worktree', { workspace_id: workspaceId });
   }
   const targetRef = cleanupIntegrationTargetRef(workspace, options.targetRef);
-  const targetCommit = git(workspace.sourceRoot, ['rev-parse', '--verify', `${targetRef}^{commit}`]);
-  const { branchRef, branchCommit } = workspaceBranchSnapshot(workspace.sourceRoot, workspace.branch);
-  const mergeMode = worktreeMergeMode(workspace.sourceRoot, branchCommit, targetCommit);
+  const targetCommit = cleanupGit(workspace.sourceRoot, ['rev-parse', '--verify', `${targetRef}^{commit}`]);
+  const { branchRef, branchCommit } = workspaceBranchSnapshot(workspace.sourceRoot, workspace.branch, gitBin);
+  const mergeMode = worktreeMergeMode(workspace.sourceRoot, branchCommit, targetCommit, gitBin);
   if (mergeMode === 'unmerged') {
     throw new CodingWorkspaceError('WORKTREE_UNMERGED', 'refusing to remove a managed worktree that is unmerged from its integration target', {
       workspace_id: workspaceId,
@@ -671,7 +692,7 @@ export async function cleanupManagedCodingWorkspace(
   }
   // Git publication fences precede runtime cleanup; pending retains every Git/state artifact.
   try {
-    const runtime = await cleanupTaskWorktree(workspace.sourceRoot, workspace.root);
+    const runtime = await cleanupTaskWorktree(workspace.sourceRoot, workspace.root, false, gitBin);
     if (runtime.status === 'cleanup_pending') throw new CodingWorkspaceError('RUNTIME_CLEANUP_PENDING', 'runtime cleanup incomplete', {
       workspace_id: workspaceId, reason: runtime.reason, pids: runtime.pids,
     });
@@ -687,15 +708,19 @@ export async function cleanupManagedCodingWorkspace(
     throw new CodingWorkspaceError('WORKSPACE_IDENTITY_CHANGED', 'MCP workspace identity changed during runtime cleanup', { workspace_id: workspaceId });
   }
   // Shutdown crosses an async boundary. Publication identities must still match.
-  if (git(workspace.sourceRoot, ['rev-parse', '--verify', `${targetRef}^{commit}`]) !== targetCommit
-    || workspaceBranchSnapshot(workspace.sourceRoot, workspace.branch).branchCommit !== branchCommit) {
+  if (cleanupGit(workspace.sourceRoot, ['rev-parse', '--verify', `${targetRef}^{commit}`]) !== targetCommit
+    || workspaceBranchSnapshot(workspace.sourceRoot, workspace.branch, gitBin).branchCommit !== branchCommit) {
     throw new CodingWorkspaceError('WORKTREE_REVISION_CHANGED', 'workspace or target changed during runtime cleanup', { workspace_id: workspaceId });
   }
-  if (existsSync(workspace.root)) git(workspace.sourceRoot, ['worktree', 'remove', workspace.root]);
-  deleteCodingWorkspaceBranchAtSnapshot(workspace.sourceRoot, branchRef, branchCommit, targetRef, targetCommit);
+  cleanupExactWorktree(workspace.sourceRoot, {
+    worktree: workspace.root, branch: workspace.branch, head_sha: branchCommit,
+    target_ref: targetRef, target_oid: targetCommit, merge_commit_sha: targetCommit,
+  }, () => {
+    if (existsSync(workspace.root)) cleanupGit(workspace.sourceRoot, ['worktree', 'remove', workspace.root]);
+    deleteCodingWorkspaceBranchAtSnapshot(workspace.sourceRoot, branchRef, branchCommit, targetRef, targetCommit, gitBin);
+  }, { gitBin });
   state.workspaces = currentState.workspaces.filter((entry) => entry.id !== workspaceId);
   writeState(env, state);
-  if (existsSync(workspace.root)) rmSync(workspace.root, { recursive: true, force: true });
   return {
     workspace_id: workspaceId,
     removed: true,

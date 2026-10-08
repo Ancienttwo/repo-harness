@@ -304,7 +304,7 @@ describe("contract-worktree cleanup squash-merge absorption", () => {
       );
       expect(result.status).toBe(0);
       expect(result.stdout).toContain("absorbed into main (squash-equivalent tree)");
-      expect(result.stdout).toContain("Deleted branch: codex/squash-real (-D, absorbed)");
+      expect(result.stdout).toContain("Deleted branch: codex/squash-real (update-ref, absorbed)");
 
       // The real assertion this test exists for: cleanup must finish in one
       // pass -- worktree, branch, AND metadata all gone, exit 0. Pre-fix,
@@ -411,7 +411,7 @@ describe("contract-worktree cleanup squash-merge absorption", () => {
     }
   }, 15000);
 
-  test("cleanup deletes a plain-merged (ancestor) branch via -d on a real run", () => {
+  test("cleanup deletes a plain-merged (ancestor) branch at the proven snapshot on a real run", () => {
     const cwd = tmpWorkspace("helper-cleanup-ancestor-real");
     const worktreePath = `${cwd}-wt-ancestor-real`;
     try {
@@ -452,7 +452,7 @@ describe("contract-worktree cleanup squash-merge absorption", () => {
       );
       expect(result.status).toBe(0);
       expect(result.stdout).toContain("ancestor of main");
-      expect(result.stdout).toContain("Deleted branch: codex/ancestor-real (-d, ancestor)");
+      expect(result.stdout).toContain("Deleted branch: codex/ancestor-real (update-ref, ancestor)");
 
       expect(existsSync(worktreePath)).toBe(false);
       expect(

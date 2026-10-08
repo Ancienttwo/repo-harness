@@ -1,3 +1,5 @@
+import { worktreeUid } from '../../src/effects/state/worktree-trash';
+import { DEFAULT_WORKTREE_TEMPLATE, resolveWorktreeTemplate, systemWorktreeRoot, defaultWorktreeTemplate } from '../../src/core/worktree-location.mjs';
 import { createHash } from 'crypto';
 import { spawnSync } from 'child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'fs';
@@ -631,4 +633,35 @@ describe('coding MCP workspace and file tools', () => {
       await state.processManager.shutdown();
     }
   }, 30_000);
+});
+
+ test('coding worktrees use system tmp by default and keep the root override', async () => {
+  const { codingWorktreeRoot } = await import('../../src/cli/mcp/coding-workspaces');
+  expect(codingWorktreeRoot({ HOME: '/unused', TMPDIR: '/unused-tmp' })).toBe(process.platform === 'win32' ? join(tmpdir(), 'repo-harness-mcp-worktrees') : '/tmp/repo-harness-mcp-worktrees');
+  expect(codingWorktreeRoot({ REPO_HARNESS_MCP_WORKTREE_ROOT: '/custom' })).toBe(require('path').resolve('/custom'));
+});
+
+describe('system worktree root platform policy', () => {
+  test('stored defaults are neutral and explicit templates stay unchanged', () => {
+    expect(DEFAULT_WORKTREE_TEMPLATE).toBe('{{system_tmp}}/{{repo}}-wt-{{slug}}');
+    for (const platform of ['linux', 'win32'] as const) {
+      expect(resolveWorktreeTemplate('/explicit/{{repo}}-wt-{{slug}}', platform, 'C:\\Users\\runner\\Temp')).toBe('/explicit/{{repo}}-wt-{{slug}}');
+      expect(resolveWorktreeTemplate(DEFAULT_WORKTREE_TEMPLATE, platform, 'C:\\Users\\runner\\Temp')).toBe(platform === 'win32' ? 'C:/Users/runner/Temp/{{repo}}-wt-{{slug}}' : '/tmp/{{repo}}-wt-{{slug}}');
+    }
+  });
+  test('POSIX uses /tmp even when the process temp root differs', () => {
+    expect(systemWorktreeRoot('linux', '/var/process-temp')).toBe('/tmp');
+    expect(systemWorktreeRoot('darwin', '/var/folders/process-temp')).toBe('/tmp');
+    expect(defaultWorktreeTemplate('linux', '/var/process-temp')).toBe('/tmp/{{repo}}-wt-{{slug}}');
+  });
+  test('Windows uses the native temp root and a Git Bash compatible template', () => {
+    expect(systemWorktreeRoot('win32', 'C:\\Users\\runner\\Temp')).toBe('C:\\Users\\runner\\Temp');
+    expect(defaultWorktreeTemplate('win32', 'C:\\Users\\runner\\Temp')).toBe('C:/Users/runner/Temp/{{repo}}-wt-{{slug}}');
+  });
+});
+
+test('Windows ownership checks never call a POSIX uid API', () => {
+  expect(worktreeUid('win32', () => { throw new Error('unsupported uid API'); })).toBeUndefined();
+  expect(worktreeUid('linux', () => 123)).toBe(123);
+  expect(worktreeUid('darwin', () => undefined)).toBeUndefined();
 });

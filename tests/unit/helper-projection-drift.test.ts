@@ -27,10 +27,11 @@ describe('single executable helper authority', () => {
   test('check rejects byte and mode drift; write repairs only the disposable projection', () => {
     const root = mkdtempSync(join(tmpdir(), 'helper-projection-'));
     try {
-      for (const dir of ['scripts', 'src/core', 'assets/templates/helpers']) mkdirSync(join(root, dir), { recursive: true });
-      for (const path of ['scripts/sync-helper-sources.ts', 'scripts/workflow-contract.ts', 'src/core/source-projection.ts']) {
+      for (const dir of ['scripts', 'src/core', 'assets/templates/helpers', 'assets/herdr/webhook-notify']) mkdirSync(join(root, dir), { recursive: true });
+      for (const path of ['scripts/sync-helper-sources.ts', 'scripts/workflow-contract.ts', 'src/core/source-projection.ts', 'src/core/worktree-location.mjs']) {
         copyFileSync(join(ROOT, path), join(root, path));
       }
+      copyFileSync(join(ROOT, 'src/core/worktree-location.mjs'), join(root, 'assets/herdr/webhook-notify/worktree-location.mjs'));
       const contract = JSON.parse(readFileSync(join(ROOT, 'assets/workflow-contract.v1.json'), 'utf8'));
       contract.helpers.scripts = ['fixture.sh'];
       writeFileSync(join(root, 'assets/workflow-contract.v1.json'), JSON.stringify(contract));

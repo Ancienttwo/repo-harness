@@ -383,7 +383,8 @@ describe('No Harness / Lite / Strict benchmark authority', () => {
     } finally {
       rmSync(runRoot, { recursive: true, force: true });
     }
-  }, 60_000);
+    // One real pack plus two isolated installs needs the pack case budget.
+  }, 120_000);
 
   test('profile preparation skips no-harness installation and uses the packed absolute CLI for both harness profiles', () => {
     const source = readFileSync(join(ROOT, 'scripts/run-harness-profile-benchmark.ts'), 'utf8');

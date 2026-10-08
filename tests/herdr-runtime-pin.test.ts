@@ -1,7 +1,7 @@
 import { defaultPolicy } from "../src/core/adoption/standard-plan";
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "fs";
-import { join } from "path";
+import { dirname, join } from "path";
 import { configureRequiredHerdrSkill } from "../src/cli/commands/herdr-skill";
 
 /**
@@ -279,7 +279,8 @@ import { askMasked } from '../src/cli/commands/herdr';
 
 function notifyFixture() {
   const root = mkdtempSync(join(tmpdir(), 'rh-herdr-notify-'));
-  const workspace = mkdtempSync(join(ROOT, '.notify-workspace-'));
+  // Use an existing non-temporary directory as read-only event context.
+  const workspace = dirname(realpathSync('/tmp'));
   const home = join(root, 'home');
   const config = join(root, 'config');
   const state = join(root, 'state');
@@ -297,7 +298,6 @@ function notifyFixture() {
     { env: { ...env, ...extra }, encoding: 'utf8', timeout: 20_000 });
   return { root, workspace, home, config, state, env, run, cleanup: () => {
     rmSync(root, { recursive: true, force: true });
-    rmSync(workspace, { recursive: true, force: true });
   } };
 }
 
@@ -394,7 +394,7 @@ describe('Herdr notify install', () => {
         ['--session', 'notify-test', 'plugin', 'enable', 'aimpact.webhook-notify'],
       ]);
       expect(calls.every(call => call.secret === null)).toBe(true);
-      for (const name of ['herdr-plugin.toml', 'notify.mjs']) expect(readFileSync(join(fixture.config, 'source', name), 'utf8')).toBe(readFileSync(join(ROOT, 'assets/herdr/webhook-notify', name), 'utf8'));
+      for (const name of ['herdr-plugin.toml', 'notify.mjs', 'worktree-location.mjs']) expect(readFileSync(join(fixture.config, 'source', name), 'utf8')).toBe(readFileSync(join(ROOT, 'assets/herdr/webhook-notify', name), 'utf8'));
       const { notify: installedNotify } = await import(join(fixture.config, 'source/notify.mjs'));
       const delivered: string[] = [];
       await installedNotify({ ...fixture.env, HERDR_SESSION: 'notify-test', HERDR_PLUGIN_CONFIG_DIR: fixture.config,
@@ -508,7 +508,7 @@ await installNotify({ session: 'notify-test', nonInteractive: true,
 });
 
 const pluginPath = join(ROOT, 'assets/herdr/webhook-notify/notify.mjs');
-const { notify } = await import(pluginPath) as { notify: (env: NodeJS.ProcessEnv, send: typeof fetch) => Promise<void> };
+const { notify } = await import(pluginPath) as { notify: (env: NodeJS.ProcessEnv, send: typeof fetch, options?: { managedRoot?: string }) => Promise<void> };
 
 describe('shipped Herdr notify event handler', () => {
   function eventFixture(status = 'blocked') {
@@ -525,6 +525,62 @@ describe('shipped Herdr notify event handler', () => {
     }) as typeof fetch;
     return { ...fixture, env, calls, send };
   }
+
+  test.each(['cwd', 'nested-cwd', 'worktree-path'])('managed default task notifications are delivered: %s', async field => {
+    for (const status of ['done', 'blocked']) {
+      const f = eventFixture(status); try {
+        const repo = join(f.root, 'repo'), managed = join(f.root, 'managed'); mkdirSync(repo); mkdirSync(managed);
+        const git = (...args: string[]) => { const result = spawnSync('git', args, { cwd: repo, env: f.env, encoding: 'utf8' }); expect(result.status, result.stderr).toBe(0); };
+        git('init', '-q', '-b', 'main'); git('-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '--allow-empty', '-qm', 'base');
+        const task = join(managed, 'repo-wt-notify'); git('worktree', 'add', '-q', '-b', 'codex/notify', task);
+        const nested = join(task, 'nested'); mkdirSync(nested);
+        const context = { workspace_cwd: f.workspace, focused_pane_cwd: f.workspace, worktree: { path: f.workspace }, workspace_label: 'project' };
+        if (field === 'worktree-path') context.worktree.path = task;
+        else { context.workspace_cwd = field === 'cwd' ? task : nested; context.focused_pane_cwd = context.workspace_cwd; }
+        f.env.HERDR_PLUGIN_CONTEXT_JSON = JSON.stringify(context);
+        if (status === 'done') writeFileSync(join(f.config, '.env'), readFileSync(join(f.config, '.env'), 'utf8') + 'WEBHOOK_NOTIFY_DONE=1\n');
+        await notify(f.env, f.send, { managedRoot: managed }); expect(f.calls).toHaveLength(status === 'done' ? 1 : 4);
+        f.calls.length = 0;
+        f.env.HERDR_PLUGIN_CONTEXT_JSON = JSON.stringify({ ...context, workspace_label: 'rh-herdr-fixture' });
+        await notify(f.env, f.send, { managedRoot: managed }); expect(f.calls).toHaveLength(0);
+      } finally { f.cleanup(); }
+    }
+  });
+
+  test.skipIf(process.platform === 'win32')('a FIFO commondir is suppressed without blocking the notifier', () => {
+    const f = eventFixture(); try {
+      const managed = join(f.root, 'managed'), fake = join(managed, 'repo-wt-fifo');
+      const admin = join(f.root, 'fake-git/worktrees/fifo');
+      mkdirSync(fake, { recursive: true }); mkdirSync(admin, { recursive: true });
+      writeFileSync(join(fake, '.git'), 'gitdir: ' + admin);
+      const fifo = spawnSync('mkfifo', [join(admin, 'commondir')], { encoding: 'utf8' });
+      expect(fifo.status, fifo.stderr).toBe(0);
+      const env = { ...f.env, HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify({ workspace_cwd: fake }) };
+      const code = `import { notify } from ${JSON.stringify(pluginPath)}; await notify(process.env, () => { throw new Error('unexpected send'); }, { managedRoot: ${JSON.stringify(managed)} });`;
+      const child = spawnSync(process.execPath, ['-e', code], { env, encoding: 'utf8', timeout: 2000 });
+      expect(child.error).toBeUndefined(); expect(child.status, child.stderr).toBe(0);
+    } finally { f.cleanup(); }
+  });
+
+  test.each(['ordinary', 'unregistered', 'copied-pointer', 'fake-admin'])('temporary notification contexts remain filtered: %s', async kind => {
+    const f = eventFixture(); try {
+      const managed = join(f.root, 'managed'); mkdirSync(managed);
+      const fake = kind === 'ordinary' ? join(f.root, 'ordinary') : join(managed, 'repo-wt-fake'); mkdirSync(fake);
+      if (kind === 'fake-admin') {
+        const admin = join(f.root, 'fake-git/worktrees/fake'); mkdirSync(admin, { recursive: true });
+        writeFileSync(join(fake, '.git'), 'gitdir: ' + admin); writeFileSync(join(admin, 'gitdir'), join(fake, '.git')); writeFileSync(join(admin, 'commondir'), '../..');
+      }
+      if (kind === 'copied-pointer') {
+        const repo = join(f.root, 'repo'); mkdirSync(repo);
+        for (const args of [['init', '-q', '-b', 'main'], ['-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '--allow-empty', '-qm', 'base'], ['worktree', 'add', '-q', '-b', 'codex/real', join(managed, 'repo-wt-real')]]) {
+          const result = spawnSync('git', args, { cwd: repo, env: f.env, encoding: 'utf8' }); expect(result.status, result.stderr).toBe(0);
+        }
+        writeFileSync(join(fake, '.git'), readFileSync(join(managed, 'repo-wt-real/.git')));
+      }
+      f.env.HERDR_PLUGIN_CONTEXT_JSON = JSON.stringify({ workspace_cwd: fake, focused_pane_cwd: fake, worktree: { path: fake } });
+      await notify(f.env, f.send, { managedRoot: managed }); expect(f.calls).toHaveLength(0);
+    } finally { f.cleanup(); }
+  });
 
   test('blocked reaches Bot and all selected human channels with native request bodies', async () => {
     const fixture = eventFixture();
@@ -579,11 +635,14 @@ describe('shipped Herdr notify event handler', () => {
     } finally { fixture.cleanup(); }
   });
 
-  test('temporary workspaces reached through a durable symlink are filtered', async () => {
+  // A checkout under system tmp cannot provide a lexically durable alias.
+  const aliasCheckoutIsTemporary = realpathSync(ROOT).startsWith(realpathSync('/tmp') + '/') || realpathSync(ROOT) === realpathSync('/tmp');
+  test.skipIf(aliasCheckoutIsTemporary)('temporary workspaces reached through a durable symlink are filtered (requires checkout outside system tmp)', async () => {
     for (const field of ['workspace_cwd', 'focused_pane_cwd', 'worktree']) {
       const fixture = eventFixture();
+      const aliasRoot = mkdtempSync(join(ROOT, '.notify-alias-'));
       try {
-        const alias = join(fixture.workspace, 'temporary'); symlinkSync(fixture.root, alias);
+        const alias = join(aliasRoot, 'temporary'); symlinkSync(fixture.root, alias);
         expect(realpathSync(alias)).toBe(realpathSync(fixture.root));
         const context = { workspace_cwd: fixture.workspace, focused_pane_cwd: fixture.workspace, worktree: { path: fixture.workspace } };
         if (field === 'worktree') context.worktree.path = alias;
@@ -591,7 +650,7 @@ describe('shipped Herdr notify event handler', () => {
         fixture.env.HERDR_PLUGIN_CONTEXT_JSON = JSON.stringify(context);
         await notify(fixture.env, fixture.send);
         expect(fixture.calls).toHaveLength(0);
-      } finally { fixture.cleanup(); }
+      } finally { fixture.cleanup(); rmSync(aliasRoot, { recursive: true, force: true }); }
     }
   });
 

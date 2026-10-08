@@ -267,6 +267,7 @@ function installFixture(container: string): Fixture {
     join(primary, '.ai/harness/policy.json'),
     `${JSON.stringify({
       worktree_strategy: {
+        worktree_dir_template: join(container, 'worktrees', '{{repo}}-wt-{{slug}}'),
         auto_for_contract_tasks: true,
         review_base: 'main',
         branch_prefix: 'codex/',

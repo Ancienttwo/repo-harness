@@ -114,7 +114,7 @@ ${tasks.map((item, index) => `| ${index + 1} | ${fixtureTaskId(item.task)} | [ ]
   for (const item of tasks) writeFileSync(join(root, `plans/rollback/${item.workPackageId}.json`), rollback(item.workPackageId));
   writeFileSync(join(root, 'tasks/current.md'), '# Current\n');
   writeFileSync(join(root, '.ai/harness/policy.json'), JSON.stringify({
-    worktree_strategy: { merge_back: { target: 'main' } },
+    worktree_strategy: { worktree_dir_template: join(root, '.ai/harness/test-worktrees', '{{repo}}-wt-{{slug}}'), merge_back: { target: 'main' } },
     agent_runtime: { mode: 'active', adapters: { 'herdr-cli-agent': { enabled: true } } },
   }));
   writeFileSync(join(root, '.ai/harness/sprint/active-sprint'), 'plans/sprints/demo.sprint.md\n');

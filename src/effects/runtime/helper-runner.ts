@@ -89,6 +89,7 @@ export function protectedChildEnv(
     'NO_COLOR',
     'FORCE_COLOR',
     'HOOK_HOST',
+    'REPO_HARNESS_WORKTREE_ROOT',
   ]);
   return env;
 }

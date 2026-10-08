@@ -67,8 +67,8 @@ function registryHome(entries: readonly { readonly path: string; readonly access
   return { env: { REPO_HARNESS_HOME: home }, home, ids: repos.map((repo) => repo.id) };
 }
 
-async function waitFor(condition: () => boolean, message: string): Promise<void> {
-  for (let attempt = 0; attempt < 100; attempt += 1) {
+async function waitFor(condition: () => boolean, message: string, attempts = 100): Promise<void> {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
     if (condition()) return;
     await Bun.sleep(10);
   }
@@ -1372,7 +1372,10 @@ test('architecture GET and HEAD match CLI digests and keep closed argv with zero
     await server.close(); spawnSpy.mockRestore(); watchers.forEach(watcher => watcher.close());
     for (const path of [root, scratch, registry.home]) rmSync(path, { recursive: true, force: true });
   }
-});
+  // This scenario makes 16 HTTP reads and three CLI calls. Each HTTP read
+  // still has its own 10-second production deadline. Allow the complete chain
+  // to finish on a busy host without changing any result or latency assertion.
+}, 120_000);
 
 test('architecture rejects F-01 query injections before any child and refuses cross-site API calls', async () => {
   const root = realpathSync(moduleRepository()), scratch = mkdtempSync('/tmp/oui-b-reject-');
@@ -1409,11 +1412,13 @@ test('architecture rejects F-01 query injections before any child and refuses cr
 test('architecture slow git leaves health responsive and returns a bounded timeout', async () => {
   const root = realpathSync(moduleRepository()), scratch = mkdtempSync('/tmp/oui-b-slow-');
   const registry = registryHome([{ path: root, accessMode: 'read_only' }]), git = architectureGit(scratch, true);
-  const server = await startOperatorServer({ port: 0, timeout_ms: 1000, max_concurrency: 1, env: { ...process.env, ...registry.env, ...git.env } });
+  const server = await startOperatorServer({ port: 0, timeout_ms: 3000, max_concurrency: 1, env: { ...process.env, ...registry.env, ...git.env } });
   const path = `/api/v1/repositories/${registry.ids[0]}/architecture/modules`;
   try {
+    // Allow the real worker to start before its intentional Git stall.
+    // Keep the health-response limit at one second.
     const pending = fetch(server.url + path);
-    await waitFor(() => existsSync(join(scratch, 'entered')), 'slow Git did not start');
+    await waitFor(() => existsSync(join(scratch, 'entered')), 'slow Git did not start', 300);
     const start = performance.now();
     expect((await fetch(server.url + '/healthz')).status).toBe(200); expect(performance.now() - start).toBeLessThan(1000);
     const busy = await fetch(server.url + path); expect(busy.status).toBe(503); expect(await busy.json()).toEqual({ code: 'busy' });
