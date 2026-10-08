@@ -49,7 +49,7 @@ All notable changes to this skill are documented here.
   only its own test files, and `--coverage` keeps one combined summary.
   (#600)
 
-## [0.21.1] - Unreleased
+## [0.21.1] - 2026-10-08
 
 ### Added
 

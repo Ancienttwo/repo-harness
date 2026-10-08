@@ -46,10 +46,27 @@
 
 ## Publication status
 
-Merge #598 before the tag. The tag must point to the main commit that
-contains #598. If main changes after this gate, compare that commit with
-`f52c63ea` before the tag.
-Tag creation and npm publication remain pending.
+- Status: npm and GitHub publication verified on 2026-10-08.
+- Source release commit: `3ea2f7b71c4eef95e158788b8564179034eef9a2` (main after #598). Its tree equals
+  the gated tree `f52c63ea` except this checklist.
+- Annotated tag `v0.21.1`: object `09a195efe1ca9182d31da6899c4dc27096280487`, pointing to the source release
+  commit.
+- Tarball: `npm pack` in a clean checkout of the source release commit.
+  803 entries. SHA256
+  `bbf5927ac170a3592262a1b617a4e3b38a80409936717887d6c09c9693fe98fa`.
+  A fresh install reports CLI 0.21.1 and `@botiverse/oar` 0.37.0.
+- npm: the owner published that tarball after browser authentication.
+  Registry integrity and shasum equal the local tarball
+  (`e7393b37808bc9c6f75cfbb0731aacaa98953c6a`). The `latest` dist-tag is
+  0.21.1. `bun run check:release-published` returned 0; runtime evidence
+  receipt `sha256:9ad324c3ad1e31ad73502151850d282f02dd7e84cd6e26cb75b69cc1edd0e1ee`.
+- GitHub Release: https://github.com/Ancienttwo/repo-harness/releases/tag/v0.21.1.
+  Public and stable. The downloaded asset SHA256 equals the tarball above.
+- Scope change: the owner first approved moving the tag to include #600,
+  then decided to publish 0.21.1 without it. #600 moves to the next release.
+  The tag never moved.
+- Rollback: revert each squash commit with `git revert <squash-commit>`.
+  A Git revert does not undo an npm publication.
 
 Skill eval evidence is unavailable. `full_test_count`, `dry_run_ratio`,
 `grader_pass_rate`, and `effectiveness_authority` are unavailable.
