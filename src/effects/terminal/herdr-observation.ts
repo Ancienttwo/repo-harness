@@ -5,7 +5,7 @@ import { runtimeInteger, runtimeTime } from '../../core/operator/runtime-status'
 import type { ProgramStatusV1 } from '../operator/runtime-status';
 
 /** Schema source revision. Reported version fields do not attest this commit. */
-export const HERDR_OBSERVATION_REVISION = '3f32b738723e91e9f25fe270009266cf97046aab';
+export const HERDR_OBSERVATION_REVISION = 'c5964c520e2a4417491e1032c4f00ea4876db272';
 export const HERDR_OBSERVATION_VERSION = '0.9.3';
 export const HERDR_OBSERVATION_PROTOCOL = 22;
 const MAX_FRAME_BYTES = 1024 * 1024;
