@@ -44,7 +44,11 @@ function git(root: string, args: string[], limits: Limits = {}): string {
 
 /** Bind and destructive cleanup serialize across every worktree of this clone. */
 export function withWorktreeTopologyLock<T>(root: string, action: () => T, limits: Limits = {}): T {
-  return withExclusiveDirectoryLock(resolveGitCommonDirectory(root, gitBinary(limits), timeout(limits)), 'repo-harness/coordination/locks/worktree-topology.lock', action,
+  const common = resolveGitCommonDirectory(root, gitBinary(limits), timeout(limits));
+  return withExclusiveDirectoryLock(common, 'repo-harness/coordination/locks/worktree-topology.lock', () => {
+    cleanIdentityTemporaryFiles(common, Date.now(), limits);
+    return action();
+  },
     { waitTimeoutMs: limits.deadline ? Math.max(1, Math.min(50, timeout(limits)!)) : undefined });
 }
 
@@ -109,23 +113,69 @@ function assertNoOwner(root: string, worktree: string, branch: string, limits: L
   }
 }
 
+function identityStore(common: string): string | null {
+  const uid = process.getuid?.();
+  if (uid === undefined) return null;
+  let directory = common;
+  for (const part of ['repo-harness', 'coordination', 'worktree-identities']) {
+    directory = join(directory, part);
+    let stat;
+    try { stat = lstatSync(directory); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null; throw error; }
+    if (!stat.isDirectory() || stat.isSymbolicLink() || stat.uid !== uid || (stat.mode & 0o002)) throw new Error('recovery identity store is unsafe');
+  }
+  return directory;
+}
+
+/** Only a later topology lock holder can remove an unpublished identity file. */
+function cleanIdentityTemporaryFiles(common: string, acquiredAt: number, limits: Limits): void {
+  const store = identityStore(common);
+  if (!store) return;
+  for (const name of readdirSync(store)) {
+    if (!/^[a-f0-9]{64}\.json\.[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(name)) continue;
+    timeout(limits);
+    const path = join(store, name); const stat = lstatSync(path);
+    if (stat.isFile() && !stat.isSymbolicLink() && stat.uid === process.getuid?.() && !(stat.mode & 0o002) && stat.mtimeMs < acquiredAt) unlinkSync(path);
+  }
+}
+
+/** Call only after Git registration and branch deletion readback succeeds. */
+function retireWorktreeIdentity(common: string, worktree: string, limits: Limits): void {
+  const store = identityStore(common);
+  if (!store || !worktree) return;
+  for (const name of readdirSync(store)) {
+    if (!/^[a-f0-9]{64}\.json$/.test(name)) continue;
+    timeout(limits);
+    const path = join(store, name); const stat = lstatSync(path);
+    if (!stat.isFile() || stat.isSymbolicLink() || stat.uid !== process.getuid?.() || (stat.mode & 0o002)) continue;
+    let saved;
+    try { saved = JSON.parse(readFileSync(path, 'utf8')); } catch { continue; }
+    if (!saved || typeof saved !== 'object' || Array.isArray(saved)) continue;
+    if (saved.worktree !== worktree || saved.uid !== process.getuid?.() || typeof saved.admin !== 'string' || dirname(saved.admin) !== join(common, 'worktrees')) continue;
+    if (name !== createHash('sha256').update(saved.admin).digest('hex') + '.json') continue;
+    unlinkSync(path);
+    syncDirectoryDurably(store);
+  }
+}
+
 /** Recovery must bind the original directory, not only its reusable Git pointer. */
 function recoveryIdentity(root: string, worktree: string) {
   const uid = process.getuid?.();
-  if (uid === undefined) throw new Error('recovery uid is unavailable');
+  if (uid === undefined) throw new Error('recovery uid is unavailable: start can create a checkout, but this platform cannot verify recovery ownership');
   const directory = lstatSync(worktree);
   if (!directory.isDirectory() || directory.isSymbolicLink() || directory.uid !== uid || (directory.mode & 0o022)) throw new Error('recovery directory ownership is unsafe');
   const pointer = join(worktree, '.git');
   const file = lstatSync(pointer);
-  if (!file.isFile() || file.isSymbolicLink() || file.uid !== uid || (file.mode & 0o022)) throw new Error('recovery Git pointer is unsafe');
+  if (!file.isFile() || file.isSymbolicLink() || file.uid !== uid || (file.mode & 0o002)) throw new Error('recovery Git pointer is unsafe');
   const text = readFileSync(pointer, 'utf8').trim();
   if (!text.startsWith('gitdir: ')) throw new Error('recovery Git pointer is invalid');
-  const admin = realpathSync(resolve(worktree, text.slice(8)));
+  const namedAdmin = resolve(worktree, text.slice(8));
+  const admin = realpathSync(namedAdmin);
   const common = resolveGitCommonDirectory(root);
   if (dirname(admin) !== join(common, 'worktrees')) throw new Error('recovery Git admin entry is outside this clone');
-  const adminStat = lstatSync(admin);
+  const adminStat = lstatSync(namedAdmin);
   const backpointer = lstatSync(join(admin, 'gitdir'));
-  if (adminStat.uid !== uid || (adminStat.mode & 0o022) || !backpointer.isFile() || backpointer.isSymbolicLink() || backpointer.uid !== uid || (backpointer.mode & 0o022)) throw new Error('recovery Git admin ownership is unsafe');
+  if (!adminStat.isDirectory() || adminStat.isSymbolicLink() || adminStat.uid !== uid || (adminStat.mode & 0o002) || !backpointer.isFile() || backpointer.isSymbolicLink() || backpointer.uid !== uid || (backpointer.mode & 0o002)) throw new Error('recovery Git admin ownership is unsafe');
   if (readFileSync(join(admin, 'gitdir'), 'utf8').trim() !== pointer) throw new Error('recovery Git backpointer changed');
   const record = join(common, 'repo-harness/coordination/worktree-identities', createHash('sha256').update(admin).digest('hex') + '.json');
   return { record, value: JSON.stringify({ worktree, admin, uid, dev: directory.dev, ino: directory.ino, birthtime: directory.birthtimeMs }) };
@@ -133,6 +183,7 @@ function recoveryIdentity(root: string, worktree: string) {
 
 /** Record identity only after this invocation creates the checkout under the lock. */
 export function recordCreatedWorktree(root: string, worktree: string): void {
+  if (process.getuid?.() === undefined) return;
   const identity = recoveryIdentity(root, realpathSync(worktree));
   const common = resolveGitCommonDirectory(root);
   let directory = common;
@@ -140,7 +191,7 @@ export function recordCreatedWorktree(root: string, worktree: string): void {
     directory = join(directory, part);
     try { mkdirSync(directory, { mode: 0o700 }); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
     const stat = lstatSync(directory);
-    if (!stat.isDirectory() || stat.isSymbolicLink() || stat.uid !== process.getuid?.() || (stat.mode & 0o022)) throw new Error('recovery identity store is unsafe');
+    if (!stat.isDirectory() || stat.isSymbolicLink() || stat.uid !== process.getuid?.() || (stat.mode & 0o002)) throw new Error('recovery identity store is unsafe');
   }
   // Git can reuse an admin name after an explicit removal. Only the create route replaces this record.
   const temporary = identity.record + '.' + randomUUID();
@@ -152,8 +203,13 @@ export function recordCreatedWorktree(root: string, worktree: string): void {
 /** The caller holds the topology lock while it validates and re-marks recovery. */
 export function assertReusableWorktree(root: string, worktree: string, branch: string): void {
   const identity = recoveryIdentity(root, worktree);
-  const saved = lstatSync(identity.record);
-  if (!saved.isFile() || saved.isSymbolicLink() || saved.uid !== process.getuid?.() || (saved.mode & 0o022) || readFileSync(identity.record, 'utf8') !== identity.value) throw new Error('recovery directory identity changed');
+  let saved;
+  try { saved = lstatSync(identity.record); }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new Error('no start identity record: this checkout was not created by contract-worktree start; finish or clean it up, or start with a new slug');
+    throw error;
+  }
+  if (!saved.isFile() || saved.isSymbolicLink() || saved.uid !== process.getuid?.() || (saved.mode & 0o002) || readFileSync(identity.record, 'utf8') !== identity.value) throw new Error('recovery directory identity changed');
   assertWorktreeBinding(root, worktree, branch);
   const entry = entries(root).find(item => checkoutPath(item.path) === worktree);
   if (entry?.locked) throw new Error('recovery worktree is locked');
@@ -208,6 +264,7 @@ export function cleanupExactWorktree(root: string, expected: ExactWorktreeCleanu
     if (!renamed && path && existsSync(path)) throw new Error('cleanup worktree removal is unproven');
     if (entries(root, limits).some(entry => entry.branch === `refs/heads/${expected.branch}`)) throw new Error('cleanup registration removal is unproven');
     if (git(root, ['for-each-ref', '--format=%(refname)', `refs/heads/${expected.branch}`], limits).split('\n').includes(`refs/heads/${expected.branch}`)) throw new Error('cleanup branch deletion is unproven');
+    retireWorktreeIdentity(resolveGitCommonDirectory(root, gitBinary(limits), timeout(limits)), path, limits);
     return result;
   }, limits);
 }
@@ -303,7 +360,7 @@ function assertBranchHasCommits(context: SweepContext, branch: string): void {
     git(context.main, ['reflog', 'exists', ref], context.limits);
     history = git(context.main, ['reflog', 'show', '--format=%gs', ref], context.limits);
   } catch { throw new Error('branch reflog is unavailable'); }
-  if (!history.split('\n').some(message => /^(?:commit(?: \(amend\)| \(merge\)| \(initial\))?|cherry-pick|revert|rebase(?: -i)? \(pick\))(?::|$)/.test(message) || /^merge .+: Merge made by /.test(message))) throw new Error('branch has no commits of its own');
+  if (!history.split('\n').some(message => /^(?:commit(?: \(amend\)| \(merge\)| \(initial\))?|cherry-pick|revert|rebase(?: -i)? \(pick\))(?::|$)/.test(message))) throw new Error('branch has no commits of its own');
 }
 function pathExists(path: string): boolean {
   try { lstatSync(path); return true; }
@@ -363,6 +420,7 @@ function resumeSweepTrashAttempt(context: SweepContext, directory: string): void
     assertNoOwner(context.main, approved.expected.worktree, approved.expected.branch, context.limits);
     if (branchExists(context, approved.expected.branch)) throw new Error('trash branch deletion is unproven');
     if (entries(context.main, context.limits).some(entry => checkoutPath(entry.path) === approved.expected.worktree)) throw new Error('trash source is still registered');
+    retireWorktreeIdentity(context.common, approved.expected.worktree, context.limits);
     // Re-read immutable identity after the lock boundary. Partly deleted data needs no new Git status check.
     const current = readWorktreeTrash(context.common, context.managedRoot, directory);
     if (!current) throw new Error('trash approval disappeared');

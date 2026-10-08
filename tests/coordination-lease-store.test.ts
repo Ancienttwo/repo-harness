@@ -1839,7 +1839,7 @@ test('a lease this completion could not release is refused before any write', ()
 
 import { dirname } from 'path';
 import { assertOwnedTrashDirectory, worktreeTrashNames } from '../src/effects/state/worktree-trash';
-import { cleanupExactWorktree, removeExactWorktree, sweepManagedWorktrees as productionSweep } from '../src/effects/state/coordination-worktree-topology';
+import { cleanupExactWorktree, removeExactWorktree, recordCreatedWorktree, withWorktreeTopologyLock, sweepManagedWorktrees as productionSweep } from '../src/effects/state/coordination-worktree-topology';
 
 const sweepManagedWorktrees: typeof productionSweep = (root, cwd, env, options) => productionSweep(root, cwd, env, { deadlineMs: 60_000, ...options });
 
@@ -1874,6 +1874,61 @@ describe('exact cleanup and SessionStart worktree sweep', () => {
       expect(existsSync(f.path)).toBe(false); expect(f.git('branch', '--list', 'codex/demo')).toBe('');
     } finally { f.cleanup(); }
   });
+
+  test('W6 sweep retires the start identity only after exact removal succeeds', () => {
+    const f = fixture(); try {
+      withWorktreeTopologyLock(f.root, () => recordCreatedWorktree(f.root, f.path));
+      const store = join(f.root, '.git/repo-harness/coordination/worktree-identities');
+      expect(readdirSync(store).filter(name => name.endsWith('.json'))).toHaveLength(1);
+      expect(sweepManagedWorktrees(f.root, f.root, f.env)).toContain('removed=1');
+      expect(readdirSync(store).filter(name => name.endsWith('.json'))).toEqual([]);
+    } finally { f.cleanup(); }
+  });
+
+  test('W6 removal keeps unknown identity content without blocking its own record retirement', () => {
+    const f = fixture(); try {
+      withWorktreeTopologyLock(f.root, () => recordCreatedWorktree(f.root, f.path));
+      const store = join(f.root, '.git/repo-harness/coordination/worktree-identities');
+      const unknown = 'f'.repeat(64) + '.json'; writeFileSync(join(store, unknown), 'null');
+      expect(sweepManagedWorktrees(f.root, f.root, f.env)).toContain('removed=1');
+      expect(readdirSync(store).filter(name => name.endsWith('.json'))).toEqual([unknown]);
+    } finally { f.cleanup(); }
+  });
+
+  test('W6 resume retires an identity left by SIGKILL after branch deletion', async () => {
+    const f = fixture(); try {
+      withWorktreeTopologyLock(f.root, () => recordCreatedWorktree(f.root, f.path));
+      const store = join(f.root, '.git/repo-harness/coordination/worktree-identities');
+      await interruptSweep(f, 'branch-deleted');
+      expect(readdirSync(store).filter(name => name.endsWith('.json'))).toHaveLength(1);
+      expect(sweepManagedWorktrees(f.root, f.root, f.env)).toContain('resumed=1');
+      expect(readdirSync(store).filter(name => name.endsWith('.json'))).toEqual([]);
+    } finally { f.cleanup(); }
+  }, 20000);
+
+  test('W6 a fresh lane that only makes a no-ff target merge stays protected', () => {
+    const f = fixture(); try {
+      f.git('worktree', 'remove', f.path); f.git('branch', '-D', 'codex/demo');
+      f.git('worktree', 'add', '-q', '-b', 'codex/demo', f.path, 'origin/main');
+      f.git('commit', '--allow-empty', '-qm', 'target change'); f.git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+      f.git('-C', f.path, 'merge', '--no-ff', 'origin/main', '-m', 'target refresh');
+      f.git('merge', '--ff-only', 'codex/demo'); f.git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+      expect(sweepManagedWorktrees(f.root, f.root, f.env)).toContain('no commits of its own');
+      expect(existsSync(f.path)).toBe(true);
+    } finally { f.cleanup(); }
+  });
+
+  test('W6 shipped bundle CLI SessionStart works with its production deadline', () => {
+    const f = fixture(); try {
+      mkdirSync(join(f.root, '.ai/harness'), { recursive: true });
+      writeFileSync(join(f.root, '.ai/harness/workflow-contract.json'), '{}');
+      const bundle = join(f.parent, 'hook-entry.js');
+      const built = spawnSync(process.execPath, ['build', join(import.meta.dir, '../src/cli/hook-entry.ts'), '--target=bun', '--outfile', bundle, '--define', 'REPO_HARNESS_BUNDLED_CLI_VERSION="0.21.1"'], { encoding: 'utf8', env: f.env });
+      expect(built.status, built.stderr).toBe(0);
+      const result = spawnSync(process.execPath, [bundle, 'SessionStart', '--route', 'default'], { cwd: f.root, encoding: 'utf8', input: '{}', env: { ...f.env, HOOK_REPO_ROOT: f.root, HOOK_HOST: 'codex' } });
+      expect(result.status).toBe(0); expect(result.stdout + result.stderr).toContain('worktree');
+    } finally { f.cleanup(); }
+  }, 15000);
 
   test('sweep compares the managed root through its realpath', () => {
     const f = fixture(); try {

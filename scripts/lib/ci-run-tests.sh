@@ -9,33 +9,41 @@ _ci_run_bun_tests_in_temporary_home() {
     const fs = require("node:fs");
     const { spawnSync } = require("node:child_process");
     const { createTemporaryTestEnvironment } = require(process.argv[1]);
-    const { env, home, temp } = createTemporaryTestEnvironment(process.env);
-    // The parent runs this check after Bun exits. Bun exit hooks are not reliable.
-    const roots = [...new Set(["/tmp", "/private/tmp"].filter(p => fs.existsSync(p)).map(p => fs.realpathSync(p)))];
-    const snapshot = () => roots.flatMap(root => fs.readdirSync(root).filter(name => /-wt-/.test(name) && !name.startsWith(".repo-harness-wt-trash-")).map(name => require("node:path").join(root, name)));
-    const before = new Set(snapshot());
-    const started = Date.now();
-    let status = 1;
-    try {
-      const result = spawnSync("bun", ["test", ...process.argv.slice(2)], {
-        env,
-        stdio: "inherit",
-      });
-      if (result.error) console.error("[ci] test process failed to start: " + result.error.message);
-      status = result.status ?? 1;
-      for (const path of snapshot()) {
-        if (before.has(path)) continue;
-        let stat;
-        try { stat = fs.lstatSync(path); } catch (error) { if (error.code === "ENOENT") continue; throw error; }
-        // Fallback: fixture-created roots are not all known to this runner.
-        if (stat.uid === process.getuid?.() && (stat.birthtimeMs || stat.ctimeMs) >= started) {
-          console.error("[ci] surviving new worktree path outside disposable roots (current uid; created during test): " + path);
-          status = 1;
+    const args = process.argv.slice(2);
+    const batch = args.indexOf("--harness-file-list");
+    const divider = args.indexOf("--harness-options");
+    const runs = batch < 0 ? [args] : args.slice(batch + 1, divider).map(file => [...args.slice(0, batch), file, ...args.slice(divider + 1)]);
+    let status = 0;
+    for (const runArgs of runs) {
+      const { env, home, temp } = createTemporaryTestEnvironment(process.env);
+      // The parent runs this check after Bun exits. Bun exit hooks are not reliable.
+      const roots = [...new Set(["/tmp", "/private/tmp"].filter(p => fs.existsSync(p)).map(p => fs.realpathSync(p)))];
+      const snapshot = () => roots.flatMap(root => fs.readdirSync(root).filter(name => /-wt-/.test(name) && !name.startsWith(".repo-harness-wt-trash-")).map(name => require("node:path").join(root, name)));
+      const before = new Set(snapshot());
+      const started = Date.now();
+      let fileStatus = 1;
+      try {
+        const result = spawnSync("bun", ["test", ...runArgs], {
+          env,
+          stdio: "inherit",
+        });
+        if (result.error) console.error("[ci] test process failed to start: " + result.error.message);
+        fileStatus = result.status ?? 1;
+        for (const path of snapshot()) {
+          if (before.has(path)) continue;
+          let stat;
+          try { stat = fs.lstatSync(path); } catch (error) { if (error.code === "ENOENT") continue; throw error; }
+          // Fallback: fixture-created roots are not all known to this runner.
+          if (stat.uid === process.getuid?.() && (stat.birthtimeMs || stat.ctimeMs) >= started) {
+            console.error("[ci] surviving new worktree path outside disposable roots (current uid; created during test): " + path);
+            fileStatus = 1;
+          }
         }
+      } finally {
+        fs.rmSync(home, { recursive: true, force: true });
+        fs.rmSync(temp, { recursive: true, force: true });
       }
-    } finally {
-      fs.rmSync(home, { recursive: true, force: true });
-      fs.rmSync(temp, { recursive: true, force: true });
+      if (fileStatus !== 0 && status === 0) status = fileStatus;
     }
     process.exit(status);
   ' "$isolation_module" --timeout "${BUN_TEST_TIMEOUT_MS:-60000}" --max-concurrency "${BUN_TEST_MAX_CONCURRENCY:-4}" "$@"
@@ -183,28 +191,58 @@ _ci_run_bun_test_pool() {
 
 run_bun_tests() {
   if [[ "${BUN_TEST_ISOLATE_FILES:-0}" != "1" ]]; then
-    local selected=() options=() argument status=0 result=0
+    local argument
     for argument in "$@"; do
-      if [[ "$argument" == *.test.ts || "$argument" == *.test.tsx || "$argument" == *.test.js || "$argument" == *.spec.ts || "$argument" == *.spec.js ]]; then
+      if [[ "$argument" == --coverage || "$argument" == --coverage=* ]]; then
+        _ci_run_bun_tests_in_temporary_home "$@"
+        return
+      fi
+    done
+    local selected=() options=() unique=() selection
+    for argument in "$@"; do
+      if [[ -f "$argument" ]]; then
         selected[${#selected[@]}]="$argument"
+      elif [[ -d "$argument" ]]; then
+        selection="$(node -e '
+          const fs=require("node:fs"),p=require("node:path");
+          function walk(root){for(const entry of fs.readdirSync(root,{withFileTypes:true})){
+            const path=p.join(root,entry.name);
+            if(entry.isDirectory() && !["node_modules",".git"].includes(entry.name))walk(path);
+            else if(entry.isFile() && /(?:[.]test|[.]spec|_test|_spec)[.][cm]?[jt]sx?$/.test(entry.name))console.log(path);
+          }}walk(process.argv[1]);
+        ' "$argument")" || return $?
+        while IFS= read -r argument; do
+          [[ -n "$argument" ]] && selected[${#selected[@]}]="$argument"
+        done <<< "$selection"
       else
         options[${#options[@]}]="$argument"
       fi
     done
     if [[ "${#selected[@]}" -eq 0 ]]; then
+      if [[ "$#" -gt 0 ]]; then
+        _ci_run_bun_tests_in_temporary_home "$@"
+        return
+      fi
       local selector="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/select-test-suite.ts"
-      local selection lane
       selection="$(bun "$selector" "${BUN_TEST_SUITE:-full}")" || return $?
+      local lane
       while IFS=$'\t' read -r lane argument; do
         [[ -n "$argument" ]] && selected[${#selected[@]}]="$argument"
       done <<< "$selection"
+      # Without a file manifest, preserve Bun's native discovery contract.
+      if [[ "${#selected[@]}" -eq 0 ]]; then
+        _ci_run_bun_tests_in_temporary_home "$@"
+        return
+      fi
     fi
+    local seen=$'\n'
     for argument in "${selected[@]}"; do
-      status=0
-      _ci_run_bun_tests_in_temporary_home "$argument" ${options[@]+"${options[@]}"} || status=$?
-      [[ "$status" == 0 ]] || result=1
+      case "$seen" in *$'\n'"$argument"$'\n'*) continue ;; esac
+      seen+="$argument"$'\n'
+      unique[${#unique[@]}]="$argument"
     done
-    return "$result"
+    _ci_run_bun_tests_in_temporary_home --harness-file-list "${unique[@]}" --harness-options ${options[@]+"${options[@]}"}
+    return
   fi
 
   local jobs="${BUN_TEST_JOBS:-1}"

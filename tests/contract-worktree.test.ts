@@ -5,6 +5,8 @@ import {
   chmodSync,
   symlinkSync,
   mkdirSync,
+  readdirSync,
+  utimesSync,
   readFileSync,
   realpathSync,
   rmSync,
@@ -289,6 +291,65 @@ describe('W2/W3/W4 start and closeout ownership', () => {
       expect(readFileSync(join(f.target, '.ai/harness/active-worktree'), 'utf8').trim()).toBe(f.target);
     } finally { f.cleanup(); }
   }, 15000);
+  test.each([false, true])('W6 start, recovery and closeout work under umask 002; shared=%s', shared => {
+    const f = fixture(); try {
+      if (shared) expect(run('git', ['config', 'core.sharedRepository', 'group'], f.cwd).status).toBe(0);
+      const invoke = (args: string[]) => run('bash', ['-c', 'umask 002; exec bash "$@"', 'w6', ...args], f.cwd);
+      const started = invoke([...f.args, '--no-plan-to-todo']); expect(started.status, started.stderr).toBe(0);
+      expect(lstatSync(f.target).mode & 0o022).toBe(0);
+      expect(lstatSync(join(f.target, '.git')).mode & 0o020).toBe(0o020);
+      const retry = invoke([...f.args, '--no-plan-to-todo', '--json']); expect(retry.status, retry.stderr).toBe(0);
+      expect(JSON.parse(retry.stdout).disposition).toBe('reused_existing_worktree');
+      const store = join(f.cwd, '.git/repo-harness/coordination/worktree-identities');
+      const record = readdirSync(store).find(name => name.endsWith('.json'))!; expect(record).toBeTruthy();
+      const stale = join(store, record + '.12345678-1234-4123-8123-123456789abc');
+      writeFileSync(stale, 'unpublished', { mode: 0o600 }); utimesSync(stale, new Date(0), new Date(0));
+      const unknown = join(store, 'keep.txt'); writeFileSync(unknown, 'keep');
+      expect(invoke([...f.args, '--no-plan-to-todo']).status).toBe(0);
+      expect(existsSync(stale)).toBe(false); expect(existsSync(unknown)).toBe(true);
+      writeFileSync(join(f.target, 'change'), 'task'); commitAll(f.target, 'task');
+      expect(run('git', ['merge', '--ff-only', 'codex/owned'], f.cwd).status).toBe(0);
+      const cleanup = invoke(['scripts/contract-worktree.sh', 'cleanup', '--slug', 'owned', '--target', 'main']);
+      expect(cleanup.status, cleanup.stderr).toBe(0); expect(existsSync(f.target)).toBe(false);
+      expect(readdirSync(store).filter(name => name.endsWith('.json'))).toEqual([]);
+    } finally { f.cleanup(); }
+  }, 20000);
+
+  test('W6 an old registered checkout without a start identity has an action message', () => {
+    const f = fixture(); try {
+      expect(run('git', ['worktree', 'add', '-b', 'codex/owned', f.target], f.cwd).status).toBe(0);
+      const retry = run('bash', [...f.args, '--no-plan-to-todo'], f.cwd);
+      expect(retry.status).toBe(1); expect(retry.stderr).toContain('no start identity record:');
+      expect(retry.stderr).toContain('start with a new slug'); expect(retry.stderr).not.toContain('ENOENT');
+      expect(existsSync(f.target)).toBe(true);
+    } finally { f.cleanup(); }
+  });
+
+  test('W6 no-uid runtime creation succeeds and recovery refuses clearly', () => {
+    const f = fixture(); try {
+      const runtime = join(ROOT, 'scripts/contract-worktree-runtime.ts');
+      const worker = join(f.parent, 'no-uid.ts');
+      writeFileSync(worker, `process.getuid=undefined;process.argv=[process.execPath,${JSON.stringify(runtime)},...process.argv.slice(2)];await import(${JSON.stringify(runtime)});`);
+      const added = run(process.execPath, [worker, 'add-worktree', '--repo', f.cwd, '--worktree', f.target, '--branch', 'codex/owned', '--base', 'HEAD', '--new-branch'], f.cwd);
+      expect(added.status, added.stderr).toBe(0); expect(existsSync(join(f.target, '.git'))).toBe(true);
+      expect(existsSync(join(f.target, '.ai/harness/active-worktree'))).toBe(true);
+      expect(existsSync(join(f.cwd, '.git/repo-harness/coordination/worktree-identities'))).toBe(false);
+      const retry = run(process.execPath, [worker, 'check-start-path', '--repo', f.cwd, '--worktree', f.target, '--branch', 'codex/owned'], f.cwd);
+      expect(retry.status).toBe(1); expect(retry.stderr).toContain('recovery uid is unavailable:');
+    } finally { f.cleanup(); }
+  });
+
+  test('W6 identity write failure names the retained checkout and a cleanup command', () => {
+    const f = fixture(); try {
+      const binary = join(f.parent, 'git-block-identity');
+      writeFileSync(binary, '#!/bin/sh\n/usr/bin/git "$@"\nstatus=$?\nif [ "$1" = worktree ] && [ "$2" = add ] && [ "$status" = 0 ]; then mkdir -p "$W6_STORE_PARENT"; printf blocked > "$W6_STORE_PARENT/worktree-identities"; fi\nexit "$status"\n', { mode: 0o755 });
+      const started = run('bash', [...f.args, '--no-plan-to-todo'], f.cwd, { REPO_HARNESS_GIT_BIN: binary, W6_STORE_PARENT: join(f.cwd, '.git/repo-harness/coordination') });
+      expect(started.status).toBe(1); expect(started.stderr).toContain('Git created checkout ' + f.target);
+      expect(started.stderr).toContain('cleanup --slug owned --target <integration-branch>');
+      expect(existsSync(join(f.target, '.git'))).toBe(true);
+    } finally { f.cleanup(); }
+  });
+
   test('W5 start and recovery accept the system tmp canonical alias', () => {
     const f = fixture(); try {
       const alias = f.target.replace(/^\/private\/tmp\//, '/tmp/');
