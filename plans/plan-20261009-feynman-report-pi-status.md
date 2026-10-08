@@ -6,6 +6,7 @@
 > Branch: `codex/feynman-report-pi-status`
 > Owner: Parent Codex agent in this chat.
 > Authority: The user requested the report SOP change, a Plan and task dispatch.
+> Publication authority: The user then requested a PR, acceptance and merge for this documentation change. Runtime integration and release remain outside this authorization.
 
 ## Goal and scope
 
@@ -13,7 +14,7 @@ Explain project progress to a reader who does not know the project. Include a Pl
 
 Plan the Pi 1.1 status link for the read-only Kanban. Pi is the worker. Its program status is a signal light. The Kanban shows that light beside the task. The task still needs its own checks before acceptance.
 
-This work changes the report SOP and records bounded implementation tasks. It does not add a scheduler, a second task store or a Pi package dependency. It does not change the existing 0.21.2 candidate, start a live provider, change a user daemon, merge, tag or publish. External code publication and live configuration changes need their own task scope.
+This work changes the report SOP and records bounded implementation tasks. It does not add a scheduler, a second task store or a Pi package dependency. It does not change the existing 0.21.2 candidate, start a live provider, change a user daemon, tag or release a package. The later user request authorizes a PR and merge of these documents after acceptance. External code publication and live configuration changes need their own task scope.
 
 ## P1: Map the boundaries
 
@@ -83,7 +84,7 @@ Runtime acceptance is a separate slice. No synthetic fixture or passed CI job ca
 
 The main risk is confusing a program's reported state with a verified task result. The identity and acceptance boundaries above prevent that promotion. An upstream protocol/version change can require a small transport update and new real-chain evidence.
 
-This slice changes documents only. Revert its local commit to remove the SOP addition, Plan and diagram. It does not modify runtime state. Do not delete unrelated files or branches. No push, PR, merge or release is part of this slice.
+This slice changes documents only. After merge, revert the provider-confirmed squash commit to remove the SOP addition, Plan and diagram. It does not modify runtime state. Do not delete unrelated files or branches. Record the merge SHA, its parent and the rollback command in the PR closeout. Package release remains out of scope.
 
 ## Sources
 
@@ -102,4 +103,4 @@ This slice changes documents only. Revert its local commit to remove the SOP add
 - D0 returned a source report at the fixed revisions above. It used Git and GitHub API reads. It did not install, edit, control Herdr or run a provider.
 - Parent inline Python checks exited 0: exact four-file scope, byte-identical SOP projection, four local links/anchors, diagram delimiters and all referenced node aliases. `git diff --check` exited 0.
 - `/usr/bin/java -version` exited 1 because no Java runtime is installed. PlantUML grammar compilation and image rendering were not run. The editable source remains available. No report content was sent to an external renderer.
-- No product test, live Pi/Herdr acceptance, upstream code change or deployment is claimed. The change is local; it has no PR, merge or release result.
+- At initial capture, no product test, live Pi/Herdr acceptance, upstream code change or deployment was claimed. The change was local. The later publication result and its exact checks belong in the PR closeout; this dated snapshot does not replace them.
