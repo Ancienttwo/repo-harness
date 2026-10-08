@@ -35,20 +35,27 @@ All notable changes to this skill are documented here.
   existing downstream policies keep their value. Set it to
   `../{{repo}}-wt-{{slug}}` to keep the old location. (#600)
 - `start` refuses an existing target path. It reuses the path only when this
-  clone registers it on the expected branch, unlocked, with no other owner.
-  A failed `git worktree add` releases only the empty path that it claimed.
-  (#600)
+  clone registers it on the expected branch, unlocked, with no other owner,
+  and the directory and its `.git` file are yours, not group or other
+  writable, and match the identity that `start` recorded at creation. A
+  replaced directory with a copied `.git` file is refused. An older worktree
+  without that record is refused. A failed `git worktree add` releases only
+  the empty path that it claimed. (#600)
 - Closeout removes a merged, clean worktree and its branch through the exact
   cleanup checks. It releases only that worktree's own marker. MCP cleanup now
   also refuses marked worktrees and retained verification evidence. Cleanup of
   a registered worktree whose branch is missing is refused. (#600)
 - Each SessionStart removes left-behind worktrees under the managed root that
-  are merged, clean and unowned and have commits of their own. It keeps
+  are merged, clean and unowned and whose reflog shows a commit made on the
+  branch. A fast-forward, reset or rebase entry alone does not count. It keeps
   untouched new branches, unreadable reflogs and worktrees with submodules.
   The sweep has a time limit and reports processed paths and deferred counts.
   The next session resumes an interrupted removal. Removal also deletes
   Git-ignored files in that worktree. A reboot or an age-based `/tmp` cleaner
   can remove worktrees; commit or push work first. (#600)
+- `test:files` and `check-ci.sh` now run each test file in its own Bun
+  process and fail a file that leaves a new `/tmp/*-wt-*` path owned by the
+  current user. The check never deletes the path. (#600)
 - `repo-harness module review-prompt` now fails with `secret_detected` when
   the prompt contains a URL with a filled `token`, `key`, `auth`, `code`,
   `sig` or `signature` query field. MCP redaction uses the same patterns. (#590)
