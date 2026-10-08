@@ -14,7 +14,7 @@ import {
 } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
-import { defaultWorktreeTemplate } from "../src/core/worktree-location.mjs";
+import { DEFAULT_WORKTREE_TEMPLATE, defaultWorktreeTemplate } from "../src/core/worktree-location.mjs";
 
 import { sweepManagedWorktrees } from '../src/effects/state/coordination-worktree-topology';
 import { copyHelpers, ROOT } from "./helpers/helper-script-fixture";
@@ -214,7 +214,7 @@ describe('task worktree location', () => {
       copyHelpers(cwd); initGitRepo(cwd);
       const policy = run('bash', ['-c', 'source "$1"; pi_write_harness_policy "$PWD" apply', 'policy', join(ROOT, 'scripts/lib/project-init-lib.sh')], cwd);
       expect(policy.status, policy.stderr).toBe(0);
-      expect(JSON.parse(readFileSync(join(cwd, '.ai/harness/policy.json'), 'utf8')).worktree_strategy.worktree_dir_template).toBe(expectedTemplate);
+      expect(JSON.parse(readFileSync(join(cwd, '.ai/harness/policy.json'), 'utf8')).worktree_strategy.worktree_dir_template).toBe(DEFAULT_WORKTREE_TEMPLATE);
       const helperTemplate = run(process.execPath, ['scripts/contract-worktree-runtime.ts', 'default-template'], cwd);
       expect(helperTemplate.status, helperTemplate.stderr).toBe(0); expect(helperTemplate.stdout.trim()).toBe(expectedTemplate);
       mkdirSync(join(cwd, 'plans'));

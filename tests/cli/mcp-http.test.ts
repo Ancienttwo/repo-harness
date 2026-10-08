@@ -1465,7 +1465,7 @@ describe('mcp http transport', () => {
         '--host', '127.0.0.1',
         '--port', String(port),
         '--profile', 'coding',
-      ], { cwd: process.cwd(), stdout: 'ignore', stderr: 'pipe', env: { ...process.env, REPO_HARNESS_MCP_WORKTREE_ROOT: join(repoRoot, 'managed-worktrees') } });
+      ], { cwd: process.cwd(), stdout: 'ignore', stderr: 'pipe', env: { ...process.env, ...(process.platform !== 'win32' ? { REPO_HARNESS_MCP_WORKTREE_ROOT: join(repoRoot, 'managed-worktrees') } : {}) } });
       await waitForHealth(port);
 
       const badHost = await fetch(`http://127.0.0.1:${port}/health`, { headers: { 'x-forwarded-host': 'evil.test' } });

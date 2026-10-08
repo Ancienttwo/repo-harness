@@ -1416,7 +1416,7 @@ pi_write_harness_policy() {
   mkdir -p "$(dirname "$output_file")"
   default_file="$(mktemp)"
   merged_file="$(mktemp)"
-  worktree_template="$(bun -e 'import {tmpdir} from "node:os"; import {pathToFileURL} from "node:url"; const {defaultWorktreeTemplate}=await import(pathToFileURL(process.argv[1]).href); console.log(JSON.stringify(defaultWorktreeTemplate(process.platform,tmpdir())));' "${BASH_SOURCE[0]%/*}/../../src/core/worktree-location.mjs")" || return $?
+  worktree_template="$(bun -e 'import {pathToFileURL} from "node:url"; const {DEFAULT_WORKTREE_TEMPLATE}=await import(pathToFileURL(process.argv[1]).href); console.log(JSON.stringify(DEFAULT_WORKTREE_TEMPLATE));' "${BASH_SOURCE[0]%/*}/../../src/core/worktree-location.mjs")" || return $?
   cat > "$default_file" <<EOF_POLICY
 {
   "version": 1,

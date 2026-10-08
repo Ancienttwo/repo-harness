@@ -547,6 +547,21 @@ describe('shipped Herdr notify event handler', () => {
     }
   });
 
+  test.skipIf(process.platform === 'win32')('a FIFO commondir is suppressed without blocking the notifier', () => {
+    const f = eventFixture(); try {
+      const managed = join(f.root, 'managed'), fake = join(managed, 'repo-wt-fifo');
+      const admin = join(f.root, 'fake-git/worktrees/fifo');
+      mkdirSync(fake, { recursive: true }); mkdirSync(admin, { recursive: true });
+      writeFileSync(join(fake, '.git'), 'gitdir: ' + admin);
+      const fifo = spawnSync('mkfifo', [join(admin, 'commondir')], { encoding: 'utf8' });
+      expect(fifo.status, fifo.stderr).toBe(0);
+      const env = { ...f.env, HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify({ workspace_cwd: fake }) };
+      const code = `import { notify } from ${JSON.stringify(pluginPath)}; await notify(process.env, () => { throw new Error('unexpected send'); }, { managedRoot: ${JSON.stringify(managed)} });`;
+      const child = spawnSync(process.execPath, ['-e', code], { env, encoding: 'utf8', timeout: 2000 });
+      expect(child.error).toBeUndefined(); expect(child.status, child.stderr).toBe(0);
+    } finally { f.cleanup(); }
+  });
+
   test.each(['ordinary', 'unregistered', 'copied-pointer', 'fake-admin'])('temporary notification contexts remain filtered: %s', async kind => {
     const f = eventFixture(); try {
       const managed = join(f.root, 'managed'); mkdirSync(managed);

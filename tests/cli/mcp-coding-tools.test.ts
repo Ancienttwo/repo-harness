@@ -1,5 +1,5 @@
 import { worktreeUid } from '../../src/effects/state/worktree-trash';
-import { systemWorktreeRoot, defaultWorktreeTemplate } from '../../src/core/worktree-location.mjs';
+import { DEFAULT_WORKTREE_TEMPLATE, resolveWorktreeTemplate, systemWorktreeRoot, defaultWorktreeTemplate } from '../../src/core/worktree-location.mjs';
 import { createHash } from 'crypto';
 import { spawnSync } from 'child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'fs';
@@ -642,6 +642,13 @@ describe('coding MCP workspace and file tools', () => {
 });
 
 describe('system worktree root platform policy', () => {
+  test('stored defaults are neutral and explicit templates stay unchanged', () => {
+    expect(DEFAULT_WORKTREE_TEMPLATE).toBe('{{system_tmp}}/{{repo}}-wt-{{slug}}');
+    for (const platform of ['linux', 'win32'] as const) {
+      expect(resolveWorktreeTemplate('/explicit/{{repo}}-wt-{{slug}}', platform, 'C:\\Users\\runner\\Temp')).toBe('/explicit/{{repo}}-wt-{{slug}}');
+      expect(resolveWorktreeTemplate(DEFAULT_WORKTREE_TEMPLATE, platform, 'C:\\Users\\runner\\Temp')).toBe(platform === 'win32' ? 'C:/Users/runner/Temp/{{repo}}-wt-{{slug}}' : '/tmp/{{repo}}-wt-{{slug}}');
+    }
+  });
   test('POSIX uses /tmp even when the process temp root differs', () => {
     expect(systemWorktreeRoot('linux', '/var/process-temp')).toBe('/tmp');
     expect(systemWorktreeRoot('darwin', '/var/folders/process-temp')).toBe('/tmp');

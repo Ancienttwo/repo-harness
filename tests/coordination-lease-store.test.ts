@@ -450,10 +450,10 @@ describe('per-task lock', () => {
       process.execPath,
       '-e',
       [
-        "const { writeFileSync } = await import('node:fs');",
+        "const { writeFileSync, renameSync } = await import('node:fs');",
         'const { withTaskLock } = await import(process.env.LEASE_STORE_MODULE);',
         'withTaskLock(process.env.REPO_ROOT, process.env.TASK_ID, () => {',
-        "  writeFileSync(process.env.READY_PATH, 'ready\\n');",
+        "  writeFileSync(process.env.READY_PATH + '.tmp', 'ready\\n'); renameSync(process.env.READY_PATH + '.tmp', process.env.READY_PATH);",
         '  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0);',
         '});',
       ].join('\n'),
@@ -1469,14 +1469,14 @@ describe('complete-row is one locked transaction', () => {
 
   function completionChildSource(repo: string, signals: string): string {
     return [
-      "import { writeFileSync } from 'fs';",
+      "import { writeFileSync, renameSync } from 'fs';",
       `import { completeRowSprintCommand, processSprintDependencies } from '${join(REPO_ROOT, 'src/effects/state/coordination-sprint')}';`,
-      `writeFileSync(${JSON.stringify(join(signals, 'started'))}, 'go');`,
+      `writeFileSync(${JSON.stringify(join(signals, 'started'))} + ".tmp", 'go'); renameSync(${JSON.stringify(join(signals, 'started'))} + ".tmp", ${JSON.stringify(join(signals, 'started'))});`,
       'const outcome = completeRowSprintCommand(',
       `  { sprint: ${JSON.stringify(RACE_SPRINT)}, task: ${JSON.stringify(RACE_TASK)}, targetRef: 'main' },`,
       `  processSprintDependencies(${JSON.stringify(repo)}),`,
       ');',
-      `writeFileSync(${JSON.stringify(join(signals, 'outcome.json'))}, JSON.stringify(outcome));`,
+      `writeFileSync(${JSON.stringify(join(signals, 'outcome.json'))} + ".tmp", JSON.stringify(outcome)); renameSync(${JSON.stringify(join(signals, 'outcome.json'))} + ".tmp", ${JSON.stringify(join(signals, 'outcome.json'))});`,
     ].join('\n');
   }
 
@@ -2194,10 +2194,10 @@ describe('exact cleanup and SessionStart worktree sweep', () => {
     const module = join(import.meta.dir, '../src/effects/state/coordination-worktree-topology.ts');
     writeFileSync(worker, [
       `import { sweepManagedWorktrees } from ${JSON.stringify(module)};`,
-      `import { writeFileSync } from 'fs';`,
+      `import { writeFileSync, renameSync } from 'fs';`,
       `let stopped = false;`,
       `const result = sweepManagedWorktrees(${JSON.stringify(f.root)}, ${JSON.stringify(f.root)}, process.env, { deadlineMs: 60_000, afterRemovalStep(step, path) {`,
-      `if (!stopped && step === ${JSON.stringify(step)}) { stopped = true; writeFileSync(${JSON.stringify(signal)}, JSON.stringify({ step, path })); process.kill(process.pid, 'SIGSTOP'); }`,
+      `if (!stopped && step === ${JSON.stringify(step)}) { stopped = true; writeFileSync(${JSON.stringify(signal)} + ".tmp", JSON.stringify({ step, path })); renameSync(${JSON.stringify(signal)} + ".tmp", ${JSON.stringify(signal)}); process.kill(process.pid, 'SIGSTOP'); }`,
       `} }); console.log(result);`,
     ].join('\n'));
     const child = spawn(process.execPath, [worker], { cwd: f.root, env: f.env, stdio: ['ignore', 'pipe', 'pipe'] });

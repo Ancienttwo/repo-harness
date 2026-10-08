@@ -7,9 +7,9 @@ import { fileURLToPath, pathToFileURL } from 'url';
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const packageRoot = basename(scriptDir) === 'helpers' ? resolve(scriptDir, '../../..') : resolve(scriptDir, '..');
 const [action, ...args] = process.argv.slice(2);
-if (action === 'default-template') {
-  const { defaultWorktreeTemplate } = await import(pathToFileURL(join(packageRoot, 'src/core/worktree-location.mjs')).href);
-  console.log(defaultWorktreeTemplate(process.platform, tmpdir()));
+if (action === 'default-template' || action === 'resolve-template') {
+  const { defaultWorktreeTemplate, resolveWorktreeTemplate } = await import(pathToFileURL(join(packageRoot, 'src/core/worktree-location.mjs')).href);
+  console.log(action === 'default-template' ? defaultWorktreeTemplate(process.platform, tmpdir()) : resolveWorktreeTemplate(args[args.indexOf('--template') + 1], process.platform, tmpdir()));
   process.exit(0);
 }
 const { readSessionArtifact, cleanupTaskWorktree, registerTaskWorktree } = await import(pathToFileURL(join(packageRoot, 'src/effects/terminal/task-session.ts')).href) as typeof import('../src/effects/terminal/task-session');
@@ -42,10 +42,7 @@ try {
     try { stat = lstatSync(value('--worktree')); }
     catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
     if (stat) {
-      if (action === 'default-template') {
-    const { defaultWorktreeTemplate } = await import(pathToFileURL(join(packageRoot, 'src/core/worktree-location.mjs')).href);
-    console.log(defaultWorktreeTemplate(process.platform, tmpdir()));
-  } else if (action === 'assert-unused-path' || args.includes('--fresh') || !stat.isDirectory() || stat.isSymbolicLink()) throw new Error('target worktree path already exists');
+      if (action === 'assert-unused-path' || args.includes('--fresh') || !stat.isDirectory() || stat.isSymbolicLink()) throw new Error('target worktree path already exists');
       const { withWorktreeTopologyLock, assertReusableWorktree } = await import(pathToFileURL(join(packageRoot, 'src/effects/state/coordination-worktree-topology.ts')).href) as typeof import('../src/effects/state/coordination-worktree-topology');
       withWorktreeTopologyLock(value('--repo'), () => {
         const canonical = realpathSync(value('--worktree'));

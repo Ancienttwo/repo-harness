@@ -8,7 +8,7 @@ _ci_run_bun_tests_in_temporary_home() {
   node -e '
     const fs = require("node:fs");
     const { spawnSync } = require("node:child_process");
-    const { createTemporaryTestEnvironment } = require(process.argv[1]);
+    const { createTemporaryTestEnvironment, temporaryPath } = require(process.argv[1]);
     const args = process.argv.slice(2);
     const batch = args.indexOf("--harness-file-list");
     const divider = args.indexOf("--harness-options");
@@ -19,6 +19,22 @@ _ci_run_bun_tests_in_temporary_home() {
       // The parent runs this check after Bun exits. Bun exit hooks are not reliable.
       const roots = [...new Set((process.platform === "win32" ? [require("node:os").tmpdir(), "/tmp", "/private/tmp"] : ["/tmp", "/private/tmp"]).filter(p => fs.existsSync(p)).map(p => fs.realpathSync(p)))];
       const snapshot = () => roots.flatMap(root => fs.readdirSync(root).filter(name => /-wt-/.test(name) && !name.startsWith(".repo-harness-wt-trash-")).map(name => require("node:path").join(root, name)));
+      const pathApi = require("node:path");
+      const runRoots = [home, temp, process.env.HOME, process.env.TMPDIR, process.env.REPO_HARNESS_WORKTREE_ROOT]
+        .filter(Boolean).map(p => temporaryPath(p, true)).filter(Boolean)
+        .filter(p => !roots.includes(p));
+      const insideRun = p => runRoots.some(root => p === root || p.startsWith(root + pathApi.sep));
+      const externalRegistration = checkout => {
+        try {
+          const pointer = pathApi.join(checkout, ".git");
+          const stat = fs.lstatSync(pointer);
+          if (!stat.isFile() || stat.isSymbolicLink()) return false;
+          const text = fs.readFileSync(pointer, "utf8").trim();
+          if (!text.startsWith("gitdir: ")) return false;
+          const admin = fs.realpathSync(pathApi.resolve(checkout, text.slice(8)));
+          return fs.statSync(admin).isDirectory() && !insideRun(admin);
+        } catch { return false; }
+      };
       const before = new Set(snapshot());
       const started = Date.now();
       let fileStatus = 1;
@@ -30,7 +46,7 @@ _ci_run_bun_tests_in_temporary_home() {
         if (result.error) console.error("[ci] test process failed to start: " + result.error.message);
         fileStatus = result.status ?? 1;
         for (const path of snapshot()) {
-          if (before.has(path)) continue;
+          if (before.has(path) || externalRegistration(path)) continue;
           let stat;
           try { stat = fs.lstatSync(path); } catch (error) { if (error.code === "ENOENT") continue; throw error; }
           // Fallback: fixture-created roots are not all known to this runner.

@@ -1,5 +1,5 @@
 // Adapted from ~/herdr-plugins/webhook-notify. Config and identity come from Herdr.
-import { existsSync, lstatSync, readFileSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, readFileSync, realpathSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { systemWorktreeRoot } from './worktree-location.mjs';
 import { randomUUID } from 'node:crypto';
 import { hostname, tmpdir } from 'node:os';
@@ -33,11 +33,15 @@ function isManagedTaskPath(absolute, managedRoot) {
     if (!content.startsWith('gitdir: ')) return false;
     const namedAdmin = resolve(worktree, content.slice(8));
     const stat = lstatSync(namedAdmin);
-    if (!stat.isDirectory() || stat.isSymbolicLink()) return false;
+    if (!stat.isDirectory() || stat.isSymbolicLink() || (process.platform !== 'win32' && stat.uid !== process.getuid?.())) return false;
     const admin = realpathSync(namedAdmin);
-    const common = realpathSync(resolve(admin, readFileSync(join(admin, 'commondir'), 'utf8').trim()));
-    if (dirname(admin) !== join(common, 'worktrees') || !statSync(join(common, 'HEAD')).isFile()
-      || !statSync(join(common, 'objects')).isDirectory() || !statSync(join(common, 'refs')).isDirectory()) return false;
+    const commonPointer = join(admin, 'commondir');
+    const commonFile = lstatSync(commonPointer);
+    if (!commonFile.isFile() || commonFile.isSymbolicLink()) return false;
+    const common = realpathSync(resolve(admin, readFileSync(commonPointer, 'utf8').trim()));
+    const head = lstatSync(join(common, 'HEAD')), objects = lstatSync(join(common, 'objects')), refs = lstatSync(join(common, 'refs'));
+    if (dirname(admin) !== join(common, 'worktrees') || !head.isFile() || head.isSymbolicLink()
+      || !objects.isDirectory() || objects.isSymbolicLink() || !refs.isDirectory() || refs.isSymbolicLink()) return false;
     const backpointer = join(admin, 'gitdir');
     const back = lstatSync(backpointer);
     return back.isFile() && !back.isSymbolicLink()
