@@ -9,7 +9,7 @@ import { openSnapshot } from '../pipeline/store';
 import { createHerdrRuntimeTransport } from './herdr-runtime-transport';
 import { configureRuntimeSource } from './runtime-source';
 import { createRuntimeStatusObserver } from './runtime-status';
-import { validateObservationEndpoint } from '../terminal/herdr-observation';
+import { HERDR_OBSERVATION_REVISION, validateObservationEndpoint } from '../terminal/herdr-observation';
 
 export interface HerdrRuntimeConfig {
   protocol: 'repo-harness.herdr-runtime-config.v1'; source_host: string; herdr_session: string;
@@ -90,7 +90,7 @@ export async function startHerdrRuntimeService(path: string) {
       try {
         if (!observer) {
           transport = createHerdrRuntimeTransport(config, config.source_host, config.herdr_session);
-          const source = await configureRuntimeSource({ ...config, source_revision: '4dc23bb15d4a2fd2c093abfb509f903c3015bf56', transport: transport.transport,
+          const source = await configureRuntimeSource({ ...config, source_revision: HERDR_OBSERVATION_REVISION, transport: transport.transport,
             bindings: async epoch => readRuntimeDispatchBindings(config, epoch) });
           if (closed) { transport.close(); return; }
           observer = createRuntimeStatusObserver(source); await observer.start();

@@ -4,8 +4,8 @@ import { isAbsolute } from 'node:path';
 import { runtimeInteger, runtimeTime } from '../../core/operator/runtime-status';
 import type { ProgramStatusV1 } from '../operator/runtime-status';
 
-/** Official herdrdev/herdr schema at this immutable source revision. */
-export const HERDR_OBSERVATION_REVISION = '4dc23bb15d4a2fd2c093abfb509f903c3015bf56';
+/** Schema source revision. Reported version fields do not attest this commit. */
+export const HERDR_OBSERVATION_REVISION = '3f32b738723e91e9f25fe270009266cf97046aab';
 export const HERDR_OBSERVATION_VERSION = '0.9.3';
 export const HERDR_OBSERVATION_PROTOCOL = 22;
 const MAX_FRAME_BYTES = 1024 * 1024;

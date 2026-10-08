@@ -3,7 +3,7 @@ import { HERDR_OBSERVATION_REVISION, herdrAgentSessionKey, herdrObject, herdrPro
 import type { StructuredRuntimeTransport } from './runtime-source';
 import { RUNTIME_SOURCE_PROTOCOL } from './runtime-source';
 
-/** Uses only official 0.9.3/protocol-22 read and subscription methods. */
+/** Uses the pinned schema and exact 0.9.3/protocol-22 read methods. */
 export function createHerdrRuntimeTransport(endpoint: HerdrObservationEndpoint, source_host: string, herdr_session: string) {
   let connections = new AbortController();
   let active = false, ready = false, generation = 0;
