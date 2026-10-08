@@ -996,3 +996,172 @@ let buffer=''; process.stdin.on('data',chunk=>{
     rmSync(fixture, { recursive: true, force: true });
   }
 }, 60_000);
+
+test.skipIf(process.platform !== 'darwin')('coding admission fails closed and real OS policy denies primary, metadata and escaped writes', async () => {
+  const isolation = await import('../src/effects/terminal/coding-isolation');
+  const { startCodingTaskAgent } = await import('../src/effects/terminal/coding-session');
+  const fixture = realpathSync(mkdtempSync('/tmp/cb-'));
+  const primary = join(fixture, 'primary'), checkout = join(fixture, 'worktree'), control = join(fixture, 'control');
+  mkdirSync(primary); mkdirSync(control);
+  const env = { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' };
+  run('git', ['init', '-qb', 'main'], primary, env);
+  run('git', ['-c', 'user.name=fixture', '-c', 'user.email=fixture@localhost', 'commit', '--allow-empty', '-qm', 'fixture'], primary, env);
+  run('git', ['worktree', 'add', '-qb', 'coding-boundary', checkout], primary, env);
+  const admission: import('../src/effects/terminal/coding-isolation').CodingHostAdmission = {
+    version: 1, runtime: 'codex', execution_root: checkout, node: realpathSync('/opt/homebrew/opt/node@24/bin/node'), executable: '/usr/bin/true',
+    model: 'fixture', effort: 'medium', approval_policy: 'never', filesystem: 'worktree-only', authorization_ref: 'fixture-exact-operator-admission',
+  };
+  try {
+    expect(() => isolation.assertCodingHostAdmission(checkout, undefined as any)).toThrow('OPERATOR_ADMISSION_REQUIRED');
+    for (const change of [{ approval_policy: 'on-request' }, { filesystem: 'danger-full-access' }, { authorization_ref: '' }, { extra: true }]) {
+      expect(() => isolation.assertCodingHostAdmission(checkout, { ...admission, ...change } as any)).toThrow('OPERATOR_ADMISSION_REQUIRED');
+    }
+    expect(() => isolation.assertCodingHostAdmission(checkout, { ...admission, runtime: 'claude' } as any)).toThrow('BOUNDARY_UNSUPPORTED');
+    expect(() => isolation.assertCodingHostAdmission(checkout, admission, 'linux')).toThrow('BOUNDARY_UNSUPPORTED');
+    expect(() => isolation.assertCodingHostAdmission(primary, { ...admission, execution_root: primary })).toThrow('LINKED_WORKTREE_REQUIRED');
+    const spec = { task: 'denied', role: 'deep-worker', harness_kind: 'codex', endpoint: { session: 'task-proof-0123456789abcdef' }, parent_pane: 'absent', args: [], max_requests: 2 };
+    await expect(startCodingTaskAgent(checkout, spec, undefined as any)).rejects.toThrow('OPERATOR_ADMISSION_REQUIRED');
+    expect(existsSync(join(primary, '.ai'))).toBe(false);
+    await expect(startCodingTaskAgent(checkout, { ...spec, args: ['--dangerously-bypass-approvals-and-sandbox'] }, admission)).rejects.toThrow('NATIVE_ARGUMENTS_REFUSED');
+    expect(existsSync(join(primary, '.ai'))).toBe(false);
+    const policy = join(control, 'policy.sb');
+    const launcher = isolation.prepareCodingLauncher(control, policy, admission);
+    isolation.proveCodingIsolation(admission, policy);
+    expect(readFileSync(launcher, 'utf8')).toContain('/usr/bin/sandbox-exec');
+    expect(readFileSync(launcher, 'utf8')).not.toContain('approval');
+    const protectedFile = join(primary, 'authority'); writeFileSync(protectedFile, 'owner');
+    const instruction = join(checkout, 'AGENTS.md'); writeFileSync(instruction, 'operator');
+    symlinkSync(primary, join(checkout, 'escape'));
+    const denied = spawnSync('/usr/bin/sandbox-exec', ['-f', policy, admission.node, '-e', `
+const fs=require('node:fs');
+for(const path of process.argv.slice(1)){try{fs.writeFileSync(path,'bad');process.exit(1)}catch(e){if(e.code!=='EPERM')throw e}}
+`, protectedFile, instruction, join(checkout, '.git'), join(checkout, 'escape', 'authority')], { encoding: 'utf8', timeout: 5000 });
+    expect(denied.status, denied.stderr).toBe(0);
+    expect(readFileSync(protectedFile, 'utf8')).toBe('owner');
+    expect(readFileSync(instruction, 'utf8')).toBe('operator');
+    const fs = await import('node:fs');
+    const alias = join(checkout,'hardlink-alias');
+    fs.linkSync(protectedFile,alias);
+    expect(() => isolation.assertCodingHostAdmission(checkout,admission)).toThrow(`OAR_CODING_HARDLINK_UNSUPPORTED: ${alias}`);
+    await expect(startCodingTaskAgent(checkout,spec,admission)).rejects.toThrow('HARDLINK_UNSUPPORTED');
+    expect(existsSync(join(primary,'.ai'))).toBe(false);
+    fs.unlinkSync(alias);
+    // After startup the sandboxed process cannot introduce an outside alias.
+    const linkAttempt = spawnSync('/usr/bin/sandbox-exec',['-f',policy,admission.node,'-e',`
+const fs=require('node:fs');try{fs.linkSync(process.argv[1],process.argv[2]);fs.writeFileSync(process.argv[2],'bad');process.exit(1)}catch(e){if(e.code!=='EPERM')throw e}
+`,protectedFile,alias],{encoding:'utf8',timeout:5000});
+    expect(linkAttempt.status,linkAttempt.stderr).toBe(0);
+    expect(existsSync(alias)).toBe(false);
+    expect(readFileSync(protectedFile,'utf8')).toBe('owner');
+    writeFileSync(policy, '(version 1)(allow default)');
+    expect(() => isolation.proveCodingIsolation(admission, policy)).toThrow('PROFILE_CHANGED');
+    expect(() => isolation.prepareCodingLauncher(control, policy, admission)).toThrow('PROFILE_CHANGED');
+  } finally { rmSync(fixture, { recursive: true, force: true }); }
+});
+
+test.skipIf(process.platform !== 'darwin')('OAR scripted coding session keeps task result authority and disposes before real Herdr cleanup', async () => {
+  const api = await import('../src/effects/terminal/task-session');
+  const coding = await import('../src/effects/terminal/coding-session');
+  const fixture = realpathSync(mkdtempSync('/tmp/cs-'));
+  const home = join(fixture, 'home'), repo = join(fixture, 'primary'), checkout = join(fixture, 'worktree');
+  mkdirSync(home); mkdirSync(repo);
+  const session = `task-proof-${randomUUID().replaceAll('-', '').slice(0, 16)}`;
+  const configPath = join(fixture, 'herdr.toml'), endpoint = { session, configPath, home };
+  requireFixtureSession(session);
+  const env = { ...herdrEnvironment(endpoint), GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' };
+  const node = realpathSync('/opt/homebrew/opt/node@24/bin/node');
+  const herdr = Bun.which('herdr'); if (!herdr) throw new Error('real_herdr_required_for_coding_proof');
+  writeFileSync(configPath, 'onboarding=false\n[terminal]\ndefault_shell="/bin/sh"\nshell_mode="non_login"\n[update]\nversion_check=false\nmanifest_check=false\n');
+  run('git', ['init', '-qb', 'main'], repo, env);
+  run('git', ['-c','user.name=fixture','-c','user.email=fixture@localhost','commit','--allow-empty','-qm','fixture'], repo, env);
+  run('git', ['worktree','add','-qb','coding-proof',checkout], repo, env);
+  const execute = (args: string[]) => { requireFixtureSession(session); return run(herdr, ['--session', session, ...args], repo, env); };
+  const call = (args: string[]) => JSON.parse(execute(args)).result;
+  const server = spawn(herdr, ['--session', session, 'server'], { env, stdio: 'ignore' }); server.on('error', () => {});
+  let binding: import('../src/effects/terminal/task-session').TaskPaneBinding | undefined;
+  let control = '';
+  const driver = join(fixture, 'scripted-host.mjs');
+  writeFileSync(driver, `
+import {existsSync,readFileSync,writeFileSync,renameSync} from 'node:fs';
+import {join} from 'node:path';
+import {openScriptedCodingHost,serveCodingHostRequests} from ${JSON.stringify(new URL('../dist/oar-coding-host.js', import.meta.url).href)};
+const spec=JSON.parse(readFileSync(process.argv[2],'utf8'));
+const host=await openScriptedCodingHost(spec.admission.execution_root,async ({input,say})=>{
+ const request=JSON.parse(input.split('\\n')[0].slice('TASK REQUEST: '.length));
+ say('fixture-oar coding observation; completion is not a result');
+ if(request.round===2){const value={request_id:request.request_id,context_sha256:request.context_sha256,value:'worker-authored result'};
+ writeFileSync(request.result_ref+'.tmp',JSON.stringify(value));renameSync(request.result_ref+'.tmp',request.result_ref);}
+ if(request.round===3)await new Promise(()=>{});
+},event=>console.log(JSON.stringify(event)));
+let closing;const close=()=>closing??=host.dispose();
+writeFileSync(join(spec.control_directory,'ready.json'),JSON.stringify({pid:process.pid,session_id:host.sessionId}));
+try{await serveCodingHostRequests(host,spec,close,()=>closing!==undefined)}finally{await close();writeFileSync(join(spec.control_directory,'disposed.json'),JSON.stringify({disposed:true,session_id:host.sessionId}));}
+`);
+  try {
+    await until(() => { try { return call(['workspace','list']).type==='workspace_list'; } catch { return false; } });
+    const workspace = call(['workspace','create','--cwd',repo,'--no-focus']);
+    const spec = { task:'coding-fixture', role:'deep-worker', harness_kind:'codex', endpoint, parent_pane:workspace.root_pane.pane_id, args:[], max_requests:3 };
+    const dir = api.taskSessionDirectory(repo, spec.task, spec.role); control = join(dir,'coding-host');
+    api.ensureSessionDirectory(repo, control);
+    const admission: import('../src/effects/terminal/coding-isolation').CodingHostAdmission = {
+      version:1, runtime:'codex', execution_root:checkout, node, executable:'/usr/bin/true', model:'fixture', effort:'medium',
+      approval_policy:'never', filesystem:'worktree-only', authorization_ref:'fixture-exact-admission',
+    };
+    const hostSpec = { admission, task:spec.task, role:spec.role, primary_root:repo, request_directory:dir, control_directory:control,
+      max_requests:3, installation:{kind:'available',via:'bundled'}, launcher:'fixture-not-used',policy_file:'fixture-not-used' };
+    const specFile = join(control,'spec.json'); api.writeSessionArtifact(specFile,hostSpec);
+    // Internal test seam runs OAR's real scriptedRuntime. It does not claim
+    // production-entrypoint or live-provider acceptance.
+    binding = await api.startTaskAgent(checkout,spec,{start:async (_endpoint,name,pane,kind)=>{
+      execute(['pane','run',pane,`${quote(node)} ${quote(driver)} ${quote(specFile)}`]);
+      await until(()=>existsSync(join(control,'ready.json')));
+      execute(['pane','report-agent',pane,'--source','coding-fixture','--agent',kind,'--state','working','--seq','1']);
+      execute(['pane','report-agent',pane,'--source','coding-fixture','--agent',kind,'--state','idle','--seq','2']);
+      execute(['agent','rename',pane,name]);
+    }});
+    expect(binding.host).toBeNull();
+    // A launch without durable provider proof must not close the pane.
+    const bindingFile = join(dir,'binding.json'), providerFile = join(dir,'provider-created.json');
+    const bindingBytes = readFileSync(bindingFile), providerBytes = readFileSync(providerFile);
+    const fs = await import('node:fs');
+    fs.unlinkSync(bindingFile); fs.unlinkSync(providerFile);
+    try {
+      expect(await api.cancelTaskAgent(repo,spec.task,spec.role)).toEqual({ status:'cleanup_pending',pids:[],reason:'oar_unbound_disposal_unproven' });
+      expect(live(binding.provider.pid)).toBe(true);
+      expect(call(['pane','get',binding.pane_id]).pane.pane_id).toBe(binding.pane_id);
+    } finally { writeFileSync(providerFile,providerBytes);writeFileSync(bindingFile,bindingBytes); }
+    writeFileSync(join(checkout,'context.md'),'first coding context');
+    const first = await coding.sendCodingTaskRequest(checkout,spec.task,spec.role,'context.md');
+    await until(()=>existsSync(join(control,'observed-1.json')));
+    expect(await api.collectTaskResult(checkout,spec.task,spec.role,1)).toBeNull();
+    expect(api.taskAgentStatus(repo,spec.task,spec.role).status).toBe('pending');
+    await expect(coding.sendCodingTaskRequest(checkout,spec.task,spec.role,'context.md')).rejects.toThrow('ambiguous_round');
+    await expect(coding.closeCodingTaskAgent(repo,spec.task,spec.role)).rejects.toThrow('pending_request');
+    expect(existsSync(join(control,'close.request'))).toBe(false);
+    expect(existsSync(join(dir,'request-2.json'))).toBe(false);
+    api.writeSessionArtifact(first.result_ref,{request_id:'forged',context_sha256:first.context_sha256,value:'forged'});
+    await expect(api.collectTaskResult(repo,spec.task,spec.role,1)).rejects.toThrow('identity_mismatch');
+    api.writeSessionArtifact(first.result_ref,{request_id:first.request_id,context_sha256:first.context_sha256,value:'explicit fixture result'},false);
+    expect((await api.collectTaskResult(repo,spec.task,spec.role,1))?.value).toBe('explicit fixture result');
+    writeFileSync(join(checkout,'context.md'),'second coding context');
+    const second=await coding.sendCodingTaskRequest(checkout,spec.task,spec.role,'context.md');
+    await until(()=>existsSync(second.result_ref));
+    expect((await api.collectTaskResult(repo,spec.task,spec.role,2))?.value).toBe('worker-authored result');
+    // Replaying a committed host attempt is refused before another OAR prompt.
+    const replay=spawnSync(node,['--input-type=module','-e',`import {readFileSync} from 'node:fs';import {openScriptedCodingHost,runCodingHostRequest} from ${JSON.stringify(new URL('../dist/oar-coding-host.js', import.meta.url).href)};
+const spec=JSON.parse(readFileSync(process.argv[1],'utf8')),request=JSON.parse(readFileSync(process.argv[2],'utf8'));const host=await openScriptedCodingHost(spec.admission.execution_root,()=>{throw new Error('REPLAY_OCCURRED')},()=>{});try{await runCodingHostRequest(host,spec,request)}finally{await host.dispose()}`,specFile,join(dir,'request-2.json')],{encoding:'utf8',timeout:5000});
+    expect(replay.status).toBe(1); expect(replay.stderr).toContain('EEXIST'); expect(replay.stderr).not.toContain('REPLAY_OCCURRED');
+    writeFileSync(join(checkout,'context.md'),'pending coding context');
+    await coding.sendCodingTaskRequest(checkout,spec.task,spec.role,'context.md');
+    expect((await api.cancelTaskAgent(repo,spec.task,spec.role)).status).toBe('closed');
+    expect((await coding.cancelCodingTaskAgent(repo,spec.task,spec.role)).status).toBe('closed');
+    expect(existsSync(join(control,'disposed.json'))).toBe(true);
+    expect(live(binding.provider.pid)).toBe(false);
+    expect(call(['pane','get',workspace.root_pane.pane_id]).pane.pane_id).toBe(workspace.root_pane.pane_id);
+  } finally {
+    if(control && existsSync(control) && !existsSync(join(control,'close.request')))writeFileSync(join(control,'close.request'),'close');
+    if(binding && live(binding.provider.pid))await until(()=>!live(binding!.provider.pid));
+    try{execute(['server','stop'])}catch{if(server.exitCode===null&&server.signalCode===null)server.kill('SIGTERM')}
+    await exited(server);rmSync(fixture,{recursive:true,force:true});
+  }
+}, 60000);

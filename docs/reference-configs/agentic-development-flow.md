@@ -30,11 +30,12 @@
 ## Bot and worker
 PM is a shared role across Bot hosts. The PM handles user communication, task
 breakdown, dispatch, follow-up and evidence-based reports. Coding agents own
-source edits, tests and repairs. Follow the [shared PM boundary](../../references/pm-boundary.md)
-for the permitted tool surface and reporting duties. Keep direct development
-sessions and explicitly assigned coding workers outside that PM restriction.
-OAR owns coding-agent execution. Herdr owns panes and visibility. A new Bot host
-adapts to that path; it does not add a new coding runtime or task authority.
+source edits, tests and repairs. Follow the shared PM boundary in the
+`repo-harness` Skill for the permitted tool surface and reporting duties.
+Keep direct development sessions and explicitly assigned coding workers outside
+that PM restriction. OAR owns coding-agent execution. Herdr owns panes and
+visibility. A new Bot host adapts to that path; it does not add a new coding
+runtime or task authority.
 
 The bot selects scope, worker and verification by risk. Use independent gatekeeper/cross-model review for large changes, security/permissions or model uncertainty; do not rerun a passing check or require multiple re-gates.
 A worker gets Goal, Scope, Verify, Rollback and a timebox, then loads concrete techniques on demand. Do not put routing catalogs or every technology guide in its brief.

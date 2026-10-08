@@ -1,0 +1,9 @@
+name: repo-harness-pm
+version: 1.0.0
+description: "Shared PM operations through the fixed repo-harness CLI."
+provides_tools:
+  - pm_capabilities
+  - pm_status
+  - pm_dispatch
+  - pm_follow_up
+  - pm_collect
