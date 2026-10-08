@@ -1236,7 +1236,7 @@ try{await serving}finally{await close();writeFileSync(join(control,'disposed.jso
         expect(existsSync(join(dir,'started-1.json'))).toBe(false);
         writeFileSync(join(control,'serve.request'),'start');
         await until(()=>existsSync(join(control,'publication-observed.json')));
-        expect(api.readSessionArtifact(join(control,'publication-observed.json'))).toEqual({state:'pending',prompts:0,failure:null});
+        expect(api.readSessionArtifact<{state:'pending'|'ended'|'failed';prompts:number;failure:string|null}>(join(control,'publication-observed.json'))).toEqual({state:'pending',prompts:0,failure:null});
         expect(live(binding.provider.pid)).toBe(true);
         expect(existsSync(join(control,'attempt-1.json'))).toBe(false);
         expect(existsSync(join(control,'serving-error.json'))).toBe(false);
@@ -1257,10 +1257,10 @@ try{await serving}finally{await close();writeFileSync(join(control,'disposed.jso
       });
       if(mode==='release'){
         await until(()=>existsSync(join(control,'observed-1.json')));
-        expect(api.readSessionArtifact(join(control,'prompts.json'))).toEqual({prompts:1});
+        expect(api.readSessionArtifact<{prompts:number}>(join(control,'prompts.json'))).toEqual({prompts:1});
         expect((await api.collectTaskResult(repo,spec.task,spec.role,1))?.value).toBe('publication result');
         expect((await api.closeTaskAgent(repo,spec.task,spec.role)).status).toBe('closed');
-        expect(api.readSessionArtifact(join(control,'prompts.json'))).toEqual({prompts:1});
+        expect(api.readSessionArtifact<{prompts:number}>(join(control,'prompts.json'))).toEqual({prompts:1});
       }else{
         expect(await api.collectTaskResult(repo,spec.task,spec.role,1)).toBeNull();
         expect((await api.cancelTaskAgent(repo,spec.task,spec.role)).status).toBe('closed');
