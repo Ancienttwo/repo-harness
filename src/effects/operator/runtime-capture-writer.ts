@@ -49,7 +49,10 @@ export class RuntimeCaptureWriter {
   private verify(): void {
     const directory = lstatSync(this.parent);
     if (!sameFile(directory, this.directoryIdentity) || !directory.isDirectory() || directory.isSymbolicLink() || (directory.mode & 0o022) !== 0) throw new Error('runtime_capture_directory_replaced');
-    const fd = openSync(this.target, constants.O_RDONLY | constants.O_NOFOLLOW);
+    const before = lstatSync(this.target);
+    if (!before.isFile() || before.isSymbolicLink() || !sameFile(before, this.fileIdentity) || (before.mode & 0o077) !== 0 || before.size > 256 * 1024) throw new Error('runtime_capture_file_replaced');
+    // O_NONBLOCK also closes the lstat/open race if a FIFO replaces this inode.
+    const fd = openSync(this.target, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
     try {
       const identity = fstatSync(fd);
       if (!sameFile(identity, this.fileIdentity) || !identity.isFile() || (identity.mode & 0o077) !== 0 || identity.size > 256 * 1024) throw new Error('runtime_capture_file_replaced');

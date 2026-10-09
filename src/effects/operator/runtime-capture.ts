@@ -17,6 +17,7 @@ export interface RuntimeCaptureOptions {
 export interface RuntimeCaptureIO { input: Readable; output: Writable; diagnostics: Writable }
 const MAX_TRANSPORT_BYTES = 256 * 1024;
 const INPUT_CHUNK_BYTES = 16 * 1024;
+const OUTPUT_RETIREMENT_MS = 2000;
 
 class CaptureCache {
   readonly snapshot: RuntimeCaptureSnapshot;
@@ -24,6 +25,7 @@ class CaptureCache {
   private timer: ReturnType<typeof setInterval>;
   private pending: ReturnType<typeof setTimeout> | null = null;
   private writerFailed = false;
+  private transportFailed = false;
   constructor(options: RuntimeCaptureOptions, private readonly diagnostic: (code: string) => void) {
     this.snapshot = { protocol: RUNTIME_CAPTURE_PROTOCOL, source_id: runtimeCaptureId(options.source_id), generation: randomUUID(), sequence: 0, provider: options.provider, format: options.provider === 'codex' ? 'codex-app-server' : 'osc7501', capture_status: 'connected', heartbeat_at: new Date().toISOString(), observations: [] };
     this.writer = new RuntimeCaptureWriter(options.snapshot_path, this.snapshot);
@@ -34,6 +36,11 @@ class CaptureCache {
     this.snapshot.observations = observations; this.schedule();
   }
   unavailable(): void { this.snapshot.capture_status = 'unavailable'; this.snapshot.observations = []; this.diagnostic('runtime_capture_observation_unavailable'); this.schedule(); }
+  transportIncomplete(): void {
+    if (this.transportFailed) return; this.transportFailed = true;
+    this.snapshot.capture_status = 'unavailable'; this.snapshot.observations = [];
+    this.diagnostic('runtime_capture_transport_incomplete'); this.schedule();
+  }
   disconnected(): void { if (this.snapshot.capture_status !== 'unavailable') this.snapshot.capture_status = 'disconnected'; this.schedule(); }
   close(): void { clearInterval(this.timer); this.disconnected(); this.flush(); }
   private schedule(): void { if (!this.pending && !this.writerFailed) this.pending = setTimeout(() => this.flush(), 0); }
@@ -70,12 +77,18 @@ async function captureCodex(options: RuntimeCaptureOptions, io: RuntimeCaptureIO
   const outputAbort = new AbortController();
   const stop = (signal: NodeJS.Signals) => {
     if (child.exitCode === null && child.signalCode === null) child.kill(signal);
-    forceStop ??= setTimeout(() => { if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL'); outputAbort.abort(); }, 2000);
+    retireOutput();
   };
+  const retireOutput = () => { forceStop ??= setTimeout(() => {
+    if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+    outputAbort.abort();
+  }, OUTPUT_RETIREMENT_MS); };
+  const abortOutput = () => { cache.transportIncomplete(); child.stdout.destroy(); };
+  outputAbort.signal.addEventListener('abort', abortOutput, { once: true });
   const interrupt = () => stop('SIGINT'), terminate = () => stop('SIGTERM');
   process.on('SIGINT', interrupt); process.on('SIGTERM', terminate);
   const decoder = new CodexRuntimeDecoder(observations => cache.observe(observations), () => cache.unavailable());
-  const exited = new Promise<number>((resolve, reject) => { child.once('error', () => reject(new Error('runtime_capture_child_unavailable'))); child.once('exit', (code, signal) => resolve(exitCode(code, signal))); });
+  const exited = new Promise<number>((resolve, reject) => { child.once('error', () => reject(new Error('runtime_capture_child_unavailable'))); child.once('exit', (code, signal) => { cache.disconnected(); retireOutput(); resolve(exitCode(code, signal)); }); });
   let inputError: Error | null = null;
   const onOutputError = () => stop('SIGTERM');
   io.output.on('error', onOutputError);
@@ -90,6 +103,7 @@ async function captureCodex(options: RuntimeCaptureOptions, io: RuntimeCaptureIO
         decoder.feed(bytes, new Date().toISOString());
         await writeOutput(io.output, bytes, outputAbort.signal);
       }
+      if (outputAbort.signal.aborted) throw new Error('runtime_capture_output_incomplete');
       decoder.end(); cache.disconnected();
     } catch { stop('SIGTERM'); throw new Error('runtime_capture_output_unavailable'); }
   })();
@@ -101,7 +115,8 @@ async function captureCodex(options: RuntimeCaptureOptions, io: RuntimeCaptureIO
     return code;
   } finally {
     stop('SIGTERM'); await exited.catch(() => {}); if (forceStop) clearTimeout(forceStop);
-    io.input.unpipe(child.stdin); io.input.pause(); child.stdin.destroy();
+    io.input.unpipe(child.stdin); io.input.pause(); child.stdin.destroy(); child.stdout.destroy();
+    outputAbort.signal.removeEventListener('abort', abortOutput);
     process.removeListener('SIGINT', interrupt); process.removeListener('SIGTERM', terminate);
     io.output.removeListener('error', onOutputError);
     io.input.removeListener('error', onInputError); child.stdin.removeListener('error', onChildInputError);
@@ -124,8 +139,11 @@ async function capturePty(options: RuntimeCaptureOptions, io: RuntimeCaptureIO, 
   const stop = (signal: NodeJS.Signals) => {
     if (pausedByCapture && child) { signalChild('SIGCONT'); pausedByCapture = false; }
     signalChild(signal);
-    forceStop ??= setTimeout(() => { signalChild('SIGKILL'); outputAbort.abort(); }, 2000);
+    retireOutput();
   };
+  const retireOutput = () => { forceStop ??= setTimeout(() => { signalChild('SIGKILL'); outputAbort.abort(); }, OUTPUT_RETIREMENT_MS); };
+  const abortOutput = () => { cache.transportIncomplete(); terminal?.close(); };
+  outputAbort.signal.addEventListener('abort', abortOutput, { once: true });
   const fail = () => { if (!fault) { fault = new Error('runtime_capture_transport_unavailable'); cache.disconnected(); stop('SIGTERM'); } };
   const pumpInput = () => {
     if (inputBusy || ended || !terminal || terminal.closed) return;
@@ -189,6 +207,7 @@ async function capturePty(options: RuntimeCaptureOptions, io: RuntimeCaptureIO, 
     pumpInput();
     if (io.input.readableEnded) inputEnd();
     const code = await child.exited;
+    retireOutput();
     ended = true;
     enqueueOutput(decoder.end(new Date().toISOString())); cache.disconnected();
     terminal?.close();
@@ -208,6 +227,7 @@ async function capturePty(options: RuntimeCaptureOptions, io: RuntimeCaptureIO, 
     ended = true; terminal?.close();
     if (child && child.exitCode === null && child.signalCode === null) { stop('SIGTERM'); await child.exited; }
     if (forceStop) clearTimeout(forceStop);
+    outputAbort.signal.removeEventListener('abort', abortOutput);
     io.input.pause(); io.input.removeListener('data', inputData); io.input.removeListener('end', inputEnd); io.input.removeListener('error', fail);
     io.output.removeListener('drain', outputDrain); io.output.removeListener('error', fail);
     process.removeListener('SIGINT', interrupt); process.removeListener('SIGTERM', terminate); process.stdout.removeListener('resize', resize);
@@ -221,5 +241,6 @@ export async function runRuntimeCapture(options: RuntimeCaptureOptions, io: Runt
   const diagnostic = (code: string) => { io.diagnostics.write(`${JSON.stringify({ ok: false, error: code })}\n`); };
   const cache = new CaptureCache(options, diagnostic);
   try { return await (options.provider === 'codex' ? captureCodex(options, io, cache) : capturePty(options, io, cache)); }
+  catch (error) { cache.transportIncomplete(); throw error; }
   finally { cache.close(); }
 }

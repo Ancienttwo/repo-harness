@@ -232,7 +232,9 @@ describe('owned child transport (fixtures do not attest provider support)', () =
     const run = runRuntimeCapture({ provider: 'pi', source_id: 'sink', snapshot_path: path, argv: [process.execPath, '-e', 'console.log("sink-trigger");await Bun.sleep(30000)'] }, { input, output, diagnostics: diagnostic.stream });
     await expect(run).rejects.toThrow('runtime_capture_transport_unavailable');
     expect([process.listenerCount('SIGINT'), process.listenerCount('SIGTERM')]).toEqual(listeners);
-    expect(input.listenerCount('data')).toBe(0); expect(JSON.parse(readFileSync(path, 'utf8')).capture_status).toBe('disconnected'); input.destroy();
+    expect(input.listenerCount('data')).toBe(0);
+    expect(JSON.parse(readFileSync(path, 'utf8'))).toMatchObject({ capture_status: 'unavailable', observations: [] });
+    expect(Buffer.concat(diagnostic.chunks).toString()).toContain('runtime_capture_transport_incomplete'); input.destroy();
   });
 
   test('a signal bounds shutdown when an outer sink never drains', async () => {
@@ -251,8 +253,102 @@ describe('owned child transport (fixtures do not attest provider support)', () =
       const start = Date.now(); process.kill(p.pid, 'SIGTERM');
       expect(await p.exited).toBe(0); expect(Date.now() - start).toBeLessThan(4000); await reading;
       expect(Buffer.concat(chunks).toString()).toContain('bounded-shutdown');
-      expect(JSON.parse(readFileSync(path, 'utf8')).capture_status).toBe('disconnected');
+      expect(JSON.parse(readFileSync(path, 'utf8'))).toMatchObject({ capture_status: 'unavailable', observations: [] });
+      expect(await new Response(p.stderr).text()).toContain('runtime_capture_transport_incomplete');
     } finally { if (p.exitCode === null) process.kill(p.pid, 'SIGKILL'); p.stdin.end(); reader.releaseLock(); }
+  });
+
+});
+
+async function boundedFixtureExit(p: Bun.Subprocess, milliseconds: number): Promise<number | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try { return await Promise.race([p.exited, new Promise<null>(resolve => { timer = setTimeout(() => resolve(null), milliseconds); })]); }
+  finally { if (timer) clearTimeout(timer); }
+}
+function fixtureOutput(stream: ReadableStream<Uint8Array>): { chunks: Buffer[]; finished: Promise<void> } {
+  const chunks: Buffer[] = [];
+  const finished = (async () => { for await (const bytes of stream) chunks.push(Buffer.from(bytes)); })();
+  return { chunks, finished };
+}
+
+describe('review regression: bounded capture retirement', () => {
+  for (const provider of ['codex', 'pi'] as const) {
+    test(`normal ${provider} child exit bounds a sink that never calls back`, async () => {
+      const dir = root(), path = join(dir, 'capture.json'), scriptPath = join(dir, 'normal-stall.ts');
+      writeFileSync(scriptPath, `import { Writable } from 'node:stream';
+        import { runRuntimeCapture } from ${JSON.stringify(join(process.cwd(), 'src/effects/operator/runtime-capture.ts'))};
+        const before = [process.listenerCount('SIGINT'),process.listenerCount('SIGTERM')];
+        const sink = new Writable({highWaterMark:1048576,write(){console.log('sink-stalled')}});
+        try { await runRuntimeCapture({provider:${JSON.stringify(provider)},source_id:'normal-stall',snapshot_path:${JSON.stringify(path)},argv:[process.execPath,'-e','process.stdout.write("normal-exit");await Bun.sleep(30);process.exit(0)']},{input:process.stdin,output:sink,diagnostics:process.stderr});console.log('false-success');process.exitCode=44 }
+        catch { console.log(JSON.stringify({retired:true,external_sink_destroyed:sink.destroyed,listeners_restored:JSON.stringify(before)===JSON.stringify([process.listenerCount('SIGINT'),process.listenerCount('SIGTERM')])})) }`);
+      const p = Bun.spawn([process.execPath, scriptPath], { stdin: 'pipe', stdout: 'pipe', stderr: 'pipe' });
+      const output = fixtureOutput(p.stdout), diagnostic = fixtureOutput(p.stderr);
+      try {
+        await until(() => Buffer.concat(output.chunks).toString().includes('sink-stalled'));
+        expect(await boundedFixtureExit(p, 3500)).toBe(0);
+        await output.finished; await diagnostic.finished;
+        expect(Buffer.concat(output.chunks).toString()).toContain('{"retired":true,"external_sink_destroyed":false,"listeners_restored":true}');
+        expect(JSON.parse(readFileSync(path, 'utf8')).capture_status).toBe('unavailable');
+        expect(Buffer.concat(diagnostic.chunks).toString()).toContain('runtime_capture_transport_incomplete');
+      } finally { if (p.exitCode === null) process.kill(p.pid, 'SIGKILL'); p.stdin.end(); await p.exited; }
+    });
+  }
+  for (const signalled of [false, true]) {
+    test(`Codex ${signalled ? 'signal' : 'normal exit'} retires a reader held open by a descendant`, async () => {
+      const dir = root(), path = join(dir, 'capture.json'), scriptPath = join(dir, 'reader-held.ts'), descendantPath = join(dir, 'descendant-pid');
+      const childScript = `const p=Bun.spawn([process.execPath,'-e','await Bun.sleep(30000)'],{stdin:'ignore',stdout:'inherit',stderr:'ignore'});await Bun.write(${JSON.stringify(descendantPath)},String(p.pid));${signalled ? 'process.on("SIGTERM",()=>process.exit(0));await Bun.sleep(30000)' : 'process.exit(0)'}`;
+      writeFileSync(scriptPath, `import { runRuntimeCapture } from ${JSON.stringify(join(process.cwd(), 'src/effects/operator/runtime-capture.ts'))};
+        try { await runRuntimeCapture({provider:'codex',source_id:'held-reader',snapshot_path:${JSON.stringify(path)},argv:[process.execPath,'-e',${JSON.stringify(childScript)}]});console.log('false-success');process.exitCode=44 }
+        catch { console.log('reader-retired') }`);
+      const p = Bun.spawn([process.execPath, scriptPath], { stdin: 'pipe', stdout: 'pipe', stderr: 'pipe' });
+      const output = fixtureOutput(p.stdout), diagnostic = fixtureOutput(p.stderr);
+      let descendantPid: number | null = null;
+      try {
+        await until(() => { try { return Number(readFileSync(descendantPath, 'utf8')) > 0; } catch { return false; } });
+        descendantPid = Number(readFileSync(descendantPath, 'utf8'));
+        if (signalled) process.kill(p.pid, 'SIGTERM');
+        expect(await boundedFixtureExit(p, 3500)).toBe(0);
+        await output.finished; await diagnostic.finished;
+        expect(Buffer.concat(output.chunks).toString()).toContain('reader-retired');
+        expect(JSON.parse(readFileSync(path, 'utf8')).capture_status).toBe('unavailable');
+        expect(Buffer.concat(diagnostic.chunks).toString()).toContain('runtime_capture_transport_incomplete');
+        // The capture must close its own reader. It cannot kill this descendant.
+        expect(() => process.kill(descendantPid!, 0)).not.toThrow();
+      } finally {
+        if (p.exitCode === null) process.kill(p.pid, 'SIGKILL'); p.stdin.end(); await p.exited;
+        if (descendantPid !== null) { try { process.kill(descendantPid, 'SIGKILL'); } catch { /* Fixture already ended. */ } }
+      }
+    });
+  }
+  test('FIFO snapshot replacement cannot block a writer or its cleanup timer', async () => {
+    const dir = root(), path = join(dir, 'capture.json'), scriptPath = join(dir, 'fifo.ts');
+    writeFileSync(scriptPath, `import { renameSync } from 'node:fs';import { execFileSync } from 'node:child_process';
+      import { RuntimeCaptureWriter } from ${JSON.stringify(join(process.cwd(), 'src/effects/operator/runtime-capture-writer.ts'))};
+      const s=${JSON.stringify(snapshot())};const w=new RuntimeCaptureWriter(${JSON.stringify(path)},s);
+      renameSync(${JSON.stringify(path)},${JSON.stringify(path + '.original')});execFileSync('mkfifo',[${JSON.stringify(path)}]);console.log('fifo-ready');
+      try { w.write({...s,sequence:1});console.log('false-success');process.exitCode=44 }catch{console.log('fifo-rejected')}`);
+    const p = Bun.spawn([process.execPath, scriptPath], { stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' });
+    const output = fixtureOutput(p.stdout);
+    try {
+      await until(() => Buffer.concat(output.chunks).toString().includes('fifo-ready'));
+      expect(await boundedFixtureExit(p, 1000)).toBe(0);
+      await output.finished; expect(Buffer.concat(output.chunks).toString()).toContain('fifo-rejected'); expect(lstatSync(path).isFIFO()).toBe(true);
+    } finally { if (p.exitCode === null) process.kill(p.pid, 'SIGKILL'); await p.exited; }
+  });
+  test('normal PTY retirement restores real owner raw mode after incomplete output', async () => {
+    const dir = root(), path = join(dir, 'capture.json'), scriptPath = join(dir, 'normal-raw-stall.ts');
+    writeFileSync(scriptPath, `import { Writable } from 'node:stream';
+      import { runRuntimeCapture } from ${JSON.stringify(join(process.cwd(), 'src/effects/operator/runtime-capture.ts'))};
+      const before=process.stdin.isRaw??false;const sink=new Writable({highWaterMark:1048576,write(){console.log('raw-stalled')}});
+      try{await runRuntimeCapture({provider:'pi',source_id:'raw-retirement',snapshot_path:${JSON.stringify(path)},argv:[process.execPath,'-e','process.stdout.write("exit-output");await Bun.sleep(30);process.exit(0)']},{input:process.stdin,output:sink,diagnostics:process.stderr});process.exitCode=44}
+      catch{console.log(JSON.stringify({before,after:process.stdin.isRaw,sink_destroyed:sink.destroyed}))}`);
+    const chunks: Buffer[] = [];
+    const p = Bun.spawn([process.execPath, scriptPath], { terminal: { data(_term, bytes) { chunks.push(Buffer.from(bytes)); } } });
+    try {
+      expect(await boundedFixtureExit(p, 3500)).toBe(0);
+      expect(Buffer.concat(chunks).toString()).toContain('{"before":false,"after":false,"sink_destroyed":false}');
+      expect(JSON.parse(readFileSync(path, 'utf8')).capture_status).toBe('unavailable');
+    } finally { if (p.exitCode === null) process.kill(p.pid, 'SIGKILL'); await p.exited; p.terminal?.close(); }
   });
 
 });
