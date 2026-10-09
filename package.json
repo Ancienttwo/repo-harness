@@ -76,7 +76,7 @@
     "build:oar-review-host": "bun build src/effects/review/oar-review-host.ts --target=node --format=esm --packages=external --outfile=dist/oar-review-host.js"
   },
   "peerDependencies": {
-    "@earendil-works/pi-coding-agent": "*"
+    "@earendil-works/pi-coding-agent": "1.1.0"
   },
   "peerDependenciesMeta": {
     "@earendil-works/pi-coding-agent": {
