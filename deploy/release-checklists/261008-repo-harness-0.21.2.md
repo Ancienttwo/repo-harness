@@ -2,8 +2,9 @@
 
 ## Scope and authority
 
-- Remote base: `5f6065b47443f1183166ec9999f71698eb1b9eb1` (#606), after the
-  main sync merge. The original fork point was `e7c86c553f229a0068dba7bef727192c8a93220c` (#600).
+- Remote base: `461e054ee5538bc4038fee8b5c3c5011435fbbf8` (#607), after the
+  second main sync merge. The first main sync used `5f6065b47443f1183166ec9999f71698eb1b9eb1` (#606).
+  The original fork point was `e7c86c553f229a0068dba7bef727192c8a93220c` (#600).
 - Include #599 at `84c225c1ebfe9ce34f4e6268662714241ca0b33b` and
   #601 at `f5ee55b1dd69f5fc51cf20f78c4d6b995b69cfcd`.
 - Kanban runtime status comes from #606 on main at
@@ -11,6 +12,11 @@
   Parent: `98c30ab6228b94f5e46c8cc3290de281eb0e4a99`.
   #606 supersedes the earlier Kanban commit `9afef1ee`. The main sync merge
   takes the #606 content for every file that `9afef1ee` changed.
+- Native Pi 1.1.0 host support comes from #607 on main at
+  `461e054ee5538bc4038fee8b5c3c5011435fbbf8`.
+  Parent: `5f6065b47443f1183166ec9999f71698eb1b9eb1`.
+  It includes the OAR 0.45.1 upgrade. This release pins the Pi peer
+  dependency to exactly `1.1.0` and records Pi telemetry host `pi`.
 - Set package, skill, template and README versions to `0.21.2`.
 - Keep strategy default-off, export-only and human-owned. No automatic memory
   edits or dispatch. Proposals keep `executionAuthorized: false`.

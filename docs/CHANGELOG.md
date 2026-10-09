@@ -8,6 +8,12 @@ All notable changes to this skill are documented here.
 
 ### Added
 
+- Add native Pi 1.1.0 host support. The Pi package provides the
+  `repo-harness` router, the `repo-harness-check` skill and an extension. In
+  opted-in repositories the extension runs typed hook checks on native
+  `edit` and `write`, direct or nested in codemode. The peer dependency is
+  pinned to exactly Pi `1.1.0`; other versions are unavailable. Hook
+  telemetry records host `pi`. (#607)
 - Show read-only Kanban runtime status from native capture sources or the
   optional Herdr 0.9.3 / protocol 22 adapter. Codex capture needs no Python.
   Claude and Pi capture use a bundled PTY relay that needs Python 3.9 or
@@ -22,6 +28,7 @@ All notable changes to this skill are documented here.
 
 ### Changed
 
+- Upgrade OAR to `0.45.1`. (#607)
 - New task worktrees default to `/tmp/<repo>-wt-<slug>`, and MCP coding
   workspaces default to `/tmp/repo-harness-mcp-worktrees`. Native Windows
   uses its system temp directory instead of `/tmp`. New policies store the
