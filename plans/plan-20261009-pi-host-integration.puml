@@ -1,0 +1,31 @@
+@startuml
+' Snapshot: 2026-10-09 Asia/Singapore
+' Source base: 98c30ab6228b94f5e46c8cc3290de281eb0e4a99
+' Dependency commit: 981a50b871f9b5238a7bca72d031e0927d397769
+skinparam shadowing false
+skinparam roundCorner 8
+skinparam defaultFontName SansSerif
+skinparam ArrowColor #475569
+skinparam rectangleBorderColor #475569
+skinparam rectangleFontColor #172033
+skinparam backgroundColor #FFFFFF
+left to right direction
+
+title Pi host integration: observed progress
+
+rectangle "D1: OAR 0.45.1 / Pi 1.1.0\nImplemented and verified\nLocal commit: 981a50b8\n22 affected tests passed" as deps #DCFCE7
+rectangle "H1: native Pi package\nImplementation plan complete\nHost code not implemented\nNo worker dispatched" as host #FEF3C7
+rectangle "Pi program status\nSeparate existing plan\nLive receiver chain unverified\nNot required for H1" as status #E2E8F0
+rectangle "Public delivery\nNo push or PR\nNot merged or released" as delivery #E2E8F0
+
+deps --> host : implementation baseline
+host --> delivery : future authorized delivery
+host .. status : separate scope
+
+note bottom of host
+  Pi events -> extension -> Bun hook bundle
+  Existing typed handlers remain the rule owner.
+  First release covers edit/write through Pi's tool pipeline.
+  Shell and arbitrary extension writes remain outside that coverage.
+end note
+@enduml
