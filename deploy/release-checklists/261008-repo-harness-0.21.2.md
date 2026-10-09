@@ -73,6 +73,10 @@ Only fixture-owned processes and paths may be stopped or removed.
   First parent: `e7c86c553f229a0068dba7bef727192c8a93220c`.
   Second parent: `f5ee55b1dd69f5fc51cf20f78c4d6b995b69cfcd`.
   Local rollback: `git revert --no-edit -m 1 b2bd276c03bba0f85ddbdcf9620fd28edfe28dd9`.
+- #607 squash merge: `461e054ee5538bc4038fee8b5c3c5011435fbbf8`.
+  Parent: `5f6065b47443f1183166ec9999f71698eb1b9eb1`.
+  `git revert --no-edit 461e054ee5538bc4038fee8b5c3c5011435fbbf8`.
+  A revert does not remove a Pi package that a user installed with `pi install`.
 - The integration PR has no main merge SHA until parent publication. Record
   that exact SHA and parent before publication. Do not substitute a candidate
   SHA for a future squash merge. No rollback command here undoes npm publication.
