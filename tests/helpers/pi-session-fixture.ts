@@ -19,7 +19,7 @@ const calls: Array<{ name: string; id: string; parent: string | null }> = [];
 const errors: string[] = [];
 const journalPaths: string[] = [];
 const writes: string[] = [];
-const bashObservations: Array<{ id: string; check: Record<string, unknown> }> = [];
+const bashObservations: Array<{ id: string; check: Record<string, unknown>; structured: unknown }> = [];
 // Use the native tools' filesystem seam to cancel after real bytes reach disk.
 // Their own post-write abort check must produce the error tool result.
 const cancelAfterWrite = async (path: string, content: string) => {
@@ -44,7 +44,7 @@ const resourceLoader = new DefaultResourceLoader({ cwd, agentDir, settingsManage
       if (event.toolName === 'bash') {
         const path = join(repoRoot, '.ai/harness/checks/post-bash-latest.json');
         if (mode !== 'inactive') {
-          bashObservations.push({ id: event.toolCallId, check: JSON.parse(readFileSync(path, 'utf8')) });
+          bashObservations.push({ id: event.toolCallId, check: JSON.parse(readFileSync(path, 'utf8')), structured: event.structuredContent });
         }
       }
     });

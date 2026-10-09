@@ -187,7 +187,8 @@ export default function repoHarnessPi(pi: ExtensionAPI): void {
         const diagnostic = boundedHookDiagnostic(`PI_HOOK_COMMAND_OBSERVATION_FAILED: ${String(error)}`);
         notify(ctx, diagnostic);
         // Tool-result content reaches print/RPC models as well as interactive sessions.
-        return { content: [...event.content, { type: 'text' as const, text: diagnostic }], isError: event.isError };
+        return { content: [...event.content, { type: 'text' as const, text: diagnostic }],
+          structuredContent: event.structuredContent, isError: event.isError };
       }
       failed(state, error, ctx);
     }

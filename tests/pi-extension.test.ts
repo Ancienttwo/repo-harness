@@ -174,6 +174,8 @@ describe('real Pi 1.1 tool pipeline with a scripted provider', () => {
       const failures = result.messages.filter((message: any) => message.role === 'toolResult' && message.toolName === 'bash');
       expect(failures).toHaveLength(3);
       expect(failures.every((message: any) => message.isError)).toBe(true);
+      expect(result.bashObservations.map((observation: any) => observation.structured?.exit_code)).toEqual([1, 1, 1]);
+      expect(result.bashObservations.every((observation: any) => observation.structured?.output.includes('native failure'))).toBe(true);
       const content = failures[2].content.filter((part: any) => part.type === 'text').map((part: any) => part.text).join('\n');
       expect(content).toContain('native failure');
       expect(content).toContain('RepairLimit');

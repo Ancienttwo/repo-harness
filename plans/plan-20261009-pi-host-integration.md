@@ -204,6 +204,7 @@ D1 回退是 `git revert 981a50b871f9b5238a7bca72d031e0927d397769`，再按原�
 - 真实 SDK/Bash/Bun 回归检查实际 pass/fail 退出码、check records 和 ledger。context 的精确次数检查保留一次 SessionStart snapshot；同一 session 的 unchanged reload 由共享 budget 去重。真实 11 秒 bridge 子进程在旧 Stop deadline 下失败，在新 deadline 下完成。普通 timeout 与取消检查保留。四项失败日志及后续差量结果均保留，最终复审以 PR 为准。
 - `0c7a9652` 的默认八进程 full 为 5630 pass、0 fail、9 gated skips，共 410 份文件。真实 provider 再次通过四项验收。独立 Claude 对四项修正返回 advisory `PASS`。OAR 未提供 actual model ID；该结果不冒充 provider-confirmed sign-off。
 - 复审还提出两项低级缺口。补修让 Bash observation diagnostics 进入模型的 tool-result content，并保留原输出和 isError。无 UI 的真实 SDK session 在同一 run 内执行三次真实失败测试，第三次让模型读到 RepairLimit 的 terminal decision。旧 adapter 在这项断言上失败。Stop 回归现直接验证非 Stop 的默认 10 秒 deadline，不再依赖 override。最终复审与 full 以 PR 为准。
+- `d3629273` 的独立复审提出一个新增中等问题：替换 tool-result content 时漏返 structuredContent，SDK 会清除原始结构结果。补修显式返回原 `event.structuredContent`。后续 SDK handler 现检查三次真实失败命令均保留 exit_code 1 和原始 output。旧返回在第三次丢失该值，红测试失败；补修后两项 Bash/repair 差量通过。最终结果以 PR 为准。
 - 尚未验证 RPC 模式、长期并发压力、shutdown 重入及 Pi–Herdr 状态链路。它们不能由以上检查推断。
 - 本地检查日志使用 `/tmp/repo-harness-pi-*.log`。这些日志不是提交内容。PR 说明记录命令、环境、结果和限制。
 
