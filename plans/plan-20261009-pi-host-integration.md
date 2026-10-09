@@ -125,7 +125,7 @@ Pi 官方安装命令为 `pi install <本地候选包目录>`。发布后采用�
 | 切片 | 状态 | 可独立交付的结果 | 预计工作量 |
 |---|---|---|---|
 | D1：依赖升级 | 已实现、已验证、本地已提交 | OAR `0.45.1` 和 Pi `1.1.0`。现有宿主继续可用。 | 本次已完成 |
-| H1：最小原生宿主 | 已实现；独立只读审查完成，补修复审中 | 上述 package、JSON bridge、上下文与 edit/write 检查。使用 Pi 官方安装即可工作，不依赖 OAR worker 或状态展示。 | 本轮实现完成 |
+| H1：最小原生宿主 | 已实现；独立静态审查 advisory PASS | 上述 package、JSON bridge、上下文与 edit/write 检查。使用 Pi 官方安装即可工作，不依赖 OAR worker 或状态展示。 | 本轮实现完成 |
 
 H1 作为一个完整 PR 交付。不能先宣传“Pi 已接入”，再等待下一阶段补写入检查。状态展示沿用已有方案。统一 installer 与 Pi review worker 不属于 H1，不是其验收前提。
 
@@ -205,6 +205,8 @@ D1 回退是 `git revert 981a50b871f9b5238a7bca72d031e0927d397769`，再按原�
 - `0c7a9652` 的默认八进程 full 为 5630 pass、0 fail、9 gated skips，共 410 份文件。真实 provider 再次通过四项验收。独立 Claude 对四项修正返回 advisory `PASS`。OAR 未提供 actual model ID；该结果不冒充 provider-confirmed sign-off。
 - 复审还提出两项低级缺口。补修让 Bash observation diagnostics 进入模型的 tool-result content，并保留原输出和 isError。无 UI 的真实 SDK session 在同一 run 内执行三次真实失败测试，第三次让模型读到 RepairLimit 的 terminal decision。旧 adapter 在这项断言上失败。Stop 回归现直接验证非 Stop 的默认 10 秒 deadline，不再依赖 override。最终复审与 full 以 PR 为准。
 - `d3629273` 的独立复审提出一个新增中等问题：替换 tool-result content 时漏返 structuredContent，SDK 会清除原始结构结果。补修显式返回原 `event.structuredContent`。后续 SDK handler 现检查三次真实失败命令均保留 exit_code 1 和原始 output。旧返回在第三次丢失该值，红测试失败；补修后两项 Bash/repair 差量通过。最终结果以 PR 为准。
+- 最终实现 `7e5b4474` 的默认八进程 full 完成 410 份文件，为 5631 pass、0 fail、9 gated skips。独立 Claude/OAR 复审返回 advisory `PASS`，没有 findings。它静态核对 direct 与 nested SDK structured contract，未重跑测试。actual_model 为 null；该结果不是 provider-confirmed sign-off。
+- `7e5b4474` 的 CI 在 module CLI 的完整只读快照断言中失败。差异仅为 setup 后 Git 后台 maintenance 删除 `.git/objects/maintenance.lock`。补修仅在临时 module repository 中关闭自动 maintenance 与 auto GC，保留完整快照和所有原断言。四份 fixture consumer 共 81 pass、0 fail。首次差量外层工具在 60 秒处终止，前三份已完成；最后一份单独完成 48 项。失败与未完成输出均保留。最终 CI 以 PR 为准。
 - 尚未验证 RPC 模式、长期并发压力、shutdown 重入及 Pi–Herdr 状态链路。它们不能由以上检查推断。
 - 本地检查日志使用 `/tmp/repo-harness-pi-*.log`。这些日志不是提交内容。PR 说明记录命令、环境、结果和限制。
 
