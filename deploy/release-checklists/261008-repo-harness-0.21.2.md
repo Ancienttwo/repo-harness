@@ -2,7 +2,8 @@
 
 ## Scope and authority
 
-- Remote base: `e7c86c553f229a0068dba7bef727192c8a93220c` (#600).
+- Remote base: `5f6065b47443f1183166ec9999f71698eb1b9eb1` (#606), after the
+  main sync merge. The original fork point was `e7c86c553f229a0068dba7bef727192c8a93220c` (#600).
 - Include #599 at `84c225c1ebfe9ce34f4e6268662714241ca0b33b` and
   #601 at `f5ee55b1dd69f5fc51cf20f78c4d6b995b69cfcd`.
 - Kanban runtime status comes from #606 on main at
