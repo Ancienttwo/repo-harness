@@ -1,6 +1,6 @@
 # Pi 1.1 宿主接入实现方案
 
-状态：方案已完成。宿主代码尚未实现。依赖升级已实现并验证。
+状态：用户已批准。H1 已实现。验证与审查结果见下文。
 日期：2026-10-09，Asia/Singapore。
 源码基线：`98c30ab6228b94f5e46c8cc3290de281eb0e4a99`。
 依赖提交：`981a50b871f9b5238a7bca72d031e0927d397769`。
@@ -14,11 +14,11 @@
 
 验收必须同时证明：正常编辑成功；受保护路径编辑被拒绝；codemode 内的嵌套编辑走相同检查；会话恢复与取消不串用身份；失败后不会自动重放外部操作。只运行 fixture 不能证明真实模型链路已通过。
 
-本次用户已授权制定方案，并实际升级 OAR 与 Pi 依赖。宿主代码实现、用户配置修改、push、PR、main 合并和发布尚未获得本次授权。
+用户已授权宿主实现、本地提交、push 和 PR。用户配置修改、main 合并和发布仍需单独授权。
 
 ## P1：边界盘点
 
-| 边界 | 当前事实 | 实现入口 |
+| 边界 | 实施前事实 | 实现入口 |
 |---|---|---|
 | 依赖 | 根清单直接依赖 OAR。Pi 是传递依赖。OAR `0.45.1` 要求 Pi AI 与 coding-agent `^1.1.0`。 | `package.json`、`bun.lock` |
 | Pi 宿主 | 本机官方 Pi 文档与包为 `1.1.0`。extension 可接收生命周期、工具调用与结果事件。 | 官方 `ExtensionAPI` |
@@ -83,9 +83,9 @@ repo-harness Pi extension
 | `agent_settled` | 执行 `Stop.default`。携带真实 session/run ID 和取消观察。 | 保留错误。不能自动标任务完成、释放 lease、push 或 merge。 |
 | `session_shutdown` | 取消并回收 extension 自己启动的检查进程。清除会话内缓存。 | 幂等清理。若未处理的本轮需要 Stop，执行一次；已经 settled 的本轮不再写重复记录。 |
 
-输入转换规则：`path` → `file_path`；write `content` 原样传入；edit 的每个 `edits[].newText` 按原始顺序放入同一内容检查输入；保留真实 tool call ID 与 parent ID。不得通过 JSON 文本搜索或终端文本解析恢复字段。
+输入转换规则：`path` 先按会话 cwd 解析为 Pi 实际执行的目标，再放入 `file_path`；write `content` 原样传入；edit 的每个 `edits[].newText` 按原始顺序放入同一内容检查输入；保留真实 tool call ID 与 parent ID。不得通过 JSON 文本搜索或终端文本解析恢复字段。
 
-记录 Pi session ID 时使用 `ctx.sessionManager.getSessionId()`。每个 `before_agent_start` 建立独立 run ID。run ID 由 session ID 和随机 UUID 组成。工具调用不能共用可被其他会话改写的全局环境。每次 spawn 显式覆盖 `HOOK_HOST=pi`、`HOOK_SESSION_ID`、`HOOK_RUN_ID` 与 cwd，并去除 Claude/Codex 身份变量。上下文 unavailable 时使用 Pi 现有 `/reload` 刷新；刷新未成功前不恢复编辑。
+记录 Pi session ID 时使用 `ctx.sessionManager.getSessionId()`。每个 `before_agent_start` 建立独立随机 UUID run ID。每次请求将 run ID 与 session ID 一起绑定。工具调用不能共用可被其他会话改写的全局环境。每次 spawn 显式覆盖 `HOOK_HOST=pi`、`HOOK_SESSION_ID`、`HOOK_RUN_ID` 与 cwd，并去除 Claude/Codex 身份变量。上下文 unavailable 时使用 Pi 现有 `/reload` 刷新；刷新未成功前不恢复编辑。
 
 并发结果以 tool call ID 绑定原始输入。不能保存单一“最近编辑路径”。迟到结果不能写入新会话。reload 与 session replacement 重建上下文，不沿用旧检查状态。
 
@@ -105,7 +105,7 @@ repo-harness Pi extension
 | `src/core/skill-surface/catalog.ts` | 增加 Pi 技能宿主及 placement 投影。使用同一 catalog 校验。 |
 | `assets/skill-commands/manifest.json` | 为 router、check 与其已支持 Pi 的技能依赖声明 Pi。Pi 首版资源只选 minimal 中本包所有的 router/check。外部技能不自动安装。 |
 | `scripts/sync-pi-package.ts`（新增） | 从 catalog 生成并检查 `package.json` 的 `pi.skills`。不维护另一份技能清单。 |
-| `package.json` | 声明 `pi.extensions`、生成的 `pi.skills` 和打包检查。Pi coding-agent 声明为可选 peer，范围 `*`，由宿主提供；运行验收基线为 `1.1.0`。类型导入不打包 SDK。OAR 的既有传递依赖仍由 lock 管理。 |
+| `package.json` | 声明 `pi.extensions`、生成的 `pi.skills` 和打包检查。Pi coding-agent 声明为可选 peer，范围 `*`，由宿主提供；运行验收基线为 `1.1.0`。SDK 的类型与版本信息由 Pi 宿主提供。extension 不打包 SDK。OAR 的既有传递依赖仍由 lock 管理。 |
 | `assets/reference-configs/host-invariants.md` 及 docs 投影 | 按已验证的实际入口更新 Pi 的覆盖等级。保留未覆盖路径。 |
 | `README.md`、`README.zh-CN.md` | 官方 package 加载方法、前置 Bun、opt-in 与覆盖范围。 |
 | 现有 hook、catalog、package 测试 | 扩展相关行为测试。新建 `tests/pi-extension.test.ts`，测试新增 Pi 运行边界。 |
@@ -125,7 +125,7 @@ Pi 官方安装命令为 `pi install <本地候选包目录>`。发布后采用�
 | 切片 | 状态 | 可独立交付的结果 | 预计工作量 |
 |---|---|---|---|
 | D1：依赖升级 | 已实现、已验证、本地已提交 | OAR `0.45.1` 和 Pi `1.1.0`。现有宿主继续可用。 | 本次已完成 |
-| H1：最小原生宿主 | 已规划，尚未实现 | 上述 package、JSON bridge、上下文与 edit/write 检查。使用 Pi 官方安装即可工作，不依赖 OAR worker 或状态展示。 | 3–5 个工程日，估计值 |
+| H1：最小原生宿主 | 已实现；独立审查未完成 | 上述 package、JSON bridge、上下文与 edit/write 检查。使用 Pi 官方安装即可工作，不依赖 OAR worker 或状态展示。 | 本轮实现完成 |
 
 H1 作为一个完整 PR 交付。不能先宣传“Pi 已接入”，再等待下一阶段补写入检查。状态展示沿用已有方案。统一 installer 与 Pi review worker 不属于 H1，不是其验收前提。
 
@@ -170,7 +170,7 @@ H1 不迁移业务数据。回退 extension 用 Pi 原生资源过滤或 remove 
 
 D1 回退是 `git revert 981a50b871f9b5238a7bca72d031e0927d397769`，再按原锁文件安装。若后续发布为 squash commit，使用 GitHub 确认的 squash SHA，不沿用本地 SHA。发布需要单独授权。
 
-## 本次实际证据
+## D1 依赖升级证据（实施前）
 
 - npm registry 查询成功：OAR `0.45.1`，Pi AI 与 coding-agent `1.1.0`。
 - `bun install --ignore-scripts` 成功。安装版本检查成功：OAR 为 `0.45.1`；chord 和七个 Pi 包均为 `1.1.0`。无额外 override 或直接 Pi runtime 依赖。
@@ -181,6 +181,24 @@ D1 回退是 `git revert 981a50b871f9b5238a7bca72d031e0927d397769`，再按原�
 - 完整测试输出位于本机 `/tmp/repo-harness-oar-0451-tests.log`。这不是仓库提交内容。
 - 本次未运行全套测试、Pi 原生接入验收、真实模型或 Pi–Herdr 状态链路。它们不能由本次依赖测试推断。
 - [进度图源文件](plan-20261009-pi-host-integration.puml) 与本方案使用同一证据快照。未渲染图像。
+
+## H1 实施证据
+
+- 实现使用本方案分支。它继承 D1 与方案提交。主工作区的用户文件未改动。
+- `bun run check:type` 通过。环境为 Node `24.21.0`、Bun `1.4.2`。
+- 八份稳定差量测试通过，共 149 pass、0 fail、0 skip。覆盖 hook runtime、旧宿主行为、mutation guard、command observer、catalog、Pi、bundle 和 doctor。
+- 后续 Pi 差量测试通过，共 12 pass、0 fail、0 skip。它覆盖真实 SDK 工具管线、直接与嵌套拒绝、子目录、`@`/`~`/file URL、并行嵌套调用后的外层失败、取消、reload、resume、fork、宿主身份隔离和 bridge 故障。provider 响应由脚本控制。
+- Pi 没有公开工具路径解析 API。adapter 使用当前宿主 SDK 安装中的 `resolveToCwd`，不复制路径语法。首版严格限定 Pi `1.1.0`。其他版本或缺少该内部文件的发行包标为 unavailable。
+- command observer 的最后差量检查通过，共 16 pass、0 fail。Pi 没有整数退出码时保持 `unknown`。缺少值、null、字符串和小数均不能导入 passing verification evidence。
+- 官方 `pi install` 在隔离 HOME 中加载了 tarball 安装的候选包。Node 宿主加载 extension 与两个技能。真实 edit 和 codemode 嵌套拒绝通过。
+- 既有真实 provider 通过四项验收：直接 edit、直接私有 write 拒绝、嵌套 edit、嵌套私有 write 拒绝。验收读取既有模型配置和只读凭据。它没有修改用户配置或凭据。
+- `bun run test:full` 完成 410 份测试文件。初次运行有三份失败：bundle 的旧 prepack 断言、未改动的 operator activity 与 doctor 测试。prepack 断言增加 Pi 投影检查后通过。另两份测试单独运行通过。完整套件未重跑，不能称为全绿。
+- `bash scripts/check-ci.sh affected --base origin/main` 初次运行只在旧 prepack 断言处失败。对应差量测试已通过。
+- `bun run check:pi-package`、`check:reference-configs`、`check:hooks` 与 `git diff --check` 通过。
+- 两次独立只读审查均未产出结果。Claude provider 返回 `ENOTFOUND`。Codex 启动未完成。两份自建任务均已取消并关闭。没有重放请求。
+- 架构模型已声明 Pi adapter 的责任。自动投影返回 `human-action-required`。它报告多个模块的历史模型与 flow 基线差异。未批准扩大投影范围；生成文档同步仍是缺口。
+- 尚未验证 RPC 模式、长期并发压力、shutdown 重入及 Pi–Herdr 状态链路。它们不能由以上检查推断。
+- 本地检查日志使用 `/tmp/repo-harness-pi-*.log`。这些日志不是提交内容。PR 说明记录命令、环境、结果和限制。
 
 ## 官方参照
 

@@ -14,17 +14,20 @@ left to right direction
 title Pi host integration: observed progress
 
 rectangle "D1: OAR 0.45.1 / Pi 1.1.0\nImplemented and verified\nLocal commit: 981a50b8\n22 affected tests passed" as deps #DCFCE7
-rectangle "H1: native Pi package\nImplementation plan complete\nHost code not implemented\nNo worker dispatched" as host #FEF3C7
+rectangle "H1: native Pi 1.1.0 package\nImplemented\n12 SDK fixture tests passed\nInstalled Node loader and live provider passed\nIndependent review unavailable" as host #FEF3C7
 rectangle "Pi program status\nSeparate existing plan\nLive receiver chain unverified\nNot required for H1" as status #E2E8F0
-rectangle "Public delivery\nNo push or PR\nNot merged or released" as delivery #E2E8F0
+rectangle "PR delivery\nAuthorized push and draft PR\nFull suite had three failed files\nAffected rechecks passed\nMain and release need separate approval" as delivery #FEF3C7
 
 deps --> host : implementation baseline
-host --> delivery : future authorized delivery
+host --> delivery : review candidate
 host .. status : separate scope
 
 note bottom of host
   Pi events -> extension -> Bun hook bundle
   Existing typed handlers remain the rule owner.
+  Pi 1.1.0's native path resolver binds the actual tool target.
+  Full-suite rechecks are not a clean full-suite receipt.
+  Automatic architecture projection remains human-action-required.
   First release covers edit/write through Pi's tool pipeline.
   Shell and arbitrary extension writes remain outside that coverage.
 end note
