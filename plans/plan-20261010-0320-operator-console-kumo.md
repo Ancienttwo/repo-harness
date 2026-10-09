@@ -111,7 +111,7 @@
 ### 3.5 GET 合约
 - 新路由 `GET /api/v1/dev-activity`，`write:false`，登记在 `OPERATOR_ROUTES`。返回 `repo-harness.dev-activity.v1`。
 - 类型放在 `src/core/dev-activity/types.ts`，投影（列、队列、权威表）放在 `src/core/dev-activity/projection.ts`，纯函数，可单测。
-- 浏览器端严格解码，拒绝未知字段和绝对路径。
+- 浏览器端严格解码，拒绝未知字段；拒绝绝对路径样文本，但 PR 来源的标题（`pull_request.title`、带 PR 的 item `title` 及其 attention `summary`）除外，N4 逐字显示。PR 标题是 GitHub 公开数据；本机文本（ledger 标题、blocked 原因、`display_name`、Decision 问题、runtime 原因）仍遮蔽。
 
 ## 4. 前端
 

@@ -325,6 +325,11 @@ describe('bounded observation lifecycle',()=>{
       expect(counts).toMatchObject({ notify: 1, pipeline: 1 });
       await page('system');
       expect(counts).toMatchObject({ notify: 2, pipeline: 2 });
+      // The System page keeps polling: one 30s tick adds exactly one read to each reader.
+      const before = { notify: counts.notify, pipeline: counts.pipeline };
+      await clock.advance(30_000);
+      expect(counts.notify).toBe(before.notify + 1);
+      expect(counts.pipeline).toBe(before.pipeline + 1);
     } finally {
       await act(async () => root?.unmount()); root = null; clock.restore();
     }

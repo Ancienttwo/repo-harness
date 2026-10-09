@@ -35,6 +35,9 @@ export function decodeDevActivitySnapshot(value: unknown): DevActivitySnapshotV1
     if (typeof v !== 'string' || /(?:^|[\s("'=:])\/\S+|[A-Za-z]:[\\/]/u.test(v)) return fail(what);
     return v;
   };
+  // PR titles are public GitHub data and are shown verbatim, so they skip the path guard.
+  const verbatimNonEmpty = (v: unknown, what: string): string =>
+    (typeof v === 'string' && v.length > 0 ? v : fail(what));
   const nonEmpty = (v: unknown, what: string): string => {
     const s = text(v, what);
     return s.length > 0 ? s : fail(what);
@@ -83,6 +86,7 @@ export function decodeDevActivitySnapshot(value: unknown): DevActivitySnapshotV1
   }
 
   const itemIds = new Set<string>();
+  const itemHasPullRequest = new Map<string, boolean>();
   for (const raw of array(v.items, 'items')) {
     const i = obj(raw, ['id', 'repository_id', 'branch', 'title', 'column', 'hidden', 'column_since', 'worktrees',
       'pull_request', 'ledger', 'agent', 'runtime_blocked', 'cleanup_pending'], 'item');
@@ -91,8 +95,11 @@ export function decodeDevActivitySnapshot(value: unknown): DevActivitySnapshotV1
     const id = nonEmpty(i.id, 'item id');
     if (!id.startsWith(`${repo}:`) || itemIds.has(id)) fail('item id');
     itemIds.add(id);
+    const hasPullRequest = i.pull_request !== null;
+    itemHasPullRequest.set(id, hasPullRequest);
     nullable(i.branch, x => nonEmpty(x, 'branch'));
-    nonEmpty(i.title, 'title');
+    if (hasPullRequest) verbatimNonEmpty(i.title, 'title');
+    else nonEmpty(i.title, 'title');
     oneOf(i.column, DEV_ACTIVITY_COLUMNS, 'column');
     nullable(i.hidden, x => oneOf(x, HIDDEN_REASONS, 'hidden'));
     nullable(i.column_since, x => time(x, 'column_since'));
@@ -109,7 +116,7 @@ export function decodeDevActivitySnapshot(value: unknown): DevActivitySnapshotV1
       const p = obj(x, ['number', 'title', 'url', 'state', 'is_draft', 'base_branch', 'merge_state', 'ci', 'review',
         'updated_at', 'merged_at', 'closed_at'], 'pull_request');
       if (count(p.number, 'pr number') < 1) fail('pr number');
-      text(p.title, 'pr title');
+      if (typeof p.title !== 'string') fail('pr title');
       githubUrl(p.url, 'pr url');
       oneOf(p.state, PR_STATES, 'pr state');
       bool(p.is_draft, 'is_draft');
@@ -163,7 +170,9 @@ export function decodeDevActivitySnapshot(value: unknown): DevActivitySnapshotV1
     if (!repositoryIds.has(repo)) fail('attention repository');
     const subject = nonEmpty(a.subject_id, 'subject_id');
     if (kind !== 'human_request' && !itemIds.has(subject)) fail('attention subject');
-    text(a.summary, 'summary');
+    // A PR-backed item's attention summary is the PR title, shown verbatim.
+    if (kind !== 'human_request' && itemHasPullRequest.get(subject) === true) verbatimNonEmpty(a.summary, 'summary');
+    else text(a.summary, 'summary');
     const at = Date.parse(time(a.waiting_since, 'waiting_since'));
     if (at < previous) fail('attention order');
     previous = at;

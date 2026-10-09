@@ -243,14 +243,33 @@ describe('dev activity attention queue (§3.4)', () => {
 });
 
 describe('dev activity public text and health', () => {
-  test('masks absolute paths in titles and blocked reasons', () => {
+  test('masks absolute paths in ledger titles and blocked reasons', () => {
     const snapshot = project(repo({
-      pull_requests: [pr('feat/path', { title: 'fix: default to /tmp and C:\\temp' })],
-      ledger: [ledger({ branch: 'feat/path', blocked: { reason: 'see /Users/me/log.txt', since: iso(DAY) } })],
+      ledger: [ledger({ title: 'fix: default to /tmp and C:\\temp', blocked: { reason: 'see /Users/me/log.txt', since: iso(DAY) } })],
     }));
-    const item = itemFor(snapshot, 'feat/path');
+    const item = snapshot.items[0]!;
     expect(item.title).toBe('fix: default to [private path] and [private path]');
     expect(item.ledger?.blocked?.reason).toBe('see [private path]');
+    expect(JSON.stringify(snapshot)).not.toContain('/Users/');
+  });
+
+  test('shows a PR title verbatim through projection and decode', () => {
+    const title = 'drop the /start double header';
+    const snapshot = project(repo({
+      pull_requests: [pr('feat/start', { title, merge_state: 'CLEAN', ci: 'success', review: 'approved' })],
+    }));
+    const item = itemFor(snapshot, 'feat/start');
+    expect(item.title).toBe(title);
+    expect(item.pull_request?.title).toBe(title);
+    const decoded = decodeDevActivitySnapshot(JSON.parse(JSON.stringify(snapshot)));
+    expect(decoded.items[0]!.title).toBe(title);
+    expect(decoded.items[0]!.pull_request?.title).toBe(title);
+    expect(decoded.attention.find(entry => entry.kind === 'ready_to_merge')?.summary).toBe(title);
+  });
+
+  test('still masks a path in a ledger-only title', () => {
+    const snapshot = project(repo({ ledger: [ledger({ title: 'edit /Users/me/x now' })] }));
+    expect(snapshot.items[0]!.title).toBe('edit [private path] now');
     expect(JSON.stringify(snapshot)).not.toContain('/Users/');
   });
 
@@ -290,7 +309,8 @@ describe('dev activity decoder', () => {
     ['missing field', v => { delete v.attention; }],
     ['wrong projection version', v => { v.projection_version = 'repo-harness.dev-activity.v0'; }],
     ['unknown item field', v => { v.items[0].path = 'x'; }],
-    ['absolute path in title', v => { v.items[0].title = 'see /Users/me/repo'; }],
+    ['absolute path in a non-PR title', v => { v.items[0].pull_request = null; v.items[0].title = 'see /Users/me/repo'; }],
+    ['absolute path in display_name', v => { v.repositories[0].display_name = 'see /Users/me/repo'; }],
     ['windows path in worktree', v => { v.items[0].worktrees[0].directory = 'C:\\work'; }],
     ['worktree directory with separator', v => { v.items[0].worktrees[0].directory = 'a/b'; }],
     ['non-GitHub url', v => { v.items[0].pull_request.url = 'https://evil.example/pull/1'; }],

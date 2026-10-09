@@ -231,7 +231,7 @@ function runtimeBlocked(badge: RuntimeBadge | null, runtime: RuntimeOverlay | nu
 
 function publicPullRequest(pr: DevActivityRawPullRequest): DevActivityPullRequest {
   return {
-    number: pr.number, title: publicDevActivityText(pr.title), url: pr.url, state: pr.state, is_draft: pr.is_draft,
+    number: pr.number, title: pr.title, url: pr.url, state: pr.state, is_draft: pr.is_draft,
     base_branch: pr.base_branch, merge_state: pr.merge_state, ci: pr.ci, review: pr.review,
     updated_at: pr.updated_at, merged_at: pr.merged_at, closed_at: pr.closed_at,
   };
@@ -265,7 +265,7 @@ function projectRepositoryItems(repo: DevActivityRawRepository, input: DevActivi
       id: `${repo.repository_id}:${branch}`,
       repository_id: repo.repository_id,
       branch,
-      title: pr ? publicDevActivityText(pr.title) : branch,
+      title: pr ? pr.title : branch,
       column: placement.column,
       hidden: placement.hidden,
       column_since: placement.since,
