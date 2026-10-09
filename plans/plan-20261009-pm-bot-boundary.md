@@ -1,7 +1,7 @@
 # Shared PM boundary and Hermes adapter
 
 Date: 2026-10-09 (Asia/Singapore)
-Status: Implementation authorized by the current user request.
+Status: Implemented locally. Architecture projection verified. Live provider acceptance remains open.
 Base: `98c30ab6228b94f5e46c8cc3290de281eb0e4a99`
 Branch: `codex/pm-bot-boundary`
 Worktree: `/tmp/repo-harness-wt-pm-bot-boundary`
@@ -168,6 +168,36 @@ requires the user's approval of the exact reviewed setting.
 
 No domain, Tunnel, public Web service or key rotation is part of this slice.
 Do not repair Herdr's recognition of Hermes as a prerequisite for PM dispatch.
+
+## Observed result
+
+Work packages A, B and C are implemented. Independent review found a request
+publication race. The host now waits for the matching start marker before it
+reads the request. A real red/green check proves that repair. The second review
+found no remaining production-code issue.
+
+Type checking passed at `c9f56b50`. The package and CI contract delta passed
+45 tests. The package dry run included both OAR bundles. Native Hermes 0.21.6
+checks found exactly five PM tools in CLI, TUI and Web. These checks did not run
+a live model or change the current Hermes profile.
+
+The full suite at `c9f56b50` checked 411 files and exited 1. Two architecture
+assertions failed because the new module had no generated document. After the
+user approved the local CodeGraph index, archctx exposed a reversed relation in
+the new flow. A typed ChangeSet fixed the flow to match the real call direction.
+The official projection then applied. Its PM P1/P2 proofs are `proven` and its
+target count is 34. The architecture delta passed all four tests without a test
+change. Capability validation and workflow diagnostics also passed.
+
+The remaining full-suite failure is in `tests/cli/operator-serve.test.ts`.
+The same failure occurred on unchanged main. A separate reproduction observed
+historical filesystem events with zero product calls and no content change.
+The test remains unchanged. The full suite has not been reported as passing.
+
+Live Hermes activation and a real coding-provider task remain unverified.
+Exact worker admission is still required. Nothing has been pushed, merged,
+released or deployed. Evidence is under the ignored local
+`.ai/harness/runs/pm-verification/` directory.
 
 ## Rollback
 

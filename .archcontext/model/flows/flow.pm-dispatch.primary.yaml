@@ -23,9 +23,9 @@ outcomes:
     label: Return task observations or a request-bound result
     steps:
       - id: return-result
-        from: operation
-        to: pm
-        label: Return the operation response without a second task authority
+        from: pm
+        to: operation
+        label: Execute the approved request against existing task authority
         evidence:
           entrypointId: entrypoint.pm-dispatch.request
           sourceSymbol: runPmJson
@@ -38,9 +38,9 @@ outcomes:
     label: Reject an invalid or unapproved request
     steps:
       - id: return-denial
-        from: operation
-        to: pm
-        label: Return a structured denial without broadening permissions
+        from: pm
+        to: operation
+        label: Reject an invalid request at the operation boundary
         evidence:
           entrypointId: entrypoint.pm-dispatch.request
           sourceSymbol: runPmJson
