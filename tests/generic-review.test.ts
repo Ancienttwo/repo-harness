@@ -301,6 +301,39 @@ else console.log(JSON.stringify({results,operations}));
   expect(readFileSync(join(output, 'child.txt'), 'utf8')).toBe('ALLOWED');
 });
 
+test.skipIf(process.platform !== 'darwin')('OAR isolation: system DNS works while a reachable local Unix socket stays denied', async () => {
+  const { createServer } = await import('node:net');
+  const { mkdirSync } = await import('node:fs');
+  const { spawnSync } = await import('node:child_process');
+  const { reviewIsolationPolicy } = await import('../src/effects/review/review-isolation');
+  const root = tmpWorkspace('oar-dns-isolation'); roots.push(root);
+  const subject = join(root, 'subject'), output = join(root, 'output');
+  mkdirSync(subject); mkdirSync(output);
+  const socketPath = join(root, 'control.sock');
+  const server = createServer(socket => { socket.destroy(); });
+  await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(socketPath, resolve); });
+  try {
+    const node = resolveNode24();
+    const script = `const net=require('node:net'),dns=require('node:dns');
+const connect=()=>new Promise(resolve=>{const socket=net.createConnection(process.argv[1]);socket.once('connect',()=>{socket.destroy();resolve({connected:true})});socket.once('error',error=>resolve({connected:false,code:error.code}));});
+(async()=>{const local=await connect();const lookup=await new Promise(resolve=>dns.lookup('example.com',error=>resolve({resolved:!error,code:error?.code??null})));console.log(JSON.stringify({local,lookup}));})();`;
+    const control = spawnSync(node, ['-e', script, socketPath], { encoding: 'utf8', timeout: 15000 });
+    expect(control.status, control.stderr).toBe(0);
+    expect(JSON.parse(control.stdout)).toMatchObject({ local: { connected: true }, lookup: { resolved: true } });
+    const profile = join(root, 'profile.sb');
+    writeFileSync(profile, reviewIsolationPolicy({ subject, primary: subject, ownerRecord: subject,
+      journal: subject, gitCommonDir: subject, output }));
+    const confined = spawnSync('/usr/bin/sandbox-exec', ['-f', profile, node, '-e', script, socketPath], { encoding: 'utf8', timeout: 15000 });
+    expect(confined.status, confined.stderr).toBe(0);
+    const result = JSON.parse(confined.stdout);
+    expect(result.local.connected).toBe(false);
+    expect(['EPERM', 'EACCES']).toContain(result.local.code);
+    expect(result.lookup).toEqual({ resolved: true, code: null });
+  } finally {
+    await new Promise<void>(resolve => { server.close(() => resolve()); });
+  }
+});
+
 test('OAR isolation: reject authority overlap and symlink output roots before execution', async () => {
   const { mkdirSync, symlinkSync } = await import('node:fs');
   const { reviewIsolationPolicy } = await import('../src/effects/review/review-isolation');
