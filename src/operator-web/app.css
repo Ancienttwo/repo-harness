@@ -1,0 +1,207 @@
+/* Kumo's tokens must register before Tailwind (Kumo README); the @source line
+   lets Tailwind see the utility classes inside Kumo's compiled components. */
+@source "../../node_modules/@cloudflare/kumo/dist/**/*.{js,jsx,ts,tsx}";
+@import "@cloudflare/kumo/styles/tailwind";
+@import "tailwindcss";
+
+@keyframes slide-in { from { transform: translateX(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+@layer base {
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    @apply bg-kumo-canvas text-kumo-default antialiased;
+    margin: 0;
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    overflow-x: hidden;
+  }
+  code, kbd, pre, .mono-value { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+  :focus-visible { outline: 2px solid var(--color-kumo-brand); outline-offset: 2px; }
+  [hidden] { display: none !important; }
+}
+
+/* A failed Fleet read keeps its facts on screen, visibly muted. */
+.operator-app[data-state="stale"] [role="tabpanel"] { filter: saturate(.55); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; }
+}
+
+/*
+ * Repository, ledger and architecture views keep their semantic class names as
+ * stable hooks. This layer gives them the Kumo surface, type and colour tokens.
+ */
+@layer components {
+  .detail-eyebrow { @apply text-xs font-semibold tracking-wide text-kumo-subtle uppercase; }
+  .detail-quiet, .automation-description, .automation-observed, .planning-observation { @apply text-sm text-kumo-subtle; }
+  .detail-description { @apply text-sm text-kumo-subtle; }
+  .detail-block { @apply flex flex-col gap-2; }
+  .detail-chips { @apply flex flex-wrap gap-1.5; }
+  .detail-list { @apply grid gap-x-4 gap-y-1.5 text-sm; grid-template-columns: minmax(8rem, auto) minmax(0, 1fr); }
+  .detail-list > div { display: contents; }
+  .detail-list dt { @apply text-kumo-subtle; }
+  .detail-list dd { @apply m-0 min-w-0 break-words text-kumo-default; }
+  .detail-list dd > time + span { @apply ml-2; }
+  .detail-callout { @apply flex items-start gap-2 rounded-lg bg-kumo-recessed p-3 text-sm; }
+  .detail-callout > div { @apply flex flex-col gap-0.5; }
+  .detail-callout--warning { @apply bg-kumo-warning-tint text-kumo-default; }
+  .detail-repair-title { @apply mt-1 font-medium; }
+  .repair-list, .cause-list { @apply m-0 flex list-none flex-col gap-1.5 p-0; }
+  .cause-item { @apply flex flex-wrap items-baseline gap-x-2 gap-y-0.5 rounded-md border-l-2 border-kumo-line bg-kumo-recessed px-3 py-2 text-sm; }
+  .cause-owner { @apply text-xs text-kumo-subtle; }
+  .cause-code { @apply rounded bg-kumo-recessed px-1 text-xs text-kumo-subtle; overflow-wrap: anywhere; }
+  .copy-value { @apply flex min-w-0 items-center gap-2 text-xs; }
+  .copy-value > code { @apply min-w-0 truncate rounded bg-kumo-recessed px-1.5 py-0.5; }
+  .signal-grid { @apply flex flex-wrap gap-4 text-sm; }
+
+  .tone-user { @apply text-kumo-warning; }
+  .tone-agent { @apply text-kumo-info; }
+  .tone-external { color: var(--text-color-kumo-badge-purple, var(--text-color-kumo-info)); }
+  .tone-danger { @apply text-kumo-danger; }
+  .tone-ok { @apply text-kumo-success; }
+  .tone-neutral, .tone-unknown { @apply text-kumo-subtle; }
+  span.operator-badge, li.operator-badge { @apply inline-flex w-fit items-center gap-1 rounded-full bg-kumo-recessed px-2 py-0.5 text-xs font-medium; }
+  .cause-item.tone-user { @apply border-kumo-warning; }
+  .cause-item.tone-danger { @apply border-kumo-danger; }
+
+  .worklist-group { @apply overflow-hidden rounded-xl border border-kumo-line bg-kumo-base; }
+  .worklist-group__header { @apply flex w-full cursor-pointer items-center gap-2 px-4 py-2.5 text-left text-sm text-kumo-strong hover:bg-kumo-tint; }
+  .worklist-group__count { @apply ml-auto rounded-full bg-kumo-recessed px-2 text-xs tabular-nums text-kumo-subtle; }
+  .worklist-group--needs_you .worklist-group__header strong { @apply text-kumo-warning; }
+  .worklist-group__rows { @apply flex flex-col border-t border-kumo-hairline; }
+  .worklist-group__empty { @apply px-4 py-3 text-sm text-kumo-subtle; }
+  .worklist-row { @apply flex w-full cursor-pointer flex-col gap-1 border-b border-kumo-hairline bg-transparent px-4 py-3 text-left last:border-b-0 hover:bg-kumo-tint; }
+  .worklist-row.is-selected { @apply bg-kumo-tint; }
+  .worklist-row--repository { @apply cursor-default; }
+  .worklist-row__head { @apply flex flex-wrap items-center gap-2; }
+  .worklist-row__label { @apply min-w-0 text-sm font-medium text-kumo-strong; overflow-wrap: anywhere; }
+  .worklist-row__label--id { @apply font-mono; }
+  .worklist-row__meta, .worklist-row__signals { @apply flex flex-wrap gap-x-3 text-xs text-kumo-subtle; }
+  .worklist-row__changed { @apply text-kumo-warning; }
+  .worklist-row__cause { @apply flex flex-wrap items-center gap-1.5 text-xs; }
+  .worklist-row__cause--quiet { @apply text-kumo-subtle; }
+  .cause-text { @apply text-kumo-default; }
+
+  .delivery-columns { @apply grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5; }
+  .delivery-other { @apply mt-4 grid grid-cols-1 gap-3 md:grid-cols-2; }
+  .delivery-stage { @apply flex min-w-0 flex-col gap-1 rounded-xl bg-kumo-recessed p-2; }
+  .delivery-stage h3 { @apply flex items-center justify-between px-1 text-xs font-semibold tracking-wide text-kumo-subtle uppercase; }
+  .delivery-stage > p { @apply px-1 text-xs text-kumo-inactive; }
+  .delivery-stage .worklist-row { @apply rounded-lg border border-kumo-hairline bg-kumo-base last:border-b; }
+
+  .planning-view, .organization-summary, .automation-summary, .notify-status, .pipeline-board, .architecture-workspace { @apply flex min-w-0 flex-col gap-3; }
+  .organization-summary, .automation-summary { @apply rounded-xl border border-kumo-line bg-kumo-base p-4; }
+  .planning-view h2, .organization-summary h2, .automation-heading h2, .notify-status h2, .pipeline-board h2, .architecture-workspace h2 { @apply text-base font-semibold text-kumo-strong; }
+  .organization-summary h3, .planning-view h3, .automation-source h3 { @apply text-sm font-semibold text-kumo-strong; }
+  .organization-summary p, .organization-summary li, .planning-view p, .planning-view li { @apply text-sm; overflow-wrap: anywhere; }
+  .organization-summary ul, .planning-tasks, .planning-blockers { @apply m-0 flex list-none flex-col gap-2 p-0; }
+  .planning-tasks > li, .organization-engineers > li { @apply flex flex-col gap-2 rounded-xl border border-kumo-line bg-kumo-base p-4; }
+  .planning-requirement { white-space: pre-wrap; }
+  .planning-package { @apply border-t border-kumo-hairline pt-2; }
+  .planning-view dl > div, .organization-summary dl > div { @apply flex flex-wrap gap-x-4; }
+  .planning-view dt, .organization-summary dt { @apply text-kumo-subtle; }
+  .planning-view dd, .organization-summary dd { @apply m-0; }
+  pre { @apply max-w-full overflow-x-auto rounded-lg bg-kumo-recessed p-3 text-xs; white-space: pre-wrap; overflow-wrap: anywhere; }
+  summary { @apply cursor-pointer text-sm text-kumo-default; }
+  details > summary { min-height: 32px; display: list-item; }
+  .decision-pagination { @apply flex gap-2; }
+  .operator-button { @apply inline-flex h-8 cursor-pointer items-center justify-center gap-1.5 rounded-md border border-kumo-line bg-kumo-base px-3 text-sm font-medium text-kumo-default hover:bg-kumo-tint disabled:cursor-not-allowed disabled:opacity-60; }
+
+  .automation-heading { @apply flex flex-wrap items-center justify-between gap-2; }
+  .automation-heading p { @apply text-xs text-kumo-subtle; }
+  .automation-native { @apply rounded-lg bg-kumo-recessed p-3 text-sm; }
+  .automation-warning { @apply text-sm text-kumo-warning; }
+  .automation-grid { @apply grid gap-3 lg:grid-cols-3; }
+  .automation-source { @apply flex min-w-0 flex-col gap-2 rounded-lg border border-kumo-hairline p-3; }
+  .automation-source header { @apply flex items-center justify-between gap-2 text-xs text-kumo-subtle; }
+  .automation-source dl, .automation-transport dl { @apply grid gap-1 text-xs; }
+  .automation-fact { @apply flex flex-wrap gap-x-2; }
+  .automation-fact dt { @apply text-kumo-subtle; }
+  .automation-fact dd { @apply m-0 flex flex-wrap gap-1; overflow-wrap: anywhere; }
+  .automation-table { @apply overflow-x-auto; }
+  .automation-table table, .stage-matrix { @apply w-full border-collapse text-xs; }
+  .automation-table th, .automation-table td, .stage-matrix th, .stage-matrix td { @apply border-b border-kumo-hairline px-2 py-1.5 text-left; }
+  .stage-matrix__scroll { @apply overflow-x-auto; }
+  .repository-overview { @apply rounded-xl border border-kumo-line bg-kumo-base p-4; }
+  .repository-overview[open] > summary { @apply mb-3; }
+  .repository-list { @apply flex flex-col divide-y divide-kumo-hairline; }
+  .repository-row { @apply flex flex-wrap items-center gap-x-4 gap-y-1 py-2 text-sm; }
+  .repository-row__main { @apply flex min-w-0 flex-1 flex-col; }
+  .repository-row__main span, .repository-row__error { @apply text-xs text-kumo-subtle; }
+  .repository-row__state { @apply inline-flex items-center gap-1.5 text-xs; }
+
+  .collab-list { @apply m-0 flex list-none flex-col gap-2 p-0; }
+  .collab-list > li { @apply flex flex-col gap-1 rounded-lg border border-kumo-hairline p-3 text-sm; }
+  .collab-lane__head, .collab-handoff__head, .collab-contributor__head { @apply flex flex-wrap items-center gap-2; }
+  .collab-meta, .collab-labels { @apply flex flex-wrap gap-x-3 gap-y-1 text-xs text-kumo-subtle; }
+  .collab-lane__key { @apply font-mono text-xs; }
+  .collab-signal.is-superseded { @apply opacity-60; }
+  .collab-context { @apply text-xs text-kumo-subtle; }
+
+  .task-evidence { @apply flex flex-col gap-4; }
+  .task-evidence h3, .task-history h2, .task-diff h3 { @apply text-xs font-semibold tracking-wide text-kumo-subtle uppercase; }
+  .task-evidence h4 { @apply text-sm font-medium text-kumo-strong; }
+  .task-evidence p, .task-evidence li, .task-history p { @apply text-sm; overflow-wrap: anywhere; }
+  .task-evidence ul { @apply m-0 flex list-none flex-col gap-1 p-0; }
+  .task-evidence__facts { @apply grid gap-x-4 gap-y-1 text-sm; grid-template-columns: minmax(7rem, auto) minmax(0, 1fr); }
+  .task-evidence__facts > div { display: contents; }
+  .task-evidence__facts dt { @apply text-kumo-subtle; }
+  .task-evidence__facts dd { @apply m-0; }
+  .task-evidence__message { @apply flex flex-col gap-1.5 rounded-lg border border-kumo-hairline p-3; }
+  .task-evidence__body { white-space: pre-wrap; }
+  .task-evidence__historical { @apply text-kumo-warning; }
+  .task-evidence button, .task-history button, .task-diff button { @apply inline-flex h-7 w-fit cursor-pointer items-center rounded-md border border-kumo-line bg-kumo-base px-2.5 text-xs font-medium hover:bg-kumo-tint disabled:opacity-60; }
+  .task-history { @apply flex flex-col gap-3 rounded-xl border border-kumo-line bg-kumo-base p-4; }
+  .task-diff__patch { max-height: 28rem; }
+
+  .notify-status__heading p, .pipeline-board__heading p { @apply text-xs text-kumo-subtle; }
+  .pipeline-board__heading { @apply flex flex-wrap items-center justify-between gap-2; }
+  .pipeline-cards__heading { @apply flex items-center gap-2 text-sm font-semibold; }
+  .pipeline-cards, .pipeline-native-sources, .pipeline-native-observations, .pipeline-runs, .pipeline-evidence { @apply m-0 flex list-none flex-col gap-2 p-0; }
+  .pipeline-card, .pipeline-native-sources > li { @apply flex flex-col gap-2 rounded-lg border border-kumo-hairline p-3; }
+  .pipeline-card__head { @apply flex flex-wrap items-center justify-between gap-2; }
+  .pipeline-card__title { @apply text-sm text-kumo-strong; }
+  .pipeline-card__badges, .pipeline-runtime-badges, .pipeline-runtime-run { @apply flex flex-wrap items-center gap-1.5 text-xs; }
+  .pipeline-card__meta, .pipeline-runtime-summary { @apply flex flex-wrap items-center gap-3 text-xs text-kumo-subtle; }
+  .pipeline-card__blocked { @apply flex items-center gap-1.5 text-sm text-kumo-danger; }
+  .pipeline-native-runtime { @apply flex flex-col gap-2; }
+  .pipeline-native-runtime h3 { @apply text-sm font-semibold; }
+  .pipeline-native-runtime > p { @apply text-xs text-kumo-subtle; }
+
+  .architecture-workspace__heading { @apply flex flex-wrap items-center gap-3; }
+  .architecture-notice { @apply rounded-lg bg-kumo-danger-tint p-3 text-sm text-kumo-danger; }
+  .module-domains { @apply grid gap-3 lg:grid-cols-2; }
+  .module-domain { @apply rounded-xl border border-kumo-line bg-kumo-base p-3; }
+  .module-domain h3 { @apply mb-2 flex items-center justify-between text-xs font-semibold tracking-wide text-kumo-subtle uppercase; }
+  .module-domain ul { @apply m-0 flex list-none flex-col divide-y divide-kumo-hairline p-0; }
+  .module-row { @apply flex flex-col gap-1 py-2; }
+  .module-row__open { @apply flex w-full cursor-pointer flex-wrap items-baseline gap-2 text-left text-sm text-kumo-strong hover:underline; }
+  .module-row__open code, .module-row__meta { @apply text-xs text-kumo-subtle; }
+  .module-states { @apply m-0 flex list-none flex-wrap gap-1.5 p-0; }
+  .module-page { @apply flex flex-col gap-4; }
+  .module-page__header { @apply flex flex-col gap-2; }
+  .module-page__header h2 { @apply text-lg font-semibold text-kumo-strong; }
+  .module-page__grid { @apply grid gap-3 lg:grid-cols-2; }
+  .architecture-card { @apply flex min-w-0 flex-col gap-2 rounded-xl border border-kumo-line bg-kumo-base p-4 text-sm; }
+  .architecture-card h3 { @apply text-sm font-semibold text-kumo-strong; }
+  .architecture-card h4 { @apply text-xs font-semibold text-kumo-subtle; }
+  .architecture-card ul { @apply m-0 flex list-none flex-col gap-1 p-0; overflow-wrap: anywhere; }
+  .review-prompt__actions { @apply flex gap-2; }
+  .review-prompt select { @apply h-8 rounded-md border border-kumo-line bg-kumo-base px-2 text-sm; }
+  .module-graph { @apply m-0 flex min-w-0 flex-col gap-2 overflow-x-auto rounded-xl border border-kumo-line bg-kumo-base p-3; }
+  .module-graph__caption { @apply grid grid-cols-3 text-xs text-kumo-subtle; }
+  .module-graph__svg { @apply max-w-full; height: auto; }
+  .module-graph__node rect { fill: var(--color-kumo-base); stroke: var(--color-kumo-line); }
+  .module-graph__node--center > rect { fill: var(--color-kumo-recessed); }
+  .module-graph__node[role="button"] { cursor: pointer; }
+  .module-graph__node[role="button"]:hover rect { stroke: var(--color-kumo-brand); }
+  .module-graph__node text { fill: currentColor; font-size: 12px; }
+  .module-graph__edge path { fill: none; stroke: var(--color-kumo-line); stroke-width: 1.5; }
+  .module-graph__arrow { fill: var(--color-kumo-line); }
+  .module-graph__edge-label { fill: currentColor; font-size: 11px; opacity: .7; }
+  .module-graph__relations { @apply m-0 flex list-none flex-col gap-1 p-0 text-xs text-kumo-subtle; }
+  .module-graph__intent { @apply mx-2 text-kumo-default; }
+  .module-graph__group ul { @apply m-0 flex list-none flex-col gap-1 p-0 text-sm; }
+}

@@ -122,7 +122,8 @@ describe('pipeline board panel', () => {
     expect(markup).not.toContain('<input');
     expect(markup).not.toContain('<form');
     expect(markup).not.toContain('/Users/');
-    expect(markup).not.toContain('http');
+    // Inline SVG icons carry the SVG namespace URI; no other URL may appear.
+    expect(markup.replaceAll('xmlns="http://www.w3.org/2000/svg"', '')).not.toContain('http');
   });
 
   test('card keys stay distinct when host or task values contain the delimiter', () => {
@@ -398,12 +399,13 @@ describe('pipeline board panel', () => {
     expect(markup).toContain('采集心跳当前有效');
   });
 
-  test('mounts in the organization tab panel', () => {
-    const markup = render(
-      <OperatorApp initialLocale="en" initialState={projectSnapshotViewState(stableSnapshot)} initialPipelineBoard={board()} />,
+  test('mounts on the System page, not on the board', () => {
+    const at = (workspace: 'system' | 'board') => render(
+      <OperatorApp initialLocale="en" initialState={projectSnapshotViewState(stableSnapshot)} initialPipelineBoard={board()}
+        initialPlace={{ workspace, module: null, item: null }} />,
     );
-    const organization = markup.slice(markup.indexOf('id="view-panel-organization"'));
-    expect(organization).toContain('data-pipeline-state="ready"');
+    expect(at('system')).toContain('data-pipeline-state="ready"');
+    expect(at('board')).not.toContain('data-pipeline-state');
   });
 });
 
