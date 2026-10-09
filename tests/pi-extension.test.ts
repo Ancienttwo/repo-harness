@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { readAcceptedEvents } from '../src/effects/evidence/event-log';
 import { PiHookBridge, type HookRequest } from '../src/pi/hook-bridge';
 import { parseHookJsonOutput, type HookJsonOutput } from '../src/pi/hook-protocol';
 import { commitAll, initGitRepo, run, sandboxEnv, tmpWorkspace } from './helpers/repo-fixture';
@@ -93,6 +94,18 @@ describe('Pi JSON hook bridge', () => {
     } finally { f.cleanup(); }
   });
 
+  test('Stop can finish after ten seconds while ordinary checks remain bounded', async () => {
+    const f = fixture();
+    try {
+      const pkg = fakePackage(f.root, `const event = process.argv[2];
+setTimeout(() => console.log(JSON.stringify({${JSON.stringify(output()).slice(1, -1)},event,route_id:'default',decision:'none'})), 11_000);`);
+      expect(await new PiHookBridge(pkg, { env: f.env }).invoke(request(f.root, { event: 'Stop', route: 'default' })))
+        .toMatchObject({ event: 'Stop', exit_code: 0 });
+      await expect(new PiHookBridge(pkg, { env: f.env, timeoutMs: 100 })
+        .invoke(request(f.root, { event: 'SessionStart', route: 'default' }))).rejects.toThrow('PI_HOOK_TIMEOUT');
+    } finally { f.cleanup(); }
+  }, 60_000);
+
   test('bounds input, output and timeout, and cancels only its running checks', async () => {
     const f = fixture();
     try {
@@ -126,12 +139,31 @@ describe('real Pi 1.1 tool pipeline with a scripted provider', () => {
       expect(results.find((message: any) => message.toolCallId === 'direct-private')?.isError).toBe(true);
       expect(results.find((message: any) => message.toolCallId === 'nested-private')?.isError).toBe(true);
       expect(result.calls.some((call: any) => call.name === 'edit' && call.parent === 'nested-edit')).toBe(true);
-      expect(result.messages.some((message: any) => message.role === 'custom' && message.customType === 'repo-harness-context')).toBe(true);
+      // The shared budget also deduplicates the unchanged snapshot on same-session /reload.
+      expect(result.messages.filter((message: any) => message.role === 'custom' && message.customType === 'repo-harness-context')).toHaveLength(1);
       const events = records(f.root);
       expect(events.filter(event => event.event === 'SessionStart')).toHaveLength(2);
       expect(events.filter(event => event.event === 'Stop')).toHaveLength(6);
       const observed = JSON.parse(readFileSync(join(f.root, '.ai/harness/checks/post-bash-latest.json'), 'utf8'));
-      expect(observed).toMatchObject({ exit_code: null, status: 'unknown' });
+      expect(observed).toMatchObject({ exit_code: 0, status: 'pass', verbosity_class: 'inline', raw_output_path: null });
+    } finally { f.cleanup(); }
+  }, 60_000);
+
+  test('native Bash carries real passing and failing Bun exit codes into checks and evidence', () => {
+    const f = fixture();
+    try {
+      const result = session(f.root, f.env, 'bash-status');
+      expect(result.bashObservations).toMatchObject([
+        { id: 'native-bash-pass', check: { exit_code: 0, status: 'pass', verbosity_class: 'inline', raw_output_path: null } },
+        { id: 'native-bash-fail', check: { exit_code: 1, status: 'fail', verbosity_class: 'failure', failure_signal: true } },
+      ]);
+      const messages = result.messages.filter((message: any) => message.role === 'toolResult');
+      expect(messages.find((message: any) => message.toolCallId === 'native-bash-pass')?.isError).toBe(false);
+      expect(messages.find((message: any) => message.toolCallId === 'native-bash-fail')?.isError).toBe(true);
+      const accepted = readAcceptedEvents(f.root).accepted;
+      expect(accepted.filter(event => event.event_type === 'post_bash.command_observed')).toHaveLength(2);
+      expect(records(f.root).filter(event => event.event === 'PostToolUse' && event.route_id === 'bash')).toHaveLength(2);
+      expect(records(f.root).filter(event => event.event === 'Stop')).toHaveLength(2);
     } finally { f.cleanup(); }
   }, 60_000);
 

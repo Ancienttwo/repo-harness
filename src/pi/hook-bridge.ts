@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import { join } from 'node:path';
+import { MANAGED_STOP_TIMEOUT_SECONDS } from '../core/hook-work-budget';
 import type { HookEvent, RouteId } from '../cli/hook/route-registry';
 import { boundedHookDiagnostic, parseHookJsonOutput, type HookJsonOutput } from './hook-protocol';
 
@@ -62,7 +63,8 @@ export class PiHookBridge {
           killTimer = setTimeout(() => { child.kill('SIGKILL'); finish(new Error(reason)); }, 250);
         };
         const abort = () => stop('PI_HOOK_CANCELLED');
-        const timer = setTimeout(() => stop('PI_HOOK_TIMEOUT'), this.options.timeoutMs ?? 10_000);
+        const timeoutMs = this.options.timeoutMs ?? (request.event === 'Stop' ? MANAGED_STOP_TIMEOUT_SECONDS * 1000 : 10_000);
+        const timer = setTimeout(() => stop('PI_HOOK_TIMEOUT'), timeoutMs);
         controller.signal.addEventListener('abort', abort, { once: true });
         for (const [stream, chunks] of [[child.stdout, stdout], [child.stderr, stderr]] as const) {
           stream.on('data', (chunk: Buffer) => {

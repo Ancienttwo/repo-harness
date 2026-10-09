@@ -96,7 +96,8 @@ runtime event record.
 Pi owns the agent loop and tool execution. `src/pi/extension.ts` maps supported
 native events to the shared typed handlers. It invokes the current package's
 `dist/hook-entry.js` through `src/pi/hook-bridge.ts`. The bridge uses protocol 1
-JSON output and a ten-second deadline. It limits stdin to 16 MiB and diagnostics
+JSON output and a ten-second deadline for ordinary checks. Stop uses the shared
+150-second managed host limit. It limits stdin to 16 MiB and diagnostics
 to 8 KiB. It cancels its own child processes on shutdown or session replacement.
 
 The adapter uses Pi 1.1.0's installed `resolveToCwd` implementation. It resolves
@@ -105,8 +106,9 @@ keeps `@`, `~`, file URLs and subdirectory calls bound to the native tool target
 Pi does not export this resolver from its public SDK. The version is exact;
 a missing resolver or another version leaves opt-in edits blocked.
 
-Session context keeps the existing provider budgets. Each model run has a fresh
-run ID. Tool call IDs bind the original payload to its result. Nested calls keep
+Session context keeps the existing provider budgets. The adapter sends each
+SessionStart snapshot once. It leaves later prompt context to UserPromptSubmit.
+Each model run has a fresh run ID. Tool call IDs bind the original payload to its result. Nested calls keep
 the parent tool call ID. Stop runs once at `agent_settled`, after retries and
 queued input have settled. The bridge never retries an external operation.
 
@@ -114,7 +116,8 @@ The extension checks native edit/write calls in opt-in repositories. Hook
 refusal, timeout, process failure or invalid output prevents execution. A failed
 session context or observation blocks later edits until `/reload` succeeds.
 Shell writes, direct extension writes and third-party MCP writes are outside
-this tool gate. A Bash result without an integer exit code stays `unknown`.
+this tool gate. Bash uses Pi's `structuredContent.exit_code` field. A result
+without an integer exit code stays `unknown`. Short unknown output stays inline.
 It cannot create passing verification evidence.
 
 The bridge records tool results with the original call binding. A native edit

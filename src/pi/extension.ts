@@ -132,6 +132,7 @@ export default function repoHarnessPi(pi: ExtensionAPI): void {
     const content = [state.context, output?.additional_context, output?.diagnostics,
       state.availability === 'unavailable' ? `[HarnessUnavailable] ${state.diagnostic}. Edits are blocked. Resolve the failure and run /reload.` : null]
       .filter(Boolean).join('\n\n');
+    state.context = null;
     if (content) return { message: { customType: 'repo-harness-context', content, display: false } };
   });
 
@@ -174,8 +175,8 @@ export default function repoHarnessPi(pi: ExtensionAPI): void {
     // Native tools can report an error after bytes reach disk. Observe the attempt
     // with its original binding even when execution has already been cancelled.
     const text = event.content.filter(part => part.type === 'text').map(part => part.text).join('\n');
-    const details = event.details as { exitCode?: unknown } | undefined;
-    const exitCode = typeof details?.exitCode === 'number' && Number.isSafeInteger(details.exitCode) ? details.exitCode : null;
+    const structured = event.structuredContent as { exit_code?: unknown } | undefined;
+    const exitCode = typeof structured?.exit_code === 'number' && Number.isSafeInteger(structured.exit_code) ? structured.exit_code : null;
     try {
       const output = await invoke(state, 'PostToolUse', event.toolName === 'bash' ? 'bash' : 'edit', {
         ...binding.payload, tool_response: { stdout: text, is_error: event.isError }, exit_code: exitCode,

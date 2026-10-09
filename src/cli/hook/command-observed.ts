@@ -198,7 +198,7 @@ export function runCommandObserved(opts: CommandObservedInput): CommandObservedR
   const longBytes = 32768;
   let verbosity: 'inline' | 'failure' | 'long' = 'inline';
   let suggestedRunner: 'inline' | 'raw' | 'rtk' = 'inline';
-  if (exitCode !== 0) {
+  if (exitCode !== null && exitCode !== 0) {
     verbosity = 'failure';
     suggestedRunner = 'raw';
   } else if (lines >= longLines || bytes >= longBytes) {

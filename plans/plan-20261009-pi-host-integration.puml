@@ -14,7 +14,7 @@ left to right direction
 title Pi host integration: observed progress
 
 rectangle "D1: OAR 0.45.1 / Pi 1.1.0\nImplemented and verified\nLocal commit: 981a50b8\n22 affected tests passed" as deps #DCFCE7
-rectangle "H1: native Pi 1.1.0 package\nImplemented\n13 SDK fixture tests passed\nInstalled Node loader and live provider passed\nCodex finding fixed; no independent sign-off" as host #FEF3C7
+rectangle "H1: native Pi 1.1.0 package\nImplemented\n15 SDK fixture cases\nInstalled Node loader and live provider passed\nIndependent findings fixed; follow-up pending" as host #FEF3C7
 rectangle "Pi program status\nSeparate existing plan\nLive receiver chain unverified\nNot required for H1" as status #E2E8F0
 rectangle "PR delivery\nPR #607: ready for review\nFull suite passed at 03fe5937\nFinal verification is recorded in the PR\nMain and release need separate approval" as delivery #FEF3C7
 

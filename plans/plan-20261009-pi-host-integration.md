@@ -114,7 +114,7 @@ JSON 输出只允许一个 stdout 对象。版本号是 `protocol: 1`。字段�
 
 结果投影由 hook runtime 负责。对 guard，非零退出码投影为 block。对其他事件，沿用 runtime 已有的结构化输出识别。extension 不再解析旧 stdout 内容。日志只写 stderr。JSON 模式不得绕过已有 telemetry、预算和 `onDelivered` 处理。
 
-bridge 单次超时为 10 秒。stdin 上限为 16 MiB。超限 edit/write 必须拒绝，不得截断后放行。它不产生新 flag 或环境配置。10 秒超时仅终止自身 hook 子进程，不自动重试已发生的 effect。
+bridge 的普通检查超时为 10 秒。Stop 使用既有 `MANAGED_STOP_TIMEOUT_SECONDS`，当前为 150 秒。它给 140 秒工作预算保留收尾时间。stdin 上限为 16 MiB。超限 edit/write 必须拒绝，不得截断后放行。它不产生新 flag 或环境配置。超时仅终止自身 hook 子进程，不自动重试已发生的 effect。
 
 Pi 官方安装命令为 `pi install <本地候选包目录>`。发布后采用官方 `npm:repo-harness@版本` 来源。首版默认个人 scope。project scope 仍受 Pi 原生 trust 约束。不得调用 `--approve`，不得写 trust.json、auth.json、默认 provider 或 sandbox 权限。
 
@@ -200,6 +200,8 @@ D1 回退是 `git revert 981a50b871f9b5238a7bca72d031e0927d397769`，再按原�
 - 用户随后以 `go` 授权最小 DNS 权限修正。规则仅放行 macOS 的 `/private/var/run/mDNSResponder`。真实 sandbox 红绿测试检查 DNS，并确认普通 Unix socket 仍被拒绝。原有源码、配置、凭据、进程 signal 与子进程写入拒绝测试保持通过。generic review 为 20 pass、0 fail。最终独立审查结果以 PR 为准。
 - 架构模型已声明 Pi adapter 的责任。初次投影缺少 CodeGraph 索引，无法确认 27 个模块的 flow。恢复索引后，仅 Pi hook adapter 的 ownership 与 responsibility 有真实变化。补修已接受该项已批准变化并同步八份生成文档。复查返回 `noop`，没有 refresh signals。DNS 修正仅更新投影输入 proof，没有其他责任变化。
 - 两处 installed candidate fixture 原先复制整个 checkout，连同未发布的测试和私有运行状态。补修改为复制 package 的发布清单。边界回归测试在原复制行为上失败，在新行为上通过。版本安装的原断言与 30 秒 timeout 保留。`4dbb1c0f` 的默认八进程 full 完成 410 份文件，退出 0。原 installer timeout 的具体触发因素未复现，不能据此断言其根因。最终提交的检查结果以 PR 为准。
+- 独立 Claude 只读审查已对 `8f76eba9` 返回 advisory `FAIL`，提出两个中等问题和两个低级问题。Bash 原先错误读取 `details.exitCode`；修正后使用 SDK 的 `structuredContent.exit_code`。Stop 原先受 10 秒限制；修正后复用 150 秒 managed timeout。短 unknown 输出不再按失败保存完整日志。SessionStart snapshot 交付一次，不再每轮重复。
+- 真实 SDK/Bash/Bun 回归检查实际 pass/fail 退出码、check records 和 ledger。context 的精确次数检查保留一次 SessionStart snapshot；同一 session 的 unchanged reload 由共享 budget 去重。真实 11 秒 bridge 子进程在旧 Stop deadline 下失败，在新 deadline 下完成。普通 timeout 与取消检查保留。四项失败日志及后续差量结果均保留，最终复审以 PR 为准。
 - 尚未验证 RPC 模式、长期并发压力、shutdown 重入及 Pi–Herdr 状态链路。它们不能由以上检查推断。
 - 本地检查日志使用 `/tmp/repo-harness-pi-*.log`。这些日志不是提交内容。PR 说明记录命令、环境、结果和限制。
 

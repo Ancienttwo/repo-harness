@@ -19,6 +19,7 @@ const calls: Array<{ name: string; id: string; parent: string | null }> = [];
 const errors: string[] = [];
 const journalPaths: string[] = [];
 const writes: string[] = [];
+const bashObservations: Array<{ id: string; check: Record<string, unknown> }> = [];
 // Use the native tools' filesystem seam to cancel after real bytes reach disk.
 // Their own post-write abort check must produce the error tool result.
 const cancelAfterWrite = async (path: string, content: string) => {
@@ -38,7 +39,15 @@ const resourceLoader = new DefaultResourceLoader({ cwd, agentDir, settingsManage
         access: async path => { await access(path, constants.R_OK | constants.W_OK); } } }));
     }
     pi.on('tool_call', (event: ToolCallEvent) => { calls.push({ name: event.toolName, id: event.toolCallId, parent: event.parentToolCallId ?? null }); });
-    pi.on('tool_result', () => { journalPaths.push(...readPendingPostEditEvents(repoRoot).flatMap(event => event.changed_paths)); });
+    pi.on('tool_result', event => {
+      journalPaths.push(...readPendingPostEditEvents(repoRoot).flatMap(event => event.changed_paths));
+      if (event.toolName === 'bash') {
+        const path = join(repoRoot, '.ai/harness/checks/post-bash-latest.json');
+        if (mode !== 'inactive') {
+          bashObservations.push({ id: event.toolCallId, check: JSON.parse(readFileSync(path, 'utf8')) });
+        }
+      }
+    });
   }],
 });
 await resourceLoader.reload();
@@ -63,9 +72,14 @@ try {
     await prompt('write', { path: '_ops/private.txt', content: 'forbidden' }, 'direct-private');
     await prompt('codemode', { code: 'await tools.edit({path: "README.md", edits: [{oldText: "updated", newText: "nested"}]}); return "nested edit done";' }, 'nested-edit');
     await prompt('codemode', { code: 'await tools.write({path: "_ops/nested.txt", content: "forbidden"});' }, 'nested-private');
-    await prompt('bash', { command: 'printf "fixture command\\n"' }, 'bash-unknown');
+    await prompt('bash', { command: 'printf "fixture command\\n"' }, 'bash-pass');
     await session.reload();
     await prompt('write', { path: 'reloaded.txt', content: 'fresh session context' }, 'after-reload');
+  } else if (mode === 'bash-status') {
+    await writeFile(join(cwd, 'native-pass.test.ts'), 'import { test, expect } from "bun:test"; test("native pass", () => expect(1).toBe(1));\n');
+    await writeFile(join(cwd, 'native-fail.test.ts'), 'import { test, expect } from "bun:test"; test("native failure", () => expect(1).toBe(2));\n');
+    await prompt('bash', { command: 'bun test native-pass.test.ts' }, 'native-bash-pass');
+    await prompt('bash', { command: 'bun test native-fail.test.ts' }, 'native-bash-fail');
   } else if (mode === 'paths') {
     for (const [id, path] of [
       ['relative-private', '../_ops/relative.txt'],
@@ -119,7 +133,7 @@ try {
   } else if (mode === 'unavailable') {
     await prompt('write', { path: 'blocked.txt', content: 'must not write' }, 'unavailable-write');
   } else throw new Error(`Unknown fixture mode: ${mode}`);
-  console.log(JSON.stringify({ calls, errors, journalPaths, writes, messages: session.state.messages, sessionId: session.sessionId, sessionIds,
+  console.log(JSON.stringify({ calls, errors, journalPaths, writes, bashObservations, messages: session.state.messages, sessionId: session.sessionId, sessionIds,
     readme: readFileSync(join(repoRoot, 'README.md'), 'utf8') }));
 } finally {
   await session.abort();

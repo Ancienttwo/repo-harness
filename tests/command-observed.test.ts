@@ -75,7 +75,9 @@ describe('runCommandObserved', () => {
           dependencies: { hasExecutable: () => false },
         });
         expect(result).toMatchObject({ exitCode: 0, reason: 'ok' });
-        expect(checks(repoRoot)).toMatchObject({ exit_code: null, status: 'unknown' });
+        expect(checks(repoRoot)).toMatchObject({ exit_code: null, status: 'unknown', verbosity_class: 'inline',
+          suggested_runner: 'inline', raw_output_path: null, raw_output_sha256: null });
+        expect(existsSync(join(repoRoot, '.ai/harness/runs/bash-output'))).toBe(false);
         expect(readAcceptedEvents(repoRoot).accepted).toHaveLength(0);
       } finally {
         rmSync(repoRoot, { recursive: true, force: true });
