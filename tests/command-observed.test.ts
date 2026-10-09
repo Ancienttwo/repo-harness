@@ -64,6 +64,25 @@ describe('runCommandObserved', () => {
     }
   });
 
+  test('Pi cannot import passing verification evidence without an explicit integer exit code', () => {
+    for (const exitCode of [undefined, null, '0', 0.5]) {
+      const repoRoot = workspace('command-observed-pi-unknown');
+      try {
+        const result = runCommandObserved({
+          repoRoot,
+          input: JSON.stringify({ tool_input: { command: 'bun run check:type' }, tool_response: { output: 'All checks passed', isError: false }, exit_code: exitCode }),
+          env: { PATH: '', HOOK_HOST: 'pi', EXIT_CODE: '0' },
+          dependencies: { hasExecutable: () => false },
+        });
+        expect(result).toMatchObject({ exitCode: 0, reason: 'ok' });
+        expect(checks(repoRoot)).toMatchObject({ exit_code: null, status: 'unknown' });
+        expect(readAcceptedEvents(repoRoot).accepted).toHaveLength(0);
+      } finally {
+        rmSync(repoRoot, { recursive: true, force: true });
+      }
+    }
+  });
+
   test('stores long output as raw evidence and uses an injected runner probe', () => {
     const repoRoot = workspace('command-observed-long');
     try {

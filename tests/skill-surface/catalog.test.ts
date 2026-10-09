@@ -70,7 +70,7 @@ function computeExpectedProjections(packages: unknown[]): unknown {
   const provisional = { packages: wellFormed } as unknown as SkillSurfaceCatalog;
   const facadesByProfile: Record<string, readonly string[]> = {};
   const externalSkillsByProfile: Record<string, readonly string[]> = {};
-  const hostSkillPlacementsByProfile: Record<string, { claude: readonly string[]; codex: readonly string[] }> = {};
+  const hostSkillPlacementsByProfile: Record<string, { claude: readonly string[]; codex: readonly string[]; pi: readonly string[] }> = {};
   for (const profile of SKILL_SURFACE_PROFILES) {
     facadesByProfile[profile] = facadesForProfile(provisional, profile);
     externalSkillsByProfile[profile] = externalSkillsForProfile(provisional, profile);
@@ -478,16 +478,17 @@ describe("skill-surface catalog: target post-cutover discovery matrix", () => {
   });
 
   test("hostSkillPlacements: full places repo-harness-cross-review on both hosts without retired plan skill", () => {
-    expect(hostSkillPlacements(catalog, "minimal")).toEqual({ claude: [], codex: [] });
+    expect(hostSkillPlacements(catalog, "minimal")).toEqual({ claude: [], codex: [], pi: [] });
     expect(hostSkillPlacements(catalog, "full")).toEqual({
       claude: ["repo-harness-cross-review"],
       codex: ["repo-harness-cross-review"],
+      pi: [],
     });
   });
 
   test("hostSkillPlacements without a profile (init.ts's init flow) is the unconditional full-tier bundle", () => {
     const unconditional = hostSkillPlacements(catalog);
-    expect(unconditional).toEqual({ claude: ["repo-harness-cross-review"], codex: ["repo-harness-cross-review"] });
+    expect(unconditional).toEqual({ claude: ["repo-harness-cross-review"], codex: ["repo-harness-cross-review"], pi: [] });
   });
 
   test("explicit ChatGPT setup is never implied by either install profile", () => {

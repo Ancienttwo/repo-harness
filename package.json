@@ -37,6 +37,8 @@
     "node": ">=24 <26"
   },
   "scripts": {
+    "check:pi-package": "bun scripts/sync-pi-package.ts --check",
+    "sync:pi-package": "bun scripts/sync-pi-package.ts --write",
     "benchmark:skills": "bun scripts/run-skill-evals.ts",
     "benchmark:harness": "bun scripts/run-harness-profile-benchmark.ts",
     "test": "bash -c 'source scripts/lib/ci-run-tests.sh; if [[ ${1:-} == -- ]]; then shift; fi; if [[ $# -gt 0 ]]; then BUN_TEST_ISOLATE_FILES=0 run_bun_tests \"$@\"; else bash scripts/lib/ci-run-tests.sh core --timeout 60000; fi' --",
@@ -67,11 +69,19 @@
     "check:task-workflow": "repo-harness run check-task-workflow",
     "build:hook-bundle": "bun build src/cli/hook-entry.ts --target=bun --outfile dist/hook-entry.js --define REPO_HARNESS_BUNDLED_CLI_VERSION=\"\\\"$npm_package_version\\\"\" && head -1 dist/hook-entry.js | grep -q '^#!/usr/bin/env bun' && ! grep -q REPO_HARNESS_BUNDLED_CLI_VERSION dist/hook-entry.js",
     "build:operator-web": "vite build --config vite.operator.config.ts",
-    "prepack": "bun run build:hook-bundle 1>&2 && bun run build:oar-review-host 1>&2 && bun run build:operator-web 1>&2",
+    "prepack": "bun run check:pi-package 1>&2 && bun run build:hook-bundle 1>&2 && bun run build:oar-review-host 1>&2 && bun run build:operator-web 1>&2",
     "prepublishOnly": "bash scripts/check-npm-release.sh --prepublish",
     "sync:brain-docs": "repo-harness run sync-brain-docs --all",
     "sync:codex-installed": "bash scripts/sync-codex-installed-copies.sh",
     "build:oar-review-host": "bun build src/effects/review/oar-review-host.ts --target=node --format=esm --packages=external --outfile=dist/oar-review-host.js"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "peerDependenciesMeta": {
+    "@earendil-works/pi-coding-agent": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@colbymchenry/codegraph": "1.6.1",
@@ -97,5 +107,14 @@
     "archctx-contracts": "0.6.3",
     "commander": "^15.0.0",
     "express": "^5.2.1"
+  },
+  "pi": {
+    "extensions": [
+      "./src/pi/extension.ts"
+    ],
+    "skills": [
+      "./SKILL.md",
+      "./assets/skill-commands/repo-harness-check"
+    ]
   }
 }
