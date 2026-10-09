@@ -170,6 +170,33 @@ describe('real Pi 1.1 tool pipeline with a scripted provider', () => {
     } finally { f.cleanup(); }
   }, 60_000);
 
+  test('cancel after native write and edit preserves observation and never replays either write', () => {
+    const f = fixture();
+    try {
+      const result = session(f.root, f.env, 'cancel-after-write');
+      expect(readFileSync(join(f.root, 'cancelled.txt'), 'utf8')).toBe('written before cancel');
+      expect(result.readme).toBe('edited before cancel\n');
+      expect(result.writes).toEqual(['cancelled.txt', 'README.md', 'after-cancelled-writes.txt']);
+      for (const id of ['cancelled-write', 'cancelled-edit']) {
+        const results = result.messages.filter((message: any) => message.role === 'toolResult' && message.toolCallId === id);
+        expect(results).toHaveLength(1);
+        expect(results[0].isError).toBe(true);
+        expect(results[0].content[0].text).toContain('aborted');
+      }
+      expect(result.journalPaths).toContain('cancelled.txt');
+      expect(result.journalPaths).toContain('README.md');
+      expect(readFileSync(join(f.root, 'after-cancelled-writes.txt'), 'utf8')).toBe('later run');
+      const events = records(f.root);
+      const observed = events.filter(event => event.event === 'PostToolUse' && event.route_id === 'edit');
+      const stops = events.filter(event => event.event === 'Stop');
+      expect(observed).toHaveLength(3);
+      expect(stops).toHaveLength(3);
+      expect(new Set(stops.map(event => event.run_id)).size).toBe(3);
+      expect(observed.map(event => event.run_id)).toEqual(stops.map(event => event.run_id));
+      expect(observed.every(event => event.session_id === result.sessionId)).toBe(true);
+    } finally { f.cleanup(); }
+  }, 60_000);
+
   test('an aborted command settles once and a later run has a separate identity', () => {
     const f = fixture();
     try {

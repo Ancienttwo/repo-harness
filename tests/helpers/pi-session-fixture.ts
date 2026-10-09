@@ -1,8 +1,9 @@
-import { createAgentSession, createCodemodeExtension, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager,
+import { createAgentSession, createCodemodeExtension, createEditToolDefinition, createWriteToolDefinition, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager,
   type ToolCallEvent } from '@earendil-works/pi-coding-agent';
 import { fauxAssistantMessage, fauxProvider, fauxToolCall, InMemoryCredentialStore, type JsonObject } from '@earendil-works/pi-ai';
-import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { constants, readFileSync } from 'node:fs';
+import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { dirname, join, relative } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import repoHarnessPi from '../../src/pi/extension';
 import { readPendingPostEditEvents } from '../../src/cli/hook/mutation-observed';
@@ -17,6 +18,16 @@ const settingsManager = SettingsManager.inMemory({ compaction: { enabled: false 
 const calls: Array<{ name: string; id: string; parent: string | null }> = [];
 const errors: string[] = [];
 const journalPaths: string[] = [];
+const writes: string[] = [];
+// Use the native tools' filesystem seam to cancel after real bytes reach disk.
+// Their own post-write abort check must produce the error tool result.
+const cancelAfterWrite = async (path: string, content: string) => {
+  await writeFile(path, content, 'utf8');
+  writes.push(relative(repoRoot, path));
+  if (path === join(repoRoot, 'cancelled.txt') || path === join(repoRoot, 'README.md')) {
+    void session.abort().catch(error => { errors.push(String(error)); });
+  }
+};
 const resourceLoader = new DefaultResourceLoader({ cwd, agentDir, settingsManager,
   noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
   extensionFactories: [repoHarnessPi, createCodemodeExtension({ models: false }), pi => {
@@ -33,6 +44,12 @@ const sessionManager = mode === 'resume' || mode === 'fork'
   ? SessionManager.create(cwd, join(agentDir, 'sessions')) : SessionManager.inMemory(cwd);
 let { session } = await createAgentSession({ cwd, agentDir, settingsManager, resourceLoader, modelRuntime,
   model: provider.getModel(), thinkingLevel: 'off', sessionManager, tools: ['edit', 'write', 'bash', 'codemode'],
+  customTools: mode === 'cancel-after-write' ? [
+    createWriteToolDefinition(cwd, { operations: { writeFile: cancelAfterWrite,
+      mkdir: async dir => { await mkdir(dir, { recursive: true }); } } }),
+    createEditToolDefinition(cwd, { operations: { writeFile: cancelAfterWrite, readFile,
+      access: async path => { await access(path, constants.R_OK | constants.W_OK); } } }),
+  ] : [],
 });
 const sessionIds = [session.sessionId];
 await session.bindExtensions({ onError: event => { errors.push(event.error); } });
@@ -79,6 +96,10 @@ try {
     await running;
     unsubscribe();
     await prompt('write', { path: 'after-cancel.txt', content: 'new run' }, 'after-cancel');
+  } else if (mode === 'cancel-after-write') {
+    await prompt('write', { path: 'cancelled.txt', content: 'written before cancel' }, 'cancelled-write');
+    await prompt('edit', { path: 'README.md', edits: [{ oldText: 'seed', newText: 'edited before cancel' }] }, 'cancelled-edit');
+    await prompt('write', { path: 'after-cancelled-writes.txt', content: 'later run' }, 'after-cancelled-writes');
   } else if (mode === 'resume' || mode === 'fork') {
     await prompt('write', { path: 'before-replacement.txt', content: 'old run' }, 'before-replacement');
     const leaf = sessionManager.getLeafId();
@@ -98,7 +119,7 @@ try {
   } else if (mode === 'unavailable') {
     await prompt('write', { path: 'blocked.txt', content: 'must not write' }, 'unavailable-write');
   } else throw new Error(`Unknown fixture mode: ${mode}`);
-  console.log(JSON.stringify({ calls, errors, journalPaths, messages: session.state.messages, sessionId: session.sessionId, sessionIds,
+  console.log(JSON.stringify({ calls, errors, journalPaths, writes, messages: session.state.messages, sessionId: session.sessionId, sessionIds,
     readme: readFileSync(join(repoRoot, 'README.md'), 'utf8') }));
 } finally {
   await session.abort();

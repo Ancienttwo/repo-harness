@@ -78,7 +78,7 @@ repo-harness Pi extension
 | `session_start` | 读取 session ID、cwd。执行 `SessionStart.default`。保存预算后的上下文。 | 非 Git 或非 opt-in 返回 inactive。opt-in 仓库中 bridge 失败标为 unavailable，并拒绝后续 edit/write，直到成功刷新。 |
 | `before_agent_start` | 执行 `UserPromptSubmit.default`。返回一条隐藏的 custom message，附带当前上下文及 advisory。 | 不能靠抛错阻止模型循环。失败显示有界诊断；已有 mutation guard 仍负责编辑检查。 |
 | `tool_call` 的 `edit` / `write` | 分别映射到 `Edit` / `Write`。执行 `PreToolUse.edit`。 | guard 拒绝、超时、无效 JSON 或 bridge 崩溃都返回 `block: true`。不自动重试检查进程。 |
-| 成功的 edit/write `tool_result` | 执行 `PostToolUse.edit`，使用现有 post-edit journal。 | 写入已发生。保留错误，不重做编辑。下一次编辑先拒绝，直到已有 journal/recovery 路径恢复。 |
+| edit/write `tool_result` | 执行 `PostToolUse.edit`，使用原调用绑定与现有 post-edit journal。工具失败或取消后仍可能已写入；观察不使用已取消的执行 signal。 | 保留真实错误结果，不重做编辑。观察失败后拒绝下一次编辑，直到 `/reload` 成功。 |
 | bash `tool_result` | 执行 `PostToolUse.bash`。将真实文本与 `isError` 放入 tool response。 | 只记录观察。没有退出码时不伪造零。不能凭日志确认验收。 |
 | `agent_settled` | 执行 `Stop.default`。携带真实 session/run ID 和取消观察。 | 保留错误。不能自动标任务完成、释放 lease、push 或 merge。 |
 | `session_shutdown` | 取消并回收 extension 自己启动的检查进程。清除会话内缓存。 | 幂等清理。若未处理的本轮需要 Stop，执行一次；已经 settled 的本轮不再写重复记录。 |
@@ -192,9 +192,10 @@ D1 回退是 `git revert 981a50b871f9b5238a7bca72d031e0927d397769`，再按原�
 - command observer 的最后差量检查通过，共 16 pass、0 fail。Pi 没有整数退出码时保持 `unknown`。缺少值、null、字符串和小数均不能导入 passing verification evidence。
 - 官方 `pi install` 在隔离 HOME 中加载了 tarball 安装的候选包。Node 宿主加载 extension 与两个技能。真实 edit 和 codemode 嵌套拒绝通过。
 - 既有真实 provider 通过四项验收：直接 edit、直接私有 write 拒绝、嵌套 edit、嵌套私有 write 拒绝。验收读取既有模型配置和只读凭据。它没有修改用户配置或凭据。
-- `bun run test:full` 完成 410 份测试文件。初次运行有三份失败：bundle 的旧 prepack 断言、未改动的 operator activity 与 doctor 测试。prepack 断言增加 Pi 投影检查后通过。另两份测试单独运行通过。完整套件未重跑，不能称为全绿。
+- `bun run test:full` 完成 410 份测试文件。初次运行有三份失败：bundle 的旧 prepack 断言、未改动的 operator activity 与 doctor 测试。prepack 断言增加 Pi 投影检查后通过。另两份测试单独运行通过。完整套件在 `03fe5937` 上重跑了 410 份文件，退出 0。初次失败日志仍保留。后续收尾结果以 PR 说明为准。
 - `bash scripts/check-ci.sh affected --base origin/main` 初次运行只在旧 prepack 断言处失败。对应差量测试已通过。
 - `bun run check:pi-package`、`check:reference-configs`、`check:hooks` 与 `git diff --check` 通过。
+- PR #607 的 Codex review 提出写入后取消仍会返回错误的问题。真实 SDK factory、真实文件写入与 `session.abort()` 已复现。原实现漏掉两份 journal 路径。修正后保留错误结果，记录原 session/run，且三次真实写入各执行一次。Pi 差量为 13 pass；mutation observer 与 command observer 共 41 pass。fixture 使用 scripted provider，不能替代真实 provider 验收。
 - 两次独立只读审查均未产出结果。Claude provider 返回 `ENOTFOUND`。Codex 启动未完成。两份自建任务均已取消并关闭。没有重放请求。
 - 架构模型已声明 Pi adapter 的责任。自动投影返回 `human-action-required`。它报告多个模块的历史模型与 flow 基线差异。未批准扩大投影范围；生成文档同步仍是缺口。
 - 尚未验证 RPC 模式、长期并发压力、shutdown 重入及 Pi–Herdr 状态链路。它们不能由以上检查推断。

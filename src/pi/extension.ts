@@ -171,14 +171,15 @@ export default function repoHarnessPi(pi: ExtensionAPI): void {
     const binding = state?.tools.get(event.toolCallId);
     if (!state || !binding || state.sessionId !== ctx.sessionManager.getSessionId()) return;
     state.tools.delete(event.toolCallId);
-    if (event.toolName !== 'bash' && event.isError) return;
+    // Native tools can report an error after bytes reach disk. Observe the attempt
+    // with its original binding even when execution has already been cancelled.
     const text = event.content.filter(part => part.type === 'text').map(part => part.text).join('\n');
     const details = event.details as { exitCode?: unknown } | undefined;
     const exitCode = typeof details?.exitCode === 'number' && Number.isSafeInteger(details.exitCode) ? details.exitCode : null;
     try {
       const output = await invoke(state, 'PostToolUse', event.toolName === 'bash' ? 'bash' : 'edit', {
         ...binding.payload, tool_response: { stdout: text, is_error: event.isError }, exit_code: exitCode,
-      }, binding.runId, ctx.signal);
+      }, binding.runId);
       if (output.exit_code !== 0) throw new Error(output.diagnostics || output.reason);
     } catch (error) {
       if (event.toolName === 'bash') notify(ctx, `PI_HOOK_COMMAND_OBSERVATION_FAILED: ${boundedHookDiagnostic(String(error))}`);

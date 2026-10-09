@@ -117,6 +117,11 @@ Shell writes, direct extension writes and third-party MCP writes are outside
 this tool gate. A Bash result without an integer exit code stays `unknown`.
 It cannot create passing verification evidence.
 
+The bridge records tool results with the original call binding. A native edit
+or write can report an error after its file write completes. Execution cancellation
+does not cancel this observation. The adapter preserves the error result and never
+repeats the tool operation.
+
 The skill catalog owns the Pi skill list. `scripts/sync-pi-package.ts` projects
 its minimal router and facade entries into `package.json`. Prepack checks this
 projection. The Claude/Codex installer rejects a Pi target and leaves Pi package
