@@ -3,6 +3,12 @@ import { dirname, isAbsolute, join, basename } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { decodeRuntimeCaptureSnapshot, type RuntimeCaptureSnapshot } from '../../core/operator/runtime-capture';
 
+export const RUNTIME_CAPTURE_OWNERSHIP_UNSUPPORTED = 'runtime_capture_ownership_unsupported' as const;
+export function runtimeCaptureUid(): number {
+  if (typeof process.getuid !== 'function') throw new Error(RUNTIME_CAPTURE_OWNERSHIP_UNSUPPORTED);
+  return process.getuid();
+}
+
 function sameFile(a: Stats, b: Stats): boolean { return a.dev === b.dev && a.ino === b.ino && a.uid === b.uid; }
 /** Refuse shared or replaced storage. This writer never changes directory permissions. */
 export class RuntimeCaptureWriter {
@@ -13,8 +19,8 @@ export class RuntimeCaptureWriter {
   private previous: RuntimeCaptureSnapshot;
   private failed = false;
   constructor(path: string, initial: RuntimeCaptureSnapshot) {
-    if (!isAbsolute(path) || path.includes('\0') || typeof process.getuid !== 'function') throw new Error('runtime_capture_output_path');
-    const uid = process.getuid();
+    const uid = runtimeCaptureUid();
+    if (!isAbsolute(path) || path.includes('\0')) throw new Error('runtime_capture_output_path');
     const directory = lstatSync(dirname(path));
     if (!directory.isDirectory() || directory.isSymbolicLink() || directory.uid !== uid || (directory.mode & 0o022) !== 0) throw new Error('runtime_capture_output_directory');
     this.parent = realpathSync(dirname(path)); this.target = join(this.parent, basename(path));

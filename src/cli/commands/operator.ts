@@ -1,6 +1,7 @@
 import { isAbsolute } from 'node:path';
 import { Command } from 'commander';
 import { runRuntimeCapture } from '../../effects/operator/runtime-capture';
+import { RUNTIME_CAPTURE_OWNERSHIP_UNSUPPORTED } from '../../effects/operator/runtime-capture-writer';
 import { runtimeCaptureId, type NativeRuntimeProvider } from '../../core/operator/runtime-capture';
 
 import {
@@ -140,9 +141,10 @@ export function buildOperatorCommand(): Command {
         if (!['codex', 'claude', 'pi'].includes(raw.provider) || !isAbsolute(raw.snapshot)) throw new OperatorArgumentError('Invalid capture options');
         runtimeCaptureId(raw.sourceId);
         process.exitCode = await runRuntimeCapture({ provider: raw.provider as NativeRuntimeProvider, source_id: raw.sourceId, snapshot_path: raw.snapshot, argv });
-      } catch {
-        // Native payloads, paths and argv never enter capture diagnostics.
-        process.stderr.write(`${JSON.stringify({ ok: false, error: 'runtime_capture_unavailable' })}\n`);
+      } catch (error) {
+        // Publish only fixed codes. Native payloads, paths and argv stay private.
+        const code = error instanceof Error && error.message === RUNTIME_CAPTURE_OWNERSHIP_UNSUPPORTED ? RUNTIME_CAPTURE_OWNERSHIP_UNSUPPORTED : 'runtime_capture_unavailable';
+        process.stderr.write(`${JSON.stringify({ ok: false, error: code })}\n`);
         process.exitCode = 1;
       }
     });

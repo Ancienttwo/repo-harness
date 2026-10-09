@@ -1,8 +1,9 @@
 # Plan: Native runtime observations without a required Herdr source
 
 > Status: Implementation authorized by the user on 2026-10-09 (Asia/Singapore).
-> Branch: `codex/native-runtime-observations`
-> Base: PR 606 head `2bb0e64864565e28a02393d2645fc0a557c60275`.
+> Branch: `codex/native-runtime-main`
+> Initial implementation base: PR 606 head `2bb0e64864565e28a02393d2645fc0a557c60275`.
+> Integration base: main `98c30ab6228b94f5e46c8cc3290de281eb0e4a99`.
 
 ## Goal
 
@@ -55,4 +56,11 @@ Capture is opt-in and applies to new owned runs only. It cannot observe arbitrar
 
 ## Reporting
 
-Use the Feynman report and editable PlantUML progress source. Keep code, tests, real-source probes, merge and release status distinct. PR 606 remains based on Draft PR 604 unless a separate authorized integration decision changes that base.
+Use the Feynman report and editable PlantUML progress source. Keep code, tests, real-source probes, merge and release status distinct. The focused integration starts from current main. It carries only the required Kanban runtime baseline from PR 603 and this task's implementation. It excludes PR 604 strategy, version and release changes. The required commits applied without conflict. Feature source blobs match the previous working branch before the final platform-refusal delta. PR 606 can target main after the new subject passes validation. This does not merge or modify PR 604.
+
+
+## Recorded acceptance boundaries
+
+Real isolated Codex 0.162.0 and Pi 1.1 output passed through capture, snapshot and the runtime GET without Herdr. The test client created an ephemeral Codex thread and sent no turn request. Claude 2.1.295 reached initial sign-in without producing a usable lifecycle state. No login or trust prompt was approved.
+
+Independent review found two P1 defects in capture retirement and FIFO replacement. Both were reproduced in isolated processes before repair. The same five failing scenarios passed after repair. Full native-provider work, Windows capture and deployment remain outside the accepted evidence.

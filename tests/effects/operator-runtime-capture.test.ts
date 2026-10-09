@@ -1,13 +1,15 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { mkdtempSync, readFileSync, writeFileSync, chmodSync, symlinkSync, renameSync, lstatSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, existsSync, writeFileSync, chmodSync, symlinkSync, renameSync, lstatSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PassThrough, Writable } from 'node:stream';
 import { decodeRuntimeCaptureSnapshot, RUNTIME_CAPTURE_PROTOCOL, RUNTIME_CAPTURE_MAX_FRAME_BYTES, type RuntimeCaptureSnapshot } from '../../src/core/operator/runtime-capture';
 import { CodexRuntimeDecoder, OscRuntimeDecoder, OSC7501_QUERY } from '../../src/core/operator/runtime-capture-decoders';
-import { RuntimeCaptureWriter } from '../../src/effects/operator/runtime-capture-writer';
+import { RuntimeCaptureWriter, RUNTIME_CAPTURE_OWNERSHIP_UNSUPPORTED } from '../../src/effects/operator/runtime-capture-writer';
 import { runRuntimeCapture } from '../../src/effects/operator/runtime-capture';
 
+const HAS_CAPTURE_OWNERSHIP = typeof process.getuid === 'function';
+const HAS_CAPTURE_PTY = HAS_CAPTURE_OWNERSHIP && ['darwin', 'linux'].includes(process.platform);
 const roots: string[] = [];
 function root(): string { const path = mkdtempSync(join(tmpdir(), 'runtime-capture-test-')); roots.push(path); return path; }
 afterEach(() => { for (const path of roots.splice(0)) rmSync(path, { recursive: true, force: true }); });
@@ -114,7 +116,7 @@ describe('native event taps', () => {
   });
 });
 
-describe('snapshot writer ownership', () => {
+describe.skipIf(!HAS_CAPTURE_OWNERSHIP)('snapshot writer ownership', () => {
   test('requires a new private path, refuses symlinks/shared directories, and atomically advances generation/sequence', () => {
     const path = join(root(), 'capture.json'); const s = snapshot(), writer = new RuntimeCaptureWriter(path, s);
     expect(lstatSync(path).mode & 0o777).toBe(0o600);
@@ -139,7 +141,7 @@ describe('snapshot writer ownership', () => {
 
 function collect(): { stream: Writable; chunks: Buffer[] } { const chunks: Buffer[] = []; return { chunks, stream: new Writable({ write(chunk, _encoding, callback) { chunks.push(Buffer.from(chunk)); callback(); } }) }; }
 
-describe('owned child transport (fixtures do not attest provider support)', () => {
+describe.skipIf(!HAS_CAPTURE_OWNERSHIP)('owned child transport (fixtures do not attest provider support)', () => {
   test('Codex stdio preserves binary stdin/stdout and child exit even after tap failure', async () => {
     const dir = root(), path = join(dir, 'capture.json'), input = new PassThrough(), output = collect(), diagnostic = collect();
     const bytes = Buffer.from([0, 255, 128, 27, 10, 99]); input.end(bytes);
@@ -172,33 +174,33 @@ describe('owned child transport (fixtures do not attest provider support)', () =
     const later = JSON.parse(readFileSync(path, 'utf8')); expect(later.heartbeat_at > first.heartbeat_at).toBe(true); expect(later.observations[0].event_received_at).toBe(first.observations[0].event_received_at);
     expect(await run).toBe(0); input.destroy();
   });
-  test('PTY consumes query and returns one reply; handles fragmented reports and real child exit', async () => {
+  test.skipIf(!HAS_CAPTURE_PTY)('PTY consumes query and returns one reply; handles fragmented reports and real child exit', async () => {
     const path = join(root(), 'capture.json'), input = new PassThrough(), output = collect(), diagnostic = collect();
     const script = 'process.stdin.setRawMode(true);process.stdout.write("\\x1b]7501;");await Bun.sleep(20);process.stdout.write("?\\x1b\\\\");let s="";for await(const b of process.stdin){s+=b.toString();if(s.includes("\\x1b]7501;?\\x1b\\\\")){process.stdout.write("reply-once\\x1b]7501;state=done\\x07");process.exit(11)}}';
     const code = await runRuntimeCapture({ provider: 'pi', source_id: 'pty', snapshot_path: path, argv: [process.execPath, '-e', script] }, { input, output: output.stream, diagnostics: diagnostic.stream });
     expect(code).toBe(11); const bytes = Buffer.concat(output.chunks).toString(); expect(bytes).not.toContain('7501;?'); expect(bytes).toContain('reply-once');
     expect(decodeRuntimeCaptureSnapshot(JSON.parse(readFileSync(path, 'utf8')))).toMatchObject({ capture_status: 'disconnected', observations: [{ state: 'settled', changed_at: null }] }); input.destroy();
   });
-  test('PTY input EOF disconnects owner, sends no synthetic input and waits for actual signal exit', async () => {
+  test.skipIf(!HAS_CAPTURE_PTY)('PTY input EOF disconnects owner, sends no synthetic input and waits for actual signal exit', async () => {
     const path = join(root(), 'capture.json'), input = new PassThrough(), output = collect(), diagnostic = collect();
     const run = runRuntimeCapture({ provider: 'claude', source_id: 'eof', snapshot_path: path, argv: [process.execPath, '-e', 'process.stdin.setRawMode(true);console.log("ready");process.on("SIGTERM",()=>process.exit(23));for await(const b of process.stdin){console.log("unexpected-input")};await Bun.sleep(30000)'] }, { input, output: output.stream, diagnostics: diagnostic.stream });
     await until(() => Buffer.concat(output.chunks).toString().includes('ready')); input.end(); expect(await run).toBe(23);
     expect(Buffer.concat(output.chunks).toString()).not.toContain('unexpected-input'); expect(JSON.parse(readFileSync(path, 'utf8')).capture_status).toBe('disconnected');
   });
-  test('PTY slow sink and burst preserve bytes under real backpressure', async () => {
+  test.skipIf(!HAS_CAPTURE_PTY)('PTY slow sink and burst preserve bytes under real backpressure', async () => {
     const path = join(root(), 'capture.json'), input = new PassThrough(), chunks: Buffer[] = [], diagnostic = collect();
     const slow = new Writable({ highWaterMark: 1024, write(chunk, _encoding, callback) { chunks.push(Buffer.from(chunk)); setTimeout(callback, 2); } });
     const run = runRuntimeCapture({ provider: 'pi', source_id: 'slow', snapshot_path: path, argv: [process.execPath, '-e', 'const b=Buffer.alloc(1024,65);for(let i=0;i<1000;i++){await new Promise(r=>process.stdout.write(b,r))}process.exit(0)'] }, { input, output: slow, diagnostics: diagnostic.stream });
     expect(await run).toBe(0); expect(Buffer.concat(chunks)).toEqual(Buffer.alloc(1024 * 1000, 65)); expect(diagnostic.chunks).toHaveLength(0); input.destroy();
   });
-  test('PTY EOF is not process exit; close descriptors then preserve actual later exit code', async () => {
+  test.skipIf(!HAS_CAPTURE_PTY)('PTY EOF is not process exit; close descriptors then preserve actual later exit code', async () => {
     const path = join(root(), 'capture.json'), input = new PassThrough(), output = collect(), diagnostic = collect();
     const script = 'const fs=require("node:fs");process.stdout.write("before-eof");await Bun.sleep(30);fs.closeSync(0);fs.closeSync(1);fs.closeSync(2);await Bun.sleep(120);process.exit(37)';
     const run = runRuntimeCapture({ provider: 'pi', source_id: 'pty-eof', snapshot_path: path, argv: [process.execPath, '-e', script] }, { input, output: output.stream, diagnostics: diagnostic.stream });
     expect(await run).toBe(37); expect(Buffer.concat(output.chunks).toString()).toContain('before-eof');
     expect(JSON.parse(readFileSync(path, 'utf8'))).toMatchObject({ capture_status: 'disconnected', observations: [] }); input.destroy();
   });
-  test('real outer PTY restores stdin raw mode after owned signal shutdown', async () => {
+  test.skipIf(!HAS_CAPTURE_PTY)('real outer PTY restores stdin raw mode after owned signal shutdown', async () => {
     const dir = root(), path = join(dir, 'capture.json'), scriptPath = join(dir, 'raw-proof.ts');
     const modulePath = join(process.cwd(), 'src/effects/operator/runtime-capture.ts');
     writeFileSync(scriptPath, `import { runRuntimeCapture } from ${JSON.stringify(modulePath)};
@@ -213,7 +215,7 @@ describe('owned child transport (fixtures do not attest provider support)', () =
       expect(Buffer.concat(chunks).toString()).toContain('{"code":17,"before":false,"after":false}');
     } finally { if (p.exitCode === null) process.kill(p.pid, 'SIGKILL'); p.terminal?.close(); }
   });
-  test('PTY feeds bounded real stdin chunks after each drain without duplicate bytes', async () => {
+  test.skipIf(!HAS_CAPTURE_PTY)('PTY feeds bounded real stdin chunks after each drain without duplicate bytes', async () => {
     const path = join(root(), 'capture.json'), input = new PassThrough(), output = collect(), diagnostic = collect();
     const total = 256 * 1024;
     const script = 'process.stdin.setRawMode(true);process.stdout.write("input-ready");let n=0;for await(const b of process.stdin){for(const c of b){if(c!==65)process.exit(41)}n+=b.length;if(n===262144){process.stdout.write("input-exact");process.exit(0)}if(n>262144)process.exit(42)}';
@@ -225,7 +227,7 @@ describe('owned child transport (fixtures do not attest provider support)', () =
     }
     expect(await run).toBe(0); expect(Buffer.concat(output.chunks).toString()).toContain('input-exact'); input.destroy();
   });
-  test('a failed outer sink closes only its owned child and restores capture handles', async () => {
+  test.skipIf(!HAS_CAPTURE_PTY)('a failed outer sink closes only its owned child and restores capture handles', async () => {
     const path = join(root(), 'capture.json'), input = new PassThrough(), diagnostic = collect();
     const output = new Writable({ write(_chunk, _encoding, callback) { callback(new Error('controlled_sink_failure')); } });
     const listeners = [process.listenerCount('SIGINT'), process.listenerCount('SIGTERM')];
@@ -237,7 +239,7 @@ describe('owned child transport (fixtures do not attest provider support)', () =
     expect(Buffer.concat(diagnostic.chunks).toString()).toContain('runtime_capture_transport_incomplete'); input.destroy();
   });
 
-  test('a signal bounds shutdown when an outer sink never drains', async () => {
+  test.skipIf(!HAS_CAPTURE_PTY)('a signal bounds shutdown when an outer sink never drains', async () => {
     const dir = root(), path = join(dir, 'capture.json'), scriptPath = join(dir, 'stalled-proof.ts');
     const modulePath = join(process.cwd(), 'src/effects/operator/runtime-capture.ts');
     writeFileSync(scriptPath, `import { Writable } from 'node:stream';
@@ -271,9 +273,9 @@ function fixtureOutput(stream: ReadableStream<Uint8Array>): { chunks: Buffer[]; 
   return { chunks, finished };
 }
 
-describe('review regression: bounded capture retirement', () => {
+describe.skipIf(!HAS_CAPTURE_OWNERSHIP)('review regression: bounded capture retirement', () => {
   for (const provider of ['codex', 'pi'] as const) {
-    test(`normal ${provider} child exit bounds a sink that never calls back`, async () => {
+    test.skipIf(provider !== 'codex' && !HAS_CAPTURE_PTY)(`normal ${provider} child exit bounds a sink that never calls back`, async () => {
       const dir = root(), path = join(dir, 'capture.json'), scriptPath = join(dir, 'normal-stall.ts');
       writeFileSync(scriptPath, `import { Writable } from 'node:stream';
         import { runRuntimeCapture } from ${JSON.stringify(join(process.cwd(), 'src/effects/operator/runtime-capture.ts'))};
@@ -335,7 +337,7 @@ describe('review regression: bounded capture retirement', () => {
       await output.finished; expect(Buffer.concat(output.chunks).toString()).toContain('fifo-rejected'); expect(lstatSync(path).isFIFO()).toBe(true);
     } finally { if (p.exitCode === null) process.kill(p.pid, 'SIGKILL'); await p.exited; }
   });
-  test('normal PTY retirement restores real owner raw mode after incomplete output', async () => {
+  test.skipIf(!HAS_CAPTURE_PTY)('normal PTY retirement restores real owner raw mode after incomplete output', async () => {
     const dir = root(), path = join(dir, 'capture.json'), scriptPath = join(dir, 'normal-raw-stall.ts');
     writeFileSync(scriptPath, `import { Writable } from 'node:stream';
       import { runRuntimeCapture } from ${JSON.stringify(join(process.cwd(), 'src/effects/operator/runtime-capture.ts'))};
@@ -351,4 +353,15 @@ describe('review regression: bounded capture retirement', () => {
     } finally { if (p.exitCode === null) process.kill(p.pid, 'SIGKILL'); await p.exited; p.terminal?.close(); }
   });
 
+});
+
+// This is a native unsupported-platform check. POSIX does not simulate Windows.
+test.skipIf(HAS_CAPTURE_OWNERSHIP)('missing uid rejects real capture before snapshot creation and child spawn', async () => {
+  const dir = root(), path = join(dir, 'capture.json'), marker = join(dir, 'child-started');
+  const childScript = `await Bun.write(${JSON.stringify(marker)}, 'started');`;
+  const p = Bun.spawn([process.execPath, 'src/cli/index.ts', 'operator', 'capture', '--provider', 'codex', '--source-id', 'unsupported', '--snapshot', path, '--', process.execPath, '-e', childScript], { cwd: process.cwd(), stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' });
+  const [code, stdout, stderr] = await Promise.all([p.exited, new Response(p.stdout).text(), new Response(p.stderr).text()]);
+  expect(code).toBe(1); expect(stdout).toBe('');
+  expect(JSON.parse(stderr)).toEqual({ ok: false, error: RUNTIME_CAPTURE_OWNERSHIP_UNSUPPORTED });
+  expect(existsSync(path)).toBe(false); expect(existsSync(marker)).toBe(false);
 });

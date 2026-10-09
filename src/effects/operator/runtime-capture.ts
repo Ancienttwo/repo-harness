@@ -4,7 +4,7 @@ import { constants as osConstants } from 'node:os';
 import { type Readable, type Writable } from 'node:stream';
 import { CodexRuntimeDecoder, OscRuntimeDecoder, OSC7501_QUERY } from '../../core/operator/runtime-capture-decoders';
 import { RUNTIME_CAPTURE_PROTOCOL, runtimeCaptureId, type NativeRuntimeProvider, type RuntimeCaptureSnapshot } from '../../core/operator/runtime-capture';
-import { RuntimeCaptureWriter } from './runtime-capture-writer';
+import { RuntimeCaptureWriter, runtimeCaptureUid } from './runtime-capture-writer';
 
 export interface RuntimeCaptureOptions {
   provider: NativeRuntimeProvider;
@@ -237,6 +237,7 @@ async function capturePty(options: RuntimeCaptureOptions, io: RuntimeCaptureIO, 
 
 /** Capture only this explicit child. No discovery, initialization, approval or task binding. */
 export async function runRuntimeCapture(options: RuntimeCaptureOptions, io: RuntimeCaptureIO = { input: process.stdin, output: process.stdout, diagnostics: process.stderr }): Promise<number> {
+  runtimeCaptureUid(); // Refuse unsupported ownership before snapshot creation or child spawn.
   if (!['codex', 'claude', 'pi'].includes(options.provider) || !options.argv.length || options.argv.some(arg => typeof arg !== 'string' || arg.includes('\0'))) throw new Error('runtime_capture_arguments');
   const diagnostic = (code: string) => { io.diagnostics.write(`${JSON.stringify({ ok: false, error: code })}\n`); };
   const cache = new CaptureCache(options, diagnostic);

@@ -2,24 +2,9 @@
 
 The Organization / Attention board reads a separate runtime overlay. Observations never advance pipeline phase, admit work, release leases, accept results or change evidence. The Pipeline Board V2 schema is unchanged. The overlay uses `repo-harness.runtime-overlay.v4`. Its `badges` array contains task observations. Its `pane_observations` array contains separate Herdr terminal reports. Its `native_sources` array contains independent native session or terminal observations. Native observations have no task binding.
 
-Without configuration, `/api/v1/runtime/status` reports unavailable. To enable observations, the operator owner supplies an absolute JSON configuration path through `repo-harness operator serve --runtime-status-config /authorized/runtime-config.json`. Example shape (paths and names are placeholders, not endpoint discovery):
+Without configuration, `/api/v1/runtime/status` reports unavailable. Native mode needs no Herdr process, socket or fork. The operator owner supplies an absolute config path with `repo-harness operator serve --runtime-status-config /authorized/runtime-config.json`.
 
-```json
-{
-  "protocol": "repo-harness.runtime-config.v2",
-  "kind": "herdr",
-  "source_host": "authorized-host",
-  "herdr_session": "authorized-session",
-  "socket_path": "/authorized/herdr.sock",
-  "deadline_ms": 1000,
-  "bindings_path": null,
-  "pipeline_snapshot": null
-}
-```
-
-The unreleased config v1 is replaced by the closed config v2 union. Old config files fail closed. A service uses one kind. It cannot combine Herdr data with native capture heartbeats. Herdr remains an optional adapter. Its dispatch and binding controls do not change. Herdr mode always has an empty `native_sources` array.
-
-For native observations, supply a native config. Each source names one explicit capture file. One service accepts one through eight sources. Source IDs and file paths must be unique. The reader does not scan HOME, logs or sockets.
+The unreleased config v1 is replaced by the closed `repo-harness.runtime-config.v2` union. Old config files fail closed. A service uses either native capture files or the optional Herdr adapter. It cannot mix their clocks. Native mode accepts one through eight explicit sources. Source IDs and paths must be unique. The reader does not scan HOME, logs or sockets.
 
 ```json
 {
@@ -43,7 +28,11 @@ repo-harness operator capture --provider pi --source-id local-pi --snapshot /aut
 repo-harness operator serve --runtime-status-config /authorized/runtime-config.json
 ```
 
-Codex capture passes stdin and stdout through. It does not originate RPC, answer approvals, start a turn or resume a session. Claude and Pi capture use an owned PTY. Capture reads structured OSC 7501 status. It consumes and answers only the fixed capability query. Other bytes continue to the terminal. Installed Claude 2.1.291 does not prove support in 2.1.295. Support needs separate evidence from that version.
+Codex capture passes stdin and stdout through. It does not originate RPC, answer approvals, start a turn or resume a session. Claude and Pi capture use an owned PTY. Capture reads structured OSC 7501 status. It consumes and answers only the fixed capability query. Other bytes continue to the terminal. The isolated Claude 2.1.295 probe reached its initial sign-in screen. It emitted clear on shutdown, but no usable lifecycle status was observed. Claude lifecycle support is not accepted from this probe; an empty observation list stays unknown.
+
+Capture requires POSIX uid ownership checks for its private output directory and snapshot. A host without those checks is rejected before creating a snapshot or starting a child. PTY capture is limited to macOS and Linux. No Windows capture acceptance is claimed.
+
+Stopping or normal child exit starts a two-second output retirement budget. If output cannot finish, capture closes its own reader and ends its waits. It reports incomplete transport and an unavailable snapshot. It does not kill descendants or destroy the caller's output sink. Regular runs retain the actual child exit code. Decoder and snapshot failures do not alter the raw I/O stream. Snapshot replacement with a FIFO is rejected without a blocking open.
 
 The service reads capture snapshots before HTTP starts. Its owned timer refreshes the cache every 30 seconds. GET reads the cache and computes age. GET does not open capture files, write snapshots or start a child. Closing the service stops only its timer and observer. It does not stop a user daemon or a capture child.
 
@@ -56,6 +45,23 @@ The reader accepts only bounded regular files. It uses no-follow open and file i
 A capture generation is a UUID. A new generation clears previous observations. Retired generations cannot return. Within a generation, lower sequences and different content at the same sequence fail closed. Rejected states stay hidden until a higher sequence or a new generation. The observer bounds retired-generation history. If that bound is exhausted, it fails closed. File replacement alone does not reset these fences.
 
 Native settled, idle, error and cancelled states are program reports. They do not accept a task. Disconnect does not mean completion. OSC idle does not mean cancellation. Codex interrupted is a native turn result. Pipeline phase, task acceptance and evidence remain under their existing authority.
+
+## Optional Herdr source
+
+Herdr remains optional. Its dispatch and binding controls do not change. Herdr mode has an empty `native_sources` array. Select it explicitly with this config shape:
+
+```json
+{
+  "protocol": "repo-harness.runtime-config.v2",
+  "kind": "herdr",
+  "source_host": "authorized-host",
+  "herdr_session": "authorized-session",
+  "socket_path": "/authorized/herdr.sock",
+  "deadline_ms": 1000,
+  "bindings_path": null,
+  "pipeline_snapshot": null
+}
+```
 
 Herdr mode starts owned Unix socket observations before HTTP serving. GET only reads the cache. The service subscribes before snapshots, serializes refresh, rereads on intervening events, refreshes every 30 seconds, and resubscribes with a new source epoch on disconnect or `events_lost`. Shutdown closes only its own sockets and timer. Unreachable or unsupported sources report unavailable. Successful snapshots update observation time, not agent progress time. Failed refresh preserves the original age. Five minutes without a successful snapshot marks data stale; silent working agents do not become errors.
 
