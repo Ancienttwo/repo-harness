@@ -8,9 +8,10 @@ All notable changes to this skill are documented here.
 
 ### Added
 
-- Show separate read-only Kanban runtime badges from explicit Herdr 0.9.3 /
-  protocol 22 sources. Verify current-round bindings. Status never advances
-  tasks or accepts results. OSC 7501 remains unsupported.
+- Show read-only Kanban runtime status from native capture sources or the
+  optional Herdr 0.9.3 / protocol 22 adapter. Codex capture needs no Python.
+  Claude and Pi capture use a bundled PTY relay that needs Python 3.9 or
+  later. Status never advances tasks or accepts results. (#606)
 - Add default-off strategy context and proposal validation. Human-owned project
   documents remain canonical. Context reads do not dispatch agents or edit memory.
   The optional Skill requires an explicit install. (#599)

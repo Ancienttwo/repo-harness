@@ -5,15 +5,17 @@
 - Remote base: `e7c86c553f229a0068dba7bef727192c8a93220c` (#600).
 - Include #599 at `84c225c1ebfe9ce34f4e6268662714241ca0b33b` and
   #601 at `f5ee55b1dd69f5fc51cf20f78c4d6b995b69cfcd`.
-- Kanban published head: `9afef1ee21f1f8b5993026de2066cad33a4cfeb5`.
-  Verified tree: `ee017b14ba31ef21c1ddc9123c2cfc9f26ee5653`.
-  Parent: `3ea2f7b71c4eef95e158788b8564179034eef9a2`.
-  This is the exact reviewed tree of source `8b289bac`.
+- Kanban runtime status comes from #606 on main at
+  `5f6065b47443f1183166ec9999f71698eb1b9eb1`.
+  Parent: `98c30ab6228b94f5e46c8cc3290de281eb0e4a99`.
+  #606 supersedes the earlier Kanban commit `9afef1ee`. The main sync merge
+  takes the #606 content for every file that `9afef1ee` changed.
 - Set package, skill, template and README versions to `0.21.2`.
 - Keep strategy default-off, export-only and human-owned. No automatic memory
   edits or dispatch. Proposals keep `executionAuthorized: false`.
-- Kanban status is a read-only projection. Herdr status grants no task
-  completion authority. OSC 7501 remains an upstream request.
+- Kanban status is a read-only projection from native sources or optional
+  Herdr. Runtime status grants no task completion authority. Python 3.9 or
+  later is needed only for Claude and Pi capture.
 - No merge, tag, npm publish or installed user runtime update is authorized here.
   Parent review and publication coordination must follow final acceptance.
 
@@ -49,7 +51,8 @@ Only fixture-owned processes and paths may be stopped or removed.
    the shared package/install smoke. Record failures and omitted coverage.
 3. Real explicit strategy pilot with `--load strategy-boundaries`, proposal
    validation, byte counts and before/after no-write evidence.
-4. Kanban UI regressions and real isolated Herdr structured-status fixtures.
+4. Kanban UI regressions, native capture tests and real isolated Herdr
+   structured-status fixtures.
 5. Read-only review of integration and test assertions. Parent reviews results.
 
 ## Rollback evidence
