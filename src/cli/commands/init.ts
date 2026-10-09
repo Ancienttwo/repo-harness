@@ -247,8 +247,11 @@ function hostIds(target: InstallTargetSpec): Array<"codex" | "claude"> {
   return ["claude", "codex"];
 }
 
-function targetFromHostIds(hosts: readonly ("codex" | "claude")[]): InstallTargetSpec {
-  return hosts.length === 2 ? "both" : hosts[0]!;
+function targetFromHostIds(hosts: readonly ("codex" | "claude" | "pi")[]): InstallTargetSpec {
+  if (hosts.some(host => host === 'pi')) throw new Error('Pi packages use the Pi installer');
+  const first = hosts[0];
+  if (first !== 'codex' && first !== 'claude') throw new Error('No install host selected');
+  return hosts.length === 2 ? "both" : first;
 }
 
 function homeDir(env?: NodeJS.ProcessEnv): string | null {

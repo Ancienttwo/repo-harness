@@ -508,6 +508,29 @@ claimed before the contract passed), and `WorktreeGuard` (writes from the wrong
 worktree). Full playbook:
 [`docs/reference-configs/hook-operations.md`](docs/reference-configs/hook-operations.md).
 
+### Pi 1.1.0 package
+
+Pi uses the official package loader. Install a built candidate with:
+
+```bash
+pi install /absolute/path/to/repo-harness
+```
+
+The package provides the `repo-harness` router and `repo-harness-check` skill.
+Use `/reload` in an open session after installation. The repository must have
+`.ai/harness/workflow-contract.json` to enable hooks. Pi 1.1.0 and Bun >= 1.4
+must be available. This first adapter uses the installed Pi SDK path resolver.
+Other Pi versions or distributions without that resolver are unavailable.
+
+The extension checks native `edit` and `write` before execution. This includes
+calls from codemode. It sends budgeted session context and records the end of
+each settled run. If a hook fails, it blocks edits. Resolve the reported cause,
+then use `/reload`.
+
+This check covers the native edit/write tool path. Shell writes, `!`/`!!`,
+direct extension writes and third-party MCP writes need their own controls.
+The Pi package does not install a scheduler or enable an OAR Pi review worker.
+
 ## Local Human Control Board
 
 Run the observe-only operator view on the same machine as the adopted
