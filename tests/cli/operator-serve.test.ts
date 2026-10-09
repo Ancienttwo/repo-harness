@@ -15,6 +15,8 @@ import { spyOn } from 'bun:test';
 import * as childProcess from 'node:child_process';
 import * as fs from 'node:fs';
 import { readArchitecture } from '../../src/effects/operator/architecture';
+import { unavailableDevActivitySnapshot } from '../../src/core/dev-activity/decode';
+import type { DevActivitySnapshotV1 } from '../../src/core/dev-activity/types';
 
 import {
   startOperatorServer,
@@ -239,7 +241,7 @@ describe('operator serve command and HTTP boundary', () => {
       read_automation_summary: async () => { reads++; throw new Error('unexpected read'); },
     });
     try {
-      const paths = ['/', '/healthz', '/api/v1/fleet/snapshot', '/api/v1/fleet/repositories/repo-a/snapshot',
+      const paths = ['/', '/healthz', '/api/v1/fleet/snapshot', '/api/v1/fleet/repositories/repo-a/snapshot', '/api/v1/dev-activity',
         '/api/v1/collaboration/repo-a/snapshot', ...['context', 'activity', 'diff', 'messages'].map(route => `/api/v1/fleet/tasks/repo-a/${TASK_ID}/${route}`)];
       for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) {
         for (const path of paths) {
@@ -258,6 +260,43 @@ describe('operator serve command and HTTP boundary', () => {
       expect((await fetch(`${server.url}/api/v1/fleet/snapshot`)).status).toBe(200);
       expect(reads).toBe(1);
     } finally { await server.close(); }
+  });
+
+  test('serves only the Dev Activity cache on GET and starts the collector only on request', async () => {
+    let reads = 0;
+    const ready: DevActivitySnapshotV1 = { ...unavailableDevActivitySnapshot(), status: 'ready', collected_at: '2026-10-10T00:00:00.000Z', unreadable_registrations: 3 };
+    let current: unknown = ready;
+    const server = await startOperatorServer({ port: 0, collect_fleet_board: async () => snapshot(), read_dev_activity: () => { reads++; return current as DevActivitySnapshotV1; } });
+    try {
+      const response = await fetch(`${server.url}/api/v1/dev-activity`);
+      expect(response.status).toBe(200);
+      expect(response.headers.get('cache-control')).toBe('no-store');
+      expect(await response.json()).toEqual(ready);
+      const head = await fetch(`${server.url}/api/v1/dev-activity`, { method: 'HEAD' });
+      expect(head.status).toBe(200);
+      expect(await head.text()).toBe('');
+      const query = await fetch(`${server.url}/api/v1/dev-activity?repo=repo_0123456789abcdef`);
+      expect(query.status).toBe(400);
+      expect(reads).toBe(2);
+      current = { ...ready, collected_at: '/Users/someone' };
+      expect(await (await fetch(`${server.url}/api/v1/dev-activity`)).json()).toEqual(unavailableDevActivitySnapshot());
+    } finally { await server.close(); }
+
+    const home = mkdtempSync(join(tmpdir(), 'repo-harness-operator-dev-activity-'));
+    const collecting = await startOperatorServer({ port: 0, dev_activity_collector: true, collect_fleet_board: async () => snapshot(),
+      env: { ...process.env, REPO_HARNESS_HOME: home, REPO_HARNESS_PIPELINES_DB: join(home, 'none.db') } });
+    try {
+      let body: DevActivitySnapshotV1 = unavailableDevActivitySnapshot();
+      for (let attempt = 0; attempt < 100 && body.status === 'unavailable'; attempt++) {
+        body = await (await fetch(`${collecting.url}/api/v1/dev-activity`)).json() as DevActivitySnapshotV1;
+        if (body.status === 'unavailable') await Bun.sleep(20);
+      }
+      expect(body).toMatchObject({ status: 'ready', repositories: [], items: [], attention: [], unreadable_registrations: 0 });
+      expect(body.collected_at).not.toBeNull();
+    } finally {
+      await collecting.close();
+      rmSync(home, { recursive: true, force: true });
+    }
   });
 
   test('bounds collaboration reads and permits a healthy retry after timeout', async () => {
