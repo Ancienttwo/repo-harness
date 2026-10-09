@@ -31,6 +31,12 @@ const cancelAfterWrite = async (path: string, content: string) => {
 const resourceLoader = new DefaultResourceLoader({ cwd, agentDir, settingsManager,
   noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
   extensionFactories: [repoHarnessPi, createCodemodeExtension({ models: false }), pi => {
+    if (mode === 'cancel-after-write') {
+      pi.registerTool(createWriteToolDefinition(cwd, { operations: { writeFile: cancelAfterWrite,
+        mkdir: async dir => { await mkdir(dir, { recursive: true }); } } }));
+      pi.registerTool(createEditToolDefinition(cwd, { operations: { writeFile: cancelAfterWrite, readFile,
+        access: async path => { await access(path, constants.R_OK | constants.W_OK); } } }));
+    }
     pi.on('tool_call', (event: ToolCallEvent) => { calls.push({ name: event.toolName, id: event.toolCallId, parent: event.parentToolCallId ?? null }); });
     pi.on('tool_result', () => { journalPaths.push(...readPendingPostEditEvents(repoRoot).flatMap(event => event.changed_paths)); });
   }],
@@ -44,12 +50,6 @@ const sessionManager = mode === 'resume' || mode === 'fork'
   ? SessionManager.create(cwd, join(agentDir, 'sessions')) : SessionManager.inMemory(cwd);
 let { session } = await createAgentSession({ cwd, agentDir, settingsManager, resourceLoader, modelRuntime,
   model: provider.getModel(), thinkingLevel: 'off', sessionManager, tools: ['edit', 'write', 'bash', 'codemode'],
-  customTools: mode === 'cancel-after-write' ? [
-    createWriteToolDefinition(cwd, { operations: { writeFile: cancelAfterWrite,
-      mkdir: async dir => { await mkdir(dir, { recursive: true }); } } }),
-    createEditToolDefinition(cwd, { operations: { writeFile: cancelAfterWrite, readFile,
-      access: async path => { await access(path, constants.R_OK | constants.W_OK); } } }),
-  ] : [],
 });
 const sessionIds = [session.sessionId];
 await session.bindExtensions({ onError: event => { errors.push(event.error); } });
