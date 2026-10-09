@@ -1,5 +1,6 @@
 import { decodeRuntimeIdentity, decodeRuntimeObservation, decodeRuntimePaneObservation, runtimePaneKey, projectRuntimeOverlay, runtimeIdentityKey, runtimeBindingKeys, runtimeInteger,
-  unavailableRuntimeOverlay, RUNTIME_LIMIT, type RuntimeIdentity, type RuntimeObservation, type RuntimeOverlay, type RuntimePaneObservation } from '../../core/operator/runtime-status';
+  unavailableRuntimeOverlay, nativeRuntimeFreshness, RUNTIME_LIMIT, NATIVE_RUNTIME_SOURCE_LIMIT, type NativeRuntimeSourceSummary, type RuntimeIdentity, type RuntimeObservation, type RuntimeOverlay, type RuntimePaneObservation } from '../../core/operator/runtime-status';
+import { decodeRuntimeCaptureSnapshot, type NativeRuntimeProvider, type RuntimeCaptureSnapshot } from '../../core/operator/runtime-capture';
 
 /** Select only documented structured pane fields. No title, cwd or text inference. */
 export function observeHerdrPane(value: unknown, binding: RuntimeIdentity): RuntimeObservation | null {
@@ -144,5 +145,70 @@ export function createRuntimeStatusObserver(source: RuntimeSource, now: () => nu
       return failed ? { ...overlay, status: 'unavailable' } : overlay;
     },
     stop() { lifecycle++; version++; started = false; subscribed = false; connected = false; failed = true; pending = null; stopSubscription?.(); stopSubscription = null; },
+  };
+}
+
+export interface NativeRuntimeSource {
+  source_id: string; provider: NativeRuntimeProvider;
+  snapshot(): Promise<RuntimeCaptureSnapshot>;
+}
+interface NativeRuntimeFence {
+  generation: string; sequence: number; content: string; rejected_through: number;
+  retired: Set<string>;
+}
+/** Native sources have separate clocks and no dispatch binding authority. */
+export function createNativeRuntimeStatusObserver(sources: readonly NativeRuntimeSource[], now: () => number = Date.now) {
+  if (!sources.length || sources.length > NATIVE_RUNTIME_SOURCE_LIMIT || new Set(sources.map(s => s.source_id)).size !== sources.length) throw new Error('runtime_native_sources');
+  const fences = new Map<string, NativeRuntimeFence>();
+  const unavailable = (source: NativeRuntimeSource): NativeRuntimeSourceSummary => ({ source_id: source.source_id, provider: source.provider,
+    generation: null, capture_status: 'unavailable', heartbeat_at: null, freshness: 'unavailable', observations: [] });
+  let summaries = sources.map(unavailable), observedAt: string | null = null;
+  let started = false, stopped = false, pending: Promise<void> | null = null;
+  async function collect() {
+    const next: NativeRuntimeSourceSummary[] = [];
+    for (const source of sources) {
+      if (stopped) return;
+      try {
+        const snapshot = decodeRuntimeCaptureSnapshot(await source.snapshot()), clock = now();
+        if (stopped) return;
+        if (snapshot.source_id !== source.source_id || snapshot.provider !== source.provider) throw new Error('runtime_native_identity');
+        const old = fences.get(source.source_id), content = JSON.stringify(snapshot);
+        if (old) {
+          if (snapshot.generation !== old.generation) {
+            if (old.retired.has(snapshot.generation) || old.retired.size >= RUNTIME_LIMIT) throw new Error('runtime_native_generation');
+          } else {
+            if (snapshot.sequence < old.sequence || (snapshot.sequence === old.sequence && content !== old.content)) {
+              old.rejected_through = Math.max(old.rejected_through, old.sequence);
+              throw new Error('runtime_native_sequence');
+            }
+            if (snapshot.sequence <= old.rejected_through) throw new Error('runtime_native_sequence');
+          }
+        }
+        if (Date.parse(snapshot.heartbeat_at) > clock || snapshot.observations.some(o => Date.parse(o.event_received_at) > clock || (o.changed_at !== null && Date.parse(o.changed_at) > clock))) throw new Error('runtime_native_future');
+        const retired = old?.retired ?? new Set<string>();
+        if (old && old.generation !== snapshot.generation) retired.add(old.generation);
+        fences.set(source.source_id, { generation: snapshot.generation, sequence: snapshot.sequence, content, retired,
+          rejected_through: old?.generation === snapshot.generation ? old.rejected_through : -1 });
+        next.push({ source_id: snapshot.source_id, provider: snapshot.provider, generation: snapshot.generation,
+          capture_status: snapshot.capture_status, heartbeat_at: snapshot.heartbeat_at,
+          freshness: nativeRuntimeFreshness(snapshot, clock), observations: snapshot.capture_status === 'unavailable' ? [] : snapshot.observations });
+      } catch { next.push(unavailable(source)); }
+    }
+    if (!stopped) { summaries = next; observedAt = new Date(now()).toISOString(); }
+  }
+  function refresh(): Promise<void> {
+    if (!started || stopped) return Promise.resolve();
+    if (!pending) pending = collect().finally(() => { pending = null; });
+    return pending;
+  }
+  return {
+    async start() { if (started || stopped) throw new Error('runtime_already_started'); started = true; await refresh(); },
+    refresh,
+    read(): RuntimeOverlay {
+      const native_sources = summaries.map(source => ({ ...structuredClone(source), freshness: stopped ? 'unavailable' as const : nativeRuntimeFreshness(source, now()) }));
+      return { ...unavailableRuntimeOverlay(), status: !stopped && native_sources.some(s => s.freshness === 'fresh' || s.freshness === 'stale') ? 'ready' : 'unavailable',
+        observed_at: observedAt, native_sources };
+    },
+    stop() { stopped = true; },
   };
 }

@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { decodeRuntimeOverlay, RUNTIME_STALE_AFTER_MS, unavailableRuntimeOverlay, type RuntimeOverlay, type RuntimeBadge, type RuntimePaneBadge } from '../core/operator/runtime-status';
+import { decodeRuntimeOverlay, nativeRuntimeFreshness, RUNTIME_STALE_AFTER_MS, unavailableRuntimeOverlay, type RuntimeOverlay, type RuntimeBadge, type RuntimePaneBadge } from '../core/operator/runtime-status';
 import type { PipelineCard } from '../core/pipeline/board';
 import { useObservationRefresh } from './useObservationRefresh';
 import { formatRelativeAge, type OperatorTranslate, type OperatorMessageKey } from './i18n';
@@ -68,11 +68,46 @@ function RuntimePaneReports({ reports, overlay, now, t }: { reports: RuntimePane
 }
 export function RuntimeSummary({ view, now, t }: { view: RuntimeView; now: number; t: OperatorTranslate }) {
   const { overlay, failed } = view;
-  return <div className="pipeline-runtime-summary" data-runtime-status={failed ? 'refresh-failed' : overlay.status} role="status">
+  return <><div className="pipeline-runtime-summary" data-runtime-status={failed ? 'refresh-failed' : overlay.status} role="status">
     <span>{t(failed ? 'runtimeObservation.refreshFailed' : overlay.status === 'unavailable' ? 'runtimeObservation.unavailable' : 'runtimeObservation.readOnly')}</span>
-    <span>{t('runtimeObservation.unclaimed', { count: overlay.unclaimed })}</span>
+    {overlay.native_sources.length === 0 && <span>{t('runtimeObservation.unclaimed', { count: overlay.unclaimed })}</span>}
     {overlay.observed_at && <time dateTime={overlay.observed_at} title={overlay.observed_at}>{t('runtimeObservation.observed')} {formatRelativeAge(overlay.observed_at, now, t)}</time>}
-  </div>;
+  </div>
+    <NativeRuntimeSources overlay={overlay} now={now} t={t} />
+  </>;
+}
+
+function NativeRuntimeSources({ overlay, now, t }: { overlay: RuntimeOverlay; now: number; t: OperatorTranslate }) {
+  if (overlay.native_sources.length === 0) return null;
+  return <section className="pipeline-native-runtime" aria-label={t('runtimeNative.heading')} data-native-runtime>
+    <h3>{t('runtimeNative.heading')}</h3>
+    <p>{t('runtimeNative.boundary')}</p>
+    <ul className="pipeline-native-sources">
+      {overlay.native_sources.map(source => {
+        // Retain server rejection states. Only a current source can age locally.
+        const freshness = source.freshness === 'fresh' ? nativeRuntimeFreshness(source, now) : source.freshness;
+        return <li key={source.source_id} data-native-source={source.source_id}>
+          <div className="pipeline-runtime-run">
+            <strong className="mono-value">{source.provider} · {source.source_id}</strong>
+            <span className="operator-badge tone-neutral" data-native-capture={source.capture_status}>{t(`runtimeNative.capture.${source.capture_status}`)}</span>
+            <span className={`operator-badge ${freshness === 'fresh' ? 'tone-neutral' : 'tone-danger'}`} data-native-freshness={freshness}>{t(`runtimeNative.freshness.${freshness}`)}</span>
+          </div>
+          <p>{t('runtimeNative.heartbeat')}: {source.heartbeat_at ? <time dateTime={source.heartbeat_at} title={source.heartbeat_at}>{formatRelativeAge(source.heartbeat_at, now, t)}</time> : t('field.none')}</p>
+          {source.observations.length === 0 ? <p data-native-empty>{t('runtimeNative.empty')}</p> : <ul className="pipeline-native-observations">
+            {source.observations.map(observation => <li key={JSON.stringify([observation.scope, observation.session_id, observation.turn_id])}>
+              <div className="pipeline-runtime-run">
+                <span>{t(`runtimeNative.scope.${observation.scope}`)}{observation.session_id && <> · <span className="mono-value">{observation.session_id}</span></>}</span>
+                <span className={`operator-badge ${['blocked', 'error'].includes(observation.state) ? 'tone-danger' : observation.state === 'working' ? 'tone-agent' : 'tone-neutral'}`} data-native-state={observation.state}>{t(observation.state === 'settled' ? 'runtimeNative.settled' : LABELS[observation.state])}</span>
+                {observation.state === 'blocked' && <span className="operator-badge tone-user">{t(`runtimeObservation.reason.${observation.reason}`)}</span>}
+              </div>
+              <p>{t('runtimeNative.eventReceived')}: <time dateTime={observation.event_received_at} title={observation.event_received_at}>{formatRelativeAge(observation.event_received_at, now, t)}</time></p>
+              {observation.changed_at && <p>{t('runtimeNative.changed')}: <time dateTime={observation.changed_at} title={observation.changed_at}>{formatRelativeAge(observation.changed_at, now, t)}</time></p>}
+            </li>)}
+          </ul>}
+        </li>;
+      })}
+    </ul>
+  </section>;
 }
 export function RuntimeCardBadges({ card, view, now, t }: { card: PipelineCard; view: RuntimeView; now: number; t: OperatorTranslate }) {
   const badges = runtimeBadgesForCard(card, view.overlay);

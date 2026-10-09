@@ -26,6 +26,23 @@ const ZH_REOBSERVE_ACTION = '刷新看板重新读一次任务，然后重试。
 const ZH_COLLABORATION_ACTION = '检查仓库的协作 store，然后刷新看板。';
 
 const en = {
+  "runtimeNative.heading": "Native session / terminal observations (not linked to tasks)",
+  "runtimeNative.boundary": "These sources are not linked to tasks. Capture heartbeat is not agent progress. Idle is not cancellation. Activity ending does not prove task acceptance.",
+  "runtimeNative.empty": "No native report received",
+  "runtimeNative.heartbeat": "Capture heartbeat",
+  "runtimeNative.eventReceived": "Status event received",
+  "runtimeNative.changed": "Provider change time",
+  "runtimeNative.settled": "Activity ended · no task acceptance",
+  "runtimeNative.scope.session": "Session",
+  "runtimeNative.scope.terminal": "Terminal",
+  "runtimeNative.capture.connected": "Capture connected",
+  "runtimeNative.capture.disconnected": "Capture disconnected",
+  "runtimeNative.capture.unavailable": "Capture unavailable",
+  "runtimeNative.freshness.fresh": "Current capture heartbeat",
+  "runtimeNative.freshness.stale": "Stale capture heartbeat",
+  "runtimeNative.freshness.disconnected": "Source disconnected",
+  "runtimeNative.freshness.unavailable": "Source unavailable",
+
   "runtimePane.heading": "Linked terminal report",
   "runtimePane.boundary": "This is the terminal's latest report. It does not prove progress or acceptance for this task round.",
   "runtimePane.settled": "Activity ended · review needed",
@@ -871,6 +888,23 @@ export function isOperatorMessageKey(value: string): value is OperatorMessageKey
 }
 
 const zh: Readonly<Record<OperatorMessageKey, string>> = {
+  "runtimeNative.heading": "原生会话/终端观察（未关联任务）",
+  "runtimeNative.boundary": "这些来源未关联任务。采集心跳不表示 agent 进度。Idle 不表示取消。活动结束不表示任务通过验收。",
+  "runtimeNative.empty": "未收到原生报告",
+  "runtimeNative.heartbeat": "采集心跳",
+  "runtimeNative.eventReceived": "状态事件接收时间",
+  "runtimeNative.changed": "Provider 状态变更时间",
+  "runtimeNative.settled": "活动结束 · 不表示任务通过验收",
+  "runtimeNative.scope.session": "会话",
+  "runtimeNative.scope.terminal": "终端",
+  "runtimeNative.capture.connected": "采集已连接",
+  "runtimeNative.capture.disconnected": "采集已断开",
+  "runtimeNative.capture.unavailable": "采集不可用",
+  "runtimeNative.freshness.fresh": "采集心跳当前有效",
+  "runtimeNative.freshness.stale": "采集心跳已过期",
+  "runtimeNative.freshness.disconnected": "来源已断开",
+  "runtimeNative.freshness.unavailable": "来源不可用",
+
   "runtimePane.heading": "关联终端报告",
   "runtimePane.boundary": "这是该终端最近的报告。它不证明本轮任务进度或验收结果。",
   "runtimePane.settled": "活动已结束 · 待查看",

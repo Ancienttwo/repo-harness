@@ -8,7 +8,7 @@ import { PipelineBoardPanel, pipelineCardKey, type PipelineBoardReader } from '.
 import { stableSnapshot } from '../../src/operator-web/fixture';
 import { translate } from '../../src/operator-web/i18n';
 import { projectSnapshotViewState } from '../../src/operator-web/types';
-import { decodeRuntimeOverlay, projectRuntimeOverlay, unavailableRuntimeOverlay, type RuntimeIdentity, type RuntimeObservation, type RuntimeOverlay, type RuntimePaneObservation } from '../../src/core/operator/runtime-status';
+import { decodeRuntimeOverlay, projectRuntimeOverlay, unavailableRuntimeOverlay, type NativeRuntimeSourceSummary, type RuntimeIdentity, type RuntimeObservation, type RuntimeOverlay, type RuntimePaneObservation } from '../../src/core/operator/runtime-status';
 import type { PipelineBoardV2, PipelineCard } from '../../src/core/pipeline/board';
 
 const t = (key: Parameters<typeof translate>[1], values?: Parameters<typeof translate>[2]) => translate('en', key, values);
@@ -74,6 +74,16 @@ function paneOverlay(state: RuntimePaneObservation['state'] = 'working', reason:
   const pane = { source_host: identity.source_host, herdr_session: identity.herdr_session, terminal_id: identity.terminal_id, pane_id: identity.pane_id, agent_session: identity.agent_session };
   return projectRuntimeOverlay(binding ? [binding] : [], [], minutesAgo(1), 0, 'v1', Date.now(), true, binding ? 0 : 1,
     [{ scope: 'pane', source: 'osc7501', pane, binding, source_epoch: 4, revision: 1, state, reason, changed_at: '2020-01-01T00:00:00.000Z' }]);
+}
+
+function nativeSource(overrides: Partial<NativeRuntimeSourceSummary> = {}): NativeRuntimeSourceSummary {
+  return { source_id: 'codex-capture', provider: 'codex', generation: '12345678-1234-4234-8234-123456789012',
+    capture_status: 'connected', heartbeat_at: minutesAgo(1), freshness: 'fresh',
+    observations: [{ scope: 'session', session_id: 'thread-native', turn_id: 'turn-native', state: 'working', reason: 'unknown',
+      event_received_at: '2020-01-01T00:00:00.000Z', changed_at: null }], ...overrides };
+}
+function nativeOverlay(sources: NativeRuntimeSourceSummary[]): RuntimeOverlay {
+  return { ...unavailableRuntimeOverlay(), status: 'ready', observed_at: minutesAgo(1), native_sources: sources };
 }
 
 describe('pipeline board panel', () => {
@@ -302,6 +312,92 @@ describe('pipeline board panel', () => {
     expect(latestMarkup).toContain('data-runtime-pane-state="working"');
   });
 
+  test('native sessions stay outside task cards and do not change task acceptance', () => {
+    const served = board(), before = JSON.stringify(served);
+    const markup = render(<PipelineBoardPanel initialBoard={served} initialRuntimeOverlay={nativeOverlay([nativeSource()])} t={t} />);
+    expect(markup).toContain('Native session / terminal observations (not linked to tasks)');
+    expect(markup).toContain('codex · codex-capture');
+    expect(markup).toContain('Session');
+    expect(markup).toContain('thread-native');
+    expect(markup).toContain('data-native-state="working"');
+    expect(markup).not.toContain('unclaimed panes');
+    const taskMarkup = markup.slice(markup.indexOf('<li class="pipeline-card"'));
+    expect(taskMarkup).not.toContain('thread-native');
+    expect(taskMarkup).not.toContain('data-native-state');
+    expect(taskMarkup).not.toContain('data-runtime-pane-state');
+    expect(taskMarkup).toContain('data-runtime-state="unknown"');
+    expect(taskMarkup).toContain('result validated');
+    expect(taskMarkup).toContain('merge ask');
+    expect(markup).not.toContain('herdr_session');
+    expect(markup).not.toContain('<button');
+    expect(markup).not.toContain('<input');
+    expect(JSON.stringify(served)).toBe(before);
+  });
+
+  test('native terminal providers show typed blocked reasons and ending is not acceptance', () => {
+    for (const provider of ['claude', 'pi'] as const) {
+      for (const [reason, label] of [['permission', 'Permission needed'], ['question', 'Answer needed'], ['auth', 'Sign-in needed'], ['unknown', 'Reason unknown']] as const) {
+        const source = nativeSource({ provider, source_id: provider + '-capture', observations: [{ scope: 'terminal', session_id: null, turn_id: null,
+          state: 'blocked', reason, event_received_at: minutesAgo(1), changed_at: '2020-01-01T00:00:00.000Z' }] });
+        const markup = render(<PipelineBoardPanel initialBoard={board()} initialRuntimeOverlay={nativeOverlay([source])} t={t} />);
+        expect(markup).toContain(provider + ' · ' + provider + '-capture');
+        expect(markup).toContain('Terminal');
+        expect(markup).toContain('data-native-state="blocked"');
+        expect(markup).toContain(label);
+        expect(markup).toContain('Provider change time');
+      }
+    }
+    for (const state of ['unknown', 'idle', 'settled', 'error', 'cancelled'] as const) {
+      const source = nativeSource(); source.observations[0].state = state;
+      const markup = render(<PipelineBoardPanel initialBoard={board()} initialRuntimeOverlay={nativeOverlay([source])} t={t} />);
+      expect(markup).toContain(`data-native-state="${state}"`);
+      if (state === 'idle') expect(markup).not.toContain('Reported cancellation');
+      if (state === 'settled') expect(markup).toContain('Activity ended · no task acceptance');
+      expect(markup).toContain('result validated');
+    }
+  });
+
+  test('native empty and cleared reports do not invent Idle; unavailable and disconnected stay explicit', () => {
+    for (const capture_status of ['connected', 'unavailable', 'disconnected'] as const) {
+      const source = nativeSource({ capture_status, freshness: capture_status === 'connected' ? 'fresh' : capture_status,
+        heartbeat_at: capture_status === 'unavailable' ? null : minutesAgo(1), generation: capture_status === 'unavailable' ? null : nativeSource().generation, observations: [] });
+      const markup = render(<PipelineBoardPanel initialBoard={board()} initialRuntimeOverlay={nativeOverlay([source])} t={t} />);
+      expect(markup).toContain('No native report received');
+      expect(markup).not.toContain('data-native-state');
+      expect(markup).toContain(`data-native-capture="${capture_status}"`);
+      expect(markup).toContain(`data-native-freshness="${source.freshness}"`);
+      expect(markup).not.toContain('unclaimed panes');
+    }
+    const disconnected = nativeSource({ capture_status: 'disconnected', freshness: 'disconnected', heartbeat_at: minutesAgo(10) });
+    const markup = render(<PipelineBoardPanel initialBoard={board()} initialRuntimeOverlay={nativeOverlay([disconnected])} t={t} />);
+    expect(markup).toContain('data-native-state="working"');
+    expect(markup).toContain('data-native-freshness="disconnected"');
+    expect(markup).not.toContain('data-native-freshness="stale"');
+  });
+
+  test('native freshness uses each capture heartbeat, not event age or overlay observation time', () => {
+    const sources = [nativeSource(), nativeSource({ source_id: 'old-capture', heartbeat_at: minutesAgo(6) })];
+    const overlay = { ...nativeOverlay(sources), observed_at: '2020-01-01T00:00:00.000Z' };
+    const markup = render(<PipelineBoardPanel initialBoard={board()} initialRuntimeOverlay={overlay} t={t} />);
+    const first = markup.slice(markup.indexOf('data-native-source="codex-capture"'), markup.indexOf('data-native-source="old-capture"'));
+    const old = markup.slice(markup.indexOf('data-native-source="old-capture"'), markup.indexOf('<dl'));
+    expect(first).toContain('data-native-freshness="fresh"');
+    expect(first).toContain('Status event received');
+    expect(first).toContain('title="2020-01-01T00:00:00.000Z"');
+    expect(first).toContain('Capture heartbeat');
+    expect(old).toContain('data-native-freshness="stale"');
+    expect(old).not.toContain('data-native-freshness="fresh"');
+  });
+
+  test('native boundary and source labels are readable in Chinese', () => {
+    const zh = (key: Parameters<typeof translate>[1], values?: Parameters<typeof translate>[2]) => translate('zh', key, values);
+    const markup = render(<PipelineBoardPanel initialBoard={board()} initialRuntimeOverlay={nativeOverlay([nativeSource({ observations: [] })])} t={zh} />);
+    expect(markup).toContain('原生会话/终端观察（未关联任务）');
+    expect(markup).toContain('未收到原生报告');
+    expect(markup).toContain('采集心跳不表示 agent 进度');
+    expect(markup).toContain('采集心跳当前有效');
+  });
+
   test('mounts in the organization tab panel', () => {
     const markup = render(
       <OperatorApp initialLocale="en" initialState={projectSnapshotViewState(stableSnapshot)} initialPipelineBoard={board()} />,
@@ -422,6 +518,41 @@ describe('pipeline board refresh', () => {
     expect(panel().querySelector('[data-runtime-state="working"]')).not.toBeNull();
     expect(panel().querySelector(`[datetime="${served.observed_at}"]`)).not.toBeNull();
     expect(panel().textContent).toContain('Runtime refresh failed');
+  });
+
+  test('native cache ages per source across repeated HTTP failures and rejects private fields', async () => {
+    const current = nativeOverlay([nativeSource(), nativeSource({ source_id: 'old-capture', heartbeat_at: minutesAgo(6) })]);
+    let value: unknown = current;
+    const read = async () => decodeRuntimeOverlay(value);
+    await act(async () => root.render(<PipelineBoardPanel initialBoard={board()} readRuntimeStatus={read} t={t} />));
+    expect(panel().querySelector('[data-native-source="codex-capture"] [data-native-freshness="fresh"]')).not.toBeNull();
+    value = { ...current, native_sources: [{ ...current.native_sources[0], raw_terminal: '/private/auth-secret' }] };
+    const originalNow = Date.now;
+    Date.now = () => originalNow() + 6 * 60_000;
+    try {
+      await visibilityChange();
+      await visibilityChange();
+      expect(panel().textContent).toContain('Runtime refresh failed');
+      expect(panel().textContent).not.toContain('auth-secret');
+      expect(panel().querySelectorAll('[data-native-freshness="stale"]')).toHaveLength(2);
+      expect(panel().querySelector('[data-native-freshness="fresh"]')).toBeNull();
+      expect(panel().querySelector('[data-native-freshness="disconnected"]')).toBeNull();
+      expect(panel().querySelector('[data-native-state="working"]')).not.toBeNull();
+      expect(panel().querySelector(`[datetime="${current.native_sources[0].heartbeat_at}"]`)).not.toBeNull();
+    } finally { Date.now = originalNow; }
+  });
+
+  test('cleared native snapshot removes its old report without making task Idle', async () => {
+    let value = nativeOverlay([nativeSource()]);
+    const read = async () => value;
+    await act(async () => root.render(<PipelineBoardPanel initialBoard={board()} readRuntimeStatus={read} t={t} />));
+    expect(panel().querySelector('[data-native-state="working"]')).not.toBeNull();
+    value = nativeOverlay([nativeSource({ observations: [] })]);
+    await visibilityChange();
+    expect(panel().querySelector('[data-native-state]')).toBeNull();
+    expect(panel().textContent).toContain('No native report received');
+    expect(panel().querySelector('[data-runtime-state="idle"]')).toBeNull();
+    expect(panel().textContent).toContain('result validated');
   });
 
   test('runtime decoder rejects private payloads and preserves the last good observation', async () => {

@@ -9,7 +9,7 @@ import { requestHerdrObservation, herdrAgentSessionKey, herdrProgramStatus, HERD
 import { createHerdrRuntimeTransport } from '../../src/effects/operator/herdr-runtime-transport';
 import { configureRuntimeSource } from '../../src/effects/operator/runtime-source';
 import { createRuntimeStatusObserver } from '../../src/effects/operator/runtime-status';
-import { decodeHerdrRuntimeConfig, readRuntimeDispatchBindings, verifyRuntimeDispatchBindings } from '../../src/effects/operator/runtime-service';
+import { decodeRuntimeConfig, readRuntimeDispatchBindings, verifyRuntimeDispatchBindings } from '../../src/effects/operator/runtime-service';
 import { startOperatorServer } from '../../src/effects/operator/server';
 import { parseOperatorServeOptions } from '../../src/cli/commands/operator';
 import type { RuntimeIdentity } from '../../src/core/operator/runtime-status';
@@ -86,7 +86,7 @@ describe('official Herdr socket observation', () => {
       owner = await observerFor(f); server = await startOperatorServer({ port: 0, read_runtime_status: owner.observer.read });
       const before = f.requests.length;
       const body = await (await fetch(`${server.url}/api/v1/runtime/status`)).json();
-      expect(body).toMatchObject({ projection_version: 'repo-harness.runtime-overlay.v3', badges: [], pane_observations: [{ scope: 'pane', source: 'osc7501', state: 'working', binding: identity }] });
+      expect(body).toMatchObject({ projection_version: 'repo-harness.runtime-overlay.v4', badges: [], pane_observations: [{ scope: 'pane', source: 'osc7501', state: 'working', binding: identity }] });
       expect(f.requests.length).toBe(before); expect(JSON.stringify(body)).not.toMatch(/private|title|cwd|msg|app|progress/);
       for (const kind of ['permission','question','auth'] as const) {
         envelope.revision++; f.setPanes([{ ...pane, program_status: { ...envelope, record: { state: 'blocked', kind } } }]); f.event('pane_updated');
@@ -196,17 +196,17 @@ describe('official Herdr socket observation', () => {
 
   test('explicit service config connects before GET; absent dispatch identity remains unclaimed', async () => {
     const f = await fixture();
-    const config = { protocol: 'repo-harness.herdr-runtime-config.v1', ...f.endpoint, source_host: 'fixture', herdr_session: 'fixture', bindings_path: null, pipeline_snapshot: null };
+    const config = { protocol: 'repo-harness.runtime-config.v2', kind: 'herdr', ...f.endpoint, source_host: 'fixture', herdr_session: 'fixture', bindings_path: null, pipeline_snapshot: null };
     const path = join(f.root, 'runtime.json'); writeFileSync(path, JSON.stringify(config));
     const server = await startOperatorServer({ port: 0, runtime_status_config: path });
     try {
       const before = f.requests.length;
       const response = await fetch(`${server.url}/api/v1/runtime/status`), body = await response.json();
-      expect(body).toMatchObject({ projection_version: 'repo-harness.runtime-overlay.v3', status: 'ready', unclaimed: 1, badges: [], pane_observations: [] });
+      expect(body).toMatchObject({ projection_version: 'repo-harness.runtime-overlay.v4', status: 'ready', unclaimed: 1, badges: [], pane_observations: [] });
       expect(f.requests.length).toBe(before); expect(JSON.stringify(body)).not.toContain('/private/');
       expect(parseOperatorServeOptions({ runtimeStatusConfig: path }).runtime_status_config).toBe(path);
       expect(() => parseOperatorServeOptions({ runtimeStatusConfig: 'relative.json' })).toThrow();
-      expect(() => decodeHerdrRuntimeConfig({ ...config, bindings_path: '/tmp/bindings.json' })).toThrow();
+      expect(() => decodeRuntimeConfig({ ...config, bindings_path: '/tmp/bindings.json' })).toThrow();
     } finally { await server.close(); await f.close(); }
   });
 });
@@ -279,7 +279,7 @@ test('actual snapshot reconciliation recovers enrollment → board and runtime b
     expect(observations(store).find(o => o.kind === 'enrollment' && o.source === 'outbox')?.payload.runs).toHaveLength(1);
     const candidate = { ...identity, source_host, repository_id: hash(repository.repository_id), pipeline_state_version: record.state_version, request_id: request.request_id, runtime_session: hash(bindingBytes) };
     const bindingsPath = join(f.root, 'runtime-bindings.json'); writeFileSync(bindingsPath, JSON.stringify({ protocol: 'repo-harness.runtime-bindings.v2', bindings: [candidate] }));
-    const configPath = join(f.root, 'runtime.json'); writeFileSync(configPath, JSON.stringify({ protocol: 'repo-harness.herdr-runtime-config.v1', ...f.endpoint, source_host, herdr_session: 'fixture', bindings_path: bindingsPath, pipeline_snapshot: snapshotPointerPath(path) }));
+    const configPath = join(f.root, 'runtime.json'); writeFileSync(configPath, JSON.stringify({ protocol: 'repo-harness.runtime-config.v2', kind: 'herdr', ...f.endpoint, source_host, herdr_session: 'fixture', bindings_path: bindingsPath, pipeline_snapshot: snapshotPointerPath(path) }));
     const beforeRecord = JSON.stringify(store.read(key));
     server = await startOperatorServer({ port: 0, env, runtime_status_config: configPath });
     const overlay = await (await fetch(`${server.url}/api/v1/runtime/status`)).json(); expect(overlay.badges[0].state).toBe('working');
@@ -289,7 +289,8 @@ test('actual snapshot reconciliation recovers enrollment → board and runtime b
     writeFileSync(join(dir, 'request-2.json'), JSON.stringify(request2)); writeFileSync(request2.context_ref, 'context-2');
     expect(ingestEvent(store, { host: source_host, herdr_session: 'fixture', result: { panes: [pane] } }, { snapshot: true }).status).toBe('observed');
     expect(store.read(key).state_version).toBe(candidate.pipeline_state_version); expect(store.read(key).runs).toEqual([]);
-    const config = decodeHerdrRuntimeConfig(JSON.parse(readFileSync(configPath, 'utf8')));
+    const config = decodeRuntimeConfig(JSON.parse(readFileSync(configPath, 'utf8')));
+    if (config.kind !== 'herdr') throw new Error('fixture mode');
     expect(readRuntimeDispatchBindings(config, 0)).toEqual([]); // Old round shares terminal/session but is no longer current.
     f.event('pane_updated');
     await until(async () => (await (await fetch(`${server!.url}/api/v1/runtime/status`)).json()).badges.length === 0);

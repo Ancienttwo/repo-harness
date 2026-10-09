@@ -1,7 +1,14 @@
 import { describe, expect, test, spyOn } from 'bun:test';
 import * as childProcess from 'node:child_process';
-import { decodeRuntimeOverlay, projectRuntimeOverlay, RUNTIME_LIMIT, unavailableRuntimeOverlay, type RuntimeIdentity, type RuntimeObservation, type RuntimePaneObservation } from '../../src/core/operator/runtime-status';
-import { createRuntimeStatusObserver, observeHerdrPane, observeProgramStatus, type RuntimeInvalidation, type RuntimeSnapshot } from '../../src/effects/operator/runtime-status';
+import * as fsPromises from 'node:fs/promises';
+import { mkdtempSync, writeFileSync, readFileSync, readdirSync, rmSync, renameSync, symlinkSync, mkdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { decodeRuntimeOverlay, projectRuntimeOverlay, nativeRuntimeFreshness, RUNTIME_LIMIT, unavailableRuntimeOverlay, type RuntimeIdentity, type RuntimeObservation, type RuntimePaneObservation } from '../../src/core/operator/runtime-status';
+import { createRuntimeStatusObserver, createNativeRuntimeStatusObserver, observeHerdrPane, observeProgramStatus, type RuntimeInvalidation, type RuntimeSnapshot } from '../../src/effects/operator/runtime-status';
+import { decodeRuntimeConfig, startRuntimeService, type NativeRuntimeConfig, type HerdrRuntimeConfig } from '../../src/effects/operator/runtime-service';
+import { readNativeRuntimeSnapshot, type NativeRuntimeSourceConfig } from '../../src/effects/operator/native-runtime-source';
+import { RUNTIME_CAPTURE_MAX_BYTES, type RuntimeCaptureSnapshot } from '../../src/core/operator/runtime-capture';
 import { configureRuntimeSource, RUNTIME_SOURCE_EVENTS, RUNTIME_SOURCE_PROTOCOL, type ConfiguredRuntimeSource } from '../../src/effects/operator/runtime-source';
 import { startOperatorServer } from '../../src/effects/operator/server';
 
@@ -63,7 +70,7 @@ describe('structured runtime overlay', () => {
 
   test('pane scope is separate from task identity and rejects forged bindings and cancellation', () => {
     const overlay = projectRuntimeOverlay([identity], [], at, 0, 'v1', Date.parse(at), true, 0, [paneReport()]);
-    expect(overlay).toMatchObject({ projection_version: 'repo-harness.runtime-overlay.v3', badges: [], pane_observations: [{ scope: 'pane', source: 'osc7501', state: 'working', binding: identity }] });
+    expect(overlay).toMatchObject({ projection_version: 'repo-harness.runtime-overlay.v4', badges: [], pane_observations: [{ scope: 'pane', source: 'osc7501', state: 'working', binding: identity }] });
     for (const change of [{ scope: 'task' }, { state: 'cancelled' }, { source: 'program-v1' }, { msg: 'private' }, { binding: { ...identity, pane_id: 'wrong' } }]) {
       expect(() => projectRuntimeOverlay([identity], [], at, 0, 'v1', Date.parse(at), true, 0, [{ ...paneReport(), ...change } as RuntimePaneObservation])).toThrow();
     }
@@ -432,5 +439,222 @@ describe('configured synthetic source adapter', () => {
       const response = await fetch(`${server.url}/api/v1/runtime/status`);
       expect((await response.json()).badges[0].state).toBe('working'); expect(calls).toBe(before);
     } finally { await server.close(); observer.stop(); }
+  });
+});
+
+const nativeGeneration = '123e4567-e89b-42d3-a456-426614174000';
+function nativeSnapshot(changes: Partial<RuntimeCaptureSnapshot> = {}): RuntimeCaptureSnapshot {
+  return { protocol: 'repo-harness.runtime-capture.v1', source_id: 'source-1', generation: nativeGeneration, sequence: 1,
+    provider: 'codex', format: 'codex-app-server', capture_status: 'connected', heartbeat_at: at,
+    observations: [{ scope: 'session', session_id: 'session-1', turn_id: 'turn-1', state: 'working', reason: 'unknown', event_received_at: at, changed_at: null }], ...changes };
+}
+function nativeFile(root: string, source_id = 'source-1', provider: NativeRuntimeSourceConfig['provider'] = 'codex'): NativeRuntimeSourceConfig {
+  return { source_id, provider, snapshot_path: join(root, `${source_id}.json`) };
+}
+function replaceNativeFile(config: NativeRuntimeSourceConfig, value: unknown) {
+  const temporary = `${config.snapshot_path}.new`;
+  writeFileSync(temporary, JSON.stringify(value)); renameSync(temporary, config.snapshot_path);
+}
+function nativeObserver(configs: NativeRuntimeSourceConfig[], now: () => number) {
+  return createNativeRuntimeStatusObserver(configs.map(config => ({ source_id: config.source_id, provider: config.provider, snapshot: () => readNativeRuntimeSnapshot(config) })), now);
+}
+
+describe('native runtime observation cache', () => {
+  test('config v2 is a closed single-mode union with explicit bounded unique sources', () => {
+    const source = { source_id: 'source-1', provider: 'codex', snapshot_path: '/tmp/explicit-native.json' };
+    const config: NativeRuntimeConfig = { protocol: 'repo-harness.runtime-config.v2', kind: 'native', sources: [{ ...source, provider: 'codex' }] };
+    expect(decodeRuntimeConfig(config)).toEqual(config);
+    const herdr: HerdrRuntimeConfig = { protocol: 'repo-harness.runtime-config.v2', kind: 'herdr', source_host: 'host', herdr_session: 'session', socket_path: '/tmp/explicit-herdr.sock', deadline_ms: 1000, bindings_path: null, pipeline_snapshot: null };
+    expect(decodeRuntimeConfig(herdr)).toEqual(herdr);
+    for (const invalid of [
+      { ...config, protocol: 'repo-harness.runtime-config.v1' }, { ...herdr, protocol: 'repo-harness.herdr-runtime-config.v1' },
+      { ...config, socket_path: '/tmp/herdr.sock' }, { ...herdr, sources: [source] },
+      { ...config, sources: [] }, { ...config, sources: Array.from({ length: 9 }, (_, i) => ({ ...source, source_id: `source-${i}`, snapshot_path: `/tmp/${i}.json` })) },
+      { ...config, sources: [source, { ...source, snapshot_path: '/tmp/other.json' }] },
+      { ...config, sources: [source, { ...source, source_id: 'source-2' }] },
+      ...[{ snapshot_path: 'relative.json' }, { provider: 'unknown' }, { source_id: '/private/path' }, { token: 'secret' }].map(change => ({ ...config, sources: [{ ...source, ...change }] })),
+    ]) expect(() => decodeRuntimeConfig(invalid)).toThrow();
+  });
+
+  test('each source uses its own heartbeat; successful reads do not advance event or heartbeat time', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'rh-native-age-')), first = nativeFile(root), second = nativeFile(root, 'source-2', 'pi');
+    let clock = Date.parse(at) + 600_000;
+    const observer = nativeObserver([first, second], () => clock);
+    try {
+      replaceNativeFile(first, nativeSnapshot());
+      replaceNativeFile(second, nativeSnapshot({ source_id: second.source_id, provider: 'pi', format: 'osc7501', heartbeat_at: new Date(clock).toISOString(), observations: [{ scope: 'terminal', session_id: null, turn_id: null, state: 'idle', reason: 'unknown', event_received_at: at, changed_at: null }] }));
+      await observer.start();
+      expect(observer.read().native_sources.map(s => s.freshness)).toEqual(['stale', 'fresh']);
+      expect(observer.read()).toMatchObject({ status: 'ready', badges: [], pane_observations: [], unclaimed: 0 });
+      clock += 60_000; await observer.refresh();
+      expect(observer.read().native_sources[0]).toMatchObject({ freshness: 'stale', heartbeat_at: at, observations: [{ event_received_at: at }] });
+      expect(observer.read().native_sources[1]).toMatchObject({ freshness: 'fresh', observations: [{ event_received_at: at }] });
+      clock += 300_000;
+      expect(observer.read().native_sources.map(s => s.freshness)).toEqual(['stale', 'stale']);
+      expect(observer.read().observed_at).toBe(new Date(Date.parse(at) + 660_000).toISOString());
+      expect(nativeRuntimeFreshness({ capture_status: 'connected', heartbeat_at: new Date(clock + 1).toISOString() }, clock)).toBe('unavailable');
+    } finally { observer.stop(); rmSync(root, { recursive: true, force: true }); }
+  });
+
+  test('atomic replacement keeps sequence fences; rollback and conflicts cannot revive old state', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'rh-native-fence-')), config = nativeFile(root), observer = nativeObserver([config], () => Date.parse(at));
+    const write = async (value: RuntimeCaptureSnapshot) => { replaceNativeFile(config, value); await observer.refresh(); return observer.read().native_sources[0]; };
+    try {
+      replaceNativeFile(config, nativeSnapshot({ sequence: 5 })); await observer.start();
+      expect(observer.read().native_sources[0].observations[0].state).toBe('working');
+      expect(await write(nativeSnapshot({ sequence: 5, generation: nativeGeneration.toUpperCase() }))).toMatchObject({ generation: nativeGeneration, freshness: 'fresh' });
+      expect(await write(nativeSnapshot({ sequence: 4 }))).toMatchObject({ freshness: 'unavailable', observations: [] });
+      expect(await write(nativeSnapshot({ sequence: 5 }))).toMatchObject({ freshness: 'unavailable', observations: [] });
+      expect(await write(nativeSnapshot({ sequence: 6 }))).toMatchObject({ freshness: 'fresh', observations: [{ state: 'working' }] });
+      const idle = nativeSnapshot({ sequence: 6, observations: [{ ...nativeSnapshot().observations[0], state: 'idle' }] });
+      expect(await write(idle)).toMatchObject({ freshness: 'unavailable', observations: [] });
+      expect(await write(nativeSnapshot({ sequence: 6 }))).toMatchObject({ freshness: 'unavailable', observations: [] });
+      expect(await write(nativeSnapshot({ sequence: 7 }))).toMatchObject({ freshness: 'fresh' });
+      const generation = '123e4567-e89b-42d3-a456-426614174001';
+      expect(await write(nativeSnapshot({ generation, sequence: 0, observations: [] }))).toMatchObject({ generation, freshness: 'fresh', observations: [] });
+      expect(await write(nativeSnapshot({ sequence: 100 }))).toMatchObject({ freshness: 'unavailable', observations: [] });
+      expect(await write(nativeSnapshot({ sequence: 100, generation: nativeGeneration.toUpperCase() }))).toMatchObject({ freshness: 'unavailable', observations: [] });
+      expect(await write(nativeSnapshot({ generation, sequence: 1, observations: [] }))).toMatchObject({ generation, freshness: 'fresh', observations: [] });
+    } finally { observer.stop(); rmSync(root, { recursive: true, force: true }); }
+  });
+
+  test('missing, malformed, wrong identity, private fields and future timestamps fail closed per source', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'rh-native-bad-')), bad = nativeFile(root), good = nativeFile(root, 'source-2');
+    const observer = nativeObserver([bad, good], () => Date.parse(at));
+    try {
+      replaceNativeFile(good, nativeSnapshot({ source_id: good.source_id })); await observer.start();
+      const assertBad = () => {
+        const overlay = observer.read();
+        expect(overlay.native_sources[0]).toEqual({ source_id: bad.source_id, provider: 'codex', generation: null, capture_status: 'unavailable', heartbeat_at: null, freshness: 'unavailable', observations: [] });
+        expect(overlay.native_sources[1].freshness).toBe('fresh');
+        expect(JSON.stringify(overlay)).not.toMatch(/snapshot_path|private|raw_error|token|prompt|tool_arguments/);
+      };
+      assertBad();
+      for (const value of [
+        {}, { ...nativeSnapshot(), source_id: 'different-source' },
+        { ...nativeSnapshot(), provider: 'pi', format: 'osc7501', observations: [] },
+        { ...nativeSnapshot(), prompt: 'private-secret' },
+        { ...nativeSnapshot(), observations: [{ ...nativeSnapshot().observations[0], tool_arguments: 'private-secret' }] },
+        nativeSnapshot({ heartbeat_at: '2026-10-08T00:00:00.001Z' }),
+        nativeSnapshot({ observations: [{ ...nativeSnapshot().observations[0], event_received_at: '2026-10-08T00:00:00.001Z' }] }),
+        nativeSnapshot({ observations: [{ ...nativeSnapshot().observations[0], changed_at: '2026-10-08T00:00:00.001Z' }] }),
+      ]) { replaceNativeFile(bad, value); await observer.refresh(); assertBad(); }
+      writeFileSync(bad.snapshot_path, '{not-json'); await observer.refresh(); assertBad();
+      replaceNativeFile(bad, nativeSnapshot({ sequence: 2 })); await observer.refresh();
+      expect(observer.read().native_sources[0].freshness).toBe('fresh');
+      replaceNativeFile(bad, nativeSnapshot({ sequence: 3, capture_status: 'disconnected' })); await observer.refresh();
+      expect(observer.read().native_sources[0]).toMatchObject({ capture_status: 'disconnected', freshness: 'disconnected', observations: [{ state: 'working' }] });
+      replaceNativeFile(bad, nativeSnapshot({ sequence: 4, capture_status: 'unavailable' })); await observer.refresh();
+      expect(observer.read().native_sources[0]).toMatchObject({ capture_status: 'unavailable', freshness: 'unavailable', observations: [] });
+    } finally { observer.stop(); rmSync(root, { recursive: true, force: true }); }
+  });
+
+  test('reader refuses symlinks, directories, oversized files and excessive observations', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'rh-native-read-')), config = nativeFile(root), other = nativeFile(root, 'other');
+    try {
+      replaceNativeFile(other, nativeSnapshot()); symlinkSync(other.snapshot_path, config.snapshot_path);
+      await expect(readNativeRuntimeSnapshot(config)).rejects.toThrow('runtime_native_file');
+      rmSync(config.snapshot_path); mkdirSync(config.snapshot_path);
+      await expect(readNativeRuntimeSnapshot(config)).rejects.toThrow('runtime_native_file');
+      rmSync(config.snapshot_path, { recursive: true });
+      if (process.platform !== 'win32') {
+        childProcess.execFileSync('mkfifo', [config.snapshot_path]);
+        await expect(readNativeRuntimeSnapshot(config)).rejects.toThrow('runtime_native_file'); rmSync(config.snapshot_path);
+      }
+      writeFileSync(config.snapshot_path, ' '.repeat(RUNTIME_CAPTURE_MAX_BYTES + 1));
+      await expect(readNativeRuntimeSnapshot(config)).rejects.toThrow('runtime_native_file');
+      replaceNativeFile(config, nativeSnapshot({ observations: Array.from({ length: 65 }, (_, i) => ({ ...nativeSnapshot().observations[0], session_id: `session-${i}` })) }));
+      await expect(readNativeRuntimeSnapshot(config)).rejects.toThrow('runtime_capture_limit');
+      replaceNativeFile(config, nativeSnapshot());
+      expect(await readNativeRuntimeSnapshot(config)).toEqual(nativeSnapshot());
+      expect(readdirSync(root).sort()).toEqual(['other.json', 'source-1.json']);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
+  test('reader refuses replacement and symlink races between lstat and open', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'rh-native-race-')), config = nativeFile(root), target = nativeFile(root, 'target');
+    const actualOpen = fsPromises.open;
+    let spy: ReturnType<typeof spyOn> | null = null;
+    try {
+      replaceNativeFile(config, nativeSnapshot()); replaceNativeFile(target, nativeSnapshot());
+      spy = spyOn(fsPromises, 'open').mockImplementation(async (...args: Parameters<typeof actualOpen>) => {
+        replaceNativeFile(config, nativeSnapshot({ sequence: 2 }));
+        return actualOpen(...args);
+      });
+      await expect(readNativeRuntimeSnapshot(config)).rejects.toThrow('runtime_native_file');
+      spy.mockRestore(); spy = null;
+      spy = spyOn(fsPromises, 'open').mockImplementation(async (...args: Parameters<typeof actualOpen>) => {
+        rmSync(config.snapshot_path); symlinkSync(target.snapshot_path, config.snapshot_path);
+        return actualOpen(...args);
+      });
+      await expect(readNativeRuntimeSnapshot(config)).rejects.toThrow();
+    } finally { spy?.mockRestore(); rmSync(root, { recursive: true, force: true }); }
+  });
+
+  test('native-only service collects before HTTP; GET never reads sources, writes files or starts children', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'rh-native-http-')), config = nativeFile(root), configPath = join(root, 'runtime.json');
+    let server: Awaited<ReturnType<typeof startOperatorServer>> | null = null;
+    const spies: { mockRestore(): void }[] = [];
+    try {
+      const captured = nativeSnapshot({ heartbeat_at: new Date().toISOString() }); replaceNativeFile(config, captured);
+      writeFileSync(configPath, JSON.stringify({ protocol: 'repo-harness.runtime-config.v2', kind: 'native', sources: [config] }));
+      server = await startOperatorServer({ port: 0, runtime_status_config: configPath });
+      const first = await (await fetch(`${server.url}/api/v1/runtime/status`)).json();
+      expect(first).toMatchObject({ projection_version: 'repo-harness.runtime-overlay.v4', status: 'ready', badges: [], pane_observations: [], native_sources: [{ source_id: config.source_id, freshness: 'fresh', observations: [{ state: 'working', event_received_at: at }] }] });
+      rmSync(config.snapshot_path);
+      const before = readdirSync(root).map(name => [name, readFileSync(join(root, name), 'utf8')]);
+      const open = spyOn(fsPromises, 'open'), lstat = spyOn(fsPromises, 'lstat'); spies.push(open, lstat);
+      const spawn = spyOn(childProcess, 'spawn'), spawnSync = spyOn(childProcess, 'spawnSync'); spies.push(spawn, spawnSync);
+      for (let i = 0; i < 3; i++) {
+        const response = await fetch(`${server.url}/api/v1/runtime/status`); expect(response.status).toBe(200);
+        expect(await response.json()).toEqual(first);
+      }
+      expect(open).not.toHaveBeenCalled(); expect(lstat).not.toHaveBeenCalled();
+      expect(spawn).not.toHaveBeenCalled(); expect(spawnSync).not.toHaveBeenCalled();
+      expect(readdirSync(root).map(name => [name, readFileSync(join(root, name), 'utf8')])).toEqual(before);
+      expect((await fetch(`${server.url}/api/v1/runtime/status`, { method: 'POST' })).status).toBe(405);
+      expect(JSON.stringify(first)).not.toContain(root);
+    } finally { for (const spy of spies) spy.mockRestore(); await server?.close(); rmSync(root, { recursive: true, force: true }); }
+  });
+
+  test('service close stops owned refresh and does not change the snapshot', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'rh-native-close-')), config = nativeFile(root), configPath = join(root, 'runtime.json');
+    try {
+      replaceNativeFile(config, nativeSnapshot({ heartbeat_at: new Date().toISOString() }));
+      writeFileSync(configPath, JSON.stringify({ protocol: 'repo-harness.runtime-config.v2', kind: 'native', sources: [config] }));
+      const service = await startRuntimeService(configPath), before = readFileSync(config.snapshot_path);
+      service.close(); await service.refresh();
+      expect(service.read()).toMatchObject({ status: 'unavailable', native_sources: [{ freshness: 'unavailable' }] });
+      expect(readFileSync(config.snapshot_path)).toEqual(before); expect(readdirSync(root).sort()).toEqual(['runtime.json', 'source-1.json']);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
+  test('native refresh coalesces reads and stop discards a late snapshot', async () => {
+    const late = deferred<RuntimeCaptureSnapshot>(); let reads = 0, nextReads = 0;
+    const observer = createNativeRuntimeStatusObserver([
+      { source_id: 'source-1', provider: 'codex', snapshot: () => { reads++; return late.promise; } },
+      { source_id: 'source-2', provider: 'codex', snapshot: async () => { nextReads++; return nativeSnapshot({ source_id: 'source-2' }); } },
+    ], () => Date.parse(at));
+    const start = observer.start(), parallel = observer.refresh();
+    expect(reads).toBe(1); expect(nextReads).toBe(0);
+    observer.stop(); late.resolve(nativeSnapshot()); await start; await parallel; await observer.refresh();
+    expect(reads).toBe(1); expect(nextReads).toBe(0);
+    expect(observer.read()).toMatchObject({ status: 'unavailable', observed_at: null, native_sources: [{ observations: [] }, { observations: [] }] });
+  });
+
+  test('overlay v4 rejects mixed authority, raw fields, duplicate sources and older schemas', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'rh-native-overlay-')), config = nativeFile(root), observer = nativeObserver([config], () => Date.parse(at));
+    try {
+      replaceNativeFile(config, nativeSnapshot()); await observer.start(); const overlay = observer.read();
+      expect(decodeRuntimeOverlay(overlay)).toEqual(overlay);
+      for (const invalid of [
+        { ...overlay, projection_version: 'repo-harness.runtime-overlay.v3' },
+        { ...overlay, native_sources: [...overlay.native_sources, ...overlay.native_sources] },
+        { ...overlay, native_sources: [{ ...overlay.native_sources[0], snapshot_path: '/private/path' }] },
+        { ...overlay, native_sources: [{ ...overlay.native_sources[0], heartbeat_at: null }] },
+        { ...overlay, native_sources: [{ ...overlay.native_sources[0], capture_status: 'unavailable' }] },
+        { ...overlay, badges: project([observation()]).badges },
+      ]) expect(() => decodeRuntimeOverlay(invalid)).toThrow();
+    } finally { observer.stop(); rmSync(root, { recursive: true, force: true }); }
   });
 });

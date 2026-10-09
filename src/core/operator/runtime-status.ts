@@ -1,7 +1,23 @@
+import { decodeNativeRuntimeObservation, runtimeCaptureId, RUNTIME_CAPTURE_MAX_OBSERVATIONS, type NativeRuntimeObservation, type NativeRuntimeProvider, type RuntimeCaptureSnapshot } from './runtime-capture';
+
 /** An observation projection. It has no task transition authority. */
-export const RUNTIME_OVERLAY_VERSION = 'repo-harness.runtime-overlay.v3' as const;
+export const RUNTIME_OVERLAY_VERSION = 'repo-harness.runtime-overlay.v4' as const;
 export const RUNTIME_STALE_AFTER_MS = 300_000;
 export const RUNTIME_LIMIT = 512;
+export const NATIVE_RUNTIME_SOURCE_LIMIT = 8;
+export interface NativeRuntimeSourceSummary {
+  source_id: string; provider: NativeRuntimeProvider; generation: string | null;
+  capture_status: RuntimeCaptureSnapshot['capture_status']; heartbeat_at: string | null;
+  freshness: 'fresh' | 'stale' | 'disconnected' | 'unavailable'; observations: NativeRuntimeObservation[];
+}
+/** Each capture has its own clock. A file read cannot renew its heartbeat. */
+export function nativeRuntimeFreshness(source: Pick<NativeRuntimeSourceSummary, 'capture_status' | 'heartbeat_at'>, now: number): NativeRuntimeSourceSummary['freshness'] {
+  if (source.capture_status === 'unavailable' || source.heartbeat_at === null) return 'unavailable';
+  const age = now - Date.parse(source.heartbeat_at);
+  if (!Number.isFinite(age) || age < 0) return 'unavailable';
+  if (source.capture_status === 'disconnected') return 'disconnected';
+  return age > RUNTIME_STALE_AFTER_MS ? 'stale' : 'fresh';
+}
 export interface RuntimeIdentity {
   source_host: string; repository_id: string; task: string; role: string; round: number; pipeline_state_version: number;
   request_id: string; context_sha256: string; runtime_session: string; attempt: number;
@@ -30,11 +46,11 @@ export interface RuntimePaneBadge extends RuntimePaneObservation { freshness: Ru
 export interface RuntimeOverlay {
   projection_version: typeof RUNTIME_OVERLAY_VERSION; status: 'ready' | 'unavailable';
   observed_at: string | null; source_epoch: number; program_status: 'unsupported' | 'v1';
-  unclaimed: number; badges: RuntimeBadge[]; pane_observations: RuntimePaneBadge[];
+  unclaimed: number; badges: RuntimeBadge[]; pane_observations: RuntimePaneBadge[]; native_sources: NativeRuntimeSourceSummary[];
 }
 export function unavailableRuntimeOverlay(epoch = 0): RuntimeOverlay {
   return { projection_version: RUNTIME_OVERLAY_VERSION, status: 'unavailable', observed_at: null,
-    source_epoch: epoch, program_status: 'unsupported', unclaimed: 0, badges: [], pane_observations: [] };
+    source_epoch: epoch, program_status: 'unsupported', unclaimed: 0, badges: [], pane_observations: [], native_sources: [] };
 }
 function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('runtime_invalid');
@@ -93,8 +109,8 @@ export function decodeRuntimePaneObservation(value: unknown): RuntimePaneObserva
 }
 export function decodeRuntimeOverlay(value: unknown): RuntimeOverlay {
   const v = record(value);
-  exact(v, ['projection_version','status','observed_at','source_epoch','program_status','unclaimed','badges','pane_observations']);
-  if (v.projection_version !== RUNTIME_OVERLAY_VERSION || !['ready','unavailable'].includes(v.status as string) || !['unsupported','v1'].includes(v.program_status as string) || !Array.isArray(v.badges) || !Array.isArray(v.pane_observations) || v.badges.length + v.pane_observations.length > RUNTIME_LIMIT) throw new Error('runtime_overlay_invalid');
+  exact(v, ['projection_version','status','observed_at','source_epoch','program_status','unclaimed','badges','pane_observations','native_sources']);
+  if (v.projection_version !== RUNTIME_OVERLAY_VERSION || !['ready','unavailable'].includes(v.status as string) || !['unsupported','v1'].includes(v.program_status as string) || !Array.isArray(v.badges) || !Array.isArray(v.pane_observations) || v.badges.length + v.pane_observations.length > RUNTIME_LIMIT || !Array.isArray(v.native_sources) || v.native_sources.length > NATIVE_RUNTIME_SOURCE_LIMIT) throw new Error('runtime_overlay_invalid');
   const epoch = runtimeInteger(v.source_epoch), seen = new Set<string>();
   const badges = v.badges.map(raw => {
     const b = record(raw);
@@ -114,8 +130,25 @@ export function decodeRuntimeOverlay(value: unknown): RuntimeOverlay {
   });
   const observed_at = runtimeTime(v.observed_at);
   if ((v.status === 'ready' && observed_at === null) || ((badges.length || pane_observations.length) && observed_at === null)) throw new Error('runtime_age_invalid');
+  const nativeSeen = new Set<string>();
+  const native_sources = v.native_sources.map(raw => {
+    const s = record(raw);
+    exact(s, ['source_id','provider','generation','capture_status','heartbeat_at','freshness','observations']);
+    const source_id = runtimeCaptureId(s.source_id);
+    if (nativeSeen.has(source_id) || !['codex','claude','pi'].includes(s.provider as string) || !['connected','disconnected','unavailable'].includes(s.capture_status as string) || !['fresh','stale','disconnected','unavailable'].includes(s.freshness as string) || !Array.isArray(s.observations) || s.observations.length > RUNTIME_CAPTURE_MAX_OBSERVATIONS) throw new Error('runtime_native_source_invalid');
+    nativeSeen.add(source_id);
+    if (s.generation !== null && (typeof s.generation !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s.generation))) throw new Error('runtime_native_generation_invalid');
+    const heartbeat_at = runtimeTime(s.heartbeat_at), observations = s.observations.map(decodeNativeRuntimeObservation);
+    if (observations.some(o => o.scope !== (s.provider === 'codex' ? 'session' : 'terminal')) || (s.provider !== 'codex' && observations.length > 1) || new Set(observations.map(o => o.session_id)).size !== observations.length) throw new Error('runtime_native_observation_invalid');
+    if ((s.generation === null || heartbeat_at === null) && (s.capture_status !== 'unavailable' || s.freshness !== 'unavailable' || observations.length)) throw new Error('runtime_native_age_invalid');
+    if ((s.capture_status === 'unavailable' && s.freshness !== 'unavailable') || (s.capture_status === 'disconnected' && s.freshness !== 'disconnected' && s.freshness !== 'unavailable') || (s.capture_status === 'connected' && s.freshness === 'disconnected')) throw new Error('runtime_native_freshness_invalid');
+    return { source_id, provider: s.provider as NativeRuntimeProvider, generation: s.generation as string | null,
+      capture_status: s.capture_status as NativeRuntimeSourceSummary['capture_status'], heartbeat_at,
+      freshness: s.freshness as NativeRuntimeSourceSummary['freshness'], observations };
+  });
+  if (native_sources.length && (badges.length || pane_observations.length || v.program_status !== 'unsupported' || v.unclaimed !== 0)) throw new Error('runtime_mode_conflict');
   return { projection_version: RUNTIME_OVERLAY_VERSION, status: v.status as RuntimeOverlay['status'], observed_at,
-    source_epoch: epoch, program_status: v.program_status as RuntimeOverlay['program_status'], unclaimed: runtimeInteger(v.unclaimed), badges, pane_observations };
+    source_epoch: epoch, program_status: v.program_status as RuntimeOverlay['program_status'], unclaimed: runtimeInteger(v.unclaimed), badges, pane_observations, native_sources };
 }
 /** Only current, unique dispatch-to-pane bindings can claim an observation. */
 export function runtimeBindingKeys(bindings: readonly RuntimeIdentity[]): Set<string> {
@@ -167,5 +200,5 @@ export function projectRuntimeOverlay(bindings: readonly RuntimeIdentity[], obse
     if (observation.state !== 'clear') pane_observations.push({ ...observation, freshness });
   }
   return decodeRuntimeOverlay({ projection_version: RUNTIME_OVERLAY_VERSION, status: connected ? 'ready' : 'unavailable', observed_at: observedAt,
-    source_epoch: epoch, program_status: program, unclaimed, badges, pane_observations });
+    source_epoch: epoch, program_status: program, unclaimed, badges, pane_observations, native_sources: [] });
 }
