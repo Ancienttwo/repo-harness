@@ -2,8 +2,9 @@ import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { constants as osConstants } from 'node:os';
 import { type Readable, type Writable } from 'node:stream';
-import { CodexRuntimeDecoder, OscRuntimeDecoder, OSC7501_QUERY } from '../../core/operator/runtime-capture-decoders';
+import { CodexRuntimeDecoder } from '../../core/operator/runtime-capture-decoders';
 import { RUNTIME_CAPTURE_PROTOCOL, runtimeCaptureId, type NativeRuntimeProvider, type RuntimeCaptureSnapshot } from '../../core/operator/runtime-capture';
+import { captureRuntimePty, prepareRuntimePty } from './runtime-capture-pty';
 import { RuntimeCaptureWriter, runtimeCaptureUid } from './runtime-capture-writer';
 
 export interface RuntimeCaptureOptions {
@@ -15,8 +16,6 @@ export interface RuntimeCaptureOptions {
   env?: NodeJS.ProcessEnv;
 }
 export interface RuntimeCaptureIO { input: Readable; output: Writable; diagnostics: Writable }
-const MAX_TRANSPORT_BYTES = 256 * 1024;
-const INPUT_CHUNK_BYTES = 16 * 1024;
 const OUTPUT_RETIREMENT_MS = 2000;
 
 class CaptureCache {
@@ -123,125 +122,14 @@ async function captureCodex(options: RuntimeCaptureOptions, io: RuntimeCaptureIO
   }
 }
 
-async function capturePty(options: RuntimeCaptureOptions, io: RuntimeCaptureIO, cache: CaptureCache): Promise<number> {
-  if (!['darwin', 'linux'].includes(process.platform)) throw new Error('runtime_capture_pty_platform');
-  let child: Bun.Subprocess | undefined, terminal: Bun.Terminal | undefined;
-  let ended = false, pausedByCapture = false, outputBlocked = false, outputBytes = 0, inputBytes = 0;
-  let forceStop: ReturnType<typeof setTimeout> | undefined;
-  let fault: Error | null = null;
-  const outputAbort = new AbortController();
-  const outputQueue: Uint8Array[] = [], inputQueue: Uint8Array[] = [];
-  let inputBusy = false;
-  const signalChild = (signal: NodeJS.Signals) => {
-    if (!child || child.exitCode !== null || child.signalCode !== null) return;
-    try { process.kill(child.pid, signal); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') fault ??= new Error('runtime_capture_signal_unavailable'); }
-  };
-  const stop = (signal: NodeJS.Signals) => {
-    if (pausedByCapture && child) { signalChild('SIGCONT'); pausedByCapture = false; }
-    signalChild(signal);
-    retireOutput();
-  };
-  const retireOutput = () => { forceStop ??= setTimeout(() => { signalChild('SIGKILL'); outputAbort.abort(); }, OUTPUT_RETIREMENT_MS); };
-  const abortOutput = () => { cache.transportIncomplete(); terminal?.close(); };
-  outputAbort.signal.addEventListener('abort', abortOutput, { once: true });
-  const fail = () => { if (!fault) { fault = new Error('runtime_capture_transport_unavailable'); cache.disconnected(); stop('SIGTERM'); } };
-  const pumpInput = () => {
-    if (inputBusy || ended || !terminal || terminal.closed) return;
-    const bytes = inputQueue.shift();
-    if (!bytes) { if (!fault) io.input.resume(); return; }
-    inputBusy = true;
-    activeInputBytes = bytes.length;
-    try { terminal.write(bytes); } catch { fail(); }
-  };
-  const enqueueInput = (bytes: Uint8Array) => {
-    if (ended || fault) return;
-    if (inputBytes + bytes.length > MAX_TRANSPORT_BYTES) { fail(); return; }
-    io.input.pause(); inputBytes += bytes.length;
-    for (let offset = 0; offset < bytes.length; offset += INPUT_CHUNK_BYTES) inputQueue.push(bytes.slice(offset, offset + INPUT_CHUNK_BYTES));
-    pumpInput();
-  };
-  let activeInputBytes = 0;
-  const drainInput = () => { inputBytes -= activeInputBytes; activeInputBytes = 0; inputBusy = false; pumpInput(); };
-  // Bun accepts all bytes and calls drain after it flushes them. Send only one bounded chunk.
-  const decoder = new OscRuntimeDecoder(observations => cache.observe(observations), () => enqueueInput(new TextEncoder().encode(OSC7501_QUERY)));
-  const pumpOutput = () => {
-    if (outputBlocked || fault) return;
-    while (outputQueue.length) {
-      const bytes = outputQueue.shift()!; outputBytes -= bytes.length;
-      let writable: boolean;
-      try { writable = io.output.write(bytes); } catch { fail(); return; }
-      if (!writable) {
-        outputBlocked = true;
-        if (child && child.exitCode === null && !pausedByCapture) { signalChild('SIGSTOP'); pausedByCapture = true; }
-        return;
-      }
-    }
-  };
-  const enqueueOutput = (bytes: Uint8Array) => {
-    if (!bytes.length || fault) return;
-    if (outputBytes + bytes.length > MAX_TRANSPORT_BYTES) { fail(); return; }
-    outputQueue.push(bytes); outputBytes += bytes.length; pumpOutput();
-  };
-  const outputDrain = () => {
-    outputBlocked = false; pumpOutput();
-    if (!outputBlocked && pausedByCapture && child) { signalChild('SIGCONT'); pausedByCapture = false; }
-  };
-  const inputData = (bytes: Buffer) => enqueueInput(bytes);
-  const inputEnd = () => { cache.disconnected(); stop('SIGTERM'); };
-  const interrupt = () => stop('SIGINT'), terminate = () => stop('SIGTERM');
-  const input = io.input as Readable & { isTTY?: boolean; isRaw?: boolean; setRawMode?: (raw: boolean) => void };
-  const previousRaw = input.isRaw ?? false;
-  const resize = () => terminal?.resize(process.stdout.columns || 80, process.stdout.rows || 24);
-  io.output.on('drain', outputDrain); io.output.on('error', fail);
-  io.input.on('data', inputData); io.input.on('end', inputEnd); io.input.on('error', fail);
-  process.on('SIGINT', interrupt); process.on('SIGTERM', terminate); process.stdout.on('resize', resize);
-  try {
-    if (input.isTTY) input.setRawMode?.(true);
-    child = Bun.spawn(options.argv, { cwd: options.cwd, env: options.env, terminal: {
-      cols: process.stdout.columns || 80, rows: process.stdout.rows || 24,
-      data(term, bytes) { terminal = term; enqueueOutput(decoder.feed(bytes, new Date().toISOString())); },
-      drain(term) { terminal = term; drainInput(); },
-      exit(_term, code) { if (code !== 0) fail(); ended = true; enqueueOutput(decoder.end(new Date().toISOString())); cache.disconnected(); },
-    } });
-    terminal = child.terminal;
-    pumpInput();
-    if (io.input.readableEnded) inputEnd();
-    const code = await child.exited;
-    retireOutput();
-    ended = true;
-    enqueueOutput(decoder.end(new Date().toISOString())); cache.disconnected();
-    terminal?.close();
-    // Wait for the real outer sink to consume the bounded tail.
-    if (!fault && (outputBlocked || outputQueue.length)) await new Promise<void>((resolve, reject) => {
-      const check = () => { if (!outputBlocked && !outputQueue.length) { cleanup(); resolve(); } };
-      const bad = () => { cleanup(); reject(new Error('runtime_capture_output_unavailable')); };
-      const cleanup = () => { io.output.removeListener('drain', check); io.output.removeListener('error', bad); outputAbort.signal.removeEventListener('abort', bad); };
-      io.output.on('drain', check); io.output.once('error', bad); outputAbort.signal.addEventListener('abort', bad, { once: true });
-      if (outputAbort.signal.aborted) bad(); else check();
-    });
-    if (fault) throw fault;
-    await writeOutput(io.output, new Uint8Array(0), outputAbort.signal);
-    return code;
-  } catch { stop('SIGTERM'); throw new Error('runtime_capture_transport_unavailable'); }
-  finally {
-    ended = true; terminal?.close();
-    if (child && child.exitCode === null && child.signalCode === null) { stop('SIGTERM'); await child.exited; }
-    if (forceStop) clearTimeout(forceStop);
-    outputAbort.signal.removeEventListener('abort', abortOutput);
-    io.input.pause(); io.input.removeListener('data', inputData); io.input.removeListener('end', inputEnd); io.input.removeListener('error', fail);
-    io.output.removeListener('drain', outputDrain); io.output.removeListener('error', fail);
-    process.removeListener('SIGINT', interrupt); process.removeListener('SIGTERM', terminate); process.stdout.removeListener('resize', resize);
-    if (input.isTTY) input.setRawMode?.(previousRaw);
-  }
-}
-
 /** Capture only this explicit child. No discovery, initialization, approval or task binding. */
 export async function runRuntimeCapture(options: RuntimeCaptureOptions, io: RuntimeCaptureIO = { input: process.stdin, output: process.stdout, diagnostics: process.stderr }): Promise<number> {
   runtimeCaptureUid(); // Refuse unsupported ownership before snapshot creation or child spawn.
   if (!['codex', 'claude', 'pi'].includes(options.provider) || !options.argv.length || options.argv.some(arg => typeof arg !== 'string' || arg.includes('\0'))) throw new Error('runtime_capture_arguments');
+  const pty = options.provider === 'codex' ? null : await prepareRuntimePty(options);
   const diagnostic = (code: string) => { io.diagnostics.write(`${JSON.stringify({ ok: false, error: code })}\n`); };
   const cache = new CaptureCache(options, diagnostic);
-  try { return await (options.provider === 'codex' ? captureCodex(options, io, cache) : capturePty(options, io, cache)); }
+  try { return await (options.provider === 'codex' ? captureCodex(options, io, cache) : captureRuntimePty(options, io, cache, pty!)); }
   catch (error) { cache.transportIncomplete(); throw error; }
   finally { cache.close(); }
 }

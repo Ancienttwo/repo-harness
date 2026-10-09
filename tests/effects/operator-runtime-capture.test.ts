@@ -1,3 +1,4 @@
+import { spawn } from 'node:child_process';
 import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, readFileSync, existsSync, writeFileSync, chmodSync, symlinkSync, renameSync, lstatSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -6,6 +7,7 @@ import { PassThrough, Writable } from 'node:stream';
 import { decodeRuntimeCaptureSnapshot, RUNTIME_CAPTURE_PROTOCOL, RUNTIME_CAPTURE_MAX_FRAME_BYTES, type RuntimeCaptureSnapshot } from '../../src/core/operator/runtime-capture';
 import { CodexRuntimeDecoder, OscRuntimeDecoder, OSC7501_QUERY } from '../../src/core/operator/runtime-capture-decoders';
 import { RuntimeCaptureWriter, RUNTIME_CAPTURE_OWNERSHIP_UNSUPPORTED } from '../../src/effects/operator/runtime-capture-writer';
+import { RUNTIME_CAPTURE_PYTHON_UNAVAILABLE } from '../../src/effects/operator/runtime-capture-pty';
 import { runRuntimeCapture } from '../../src/effects/operator/runtime-capture';
 
 const HAS_CAPTURE_OWNERSHIP = typeof process.getuid === 'function';
@@ -364,4 +366,66 @@ test.skipIf(HAS_CAPTURE_OWNERSHIP)('missing uid rejects real capture before snap
   expect(code).toBe(1); expect(stdout).toBe('');
   expect(JSON.parse(stderr)).toEqual({ ok: false, error: RUNTIME_CAPTURE_OWNERSHIP_UNSUPPORTED });
   expect(existsSync(path)).toBe(false); expect(existsSync(marker)).toBe(false);
+});
+
+
+describe.skipIf(!HAS_CAPTURE_PTY)('Python owned PTY transport', () => {
+  test('normal PTY exit 7 stays 7 and keeps transport disconnected', async () => {
+    const path = join(root(), 'capture.json'), input = new PassThrough(), output = collect(), diagnostics = collect();
+    const code = await runRuntimeCapture({ provider: 'pi', source_id: 'exit-seven', snapshot_path: path, argv: ['/bin/sh', '-c', 'exit 7'] }, { input, output: output.stream, diagnostics: diagnostics.stream });
+    expect(code).toBe(7); expect(JSON.parse(readFileSync(path, 'utf8')).capture_status).toBe('disconnected');
+    expect(diagnostics.chunks).toHaveLength(0); input.destroy();
+  });
+  test('missing Python refuses before snapshot and provider; Codex needs no Python', async () => {
+    const dir = root(), path = join(dir, 'capture.json'), marker = join(dir, 'child-started');
+    const input = new PassThrough(), output = collect(), diagnostics = collect(), env = { ...process.env, PATH: '' };
+    const argv = [process.execPath, '-e', `await Bun.write(${JSON.stringify(marker)},'started')`];
+    await expect(runRuntimeCapture({ provider: 'pi', source_id: 'no-python', snapshot_path: path, argv, env }, { input, output: output.stream, diagnostics: diagnostics.stream })).rejects.toThrow(RUNTIME_CAPTURE_PYTHON_UNAVAILABLE);
+    expect(existsSync(path)).toBe(false); expect(existsSync(marker)).toBe(false);
+    expect(await runRuntimeCapture({ provider: 'codex', source_id: 'no-python', snapshot_path: path, argv, env }, { input, output: output.stream, diagnostics: diagnostics.stream })).toBe(0);
+    expect(readFileSync(marker, 'utf8')).toBe('started'); input.destroy();
+  });
+  test('blocked provider bounds real input backlog and resumes through independent resize control', async () => {
+    const python = Bun.which('python3')!;
+    const helper = join(process.cwd(), 'src/effects/operator/runtime-capture-pty.py');
+    const total = 2 * 1024 * 1024;
+    const script = 'process.stdin.setRawMode(true);let n=0;process.stdin.on("data",b=>{for(const c of b){if(c!==65)process.exit(41)}n+=b.length;if(n===2097152){process.stdout.write("input-exact="+n);process.exit(0)}if(n>2097152)process.exit(42)});process.stdin.pause();setInterval(()=>{},10000);process.on("SIGWINCH",()=>process.stdin.resume());process.stdout.write("input-blocked");';
+    const p = spawn(python, ['-I', '-S', '-u', helper, '--cols', '80', '--rows', '24', '--', process.execPath, '-e', script], { stdio: ['pipe', 'pipe', 'pipe', 'pipe', 'pipe'] });
+    const output: Buffer[] = [], control: Buffer[] = [], diagnostics: Buffer[] = [];
+    p.stdout!.on('data', bytes => output.push(Buffer.from(bytes))); p.stderr!.on('data', bytes => diagnostics.push(Buffer.from(bytes)));
+    (p.stdio[4] as PassThrough).on('data', bytes => control.push(Buffer.from(bytes)));
+    const exited = new Promise<number | null>(resolve => p.once('exit', resolve));
+    try {
+      await until(() => Buffer.concat(output).toString().includes('input-blocked'));
+      let accepted = false;
+      const writing = new Promise<void>((resolve, reject) => p.stdin!.write(Buffer.alloc(total, 65), error => { accepted = true; if (error) reject(error); else resolve(); }));
+      writing.catch(() => {});
+      await Bun.sleep(100); expect(accepted).toBe(false);
+      (p.stdio[3] as PassThrough).write('{"type":"resize","cols":123,"rows":45}\n');
+      await writing; expect(await exited).toBe(0);
+      expect(Buffer.concat(output).toString()).toContain(`input-exact=${total}`);
+      const events = Buffer.concat(control).toString().trim().split('\n').map(line => JSON.parse(line));
+      expect(events.find(e => e.type === 'child_exit')).toEqual({ type: 'child_exit', code: 0 });
+      const complete = events.find(e => e.type === 'complete');
+      expect(complete.input_peak).toBeGreaterThan(0); expect(complete.input_peak).toBeLessThanOrEqual(256 * 1024);
+      expect(complete.output_peak).toBeGreaterThan(0); expect(complete.output_peak).toBeLessThanOrEqual(256 * 1024);
+      expect(diagnostics).toHaveLength(0);
+      console.log(JSON.stringify({ fixture: 'runtime-pty-buffer-proof', platform: process.platform, bun: process.versions.bun, received_bytes: Number(/input-exact=(\d+)/.exec(Buffer.concat(output).toString())?.[1]), input_peak: complete.input_peak, output_peak: complete.output_peak }));
+    } finally { if (p.exitCode === null) p.kill('SIGTERM'); p.stdin!.destroy(); (p.stdio[3] as PassThrough).destroy(); await exited; }
+  });
+  test('resize control changes real kernel PTY dimensions without mixing control into bytes', async () => {
+    const python = Bun.which('python3')!, helper = join(process.cwd(), 'src/effects/operator/runtime-capture-pty.py');
+    const script = 'const size=()=>Bun.spawnSync(["/bin/stty","size"],{stdin:0,stdout:"pipe",stderr:"ignore"}).stdout.toString().trim();process.on("SIGWINCH",()=>{process.stdout.write("resized="+size());process.exit(0)});process.stdout.write("initial="+size());await Bun.sleep(30000)';
+    const p = spawn(python, ['-I', '-S', '-u', helper, '--cols', '101', '--rows', '31', '--', process.execPath, '-e', script], { stdio: ['pipe', 'pipe', 'pipe', 'pipe', 'pipe'] });
+    const output: Buffer[] = [], control: Buffer[] = [];
+    p.stdout!.on('data', bytes => output.push(Buffer.from(bytes))); (p.stdio[4] as PassThrough).on('data', bytes => control.push(Buffer.from(bytes)));
+    const exited = new Promise<number | null>(resolve => p.once('exit', resolve));
+    try {
+      await until(() => Buffer.concat(output).toString().includes('initial=31 101'));
+      (p.stdio[3] as PassThrough).write('{"type":"resize","cols":123,"rows":45}\n');
+      expect(await exited).toBe(0); expect(Buffer.concat(output).toString()).toContain('resized=45 123');
+      expect(Buffer.concat(output).toString()).not.toContain('child_exit');
+      expect(Buffer.concat(control).toString()).toContain('"type":"child_exit"');
+    } finally { if (p.exitCode === null) p.kill('SIGTERM'); p.stdin!.destroy(); (p.stdio[3] as PassThrough).destroy(); await exited; }
+  });
 });

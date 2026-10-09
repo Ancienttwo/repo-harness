@@ -1,5 +1,6 @@
 import { isAbsolute } from 'node:path';
 import { Command } from 'commander';
+import { RUNTIME_CAPTURE_PYTHON_UNAVAILABLE } from '../../effects/operator/runtime-capture-pty';
 import { runRuntimeCapture } from '../../effects/operator/runtime-capture';
 import { RUNTIME_CAPTURE_OWNERSHIP_UNSUPPORTED } from '../../effects/operator/runtime-capture-writer';
 import { runtimeCaptureId, type NativeRuntimeProvider } from '../../core/operator/runtime-capture';
@@ -143,7 +144,7 @@ export function buildOperatorCommand(): Command {
         process.exitCode = await runRuntimeCapture({ provider: raw.provider as NativeRuntimeProvider, source_id: raw.sourceId, snapshot_path: raw.snapshot, argv });
       } catch (error) {
         // Publish only fixed codes. Native payloads, paths and argv stay private.
-        const code = error instanceof Error && error.message === RUNTIME_CAPTURE_OWNERSHIP_UNSUPPORTED ? RUNTIME_CAPTURE_OWNERSHIP_UNSUPPORTED : 'runtime_capture_unavailable';
+        const code = error instanceof Error && (error.message === RUNTIME_CAPTURE_OWNERSHIP_UNSUPPORTED || error.message === RUNTIME_CAPTURE_PYTHON_UNAVAILABLE) ? error.message : 'runtime_capture_unavailable';
         process.stderr.write(`${JSON.stringify({ ok: false, error: code })}\n`);
         process.exitCode = 1;
       }

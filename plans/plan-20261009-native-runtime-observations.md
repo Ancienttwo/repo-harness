@@ -11,7 +11,7 @@ Make runtime observation independent of Herdr. Keep Herdr as an optional source 
 
 ## P1: Map
 
-The current overlay and bindings contain Herdr pane identity. The service starts before HTTP admission. GET reads its cache. Codex 0.162.0 provides native thread/turn notifications, but no read-only observer role or subscribe method. Existing hook telemetry describes hook completion, not complete agent runtime state. The project already runs on Bun 1.4.2, which has a built-in PTY.
+The current overlay and bindings contain Herdr pane identity. The service starts before HTTP admission. GET reads its cache. Codex 0.162.0 provides native thread/turn notifications, but no read-only observer role or subscribe method. Existing hook telemetry describes hook completion, not complete agent runtime state. The initial implementation used Bun 1.4.2 and its built-in PTY. Linux checks later showed that the public API cannot expose all input backlog states. It also reports normal Linux PTY EIO as a lifecycle error.
 
 ## P2: Trace and proof
 
@@ -22,6 +22,8 @@ The new path is explicit capture -> real child output -> bounded decoder -> atom
 ## P3: Decision
 
 Implement an opt-in I/O tap, not a scheduler or a desktop-session observer. Codex stdin/stdout are transparent. The tap never originates RPC, answers approval, starts a turn or resumes a session. PTY capture owns only the child explicitly supplied by the caller. It answers and consumes only the fixed OSC 7501 capability query; other bytes continue to the terminal.
+
+Use one bundled helper that uses the standard library of Python 3.9 or later for the owned PTY. Probe its capabilities before creating the capture snapshot or starting the provider. Do not install Python or retain a Bun PTY fallback. The helper uses bounded nonblocking input/output queues and a separate control channel. Only actual partial writes release queue space. Child status comes from waitpid; EOF and EIO are stream events. Codex retains its existing pipe transport.
 
 Publish no raw logs. Snapshot fields are limited to source identity, capture generation/sequence, provider, format, capture health/heartbeat and bounded observations. Prompt, tool arguments, terminal text, paths and approval payloads stay out of snapshots and HTTP responses. A capture heartbeat does not advance the last event time or imply agent progress.
 
@@ -64,3 +66,9 @@ Use the Feynman report and editable PlantUML progress source. Keep code, tests, 
 Real isolated Codex 0.162.0 and Pi 1.1 output passed through capture, snapshot and the runtime GET without Herdr. The test client created an ephemeral Codex thread and sent no turn request. Claude 2.1.295 reached initial sign-in without producing a usable lifecycle state. No login or trust prompt was approved.
 
 Independent review found two P1 defects in capture retirement and FIFO replacement. Both were reproduced in isolated processes before repair. The same five failing scenarios passed after repair. Full native-provider work, Windows capture and deployment remain outside the accepted evidence.
+
+## Linux CI repair decision
+
+CI run 37895657514 found PTY failures on Linux Bun 1.4.0. Real Linux arm64 probes reproduced normal exit 0 and 7 as terminal lifecycle 1 on both Bun 1.4.0 and 1.4.2. The subprocess result remained correct. The public write API accepts all bytes but exposes no backlog count. Its drain event is not a per-write acknowledgement. Waiting for every write can stall; a timer cannot prove a buffer limit.
+
+The Python helper replaces this transport. This adds a requirement for Python 3.9 or later for Claude/Pi capture. It does not add a service, task scheduler, global installation or npm/native build chain. The independent design review rejected a script-command wrapper because its input queue has no proved total bound. The new helper must pass real input, output, resize, nonzero exit, signal and queue-bound checks on macOS and Linux before acceptance.
