@@ -125,7 +125,7 @@ Pi 官方安装命令为 `pi install <本地候选包目录>`。发布后采用�
 | 切片 | 状态 | 可独立交付的结果 | 预计工作量 |
 |---|---|---|---|
 | D1：依赖升级 | 已实现、已验证、本地已提交 | OAR `0.45.1` 和 Pi `1.1.0`。现有宿主继续可用。 | 本次已完成 |
-| H1：最小原生宿主 | 已实现；独立审查未完成 | 上述 package、JSON bridge、上下文与 edit/write 检查。使用 Pi 官方安装即可工作，不依赖 OAR worker 或状态展示。 | 本轮实现完成 |
+| H1：最小原生宿主 | 已实现；独立只读审查完成，补修复审中 | 上述 package、JSON bridge、上下文与 edit/write 检查。使用 Pi 官方安装即可工作，不依赖 OAR worker 或状态展示。 | 本轮实现完成 |
 
 H1 作为一个完整 PR 交付。不能先宣传“Pi 已接入”，再等待下一阶段补写入检查。状态展示沿用已有方案。统一 installer 与 Pi review worker 不属于 H1，不是其验收前提。
 
@@ -202,6 +202,8 @@ D1 回退是 `git revert 981a50b871f9b5238a7bca72d031e0927d397769`，再按原�
 - 两处 installed candidate fixture 原先复制整个 checkout，连同未发布的测试和私有运行状态。补修改为复制 package 的发布清单。边界回归测试在原复制行为上失败，在新行为上通过。版本安装的原断言与 30 秒 timeout 保留。`4dbb1c0f` 的默认八进程 full 完成 410 份文件，退出 0。原 installer timeout 的具体触发因素未复现，不能据此断言其根因。最终提交的检查结果以 PR 为准。
 - 独立 Claude 只读审查已对 `8f76eba9` 返回 advisory `FAIL`，提出两个中等问题和两个低级问题。Bash 原先错误读取 `details.exitCode`；修正后使用 SDK 的 `structuredContent.exit_code`。Stop 原先受 10 秒限制；修正后复用 150 秒 managed timeout。短 unknown 输出不再按失败保存完整日志。SessionStart snapshot 交付一次，不再每轮重复。
 - 真实 SDK/Bash/Bun 回归检查实际 pass/fail 退出码、check records 和 ledger。context 的精确次数检查保留一次 SessionStart snapshot；同一 session 的 unchanged reload 由共享 budget 去重。真实 11 秒 bridge 子进程在旧 Stop deadline 下失败，在新 deadline 下完成。普通 timeout 与取消检查保留。四项失败日志及后续差量结果均保留，最终复审以 PR 为准。
+- `0c7a9652` 的默认八进程 full 为 5630 pass、0 fail、9 gated skips，共 410 份文件。真实 provider 再次通过四项验收。独立 Claude 对四项修正返回 advisory `PASS`。OAR 未提供 actual model ID；该结果不冒充 provider-confirmed sign-off。
+- 复审还提出两项低级缺口。补修让 Bash observation diagnostics 进入模型的 tool-result content，并保留原输出和 isError。无 UI 的真实 SDK session 在同一 run 内执行三次真实失败测试，第三次让模型读到 RepairLimit 的 terminal decision。旧 adapter 在这项断言上失败。Stop 回归现直接验证非 Stop 的默认 10 秒 deadline，不再依赖 override。最终复审与 full 以 PR 为准。
 - 尚未验证 RPC 模式、长期并发压力、shutdown 重入及 Pi–Herdr 状态链路。它们不能由以上检查推断。
 - 本地检查日志使用 `/tmp/repo-harness-pi-*.log`。这些日志不是提交内容。PR 说明记录命令、环境、结果和限制。
 

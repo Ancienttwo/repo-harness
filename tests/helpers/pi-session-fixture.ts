@@ -75,11 +75,20 @@ try {
     await prompt('bash', { command: 'printf "fixture command\\n"' }, 'bash-pass');
     await session.reload();
     await prompt('write', { path: 'reloaded.txt', content: 'fresh session context' }, 'after-reload');
-  } else if (mode === 'bash-status') {
+  } else if (mode === 'bash-status' || mode === 'repair-circuit') {
     await writeFile(join(cwd, 'native-pass.test.ts'), 'import { test, expect } from "bun:test"; test("native pass", () => expect(1).toBe(1));\n');
     await writeFile(join(cwd, 'native-fail.test.ts'), 'import { test, expect } from "bun:test"; test("native failure", () => expect(1).toBe(2));\n');
-    await prompt('bash', { command: 'bun test native-pass.test.ts' }, 'native-bash-pass');
-    await prompt('bash', { command: 'bun test native-fail.test.ts' }, 'native-bash-fail');
+    if (mode === 'bash-status') {
+      await prompt('bash', { command: 'bun test native-pass.test.ts' }, 'native-bash-pass');
+      await prompt('bash', { command: 'bun test native-fail.test.ts' }, 'native-bash-fail');
+    } else {
+      provider.setResponses([
+        ...[1, 2, 3].map(attempt => fauxAssistantMessage(fauxToolCall('bash', { command: 'bun test native-fail.test.ts' },
+          { id: `repair-failure-${attempt}` }), { stopReason: 'toolUse' })),
+        fauxAssistantMessage('Done.'),
+      ]);
+      await session.prompt('Run the three failing fixture attempts in this one run.');
+    }
   } else if (mode === 'paths') {
     for (const [id, path] of [
       ['relative-private', '../_ops/relative.txt'],

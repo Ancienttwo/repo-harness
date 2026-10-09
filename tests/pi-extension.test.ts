@@ -101,7 +101,7 @@ describe('Pi JSON hook bridge', () => {
 setTimeout(() => console.log(JSON.stringify({${JSON.stringify(output()).slice(1, -1)},event,route_id:'default',decision:'none'})), 11_000);`);
       expect(await new PiHookBridge(pkg, { env: f.env }).invoke(request(f.root, { event: 'Stop', route: 'default' })))
         .toMatchObject({ event: 'Stop', exit_code: 0 });
-      await expect(new PiHookBridge(pkg, { env: f.env, timeoutMs: 100 })
+      await expect(new PiHookBridge(pkg, { env: f.env })
         .invoke(request(f.root, { event: 'SessionStart', route: 'default' }))).rejects.toThrow('PI_HOOK_TIMEOUT');
     } finally { f.cleanup(); }
   }, 60_000);
@@ -164,6 +164,23 @@ describe('real Pi 1.1 tool pipeline with a scripted provider', () => {
       expect(accepted.filter(event => event.event_type === 'post_bash.command_observed')).toHaveLength(2);
       expect(records(f.root).filter(event => event.event === 'PostToolUse' && event.route_id === 'bash')).toHaveLength(2);
       expect(records(f.root).filter(event => event.event === 'Stop')).toHaveLength(2);
+    } finally { f.cleanup(); }
+  }, 60_000);
+
+  test('a headless model receives the terminal repair decision without losing the native error', () => {
+    const f = fixture();
+    try {
+      const result = session(f.root, f.env, 'repair-circuit');
+      const failures = result.messages.filter((message: any) => message.role === 'toolResult' && message.toolName === 'bash');
+      expect(failures).toHaveLength(3);
+      expect(failures.every((message: any) => message.isError)).toBe(true);
+      const content = failures[2].content.filter((part: any) => part.type === 'text').map((part: any) => part.text).join('\n');
+      expect(content).toContain('native failure');
+      expect(content).toContain('RepairLimit');
+      expect(content).toContain('terminal: stop automatic retries');
+      expect(failures[0].content.some((part: any) => part.text?.includes('RepairLimit'))).toBe(false);
+      expect(failures[1].content.some((part: any) => part.text?.includes('RepairLimit'))).toBe(false);
+      expect(records(f.root).filter(event => event.event === 'Stop')).toHaveLength(1);
     } finally { f.cleanup(); }
   }, 60_000);
 

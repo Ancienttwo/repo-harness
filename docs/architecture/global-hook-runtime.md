@@ -118,7 +118,9 @@ session context or observation blocks later edits until `/reload` succeeds.
 Shell writes, direct extension writes and third-party MCP writes are outside
 this tool gate. Bash uses Pi's `structuredContent.exit_code` field. A result
 without an integer exit code stays `unknown`. Short unknown output stays inline.
-It cannot create passing verification evidence.
+It cannot create passing verification evidence. Bash observation diagnostics
+also reach the model through tool-result content. The native output and error
+flag stay intact.
 
 The bridge records tool results with the original call binding. A native edit
 or write can report an error after its file write completes. Execution cancellation

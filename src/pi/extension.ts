@@ -183,8 +183,13 @@ export default function repoHarnessPi(pi: ExtensionAPI): void {
       }, binding.runId);
       if (output.exit_code !== 0) throw new Error(output.diagnostics || output.reason);
     } catch (error) {
-      if (event.toolName === 'bash') notify(ctx, `PI_HOOK_COMMAND_OBSERVATION_FAILED: ${boundedHookDiagnostic(String(error))}`);
-      else failed(state, error, ctx);
+      if (event.toolName === 'bash') {
+        const diagnostic = boundedHookDiagnostic(`PI_HOOK_COMMAND_OBSERVATION_FAILED: ${String(error)}`);
+        notify(ctx, diagnostic);
+        // Tool-result content reaches print/RPC models as well as interactive sessions.
+        return { content: [...event.content, { type: 'text' as const, text: diagnostic }], isError: event.isError };
+      }
+      failed(state, error, ctx);
     }
   });
 
