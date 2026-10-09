@@ -1,4 +1,4 @@
-import { startHerdrRuntimeService } from './runtime-service';
+import { startRuntimeService } from './runtime-service';
 import { decodeRuntimeOverlay, unavailableRuntimeOverlay, type RuntimeOverlay } from '../../core/operator/runtime-status';
 import { ARCHITECTURE_FAILURES, parseArchitectureRequest, decodeArchitectureModuleIndex, decodeArchitectureModuleDetail, decodeArchitectureReviewPrompt, OPERATOR_ARCHITECTURE_MODULES_ROUTE, OPERATOR_ARCHITECTURE_MODULE_ROUTE, OPERATOR_ARCHITECTURE_REVIEW_PROMPT_ROUTE } from '../../core/operator/architecture';
 export { OPERATOR_ARCHITECTURE_MODULES_ROUTE, OPERATOR_ARCHITECTURE_MODULE_ROUTE, OPERATOR_ARCHITECTURE_REVIEW_PROMPT_ROUTE } from '../../core/operator/architecture';
@@ -1668,7 +1668,7 @@ export async function startOperatorServer(
   };
 
   if (options.runtime_status_config && options.read_runtime_status) throw new OperatorServerError('invalid_argument', 'Select runtime config or cache reader.', 400);
-  const runtimeService = options.runtime_status_config ? await startHerdrRuntimeService(options.runtime_status_config) : null;
+  const runtimeService = options.runtime_status_config ? await startRuntimeService(options.runtime_status_config) : null;
   const pipelineReader = createPipelineStatusReader();
   const server: Server = createServer((request, response) => {
     void handleRequest(request, response).catch((_error) => {

@@ -1,5 +1,9 @@
 import { isAbsolute } from 'node:path';
 import { Command } from 'commander';
+import { RUNTIME_CAPTURE_PYTHON_UNAVAILABLE } from '../../effects/operator/runtime-capture-pty';
+import { runRuntimeCapture } from '../../effects/operator/runtime-capture';
+import { RUNTIME_CAPTURE_OWNERSHIP_UNSUPPORTED } from '../../effects/operator/runtime-capture-writer';
+import { runtimeCaptureId, type NativeRuntimeProvider } from '../../core/operator/runtime-capture';
 
 import {
   OPERATOR_DEFAULT_HOST,
@@ -118,12 +122,31 @@ export function buildOperatorCommand(): Command {
     .option('--port <port>', 'TCP port (0 selects an ephemeral test port)', String(OPERATOR_DEFAULT_PORT))
     .option('--max-concurrency <count>', 'Bounded Fleet collection concurrency (1-16)', String(OPERATOR_DEFAULT_MAX_CONCURRENCY))
     .option('--timeout-ms <milliseconds>', 'Fleet collection deadline (1000-30000)', String(OPERATOR_DEFAULT_TIMEOUT_MS))
-    .option('--runtime-status-config <path>', 'Explicit read-only Herdr runtime observation configuration; disabled when absent')
+    .option('--runtime-status-config <path>', 'Explicit read-only runtime source configuration; disabled when absent')
     .action(async (raw: OperatorServeRawOptions) => {
       try {
         await runOperatorServe(parseOperatorServeOptions(raw));
       } catch (error) {
         outputOperatorError(error);
+      }
+    });
+  operator
+    .command('capture')
+    .description('Capture native runtime status from one explicit owned child')
+    .requiredOption('--provider <provider>', 'Native provider (codex, claude, pi)')
+    .requiredOption('--source-id <id>', 'Bounded source identity')
+    .requiredOption('--snapshot <path>', 'New absolute snapshot path in an owned private directory')
+    .argument('<argv...>', 'Child command and arguments after --')
+    .action(async (argv: string[], raw: { provider: string; sourceId: string; snapshot: string }) => {
+      try {
+        if (!['codex', 'claude', 'pi'].includes(raw.provider) || !isAbsolute(raw.snapshot)) throw new OperatorArgumentError('Invalid capture options');
+        runtimeCaptureId(raw.sourceId);
+        process.exitCode = await runRuntimeCapture({ provider: raw.provider as NativeRuntimeProvider, source_id: raw.sourceId, snapshot_path: raw.snapshot, argv });
+      } catch (error) {
+        // Publish only fixed codes. Native payloads, paths and argv stay private.
+        const code = error instanceof Error && (error.message === RUNTIME_CAPTURE_OWNERSHIP_UNSUPPORTED || error.message === RUNTIME_CAPTURE_PYTHON_UNAVAILABLE) ? error.message : 'runtime_capture_unavailable';
+        process.stderr.write(`${JSON.stringify({ ok: false, error: code })}\n`);
+        process.exitCode = 1;
       }
     });
   return operator;

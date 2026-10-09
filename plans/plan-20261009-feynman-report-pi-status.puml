@@ -1,0 +1,34 @@
+@startuml
+left to right direction
+skinparam shadowing false
+title Report SOP and Pi status integration\n2026-10-09 Asia/Singapore | base e7c86c55 | candidate 48d39b05
+
+rectangle "Completed locally" #DCFCE7 {
+  rectangle "R1: Report SOP\nFeynman explanation + PlantUML source\nDocument checks passed" as SOP
+  rectangle "D0: Source research\nPi sender exists\nHerdr receiver/API gap confirmed" as Research
+}
+rectangle "Not dispatched" #FEF3C7 {
+  rectangle "P0: Real capability probe\nNeeds an authorized Herdr caller\nNo live result yet" as Probe
+}
+rectangle "Planned work" #E2E8F0 {
+  rectangle "P1: Herdr receiver + typed API\nExternal dependency" as Receiver
+  rectangle "P2: repo-harness adapter\nReuse current task/session bindings" as Adapter
+  rectangle "P3: UI changes only if needed\nExisting badges may suffice" as UI
+  rectangle "P4: Real chain and browser checks\nTask acceptance must stay unchanged" as Verify
+}
+Research --> Probe
+Probe --> Receiver : only if capability is absent
+Probe --> Adapter : if an existing API is proven
+Receiver --> Adapter
+Adapter --> UI
+Adapter --> Verify : if no UI change is needed
+UI --> Verify
+SOP ..> Verify : use the report format
+
+legend bottom
+  This graph is a dated report view, not a task store.
+  Pi v1.1.0: abe508e1 | Herdr source: cce57bc3.
+  A program reporting done does not prove task acceptance.
+  No runtime integration, merge or release is claimed.
+endlegend
+@enduml

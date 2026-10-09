@@ -5,11 +5,11 @@ import { hostname } from 'node:os';
 import { join, basename } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { requestHerdrObservation, herdrAgentSessionKey, HERDR_OBSERVATION_REVISION } from '../../src/effects/terminal/herdr-observation';
+import { requestHerdrObservation, herdrAgentSessionKey, herdrProgramStatus, HERDR_OBSERVATION_REVISION } from '../../src/effects/terminal/herdr-observation';
 import { createHerdrRuntimeTransport } from '../../src/effects/operator/herdr-runtime-transport';
 import { configureRuntimeSource } from '../../src/effects/operator/runtime-source';
 import { createRuntimeStatusObserver } from '../../src/effects/operator/runtime-status';
-import { decodeHerdrRuntimeConfig, readRuntimeDispatchBindings, verifyRuntimeDispatchBindings } from '../../src/effects/operator/runtime-service';
+import { decodeRuntimeConfig, readRuntimeDispatchBindings, verifyRuntimeDispatchBindings } from '../../src/effects/operator/runtime-service';
 import { startOperatorServer } from '../../src/effects/operator/server';
 import { parseOperatorServeOptions } from '../../src/cli/commands/operator';
 import type { RuntimeIdentity } from '../../src/core/operator/runtime-status';
@@ -35,6 +35,7 @@ async function fixture() {
   const sockets = new Set<Socket>(), subscriptions: { socket: Socket; id: string; types: Record<string, any>[] }[] = [];
   const requests: Record<string, any>[] = [];
   let version = '0.9.3', protocol = 22, panes: unknown[] = [pane], wrongId = false, globals = 0;
+  let programCapability: unknown = undefined;
   const server = createServer(socket => {
     sockets.add(socket); socket.on('close', () => sockets.delete(socket)); socket.on('error', () => {});
     let input = '';
@@ -42,7 +43,7 @@ async function fixture() {
       input += chunk.toString(); const end = input.indexOf('\n'); if (end < 0) return;
       const request = JSON.parse(input.slice(0, end)); input = input.slice(end + 1); requests.push(request);
       const id = wrongId ? 'wrong-id' : request.id;
-      if (request.method === 'ping') socket.write(JSON.stringify({ id, result: { type: 'pong', version, protocol, capabilities: { endpoint_protocol_generation: 1 } } }) + '\n');
+      if (request.method === 'ping') socket.write(JSON.stringify({ id, result: { type: 'pong', version, protocol, capabilities: { endpoint_protocol_generation: 1, program_status_root_v1: programCapability } } }) + '\n');
       else if (request.method === 'session.snapshot') socket.write(JSON.stringify({ id, result: { type: 'session_snapshot', snapshot: { version, protocol, workspaces: [], tabs: [], panes, layouts: [], agents: [] } } }) + '\n');
       else if (request.method === 'events.subscribe') {
         const types = request.params.subscriptions;
@@ -57,6 +58,7 @@ async function fixture() {
   });
   await new Promise<void>(resolve => server.listen(path, resolve));
   return { root, endpoint: { socket_path: path, deadline_ms: 1000 }, requests, subscriptions,
+    setProgramCapability: (value: unknown) => { programCapability = value; },
     setVersion: (v: string, p = 22) => { version = v; protocol = p; }, setPanes: (p: unknown[]) => { panes = p; }, wrongId: () => { wrongId = true; }, globals: () => globals,
     event: (event: string) => { for (const s of subscriptions) if (!s.socket.destroyed) s.socket.write(JSON.stringify({ event, data: { private: '/private/path' } }) + '\n'); },
     lose: () => { const s = subscriptions.find(s => !s.socket.destroyed && s.types.some(t => t.type === 'pane.created'))!; s.socket.write(JSON.stringify({ id: s.id, error: { code: 'events_lost', message: 'private fixture error' } }) + '\n'); },
@@ -75,6 +77,80 @@ async function observerFor(f: Awaited<ReturnType<typeof fixture>>, bindings: Run
 }
 
 describe('official Herdr socket observation', () => {
+  test('root pane reports reach GET cache with explicit scope, routing and clear fences', async () => {
+    const f = await fixture(); let owner: Awaited<ReturnType<typeof observerFor>> | null = null;
+    let server: Awaited<ReturnType<typeof startOperatorServer>> | null = null;
+    const envelope = { source: 'osc7501', revision: 1, source_epoch: 0, updated_at_ms: Date.parse('2026-10-08T00:00:00.000Z') };
+    try {
+      f.setProgramCapability(true); f.setPanes([{ ...pane, program_status: { ...envelope, record: { state: 'working' } } }]);
+      owner = await observerFor(f); server = await startOperatorServer({ port: 0, read_runtime_status: owner.observer.read });
+      const before = f.requests.length;
+      const body = await (await fetch(`${server.url}/api/v1/runtime/status`)).json();
+      expect(body).toMatchObject({ projection_version: 'repo-harness.runtime-overlay.v4', badges: [], pane_observations: [{ scope: 'pane', source: 'osc7501', state: 'working', binding: identity }] });
+      expect(f.requests.length).toBe(before); expect(JSON.stringify(body)).not.toMatch(/private|title|cwd|msg|app|progress/);
+      for (const kind of ['permission','question','auth'] as const) {
+        envelope.revision++; f.setPanes([{ ...pane, program_status: { ...envelope, record: { state: 'blocked', kind } } }]); f.event('pane_updated');
+        await until(() => owner!.observer.read().pane_observations[0]?.reason === kind);
+      }
+      envelope.revision++; f.setPanes([{ ...pane, program_status: { ...envelope, record: { state: 'done' } } }]); f.event('pane_updated');
+      await until(() => owner!.observer.read().pane_observations[0]?.state === 'settled');
+      envelope.revision++; f.setPanes([{ ...pane, program_status: { ...envelope, record: null } }]); f.event('pane_updated');
+      await until(() => owner!.observer.read().pane_observations.length === 0);
+      f.setPanes([{ ...pane, program_status: { ...envelope, revision: envelope.revision - 1, record: { state: 'working' } } }]);
+      await owner.observer.refresh(); expect(owner.observer.read().pane_observations).toEqual([]);
+      envelope.revision++; envelope.source_epoch++;
+      f.setPanes([{ ...pane, agent_session: null, program_status: { ...envelope, record: { state: 'error' } } }]); f.event('pane_updated');
+      await until(() => owner!.observer.read().pane_observations[0]?.state === 'error');
+      expect(owner.observer.read()).toMatchObject({ badges: [], unclaimed: 1, pane_observations: [{ binding: null, pane: { agent_session: null } }] });
+      expect((await fetch(`${server.url}/api/v1/runtime/status`, { method: 'POST' })).status).toBe(405);
+    } finally { await server?.close(); owner?.close(); await f.close(); }
+  });
+
+  test('explicit root capability decodes terminal facts without creating task identity', async () => {
+    const f = await fixture(), owner = createHerdrRuntimeTransport(f.endpoint, 'fixture', 'fixture');
+    const signal = new AbortController().signal;
+    try {
+      f.setProgramCapability(true);
+      f.setPanes([{ ...pane, program_status: { source: 'osc7501', revision: 4, source_epoch: 2, updated_at_ms: Date.parse('2026-10-08T00:00:00.000Z'), record: { state: 'blocked', kind: 'auth', app: 'private-app' } } }]);
+      expect(await owner.transport.capabilities(signal)).toMatchObject({ program_status: 'v1' });
+      await owner.transport.subscribe([], () => {}, signal);
+      const result = await owner.transport.snapshot(signal) as { panes: Record<string, unknown>[]; program_status: unknown[] };
+      expect(result.panes[0].program_status).toEqual({ protocol: 'repo-harness.program-status.v1', revision: 4, source_epoch: 2, changed_at: '2026-10-08T00:00:00.000Z', state: 'blocked', reason: 'auth' });
+      expect(result.program_status).toEqual([]);
+      expect(JSON.stringify(result)).not.toMatch(/private|title|cwd|app|progress|request_id|generation/);
+      f.setProgramCapability(false);
+      await expect(owner.transport.capabilities(signal)).rejects.toThrow('capability_changed');
+    } finally { owner.close(); await f.close(); }
+  });
+
+  test('root data without capability and nonboolean capability fail closed', async () => {
+    const f = await fixture(), owner = createHerdrRuntimeTransport(f.endpoint, 'fixture', 'fixture');
+    const signal = new AbortController().signal;
+    try {
+      f.setProgramCapability('true'); await expect(owner.transport.capabilities(signal)).rejects.toThrow('program_capability');
+      f.setProgramCapability(false); await owner.transport.capabilities(signal); await owner.transport.subscribe([], () => {}, signal);
+      f.setPanes([{ ...pane, program_status: { source: 'osc7501', revision: 1, source_epoch: 0, updated_at_ms: 0, record: null } }]);
+      await expect(owner.transport.snapshot(signal)).rejects.toThrow('program_capability');
+    } finally { owner.close(); await f.close(); }
+  });
+
+  test('root OSC decoder selects typed states and excludes private fields and cancellation inference', () => {
+    const envelope = { source: 'osc7501', revision: 3, source_epoch: 2, updated_at_ms: Date.parse('2026-10-08T00:00:00.000Z') };
+    for (const [state, output] of [['idle','idle'],['working','working'],['blocked','blocked'],['done','settled'],['error','error']] as const) {
+      const observed = herdrProgramStatus({ ...envelope, record: { state, app: 'private-app', ...(['working','blocked'].includes(state) ? { progress: 50 } : {}) } });
+      expect(observed).toMatchObject({ state: output, revision: 3, source_epoch: 2, reason: 'unknown', changed_at: '2026-10-08T00:00:00.000Z' });
+      expect(JSON.stringify(observed)).not.toMatch(/private-app|app|progress|msg|title|path|cancelled/);
+    }
+    for (const kind of ['permission','question','auth'] as const) expect(herdrProgramStatus({ ...envelope, record: { state: 'blocked', kind } }).reason).toBe(kind);
+    expect(herdrProgramStatus({ ...envelope, record: null }).state).toBe('clear');
+    for (const changes of [{ source: 'title' }, { revision: -1 }, { revision: Number.MAX_SAFE_INTEGER + 1 }, { source_epoch: undefined }, { source_epoch: -1 }, { updated_at_ms: Number.MAX_SAFE_INTEGER }, { msg: 'private' }]) {
+      expect(() => herdrProgramStatus({ ...envelope, record: { state: 'working' }, ...changes })).toThrow();
+    }
+    for (const record of [{ state: 'aborted' }, { state: 'working', kind: 'auth' }, { state: 'blocked', kind: 'unknown' }, { state: 'done', msg: 'private' }, { state: 'working', progress: 101 }, { state: 'working', progress: 0.5 }, { state: 'done', progress: 50 }, { state: 'working', app: 'x'.repeat(33) }]) {
+      expect(() => herdrProgramStatus({ ...envelope, record })).toThrow();
+    }
+  });
+
   test('uses official request/response frames, exact status subscriptions and private-safe projection', async () => {
     const f = await fixture(); let owner: Awaited<ReturnType<typeof observerFor>> | null = null;
     try {
@@ -120,17 +196,17 @@ describe('official Herdr socket observation', () => {
 
   test('explicit service config connects before GET; absent dispatch identity remains unclaimed', async () => {
     const f = await fixture();
-    const config = { protocol: 'repo-harness.herdr-runtime-config.v1', ...f.endpoint, source_host: 'fixture', herdr_session: 'fixture', bindings_path: null, pipeline_snapshot: null };
+    const config = { protocol: 'repo-harness.runtime-config.v2', kind: 'herdr', ...f.endpoint, source_host: 'fixture', herdr_session: 'fixture', bindings_path: null, pipeline_snapshot: null };
     const path = join(f.root, 'runtime.json'); writeFileSync(path, JSON.stringify(config));
     const server = await startOperatorServer({ port: 0, runtime_status_config: path });
     try {
       const before = f.requests.length;
       const response = await fetch(`${server.url}/api/v1/runtime/status`), body = await response.json();
-      expect(body).toMatchObject({ projection_version: 'repo-harness.runtime-overlay.v2', status: 'ready', unclaimed: 1, badges: [] });
+      expect(body).toMatchObject({ projection_version: 'repo-harness.runtime-overlay.v4', status: 'ready', unclaimed: 1, badges: [], pane_observations: [] });
       expect(f.requests.length).toBe(before); expect(JSON.stringify(body)).not.toContain('/private/');
       expect(parseOperatorServeOptions({ runtimeStatusConfig: path }).runtime_status_config).toBe(path);
       expect(() => parseOperatorServeOptions({ runtimeStatusConfig: 'relative.json' })).toThrow();
-      expect(() => decodeHerdrRuntimeConfig({ ...config, bindings_path: '/tmp/bindings.json' })).toThrow();
+      expect(() => decodeRuntimeConfig({ ...config, bindings_path: '/tmp/bindings.json' })).toThrow();
     } finally { await server.close(); await f.close(); }
   });
 });
@@ -203,7 +279,7 @@ test('actual snapshot reconciliation recovers enrollment → board and runtime b
     expect(observations(store).find(o => o.kind === 'enrollment' && o.source === 'outbox')?.payload.runs).toHaveLength(1);
     const candidate = { ...identity, source_host, repository_id: hash(repository.repository_id), pipeline_state_version: record.state_version, request_id: request.request_id, runtime_session: hash(bindingBytes) };
     const bindingsPath = join(f.root, 'runtime-bindings.json'); writeFileSync(bindingsPath, JSON.stringify({ protocol: 'repo-harness.runtime-bindings.v2', bindings: [candidate] }));
-    const configPath = join(f.root, 'runtime.json'); writeFileSync(configPath, JSON.stringify({ protocol: 'repo-harness.herdr-runtime-config.v1', ...f.endpoint, source_host, herdr_session: 'fixture', bindings_path: bindingsPath, pipeline_snapshot: snapshotPointerPath(path) }));
+    const configPath = join(f.root, 'runtime.json'); writeFileSync(configPath, JSON.stringify({ protocol: 'repo-harness.runtime-config.v2', kind: 'herdr', ...f.endpoint, source_host, herdr_session: 'fixture', bindings_path: bindingsPath, pipeline_snapshot: snapshotPointerPath(path) }));
     const beforeRecord = JSON.stringify(store.read(key));
     server = await startOperatorServer({ port: 0, env, runtime_status_config: configPath });
     const overlay = await (await fetch(`${server.url}/api/v1/runtime/status`)).json(); expect(overlay.badges[0].state).toBe('working');
@@ -213,7 +289,8 @@ test('actual snapshot reconciliation recovers enrollment → board and runtime b
     writeFileSync(join(dir, 'request-2.json'), JSON.stringify(request2)); writeFileSync(request2.context_ref, 'context-2');
     expect(ingestEvent(store, { host: source_host, herdr_session: 'fixture', result: { panes: [pane] } }, { snapshot: true }).status).toBe('observed');
     expect(store.read(key).state_version).toBe(candidate.pipeline_state_version); expect(store.read(key).runs).toEqual([]);
-    const config = decodeHerdrRuntimeConfig(JSON.parse(readFileSync(configPath, 'utf8')));
+    const config = decodeRuntimeConfig(JSON.parse(readFileSync(configPath, 'utf8')));
+    if (config.kind !== 'herdr') throw new Error('fixture mode');
     expect(readRuntimeDispatchBindings(config, 0)).toEqual([]); // Old round shares terminal/session but is no longer current.
     f.event('pane_updated');
     await until(async () => (await (await fetch(`${server!.url}/api/v1/runtime/status`)).json()).badges.length === 0);

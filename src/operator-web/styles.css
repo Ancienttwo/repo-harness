@@ -514,3 +514,10 @@ code, .mono-value { font-family: var(--font-mono); }
 .pipeline-runtime-summary { margin: .8rem 0; font-size: .8rem; color: var(--ink-500); }
 .pipeline-runtime-summary > span + span, .pipeline-runtime-summary > time { padding-left: .4rem; }
 .pipeline-runtime-badges { margin: .6rem 0; }
+
+.pipeline-native-runtime { margin: .8rem 0; font-size: .8rem; }
+.pipeline-native-runtime h3 { font-size: .9rem; margin: 0; }
+.pipeline-native-runtime p { color: var(--ink-500); margin: .4rem 0; }
+.pipeline-native-sources, .pipeline-native-observations { list-style: none; padding: 0; margin: .6rem 0; }
+.pipeline-native-sources > li { border-top: 1px solid var(--border-default); padding: .6rem 0; min-width: 0; overflow-wrap: anywhere; }
+.pipeline-native-observations > li { margin-top: .5rem; }

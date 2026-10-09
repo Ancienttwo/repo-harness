@@ -1,20 +1,26 @@
 import { readFileSync, lstatSync } from 'node:fs';
 import { dirname, isAbsolute, join } from 'node:path';
 import { createHash } from 'node:crypto';
-import { decodeRuntimeIdentity, runtimeId, runtimeInteger, runtimeBindingKeys, unavailableRuntimeOverlay, type RuntimeIdentity, type RuntimeOverlay } from '../../core/operator/runtime-status';
+import { decodeRuntimeIdentity, runtimeId, runtimeInteger, runtimeBindingKeys, unavailableRuntimeOverlay, NATIVE_RUNTIME_SOURCE_LIMIT, type RuntimeIdentity, type RuntimeOverlay } from '../../core/operator/runtime-status';
+import { runtimeCaptureId } from '../../core/operator/runtime-capture';
 import type { PipelineRecord } from '../../core/pipeline/types';
 import { decodeRecord } from '../../core/pipeline/types';
 import { projectedRuns, type LogObservation } from '../../core/pipeline/projection';
 import { openSnapshot } from '../pipeline/store';
 import { createHerdrRuntimeTransport } from './herdr-runtime-transport';
 import { configureRuntimeSource } from './runtime-source';
-import { createRuntimeStatusObserver } from './runtime-status';
-import { validateObservationEndpoint } from '../terminal/herdr-observation';
+import { createRuntimeStatusObserver, createNativeRuntimeStatusObserver } from './runtime-status';
+import { readNativeRuntimeSnapshot, type NativeRuntimeSourceConfig } from './native-runtime-source';
+import { HERDR_OBSERVATION_REVISION, validateObservationEndpoint } from '../terminal/herdr-observation';
 
 export interface HerdrRuntimeConfig {
-  protocol: 'repo-harness.herdr-runtime-config.v1'; source_host: string; herdr_session: string;
+  protocol: 'repo-harness.runtime-config.v2'; kind: 'herdr'; source_host: string; herdr_session: string;
   socket_path: string; deadline_ms: number; bindings_path: string | null; pipeline_snapshot: string | null;
 }
+export interface NativeRuntimeConfig {
+  protocol: 'repo-harness.runtime-config.v2'; kind: 'native'; sources: NativeRuntimeSourceConfig[];
+}
+export type RuntimeConfig = HerdrRuntimeConfig | NativeRuntimeConfig;
 const digest = (bytes: string | Buffer) => 'sha256:' + createHash('sha256').update(bytes).digest('hex');
 function readBounded(path: string): Buffer {
   const stat = lstatSync(path);
@@ -22,10 +28,23 @@ function readBounded(path: string): Buffer {
   const bytes = readFileSync(path); if (bytes.length > 1024 * 1024) throw new Error('runtime_config_file');
   return bytes;
 }
-export function decodeHerdrRuntimeConfig(value: unknown): HerdrRuntimeConfig {
+export function decodeRuntimeConfig(value: unknown): RuntimeConfig {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('runtime_config_invalid');
-  const v = value as HerdrRuntimeConfig;
-  if (Object.keys(v).sort().join() !== ['bindings_path','deadline_ms','herdr_session','pipeline_snapshot','protocol','socket_path','source_host'].join() || v.protocol !== 'repo-harness.herdr-runtime-config.v1') throw new Error('runtime_config_invalid');
+  const v = value as RuntimeConfig;
+  if (v.protocol !== 'repo-harness.runtime-config.v2') throw new Error('runtime_config_invalid');
+  if (v.kind === 'native') {
+    if (Object.keys(v).sort().join() !== 'kind,protocol,sources' || !Array.isArray(v.sources) || !v.sources.length || v.sources.length > NATIVE_RUNTIME_SOURCE_LIMIT) throw new Error('runtime_config_invalid');
+    const ids = new Set<string>(), paths = new Set<string>();
+    const sources = v.sources.map(source => {
+      if (!source || typeof source !== 'object' || Array.isArray(source) || Object.keys(source).sort().join() !== 'provider,snapshot_path,source_id' || !['codex','claude','pi'].includes(source.provider)) throw new Error('runtime_config_source');
+      const source_id = runtimeCaptureId(source.source_id);
+      if (typeof source.snapshot_path !== 'string' || !isAbsolute(source.snapshot_path) || ids.has(source_id) || paths.has(source.snapshot_path)) throw new Error('runtime_config_source');
+      ids.add(source_id); paths.add(source.snapshot_path);
+      return { source_id, provider: source.provider, snapshot_path: source.snapshot_path };
+    });
+    return { protocol: v.protocol, kind: 'native', sources };
+  }
+  if (v.kind !== 'herdr' || Object.keys(v).sort().join() !== ['bindings_path','deadline_ms','herdr_session','kind','pipeline_snapshot','protocol','socket_path','source_host'].join()) throw new Error('runtime_config_invalid');
   runtimeId(v.source_host); runtimeId(v.herdr_session); validateObservationEndpoint(v);
   for (const path of [v.bindings_path, v.pipeline_snapshot]) if (path !== null && (typeof path !== 'string' || !isAbsolute(path))) throw new Error('runtime_config_path');
   if ((v.bindings_path === null) !== (v.pipeline_snapshot === null)) throw new Error('runtime_config_binding');
@@ -78,9 +97,16 @@ export function readRuntimeDispatchBindings(config: HerdrRuntimeConfig, epoch: n
   } finally { opened.db.close(); }
 }
 /** Starts only from explicit configuration, before HTTP admission. No GET source work. */
-export async function startHerdrRuntimeService(path: string) {
+export async function startRuntimeService(path: string) {
   if (!isAbsolute(path)) throw new Error('runtime_config_path');
-  const config = decodeHerdrRuntimeConfig(JSON.parse(readBounded(path).toString()));
+  const config = decodeRuntimeConfig(JSON.parse(readBounded(path).toString()));
+  if (config.kind === 'native') {
+    const observer = createNativeRuntimeStatusObserver(config.sources.map(source => ({ source_id: source.source_id, provider: source.provider,
+      snapshot: () => readNativeRuntimeSnapshot(source) })));
+    await observer.start();
+    const timer = setInterval(() => { void observer.refresh(); }, 30_000); timer.unref();
+    return { read: observer.read, refresh: observer.refresh, close: () => { clearInterval(timer); observer.stop(); } };
+  }
   let closed = false, pending: Promise<void> | null = null;
   let observer: ReturnType<typeof createRuntimeStatusObserver> | null = null;
   let transport: ReturnType<typeof createHerdrRuntimeTransport> | null = null;
@@ -90,7 +116,7 @@ export async function startHerdrRuntimeService(path: string) {
       try {
         if (!observer) {
           transport = createHerdrRuntimeTransport(config, config.source_host, config.herdr_session);
-          const source = await configureRuntimeSource({ ...config, source_revision: '4dc23bb15d4a2fd2c093abfb509f903c3015bf56', transport: transport.transport,
+          const source = await configureRuntimeSource({ ...config, source_revision: HERDR_OBSERVATION_REVISION, transport: transport.transport,
             bindings: async epoch => readRuntimeDispatchBindings(config, epoch) });
           if (closed) { transport.close(); return; }
           observer = createRuntimeStatusObserver(source); await observer.start();
