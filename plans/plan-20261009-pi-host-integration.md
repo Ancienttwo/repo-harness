@@ -196,8 +196,10 @@ D1 回退是 `git revert 981a50b871f9b5238a7bca72d031e0927d397769`，再按原�
 - `bash scripts/check-ci.sh affected --base origin/main` 初次运行只在旧 prepack 断言处失败。对应差量测试已通过。
 - `bun run check:pi-package`、`check:reference-configs`、`check:hooks` 与 `git diff --check` 通过。
 - PR #607 的 Codex review 提出写入后取消仍会返回错误的问题。真实 SDK factory、真实文件写入与 `session.abort()` 已复现。原实现漏掉两份 journal 路径。修正后保留错误结果，记录原 session/run，且三次真实写入各执行一次。Pi 差量为 13 pass；mutation observer 与 command observer 共 41 pass。fixture 使用 scripted provider，不能替代真实 provider 验收。
-- 两次独立只读审查均未产出结果。Claude provider 返回 `ENOTFOUND`。Codex 启动未完成。两份自建任务均已取消并关闭。没有重放请求。
-- 架构模型已声明 Pi adapter 的责任。自动投影返回 `human-action-required`。它报告多个模块的历史模型与 flow 基线差异。未批准扩大投影范围；生成文档同步仍是缺口。
+- 最初两次独立只读审查没有结果。Claude 返回 `ENOTFOUND`。Codex 启动未完成。两份任务已取消并关闭。补修时再次执行 Claude 审查，仍因当前 Seatbelt 返回 `ENOTFOUND`。普通 Node 解析同一 hostname 成功。任务已取消并关闭，没有重放请求。
+- 用户随后以 `go` 授权最小 DNS 权限修正。规则仅放行 macOS 的 `/private/var/run/mDNSResponder`。真实 sandbox 红绿测试检查 DNS，并确认普通 Unix socket 仍被拒绝。原有源码、配置、凭据、进程 signal 与子进程写入拒绝测试保持通过。generic review 为 20 pass、0 fail。最终独立审查结果以 PR 为准。
+- 架构模型已声明 Pi adapter 的责任。初次投影缺少 CodeGraph 索引，无法确认 27 个模块的 flow。恢复索引后，仅 Pi hook adapter 的 ownership 与 responsibility 有真实变化。补修已接受该项已批准变化并同步八份生成文档。复查返回 `noop`，没有 refresh signals。DNS 修正仅更新投影输入 proof，没有其他责任变化。
+- 两处 installed candidate fixture 原先复制整个 checkout，连同未发布的测试和私有运行状态。补修改为复制 package 的发布清单。边界回归测试在原复制行为上失败，在新行为上通过。版本安装的原断言与 30 秒 timeout 保留。`4dbb1c0f` 的默认八进程 full 完成 410 份文件，退出 0。原 installer timeout 的具体触发因素未复现，不能据此断言其根因。最终提交的检查结果以 PR 为准。
 - 尚未验证 RPC 模式、长期并发压力、shutdown 重入及 Pi–Herdr 状态链路。它们不能由以上检查推断。
 - 本地检查日志使用 `/tmp/repo-harness-pi-*.log`。这些日志不是提交内容。PR 说明记录命令、环境、结果和限制。
 
