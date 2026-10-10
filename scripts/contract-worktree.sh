@@ -520,7 +520,7 @@ start_worktree() {
   # The existing Bun adapter uses lstat. It never follows the target leaf.
   local freshness_args=()
   [[ "$require_fresh" -eq 0 ]] || freshness_args+=(--fresh)
-  if ! run_contract_runtime check-start-path --repo "$REPO_ROOT" --worktree "$worktree_path" --branch "$branch_name" "${freshness_args[@]}"; then
+  if ! run_contract_runtime check-start-path --repo "$REPO_ROOT" --worktree "$worktree_path" --branch "$branch_name" ${freshness_args[@]+"${freshness_args[@]}"}; then
     if [[ "$require_fresh" -eq 1 ]]; then
       echo "contract-worktree: --fresh refuses residual worktree path: $worktree_path" >&2
     else
