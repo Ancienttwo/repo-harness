@@ -600,6 +600,37 @@ describe('install profiles', () => {
     }
   }));
 
+  for (const profile of ['minimal', 'full'] as const) {
+    for (const mode of ['0', '1'] as const) {
+      test(`${profile} sync projects windows-python-first to both hosts in ${mode === '0' ? 'copy' : 'link'} mode`, () => withHome((env) => {
+        const { source } = writeManagedHostSurfaces(env, profile);
+        seedSyncRuntime(source);
+        const skillSource = join(source, 'assets', 'skills', 'windows-python-first');
+        cpSync(join(ROOT, 'assets', 'skills', 'windows-python-first'), skillSource, { recursive: true });
+        const sync = runSkillSync(env, {
+          AGENTIC_DEV_SOURCE_ROOT: source,
+          AGENTIC_DEV_LINK_INSTALLED_COPIES: mode,
+          REPO_HARNESS_INSTALL_PROFILE: profile,
+        });
+        expect(sync.status, sync.stderr).toBe(0);
+        for (const host of ['.codex', '.claude']) {
+          const destination = join(env.HOME!, host, 'skills', 'windows-python-first');
+          for (const file of ['SKILL.md', 'agents/openai.yaml']) {
+            expect(readFileSync(join(destination, file))).toEqual(readFileSync(join(skillSource, file)));
+          }
+          expect(lstatSync(destination).isSymbolicLink()).toBe(mode === '1');
+          if (mode === '1') {
+            expect(readlinkSync(destination)).toBe(skillSource);
+          } else {
+            expect(JSON.parse(readFileSync(join(destination, '.repo-harness-owner.json'), 'utf-8'))).toMatchObject({
+              owner: 'repo-harness', surface: 'command-facade',
+            });
+          }
+        }
+      }));
+    }
+  }
+
   test('copy-mode sync gives a non-prefixed profile facade an ownership receipt that uninstall honors', () => withHome((env) => {
     const { source } = writeManagedHostSurfaces(env, 'minimal');
     seedSyncRuntime(source);

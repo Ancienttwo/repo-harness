@@ -236,10 +236,9 @@ describe('operator serve command and HTTP boundary', () => {
       read_task_activity: async () => { reads++; throw new Error('unexpected read'); },
       read_task_diff: async () => { reads++; throw new Error('unexpected read'); },
       read_task_history: async () => { reads++; throw new Error('unexpected read'); },
-      read_automation_summary: async () => { reads++; throw new Error('unexpected read'); },
     });
     try {
-      const paths = ['/', '/healthz', '/api/v1/fleet/snapshot', '/api/v1/fleet/repositories/repo-a/snapshot',
+      const paths = ['/', '/healthz', '/api/v1/fleet/snapshot',
         '/api/v1/collaboration/repo-a/snapshot', ...['context', 'activity', 'diff', 'messages'].map(route => `/api/v1/fleet/tasks/repo-a/${TASK_ID}/${route}`)];
       for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) {
         for (const path of paths) {
@@ -549,7 +548,7 @@ describe('operator serve command and HTTP boundary', () => {
       env: { ...registry.env, GIT_NO_LAZY_FETCH: '0' },
     });
     try {
-      for (const route of ['/api/v1/fleet/snapshot', `/api/v1/fleet/repositories/${registry.ids[0]}/snapshot`]) {
+      for (const route of ['/api/v1/fleet/snapshot']) {
         const response = await fetch(`${server.url}${route}`);
         expect(response.status).toBe(200);
         const body = JSON.stringify(await response.json());
@@ -1011,162 +1010,23 @@ describe('current Task context route',()=>{
   });
 });
 
-describe('repository snapshot admission', () => {
-  const path = (id: string) => `/api/v1/fleet/repositories/${id}/snapshot`;
-  function scopedSnapshot(id: string | undefined, sequence: number) {
-    return projectFleetBoardSnapshot({ registry_revision: `sha256:${'a'.repeat(64)}`, sequence,
-      observed_at: '2026-09-22T00:00:00.000Z', repositories: id === undefined ? [] : [{
-        repository_id: id, repo_root: `/private/${id}`, access_mode: 'read_only',
-        status: 'ok', snapshot_consistency: 'stable', cards: [], error: null,
-      }] });
-  }
-
-  test('coalesces one scope, serializes global and repository providers, and binds epoch/generation', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'operator-scoped-'));
-    const starts: (string | undefined)[] = [];
-    const releases: (() => void)[] = [];
-    let active = 0, peak = 0;
-    const server = await startOperatorServer({ port: 0, static_root: root, read_automation_summary: input => automationFixture(input.repository_id), max_concurrency: 2,
-      collect_fleet_board: async (input) => {
-        starts.push(input?.repository_id); active += 1; peak = Math.max(peak, active);
-        await new Promise<void>((resolve) => releases.push(resolve));
-        active -= 1;
-        return scopedSnapshot(input?.repository_id, input!.sequence!);
-      },
-    });
-    try {
-      const a1 = fetch(server.url + path('repo-a'));
-      await waitFor(() => starts.length === 1, 'A did not start');
-      const a2 = fetch(server.url + path('repo-a'));
-      const b = fetch(server.url + path('repo-b'));
-      const fleet = fetch(server.url + '/api/v1/fleet/snapshot');
-      await Bun.sleep(30);
-      expect(starts).toEqual(['repo-a']);
-      releases[0]!();
-      const va = await (await a1).json() as Record<string, unknown>;
-      expect(await (await a2).json()).toEqual(va);
-      expect(va).toMatchObject({ protocol: 3, kind: 'operator_repository_snapshot', repository_id: 'repo-a', generation: 1 });
-      expect(JSON.stringify(va)).not.toContain('/private/');
-      await waitFor(() => starts.length === 2, 'B did not start'); releases[1]!();
-      const vb = await (await b).json() as Record<string, unknown>;
-      expect(vb.service_epoch).toBe(va.service_epoch);
-      expect(Number(vb.generation)).toBeGreaterThan(Number(va.generation));
-      await waitFor(() => starts.length === 3, 'global did not start'); releases[2]!();
-      expect((await fleet).status).toBe(200);
-      expect(starts).toEqual(['repo-a', 'repo-b', undefined]);
-      expect(peak).toBe(1);
-      const again = fetch(server.url + path('repo-a'));
-      await waitFor(() => starts.length === 4, 'fresh A did not start'); releases[3]!();
-      expect((await (await again).json() as { generation: number }).generation).toBeGreaterThan(Number(va.generation));
-    } finally { releases.forEach((release) => release()); await server.close(); rmSync(root, { recursive: true, force: true }); }
-  });
-
-  test('bounds queued scopes and timeout responses while holding cleanup through shutdown', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'operator-scoped-deadline-'));
-    let calls = 0, aborted = false;
-    let finish!: () => void;
-    const server = await startOperatorServer({ port: 0, static_root: root, read_automation_summary: input => automationFixture(input.repository_id), max_concurrency: 1, timeout_ms: 1_000,
-      collect_fleet_board: async (input) => {
-        calls += 1;
-        input!.signal!.addEventListener('abort', () => { aborted = true; }, { once: true });
-        await new Promise<void>((resolve) => { finish = resolve; });
-        return scopedSnapshot(input?.repository_id, input!.sequence!);
-      },
-    });
-    try {
-      const a = fetch(server.url + path('repo-a'));
-      await waitFor(() => calls === 1, 'A did not start');
-      const b = fetch(server.url + path('repo-b'));
-      const c = fetch(server.url + path('repo-c'));
-      await Bun.sleep(30);
-      const overflow = await fetch(server.url + path('repo-d'));
-      expect(overflow.status).toBe(503);
-      expect(await overflow.json()).toMatchObject({ error: { code: 'fleet_snapshot_busy' } });
-      for (const response of await Promise.all([a, b, c])) {
-        expect(response.status).toBe(503);
-        expect(await response.json()).toMatchObject({ error: { code: 'fleet_snapshot_timeout' } });
-      }
-      expect(calls).toBe(1); expect(aborted).toBe(true);
-      let closed = false;
-      const closing = server.close().then(() => { closed = true; });
-      await Bun.sleep(30); expect(closed).toBe(false);
-      finish(); await closing; expect(closed).toBe(true);
-    } finally { finish?.(); await server.close(); rmSync(root, { recursive: true, force: true }); }
-  });
-
-  test('enforces scoped query, Host, Origin and POST guards and refuses wrong collection identity', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'operator-scoped-guards-'));
-    let calls = 0;
-    const server = await startOperatorServer({ port: 0, static_root: root, read_automation_summary: input => automationFixture(input.repository_id),
-      collect_fleet_board: async (input) => { calls += 1; return scopedSnapshot('wrong-repo', input!.sequence!); },
-    });
-    try {
-      expect((await fetch(server.url + path('repo-a') + '?path=/private')).status).toBe(400);
-      expect((await fetch(server.url + path('repo-a'), { headers: { Origin: 'https://invalid.example' } })).status).toBe(403);
-      expect((await fetch(server.url + path('repo-a'), { headers: { Host: 'invalid.example' } })).status).toBe(421);
-      expect((await fetch(server.url + path('repo-a'), { method: 'POST', headers: { Origin: server.url } })).status).toBe(405);
-      expect(calls).toBe(0);
-      expect((await fetch(server.url + path('repo-a'))).status).toBe(503); expect(calls).toBe(1);
-    } finally { await server.close(); rmSync(root, { recursive: true, force: true }); }
-  });
-
-  test('real process reads only registered read-only target and returns typed missing identity', async () => {
-    const repoRoot = realpathSync(mkdtempSync(join(tmpdir(), 'operator-scoped-native-')));
-    const registry = registryHome([{ path: repoRoot, accessMode: 'read_only' }]);
-    const root = mkdtempSync(join(tmpdir(), 'operator-scoped-assets-'));
-    const server = await startOperatorServer({ port: 0, static_root: root, env: registry.env });
-    try {
-      const response = await fetch(server.url + path(registry.ids[0]!));
-      expect(response.status).toBe(200);
-      expect(await response.json()).toMatchObject({ repository_id: registry.ids[0], snapshot: { repositories: [{ repository_id: registry.ids[0], status: 'ok' }] } });
-      const missing = await fetch(server.url + path('missing'));
-      expect(missing.status).toBe(404); expect(await missing.json()).toMatchObject({ error: { code: 'fleet_repository_not_found' } });
-    } finally { await server.close(); rmSync(root,{recursive:true,force:true});rmSync(repoRoot,{recursive:true,force:true});rmSync(registry.home,{recursive:true,force:true}); }
-  });
-});
-
-test('repository snapshots use a new service epoch after server restart', async () => {
+test('fleet snapshots use a new service epoch after server restart', async () => {
   const root = mkdtempSync(join(tmpdir(), 'operator-epoch-'));
   const epochs: string[] = [];
   try {
     for (let i = 0; i < 2; i += 1) {
-      const server = await startOperatorServer({ port: 0, static_root: root, read_automation_summary: input => automationFixture(input.repository_id), collect_fleet_board: async (input) =>
+      const server = await startOperatorServer({ port: 0, static_root: root, collect_fleet_board: async (input) =>
         projectFleetBoardSnapshot({ registry_revision: `sha256:${'a'.repeat(64)}`, sequence: input!.sequence!,
-          observed_at: '2026-09-22T00:00:00.000Z', repositories: [{ repository_id: input!.repository_id ?? 'repo-a',
+          observed_at: '2026-09-22T00:00:00.000Z', repositories: [{ repository_id: 'repo-a',
             repo_root: '/private/repo', access_mode: 'read_only', status: 'ok', snapshot_consistency: 'stable', cards: [], error: null }] }),
       });
       try {
-        const result = await (await fetch(server.url + '/api/v1/fleet/repositories/repo-a/snapshot')).json() as {service_epoch: string;generation: number;snapshot: {service_epoch: string; protocol: number}};
-        expect(result.generation).toBe(1); epochs.push(result.service_epoch);
-        expect(result.snapshot).toMatchObject({ protocol: 7, service_epoch: result.service_epoch });
         const fleet = await (await fetch(server.url + '/api/v1/fleet/snapshot')).json() as {service_epoch: string; protocol: number};
-        expect(fleet).toMatchObject({ protocol: 7, service_epoch: result.service_epoch });
+        expect(fleet.protocol).toBe(7); epochs.push(fleet.service_epoch);
       } finally { await server.close(); }
     }
     expect(epochs[0]).not.toBe(epochs[1]);
   } finally { rmSync(root, { recursive: true, force: true }); }
-});
-
-function automationFixture(repositoryId: string) {
-  const source = { status: 'missing' as const, observed_at: '2026-09-22T00:00:00.000Z', reason: null, records: [] };
-  return { protocol: 1 as const, repository_id: repositoryId, consistency: 'observed' as const, observed_at: source.observed_at,
-    grants: source, budgets: source, controllers: source,
-    native_execution: { status: 'unavailable' as const, reason: 'native_admission_authority_unavailable' as const, turn_ref: null },
-  };
-}
-
-test('repository snapshot rejects automation from another repository', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'operator-automation-identity-'));
-  const server = await startOperatorServer({ port: 0, static_root: root,
-    read_automation_summary: () => automationFixture('other-repository'),
-    collect_fleet_board: async input => projectFleetBoardSnapshot({ registry_revision: `sha256:${'a'.repeat(64)}`, sequence: input!.sequence!,
-      observed_at: '2026-09-22T00:00:00.000Z', repositories: [{ repository_id: input!.repository_id!, repo_root: '/private/repo',
-        access_mode: 'read_only', status: 'ok', snapshot_consistency: 'stable', cards: [], error: null }] }),
-  });
-  try {
-    const response = await fetch(server.url + '/api/v1/fleet/repositories/repo-a/snapshot');
-    expect(response.status).toBe(503); expect(await response.json()).toMatchObject({error:{code:'fleet_snapshot_unavailable'}});
-  } finally { await server.close(); rmSync(root,{recursive:true,force:true}); }
 });
 
 describe('collaboration protocol4 source collection', () => {

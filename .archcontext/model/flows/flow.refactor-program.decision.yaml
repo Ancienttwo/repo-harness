@@ -1,0 +1,50 @@
+schemaVersion: archcontext.flow/v1
+id: flow.refactor-program.decision
+capabilityId: capability.runtime-harness.refactor-program
+name: Record the user decision on a suggestion
+applicability: required
+participants:
+  - id: refactor-program
+    nodeId: capability.runtime-harness.refactor-program
+  - id: archctx-provider
+    nodeId: component.refactor-program.archctx-provider
+steps:
+  - id: decide
+    from: refactor-program
+    to: archctx-provider
+    label: Record the scan when needed, then send accept, defer or reject with the user reason
+    evidence:
+      entrypointId: entrypoint.refactor-program.decide
+      sourceSymbol: decideRefactorRecommendation
+      sinkId: sink.refactor-program.decision
+outcomes:
+  - id: recorded
+    kind: success
+    label: ArchContext stores the decision and later scans hide the suggestion
+    steps:
+      - id: store-decision
+        from: refactor-program
+        to: archctx-provider
+        label: Return the new lifecycle status
+        evidence:
+          entrypointId: entrypoint.refactor-program.decide
+          sourceSymbol: decideRefactorRecommendation
+          sinkId: sink.refactor-program.decision
+    terminal:
+      participant: refactor-program
+      label: Report the recorded status
+  - id: refused
+    kind: error
+    label: An unknown suggestion or a provider error records nothing
+    steps:
+      - id: report-error
+        from: refactor-program
+        to: archctx-provider
+        label: Return the provider error code
+        evidence:
+          entrypointId: entrypoint.refactor-program.decide
+          sourceSymbol: decideRefactorRecommendation
+          sinkId: sink.refactor-program.decision
+    terminal:
+      participant: refactor-program
+      label: Exit with the error

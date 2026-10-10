@@ -171,6 +171,27 @@
       "audience": "bot"
     },
     {
+      "name": "windows-python-first",
+      "kind": "facade",
+      "source": "assets/skills/windows-python-first",
+      "provider": null,
+      "hosts": [
+        "claude",
+        "codex"
+      ],
+      "profiles": [
+        "minimal",
+        "full"
+      ],
+      "discoverability": "profile-facade",
+      "component": "adaptive-workflow",
+      "requires": [],
+      "mutatesRepoByDefault": false,
+      "summary": "Native Windows file and text operations. Prefer Python with explicit encoding. Keep simple shell commands. Does not apply Windows rules to macOS, Linux, or WSL.",
+      "retirementCandidate": null,
+      "audience": "worker"
+    },
+    {
       "name": "repo-harness-cross-review",
       "kind": "provider-skill",
       "source": "assets/skills/repo-harness-cross-review",
@@ -398,20 +419,40 @@
       "summary": "Explicit-opt-in official Obsidian CLI companion Skill. Does not install or require the Obsidian executable or desktop App.",
       "retirementCandidate": null,
       "audience": "worker"
+    },
+    {
+      "name": "repo-harness-strategy",
+      "kind": "integration",
+      "source": "assets/skills/repo-harness-strategy",
+      "provider": null,
+      "hosts": [
+        "claude",
+        "codex"
+      ],
+      "profiles": [],
+      "discoverability": "explicit-setup",
+      "component": "adaptive-workflow",
+      "requires": [],
+      "mutatesRepoByDefault": false,
+      "summary": "Explicit project-local strategic reflection and progressive lesson recall. Context packet only; no dispatch or automatic goal edits.",
+      "retirementCandidate": null,
+      "audience": "bot"
     }
   ],
   "expectedProjections": {
     "facadesByProfile": {
       "minimal": [
         "repo-harness-check",
-        "obsidian-memory"
+        "obsidian-memory",
+        "windows-python-first"
       ],
       "full": [
         "repo-harness-check",
         "repo-harness-test",
         "repo-harness-product",
         "repo-harness-ship",
-        "obsidian-memory"
+        "obsidian-memory",
+        "windows-python-first"
       ]
     },
     "externalSkillsByProfile": {

@@ -308,7 +308,7 @@ describe('workspace navigation', () => {
   const repositoryId = stableSnapshot.repositories[0]!.repository_id;
   function app(): ReactElement {
     return <OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" initialCollaboration={{ kind: 'ready', snapshot: collaborationSnapshot }}
-      readNotifyStatus={() => new Promise(() => {})} readPipelineBoard={() => new Promise(() => {})} fetchRepositoryObservation={() => new Promise(() => {})} />;
+      readNotifyStatus={() => new Promise(() => {})} readPipelineBoard={() => new Promise(() => {})} />;
   }
   const link = (workspace: string) => document.querySelector<HTMLAnchorElement>(`.workspace-nav a[data-workspace="${workspace}"]`)!;
 

@@ -4,7 +4,6 @@ import * as os from 'os';
 import * as path from 'path';
 import { spawnSync } from 'child_process';
 import {
-  runCapabilityContextRequest,
   runCapabilityContextStatus,
   runCapabilityContextSync,
 } from '../../src/cli/commands/capability-context';
@@ -59,24 +58,11 @@ const scriptCapability: Capability = {
 };
 
 describe('capability-context command', () => {
-  test('status reports normalized target paths and pending counts', () => {
+  test('status reports normalized target paths', () => {
     const cwd = tmpWorkspace('capability-context-status');
     try {
       fs.mkdirSync(path.join(cwd, 'apps/web'), { recursive: true });
       writeRegistry(cwd, [rootCapability, webCapability]);
-      fs.mkdirSync(path.join(cwd, '.ai/harness/capability-context'), { recursive: true });
-      fs.writeFileSync(
-        path.join(cwd, '.ai/harness/capability-context/requests.jsonl'),
-        `${JSON.stringify({
-          status: 'pending',
-          request_id: 'apps-web:apps/web/page.tsx:manual',
-          capability_id: 'apps-web',
-          path: 'apps/web/page.tsx',
-          matched_prefix: 'apps/web',
-          ts: '2026-05-29T00:00:00.000Z',
-          source: 'cli',
-        })}\n`,
-      );
 
       const status = runCapabilityContextStatus(cwd);
       const web = status.capabilities.find((entry) => entry.id === 'apps-web')!;
@@ -85,77 +71,16 @@ describe('capability-context command', () => {
         claude: 'apps/web/CLAUDE.md',
       });
       expect(web.normalized).toBe(false);
-      expect(web.pending_requests).toBe(1);
     } finally {
       fs.rmSync(cwd, { recursive: true, force: true });
     }
   });
 
-  test('request queues latest architecture event idempotently', () => {
-    const cwd = tmpWorkspace('capability-context-request');
-    try {
-      fs.mkdirSync(path.join(cwd, 'apps/web'), { recursive: true });
-      fs.mkdirSync(path.join(cwd, '.ai/harness/architecture'), { recursive: true });
-      writeRegistry(cwd, [rootCapability, webCapability]);
-      fs.writeFileSync(
-        path.join(cwd, '.ai/harness/architecture/events.jsonl'),
-        `${JSON.stringify({
-          file_path: 'apps/web/page.tsx',
-          capability_id: 'apps-web',
-          matched_prefix: 'apps/web',
-          request_file: 'docs/architecture/requests/request.md',
-          spawn_recommended: true,
-        })}\n`,
-      );
-
-      const first = runCapabilityContextRequest({ repo: cwd, fromLatestArchitectureEvent: true });
-      const second = runCapabilityContextRequest({ repo: cwd, fromLatestArchitectureEvent: true });
-      expect(first.status).toBe('queued');
-      expect(second.status).toBe('existing');
-      const queue = fs.readFileSync(path.join(cwd, '.ai/harness/capability-context/requests.jsonl'), 'utf-8');
-      expect(queue.trim().split(/\r?\n/)).toHaveLength(1);
-      expect(queue).toContain('"capability_id":"apps-web"');
-    } finally {
-      fs.rmSync(cwd, { recursive: true, force: true });
-    }
-  });
-
-  test('automatic unmapped events skip without masking invalid capability authority', () => {
-    const cwd = tmpWorkspace('capability-context-unmapped-event');
-    const events = path.join(cwd, '.ai/harness/architecture/events.jsonl');
-    const writeEvent = (capabilityId?: string) => {
-      fs.writeFileSync(events, `${JSON.stringify({ file_path: 'pnpm-workspace.yaml', capability_id: capabilityId })}\n`);
-    };
-    try {
-      writeRegistry(cwd, [webCapability]);
-      fs.mkdirSync(path.dirname(events), { recursive: true });
-      for (const id of ['root', undefined]) {
-        writeEvent(id);
-        const result = runCapabilityContextRequest({ repo: cwd, fromLatestArchitectureEvent: true });
-        expect(result.status).toBe('skipped');
-        expect(result.entry).toBeNull();
-        expect(result.lines.join('\n')).toContain('pnpm-workspace.yaml');
-      }
-      expect(fs.existsSync(path.join(cwd, '.ai/harness/capability-context/requests.jsonl'))).toBe(false);
-      writeEvent('deleted-capability');
-      expect(() => runCapabilityContextRequest({ repo: cwd, fromLatestArchitectureEvent: true })).toThrow('unknown capability');
-      fs.writeFileSync(events, `${JSON.stringify({ file_path: '../outside.ts', capability_id: 'root' })}\n`);
-      expect(() => runCapabilityContextRequest({ repo: cwd, fromLatestArchitectureEvent: true })).toThrow();
-      fs.writeFileSync(events, `${JSON.stringify({ file_path: 'apps/web/page.tsx', capability_id: 'root' })}\n`);
-      expect(() => runCapabilityContextRequest({ repo: cwd, fromLatestArchitectureEvent: true })).toThrow('unknown capability: root');
-      writeEvent('root');
-      fs.writeFileSync(path.join(cwd, '.ai/context/capabilities.json'), '{broken');
-      expect(() => runCapabilityContextRequest({ repo: cwd, fromLatestArchitectureEvent: true })).toThrow();
-    } finally {
-      fs.rmSync(cwd, { recursive: true, force: true });
-    }
-  });
-
-  test('request fails when no registered capability matches the path', () => {
+  test('sync fails when no registered capability matches the path', () => {
     const cwd = tmpWorkspace('capability-context-unmatched');
     try {
       writeRegistry(cwd, [rootCapability]);
-      expect(() => runCapabilityContextRequest({ repo: cwd, path: 'src/unowned.ts' })).toThrow(
+      expect(() => runCapabilityContextSync({ repo: cwd, inputPath: 'src/unowned.ts' })).toThrow(
         'no capability matches path: src/unowned.ts',
       );
     } finally {
@@ -163,7 +88,7 @@ describe('capability-context command', () => {
     }
   });
 
-  test('sync applies manifest content, preserves manual text, normalizes registry, and clears pending requests', () => {
+  test('sync applies manifest content, preserves manual text, and normalizes registry', () => {
     const cwd = tmpWorkspace('capability-context-sync');
     try {
       fs.mkdirSync(path.join(cwd, 'apps/web'), { recursive: true });
@@ -198,22 +123,9 @@ describe('capability-context command', () => {
           '',
         ].join('\n'),
       );
-      fs.mkdirSync(path.join(cwd, '.ai/harness/capability-context'), { recursive: true });
-      fs.writeFileSync(
-        path.join(cwd, '.ai/harness/capability-context/requests.jsonl'),
-        `${JSON.stringify({
-          status: 'pending',
-          request_id: 'apps-web:apps/web/page.tsx:manual',
-          capability_id: 'apps-web',
-          path: 'apps/web/page.tsx',
-          matched_prefix: 'apps/web',
-          ts: '2026-05-29T00:00:00.000Z',
-          source: 'cli',
-        })}\n`,
-      );
 
-      const result = runCapabilityContextSync({ repo: cwd, pending: true, apply: true });
-      expect(result.cleared_requests).toBe(1);
+      const result = runCapabilityContextSync({ repo: cwd, inputPath: 'apps/web/page.tsx', apply: true });
+      expect(result.changes.map((change) => change.capability_id)).toEqual(['apps-web']);
       const agents = fs.readFileSync(path.join(cwd, 'apps/web/AGENTS.md'), 'utf-8');
       const claude = fs.readFileSync(path.join(cwd, 'apps/web/CLAUDE.md'), 'utf-8');
       expect(agents).toBe(claude);
@@ -227,7 +139,6 @@ describe('capability-context command', () => {
         agents: 'apps/web/AGENTS.md',
         claude: 'apps/web/CLAUDE.md',
       });
-      expect(fs.readFileSync(path.join(cwd, '.ai/harness/capability-context/requests.jsonl'), 'utf-8')).toBe('');
     } finally {
       fs.rmSync(cwd, { recursive: true, force: true });
     }

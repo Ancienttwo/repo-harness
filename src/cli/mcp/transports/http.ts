@@ -32,6 +32,7 @@ import { resolveMcpRepoRoot } from '../repo';
 import { McpSessionStore } from '../session-store';
 import { buildMcpToolDefinitions } from '../tools';
 import { repoHarnessPackageVersion } from '../version';
+import { createPmMcpBinding } from '../pm-server';
 
 export interface McpHttpOptions extends McpServerOptions {
   host?: string;
@@ -197,7 +198,7 @@ function escapeHtmlAttribute(value: string): string {
     .replace(/>/g, '&gt;');
 }
 
-function renderPassphrasePage(params: URLSearchParams, opts: { coding?: boolean; engineer?: boolean; repoNames?: string[] } = {}): string {
+function renderPassphrasePage(params: URLSearchParams, opts: { coding?: boolean; engineer?: boolean; pm?: boolean; repoNames?: string[] } = {}): string {
   const hiddenFields = Array.from(params.entries())
     .filter(([key]) => key !== 'passphrase')
     .map(([key, value]) => `<input type="hidden" name="${escapeHtmlAttribute(key)}" value="${escapeHtmlAttribute(value)}">`)
@@ -218,6 +219,8 @@ button{width:100%;margin-top:14px;border:0;border-radius:8px;padding:12px;backgr
 <h1>Authorize repo-harness</h1>
 <p>${opts.coding
     ? `This Connector can open and edit these explicitly granted repositories: ${escapeHtmlAttribute((opts.repoNames ?? []).join(', ') || '(none)')}. It can also run arbitrary shell commands that can access anything your local OS user can access on this machine, including outside these repositories. Repository grants and allowed roots select workspaces; they do not sandbox shell access. Access tokens expire after 1 hour; refresh authorization lasts up to 30 days and rotates.`
+    : opts.pm
+      ? `This Connector uses only server-approved PM operations for these explicitly granted repositories: ${escapeHtmlAttribute((opts.repoNames ?? []).join(', ') || '(none)')}. It has no shell, generic file, browser, delegation, approval or publication tools. Operator acquisition and exact worker admission remain required. Access tokens expire after 1 hour; refresh authorization lasts up to 30 days and rotates.`
     : opts.engineer
       ? `This Connector can acquire execution work only as an operator-enrolled Module Engineer for these explicitly granted repositories: ${escapeHtmlAttribute((opts.repoNames ?? []).join(', ') || '(none)')}. It has no shell, generic file write, Binding mutation, Publication, or Acceptance tools. Access tokens expire after 1 hour; refresh authorization lasts up to 30 days and rotates.`
       : 'Enter the local MCP passphrase to let ChatGPT use this workflow-scoped connector.'}</p>
@@ -258,7 +261,7 @@ function consentRequestParams(req: Request): URLSearchParams {
 
 function requirePassphrase(
   passphrase: string,
-  opts: { coding?: boolean; engineer?: boolean; repoNames?: string[] } = {},
+  opts: { coding?: boolean; engineer?: boolean; pm?: boolean; repoNames?: string[] } = {},
 ): (req: Request, res: Response, next: NextFunction) => void {
   return (req, res, next) => {
     const provided = typeof req.body?.passphrase === 'string' ? req.body.passphrase : undefined;
@@ -466,9 +469,9 @@ async function handleMcpPost(
   sessions: McpSessionStore<McpHttpTransport>,
   codingRuntimes: CodingAuthorizationRuntimeStore | null,
   startupProfile: string,
-  verifyEngineerAuthorization?: (token: string, authorizationId: string) => void,
+  verifyAuthorization?: (token: string, authorizationId: string) => void,
 ): Promise<void> {
-  const authorizationScoped = startupProfile === 'coding' || startupProfile === 'engineer';
+  const authorizationScoped = startupProfile === 'coding' || startupProfile === 'engineer' || startupProfile === 'pm';
   let body: unknown;
   try {
     body = rawBodyToJson(req.body as Buffer);
@@ -497,6 +500,10 @@ async function handleMcpPost(
     const authorizationId = authorizationScoped ? authorizationIdFromRequest(req) : undefined;
     if (authorizationScoped && !authorizationId) {
       sendOAuthUnauthorized(req, res, `${startupProfile} authorization identity is missing`);
+      return;
+    }
+    if (startupProfile === 'pm' && !verifyAuthorization) {
+      sendOAuthUnauthorized(req, res, 'PM authorization verification is missing');
       return;
     }
     let codingRuntime: McpCodingRuntime | undefined;
@@ -541,7 +548,8 @@ async function handleMcpPost(
         profile: startupProfile,
         codingRuntime,
         engineerAuthorizationId: startupProfile === 'engineer' ? authorizationId : undefined,
-        verifyEngineerAuthorization,
+        verifyEngineerAuthorization: startupProfile === 'engineer' ? verifyAuthorization : undefined,
+        pmAuthorization: startupProfile === 'pm' ? { authorizationId: authorizationId!, verify: verifyAuthorization! } : undefined,
       });
       await server.connect(transport);
       await transport.handleRequest(req, res, body);
@@ -631,19 +639,24 @@ export async function startMcpHttp(opts: McpHttpOptions): Promise<void> {
   }
   const coding = profile === 'coding';
   const engineer = profile === 'engineer';
-  const authorizationScoped = coding || engineer;
+  const pm = profile === 'pm';
+  const profileEnabled = (config: ReturnType<typeof loadMcpLocalConfig>) => coding ? config?.coding?.enabled === true
+    : pm ? config?.pm?.enabled === true : config?.engineer?.enabled === true;
+  const authorizationScoped = coding || engineer || pm;
   if (
     authorizationScoped
     && (
       localConfig?.version !== 3
       || localConfig.profile !== profile
-      || (coding ? localConfig.coding?.enabled !== true : localConfig.engineer?.enabled !== true)
+      || !profileEnabled(localConfig)
       || localConfig.authorizationRevision !== repoHarnessAuthorizationRevision()
     )
   ) {
     throw new Error(`${profile} profile requires enabled v3 setup`);
   }
-  const readWriteRepos = readRegisteredRepoHarnessRepos({ adoptedOnly: true }).filter((repo) => repo.accessMode === 'read_write');
+  const pmBinding = pm ? createPmMcpBinding() : undefined;
+  const readWriteRepos = readRegisteredRepoHarnessRepos({ adoptedOnly: true }).filter((repo) => repo.accessMode === 'read_write'
+    && (!pmBinding || repo.id === pmBinding.check().repo_id));
   if (authorizationScoped && readWriteRepos.length === 0) {
     throw new Error(`${profile} profile requires at least one explicitly registered read_write repo`);
   }
@@ -662,10 +675,14 @@ export async function startMcpHttp(opts: McpHttpOptions): Promise<void> {
   let observedAuthorizationRevision = repoHarnessAuthorizationRevision();
   const oauthProvider = tokenStore ? createMcpOAuthProvider(tokenStore, {
     profile,
+    pmScopeFingerprint: pmBinding?.fingerprint,
     authorizationRevision: () => repoHarnessAuthorizationRevision(),
     accessTokenTtlSeconds: authorizationScoped ? 60 * 60 : 30 * 24 * 60 * 60,
     refreshTokenTtlSeconds: 30 * 24 * 60 * 60,
-    onAuthorizationRevoked: (authorizationId) => codingRuntimes?.close(authorizationId),
+    onAuthorizationRevoked: async authorizationId => {
+      await codingRuntimes?.close(authorizationId);
+      if (pm) await sessions.closeMatching(transport => transport.authorizationId === authorizationId);
+    },
   }) : null;
   const allowedRedirectHosts = localConfig?.auth?.allowedRedirectHosts ?? ['chatgpt.com', 'localhost', '127.0.0.1', '::1'];
   const publicHost = configuredPublicOrigin ? new URL(configuredPublicOrigin).host.toLowerCase() : undefined;
@@ -701,8 +718,9 @@ export async function startMcpHttp(opts: McpHttpOptions): Promise<void> {
       observedAuthorizationRevision = currentRevision;
       closeStaleAuthorizationState();
     }
-    const enabled = coding ? liveConfig?.coding?.enabled === true : liveConfig?.engineer?.enabled === true;
-    if (liveConfig?.profile !== profile || !enabled) closeStaleAuthorizationState();
+    const enabled = profileEnabled(liveConfig);
+    if (liveConfig?.profile !== profile || !enabled || (pm && liveConfig?.version !== 3)) closeStaleAuthorizationState();
+    try { pmBinding?.check(); } catch { closeStaleAuthorizationState(); }
   }, 1_000) : undefined;
   authorizationTimer?.unref?.();
   const cleanupTimer = setInterval(() => {
@@ -716,22 +734,30 @@ export async function startMcpHttp(opts: McpHttpOptions): Promise<void> {
   // loop for seconds on a cold disk. Live state stays live: the coding grant is
   // still re-checked per request by the middleware above, and session counters
   // are read from the store on each response.
-  const healthContext = createMcpToolContext({ ...opts, repo: repoRoot, codingRuntime: null });
+  const healthContext = pm ? { policy: { profile: 'pm', allowedRoots: [], capabilities: {
+    workspaceReader: false, workflowPlanner: false, workflowExecutor: false, agentRunner: false, workspaceCoder: false,
+  } } } : createMcpToolContext({ ...opts, repo: repoRoot, codingRuntime: null });
   const healthSchemaHash = createHash('sha256')
-    .update(JSON.stringify(buildMcpToolDefinitions(healthContext.policy, { enableChatgptBrowser: opts.enableChatgptBrowser === true })))
+    .update(JSON.stringify(pmBinding ? pmBinding.tools() : buildMcpToolDefinitions((healthContext as ReturnType<typeof createMcpToolContext>).policy, { enableChatgptBrowser: opts.enableChatgptBrowser === true })))
     .digest('hex');
   const app = express();
 
   app.use((req, res, next) => {
     if (authorizationScoped) {
       const liveConfig = loadMcpLocalConfig();
-      const hasGrant = readRegisteredRepoHarnessRepos({ adoptedOnly: true }).some((repo) => repo.accessMode === 'read_write');
-      const enabled = coding ? liveConfig?.coding?.enabled === true : liveConfig?.engineer?.enabled === true;
+      let scopeReady = true;
+      let repoId: string | undefined;
+      try { repoId = pmBinding?.check().repo_id; } catch { scopeReady = false; }
+      const hasGrant = readRegisteredRepoHarnessRepos({ adoptedOnly: true }).some(repo => repo.accessMode === 'read_write'
+        && (!pm || repo.id === repoId));
+      const enabled = profileEnabled(liveConfig);
       if (
         liveConfig?.profile !== profile
         || !enabled
+        || (pm && liveConfig?.version !== 3)
         || liveConfig.authorizationRevision !== repoHarnessAuthorizationRevision()
         || !hasGrant
+        || !scopeReady
       ) {
         closeStaleAuthorizationState();
         res.status(503).json({ error: `${profile}_disabled` });
@@ -790,7 +816,7 @@ export async function startMcpHttp(opts: McpHttpOptions): Promise<void> {
     const oauthRateLimit = createOAuthRateLimitMiddleware({ windowMs: 60_000, maxRequests: 120 });
     app.use(['/authorize', '/token', '/revoke', '/register'], oauthRateLimit);
     app.use('/authorize', express.urlencoded({ extended: false, limit: '10kb' }));
-    app.use('/authorize', requirePassphrase(oauthPassphrase ?? '', { coding, engineer, repoNames: readWriteRepos.map((repo) => basename(repo.path)) }));
+    app.use('/authorize', requirePassphrase(oauthPassphrase ?? '', { coding, engineer, pm, repoNames: readWriteRepos.map((repo) => basename(repo.path)) }));
     app.use('/authorize', oauthAuthorizationHandler(oauthProvider, allowedRedirectHosts));
     app.use('/token', tokenHandler({ provider: oauthProvider }));
     app.use('/revoke', revocationHandler({ provider: oauthProvider }));
@@ -807,7 +833,7 @@ export async function startMcpHttp(opts: McpHttpOptions): Promise<void> {
         grant_types_supported: ['authorization_code', 'refresh_token'],
         code_challenge_methods_supported: ['S256'],
         token_endpoint_auth_methods_supported: ['client_secret_post', 'none'],
-        scopes_supported: ['repo-harness', ...(coding ? ['repo-harness.coding'] : []), ...(engineer ? ['repo-harness.engineer'] : []), 'offline_access'],
+        scopes_supported: ['repo-harness', ...(coding ? ['repo-harness.coding'] : []), ...(engineer ? ['repo-harness.engineer'] : []), ...(pm ? ['repo-harness.pm'] : []), 'offline_access'],
       });
     });
     app.get('/.well-known/openid-configuration', (req, res) => {
@@ -821,7 +847,7 @@ export async function startMcpHttp(opts: McpHttpOptions): Promise<void> {
         grant_types_supported: ['authorization_code', 'refresh_token'],
         code_challenge_methods_supported: ['S256'],
         token_endpoint_auth_methods_supported: ['client_secret_post', 'none'],
-        scopes_supported: ['repo-harness', ...(coding ? ['repo-harness.coding'] : []), ...(engineer ? ['repo-harness.engineer'] : []), 'offline_access'],
+        scopes_supported: ['repo-harness', ...(coding ? ['repo-harness.coding'] : []), ...(engineer ? ['repo-harness.engineer'] : []), ...(pm ? ['repo-harness.pm'] : []), 'offline_access'],
       });
     });
     app.get('/.well-known/oauth-protected-resource/mcp', (req, res) => {
@@ -829,17 +855,17 @@ export async function startMcpHttp(opts: McpHttpOptions): Promise<void> {
       res.json({
         resource: `${origin}/mcp`,
         authorization_servers: [origin],
-        scopes_supported: ['repo-harness', ...(coding ? ['repo-harness.coding'] : []), ...(engineer ? ['repo-harness.engineer'] : []), 'offline_access'],
+        scopes_supported: ['repo-harness', ...(coding ? ['repo-harness.coding'] : []), ...(engineer ? ['repo-harness.engineer'] : []), ...(pm ? ['repo-harness.pm'] : []), 'offline_access'],
         bearer_methods_supported: ['header'],
       });
     });
   }
 
   app.post('/mcp', requireMcpHttpAuth(authMode, authToken, oauthProvider, configuredPublicOrigin), express.raw({ type: '*/*', limit: '1mb' }), (req, res) => {
-    handleMcpPost(req, res, { ...opts, repo: repoRoot }, sessions, codingRuntimes, profile,
-      profile === 'engineer' && oauthProvider ? (token, authorizationId) => {
+    handleMcpPost(req, res, { ...opts, repo: repoRoot, pmBinding }, sessions, codingRuntimes, profile,
+      (engineer || pm) && oauthProvider ? (token, authorizationId) => {
         const current = oauthProvider.verifyAccessTokenCurrent(token) as McpStoredAuthInfo;
-        if (current.authorizationId !== authorizationId) throw new InvalidTokenError('Engineer authorization identity changed');
+        if (current.authorizationId !== authorizationId) throw new InvalidTokenError(`${profile} authorization identity changed`);
       } : undefined,
     ).catch((error: unknown) => {
       if (!res.headersSent) res.status(500).json({ error: error instanceof Error ? error.message : String(error) });

@@ -1,105 +1,55 @@
-import type { RecommendationV3, RefactorRequestV1, RefactorVerificationRequestV1 } from "archctx-contracts";
+import type { RecommendationV3 } from "archctx-contracts";
+import { ARCHCTX_REQUIRED_VERSION, assertArchctxVersion } from "../../core/architecture/projection";
 import { canonicalize } from "../../core/evidence/canonical-json";
 import {
-  assertRefactorCapabilities,
-  assertAcceptedRefactorRecommendations,
-  assertRefactorRecommendationReadback,
-  assertRefactorResolutionRecord,
-  assertRefactorRecordResult,
-  assertRefactorRequest,
-  assertRefactorScanResult,
-  assertRefactorVerificationRequest,
-  assertRefactorVerifyResult,
+  refactorEnvelopeData,
   RefactorProviderError,
-  type RefactorRecordResultV1,
-  type RefactorRecommendationReadbackV1,
-  type RefactorResolutionRecordResultV1,
   type RefactorScanResultV1,
-  type RefactorVerifyResultV1,
 } from "../../core/refactor/provider-contract";
-import { loadRefactorPolicy, type RefactorPolicy, type RefactorProviderStage } from "../../core/refactor/policy";
 import { runPackageLocalArchctxJson, type ArchctxProviderOptions } from "../architecture/archctx-provider";
 
-export interface RefactorArchctxProviderOptions extends ArchctxProviderOptions { refactorPolicy?: RefactorPolicy }
+export type RefactorDecision = "accept" | "defer" | "reject";
 
-function invoke(
-  repoRoot: string,
-  stage: RefactorProviderStage,
-  args: readonly string[],
-  options: RefactorArchctxProviderOptions,
-): unknown {
+const checkedRoots = new Set<string>();
+
+function invoke(repoRoot: string, args: readonly string[], options: ArchctxProviderOptions): unknown {
   try {
-    const capabilities = runPackageLocalArchctxJson(repoRoot, stage.provider_version, ["capabilities", "--json"], options, 10_000).value;
-    assertRefactorCapabilities(capabilities, stage);
-    return runPackageLocalArchctxJson(repoRoot, stage.provider_version, args, options, 120_000, true).value;
+    if (!checkedRoots.has(repoRoot)) {
+      assertArchctxVersion(runPackageLocalArchctxJson(repoRoot, ARCHCTX_REQUIRED_VERSION, ["capabilities", "--json"], options, 10_000).value, ARCHCTX_REQUIRED_VERSION);
+      checkedRoots.add(repoRoot);
+    }
+    return runPackageLocalArchctxJson(repoRoot, ARCHCTX_REQUIRED_VERSION, args, options, 120_000, true).value;
   } catch (error) {
     if (error instanceof RefactorProviderError) throw error;
-    const message = error instanceof Error ? error.message : String(error);
-    const code = /mismatch|expected archctx@|not found|is missing/.test(message)
-      ? "refactor_provider_version_mismatch"
-      : "refactor_provider_result_invalid";
-    throw new RefactorProviderError(code, message);
+    throw new RefactorProviderError("refactor_provider_unavailable", error instanceof Error ? error.message : String(error));
   }
 }
 
-export function runRefactorScan(request: RefactorRequestV1, repoRoot: string, options: RefactorArchctxProviderOptions = {}): RefactorScanResultV1 {
-  assertRefactorRequest(request);
-  const policy = options.refactorPolicy ?? loadRefactorPolicy(repoRoot);
-  const value = invoke(repoRoot, policy.stages.scan, ["refactor", "scan", "--request-json", canonicalize(request as never), "--json"], options);
-  return assertRefactorScanResult(value, request);
+export function runRefactorScan(repoRoot: string, options: ArchctxProviderOptions = {}): RefactorScanResultV1 {
+  const request = { schemaVersion: "archcontext.refactor-request/v1", scope: { kind: "repository" } };
+  const value = invoke(repoRoot, ["refactor", "scan", "--request-json", canonicalize(request as never), "--json"], options);
+  return refactorEnvelopeData(value, "refactor.scan", "archcontext.runtime-refactor-scan/v1") as unknown as RefactorScanResultV1;
 }
 
-export function runRefactorRecord(
-  assessmentDigest: string,
-  expectedWorktreeDigest: string,
-  repoRoot: string,
-  options: RefactorArchctxProviderOptions = {},
-): RefactorRecordResultV1 {
-  if (!/^sha256:[a-f0-9]{64}$/.test(assessmentDigest) || !/^sha256:[a-f0-9]{64}$/.test(expectedWorktreeDigest)) {
-    throw new RefactorProviderError("refactor_provider_result_invalid", "refactor record digests must be canonical sha256 values");
-  }
-  const policy = options.refactorPolicy ?? loadRefactorPolicy(repoRoot);
-  const value = invoke(repoRoot, policy.stages.scan, ["refactor", "record", "--assessment-digest", assessmentDigest, "--expected-worktree-digest", expectedWorktreeDigest, "--json"], options);
-  return assertRefactorRecordResult(value, assessmentDigest, expectedWorktreeDigest);
+export function readRecommendationRecords(repoRoot: string, options: ArchctxProviderOptions = {}): readonly RecommendationV3[] {
+  const data = refactorEnvelopeData(invoke(repoRoot, ["book", "recommendations", "--json"], options), "book.recommendations", "archcontext.architecture-book-recommendations/v1");
+  return Array.isArray(data.recommendations) ? data.recommendations as RecommendationV3[] : [];
 }
 
-export function readAcceptedRefactorRecommendations(
-  expectedHeadSha: string,
-  repoRoot: string,
-  options: RefactorArchctxProviderOptions = {},
-): readonly RecommendationV3[] {
-  const policy = options.refactorPolicy ?? loadRefactorPolicy(repoRoot);
-  const value = invoke(repoRoot, policy.stages.scan, ["book", "recommendations", "--json"], options);
-  return assertAcceptedRefactorRecommendations(value, expectedHeadSha);
+/** Puts a scan's observations into the ArchContext lifecycle ledger so they can take a decision. */
+export function recordRefactorScan(scan: RefactorScanResultV1, repoRoot: string, options: ArchctxProviderOptions = {}): void {
+  refactorEnvelopeData(invoke(repoRoot, ["refactor", "record", "--assessment-digest", assessmentDigestOf(scan),
+    "--expected-worktree-digest", scan.worktree.worktreeDigest, "--json"], options), "refactor.record", "archcontext.runtime-refactor-record/v1");
 }
 
-export function readRefactorRecommendationRecords(
-  expectedHeadSha: string,
-  repoRoot: string,
-  options: RefactorArchctxProviderOptions = {},
-): RefactorRecommendationReadbackV1 {
-  const policy = options.refactorPolicy ?? loadRefactorPolicy(repoRoot);
-  const value = invoke(repoRoot, policy.stages.scan, ["book", "recommendations", "--json"], options);
-  return assertRefactorRecommendationReadback(value, expectedHeadSha);
+export function decideRecommendation(recommendationId: string, decision: RefactorDecision, reason: string, repoRoot: string, options: ArchctxProviderOptions = {}): RecommendationV3 {
+  const data = refactorEnvelopeData(invoke(repoRoot, ["recommendations", decision, "--id", recommendationId, "--reason", reason, "--json"], options),
+    `recommendations.${decision}`, "archcontext.runtime-recommendation-lifecycle/v1");
+  return data.recommendation as RecommendationV3;
 }
 
-export function recordRefactorResolution(
-  recommendationId: string,
-  resolutionDigest: string,
-  expectedWorktreeDigest: string,
-  reason: string,
-  repoRoot: string,
-  options: RefactorArchctxProviderOptions = {},
-): RefactorResolutionRecordResultV1 {
-  if (!recommendationId || !/^sha256:[a-f0-9]{64}$/u.test(resolutionDigest) || !/^sha256:[a-f0-9]{64}$/u.test(expectedWorktreeDigest) || !reason.trim()) throw new RefactorProviderError('refactor_provider_result_invalid', 'resolution record input is invalid');
-  const policy = options.refactorPolicy ?? loadRefactorPolicy(repoRoot);
-  const value = invoke(repoRoot, policy.stages.verify, ['recommendations', 'resolve', '--id', recommendationId, '--reason', reason, '--expected-worktree-digest', expectedWorktreeDigest, '--evidence-digest', resolutionDigest, '--json'], options);
-  return assertRefactorResolutionRecord(value, recommendationId);
-}
-
-export function runRefactorVerify(request: RefactorVerificationRequestV1, repoRoot: string, options: RefactorArchctxProviderOptions = {}): RefactorVerifyResultV1 {
-  assertRefactorVerificationRequest(request);
-  const policy = options.refactorPolicy ?? loadRefactorPolicy(repoRoot);
-  const value = invoke(repoRoot, policy.stages.verify, ["refactor", "verify", "--request-json", canonicalize(request as never), "--json"], options);
-  return assertRefactorVerifyResult(value, request);
+function assessmentDigestOf(scan: RefactorScanResultV1): string {
+  const observation = scan.proposedRecommendations.find((entry) => entry.category === "structural_observation");
+  if (!observation || observation.category !== "structural_observation") throw new RefactorProviderError("refactor_provider_result_invalid", "refactor scan has no observation to record");
+  return observation.payload.assessmentDigest;
 }

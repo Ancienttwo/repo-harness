@@ -26,7 +26,7 @@ void consume;
 
 // Compile real published declarations. These fixtures never execute a Session
 // or provider; the actual root policy supplies D4 and strict source checking.
-function compile(types: 'bun' | 'node', invalidSource = false) {
+function compile(types: 'bun-types' | 'node', invalidSource = false) {
   const runs = join(root, '.ai/harness/runs');
   mkdirSync(runs, { recursive: true });
   const dir = mkdtempSync(join(runs, 'oar-public-types-'));
@@ -50,7 +50,7 @@ function compile(types: 'bun' | 'node', invalidSource = false) {
 }
 
 describe('OAR public declarations under the approved D4 policy', () => {
-  for (const types of ['bun', 'node'] as const) {
+  for (const types of ['bun-types', 'node'] as const) {
     test(`the real Session API compiles with ${types} ambient types`, () => {
       const result = compile(types);
       expect(result.error).toBeUndefined();
@@ -59,7 +59,7 @@ describe('OAR public declarations under the approved D4 policy', () => {
   }
 
   test('incorrect application source is still rejected', () => {
-    const result = compile('bun', true);
+    const result = compile('bun-types', true);
     expect(result.error).toBeUndefined();
     expect(result.status).toBe(1);
     expect(result.stdout + result.stderr).toContain('consumer.ts');

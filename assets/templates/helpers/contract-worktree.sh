@@ -379,10 +379,10 @@ clear_primary_markers_for_transferred_plan() {
 bootstrap_worktree_runtime() {
   # A fresh linked worktree starts without the gitignored runtime artifacts the
   # verification gates depend on, and both resulting failures name neither cause.
-  # A missing dependency tree surfaces as `state=missing`, because
-  # check-architecture-sync resolves the provider through the candidate build,
-  # which requires archctx package-locally, while the globally installed CLI
-  # resolves it elsewhere and cheerfully reports ready. A missing code index
+  # A missing dependency tree surfaces as `state=missing`, because the
+  # projection provider resolves archctx package-locally from the candidate
+  # build, while the globally installed CLI resolves it elsewhere and reports
+  # ready. A missing code index
   # surfaces as `unresolved-major-change` listing every capability, because
   # archctx cannot prove a single flow without code facts. Seeding both here
   # keeps that diagnosis from being re-derived once per worktree.
@@ -520,7 +520,7 @@ start_worktree() {
   # The existing Bun adapter uses lstat. It never follows the target leaf.
   local freshness_args=()
   [[ "$require_fresh" -eq 0 ]] || freshness_args+=(--fresh)
-  if ! run_contract_runtime check-start-path --repo "$REPO_ROOT" --worktree "$worktree_path" --branch "$branch_name" "${freshness_args[@]}"; then
+  if ! run_contract_runtime check-start-path --repo "$REPO_ROOT" --worktree "$worktree_path" --branch "$branch_name" ${freshness_args[@]+"${freshness_args[@]}"}; then
     if [[ "$require_fresh" -eq 1 ]]; then
       echo "contract-worktree: --fresh refuses residual worktree path: $worktree_path" >&2
     else
