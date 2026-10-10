@@ -26,6 +26,7 @@ export type McpStoredAuthInfo = AuthInfo & {
   profile?: string;
   authorizationRevision?: number;
   authorizationId?: string;
+  pmScopeFingerprint?: string;
 };
 
 export interface McpAuthorizationSummary {
@@ -50,6 +51,7 @@ function normalizeScopes(scopes: string[] | undefined, profile = 'planner'): str
     'offline_access',
     ...(profile === 'coding' ? ['repo-harness.coding'] : []),
     ...(profile === 'engineer' ? ['repo-harness.engineer'] : []),
+    ...(profile === 'pm' ? ['repo-harness.pm'] : []),
   ]);
   const normalized = (scopes ?? [])
     .flatMap((scope) => scope.split(' '))
@@ -286,6 +288,7 @@ interface AuthorizationCodeRecord {
   redirectUri: string;
   scopes: string[];
   authorizationRevision: number;
+  pmScopeFingerprint?: string;
   createdAt: number;
   expiresAt: number;
 }
@@ -299,6 +302,8 @@ export function createMcpOAuthProvider(
     readonly refreshTokenTtlSeconds?: number;
     readonly profile?: string;
     readonly authorizationRevision?: number | (() => number);
+    /** Trusted server-owned PM scope. Never supplied by an OAuth client. */
+    readonly pmScopeFingerprint?: () => string;
     readonly onAuthorizationRevoked?: (authorizationId: string) => void | Promise<void>;
   } = {},
 ): OAuthServerProvider & { verifyAccessTokenCurrent(token: string): AuthInfo } {
@@ -309,8 +314,14 @@ export function createMcpOAuthProvider(
   const accessTokenTtlSeconds = opts.accessTokenTtlSeconds ?? 30 * 24 * 60 * 60;
   const refreshTokenTtlSeconds = opts.refreshTokenTtlSeconds ?? 30 * 24 * 60 * 60;
   const profile = opts.profile ?? 'planner';
-  const authorizationScoped = profile === 'coding' || profile === 'engineer';
-  const requiredScope = profile === 'coding' ? 'repo-harness.coding' : profile === 'engineer' ? 'repo-harness.engineer' : null;
+  const authorizationScoped = profile === 'coding' || profile === 'engineer' || profile === 'pm';
+  const requiredScope = profile === 'coding' ? 'repo-harness.coding' : profile === 'engineer' ? 'repo-harness.engineer' : profile === 'pm' ? 'repo-harness.pm' : null;
+  const currentPmFingerprint = () => {
+    if (profile !== 'pm') return undefined;
+    const fingerprint = opts.pmScopeFingerprint?.();
+    if (!fingerprint || !/^[0-9a-f]{64}$/.test(fingerprint)) throw new InvalidTokenError('PM scope binding is missing');
+    return fingerprint;
+  };
   const revisionOption = opts.authorizationRevision;
   const notifyAuthorizationRevoked = (info: McpStoredAuthInfo | undefined): void => {
     if (!authorizationScoped || !info?.authorizationId) return;
@@ -355,6 +366,7 @@ export function createMcpOAuthProvider(
       (requiredScope !== null && !info.scopes.includes(requiredScope)) ||
       typeof info.authorizationId !== 'string' ||
       !info.authorizationId.trim()
+      || (profile === 'pm' && info.pmScopeFingerprint !== currentPmFingerprint())
     )) {
       const refreshToken = store.findRefreshTokenByAccessToken(token);
       if (refreshToken) store.deleteRefreshToken(refreshToken);
@@ -390,6 +402,7 @@ export function createMcpOAuthProvider(
         redirectUri: params.redirectUri,
         scopes,
         authorizationRevision: currentAuthorizationRevision(),
+        pmScopeFingerprint: currentPmFingerprint(),
         createdAt,
         expiresAt: createdAt + authorizationCodeTtlSeconds,
       });
@@ -423,6 +436,10 @@ export function createMcpOAuthProvider(
         authCodes.delete(authorizationCode);
         throw new InvalidGrantError('Authorization code was issued under a different authorization revision');
       }
+      if (profile === 'pm' && stored.pmScopeFingerprint !== currentPmFingerprint()) {
+        authCodes.delete(authorizationCode);
+        throw new InvalidGrantError('Authorization code was issued under a different PM scope');
+      }
       authCodes.delete(authorizationCode);
       const accessToken = issueToken();
       const expiresIn = accessTokenTtlSeconds;
@@ -439,6 +456,7 @@ export function createMcpOAuthProvider(
         profile,
         authorizationRevision,
         authorizationId,
+        pmScopeFingerprint: stored.pmScopeFingerprint,
       });
       const response: OAuthTokens = {
         access_token: accessToken,
@@ -472,6 +490,7 @@ export function createMcpOAuthProvider(
           typeof existing.authorizationId !== 'string' ||
           !existing.authorizationId.trim() ||
           (requiredScope !== null && !existing.scopes.includes(requiredScope))
+          || (profile === 'pm' && existing.pmScopeFingerprint !== currentPmFingerprint())
         ))
       ) {
         store.deleteRefreshToken(refreshToken);

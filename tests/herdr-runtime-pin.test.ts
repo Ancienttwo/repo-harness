@@ -63,7 +63,7 @@ describe("herdr runtime pin has one source of truth", () => {
     expect(step).toContain('GITHUB_PATH');
     const homeSteps = workflow.jobs['test-home-isolation']!.steps as Array<{ name?: string; uses?: string; if?: string }>;
     const install = homeSteps.findIndex(step => step.uses === './.github/actions/install-pinned-herdr');
-    const native = homeSteps.findIndex(step => step.name === 'Run native review acceptance tests');
+    const native = homeSteps.findIndex(step => step.name === 'Run native OAR acceptance tests');
     expect(install).toBeGreaterThan(-1);
     expect(install).toBeLessThan(native);
     expect(homeSteps[install]!.if).toBe("matrix.os == 'macos-latest'");

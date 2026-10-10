@@ -304,7 +304,7 @@ contract-assets 前缀，漂移由 `bun run sync:helpers` 的 `--check` 模式�
 - Treat user-level `~/.codex/hooks.json` and `~/.claude/settings.json` as host adapters. Keep hook implementation under `.ai/hooks/`, and treat repo-local `.claude/settings.json` / `.codex/hooks.json` hook adapters as retired legacy config.
 - Run `bun scripts/capability-resolver.ts validate --format text` when capability data changes. The workflow helper remains a read-only diagnostic.
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.architecture.index" sourceDigest="sha256:7d93c7a3de01da1580e05f042cff0b72f1cbc6f69b41b50fd1e4a1a8d81b5626" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:1d2e85459e09dd41d3f97e56a2a987d9948d879a34a6ad142591c2f55c0dc2c4" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.architecture.index" sourceDigest="sha256:541ec63ab7c5da89cacc94a5f9becb5aa29d9268eb93372fedaf1fb78b27f0d8" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:081d9aa068b5e73c636c42e4c60789b87af9fa7007d17bbd92c70b2dfb8266e3" -->
 # Architecture Index
 
 Generated: 1970-01-01T00:00:00.000Z
@@ -330,6 +330,7 @@ Generated: 1970-01-01T00:00:00.000Z
 - [Interface Change Requests](modules/runtime-harness/interface-change.md) — capability / active
 - [MCP Sidecar](modules/runtime-harness/mcp-sidecar.md) — capability / active
 - [Operator Board](modules/runtime-harness/operator.md) — capability / active
+- [PM Dispatch Boundary](modules/runtime-harness/pm-dispatch.md) — capability / active
 - [Refactor Program](modules/runtime-harness/refactor-program.md) — capability / active
 - [Verified Evidence Context](modules/runtime-harness/verified-context.md) — capability / active
 - [Work Demand Intake](modules/runtime-harness/work-demand.md) — capability / active
@@ -385,6 +386,7 @@ Generated: 1970-01-01T00:00:00.000Z
 - capability.runtime-harness.mcp-sidecar -> capability.runtime-harness.interface-change — calls
 - capability.runtime-harness.mcp-sidecar -> component.mcp-sidecar.primary — calls
 - capability.runtime-harness.operator -> component.operator.primary — calls
+- capability.runtime-harness.pm-dispatch -> component.pm-dispatch.primary — calls
 - capability.runtime-harness.refactor-program -> component.refactor-program.archctx-provider — calls
 - capability.runtime-harness.refactor-program -> component.refactor-program.lifecycle — calls
 - capability.public-surface.root-router -> component.root-router.primary — calls
