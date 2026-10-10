@@ -100,8 +100,9 @@ const missing = required.filter((file) => !files.has(file));
 const leaked = retired.filter((file) => files.has(file));
 const aiHooks = [...files].filter((file) => file.startsWith(".ai/hooks/"));
 const operatorAssets = [...files].filter((file) => file.startsWith("dist/operator-ui/assets/"));
-const missingOperatorAssetKinds = [".js", ".css", ".woff2"].filter(
-  (extension) => !operatorAssets.some((file) => file.endsWith(extension)),
+// The Kumo/Tailwind UI ships one hashed entry script and one hashed stylesheet; fonts are system stacks.
+const missingOperatorAssetKinds = [".js", ".css"].filter(
+  (extension) => !operatorAssets.some((file) => /^dist\/operator-ui\/assets\/index-[A-Za-z0-9_-]+\.(?:js|css)$/u.test(file) && file.endsWith(extension)),
 );
 if (missing.length > 0 || leaked.length > 0 || aiHooks.length > 0 || missingOperatorAssetKinds.length > 0) {
   if (missing.length > 0) {
@@ -199,12 +200,23 @@ if (healthBody?.ok !== true || healthBody?.service !== 'repo-harness-operator' |
 const page = await fetch(`${baseUrl}/`);
 if (!page.ok || !page.headers.get('content-type')?.includes('text/html')) fail('operator HTML entrypoint is unavailable');
 const html = await page.text();
-const assetRef = html.match(/(?:src|href)=["']([^"']*assets\/[^"']+\.(?:js|css))["']/u)?.[1];
-if (!assetRef) fail('operator HTML did not reference a bundled static asset');
-const assetUrl = new URL(assetRef, `${baseUrl}/`);
-if (assetUrl.origin !== origin) fail('operator HTML referenced a cross-origin static asset');
-const asset = await fetch(assetUrl);
-if (!asset.ok || (await asset.arrayBuffer()).byteLength === 0) fail('operator static asset is unavailable');
+const assetText = {};
+for (const kind of ['js', 'css']) {
+  const assetRef = html.match(new RegExp(`(?:src|href)=["']([^"']*assets/index-[A-Za-z0-9_-]+\\.${kind})["']`, 'u'))?.[1];
+  if (!assetRef) fail(`operator HTML did not reference a hashed ${kind} bundle`);
+  const assetUrl = new URL(assetRef, `${baseUrl}/`);
+  if (assetUrl.origin !== origin) fail('operator HTML referenced a cross-origin static asset');
+  const asset = await fetch(assetUrl);
+  const body = asset.ok ? await asset.text() : '';
+  if (body.length === 0) fail(`operator ${kind} bundle is unavailable`);
+  assetText[kind] = body;
+}
+// Kumo's colour tokens and its dark-mode selector must survive the packaged build.
+for (const token of ['--color-kumo-base', '--color-kumo-line', '[data-mode=dark]']) {
+  if (!assetText.css.includes(token)) fail(`operator stylesheet is missing Kumo token ${token}`);
+}
+// `?fixture=` exists only under the Vite dev server; its data must not ship.
+if (assetText.js.includes('unknown operator fixture')) fail('operator bundle contains development fixtures');
 const snapshot = await fetch(`${baseUrl}/api/v1/fleet/snapshot`);
 if (!snapshot.ok) fail(`operator Fleet API returned ${snapshot.status}`);
 const payload = await snapshot.json();

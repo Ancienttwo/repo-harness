@@ -4,18 +4,10 @@ import { createRoot, type Root } from 'react-dom/client';
 import { Window } from 'happy-dom';
 import { useObservationRefresh } from '../../src/operator-web/useObservationRefresh';
 
-import {
-  asApiError,
-  copyOperatorIdentifier,
-  defaultCollapsedGroups,
-  fetchOperatorSnapshot,
-  groupWorklist,
-  OperatorApp,
-  OPERATOR_REPOSITORY_STORAGE_KEY,
-  primaryCause,
-  taskDisplayLabel,
-  taskKey,
-} from '../../src/operator-web/App';
+import { OperatorApp, OPERATOR_REPOSITORY_STORAGE_KEY } from '../../src/operator-web/App';
+import { copyOperatorIdentifier } from '../../src/operator-web/clipboard';
+import { asApiError, fetchOperatorSnapshot } from '../../src/operator-web/fleet-api';
+import { defaultCollapsedGroups, groupWorklist, primaryCause, taskDisplayLabel, taskKey } from '../../src/operator-web/worklist';
 import {
   collaborationSnapshot,
   degradedSnapshot,
@@ -98,7 +90,7 @@ let window: Window;
  * the persistent-pane layouts are both asserted deterministically.
  */
 function installDom(wide = false): void {
-  window = new Window({ url: 'http://127.0.0.1:4318/' });
+  window = new Window({ url: 'http://127.0.0.1:4318/#repository' });
   Object.defineProperty(window, 'matchMedia', {
     configurable: true,
     value: (media: string) => ({
@@ -297,40 +289,57 @@ describe('bounded observation lifecycle',()=>{
     }
   });
 
-  test('Organization-only readers pause behind another tab and read once on return, including a deferred Refresh', async () => {
+  test('page- and tab-scoped readers pause while hidden and read once on return, including a deferred Refresh', async () => {
     const { repositoryObservationFixture } = await import('../../src/operator-web/fixture');
     const clock = observationClock();
     const counts = { fleet: 0, repository: 0, notify: 0, pipeline: 0 };
     const tab = (name: string) => act(async () => document.querySelector<HTMLButtonElement>(`#view-tab-${name}`)!.click());
+    const page = (name: string) => act(async () => document.querySelector<HTMLAnchorElement>(`.workspace-nav a[data-workspace="${name}"]`)!.click());
     try {
       await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" initialCollaboration={{ kind: 'ready', snapshot: collaborationSnapshot }}
         fetchSnapshot={async () => { counts.fleet++; return stableSnapshot; }}
         fetchRepositoryObservation={async id => { counts.repository++; return repositoryObservationFixture(id); }}
         readNotifyStatus={async () => { counts.notify++; return notifyStatus; }}
         readPipelineBoard={async () => { counts.pipeline++; return board; }} />);
-      expect(counts).toEqual({ fleet: 0, repository: 1, notify: 1, pipeline: 1 });
+      // Notify and Pipeline belong to the System page; the repository page never reads them.
+      expect(counts).toEqual({ fleet: 0, repository: 1, notify: 0, pipeline: 0 });
       await tab('delivery');
       await clock.advance(600_000);
-      expect(counts).toEqual({ fleet: 20, repository: 1, notify: 1, pipeline: 1 });
+      expect(counts).toEqual({ fleet: 20, repository: 1, notify: 0, pipeline: 0 });
       expect(document.querySelector('.automation-summary')?.getAttribute('data-observation-status')).toBe('ready');
       await tab('organization');
-      expect(counts).toEqual({ fleet: 20, repository: 2, notify: 2, pipeline: 2 });
+      expect(counts).toEqual({ fleet: 20, repository: 2, notify: 0, pipeline: 0 });
       await clock.advance(30_000);
-      expect(counts).toEqual({ fleet: 21, repository: 3, notify: 3, pipeline: 3 });
+      expect(counts).toEqual({ fleet: 21, repository: 3, notify: 0, pipeline: 0 });
       await tab('planning');
       await act(async () => buttonWithText('Refresh').click());
-      expect(counts).toEqual({ fleet: 22, repository: 3, notify: 3, pipeline: 3 });
+      expect(counts).toEqual({ fleet: 22, repository: 3, notify: 0, pipeline: 0 });
       await tab('organization');
-      expect(counts).toEqual({ fleet: 22, repository: 4, notify: 4, pipeline: 4 });
+      expect(counts).toEqual({ fleet: 22, repository: 4, notify: 0, pipeline: 0 });
+      await page('system');
+      expect(counts).toMatchObject({ notify: 1, pipeline: 1 });
+      await page('board');
+      await clock.advance(600_000);
+      expect(counts).toMatchObject({ notify: 1, pipeline: 1 });
+      await act(async () => buttonWithText('Refresh').click());
+      expect(counts).toMatchObject({ notify: 1, pipeline: 1 });
+      await page('system');
+      expect(counts).toMatchObject({ notify: 2, pipeline: 2 });
+      // The System page keeps polling: one 30s tick adds exactly one read to each reader.
+      const before = { notify: counts.notify, pipeline: counts.pipeline };
+      await clock.advance(30_000);
+      expect(counts.notify).toBe(before.notify + 1);
+      expect(counts.pipeline).toBe(before.pipeline + 1);
     } finally {
       await act(async () => root?.unmount()); root = null; clock.restore();
     }
   });
 
-  test('seeded Organization readers that start without a read still read at once on return', async () => {
+  test('seeded System readers that start without a read still read at once on return', async () => {
     const clock = observationClock();
     const counts = { notify: 0, pipeline: 0 };
-    const tab = (name: string) => act(async () => document.querySelector<HTMLButtonElement>(`#view-tab-${name}`)!.click());
+    const page = (name: string) => act(async () => document.querySelector<HTMLAnchorElement>(`.workspace-nav a[data-workspace="${name}"]`)!.click());
+    window.location.hash = '#system';
     try {
       await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" initialCollaboration={{ kind: 'ready', snapshot: collaborationSnapshot }}
         fetchSnapshot={async () => stableSnapshot}
@@ -338,10 +347,10 @@ describe('bounded observation lifecycle',()=>{
         initialNotifyStatus={notifyStatus} readNotifyStatus={async () => { counts.notify++; return notifyStatus; }}
         initialPipelineBoard={board} readPipelineBoard={async () => { counts.pipeline++; return board; }} />);
       expect(counts).toEqual({ notify: 0, pipeline: 0 });
-      await tab('delivery');
+      await page('board');
       await clock.advance(300_000);
       expect(counts).toEqual({ notify: 0, pipeline: 0 });
-      await tab('organization');
+      await page('system');
       expect(counts).toEqual({ notify: 1, pipeline: 1 });
     } finally {
       await act(async () => root?.unmount()); root = null; clock.restore();
@@ -1042,6 +1051,7 @@ describe('operator web interactions', () => {
   test('the page Refresh action also re-requests the Notify and Pipeline panels', async () => {
     let notify = 0;
     let pipeline = 0;
+    window.location.hash = '#system';
     await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" fetchSnapshot={async () => stableSnapshot}
       readNotifyStatus={async () => { notify += 1; if (notify === 1) throw new Error('notify down'); return notifyStatus; }}
       readPipelineBoard={async () => { pipeline += 1; return board; }} />);
@@ -1199,20 +1209,38 @@ describe('operator web interactions', () => {
     expect(row.querySelectorAll('[aria-hidden="true"]:not(svg)').length).toBe(0);
   });
 
-  test('holds the layout, stale treatment, motion, and type-size contracts in one stylesheet', async () => {
-    const css = await Bun.file('src/operator-web/styles.css').text();
+  test('builds the console into the packaged static root with Tailwind and a loopback dev proxy', async () => {
+    const config = (await import('../../vite.operator.config.ts')).default as {
+      root: string; build: { outDir: string }; server: { host: string; proxy: Record<string, string> }; plugins: unknown[];
+    };
+    const names = config.plugins.flat(Infinity).map(plugin => (plugin as { name?: string } | null)?.name ?? '');
+    expect(config.root.endsWith('/src/operator-web')).toBe(true);
+    // `operator serve` and the tarball smoke read the build from dist/operator-ui.
+    expect(config.build.outDir.endsWith('/dist/operator-ui')).toBe(true);
+    expect(names).toContain('@tailwindcss/vite:generate:build');
+    expect(names).toContain('vite:react-babel');
+    expect(config.server.host).toBe('127.0.0.1');
+    expect(config.server.proxy['/api']).toBe(process.env.OPERATOR_API_ORIGIN ?? 'http://127.0.0.1:4318');
+  });
 
-    expect(css).toContain('.operator-main { display: block; flex: 1; }');
-    expect(css).toContain('width: min(720px, 100vw)');
-    expect(css).toContain('.operator-app[data-state="stale"] .operator-content { filter: saturate(.55); }');
-    expect(css).toContain('@media (max-width: 900px)');
+  test('holds the Kumo import order, stale treatment, motion and type-size floor in one stylesheet', async () => {
+    const css = await Bun.file('src/operator-web/app.css').text();
+
+    // Kumo's tokens register before Tailwind, and Tailwind must scan Kumo's components.
+    const order = ['@source "../../node_modules/@cloudflare/kumo/dist/', '@import "@cloudflare/kumo/styles/tailwind";', '@import "tailwindcss";']
+      .map(fragment => css.indexOf(fragment));
+    expect(order.every(index => index >= 0)).toBe(true);
+    expect(order).toEqual([...order].sort((left, right) => left - right));
+    expect(css).toContain('.operator-app[data-state="stale"] [role="tabpanel"] { filter: saturate(.55); }');
     expect(css).toContain('@media (prefers-reduced-motion: reduce)');
-    expect(css).toContain('.delivery-columns { grid-template-columns: repeat(2, minmax(0, 1fr)); }');
 
     const sizes = Array.from(css.matchAll(/font-size:\s*(\d+)px/gu), (match) => Number(match[1]));
+    for await (const relative of new Bun.Glob('*.tsx').scan({ cwd: 'src/operator-web' })) {
+      const source = await Bun.file(`src/operator-web/${relative}`).text();
+      sizes.push(...Array.from(source.matchAll(/text-\[(\d+)px\]/gu), (match) => Number(match[1])));
+    }
     expect(sizes.length).toBeGreaterThan(0);
     expect(Math.min(...sizes)).toBeGreaterThanOrEqual(11);
-
   });
 
   test('counts cards in the All filter and repositories in the unreadable filter', async () => {

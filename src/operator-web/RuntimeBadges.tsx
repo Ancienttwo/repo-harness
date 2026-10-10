@@ -71,7 +71,7 @@ export function RuntimeSummary({ view, now, t }: { view: RuntimeView; now: numbe
   return <><div className="pipeline-runtime-summary" data-runtime-status={failed ? 'refresh-failed' : overlay.status} role="status">
     <span>{t(failed ? 'runtimeObservation.refreshFailed' : overlay.status === 'unavailable' ? 'runtimeObservation.unavailable' : 'runtimeObservation.readOnly')}</span>
     {overlay.native_sources.length === 0 && <span>{t('runtimeObservation.unclaimed', { count: overlay.unclaimed })}</span>}
-    {overlay.observed_at && <time dateTime={overlay.observed_at} title={overlay.observed_at}>{t('runtimeObservation.observed')} {formatRelativeAge(overlay.observed_at, now, t)}</time>}
+    {overlay.observed_at && <time dateTime={overlay.observed_at} title={overlay.observed_at}>{formatRelativeAge(overlay.observed_at, now, t)}</time>}
   </div>
     <NativeRuntimeSources overlay={overlay} now={now} t={t} />
   </>;

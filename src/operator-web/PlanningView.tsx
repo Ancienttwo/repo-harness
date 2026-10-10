@@ -1,4 +1,4 @@
-import type { CollaborationViewState } from './App';
+import type { CollaborationViewState } from './RepositoryWorkspace';
 import type { OperatorFleetCardV1 } from './types';
 import type { OperatorTranslate } from './i18n';
 

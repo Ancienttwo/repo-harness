@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { OperatorApp, primaryCause } from '../../src/operator-web/App';
+import { OperatorApp } from '../../src/operator-web/App';
+import { primaryCause } from '../../src/operator-web/worklist';
 import {
   changedDuringReadSnapshot,
   degradedSnapshot,
@@ -11,8 +12,11 @@ import {
 } from '../../src/operator-web/fixture';
 import { projectSnapshotViewState, snapshotViewKind } from '../../src/operator-web/types';
 
+/** The Fleet worklist lives on the repository page; the board is the default route. */
+const REPOSITORY_PLACE = { workspace: 'repository', module: null, item: null } as const;
+
 function renderStable(snapshot = stableSnapshot): string {
-  return renderToStaticMarkup(<OperatorApp initialState={projectSnapshotViewState(snapshot)} initialLocale="en" />);
+  return renderToStaticMarkup(<OperatorApp initialState={projectSnapshotViewState(snapshot)} initialLocale="en" initialPlace={REPOSITORY_PLACE} />);
 }
 
 function ordered(markup: string, ...fragments: readonly string[]): boolean {
@@ -124,6 +128,7 @@ describe('operator web control board', () => {
     const markup = renderToStaticMarkup(
       <OperatorApp
         initialLocale="en"
+        initialPlace={REPOSITORY_PLACE}
         initialState={{
           kind: 'fatal',
           error: {
@@ -150,6 +155,7 @@ describe('operator web control board', () => {
     const markup = renderToStaticMarkup(
       <OperatorApp
         initialLocale="en"
+        initialPlace={REPOSITORY_PLACE}
         initialState={{
           kind: 'fatal',
           error: {

@@ -72,6 +72,7 @@
     "check:task-workflow": "repo-harness run check-task-workflow",
     "build:hook-bundle": "bun build src/cli/hook-entry.ts --target=bun --outfile dist/hook-entry.js --define REPO_HARNESS_BUNDLED_CLI_VERSION=\"\\\"$npm_package_version\\\"\" && head -1 dist/hook-entry.js | grep -q '^#!/usr/bin/env bun' && ! grep -q REPO_HARNESS_BUNDLED_CLI_VERSION dist/hook-entry.js",
     "build:operator-web": "vite build --config vite.operator.config.ts",
+    "dev:operator": "vite --config vite.operator.config.ts",
     "prepack": "bun run check:pi-package 1>&2 && bun run build:hook-bundle 1>&2 && bun run build:oar-hosts 1>&2 && bun run build:operator-web 1>&2",
     "prepublishOnly": "bash scripts/check-npm-release.sh --prepublish",
     "sync:brain-docs": "repo-harness run sync-brain-docs --all",
@@ -89,10 +90,10 @@
     }
   },
   "devDependencies": {
+    "@cloudflare/kumo": "2.14.0",
     "@colbymchenry/codegraph": "1.6.1",
-    "@fontsource/ibm-plex-sans": "^5.3.0",
-    "@fontsource/jetbrains-mono": "^5.3.0",
-    "@fontsource/space-grotesk": "^5.3.0",
+    "@phosphor-icons/react": "^2.1.10",
+    "@tailwindcss/vite": "^4.3.3",
     "@types/bun": "latest",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
@@ -102,6 +103,7 @@
     "happy-dom": "^20.14.5",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
+    "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
     "vite": "^8.3.1"
   },

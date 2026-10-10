@@ -57,10 +57,11 @@ describe('notify plugin status panel', () => {
     expect(markup).not.toContain('<form');
   });
 
-  test('the board section states a missing delivery without a control', () => {
+  test('the System page states a missing delivery without a control', () => {
     const markup = renderToStaticMarkup(
       <OperatorApp
         initialLocale="en"
+        initialPlace={{ workspace: 'system', module: null, item: null }}
         initialState={projectSnapshotViewState(stableSnapshot)}
         initialNotifyStatus={{ ...status, last_delivery: { at: null, result: 'missing' }, enabled: 'disabled' }}
       />,
