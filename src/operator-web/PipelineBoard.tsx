@@ -2,7 +2,8 @@ import { fetchRuntimeOverlay, useRuntimeOverlay, RuntimeSummary, RuntimeCardBadg
 import type { RuntimeOverlay } from '../core/operator/runtime-status';
 import { useCallback, useState, type ReactNode } from 'react';
 import { decodePipelineBoard, PIPELINE_STALE_AFTER_MS, type PipelineBoardV2, type PipelineCard } from '../core/pipeline/board';
-import { Icon } from './icons';
+import { Badge as KumoBadge, Banner } from '@cloudflare/kumo';
+import { CheckCircleIcon, FolderIcon, WarningIcon } from '@phosphor-icons/react';
 import { useObservationRefresh } from './useObservationRefresh';
 import {
   formatRelativeAge,
@@ -95,8 +96,12 @@ const FLAG_TONES: Readonly<Record<string, string>> = {
   registration_incomplete: 'tone-danger',
 };
 
+const BADGE_VARIANT: Readonly<Record<string, 'warning' | 'info' | 'purple' | 'error' | 'neutral'>> = {
+  'tone-user': 'warning', 'tone-agent': 'info', 'tone-external': 'purple', 'tone-danger': 'error', 'tone-neutral': 'neutral',
+};
+
 function Badge({ children, tone = 'tone-neutral' }: { readonly children: ReactNode; readonly tone?: string }) {
-  return <span className={`operator-badge ${tone}`}>{children}</span>;
+  return <KumoBadge variant={BADGE_VARIANT[tone] ?? 'neutral'} className={`operator-badge ${tone}`}>{children}</KumoBadge>;
 }
 
 function Age({ at, now, t }: { readonly at: string; readonly now: number; readonly t: OperatorTranslate }) {
@@ -110,8 +115,7 @@ function Notice({ tone, title, body }: { readonly tone: 'danger' | 'warning'; re
       role={tone === 'danger' ? 'alert' : 'status'}
       aria-live={tone === 'danger' ? undefined : 'polite'}
     >
-      <Icon name="alert" size={16} />
-      <div><strong>{title}</strong><span>{body}</span></div>
+      <Banner variant={tone === 'danger' ? 'error' : 'alert'} icon={<WarningIcon />} title={title} description={body} />
     </div>
   );
 }
@@ -246,7 +250,7 @@ function BoardBody({ board, refreshFailed, runtimeView, now, t }: {
         ))}
       </dl>
       {board.cards.length === 0 ? (
-        <div className="empty-inline"><Icon name="check" size={16} /><span>{t('pipeline.empty')}</span></div>
+        <div className="empty-inline"><CheckCircleIcon size={16} /><span>{t('pipeline.empty')}</span></div>
       ) : (
         <section aria-labelledby="pipeline-cards-heading">
           <h3 className="pipeline-cards__heading" id="pipeline-cards-heading">
@@ -282,14 +286,14 @@ function PipelineCardItem({ card, runtimeView, now, t }: {
         </span>
       </div>
       <p className="pipeline-card__meta">
-        <span><Icon name="repo" size={13} /> {card.repo}</span>
+        <span><FolderIcon size={13} /> {card.repo}</span>
         <span className="mono-value" title={card.task}>{card.task}</span>
         <span>{t('pipeline.runs.count', { count: card.runs.length })}</span>
       </p>
       <RuntimeCardBadges card={card} view={runtimeView} now={now} t={t} />
       {card.blocked !== null && (
         <p className="pipeline-card__blocked">
-          <Icon name="alert" size={13} />
+          <WarningIcon size={13} />
           <span>{t('pipeline.card.blocked', { reason: card.blocked })}</span>
         </p>
       )}

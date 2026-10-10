@@ -9,12 +9,9 @@ import { Window } from 'happy-dom';
 
 import { projectOperatorWorkExchangeSnapshot } from '../../src/core/operator/collaboration-snapshot';
 import type { CollaborativeWorkExchangeSnapshotV1 } from '../../src/core/collaboration/work-exchange';
-import {
-  CollaborationPane,
-  fetchOperatorCollaborationSnapshot,
-  fetchOperatorSnapshot,
-  OperatorApp,
-} from '../../src/operator-web/App';
+import { OperatorApp } from '../../src/operator-web/App';
+import { fetchOperatorCollaborationSnapshot, fetchOperatorSnapshot } from '../../src/operator-web/fleet-api';
+import { CollaborationPane } from '../../src/operator-web/RepositoryWorkspace';
 import {
   changedCollaborationSnapshot,
   collaborationSnapshot,
@@ -42,7 +39,7 @@ let window: Window;
  * a repository's lanes" hint is correctly unreachable there.
  */
 function installDom(): void {
-  window = new Window({ url: 'http://127.0.0.1:4318/' });
+  window = new Window({ url: 'http://127.0.0.1:4318/#repository' });
   Object.defineProperty(window, 'matchMedia', {
     configurable: true,
     value: (media: string) => ({
@@ -280,7 +277,9 @@ describe('operator collaboration surface', () => {
 
     expect(markup).toContain('Collaboration');
     expect(markup).toContain('mode shadow');
-    expect(markup).toContain('Read only. Nothing in this section writes.');
+    // The read-only boundary is stated once on the System page, not per section.
+    expect(markup).not.toContain('Read only. Nothing in this section writes.');
+    expect(markup).not.toContain('<form');
 
     // Lanes, hottest first, with C2's own score.
     expect(markup).toContain('capability.runtime-harness.collaboration');

@@ -312,23 +312,26 @@ describe('workspace navigation', () => {
   }
   const link = (workspace: string) => document.querySelector<HTMLAnchorElement>(`.workspace-nav a[data-workspace="${workspace}"]`)!;
 
-  test('keeps Overview and its three tabs, and states unavailable workspaces without data', async () => {
+  test('names four sections, starts on the Board and keeps the repository page with its three tabs', async () => {
     await mount(app());
-    expect([...document.querySelectorAll('.workspace-nav a')].map(item => item.textContent)).toEqual(['Overview', 'Architecture', 'Docs', 'Pipeline', 'Agent config']);
-    expect(link('overview').getAttribute('aria-current')).toBe('page');
-    expect(document.querySelectorAll('[role="tab"]')).toHaveLength(3);
-    for (const workspace of ['docs', 'pipeline', 'agent-config']) {
+    expect([...document.querySelectorAll('.workspace-nav a')].map(item => item.textContent)).toEqual(['Board', 'Repositories', 'Architecture', 'System']);
+    expect(link('board').getAttribute('aria-current')).toBe('page');
+    expect(document.querySelector('main')?.getAttribute('data-workspace')).toBe('board');
+    for (const workspace of ['repositories', 'system']) {
       await act(async () => link(workspace).click());
       expect(window.location.hash).toBe(`#${workspace}`);
       expect(link(workspace).getAttribute('aria-current')).toBe('page');
-      const panel = document.querySelector('[data-workspace-state="unavailable"]')!;
-      expect(panel.textContent).toContain('Not available yet');
-      expect(panel.querySelectorAll('li, table, dl, svg')).toHaveLength(0);
-      expect(document.querySelectorAll('[role="tab"]')).toHaveLength(0);
+      expect(document.querySelector('main')?.getAttribute('data-workspace')).toBe(workspace);
     }
-    await act(async () => link('overview').click());
-    expect(window.location.hash).toBe('');
+    await act(async () => {
+      window.location.hash = '#repository';
+      window.dispatchEvent(new window.HashChangeEvent('hashchange'));
+    });
+    expect(link('repositories').getAttribute('aria-current')).toBe('page');
     expect(document.querySelectorAll('[role="tab"]')).toHaveLength(3);
+    await act(async () => link('board').click());
+    expect(window.location.hash).toBe('#board');
+    expect(document.querySelectorAll('#view-tab-organization')).toHaveLength(0);
   });
 
   test('loads Architecture on demand and keeps the module in the hash when a neighbor recenters', async () => {

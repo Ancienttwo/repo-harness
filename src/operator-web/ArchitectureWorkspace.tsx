@@ -1,13 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import type { Json } from 'archctx-contracts';
 import type { ModuleDetailV1, ModuleIndexV1, ModuleState } from '../core/architecture/module-view';
 import type { ModuleReviewPromptV1 } from '../core/review/module-review-prompt';
 import { decodeArchitectureModuleDetail, decodeArchitectureModuleIndex, decodeArchitectureReviewPrompt } from '../core/operator/architecture';
-import { copyOperatorIdentifier } from './App';
-import { Icon } from './icons';
 import type { OperatorMessageKey, OperatorTranslate } from './i18n';
 import { ModuleGraph } from './ModuleGraph';
 import { useObservationRefresh } from './useObservationRefresh';
+import { CopyButton } from './ui';
 
 /** A typed failure code from the route. The board shows it and never parses messages. */
 function failureCode(body: unknown): string {
@@ -116,21 +115,6 @@ function ModuleList({ index, onModule, t }: { readonly index: ModuleIndexV1; rea
       </section>
     ))}
   </div>;
-}
-
-function CopyButton({ label, value, t }: { readonly label: string; readonly value: string; readonly t: OperatorTranslate }) {
-  const [status, setStatus] = useState<'idle' | 'copied' | 'failed'>('idle');
-  useEffect(() => setStatus('idle'), [value]);
-  return <>
-    <button className="copy-value__button" type="button" aria-label={t('copy.action', { label })}
-      onClick={() => void copyOperatorIdentifier(value).then(copied => setStatus(copied ? 'copied' : 'failed'))}>
-      <Icon name="copy" size={14} />
-      <span>{status === 'copied' ? t('copy.copied') : status === 'failed' ? t('copy.failed') : t('copy.idle')}</span>
-    </button>
-    <span className="copy-value__status" role="status" aria-live="polite">
-      {status === 'copied' ? t('copy.copiedStatus', { label }) : status === 'failed' ? t('copy.failedStatus', { label }) : ''}
-    </span>
-  </>;
 }
 
 function ReviewPromptPanel({ base, generation, t }: { readonly base: string; readonly generation: number; readonly t: OperatorTranslate }) {

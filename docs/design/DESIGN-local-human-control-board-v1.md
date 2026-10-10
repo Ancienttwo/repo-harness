@@ -89,6 +89,8 @@
 
 ## Typography (字型排印)
 
+> Note: the Kumo console plan (`plans/plan-20261010-0320-operator-console-kumo.md`) replaces the typography and styling in this document.
+
 - Typeface(s): Space Grotesk display、IBM Plex Sans body、JetBrains Mono ids/labels/code，复用 reference 自托管 font packages。
 - Scale / weights: dashboard 主体以 12/14/16/18/22/28px 为主，400/500/600/700；数字、revision、SHA 使用 tabular mono。
 - Language-specific notes: v1 UI copy 使用 concise English technical labels；CJK/系统 fallback 保留，line-height 不低于 1.45。

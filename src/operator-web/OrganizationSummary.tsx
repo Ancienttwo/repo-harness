@@ -1,4 +1,4 @@
-import type { CollaborationViewState } from './App';
+import type { CollaborationViewState } from './RepositoryWorkspace';
 import type { OperatorTranslate } from './i18n';
 
 export function OrganizationSummary({ state, repositoryId, t }: { readonly state: CollaborationViewState; readonly repositoryId: string; readonly t: OperatorTranslate }) {

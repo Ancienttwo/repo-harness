@@ -89,9 +89,12 @@ function outputOperatorError(error: unknown): void {
   process.exitCode = invalid ? 2 : 1;
 }
 
-/** Start the local server and keep the CLI alive until an interrupt signal. */
+/**
+ * Start the local server and keep the CLI alive until an interrupt signal.
+ * `serve` owns the background Dev Activity collector; the server stops it on close.
+ */
 export async function runOperatorServe(options: OperatorServeOptions): Promise<void> {
-  const server = await startOperatorServer(options);
+  const server = await startOperatorServer({ ...options, dev_activity_collector: true });
   process.stdout.write(`${server.url}\n`);
   let shutdown: (() => void) | undefined;
   try {
