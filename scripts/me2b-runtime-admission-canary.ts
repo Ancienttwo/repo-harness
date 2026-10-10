@@ -38,14 +38,14 @@ export interface Me2bRuntimeDecisionV2 {
 
 export interface Me2bRuntimeControlsV2 {
   readonly read_only_exit_code: number;
-  readonly read_only_signal_code: string | null;
+  readonly read_only_signal_code: NodeJS.Signals | number | null;
   readonly read_only_stdout_sha256: `sha256:${string}`;
   readonly read_only_stderr_sha256: `sha256:${string}`;
   readonly read_only_stderr_excerpt: string;
   readonly read_only_worktree_before_sha256: `sha256:${string}`;
   readonly read_only_worktree_after_sha256: `sha256:${string}`;
   readonly workspace_write_exit_code: number;
-  readonly workspace_write_signal_code: string | null;
+  readonly workspace_write_signal_code: NodeJS.Signals | number | null;
   readonly workspace_write_stderr_sha256: `sha256:${string}`;
   readonly workspace_write_stderr_excerpt: string;
   readonly static_parent_exit_code: number | null;
@@ -89,14 +89,14 @@ export interface Me2bRuntimeCanaryDependenciesV2 {
 
 interface ProcessResult {
   readonly exitCode: number;
-  readonly signalCode: string | null;
+  readonly signalCode: NodeJS.Signals | number | null;
   readonly stdout: Uint8Array;
   readonly stderr: Uint8Array;
 }
 
 export interface ReadOnlyControlEvidence {
   readonly exitCode: number;
-  readonly signalCode: string | null;
+  readonly signalCode: NodeJS.Signals | number | null;
   readonly stdout: Uint8Array;
   readonly stderrExcerpt: string;
   readonly sentinelExists: boolean;
