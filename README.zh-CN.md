@@ -520,6 +520,7 @@ Canonical 的 rule-owner package 放在 `assets/skills/` 和 `assets/skill-comma
 | `repo-harness-chatgpt` | Oracle browser/GPT Pro consult、MCP Connector setup 和 bridge handoff；仅限显式 setup |
 | `obsidian-memory` | Bot：明确请求后读取或写入记忆。 |
 | `repo-harness-test` | Worker：源码测试与真实 fixture。 |
+| `windows-python-first` | Worker：原生 Windows 下用 Python 处理文件、文本和 shell 任务。 |
 | `merge-gate`（外部） | Exact-candidate 的 final gate；repo-harness 本身不附带 merge-gate Skill——见 [external tooling](docs/reference-configs/external-tooling.md) |
 
 Bot skills 负责范围、委派和验收。Worker skills 负责执行。
@@ -527,7 +528,8 @@ Bot skills 负责范围、委派和验收。Worker skills 负责执行。
 Bot: `repo-harness`, `repo-harness-check`, `repo-harness-product`,
 `repo-harness-ship`, `obsidian-memory`, `repo-harness-cross-review`,
 `repo-harness-chatgpt`. Worker: `repo-harness-setup`,
-`repo-harness-test`, and `repo-harness-architecture`.
+`repo-harness-test`, `repo-harness-architecture`, and
+`windows-python-first`.
 `obsidian-memory`, and `repo-harness-ship` 必须显式调用。
 普通任务使用简短 brief 和 PR 描述。PRD、Sprint、Goal 用于明确请求的产品工作。
 
