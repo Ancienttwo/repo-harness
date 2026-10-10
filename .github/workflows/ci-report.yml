@@ -35,7 +35,7 @@ jobs:
           persist-credentials: false
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.4.0
+          bun-version: 1.4.3
       - name: Read provider rollback commits, dispatch failures and write report
         env:
           GH_TOKEN: ${{ github.token }}
@@ -65,7 +65,7 @@ jobs:
           persist-credentials: false
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.4.0
+          bun-version: 1.4.3
       - name: Detect daily full validation that never started or exceeded its deadline
         env:
           GH_TOKEN: ${{ github.token }}
