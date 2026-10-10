@@ -1,15 +1,20 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react';
 import { Button, Loader, cn } from '@cloudflare/kumo';
 import {
   ArrowClockwiseIcon,
   CpuIcon,
   DesktopIcon,
+  DotsThreeIcon,
   FoldersIcon,
   KanbanIcon,
   MoonIcon,
+  PlugsConnectedIcon,
+  PuzzlePieceIcon,
+  RobotIcon,
   SunIcon,
   TreeStructureIcon,
 } from '@phosphor-icons/react';
+import type { SetupSnapshotV1 } from '../core/setup/types';
 import type { DevActivitySnapshotV1 } from '../core/dev-activity/types';
 import type { NotifyStatusV1 } from '../core/operator/notify-status';
 import type { RuntimeOverlay } from '../core/operator/runtime-status';
@@ -40,6 +45,8 @@ import { CarrotMark } from './marks';
 import type { NotifyStatusReader } from './NotifyStatus';
 import type { PipelineBoardReader } from './PipelineBoard';
 import { RepositoriesPage } from './RepositoriesPage';
+import { fetchSetup, setupPageState, useSetup, type SetupReader, type SetupView } from './setup';
+import { AgentsPage, HooksPage, SkillsPage } from './SetupPages';
 import {
   RepositorySwitch,
   RepositoryWorkspace,
@@ -65,7 +72,7 @@ import {
 } from './types';
 import { useNow } from './ui';
 import { useObservationRefresh } from './useObservationRefresh';
-import { parseWorkspaceLocation, workspaceHash, WORKSPACES, type Workspace, type WorkspaceLocation } from './workspace-location';
+import { parseWorkspaceLocation, SETUP_WORKSPACES, workspaceHash, WORKSPACES, type Workspace, type WorkspaceLocation } from './workspace-location';
 import { taskKey } from './worklist';
 
 export interface OperatorAppProps {
@@ -94,6 +101,9 @@ export interface OperatorAppProps {
   readonly initialNotifyStatus?: NotifyStatusV1;
   readonly readPipelineBoard?: PipelineBoardReader;
   readonly initialPipelineBoard?: PipelineBoardV2;
+  /** The cached `repo-harness setup check` result behind the Agents, Skills and Hooks pages. */
+  readonly readSetup?: SetupReader;
+  readonly initialSetup?: SetupSnapshotV1;
 }
 
 export const OPERATOR_REPOSITORY_STORAGE_KEY = 'repo-harness:operator-repository';
@@ -130,13 +140,41 @@ const ArchitectureWorkspace = lazy(() => import('./ArchitectureWorkspace').then(
 const NAV_ICON: Readonly<Record<typeof WORKSPACES[number], ReactNode>> = {
   board: <KanbanIcon size={18} />,
   repositories: <FoldersIcon size={18} />,
+  agents: <RobotIcon size={18} />,
+  skills: <PuzzlePieceIcon size={18} />,
+  hooks: <PlugsConnectedIcon size={18} />,
   architecture: <TreeStructureIcon size={18} />,
   system: <CpuIcon size={18} />,
 };
 
+/** Seven sections do not fit a phone's bottom bar; these sit behind "More" below the md breakpoint. */
+const PHONE_OVERFLOW: ReadonlySet<Workspace> = new Set<Workspace>(['skills', 'hooks', 'architecture']);
+
+function isActive(current: Workspace, workspace: Workspace): boolean {
+  return current === workspace || (workspace === 'repositories' && current === 'repository');
+}
+
+function plainClick(event: MouseEvent<HTMLAnchorElement>): boolean {
+  return event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
+}
+
 function WorkspaceNav({ current, attention, onOpen, t }: {
   readonly current: Workspace; readonly attention: number | null; readonly onOpen: (next: WorkspaceLocation) => void; readonly t: OperatorTranslate;
 }) {
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreRef = useRef<HTMLLIElement>(null);
+  const moreButtonRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!moreOpen) return;
+    const away = (event: Event) => { if (!moreRef.current?.contains(event.target as Node)) setMoreOpen(false); };
+    document.addEventListener('pointerdown', away);
+    return () => document.removeEventListener('pointerdown', away);
+  }, [moreOpen]);
+  const open = (event: MouseEvent<HTMLAnchorElement>, next: WorkspaceLocation) => {
+    if (!plainClick(event)) return;
+    event.preventDefault(); setMoreOpen(false); onOpen(next);
+  };
+  const overflowActive = [...PHONE_OVERFLOW].some(workspace => isActive(current, workspace));
   return (
     // The rail's background and border stretch with the page; only the nav inside it sticks to the viewport.
     <div className="md:w-52 md:shrink-0 md:border-r md:border-kumo-line md:bg-kumo-base" data-nav-rail>
@@ -149,16 +187,13 @@ function WorkspaceNav({ current, attention, onOpen, t }: {
       <ul className="flex w-full justify-around md:flex-col md:gap-0.5">
         {WORKSPACES.map(workspace => {
           const next: WorkspaceLocation = { workspace, module: null, item: null };
-          const active = current === workspace || (workspace === 'repositories' && current === 'repository');
+          const active = isActive(current, workspace);
           return (
-            <li key={workspace} className="flex-1 md:flex-none">
+            <li key={workspace} className={cn('min-w-0 flex-1 md:flex-none', PHONE_OVERFLOW.has(workspace) && 'max-md:hidden')}>
               <a href={workspaceHash(next)} aria-current={active ? 'page' : undefined} data-workspace={workspace}
                 className={cn('flex flex-col items-center gap-0.5 px-2 py-2 text-[11px] font-medium md:flex-row md:gap-2.5 md:rounded-md md:px-2.5 md:py-1.5 md:text-sm',
                   active ? 'text-kumo-strong md:bg-kumo-tint' : 'text-kumo-subtle hover:text-kumo-default md:hover:bg-kumo-tint')}
-                onClick={(event: MouseEvent<HTMLAnchorElement>) => {
-                  if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-                  event.preventDefault(); onOpen(next);
-                }}>
+                onClick={event => open(event, next)}>
                 {NAV_ICON[workspace]}
                 <span>{t(`nav.${workspace}`)}</span>
                 {workspace === 'board' && attention !== null && attention > 0 && (
@@ -168,6 +203,36 @@ function WorkspaceNav({ current, attention, onOpen, t }: {
             </li>
           );
         })}
+        <li ref={moreRef} className="relative min-w-0 flex-1 md:hidden" data-nav-more
+          onKeyDown={(event: KeyboardEvent<HTMLLIElement>) => {
+            if (event.key !== 'Escape' || !moreOpen) return;
+            event.stopPropagation(); setMoreOpen(false); moreButtonRef.current?.focus();
+          }}>
+          <button ref={moreButtonRef} type="button" aria-expanded={moreOpen} aria-controls="nav-more-menu" onClick={() => setMoreOpen(value => !value)}
+            className={cn('flex w-full cursor-pointer flex-col items-center gap-0.5 px-2 py-2 text-[11px] font-medium', overflowActive || moreOpen ? 'text-kumo-strong' : 'text-kumo-subtle')}>
+            <DotsThreeIcon size={18} />
+            <span>{t('nav.more')}</span>
+          </button>
+          {moreOpen && (
+            <ul id="nav-more-menu" aria-label={t('nav.moreLabel')}
+              className="absolute right-1 bottom-full mb-2 flex w-48 flex-col gap-0.5 rounded-lg border border-kumo-line bg-kumo-base p-1 shadow-lg">
+              {[...PHONE_OVERFLOW].map(workspace => {
+                const next: WorkspaceLocation = { workspace, module: null, item: null };
+                const active = isActive(current, workspace);
+                return (
+                  <li key={workspace}>
+                    <a href={workspaceHash(next)} aria-current={active ? 'page' : undefined} data-more-workspace={workspace}
+                      className={cn('flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm', active ? 'bg-kumo-tint font-medium text-kumo-strong' : 'text-kumo-default hover:bg-kumo-tint')}
+                      onClick={event => open(event, next)}>
+                      {NAV_ICON[workspace as typeof WORKSPACES[number]]}
+                      <span>{t(`nav.${workspace as typeof WORKSPACES[number]}`)}</span>
+                    </a>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </li>
       </ul>
       {/* Protocol vocabulary: never translated. The full boundary lives on the System page. */}
       <p className="mt-auto hidden px-2.5 text-xs text-kumo-subtle md:block">read-only</p>
@@ -196,12 +261,31 @@ function Freshness({ view, now, t }: { readonly view: DevActivityView; readonly 
   );
 }
 
+/** The same line for the setup pages, about the setup check result they show. */
+function SetupFreshness({ view, now, t }: { readonly view: SetupView; readonly now: number; readonly t: OperatorTranslate }) {
+  const state = setupPageState(view);
+  if (state.kind === 'pending') return <span className="inline-flex items-center gap-1.5" data-freshness="pending" data-freshness-source="setup"><Loader size={12} />{t('freshness.setup.loading')}</span>;
+  if (state.kind === 'failed') {
+    return <span className="text-kumo-danger" data-freshness="failed" data-freshness-source="setup">{t('freshness.setup.failed', { reason: t(`setup.reason.${state.reason}`) })}</span>;
+  }
+  const { snapshot } = state;
+  const age = ageWords(snapshot.collected_at ?? '', now, t);
+  const stale = snapshot.status === 'stale';
+  const lead = stale ? t('freshness.setup.stale', { age }) : state.refreshFailed ? t('freshness.setup.refreshFailed', { age }) : t('freshness.setup.read', { age });
+  const attention = snapshot.checks.length > 0 ? t('freshness.setup.attention', { count: snapshot.checks.length }) : t('freshness.setup.clear');
+  return (
+    <span className={cn('truncate', (stale || state.refreshFailed) && 'text-kumo-warning')} data-freshness={stale ? 'stale' : state.refreshFailed ? 'refresh-failed' : 'ready'} data-freshness-source="setup">
+      {lead}{' · '}{attention}
+    </span>
+  );
+}
+
 const THEME_ICON: Readonly<Record<ThemePreference, ReactNode>> = {
   system: <DesktopIcon size={16} />, light: <SunIcon size={16} />, dark: <MoonIcon size={16} />,
 };
 
-function TopBar({ workspace, view, now, filters, onBoardRepository, attention, onNeedsYou, busy, onRefresh, locale, onLocale, theme, onTheme, t }: {
-  readonly workspace: Workspace; readonly view: DevActivityView; readonly now: number;
+function TopBar({ workspace, view, setup, now, filters, onBoardRepository, attention, onNeedsYou, busy, onRefresh, locale, onLocale, theme, onTheme, t }: {
+  readonly workspace: Workspace; readonly view: DevActivityView; readonly setup: SetupView; readonly now: number;
   readonly filters: BoardFilters; readonly onBoardRepository: (id: string | null) => void;
   readonly attention: number | null; readonly onNeedsYou: () => void;
   readonly busy: boolean; readonly onRefresh: () => void;
@@ -234,7 +318,10 @@ function TopBar({ workspace, view, now, filters, onBoardRepository, attention, o
             </select>
           </label>
         )}
-        <span className="min-w-0 flex-1 truncate"><Freshness view={view} now={now} t={t} /></span>
+        {/* One freshness line, about the source of the page on screen. */}
+        <span className="min-w-0 flex-1 truncate">
+          {(SETUP_WORKSPACES as readonly Workspace[]).includes(workspace) ? <SetupFreshness view={setup} now={now} t={t} /> : <Freshness view={view} now={now} t={t} />}
+        </span>
       </div>
       <span className="flex-1 sm:hidden" />
       {attention !== null && (
@@ -277,6 +364,8 @@ export function OperatorApp({
   initialNotifyStatus,
   readPipelineBoard,
   initialPipelineBoard,
+  readSetup = fetchSetup,
+  initialSetup,
 }: OperatorAppProps) {
   const initial = initialState ?? (initialSnapshot ? projectSnapshotViewState(initialSnapshot) : { kind: 'loading', previous: null } as const);
   const [state, setState] = useState<OperatorSnapshotViewState>(initial);
@@ -314,6 +403,8 @@ export function OperatorApp({
   useEffect(() => {
     if (typeof document !== 'undefined') document.title = documentTitle(attention);
   }, [attention]);
+  // Agents, Skills and Hooks share one cached setup check result; it is read only while one of them shows.
+  const setup = useSetup(readSetup, initialSetup, refreshGeneration, (SETUP_WORKSPACES as readonly Workspace[]).includes(workspace));
   const runtime = useRuntimeOverlay(readRuntimeStatus, initialRuntimeOverlay, workspace === 'board', refreshGeneration);
   // A stored board filter for a repository that left the snapshot shows every repository.
   const boardFilters = devSnapshot && filters.repositoryId !== null && !devSnapshot.repositories.some(row => row.repository_id === filters.repositoryId)
@@ -463,13 +554,16 @@ export function OperatorApp({
     >
       <WorkspaceNav current={workspace} attention={attention} onOpen={openPlace} t={t} />
       <div className="flex min-w-0 flex-1 flex-col">
-        <TopBar workspace={workspace} view={devActivity} now={now} filters={boardFilters} onBoardRepository={setBoardRepository}
+        <TopBar workspace={workspace} view={devActivity} setup={setup} now={now} filters={boardFilters} onBoardRepository={setBoardRepository}
           attention={attention} onNeedsYou={openNeedsYou} busy={busy} onRefresh={refresh}
           locale={locale} onLocale={setLocale} theme={theme.preference} onTheme={theme.cycle} t={t} />
         <main className="operator-content mx-auto flex w-full max-w-[1680px] min-w-0 flex-1 flex-col gap-5 px-4 pt-5 pb-[calc(6rem+env(safe-area-inset-bottom))] md:px-6 md:pb-10" data-workspace={workspace}>
           {workspace === 'board' && <Board view={devActivity} runtime={runtime} filters={boardFilters} onFilters={setFilters} itemId={place.item}
             onOpenItem={item => openPlace({ workspace: 'board', module: null, item })} onCloseItem={() => openPlace({ workspace: 'board', module: null, item: null })} now={now} t={t} />}
           {workspace === 'repositories' && <RepositoriesPage view={devActivity} onOpen={openRepository} t={t} />}
+          {workspace === 'agents' && <AgentsPage view={setup} now={now} t={t} />}
+          {workspace === 'skills' && <SkillsPage view={setup} now={now} t={t} />}
+          {workspace === 'hooks' && <HooksPage view={setup} now={now} t={t} />}
           {workspace === 'repository' && <RepositoryWorkspace
             state={state} activeRepository={activeRepository} activeRepositoryId={activeRepositoryId} onRepository={switchRepository}
             location={location} selection={selection} selectedCard={selectedCard} revisionChangedFrom={revisionChangedFrom}

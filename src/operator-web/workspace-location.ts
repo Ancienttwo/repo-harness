@@ -2,7 +2,9 @@
 export const CAPABILITY_ID = /^capability\.[a-z0-9-]+(\.[a-z0-9-]+)+$/u;
 
 /** Navigation order. Every entry has a data source; no placeholder pages. */
-export const WORKSPACES = ['board', 'repositories', 'architecture', 'system'] as const;
+export const WORKSPACES = ['board', 'repositories', 'agents', 'skills', 'hooks', 'architecture', 'system'] as const;
+/** The three pages read from one `repo-harness setup check` result. */
+export const SETUP_WORKSPACES = ['agents', 'skills', 'hooks'] as const;
 /** `repository` is the detail page of one repository; it is reached from the list, not the nav. */
 export type Workspace = typeof WORKSPACES[number] | 'repository';
 
@@ -28,7 +30,7 @@ function decodeItem(value: string): string | null {
 export function parseWorkspaceLocation(hash: string): WorkspaceLocation {
   const [name, parameter, ...rest] = hash.replace(/^#/u, '').split('/');
   if (rest.length > 0) return BOARD;
-  if (name === 'repositories' || name === 'repository' || name === 'system') {
+  if (name === 'repositories' || name === 'repository' || name === 'system' || name === 'agents' || name === 'skills' || name === 'hooks') {
     return parameter === undefined ? { workspace: name, module: null, item: null } : BOARD;
   }
   if (name === 'architecture') {
