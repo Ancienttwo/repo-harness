@@ -113,7 +113,7 @@ describe('single affected verification and daily fallback', () => {
     const checkout = job.steps.find((step: any) => step.uses === 'actions/checkout@v4');
     expect(checkout.with).toEqual({ ref: '${{ github.event.pull_request.head.sha }}', 'persist-credentials': false });
     expect(job.steps.find((step: any) => step.uses === 'actions/setup-node@v4').with['node-version']).toBe('24');
-    expect(job.steps.find((step: any) => step.uses === 'oven-sh/setup-bun@v2').with['bun-version']).toBe('1.4.0');
+    expect(job.steps.find((step: any) => step.uses === 'oven-sh/setup-bun@v2').with['bun-version']).toBe('1.4.3');
     expect(job.steps.some((step: any) => step.run === 'bun install --frozen-lockfile')).toBe(true);
     const matrix = job.steps.find((step: any) => step.name === 'Run the native Windows path matrix and contract tests');
     const daily = workflow.jobs['mcp-path-matrix'].steps.find((step: any) => step.name === 'Run the native path tests');

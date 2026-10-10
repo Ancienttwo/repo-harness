@@ -33,7 +33,7 @@ jobs:
           persist-credentials: false
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.4.0
+          bun-version: 1.4.3
       - id: select
         run: bun scripts/select-ci-coverage.ts
       - uses: actions/upload-artifact@v4
@@ -63,7 +63,7 @@ jobs:
           node-version: '24'
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.4.0
+          bun-version: 1.4.3
       - name: Run the isolation tests
         shell: bash
         run: |
@@ -108,7 +108,7 @@ jobs:
           node-version: '24'
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.4.0
+          bun-version: 1.4.3
       - run: sudo apt-get update && sudo apt-get install -y jq rsync
       - run: |
           git config --global user.name 'github-actions[bot]'
@@ -140,7 +140,7 @@ jobs:
           node-version: '24'
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.4.0
+          bun-version: 1.4.3
       - run: sudo apt-get update && sudo apt-get install -y jq rsync
       - run: |
           git config --global user.name 'github-actions[bot]'
@@ -169,7 +169,7 @@ jobs:
           node-version: '24'
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.4.0
+          bun-version: 1.4.3
       - run: sudo apt-get update && sudo apt-get install -y jq rsync
       - run: |
           git config --global user.name 'github-actions[bot]'
@@ -199,7 +199,7 @@ jobs:
           node-version: '24'
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.4.0
+          bun-version: 1.4.3
       - run: bun install --frozen-lockfile
       - name: Run the native path tests
         shell: bash
