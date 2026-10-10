@@ -133,6 +133,9 @@ describe('optional strategy and progressive memory', () => {
     const { root, doc, save } = fixture();
     expect(collect(root, { nowMs, topics: ['other'] }).memory).toEqual([]);
     doc.memory[0]!.expiresAt = '2026-10-07T00:00:00.000Z'; save(); expect(collect(root, { nowMs }).memory).toEqual([]);
+    for (const bad of ['2026-02-30T00:00:00.000Z', '2026-04-31T00:00:00.000Z', '2026-01-01T24:00:00.000Z']) {
+      expect(() => parseStrategyDocument({ ...doc, memory: [{ ...doc.memory[0]!, expiresAt: bad }] })).toThrow('Invalid expiry');
+    }
     doc.memory[0]!.expiresAt = null; doc.memory[0]!.supersededBy = 'new-id'; save(); expect(collect(root, { nowMs }).memory).toEqual([]);
     doc.memory[0]!.supersededBy = null; doc.memory[0]!.reviewOnRevision = '0'.repeat(40); save(); expect(collect(root, { nowMs }).memory).toEqual([]);
     for (const kind of ['long_term', 'current', 'error'] as const) { doc.memory[0]!.reviewOnRevision = null; doc.memory[0]!.kind = kind; save(); expect(collect(root, { nowMs }).memory[0]!.kind).toBe(kind); }

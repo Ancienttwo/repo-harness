@@ -56,6 +56,12 @@ function claim(v: unknown): asserts v is Claim {
   const o = object(v); exact(o, ['text', 'kind', 'evidence']); text(o.text); strings(o.evidence);
   if (typeof o.kind !== 'string' || !['fact', 'assumption', 'unknown'].includes(o.kind)) throw new Error('Invalid claim kind');
 }
+// Date.parse rolls impossible calendar values forward (02-30 becomes 03-02),
+// so only a value that round-trips to the same canonical string is valid.
+function isCanonicalInstant(value: string): boolean {
+  const ms = Date.parse(value);
+  return Number.isFinite(ms) && new Date(ms).toISOString() === value;
+}
 export function parseStrategyDocument(v: unknown): StrategyDocument {
   const o = object(v);
   exact(o, ['version', 'goal', 'owner', 'intendedResults', 'realityConstraints', 'observedOutcomes', 'gaps', 'architecture', 'evidence', 'memory']);
@@ -72,7 +78,7 @@ export function parseStrategyDocument(v: unknown): StrategyDocument {
     text(m.id, 100); text(m.summary, 1000); strings(m.provenance); strings(m.applicability); strings(m.reviewConditions);
     if (typeof m.kind !== 'string' || !['long_term', 'current', 'error'].includes(m.kind) || typeof m.lifecycle !== 'string' || !['active', 'stale', 'superseded', 'archived', 'tombstoned'].includes(m.lifecycle)) throw new Error('Invalid memory classification');
     if (m.body !== null) evidence(m.body);
-    if (m.expiresAt !== null && (typeof m.expiresAt !== 'string' || !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(m.expiresAt) || !Number.isFinite(Date.parse(m.expiresAt)))) throw new Error('Invalid expiry');
+    if (m.expiresAt !== null && (typeof m.expiresAt !== 'string' || !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(m.expiresAt) || !isCanonicalInstant(m.expiresAt))) throw new Error('Invalid expiry');
     if (m.reviewOnRevision !== null) revision(m.reviewOnRevision);
     if (m.supersededBy !== null) text(m.supersededBy, 100);
   });
