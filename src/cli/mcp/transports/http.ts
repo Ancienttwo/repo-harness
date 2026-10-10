@@ -33,6 +33,7 @@ import { McpSessionStore } from '../session-store';
 import { buildMcpToolDefinitions } from '../tools';
 import { repoHarnessPackageVersion } from '../version';
 import { createPmMcpBinding } from '../pm-server';
+import { PmError } from '../../../core/pm/protocol';
 
 export interface McpHttpOptions extends McpServerOptions {
   host?: string;
@@ -864,6 +865,14 @@ export async function startMcpHttp(opts: McpHttpOptions): Promise<void> {
   app.post('/mcp', requireMcpHttpAuth(authMode, authToken, oauthProvider, configuredPublicOrigin), express.raw({ type: '*/*', limit: '1mb' }), (req, res) => {
     handleMcpPost(req, res, { ...opts, repo: repoRoot, pmBinding }, sessions, codingRuntimes, profile,
       (engineer || pm) && oauthProvider ? (token, authorizationId) => {
+        // This verifier also runs inside the PM effect guard after every lock
+        // wait. Closing a session cannot cancel an already queued operation.
+        if (pm) {
+          const live = loadMcpLocalConfig();
+          if (live?.version !== 3 || live.profile !== 'pm' || live.pm?.enabled !== true
+            || live.authorizationRevision !== repoHarnessAuthorizationRevision()
+            || (live.auth?.mode ?? 'oauth') !== 'oauth') throw new PmError('pm_http_configuration_changed');
+        }
         const current = oauthProvider.verifyAccessTokenCurrent(token) as McpStoredAuthInfo;
         if (current.authorizationId !== authorizationId) throw new InvalidTokenError(`${profile} authorization identity changed`);
       } : undefined,

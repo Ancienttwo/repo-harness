@@ -652,12 +652,14 @@ export async function sendTaskRequest(repoRoot: string, task: string, role: stri
     try {
       if (applicationDelivery) await applicationDelivery(request);
       else mutate(binding.endpoint, ['agent', 'prompt', binding.agent_name, `Read task request ${requestPath}; write its result only to ${request.result_ref}.`]);
-      guard?.();
-      writeSessionArtifact(join(dir, `delivery-${round}.json`), { request_id: request.request_id, state: 'accepted' });
     } catch (error) {
       writeSessionArtifact(join(dir, `delivery-${round}.json`), { request_id: request.request_id, state: 'unknown', error: String(error) });
       throw new Error('task_agent_delivery_unknown; inspect the same request/result before further action');
     }
+    // Successful transport ACK is a durable fact. A later authority denial
+    // refuses further work, but must not turn accepted delivery into unknown.
+    writeSessionArtifact(join(dir, `delivery-${round}.json`), { request_id: request.request_id, state: 'accepted' });
+    guard?.();
     return request;
   });
 }
