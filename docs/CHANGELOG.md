@@ -34,12 +34,18 @@ All notable changes to this skill are documented here.
   workers are conditionally supported. Live Hermes configuration and a real
   coding-provider task are not yet verified. The Hermes restriction is a tool
   boundary, not an OS sandbox. (#608)
+- Add a scoped PM MCP server for Bot controllers. It exposes the same bounded
+  PM operations over MCP with server-owned repository and action scope. It
+  keeps task IDs, atomic claims, fencing and operation receipts. It adds no
+  shell tool, ledger, approval identity or credentials. Dot hosts, live
+  providers and event wake are not yet verified. (#615)
 
 ### Changed
 
 - Upgrade OAR to `0.45.1`. (#607)
 - macOS native CI installs the pinned Herdr 0.9.3 binary and verifies its
   checksum before Herdr-dependent tests. (#612)
+- CI pins Bun 1.4.3. (#616)
 - New task worktrees default to `/tmp/<repo>-wt-<slug>`, and MCP coding
   workspaces default to `/tmp/repo-harness-mcp-worktrees`. Native Windows
   uses its system temp directory instead of `/tmp`. New policies store the

@@ -2,8 +2,9 @@
 
 ## Scope and authority
 
-- Remote base: `bd1b971f93d062ac654acdc6ef93c0a92d5d9cb9` (#608), after the
-  third main sync merge. The second main sync used `461e054ee5538bc4038fee8b5c3c5011435fbbf8` (#607).
+- Remote base: `daa49e202b49068418ead6a78e399d851ddf3d73` (#615), after the
+  fifth main sync merge. The fourth main sync used `80e773fa1b91c075ddef0a0cc47203920a57e23e` (#616).
+  The third main sync used `bd1b971f93d062ac654acdc6ef93c0a92d5d9cb9` (#608). The second main sync used `461e054ee5538bc4038fee8b5c3c5011435fbbf8` (#607).
   The first main sync used `5f6065b47443f1183166ec9999f71698eb1b9eb1` (#606).
   The original fork point was `e7c86c553f229a0068dba7bef727192c8a93220c` (#600).
 - Include #599 at `84c225c1ebfe9ce34f4e6268662714241ca0b33b` and
@@ -27,6 +28,14 @@
   `dist/oar-coding-host.js` and two PM references. Live Hermes configuration
   and a real coding-provider task are not verified. Only macOS Codex workers
   are conditionally supported.
+- CI pins Bun 1.4.3 from #616 on main at
+  `80e773fa1b91c075ddef0a0cc47203920a57e23e`.
+  Parent: `bd1b971f93d062ac654acdc6ef93c0a92d5d9cb9`. CI only.
+- The scoped PM MCP adapter comes from #615 on main at
+  `daa49e202b49068418ead6a78e399d851ddf3d73`.
+  Parent: `80e773fa1b91c075ddef0a0cc47203920a57e23e`. It adds no shell tool,
+  ledger, approval identity or credentials. Dot, live-provider and event wake
+  are not verified.
 - Set package, skill, template and README versions to `0.21.2`.
 - Keep strategy default-off, export-only and human-owned. No automatic memory
   edits or dispatch. Proposals keep `executionAuthorized: false`.
@@ -95,6 +104,12 @@ Only fixture-owned processes and paths may be stopped or removed.
   `git revert --no-edit bd1b971f93d062ac654acdc6ef93c0a92d5d9cb9`.
   Operator Hermes configuration is a separate activation step; a revert does
   not change a Hermes profile that an operator set up.
+- #616 squash merge: `80e773fa1b91c075ddef0a0cc47203920a57e23e`.
+  Parent: `bd1b971f93d062ac654acdc6ef93c0a92d5d9cb9`.
+  `git revert --no-edit 80e773fa1b91c075ddef0a0cc47203920a57e23e`.
+- #615 squash merge: `daa49e202b49068418ead6a78e399d851ddf3d73`.
+  Parent: `80e773fa1b91c075ddef0a0cc47203920a57e23e`.
+  `git revert --no-edit daa49e202b49068418ead6a78e399d851ddf3d73`.
 - The integration PR has no main merge SHA until parent publication. Record
   that exact SHA and parent before publication. Do not substitute a candidate
   SHA for a future squash merge. No rollback command here undoes npm publication.
