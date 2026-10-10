@@ -3,7 +3,8 @@ import type { RecommendationV3 } from 'archctx-contracts';
 
 import { projectRefactorArchitectureIntervention, type RefactorArchitectureInterventionV1 } from '../../core/refactor/architecture-intervention';
 import { validateRefactorProgram, type RefactorProgramV1 } from '../../core/refactor/program';
-import { readArchitectureProjectionAcceptanceReceipt, type ArchitectureProjectionAcceptanceReceiptV1 } from '../architecture/projection-acceptance';
+import type { ProjectionResultV1 } from '../../core/architecture/projection';
+import { applyArchitectureProjection } from '../architecture/projection-apply';
 import { readRefactorRecommendationRecords } from './archctx-provider';
 import { appendRefactorProgramEvent, readRefactorProgramStatus } from './program-store';
 
@@ -39,16 +40,18 @@ export function prepareRefactorArchitectureIntervention(input: PrepareRefactorAr
   return Object.freeze({ intervention, current: transition.current });
 }
 
-export function verifyRefactorArchitectureApproval(input: {
-  readonly repo_root: string; readonly program: RefactorProgramV1; readonly expected_head_sha: string; readonly signal_id: string;
+/** Apply the intervention's projection; the accepted major change must be the one the Program assessed. */
+export function applyRefactorArchitectureIntervention(input: {
+  readonly repo_root: string; readonly program: RefactorProgramV1; readonly expected_head_sha: string;
   readonly recommendation_reader?: RefactorRecommendationReader;
-  readonly receipt_reader?: (repoRoot: string, signalId: string) => ArchitectureProjectionAcceptanceReceiptV1;
-}): { readonly intervention: RefactorArchitectureInterventionV1; readonly receipt: ArchitectureProjectionAcceptanceReceiptV1 } {
+  readonly apply_projection?: (repoRoot: string) => ProjectionResultV1;
+}): { readonly intervention: RefactorArchitectureInterventionV1; readonly result: ProjectionResultV1 } {
   const program = validateRefactorProgram(input.program); const intervention = readIntervention(program, input.expected_head_sha, input.repo_root, input.recommendation_reader);
   if (intervention.readiness !== 'approval_required') fail(`architecture target remains unresolved: ${intervention.targetDelta.unresolvedTargets.join(', ')}`);
-  const receipt = (input.receipt_reader ?? readArchitectureProjectionAcceptanceReceipt)(input.repo_root, input.signal_id);
-  if (receipt.approvalReference !== intervention.approvalReference
-    || !same(receipt.acceptedChange.affectedNodeIds, intervention.affectedNodeIds)
-    || !same(receipt.acceptedChange.reasonCodes, intervention.majorChangeReasons)) fail('architecture acceptance receipt does not bind the Refactor intervention');
-  return Object.freeze({ intervention, receipt });
+  const result = (input.apply_projection ?? applyArchitectureProjection)(input.repo_root);
+  const accepted = result.applyReceipt?.acceptedChange;
+  if (!accepted || !same(accepted.affectedNodeIds, intervention.affectedNodeIds) || !same(accepted.reasonCodes, intervention.majorChangeReasons)) {
+    fail('architecture projection did not accept the major change the Refactor intervention assessed');
+  }
+  return Object.freeze({ intervention, result });
 }

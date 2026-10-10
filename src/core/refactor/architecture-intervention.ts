@@ -10,7 +10,6 @@ export interface RefactorArchitectureInterventionV1 {
   readonly affectedNodeIds: readonly string[];
   readonly majorChangeReasons: readonly string[];
   readonly targetDelta: NonNullable<Extract<RecommendationV3, { category: 'refactor_proposal' }>['payload']['targetDelta']>;
-  readonly approvalReference: string;
   readonly readiness: 'approval_required' | 'target_resolution_required';
   readonly interventionDigest: string;
 }
@@ -44,6 +43,5 @@ export function projectRefactorArchitectureIntervention(
   };
   const interventionDigest = canonicalMessageDigest(basis);
   return Object.freeze({ ...basis, affectedNodeIds: Object.freeze(basis.affectedNodeIds), majorChangeReasons: Object.freeze(basis.majorChangeReasons),
-    approvalReference: `refactor.intervention.${interventionDigest.slice('sha256:'.length, 'sha256:'.length + 32)}`,
     readiness: recommendation.payload.targetDelta.unresolvedTargets.length ? 'target_resolution_required' : 'approval_required', interventionDigest });
 }

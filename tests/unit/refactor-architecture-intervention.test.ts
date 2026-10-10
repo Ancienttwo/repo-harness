@@ -10,7 +10,7 @@ import { sealProgramAuthorization } from '../../src/core/automation/budget';
 import { buildRefactorProgram } from '../../src/core/refactor/program';
 import { buildRefactorProgramDefinition } from '../../src/core/refactor/program-state';
 import { mintProgramAuthorization } from '../../src/effects/automation/grant-store';
-import { prepareRefactorArchitectureIntervention, verifyRefactorArchitectureApproval } from '../../src/effects/refactor/architecture-intervention';
+import { applyRefactorArchitectureIntervention, prepareRefactorArchitectureIntervention } from '../../src/effects/refactor/architecture-intervention';
 import { materializeRefactorProgram } from '../../src/effects/refactor/materialization';
 import { appendRefactorProgramEvent, createRefactorProgram } from '../../src/effects/refactor/program-store';
 import { activateRefactorFixture } from '../helpers/refactor-activation-fixture';
@@ -38,15 +38,15 @@ function fixture(tracked: Record<string, string> = {}) {
   return { root, env, current, program };
 }
 
-function materializeWithReceipt(f: ReturnType<typeof fixture>, files: readonly Record<string, unknown>[]) {
+function materializeWithProjection(f: ReturnType<typeof fixture>, files: readonly Record<string, unknown>[]) {
   const record = recommendation();
   const prepared = prepareRefactorArchitectureIntervention({ repo_root: f.root, program: f.program, expected_current_sha256: f.current.current_sha256, idempotency_key: 'approval', observed_at: NOW, env: f.env, recommendation_reader: () => [record] });
   const policy = { path: 'plans/policies/rf-architecture.json', bytes: 'acceptance\n' }; const rollback = { path: 'plans/rollback/rf-architecture.json', bytes: 'rollback\n' };
-  const receipt = { approvalReference: prepared.intervention.approvalReference, acceptedChange: { affectedNodeIds: ['runtime.refactor'], reasonCodes: ['ownership-changed'] }, result: { files } } as never;
+  const projection = { applyReceipt: { acceptedChange: { affectedNodeIds: ['runtime.refactor'], reasonCodes: ['ownership-changed'] } }, files } as never;
   return materializeRefactorProgram({ repo_root: f.root, expected_current_sha256: prepared.current.current_sha256, idempotency_key: 'materialize', observed_at: NOW, program: f.program,
     sprint_path: 'plans/sprints/rf-arch.sprint.md', sprint_title: 'Architecture refactor', program_path: 'plans/refactors/rf-arch.refactor-program.v1.json',
     units: [{ recommendationId: 'recommendation.arch', architectureNodeId: 'runtime.refactor', taskId: 'd'.repeat(64), taskText: 'Apply accepted architecture intervention', acceptanceText: 'Architecture acceptance and module checks pass', planPath: 'plans/plan-rf-architecture.md', planBytes: '# Architecture Plan\n', kind: 'implementation', primaryCapability: 'capability.runtime-harness.refactor-program', dependsOnWorkPackageIds: [], priority: 50, requiredAcceptance: [{ gate: 'module', policy_id: 'rf-architecture', policy_ref: policy.path, policy_revision: D(policy.bytes) }], rollbackBoundary: { kind: 'work_package', boundary_id: 'rf-architecture', boundary_ref: rollback.path, boundary_revision: D(rollback.bytes) }, retryPolicy: { max_automated_attempts: 3, retryable_failure_classes: ['transient_failure'], backoff: { kind: 'exponential', initial_seconds: 30, maximum_seconds: 300 }, attention_after_seconds: 3600, revision_reset: 'reset_on_work_package_revision' } }], artifacts: [policy, rollback], env: f.env,
-    architecture_signal_id: D('signal'), architecture_recommendation_reader: () => [record], architecture_receipt_reader: () => receipt, now: () => NOW });
+    architecture_recommendation_reader: () => [record], architecture_projection_apply: () => projection, now: () => NOW });
 }
 
 afterAll(() => roots.forEach((root) => rmSync(root, { recursive: true, force: true })));
@@ -55,39 +55,40 @@ describe('Module 7 architecture intervention gate', () => {
   test('projects every target-delta field and stops at the approval state', () => {
     const f = fixture(); const record = recommendation();
     const result = prepareRefactorArchitectureIntervention({ repo_root: f.root, program: f.program, expected_current_sha256: f.current.current_sha256, idempotency_key: 'approval', observed_at: NOW, env: f.env, recommendation_reader: () => [record] });
-    expect(result.current.state).toBe('architecture_approval_required'); expect(result.intervention.targetDelta.interventionId).toBe('intervention-1'); expect(result.intervention.approvalReference).toStartWith('refactor.intervention.');
+    expect(result.current.state).toBe('architecture_approval_required'); expect(result.intervention.targetDelta.interventionId).toBe('intervention-1');
     expect(prepareRefactorArchitectureIntervention({ repo_root: f.root, program: f.program, expected_current_sha256: f.current.current_sha256, idempotency_key: 'approval', observed_at: NOW, env: f.env, recommendation_reader: () => [record] }).current.current_sha256).toBe(result.current.current_sha256);
   });
 
-  test('unresolved targets and mismatched existing receipts fail closed', () => {
+  test('unresolved targets and a mismatched accepted change fail closed', () => {
     const f = fixture(); const blocked = prepareRefactorArchitectureIntervention({ repo_root: f.root, program: f.program, expected_current_sha256: f.current.current_sha256, idempotency_key: 'approval', observed_at: NOW, env: f.env, recommendation_reader: () => [recommendation(['new-node'])] });
     expect(blocked.intervention.readiness).toBe('target_resolution_required');
-    expect(() => verifyRefactorArchitectureApproval({ repo_root: f.root, program: f.program, expected_head_sha: f.program.baseMainSha, signal_id: D('signal'), recommendation_reader: () => [recommendation(['new-node'])], receipt_reader: () => { throw new Error('must not read'); } })).toThrow('target remains unresolved');
+    expect(() => applyRefactorArchitectureIntervention({ repo_root: f.root, program: f.program, expected_head_sha: f.program.baseMainSha, recommendation_reader: () => [recommendation(['new-node'])], apply_projection: () => { throw new Error('must not apply'); } })).toThrow('target remains unresolved');
     const ready = recommendation();
-    expect(() => verifyRefactorArchitectureApproval({ repo_root: f.root, program: f.program, expected_head_sha: f.program.baseMainSha, signal_id: D('signal'), recommendation_reader: () => [ready], receipt_reader: () => ({ approvalReference: 'another.event', acceptedChange: { affectedNodeIds: ['runtime.refactor'], reasonCodes: ['ownership-changed'] } }) as never })).toThrow('does not bind');
+    expect(() => applyRefactorArchitectureIntervention({ repo_root: f.root, program: f.program, expected_head_sha: f.program.baseMainSha, recommendation_reader: () => [ready], apply_projection: () => ({ applyReceipt: { acceptedChange: { affectedNodeIds: ['runtime.refactor'], reasonCodes: ['relation-changed'] } }, files: [] }) as never })).toThrow('did not accept the major change');
+    expect(() => applyRefactorArchitectureIntervention({ repo_root: f.root, program: f.program, expected_head_sha: f.program.baseMainSha, recommendation_reader: () => [ready], apply_projection: () => ({ files: [] }) as never })).toThrow('did not accept the major change');
   });
 
-  test('materializes only after the existing architecture acceptance receipt binds the intervention', () => {
+  test('materializes the projection output once its accepted change matches the intervention', () => {
     const f = fixture();
     mkdirSync(join(f.root, 'docs', 'architecture', 'modules'), { recursive: true }); writeFileSync(join(f.root, 'docs', 'architecture', 'modules', 'accepted.md'), '# Accepted architecture\n');
-    const result = materializeWithReceipt(f, [{ path: 'docs/architecture/modules/accepted.md', action: 'create', preimageDigest: null, outputDigest: D('# Accepted architecture\n') }]);
+    const result = materializeWithProjection(f, [{ path: 'docs/architecture/modules/accepted.md', action: 'create', preimageDigest: null, outputDigest: D('# Accepted architecture\n') }]);
     expect(result.current.state).toBe('planning'); expect(execFileSync('git', ['show', `${result.materialized_commit}:docs/architecture/modules/accepted.md`], { cwd: f.root, encoding: 'utf8' })).toBe('# Accepted architecture\n');
   });
 
-  test('materializes an accepted update of a tracked projection file only from its receipt preimage', () => {
+  test('materializes an accepted update of a tracked projection file only from its classified preimage', () => {
     const path = 'docs/architecture/modules/accepted.md'; const before = '# Previous architecture\n'; const after = '# Accepted architecture\n';
     const updated = fixture({ [path]: before }); writeFileSync(join(updated.root, path), after);
-    const result = materializeWithReceipt(updated, [{ path, action: 'update', preimageDigest: D(before), outputDigest: D(after) }]);
+    const result = materializeWithProjection(updated, [{ path, action: 'update', preimageDigest: D(before), outputDigest: D(after) }]);
     expect(result.current.state).toBe('planning');
     expect(execFileSync('git', ['show', `${result.materialized_commit}:${path}`], { cwd: updated.root, encoding: 'utf8' })).toBe(after);
     expect(execFileSync('git', ['diff-tree', '--no-commit-id', '--name-status', '-r', result.materialized_commit], { cwd: updated.root, encoding: 'utf8' })).toContain(`M\t${path}`);
 
     const drifted = fixture({ [path]: before }); writeFileSync(join(drifted.root, path), after);
     const baseline = execFileSync('git', ['rev-parse', 'main'], { cwd: drifted.root, encoding: 'utf8' }).trim();
-    expect(() => materializeWithReceipt(drifted, [{ path, action: 'update', preimageDigest: D('# Some other baseline\n'), outputDigest: D(after) }])).toThrow(`architecture projection preimage drifted: ${path}`);
+    expect(() => materializeWithProjection(drifted, [{ path, action: 'update', preimageDigest: D('# Some other baseline\n'), outputDigest: D(after) }])).toThrow(`architecture projection preimage drifted: ${path}`);
     expect(execFileSync('git', ['rev-parse', 'main'], { cwd: drifted.root, encoding: 'utf8' }).trim()).toBe(baseline);
 
     const created = fixture({ [path]: before }); writeFileSync(join(created.root, path), after);
-    expect(() => materializeWithReceipt(created, [{ path, action: 'create', preimageDigest: null, outputDigest: D(after) }])).toThrow(`artifact already exists: ${path}`);
+    expect(() => materializeWithProjection(created, [{ path, action: 'create', preimageDigest: null, outputDigest: D(after) }])).toThrow(`artifact already exists: ${path}`);
   });
 });

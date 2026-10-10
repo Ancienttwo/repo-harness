@@ -15,8 +15,8 @@ import { BACKLOG_TABLE_HEADER, BACKLOG_TABLE_SEPARATOR, SPRINT_BACKLOG_SCHEMA_HE
 import type { RefactorRecommendationAuthorityV1 } from '../../core/refactor/provider-contract';
 import { readStoredProgramAuthorization } from '../automation/grant-store';
 import { readAcceptedRefactorRecommendations } from './archctx-provider';
-import { verifyRefactorArchitectureApproval, type RefactorRecommendationReader } from './architecture-intervention';
-import type { ArchitectureProjectionAcceptanceReceiptV1 } from '../architecture/projection-acceptance';
+import { applyRefactorArchitectureIntervention, type RefactorRecommendationReader } from './architecture-intervention';
+import type { ProjectionResultV1 } from '../../core/architecture/projection';
 import { appendRefactorProgramEvent, readRefactorProgramStatus } from './program-store';
 
 export class RefactorMaterializationError extends Error {
@@ -59,13 +59,12 @@ export interface MaterializeRefactorProgramInput {
   readonly now?: () => string;
   readonly crash_hook?: (boundary: 'after_begin_materialize' | 'before_ref_cas' | 'after_ref_cas') => void;
   readonly recommendation_authority_reader?: (expectedHeadSha: string, repoRoot: string) => readonly RefactorRecommendationAuthorityV1[];
-  readonly architecture_signal_id?: string;
   readonly architecture_recommendation_reader?: RefactorRecommendationReader;
-  readonly architecture_receipt_reader?: (repoRoot: string, signalId: string) => ArchitectureProjectionAcceptanceReceiptV1;
+  readonly architecture_projection_apply?: (repoRoot: string) => ProjectionResultV1;
 }
 
 export function materializeRefactorProgram(input: MaterializeRefactorProgramInput) {
-  const inputKeys = Object.keys(input); const allowedInputKeys = ['repo_root', 'expected_current_sha256', 'idempotency_key', 'observed_at', 'program', 'sprint_path', 'sprint_title', 'program_path', 'units', 'artifacts', 'env', 'now', 'crash_hook', 'recommendation_authority_reader', 'architecture_signal_id', 'architecture_recommendation_reader', 'architecture_receipt_reader'];
+  const inputKeys = Object.keys(input); const allowedInputKeys = ['repo_root', 'expected_current_sha256', 'idempotency_key', 'observed_at', 'program', 'sprint_path', 'sprint_title', 'program_path', 'units', 'artifacts', 'env', 'now', 'crash_hook', 'recommendation_authority_reader', 'architecture_recommendation_reader', 'architecture_projection_apply'];
   if (inputKeys.some((key) => !allowedInputKeys.includes(key))) fail('refactor_materialization_conflict', 'materialization input contains an unknown field');
   if (typeof input.sprint_title !== 'string' || !input.sprint_title || /[\r\n\u0000-\u001f\u007f]/u.test(input.sprint_title)) fail('refactor_materialization_conflict', 'sprint_title is invalid');
   const root = realpathSync(resolve(input.repo_root)); const program = validateRefactorProgram(input.program);
@@ -79,13 +78,11 @@ export function materializeRefactorProgram(input: MaterializeRefactorProgramInpu
   const authorizedWorkPackages = new Set(grant.allowed_work_package_ids);
   for (const binding of program.bindings) if (!authorizedWorkPackages.has(binding.workPackageId)) fail('refactor_materialization_conflict', `work package is not authorized: ${binding.workPackageId}`);
   const targetRef = status.program.target_ref; const current = git(root, ['rev-parse', '--verify', `${targetRef}^{commit}`]);
-  let architectureReceipt: ArchitectureProjectionAcceptanceReceiptV1 | null = null;
+  let architectureResult: ProjectionResultV1 | null = null;
   if (program.route === 'architecture_intervention') {
-    if (!input.architecture_signal_id) fail('refactor_materialization_conflict', 'architecture intervention requires an acceptance signal id');
-    architectureReceipt = verifyRefactorArchitectureApproval({ repo_root: root, program, expected_head_sha: current, signal_id: input.architecture_signal_id,
-      recommendation_reader: input.architecture_recommendation_reader, receipt_reader: input.architecture_receipt_reader }).receipt;
+    architectureResult = applyRefactorArchitectureIntervention({ repo_root: root, program, expected_head_sha: current,
+      recommendation_reader: input.architecture_recommendation_reader, apply_projection: input.architecture_projection_apply }).result;
   } else {
-    if (input.architecture_signal_id !== undefined) fail('refactor_materialization_conflict', 'architecture acceptance is forbidden for a non-architecture route');
     const readAuthority = input.recommendation_authority_reader ?? ((head, repo) => readAcceptedRefactorRecommendations(head, repo, { env: input.env }));
     assertRefactorProgramRecommendationAuthority(program, readAuthority(current, root));
   }
@@ -102,10 +99,10 @@ export function materializeRefactorProgram(input: MaterializeRefactorProgramInpu
   // Prior committed applies declare paths this transaction cannot reconstruct: they carry
   // no output digest to verify bytes against, so a transaction built from this attempt's
   // files alone would silently drop declared writes.
-  if (architectureReceipt !== null && (architectureReceipt.result.priorCommittedApplies?.length ?? 0) > 0) {
-    fail('refactor_materialization_conflict', 'architecture projection receipt declares prior committed applies this transaction cannot reproduce');
+  if (architectureResult !== null && (architectureResult.priorCommittedApplies?.length ?? 0) > 0) {
+    fail('refactor_materialization_conflict', 'architecture projection result declares prior committed applies this transaction cannot reproduce');
   }
-  const architectureWrites = architectureReceipt === null ? [] : architectureReceipt.result.files.filter((entry) => entry.action === 'create' || entry.action === 'update').map((entry) => {
+  const architectureWrites = architectureResult === null ? [] : architectureResult.files.filter((entry) => entry.action === 'create' || entry.action === 'update').map((entry) => {
     const path = safePath(entry.path, 'architecture projection path'); const absolute = join(root, path); const stat = lstatSync(absolute);
     if (!stat.isFile() || stat.isSymbolicLink()) fail('refactor_materialization_conflict', `architecture projection output is unsafe: ${path}`);
     if (!realpathSync(absolute).startsWith(`${root}/`)) fail('refactor_materialization_conflict', `architecture projection output escapes the repository: ${path}`);
@@ -114,7 +111,7 @@ export function materializeRefactorProgram(input: MaterializeRefactorProgramInpu
     if (digest !== entry.outputDigest) fail('refactor_materialization_conflict', `architecture projection bytes drifted: ${path}`);
     return { path, bytes, preimageDigest: entry.preimageDigest };
   });
-  const architectureDeletes = architectureReceipt === null ? [] : architectureReceipt.result.files.filter((entry) => entry.action === 'delete').map((entry) => {
+  const architectureDeletes = architectureResult === null ? [] : architectureResult.files.filter((entry) => entry.action === 'delete').map((entry) => {
     const path = safePath(entry.path, 'architecture projection path');
     if (existsSync(join(root, path)) || entry.outputDigest !== null) fail('refactor_materialization_conflict', `architecture projection deletion drifted: ${path}`);
     return { path, preimageDigest: entry.preimageDigest };

@@ -257,7 +257,6 @@
     "tests/tooling/codegraph-integration.test.ts": 2552.79,
     "tests/trace-observer.test.ts": 14.28,
     "tests/unit/ai-native-scaffold-architecture-profile.test.ts": 5.15,
-    "tests/unit/architecture-projection-acceptance.test.ts": 3939.51,
     "tests/unit/brc10-reclaim-time-boundary.test.ts": 2349.62,
     "tests/unit/brc10-supervised-renewal.test.ts": 3438.6,
     "tests/unit/candidate-bound-global-runtime-reconciliation.test.ts": 23185.86,

@@ -1035,37 +1035,13 @@ ChangeSet, and runs `repo-harness architecture-projection apply --json` in the
 same branch. `check` and `plan` show the effect without writes. The projected
 `docs/architecture/` files are committed with the change.
 
-An unresolved-major signal is persisted as an exact acceptance candidate. A
-human approval is applied only through
-`repo-harness architecture-projection accept --signal-id <sha256> --approval-reference <event-id> --json`:
-the command copies reason codes and affected node ids from that signal, keeps
-the supplied approval event identity unchanged, and refuses if repository,
-workspace, HEAD, or worktree digest has moved. A successful accepted apply
-writes a content-bound acceptance receipt and is byte-idempotent on the same
-signal and approval reference. `status --json` reports unresolved or invalid
-acceptance evidence; the command never chooses or infers an architecture
-decision.
-
-For accepted apply, acceptance records an exact request intent before invoking
-ArchContext and the original result before it writes the receipt. A retry
-with this pending evidence uses the provider's `projection-apply-readback-v1`
-capability. Readback returns the immutable committed receipt, original refresh
-signals, and a freshly verified current fixed point without changing provider
-delivery state. The same candidate, approval reference, request, and snapshot
-must still match. If the provider proves the exact request has no committed
-receipt, only an intent without a recorded result may retry apply; the provider
-checks the receipt again within its writer lock before writing. Errors and
-missing capabilities never authorize another apply.
-
-To recover an older interrupted accept that has no local intent, run
-`repo-harness architecture-projection accept --recover --signal-id <sha256> --approval-reference <original-event-id> --json`.
-This explicit command only resumes a committed apply. It fails if the provider
-has no receipt, and never creates an apply or poisons a fresh candidate with an
-unrecoverable intent. Adoption recovery is unsupported and fails closed; it is
-not converted into apply. Pending evidence remains content-bound local runtime
-state after completion; the final acceptance receipt is the resolution authority.
-The readback capability must be present in both the packaged CLI and its daemon;
-installing a new CLI alone does not upgrade a running daemon.
+`apply` accepts a major change in the same call. When ArchContext returns an
+unresolved-major signal, `apply` copies its reason codes and affected node ids
+into `acceptedChange` and applies again. The Agent that runs `apply` owns the
+decision; the pull request review is the human gate. If the provider response
+of a committed accepted apply is lost, `apply` reads the committed result back
+through `projection-apply-readback-v1` and does not apply twice. No local
+candidate, receipt or approval store exists.
 
 Managed install/update also verifies `daemon status --json` through the same
 exact package-local CLI and compatible Node runtime after static capabilities.
@@ -1090,15 +1066,6 @@ CodeGraph index. Request authorization to rebuild only when its authoritative
 status reports it missing or stale; verify readiness before retrying the blocked
 operation. CLI upgrade alone does not prove that an index needs rebuilding.
 Never delete the shared database or all repository indexes as recovery.
-If a candidate's exact reason set is only `verified-flow-proof-changed`, use
-`repo-harness architecture-projection reconcile --signal-id <sha256> --json`
-after refreshing the configured CodeGraph index. Reconciliation runs the same
-provider in check mode without `acceptedChange`, requires CodeGraph-ready
-input/output snapshots and an empty `noop`, and writes a separate content-bound
-receipt. Semantic reasons, unavailable proof, affected nodes, files, human
-actions, refresh signals, and apply receipts all fail closed; human approval is
-never treated as missing proof. Resolution is serialized per acceptance store,
-so acceptance and reconciliation cannot both execute for one candidate.
 The runtime snapshot excludes `.ai/harness/**`, so concurrent harness receipts
 and traces cannot invalidate a provider snapshot.
 
