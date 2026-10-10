@@ -2747,6 +2747,7 @@
     "docs/",
     "dist/hook-entry.js",
     "dist/oar-review-host.js",
+    "dist/oar-coding-host.js",
     "dist/operator-ui/"
   ]
 }

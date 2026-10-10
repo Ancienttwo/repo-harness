@@ -31,15 +31,19 @@ describe("AXR7 repo-harness architecture consumer", () => {
     expect(capabilities.length).toBeGreaterThan(0);
     expect(new Set(capabilities.map(node => node.id)).size).toBe(capabilities.length);
     expect(new Set(components.map(node => node.parent))).toEqual(new Set(capabilities.map(node => node.id)));
-    expect(components).toHaveLength(29);
+    expect(components).toHaveLength(27);
     // C4 declared the collaboration -> delegated-runs relation and the
     // delegated-contribution flow; C6 adds the collaboration -> bound-task-freezes
     // relation its read-time succession proof crosses, and the context-delivery
     // flow. Both counts are inventory pins: a legitimate model addition is a red
     // test until the pin moves with it, which is the point. Multiple flows per
     // capability was already the norm.
-    expect(relations).toHaveLength(53);
-    expect(flows).toHaveLength(35);
+    // PM adds one component, its request relation and one required flow.
+    // Retiring the Refactor Program lifecycle (one component, one relation)
+    // and the automation scheduler (two components, two relations, two flows)
+    // removes them from the model.
+    expect(relations).toHaveLength(51);
+    expect(flows).toHaveLength(34);
     expect(flows.every((flow) => flow.schemaVersion === "archcontext.flow/v1")).toBe(true);
     expect(flows.every((flow) => flow.applicability === "required")).toBe(true);
     expect(new Set(flows.map((flow) => flow.capabilityId))).toEqual(new Set(capabilities.map((node) => node.id)));
@@ -94,14 +98,11 @@ describe("AXR7 repo-harness architecture consumer", () => {
     expect(manifest.provenance?.projectionInputDigest).toMatch(/^sha256:[a-f0-9]{64}$/);
   });
 
-  test("keeps project freshness advisory without authoring host projection preferences", () => {
+  test("authors no repository architecture policy or host projection preferences", () => {
     const policy = JSON.parse(readFileSync(join(ROOT, ".ai", "harness", "policy.json"), "utf8"));
     expect(policy.context.capability_source).toBe("archcontext");
-    expect(policy.architecture.projection_provider).toBeUndefined();
-    expect(policy.architecture.projection_apply).toBeUndefined();
-    expect(policy.architecture.projection_failure_gate).toBeUndefined();
-    expect(policy.architecture.freshness_gate).toBe("advisory");
-    expect(policy.architecture.diagram_skill).toBe("mermaid");
-    expect(policy.architecture.vendoring_policy).toBe("do-not-vendor-diagram-skill-assets");
+    // Projection preferences live in ~/.repo-harness/config.json. The generated
+    // repository architecture keys had no reader and adoption retires them.
+    expect(policy.architecture).toBeUndefined();
   });
 });

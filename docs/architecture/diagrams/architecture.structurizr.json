@@ -1,4 +1,4 @@
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.diagram.structurizr" sourceDigest="sha256:c416474fc586971837e3d98fc5a4e16fcfbcd2c4e550ee0cb95fa8e56fe6fd5b" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:fa4ea2eaf882e147533ce114a2fedb7a37b72d10cb258d3dfa1a3d1e8db99aff" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.diagram.structurizr" sourceDigest="sha256:c2c495836f39fcc7416d4cb39a62866afd4ae2a2a5e692eac000d5af564e172a" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:d39054a2b21341f64a01b7091f746e5295899b73943c7a43995fac262162c37d" -->
 {
   "schemaVersion": "archcontext.structurizr-export/v1",
   "name": "ArchContext Architecture",
@@ -143,6 +143,14 @@
       {
         "id": "capability.runtime-harness.operator",
         "name": "Operator Board",
+        "type": "Software System",
+        "tags": [
+          "capability"
+        ]
+      },
+      {
+        "id": "capability.runtime-harness.pm-dispatch",
+        "name": "PM Dispatch Boundary",
         "type": "Software System",
         "tags": [
           "capability"
@@ -383,6 +391,14 @@
       {
         "id": "component.operator.primary",
         "name": "Operator HTTP Reader",
+        "type": "Component",
+        "tags": [
+          "component"
+        ]
+      },
+      {
+        "id": "component.pm-dispatch.primary",
+        "name": "PM Task Operation Surface",
         "type": "Component",
         "tags": [
           "component"
@@ -675,6 +691,12 @@
         "description": "calls"
       },
       {
+        "id": "relation.pm-dispatch.primary",
+        "sourceId": "capability.runtime-harness.pm-dispatch",
+        "destinationId": "component.pm-dispatch.primary",
+        "description": "calls"
+      },
+      {
         "id": "relation.refactor-program.archctx-provider",
         "sourceId": "capability.runtime-harness.refactor-program",
         "destinationId": "component.refactor-program.archctx-provider",
@@ -746,6 +768,7 @@
         "capability.runtime-harness.interface-change",
         "capability.runtime-harness.mcp-sidecar",
         "capability.runtime-harness.operator",
+        "capability.runtime-harness.pm-dispatch",
         "capability.runtime-harness.refactor-program",
         "capability.runtime-harness.verified-context",
         "capability.runtime-harness.work-demand",
@@ -776,6 +799,7 @@
         "component.interface-change.primary",
         "component.mcp-sidecar.primary",
         "component.operator.primary",
+        "component.pm-dispatch.primary",
         "component.refactor-program.archctx-provider",
         "component.root-router.primary",
         "component.verified-context.primary",

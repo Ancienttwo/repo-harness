@@ -1,0 +1,77 @@
+name: PM candidate acceptance
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - '.github/workflows/pm-acceptance.yml'
+      - '.github/workflows/ci.yml'
+      - 'src/core/pm/**'
+      - 'src/effects/pm/**'
+      - 'src/effects/terminal/coding-session.ts'
+      - 'src/effects/terminal/task-session.ts'
+      - 'src/cli/commands/pm.ts'
+      - 'src/cli/commands/mcp.ts'
+      - 'src/cli/mcp/**'
+      - 'tests/cli/pm.test.ts'
+      - 'scripts/sync-codex-installed-copies.sh'
+      - 'tests/installed-copy-sync.test.ts'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pm-acceptance-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  candidate:
+    name: PM full candidate (${{ matrix.lane }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        lane: [governance, functional]
+    env:
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      REPO_HARNESS_TEST_EXPENSIVE: '1'
+      BUN_TEST_MAX_CONCURRENCY: '1'
+      BUN_TEST_TIMEOUT_MS: '60000'
+      BUN_TEST_ISOLATE_FILES: '1'
+      BUN_TEST_JOBS: '8'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Record the immutable candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          git cat-file -e "$BASE_SHA^{commit}"
+          printf 'base=%s\nhead=%s\ntree=%s\n' "$BASE_SHA" "$EXPECTED_SHA" "$(git rev-parse HEAD^{tree})"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - run: sudo apt-get update && sudo apt-get install -y jq rsync
+      - run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email '41898282+github-actions[bot]@users.noreply.github.com'
+      - name: Install pinned Herdr runtime
+        uses: ./.github/actions/install-pinned-herdr
+      - name: Run candidate governance
+        if: matrix.lane == 'governance'
+        env:
+          REPO_HARNESS_DIFF_BASE: ${{ github.event.pull_request.base.sha }}
+          REPO_HARNESS_DIFF_MODE: direct
+        run: bash scripts/check-ci.sh governance
+      - name: Run full functional acceptance
+        if: matrix.lane == 'functional'
+        run: bash scripts/check-ci.sh functional
