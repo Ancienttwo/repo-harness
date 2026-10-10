@@ -53,3 +53,17 @@ Bind the canonical PM repo/action fingerprint to consent, access and refresh
 grants. Old grants must fail after a restart with changed scope at the same
 registry revision. These changes extend the existing #608 owners. They do not
 copy a core, add a ledger or accept guard fields from a model.
+
+## Temporary CI integration dependency
+
+The first hosted PM candidate failed the macOS native job before PM acceptance.
+Its runtime path did not install pinned Herdr. Reuse Draft #612 source commits
+eda3749f677c461464a4d37cb8ce03b937404371 and
+a451d164049b6d8f1231bde7df5d04a8f30aa074 on this owned branch.
+Keep the #608 native OAR step and all test arguments. Resolve only the step
+name in the two installation-order assertions. No test assertion is removed.
+This branch still targets unmerged #608. It is an integration review only.
+It does not pass main-only merge readiness. After #608 lands on main, retarget
+and verify the new exact base and candidate. #612 remains a separate main PR.
+Local native and HTTP commands remain blocked. Use the hosted affected lane
+and verify that tests/cli/pm.test.ts and its real HTTP case run without a skip.
