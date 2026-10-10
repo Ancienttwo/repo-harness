@@ -1,8 +1,7 @@
 import type { RecommendationV3 } from "archctx-contracts";
-import { ARCHCTX_REQUIRED_VERSION } from "../../core/architecture/projection";
+import { ARCHCTX_REQUIRED_VERSION, assertArchctxVersion } from "../../core/architecture/projection";
 import { canonicalize } from "../../core/evidence/canonical-json";
 import {
-  assertRefactorProviderVersion,
   refactorEnvelopeData,
   RefactorProviderError,
   type RefactorScanResultV1,
@@ -16,7 +15,7 @@ const checkedRoots = new Set<string>();
 function invoke(repoRoot: string, args: readonly string[], options: ArchctxProviderOptions): unknown {
   try {
     if (!checkedRoots.has(repoRoot)) {
-      assertRefactorProviderVersion(runPackageLocalArchctxJson(repoRoot, ARCHCTX_REQUIRED_VERSION, ["capabilities", "--json"], options, 10_000).value, ARCHCTX_REQUIRED_VERSION);
+      assertArchctxVersion(runPackageLocalArchctxJson(repoRoot, ARCHCTX_REQUIRED_VERSION, ["capabilities", "--json"], options, 10_000).value, ARCHCTX_REQUIRED_VERSION);
       checkedRoots.add(repoRoot);
     }
     return runPackageLocalArchctxJson(repoRoot, ARCHCTX_REQUIRED_VERSION, args, options, 120_000, true).value;

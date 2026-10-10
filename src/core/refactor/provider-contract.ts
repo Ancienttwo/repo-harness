@@ -40,10 +40,3 @@ export function refactorEnvelopeData(value: unknown, requestId: string, schemaVe
   }
   return data;
 }
-
-export function assertRefactorProviderVersion(value: unknown, version: string): void {
-  const input = record(value, "archctx capabilities");
-  if (record(input.package, "archctx capabilities.package").version !== version) {
-    throw new RefactorProviderError("refactor_provider_version_mismatch", `expected archctx@${version}`);
-  }
-}

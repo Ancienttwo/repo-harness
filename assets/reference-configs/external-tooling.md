@@ -1025,7 +1025,10 @@ repository's `node_modules/archctx` never overrides that runtime dependency.
 Source-checkout execution uses that checkout's repo-harness dependencies, and
 candidate verification may explicitly select the candidate package root.
 Missing or mismatching runtime dependencies still fail closed with no target-repo
-fallback. Project model, ownership and snapshot checks remain repository-local.
+fallback. repo-harness captures the expected worktree snapshot. ArchContext
+checks it and owns the result contract. repo-harness decodes each result with
+the published `archctx-contracts` schema and invariants and keeps no local copy
+of the wire contract. The exact archctx version pin is the compatibility check.
 
 No hook runs architecture projection or records architecture drift. The pull
 request is the update unit. When a change alters a capability's

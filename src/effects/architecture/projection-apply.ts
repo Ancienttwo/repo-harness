@@ -1,11 +1,9 @@
 import {
-  PROJECTION_REQUEST_VERSION,
-  assertProjectionApplyReadbackResult,
-  assertProjectionResult,
+  PROJECTION_REQUEST_SCHEMA_VERSION,
   type ArchitectureRefreshSignalV1,
   type ProjectionRequestV1,
-  type ProjectionResultV1,
-} from '../../core/architecture/projection';
+  type ProjectionResultV2,
+} from 'archctx-contracts';
 import {
   captureArchitectureProjectionSnapshot,
   readArchitectureProjectionApply,
@@ -20,7 +18,7 @@ export interface ArchitectureProjectionApplyOptions extends ArchctxProviderOptio
   readonly adoptionPlanId?: string;
   readonly changedPaths?: readonly string[];
   readonly requestId?: string;
-  readonly runProjection?: (request: ProjectionRequestV1, repoRoot: string) => ProjectionResultV1;
+  readonly runProjection?: (request: ProjectionRequestV1, repoRoot: string) => ProjectionResultV2;
   readonly runReadback?: typeof readArchitectureProjectionApply;
 }
 
@@ -31,11 +29,11 @@ export interface ArchitectureProjectionApplyOptions extends ArchctxProviderOptio
  * same call. A lost provider response for a committed accepted apply is read back
  * instead of applied twice.
  */
-export function applyArchitectureProjection(repoRoot: string, options: ArchitectureProjectionApplyOptions = {}): ProjectionResultV1 {
+export function applyArchitectureProjection(repoRoot: string, options: ArchitectureProjectionApplyOptions = {}): ProjectionResultV2 {
   const run = options.runProjection ?? ((request, root) => runArchitectureProjection(request, root, options));
   const mode = options.mode ?? 'apply';
   const request = (acceptedChange?: AcceptedChange): ProjectionRequestV1 => ({
-    schemaVersion: PROJECTION_REQUEST_VERSION,
+    schemaVersion: PROJECTION_REQUEST_SCHEMA_VERSION,
     requestId: `${options.requestId ?? `repo-harness.${mode}`}${acceptedChange ? '.accepted' : ''}`,
     profile: 'repo-harness/v1',
     mode,
@@ -55,8 +53,7 @@ export function applyArchitectureProjection(repoRoot: string, options: Architect
     return run(accepted, repoRoot);
   } catch (error) {
     if (mode !== 'apply' || !/committed projection receipt/i.test(error instanceof Error ? error.message : String(error))) throw error;
-    const readback = assertProjectionApplyReadbackResult((options.runReadback ?? readArchitectureProjectionApply)(accepted, repoRoot, options), accepted);
-    return assertProjectionResult(readback.receipt.result, accepted.requestId);
+    return (options.runReadback ?? readArchitectureProjectionApply)(accepted, repoRoot, options).receipt.result;
   }
 }
 

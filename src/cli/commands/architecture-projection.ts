@@ -1,7 +1,7 @@
 import { readGlobalArchitectureConfiguration } from '../../effects/architecture/projection-config';
 import { execFileSync } from 'node:child_process';
 import { Command } from 'commander';
-import { PROJECTION_REQUEST_VERSION, type ProjectionMode } from '../../core/architecture/projection';
+import { PROJECTION_REQUEST_SCHEMA_VERSION, type ProjectionMode } from 'archctx-contracts';
 import { captureArchitectureProjectionSnapshot, inspectArchitectureProjectionReadiness, runArchitectureProjection } from '../../effects/architecture/archctx-provider';
 import { applyArchitectureProjection } from '../../effects/architecture/projection-apply';
 
@@ -30,13 +30,13 @@ export function buildArchitectureProjectionCommand(): Command {
   });
   for (const name of ['check', 'plan', 'apply'] as const) {
     command.command(name)
-      .requiredOption('--json', 'Output ProjectionResultV1 JSON')
+      .requiredOption('--json', 'Output ProjectionResultV2 JSON')
       .option('--changed-path <path...>', 'Changed repository-relative paths')
       .option('--request-id <id>', 'Stable request id')
       .action((options: ProjectionCommandOptions) => execute(name, options));
   }
   command.command('adopt')
-    .requiredOption('--json', 'Output ProjectionResultV1 JSON')
+    .requiredOption('--json', 'Output ProjectionResultV2 JSON')
     .requiredOption('--adoption-plan-id <id>', 'Approved ArchContext adoption plan id')
     .option('--changed-path <path...>', 'Changed repository-relative paths')
     .option('--request-id <id>', 'Stable request id')
@@ -50,7 +50,7 @@ function execute(mode: ProjectionMode, options: ProjectionCommandOptions): void 
     const result = mode === 'apply' || mode === 'adopt'
       ? applyArchitectureProjection(root, { mode, adoptionPlanId: options.adoptionPlanId, changedPaths: options.changedPath, requestId: options.requestId })
       : runArchitectureProjection({
-        schemaVersion: PROJECTION_REQUEST_VERSION,
+        schemaVersion: PROJECTION_REQUEST_SCHEMA_VERSION,
         requestId: options.requestId ?? `repo-harness.${mode}`,
         profile: 'repo-harness/v1',
         mode,

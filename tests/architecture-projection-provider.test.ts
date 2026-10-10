@@ -3,30 +3,28 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createProjectionApplyIdentity, projectionApplyLookupKey } from 'archctx-contracts';
 import {
-  ARCHCTX_REQUIRED_VERSION,
-  PROJECTION_REQUEST_VERSION,
-  digestProjectionJson,
-  projectionRequestIssues,
+  PROJECTION_REQUEST_SCHEMA_VERSION,
+  createProjectionApplyIdentity,
+  digestJson,
+  projectionApplyLookupKey,
+  projectionResultInvariantIssues,
   projectionResultReceiptDigest,
-  projectionResultIssues,
-  type ArchitectureProjectionPolicy,
   type ArchitectureRefreshSignalV1,
+  type Json,
   type ProjectionRequestV1,
-  type ProjectionResultV1,
-} from '../src/core/architecture/projection';
+  type ProjectionResultV2,
+} from 'archctx-contracts';
+import { ARCHCTX_REQUIRED_VERSION, type ArchitectureProjectionPolicy } from '../src/core/architecture/projection';
 import {
   archctxCapabilities,
   verifyArchctxDaemonRuntime,
   inspectArchitectureProjectionReadiness,
   captureArchitectureProjectionSnapshot,
-  architectureProjectionOwnedPaths,
   resolveCompatibleNodeRuntime,
   resolvePackageLocalArchctx,
   readArchitectureProjectionApply,
   runArchitectureProjection,
-  type ArchitectureProjectionProviderDiagnostic,
   type ArchctxProcessResult,
   type RunArchctxProcess,
 } from '../src/effects/architecture/archctx-provider';
@@ -36,9 +34,17 @@ import { applyArchitectureProjection } from '../src/effects/architecture/project
 
 const roots: string[] = [];
 const digest = (value: string) => `sha256:${value.repeat(64).slice(0, 64)}` as const;
+const digestProjectionJson = (value: unknown) => digestJson(value as Json);
 const policy: ArchitectureProjectionPolicy = { provider: 'archctx', applyMode: 'manual', requiredVersion: ARCHCTX_REQUIRED_VERSION, timeoutMs: 120_000 };
 
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
+
+/** Projection-owned agent-context targets stay out of the snapshot digest. */
+function excludesAgentContextTargets(repoRoot: string): boolean {
+  const before = captureArchitectureProjectionSnapshot(repoRoot);
+  for (const name of ['AGENTS.md', 'CLAUDE.md']) writeFileSync(join(repoRoot, name), `regenerated ${Date.now()}\n`);
+  return captureArchitectureProjectionSnapshot(repoRoot).worktreeDigest === before.worktreeDigest;
+}
 
 test('projection profile targets do not require ownership-registry metadata or prefix grammar', () => {
   const { repoRoot } = fixture();
@@ -49,7 +55,7 @@ test('projection profile targets do not require ownership-registry metadata or p
   delete node.extensions.verification;
   node.source = { include: ['packages/**/src/**'], exclude: ['packages/**/test/**'] };
   writeFileSync(path, Bun.YAML.stringify(node));
-  expect(architectureProjectionOwnedPaths(repoRoot)).toEqual(['AGENTS.md', 'CLAUDE.md', 'docs/architecture']);
+  expect(excludesAgentContextTargets(repoRoot)).toBe(true);
   expect(captureArchitectureProjectionSnapshot(repoRoot).headSha).toMatch(/^[a-f0-9]{40}$/);
 });
 
@@ -57,7 +63,7 @@ test('projection target discovery includes inactive capabilities rendered by the
   const { repoRoot } = fixture();
   const path = join(repoRoot, '.archcontext/model/nodes/capability.test.core.yaml');
   writeFileSync(path, readFileSync(path, 'utf8').replace('status: active', 'status: deprecated'));
-  expect(architectureProjectionOwnedPaths(repoRoot)).toEqual(['AGENTS.md', 'CLAUDE.md', 'docs/architecture']);
+  expect(excludesAgentContextTargets(repoRoot)).toBe(true);
 });
 
 test('projection profile rejects invalid identity and unsafe or wrong contract targets', () => {
@@ -68,14 +74,14 @@ test('projection profile rejects invalid identity and unsafe or wrong contract t
     const node = Bun.YAML.parse(original) as Record<string, any>;
     node.extensions.contractFiles.agents = invalid;
     writeFileSync(path, Bun.YAML.stringify(node));
-    expect(() => architectureProjectionOwnedPaths(repoRoot)).toThrow();
+    expect(() => captureArchitectureProjectionSnapshot(repoRoot)).toThrow();
   }
   writeFileSync(path, original.replace('id: capability.test.core', 'id: capability.core'));
-  expect(() => architectureProjectionOwnedPaths(repoRoot)).toThrow();
+  expect(() => captureArchitectureProjectionSnapshot(repoRoot)).toThrow();
   const node = Bun.YAML.parse(original) as Record<string, any>;
   delete node.extensions.contractFiles;
   writeFileSync(path, Bun.YAML.stringify(node));
-  expect(() => architectureProjectionOwnedPaths(repoRoot)).toThrow();
+  expect(() => captureArchitectureProjectionSnapshot(repoRoot)).toThrow();
 });
 
 function fixture() {
@@ -155,7 +161,7 @@ function capabilities(version = '0.6.3') {
 function request(repoRoot: string): ProjectionRequestV1 {
   const expected = captureArchitectureProjectionSnapshot(repoRoot);
   return {
-    schemaVersion: PROJECTION_REQUEST_VERSION,
+    schemaVersion: PROJECTION_REQUEST_SCHEMA_VERSION,
     requestId: 'request.axr5',
     profile: 'repo-harness/v1',
     mode: 'plan',
@@ -315,7 +321,7 @@ function absentApplyReadback(request: ProjectionRequestV1) {
     data: { ...body, absenceDigest: digestProjectionJson(body) } };
 }
 
-function unresolvedAcceptanceResult(request: ProjectionRequestV1): ProjectionResultV1 {
+function unresolvedAcceptanceResult(request: ProjectionRequestV1): ProjectionResultV2 {
   const change: NonNullable<ProjectionRequestV1['acceptedChange']> = {
     changeSetId: 'changeset.pending-acceptance',
     eventId: 'event.pending-acceptance',
@@ -330,7 +336,7 @@ function unresolvedAcceptanceResult(request: ProjectionRequestV1): ProjectionRes
     mode: 'human-action-required',
     cause: 'unresolved-major-candidate',
   };
-  const body: Omit<ProjectionResultV1, 'receiptDigest'> = {
+  const body: Omit<ProjectionResultV2, 'receiptDigest'> = {
     schemaVersion: 'archcontext.projection-result/v2',
     requestId: request.requestId,
     status: 'human-action-required',
@@ -438,6 +444,12 @@ describe('package-local ArchContext projection provider', () => {
     });
     expect(() => readArchitectureProjectionApply(accepted, f.repoRoot, { consumerRoot: f.consumerRoot, policy, run }))
       .toThrow('readback current state differs from committed recovery binding');
+    const absent: RunArchctxProcess = (_binary, args) => ({
+      status: 0, signal: null,
+      stdout: JSON.stringify(args[0] === 'capabilities' ? capabilities() : absentApplyReadback(accepted)), stderr: '',
+    });
+    expect(() => readArchitectureProjectionApply(accepted, f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: absent }))
+      .toThrow('no committed projection apply exists for request.axr5');
   });
 
   test('bounds a real provider process tree whose descendant keeps captured pipes open', () => {
@@ -513,15 +525,6 @@ describe('package-local ArchContext projection provider', () => {
       expect(subcommand!.options.map((option) => option.long)).not.toContain('--approval-reference');
     }
 
-    const invalid = request(fixture().repoRoot);
-    invalid.acceptedChange = {
-      changeSetId: 'changeset.unsorted',
-      eventId: 'event.unsorted',
-      reasonCodes: ['ownership-changed', 'node-added'],
-      affectedNodeIds: ['capability.workflow', 'capability.runtime'],
-    };
-    expect(projectionRequestIssues(invalid)).toContain('acceptedChange.reasonCodes must be sorted, unique and non-empty');
-    expect(projectionRequestIssues(invalid)).toContain('acceptedChange.affectedNodeIds must be sorted, unique and non-empty');
   });
 
   test('manual command exit status distinguishes clean/planned from human and failure outcomes', () => {
@@ -596,13 +599,10 @@ describe('package-local ArchContext projection provider', () => {
     expect(JSON.parse(readFileSync(join(f.repoRoot, 'node_modules', 'archctx', 'package.json'), 'utf8')).version).toBe('0.0.1');
   });
 
-  test('fails closed when the pinned version omits the prior-committed-applies feature', () => {
+  test('fails closed when the provider reports another package version', () => {
     const f = fixture();
-    const payload = capabilities();
-    const withoutFeature = { ...payload, features: payload.features.filter((feature) => feature !== 'projection-prior-committed-applies-v1') };
-    expect(withoutFeature.features).not.toContain('projection-prior-committed-applies-v1');
-    expect(() => archctxCapabilities(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: () => ({ status: 0, signal: null, stdout: JSON.stringify(withoutFeature), stderr: '' }) }))
-      .toThrow('archctx required feature set mismatch');
+    expect(() => archctxCapabilities(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: () => ({ status: 0, signal: null, stdout: JSON.stringify(capabilities('0.6.2')), stderr: '' }) }))
+      .toThrow(`expected archctx@${ARCHCTX_REQUIRED_VERSION}, got archctx@0.6.2`);
   });
 
   test('resolves from the running CLI package root when the target repo vendors no archctx', () => {
@@ -803,7 +803,7 @@ describe('package-local ArchContext projection provider', () => {
     expect(JSON.parse(calls[1]!.args[3]!)).toEqual(projectionRequest);
     expect(result.status).toBe('planned');
     expect(result.files).toEqual([{ path: 'docs/architecture/index.md', action: 'create', preimageDigest: null, outputDigest: digest('7') }]);
-    expect(projectionResultIssues(result)).toEqual([]);
+    expect(projectionResultInvariantIssues(result)).toEqual([]);
     const { receiptDigest, ...payload } = result;
     expect(receiptDigest).toBe(projectionResultReceiptDigest(payload));
   });
@@ -836,101 +836,13 @@ describe('package-local ArchContext projection provider', () => {
     expect(captureArchitectureProjectionSnapshot(f.repoRoot).worktreeDigest).not.toBe(before.worktreeDigest);
   });
 
-  test('rejects provider writes outside the requested surface and applied status for read-only modes', () => {
+  test('refuses apply and adopt while projection apply is disabled', () => {
     const f = fixture();
     const projectionRequest = request(f.repoRoot);
-    projectionRequest.mode = 'check';
-    const applied = structuredClone(projectionEnvelope(projectionRequest.expected)) as any;
-    applied.data.status = 'applied';
-    const { receiptDigest: _appliedReceipt, ...appliedPayload } = applied.data;
-    applied.data.receiptDigest = projectionResultReceiptDigest(appliedPayload);
-    expect(() => runArchitectureProjection(projectionRequest, f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: runner([], applied) })).toThrow('applied for non-mutating mode check');
-
-    const escaped = structuredClone(projectionEnvelope(projectionRequest.expected));
-    escaped.data.files[0]!.path = '.git/hooks/pre-commit';
-    const { receiptDigest: _escapedReceipt, ...escapedPayload } = escaped.data;
-    escaped.data.receiptDigest = projectionResultReceiptDigest(escapedPayload);
-    expect(() => runArchitectureProjection(projectionRequest, f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: runner([], escaped) })).toThrow('path escapes requested projection targets');
-
-    const hiddenWrite = structuredClone(projectionEnvelope(projectionRequest.expected)) as any;
-    hiddenWrite.data.outputSnapshot.worktreeDigest = digest('9');
-    const { receiptDigest: _hiddenReceipt, ...hiddenPayload } = hiddenWrite.data;
-    hiddenWrite.data.receiptDigest = projectionResultReceiptDigest(hiddenPayload);
-    expect(() => runArchitectureProjection(projectionRequest, f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: runner([], hiddenWrite) })).toThrow('outside the projection-owned fixed-point surfaces');
-
-    const actualDiskWrite: RunArchctxProcess = (_binary, args) => {
-      if (args[0] === 'capabilities') return { status: 0, signal: null, stdout: JSON.stringify(capabilities()), stderr: '' };
-      writeFileSync(join(f.repoRoot, 'src', 'core', 'stray.ts'), 'export const stray = true;\n');
-      return { status: 0, signal: null, stdout: JSON.stringify(projectionEnvelope(projectionRequest.expected)), stderr: '' };
-    };
-    expect(() => runArchitectureProjection(projectionRequest, f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: actualDiskWrite })).toThrow('snapshot mismatch after projection');
-
-    projectionRequest.mode = 'apply';
-    expect(() => runArchitectureProjection(projectionRequest, f.repoRoot, { consumerRoot: f.consumerRoot, policy: { ...policy, applyMode: 'disabled' }, run: runner([], projectionEnvelope(projectionRequest.expected)) })).toThrow('apply is disabled');
-  });
-
-  test('reports added, modified and deleted snapshot paths after the provider without retrying', () => {
-    const f = fixture();
-    writeFileSync(join(f.repoRoot, 'src/core/obsolete.ts'), 'old bytes\n');
-    const projectionRequest = request(f.repoRoot);
-    const diagnostics: ArchitectureProjectionProviderDiagnostic[] = [];
-    let calls = 0;
-    const run: RunArchctxProcess = (_binary, args) => {
-      if (args[0] === 'capabilities') return { status: 0, signal: null, stdout: JSON.stringify(capabilities()), stderr: '' };
-      calls++;
-      mkdirSync(join(f.repoRoot, 'dist'), { recursive: true });
-      mkdirSync(join(f.repoRoot, '.archcontext/generated'), { recursive: true });
-      writeFileSync(join(f.repoRoot, 'dist/hook-entry.js'), 'private generated bytes\n');
-      writeFileSync(join(f.repoRoot, '.archcontext/generated/ARCHITECTURE.md'), 'private generated bytes\n');
-      writeFileSync(join(f.repoRoot, 'src/core/index.ts'), 'private source bytes\n');
-      rmSync(join(f.repoRoot, 'src/core/obsolete.ts'));
-      return { status: 0, signal: null, stdout: JSON.stringify(projectionEnvelope(projectionRequest.expected)), stderr: '' };
-    };
-    expect(() => runArchitectureProjection(projectionRequest, f.repoRoot, { consumerRoot: f.consumerRoot, policy, run, onDiagnostic: (d) => diagnostics.push(d) })).toThrow('snapshot mismatch after projection');
-    expect(calls).toBe(1);
-    expect(diagnostics).toHaveLength(1);
-    const diagnostic = diagnostics[0] as any;
-    expect(diagnostic).toMatchObject({ code: 'snapshot-drift', phase: 'after-provider', baseline: 'provider-entry', totalChanges: 4, truncated: false });
-    expect(diagnostic.changes.map((c: any) => [c.path, c.change])).toEqual([
-      ['.archcontext/generated/ARCHITECTURE.md', 'added'], ['dist/hook-entry.js', 'added'],
-      ['src/core/index.ts', 'modified'], ['src/core/obsolete.ts', 'deleted'],
-    ]);
-    expect(diagnostic.changes[0].before).toBeNull();
-    expect(diagnostic.changes[0].after.digest).toMatch(/^[a-f0-9]{64}$/);
-    expect(diagnostic.changes[2].before.digest).not.toBe(diagnostic.changes[2].after.digest);
-    expect(diagnostic.changes[3].after).toBeNull();
-    expect(JSON.stringify(diagnostic)).not.toContain('private generated bytes');
-    expect(JSON.stringify(diagnostic)).not.toContain('private source bytes');
-  });
-
-  test.each([false, true])('reports pre-provider drift without inventing a missing capture baseline (serialized=%s)', (serialized) => {
-    const f = fixture();
-    const captured = request(f.repoRoot);
-    const projectionRequest = serialized ? JSON.parse(JSON.stringify(captured)) : captured;
-    writeFileSync(join(f.repoRoot, 'src/core/index.ts'), 'changed before provider\n');
-    const diagnostics: ArchitectureProjectionProviderDiagnostic[] = [];
-    const run: RunArchctxProcess = (_binary, args) => args[0] === 'capabilities'
-      ? { status: 0, signal: null, stdout: JSON.stringify(capabilities()), stderr: '' }
-      : { status: 1, signal: null, stdout: '', stderr: 'expected snapshot is stale' };
-    expect(() => runArchitectureProjection(projectionRequest, f.repoRoot, { consumerRoot: f.consumerRoot, policy, run, onDiagnostic: (d) => diagnostics.push(d) })).toThrow('expected snapshot is stale');
-    expect(diagnostics).toHaveLength(1);
-    expect(diagnostics[0]).toMatchObject({ code: 'snapshot-drift', phase: 'before-provider', baseline: serialized ? 'unavailable' : 'request-capture', totalChanges: serialized ? null : 1 });
-    expect((diagnostics[0] as any).changes).toEqual(serialized ? null : [expect.objectContaining({ path: 'src/core/index.ts', change: 'modified' })]);
-  });
-
-  test('bounds snapshot diagnostics and preserves provider failures', () => {
-    const f = fixture();
-    const projectionRequest = request(f.repoRoot);
-    const diagnostics: ArchitectureProjectionProviderDiagnostic[] = [];
-    const run: RunArchctxProcess = (_binary, args) => {
-      if (args[0] === 'capabilities') return { status: 0, signal: null, stdout: JSON.stringify(capabilities()), stderr: '' };
-      for (let i = 0; i < 25; i++) writeFileSync(join(f.repoRoot, `src/core/added-${i}.ts`), 'added\n');
-      return { status: 1, signal: null, stdout: '', stderr: 'provider failed after writes' };
-    };
-    expect(() => runArchitectureProjection(projectionRequest, f.repoRoot, { consumerRoot: f.consumerRoot, policy, run, onDiagnostic: (d) => diagnostics.push(d) })).toThrow('provider failed after writes');
-    expect(diagnostics).toHaveLength(1);
-    expect(diagnostics[0]).toMatchObject({ code: 'snapshot-drift', phase: 'after-provider', totalChanges: 25, truncated: true });
-    expect((diagnostics[0] as any).changes).toHaveLength(20);
+    for (const mode of ['apply', 'adopt'] as const) {
+      projectionRequest.mode = mode;
+      expect(() => runArchitectureProjection(projectionRequest, f.repoRoot, { consumerRoot: f.consumerRoot, policy: { ...policy, applyMode: 'disabled' }, run: runner([], projectionEnvelope(projectionRequest.expected)) })).toThrow('apply is disabled');
+    }
   });
 
   test('tracks the packed node/v2 integration proof without a stale node/v1 dependency', () => {
@@ -947,30 +859,29 @@ describe('package-local ArchContext projection provider', () => {
     expect(readback.source.dirtySourceUsed).toBe(false);
   });
 
-  test('rejects feature mismatch, corrupt JSON and stale worktree', () => {
+  test('rejects corrupt JSON and results outside the published contract', () => {
     const f = fixture();
     const projectionRequest = request(f.repoRoot);
     const validEnvelope = projectionEnvelope(projectionRequest.expected);
-    const mismatch: RunArchctxProcess = (_binary, args) => ({ status: 0, signal: null, stdout: JSON.stringify(args[0] === 'capabilities' ? { ...capabilities(), features: [] } : validEnvelope), stderr: '' });
-    expect(() => runArchitectureProjection(projectionRequest, f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: mismatch })).toThrow('feature set mismatch');
     expect(() => runArchitectureProjection(projectionRequest, f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: () => ({ status: 0, signal: null, stdout: '{', stderr: '' }) })).toThrow('corrupt JSON');
-    const stale = structuredClone(validEnvelope);
-    stale.data.outputSnapshot.worktreeDigest = digest('9');
-    const { receiptDigest: _old, ...payload } = stale.data;
-    stale.data.receiptDigest = projectionResultReceiptDigest(payload);
-    expect(() => runArchitectureProjection(projectionRequest, f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: runner([], stale) })).toThrow('outside the projection-owned fixed-point surfaces');
 
     const corrupt = structuredClone(validEnvelope) as any;
     corrupt.data.refreshSignals = [{}];
-    expect(() => runArchitectureProjection(projectionRequest, f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: runner([], corrupt) })).toThrow('refreshSignals[0].schemaVersion');
+    expect(() => runArchitectureProjection(projectionRequest, f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: runner([], corrupt) })).toThrow('projection result invalid: $.refreshSignals[0]');
 
     const forged = structuredClone(validEnvelope) as any;
     forged.data.receiptDigest = digest('f');
-    expect(() => runArchitectureProjection(projectionRequest, f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: runner([], forged) })).toThrow('receiptDigest mismatch');
+    expect(() => runArchitectureProjection(projectionRequest, f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: runner([], forged) })).toThrow('receiptDigest must match the canonical projection result payload');
 
     const legacy = structuredClone(validEnvelope) as any;
     legacy.data.schemaVersion = 'archcontext.projection-result/v1';
-    expect(() => runArchitectureProjection(projectionRequest, f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: runner([], legacy) })).toThrow('projection result schemaVersion mismatch');
+    expect(() => runArchitectureProjection(projectionRequest, f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: runner([], legacy) })).toThrow('projection result invalid: $.schemaVersion');
+
+    const otherRequest = structuredClone(validEnvelope) as any;
+    otherRequest.data.requestId = 'request.other';
+    const { receiptDigest: _old, ...payload } = otherRequest.data;
+    otherRequest.data.receiptDigest = projectionResultReceiptDigest(payload);
+    expect(() => runArchitectureProjection(projectionRequest, f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: runner([], otherRequest) })).toThrow('requestId mismatch');
   });
 
   test('distinguishes pre-write failure, committed reconciliation, and consumed noop', () => {
@@ -985,7 +896,6 @@ describe('package-local ArchContext projection provider', () => {
     initial.requestId = 'request.apply.initial';
     initial.acceptedChange = acceptedChange;
     const originalExpected = initial.expected;
-    const diagnostics: Array<{ code: string; message: string }> = [];
     let projectionCalls = 0;
     let ownedWrites = 0;
     let humanAcceptances = 0;
@@ -1007,49 +917,33 @@ describe('package-local ArchContext projection provider', () => {
       };
     };
 
-    const first = runArchitectureProjection(initial, f.repoRoot, { consumerRoot: f.consumerRoot, policy, run, onDiagnostic: (value) => diagnostics.push(value) });
+    const first = runArchitectureProjection(initial, f.repoRoot, { consumerRoot: f.consumerRoot, policy, run });
     expect(first.status).toBe('applied-reconcile-required');
     expect(first.refreshSignals).toEqual([]);
     expect(first.applyReceipt?.applyId).toBe(digest('a'));
-    expect(diagnostics[0]).toMatchObject({ code: 'snapshot-drift', phase: 'after-provider', totalChanges: 1 });
-    expect(diagnostics[0]?.message).toContain('src/core/concurrent.ts');
-    expect(diagnostics[1]).toMatchObject({ code: 'post-apply-reconciliation-required' });
-    expect(diagnostics[1]?.message).toContain('worktreeDigest');
-    expect(diagnostics[1]?.message).toContain('projection post-apply worktree digest diverged');
 
     const retry = { ...initial, requestId: 'request.apply.retry', expected: captureArchitectureProjectionSnapshot(f.repoRoot) };
-    const second = runArchitectureProjection(retry, f.repoRoot, { consumerRoot: f.consumerRoot, policy, run, onDiagnostic: (value) => diagnostics.push(value) });
+    const second = runArchitectureProjection(retry, f.repoRoot, { consumerRoot: f.consumerRoot, policy, run });
     expect(second.status).toBe('applied');
     expect(second.refreshSignals).toHaveLength(1);
-    expect(diagnostics[2]).toMatchObject({ code: 'apply-receipt-reconciled' });
-    const mismatchedSignal = structuredClone(second);
-    mismatchedSignal.refreshSignals[0]!.acceptedChange!.eventId = 'event.other-acceptance';
-    const { receiptDigest: _oldReceipt, ...mismatchedPayload } = mismatchedSignal;
-    mismatchedSignal.receiptDigest = projectionResultReceiptDigest(mismatchedPayload);
-    mismatchedSignal.refreshSignals[0]!.projectionReceiptDigest = mismatchedSignal.receiptDigest;
-    expect(projectionResultIssues(mismatchedSignal)).toContain('refreshSignals[0].acceptedChange must match applyReceipt.acceptedChange');
 
-    const third = runArchitectureProjection({ ...retry, requestId: 'request.apply.noop' }, f.repoRoot, { consumerRoot: f.consumerRoot, policy, run, onDiagnostic: (value) => diagnostics.push(value) });
+    const third = runArchitectureProjection({ ...retry, requestId: 'request.apply.noop' }, f.repoRoot, { consumerRoot: f.consumerRoot, policy, run });
     expect(third.status).toBe('noop');
     expect(third.refreshSignals).toEqual([]);
-    expect(diagnostics[3]).toMatchObject({ code: 'apply-receipt-reconciled' });
-    expect(diagnostics).toHaveLength(4);
     expect(projectionCalls).toBe(3);
     expect(ownedWrites).toBe(1);
     expect(humanAcceptances).toBe(1);
   });
 
-  test('pre-write provider failure remains fail-closed and emits no reconciliation diagnostic', () => {
+  test('pre-write provider failure remains fail-closed', () => {
     const f = fixture();
     const projectionRequest = request(f.repoRoot);
     projectionRequest.mode = 'apply';
     projectionRequest.acceptedChange = { changeSetId: 'changeset.stale', eventId: 'event.stale', reasonCodes: ['responsibility-changed'], affectedNodeIds: ['capability.test.core'] };
-    const diagnostics: unknown[] = [];
     const run: RunArchctxProcess = (_binary, args) => args[0] === 'capabilities'
       ? { status: 0, signal: null, stdout: JSON.stringify(capabilities()), stderr: '' }
       : { status: 1, signal: null, stdout: '', stderr: 'AC_PRECONDITION_FAILED: expected snapshot is stale' };
-    expect(() => runArchitectureProjection(projectionRequest, f.repoRoot, { consumerRoot: f.consumerRoot, policy, run, onDiagnostic: (value) => diagnostics.push(value) })).toThrow('expected snapshot is stale');
-    expect(diagnostics).toEqual([]);
+    expect(() => runArchitectureProjection(projectionRequest, f.repoRoot, { consumerRoot: f.consumerRoot, policy, run })).toThrow('expected snapshot is stale');
   });
 });
 
