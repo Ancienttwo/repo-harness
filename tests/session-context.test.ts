@@ -717,54 +717,49 @@ describe("sessionStartMainContent — cold-path event-log rotation (gatekeeper P
     });
   });
 
-  test("oversized architecture events.jsonl also rotates (hardcoded second target, not policy-configurable)", () => {
-    withTmpRepo("rotate-architecture-oversized", (repoRoot) => {
+  test("the retired architecture event log is no longer a rotation target", () => {
+    withTmpRepo("rotate-architecture-retired", (repoRoot) => {
       mkdirSync(join(repoRoot, ".ai/harness/architecture"), { recursive: true });
       const eventsPath = join(repoRoot, ".ai/harness/architecture/events.jsonl");
       writeEventLines(eventsPath, 2500);
+      const before = readFileSync(eventsPath, "utf-8");
 
       sessionStartMainContent(freshCollector(repoRoot), process.env, Date.now());
 
-      const kept = readFileSync(eventsPath, "utf-8").trim().split("\n");
-      expect(kept.length).toBe(500);
-      expect(JSON.parse(kept[0]).reason).toBe("line-2001");
-
-      const now = new Date();
-      const stamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}`;
-      expect(existsSync(join(repoRoot, ".ai/harness/architecture/archive", `events-${stamp}.jsonl`))).toBe(true);
+      expect(readFileSync(eventsPath, "utf-8")).toBe(before);
+      expect(existsSync(join(repoRoot, ".ai/harness/architecture/archive"))).toBe(false);
     });
   });
 
-  test("architecture rotation refuses an archive-directory symlink", () => {
-    withTmpRepo("rotate-architecture-archive-symlink", (repoRoot) => {
-      mkdirSync(join(repoRoot, ".ai/harness/architecture"), { recursive: true });
-      const eventsPath = join(repoRoot, ".ai/harness/architecture/events.jsonl");
+  test("event log rotation refuses an archive-directory symlink", () => {
+    withTmpRepo("rotate-archive-symlink", (repoRoot) => {
+      const eventsPath = join(repoRoot, ".ai/harness/events.jsonl");
       writeEventLines(eventsPath, 2500);
       const before = readFileSync(eventsPath, "utf8");
-      const outside = mkdtempSync(join(tmpdir(), "architecture-archive-outside-"));
+      const outside = mkdtempSync(join(tmpdir(), "events-archive-outside-"));
       try {
-        symlinkSync(outside, join(repoRoot, ".ai/harness/architecture/archive"));
+        symlinkSync(outside, join(repoRoot, ".ai/harness/archive"));
         sessionStartMainContent(freshCollector(repoRoot), process.env, Date.now());
         expect(readFileSync(eventsPath, "utf8")).toBe(before);
-        expect(existsSync(join(outside, "events-202608.jsonl"))).toBe(false);
+        expect(readdirSync(outside)).toEqual([]);
       } finally {
         rmSync(outside, { recursive: true, force: true });
       }
     });
   });
 
-  test("architecture rotation refuses a source-log symlink", () => {
-    withTmpRepo("rotate-architecture-source-symlink", (repoRoot) => {
-      mkdirSync(join(repoRoot, ".ai/harness/architecture"), { recursive: true });
-      const eventsPath = join(repoRoot, ".ai/harness/architecture/events.jsonl");
-      const outside = join(tmpdir(), `architecture-events-outside-${process.pid}-${Date.now()}.jsonl`);
+  test("event log rotation refuses a source-log symlink", () => {
+    withTmpRepo("rotate-source-symlink", (repoRoot) => {
+      mkdirSync(join(repoRoot, ".ai/harness"), { recursive: true });
+      const eventsPath = join(repoRoot, ".ai/harness/events.jsonl");
+      const outside = join(tmpdir(), `events-outside-${process.pid}-${Date.now()}.jsonl`);
       try {
         writeEventLines(outside, 2500);
         const before = readFileSync(outside, "utf8");
         symlinkSync(outside, eventsPath);
         sessionStartMainContent(freshCollector(repoRoot), process.env, Date.now());
         expect(readFileSync(outside, "utf8")).toBe(before);
-        expect(existsSync(join(repoRoot, ".ai/harness/architecture/archive"))).toBe(false);
+        expect(existsSync(join(repoRoot, ".ai/harness/archive"))).toBe(false);
         expect(lstatSync(eventsPath).isSymbolicLink()).toBe(true);
       } finally {
         rmSync(outside, { force: true });
@@ -772,13 +767,12 @@ describe("sessionStartMainContent — cold-path event-log rotation (gatekeeper P
     });
   });
 
-  test("architecture rotation refuses a shared lock-root symlink", () => {
-    withTmpRepo("rotate-architecture-lock-root-symlink", (repoRoot) => {
-      mkdirSync(join(repoRoot, ".ai/harness/architecture"), { recursive: true });
-      const eventsPath = join(repoRoot, ".ai/harness/architecture/events.jsonl");
+  test("event log rotation refuses a shared lock-root symlink", () => {
+    withTmpRepo("rotate-lock-root-symlink", (repoRoot) => {
+      const eventsPath = join(repoRoot, ".ai/harness/events.jsonl");
       writeEventLines(eventsPath, 2500);
       const before = readFileSync(eventsPath, "utf8");
-      const outside = mkdtempSync(join(tmpdir(), "architecture-lock-outside-"));
+      const outside = mkdtempSync(join(tmpdir(), "events-lock-outside-"));
       try {
         symlinkSync(outside, join(repoRoot, ".ai/harness/.locks"));
         sessionStartMainContent(freshCollector(repoRoot), process.env, Date.now());
@@ -790,10 +784,9 @@ describe("sessionStartMainContent — cold-path event-log rotation (gatekeeper P
     });
   });
 
-  test("busy shared event lock skips rotation instead of racing an architecture writer", () => {
-    withTmpRepo("rotate-architecture-busy-lock", (repoRoot) => {
-      mkdirSync(join(repoRoot, ".ai/harness/architecture"), { recursive: true });
-      const eventsPath = join(repoRoot, ".ai/harness/architecture/events.jsonl");
+  test("busy shared event lock skips rotation instead of racing a writer", () => {
+    withTmpRepo("rotate-busy-lock", (repoRoot) => {
+      const eventsPath = join(repoRoot, ".ai/harness/events.jsonl");
       writeEventLines(eventsPath, 2500);
       const before = readFileSync(eventsPath, "utf8");
       mkdirSync(join(repoRoot, ".ai/harness/.locks/evt-events.jsonl.lock"), { recursive: true });
@@ -801,7 +794,7 @@ describe("sessionStartMainContent — cold-path event-log rotation (gatekeeper P
       sessionStartMainContent(freshCollector(repoRoot), process.env, Date.now());
 
       expect(readFileSync(eventsPath, "utf8")).toBe(before);
-      expect(existsSync(join(repoRoot, ".ai/harness/architecture/archive"))).toBe(false);
+      expect(existsSync(join(repoRoot, ".ai/harness/archive"))).toBe(false);
     });
   }, 10_000);
 

@@ -5,7 +5,7 @@ Worker reference. Use only within the assigned architecture scope.
 ## Protocol
 
 1. Confirm the target repo path and architecture scope.
-2. Inspect `docs/architecture/index.md`, `.archcontext/model/nodes/`, and pending files under `docs/architecture/requests/`. For architecture model guidance or a registration scope, follow the coverage procedure below even when no drift request exists.
+2. Inspect `docs/architecture/index.md` and `.archcontext/model/nodes/`. For a coverage or registration scope, follow the coverage procedure below.
 3. When the scope maps to repo code or config, resolve the capability with:
    - `repo-harness run capability-resolver match --repo <repo> --path <path> --format json`
 4. Update the smallest relevant architecture artifact:
@@ -13,21 +13,17 @@ Worker reference. Use only within the assigned architecture scope.
    - module or snapshot docs under `docs/architecture/`
    - Mermaid fenced block in the relevant module or snapshot Markdown when a visual flow materially helps
 5. Use Markdown Mermaid as the only architecture diagram artifact. Do not generate standalone HTML; use the external `mermaid` skill only to review layout and renderability before shipping the Markdown source.
-6. Archive handled requests with:
-   - `repo-harness run archive-architecture-request --request <request> --status <resolved|superseded|rejected|no-change> --artifact <path> --note <text>`
-   - For `resolved`, the live `Pending` request must declare `> **Architecture Module**:` and that exact existing module path must be supplied as an `--artifact`.
-7. Verify with:
-   - `repo-harness run check-architecture-sync`
+6. Verify with:
+   - `repo-harness architecture-projection check --json` (expect `noop` after the projection is committed)
    - `repo-harness run capability-resolver validate --repo <repo> --format text`
    - `repo-harness run check-task-workflow` when repo workflow surfaces changed
 
 ## Coverage and Agent-owned registration
 
-SessionStart automatically supplies read-only coverage observations when the global
-architecture provider is enabled and the repo selects `capability_source: archcontext`.
 An empty model, missing module docs, unmatched tracked package roots, or multiple
 packages sharing an ancestor capability are reasons to inspect, not proof that a new
-capability is required. Hooks do not decide responsibilities or write nodes.
+capability is required. Hooks do not observe coverage, decide responsibilities or
+write nodes.
 
 1. Read the existing semantic architecture docs and trace the relevant entrypoints,
    dependencies, ownership and verification in source. Use CodeGraph when indexed.
@@ -67,20 +63,18 @@ capability is required. Hooks do not decide responsibilities or write nodes.
    and `repo-harness architecture-projection apply --json --changed-path <node-path>`.
    Verify the expected module document exists and run the protocol's architecture checks.
    Missing docs for an unchanged node need projection, not a duplicate node. Generated
-   module regions belong to archctx; preserve human-owned prose. Resolve any resulting
-   drift request through the normal request protocol.
+   module regions belong to archctx; preserve human-owned prose. Commit the model and
+   the projected documents in the same pull request.
 
 ## Failure Modes
 
-- If no pending architecture request exists, do not invent one. Coverage and registration work can proceed independently; report `no-change` only after inspecting the requested coverage scope.
+- Report `no-change` only after inspecting the requested scope and confirming that no responsibility changed.
 - If capability resolution is ambiguous, stop at the matching paths and ask for a narrower scope.
-- If `check-architecture-sync.sh` blocks in strict mode, resolve or archive the pending request card for the touched capability before finishing the worktree.
 - If diagram validation fails, fix the Mermaid Markdown source or report the validation failure; do not substitute HTML.
 
 ## Boundaries
 
 - Does not run `repo-harness init`.
 - Does not install or refresh the full harness.
-- Does not let hooks rewrite architecture prose; hooks only record drift requests.
+- Does not let hooks rewrite architecture prose or record architecture drift; architecture updates are explicit.
 - Does not vendor `mermaid`; it remains an external authoring/review skill and never owns a product artifact.
-- Keeps `docs/architecture/requests/` pending-only by archiving handled requests.

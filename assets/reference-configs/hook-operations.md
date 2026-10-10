@@ -20,13 +20,10 @@ The stable route tuple is the adapter contract. Handler identities are internal
 authority names and are not selected by installation location or host provider.
 Codex must trust `~/.codex/hooks.json` in Settings before it executes the
 adapter. Generated adapters use 30 seconds except `Stop.default`, whose outer
-deadline is 150 seconds. Stop shares a 20-second deferred-work budget between
-architecture projection and the post-edit journal; provider and cascade children
-run under process-group supervision with bounded TERM/KILL cleanup. A shorter
-host budget yields the projection job back to pending without consuming a
-business retry or acknowledging its drift range. Explicit
-`repo-harness architecture-projection drain --json` retains the policy's longer
-budget. Strict projection/readiness gates still apply; yielding is not success.
+deadline is 150 seconds. Stop runs the deferred post-edit journal and the refactor
+recommendation observer under one bounded work budget. Child processes run
+under process-group supervision with bounded TERM/KILL cleanup. Stop does not
+run architecture projection and does not record architecture drift.
 
 Measure `Stop.default` and `SubagentStop.quality` separately using
 `.ai/harness/runs/hook-events.jsonl` `metrics.elapsed_ms`. The terminal's Working
@@ -132,9 +129,8 @@ verifying that no hook process is active, an operator may remove
 
 ## Architecture Drift and Parity
 
-Hook scope is detect, classify, record, and remind:
+Hooks do not record architecture drift. Architecture updates are explicit:
 
-- `repo-harness run architecture-queue` writes requests and events.
 - `repo-harness run workstream-sync` maintains durable capability workstreams.
 - Agents read architecture documents on demand and update real boundaries explicitly.
 

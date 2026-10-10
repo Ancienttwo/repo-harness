@@ -35,12 +35,10 @@ type RequestEntry = {
   ts: string;
   request_id: string;
   status: 'pending';
-  source: 'cli' | 'architecture-event';
+  source: 'cli';
   path: string;
   capability_id: string;
   matched_prefix: string;
-  request_file?: string;
-  spawn_recommended?: boolean;
 };
 
 export type CapabilityContextStatus = {
@@ -92,7 +90,6 @@ const REGISTRY_PATH = '.ai/context/capabilities.json';
 const NODES_DIR = '.archcontext/model/nodes';
 const DEFAULT_MANIFEST_PATH = '.ai/context/capability-source-map.json';
 const QUEUE_PATH = '.ai/harness/capability-context/requests.jsonl';
-const ARCH_EVENTS_PATH = '.ai/harness/architecture/events.jsonl';
 const BEGIN = '<!-- BEGIN CAPABILITY CONTEXT -->';
 const END = '<!-- END CAPABILITY CONTEXT -->';
 
@@ -253,71 +250,30 @@ function pendingRequests(repo: string): RequestEntry[] {
   );
 }
 
-function latestArchitectureEvent(repo: string): Record<string, unknown> | null {
-  const entries = readJsonl<Record<string, unknown>>(path.join(repo, ARCH_EVENTS_PATH));
-  return entries.at(-1) ?? null;
-}
-
-function requestId(capabilityId: string, filePath: string, requestFile = ''): string {
-  return [capabilityId, filePath, requestFile || 'manual'].join(':');
+function requestId(capabilityId: string, filePath: string): string {
+  return [capabilityId, filePath, 'manual'].join(':');
 }
 
 export function runCapabilityContextRequest(opts: {
   repo?: string;
   path?: string;
-  fromLatestArchitectureEvent?: boolean;
 }): { repo: string; entry: RequestEntry | null; status: 'queued' | 'existing' | 'skipped'; lines: string[] } {
   const repo = repoRoot(opts.repo);
-  const registry = readRegistry(repo);
-  const event = opts.fromLatestArchitectureEvent ? latestArchitectureEvent(repo) : null;
-  const eventPath = typeof event?.file_path === 'string' ? event.file_path : '';
-  const inputPath = opts.path || eventPath;
   const lines: string[] = [];
-
-  if (!inputPath) {
+  if (!opts.path) {
     return { repo, entry: null, status: 'skipped', lines: ['[CapabilityContext] No changed path to queue.'] };
   }
 
-  let capability: Capability;
-  let matchedPrefix: string;
-  const eventCapabilityId = typeof event?.capability_id === 'string' ? event.capability_id : '';
-  // Architecture events use synthetic root ownership for unmapped paths. They
-  // retain their architecture card but have no capability contract to refresh.
-  if (event && !opts.path && (!eventCapabilityId || eventCapabilityId === 'root')) {
-    const match = findMatch(registry, repo, inputPath);
-    if (!match.matched) {
-      return {
-        repo, entry: null, status: 'skipped',
-        lines: [`[CapabilityContext] No capability matches architecture event path: ${inputPath}; skipped.`],
-      };
-    }
-  }
-  if (eventCapabilityId) {
-    capability = findCapabilityById(registry, eventCapabilityId);
-    matchedPrefix = typeof event?.matched_prefix === 'string'
-      ? event.matched_prefix
-      : normalizeRepoPath(capability.prefixes[0] || '.', repo, true);
-  } else {
-    const match = findCapabilityByPath(registry, repo, inputPath);
-    capability = match.capability;
-    matchedPrefix = match.matchedPrefix;
-  }
-
-  const relPath = normalizeRepoPath(inputPath, repo);
+  const { capability, matchedPrefix } = findCapabilityByPath(readRegistry(repo), repo, opts.path);
+  const relPath = normalizeRepoPath(opts.path, repo);
   const entry: RequestEntry = {
     ts: new Date().toISOString(),
-    request_id: requestId(
-      capability.id,
-      relPath,
-      typeof event?.request_file === 'string' ? event.request_file : '',
-    ),
+    request_id: requestId(capability.id, relPath),
     status: 'pending',
-    source: event ? 'architecture-event' : 'cli',
+    source: 'cli',
     path: relPath,
     capability_id: capability.id,
     matched_prefix: matchedPrefix,
-    request_file: typeof event?.request_file === 'string' ? event.request_file : undefined,
-    spawn_recommended: typeof event?.spawn_recommended === 'boolean' ? event.spawn_recommended : undefined,
   };
 
   const queueFile = path.join(repo, QUEUE_PATH);
@@ -567,14 +523,9 @@ export function buildCapabilityContextCommand(): Command {
     .command('request')
     .option('--repo <path>', 'Target repository path (defaults to cwd)')
     .option('--path <path>', 'Changed file path to resolve')
-    .option('--from-latest-architecture-event', 'Use the latest architecture event as the request source')
     .option('--json', 'Output JSON')
-    .action((opts: { repo?: string; path?: string; fromLatestArchitectureEvent?: boolean; json?: boolean }) => {
-      const result = runCapabilityContextRequest({
-        repo: opts.repo,
-        path: opts.path,
-        fromLatestArchitectureEvent: opts.fromLatestArchitectureEvent === true,
-      });
+    .action((opts: { repo?: string; path?: string; json?: boolean }) => {
+      const result = runCapabilityContextRequest({ repo: opts.repo, path: opts.path });
       printResult(result, result.lines, opts.json);
     });
 

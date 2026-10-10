@@ -91,61 +91,19 @@ describe('capability-context command', () => {
     }
   });
 
-  test('request queues latest architecture event idempotently', () => {
+  test('request queues a changed path idempotently', () => {
     const cwd = tmpWorkspace('capability-context-request');
     try {
       fs.mkdirSync(path.join(cwd, 'apps/web'), { recursive: true });
-      fs.mkdirSync(path.join(cwd, '.ai/harness/architecture'), { recursive: true });
       writeRegistry(cwd, [rootCapability, webCapability]);
-      fs.writeFileSync(
-        path.join(cwd, '.ai/harness/architecture/events.jsonl'),
-        `${JSON.stringify({
-          file_path: 'apps/web/page.tsx',
-          capability_id: 'apps-web',
-          matched_prefix: 'apps/web',
-          request_file: 'docs/architecture/requests/request.md',
-          spawn_recommended: true,
-        })}\n`,
-      );
 
-      const first = runCapabilityContextRequest({ repo: cwd, fromLatestArchitectureEvent: true });
-      const second = runCapabilityContextRequest({ repo: cwd, fromLatestArchitectureEvent: true });
+      const first = runCapabilityContextRequest({ repo: cwd, path: 'apps/web/page.tsx' });
+      const second = runCapabilityContextRequest({ repo: cwd, path: 'apps/web/page.tsx' });
       expect(first.status).toBe('queued');
       expect(second.status).toBe('existing');
       const queue = fs.readFileSync(path.join(cwd, '.ai/harness/capability-context/requests.jsonl'), 'utf-8');
       expect(queue.trim().split(/\r?\n/)).toHaveLength(1);
       expect(queue).toContain('"capability_id":"apps-web"');
-    } finally {
-      fs.rmSync(cwd, { recursive: true, force: true });
-    }
-  });
-
-  test('automatic unmapped events skip without masking invalid capability authority', () => {
-    const cwd = tmpWorkspace('capability-context-unmapped-event');
-    const events = path.join(cwd, '.ai/harness/architecture/events.jsonl');
-    const writeEvent = (capabilityId?: string) => {
-      fs.writeFileSync(events, `${JSON.stringify({ file_path: 'pnpm-workspace.yaml', capability_id: capabilityId })}\n`);
-    };
-    try {
-      writeRegistry(cwd, [webCapability]);
-      fs.mkdirSync(path.dirname(events), { recursive: true });
-      for (const id of ['root', undefined]) {
-        writeEvent(id);
-        const result = runCapabilityContextRequest({ repo: cwd, fromLatestArchitectureEvent: true });
-        expect(result.status).toBe('skipped');
-        expect(result.entry).toBeNull();
-        expect(result.lines.join('\n')).toContain('pnpm-workspace.yaml');
-      }
-      expect(fs.existsSync(path.join(cwd, '.ai/harness/capability-context/requests.jsonl'))).toBe(false);
-      writeEvent('deleted-capability');
-      expect(() => runCapabilityContextRequest({ repo: cwd, fromLatestArchitectureEvent: true })).toThrow('unknown capability');
-      fs.writeFileSync(events, `${JSON.stringify({ file_path: '../outside.ts', capability_id: 'root' })}\n`);
-      expect(() => runCapabilityContextRequest({ repo: cwd, fromLatestArchitectureEvent: true })).toThrow();
-      fs.writeFileSync(events, `${JSON.stringify({ file_path: 'apps/web/page.tsx', capability_id: 'root' })}\n`);
-      expect(() => runCapabilityContextRequest({ repo: cwd, fromLatestArchitectureEvent: true })).toThrow('unknown capability: root');
-      writeEvent('root');
-      fs.writeFileSync(path.join(cwd, '.ai/context/capabilities.json'), '{broken');
-      expect(() => runCapabilityContextRequest({ repo: cwd, fromLatestArchitectureEvent: true })).toThrow();
     } finally {
       fs.rmSync(cwd, { recursive: true, force: true });
     }

@@ -204,7 +204,7 @@ unmatched bytes and custom sibling hooks remain untouched.
 - `bun test tests/command-observed.test.ts tests/trace-observer.test.ts`
 - `bun run check:type`
 - `bun run check:hooks`
-- `bash scripts/check-architecture-sync.sh`
+- `bun src/cli/index.ts architecture-projection check --json`
 
 Historical canary observations remain in archived research and are not runtime
 inputs. Current behavior is defined by the typed registry, installer projection,

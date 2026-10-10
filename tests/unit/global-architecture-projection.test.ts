@@ -94,17 +94,30 @@ test('update migrates retired automatic projection settings once and readers ref
   expect(JSON.parse(readFileSync(f.path, 'utf8')).architecture).toEqual({ projection_provider: 'disabled', projection_apply: 'disabled' });
 });
 
-test('adoption removes retired repo execution settings while preserving project architecture policy', () => {
-  const f = globalFixture();
-  mkdirSync(join(f.home, '.ai/harness'), { recursive: true });
-  writeFileSync(join(f.home, '.ai/harness/policy.json'), JSON.stringify({ architecture: {
-    projection_provider: 'disabled', projection_apply: 'disabled', projection_version: '0.0.1',
-    projection_failure_gate: 'strict', projection_timeout_ms: 1000, freshness_gate: 'strict', gate_min_severity: 'high',
-  } }));
-  const plan = planStandardAdoption({ repoRoot: f.home, mode: 'standard', env: f.env });
-  const operation = plan.operations.find((entry) => entry.kind === 'writeFile' && entry.path === '.ai/harness/policy.json');
-  expect(operation?.kind).toBe('writeFile');
-  if (operation?.kind !== 'writeFile') throw new Error('policy operation missing');
-  expect(JSON.parse(operation.content).architecture).toEqual({ freshness_gate: 'strict', gate_min_severity: 'high' });
-  expect(existsSync(f.path)).toBe(false); // Repository adoption does not invent a host preference.
+test('adoption removes retired generated architecture settings while preserving user-authored keys', () => {
+  const policyFor = (policy: Record<string, unknown>) => {
+    const f = globalFixture();
+    mkdirSync(join(f.home, '.ai/harness'), { recursive: true });
+    writeFileSync(join(f.home, '.ai/harness/policy.json'), JSON.stringify(policy));
+    const plan = planStandardAdoption({ repoRoot: f.home, mode: 'standard', env: f.env });
+    const operation = plan.operations.find((entry) => entry.kind === 'writeFile' && entry.path === '.ai/harness/policy.json');
+    if (operation?.kind !== 'writeFile') throw new Error('policy operation missing');
+    expect(existsSync(f.path)).toBe(false); // Repository adoption does not invent a host preference.
+    return JSON.parse(operation.content);
+  };
+  const retired = policyFor({
+    harness: { events_file: '.ai/harness/events.jsonl', architecture_events_file: '.ai/harness/architecture/events.jsonl' },
+    architecture: {
+      projection_provider: 'disabled', projection_apply: 'disabled', projection_version: '0.0.1',
+      projection_failure_gate: 'strict', projection_timeout_ms: 1000, freshness_gate: 'strict', gate_min_severity: 'high',
+      requests_dir: 'docs/architecture/requests', queue_script: 'repo-harness run architecture-queue',
+      rule: 'hooks record architecture queue cards and sync controlled local context blocks; agents author semantic snapshots and diagrams',
+    },
+  });
+  expect(retired.architecture).toBeUndefined();
+  expect(retired.harness.architecture_events_file).toBeUndefined();
+  expect(retired.harness.events_file).toBe('.ai/harness/events.jsonl');
+
+  const custom = policyFor({ architecture: { freshness_gate: 'strict', rule: 'Team-specific architecture rule.', review_owner: 'platform' } });
+  expect(custom.architecture).toEqual({ rule: 'Team-specific architecture rule.', review_owner: 'platform' });
 });

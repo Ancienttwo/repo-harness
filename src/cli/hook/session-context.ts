@@ -360,7 +360,6 @@ function getActivePlan(collector: SessionContextCollector): string | null {
 // Gatekeeper blocking finding (PORT decision): the base script's own
 // top-of-file housekeeping --
 //   workflow_rotate_events_file "$(workflow_events_file)" 2>/dev/null || true
-//   workflow_rotate_events_file ".ai/harness/architecture/events.jsonl" 2>/dev/null || true
 // -- was dropped in the first pass. Operator helpers still append lifecycle
 // events, while typed host handlers may write trace/runtime evidence; without
 // rotation those durable files grow unbounded. Ported
@@ -570,16 +569,11 @@ function workflowRotateEventsFile(
   });
 }
 
-/** Both cold-path rotation targets, in the base script's own call order. Never throws (mirrors `2>/dev/null || true` on each call). */
+/** Cold-path rotation of the workflow event log. Never throws (mirrors `2>/dev/null || true`). */
 function rotateSessionStartEventLogs(repoRoot: string): void {
   const lockRoot = join(dirname(join(repoRoot, workflowEventsFile(repoRoot))), '.locks');
   try {
     workflowRotateEventsFile(repoRoot, workflowEventsFile(repoRoot), lockRoot);
-  } catch {
-    /* cold-path housekeeping must never fail the session */
-  }
-  try {
-    workflowRotateEventsFile(repoRoot, '.ai/harness/architecture/events.jsonl', lockRoot);
   } catch {
     /* cold-path housekeeping must never fail the session */
   }

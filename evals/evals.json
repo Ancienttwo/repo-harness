@@ -709,8 +709,8 @@
     {
       "id": 17,
       "slug": "route-repo-harness-architecture",
-      "prompt": "Resolve the pending architecture drift request and update the architecture diagram if it helps, but do not refresh the whole harness.",
-      "expected_output": "Routes the request to repo-harness-architecture, inspects docs/architecture/index.md and pending requests, uses capability matching when relevant, archives handled requests, and only generates a diagram through diagram-design when useful.",
+      "prompt": "Update the architecture model and module documents for the changed responsibility, and add a diagram if it helps, but do not refresh the whole harness.",
+      "expected_output": "Routes the request to repo-harness-architecture, inspects docs/architecture/index.md and the archctx model, uses capability matching when relevant, writes the model change through an archctx ChangeSet, runs repo-harness architecture-projection apply, and only generates a diagram through diagram-design when useful.",
       "files": [
         "assets/skill-commands/repo-harness-architecture/SKILL.md"
       ],
@@ -725,7 +725,7 @@
           },
           {
             "path": "final-response.md",
-            "pattern": "archive-architecture-request"
+            "pattern": "architecture-projection"
           },
           {
             "path": "final-response.md",
@@ -742,8 +742,8 @@
         ]
       },
       "expectations": [
-        "Treats hooks as architecture request recorders, not prose rewriters.",
-        "Keeps docs/architecture/requests pending-only after handling a request.",
+        "Treats architecture updates as explicit agent work; hooks do not record drift or rewrite prose.",
+        "Commits the model change and the projected documents together.",
         "Does not run a full harness refresh."
       ]
     },

@@ -1,6 +1,6 @@
 # Architecture Index
 
-> Umbrella architecture ledger for current boundaries, drift requests, snapshots, and diagrams.
+> Umbrella architecture ledger for current boundaries, snapshots, and diagrams.
 
 ## Current Snapshot
 
@@ -238,28 +238,25 @@ contract-assets 前缀，漂移由 `bun run sync:helpers` 的 `--check` 模式�
 阅读约定：
 
 - 模块文档按 capability 组织，一个 capability 恰好对应 `modules/<domain>/<capability>.md` 一个文件。
-- 事实优先级：实际源码 > 本文与模块文档。本图与表若与 `src/`、`scripts/`、`assets/` 的现状冲突，以源码为准并提一次 architecture drift request。
+- 事实优先级：实际源码 > 本文与模块文档。本图与表若与 `src/`、`scripts/`、`assets/` 的现状冲突，以源码为准，并在同一个 PR 里更新模型与投影。
 - 前缀权威在 `.ai/harness/policy.json#context.capability_source` 选中的 capability 权威（本仓库为 `.archcontext/model/nodes/*.yaml`），本表「主前缀」只取每个 capability 前缀列表的首项作为定位锚点，不是完整边界。
 - Verified against: `main@13686d8d`（2026-08-08）。
 
-## Architecture Drift Flow
+## Architecture Update Flow
 
-- `scripts/architecture-queue.sh` records architecture-sensitive edits as requests.
+- Hooks do not record architecture drift. The pull request is the update unit.
 - `scripts/capability-resolver.ts` resolves changed paths to capabilities with longest-prefix matching.
-- `scripts/archive-architecture-request.sh` archives handled requests after an agent records the resolution status and linked artifacts; `Resolved` requires the request's declared architecture module as an existing durable artifact.
+- When a change alters responsibilities, entrypoints, relations or flows, write the model change through an archctx ChangeSet and run `repo-harness architecture-projection apply --json` in the same branch.
 - Read architecture documents on demand. Update real boundaries explicitly.
 - `scripts/workstream-sync.sh` keeps durable multi-session progress under `tasks/workstreams/<domain>/<capability>/` and projects only pointers into local contracts.
 - Semantic diagrams live as Mermaid fenced blocks in the relevant architecture module or snapshot Markdown.
 - Mermaid fenced blocks are the only architecture diagram artifacts; agents must not generate standalone HTML.
 - `mermaid` is an external authoring/review skill (`~/.codex/skills/mermaid`), not a production dependency or vendored architecture body.
 
-## Request Archive Rule
+## Request Archive
 
-- `docs/architecture/requests/` contains only pending architecture drift requests.
-- Handled requests move to `docs/architecture/requests/archive/YYYY/`.
-- Valid terminal statuses are `Resolved`, `Superseded`, `Rejected`, and `No architecture change`.
-- The archived request must link any produced module, snapshot, or embedded Mermaid source.
-- `docs/architecture/index.md` keeps only pending request links.
+- `docs/architecture/requests/archive/` keeps the historical cards of the retired request queue.
+- No new request cards are created.
 
 ## 2026-07-16 Closeout Runner Guardrails
 
@@ -289,13 +286,6 @@ contract-assets 前缀，漂移由 `bun run sync:helpers` 的 `--check` 模式�
   `origin/main` 的版本逐位元組相同,最後一次真實內容改動仍停在 `9563083c`。
   模組邊界、entrypoint、依賴規則、runtime path 與驗證命令都沒有動,所以不需要
   snapshot;卡片的 Contract Files 是 `none`,也沒有本地契約需要同步。
-
-## Pending Requests
-
-
-<!-- BEGIN ARCHITECTURE PENDING REQUESTS -->
-- (none)
-<!-- END ARCHITECTURE PENDING REQUESTS -->
 
 
 

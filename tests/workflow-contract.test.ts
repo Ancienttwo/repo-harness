@@ -105,10 +105,10 @@ describe("workflow contract manifest", () => {
     expect(contract.helpers.scripts).toContain("switch-plan.sh");
     expect(contract.helpers.scripts).not.toContain("context-budget.ts");
     expect(contract.helpers.scripts).toContain("capability-resolver.ts");
-    expect(contract.helpers.scripts).toContain("architecture-event.ts");
+    expect(contract.helpers.scripts).not.toContain("architecture-event.ts");
     expect(contract.helpers.scripts).toContain("capability-config.ts");
-    expect(contract.helpers.scripts).toContain("architecture-queue.sh");
-    expect(contract.helpers.scripts).toContain("archive-architecture-request.sh");
+    expect(contract.helpers.scripts).not.toContain("architecture-queue.sh");
+    expect(contract.helpers.scripts).not.toContain("archive-architecture-request.sh");
     expect(contract.helpers.scripts).not.toContain("context-contract-sync.sh");
     expect(contract.helpers.scripts).toContain("workstream-sync.sh");
     expect(contract.helpers.scripts).toContain("refresh-current-status.sh");
@@ -118,7 +118,7 @@ describe("workflow contract manifest", () => {
     expect(contract.helpers.scripts).toContain("check-brain-manifest.sh");
     expect(contract.helpers.scripts).toContain("sync-brain-docs.sh");
     expect(contract.helpers.scripts).toContain("check-deploy-sql-order.sh");
-    expect(contract.helpers.scripts).toContain("check-architecture-sync.sh");
+    expect(contract.helpers.scripts).not.toContain("check-architecture-sync.sh");
     expect(contract.helpers.scripts).toContain("install-agent-fleet.sh");
     expect(contract.externalTooling?.waza?.primaryHost).toBe("codex");
     expect(contract.externalTooling?.waza?.managedSkills).toContain("think");
@@ -189,7 +189,7 @@ describe("workflow contract manifest", () => {
     expect(contract.artifacts.runtimeFiles).toContain(".ai/harness/capability-context/");
     expect(contract.artifacts.runtimeFiles).toContain(".ai/harness/planning/");
     expect(contract.artifacts.runtimeFiles).not.toContain(".ai/harness/checks/latest.json");
-    expect(contract.artifacts.runtimeFiles).toContain(".ai/harness/architecture/events.jsonl");
+    expect(contract.artifacts.runtimeFiles).not.toContain(".ai/harness/architecture/events.jsonl");
     expect(contract.artifacts.runtimeFiles).toContain(".ai/harness/active-plan");
     expect(contract.artifacts.runtimeFiles).toContain(".ai/harness/active-worktree");
     expect(contract.artifacts.runtimeFiles).toContain(".ai/harness/worktrees/");
@@ -209,6 +209,11 @@ describe("workflow contract manifest", () => {
     expect(legacyRootHelpers?.cleanupMode).toBe("generated_helper");
     expect(legacyRootHelpers?.paths).toContain("scripts/architecture-drift.sh");
     expect(legacyRootHelpers?.paths).toContain("scripts/check-task-workflow.sh");
+    expect(legacyRootHelpers?.paths).toContain("scripts/architecture-queue.sh");
+    const queueScaffold = contract.migrations.upgrade?.actions.find((action) => action.id === "architecture-request-queue-scaffold");
+    expect(queueScaffold?.action).toBe("remove");
+    expect(queueScaffold?.cleanupMode).toBe("exact_fingerprint");
+    expect(queueScaffold?.paths).toEqual([".ai/harness/architecture/.gitkeep", ".ai/harness/architecture/events.jsonl", "docs/architecture/requests/.gitkeep"]);
   });
 
   test("helper descriptions should cover the helper inventory 1:1 with non-empty text", () => {
