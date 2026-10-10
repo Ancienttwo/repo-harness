@@ -379,10 +379,10 @@ clear_primary_markers_for_transferred_plan() {
 bootstrap_worktree_runtime() {
   # A fresh linked worktree starts without the gitignored runtime artifacts the
   # verification gates depend on, and both resulting failures name neither cause.
-  # A missing dependency tree surfaces as `state=missing`, because
-  # check-architecture-sync resolves the provider through the candidate build,
-  # which requires archctx package-locally, while the globally installed CLI
-  # resolves it elsewhere and cheerfully reports ready. A missing code index
+  # A missing dependency tree surfaces as `state=missing`, because the
+  # projection provider resolves archctx package-locally from the candidate
+  # build, while the globally installed CLI resolves it elsewhere and reports
+  # ready. A missing code index
   # surfaces as `unresolved-major-change` listing every capability, because
   # archctx cannot prove a single flow without code facts. Seeding both here
   # keeps that diagnosis from being re-derived once per worktree.

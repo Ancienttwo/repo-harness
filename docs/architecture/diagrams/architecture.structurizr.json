@@ -1,4 +1,4 @@
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.diagram.structurizr" sourceDigest="sha256:541ec63ab7c5da89cacc94a5f9becb5aa29d9268eb93372fedaf1fb78b27f0d8" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:c0e46336b5854f082df0ccc7b19f0907a0b0310db595686503948d897b932b42" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.diagram.structurizr" sourceDigest="sha256:c2c495836f39fcc7416d4cb39a62866afd4ae2a2a5e692eac000d5af564e172a" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:d39054a2b21341f64a01b7091f746e5295899b73943c7a43995fac262162c37d" -->
 {
   "schemaVersion": "archcontext.structurizr-export/v1",
   "name": "ArchContext Architecture",
@@ -31,14 +31,6 @@
       {
         "id": "capability.runtime-harness.agent-runtime-effects",
         "name": "Agent Runtime Effects",
-        "type": "Software System",
-        "tags": [
-          "capability"
-        ]
-      },
-      {
-        "id": "capability.runtime-harness.automation-budget",
-        "name": "Automation Budget",
         "type": "Software System",
         "tags": [
           "capability"
@@ -166,7 +158,7 @@
       },
       {
         "id": "capability.runtime-harness.refactor-program",
-        "name": "Refactor Program",
+        "name": "Refactor Recommendations",
         "type": "Software System",
         "tags": [
           "capability"
@@ -247,22 +239,6 @@
       {
         "id": "component.agent-runtime-effects.journal",
         "name": "Agent Runtime Effect Journal",
-        "type": "Component",
-        "tags": [
-          "component"
-        ]
-      },
-      {
-        "id": "component.automation-budget.ledger",
-        "name": "Automation Budget Ledger",
-        "type": "Component",
-        "tags": [
-          "component"
-        ]
-      },
-      {
-        "id": "component.automation-controller.journal",
-        "name": "Automation Controller Journal",
         "type": "Component",
         "tags": [
           "component"
@@ -374,7 +350,7 @@
       },
       {
         "id": "component.hook-adapters.primary",
-        "name": "Architecture Cascade",
+        "name": "Typed Route Dispatch",
         "type": "Component",
         "tags": [
           "component"
@@ -437,14 +413,6 @@
         ]
       },
       {
-        "id": "component.refactor-program.lifecycle",
-        "name": "Refactor Program Lifecycle Plane",
-        "type": "Component",
-        "tags": [
-          "component"
-        ]
-      },
-      {
         "id": "component.root-router.primary",
         "name": "Root Adoption Router",
         "type": "Component",
@@ -498,18 +466,6 @@
         "id": "relation.agent-runtime-effects.journal",
         "sourceId": "capability.runtime-harness.agent-runtime-effects",
         "destinationId": "component.agent-runtime-effects.journal",
-        "description": "calls"
-      },
-      {
-        "id": "relation.automation-budget.ledger",
-        "sourceId": "capability.runtime-harness.automation-budget",
-        "destinationId": "component.automation-budget.ledger",
-        "description": "calls"
-      },
-      {
-        "id": "relation.automation-controller.journal",
-        "sourceId": "capability.runtime-harness.automation-budget",
-        "destinationId": "component.automation-controller.journal",
         "description": "calls"
       },
       {
@@ -747,12 +703,6 @@
         "description": "calls"
       },
       {
-        "id": "relation.refactor-program.lifecycle",
-        "sourceId": "capability.runtime-harness.refactor-program",
-        "destinationId": "component.refactor-program.lifecycle",
-        "description": "calls"
-      },
-      {
         "id": "relation.root-router.primary",
         "sourceId": "capability.public-surface.root-router",
         "destinationId": "component.root-router.primary",
@@ -804,7 +754,6 @@
         "capability.public-surface.adoption",
         "capability.public-surface.root-router",
         "capability.runtime-harness.agent-runtime-effects",
-        "capability.runtime-harness.automation-budget",
         "capability.runtime-harness.bound-task-freezes",
         "capability.runtime-harness.collaboration",
         "capability.runtime-harness.delegated-runs",
@@ -831,8 +780,6 @@
         "component.action-commands.primary",
         "component.adoption.primary",
         "component.agent-runtime-effects.journal",
-        "component.automation-budget.ledger",
-        "component.automation-controller.journal",
         "component.bound-task-freezes.primary",
         "component.codegraph-readiness.primary",
         "component.collaboration.primary",
@@ -854,7 +801,6 @@
         "component.operator.primary",
         "component.pm-dispatch.primary",
         "component.refactor-program.archctx-provider",
-        "component.refactor-program.lifecycle",
         "component.root-router.primary",
         "component.verified-context.primary",
         "component.work-demand.primary"
