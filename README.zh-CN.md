@@ -21,9 +21,8 @@ checks 和 review evidence 写回项目文件，让下一个 agent 会话从文�
 记忆里继续。它用 tasks-first agent contract 接入已有仓库，让 Claude 和 Codex
 保持一致。
 
-在这层 contract 之上，它运行 **authorized programs**：长周期的工作各自持有自己的
-authorization、budget、task offer 和 lease，因此一个 Sprint 可以跨会话推进，不需要
-人盯着每一步。
+在这层 contract 之上，由 Bot 调度 **长周期 program**：task offer 和 lease 让一个
+Sprint 可以跨会话推进。repo-harness 提供工具和证据；Bot 决定下一步运行什么。
 
 ## 目录
 
@@ -151,9 +150,8 @@ repo-harness mcp uninstall --services-stopped # after stopping all MCP HTTP serv
   证据和一张 review card。人工决策面就是一屏——verdict、intended vs actual
   files、commands passed、residual risk、rollback——而不用靠还原 agent 自称做过
   什么来判断。
-- **无人值守的工作仍然可追责。** 一个 program 没有存好的 authorization 就起不来，
-  超不出自己的 budget ledger，拿不住超过 lease 期限的任务，也没有 receipt 就声称
-  不了 acceptance。约束自主性的是 artifact，不是信任。
+- **调度的工作仍然可追责。** 任务不能超过 lease 期限被持有。没有 receipt 也不能
+  声称 acceptance。Bot 依据记录下来的证据调度，而不是依据信任。
 
 在接入后的仓库里，surface 刻意保持精简：
 
@@ -173,19 +171,18 @@ contract、checks、review 和 handoff 是持久的 authority；hook 负责把�
 里面。对单人仓库来说这就是完整的产品，[任务 Workflow](#任务-workflow) 里的全部内容
 都属于这一层。下面的内容都不是使用它的前提。
 
-**第 2 层 —— authorized programs。** 活得比会话更久的工作：无人值守的 controller
-逐步推进一个 Sprint、一个多个 Module Engineer 交换信号与 handoff 的协作
-平面。每个 program 都以 operator 铸造的 authorization 为前提，从 per-goal budget
-ledger 支取额度，并用可续期的 lease 持有工作。见
+**第 2 层 —— Bot 调度的 program。** 活得比会话更久的工作：一个多个 Module
+Engineer 交换信号与 handoff 的协作平面，以及通过可续期 lease 持有的 engineer
+task offer。Bot 决定调度什么。repo-harness 提供工具和证据。见
 [Authorized Programs](#authorized-programs)。
 
 | | 第 1 层 | 第 2 层 |
 | --- | --- | --- |
-| 工作单元 | 一份 task contract | 一个 authorized program |
-| 谁在驱动 | 会话里的人 | 受上限约束的 controller |
-| Authority | Plan、contract、review、checks | 以上全部，再加 authorization、budget、lease、receipt |
-| 入口 | `repo-harness init` | `repo-harness automation grant mint` |
-| 停止条件 | Task closeout | Budget 耗尽、lease 丢失，或拿到终态 receipt |
+| 工作单元 | 一份 task contract | 一个被调度的 engineer task |
+| 谁在驱动 | 会话里的人 | Bot，通过 repo-harness CLI 和 Herdr |
+| Authority | Plan、contract、review、checks | 以上全部，再加 engineer binding 和 lease |
+| 入口 | `repo-harness init` | `repo-harness engineer acquire-next` |
+| 停止条件 | Task closeout | Task closeout 或 lease 丢失 |
 
 第 2 层不取代第 1 层：program 的每一步仍然投射进人类本来会写的那些 plan、contract
 和 review artifact。
@@ -197,8 +194,7 @@ ledger 支取额度，并用可续期的 lease 持有工作。见
 | **会话状态落在文件里** | Plan、contract、check 和 handoff 都留在仓库里，新会话从 artifact 而不是聊天线程恢复 |
 | **Typed hook runtime** | 八条共享 managed route 加三条 Codex-only delegation route，每条都绑定唯一一个 typed in-process handler，在 edit boundary 上做 fail-closed guard |
 | **Plan → Contract → Review** | 从 approved plan 到 projected contract、隔离 worktree、结构化证据，再到可审查 closeout 的完整生命周期 |
-| **Authorized programs** | automation 和 collaboration program 各自持有 authorization、budget ledger、task offer 和可续期 lease |
-| **有上限的无人值守 controller** | 一条 Engineer dispatch loop，受 step、duration、retry 硬上限约束，每次尝试前先预留 budget |
+| **Bot 调度的 program** | 带 engineer task offer 和可续期 lease 的 collaboration program；Bot 负责调度，repo-harness 提供工具和证据 |
 | **渐进式 context loading** | 约 12KB 的稳定 root context，加上只为实际改动文件加载的约 1KB capability contract |
 | **CodeGraph 集成** | 用预建索引回答调用者、被调用者、定义位置这类结构化查询，取代反复的 grep-and-read |
 | **MCP planner sidecar** | ChatGPT 读取真实仓库状态并写出 PRD/Sprint/Goal artifact；Codex 负责执行，默认没有源码写入权限 |
@@ -305,35 +301,11 @@ source of truth，backlog 是持久的执行队列，这样 resume 之后的 Goa
 
 ## Authorized Programs
 
-Program 指的是活得比会话更久的工作。它们全都从同样的三个原语出发，缺了第一个
-就一个也起不来。
+Program 指的是活得比会话更久的工作。Bot 通过 repo-harness CLI 和 Herdr 调度它。
+repo-harness 自己不保留 scheduler、budget ledger 或 controller。
 
-```bash
-repo-harness automation grant mint   # store one operator ProgramAuthorizationV2
-repo-harness automation grant list   # digests held for this repository
-repo-harness automation budget show          # the enforceable per-goal ledger
-repo-harness automation budget repair        # seal a stopped or expired run's exhaustion receipt
-```
-
-- **Authorization。** operator 铸造的 `ProgramAuthorizationV2` 存在 harness home
-  的 gate store 里。没有未经认证的启动路径，program 也不会自己推导 actor——每条
-  记录的作者都由 `--authorization-id` 解析而来。
-- **Budget。** Agent turn、worker acquisition 和 runner invocation 在执行前预留 per-goal 额度。`budget repair` 在现有锁内封存耗尽证据。它不改上限。
 - **Lease。** 被持有的工作带一个可续期的 lease，有续期间隔、最大 TTL 和一组封闭的
   evidence source。liveness 状态无法证明时需要人来看，而不是悄悄回收。
-
-### 无人值守 controller
-
-```bash
-repo-harness automation controller start --maximum-steps 20 --maximum-duration-ms 300000
-repo-harness automation controller step
-repo-harness automation controller status
-repo-harness automation controller stop
-```
-
-一条 Engineer dispatch loop，受硬上限约束，带确定性 backoff 和有界的
-attempt-retry ledger。每次 attempt 记录之前先预留 budget，投射出来的 outcome 落在
-封闭 enum 之外时不能算 satisfied。
 
 ### Engineer 调度
 

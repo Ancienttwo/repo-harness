@@ -22,10 +22,10 @@ proyecto, de modo que la siguiente sesión de agente continúa desde archivos en
 lugar del historial de chat. Adopta un repositorio existente con un contract
 de agente tasks-first que mantiene alineados a Claude y Codex.
 
-Sobre ese contract ejecuta **programas autorizados**: trabajo de larga duración
-que sostiene su propia autorización, presupuesto, task offers y leases, de modo
-que un Sprint puede avanzar a través de sesiones sin que un humano conduzca
-cada paso.
+Sobre ese contract, el Bot planifica **programas de larga duración**: los task
+offers y los leases permiten que un Sprint avance a través de sesiones.
+repo-harness aporta las herramientas y la evidencia; el Bot decide qué se
+ejecuta a continuación.
 
 ## Índice
 
@@ -172,10 +172,9 @@ repo-harness mcp uninstall --services-stopped # after stopping all MCP HTTP serv
   decisión humana cabe en una sola pantalla — verdict, archivos previstos vs
   reales, comandos que pasaron, riesgo residual, rollback — en lugar de una
   reconstrucción de lo que el agente afirma haber hecho.
-- **El trabajo desatendido sigue siendo responsable.** Un programa no puede
-  arrancar sin una autorización almacenada, no puede exceder su budget ledger,
-  no puede retener una tarea más allá de su lease, y no puede reclamar
-  aceptación sin un receipt. La autonomía está acotada por artefactos, no por
+- **El trabajo planificado sigue siendo responsable.** Una tarea no puede
+  retenerse más allá de su lease. Tampoco puede reclamar aceptación sin un
+  receipt. El Bot planifica a partir de evidencia registrada, no de la
   confianza.
 
 En un repositorio adoptado, la superficie se mantiene intencionalmente
@@ -199,20 +198,20 @@ completo para un repositorio en solitario, y todo lo que está en
 [Flujo de trabajo de tareas](#flujo-de-trabajo-de-tareas) pertenece aquí. Nada
 de lo que sigue es necesario para usarlo.
 
-**Capa 2 — programas autorizados.** Trabajo de larga duración que sobrevive a
-una sesión: un controller desatendido que avanza un Sprint, un plano de colaboración donde varios Module
-Engineers intercambian señales y handoffs. Cada programa está condicionado a
-una autorización emitida por un operador, consume de un budget ledger por goal,
-y retiene el trabajo mediante leases renovables. Ver
+**Capa 2 — programas planificados por el Bot.** Trabajo de larga duración que
+sobrevive a una sesión: un plano de colaboración donde varios Module Engineers
+intercambian señales y handoffs, y task offers de engineer retenidos mediante
+leases renovables. El Bot decide qué planificar. repo-harness aporta las
+herramientas y la evidencia. Ver
 [Programas autorizados](#programas-autorizados).
 
 | | Capa 1 | Capa 2 |
 | --- | --- | --- |
-| Unidad de trabajo | Un task contract | Un programa autorizado |
-| Quién lo conduce | Un humano en una sesión | Un controller, bajo topes |
-| Autoridad | Plan, contract, review, checks | Lo anterior, más authorization, budget, lease, receipts |
-| Punto de entrada | `repo-harness init` | `repo-harness automation grant mint` |
-| Condición de parada | Closeout de la tarea | Budget agotado, lease perdido, o un receipt terminal |
+| Unidad de trabajo | Un task contract | Una engineer task planificada |
+| Quién lo conduce | Un humano en una sesión | El Bot, a través del CLI de repo-harness y Herdr |
+| Autoridad | Plan, contract, review, checks | Lo anterior, más engineer binding y lease |
+| Punto de entrada | `repo-harness init` | `repo-harness engineer acquire-next` |
+| Condición de parada | Closeout de la tarea | Closeout de la tarea o lease perdido |
 
 La capa 2 no reemplaza a la capa 1: cada paso de un programa sigue
 proyectándose en los mismos artefactos de plan, contract y review que habría
@@ -225,8 +224,7 @@ escrito un humano.
 | **Sesiones respaldadas por archivos** | Plans, contracts, checks y handoffs viven en el repositorio, de modo que una sesión nueva retoma desde artefactos en vez de un hilo de chat |
 | **Typed hook runtime** | Ocho managed routes compartidas, más tres delegation routes exclusivas de Codex, cada una atada a exactamente un typed handler in-process, con guards fail-closed en el límite de edición |
 | **Plan → Contract → Review** | Un solo ciclo de vida desde el plan aprobado hasta el contract proyectado, el worktree aislado, la evidencia estructurada y un closeout revisable |
-| **Programas autorizados** | Programas de automation y collaboration que sostienen su propia authorization, budget ledger, task offers y leases renovables |
-| **Controller desatendido acotado** | Un bucle de dispatch de Engineer bajo topes duros de pasos, duración y reintentos, que reserva budget antes de cada intento |
+| **Programas planificados por el Bot** | Programas de collaboration con task offers de engineer y leases renovables; el Bot planifica, repo-harness aporta herramientas y evidencia |
 | **Carga de contexto progresiva** | Un root context estable de ~12KB más capability contracts de ~1KB que solo se cargan para los archivos que realmente se están tocando |
 | **Integración con CodeGraph** | Consultas estructurales (callers, callees, definitions) respondidas desde un índice pre-construido en vez de pasadas repetidas de grep-and-read |
 | **MCP planner sidecar** | ChatGPT lee el estado real del repositorio y escribe artefactos de PRD/Sprint/Goal; Codex los ejecuta, sin acceso de escritura al código fuente por defecto |
@@ -340,39 +338,14 @@ y [`workflow-orchestration.md`](docs/reference-configs/workflow-orchestration.md
 
 ## Programas autorizados
 
-Un programa es trabajo que sobrevive a una sesión. Todos ellos parten de las
-mismas tres primitivas, y ninguno puede arrancar sin la primera.
+Un programa es trabajo que sobrevive a una sesión. El Bot lo planifica a
+través del CLI de repo-harness y Herdr. repo-harness no mantiene un scheduler,
+un budget ledger ni un controller propios.
 
-```bash
-repo-harness automation grant mint   # store one operator ProgramAuthorizationV2
-repo-harness automation grant list   # digests held for this repository
-repo-harness automation budget show          # the enforceable per-goal ledger
-repo-harness automation budget repair        # seal a stopped or expired run's exhaustion receipt
-```
-
-- **Authorization.** Un `ProgramAuthorizationV2` emitido por un operador vive
-  en el gate store del home del harness. No existe una ruta de arranque sin
-  autenticar, y un programa nunca deriva su propio actor — el autor de cada
-  registro se resuelve desde `--authorization-id`.
-- **Budget.** Los agent turns, acquisitions y runner invocations reservan el presupuesto antes del trabajo. `budget repair` conserva los límites.
 - **Lease.** El trabajo retenido lleva un lease renovable con un intervalo de
   renovación, un TTL máximo y un conjunto cerrado de fuentes de evidencia. Un
   estado de liveness no probado exige atención en lugar de reclamarse en
   silencio.
-
-### Controller desatendido
-
-```bash
-repo-harness automation controller start --maximum-steps 20 --maximum-duration-ms 300000
-repo-harness automation controller step
-repo-harness automation controller status
-repo-harness automation controller stop
-```
-
-Un bucle de dispatch de Engineer bajo topes duros, con backoff determinista y
-un ledger acotado de reintentos por intento. Cada intento reserva budget antes
-de quedar registrado, y un resultado proyectado fuera del enum cerrado no puede
-contarse como satisfecho.
 
 ### Scheduling de Engineer
 

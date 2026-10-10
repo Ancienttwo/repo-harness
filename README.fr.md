@@ -22,10 +22,10 @@ de review, afin que la session d'agent suivante reprenne à partir des fichiers
 plutôt que de la mémoire de chat. Il adopte un dépôt existant avec un contrat
 d'agent tasks-first qui maintient Claude et Codex alignés.
 
-Par-dessus ce contrat, il exécute des **programmes autorisés** : du travail de
-longue durée qui porte sa propre autorisation, son budget, ses task offers et
-ses leases, si bien qu'un Sprint peut avancer d'une session à l'autre sans
-qu'un humain pilote chaque étape.
+Par-dessus ce contrat, le Bot ordonnance des **programmes de longue durée** :
+les task offers et les leases permettent à un Sprint d'avancer d'une session à
+l'autre. repo-harness fournit les outils et les preuves ; le Bot décide de ce
+qui s'exécute ensuite.
 
 ## Sommaire
 
@@ -171,11 +171,10 @@ repo-harness mcp uninstall --services-stopped # after stopping all MCP HTTP serv
   décision humaine tient sur un seul écran — verdict, fichiers prévus vs
   réels, commandes passées, risque résiduel, rollback — plutôt qu'une
   reconstruction de ce que l'agent prétend avoir fait.
-- **Le travail non supervisé reste redevable.** Un programme ne peut pas
-  démarrer sans une autorisation stockée, ne peut pas dépasser son budget
-  ledger, ne peut pas retenir une tâche au-delà de son lease, et ne peut pas
-  revendiquer une acceptance sans receipt. L'autonomie est bornée par des
-  artifacts, pas par la confiance.
+- **Le travail ordonnancé reste redevable.** Une tâche ne peut pas être
+  retenue au-delà de son lease. Elle ne peut pas non plus revendiquer une
+  acceptance sans receipt. Le Bot ordonnance à partir des preuves enregistrées,
+  pas de la confiance.
 
 Dans un dépôt adopté, la surface à comprendre reste volontairement réduite :
 
@@ -197,20 +196,20 @@ entier pour un dépôt en solo, et tout ce qui figure dans
 [Workflow des tâches](#workflow-des-tâches) appartient à cette couche. Rien de
 ce qui suit n'est requis pour l'utiliser.
 
-**Couche 2 — les programmes autorisés.** Du travail de longue durée qui survit
-à une session : un controller non supervisé qui fait avancer un Sprint, un plan de collaboration où
-plusieurs Module Engineers échangent signaux et handoffs. Chaque programme est
-conditionné à une autorisation frappée par un opérateur, puise dans un budget
-ledger par goal, et retient le travail via des leases renouvelables. Voir
+**Couche 2 — les programmes ordonnancés par le Bot.** Du travail de longue
+durée qui survit à une session : un plan de collaboration où plusieurs Module
+Engineers échangent signaux et handoffs, et des task offers d'engineer retenus
+via des leases renouvelables. Le Bot décide de ce qu'il ordonnance. repo-harness
+fournit les outils et les preuves. Voir
 [Programmes autorisés](#programmes-autorisés).
 
 | | Couche 1 | Couche 2 |
 | --- | --- | --- |
-| Unité de travail | Un task contract | Un programme autorisé |
-| Qui le pilote | Un humain dans une session | Un controller, sous caps |
-| Autorité | Plan, contract, review, checks | Ce qui précède, plus authorization, budget, lease, receipts |
-| Point d'entrée | `repo-harness init` | `repo-harness automation grant mint` |
-| Condition d'arrêt | Closeout de la tâche | Budget épuisé, lease perdu, ou un receipt terminal |
+| Unité de travail | Un task contract | Une engineer task ordonnancée |
+| Qui le pilote | Un humain dans une session | Le Bot, via le CLI repo-harness et Herdr |
+| Autorité | Plan, contract, review, checks | Ce qui précède, plus engineer binding et lease |
+| Point d'entrée | `repo-harness init` | `repo-harness engineer acquire-next` |
+| Condition d'arrêt | Closeout de la tâche | Closeout de la tâche ou lease perdu |
 
 La couche 2 ne remplace pas la couche 1 : chaque étape d'un programme se
 projette toujours dans les mêmes artifacts de plan, contract et review qu'un
@@ -223,8 +222,7 @@ humain aurait écrits.
 | **Sessions file-backed** | Les plans, contracts, checks et handoffs vivent dans le dépôt, si bien qu'une nouvelle session reprend à partir des artifacts plutôt que d'un chat thread |
 | **Runtime de hooks typés** | Huit routes managées partagées, plus trois routes de delegation réservées à Codex, chacune liée à exactement un typed handler in-process, avec des guards fail-closed à la frontière d'édition |
 | **Plan → Contract → Review** | Un seul lifecycle, du plan approuvé au contract projeté, en passant par le worktree isolé et l'evidence structurée, jusqu'à un closeout prêt pour la review |
-| **Programmes autorisés** | Programmes automation et collaboration qui portent leur propre authorization, budget ledger, task offers et leases renouvelables |
-| **Controller non supervisé borné** | Une boucle de dispatch Engineer sous des caps stricts d'étapes, de durée et de retries, qui réserve du budget avant chaque tentative |
+| **Programmes ordonnancés par le Bot** | Programmes de collaboration avec des task offers d'engineer et des leases renouvelables ; le Bot ordonnance, repo-harness fournit les outils et les preuves |
 | **Chargement de contexte progressif** | Un root context stable d'environ 12 Ko, plus des capability contracts d'environ 1 Ko chargés uniquement pour les fichiers réellement touchés |
 | **Intégration CodeGraph** | Requêtes structurelles (callers, callees, définitions) résolues depuis un index pré-construit, au lieu de passes grep-and-read répétées |
 | **MCP planner sidecar** | ChatGPT lit l'état réel du dépôt et écrit les artifacts PRD/Sprint/Goal ; Codex les exécute, sans accès en écriture par défaut au source-code |
@@ -338,39 +336,14 @@ et [`workflow-orchestration.md`](docs/reference-configs/workflow-orchestration.m
 
 ## Programmes autorisés
 
-Un programme est un travail qui survit à une session. Chacun d'eux part des
-trois mêmes primitives, et aucun ne peut démarrer sans la première.
+Un programme est un travail qui survit à une session. Le Bot l'ordonnance via
+le CLI repo-harness et Herdr. repo-harness ne garde ni scheduler, ni budget
+ledger, ni controller qui lui soient propres.
 
-```bash
-repo-harness automation grant mint   # store one operator ProgramAuthorizationV2
-repo-harness automation grant list   # digests held for this repository
-repo-harness automation budget show          # the enforceable per-goal ledger
-repo-harness automation budget repair        # seal a stopped or expired run's exhaustion receipt
-```
-
-- **Authorization.** Un `ProgramAuthorizationV2` frappé par un opérateur vit
-  dans le gate store du harness home. Il n'existe aucun chemin de démarrage non
-  authentifié, et un programme ne dérive jamais son propre actor — l'auteur de
-  chaque enregistrement est résolu depuis `--authorization-id`.
-- **Budget.** Les agent turns, acquisitions et runner invocations réservent le budget avant le travail. `budget repair` conserve les limites.
 - **Lease.** Le travail retenu porte un lease renouvelable avec un intervalle de
   renouvellement, un TTL maximum, et un ensemble fermé de sources d'evidence. Un
   état de liveness non prouvé demande de l'attention plutôt qu'une reprise
   silencieuse.
-
-### Controller non supervisé
-
-```bash
-repo-harness automation controller start --maximum-steps 20 --maximum-duration-ms 300000
-repo-harness automation controller step
-repo-harness automation controller status
-repo-harness automation controller stop
-```
-
-Une seule boucle de dispatch Engineer sous des caps stricts, avec un backoff
-déterministe et un ledger borné de retries de tentative. Chaque tentative
-réserve du budget avant d'être enregistrée, et un outcome projeté en dehors de
-l'enum fermée ne peut pas être compté comme satisfait.
 
 ### Ordonnancement des Engineers
 

@@ -21,9 +21,10 @@
 なくファイルから続きに入れるようにします。既存のリポジトリに、Claude と Codex を
 揃える tasks-first な agent contract を導入します。
 
-その contract の上で、**authorized programs** を動かします。これは自前の
-authorization、budget、task offer、lease を保持する長時間の作業であり、人間が
-1 ステップずつ駆動しなくても Sprint がセッションをまたいで前進できるようにします。
+その contract の上で、Bot が **long-running programs** をスケジュールします。
+task offer と lease により、Sprint はセッションをまたいで前進できます。
+repo-harness は tools と evidence を提供します。次に何を実行するかは Bot が
+決めます。
 
 ## 目次
 
@@ -170,10 +171,9 @@ repo-harness mcp uninstall --services-stopped # after stopping all MCP HTTP serv
   収まります — verdict、想定/実際の変更ファイル、通過した commands、残余
   リスク、rollback — agent が何をしたと主張しているかを再構築する必要は
   ありません。
-- **無人の作業も説明責任を保つ。** program は保存された authorization なしに
-  開始できず、budget ledger を超過できず、lease を過ぎて task を保持できず、
-  receipt なしに acceptance を主張できません。自律性を縛るのは信頼ではなく
-  artifacts です。
+- **スケジュールされた作業も説明責任を保つ。** task は lease を過ぎて保持
+  できません。receipt なしに acceptance を主張することもできません。Bot は
+  信頼ではなく、記録された evidence に基づいてスケジュールします。
 
 導入済みのリポジトリでは、意識すべき surface area は意図的に小さく保たれて
 います。
@@ -195,20 +195,19 @@ task。plan、contract、check、review、handoff が持続的な authority で�
 [タスク Workflow](#タスク-workflow) の内容はすべてここに属します。以降の内容は
 利用に必須ではありません。
 
-**Layer 2 — authorized programs。** セッションより長く生きる作業です。Sprint を
-進める無人 controller、複数の Module Engineer が signal と
-handoff をやり取りする collaboration plane などが該当します。各 program は
-operator が mint した authorization で gate され、goal 単位の budget ledger から
-引き当て、更新可能な lease を通じて作業を保持します。詳細は
-[Authorized Programs](#authorized-programs) を参照してください。
+**Layer 2 — Bot-scheduled programs。** セッションより長く生きる作業です。
+複数の Module Engineer が signal と handoff をやり取りする collaboration plane と、
+更新可能な lease を通じて保持される engineer task offer が該当します。何を
+スケジュールするかは Bot が決めます。repo-harness は tools と evidence を提供
+します。詳細は [Authorized Programs](#authorized-programs) を参照してください。
 
 | | Layer 1 | Layer 2 |
 | --- | --- | --- |
-| 作業の単位 | 1 つの task contract | 1 つの authorized program |
-| 駆動するのは誰か | セッション内の人間 | 上限の範囲で動く controller |
-| Authority | Plan、contract、review、checks | 上記に加えて authorization、budget、lease、receipt |
-| Entry point | `repo-harness init` | `repo-harness automation grant mint` |
-| 停止条件 | Task closeout | Budget の枯渇、lease の喪失、または終端 receipt |
+| 作業の単位 | 1 つの task contract | スケジュールされた 1 つの engineer task |
+| 駆動するのは誰か | セッション内の人間 | Bot（repo-harness CLI と Herdr を通じて） |
+| Authority | Plan、contract、review、checks | 上記に加えて engineer binding と lease |
+| Entry point | `repo-harness init` | `repo-harness engineer acquire-next` |
+| 停止条件 | Task closeout | Task closeout または lease の喪失 |
 
 Layer 2 は Layer 1 を置き換えるものではありません。program のすべてのステップも、
 人間が書いたであろう同じ plan、contract、review の artifacts へ投射されます。
@@ -220,8 +219,7 @@ Layer 2 は Layer 1 を置き換えるものではありません。program の�
 | **File-backed sessions** | Plan、contract、check、handoff がリポジトリに残るので、新しいセッションはチャットスレッドではなく artifacts から再開します |
 | **Typed hook runtime** | 8 本の共有 managed route と 3 本の Codex 専用 delegation route があり、それぞれが exactly one の typed in-process handler に bind され、edit boundary で fail-closed な guard がかかります |
 | **Plan → Contract → Review** | approved plan から投射された contract、隔離された worktree、構造化された evidence、review 可能な closeout までの 1 本の lifecycle |
-| **Authorized programs** | 自前の authorization、budget ledger、task offer、更新可能な lease を保持する automation・collaboration の各 program |
-| **Bounded unattended controller** | step・duration・retry の hard cap 下で動く 1 本の Engineer dispatch loop。各試行の前に budget を予約します |
+| **Bot-scheduled programs** | engineer task offer と更新可能な lease を持つ collaboration program。Bot がスケジュールし、repo-harness が tools と evidence を提供します |
 | **Progressive context loading** | 安定した約 12KB の root context に、実際に触れるファイルにだけ読み込まれる約 1KB の capability contract が加わります |
 | **CodeGraph integration** | caller・callee・definition などの構造的なクエリに、grep-and-read を繰り返す代わりに事前構築された index が答えます |
 | **MCP planner sidecar** | ChatGPT が実際のリポジトリ状態を読み、PRD/Sprint/Goal artifacts を書きます。実行するのは Codex で、既定では source code への書き込み権限を持ちません |
@@ -338,38 +336,13 @@ execution queue となるため、resume された Goal セッションが元の
 
 ## Authorized Programs
 
-program とは、セッションより長く生きる作業のことです。どの program も同じ
-3 つの primitive から始まり、最初の 1 つがなければ起動できません。
+program とは、セッションより長く生きる作業のことです。Bot は repo-harness CLI
+と Herdr を通じてそれをスケジュールします。repo-harness は独自の scheduler、
+budget ledger、controller を持ちません。
 
-```bash
-repo-harness automation grant mint   # store one operator ProgramAuthorizationV2
-repo-harness automation grant list   # digests held for this repository
-repo-harness automation budget show          # the enforceable per-goal ledger
-repo-harness automation budget repair        # seal a stopped or expired run's exhaustion receipt
-```
-
-- **Authorization。** operator が mint した `ProgramAuthorizationV2` が harness
-  home の gate store に置かれます。認証されていない起動経路は存在せず、program
-  が自分の actor を導出することもありません。すべてのレコードの author は
-  `--authorization-id` から解決されます。
-- **Budget。** Agent turn、worker acquisition、runner invocation は実行前に予算を予約します。`budget repair` は上限を変更しません。
 - **Lease。** 保持された作業には、更新間隔・最大 TTL・閉じた evidence source の
   集合を伴う更新可能な lease が付きます。liveness が証明できない状態は、黙って
   reclaim するのではなく attention を要求します。
-
-### Unattended controller
-
-```bash
-repo-harness automation controller start --maximum-steps 20 --maximum-duration-ms 300000
-repo-harness automation controller step
-repo-harness automation controller status
-repo-harness automation controller stop
-```
-
-hard cap の下で動く 1 本の Engineer dispatch loop で、決定的な backoff と
-上限のある attempt-retry ledger を備えます。各 attempt は記録される前に budget
-を予約し、閉じた enum の外にある projected outcome は satisfied として数えられ
-ません。
 
 ### Engineer scheduling
 
