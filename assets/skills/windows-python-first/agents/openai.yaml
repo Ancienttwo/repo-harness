@@ -1,0 +1,4 @@
+interface:
+  display_name: "Windows Python First"
+  short_description: "Prefer Python for Windows file and text operations"
+  default_prompt: "Use $windows-python-first to handle this Windows task with explicit file encoding and simple shell commands."
