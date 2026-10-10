@@ -1,4 +1,4 @@
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.diagram.structurizr" sourceDigest="sha256:7d93c7a3de01da1580e05f042cff0b72f1cbc6f69b41b50fd1e4a1a8d81b5626" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:119d5987a2e78d64984beec1fb4758166bbb4171b75d66491d4a1f3961bbaca2" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.diagram.structurizr" sourceDigest="sha256:3ec3e9bf8d698407478762d22c1fd6267029bfd0cd24e4f91653ab01417a98ce" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:3f810607d66449ef2be934a2db0bc89840fae9182d2378944c27e2f24a776b83" -->
 {
   "schemaVersion": "archcontext.structurizr-export/v1",
   "name": "ArchContext Architecture",
@@ -366,7 +366,7 @@
       },
       {
         "id": "component.hook-adapters.primary",
-        "name": "Architecture Cascade",
+        "name": "Typed Route Dispatch",
         "type": "Component",
         "tags": [
           "component"

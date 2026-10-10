@@ -62,7 +62,7 @@ outcomes:
           sinkId: sink.refactor-program.architecture-intervention
     terminal:
       participant: operator
-      label: Use the returned digest-derived approval reference with architecture-projection accept before materialization
+      label: Materialization applies the architecture projection and requires the intervention's major change
   - id: candidate-verified
     kind: success
     label: Verify an exact candidate through all four gates in fixed order

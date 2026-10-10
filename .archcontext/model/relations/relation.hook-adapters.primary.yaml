@@ -3,4 +3,4 @@ id: relation.hook-adapters.primary
 kind: calls
 source: capability.runtime-harness.hook-adapters
 target: component.hook-adapters.primary
-intent: "Drain Stop architecture work"
+intent: "Dispatch a host hook route to its typed handler"

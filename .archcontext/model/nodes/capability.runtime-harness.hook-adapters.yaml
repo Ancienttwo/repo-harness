@@ -17,13 +17,13 @@ source:
     - "src/pi/**"
   entrypoints:
     - id: entrypoint.hook-adapters.primary
-      path: "src/cli/hook/mutation-observed.ts"
+      path: "src/cli/hook/runtime.ts"
       symbols:
-        - name: "processArchitectureCascade"
+        - name: "runHook"
           sinks:
             - id: sink.hook-adapters.primary
-              path: "src/cli/hook/mutation-observed.ts"
-              symbol: "runRepoHarnessHelper"
+              path: "src/cli/hook/handler-registry.ts"
+              symbol: "getHandlerForRoute"
 extensions:
   contractFiles:
     agents: "assets/hooks/AGENTS.md"

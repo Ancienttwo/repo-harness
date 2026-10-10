@@ -1,5 +1,5 @@
 # Refactor Program
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-refactor-program" sourceDigest="sha256:e62d682d1acc2005b21ec95c10b7d564f58d7974b9190f8bd2352ae2f89574b9" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:281710e8acc1b2e7fa7a7e0521833566e98430f128f36147674832cef046126d" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-refactor-program" sourceDigest="sha256:a86693b33d011998a55de615ed738ab49d7515bfe6f9a18d5c6365628bef6401" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:2fa6d59c89b3605f8b3d0fe9370469d389f98ac4175591fb0d42b14d425f66c7" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.refactor-program`(kind `capability`)
 > **Matched Prefixes**:`src/core/refactor/**`、`src/effects/refactor/**`、`src/cli/commands/refactor.ts`
@@ -25,7 +25,7 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:73e4995f7ad0fbe27bda040c8e7307891a8407b81069c37844a98b1157da846d`).
+- Proof: `proven` (`sha256:64e161d55208488b3f0ceb150f39a32990453720fd2a0f5634608552cd81b41b`).
 - Semantic nodes: `3`; declared relations: `2`.
 
 ### 1.2 模組職責表
@@ -64,7 +64,7 @@ flowchart LR
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:73e4995f7ad0fbe27bda040c8e7307891a8407b81069c37844a98b1157da846d`); selectors `8/8`.
+> **Proof**: `proven` (`sha256:64e161d55208488b3f0ceb150f39a32990453720fd2a0f5634608552cd81b41b`); selectors `8/8`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
@@ -97,7 +97,7 @@ sequenceDiagram
     Note over p2_operator_97b83da8: Return the materialized commit and planning-state receipt
   else Route architecture-scale work through the existing human projection acceptance authority
   p2_operator_97b83da8->>p2_program_store_c54d7d72: Bind the accepted ArchContext target delta and stop at architecture_approval_required
-    Note over p2_operator_97b83da8: Use the returned digest-derived approval reference with architecture-projection accept before materialization
+    Note over p2_operator_97b83da8: Materialization applies the architecture projection and requires the intervention's major change
   else Verify an exact candidate through all four gates in fixed order
   p2_operator_97b83da8->>p2_program_store_c54d7d72: Run Contract， Cutover Closure， ArchContext candidate preverify， then AcceptanceReceipt and persist an immutable receipt
     Note over p2_operator_97b83da8: Return exact evidence references without projecting a final architecture disposition
@@ -119,7 +119,7 @@ sequenceDiagram
 - Every mutating program transition is append-only, idempotent by exact event identity, and rejected on conflicting replay.
 - Candidate worktrees cannot relax the target revision's policy or authorization.
 - Architecture-scale work always crosses the existing human architecture-acceptance boundary.
-- An architecture approval reference is derived from the complete target delta; the existing projection receipt must bind that reference, the exact affected nodes, and the exact provider major-change reasons.
+- Materialization applies the architecture projection itself. The change that ArchContext accepts must have exactly the intervention's affected nodes and major-change reasons; its output files enter the materialization transaction.
 - Projection-owned architecture file changes join the same Git CAS as the Refactor Program artifacts; the refactor lane never renders architecture docs itself.
 - Workflow route is a pure three-input projection of provider-owned scale, scale reason codes, and major-change reasons; a supplied route is accepted only when it equals that projection.
 - Materialization never creates a Lease: it writes only Program bindings, canonical Sprint tasks, Work Packages, Plans, and their exact acceptance and rollback references.

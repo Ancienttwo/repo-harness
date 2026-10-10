@@ -1,5 +1,5 @@
 # runtime-harness/hook-adapters 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-hook-adapters" sourceDigest="sha256:50c4ab52b994cf145a29fa2473c12bf4a797684ea8aae35fbb52f3cb58305f85" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:8478f1f1a5e18e7bd4d735326c9aac43999f8bc5fd16cf4e2618749cecc29af4" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-hook-adapters" sourceDigest="sha256:c9cc53d828574f8c6196550de72acfe1aa2ab22d1031202e4d3bfab1d9ea832d" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:beacc666641e4bbfff759d6bc0f12d49a36c09cb8d2d595e39f7e0a379d07c6a" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.hook-adapters`(kind `capability`)
 > **Matched Prefixes**:`assets/hooks/**`、`.ai/hooks/**`、`src/cli/installer/**`、`src/cli/hook/**`、`src/cli/hook-entry.ts`、`src/pi/**`
@@ -15,22 +15,22 @@ Installs and runs typed Claude, Codex, and Pi host hook routes.
 ```mermaid
 flowchart LR
   p1_capability_runtime_harness_hook_adapters_75a11743["Hook Adapters"]:::component
-  p1_component_hook_adapters_primary_1659ffb9["Architecture Cascade"]:::component
-  p1_capability_runtime_harness_hook_adapters_75a11743 -->|"Drain Stop architecture work"| p1_component_hook_adapters_primary_1659ffb9
+  p1_component_hook_adapters_primary_1659ffb9["Typed Route Dispatch"]:::component
+  p1_capability_runtime_harness_hook_adapters_75a11743 -->|"Dispatch a host hook route to its typed handler"| p1_component_hook_adapters_primary_1659ffb9
   classDef actor fill:#111827,color:#ffffff,stroke:#f9fafb,stroke-width:2px
   classDef component fill:#075985,color:#ffffff,stroke:#bae6fd,stroke-width:2px
   classDef datastore fill:#3f6212,color:#ffffff,stroke:#d9f99d,stroke-width:2px
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:c112b4e41464cbd2dd291508791ba1a53d423ad21a2225b5052cc32d3fb3de97`).
+- Proof: `proven` (`sha256:c1ca3935697d82814643cb47e1a24cee21cf56b7b6fee0faff090712e273dd3e`).
 - Semantic nodes: `2`; declared relations: `1`.
 
 ### 1.2 模組職責表
 
 | 宣告入口 | 錨點 | 職責 |
 | --- | --- | --- |
-| `entrypoint.hook-adapters.primary` | `src/cli/hook/mutation-observed.ts#processArchitectureCascade` | `sink.hook-adapters.primary` → `src/cli/hook/mutation-observed.ts#runRepoHarnessHelper` |
+| `entrypoint.hook-adapters.primary` | `src/cli/hook/runtime.ts#runHook` | `sink.hook-adapters.primary` → `src/cli/hook/handler-registry.ts#getHandlerForRoute` |
 
 ### 1.3 規模信號
 
@@ -42,7 +42,7 @@ flowchart LR
 
 出向關係:
 
-- `calls` → `component.hook-adapters.primary` — Drain Stop architecture work
+- `calls` → `component.hook-adapters.primary` — Dispatch a host hook route to its typed handler
 
 入向關係:
 
@@ -50,20 +50,20 @@ flowchart LR
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:c112b4e41464cbd2dd291508791ba1a53d423ad21a2225b5052cc32d3fb3de97`); selectors `1/1`.
+> **Proof**: `proven` (`sha256:c1ca3935697d82814643cb47e1a24cee21cf56b7b6fee0faff090712e273dd3e`); selectors `1/1`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
 sequenceDiagram
   autonumber
   participant p2_capability_4262990f as Hook Adapters
-  participant p2_component_7b8d80ff as Architecture Cascade
-  p2_capability_4262990f->>p2_component_7b8d80ff: Dispatch Architecture Cascade
-  alt Drain Stop architecture work completes
-  p2_capability_4262990f->>p2_component_7b8d80ff: Invoke Architecture Cascade
+  participant p2_component_7b8d80ff as Typed Route Dispatch
+  p2_capability_4262990f->>p2_component_7b8d80ff: Resolve the typed handler for the route
+  alt The typed handler completes
+  p2_capability_4262990f->>p2_component_7b8d80ff: Run the typed handler
     Note over p2_capability_4262990f: Return success receipt
-  else Drain Stop architecture work is rejected or fails
-  p2_capability_4262990f->>p2_component_7b8d80ff: Propagate Architecture Cascade failure
+  else An unknown route or unbound handler fails closed
+  p2_capability_4262990f->>p2_component_7b8d80ff: Return the route failure
     Note over p2_capability_4262990f: Return typed failure
   end
 ```
@@ -79,7 +79,7 @@ sequenceDiagram
 5. **opt-in marker 是硬门。** 没有 `.ai/harness/workflow-contract.json` 就静默退出 —— 装了 CLI 的用户在非 harness 仓库不应付出任何代价。
 6. **`assets/hooks` 是 canonical root，`.ai/hooks` 是投影。** `.projection.json` 的 digest 与 file_count 是漂移检测，不是备份。
 7. **遥测非安全权威，但消费者 fail-closed。** 字段缺失、畸形、重复或混协议时消费者必须停，不得补零。
-8. **单一权威不做二次推导。** architecture 级联依赖 `architecture-queue.sh` 自身 stdout，不重实现 capability resolver。
+8. **Hook 不做架构工作。** Hook 不记录架构漂移，不运行投影，不写 capability 块。架构更新在 PR 里显式完成：ChangeSet 加 `architecture-projection apply`。
 
 ### 3.2 关键权衡
 
@@ -106,10 +106,10 @@ sequenceDiagram
 
 按实测的可证伪顺序：
 
-1. **Stop 的串行级联。** 旧采样覆盖四类串行调用。当前 cascade 只调用 `architecture-queue` 和 `capability-context`。二者共享同一 deadline。已移除的 stub 不再消耗预算。这是唯一已经贴到硬上限的 route：675 次 Stop 里 93 次超过 5s、77 次超过 10s，p99 24.4s，而 host 的 30s adapter timeout 就在旁边。10x 之前它就会先撞墙 —— 它已经吃掉近一半的实测 hook 时间。
+1. **Stop 的延迟工作。** 旧采样里 Stop 是唯一贴到硬上限的 route：675 次 Stop 里 93 次超过 5s、77 次超过 10s，p99 24.4s。当时的主要成本是架构 cascade 和投影 drain。二者已删除（2026-10-10）。剩下的是 post-edit journal 和 refactor recommendation observer。需要重新采样，再判断 Stop 是否仍是最先垮的点。
 2. **`PostToolUse.bash` 的单位成本 × 调用量。** p50 52ms 单看不贵，但它是第二高频 route（16,398 次），乘出来就是 26.7% 的总时间。它没有尾延迟问题（p99 244ms），垮的方式是稳态吞吐：命令密度上去后每次 Bash 调用都固定付这 50ms。
 3. **`PreToolUse.edit` 阻塞编辑热路径。** mutation-guard 是**同步前置**门，p50 253ms 直接计入用户可感知的编辑延迟，且 max 10.9s 说明它在状态解析退化时会长尾。§3.2 那条"编辑热路径近乎零成本"的权衡只对 `PostToolUse.edit`（0.8%、p50 13ms）成立，对 PreToolUse 一侧不成立。
-4. **SessionStart 上下文预算是全有或全无。** 七个 provider（resume、capability-context-pending、architecture-queue-pending、pending-plan-capture、current-status-snapshot、active-sprint、tooling-update-advisory）在 `session-context.ts:1345-1351` 被 `appendBlock` 拼成**一整块** priority-5 的 `session-start-context.sh` section。`budgetSessionContext` 的裁剪粒度是 section（`session-context-budget.ts:437`），不是 provider —— 超预算时整块被丢掉、只留一行 `[ContextRef:session-start-context.sh]` 占位。所以这里不存在"低优先级 provider 先被牺牲"，而是七块内容一起消失。延迟本身不是瓶颈（4.6%、p95 711ms）。
+4. **SessionStart 上下文预算是全有或全无。** 五个 provider（resume、pending-plan-capture、current-status-snapshot、active-sprint、tooling-update-advisory）被 `appendBlock` 拼成**一整块** priority-5 的 `session-start-context.sh` section。`budgetSessionContext` 的裁剪粒度是 section（`session-context-budget.ts:437`），不是 provider —— 超预算时整块被丢掉、只留一行 `[ContextRef:session-start-context.sh]` 占位。所以这里不存在"低优先级 provider 先被牺牲"，而是五块内容一起消失。延迟本身不是瓶颈（4.6%、p95 711ms）。
 5. **`resolveEffectiveState` 的锁竞争。** `runtime.ts:277` 的三次有界重试只覆盖两种已知瞬时签名（stability 重读耗尽、独占锁超时）。并行 agent 数量上去后，重试耗尽会把 SessionStart 推进 `[HarnessStateUnavailable]` 分支 —— 这是正确的 fail-closed，但用户侧表现为上下文突然消失。
 6. **`install-profile.ts` 1,167 行的单点。** profile 组件矩阵继续增长时，这里是最先需要拆分的文件。不在 dispatch 热路径上。
 
@@ -290,6 +290,17 @@ does not inspect legacy command shapes, so there is no dual-read path.
   a path that no longer exists on disk. The cascade commands themselves are
   byte-identical -- only their input feed changed.
 
+### Hooks stop doing architecture work (2026-10-10)
+
+- P1: #483 removed the Stop drain. The queue, cursor, cascade and request-card
+  helpers then had no automatic trigger. They are deleted, not gated. The
+  entries above from 2026-08-12 describe that retired design.
+- P2: the pull request is the architecture update unit. A responsibility change
+  is an archctx model change plus `repo-harness architecture-projection apply`
+  in the same branch.
+- P3: this capability's primary flow is now route dispatch:
+  `runHook` resolves one typed handler through `getHandlerForRoute`.
+
 ## 5. 验证面
 
 capabilities.json 的 `verification_hints`：
@@ -304,11 +315,11 @@ bash scripts/check-task-workflow.sh
 - `bun test tests/cli/route-registry.test.ts tests/cli/hook.test.ts`
 - `bun test tests/prompt-handler.test.ts tests/subagent-handler.test.ts`
 - `bun test tests/command-observed.test.ts tests/trace-observer.test.ts`
-- `bun test tests/architecture-drift.test.ts tests/stop-handler.test.ts tests/mutation-observed.test.ts`
+- `bun test tests/stop-handler.test.ts tests/mutation-observed.test.ts`
 - `bun test tests/hook-contracts.test.ts tests/hook-protocol.test.ts`
 - `bun run check:type`
 - `bun run check:hooks`
-- `bash scripts/check-architecture-sync.sh`
+- `bun src/cli/index.ts architecture-projection check --json`
 
 ## 6. Workstream
 
