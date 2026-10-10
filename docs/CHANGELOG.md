@@ -25,10 +25,21 @@ All notable changes to this skill are documented here.
 - Add the export-only wake contract and explicit repository pilot. The pilot
   keeps its 128 KiB file and 4 MiB request limits. Global limits stay at
   64 KiB and 1 MiB. Proposals grant no execution authority. (#601)
+- Add five closed PM Bot operations: capabilities, status, dispatch,
+  follow-up and collect. They reject caller-supplied commands, paths, runtime
+  flags and permission changes. Dispatch needs operator approval for the exact
+  worker scope and runs a fixed OAR coding host in Herdr. Existing task,
+  claim, worktree and result records stay authoritative. Add a Hermes PM
+  profile adapter that exposes only these five tools. Only macOS Codex
+  workers are conditionally supported. Live Hermes configuration and a real
+  coding-provider task are not yet verified. The Hermes restriction is a tool
+  boundary, not an OS sandbox. (#608)
 
 ### Changed
 
 - Upgrade OAR to `0.45.1`. (#607)
+- macOS native CI installs the pinned Herdr 0.9.3 binary and verifies its
+  checksum before Herdr-dependent tests. (#612)
 - New task worktrees default to `/tmp/<repo>-wt-<slug>`, and MCP coding
   workspaces default to `/tmp/repo-harness-mcp-worktrees`. Native Windows
   uses its system temp directory instead of `/tmp`. New policies store the

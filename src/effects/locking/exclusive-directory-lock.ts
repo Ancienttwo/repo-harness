@@ -547,3 +547,23 @@ export function withExclusiveDirectoryLock<T>(
     handle.release();
   }
 }
+
+/** Use the same owner protocol while an effect awaits its child process. */
+export async function withExclusiveDirectoryLockAsync<T>(
+  canonicalRoot: string,
+  relativeLockPath: string,
+  run: () => Promise<T>,
+  options: ExclusiveDirectoryLockOptions = {},
+): Promise<T> {
+  const deadline = Date.now() + resolveWaitTimeoutMs(options.waitTimeoutMs);
+  let handle: ExclusiveDirectoryLockHandle;
+  for (;;) {
+    try { handle = acquireExclusiveDirectoryLock(canonicalRoot, relativeLockPath, { ...options, waitTimeoutMs: 1 }); break; }
+    catch (error) {
+      if (!(error instanceof ExclusiveLockContentionError) || error.kind !== 'timeout' || Date.now() >= deadline) throw error;
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+  }
+  try { handle.assertOwned(); return await run(); }
+  finally { handle.release(); }
+}

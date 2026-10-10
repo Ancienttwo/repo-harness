@@ -2,8 +2,9 @@
 
 ## Scope and authority
 
-- Remote base: `461e054ee5538bc4038fee8b5c3c5011435fbbf8` (#607), after the
-  second main sync merge. The first main sync used `5f6065b47443f1183166ec9999f71698eb1b9eb1` (#606).
+- Remote base: `bd1b971f93d062ac654acdc6ef93c0a92d5d9cb9` (#608), after the
+  third main sync merge. The second main sync used `461e054ee5538bc4038fee8b5c3c5011435fbbf8` (#607).
+  The first main sync used `5f6065b47443f1183166ec9999f71698eb1b9eb1` (#606).
   The original fork point was `e7c86c553f229a0068dba7bef727192c8a93220c` (#600).
 - Include #599 at `84c225c1ebfe9ce34f4e6268662714241ca0b33b` and
   #601 at `f5ee55b1dd69f5fc51cf20f78c4d6b995b69cfcd`.
@@ -17,6 +18,15 @@
   Parent: `5f6065b47443f1183166ec9999f71698eb1b9eb1`.
   It includes the OAR 0.45.1 upgrade. This release pins the Pi peer
   dependency to exactly `1.1.0` and records Pi telemetry host `pi`.
+- The pinned Herdr install for macOS native CI comes from #612 on main at
+  `94face4506806d4b7f376d2e9761d5d26e70b5c6`.
+  Parent: `461e054ee5538bc4038fee8b5c3c5011435fbbf8`. CI only.
+- PM Bot operations and the Hermes adapter come from #608 on main at
+  `bd1b971f93d062ac654acdc6ef93c0a92d5d9cb9`.
+  Parent: `94face4506806d4b7f376d2e9761d5d26e70b5c6`. The package adds
+  `dist/oar-coding-host.js` and two PM references. Live Hermes configuration
+  and a real coding-provider task are not verified. Only macOS Codex workers
+  are conditionally supported.
 - Set package, skill, template and README versions to `0.21.2`.
 - Keep strategy default-off, export-only and human-owned. No automatic memory
   edits or dispatch. Proposals keep `executionAuthorized: false`.
@@ -77,6 +87,14 @@ Only fixture-owned processes and paths may be stopped or removed.
   Parent: `5f6065b47443f1183166ec9999f71698eb1b9eb1`.
   `git revert --no-edit 461e054ee5538bc4038fee8b5c3c5011435fbbf8`.
   A revert does not remove a Pi package that a user installed with `pi install`.
+- #612 squash merge: `94face4506806d4b7f376d2e9761d5d26e70b5c6`.
+  Parent: `461e054ee5538bc4038fee8b5c3c5011435fbbf8`.
+  `git revert --no-edit 94face4506806d4b7f376d2e9761d5d26e70b5c6`.
+- #608 squash merge: `bd1b971f93d062ac654acdc6ef93c0a92d5d9cb9`.
+  Parent: `94face4506806d4b7f376d2e9761d5d26e70b5c6`.
+  `git revert --no-edit bd1b971f93d062ac654acdc6ef93c0a92d5d9cb9`.
+  Operator Hermes configuration is a separate activation step; a revert does
+  not change a Hermes profile that an operator set up.
 - The integration PR has no main merge SHA until parent publication. Record
   that exact SHA and parent before publication. Do not substitute a candidate
   SHA for a future squash merge. No rollback command here undoes npm publication.
