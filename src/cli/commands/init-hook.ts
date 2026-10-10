@@ -156,9 +156,20 @@ function shellQuoteArg(value: string): string {
   return `'${value.replace(/'/g, "'\\''")}'`;
 }
 
-function addAction(actions: InitHookAction[], action: InitHookAction): void {
-  if (actions.some((entry) => entry.id === action.id)) return;
-  actions.push(action);
+/** Agent actions in creation order, plus the action each check produced. */
+interface ActionLedger {
+  readonly list: InitHookAction[];
+  /** Check id -> id of the first action generated for that check. */
+  readonly byCheck: Map<string, string>;
+}
+
+function addAction(actions: ActionLedger, action: InitHookAction, checkIds: readonly string[]): void {
+  if (!actions.list.some((entry) => entry.id === action.id)) actions.list.push(action);
+  for (const checkId of checkIds) linkCheck(actions, checkId, action.id);
+}
+
+function linkCheck(actions: ActionLedger, checkId: string, actionId: string): void {
+  if (!actions.byCheck.has(checkId)) actions.byCheck.set(checkId, actionId);
 }
 
 function hasGlobalWorkingRules(content: string): boolean {
@@ -178,7 +189,7 @@ function statusChecks(
   report: StatusReport,
   target: InitHookTarget,
   checkUpdates: boolean,
-  actions: InitHookAction[],
+  actions: ActionLedger,
 ): InitHookCheck[] {
   const checks: InitHookCheck[] = [];
   const invalidProfile = report.installedProfile.recorded === 'invalid'
@@ -194,7 +205,7 @@ function statusChecks(
       command: `repo-harness install --migrate-profile-state --profile full --target ${target}`,
       targets: [invalidProfile.path],
       verification: verificationCommand(target, checkUpdates),
-    });
+    }, []);
   } else if (invalidProfile) {
     addAction(actions, {
       id: 'install-profile.repair',
@@ -204,8 +215,11 @@ function statusChecks(
       risk: 'Requires operator inspection of the user-level state authority; do not overwrite or delete it until the intended profile and ownership manifest are established.',
       targets: [invalidProfile.path],
       verification: verificationCommand(target, checkUpdates),
-    });
+    }, []);
   }
+  const profileActionId = invalidProfile === null
+    ? null
+    : invalidProfile.kind === 'legacy_protocol' ? 'install-profile.migrate' : 'install-profile.repair';
   for (const id of selectedTargets(target)) {
     const entry = report.targets.find((candidate) => candidate.id === id);
     if (!entry) {
@@ -254,6 +268,7 @@ function statusChecks(
         ? `${entry.managedEntryCount}/${entry.expectedEntryCount} managed entries at ${entry.configPath}`
         : `${entry.managedEntryCount}/${entry.expectedEntryCount} managed entries at ${entry.configPath ?? '(unknown config path)'}${projectionDetail}`,
     });
+    if (profileActionId !== null) linkCheck(actions, `status.adapter.${id}`, profileActionId);
 
     if (!configured && invalidProfile === null) {
       addAction(actions, {
@@ -265,7 +280,7 @@ function statusChecks(
         command: `repo-harness install --target ${id} --location global`,
         targets: entry.configPath ? [entry.configPath] : undefined,
         verification: verificationCommand(target, checkUpdates),
-      });
+      }, [`status.adapter.${id}`]);
     }
   }
   return checks;
@@ -275,7 +290,7 @@ function adoptionRefreshCheck(
   report: StatusReport,
   target: InitHookTarget,
   checkUpdates: boolean,
-  actions: InitHookAction[],
+  actions: ActionLedger,
 ): InitHookCheck {
   const id = 'repo.init-refresh';
   const title = 'Repo-local adoption refresh';
@@ -340,7 +355,7 @@ function adoptionRefreshCheck(
     command,
     targets: [report.repo.repoRoot],
     verification: verificationCommand(target, checkUpdates),
-  });
+  }, [id]);
   return {
     id,
     title,
@@ -363,7 +378,7 @@ function doctorChecks(
   report: DoctorReport,
   target: InitHookTarget,
   checkUpdates: boolean,
-  actions: InitHookAction[],
+  actions: ActionLedger,
 ): InitHookCheck[] {
   const checks: InitHookCheck[] = [];
   for (const entry of report.checks) {
@@ -383,7 +398,7 @@ function doctorChecks(
           risk: 'Updates global CLI/runtime; Agent should verify adapters and current repo status after install.',
           command,
           verification: verificationCommand(target, checkUpdates),
-        });
+        }, [`doctor.${entry.id}`]);
       }
     } else if (entry.id === 'security-config' && (entry.status === 'warn' || entry.status === 'fail')) {
       if (entry.status === 'warn') checkStatus = 'needs_agent';
@@ -395,7 +410,7 @@ function doctorChecks(
         risk: 'Do not blindly delete user-owned config; inspect the reported file and preserve intentional entries.',
         command: 'repo-harness security scan --json',
         verification: 'repo-harness security scan --json',
-      });
+      }, [`doctor.${entry.id}`]);
     } else if (
       (entry.id === 'repo-hook-scripts' || entry.id.startsWith('codegraph-')) &&
       (entry.status === 'warn' || entry.status === 'fail')
@@ -411,7 +426,7 @@ function doctorChecks(
           risk: 'Repair command may touch repo-local workflow or user-level tool configuration; run from the intended repo root.',
           command,
           verification: verificationCommand(target, checkUpdates),
-        });
+        }, [`doctor.${entry.id}`]);
       }
     }
 
@@ -430,7 +445,7 @@ function globalRulesChecks(
   target: InitHookTarget,
   env: NodeJS.ProcessEnv | undefined,
   checkUpdates: boolean,
-  actions: InitHookAction[],
+  actions: ActionLedger,
 ): InitHookCheck[] {
   const home = homeDir(env);
   const files: Array<{ target: 'codex' | 'claude'; filePath: string }> = [];
@@ -443,6 +458,7 @@ function globalRulesChecks(
 
   const checks: InitHookCheck[] = [];
   const missing: string[] = [];
+  const missingChecks: string[] = [];
   for (const entry of files) {
     let content = '';
     let readError: string | undefined;
@@ -465,7 +481,10 @@ function globalRulesChecks(
           ? `unreadable (${readError}): ${entry.filePath}`
           : `${existsSync(entry.filePath) ? 'not found in existing file' : 'file missing'}: ${entry.filePath}`,
     });
-    if (!present) missing.push(entry.filePath);
+    if (!present) {
+      missing.push(entry.filePath);
+      missingChecks.push(`global-rules.${entry.target}`);
+    }
   }
 
   if (missing.length > 0) {
@@ -477,7 +496,7 @@ function globalRulesChecks(
       risk: 'User-owned markdown; Agent must inspect first and insert only if absent, preserving existing content.',
       targets: missing,
       verification: verificationCommand(target, checkUpdates),
-    });
+    }, missingChecks);
   }
 
   return checks;
@@ -520,7 +539,7 @@ function runtimeCapabilityChecks(
   report: ToolingReport | undefined,
   target: InitHookTarget,
   checkUpdates: boolean,
-  actions: InitHookAction[],
+  actions: ActionLedger,
 ): InitHookCheck[] {
   const checks: InitHookCheck[] = [];
   for (const [capabilityName, capability] of Object.entries(report?.runtime_capabilities ?? {})) {
@@ -547,7 +566,7 @@ function runtimeCapabilityChecks(
         risk: 'May change host-level runtime tooling; verify setup check after repair.',
         command: normalizeToolCommand(capability.command, target),
         verification: verificationCommand(target, checkUpdates),
-      });
+      }, [`runtime.${capabilityName}`]);
     }
   }
   return checks;
@@ -600,7 +619,7 @@ function toolingChecks(
   report: ToolingReport | undefined,
   target: InitHookTarget,
   checkUpdates: boolean,
-  actions: InitHookAction[],
+  actions: ActionLedger,
   probeError?: string,
 ): InitHookCheck[] {
   if (!report) {
@@ -645,7 +664,7 @@ function toolingChecks(
         risk: 'May install or reconfigure external developer tooling; preserve host-specific paths and verify after the command.',
         command,
         verification: verificationCommand(target, checkUpdates),
-      });
+      }, [`tooling.${toolName}`]);
     }
 
     if (hasUpdateAction) {
@@ -658,19 +677,20 @@ function toolingChecks(
         risk: 'Updates external developer tooling; run the tool-specific verification afterward.',
         command,
         verification: verificationCommand(target, checkUpdates),
-      });
+      }, [`tooling.${toolName}`]);
     }
   }
   return checks;
 }
 
-function legacyChecks(cwd: string, target: InitHookTarget, checkUpdates: boolean, actions: InitHookAction[]): InitHookCheck[] {
+function legacyChecks(cwd: string, target: InitHookTarget, checkUpdates: boolean, actions: ActionLedger): InitHookCheck[] {
   const files = [
     { id: 'legacy.project-claude-settings', filePath: join(cwd, '.claude', 'settings.json') },
     { id: 'legacy.project-codex-hooks', filePath: join(cwd, '.codex', 'hooks.json') },
   ];
   const checks: InitHookCheck[] = [];
   const present: string[] = [];
+  const presentChecks: string[] = [];
   for (const entry of files) {
     const exists = existsSync(entry.filePath);
     checks.push({
@@ -680,7 +700,10 @@ function legacyChecks(cwd: string, target: InitHookTarget, checkUpdates: boolean
       source: 'legacy',
       detail: exists ? `legacy adapter config exists at ${entry.filePath}` : `not present: ${entry.filePath}`,
     });
-    if (exists) present.push(entry.filePath);
+    if (exists) {
+      present.push(entry.filePath);
+      presentChecks.push(entry.id);
+    }
   }
 
   if (present.length > 0) {
@@ -693,7 +716,7 @@ function legacyChecks(cwd: string, target: InitHookTarget, checkUpdates: boolean
       command: 'repo-harness migrate --apply',
       targets: present,
       verification: verificationCommand(target, checkUpdates),
-    });
+    }, presentChecks);
   }
   return checks;
 }
@@ -710,12 +733,23 @@ function overallStatus(summary: InitHookReport['summary']): InitHookStatus {
   return 'ok';
 }
 
-export function runInitHook(opts: InitHookOptions = {}): InitHookReport {
+/** The setup check report plus the typed inputs it was built from. */
+export interface SetupCheckBuild {
+  readonly report: InitHookReport;
+  readonly status: StatusReport;
+  readonly doctor: DoctorReport;
+  readonly tooling: ToolingReport | undefined;
+  /** Check id -> the agent action the builder generated for that check. */
+  readonly check_actions: ReadonlyMap<string, InitHookAction>;
+}
+
+/** The one `setup check` builder. `runInitHook` returns its report. */
+export function buildSetupCheck(opts: InitHookOptions = {}): SetupCheckBuild {
   const cwd = resolve(opts.cwd ?? process.cwd());
   const sourceRoot = resolve(opts.sourceRoot ?? REPO_ROOT);
   const target = opts.target ?? 'both';
   const checkUpdates = opts.checkUpdates === true;
-  const actions: InitHookAction[] = [];
+  const actions: ActionLedger = { list: [], byCheck: new Map() };
 
   const statusReport = opts.statusReport ?? withProcessEnv(opts.env, () => runStatus(cwd));
   const doctorEnv = { ...(opts.env ?? {}), [UPDATE_CHECK_ENV]: checkUpdates ? '1' : undefined };
@@ -736,16 +770,24 @@ export function runInitHook(opts: InitHookOptions = {}): InitHookReport {
 
   const legacyItems = planLegacyLeftovers({ scope: 'all', cwd, home: opts.env?.HOME ?? process.env.HOME ?? os.homedir(), packageRoot: REPO_ROOT }).items;
   const summary = summarize(checks);
-  return {
+  const report: InitHookReport = {
     version: 1,
     status: overallStatus(summary),
     target,
     checkUpdates,
     summary,
     checks,
-    agent_actions: actions,
+    agent_actions: actions.list,
     leftovers: { total: legacyItems.length, removable: legacyItems.filter((item) => item.action !== 'report').length },
   };
+  const byId = new Map(actions.list.map((action) => [action.id, action]));
+  const checkActions = new Map<string, InitHookAction>();
+  for (const [checkId, actionId] of actions.byCheck) checkActions.set(checkId, byId.get(actionId)!);
+  return { report, status: statusReport, doctor: doctorReport, tooling: toolingProbe.report, check_actions: checkActions };
+}
+
+export function runInitHook(opts: InitHookOptions = {}): InitHookReport {
+  return buildSetupCheck(opts).report;
 }
 
 export function formatInitHook(report: InitHookReport, asJson = false): string {
