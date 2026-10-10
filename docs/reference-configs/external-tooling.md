@@ -998,9 +998,11 @@ fails closed with upgrade guidance and only when `capability_source` is
 Architecture projection execution is user-level configuration in
 `~/.repo-harness/config.json#architecture`. `repo-harness install` and
 `repo-harness update` initialize it once with `projection_provider: "archctx"`,
-`projection_apply: "automatic"`, `projection_failure_gate: "advisory"`, and
-`projection_timeout_ms: 120000`. Repeated setup preserves an explicit global
-choice, including disabled. Malformed or partial settings fail closed without
+`projection_apply: "manual"`, and `projection_timeout_ms: 120000`. Repeated
+setup preserves an explicit global choice, including disabled. Setup migrates a
+section from the retired automatic queue once: `automatic` becomes `manual` and
+`projection_failure_gate` is removed. Until then, readers refuse that section
+and name the migration command. Malformed or partial settings fail closed without
 rewriting the file; unrelated user settings are preserved. The exact provider
 version is owned by the packaged release contract, not a configurable repo pin.
 
@@ -1011,7 +1013,7 @@ inventing the project's model. Minimal adoption does not author a policy.
 Runtime does not read or merge retired repo execution settings. Capability
 identity, model files, documentation ownership and project freshness gates
 remain repository-local. Missing model/adoption evidence still blocks apply;
-global automatic mode does not authorize ownership adoption or semantic acceptance.
+the global apply mode does not authorize ownership adoption or semantic acceptance.
 
 Use `repo-harness architecture-projection policy --json` to inspect the global
 source path, initialization state and effective execution settings without a
@@ -1023,76 +1025,26 @@ repository's `node_modules/archctx` never overrides that runtime dependency.
 Source-checkout execution uses that checkout's repo-harness dependencies, and
 candidate verification may explicitly select the candidate package root.
 Missing or mismatching runtime dependencies still fail closed with no target-repo
-fallback. Project model, ownership and snapshot checks remain repository-local.
+fallback. repo-harness captures the expected worktree snapshot. ArchContext
+checks it and owns the result contract. repo-harness decodes each result with
+the published `archctx-contracts` schema and invariants and keeps no local copy
+of the wire contract. The exact archctx version pin is the compatibility check.
 
-SessionStart also gives the Agent read-only model coverage guidance under this
-global provider setting; no per-repo execution toggle is needed. It observes empty
-capability models, missing declared module documents, and tracked package roots
-with no capability match or a shared ancestor capability. These are bounded
-inspection prompts, not inferred semantic nodes. The Agent uses the
-`repo-harness-architecture` skill to inspect source evidence and decide boundaries
-within the authorized task, then creates nodes through archctx ChangeSets and
-runs the existing projection. An intentional umbrella is valid. Hooks do not
-write model YAML, and unrelated coverage findings remain advice. The manifest
-inventory is limited to Git-tracked `package.json` paths; this is not a complete
-semantic coverage audit for every language or untracked source tree. Inspection
-errors become SessionStart provider diagnostics instead of invented model facts.
+No hook runs architecture projection or records architecture drift. The pull
+request is the update unit. When a change alters a capability's
+responsibilities, entrypoints, relations or flows, the Agent uses the
+`repo-harness-architecture` skill, writes the model change through an archctx
+ChangeSet, and runs `repo-harness architecture-projection apply --json` in the
+same branch. `check` and `plan` show the effect without writes. The projected
+`docs/architecture/` files are committed with the change.
 
-When enabled, Stop observes the Git changed set and coalesces eligible paths
-into one durable projection job, excludes
-ArchContext-owned `docs/architecture/**` and declared agent-context targets,
-and acknowledges the source records only after a typed projection receipt is
-durable. Process, timeout, stale-snapshot, invalid-result, and refresh failures
-remain pending for three attempts before an explicit dead-letter transition.
-Preflight failures are jobs too. Each pending journal slot has a stable source
-key while its delivery event id rotates on every coalesced edit; a dead letter
-blocks aggregate jobs containing that source key, so later edits cannot reset
-its attempt budget. Store transitions and queue/dead-letter read models share
-one repository lock. One repository has at most one claimed provider process.
-If the Stop owner disappears, its running claim remains quarantined for 150
-seconds—longer than the 120-second provider bound—before recovery can start a
-new attempt; an abandoned third attempt then transitions directly to dead-letter.
-Before a retry is claimed, the job refreshes delivery ids for its existing
-stable source keys, so edits incorporated before the new snapshot can be
-acknowledged while edits arriving during projection remain pending.
-`ArchitectureRefreshSignalV1` is the only major-change refresh authority; the
-consumer does not infer impact from path names, diff size, or queue-helper
-stdout. A typed refresh-required signal runs the canonical architecture,
-context-contract, and capability-context writers even when the legacy queue
-helper creates no drift card. SessionStart and
-`repo-harness architecture-projection drain --json` expose queue state.
-An unresolved-major signal is persisted as an exact acceptance candidate. A
-human approval is applied only through
-`repo-harness architecture-projection accept --signal-id <sha256> --approval-reference <event-id> --json`:
-the command copies reason codes and affected node ids from that signal, keeps
-the supplied approval event identity unchanged, and refuses if repository,
-workspace, HEAD, or worktree digest has moved. A successful accepted apply
-writes a content-bound acceptance receipt, projects an automatic-drain dead
-letter into its terminal job receipt, and is byte-idempotent on the same signal
-and approval reference. `status --json` reports unresolved or invalid
-acceptance evidence, and the strict architecture gate fails closed on either;
-the command never chooses or infers an architecture decision.
-
-For accepted apply, acceptance records an exact request intent before invoking
-ArchContext and the original result before running refresh actions. A retry
-with this pending evidence uses the provider's `projection-apply-readback-v1`
-capability. Readback returns the immutable committed receipt, original refresh
-signals, and a freshly verified current fixed point without changing provider
-delivery state. The same candidate, approval reference, request, and snapshot
-must still match. If the provider proves the exact request has no committed
-receipt, only an intent without a recorded result may retry apply; the provider
-checks the receipt again within its writer lock before writing. Errors and
-missing capabilities never authorize another apply.
-
-To recover an older interrupted accept that has no local intent, run
-`repo-harness architecture-projection accept --recover --signal-id <sha256> --approval-reference <original-event-id> --json`.
-This explicit command only resumes a committed apply. It fails if the provider
-has no receipt, and never creates an apply or poisons a fresh candidate with an
-unrecoverable intent. Adoption recovery is unsupported and fails closed; it is
-not converted into apply. Pending evidence remains content-bound local runtime
-state after completion; the final acceptance receipt is the resolution authority.
-The readback capability must be present in both the packaged CLI and its daemon;
-installing a new CLI alone does not upgrade a running daemon.
+`apply` accepts a major change in the same call. When ArchContext returns an
+unresolved-major signal, `apply` copies its reason codes and affected node ids
+into `acceptedChange` and applies again. The Agent that runs `apply` owns the
+decision; the pull request review is the human gate. If the provider response
+of a committed accepted apply is lost, `apply` reads the committed result back
+through `projection-apply-readback-v1` and does not apply twice. No local
+candidate, receipt or approval store exists.
 
 Managed install/update also verifies `daemon status --json` through the same
 exact package-local CLI and compatible Node runtime after static capabilities.
@@ -1117,43 +1069,13 @@ CodeGraph index. Request authorization to rebuild only when its authoritative
 status reports it missing or stale; verify readiness before retrying the blocked
 operation. CLI upgrade alone does not prove that an index needs rebuilding.
 Never delete the shared database or all repository indexes as recovery.
-If a candidate's exact reason set is only `verified-flow-proof-changed`, use
-`repo-harness architecture-projection reconcile --signal-id <sha256> --json`
-after refreshing the configured CodeGraph index. Reconciliation runs the same
-provider in check mode without `acceptedChange`, requires CodeGraph-ready
-input/output snapshots and an empty `noop`, and writes a separate content-bound
-receipt. Semantic reasons, unavailable proof, affected nodes, files, human
-actions, refresh signals, and apply receipts all fail closed; human approval is
-never treated as missing proof. Resolution is serialized per acceptance store,
-so acceptance and reconciliation cannot both execute for one candidate. When
-the candidate came from the automatic drain, a successful reconciliation also
-projects the exact dead letter into a terminal job receipt.
-Each successful canonical refresh action is checkpointed by action key before
-the next action runs, so a partial failure resumes without replaying completed
-writers. Missing or stale CLI authority remains a typed refresh failure; it is
-not silently skipped.
-
-Projection delivery failures use the independent
-`architecture.projection_failure_gate` (`advisory` by default); the existing
-`architecture.freshness_gate` retains its merge/drift meaning. A strict
-projection failure can be recovered without deleting runtime evidence via
-`repo-harness architecture-projection retry-dead-letter --job-id <job> --json`.
-An unreadable policy with no active projection queue remains an advisory
-configuration error; it cannot silently promote the default gate to strict.
 The runtime snapshot excludes `.ai/harness/**`, so concurrent harness receipts
 and traces cannot invalidate a provider snapshot.
 
-Managed host adapters give only `Stop.default` 150 seconds so the configured
-120-second provider bound has control-plane margin. Every other managed route
-remains at 30 seconds, and installer refresh replaces only repo-harness-owned
-entries while preserving sibling user hooks.
-
-Before rolling back to a runtime that only understands journal v1, disable the
-projection provider with the current runtime, run
-`repo-harness architecture-projection drain --json`, and verify the pending
-journal count reported as `sourceJournalPending` is zero. The manual drain owns
-the same selective source acknowledgement as Stop. Downgrading with v2
-observations still pending is not a supported rollback state.
+Managed host adapters give only `Stop.default` 150 seconds for its bounded
+deferred work. Every other managed route remains at 30 seconds, and installer
+refresh replaces only repo-harness-owned entries while preserving sibling user
+hooks.
 
 ### `source.include` grammar
 
@@ -1270,35 +1192,26 @@ repo-harness run sync-brain-docs --all
 repo-harness run sync-brain-docs --check
 ```
 
-## Proactive refactor recommendations
+## Refactor recommendations
 
-`~/.repo-harness/config.json#refactor_recommendations` contains `{ "enabled": true }`
-by default. Global install/update initializes the setting once and preserves an
-explicit disabled choice. Repositories do not need another enable switch.
+repo-harness supplies refactor evidence on demand. No hook scans for it and no
+setting enables it. The Bot reads the evidence and decides whether to schedule
+work or ask the user. Incomplete code facts return `proof_required` with a
+`codegraph init` hint. The command never creates an index, a model, a plan or a
+code edit.
 
-At normal Stop, repo-harness observes ArchContext structural candidates when a
-project model is present. It uses the packaged exact provider contract and
-existing lifecycle readback; it does not require or change execution activation.
-Only complete, non-truncated code facts with unambiguous ownership produce a
-recommendation. The observer never creates an index or model on the user's behalf.
+Read evidence and record a decision with:
 
-The Agent receives at most three candidates and is instructed to explain the
-measured evidence, inferred benefit and risk, then ask the user whether to
-proceed, defer or decline. No author, recommendation record/acceptance,
-Work Package, program or code edit is triggered by observation. User approval
-uses the normal approved-plan workflow and its existing execution gates.
+```bash
+repo-harness refactor recommendations [--json]
+repo-harness refactor decide <recommendation-id> accept|defer|reject --reason "<text>"
+```
 
-Observation gets at most ten seconds within Stop's existing twenty-second
-shared work budget, with a five-minute scan cooldown. A delivery ledger retains up to 4096
-recommendation identity/fingerprint pairs without eviction. At capacity, automatic
-delivery pauses with an explicit diagnostic; existing identities remain suppressed.
-The explicit CLI still permits observation without consuming delivery history. The one-shot
-Stop continuation ends after presenting the choice; waiting for an answer does
-not hold Stop in a loop. State and the last observation are stored in the ignored
-`.ai/harness/runs/refactor-recommendations.json`; they are delivery evidence,
-not user approval or upstream recommendation status.
-
-`repo-harness refactor recommendations --repo <root> --json` explicitly reads
-current opportunities through the same observer, without consuming Stop's
-delivery history or requiring `refactor discover`'s author activation. It returns
-readiness/error status when evidence is unavailable; it never invents a candidate.
+`recommendations` shows each open suggestion with its explanation, the metrics
+of its observation and the statistics of every affected module (files, lines,
+fan-in, fan-out, cycles, instability, direction violations, test files,
+unresolved imports). `decide` records the scan in ArchContext when needed and
+then stores the decision. Suggestions with a recorded decision are not shown
+again. repo-harness keeps no local delivery state; ArchContext owns the
+recommendation lifecycle. Execution of an accepted suggestion uses the normal
+plan and pull request workflow.

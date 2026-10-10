@@ -4,4 +4,4 @@ kind: component
 name: Refactor ArchContext Provider Boundary
 status: active
 parent: capability.runtime-harness.refactor-program
-summary: Performs exact package-local ArchContext scan, record, and verify handshakes while preserving provider-owned structural semantics.
+summary: Runs the pinned package-local ArchContext scan, recommendation readback, record and decision commands.

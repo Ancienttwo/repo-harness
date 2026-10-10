@@ -148,7 +148,6 @@
       "factor-lab-check.sh",
       "check-task-sync.sh",
       "check-deploy-sql-order.sh",
-      "check-architecture-sync.sh",
       "check-agent-tooling.sh",
       "install-agent-fleet.sh",
       "check-context-files.sh",
@@ -165,10 +164,7 @@
       "workflow-contract.ts",
       "inspect-project-state.ts",
       "capability-resolver.ts",
-      "architecture-event.ts",
       "capability-config.ts",
-      "architecture-queue.sh",
-      "archive-architecture-request.sh",
       "workstream-sync.sh",
       "prepare-codex-handoff.sh",
       "codex-handoff-resume.sh",
@@ -208,7 +204,6 @@
       "factor-lab-check": "Inspect factor registry health and candidate completeness",
       "check-task-sync": "Check that substantive changes are synchronized with tasks/ updates",
       "check-deploy-sql-order": "Validate deploy SQL filenames follow the configured ordering policy",
-      "check-architecture-sync": "Gate pending architecture drift for capabilities touched by this change",
       "check-agent-tooling": "Check the installed agent fleet copy is current with the packaged source",
       "install-agent-fleet": "Install or sync the packaged agent fleet into the target host",
       "check-context-files": "Scan AGENTS.md and CLAUDE.md files for risky embedded instructions",
@@ -225,10 +220,7 @@
       "workflow-contract": "Load and print the resolved workflow contract as JSON",
       "inspect-project-state": "Detect legacy contract drift and produce an initialize, migrate, audit, or repair plan",
       "capability-resolver": "List, match, validate, or export capability registry entries",
-      "architecture-event": "Low-level JSON helpers for architecture request event bookkeeping",
       "capability-config": "Register a new capability prefix and sync its contract files",
-      "architecture-queue": "Record, index, gate, and triage pending architecture drift requests",
-      "archive-architecture-request": "Archive a handled architecture drift request without deciding scope",
       "workstream-sync": "Ensure a durable capability workstream ledger exists for a plan slice",
       "prepare-codex-handoff": "Refresh the handoff snapshot, resume packet, and global Codex handoff pointer",
       "codex-handoff-resume": "Rebuild the repo's resume packet, optionally printing the resume prompt",
@@ -260,14 +252,12 @@
       ".ai/harness/security",
       ".ai/harness/planning",
       ".ai/harness/delegation",
-      ".ai/harness/architecture",
       ".ai/harness/worktrees",
       ".ai/harness/runs",
       ".ai/harness/triage",
       "docs/architecture",
       "docs/architecture/domains",
       "docs/architecture/modules",
-      "docs/architecture/requests",
       "docs/architecture/snapshots",
       "docs/architecture/diagrams",
       "docs/reference-configs",
@@ -321,7 +311,6 @@
       ".ai/harness/architecture-projection/",
       ".ai/harness/security/.gitkeep",
       ".ai/harness/planning/",
-      ".ai/harness/architecture/events.jsonl",
       ".ai/harness/active-plan",
       ".ai/harness/active-worktree",
       ".ai/harness/sprint/",
@@ -623,6 +612,7 @@
               "sha256:4811d4e08d9f141d433adf5c6e7281e5c87b947b6b87119b788dcb372e9a86a0",
               "sha256:59c2d3b5ab63292b22ed683d0de140b71eaec553852877fd5492c6f8a9772a1f",
               "sha256:5b092cb8e8db3c77ea8d773eec8d70859dab3186f01215e7c93e9c762b4c7f4d",
+              "sha256:8af5af83954ec17935cf0d16cf03e914abdd807cb5bea8e9e43253e02ccbbc5c",
               "sha256:8d99b85c3cf17e0ffea4ef95f2ad8227e78ec9d40d0ef45a1085de7962c91bd9",
               "sha256:8f6bbf24f4f7d3404d07eaa1ebe71676cd11b54e6816d5bcb1e24d378eff1c0b",
               "sha256:8fec7ef91dfab9a5eed96163531aba49890e23017518f3c80650cfbf426c31cd",
@@ -635,6 +625,7 @@
               "sha256:f38661d24696ced2c999e9501fde413ed7876a8b21c19a2548cb4542104ed3d0"
             ],
             "scripts/architecture-queue.sh": [
+              "sha256:0400468b3a259ff28690add1142eb9b61687495fa17aa36028f9a0b30c304750",
               "sha256:57de5422b9a403d13864d3f97cef03ced3281b20bb95842d83ba90f6aa11bf22",
               "sha256:62b38c06c38a689269c8de2d444716b3a97a9353138b57a9d535dab2033e116d",
               "sha256:8690884363aaa4edceb77ca0badbca1a8393ce923dff337443e5fb7c1c6bde58",
@@ -1559,6 +1550,37 @@
           "summary": "Remove the retired architecture-drift helper after architecture-queue.sh absorbs request, card, index, and gate ownership.",
           "retiredBy": "8e160323",
           "historicalFingerprints": {}
+        },
+        {
+          "id": "architecture-request-queue-scaffold",
+          "signal": "stale-architecture-request-queue-scaffold",
+          "action": "remove",
+          "risk": "low",
+          "ownership": "known_generated",
+          "cleanupMode": "exact_fingerprint",
+          "paths": [
+            ".ai/harness/architecture/.gitkeep",
+            ".ai/harness/architecture/events.jsonl",
+            "docs/architecture/requests/.gitkeep"
+          ],
+          "fingerprints": {
+            ".ai/harness/architecture/.gitkeep": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            ".ai/harness/architecture/events.jsonl": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "docs/architecture/requests/.gitkeep": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "summary": "Remove the empty scaffold of the retired architecture request queue; keep any request card or non-empty event log as user content.",
+          "retiredBy": "c401aedb",
+          "historicalFingerprints": {
+            ".ai/harness/architecture/.gitkeep": [
+              "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            ],
+            ".ai/harness/architecture/events.jsonl": [
+              "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            ],
+            "docs/architecture/requests/.gitkeep": [
+              "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            ]
+          }
         },
         {
           "id": "custom-claude-hooks-preserve",
@@ -2678,7 +2700,6 @@
     ".ai/harness/failures/latest.jsonl",
     ".ai/harness/handoff/current.md",
     ".ai/harness/handoff/resume.md",
-    ".ai/harness/architecture/events.jsonl",
     ".ai/harness/worktrees/",
     ".ai/harness/runs/",
     "dist/",

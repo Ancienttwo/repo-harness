@@ -1,207 +1,72 @@
-import { observeRefactorRecommendations } from '../../effects/refactor/recommendations';
 import { Command } from 'commander';
 import { canonicalRepoPath } from '../../effects/repo-registry';
-import { readFileSync } from 'fs';
-
-import { buildRefactorProgramDefinition } from '../../core/refactor/program-state';
-import { readStoredProgramAuthorization } from '../../effects/automation/grant-store';
+import { decideRecommendation, recordRefactorScan, type RefactorDecision } from '../../effects/refactor/archctx-provider';
 import {
-  appendRefactorProgramEvent,
-  createRefactorProgram,
-  readRefactorProgramStatus,
-  RefactorProgramStoreError,
-} from '../../effects/refactor/program-store';
-import { materializeRefactorProgram, RefactorMaterializationError, type MaterializeRefactorProgramInput } from '../../effects/refactor/materialization';
-import { prepareRefactorArchitectureIntervention, RefactorArchitectureInterventionEffectError, type PrepareRefactorArchitectureInterventionInput } from '../../effects/refactor/architecture-intervention';
-import { verifyRefactorCandidate, RefactorCandidateVerificationEffectError } from '../../effects/refactor/candidate-verification';
-import { appendRefactorExecutionBinding, RefactorExecutionBindingStoreError } from '../../effects/refactor/execution-binding-store';
-import { rebuildRefactorBoard, resolveRefactorPostMerge, RefactorPostMergeResolutionError } from '../../effects/refactor/post-merge-resolution';
-import { advanceRefactorActivation, appendRefactorCanaryReceipt, readRefactorActivationLevel } from '../../effects/refactor/activation-store';
-import type { RefactorProgramV1 } from '../../core/refactor/program';
-import type { RefactorCandidateVerificationReceiptV1 } from '../../core/refactor/candidate-verification';
-import type { RefactorExecutionBindingV1 } from '../../core/refactor/execution-binding';
-import { RefactorProviderError } from '../../core/refactor/provider-contract';
-import { RefactorDiscoveryError } from '../../effects/refactor/discovery-authoring';
-import { runShadowRefactorDiscovery, RefactorShadowError, type RefactorShadowDependencies, type RefactorShadowInput } from '../../effects/refactor/shadow-discovery';
+  discoverRefactorRecommendations,
+  observeRefactorRecommendations,
+  refactorCandidates,
+  type RefactorRecommendation,
+  type RefactorRecommendationResult,
+} from '../../effects/refactor/recommendations';
 
-class RefactorArgumentError extends Error {
-  readonly code = 'invalid_argument' as const;
+const DECISIONS: readonly RefactorDecision[] = ['accept', 'defer', 'reject'];
+
+export function formatRefactorRecommendations(value: RefactorRecommendationResult): string {
+  if (value.status !== 'recommended') return `[RefactorRecommendations] ${value.status}${value.message ? `: ${value.message}` : ''}\n`;
+  return value.candidates.map(formatCandidate).join('\n');
 }
 
-function required(value: string | undefined, name: string): string {
-  const result = value?.trim();
-  if (!result) throw new RefactorArgumentError(`${name} is required`);
-  return result;
+function formatCandidate(entry: RefactorRecommendation, index: number): string {
+  const metrics = Object.entries(entry.metrics).map(([key, metric]) => `${key}=${metric ?? 'n/a'}`).join(', ');
+  const modules = entry.modules.map((module) => `  - ${module.nodeId}: ${module.files ?? '?'} files / ${module.lines ?? '?'} lines, fan-in ${module.fanIn ?? '?'}, fan-out ${module.fanOut ?? '?'}, cycles ${module.cycles ?? '?'}, direction violations ${module.directionViolations ?? '?'}, test files ${module.testFiles ?? '?'}, unresolved imports ${module.unresolvedImports}`);
+  return [
+    `${index + 1}. ${entry.kind} on ${entry.subject} (risk ${entry.risk}, confidence ${entry.confidence}, uncertainty ${entry.uncertainty})`,
+    `  id: ${entry.recommendationId}`,
+    ...entry.explanation.map((line) => `  ${line}`),
+    ...(metrics ? [`  metrics: ${metrics}`] : []),
+    ...(modules.length ? ['  modules:', ...modules.map((line) => `  ${line}`)] : []),
+    '',
+  ].join('\n');
 }
 
-function output(value: unknown): void {
-  process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
+/** ArchContext decides only recorded suggestions, so a fresh scan candidate is recorded first. */
+export function decideRefactorRecommendation(root: string, recommendationId: string, decision: RefactorDecision, reason: string): string {
+  const discovery = discoverRefactorRecommendations(root, {});
+  if (!discovery.records.some((entry) => entry.recommendationId === recommendationId)) {
+    if (!refactorCandidates(discovery).some((entry) => entry.recommendationId === recommendationId)) throw new Error(`unknown recommendation: ${recommendationId}`);
+    recordRefactorScan(discovery.scan, root);
+  }
+  return decideRecommendation(recommendationId, decision, reason, root).status;
 }
 
-function outputError(error: unknown): void {
-  const code = error instanceof RefactorArgumentError
-    ? error.code
-    : error instanceof RefactorProviderError || error instanceof RefactorDiscoveryError || error instanceof RefactorShadowError || error instanceof RefactorProgramStoreError || error instanceof RefactorMaterializationError || error instanceof RefactorArchitectureInterventionEffectError || error instanceof RefactorCandidateVerificationEffectError || error instanceof RefactorExecutionBindingStoreError || error instanceof RefactorPostMergeResolutionError ? error.code : 'refactor_program_unavailable';
-  process.stderr.write(`${JSON.stringify({ ok: false, error: code, message: error instanceof Error ? error.message : String(error) })}\n`);
-  process.exitCode = error instanceof RefactorArgumentError ? 2 : 1;
+function fail(error: unknown): void {
+  process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+  process.exitCode = 1;
 }
 
-export interface RefactorStartOptions {
-  readonly repo?: string;
-  readonly programId?: string;
-  readonly authorizationSha256?: string;
-  readonly baseMainSha?: string;
-  readonly idempotencyKey?: string;
-  readonly observedAt?: string;
-}
-
-export function runRefactorStart(raw: RefactorStartOptions): void {
-  const repo = canonicalRepoPath(raw.repo?.trim() || process.cwd());
-  const authorizationSha256 = required(raw.authorizationSha256, '--authorization-sha256');
-  const authorization = readStoredProgramAuthorization(repo, authorizationSha256);
-  const observedAt = raw.observedAt?.trim() || new Date().toISOString();
-  const program = buildRefactorProgramDefinition({
-    program_id: required(raw.programId, '--program-id'),
-    authorization_id: authorization.authorization_id,
-    authorization_sha256: authorization.authorization_sha256,
-    repository_id: authorization.repository_id,
-    target_ref: authorization.target_ref,
-    target_revision: authorization.target_revision,
-    base_main_sha: required(raw.baseMainSha, '--base-main-sha'),
-    created_at: observedAt,
-  });
-  output(createRefactorProgram({ repo_root: repo, program, idempotency_key: required(raw.idempotencyKey, '--idempotency-key') }));
-}
-
-export function runRefactorStatus(raw: { readonly repo?: string; readonly programId?: string }): void {
-  output(readRefactorProgramStatus(canonicalRepoPath(raw.repo?.trim() || process.cwd()), required(raw.programId, '--program-id')));
-}
-
-export function runRefactorStop(raw: { readonly repo?: string; readonly programId?: string; readonly expectedCurrentSha256?: string; readonly idempotencyKey?: string; readonly observedAt?: string }): void {
-  output(appendRefactorProgramEvent({
-    repo_root: canonicalRepoPath(raw.repo?.trim() || process.cwd()),
-    program_id: required(raw.programId, '--program-id'),
-    expected_current_sha256: required(raw.expectedCurrentSha256, '--expected-current-sha256'),
-    idempotency_key: required(raw.idempotencyKey, '--idempotency-key'),
-    operation: 'stop',
-    observed_at: raw.observedAt?.trim() || new Date().toISOString(),
-  }));
-}
-
-export function runRefactorMaterialize(raw: { readonly repo?: string; readonly request?: string }): void {
-  const input = requestJson(raw.request) as unknown as Omit<MaterializeRefactorProgramInput, 'repo_root'>;
-  output(materializeRefactorProgram({ ...input, repo_root: canonicalRepoPath(raw.repo?.trim() || process.cwd()) }));
-}
-
-export function runRefactorArchitectureRequest(raw: { readonly repo?: string; readonly request?: string }): void {
-  output(prepareRefactorArchitectureIntervention({ ...(requestJson(raw.request) as unknown as Omit<PrepareRefactorArchitectureInterventionInput, 'repo_root'>), repo_root: canonicalRepoPath(raw.repo?.trim() || process.cwd()) }));
-}
-
-function requestJson(pathInput: string | undefined): Record<string, unknown> {
-  const path = required(pathInput, '--request'); let parsed: unknown;
-  try { parsed = JSON.parse(readFileSync(path, 'utf8')); } catch (error) { throw new RefactorArgumentError(`cannot read --request: ${error instanceof Error ? error.message : String(error)}`); }
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new RefactorArgumentError('--request must contain one JSON object');
-  return parsed as Record<string, unknown>;
-}
-
-export async function runRefactorCandidateVerify(raw: { readonly repo?: string; readonly request?: string }): Promise<void> {
-  output(await verifyRefactorCandidate({ ...requestJson(raw.request), repo_root: canonicalRepoPath(raw.repo?.trim() || process.cwd()) } as Parameters<typeof verifyRefactorCandidate>[0]));
-}
-
-export function runRefactorBindExecution(raw: { readonly repo?: string; readonly request?: string }): void {
-  const input = requestJson(raw.request) as { program: RefactorProgramV1; candidate_verification: RefactorCandidateVerificationReceiptV1; binding: RefactorExecutionBindingV1 };
-  output(appendRefactorExecutionBinding({ repo_root: canonicalRepoPath(raw.repo?.trim() || process.cwd()), ...input }));
-}
-
-export async function runRefactorPostMerge(raw: { readonly repo?: string; readonly request?: string }): Promise<void> {
-  output(await resolveRefactorPostMerge({ ...requestJson(raw.request), repo_root: canonicalRepoPath(raw.repo?.trim() || process.cwd()) } as Parameters<typeof resolveRefactorPostMerge>[0]));
-}
-
-export function runRefactorBoard(raw: { readonly repo?: string; readonly request?: string }): void {
-  output(rebuildRefactorBoard({ ...requestJson(raw.request), repo_root: canonicalRepoPath(raw.repo?.trim() || process.cwd()) } as Parameters<typeof rebuildRefactorBoard>[0]));
-}
-export function runRefactorCanaryRecord(raw: { readonly repo?: string; readonly request?: string }): void { output(appendRefactorCanaryReceipt(canonicalRepoPath(raw.repo?.trim() || process.cwd()), requestJson(raw.request) as never)); }
-export function runRefactorActivationPromote(raw: { readonly repo?: string; readonly request?: string }): void { output(advanceRefactorActivation({ ...requestJson(raw.request), repo_root: canonicalRepoPath(raw.repo?.trim() || process.cwd()) } as Parameters<typeof advanceRefactorActivation>[0])); }
-export function runRefactorActivationStatus(raw: { readonly repo?: string }): void { output({ level: readRefactorActivationLevel(canonicalRepoPath(raw.repo?.trim() || process.cwd())) }); }
-
-export function buildRefactorCommand(shadowDependencies: RefactorShadowDependencies = {}): Command {
-  const command = new Command('refactor').description('Operate the authorized refactor program state machine');
+export function buildRefactorCommand(): Command {
+  const command = new Command('refactor').description('Show measured refactor suggestions with their evidence and record the user decision');
   command.command('recommendations')
-    .description('Read measured opportunities for an Agent to discuss with the user; never execute')
+    .description('Show measured suggestions with evidence; never executes a refactor')
     .option('--repo <path>', 'Repository root', '.')
-    .requiredOption('--json', 'Output measured recommendations and readiness')
-    .action((options: { repo: string }) => {
-      try {
-        const value = observeRefactorRecommendations(canonicalRepoPath(options.repo));
-        output(value);
-        if (value.status === 'unavailable' || value.status === 'proof_required') process.exitCode = 1;
-      } catch (error) { outputError(error); }
+    .option('--json', 'Output machine-readable JSON')
+    .action((options: { repo: string; json?: boolean }) => {
+      const value = observeRefactorRecommendations(canonicalRepoPath(options.repo));
+      process.stdout.write(options.json ? `${JSON.stringify(value, null, 2)}\n` : formatRefactorRecommendations(value));
+      if (value.status === 'unavailable' || value.status === 'proof_required') process.exitCode = 1;
     });
-  command.command('discover')
-    .description('Scan, select and assess one local agent proposal within shadow boundaries')
+  command.command('decide')
+    .description('Record the user decision on one suggestion in ArchContext')
+    .argument('<recommendation-id>')
+    .argument('<decision>', DECISIONS.join('|'))
+    .requiredOption('--reason <text>', 'Why the user decided this way')
     .option('--repo <path>', 'Repository root', '.')
-    .requiredOption('--request <path>', 'Shadow request JSON with scan request and explicit call/time budgets')
-    .action(async (options: { repo?: string; request?: string }) => {
+    .action((recommendationId: string, decision: string, options: { reason: string; repo: string }) => {
       try {
-        const result = await runShadowRefactorDiscovery(requestJson(options.request) as unknown as RefactorShadowInput, canonicalRepoPath(options.repo?.trim() || process.cwd()), shadowDependencies) as { status: string; result?: { status: string } };
-        output(result);
-        if (result.status === 'failed' || (result.status === 'duplicate' && result.result?.status === 'failed')) process.exitCode = 1;
-      }
-      catch (error) { outputError(error); }
+        if (!DECISIONS.includes(decision as RefactorDecision)) throw new Error(`decision must be one of ${DECISIONS.join('|')}`);
+        const status = decideRefactorRecommendation(canonicalRepoPath(options.repo), recommendationId, decision as RefactorDecision, options.reason);
+        process.stdout.write(`${JSON.stringify({ recommendationId, status }, null, 2)}\n`);
+      } catch (error) { fail(error); }
     });
-  command.command('start')
-    .option('--repo <path>', 'Repository root', '.')
-    .requiredOption('--program-id <id>', 'Stable refactor program id')
-    .requiredOption('--authorization-sha256 <digest>', 'Stored ProgramAuthorizationV2 digest')
-    .requiredOption('--base-main-sha <digest>', 'Exact program baseline digest')
-    .requiredOption('--idempotency-key <key>', 'Stable creation key')
-    .option('--observed-at <timestamp>', 'RFC3339 creation time')
-    .action((options: RefactorStartOptions) => { try { runRefactorStart(options); } catch (error) { outputError(error); } });
-  command.command('status')
-    .option('--repo <path>', 'Repository root', '.')
-    .requiredOption('--program-id <id>', 'Refactor program id')
-    .action((options: { repo?: string; programId?: string }) => { try { runRefactorStatus(options); } catch (error) { outputError(error); } });
-  command.command('stop')
-    .option('--repo <path>', 'Repository root', '.')
-    .requiredOption('--program-id <id>', 'Refactor program id')
-    .requiredOption('--expected-current-sha256 <digest>', 'Exact current projection digest')
-    .requiredOption('--idempotency-key <key>', 'Stable stop key')
-    .option('--observed-at <timestamp>', 'RFC3339 stop time')
-    .action((options: { repo?: string; programId?: string; expectedCurrentSha256?: string; idempotencyKey?: string; observedAt?: string }) => { try { runRefactorStop(options); } catch (error) { outputError(error); } });
-  command.command('materialize')
-    .option('--repo <path>', 'Repository root', '.')
-    .requiredOption('--request <path>', 'Exact Refactor materialization request JSON')
-    .action((options: { repo?: string; request?: string }) => { try { runRefactorMaterialize(options); } catch (error) { outputError(error); } });
-  command.command('architecture-request')
-    .option('--repo <path>', 'Repository root', '.')
-    .requiredOption('--request <path>', 'Exact architecture intervention request JSON')
-    .action((options: { repo?: string; request?: string }) => { try { runRefactorArchitectureRequest(options); } catch (error) { outputError(error); } });
-  command.command('verify-candidate')
-    .option('--repo <path>', 'Repository root', '.')
-    .requiredOption('--request <path>', 'Exact candidate verification request JSON')
-    .action(async (options: { repo?: string; request?: string }) => { try { await runRefactorCandidateVerify(options); } catch (error) { outputError(error); } });
-  command.command('bind-execution')
-    .option('--repo <path>', 'Repository root', '.')
-    .requiredOption('--request <path>', 'Exact finalized execution binding request JSON')
-    .action((options: { repo?: string; request?: string }) => { try { runRefactorBindExecution(options); } catch (error) { outputError(error); } });
-  command.command('resolve-post-merge')
-    .option('--repo <path>', 'Repository root', '.')
-    .requiredOption('--request <path>', 'Exact post-merge resolution request JSON')
-    .action(async (options: { repo?: string; request?: string }) => { try { await runRefactorPostMerge(options); } catch (error) { outputError(error); } });
-  command.command('board')
-    .option('--repo <path>', 'Repository root', '.')
-    .requiredOption('--request <path>', 'Exact board projection request JSON')
-    .action((options: { repo?: string; request?: string }) => { try { runRefactorBoard(options); } catch (error) { outputError(error); } });
-  command.command('canary-record')
-    .option('--repo <path>', 'Repository root', '.')
-    .requiredOption('--request <path>', 'Repository-local canary evidence request JSON')
-    .action((options: { repo?: string; request?: string }) => { try { runRefactorCanaryRecord(options); } catch (error) { outputError(error); } });
-  command.command('activation-promote')
-    .option('--repo <path>', 'Repository root', '.')
-    .requiredOption('--request <path>', 'One-step activation promotion request JSON')
-    .action((options: { repo?: string; request?: string }) => { try { runRefactorActivationPromote(options); } catch (error) { outputError(error); } });
-  command.command('activation-status')
-    .option('--repo <path>', 'Repository root', '.')
-    .action((options: { repo?: string }) => { try { runRefactorActivationStatus(options); } catch (error) { outputError(error); } });
   return command;
 }

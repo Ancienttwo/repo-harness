@@ -9,7 +9,7 @@ const ROOT = join(import.meta.dir, "..");
 function tmpWorkspace(prefix: string): string {
   const cwd = mkdtempSync(join(tmpdir(), `${prefix}-`));
   mkdirSync(join(cwd, "scripts"), { recursive: true });
-  for (const helper of ["capability-config.ts", "capability-resolver.ts", "architecture-event.ts", "workstream-sync.sh"]) {
+  for (const helper of ["capability-config.ts", "capability-resolver.ts", "workstream-sync.sh"]) {
     const source = helper === "capability-resolver.ts"
       ? join(ROOT, "assets/templates/helpers", helper)
       : join(ROOT, "scripts", helper);

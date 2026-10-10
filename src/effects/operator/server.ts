@@ -8,10 +8,7 @@ import { decodeNotifyStatus, type NotifyStatusV1 } from '../../core/operator/not
 import { readNotifyStatus, type NotifyStatusReadInput } from './notify-status';
 import { decodeOperatorTaskHistory, parseTaskHistoryRequest, TASK_HISTORY_FAILURES, type OperatorTaskHistoryRequest, type OperatorTaskHistory } from '../../core/operator/task-history';
 import { isDecisionCursor } from '../../core/operator/decision-inventory';
-import { readOperatorAutomationSummary, type AutomationSummaryReadInput } from './automation-summary';
-import { decodeOperatorAutomationSummary, type OperatorAutomationSummary } from '../../core/operator/automation-summary';
 import { createHash, randomUUID } from 'node:crypto';
-import { projectOperatorRepositorySnapshot } from '../../core/operator/repository-snapshot';
 import { decodeOperatorTaskContext, parseTaskContextRequest, TASK_CONTEXT_FAILURES, type OperatorTaskContextRequest, type OperatorTaskContext } from '../../core/operator/task-context';
 import { Worker as ObservationWorker } from 'node:worker_threads';
 import { decodeOperatorTaskActivity, parseTaskActivityRequest, TASK_ACTIVITY_FAILURES, type OperatorTaskActivityRequest, type OperatorTaskActivity } from '../../core/operator/task-activity';
@@ -61,7 +58,6 @@ const OPERATOR_COLLABORATION_ACTION = 'Check the repository collaboration store,
  * second copy of the same strings.
  */
 export const OPERATOR_HEALTH_PATH = '/healthz' as const;
-export const OPERATOR_REPOSITORY_SNAPSHOT_ROUTE = /^\/api\/v1\/fleet\/repositories\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/snapshot$/u;
 export const OPERATOR_FLEET_SNAPSHOT_PATH = '/api/v1/fleet/snapshot' as const;
 export const OPERATOR_API_PATH_PREFIX = '/api' as const;
 /** The static fallback has no path shape of its own; it is whatever is left. */
@@ -97,7 +93,6 @@ export interface OperatorRouteV1 {
  */
 export const OPERATOR_ROUTES: readonly OperatorRouteV1[] = Object.freeze([
   Object.freeze({ id: 'health', method: 'GET', pattern: OPERATOR_HEALTH_PATH, write: false }),
-  Object.freeze({ id: 'repository_snapshot', method: 'GET', pattern: OPERATOR_REPOSITORY_SNAPSHOT_ROUTE.source, write: false }),
   Object.freeze({ id: 'fleet_snapshot', method: 'GET', pattern: OPERATOR_FLEET_SNAPSHOT_PATH, write: false }),
   Object.freeze({
     id: 'collaboration_snapshot',
@@ -128,7 +123,6 @@ export interface OperatorServerOptions {
   /** Cache read only. Observation lifecycle runs outside the HTTP request. */
   readonly read_runtime_status?: () => RuntimeOverlay;
   readonly runtime_status_config?: string;
-  readonly read_automation_summary?: (input: AutomationSummaryReadInput & { readonly signal: AbortSignal }) => OperatorAutomationSummary | Promise<OperatorAutomationSummary>;
   readonly read_task_history?: (input: OperatorTaskHistoryRequest & { readonly signal: AbortSignal }) => Promise<OperatorTaskHistory>;
   readonly read_task_context?: (input: OperatorTaskContextRequest & { readonly signal: AbortSignal }) => Promise<OperatorTaskContext>;
   readonly read_task_activity?: (input: OperatorTaskActivityRequest & { readonly signal: AbortSignal }) => Promise<OperatorTaskActivity>;
@@ -570,14 +564,10 @@ function readDefaultCollaborationSnapshot(
   });
 }
 
-interface FleetCollectionResult { readonly snapshot: FleetBoardSnapshotV1; readonly automation: OperatorAutomationSummary | null }
-interface OperatorFleetObservation { readonly snapshot: OperatorFleetSnapshotV1; readonly automation: OperatorAutomationSummary | null }
-
 type OperatorFleetCollectorResponse =
   | {
       readonly ok: true;
       readonly snapshot: FleetBoardSnapshotV1;
-      readonly automation: OperatorAutomationSummary | null;
     }
   | {
       readonly ok: false;
@@ -590,8 +580,8 @@ type OperatorFleetCollectorResponse =
 
 function fleetCollectorResponse(value: unknown): OperatorFleetCollectorResponse | null {
   if (typeof value !== 'object' || value === null || !('ok' in value)) return null;
-  if (value.ok === true && 'protocol' in value && value.protocol === 2 && 'automation' in value && 'snapshot' in value && typeof value.snapshot === 'object' && value.snapshot !== null) {
-    return { ok: true, snapshot: value.snapshot as FleetBoardSnapshotV1, automation: value.automation as OperatorAutomationSummary | null };
+  if (value.ok === true && 'protocol' in value && value.protocol === 2 && 'snapshot' in value && typeof value.snapshot === 'object' && value.snapshot !== null) {
+    return { ok: true, snapshot: value.snapshot as FleetBoardSnapshotV1 };
   }
   if (
     value.ok === false
@@ -692,22 +682,21 @@ function windowsFleetControllerPath(): string {
  */
 function readDefaultFleetSnapshot(
   input: Required<Pick<FleetBoardCollectorOptions, 'sequence' | 'max_concurrency' | 'timeout_ms'>> & {
-    readonly repository_id?: string;
     readonly env?: NodeJS.ProcessEnv;
     readonly signal: AbortSignal;
   },
-): Promise<FleetCollectionResult> {
+): Promise<FleetBoardSnapshotV1> {
   return readSupervisedOperatorProcess({
     process_path: fleetCollectorProcessPath(), env: input.env, signal: input.signal,
     start: { type:'start', protocol:2,
-      scope: input.repository_id === undefined ? {kind:'fleet'} : {kind:'repository',repository_id:input.repository_id},
+      scope: {kind:'fleet'},
       sequence:input.sequence, max_concurrency:input.max_concurrency, timeout_ms:input.timeout_ms,
       ...(process.platform === 'win32' ? {} : {env:collaborationWorkerEnvironment(input.env)}),
     },
     response: value => {
       const response = fleetCollectorResponse(value);
       return response?.ok
-        ? { ok: true, snapshot: { snapshot: response.snapshot, automation: response.automation } }
+        ? { ok: true, snapshot: response.snapshot }
         : response;
     },
     failure: code => code === 'fleet_snapshot_unavailable'
@@ -1177,12 +1166,11 @@ export async function startOperatorServer(
   };
 
   interface FleetObservation {
-    readonly repositoryId: string | undefined;
     readonly key: string;
     readonly sequence: number;
     readonly controller: AbortController;
-    readonly promise: Promise<OperatorFleetObservation>;
-    readonly resolve: (snapshot: OperatorFleetObservation) => void;
+    readonly promise: Promise<OperatorFleetSnapshotV1>;
+    readonly resolve: (snapshot: OperatorFleetSnapshotV1) => void;
     readonly reject: (error: unknown) => void;
     timer: ReturnType<typeof setTimeout> | null;
     subscribers: number;
@@ -1196,7 +1184,7 @@ export async function startOperatorServer(
   let fleetClosing = false;
 
   const settleFleetObservation = (observation: FleetObservation, outcome:
-    { readonly ok: true; readonly value: OperatorFleetObservation } | { readonly ok: false; readonly error: unknown }): void => {
+    { readonly ok: true; readonly value: OperatorFleetSnapshotV1 } | { readonly ok: false; readonly error: unknown }): void => {
     if (observation.settled) return;
     observation.settled = true;
     if (observation.timer !== null) clearTimeout(observation.timer);
@@ -1221,7 +1209,6 @@ export async function startOperatorServer(
     activeFleetObservation = observation;
     const input = {
       env: options.env,
-      repository_id: observation.repositoryId,
       sequence: observation.sequence,
       max_concurrency: maxConcurrency,
       timeout_ms: timeoutMs,
@@ -1229,18 +1216,11 @@ export async function startOperatorServer(
     };
     const completion = Promise.resolve().then(() => {
       if (observation.controller.signal.aborted) throw new OperatorFleetTimeoutError();
-      return collect === undefined ? readDefaultFleetSnapshot(input) : Promise.resolve(collect(input)).then(async (snapshot) => ({
-        snapshot, automation: input.repository_id === undefined ? null : await (options.read_automation_summary ?? readOperatorAutomationSummary)({
-          repository_id: input.repository_id, registry_revision: snapshot.registry_revision, env: input.env, signal: input.signal,
-        }),
-      }));
+      return collect === undefined ? readDefaultFleetSnapshot(input) : Promise.resolve(collect(input));
     }).then((raw) => {
-      const value = projectOperatorFleetSnapshot(raw.snapshot, serviceEpoch);
+      const value = projectOperatorFleetSnapshot(raw, serviceEpoch);
       if (value.sequence !== observation.sequence) throw new Error('Fleet generation mismatch');
-      const automation = observation.repositoryId === undefined ? null : decodeOperatorAutomationSummary(raw.automation, observation.repositoryId);
-      if (observation.repositoryId === undefined && raw.automation !== null) throw new Error('unexpected global automation');
-      if (observation.repositoryId !== undefined) projectOperatorRepositorySnapshot(value, observation.repositoryId, automation!);
-      settleFleetObservation(observation, { ok: true, value: { snapshot: value, automation } });
+      settleFleetObservation(observation, { ok: true, value });
     }).catch((error: unknown) => {
       settleFleetObservation(observation, { ok: false, error });
     }).finally(() => {
@@ -1253,16 +1233,16 @@ export async function startOperatorServer(
     fleetCompletions.add(completion);
   };
 
-  const acquireFleetObservation = (repositoryId: string | undefined): FleetObservation => {
+  const acquireFleetObservation = (): FleetObservation => {
     if (fleetClosing) throw new OperatorFleetTimeoutError();
-    const key = repositoryId === undefined ? 'fleet' : `repository:${repositoryId}`;
+    const key = 'fleet';
     const current = fleetObservations.get(key);
     if (current !== undefined) { current.subscribers += 1; return current; }
     if (activeFleetObservation !== null && fleetQueue.length >= maxConcurrency * 2) throw new OperatorFleetBusyError();
     let resolveObservation!: FleetObservation['resolve'];
     let rejectObservation!: FleetObservation['reject'];
     const observation: FleetObservation = {
-      repositoryId, key, sequence: nextSnapshotSequence++, controller: new AbortController(),
+      key, sequence: nextSnapshotSequence++, controller: new AbortController(),
       promise: new Promise((resolve, reject) => { resolveObservation = resolve; rejectObservation = reject; }),
       resolve: (value) => resolveObservation(value), reject: (error) => rejectObservation(error),
       timer: null, subscribers: 1, settled: false,
@@ -1278,10 +1258,9 @@ export async function startOperatorServer(
     request: IncomingMessage,
     response: ServerResponse,
     headOnly: boolean,
-    repositoryId?: string,
   ): Promise<void> => {
     let observation: FleetObservation;
-    try { observation = acquireFleetObservation(repositoryId); }
+    try { observation = acquireFleetObservation(); }
     catch (error) {
       const failure = publicFleetError(error);
       sendRefusal(request, response, failure.status, failure.body, headOnly);
@@ -1301,8 +1280,7 @@ export async function startOperatorServer(
     try {
       const current = await observation.promise;
       if (clientDisconnected || response.destroyed) return;
-      sendJson(response, 200, repositoryId === undefined ? current.snapshot
-        : projectOperatorRepositorySnapshot(current.snapshot, repositoryId, current.automation!), headOnly);
+      sendJson(response, 200, current, headOnly);
     } catch (error) {
       if (clientDisconnected || response.destroyed) return;
       const failure = publicFleetError(error);
@@ -1552,16 +1530,6 @@ export async function startOperatorServer(
       } catch {
         sendRefusal(request, response, 503, errorBody('notify_status_unavailable', 'Notify status is unavailable.'), headOnly);
       }
-      return;
-    }
-
-    const repositoryRoute = OPERATOR_REPOSITORY_SNAPSHOT_ROUTE.exec(pathname);
-    if (repositoryRoute !== null) {
-      if (url.search !== '') {
-        sendRefusal(request, response, 400, errorBody('invalid_request', 'Repository snapshots accept no query selectors.'), headOnly);
-        return;
-      }
-      await handleFleetSnapshot(request, response, headOnly, repositoryRoute[1]!);
       return;
     }
 

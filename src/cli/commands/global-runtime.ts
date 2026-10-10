@@ -1,5 +1,4 @@
 import { bunGlobalPackageRoot, isBunGlobalPackageSource, skillLinkMatches } from "../installer/skill-projection";
-import { ensureGlobalRefactorRecommendations } from './refactor-recommendation-configuration';
 import { ensureGlobalArchitectureProjection } from './architecture-configuration';
 import { copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync } from "fs";
 import { homedir, tmpdir, userInfo } from "os";
@@ -473,7 +472,6 @@ function readManagedRuntime(
       policy: {
         provider: "archctx" as const,
         applyMode: "manual" as const,
-        failureGate: "advisory" as const,
         requiredVersion: String(dependencies.archctx),
         timeoutMs: 10_000,
       },
@@ -534,7 +532,7 @@ function inspectManagedDaemonRuntime(cwd: string, env: NodeJS.ProcessEnv): Globa
     if (typeof requiredVersion !== 'string') throw new Error('managed archctx dependency version is unavailable');
     verifyArchctxDaemonRuntime(cwd, {
       consumerRoot, env,
-      policy: { provider: 'archctx', applyMode: 'manual', failureGate: 'advisory', requiredVersion, timeoutMs: 10_000 },
+      policy: { provider: 'archctx', applyMode: 'manual', requiredVersion, timeoutMs: 10_000 },
     });
     return { step: 'check shared ArchContext daemon', status: 'ok', detail: 'daemon is compatible or cleanly stopped' };
   } catch (error) {
@@ -1468,9 +1466,6 @@ export function runGlobalRuntimeSetup(
   const architectureConfiguration = ensureGlobalArchitectureProjection(env);
   steps.push(architectureConfiguration);
   if (architectureConfiguration.status === 'failed') return finalizeRuntimeResult(steps);
-  const recommendations = ensureGlobalRefactorRecommendations(env);
-  steps.push(recommendations);
-  if (recommendations.status === 'failed') return finalizeRuntimeResult(steps);
 
   if (opts.syncSkill !== false) steps.push(syncRuntimeSkill(sourceRoot, profile, env));
   else steps.push({ step: "sync repo-harness skill runtime", status: "skipped", detail: "disabled" });

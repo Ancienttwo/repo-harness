@@ -215,13 +215,14 @@ describe("repo-harness action command skills", () => {
     const architecture = readFileSync(join(COMMAND_ROOT, "repo-harness-architecture/references/worker.md"), "utf-8");
     const handoff = readFileSync(join(ROOT, "references", "handoff.md"), "utf-8");
 
-    expect(architecture).toContain("repo-harness run archive-architecture-request");
+    expect(architecture).toContain("repo-harness architecture-projection check --json");
+    expect(architecture).not.toContain("archive-architecture-request");
     expect(architecture).toContain("mermaid");
     expect(architecture).toContain("only architecture diagram artifact");
     expect(architecture).toContain("Do not generate standalone HTML");
     expect(architecture).not.toContain("optional human-readable HTML");
     expect(architecture).toContain("Does not run `repo-harness init`");
-    expect(architecture).toContain("hooks only record drift requests");
+    expect(architecture).toContain("architecture updates are explicit");
 
     expect(handoff).toContain("repo-harness run prepare-codex-handoff");
     expect(handoff).toContain("repo-harness run codex-handoff-resume");

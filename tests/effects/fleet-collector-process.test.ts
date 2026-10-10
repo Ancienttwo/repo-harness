@@ -235,14 +235,14 @@ describe('Fleet collector supervision protocol', () => {
   }, 30_000);
 });
 
-test('collector requires versioned explicit scope and rejects malformed repository selectors', () => {
+test('collector requires the versioned fleet scope and rejects any repository scope', () => {
   const base = { type: 'start', protocol: 2, sequence: 1, max_concurrency: 1, timeout_ms: 1_000 };
   expect(parseFleetCollectorRequest(base)).toBeNull();
   expect(parseFleetCollectorRequest({ ...base, protocol: 1, scope: { kind: 'fleet' } })).toBeNull();
   for (const scope of [{ kind: 'fleet', repository_id: 'repo-a' }, { kind: 'repository' },
-    { kind: 'repository', repository_id: '../root' }, { kind: 'repository', repository_id: 'repo-a', extra: true }]) {
+    { kind: 'repository', repository_id: '../root' }, { kind: 'repository', repository_id: 'repo-a' }]) {
     expect(parseFleetCollectorRequest({ ...base, scope })).toBeNull();
   }
-  expect(parseFleetCollectorRequest({ ...base, scope: { kind: 'repository', repository_id: 'repo-a' } }))
-    .toMatchObject({ protocol: 2, scope: { kind: 'repository', repository_id: 'repo-a' } });
+  expect(parseFleetCollectorRequest({ ...base, scope: { kind: 'fleet' } }))
+    .toMatchObject({ protocol: 2, scope: { kind: 'fleet' } });
 });

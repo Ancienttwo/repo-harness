@@ -129,18 +129,9 @@ function installFixture(container: string): { primary: string; linked: string } 
   writeFileSync(
     join(primary, "src/cli/index.ts"),
     [
-      'import { mkdirSync, writeFileSync } from "fs";',
-      'import { join } from "path";',
       'const args = process.argv.slice(2);',
-      'if (args[0] === "architecture-projection" && args[1] === "policy") { console.log(JSON.stringify({ provider: "archctx", applyMode: "automatic" })); process.exit(0); }',
-      'if (args[0] !== "architecture-projection" || args[1] !== "acknowledge-publication") process.exit(64);',
-      'const shaIndex = args.indexOf("--publication-sha");',
-      'const publicationSha = shaIndex >= 0 ? args[shaIndex + 1] : "";',
-      'if (!/^[0-9a-f]{40}$/.test(publicationSha)) process.exit(65);',
-      'const stateDir = join(process.cwd(), ".ai/harness/state");',
-      'mkdirSync(stateDir, { recursive: true });',
-      'writeFileSync(join(stateDir, "architecture-drift-cursor.json"), JSON.stringify({ head_sha: publicationSha }) + "\\n");',
-      'process.stdout.write(JSON.stringify({ publicationSha }) + "\\n");',
+      'if (args[0] === "architecture-projection" && args[1] === "policy") { console.log(JSON.stringify({ provider: "archctx", applyMode: "manual" })); process.exit(0); }',
+      'process.exit(64);',
       "",
     ].join("\n"),
   );
@@ -150,7 +141,7 @@ function installFixture(container: string): { primary: string; linked: string } 
   );
   writeFileSync(
     join(primary, ".ai/harness/policy.json"),
-    `${JSON.stringify({ architecture: { projection_apply: "automatic" }, worktree_strategy: { review_base: "main", merge_back: { target: "main" } } }, null, 2)}\n`,
+    `${JSON.stringify({ worktree_strategy: { review_base: "main", merge_back: { target: "main" } } }, null, 2)}\n`,
   );
   writeFileSync(join(primary, ".gitignore"), ".ai/harness/state/\n");
   writeFileSync(join(primary, "docs/architecture/index.md"), "# Architecture Index\n\n## Pending Requests\n\n- (none)\n");
@@ -280,7 +271,6 @@ describe("contract-worktree single publication commit", () => {
         .toBe('{"projection":"reviewed-with-contract"}\n');
       expect(run("git", ["show", "--pretty=format:", "--name-only", "main"], primary).stdout)
         .toContain("docs/architecture/.projection-manifest.json");
-      expect(existsSync(join(primary, ".ai/harness/state/architecture-drift-cursor.json"))).toBe(false);
       expect(existsSync(join(primary, "plans/archive"))).toBe(true);
 
       const attempts = finishAttempts(primary);

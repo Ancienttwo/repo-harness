@@ -1,5 +1,5 @@
 # workflow-engine/contract-assets 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-contract-assets" sourceDigest="sha256:cadfd578f5bb80b5b72f2fb06736f57f06f4fe6739473d470c00f550b526210e" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:78ce27a8176c1796956e450334a979b1b2fb3f31f9259930e536d12005ec665f" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-contract-assets" sourceDigest="sha256:e53371224f6ee0169d00a76b5514e983f4e39a5a04e4daca0269f3e63ea909cd" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:6cfc75f4daa1fb4b92097a4b6ef5f6904c1edeb20db62ca6187abf7461da5b20" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.workflow-engine.contract-assets`(kind `capability`)
 > **Matched Prefixes**:`assets/workflow-contract.v1.json`、`.ai/harness/workflow-contract.json`、`.ai/harness/policy.json`、`.ai/context/context-map.json`、`.archcontext/model/nodes/**`、`scripts/capability-resolver.ts`、`scripts/capability-config.ts`、`scripts/contract-run.ts`、`scripts/contract-worktree.sh`、`scripts/archive-workflow.sh`、`scripts/merge-gate.ts`、`scripts/ship-worktrees.sh`、`src/cli/commands/init.ts`、`src/cli/commands/capability-context.ts`、`src/effects/runtime/helper-runner.ts`、`assets/templates/**`、`assets/reference-configs/**`、`docs/reference-configs/**`
@@ -34,7 +34,7 @@ flowchart LR
 
 ### 1.3 規模信號
 
-- 規模量級:`200–500` 個文件 / `20k–50k` 行
+- 規模量級:`100–200` 個文件 / `20k–50k` 行
 - 匹配前綴:`assets/workflow-contract.v1.json`、`.ai/harness/workflow-contract.json`、`.ai/harness/policy.json`、`.ai/context/context-map.json`、`.archcontext/model/nodes/**`、`scripts/capability-resolver.ts`、`scripts/capability-config.ts`、`scripts/contract-run.ts`、`scripts/contract-worktree.sh`、`scripts/archive-workflow.sh`、`scripts/merge-gate.ts`、`scripts/ship-worktrees.sh`、`src/cli/commands/init.ts`、`src/cli/commands/capability-context.ts`、`src/effects/runtime/helper-runner.ts`、`assets/templates/**`、`assets/reference-configs/**`、`docs/reference-configs/**`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
@@ -87,14 +87,14 @@ Architecture projection execution preferences belong to the user-level
 `~/.repo-harness/config.json#architecture`. Repository policy owns model and
 capability authority, documentation paths, and freshness gates; it does not
 author provider selection or apply mode. Global install/update and successful
-repository init use the same configuration writers to initialize automatic
-projection and `refactor_recommendations.enabled=true` when unset, preserving
-explicit disabled choices. Init dry-run does not write these preferences.
+repository init use the same configuration writer to initialize the projection
+provider when unset, preserving an explicit disabled choice. Init dry-run does
+not write the preference.
 
-The Stop hook consumes architecture changes and delivers measured refactor
-opportunities for a user decision. Default enablement does not synthesize a
-missing architecture model, missing code facts, or permission to execute a
-refactor. `docs/spec.md` owns the product contract; the initialization and Stop
+No hook delivers architecture or refactor work. repo-harness supplies tools and
+evidence; the Bot decides what to schedule. Default enablement does not
+synthesize a missing architecture model, missing code facts, or permission to
+execute a refactor. `docs/spec.md` owns the product contract; the initialization and Stop
 regressions verify these separate boundaries.
 ## 3. P3：设计决策与不变量
 

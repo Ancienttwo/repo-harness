@@ -374,7 +374,6 @@ export function installAutomaticProjectionVerifyFixture(
     join(cwd, ".ai/harness/policy.json"),
     `${JSON.stringify({
       worktree_strategy: { review_base: "main" },
-      architecture: { projection_provider: "archctx", projection_apply: "automatic" },
     }, null, 2)}\n`,
   );
   writeFileSync(join(cwd, "docs/spec.md"), "# Product Spec\n");

@@ -62,7 +62,6 @@ with the project.
 - Use `docs/reference-configs/global-working-rules.md` as the user-level Claude/Codex rule template; keep repo-local workflow contracts in repo files.
 - Externalized reference docs may be indexed by `.ai/harness/brain-manifest.json`. Validation and export through `repo-harness run check-brain-manifest` / `sync-brain-docs` are explicit operator actions and never part of hook or workflow correctness.
 - Contract-level execution should run in an isolated `codex/<task-slug>` worktree. Merge back only after the contract is fulfilled, `tasks/reviews/<plan-stem>.review.md` recommends pass, and the target worktree is clean.
-- Architecture-sensitive work also runs `repo-harness run check-architecture-sync`: the check keeps the request index derived from `docs/architecture/requests/` and, when policy is strict, blocks finish if the current diff touches a capability with a pending architecture request at or above `architecture.gate_min_severity`.
 - Adoption retires legacy hook/runtime assets only inside the canonical
   `FsTransaction`: declared paths require an exact SHA-256 match, while
   mismatches, ambiguous app-owned files, and custom adapter siblings are
@@ -201,11 +200,9 @@ rather than inferring those values from turns, tool names, or timestamps.
   `REPO_HARNESS_CONTEXT_BLOCKS`, and existing nested `CLAUDE.md`/`AGENTS.md`
   files as migration inputs only; the capability registry is runtime authority.
 - Selected capabilities receive paired `CLAUDE.md` and `AGENTS.md` files so Claude Code and Codex share the same local contract.
-- Use `repo-harness capability-context status|request|sync` to keep paired local context files aligned with the registry. The command writes only the controlled `CAPABILITY CONTEXT` block and preserves hand-authored content plus the separate architecture contract block.
+- Use `repo-harness capability-context status|sync` to keep paired local context files aligned with the registry. The command writes only the controlled `CAPABILITY CONTEXT` block and preserves hand-authored content plus the separate architecture contract block.
 - `.ai/context/capability-source-map.json` is the optional human-edited source-map manifest for capability positioning and source pointers. Missing entries fall back to registry/architecture/workstream metadata; `--auto-fill-positioning` writes deterministic draft entries explicitly, not from hooks.
-- `.ai/harness/capability-context/` is ignored runtime queue state. Post-edit hooks may enqueue requests, and `SessionStart` only reminds the current agent to run `repo-harness capability-context sync --pending --apply`.
-- `.ai/harness/architecture-projection/` is ignored durable projection runtime state. It owns one running provider job per repository, pending jobs, typed receipts, refresh receipts, unresolved-major acceptance candidates, content-bound acceptance or proof-reconciliation receipts, and dead letters; source observations are acknowledged only after a terminal receipt. `architecture-projection accept` binds an explicit approval reference to one exact fresh candidate and resolves its dead letter without inferring semantic scope. `architecture-projection reconcile` retires only an exact proof-only candidate after a current CodeGraph-ready empty check-mode `noop`; it cannot carry approval or apply evidence, is mutually exclusive with acceptance, and converts an automatic-drain dead letter to its terminal job receipt. SessionStart exposes the exact oldest dead-letter id for the explicit `architecture-projection retry-dead-letter` recovery command.
-- `SessionStart` also summarizes pending architecture request cards so a resumed agent can see drift debt before claiming finish.
+- No hook queues capability-context work. The Agent runs `repo-harness capability-context sync --capability <id> --apply` or `--path <path> --apply` when a change needs it.
 
 ## Initializer and Runtime Model
 

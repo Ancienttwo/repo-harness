@@ -1,6 +1,6 @@
 # Architecture Index
 
-> Umbrella architecture ledger for current boundaries, drift requests, snapshots, and diagrams.
+> Umbrella architecture ledger for current boundaries, snapshots, and diagrams.
 
 ## Current Snapshot
 
@@ -197,7 +197,6 @@ flowchart LR
 | inspection-migration -> contract-assets | `scripts/lib/project-init-lib.sh` 生成并写入下游 registry 模式的 `.ai/context/capabilities.json` 与模板契约文件（新仓库默认 `capability_source: "registry"`，与本仓库自身的 archcontext 权威无关） |
 | adoption -> contract-assets | `src/core/adoption/source-checkout.ts` 以 `assets/workflow-contract.v1.json` 判定源码 checkout；`src/core/adoption/standard-plan.ts` 指向 `package:assets/templates/helpers` |
 | adoption -> mcp-sidecar | `src/cli/commands/adoption-plan.ts` 导入 `../../effects/repo-registry` 的 `registerRepoHarnessRepo` |
-| hook-adapters -> contract-assets | `src/cli/hook/mutation-observed.ts` 以 `capability-context request` 消费架构队列的 request，而不是自带第二份 capability-resolver |
 | hook-adapters -> action-commands | `src/cli/installer/install-profile.ts` 读取 `assets/skill-commands/manifest.json` 并按名取用各命令源目录 |
 | engineer-scheduling -> engineer-bindings | `src/effects/engineers/scheduling-acquire.ts` 重验精确 Engineer 合同后，通过 `delegateScheduledEngineerAcquire` 调用既有 ME-0B acquire authority |
 | engineer-messages -> engineer-bindings | `src/effects/engineers/module-inbox.ts` 在 send、delivery 与 ACK 边界调用 `readEngineerBindingStatus` 重验精确 Binding |
@@ -238,28 +237,25 @@ contract-assets 前缀，漂移由 `bun run sync:helpers` 的 `--check` 模式�
 阅读约定：
 
 - 模块文档按 capability 组织，一个 capability 恰好对应 `modules/<domain>/<capability>.md` 一个文件。
-- 事实优先级：实际源码 > 本文与模块文档。本图与表若与 `src/`、`scripts/`、`assets/` 的现状冲突，以源码为准并提一次 architecture drift request。
+- 事实优先级：实际源码 > 本文与模块文档。本图与表若与 `src/`、`scripts/`、`assets/` 的现状冲突，以源码为准，并在同一个 PR 里更新模型与投影。
 - 前缀权威在 `.ai/harness/policy.json#context.capability_source` 选中的 capability 权威（本仓库为 `.archcontext/model/nodes/*.yaml`），本表「主前缀」只取每个 capability 前缀列表的首项作为定位锚点，不是完整边界。
 - Verified against: `main@13686d8d`（2026-08-08）。
 
-## Architecture Drift Flow
+## Architecture Update Flow
 
-- `scripts/architecture-queue.sh` records architecture-sensitive edits as requests.
+- Hooks do not record architecture drift. The pull request is the update unit.
 - `scripts/capability-resolver.ts` resolves changed paths to capabilities with longest-prefix matching.
-- `scripts/archive-architecture-request.sh` archives handled requests after an agent records the resolution status and linked artifacts; `Resolved` requires the request's declared architecture module as an existing durable artifact.
+- When a change alters responsibilities, entrypoints, relations or flows, write the model change through an archctx ChangeSet and run `repo-harness architecture-projection apply --json` in the same branch.
 - Read architecture documents on demand. Update real boundaries explicitly.
 - `scripts/workstream-sync.sh` keeps durable multi-session progress under `tasks/workstreams/<domain>/<capability>/` and projects only pointers into local contracts.
 - Semantic diagrams live as Mermaid fenced blocks in the relevant architecture module or snapshot Markdown.
 - Mermaid fenced blocks are the only architecture diagram artifacts; agents must not generate standalone HTML.
 - `mermaid` is an external authoring/review skill (`~/.codex/skills/mermaid`), not a production dependency or vendored architecture body.
 
-## Request Archive Rule
+## Request Archive
 
-- `docs/architecture/requests/` contains only pending architecture drift requests.
-- Handled requests move to `docs/architecture/requests/archive/YYYY/`.
-- Valid terminal statuses are `Resolved`, `Superseded`, `Rejected`, and `No architecture change`.
-- The archived request must link any produced module, snapshot, or embedded Mermaid source.
-- `docs/architecture/index.md` keeps only pending request links.
+- `docs/architecture/requests/archive/` keeps the historical cards of the retired request queue.
+- No new request cards are created.
 
 ## 2026-07-16 Closeout Runner Guardrails
 
@@ -290,13 +286,6 @@ contract-assets 前缀，漂移由 `bun run sync:helpers` 的 `--check` 模式�
   模組邊界、entrypoint、依賴規則、runtime path 與驗證命令都沒有動,所以不需要
   snapshot;卡片的 Contract Files 是 `none`,也沒有本地契約需要同步。
 
-## Pending Requests
-
-
-<!-- BEGIN ARCHITECTURE PENDING REQUESTS -->
-- (none)
-<!-- END ARCHITECTURE PENDING REQUESTS -->
-
 
 
 ## Review Backlog
@@ -304,7 +293,7 @@ contract-assets 前缀，漂移由 `bun run sync:helpers` 的 `--check` 模式�
 - Treat user-level `~/.codex/hooks.json` and `~/.claude/settings.json` as host adapters. Keep hook implementation under `.ai/hooks/`, and treat repo-local `.claude/settings.json` / `.codex/hooks.json` hook adapters as retired legacy config.
 - Run `bun scripts/capability-resolver.ts validate --format text` when capability data changes. The workflow helper remains a read-only diagnostic.
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.architecture.index" sourceDigest="sha256:541ec63ab7c5da89cacc94a5f9becb5aa29d9268eb93372fedaf1fb78b27f0d8" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:081d9aa068b5e73c636c42e4c60789b87af9fa7007d17bbd92c70b2dfb8266e3" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.architecture.index" sourceDigest="sha256:c2c495836f39fcc7416d4cb39a62866afd4ae2a2a5e692eac000d5af564e172a" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:cf60a5c3d66d54c9b9f162750d78221d325dfc57df50ea6aa4b0750231771c08" -->
 # Architecture Index
 
 Generated: 1970-01-01T00:00:00.000Z
@@ -315,7 +304,6 @@ Generated: 1970-01-01T00:00:00.000Z
 - [Adoption](modules/public-surface/adoption.md) — capability / active
 - [Root Router](modules/public-surface/root-router.md) — capability / active
 - [Agent Runtime Effects](modules/runtime-harness/agent-runtime-effects.md) — capability / active
-- [Automation Budget](modules/runtime-harness/automation-budget.md) — capability / active
 - [Bound Task Freezes](modules/runtime-harness/bound-task-freezes.md) — capability / active
 - [Collaboration Substrate](modules/runtime-harness/collaboration.md) — capability / active
 - [Read-only Delegated Runs](modules/runtime-harness/delegated-runs.md) — capability / active
@@ -331,7 +319,7 @@ Generated: 1970-01-01T00:00:00.000Z
 - [MCP Sidecar](modules/runtime-harness/mcp-sidecar.md) — capability / active
 - [Operator Board](modules/runtime-harness/operator.md) — capability / active
 - [PM Dispatch Boundary](modules/runtime-harness/pm-dispatch.md) — capability / active
-- [Refactor Program](modules/runtime-harness/refactor-program.md) — capability / active
+- [Refactor Recommendations](modules/runtime-harness/refactor-program.md) — capability / active
 - [Verified Evidence Context](modules/runtime-harness/verified-context.md) — capability / active
 - [Work Demand Intake](modules/runtime-harness/work-demand.md) — capability / active
 - [General Repository Access](modules/runtime-mcp/general-repo-access.md) — capability / active
@@ -347,8 +335,6 @@ Generated: 1970-01-01T00:00:00.000Z
 - capability.runtime-harness.agent-runtime-effects -> capability.runtime-harness.engineer-bindings — calls
 - capability.runtime-harness.agent-runtime-effects -> capability.runtime-harness.engineer-messages — calls
 - capability.runtime-harness.agent-runtime-effects -> component.agent-runtime-effects.journal — calls
-- capability.runtime-harness.automation-budget -> component.automation-budget.ledger — calls
-- capability.runtime-harness.automation-budget -> component.automation-controller.journal — calls
 - capability.runtime-harness.bound-task-freezes -> capability.runtime-harness.engineer-bindings — calls
 - capability.runtime-harness.bound-task-freezes -> component.bound-task-freezes.primary — calls
 - capability.verification.codegraph-readiness -> component.codegraph-readiness.primary — calls
@@ -388,7 +374,6 @@ Generated: 1970-01-01T00:00:00.000Z
 - capability.runtime-harness.operator -> component.operator.primary — calls
 - capability.runtime-harness.pm-dispatch -> component.pm-dispatch.primary — calls
 - capability.runtime-harness.refactor-program -> component.refactor-program.archctx-provider — calls
-- capability.runtime-harness.refactor-program -> component.refactor-program.lifecycle — calls
 - capability.public-surface.root-router -> component.root-router.primary — calls
 - capability.runtime-harness.verified-context -> capability.runtime-harness.delegated-runs — calls
 - capability.runtime-harness.verified-context -> capability.runtime-harness.engineer-bindings — calls

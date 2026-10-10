@@ -72,7 +72,6 @@ if [[ "$lane" != functional ]]; then
   bash scripts/check-deploy-sql-order.sh
   echo "[ci] context files"
   bash scripts/check-context-files.sh
-  bash scripts/check-architecture-sync.sh
   echo "[ci] context map"
   bun run check:context-map
   # Preserve the read-only helper's failure before checking successful evidence.

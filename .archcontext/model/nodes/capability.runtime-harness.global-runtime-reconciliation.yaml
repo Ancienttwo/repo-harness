@@ -21,7 +21,6 @@ source:
     - "tests/cli/global-runtime-init.test.ts"
     - "tests/cli/global-runtime.test.ts"
     - "tests/architecture-projection-provider.test.ts"
-    - "tests/architecture-projection-orchestration.test.ts"
     - "assets/reference-configs/external-tooling.md"
     - "docs/reference-configs/external-tooling.md"
     - "docs/reference-configs/install-profiles.md"
@@ -49,5 +48,5 @@ extensions:
   lspProfile: "typescript-lsp"
   verification:
     - "bun test tests/cli/global-runtime-init.test.ts tests/cli/global-runtime.test.ts"
-    - "bun test tests/architecture-projection-provider.test.ts tests/architecture-projection-orchestration.test.ts"
+    - "bun test tests/architecture-projection-provider.test.ts"
     - "bun run check:release"

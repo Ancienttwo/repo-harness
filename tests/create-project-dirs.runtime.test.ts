@@ -6,7 +6,6 @@ import { spawnSync } from "child_process";
 import { defaultPolicy } from "../src/core/adoption/standard-plan";
 import { parseExternalSourcesPolicy } from "../src/effects/external-sources/policy";
 import { ARCHCTX_REQUIRED_VERSION, readArchitectureProjectionPolicy } from "../src/core/architecture/projection";
-import { REFACTOR_PROVIDER_VERSION, readRefactorPolicy } from "../src/core/refactor/policy";
 
 const ROOT = join(import.meta.dir, "..");
 const REFERENCE_STUB_MARKER = "<!-- repo-harness: reference-config-stub v1 -->";
@@ -72,7 +71,7 @@ describe("create-project-dirs runtime smoke", () => {
       expect(existsSync(join(cwd, "docs/architecture/index.md"))).toBe(true);
       expect(existsSync(join(cwd, "docs/architecture/domains/.gitkeep"))).toBe(true);
       expect(existsSync(join(cwd, "docs/architecture/modules/.gitkeep"))).toBe(true);
-      expect(existsSync(join(cwd, "docs/architecture/requests/.gitkeep"))).toBe(true);
+      expect(existsSync(join(cwd, "docs/architecture/requests"))).toBe(false);
       expect(existsSync(join(cwd, "docs/architecture/snapshots/.gitkeep"))).toBe(true);
       expect(existsSync(join(cwd, "docs/architecture/diagrams/.gitkeep"))).toBe(true);
       expect(existsSync(join(cwd, "docs/api"))).toBe(false);
@@ -123,7 +122,7 @@ describe("create-project-dirs runtime smoke", () => {
       expect(existsSync(join(cwd, ".ai/harness/policy.json"))).toBe(true);
       expect(existsSync(join(cwd, ".ai/harness/brain-manifest.json"))).toBe(true);
       expect(existsSync(join(cwd, ".ai/harness/events.jsonl"))).toBe(true);
-      expect(existsSync(join(cwd, ".ai/harness/architecture/events.jsonl"))).toBe(true);
+      expect(existsSync(join(cwd, ".ai/harness/architecture"))).toBe(false);
       expect(existsSync(join(cwd, ".ai/harness/workstreams/events.jsonl"))).toBe(false);
       expect(existsSync(join(cwd, ".ai/harness/failures/latest.jsonl"))).toBe(true);
       expect(existsSync(join(cwd, ".ai/harness/handoff/current.md"))).toBe(true);
@@ -223,9 +222,8 @@ describe("create-project-dirs runtime smoke", () => {
       expect(readFileSync(join(cwd, ".ai/hooks/README.md"), "utf-8")).toContain("repo-harness-hook");
 
       const architectureIndex = readFileSync(join(cwd, "docs/architecture/index.md"), "utf-8");
-      expect(architectureIndex).toContain("<!-- BEGIN ARCHITECTURE PENDING REQUESTS -->");
-      expect(architectureIndex).toContain("- (none)");
-      expect(architectureIndex).toContain("<!-- END ARCHITECTURE PENDING REQUESTS -->");
+      expect(architectureIndex).toContain("## Architecture Flow");
+      expect(architectureIndex).not.toContain("ARCHITECTURE PENDING REQUESTS");
 
       expect(existsSync(join(cwd, "docs/PROGRESS.md"))).toBe(false);
       const workflowContract = JSON.parse(readFileSync(join(ROOT, "assets/workflow-contract.v1.json"), "utf-8"));
@@ -240,7 +238,7 @@ describe("create-project-dirs runtime smoke", () => {
       expect(workflowContract.helpers.scripts).toContain("check-brain-manifest.sh");
       expect(workflowContract.helpers.scripts).toContain("sync-brain-docs.sh");
       expect(workflowContract.helpers.scripts).toContain("check-deploy-sql-order.sh");
-      expect(workflowContract.helpers.scripts).toContain("check-architecture-sync.sh");
+      expect(workflowContract.helpers.scripts).not.toContain("check-architecture-sync.sh");
       expect(workflowContract.helpers.scripts).toContain("check-task-workflow.sh");
       expect(workflowContract.helpers.scripts).toContain("sprint-backlog.sh");
       expect(workflowContract.helpers.scripts).toContain("contract-worktree.sh");
@@ -249,10 +247,10 @@ describe("create-project-dirs runtime smoke", () => {
       expect(workflowContract.helpers.scripts).toContain("select-agent-context-blocks.sh");
       expect(workflowContract.helpers.scripts).not.toContain("context-budget.ts");
       expect(workflowContract.helpers.scripts).toContain("capability-resolver.ts");
-      expect(workflowContract.helpers.scripts).toContain("architecture-event.ts");
+      expect(workflowContract.helpers.scripts).not.toContain("architecture-event.ts");
       expect(workflowContract.helpers.scripts).toContain("capability-config.ts");
-      expect(workflowContract.helpers.scripts).toContain("architecture-queue.sh");
-      expect(workflowContract.helpers.scripts).toContain("archive-architecture-request.sh");
+      expect(workflowContract.helpers.scripts).not.toContain("architecture-queue.sh");
+      expect(workflowContract.helpers.scripts).not.toContain("archive-architecture-request.sh");
       expect(workflowContract.helpers.scripts).not.toContain("context-contract-sync.sh");
       expect(workflowContract.helpers.scripts).toContain("workstream-sync.sh");
       expect(workflowContract.artifacts.requiredFiles).not.toContain(".ai/harness/context-budget/latest.json");
@@ -262,7 +260,7 @@ describe("create-project-dirs runtime smoke", () => {
       expect(workflowContract.artifacts.runtimeFiles).not.toContain(".ai/harness/context-budget/latest.json");
       expect(workflowContract.artifacts.runtimeFiles).toContain(".ai/harness/handoff/resume.md");
       expect(workflowContract.artifacts.runtimeFiles).toContain(".ai/harness/planning/");
-      expect(workflowContract.artifacts.runtimeFiles).toContain(".ai/harness/architecture/events.jsonl");
+      expect(workflowContract.artifacts.runtimeFiles).not.toContain(".ai/harness/architecture/events.jsonl");
       expect(workflowContract.artifacts.runtimeFiles).toContain(".ai/harness/active-plan");
       expect(workflowContract.artifacts.runtimeFiles).toContain(".ai/harness/active-worktree");
       expect(workflowContract.artifacts.runtimeFiles).toContain(".ai/harness/triage/inbox.md");
@@ -481,10 +479,9 @@ describe("create-project-dirs runtime smoke", () => {
       expect(policy.documentation.reference_stub_marker).toBe(REFERENCE_STUB_MARKER);
       expect(policy.documentation.reference_resolver).toBe("repo-harness docs path <doc-id>");
       expect(policy.documentation.required).toContain("docs/architecture/index.md");
-      expect(policy.architecture.diagram_skill).toBe("mermaid");
-      expect(policy.architecture.vendoring_policy).toBe("do-not-vendor-diagram-skill-assets");
+      expect(policy.architecture).toBeUndefined();
       expect(policy.external_tooling.diagram_design.sync_mode).toBe("external-installed-skill");
-      expect(policy.harness.architecture_events_file).toBe(".ai/harness/architecture/events.jsonl");
+      expect(policy.harness.architecture_events_file).toBeUndefined();
       expect(policy.harness.workstream_events_file).toBeUndefined();
       expect(policy.workstreams.scope).toBe("capability");
       expect(policy.workstreams.projection).toBe("local-contract-active-pointer-and-current-slice");
@@ -529,7 +526,7 @@ describe("create-project-dirs runtime smoke", () => {
       const pkg = JSON.parse(readFileSync(join(cwd, "package.json"), "utf-8"));
       expect(pkg.scripts["check:context-files"]).toBe("repo-harness run check-context-files");
       expect(pkg.scripts["check:deploy-sql"]).toBe("repo-harness run check-deploy-sql-order");
-      expect(pkg.scripts["check:architecture-sync"]).toBe("repo-harness run check-architecture-sync");
+      expect(pkg.scripts["check:architecture-sync"]).toBeUndefined();
       expect(pkg.scripts["check:task-sync"]).toBe("repo-harness run check-task-sync");
       expect(pkg.scripts["check:task-workflow"]).toBeUndefined();
       expect(pkg.scripts["sync:brain-docs"]).toBe("repo-harness run sync-brain-docs --all");
@@ -1029,14 +1026,11 @@ describe("create-project-dirs runtime smoke", () => {
   }, RUNTIME_SMOKE_TIMEOUT_MS);
 
   /**
-   * `scripts/` ships inside the npm package, so a seeder that hardcodes a stale archctx pin
-   * reaches every generated repository. `readRefactorPolicy` fail-closes on an exact
-   * `provider_version` mismatch, so a stale seed makes the generated repo's own refactor
-   * stages unreadable rather than merely out of date. The guard runs the real seeders and
-   * feeds their output to the real readers instead of comparing version literals, so it
-   * fails on the behavior the consumer actually depends on.
+   * The archctx pin lives in the package (`ARCHCTX_REQUIRED_VERSION`). Repository
+   * seeders must not author archctx execution or refactor settings, because no
+   * runtime reader consumes them.
    */
-  test("every policy seeder emits an archctx pin the runtime readers accept", () => {
+  test("policy seeders author no repository archctx execution or refactor settings", () => {
     const cwd = mkdtempSync(join(tmpdir(), "seeder-archctx-pin-parity-"));
     const libPath = join(ROOT, "scripts/lib/project-init-lib.sh");
 
@@ -1054,21 +1048,13 @@ describe("create-project-dirs runtime smoke", () => {
       ];
 
       for (const [source, seeded] of seeders) {
-        // readRefactorPolicy takes the whole policy and throws on an exact
-        // provider_version mismatch, so a stale seed surfaces here as the generated
-        // repo's real failure, not as a string diff.
-        const refactor = readRefactorPolicy(seeded);
-        expect([source, refactor.stages.scan.provider_version]).toEqual([source, REFACTOR_PROVIDER_VERSION]);
-        expect([source, refactor.stages.verify.provider_version]).toEqual([source, REFACTOR_PROVIDER_VERSION]);
-
-        // Projection execution is global; repository seeders must not author it.
+        expect([source, seeded.refactor]).toEqual([source, undefined]);
         for (const key of ['projection_provider', 'projection_apply', 'projection_version', 'projection_failure_gate', 'projection_timeout_ms']) {
           expect([source, seeded.architecture?.[key]]).toEqual([source, undefined]);
         }
         expect(readArchitectureProjectionPolicy({}).requiredVersion).toBe(ARCHCTX_REQUIRED_VERSION);
       }
 
-      expect(REFACTOR_PROVIDER_VERSION).toBe(ARCHCTX_REQUIRED_VERSION);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

@@ -19,7 +19,6 @@ function makeRepo(prefix = "heartbeat-triage-"): string {
   const repo = mkdtempSync(join(tmpdir(), prefix));
   mkdirSync(join(repo, ".ai/harness/sprint"), { recursive: true });
   mkdirSync(join(repo, ".ai/harness/runs"), { recursive: true });
-  mkdirSync(join(repo, "docs/architecture/requests"), { recursive: true });
   mkdirSync(join(repo, "plans/sprints"), { recursive: true });
   writeFileSync(
     join(repo, ".ai/harness/policy.json"),
@@ -105,12 +104,11 @@ function parseJson(stdout: string): Record<string, unknown> {
 }
 
 describe("heartbeat triage runner", () => {
-  test("three scheduled runs append workflow, sprint-next, and drift entries", () => {
+  test("three scheduled runs append workflow and sprint-next entries", () => {
     const repo = makeRepo();
     try {
       writeSprint(repo);
       writeWorkflowHelpers(repo);
-      writeFileSync(join(repo, "docs/architecture/requests/request-one.md"), "# Request\n");
 
       for (const idx of [1, 2, 3]) {
         const res = runHeartbeat(repo, ["--source", "scheduled", "--run-id", `scheduled-${idx}`, "--json"]);
@@ -121,7 +119,6 @@ describe("heartbeat triage runner", () => {
         expect((manifest.entries as Array<{ kind: string; status: string }>)).toEqual([
           expect.objectContaining({ kind: "workflow-check", status: "pass" }),
           expect.objectContaining({ kind: "sprint-next", status: "action" }),
-          expect.objectContaining({ kind: "drift-requests", status: "action" }),
         ]);
       }
 
@@ -129,9 +126,8 @@ describe("heartbeat triage runner", () => {
       expect((inbox.match(/^## Run scheduled-/gm) ?? [])).toHaveLength(3);
       expect((inbox.match(/workflow-check/g) ?? [])).toHaveLength(3);
       expect((inbox.match(/sprint-next/g) ?? [])).toHaveLength(3);
-      expect((inbox.match(/drift-requests/g) ?? [])).toHaveLength(3);
+      expect(inbox).not.toContain("drift-requests");
       expect(inbox).toContain("next-heartbeat-task");
-      expect(inbox).toContain("docs/architecture/requests/request-one.md");
       expect(inbox).toContain("Adoption review due:");
       expect(existsSync(join(repo, ".ai/harness/runs/scheduled-3-heartbeat-triage.json"))).toBe(true);
     } finally {
