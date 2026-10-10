@@ -10,8 +10,14 @@ transaction passes.
 
 | Profile | Codex hooks | Components and discovery |
 |---|---:|---|
-| `minimal` | 7 | CLI, effective state, scope/worktree/check guards, handoff, adaptive workflow, conditional CodeGraph support, host adapters, root router, `repo-harness-check`, and the repo-owned `obsidian-memory` facade |
+| `minimal` | 7 | CLI, effective state, scope/worktree/check guards, handoff, adaptive workflow, conditional CodeGraph support, host adapters, root router, `repo-harness-check`, the repo-owned `obsidian-memory` facade, and `windows-python-first` |
 | `full` | 11 | Everything in minimal plus PRD/Sprint/Goal planning integrations, agent fleet, verifier, cross-model acceptance, release/deployment gates, `repo-harness-product`, `repo-harness-ship`, host-aware `repo-harness-cross-review`, Waza, and Mermaid |
+
+`windows-python-first` is a package-owned toolbox Skill. Both profiles project
+it to Codex and Claude. Use it for native Windows file and text operations. It
+prefers Python with explicit encoding and keeps simple shell commands. It does
+not apply Windows shell rules to macOS, Linux, or WSL. Installation adds the
+Skill only; it does not install Python or change PowerShell settings.
 
 Fresh global installs and adapter-only installs both default to `full`.
 `minimal` is the explicit bounded choice; there is no 5-hook profile.

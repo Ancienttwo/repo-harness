@@ -251,7 +251,7 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
     test("minimal discovers router, plan/check facades, and explicit-setup chatgpt", () => {
       const names = buildDiscoveredSkillSurface(catalog, "minimal", "claude").map((e) => e.name).sort();
       expect(names).toEqual(
-        ["obsidian-memory", "repo-harness", "repo-harness-chatgpt", "repo-harness-check"],
+        ["obsidian-memory", "repo-harness", "repo-harness-chatgpt", "repo-harness-check", "windows-python-first"],
       );
     });
 
@@ -506,7 +506,7 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
       expect(report.metrics.double_trigger).toEqual({ count: 0, denominator: 68, rate: 0 });
       expect(report.metrics.provider_error_count).toBe(0);
       expect(report.discovered_surface.map((d) => d.name).sort()).toEqual(
-        ["obsidian-memory", "repo-harness", "repo-harness-check", "repo-harness-chatgpt", "repo-harness-cross-review", "repo-harness-product", "repo-harness-ship", "repo-harness-test"].sort(),
+        ["obsidian-memory", "repo-harness", "repo-harness-check", "repo-harness-chatgpt", "repo-harness-cross-review", "repo-harness-product", "repo-harness-ship", "repo-harness-test", "windows-python-first"].sort(),
       );
     }, 30_000);
 

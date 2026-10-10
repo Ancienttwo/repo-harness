@@ -373,11 +373,11 @@ describe("skill-surface catalog: the real manifest.json on disk", () => {
   });
 
   // Current closed catalog excludes the retired headless plan skill.
-  test("covers all 11 repo-owned entries plus the 9 external skills (20 packages)", () => {
+  test("covers all 12 repo-owned entries plus the 9 external skills (21 packages)", () => {
     if (resolution.status !== "valid") throw new Error("expected valid catalog");
-    expect(resolution.catalog.packages.length).toBe(20);
+    expect(resolution.catalog.packages.length).toBe(21);
     const repoOwned = resolution.catalog.packages.filter((p) => p.kind !== "external");
-    expect(repoOwned.length).toBe(11);
+    expect(repoOwned.length).toBe(12);
     expect(repoOwned.map(p => p.name)).not.toContain("claude-plan");
     const external = resolution.catalog.packages.filter((p) => p.kind === "external");
     expect(external.map((p) => p.name).sort()).toEqual([
@@ -455,11 +455,11 @@ describe("skill-surface catalog: target post-cutover discovery matrix", () => {
 
   test("facadesForProfile matches the target discovery matrix for every profile", () => {
     expect(facadesForProfile(catalog, "minimal")).toEqual([
-      "repo-harness-check", "obsidian-memory",
+      "repo-harness-check", "obsidian-memory", "windows-python-first",
     ]);
     expect(facadesForProfile(catalog, "full")).toEqual([
       "repo-harness-check", "repo-harness-test", "repo-harness-product", "repo-harness-ship",
-      "obsidian-memory",
+      "obsidian-memory", "windows-python-first",
     ]);
   });
 
@@ -575,7 +575,7 @@ describe("skill-surface catalog: target post-cutover discovery matrix", () => {
     const { repoHarnessSkills, externalSkills } = mutationPathSkillNames(catalog);
     expect(repoHarnessSkills).toEqual([
       "repo-harness", "repo-harness-check", "repo-harness-test", "repo-harness-product",
-      "repo-harness-ship", "obsidian-memory",
+      "repo-harness-ship", "obsidian-memory", "windows-python-first",
     ]);
     expect(externalSkills).toEqual([
       "repo-harness-cross-review", "herdr", "think", "hunt", "check", "health", "mermaid", "reverse-skill-router",
@@ -675,7 +675,7 @@ test("audience source selection returns disjoint complete load groups and reject
     "obsidian-memory", "repo-harness-cross-review", "repo-harness-chatgpt",
   ]);
   expect(lines(worker.stdout).map((line) => line.split("\t")[0])).toEqual([
-    "repo-harness-setup", "repo-harness-test", "repo-harness-architecture",
+    "repo-harness-setup", "repo-harness-test", "repo-harness-architecture", "windows-python-first",
   ]);
   for (const line of [...lines(bot.stdout), ...lines(worker.stdout)]) {
     expect(existsSync(join(ROOT, line.split("\t")[1], "SKILL.md"))).toBe(true);
