@@ -2251,6 +2251,23 @@ describe('exact cleanup and SessionStart worktree sweep', () => {
       const path = JSON.parse(readFileSync(signal, 'utf8')).path as string;
       child.kill('SIGKILL'); await ended;
       expect(child.signalCode).toBe('SIGKILL');
+      // Recovery uses kill(pid, 0), so an exit notification alone is not its
+      // proof of death. Observe that same condition before starting recovery.
+      const pid = child.pid;
+      expect(pid).toBeDefined();
+      let aliveObservations = 0;
+      for (;;) {
+        try {
+          process.kill(pid!, 0);
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error;
+          break;
+        }
+        aliveObservations += 1;
+        if (Date.now() >= deadline) throw new Error(`W1 worker ${pid} remains observable after SIGKILL (${aliveObservations} liveness observations)`);
+        await Bun.sleep(10);
+      }
+      console.error(`[W1 worker death] pid=${pid} aliveAfterExit=${aliveObservations} final=ESRCH`);
       // An unlink signal names a child of the renamed payload. Other steps name the container.
       return step === 'trash-entry-deleted' ? dirname(dirname(path)) : path;
     } finally {

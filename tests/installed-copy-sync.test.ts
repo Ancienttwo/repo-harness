@@ -441,6 +441,41 @@ describe("Codex installed copy sync", () => {
     }
   }, 30_000);
 
+  test("copy sync installs a selected facade when the profile projection exceeds pipe capacity", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "repo-harness-profile-pipe-"));
+    const source = join(tmp, "source");
+    const roots = [join(tmp, "codex-skills"), join(tmp, "claude-skills")];
+    try {
+      seedSkillSurfaceRuntime(source);
+      const manifestPath = join(source, "assets/skill-commands/manifest.json");
+      const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+      const product = manifest.packages.find((entry: any) => entry.name === "repo-harness-product");
+      // Valid sparse package fixtures may declare facades that are not shipped.
+      // Enough trailing selection data makes grep's early pipe close observable.
+      for (let index = 0; index < 512; index++) {
+        const name = `repo-harness-tail-${index}-${"x".repeat(220)}`;
+        manifest.packages.push({ ...product, name, source: `assets/skills/tail-${index}` });
+        manifest.expectedProjections.facadesByProfile.full.push(name);
+      }
+      writeFileSync(manifestPath, JSON.stringify(manifest));
+      writeFileSync(join(source, "SKILL.md"), "---\nname: repo-harness\n---\n");
+      const productSource = join(source, product.source);
+      mkdirSync(productSource, { recursive: true });
+      writeFileSync(join(productSource, "SKILL.md"), "---\nname: repo-harness-product\n---\n");
+      const result = spawnSync("bash", [join(ROOT, "scripts/sync-codex-installed-copies.sh")], {
+        cwd: ROOT, encoding: "utf8", timeout: 60000,
+        env: { ...process.env, AGENTIC_DEV_SOURCE_ROOT: source, AGENTIC_DEV_LINK_INSTALLED_COPIES: "0",
+          REPO_HARNESS_INSTALL_PROFILE: "full", CODEX_SKILLS_ROOT: roots[0], CLAUDE_SKILLS_ROOT: roots[1] },
+      });
+      expect(result.status, result.stderr + result.stdout).toBe(0);
+      for (const root of roots) {
+        const dest = join(root, "repo-harness-product");
+        expect(existsSync(join(dest, ".repo-harness-owner.json")), result.stdout).toBe(true);
+        expect(readFileSync(join(dest, "SKILL.md"), "utf8")).toBe(readFileSync(join(productSource, "SKILL.md"), "utf8"));
+      }
+    } finally { rmSync(tmp, { recursive: true, force: true }); }
+  }, 60000);
+
   test("retires an owner-marked facade once its canonical source and profile selection are both gone", () => {
     const tmp = join(tmpdir(), `repo-harness-installed-retire-${Date.now()}`);
     const source = join(tmp, "source");

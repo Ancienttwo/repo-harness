@@ -101,3 +101,11 @@ checks separate. Report missing live-provider evidence as unverified.
 For the current Hermes adapter, see `assets/hermes/README.md`. It uses a dedicated
 profile and the same CLI schemas. Its tool restriction is a model tool boundary,
 not an OS sandbox for the Hermes process. Grok and Dot need their own host checks.
+
+
+## MCP controller access
+
+The bounded PM MCP surface reuses this protocol and authority. Read
+[Dot PM controller](dot-pm-control.md) for the operator scope, HTTP v3 profile,
+OAuth consent, read-only preflight and connection limits. MCP consent is not
+candidate approval. A local install is not a Dot connection or event wake.

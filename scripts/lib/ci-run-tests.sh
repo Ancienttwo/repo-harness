@@ -56,8 +56,20 @@ _ci_run_bun_tests_in_temporary_home() {
           }
         }
       } finally {
-        fs.rmSync(home, { recursive: true, force: true });
-        fs.rmSync(temp, { recursive: true, force: true });
+        const removeDisposableRoot = path => {
+          // A late runtime cache write can race the recursive directory walk.
+          // Retry only ENOTEMPTY, on the same disposable root, with a hard bound.
+          for (let attempt = 0; ; attempt++) {
+            try { fs.rmSync(path, { recursive: true, force: true }); return; }
+            catch (error) {
+              if (error.code !== "ENOTEMPTY" || attempt === 3) throw error;
+              console.error("[ci] retrying disposable root cleanup after ENOTEMPTY (" + (attempt + 1) + "/3): " + path);
+              Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50);
+            }
+          }
+        };
+        removeDisposableRoot(home);
+        removeDisposableRoot(temp);
       }
       if (fileStatus !== 0 && status === 0) status = fileStatus;
     }
