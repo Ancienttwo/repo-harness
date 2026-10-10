@@ -553,6 +553,7 @@ Canonical な rule-owner package は `assets/skills/` と
 | `repo-harness-chatgpt` | Oracle browser/GPT Pro consult、MCP Connector setup、bridge handoff。explicit setup 限定 |
 | `obsidian-memory` | Bot：明示的な依頼で記憶を読む、または保存する。 |
 | `repo-harness-test` | Worker：ソースのテストと実際の fixture。 |
+| `windows-python-first` | Worker：ネイティブ Windows のファイル・テキスト・シェル作業を Python で行う。 |
 | `merge-gate`(external) | exact-candidate な final gate。repo-harness は merge-gate Skill を同梱しません — [external tooling](docs/reference-configs/external-tooling.md) を参照 |
 
 Bot skills は範囲、委任、承認を決めます。Worker skills は作業を実行します。
@@ -560,7 +561,8 @@ Bot skills は範囲、委任、承認を決めます。Worker skills は作業�
 Bot: `repo-harness`, `repo-harness-check`, `repo-harness-product`,
 `repo-harness-ship`, `obsidian-memory`, `repo-harness-cross-review`,
 `repo-harness-chatgpt`. Worker: `repo-harness-setup`,
-`repo-harness-test`, and `repo-harness-architecture`.
+`repo-harness-test`, `repo-harness-architecture`, and
+`windows-python-first`.
 `obsidian-memory`, and `repo-harness-ship` は明示的な呼び出しが必要です。
 通常の作業には短い brief と PR の説明を使います。PRD、Sprint、Goal は依頼された製品作業に使います。
 

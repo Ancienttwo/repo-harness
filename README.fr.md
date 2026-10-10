@@ -554,6 +554,7 @@ bornée pendant que le CLI et les hooks possèdent l'exécution.
 | `repo-harness-chatgpt` | Consults Oracle browser/GPT Pro, setup du Connecteur MCP et bridge handoff ; setup explicite uniquement |
 | `obsidian-memory` | Bot : lire ou écrire la mémoire sur demande explicite. |
 | `repo-harness-test` | Worker : tests du code source et fixtures réelles. |
+| `windows-python-first` | Worker : fichiers, texte et shell sous Windows natif avec Python. |
 | `merge-gate` (externe) | Gate final exact-candidate ; repo-harness ne fournit aucun Skill merge-gate — voir [external tooling](docs/reference-configs/external-tooling.md) |
 
 Les Bot skills définissent le périmètre, la délégation et les décisions. Les Worker skills exécutent les étapes.
@@ -561,7 +562,8 @@ Les Bot skills définissent le périmètre, la délégation et les décisions. L
 Bot: `repo-harness`, `repo-harness-check`, `repo-harness-product`,
 `repo-harness-ship`, `obsidian-memory`, `repo-harness-cross-review`,
 `repo-harness-chatgpt`. Worker: `repo-harness-setup`,
-`repo-harness-test`, and `repo-harness-architecture`.
+`repo-harness-test`, `repo-harness-architecture`, and
+`windows-python-first`.
 `obsidian-memory`, and `repo-harness-ship` exigent une invocation explicite.
 Les tâches courantes utilisent un brief court et la description du PR. PRD, Sprint et Goal servent aux travaux produit demandés.
 
