@@ -5,12 +5,12 @@
   "sourceDigest": "sha256:c2c495836f39fcc7416d4cb39a62866afd4ae2a2a5e692eac000d5af564e172a",
   "provenance": {
     "schemaVersion": "archcontext.architecture-docs-projection-provenance/v1",
-    "baseHeadSha": "77ef3836e9a6b7d5a8ae06a71c513e954e488489",
-    "worktreeDigest": "sha256:ee35272f583ee8c9e7657a32bfdfd31bf1325f7a3d77a2151dad8c5426761b0e",
-    "sourceTreeDigest": "sha256:13fdfbdf3f1e35059d28d1a33ce8494bf45da556eb594df7d1dadfb13d915224",
+    "baseHeadSha": "6eba7ab98212c4957b69680c5ea057c280770986",
+    "worktreeDigest": "sha256:6cc6c3d00a95e5b11895d8ec9499d8952c0c46422084feeb414eececcbf99153",
+    "sourceTreeDigest": "sha256:82183630078869abfdb16daebcfebbacb212a3f90cc7ff2e3d675a882f134040",
     "modelDigest": "sha256:6a9249adc16f3331af7cbb05cab0836623a5b63706e381503fac931b6d8873df",
-    "codeGraphDigest": "sha256:a7d47e8d3f8cb8d6aec0da4723f7ee56a5d606762130446fad2d936d80b86608",
-    "indexedWorktreeDigest": "sha256:f703d9787f31223ea893696ab1b5e3c01cf7148117f0e9da6652a17589b869ee",
+    "codeGraphDigest": "sha256:f2ba90ba68442f1b55f8c6c6ac311e775cbe03923c9bf0225379bfb432c67507",
+    "indexedWorktreeDigest": "sha256:7705e86cd5929594f19a828f53a077c0062c5b43ed4dce3e3a2a62278f59cd2c",
     "rendererVersion": "archcontext.docs-renderer/v4",
     "layoutVersion": "archcontext.docs-layout/v1",
     "generatedFrom": {
@@ -19,9 +19,9 @@
       "codeGraphBinaryDigest": "sha256:abaaa7a8e99006dc46a6ed9d160a3f36bbf4e993f9b9fbd01d2fa5b7fb13512a",
       "codeGraphStatus": "ready"
     },
-    "projectionInputDigest": "sha256:01cf96c31c0dd5d785a5433378e4e0bb8f8ee6f3c8405167298c2209af9c301f"
+    "projectionInputDigest": "sha256:7e52ee3710a23180d54a734deda7655f295122b3d9c0477e60233d05d47e57c6"
   },
-  "projectionDigest": "sha256:365e10606799740f87a91ee9192b0dbb66874a56285b2d413b4b2b9657f23dc9",
+  "projectionDigest": "sha256:6b1cb1b2a92ca7c1f29c1562cce131b02f30854f52df190a0d74802c9f47f38b",
   "semanticBaseline": {
     "semanticState": {
       "schemaVersion": "archcontext.architecture-semantic-state/v1",
@@ -707,17 +707,17 @@
     },
     "digests": {
       "modelDigest": "sha256:6a9249adc16f3331af7cbb05cab0836623a5b63706e381503fac931b6d8873df",
-      "sourceTreeDigest": "sha256:13fdfbdf3f1e35059d28d1a33ce8494bf45da556eb594df7d1dadfb13d915224",
+      "sourceTreeDigest": "sha256:82183630078869abfdb16daebcfebbacb212a3f90cc7ff2e3d675a882f134040",
       "flowProofDigest": "sha256:df86d867a25643feb0de7781cf8ec7c580e7060980105d25146dbcbf4be623db",
-      "projectionDigest": "sha256:365e10606799740f87a91ee9192b0dbb66874a56285b2d413b4b2b9657f23dc9"
+      "projectionDigest": "sha256:6b1cb1b2a92ca7c1f29c1562cce131b02f30854f52df190a0d74802c9f47f38b"
     },
     "evidence": {
-      "sourceTreeDigest": "sha256:13fdfbdf3f1e35059d28d1a33ce8494bf45da556eb594df7d1dadfb13d915224",
+      "sourceTreeDigest": "sha256:82183630078869abfdb16daebcfebbacb212a3f90cc7ff2e3d675a882f134040",
       "selectorEvidenceDigest": "sha256:4fa28cfdaa445968ad0dba134bd507ab631f8bfea4e8331192218726cf3ac1e8",
       "rendererVersion": "archcontext.docs-renderer/v4"
     }
   },
-  "receiptDigest": "sha256:9cb2107fb93bf99661b5261c646560e44b5eef3af55754a7bcaf065780efe7e0",
+  "receiptDigest": "sha256:e5000dbd08761ad146b78fb4d21f90a0ef10b0dec5a838ae1e8c089178602436",
   "targetCount": 33,
   "fileCount": 33,
   "targets": [
@@ -790,8 +790,8 @@
       "outputDigest": "sha256:680ff6695a68e7ffccd5290cb4476171d8bff7cbe0f13cfab495b7ff09d20a21",
       "verifiedAgainst": {
         "branch": "claude/eager-knuth-kbo242",
-        "commit": "ccc89390a8e67ae69e76e9de217ef6543e96c532",
-        "committedAt": "2026-10-10T11:31:14+00:00"
+        "commit": "6eba7ab98212c4957b69680c5ea057c280770986",
+        "committedAt": "2026-10-10T13:55:25+00:00"
       }
     },
     {
@@ -990,8 +990,8 @@
       "outputDigest": "sha256:f32367316b2e760760044d3856d3f49d3cc762ea0f99627914f14ee7749c6134",
       "verifiedAgainst": {
         "branch": "claude/eager-knuth-kbo242",
-        "commit": "ccc89390a8e67ae69e76e9de217ef6543e96c532",
-        "committedAt": "2026-10-10T11:31:14+00:00"
+        "commit": "6eba7ab98212c4957b69680c5ea057c280770986",
+        "committedAt": "2026-10-10T13:55:25+00:00"
       }
     },
     {
@@ -1070,8 +1070,8 @@
       "outputDigest": "sha256:5422b6f45cd474884c42d42a58f78d1a95f73bc85eb3584fca5fdbfd0e5d2f29",
       "verifiedAgainst": {
         "branch": "claude/eager-knuth-kbo242",
-        "commit": "96fd489a129c6d328bdef4540a5b56913b7893e7",
-        "committedAt": "2026-10-10T10:21:48+00:00"
+        "commit": "6eba7ab98212c4957b69680c5ea057c280770986",
+        "committedAt": "2026-10-10T13:55:25+00:00"
       }
     },
     {
@@ -1110,8 +1110,8 @@
       "outputDigest": "sha256:44a77669051b0563c7c4813eeef5e1a6d859c18b08a68f35cbbfc2f0096863cf",
       "verifiedAgainst": {
         "branch": "claude/eager-knuth-kbo242",
-        "commit": "77ef3836e9a6b7d5a8ae06a71c513e954e488489",
-        "committedAt": "2026-10-10T11:36:55+00:00"
+        "commit": "6eba7ab98212c4957b69680c5ea057c280770986",
+        "committedAt": "2026-10-10T13:55:25+00:00"
       }
     },
     {
@@ -1230,8 +1230,8 @@
       "outputDigest": "sha256:9b17d3562bfed9c5dcb999e05010b4acfe80289694098c581cec01113b5e703d",
       "verifiedAgainst": {
         "branch": "claude/eager-knuth-kbo242",
-        "commit": "ccc89390a8e67ae69e76e9de217ef6543e96c532",
-        "committedAt": "2026-10-10T11:31:14+00:00"
+        "commit": "6eba7ab98212c4957b69680c5ea057c280770986",
+        "committedAt": "2026-10-10T13:55:25+00:00"
       }
     },
     {
@@ -1250,8 +1250,8 @@
       "outputDigest": "sha256:6cfc75f4daa1fb4b92097a4b6ef5f6904c1edeb20db62ca6187abf7461da5b20",
       "verifiedAgainst": {
         "branch": "claude/eager-knuth-kbo242",
-        "commit": "ccc89390a8e67ae69e76e9de217ef6543e96c532",
-        "committedAt": "2026-10-10T11:31:14+00:00"
+        "commit": "6eba7ab98212c4957b69680c5ea057c280770986",
+        "committedAt": "2026-10-10T13:55:25+00:00"
       }
     },
     {
@@ -1270,8 +1270,8 @@
       "outputDigest": "sha256:a148fc8868cf1e59ce9fe25484555aff2c06e611ed559c709c045b9cde19ab0a",
       "verifiedAgainst": {
         "branch": "claude/eager-knuth-kbo242",
-        "commit": "0e1ff4d2c6190001bd0bc840fd49d33ed8a8a63f",
-        "committedAt": "2026-10-10T10:53:02+00:00"
+        "commit": "6eba7ab98212c4957b69680c5ea057c280770986",
+        "committedAt": "2026-10-10T13:55:25+00:00"
       }
     },
     {

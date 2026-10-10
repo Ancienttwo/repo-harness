@@ -309,9 +309,7 @@ Only Human authority may accept or reject a submitted demand. Acceptance freezes
 
 ## Execution boundary invariants
 
-- Controller dispatch must match the acquired Task/revision, Claim/generation, WorkEnvelope, and Engineer Binding/generation before budget reservation or attempt start.
-- Refactor materialization binds every accepted Recommendation payload's baseline, assessment, proposal/author, scale, nodes and major-change reasons to the Program. Later stages consume the immutable materialized Program digest. Full scan provenance (provider stage and scale-reason codes absent from recommendation readback) remains an audit gap, not execution authority.
-- Execution bindings consume verifier-persisted receipts and the exact verified PR head. Post-merge evidence measures one exact final-main head; each recorded merge must be its ancestor. Board identity includes that measured head.
+- repo-harness dispatches no controller work and executes no refactor. The Bot schedules through the repo-harness CLI and Herdr; an accepted refactor suggestion enters the normal plan and pull request flow.
 - Live canonical Sprint carriers share one Task ID namespace, including completed rows in a live Sprint. Archived carriers are excluded. Canonical readers and proposed materialization validate the same invariant before shared Lease/message use or publication.
 
 ## Persistent generic acceptance review

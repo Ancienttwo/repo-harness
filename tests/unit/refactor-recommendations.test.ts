@@ -29,11 +29,12 @@ function module(nodeId: string) {
     tests: { testFileCount: 3 }, uncertainty: { unresolvedImports: 0 },
   };
 }
-function discovery(options: { coverage?: string; ids?: string[]; records?: Array<{ recommendationId: string; status: string }> } = {}): RefactorDiscovery {
+function discovery(options: { coverage?: string; multiplyOwned?: number; ids?: string[]; records?: Array<{ recommendationId: string; status: string }> } = {}): RefactorDiscovery {
   const ids = options.ids ?? ['rec.0'];
   return {
     scan: {
-      snapshot: { codeFacts: { coverage: options.coverage ?? 'complete', truncated: false }, modules: [module('module.a'), module('module.b')] },
+      snapshot: { codeFacts: { coverage: options.coverage ?? 'complete', truncated: false }, repositorySummary: { multiplyOwnedFileCount: options.multiplyOwned ?? 0 },
+        modules: [module('module.a'), module('module.b')] },
       assessment: { observations: ids.map((id) => ({ kind: 'cycle', subjectSelectorId: `selector.${id}`, signalIds: ['signal.cycle'], metrics: { cycleCount: 2, sccSize: 2 } })) },
       proposedRecommendations: ids.map(observation),
     },
@@ -67,11 +68,14 @@ test('suggestions with a recorded user decision are not shown again', () => {
   expect(none.status).toBe('no_action');
 });
 
-test('incomplete code facts ask for an index', () => {
+test('incomplete code facts or ambiguous ownership withhold suggestions', () => {
   const f = fixture();
   const partial = observeRefactorRecommendations(f.repo, { env: f.env, discover: () => discovery({ coverage: 'partial' }) });
   expect(partial).toMatchObject({ status: 'proof_required', candidates: [] });
   expect(partial.message).toContain('codegraph init');
+  const ambiguous = observeRefactorRecommendations(f.repo, { env: f.env, discover: () => discovery({ multiplyOwned: 75 }) });
+  expect(ambiguous).toMatchObject({ status: 'proof_required', candidates: [] });
+  expect(ambiguous.message).toContain('75 files have more than one owning capability');
 });
 
 test('an unavailable provider or a missing model reports unavailable without a scan', () => {

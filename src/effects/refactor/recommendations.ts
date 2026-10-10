@@ -99,9 +99,14 @@ export function observeRefactorRecommendations(repoRoot: string, options: Refact
     const root = realpathSync(repoRoot);
     if (!existsSync(join(root, '.archcontext/manifest.yaml'))) return result('unavailable', 'repository architecture model is not initialized');
     const discovery = (options.discover ?? discoverRefactorRecommendations)(root, { env: options.env });
-    const facts = discovery.scan.snapshot.codeFacts;
+    const { codeFacts: facts, repositorySummary } = discovery.scan.snapshot;
     if (facts.coverage !== 'complete' || facts.truncated) {
       return result('proof_required', 'code facts are incomplete; run `codegraph init` and scan again');
+    }
+    // Module statistics double-count a file that several capabilities own, so
+    // suggestions wait for unambiguous ownership (tasks/todos.md, recommendation proof).
+    if (repositorySummary.multiplyOwnedFileCount > 0) {
+      return result('proof_required', `${repositorySummary.multiplyOwnedFileCount} files have more than one owning capability; resolve model ownership and scan again`);
     }
     const candidates = refactorCandidates(discovery);
     return { ...result(candidates.length ? 'recommended' : 'no_action'), candidates };

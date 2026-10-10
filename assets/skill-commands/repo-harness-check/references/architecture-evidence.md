@@ -34,7 +34,7 @@ and affected module statistics.
 | --- | --- |
 | `recommended` | Show the candidates and their evidence to the user, or schedule a bounded refactor task in the normal plan and pull request flow. |
 | `no_action` | Schedule nothing. |
-| `proof_required` | Code facts are incomplete. Run `codegraph init` before you use this evidence. |
+| `proof_required` | Code facts are incomplete or file ownership is ambiguous. The message names which. Run `codegraph init`, or schedule a model ownership fix, before you use this evidence. |
 | `unavailable` | No model or no provider. Schedule nothing. |
 
 Record only a decision that the user made:
