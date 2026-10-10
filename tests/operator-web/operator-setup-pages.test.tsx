@@ -40,7 +40,6 @@ function props(setup: SetupSnapshotV1 | null, overrides: Partial<OperatorAppProp
     initialDevActivity: activity, fetchDevActivity: async () => activity,
     initialRuntimeOverlay: unavailableRuntimeOverlay(), readRuntimeStatus: async () => unavailableRuntimeOverlay(),
     readNotifyStatus: () => new Promise(() => {}), readPipelineBoard: () => new Promise(() => {}),
-    fetchRepositoryObservation: () => new Promise(() => {}),
     ...(setup ? { initialSetup: setup, readSetup: async () => setup } : {}),
     ...overrides,
   };
