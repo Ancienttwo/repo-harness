@@ -67,3 +67,11 @@ It does not pass main-only merge readiness. After #608 lands on main, retarget
 and verify the new exact base and candidate. #612 remains a separate main PR.
 Local native and HTTP commands remain blocked. Use the hosted affected lane
 and verify that tests/cli/pm.test.ts and its real HTTP case run without a skip.
+
+The combined macOS candidate then ran all native cases and found one Bash
+start failure. The empty freshness_args array exits under Bash 3.2 nounset
+before checkout creation. The unchanged main comparison already reproduced
+this error in the worktree tests. Use the existing safe optional-array
+expansion idiom. Keep every existing test assertion. The owning worktree
+test file passed 25 tests and 237 assertions locally after the one-line fix.
+Hosted native recovery and PM HTTP must still run on the final candidate.
