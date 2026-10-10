@@ -963,6 +963,10 @@ let buffer=''; process.stdin.on('data',chunk=>{
     writeFileSync(join(fixture, 'context.md'), 'owned observer context');
     const observerEnv = { ...env, REPO_HARNESS_PIPELINES_AUTHORITY_HOST: hostname(), REPO_HARNESS_PIPELINES_DB: join(fixture, '.ai/harness/pipeline/observer.db') };
     const key = { source_host: hostname(), repository_id: binding.repository_id, task: spec.task };
+    // Capture the exact existing fixture subject. Never move it or relax the store gate.
+    const fs = await import('node:fs');
+    console.error(JSON.stringify({ fixture: 'pipeline-filesystem', root: fixture,
+      platform: process.platform, bun: Bun.version, type: fs.statfsSync(fixture).type, dev: fs.statSync(fixture).dev }));
     const enrolled = new PipelineStore({ env: observerEnv });
     try {
       newPipeline(enrolled, { ...key, adopt_task: spec.task, root: fixture });

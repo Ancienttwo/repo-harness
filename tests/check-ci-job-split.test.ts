@@ -208,13 +208,20 @@ describe('single affected verification and daily fallback', () => {
       ref: '${{ github.event.pull_request.head.sha }}', 'fetch-depth': 0, 'persist-credentials': false,
     });
     expect(job.env.EXPECTED_SHA).toBe('${{ github.event.pull_request.head.sha }}');
-    expect(job.env.REPO_HARNESS_DIFF_BASE).toBe('${{ github.event.pull_request.base.sha }}');
-    expect(job.env.REPO_HARNESS_DIFF_MODE).toBe('direct');
+    // Functional fixtures own their own Git refs. Governance refs must not leak.
+    expect(job.env.REPO_HARNESS_DIFF_BASE).toBeUndefined();
+    expect(job.env.REPO_HARNESS_DIFF_MODE).toBeUndefined();
+    const governance = job.steps.find((step: any) => step.name === 'Run candidate governance');
+    expect(governance.if).toBe("matrix.lane == 'governance'");
+    expect(governance.env).toEqual({ REPO_HARNESS_DIFF_BASE: '${{ github.event.pull_request.base.sha }}', REPO_HARNESS_DIFF_MODE: 'direct' });
+    expect(governance.run).toBe('bash scripts/check-ci.sh governance');
     expect(job.env.REPO_HARNESS_TEST_EXPENSIVE).toBe('1');
     expect(job.steps.find((step: any) => step.name === 'Record the immutable candidate').run)
       .toContain('test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"');
-    expect(job.steps.find((step: any) => step.name === 'Run the existing acceptance lane').run)
-      .toBe('bash scripts/check-ci.sh "$ACCEPTANCE_LANE"');
+    const functional = job.steps.find((step: any) => step.name === 'Run full functional acceptance');
+    expect(functional.if).toBe("matrix.lane == 'functional'");
+    expect(functional.env).toBeUndefined();
+    expect(functional.run).toBe('bash scripts/check-ci.sh functional');
     for (const lane of ['governance', 'test', 'mcp-path-matrix']) {
       expect(workflow.jobs[lane].if).toBe("needs.selection.outputs.mode == 'daily'");
     }

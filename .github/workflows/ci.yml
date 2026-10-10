@@ -72,6 +72,27 @@ jobs:
       - name: Install pinned Herdr runtime
         if: matrix.os == 'macos-latest'
         uses: ./.github/actions/install-pinned-herdr
+      - name: Record native pipeline filesystem
+        if: matrix.os == 'macos-latest'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/pipeline-fs-probe.c" <<'C'
+          #include <stdio.h>
+          #include <sys/mount.h>
+          int main(int argc, char **argv) {
+            for (int i = 1; i < argc; i++) {
+              struct statfs value;
+              if (statfs(argv[i], &value)) { perror("statfs"); return 1; }
+              printf("filesystem path=%s type=%u name=%s local=%d flags=%u\n", argv[i], value.f_type, value.f_fstypename, !!(value.f_flags & MNT_LOCAL), value.f_flags);
+            }
+            return 0;
+          }
+          C
+          clang "$RUNNER_TEMP/pipeline-fs-probe.c" -o "$RUNNER_TEMP/pipeline-fs-probe"
+          "$RUNNER_TEMP/pipeline-fs-probe" /tmp /private/tmp "$GITHUB_WORKSPACE"
+          node -e 'const fs=require("node:fs");for(const path of ["/tmp",process.cwd()]) console.log(JSON.stringify({runtime:"node",path,type:fs.statfsSync(path).type,dev:fs.statSync(path).dev}))'
+          bun -e 'const fs=require("node:fs");for(const path of ["/tmp",process.cwd()]) console.log(JSON.stringify({runtime:"bun",path,type:fs.statfsSync(path).type,dev:fs.statSync(path).dev}))'
       - name: Run native OAR acceptance tests
         if: matrix.os == 'macos-latest'
         shell: bash

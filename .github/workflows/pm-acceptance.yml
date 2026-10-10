@@ -36,8 +36,6 @@ jobs:
     env:
       EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
       BASE_SHA: ${{ github.event.pull_request.base.sha }}
-      REPO_HARNESS_DIFF_BASE: ${{ github.event.pull_request.base.sha }}
-      REPO_HARNESS_DIFF_MODE: direct
       REPO_HARNESS_TEST_EXPENSIVE: '1'
       BUN_TEST_MAX_CONCURRENCY: '1'
       BUN_TEST_TIMEOUT_MS: '60000'
@@ -68,7 +66,12 @@ jobs:
           git config --global user.email '41898282+github-actions[bot]@users.noreply.github.com'
       - name: Install pinned Herdr runtime
         uses: ./.github/actions/install-pinned-herdr
-      - name: Run the existing acceptance lane
+      - name: Run candidate governance
+        if: matrix.lane == 'governance'
         env:
-          ACCEPTANCE_LANE: ${{ matrix.lane }}
-        run: bash scripts/check-ci.sh "$ACCEPTANCE_LANE"
+          REPO_HARNESS_DIFF_BASE: ${{ github.event.pull_request.base.sha }}
+          REPO_HARNESS_DIFF_MODE: direct
+        run: bash scripts/check-ci.sh governance
+      - name: Run full functional acceptance
+        if: matrix.lane == 'functional'
+        run: bash scripts/check-ci.sh functional
