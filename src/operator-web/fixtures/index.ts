@@ -18,7 +18,9 @@ import {
   taskActivityFixture,
   taskContextFixture,
 } from '../fixture';
+import { decodeSetupSnapshot } from '../../core/setup/decode';
 import { busyDevActivity, busyRuntimeOverlay, degradedDevActivity, emptyDevActivity, HARNESS_ID } from './dev-activity';
+import { degradedSetup, loadingSetup, readySetup } from './setup';
 
 export const FIXTURE_NAMES = ['busy', 'empty', 'degraded'] as const;
 export type FixtureName = typeof FIXTURE_NAMES[number];
@@ -74,6 +76,8 @@ export function fixtureProps(name: string): OperatorAppProps {
   const snapshot = fleet(fixture === 'busy' ? stableSnapshot : fixture === 'empty' ? emptySnapshot : degradedSnapshot);
   const board = fixture === 'degraded' ? unavailableBoard() : pipeline(now);
   const notifyStatus = notify(now, fixture !== 'degraded');
+  // busy: a ready setup check; empty: the first run has not finished; degraded: a timed-out run over drifted data.
+  const setup = decodeSetupSnapshot(fixture === 'busy' ? readySetup(now) : fixture === 'empty' ? loadingSetup() : degradedSetup(now));
   return {
     fetchDevActivity: () => Promise.resolve(activity),
     initialDevActivity: activity,
@@ -91,5 +95,7 @@ export function fixtureProps(name: string): OperatorAppProps {
     initialNotifyStatus: notifyStatus,
     readPipelineBoard: () => Promise.resolve(board),
     initialPipelineBoard: board,
+    readSetup: () => Promise.resolve(setup),
+    initialSetup: setup,
   };
 }

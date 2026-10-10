@@ -16,6 +16,7 @@ import {
   OPERATOR_ARCHITECTURE_REVIEW_PROMPT_ROUTE,
   OPERATOR_COLLABORATION_SNAPSHOT_ROUTE,
   OPERATOR_DEV_ACTIVITY_PATH,
+  OPERATOR_SETUP_PATH,
   OPERATOR_FLEET_SNAPSHOT_PATH,
   OPERATOR_REPOSITORY_SNAPSHOT_ROUTE,
   OPERATOR_HEALTH_PATH,
@@ -88,6 +89,7 @@ describe('operator structural write boundary', () => {
       'pipelines',
       'notify_status',
       'dev_activity',
+      'setup',
       'architecture_modules',
       'architecture_module',
       'architecture_review_prompt',
@@ -105,6 +107,8 @@ describe('operator structural write boundary', () => {
     expect(patterns.get('notify_status')).toBe(OPERATOR_NOTIFY_STATUS_PATH);
     expect(patterns.get('dev_activity')).toBe(OPERATOR_DEV_ACTIVITY_PATH);
     expect(OPERATOR_ROUTES.find(route => route.id === 'dev_activity')).toEqual({ id: 'dev_activity', method: 'GET', pattern: '/api/v1/dev-activity', write: false });
+    expect(patterns.get('setup')).toBe(OPERATOR_SETUP_PATH);
+    expect(OPERATOR_ROUTES.find(route => route.id === 'setup')).toEqual({ id: 'setup', method: 'GET', pattern: '/api/v1/setup', write: false });
     expect(patterns.get('architecture_modules')).toBe(OPERATOR_ARCHITECTURE_MODULES_ROUTE.source);
     expect(patterns.get('architecture_module')).toBe(OPERATOR_ARCHITECTURE_MODULE_ROUTE.source);
     expect(patterns.get('architecture_review_prompt')).toBe(OPERATOR_ARCHITECTURE_REVIEW_PROMPT_ROUTE.source);

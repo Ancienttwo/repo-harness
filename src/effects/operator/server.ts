@@ -2,6 +2,9 @@ import { startRuntimeService } from './runtime-service';
 import { startDevActivityCollector } from '../dev-activity/collector';
 import { decodeDevActivitySnapshot, unavailableDevActivitySnapshot } from '../../core/dev-activity/decode';
 import type { DevActivitySnapshotV1 } from '../../core/dev-activity/types';
+import { startSetupCollector } from '../setup/collector';
+import { decodeSetupSnapshot, unavailableSetupSnapshot } from '../../core/setup/decode';
+import type { SetupSnapshotV1 } from '../../core/setup/types';
 import { decodeRuntimeOverlay, unavailableRuntimeOverlay, type RuntimeOverlay } from '../../core/operator/runtime-status';
 import { ARCHITECTURE_FAILURES, parseArchitectureRequest, decodeArchitectureModuleIndex, decodeArchitectureModuleDetail, decodeArchitectureReviewPrompt, OPERATOR_ARCHITECTURE_MODULES_ROUTE, OPERATOR_ARCHITECTURE_MODULE_ROUTE, OPERATOR_ARCHITECTURE_REVIEW_PROMPT_ROUTE } from '../../core/operator/architecture';
 export { OPERATOR_ARCHITECTURE_MODULES_ROUTE, OPERATOR_ARCHITECTURE_MODULE_ROUTE, OPERATOR_ARCHITECTURE_REVIEW_PROMPT_ROUTE } from '../../core/operator/architecture';
@@ -82,6 +85,7 @@ export const OPERATOR_RUNTIME_STATUS_PATH = '/api/v1/runtime/status' as const;
 export const OPERATOR_PIPELINES_PATH = '/api/v1/pipelines' as const;
 export const OPERATOR_NOTIFY_STATUS_PATH = '/api/v1/notify/status' as const;
 export const OPERATOR_DEV_ACTIVITY_PATH = '/api/v1/dev-activity' as const;
+export const OPERATOR_SETUP_PATH = '/api/v1/setup' as const;
 const DEFAULT_STATIC_ROOT = resolve(
   dirname(fileURLToPath(import.meta.url)),
   '../../../dist/operator-ui',
@@ -116,6 +120,7 @@ export const OPERATOR_ROUTES: readonly OperatorRouteV1[] = Object.freeze([
   Object.freeze({ id: 'pipelines', method: 'GET', pattern: OPERATOR_PIPELINES_PATH, write: false }),
   Object.freeze({ id: 'notify_status', method: 'GET', pattern: OPERATOR_NOTIFY_STATUS_PATH, write: false }),
   Object.freeze({ id: 'dev_activity', method: 'GET', pattern: OPERATOR_DEV_ACTIVITY_PATH, write: false }),
+  Object.freeze({ id: 'setup', method: 'GET', pattern: OPERATOR_SETUP_PATH, write: false }),
   Object.freeze({ id: 'architecture_modules', method: 'GET', pattern: OPERATOR_ARCHITECTURE_MODULES_ROUTE.source, write: false }),
   Object.freeze({ id: 'architecture_module', method: 'GET', pattern: OPERATOR_ARCHITECTURE_MODULE_ROUTE.source, write: false }),
   Object.freeze({ id: 'architecture_review_prompt', method: 'GET', pattern: OPERATOR_ARCHITECTURE_REVIEW_PROMPT_ROUTE.source, write: false }),
@@ -144,6 +149,10 @@ export interface OperatorServerOptions {
   readonly read_dev_activity?: () => DevActivitySnapshotV1;
   /** Start the in-process Dev Activity collector (operator serve). Ignored when a cache reader is injected. */
   readonly dev_activity_collector?: boolean;
+  /** Setup snapshot cache reader. GET serves only this cache; it never runs setup check. */
+  readonly read_setup?: () => SetupSnapshotV1;
+  /** Start the in-process setup collector (operator serve). Ignored when a cache reader is injected. */
+  readonly setup_collector?: boolean;
   readonly host?: string;
   /** Port 0 is accepted by the effect for ephemeral test servers. */
   readonly port?: number;
@@ -1565,6 +1574,21 @@ export async function startOperatorServer(
       return;
     }
 
+    if (pathname === OPERATOR_SETUP_PATH) {
+      if (url.search !== '') {
+        sendRefusal(request, response, 400, errorBody('invalid_request', 'Setup accepts no query selectors.'), headOnly);
+        return;
+      }
+      let setupSnapshot: SetupSnapshotV1;
+      try {
+        setupSnapshot = decodeSetupSnapshot((options.read_setup ?? setup?.read ?? unavailableSetupSnapshot)());
+      } catch {
+        setupSnapshot = unavailableSetupSnapshot('setup_check_invalid');
+      }
+      sendJson(response, 200, setupSnapshot, headOnly);
+      return;
+    }
+
     if (pathname === OPERATOR_NOTIFY_STATUS_PATH) {
       if (url.search !== '') {
         sendRefusal(request, response, 400, errorBody('invalid_request', 'Notify status accepts no query selectors.'), headOnly);
@@ -1700,6 +1724,7 @@ export async function startOperatorServer(
       read_runtime: options.read_runtime_status ?? runtimeService?.read ?? null,
     })
     : null;
+  const setup = options.setup_collector && !options.read_setup ? startSetupCollector({ env: options.env }) : null;
   const server: Server = createServer((request, response) => {
     void handleRequest(request, response).catch((_error) => {
       if (response.headersSent) {
@@ -1715,6 +1740,7 @@ export async function startOperatorServer(
       server.removeListener('listening', onListening);
       runtimeService?.close();
       void devActivity?.close();
+      void setup?.close();
       rejectListen(error);
     };
     const onListening = () => {
@@ -1741,7 +1767,7 @@ export async function startOperatorServer(
     runtimeService?.close();
     fleetClosing = true;
     closeCompletion = Promise.resolve().then(async () => {
-      await devActivity?.close();
+      await Promise.all([devActivity?.close(), setup?.close()]);
       // Close admission and cancel every owner before waiting for any one of
       // them: a retiring Fleet read must not leave other queues launching work.
       for (const observation of [...fleetObservations.values()]) cancelFleetObservation(observation);

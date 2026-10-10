@@ -312,9 +312,9 @@ describe('workspace navigation', () => {
   }
   const link = (workspace: string) => document.querySelector<HTMLAnchorElement>(`.workspace-nav a[data-workspace="${workspace}"]`)!;
 
-  test('names four sections, starts on the Board and keeps the repository page with its three tabs', async () => {
+  test('names seven sections, starts on the Board and keeps the repository page with its three tabs', async () => {
     await mount(app());
-    expect([...document.querySelectorAll('.workspace-nav a')].map(item => item.textContent)).toEqual(['Board', 'Repositories', 'Architecture', 'System']);
+    expect([...document.querySelectorAll('.workspace-nav a')].map(item => item.textContent)).toEqual(['Board', 'Repositories', 'Agents', 'Skills', 'Hooks', 'Architecture', 'System']);
     expect(link('board').getAttribute('aria-current')).toBe('page');
     expect(document.querySelector('main')?.getAttribute('data-workspace')).toBe('board');
     for (const workspace of ['repositories', 'system']) {
