@@ -138,7 +138,7 @@ export function buildMcpCommand(): Command {
     .option('--transport <transport>', 'Transport: stdio|http', 'stdio')
     .option('--host <host>', 'HTTP bind host', '127.0.0.1')
     .option('--port <port>', 'HTTP bind port', '8765')
-    .option('--profile <profile>', 'MCP profile: planner|executor|orchestrator|coding|engineer', 'planner')
+    .option('--profile <profile>', 'MCP profile: planner|executor|orchestrator|coding|engineer|pm', 'planner')
     .option('--auth <mode>', 'HTTP auth mode: oauth|bearer|url-token', 'oauth')
     .option('--enable-reader', 'Force read-only workspace tools in this same MCP connector; registered adopted repos are included automatically')
     .option('--allow-root <path>', 'Additional non-repo local root for workspace reader/discovery tools; may be repeated', collectOption, [])
