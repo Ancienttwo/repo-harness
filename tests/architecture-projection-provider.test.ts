@@ -32,7 +32,6 @@ import {
 } from '../src/effects/architecture/archctx-provider';
 import { trustedNodeCandidates } from '../src/effects/runtime/node-candidates';
 import { architectureProjectionExitCode, buildArchitectureProjectionCommand } from '../src/cli/commands/architecture-projection';
-import { consumeArchitectureRefreshSignals } from '../src/effects/architecture/refresh-consumer';
 import { acceptArchitectureProjectionCandidate, inspectArchitectureProjectionAcceptanceState, recordArchitectureProjectionAcceptanceCandidates } from '../src/effects/architecture/projection-acceptance';
 
 const roots: string[] = [];
@@ -353,89 +352,20 @@ function runner(calls: Array<{ binary: string; args: readonly string[] }>, docs:
   };
 }
 
-function refreshOwnedMutationFixture() {
-  const f = fixture();
-  const initial = request(f.repoRoot);
-  const [candidate] = recordArchitectureProjectionAcceptanceCandidates(f.repoRoot, initial, unresolvedAcceptanceResult(initial));
-  if (!candidate) throw new Error('candidate fixture failed');
-  const failMarker = join(f.root, 'fail-capability-context');
-  writeFileSync(failMarker, '1\n');
-  const stubCli = join(f.root, 'stub-repo-harness-cli.ts');
-  const architectureEvent = join(import.meta.dir, '..', 'scripts', 'architecture-event.ts');
-  writeFileSync(stubCli, `import { spawnSync } from 'node:child_process';
-import { existsSync, rmSync } from 'node:fs';
-const [command, sub] = process.argv.slice(2);
-if (command === 'run' && sub === 'architecture-queue') process.exit(0);
-if (command === 'run' && sub === 'context-contract-sync') {
-  const sync = spawnSync(process.execPath, [${JSON.stringify(architectureEvent)}, 'sync-context-map',
-    '--context-map', '.ai/context/context-map.json', '--block', 'src/core', '--capability-id', 'capability.test.core',
-    '--contract-agents', 'src/core/AGENTS.md', '--contract-claude', 'src/core/CLAUDE.md',
-    '--architecture-domain', 'test', '--architecture-capability', 'core'], { stdio: 'inherit' });
-  process.exit(sync.status ?? 1);
-}
-if (command === 'capability-context') {
-  if (existsSync(${JSON.stringify(failMarker)})) {
-    rmSync(${JSON.stringify(failMarker)});
-    process.stderr.write('capability helper unavailable');
-    process.exit(1);
-  }
-  process.exit(0);
-}
-process.exit(2);
-`);
-  let semanticApplies = 0;
-  let committedResult: ReturnType<typeof committedApplyEnvelope> | null = null;
-  const run: RunArchctxProcess = (_binary, args) => {
-    if (args[0] === 'capabilities') return { status: 0, signal: null, stdout: JSON.stringify(capabilities()), stderr: '' };
-    if (args[0] !== 'projection' || args[1] !== 'run') throw new Error(`unexpected provider command: ${args.join(' ')}`);
-    if (committedResult) {
-      return { status: 1, signal: null, stdout: '', stderr: 'AC_PRECONDITION_FAILED: committed projection receipt requires explicit projection recover' };
-    }
-    const wireRequest = JSON.parse(args[3]!) as ProjectionRequestV1;
-    semanticApplies += 1;
-    mkdirSync(join(f.repoRoot, 'docs', 'architecture'), { recursive: true });
-    writeFileSync(join(f.repoRoot, 'docs', 'architecture', 'index.md'), 'committed projection\n');
-    committedResult = committedApplyEnvelope(wireRequest);
-    return { status: 0, signal: null, stdout: JSON.stringify(committedResult), stderr: '' };
-  };
-  return {
-    repoRoot: f.repoRoot,
-    initial,
-    signalId: candidate.signalId,
-    approval: 'event.user-approval-refresh-owned-mutation',
-    options: {
-      consumerRoot: f.consumerRoot,
-      policy,
-      run,
-      env: { ...process.env, REPO_HARNESS_CLI: stubCli, REPO_HARNESS_BUN: process.execPath },
-      // Default refreshes are observation-only. This case explicitly owns a
-      // real context-map mutation followed by a failing capability refresh.
-      runRefreshActions: () => {
-        const sync = spawnSync(process.execPath, [stubCli, 'run', 'context-contract-sync'], { cwd: f.repoRoot, encoding: 'utf8' });
-        const capability = spawnSync(process.execPath, [stubCli, 'capability-context'], { cwd: f.repoRoot, encoding: 'utf8' });
-        return [
-          { actionKey: 'context-contract-sync:src/core', action: 'context-contract-sync' as const, status: sync.status ?? 1, stdout: sync.stdout, stderr: sync.stderr },
-          { actionKey: 'capability-context-request:src/core', action: 'capability-context-request' as const, status: capability.status ?? 1, stdout: capability.stdout, stderr: capability.stderr },
-        ];
-      },
-    },
-    semanticApplies: () => semanticApplies,
-  };
-}
-
 describe('package-local ArchContext projection provider', () => {
-  test('recovers an accepted apply when refresh fails after the provider commit', () => {
+  test('recovers an accepted apply whose receipt write was lost after the provider commit', () => {
     const f = fixture();
     const initial = request(f.repoRoot);
     const [candidate] = recordArchitectureProjectionAcceptanceCandidates(f.repoRoot, initial, unresolvedAcceptanceResult(initial));
     if (!candidate) throw new Error('candidate fixture failed');
     let semanticApplies = 0;
-    let refreshAttempts = 0;
+    let readbacks = 0;
     let committedResult: ReturnType<typeof committedApplyEnvelope> | null = null;
     let committedRequest: ProjectionRequestV1 | null = null;
     const run: RunArchctxProcess = (_binary, args) => {
       if (args[0] === 'capabilities') return { status: 0, signal: null, stdout: JSON.stringify(capabilities()), stderr: '' };
       if (args[0] === 'projection' && args[1] === 'readback' && committedResult && committedRequest) {
+        readbacks += 1;
         const wireRequest = JSON.parse(args[3]!) as ProjectionRequestV1;
         expect(wireRequest).toEqual(committedRequest);
         return { status: 0, signal: null, stdout: JSON.stringify(committedApplyReadback(wireRequest, committedResult.data)), stderr: '' };
@@ -454,45 +384,21 @@ describe('package-local ArchContext projection provider', () => {
       return { status: 0, signal: null, stdout: JSON.stringify(committedResult), stderr: '' };
     };
     const approval = 'event.user-approval-interrupted-acceptance';
-    const options = {
-      consumerRoot: f.consumerRoot,
-      policy,
-      run,
-      runRefreshActions: () => {
-        refreshAttempts += 1;
-        return [{ actionKey: 'architecture-queue:src/core/a.ts', action: 'architecture-queue' as const,
-          status: refreshAttempts === 1 ? 1 : 0, stdout: '', stderr: refreshAttempts === 1 ? 'helper unavailable' : '' }];
-      },
-    };
-    expect(() => acceptArchitectureProjectionCandidate(f.repoRoot, candidate.signalId, approval, options))
-      .toThrow('architecture refresh architecture-queue failed');
-    expect(semanticApplies).toBe(1);
-    expect(existsSync(join(f.repoRoot, '.ai/harness/architecture-projection/acceptance-receipts', `${candidate.signalId.slice(7)}.json`))).toBe(false);
+    const options = { consumerRoot: f.consumerRoot, policy, run };
+    const receiptPath = join(f.repoRoot, '.ai/harness/architecture-projection/acceptance-receipts', `${candidate.signalId.slice(7)}.json`);
+    const first = acceptArchitectureProjectionCandidate(f.repoRoot, candidate.signalId, approval, options);
+    // A crash between the persisted pending result and the receipt write leaves only the pending journal.
+    rmSync(receiptPath);
     expect(inspectArchitectureProjectionAcceptanceState(f.repoRoot).unresolvedCandidates).toBe(1);
 
     const receipt = acceptArchitectureProjectionCandidate(f.repoRoot, candidate.signalId, approval, options);
+    expect(receipt).toEqual(first);
     expect(receipt.result.applyReceipt).toEqual(committedResult!.data.applyReceipt);
-    expect(receipt.result.refreshSignals).toEqual(committedResult!.data.refreshSignals);
-    expect(receipt.refreshReceiptDigests).toHaveLength(1);
     expect(semanticApplies).toBe(1);
-    expect(refreshAttempts).toBe(2);
+    expect(readbacks).toBe(1);
     expect(inspectArchitectureProjectionAcceptanceState(f.repoRoot).unresolvedCandidates).toBe(0);
     expect(() => acceptArchitectureProjectionCandidate(f.repoRoot, candidate.signalId, 'event.other-approval', options))
       .toThrow('different approval reference');
-  });
-
-  test('an explicitly requested refresh mutation after a committed apply fails closed on stale retry', () => {
-    const m = refreshOwnedMutationFixture();
-    expect(() => acceptArchitectureProjectionCandidate(m.repoRoot, m.signalId, m.approval, m.options))
-      .toThrow('architecture refresh capability-context-request failed');
-    expect(existsSync(join(m.repoRoot, '.ai', 'context', 'context-map.json'))).toBe(true);
-    expect(captureArchitectureProjectionSnapshot(m.repoRoot).worktreeDigest).not.toBe(m.initial.expected.worktreeDigest);
-
-    expect(() => acceptArchitectureProjectionCandidate(m.repoRoot, m.signalId, m.approval, m.options))
-      .toThrow(`architecture acceptance refresh signal is stale: ${m.signalId}`);
-    expect(m.semanticApplies()).toBe(1);
-    expect(existsSync(join(m.repoRoot, '.ai/harness/architecture-projection/acceptance-receipts', `${m.signalId.slice(7)}.json`))).toBe(false);
-    expect(inspectArchitectureProjectionAcceptanceState(m.repoRoot)).toMatchObject({ receipts: 0, unresolvedCandidates: 1 });
   });
 
   test('explicit readback closes a legacy orphan after provider commit but before its response', () => {
@@ -522,10 +428,7 @@ describe('package-local ArchContext projection provider', () => {
       return { status: 1, signal: null, stdout: '', stderr: 'provider response lost after committed apply' };
     };
     const approval = 'event.user-approval-legacy-orphan';
-    const options = { consumerRoot: f.consumerRoot, policy, run,
-      runRefreshActions: () => [{ actionKey: 'architecture-queue:src/core/a.ts', action: 'architecture-queue' as const,
-        status: 0, stdout: '', stderr: '' }],
-    };
+    const options = { consumerRoot: f.consumerRoot, policy, run };
     expect(() => acceptArchitectureProjectionCandidate(f.repoRoot, candidate.signalId, approval, options))
       .toThrow('provider response lost after committed apply');
     const pendingPath = join(f.repoRoot, '.ai/harness/architecture-projection/acceptance-pending', `${candidate.signalId.slice(7)}.json`);
@@ -533,7 +436,6 @@ describe('package-local ArchContext projection provider', () => {
     rmSync(pendingPath);
     const receipt = acceptArchitectureProjectionCandidate(f.repoRoot, candidate.signalId, approval, { ...options, recover: true });
     expect(receipt.result).toEqual(committedResult!.data);
-    expect(receipt.refreshReceiptDigests).toHaveLength(1);
     expect(semanticApplies).toBe(1);
     expect(readbacks).toBe(1);
     const repeated = acceptArchitectureProjectionCandidate(f.repoRoot, candidate.signalId, approval, { ...options, recover: true });
@@ -563,9 +465,7 @@ describe('package-local ArchContext projection provider', () => {
       writeFileSync(join(f.repoRoot, 'docs', 'architecture', 'index.md'), 'committed projection\n');
       return { status: 1, signal: null, stdout: '', stderr: 'provider response lost after committed apply' };
     };
-    const options = { consumerRoot: f.consumerRoot, policy, run,
-      runRefreshActions: () => { throw new Error('must not refresh'); },
-    };
+    const options = { consumerRoot: f.consumerRoot, policy, run };
     const approval = 'event.user-approval-committed-then-adopt';
     expect(() => acceptArchitectureProjectionCandidate(f.repoRoot, candidate.signalId, approval, options))
       .toThrow('provider response lost after committed apply');
@@ -596,7 +496,6 @@ describe('package-local ArchContext projection provider', () => {
       };
       const accept = () => acceptArchitectureProjectionCandidate(f.repoRoot, candidate.signalId, 'event.user-approval-adoption', {
         consumerRoot: f.consumerRoot, policy, run, adoptionPlanId,
-        runRefreshActions: () => [{ actionKey: 'architecture-queue:src/core/a.ts', action: 'architecture-queue' as const, status: 0, stdout: '', stderr: '' }],
       });
       return { accept, modes, repoRoot: f.repoRoot };
     };
@@ -648,16 +547,12 @@ describe('package-local ArchContext projection provider', () => {
       writeFileSync(join(f.repoRoot, 'docs', 'architecture', 'index.md'), 'committed projection\n');
       return { status: 0, signal: null, stdout: JSON.stringify(committedApplyEnvelope(wireRequest)), stderr: '' };
     };
-    const options = { consumerRoot: f.consumerRoot, policy, run,
-      runRefreshActions: () => [{ actionKey: 'architecture-queue:src/core/a.ts', action: 'architecture-queue' as const,
-        status: 0, stdout: '', stderr: '' }],
-    };
+    const options = { consumerRoot: f.consumerRoot, policy, run };
     const approval = 'event.user-approval-precommit-retry';
     expect(() => acceptArchitectureProjectionCandidate(f.repoRoot, candidate.signalId, approval, options))
       .toThrow('precommit provider unavailable');
     const receipt = acceptArchitectureProjectionCandidate(f.repoRoot, candidate.signalId, approval, options);
     expect(receipt.result.status).toBe('applied');
-    expect(receipt.refreshReceiptDigests).toHaveLength(1);
     expect(applyAttempts).toBe(2);
     expect(readbacks).toBe(1);
   });
@@ -678,10 +573,7 @@ describe('package-local ArchContext projection provider', () => {
       writeFileSync(join(f.repoRoot, 'docs', 'architecture', 'index.md'), 'committed projection\n');
       return { status: 0, signal: null, stdout: JSON.stringify(committedApplyEnvelope(wireRequest)), stderr: '' };
     };
-    const options = { consumerRoot: f.consumerRoot, policy, run,
-      runRefreshActions: () => [{ actionKey: 'architecture-queue:src/core/a.ts', action: 'architecture-queue' as const,
-        status: 0, stdout: '', stderr: '' }],
-    };
+    const options = { consumerRoot: f.consumerRoot, policy, run };
     const approval = 'event.user-approval-fresh-absence';
     expect(() => acceptArchitectureProjectionCandidate(f.repoRoot, candidate.signalId, approval, { ...options, recover: true }))
       .toThrow('explicit recovery found no committed provider apply');
@@ -1269,7 +1161,7 @@ describe('package-local ArchContext projection provider', () => {
     expect(() => runArchitectureProjection(projectionRequest, f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: runner([], legacy) })).toThrow('projection result schemaVersion mismatch');
   });
 
-  test('distinguishes pre-write failure, committed reconciliation, refresh delivery, and consumed noop', () => {
+  test('distinguishes pre-write failure, committed reconciliation, and consumed noop', () => {
     const f = fixture();
     const acceptedChange: NonNullable<ProjectionRequestV1['acceptedChange']> = {
       changeSetId: 'changeset.user-accepted', eventId: 'event.user-accepted',
@@ -1324,11 +1216,6 @@ describe('package-local ArchContext projection provider', () => {
     mismatchedSignal.receiptDigest = projectionResultReceiptDigest(mismatchedPayload);
     mismatchedSignal.refreshSignals[0]!.projectionReceiptDigest = mismatchedSignal.receiptDigest;
     expect(projectionResultIssues(mismatchedSignal)).toContain('refreshSignals[0].acceptedChange must match applyReceipt.acceptedChange');
-    let refreshCalls = 0;
-    const refreshRun = () => { refreshCalls += 1; return []; };
-    consumeArchitectureRefreshSignals(f.repoRoot, second.refreshSignals, initial.changedPaths, { run: refreshRun });
-    consumeArchitectureRefreshSignals(f.repoRoot, second.refreshSignals, initial.changedPaths, { run: refreshRun });
-    expect(refreshCalls).toBe(1);
 
     const third = runArchitectureProjection({ ...retry, requestId: 'request.apply.noop' }, f.repoRoot, { consumerRoot: f.consumerRoot, policy, run, onDiagnostic: (value) => diagnostics.push(value) });
     expect(third.status).toBe('noop');

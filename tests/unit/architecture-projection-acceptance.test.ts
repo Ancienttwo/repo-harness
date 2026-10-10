@@ -19,21 +19,13 @@ import {
   recordArchitectureProjectionAcceptanceCandidates,
   retireStaleArchitectureProjectionCandidate,
 } from '../../src/effects/architecture/projection-acceptance';
-import {
-  architectureProjectionJobId,
-  architectureProjectionQueueState,
-  architectureProjectionJobState,
-  claimNextArchitectureProjectionJob,
-  enqueueArchitectureProjectionJob,
-  failArchitectureProjectionJob,
-} from '../../src/effects/architecture/projection-jobs';
 
 const roots: string[] = [];
 const digest = (token: string) => `sha256:${token.repeat(64).slice(0, 64)}` as const;
 
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 
-function fixture(jobId?: string, reasonCodes = ['node-added', 'ownership-changed']) {
+function fixture(reasonCodes = ['node-added', 'ownership-changed']) {
   const repoRoot = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-architecture-acceptance-')));
   roots.push(repoRoot);
   mkdirSync(join(repoRoot, '.ai', 'harness'), { recursive: true });
@@ -52,7 +44,7 @@ function fixture(jobId?: string, reasonCodes = ['node-added', 'ownership-changed
   };
   const request: ProjectionRequestV1 = {
     schemaVersion: PROJECTION_REQUEST_VERSION,
-    requestId: jobId ? `repo-harness.projection.${jobId}` : 'repo-harness.apply.candidate',
+    requestId: 'repo-harness.apply.candidate',
     profile: 'repo-harness/v1',
     mode: 'apply',
     targets: ['agent-context', 'architecture-docs'],
@@ -60,7 +52,7 @@ function fixture(jobId?: string, reasonCodes = ['node-added', 'ownership-changed
     expected,
   };
   const result = unresolvedResult(request, reasonCodes);
-  const [candidate] = recordArchitectureProjectionAcceptanceCandidates(repoRoot, request, result, { jobId });
+  const [candidate] = recordArchitectureProjectionAcceptanceCandidates(repoRoot, request, result);
   if (!candidate) throw new Error('fixture did not record a candidate');
   return { repoRoot, expected, request, result, candidate };
 }
@@ -457,33 +449,8 @@ describe('architecture projection acceptance', () => {
     expect(reapplies).toBe(0);
   });
 
-  test('projects accepted evidence into the durable job receipt and clears its dead letter', () => {
-    const changedPaths = ['src/core/architecture.ts'];
-    const jobId = architectureProjectionJobId(['event-1'], changedPaths);
-    const f = fixture(jobId);
-    enqueueArchitectureProjectionJob(f.repoRoot, ['event-1'], ['source-1'], changedPaths, new Date('2026-08-30T00:00:00.000Z'));
-    const claimed = claimNextArchitectureProjectionJob(f.repoRoot, 120_000, new Date('2026-08-30T00:00:01.000Z'));
-    if (!claimed) throw new Error('fixture did not claim the durable projection job');
-    failArchitectureProjectionJob(f.repoRoot, claimed, { kind: 'permanent', message: 'unresolved major change' }, new Date('2026-08-30T00:00:02.000Z'));
-    expect(architectureProjectionJobState(f.repoRoot, jobId)).toBe('dead-letter');
-    const deadLetterPath = join(f.repoRoot, '.ai/harness/architecture-projection/dead-letter', `${jobId}.json`);
-    const deadLetterBytes = readFileSync(deadLetterPath, 'utf8');
-
-    const options = {
-      captureSnapshot: () => f.expected,
-      runProjection: (request: ProjectionRequestV1) => acceptedResult(request),
-      now: new Date('2026-08-30T00:00:03.000Z'),
-    };
-    acceptArchitectureProjectionCandidate(f.repoRoot, f.candidate.signalId, 'event.review-durable-gate', options);
-
-    expect(architectureProjectionJobState(f.repoRoot, jobId)).toBe('receipt');
-    writeFileSync(deadLetterPath, deadLetterBytes);
-    acceptArchitectureProjectionCandidate(f.repoRoot, f.candidate.signalId, 'event.review-durable-gate', options);
-    expect(architectureProjectionQueueState(f.repoRoot).deadLetters).toBe(0);
-  });
-
   test('reconciles an exact proof-only candidate through a check-mode noop without acceptance', () => {
-    const f = fixture(undefined, ['verified-flow-proof-changed']);
+    const f = fixture(['verified-flow-proof-changed']);
     const observed: ProjectionRequestV1[] = [];
     const receipt = reconcileArchitectureProjectionCandidate(f.repoRoot, f.candidate.signalId, {
       captureSnapshot: () => f.expected,
@@ -521,7 +488,7 @@ describe('architecture projection acceptance', () => {
   });
 
   test('refuses unavailable current CodeGraph proof', () => {
-    const f = fixture(undefined, ['verified-flow-proof-changed']);
+    const f = fixture(['verified-flow-proof-changed']);
     expect(() => reconcileArchitectureProjectionCandidate(f.repoRoot, f.candidate.signalId, {
       captureSnapshot: () => f.expected,
       runProjection: (request) => noopProofResult(request, null),
@@ -530,7 +497,7 @@ describe('architecture projection acceptance', () => {
   });
 
   test('returns byte-identical reconciliation evidence without a second provider call', () => {
-    const f = fixture(undefined, ['verified-flow-proof-changed']);
+    const f = fixture(['verified-flow-proof-changed']);
     let providerCalls = 0;
     const options = {
       captureSnapshot: () => f.expected,
@@ -547,7 +514,7 @@ describe('architecture projection acceptance', () => {
   });
 
   test('refuses acceptance after reconciliation before invoking the provider', () => {
-    const f = fixture(undefined, ['verified-flow-proof-changed']);
+    const f = fixture(['verified-flow-proof-changed']);
     reconcileArchitectureProjectionCandidate(f.repoRoot, f.candidate.signalId, {
       captureSnapshot: () => f.expected,
       runProjection: (request) => noopProofResult(request),
@@ -566,58 +533,8 @@ describe('architecture projection acceptance', () => {
     expect(inspectArchitectureProjectionAcceptanceState(f.repoRoot).unresolvedCandidates).toBe(0);
   });
 
-  test('projects proof reconciliation into a durable terminal job receipt', () => {
-    const changedPaths = ['src/core/architecture.ts'];
-    const jobId = architectureProjectionJobId(['event-proof'], changedPaths);
-    const f = fixture(jobId, ['verified-flow-proof-changed']);
-    enqueueArchitectureProjectionJob(f.repoRoot, ['event-proof'], ['source-proof'], changedPaths, new Date('2026-08-30T00:00:00.000Z'));
-    const claimed = claimNextArchitectureProjectionJob(f.repoRoot, 120_000, new Date('2026-08-30T00:00:01.000Z'));
-    if (!claimed) throw new Error('fixture did not claim a proof-only projection job');
-    failArchitectureProjectionJob(f.repoRoot, claimed, { kind: 'permanent', message: 'proof unavailable' }, new Date('2026-08-30T00:00:02.000Z'));
-    expect(architectureProjectionJobState(f.repoRoot, jobId)).toBe('dead-letter');
-    const deadLetterPath = join(f.repoRoot, '.ai/harness/architecture-projection/dead-letter', `${jobId}.json`);
-    const deadLetterBytes = readFileSync(deadLetterPath, 'utf8');
-
-    const options = {
-      captureSnapshot: () => f.expected,
-      runProjection: (request: ProjectionRequestV1) => noopProofResult(request),
-      now: new Date('2026-08-30T00:00:03.000Z'),
-    };
-    reconcileArchitectureProjectionCandidate(f.repoRoot, f.candidate.signalId, options);
-
-    expect(architectureProjectionJobState(f.repoRoot, jobId)).toBe('receipt');
-    expect(architectureProjectionQueueState(f.repoRoot).deadLetters).toBe(0);
-    writeFileSync(deadLetterPath, deadLetterBytes);
-    reconcileArchitectureProjectionCandidate(f.repoRoot, f.candidate.signalId, options);
-    expect(architectureProjectionQueueState(f.repoRoot).deadLetters).toBe(0);
-  });
-
-  test('retries terminal job projection from an already durable reconciliation receipt', () => {
-    const changedPaths = ['src/core/architecture.ts'];
-    const jobId = architectureProjectionJobId(['event-proof-retry'], changedPaths);
-    const f = fixture(jobId, ['verified-flow-proof-changed']);
-    let providerCalls = 0;
-    const options = {
-      captureSnapshot: () => f.expected,
-      runProjection: (request: ProjectionRequestV1) => { providerCalls += 1; return noopProofResult(request); },
-      now: new Date('2026-08-30T00:00:03.000Z'),
-    };
-    expect(() => reconcileArchitectureProjectionCandidate(f.repoRoot, f.candidate.signalId, options))
-      .toThrow('reconciliation dead letter is missing');
-    expect(providerCalls).toBe(1);
-
-    enqueueArchitectureProjectionJob(f.repoRoot, ['event-proof-retry'], ['source-proof-retry'], changedPaths, new Date('2026-08-30T00:00:00.000Z'));
-    const claimed = claimNextArchitectureProjectionJob(f.repoRoot, 120_000, new Date('2026-08-30T00:00:01.000Z'));
-    if (!claimed) throw new Error('fixture did not claim a retryable proof-only projection job');
-    failArchitectureProjectionJob(f.repoRoot, claimed, { kind: 'permanent', message: 'proof unavailable' }, new Date('2026-08-30T00:00:02.000Z'));
-
-    reconcileArchitectureProjectionCandidate(f.repoRoot, f.candidate.signalId, options);
-    expect(providerCalls).toBe(1);
-    expect(architectureProjectionJobState(f.repoRoot, jobId)).toBe('receipt');
-  });
-
   test('marks a re-digested reconciliation receipt with another request surface invalid', () => {
-    const f = fixture(undefined, ['verified-flow-proof-changed']);
+    const f = fixture(['verified-flow-proof-changed']);
     reconcileArchitectureProjectionCandidate(f.repoRoot, f.candidate.signalId, {
       captureSnapshot: () => f.expected,
       runProjection: (request) => noopProofResult(request),
@@ -699,7 +616,7 @@ describe('architecture projection acceptance', () => {
       .toThrow('different approval reference');
   });
 
-  test('refuses stale retirement for a current, proof-only, or unterminated job candidate', () => {
+  test('refuses stale retirement for a current or proof-only candidate', () => {
     const current = fixture();
     expect(() => retireStaleArchitectureProjectionCandidate(
       current.repoRoot,
@@ -708,19 +625,11 @@ describe('architecture projection acceptance', () => {
       { captureSnapshot: () => current.expected },
     )).toThrow('candidate head is current');
 
-    const proofOnly = fixture(undefined, ['verified-flow-proof-changed']);
+    const proofOnly = fixture(['verified-flow-proof-changed']);
     expect(() => retireStaleArchitectureProjectionCandidate(
       proofOnly.repoRoot,
       proofOnly.candidate.signalId,
       'event.review-proof-only',
     )).toThrow('use reconciliation for proof-only candidates');
-
-    const jobId = architectureProjectionJobId(['event-stale'], ['src/core/architecture.ts']);
-    const jobBound = fixture(jobId);
-    expect(() => retireStaleArchitectureProjectionCandidate(
-      jobBound.repoRoot,
-      jobBound.candidate.signalId,
-      'event.review-job-not-terminal',
-    )).toThrow('requires a terminal job receipt');
   });
 });

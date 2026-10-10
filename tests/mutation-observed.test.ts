@@ -203,9 +203,7 @@ describe('mutation-observed: dirty-bit derivation', () => {
       const [event] = pendingEvents(cwd);
       expect(event.dirty.context).toBe(true);
       expect(event.dirty.capability).toBe(false);
-      // The architecture changed set is git-derived at Stop
-      // (src/cli/hook/architecture-drift.ts); the journal carries no
-      // architecture datum for any consumer to read.
+      // The journal carries no architecture datum for any consumer to read.
       expect(Object.keys(event.dirty)).not.toContain('architecture');
     } finally {
       rmSync(cwd, { recursive: true, force: true });

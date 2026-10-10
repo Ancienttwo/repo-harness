@@ -8,7 +8,6 @@ import { runStopHandler as runStopHandlerRuntime, type StopProjectionTarget } fr
 import { observeRefactorRecommendations } from '../src/effects/refactor/recommendations';
 import { RUN_SUMMARY_RETENTION_COUNT } from '../src/effects/run-summary-retention';
 import { consumePendingPostEditEvents, readPendingPostEditEvents } from '../src/cli/hook/mutation-observed';
-import { advanceArchitectureDriftCursor, computeArchitectureDriftChangedSet, readArchitectureDriftCursor } from '../src/cli/hook/architecture-drift';
 
 const fixtures: string[] = [];
 
@@ -35,7 +34,7 @@ function git(cwd: string, args: readonly string[]): string {
   return result.stdout.trim();
 }
 
-/** A repository the drift cursor can actually anchor to. */
+/** A committed repository with a real HEAD. */
 function gitFixture(): { cwd: string; head: string } {
   const cwd = realpathSync(fixture());
   git(cwd, ['init', '-b', 'main']);
@@ -583,13 +582,14 @@ describe('Stop observes workflow gaps without permission gates', () => {
     expect(result.stderr).toContain('Non-blocking review');
     expect(existsSync(join(cwd, '.ai/harness/handoff/current.md'))).toBe(true);
   });
-  test('Stop does not start architecture provider, create a drift cursor or enqueue capability work', () => {
+  test('Stop writes no architecture or capability runtime state', () => {
     const { cwd } = gitFixture();
     mkdirSync(join(cwd, 'src'), { recursive: true }); writeFileSync(join(cwd, 'src/change.ts'), 'export const x = 1;');
-    const result = runStopHandler({ collector: collector(cwd, () => canonicalState()), env: {
-      REPO_HARNESS_ARCHITECTURE_PROJECTION_FAILURE_GATE: 'strict',
-    } });
-    expect(result.stdout).toBe(''); expect(readArchitectureDriftCursor(cwd)).toBeNull();
+    const result = runStopHandler({ collector: collector(cwd, () => canonicalState()) });
+    expect(result.stdout).toBe('');
+    expect(existsSync(join(cwd, '.ai/harness/architecture-projection'))).toBe(false);
+    expect(existsSync(join(cwd, '.ai/harness/state/architecture-drift-cursor.json'))).toBe(false);
+    expect(existsSync(join(cwd, '.ai/harness/runs/unplanned-implementation.jsonl'))).toBe(false);
     expect(existsSync(join(cwd, '.ai/harness/capability-context/requests.jsonl'))).toBe(false);
   });
 });

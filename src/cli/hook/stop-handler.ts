@@ -20,8 +20,6 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'pat
 import { execFileSync } from 'child_process';
 import type { EffectiveState } from '../../core/state/types';
 import { consumePendingPostEditEvents } from './mutation-observed';
-import { computeArchitectureDriftChangedSet } from './architecture-drift';
-import { isImplementationSurfacePath } from '../../effects/review/diff-fingerprint';
 import { runMinimalChangeCli } from './minimal-change-cli';
 import { sweepRunSummaries } from '../../effects/run-summary-retention';
 import { loadMinimalChangePolicy, type MinimalChangePolicy } from './minimal-change-policy';
@@ -34,27 +32,6 @@ import {
 } from '../../effects/evidence/recovery-materializer';
 import { STOP_WORK_BUDGET_MS } from '../../core/hook-work-budget';
 import { HookEffectReconciliationRequired } from './handler-contract';
-
-// Ignored runtime evidence, same tree as hook-events.jsonl. Deliberately not a
-// telemetry metric and not a typed journal: this exists to measure a hit rate
-// before deciding whether the advisory should ever block, and adding a metric
-// would repeat the `child_processes` completeness problem already on the ledger.
-const UNPLANNED_IMPLEMENTATION_EVIDENCE = '.ai/harness/runs/unplanned-implementation.jsonl';
-
-function recordUnplannedImplementation(repoRoot: string, now: Date, paths: readonly string[]): void {
-  try {
-    const target = join(repoRoot, UNPLANNED_IMPLEMENTATION_EVIDENCE);
-    mkdirSync(dirname(target), { recursive: true });
-    appendFileSync(target, `${JSON.stringify({
-      observed_at: now.toISOString(),
-      path_count: paths.length,
-      paths,
-    })}\n`, 'utf-8');
-  } catch {
-    // Evidence collection must never change the Stop result; the sibling side
-    // effects above are wrapped the same way.
-  }
-}
 
 export interface StopCollector {
   getRepoRoot(): string;
@@ -533,10 +510,6 @@ export function runStopHandler(opts: StopHandlerInput): StopHandlerResult {
   }
   const minimal = minimalChangeReview(repoRoot, loadMinimalChangePolicy(repoRoot));
   if (minimal.summary) stderr.push(`${minimal.summary}\n`);
-  if (!activePlan) {
-    const paths = computeArchitectureDriftChangedSet(repoRoot).paths.filter(isImplementationSurfacePath);
-    if (paths.length) recordUnplannedImplementation(repoRoot, now, paths);
-  }
   try {
     const recommendation = (dependencies.observeRefactorRecommendations ?? observeRefactorRecommendations)(
       repoRoot, { env, consume: false, deadlineMs, nowMs: wallClockMs });

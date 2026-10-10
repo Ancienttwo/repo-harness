@@ -2,11 +2,7 @@
  * Mutation observed — HRD-05 in-process journal handler for `PostToolUse.edit`.
  *
  * A qualifying edit writes at most one durable journal event carrying dirty
- * bits. Deferred consumers update projections and observe architecture changes.
- * The queue and capability-context calls share one deadline. Removing the
- * no-op middle step leaves its time available to capability context. No delay
- * or reserved budget is added. The deferred
- * consumers (`consumePendingPostEditEvents`, invoked at Stop by
+ * bits. The deferred consumers (`consumePendingPostEditEvents`, invoked at Stop by
  * `runtime.ts`, and `pendingPostEditJournalSection`, surfaced at
  * SessionStart) consume deferred changes; contract verification reads execution
  * evidence without starting contract commands. See
@@ -14,21 +10,15 @@
  * the condition-by-condition dirty-bit derivation table and the falsifier
  * record.
  *
- * The architecture cascade is no longer one of those dirty bits: a journal
- * event only exists for a Claude Edit/Write tool call, which made the cascade
- * blind to shell and apply_patch writes. `architecture-drift.ts` owns that
- * changed set now; this journal owns edit-time trigger payloads only.
- *
  * Host-visible advisory stdout (DocDrift/DeployAsset echoes, and the
  * former first-principles advisory) is ported in-process — those never wrote
  * anything durable, so they stay on the hot path without a second route
  * runtime.
  */
 
-import { execFileSync, spawnSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import { parseVerificationPlanFromContractText } from '../../core/evidence/verification-plan';
 import {
-  existsSync,
   mkdirSync,
   readFileSync,
   readdirSync,
@@ -44,7 +34,6 @@ import { loadMinimalChangePolicy } from './minimal-change-policy';
 import { collectMinimalChangeSignals } from './minimal-change-signals';
 import { canonicalRepoRelativePath, fileExists, readText } from '../../effects/state/collect-state-inputs';
 import { withExclusiveDirectoryLock } from '../../effects/locking/exclusive-directory-lock';
-import { runProcess } from '../../effects/process-runner';
 import type { WorktreeOwnership } from '../../effects/loop/state-input-collector';
 import {
   artifactStemFromPlan,
@@ -595,118 +584,11 @@ export function pendingPostEditJournalSection(repoRoot: string): SessionContextS
 }
 
 // ---------------------------------------------------------------------------
-// Stop-time (deferred) consumption: replays the SAME external commands the
-// retired scripts used, per unique dirty path, then marks each event
-// consumed atomically. Invoked by runtime.ts's Stop.default dispatch.
+// Stop-time (deferred) consumption: runs each dirty consumer once per unique
+// path, then marks each event consumed atomically. Invoked by runtime.ts's
+// Stop.default dispatch.
 // ---------------------------------------------------------------------------
 
-function commandAvailable(cmd: string, env: NodeJS.ProcessEnv): boolean {
-  try {
-    return spawnSync('sh', ['-c', `command -v ${cmd}`], { env, stdio: 'ignore' }).status === 0;
-  } catch {
-    return false;
-  }
-}
-
-/** `repo_harness_runner_available()` port (assets/hooks/post-edit-guard.sh:14-19). */
-function repoHarnessRunnerAvailable(env: NodeJS.ProcessEnv): boolean {
-  const cli = env.REPO_HARNESS_CLI;
-  if (cli && existsSync(cli) && commandAvailable('bun', env)) return true;
-  return commandAvailable('repo-harness', env);
-}
-
-/** `run_repo_harness_helper()` port (assets/hooks/post-edit-guard.sh:21-29). */
-function runRepoHarnessHelper(
-  repoRoot: string,
-  env: NodeJS.ProcessEnv,
-  helper: string,
-  args: readonly string[],
-  timeoutMs: number,
-): { status: number; stdout: string; stderr: string; timedOut: boolean } {
-  const cli = env.REPO_HARNESS_CLI;
-  let command: string;
-  let commandArgs: readonly string[];
-  if (cli && existsSync(cli) && commandAvailable('bun', env)) {
-    command = 'bun';
-    commandArgs = [cli, 'run', helper, ...args];
-  } else {
-    command = 'repo-harness';
-    commandArgs = ['run', helper, ...args];
-  }
-  const result = runProcess(command, commandArgs, { cwd: repoRoot, env, inheritEnv: false, processGroup: true, timeoutMs });
-  return {
-    status: result.status,
-    stdout: result.stdout,
-    stderr: result.stderr,
-    timedOut: result.timedOut,
-  };
-}
-
-/** capability-context's own 3-tier fallback (post-edit-guard.sh:73-93) --
- * NOT `run <helper>` shaped, ported as its own function. */
-function runCapabilityContextRequest(repoRoot: string, env: NodeJS.ProcessEnv, timeoutMs: number): { status: number } {
-  const args = ['capability-context', 'request', '--from-latest-architecture-event'];
-  const cli = env.REPO_HARNESS_CLI;
-  if (cli && existsSync(cli) && commandAvailable('bun', env)) {
-    const result = runProcess('bun', [cli, ...args], { cwd: repoRoot, env, inheritEnv: false, processGroup: true, timeoutMs });
-    return { status: result.status ?? 1 };
-  }
-  if (commandAvailable('repo-harness', env)) {
-    const result = runProcess('repo-harness', args, { cwd: repoRoot, env, inheritEnv: false, processGroup: true, timeoutMs });
-    return { status: result.status ?? 1 };
-  }
-  const localCli = join(repoRoot, 'src/cli/index.ts');
-  if (commandAvailable('bun', env) && existsSync(localCli)) {
-    const result = runProcess('bun', [localCli, ...args], { cwd: repoRoot, env, inheritEnv: false, processGroup: true, timeoutMs });
-    return { status: result.status ?? 1 };
-  }
-  return { status: 1 };
-}
-
-/**
- * `run_architecture_queue_sync()` port (post-edit-guard.sh:49-96), now
- * invoked per path of the Stop-time drift changed set (see
- * `architecture-drift.ts`) instead of per journal event. The
- * capability-context follow-up is gated on
- * architecture-queue's OWN real-time output matching
- * `/^\[ArchitectureDrift\] Request:/m` -- replicated here exactly, against
- * the (still same, unmodified) `architecture-queue.sh record` command's real
- * output, not a second capability-resolver implementation.
- */
-export type ArchitectureCascadeResult =
-  | { readonly ok: true }
-  | { readonly ok: false; readonly error: string };
-
-export function processArchitectureCascade(
-  repoRoot: string,
-  env: NodeJS.ProcessEnv,
-  filePath: string,
-  budget: { readonly deadlineMs: number; readonly nowMs: () => number },
-): ArchitectureCascadeResult {
-  const remaining = () => Math.max(0, budget.deadlineMs - budget.nowMs());
-  const expired = (): ArchitectureCascadeResult => ({ ok: false, error: `legacy architecture cascade deadline exhausted before ${filePath}; drift retained for retry` });
-  if (remaining() <= 0) return expired();
-  if (!repoHarnessRunnerAvailable(env)) {
-    return { ok: false, error: `legacy architecture cascade runner is unavailable for ${filePath}` };
-  }
-  const queueBudget = remaining();
-  if (queueBudget <= 0) return expired();
-  const result = runRepoHarnessHelper(repoRoot, env, 'architecture-queue', ['record', '--file', filePath], queueBudget);
-  if (result.status !== 0) {
-    return { ok: false, error: `legacy architecture cascade failed for ${filePath}: architecture-queue exited ${result.status}` };
-  }
-  if (/^\[ArchitectureDrift\] Request:/m.test(result.stdout)) {
-    const capabilityBudget = remaining();
-    if (capabilityBudget <= 0) return expired();
-    const capabilityContext = runCapabilityContextRequest(repoRoot, env, capabilityBudget);
-    if (capabilityContext.status !== 0) {
-      return { ok: false, error: `legacy architecture cascade failed for ${filePath}: capability-context exited ${capabilityContext.status}` };
-    }
-  }
-  return { ok: true };
-}
-
-/** Evaluate the current plan without starting missing verification commands. */
 /** `minimal_change_hook_entry signals --phase post-edit` port -- calls the
  * SAME `collectMinimalChangeSignals()` function `minimal-change-observer.sh`
  * called (via minimal-change-cli.ts), just deferred to Stop time using the

@@ -19,16 +19,10 @@ import {
 } from '../../core/architecture/projection';
 import { withExclusiveDirectoryLock } from '../locking/exclusive-directory-lock';
 import { captureArchitectureProjectionSnapshot, readArchitectureProjectionApply, runArchitectureProjection, type ArchctxProviderOptions } from './archctx-provider';
-import {
-  ARCHITECTURE_PROJECTION_RUNTIME_ROOT,
-  architectureProjectionJobState,
-  completeArchitectureProjectionDeadLetterAcceptance,
-  completeArchitectureProjectionDeadLetterReconciliation,
-} from './projection-jobs';
-import { consumeArchitectureRefreshSignals, type RunArchitectureRefreshActions } from './refresh-consumer';
 
-const CANDIDATE_VERSION = 'repo-harness.architecture-projection-acceptance-candidate/v1' as const;
-const RECEIPT_VERSION = 'repo-harness.architecture-projection-acceptance-receipt/v1' as const;
+const ARCHITECTURE_PROJECTION_RUNTIME_ROOT = '.ai/harness/architecture-projection';
+const CANDIDATE_VERSION = 'repo-harness.architecture-projection-acceptance-candidate/v2' as const;
+const RECEIPT_VERSION = 'repo-harness.architecture-projection-acceptance-receipt/v2' as const;
 const PENDING_VERSION = 'repo-harness.architecture-projection-acceptance-pending/v1' as const;
 const RECONCILIATION_RECEIPT_VERSION = 'repo-harness.architecture-projection-reconciliation-receipt/v1' as const;
 const STALE_RETIREMENT_RECEIPT_VERSION = 'repo-harness.architecture-projection-stale-retirement-receipt/v1' as const;
@@ -45,7 +39,6 @@ const APPROVAL_REFERENCE = /^[a-zA-Z0-9_.:-]+$/;
 export interface ArchitectureProjectionAcceptanceCandidateV1 {
   readonly schemaVersion: typeof CANDIDATE_VERSION;
   readonly signalId: Sha256Digest;
-  readonly jobId: string | null;
   readonly request: ProjectionRequestV1;
   readonly result: ProjectionResultV1;
   readonly candidateDigest: Sha256Digest;
@@ -59,7 +52,6 @@ export interface ArchitectureProjectionAcceptanceReceiptV1 {
   readonly candidateDigest: Sha256Digest;
   readonly request: ProjectionRequestV1;
   readonly result: ProjectionResultV1;
-  readonly refreshReceiptDigests: readonly Sha256Digest[];
   readonly receiptDigest: Sha256Digest;
 }
 
@@ -109,20 +101,17 @@ export interface ArchitectureProjectionAcceptanceOptions extends ArchctxProvider
   readonly captureSnapshot?: (repoRoot: string) => ProjectionExpectedSnapshotV1;
   readonly runProjection?: (request: ProjectionRequestV1, repoRoot: string) => ProjectionResultV1;
   readonly runReadback?: (request: ProjectionRequestV1, repoRoot: string) => ProjectionApplyReadbackV1;
-  readonly runRefreshActions?: RunArchitectureRefreshActions;
-  readonly now?: Date;
 }
 
 export function recordArchitectureProjectionAcceptanceCandidates(
   repoRoot: string,
   request: ProjectionRequestV1,
   result: ProjectionResultV1,
-  options: { jobId?: string } = {},
 ): ArchitectureProjectionAcceptanceCandidateV1[] {
   const root = realpathSync(resolve(repoRoot));
   const signals = result.refreshSignals.filter(isUnresolvedMajorCandidate);
   return withExclusiveDirectoryLock(root, LOCK_PATH, () => signals.map((signal) => {
-    const body = { schemaVersion: CANDIDATE_VERSION, signalId: signal.signalId, jobId: options.jobId ?? null, request, result };
+    const body = { schemaVersion: CANDIDATE_VERSION, signalId: signal.signalId, request, result };
     const candidate: ArchitectureProjectionAcceptanceCandidateV1 = {
       ...body,
       candidateDigest: digestProjectionJson(body),
@@ -171,7 +160,6 @@ export function acceptArchitectureProjectionCandidate(
       if (existing.approvalReference !== approvalReference) {
         throw new Error(`architecture acceptance already recorded with a different approval reference: ${signalId}`);
       }
-      projectAcceptedDeadLetter(root, candidate, existing, options.now);
       return existing;
     }
 
@@ -286,13 +274,6 @@ export function acceptArchitectureProjectionCandidate(
         atomicJson(pendingPath, pending);
       }
     }
-    const refreshReceipts = consumeArchitectureRefreshSignals(root, result.refreshSignals, request.changedPaths, {
-      env: options.env,
-      run: options.runRefreshActions,
-      now: options.now,
-      deadlineMs: options.deadlineMs,
-      nowMs: options.nowMs,
-    });
     const body = {
       schemaVersion: RECEIPT_VERSION,
       signalId: signal.signalId,
@@ -301,12 +282,10 @@ export function acceptArchitectureProjectionCandidate(
       candidateDigest: candidate.candidateDigest,
       request,
       result,
-      refreshReceiptDigests: refreshReceipts.map((entry) => entry.receiptDigest).sort(),
     };
     const receipt: ArchitectureProjectionAcceptanceReceiptV1 = { ...body, receiptDigest: digestProjectionJson(body) };
     assertReceipt(receipt, candidate);
     atomicJson(existingPath, receipt);
-    projectAcceptedDeadLetter(root, candidate, receipt, options.now);
     return receipt;
   });
 }
@@ -332,9 +311,7 @@ export function reconcileArchitectureProjectionCandidate(
       throw new Error(`architecture projection candidate is already resolved by stale retirement: ${signalId}`);
     }
     if (existsSync(reconciliationPath)) {
-      const existing = readReconciliationReceiptFile(reconciliationPath, candidate);
-      projectReconciledDeadLetter(root, candidate, existing, options.now);
-      return existing;
+      return readReconciliationReceiptFile(reconciliationPath, candidate);
     }
 
     assertProofOnlyCandidate(candidate);
@@ -367,7 +344,6 @@ export function reconcileArchitectureProjectionCandidate(
     };
     assertReconciliationReceipt(receipt, candidate);
     atomicJson(reconciliationPath, receipt);
-    projectReconciledDeadLetter(root, candidate, receipt, options.now);
     return receipt;
   });
 }
@@ -403,9 +379,6 @@ export function retireStaleArchitectureProjectionCandidate(
     }
 
     assertSemanticCandidate(candidate);
-    if (candidate.jobId && architectureProjectionJobState(root, candidate.jobId) !== 'receipt') {
-      throw new Error(`architecture stale retirement requires a terminal job receipt: ${candidate.jobId}`);
-    }
     const current = (options.captureSnapshot ?? captureArchitectureProjectionSnapshot)(root);
     const staleHeadSha = candidate.request.expected.headSha;
     assertStrictAncestor(root, staleHeadSha, current.headSha);
@@ -607,7 +580,6 @@ function readStaleRetirementReceiptFile(
 function assertCandidate(candidate: ArchitectureProjectionAcceptanceCandidateV1): void {
   if (candidate.schemaVersion !== CANDIDATE_VERSION) throw new Error('architecture acceptance candidate schema mismatch');
   assertSignalId(candidate.signalId);
-  if (candidate.jobId !== null && !/^job-[a-f0-9]{24}$/.test(candidate.jobId)) throw new Error('architecture acceptance candidate job id invalid');
   const requestIssues = projectionRequestIssues(candidate.request);
   const resultIssues = projectionResultIssues(candidate.result);
   if (requestIssues.length > 0 || resultIssues.length > 0) {
@@ -615,9 +587,6 @@ function assertCandidate(candidate: ArchitectureProjectionAcceptanceCandidateV1)
   }
   const signal = candidateSignal(candidate);
   if (candidate.request.acceptedChange) throw new Error('architecture acceptance candidate request must not already contain an accepted change');
-  if (candidate.jobId && candidate.request.requestId !== `repo-harness.projection.${candidate.jobId}`) {
-    throw new Error('architecture acceptance candidate request/job identity mismatch');
-  }
   if (!sameExpected(candidate.request.expected, signal.worktree, signal.repository.repositoryId)) {
     throw new Error('architecture acceptance candidate request/signal identity mismatch');
   }
@@ -660,7 +629,6 @@ function assertReceipt(receipt: ArchitectureProjectionAcceptanceReceiptV1, candi
   }
   if (receipt.result.status !== 'applied' && receipt.result.status !== 'noop') throw new Error('architecture acceptance receipt result is not complete');
   if (receipt.result.refreshSignals.some((signal) => signal.mode === 'human-action-required')) throw new Error('architecture acceptance receipt preserves an unresolved signal');
-  if (!sortedUniqueDigests(receipt.refreshReceiptDigests)) throw new Error('architecture acceptance receipt refresh digests invalid');
   const { receiptDigest: _digest, ...body } = receipt;
   if (digestProjectionJson(body) !== receipt.receiptDigest) throw new Error('architecture acceptance receipt digest mismatch');
 }
@@ -833,47 +801,9 @@ function jsonNames(root: string, directory: string): string[] {
   catch { return []; }
 }
 
-function sortedUniqueDigests(values: readonly string[]): values is readonly Sha256Digest[] {
-  return values.every((value, index) => DIGEST.test(value) && (index === 0 || values[index - 1]! < value));
-}
-
 function atomicJson(path: string, value: unknown): void {
   mkdirSync(dirname(path), { recursive: true });
   const temp = `${path}.${process.pid}.${Date.now()}.tmp`;
   writeFileSync(temp, `${JSON.stringify(value, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 });
   renameSync(temp, path);
-}
-
-function projectAcceptedDeadLetter(
-  repoRoot: string,
-  candidate: ArchitectureProjectionAcceptanceCandidateV1,
-  receipt: ArchitectureProjectionAcceptanceReceiptV1,
-  now?: Date,
-): void {
-  if (!candidate.jobId) return;
-  completeArchitectureProjectionDeadLetterAcceptance(
-    repoRoot,
-    candidate.jobId,
-    candidate.request.changedPaths,
-    receipt.acceptedChange,
-    receipt.result,
-    receipt.refreshReceiptDigests,
-    now,
-  );
-}
-
-function projectReconciledDeadLetter(
-  repoRoot: string,
-  candidate: ArchitectureProjectionAcceptanceCandidateV1,
-  receipt: ArchitectureProjectionReconciliationReceiptV1,
-  now?: Date,
-): void {
-  if (!candidate.jobId) return;
-  completeArchitectureProjectionDeadLetterReconciliation(
-    repoRoot,
-    candidate.jobId,
-    candidate.request.changedPaths,
-    receipt.result,
-    now,
-  );
 }

@@ -10,7 +10,6 @@ import { runTaskInboxHandler } from './task-inbox-handler';
 import { getRoute, ROUTES, type HookEvent, type HookHandlerId, type Route, type RouteId } from './route-registry';
 import type { HookEffectContract, HookHandlerContext, HookHandlerResult, TypedHookHandler } from './handler-contract';
 import { sweepManagedWorktrees } from '../../effects/state/coordination-worktree-topology';
-import { architectureProjectionQueueState } from '../../effects/architecture/projection-jobs';
 
 const MUTATION_OBSERVED_EFFECT_CONTRACT: HookEffectContract = Object.freeze({
   contractId: 'mutation-observed.durable-journal.v1',
@@ -57,31 +56,6 @@ const handlers: Readonly<Record<HookHandlerId, TypedHookHandler>> = Object.freez
       if (stateSection) sections.push(stateSection);
       const pending = pendingPostEditJournalSection(context.repoRoot);
       if (pending) sections.push(pending);
-      try {
-        const projectionQueue = architectureProjectionQueueState(context.repoRoot);
-        if (projectionQueue.pending > 0 || projectionQueue.running > 0 || projectionQueue.deadLetters > 0) {
-          sections.push({
-            id: 'architecture-projection-queue',
-            priority: 4 as const,
-            content: `[ArchitectureProjection] pending=${projectionQueue.pending} running=${projectionQueue.running} dead-letter=${projectionQueue.deadLetters}${projectionQueue.oldestPendingJobId ? ` oldest-pending=${projectionQueue.oldestPendingJobId}` : ''}${projectionQueue.oldestDeadLetterJobId ? ` oldest-dead-letter=${projectionQueue.oldestDeadLetterJobId}` : ''}.`,
-            mandatory: false,
-            actionable: true,
-            reference: projectionQueue.oldestDeadLetterJobId
-              ? `repo-harness architecture-projection retry-dead-letter --job-id ${projectionQueue.oldestDeadLetterJobId} --json`
-              : 'repo-harness architecture-projection drain --json',
-          });
-        }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        sections.push({
-          id: 'architecture-projection-queue-error',
-          priority: 1 as const,
-          content: `[ArchitectureProjection] queue state unavailable: ${message.slice(0, 300)}.`,
-          mandatory: true,
-          actionable: true,
-          reference: 'repo-harness architecture-projection drain --json',
-        });
-      }
       sections.push(...buildSessionStartSections(
         context.collector,
         context.env,

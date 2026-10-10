@@ -18,7 +18,6 @@ import {
   existsSync,
   lstatSync,
   mkdirSync,
-  readdirSync,
   readFileSync,
   realpathSync,
   renameSync,
@@ -43,8 +42,6 @@ import type { WorktreeOwnership } from '../../effects/loop/state-input-collector
 import { resolveRecoveryEvidence } from '../../effects/evidence/recovery-materializer';
 import { parseHookInput } from './hook-input';
 import { mintOrAdoptSessionRunIdentity } from './run-identity';
-import { capabilitySourceMode, findMatch, readRegistry } from '../../../scripts/capability-resolver';
-import { readGlobalArchitectureConfiguration } from '../../effects/architecture/projection-config';
 import {
   acquireExclusiveDirectoryLock,
   ExclusiveLockContentionError,
@@ -693,142 +690,6 @@ function resumeBlock(repoRoot: string, collector: SessionContextCollector): stri
     handoffSectionHasSignal(repoRoot, handoffFile, '## Changed Files');
   if (!signal) return '';
   return capResumeContent(readText(repoRoot, resumeFile) ?? '');
-}
-
-/** 2. `capability_context_pending` -- ".request_id" existing-but-non-string rows still count toward pending_count in jq (`// empty` only drops null/absent); the display list silently skips rows missing capability_id/path (jq would error per-row and jq's own multi-input error recovery is not worth replicating for a queue format this repo always writes complete). */
-function capabilityContextPendingContext(repoRoot: string): string | null {
-  const raw = readText(repoRoot, '.ai/harness/capability-context/requests.jsonl');
-  if (!raw || raw.trim() === '') return null;
-  let pendingCount = 0;
-  const lineSet = new Set<string>();
-  for (const rawLine of raw.split('\n')) {
-    const line = rawLine.trim();
-    if (!line) continue;
-    let obj: unknown;
-    try {
-      obj = JSON.parse(line);
-    } catch {
-      continue;
-    }
-    if (!obj || typeof obj !== 'object' || (obj as Record<string, unknown>).status !== 'pending') continue;
-    pendingCount += 1;
-    const capabilityId = (obj as Record<string, unknown>).capability_id;
-    const path = (obj as Record<string, unknown>).path;
-    if (typeof capabilityId === 'string' && typeof path === 'string') {
-      lineSet.add(`- ${capabilityId} <- \`${path}\``);
-    }
-  }
-  const pendingLines = [...lineSet].sort().slice(0, 10).join('\n');
-  if (pendingCount === 0 || !pendingLines) return null;
-  return [
-    '# Capability Context Queue',
-    '',
-    `Pending capability context requests detected (${pendingCount}). Run:`,
-    '',
-    '```bash',
-    'repo-harness capability-context sync --pending --apply',
-    '```',
-    '',
-    'Queued capabilities:',
-    pendingLines,
-  ].join('\n');
-}
-
-/** 3. `architecture_queue_pending` -- `date -j -f '%Y-%m-%d'` parses in LOCAL time, matched here with the local-time `Date(y,m,d)` constructor rather than a UTC `Date.parse`. */
-function architectureQueuePendingContext(repoRoot: string, nowMs: number): string | null {
-  const requestsDir = 'docs/architecture/requests';
-  const absDir = join(repoRoot, requestsDir);
-  let entries: string[];
-  try {
-    entries = readdirSync(absDir, { withFileTypes: true })
-      .filter((entry) => entry.isFile() && entry.name.endsWith('.md'))
-      .map((entry) => entry.name)
-      .sort();
-  } catch {
-    return null;
-  }
-
-  let pendingCount = 0;
-  let oldestEpochSec: number | null = null;
-  for (const name of entries) {
-    const relPath = `${requestsDir}/${name}`;
-    const text = readText(repoRoot, relPath);
-    if (text === null) continue;
-    if (!/^> \*\*Status\*\*:[ \t]*Pending[ \t]*$/m.test(text)) continue;
-    pendingCount += 1;
-    const match = /^> \*\*Detected\*\*:[ \t]*(.*)$/m.exec(text);
-    const detectedDate = (match ? match[1].trim() : '').split('T')[0];
-    if (/^\d{4}-\d{2}-\d{2}$/.test(detectedDate)) {
-      const [y, m, d] = detectedDate.split('-').map(Number);
-      const epochSec = Math.floor(new Date(y, m - 1, d).getTime() / 1000);
-      if (oldestEpochSec === null || epochSec < oldestEpochSec) oldestEpochSec = epochSec;
-    }
-  }
-  if (pendingCount === 0) return null;
-
-  const nowEpochSec = Math.floor(nowMs / 1000);
-  const oldestDays =
-    oldestEpochSec !== null && nowEpochSec >= oldestEpochSec
-      ? `${Math.floor((nowEpochSec - oldestEpochSec) / 86400)}d`
-      : 'unknown';
-
-  // Checkpoint nudge, not a manual documentation obligation: architecture
-  // truth projection belongs to archcontext (docs/researches/
-  // 20260808-archctx-projection-handoff.md §4), so this card only reports that
-  // a checkpoint is due and names the command to inspect it.
-  return [
-    '# Architecture Queue',
-    '',
-    `Checkpoint due: ${pendingCount} capabilities have pending architecture drift (oldest ${oldestDays}) -- \`repo-harness run architecture-queue status\`.`,
-  ].join('\n');
-}
-
-/** Read-only observations, not proposed semantic boundaries. */
-export function architectureModelGuidanceContext(repoRoot: string, env: NodeJS.ProcessEnv): string | null {
-  if (capabilitySourceMode(repoRoot) !== 'archcontext') return null;
-  const global = readGlobalArchitectureConfiguration(env);
-  if (!global.initialized || global.policy.provider === 'disabled') return null;
-
-  const registry = readRegistry(repoRoot);
-  const observations: string[] = [];
-  if (registry.capabilities.length === 0) observations.push('No capability nodes are declared.');
-  const missingDocs = registry.capabilities.filter((capability) => !fileExists(repoRoot, capability.architecture_module));
-  if (missingDocs.length) {
-    observations.push(`${missingDocs.length} declared module document(s) are missing: ${missingDocs.slice(0, 3).map((capability) => JSON.stringify(capability.architecture_module)).join(', ')}.`);
-  }
-
-  // Git's tracked manifest paths are inventory evidence only. Do not crawl source
-  // trees or infer responsibilities from directory names inside a session hook.
-  const manifests = execFileSync('git', ['ls-files', '-z', '--', ':(glob)**/package.json'], {
-    cwd: repoRoot, encoding: 'utf-8', timeout: 2_000, maxBuffer: 1_048_576,
-    stdio: ['ignore', 'pipe', 'pipe'],
-  }).split('\0').filter((file) => file && file !== 'package.json');
-  const unmapped: string[] = [];
-  const ancestorGroups = new Map<string, string[]>();
-  for (const manifest of manifests) {
-    const packageRoot = dirname(manifest);
-    const match = findMatch(registry, repoRoot, packageRoot);
-    if (!match.matched) unmapped.push(packageRoot);
-    else if (match.matched_prefix !== packageRoot) {
-      const key = `${match.capability_id} (${match.matched_prefix})`;
-      const roots = ancestorGroups.get(key) ?? [];
-      roots.push(packageRoot);
-      ancestorGroups.set(key, roots);
-    }
-  }
-  if (unmapped.length) observations.push(`${unmapped.length} tracked package root(s) have no capability match: ${unmapped.slice(0, 3).map((root) => JSON.stringify(root)).join(', ')}.`);
-  for (const [capability, roots] of ancestorGroups) {
-    if (roots.length > 1) observations.push(`${roots.length} tracked package roots share ancestor capability ${JSON.stringify(capability)}: ${roots.slice(0, 3).map((root) => JSON.stringify(root)).join(', ')}. Review whether that boundary is intentional.`);
-  }
-  if (!observations.length) return null;
-  return [
-    '# Architecture Model Guidance', '',
-    ...observations.slice(0, 5).map((observation) => `- ${observation}`),
-    ...(observations.length > 5 ? [`- ${observations.length - 5} more observations; inspect the full model.`] : []),
-    'Use the repo-harness-architecture skill to inspect source responsibilities and existing semantic docs, then propose justified capability boundaries. Package layout alone does not establish a capability.',
-    'Within the authorized task, Agent decides and writes model changes through archctx plan/apply (ChangeSet), validates, then runs architecture projection. Keep unrelated findings as advice; do not expand the active task. Hooks never author nodes.',
-    'Evidence: `repo-harness run capability-resolver list --format json`; `.archcontext/model/nodes/`; `git ls-files "**/package.json"`.',
-  ].join('\n');
 }
 
 interface PendingOrchestration {
