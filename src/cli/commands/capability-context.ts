@@ -31,21 +31,10 @@ type SourceMapManifest = {
   capabilities: Record<string, ManifestCapability>;
 };
 
-type RequestEntry = {
-  ts: string;
-  request_id: string;
-  status: 'pending';
-  source: 'cli';
-  path: string;
-  capability_id: string;
-  matched_prefix: string;
-};
-
 export type CapabilityContextStatus = {
   repo: string;
   registry_file: string;
   source_map_manifest: string;
-  queue_file: string;
   capabilities: Array<{
     id: string;
     primary_prefix: string;
@@ -55,16 +44,13 @@ export type CapabilityContextStatus = {
     agents_exists: boolean;
     claude_exists: boolean;
     manifest_entry: boolean;
-    pending_requests: number;
   }>;
-  pending_requests: RequestEntry[];
 };
 
 type SyncOptions = {
   repo?: string;
   capabilityId?: string;
   inputPath?: string;
-  pending?: boolean;
   apply?: boolean;
   sourceMapManifest?: string;
   autoFillPositioning?: boolean;
@@ -82,14 +68,12 @@ export type SyncResult = {
   repo: string;
   apply: boolean;
   changes: SyncChange[];
-  cleared_requests: number;
   lines: string[];
 };
 
 const REGISTRY_PATH = '.ai/context/capabilities.json';
 const NODES_DIR = '.archcontext/model/nodes';
 const DEFAULT_MANIFEST_PATH = '.ai/context/capability-source-map.json';
-const QUEUE_PATH = '.ai/harness/capability-context/requests.jsonl';
 const BEGIN = '<!-- BEGIN CAPABILITY CONTEXT -->';
 const END = '<!-- END CAPABILITY CONTEXT -->';
 
@@ -172,36 +156,6 @@ function writeManifest(repo: string, manifestPath: string, manifest: SourceMapMa
   writeJsonFile(path.resolve(repo, manifestPath), manifest);
 }
 
-function readJsonl<T>(file: string): T[] {
-  if (!fs.existsSync(file)) return [];
-  return fs
-    .readFileSync(file, 'utf-8')
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .flatMap((line) => {
-      try {
-        return [JSON.parse(line) as T];
-      } catch {
-        return [];
-      }
-    });
-}
-
-function writeJsonl(file: string, entries: unknown[]): void {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  if (entries.length === 0) {
-    fs.writeFileSync(file, '');
-    return;
-  }
-  fs.writeFileSync(file, `${entries.map((entry) => JSON.stringify(entry)).join('\n')}\n`);
-}
-
-function appendJsonl(file: string, entry: unknown): void {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.appendFileSync(file, `${JSON.stringify(entry)}\n`);
-}
-
 function isLikelyFile(repo: string, relPath: string): boolean {
   const abs = path.join(repo, relPath);
   if (fs.existsSync(abs)) return fs.statSync(abs).isFile();
@@ -244,61 +198,14 @@ function findCapabilityById(registry: CapabilityRegistry, id: string): Capabilit
   return capability;
 }
 
-function pendingRequests(repo: string): RequestEntry[] {
-  return readJsonl<RequestEntry>(path.join(repo, QUEUE_PATH)).filter(
-    (entry) => entry.status === 'pending' && Boolean(entry.capability_id),
-  );
-}
-
-function requestId(capabilityId: string, filePath: string): string {
-  return [capabilityId, filePath, 'manual'].join(':');
-}
-
-export function runCapabilityContextRequest(opts: {
-  repo?: string;
-  path?: string;
-}): { repo: string; entry: RequestEntry | null; status: 'queued' | 'existing' | 'skipped'; lines: string[] } {
-  const repo = repoRoot(opts.repo);
-  const lines: string[] = [];
-  if (!opts.path) {
-    return { repo, entry: null, status: 'skipped', lines: ['[CapabilityContext] No changed path to queue.'] };
-  }
-
-  const { capability, matchedPrefix } = findCapabilityByPath(readRegistry(repo), repo, opts.path);
-  const relPath = normalizeRepoPath(opts.path, repo);
-  const entry: RequestEntry = {
-    ts: new Date().toISOString(),
-    request_id: requestId(capability.id, relPath),
-    status: 'pending',
-    source: 'cli',
-    path: relPath,
-    capability_id: capability.id,
-    matched_prefix: matchedPrefix,
-  };
-
-  const queueFile = path.join(repo, QUEUE_PATH);
-  const existing = pendingRequests(repo);
-  if (existing.some((queued) => queued.request_id === entry.request_id)) {
-    lines.push(`[CapabilityContext] Pending request already queued for ${capability.id}.`);
-    return { repo, entry, status: 'existing', lines };
-  }
-
-  appendJsonl(queueFile, entry);
-  lines.push(`[CapabilityContext] Queued ${capability.id} from ${relPath}.`);
-  return { repo, entry, status: 'queued', lines };
-}
-
 export function runCapabilityContextStatus(repoInput = '.', manifestPath = DEFAULT_MANIFEST_PATH): CapabilityContextStatus {
   const repo = repoRoot(repoInput);
   const registry = readRegistry(repo);
   const manifest = readManifest(repo, manifestPath);
-  const pending = pendingRequests(repo);
   return {
     repo,
     registry_file: capabilityAuthorityPath(repo),
     source_map_manifest: manifestPath,
-    queue_file: QUEUE_PATH,
-    pending_requests: pending,
     capabilities: registry.capabilities.map((capability) => {
       const target = targetContractFiles(repo, capability);
       const current = capability.contract_files || { agents: '', claude: '' };
@@ -311,7 +218,6 @@ export function runCapabilityContextStatus(repoInput = '.', manifestPath = DEFAU
         agents_exists: fs.existsSync(path.join(repo, target.agents)),
         claude_exists: fs.existsSync(path.join(repo, target.claude)),
         manifest_entry: Boolean(manifest.capabilities[capability.id]),
-        pending_requests: pending.filter((entry) => entry.capability_id === capability.id).length,
       };
     }),
   };
@@ -392,13 +298,9 @@ function replaceBlock(source: string, block: string): string {
 }
 
 function selectCapabilities(registry: CapabilityRegistry, repo: string, opts: SyncOptions): Capability[] {
-  if (opts.pending) {
-    const ids = new Set(pendingRequests(repo).map((entry) => entry.capability_id));
-    return registry.capabilities.filter((capability) => ids.has(capability.id));
-  }
   if (opts.capabilityId) return [findCapabilityById(registry, opts.capabilityId)];
   if (opts.inputPath) return [findCapabilityByPath(registry, repo, opts.inputPath).capability];
-  throw new Error('sync requires --capability, --path, or --pending');
+  throw new Error('sync requires --capability or --path');
 }
 
 export function runCapabilityContextSync(opts: SyncOptions): SyncResult {
@@ -410,7 +312,6 @@ export function runCapabilityContextSync(opts: SyncOptions): SyncResult {
   const manifest = readManifest(repo, manifestPath);
   const capabilities = selectCapabilities(registry, repo, opts);
   const changedManifestIds = new Set<string>();
-  const processedIds = new Set<string>();
   const changes: SyncChange[] = [];
   const lines: string[] = [];
 
@@ -440,7 +341,6 @@ export function runCapabilityContextSync(opts: SyncOptions): SyncResult {
       capability.contract_files = target;
     }
 
-    processedIds.add(capability.id);
     changes.push({
       capability_id: capability.id,
       target_contract_files: target,
@@ -453,7 +353,6 @@ export function runCapabilityContextSync(opts: SyncOptions): SyncResult {
     );
   }
 
-  let clearedRequests = 0;
   if (apply) {
     // Under archcontext the JSON registry is retired, so contract_files drift
     // has to be fixed in the node that declares it. Writing the registry here
@@ -470,16 +369,9 @@ export function runCapabilityContextSync(opts: SyncOptions): SyncResult {
       writeRegistry(repo, registry);
     }
     if (changedManifestIds.size > 0) writeManifest(repo, manifestPath, manifest);
-    if (opts.pending) {
-      const queueFile = path.join(repo, QUEUE_PATH);
-      const requests = pendingRequests(repo);
-      const remaining = requests.filter((entry) => !processedIds.has(entry.capability_id));
-      clearedRequests = requests.length - remaining.length;
-      writeJsonl(queueFile, remaining);
-    }
   }
 
-  return { repo, apply, changes, cleared_requests: clearedRequests, lines };
+  return { repo, apply, changes, lines };
 }
 
 export function formatCapabilityContextStatus(status: CapabilityContextStatus, json = false): string {
@@ -488,13 +380,12 @@ export function formatCapabilityContextStatus(status: CapabilityContextStatus, j
     `Capability context: ${status.repo}`,
     `Registry: ${status.registry_file}`,
     `Manifest: ${status.source_map_manifest}`,
-    `Pending requests: ${status.pending_requests.length}`,
     'Capabilities:',
   ];
   for (const capability of status.capabilities) {
     lines.push(
       `- ${capability.id}: ${capability.target_contract_files.agents}, ${capability.target_contract_files.claude}` +
-        ` (${capability.normalized ? 'normalized' : 'needs-normalize'}, pending=${capability.pending_requests})`,
+        ` (${capability.normalized ? 'normalized' : 'needs-normalize'})`,
     );
   }
   return lines.join('\n');
@@ -520,22 +411,11 @@ export function buildCapabilityContextCommand(): Command {
     });
 
   command
-    .command('request')
-    .option('--repo <path>', 'Target repository path (defaults to cwd)')
-    .option('--path <path>', 'Changed file path to resolve')
-    .option('--json', 'Output JSON')
-    .action((opts: { repo?: string; path?: string; json?: boolean }) => {
-      const result = runCapabilityContextRequest({ repo: opts.repo, path: opts.path });
-      printResult(result, result.lines, opts.json);
-    });
-
-  command
     .command('sync')
     .option('--repo <path>', 'Target repository path (defaults to cwd)')
     .option('--capability <id>', 'Capability ID to sync')
     .option('--path <path>', 'Changed file path to resolve')
-    .option('--pending', 'Sync all pending queued capability-context requests')
-    .option('--apply', 'Write files and clear processed pending requests')
+    .option('--apply', 'Write files')
     .option('--dry-run', 'Preview without writing')
     .option('--auto-fill-positioning', 'Write a deterministic manifest fallback for missing entries')
     .option('--source-map-manifest <path>', 'Capability source-map manifest path', DEFAULT_MANIFEST_PATH)
@@ -544,7 +424,6 @@ export function buildCapabilityContextCommand(): Command {
       repo?: string;
       capability?: string;
       path?: string;
-      pending?: boolean;
       apply?: boolean;
       autoFillPositioning?: boolean;
       sourceMapManifest?: string;
@@ -554,7 +433,6 @@ export function buildCapabilityContextCommand(): Command {
         repo: opts.repo,
         capabilityId: opts.capability,
         inputPath: opts.path,
-        pending: opts.pending === true,
         apply: opts.apply === true,
         autoFillPositioning: opts.autoFillPositioning === true,
         sourceMapManifest: opts.sourceMapManifest,

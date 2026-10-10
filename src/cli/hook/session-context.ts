@@ -1219,7 +1219,7 @@ export function sessionStartMainContent(
 
 /** Headers that flip the old script-loop branch's `actionable` bit for this id. The tooling advisory names an agent update action, so it counts too. */
 const SESSION_START_ACTIONABLE_HEADERS =
-  /^# (Pending Plan Capture|Capability Context Queue|Architecture Queue|Architecture Model Guidance|Active Sprint|Tooling Update Advisory)/m;
+  /^# (Pending Plan Capture|Active Sprint|Tooling Update Advisory)/m;
 
 export function sessionStartMainSection(
   collector: SessionContextCollector,

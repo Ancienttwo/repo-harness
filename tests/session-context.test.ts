@@ -372,8 +372,8 @@ describe("sessionStartMainContent (session-start-context.sh port) — empty/gati
   });
 });
 
-describe("sessionStartMainContent — capability/architecture queues", () => {
-  test("capability-context queue: counts pending, dedupes+sorts, caps at 10, ignores non-pending rows", () => {
+describe("sessionStartMainContent — retired capability/architecture queues", () => {
+  test("a leftover capability-context queue file is not injected", () => {
     withTmpRepo("main-capability", (repoRoot) => {
       mkdirSync(join(repoRoot, ".ai/harness/capability-context"), { recursive: true });
       const lines = [
@@ -387,7 +387,7 @@ describe("sessionStartMainContent — capability/architecture queues", () => {
     });
   });
 
-  test("architecture queue: counts pending requests and computes oldest age in days", () => {
+  test("leftover architecture request cards are not injected", () => {
     withTmpRepo("main-architecture", (repoRoot) => {
       mkdirSync(join(repoRoot, "docs/architecture/requests"), { recursive: true });
       const tenDaysAgo = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000);
