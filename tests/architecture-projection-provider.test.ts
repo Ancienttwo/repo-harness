@@ -36,7 +36,7 @@ import { acceptArchitectureProjectionCandidate, inspectArchitectureProjectionAcc
 
 const roots: string[] = [];
 const digest = (value: string) => `sha256:${value.repeat(64).slice(0, 64)}` as const;
-const policy: ArchitectureProjectionPolicy = { provider: 'archctx', applyMode: 'manual', failureGate: 'advisory', requiredVersion: ARCHCTX_REQUIRED_VERSION, timeoutMs: 120_000 };
+const policy: ArchitectureProjectionPolicy = { provider: 'archctx', applyMode: 'manual', requiredVersion: ARCHCTX_REQUIRED_VERSION, timeoutMs: 120_000 };
 
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 
@@ -625,7 +625,7 @@ describe('package-local ArchContext projection provider', () => {
       `import { archctxCapabilities } from ${JSON.stringify(providerModule)};`,
       `const started = Date.now();`,
       `try {`,
-      `  archctxCapabilities(${JSON.stringify(f.repoRoot)}, { consumerRoot: ${JSON.stringify(f.consumerRoot)}, policy: { provider: 'archctx', applyMode: 'manual', failureGate: 'advisory', requiredVersion: '${ARCHCTX_REQUIRED_VERSION}', timeoutMs: ${providerBudgetMs} }, env: { ...process.env, REPO_HARNESS_NODE_BIN: ${JSON.stringify(node)}, ARCHCTX_DESCENDANT_PID_PATH: ${JSON.stringify(descendantPidPath)} }, deadlineMs: Date.now() + ${providerBudgetMs} });`,
+      `  archctxCapabilities(${JSON.stringify(f.repoRoot)}, { consumerRoot: ${JSON.stringify(f.consumerRoot)}, policy: { provider: 'archctx', applyMode: 'manual', requiredVersion: '${ARCHCTX_REQUIRED_VERSION}', timeoutMs: ${providerBudgetMs} }, env: { ...process.env, REPO_HARNESS_NODE_BIN: ${JSON.stringify(node)}, ARCHCTX_DESCENDANT_PID_PATH: ${JSON.stringify(descendantPidPath)} }, deadlineMs: Date.now() + ${providerBudgetMs} });`,
       `  process.exitCode = 2;`,
       `} catch (error) {`,
       `  console.error(String(error));`,
@@ -772,7 +772,7 @@ describe('package-local ArchContext projection provider', () => {
     const home = join(f.root, 'home');
     mkdirSync(join(home, '.repo-harness'), { recursive: true });
     writeFileSync(join(home, '.repo-harness', 'config.json'), JSON.stringify({
-      architecture: { projection_provider: 'archctx', projection_apply: 'automatic' },
+      architecture: { projection_provider: 'archctx', projection_apply: 'manual' },
     }));
     const output = execFileSync(process.execPath, [
       join(import.meta.dir, '..', 'src', 'cli', 'index.ts'), 'architecture-projection', 'status', '--json',

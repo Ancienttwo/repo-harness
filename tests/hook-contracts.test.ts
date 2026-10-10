@@ -213,14 +213,12 @@ describe("Hook contracts", () => {
   // HRD-05: post-edit-guard.sh's per-edit task-handoff regeneration
   // ("[TaskHandoff]") is retired -- deferred to Stop's existing unconditional
   // handoff refresh instead of reprinted per edit -- so that assertion does
-  // not carry over. architecture-queue moves from a
-  // synchronous `run_repo_harness_helper` call to deferred Stop-time
-  // consumption (`runRepoHarnessHelper`, same helper names as CLI args).
+  // not carry over. Edits never start architecture queue work.
   test("mutation-observed preserves doc drift and disables automatic contract verification", () => {
     const script = read("src/cli/hook/mutation-observed.ts");
     expect(script).toContain("[DocDrift]");
     expect(script).toContain("[DeployAsset]");
-    expect(script).toContain("'architecture-queue'");
+    expect(script).not.toContain("'architecture-queue'");
     expect(script).not.toContain("sync-brain-docs");
     expect(read("assets/templates/helpers/archive-architecture-request.sh")).toContain("[ArchitectureArchive]");
     expect(read("assets/templates/helpers/workstream-sync.sh")).toContain("tasks/workstreams");

@@ -205,7 +205,7 @@ describe("init command", () => {
       expect(applied.exitCode).toBe(0);
       expect(JSON.parse(readFileSync(configPath, "utf8"))).toMatchObject({
         brainRoot: "/existing/brain",
-        architecture: { projection_provider: "archctx", projection_apply: "automatic" },
+        architecture: { projection_provider: "archctx", projection_apply: "manual" },
         refactor_recommendations: { enabled: true },
       });
       expect(applied.steps.find((step) => step.step === "global architecture projection")?.status).toBe("ok");
@@ -257,7 +257,7 @@ describe("init command", () => {
       });
       expect(runInit(options).exitCode).toBe(0);
       expect(JSON.parse(readFileSync(configPath, "utf8"))).toMatchObject({
-        architecture: { projection_apply: "automatic" },
+        architecture: { projection_apply: "manual" },
         refactor_recommendations: { enabled: true },
       });
     } finally {

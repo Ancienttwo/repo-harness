@@ -14,7 +14,7 @@ test('one global configuration controls two repos without repository projection 
   const home = join(root, 'home');
   mkdirSync(join(home, '.repo-harness'), { recursive: true });
   writeFileSync(join(home, '.repo-harness/config.json'), JSON.stringify({ architecture: {
-    projection_provider: 'archctx', projection_apply: 'automatic', projection_failure_gate: 'advisory',
+    projection_provider: 'archctx', projection_apply: 'manual',
   } }));
   for (const name of ['first', 'second']) {
     const repo = join(root, name);
@@ -29,7 +29,7 @@ test('one global configuration controls two repos without repository projection 
     expect(result.status).toBe(0);
     const value = JSON.parse(result.stdout);
     expect(value.projectionProvider.provider).toBe('archctx');
-    expect(value.apply.mode).toBe('automatic');
+    expect(value.apply.mode).toBe('manual');
     expect(value.apply.enabled).toBe(false); // No project model has been authored.
   }
 }, 60000);
@@ -51,7 +51,7 @@ test('global setup seeds once and preserves unrelated global configuration', () 
   expect(existsSync(f.path)).toBe(false);
   writeFileSync(f.path, JSON.stringify({ brainRoot: '/existing/vault', protectedHelperRuntime: { preserved: true } }));
   expect(ensureGlobalArchitectureProjection(f.env).status).toBe('ok');
-  expect(loadArchitectureProjectionPolicy(f.env)).toMatchObject({ provider: 'archctx', applyMode: 'automatic' });
+  expect(loadArchitectureProjectionPolicy(f.env)).toMatchObject({ provider: 'archctx', applyMode: 'manual' });
   const first = readFileSync(f.path, 'utf8');
   expect(JSON.parse(first)).toMatchObject({ brainRoot: '/existing/vault', protectedHelperRuntime: { preserved: true } });
   expect(ensureGlobalArchitectureProjection(f.env).status).toBe('ok');
@@ -65,12 +65,33 @@ test('global setup preserves an explicit global disabled choice and rejects malf
   expect(ensureGlobalArchitectureProjection(f.env).status).toBe('ok');
   expect(readFileSync(f.path, 'utf8')).toBe(disabled);
   expect(loadArchitectureProjectionPolicy(f.env).provider).toBe('disabled');
-  for (const invalid of ['{', 'null', '[]', JSON.stringify({ architecture: { projection_provider: null, projection_apply: 'automatic' } }), JSON.stringify({ architecture: { projection_provider: 'archctx', projection_apply: null } }), '{"architecture":{}}', '{"architecture":{"projection_provider":"archctx","projection_apply":"automatci"}}', '{"architecture":{"projection_provider":"archctx","projection_apply":"automatic","projection_version":"0.0.1"}}']) {
+  for (const invalid of ['{', 'null', '[]', JSON.stringify({ architecture: { projection_provider: null, projection_apply: 'manual' } }), JSON.stringify({ architecture: { projection_provider: 'archctx', projection_apply: null } }), '{"architecture":{}}', '{"architecture":{"projection_provider":"archctx","projection_apply":"manaul"}}', '{"architecture":{"projection_provider":"archctx","projection_apply":"manual","projection_version":"0.0.1"}}']) {
     writeFileSync(f.path, invalid);
     expect(ensureGlobalArchitectureProjection(f.env).status).toBe('failed');
     expect(() => readGlobalArchitectureConfiguration(f.env)).toThrow();
     expect(readFileSync(f.path, 'utf8')).toBe(invalid);
   }
+});
+
+test('update migrates retired automatic projection settings once and readers refuse them before migration', () => {
+  const f = globalFixture();
+  writeFileSync(f.path, JSON.stringify({ brainRoot: '/existing/vault', architecture: {
+    projection_provider: 'archctx', projection_apply: 'automatic', projection_failure_gate: 'strict', projection_timeout_ms: 90000,
+  } }));
+  expect(() => readGlobalArchitectureConfiguration(f.env)).toThrow('run `repo-harness update` to migrate');
+  const migrated = ensureGlobalArchitectureProjection(f.env);
+  expect(migrated).toMatchObject({ status: 'ok', detail: expect.stringContaining('migrated retired automatic projection settings') });
+  expect(JSON.parse(readFileSync(f.path, 'utf8'))).toEqual({ brainRoot: '/existing/vault', architecture: {
+    projection_provider: 'archctx', projection_apply: 'manual', projection_timeout_ms: 90000,
+  } });
+  expect(loadArchitectureProjectionPolicy(f.env)).toMatchObject({ provider: 'archctx', applyMode: 'manual', timeoutMs: 90000 });
+  const settled = readFileSync(f.path, 'utf8');
+  expect(ensureGlobalArchitectureProjection(f.env).detail).toContain('using ');
+  expect(readFileSync(f.path, 'utf8')).toBe(settled);
+
+  writeFileSync(f.path, JSON.stringify({ architecture: { projection_provider: 'disabled', projection_apply: 'disabled', projection_failure_gate: 'advisory' } }));
+  expect(ensureGlobalArchitectureProjection(f.env).status).toBe('ok');
+  expect(JSON.parse(readFileSync(f.path, 'utf8')).architecture).toEqual({ projection_provider: 'disabled', projection_apply: 'disabled' });
 });
 
 test('adoption removes retired repo execution settings while preserving project architecture policy', () => {
