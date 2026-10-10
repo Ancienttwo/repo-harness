@@ -53,6 +53,13 @@ const required = [
   "src/cli/hook/handler-registry.ts",
   "src/cli/hook/route-registry.ts",
   "src/cli/hook/runtime.ts",
+  "src/pi/extension.ts",
+  "src/pi/hook-bridge.ts",
+  "src/pi/hook-protocol.ts",
+  "scripts/sync-pi-package.ts",
+  "scripts/check-pi-package-smoke.ts",
+  "SKILL.md",
+  "assets/skill-commands/repo-harness-check/SKILL.md",
   "src/cli/hook/prompt-handler.ts",
   "assets/templates/helpers/capability-resolver.ts",
   "assets/templates/helpers/capability-config.ts",
@@ -122,6 +129,12 @@ bun add "$TARBALL_PATH" >/dev/null
 
 CLI="$APP_DIR/node_modules/.bin/repo-harness"
 HOOK="$APP_DIR/node_modules/.bin/repo-harness-hook"
+PI_SMOKE_HOME="$TMP_DIR/pi-home"
+PI_SMOKE_REPO="$TMP_DIR/pi-repo"
+mkdir -p "$PI_SMOKE_HOME" "$PI_SMOKE_REPO"
+git -C "$PI_SMOKE_REPO" init -q
+env HOME="$PI_SMOKE_HOME" PI_CODING_AGENT_DIR="$PI_SMOKE_HOME/.pi/agent" \
+  node "$ROOT/scripts/check-pi-package-smoke.ts" "$APP_DIR" "$PI_SMOKE_REPO"
 # This smoke verifies the installed package runtime even when the operator shell
 # is configured to route development CLIs to another source checkout.
 unset REPO_HARNESS_SOURCE_ROOT

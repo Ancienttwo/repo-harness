@@ -1,0 +1,50 @@
+schemaVersion: archcontext.node/v2
+id: capability.runtime-harness.pm-dispatch
+kind: capability
+name: PM Dispatch Boundary
+status: active
+summary: Provides shared task-level PM operations and a fixed OAR coding host without adding task or result authority.
+responsibilities:
+  - Validate closed PM requests independently of the Bot host.
+  - Bind dispatch, follow-up and collection to existing repository, task, claim, token and worktree authority.
+  - Keep host endpoints and exact worker permission admission outside model-controlled requests.
+  - Hold existing authority locks through launch and delivery effects.
+  - Run the fixed OAR coding host inside Herdr and preserve request-bound TaskResult collection.
+  - Refuse unsupported worker isolation and preserve unknown delivery without replay.
+  - Provide the thin Hermes native adapter and verify its final model tool inventory.
+  - Exclude coding by the PM, a new scheduler, publication, credential changes and self-approved permissions.
+source:
+  include:
+    - "src/core/pm/**"
+    - "src/effects/pm/**"
+    - "src/cli/commands/pm.ts"
+    - "src/effects/terminal/coding-isolation.ts"
+    - "src/effects/terminal/coding-session.ts"
+    - "src/effects/terminal/oar-coding-host.ts"
+    - "assets/hermes/**"
+    - "references/pm-operations.md"
+  entrypoints:
+    - id: entrypoint.pm-dispatch.request
+      path: "src/cli/commands/pm.ts"
+      symbols:
+        - name: "runPmJson"
+          sinks:
+            - id: sink.pm-dispatch.operation
+              path: "src/effects/pm/operations.ts"
+              symbol: "executePmRequest"
+    - id: entrypoint.pm-dispatch.coding-host
+      path: "src/effects/terminal/coding-session.ts"
+      symbols:
+        - name: "startCodingTaskAgent"
+          sinks:
+            - id: sink.pm-dispatch.task-binding
+              path: "src/effects/terminal/task-session.ts"
+              symbol: "startTaskApplicationHost"
+extensions:
+  contractFiles:
+    agents: "AGENTS.md"
+    claude: "CLAUDE.md"
+  lspProfile: "typescript-lsp"
+  verification:
+    - "bun run test:files tests/cli/pm.test.ts tests/hermes-pm-adapter.test.ts tests/herdr-task-lifecycle.test.ts --timeout 60000 --max-concurrency 1"
+    - "bun run check:type"

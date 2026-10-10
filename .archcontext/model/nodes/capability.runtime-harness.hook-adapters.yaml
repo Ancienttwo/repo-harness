@@ -3,9 +3,10 @@ id: capability.runtime-harness.hook-adapters
 kind: capability
 name: Hook Adapters
 status: active
-summary: Installs and runs typed Claude and Codex host hook routes.
+summary: Installs and runs typed Claude, Codex, and Pi host hook routes.
 responsibilities:
   - Own managed hook entries, route dispatch, mutation observation, and Stop handling.
+  - Own the Pi package event adapter and its bounded Bun JSON bridge.
 source:
   include:
     - "assets/hooks/**"
@@ -13,15 +14,16 @@ source:
     - "src/cli/installer/**"
     - "src/cli/hook/**"
     - "src/cli/hook-entry.ts"
+    - "src/pi/**"
   entrypoints:
     - id: entrypoint.hook-adapters.primary
-      path: "src/cli/hook/mutation-observed.ts"
+      path: "src/cli/hook/runtime.ts"
       symbols:
-        - name: "processArchitectureCascade"
+        - name: "runHook"
           sinks:
             - id: sink.hook-adapters.primary
-              path: "src/cli/hook/mutation-observed.ts"
-              symbol: "runRepoHarnessHelper"
+              path: "src/cli/hook/handler-registry.ts"
+              symbol: "getHandlerForRoute"
 extensions:
   contractFiles:
     agents: "assets/hooks/AGENTS.md"

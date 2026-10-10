@@ -22,7 +22,6 @@ import { tmpdir } from "os";
 import { join } from "path";
 import {
   INPUT_PRIORITY_CONTEXT,
-  architectureModelGuidanceContext,
   buildSessionStartSections,
   minimalChangeSessionContent,
   minimalChangeSessionSection,
@@ -373,8 +372,8 @@ describe("sessionStartMainContent (session-start-context.sh port) — empty/gati
   });
 });
 
-describe("sessionStartMainContent — capability/architecture queues", () => {
-  test("capability-context queue: counts pending, dedupes+sorts, caps at 10, ignores non-pending rows", () => {
+describe("sessionStartMainContent — retired capability/architecture queues", () => {
+  test("a leftover capability-context queue file is not injected", () => {
     withTmpRepo("main-capability", (repoRoot) => {
       mkdirSync(join(repoRoot, ".ai/harness/capability-context"), { recursive: true });
       const lines = [
@@ -388,7 +387,7 @@ describe("sessionStartMainContent — capability/architecture queues", () => {
     });
   });
 
-  test("architecture queue: counts pending requests and computes oldest age in days", () => {
+  test("leftover architecture request cards are not injected", () => {
     withTmpRepo("main-architecture", (repoRoot) => {
       mkdirSync(join(repoRoot, "docs/architecture/requests"), { recursive: true });
       const tenDaysAgo = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000);
@@ -718,54 +717,49 @@ describe("sessionStartMainContent — cold-path event-log rotation (gatekeeper P
     });
   });
 
-  test("oversized architecture events.jsonl also rotates (hardcoded second target, not policy-configurable)", () => {
-    withTmpRepo("rotate-architecture-oversized", (repoRoot) => {
+  test("the retired architecture event log is no longer a rotation target", () => {
+    withTmpRepo("rotate-architecture-retired", (repoRoot) => {
       mkdirSync(join(repoRoot, ".ai/harness/architecture"), { recursive: true });
       const eventsPath = join(repoRoot, ".ai/harness/architecture/events.jsonl");
       writeEventLines(eventsPath, 2500);
+      const before = readFileSync(eventsPath, "utf-8");
 
       sessionStartMainContent(freshCollector(repoRoot), process.env, Date.now());
 
-      const kept = readFileSync(eventsPath, "utf-8").trim().split("\n");
-      expect(kept.length).toBe(500);
-      expect(JSON.parse(kept[0]).reason).toBe("line-2001");
-
-      const now = new Date();
-      const stamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}`;
-      expect(existsSync(join(repoRoot, ".ai/harness/architecture/archive", `events-${stamp}.jsonl`))).toBe(true);
+      expect(readFileSync(eventsPath, "utf-8")).toBe(before);
+      expect(existsSync(join(repoRoot, ".ai/harness/architecture/archive"))).toBe(false);
     });
   });
 
-  test("architecture rotation refuses an archive-directory symlink", () => {
-    withTmpRepo("rotate-architecture-archive-symlink", (repoRoot) => {
-      mkdirSync(join(repoRoot, ".ai/harness/architecture"), { recursive: true });
-      const eventsPath = join(repoRoot, ".ai/harness/architecture/events.jsonl");
+  test("event log rotation refuses an archive-directory symlink", () => {
+    withTmpRepo("rotate-archive-symlink", (repoRoot) => {
+      const eventsPath = join(repoRoot, ".ai/harness/events.jsonl");
       writeEventLines(eventsPath, 2500);
       const before = readFileSync(eventsPath, "utf8");
-      const outside = mkdtempSync(join(tmpdir(), "architecture-archive-outside-"));
+      const outside = mkdtempSync(join(tmpdir(), "events-archive-outside-"));
       try {
-        symlinkSync(outside, join(repoRoot, ".ai/harness/architecture/archive"));
+        symlinkSync(outside, join(repoRoot, ".ai/harness/archive"));
         sessionStartMainContent(freshCollector(repoRoot), process.env, Date.now());
         expect(readFileSync(eventsPath, "utf8")).toBe(before);
-        expect(existsSync(join(outside, "events-202608.jsonl"))).toBe(false);
+        expect(readdirSync(outside)).toEqual([]);
       } finally {
         rmSync(outside, { recursive: true, force: true });
       }
     });
   });
 
-  test("architecture rotation refuses a source-log symlink", () => {
-    withTmpRepo("rotate-architecture-source-symlink", (repoRoot) => {
-      mkdirSync(join(repoRoot, ".ai/harness/architecture"), { recursive: true });
-      const eventsPath = join(repoRoot, ".ai/harness/architecture/events.jsonl");
-      const outside = join(tmpdir(), `architecture-events-outside-${process.pid}-${Date.now()}.jsonl`);
+  test("event log rotation refuses a source-log symlink", () => {
+    withTmpRepo("rotate-source-symlink", (repoRoot) => {
+      mkdirSync(join(repoRoot, ".ai/harness"), { recursive: true });
+      const eventsPath = join(repoRoot, ".ai/harness/events.jsonl");
+      const outside = join(tmpdir(), `events-outside-${process.pid}-${Date.now()}.jsonl`);
       try {
         writeEventLines(outside, 2500);
         const before = readFileSync(outside, "utf8");
         symlinkSync(outside, eventsPath);
         sessionStartMainContent(freshCollector(repoRoot), process.env, Date.now());
         expect(readFileSync(outside, "utf8")).toBe(before);
-        expect(existsSync(join(repoRoot, ".ai/harness/architecture/archive"))).toBe(false);
+        expect(existsSync(join(repoRoot, ".ai/harness/archive"))).toBe(false);
         expect(lstatSync(eventsPath).isSymbolicLink()).toBe(true);
       } finally {
         rmSync(outside, { force: true });
@@ -773,13 +767,12 @@ describe("sessionStartMainContent — cold-path event-log rotation (gatekeeper P
     });
   });
 
-  test("architecture rotation refuses a shared lock-root symlink", () => {
-    withTmpRepo("rotate-architecture-lock-root-symlink", (repoRoot) => {
-      mkdirSync(join(repoRoot, ".ai/harness/architecture"), { recursive: true });
-      const eventsPath = join(repoRoot, ".ai/harness/architecture/events.jsonl");
+  test("event log rotation refuses a shared lock-root symlink", () => {
+    withTmpRepo("rotate-lock-root-symlink", (repoRoot) => {
+      const eventsPath = join(repoRoot, ".ai/harness/events.jsonl");
       writeEventLines(eventsPath, 2500);
       const before = readFileSync(eventsPath, "utf8");
-      const outside = mkdtempSync(join(tmpdir(), "architecture-lock-outside-"));
+      const outside = mkdtempSync(join(tmpdir(), "events-lock-outside-"));
       try {
         symlinkSync(outside, join(repoRoot, ".ai/harness/.locks"));
         sessionStartMainContent(freshCollector(repoRoot), process.env, Date.now());
@@ -791,10 +784,9 @@ describe("sessionStartMainContent — cold-path event-log rotation (gatekeeper P
     });
   });
 
-  test("busy shared event lock skips rotation instead of racing an architecture writer", () => {
-    withTmpRepo("rotate-architecture-busy-lock", (repoRoot) => {
-      mkdirSync(join(repoRoot, ".ai/harness/architecture"), { recursive: true });
-      const eventsPath = join(repoRoot, ".ai/harness/architecture/events.jsonl");
+  test("busy shared event lock skips rotation instead of racing a writer", () => {
+    withTmpRepo("rotate-busy-lock", (repoRoot) => {
+      const eventsPath = join(repoRoot, ".ai/harness/events.jsonl");
       writeEventLines(eventsPath, 2500);
       const before = readFileSync(eventsPath, "utf8");
       mkdirSync(join(repoRoot, ".ai/harness/.locks/evt-events.jsonl.lock"), { recursive: true });
@@ -802,7 +794,7 @@ describe("sessionStartMainContent — cold-path event-log rotation (gatekeeper P
       sessionStartMainContent(freshCollector(repoRoot), process.env, Date.now());
 
       expect(readFileSync(eventsPath, "utf8")).toBe(before);
-      expect(existsSync(join(repoRoot, ".ai/harness/architecture/archive"))).toBe(false);
+      expect(existsSync(join(repoRoot, ".ai/harness/archive"))).toBe(false);
     });
   }, 10_000);
 
@@ -1474,81 +1466,16 @@ describe("worktreeBacklogSessionSection — cleanable contract worktree notice",
   }, 60_000);
 });
 
-describe('architecture model guidance', () => {
-  function fixture(run: (repo: string, env: NodeJS.ProcessEnv) => void): void {
-    withTmpRepo('architecture-guidance', (repo) => withTmpHome((home) => {
+describe('architecture on demand', () => {
+  test('normal SessionStart emits no architecture section and writes no architecture state', () => {
+    withTmpRepo('architecture-on-demand', (repo) => withTmpHome((home) => {
       initGit(repo);
-      mkdirSync(join(home, '.repo-harness'), { recursive: true });
-      writeFileSync(join(home, '.repo-harness/config.json'), JSON.stringify({ architecture: { projection_provider: 'archctx', projection_apply: 'automatic' } }));
       writeFileSync(join(repo, '.ai/harness/policy.json'), JSON.stringify({ context: { capability_source: 'archcontext' } }));
       mkdirSync(join(repo, '.archcontext/model/nodes'), { recursive: true });
-      run(repo, { HOME: home });
+      const section = sessionStartMainSection(freshCollector(repo), { HOME: home }, Date.now());
+      expect(section).toBeNull();
+      expect(readdirSync(join(repo, '.archcontext/model/nodes'))).toEqual([]);
+      expect(existsSync(join(repo, 'docs/architecture/requests'))).toBe(false);
     }));
-  }
-  function node(repo: string, name: string, prefix: string): void {
-    mkdirSync(join(repo, prefix), { recursive: true });
-    writeFileSync(join(repo, `.archcontext/model/nodes/capability.test.${name}.yaml`), JSON.stringify({
-      schemaVersion: 'archcontext.node/v2', id: `capability.test.${name}`, kind: 'capability', name,
-      status: 'active', summary: `Fixture ${name}`, responsibilities: ['Fixture responsibility'], source: { include: [`${prefix}/**`] },
-      extensions: { contractFiles: { agents: `${prefix}/AGENTS.md`, claude: `${prefix}/CLAUDE.md` }, lspProfile: 'typescript-lsp', verification: ['bun test'] },
-    }));
-    mkdirSync(join(repo, 'docs/architecture/modules/test'), { recursive: true });
-    writeFileSync(join(repo, `docs/architecture/modules/test/${name}.md`), '# Fixture module\n');
-  }
-  function trackPackage(repo: string, prefix: string): void {
-    mkdirSync(join(repo, prefix), { recursive: true });
-    writeFileSync(join(repo, prefix, 'package.json'), '{}\n');
-    execFileSync('git', ['add', '--', `${prefix}/package.json`], { cwd: repo });
-  }
-
-  test('normal SessionStart leaves architecture on demand and never writes nodes', () => fixture((repo, env) => {
-    const section = sessionStartMainSection(freshCollector(repo), env, Date.now());
-    expect(section).toBeNull();
-    expect(architectureModelGuidanceContext(repo, env)).toContain('No capability nodes are declared');
-    expect(readdirSync(join(repo, '.archcontext/model/nodes'))).toEqual([]);
-    expect(existsSync(join(repo, 'docs/architecture/requests'))).toBe(false);
-  }));
-
-  test('reports shared ancestor and unmapped tracked packages as observations, not invented nodes', () => fixture((repo, env) => {
-    node(repo, 'umbrella', 'packages');
-    trackPackage(repo, 'packages/client'); trackPackage(repo, 'packages/server'); trackPackage(repo, 'tools/cli');
-    const before = readFileSync(join(repo, '.archcontext/model/nodes/capability.test.umbrella.yaml'), 'utf8');
-    const content = architectureModelGuidanceContext(repo, env);
-    expect(content).toContain('2 tracked package roots share ancestor capability');
-    expect(content).toContain('1 tracked package root(s) have no capability match: "tools/cli"');
-    expect(content).toContain('Review whether that boundary is intentional');
-    expect(content).toContain('Package layout alone does not establish a capability');
-    expect(readFileSync(join(repo, '.archcontext/model/nodes/capability.test.umbrella.yaml'), 'utf8')).toBe(before);
-    expect(readdirSync(join(repo, '.archcontext/model/nodes'))).toHaveLength(1);
-  }));
-
-  test('reports missing declared docs and becomes silent once coverage and documents are complete', () => fixture((repo, env) => {
-    trackPackage(repo, 'packages/client'); node(repo, 'client', 'packages/client');
-    const doc = join(repo, 'docs/architecture/modules/test/client.md');
-    rmSync(doc);
-    expect(architectureModelGuidanceContext(repo, env)).toContain('docs/architecture/modules/test/client.md');
-    writeFileSync(doc, '# Fixture module\n');
-    expect(architectureModelGuidanceContext(repo, env)).toBeNull();
-  }));
-
-  test('global disabled or uninitialized and registry mode do not produce guidance', () => fixture((repo, env) => {
-    const config = join(env.HOME!, '.repo-harness/config.json');
-    writeFileSync(config, JSON.stringify({ architecture: { projection_provider: 'disabled', projection_apply: 'disabled' } }));
-    expect(architectureModelGuidanceContext(repo, env)).toBeNull();
-    rmSync(config);
-    expect(architectureModelGuidanceContext(repo, env)).toBeNull();
-    writeFileSync(join(repo, '.ai/harness/policy.json'), JSON.stringify({ context: { capability_source: 'registry' } }));
-    expect(architectureModelGuidanceContext(repo, env)).toBeNull();
-  }));
-
-  test('malformed authority rejects inspection and SessionStart records a provider diagnostic', () => fixture((repo, env) => {
-    writeFileSync(join(repo, '.archcontext/model/nodes/broken.yaml'), 'not: [valid');
-    expect(() => architectureModelGuidanceContext(repo, env)).toThrow();
-    const diagnostics: Array<{ provider_id: string }> = [];
-    const content = sessionStartMainContent(freshCollector(repo), env, Date.now(), (diagnostic) => diagnostics.push(diagnostic));
-    expect(content ?? '').not.toContain('No capability nodes');
-    expect(diagnostics.some((diagnostic) => diagnostic.provider_id === 'architecture-model-guidance')).toBe(false);
-    writeFileSync(join(env.HOME!, '.repo-harness/config.json'), '{');
-    expect(() => architectureModelGuidanceContext(repo, env)).toThrow();
-  }));
+  });
 });

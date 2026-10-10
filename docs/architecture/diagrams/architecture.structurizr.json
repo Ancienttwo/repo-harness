@@ -1,4 +1,4 @@
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.diagram.structurizr" sourceDigest="sha256:999a6de75548ad65459cdc71baa75dd1338274dfd1a30d263871350645cdef7d" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:119d5987a2e78d64984beec1fb4758166bbb4171b75d66491d4a1f3961bbaca2" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.diagram.structurizr" sourceDigest="sha256:c2c495836f39fcc7416d4cb39a62866afd4ae2a2a5e692eac000d5af564e172a" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:d39054a2b21341f64a01b7091f746e5295899b73943c7a43995fac262162c37d" -->
 {
   "schemaVersion": "archcontext.structurizr-export/v1",
   "name": "ArchContext Architecture",
@@ -31,14 +31,6 @@
       {
         "id": "capability.runtime-harness.agent-runtime-effects",
         "name": "Agent Runtime Effects",
-        "type": "Software System",
-        "tags": [
-          "capability"
-        ]
-      },
-      {
-        "id": "capability.runtime-harness.automation-budget",
-        "name": "Automation Budget",
         "type": "Software System",
         "tags": [
           "capability"
@@ -157,8 +149,16 @@
         ]
       },
       {
+        "id": "capability.runtime-harness.pm-dispatch",
+        "name": "PM Dispatch Boundary",
+        "type": "Software System",
+        "tags": [
+          "capability"
+        ]
+      },
+      {
         "id": "capability.runtime-harness.refactor-program",
-        "name": "Refactor Program",
+        "name": "Refactor Recommendations",
         "type": "Software System",
         "tags": [
           "capability"
@@ -239,22 +239,6 @@
       {
         "id": "component.agent-runtime-effects.journal",
         "name": "Agent Runtime Effect Journal",
-        "type": "Component",
-        "tags": [
-          "component"
-        ]
-      },
-      {
-        "id": "component.automation-budget.ledger",
-        "name": "Automation Budget Ledger",
-        "type": "Component",
-        "tags": [
-          "component"
-        ]
-      },
-      {
-        "id": "component.automation-controller.journal",
-        "name": "Automation Controller Journal",
         "type": "Component",
         "tags": [
           "component"
@@ -366,7 +350,7 @@
       },
       {
         "id": "component.hook-adapters.primary",
-        "name": "Architecture Cascade",
+        "name": "Typed Route Dispatch",
         "type": "Component",
         "tags": [
           "component"
@@ -413,16 +397,16 @@
         ]
       },
       {
-        "id": "component.refactor-program.archctx-provider",
-        "name": "Refactor ArchContext Provider Boundary",
+        "id": "component.pm-dispatch.primary",
+        "name": "PM Task Operation Surface",
         "type": "Component",
         "tags": [
           "component"
         ]
       },
       {
-        "id": "component.refactor-program.lifecycle",
-        "name": "Refactor Program Lifecycle Plane",
+        "id": "component.refactor-program.archctx-provider",
+        "name": "Refactor ArchContext Provider Boundary",
         "type": "Component",
         "tags": [
           "component"
@@ -482,18 +466,6 @@
         "id": "relation.agent-runtime-effects.journal",
         "sourceId": "capability.runtime-harness.agent-runtime-effects",
         "destinationId": "component.agent-runtime-effects.journal",
-        "description": "calls"
-      },
-      {
-        "id": "relation.automation-budget.ledger",
-        "sourceId": "capability.runtime-harness.automation-budget",
-        "destinationId": "component.automation-budget.ledger",
-        "description": "calls"
-      },
-      {
-        "id": "relation.automation-controller.journal",
-        "sourceId": "capability.runtime-harness.automation-budget",
-        "destinationId": "component.automation-controller.journal",
         "description": "calls"
       },
       {
@@ -719,15 +691,15 @@
         "description": "calls"
       },
       {
-        "id": "relation.refactor-program.archctx-provider",
-        "sourceId": "capability.runtime-harness.refactor-program",
-        "destinationId": "component.refactor-program.archctx-provider",
+        "id": "relation.pm-dispatch.primary",
+        "sourceId": "capability.runtime-harness.pm-dispatch",
+        "destinationId": "component.pm-dispatch.primary",
         "description": "calls"
       },
       {
-        "id": "relation.refactor-program.lifecycle",
+        "id": "relation.refactor-program.archctx-provider",
         "sourceId": "capability.runtime-harness.refactor-program",
-        "destinationId": "component.refactor-program.lifecycle",
+        "destinationId": "component.refactor-program.archctx-provider",
         "description": "calls"
       },
       {
@@ -782,7 +754,6 @@
         "capability.public-surface.adoption",
         "capability.public-surface.root-router",
         "capability.runtime-harness.agent-runtime-effects",
-        "capability.runtime-harness.automation-budget",
         "capability.runtime-harness.bound-task-freezes",
         "capability.runtime-harness.collaboration",
         "capability.runtime-harness.delegated-runs",
@@ -797,6 +768,7 @@
         "capability.runtime-harness.interface-change",
         "capability.runtime-harness.mcp-sidecar",
         "capability.runtime-harness.operator",
+        "capability.runtime-harness.pm-dispatch",
         "capability.runtime-harness.refactor-program",
         "capability.runtime-harness.verified-context",
         "capability.runtime-harness.work-demand",
@@ -808,8 +780,6 @@
         "component.action-commands.primary",
         "component.adoption.primary",
         "component.agent-runtime-effects.journal",
-        "component.automation-budget.ledger",
-        "component.automation-controller.journal",
         "component.bound-task-freezes.primary",
         "component.codegraph-readiness.primary",
         "component.collaboration.primary",
@@ -829,8 +799,8 @@
         "component.interface-change.primary",
         "component.mcp-sidecar.primary",
         "component.operator.primary",
+        "component.pm-dispatch.primary",
         "component.refactor-program.archctx-provider",
-        "component.refactor-program.lifecycle",
         "component.root-router.primary",
         "component.verified-context.primary",
         "component.work-demand.primary"

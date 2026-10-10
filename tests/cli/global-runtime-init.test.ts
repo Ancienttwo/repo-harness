@@ -1,13 +1,13 @@
 import { describe, expect, test } from 'bun:test';
-import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, lstatSync, rmSync, symlinkSync, writeFileSync } from 'fs';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, lstatSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
-import { basename, dirname, join } from 'path';
+import { dirname, join } from 'path';
 import { spawnSync } from 'child_process';
 import { PassThrough, Writable } from 'stream';
 import { createHash } from 'crypto';
 import { runGlobalRuntimeSetup, verifyInstalledManagedRuntime } from '../../src/cli/commands/global-runtime';
 import { resolveOptionalRuntimeDeps, runCli, runTransactionalRuntimeRefresh } from '../../src/cli/index';
-import { writeShellExecutableFixture } from '../helpers/repo-fixture';
+import { copyPackageRuntimeFixture, writeShellExecutableFixture } from '../helpers/repo-fixture';
 
 const ROOT = join(import.meta.dir, '..', '..');
 const CLI = join(ROOT, 'src/cli/index.ts');
@@ -212,10 +212,7 @@ function setupManagedRuntimeReadback(home: string, fakeBin: string, harnessVersi
 function installCandidateRuntimeFixture(home: string, version: string): string {
   const candidate = join(home, '.bun', 'install', 'global', 'node_modules', 'repo-harness');
   rmSync(candidate, { recursive: true, force: true });
-  cpSync(ROOT, candidate, {
-    recursive: true,
-    filter: (source) => !['.git', '.codegraph', 'node_modules', '_ops'].includes(basename(source)),
-  });
+  copyPackageRuntimeFixture(ROOT, candidate);
   const manifestPath = join(candidate, 'package.json');
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8')) as { version?: string };
   manifest.version = version;
@@ -284,10 +281,10 @@ describe('install command global runtime bootstrap', () => {
       });
       expect(readFileSync(bunLog, 'utf-8')).toBe('--version\nupgrade\n--version\n');
       expect(JSON.parse(readFileSync(join(home, '.repo-harness/config.json'), 'utf8')).architecture).toEqual({
-        projection_provider: 'archctx', projection_apply: 'automatic', projection_failure_gate: 'advisory', projection_timeout_ms: 120000,
+        projection_provider: 'archctx', projection_apply: 'manual', projection_timeout_ms: 120000,
       });
       expect(result.steps.find((step) => step.step === 'global architecture projection')?.status).toBe('ok');
-      expect(JSON.parse(readFileSync(join(home, '.repo-harness/config.json'), 'utf8')).refactor_recommendations).toEqual({ enabled: true });
+      expect(JSON.parse(readFileSync(join(home, '.repo-harness/config.json'), 'utf8')).refactor_recommendations).toBeUndefined();
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
@@ -1853,6 +1850,29 @@ exit 0
       else process.env.HOME = previousHome;
       rmSync(tmp, { recursive: true, force: true });
     }
+  });
+
+  test('candidate runtime fixture copies published inputs and excludes local state', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'candidate-package-boundary-'));
+    const source = join(tmp, 'source');
+    const destination = join(tmp, 'candidate');
+    try {
+      mkdirSync(join(source, 'src'), { recursive: true });
+      mkdirSync(join(source, '.ai/harness/runs'), { recursive: true });
+      mkdirSync(join(source, 'tests'), { recursive: true });
+      writeFileSync(join(source, 'package.json'), JSON.stringify({ files: ['src/', 'README.md'] }));
+      writeFileSync(join(source, 'src/entry.ts'), 'export const runtime = true;\n');
+      writeFileSync(join(source, 'README.md'), 'Published readme\n');
+      writeFileSync(join(source, '.ai/harness/runs/local.json'), '{"local":true}\n');
+      writeFileSync(join(source, 'tests/local.test.ts'), 'Local test\n');
+      copyPackageRuntimeFixture(source, destination);
+      expect(readFileSync(join(destination, 'src/entry.ts'), 'utf8')).toBe('export const runtime = true;\n');
+      expect(readFileSync(join(destination, 'README.md'), 'utf8')).toBe('Published readme\n');
+      expect(readFileSync(join(destination, 'package.json'), 'utf8')).toBe(readFileSync(join(source, 'package.json'), 'utf8'));
+      expect(existsSync(join(destination, '.ai'))).toBe(false);
+      expect(existsSync(join(destination, 'tests'))).toBe(false);
+      expect(existsSync(join(source, '.ai/harness/runs/local.json'))).toBe(true);
+    } finally { rmSync(tmp, { recursive: true, force: true }); }
   });
 
   test('CLI update --version installs the requested package version', () => {

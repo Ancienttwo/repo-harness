@@ -22,6 +22,9 @@ export function moduleRepository(options: { section3?: string; budget?: number; 
   const capabilityId = options.capabilityId ?? MODULE_ID;
   const [, domain, name] = capabilityId.split('.');
   fixtureGit(root, ['init', '-q']);
+  // The fixture snapshots every Git file. Setup must not leave detached maintenance writers.
+  fixtureGit(root, ['config', 'maintenance.auto', 'false']);
+  fixtureGit(root, ['config', 'gc.auto', '0']);
   fixtureWrite(root, '.archcontext/manifest.yaml', Bun.YAML.stringify({ runtime: { contextBudgetBytes: options.budget ?? 12288 } }));
   const node = { schemaVersion: 'archcontext.node/v2', id: capabilityId, kind: 'capability', name: 'Test Module', status: 'active', summary: 'Read a committed module.',
     responsibilities: ['Keep committed content separate from worktree observations.'],

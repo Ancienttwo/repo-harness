@@ -2,7 +2,7 @@
 
 The host chooses when to wake, which native agents to dispatch, and how to schedule them. repo-harness supplies the upstream admission and closeout contract: authorized scope, isolated ownership, durable workflow authority, and acceptance of the exact subject. Scheduling belongs to the host; repo-harness ships no scheduler as part of this contract. Follow [Long-Run Continuation](long-run-continuation.md) for the tick and recovery protocol (`docs/reference-configs/long-run-continuation.md:5`).
 
-These requirements apply to Claude Code, Codex, and a guidance-only Pi integration. The tables distinguish what a host must do from what the current repository actually enforces. A host must not infer enforcement from a policy field, an injected sentence, a tool annotation, or a successful exit code.
+These requirements apply to Claude Code, Codex, and Pi 1.1 with the repo-harness Pi package. The tables distinguish what a host must do from what the current repository actually enforces. A host must not infer enforcement from a policy field, an injected sentence, a tool annotation, or a successful exit code.
 
 ## Enforcement Levels
 
@@ -12,7 +12,7 @@ These requirements apply to Claude Code, Codex, and a guidance-only Pi integrati
 | **P** | Declared in policy/configuration, but no enforcing code was found for the complete requirement in the inspected path. |
 | **G** | Guidance only. The host or operator must uphold it; the inspected integration does not enforce it. |
 
-The grades describe the inspected repository on 2026-09-30, not a live installation test. An **E** helper remains enforced when called from any host. That does not make all of that host's native operations enforced.
+The grades describe repository boundaries. The Pi landing uses the native extension added on 2026-10-09. The other rows retain their 2026-09-30 evidence. An **E** helper remains enforced when called from any host. That does not make all of that host's native operations enforced.
 
 ## Invariants
 
@@ -36,13 +36,13 @@ The grades describe the inspected repository on 2026-09-30, not a live installat
 |---|---|---|
 | Claude Code | Use the host's native subagent surface. The shared route registry attaches `PreToolUse` edit and subagent routes; the `Task`/`Agent` handler appends a return contract to the prompt (`src/cli/hook/route-registry.ts:77`, `src/cli/hook/route-registry.ts:84`, `src/cli/hook/subagent-handler.ts:340`). | **E** for installed typed-hook behavior and invoked CLI/MCP gates only. Appended instructions do not make writer ownership, fresh context, or spawn depth mechanically enforced. The Codex-only delegation/context routes do not run here. |
 | Codex | Use native `spawn_agent` with the installed role and a self-contained task packet. The registry selects Codex-only delegation and `SubagentStart.context`; the handler emits the child scope context (`src/cli/hook/route-registry.ts:120`, `src/cli/hook/subagent-handler.ts:823`, `src/cli/hook/subagent-handler.ts:906`). | **E** for the installed route's handling, including the bounded spawn-attempt refusal (`src/cli/hook/subagent-handler.ts:753`). Policy's fresh-context/depth requirements remain **P**; scope text is guidance, not a filesystem lock. |
-| Pi | Guidance-only landing. Use the `workflowScript`, `worktree: true`, and `gate` patterns recorded in the existing package research, with CLI/MCP owner gates retained (`docs/researches/20260930-pi-harness-packages-extraction.md`, section 6.4). | **G** for host integration: repo-harness typed hooks do not run on Pi; the supported route host type names only Claude and Codex (`src/cli/hook/route-registry.ts:28`). This landing mechanically enforces none of the host-wide requirements. Invoking an existing CLI/MCP gate still invokes its narrower **E** checks. |
+| Pi | Install the official Pi package. `src/pi/extension.ts` maps native edit/write calls, including codemode nested calls, to `PreToolUse.edit` and `PostToolUse.edit`. It sends session context and runs Stop at `agent_settled`. | **E** for native edit/write calls in opt-in repositories. A failed or unavailable bridge blocks these calls. Shell writes, `!`/`!!`, direct extension writes and third-party MCP writes require their own admission checks. Existing CLI/MCP gates keep their narrower **E** checks. |
 
-Install and trust the user-level hook adapters before relying on their routes. Read the active contract for scope; use the receipt-backed gate for acceptance and the journal-backed helper for closeout. Native process/session state is an observation, not permission to change workflow authority.
+Install and trust the user-level hook adapters, or the Pi package, before relying on their routes. Read the active contract for scope; use the receipt-backed gate for acceptance and the journal-backed helper for closeout. Native process/session state is an observation, not permission to change workflow authority.
 
 ## MCP Write Safety
 
-Tool presentation and write admission serve different purposes. In Pi, `deferred`, `codemode`, `codemode-deferred`, and `direct` tools are all callable from codemode scripts. Only `hidden` blocks calls. Exposure neither limits nor orders writes. This distinction is recorded in `docs/researches/20260930-pi-harness-packages-extraction.md`, section 6.3 item 3 ("exposure is not a write constraint"); this document adds no Pi runtime mechanism.
+Tool presentation and write admission serve different purposes. In Pi, `deferred`, `codemode`, `codemode-deferred`, and `direct` tools are all callable from codemode scripts. Only `hidden` blocks calls. Exposure neither limits nor orders writes. This distinction is recorded in `docs/researches/20260930-pi-harness-packages-extraction.md`, section 6.3 item 3 ("exposure is not a write constraint"); this document adds no universal MCP write gate.
 
 If using Pi MCP, keep ordinary discovery in `codemode` and set `hidden` only for tools the host must not use. A `deferred` override may change discovery, but is not a write-safety control. No special exposure configuration is required by this contract.
 
@@ -67,6 +67,6 @@ The positive signal-record example does not establish equivalent semantics for e
 ## Non-Goals
 
 - No `FleetRuntimeAdapter`, fleet scheduler, host timer, or replacement agent loop.
-- No Pi runtime code or typed-hook integration; the Pi landing stays guidance-only.
+- No Pi scheduler or OAR Pi review worker. The Pi extension only maps supported native events to existing typed handlers.
 - No changes to skill invocation flags, SessionStart provider budgets, authorization, audit durability, or existing runtime behavior.
 - No removal of existing fleet/engineer code based on this document. A later responsibility trace must distinguish scheduling from admission, evidence, and closeout before any removal is designed.

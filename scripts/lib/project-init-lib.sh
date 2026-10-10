@@ -1493,40 +1493,9 @@ pi_write_harness_policy() {
     "handoff_file": ".ai/harness/handoff/current.md",
     "failure_log_file": ".ai/harness/failures/latest.jsonl",
     "events_file": ".ai/harness/events.jsonl",
-    "architecture_events_file": ".ai/harness/architecture/events.jsonl",
     "runs_dir": ".ai/harness/runs",
     "helper_runtime_dir": "package:scripts",
     "helper_source": "package"
-  },
-  "architecture": {
-    "index_file": "docs/architecture/index.md",
-    "requests_dir": "docs/architecture/requests",
-    "snapshots_dir": "docs/architecture/snapshots",
-    "diagrams_dir": "docs/architecture/diagrams",
-    "domains_dir": "docs/architecture/domains",
-    "modules_dir": "docs/architecture/modules",
-    "diagram_skill": "mermaid",
-    "diagram_skill_source": "~/.codex/skills/mermaid",
-    "vendoring_policy": "do-not-vendor-diagram-skill-assets",
-    "freshness_gate": "advisory",
-    "gate_min_severity": "medium",
-    "pending_card_scope": "capability",
-    "pending_block_begin": "<!-- BEGIN ARCHITECTURE PENDING REQUESTS -->",
-    "pending_block_end": "<!-- END ARCHITECTURE PENDING REQUESTS -->",
-    "queue_script": "repo-harness run architecture-queue",
-    "contract_block_begin": "<!-- BEGIN ARCHITECTURE CONTRACT -->",
-    "contract_block_end": "<!-- END ARCHITECTURE CONTRACT -->",
-    "rule": "hooks record architecture queue cards and sync controlled local context blocks; agents author semantic snapshots and diagrams"
-  },
-  "refactor": {
-    "mode": "off",
-    "provider": "archctx",
-    "stages": {
-      "scan": { "provider_version": "0.6.3", "required_features": ["module-statistics-v1", "refactor-assessment-v1", "recommendation-v3"] },
-      "verify": { "provider_version": "0.6.3", "required_features": ["refactor-resolution-v1"] }
-    },
-    "require_cutover_closure": true,
-    "require_post_merge_measurement": false
   },
   "workstreams": {
     "dir": "tasks/workstreams",
@@ -1769,6 +1738,14 @@ pi_write_harness_policy() {
         "linux-x86_64": {
           "url": "https://github.com/herdrdev/herdr/releases/download/v0.9.3/herdr-linux-x86_64",
           "sha256": "18a8dc65f1c2fa485884344356dea1cfd911c6f06cf46fa78e193f4087f4dba7"
+        },
+        "macos-aarch64": {
+          "url": "https://github.com/herdrdev/herdr/releases/download/v0.9.3/herdr-macos-aarch64",
+          "sha256": "5173a3e0ae42d5d1ab7ebfa5d5e6329f7c3d23f8e1a3677c7ce3231da2884157"
+        },
+        "macos-x86_64": {
+          "url": "https://github.com/herdrdev/herdr/releases/download/v0.9.3/herdr-macos-x86_64",
+          "sha256": "db62d548ff3e832b087a96b1894a08d26be3905f1830309cd556783f215d4054"
         }
       }
     }
@@ -1958,7 +1935,7 @@ Generality: These are general working rules. Do not tailor behavior to any speci
 ## Execution And Verification
 
 - Prefer platform or standard-library features, then existing dependencies and repo patterns, before adding dependencies, files, or abstractions.
-- Preserve user-authored files; do not overwrite existing `CLAUDE.md` or `AGENTS.md` except when explicitly applying an approved scaffold or syncing the controlled architecture block.
+- Preserve user-authored files; do not overwrite existing `CLAUDE.md` or `AGENTS.md` except when explicitly applying an approved scaffold.
 - Do not run the full suite for every small change. Select checks from the complete diff, repo commands, active contract, and CI; report the selected scope, reason, exact commands, and results.
 - For docs-only or ledger-closeout changes with no executable impact, check diff hygiene, affected links/paths, and task-sync/workflow consistency when workflow artifacts changed. No full suite or typecheck is required solely for closeout.
 - For isolated code changes, run the regression and affected suites, plus relevant type/lint/build checks. For generator or template changes, generate a fixture and check the affected mirrors.
@@ -2081,13 +2058,11 @@ pi_ensure_harness_state_surface() {
     "$target_dir/.ai/harness/security" \
     "$target_dir/.ai/harness/planning" \
     "$target_dir/.ai/harness/delegation" \
-    "$target_dir/.ai/harness/architecture" \
     "$target_dir/.ai/harness/worktrees" \
     "$target_dir/.ai/harness/triage" \
     "$target_dir/docs/researches" \
     "$target_dir/docs/architecture/domains" \
     "$target_dir/docs/architecture/modules" \
-    "$target_dir/docs/architecture/requests" \
     "$target_dir/docs/architecture/snapshots" \
     "$target_dir/docs/architecture/diagrams" \
     "$target_dir/.ai/harness/runs"
@@ -2096,8 +2071,6 @@ pi_ensure_harness_state_surface() {
   [[ -f "$target_dir/.ai/harness/handoff/resume.md" ]] || printf "# Codex Resume Packet\n\n> **Reason**: bootstrap\n" > "$target_dir/.ai/harness/handoff/resume.md"
   [[ -f "$target_dir/.ai/context/capability-source-map.json" ]] || printf '{\n  "version": 1,\n  "capabilities": {}\n}\n' > "$target_dir/.ai/context/capability-source-map.json"
   [[ -f "$target_dir/.ai/harness/events.jsonl" ]] || : > "$target_dir/.ai/harness/events.jsonl"
-  [[ -f "$target_dir/.ai/harness/architecture/events.jsonl" ]] || : > "$target_dir/.ai/harness/architecture/events.jsonl"
-  [[ -f "$target_dir/.ai/harness/architecture/.gitkeep" ]] || : > "$target_dir/.ai/harness/architecture/.gitkeep"
   [[ -f "$target_dir/.ai/harness/failures/latest.jsonl" ]] || : > "$target_dir/.ai/harness/failures/latest.jsonl"
   [[ -f "$target_dir/.ai/harness/security/.gitkeep" ]] || : > "$target_dir/.ai/harness/security/.gitkeep"
   [[ -f "$target_dir/.ai/harness/planning/.gitkeep" ]] || : > "$target_dir/.ai/harness/planning/.gitkeep"
@@ -2138,34 +2111,25 @@ CURRENT_STATUS_EOF
   fi
   [[ -f "$target_dir/docs/architecture/domains/.gitkeep" ]] || : > "$target_dir/docs/architecture/domains/.gitkeep"
   [[ -f "$target_dir/docs/architecture/modules/.gitkeep" ]] || : > "$target_dir/docs/architecture/modules/.gitkeep"
-  [[ -f "$target_dir/docs/architecture/requests/.gitkeep" ]] || : > "$target_dir/docs/architecture/requests/.gitkeep"
   [[ -f "$target_dir/docs/architecture/snapshots/.gitkeep" ]] || : > "$target_dir/docs/architecture/snapshots/.gitkeep"
   [[ -f "$target_dir/docs/architecture/diagrams/.gitkeep" ]] || : > "$target_dir/docs/architecture/diagrams/.gitkeep"
   if [[ ! -f "$target_dir/docs/architecture/index.md" ]]; then
     cat > "$target_dir/docs/architecture/index.md" <<'ARCHITECTURE_INDEX_EOF'
 # Architecture Index
 
-> Umbrella architecture ledger for current boundaries, drift requests, snapshots, and diagrams.
+> Umbrella architecture ledger for current boundaries, snapshots, and diagrams.
 
 ## Current Snapshot
 
 - Latest snapshot: (none yet)
 - Semantic diagram source: (none yet)
 
-## Architecture Drift Flow
+## Architecture Flow
 
-- `repo-harness run architecture-queue` records architecture-sensitive edits as requests.
-- `repo-harness run archive-architecture-request` archives handled requests after an agent records the resolution status and linked artifacts; `Resolved` requires the request's declared architecture module as an existing durable artifact.
 - Read architecture documents on demand. Update real boundaries explicitly.
 - `repo-harness run workstream-sync` keeps durable multi-session progress under `tasks/workstreams/<domain>/<capability>/` and projects only pointers into local contracts.
 - Semantic architecture diagrams live as Mermaid fenced blocks in the relevant module or snapshot Markdown.
 - Markdown Mermaid fenced blocks are the only architecture diagram artifacts; do not generate standalone HTML.
-
-## Pending Requests
-
-<!-- BEGIN ARCHITECTURE PENDING REQUESTS -->
-- (none)
-<!-- END ARCHITECTURE PENDING REQUESTS -->
 
 ARCHITECTURE_INDEX_EOF
   fi
@@ -2398,7 +2362,6 @@ pi_ensure_task_sync() {
     "check:brain-manifest": "repo-harness run check-brain-manifest",
     "check:context-files": "repo-harness run check-context-files",
     "check:deploy-sql": "repo-harness run check-deploy-sql-order",
-    "check:architecture-sync": "repo-harness run check-architecture-sync",
     "check:task-sync": "repo-harness run check-task-sync",
     "sync:brain-docs": "repo-harness run sync-brain-docs --all"
   }
@@ -2422,10 +2385,12 @@ pkg.scripts ??= {};
 pkg.scripts["check:brain-manifest"] = "repo-harness run check-brain-manifest";
 pkg.scripts["check:context-files"] = "repo-harness run check-context-files";
 pkg.scripts["check:deploy-sql"] = "repo-harness run check-deploy-sql-order";
-pkg.scripts["check:architecture-sync"] = "repo-harness run check-architecture-sync";
 pkg.scripts["check:task-sync"] = "repo-harness run check-task-sync";
 if (pkg.scripts["check:task-workflow"] === "repo-harness run check-task-workflow --strict") {
   delete pkg.scripts["check:task-workflow"];
+}
+if (pkg.scripts["check:architecture-sync"] === "repo-harness run check-architecture-sync") {
+  delete pkg.scripts["check:architecture-sync"];
 }
 pkg.scripts["sync:brain-docs"] = "repo-harness run sync-brain-docs --all";
 fs.writeFileSync(file, JSON.stringify(pkg, null, 2) + "\n");

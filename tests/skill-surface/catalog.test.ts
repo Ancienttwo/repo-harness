@@ -70,7 +70,7 @@ function computeExpectedProjections(packages: unknown[]): unknown {
   const provisional = { packages: wellFormed } as unknown as SkillSurfaceCatalog;
   const facadesByProfile: Record<string, readonly string[]> = {};
   const externalSkillsByProfile: Record<string, readonly string[]> = {};
-  const hostSkillPlacementsByProfile: Record<string, { claude: readonly string[]; codex: readonly string[] }> = {};
+  const hostSkillPlacementsByProfile: Record<string, { claude: readonly string[]; codex: readonly string[]; pi: readonly string[] }> = {};
   for (const profile of SKILL_SURFACE_PROFILES) {
     facadesByProfile[profile] = facadesForProfile(provisional, profile);
     externalSkillsByProfile[profile] = externalSkillsForProfile(provisional, profile);
@@ -373,11 +373,11 @@ describe("skill-surface catalog: the real manifest.json on disk", () => {
   });
 
   // Current closed catalog excludes the retired headless plan skill.
-  test("covers all 12 repo-owned entries plus the 9 external skills (21 packages)", () => {
+  test("covers all 13 repo-owned entries plus the 9 external skills (22 packages)", () => {
     if (resolution.status !== "valid") throw new Error("expected valid catalog");
-    expect(resolution.catalog.packages.length).toBe(21);
+    expect(resolution.catalog.packages.length).toBe(22);
     const repoOwned = resolution.catalog.packages.filter((p) => p.kind !== "external");
-    expect(repoOwned.length).toBe(12);
+    expect(repoOwned.length).toBe(13);
     expect(repoOwned.map(p => p.name)).not.toContain("claude-plan");
     const external = resolution.catalog.packages.filter((p) => p.kind === "external");
     expect(external.map((p) => p.name).sort()).toEqual([
@@ -478,16 +478,17 @@ describe("skill-surface catalog: target post-cutover discovery matrix", () => {
   });
 
   test("hostSkillPlacements: full places repo-harness-cross-review on both hosts without retired plan skill", () => {
-    expect(hostSkillPlacements(catalog, "minimal")).toEqual({ claude: [], codex: [] });
+    expect(hostSkillPlacements(catalog, "minimal")).toEqual({ claude: [], codex: [], pi: [] });
     expect(hostSkillPlacements(catalog, "full")).toEqual({
       claude: ["repo-harness-cross-review"],
       codex: ["repo-harness-cross-review"],
+      pi: [],
     });
   });
 
   test("hostSkillPlacements without a profile (init.ts's init flow) is the unconditional full-tier bundle", () => {
     const unconditional = hostSkillPlacements(catalog);
-    expect(unconditional).toEqual({ claude: ["repo-harness-cross-review"], codex: ["repo-harness-cross-review"] });
+    expect(unconditional).toEqual({ claude: ["repo-harness-cross-review"], codex: ["repo-harness-cross-review"], pi: [] });
   });
 
   test("explicit ChatGPT setup is never implied by either install profile", () => {
@@ -671,7 +672,7 @@ test("audience source selection returns disjoint complete load groups and reject
   const lines = (body: string) => body.trim().split("\n");
   expect(lines(bot.stdout).map((line) => line.split("\t")[0])).toEqual([
     "repo-harness", "repo-harness-check", "repo-harness-product", "repo-harness-ship",
-    "obsidian-memory", "repo-harness-cross-review", "repo-harness-chatgpt",
+    "obsidian-memory", "repo-harness-cross-review", "repo-harness-chatgpt", "repo-harness-strategy",
   ]);
   expect(lines(worker.stdout).map((line) => line.split("\t")[0])).toEqual([
     "repo-harness-setup", "repo-harness-test", "repo-harness-architecture", "windows-python-first",

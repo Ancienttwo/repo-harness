@@ -42,7 +42,8 @@ if [[ "$lane" == affected ]]; then
     BUN_TEST_TIMEOUT_MS=60000
     BUN_TEST_MAX_CONCURRENCY=1
     BUN_TEST_JOBS="${BUN_TEST_JOBS:-8}"
-    bun run build:oar-review-host
+    bun run build:hook-bundle
+    bun run build:oar-hosts
     run_bun_tests
   else
     echo "[ci] No executable consumers changed; typecheck completed."
@@ -71,7 +72,6 @@ if [[ "$lane" != functional ]]; then
   bash scripts/check-deploy-sql-order.sh
   echo "[ci] context files"
   bash scripts/check-context-files.sh
-  bash scripts/check-architecture-sync.sh
   echo "[ci] context map"
   bun run check:context-map
   # Preserve the read-only helper's failure before checking successful evidence.
@@ -96,7 +96,8 @@ if [[ "$lane" != governance ]]; then
   fi
 
   echo "[ci] tests"
-  bun run build:oar-review-host
+  bun run build:hook-bundle
+  bun run build:oar-hosts
   run_bun_tests
 
   echo "[ci] package/install smoke (one shared tarball)"

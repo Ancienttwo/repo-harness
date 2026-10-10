@@ -250,9 +250,9 @@ function RefreshProbe({read,identity='source'}:{read:(signal:AbortSignal)=>Promi
 
 describe('bounded observation lifecycle',()=>{
   test('automatic and visible refresh preserve Decision and activity queries without a composer', async () => {
-    const { repositoryObservationFixture, taskContextFixture, taskActivityFixture, decisionInventoryFixture } = await import('../../src/operator-web/fixture');
+    const { taskContextFixture, taskActivityFixture, decisionInventoryFixture } = await import('../../src/operator-web/fixture');
     const clock = observationClock();
-    const counts = { fleet: 0, repository: 0, context: 0 };
+    const counts = { fleet: 0, context: 0 };
     const decisions: (string | null)[] = [];
     const activities: import('../../src/core/operator/task-activity').OperatorTaskActivityRequest[] = [];
     let visibility = 'visible';
@@ -261,7 +261,6 @@ describe('bounded observation lifecycle',()=>{
     try {
       await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en"
         fetchSnapshot={async () => { counts.fleet++; return stableSnapshot; }}
-        fetchRepositoryObservation={async id => { counts.repository++; return repositoryObservationFixture(id); }}
         fetchCollaboration={async (id, _signal, after) => {
           decisions.push(after);
           const page = decisionInventoryFixture(id);
@@ -280,16 +279,16 @@ describe('bounded observation lifecycle',()=>{
       await act(async () => buttonWithText('Read reply message').click());
       const query = activities.at(-1)!;
       expect(query.message_id).toBe('22222222-2222-4222-8222-222222222222');
-      expect(counts).toEqual({ fleet: 0, repository: 1, context: 1 });
+      expect(counts).toEqual({ fleet: 0, context: 1 });
       await clock.advance(30_000);
-      expect(counts).toEqual({ fleet: 1, repository: 2, context: 2 });
+      expect(counts).toEqual({ fleet: 1, context: 2 });
       expect(decisions).toEqual([null, 'a'.repeat(64), 'a'.repeat(64)]);
       expect(activities).toHaveLength(3); expect(activities.at(-1)).toEqual(query);
       await setVisibility('hidden'); await clock.advance(120_000);
-      expect(counts).toEqual({ fleet: 1, repository: 2, context: 2 });
+      expect(counts).toEqual({ fleet: 1, context: 2 });
       expect(decisions).toHaveLength(3); expect(activities).toHaveLength(3);
       await setVisibility('visible');
-      expect(counts).toEqual({ fleet: 2, repository: 3, context: 3 });
+      expect(counts).toEqual({ fleet: 2, context: 3 });
       expect(decisions).toHaveLength(4); expect(decisions.at(-1)).toBe('a'.repeat(64));
       expect(activities).toHaveLength(4); expect(activities.at(-1)).toEqual(query);
     } finally {
@@ -298,30 +297,27 @@ describe('bounded observation lifecycle',()=>{
   });
 
   test('Organization-only readers pause behind another tab and read once on return, including a deferred Refresh', async () => {
-    const { repositoryObservationFixture } = await import('../../src/operator-web/fixture');
     const clock = observationClock();
-    const counts = { fleet: 0, repository: 0, notify: 0, pipeline: 0 };
+    const counts = { fleet: 0, notify: 0, pipeline: 0 };
     const tab = (name: string) => act(async () => document.querySelector<HTMLButtonElement>(`#view-tab-${name}`)!.click());
     try {
       await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" initialCollaboration={{ kind: 'ready', snapshot: collaborationSnapshot }}
         fetchSnapshot={async () => { counts.fleet++; return stableSnapshot; }}
-        fetchRepositoryObservation={async id => { counts.repository++; return repositoryObservationFixture(id); }}
         readNotifyStatus={async () => { counts.notify++; return notifyStatus; }}
         readPipelineBoard={async () => { counts.pipeline++; return board; }} />);
-      expect(counts).toEqual({ fleet: 0, repository: 1, notify: 1, pipeline: 1 });
+      expect(counts).toEqual({ fleet: 0, notify: 1, pipeline: 1 });
       await tab('delivery');
       await clock.advance(600_000);
-      expect(counts).toEqual({ fleet: 20, repository: 1, notify: 1, pipeline: 1 });
-      expect(document.querySelector('.automation-summary')?.getAttribute('data-observation-status')).toBe('ready');
+      expect(counts).toEqual({ fleet: 20, notify: 1, pipeline: 1 });
       await tab('organization');
-      expect(counts).toEqual({ fleet: 20, repository: 2, notify: 2, pipeline: 2 });
+      expect(counts).toEqual({ fleet: 20, notify: 2, pipeline: 2 });
       await clock.advance(30_000);
-      expect(counts).toEqual({ fleet: 21, repository: 3, notify: 3, pipeline: 3 });
+      expect(counts).toEqual({ fleet: 21, notify: 3, pipeline: 3 });
       await tab('planning');
       await act(async () => buttonWithText('Refresh').click());
-      expect(counts).toEqual({ fleet: 22, repository: 3, notify: 3, pipeline: 3 });
+      expect(counts).toEqual({ fleet: 22, notify: 3, pipeline: 3 });
       await tab('organization');
-      expect(counts).toEqual({ fleet: 22, repository: 4, notify: 4, pipeline: 4 });
+      expect(counts).toEqual({ fleet: 22, notify: 4, pipeline: 4 });
     } finally {
       await act(async () => root?.unmount()); root = null; clock.restore();
     }
@@ -334,7 +330,6 @@ describe('bounded observation lifecycle',()=>{
     try {
       await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" initialCollaboration={{ kind: 'ready', snapshot: collaborationSnapshot }}
         fetchSnapshot={async () => stableSnapshot}
-        fetchRepositoryObservation={async () => { throw Error('fixture unavailable'); }}
         initialNotifyStatus={notifyStatus} readNotifyStatus={async () => { counts.notify++; return notifyStatus; }}
         initialPipelineBoard={board} readPipelineBoard={async () => { counts.pipeline++; return board; }} />);
       expect(counts).toEqual({ notify: 0, pipeline: 0 });
@@ -1331,75 +1326,6 @@ describe('preparation and available work', () => {
   });
 });
 
-describe('scoped automation homepage observations', () => {
-  test('switches only the selected scope and discards an aborted late response', async () => {
-    const { repositoryObservationFixture } = await import('../../src/operator-web/fixture');
-    const pending: { id: string; signal: AbortSignal; resolve: (value: ReturnType<typeof repositoryObservationFixture>) => void }[] = [];
-    await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en"
-      fetchRepositoryObservation={(id, signal) => new Promise((resolve) => pending.push({ id, signal, resolve }))} />);
-    expect(pending.map((row) => row.id)).toEqual(['repo-harness']);
-    await selectRepository('repo-console');
-    expect(pending[0]!.signal.aborted).toBe(true);
-    expect(pending.map((row) => row.id)).toEqual(['repo-harness', 'repo-console']);
-    await act(async () => pending[1]!.resolve(repositoryObservationFixture('repo-console')));
-    const summary = () => document.querySelector('.automation-summary')!;
-    expect(summary().textContent).toContain('repo-console');
-    await act(async () => pending[0]!.resolve(repositoryObservationFixture('repo-harness')));
-    expect(summary().textContent).not.toContain('repo-harness');
-    expect(summary().getAttribute('data-observation-status')).toBe('ready');
-    await act(async () => root?.unmount()); root = null;
-    expect(pending[1]!.signal.aborted).toBe(true);
-  });
-
-  test('refresh supersedes an in-flight response and accepts a current service epoch reset', async () => {
-    const { repositoryObservationFixture } = await import('../../src/operator-web/fixture');
-    const pending: { signal: AbortSignal; resolve: (value: ReturnType<typeof repositoryObservationFixture>) => void }[] = [];
-    await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" fetchSnapshot={async () => stableSnapshot}
-      fetchRepositoryObservation={(_id, signal) => new Promise((resolve) => pending.push({ signal, resolve }))} />);
-    await act(async () => buttonWithText('Refresh').click());
-    expect(pending).toHaveLength(2);
-    expect(pending[0]!.signal.aborted).toBe(true);
-    const next = repositoryObservationFixture();
-    await act(async () => pending[1]!.resolve({ ...next, generation: 1,
-      service_epoch: '00000000-0000-4000-8000-000000000002', snapshot: { ...next.snapshot, service_epoch: '00000000-0000-4000-8000-000000000002', sequence: 1 } }));
-    await act(async () => pending[0]!.resolve(next));
-    expect(document.querySelector('.automation-summary')?.textContent).toContain('00000000-0000-4000-8000-000000000002');
-    expect(document.querySelector('.automation-summary')?.textContent).not.toContain('00000000-0000-4000-8000-000000000001');
-  });
-
-  test('rejects a wrong scope and labels retained evidence when a refresh fails', async () => {
-    const { repositoryObservationFixture } = await import('../../src/operator-web/fixture');
-    let request = 0;
-    await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" fetchSnapshot={async () => stableSnapshot}
-      fetchRepositoryObservation={async () => {
-        request += 1;
-        if (request === 1) return repositoryObservationFixture();
-        if (request === 2) return repositoryObservationFixture('repo-console');
-        throw new Error('private diagnostic must not be rendered');
-      }} />);
-    await act(async () => buttonWithText('Refresh').click());
-    expect(document.querySelector('.automation-summary')?.getAttribute('data-observation-status')).toBe('failed');
-    expect(document.querySelector('.automation-summary')?.textContent).toContain('Previous observation');
-    expect(document.querySelector('.automation-summary')?.textContent).not.toContain('repo-console');
-    await act(async () => buttonWithText('Refresh').click());
-    expect(document.querySelector('.automation-summary')?.textContent).not.toContain('private diagnostic');
-    expect(document.querySelector('.automation-summary')?.textContent).toContain('Read failed');
-  });
-});
-
-test('does not relabel a regressed generation in the same service epoch as current', async () => {
-  const { repositoryObservationFixture } = await import('../../src/operator-web/fixture');
-  let calls = 0;
-  await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" fetchSnapshot={async () => stableSnapshot}
-    fetchRepositoryObservation={async () => {
-      const value = repositoryObservationFixture();
-      return calls++ === 0 ? value : { ...value, generation: 1, snapshot: { ...value.snapshot, sequence: 1 } };
-    }} />);
-  await act(async () => buttonWithText('Refresh').click());
-  expect(document.querySelector('.automation-summary')?.getAttribute('data-observation-status')).toBe('failed');
-  expect(document.querySelector('.automation-summary')?.textContent).toContain('Previous observation');
-});
-
 describe('task detail original evidence', () => {
   const task = fixtureTasks.working;
   const evidenceProps = () => ({ repositoryId: 'repo-harness', taskId: task.task_id, revision: task.task_revision, generation: 0, t: ((key: never, args: never) => translate('en', key, args)) as import('../../src/operator-web/i18n').OperatorTranslate });
@@ -1535,7 +1461,7 @@ test('OperatorApp selects, refreshes and cancels exact task evidence without a m
 });
 
 test('automatic epoch change cancels associated evidence and late responses cannot restore the old service view', async () => {
-  const { taskContextFixture, taskActivityFixture, repositoryObservationFixture } = await import('../../src/operator-web/fixture');
+  const { taskContextFixture, taskActivityFixture } = await import('../../src/operator-web/fixture');
   const clock = observationClock(), originalFetch = globalThis.fetch;
   const collaborationReads: Array<{signal: AbortSignal; finish: (value: typeof collaborationSnapshot) => void}> = [];
   const contexts: Array<{signal: AbortSignal; finish: (value: ReturnType<typeof taskContextFixture>) => void; request: Parameters<typeof taskContextFixture>[0]}> = [];
@@ -1553,7 +1479,6 @@ test('automatic epoch change cancels associated evidence and late responses cann
   }) as typeof fetch;
   try {
     await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" fetchSnapshot={async () => next}
-      fetchRepositoryObservation={async id => repositoryObservationFixture(id)}
       fetchCollaboration={(_id, signal) => new Promise(resolve => collaborationReads.push({ signal: signal!, finish: resolve }))}
       readTaskContext={(request, signal) => new Promise(resolve => contexts.push({request, signal, finish: resolve}))}
       readTaskActivity={async request => taskActivityFixture(request)} />);

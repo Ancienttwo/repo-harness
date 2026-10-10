@@ -25,7 +25,7 @@ export type HookEvent =
   | 'SubagentStop'
   | 'Stop';
 
-export type RouteHost = 'claude' | 'codex';
+export type RouteHost = 'claude' | 'codex' | 'pi';
 
 /** Stable route id within an event. Public contract — never rename without coordinated adapter migration. */
 export type RouteId =
@@ -84,6 +84,7 @@ export const ROUTES: readonly Route[] = Object.freeze([
     event: 'PreToolUse' as const,
     routeId: 'subagent' as const,
     matcher: 'Task|Agent|SendUserMessage',
+    hosts: ['claude', 'codex'] as const,
     handler: 'subagent',
   }),
   Object.freeze({
@@ -103,6 +104,7 @@ export const ROUTES: readonly Route[] = Object.freeze([
     event: 'PostToolUse' as const,
     routeId: 'always' as const,
     handler: 'trace-observer',
+    hosts: ['claude', 'codex'] as const,
   }),
   Object.freeze({
     event: 'UserPromptSubmit' as const,
@@ -116,6 +118,7 @@ export const ROUTES: readonly Route[] = Object.freeze([
     // separate from prompt classification prevents untrusted peer content
     // from becoming routing or authorization input.
     handler: 'task-inbox',
+    hosts: ['claude', 'codex'] as const,
   }),
   Object.freeze({
     event: 'UserPromptSubmit' as const,

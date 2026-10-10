@@ -363,25 +363,6 @@ interface ExcludedModule {
  */
 const DELIBERATELY_EXCLUDED: readonly ExcludedModule[] = [
   {
-    module: 'src/core/automation/controller.ts',
-    fails: ['C-1', 'C-2'],
-    evidence: 'automation orchestration evidence plane (issue #279): journals bounded observations and calls existing acquire/dispatch authorities, but grants no claim, moves no lease generation, and publishes or accepts nothing',
-  },
-  {
-    /**
-     * The automation cost plane (issue #282). It fails C-1 because a budget is
-     * none of the five planes C0 froze: it owns spend, not Task/Claim, Lease,
-     * Publication, Acceptance, or Delegation identity. It fails C-2 because its
-     * bytes decide only whether the next operation may be paid for -- they
-     * grant no claim, move no lease generation, and publish or accept nothing,
-     * and exhaustion explicitly leaves every in-flight authority to its own
-     * owner's normal recovery.
-     */
-    module: 'src/core/automation/budget.ts',
-    fails: ['C-1', 'C-2'],
-    evidence: 'automation cost plane (issue #282): reserves and charges spend against one host-owned ProgramAuthorization grant, writes only its own ledger under the Git common directory, and never creates, releases, or steals a Task, Claim, Lease, Publication, or Acceptance fact',
-  },
-  {
     module: 'src/core/state/lease-liveness.ts',
     fails: ['C-1', 'C-2'],
     evidence: 'Lease liveness evidence plane (issue #286): classifies expiry and proves reclaim preconditions, but only the existing Lease store can move ownership or increment generation',
@@ -460,21 +441,6 @@ const DELIBERATELY_EXCLUDED: readonly ExcludedModule[] = [
     module: 'src/core/review/change-assessment.ts',
     fails: ['C-1'],
     evidence: 'review plane (D12); one consumer, src/effects/review/change-assessment.ts',
-  },
-  {
-    module: 'src/core/refactor/program.ts',
-    fails: ['C-1'],
-    evidence: 'refactor orchestration plane: maps provider recommendation identity to a Work Package before materialization, but no TaskOffer, Claim, Lease, Publication, Acceptance, or Delegation decision reads RefactorProgram bytes as its authority',
-  },
-  {
-    module: 'src/core/refactor/board.ts',
-    fails: ['C-1', 'C-2'],
-    evidence: 'refactor read-model plane: projects Program, provider lifecycle, execution, and resolution authorities for display, but no TaskOffer, Claim, Lease, Publication, Acceptance, or Delegation decision reads Refactor Board bytes',
-  },
-  {
-    module: 'src/core/refactor/activation.ts',
-    fails: ['C-1', 'C-2'],
-    evidence: 'refactor rollout-control plane: gates Refactor Mode activation from canary evidence but grants no Task/Claim, moves no Lease generation, and publishes or accepts no delivery-plane fact',
   },
   {
     module: 'src/core/state/project-board-slice.ts',

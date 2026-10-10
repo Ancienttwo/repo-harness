@@ -1,12 +1,12 @@
 #!/usr/bin/env bun
 
+import { assertObservationPath, currentReadonlyObservation, rejectObservation, observationReadFileSync as readFileSync, observationSpawnSync as spawnSync } from '../src/effects/state/readonly-observation';
 import { createHash } from 'crypto';
 import {
   chmodSync,
   existsSync,
   lstatSync,
   mkdirSync,
-  readFileSync,
   realpathSync,
   renameSync,
   unlinkSync,
@@ -16,7 +16,6 @@ import { userInfo } from 'os';
 import { createRequire } from 'module';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
-import { spawnSync } from 'child_process';
 
 export type AcceptanceDisposition = 'external_pass' | 'user_waiver' | 'reject';
 
@@ -195,6 +194,7 @@ type ProtectedGitRuntime = {
   readonly env: NodeJS.ProcessEnv;
 };
 const requireFromHelper = createRequire(import.meta.url);
+
 let protectedGitRuntimeCache: ProtectedGitRuntime | null = null;
 
 function fixedPosixExecutable(label: string, candidates: readonly string[]): string {
@@ -402,6 +402,7 @@ function repoRelative(root: string, path: string): string {
 }
 
 function readRegular(root: string, requested: string, label: string): { path: string; content: string } {
+  assertObservationPath(resolve(root, requested));
   const absolute = resolve(root, requested);
   if (!existsSync(absolute)) fail(`${label} is missing: ${requested}`);
   const actual = realpathSync(absolute);
@@ -532,6 +533,7 @@ export function inspectAcceptanceEvidence(args: {
   if (!allowed.length) fail('contract Allowed Paths are missing or malformed');
   if (subject.status !== 'ok') fail('current normalized review subject is unavailable');
   for (const path of subject.paths) if (!parsers.contractAllowsPath(args.contract, allowed, path)) fail('contract Allowed Paths refuse reviewed path: ' + path);
+  if (currentReadonlyObservation()) rejectObservation('Bounded acceptance assessment and benchmark adapters are not available');
   const assessmentFile = readRegular(root, '.ai/harness/checks/change-assessment.latest.json', 'Change Assessment');
   let assessment: unknown;
   try { assessment = JSON.parse(assessmentFile.content); } catch { fail('verification evidence Change Assessment is invalid JSON'); }

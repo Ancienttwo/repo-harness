@@ -2,7 +2,6 @@ import { bunGlobalPackageRoot, isBunGlobalPackageSource, skillLinkMatches } from
 import { readGlobalArchitectureConfiguration } from '../../effects/architecture/projection-config';
 import { inspectArchitectureProjectionReadiness } from '../../effects/architecture/archctx-provider';
 import { ensureGlobalArchitectureProjection } from './architecture-configuration';
-import { ensureGlobalRefactorRecommendations } from './refactor-recommendation-configuration';
 /**
  * Existing-repo harness bootstrap/update implementation.
  *
@@ -247,8 +246,11 @@ function hostIds(target: InstallTargetSpec): Array<"codex" | "claude"> {
   return ["claude", "codex"];
 }
 
-function targetFromHostIds(hosts: readonly ("codex" | "claude")[]): InstallTargetSpec {
-  return hosts.length === 2 ? "both" : hosts[0]!;
+function targetFromHostIds(hosts: readonly ("codex" | "claude" | "pi")[]): InstallTargetSpec {
+  if (hosts.some(host => host === 'pi')) throw new Error('Pi packages use the Pi installer');
+  const first = hosts[0];
+  if (first !== 'codex' && first !== 'claude') throw new Error('No install host selected');
+  return hosts.length === 2 ? "both" : first;
 }
 
 function homeDir(env?: NodeJS.ProcessEnv): string | null {
@@ -783,9 +785,7 @@ export function runInit(
       // Install/update snapshot and roll back this same account configuration.
       // Join their lock before either initializer reads its current values.
       withRuntimeHostTransactionLock(commandEnv, () => {
-        const architecture = ensureGlobalArchitectureProjection(commandEnv);
-        steps.push(architecture);
-        if (architecture.status === "ok") steps.push(ensureGlobalRefactorRecommendations(commandEnv));
+        steps.push(ensureGlobalArchitectureProjection(commandEnv));
       });
     } catch (error) {
       steps.push({ step: "global automation defaults", status: "failed", detail: String(error) });

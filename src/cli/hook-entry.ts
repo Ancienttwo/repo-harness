@@ -13,7 +13,6 @@ import { DETACHED_TOOLING_POPULATE_FLAG, runDetachedToolingPopulate } from './ho
 import { writeAllSync } from './runtime/write-all-sync';
 import { PROCESS_GROUP_LAUNCHER_FLAG, runProcessGroupLauncherCli } from '../effects/process-group-launcher';
 import { PROCESS_SUPERVISOR_FLAG, runProcessSupervisorCli } from '../effects/process-supervisor';
-import { ARCHITECTURE_PROJECTION_CONTINUATION_FLAG, runArchitectureProjectionContinuationCli } from '../effects/architecture/projection-continuation';
 
 export type RunHookEntryOptions = RunHookOptions;
 export type RunHookEntryResult = RunHookResult;
@@ -22,19 +21,18 @@ export function runHookEntry(opts: RunHookEntryOptions): RunHookEntryResult {
   return runHookRuntime({ ...opts, commandName: 'repo-harness-hook' });
 }
 
-function parseCliArgs(argv: readonly string[]): { event: HookEvent; routeId: RouteId } | null {
+function parseCliArgs(argv: readonly string[]): { event: HookEvent; routeId: RouteId; format?: 'json' } | null {
   const event = argv[0] as HookEvent | undefined;
   const routeFlagIndex = argv.indexOf('--route');
   const routeId = routeFlagIndex >= 0 ? argv[routeFlagIndex + 1] : undefined;
   if (!event || !routeId) return null;
-  return { event, routeId: routeId as RouteId };
+  const formatIndex = argv.indexOf('--format');
+  if (formatIndex >= 0 && argv[formatIndex + 1] !== 'json') return null;
+  return { event, routeId: routeId as RouteId, ...(formatIndex >= 0 ? { format: 'json' as const } : {}) };
 }
 
 if (import.meta.main) {
   const argv = process.argv.slice(2);
-  if (argv[0] === ARCHITECTURE_PROJECTION_CONTINUATION_FLAG) {
-    process.exit(runArchitectureProjectionContinuationCli(argv.slice(1)));
-  }
   if (argv[0] === PROCESS_SUPERVISOR_FLAG) {
     process.exit(await runProcessSupervisorCli(argv.slice(1)));
   }
@@ -128,7 +126,7 @@ if (import.meta.main) {
 
   const parsed = parseCliArgs(argv);
   if (!parsed) {
-    writeAllSync(2, 'repo-harness-hook: usage: repo-harness-hook <event> --route <route>\n');
+    writeAllSync(2, 'repo-harness-hook: usage: repo-harness-hook <event> --route <route> [--format json]\n');
     process.exit(2);
   }
   const { readFileSync } = await import('fs');

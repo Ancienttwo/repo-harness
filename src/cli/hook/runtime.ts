@@ -21,6 +21,8 @@ import type { EffectiveState, EffectiveStateRiskInput } from '../../core/state/t
 import type { WorkflowProfile } from '../../core/workflow/profile';
 import { createHookEffectTracker, hookEffectFailureMetadata, type HookHandlerResult } from './handler-contract';
 
+import { boundedHookDiagnostic, type HookJsonOutput } from '../../pi/hook-protocol';
+
 const OPT_IN_MARKER = '.ai/harness/workflow-contract.json';
 
 export interface RunHookOptions {
@@ -30,6 +32,7 @@ export interface RunHookOptions {
   readonly cwd?: string;
   /** Host output mode. The runtime owns all fd shaping; handlers never write to host fds. */
   readonly stdio?: 'inherit' | 'pipe' | 'ignore';
+  readonly format?: 'json';
   readonly commandName?: string;
   readonly input?: string | Buffer;
   readonly env?: NodeJS.ProcessEnv;
@@ -49,10 +52,12 @@ export interface RunHookResult {
     | 'non-opt-in'
     | 'unknown-route'
     | 'handler-unbound'
+    | 'unsupported-host-route'
     | 'handler-failed'
     | 'ok';
   readonly repoRoot?: string;
   readonly handler?: HookHandlerId;
+  readonly json?: HookJsonOutput;
 }
 
 function outputBytes(output: string | null | undefined): number | null {
@@ -96,6 +101,48 @@ function writeText(fd: 1 | 2, value: string): void {
   if (value) writeAllSync(fd, value);
 }
 
+function writeJsonOutput(opts: RunHookOptions, output: HookJsonOutput): boolean {
+  if (opts.stdio === 'ignore' || opts.stdio === 'pipe') return false;
+  writeText(1, `${JSON.stringify(output)}\n`);
+  return true;
+}
+
+function sessionOutput(
+  opts: RunHookOptions,
+  result: HookHandlerResult,
+  repoRoot: string,
+  diagnostics: readonly SessionContextProviderDiagnostic[],
+): { context: string | null; delivered: () => void } {
+  const sections = result.sessionContexts ?? [];
+  if (sections.length === 0 && diagnostics.length === 0) return { context: null, delivered: () => {} };
+  const env = opts.env ?? process.env;
+  const sessionId = env.HOOK_SESSION_ID ?? env.CODEX_SESSION_ID ?? env.CLAUDE_SESSION_ID ?? null;
+  const budgeted = budgetSessionContext(repoRoot, sections, sessionId, diagnostics);
+  return {
+    context: budgeted.context || null,
+    delivered: () => {
+      const included = new Set(budgeted.evidence.included_sections);
+      for (const section of sections) if (included.has(section.id)) section.onDelivered?.();
+    },
+  };
+}
+
+function jsonOutput(opts: RunHookOptions, result: RunHookResult, output?: HookHandlerResult, context: string | null = null,
+  unavailable = false): HookJsonOutput {
+  const parsed = output ? parseJson(output.stdout) : null;
+  const specific = parsed?.hookSpecificOutput as Record<string, unknown> | undefined;
+  const decision = result.exitCode !== 0 || unavailable ? 'block'
+    : parsed?.decision === 'block' ? 'block'
+    : parsed?.decision === 'allow' || (opts.event === 'PreToolUse' && result.reason === 'ok') ? 'allow' : 'none';
+  return {
+    protocol: 1, event: opts.event, route_id: opts.routeId,
+    host: (opts.env ?? process.env).HOOK_HOST ?? 'unknown', repo_root: result.repoRoot ?? null,
+    exit_code: result.exitCode, reason: unavailable ? 'context-unavailable' : result.reason, decision,
+    additional_context: context ?? (typeof specific?.additionalContext === 'string' ? specific.additionalContext : null),
+    diagnostics: boundedHookDiagnostic(output ? [output.stderr, isStructuredHookOutput(output.stdout, opts.event) ? '' : output.stdout].filter(Boolean).join('\n') : ''),
+  };
+}
+
 function hostOutput(
   opts: RunHookOptions,
   result: HookHandlerResult,
@@ -110,18 +157,12 @@ function hostOutput(
   const isDefaultSessionCapture = isSessionDefault && mode === undefined;
   if (isDefaultSessionCapture) {
     if (result.stderr) writeText(2, result.stderr);
-    const sections = result.sessionContexts ?? [];
-    if (sections.length === 0 && providerDiagnostics.length === 0) return;
-    const sessionId = env.HOOK_SESSION_ID ?? env.CODEX_SESSION_ID ?? env.CLAUDE_SESSION_ID ?? null;
-    const budgeted = budgetSessionContext(repoRoot, sections, sessionId, providerDiagnostics);
-    if (!budgeted.context) return;
+    const session = sessionOutput(opts, result, repoRoot, providerDiagnostics);
+    if (!session.context) return;
     writeText(1, `${JSON.stringify({
-      hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: budgeted.context },
+      hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: session.context },
     })}\n`);
-    const included = new Set(budgeted.evidence.included_sections);
-    for (const section of sections) {
-      if (included.has(section.id)) section.onDelivered?.();
-    }
+    session.delivered();
     return;
   }
 
@@ -359,21 +400,30 @@ export function runHook(opts: RunHookOptions): RunHookResult {
   const env = opts.env ?? process.env;
   const cwd = opts.cwd ?? process.cwd();
   const commandName = opts.commandName ?? 'repo-harness hook';
+  const complete = (result: RunHookResult): RunHookResult => {
+    if (opts.format !== 'json') return result;
+    const json = jsonOutput(opts, result);
+    writeJsonOutput(opts, json);
+    return { ...result, json };
+  };
   const resolved = resolveExplicitRepoRoot(cwd, env);
-  if (resolved.mismatch) return { exitCode: 0, reason: 'repo-root-mismatch' };
+  if (resolved.mismatch) return complete({ exitCode: 0, reason: 'repo-root-mismatch' });
   const repoRoot = resolved.repoRoot;
-  if (!repoRoot) return { exitCode: 0, reason: 'not-in-git-repo' };
-  if (!isOptIn(repoRoot)) return { exitCode: 0, reason: 'non-opt-in', repoRoot };
+  if (!repoRoot) return complete({ exitCode: 0, reason: 'not-in-git-repo' });
+  if (!isOptIn(repoRoot)) return complete({ exitCode: 0, reason: 'non-opt-in', repoRoot });
 
   const route = getRoute(opts.event, opts.routeId);
   if (!route) {
     writeAllSync(2, `${commandName}: unknown route ${opts.event}.${opts.routeId}\n`);
-    return { exitCode: 2, reason: 'unknown-route', repoRoot };
+    return complete({ exitCode: 2, reason: 'unknown-route', repoRoot });
+  }
+  if (env.HOOK_HOST === 'pi' && route.hosts && !route.hosts.includes('pi')) {
+    return complete({ exitCode: 2, reason: 'unsupported-host-route', repoRoot });
   }
   const handler = getHandlerForRoute(route);
   if (!handler) {
     writeAllSync(2, `${commandName}: no typed handler for ${opts.event}.${opts.routeId}\n`);
-    return { exitCode: 2, reason: 'handler-unbound', repoRoot };
+    return complete({ exitCode: 2, reason: 'handler-unbound', repoRoot });
   }
 
   const telemetry = createHookEventTelemetry({ repoRoot, event: opts.event, routeId: opts.routeId, input: opts.input, env });
@@ -469,7 +519,7 @@ export function runHook(opts: RunHookOptions): RunHookResult {
   if (!handlerThrew && handler.effectContract) {
     telemetry.markMetricsComplete(handler.effectContract.completeMetrics);
   }
-  hostOutput(opts, handlerResult, repoRoot, providerDiagnostics);
+  if (opts.format !== 'json') hostOutput(opts, handlerResult, repoRoot, providerDiagnostics);
   const exitCode = handlerResult.exitCode;
   const publicReason: RunHookResult['reason'] = exitCode === 0 ? 'ok' : 'handler-failed';
   // Handler-specific detail is retained only in the event telemetry record;
@@ -484,5 +534,13 @@ export function runHook(opts: RunHookOptions): RunHookResult {
       effectRecoveryOverride?.recovery,
     ),
   });
-  return { exitCode, reason: publicReason, repoRoot, handler: handler.id };
+  const result: RunHookResult = { exitCode, reason: publicReason, repoRoot, handler: handler.id };
+  if (opts.format !== 'json') return result;
+  const session = opts.event === 'SessionStart'
+    ? sessionOutput(opts, handlerResult, repoRoot, providerDiagnostics) : null;
+  const unavailable = providerDiagnostics.some(diagnostic => diagnostic.provider_id === 'effective-state');
+  const json = jsonOutput(opts, result, handlerResult, session?.context ?? null, unavailable);
+  const delivered = writeJsonOutput(opts, json);
+  if (delivered && session?.context) session.delivered();
+  return { ...result, json };
 }

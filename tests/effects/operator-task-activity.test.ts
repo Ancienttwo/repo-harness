@@ -93,7 +93,12 @@ test('byte ceilings include nested reply/actor reads and never report an empty c
   expect(read(100).coverage).toMatchObject({complete:false,reason:'bytes'});
   expect(read(3000).coverage).toMatchObject({complete:false,reason:'bytes'});
   for(let n=100;n<400;n++) f.event(buildTaskMessageEvent({...f.parent,message_id:id(n),body:'x'.repeat(8000)}));
-  const r=readOperatorTaskActivity(f.input); expect(r.coverage.reason).toBe('bytes'); expect(JSON.stringify(r).length).toBeLessThan(TASK_ACTIVITY_MAX_OUTPUT_BYTES);
+  // The deadline has its own boundary test. Pin time to test only the byte ceiling.
+  const byteClock = spyOn(Date, 'now').mockReturnValue(Date.now());
+  let r: ReturnType<typeof readOperatorTaskActivity>;
+  try { r=readOperatorTaskActivity(f.input); }
+  finally { byteClock.mockRestore(); }
+  expect(r.coverage.reason).toBe('bytes'); expect(JSON.stringify(r).length).toBeLessThan(TASK_ACTIVITY_MAX_OUTPUT_BYTES);
   expect(readOperatorTaskActivity({...f.input,message_id:id(2),limit:1}).entries[0]?.provenance).toBe('recorded_claim_actor');
 });
 test('unsafe and mismatched event/receipt paths are unavailable, with no path disclosure', () => {

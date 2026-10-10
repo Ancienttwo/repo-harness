@@ -14,7 +14,7 @@ test('one global configuration controls two repos without repository projection 
   const home = join(root, 'home');
   mkdirSync(join(home, '.repo-harness'), { recursive: true });
   writeFileSync(join(home, '.repo-harness/config.json'), JSON.stringify({ architecture: {
-    projection_provider: 'archctx', projection_apply: 'automatic', projection_failure_gate: 'advisory',
+    projection_provider: 'archctx', projection_apply: 'manual',
   } }));
   for (const name of ['first', 'second']) {
     const repo = join(root, name);
@@ -29,7 +29,7 @@ test('one global configuration controls two repos without repository projection 
     expect(result.status).toBe(0);
     const value = JSON.parse(result.stdout);
     expect(value.projectionProvider.provider).toBe('archctx');
-    expect(value.apply.mode).toBe('automatic');
+    expect(value.apply.mode).toBe('manual');
     expect(value.apply.enabled).toBe(false); // No project model has been authored.
   }
 }, 60000);
@@ -51,7 +51,7 @@ test('global setup seeds once and preserves unrelated global configuration', () 
   expect(existsSync(f.path)).toBe(false);
   writeFileSync(f.path, JSON.stringify({ brainRoot: '/existing/vault', protectedHelperRuntime: { preserved: true } }));
   expect(ensureGlobalArchitectureProjection(f.env).status).toBe('ok');
-  expect(loadArchitectureProjectionPolicy(f.env)).toMatchObject({ provider: 'archctx', applyMode: 'automatic' });
+  expect(loadArchitectureProjectionPolicy(f.env)).toMatchObject({ provider: 'archctx', applyMode: 'manual' });
   const first = readFileSync(f.path, 'utf8');
   expect(JSON.parse(first)).toMatchObject({ brainRoot: '/existing/vault', protectedHelperRuntime: { preserved: true } });
   expect(ensureGlobalArchitectureProjection(f.env).status).toBe('ok');
@@ -65,7 +65,7 @@ test('global setup preserves an explicit global disabled choice and rejects malf
   expect(ensureGlobalArchitectureProjection(f.env).status).toBe('ok');
   expect(readFileSync(f.path, 'utf8')).toBe(disabled);
   expect(loadArchitectureProjectionPolicy(f.env).provider).toBe('disabled');
-  for (const invalid of ['{', 'null', '[]', JSON.stringify({ architecture: { projection_provider: null, projection_apply: 'automatic' } }), JSON.stringify({ architecture: { projection_provider: 'archctx', projection_apply: null } }), '{"architecture":{}}', '{"architecture":{"projection_provider":"archctx","projection_apply":"automatci"}}', '{"architecture":{"projection_provider":"archctx","projection_apply":"automatic","projection_version":"0.0.1"}}']) {
+  for (const invalid of ['{', 'null', '[]', JSON.stringify({ architecture: { projection_provider: null, projection_apply: 'manual' } }), JSON.stringify({ architecture: { projection_provider: 'archctx', projection_apply: null } }), '{"architecture":{}}', '{"architecture":{"projection_provider":"archctx","projection_apply":"manaul"}}', '{"architecture":{"projection_provider":"archctx","projection_apply":"manual","projection_version":"0.0.1"}}']) {
     writeFileSync(f.path, invalid);
     expect(ensureGlobalArchitectureProjection(f.env).status).toBe('failed');
     expect(() => readGlobalArchitectureConfiguration(f.env)).toThrow();
@@ -73,17 +73,51 @@ test('global setup preserves an explicit global disabled choice and rejects malf
   }
 });
 
-test('adoption removes retired repo execution settings while preserving project architecture policy', () => {
+test('update migrates retired automatic projection settings once and readers refuse them before migration', () => {
   const f = globalFixture();
-  mkdirSync(join(f.home, '.ai/harness'), { recursive: true });
-  writeFileSync(join(f.home, '.ai/harness/policy.json'), JSON.stringify({ architecture: {
-    projection_provider: 'disabled', projection_apply: 'disabled', projection_version: '0.0.1',
-    projection_failure_gate: 'strict', projection_timeout_ms: 1000, freshness_gate: 'strict', gate_min_severity: 'high',
+  writeFileSync(f.path, JSON.stringify({ brainRoot: '/existing/vault', architecture: {
+    projection_provider: 'archctx', projection_apply: 'automatic', projection_failure_gate: 'strict', projection_timeout_ms: 90000,
   } }));
-  const plan = planStandardAdoption({ repoRoot: f.home, mode: 'standard', env: f.env });
-  const operation = plan.operations.find((entry) => entry.kind === 'writeFile' && entry.path === '.ai/harness/policy.json');
-  expect(operation?.kind).toBe('writeFile');
-  if (operation?.kind !== 'writeFile') throw new Error('policy operation missing');
-  expect(JSON.parse(operation.content).architecture).toEqual({ freshness_gate: 'strict', gate_min_severity: 'high' });
-  expect(existsSync(f.path)).toBe(false); // Repository adoption does not invent a host preference.
+  expect(() => readGlobalArchitectureConfiguration(f.env)).toThrow('run `repo-harness update` to migrate');
+  const migrated = ensureGlobalArchitectureProjection(f.env);
+  expect(migrated).toMatchObject({ status: 'ok', detail: expect.stringContaining('migrated retired automatic projection settings') });
+  expect(JSON.parse(readFileSync(f.path, 'utf8'))).toEqual({ brainRoot: '/existing/vault', architecture: {
+    projection_provider: 'archctx', projection_apply: 'manual', projection_timeout_ms: 90000,
+  } });
+  expect(loadArchitectureProjectionPolicy(f.env)).toMatchObject({ provider: 'archctx', applyMode: 'manual', timeoutMs: 90000 });
+  const settled = readFileSync(f.path, 'utf8');
+  expect(ensureGlobalArchitectureProjection(f.env).detail).toContain('using ');
+  expect(readFileSync(f.path, 'utf8')).toBe(settled);
+
+  writeFileSync(f.path, JSON.stringify({ architecture: { projection_provider: 'disabled', projection_apply: 'disabled', projection_failure_gate: 'advisory' } }));
+  expect(ensureGlobalArchitectureProjection(f.env).status).toBe('ok');
+  expect(JSON.parse(readFileSync(f.path, 'utf8')).architecture).toEqual({ projection_provider: 'disabled', projection_apply: 'disabled' });
+});
+
+test('adoption removes retired generated architecture settings while preserving user-authored keys', () => {
+  const policyFor = (policy: Record<string, unknown>) => {
+    const f = globalFixture();
+    mkdirSync(join(f.home, '.ai/harness'), { recursive: true });
+    writeFileSync(join(f.home, '.ai/harness/policy.json'), JSON.stringify(policy));
+    const plan = planStandardAdoption({ repoRoot: f.home, mode: 'standard', env: f.env });
+    const operation = plan.operations.find((entry) => entry.kind === 'writeFile' && entry.path === '.ai/harness/policy.json');
+    if (operation?.kind !== 'writeFile') throw new Error('policy operation missing');
+    expect(existsSync(f.path)).toBe(false); // Repository adoption does not invent a host preference.
+    return JSON.parse(operation.content);
+  };
+  const retired = policyFor({
+    harness: { events_file: '.ai/harness/events.jsonl', architecture_events_file: '.ai/harness/architecture/events.jsonl' },
+    architecture: {
+      projection_provider: 'disabled', projection_apply: 'disabled', projection_version: '0.0.1',
+      projection_failure_gate: 'strict', projection_timeout_ms: 1000, freshness_gate: 'strict', gate_min_severity: 'high',
+      requests_dir: 'docs/architecture/requests', queue_script: 'repo-harness run architecture-queue',
+      rule: 'hooks record architecture queue cards and sync controlled local context blocks; agents author semantic snapshots and diagrams',
+    },
+  });
+  expect(retired.architecture).toBeUndefined();
+  expect(retired.harness.architecture_events_file).toBeUndefined();
+  expect(retired.harness.events_file).toBe('.ai/harness/events.jsonl');
+
+  const custom = policyFor({ architecture: { freshness_gate: 'strict', rule: 'Team-specific architecture rule.', review_owner: 'platform' } });
+  expect(custom.architecture).toEqual({ rule: 'Team-specific architecture rule.', review_owner: 'platform' });
 });
