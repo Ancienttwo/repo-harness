@@ -1,7 +1,7 @@
 import { createHash } from 'crypto';
 import { existsSync, readFileSync, realpathSync } from 'fs';
 import { join, relative } from 'path';
-import { PM_OPERATION_SCHEMAS, PM_WORKER_ROLE, PmError, parsePmRequest, type PmTaskScope } from '../../core/pm/protocol';
+import { PM_OPERATION_SCHEMAS, PM_WORKER_ROLE, PmError, publicPmError, parsePmRequest, type PmTaskScope } from '../../core/pm/protocol';
 import { collectRepoTaskOffers } from '../fleet/acquire';
 import { canonicalRepoPath, isRepoHarnessAdoptedPath, readRepoHarnessRegistryStrictSnapshot, repoHarnessRepoIdFor, withRepoHarnessRegistryAuthorizationLockAsync } from '../repo-registry';
 import { readLease, withTaskLockAsync } from '../state/coordination-lease-store';
@@ -154,7 +154,7 @@ export async function executePmRequest(value: unknown, env: NodeJS.ProcessEnv = 
   if (request.operation === 'capabilities') {
     let runtime: { available: boolean; reason?: string };
     try { readPmHostConfiguration(env); runtime = { available: true }; }
-    catch (error) { runtime = { available: false, reason: error instanceof Error ? error.message : String(error) }; }
+    catch (error) { runtime = { available: false, reason: publicPmError(error).code }; }
     return { operations: PM_OPERATION_SCHEMAS, worker_role: PM_WORKER_ROLE, runtime, restriction: 'model-tool-boundary',
       dispatch_scope: 'operator-approved-canonical-bound-linked-worktree', provider_acceptance: 'unverified', acquisition: 'unavailable', remediation: PM_ADMISSION_REMEDIATION };
   }
@@ -163,8 +163,9 @@ export async function executePmRequest(value: unknown, env: NodeJS.ProcessEnv = 
     const offers = collectRepoTaskOffers(repo, registry)?.offers ?? [];
     return { authorization_revision: registry.authorizationRevision, tasks: offers.map(offer => {
       const claim = readLease(repo.path, offer.task_id).record;
+      const worker = taskAgentStatus(repo.path, offer.task_id, PM_WORKER_ROLE);
       return { offer, claim: claim ? { claim_id: claim.claim_id, generation: claim.generation, task_revision: claim.task_revision, state: claim.state } : null,
-        worker: taskAgentStatus(repo.path, offer.task_id, PM_WORKER_ROLE) };
+        worker: 'error' in worker && worker.error !== null ? { ...worker, error: 'pm_operation_failed' } : worker };
     }) };
   }
   const write = request.operation !== 'collect';

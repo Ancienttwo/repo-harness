@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import { isAbsolute, relative, resolve } from 'path';
 import { realpathSync } from 'fs';
+import { reconcileTaskRequest } from '../../effects/terminal/task-request-readback';
 import { cancelTaskAgent, closeTaskAgent, collectTaskResult, readSessionArtifact, readTaskAgent, readTaskAgentHistory, readTaskRequestResult, sendTaskRequest, submitTaskResult, startTaskAgent, taskAgentStatus, type TaskAgentSpec, type TaskRequest } from '../../effects/terminal/task-session';
 
 export function buildTaskAgentCommand(): Command {
@@ -48,6 +49,12 @@ export function buildTaskAgentCommand(): Command {
       const { dir } = readTaskAgent(opts.repo, opts.task, opts.role);
       const request = readSessionArtifact<TaskRequest>(resolve(dir, `request-${round}.json`));
       process.stdout.write(JSON.stringify(readTaskRequestResult(opts.repo, dir, request)) + '\n');
+    });
+  command.command('reconcile').description('Read one saved request by stable ID without delivery or acceptance')
+    .requiredOption('--task <id>').requiredOption('--role <name>').requiredOption('--request-id <id>')
+    .requiredOption('--expected-head <sha>', 'Full expected execution checkout HEAD; result SHA binding remains unverified')
+    .option('--repo <path>', 'Repository root', process.cwd()).action(opts => {
+      process.stdout.write(JSON.stringify(reconcileTaskRequest(opts.repo, opts.task, opts.role, opts.requestId, opts.expectedHead)) + '\n');
     });
   for (const action of ['close', 'cancel']) command.command(action).requiredOption('--task <id>').requiredOption('--role <name>')
     .option('--repo <path>', 'Repository root', process.cwd()).action(async opts => {

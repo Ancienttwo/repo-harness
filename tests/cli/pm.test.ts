@@ -4,7 +4,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSy
 import { basename, dirname, join, relative } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createHash } from 'node:crypto';
-import { PM_OPERATION_SCHEMAS, parsePmRequest, type PmRequest, type PmTaskScope } from '../../src/core/pm/protocol';
+import { PM_OPERATION_SCHEMAS, PmError, parsePmRequest, type PmRequest, type PmTaskScope } from '../../src/core/pm/protocol';
 import { buildPmCommand, runPmJson } from '../../src/cli/commands/pm';
 import { executePmRequest, withPmTaskAuthority } from '../../src/effects/pm/operations';
 import { readPmHostConfiguration } from '../../src/effects/pm/host';
@@ -407,12 +407,12 @@ test('PM authenticated handlers revalidate token profile, owner, revision and re
     expect(pmPayload(await client.callTool({ name: 'pm_status', arguments: {} }))).toMatchObject({ error: { code: 'pm_mcp_authentication_required' } });
     authInfo = provider.verifyAccessTokenCurrent('good');
     revision = 8;
-    await expect(client.listTools()).rejects.toThrow('stale or missing');
+    await expect(client.listTools()).rejects.toThrow('pm_mcp_failed');
     expect(pmPayload(await client.callTool({ name: 'pm_status', arguments: {} }))).toMatchObject({ ok: false });
     revision = 7; store.setAccessToken('good', { ...record, token: 'good' });
     expect((await client.listTools()).tools).toHaveLength(2);
     store.deleteAccessToken('good');
-    await expect(client.listTools()).rejects.toThrow('Token not found');
+    await expect(client.listTools()).rejects.toThrow('pm_mcp_failed');
     expect(pmPayload(await client.callTool({ name: 'pm_status', arguments: {} }))).toMatchObject({ ok: false });
   } finally { await client.close(); await server.close(); }
   expect(existsSync(join(f.repo, '.ai/harness/runs'))).toBe(false);
@@ -492,7 +492,7 @@ async function queuedPmRevocation(operation: 'dispatch' | 'collect', change: 'to
     held.release();
     const denied = pmPayload(await pending);
     expect(denied).toMatchObject({ ok: false, error: change === 'token'
-      ? { message: 'Token not found' } : { code: 'pm_mcp_configuration_changed' } });
+      ? { message: 'pm_mcp_failed' } : { code: 'pm_mcp_configuration_changed' } });
     expect(existsSync(join(dir, 'collected-1.json'))).toBe(false);
     expect(existsSync(join(dir, 'coding-host'))).toBe(false);
     expect(existsSync(join(f.execution, '.ai/harness/runs/pm-input'))).toBe(false);
@@ -526,7 +526,7 @@ for (const change of ['token', 'action'] as const) test(`PM effect guard rejects
     if (change === 'token') store.deleteAccessToken('dispatch-token'); else mcpScope(f, ['status']);
     held.release();
     expect(await pending).toMatchObject({ operation: 'dispatch', ok: false, error: change === 'token'
-      ? { code: 'pm_operation_failed', message: 'Token not found' } : { code: 'pm_mcp_configuration_changed' } });
+      ? { code: 'pm_operation_failed', message: 'pm_operation_failed' } : { code: 'pm_mcp_configuration_changed' } });
     // Missing native admission would return a different error. This assertion
     // proves rejection inside the queued effect, rather than the MCP return fence.
     expect(existsSync(join(f.repo, '.ai/harness/runs/task-agents'))).toBe(false);
@@ -680,4 +680,226 @@ test('PM preflight reads bounded configuration without creating credentials or c
   chmodSync(join(f.home, 'pm-mcp.json'), 0o666);
   expect(inspectPmMcpConnection(f.env).blockers).toContain('pm_mcp_configuration_unsafe');
   expect(readdirSync(f.home).sort()).toEqual(before.map(([name]) => name));
+});
+
+// Transport fixtures only. No live Herdr or provider is started.
+for (const outcome of ['ack-revoked', 'accepted', 'failed', 'interrupted'] as const) {
+  test.skipIf(process.platform === 'win32')(`PM delivery ${outcome} retains the transport fact without replay`, async () => {
+    const f = fixture(true), { dir, binding, request: previous } = requestFixture(f);
+    writeSessionArtifact(previous.result_ref, { request_id: previous.request_id, context_sha256: previous.context_sha256, value: 'done' });
+    writeSessionArtifact(join(dir, 'started-1.json'), { request_id: previous.request_id });
+    const bin = join(f.root, 'bin'); mkdirSync(bin);
+    const fake = join(bin, 'herdr');
+    writeFileSync(fake, `#!${process.execPath}\nconst args=process.argv.slice(2); let result;\nif(args[2]==='pane'&&args[3]==='get')result={pane:${JSON.stringify({ pane_id: binding.pane_id, terminal_id: binding.terminal_id, workspace_id: binding.workspace_id })}};\nelse if(args[2]==='agent'&&args[3]==='get')result={agent:${JSON.stringify({ pane_id: binding.pane_id, terminal_id: binding.terminal_id, name: binding.agent_name, agent: binding.harness_kind })}};\nelse if(args[2]==='pane'&&args[3]==='process-info')result={process_info:{foreground_processes:[{pid:${process.pid}}]}};\nelse throw new Error('unexpected fixture command');\nconsole.log(JSON.stringify({id:'fixture',result}));\n`);
+    chmodSync(fake, 0o700);
+    const savedPath = process.env.PATH; process.env.PATH = bin + ':' + savedPath;
+    let revoked = false, deliveries = 0;
+    const guard = () => { if (revoked) throw new Error('fixture_authority_revoked'); };
+    const delivery = async () => {
+      deliveries++;
+      if (outcome === 'failed' || outcome === 'interrupted') throw new Error(`fixture_${outcome}`);
+      if (outcome === 'ack-revoked') revoked = true;
+    };
+    try {
+      const { sendTaskRequest } = await import('../../src/effects/terminal/task-session');
+      const pending = sendTaskRequest(f.execution, taskId, 'deep-worker', plan, 'repeatable', delivery, undefined, guard);
+      if (outcome === 'ack-revoked') await expect(pending).rejects.toThrow('fixture_authority_revoked');
+      else if (outcome === 'accepted') expect((await pending).round).toBe(2);
+      else await expect(pending).rejects.toThrow('task_agent_delivery_unknown');
+      const request = JSON.parse(readFileSync(join(dir, 'request-2.json'), 'utf8'));
+      expect(JSON.parse(readFileSync(join(dir, 'delivery-2.json'), 'utf8'))).toMatchObject({ request_id: request.request_id,
+        state: outcome === 'failed' || outcome === 'interrupted' ? 'unknown' : 'accepted' });
+      expect(deliveries).toBe(1);
+      revoked = false;
+      await expect(sendTaskRequest(f.execution, taskId, 'deep-worker', plan, 'repeatable', delivery)).rejects.toThrow('ambiguous_round');
+      expect(deliveries).toBe(1); expect(existsSync(join(dir, 'request-3.json'))).toBe(false);
+    } finally { process.env.PATH = savedPath; }
+  });
+}
+
+for (const failure of ['returned', 'thrown', 'list'] as const) test(`PM remote ${failure} errors do not expose diagnostic sentinels`, async () => {
+  const f = fixture(); mcpScope(f, ['status']);
+  const sentinel = `${f.home}/private-secret-like-sentinel`;
+  const original = createPmMcpBinding(f.env); let checks = 0;
+  const binding = { ...original,
+    check: () => { if (failure === 'returned' && ++checks === 2) throw new Error(sentinel); return original.check(); },
+    tools: () => { if (failure === 'list') throw new Error(sentinel); return original.tools(); },
+  };
+  const server = createPmMcpServer(f.env, { binding, ...(failure === 'thrown' ? {
+    authorization: { authorizationId: 'fixture', verify: () => { throw new Error(sentinel); } },
+  } : {}) });
+  const [transport, peer] = InMemoryTransport.createLinkedPair();
+  const send = transport.send.bind(transport);
+  transport.send = (message, options) => send(message, { ...options, authInfo: { token: 'fixture-token', clientId: 'fixture', scopes: [] } });
+  const client = new Client({ name: 'pm-error-fixture', version: '0' }, { capabilities: {} });
+  await server.connect(peer); await client.connect(transport);
+  try {
+    if (failure === 'list') {
+      const error = await client.listTools().then(() => { throw new Error('expected list refusal'); }, error => error);
+      expect(String(error)).not.toContain(sentinel); expect(String(error)).toContain('pm_mcp_failed');
+    } else {
+      const response = await client.callTool({ name: 'pm_status', arguments: {} });
+      expect(JSON.stringify(response)).not.toContain(sentinel);
+      expect(pmPayload(response)).toMatchObject({ ok: false, error: { message: failure === 'returned' ? 'pm_operation_failed' : 'pm_mcp_failed' } });
+    }
+  } finally { await client.close(); await server.close(); }
+});
+
+test('PM JSON failures expose only fixed public errors, including typed and parser errors', async () => {
+  const f = fixture(), sentinel = `${f.home}/private-secret-like-sentinel`;
+  for (const error of [new Error(sentinel), new PmError('pm_request_invalid', sentinel), new PmError(sentinel, sentinel)]) {
+    const response = await runPmJson(JSON.stringify({ protocol: 1, operation: 'capabilities' }), f.env, () => { throw error; });
+    expect(JSON.stringify(response)).not.toContain(sentinel);
+    expect(response).toMatchObject({ ok: false, error: { message: error instanceof PmError && error.code === 'pm_request_invalid' ? 'pm_request_invalid' : 'pm_operation_failed' } });
+  }
+  expect(JSON.stringify(await runPmJson(`{"${sentinel}`, f.env))).not.toContain(sentinel);
+});
+
+for (const change of ['enabled', 'profile', 'version', 'revision'] as const) {
+  for (const operation of ['dispatch', 'collect'] as const) for (const lock of ['topology', 'task'] as const) {
+    test(`PM HTTP queued ${operation} checks live ${change} after ${lock} lock`, async () => queuedHttpConfiguration(operation, change, lock));
+  }
+  test(`PM HTTP queued collect checks live ${change} after session lock`, async () => queuedHttpConfiguration('collect', change, 'session'));
+}
+
+async function queuedHttpConfiguration(operation: 'dispatch' | 'collect', change: 'enabled' | 'profile' | 'version' | 'revision', lock: 'topology' | 'task' | 'session') {
+  const f = fixture(true); mcpScope(f);
+  const { request, dir } = requestFixture(f, { pid: process.pid, identity: 'unused-fixture-process-proof' });
+  const result = { request_id: request.request_id, context_sha256: request.context_sha256, value: 'queued-http-fixture' };
+  writeSessionArtifact(request.result_ref, result);
+  const configPath = join(f.home, 'mcp.local.json');
+  const config = { version: 3, profile: 'pm', authorizationRevision: 7, pm: { enabled: true } };
+  writeFileSync(configPath, JSON.stringify(config), { mode: 0o600 });
+  const store = new McpOAuthTokenStore(join(f.home, 'mcp.oauth-tokens.json'));
+  const client = store.registerClient({ redirect_uris: ['http://localhost/fixture'], token_endpoint_auth_method: 'none' });
+  store.setAccessToken('queued-http-token', { token: 'queued-http-token', clientId: client.client_id, authorizationId: 'queued-http-owner',
+    profile: 'pm', authorizationRevision: 7, pmScopeFingerprint: createPmMcpBinding(f.env).fingerprint(), scopes: ['repo-harness', 'repo-harness.pm'], expiresAt: Math.floor(Date.now() / 1000) + 600 });
+  const port = await pmHttpPort(), base = `http://127.0.0.1:${port}`;
+  const enteredPath = join(f.root, 'guard-entered.txt'), responsePath = join(f.root, 'executed-response.json');
+  const driver = join(f.root, 'http-observer.ts');
+  // Observe the real verifier and CLI result in this isolated child only. Do
+  // not change return values, locks, guards, credentials or production modules.
+  writeFileSync(driver, `
+import { mock } from 'bun:test';
+import { appendFileSync, writeFileSync } from 'node:fs';
+const oauthPath=${JSON.stringify(join(import.meta.dir, '../../src/cli/mcp/oauth.ts'))};
+const oauth=await import(oauthPath); const createProvider=oauth.createMcpOAuthProvider;
+mock.module(oauthPath,()=>({...oauth,createMcpOAuthProvider:(...args:any[])=>{
+  const provider=createProvider(...args);
+  const verify=provider.verifyAccessTokenCurrent.bind(provider);
+  provider.verifyAccessTokenCurrent=(...input:any[])=>{
+    const result=verify(...input);appendFileSync(${JSON.stringify(enteredPath)},'verified\\n');return result;
+  };return provider;
+}}));
+const commandPath=${JSON.stringify(join(import.meta.dir, '../../src/cli/commands/pm.ts'))};
+const commands=await import(commandPath); const runPm=commands.runPmJson;
+mock.module(commandPath,()=>({...commands,runPmJson:async(...args:any[])=>{
+  const result=await runPm(...args);writeFileSync(${JSON.stringify(responsePath)},JSON.stringify(result));return result;
+}}));
+const {startMcpHttp}=await import(${JSON.stringify(join(import.meta.dir, '../../src/cli/mcp/transports/http.ts'))});
+await startMcpHttp({repo:${JSON.stringify(f.repo)},profile:'pm',port:${port}});
+`);
+  const proc = Bun.spawn([process.execPath, driver], { env: f.env, stdout: 'ignore', stderr: 'pipe' });
+  const diagnostic = new Response(proc.stderr).text();
+  const post = (session: string | undefined, body: unknown) => fetch(base + '/mcp', { method: 'POST', headers: {
+    authorization: 'Bearer queued-http-token', 'content-type': 'application/json', accept: 'application/json, text/event-stream',
+    ...(session ? { 'mcp-session-id': session } : {}),
+  }, body: JSON.stringify(body) });
+  const initialize = async () => {
+    const response = await post(undefined, { jsonrpc: '2.0', id: 1, method: 'initialize', params: {
+      protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'queued-fixture', version: '0' },
+    } });
+    expect(response.status).toBe(200); await response.text();
+    const session = response.headers.get('mcp-session-id')!; expect(session).toBeTruthy();
+    await post(session, { jsonrpc: '2.0', method: 'notifications/initialized' }); return session;
+  };
+  let held: ReturnType<typeof acquireExclusiveDirectoryLock> | undefined;
+  try {
+    let ready = false;
+    for (let attempt = 0; attempt < 100; attempt++) {
+      try { if ((await fetch(base + '/health')).ok) { ready = true; break; } } catch {}
+      if (proc.exitCode !== null) throw new Error('queued HTTP fixture exited: ' + await diagnostic);
+      await Bun.sleep(50);
+    }
+    expect(ready).toBe(true);
+    const session = await initialize();
+    const { repo_id, authorization_revision, ...taskScope } = f.scope;
+    const status = await executePmRequest({ protocol: 1, operation: 'status', repo_id }, f.env) as any;
+    const args = operation === 'collect' ? { ...taskScope, round: 1, request_id: request.request_id }
+      : { ...taskScope, offer_revision: status.tasks[0].offer.offer_revision };
+    held = lock === 'task' ? acquireExclusiveDirectoryLock(join(f.repo, '.git'), taskLockRelativePath(taskId))
+      : lock === 'topology' ? acquireExclusiveDirectoryLock(join(f.repo, '.git'), 'repo-harness/coordination/locks/worktree-topology.lock')
+      : acquireExclusiveDirectoryLock(f.repo, relative(f.repo, join(dir, 'caller.lock')));
+    // SSE headers prove ingress. The verifier count below proves the owning
+    // guard reached the real lock boundary before configuration changes.
+    const queued = await post(session, { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: `pm_${operation}`, arguments: args } });
+    expect(queued.status).toBe(200); expect(queued.headers.get('content-type')).toContain('text/event-stream');
+    const guardEntries = lock === 'topology' ? 3 : lock === 'task' ? 4 : 8;
+    const entryDeadline = Date.now() + 10_000;
+    while ((!existsSync(enteredPath) || readFileSync(enteredPath, 'utf8').trim().split('\n').length < guardEntries) && Date.now() < entryDeadline) await Bun.sleep(10);
+    expect(readFileSync(enteredPath, 'utf8').trim().split('\n').length).toBeGreaterThanOrEqual(guardEntries);
+    expect(existsSync(responsePath)).toBe(false);
+    expect(existsSync(join(dir, 'collected-1.json'))).toBe(false);
+    const changed = change === 'enabled' ? { ...config, pm: { enabled: false } }
+      : change === 'profile' ? { ...config, profile: 'planner' }
+      : change === 'version' ? { ...config, version: 2 } : { ...config, authorizationRevision: 8 };
+    writeFileSync(configPath, JSON.stringify(changed)); held.release();
+    const wire = queued.text().catch(() => '');
+    const completionDeadline = Date.now() + 10_000;
+    while (!existsSync(responsePath) && Date.now() < completionDeadline) await Bun.sleep(10);
+    expect(existsSync(responsePath)).toBe(true);
+    const response = JSON.parse(readFileSync(responsePath, 'utf8'));
+    const remote = await wire;
+    if (remote) expect(JSON.parse(pmHttpPayload(remote).result.content[0].text)).toMatchObject({ ok: false });
+    expect(response).toMatchObject({ ok: false, error: { code: 'pm_http_configuration_changed' } });
+    expect(existsSync(join(dir, 'collected-1.json'))).toBe(false);
+    expect(existsSync(join(dir, 'coding-host'))).toBe(false);
+    expect(existsSync(join(f.execution, '.ai/harness/runs/pm-input'))).toBe(false);
+    expect(readFileSync(request.result_ref, 'utf8')).toContain('queued-http-fixture');
+    writeFileSync(configPath, JSON.stringify(config));
+    if (operation === 'collect') {
+      const fresh = await initialize();
+      const accepted = await post(fresh, { jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'pm_collect', arguments: args } });
+      expect(JSON.parse(pmHttpPayload(await accepted.text()).result.content[0].text)).toMatchObject({ ok: true, data: { result, status: 'collected' } });
+    }
+  } finally { held?.release(); proc.kill('SIGTERM'); await proc.exited; await diagnostic; }
+}
+
+test.skipIf(process.platform !== 'darwin')('PM capabilities do not expose host probe exception details', async () => {
+  const f = fixture(true), parent = join(f.home, 'private-secret-like-sentinel'), sentinel = join(parent, 'runtime');
+  writeFileSync(parent, 'not a directory');
+  writeFileSync(join(f.home, 'pm-host.json'), JSON.stringify({ protocol: 1, endpoint: { session: 'fixture' }, parent_pane: 'fixture', max_requests: 1,
+    admission: { version: 1, runtime: 'codex', execution_root: f.execution, node: sentinel, executable: sentinel, model: 'fixture', effort: 'high',
+      approval_policy: 'never', filesystem: 'worktree-only', authorization_ref: 'fixture-only' } }), { mode: 0o600 });
+  const response = await runPmJson(JSON.stringify({ protocol: 1, operation: 'capabilities' }), f.env);
+  expect(JSON.stringify(response)).not.toContain(sentinel);
+  expect(response).toMatchObject({ ok: true, data: { runtime: { available: false, reason: 'pm_operation_failed' } } });
+});
+
+test.skipIf(process.platform === 'win32')('PM status successful response redacts worker diagnostics', async () => {
+  const f = fixture(true); requestFixture(f);
+  const sentinel = join(f.home, 'private-worker-secret-like-sentinel');
+  const bin = join(f.root, 'bin'); mkdirSync(bin);
+  const fake = join(bin, 'herdr');
+  writeFileSync(fake, `#!${process.execPath}\nconsole.error(${JSON.stringify(sentinel)}); process.exit(1);\n`);
+  chmodSync(fake, 0o700);
+  const savedPath = process.env.PATH; process.env.PATH = bin + ':' + savedPath;
+  try {
+    const { taskAgentStatus } = await import('../../src/effects/terminal/task-session');
+    expect(taskAgentStatus(f.repo, taskId, 'deep-worker').error).toContain(sentinel);
+    const response = await runPmJson(JSON.stringify({ protocol: 1, operation: 'status', repo_id: f.scope.repo_id }), f.env);
+    expect(JSON.stringify(response)).not.toContain(sentinel);
+    expect(response).toMatchObject({ ok: true, data: { tasks: [{ worker: { status: 'interrupted', error: 'pm_operation_failed' } }] } });
+  } finally { process.env.PATH = savedPath; }
+});
+
+test('PM CLI and real stdio remain independent from disabled HTTP configuration', async () => {
+  const f = fixture(); mcpScope(f, ['status']);
+  writeFileSync(join(f.home, 'mcp.local.json'), JSON.stringify({ version: 3, profile: 'pm', authorizationRevision: 7, pm: { enabled: false } }), { mode: 0o600 });
+  expect(await runPmJson(JSON.stringify({ protocol: 1, operation: 'status', repo_id: f.scope.repo_id }), f.env)).toMatchObject({ ok: true });
+  const client = await pmClient(f);
+  try {
+    expect((await client.listTools()).tools.map(tool => tool.name)).toEqual(['pm_status']);
+    expect(pmPayload(await client.callTool({ name: 'pm_status', arguments: {} }))).toMatchObject({ ok: true });
+  } finally { await client.close(); }
 });

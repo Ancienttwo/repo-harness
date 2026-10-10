@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import { PM_MAX_INPUT_BYTES, PmError, type PmResponse } from '../../core/pm/protocol';
+import { PM_MAX_INPUT_BYTES, PmError, publicPmError, type PmResponse } from '../../core/pm/protocol';
 import { executePmRequest, type PmExecutionGuard } from '../../effects/pm/operations';
 
 export async function runPmJson(input: string, env: NodeJS.ProcessEnv = process.env, guard?: PmExecutionGuard): Promise<PmResponse> {
@@ -11,8 +11,7 @@ export async function runPmJson(input: string, env: NodeJS.ProcessEnv = process.
     return { protocol: 1, kind: 'repo-harness-pm-response', operation, ok: true, data: await executePmRequest(value, env, guard) };
   } catch (error) {
     return { protocol: 1, kind: 'repo-harness-pm-response', operation, ok: false,
-      error: { code: error instanceof PmError ? error.code : error instanceof SyntaxError ? 'pm_json_invalid' : 'pm_operation_failed',
-        message: error instanceof Error ? error.message : String(error) } };
+      error: publicPmError(error) };
   }
 }
 
