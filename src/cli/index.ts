@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { buildStrategyCommand } from './commands/strategy';
 import { buildPipelineCommand } from './commands/pipeline';
 import { buildModuleCommand } from './commands/module';
 import { withRuntimeHostTransactionLock } from './installer/runtime-host-lock';
@@ -865,6 +866,7 @@ export function buildProgram(): Command {
   program.addCommand(buildIntegrationCommand());
   program.addCommand(buildDelegationCommand());
   program.addCommand(buildCollaborationCommand());
+  program.addCommand(buildStrategyCommand());
   program.addCommand(buildVerifiedContextCommand());
   program.addCommand(buildInterfaceChangeCommand());
   program.addCommand(buildExternalSourceCommand());

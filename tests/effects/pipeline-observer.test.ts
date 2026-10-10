@@ -210,13 +210,18 @@ test('A9: pinned snapshot and GET/HEAD paths never open or change live WAL files
   expect(readFileSync(path+'-wal')).toEqual(wal);expect(OPERATOR_ROUTES.find(r=>r.id==='pipelines')?.write).toBe(false);
 });
 
-test('A10/A14: unavailable authority and missing D never create a fallback or alter existing workflow paths',()=>{
+const dMounted=(()=>{try{return statSync('/Volumes/D').dev!==statSync('/Volumes').dev;}catch{return false;}})();
+
+test('A10: unavailable authority never creates a fallback or alters existing workflow paths',()=>{
   const missing=join(scratch,'missing','db');expect(()=>new PipelineStore({env:{...env,REPO_HARNESS_PIPELINES_AUTHORITY_HOST:'another-host',REPO_HARNESS_PIPELINES_DB:missing}})).toThrow('authority host');expect(existsSync(missing)).toBe(false);
-  let mounted=false;try{mounted=statSync('/Volumes/D').dev!==statSync('/Volumes').dev;}catch{}
-  if(mounted)throw new Error('A14 requires unmounted D. Refuse to create a test database on the real volume.');
-  const r=cli(['new','--source-host','max','--repository-id','/repo/.git','--title','one'],{REPO_HARNESS_PIPELINES_DB:'/Volumes/D/repo-harness/pipelines/pipelines.db'});expect(r.status).toBe(3);expect(r.stdout).toContain('volume_unavailable');expect(readPipelineSnapshot({env:{...env,REPO_HARNESS_PIPELINES_DB:missing}}).status).toBe('unavailable');expect(existsSync(missing)).toBe(false);
+  expect(readPipelineSnapshot({env:{...env,REPO_HARNESS_PIPELINES_DB:missing}}).status).toBe('unavailable');expect(existsSync(missing)).toBe(false);
   for(const version of ['3.51.0','unknown','3.50.6'])expect(()=>assertSQLiteVersion(version)).toThrow();for(const version of ['3.51.3','3.50.7','3.44.6','3.53.4'])expect(()=>assertSQLiteVersion(version)).not.toThrow();
   for(const file of ['src/effects/terminal/task-session.ts','src/effects/terminal/herdr.ts','src/effects/publication/merge-readiness.ts'])expect(readFileSync(resolve(import.meta.dir,'../..',file),'utf8')).not.toMatch(/from ['"].*pipeline/);
+});
+
+// The product hard-codes /Volumes/D. A mounted D would make this test write a database on the real volume, so skip it there.
+test.skipIf(dMounted)('A14: missing D fails closed with volume_unavailable (requires unmounted /Volumes/D)',()=>{
+  const r=cli(['new','--source-host','max','--repository-id','/repo/.git','--title','one'],{REPO_HARNESS_PIPELINES_DB:'/Volumes/D/repo-harness/pipelines/pipelines.db'});expect(r.status).toBe(3);expect(r.stdout).toContain('volume_unavailable');
 });
 
 test('A11: post-commit export failure preserves receipt; later export catches up',()=>{

@@ -1,3 +1,4 @@
+import { assertObservationPath, currentReadonlyObservation, withReadonlyObservation, type ReadonlyObservationIO, observationReadFileSync as readFileSync, observationReaddirSync as readdirSync, observationExecFileSync as execFileSync } from './readonly-observation';
 import {
   acceptanceReceiptPath,
   inspectAcceptanceCurrentBinding,
@@ -5,8 +6,7 @@ import {
 } from '../../../scripts/acceptance-receipt';
 import { evaluateVerificationContract } from '../evidence/verification-execution';
 import type { EffectiveStateInputs } from '../../core/state/project-effective-state';
-import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from 'fs';
-import { execFileSync } from 'child_process';
+import { existsSync, realpathSync, statSync } from 'fs';
 import { isAbsolute, posix, win32 } from 'path';
 import { buildReviewSubject, isImplementationSurfacePath } from '../review/diff-fingerprint';
 import { resolveWorkflowProfile, type WorkflowProfile } from '../../core/workflow/profile';
@@ -77,8 +77,8 @@ export interface EffectiveStatePublicationEffects {
   readonly version?: StateVersionWriteEffects;
 }
 
-function readWorkflowPolicy(cwd: string): WorkflowPolicy {
-  const text = readText(cwd, POLICY_PATH);
+function readWorkflowPolicy(cwd: string, readSource = (path: string) => readText(cwd, path)): WorkflowPolicy {
+  const text = readSource(POLICY_PATH);
   if (text === null) return null;
   let parsed: unknown;
   try {
@@ -240,11 +240,11 @@ function parseNodeYaml(source: string): unknown {
  * single-file hash byte-for-byte; archcontext mode folds the sorted node files
  * into one revision so any node edit still moves authority_revision.
  */
-function capabilityAuthorityHash(cwd: string, mode: CapabilitySourceMode): string {
-  if (mode === 'registry') return sourceHash(cwd, CAPABILITY_REGISTRY_PATH);
+function capabilityAuthorityHash(cwd: string, mode: CapabilitySourceMode, hashSource = (path: string) => sourceHash(cwd, path)): string {
+  if (mode === 'registry') return hashSource(CAPABILITY_REGISTRY_PATH);
   const paths = archcontextNodePaths(cwd);
   if (paths.length === 0) return sha256(`missing:${CAPABILITY_NODES_DIR}`);
-  return contentRevision(Object.fromEntries(paths.map((path) => [path, sourceHash(cwd, path)])));
+  return contentRevision(Object.fromEntries(paths.map((path) => [path, hashSource(path)])));
 }
 
 /** State-input source paths for the selected capability authority. */
@@ -360,9 +360,9 @@ function policyDeclaresCapabilityRegistry(policy: WorkflowPolicy): boolean {
  * `archcontext` the policy switch itself is the declaration, so a missing nodes
  * directory or an unreadable node is `invalid` (fail closed), never `absent`.
  */
-function loadCapabilityRegistry(cwd: string, policy: WorkflowPolicy): CapabilityRegistryResolution {
+function loadCapabilityRegistry(cwd: string, policy: WorkflowPolicy, readSource = (path: string) => readText(cwd, path)): CapabilityRegistryResolution {
   if (capabilitySourceMode(policy) === 'registry') {
-    const text = readText(cwd, CAPABILITY_REGISTRY_PATH);
+    const text = readSource(CAPABILITY_REGISTRY_PATH);
     return parseCapabilityRegistry(text && text.length > 0 ? text : null, {
       declared: policyDeclaresCapabilityRegistry(policy),
       repoRoot: cwd,
@@ -384,7 +384,7 @@ function loadCapabilityRegistry(cwd: string, policy: WorkflowPolicy): Capability
 
   const files: ArchcontextNodeFile[] = [];
   for (const path of nodePaths) {
-    const text = readText(cwd, path);
+    const text = readSource(path);
     if (text === null) {
       return {
         status: 'invalid',
@@ -426,6 +426,7 @@ function capabilityIdsForPaths(
   cwd: string,
   paths: readonly string[],
   policy: WorkflowPolicy,
+  readSource = (path: string) => readText(cwd, path),
 ): CapabilityResolution {
   // Absolute paths outside the repo (user-level config such as ~/.pi/agent/*)
   // are outside the registry's jurisdiction: prefixes are repo-relative, so
@@ -435,7 +436,7 @@ function capabilityIdsForPaths(
   // own capability:out-of-repo:<n> reason instead.
   const inRepoPaths = paths.filter((path) => !isCapabilityPathOutsideRepo(path, cwd));
   const outOfRepoPathCount = paths.length - inRepoPaths.length;
-  const registry = loadCapabilityRegistry(cwd, policy);
+  const registry = loadCapabilityRegistry(cwd, policy, readSource);
   if (registry.status === 'absent') {
     return { ids: [], registryStatus: 'absent', unmappedPaths: [], malformedEntryCount: 0, outOfRepoPathCount };
   }
@@ -504,7 +505,20 @@ function resolveEffectiveStateUnlocked(
   options: { risk?: EffectiveStateRiskInput },
 ): EffectiveState {
   const currentWorktree = safeRealpath(cwd);
-  const policy = readWorkflowPolicy(cwd);
+  // Only these named facts are shared, and only within this unlocked read-only
+  // pass. Every subsequent initial/confirmation pass owns a fresh map.
+  const captured = currentReadonlyObservation() ? new Map<string, string | null>() : null;
+  const readSource = (path: string): string | null => {
+    if (captured?.has(path)) { assertObservationPath(repoPath(cwd, path)); return captured.get(path)!; }
+    const text = readText(cwd, path);
+    captured?.set(path, text);
+    return text;
+  };
+  const hashSource = (path: string): string => {
+    const text = readSource(path);
+    return text === null ? sha256(`missing:${path}`) : sha256(text);
+  };
+  const policy = readWorkflowPolicy(cwd, readSource);
   const capabilitySource = capabilitySourceMode(policy);
   const preferredMarker = readTrimmed(cwd, ACTIVE_PLAN_MARKER);
   const owner = readTrimmed(cwd, ACTIVE_WORKTREE_MARKER);
@@ -572,7 +586,7 @@ function resolveEffectiveStateUnlocked(
   const capabilityResolution: CapabilityResolution | null = options.risk?.capabilityIds
     ? { ids: options.risk.capabilityIds, registryStatus: 'valid', unmappedPaths: [], malformedEntryCount: 0, outOfRepoPathCount: 0 }
     : hasRawTargetPaths
-      ? capabilityIdsForPaths(cwd, implementationTargetPaths, policy)
+      ? capabilityIdsForPaths(cwd, implementationTargetPaths, policy, readSource)
       : null;
   const observedCapabilityIds = capabilityResolution?.ids;
   const unmappedCapabilityCount = capabilityResolution?.unmappedPaths.length ?? 0;
@@ -728,8 +742,8 @@ function resolveEffectiveStateUnlocked(
     active_worktree: sourceHash(cwd, ACTIVE_WORKTREE_MARKER),
     plan: planPath ? sourceHash(cwd, planPath) : sha256('missing:plan'),
     contract: contractPath ? sourceHash(cwd, contractPath) : sha256('missing:contract'),
-    policy: sourceHash(cwd, POLICY_PATH),
-    capability_registry: capabilityAuthorityHash(cwd, capabilitySource),
+    policy: captured ? hashSource(POLICY_PATH) : sourceHash(cwd, POLICY_PATH),
+    capability_registry: capabilityAuthorityHash(cwd, capabilitySource, captured ? hashSource : undefined),
     active_sprint_marker: sourceHash(cwd, ACTIVE_SPRINT_MARKER),
     active_sprint_file: sprintPath ? sourceHash(cwd, sprintPath) : sha256('missing:active-sprint-file'),
     task_identity: sha256(taskId ?? 'missing:task-id'),
@@ -772,7 +786,8 @@ function resolveEffectiveStateUnlocked(
     RESUME_PATH,
     CURRENT_SNAPSHOT_PATH,
   ];
-  const collected = collectStateInputs(cwd, sourcePaths, {
+  const collected = collectStateInputs(cwd, sourcePaths.filter(path => !captured?.has(path)), {
+    ...Object.fromEntries(sourcePaths.filter(path => captured?.has(path)).map(path => [path, hashSource(path)])),
     ...(reviewSubjectSha256 ? { review_subject: reviewSubjectSha256 } : {}),
     authority_revision: authorityRevision,
     evidence_revision: evidenceRevision,
@@ -908,9 +923,13 @@ export function resolveEffectiveStateReadOnly(
   cwd = process.cwd(),
   nowMs = Date.now(),
   risk?: EffectiveStateRiskInput,
+  observation?: ReadonlyObservationIO,
 ): EffectiveState {
-  const confirmed = resolveStableEffectiveState(cwd, nowMs, risk);
-  return { ...confirmed, state_version: currentStateVersion(cwd) };
+  const collect = () => {
+    const confirmed = resolveStableEffectiveState(cwd, nowMs, risk);
+    return { ...confirmed, state_version: currentStateVersion(cwd) };
+  };
+  return observation ? withReadonlyObservation(observation, collect) : collect();
 }
 
 function resolveStableEffectiveState(

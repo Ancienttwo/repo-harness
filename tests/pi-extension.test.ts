@@ -125,6 +125,16 @@ setTimeout(() => console.log(JSON.stringify({${JSON.stringify(output()).slice(1,
   });
 });
 
+describe('Pi package manifest', () => {
+  test('peer range is the exact Pi version that the extension accepts', () => {
+    const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
+    const extension = readFileSync(join(ROOT, 'src/pi/extension.ts'), 'utf8');
+    expect(extension).toContain("VERSION !== '1.1.0'");
+    expect(pkg.peerDependencies['@earendil-works/pi-coding-agent']).toBe('1.1.0');
+    expect(pkg.peerDependenciesMeta['@earendil-works/pi-coding-agent']).toEqual({ optional: true });
+  });
+});
+
 describe('real Pi 1.1 tool pipeline with a scripted provider', () => {
   test('checks direct and codemode edits, refuses private writes and reloads context', () => {
     const f = fixture();
@@ -144,6 +154,7 @@ describe('real Pi 1.1 tool pipeline with a scripted provider', () => {
       const events = records(f.root);
       expect(events.filter(event => event.event === 'SessionStart')).toHaveLength(2);
       expect(events.filter(event => event.event === 'Stop')).toHaveLength(6);
+      expect(events.every(event => event.host === 'pi')).toBe(true);
       const observed = JSON.parse(readFileSync(join(f.root, '.ai/harness/checks/post-bash-latest.json'), 'utf8'));
       expect(observed).toMatchObject({ exit_code: 0, status: 'pass', verbosity_class: 'inline', raw_output_path: null });
     } finally { f.cleanup(); }

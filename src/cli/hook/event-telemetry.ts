@@ -101,7 +101,7 @@ function stringField(value: unknown): string | null {
 }
 
 function hostFromEnv(env: NodeJS.ProcessEnv): RouteHost | null {
-  return env.HOOK_HOST === 'claude' || env.HOOK_HOST === 'codex' ? env.HOOK_HOST : null;
+  return env.HOOK_HOST === 'claude' || env.HOOK_HOST === 'codex' || env.HOOK_HOST === 'pi' ? env.HOOK_HOST : null;
 }
 
 function payloadMetadata(input: string | Buffer | undefined): HostPayloadMetadata {
