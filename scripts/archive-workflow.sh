@@ -251,12 +251,6 @@ completed_archive_gate() {
   }
   verified_verification_sha="$after_hash"
 
-  if [[ ! -f "$helper_dir/check-architecture-sync.sh" ]]; then
-    echo "archive-workflow: Completed requires architecture freshness helper: $helper_dir/check-architecture-sync.sh" >&2
-    return 1
-  fi
-  REPO_HARNESS_TARGET_REPO_ROOT="$PWD" bash "$helper_dir/check-architecture-sync.sh"
-
   [[ "$(verification_report_hash "$PWD" "$verification_file")" == "$verified_verification_sha" ]] || {
     echo "archive-workflow: verified report changed before archive mutation" >&2
     return 1

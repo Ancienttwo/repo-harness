@@ -1,14 +1,14 @@
 import { Command } from 'commander';
 import { PM_MAX_INPUT_BYTES, PmError, type PmResponse } from '../../core/pm/protocol';
-import { executePmRequest } from '../../effects/pm/operations';
+import { executePmRequest, type PmExecutionGuard } from '../../effects/pm/operations';
 
-export async function runPmJson(input: string, env: NodeJS.ProcessEnv = process.env): Promise<PmResponse> {
+export async function runPmJson(input: string, env: NodeJS.ProcessEnv = process.env, guard?: PmExecutionGuard): Promise<PmResponse> {
   let operation: string | null = null;
   try {
     if (Buffer.byteLength(input) > PM_MAX_INPUT_BYTES) throw new PmError('pm_request_too_large');
     const value: unknown = JSON.parse(input);
     if (value && typeof value === 'object' && typeof (value as { operation?: unknown }).operation === 'string') operation = (value as { operation: string }).operation;
-    return { protocol: 1, kind: 'repo-harness-pm-response', operation, ok: true, data: await executePmRequest(value, env) };
+    return { protocol: 1, kind: 'repo-harness-pm-response', operation, ok: true, data: await executePmRequest(value, env, guard) };
   } catch (error) {
     return { protocol: 1, kind: 'repo-harness-pm-response', operation, ok: false,
       error: { code: error instanceof PmError ? error.code : error instanceof SyntaxError ? 'pm_json_invalid' : 'pm_operation_failed',

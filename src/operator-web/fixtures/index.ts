@@ -13,7 +13,6 @@ import {
   collaborationSnapshot,
   degradedSnapshot,
   emptySnapshot,
-  repositoryObservationFixture,
   stableSnapshot,
   taskActivityFixture,
   taskContextFixture,
@@ -83,7 +82,6 @@ export function fixtureProps(name: string): OperatorAppProps {
     initialSnapshot: snapshot,
     fetchCollaboration: (repositoryId: string) => repositoryId === HARNESS_ID && fixture === 'busy'
       ? Promise.resolve(collaborationSnapshot) : Promise.reject(new Error('fixture collaboration unavailable')),
-    fetchRepositoryObservation: (repositoryId: string) => Promise.resolve({ ...retarget(repositoryObservationFixture('repo-harness')), repository_id: repositoryId }),
     readTaskContext: request => Promise.resolve(taskContextFixture(request)),
     readTaskActivity: request => Promise.resolve(taskActivityFixture(request)),
     readTaskHistory: unavailable('task history'),

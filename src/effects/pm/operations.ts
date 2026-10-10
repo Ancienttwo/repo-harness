@@ -14,6 +14,9 @@ import { assertTaskRequest, collectTaskResult, ensureSessionDirectory, readSessi
 import { taskRepository } from '../terminal/task-worktree';
 import { PM_ADMISSION_REMEDIATION, readPmHostConfiguration, type PmHostConfiguration } from './host';
 
+/** Synchronous trusted caller fence. Never parsed from the PM wire request. */
+export type PmExecutionGuard = () => void;
+
 function registeredRepository(repoId: string, env: NodeJS.ProcessEnv) {
   const registry = readRepoHarnessRegistryStrictSnapshot({ env, adoptedOnly: false });
   const repo = registry.repos.find(entry => entry.id === repoId);
@@ -53,13 +56,21 @@ function taskAuthority(scope: PmTaskScope, env: NodeJS.ProcessEnv, write: boolea
 
 /** Bind, cleanup, lease changes and authorization changes use these same locks. */
 export async function withPmTaskAuthority<T>(scope: PmTaskScope, env: NodeJS.ProcessEnv, write: boolean,
-  action: (authority: ReturnType<typeof taskAuthority>) => Promise<T>, offerRevision?: string): Promise<T> {
+  action: (authority: ReturnType<typeof taskAuthority>) => Promise<T>, offerRevision?: string, guard?: PmExecutionGuard): Promise<T> {
+  guard?.();
   const { repo } = registeredRepository(scope.repo_id, env);
-  return withWorktreeTopologyLockAsync(repo.path, () => withTaskLockAsync(repo.path, scope.task_id, () =>
-    withRepoHarnessRegistryAuthorizationLockAsync({ env }, async () => {
-      const authority = taskAuthority(scope, env, write, offerRevision);
-      return await action(authority);
-    })));
+  return withWorktreeTopologyLockAsync(repo.path, () => {
+    guard?.();
+    return withTaskLockAsync(repo.path, scope.task_id, () => {
+      guard?.();
+      return withRepoHarnessRegistryAuthorizationLockAsync({ env }, async () => {
+        guard?.();
+        const authority = taskAuthority(scope, env, write, offerRevision);
+        guard?.();
+        return await action(authority);
+      });
+    });
+  });
 }
 
 function admittedHost(authority: ReturnType<typeof taskAuthority>, env: NodeJS.ProcessEnv): PmHostConfiguration {
@@ -111,12 +122,18 @@ function sameInputRequest(root: string, task: string, source: { path: string; di
   return null;
 }
 
-async function deliver(root: string, task: string, source: ReturnType<typeof inputProjection>) {
+async function deliver(root: string, task: string, source: ReturnType<typeof inputProjection>, guard: PmExecutionGuard) {
+  guard();
   const previous = sameInputRequest(root, task, source);
   if (previous) return deliveryReceipt(root, previous);
   publishInput(root, source);
-  try { return deliveryReceipt(root, await sendCodingTaskRequest(root, task, PM_WORKER_ROLE, relative(root, source.path), 'changed_only')); }
+  try {
+    const request = await sendCodingTaskRequest(root, task, PM_WORKER_ROLE, relative(root, source.path), 'changed_only', guard);
+    guard();
+    return deliveryReceipt(root, request);
+  }
   catch (error) {
+    guard();
     // The canonical request is the retry receipt, including unknown delivery.
     const written = sameInputRequest(root, task, source);
     if (written) return deliveryReceipt(root, written);
@@ -131,8 +148,9 @@ function deliveryReceipt(root: string, request: TaskRequest) {
   return { request, delivery: marker?.request_id === request.request_id && marker.state === 'accepted' ? 'accepted' : 'unknown' };
 }
 
-export async function executePmRequest(value: unknown, env: NodeJS.ProcessEnv = process.env): Promise<unknown> {
+export async function executePmRequest(value: unknown, env: NodeJS.ProcessEnv = process.env, trustedGuard?: PmExecutionGuard): Promise<unknown> {
   const request = parsePmRequest(value);
+  trustedGuard?.();
   if (request.operation === 'capabilities') {
     let runtime: { available: boolean; reason?: string };
     try { readPmHostConfiguration(env); runtime = { available: true }; }
@@ -150,24 +168,29 @@ export async function executePmRequest(value: unknown, env: NodeJS.ProcessEnv = 
     }) };
   }
   const write = request.operation !== 'collect';
+  const guard = () => {
+    trustedGuard?.();
+    taskAuthority(request, env, write, request.operation === 'dispatch' ? request.offer_revision : undefined);
+  };
   return withPmTaskAuthority(request, env, write, async authority => {
     if (request.operation === 'collect') {
       const canonical = existingRequest(authority.repo.path, authority.executionRoot, request.task_id, request.round, request.request_id);
-      const result = await collectTaskResult(authority.repo.path, request.task_id, PM_WORKER_ROLE, canonical.round);
+      const result = await collectTaskResult(authority.repo.path, request.task_id, PM_WORKER_ROLE, canonical.round, guard);
+      guard();
       return { request: canonical, status: result === null ? 'pending' : 'collected', result };
     }
     const host = admittedHost(authority, env);
     if (request.operation === 'dispatch') {
       await startCodingTaskAgent(authority.executionRoot, { task: request.task_id, role: PM_WORKER_ROLE, harness_kind: 'codex',
-        endpoint: host.endpoint, parent_pane: host.parent_pane, args: [], max_requests: host.max_requests }, host.admission);
-      taskAuthority(request, env, true, request.offer_revision);
+        endpoint: host.endpoint, parent_pane: host.parent_pane, args: [], max_requests: host.max_requests }, host.admission, guard);
+      guard();
       const source = inputProjection(authority.executionRoot, { operation: 'dispatch', task_id: request.task_id, claim_id: request.claim_id,
         task_revision: request.task_revision, plan: authority.offer.plan });
       const { dir } = readTaskAgent(authority.repo.path, request.task_id, PM_WORKER_ROLE);
       if (existsSync(join(dir, 'request-1.json')) && !sameInputRequest(authority.executionRoot, request.task_id, source)) {
         throw new PmError('pm_request_stale', 'Dispatch has a request. Use a same-task follow-up after its result is valid.');
       }
-      return await deliver(authority.executionRoot, request.task_id, source);
+      return await deliver(authority.executionRoot, request.task_id, source, guard);
     }
     assertCodingTaskAgent(authority.executionRoot, request.task_id, PM_WORKER_ROLE, host.admission);
     const previous = existingRequest(authority.repo.path, authority.executionRoot, request.task_id, request.round, request.request_id);
@@ -180,6 +203,6 @@ export async function executePmRequest(value: unknown, env: NodeJS.ProcessEnv = 
     if (existsSync(join(dir, `request-${previous.round + 1}.json`))) throw new PmError('pm_request_stale');
     if (readTaskRequestResult(authority.repo.path, dir, previous) === null) throw new PmError('pm_result_pending');
     taskAuthority(request, env, true);
-    return await deliver(authority.executionRoot, request.task_id, source);
-  }, request.operation === 'dispatch' ? request.offer_revision : undefined);
+    return await deliver(authority.executionRoot, request.task_id, source, guard);
+  }, request.operation === 'dispatch' ? request.offer_revision : undefined, trustedGuard);
 }

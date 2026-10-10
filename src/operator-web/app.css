@@ -91,8 +91,8 @@
   .delivery-stage > p { @apply px-1 text-xs text-kumo-inactive; }
   .delivery-stage .worklist-row { @apply rounded-lg border border-kumo-hairline bg-kumo-base last:border-b; }
 
-  .planning-view, .organization-summary, .automation-summary, .notify-status, .pipeline-board, .architecture-workspace { @apply flex min-w-0 flex-col gap-3; }
-  .organization-summary, .automation-summary { @apply rounded-xl border border-kumo-line bg-kumo-base p-4; }
+  .planning-view, .organization-summary, .notify-status, .pipeline-board, .architecture-workspace { @apply flex min-w-0 flex-col gap-3; }
+  .organization-summary { @apply rounded-xl border border-kumo-line bg-kumo-base p-4; }
   .planning-view h2, .organization-summary h2, .automation-heading h2, .notify-status h2, .pipeline-board h2, .architecture-workspace h2 { @apply text-base font-semibold text-kumo-strong; }
   .organization-summary h3, .planning-view h3, .automation-source h3 { @apply text-sm font-semibold text-kumo-strong; }
   .organization-summary p, .organization-summary li, .planning-view p, .planning-view li { @apply text-sm; overflow-wrap: anywhere; }

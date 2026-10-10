@@ -261,23 +261,6 @@ run_sprint_next() {
   fi
 }
 
-run_drift_requests() {
-  local details count
-  if [[ ! -d "docs/architecture/requests" ]]; then
-    add_entry "drift-requests" "pass" "no architecture request directory" ""
-    return 0
-  fi
-
-  details="$(find docs/architecture/requests -maxdepth 1 -type f ! -name '.gitkeep' | sort)"
-  if [[ -z "$details" ]]; then
-    add_entry "drift-requests" "pass" "no pending architecture drift requests" ""
-    return 0
-  fi
-
-  count="$(printf '%s\n' "$details" | sed '/^$/d' | wc -l | xargs)"
-  add_entry "drift-requests" "action" "${count} pending architecture drift request(s)" "$details"
-}
-
 write_json_snapshot() {
   local target="$1"
   local idx
@@ -343,7 +326,6 @@ write_inbox() {
 adoption_review_due="$(date_plus_14_days)"
 run_workflow_check
 run_sprint_next
-run_drift_requests
 write_json_snapshot "$run_file"
 write_inbox
 

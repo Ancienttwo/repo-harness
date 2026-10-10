@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { delimiter, join, resolve } from "node:path";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { basename, delimiter, join, resolve, sep } from "node:path";
 import { tmpdir } from "node:os";
 import { discoverTestFiles, integrationFiles, scheduleTestFiles, selectTestSuite, serialFiles } from '../scripts/select-test-suite';
 import recordedDurations from '../scripts/test-file-durations.json';
@@ -29,6 +29,7 @@ type GateOptions = {
   jobs?: string;
   /** Prepended to PATH so a case can substitute a deterministic fake `bun`. */
   binDir?: string;
+  nodeOptions?: string;
 };
 
 function writeTestFile(dir: string, name: string, passing: boolean): string {
@@ -59,6 +60,7 @@ function runIsolatedGate(files: string[], options: GateOptions = {}): RunResult 
     cwd: REPO_ROOT,
     encoding: "utf-8",
     env: gateEnv({
+      ...(options.nodeOptions ? { NODE_OPTIONS: options.nodeOptions } : {}),
       ...(options.binDir ? { PATH: `${options.binDir}${delimiter}${process.env.PATH ?? ""}` } : {}),
       ...(options.jobs === undefined ? {} : { BUN_TEST_JOBS: options.jobs }),
       BUN_TEST_ISOLATE_FILES: "1",
@@ -400,6 +402,71 @@ describe("ci isolate-mode job pool", () => {
       expect(result.output).toContain("[ci] BUN_TEST_JOBS must be a positive integer");
       expect(result.output).not.toContain("[ci] test ");
     } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+
+describe("disposable worker cleanup", () => {
+  test.each([
+    { mode: "transient", failing: false, status: 0, failures: 1 },
+    { mode: "transient", failing: true, status: 1, failures: 1 },
+    { mode: "persistent", failing: false, status: 1, failures: 4 },
+    { mode: "denied", failing: false, status: 1, failures: 1 },
+  ])("keeps cleanup bounded and preserves the test result: %j", ({ mode, failing, status, failures }) => {
+    const root = mkdtempSync(join(tmpdir(), "rh-ci-cleanup-"));
+    const marker = join(root, "cleanup.jsonl");
+    try {
+      const binDir = writeFakeBun(root);
+      const file = writeTestFile(root, failing ? "cleanup-failing.test.ts" : "cleanup-passing.test.ts", !failing);
+      const preload = join(root, "cleanup-preload.cjs");
+      // Inject the observed syscall error at the real parent-runner boundary.
+      // The successful retry removes a real late-written file, rather than
+      // returning a fabricated cleanup success.
+      writeFileSync(preload, `const fs = require("node:fs");
+const pathApi = require("node:path");
+const original = fs.rmSync;
+const seen = new Set();
+fs.rmSync = function(path, options) {
+  if (pathApi.basename(path).startsWith("rh-test-tmp-")) {
+    const fail = ${JSON.stringify(mode)} !== "transient" || !seen.has(path);
+    seen.add(path);
+    if (fail) {
+      fs.writeFileSync(pathApi.join(path, "late-runtime-cache"), "cache");
+      fs.appendFileSync(${JSON.stringify(marker)}, JSON.stringify({ path, failure: true }) + "\\n");
+      throw Object.assign(new Error("injected cleanup error"), { code: ${JSON.stringify(mode === 'denied' ? 'EACCES' : 'ENOTEMPTY')} });
+    }
+    const result = original(path, options);
+    fs.appendFileSync(${JSON.stringify(marker)}, JSON.stringify({ path, removed: !fs.existsSync(path) }) + "\\n");
+    return result;
+  }
+  return original(path, options);
+};`);
+      const result = runIsolatedGate([file], { binDir, jobs: "1", nodeOptions: `--require ${JSON.stringify(preload)}` });
+      expect(result.status).toBe(status);
+      const records = readFileSync(marker, "utf8").trim().split("\n").map(line => JSON.parse(line) as { path: string; failure?: boolean; removed?: boolean });
+      expect(records.filter(record => record.failure)).toHaveLength(failures);
+      expect(new Set(records.map(record => record.path)).size).toBe(1);
+      if (mode === "transient") {
+        expect(records.at(-1)?.removed).toBe(true);
+        expect(existsSync(records[0]!.path)).toBe(false);
+        expect(result.output).toContain("retrying disposable root cleanup after ENOTEMPTY (1/3)");
+        expect(summaryEntries(result.output)).toEqual(failing ? [`${file} (exit 1)`] : []);
+      } else {
+        expect(records.some(record => record.removed)).toBe(false);
+        expect(summaryEntries(result.output)).toEqual([`${file} (exit 1)`]);
+        expect(result.output).toContain(mode === "denied" ? "EACCES" : "ENOTEMPTY");
+      }
+    } finally {
+      if (existsSync(marker)) {
+        for (const line of readFileSync(marker, "utf8").trim().split("\n")) {
+          const { path } = JSON.parse(line) as { path: string };
+          expect(path.startsWith(realpathSync(resolve("/tmp")) + sep)).toBe(true);
+          expect(basename(path)).toStartWith("rh-test-tmp-");
+          rmSync(path, { recursive: true, force: true });
+        }
+      }
       rmSync(root, { recursive: true, force: true });
     }
   });

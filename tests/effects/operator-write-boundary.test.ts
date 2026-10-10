@@ -17,7 +17,6 @@ import {
   OPERATOR_COLLABORATION_SNAPSHOT_ROUTE,
   OPERATOR_DEV_ACTIVITY_PATH,
   OPERATOR_FLEET_SNAPSHOT_PATH,
-  OPERATOR_REPOSITORY_SNAPSHOT_ROUTE,
   OPERATOR_HEALTH_PATH,
   OPERATOR_NOTIFY_STATUS_PATH,
   OPERATOR_PIPELINES_PATH,
@@ -78,7 +77,6 @@ describe('operator structural write boundary', () => {
     expect(patterns.size).toBe(OPERATOR_ROUTES.length);
     expect([...patterns.keys()]).toEqual([
       'health',
-      'repository_snapshot',
       'fleet_snapshot',
       'collaboration_snapshot',
       'task_context',
@@ -94,7 +92,6 @@ describe('operator structural write boundary', () => {
       'static_asset',
     ]);
     expect(patterns.get('health')).toBe(OPERATOR_HEALTH_PATH);
-    expect(patterns.get('repository_snapshot')).toBe(OPERATOR_REPOSITORY_SNAPSHOT_ROUTE.source);
     expect(patterns.get('fleet_snapshot')).toBe(OPERATOR_FLEET_SNAPSHOT_PATH);
     expect(patterns.get('collaboration_snapshot')).toBe(OPERATOR_COLLABORATION_SNAPSHOT_ROUTE.source);
     expect(patterns.get('task_context')).toBe(OPERATOR_TASK_CONTEXT_ROUTE.source);

@@ -300,11 +300,13 @@ function attachWorkspace(repository: TaskRepository, endpoint: HerdrEndpoint, sp
   if (!primary || !Array.isArray(panes) || !panes[0]?.pane_id) throw new Error('task_agent_workspace_response_invalid');
   return workspaceBinding(repository, endpoint, primary.workspace_id, space.workspace_id, panes[0].pane_id, { disposition: 'attached' });
 }
-export async function registerTaskWorktree(repoRoot: string, endpoint: HerdrEndpoint, parentPane: string): Promise<TaskWorkspaceBinding> {
+export async function registerTaskWorktree(repoRoot: string, endpoint: HerdrEndpoint, parentPane: string, guard?: () => void): Promise<TaskWorkspaceBinding> {
+  guard?.();
   validateHerdrEndpoint(endpoint);
   const repository = taskRepository(repoRoot); const dir = workspaceDirectory(repository);
   ensureSessionDirectory(repository.primary_root, dir);
   return locked(repository.primary_root, dir, async () => {
+    guard?.();
     const path = join(dir, 'binding.json');
     const spaces = workspaceReadback(endpoint);
     const existing = checkoutWorkspace(spaces, repository);
@@ -429,8 +431,11 @@ export interface TaskStartEffects {
   contended?: () => void;
   /** Internal bounded readiness probe; public callers use the 60s default. */
   startTimeoutMs?: number;
+  /** Trusted caller fence checked after lock waits and before side effects. */
+  guard?: () => void;
 }
 export async function startTaskAgent(repoRoot: string, spec: TaskAgentSpec, effects: TaskStartEffects = {}): Promise<TaskPaneBinding> {
+  effects.guard?.();
   spec = structuredClone(spec);
   validateSpec(spec);
   const startTimeoutMs = effects.startTimeoutMs ?? TASK_AGENT_START_TIMEOUT_MS;
@@ -438,6 +443,7 @@ export async function startTaskAgent(repoRoot: string, spec: TaskAgentSpec, effe
   const repository = taskRepository(repoRoot); const root = repository.primary_root; const dir = taskSessionDirectory(root, spec.task, spec.role);
   ensureSessionDirectory(root, dir);
   return locked(root, dir, async () => {
+    effects.guard?.();
     if (existsSync(join(dir, 'closed.json'))) throw new Error('task_agent_session_closed');
     if (existsSync(join(dir, 'binding.json'))) {
       const intent = readSessionArtifact<StartIntent>(join(dir, 'intent.json'));
@@ -449,22 +455,27 @@ export async function startTaskAgent(repoRoot: string, spec: TaskAgentSpec, effe
       if (!sameSessionData(intent.spec, spec)) throw new Error('task_agent_spec_changed');
       return reconcile(dir, intent);
     }
-    const workspace = await registerTaskWorktree(repository.execution_root, spec.endpoint, spec.parent_pane);
+    const workspace = await registerTaskWorktree(repository.execution_root, spec.endpoint, spec.parent_pane, effects.guard);
+    effects.guard?.();
     const intent: StartIntent = { protocol: 2, repository, intent_id: randomUUID(), agent_name: `task-${randomUUID().replaceAll('-', '').slice(0, 20)}`, spec };
     writeSessionArtifact(join(dir, 'intent.json'), intent);
     await effects.boundary?.('intent');
+    effects.guard?.();
     writeSessionArtifact(join(dir, 'split-intent.json'), { intent_id: intent.intent_id, workspace_id: workspace.workspace_id });
     const result = info(spec.endpoint, ['pane', 'split', '--pane', workspace.root_pane.pane_id, '--direction', 'right', '--cwd', repository.execution_root, '--no-focus']);
     if (typeof result.pane?.pane_id !== 'string' || typeof result.pane.terminal_id !== 'string') throw new Error('task_agent_split_response_invalid');
     await effects.boundary?.('split');
+    effects.guard?.();
     const pane: CreatedPane = { pane_id: result.pane.pane_id, terminal_id: result.pane.terminal_id, intent_id: intent.intent_id };
     writeSessionArtifact(join(dir, 'pane-created.json'), pane);
     await effects.boundary?.('pane');
+    effects.guard?.();
     writeSessionArtifact(join(dir, 'launch-intent.json'), { intent_id: intent.intent_id });
     try {
       if (effects.start) await effects.start(spec.endpoint, intent.agent_name, pane.pane_id, spec.harness_kind, spec.args);
       else herdrMutation(herdrCommand(spec.endpoint, ['agent', 'start', intent.agent_name, '--kind', spec.harness_kind,
         '--pane', pane.pane_id, '--timeout', String(startTimeoutMs), '--', ...spec.args], 'herdr', spawnHerdr, startTimeoutMs + 5000));
+      effects.guard?.();
     } catch (error) {
       writeSessionArtifact(join(dir, 'launch-unknown.json'), { intent_id: intent.intent_id, error: String(error) });
       throw new Error('task_agent_ambiguous_launch; inspect or cancel the same start; never replay');
@@ -472,6 +483,7 @@ export async function startTaskAgent(repoRoot: string, spec: TaskAgentSpec, effe
     const binding = bindStartedAgent(intent, pane);
     writeSessionArtifact(join(dir, 'provider-created.json'), binding);
     await effects.boundary?.('launched');
+    effects.guard?.();
     assertTaskBinding(binding);
     writeSessionArtifact(join(dir, 'binding.json'), binding);
     return binding;
@@ -487,16 +499,18 @@ export async function startTaskAgent(repoRoot: string, spec: TaskAgentSpec, effe
  * This does not change binding.host's protected-domain-result semantics.
  */
 export async function startTaskApplicationHost(repoRoot: string, spec: TaskAgentSpec,
-  command: readonly string[], ready: () => Promise<void>): Promise<TaskPaneBinding> {
+  command: readonly string[], ready: () => Promise<void>, guard?: () => void): Promise<TaskPaneBinding> {
   if (spec.args.length !== 0 || command.length !== 4 || !isAbsolute(command[0]!) || command[1] !== '--disable-sigusr1'
     || !['oar-review-host.js', 'oar-coding-host.js'].some(bundle => {
       const path = join(import.meta.dir, '../../../dist', bundle);
       return existsSync(path) && command[2] === realpathSync(path);
     }) || !isAbsolute(command[3]!)
     || command.some(arg => /[\r\n]/.test(arg))) throw new Error('task_agent_application_host_command_invalid');
-  return startTaskAgent(repoRoot, spec, { start: async (endpoint, name, pane, kind) => {
+  return startTaskAgent(repoRoot, spec, { guard, start: async (endpoint, name, pane, kind) => {
+    guard?.();
     mutate(endpoint, ['pane', 'run', pane, ...command]);
     await ready();
+    guard?.();
     mutate(endpoint, ['pane', 'report-agent', pane, '--source', 'repo-harness', '--agent', kind, '--state', 'working', '--seq', '1']);
     mutate(endpoint, ['pane', 'report-agent', pane, '--source', 'repo-harness', '--agent', kind, '--state', 'idle', '--seq', '2']);
     mutate(endpoint, ['agent', 'rename', pane, name]);
@@ -556,11 +570,13 @@ export function readTaskRequestResult(root: string, dir: string, request: TaskRe
   return validateTaskResult(request, value);
 }
 /** The owner validates the transport result before immutable primary ingestion. */
-export async function collectTaskResult(repoRoot: string, task: string, role: string, round: number): Promise<TaskResult | null> {
+export async function collectTaskResult(repoRoot: string, task: string, role: string, round: number, guard?: () => void): Promise<TaskResult | null> {
+  guard?.();
   const repository = taskRepository(repoRoot);
   const { dir } = readTaskAgent(repoRoot, task, role);
   if (!Number.isSafeInteger(round) || round < 1) throw new Error('task_agent_round_invalid');
   return locked(repository.primary_root, dir, async () => {
+    guard?.();
     const request = readSessionArtifact<TaskRequest>(join(dir, `request-${round}.json`));
     const result = readTaskRequestResult(repoRoot, dir, request);
     if (!result) return null;
@@ -570,6 +586,7 @@ export async function collectTaskResult(repoRoot: string, task: string, role: st
       if (!sameSessionData(previous, result)) throw new Error('task_agent_result_conflict');
       return previous;
     }
+    guard?.();
     writeSessionArtifact(path, result);
     return result;
   });
@@ -598,10 +615,11 @@ export async function submitTaskResult(repoRoot: string, task: string, role: str
 }
 export async function sendTaskRequest(repoRoot: string, task: string, role: string, contextRef: string, contextPolicy: 'repeatable' | 'changed_only' = 'repeatable', applicationDelivery?: (request: TaskRequest) => Promise<void>,
   /** Internal fixture barrier. It is never accepted from CLI or PM input. */
-  publicationBoundary?: (request: TaskRequest) => Promise<void>): Promise<TaskRequest> {
+  publicationBoundary?: (request: TaskRequest) => Promise<void>, guard?: () => void): Promise<TaskRequest> {
   const repository = taskRepository(repoRoot); const root = repository.primary_root; const { dir, binding } = readTaskAgent(root, task, role);
   if (binding.host) throw new Error('task_agent_host_domain_delivery_required');
   return locked(root, dir, async () => {
+    guard?.();
     if (!['repeatable', 'changed_only'].includes(contextPolicy)) throw new Error('task_agent_context_policy_invalid');
     assertTaskBinding(binding);
     if (existsSync(join(dir, 'closed.json'))) throw new Error('task_agent_session_closed');
@@ -623,8 +641,10 @@ export async function sendTaskRequest(repoRoot: string, task: string, role: stri
       result_contract: { required_fields: ['request_id', 'context_sha256', 'value'], atomic_write: 'temp_rename',
         submission: { command: 'repo-harness task-agent result', repo: binding.execution_root, task, role, round } } };
     const requestPath = join(dir, `request-${round}.json`);
+    guard?.();
     writeSessionArtifact(requestPath, request);
     if (publicationBoundary) await publicationBoundary(request);
+    guard?.();
     writeSessionBytes(request.context_ref, content);
     beginSessionRound(dir, round, { request_id: request.request_id, provider: binding.provider });
     // Once this marker exists, a crash/nonzero/timeout can mean input was sent.
@@ -632,6 +652,7 @@ export async function sendTaskRequest(repoRoot: string, task: string, role: stri
     try {
       if (applicationDelivery) await applicationDelivery(request);
       else mutate(binding.endpoint, ['agent', 'prompt', binding.agent_name, `Read task request ${requestPath}; write its result only to ${request.result_ref}.`]);
+      guard?.();
       writeSessionArtifact(join(dir, `delivery-${round}.json`), { request_id: request.request_id, state: 'accepted' });
     } catch (error) {
       writeSessionArtifact(join(dir, `delivery-${round}.json`), { request_id: request.request_id, state: 'unknown', error: String(error) });

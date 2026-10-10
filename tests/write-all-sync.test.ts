@@ -1,6 +1,4 @@
 import { describe, expect, test } from 'bun:test';
-import { spawnSync } from 'child_process';
-import { join } from 'path';
 import { writeAllSync, type SyncWriter } from '../src/cli/runtime/write-all-sync';
 
 describe('writeAllSync', () => {
@@ -29,18 +27,4 @@ describe('writeAllSync', () => {
       'invalid synchronous write progress 8 at byte 0',
     );
   });
-
-  test('architecture-event emits a large exit-adjacent payload completely', () => {
-    const payload = '界'.repeat(400_000);
-    const child = spawnSync(process.execPath, [join(process.cwd(), 'scripts/architecture-event.ts'), 'json-get', '--key', 'payload'], {
-      cwd: process.cwd(),
-      input: JSON.stringify({ payload }),
-      encoding: 'utf8',
-      maxBuffer: 4 * 1024 * 1024,
-    });
-
-    expect(child.status).toBe(0);
-    expect(child.stderr).toBe('');
-    expect(child.stdout).toBe(payload);
-  }, 30_000);
 });

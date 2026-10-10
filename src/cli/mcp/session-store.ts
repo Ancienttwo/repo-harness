@@ -159,6 +159,13 @@ export class McpSessionStore<TTransport extends McpSessionClosableTransport = Mc
     await Promise.all(records.map((record) => record.transport.close().catch(() => undefined)));
   }
 
+  async closeMatching(predicate: (transport: TTransport) => boolean): Promise<void> {
+    const selected = Array.from(this.records.entries()).filter(([, record]) => predicate(record.transport));
+    const records = selected.map(([id]) => this.remove(id, 'closed', false))
+      .filter((record): record is McpSessionRecord<TTransport> => record !== undefined);
+    await Promise.all(records.map(record => record.transport.close().catch(() => undefined)));
+  }
+
   private remove(sessionId: string, reason: SessionRemovalReason, closeInBackground: boolean): McpSessionRecord<TTransport> | undefined {
     const record = this.records.get(sessionId);
     if (!record) return undefined;

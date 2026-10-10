@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { buildStrategyCommand } from './commands/strategy';
 import { buildPipelineCommand } from './commands/pipeline';
 import { buildModuleCommand } from './commands/module';
 import { withRuntimeHostTransactionLock } from './installer/runtime-host-lock';
@@ -43,7 +44,6 @@ import { buildStateCommand } from './commands/state';
 import { buildSprintCommand } from './commands/sprint';
 import { buildPublicationCommand } from './commands/publication';
 import { buildFleetCommand } from './commands/fleet';
-import { buildAutomationCommand } from './commands/automation';
 import { buildRefactorCommand } from './commands/refactor';
 import { buildOperatorCommand } from './commands/operator';
 import { buildEngineerCommand } from './commands/engineer';
@@ -860,13 +860,13 @@ export function buildProgram(): Command {
   program.addCommand(buildPublicationCommand());
   program.addCommand(buildFleetCommand());
   program.addCommand(buildOperatorCommand());
-  program.addCommand(buildAutomationCommand());
   program.addCommand(buildRefactorCommand());
   program.addCommand(buildEngineerCommand());
   program.addCommand(buildArchitectureProjectionCommand());
   program.addCommand(buildIntegrationCommand());
   program.addCommand(buildDelegationCommand());
   program.addCommand(buildCollaborationCommand());
+  program.addCommand(buildStrategyCommand());
   program.addCommand(buildVerifiedContextCommand());
   program.addCommand(buildInterfaceChangeCommand());
   program.addCommand(buildExternalSourceCommand());

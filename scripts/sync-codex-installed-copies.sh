@@ -276,13 +276,9 @@ facade_source_for() {
   printf ''
 }
 
-profile_facades() {
-  [[ -n "$SELECTED_FACADES" ]] && printf '%s\n' "$SELECTED_FACADES"
-}
-
 facade_selected() {
   local wanted="$1"
-  profile_facades | grep -Fxq "$wanted"
+  grep -Fxq "$wanted" <<< "$SELECTED_FACADES"
 }
 
 provider_skill_for_root() {

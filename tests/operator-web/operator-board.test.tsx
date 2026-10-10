@@ -45,7 +45,6 @@ function props(activity: DevActivitySnapshotV1, overrides: Partial<OperatorAppPr
     initialDevActivity: activity, fetchDevActivity: async () => activity,
     initialRuntimeOverlay: unavailableRuntimeOverlay(), readRuntimeStatus: async () => unavailableRuntimeOverlay(),
     readNotifyStatus: () => new Promise(() => {}), readPipelineBoard: () => new Promise(() => {}),
-    fetchRepositoryObservation: () => new Promise(() => {}),
     ...overrides,
   };
 }

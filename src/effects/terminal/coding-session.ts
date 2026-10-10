@@ -36,7 +36,8 @@ export function assertCodingTaskAgent(repoRoot: string, task: string, role: stri
     || admission !== undefined && !same(spec.admission, admission)) throw new Error('OAR_CODING_HOST_IDENTITY_LOST');
   return current;
 }
-export async function startCodingTaskAgent(repoRoot: string, spec: TaskAgentSpec, admission: CodingHostAdmission): Promise<TaskPaneBinding> {
+export async function startCodingTaskAgent(repoRoot: string, spec: TaskAgentSpec, admission: CodingHostAdmission, guard?: () => void): Promise<TaskPaneBinding> {
+  guard?.();
   assertCodingHostAdmission(repoRoot, admission);
   if (spec.harness_kind !== admission.runtime || spec.args.length !== 0) throw new Error('OAR_CODING_NATIVE_ARGUMENTS_REFUSED');
   const repository = taskRepository(repoRoot), dir = taskSessionDirectory(repository.primary_root, spec.task, spec.role);
@@ -55,31 +56,36 @@ export async function startCodingTaskAgent(repoRoot: string, spec: TaskAgentSpec
     proveCodingIsolation(admission, policy_file);
     const hostSpec: CodingHostSpec = { admission, task: spec.task, role: spec.role, primary_root: repository.primary_root, request_directory: dir, control_directory: control,
       max_requests: spec.max_requests, installation: { ...available, via: 'executable', command: launcher }, launcher, policy_file };
+    guard?.();
     writeSessionArtifact(specFile, hostSpec);
   }
   const binding = await startTaskApplicationHost(repoRoot, spec, [admission.node, '--disable-sigusr1', hostEntry(), specFile], async () => {
     await waitSessionArtifact(join(control, 'ready.json'), Date.now() + 50_000, () => {
+      guard?.();
       if (existsSync(join(control, 'error.json'))) throw new Error('OAR_CODING_START_FAILED');
     });
     const ready = readSessionArtifact<{ pid: number; session_id: string }>(join(control, 'ready.json'));
     if (!Number.isSafeInteger(ready.pid) || typeof ready.session_id !== 'string' || !ready.session_id) throw new Error('OAR_CODING_READY_INVALID');
-  });
+  }, guard);
+  guard?.();
   const ready = readSessionArtifact<{ pid: number }>(join(control, 'ready.json'));
   if (binding.host !== null || binding.provider.pid !== ready.pid) throw new Error('OAR_CODING_HOST_IDENTITY_LOST');
   return binding;
 }
-export async function sendCodingTaskRequest(repoRoot: string, task: string, role: string, contextRef: string, contextPolicy: 'repeatable' | 'changed_only' = 'repeatable') {
+export async function sendCodingTaskRequest(repoRoot: string, task: string, role: string, contextRef: string, contextPolicy: 'repeatable' | 'changed_only' = 'repeatable', guard?: () => void) {
+  guard?.();
   const { dir, binding } = assertCodingTaskAgent(repoRoot, task, role), spec = readCodingSpec(dir);
   assertCodingHostAdmission(binding.execution_root, spec.admission);
   if (binding.host !== null || binding.execution_root !== spec.admission.execution_root) throw new Error('OAR_CODING_HOST_IDENTITY_LOST');
   return sendTaskRequest(repoRoot, task, role, contextRef, contextPolicy, async request => {
     const ack = join(spec.control_directory, `ack-${request.round}.json`);
     await waitSessionArtifact(ack, Date.now() + 10_000, () => {
+      guard?.();
       assertTaskBinding(binding);
       if (existsSync(join(spec.control_directory, 'error.json'))) throw new Error('OAR_CODING_DELIVERY_FAILED');
     });
     if (readSessionArtifact<{request_id: string}>(ack).request_id !== request.request_id) throw new Error('OAR_CODING_ACK_IDENTITY_LOST');
-  });
+  }, undefined, guard);
 }
 async function cleanupCodingTaskAgent(repoRoot: string, task: string, role: string, cancel: boolean): Promise<TaskCleanupResult> {
   assertCodingTaskAgent(repoRoot, task, role);
