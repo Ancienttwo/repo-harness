@@ -1,0 +1,99 @@
+{
+  "version": 1,
+  "owner": "Aimpact",
+  "goal": {
+    "text": "Assess whether strategic reflection preserves file-backed continuity and authorized execution under human intent ownership.",
+    "kind": "assumption",
+    "evidence": [
+      "README.md",
+      "docs/plans/optional-strategy-memory.md"
+    ]
+  },
+  "intendedResults": [
+    {
+      "text": "Export traceable context without agent launch, dispatch or automatic goal changes.",
+      "kind": "assumption",
+      "evidence": [
+        "README.md",
+        "docs/plans/optional-strategy-memory.md"
+      ]
+    },
+    {
+      "text": "Keep source facts, assumptions and unknown outcomes distinct.",
+      "kind": "assumption",
+      "evidence": [
+        "README.md",
+        "docs/plans/optional-strategy-memory.md"
+      ]
+    }
+  ],
+  "realityConstraints": [
+    {
+      "key": "execution",
+      "value": "export-only",
+      "evidence": [
+        "docs/plans/optional-strategy-memory.md"
+      ]
+    }
+  ],
+  "observedOutcomes": [
+    {
+      "text": "A business-success verdict has not been established.",
+      "kind": "unknown",
+      "evidence": []
+    }
+  ],
+  "gaps": [
+    {
+      "text": "Live host read-only and resume capability is unverified.",
+      "kind": "unknown",
+      "evidence": []
+    }
+  ],
+  "architecture": [
+    {
+      "text": "The repository describes a file-backed workflow and an authorized program runtime.",
+      "kind": "fact",
+      "evidence": [
+        "README.md"
+      ]
+    }
+  ],
+  "evidence": [
+    {
+      "path": "README.md",
+      "revision": "f4ed93d91575c470d72560c1bab3d2fb14e117ab",
+      "sha256": "a4e6e09041964e198e1952d705b11946766163b9299f6a384f56aba8372c8291"
+    },
+    {
+      "path": "docs/plans/optional-strategy-memory.md",
+      "revision": "f4ed93d91575c470d72560c1bab3d2fb14e117ab",
+      "sha256": "df15c55f0bac2e23ab3827c83d8e99fa6b81fe46ad29b9cd214b28ddca0866d3"
+    }
+  ],
+  "memory": [
+    {
+      "id": "strategy-boundaries",
+      "summary": "The approved first scope keeps human intent authority, bounded source reads and proposal-only strategic output.",
+      "kind": "long_term",
+      "lifecycle": "active",
+      "body": {
+        "path": "docs/plans/optional-strategy-memory.md",
+        "revision": "f4ed93d91575c470d72560c1bab3d2fb14e117ab",
+        "sha256": "df15c55f0bac2e23ab3827c83d8e99fa6b81fe46ad29b9cd214b28ddca0866d3"
+      },
+      "provenance": [
+        "docs/plans/optional-strategy-memory.md"
+      ],
+      "applicability": [
+        "strategy-pilot"
+      ],
+      "expiresAt": null,
+      "reviewOnRevision": null,
+      "reviewConditions": [
+        "Review when the approved strategy scope changes."
+      ],
+      "supersededBy": null
+    }
+  ]
+}

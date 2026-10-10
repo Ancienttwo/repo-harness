@@ -1,5 +1,6 @@
+import { assertObservationPath, observationReadFileSync as readFileSync } from './readonly-observation';
 import { createHash } from 'crypto';
-import { lstatSync, readFileSync, realpathSync, statSync } from 'fs';
+import { lstatSync, realpathSync, statSync } from 'fs';
 import { basename, dirname, isAbsolute, posix, relative, resolve, sep, win32 } from 'path';
 import { stripWrappingQuotes } from '../../core/state/artifact-parsers';
 
@@ -83,6 +84,7 @@ export function isForeignDriveAbsolutePath(cwd: string, candidate: string): bool
 }
 
 export function repoPath(cwd: string, relPath: string): string {
+  assertObservationPath(resolve(cwd, relPath));
   const posixRoot = posix.resolve('/repo');
   const win32Root = win32.resolve('C:\\repo').toLowerCase();
   const posixCandidate = posix.resolve(posixRoot, relPath);

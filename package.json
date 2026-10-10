@@ -1,6 +1,6 @@
 {
   "name": "repo-harness",
-  "version": "0.21.1",
+  "version": "0.21.2",
   "description": "Installs, migrates, audits, and repairs repo-local agentic development harnesses",
   "license": "MIT",
   "repository": {
@@ -82,7 +82,7 @@
     "build:oar-hosts": "bun run build:oar-review-host && bun run build:oar-coding-host"
   },
   "peerDependencies": {
-    "@earendil-works/pi-coding-agent": "*"
+    "@earendil-works/pi-coding-agent": "1.1.0"
   },
   "peerDependenciesMeta": {
     "@earendil-works/pi-coding-agent": {

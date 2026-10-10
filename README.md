@@ -721,11 +721,18 @@ repo-harness commit scripts or hooks unless that repo adopts the same policy.
 
 ## Current Release
 
-- npm package: `repo-harness@0.21.1`
-- Generated workflow stamp: `repo-harness@0.21.1+template@0.21.1`
+- npm package: `repo-harness@0.21.2`
+- Generated workflow stamp: `repo-harness@0.21.2+template@0.21.2`
 - GitHub repository: `Ancienttwo/repo-harness`
 - Release notes and history: [`docs/CHANGELOG.md`](docs/CHANGELOG.md)
 
 ## License
 
 MIT — see [`LICENSE`](LICENSE).
+
+### Optional strategic reflection
+
+`repo-harness strategy status|context|validate` exports project-local evidence
+and validates inert proposals. It is off by default and never dispatches work.
+The optional Skill needs an explicit `strategy install-skill` command. See
+[Strategy and progressive memory](docs/reference-configs/strategy.md).
