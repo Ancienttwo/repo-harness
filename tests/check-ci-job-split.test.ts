@@ -190,8 +190,34 @@ describe('single affected verification and daily fallback', () => {
       'bun run build:oar-hosts',
       'test -s dist/oar-review-host.js',
       'test -s dist/oar-coding-host.js',
-      'bun run test:files tests/generic-review.test.ts tests/acceptance-receipt.test.ts tests/cli/cross-review.test.ts tests/herdr-task-lifecycle.test.ts --timeout 60000 --max-concurrency 1',
+      'bun run test:files tests/generic-review.test.ts tests/acceptance-receipt.test.ts tests/cli/cross-review.test.ts tests/herdr-task-lifecycle.test.ts tests/cli/pm.test.ts --timeout 60000 --max-concurrency 1',
     ]);
+  });
+
+  test('PM candidate acceptance runs full lanes on one immutable head with read-only permissions', () => {
+    const pm = Bun.YAML.parse(readFileSync(join(ROOT, '.github/workflows/pm-acceptance.yml'), 'utf8')) as any;
+    expect(Object.keys(pm.on)).toEqual(['pull_request']);
+    expect(pm.permissions).toEqual({ contents: 'read' });
+    expect(pm.on.pull_request.paths).toContain('tests/cli/pm.test.ts');
+    const job = pm.jobs.candidate;
+    expect(job.strategy.matrix.lane).toEqual(['governance', 'functional']);
+    expect(job.strategy['fail-fast']).toBe(false);
+    expect(job['continue-on-error']).toBeUndefined();
+    expect(job.steps.every((step: any) => step['continue-on-error'] === undefined)).toBe(true);
+    expect(job.steps.find((step: any) => step.uses === 'actions/checkout@v4').with).toEqual({
+      ref: '${{ github.event.pull_request.head.sha }}', 'fetch-depth': 0, 'persist-credentials': false,
+    });
+    expect(job.env.EXPECTED_SHA).toBe('${{ github.event.pull_request.head.sha }}');
+    expect(job.env.REPO_HARNESS_DIFF_BASE).toBe('${{ github.event.pull_request.base.sha }}');
+    expect(job.env.REPO_HARNESS_DIFF_MODE).toBe('direct');
+    expect(job.env.REPO_HARNESS_TEST_EXPENSIVE).toBe('1');
+    expect(job.steps.find((step: any) => step.name === 'Record the immutable candidate').run)
+      .toContain('test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"');
+    expect(job.steps.find((step: any) => step.name === 'Run the existing acceptance lane').run)
+      .toBe('bash scripts/check-ci.sh "$ACCEPTANCE_LANE"');
+    for (const lane of ['governance', 'test', 'mcp-path-matrix']) {
+      expect(workflow.jobs[lane].if).toBe("needs.selection.outputs.mode == 'daily'");
+    }
   });
 
   test('selector uses actual complete Git PR diff and outputs selected files', () => {

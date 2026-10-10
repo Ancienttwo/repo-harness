@@ -79,6 +79,22 @@ This path reuses existing host, origin, consent and OAuth checks. It creates no
 second identity store, task ledger, or approval store. OAuth consent permits
 bounded PM access. It does not approve a candidate or supply worker admission.
 
+## Read-only connection check
+
+Run `repo-harness mcp pm-preflight --json` before any connection work. It reads
+operator scope, registry grants, HTTP profile configuration and host admission.
+It reports fixed error codes. It does not start a server, read credential values,
+register a client, issue a token or write task state. Valid configuration does
+not prove native execution, an OAuth connection, a Dot invocation or event wake.
+Those fields remain `unverified`.
+
+Do not use `mcp doctor --live` for a read-only PM check. That command can register
+and save an OAuth client and exchange tokens. It does not yet validate PM scope.
+A real Dot connection needs an operator-approved endpoint, platform connector
+enrollment, OAuth consent and a recorded tool invocation. Event wake also needs
+a supported platform wake API and binding. MCP availability supplies neither.
+Any later wake adapter must reuse the existing stable operation IDs and receipts.
+
 ## Controller sequence
 
 1. Read capabilities and status. Preserve canonical task, claim, generation,
@@ -114,6 +130,8 @@ Fixture results are test evidence, not live coding-provider acceptance. Native
 host tests are separate. OAuth and in-memory MCP handler tests cover identity,
 scope, revision, revocation and owner isolation. The HTTP wire fixture is kept
 as a required test. Its local run is blocked by loopback listen permission.
+The hosted HTTP wire fixture passed on candidate b00dae4a. That receipt does
+not establish a connection to Dot. New candidate changes require new CI evidence.
 A real Dot connector, remote OAuth flow, event wake-up, and a live provider task
 need platform evidence. They are unverified here. MCP tool availability does not
 mean an event can wake Dot. Do not report

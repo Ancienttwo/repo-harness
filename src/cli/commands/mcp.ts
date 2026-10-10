@@ -1,6 +1,7 @@
 import { runMcpUninstall, type McpUninstallOptions } from '../mcp/uninstall';
 import { Command } from 'commander';
 import { isAbsolute, relative } from 'path';
+import { inspectPmMcpConnection } from '../mcp/pm-server';
 import { createMcpToolContext } from '../mcp/server';
 import { startMcpHttp } from '../mcp/transports/http';
 import { startMcpStdio } from '../mcp/transports/stdio';
@@ -183,10 +184,20 @@ export function buildMcpCommand(): Command {
     });
 
   mcp
+    .command('pm-preflight')
+    .description('Read PM configuration and scope without connecting or creating authorization')
+    .option('--json', 'Output JSON')
+    .action((opts: { json?: boolean }) => {
+      const result = inspectPmMcpConnection();
+      console.log(opts.json ? JSON.stringify(result, null, 2)
+        : `[repo-harness mcp] PM configuration: ${result.blockers.length ? result.blockers.join(', ') : 'valid'}; runtime, connector and event wake: unverified`);
+    });
+
+  mcp
     .command('doctor')
     .description('Check repo-harness MCP setup status')
     .option('--repo <path>', 'Repository root to inspect', '.')
-    .option('--live', 'Probe local/public health, OAuth metadata, and MCP tool schema without changing external state')
+    .option('--live', 'Probe endpoints and tools; can register and save an OAuth client and exchange tokens')
     .option('--json', 'Output JSON instead of human-readable text')
     .action((rawOpts: { repo?: string; json?: boolean; live?: boolean }) => {
       void runMcpAction(() => {

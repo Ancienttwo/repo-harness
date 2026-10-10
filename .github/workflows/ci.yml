@@ -89,7 +89,7 @@ jobs:
           bun run build:oar-hosts
           test -s dist/oar-review-host.js
           test -s dist/oar-coding-host.js
-          bun run test:files tests/generic-review.test.ts tests/acceptance-receipt.test.ts tests/cli/cross-review.test.ts tests/herdr-task-lifecycle.test.ts --timeout 60000 --max-concurrency 1
+          bun run test:files tests/generic-review.test.ts tests/acceptance-receipt.test.ts tests/cli/cross-review.test.ts tests/herdr-task-lifecycle.test.ts tests/cli/pm.test.ts --timeout 60000 --max-concurrency 1
 
   verify:
     name: Typecheck and affected tests

@@ -5,6 +5,8 @@ import { constants, closeSync, fstatSync, lstatSync, openSync, readFileSync, rea
 import { dirname, isAbsolute, join, relative, sep } from 'path';
 import { PM_OPERATIONS, PM_OPERATION_SCHEMAS, PmError, type PmOperation } from '../../core/pm/protocol';
 import { canonicalRepoPath, isRepoHarnessAdoptedPath, readRepoHarnessRegistryStrictSnapshot, repoHarnessHome, repoHarnessRepoIdFor } from '../../effects/repo-registry';
+import { readMcpLocalConfigFile } from './auth';
+import { readPmHostConfiguration } from '../../effects/pm/host';
 import { runPmJson } from '../commands/pm';
 import { readWorktreeTopology } from '../../effects/git/worktree-topology';
 import { repoHarnessPackageVersion } from './version';
@@ -122,4 +124,42 @@ export function createPmMcpServer(env: NodeJS.ProcessEnv = { ...process.env }, o
     }
   });
   return server;
+}
+
+/** Local configuration only. No socket, credential, task or authorization writes. */
+export function inspectPmMcpConnection(env: NodeJS.ProcessEnv = process.env) {
+  const blockers: string[] = [];
+  let scope: PmMcpScope | null = null;
+  let httpConfigurationValid = false;
+  let hostConfigurationValid = false;
+  try {
+    scope = createPmMcpBinding(env).check();
+    const registry = readRepoHarnessRegistryStrictSnapshot({ env, adoptedOnly: false });
+    if (registry.repos.find(repo => repo.id === scope!.repo_id)?.accessMode !== 'read_write') {
+      blockers.push('pm_scope_not_approved');
+    }
+    const config = readMcpLocalConfigFile(join(repoHarnessHome(env), 'mcp.local.json'));
+    httpConfigurationValid = config?.version === 3 && config.profile === 'pm' && config.pm?.enabled === true
+      && config.authorizationRevision === scope.authorization_revision && (config.auth?.mode ?? 'oauth') === 'oauth';
+    if (!httpConfigurationValid) blockers.push('pm_http_configuration_invalid');
+  } catch (error) {
+    blockers.push(error instanceof PmError ? error.code : 'pm_connection_configuration_invalid');
+  }
+  try {
+    readPmHostConfiguration(env);
+    hostConfigurationValid = true;
+  } catch (error) {
+    blockers.push(error instanceof PmError ? error.code : 'pm_host_configuration_invalid');
+  }
+  return {
+    protocol: 1 as const, kind: 'repo-harness-pm-connection-check' as const,
+    scope: scope && { repo_id: scope.repo_id, authorization_revision: scope.authorization_revision,
+      allowed_operations: scope.allowed_operations },
+    http_configuration_valid: httpConfigurationValid,
+    host_configuration_valid: hostConfigurationValid,
+    blockers: [...new Set(blockers)],
+    runtime_acceptance: 'unverified' as const,
+    connector_invocation: 'unverified' as const,
+    event_wake: 'unverified' as const,
+  };
 }

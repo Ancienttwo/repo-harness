@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from 'bun:test';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, relative } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createHash } from 'node:crypto';
@@ -18,7 +18,7 @@ import { readLease, taskLockRelativePath } from '../../src/effects/state/coordin
 import { acquireExclusiveDirectoryLock, withExclusiveDirectoryLockAsync } from '../../src/effects/locking/exclusive-directory-lock';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
-import { createPmMcpServer, createPmMcpBinding } from '../../src/cli/mcp/pm-server';
+import { createPmMcpServer, createPmMcpBinding, inspectPmMcpConnection } from '../../src/cli/mcp/pm-server';
 import { createRepoHarnessMcpServer } from '../../src/cli/mcp/server';
 import { startMcpHttp } from '../../src/cli/mcp/transports/http';
 import { McpOAuthTokenStore, createMcpOAuthProvider } from '../../src/cli/mcp/oauth';
@@ -642,4 +642,42 @@ test('PM HTTP enforces profile and session owner on list, calls, streams and del
     mcpScope(f, ['status']);
     expect((await post('fixture-two', undefined, init)).status).toBe(503);
   } finally { proc.kill('SIGTERM'); await proc.exited; await diagnostic; }
+});
+
+
+test('PM preflight reads bounded configuration without creating credentials or claiming a connection', () => {
+  const f = fixture(); mcpScope(f, ['status', 'collect']);
+  const configPath = join(f.home, 'mcp.local.json');
+  const config = { version: 3, profile: 'pm', authorizationRevision: 7, pm: { enabled: true }, auth: { mode: 'oauth' } };
+  writeFileSync(configPath, JSON.stringify(config));
+  const before = readdirSync(f.home).sort().map(name => [name, readFileSync(join(f.home, name), 'utf8')]);
+  expect(inspectPmMcpConnection(f.env)).toEqual({
+    protocol: 1, kind: 'repo-harness-pm-connection-check',
+    scope: { repo_id: f.scope.repo_id, authorization_revision: 7, allowed_operations: ['status', 'collect'] },
+    http_configuration_valid: true, host_configuration_valid: false,
+    blockers: ['pm_acquisition_not_admitted'], runtime_acceptance: 'unverified', connector_invocation: 'unverified', event_wake: 'unverified',
+  });
+  const cli = spawnSync(process.execPath, [join(import.meta.dir, '../../src/cli/index.ts'), 'mcp', 'pm-preflight', '--json'],
+    { env: f.env, encoding: 'utf8' });
+  expect(cli.status, cli.stderr).toBe(0);
+  expect(JSON.parse(cli.stdout)).toEqual(inspectPmMcpConnection(f.env));
+  expect(readdirSync(f.home).sort().map(name => [name, readFileSync(join(f.home, name), 'utf8')])).toEqual(before);
+  for (const delta of [{ version: 2 }, { profile: 'planner' }, { authorizationRevision: 8 }, { pm: { enabled: false } }, { auth: { mode: 'bearer' } }]) {
+    writeFileSync(configPath, JSON.stringify({ ...config, ...delta }));
+    expect(inspectPmMcpConnection(f.env)).toMatchObject({ http_configuration_valid: false, blockers: ['pm_http_configuration_invalid', 'pm_acquisition_not_admitted'] });
+  }
+  writeFileSync(configPath, 'not-json secret-fixture-value');
+  const invalid = JSON.stringify(inspectPmMcpConnection(f.env));
+  expect(invalid).toContain('pm_connection_configuration_invalid');
+  expect(invalid).not.toContain('secret-fixture-value'); expect(invalid).not.toContain(f.home);
+  const registryPath = join(f.home, 'registered-repos.json');
+  const registry = JSON.parse(readFileSync(registryPath, 'utf8'));
+  writeFileSync(configPath, JSON.stringify(config));
+  registry.repos[0].accessMode = 'read_only'; writeFileSync(registryPath, JSON.stringify(registry));
+  expect(inspectPmMcpConnection(f.env).blockers).toContain('pm_scope_not_approved');
+  registry.authorizationRevision = 8; writeFileSync(registryPath, JSON.stringify(registry));
+  expect(inspectPmMcpConnection(f.env)).toMatchObject({ scope: null, http_configuration_valid: false, blockers: ['pm_authorization_stale', 'pm_acquisition_not_admitted'] });
+  chmodSync(join(f.home, 'pm-mcp.json'), 0o666);
+  expect(inspectPmMcpConnection(f.env).blockers).toContain('pm_mcp_configuration_unsafe');
+  expect(readdirSync(f.home).sort()).toEqual(before.map(([name]) => name));
 });
