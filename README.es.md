@@ -200,8 +200,7 @@ completo para un repositorio en solitario, y todo lo que está en
 de lo que sigue es necesario para usarlo.
 
 **Capa 2 — programas autorizados.** Trabajo de larga duración que sobrevive a
-una sesión: un controller desatendido que avanza un Sprint, un programa de refactor guiado
-por el modelo de arquitectura, un plano de colaboración donde varios Module
+una sesión: un controller desatendido que avanza un Sprint, un plano de colaboración donde varios Module
 Engineers intercambian señales y handoffs. Cada programa está condicionado a
 una autorización emitida por un operador, consume de un budget ledger por goal,
 y retiene el trabajo mediante leases renovables. Ver
@@ -226,7 +225,7 @@ escrito un humano.
 | **Sesiones respaldadas por archivos** | Plans, contracts, checks y handoffs viven en el repositorio, de modo que una sesión nueva retoma desde artefactos en vez de un hilo de chat |
 | **Typed hook runtime** | Ocho managed routes compartidas, más tres delegation routes exclusivas de Codex, cada una atada a exactamente un typed handler in-process, con guards fail-closed en el límite de edición |
 | **Plan → Contract → Review** | Un solo ciclo de vida desde el plan aprobado hasta el contract proyectado, el worktree aislado, la evidencia estructurada y un closeout revisable |
-| **Programas autorizados** | Programas de refactor, automation y collaboration que sostienen su propia authorization, budget ledger, task offers y leases renovables |
+| **Programas autorizados** | Programas de automation y collaboration que sostienen su propia authorization, budget ledger, task offers y leases renovables |
 | **Controller desatendido acotado** | Un bucle de dispatch de Engineer bajo topes duros de pasos, duración y reintentos, que reserva budget antes de cada intento |
 | **Carga de contexto progresiva** | Un root context estable de ~12KB más capability contracts de ~1KB que solo se cargan para los archivos que realmente se están tocando |
 | **Integración con CodeGraph** | Consultas estructurales (callers, callees, definitions) respondidas desde un índice pre-construido en vez de pasadas repetidas de grep-and-read |
@@ -393,20 +392,17 @@ sobre un backlog más antiguo.
 
 Campaign execution moved to the existing Bot skills on 2026-10-04. Use [repo-harness](SKILL.md) to dispatch and collect work through Herdr/OAR. Use [repo-harness-product](assets/skills/repo-harness-product/SKILL.md) for planning and [repo-harness-check](assets/skill-commands/repo-harness-check/SKILL.md) for scope and verification. repo-harness has no campaign runtime.
 
-### Refactor Mode
+### Refactor recommendations
 
 ```bash
-repo-harness refactor discover        # bounded shadow scan of one local proposal
-repo-harness refactor materialize     # one recommendation into N Work Packages
-repo-harness refactor verify-candidate
-repo-harness refactor board
+repo-harness refactor recommendations                       # measured suggestions with evidence
+repo-harness refactor decide <id> accept|defer|reject --reason "<text>"
 ```
 
-Un programa respaldado por ArchContext que convierte una recomendación de
-arquitectura en work packages contra una única autoridad canónica de tarea de
-Sprint. Su activación está condicionada: el canary set y la evidencia de
-rung-promotion deben refrescarse contra el provider instalado antes de que se
-active.
+ArchContext mide problemas estructurales como ciclos y violaciones de
+dirección. repo-harness muestra cada sugerencia con sus métricas y las
+estadísticas de sus módulos, y registra la decisión del usuario. Nunca ejecuta
+un refactor; una sugerencia aceptada sigue el flujo normal de plan y pull request.
 
 ### Plano de colaboración
 

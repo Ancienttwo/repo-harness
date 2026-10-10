@@ -1497,16 +1497,6 @@ pi_write_harness_policy() {
     "helper_runtime_dir": "package:scripts",
     "helper_source": "package"
   },
-  "refactor": {
-    "mode": "off",
-    "provider": "archctx",
-    "stages": {
-      "scan": { "provider_version": "0.6.3", "required_features": ["module-statistics-v1", "refactor-assessment-v1", "recommendation-v3"] },
-      "verify": { "provider_version": "0.6.3", "required_features": ["refactor-resolution-v1"] }
-    },
-    "require_cutover_closure": true,
-    "require_post_merge_measurement": false
-  },
   "workstreams": {
     "dir": "tasks/workstreams",
     "scope": "capability",

@@ -730,6 +730,8 @@ export function planStandardAdoption(opts: StandardPlanOptions): { operations: A
   // Operator-invoked adoption retires the old execution authority. Never copy
   // repository preferences into the host-wide configuration.
   retireArchitecturePolicy(policy);
+  // Refactor execution is retired; recommendations read no repository refactor policy.
+  delete policy.refactor;
   const externalTooling = isObject(policy.external_tooling) ? policy.external_tooling : {};
   const externalRouting = isObject(externalTooling.routing) ? externalTooling.routing : {};
   const retiredComplexProvider = typeof externalRouting.complex === "string" ? externalRouting.complex : null;

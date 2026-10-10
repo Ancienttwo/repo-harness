@@ -341,49 +341,21 @@ AcceptanceReceipt field.
 - **Task profile**: The declared execution shape of a contract (for example
   `code-change`) that determines which verification and delegation rules
   apply to that task.
-- **Proactive refactor recommendations**: Global `refactor_recommendations.enabled`
+- **Refactor recommendations**: Global `refactor_recommendations.enabled`
   defaults to true and is initialized once by install/update or successful
-  repository init, preserving an explicit disabled choice. Normal Stop reads
-  measured structural opportunities and asks the Agent to explain evidence,
-  expected benefit and risk, then request the user's decision. Observation is
-  separate from Refactor Mode activation: it never authors a proposal, accepts
-  a recommendation, creates an execution task or edits code. User approval
-  enters the existing approved-plan workflow. Incomplete facts are reported,
-  never synthesized. Delivery is bounded and deduplicated. The managed Stop host allows 150 seconds;
-  a shared timing policy caps Stop work at 140 seconds and projection at 110
-  seconds, reserving 30 seconds for the serial recommendation scan and lifecycle
-  readback. Journal and disabled-provider cascade work retain their 20-second
-  entry deadline. The provider may impose a shorter configured timeout; work
-  that exceeds the host slice remains pending for the existing explicit drain.
-  Observation uses positive remaining caller time and reports exhausted-budget
-  deferral without turning it into a recommendation.
-- **Refactor Mode**: The `off | shadow | active` operating mode under which
-  repo-harness consumes an external structural authority to author, assess and
-  execute refactors. It is a narrowed entry into the existing plan, contract,
-  worktree, and ship flow, never a second workflow engine.
-- **Proposal Author**: The repo-harness-side agent or human that writes a
-  refactor proposal for the external structural authority to assess. The
-  author supplies intent, scope, target outcomes, and kill list; it never
-  decides the structural scale, the workflow route, or a recommendation's
-  status.
-- **RefactorWorkflowRoute**: The repo-harness workflow routing decision
-  deterministically projected from the external authority's structural scale
-  and its evidence reason codes. It may stop more conservatively than the
-  upstream scale but may never route below it.
-- **Refactor Program**: One authorized Refactor Mode run, holding only the
-  bindings from external recommendations to local work packages. It carries no
-  recommendation status; every status is re-read from the external authority.
+  repository init, preserving an explicit disabled choice. Normal Stop scans for
+  measured structural observations within a 30-second slice of the 140-second
+  Stop work budget and prints one line when open suggestions exist.
+  `repo-harness refactor recommendations` shows each suggestion with its
+  metrics and module statistics; `repo-harness refactor decide` records the
+  user's accept, defer or reject decision in ArchContext. repo-harness never
+  executes a refactor and keeps no local delivery state. An accepted suggestion
+  enters the normal plan and pull request workflow. Incomplete code facts are
+  reported, never synthesized.
 - **Cutover Closure**: The provider-independent gate asserting that every
   declared old implementation, caller, fallback, test, document, and
   compatibility window of a replaced surface has an explicit disposition, and
   that nothing declared removed still exists at the candidate head.
-- **Refactor Execution Binding**: The append-only, immutable set of references
-  tying one external recommendation to the plan, contract, closure,
-  acceptance, and merge evidence of one execution. It has no status field, so
-  a merged pull request can never by itself mean the refactor is resolved.
-- **Joined Refactor Board**: The read-only projection joining the external
-  semantic refactor ledger with local execution evidence. It owns no state and
-  is fully rebuildable from its authorities.
 
 ## Agent WorkDemand intake authority
 

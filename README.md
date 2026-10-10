@@ -225,7 +225,7 @@ and everything in [Task Workflow](#task-workflow) belongs here. Nothing below is
 required to use it.
 
 **Layer 2 — authorized programs.** Long-running work that outlives a session:
-an unattended controller stepping a Sprint, a refactor program driven off the architecture model, a
+an unattended controller stepping a Sprint, a
 collaboration plane where several Module Engineers exchange signals and
 handoffs. Each program is gated on an operator-minted authorization, draws on a
 per-goal budget ledger, and holds work through renewable leases. See
@@ -249,7 +249,7 @@ same plan, contract, and review artifacts a human would have written.
 | **File-backed sessions** | Plans, contracts, checks, and handoffs live in the repo, so a new session resumes from artifacts instead of a chat thread |
 | **Typed hook runtime** | Eight shared managed routes plus three Codex-only delegation routes, each bound to exactly one typed in-process handler, with fail-closed guards at the edit boundary |
 | **Plan → Contract → Review** | One lifecycle from approved plan to projected contract, isolated worktree, structured evidence, and a reviewable closeout |
-| **Authorized programs** | Refactor, automation, and collaboration programs that hold their own authorization, budget ledger, task offers, and renewable leases |
+| **Authorized programs** | Automation and collaboration programs that hold their own authorization, budget ledger, task offers, and renewable leases |
 | **Bounded unattended controller** | One Engineer dispatch loop under hard step, duration, and retry caps, reserving budget before each attempt |
 | **Progressive context loading** | A ~12KB stable root context plus ~1KB capability contracts loaded only for the files actually being touched |
 | **CodeGraph integration** | Structural queries (callers, callees, definitions) answered from a pre-built index instead of repeated grep-and-read passes |
@@ -410,19 +410,17 @@ Sprint task IDs are immutable identities under backlog schema v2 — run
 
 Campaign execution moved to the existing Bot skills on 2026-10-04. Use [repo-harness](SKILL.md) to dispatch and collect work through Herdr/OAR. Use [repo-harness-product](assets/skills/repo-harness-product/SKILL.md) for planning and [repo-harness-check](assets/skill-commands/repo-harness-check/SKILL.md) for scope and verification. repo-harness has no campaign runtime.
 
-### Refactor Mode
+### Refactor recommendations
 
 ```bash
-repo-harness refactor discover        # bounded shadow scan of one local proposal
-repo-harness refactor materialize     # one recommendation into N Work Packages
-repo-harness refactor verify-candidate
-repo-harness refactor board
+repo-harness refactor recommendations                       # measured suggestions with evidence
+repo-harness refactor decide <id> accept|defer|reject --reason "<text>"
 ```
 
-An ArchContext-backed program that turns an architecture recommendation into
-work packages against a single canonical Sprint task authority. Activation is
-gated: the canary set and rung-promotion evidence must be refreshed against the
-installed provider before it turns on.
+ArchContext measures structural problems such as cycles and direction
+violations. repo-harness shows each suggestion with its metrics and module
+statistics, and records the user decision. It never executes a refactor; an
+accepted suggestion goes through the normal plan and pull request workflow.
 
 ### Collaboration plane
 

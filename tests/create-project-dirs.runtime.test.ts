@@ -6,7 +6,6 @@ import { spawnSync } from "child_process";
 import { defaultPolicy } from "../src/core/adoption/standard-plan";
 import { parseExternalSourcesPolicy } from "../src/effects/external-sources/policy";
 import { ARCHCTX_REQUIRED_VERSION, readArchitectureProjectionPolicy } from "../src/core/architecture/projection";
-import { REFACTOR_PROVIDER_VERSION, readRefactorPolicy } from "../src/core/refactor/policy";
 
 const ROOT = join(import.meta.dir, "..");
 const REFERENCE_STUB_MARKER = "<!-- repo-harness: reference-config-stub v1 -->";
@@ -1027,14 +1026,11 @@ describe("create-project-dirs runtime smoke", () => {
   }, RUNTIME_SMOKE_TIMEOUT_MS);
 
   /**
-   * `scripts/` ships inside the npm package, so a seeder that hardcodes a stale archctx pin
-   * reaches every generated repository. `readRefactorPolicy` fail-closes on an exact
-   * `provider_version` mismatch, so a stale seed makes the generated repo's own refactor
-   * stages unreadable rather than merely out of date. The guard runs the real seeders and
-   * feeds their output to the real readers instead of comparing version literals, so it
-   * fails on the behavior the consumer actually depends on.
+   * The archctx pin lives in the package (`ARCHCTX_REQUIRED_VERSION`). Repository
+   * seeders must not author archctx execution or refactor settings, because no
+   * runtime reader consumes them.
    */
-  test("every policy seeder emits an archctx pin the runtime readers accept", () => {
+  test("policy seeders author no repository archctx execution or refactor settings", () => {
     const cwd = mkdtempSync(join(tmpdir(), "seeder-archctx-pin-parity-"));
     const libPath = join(ROOT, "scripts/lib/project-init-lib.sh");
 
@@ -1052,21 +1048,13 @@ describe("create-project-dirs runtime smoke", () => {
       ];
 
       for (const [source, seeded] of seeders) {
-        // readRefactorPolicy takes the whole policy and throws on an exact
-        // provider_version mismatch, so a stale seed surfaces here as the generated
-        // repo's real failure, not as a string diff.
-        const refactor = readRefactorPolicy(seeded);
-        expect([source, refactor.stages.scan.provider_version]).toEqual([source, REFACTOR_PROVIDER_VERSION]);
-        expect([source, refactor.stages.verify.provider_version]).toEqual([source, REFACTOR_PROVIDER_VERSION]);
-
-        // Projection execution is global; repository seeders must not author it.
+        expect([source, seeded.refactor]).toEqual([source, undefined]);
         for (const key of ['projection_provider', 'projection_apply', 'projection_version', 'projection_failure_gate', 'projection_timeout_ms']) {
           expect([source, seeded.architecture?.[key]]).toEqual([source, undefined]);
         }
         expect(readArchitectureProjectionPolicy({}).requiredVersion).toBe(ARCHCTX_REQUIRED_VERSION);
       }
 
-      expect(REFACTOR_PROVIDER_VERSION).toBe(ARCHCTX_REQUIRED_VERSION);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

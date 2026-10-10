@@ -1,4 +1,4 @@
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.diagram.structurizr" sourceDigest="sha256:3ec3e9bf8d698407478762d22c1fd6267029bfd0cd24e4f91653ab01417a98ce" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:3f810607d66449ef2be934a2db0bc89840fae9182d2378944c27e2f24a776b83" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.diagram.structurizr" sourceDigest="sha256:92a45670ec0307bfa979726449a3264a7fdb76436f8640e413666b5f71a9552a" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:c760db99aa828aa3fcfc0c0da6c76c5f8073f93e874f854114c4be298a88a34d" -->
 {
   "schemaVersion": "archcontext.structurizr-export/v1",
   "name": "ArchContext Architecture",
@@ -158,7 +158,7 @@
       },
       {
         "id": "capability.runtime-harness.refactor-program",
-        "name": "Refactor Program",
+        "name": "Refactor Recommendations",
         "type": "Software System",
         "tags": [
           "capability"
@@ -415,14 +415,6 @@
       {
         "id": "component.refactor-program.archctx-provider",
         "name": "Refactor ArchContext Provider Boundary",
-        "type": "Component",
-        "tags": [
-          "component"
-        ]
-      },
-      {
-        "id": "component.refactor-program.lifecycle",
-        "name": "Refactor Program Lifecycle Plane",
         "type": "Component",
         "tags": [
           "component"
@@ -725,12 +717,6 @@
         "description": "calls"
       },
       {
-        "id": "relation.refactor-program.lifecycle",
-        "sourceId": "capability.runtime-harness.refactor-program",
-        "destinationId": "component.refactor-program.lifecycle",
-        "description": "calls"
-      },
-      {
         "id": "relation.root-router.primary",
         "sourceId": "capability.public-surface.root-router",
         "destinationId": "component.root-router.primary",
@@ -830,7 +816,6 @@
         "component.mcp-sidecar.primary",
         "component.operator.primary",
         "component.refactor-program.archctx-provider",
-        "component.refactor-program.lifecycle",
         "component.root-router.primary",
         "component.verified-context.primary",
         "component.work-demand.primary"

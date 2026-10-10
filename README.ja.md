@@ -196,7 +196,7 @@ task。plan、contract、check、review、handoff が持続的な authority で�
 利用に必須ではありません。
 
 **Layer 2 — authorized programs。** セッションより長く生きる作業です。Sprint を
-進める無人 controller、architecture model に基づく refactor program、複数の Module Engineer が signal と
+進める無人 controller、複数の Module Engineer が signal と
 handoff をやり取りする collaboration plane などが該当します。各 program は
 operator が mint した authorization で gate され、goal 単位の budget ledger から
 引き当て、更新可能な lease を通じて作業を保持します。詳細は
@@ -220,7 +220,7 @@ Layer 2 は Layer 1 を置き換えるものではありません。program の�
 | **File-backed sessions** | Plan、contract、check、handoff がリポジトリに残るので、新しいセッションはチャットスレッドではなく artifacts から再開します |
 | **Typed hook runtime** | 8 本の共有 managed route と 3 本の Codex 専用 delegation route があり、それぞれが exactly one の typed in-process handler に bind され、edit boundary で fail-closed な guard がかかります |
 | **Plan → Contract → Review** | approved plan から投射された contract、隔離された worktree、構造化された evidence、review 可能な closeout までの 1 本の lifecycle |
-| **Authorized programs** | 自前の authorization、budget ledger、task offer、更新可能な lease を保持する refactor・automation・collaboration の各 program |
+| **Authorized programs** | 自前の authorization、budget ledger、task offer、更新可能な lease を保持する automation・collaboration の各 program |
 | **Bounded unattended controller** | step・duration・retry の hard cap 下で動く 1 本の Engineer dispatch loop。各試行の前に budget を予約します |
 | **Progressive context loading** | 安定した約 12KB の root context に、実際に触れるファイルにだけ読み込まれる約 1KB の capability contract が加わります |
 | **CodeGraph integration** | caller・callee・definition などの構造的なクエリに、grep-and-read を繰り返す代わりに事前構築された index が答えます |
@@ -388,19 +388,17 @@ Sprint task ID は backlog schema v2 の下で不変の identity です。古い
 
 Campaign execution moved to the existing Bot skills on 2026-10-04. Use [repo-harness](SKILL.md) to dispatch and collect work through Herdr/OAR. Use [repo-harness-product](assets/skills/repo-harness-product/SKILL.md) for planning and [repo-harness-check](assets/skill-commands/repo-harness-check/SKILL.md) for scope and verification. repo-harness has no campaign runtime.
 
-### Refactor Mode
+### Refactor recommendations
 
 ```bash
-repo-harness refactor discover        # bounded shadow scan of one local proposal
-repo-harness refactor materialize     # one recommendation into N Work Packages
-repo-harness refactor verify-candidate
-repo-harness refactor board
+repo-harness refactor recommendations                       # measured suggestions with evidence
+repo-harness refactor decide <id> accept|defer|reject --reason "<text>"
 ```
 
-ArchContext に裏打ちされた program で、architecture recommendation を単一の
-canonical Sprint task authority に対する work package へ変換します。有効化は
-gate されており、canary set と rung-promotion の evidence を、インストール済みの
-provider に対してリフレッシュしてからでないと有効になりません。
+ArchContext は循環や依存方向の違反などの構造上の問題を計測します。repo-harness は
+各提案をその指標とモジュール統計とともに表示し、ユーザーの判断を記録します。
+リファクタリング自体は実行しません。受け入れた提案は通常の plan と pull request の
+流れで進めます。
 
 ### Collaboration plane
 

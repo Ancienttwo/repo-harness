@@ -1,4 +1,4 @@
-import { observeRefactorRecommendations } from '../../effects/refactor/recommendations';
+import { observeRefactorRecommendations, renderRefactorRecommendationSummary } from '../../effects/refactor/recommendations';
 /** Stop refreshes bounded recovery observations without workflow permission gates. */
 import {
   appendFileSync,
@@ -512,10 +512,9 @@ export function runStopHandler(opts: StopHandlerInput): StopHandlerResult {
   if (minimal.summary) stderr.push(`${minimal.summary}\n`);
   try {
     const recommendation = (dependencies.observeRefactorRecommendations ?? observeRefactorRecommendations)(
-      repoRoot, { env, consume: false, deadlineMs, nowMs: wallClockMs });
-    if (recommendation.status !== 'unavailable') {
-      stderr.push(`[RefactorRecommendations] ${recommendation.status}: ${recommendation.message}\n`);
-    }
+      repoRoot, { env, deadlineMs, nowMs: wallClockMs });
+    const summary = renderRefactorRecommendationSummary(recommendation);
+    if (summary) stderr.push(`${summary}\n`);
   } catch (error) {
     stderr.push(`[RefactorRecommendations] ${error instanceof Error ? error.message : String(error)}\n`);
   }

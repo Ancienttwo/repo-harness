@@ -1,96 +1,41 @@
 schemaVersion: archcontext.node/v2
 id: capability.runtime-harness.refactor-program
 kind: capability
-name: Refactor Program
+name: Refactor Recommendations
 status: active
-summary: Orchestrates ArchContext-backed refactor discovery, accountable proposal authoring, conservative workflow routing, execution evidence, and post-merge resolution without duplicating structural authority.
+summary: Shows measured ArchContext refactor suggestions with their evidence and records the user decision; it never executes a refactor.
 responsibilities:
-  - Keep ArchContext as the sole authority for structural observations, refactor scale, recommendation identity, verification, and resolution.
-  - Enforce the proposal-free discovery scan followed by accountable proposal authoring and a proposal-bound assessment.
-  - Persist one append-only Refactor Program event chain in the Git common directory and rebuild its current projection from durable events.
-  - Apply the off, shadow, and active policy ladder without allowing a candidate worktree to relax its own mutation authority.
-  - Project assessed scale conservatively into module, cross-module, architecture-intervention, proof-required, or no-action workflow routes.
-  - Materialize bounded work packages and execution bindings without copying recommendation lifecycle state.
-  - Require Cutover Closure and exact candidate verification before merge, then measure and resolve only against exact new main.
-  - Keep board and workflow views deterministic projections of provider and program authorities.
-  - Gate shadow, module-only, and cross-module activation on repository-local canary evidence without allowing rung skips.
+  - Keep ArchContext as the sole authority for structural observations, recommendation identity and lifecycle state.
+  - Present each open suggestion with the metrics and module statistics from the scan that produced it.
+  - Tell the Agent at Stop that measured suggestions exist, and stay silent when the provider is unavailable.
+  - Record an accept, defer or reject decision with its reason through ArchContext.
 source:
   include:
     - "src/core/refactor/**"
     - "src/effects/refactor/**"
     - "src/cli/commands/refactor.ts"
   entrypoints:
-    - id: entrypoint.refactor-program.discover
-      path: "src/effects/refactor/discovery-authoring.ts"
+    - id: entrypoint.refactor-program.observe
+      path: "src/effects/refactor/recommendations.ts"
       symbols:
-        - name: "discoverRefactorCandidates"
+        - name: "discoverRefactorRecommendations"
           sinks:
             - id: sink.refactor-program.provider-scan
               path: "src/effects/refactor/archctx-provider.ts"
               symbol: "runRefactorScan"
-        - name: "assessRefactorProposal"
-          sinks:
-            - id: sink.refactor-program.proposal-assessment
-              path: "src/effects/refactor/archctx-provider.ts"
-              symbol: "runRefactorScan"
-    - id: entrypoint.refactor-program.lifecycle
+    - id: entrypoint.refactor-program.decide
       path: "src/cli/commands/refactor.ts"
       symbols:
-        - name: "runRefactorStart"
+        - name: "decideRefactorRecommendation"
           sinks:
-            - id: sink.refactor-program.create
-              path: "src/effects/refactor/program-store.ts"
-              symbol: "createRefactorProgram"
-        - name: "runRefactorStatus"
-          sinks:
-            - id: sink.refactor-program.status
-              path: "src/effects/refactor/program-store.ts"
-              symbol: "readRefactorProgramStatus"
-        - name: "runRefactorStop"
-          sinks:
-            - id: sink.refactor-program.stop
-              path: "src/effects/refactor/program-store.ts"
-              symbol: "appendRefactorProgramEvent"
-        - name: "runRefactorMaterialize"
-          sinks:
-            - id: sink.refactor-program.materialize
-              path: "src/effects/refactor/materialization.ts"
-              symbol: "materializeRefactorProgram"
-        - name: "runRefactorArchitectureRequest"
-          sinks:
-            - id: sink.refactor-program.architecture-intervention
-              path: "src/effects/refactor/architecture-intervention.ts"
-              symbol: "prepareRefactorArchitectureIntervention"
-        - name: "runRefactorCandidateVerify"
-          sinks:
-            - id: sink.refactor-program.candidate-verification
-              path: "src/effects/refactor/candidate-verification.ts"
-              symbol: "verifyRefactorCandidate"
-        - name: "runRefactorBindExecution"
-          sinks:
-            - id: sink.refactor-program.execution-binding
-              path: "src/effects/refactor/execution-binding-store.ts"
-              symbol: "appendRefactorExecutionBinding"
-        - name: "runRefactorPostMerge"
-          sinks:
-            - id: sink.refactor-program.post-merge-resolution
-              path: "src/effects/refactor/post-merge-resolution.ts"
-              symbol: "resolveRefactorPostMerge"
-        - name: "runRefactorBoard"
-          sinks:
-            - id: sink.refactor-program.board-projection
-              path: "src/effects/refactor/post-merge-resolution.ts"
-              symbol: "rebuildRefactorBoard"
-        - name: "runRefactorActivationPromote"
-          sinks:
-            - id: sink.refactor-program.activation-ledger
-              path: "src/effects/refactor/activation-store.ts"
-              symbol: "advanceRefactorActivation"
+            - id: sink.refactor-program.decision
+              path: "src/effects/refactor/archctx-provider.ts"
+              symbol: "decideRecommendation"
 extensions:
   contractFiles:
     agents: "AGENTS.md"
     claude: "CLAUDE.md"
   lspProfile: "typescript-lsp"
   verification:
-    - "bun test tests/unit/refactor-discovery-proposal-authoring.test.ts tests/unit/refactor-provider-contract.test.ts tests/refactor-archctx-provider.test.ts tests/unit/refactor-policy.test.ts tests/unit/refactor-program-state-store.test.ts tests/unit/refactor-workflow-route.test.ts tests/unit/refactor-program-contract.test.ts tests/unit/refactor-materialization-contract.test.ts tests/unit/refactor-materialization-effect.test.ts tests/unit/refactor-architecture-intervention.test.ts tests/unit/refactor-candidate-verification.test.ts tests/unit/refactor-execution-binding.test.ts tests/unit/refactor-board.test.ts tests/unit/refactor-post-merge-resolution.test.ts tests/unit/refactor-activation.test.ts --timeout 60000"
+    - "bun test tests/unit/refactor-recommendations.test.ts tests/refactor-archctx-provider.test.ts --timeout 60000"
     - "bun run check:type"

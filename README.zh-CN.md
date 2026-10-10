@@ -174,8 +174,7 @@ contract、checks、review 和 handoff 是持久的 authority；hook 负责把�
 都属于这一层。下面的内容都不是使用它的前提。
 
 **第 2 层 —— authorized programs。** 活得比会话更久的工作：无人值守的 controller
-逐步推进一个 Sprint、一个由架构
-模型驱动的 refactor program、一个多个 Module Engineer 交换信号与 handoff 的协作
+逐步推进一个 Sprint、一个多个 Module Engineer 交换信号与 handoff 的协作
 平面。每个 program 都以 operator 铸造的 authorization 为前提，从 per-goal budget
 ledger 支取额度，并用可续期的 lease 持有工作。见
 [Authorized Programs](#authorized-programs)。
@@ -198,7 +197,7 @@ ledger 支取额度，并用可续期的 lease 持有工作。见
 | **会话状态落在文件里** | Plan、contract、check 和 handoff 都留在仓库里，新会话从 artifact 而不是聊天线程恢复 |
 | **Typed hook runtime** | 八条共享 managed route 加三条 Codex-only delegation route，每条都绑定唯一一个 typed in-process handler，在 edit boundary 上做 fail-closed guard |
 | **Plan → Contract → Review** | 从 approved plan 到 projected contract、隔离 worktree、结构化证据，再到可审查 closeout 的完整生命周期 |
-| **Authorized programs** | refactor、automation 和 collaboration program 各自持有 authorization、budget ledger、task offer 和可续期 lease |
+| **Authorized programs** | automation 和 collaboration program 各自持有 authorization、budget ledger、task offer 和可续期 lease |
 | **有上限的无人值守 controller** | 一条 Engineer dispatch loop，受 step、duration、retry 硬上限约束，每次尝试前先预留 budget |
 | **渐进式 context loading** | 约 12KB 的稳定 root context，加上只为实际改动文件加载的约 1KB capability contract |
 | **CodeGraph 集成** | 用预建索引回答调用者、被调用者、定义位置这类结构化查询，取代反复的 grep-and-read |
@@ -352,18 +351,16 @@ repo-harness engineer board                   # read-only organization attention
 
 Campaign execution moved to the existing Bot skills on 2026-10-04. Use [repo-harness](SKILL.md) to dispatch and collect work through Herdr/OAR. Use [repo-harness-product](assets/skills/repo-harness-product/SKILL.md) for planning and [repo-harness-check](assets/skill-commands/repo-harness-check/SKILL.md) for scope and verification. repo-harness has no campaign runtime.
 
-### Refactor Mode
+### Refactor recommendations
 
 ```bash
-repo-harness refactor discover        # bounded shadow scan of one local proposal
-repo-harness refactor materialize     # one recommendation into N Work Packages
-repo-harness refactor verify-candidate
-repo-harness refactor board
+repo-harness refactor recommendations                       # measured suggestions with evidence
+repo-harness refactor decide <id> accept|defer|reject --reason "<text>"
 ```
 
-一个 ArchContext 支撑的 program，把架构建议转成 work package，对应到单一 canonical
-Sprint task authority。启用是有闸门的：canary set 和 rung-promotion 证据必须对着
-已安装的 provider 重新刷新过，它才会打开。
+ArchContext 测量循环依赖、依赖方向违规等结构问题。repo-harness 把每条建议连同其指标和
+模块统计一起展示，并记录用户的决定。它从不执行重构；被接受的建议走正常的 plan 和
+pull request 流程。
 
 ### 协作平面
 
