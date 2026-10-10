@@ -1209,6 +1209,20 @@ describe('operator web interactions', () => {
     expect(row.querySelectorAll('[aria-hidden="true"]:not(svg)').length).toBe(0);
   });
 
+  test('builds the console into the packaged static root with Tailwind and a loopback dev proxy', async () => {
+    const config = (await import('../../vite.operator.config.ts')).default as {
+      root: string; build: { outDir: string }; server: { host: string; proxy: Record<string, string> }; plugins: unknown[];
+    };
+    const names = config.plugins.flat(Infinity).map(plugin => (plugin as { name?: string } | null)?.name ?? '');
+    expect(config.root.endsWith('/src/operator-web')).toBe(true);
+    // `operator serve` and the tarball smoke read the build from dist/operator-ui.
+    expect(config.build.outDir.endsWith('/dist/operator-ui')).toBe(true);
+    expect(names).toContain('@tailwindcss/vite:generate:build');
+    expect(names).toContain('vite:react-babel');
+    expect(config.server.host).toBe('127.0.0.1');
+    expect(config.server.proxy['/api']).toBe(process.env.OPERATOR_API_ORIGIN ?? 'http://127.0.0.1:4318');
+  });
+
   test('holds the Kumo import order, stale treatment, motion and type-size floor in one stylesheet', async () => {
     const css = await Bun.file('src/operator-web/app.css').text();
 
