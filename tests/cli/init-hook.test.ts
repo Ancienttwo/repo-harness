@@ -4,6 +4,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { spawnSync } from 'child_process';
 import {
+  buildSetupCheck,
   formatInitHook,
   runInitHook,
   type ToolingReport,
@@ -678,4 +679,37 @@ describe('init-hook command', () => {
     expect(res.stdout).toContain('--target <target>');
     expect(res.stdout).toContain('--check-updates');
   }, 30_000);
+});
+
+describe('setup check builder', () => {
+  test('links each check to the action it generated and keeps the report unchanged', () => {
+    withTempHome((home, repo) => {
+      const options = {
+        cwd: repo,
+        target: 'both' as const,
+        env: { ...process.env, HOME: home },
+        statusReport: baseStatusReport({ managedEntryCount: 11 }),
+        doctorReport: baseDoctorReport([
+          { id: 'codegraph-index', describe: 'CodeGraph project index', status: 'warn', detail: 'index=stale; remediation=bash scripts/ensure-codegraph.sh --sync' },
+        ]),
+        toolingReport: baseToolingReport({
+          agent_fleet: { name: 'agent_fleet', status: 'missing', reason: 'none', install_command: 'repo-harness run install-agent-fleet' },
+        }),
+      };
+      const build = buildSetupCheck(options);
+      expect(JSON.stringify(build.report)).toBe(JSON.stringify(runInitHook(options)));
+      const commandFor = (checkId: string) => build.check_actions.get(checkId)?.command;
+      expect(build.check_actions.get('status.adapter.codex')?.id).toBe('adapter.codex.install');
+      expect(commandFor('status.adapter.codex')).toBe('repo-harness install --target codex --location global');
+      expect(build.check_actions.has('status.adapter.claude')).toBe(false);
+      expect(commandFor('doctor.codegraph-index')).toBe('bash scripts/ensure-codegraph.sh --sync');
+      expect(commandFor('tooling.agent_fleet')).toBe('repo-harness run install-agent-fleet');
+      expect(build.check_actions.get('global-rules.codex')?.id).toBe('global-rules.insert');
+      expect(build.check_actions.get('global-rules.claude')?.id).toBe('global-rules.insert');
+      for (const [checkId, action] of build.check_actions) {
+        expect(build.report.checks.some(check => check.id === checkId)).toBe(true);
+        expect(build.report.agent_actions).toContain(action);
+      }
+    });
+  });
 });

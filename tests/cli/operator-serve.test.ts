@@ -17,6 +17,10 @@ import * as fs from 'node:fs';
 import { readArchitecture } from '../../src/effects/operator/architecture';
 import { unavailableDevActivitySnapshot } from '../../src/core/dev-activity/decode';
 import type { DevActivitySnapshotV1 } from '../../src/core/dev-activity/types';
+import { unavailableSetupSnapshot } from '../../src/core/setup/decode';
+import { projectSetupSnapshot } from '../../src/core/setup/projection';
+import type { SetupSnapshotV1 } from '../../src/core/setup/types';
+import { ROUTES } from '../../src/cli/hook/route-registry';
 
 import {
   startOperatorServer,
@@ -241,7 +245,7 @@ describe('operator serve command and HTTP boundary', () => {
       read_automation_summary: async () => { reads++; throw new Error('unexpected read'); },
     });
     try {
-      const paths = ['/', '/healthz', '/api/v1/fleet/snapshot', '/api/v1/fleet/repositories/repo-a/snapshot', '/api/v1/dev-activity',
+      const paths = ['/', '/healthz', '/api/v1/fleet/snapshot', '/api/v1/fleet/repositories/repo-a/snapshot', '/api/v1/dev-activity', '/api/v1/setup',
         '/api/v1/collaboration/repo-a/snapshot', ...['context', 'activity', 'diff', 'messages'].map(route => `/api/v1/fleet/tasks/repo-a/${TASK_ID}/${route}`)];
       for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) {
         for (const path of paths) {
@@ -293,6 +297,51 @@ describe('operator serve command and HTTP boundary', () => {
       }
       expect(body).toMatchObject({ status: 'ready', repositories: [], items: [], attention: [], unreadable_registrations: 0 });
       expect(body.collected_at).not.toBeNull();
+    } finally {
+      await collecting.close();
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  test('serves only the setup cache on GET and never runs setup check on the request path', async () => {
+    let reads = 0;
+    const ready: SetupSnapshotV1 = projectSetupSnapshot({
+      collected_at: '2026-10-10T00:00:00.000Z', setup_status: 'ok', summary: { ok: 1, warn: 0, fail: 0, na: 0, needs_agent: 0 },
+      checks: [], check_commands: new Map(), adapters: [], cli_versions: {}, skill_rows: [], skill_summaries: new Map(),
+      routes: ROUTES, fleet_roles: [], fleet_hosts: null,
+    });
+    let current: unknown = ready;
+    const spawnSpy = spyOn(childProcess, 'spawn');
+    const spawnSyncSpy = spyOn(childProcess, 'spawnSync');
+    const server = await startOperatorServer({ port: 0, collect_fleet_board: async () => snapshot(), read_setup: () => { reads++; return current as SetupSnapshotV1; } });
+    try {
+      const response = await fetch(`${server.url}/api/v1/setup`);
+      expect(response.status).toBe(200);
+      expect(response.headers.get('cache-control')).toBe('no-store');
+      expect(await response.json()).toEqual(ready);
+      const head = await fetch(`${server.url}/api/v1/setup`, { method: 'HEAD' });
+      expect(head.status).toBe(200);
+      expect(await head.text()).toBe('');
+      expect((await fetch(`${server.url}/api/v1/setup?host=codex`)).status).toBe(400);
+      expect(reads).toBe(2);
+      current = { ...ready, checks: [{ id: 'x', status: 'warn', title: 't', detail: 'at /Users/someone', command: null }] };
+      expect(await (await fetch(`${server.url}/api/v1/setup`)).json()).toEqual(unavailableSetupSnapshot('setup_check_invalid'));
+      expect(spawnSpy).not.toHaveBeenCalled();
+      expect(spawnSyncSpy).not.toHaveBeenCalled();
+    } finally {
+      spawnSpy.mockRestore();
+      spawnSyncSpy.mockRestore();
+      await server.close();
+    }
+
+    // The serve collector answers from its cache at once: the first run is still pending.
+    const home = mkdtempSync(join(tmpdir(), 'repo-harness-operator-setup-'));
+    const collecting = await startOperatorServer({ port: 0, setup_collector: true, collect_fleet_board: async () => snapshot(),
+      env: { PATH: process.env.PATH, HOME: home } });
+    try {
+      const started = Date.now();
+      expect(await (await fetch(`${collecting.url}/api/v1/setup`)).json()).toEqual(unavailableSetupSnapshot('collection_pending'));
+      expect(Date.now() - started).toBeLessThan(5_000);
     } finally {
       await collecting.close();
       rmSync(home, { recursive: true, force: true });

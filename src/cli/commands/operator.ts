@@ -91,10 +91,10 @@ function outputOperatorError(error: unknown): void {
 
 /**
  * Start the local server and keep the CLI alive until an interrupt signal.
- * `serve` owns the background Dev Activity collector; the server stops it on close.
+ * `serve` owns the background Dev Activity and setup collectors; the server stops them on close.
  */
 export async function runOperatorServe(options: OperatorServeOptions): Promise<void> {
-  const server = await startOperatorServer({ ...options, dev_activity_collector: true });
+  const server = await startOperatorServer({ ...options, dev_activity_collector: true, setup_collector: true });
   process.stdout.write(`${server.url}\n`);
   let shutdown: (() => void) | undefined;
   try {

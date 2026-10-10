@@ -15,6 +15,8 @@ import {
   runDoctor,
 } from '../../src/cli/commands/doctor';
 import { writeShellExecutableFixture } from '../helpers/repo-fixture';
+import { expectedSkillProjections, type SkillProjection } from '../../src/cli/installer/skill-projection';
+import { parseSkillSurfaceCatalog } from '../../src/core/skill-surface/catalog';
 
 const DOCTOR_CHECK_TIMEOUT_MS = 15000;
 
@@ -513,6 +515,53 @@ describe('doctor skill projection', () => {
       if (state === 'dangling link') expect(fs.readlinkSync(f.destination)).toBe(path.join(home, 'missing'));
     }));
   }
+
+  test('per-skill rows and the CLI text are two projections of the same judgments', () => withTempHome(home => {
+    const f = seed(home);
+    const packageRoot = path.join(home, '.bun/install/global/node_modules/repo-harness');
+    const catalog = parseSkillSurfaceCatalog(fs.readFileSync(path.join(packageRoot, 'assets/skill-commands/manifest.json'), 'utf8'),
+      { declared: true, profileComponents: PROFILE_COMPONENTS });
+    if (catalog.status !== 'valid') throw new Error('fixture catalog invalid');
+    // The pre-row CLI line format, frozen: the rows must regenerate it byte for byte.
+    const frozenLine = (projection: SkillProjection, state: string, ledgerDrift: boolean): string => {
+      const fix = `repo-harness install --profile full --target ${projection.host}`;
+      const shown = state === 'ok link' ? `ok link -> ${projection.source}` : state;
+      const problems: string[] = [];
+      if (!shown.startsWith('ok ')) {
+        const preserve = state === 'missing' || state === 'source missing' ? '' : `preserve or move ${projection.destination}, then `;
+        problems.push(`expected ${projection.source}; ${preserve}run: ${fix}`);
+      }
+      if (ledgerDrift) problems.push(`ledger drift; inspect: repo-harness install --state; then run: ${fix}`);
+      return `${projection.destination}: ${shown}${problems.length > 0 ? '; ' + problems.join('; ') : ''}`;
+    };
+    const arrange: Record<string, () => void> = {
+      'ok link': () => fs.symlinkSync(f.source, f.destination),
+      'dangling link': () => fs.symlinkSync(path.join(home, 'missing'), f.destination),
+      'wrong link': () => fs.symlinkSync(root, f.destination),
+      'ok copy': () => fs.cpSync(f.source, f.destination, { recursive: true }),
+      'stale copy': () => { fs.cpSync(f.source, f.destination, { recursive: true }); fs.writeFileSync(path.join(f.destination, 'SKILL.md'), 'x\n'); },
+      'invalid path type': () => fs.writeFileSync(f.destination, 'f\n'),
+      missing: () => {},
+    };
+    for (const [state, setup] of Object.entries(arrange)) {
+      fs.rmSync(f.destination, { recursive: true, force: true });
+      setup();
+      for (const target of ['both', 'codex', 'claude'] as const) {
+        const result = checkSkillProjection(target, f.env);
+        const rows = result.skills!;
+        const projections = expectedSkillProjections(catalog.catalog, packageRoot, home, 'full')
+          .filter(projection => target === 'both' || projection.host === target);
+        expect(rows.map(row => `${row.host}:${row.name}`)).toEqual(projections.map(p => `${p.host}:${p.name}`));
+        expect(rows.find(row => row.host === 'codex' && row.name === 'repo-harness-cross-review')?.state ?? state).toBe(state as never);
+        for (const row of rows) expect(row.ok).toBe(row.state.startsWith('ok '));
+        const expected = [...rows.map((row, index) => frozenLine(projections[index]!, row.state, false)),
+          'install ledger: missing; run: repo-harness install --profile full'];
+        expect(result.detail).toBe(expected.join('\n'));
+        expect(result.status).toBe('warn');
+        expect(JSON.stringify(rows)).not.toContain(home);
+      }
+    }
+  }));
 
   test('review regression: old global contract is an actionable warning', () => withTempHome(home => {
     const f = seed(home);
