@@ -219,6 +219,28 @@ test('A10: unavailable authority never creates a fallback or alters existing wor
   for(const file of ['src/effects/terminal/task-session.ts','src/effects/terminal/herdr.ts','src/effects/publication/merge-readiness.ts'])expect(readFileSync(resolve(import.meta.dir,'../..',file),'utf8')).not.toMatch(/from ['"].*pipeline/);
 });
 
+// Real disk images: the darwin statfs f_type index differs between machines, so
+// the gate must accept local HFS+ and APFS by name and refuse other local filesystems.
+test.skipIf(process.platform!=='darwin')('A10: darwin ledger location accepts local apfs and hfs by name and refuses other local filesystems',()=>{
+  const mounts:string[]=[];
+  const volume=(fs:string,name:string)=>{
+    const image=join(scratch,name+'.dmg'),mount=join(scratch,name);mkdirSync(mount);
+    execFileSync('hdiutil',['create','-quiet','-size','8m','-fs',fs,'-volname',name,image]);
+    execFileSync('hdiutil',['attach','-quiet','-nobrowse','-noautoopen','-mountpoint',mount,image]);mounts.push(mount);
+    return mount;
+  };
+  // beforeEach already opened the store on the APFS /tmp volume.
+  expect(existsSync(env.REPO_HARNESS_PIPELINES_DB!)).toBe(true);
+  try {
+    const hfs=join(volume('HFS+','rhhfs'),'ledger','ledger.db');
+    const opened=new PipelineStore({env:{...env,REPO_HARNESS_PIPELINES_DB:hfs}});opened.close();expect(existsSync(hfs)).toBe(true);
+    for(const refused of [join(volume('MS-DOS','RHFAT'),'ledger','ledger.db'),'/dev/repo-harness-ledger/ledger.db']) {
+      let failure:unknown;try{new PipelineStore({env:{...env,REPO_HARNESS_PIPELINES_DB:refused}}).close();}catch(error){failure=error;}
+      expect(failure).toBeInstanceOf(PipelineError);expect((failure as PipelineError).code).toBe('store_location');expect(existsSync(refused)).toBe(false);
+    }
+  } finally {for(const mount of mounts)execFileSync('hdiutil',['detach','-quiet','-force',mount]);}
+},30_000);
+
 // The product hard-codes /Volumes/D. A mounted D would make this test write a database on the real volume, so skip it there.
 test.skipIf(dMounted)('A14: missing D fails closed with volume_unavailable (requires unmounted /Volumes/D)',()=>{
   const r=cli(['new','--source-host','max','--repository-id','/repo/.git','--title','one'],{REPO_HARNESS_PIPELINES_DB:'/Volumes/D/repo-harness/pipelines/pipelines.db'});expect(r.status).toBe(3);expect(r.stdout).toContain('volume_unavailable');

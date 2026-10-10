@@ -3,6 +3,7 @@ import { hostname } from 'node:os';
 import { dirname, join, resolve, basename } from 'node:path';
 import { chmodSync, closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, statSync, statfsSync, lstatSync, writeFileSync, unlinkSync, readdirSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
+import { dlopen, ptr } from 'bun:ffi';
 import { compareWatermarks, decodePublicationIntent, decodePublicationState, type PublicationIntent, type PublicationState } from '../../core/pipeline/health';
 import { decodeRecord, digest, PipelineError, type Key, type PipelineRecord } from '../../core/pipeline/types';
 
@@ -60,6 +61,31 @@ export function storeFailure(error: unknown): PipelineError {
     ? new PipelineError('busy',4,'Store is busy',true)
     : new PipelineError('store_unavailable',3,error instanceof Error?error.message:'Store is unavailable');
 }
+// Linux statfs f_type values are stable magic numbers: ext4, tmpfs, overlay, xfs, btrfs.
+const LINUX_LOCAL_FILESYSTEMS=[0xef53,0x01021994,0x794c7630,0x58465342,0x9123683e];
+const DARWIN_LOCAL_FILESYSTEMS=['apfs','hfs'];
+// Darwin f_type is an index into the kernel VFS table, and it differs between
+// machines. Read f_fstypename and MNT_LOCAL from the 64-bit-inode struct statfs instead.
+const DARWIN_STATFS={size:2168,flags:64,typeName:72,typeNameLength:16,local:0x1000};
+let darwinStatfs:((path:Buffer,out:ReturnType<typeof ptr>)=>number)|undefined;
+function darwinFilesystem(path:string):{name:string;local:boolean} {
+  if(!darwinStatfs) {
+    const symbol=process.arch==='arm64'?'statfs':process.arch==='x64'?'statfs$INODE64':null;
+    if(!symbol) throw new PipelineError('store_location',3,'Cannot identify the ledger filesystem on this architecture');
+    const library=dlopen('/usr/lib/libSystem.B.dylib',{[symbol]:{args:['cstring','ptr'],returns:'i32'}});
+    darwinStatfs=library.symbols[symbol] as unknown as typeof darwinStatfs;
+  }
+  const out=new Uint8Array(DARWIN_STATFS.size);
+  if(darwinStatfs!(Buffer.from(path+'\0'),ptr(out))!==0) throw new PipelineError('store_location',3,'Cannot identify the ledger filesystem');
+  const name=out.subarray(DARWIN_STATFS.typeName,DARWIN_STATFS.typeName+DARWIN_STATFS.typeNameLength);
+  const flags=new DataView(out.buffer).getUint32(DARWIN_STATFS.flags,true);
+  return {name:Buffer.from(name.subarray(0,name.indexOf(0))).toString('latin1'),local:(flags&DARWIN_STATFS.local)!==0};
+}
+function knownLocalFilesystem(path:string):boolean {
+  if(process.platform==='linux') return LINUX_LOCAL_FILESYSTEMS.includes(statfsSync(path).type);
+  if(process.platform==='darwin') {const filesystem=darwinFilesystem(path);return filesystem.local&&DARWIN_LOCAL_FILESYSTEMS.includes(filesystem.name);}
+  return false;
+}
 function requireLocation(path:string,env:NodeJS.ProcessEnv): void {
   const authority=env.REPO_HARNESS_PIPELINES_AUTHORITY_HOST ?? 'kitos';
   if(hostname() !== authority) throw new PipelineError('authority_unavailable',3,'Run the writer on the configured authority host');
@@ -68,9 +94,7 @@ function requireLocation(path:string,env:NodeJS.ProcessEnv): void {
     catch {throw new PipelineError('volume_unavailable',3,'Volume D is not mounted');}
   }
   let ancestor=dirname(path);while(!existsSync(ancestor)&&dirname(ancestor)!==ancestor)ancestor=dirname(ancestor);
-  const fsType=statfsSync(ancestor).type;
-  const allowed=process.platform==='darwin'?[17,26]:process.platform==='linux'?[0xef53,0x01021994,0x794c7630,0x58465342,0x9123683e]:[];
-  if(!allowed.includes(fsType))throw new PipelineError('store_location',3,'The ledger requires a known local filesystem');
+  if(!knownLocalFilesystem(ancestor))throw new PipelineError('store_location',3,'The ledger requires a known local filesystem');
   if(path.split('/').includes('_share') || path.split('/').includes('_ops')) throw new PipelineError('store_location',3,'Shared and operations directories cannot hold the ledger');
 }
 export class PipelineStore {
