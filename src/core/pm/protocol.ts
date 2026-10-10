@@ -56,6 +56,21 @@ export const PM_OPERATION_SCHEMAS = {
 export class PmError extends Error {
   constructor(readonly code: string, message = code) { super(message); this.name = 'PmError'; }
 }
+// Only these fixed identifiers may cross a PM adapter boundary. Error messages
+// and unknown codes can contain local paths or transport diagnostics.
+const PM_PUBLIC_ERRORS = new Set([
+  'pm_request_too_large', 'pm_request_invalid', 'pm_request_fields_invalid', 'pm_operation_unsupported',
+  'pm_authorization_stale', 'pm_repo_unavailable', 'pm_acquisition_not_admitted', 'pm_scope_not_approved',
+  'pm_task_stale', 'pm_claim_stale', 'pm_claim_token_stale', 'pm_worktree_stale', 'pm_request_stale',
+  'pm_result_pending', 'pm_input_conflict', 'pm_host_configuration_invalid', 'pm_host_configuration_unsafe',
+  'pm_mcp_authentication_required', 'pm_mcp_configuration_changed', 'pm_mcp_configuration_invalid',
+  'pm_mcp_configuration_unsafe', 'pm_mcp_operation_denied', 'pm_http_configuration_changed',
+]);
+export function publicPmError(error: unknown, fallback: 'pm_operation_failed' | 'pm_mcp_failed' = 'pm_operation_failed') {
+  const code = error instanceof PmError && PM_PUBLIC_ERRORS.has(error.code) ? error.code
+    : error instanceof SyntaxError ? 'pm_json_invalid' : fallback;
+  return { code, message: code };
+}
 export function parsePmRequest(value: unknown): PmRequest {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new PmError('pm_request_invalid');
   const record = value as Record<string, unknown>;

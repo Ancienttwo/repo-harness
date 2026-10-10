@@ -1,9 +1,9 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { createHash } from 'crypto';
-import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import { CallToolRequestSchema, ListToolsRequestSchema, McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 import { constants, closeSync, fstatSync, lstatSync, openSync, readFileSync, realpathSync } from 'fs';
 import { dirname, isAbsolute, join, relative, sep } from 'path';
-import { PM_OPERATIONS, PM_OPERATION_SCHEMAS, PmError, type PmOperation } from '../../core/pm/protocol';
+import { PM_OPERATIONS, PM_OPERATION_SCHEMAS, PmError, publicPmError, type PmOperation } from '../../core/pm/protocol';
 import { canonicalRepoPath, isRepoHarnessAdoptedPath, readRepoHarnessRegistryStrictSnapshot, repoHarnessHome, repoHarnessRepoIdFor } from '../../effects/repo-registry';
 import { readMcpLocalConfigFile } from './auth';
 import { readPmHostConfiguration } from '../../effects/pm/host';
@@ -94,8 +94,12 @@ export function createPmMcpServer(env: NodeJS.ProcessEnv = { ...process.env }, o
     instructions: 'Use canonical PM task and claim IDs. The operator owns acquisition and admission. Reconcile unknown delivery by the same request ID. Tool availability is not approval, provider acceptance, or an event wake-up connection.',
   });
   server.setRequestHandler(ListToolsRequestSchema, async (_request, extra) => {
-    authorize(extra.authInfo?.token);
-    return { tools: binding.tools() };
+    try {
+      authorize(extra.authInfo?.token);
+      return { tools: binding.tools() };
+    } catch (error) {
+      throw new McpError(ErrorCode.InternalError, publicPmError(error, 'pm_mcp_failed').message);
+    }
   });
   server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     try {
@@ -119,8 +123,7 @@ export function createPmMcpServer(env: NodeJS.ProcessEnv = { ...process.env }, o
       return { isError: !response.ok, content: [{ type: 'text', text: JSON.stringify(response) }] };
     } catch (error) {
       return { isError: true, content: [{ type: 'text', text: JSON.stringify({ protocol: 1, kind: 'repo-harness-pm-response',
-        operation: null, ok: false, error: { code: error instanceof PmError ? error.code : 'pm_mcp_failed',
-          message: error instanceof Error ? error.message : String(error) } }) }] };
+        operation: null, ok: false, error: publicPmError(error, 'pm_mcp_failed') }) }] };
     }
   });
   return server;
