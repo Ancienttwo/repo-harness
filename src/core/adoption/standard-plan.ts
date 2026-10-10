@@ -361,6 +361,14 @@ export function defaultPolicy(documentationProfile: string, documentationLanguag
           "linux-x86_64": {
             "url": "https://github.com/herdrdev/herdr/releases/download/v0.9.3/herdr-linux-x86_64",
             "sha256": "18a8dc65f1c2fa485884344356dea1cfd911c6f06cf46fa78e193f4087f4dba7"
+          },
+          "macos-aarch64": {
+            "url": "https://github.com/herdrdev/herdr/releases/download/v0.9.3/herdr-macos-aarch64",
+            "sha256": "5173a3e0ae42d5d1ab7ebfa5d5e6329f7c3d23f8e1a3677c7ce3231da2884157"
+          },
+          "macos-x86_64": {
+            "url": "https://github.com/herdrdev/herdr/releases/download/v0.9.3/herdr-macos-x86_64",
+            "sha256": "db62d548ff3e832b087a96b1894a08d26be3905f1830309cd556783f215d4054"
           }
         }
       },

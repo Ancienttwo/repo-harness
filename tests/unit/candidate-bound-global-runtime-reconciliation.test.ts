@@ -1,10 +1,11 @@
 import { afterAll, describe, expect, test } from 'bun:test';
-import { chmodSync, cpSync, existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs';
+import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
-import { basename, join } from 'path';
+import { join } from 'path';
 import { spawnSync } from 'child_process';
 import { createHash } from 'crypto';
 
+import { copyPackageRuntimeFixture } from '../helpers/repo-fixture';
 import { buildManagedHooks } from '../../src/cli/installer/managed-entries';
 import { beginInstallHostTransaction, PROFILE_COMPONENTS, readInstalledProfile, rollbackInstallHostTransaction } from '../../src/cli/installer/install-profile';
 import {
@@ -35,10 +36,7 @@ function copyRuntimeFixture(
   stopTimeout: 30 | 150,
   legacyParent = false,
 ): string {
-  cpSync(ROOT, destination, {
-    recursive: true,
-    filter: (source) => !['.git', '.codegraph', 'node_modules', '_ops'].includes(basename(source)),
-  });
+  copyPackageRuntimeFixture(ROOT, destination);
   const manifestPath = join(destination, 'package.json');
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8')) as { version?: string };
   manifest.version = version;

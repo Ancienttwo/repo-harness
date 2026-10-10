@@ -7,7 +7,7 @@
 
 export const SKILL_SURFACE_CATALOG_VERSION = 2 as const;
 
-export const SKILL_SURFACE_HOSTS = ["claude", "codex"] as const;
+export const SKILL_SURFACE_HOSTS = ["claude", "codex", "pi"] as const;
 export type SkillSurfaceHost = (typeof SKILL_SURFACE_HOSTS)[number];
 
 export const SKILL_SURFACE_PROFILES = ["minimal", "full"] as const;
@@ -76,6 +76,7 @@ export interface SkillSurfacePackage {
 export interface SkillSurfaceHostPlacements {
   readonly claude: readonly string[];
   readonly codex: readonly string[];
+  readonly pi: readonly string[];
 }
 
 export interface SkillSurfaceExpectedProjections {
@@ -227,17 +228,13 @@ function computeHostSkillPlacements(
   packages: readonly SkillSurfacePackage[],
   profile: SkillSurfaceProfile | undefined,
 ): SkillSurfaceHostPlacements {
-  const claude: string[] = [];
-  const codex: string[] = [];
+  const placements: Record<SkillSurfaceHost, string[]> = { claude: [], codex: [], pi: [] };
   for (const pkg of packages) {
     if (pkg.kind !== "provider-skill") continue;
     if (profile !== undefined && !pkg.profiles.includes(profile)) continue;
-    for (const host of pkg.hosts) {
-      if (host === "claude") claude.push(pkg.name);
-      else if (host === "codex") codex.push(pkg.name);
-    }
+    for (const host of pkg.hosts) placements[host].push(pkg.name);
   }
-  return { claude, codex };
+  return placements;
 }
 
 function computeExternalSkillsForProfile(
@@ -461,18 +458,20 @@ function validateExpectedProjections(
     if (
       !isRecord(hostPlacement) ||
       !isStringArray(hostPlacement.claude) ||
-      !isStringArray(hostPlacement.codex)
+      !isStringArray(hostPlacement.codex) ||
+      !isStringArray(hostPlacement.pi)
     ) {
       diagnostics.push(diagnostic(
         "EXPECTED_PROJECTIONS_REQUIRED",
         `expectedProjections.hostSkillPlacementsByProfile.${profile}`,
-        `expectedProjections.hostSkillPlacementsByProfile.${profile} must have claude and codex string arrays`,
+        `expectedProjections.hostSkillPlacementsByProfile.${profile} must have claude, codex and pi string arrays`,
       ));
       shapeOk = false;
     } else {
       hostSkillPlacementsByProfile[profile] = {
         claude: hostPlacement.claude as string[],
         codex: hostPlacement.codex as string[],
+        pi: hostPlacement.pi as string[],
       };
     }
   }
@@ -779,13 +778,12 @@ export function validateSkillSurfaceCatalogValue(
       const declaredHosts = expectedProjections.hostSkillPlacementsByProfile[profile];
       const computedHosts = computeHostSkillPlacements(packages, profile);
       if (
-        !arraysEqual(declaredHosts.claude, computedHosts.claude) ||
-        !arraysEqual(declaredHosts.codex, computedHosts.codex)
+        SKILL_SURFACE_HOSTS.some(host => !arraysEqual(declaredHosts[host], computedHosts[host]))
       ) {
         diagnostics.push(diagnostic(
           "PROJECTION_MISMATCH",
           `expectedProjections.hostSkillPlacementsByProfile.${profile}`,
-          `hostSkillPlacementsByProfile.${profile} declared claude=[${declaredHosts.claude.join(", ")}] codex=[${declaredHosts.codex.join(", ")}] but packages compute claude=[${computedHosts.claude.join(", ")}] codex=[${computedHosts.codex.join(", ")}]`,
+          `hostSkillPlacementsByProfile.${profile} declared ${JSON.stringify(declaredHosts)} but packages compute ${JSON.stringify(computedHosts)}`,
         ));
       }
     }

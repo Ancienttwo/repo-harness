@@ -1467,3 +1467,36 @@ test('architecture prompt keeps public absolute-path examples in CLI digest pari
     expect(response.status).toBe(200); expect((await response.json()).digest).toBe(JSON.parse(expected.stdout).digest);
   } finally { await server.close(); for (const path of [root, registry.home]) rmSync(path, { recursive: true, force: true }); }
 });
+
+test('operator serve admits explicit native capture snapshots without Herdr or pipeline setup', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'rh-operator-native-cli-'));
+  const configPath = join(root, 'runtime.json'), sourcePath = join(root, 'capture.json');
+  const heartbeat = new Date().toISOString();
+  writeFileSync(sourcePath, JSON.stringify({ protocol: 'repo-harness.runtime-capture.v1', source_id: 'cli-source',
+    generation: '123e4567-e89b-42d3-a456-426614174000', sequence: 1, provider: 'pi', format: 'osc7501',
+    capture_status: 'connected', heartbeat_at: heartbeat, observations: [{ scope: 'terminal', session_id: null, turn_id: null,
+      state: 'idle', reason: 'unknown', event_received_at: heartbeat, changed_at: null }] }));
+  writeFileSync(configPath, JSON.stringify({ protocol: 'repo-harness.runtime-config.v2', kind: 'native',
+    sources: [{ source_id: 'cli-source', provider: 'pi', snapshot_path: sourcePath }] }));
+  const sourceBefore = readFileSync(sourcePath), configBefore = readFileSync(configPath);
+  const cli = new URL('../../src/cli/index.ts', import.meta.url).pathname;
+  const child = spawn(process.execPath, [cli, 'operator', 'serve', '--port', '0', '--runtime-status-config', configPath], {
+    cwd: root, env: { ...process.env, HOME: root, TMPDIR: root, REPO_HARNESS_HOME: root }, stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  let stdout = '', stderr = '';
+  child.stdout.on('data', bytes => { stdout += bytes.toString(); }); child.stderr.on('data', bytes => { stderr += bytes.toString(); });
+  const exited = new Promise<number | null>(resolve => child.once('exit', code => resolve(code)));
+  try {
+    await waitFor(() => /http:\/\/127\.0\.0\.1:\d+\n/.test(stdout) || child.exitCode !== null, 'native CLI readiness', 500);
+    expect(stderr).toBe(''); expect(child.exitCode).toBeNull();
+    const filesBeforeGet = readdirSync(root).sort();
+    const url = stdout.trim();
+    const response = await fetch(`${url}/api/v1/runtime/status`); expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ projection_version: 'repo-harness.runtime-overlay.v4', status: 'ready',
+      badges: [], pane_observations: [], native_sources: [{ source_id: 'cli-source', provider: 'pi', freshness: 'fresh',
+        observations: [{ scope: 'terminal', state: 'idle', event_received_at: heartbeat }] }] });
+    expect(readFileSync(sourcePath)).toEqual(sourceBefore); expect(readFileSync(configPath)).toEqual(configBefore);
+    expect(readdirSync(root).sort()).toEqual(filesBeforeGet);
+    child.kill('SIGTERM'); expect(await exited).toBe(0);
+  } finally { if (child.exitCode === null) { child.kill('SIGTERM'); await exited; } rmSync(root, { recursive: true, force: true }); }
+});

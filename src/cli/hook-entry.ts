@@ -22,12 +22,14 @@ export function runHookEntry(opts: RunHookEntryOptions): RunHookEntryResult {
   return runHookRuntime({ ...opts, commandName: 'repo-harness-hook' });
 }
 
-function parseCliArgs(argv: readonly string[]): { event: HookEvent; routeId: RouteId } | null {
+function parseCliArgs(argv: readonly string[]): { event: HookEvent; routeId: RouteId; format?: 'json' } | null {
   const event = argv[0] as HookEvent | undefined;
   const routeFlagIndex = argv.indexOf('--route');
   const routeId = routeFlagIndex >= 0 ? argv[routeFlagIndex + 1] : undefined;
   if (!event || !routeId) return null;
-  return { event, routeId: routeId as RouteId };
+  const formatIndex = argv.indexOf('--format');
+  if (formatIndex >= 0 && argv[formatIndex + 1] !== 'json') return null;
+  return { event, routeId: routeId as RouteId, ...(formatIndex >= 0 ? { format: 'json' as const } : {}) };
 }
 
 if (import.meta.main) {
@@ -128,7 +130,7 @@ if (import.meta.main) {
 
   const parsed = parseCliArgs(argv);
   if (!parsed) {
-    writeAllSync(2, 'repo-harness-hook: usage: repo-harness-hook <event> --route <route>\n');
+    writeAllSync(2, 'repo-harness-hook: usage: repo-harness-hook <event> --route <route> [--format json]\n');
     process.exit(2);
   }
   const { readFileSync } = await import('fs');
