@@ -8,7 +8,7 @@ Reuse the existing PM CLI/core, task IDs, task locks and fencing, operation rece
 
 ## Integration decisions
 
-Preserve main Pi metadata, optional peer and package check, OAR 0.45.1, in-process pipeline reader and package installation fixes. Build the hook bundle before both OAR hosts in every test entry, and retain the operator web build in prepack. Preserve the native PM acceptance lane and exact-candidate governance/functional workflow.
+Preserve main Pi metadata, optional peer and package check, OAR 0.45.1, in-process pipeline reader and package installation fixes. Build the hook bundle before both OAR hosts in the direct suite and check-ci affected/functional entries, and retain the operator web build in prepack. Preserve the native PM acceptance lane and exact-candidate governance/functional workflow.
 
 Reuse the latest #608 owner-generated architecture projections for its identical merged model. Local projection apply failed with AC_RUNTIME_UNAVAILABLE / EPERM while creating its normal Library runtime directory; no alternate runtime directory was used. Projection regeneration/check remains an explicit acceptance item.
 
@@ -19,3 +19,5 @@ Run TypeScript and affected consumer tests, independent architecture/security re
 ## Limits
 
 Actual Dot remote connection, OAuth enrollment and event wake are unverified. Local native/HTTP acceptance and npm pack previously hit permission blockers; hosted execution is separately reported. A Draft PR is reviewable work, not a claim of completed acceptance.
+
+On candidate 5be0e8ee, full functional and shared package/install smoke passed, while affected CI failed after all HRD-09 assertions because temporary-root cleanup returned ENOTEMPTY. Add at most three same-root ENOTEMPTY retries; preserve persistent-error and child-test failures. Fault-injected parent-runner regression covers transient, persistent, permission-denied cleanup and a failing child. No production task or filesystem authority is changed.
