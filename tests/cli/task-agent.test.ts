@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, unlinkSync, writeFileSync } from 'fs';
 import { basename, join } from 'path';
 import { execFileSync, spawn, spawnSync } from 'child_process';
 import { createHash } from 'crypto';
@@ -103,6 +103,57 @@ test('provider identity loss is an interrupted observation, never success', () =
   f.save(join(f.dir, 'binding.json'), { ...f.binding, provider: { ...f.binding.provider, identity: 'replaced process' } });
   expect(f.read()).toMatchObject({ provider: 'identity_unavailable', result_status: 'pending', acceptance_authorized: false });
 }));
+
+// This deterministic observation seam changes only disposable fixture state.
+// Real ps liveness remains covered by the original and readback lifecycle tests.
+test.each(['context', 'head'] as const)('readback refuses %s changed during provider observation', change => withReadbackFixture(f => {
+  const bin = join(f.root, 'bin'); mkdirSync(bin);
+  const previousPath = process.env.PATH;
+  const mutation = change === 'context'
+    ? `require('fs').writeFileSync(${JSON.stringify(f.request.context_ref)}, 'changed during read');`
+    : `require('child_process').execFileSync('git', ['-c','user.name=fixture','-c','user.email=fixture@localhost','commit','--allow-empty','-qm','candidate changed during read'], {cwd:${JSON.stringify(f.root)}});`;
+  const columns = f.binding.provider.identity.split(/\s+/).slice(0, 7).join(' ');
+  writeFileSync(join(bin, 'ps'), `#!${process.execPath}\n${mutation}\nprocess.stdout.write(process.argv.at(-1).endsWith('stat=') ? ${JSON.stringify(columns + ' S\n')} : ${JSON.stringify(f.binding.provider.identity + '\n')});\n`);
+  chmodSync(join(bin, 'ps'), 0o700);
+  try {
+    process.env.PATH = bin + ':' + previousPath;
+    expect(f.read).toThrow(change === 'context' ? 'readback_changed' : 'head_stale');
+  } finally { process.env.PATH = previousPath; }
+}));
+
+test('missing delivery stays unknown and malformed query inputs fail before lookup', () => withReadbackFixture(f => {
+  unlinkSync(join(f.dir, 'delivery-1.json'));
+  expect(f.read()).toMatchObject({ delivery: 'unknown', evidence: { delivery: null } });
+  for (const requestId of ['', '../request', 'x'.repeat(129)]) {
+    expect(() => reconcileTaskRequest(f.root, f.task, f.role, requestId, f.sha)).toThrow('request_id_invalid');
+  }
+  for (const sha of ['', 'main', f.sha.slice(1)]) {
+    expect(() => reconcileTaskRequest(f.root, f.task, f.role, f.request.request_id, sha)).toThrow('expected_head_invalid');
+  }
+  for (const max of [0, 101, 1.5]) {
+    f.save(join(f.dir, 'binding.json'), { ...f.binding, max_requests: max });
+    expect(f.read).toThrow('binding_invalid');
+  }
+  f.save(join(f.dir, 'binding.json'), { ...f.binding, max_requests: 100 });
+  expect(f.read().request_id).toBe(f.request.request_id);
+}));
+
+test('an exited provider leaves a pending request pending', async () => {
+  const root = realpathSync(mkdtempSync('/tmp/rb-exit-'));
+  const child = spawn(process.execPath, ['-e', 'console.log("ready");setInterval(()=>{},1000)'], { stdio: ['ignore', 'pipe', 'ignore'] });
+  try {
+    await new Promise<void>((resolve, reject) => { child.once('error', reject); child.stdout!.once('data', () => resolve()); });
+    const proof = { pid: child.pid!, identity: processIdentity(child.pid!) };
+    const f = readbackFixture(root);
+    const exited = new Promise<void>(resolve => child.once('exit', () => resolve()));
+    child.kill('SIGTERM'); await exited;
+    f.save(join(f.dir, 'binding.json'), { ...f.binding, provider: { ...f.binding.provider, ...proof } });
+    expect(f.read()).toMatchObject({ provider: 'exited', result_status: 'pending', result: null, acceptance_authorized: false });
+  } finally {
+    if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM');
+    rmSync(root, { recursive: true, force: true });
+  }
+});
 test('attached ownership cannot be signalled and real harness evidence stays unverified', () => {
   expect(() => assertCreated({ disposition: 'attached' })).toThrow('attached_object_not_closeable');
   for (const kind of ['codex', 'claude', 'opencode', 'pi']) {

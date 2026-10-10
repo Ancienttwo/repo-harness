@@ -65,3 +65,30 @@ through a thin typed adapter. Keep shell, credentials, permissions, release and
 publication out of that adapter. Keep evidence source references and hashes.
 Dot/Grok remote tool access and event wake are separate platform connections.
 Local MCP installation proves neither. Both remain unverified here.
+
+## Acceptance follow-up
+
+Independent static review of published `f658da3e` found no confirmed blocking
+defect. Follow-up tests cover HEAD/context changes during the read, missing
+delivery, real provider exit, invalid input and the 100-request bound. They do
+not weaken the existing assertions. The production readback code is unchanged.
+
+The initial sandbox test failed because `ps` was denied. The same command then
+ran through the tool's explicit execution approval path. The expanded file
+passed 18 tests and 70 assertions. No global permission policy was changed.
+
+The first dependency source had Pi 1.0.0, while this lock needs 1.1.0. Interrupted
+local installation left an incomplete copied package. These were environment
+failures, not a verified clean-base compiler failure. A complete installation
+was copied from `/tmp/repo-harness-wt-0212-main-sync/node_modules` into this
+task's own directory. Its lock is equal except for the root Pi peer constraint
+(`1.1.0` versus `*`); all locked package entries match. Installed Pi is 1.1.0
+and OAR is 0.45.1. Typecheck passes on both this source and isolated unchanged
+base `461e054e`, using the same dependencies. No dependency file was changed.
+
+Local `check-ci.sh affected` was interrupted during installation (exit 130).
+This is not a GitHub Actions result. Local offline installation also stalled
+against the configured `/Volumes/D/caches/npm` cache and was interrupted.
+Neither installation is claimed as passing. Final affected coverage selects
+370 files. Run the selected test lane without changing its test selection or
+assertions. Record its result separately from the aggregate install command.
