@@ -93,60 +93,9 @@ repos.
   `effect_started` are durable; only the exact persisted Task or Module Inbox
   receipt proves delivery, and every ambiguous outcome requires reconciliation
   without an automatic retry.
-- An unattended automation run is bounded by one machine-enforced budget, never
-  by prompt text. Every claim, dispatch, retry, and provider invocation first
-  takes a reservation under the run's exclusive lock, and a reservation that
-  would pass any hard limit is refused before the operation happens.
-- The budget store's caller is untrusted for every decision input; the host
-  process is the only trusted source. The store reads its own clock, derives the
-  reserved vector from the operation kind, derives the charge from the outcome
-  the host observed, and reads and digests the task contract from the repository
-  itself. A caller names what it wants to do and what happened; it never states
-  what that costs or when it happened. The limits are the host-owned
-  `ProgramAuthorizationV2` (protocol 2) / `ProgramBudgetLimitV1` grant composed with the task
-  contract's own runner budget, strictest value per metric, recomputed from both
-  authorities on every read rather than trusted from the record. A run with no
-  task contract requires an explicit `contract_less` grant. Wall clock is a
-  frozen absolute deadline measured on the store clock, which may not run
-  backwards over the run's own durable records. A token or cost limit is
-  refused at preflight until provider-attested usage is wired, because a
-  self-asserted usage number is worse than no limit. `ProgramAuthorizationV2`
-  grants are operator-minted into the account-level harness home and a budget is
-  accepted only when its embedded grant resolves to byte-identical stored bytes.
-- The automation budget defends against honest-but-buggy controllers and
-  transport retries, not against a caller that already has the store's own
-  privileges. Three boundaries are explicitly out of scope until their owning
-  authority exists: `operation` and `outcome` are caller-asserted until the
-  unattended controller binds them to real side effects; reconciliation
-  `evidence_refs` are shape-checked typed refs, presence-checked but not
-  content-verified, until a digest-addressed provider usage and attempt-receipt
-  authority can resolve them; and the store's clock seam is a test-only
-  convenience rather than a permission boundary, because a same-process caller
-  is already trusted at the process level. Replaying an idempotency key charges
-  once, an interrupted reservation blocks further spending until it is
-  reconciled from exact evidence rather than assumed free -- and once a
-  reconciliation decision is recorded, only that decision may charge the
-  reservation. A projection that counts durable records the disk does not have
-  is corruption, not a crash window: every verb and every read surface fails
-  closed without writing anything. Exhaustion
-  publishes an immutable `AutomationStopReceiptV1`. A budget never raises or
-  renews itself, never rewrites Task, Lease, Work Graph, or contract authority,
-  and never releases or steals a claim.
-
-- One unattended controller is bound to the exact automation budget run,
-  Engineer principal, Binding generation, authorization revision, and protected
-  path set. Each invocation has independent hard step and duration ceilings.
-  Acquisition is only through canonical `acquire-next`; execution consumes its
-  returned `WorkEnvelopeV1` and dispatches only an already-admitted run through
-  `dispatchDelegatedRun`. The controller never creates Task, Work Graph, Lease,
-  or delegated-run authority.
-- Controller events are append-only evidence under the Git common directory.
-  The event is durable before every acquisition or dispatch; a restart at an
-  unresolved side-effect boundary becomes `reconciliation_required` and cannot
-  repeat that side effect. Transient acquisition failures use recorded,
-  deterministic exponential backoff capped by the frozen policy; user/operator
-  blockers and budget exhaustion are terminal. Explicit stop prevents another
-  acquisition and leaves the current Claim and Lease to their normal owner.
+- repo-harness keeps no scheduler, budget ledger or unattended controller. The
+  Bot schedules long-running work through the repo-harness CLI and Herdr.
+  repo-harness supplies the tools and the evidence for that decision.
 
 ## Workflow Surfaces
 
@@ -161,9 +110,6 @@ repos.
 | `.ai/harness/evidence/events/log.jsonl` | Verification Plan executor | Accepted execution events bind immutable runs |
 | `.ai/harness/runs/*.json` | Verifier | Immutable run/trace snapshots |
 | `.ai/harness/handoff/` | Session owner | Resume packets and exact next step |
-| `repo-harness automation budget show --run <id>` | Package runtime | Read-only operator projection of one automation run's budget, consumption, and stop receipt |
-| `repo-harness automation budget repair --run <id>` | Package runtime | Operator re-run of the locked reconciliation so a stopped or expired run seals its exhaustion receipt; it reserves, charges and re-caps nothing |
-| `repo-harness automation controller start\|step\|status\|stop\|reconcile` | Package runtime | Bounded unattended Engineer orchestration over the existing budget, acquire-next, WorkEnvelope and delegated-run authorities |
 | `docs/reference-configs/ux-feature-guard.md`, `docs/reference-configs/design-options.md`, `.claude/templates/design-brief.template.md` | Conventions | Frontend behavior discipline: freeze rules and non-goals before implementation, product boundary before imagegen variants, taste-class refinement ceiling, role-aware visible-concept declaration; `frontend` task_profile contracts must cite a design brief, and the runtime `[UXFeatureGuard]` advisory fires only on frontend-scoped feature intent |
 
 ## Safety Boundaries

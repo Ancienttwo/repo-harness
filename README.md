@@ -21,9 +21,9 @@ handoffs, checks, and review evidence back into the project, so the next agent
 session continues from files instead of chat memory. It adopts an existing repo
 with a tasks-first agent contract that keeps Claude and Codex aligned.
 
-On top of that contract it runs **authorized programs**: long-running work that
-holds its own authorization, budget, task offers, and leases, so a Sprint can
-advance across sessions without a human driving each step.
+On top of that contract the Bot schedules **long-running programs**: task offers
+and leases let a Sprint advance across sessions. repo-harness supplies the tools
+and the evidence; the Bot decides what runs next.
 
 ## Contents
 
@@ -200,10 +200,9 @@ release line have no supported historical proof and remain report-only.
   evidence, and a review card behind. The human decision surface is one screen —
   verdict, intended vs actual files, commands passed, residual risk, rollback —
   rather than a reconstruction of what the agent claims it did.
-- **Unattended work stays accountable.** A program cannot start without a stored
-  authorization, cannot exceed its budget ledger, cannot hold a task past its
-  lease, and cannot claim acceptance without a receipt. Autonomy is bounded by
-  artifacts, not by trust.
+- **Scheduled work stays accountable.** A task cannot be held past its lease and
+  cannot claim acceptance without a receipt. The Bot schedules from recorded
+  evidence, not from trust.
 
 In an adopted repo, the surface area is intentionally small:
 
@@ -224,20 +223,19 @@ hooks keep the session inside them. This is the whole product for a solo repo,
 and everything in [Task Workflow](#task-workflow) belongs here. Nothing below is
 required to use it.
 
-**Layer 2 — authorized programs.** Long-running work that outlives a session:
-an unattended controller stepping a Sprint, a
-collaboration plane where several Module Engineers exchange signals and
-handoffs. Each program is gated on an operator-minted authorization, draws on a
-per-goal budget ledger, and holds work through renewable leases. See
+**Layer 2 — Bot-scheduled programs.** Long-running work that outlives a
+session: a collaboration plane where several Module Engineers exchange signals
+and handoffs, and engineer task offers held through renewable leases. The Bot
+decides what to schedule. repo-harness supplies the tools and the evidence. See
 [Authorized Programs](#authorized-programs).
 
 | | Layer 1 | Layer 2 |
 | --- | --- | --- |
-| Unit of work | One task contract | One authorized program |
-| Who drives it | A human in a session | A controller, under caps |
-| Authority | Plan, contract, review, checks | The above, plus authorization, budget, lease, receipts |
-| Entry point | `repo-harness init` | `repo-harness automation grant mint` |
-| Stop condition | Task closeout | Budget exhausted, lease lost, or a terminal receipt |
+| Unit of work | One task contract | One scheduled engineer task |
+| Who drives it | A human in a session | The Bot, through the repo-harness CLI and Herdr |
+| Authority | Plan, contract, review, checks | The above, plus engineer binding and lease |
+| Entry point | `repo-harness init` | `repo-harness engineer acquire-next` |
+| Stop condition | Task closeout | Task closeout or lease lost |
 
 Layer 2 does not replace layer 1: a program's every step still projects into the
 same plan, contract, and review artifacts a human would have written.
@@ -249,8 +247,7 @@ same plan, contract, and review artifacts a human would have written.
 | **File-backed sessions** | Plans, contracts, checks, and handoffs live in the repo, so a new session resumes from artifacts instead of a chat thread |
 | **Typed hook runtime** | Eight shared managed routes plus three Codex-only delegation routes, each bound to exactly one typed in-process handler, with fail-closed guards at the edit boundary |
 | **Plan → Contract → Review** | One lifecycle from approved plan to projected contract, isolated worktree, structured evidence, and a reviewable closeout |
-| **Authorized programs** | Automation and collaboration programs that hold their own authorization, budget ledger, task offers, and renewable leases |
-| **Bounded unattended controller** | One Engineer dispatch loop under hard step, duration, and retry caps, reserving budget before each attempt |
+| **Bot-scheduled programs** | Collaboration programs with engineer task offers and renewable leases; the Bot schedules, repo-harness supplies tools and evidence |
 | **Progressive context loading** | A ~12KB stable root context plus ~1KB capability contracts loaded only for the files actually being touched |
 | **CodeGraph integration** | Structural queries (callers, callees, definitions) answered from a pre-built index instead of repeated grep-and-read passes |
 | **MCP planner sidecar** | ChatGPT reads real repo state and writes PRD/Sprint/Goal artifacts; Codex executes them, with no default source-code write access |
@@ -360,38 +357,13 @@ and [`workflow-orchestration.md`](docs/reference-configs/workflow-orchestration.
 
 ## Authorized Programs
 
-A program is work that outlives a session. Every one of them starts from the
-same three primitives, and none of them can be started without the first.
+A program is work that outlives a session. The Bot schedules it through the
+repo-harness CLI and Herdr. repo-harness keeps no scheduler, budget ledger or
+controller of its own.
 
-```bash
-repo-harness automation grant mint   # store one operator ProgramAuthorizationV2
-repo-harness automation grant list   # digests held for this repository
-repo-harness automation budget show          # the enforceable per-goal ledger
-repo-harness automation budget repair        # seal a stopped or expired run's exhaustion receipt
-```
-
-- **Authorization.** An operator-minted `ProgramAuthorizationV2` lives in the
-  harness home gate store. There is no unauthenticated start path, and a program
-  never derives its own actor — the author of every record is resolved from
-  `--authorization-id`.
-- **Budget.** Agent turns, worker acquisition, and runner invocations reserve against a per-goal ledger before work starts. `budget repair` seals exhaustion under the existing lock. It changes no cap.
 - **Lease.** Held work carries a renewable lease with a renewal interval, a
   maximum TTL, and a closed set of evidence sources. An unproven liveness state
   requires attention instead of reclaiming silently.
-
-### Unattended controller
-
-```bash
-repo-harness automation controller start --maximum-steps 20 --maximum-duration-ms 300000
-repo-harness automation controller step
-repo-harness automation controller status
-repo-harness automation controller stop
-```
-
-One Engineer dispatch loop under hard caps, with deterministic backoff and a
-bounded attempt-retry ledger. Each attempt reserves budget before it is
-recorded, and a projected outcome outside the closed enum cannot be counted as
-satisfied.
 
 ### Engineer scheduling
 
