@@ -9,6 +9,7 @@ responsibilities:
 source:
   include:
     - "SKILL.md"
+    - "references/pm-boundary.md"
     - "README.md"
     - "AGENTS.md"
     - "CLAUDE.md"

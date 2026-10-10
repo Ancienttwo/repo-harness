@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.pm-dispatch.primary
+kind: calls
+source: capability.runtime-harness.pm-dispatch
+target: component.pm-dispatch.primary
+intent: Validate a task-level PM request before using existing task authority.

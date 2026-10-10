@@ -155,7 +155,7 @@ describe('single affected verification and daily fallback', () => {
     }
   });
 
-  test('required HOME isolation runs native review acceptance only on the exact macOS candidate', () => {
+  test('required HOME isolation runs native OAR acceptance only on the exact macOS candidate', () => {
     const job = workflow.jobs['test-home-isolation'];
     expect(job.needs).toBe('selection');
     expect(job.if).toBe("needs.selection.outputs.mode == 'affected' || needs.selection.outputs.mode == 'daily'");
@@ -168,7 +168,12 @@ describe('single affected verification and daily fallback', () => {
     });
     expect(job.steps.find((step: any) => step.uses === 'actions/setup-node@v4').with['node-version']).toBe('24');
     expect(job.steps.some((step: any) => step.uses === 'actions/download-artifact@v4')).toBe(false);
-    const native = job.steps.filter((step: any) => step.name === 'Run native review acceptance tests');
+    const install = job.steps.filter((step: any) => step.name === 'Install pinned Herdr runtime');
+    expect(install).toHaveLength(1);
+    expect(install[0].if).toBe("matrix.os == 'macos-latest'");
+    expect(install[0].uses).toBe('./.github/actions/install-pinned-herdr');
+    expect(job.steps.indexOf(install[0])).toBeLessThan(job.steps.findIndex((step: any) => step.name === 'Run native OAR acceptance tests'));
+    const native = job.steps.filter((step: any) => step.name === 'Run native OAR acceptance tests');
     expect(native).toHaveLength(1);
     expect(native[0].if).toBe("matrix.os == 'macos-latest'");
     expect(native[0].shell).toBe('bash');
@@ -181,9 +186,11 @@ describe('single affected verification and daily fallback', () => {
       'test -x /usr/bin/sandbox-exec',
       'bun install --frozen-lockfile',
       'test ! -e dist/oar-review-host.js',
-      'bun run build:oar-review-host',
+      'test ! -e dist/oar-coding-host.js',
+      'bun run build:oar-hosts',
       'test -s dist/oar-review-host.js',
-      'bun run test:files tests/generic-review.test.ts tests/acceptance-receipt.test.ts tests/cli/cross-review.test.ts --timeout 60000 --max-concurrency 1',
+      'test -s dist/oar-coding-host.js',
+      'bun run test:files tests/generic-review.test.ts tests/acceptance-receipt.test.ts tests/cli/cross-review.test.ts tests/herdr-task-lifecycle.test.ts --timeout 60000 --max-concurrency 1',
     ]);
   });
 
