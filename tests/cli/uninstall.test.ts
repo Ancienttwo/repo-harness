@@ -19,7 +19,7 @@ test('restores original config, preserves siblings and archives, dry run is byte
  put(home,'.codex/config.toml','default_mode_request_user_input = false\nmodel = "user"\n');
  writeOwnedConfiguration(join(home,'.codex/config.toml'),'default_mode_request_user_input = true\nmodel = "user"\n',env);
  put(home,'.claude/settings.json',JSON.stringify({theme:'dark',hooks:{...buildManagedHooks('claude'),UserPromptSubmit:[{hooks:[{type:'command',command:'user-hook'}]}]}}));
- put(home,'.repo-harness/config.json',JSON.stringify({brainRoot:join(home,'vault'),refactor_recommendations:{enabled:true},architecture:{projection_provider:'archctx',projection_apply:'automatic'},custom:42}));
+ put(home,'.repo-harness/config.json',JSON.stringify({brainRoot:join(home,'vault'),refactor_recommendations:{enabled:true},architecture:{projection_provider:'archctx',projection_apply:'manual'},custom:42}));
  put(home,'vault/archive.md','keep'); put(home,'.repo-harness/history/log','keep');
  const before=tree(home);
  const preview=runUserUninstall({target:'both',dryRun:true,env});

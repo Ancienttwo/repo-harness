@@ -5,7 +5,6 @@ import { PlanningView } from './PlanningView';
 import { DecisionSummary, OrganizationSummary } from './OrganizationSummary';
 import type { OperatorWorkExchangeSnapshot } from './types';
 import { TaskEvidence, type TaskContextReader, type TaskActivityReader } from './TaskEvidence';
-import { AutomationSummary, type RepositoryObservationReader } from './AutomationSummary';
 import { type NotifyStatusV1 } from '../core/operator/notify-status';
 import { NotifyStatusPanel, type NotifyStatusReader } from './NotifyStatus';
 import { type PipelineBoardV2 } from '../core/pipeline/board';
@@ -60,7 +59,6 @@ export interface OperatorAppProps {
   readonly initialCollaboration?: CollaborationViewState;
   /** Tests pin the locale; the browser resolves it from storage or navigator. */
   readonly initialLocale?: OperatorLocale;
-  readonly fetchRepositoryObservation?: RepositoryObservationReader;
   readonly readTaskHistory?: TaskHistoryReader;
   readonly readTaskContext?: TaskContextReader;
   readonly readTaskActivity?: TaskActivityReader;
@@ -1601,7 +1599,6 @@ export function OperatorApp({
   fetchCollaboration = fetchOperatorCollaborationSnapshot,
   initialCollaboration,
   initialLocale,
-  fetchRepositoryObservation,
   readTaskContext,
   readTaskActivity,
   readTaskHistory,
@@ -1797,13 +1794,6 @@ export function OperatorApp({
 
           {activeRepository && <ObservationTabs view={view} onChange={setView} t={t} />}
           <div role="tabpanel" id="view-panel-organization" aria-labelledby="view-tab-organization" hidden={!organizationActive}>
-          {activeRepository && <AutomationSummary
-            repositoryId={activeRepository.repository_id}
-            refreshGeneration={collaborationRefreshGeneration}
-            active={organizationActive}
-            readObservation={fetchRepositoryObservation}
-            t={t}
-          />}
           {activeRepository && <DecisionSummary state={collaboration} repositoryId={activeRepository.repository_id} after={decisionAfter} onPage={changeDecisionPage} t={t} />}
           {activeRepository && <OrganizationSummary state={collaboration} repositoryId={activeRepository.repository_id} t={t} />}
           <NotifyStatusPanel readStatus={readNotifyStatus} initialStatus={initialNotifyStatus} refreshGeneration={collaborationRefreshGeneration} active={organizationActive} t={t} />

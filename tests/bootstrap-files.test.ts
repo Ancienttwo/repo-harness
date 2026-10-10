@@ -186,7 +186,7 @@ describe("Bootstrap Script Contracts", () => {
     expect(pkg.scripts["check:brain-manifest"]).toBe("repo-harness run check-brain-manifest");
     expect(pkg.scripts["check:task-sync"]).toBe("repo-harness run check-task-sync");
     expect(pkg.scripts["check:deploy-sql"]).toBe("repo-harness run check-deploy-sql-order");
-    expect(pkg.scripts["check:architecture-sync"]).toBe("repo-harness run check-architecture-sync");
+    expect(pkg.scripts["check:architecture-sync"]).toBeUndefined();
     expect(pkg.scripts["check:task-workflow"]).toBe("repo-harness run check-task-workflow");
     expect(pkg.scripts["check:context-files"]).toBe("repo-harness run check-context-files");
     expect(pkg.scripts["sync:brain-docs"]).toBe("repo-harness run sync-brain-docs --all");
@@ -269,8 +269,8 @@ describe("Bootstrap Script Contracts", () => {
     expect(contract.helpers.scripts).toContain("capture-plan.sh");
     expect(contract.helpers.scripts).toContain("refresh-current-status.sh");
     expect(contract.helpers.scripts).not.toContain("context-budget.ts");
-    expect(contract.helpers.scripts).toContain("architecture-queue.sh");
-    expect(contract.helpers.scripts).toContain("archive-architecture-request.sh");
+    expect(contract.helpers.scripts).not.toContain("architecture-queue.sh");
+    expect(contract.helpers.scripts).not.toContain("archive-architecture-request.sh");
     expect(contract.helpers.scripts).not.toContain("context-contract-sync.sh");
     expect(contract.helpers.scripts).toContain("workstream-sync.sh");
     expect(contract.helpers.scripts).toContain("contract-worktree.sh");
@@ -287,13 +287,13 @@ describe("Bootstrap Script Contracts", () => {
     expect(contract.helpers.scripts).toContain("prepare-codex-handoff.sh");
     expect(contract.helpers.scripts).toContain("codex-handoff-resume.sh");
     expect(contract.helpers.scripts).toContain("check-agent-tooling.sh");
-    expect(contract.helpers.scripts).toContain("check-architecture-sync.sh");
+    expect(contract.helpers.scripts).not.toContain("check-architecture-sync.sh");
     expect(contract.helpers.scripts).toContain("check-brain-manifest.sh");
     expect(contract.helpers.scripts).toContain("sync-brain-docs.sh");
     expect(contract.helpers.scripts).toContain("check-deploy-sql-order.sh");
     expect(contract.helpers.scripts).toContain("check-context-files.sh");
     expect(contract.helpers.scripts).toContain("select-agent-context-blocks.sh");
-    expect(contract.helpers.scripts).toContain("architecture-event.ts");
+    expect(contract.helpers.scripts).not.toContain("architecture-event.ts");
     expect(contract.helpers.scripts).toContain("capability-config.ts");
     expect(contract.helpers.scripts).toContain("ensure-task-workflow.sh");
     expect(contract.helpers.scripts).toContain("check-task-workflow.sh");
@@ -301,7 +301,7 @@ describe("Bootstrap Script Contracts", () => {
     expect(sharedLib).not.toContain("skill-factory-check.sh");
     expect(sharedLib).not.toContain("pi_install_workflow_contract");
     expect(sharedLib).toContain("check:task-sync");
-    expect(sharedLib).toContain("check:architecture-sync");
+    expect(sharedLib).not.toContain('pkg.scripts["check:architecture-sync"] = ');
     expect(sharedLib).toContain("check:task-workflow");
     expect(sharedLib).toContain("contract.template.md");
     expect(sharedLib).toContain("implementation-notes.template.md");
@@ -320,7 +320,7 @@ describe("Bootstrap Script Contracts", () => {
     expect(sharedLib).not.toContain("pi_prune_repo_local_hook_runtime");
     expect(contract.helpers.scripts).toContain("switch-plan.sh");
     expect(contract.helpers.scripts).toContain("capability-resolver.ts");
-    expect(contract.helpers.scripts).toContain("architecture-event.ts");
+    expect(contract.helpers.scripts).not.toContain("architecture-event.ts");
     expect(contract.helpers.scripts).toContain("capability-config.ts");
     expect(contract.artifacts.requiredFiles).not.toContain("scripts/contract-worktree.sh");
     expect(contract.artifacts.requiredFiles).not.toContain("scripts/contract-run.ts");
@@ -352,7 +352,7 @@ describe("Bootstrap Script Contracts", () => {
     expect(contract.artifacts.runtimeFiles).toContain(".ai/harness/triage/inbox.md");
     expect(contract.artifacts.requiredFiles).toContain("docs/reference-configs/agentic-development-flow.md");
     expect(contract.artifacts.requiredFiles).toContain("docs/architecture/index.md");
-    expect(contract.artifacts.runtimeFiles).toContain(".ai/harness/architecture/events.jsonl");
+    expect(contract.artifacts.runtimeFiles).not.toContain(".ai/harness/architecture/events.jsonl");
     expect(contract.artifacts.runtimeFiles).not.toContain(".ai/harness/workstreams/events.jsonl");
     expect(contract.artifacts.requiredFiles).toContain("docs/reference-configs/external-tooling.md");
     expect(contract.migrations.upgrade.strategyVersion).toBe(1);
@@ -420,11 +420,11 @@ describe("Bootstrap Script Contracts", () => {
     expect(contract.helpers.scripts).toContain("prepare-codex-handoff.sh");
     expect(contract.helpers.scripts).toContain("codex-handoff-resume.sh");
     expect(contract.helpers.scripts).toContain("check-agent-tooling.sh");
-    expect(contract.helpers.scripts).toContain("check-architecture-sync.sh");
+    expect(contract.helpers.scripts).not.toContain("check-architecture-sync.sh");
     expect(contract.helpers.scripts).toContain("check-deploy-sql-order.sh");
     expect(contract.helpers.scripts).toContain("check-context-files.sh");
     expect(contract.helpers.scripts).toContain("select-agent-context-blocks.sh");
-    expect(contract.helpers.scripts).toContain("architecture-event.ts");
+    expect(contract.helpers.scripts).not.toContain("architecture-event.ts");
     expect(contract.helpers.scripts).toContain("capability-config.ts");
     expect(contract.helpers.scripts).toContain("workstream-sync.sh");
     expect(contract.helpers.scripts).toContain("contract-worktree.sh");
@@ -447,7 +447,7 @@ describe("Bootstrap Script Contracts", () => {
     expect(sharedLib).not.toContain("skill-factory-check.sh");
     expect(sharedLib).toContain("pi_workflow_contract_query_lines");
     expect(sharedLib).toContain("check:task-sync");
-    expect(sharedLib).toContain("check:architecture-sync");
+    expect(sharedLib).not.toContain('pkg.scripts["check:architecture-sync"] = ');
     expect(sharedLib).toContain("check:task-workflow");
     expect(content).toContain("pi_install_reference_configs");
     expect(contract.artifacts.requiredFiles).toContain("docs/reference-configs/document-generation.md");

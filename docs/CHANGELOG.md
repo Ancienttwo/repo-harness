@@ -4,8 +4,48 @@ All notable changes to this skill are documented here.
 
 ## Unreleased
 
+## [0.21.2] - 2026-10-10
+
+### Added
+
+- Add native Pi 1.1.0 host support. The Pi package provides the
+  `repo-harness` router, the `repo-harness-check` skill and an extension. In
+  opted-in repositories the extension runs typed hook checks on native
+  `edit` and `write`, direct or nested in codemode. The peer dependency is
+  pinned to exactly Pi `1.1.0`; other versions are unavailable. Hook
+  telemetry records host `pi`. (#607)
+- Show read-only Kanban runtime status from native capture sources or the
+  optional Herdr 0.9.3 / protocol 22 adapter. Codex capture needs no Python.
+  Claude and Pi capture use a bundled PTY relay that needs Python 3.9 or
+  later. PTY capture runs on macOS and Linux only. Claude lifecycle status is
+  not yet accepted. Status never advances tasks or accepts results. (#606)
+- Add default-off strategy context and proposal validation. Human-owned project
+  documents remain canonical. Context reads do not dispatch agents or edit memory.
+  The optional Skill requires an explicit install. (#599)
+- Add the export-only wake contract and explicit repository pilot. The pilot
+  keeps its 128 KiB file and 4 MiB request limits. Global limits stay at
+  64 KiB and 1 MiB. Proposals grant no execution authority. (#601)
+- Add five closed PM Bot operations: capabilities, status, dispatch,
+  follow-up and collect. They reject caller-supplied commands, paths, runtime
+  flags and permission changes. Dispatch needs operator approval for the exact
+  worker scope and runs a fixed OAR coding host in Herdr. Existing task,
+  claim, worktree and result records stay authoritative. Add a Hermes PM
+  profile adapter that exposes only these five tools. Only macOS Codex
+  workers are conditionally supported. Live Hermes configuration and a real
+  coding-provider task are not yet verified. The Hermes restriction is a tool
+  boundary, not an OS sandbox. (#608)
+- Add a scoped PM MCP server for Bot controllers. It exposes the same bounded
+  PM operations over MCP with server-owned repository and action scope. It
+  keeps task IDs, atomic claims, fencing and operation receipts. It adds no
+  shell tool, ledger, approval identity or credentials. Dot hosts, live
+  providers and event wake are not yet verified. (#615)
+
 ### Changed
 
+- Upgrade OAR to `0.45.1`. (#607)
+- macOS native CI installs the pinned Herdr 0.9.3 binary and verifies its
+  checksum before Herdr-dependent tests. (#612)
+- CI pins Bun 1.4.3. (#616)
 - New task worktrees default to `/tmp/<repo>-wt-<slug>`, and MCP coding
   workspaces default to `/tmp/repo-harness-mcp-worktrees`. Native Windows
   uses its system temp directory instead of `/tmp`. New policies store the
@@ -49,7 +89,7 @@ All notable changes to this skill are documented here.
   only its own test files, and `--coverage` keeps one combined summary.
   (#600)
 
-## [0.21.1] - Unreleased
+## [0.21.1] - 2026-10-08
 
 ### Added
 

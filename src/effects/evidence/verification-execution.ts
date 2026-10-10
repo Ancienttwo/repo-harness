@@ -1,6 +1,7 @@
+import { captureReadonlyGitTree } from '../git/readonly-virtual-tree';
+import { currentReadonlyObservation, observationReadFileSync as readFileSync, observationExecFileSync as execFileSync } from '../state/readonly-observation';
 import { createHash, randomUUID } from "crypto";
-import { execFileSync } from "child_process";
-import { accessSync, constants, existsSync, lstatSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync } from "fs";
+import { accessSync, constants, existsSync, lstatSync, mkdtempSync, realpathSync, rmSync, statSync } from "fs";
 import { tmpdir } from "os";
 import { basename, delimiter, isAbsolute, join, relative, resolve } from "path";
 
@@ -196,8 +197,9 @@ function virtualTreeOnce(repoRoot: string): string {
 export function captureGitVirtualTreeSnapshot(repoRoot: string): GitVirtualTreeSnapshot {
   const root = resolve(repoRoot);
   const before = git(root, ["status", "--porcelain=v2", "--untracked-files=all"]);
-  const firstTree = virtualTreeOnce(root);
-  const secondTree = virtualTreeOnce(root);
+  const snapshot = currentReadonlyObservation() ? captureReadonlyGitTree : virtualTreeOnce;
+  const firstTree = snapshot(root);
+  const secondTree = snapshot(root);
   const after = git(root, ["status", "--porcelain=v2", "--untracked-files=all"]);
   if (firstTree !== secondTree || before !== after) {
     throw new Error("repository changed while capturing the verification source snapshot");

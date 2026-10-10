@@ -1,9 +1,10 @@
+import { currentReadonlyObservation, rejectObservation, observationReadFileSync as readFileSync } from '../state/readonly-observation';
 /**
  * Append-only event log IO (D1/D2/D5). Genesis-before-append is enforced
  * fail-closed; reads apply the pure corrupt-tail policy from
  * `src/core/evidence/fold.ts` and quarantine any discarded tail.
  */
-import { existsSync, readFileSync, realpathSync, truncateSync } from "fs";
+import { existsSync, realpathSync, truncateSync } from "fs";
 import { join } from "path";
 import type { EvidenceEventRecord, EvidenceLogRecord, GenesisRecord } from "../../core/evidence/types";
 import { findCorruptTail, foldAcceptedEvents, parseLogLine } from "../../core/evidence/fold";
@@ -155,6 +156,7 @@ function repairCorruptTail(repoRoot: string, logPath: string): LogSnapshot & { r
 export function readAcceptedEvents(repoRoot: string): ReadAcceptedEventsResult {
   const logPath = resolveLogPath(repoRoot);
   const unlocked = readLogSnapshot(logPath);
+  if (currentReadonlyObservation() && unlocked.corruptTail.corruptStartIndex !== null) rejectObservation('Corrupt evidence tail requires owner repair; observation cannot repair');
   // A clean read changes nothing, so only a repair takes the log lock.
   const { parsedLines, corruptTail, quarantinedPath } = unlocked.corruptTail.corruptStartIndex === null
     ? { ...unlocked, quarantinedPath: null }

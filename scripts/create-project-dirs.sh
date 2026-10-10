@@ -183,7 +183,6 @@ DOCS_SPEC_EOF
 # - .ai/harness/policy.json
 # - .ai/harness/brain-manifest.json
 # - .ai/harness/events.jsonl
-# - .ai/harness/architecture/events.jsonl
 # - .ai/harness/handoff/current.md
 # - .ai/harness/handoff/resume.md
 # - .ai/harness/failures/latest.jsonl

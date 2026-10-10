@@ -42,7 +42,7 @@ test("native Completed archive validates real execution and acceptance before mu
     expect(receipt.disposition).toBe("external_pass");
     const runtime = join(root, ".ai/harness/runs/archive-test-helpers");
     mkdirSync(runtime, { recursive: true });
-    for (const helper of ["archive-workflow.sh", "check-architecture-sync.sh", "refresh-current-status.sh"]) {
+    for (const helper of ["archive-workflow.sh", "refresh-current-status.sh"]) {
       copyFileSync(join(ROOT, "scripts", helper), join(runtime, helper));
     }
     // Forward to the actual owner CLI with an isolated host authority home.
@@ -69,7 +69,7 @@ test("native Completed archive validates real execution and acceptance before mu
     expect(existsSync(join(root, "plans/archive/plan-demo.md"))).toBe(true);
     expect(existsSync(join(root, verification))).toBe(true);
     expect(existsSync(join(root, ".ai/harness/evidence/events/log.jsonl"))).toBe(true);
-    expect(readFileSync(`${cli}.calls`, "utf8")).toContain("architecture-projection policy --json");
+    expect(existsSync(`${cli}.calls`) ? readFileSync(`${cli}.calls`, "utf8") : "").not.toContain("architecture-projection");
   } finally {
     rmSync(root, { recursive: true, force: true });
     rmSync(home, { recursive: true, force: true });
@@ -204,17 +204,6 @@ function installWorkflowArchiveFixture(cwd: string): void {
     join(cwd, ".ai/hooks/lib/workflow-state.sh"),
   );
   writeFileSync(
-    join(cwd, "scripts/check-architecture-sync.sh"),
-    [
-      "#!/bin/bash",
-      "if [[ \"${ARCH_FRESHNESS_FAIL:-0}\" == \"1\" ]]; then",
-      "  echo 'architecture freshness failed' >&2",
-      "  exit 19",
-      "fi",
-      "",
-    ].join("\n"),
-  );
-  writeFileSync(
     join(cwd, "scripts/refresh-current-status.sh"),
     [
       "#!/bin/bash",
@@ -228,7 +217,6 @@ function installWorkflowArchiveFixture(cwd: string): void {
     ].join("\n"),
   );
   chmodSync(join(cwd, "scripts/archive-workflow.sh"), 0o755);
-  chmodSync(join(cwd, "scripts/check-architecture-sync.sh"), 0o755);
   chmodSync(join(cwd, "scripts/refresh-current-status.sh"), 0o755);
   writeFileSync(
     join(cwd, "plans/plan-20260711-1200-demo.md"),
@@ -349,7 +337,7 @@ function writeWorkflowChecks(cwd: string): void {
   expect(report.passed).toBe(true);
 }
 
-test.each(["report-symlink", "parent-symlink", "verify-swap", "architecture-swap"])("Completed archive refuses %s before mutation", (mode) => {
+test.each(["report-symlink", "parent-symlink", "verify-swap"])("Completed archive refuses %s before mutation", (mode) => {
   withTempRepo("archive-frozen-report", (cwd) => {
     installWorkflowArchiveFixture(cwd);
     writeWorkflowContract(cwd, "Active");
@@ -364,13 +352,11 @@ test.each(["report-symlink", "parent-symlink", "verify-swap", "architecture-swap
         rmSync(join(cwd, ARCHIVE_REPORT));
         symlinkSync(source, join(cwd, ARCHIVE_REPORT));
       }
-    } else if (mode === "verify-swap") {
+    } else {
       const helper = join(cwd, "scripts/acceptance-receipt.ts");
       writeFileSync(helper, readFileSync(helper, "utf8")
         .replace("import { existsSync, realpathSync }", "import { appendFileSync, existsSync, realpathSync }")
         .replace("if (import.meta.main) process.exit", `if (process.argv[2] === 'verify') appendFileSync(${JSON.stringify(ARCHIVE_REPORT)}, ' ');\nif (import.meta.main) process.exit`));
-    } else {
-      writeFileSync(join(cwd, "scripts/check-architecture-sync.sh"), `#!/bin/bash\nprintf ' ' >> '${ARCHIVE_REPORT}'\n`);
     }
     const report = mode === "parent-symlink" ? ".ai/harness/runs/runs-link/report.json" : ARCHIVE_REPORT;
     // A parent link inside the allowed namespace must also fail closed.
@@ -416,70 +402,6 @@ function archiveWorkflow(cwd: string, outcome = "Completed", env: NodeJS.Process
   return run(
     "scripts/archive-workflow.sh",
     ["--plan", "plans/plan-20260711-1200-demo.md", "--outcome", outcome],
-    cwd,
-    env,
-  );
-}
-
-function installArchitectureArchiveFixture(cwd: string): void {
-  mkdirSync(join(cwd, "scripts"), { recursive: true });
-  mkdirSync(join(cwd, "docs/architecture/requests"), { recursive: true });
-  mkdirSync(join(cwd, "docs/architecture/modules/runtime"), { recursive: true });
-  copyFileSync(
-    join(ROOT, "scripts/archive-architecture-request.sh"),
-    join(cwd, "scripts/archive-architecture-request.sh"),
-  );
-  copyFileSync(
-    join(ROOT, "scripts/architecture-event.ts"),
-    join(cwd, "scripts/architecture-event.ts"),
-  );
-  mkdirSync(join(cwd, ".ai/harness/architecture"), { recursive: true });
-  writeFileSync(
-    join(cwd, "scripts/architecture-queue.sh"),
-    [
-      "#!/bin/bash",
-      "printf '%s\\n' \"$*\" >> .queue-calls",
-      "if [[ \"${ARCH_QUEUE_FAIL_ON_CHECK:-0}\" == \"1\" && \"$*\" == \"reindex --check\" ]]; then",
-      "  echo 'pre-archive reindex check failed' >&2",
-      "  exit 31",
-      "fi",
-      "if [[ \"${ARCH_QUEUE_FAIL_ON_POST:-0}\" == \"1\" && \"$*\" == \"reindex\" ]]; then",
-      "  echo 'post-archive reindex failed' >&2",
-      "  exit 29",
-      "fi",
-      "",
-    ].join("\n"),
-  );
-  chmodSync(join(cwd, "scripts/archive-architecture-request.sh"), 0o755);
-  chmodSync(join(cwd, "scripts/architecture-queue.sh"), 0o755);
-  writeFileSync(join(cwd, "docs/architecture/index.md"), "# Architecture Index\n");
-  writeFileSync(
-    join(cwd, "docs/architecture/modules/runtime/demo.md"),
-    "# Architecture Module: runtime/demo\n\nUpdated durable truth.\n",
-  );
-}
-
-function writeArchitectureRequest(cwd: string, status = "Pending"): void {
-  writeFileSync(
-    join(cwd, "docs/architecture/requests/runtime-demo.md"),
-    [
-      "# Architecture Drift Request: runtime-demo",
-      "",
-      `> **Status**: ${status}`,
-      "> **Architecture Module**: `docs/architecture/modules/runtime/demo.md`",
-      "",
-      "## Human Decision Context",
-      "",
-      "Preserve this exact request rationale.",
-      "",
-    ].join("\n"),
-  );
-}
-
-function archiveArchitecture(cwd: string, args: string[], env: NodeJS.ProcessEnv = {}) {
-  return run(
-    "scripts/archive-architecture-request.sh",
-    ["--request", "docs/architecture/requests/runtime-demo.md", "--status", "resolved", ...args],
     cwd,
     env,
   );
@@ -538,10 +460,6 @@ describe("archive evidence gates", () => {
         join(ROOT, "assets/hooks/lib/workflow-state.sh"),
         join(primary, ".ai/hooks/lib/workflow-state.sh"),
       );
-      writeFileSync(
-        join(primary, "scripts/check-architecture-sync.sh"),
-        "#!/bin/bash\nexit 0\n",
-      );
       writeFileSync(join(primary, "scripts/verify-sprint.sh"), "#!/bin/bash\nexit 0\n");
       writeFileSync(
         join(primary, "scripts/refresh-current-status.sh"),
@@ -564,7 +482,6 @@ describe("archive evidence gates", () => {
         ].join("\n"),
       );
       for (const helper of [
-        "check-architecture-sync.sh",
         "verify-sprint.sh",
         "refresh-current-status.sh",
         "sprint-backlog.sh",
@@ -711,11 +628,6 @@ describe("archive evidence gates", () => {
       expect(result.stderr).toContain("AcceptanceReceipt gate failed");
 
       writeWorkflowReview(cwd, "pass", "pass");
-      result = archiveWorkflow(cwd, "Completed", { ARCH_FRESHNESS_FAIL: "1" });
-      expect(result.status).toBe(19);
-      expect(result.stderr).toContain("architecture freshness failed");
-      expect(existsSync(join(cwd, "plans/plan-20260711-1200-demo.md"))).toBe(true);
-
       result = archiveWorkflow(cwd);
       expect(result.status).toBe(0);
       expect(existsSync(join(cwd, "plans/archive/plan-20260711-1200-demo.md"))).toBe(true);
@@ -907,84 +819,6 @@ describe("archive evidence gates", () => {
         expect(archived).toContain("Keep this content.");
       });
     }
-  }, 30_000);
-
-  test("Resolved architecture archive requires a live Pending request and its existing module artifact", () => {
-    withTempRepo("archive-architecture-gates", (cwd) => {
-      installArchitectureArchiveFixture(cwd);
-      writeArchitectureRequest(cwd, "Resolved");
-
-      let result = archiveArchitecture(cwd, ["--artifact", "docs/architecture/modules/runtime/demo.md"]);
-      expect(result.status).toBe(1);
-      expect(result.stderr).toContain("request status must be Pending");
-
-      writeArchitectureRequest(cwd);
-      result = archiveArchitecture(cwd, []);
-      expect(result.status).toBe(1);
-      expect(result.stderr).toContain("requires the architecture module as a durable --artifact");
-
-      result = archiveArchitecture(cwd, ["--artifact", "docs/architecture/modules/runtime/missing.md"]);
-      expect(result.status).toBe(1);
-      expect(result.stderr).toContain("artifact does not exist");
-
-      writeFileSync(join(cwd, "docs/architecture/modules/runtime/other.md"), "# Other\n");
-      result = archiveArchitecture(cwd, ["--artifact", "docs/architecture/modules/runtime/other.md"]);
-      expect(result.status).toBe(1);
-      expect(result.stderr).toContain("requires the architecture module as a durable --artifact");
-
-      result = archiveArchitecture(cwd, ["--artifact", "docs/architecture/modules/runtime/demo.md"]);
-      expect(result.status).toBe(0);
-      expect(existsSync(join(cwd, "docs/architecture/requests/runtime-demo.md"))).toBe(false);
-      const archiveDir = join(cwd, "docs/architecture/requests/archive", String(new Date().getFullYear()));
-      const archiveFile = readdirSync(archiveDir).find((name) => name.endsWith("runtime-demo.md"));
-      expect(archiveFile).toBeDefined();
-      const archived = readFileSync(join(archiveDir, archiveFile!), "utf-8");
-      expect(archived).toContain("> **Status**: Resolved");
-      expect(archived).toContain("Preserve this exact request rationale.");
-      expect(archived).toContain("- `docs/architecture/modules/runtime/demo.md`");
-      expect(readFileSync(join(cwd, ".queue-calls"), "utf-8")).toContain("reindex --check");
-    });
-  }, 30_000);
-
-  test("unsafe artifact symlinks and post-archive reindex failures fail visibly", () => {
-    withTempRepo("archive-architecture-failure", (cwd) => {
-      installArchitectureArchiveFixture(cwd);
-      writeArchitectureRequest(cwd);
-      const outside = join(cwd, "..", `outside-${Date.now()}.md`);
-      writeFileSync(outside, "outside\n");
-      symlinkSync(outside, join(cwd, "docs/architecture/modules/runtime/linked.md"));
-
-      let result = archiveArchitecture(cwd, ["--artifact", "docs/architecture/modules/runtime/linked.md"]);
-      expect(result.status).toBe(2);
-      expect(result.stderr).toContain("artifact must not be a symlink");
-      rmSync(outside, { force: true });
-
-      const requestPath = join(cwd, "docs/architecture/requests/runtime-demo.md");
-      const requestBefore = readFileSync(requestPath, "utf-8");
-
-      result = archiveArchitecture(
-        cwd,
-        ["--artifact", "docs/architecture/modules/runtime/demo.md"],
-        { ARCH_QUEUE_FAIL_ON_CHECK: "1" },
-      );
-      expect(result.status).toBe(31);
-      expect(result.stderr).toContain("pre-archive reindex check failed");
-      expect(readFileSync(requestPath, "utf-8")).toBe(requestBefore);
-
-      result = archiveArchitecture(
-        cwd,
-        ["--artifact", "docs/architecture/modules/runtime/demo.md"],
-        { ARCH_QUEUE_FAIL_ON_POST: "1" },
-      );
-      expect(result.status).toBe(29);
-      expect(result.stderr).toContain("post-archive reindex failed");
-      expect(result.stderr).toContain("restored live architecture artifacts");
-      expect(readFileSync(requestPath, "utf-8")).toBe(requestBefore);
-
-      const retry = archiveArchitecture(cwd, ["--artifact", "docs/architecture/modules/runtime/demo.md"]);
-      expect(retry.status).toBe(0);
-      expect(existsSync(requestPath)).toBe(false);
-    });
   }, 30_000);
 });
 

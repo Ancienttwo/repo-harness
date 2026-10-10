@@ -124,7 +124,7 @@ export type WorkflowContract = {
         ownership: "known_generated" | "managed_config" | "user_authored" | "user_local";
         paths: string[];
         targetPaths?: string[];
-        cleanupMode?: "always" | "generated_helper";
+        cleanupMode?: "always" | "generated_helper" | "exact_fingerprint";
         summary: string;
       }>;
     };

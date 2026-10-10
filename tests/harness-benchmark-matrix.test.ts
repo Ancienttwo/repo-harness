@@ -383,8 +383,9 @@ describe('No Harness / Lite / Strict benchmark authority', () => {
     } finally {
       rmSync(runRoot, { recursive: true, force: true });
     }
-    // One real pack plus two isolated installs needs the pack case budget.
-  }, 120_000);
+    // One real pack plus two isolated installs of a ~120 MB artifact.
+    // A loaded macOS host measured 67-151 s for these steps, so the budget is 240 s.
+  }, 240_000);
 
   test('profile preparation skips no-harness installation and uses the packed absolute CLI for both harness profiles', () => {
     const source = readFileSync(join(ROOT, 'scripts/run-harness-profile-benchmark.ts'), 'utf8');

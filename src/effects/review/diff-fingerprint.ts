@@ -1,6 +1,6 @@
-import { execFileSync, spawnSync } from 'child_process';
+import { assertObservationPath, observationReadFileSync as readFileSync, observationExecFileSync as execFileSync, observationSpawnSync as spawnSync } from '../state/readonly-observation';
 import { createHash } from 'crypto';
-import { lstatSync, readFileSync, readlinkSync } from 'fs';
+import { lstatSync, readlinkSync } from 'fs';
 import { join } from 'path';
 
 // Raised from 4 MiB: a diff that overflows this cap can no longer be observed,
@@ -220,6 +220,7 @@ function untrackedContentHash(repoRoot: string, paths: readonly string[], ctx: F
     if (!statusRes.text.split('\0').some((token) => token.startsWith('?? '))) continue;
 
     const absolute = join(repoRoot, path);
+    assertObservationPath(absolute);
     try {
       // lstat, never stat: an untracked symlink must be fingerprinted by its own
       // target and type, not by the content it points at. statSync would follow
@@ -457,6 +458,7 @@ function normalizedFinalContent(
   const entries: Array<Record<string, unknown>> = [];
   for (const path of paths) {
     const absolute = join(repoRoot, path);
+    assertObservationPath(absolute);
     try {
       const stat = lstatSync(absolute);
       if (stat.isSymbolicLink()) {

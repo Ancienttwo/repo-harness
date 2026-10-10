@@ -124,7 +124,7 @@ describe("capability resolver", () => {
         "--target", "ES2022",
         "--strict",
         "--skipLibCheck",
-        "--types", "bun",
+        "--types", "bun-types",
         "assets/templates/helpers/capability-config.ts",
         "assets/templates/helpers/capability-resolver.ts",
       ], { cwd: ROOT, encoding: "utf-8" });

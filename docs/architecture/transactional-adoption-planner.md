@@ -93,4 +93,4 @@ entry tells the user to run `git add -- <path>` by hand.
 - `bun test tests/hook-recursive-copy.test.ts tests/hook-contracts.test.ts`
 - `bun run check:type`
 - `bun src/cli/index.ts init --repo . --dry-run`
-- `bash scripts/check-architecture-sync.sh`
+- `bun src/cli/index.ts architecture-projection check --json`

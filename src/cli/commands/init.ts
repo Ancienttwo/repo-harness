@@ -2,7 +2,6 @@ import { bunGlobalPackageRoot, isBunGlobalPackageSource, skillLinkMatches } from
 import { readGlobalArchitectureConfiguration } from '../../effects/architecture/projection-config';
 import { inspectArchitectureProjectionReadiness } from '../../effects/architecture/archctx-provider';
 import { ensureGlobalArchitectureProjection } from './architecture-configuration';
-import { ensureGlobalRefactorRecommendations } from './refactor-recommendation-configuration';
 /**
  * Existing-repo harness bootstrap/update implementation.
  *
@@ -786,9 +785,7 @@ export function runInit(
       // Install/update snapshot and roll back this same account configuration.
       // Join their lock before either initializer reads its current values.
       withRuntimeHostTransactionLock(commandEnv, () => {
-        const architecture = ensureGlobalArchitectureProjection(commandEnv);
-        steps.push(architecture);
-        if (architecture.status === "ok") steps.push(ensureGlobalRefactorRecommendations(commandEnv));
+        steps.push(ensureGlobalArchitectureProjection(commandEnv));
       });
     } catch (error) {
       steps.push({ step: "global automation defaults", status: "failed", detail: String(error) });

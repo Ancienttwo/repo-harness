@@ -525,7 +525,7 @@ REGISTRY_EOF
 git -C "$STANDALONE_REPO" init -q
 (cd "$ROOT" && node node_modules/typescript/bin/tsc \
   --ignoreConfig --noEmit --module Preserve --moduleResolution Bundler \
-  --target ES2022 --strict --skipLibCheck --types bun \
+  --target ES2022 --strict --skipLibCheck --types bun-types \
   "$STANDALONE_REPO/scripts/capability-config.ts" \
   "$STANDALONE_REPO/scripts/capability-resolver.ts")
 (cd "$STANDALONE_REPO" && bun scripts/capability-resolver.ts match \

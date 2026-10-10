@@ -208,6 +208,7 @@ describe('single affected verification and daily fallback', () => {
       ref: '${{ github.event.pull_request.head.sha }}', 'fetch-depth': 0, 'persist-credentials': false,
     });
     expect(job.env.EXPECTED_SHA).toBe('${{ github.event.pull_request.head.sha }}');
+    expect(job.steps.find((step: any) => step.uses === 'oven-sh/setup-bun@v2').with['bun-version']).toBe('1.4.3');
     // Functional fixtures own their own Git refs. Governance refs must not leak.
     expect(job.env.REPO_HARNESS_DIFF_BASE).toBeUndefined();
     expect(job.env.REPO_HARNESS_DIFF_MODE).toBeUndefined();
