@@ -4,7 +4,7 @@ All notable changes to this skill are documented here.
 
 ## Unreleased
 
-## [0.21.2] - Unreleased
+## [0.21.2] - 2026-10-10
 
 ### Added
 
