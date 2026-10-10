@@ -341,11 +341,9 @@ AcceptanceReceipt field.
 - **Task profile**: The declared execution shape of a contract (for example
   `code-change`) that determines which verification and delegation rules
   apply to that task.
-- **Refactor recommendations**: Global `refactor_recommendations.enabled`
-  defaults to true and is initialized once by install/update or successful
-  repository init, preserving an explicit disabled choice. Normal Stop scans for
-  measured structural observations within a 30-second slice of the 140-second
-  Stop work budget and prints one line when open suggestions exist.
+- **Refactor recommendations**: Evidence on demand. No hook scans for them.
+  The Bot reads `repo-harness refactor recommendations --json` and decides
+  whether to schedule work or ask the user.
   `repo-harness refactor recommendations` shows each suggestion with its
   metrics and module statistics; `repo-harness refactor decide` records the
   user's accept, defer or reject decision in ArchContext. repo-harness never

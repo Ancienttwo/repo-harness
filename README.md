@@ -120,10 +120,10 @@ bun test
 
 ### Success looks like this
 
-Successful init enables automatic architecture document projection and proactive
-Stop-hook refactor recommendations when those preferences are unset. Explicit
-disabled choices are preserved. Suggestions present evidence for a user decision;
-they do not authorize a refactor. Dry-run does not write these preferences.
+Successful init enables the architecture projection provider when that
+preference is unset. An explicit disabled choice is preserved. Dry-run does not
+write the preference. repo-harness supplies tools and evidence; the Bot decides
+what to schedule.
 
 Apply ends with `=== Migration Report ===`, naming where generated hook behavior
 comes from, the user-level `~/.claude/settings.json` and `~/.codex/hooks.json`

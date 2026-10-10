@@ -20,8 +20,8 @@ The stable route tuple is the adapter contract. Handler identities are internal
 authority names and are not selected by installation location or host provider.
 Codex must trust `~/.codex/hooks.json` in Settings before it executes the
 adapter. Generated adapters use 30 seconds except `Stop.default`, whose outer
-deadline is 150 seconds. Stop runs the deferred post-edit journal and the refactor
-recommendation observer under one bounded work budget. Child processes run
+deadline is 150 seconds. Stop runs the deferred post-edit journal under one
+bounded work budget. Stop does not scan for refactor recommendations. Child processes run
 under process-group supervision with bounded TERM/KILL cleanup. Stop does not
 run architecture projection and does not record architecture drift.
 

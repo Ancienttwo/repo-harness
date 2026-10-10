@@ -87,14 +87,14 @@ Architecture projection execution preferences belong to the user-level
 `~/.repo-harness/config.json#architecture`. Repository policy owns model and
 capability authority, documentation paths, and freshness gates; it does not
 author provider selection or apply mode. Global install/update and successful
-repository init use the same configuration writers to initialize automatic
-projection and `refactor_recommendations.enabled=true` when unset, preserving
-explicit disabled choices. Init dry-run does not write these preferences.
+repository init use the same configuration writer to initialize the projection
+provider when unset, preserving an explicit disabled choice. Init dry-run does
+not write the preference.
 
-The Stop hook consumes architecture changes and delivers measured refactor
-opportunities for a user decision. Default enablement does not synthesize a
-missing architecture model, missing code facts, or permission to execute a
-refactor. `docs/spec.md` owns the product contract; the initialization and Stop
+No hook delivers architecture or refactor work. repo-harness supplies tools and
+evidence; the Bot decides what to schedule. Default enablement does not
+synthesize a missing architecture model, missing code facts, or permission to
+execute a refactor. `docs/spec.md` owns the product contract; the initialization and Stop
 regressions verify these separate boundaries.
 ## 3. P3：设计决策与不变量
 

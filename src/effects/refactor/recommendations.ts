@@ -1,11 +1,9 @@
 import { existsSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import type { RecommendationV3 } from 'archctx-contracts';
-import { REFACTOR_RECOMMENDATION_TIMEOUT_MS } from '../../core/hook-work-budget';
 import type { RefactorScanResultV1 } from '../../core/refactor/provider-contract';
 import type { ArchctxProviderOptions } from '../architecture/archctx-provider';
 import { readRecommendationRecords, runRefactorScan } from './archctx-provider';
-import { readRefactorRecommendationSettings } from './recommendation-settings';
 
 type Observation = RecommendationV3 & { category: 'structural_observation' };
 type ModuleStatistics = RefactorScanResultV1['snapshot']['modules'][number];
@@ -37,7 +35,7 @@ export interface RefactorRecommendation {
 }
 export interface RefactorRecommendationResult {
   schemaVersion: 'repo-harness.refactor-recommendations/v2';
-  status: 'recommended' | 'no_action' | 'proof_required' | 'unavailable' | 'disabled' | 'deferred';
+  status: 'recommended' | 'no_action' | 'proof_required' | 'unavailable';
   candidates: readonly RefactorRecommendation[];
   message?: string;
 }
@@ -47,8 +45,6 @@ export interface RefactorDiscovery {
 }
 export interface RefactorRecommendationOptions {
   env?: NodeJS.ProcessEnv;
-  deadlineMs?: number;
-  nowMs?: () => number;
   discover?: (repoRoot: string, provider: ArchctxProviderOptions) => RefactorDiscovery;
 }
 
@@ -94,16 +90,15 @@ function moduleEvidence(entry: ModuleStatistics): RefactorModuleEvidence {
   };
 }
 
-/** Observation only: it never records, decides or executes anything. */
+/**
+ * Evidence only: it never records, decides, schedules or executes anything.
+ * The Bot reads this result and decides whether to schedule work or ask the user.
+ */
 export function observeRefactorRecommendations(repoRoot: string, options: RefactorRecommendationOptions = {}): RefactorRecommendationResult {
-  const now = options.nowMs ?? Date.now;
   try {
-    if (!readRefactorRecommendationSettings(options.env).enabled) return result('disabled');
     const root = realpathSync(repoRoot);
     if (!existsSync(join(root, '.archcontext/manifest.yaml'))) return result('unavailable', 'repository architecture model is not initialized');
-    if (options.deadlineMs !== undefined && options.deadlineMs <= now()) return result('deferred', 'insufficient remaining Stop work budget');
-    const deadlineMs = Math.min(options.deadlineMs ?? Infinity, now() + REFACTOR_RECOMMENDATION_TIMEOUT_MS);
-    const discovery = (options.discover ?? discoverRefactorRecommendations)(root, { env: options.env, deadlineMs, nowMs: now });
+    const discovery = (options.discover ?? discoverRefactorRecommendations)(root, { env: options.env });
     const facts = discovery.scan.snapshot.codeFacts;
     if (facts.coverage !== 'complete' || facts.truncated) {
       return result('proof_required', 'code facts are incomplete; run `codegraph init` and scan again');
@@ -113,15 +108,4 @@ export function observeRefactorRecommendations(repoRoot: string, options: Refact
   } catch (error) {
     return result('unavailable', error instanceof Error ? error.message : String(error));
   }
-}
-
-/** One Stop line: enough to tell the Agent that measured suggestions exist and how to review them. */
-export function renderRefactorRecommendationSummary(observation: RefactorRecommendationResult): string | null {
-  if (observation.status === 'recommended') {
-    const kinds = [...new Set(observation.candidates.map((entry) => entry.kind))].join(', ');
-    return `[RefactorRecommendations] ${observation.candidates.length} measured suggestion(s) (${kinds}). Review the evidence with \`repo-harness refactor recommendations\` and ask the user to accept, defer or reject each one.`;
-  }
-  // An unavailable provider (no model, no archctx) stays silent so unrelated repositories see no noise.
-  if (observation.status === 'proof_required') return `[RefactorRecommendations] proof_required: ${observation.message}`;
-  return null;
 }

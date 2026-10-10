@@ -206,10 +206,9 @@ describe("init command", () => {
       expect(JSON.parse(readFileSync(configPath, "utf8"))).toMatchObject({
         brainRoot: "/existing/brain",
         architecture: { projection_provider: "archctx", projection_apply: "manual" },
-        refactor_recommendations: { enabled: true },
       });
+      expect(JSON.parse(readFileSync(configPath, "utf8")).refactor_recommendations).toBeUndefined();
       expect(applied.steps.find((step) => step.step === "global architecture projection")?.status).toBe("ok");
-      expect(applied.steps.find((step) => step.step === "global refactor recommendations")?.status).toBe("ok");
       const disabled = JSON.stringify({
         architecture: { projection_provider: "disabled", projection_apply: "disabled" },
         refactor_recommendations: { enabled: false },
@@ -258,7 +257,6 @@ describe("init command", () => {
       expect(runInit(options).exitCode).toBe(0);
       expect(JSON.parse(readFileSync(configPath, "utf8"))).toMatchObject({
         architecture: { projection_apply: "manual" },
-        refactor_recommendations: { enabled: true },
       });
     } finally {
       rmSync(tmp, { recursive: true, force: true });

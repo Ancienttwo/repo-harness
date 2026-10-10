@@ -7,7 +7,7 @@ summary: Shows measured ArchContext refactor suggestions with their evidence and
 responsibilities:
   - Keep ArchContext as the sole authority for structural observations, recommendation identity and lifecycle state.
   - Present each open suggestion with the metrics and module statistics from the scan that produced it.
-  - Tell the Agent at Stop that measured suggestions exist, and stay silent when the provider is unavailable.
+  - Return suggestions as on-demand evidence for the Bot; no hook scans for them and repo-harness schedules nothing.
   - Record an accept, defer or reject decision with its reason through ArchContext.
 source:
   include:

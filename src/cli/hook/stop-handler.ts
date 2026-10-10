@@ -1,4 +1,3 @@
-import { observeRefactorRecommendations, renderRefactorRecommendationSummary } from '../../effects/refactor/recommendations';
 /** Stop refreshes bounded recovery observations without workflow permission gates. */
 import {
   appendFileSync,
@@ -54,7 +53,6 @@ export interface StopHandlerDependencies {
   readonly observeProjectionTransaction?: () => void;
   /** Narrow post-commit fault/observation seam; never driven by an env flag. */
   readonly afterProjectionWrite?: (target: StopProjectionTarget) => void;
-  readonly observeRefactorRecommendations?: typeof observeRefactorRecommendations;
 }
 
 export interface StopHandlerInput {
@@ -510,13 +508,5 @@ export function runStopHandler(opts: StopHandlerInput): StopHandlerResult {
   }
   const minimal = minimalChangeReview(repoRoot, loadMinimalChangePolicy(repoRoot));
   if (minimal.summary) stderr.push(`${minimal.summary}\n`);
-  try {
-    const recommendation = (dependencies.observeRefactorRecommendations ?? observeRefactorRecommendations)(
-      repoRoot, { env, deadlineMs, nowMs: wallClockMs });
-    const summary = renderRefactorRecommendationSummary(recommendation);
-    if (summary) stderr.push(`${summary}\n`);
-  } catch (error) {
-    stderr.push(`[RefactorRecommendations] ${error instanceof Error ? error.message : String(error)}\n`);
-  }
   return { exitCode: 0, stdout: '', stderr: stderr.join('') };
 }

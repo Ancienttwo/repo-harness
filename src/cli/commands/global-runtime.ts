@@ -1,5 +1,4 @@
 import { bunGlobalPackageRoot, isBunGlobalPackageSource, skillLinkMatches } from "../installer/skill-projection";
-import { ensureGlobalRefactorRecommendations } from './refactor-recommendation-configuration';
 import { ensureGlobalArchitectureProjection } from './architecture-configuration';
 import { copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync } from "fs";
 import { homedir, tmpdir, userInfo } from "os";
@@ -1467,9 +1466,6 @@ export function runGlobalRuntimeSetup(
   const architectureConfiguration = ensureGlobalArchitectureProjection(env);
   steps.push(architectureConfiguration);
   if (architectureConfiguration.status === 'failed') return finalizeRuntimeResult(steps);
-  const recommendations = ensureGlobalRefactorRecommendations(env);
-  steps.push(recommendations);
-  if (recommendations.status === 'failed') return finalizeRuntimeResult(steps);
 
   if (opts.syncSkill !== false) steps.push(syncRuntimeSkill(sourceRoot, profile, env));
   else steps.push({ step: "sync repo-harness skill runtime", status: "skipped", detail: "disabled" });

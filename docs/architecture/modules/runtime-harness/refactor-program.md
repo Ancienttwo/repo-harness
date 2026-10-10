@@ -1,5 +1,5 @@
 # Refactor Program
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-refactor-program" sourceDigest="sha256:9d65995a7037de891f163871edcdf0379448308c5a6cb20a9be9f6b78d291d02" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:3805081506b3e6a95610c393e0949ab093aa989ffe62d30992c1e0b379ffe79b" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-refactor-program" sourceDigest="sha256:f2e6199199a2d7ea14d7749c73a996db4468b0ef5895d151d8b7903be45135f8" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:10d3e00c82a57338cbef34a85c33ec2b3346f260410b7c603f0eda52d491defd" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.refactor-program`(kind `capability`)
 > **Matched Prefixes**:`src/core/refactor/**`、`src/effects/refactor/**`、`src/cli/commands/refactor.ts`
@@ -35,7 +35,7 @@ flowchart LR
 
 ### 1.3 規模信號
 
-- 規模量級:`5–10` 個文件 / `200–500` 行
+- 規模量級:`2–5` 個文件 / `200–500` 行
 - 匹配前綴:`src/core/refactor/**`、`src/effects/refactor/**`、`src/cli/commands/refactor.ts`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 

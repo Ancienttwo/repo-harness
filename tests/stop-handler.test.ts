@@ -5,7 +5,6 @@ import { dirname, join } from 'path';
 import { tmpdir } from 'os';
 import type { EffectiveState } from '../src/core/state/types';
 import { runStopHandler as runStopHandlerRuntime, type StopProjectionTarget } from '../src/cli/hook/stop-handler';
-import { observeRefactorRecommendations } from '../src/effects/refactor/recommendations';
 import { RUN_SUMMARY_RETENTION_COUNT } from '../src/effects/run-summary-retention';
 import { consumePendingPostEditEvents, readPendingPostEditEvents } from '../src/cli/hook/mutation-observed';
 

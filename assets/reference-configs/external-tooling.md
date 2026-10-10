@@ -1192,20 +1192,15 @@ repo-harness run sync-brain-docs --all
 repo-harness run sync-brain-docs --check
 ```
 
-## Proactive refactor recommendations
+## Refactor recommendations
 
-`~/.repo-harness/config.json#refactor_recommendations` contains `{ "enabled": true }`
-by default. Global install/update initializes the setting once and preserves an
-explicit disabled choice. Repositories do not need another enable switch.
+repo-harness supplies refactor evidence on demand. No hook scans for it and no
+setting enables it. The Bot reads the evidence and decides whether to schedule
+work or ask the user. Incomplete code facts return `proof_required` with a
+`codegraph init` hint. The command never creates an index, a model, a plan or a
+code edit.
 
-At normal Stop, repo-harness scans for ArchContext structural observations when
-a project model is present. The scan has at most thirty seconds of Stop's work
-budget. When open suggestions exist, Stop prints one line with their count and
-kinds. An unavailable provider prints nothing. Incomplete code facts print a
-`proof_required` line that asks for `codegraph init`. The observer never creates
-an index, a model, a plan or a code edit.
-
-Review and decide with:
+Read evidence and record a decision with:
 
 ```bash
 repo-harness refactor recommendations [--json]

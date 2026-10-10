@@ -801,7 +801,7 @@ describe("init command cutover", () => {
       expect(apply.status).toBe(0);
       const config = JSON.parse(readFileSync(join(home, ".repo-harness", "config.json"), "utf8"));
       expect(config.architecture.projection_apply).toBe("manual");
-      expect(config.refactor_recommendations.enabled).toBe(true);
+      expect(config.refactor_recommendations).toBeUndefined();
       expect(existsSync(join(repo, ".ai", "harness", "workflow-contract.json"))).toBe(true);
       const retired = spawnSync("bun", [CLI, "init", "--experimental-ts-apply"], { cwd: ROOT, encoding: "utf-8" });
       expect(retired.status).toBe(1);
