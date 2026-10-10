@@ -267,6 +267,28 @@ describe('dev activity public text and health', () => {
     expect(decoded.attention.find(entry => entry.kind === 'ready_to_merge')?.summary).toBe(title);
   });
 
+  test('masks absolute paths after any punctuation but keeps branch and ratio slashes', () => {
+    const cases: [string, string][] = [
+      ['failed [/home/alice/secret]', 'failed [[private path]]'],
+      ['failed,/home/alice/secret', 'failed,[private path]'],
+      ['open ~/Projects/secret now', 'open ~[private path] now'],
+      ['see <C:\\Users\\me>', 'see <[private path]>'],
+      ['merge feat/x and and/or at 1/2 from ./rel', 'merge feat/x and and/or at 1/2 from ./rel'],
+    ];
+    for (const [title, expected] of cases) {
+      const snapshot = project(repo({ ledger: [ledger({ title })] }));
+      expect(snapshot.items[0]!.title).toBe(expected);
+      expect(decodeDevActivitySnapshot(JSON.parse(JSON.stringify(snapshot))).items[0]!.title).toBe(expected);
+    }
+  });
+
+  test('the decoder rejects a path after punctuation in a guarded field', () => {
+    const snapshot = project(repo({ ledger: [ledger({ title: 'plain title' })] }));
+    const raw = JSON.parse(JSON.stringify(snapshot));
+    raw.items[0].title = 'failed [/home/alice/secret]';
+    expect(() => decodeDevActivitySnapshot(raw)).toThrow('dev activity projection invalid');
+  });
+
   test('still masks a path in a ledger-only title', () => {
     const snapshot = project(repo({ ledger: [ledger({ title: 'edit /Users/me/x now' })] }));
     expect(snapshot.items[0]!.title).toBe('edit [private path] now');

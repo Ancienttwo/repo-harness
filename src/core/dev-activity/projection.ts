@@ -4,7 +4,7 @@
 // Every value comes from exactly one authority. A value without one is null.
 
 import { RUNTIME_STALE_AFTER_MS, type RuntimeBadge, type RuntimeOverlay } from '../operator/runtime-status';
-import { decodeDevActivitySnapshot } from './decode';
+import { decodeDevActivitySnapshot, isPublicDevActivityText, publicDevActivityText } from './decode';
 import {
   DEV_ACTIVITY_COLUMNS,
   DEV_ACTIVITY_PROJECTION,
@@ -89,16 +89,6 @@ export interface DevActivityProjectionInput {
 const LEDGER_UNASSIGNED_OWNER = 'unassigned';
 const PLANNING_PHASES: readonly string[] = ['plan', 'plan-review'];
 const TERMINAL_PHASES: readonly string[] = ['merged', 'cleanup', 'abandoned'];
-
-/** Mask absolute-path-looking spans in free text. Paths never leave the host. */
-export function publicDevActivityText(value: string): string {
-  return value.replace(/(^|[\s("'=:])(?:\/[^\s"')]+|[A-Za-z]:[\\/][^\s"')]+)/gu, (_match, prefix: string) => `${prefix}[private path]`);
-}
-
-/** True when the value would pass the snapshot decoder's private-path guard. */
-export function isPublicDevActivityText(value: string): boolean {
-  return !/(?:^|[\s("'=:])\/\S+|[A-Za-z]:[\\/]/u.test(value);
-}
 
 const FAILED_CONCLUSIONS = new Set(['FAILURE', 'TIMED_OUT', 'CANCELLED', 'ACTION_REQUIRED', 'STARTUP_FAILURE', 'STALE']);
 const FAILED_STATES = new Set(['FAILURE', 'ERROR']);

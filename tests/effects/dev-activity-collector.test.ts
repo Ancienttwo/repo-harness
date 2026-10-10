@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { hostname, tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -8,6 +8,7 @@ import {
   collectDevActivity,
   startDevActivityCollector,
   devActivityGhPrListArgv,
+  DEV_ACTIVITY_GH_PR_LIMIT,
   DEV_ACTIVITY_GH_REPO_VIEW_ARGV,
   type DevActivityProcessRunner,
 } from '../../src/effects/dev-activity/collector';
@@ -36,7 +37,7 @@ function fakeGh(bin: string, argvLog: string): void {
 printf '%s\\n' "$*" >> ${JSON.stringify(argvLog)}
 state="$PWD/.git"
 if [ -f "$state/gh-fail" ]; then echo "fatal: secret $PWD" >&2; exit 1; fi
-if [ -f "$state/gh-sleep" ]; then exec sleep 30; fi
+if [ -f "$state/gh-sleep" ]; then trap 'touch "$state/gh-terminated"; exit 143' TERM; sleep 30 & wait $!; fi
 case "$1 $2" in
   "repo view") echo '{"nameWithOwner":"acme/widgets","defaultBranchRef":{"name":"main"}}' ;;
   "pr list")
@@ -160,6 +161,42 @@ describe('dev activity collector on real repositories', () => {
       expect(Date.now() - started).toBeLessThan(10_000);
       expect(snapshot.repositories[0]!.sources.find(source => source.kind === 'github')).toMatchObject({ status: 'unavailable', reason: 'gh_timeout' });
       expect(snapshot.repositories[0]!.sources.find(source => source.kind === 'git')).toMatchObject({ status: 'ok' });
+      // The deadline sends SIGTERM, so the child's TERM handler runs.
+      const terminated = join(f.repos.slow!, '.git', 'gh-terminated');
+      for (let waited = 0; waited < 5_000 && !existsSync(terminated); waited += 50) await Bun.sleep(50);
+      expect(existsSync(terminated)).toBe(true);
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  test('more PR rows than the limit mark GitHub unavailable instead of complete', async () => {
+    const f = fixture(['busy'], 0);
+    try {
+      const rows = Array.from({ length: DEV_ACTIVITY_GH_PR_LIMIT + 1 }, (_, index) =>
+        prJson(`feat/p${index}`, { number: index + 1, url: `https://github.com/acme/widgets/pull/${index + 1}` }));
+      writeFileSync(join(f.repos.busy!, '.git', 'gh-prs-open.json'), JSON.stringify(rows));
+      const snapshot = await collectDevActivity({ env: f.env });
+      expect(snapshot.repositories[0]!.sources.find(source => source.kind === 'github')).toMatchObject({ status: 'unavailable', reason: 'github_truncated' });
+      expect(snapshot.status).toBe('partial');
+      expect(snapshot.items.some(item => item.pull_request !== null)).toBe(false);
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  test('Decision wait clocks survive a failed read and clear after a complete one', async () => {
+    const f = fixture(['asks'], 0);
+    try {
+      const key = `${repoHarnessRepoIdFor(f.repos.asks!)}:dec_closed`;
+      const firstSeen = new Map([[key, '2026-10-01T00:00:00.000Z']]);
+      const failing: DevActivityProcessRunner = async () => ({ ok: false, code: 'failed' });
+      const failed = await collectDevActivity({ env: f.env, first_seen: firstSeen, run_process: failing });
+      expect(failed.repositories[0]!.sources.find(source => source.kind === 'decisions')).toMatchObject({ status: 'unavailable' });
+      expect(firstSeen.get(key)).toBe('2026-10-01T00:00:00.000Z');
+      const complete = await collectDevActivity({ env: f.env, first_seen: firstSeen });
+      expect(complete.repositories[0]!.sources.find(source => source.kind === 'decisions')).toMatchObject({ status: 'ok' });
+      expect(firstSeen.has(key)).toBe(false);
     } finally {
       rmSync(f.root, { recursive: true, force: true });
     }
@@ -205,9 +242,9 @@ describe('dev activity collector on real repositories', () => {
 describe('dev activity collector bounds', () => {
   test('PR queries are author-scoped and bounded to the shipped window by the collector clock', () => {
     const [open, merged, closed] = devActivityGhPrListArgv(Date.parse('2026-10-10T12:00:00.000Z')).map(argv => argv.join(' '));
-    expect(open).toBe('pr list --state open --author @me --limit 50 --json number,title,state,isDraft,headRefName,baseRefName,url,createdAt,updatedAt,mergedAt,closedAt,mergeStateStatus,reviewDecision,statusCheckRollup');
-    expect(merged).toBe('pr list --state merged --author @me --limit 50 --search merged:>=2026-10-03 --json number,title,state,isDraft,headRefName,baseRefName,url,createdAt,updatedAt,mergedAt,closedAt,mergeStateStatus,reviewDecision');
-    expect(closed).toBe('pr list --state closed --author @me --limit 50 --search closed:>=2026-10-03 is:unmerged --json number,title,state,isDraft,headRefName,baseRefName,url,createdAt,updatedAt,mergedAt,closedAt,mergeStateStatus,reviewDecision');
+    expect(open).toBe('pr list --state open --author @me --limit 201 --json number,title,state,isDraft,headRefName,baseRefName,url,createdAt,updatedAt,mergedAt,closedAt,mergeStateStatus,reviewDecision,statusCheckRollup');
+    expect(merged).toBe('pr list --state merged --author @me --limit 201 --search merged:>=2026-10-03 --json number,title,state,isDraft,headRefName,baseRefName,url,createdAt,updatedAt,mergedAt,closedAt,mergeStateStatus,reviewDecision');
+    expect(closed).toBe('pr list --state closed --author @me --limit 201 --search closed:>=2026-10-03 is:unmerged --json number,title,state,isDraft,headRefName,baseRefName,url,createdAt,updatedAt,mergedAt,closedAt,mergeStateStatus,reviewDecision');
   });
 
   test('caps repository concurrency and passes only constant argv', async () => {
