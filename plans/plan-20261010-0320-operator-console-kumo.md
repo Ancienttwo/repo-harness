@@ -181,7 +181,7 @@
 > 2026-10-10 编排者定稿。分支 `feat/console-setup-pages`，叠在 #609 上，worktree `/tmp/repo-harness-wt-console-setup`。
 
 ### 8.1 决定
-- **单一来源**：页面只显示 `repo-harness setup check` 的结论。collector 在 `operator serve` 进程内调用同一个 builder（`runInitHook`，`src/cli/commands/init-hook.ts`），不另写判断。CLI 与 UI 用同一份结果（I7）。
+- **单一来源**：页面只显示 `repo-harness setup check` 的结论。collector 的定时器在 `operator serve` 进程内，它用固定 argv 启动一个子 `bun` 进程运行同一个 builder（`buildSetupCheck`/`runInitHook`，`src/cli/commands/init-hook.ts`），不另写判断。CLI 与 UI 用同一份结果（I7）。用子进程的原因：builder 是同步的，并用 `spawnSync` 起探测，在服务进程内运行会阻塞事件循环约 20 秒。
 - **频率**：启动后一次，之后每 10 分钟一次，不重叠。单次上限 90 秒（实测约 22 秒）。超时或失败时保留上次结果并标出年龄与原因码。
 - **GET 只读缓存**：新路由 `GET /api/v1/setup`，`write:false`，登记在 `OPERATOR_ROUTES`。
 - **隐私**：服务端对每个 `detail`、remediation 文本用现有 `publicAgentConfigText`（`src/core/operator/agent-config.ts`）处理：凭据变成 `[configured]`，绝对路径变成 `[private path]`。不读 `~/.pi/agent/auth.json`、MCP token 文件。
@@ -190,7 +190,7 @@
 ### 8.2 数据
 - **Skills 结构化**：`checkSkillProjection`（`src/cli/commands/doctor.ts`）现在只产出一段文本。把逐 skill 的判断改成先产出类型化的行 `{host, name, state, ok}`，CLI 文本从这些行生成。setup check 结果带上这些行。`state` 用现有词表（missing、dangling link、wrong link、ok link、invalid path type、source missing、stale copy、unowned real directory、ok copy）。链接目标不输出。
 - **Skills 说明**：取 catalog `summary`（`assets/skill-commands/manifest.json`）。不新写 SKILL.md frontmatter 解析器。
-- **宿主**：行来自 `RouteHost`（claude、codex、pi）。claude、codex 的安装状态来自 setup check 的 `status.adapter.*` 与 `doctor.*`。Pi 没有安装检查，显示「setup check 未报告 Pi 安装状态」和一条查看命令。补 Pi 安装检查是后续项。
+- **宿主**：行来自 `RouteHost`（claude、codex、pi）。claude、codex 的安装状态来自 setup check 的 `status.adapter.*` 与 `doctor.*`。Pi 没有安装检查，显示「setup check 未报告 Pi 安装状态」，不给命令：Pi 的安装命令会写文件，只读的查看命令没有验证过。补 Pi 安装检查是后续项。
 - **Hooks**：已配置路由来自 `ROUTES`（`src/cli/hook/route-registry.ts`），按宿主分组。受管条目状态来自 status 报告的 `managedEntryCount/expectedEntryCount` 与 `projection.mismatches`。本期不显示实际命中次数：telemetry 按仓库存放、体积大，写入失败不报错，命中数只是下限。
 - **Agent fleet**：角色、model、effort、description 来自 `agents/fleet/*.md`，用现有 `parseFrontmatter`（`src/effects/terminal/task-role-profiles.ts`）。各宿主已装与缺失来自 setup check 的 `tooling.agent_fleet`。
 - **总览**：setup check 的 summary（ok / warn / fail / needs_agent / na 计数）。每条非 ok 检查一行：人话标题、状态、处理命令。
@@ -198,7 +198,7 @@
 ### 8.3 页面
 - 导航：看板 / 仓库 / **Agents** / **Skills** / **Hooks** / 架构 / 系统状态。
 - **Agents**：顶部一行总体状态（「2 项需要处理」）。宿主列表每行：图标、名称、CLI 版本（有才显示）、状态点和一句话（「已接入 · 9/9 个受管 hook」）、右侧状态或复制命令。下面是 agent fleet 角色表：角色、model、effort、说明、每个宿主是否已装。
-- **Skills**：表格：skill、说明、每个宿主的状态点。异常行在前。非 repo-harness 管理的 skill 只显示数量。
+- **Skills**：表格：skill、说明、每个宿主的状态点。异常行在前。非 repo-harness 管理的 skill 不显示：setup check 不统计它们，没有来源。
 - **Hooks**：按事件分组的路由表，列为宿主（支持 / 不支持）。每个宿主一行受管条目状态，有偏差时列出偏差项。
 - 未完成首次采集时显示「正在读取配置（约 20 秒）」。采集失败时显示原因码和 `repo-harness setup check` 命令。
 
