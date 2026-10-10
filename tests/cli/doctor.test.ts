@@ -534,29 +534,60 @@ describe('doctor skill projection', () => {
       if (ledgerDrift) problems.push(`ledger drift; inspect: repo-harness install --state; then run: ${fix}`);
       return `${projection.destination}: ${shown}${problems.length > 0 ? '; ' + problems.join('; ') : ''}`;
     };
-    const arrange: Record<string, () => void> = {
-      'ok link': () => fs.symlinkSync(f.source, f.destination),
-      'dangling link': () => fs.symlinkSync(path.join(home, 'missing'), f.destination),
-      'wrong link': () => fs.symlinkSync(root, f.destination),
-      'ok copy': () => fs.cpSync(f.source, f.destination, { recursive: true }),
-      'stale copy': () => { fs.cpSync(f.source, f.destination, { recursive: true }); fs.writeFileSync(path.join(f.destination, 'SKILL.md'), 'x\n'); },
-      'invalid path type': () => fs.writeFileSync(f.destination, 'f\n'),
-      missing: () => {},
-    };
-    for (const [state, setup] of Object.entries(arrange)) {
-      fs.rmSync(f.destination, { recursive: true, force: true });
-      setup();
+    const crossReview = 'repo-harness-cross-review';
+    const allProjections = expectedSkillProjections(catalog.catalog, packageRoot, home, 'full');
+    const codexProjection = (name: string): SkillProjection => allProjections.find(p => p.host === 'codex' && p.name === name)!;
+    const ledgerPath = path.join(home, '.repo-harness/install-state.json');
+    const cases: { state: string; name: string; ledger?: boolean; setup: (p: SkillProjection) => void }[] = [
+      { state: 'ok link', name: crossReview, setup: p => fs.symlinkSync(p.source, p.destination) },
+      { state: 'dangling link', name: crossReview, setup: p => fs.symlinkSync(path.join(home, 'missing'), p.destination) },
+      { state: 'wrong link', name: crossReview, setup: p => fs.symlinkSync(root, p.destination) },
+      { state: 'ok copy', name: crossReview, setup: p => fs.cpSync(p.source, p.destination, { recursive: true }) },
+      { state: 'stale copy', name: crossReview, setup: p => { fs.cpSync(p.source, p.destination, { recursive: true }); fs.writeFileSync(path.join(p.destination, 'SKILL.md'), 'x\n'); } },
+      { state: 'invalid path type', name: crossReview, setup: p => fs.writeFileSync(p.destination, 'f\n') },
+      { state: 'missing', name: crossReview, setup: () => {} },
+      // A staged Waza skill: a real directory that matches its staging source but has no recorded owner.
+      { state: 'unowned real directory', name: 'think', setup: p => {
+        fs.mkdirSync(p.source, { recursive: true });
+        fs.writeFileSync(path.join(p.source, 'SKILL.md'), '# think\n');
+        fs.cpSync(p.source, p.destination, { recursive: true });
+      } },
+      // The link is fine; the recorded ledger entry has the wrong type, so only the ledger line differs.
+      { state: 'ok link', name: crossReview, ledger: true, setup: p => {
+        fs.symlinkSync(p.source, p.destination);
+        fs.mkdirSync(path.dirname(ledgerPath), { recursive: true });
+        fs.writeFileSync(ledgerPath, JSON.stringify({ protocol: 2, profile: 'full', components: PROFILE_COMPONENTS.full,
+          transaction_id: 'parity-test', applied_at: new Date(0).toISOString(), previous: null,
+          ownership_manifest: [{ components: ['cross-model-acceptance'], authority: 'repo-harness-install-transaction', removal: 'managed-surfaces-only',
+            path: p.destination, type: 'directory-copy', content_hash: hashManagedTree(p.source), managed_marker: 'transaction-created-directory', symlink_target: null }] }));
+      } },
+      // Last: this case deletes the fixture source for the rest of the test.
+      { state: 'source missing', name: crossReview, setup: p => { fs.cpSync(p.source, p.destination, { recursive: true }); fs.rmSync(p.source, { recursive: true }); } },
+    ];
+    for (const { state, name, ledger, setup } of cases) {
+      for (const projection of allProjections) fs.rmSync(projection.destination, { recursive: true, force: true });
+      fs.rmSync(ledgerPath, { force: true });
+      setup(codexProjection(name));
+      const driftedDestination = ledger ? codexProjection(name).destination : null;
       for (const target of ['both', 'codex', 'claude'] as const) {
         const result = checkSkillProjection(target, f.env);
         const rows = result.skills!;
-        const projections = expectedSkillProjections(catalog.catalog, packageRoot, home, 'full')
-          .filter(projection => target === 'both' || projection.host === target);
+        const projections = allProjections.filter(projection => target === 'both' || projection.host === target);
         expect(rows.map(row => `${row.host}:${row.name}`)).toEqual(projections.map(p => `${p.host}:${p.name}`));
-        expect(rows.find(row => row.host === 'codex' && row.name === 'repo-harness-cross-review')?.state ?? state).toBe(state as never);
-        for (const row of rows) expect(row.ok).toBe(row.state.startsWith('ok '));
-        const expected = [...rows.map((row, index) => frozenLine(projections[index]!, row.state, false)),
-          'install ledger: missing; run: repo-harness install --profile full'];
-        expect(result.detail).toBe(expected.join('\n'));
+        expect(rows.find(row => row.host === 'codex' && row.name === name)?.state ?? state).toBe(state as never);
+        rows.forEach((row, index) => {
+          const drifted = projections[index]!.destination === driftedDestination;
+          expect(row.ok).toBe(row.state.startsWith('ok ') && !drifted);
+        });
+        const skillLines = rows.map((row, index) => frozenLine(projections[index]!, row.state, projections[index]!.destination === driftedDestination));
+        const detailLines = result.detail.split('\n');
+        expect(detailLines.slice(0, rows.length)).toEqual(skillLines);
+        expect(detailLines).toHaveLength(rows.length + 1);
+        if (ledger) {
+          expect(detailLines[rows.length]).toContain('"surface_drift":["' + driftedDestination + '"]');
+        } else {
+          expect(detailLines[rows.length]).toBe('install ledger: missing; run: repo-harness install --profile full');
+        }
         expect(result.status).toBe('warn');
         expect(JSON.stringify(rows)).not.toContain(home);
       }

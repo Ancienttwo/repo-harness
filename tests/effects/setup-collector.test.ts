@@ -31,8 +31,8 @@ function snapshot(collectedAt: string): SetupSnapshotV1 {
 
 const ok = (value: unknown): SetupProcessResult => ({ ok: true, stdout: `${JSON.stringify(value)}\n` });
 
-async function until(condition: () => boolean): Promise<void> {
-  for (let attempt = 0; attempt < 500 && !condition(); attempt++) await Bun.sleep(5);
+async function until(condition: () => boolean, limit_ms = 2_500): Promise<void> {
+  for (let attempt = 0; attempt < limit_ms / 5 && !condition(); attempt++) await Bun.sleep(5);
   expect(condition()).toBe(true);
 }
 
@@ -64,11 +64,16 @@ const sleeper = spawn('sleep', ['30'], { stdio: 'ignore' });
 writeFileSync(${JSON.stringify(pidFile)}, String(sleeper.pid));
 setInterval(() => {}, 1000);
 `);
+      const deadline_ms = 8_000;
       const started = Date.now();
-      const result = await runSetupProcess([script], { cwd: dir, env: process.env, timeout_ms: 1_500, signal: new AbortController().signal });
-      expect(result).toEqual({ ok: false, code: 'timeout' });
-      expect(Date.now() - started).toBeLessThan(10_000);
+      const pending = runSetupProcess([script], { cwd: dir, env: process.env, timeout_ms: deadline_ms, signal: new AbortController().signal });
+      // The child writes its grandchild pid after startup; wait for it while the call is still pending.
+      await until(() => existsSync(pidFile) && readFileSync(pidFile, 'utf8') !== '', 5_000);
       const grandchild = Number(readFileSync(pidFile, 'utf8'));
+      expect(alive(grandchild)).toBe(true);
+      const result = await pending;
+      expect(result).toEqual({ ok: false, code: 'timeout' });
+      expect(Date.now() - started).toBeLessThan(deadline_ms + 5_000);
       await until(() => !alive(grandchild));
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
