@@ -20,11 +20,39 @@ function fixture(): string {
   return root;
 }
 
-function env(root: string, host: 'claude' | 'codex' = 'claude'): NodeJS.ProcessEnv {
+function env(root: string, host: 'claude' | 'codex' | 'pi' = 'claude'): NodeJS.ProcessEnv {
   return { ...process.env, HOOK_REPO_ROOT: root, HOOK_HOST: host, REPO_HARNESS_WORKFLOW_PROFILE: 'routine' };
 }
 
 describe('hook runtime typed dispatch', () => {
+  test('Pi JSON maps guard decisions and refuses host-specific routes', () => {
+    const root = fixture();
+    try {
+      const allowed = runHook({ event: 'PreToolUse', routeId: 'edit', cwd: root, env: env(root, 'pi'), format: 'json', stdio: 'ignore',
+        input: JSON.stringify({ tool_name: 'Write', tool_input: { file_path: 'README.md', content: 'safe' } }) });
+      expect(allowed.json).toMatchObject({ protocol: 1, host: 'pi', exit_code: 0, decision: 'allow', reason: 'ok' });
+      const refused = runHook({ event: 'PreToolUse', routeId: 'edit', cwd: root, env: env(root, 'pi'), format: 'json', stdio: 'ignore',
+        input: JSON.stringify({ tool_name: 'Write', tool_input: { file_path: '_ops/private', content: 'forbidden' } }) });
+      expect(refused.json).toMatchObject({ host: 'pi', exit_code: 2, decision: 'block' });
+      expect(refused.json?.diagnostics).toContain('OpsPrivateGuard');
+      expect(runHook({ event: 'PreToolUse', routeId: 'subagent', cwd: root, env: env(root, 'pi'), format: 'json', stdio: 'ignore' }).json)
+        .toMatchObject({ decision: 'block', reason: 'unsupported-host-route', exit_code: 2 });
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
+  test('Pi JSON keeps the existing pipe and ignore fd contract', () => {
+    const root = fixture();
+    try {
+      for (const stdio of ['pipe', 'ignore']) {
+        const script = `import { runHook } from ${JSON.stringify(join(import.meta.dir, '../src/cli/hook/runtime.ts'))};
+          const result = runHook({ event: 'PreToolUse', routeId: 'edit', cwd: ${JSON.stringify(root)}, format: 'json', stdio: ${JSON.stringify(stdio)},
+            input: JSON.stringify({ tool_name: 'Write', tool_input: { file_path: 'README.md', content: 'safe' } }) });
+          if (result.json?.decision !== 'allow') process.exit(1);`;
+        expect(execFileSync('bun', ['-e', script], { cwd: root, env: env(root, 'pi'), encoding: 'utf8' })).toBe('');
+      }
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
   test('passes host payload once to the command observer and records its result', () => {
     const root = fixture();
     try {

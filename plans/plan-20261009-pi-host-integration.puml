@@ -1,0 +1,34 @@
+@startuml
+' Snapshot: 2026-10-09 Asia/Singapore
+' Source base: 98c30ab6228b94f5e46c8cc3290de281eb0e4a99
+' Dependency commit: 981a50b871f9b5238a7bca72d031e0927d397769
+skinparam shadowing false
+skinparam roundCorner 8
+skinparam defaultFontName SansSerif
+skinparam ArrowColor #475569
+skinparam rectangleBorderColor #475569
+skinparam rectangleFontColor #172033
+skinparam backgroundColor #FFFFFF
+left to right direction
+
+title Pi host integration: observed progress
+
+rectangle "D1: OAR 0.45.1 / Pi 1.1.0\nImplemented and verified\nLocal commit: 981a50b8\n22 affected tests passed" as deps #DCFCE7
+rectangle "H1: native Pi 1.1.0 package\nImplemented\n16 SDK fixture cases\nInstalled Node loader and live provider passed\nIndependent static advisory PASS\nActual model identity unconfirmed" as host #FEF3C7
+rectangle "Pi program status\nSeparate existing plan\nLive receiver chain unverified\nNot required for H1" as status #E2E8F0
+rectangle "PR delivery\nPR #607: ready for review\nFull suite passed at 03fe5937\nFinal verification is recorded in the PR\nMain and release need separate approval" as delivery #FEF3C7
+
+deps --> host : implementation baseline
+host --> delivery : review candidate
+host .. status : separate scope
+
+note bottom of host
+  Pi events -> extension -> Bun hook bundle
+  Existing typed handlers remain the rule owner.
+  Pi 1.1.0's native path resolver binds the actual tool target.
+  Error results keep their original observation binding.
+  Automatic architecture projection remains human-action-required.
+  First release covers edit/write through Pi's tool pipeline.
+  Shell and arbitrary extension writes remain outside that coverage.
+end note
+@enduml

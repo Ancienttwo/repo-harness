@@ -20,6 +20,7 @@ import {
   OPERATOR_HEALTH_PATH,
   OPERATOR_NOTIFY_STATUS_PATH,
   OPERATOR_PIPELINES_PATH,
+  OPERATOR_RUNTIME_STATUS_PATH,
   OPERATOR_ROUTES,
   OPERATOR_STATIC_ASSET_PATTERN,
   OPERATOR_TASK_DIFF_ROUTE,
@@ -82,6 +83,7 @@ describe('operator structural write boundary', () => {
       'task_context',
       'task_activity',
       'task_diff',
+      'runtime_status',
       'pipelines',
       'notify_status',
       'architecture_modules',
@@ -96,6 +98,7 @@ describe('operator structural write boundary', () => {
     expect(patterns.get('task_context')).toBe(OPERATOR_TASK_CONTEXT_ROUTE.source);
     expect(patterns.get('task_activity')).toBe(OPERATOR_TASK_ACTIVITY_ROUTE.source);
     expect(patterns.get('task_diff')).toBe(OPERATOR_TASK_DIFF_ROUTE.source);
+    expect(patterns.get('runtime_status')).toBe(OPERATOR_RUNTIME_STATUS_PATH);
     expect(patterns.get('pipelines')).toBe(OPERATOR_PIPELINES_PATH);
     expect(patterns.get('notify_status')).toBe(OPERATOR_NOTIFY_STATUS_PATH);
     expect(patterns.get('architecture_modules')).toBe(OPERATOR_ARCHITECTURE_MODULES_ROUTE.source);

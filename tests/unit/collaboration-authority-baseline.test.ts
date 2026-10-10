@@ -500,6 +500,11 @@ const DELIBERATELY_EXCLUDED: readonly ExcludedModule[] = [
     evidence: 'operator transport view of the collaboration plane (D1): a redacting projection with no store, no agent reader, and no field it decides rather than copies',
   },
   {
+    module: 'src/core/operator/runtime-capture.ts',
+    fails: ['C-1'],
+    evidence: 'native runtime observation plane: capture writes a derived session or terminal status cache, and the native reader projects it into the read-only runtime HTTP route. The protocol owns no Task/Claim, Lease, Publication, Acceptance or Delegation wire identity',
+  },
+  {
     /**
      * The schema 1 -> 2 backlog migration receipt. It fails C-1 because a
      * migration receipt is not a wire identity on Task/Claim, Lease,

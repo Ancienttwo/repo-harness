@@ -42,6 +42,7 @@ if [[ "$lane" == affected ]]; then
     BUN_TEST_TIMEOUT_MS=60000
     BUN_TEST_MAX_CONCURRENCY=1
     BUN_TEST_JOBS="${BUN_TEST_JOBS:-8}"
+    bun run build:hook-bundle
     bun run build:oar-hosts
     run_bun_tests
   else
@@ -96,6 +97,7 @@ if [[ "$lane" != governance ]]; then
   fi
 
   echo "[ci] tests"
+  bun run build:hook-bundle
   bun run build:oar-hosts
   run_bun_tests
 
