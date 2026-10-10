@@ -39,9 +39,11 @@ describe("herdr runtime pin has one source of truth", () => {
     expect(herdr).toBeDefined();
     expect(herdr.min_version).toMatch(/^\d+\.\d+\.\d+$/);
     expect(herdr.min_version).toBe("0.9.3");
-    const asset = herdr.release_assets?.["linux-x86_64"];
-    expect(asset?.sha256).toMatch(/^[0-9a-f]{64}$/);
-    expect(asset?.url).toContain(`/v${herdr.min_version}/`);
+    for (const platform of ['linux-x86_64', 'macos-aarch64', 'macos-x86_64']) {
+      const asset = herdr.release_assets?.[platform];
+      expect(asset?.sha256).toMatch(/^[0-9a-f]{64}$/);
+      expect(asset?.url).toContain(`/v${herdr.min_version}/herdr-${platform}`);
+    }
   });
 
   test("the CI install step reads the pin instead of restating it", () => {
@@ -56,7 +58,15 @@ describe("herdr runtime pin has one source of truth", () => {
     expect(step).toContain(".ai/harness/policy.json");
     expect(step).toContain(".external_tooling.herdr.min_version");
     expect(step).toContain("sha256sum --check");
-    expect(step).toContain("herdr --version");
+    expect(step).toContain('"$bin/herdr" --version');
+    expect(step).toContain('shasum -a 256 --check');
+    expect(step).toContain('GITHUB_PATH');
+    const homeSteps = workflow.jobs['test-home-isolation']!.steps as Array<{ name?: string; uses?: string; if?: string }>;
+    const install = homeSteps.findIndex(step => step.uses === './.github/actions/install-pinned-herdr');
+    const native = homeSteps.findIndex(step => step.name === 'Run native review acceptance tests');
+    expect(install).toBeGreaterThan(-1);
+    expect(install).toBeLessThan(native);
+    expect(homeSteps[install]!.if).toBe("matrix.os == 'macos-latest'");
     // No hardcoded version, release tag, or checksum may survive in the step.
     expect(step).not.toMatch(/v?\d+\.\d+\.\d+/);
     expect(step).not.toMatch(/[0-9a-f]{64}/);

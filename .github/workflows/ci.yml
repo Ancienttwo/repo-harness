@@ -69,6 +69,9 @@ jobs:
         run: |
           source scripts/lib/ci-run-tests.sh
           run_bun_test_file tests/preload-home-isolation.test.ts
+      - name: Install pinned Herdr runtime
+        if: matrix.os == 'macos-latest'
+        uses: ./.github/actions/install-pinned-herdr
       - name: Run native review acceptance tests
         if: matrix.os == 'macos-latest'
         shell: bash

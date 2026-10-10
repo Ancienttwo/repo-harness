@@ -168,6 +168,11 @@ describe('single affected verification and daily fallback', () => {
     });
     expect(job.steps.find((step: any) => step.uses === 'actions/setup-node@v4').with['node-version']).toBe('24');
     expect(job.steps.some((step: any) => step.uses === 'actions/download-artifact@v4')).toBe(false);
+    const install = job.steps.filter((step: any) => step.name === 'Install pinned Herdr runtime');
+    expect(install).toHaveLength(1);
+    expect(install[0].if).toBe("matrix.os == 'macos-latest'");
+    expect(install[0].uses).toBe('./.github/actions/install-pinned-herdr');
+    expect(job.steps.indexOf(install[0])).toBeLessThan(job.steps.findIndex((step: any) => step.name === 'Run native review acceptance tests'));
     const native = job.steps.filter((step: any) => step.name === 'Run native review acceptance tests');
     expect(native).toHaveLength(1);
     expect(native[0].if).toBe("matrix.os == 'macos-latest'");
