@@ -1,15 +1,158 @@
 import { expect, test } from 'bun:test';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, unlinkSync, writeFileSync } from 'fs';
 import { basename, join } from 'path';
 import { execFileSync, spawn, spawnSync } from 'child_process';
 import { createHash } from 'crypto';
 import { buildTaskAgentCommand } from '../../src/cli/commands/task-agent';
 import { assertCreated, collectTaskResult, harnessCapabilities, processIdentity, processProofAlive, startTaskAgent, taskSessionDirectory } from '../../src/effects/terminal/task-session';
 import { validateHerdrEndpoint } from '../../src/effects/terminal/herdr';
+import { reconcileTaskRequest } from '../../src/effects/terminal/task-request-readback';
+import { canonicalize } from '../../src/core/evidence/canonical-json';
 
 test('public task-agent command has only task participant operations, never server stop', () => {
-  expect(buildTaskAgentCommand().commands.map(command => command.name())).toEqual(['start', 'send', 'result', 'collect', 'status', 'history', 'read', 'close', 'cancel']);
+  expect(buildTaskAgentCommand().commands.map(command => command.name())).toEqual(['start', 'send', 'result', 'collect', 'status', 'history', 'read', 'reconcile', 'close', 'cancel']);
   expect(buildTaskAgentCommand().commands.some(command => command.name().includes('server'))).toBe(false);
+});
+
+function withReadbackFixture(run: (fixture: ReturnType<typeof readbackFixture>) => void) {
+  const root = realpathSync(mkdtempSync('/tmp/rb-'));
+  try { run(readbackFixture(root)); } finally { rmSync(root, { recursive: true, force: true }); }
+}
+
+// Saved collaboration artifacts are synthetic. No live Herdr or model is claimed.
+function readbackFixture(root: string) {
+  const git = (args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
+  git(['init', '-q', '-b', 'main']);
+  const commit = () => git(['-c', 'user.name=fixture', '-c', 'user.email=fixture@localhost', 'commit', '--allow-empty', '-qm', 'fixture']);
+  commit();
+  const sha = git(['rev-parse', 'HEAD']), task = 'readback-task', role = 'deep-worker';
+  const dir = taskSessionDirectory(root, task, role); mkdirSync(dir, { recursive: true });
+  const outbox = join(root, '.ai/harness/runs/task-agent-outbox', basename(dir)); mkdirSync(outbox, { recursive: true });
+  const identity = { pid: process.pid, identity: processIdentity(process.pid) };
+  const binding = { protocol: 2, repository_id: realpathSync(join(root, '.git')), execution_root: root, runtime: 'herdr', task, role,
+    harness_kind: 'fixture', endpoint: { session: 'fixture-unreachable', home: root }, capabilities: harnessCapabilities('fixture', 'fixture-proof'),
+    max_requests: 2, pane_id: 'fixture-pane', terminal_id: 'fixture-terminal', workspace_id: 'fixture-workspace', shell: identity,
+    agent_name: 'fixture-worker', provider: { ...identity, ownership: { disposition: 'attached' } }, host: null, ownership: { disposition: 'attached' } };
+  const save = (path: string, value: unknown) => writeFileSync(path, JSON.stringify(value));
+  save(join(dir, 'binding.json'), binding);
+  const request = { protocol: 2, task, role, round: 1, request_id: 'stable-operation',
+    context_sha256: 'sha256:' + createHash('sha256').update('context').digest('hex'),
+    context_ref: join(outbox, 'context-1.txt'), source_ref: join(root, 'context.txt'), result_ref: join(outbox, 'result-1.json'),
+    result_contract: { required_fields: ['request_id', 'context_sha256', 'value'], atomic_write: 'temp_rename',
+      submission: { command: 'repo-harness task-agent result', repo: root, task, role, round: 1 } } };
+  save(join(dir, 'request-1.json'), request); writeFileSync(request.context_ref, 'context');
+  save(join(dir, 'delivery-1.json'), { request_id: request.request_id, state: 'unknown', error: 'lost ACK' });
+  const read = () => reconcileTaskRequest(root, task, role, request.request_id, sha);
+  return { root, dir, binding, request, sha, task, role, git, commit, save, read };
+}
+
+test('request readback keeps unknown delivery and never creates a new round or collected result', () => withReadbackFixture(f => {
+  const before = readFileSync(join(f.dir, 'request-1.json'));
+  const first = f.read();
+  expect(first).toMatchObject({ request_id: 'stable-operation', round: 1, delivery: 'unknown', provider: 'alive',
+    result_status: 'pending', result: null, acceptance_authorized: false, result_head_binding: 'unverified' });
+  expect(f.read()).toEqual(first);
+  expect(readFileSync(join(f.dir, 'request-1.json'))).toEqual(before);
+  expect(existsSync(join(f.dir, 'request-2.json'))).toBe(false);
+  expect(existsSync(join(f.dir, 'collected-1.json'))).toBe(false);
+  const result = { request_id: f.request.request_id, context_sha256: f.request.context_sha256, value: { checks: 'fixture only' } };
+  f.save(f.request.result_ref, result);
+  expect(f.read().result).toEqual(result);
+  const evidence = f.read().evidence.result!;
+  expect(evidence.ref).toBe(f.request.result_ref);
+  expect(evidence.sha256).toBe('sha256:' + createHash('sha256').update(canonicalize(JSON.parse(readFileSync(evidence.ref, 'utf8')))).digest('hex'));
+  expect(existsSync(join(f.dir, 'collected-1.json'))).toBe(false);
+}));
+
+test('readback CLI returns the real saved request projection', () => withReadbackFixture(f => {
+  const result = spawnSync(process.execPath, [new URL('../../src/cli/index.ts', import.meta.url).pathname,
+    'task-agent', 'reconcile', '--repo', f.root, '--task', f.task, '--role', f.role,
+    '--request-id', f.request.request_id, '--expected-head', f.sha], { encoding: 'utf8' });
+  expect(result.status, result.stderr).toBe(0);
+  expect(JSON.parse(result.stdout)).toEqual(f.read());
+}));
+
+test('readback refuses unknown and duplicate request IDs', () => withReadbackFixture(f => {
+  expect(() => reconcileTaskRequest(f.root, f.task, f.role, 'missing', f.sha)).toThrow('request_not_found');
+  f.save(join(f.dir, 'request-2.json'), { ...f.request, round: 2,
+    context_ref: join(f.root, '.ai/harness/runs/task-agent-outbox', basename(f.dir), 'context-2.txt'),
+    result_ref: join(f.root, '.ai/harness/runs/task-agent-outbox', basename(f.dir), 'result-2.json') });
+  expect(f.read).toThrow('request_id_conflict');
+}));
+
+test('HEAD drift refuses an old query fence and does not assert result candidate provenance', () => withReadbackFixture(f => {
+  // Make a distinct commit without relying on clock granularity.
+  f.git(['-c', 'user.name=fixture', '-c', 'user.email=fixture@localhost', 'commit', '--allow-empty', '-qm', 'changed candidate']);
+  expect(f.read).toThrow('head_stale');
+  const current = f.git(['rev-parse', 'HEAD']);
+  expect(reconcileTaskRequest(f.root, f.task, f.role, f.request.request_id, current).result_head_binding).toBe('unverified');
+  writeFileSync(f.request.context_ref, 'changed context');
+  expect(() => reconcileTaskRequest(f.root, f.task, f.role, f.request.request_id, current)).toThrow('context_identity_mismatch');
+}));
+
+test('forged result and delivery identity fail closed; host results stay protected', () => withReadbackFixture(f => {
+  f.save(f.request.result_ref, { request_id: 'forged', context_sha256: f.request.context_sha256, value: 'PASS' });
+  expect(f.read).toThrow('result_identity_mismatch');
+  f.save(join(f.dir, 'binding.json'), { ...f.binding, host: f.binding.provider });
+  expect(f.read()).toMatchObject({ result_status: 'host_authority', result: null, evidence: { result: null } });
+  f.save(join(f.dir, 'delivery-1.json'), { request_id: 'forged', state: 'accepted' });
+  expect(f.read).toThrow('delivery_identity_mismatch');
+}));
+
+test('provider identity loss is an interrupted observation, never success', () => withReadbackFixture(f => {
+  f.save(join(f.dir, 'binding.json'), { ...f.binding, provider: { ...f.binding.provider, identity: 'replaced process' } });
+  expect(f.read()).toMatchObject({ provider: 'identity_unavailable', result_status: 'pending', acceptance_authorized: false });
+}));
+
+// This deterministic observation seam changes only disposable fixture state.
+// Real ps liveness remains covered by the original and readback lifecycle tests.
+test.each(['context', 'head'] as const)('readback refuses %s changed during provider observation', change => withReadbackFixture(f => {
+  const bin = join(f.root, 'bin'); mkdirSync(bin);
+  const previousPath = process.env.PATH;
+  const mutation = change === 'context'
+    ? `require('fs').writeFileSync(${JSON.stringify(f.request.context_ref)}, 'changed during read');`
+    : `require('child_process').execFileSync('git', ['-c','user.name=fixture','-c','user.email=fixture@localhost','commit','--allow-empty','-qm','candidate changed during read'], {cwd:${JSON.stringify(f.root)}});`;
+  const columns = f.binding.provider.identity.split(/\s+/).slice(0, 7).join(' ');
+  writeFileSync(join(bin, 'ps'), `#!${process.execPath}\n${mutation}\nprocess.stdout.write(process.argv.at(-1).endsWith('stat=') ? ${JSON.stringify(columns + ' S\n')} : ${JSON.stringify(f.binding.provider.identity + '\n')});\n`);
+  chmodSync(join(bin, 'ps'), 0o700);
+  try {
+    process.env.PATH = bin + ':' + previousPath;
+    expect(f.read).toThrow(change === 'context' ? 'readback_changed' : 'head_stale');
+  } finally { process.env.PATH = previousPath; }
+}));
+
+test('missing delivery stays unknown and malformed query inputs fail before lookup', () => withReadbackFixture(f => {
+  unlinkSync(join(f.dir, 'delivery-1.json'));
+  expect(f.read()).toMatchObject({ delivery: 'unknown', evidence: { delivery: null } });
+  for (const requestId of ['', '../request', 'x'.repeat(129)]) {
+    expect(() => reconcileTaskRequest(f.root, f.task, f.role, requestId, f.sha)).toThrow('request_id_invalid');
+  }
+  for (const sha of ['', 'main', f.sha.slice(1)]) {
+    expect(() => reconcileTaskRequest(f.root, f.task, f.role, f.request.request_id, sha)).toThrow('expected_head_invalid');
+  }
+  for (const max of [0, 101, 1.5]) {
+    f.save(join(f.dir, 'binding.json'), { ...f.binding, max_requests: max });
+    expect(f.read).toThrow('binding_invalid');
+  }
+  f.save(join(f.dir, 'binding.json'), { ...f.binding, max_requests: 100 });
+  expect(f.read().request_id).toBe(f.request.request_id);
+}));
+
+test('an exited provider leaves a pending request pending', async () => {
+  const root = realpathSync(mkdtempSync('/tmp/rb-exit-'));
+  const child = spawn(process.execPath, ['-e', 'console.log("ready");setInterval(()=>{},1000)'], { stdio: ['ignore', 'pipe', 'ignore'] });
+  try {
+    await new Promise<void>((resolve, reject) => { child.once('error', reject); child.stdout!.once('data', () => resolve()); });
+    const proof = { pid: child.pid!, identity: processIdentity(child.pid!) };
+    const f = readbackFixture(root);
+    const exited = new Promise<void>(resolve => child.once('exit', () => resolve()));
+    child.kill('SIGTERM'); await exited;
+    f.save(join(f.dir, 'binding.json'), { ...f.binding, provider: { ...f.binding.provider, ...proof } });
+    expect(f.read()).toMatchObject({ provider: 'exited', result_status: 'pending', result: null, acceptance_authorized: false });
+  } finally {
+    if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM');
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 test('attached ownership cannot be signalled and real harness evidence stays unverified', () => {
   expect(() => assertCreated({ disposition: 'attached' })).toThrow('attached_object_not_closeable');

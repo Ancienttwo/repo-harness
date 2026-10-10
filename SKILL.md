@@ -21,6 +21,9 @@ Only an agent inside a Herdr pane may run those control commands.
 4. **verify** — use `repo-harness-check` to assess recorded checks and risk.
 5. **handoff** — read `references/handoff.md` only when work must resume later.
 
+For a lost worker response or Bot control integration, read
+`references/bot-control.md`. Inspect the saved request before any retry.
+
 Keep main publication, deletion, credentials/permissions and release/production
 within their separate authorization boundaries. Ordinary work needs scoped
 changes, verification and a PR description. Load architecture or command details

@@ -20,6 +20,7 @@
     "install.ps1",
     "interfaces/",
     "references/handoff.md",
+    "references/bot-control.md",
     "references/workflow-packaging-rubric.md",
     "scripts/",
     "src/",
