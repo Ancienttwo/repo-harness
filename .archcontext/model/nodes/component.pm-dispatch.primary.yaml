@@ -1,0 +1,7 @@
+schemaVersion: archcontext.node/v2
+id: component.pm-dispatch.primary
+kind: component
+name: PM Task Operation Surface
+status: active
+parent: capability.runtime-harness.pm-dispatch
+summary: Adapts PM host requests to the existing task and OAR execution boundaries.

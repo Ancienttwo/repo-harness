@@ -7,6 +7,10 @@ when_to_use: "repo-harness"
 # repo-harness
 
 Bot entrypoint. Resolve scope, worker ownership and the authorized outcome.
+When acting as a PM Bot, use [the shared PM boundary](references/pm-boundary.md).
+The PM coordinates work. Coding agents own source edits, tests and repairs.
+This role applies to Grok, Hermes, Dot and other Bot hosts. It does not restrict
+an explicitly assigned coding worker or a direct development session.
 Use `repo-harness state resolve --json` when active harness state is needed.
 Treat the returned state as authority; load only the files it names.
 Load the required `herdr` skill before controlling Herdr panes or agents.

@@ -28,6 +28,7 @@ import { buildInitHookCommand, buildSetupCommand, formatInitHook, runInitHook } 
 import { formatMigratePlan, runMigrate } from './commands/migrate';
 import { buildReviewCommand } from './commands/review';
 import { buildTaskAgentCommand } from './commands/task-agent';
+import { buildPmCommand } from './commands/pm';
 import { buildUpgradeCommand } from './commands/upgrade';
 import { planLegacyLeftovers, formatLegacyLeftoverSummary } from '../core/upgrade/legacy-inventory';
 import { buildToolsCommand } from './commands/tools';
@@ -813,6 +814,7 @@ export function buildProgram(): Command {
   program.command('claude-review', { hidden: true }).helpOption(false).allowUnknownOption().argument('[args...]')
     .action(() => { console.error('UPGRADE_REQUIRED: claude-review is retired; use repo-harness review. Drain old sessions with the previous version and archive old receipts.'); process.exitCode = 1; });
   program.addCommand(buildTaskAgentCommand());
+  program.addCommand(buildPmCommand());
   program.addCommand(buildPipelineCommand());
   program.addCommand(buildModuleCommand());
   program.addCommand(buildSetupCommand());

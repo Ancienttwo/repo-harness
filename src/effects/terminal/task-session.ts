@@ -489,7 +489,10 @@ export async function startTaskAgent(repoRoot: string, spec: TaskAgentSpec, effe
 export async function startTaskApplicationHost(repoRoot: string, spec: TaskAgentSpec,
   command: readonly string[], ready: () => Promise<void>): Promise<TaskPaneBinding> {
   if (spec.args.length !== 0 || command.length !== 4 || !isAbsolute(command[0]!) || command[1] !== '--disable-sigusr1'
-    || command[2] !== realpathSync(join(import.meta.dir, '../../../dist/oar-review-host.js')) || !isAbsolute(command[3]!)
+    || !['oar-review-host.js', 'oar-coding-host.js'].some(bundle => {
+      const path = join(import.meta.dir, '../../../dist', bundle);
+      return existsSync(path) && command[2] === realpathSync(path);
+    }) || !isAbsolute(command[3]!)
     || command.some(arg => /[\r\n]/.test(arg))) throw new Error('task_agent_application_host_command_invalid');
   return startTaskAgent(repoRoot, spec, { start: async (endpoint, name, pane, kind) => {
     mutate(endpoint, ['pane', 'run', pane, ...command]);
@@ -593,7 +596,9 @@ export async function submitTaskResult(repoRoot: string, task: string, role: str
     return result;
   });
 }
-export async function sendTaskRequest(repoRoot: string, task: string, role: string, contextRef: string, contextPolicy: 'repeatable' | 'changed_only' = 'repeatable', applicationDelivery?: (request: TaskRequest) => Promise<void>): Promise<TaskRequest> {
+export async function sendTaskRequest(repoRoot: string, task: string, role: string, contextRef: string, contextPolicy: 'repeatable' | 'changed_only' = 'repeatable', applicationDelivery?: (request: TaskRequest) => Promise<void>,
+  /** Internal fixture barrier. It is never accepted from CLI or PM input. */
+  publicationBoundary?: (request: TaskRequest) => Promise<void>): Promise<TaskRequest> {
   const repository = taskRepository(repoRoot); const root = repository.primary_root; const { dir, binding } = readTaskAgent(root, task, role);
   if (binding.host) throw new Error('task_agent_host_domain_delivery_required');
   return locked(root, dir, async () => {
@@ -619,6 +624,7 @@ export async function sendTaskRequest(repoRoot: string, task: string, role: stri
         submission: { command: 'repo-harness task-agent result', repo: binding.execution_root, task, role, round } } };
     const requestPath = join(dir, `request-${round}.json`);
     writeSessionArtifact(requestPath, request);
+    if (publicationBoundary) await publicationBoundary(request);
     writeSessionBytes(request.context_ref, content);
     beginSessionRound(dir, round, { request_id: request.request_id, provider: binding.provider });
     // Once this marker exists, a crash/nonzero/timeout can mean input was sent.
@@ -644,6 +650,24 @@ async function stopCreatedProcess(proof: OwnedProcess, guard: () => void): Promi
     while (processProofAlive(proof) && Date.now() < deadline) await Bun.sleep(50);
   }
   return !processProofAlive(proof);
+}
+/** All task-agent cleanup paths must wait for the OAR owner's disposal. */
+async function disposeCodingApplication(dir: string, binding: TaskPaneBinding): Promise<boolean> {
+  const control = join(dir, 'coding-host');
+  if (!existsSync(join(control, 'spec.json'))) return true;
+  const ready = readSessionArtifact<{ pid: number; session_id: string }>(join(control, 'ready.json'));
+  if (binding.host !== null || ready.pid !== binding.provider.pid || !ready.session_id) throw new Error('task_agent_application_host_identity_lost');
+  const disposed = join(control, 'disposed.json');
+  if (!existsSync(disposed)) {
+    if (!processProofAlive(binding.provider)) return false;
+    assertTaskBinding(binding);
+    if (!existsSync(join(control, 'close.request'))) writeSessionArtifact(join(control, 'close.request'), { task: binding.task, role: binding.role });
+    try { await waitSessionArtifact(disposed, Date.now() + 10_000, () => assertProcessProof(binding.provider)); }
+    catch { return false; }
+  }
+  const receipt = readSessionArtifact<{ disposed: boolean; session_id: string }>(disposed);
+  if (receipt.disposed !== true || receipt.session_id !== ready.session_id) throw new Error('task_agent_application_disposal_invalid');
+  return true;
 }
 export interface TaskCleanupResult { status: 'closed' | 'cleanup_pending'; pids: number[]; reason?: string }
 interface UnboundCleanupReceipt { intent_id: string; pane_id: string; terminal_id: string; pids: number[] }
@@ -682,12 +706,15 @@ async function closeUnboundTaskStart(dir: string, task: string, role: string, mo
     const proof = readSessionArtifact<TaskPaneBinding>(join(dir, 'provider-created.json'));
     assertCreated(proof.provider.ownership);
     if (proof.provider.ownership.intent_id !== intent.intent_id || proof.pane_id !== pane.pane_id || proof.terminal_id !== pane.terminal_id) throw new Error('task_agent_start_identity_unknown');
+    if (!await disposeCodingApplication(dir, proof)) return { status: 'cleanup_pending', pids: processProofAlive(proof.provider) ? [proof.provider.pid] : [], reason: 'oar_disposal_unproven' };
     const stopped = await stopCreatedProcess(proof.provider, () => {
       if (startPanePresent(intent.spec.endpoint, pane)) assertTaskBinding(proof);
       else assertProcessProof(proof.provider); // Reparenting doesn't change birth/executable identity.
     });
     if (!stopped) return { status: 'cleanup_pending', pids: [proof.provider.pid] };
   }
+  if (existsSync(join(dir, 'coding-host/spec.json')) && existsSync(join(dir, 'launch-intent.json'))
+    && !existsSync(join(dir, 'provider-created.json'))) return { status: 'cleanup_pending', pids: [], reason: 'oar_unbound_disposal_unproven' };
   const receiptPath = join(dir, 'unbound-cleanup.json');
   let receipt: UnboundCleanupReceipt;
   if (existsSync(receiptPath)) {
@@ -743,6 +770,7 @@ async function cleanupTaskAgent(repoRoot: string, task: string, role: string, mo
       assertTaskBinding(binding, true);
       writeSessionArtifact(join(dir, 'close-intent.json'), { task, role, provider: binding.provider, mode });
     }
+    if (!await disposeCodingApplication(dir, binding)) return { status: 'cleanup_pending', pids: processProofAlive(binding.provider) ? [binding.provider.pid] : [], reason: 'oar_disposal_unproven' };
     if (!await stopCreatedProcess(binding.provider, () => assertTaskBinding(binding))) return { status: 'cleanup_pending', pids: [binding.provider.pid] };
     const deadline = Date.now() + 5000;
     while (Date.now() < deadline) {
