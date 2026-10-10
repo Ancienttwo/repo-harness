@@ -614,6 +614,7 @@ control context loading. They do not add a host permission boundary.
 | `repo-harness-setup` | Worker | Assigned install, migration, repair or scaffold |
 | `repo-harness-test` | Worker | Source tests and real fixtures |
 | `repo-harness-architecture` | Worker | Assigned model, projection or diagram work |
+| `windows-python-first` | Worker | Native Windows file, text and shell work through Python |
 
 Planning is merged into `repo-harness-check`. No separate planning alias remains.
 `obsidian-memory` and `repo-harness-ship` stay installed for their
