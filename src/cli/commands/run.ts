@@ -60,7 +60,6 @@ export const RUN_HELP_GROUPS = [
       'summarize-failures',
       'check-task-sync',
       'check-deploy-sql-order',
-      'check-architecture-sync',
       'check-agent-tooling',
       'check-context-files',
       'check-brain-manifest',
@@ -76,10 +75,7 @@ export const RUN_HELP_GROUPS = [
     helpers: [
       'select-agent-context-blocks',
       'capability-resolver',
-      'architecture-event',
       'capability-config',
-      'architecture-queue',
-      'archive-architecture-request',
       'workstream-sync',
     ],
   },

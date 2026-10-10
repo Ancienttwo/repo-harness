@@ -82,6 +82,22 @@ describe('HRD-08 event telemetry authority', () => {
     expect(record.steps).toHaveLength(1);
   });
 
+  test('Pi hook events carry host pi', () => {
+    const repoRoot = tempDir('hrd08-event-pi-host-');
+    const telemetry = createHookEventTelemetry({
+      repoRoot,
+      event: 'PreToolUse',
+      routeId: 'edit',
+      input: JSON.stringify({ session_id: 'pi-session' }),
+      env: { HOOK_HOST: 'pi' },
+    });
+
+    const record = telemetry.finalize({ exitCode: 0, reason: 'ok' });
+    expect(isHookEventTelemetryRecord(record)).toBe(true);
+    expect(record.host).toBe('pi');
+    expect(record.session_id).toBe('pi-session');
+  });
+
   test('opaque steps are explicit and do not fabricate hidden I/O completeness', () => {
     const repoRoot = tempDir('hrd08-event-opaque-');
     const telemetry = createHookEventTelemetry({

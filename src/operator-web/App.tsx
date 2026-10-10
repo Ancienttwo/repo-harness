@@ -19,7 +19,6 @@ import type { DevActivitySnapshotV1 } from '../core/dev-activity/types';
 import type { NotifyStatusV1 } from '../core/operator/notify-status';
 import type { RuntimeOverlay } from '../core/operator/runtime-status';
 import type { PipelineBoardV2 } from '../core/pipeline/board';
-import type { RepositoryObservationReader } from './AutomationSummary';
 import { Board } from './Board';
 import {
   DEFAULT_BOARD_FILTERS,
@@ -93,7 +92,6 @@ export interface OperatorAppProps {
   readonly initialDevActivity?: DevActivitySnapshotV1;
   readonly readRuntimeStatus?: RuntimeOverlayReader;
   readonly initialRuntimeOverlay?: RuntimeOverlay;
-  readonly fetchRepositoryObservation?: RepositoryObservationReader;
   readonly readTaskHistory?: TaskHistoryReader;
   readonly readTaskContext?: TaskContextReader;
   readonly readTaskActivity?: TaskActivityReader;
@@ -356,7 +354,6 @@ export function OperatorApp({
   initialDevActivity,
   readRuntimeStatus = fetchRuntimeOverlay,
   initialRuntimeOverlay,
-  fetchRepositoryObservation,
   readTaskContext,
   readTaskActivity,
   readTaskHistory,
@@ -569,7 +566,7 @@ export function OperatorApp({
             location={location} selection={selection} selectedCard={selectedCard} revisionChangedFrom={revisionChangedFrom}
             view={view} onView={setView} collaboration={collaboration} decisionAfter={decisionAfter} onDecisionPage={changeDecisionPage}
             refreshGeneration={refreshGeneration} onRefresh={refresh} onSelect={selectCard} onCloseSelection={closeSelection}
-            fetchRepositoryObservation={fetchRepositoryObservation} readTaskContext={readTaskContext} readTaskActivity={readTaskActivity} readTaskHistory={readTaskHistory}
+            readTaskContext={readTaskContext} readTaskActivity={readTaskActivity} readTaskHistory={readTaskHistory}
             onBack={() => openPlace({ workspace: 'repositories', module: null, item: null })} now={now} t={t} />}
           {workspace === 'architecture' && <>
             <header className="flex flex-wrap items-center justify-between gap-3 border-b border-kumo-hairline pb-4">

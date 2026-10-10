@@ -10,7 +10,6 @@ import {
   WarningIcon,
   XIcon,
 } from '@phosphor-icons/react';
-import { AutomationSummary, type RepositoryObservationReader } from './AutomationSummary';
 import { DrawerFrame, useModalFocus } from './Drawer';
 import { localizeApiError } from './fleet-api';
 import { relativeAge, type OperatorMessageKey, type OperatorTranslate } from './i18n';
@@ -1017,7 +1016,6 @@ export interface RepositoryWorkspaceProps {
   readonly onRefresh: () => void;
   readonly onSelect: (card: OperatorFleetCardV1) => void;
   readonly onCloseSelection: () => void;
-  readonly fetchRepositoryObservation?: RepositoryObservationReader;
   readonly readTaskContext?: TaskContextReader;
   readonly readTaskActivity?: TaskActivityReader;
   readonly readTaskHistory?: TaskHistoryReader;
@@ -1026,13 +1024,11 @@ export interface RepositoryWorkspaceProps {
   readonly t: OperatorTranslate;
 }
 
-/** One repository's Fleet tasks, automation and organization, with the task drawer. */
+/** One repository's Fleet tasks and organization, with the task drawer. */
 export function RepositoryWorkspace(props: RepositoryWorkspaceProps) {
   const { state, activeRepository, selection, selectedCard, view, collaboration, t } = props;
   const snapshot = snapshotForState(state);
   const visibleRepositories = useMemo(() => activeRepository ? [activeRepository] : [], [activeRepository]);
-  // Organization-only readers stay mounted to keep their last result, but they
-  // poll only while their panel shows; the shared Fleet read keeps running.
   const organizationActive = activeRepository === null || view === 'organization';
   return (
     <>
@@ -1050,7 +1046,6 @@ export function RepositoryWorkspace(props: RepositoryWorkspaceProps) {
         generation={props.refreshGeneration} read={props.readTaskHistory} onClose={props.onCloseSelection} t={t} />}
       {activeRepository && <ObservationTabs view={view} onChange={props.onView} t={t} />}
       <div role="tabpanel" id="view-panel-organization" aria-labelledby="view-tab-organization" hidden={!organizationActive} className="flex flex-col gap-6">
-        {activeRepository && <AutomationSummary repositoryId={activeRepository.repository_id} refreshGeneration={props.refreshGeneration} active={organizationActive} readObservation={props.fetchRepositoryObservation} t={t} />}
         {activeRepository && <DecisionSummary state={collaboration} repositoryId={activeRepository.repository_id} after={props.decisionAfter} onPage={props.onDecisionPage} t={t} />}
         {activeRepository && <OrganizationSummary state={collaboration} repositoryId={activeRepository.repository_id} t={t} />}
         <SnapshotNotice state={state} onRetry={props.onRefresh} t={t} />

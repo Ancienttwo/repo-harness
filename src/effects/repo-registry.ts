@@ -268,7 +268,9 @@ function reclaimDeadRegistryMutationLock(lockPath: string): boolean {
   }
 }
 
-function acquireRegistryMutationLock(registryPath: string): () => void {
+class RegistryMutationLockTimeoutError extends Error {}
+
+function acquireRegistryMutationLock(registryPath: string, waitMs = REGISTRY_LOCK_TIMEOUT_MS): () => void {
   mkdirSync(dirname(registryPath), { recursive: true, mode: 0o700 });
   const lockPath = `${registryPath}.lock`;
   const owner: RegistryLockOwner = {
@@ -276,7 +278,7 @@ function acquireRegistryMutationLock(registryPath: string): () => void {
     token: randomUUID(),
     acquiredAt: new Date().toISOString(),
   };
-  const deadline = Date.now() + REGISTRY_LOCK_TIMEOUT_MS;
+  const deadline = Date.now() + waitMs;
 
   while (true) {
     try {
@@ -308,7 +310,7 @@ function acquireRegistryMutationLock(registryPath: string): () => void {
       if (!isNodeError(error) || error.code !== 'EEXIST') throw error;
       if (reclaimDeadRegistryMutationLock(lockPath)) continue;
       if (Date.now() >= deadline) {
-        throw new Error(`timed out waiting for registry mutation lock ${lockPath}: ${describeRegistryLock(lockPath)}`);
+        throw new RegistryMutationLockTimeoutError(`timed out waiting for registry mutation lock ${lockPath}: ${describeRegistryLock(lockPath)}`);
       }
       Atomics.wait(REGISTRY_LOCK_SLEEP, 0, 0, REGISTRY_LOCK_RETRY_MS);
     }
@@ -485,6 +487,24 @@ export function withRepoHarnessRegistryAuthorizationLock<T>(
   return withRegistryMutationLock(registryPath, () => (
     action(readRepoHarnessRegistryStrictSnapshot({ env: opts.env, adoptedOnly: false }))
   ));
+}
+
+/** Hold the existing authorization lock until a bounded launch or delivery settles. */
+export async function withRepoHarnessRegistryAuthorizationLockAsync<T>(
+  opts: { readonly env?: NodeJS.ProcessEnv } = {},
+  action: (snapshot: RepoHarnessRegistryStrictSnapshot) => Promise<T>,
+): Promise<T> {
+  const deadline = Date.now() + REGISTRY_LOCK_TIMEOUT_MS;
+  let release: () => void;
+  for (;;) {
+    try { release = acquireRegistryMutationLock(repoHarnessRegisteredReposPath(opts.env), 0); break; }
+    catch (error) {
+      if (!(error instanceof RegistryMutationLockTimeoutError) || Date.now() >= deadline) throw error;
+      await new Promise(resolve => setTimeout(resolve, REGISTRY_LOCK_RETRY_MS));
+    }
+  }
+  try { return await action(readRepoHarnessRegistryStrictSnapshot({ env: opts.env, adoptedOnly: false })); }
+  finally { release(); }
 }
 
 export function repoHarnessAuthorizationRevision(env: NodeJS.ProcessEnv = process.env): number {

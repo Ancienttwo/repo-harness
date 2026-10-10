@@ -1,0 +1,33 @@
+@startuml
+title 共用 PM 层：实施与验收进度\n2026-10-09 · 本地候选
+skinparam backgroundColor #F5F5F5
+skinparam shadowing false
+skinparam defaultFontName "PingFang SC"
+skinparam defaultFontSize 15
+skinparam ArrowColor #4F5D75
+skinparam activity {
+ BackgroundColor #FFFFFF
+ BorderColor #2D3142
+ FontColor #2D3142
+}
+start
+:**已完成｜Plan 与派工**\nPM 负责沟通与分派，coding agent 负责实现;
+fork
+ :**A 已实现**\n共用 PM 五操作\n保留原任务与结果权威;
+fork again
+ :**B 已实现**\nHerdr 中的固定 OAR host\n无精确权限即拒绝启动;
+fork again
+ :**C 已实现**\nHermes 薄适配器\nCLI / TUI / Web 仅有五个 PM 工具;
+end fork
+:**独立代码审查**\n请求发布竞争已修复，有 red / green 证据\n执行与权限代码无剩余 finding;
+:**已通过**\n类型检查、原生工具拒绝验证、45 项包与 CI 契约测试\n包预演包含两个 OAR host 与 PM 接口;
+:**已完成｜正式架构投影**\n本地 CodeGraph 索引已获授权并完成\nPM P1 / P2 已证明，架构增量 4 / 4 通过;
+:**仍未通过｜全量验收**\n历史全量检查 411 个文件，exit 1\n架构失败已关闭；保留 main 同样存在的监听器失败; <<#FCEDE5>>
+:**尚未验证｜实际派工**\n当前 Hermes 配置尚未切换\n真实 coding provider 未运行; <<#FCEDE5>>
+note right
+ Grok 接入由用户报告，本次未改造。
+ Dot 适配尚未实施。
+ 未推送、未合并、未部署。
+end note
+stop
+@enduml

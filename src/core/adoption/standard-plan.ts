@@ -31,14 +31,12 @@ const STANDARD_DIRS = [
   "docs/reference-configs",
   "docs/architecture/domains",
   "docs/architecture/modules",
-  "docs/architecture/requests",
   "docs/architecture/snapshots",
   "docs/architecture/diagrams",
   ".ai/context",
   ".ai/harness/checks",
   ".ai/harness/handoff",
   ".ai/harness/failures",
-  ".ai/harness/architecture",
   ".ai/harness/security",
   ".ai/harness/planning",
   ".ai/harness/delegation",
@@ -75,8 +73,6 @@ const STATE_FILES: ReadonlyArray<{ path: string; content: string }> = [
   { path: ".ai/harness/handoff/resume.md", content: "# Codex Resume Packet\n\n> **Reason**: bootstrap\n" },
   { path: ".ai/context/capability-source-map.json", content: '{\n  "version": 1,\n  "capabilities": {}\n}\n' },
   { path: ".ai/harness/events.jsonl", content: "" },
-  { path: ".ai/harness/architecture/events.jsonl", content: "" },
-  { path: ".ai/harness/architecture/.gitkeep", content: "" },
   { path: ".ai/harness/failures/latest.jsonl", content: "" },
   { path: ".ai/harness/security/.gitkeep", content: "" },
   { path: ".ai/harness/planning/.gitkeep", content: "" },
@@ -86,7 +82,6 @@ const STATE_FILES: ReadonlyArray<{ path: string; content: string }> = [
   { path: "tasks/workstreams/.gitkeep", content: "" },
   { path: "docs/architecture/domains/.gitkeep", content: "" },
   { path: "docs/architecture/modules/.gitkeep", content: "" },
-  { path: "docs/architecture/requests/.gitkeep", content: "" },
   { path: "docs/architecture/snapshots/.gitkeep", content: "" },
   { path: "docs/architecture/diagrams/.gitkeep", content: "" },
   { path: "deploy/env/.gitkeep", content: "" },
@@ -361,6 +356,14 @@ export function defaultPolicy(documentationProfile: string, documentationLanguag
           "linux-x86_64": {
             "url": "https://github.com/herdrdev/herdr/releases/download/v0.9.3/herdr-linux-x86_64",
             "sha256": "18a8dc65f1c2fa485884344356dea1cfd911c6f06cf46fa78e193f4087f4dba7"
+          },
+          "macos-aarch64": {
+            "url": "https://github.com/herdrdev/herdr/releases/download/v0.9.3/herdr-macos-aarch64",
+            "sha256": "5173a3e0ae42d5d1ab7ebfa5d5e6329f7c3d23f8e1a3677c7ce3231da2884157"
+          },
+          "macos-x86_64": {
+            "url": "https://github.com/herdrdev/herdr/releases/download/v0.9.3/herdr-macos-x86_64",
+            "sha256": "db62d548ff3e832b087a96b1894a08d26be3905f1830309cd556783f215d4054"
           }
         }
       },
@@ -425,18 +428,12 @@ This is the root routing contract for Claude Code and Codex. Load this before ta
 function architectureIndexContent(): string {
   return `# Architecture Index
 
-> Umbrella architecture ledger for current boundaries, drift requests, snapshots, and diagrams.
+> Umbrella architecture ledger for current boundaries, snapshots, and diagrams.
 
 ## Current Snapshot
 
 - Latest snapshot: (none yet)
 - Semantic diagram source: (none yet)
-
-## Pending Requests
-
-<!-- BEGIN ARCHITECTURE PENDING REQUESTS -->
-- (none)
-<!-- END ARCHITECTURE PENDING REQUESTS -->
 `;
 }
 
@@ -673,14 +670,40 @@ function addPackageOperation(repoRoot: string, operations: AdoptionOperation[]):
     "check:brain-manifest": "repo-harness run check-brain-manifest",
     "check:context-files": "repo-harness run check-context-files",
     "check:deploy-sql": "repo-harness run check-deploy-sql-order",
-    "check:architecture-sync": "repo-harness run check-architecture-sync",
     "check:task-sync": "repo-harness run check-task-sync",
     "sync:brain-docs": "repo-harness run sync-brain-docs --all",
   });
   if (scripts["check:task-workflow"] === "repo-harness run check-task-workflow --strict") {
     delete scripts["check:task-workflow"];
   }
+  if (scripts["check:architecture-sync"] === "repo-harness run check-architecture-sync") {
+    delete scripts["check:architecture-sync"];
+  }
   operations.push(writeOperation(repoRoot, "package.json", jsonContent({ ...current, private: current.private ?? true, scripts }), "Install canonical repo-harness workflow package scripts", { risk: "medium" }));
+}
+
+// Generated repository architecture settings that no reader consumes after the
+// projection queue and request-card queue retirement. Execution settings now
+// live in the host configuration; architecture truth lives in .archcontext/.
+const RETIRED_ARCHITECTURE_POLICY_KEYS = [
+  'projection_provider', 'projection_apply', 'projection_failure_gate', 'projection_version', 'projection_timeout_ms',
+  'index_file', 'requests_dir', 'snapshots_dir', 'diagrams_dir', 'domains_dir', 'modules_dir',
+  'diagram_skill', 'diagram_skill_source', 'vendoring_policy', 'freshness_gate', 'gate_min_severity',
+  'pending_card_scope', 'pending_block_begin', 'pending_block_end', 'queue_script',
+  'contract_block_begin', 'contract_block_end',
+] as const;
+const GENERATED_ARCHITECTURE_RULES = new Set([
+  'hooks record architecture queue cards and sync controlled local context blocks; agents author semantic snapshots and diagrams',
+  'Architecture documents and the archctx model are on-demand references; update real responsibility changes explicitly. Hooks do not queue per-edit drift, sync workstreams or author agent-context blocks.',
+]);
+
+function retireArchitecturePolicy(policy: Record<string, unknown>): void {
+  if (isObject(policy.harness)) delete policy.harness.architecture_events_file;
+  if (!isObject(policy.architecture)) return;
+  const architecture = policy.architecture;
+  for (const key of RETIRED_ARCHITECTURE_POLICY_KEYS) delete architecture[key];
+  if (typeof architecture.rule === 'string' && GENERATED_ARCHITECTURE_RULES.has(architecture.rule)) delete architecture.rule;
+  if (Object.keys(architecture).length === 0) delete policy.architecture;
 }
 
 function addActivePlanMigration(repoRoot: string, operations: AdoptionOperation[]): void {
@@ -706,9 +729,9 @@ export function planStandardAdoption(opts: StandardPlanOptions): { operations: A
   delete policy.hook_source;
   // Operator-invoked adoption retires the old execution authority. Never copy
   // repository preferences into the host-wide configuration.
-  if (isObject(policy.architecture)) {
-    for (const key of ['projection_provider', 'projection_apply', 'projection_failure_gate', 'projection_version', 'projection_timeout_ms']) delete policy.architecture[key];
-  }
+  retireArchitecturePolicy(policy);
+  // Refactor execution is retired; recommendations read no repository refactor policy.
+  delete policy.refactor;
   const externalTooling = isObject(policy.external_tooling) ? policy.external_tooling : {};
   const externalRouting = isObject(externalTooling.routing) ? externalTooling.routing : {};
   const retiredComplexProvider = typeof externalRouting.complex === "string" ? externalRouting.complex : null;

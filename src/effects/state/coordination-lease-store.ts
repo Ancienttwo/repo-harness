@@ -47,7 +47,7 @@ import {
 } from '../../core/state/coordination-identity';
 import { syncDirectoryDurably, writeFileDurably } from '../evidence/atomic-append';
 import { configuredGitBinary, resolveGitCommonDirectory } from '../git/common-directory';
-import { withExclusiveDirectoryLock } from '../locking/exclusive-directory-lock';
+import { withExclusiveDirectoryLock, withExclusiveDirectoryLockAsync } from '../locking/exclusive-directory-lock';
 
 /** Relative to the git common directory. */
 export const COORDINATION_ROOT_RELATIVE_PATH = 'repo-harness/coordination/v1';
@@ -126,6 +126,10 @@ export function leaseOwnerPath(cwd: string, taskId: string): string {
 export function withTaskLock<T>(cwd: string, taskId: string, run: () => T): T {
   const commonDir = resolveGitCommonDirectory(cwd);
   return withExclusiveDirectoryLock(commonDir, taskLockRelativePath(taskId), run);
+}
+
+export function withTaskLockAsync<T>(cwd: string, taskId: string, run: () => Promise<T>): Promise<T> {
+  return withExclusiveDirectoryLockAsync(resolveGitCommonDirectory(cwd), taskLockRelativePath(taskId), run);
 }
 
 /** How a reclaimed backlog lock is reported; overridable for tests. */

@@ -18,7 +18,6 @@ JSON snapshot under `.ai/harness/runs/`. Each run records:
 - `workflow-check`: `repo-harness run check-task-workflow`
 - `sprint-next`: `repo-harness run sprint-backlog next` when an active sprint
   marker exists, with a read-only sprint-file fallback when it does not
-- `drift-requests`: pending files under `docs/architecture/requests/`
 
 ## cron
 

@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
-import { PROJECTION_REQUEST_VERSION, type ProjectionRequestV1 } from '../src/core/architecture/projection';
+import { PROJECTION_REQUEST_SCHEMA_VERSION, type ProjectionRequestV1 } from 'archctx-contracts';
 import { archctxCapabilities, captureArchitectureProjectionSnapshot, runArchitectureProjection } from '../src/effects/architecture/archctx-provider';
 
 const VERSION = '0.6.3';
@@ -122,7 +122,7 @@ extensions:
   daemonRoot = fixtureRepo;
   run(installedBinary, ['daemon', 'upgrade'], fixtureRepo, { ...offlineEnv, PATH: `${conflictDir}:${process.env.PATH ?? ''}` });
   const request: ProjectionRequestV1 = {
-    schemaVersion: PROJECTION_REQUEST_VERSION,
+    schemaVersion: PROJECTION_REQUEST_SCHEMA_VERSION,
     requestId: 'repo-harness.axr5-clean-room',
     profile: 'repo-harness/v1',
     mode: 'plan',

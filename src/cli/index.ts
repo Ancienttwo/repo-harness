@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { buildStrategyCommand } from './commands/strategy';
 import { buildPipelineCommand } from './commands/pipeline';
 import { buildModuleCommand } from './commands/module';
 import { withRuntimeHostTransactionLock } from './installer/runtime-host-lock';
@@ -28,6 +29,7 @@ import { buildInitHookCommand, buildSetupCommand, formatInitHook, runInitHook } 
 import { formatMigratePlan, runMigrate } from './commands/migrate';
 import { buildReviewCommand } from './commands/review';
 import { buildTaskAgentCommand } from './commands/task-agent';
+import { buildPmCommand } from './commands/pm';
 import { buildUpgradeCommand } from './commands/upgrade';
 import { planLegacyLeftovers, formatLegacyLeftoverSummary } from '../core/upgrade/legacy-inventory';
 import { buildToolsCommand } from './commands/tools';
@@ -42,7 +44,6 @@ import { buildStateCommand } from './commands/state';
 import { buildSprintCommand } from './commands/sprint';
 import { buildPublicationCommand } from './commands/publication';
 import { buildFleetCommand } from './commands/fleet';
-import { buildAutomationCommand } from './commands/automation';
 import { buildRefactorCommand } from './commands/refactor';
 import { buildOperatorCommand } from './commands/operator';
 import { buildEngineerCommand } from './commands/engineer';
@@ -813,6 +814,7 @@ export function buildProgram(): Command {
   program.command('claude-review', { hidden: true }).helpOption(false).allowUnknownOption().argument('[args...]')
     .action(() => { console.error('UPGRADE_REQUIRED: claude-review is retired; use repo-harness review. Drain old sessions with the previous version and archive old receipts.'); process.exitCode = 1; });
   program.addCommand(buildTaskAgentCommand());
+  program.addCommand(buildPmCommand());
   program.addCommand(buildPipelineCommand());
   program.addCommand(buildModuleCommand());
   program.addCommand(buildSetupCommand());
@@ -858,13 +860,13 @@ export function buildProgram(): Command {
   program.addCommand(buildPublicationCommand());
   program.addCommand(buildFleetCommand());
   program.addCommand(buildOperatorCommand());
-  program.addCommand(buildAutomationCommand());
   program.addCommand(buildRefactorCommand());
   program.addCommand(buildEngineerCommand());
   program.addCommand(buildArchitectureProjectionCommand());
   program.addCommand(buildIntegrationCommand());
   program.addCommand(buildDelegationCommand());
   program.addCommand(buildCollaborationCommand());
+  program.addCommand(buildStrategyCommand());
   program.addCommand(buildVerifiedContextCommand());
   program.addCommand(buildInterfaceChangeCommand());
   program.addCommand(buildExternalSourceCommand());
