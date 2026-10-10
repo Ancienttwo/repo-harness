@@ -92,3 +92,7 @@ against the configured `/Volumes/D/caches/npm` cache and was interrupted.
 Neither installation is claimed as passing. Final affected coverage selects
 370 files. Run the selected test lane without changing its test selection or
 assertions. Record its result separately from the aggregate install command.
+
+The package file list must include `references/bot-control.md`, because the
+root Skill reads that guide. Verify its presence in the actual pack inventory.
+This adds no dependency and changes no publication or permission setting.
