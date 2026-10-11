@@ -18,6 +18,7 @@ source:
     - "src/core/engineers/delegation.ts"
     - "src/effects/engineers/delegated-run-store.ts"
     - "src/cli/commands/delegation.ts"
+    - "scripts/me2b-runtime-admission-canary.ts"
   entrypoints:
     - id: entrypoint.delegated-runs.dispatch-command
       path: "src/cli/commands/delegation.ts"

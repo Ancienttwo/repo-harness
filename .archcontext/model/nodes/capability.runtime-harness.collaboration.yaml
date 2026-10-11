@@ -39,6 +39,7 @@ source:
     - "src/core/collaboration/**"
     - "src/effects/collaboration/**"
     - "src/cli/commands/collaboration.ts"
+    - "scripts/c9-collaboration-dispatch-runner.ts"
   entrypoints:
     - id: entrypoint.collaboration.publish
       path: "src/effects/collaboration/signal-store.ts"

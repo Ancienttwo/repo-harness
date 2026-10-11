@@ -39,6 +39,19 @@ source:
             - id: sink.engineer-scheduling.engineer-acquire
               path: "src/effects/engineers/acquire.ts"
               symbol: "acquireEngineerTask"
+        - name: "selectCurrentOffer"
+          sinks:
+            - id: sink.engineer-scheduling.offer-revalidation
+              path: "src/core/engineers/scheduling.ts"
+              symbol: "validateEngineerOffer"
+    - id: entrypoint.engineer-scheduling.dependency-readers
+      path: "src/effects/engineers/dependency-authority.ts"
+      symbols:
+        - name: "defaultDependencyAuthorityReaders"
+          sinks:
+            - id: sink.engineer-scheduling.product-acceptance
+              path: "src/effects/integration/product-acceptance.ts"
+              symbol: "listProductAcceptanceProjections"
     - id: entrypoint.engineer-scheduling.acquire-next
       path: "src/effects/engineers/scheduling-acquire-next.ts"
       symbols:

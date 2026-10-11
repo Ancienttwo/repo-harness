@@ -6,26 +6,38 @@ applicability: required
 participants:
   - id: scheduling-authority
     nodeId: capability.runtime-harness.engineer-scheduling
+  - id: offer-projector
+    nodeId: component.engineer-scheduling.primary
+  - id: product-acceptance
+    nodeId: capability.runtime-harness.integration-acceptance
   - id: engineer-authority
     nodeId: capability.runtime-harness.engineer-bindings
 steps:
-  - id: delegate-acquire
+  - id: read-dependency-authority
     from: scheduling-authority
-    to: engineer-authority
-    label: Delegate the current offer to the existing Engineer and Fleet acquire path
+    to: product-acceptance
+    label: Resolve a product-acceptance dependency only from the ME-4C projection that owns the verdict
+    evidence:
+      entrypointId: entrypoint.engineer-scheduling.dependency-readers
+      sourceSymbol: defaultDependencyAuthorityReaders
+      sinkId: sink.engineer-scheduling.product-acceptance
+  - id: revalidate-offer
+    from: scheduling-authority
+    to: offer-projector
+    label: Re-collect offers and validate the one that matches the caller assertion exactly
     evidence:
       entrypointId: entrypoint.engineer-scheduling.acquire
-      sourceSymbol: delegateScheduledEngineerAcquire
-      sinkId: sink.engineer-scheduling.engineer-acquire
+      sourceSymbol: selectCurrentOffer
+      sinkId: sink.engineer-scheduling.offer-revalidation
 outcomes:
   - id: success
     kind: success
     label: The existing WorkEnvelope and immutable ClaimActorReceipt are returned unchanged
     steps:
-      - id: return-acquire-result
+      - id: delegate-acquire
         from: scheduling-authority
         to: engineer-authority
-        label: Preserve the delegated WorkEnvelope and ClaimActorReceipt result
+        label: Delegate the current offer to the existing Engineer and Fleet acquire path inside the concurrency lock
         evidence:
           entrypointId: entrypoint.engineer-scheduling.acquire
           sourceSymbol: delegateScheduledEngineerAcquire
@@ -35,16 +47,16 @@ outcomes:
       label: Return the scheduled acquire result
   - id: error
     kind: error
-    label: The existing Engineer or Fleet acquire authority refuses the revalidated offer
+    label: The asserted offer is not current before or inside the concurrency lock
     steps:
-      - id: propagate-refusal
+      - id: refuse-stale-offer
         from: scheduling-authority
-        to: engineer-authority
-        label: Propagate the delegated typed refusal without adding a second rollback path
+        to: offer-projector
+        label: Return a stale refusal when no current offer matches the assertion and create no Claim
         evidence:
           entrypointId: entrypoint.engineer-scheduling.acquire
-          sourceSymbol: delegateScheduledEngineerAcquire
-          sinkId: sink.engineer-scheduling.engineer-acquire
+          sourceSymbol: selectCurrentOffer
+          sinkId: sink.engineer-scheduling.offer-revalidation
     terminal:
       participant: scheduling-authority
-      label: Return typed fail-closed error
+      label: Return typed stale error without a second rollback path
