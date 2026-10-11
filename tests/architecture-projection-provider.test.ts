@@ -321,7 +321,7 @@ function absentApplyReadback(request: ProjectionRequestV1) {
     data: { ...body, absenceDigest: digestProjectionJson(body) } };
 }
 
-function unresolvedAcceptanceResult(request: ProjectionRequestV1): ProjectionResultV2 {
+function unresolvedAcceptanceResult(request: ProjectionRequestV1, signalDigit = '9'): ProjectionResultV2 {
   const change: NonNullable<ProjectionRequestV1['acceptedChange']> = {
     changeSetId: 'changeset.pending-acceptance',
     eventId: 'event.pending-acceptance',
@@ -332,7 +332,7 @@ function unresolvedAcceptanceResult(request: ProjectionRequestV1): ProjectionRes
   const { acceptedChange: _acceptedChange, ...refreshSignal } = applied.refreshSignals[0]!;
   const signal: ArchitectureRefreshSignalV1 = {
     ...refreshSignal,
-    signalId: digest('9'),
+    signalId: digest(signalDigit),
     mode: 'human-action-required',
     cause: 'unresolved-major-candidate',
   };
@@ -376,10 +376,36 @@ describe('package-local ArchContext projection provider', () => {
     };
     const result = applyArchitectureProjection(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run });
     expect(result.status).toBe('applied');
-    expect(wireRequests.map((entry) => entry.requestId)).toEqual(['repo-harness.apply', 'repo-harness.apply.accepted']);
+    expect(wireRequests.map((entry) => entry.requestId)).toEqual(['repo-harness.apply', 'repo-harness.apply.accepted.9999999999999999']);
     expect(wireRequests[1]!.acceptedChange).toMatchObject({ reasonCodes: ['responsibility-changed'], affectedNodeIds: ['capability.test.core'] });
     expect(result.applyReceipt?.acceptedChange).toEqual(wireRequests[1]!.acceptedChange!);
     expect(existsSync(join(f.repoRoot, '.ai/harness/architecture-projection'))).toBe(false);
+  });
+
+  test('a second major change in the same workspace is applied under its own request id', () => {
+    const f = fixture();
+    const committedRequests = new Map<string, string>();
+    let signalDigit = '9';
+    const run: RunArchctxProcess = (_binary, args) => {
+      if (args[0] === 'capabilities') return { status: 0, signal: null, stdout: JSON.stringify(capabilities()), stderr: '' };
+      const wireRequest = JSON.parse(args[3]!) as ProjectionRequestV1;
+      if (!wireRequest.acceptedChange) {
+        return { status: 0, signal: null, stdout: JSON.stringify({ schemaVersion: 'archcontext.envelope/v1', ok: true, requestId: 'projection.run', data: unresolvedAcceptanceResult(wireRequest, signalDigit) }), stderr: '' };
+      }
+      // ArchContext replays only an identical request under a committed requestId.
+      const previous = committedRequests.get(wireRequest.requestId);
+      if (previous !== undefined && previous !== args[3]) {
+        return { status: 1, signal: null, stdout: '', stderr: `AC_PROJECTION_APPLY_COMMITTED: requestId ${wireRequest.requestId} already committed an apply for a different request` };
+      }
+      committedRequests.set(wireRequest.requestId, args[3]!);
+      return { status: 0, signal: null, stdout: JSON.stringify(committedApplyEnvelope(wireRequest)), stderr: '' };
+    };
+
+    expect(applyArchitectureProjection(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run }).status).toBe('applied');
+    writeFileSync(join(f.repoRoot, 'model-change.txt'), 'second responsibility change\n');
+    signalDigit = '7';
+    expect(applyArchitectureProjection(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run }).status).toBe('applied');
+    expect([...committedRequests.keys()]).toEqual(['repo-harness.apply.accepted.9999999999999999', 'repo-harness.apply.accepted.7777777777777777']);
   });
 
   test('apply without a major change runs the provider once', () => {
