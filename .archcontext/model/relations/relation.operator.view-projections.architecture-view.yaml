@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.operator.view-projections.architecture-view
+kind: depends-on
+source: component.operator.view-projections
+target: component.operator.architecture-view
+intent: "Decode the module index and module detail shapes that the architecture view declares"

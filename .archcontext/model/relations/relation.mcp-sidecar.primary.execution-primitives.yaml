@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.mcp-sidecar.primary.execution-primitives
+kind: calls
+source: component.mcp-sidecar.primary
+target: capability.workflow-engine.execution-primitives
+intent: "Read the worktree topology for the PM server scope"

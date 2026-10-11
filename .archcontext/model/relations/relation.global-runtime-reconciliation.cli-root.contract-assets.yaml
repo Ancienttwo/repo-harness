@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.global-runtime-reconciliation.cli-root.contract-assets
+kind: calls
+source: component.global-runtime-reconciliation.cli-root
+target: capability.workflow-engine.contract-assets
+intent: "Register the init and capability-context commands"

@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.mcp-sidecar.coding-profile.task-agent-host
+kind: calls
+source: component.mcp-sidecar.coding-profile
+target: capability.runtime-harness.task-agent-host
+intent: "Clean up task worktrees for coding workspaces"

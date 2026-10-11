@@ -549,7 +549,7 @@ bornée pendant que le CLI et les hooks possèdent l'exécution.
 | `repo-harness-product` | Modes PRD, Sprint et Goal pour le product planning upper-layer |
 | `repo-harness-check` | Planifier le travail. Revoir le plan. Vérifier les résultats enregistrés. |
 | `repo-harness-ship` | Valide les worktrees terminés, push les branches et ouvre les PRs |
-| `repo-harness-architecture` | Docs d'architecture, drift requests et diagrammes sans rafraîchissement complet du harness |
+| `repo-harness-architecture` | Modèle d'architecture, docs projetés et diagrammes sans rafraîchissement complet du harness |
 | `repo-harness-cross-review` | Generic acceptance through persistent fleet deep-reasoner task-agent + Herdr review; direct advisory runtime retired |
 | `repo-harness-chatgpt` | Consults Oracle browser/GPT Pro, setup du Connecteur MCP et bridge handoff ; setup explicite uniquement |
 | `obsidian-memory` | Bot : lire ou écrire la mémoire sur demande explicite. |

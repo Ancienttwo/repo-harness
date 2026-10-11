@@ -1,0 +1,58 @@
+schemaVersion: archcontext.flow/v1
+id: flow.evidence-ledger.append-and-recover
+capabilityId: capability.runtime-harness.evidence-ledger
+name: Append one observation and recover views from the accepted set
+applicability: required
+participants:
+  - id: evidence
+    nodeId: capability.runtime-harness.evidence-ledger
+  - id: store
+    nodeId: component.evidence-ledger.primary
+steps:
+  - id: import-observation
+    from: evidence
+    to: store
+    label: Import one PostBash observation as exactly one observed event through the writer path
+    evidence:
+      entrypointId: entrypoint.evidence-ledger.post-bash
+      sourceSymbol: importPostBashObservation
+      sinkId: sink.evidence-ledger.append
+outcomes:
+  - id: success
+    kind: success
+    label: The accepted set folds and a validated checkpoint backs recovery
+    steps:
+      - id: publish-checkpoint
+        from: evidence
+        to: store
+        label: Fold accepted events and publish a validated content-addressed checkpoint
+        evidence:
+          entrypointId: entrypoint.evidence-ledger.checkpoint
+          sourceSymbol: publishCheckpointFromLedger
+          sinkId: sink.evidence-ledger.accepted-events
+      - id: resolve-recovery
+        from: evidence
+        to: store
+        label: Resolve the checkpoint only through the last-published marker
+        evidence:
+          entrypointId: entrypoint.evidence-ledger.recovery
+          sourceSymbol: resolveRecoveryEvidence
+          sinkId: sink.evidence-ledger.last-checkpoint
+    terminal:
+      participant: evidence
+      label: Render handoff and resume views from the validated projection
+  - id: corrupt-tail
+    kind: error
+    label: The last write was truncated or a record does not parse
+    steps:
+      - id: detect-corrupt-tail
+        from: evidence
+        to: store
+        label: Treat every line from the first bad record onward as corrupt tail
+        evidence:
+          entrypointId: entrypoint.evidence-ledger.log-read
+          sourceSymbol: readLogSnapshot
+          sinkId: sink.evidence-ledger.corrupt-tail
+    terminal:
+      participant: store
+      label: Quarantine the tail under the log lock and fold only the valid prefix

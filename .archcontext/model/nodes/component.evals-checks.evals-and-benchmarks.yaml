@@ -1,0 +1,18 @@
+schemaVersion: archcontext.node/v2
+id: component.evals-checks.evals-and-benchmarks
+kind: component
+name: "Evals And Benchmarks"
+status: active
+parent: capability.verification.evals-checks
+summary: "Skill evaluations and the harness profile benchmark that produce effectiveness evidence."
+responsibilities:
+  - Run skill evaluations in a disposable evaluation boundary.
+  - Run the 3x9 harness profile benchmark under the expensive-run lock and validate its report.
+  - Grade harness traces.
+source:
+  include:
+    - "evals/**"
+    - "scripts/run-skill-evals.ts"
+    - "scripts/run-harness-profile-benchmark.ts"
+    - "scripts/validate-harness-profile-benchmark.ts"
+    - "scripts/harness-trace-grade.sh"

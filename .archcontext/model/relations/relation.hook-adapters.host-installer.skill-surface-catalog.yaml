@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.hook-adapters.host-installer.skill-surface-catalog
+kind: calls
+source: component.hook-adapters.host-installer
+target: component.action-commands.skill-surface-catalog
+intent: "Read skill names and profile ownership from the skill surface catalog"

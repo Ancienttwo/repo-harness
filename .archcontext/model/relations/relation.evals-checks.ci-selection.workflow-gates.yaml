@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.evals-checks.ci-selection.workflow-gates
+kind: calls
+source: component.evals-checks.ci-selection
+target: component.evals-checks.workflow-gates
+intent: "Run the task sync and task workflow gates in the governance lane"

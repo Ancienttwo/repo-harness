@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.engineer-bindings.workflow-state
+kind: calls
+source: capability.runtime-harness.engineer-bindings
+target: capability.workflow-engine.workflow-state
+intent: "Process Sprint dependencies and release Sprint leases for bound engineer tasks"

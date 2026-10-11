@@ -1,0 +1,54 @@
+schemaVersion: archcontext.node/v2
+id: capability.runtime-harness.pipeline-ledger
+kind: capability
+name: Pipeline Observer Ledger
+status: active
+summary: Records development pipeline facts per task in one SQLite observer ledger and serves readers from immutable published generations; it never dispatches, merges or cleans.
+responsibilities:
+  - Create, record and advance pipeline records with compare-and-set state versions and command-key replay.
+  - Admit verified evidence only through source-host authority validation of the original task-session and verification artifacts.
+  - Ingest Herdr notices and pane snapshots as append-only observations without changing record versions.
+  - Publish each committed store generation as an immutable snapshot and repair a failed publication from a later writer.
+  - Refuse unknown SQLite versions and network or unknown filesystems before the store opens.
+source:
+  include:
+    - "src/core/pipeline/**"
+    - "src/effects/pipeline/**"
+    - "src/cli/commands/pipeline.ts"
+    - "assets/pipeline-record.v2.schema.json"
+  entrypoints:
+    - id: entrypoint.pipeline-ledger.command
+      path: "src/cli/commands/pipeline.ts"
+      symbols:
+        - name: "buildPipelineCommand"
+          sinks:
+            - id: sink.pipeline-ledger.mutate
+              path: "src/effects/pipeline/ledger.ts"
+              symbol: "mutatePipeline"
+            - id: sink.pipeline-ledger.ingest
+              path: "src/effects/pipeline/ingest.ts"
+              symbol: "ingestEvent"
+        - name: "output"
+          sinks:
+            - id: sink.pipeline-ledger.store-failure
+              path: "src/effects/pipeline/store.ts"
+              symbol: "storeFailure"
+    - id: entrypoint.pipeline-ledger.source-authority
+      path: "src/effects/pipeline/authority.ts"
+      symbols:
+        - name: "validateOnSource"
+          sinks:
+            - id: sink.pipeline-ledger.task-request
+              path: "src/effects/terminal/task-session.ts"
+              symbol: "assertTaskRequest"
+            - id: sink.pipeline-ledger.outcome-provenance
+              path: "src/effects/evidence/verification-execution.ts"
+              symbol: "verificationOutcomeProvenance"
+extensions:
+  contractFiles:
+    agents: "AGENTS.md"
+    claude: "CLAUDE.md"
+  lspProfile: "typescript-lsp"
+  verification:
+    - "bun run test:files tests/effects/pipeline-observer.test.ts tests/effects/operator-pipeline-cache.test.ts --timeout 60000 --max-concurrency 1"
+    - "bun run check:type"

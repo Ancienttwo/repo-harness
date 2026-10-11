@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.workflow-state.primary.execution-primitives
+kind: calls
+source: component.workflow-state.primary
+target: capability.workflow-engine.execution-primitives
+intent: "Take the state lock and commit the version owner under the Git common dir"

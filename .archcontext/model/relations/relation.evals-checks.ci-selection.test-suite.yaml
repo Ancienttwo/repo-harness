@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.evals-checks.ci-selection.test-suite
+kind: calls
+source: component.evals-checks.ci-selection
+target: component.evals-checks.test-suite
+intent: "Select affected test files and run them in isolated file jobs"

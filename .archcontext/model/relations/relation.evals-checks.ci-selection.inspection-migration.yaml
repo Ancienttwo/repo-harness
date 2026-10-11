@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.evals-checks.ci-selection.inspection-migration
+kind: calls
+source: component.evals-checks.ci-selection
+target: capability.workflow-engine.inspection-migration
+intent: "Run test files through the shared runner in scripts/lib/ci-run-tests.sh"

@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.engineer-messages.primary
+kind: calls
+source: capability.runtime-harness.engineer-messages
+target: component.engineer-messages.primary
+intent: Persist the immutable event and pending receipt under the inbox lock and continue the receipt chain only from exact observations

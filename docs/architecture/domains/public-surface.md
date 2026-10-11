@@ -1,7 +1,7 @@
 # Architecture Domain: Public Surface
 
 > **Source**: `repo-harness run capability-resolver`
-> **Owner**: Root router and command facade docs.
+> **Owner**: Root router, command facade docs, repository adoption, and strategy reflection.
 
 ## Purpose
 
@@ -12,8 +12,10 @@ compatibility router, README, root agent docs, the `repo-harness` CLI, and thin
 
 ## Capabilities
 
-- `public-surface-root-router` -> `docs/architecture/modules/public-surface/root-router.md`
-- `public-surface-action-commands` -> `docs/architecture/modules/public-surface/action-commands.md`
+- `public-surface-root-router` -> `docs/architecture/modules/public-surface/root-router.md`: routes repository-level product and agent context into capability-specific contracts.
+- `public-surface-action-commands` -> `docs/architecture/modules/public-surface/action-commands.md`: defines the action command skills, the bundled skill packages and the skill-surface catalog.
+- `public-surface-adoption` -> `docs/architecture/modules/public-surface/adoption.md`: plans and applies repository adoption through the filesystem transaction boundary.
+- `public-surface-strategy-reflection` -> `docs/architecture/modules/public-surface/strategy-reflection.md`: collects a bounded strategy context packet and validates inert strategic proposals on explicit request.
 
 ## Stable Rules
 

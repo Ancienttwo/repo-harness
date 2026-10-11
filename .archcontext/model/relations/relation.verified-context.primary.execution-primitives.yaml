@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.verified-context.primary.execution-primitives
+kind: calls
+source: component.verified-context.primary
+target: capability.workflow-engine.execution-primitives
+intent: "Hold exclusive directory locks under the Git common directory"

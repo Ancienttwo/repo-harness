@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.operator.http-reader.activity-feeds
+kind: calls
+source: component.operator.primary
+target: component.operator.activity-feeds
+intent: "Start the bounded background collectors once and serve only their cached, re-decoded snapshots"

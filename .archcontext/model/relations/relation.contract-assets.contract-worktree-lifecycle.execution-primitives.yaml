@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.contract-assets.contract-worktree-lifecycle.execution-primitives
+kind: calls
+source: component.contract-assets.contract-worktree-lifecycle
+target: capability.workflow-engine.execution-primitives
+intent: "Resolve the configured Git binary for worktree lifecycle commands"

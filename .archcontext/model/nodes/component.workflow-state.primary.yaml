@@ -1,0 +1,28 @@
+schemaVersion: archcontext.node/v2
+id: component.workflow-state.primary
+kind: component
+name: Effective State Resolver
+status: active
+parent: capability.workflow-engine.workflow-state
+summary: Projects plan, contract, review and evidence artifacts into one Effective State and publishes the cache before the shared version owner.
+responsibilities:
+  - Parse workflow artifacts and resolve the deterministic risk profile in the pure core.
+  - Collect sources with a stability re-read and fail closed on paths that leave the repository.
+  - Publish the ignored cache first and commit the Git common-dir version owner last under locks.
+  - Own the state CLI adapter, the public interfaces re-export and the state boundary gate.
+source:
+  include:
+    - src/core/state/types.ts
+    - src/core/state/artifact-parsers.ts
+    - src/core/state/project-effective-state.ts
+    - src/core/state/project-state-snapshot.ts
+    - src/core/workflow/**
+    - src/effects/state/resolve-effective-state.ts
+    - src/effects/state/collect-state-inputs.ts
+    - src/effects/state/state-cache.ts
+    - src/effects/state/state-lock.ts
+    - src/effects/state/git-state-version-store.ts
+    - src/effects/state/readonly-observation.ts
+    - interfaces/**
+    - src/cli/commands/state.ts
+    - scripts/check-state-boundaries.ts

@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.global-runtime-reconciliation.cli-root.strategy-reflection
+kind: calls
+source: component.global-runtime-reconciliation.cli-root
+target: capability.public-surface.strategy-reflection
+intent: "Register the strategy command"

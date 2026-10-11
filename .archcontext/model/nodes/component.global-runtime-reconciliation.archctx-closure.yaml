@@ -1,0 +1,21 @@
+schemaVersion: archcontext.node/v2
+id: component.global-runtime-reconciliation.archctx-closure
+kind: component
+name: ArchContext Closure
+status: active
+parent: capability.runtime-harness.global-runtime-reconciliation
+summary: Runs the pinned package-local archctx CLI on a trusted Node runtime, applies architecture projections and reads the committed model.
+responsibilities:
+  - Select a trusted Node runtime and run package-local archctx with the exact version pin.
+  - Apply and check the architecture projection and accept a projected major change inside apply.
+  - Read and migrate the global architecture configuration section.
+  - Read the committed architecture model for module views and review prompts.
+source:
+  include:
+    - "src/effects/architecture/**"
+    - "src/core/architecture/projection.ts"
+    - "src/cli/commands/architecture-projection.ts"
+    - "src/cli/commands/architecture-configuration.ts"
+    - "src/effects/configuration/**"
+    - "src/effects/runtime/node-candidates.ts"
+    - "scripts/axr5-archctx-clean-room.ts"

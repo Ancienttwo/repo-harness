@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.global-runtime-reconciliation.release-packaging.cli-root
+kind: calls
+source: component.global-runtime-reconciliation.release-packaging
+target: component.global-runtime-reconciliation.cli-root
+intent: "Smoke the packed tarball CLI and hook binaries in a clean app"

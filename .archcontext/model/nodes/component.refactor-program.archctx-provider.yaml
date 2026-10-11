@@ -5,3 +5,6 @@ name: Refactor ArchContext Provider Boundary
 status: active
 parent: capability.runtime-harness.refactor-program
 summary: Runs the pinned package-local ArchContext scan, recommendation readback, record and decision commands.
+source:
+  include:
+    - "src/effects/refactor/archctx-provider.ts"

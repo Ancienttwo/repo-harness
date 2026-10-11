@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.operator.http-reader.view-projections
+kind: calls
+source: component.operator.primary
+target: component.operator.view-projections
+intent: "Parse closed route requests and project or re-decode each observation before it leaves the server"

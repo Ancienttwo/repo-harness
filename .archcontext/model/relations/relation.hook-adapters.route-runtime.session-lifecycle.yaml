@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.hook-adapters.route-runtime.session-lifecycle
+kind: calls
+source: component.hook-adapters.primary
+target: component.hook-adapters.session-lifecycle
+intent: "Bind SessionStart and Stop and subagent and inbox routes to their typed handlers"

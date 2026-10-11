@@ -1,9 +1,9 @@
 # runtime-harness/collaboration 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-collaboration" sourceDigest="sha256:78e706b4a2486625c22aa0e78f298de6bb69a8dcc9da766495197d80d2d73f35" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:65c2e5beb9c8cddc1813b25eb8bcd7653d4b09c9ca92cfaf72615a88ca09a209" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-collaboration" sourceDigest="sha256:51a7e39ad8905951932e13285c49bfd146d008d1acfe684f5bfc960f273e3d88" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:f72f21d5cd6d7eaf45e1af0da2e1c72ab8bcc71db99aeea6616b04f3478dd190" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.collaboration`(kind `capability`)
-> **Matched Prefixes**:`src/core/collaboration/**`、`src/effects/collaboration/**`、`src/cli/commands/collaboration.ts`
+> **Matched Prefixes**:`src/core/collaboration/**`、`src/effects/collaboration/**`、`src/cli/commands/collaboration.ts`、`scripts/c9-collaboration-dispatch-runner.ts`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
@@ -88,7 +88,7 @@ flowchart LR
 ### 1.3 規模信號
 
 - 規模量級:`20–50` 個文件 / `5000–10000` 行
-- 匹配前綴:`src/core/collaboration/**`、`src/effects/collaboration/**`、`src/cli/commands/collaboration.ts`
+- 匹配前綴:`src/core/collaboration/**`、`src/effects/collaboration/**`、`src/cli/commands/collaboration.ts`、`scripts/c9-collaboration-dispatch-runner.ts`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
 ### 1.4 依賴邊界
@@ -99,12 +99,16 @@ flowchart LR
 - `calls` → `capability.runtime-harness.delegated-runs` — Enforce the parent Engineer's delegation policy as a pre-step to the unchanged read-only admission, and turn one run's persisted output into a contribution the delegation plane's own WorkerResult then references
 - `calls` → `capability.runtime-harness.engineer-bindings` — Derive the publishing actor from the authenticated principal and current Binding instead of accepting a declared identity
 - `calls` → `capability.runtime-harness.engineer-scheduling` — Ask the scheduling plane for this exact authenticated principal's own offers, so a Work Exchange snapshot reports what the plane answered rather than defaulting an empty list
+- `calls` → `capability.workflow-engine.execution-primitives` — Hold exclusive directory locks under the Git common directory
 - `calls` → `component.collaboration.primary` — Persist immutable coordination signals under a per-thread lock without writing any delivery store
 
 入向關係:
 
 - `calls` ← `capability.runtime-harness.delegated-runs` — Run the collaboration dispatch fence inside the read-only dispatch effect itself, before any host action, refusing a run whose injected coordination context no binding accounts for
+- `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the collaboration command
 - `calls` ← `capability.runtime-harness.mcp-sidecar` — Serve the bounded Engineer collaboration tool set from the shared agent surface, deriving the author from the authenticated authorization and taking no actor, destination or recorded time from a caller
+- `calls` ← `component.operator.primary` — Collect the collaborative Work Exchange for one registered repository
+- `depends-on` ← `component.operator.view-projections` — Project Work Exchange, handoff and context packet records with the collaboration validators
 
 ## 2. P2:端到端數據流
 
@@ -245,58 +249,35 @@ sequenceDiagram
 
 ## 3. P3:設計決策與不變量
 
-### 兩個平面,一個方向
+### 3.1 必须保持的不变量
 
-交付平面(Work Graph → EngineerOffer → Claim/Lease → WorkEnvelope → Publication
-→ Acceptance)是權威。協作平面只讀它,永不寫它,也沒有一條反向邊。這條邊界由
-C0 的 D1 凍結,由 `tests/unit/collaboration-authority-baseline.test.ts` 守住:
-封閉掃描證明本能力不在五個被凍結的平面上,另一條斷言證明任何交付平面模組都沒有
-import 協作模組。
+1. **两个平面，一个方向。** 交付平面（Work Graph → EngineerOffer → Claim/Lease → WorkEnvelope → Publication → Acceptance）是权威。协作平面只读它，从不写它。C0 的 D1 冻结了这条边界（`docs/researches/20260829-c0-collaboration-two-plane-authority-freeze.md`）。`tests/unit/collaboration-authority-baseline.test.ts:680-726` 守住方向：交付平面目录中只有 `delegated-run-store.ts` 可以导入一个协作符号 `fenceCollaborationDispatch`。
+2. **协作平面对 Task、Lease、Publication、Acceptance 的字节影响为 0。** Child PRD A 记录的核心风险是协作 store 退化成第二个调度器。防线是上面的导入方向断言，加上 store 零交付写入的 before/after 摘要证据。
+3. **身份只能由服务端派生。** publish 的输入没有 actor 字段。actor 由 `resolveEngineerPrincipal()` 从已认证主体推导，然后再读一次主体映射，两次不一致就 fail closed（`src/effects/collaboration/actor.ts:70-84`）。wire union 只有 `module_engineer` 和 `delegated_worker`，因为只有这两类有不可变的服务端 provenance。`human_operator` 和 `native_subagent` 不进 union，也不留占位分支。
+4. **记录时间是判别联合，并且对重试稳定。** delegated 贡献取该次运行精确的持久化观测时间。直接发布在第一次 idempotency 事件中冻结时钟。store 只在创建记录的分支读时钟；比较分支用已持久化的值重建候选。先采样时钟再查存在性，会让一次幂等重试看起来像 payload 冲突。
+5. **每条记录一个不可变文件。** 同 id 同 payload 幂等，不同 payload 显式冲突。store 不可读时 fail loud，不退化成健康的空集。
+6. **supersede 只在同一 actor lineage 内。** Module Engineer 的 lineage 是 `engineer_id`；delegated Worker 的 lineage 是 `worker_run_ref_sha256`。重新绑定是同一个持久 Engineer 换届，两次 delegated run 是两个参与者。
+7. **`collaboration.mode` 默认 `off`。** 升级顺序是 `off -> shadow -> active`，不跳级。策略文件不可解析或值不在封闭集合中时 fail closed（`src/effects/collaboration/feature-flag.ts:2-52`）。
+8. **注入的协作上下文必须有 run-context binding。** `fenceCollaborationDispatch` 在 delegated-runs 的 dispatch 锁内执行，拒绝没有 binding 记录的注入上下文（PR #289）。
+9. **`src/core/collaboration/common.ts` 在 C1 之后冻结。** C2-C9 只消费，不修改。
 
-Child PRD A 記的核心風險是「協作 store 退化成第二個調度器」。防線不是文檔約定,
-而是這條 import 方向斷言加上 store 本身零交付寫入的 before/after digest 證據。
+### 3.2 关键权衡
 
-### 記錄時間為什麼是一個判別聯合
+| 决策 | 权衡 |
+| --- | --- |
+| 准入桥是既有只读委派之前的一步，不改动 delegated-runs 的准入 | delegated-runs 保持唯一的准入权威；代价是协作能力依赖 delegated-runs 的 11 处导入 |
+| dispatch fence 放进 delegated-runs 的效果内部 | 没有可绕过的 dispatch 入口；代价是形成 collaboration 与 delegated-runs 的双向 relation，只由精确例外的测试约束 |
+| C9 canary 后不建持久的同能力 `EngineerSeatV2` | 实测：treatment 12 条有用发现对 baseline 9 条，输入 token 是 3.51 倍；继任者重启只在三例中的一例超过 baseline 首次有用延迟（PR #229；`deploy/release-checklists/260830-collaboration-canary-decision.md`）。代价是多席协作保持关闭 |
+| 共享机制（actor、scope ref、证据引用、记录身份、时间来源）在 C1 冻结 | 后续行为只增加，不改共享语义；代价是修正共享缺陷需要新的协议版本 |
 
-signal 的 `created_at` 由 Host 派生,且對重試穩定。兩種來源各自對應一條真實的
-provenance 鏈:delegated 貢獻取該次運行精確的持久化觀測時間,直接發布在第一次
-idempotency 事件裡凍結時鐘。用一組可空欄位表達會允許「兩個都為 null」這種無意義
-狀態,所以它是判別聯合。
+### 3.3 10x 规模下先坏的点
 
-真正的壓力點在重試路徑:先採樣時鐘再查存在性,會讓一次冪等重試看起來像 payload
-衝突。store 因此只在建檔那條分支讀時鐘,比較分支一律用已持久化的值重建候選。
+- per-thread 锁让同一 thread 的写入串行。单 thread 的高频写入先撞到锁等待。磁盘不是先出现的瓶颈。thread 之间互不阻塞，所以扩展方向是 thread 数量。
+- `listCoordinationSignals()` 是全量扫描（`src/effects/collaboration/signal-store.ts:117-119`）。投影需要它时，要绑定来源集合的摘要。缓存永远不能成为权威。
 
-### 身份只能由服務端派生
+### 3.4 组件状态
 
-publish 的入參裡根本沒有 actor 欄位。actor 由 `resolveEngineerPrincipal()` 從
-authenticated principal 推導,再對 principal mapping 做第二次讀取,兩次不一致就
-fail closed。呼叫方自述的身份不是被忽略,而是無處可寫。
-
-P0 的 wire union 只有 `module_engineer` 與 `delegated_worker`,因為只有這兩類有
-不可變的服務端 provenance。`human_operator` 與 `native_subagent` 不進 union,也
-不留佔位分支——留下的佔位分支遲早會被填上一個沒有 provenance 的值。
-
-### supersede 的 lineage 邊界
-
-append-only 的修訂只能是 supersede,而 supersede 只能在同一個 actor lineage 內。
-lineage 對 Module Engineer 取 `engineer_id`,對 delegated Worker 取
-`worker_run_ref_sha256`:重新綁定是同一個持久 Engineer 的換屆,兩次 delegated run
-則是兩個參與者。
-
-### 10x 規模下先壞的地方
-
-per-thread lock 讓同一條 thread 的寫入串行。單一 thread 上的高頻寫入會先撞到鎖等待,
-而不是磁碟。thread 之間互不阻塞,所以擴展方向是 thread 的數量而不是單 thread 的吞吐。
-`listCoordinationSignals()` 是全量掃描,C2 的投影需要它時要綁定來源集合的 digest,
-且快取永遠不能成為權威。
-
-### 不變量
-
-- 協作平面對 Task、Lease、Publication、Acceptance 的字節影響為 0。
-- 每條 signal 一個不可變檔案,身份級原子寫,同 id 同 payload 冪等、不同 payload 顯式衝突。
-- store 不可讀時 fail loud,絕不退化成健康空集。
-- `collaboration.mode` 預設 `off`,升級順序 `off -> shadow -> active`,不跳級。
-- `src/core/collaboration/common.ts` 在 C1 之後凍結,C2-C9 只消費不修改。
+本能力有 28 个源文件、约 8.6k 行（含 `scripts/c9-collaboration-dispatch-runner.ts`），低于拆分阈值。只有 `component.collaboration.primary` 一个组件。超过 10k 行时，按记录存储、委派贡献、Work Exchange 与上下文投递、代理入口四部分拆分（`ownership-proposal` §5）。
 
 ## 4. 歷史決策記錄(append-only)
 
@@ -305,8 +286,15 @@ per-thread lock 讓同一條 thread 的寫入串行。單一 thread 上的高頻
 | 2026-08-29 | 建立 `capability.runtime-harness.collaboration`,協作平面與交付平面分離 | `docs/researches/20260829-c0-collaboration-two-plane-authority-freeze.md` D1-D12 |
 | 2026-08-29 | `ArtifactRefV1` 複用 `WorkerResultV1.evidence_refs` 的同一個校驗器,不引入第二個等價引用類型 | D8;`src/core/engineers/delegation.ts` 的 `validateWorkerEvidenceRefs()` |
 | 2026-08-29 | store 根、鎖策略與 canonical JSON 複用既有 `repo-harness/<domain>/v1` 慣例與既有鎖原語,不寫第二個序列化器 | D9 |
+| 2026-08-30 | C1-C9 落地：signal store、thread/hotspot 投影、handoff 与 adoption、委派贡献与准入桥、TaskFreeze 继任、Work Exchange 与上下文投递、代理入口 | PR #223 至 #229 |
+| 2026-08-30 | 持久的同能力 `EngineerSeatV2` 判定为 NO-GO | PR #229；`deploy/release-checklists/260830-collaboration-canary-decision.md` |
+| 2026-09-03 | dispatch fence 移入 `dispatchDelegatedRun()`，删除 CLI 和 C9 runner 的前置步骤 | PR #289（closes #278） |
+| 2026-10-11 | include 新增 `scripts/c9-collaboration-dispatch-runner.ts`。它是 `tests/effects/collaboration-dispatch-fence-composed.test.ts` 使用的组合 dispatch 入口 | G4b 架构模型变更 |
 
 ## Optimization Backlog
 
-- C2 的 thread/hotspot 投影如果需要快取,快取必須綁定來源集合的 digest 並在不匹配時重算。
-- 目前 `listCoordinationSignals()` 讀全量;真實 signal 量級由 C9 的 canary 測出來之後再決定要不要分片。
+- C2 的 thread/hotspot 投影如果需要缓存，缓存必须绑定来源集合的摘要，并在不匹配时重算。
+- `listCoordinationSignals()` 读全量。真实 signal 量级测出来之后，再决定是否分片。C9 canary 工具已在 PR #512 退役，目前没有在用的量级测量。
+- 本能力 9 个文件（8 个 core、`src/effects/collaboration/provider-output-adapter.ts`）调用 engineer-messages 所有的 `src/core/messages/mechanics.ts`（共享校验原语）。当前不声明 collaboration → engineer-messages 的 relation，归属见 engineer-messages 的 Backlog。
+- 本能力调用 `src/effects/{locking,git}`。集成步骤声明了 collaboration → execution-primitives。没有声明 collaboration → workflow-state：`classifyPasses` 是 `src/effects/collaboration/work-exchange.ts:144` 的本地函数，本能力没有导入 `src/effects/state/` 的语句。原来的边是 CodeGraph 的同名误解析。
+- operator 通过 `src/effects/operator/collaboration.ts` 调用 `collectCollaborativeWorkExchange`。operator 已经声明 `relation.operator.http-reader.collaboration` 与 `relation.operator.view-projections.collaboration`。

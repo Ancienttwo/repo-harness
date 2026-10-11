@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.contract-assets.template-projection
+kind: calls
+source: capability.workflow-engine.contract-assets
+target: component.contract-assets.template-projection
+intent: "Run the helper and reference config projection sync"

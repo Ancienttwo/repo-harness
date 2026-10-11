@@ -1,0 +1,63 @@
+schemaVersion: archcontext.node/v2
+id: capability.workflow-engine.execution-primitives
+kind: capability
+name: Execution Primitives
+status: active
+summary: Runs bounded child processes and provides the canonical directory lock and Git common-dir and worktree topology reads. It holds no workflow policy.
+responsibilities:
+  - Run a child process with a timeout, an output cap and secret redaction, and supervise a process group when the caller asks.
+  - Serialize expensive runs across linked worktrees with one Git common-dir lock that a dead owner releases only after its process group drains.
+  - Provide the exclusive directory lock with ancestor identity checks, a bounded wait and stale-owner reclaim.
+  - Read the Git common dir, the worktree topology and a read-only virtual tree.
+source:
+  include:
+    - src/effects/process-runner.ts
+    - src/effects/process-supervisor.ts
+    - src/effects/process-group-launcher.ts
+    - src/effects/expensive-run-lock.ts
+    - src/effects/locking/**
+    - src/effects/git/**
+  entrypoints:
+    - id: entrypoint.execution-primitives.primary
+      path: src/effects/process-runner.ts
+      symbols:
+        - name: runProcess
+          sinks:
+            - id: sink.execution-primitives.primary
+              path: src/effects/process-runner.ts
+              symbol: runSupervisedProcess
+            - id: sink.execution-primitives.output-cap
+              path: src/effects/process-runner.ts
+              symbol: capProcessOutput
+        - name: runSupervisedProcess
+          sinks:
+            - id: sink.execution-primitives.abandoned-group
+              path: src/effects/process-runner.ts
+              symbol: terminateAbandonedProcessGroup
+    - id: entrypoint.execution-primitives.supervisor
+      path: src/effects/process-supervisor.ts
+      symbols:
+        - name: supervise
+          sinks:
+            - id: sink.execution-primitives.expensive-lock
+              path: src/effects/expensive-run-lock.ts
+              symbol: acquireExpensiveRunLock
+    - id: entrypoint.execution-primitives.expensive-lock
+      path: src/effects/expensive-run-lock.ts
+      symbols:
+        - name: acquireExpensiveRunLock
+          sinks:
+            - id: sink.execution-primitives.git-common-dir
+              path: src/effects/git/common-directory.ts
+              symbol: resolveGitCommonDirectory
+            - id: sink.execution-primitives.directory-lock
+              path: src/effects/locking/exclusive-directory-lock.ts
+              symbol: acquireExclusiveDirectoryLock
+extensions:
+  contractFiles:
+    agents: AGENTS.md
+    claude: CLAUDE.md
+  lspProfile: typescript-lsp
+  verification:
+    - bun run check:type
+    - bun run test:files tests/process-runner.test.ts tests/bounded-supervisor-audit.test.ts tests/unit/closeout-runner-guardrails.test.ts tests/state/state-effects.test.ts --timeout 60000 --max-concurrency 1

@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.global-runtime-reconciliation.archctx-closure.acceptance-review
+kind: calls
+source: component.global-runtime-reconciliation.archctx-closure
+target: capability.verification.acceptance-review
+intent: "Build the module review prompt from the committed architecture model"

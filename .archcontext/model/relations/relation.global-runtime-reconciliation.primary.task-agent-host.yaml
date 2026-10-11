@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.global-runtime-reconciliation.primary.task-agent-host
+kind: calls
+source: component.global-runtime-reconciliation.primary
+target: capability.runtime-harness.task-agent-host
+intent: "Configure the required Herdr skill during global runtime setup"

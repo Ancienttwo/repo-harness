@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.delegated-runs.evidence-ledger
+kind: writes
+source: capability.runtime-harness.delegated-runs
+target: capability.runtime-harness.evidence-ledger
+intent: "Store delegated run payloads in the evidence blob store"

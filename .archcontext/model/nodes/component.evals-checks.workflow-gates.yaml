@@ -1,0 +1,18 @@
+schemaVersion: archcontext.node/v2
+id: component.evals-checks.workflow-gates
+kind: component
+name: "Workflow Gates"
+status: active
+parent: capability.verification.evals-checks
+summary: "Shell gates for task sync, task workflow, agent tooling and the brain manifest."
+responsibilities:
+  - Bind workflow evidence to the substantive diff digest and fail closed on missing evidence.
+  - Check the workflow contract files and agent tooling readiness.
+  - Check and sync the brain manifest documents.
+source:
+  include:
+    - "scripts/check-task-workflow.sh"
+    - "scripts/check-task-sync.sh"
+    - "scripts/check-agent-tooling.sh"
+    - "scripts/check-brain-manifest.sh"
+    - "scripts/sync-brain-docs.sh"

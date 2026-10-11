@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.operator.web-console.view-projections
+kind: calls
+source: component.operator.web-console
+target: component.operator.view-projections
+intent: "Decode each observation body with the shared strict core decoder before render"

@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.contract-assets.contract-worktree-lifecycle.acceptance-review
+kind: calls
+source: component.contract-assets.contract-worktree-lifecycle
+target: capability.verification.acceptance-review
+intent: "Locate the acceptance receipt and the protected Git runtime"

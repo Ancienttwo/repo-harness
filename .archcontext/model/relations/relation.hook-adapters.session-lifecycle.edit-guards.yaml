@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.hook-adapters.session-lifecycle.edit-guards
+kind: calls
+source: component.hook-adapters.session-lifecycle
+target: component.hook-adapters.edit-guards
+intent: "Drain the post-edit journal at Stop and render the minimal change context"

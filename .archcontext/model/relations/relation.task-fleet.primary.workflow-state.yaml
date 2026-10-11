@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.task-fleet.primary.workflow-state
+kind: reads
+source: component.task-fleet.primary
+target: capability.workflow-engine.workflow-state
+intent: "Read canonical Sprint tasks and leases to build offers and the board"

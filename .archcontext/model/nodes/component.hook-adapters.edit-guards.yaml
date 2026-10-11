@@ -1,0 +1,29 @@
+schemaVersion: archcontext.node/v2
+id: component.hook-adapters.edit-guards
+kind: component
+name: "Guard and Observer Handlers"
+status: active
+parent: capability.runtime-harness.hook-adapters
+summary: "Typed handlers that guard edits, observe edits and shell commands, classify prompts and review minimal change."
+responsibilities:
+  - Decide PreToolUse.edit with the mutation guard from resolved Effective State and the active contract scope.
+  - Write one post-edit journal event per edit and leave the heavy work for Stop.
+  - Observe Bash results and import post-command evidence.
+  - Classify user prompts and keep the circuit breaker and the minimal change policy.
+source:
+  include:
+    - "src/cli/hook/mutation-guard.ts"
+    - "src/cli/hook/mutation-observed.ts"
+    - "src/cli/hook/minimal-change-cli.ts"
+    - "src/cli/hook/minimal-change-context.ts"
+    - "src/cli/hook/minimal-change-policy.ts"
+    - "src/cli/hook/minimal-change-signals.ts"
+    - "src/cli/hook/prompt-guard-decision.ts"
+    - "src/cli/hook/prompt-handler.ts"
+    - "src/cli/hook/prompt-intents.ts"
+    - "src/cli/hook/prompt-router.ts"
+    - "src/cli/hook/circuit-breaker.ts"
+    - "src/cli/hook/command-observed.ts"
+    - "src/cli/hook/review-rubric.ts"
+    - "src/cli/hook/review-subject.ts"
+    - "src/cli/commands/prompt-guard-decision.ts"

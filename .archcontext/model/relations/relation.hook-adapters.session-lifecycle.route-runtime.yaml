@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.hook-adapters.session-lifecycle.route-runtime
+kind: depends-on
+source: component.hook-adapters.session-lifecycle
+target: component.hook-adapters.primary
+intent: "Implement the typed handler contract and read state through the event-scoped collector"

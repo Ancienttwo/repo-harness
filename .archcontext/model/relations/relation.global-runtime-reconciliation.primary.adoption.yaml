@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.global-runtime-reconciliation.primary.adoption
+kind: calls
+source: component.global-runtime-reconciliation.primary
+target: capability.public-surface.adoption
+intent: "Classify retired surfaces with the adoption fingerprints and back up removals in an FsTransaction manifest under the target lock"

@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.external-source-intake.immutable-evidence.execution-primitives
+kind: calls
+source: component.external-source-intake.immutable-evidence
+target: capability.workflow-engine.execution-primitives
+intent: "Hold exclusive directory locks under the Git common directory"

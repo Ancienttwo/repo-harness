@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.external-source-intake.mcp-sidecar
+kind: calls
+source: capability.runtime-harness.external-source-intake
+target: capability.runtime-harness.mcp-sidecar
+intent: "Read the strict repo registry snapshot for repository identity and authorization"

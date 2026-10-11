@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.pipeline-ledger.task-agent-host
+kind: calls
+source: capability.runtime-harness.pipeline-ledger
+target: capability.runtime-harness.task-agent-host
+intent: "Validate persisted task requests and results with the original task-session readers"

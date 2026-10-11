@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.contract-assets.template-projection.planning-helpers
+kind: calls
+source: component.contract-assets.template-projection
+target: component.contract-assets.planning-helpers
+intent: "Initialize the brain export root during repository init"

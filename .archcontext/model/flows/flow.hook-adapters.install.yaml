@@ -1,0 +1,50 @@
+schemaVersion: archcontext.flow/v1
+id: flow.hook-adapters.install
+capabilityId: capability.runtime-harness.hook-adapters
+name: "Project routes into managed host adapter entries"
+applicability: required
+participants:
+  - id: host-installer
+    nodeId: component.hook-adapters.host-installer
+  - id: route-runtime
+    nodeId: component.hook-adapters.primary
+steps:
+  - id: project-routes
+    from: host-installer
+    to: route-runtime
+    label: "Read the ordered routes for one host"
+    evidence:
+      entrypointId: entrypoint.hook-adapters.managed-entries
+      sourceSymbol: "buildManagedHooks"
+      sinkId: sink.hook-adapters.routes-for-host
+outcomes:
+  - id: success
+    kind: success
+    label: "One managed adapter entry exists per selected route in registry order"
+    steps:
+      - id: build-entries
+        from: host-installer
+        to: route-runtime
+        label: "Build one adapter entry per route that the install profile selects"
+        evidence:
+          entrypointId: entrypoint.hook-adapters.managed-entries
+          sourceSymbol: "buildManagedHooks"
+          sinkId: sink.hook-adapters.routes-for-host
+    terminal:
+      participant: host-installer
+      label: "Write the user-level host configuration"
+  - id: error
+    kind: error
+    label: "An installed projection differs from the registry"
+    steps:
+      - id: compare-entries
+        from: host-installer
+        to: route-runtime
+        label: "Rebuild the expected entries for the comparison"
+        evidence:
+          entrypointId: entrypoint.hook-adapters.managed-entries
+          sourceSymbol: "buildManagedHooks"
+          sinkId: sink.hook-adapters.routes-for-host
+    terminal:
+      participant: host-installer
+      label: "Report the drift in status without a rewrite"

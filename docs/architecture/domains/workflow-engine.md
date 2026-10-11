@@ -1,19 +1,23 @@
 # Architecture Domain: Workflow Engine
 
 > **Source**: `repo-harness run capability-resolver`
-> **Owner**: Inspection, migration, contract, template, and policy generation.
+> **Owner**: Inspection, migration, contract, template, policy generation, workflow state, and execution primitives.
 
 ## Purpose
 
 The workflow engine is the repo mutation layer. It classifies the target repo,
 archives or preserves legacy workflow surfaces, installs the tasks-first
 contract, and writes the minimal file-backed harness that downstream repos can
-verify without a live service.
+verify without a live service. It also resolves the one Effective State
+projection, owns the shared coordination plane, and provides the process, lock
+and Git primitives that other capabilities share.
 
 ## Capabilities
 
-- `workflow-engine-inspection-migration` -> `docs/architecture/modules/workflow-engine/inspection-migration.md`
-- `workflow-engine-contract-assets` -> `docs/architecture/modules/workflow-engine/contract-assets.md`
+- `workflow-engine-inspection-migration` -> `docs/architecture/modules/workflow-engine/inspection-migration.md`: inspects repository state and executes explicit initialization or migration plans.
+- `workflow-engine-contract-assets` -> `docs/architecture/modules/workflow-engine/contract-assets.md`: owns the package workflow contract, the opt-in marker, templates, capability nodes and helper projections.
+- `workflow-engine-workflow-state` -> `docs/architecture/modules/workflow-engine/workflow-state.md`: resolves the one Effective State projection and owns the shared coordination plane and the continuation ledger.
+- `workflow-engine-execution-primitives` -> `docs/architecture/modules/workflow-engine/execution-primitives.md`: runs bounded child processes and provides the directory lock and Git common-dir and worktree topology reads. It holds no workflow policy.
 
 ## Stable Rules
 

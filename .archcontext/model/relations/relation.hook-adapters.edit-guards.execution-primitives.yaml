@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.hook-adapters.edit-guards.execution-primitives
+kind: calls
+source: component.hook-adapters.edit-guards
+target: capability.workflow-engine.execution-primitives
+intent: "Lock the edit journal and the circuit breaker records"

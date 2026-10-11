@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.general-repo-access.primary.codegraph-readiness
+kind: calls
+source: component.general-repo-access.primary
+target: capability.verification.codegraph-readiness
+intent: "Read CodeGraph index metadata through the adapter after path authorization"

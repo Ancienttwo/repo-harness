@@ -1,8 +1,8 @@
 # workflow-engine/inspection-migration 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-inspection-migration" sourceDigest="sha256:654f7236e2e51fd19e64129d48fe05f974f3172f6f69c671a78f31ba896198ae" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:a148fc8868cf1e59ce9fe25484555aff2c06e611ed559c709c045b9cde19ab0a" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-inspection-migration" sourceDigest="sha256:ac9e95ea634463056649d6771a617f2716fc5ba871786bb159330e9ce3c244b2" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:9bc9a965d7865509022f2d5ef555259a3fbe282f9b116e720f15e3368c800d52" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.workflow-engine.inspection-migration`(kind `capability`)
-> **Matched Prefixes**:`scripts/inspect-project-state.ts`、`scripts/create-project-dirs.sh`、`scripts/init-project.sh`、`scripts/lib/**`
+> **Matched Prefixes**:`scripts/inspect-project-state.ts`、`scripts/create-project-dirs.sh`、`scripts/init-project.sh`、`scripts/lib/**`、`scripts/AGENTS.md`、`scripts/CLAUDE.md`
 > **Local Contracts**:`scripts/AGENTS.md`、`scripts/CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
@@ -14,28 +14,30 @@ Inspects repository state and executes explicit initialization or migration plan
 
 ```mermaid
 flowchart LR
+  p1_capability_workflow_engine_contract_assets_c7ab122d["Contract Assets"]:::component
   p1_capability_workflow_engine_inspection_migration_9879a5f1["Inspection And Migration"]:::component
   p1_component_inspection_migration_primary_98f1224c["Repository Inspector Process"]:::component
   p1_capability_workflow_engine_inspection_migration_9879a5f1 -->|"Inspect before migration"| p1_component_inspection_migration_primary_98f1224c
+  p1_component_inspection_migration_primary_98f1224c -->|"Read directory and legacy path inventory from the package workflow contract"| p1_capability_workflow_engine_contract_assets_c7ab122d
   classDef actor fill:#111827,color:#ffffff,stroke:#f9fafb,stroke-width:2px
   classDef component fill:#075985,color:#ffffff,stroke:#bae6fd,stroke-width:2px
   classDef datastore fill:#3f6212,color:#ffffff,stroke:#d9f99d,stroke-width:2px
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:645bddf60b9049dc2f4d240dce10b9eb745f031ae765418032b109c0b7d3b7b7`).
-- Semantic nodes: `2`; declared relations: `1`.
+- Proof: `proven` (`sha256:fbb06b7f7b3105ac23913c540e65533c4174ac64a8ece2b9ce5b45c2164856ee`).
+- Semantic nodes: `3`; declared relations: `2`.
 
 ### 1.2 模組職責表
 
 | 宣告入口 | 錨點 | 職責 |
 | --- | --- | --- |
-| `entrypoint.inspection-migration.primary` | `src/cli/commands/init.ts#runProcess` | `sink.inspection-migration.primary` → `src/effects/process-runner.ts#runProcess` |
+| `entrypoint.inspection-migration.primary` | `scripts/inspect-project-state.ts#inspectRepo` | `sink.inspection-migration.primary` → `scripts/inspect-project-state.ts#detectMode`、`sink.inspection-migration.contract` → `scripts/workflow-contract.ts#loadWorkflowContract`、`sink.inspection-migration.hook-drift` → `scripts/inspect-project-state.ts#hasCustomClaudeHooks` |
 
 ### 1.3 規模信號
 
 - 規模量級:`5–10` 個文件 / `2000–5000` 行
-- 匹配前綴:`scripts/inspect-project-state.ts`、`scripts/create-project-dirs.sh`、`scripts/init-project.sh`、`scripts/lib/**`
+- 匹配前綴:`scripts/inspect-project-state.ts`、`scripts/create-project-dirs.sh`、`scripts/init-project.sh`、`scripts/lib/**`、`scripts/AGENTS.md`、`scripts/CLAUDE.md`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
 ### 1.4 依賴邊界
@@ -46,25 +48,27 @@ flowchart LR
 
 入向關係:
 
-- 無。
+- `calls` ← `component.evals-checks.ci-selection` — Run test files through the shared runner in scripts/lib/ci-run-tests.sh
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:645bddf60b9049dc2f4d240dce10b9eb745f031ae765418032b109c0b7d3b7b7`); selectors `1/1`.
+> **Proof**: `proven` (`sha256:fbb06b7f7b3105ac23913c540e65533c4174ac64a8ece2b9ce5b45c2164856ee`); selectors `3/3`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
 sequenceDiagram
   autonumber
   participant p2_capability_4262990f as Inspection And Migration
-  participant p2_component_7b8d80ff as Repository Inspector Process
-  p2_capability_4262990f->>p2_component_7b8d80ff: Dispatch Repository Inspector Process
-  alt Inspect before migration completes
-  p2_capability_4262990f->>p2_component_7b8d80ff: Invoke Repository Inspector Process
-    Note over p2_capability_4262990f: Return success receipt
-  else Inspect before migration is rejected or fails
-  p2_capability_4262990f->>p2_component_7b8d80ff: Propagate Repository Inspector Process failure
-    Note over p2_capability_4262990f: Return typed failure
+  participant p2_inspector_e0e36519 as Repository Inspector Process
+  participant p2_contract_304aeb6a as Contract Assets
+  p2_inspector_e0e36519->>p2_contract_304aeb6a: Load legacy paths and upgrade actions from the package workflow contract
+  p2_capability_4262990f->>p2_inspector_e0e36519: Detect the repository mode without writes
+  alt Inspection completes
+  p2_capability_4262990f->>p2_inspector_e0e36519: Record drift signals and required decisions
+    Note over p2_inspector_e0e36519: Return the read-only inspection result
+  else The package contract is missing or malformed
+  p2_inspector_e0e36519->>p2_contract_304aeb6a: Fail closed on an unreadable contract inventory
+    Note over p2_capability_4262990f: Exit non-zero without writes
   end
 ```
 <!-- END ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-inspection-migration" -->
@@ -83,27 +87,27 @@ The installed-contract resolver statements in earlier dated closeouts are histor
 ### 3.1 必须保持的不变量
 
 1. **inspector 只读**。判定与变更彻底分离：`inspect-project-state.ts` 没有任何写路径，因此可以在任意脏仓库、任意 CI 阶段安全反复运行。`check-ci.sh` 正是靠这一点把它当 smoke 用。
-2. **用户内容优先保全**。安全默认写死在 `safeDefaults`（:111-116）：保留 repo-local tasks-first 工作流、归档不确定的遗留内容而非覆盖、只删除 manifest 声明为 `known_generated` 的文件。契约里 `_ref/`、`_ops/`、`.codegraph/` 的动作是 `preserve` 且 `risk: high` / `ownership: user_local`——本仓库当前的 upgrade plan 里唯一一条就是它。
+2. **用户内容优先保全**。安全默认写死在 `safeDefaults`（`scripts/inspect-project-state.ts:109-114`）：保留 repo-local tasks-first 工作流、归档不确定的遗留内容而非覆盖、只删除 manifest 声明为 `known_generated` 的文件。契约里 `_ref/`、`_ops/`、`.codegraph/` 的动作是 `preserve` 且 `risk: high` / `ownership: user_local`——本仓库当前的 upgrade plan 里唯一一条就是它。
 3. **根 `CLAUDE.md` / `AGENTS.md` 永不覆盖**。检测到两者分叉时只产出 required decision 让人处理。
 4. **契约是唯一 inventory 权威**。目录清单、helper 清单、legacy 路径、upgrade 动作全部来自 `assets/workflow-contract.v1.json`，脚本里不得再维护第二份平行清单。
 5. **helper 解析 fail-closed**。不扫目录、不猜扩展名、不查 home、不认 legacy env alias；不合法条目直接抛错而不是跳过。
 6. **下游不装 helper wrapper**。`pi_install_helpers` 只在"目标目录就是源仓库自己"时才把 helper 拷进 `scripts/`；下游仓库统一走全局 repo-harness helper runtime。
 7. **dry-run 不碰用户级目录**。agent fleet 安装在非 apply 模式下只打印。
 
-### 3.2 有意接受的约束
+### 3.2 关键权衡
 
 - **shell 与 TS 双语言实现**是能力边界的直接结果：判定与事务在 TS（inspector + adoption），脚手架与安装在 shell（`pi_*`）。合并成一种语言会把 adoption 能力的所有权拖进本能力，代价高于收益。
 - **`init-project.sh` 会联网装依赖**（`bun create vite`、`npx shadcn` 等）。这是脚手架命令的本分，但也意味着它不能在离线 CI 里当检查用——所以 CI 只跑 inspector。
-- **三级 JSON runtime 探测**换来的是在没有 node/bun 的机器上也能读契约。代价是 python3 分支与 node 分支是两份独立实现的 selector 解析逻辑（`project-init-lib.sh:780-810`），语义漂移只能靠测试兜。
+- **三级 JSON runtime 探测**换来的是在没有 node/bun 的机器上也能读契约。代价是 python3 分支与 node 分支是两份独立实现的 selector 解析逻辑（`scripts/lib/project-init-lib.sh:502-553`），语义漂移只能靠测试兜。
 
 ### 3.3 10x 规模下先垮的点
 
 按危险度排序：
 
-1. **`project-init-lib.sh` 单文件 2,721 行**。它同时承担契约读取、模板安装、policy 生成、context map 生成、capability registry 生成、harness 状态面、gitignore managed block、外部工具报告七类职责。目标仓库形态每多一种，新分支就往这一个文件里加。这是本能力最先垮的地方——不是因为性能，而是因为没有任何模块边界能阻止一个 `pi_*` 函数偷偷依赖另一个的副作用。
+1. **`project-init-lib.sh` 单文件 2,449 行**。它同时承担契约读取、模板安装、policy 生成、context map 生成、capability registry 生成、harness 状态面、gitignore managed block、外部工具报告七类职责。目标仓库形态每多一种，新分支就往这一个文件里加。这是本能力最先垮的地方——不是因为性能，而是因为没有任何模块边界能阻止一个 `pi_*` 函数偷偷依赖另一个的副作用。
 2. **selector 解析的双实现漂移**。python3 与 node 两条分支各写一遍嵌套取值。今天语义一致，但只要有人给 node 分支加一个数组索引语法而忘了 python3 分支，行为就会随机器而变。这一处是 §3.1 第 4 条"单一权威"原则的实际缺口。
 3. **`pi_workflow_contract_query_lines` 静默降级**。没有 JSON runtime 时它返回空并只打 warn，调用方 `create_contract_directories` 会安静地一个目录都不建。这与仓库的 fail-closed 原则冲突，但目前没有调用方检查它的返回码。
-4. **drift 探测的硬编码常量**。`generatedClaudeHookPaths`（inspector :123-130）与 `ignoredReferenceOrSecretPaths`（:131-134）是 TS 里的字面量，不来自契约。契约里已有对应的 `legacy-claude-hook-shims` / `reference-and-secret-surfaces-preserve` 动作，两边同时改才不漂移。第 4 条不变量在这两处还没有真正兑现。
+4. **drift 探测的硬编码常量**。`generatedClaudeHookPaths`（`inspect-project-state.ts:121-128`）与 `ignoredReferenceOrSecretPaths`（`:129-132`）是 TS 里的字面量，不来自契约。契约里已有对应的 `legacy-claude-hook-shims` / `reference-and-secret-surfaces-preserve` 动作，两边同时改才不漂移。第 4 条不变量在这两处还没有真正兑现。
 5. **stack 分支的组合爆炸**。`init-project.sh` 的 5 个 stack 各自硬编码依赖列表。第 6 个 stack 的边际成本是线性的，但每个 stack 的依赖版本腐化是独立的，没有任何检查覆盖它们。
 
 ### 3.4 验证面
@@ -114,11 +118,23 @@ bun src/cli/index.ts init --repo . --dry-run
 bun scripts/inspect-project-state.ts --repo . --format text
 ```
 
-前两条是 `.ai/context/capabilities.json#verification_hints` 的原文。1,582 行测试对 3,786 行生产代码，其中 `create-project-dirs.runtime.test.ts` 一个文件 1,066 行——脚手架的真实行为几乎全靠它兜。
+前两条是 capability 节点 `extensions.verification` 的原文（`.archcontext/model/nodes/capability.workflow-engine.inspection-migration.yaml`）。本 capability 的生产代码有 3,965 行（含 `scripts/lib/**`）。`create-project-dirs.runtime.test.ts` 一个文件 1,148 行，脚手架的真实行为主要靠它覆盖；`migration-script.test.ts` 只有 47 行。
+
+### 3.5 跨 capability 边界
+
+- 本 capability 只读 contract-assets 的契约。`inspectRepo` 调用 `scripts/workflow-contract.ts` 的 `loadWorkflowContract`（`scripts/inspect-project-state.ts:3`、`:101`）。模型里对应关系是 `relation.inspection-migration.primary.contract-assets`（`reads`）。
+- `repo-harness init` 不属于本 capability。`src/cli/commands/init.ts` 归 contract-assets 的 template-projection 组件。它通过 execution-primitives 的 `runProcess` 把 inspector 当子进程运行（`init.ts:742`），所以 CodeGraph 没有从 init 到 inspector 的调用边。
+- 组件：只有 `component.inspection-migration.primary`，9 个文件、4,023 行（`archctx refactor scan`，2026-10-11）。
 
 ## 4. 历史决策记录（append-only）
 
 以下段落逐字保留自本文件前一版本，不翻译、不改写。
+
+### 2026-10-11 Flow anchored in the inspector
+
+- 旧 flow 的入口是 `src/cli/commands/init.ts#runProcess`，sink 是 `src/effects/process-runner.ts#runProcess`。这两个文件都不归本 capability：前者归 contract-assets，后者归新的 execution-primitives。
+- 新 flow 从 `scripts/inspect-project-state.ts#inspectRepo` 开始。它证明三条直接调用：`detectMode`、`hasCustomClaudeHooks` 与 `scripts/workflow-contract.ts#loadWorkflowContract`。
+- `scripts/AGENTS.md` 与 `scripts/CLAUDE.md` 是本 capability 声明的契约文件。之前它们没有 owner，现在进入 include。
 
 ### 2026-08-11 Codex Native Agent Projection Cutover
 
@@ -191,3 +207,6 @@ bun scripts/inspect-project-state.ts --repo . --format text
 - `tasks/archive/gate-audit-20261003/workstreams/workflow-engine/inspection-migration/20260712-inspection-migration.md`
 
 - `tasks/archive/gate-audit-20261003/workstreams/workflow-engine/inspection-migration/agent-fleet-specialists.md`
+
+- `generatedClaudeHookPaths` 与 `ignoredReferenceOrSecretPaths`（`scripts/inspect-project-state.ts:121-132`）应改为从契约的 `legacy-claude-hook-shims` 与 `reference-and-secret-surfaces-preserve` 动作读取（`assets/workflow-contract.v1.json:1241`、`:1597`）。
+- `pi_workflow_contract_query_lines` 在没有 JSON runtime 时返回 1，但 `create-project-dirs.sh:45` 与 `init-project.sh:71` 在进程替换里调用它，返回码被丢弃。目录清单会静默为空。

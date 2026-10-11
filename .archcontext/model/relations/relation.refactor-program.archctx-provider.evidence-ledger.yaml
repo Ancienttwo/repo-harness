@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.refactor-program.archctx-provider.evidence-ledger
+kind: calls
+source: component.refactor-program.archctx-provider
+target: capability.runtime-harness.evidence-ledger
+intent: "Canonicalize refactor provider records"

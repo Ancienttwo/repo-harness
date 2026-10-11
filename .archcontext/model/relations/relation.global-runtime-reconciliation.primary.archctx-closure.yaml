@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.global-runtime-reconciliation.primary.archctx-closure
+kind: calls
+source: component.global-runtime-reconciliation.primary
+target: component.global-runtime-reconciliation.archctx-closure
+intent: "Configure the global architecture projection and verify the archctx daemon handshake"

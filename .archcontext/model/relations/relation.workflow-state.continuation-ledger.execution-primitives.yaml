@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.workflow-state.continuation-ledger.execution-primitives
+kind: calls
+source: component.workflow-state.continuation-ledger
+target: capability.workflow-engine.execution-primitives
+intent: "Serialize attempt ledger appends under a directory lock"

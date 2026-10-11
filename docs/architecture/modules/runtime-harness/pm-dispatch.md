@@ -1,6 +1,6 @@
 # runtime-harness/pm-dispatch 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-pm-dispatch" sourceDigest="sha256:cf50adce0ead8a8faf5628cb1871cdf08e32bc764a3a29f6d78ef779e28b1666" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:44a77669051b0563c7c4813eeef5e1a6d859c18b08a68f35cbbfc2f0096863cf" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-pm-dispatch" sourceDigest="sha256:3384283c7f5056d463dcb19b3dabede839d40d3978a17f4071e91b68e9d0ec96" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:9981c5ce34a98393195fa7d23401875b1db06f23e568358912c514a015b01b08" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.pm-dispatch`(kind `capability`)
 > **Matched Prefixes**:`src/core/pm/**`、`src/effects/pm/**`、`src/cli/commands/pm.ts`、`src/effects/terminal/coding-isolation.ts`、`src/effects/terminal/coding-session.ts`、`src/effects/terminal/oar-coding-host.ts`、`assets/hermes/**`、`references/pm-operations.md`
@@ -16,16 +16,18 @@ Provides shared task-level PM operations and a fixed OAR coding host without add
 ```mermaid
 flowchart LR
   p1_capability_runtime_harness_pm_dispatch_a1501b88["PM Dispatch Boundary"]:::component
+  p1_capability_runtime_harness_task_agent_host_d81dadb6["Task Agent Host"]:::component
   p1_component_pm_dispatch_primary_b8936721["PM Task Operation Surface"]:::component
   p1_capability_runtime_harness_pm_dispatch_a1501b88 -->|"Validate a task-level PM request before using existing task authority."| p1_component_pm_dispatch_primary_b8936721
+  p1_capability_runtime_harness_pm_dispatch_a1501b88 -->|"Start the fixed OAR coding host and deliver requests through the existing task session"| p1_capability_runtime_harness_task_agent_host_d81dadb6
   classDef actor fill:#111827,color:#ffffff,stroke:#f9fafb,stroke-width:2px
   classDef component fill:#075985,color:#ffffff,stroke:#bae6fd,stroke-width:2px
   classDef datastore fill:#3f6212,color:#ffffff,stroke:#d9f99d,stroke-width:2px
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:2b8c7f988c2febb49e41c60a1acafac796fb535f64d8158b7d3d0abe8a55abd3`).
-- Semantic nodes: `2`; declared relations: `1`.
+- Proof: `proven` (`sha256:e0f724e2086a65fae8339cfb707f89852ea045ef562cd9b2253240c0f9df7760`).
+- Semantic nodes: `3`; declared relations: `2`.
 
 ### 1.2 模組職責表
 
@@ -44,15 +46,20 @@ flowchart LR
 
 出向關係:
 
+- `calls` → `capability.runtime-harness.evidence-ledger` — Hash coding session records with the evidence canonical JSON
 - `calls` → `component.pm-dispatch.primary` — Validate a task-level PM request before using existing task authority.
+- `reads` → `component.mcp-sidecar.repo-policy-registry` — Read registry authorization and hold its lock through PM effects
+- `calls` → `capability.runtime-harness.task-agent-host` — Start the fixed OAR coding host and deliver requests through the existing task session
+- `reads` → `capability.organization.task-fleet` — Read repository task offers for PM status without acquiring work
 
 入向關係:
 
-- 無。
+- `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the pm command
+- `calls` ← `component.mcp-sidecar.primary` — Serve the PM MCP binding over the PM host protocol
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:2b8c7f988c2febb49e41c60a1acafac796fb535f64d8158b7d3d0abe8a55abd3`); selectors `1/1`.
+> **Proof**: `proven` (`sha256:e0f724e2086a65fae8339cfb707f89852ea045ef562cd9b2253240c0f9df7760`); selectors `2/2`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
@@ -60,9 +67,11 @@ sequenceDiagram
   autonumber
   participant p2_pm_440be87a as PM Dispatch Boundary
   participant p2_operation_063bd517 as PM Task Operation Surface
+  participant p2_host_e62c1c09 as Task Agent Host
   p2_pm_440be87a->>p2_operation_063bd517: Validate the closed request against current task authority
   alt Return task observations or a request-bound result
   p2_pm_440be87a->>p2_operation_063bd517: Execute the approved request against existing task authority
+  p2_pm_440be87a->>p2_host_e62c1c09: Start the fixed OAR coding host as a task application host in Herdr
     Note over p2_pm_440be87a: Report the observed result and remaining verification
   else Reject an invalid or unapproved request
   p2_pm_440be87a->>p2_operation_063bd517: Reject an invalid request at the operation boundary
@@ -73,15 +82,46 @@ sequenceDiagram
 
 ## 3. P3:設計決策與不變量
 
-The PM interface delegates work through the existing task, claim and result
-records. It does not own another scheduler. The CLI validates each request
-before dispatch. Host configuration supplies exact worker admission.
+### 3.1 必须保持的不变量
 
-The fixed OAR host runs inside Herdr. OAR completion alone does not complete a
-task. Collection requires a valid request-bound TaskResult. Hermes exposes the
-same five PM operations. Its model tool boundary does not sandbox the whole
-Hermes process. Live provider acceptance remains unverified.
+1. **PM 只能选择操作。** PM 不能选择 host 命令或权限（`src/core/pm/protocol.ts:1`）。操作集合封闭：`capabilities`、`status`、`dispatch`、`follow-up`、`collect`（`protocol.ts:2`）。
+2. **不新增任务存储或调度器。** PM 通过现有的 task、claim 与 result 记录委派工作（#608）。
+3. **请求路径不触达 Git 或文件系统。** 路径来自 lease（`src/effects/pm/operations.ts:27`）。可信调用方围栏不从 PM wire 请求中解析（`operations.ts:17`）。
+4. **副作用持有现有的锁。** Bind、cleanup、lease 变更与授权变更使用同一组锁（`operations.ts:57`）。锁持续到启动与投递结束（capability responsibilities）。
+5. **Worker 准入只来自 operator。** PM 请求不能提供或修改准入（`src/effects/terminal/coding-isolation.ts:6`）。只有批准的 worktree 可写。系统不会为了让 provider 运行而授予额外的状态访问（`coding-isolation.ts:61-63`）。
+6. **OAR 完成不等于任务完成。** 收集需要有效的 request-bound TaskResult。OAR 输出只是观察（`src/effects/terminal/oar-coding-host.ts:29`）。
+7. **未知投递不重放。** Canonical request 就是重试 receipt，包括未知投递（`operations.ts:137`）。被接受的传输 ACK 在后续权威检查之前持久化（#619）。
+8. **跨适配器边界只传固定标识符。** 错误消息与未知代码可能含本地路径，所以不跨边界（`protocol.ts:59-60`，#619）。
+9. **Hermes 只暴露五个 PM 工具。** 它的模型工具边界不是整个 Hermes 进程的 OS sandbox（#608）。
+
+### 3.2 关键权衡
+
+| 决策 | 权衡 |
+| --- | --- |
+| 共享 CLI contract 加薄适配器（#608） | Grok 与以后的 Dot host 可以复用同一个 contract。代价：每个 host 的限制要单独验证，#608 没有验证它们 |
+| 这一阶段只支持 macOS 上的 Codex worker 隔离（#608） | 其他平台与 provider fail closed |
+| 远端错误改为固定公共代码（#619） | 本地路径与传输诊断不外泄。代价：远端调用方得到的诊断更少，内部 worker 诊断保持不变 |
+| 在后续 guard 之前持久化 ACK（#619） | 拒绝之后仍保留已接受的投递证据。代价：拒绝路径也会写一个 receipt |
+| Coding host 复用 task-agent-host 的 `startTaskApplicationHost` | 生命周期、清理与结果收集只有一份实现。代价：pm-dispatch 依赖 task-agent-host |
+
+### 3.3 未决问题
+
+- 真实的 coding provider 任务与 live Hermes 配置仍未验证（#608，原 P3 记录）。
+- #608 的后续项 F2：Hermes 适配器使用 60 秒超时。当前文件仍是 `timeout=60`（`assets/hermes/repo-harness-pm/__init__.py:15`）。Dispatch 可能更久。#608 要求在 live 激活前修复。
 
 ## 4. 歷史決策記錄(append-only)
 
+### PM 边界加入模型 (2026-10-10, #608 与 #615)
+
+- P1：Bot 停在 PM 边界。Coding agent 在 Herdr 中的固定 OAR host 里运行。
+- P2：#608 加入共享 PM 操作与 Hermes 适配器。#615 把 PM 与 MCP 适配器整合到 main。
+- P3：PM 不拥有 task 或 result 权威。原 P3 的英文说明已并入 §3.1。
+
+### 与 task-agent-host 的依赖进入模型 (2026-10-11)
+
+- P3：`startCodingTaskAgent` 直接调用 task-agent-host 的 `startTaskApplicationHost`。Flow 增加这一步，并声明 pm-dispatch → task-agent-host 关系。
+
 ## Optimization Backlog
+
+- **共享目录 `src/effects/terminal/`。** 本能力在其中拥有 3 个显式文件。After arch-context#296，与 task-agent-host 一起决定目录归属。
+- **`relation.pm-dispatch.repo-registry` 的目标（集成）。** 目标从 mcp-sidecar capability 改为 `component.mcp-sidecar.repo-policy-registry`。导入只指向 `src/effects/repo-registry.ts`。`relation.mcp-sidecar.primary.pm-dispatch` 因此不形成节点级的环。

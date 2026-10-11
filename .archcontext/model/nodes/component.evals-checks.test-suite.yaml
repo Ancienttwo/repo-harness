@@ -1,0 +1,16 @@
+schemaVersion: archcontext.node/v2
+id: component.evals-checks.test-suite
+kind: component
+name: "Test Suite"
+status: active
+parent: capability.verification.evals-checks
+summary: "The repository test files and the Bun test configuration; expandable by runtime boundary."
+responsibilities:
+  - Hold every test file of the repository under one owner.
+  - Isolate HOME and TMPDIR for every test file through the Bun test preload.
+notes:
+  - "Expandable: split by runtime boundary (cli, effects, unit, state, operator-web, fixtures) when a separate owner needs it."
+source:
+  include:
+    - "tests/**"
+    - "bunfig.toml"

@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.global-runtime-reconciliation.cli-root.mcp-sidecar
+kind: calls
+source: component.global-runtime-reconciliation.cli-root
+target: capability.runtime-harness.mcp-sidecar
+intent: "Register the mcp command"

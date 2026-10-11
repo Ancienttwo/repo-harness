@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.operator.activity-feeds.view-projections
+kind: calls
+source: component.operator.activity-feeds
+target: component.operator.view-projections
+intent: "Reuse public agent-config text filtering and runtime badge freshness rules"

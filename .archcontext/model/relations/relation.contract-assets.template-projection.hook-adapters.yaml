@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.contract-assets.template-projection.hook-adapters
+kind: calls
+source: component.contract-assets.template-projection
+target: capability.runtime-harness.hook-adapters
+intent: "Read the install profile and project skills during init"

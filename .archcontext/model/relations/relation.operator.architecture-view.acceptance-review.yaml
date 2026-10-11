@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.operator.architecture-view.acceptance-review
+kind: calls
+source: component.operator.architecture-view
+target: capability.verification.acceptance-review
+intent: "Report module CLI failures with the typed module read error of the review prompt builder"

@@ -49,8 +49,7 @@ runner as an on-demand diagnostic command.
 ## Guardrails
 
 - Keep scheduler installation manual and host-local.
-- Treat workflow failures and drift requests as inbox entries, not process
-  crashes.
+- Treat workflow failures as inbox entries, not process crashes.
 - Keep `.ai/harness/triage/inbox.md` as runtime state, not a source-of-truth
   plan or task ledger.
 - Triage entries do not authorize work. Execution authority stays with the

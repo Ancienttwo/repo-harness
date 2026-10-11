@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.mcp-sidecar.host-setup.primary
+kind: calls
+source: component.mcp-sidecar.host-setup
+target: component.mcp-sidecar.primary
+intent: "Build the expected tool inventory for the live doctor and run prepare-goal through the tool dispatcher"

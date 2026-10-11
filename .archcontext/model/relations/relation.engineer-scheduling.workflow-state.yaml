@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.engineer-scheduling.workflow-state
+kind: reads
+source: capability.runtime-harness.engineer-scheduling
+target: capability.workflow-engine.workflow-state
+intent: "Project canonical Sprint tasks into the work graph"

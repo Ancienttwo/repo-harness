@@ -1,7 +1,7 @@
 schemaVersion: archcontext.flow/v1
 id: flow.engineer-bindings.primary
 capabilityId: capability.runtime-harness.engineer-bindings
-name: Resolve an authenticated Engineer principal against the current Binding
+name: Bind an Engineer and resolve its authenticated principal against the current Binding
 applicability: required
 participants:
   - id: engineer-authority
@@ -9,6 +9,14 @@ participants:
   - id: binding-store
     nodeId: component.engineer-bindings.primary
 steps:
+  - id: publish-binding
+    from: engineer-authority
+    to: binding-store
+    label: Publish one operator-authorized binding transition with the event durable before current
+    evidence:
+      entrypointId: entrypoint.engineer-bindings.operator-cli
+      sourceSymbol: buildEngineerCommand
+      sinkId: sink.engineer-bindings.shared-store
   - id: resolve-current-binding
     from: engineer-authority
     to: binding-store
@@ -20,19 +28,19 @@ steps:
 outcomes:
   - id: success
     kind: success
-    label: The mapping and current Binding match every exact fence
+    label: The principal matches every exact fence and its Claim gets a ClaimActorReceipt
     steps:
-      - id: return-principal
+      - id: build-claim-actor-receipt
         from: engineer-authority
         to: binding-store
-        label: Return the server-derived Engineer principal
+        label: Bind the authenticated principal to the canonical WorkEnvelope and live Lease of the new Claim
         evidence:
-          entrypointId: entrypoint.engineer-bindings.principal-resolution
-          sourceSymbol: resolveEngineerPrincipal
-          sinkId: sink.engineer-bindings.current-binding
+          entrypointId: entrypoint.engineer-bindings.acquire
+          sourceSymbol: acquireEngineerTaskLocked
+          sinkId: sink.engineer-bindings.claim-actor-build
     terminal:
       participant: engineer-authority
-      label: Return authenticated principal
+      label: Return the WorkEnvelope and the immutable ClaimActorReceipt
   - id: error
     kind: error
     label: Mapping, Profile, Binding, or exact fence validation fails
@@ -40,7 +48,7 @@ outcomes:
       - id: return-refusal
         from: engineer-authority
         to: binding-store
-        label: Propagate typed fail-closed refusal
+        label: Propagate typed fail-closed refusal before any Claim
         evidence:
           entrypointId: entrypoint.engineer-bindings.principal-resolution
           sourceSymbol: resolveEngineerPrincipal

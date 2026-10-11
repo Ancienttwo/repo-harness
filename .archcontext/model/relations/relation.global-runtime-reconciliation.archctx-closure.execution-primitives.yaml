@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.global-runtime-reconciliation.archctx-closure.execution-primitives
+kind: calls
+source: component.global-runtime-reconciliation.archctx-closure
+target: capability.workflow-engine.execution-primitives
+intent: "Run the archctx binary through the process runner"

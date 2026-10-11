@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.work-demand.workflow-state
+kind: writes
+source: capability.runtime-harness.work-demand
+target: capability.workflow-engine.workflow-state
+intent: "Materialize an accepted work demand as a canonical Sprint backlog row"

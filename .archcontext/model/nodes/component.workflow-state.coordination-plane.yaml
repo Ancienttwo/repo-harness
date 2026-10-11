@@ -1,0 +1,42 @@
+schemaVersion: archcontext.node/v2
+id: component.workflow-state.coordination-plane
+kind: component
+name: Shared Coordination Plane
+status: active
+parent: capability.workflow-engine.workflow-state
+summary: Gives every linked worktree of one clone the same task identity, lease ownership and read-only board.
+responsibilities:
+  - Read task identity from the persisted Sprint ID cell and derive only the task revision.
+  - Move leases through reserving, bound, completing and released with claim id and generation fencing inside the task lock.
+  - Project the board from canonical Sprint rows, leases, worktree topology and attempt ledgers without any lock.
+  - Own Sprint schema migration, worktree topology records and the sprint CLI verbs.
+source:
+  include:
+    - src/core/state/coordination-identity.ts
+    - src/core/state/lease-liveness.ts
+    - src/core/state/sprint-backlog-rows.ts
+    - src/core/state/sprint-row-completion.ts
+    - src/core/state/sprint-schema-migration.ts
+    - src/core/state/sprint-schema-v1.ts
+    - src/core/state/project-board-slice.ts
+    - src/core/state/project-board.ts
+    - src/core/state/command-outcome.ts
+    - src/effects/state/coordination-canonical-source.ts
+    - src/effects/state/coordination-claim-token.ts
+    - src/effects/state/coordination-cutover.ts
+    - src/effects/state/coordination-lease-liveness-store.ts
+    - src/effects/state/coordination-lease-reclaim.ts
+    - src/effects/state/coordination-lease-store.ts
+    - src/effects/state/coordination-sprint.ts
+    - src/effects/state/coordination-worktree-topology.ts
+    - src/effects/state/collect-board-inputs.ts
+    - src/effects/state/collect-slice-inputs.ts
+    - src/effects/state/resolve-board.ts
+    - src/effects/state/sprint-schema-migration.ts
+    - src/effects/state/pruned-worktree-intents.ts
+    - src/effects/state/worktree-trash.ts
+    - src/effects/state/write-journal.ts
+    - src/core/worktree-location.mjs
+    - src/core/worktree-location.d.mts
+    - src/cli/commands/sprint.ts
+    - scripts/sprint-backlog.sh

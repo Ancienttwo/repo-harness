@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.pm-dispatch.evidence-ledger
+kind: calls
+source: capability.runtime-harness.pm-dispatch
+target: capability.runtime-harness.evidence-ledger
+intent: "Hash coding session records with the evidence canonical JSON"

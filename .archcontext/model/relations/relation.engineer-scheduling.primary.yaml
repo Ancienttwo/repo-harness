@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.engineer-scheduling.primary
+kind: calls
+source: capability.runtime-harness.engineer-scheduling
+target: component.engineer-scheduling.primary
+intent: Revalidate the asserted offer against a fresh offer projection before and inside the concurrency lock

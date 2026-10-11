@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.hook-adapters.session-lifecycle.execution-primitives
+kind: calls
+source: component.hook-adapters.session-lifecycle
+target: capability.workflow-engine.execution-primitives
+intent: "Run setup check subprocesses and hold delegation and session locks"

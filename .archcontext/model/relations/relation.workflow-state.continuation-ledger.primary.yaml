@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.workflow-state.continuation-ledger.primary
+kind: calls
+source: component.workflow-state.continuation-ledger
+target: component.workflow-state.primary
+intent: "Project the continuation envelope from read-only Effective State"

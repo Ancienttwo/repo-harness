@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.mcp-sidecar.coding-profile.execution-primitives
+kind: calls
+source: component.mcp-sidecar.coding-profile
+target: capability.workflow-engine.execution-primitives
+intent: "Use the configured Git binary for coding workspaces"

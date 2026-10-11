@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.hook-adapters.edit-guards.workflow-state
+kind: calls
+source: component.hook-adapters.edit-guards
+target: capability.workflow-engine.workflow-state
+intent: "Check edit paths against the contract and claim tokens"

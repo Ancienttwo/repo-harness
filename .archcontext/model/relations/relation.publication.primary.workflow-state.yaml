@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.publication.primary.workflow-state
+kind: calls
+source: component.publication.primary
+target: capability.workflow-engine.workflow-state
+intent: "Move the publication lease through review and takeover states under the task lock"

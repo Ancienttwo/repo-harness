@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.engineer-scheduling.task-fleet
+kind: calls
+source: capability.runtime-harness.engineer-scheduling
+target: capability.organization.task-fleet
+intent: "Collect fleet offers for the scheduling acquire path"

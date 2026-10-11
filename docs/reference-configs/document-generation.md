@@ -5,7 +5,7 @@ Generated repos use a minimal documentation profile by default.
 ## Required
 
 - `docs/spec.md`: stable product or operator outcome.
-- `docs/architecture/index.md`: umbrella architecture ledger, pending drift requests, snapshots, and diagram links.
+- `docs/architecture/index.md`: umbrella architecture ledger, snapshots, and diagram links.
 - `tasks/`: execution, lessons, research, contracts, and reviews.
 - `tasks/workstreams/`: durable capability workstream ledgers; `tasks/todos.md` is only the deferred-goal ledger.
 - `.ai/harness/`: workflow policy, checks, handoff, failures, and run state.

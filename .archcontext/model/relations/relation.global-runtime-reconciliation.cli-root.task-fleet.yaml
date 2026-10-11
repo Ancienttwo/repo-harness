@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.global-runtime-reconciliation.cli-root.task-fleet
+kind: calls
+source: component.global-runtime-reconciliation.cli-root
+target: capability.organization.task-fleet
+intent: "Register the fleet command"

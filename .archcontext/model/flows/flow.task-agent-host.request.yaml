@@ -1,0 +1,58 @@
+schemaVersion: archcontext.flow/v1
+id: flow.task-agent-host.request
+capabilityId: capability.runtime-harness.task-agent-host
+name: Run one request through a persistent Herdr task agent
+applicability: required
+participants:
+  - id: host
+    nodeId: capability.runtime-harness.task-agent-host
+  - id: session
+    nodeId: component.task-agent-host.primary
+steps:
+  - id: start-agent
+    from: host
+    to: session
+    label: Start the task agent pane for one task and role and record its binding
+    evidence:
+      entrypointId: entrypoint.task-agent-host.command
+      sourceSymbol: buildTaskAgentCommand
+      sinkId: sink.task-agent-host.start
+  - id: send-request
+    from: host
+    to: session
+    label: Save the numbered request and its round marker before the prompt is delivered
+    evidence:
+      entrypointId: entrypoint.task-agent-host.command
+      sourceSymbol: buildTaskAgentCommand
+      sinkId: sink.task-agent-host.send
+outcomes:
+  - id: success
+    kind: success
+    label: The provider writes the exact request result
+    steps:
+      - id: collect-result
+        from: host
+        to: session
+        label: Validate and ingest only the request-bound TaskResult
+        evidence:
+          entrypointId: entrypoint.task-agent-host.command
+          sourceSymbol: buildTaskAgentCommand
+          sinkId: sink.task-agent-host.collect
+    terminal:
+      participant: host
+      label: Return the collected result without acceptance authority
+  - id: lost-response
+    kind: error
+    label: The send response is lost or delivery is unknown
+    steps:
+      - id: reconcile-request
+        from: host
+        to: session
+        label: Read the saved request by stable id and report its delivery state
+        evidence:
+          entrypointId: entrypoint.task-agent-host.command
+          sourceSymbol: buildTaskAgentCommand
+          sinkId: sink.task-agent-host.reconcile
+    terminal:
+      participant: host
+      label: Keep delivery unknown and never resend launch or accept

@@ -5,3 +5,34 @@ name: Operator HTTP Reader
 status: active
 parent: capability.runtime-harness.operator
 summary: Returns public JSON observations and typed failures without write routes.
+responsibilities:
+  - Accept only GET and HEAD from a loopback Host and same-origin callers; refuse every other method with 405.
+  - Route each path through the frozen OPERATOR_ROUTES list; every route declares write false.
+  - Run slow reads in supervised worker processes and start background collectors once per server.
+  - Own the operator serve and runtime capture CLI entry and the Herdr observation transport.
+source:
+  include:
+    - src/effects/operator/**
+    - src/cli/commands/operator.ts
+    - assets/operator/**
+    - src/effects/terminal/herdr-observation.ts
+  entrypoints:
+    - id: entrypoint.operator.http-server
+      path: src/effects/operator/server.ts
+      symbols:
+        - name: startOperatorServer
+          sinks:
+            - id: sink.operator.dev-activity-collector
+              path: src/effects/dev-activity/collector.ts
+              symbol: startDevActivityCollector
+        - name: handleRequest
+          sinks:
+            - id: sink.operator.dev-activity-decode
+              path: src/core/dev-activity/decode.ts
+              symbol: decodeDevActivitySnapshot
+            - id: sink.operator.dev-activity-unavailable
+              path: src/core/dev-activity/decode.ts
+              symbol: unavailableDevActivitySnapshot
+            - id: sink.operator.architecture-request
+              path: src/core/operator/architecture.ts
+              symbol: parseArchitectureRequest

@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.publication.provider-feedback.workflow-state
+kind: calls
+source: component.publication.provider-feedback
+target: capability.workflow-engine.workflow-state
+intent: "Read canonical tasks and leases to evaluate provider feedback progress"

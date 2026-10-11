@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.acceptance-review.primary.task-agent-host
+kind: calls
+source: component.acceptance-review.primary
+target: capability.runtime-harness.task-agent-host
+intent: "Run the persistent review session on a Herdr task agent and read its session artifacts"

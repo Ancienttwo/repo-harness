@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.global-runtime-reconciliation.cli-root.skill-surface-catalog
+kind: calls
+source: component.global-runtime-reconciliation.cli-root
+target: component.action-commands.skill-surface-catalog
+intent: "Parse the skill surface catalog for CLI commands"

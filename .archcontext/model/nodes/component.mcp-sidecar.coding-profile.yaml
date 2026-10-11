@@ -1,0 +1,16 @@
+schemaVersion: archcontext.node/v2
+id: component.mcp-sidecar.coding-profile
+kind: component
+name: "Coding Profile Runtime"
+status: active
+parent: capability.runtime-harness.mcp-sidecar
+summary: "Runs the opt-in coding tool block: managed worktree workspaces, file edits and bounded shell processes."
+responsibilities:
+  - Open managed coding workspaces as separate worktrees by default.
+  - Serve read, write, patch and exec tools inside the granted workspace.
+  - Bound process count, duration and output per authorization.
+source:
+  include:
+    - src/cli/mcp/coding-tools.ts
+    - src/cli/mcp/coding-workspaces.ts
+    - src/cli/mcp/process-sessions.ts

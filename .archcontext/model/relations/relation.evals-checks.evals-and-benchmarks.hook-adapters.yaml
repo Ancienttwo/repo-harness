@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.evals-checks.evals-and-benchmarks.hook-adapters
+kind: reads
+source: component.evals-checks.evals-and-benchmarks
+target: capability.runtime-harness.hook-adapters
+intent: "Read hook event telemetry records to measure hook cost in profile benchmarks"

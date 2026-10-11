@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.workflow-state.coordination-plane.primary
+kind: calls
+source: component.workflow-state.coordination-plane
+target: component.workflow-state.primary
+intent: "Read artifacts and owner Effective State through the shared resolver"

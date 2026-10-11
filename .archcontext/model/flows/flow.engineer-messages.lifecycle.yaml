@@ -8,6 +8,8 @@ participants:
     nodeId: capability.runtime-harness.engineer-messages
   - id: binding-authority
     nodeId: capability.runtime-harness.engineer-bindings
+  - id: inbox
+    nodeId: component.engineer-messages.primary
 steps:
   - id: revalidate-binding
     from: message-authority
@@ -17,34 +19,42 @@ steps:
       entrypointId: entrypoint.engineer-messages.binding-fence
       sourceSymbol: validateTarget
       sinkId: sink.engineer-messages.binding-fence
+  - id: persist-event-and-receipt
+    from: message-authority
+    to: inbox
+    label: Write the immutable event and its pending receipt before any transport attempt
+    evidence:
+      entrypointId: entrypoint.engineer-messages.send
+      sourceSymbol: persistEventAndReceipt
+      sinkId: sink.engineer-messages.pending-receipt
 outcomes:
   - id: success
     kind: success
-    label: Immutable event and pending receipt exist before optional delivery and digest-gated acknowledgement
+    label: The recipient acknowledges after every referenced resource matches its digest
     steps:
-      - id: persist-and-return
+      - id: acknowledge-after-resource-check
         from: message-authority
-        to: binding-authority
-        label: Persist canonical event and receipt before returning the current delivery state
+        to: inbox
+        label: Re-read referenced resource bytes and refuse acknowledgement on any digest mismatch
         evidence:
-          entrypointId: entrypoint.engineer-messages.binding-fence
-          sourceSymbol: validateTarget
-          sinkId: sink.engineer-messages.binding-fence
+          entrypointId: entrypoint.engineer-messages.acknowledge
+          sourceSymbol: acknowledgeModuleMessage
+          sinkId: sink.engineer-messages.resource-bytes
     terminal:
       participant: message-authority
-      label: Return canonical event and current receipt
+      label: Return the acknowledged receipt
   - id: error
     kind: error
-    label: Stale Binding, persistence, transport observation, resource digest or transition validation fails closed
+    label: A transport or external observation does not continue the exact receipt chain
     steps:
-      - id: preserve-state
+      - id: refuse-broken-chain
         from: message-authority
-        to: binding-authority
-        label: Preserve the last durable state and return typed refusal
+        to: inbox
+        label: Accept an observation only for a pending receipt with the next attempt and the previous observation digest
         evidence:
-          entrypointId: entrypoint.engineer-messages.binding-fence
-          sourceSymbol: validateTarget
-          sinkId: sink.engineer-messages.binding-fence
+          entrypointId: entrypoint.engineer-messages.external-delivery-observation
+          sourceSymbol: appendObservation
+          sinkId: sink.engineer-messages.observation-chain
     terminal:
       participant: message-authority
-      label: Preserve durable state and return typed refusal
+      label: Keep the last durable receipt and return a typed refusal

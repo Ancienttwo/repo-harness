@@ -1,0 +1,7 @@
+schemaVersion: archcontext.relation/v1
+id: relation.engineer-scheduling.integration-acceptance
+kind: reads
+source: capability.runtime-harness.engineer-scheduling
+target: capability.runtime-harness.integration-acceptance
+synchrony: synchronous
+intent: Read ME-4C product acceptance projections as one closed dependency authority and never reconstruct acceptance from prose

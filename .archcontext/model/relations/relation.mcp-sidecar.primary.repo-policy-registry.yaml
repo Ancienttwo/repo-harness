@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.mcp-sidecar.primary.repo-policy-registry
+kind: calls
+source: component.mcp-sidecar.primary
+target: component.mcp-sidecar.repo-policy-registry
+intent: "Resolve repositories and paths under the profile policy then redact and audit each result"

@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.hook-adapters.session-lifecycle.task-fleet
+kind: calls
+source: component.hook-adapters.session-lifecycle
+target: capability.organization.task-fleet
+intent: "Render task inbox messages as untrusted session context"

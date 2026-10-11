@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.pm-dispatch.task-agent-host
+kind: calls
+source: capability.runtime-harness.pm-dispatch
+target: capability.runtime-harness.task-agent-host
+intent: "Start the fixed OAR coding host and deliver requests through the existing task session"

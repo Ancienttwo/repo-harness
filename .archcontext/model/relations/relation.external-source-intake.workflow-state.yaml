@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.external-source-intake.workflow-state
+kind: reads
+source: capability.runtime-harness.external-source-intake
+target: capability.workflow-engine.workflow-state
+intent: "Look up the canonical task for an external source"

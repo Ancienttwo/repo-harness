@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.pipeline-ledger.evidence-ledger
+kind: calls
+source: capability.runtime-harness.pipeline-ledger
+target: capability.runtime-harness.evidence-ledger
+intent: "Validate original verification execution provenance before admitting evidence"

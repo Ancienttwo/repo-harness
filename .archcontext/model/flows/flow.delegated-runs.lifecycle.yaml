@@ -10,6 +10,8 @@ participants:
     nodeId: capability.runtime-harness.engineer-bindings
   - id: delegated-run-schema
     nodeId: component.delegated-runs.primary
+  - id: collaboration-fence
+    nodeId: capability.runtime-harness.collaboration
 steps:
   - id: revalidate-parent
     from: delegated-run-journal
@@ -27,6 +29,22 @@ steps:
       entrypointId: entrypoint.delegated-runs.intent
       sourceSymbol: persistIntent
       sinkId: sink.delegated-runs.intent-schema
+  - id: dispatch-admitted-run
+    from: delegated-run-journal
+    to: delegated-run-schema
+    label: Dispatch the admitted run through the journal that owns the one launch claim
+    evidence:
+      entrypointId: entrypoint.delegated-runs.dispatch-command
+      sourceSymbol: dispatchDelegatedRunCommand
+      sinkId: sink.delegated-runs.dispatch-host-action
+  - id: fence-collaboration-context
+    from: delegated-run-journal
+    to: collaboration-fence
+    label: Refuse a run whose injected coordination context has no recorded run-context binding before any host action
+    evidence:
+      entrypointId: entrypoint.delegated-runs.dispatch-effect
+      sourceSymbol: dispatchDelegatedRun
+      sinkId: sink.delegated-runs.collaboration-dispatch-fence
 outcomes:
   - id: completed
     kind: success

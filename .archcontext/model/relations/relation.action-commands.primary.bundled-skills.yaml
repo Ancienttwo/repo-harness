@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.action-commands.primary.bundled-skills
+kind: depends-on
+source: component.action-commands.primary
+target: component.action-commands.bundled-skills
+intent: "Name bundled skill packages as manifest package sources"

@@ -1,7 +1,41 @@
 schemaVersion: archcontext.node/v2
 id: component.hook-adapters.primary
 kind: component
-name: "Typed Route Dispatch"
+name: "Hook Route Runtime"
 status: active
 parent: capability.runtime-harness.hook-adapters
-summary: "Resolves a host hook route to its one typed handler and runs it."
+summary: "Resolves a host hook route to its one typed handler, shapes the host output and writes one telemetry record."
+responsibilities:
+  - Keep the ordered ROUTES registry and the one typed handler binding per route.
+  - Check the opt-in marker, parse hook input once and memoize state reads per event.
+  - Shape Claude, Codex and Pi output in one place, including the SessionStart context budget.
+  - Append one loop-engine-hook-event/v1 record per handled event and rotate the bounded log archive.
+source:
+  include:
+    - "src/cli/hook-entry.ts"
+    - "src/cli/hook/runtime.ts"
+    - "src/cli/hook/route-registry.ts"
+    - "src/cli/hook/handler-registry.ts"
+    - "src/cli/hook/handler-contract.ts"
+    - "src/cli/hook/hook-input.ts"
+    - "src/cli/hook/event-telemetry.ts"
+    - "src/cli/hook/run-identity.ts"
+    - "src/cli/hook/trace-observer.ts"
+    - "src/cli/hook/session-context-budget.ts"
+    - "src/pi/hook-protocol.ts"
+    - "src/core/loop/**"
+    - "src/effects/loop/**"
+    - "src/core/hook-work-budget.ts"
+    - "src/effects/hook-event-log.ts"
+  entrypoints:
+    - id: entrypoint.hook-adapters.handler-bindings
+      path: "src/cli/hook/handler-registry.ts"
+      symbols:
+        - name: "handlers"
+          sinks:
+            - id: sink.hook-adapters.mutation-guard
+              path: "src/cli/hook/mutation-guard.ts"
+              symbol: "runMutationGuard"
+            - id: sink.hook-adapters.stop-handler
+              path: "src/cli/hook/stop-handler.ts"
+              symbol: "runStopHandler"

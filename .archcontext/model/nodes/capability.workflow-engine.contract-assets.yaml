@@ -7,6 +7,7 @@ summary: Owns the package workflow contract, repo opt-in marker, templates, capa
 responsibilities:
   - Own the package workflow contract body and the repo opt-in marker.
   - Own policy seeders, capability authority, and generated helper parity.
+  - Own the contract worktree lifecycle and the planning helpers that the contract lists.
 source:
   include:
     - "assets/workflow-contract.v1.json"
@@ -27,15 +28,87 @@ source:
     - "assets/templates/**"
     - "assets/reference-configs/**"
     - "docs/reference-configs/**"
+    - "assets/AGENTS.md"
+    - "assets/CLAUDE.md"
+    - ".ai/context/**"
+    - ".ai/harness/brain-manifest.json"
+    - ".archcontext/**"
+    - "src/core/capabilities/**"
+    - "src/core/source-projection.ts"
+    - "src/cli/commands/run.ts"
+    - "src/cli/commands/brain.ts"
+    - "src/cli/commands/brain-root.ts"
+    - "assets/partials/**"
+    - "assets/partials-agents/**"
+    - "assets/project-structures/**"
+    - "assets/plan-map.json"
+    - "assets/versions.json"
+    - "assets/initializer-question-pack.v4.json"
+    - "assets/initializer-question-pack.v4.schema.json"
+    - ".claude/templates/**"
+    - "scripts/workflow-contract.ts"
+    - "scripts/check-context-map.ts"
+    - "scripts/check-context-files.sh"
+    - "scripts/select-agent-context-blocks.sh"
+    - "scripts/workstream-sync.sh"
+    - "scripts/sync-helper-sources.ts"
+    - "scripts/sync-reference-configs.ts"
+    - "scripts/assemble-template.ts"
+    - "scripts/initializer-question-pack.ts"
+    - "scripts/contract-worktree-runtime.ts"
+    - "scripts/worktree-merge-lib.sh"
+    - "scripts/cutover-closure.ts"
+    - "scripts/new-spec.sh"
+    - "scripts/new-sprint.sh"
+    - "scripts/new-plan.sh"
+    - "scripts/capture-plan.sh"
+    - "scripts/plan-to-todo.sh"
+    - "scripts/switch-plan.sh"
+    - "scripts/classify-historical-plans.ts"
+    - "scripts/ensure-task-workflow.sh"
+    - "scripts/refresh-current-status.sh"
+    - "scripts/summarize-failures.sh"
+    - "scripts/maintenance-triage.sh"
+    - "scripts/heartbeat-triage.sh"
+    - "scripts/check-deploy-sql-order.sh"
+    - "scripts/factor-lab-new.sh"
+    - "scripts/factor-lab-promote.sh"
+    - "scripts/factor-lab-reject.sh"
+    - "scripts/factor-lab-check.sh"
   entrypoints:
     - id: entrypoint.contract-assets.primary
-      path: "src/core/adoption/workflow-contract-asset.ts"
+      path: "scripts/sync-helper-sources.ts"
       symbols:
-        - name: "loadWorkflowContractAsset"
+        - name: "main"
           sinks:
             - id: sink.contract-assets.primary
-              path: "src/core/adoption/workflow-contract-asset.ts"
-              symbol: "readWorkflowContractAsset"
+              path: "scripts/workflow-contract.ts"
+              symbol: "loadWorkflowContract"
+            - id: sink.contract-assets.helper-inventory
+              path: "scripts/workflow-contract.ts"
+              symbol: "getHelperScripts"
+            - id: sink.contract-assets.projection-write
+              path: "src/core/source-projection.ts"
+              symbol: "writeProjectionFileAtomic"
+            - id: sink.contract-assets.projection-compare
+              path: "src/core/source-projection.ts"
+              symbol: "sameProjectionBytes"
+    - id: entrypoint.contract-assets.run-command
+      path: "src/cli/commands/run.ts"
+      symbols:
+        - name: "buildRunCommand"
+          sinks:
+            - id: sink.contract-assets.helper-runner
+              path: "src/effects/runtime/helper-runner.ts"
+              symbol: "runHelper"
+    - id: entrypoint.contract-assets.helper-runner
+      path: "src/effects/runtime/helper-runner.ts"
+      symbols:
+        - name: "runHelper"
+          sinks:
+            - id: sink.contract-assets.bounded-process
+              path: "src/effects/process-runner.ts"
+              symbol: "runProcess"
 extensions:
   contractFiles:
     agents: "assets/AGENTS.md"
@@ -44,3 +117,4 @@ extensions:
   verification:
     - "bun test tests/workflow-contract.test.ts tests/scaffold-parity.test.ts"
     - "bun scripts/capability-resolver.ts validate --format text"
+    - "bun run check:helpers"

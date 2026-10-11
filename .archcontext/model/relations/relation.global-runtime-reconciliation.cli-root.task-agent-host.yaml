@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.global-runtime-reconciliation.cli-root.task-agent-host
+kind: calls
+source: component.global-runtime-reconciliation.cli-root
+target: capability.runtime-harness.task-agent-host
+intent: "Register the herdr and task-agent commands"

@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.global-runtime-reconciliation.primary.skill-surface-catalog
+kind: calls
+source: component.global-runtime-reconciliation.primary
+target: component.action-commands.skill-surface-catalog
+intent: "Read external skill install groups from the skill surface catalog"

@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.pm-dispatch.primary.workflow-state
+kind: calls
+source: component.pm-dispatch.primary
+target: capability.workflow-engine.workflow-state
+intent: "Read claim tokens and leases under the task and topology locks"

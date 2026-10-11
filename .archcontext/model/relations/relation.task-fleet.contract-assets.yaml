@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.task-fleet.contract-assets
+kind: calls
+source: capability.organization.task-fleet
+target: capability.workflow-engine.contract-assets
+intent: "Run packaged contract worktree helpers to provision and bind an acquired task"

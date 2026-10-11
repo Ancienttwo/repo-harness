@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.evals-checks.primary.evidence-ledger
+kind: calls
+source: component.evals-checks.primary
+target: capability.runtime-harness.evidence-ledger
+intent: "Validate and execute verification plans through the evidence verification modules"

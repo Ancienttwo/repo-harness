@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.global-runtime-reconciliation.primary.contract-assets
+kind: calls
+source: component.global-runtime-reconciliation.primary
+target: capability.workflow-engine.contract-assets
+intent: "Sync the cross-review skills through the init command"

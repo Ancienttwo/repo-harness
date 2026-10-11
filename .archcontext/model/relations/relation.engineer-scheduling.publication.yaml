@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.engineer-scheduling.publication
+kind: reads
+source: capability.runtime-harness.engineer-scheduling
+target: capability.organization.publication
+intent: "Read cached publication receipts as dependency authority"

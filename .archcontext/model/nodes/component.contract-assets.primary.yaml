@@ -1,7 +1,25 @@
 schemaVersion: archcontext.node/v2
 id: component.contract-assets.primary
 kind: component
-name: "Workflow Contract Asset"
+name: "Workflow Contract And Policy"
 status: active
 parent: capability.workflow-engine.contract-assets
-summary: "Executes the reviewed project the workflow contract boundary."
+summary: "Holds the package workflow contract, the opt-in marker, the harness policy and the context map, and loads the contract fail closed."
+responsibilities:
+  - "Keep assets/workflow-contract.v1.json as the only inventory of directories, helpers, legacy paths and upgrade actions."
+  - "Keep .ai/harness/workflow-contract.json as an opt-in marker only."
+  - "Load the contract from the package or an explicit source checkout and reject unsafe helper entries."
+  - "Check the context map and select agent context blocks."
+source:
+  include:
+    - assets/workflow-contract.v1.json
+    - assets/AGENTS.md
+    - assets/CLAUDE.md
+    - .ai/harness/workflow-contract.json
+    - .ai/harness/policy.json
+    - .ai/harness/brain-manifest.json
+    - .ai/context/**
+    - scripts/workflow-contract.ts
+    - scripts/check-context-map.ts
+    - scripts/check-context-files.sh
+    - scripts/select-agent-context-blocks.sh

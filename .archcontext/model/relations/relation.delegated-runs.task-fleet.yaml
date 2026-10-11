@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.delegated-runs.task-fleet
+kind: depends-on
+source: capability.runtime-harness.delegated-runs
+target: capability.organization.task-fleet
+intent: "Type the delegated run against the fleet work envelope"

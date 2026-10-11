@@ -1,0 +1,30 @@
+schemaVersion: archcontext.node/v2
+id: component.contract-assets.template-projection
+kind: component
+name: Template Projection
+status: active
+parent: capability.workflow-engine.contract-assets
+summary: Projects helper copies, reference configs and template assets byte for byte and drives repository init.
+responsibilities:
+  - Write helper and reference config copies atomically with the source bytes and mode and report drift in check mode.
+  - Assemble templates and the initializer question pack.
+  - Run repository init through adoption, install profile and architecture preference steps.
+source:
+  include:
+    - assets/templates/**
+    - assets/reference-configs/**
+    - docs/reference-configs/**
+    - assets/partials/**
+    - assets/partials-agents/**
+    - assets/project-structures/**
+    - assets/plan-map.json
+    - assets/versions.json
+    - assets/initializer-question-pack.v4.json
+    - assets/initializer-question-pack.v4.schema.json
+    - .claude/templates/**
+    - src/core/source-projection.ts
+    - scripts/sync-helper-sources.ts
+    - scripts/sync-reference-configs.ts
+    - scripts/assemble-template.ts
+    - scripts/initializer-question-pack.ts
+    - src/cli/commands/init.ts

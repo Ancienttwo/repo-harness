@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.mcp-sidecar.host-setup.chatgpt-browser
+kind: calls
+source: component.mcp-sidecar.host-setup
+target: capability.runtime-mcp.chatgpt-browser
+intent: "Read the canonical ChatGPT bridge reference from the packaged skill source"

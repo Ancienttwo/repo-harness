@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.global-runtime-reconciliation.archctx-closure.workflow-state
+kind: reads
+source: component.global-runtime-reconciliation.archctx-closure
+target: capability.workflow-engine.workflow-state
+intent: "Parse Markdown headers of plans and contracts"
