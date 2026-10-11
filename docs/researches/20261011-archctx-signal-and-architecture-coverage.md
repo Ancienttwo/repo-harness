@@ -78,6 +78,44 @@ archctx 0.7.0 扫描的权威数字：
 3. Phase C：集成。串行合并，执行一次 `apply`，补写产品总架构，`check` 结果为 `noop`。
 4. Phase D：从摩擦日志反推能力缺口。archctx 的缺口对照 0.7.0 源码核实后提交 upstream issue。repo-harness 的缺口作为信号与 Bot 指引方案的输入。
 
+## 执行结果
+
+6 个组并行细化模型，之后集成一次。结果：
+
+- 模型：37 个 capability，6 个 domain，65 个 component，302 条 relation，52 个 flow。37 个模块页面都是 `Proof: proven`。`check` 结果是 `noop`。
+- 新 capability 共 10 个。新 domain 是 `organization`。协调平面成为 `workflow-state` 的 component。
+- 多归属文件保持 45 个。收窄 include 要等 arch-context#296 和 resolver 改造。
+- 每个模块页面都有 P3。旧 P3 里与源码冲突的内容移到历史记录，并注明冲突。
+- 产品总架构写在 `docs/architecture/index.md`：domain 地图、主运行路径、权威与状态对照、capability 索引。
+
+## 反推的能力缺口
+
+7 份摩擦日志共 86 条。去重后按归属分组。
+
+| 缺口 | 现象 | 归属 | 跟踪 |
+| --- | --- | --- | --- |
+| 人写段落的引用漂移 | 4 个组靠手工 grep 才发现过时的 `file:line`、已删除的符号和过时的节点描述 | archctx | [arch-context#298](https://github.com/Ancienttwo/arch-context/issues/298) |
+| 批量归属判断 | 单路径 `resolve` 每次 0.28 秒；拆出 component 后 `resolve` 和 `refactor scan` 的结论不一致 | archctx | [arch-context#296](https://github.com/Ancienttwo/arch-context/issues/296) |
+| 多操作 ChangeSet | 0.7.0 bundle 的 `plan --operations-file` 必然失败；`--help` 无输出 | archctx | [arch-context#297](https://github.com/Ancienttwo/arch-context/issues/297) |
+| 重构扫描截断 | import 节点上限 5000，本仓库有 6124 个 | archctx | [arch-context#295](https://github.com/Ancienttwo/arch-context/issues/295) |
+| selector 证明预检 | 依赖注入导致的不可证 selector 要等 60 到 100 秒的 apply 才暴露 | archctx | [arch-context#300](https://github.com/Ancienttwo/arch-context/issues/300) |
+| 归属变化预览和依赖矩阵 | 3 个组自己写了扫描脚本，其中一个把字符串当成 import | archctx | [arch-context#301](https://github.com/Ancienttwo/arch-context/issues/301) |
+| component 在页面上可见 | component 入口、对外 relation 和规模都不渲染；CLI 根的扇出看不到 | archctx | [arch-context#299](https://github.com/Ancienttwo/arch-context/issues/299) |
+| 渲染文本 | 骨架标题固定繁体；逗号被换成全角 | archctx | [arch-context#302](https://github.com/Ancienttwo/arch-context/issues/302) |
+| 假调用边 | Node 内置函数被解析到同名的项目函数 | CodeGraph | [codegraph#2491](https://github.com/colbymchenry/codegraph/issues/2491) |
+| apply 的 request id | 同一 workspace 第二次 major change apply 失败 | repo-harness | [#630](https://github.com/Ancienttwo/repo-harness/issues/630) |
+| 归属权威 | 我们的 prefix 解析器不支持 exclude 和中间通配符，与 ArchContext 不一致 | repo-harness | [#631](https://github.com/Ancienttwo/repo-harness/issues/631) |
+
+工作得好的部分（摩擦日志里标为 `works`）：MCP 规划加 CLI apply 的 ChangeSet 路径（几十个操作约 2 秒）、`capability-resolver match --paths-from` 批量匹配、`refactor scan` 基线（约 11 秒）。
+
+## 对信号设计的输入
+
+- 生成区的漂移已有信号：`check --json` 的 `freshness.staleNodes`（约 20 秒）。
+- 人写区的漂移没有信号。#298 落地后，它和 `staleNodes` 一起构成 Bot 的文档派工依据。
+- 归属缺口按目录报告。新文件落在显式列表目录外会成为无归属，这本身就是一个信号。
+- 重构建议在 #295 之前不可用。
+- 并行写模型的冲突点只有共享的投影输出。派工规则应当是：每个 worker 只写自己的节点，集成时串行执行一次 apply。
+
 ## 摩擦日志格式
 
 每个 worker 记录每一次摩擦，一行一条：
