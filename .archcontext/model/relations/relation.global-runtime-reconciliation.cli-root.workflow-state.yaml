@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.global-runtime-reconciliation.cli-root.workflow-state
+kind: calls
+source: component.global-runtime-reconciliation.cli-root
+target: capability.workflow-engine.workflow-state
+intent: "Register the sprint and state commands"

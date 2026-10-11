@@ -146,3 +146,5 @@ sequenceDiagram
 - **双向依赖（重构证据）。** `src/effects/fleet/board.ts` 读取 agent-runtime-effects 的 runtime 投影。`src/effects/engineers/agent-runtime-effect-store.ts` 又反向导入 `src/core/fleet/board.ts`、`src/core/fleet/task-message.ts` 与 `src/effects/fleet/task-inbox.ts`。模型只声明 task-fleet → agent-runtime-effects。反向边记录在此，不作为意图关系。
 - **`WorkEnvelopeV1` 类型位于 effects 层。** engineer-bindings、engineer-scheduling、bound-task-freezes 与 delegated-runs 从 `src/effects/fleet/acquire.ts` 导入它（另有 `collectFleetOffers` 与 `validateFleetCommunicationEnvelope`）。候选重构：把 envelope 类型与校验移到 `src/core/fleet/`。
 - **`src/cli/commands/fleet.ts` 有 933 行。** 它组合 offer、board、inbox 与 feedback 子命令。若继续增长，可以把 inbox 子命令移到 task-inbox 组件。
+- **agent-runtime-effects 的方向（集成）。** 反向有 7 条边，`relation.task-fleet.agent-runtime-effects` 一侧有 4 条。集成保留已声明的方向。是否翻转方向是开放问题。
+- **`relation.task-fleet.repo-registry` 的目标（集成）。** 目标从 mcp-sidecar capability 改为 `component.mcp-sidecar.repo-policy-registry`。导入只指向 `src/effects/repo-registry.ts`。mcp-sidecar primary → task-fleet 因此不形成节点级的环。

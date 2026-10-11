@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.global-runtime-reconciliation.release-packaging.skill-surface-catalog
+kind: calls
+source: component.global-runtime-reconciliation.release-packaging
+target: component.action-commands.skill-surface-catalog
+intent: "Parse the skill surface catalog for release packaging"

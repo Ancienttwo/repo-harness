@@ -115,5 +115,5 @@ sequenceDiagram
 ## Optimization Backlog
 
 - after arch-context#296：`src/core/engineers/interface-change.ts` 和 `src/effects/engineers/interface-change-store.ts` 同时被 engineer-bindings 的 `src/{core,effects}/engineers/**` 认领。目标单一所有者是本能力（`ownership-proposal` §2）。
-- 本能力调用 `src/effects/state/collect-board-inputs.ts` 的 `readCanonicalTargetRef`，以及 `src/effects/{locking,git}`。workflow-state 和 execution-primitives 落地后，补上对应 relation。
+- 本能力调用 `src/effects/state/collect-board-inputs.ts` 的 `readCanonicalTargetRef`，以及 `src/effects/{locking,git}`。集成步骤声明了 interface-change → workflow-state（`reads`）与 → execution-primitives。
 - P2 flow 的 `buildInterfaceChangeEvent` 步骤指向本能力的 store 组件，但它的 sink `canonicalMessageDigest` 位于 engineer-messages 所有的 `src/core/messages/mechanics.ts`。共享原语的归属见 engineer-messages 的 Backlog。

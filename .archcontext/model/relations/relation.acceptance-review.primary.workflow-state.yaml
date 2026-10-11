@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.acceptance-review.primary.workflow-state
+kind: reads
+source: component.acceptance-review.primary
+target: capability.workflow-engine.workflow-state
+intent: "Observe Git and files read-only and resolve the workflow profile for the review subject"

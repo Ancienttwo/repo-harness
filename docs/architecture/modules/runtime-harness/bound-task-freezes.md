@@ -113,4 +113,4 @@ sequenceDiagram
 
 - after arch-context#296：`task-freeze.ts`、`task-freeze-store.ts` 和 `bound-task-rotation.ts` 同时被 engineer-bindings 的 `src/{core,effects}/engineers/**` 认领。目标单一所有者是本能力（`ownership-proposal` §2）。
 - 反向边证据：`binding-store.ts:45` 导入 `bound-task-rotation.ts`，engineer-bindings 因此依赖本能力，而本能力也依赖 engineer-bindings。可选重构：把 `assertNoLiveClaimForBindingRotation` 作为参数注入 binding 转换，或把它移到 engineer-bindings。当前不声明这条 relation。
-- 本能力调用 `src/effects/state/coordination-lease-store.ts` 的 `listLeaseReads`、`scripts/acceptance-receipt.ts` 的 `inspectAcceptanceEvidence` 和 `src/effects/evidence/verification-execution.ts`。workflow-state、acceptance-review 和 evidence 相关能力落地后，补上对应 relation。
+- 本能力调用 `src/effects/state/coordination-lease-store.ts` 的 `listLeaseReads`、`scripts/acceptance-receipt.ts` 的 `inspectAcceptanceEvidence` 和 `src/effects/evidence/verification-execution.ts`。集成步骤声明了 bound-task-freezes → workflow-state、→ acceptance-review（`reads`）、→ evidence-ledger 与 → execution-primitives。到 task-fleet 只有 `WorkEnvelopeV1` 类型导入，没有声明。

@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.bound-task-freezes.execution-primitives
+kind: calls
+source: capability.runtime-harness.bound-task-freezes
+target: capability.workflow-engine.execution-primitives
+intent: "Resolve the Git common directory for freeze records"

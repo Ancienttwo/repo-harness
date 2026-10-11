@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.contract-assets.contract-worktree-lifecycle.task-agent-host
+kind: calls
+source: component.contract-assets.contract-worktree-lifecycle
+target: capability.runtime-harness.task-agent-host
+intent: "Register and clean up task worktrees and read session artifacts"

@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.operator.web-console.pipeline-ledger
+kind: reads
+source: component.operator.web-console
+target: capability.runtime-harness.pipeline-ledger
+intent: "Decode the pipeline board in the browser"

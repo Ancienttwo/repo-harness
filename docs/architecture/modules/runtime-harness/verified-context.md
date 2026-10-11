@@ -144,4 +144,4 @@ sequenceDiagram
 ## Optimization Backlog
 
 - `verified-context.ts` 有 722 行，schema、校验和编译器在同一个文件里。编译器（`compileVerifiedEvidenceContext`）可以独立成文件。没有改动频率证据前不拆。
-- store 依赖的 `src/effects/git/common-directory.ts` 和 `src/effects/locking/exclusive-directory-lock.ts` 目前没有归属，预计归 `execution-primitives`。关系在集成阶段补上。
+- store 依赖的 `src/effects/git/common-directory.ts` 和 `src/effects/locking/exclusive-directory-lock.ts` 归 `execution-primitives`。集成步骤声明了 primary → execution-primitives。

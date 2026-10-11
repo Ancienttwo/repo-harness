@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.operator.primary.task-fleet
+kind: reads
+source: component.operator.primary
+target: capability.organization.task-fleet
+intent: "Collect fleet offers and the fleet board for the console"

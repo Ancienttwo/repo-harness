@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.global-runtime-reconciliation.cli-root.publication
+kind: calls
+source: component.global-runtime-reconciliation.cli-root
+target: capability.organization.publication
+intent: "Register the publication command"

@@ -99,7 +99,7 @@ sequenceDiagram
 
 出向调用：
 - 到 action-commands 的 skill-surface-catalog 组件：`projectStrategySkill` 读取 manifest，检查 strategy skill 仍是 explicit-setup（`skill.ts:14-16`）。已声明为 relation。
-- 到 Effective State：`resolveEffectiveStateReadOnly`（`src/effects/state/resolve-effective-state.ts`）和 `readonly-observation.ts`。这两个文件目前没有归属。relation 等待集成步骤添加（目标是新的 workflow-state capability）。
+- 到 Effective State：`resolveEffectiveStateReadOnly`（`src/effects/state/resolve-effective-state.ts`）和 `readonly-observation.ts`。这两个文件归 workflow-state。集成步骤声明了 primary → workflow-state（`reads`）。
 
 ### 3.4 开放问题
 
@@ -117,5 +117,5 @@ sequenceDiagram
 
 ## Optimization Backlog
 
-- 集成步骤添加 relation：`component.strategy-reflection.primary` → `capability.workflow-engine.workflow-state`（`context.ts:2-3` import `readonly-observation.ts` 和 `resolve-effective-state.ts`）。
+- 集成步骤已添加 relation：`component.strategy-reflection.primary` → `capability.workflow-engine.workflow-state`（`context.ts:2-3` import `readonly-observation.ts` 和 `resolve-effective-state.ts`）。
 - 决定 `exportStrategyWakePacket` 保留还是退役（见 §3.4）。

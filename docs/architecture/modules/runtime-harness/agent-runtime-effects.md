@@ -161,7 +161,7 @@ intent 先写，ledger 后发布。两者之间崩溃时，`created_at` 使用�
 
 对外关系：`engineer-bindings`（当前 Binding）、`engineer-messages`（持久化消息与回执）、`engineer-scheduling`（offers 文档校验，2026-10-11 新增）、`mcp-sidecar`（严格 repo registry 与授权 revision，2026-10-11 新增）。
 
-需要集成阶段补上的关系：Herdr adapter → `src/effects/terminal/herdr.ts`（预计 `task-agent-host`）；store → `src/core/fleet/*`、`src/effects/fleet/task-inbox.ts`（预计 `task-fleet`）；store → `src/effects/state/coordination-lease-store.ts`（预计 `workflow-state`）；store → git 与 locking 原语（预计 `execution-primitives`）。
+集成步骤补上的关系：capability → task-agent-host（Herdr adapter 调用 `herdr.ts`）；journal → workflow-state（`reads`，`readLease`）；journal → execution-primitives。没有声明 journal → task-fleet：`relation.task-fleet.agent-runtime-effects` 已经声明反向。见 Backlog。
 
 ### 3.11 开放问题
 
@@ -178,4 +178,5 @@ intent 先写，ledger 后发布。两者之间崩溃时，`created_at` 使用�
 - 本 capability 的 summary 和 responsibilities 曾在 adapter 退役后仍写着 codex-app-thread 和 V1 迁移命令。2026-10-11 已改正。以后删除 adapter 或命令时，同一个 PR 需要更新 capability 节点。
 - V1 迁移回执检查（§3.11）。如果确认没有仓库还保留 V1 存储，可以删除 `assertMigrationReady` 和 `PROVIDER_THREAD_EFFECT_V1_RELATIVE_ROOT`；否则需要恢复一个迁移入口。
 - `agent-runtime-effect-store.ts` 有 815 行，wake ledger 与通用 effect 链在同一个文件里。wake 部分可以独立成文件，但锁顺序（§3.7）必须保持在一处可见。
+- journal → task-fleet 没有声明。`agent-runtime-effect-store.ts` 导入 `src/core/fleet/task-message.ts` 与 `src/effects/fleet/task-inbox.ts`（7 条边）。反向的 `relation.task-fleet.agent-runtime-effects` 有 4 条边。集成不删除分组已声明的关系，也不新增反向关系。是否翻转方向是开放问题。
 

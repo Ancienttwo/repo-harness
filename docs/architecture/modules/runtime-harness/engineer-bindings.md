@@ -144,5 +144,5 @@ sequenceDiagram
   - work-demand：`work-demand.ts`、`work-demand-store.ts`、`work-demand-materialization.ts`。
 - 反向边证据（不声明为 relation）：`src/cli/commands/engineer.ts`（831 行）是 engineer 命令族的组合根。它调用 engineer-scheduling、bound-task-freezes、work-demand、engineer-messages、engineering-overlay 和 agent-runtime-effects，而这些能力都依赖本能力。可选重构：把各子命令移到所属能力，或把 `engineer.ts` 作为单独的命令面组件。
 - 反向边证据：`binding-store.ts:45` 导入 bound-task-freezes 的 `bound-task-rotation.ts`；`src/core/engineers/automation-attempt.ts` 导入 engineer-scheduling 的类型。
-- 本能力调用 `src/effects/fleet/acquire.ts`（`acquireFleetTask`、`resumeReclaimedFleetWork`）和 `src/effects/state/coordination-sprint.ts`。task-fleet 和 workflow-state 落地后，补上对应 relation。
+- 本能力调用 `src/effects/fleet/acquire.ts`（`acquireFleetTask`、`resumeReclaimedFleetWork`）和 `src/effects/state/coordination-sprint.ts`。集成步骤声明了 engineer-bindings → workflow-state 与 → execution-primitives。没有声明 engineer-bindings → task-fleet：`relation.task-fleet.engineer-bindings` 已经声明反向，且反向边更多（14 条对 5 条）。本方向是回边。
 - 声明的 selector `entrypoint.engineer-bindings.acquire#acquireEngineerTask` 的两个 sink 在 CodeGraph 中没有直接 `calls` 边（经由注入的依赖调用）。P2 flow 改用 `acquireEngineerTaskLocked → buildClaimActorReceipt`。

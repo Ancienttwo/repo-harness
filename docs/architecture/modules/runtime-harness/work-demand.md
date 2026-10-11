@@ -116,6 +116,7 @@ sequenceDiagram
 ## Optimization Backlog
 
 - after arch-context#296：`work-demand.ts`、`work-demand-store.ts` 和 `work-demand-materialization.ts` 同时被 engineer-bindings 的 `src/{core,effects}/engineers/**` 认领。目标单一所有者是本能力（`ownership-proposal` §2）。
-- 本能力没有自己的 CLI 文件。Human 入口在 engineer-bindings 的 `src/cli/commands/engineer.ts`，Engineer 入口在 mcp-sidecar 的 `src/cli/mcp/engineer-tools.ts`（`proposeWorkDemandAsEngineer`、`transitionWorkDemandAsEngineer`）。模型中缺少 mcp-sidecar → work-demand 的 relation，需要 mcp-sidecar 的所有者补上。
-- 本能力调用 `src/core/state/sprint-backlog-rows.ts`、`src/core/state/coordination-identity.ts`、`src/effects/state/coordination-canonical-source.ts` 和 `src/effects/state/collect-board-inputs.ts`。workflow-state 落地后，补上 work-demand → workflow-state 的 relation。
+- 本能力没有自己的 CLI 文件。Human 入口在 engineer-bindings 的 `src/cli/commands/engineer.ts`，Engineer 入口在 mcp-sidecar 的 `src/cli/mcp/engineer-tools.ts`（`proposeWorkDemandAsEngineer`、`transitionWorkDemandAsEngineer`）。集成步骤声明了 mcp-sidecar primary → work-demand。
+- 本能力调用 `src/core/state/sprint-backlog-rows.ts`、`src/core/state/coordination-identity.ts`、`src/effects/state/coordination-canonical-source.ts` 和 `src/effects/state/collect-board-inputs.ts`。集成步骤声明了 work-demand → workflow-state（`writes`）与 → execution-primitives。
 - P2 flow 的 `buildWorkDemandEvent` 步骤指向本能力的 store 组件，但它的 sink `canonicalMessageDigest` 位于 engineer-messages 所有的 `src/core/messages/mechanics.ts`。归属见 engineer-messages 的 Backlog。
+- 到 mcp-sidecar 的 capability 级回边：`work-demand-store.ts:17` 导入 `src/effects/repo-registry.ts`（repo-policy-registry 组件）。mcp-sidecar primary 又调用本能力。节点级没有环。模型不声明本方向。

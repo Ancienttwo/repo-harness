@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.workflow-state.coordination-plane.task-agent-host
+kind: reads
+source: component.workflow-state.coordination-plane
+target: capability.runtime-harness.task-agent-host
+intent: "Confirm that the task runtime is closed before a worktree prune"

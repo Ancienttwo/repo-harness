@@ -152,5 +152,6 @@ _（暂无条目）_
 
 - Add an eval case whenever a new command changes routing behavior.
 - Keep command facades thin; move policy into scripts, manifests, or reference configs.
-- 集成步骤添加 hook-adapters（`install-profile.ts`、`skill-projection.ts`）和 global-runtime-reconciliation（`init.ts`、`global-runtime.ts`、`doctor.ts`）到 skill-surface-catalog 的入向 relation。这些 relation 的 `from` 节点不在本分组。
+- 集成步骤添加了到 skill-surface-catalog 的入向 relation：hook-adapters host-installer、global-runtime-reconciliation 的 primary、release-packaging 与 cli-root，以及 contract-assets template-projection。
+- 回边（不声明）：`scripts/skill-surface-select.ts:64-84` 动态导入 hook-adapters 的 `install-profile.ts` 与 global-runtime-reconciliation 的 `skill-tree-integrity.ts`。`scripts/check-skill-version.ts:15` 导入 contract-assets 的 `scripts/workflow-contract.ts`。入向边更多（hook-adapters 12 对 5，global-runtime-reconciliation 11 对 2，contract-assets 5 对 3）。
 - `expectedProjections` 超过约 50 个 package 时，评估从 package 条目派生投影表。派生会削弱"新命令默认不可发现"，需要一次显式决策。

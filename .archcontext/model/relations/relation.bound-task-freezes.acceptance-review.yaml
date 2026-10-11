@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.bound-task-freezes.acceptance-review
+kind: reads
+source: capability.runtime-harness.bound-task-freezes
+target: capability.verification.acceptance-review
+intent: "Inspect acceptance evidence and the review subject for a frozen task"

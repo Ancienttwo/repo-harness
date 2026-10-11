@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.contract-assets.planning-helpers.acceptance-review
+kind: calls
+source: component.contract-assets.planning-helpers
+target: capability.verification.acceptance-review
+intent: "Read the acceptance policy for planning helpers"

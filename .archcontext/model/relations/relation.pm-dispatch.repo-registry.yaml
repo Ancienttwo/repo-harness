@@ -2,5 +2,5 @@ schemaVersion: archcontext.relation/v1
 id: relation.pm-dispatch.repo-registry
 kind: reads
 source: capability.runtime-harness.pm-dispatch
-target: capability.runtime-harness.mcp-sidecar
+target: component.mcp-sidecar.repo-policy-registry
 intent: "Read registry authorization and hold its lock through PM effects"

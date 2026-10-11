@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.integration-acceptance.primary.execution-primitives
+kind: calls
+source: component.integration-acceptance.primary
+target: capability.workflow-engine.execution-primitives
+intent: "Resolve the Git common directory for integration records"

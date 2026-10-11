@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.acceptance-review.primary.evidence-ledger
+kind: calls
+source: component.acceptance-review.primary
+target: capability.runtime-harness.evidence-ledger
+intent: "Canonicalize review records and load verification execution results"

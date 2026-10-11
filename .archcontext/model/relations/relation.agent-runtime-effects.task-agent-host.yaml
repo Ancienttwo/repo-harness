@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.agent-runtime-effects.task-agent-host
+kind: calls
+source: capability.runtime-harness.agent-runtime-effects
+target: capability.runtime-harness.task-agent-host
+intent: "Run Herdr commands for task agent runtime effects"

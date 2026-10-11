@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.mcp-sidecar.repo-policy-registry.execution-primitives
+kind: calls
+source: component.mcp-sidecar.repo-policy-registry
+target: capability.workflow-engine.execution-primitives
+intent: "Run Git for repository roots and lock guarded writes"

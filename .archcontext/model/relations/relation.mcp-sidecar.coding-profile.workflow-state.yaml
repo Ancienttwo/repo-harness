@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.mcp-sidecar.coding-profile.workflow-state
+kind: calls
+source: component.mcp-sidecar.coding-profile
+target: capability.workflow-engine.workflow-state
+intent: "Clean up exact worktrees under the system worktree root"

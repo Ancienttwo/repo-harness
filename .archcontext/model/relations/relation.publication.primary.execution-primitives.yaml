@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.publication.primary.execution-primitives
+kind: calls
+source: component.publication.primary
+target: capability.workflow-engine.execution-primitives
+intent: "Read the worktree topology and the Git common directory"

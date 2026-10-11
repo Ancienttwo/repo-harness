@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.hook-adapters.session-lifecycle.workflow-state
+kind: calls
+source: component.hook-adapters.session-lifecycle
+target: capability.workflow-engine.workflow-state
+intent: "Collect state and board slices and claim tokens for session context"

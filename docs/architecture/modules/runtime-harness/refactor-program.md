@@ -121,7 +121,7 @@ sequenceDiagram
 
 ### 3.4 开放问题
 
-- `archctx-provider.ts:4` 引用 `src/core/evidence/canonical-json.ts`。该文件目前没有归属，预计归 `evidence-ledger`。关系在集成阶段补上。
+- `archctx-provider.ts:4` 引用 `src/core/evidence/canonical-json.ts`。该文件归 `evidence-ledger`。集成步骤声明了 archctx-provider → evidence-ledger。
 
 ## Verification
 

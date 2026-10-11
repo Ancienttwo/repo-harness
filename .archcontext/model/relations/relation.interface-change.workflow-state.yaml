@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.interface-change.workflow-state
+kind: reads
+source: capability.runtime-harness.interface-change
+target: capability.workflow-engine.workflow-state
+intent: "Read the canonical target ref for an interface change"

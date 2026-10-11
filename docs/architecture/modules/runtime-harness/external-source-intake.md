@@ -115,10 +115,10 @@ sequenceDiagram
 
 - capability → `mcp-sidecar`：CLI 和 `binding.ts` 读取严格的 repo registry 快照（`external-source.ts:3`、`binding.ts:9-13`）。
 
-需要集成阶段补上的关系（目标 capability 由其他分组新建）：
+集成步骤补上的关系：
 
-- `binding.ts` → `src/core/state/coordination-identity.ts`、`src/effects/state/coordination-canonical-source.ts`（预计 `workflow-state`）。
-- `store.ts` → `src/effects/git/common-directory.ts`、`src/effects/locking/exclusive-directory-lock.ts`（预计 `execution-primitives`）。
+- capability → workflow-state（`reads`）：`binding.ts` → `src/core/state/coordination-identity.ts`、`src/effects/state/coordination-canonical-source.ts`。
+- immutable-evidence → execution-primitives：`store.ts` → `src/effects/git/common-directory.ts`、`src/effects/locking/exclusive-directory-lock.ts`。
 
 ## 4. 历史决策记录（append-only）
 

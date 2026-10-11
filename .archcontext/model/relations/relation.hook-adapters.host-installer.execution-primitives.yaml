@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.hook-adapters.host-installer.execution-primitives
+kind: calls
+source: component.hook-adapters.host-installer
+target: capability.workflow-engine.execution-primitives
+intent: "Hold the runtime host transaction lock"

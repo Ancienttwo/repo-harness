@@ -124,7 +124,7 @@ sequenceDiagram
 ## Optimization Backlog
 
 - after arch-context#296：`scheduling.ts`、`dependency-authority.ts`、`scheduling.ts`（effects）、`scheduling-acquire.ts` 和 `scheduling-acquire-next.ts` 同时被 engineer-bindings 的 `src/{core,effects}/engineers/**` 认领。目标单一所有者是本能力（`ownership-proposal` §2）。
-- 反向边证据：`src/cli/commands/sprint.ts` 调用本能力的 `readProjectedWorkGraphAt` 和 `resolveRegisteredRepoForWorktree`，`src/effects/state/sprint-schema-migration.ts` 调用 `schedulingCarrierPath`。本能力又依赖 `src/core/state/coordination-identity.ts`。workflow-state 落地后，这是一个循环，应作为重构输入，不作为预期 relation。
+- 反向边证据：`src/cli/commands/sprint.ts` 调用本能力的 `readProjectedWorkGraphAt` 和 `resolveRegisteredRepoForWorktree`，`src/effects/state/sprint-schema-migration.ts` 调用 `schedulingCarrierPath`。本能力又依赖 `src/core/state/coordination-identity.ts`。集成按边数声明 engineer-scheduling → workflow-state（9 条边对 8 条）。sprint 方向是回边，作为重构输入，不声明。
 - `resolveRegisteredRepoForWorktree` 被 engineering-overlay、agent-runtime-effects 和 `sprint.ts` 调用。它的职责是解析仓库注册表，与调度无关。建议移到 `src/effects/repo-registry.ts` 的所有者。
 - 声明的 selector `entrypoint.engineer-scheduling.offers#collectEngineerOffers` 的两个 sink 和 `entrypoint.engineer-scheduling.acquire-next` 的两个 sink 在 CodeGraph 中没有直接 `calls` 边（经由注入的依赖调用）。P2 flow 改用有直接边的 `selectCurrentOffer` 和 `defaultDependencyAuthorityReaders`。
-- 依赖解析器读取 `src/effects/publication/**` 和 `scripts/acceptance-receipt.ts`。publication 和 acceptance-review 落地后，补上 engineer-scheduling → publication 和 engineer-scheduling → acceptance-review 的 relation。
+- 依赖解析器读取 `src/effects/publication/**` 和 `scripts/acceptance-receipt.ts`。集成步骤声明了 engineer-scheduling → publication（`reads`）、→ acceptance-review、→ task-fleet 与 → execution-primitives。

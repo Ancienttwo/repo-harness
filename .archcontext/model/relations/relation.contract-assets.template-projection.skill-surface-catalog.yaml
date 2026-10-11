@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.contract-assets.template-projection.skill-surface-catalog
+kind: calls
+source: component.contract-assets.template-projection
+target: component.action-commands.skill-surface-catalog
+intent: "Read host skill placements and install groups during init"

@@ -112,4 +112,5 @@ sequenceDiagram
 - `COMPONENT_ORDER` 在 core（`src/core/engineers/engineering-overlay.ts:19`）和 effects（`src/effects/engineers/engineering-overlay.ts:243`）各定义一次。effects 可以从 core 导入，保持一个来源。
 - 声明的 sink（`readEngineerBindingStatus`、`listLiveClaimActorReceiptsForEngineer`、`observeModuleInboxSummary`、`observeAgentRuntimeEffects`）都经由注入的依赖调用，CodeGraph 没有直接 `calls` 边。到 engineer-bindings、engineer-messages 和 agent-runtime-effects 的 relation 因此只有 P1 证据，P2 只证明了 schema 步骤。
 - `collectEngineeringBoard` 调用 engineer-scheduling 的 `resolveRegisteredRepoForWorktree` 解析注册仓库（`engineering-overlay.ts:255`）。它的职责是解析仓库注册表，与调度无关。当前不声明 engineering-overlay → engineer-scheduling 的 relation。建议把该函数移到仓库注册表的所有者。
-- operator 读取本能力（`src/effects/operator/collaboration.ts:15-16`）。模型中缺少 operator → engineering-overlay 的 relation，需要 operator 的所有者补上。
+- operator 读取本能力（`src/effects/operator/collaboration.ts:15-16`）。operator 已经声明 `relation.operator.http-reader.engineering-overlay`。
+- 集成时没有发现本能力到 execution-primitives 的导入。模型不声明该关系。

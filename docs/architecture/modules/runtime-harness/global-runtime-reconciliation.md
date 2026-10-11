@@ -151,7 +151,7 @@ sequenceDiagram
 | archctx-closure | `mcp-sidecar` | `model-reader.ts` 引用 `effects/repo-registry.ts` |
 | cli-root | 14 个已有 capability | `buildProgram` 注册各命令（`index.ts:804-869`）：hook-adapters、adoption、contract-assets、codegraph-readiness、pm-dispatch、mcp-sidecar、refactor-program、operator、engineer-bindings、delegated-runs、collaboration、verified-context、interface-change、external-source-intake |
 
-CLI 根的扇出是真实的组合根结构，所以如实建模。`index.ts` 另外注册约 15 个命令文件（state、sprint、fleet、publication、pipeline、task-agent、herdr、review、chatgpt、strategy、integration、docs、brain、run、migrate、tools）。这些文件目前没有归属或由其他分组新建 capability。它们的关系在集成阶段补上。
+CLI 根的扇出是真实的组合根结构，所以如实建模。`index.ts` 另外注册约 15 个命令文件（state、sprint、fleet、publication、pipeline、task-agent、herdr、review、chatgpt、strategy、integration、docs、brain、run、migrate、tools）。集成步骤补上了这些命令的关系：workflow-state（state、sprint）、task-fleet、publication、pipeline-ledger、task-agent-host（task-agent、herdr）、acceptance-review（review）、chatgpt-browser、strategy-reflection、integration-acceptance 与 root-router（docs）。brain 与 run 归 contract-assets，migrate 归 adoption，tools 归 codegraph-readiness。
 
 反向边（未声明为关系，记入 Backlog）：
 
@@ -201,3 +201,5 @@ CLI 根的扇出是真实的组合根结构，所以如实建模。`index.ts` �
 - **`global-runtime.ts` 有 1,631 行。** setup 步骤、外部 skill 安装、Waza 规则同步、CodeGraph 配置都在一个文件里。按步骤族拆分前需要改动频率证据。
 - **反向边：** primary → cli-root（`doctor.ts` 的版本比较函数）。把 `compareVersions`、`readLatestPackageVersion` 移到 primary 或一个版本工具模块即可去掉。archctx-closure → primary 只有类型引用（`GlobalRuntimeStep`），可以把类型移到 `src/cli/runtime/`。
 - **多归属文件。** 3 个测试文件和 3 个 reference config 仍在本 capability 的 include 里，与 evals-checks、contract-assets 重叠。按用户决定，等 arch-context#296 和 resolver 改动后再收窄。
+- **集成没有声明的方向。** archctx-closure → contract-assets（`model-reader.ts` 读 capability registry，7 条边）与 archctx-closure → operator（4 条边）没有声明。contract-assets → 本 capability（25 条边）与 operator → 本 capability（12 条边）已经声明，且边更多。cli-root → execution-primitives 只有类型导入（`src/cli/index.ts:102-104`），没有声明。
+- **与 contract-assets 的已声明双向关系。** cli-root 与 primary → contract-assets（21 条边）和 contract-assets template-projection → 本 capability（25 条边）都已声明。按边数，本 capability 的方向是回边。集成不删除分组已声明的关系。是否删除是开放问题。

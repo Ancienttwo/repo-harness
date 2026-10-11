@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.engineer-scheduling.acceptance-review
+kind: calls
+source: capability.runtime-harness.engineer-scheduling
+target: capability.verification.acceptance-review
+intent: "Compute the acceptance authority fingerprint for a dependency"

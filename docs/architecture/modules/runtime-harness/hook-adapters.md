@@ -433,3 +433,4 @@ The event route registry remains the host adapter authority. Ordinary edits and 
 - route-runtime 与 handler 组件之间的环（§3.3）。如果 archctx 的环检测开始阻塞，把 handler 契约移到叶子组件。
 - `write-all-sync.ts` 归 global-runtime-reconciliation，但 hook 热路径也用它。它造成 hook-adapters → global-runtime-reconciliation 的一条边，而 global-runtime-reconciliation 也调用 hook-adapters。这个 26 行的工具可以移到 `execution-primitives`（G2 新建），以去掉这条 capability 级回边。
 - session-lifecycle → host-installer 的 `runSecurityScan` 调用（§3.7）是反向依赖证据，没有声明为关系。
+- host-installer 与 edit-guards → acceptance-review 没有声明。`relation.acceptance-review.hook-adapters` 已经声明反向（review 命令调用 circuit breaker）。本方向有 5 条边，反向有 2 条。集成不新增反向关系。是否翻转方向是开放问题。

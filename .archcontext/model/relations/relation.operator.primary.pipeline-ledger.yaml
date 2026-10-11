@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.operator.primary.pipeline-ledger
+kind: reads
+source: component.operator.primary
+target: capability.runtime-harness.pipeline-ledger
+intent: "Open pipeline ledger snapshots and decode the pipeline board"

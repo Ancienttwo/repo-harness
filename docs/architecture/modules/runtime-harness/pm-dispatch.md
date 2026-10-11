@@ -123,3 +123,4 @@ sequenceDiagram
 ## Optimization Backlog
 
 - **共享目录 `src/effects/terminal/`。** 本能力在其中拥有 3 个显式文件。After arch-context#296，与 task-agent-host 一起决定目录归属。
+- **`relation.pm-dispatch.repo-registry` 的目标（集成）。** 目标从 mcp-sidecar capability 改为 `component.mcp-sidecar.repo-policy-registry`。导入只指向 `src/effects/repo-registry.ts`。`relation.mcp-sidecar.primary.pm-dispatch` 因此不形成节点级的环。

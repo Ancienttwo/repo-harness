@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.hook-adapters.session-lifecycle.evidence-ledger
+kind: calls
+source: component.hook-adapters.session-lifecycle
+target: capability.runtime-harness.evidence-ledger
+intent: "Build recovery context and handoff from checkpoint evidence"

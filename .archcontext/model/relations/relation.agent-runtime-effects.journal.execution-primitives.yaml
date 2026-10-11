@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.agent-runtime-effects.journal.execution-primitives
+kind: calls
+source: component.agent-runtime-effects.journal
+target: capability.workflow-engine.execution-primitives
+intent: "Hold exclusive directory locks under the Git common directory"

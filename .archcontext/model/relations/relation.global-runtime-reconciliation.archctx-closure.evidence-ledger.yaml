@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.global-runtime-reconciliation.archctx-closure.evidence-ledger
+kind: calls
+source: component.global-runtime-reconciliation.archctx-closure
+target: capability.runtime-harness.evidence-ledger
+intent: "Canonicalize architecture closure records"

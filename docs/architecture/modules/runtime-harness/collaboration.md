@@ -292,5 +292,5 @@ sequenceDiagram
 - C2 的 thread/hotspot 投影如果需要缓存，缓存必须绑定来源集合的摘要，并在不匹配时重算。
 - `listCoordinationSignals()` 读全量。真实 signal 量级测出来之后，再决定是否分片。C9 canary 工具已在 PR #512 退役，目前没有在用的量级测量。
 - 本能力 9 个文件（8 个 core、`src/effects/collaboration/provider-output-adapter.ts`）调用 engineer-messages 所有的 `src/core/messages/mechanics.ts`（共享校验原语）。当前不声明 collaboration → engineer-messages 的 relation，归属见 engineer-messages 的 Backlog。
-- 本能力调用 `src/effects/state/coordination-lease-liveness-store.ts`（`work-exchange.ts` 的 `classifyPasses`）、`src/effects/state/readonly-observation.ts` 以及 `src/effects/{locking,git}`。workflow-state 和 execution-primitives 落地后，补上对应 relation。
-- operator 通过 `src/effects/operator/collaboration.ts` 调用 `collectCollaborativeWorkExchange`。模型中缺少 operator → collaboration 的 relation，需要 operator 的所有者补上。
+- 本能力调用 `src/effects/{locking,git}`。集成步骤声明了 collaboration → execution-primitives。没有声明 collaboration → workflow-state：`classifyPasses` 是 `src/effects/collaboration/work-exchange.ts:144` 的本地函数，本能力没有导入 `src/effects/state/` 的语句。原来的边是 CodeGraph 的同名误解析。
+- operator 通过 `src/effects/operator/collaboration.ts` 调用 `collectCollaborativeWorkExchange`。operator 已经声明 `relation.operator.http-reader.collaboration` 与 `relation.operator.view-projections.collaboration`。

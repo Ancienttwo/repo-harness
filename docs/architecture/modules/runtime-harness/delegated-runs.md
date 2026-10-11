@@ -130,6 +130,6 @@ sequenceDiagram
 
 ## Optimization Backlog
 
-- `delegated-run-store.ts` 依赖 `src/effects/fleet/acquire.ts` 的 `WorkEnvelopeV1` 类型、`src/effects/evidence/{blob-store,paths}.ts` 和 `src/effects/process-runner.ts`。这些文件当前无主。task-fleet、evidence-ledger 和 execution-primitives 落地后，补上对应 relation。
+- `delegated-run-store.ts` 依赖 `src/effects/fleet/acquire.ts` 的 `WorkEnvelopeV1` 类型、`src/effects/evidence/{blob-store,paths}.ts` 和 `src/effects/process-runner.ts`。集成步骤声明了 delegated-runs → evidence-ledger（`writes`）、→ execution-primitives 与 → task-fleet（`depends-on`，只有类型导入）。
 - `delegated-run-store.ts`（1,034 行）可按准入、dispatch、结果拆分。拆分前先确认测试 `tests/unit/me2a-me3b-readonly-delegation.test.ts` 覆盖每个 crash 边界。
 - 共享校验原语 `src/core/messages/mechanics.ts` 被 `delegation.ts` 和 `delegated-run-store.ts` 调用。归属问题见 engineer-messages 的 Backlog。

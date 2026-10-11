@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.operator.view-projections.task-fleet
+kind: reads
+source: component.operator.view-projections
+target: capability.organization.task-fleet
+intent: "Render fleet board errors and task message shapes"

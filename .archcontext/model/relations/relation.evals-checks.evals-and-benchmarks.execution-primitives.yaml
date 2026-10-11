@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.evals-checks.evals-and-benchmarks.execution-primitives
+kind: calls
+source: component.evals-checks.evals-and-benchmarks
+target: capability.workflow-engine.execution-primitives
+intent: "Take the expensive-run lock before a costly benchmark profile runs"
