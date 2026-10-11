@@ -25,6 +25,11 @@ source:
             - id: sink.engineer-messages.current-binding
               path: "src/effects/engineers/binding-store.ts"
               symbol: "readEngineerBindingStatus"
+        - name: "persistEventAndReceipt"
+          sinks:
+            - id: sink.engineer-messages.pending-receipt
+              path: "src/core/engineers/module-message.ts"
+              symbol: "buildModuleMessageDeliveryReceipt"
     - id: entrypoint.engineer-messages.acknowledge
       path: "src/effects/engineers/module-inbox.ts"
       symbols:
@@ -47,6 +52,11 @@ source:
         - name: "recordModuleMessageDeliveryObservation"
           sinks:
             - id: sink.engineer-messages.delivery-receipt
+              path: "src/core/engineers/module-message.ts"
+              symbol: "applyModuleMessageObservation"
+        - name: "appendObservation"
+          sinks:
+            - id: sink.engineer-messages.observation-chain
               path: "src/core/engineers/module-message.ts"
               symbol: "applyModuleMessageObservation"
 extensions:

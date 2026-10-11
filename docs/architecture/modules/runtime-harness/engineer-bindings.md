@@ -1,6 +1,6 @@
 # runtime-harness/engineer-bindings 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineer-bindings" sourceDigest="sha256:cdf567032caddaaed39c7205a7243dbf1f35ced90d92af584cfececc9ffd3a4d" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:5b8d7ca0d2bfe132fa3c68512637adcf53e5864f762cb12553fbecccf7d49b5b" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineer-bindings" sourceDigest="sha256:766a7e047ca8554da3f024cb026a87f986738225c1d5cf85ba1149063fcf1c59" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:aa78de4f4bdaa0a01e78ba7f4222e1d4d203cc2379bcd39dc72002cbe34e32a6" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.engineer-bindings`(kind `capability`)
 > **Matched Prefixes**:`agents/engineers/**`、`src/core/engineers/**`、`src/effects/engineers/**`、`src/cli/commands/engineer.ts`
@@ -24,7 +24,7 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:3f16adb4df18e2b882df1fd090378ce0b09a3ee5dc4552d6104cbe2a3b92341b`).
+- Proof: `proven` (`sha256:8880eb9b31d191dff30547d88f4be31efc14f7a607fdea2169b2aecf9ab02a04`).
 - Semantic nodes: `2`; declared relations: `1`.
 
 ### 1.2 模組職責表
@@ -34,6 +34,7 @@ flowchart LR
 | `entrypoint.engineer-bindings.operator-cli` | `src/cli/commands/engineer.ts#buildEngineerCommand` | `sink.engineer-bindings.shared-store` → `src/effects/engineers/binding-store.ts#bindEngineer` |
 | `entrypoint.engineer-bindings.principal-resolution` | `src/effects/engineers/principal.ts#resolveEngineerPrincipal` | `sink.engineer-bindings.current-binding` → `src/effects/engineers/binding-store.ts#readEngineerBindingStatus` |
 | `entrypoint.engineer-bindings.acquire` | `src/effects/engineers/acquire.ts#acquireEngineerTask` | `sink.engineer-bindings.fleet-acquire` → `src/effects/fleet/acquire.ts#acquireFleetTask`、`sink.engineer-bindings.claim-actor-receipt` → `src/effects/engineers/claim-actor-store.ts#publishClaimActorReceipt` |
+| `entrypoint.engineer-bindings.acquire` | `src/effects/engineers/acquire.ts#acquireEngineerTaskLocked` | `sink.engineer-bindings.claim-actor-build` → `src/core/engineers/principal-claim.ts#buildClaimActorReceipt` |
 
 ### 1.3 規模信號
 
@@ -63,7 +64,7 @@ flowchart LR
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:3f16adb4df18e2b882df1fd090378ce0b09a3ee5dc4552d6104cbe2a3b92341b`); selectors `1/1`.
+> **Proof**: `proven` (`sha256:8880eb9b31d191dff30547d88f4be31efc14f7a607fdea2169b2aecf9ab02a04`); selectors `3/3`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
@@ -71,12 +72,13 @@ sequenceDiagram
   autonumber
   participant p2_engineer_authority_fd9ce331 as Engineer Bindings
   participant p2_binding_store_8e904230 as Shared Engineer Binding Store
+  p2_engineer_authority_fd9ce331->>p2_binding_store_8e904230: Publish one operator-authorized binding transition with the event durable before current
   p2_engineer_authority_fd9ce331->>p2_binding_store_8e904230: Join the authorization mapping to the exact current Binding
-  alt The mapping and current Binding match every exact fence
-  p2_engineer_authority_fd9ce331->>p2_binding_store_8e904230: Return the server-derived Engineer principal
-    Note over p2_engineer_authority_fd9ce331: Return authenticated principal
+  alt The principal matches every exact fence and its Claim gets a ClaimActorReceipt
+  p2_engineer_authority_fd9ce331->>p2_binding_store_8e904230: Bind the authenticated principal to the canonical WorkEnvelope and live Lease of the new Claim
+    Note over p2_engineer_authority_fd9ce331: Return the WorkEnvelope and the immutable ClaimActorReceipt
   else Mapping， Profile， Binding， or exact fence validation fails
-  p2_engineer_authority_fd9ce331->>p2_binding_store_8e904230: Propagate typed fail-closed refusal
+  p2_engineer_authority_fd9ce331->>p2_binding_store_8e904230: Propagate typed fail-closed refusal before any Claim
     Note over p2_engineer_authority_fd9ce331: Return typed error without acquiring a Claim
   end
 ```
@@ -84,30 +86,31 @@ sequenceDiagram
 
 ## 3. P3:設計決策與不變量
 
-### Authority split
+### 3.1 必须保持的不变量
 
-- Profile/SOP 是 Git-index tracked 行为契约；filesystem presence 不构成 authority。`.archcontext/model/nodes/*.yaml` 仍是 capability path、entrypoint、interface 与 check 的唯一权威，contract revision 哈希完整 schema-valid selected node；Profile 只保存 `capability_id` 引用。
-- `<git-common-dir>/repo-harness/engineers/v1/` 是 linked worktrees 共享的唯一 binding authority。`current.json` 决定当前状态；event 只提供 immutable audit 与同一 idempotency key 的定向恢复。
-- ME-0A 只有 local Human operator CLI 能写 binding。bootstrap capsule 是 read-only context，不携带 Principal、credential、Claim、Lease、Publication、Acceptance 或 task mutation authority。
+1. **Profile 和 SOP 是 Git index 跟踪的行为契约。** 文件系统中存在不构成权威。`.archcontext/model/nodes/*.yaml` 仍是 capability 路径、入口、接口和检查的唯一权威。contract revision 哈希完整的、通过 schema 校验的所选节点。Profile 只保存 `capability_id` 引用。
+2. **`<git-common-dir>/repo-harness/engineers/v1/` 是唯一的 Binding 权威。** linked worktree 共享它。`current.json` 决定当前状态。event 只提供不可变审计，以及同一 idempotency key 的定向恢复。
+3. **只有本地 Human operator CLI 能写 Binding。** bootstrap capsule 是只读上下文。它不携带 Principal、凭据、Claim、Lease、Publication、Acceptance 或任务变更权威（ME-0A）。
+4. **event 先于 current 持久化。** 每次变更在每个 Engineer 一个的独占锁内执行：校验 current 和 CAS fence；用 `O_EXCL|O_NOFOLLOW` 创建不可变 event（`src/effects/engineers/binding-store.ts:323`）；fsync event 和 events 目录；用 temp+fsync+rename 发布 current；最后 fsync Engineer 目录。任何模糊状态或 symlink 都 fail closed。
+5. **同一请求的重试复用首次 event 冻结的值。** binding ID、时间戳和目标 contract revision 都来自首次 event。operation fingerprint 不含服务端派生的目标 revision，所以 Profile 演进不会阻断已持久化 event 的崩溃恢复。Provider、thread 或 host 等请求字段变化仍返回 `idempotency_conflict`（`binding-store.ts:367`、`:466`）。
+6. **`replace` 在 `created_at` 退休上一个 Binding。** 旧 event 中的 binding 保留事件时的状态，不是第二个 current 权威。generation 0 的 genesis 不落盘。有 event 而没有 current 时，status 视为损坏；只有该精确转换的重试可以补完 genesis 崩溃窗口。
+7. **陈旧空锁的恢复只对 Engineer 调用方开启。** 超过 30 秒后，重新校验祖先目录、目录 inode 和空目录，再用 `rmdir` 作为 fence。暂停的原创建者恢复后，仍要通过唯一 token 所有权检查。其他共享锁调用方保持默认的 fail-closed 语义。
+8. **OAuth `authorizationId` 只选择主体映射候选。** 每个 Engineer 命令都重新读取当前 Binding，并核对仓库、Engineer ID、binding ID、generation 和 contract revision。映射不能延长已撤销或已替换 Binding 的生命周期（ME-0B）。
+9. **Lease 回答"谁拥有执行"，ClaimActorReceipt 回答"哪个已认证主体触发了 Claim"。** 收据必须与完整规范化 WorkEnvelope 摘要，以及 live Lease 的 claim ID、generation、task revision、worktree、branch 和 unit 一致。
+10. **Engineer acquire 复用 canonical Fleet acquire。** 收据发布失败时，只释放刚返回且仍为 live 的那个 Claim。Claim 已被替换或释放失败都 fail closed，并保留已创建的 worktree 供恢复（`src/effects/engineers/acquire.ts:163-178`）。
+11. **其他 engineer-* 能力在 Binding 锁内重新校验 Binding。** interface-change、work-demand 和 bound-task-freezes 都先取 `withEngineerBindingLock`（`binding-store.ts:498`），再取自己的锁。锁顺序是 Binding 在外。
 
-### Publication invariant
+### 3.2 关键权衡
 
-每次 mutation 在 per-Engineer exclusive lock 内执行：校验 authoritative current/CAS fence，使用 `O_EXCL|O_NOFOLLOW` 创建 immutable event，fsync event 与 events directory，再以 temp+fsync+rename 发布 current，最后 fsync Engineer directory。event durable 先于 current；任一模糊或 symlink 状态 fail closed。
+| 决策 | 权衡 |
+| --- | --- |
+| 每个 Engineer 一个目录，Profile 和节点全量扫描 | 简单、可审计、不需要第二个索引权威；一次 list 只读一次 Git index、只解析一次 ArchContext 注册表。代价是 10x 时先遇到扫描和目录数量的成本 |
+| 用户级主体映射使用单锁和线性扫描 | 没有数据库或缓存权威；代价是 10x 时先出现授权查找和锁竞争 |
+| Engineer acquire 不复制 Fleet acquire，只在其外包一层收据 | 没有第二个 Claim 权威；代价是本能力依赖 Fleet 和 Sprint 的释放命令（`acquire.ts:19`、`:71`） |
 
-同一 key/同一 client-authored semantic request 重用首次 event 冻结的 binding ID、时间戳与 target contract revision；operation fingerprint 排除 server-derived target revision，因此 Profile 演进不会封死已 durable event 的 crash recovery，但 Provider/thread/host 等请求字段改变仍返回 `idempotency_conflict`。bootstrap 遇到 current/Profile revision 不一致时拒绝。generation-0 genesis 不落盘；有 event 而无 current 对 status 是 corruption，只有该 exact transition 的 retry 可以完成 genesis crash window。
+### 3.3 10x 规模下先坏的点
 
-`replace` event 在 `created_at` 退休 `previous_binding_id` 并发布下一代 current；旧 event 中的 binding 保留 state-at-event，不是第二份 current authority。Engineer caller 单独启用 stale empty-lock recovery：超过 30 秒后重验 ancestor/directory inode 与 emptiness，再以 `rmdir` 为 fence；暂停的原 creator 恢复后仍必须通过唯一 token ownership check，其他共享锁 caller 的默认 fail-closed 语义不变。
-
-### Scale and trade-off
-
-P0 选择每个 Engineer 一个目录与 Profile/node 全量扫描，换取简单、可审计、无需第二索引权威；一次 list 只批量读取一次 Git index 并解析一次 ArchContext registry。10x 时先遇到的是 Profile/node 扫描与目录数量，而非 lock/CAS 正确性；在出现可测量压力前不引入 database、cache authority、background repair 或 batch protocol。
-
-### ME-0B principal and claim provenance
-
-- OAuth `authorizationId` 只选择 user-level principal mapping 候选；每次 Engineer 命令都重新读取并核对当前 ME-0A Binding 的 repository、Engineer ID、binding ID、generation 与 contract revision。mapping 无权延长已撤销或已替换 Binding 的生命周期。
-- Lease 继续回答“当前谁拥有 task execution”，独立的 immutable `ClaimActorReceiptV1` 回答“哪个 authenticated Engineer principal 触发了这次 Claim”。receipt 必须与完整 canonical WorkEnvelope digest 和 live Lease 的 claim ID/generation/task revision/worktree/branch/unit 一致。
-- Engineer acquire 复用 canonical Fleet acquire。receipt publication 失败时只释放刚返回且仍为 live 的 exact Claim；Claim 已被替换或 release 失败均 fail closed，并保留 provisioned worktree 供恢复。
-- P0 的 user-level mapping store 使用单锁与线性扫描。10x 时先出现授权查找与锁竞争；在真实 contention 证据出现前不引入 database、cache 或 background reconciler。
+- Profile 和节点扫描以及目录数量先受压。锁和 CAS 的正确性不受规模影响。主体映射的线性查找和单锁竞争紧随其后。在测得真实竞争之前，不引入数据库、缓存权威、后台修复或批量协议。
 
 ## 4. 歷史決策記錄(append-only)
 
@@ -123,4 +126,23 @@ P0 选择每个 Engineer 一个目录与 Profile/node 全量扫描，换取简�
 - Accepted architecture change: `changeset.plan-20260825-0029-me0b-engineer-principal-claim-actor`, bound to Human approval `event.review-20260825-0029-me0b-engineer-principal-claim-actor-approval`; the final residual refresh covered `verified-flow-proof-changed` for `capability.runtime-harness.engineer-bindings` and `capability.runtime-harness.mcp-sidecar`.
 - EngineerPrincipal and ClaimActorReceipt are now in scope; Provider adapters, Session lifecycle, Worker Host, Work Package Graph, delegation, messaging, writer grant, handoff, interface request, Human Board, and remote access remain separate children.
 
+### 2026-10-11 P2 flow 改为三个不同步骤
+
+- P2 flow 原来三个步骤都是同一个 selector。现在分别是：operator CLI 发布 Binding，主体解析读取当前 Binding，`acquireEngineerTaskLocked` 构建 ClaimActorReceipt。
+
 ## Optimization Backlog
+
+- after arch-context#296：本能力的 `src/core/engineers/**` 和 `src/effects/engineers/**` 与 9 个具体能力重叠，共 25 个文件。目标是把这两个通配符换成本能力自己的 11 个代码文件加 `src/core/engineers/{AGENTS,CLAUDE}.md`，`agents/engineers/**` 和 `src/cli/commands/engineer.ts` 保留（`ownership-proposal` §2）。每个重叠文件的目标所有者：
+  - agent-runtime-effects：`agent-runtime-effect.ts`、`agent-runtime-effect-store.ts`、`agent-runtime-feature.ts`、`agent-runtime-adapters/**`。
+  - bound-task-freezes：`task-freeze.ts`、`task-freeze-store.ts`、`bound-task-rotation.ts`。
+  - delegated-runs：`delegation.ts`、`delegated-run-store.ts`。
+  - engineering-overlay：两个 `engineering-overlay.ts`。
+  - engineer-messages：`module-message.ts`、`module-inbox.ts`。
+  - engineer-scheduling：`scheduling.ts`（core 和 effects）、`dependency-authority.ts`、`scheduling-acquire.ts`、`scheduling-acquire-next.ts`。
+  - interface-change：`interface-change.ts`、`interface-change-store.ts`。
+  - verified-context：`verified-context.ts`、`verified-context-store.ts`。
+  - work-demand：`work-demand.ts`、`work-demand-store.ts`、`work-demand-materialization.ts`。
+- 反向边证据（不声明为 relation）：`src/cli/commands/engineer.ts`（831 行）是 engineer 命令族的组合根。它调用 engineer-scheduling、bound-task-freezes、work-demand、engineer-messages、engineering-overlay 和 agent-runtime-effects，而这些能力都依赖本能力。可选重构：把各子命令移到所属能力，或把 `engineer.ts` 作为单独的命令面组件。
+- 反向边证据：`binding-store.ts:45` 导入 bound-task-freezes 的 `bound-task-rotation.ts`；`src/core/engineers/automation-attempt.ts` 导入 engineer-scheduling 的类型。
+- 本能力调用 `src/effects/fleet/acquire.ts`（`acquireFleetTask`、`resumeReclaimedFleetWork`）和 `src/effects/state/coordination-sprint.ts`。task-fleet 和 workflow-state 落地后，补上对应 relation。
+- 声明的 selector `entrypoint.engineer-bindings.acquire#acquireEngineerTask` 的两个 sink 在 CodeGraph 中没有直接 `calls` 边（经由注入的依赖调用）。P2 flow 改用 `acquireEngineerTaskLocked → buildClaimActorReceipt`。

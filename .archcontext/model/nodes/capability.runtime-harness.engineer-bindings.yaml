@@ -44,6 +44,11 @@ source:
             - id: sink.engineer-bindings.claim-actor-receipt
               path: "src/effects/engineers/claim-actor-store.ts"
               symbol: "publishClaimActorReceipt"
+        - name: "acquireEngineerTaskLocked"
+          sinks:
+            - id: sink.engineer-bindings.claim-actor-build
+              path: "src/core/engineers/principal-claim.ts"
+              symbol: "buildClaimActorReceipt"
 extensions:
   contractFiles:
     agents: "AGENTS.md"
