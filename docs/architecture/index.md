@@ -1,20 +1,42 @@
 # Architecture Index
 
-> Umbrella architecture ledger for current boundaries, snapshots, and diagrams.
+> Product-level architecture of repo-harness: boundary, domains, runtime paths,
+> state authority, and links to every module page.
 
 ## Current Snapshot
 
-- Current capability boundaries: [architecture modules](modules/).
-- Runtime hook adapter diagrams: [hook adapter architecture](modules/runtime-harness/hook-adapters.md).
+- The architecture model lives in `.archcontext/model/`. It declares 37
+  capabilities in 6 domains, 65 components, 302 relations and 52 flows.
+- Every capability page under [modules](modules/) shows `Proof: proven` for its
+  P1 map and its P2 flow.
+- The full generated graph is in [diagrams/architecture.mmd](diagrams/architecture.mmd),
+  [diagrams/architecture.likec4](diagrams/architecture.likec4) and
+  [diagrams/architecture.structurizr.json](diagrams/architecture.structurizr.json).
+  The generated entity and relation lists are at the end of this page.
+- Cross-module contracts that are not capability pages:
+  [Effective State Authority](effective-state-authority.md),
+  [Shared Coordination Plane](shared-coordination-plane.md),
+  [Global Hook Runtime](global-hook-runtime.md) and
+  [Transactional Adoption Planner](transactional-adoption-planner.md).
 
 ## System Boundary
 
 `repo-harness` is a repo-local workflow harness CLI and skill with an optional
-local MCP sidecar. It is not a hosted product runtime, agent gateway, or database
-service. Its job is to inspect a target repository, install or refresh a
-file-backed workflow contract, route public command skills, expose explicitly
+local MCP sidecar. It is not a hosted product runtime, agent gateway, or
+database service. Its job is to inspect a target repository, install or refresh
+a file-backed workflow contract, route public command skills, expose explicitly
 configured local MCP capabilities, and verify that generated repo-local surfaces
 remain consistent.
+
+The product has two layers that share one set of files (`README.md`, "Two
+Layers"):
+
+- **Session contract.** One human, one agent session, one task. Plans,
+  contracts, checks, reviews and handoffs are the durable authority. Hooks keep
+  the session inside them.
+- **Bot-scheduled programs.** The Bot is the entry point for long-running work.
+  It drives the repo-harness CLI and Herdr task agents. repo-harness supplies
+  the tools and the evidence. The Bot decides what runs next.
 
 Authoritative surfaces:
 
@@ -22,46 +44,39 @@ Authoritative surfaces:
 - Public command facades: `assets/skill-commands/*/SKILL.md` plus `assets/skill-commands/manifest.json`.
 - Engine: `scripts/inspect-project-state.ts`, `src/core/adoption/`, `src/effects/fs-transaction.ts`, `scripts/create-project-dirs.sh`, `scripts/lib/project-init-lib.sh`, and the [Transactional Adoption Planner](transactional-adoption-planner.md).
 - Contract assets: `assets/workflow-contract.v1.json`, `.ai/harness/workflow-contract.json`, `.ai/harness/policy.json`, `.ai/context/context-map.json`, and the capability authority selected by `.ai/harness/policy.json#context.capability_source` (this repo: `.archcontext/model/nodes/*.yaml`).
-- Runtime harness: `assets/hooks/`, `.ai/hooks/`, user-level host adapters, and ignored `.ai/harness/*` runtime state.
-- MCP sidecar: `src/cli/mcp/`, `src/cli/commands/mcp.ts`, user-owned ignored config/registry under `~/.repo-harness/`, and the [MCP sidecar architecture](modules/runtime-harness/mcp-sidecar.md).
+- Runtime harness: the `repo-harness-hook` binary (`package.json` `bin`), the typed route registry `src/cli/hook/route-registry.ts`, user-level host adapters, and ignored `.ai/harness/*` runtime state. `.ai/hooks/lib/workflow-state.sh` stays only for self-hosting.
+- MCP sidecar: `src/cli/mcp/`, `src/cli/commands/mcp.ts`, user-owned ignored config and registry under `~/.repo-harness/`, and the [MCP sidecar architecture](modules/runtime-harness/mcp-sidecar.md).
 - Verification: `tests/`, `evals/`, `scripts/check-task-workflow.sh`, `scripts/check-task-sync.sh`, `scripts/check-agent-tooling.sh`, `scripts/ensure-codegraph.sh`.
 - Effective State and workflow policy: `src/core/state/` (pure Effective State
   projection, ESA PR #79), `src/effects/state/` (source resolution and
-  publication), and `src/core/workflow/` — `profile.ts` owns the deterministic
-  risk/profile authority and `artifact-requirement-policy.ts` (LSC-02) owns
-  the Lite/Standard/Strict x edit/stop/ship artifact-requirement matrix.
-  Consumer cutovers to that matrix land one package at a time through the
-  Loop Semantics Convergence sprint
-  (`plans/sprints/20260716-0101-loop-semantics-convergence.sprint.md`);
-  its active state goldens live in `tests/state/cli-state-golden.test.ts`.
-  Adapter parity is checked in `tests/state/adapter-parity.test.ts`.
+  publication), and `src/core/workflow/`. `profile.ts` owns the deterministic
+  risk profile (`routine` or `high`). `artifact-requirement-policy.ts` owns the
+  `routine`/`high` x edit/stop/ship artifact-requirement matrix. The Loop
+  Semantics Convergence sprint is archived at
+  `plans/archive/20260716-0101-loop-semantics-convergence.sprint.md`. Its state
+  goldens live in `tests/state/cli-state-golden.test.ts`.
 - Loop semantics parity contract (LSC-08): the readiness authority
-  (`src/core/workflow/operation-readiness.ts`'s `evaluateReadiness`, carried
-  verbatim as `EffectiveStateV1.readiness`) and its Skill guidance
-  (`EffectiveStateV1.guidance`) are projected, never recomputed, by four
-  adapter surfaces — CLI (`repo-harness state resolve --json`, including
-  `--field readiness`), MCP (`summarize_repo_harness_state`'s compact
-  state), Hook (the Stop route's in-process `stop-handler.ts` reading
-  `.readiness.allowedToStop` / `.readiness.readyToShip`), and Skill
-  (guidance text matched against `CEREMONY_GUIDANCE[profile]`). All four
-  agree on profile, operation, decision, reason, and readiness for the same
-  fixtures; the parity gate is `tests/state/adapter-parity.test.ts`, with no
-  separate gate machinery.
-- Shared coordination plane: the cross-worktree ownership and visibility
-  contract — lease identity and the four-state machine
+  (`src/core/workflow/operation-readiness.ts`, `evaluateReadiness`, carried as
+  `EffectiveStateV1.readiness`) and its Skill guidance
+  (`EffectiveStateV1.guidance`) are projected, never recomputed. The adapter
+  surfaces are the CLI (`repo-harness state resolve --json`), MCP
+  (`summarize_repo_harness_state`), the Stop hook route
+  (`src/cli/hook/stop-handler.ts` reads `readiness.readyToShip` and reports a
+  warning without a stop gate) and the Skill guidance text
+  (`CEREMONY_GUIDANCE` in `src/core/state/project-effective-state.ts`). The
+  parity gate is `tests/state/adapter-parity.test.ts`.
+- Shared coordination plane: lease identity and the four-state machine
   (`src/core/state/coordination-identity.ts`,
-  `src/effects/state/coordination-lease-store.ts`,
-  `src/cli/commands/sprint.ts`) plus the read-only kanban projection
-  (`src/core/state/project-board.ts`,
+  `src/effects/state/coordination-lease-store.ts`, `src/cli/commands/sprint.ts`)
+  plus the read-only board projection (`src/core/state/project-board.ts`,
   `src/effects/state/collect-board-inputs.ts`,
-  `src/effects/state/resolve-board.ts`,
-  `src/effects/git/worktree-topology.ts`, `repo-harness state board --json`),
-  and the [Shared Coordination Plane](shared-coordination-plane.md).
+  `src/effects/state/resolve-board.ts`, `repo-harness state board --json`). See
+  the [Shared Coordination Plane](shared-coordination-plane.md).
 - Shared execution effects: `src/effects/process-runner.ts`,
   `src/effects/process-supervisor.ts`, `src/effects/process-group-launcher.ts`,
   `src/effects/locking/`, and `src/effects/git/` own bounded process lifecycle
-  and canonical filesystem/Git primitives consumed by workflow and
-  verification modules.
+  and canonical filesystem and Git primitives (capability
+  [execution-primitives](modules/workflow-engine/execution-primitives.md)).
 
 Out of scope:
 
@@ -69,6 +84,187 @@ Out of scope:
 - `_ref/` external reference checkouts and `_ops/` private operations state.
 - Installing, upgrading, or enabling external host tools such as Waza, `geju`, or MCP servers. This self-host repo may vendor CodeGraph as a dev dependency, but generated downstream repos keep CodeGraph host setup explicit unless local policy opts in.
 - Vendoring external skill bodies such as `mermaid`.
+- Merging pull requests. The provider and the user perform the merge.
+
+## Domain Map
+
+| Domain | Capabilities | Purpose | Page |
+| --- | --- | --- | --- |
+| public-surface | 4 | Routes user intent to CLI-backed command facades, adopts repositories, and collects strategy context. | [Public Surface](domains/public-surface.md) |
+| workflow-engine | 4 | Owns the workflow contract and templates, inspects and migrates repositories, resolves Effective State and the coordination plane, and provides process, lock and Git primitives. | [Workflow Engine](domains/workflow-engine.md) |
+| runtime-harness | 22 | Runs host hooks and the installed runtime, hosts task agents, records evidence and observations, serves the MCP sidecar, and runs the Module Engineer organization. | [Runtime Harness](domains/runtime-harness.md) |
+| organization | 2 | Delivers tasks across repositories: task offers, acquire, the Task Inbox, and PR publication. | [Organization](domains/organization.md) |
+| runtime-mcp | 2 | Exposes bounded repository tools through MCP and runs the local ChatGPT browser consult. | [Runtime MCP](domains/runtime-mcp.md) |
+| verification | 3 | Runs tests, gates and evals, records the acceptance receipt, and checks CodeGraph readiness. | [Verification](domains/verification.md) |
+
+## Main Runtime Paths
+
+The diagram shows the five main entry paths. Each solid edge between two
+repo-harness nodes is a relation in the model. The table below gives the
+relation id. Dashed edges go to external actors that the model does not
+declare. The table gives their source evidence.
+
+```mermaid
+flowchart LR
+  classDef ext fill:#f3f4f6,stroke:#6b7280,color:#111827,stroke-dasharray:4 3
+  classDef cap fill:#1e3a8a,stroke:#bfdbfe,color:#ffffff
+  classDef store fill:#14532d,stroke:#bbf7d0,color:#ffffff
+
+  Bot["Bot"]:::ext
+  Host["Claude / Codex / Pi host"]:::ext
+  Client["ChatGPT or other MCP client"]:::ext
+  Human["Human in a browser"]:::ext
+  Herdr["Herdr panes"]:::ext
+  Provider["GitHub provider"]:::ext
+  Archctx["archctx"]:::ext
+
+  CLI["CLI root<br/>global-runtime-reconciliation"]:::cap
+  Hooks["hook-adapters"]:::cap
+  MCP["mcp-sidecar"]:::cap
+  Repo["general-repo-access"]:::cap
+  Console["operator web console"]:::cap
+  OpServer["operator HTTP reader"]:::cap
+  Closure["archctx closure<br/>global-runtime-reconciliation"]:::cap
+  Fleet["task-fleet"]:::cap
+  Pub["publication"]:::cap
+  PM["pm-dispatch"]:::cap
+  TAH["task-agent-host"]:::cap
+  Review["acceptance-review"]:::cap
+  Pipe["pipeline-ledger"]:::cap
+  WS["workflow-state"]:::store
+  EL["evidence-ledger"]:::store
+  CA["contract-assets"]:::cap
+
+  Bot -.-> CLI
+  CLI --> Fleet
+  CLI --> TAH
+  CLI --> WS
+  CLI --> Pub
+  Fleet --> WS
+  Fleet --> CA
+  Fleet --> Pub
+  TAH -.-> Herdr
+  Pub -.-> Provider
+
+  Host -.-> Hooks
+  Hooks --> WS
+  Hooks --> EL
+  Hooks --> Fleet
+
+  Client -.-> MCP
+  MCP --> PM
+  MCP --> Fleet
+  MCP --> Pub
+  MCP --> Repo
+  MCP --> WS
+  PM --> TAH
+
+  Human -.-> Console
+  Console --> OpServer
+  OpServer --> Fleet
+  OpServer --> Pipe
+  OpServer --> Closure
+
+  CLI --> Closure
+  Closure -.-> Archctx
+  Closure --> Review
+  Review --> TAH
+  WS --> EL
+```
+
+| Edge | Evidence |
+| --- | --- |
+| Bot -> CLI root | External. `README.md` "Two Layers": the Bot drives programs through the repo-harness CLI and Herdr. |
+| CLI root -> task-fleet, task-agent-host, workflow-state, publication | `relation.global-runtime-reconciliation.cli-root.task-fleet`, `.task-agent-host`, `.workflow-state`, `.publication` (`buildProgram` registers the fleet, herdr, task-agent, sprint, state and publication commands). |
+| task-fleet -> workflow-state | `relation.task-fleet.primary.workflow-state`: read canonical Sprint tasks and leases to build offers and the board. |
+| task-fleet -> contract-assets | `relation.task-fleet.contract-assets`: run packaged contract worktree helpers to provision and bind an acquired task. |
+| task-fleet -> publication | `relation.task-fleet.publication`: read publication receipts, readiness and provider feedback. |
+| task-agent-host -> Herdr | External. The capability hosts persistent task agents in Herdr panes (capability summary). |
+| publication -> GitHub provider | External. Publication binds a claim generation to a pull request and never merges it (`modules/organization/publication.md` §3.1). |
+| Host -> hook-adapters | External. User-level host hooks call the `repo-harness-hook` binary (`package.json` `bin`, [Global Hook Runtime](global-hook-runtime.md)). |
+| hook-adapters -> workflow-state, evidence-ledger, task-fleet | `relation.hook-adapters.primary.workflow-state`, `relation.hook-adapters.session-lifecycle.evidence-ledger`, `relation.hook-adapters.session-lifecycle.task-fleet`. |
+| MCP client -> mcp-sidecar | External. `README.md` "MCP Connector". |
+| mcp-sidecar -> pm-dispatch, task-fleet, publication, general-repo-access, workflow-state | `relation.mcp-sidecar.primary.pm-dispatch`, `.task-fleet`, `.publication`, `.general-repo-access`, `.workflow-state`. |
+| pm-dispatch -> task-agent-host | `relation.pm-dispatch.task-agent-host`: start the fixed OAR coding host and deliver requests through the task session. |
+| Human -> operator web console | External. `README.md` "Local Human Control Board" (`repo-harness operator serve`). |
+| operator web console -> HTTP reader | `relation.operator.web-console.http-reader`: GET and HEAD routes only. |
+| operator HTTP reader -> task-fleet, pipeline-ledger, archctx closure | `relation.operator.primary.task-fleet`, `relation.operator.primary.pipeline-ledger`, `relation.operator.http-reader.model-reader`. |
+| CLI root -> archctx closure | `relation.global-runtime-reconciliation.cli-root.archctx-closure`: register the architecture-projection command. |
+| archctx closure -> archctx | External. `src/effects/architecture/archctx-provider.ts` runs the package-local archctx binary. |
+| archctx closure -> acceptance-review | `relation.global-runtime-reconciliation.archctx-closure.acceptance-review`: build the module review prompt from the committed model. |
+| acceptance-review -> task-agent-host | `relation.acceptance-review.primary.task-agent-host`: run the persistent review session on a Herdr task agent. |
+| workflow-state -> evidence-ledger | `relation.workflow-state.coordination-plane.evidence-ledger`: write lease and topology records durably. |
+
+## Authority and State Map
+
+Each datum has one authority. Every other representation is a projection.
+
+| Datum | Authority (store) | Owner capability | Projections and readers |
+| --- | --- | --- | --- |
+| Workflow contract | `assets/workflow-contract.v1.json`; the repo opt-in marker `.ai/harness/workflow-contract.json` | contract-assets | Templates, helper copies and reference configs are byte projections. |
+| Architecture model | `.archcontext/model/{nodes,relations,flows}/`, written through archctx ChangeSets | contract-assets (files); global-runtime-reconciliation runs the projection | Generated regions in `docs/architecture/**`. `repo-harness module` and the operator read the committed HEAD snapshot (`src/effects/architecture/model-reader.ts`). |
+| Capability ownership | Capability nodes only (`src/core/capabilities/registry.ts`) | contract-assets | `scripts/capability-resolver.ts` longest-prefix match. |
+| Plans, contracts and reviews | Repository Markdown under `plans/` and `tasks/` | workflow-state reads them | Effective State is the single deterministic projection. Its JSON cache and `tasks/current.md` are read models ([Effective State Authority](effective-state-authority.md)). |
+| Task identity | The ID cell of the canonical Sprint row | workflow-state | Task revision, fleet offers and boards. |
+| Task execution (lease) | `<git-common-dir>/repo-harness/coordination/v1/`; claim tokens under `.ai/harness/sprint/claims` | workflow-state | State board and fleet board (read-only, no persisted column). |
+| Task messages | `<git-common-dir>/repo-harness/task-inbox/v2` | task-fleet | Session context renders them as untrusted data. They hold no authority. |
+| Publication | Immutable receipts in `<git-common-dir>/repo-harness/publications/v1`; the `current_publication` pointer in the lease record | publication | Merge readiness is derived at read time and never stored. |
+| Acceptance | `~/.repo-harness/gates/<repo-id>/acceptance.latest.json` | acceptance-review | Effective State, bound-task-freezes and integration acceptance read it. |
+| Harness evidence | `.ai/harness/evidence/events/log.jsonl` and `.ai/harness/evidence/blobs` | evidence-ledger | Handoff and resume recovery views. |
+| Pipeline facts | SQLite `pipelines.db` (`REPO_HARNESS_PIPELINES_DB`) | pipeline-ledger | Operator pipeline board. The ledger never dispatches, merges or cleans. |
+| Engineer contracts and bindings | Tracked `agents/engineers/**`; bindings in `<git-common-dir>/repo-harness/engineers/v1` | engineer-bindings | Engineer offers and the engineering overlay. |
+| Task agent sessions | Herdr panes; records under `.ai/harness/runs/task-agents` and task worktrees under `.ai/harness/runs/task-workspaces` | task-agent-host | Pipeline ledger and acceptance review read the session records. |
+| Repository registry | `~/.repo-harness/registered-repos.json` | mcp-sidecar | Fleet offers, PM dispatch, operator and work demand read it. |
+| Global configuration | `~/.repo-harness/config.json` | global-runtime-reconciliation | Projection policy (`src/effects/architecture/projection-config.ts`). |
+| Merge | The provider and the user | none | repo-harness never merges. |
+
+## Capability Index
+
+| Domain | Capability | Module page |
+| --- | --- | --- |
+| public-surface | Root Router | [root-router](modules/public-surface/root-router.md) |
+| public-surface | Action Commands | [action-commands](modules/public-surface/action-commands.md) |
+| public-surface | Adoption | [adoption](modules/public-surface/adoption.md) |
+| public-surface | Strategy Reflection | [strategy-reflection](modules/public-surface/strategy-reflection.md) |
+| workflow-engine | Inspection And Migration | [inspection-migration](modules/workflow-engine/inspection-migration.md) |
+| workflow-engine | Contract Assets | [contract-assets](modules/workflow-engine/contract-assets.md) |
+| workflow-engine | Workflow State | [workflow-state](modules/workflow-engine/workflow-state.md) |
+| workflow-engine | Execution Primitives | [execution-primitives](modules/workflow-engine/execution-primitives.md) |
+| runtime-harness | Hook Adapters | [hook-adapters](modules/runtime-harness/hook-adapters.md) |
+| runtime-harness | Global Runtime Reconciliation | [global-runtime-reconciliation](modules/runtime-harness/global-runtime-reconciliation.md) |
+| runtime-harness | MCP Sidecar | [mcp-sidecar](modules/runtime-harness/mcp-sidecar.md) |
+| runtime-harness | Task Agent Host | [task-agent-host](modules/runtime-harness/task-agent-host.md) |
+| runtime-harness | PM Dispatch Boundary | [pm-dispatch](modules/runtime-harness/pm-dispatch.md) |
+| runtime-harness | Agent Runtime Effects | [agent-runtime-effects](modules/runtime-harness/agent-runtime-effects.md) |
+| runtime-harness | Evidence Ledger | [evidence-ledger](modules/runtime-harness/evidence-ledger.md) |
+| runtime-harness | Pipeline Observer Ledger | [pipeline-ledger](modules/runtime-harness/pipeline-ledger.md) |
+| runtime-harness | Operator Board | [operator](modules/runtime-harness/operator.md) |
+| runtime-harness | Refactor Recommendations | [refactor-program](modules/runtime-harness/refactor-program.md) |
+| runtime-harness | Engineer Bindings | [engineer-bindings](modules/runtime-harness/engineer-bindings.md) |
+| runtime-harness | Engineer Messages | [engineer-messages](modules/runtime-harness/engineer-messages.md) |
+| runtime-harness | Engineer Scheduling | [engineer-scheduling](modules/runtime-harness/engineer-scheduling.md) |
+| runtime-harness | Engineering Overlay | [engineering-overlay](modules/runtime-harness/engineering-overlay.md) |
+| runtime-harness | Bound Task Freezes | [bound-task-freezes](modules/runtime-harness/bound-task-freezes.md) |
+| runtime-harness | Read-only Delegated Runs | [delegated-runs](modules/runtime-harness/delegated-runs.md) |
+| runtime-harness | Collaboration Substrate | [collaboration](modules/runtime-harness/collaboration.md) |
+| runtime-harness | Work Demand Intake | [work-demand](modules/runtime-harness/work-demand.md) |
+| runtime-harness | Interface Change Requests | [interface-change](modules/runtime-harness/interface-change.md) |
+| runtime-harness | External Source Intake | [external-source-intake](modules/runtime-harness/external-source-intake.md) |
+| runtime-harness | Verified Evidence Context | [verified-context](modules/runtime-harness/verified-context.md) |
+| runtime-harness | Integration Product Acceptance | [integration-acceptance](modules/runtime-harness/integration-acceptance.md) |
+| organization | Task Fleet | [task-fleet](modules/organization/task-fleet.md) |
+| organization | PR Publication | [publication](modules/organization/publication.md) |
+| runtime-mcp | General Repository Access | [general-repo-access](modules/runtime-mcp/general-repo-access.md) |
+| runtime-mcp | ChatGPT Browser Consult | [chatgpt-browser](modules/runtime-mcp/chatgpt-browser.md) |
+| verification | Evals And Checks | [evals-checks](modules/verification/evals-checks.md) |
+| verification | Acceptance Review | [acceptance-review](modules/verification/acceptance-review.md) |
+| verification | CodeGraph Readiness | [codegraph-readiness](modules/verification/codegraph-readiness.md) |
+
+Reading rules:
+
+- One capability has exactly one module page at `modules/<domain>/<capability>.md`.
+- Fact priority: current source > model > documents. When a page conflicts with `src/`, `scripts/` or `assets/`, the source wins. Update the model and the projection in the same pull request.
+- The prefix authority is the capability source that `.ai/harness/policy.json#context.capability_source` selects. In this repository it is `.archcontext/model/nodes/*.yaml`.
 
 ## Umbrella Hierarchy
 
@@ -76,6 +272,7 @@ Out of scope:
 Project
   -> architecture domain
      -> capability
+        -> component
         -> capability contract block
         -> workstream ledger
         -> current todo slice
@@ -84,162 +281,10 @@ Project
 
 - Architecture owns stable truth: boundaries, snapshots, and embedded Mermaid source.
 - The capability authority selected by `.ai/harness/policy.json#context.capability_source` owns declared capability prefixes and longest-prefix matching; this repo resolves from `.archcontext/model/nodes/*.yaml`.
+- Component nodes split a capability by responsibility. The repo-harness registry reads capability nodes only.
 - Local `AGENTS.md` / `CLAUDE.md` contract blocks own agent-facing context projection.
 - `tasks/workstreams/<domain>/<capability>/` owns durable multi-session progress.
 - `tasks/todos.md` owns deferred medium/long-term goals with tradeoff and revisit trigger; current execution slices stay in the active plan's `## Task Breakdown`.
-
-## Domains
-
-- [Public Surface](domains/public-surface.md): root router, README, root agent docs, and action command facades.
-- [Workflow Engine](domains/workflow-engine.md): inspection, migration, template install, contract assets, and policy/context generation.
-- [Runtime Harness](domains/runtime-harness.md): generated hook implementation, user-level adapter settings, handoff, and runtime event state.
-- [Verification](domains/verification.md): unit tests, smoke checks, eval fixtures, CodeGraph readiness, and advisory tooling probes.
-
-## Capability 地图
-
-`.ai/harness/policy.json#context.capability_source` 选中的 capability 权威声明 14 个 capability，分属 5 个 architecture domain；本仓库的权威是 `.archcontext/model/nodes/*.yaml`。
-下图按 domain 分组，只画在源码里核实过的强依赖边（import 或运行时调用），
-虚线是 verification 的 gate 关系而非代码依赖。
-
-```mermaid
-flowchart LR
-  classDef surface fill:#1e40af,stroke:#bfdbfe,stroke-width:2px,color:#fff
-  classDef engine fill:#5b21b6,stroke:#ddd6fe,stroke-width:2px,color:#fff
-  classDef harness fill:#0f766e,stroke:#99f6e4,stroke-width:2px,color:#fff
-  classDef mcp fill:#9a3412,stroke:#fed7aa,stroke-width:2px,color:#fff
-  classDef verify fill:#374151,stroke:#d1d5db,stroke-width:2px,color:#fff
-
-  subgraph PS["public-surface"]
-    direction TB
-    RootRouter(["root-router<br/>根路由与产品真相入口"]):::surface
-    ActionCommands(["action-commands<br/>公开命令 skill facade"]):::surface
-    Adoption(["adoption<br/>事务式接入计划与落盘"]):::surface
-  end
-
-  subgraph WE["workflow-engine"]
-    direction TB
-    InspectionMigration(["inspection-migration<br/>仓库巡检与目录/契约生成"]):::engine
-    ContractAssets(["contract-assets<br/>契约资产、策略与 capability 注册表"]):::engine
-  end
-
-  subgraph RH["runtime-harness"]
-    direction TB
-    GlobalRuntime(["global-runtime-reconciliation<br/>全局 runtime closure 与显式外部工具刷新"]):::harness
-    EngineerBindings(["engineer-bindings<br/>tracked Engineer 契约与 shared binding authority"]):::harness
-    EngineerMessages(["engineer-messages<br/>closed message protocol 与 durable inbox"]):::harness
-    EngineerScheduling(["engineer-scheduling<br/>Work Graph、Engineer Offer 与 acquire fence"]):::harness
-    HookAdapters(["hook-adapters<br/>宿主 hook 路由与安装器"]):::harness
-    McpSidecar(["mcp-sidecar<br/>本地 MCP 服务与仓库注册表"]):::harness
-  end
-
-  subgraph RM["runtime-mcp"]
-    direction TB
-    GeneralRepoAccess(["general-repo-access<br/>受策略约束的通用仓库读写工具"]):::mcp
-  end
-
-  subgraph VF["verification"]
-    direction TB
-    CodegraphReadiness(["codegraph-readiness<br/>CodeGraph 探测与适配"]):::verify
-    EvalsChecks(["evals-checks<br/>测试、eval 与工作流闸门"]):::verify
-  end
-
-  RootRouter --> ActionCommands
-  ContractAssets --> Adoption
-  ContractAssets --> HookAdapters
-  ContractAssets --> CodegraphReadiness
-  GlobalRuntime --> ContractAssets
-  GlobalRuntime --> CodegraphReadiness
-  InspectionMigration --> ContractAssets
-  Adoption --> ContractAssets
-  Adoption --> McpSidecar
-  HookAdapters --> ContractAssets
-  HookAdapters --> ActionCommands
-  EngineerScheduling --> EngineerBindings
-  EngineerMessages --> EngineerBindings
-  McpSidecar --> EngineerMessages
-  McpSidecar --> EngineerScheduling
-  McpSidecar --> ContractAssets
-  McpSidecar --> CodegraphReadiness
-  GeneralRepoAccess --> McpSidecar
-  GeneralRepoAccess --> CodegraphReadiness
-
-  EvalsChecks -.->|gate| RootRouter
-  EvalsChecks -.->|gate| ActionCommands
-  EvalsChecks -.->|gate| Adoption
-  EvalsChecks -.->|gate| InspectionMigration
-  EvalsChecks -.->|gate| ContractAssets
-  EvalsChecks -.->|gate| GlobalRuntime
-  EvalsChecks -.->|gate| EngineerBindings
-  EvalsChecks -.->|gate| EngineerMessages
-  EvalsChecks -.->|gate| EngineerScheduling
-  EvalsChecks -.->|gate| HookAdapters
-  EvalsChecks -.->|gate| McpSidecar
-  EvalsChecks -.->|gate| GeneralRepoAccess
-  EvalsChecks -.->|gate| CodegraphReadiness
-
-  style PS fill:none,stroke:#60a5fa,stroke-width:2px,color:#60a5fa
-  style WE fill:none,stroke:#a78bfa,stroke-width:2px,color:#a78bfa
-  style RH fill:none,stroke:#2dd4bf,stroke-width:2px,color:#2dd4bf
-  style RM fill:none,stroke:#fb923c,stroke-width:2px,color:#fb923c
-  style VF fill:none,stroke:#9ca3af,stroke-width:2px,color:#9ca3af
-```
-
-每条实线边的源码证据：
-
-| 边 | 证据 |
-| --- | --- |
-| root-router -> action-commands | `SKILL.md` 的 verify 步骤指名 `repo-harness-check`，该 facade 实体在 `assets/skill-commands/repo-harness-check/` |
-| contract-assets -> adoption | `src/cli/commands/init.ts` 导入 `./adoption-plan` 的 `runAdoptionApply` / `runAdoptionPlan` |
-| contract-assets -> hook-adapters | `src/cli/commands/init.ts` 导入 `../installer/install-profile` 的 `PROFILE_COMPONENTS` |
-| contract-assets -> codegraph-readiness | `src/cli/commands/init.ts` 导入 `../tools/codegraph` 的 `configureCodegraph` / `ensureCodegraph` |
-| global-runtime-reconciliation -> contract-assets | `src/cli/commands/global-runtime.ts` 导入 install-profile 与 skill-surface catalog，并读取 package-owned runtime assets |
-| global-runtime-reconciliation -> codegraph-readiness | `src/cli/commands/global-runtime.ts` 导入 `../tools/codegraph` 的 `configureCodegraph` |
-| inspection-migration -> contract-assets | `scripts/lib/project-init-lib.sh` 生成并写入下游 registry 模式的 `.ai/context/capabilities.json` 与模板契约文件（新仓库默认 `capability_source: "registry"`，与本仓库自身的 archcontext 权威无关） |
-| adoption -> contract-assets | `src/core/adoption/source-checkout.ts` 以 `assets/workflow-contract.v1.json` 判定源码 checkout；`src/core/adoption/standard-plan.ts` 指向 `package:assets/templates/helpers` |
-| adoption -> mcp-sidecar | `src/cli/commands/adoption-plan.ts` 导入 `../../effects/repo-registry` 的 `registerRepoHarnessRepo` |
-| hook-adapters -> action-commands | `src/cli/installer/install-profile.ts` 读取 `assets/skill-commands/manifest.json` 并按名取用各命令源目录 |
-| engineer-scheduling -> engineer-bindings | `src/effects/engineers/scheduling-acquire.ts` 重验精确 Engineer 合同后，通过 `delegateScheduledEngineerAcquire` 调用既有 ME-0B acquire authority |
-| engineer-messages -> engineer-bindings | `src/effects/engineers/module-inbox.ts` 在 send、delivery 与 ACK 边界调用 `readEngineerBindingStatus` 重验精确 Binding |
-| mcp-sidecar -> engineer-messages | `src/cli/mcp/engineer-tools.ts` 从已验证 principal 派生 sender/recipient 并调用 module inbox effects |
-| mcp-sidecar -> engineer-scheduling | `src/cli/mcp/engineer-tools.ts` 调用 scheduling effects 投影并获取带 revision fence 的 Engineer offer |
-| mcp-sidecar -> contract-assets | `src/cli/mcp/tools.ts` 导入 `../../effects/runtime/helper-runner` 的 `runHelper` |
-| mcp-sidecar -> codegraph-readiness | `src/cli/mcp/server.ts`、`coding-tools.ts`、`reader-tools.ts` 导入 `./codegraph-adapter` |
-| general-repo-access -> mcp-sidecar | `src/cli/mcp/general-repo-access.ts` 导入同目录的 `./types` / `./paths` / `./audit` / `./redaction` 与 `../../effects/repo-registry` |
-| general-repo-access -> codegraph-readiness | `src/cli/mcp/general-repo-access.ts` 导入 `./codegraph-adapter` 的 `createCodeGraphCliAdapter` |
-
-虚线 gate 边来自每个 capability 在 capability 权威里自己声明的 `verification_hints`
-（例如 `tests/cli/adoption-plan.test.ts`、`tests/hook-runtime.test.ts`、`tests/cli/mcp-reader-tools.test.ts`），
-以及 `bun test` 全仓测试和 `scripts/check-task-workflow.sh` 只读诊断。
-
-contract-assets 内部还有一条投影关系而不是跨 capability 边：`scripts/sync-helper-sources.ts`
-把 `scripts/` 下的 helper 单向投影成 `assets/templates/helpers/` 的打包副本，源与投影两端同属
-contract-assets 前缀，漂移由 `bun run sync:helpers` 的 `--check` 模式拦截。
-
-### Capability 索引
-
-| capability id | 主前缀 | 职责 | 模块文档 |
-| --- | --- | --- | --- |
-| `public-surface-root-router` | `SKILL.md` | 根路由与产品真相入口，把请求分发到各动作命令 | [root-router](modules/public-surface/root-router.md) |
-| `public-surface-action-commands` | `assets/skill-commands` | 公开动作命令的 skill facade 与 manifest | [action-commands](modules/public-surface/action-commands.md) |
-| `public-surface-adoption` | `src/core/adoption` | 事务式接入计划的生成、渲染与文件系统落盘 | [adoption](modules/public-surface/adoption.md) |
-| `workflow-engine-inspection-migration` | `scripts/inspect-project-state.ts` | 巡检目标仓库状态并生成或迁移工作流目录骨架 | [inspection-migration](modules/workflow-engine/inspection-migration.md) |
-| `workflow-engine-contract-assets` | `assets/workflow-contract.v1.json` | 工作流契约、策略、模板与 capability 注册表的权威面 | [contract-assets](modules/workflow-engine/contract-assets.md) |
-| `runtime-harness-hook-adapters` | `assets/hooks` | 宿主 hook 事件的进程内路由、handler 与安装器 | [hook-adapters](modules/runtime-harness/hook-adapters.md) |
-| `runtime-harness-global-runtime-reconciliation` | `package.json` | 校验 package-local ArchContext closure，并只在显式选择时刷新 mutable provider | [global-runtime-reconciliation](modules/runtime-harness/global-runtime-reconciliation.md) |
-| `runtime-harness-engineer-bindings` | `agents/engineers` | tracked Engineer 行为契约、shared binding authority 与 operator-only projection | [engineer-bindings](modules/runtime-harness/engineer-bindings.md) |
-| `runtime-harness-engineer-messages` | `src/core/messages/mechanics.ts` | closed ModuleMessage schema、git-common-dir durable inbox、Binding-fenced delivery 与 digest-gated ACK | [engineer-messages](modules/runtime-harness/engineer-messages.md) |
-| `runtime-harness-engineer-scheduling` | `src/core/engineers/scheduling.ts` | 显式 Work Graph、确定性 Engineer Offer、repo concurrency fence 与 ME-0B acquire bridge | [engineer-scheduling](modules/runtime-harness/engineer-scheduling.md) |
-| `runtime-harness-mcp-sidecar` | `src/cli/mcp` | 本地 MCP sidecar 的传输、策略、审计与仓库注册表 | [mcp-sidecar](modules/runtime-harness/mcp-sidecar.md) |
-| `runtime-mcp-general-repo-access` | `src/cli/mcp/general-repo-access.ts` | 受策略与授权约束的通用仓库读写工具面 | [general-repo-access](modules/runtime-mcp/general-repo-access.md) |
-| `verification-codegraph-readiness` | `scripts/ensure-codegraph.sh` | CodeGraph 可用性探测、解析与 MCP 适配 | [codegraph-readiness](modules/verification/codegraph-readiness.md) |
-| `verification-evals-checks` | `tests` | 单元测试、eval fixture、工作流与任务同步闸门 | [evals-checks](modules/verification/evals-checks.md) |
-
-阅读约定：
-
-- 模块文档按 capability 组织，一个 capability 恰好对应 `modules/<domain>/<capability>.md` 一个文件。
-- 事实优先级：实际源码 > 本文与模块文档。本图与表若与 `src/`、`scripts/`、`assets/` 的现状冲突，以源码为准，并在同一个 PR 里更新模型与投影。
-- 前缀权威在 `.ai/harness/policy.json#context.capability_source` 选中的 capability 权威（本仓库为 `.archcontext/model/nodes/*.yaml`），本表「主前缀」只取每个 capability 前缀列表的首项作为定位锚点，不是完整边界。
-- Verified against: `main@13686d8d`（2026-08-08）。
 
 ## Architecture Update Flow
 
@@ -286,12 +331,12 @@ contract-assets 前缀，漂移由 `bun run sync:helpers` 的 `--check` 模式�
   模組邊界、entrypoint、依賴規則、runtime path 與驗證命令都沒有動,所以不需要
   snapshot;卡片的 Contract Files 是 `none`,也沒有本地契約需要同步。
 
-
-
 ## Review Backlog
 
-- Treat user-level `~/.codex/hooks.json` and `~/.claude/settings.json` as host adapters. Keep hook implementation under `.ai/hooks/`, and treat repo-local `.claude/settings.json` / `.codex/hooks.json` hook adapters as retired legacy config.
+- Treat user-level `~/.codex/hooks.json` and `~/.claude/settings.json` as host adapters. The `repo-harness-hook` route registry is the hook implementation. Treat repo-local `.claude/settings.json` / `.codex/hooks.json` hook adapters as retired legacy config.
 - Run `bun scripts/capability-resolver.ts validate --format text` when capability data changes. The workflow helper remains a read-only diagnostic.
+- Component footprints accept only an exact path or `dir/**` until arch-context#296 lands (`src/effects/architecture/model-reader.ts:85-89`).
+- Several capability pairs have declared relations in both directions (for example contract-assets and global-runtime-reconciliation). The module backlogs record each pair with its edge counts.
 
 <!-- BEGIN ARCHCONTEXT:generated target="projection_target.architecture.index" sourceDigest="sha256:cbbccfd6824322f42c77802d563b81761359bdeea76580d95d90817b08c25bca" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:7493e84acdcb236f0ae94e21492b501de2978b0a5d4181f5b76364b2cba75d56" -->
 # Architecture Index
