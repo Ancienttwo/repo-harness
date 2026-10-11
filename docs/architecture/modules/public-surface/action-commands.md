@@ -1,5 +1,5 @@
 # public-surface/action-commands 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-action-commands" sourceDigest="sha256:43d57c250cb76218cff0a85a9c3e86dc030fbedce5f8633d69d857745f9d72ab" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:cb3a95c4c88d943a6222b8835eeb45c31924a80fc9ac4b8ea1fc67e471614abf" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-action-commands" sourceDigest="sha256:43d57c250cb76218cff0a85a9c3e86dc030fbedce5f8633d69d857745f9d72ab" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:cb3a95c4c88d943a6222b8835eeb45c31924a80fc9ac4b8ea1fc67e471614abf" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.public-surface.action-commands`(kind `capability`)
 > **Matched Prefixes**:`assets/skill-commands/**`

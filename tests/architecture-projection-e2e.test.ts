@@ -84,17 +84,18 @@ describe("AXR7 repo-harness architecture consumer", () => {
       provenance?: {
         rendererVersion?: string;
         layoutVersion?: string;
-        indexedWorktreeDigest?: string | null;
+        sourceTreeDigest?: string;
         projectionInputDigest?: string;
-        generatedFrom?: { codeGraphVersion?: string; codeGraphStatus?: string };
+        generatedFrom?: { codeGraphPackage?: string; codeGraphVersion?: string };
       };
     };
     expect(manifest.profile).toBe("repo-harness/v1");
     expect(manifest.targetCount).toBe(33);
-    expect(manifest.provenance?.rendererVersion).toBe("archcontext.docs-renderer/v4");
+    expect(manifest.provenance?.rendererVersion).toBe("archcontext.docs-renderer/v5");
     expect(manifest.provenance?.layoutVersion).toBe("archcontext.docs-layout/v1");
-    expect(manifest.provenance?.generatedFrom).toMatchObject({ codeGraphVersion: "1.6.1", codeGraphStatus: "ready" });
-    expect(manifest.provenance?.indexedWorktreeDigest).toMatch(/^sha256:[a-f0-9]{64}$/);
+    // Provenance v3 keeps only the reproducible CodeGraph identity, not the local index state.
+    expect(manifest.provenance?.generatedFrom).toEqual({ codeGraphPackage: "@colbymchenry/codegraph", codeGraphVersion: "1.6.1" });
+    expect(manifest.provenance?.sourceTreeDigest).toMatch(/^sha256:[a-f0-9]{64}$/);
     expect(manifest.provenance?.projectionInputDigest).toMatch(/^sha256:[a-f0-9]{64}$/);
   });
 
