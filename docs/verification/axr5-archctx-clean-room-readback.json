@@ -3,20 +3,20 @@
   "status": "verified",
   "source": {
     "repository": "Ancienttwo/arch-context",
-    "revision": "5d67c27eeef7902b95dc1fec32518efa9037309d",
+    "revision": "184e3d28f099fecbd90c72e327726f257c1ea0c4",
     "archiveMode": "git-archive",
     "dirtySourceUsed": false
   },
   "packages": {
     "contracts": {
       "name": "archctx-contracts",
-      "version": "0.6.3",
-      "file": "archctx-contracts-0.6.3.tgz"
+      "version": "0.7.0",
+      "file": "archctx-contracts-0.7.0.tgz"
     },
     "archctx": {
       "name": "archctx",
-      "version": "0.6.3",
-      "file": "archctx-0.6.3.tgz"
+      "version": "0.7.0",
+      "file": "archctx-0.7.0.tgz"
     }
   },
   "consumer": {
@@ -31,7 +31,7 @@
       "schemaVersion": "archcontext.capabilities/v1",
       "package": {
         "name": "archctx",
-        "version": "0.6.3"
+        "version": "0.7.0"
       },
       "protocols": {
         "projectionRequest": "archcontext.projection-request/v1",
@@ -39,33 +39,44 @@
         "architectureRefreshSignal": "archcontext.architecture-refresh-signal/v1"
       },
       "renderers": {
-        "architectureDocs": "archcontext.docs-renderer/v4",
+        "architectureDocs": "archcontext.docs-renderer/v5",
         "agentContext": "archcontext.agent-context-renderer/v1"
       },
       "features": [
+        "architecture-change-capabilities-v1",
         "architecture-docs-renderer-v2",
         "architecture-refresh-signal-v1",
+        "changeset-entity-operations-v1",
+        "code-facts-unavailable-error-v1",
         "module-statistics-v1",
         "projection-apply-readback-v1",
         "projection-apply-receipt-v1",
         "projection-apply-recovery-v1",
+        "projection-apply-replay-v1",
+        "projection-check-freshness-v1",
+        "projection-manifest-contract-v2",
+        "projection-observed-major-change-acceptance-v1",
+        "projection-orphan-review-v1",
+        "projection-preview-v1",
         "projection-prior-committed-applies-v1",
         "projection-protocol-v2",
+        "recommendation-scan-decision-v1",
         "recommendation-v3",
         "refactor-assessment-v1",
-        "refactor-resolution-v1"
+        "refactor-observation-evidence-v1",
+        "refactor-resolution-v1",
+        "refactor-scan-limits-v1"
       ]
     },
     "projection": {
       "requestId": "repo-harness.axr5-clean-room",
       "status": "human-action-required",
       "worktreeDigestMatched": true,
-      "rendererVersion": "archcontext.docs-renderer/v4",
+      "rendererVersion": "archcontext.docs-renderer/v5",
       "layoutVersion": "archcontext.docs-layout/v1",
       "codeGraph": {
         "codeGraphPackage": "@colbymchenry/codegraph",
         "codeGraphVersion": "1.6.1",
-        "codeGraphBinaryDigest": "sha256:aaf60671de2533409c0ac11aa5db94ec1ac4d758cce92b4b78219ce21edf61d7",
         "codeGraphStatus": "unavailable"
       }
     }

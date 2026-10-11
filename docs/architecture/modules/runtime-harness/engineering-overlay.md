@@ -1,6 +1,6 @@
 # runtime-harness/engineering-overlay 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineering-overlay" sourceDigest="sha256:f9ab4635d72a1716c09c6070af18e58da67bdbb87773350d6986680dfaf7988e" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:9bae1e0d6199be40d080e00c13cb97f3ef8cb4d1068a029af5dc7c58716edd66" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineering-overlay" sourceDigest="sha256:f9ab4635d72a1716c09c6070af18e58da67bdbb87773350d6986680dfaf7988e" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:9bae1e0d6199be40d080e00c13cb97f3ef8cb4d1068a029af5dc7c58716edd66" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.engineering-overlay`(kind `capability`)
 > **Matched Prefixes**:`src/core/engineers/engineering-overlay.ts`、`src/effects/engineers/engineering-overlay.ts`

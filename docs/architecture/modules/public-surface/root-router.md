@@ -1,5 +1,5 @@
 # public-surface/root-router 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-root-router" sourceDigest="sha256:0ef4598222b136202f28cce16cedc9aa3c5400ac174b4d7cae7b141a2e58677d" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:680ff6695a68e7ffccd5290cb4476171d8bff7cbe0f13cfab495b7ff09d20a21" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-root-router" sourceDigest="sha256:0ef4598222b136202f28cce16cedc9aa3c5400ac174b4d7cae7b141a2e58677d" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:680ff6695a68e7ffccd5290cb4476171d8bff7cbe0f13cfab495b7ff09d20a21" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.public-surface.root-router`(kind `capability`)
 > **Matched Prefixes**:`SKILL.md`、`references/pm-boundary.md`、`README.md`、`AGENTS.md`、`CLAUDE.md`、`docs/spec.md`

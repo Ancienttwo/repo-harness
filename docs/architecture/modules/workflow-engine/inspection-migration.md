@@ -1,5 +1,5 @@
 # workflow-engine/inspection-migration 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-inspection-migration" sourceDigest="sha256:654f7236e2e51fd19e64129d48fe05f974f3172f6f69c671a78f31ba896198ae" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:a148fc8868cf1e59ce9fe25484555aff2c06e611ed559c709c045b9cde19ab0a" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-inspection-migration" sourceDigest="sha256:654f7236e2e51fd19e64129d48fe05f974f3172f6f69c671a78f31ba896198ae" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:a148fc8868cf1e59ce9fe25484555aff2c06e611ed559c709c045b9cde19ab0a" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.workflow-engine.inspection-migration`(kind `capability`)
 > **Matched Prefixes**:`scripts/inspect-project-state.ts`、`scripts/create-project-dirs.sh`、`scripts/init-project.sh`、`scripts/lib/**`

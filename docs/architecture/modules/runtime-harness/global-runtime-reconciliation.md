@@ -1,6 +1,6 @@
 # runtime-harness/global-runtime-reconciliation 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-global-runtime-reconciliation" sourceDigest="sha256:d3eed08f4cb8dac13ca0b70c56aeda5f9d9baf4c1206113e009b5d485db72a67" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:f32367316b2e760760044d3856d3f49d3cc762ea0f99627914f14ee7749c6134" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-global-runtime-reconciliation" sourceDigest="sha256:d3eed08f4cb8dac13ca0b70c56aeda5f9d9baf4c1206113e009b5d485db72a67" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:f32367316b2e760760044d3856d3f49d3cc762ea0f99627914f14ee7749c6134" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.global-runtime-reconciliation`(kind `capability`)
 > **Matched Prefixes**:`package.json`、`bun.lock`、`src/cli/index.ts`、`src/cli/commands/global-runtime.ts`、`scripts/check-managed-runtime.ts`、`scripts/sync-codex-installed-copies.sh`、`src/effects/architecture/**`、`tests/cli/global-runtime-init.test.ts`、`tests/cli/global-runtime.test.ts`、`tests/architecture-projection-provider.test.ts`、`assets/reference-configs/external-tooling.md`、`docs/reference-configs/external-tooling.md`、`docs/reference-configs/install-profiles.md`

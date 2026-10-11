@@ -1,5 +1,5 @@
 # runtime-harness/hook-adapters 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-hook-adapters" sourceDigest="sha256:c9cc53d828574f8c6196550de72acfe1aa2ab22d1031202e4d3bfab1d9ea832d" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:beacc666641e4bbfff759d6bc0f12d49a36c09cb8d2d595e39f7e0a379d07c6a" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-hook-adapters" sourceDigest="sha256:c9cc53d828574f8c6196550de72acfe1aa2ab22d1031202e4d3bfab1d9ea832d" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:beacc666641e4bbfff759d6bc0f12d49a36c09cb8d2d595e39f7e0a379d07c6a" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.hook-adapters`(kind `capability`)
 > **Matched Prefixes**:`assets/hooks/**`、`.ai/hooks/**`、`src/cli/installer/**`、`src/cli/hook/**`、`src/cli/hook-entry.ts`、`src/pi/**`

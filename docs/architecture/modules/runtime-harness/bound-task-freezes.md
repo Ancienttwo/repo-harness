@@ -1,6 +1,6 @@
 # runtime-harness/bound-task-freezes 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-bound-task-freezes" sourceDigest="sha256:50bf95c298d1eb462bd2b05a273f7a34ea8be649f18ea2562b25433e1462eca5" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:557ff7976d47c8f901ab758192325809b7d4808fa7cb991eadba32878cb0e89e" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-bound-task-freezes" sourceDigest="sha256:50bf95c298d1eb462bd2b05a273f7a34ea8be649f18ea2562b25433e1462eca5" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:557ff7976d47c8f901ab758192325809b7d4808fa7cb991eadba32878cb0e89e" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.bound-task-freezes`(kind `capability`)
 > **Matched Prefixes**:`src/core/engineers/task-freeze.ts`、`src/effects/engineers/task-freeze-store.ts`、`src/effects/engineers/bound-task-rotation.ts`

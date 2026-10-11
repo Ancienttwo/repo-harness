@@ -1,5 +1,5 @@
 # verification/evals-checks 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-evals-checks" sourceDigest="sha256:dab4410b60145f7fca9271ad864c60f8b83d8ea477dbdbe8a16d44bdb7956455" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:9b17d3562bfed9c5dcb999e05010b4acfe80289694098c581cec01113b5e703d" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-evals-checks" sourceDigest="sha256:dab4410b60145f7fca9271ad864c60f8b83d8ea477dbdbe8a16d44bdb7956455" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:9b17d3562bfed9c5dcb999e05010b4acfe80289694098c581cec01113b5e703d" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.verification.evals-checks`(kind `capability`)
 > **Matched Prefixes**:`tests/**`、`evals/**`、`scripts/run-skill-evals.ts`、`scripts/run-harness-profile-benchmark.ts`、`scripts/validate-harness-profile-benchmark.ts`、`scripts/run-bounded-verifier-command.ts`、`scripts/verify-contract.sh`、`scripts/verify-sprint.sh`、`scripts/check-task-workflow.sh`、`scripts/check-task-sync.sh`、`scripts/check-agent-tooling.sh`、`scripts/check-brain-manifest.sh`、`scripts/sync-brain-docs.sh`

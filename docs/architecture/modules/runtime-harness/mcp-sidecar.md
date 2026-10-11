@@ -1,5 +1,5 @@
 # runtime-harness/mcp-sidecar 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-mcp-sidecar" sourceDigest="sha256:2d761a23581c19f34eb060fc3baa1ce890de5094d8a65cadd151dfbb11d7b64a" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:5422b6f45cd474884c42d42a58f78d1a95f73bc85eb3584fca5fdbfd0e5d2f29" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-mcp-sidecar" sourceDigest="sha256:2d761a23581c19f34eb060fc3baa1ce890de5094d8a65cadd151dfbb11d7b64a" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:5422b6f45cd474884c42d42a58f78d1a95f73bc85eb3584fca5fdbfd0e5d2f29" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.mcp-sidecar`(kind `capability`)
 > **Matched Prefixes**:`src/cli/mcp/**`、`src/cli/commands/mcp.ts`、`src/cli/chatgpt-browser/file-policy.ts`、`src/effects/repo-registry.ts`、`docs/repo-harness-chatgpt-mcp-setup.md`、`docs/reference-configs/chatgpt-coding-mcp.md`、`docs/researches/20260711-devspace-chatgpt-local-control.md`

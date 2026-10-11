@@ -1,5 +1,5 @@
 # Refactor Program
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-refactor-program" sourceDigest="sha256:f2e6199199a2d7ea14d7749c73a996db4468b0ef5895d151d8b7903be45135f8" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:10d3e00c82a57338cbef34a85c33ec2b3346f260410b7c603f0eda52d491defd" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-refactor-program" sourceDigest="sha256:f2e6199199a2d7ea14d7749c73a996db4468b0ef5895d151d8b7903be45135f8" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:10d3e00c82a57338cbef34a85c33ec2b3346f260410b7c603f0eda52d491defd" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.refactor-program`(kind `capability`)
 > **Matched Prefixes**:`src/core/refactor/**`、`src/effects/refactor/**`、`src/cli/commands/refactor.ts`
