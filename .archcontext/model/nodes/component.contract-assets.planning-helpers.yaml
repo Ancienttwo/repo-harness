@@ -24,7 +24,10 @@ source:
     - scripts/maintenance-triage.sh
     - scripts/heartbeat-triage.sh
     - scripts/check-deploy-sql-order.sh
-    - scripts/factor-lab-*.sh
+    - scripts/factor-lab-check.sh
+    - scripts/factor-lab-new.sh
+    - scripts/factor-lab-promote.sh
+    - scripts/factor-lab-reject.sh
     - src/effects/runtime/helper-runner.ts
     - src/cli/commands/run.ts
     - src/cli/commands/brain.ts

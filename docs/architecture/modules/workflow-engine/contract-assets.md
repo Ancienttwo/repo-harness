@@ -551,6 +551,7 @@ template-projection 标记为可扩展。`assets/templates/helpers/**` 有 20,83
 - **contract-worktree-lifecycle 的外部依赖。** `scripts/contract-worktree-runtime.ts` 动态导入 `src/effects/terminal/task-session.ts` 与 `herdr.ts`；`scripts/merge-gate.ts` 导入 `scripts/acceptance-receipt.ts` 与 `src/effects/publication/merge-readiness.ts`。这些目标由并行分组认领，关系在集成时补齐。
 - **planning-helpers 的平台依赖。** `src/effects/runtime/helper-runner.ts` 导入 `node-candidates.ts` 与 `protected-helper-platform.ts`。它们当前无 owner。
 - **reference configs 多重归属（after arch-context#296）。** `assets/reference-configs/external-tooling.md` 与 `docs/reference-configs/{external-tooling,install-profiles,chatgpt-coding-mcp}.md` 同时被 global-runtime-reconciliation 或 mcp-sidecar 认领。镜像对必须由一个 owner 持有。
+- **组件 footprint 用精确文件列表（use globs after arch-context#296）。** repo-harness model reader 只接受精确路径或 `dir/**`（`src/effects/architecture/model-reader.ts:85-89`）。`planning-helpers` 因此列出 4 个 `scripts/factor-lab-*.sh` 文件。`template-projection` 列出 2 个 `assets/initializer-question-pack.v4*.json` 文件。新增同名模式的文件不会自动进入组件。
 
 - Run `bun scripts/capability-resolver.ts validate --format text` when capability data changes. The workflow helper remains a read-only diagnostic.
 - Keep durable knowledge in repo-authored research and lessons. Optional external brain exports require an operator-invoked manifest sync and never participate in workflow correctness.

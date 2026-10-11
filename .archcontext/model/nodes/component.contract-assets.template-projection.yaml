@@ -19,7 +19,8 @@ source:
     - assets/project-structures/**
     - assets/plan-map.json
     - assets/versions.json
-    - assets/initializer-question-pack.v4*.json
+    - assets/initializer-question-pack.v4.json
+    - assets/initializer-question-pack.v4.schema.json
     - .claude/templates/**
     - src/core/source-projection.ts
     - scripts/sync-helper-sources.ts
