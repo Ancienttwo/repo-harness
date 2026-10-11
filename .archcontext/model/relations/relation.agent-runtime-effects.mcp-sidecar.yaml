@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.agent-runtime-effects.mcp-sidecar
+kind: calls
+source: capability.runtime-harness.agent-runtime-effects
+target: capability.runtime-harness.mcp-sidecar
+intent: "Read the strict repo registry and the authorization revision for the wake fence"

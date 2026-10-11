@@ -1,0 +1,52 @@
+schemaVersion: archcontext.flow/v1
+id: flow.hook-adapters.stop
+capabilityId: capability.runtime-harness.hook-adapters
+name: "Run the Stop deferred work"
+applicability: required
+participants:
+  - id: route-runtime
+    nodeId: component.hook-adapters.primary
+  - id: session-lifecycle
+    nodeId: component.hook-adapters.session-lifecycle
+  - id: edit-guards
+    nodeId: component.hook-adapters.edit-guards
+steps:
+  - id: bind-stop
+    from: route-runtime
+    to: session-lifecycle
+    label: "Run the stop handler under its declared effect contract"
+    evidence:
+      entrypointId: entrypoint.hook-adapters.handler-bindings
+      sourceSymbol: "handlers"
+      sinkId: sink.hook-adapters.stop-handler
+outcomes:
+  - id: success
+    kind: success
+    label: "Pending post-edit events are consumed inside the Stop work budget"
+    steps:
+      - id: drain-journal
+        from: session-lifecycle
+        to: edit-guards
+        label: "Consume the pending post-edit journal events before the deadline"
+        evidence:
+          entrypointId: entrypoint.hook-adapters.stop
+          sourceSymbol: "runStopHandler"
+          sinkId: sink.hook-adapters.post-edit-journal
+    terminal:
+      participant: session-lifecycle
+      label: "Refresh handoff and resume projections and exit 0"
+  - id: error
+    kind: error
+    label: "A journal failure becomes a diagnostic and Stop continues"
+    steps:
+      - id: report-journal-failure
+        from: session-lifecycle
+        to: edit-guards
+        label: "Catch the journal error and keep the unconsumed events for the next Stop"
+        evidence:
+          entrypointId: entrypoint.hook-adapters.stop
+          sourceSymbol: "runStopHandler"
+          sinkId: sink.hook-adapters.post-edit-journal
+    terminal:
+      participant: session-lifecycle
+      label: "Write a PostEditJournal line to stderr and exit 0"

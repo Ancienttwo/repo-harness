@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.global-runtime-reconciliation.cli-root.pm-dispatch
+kind: calls
+source: component.global-runtime-reconciliation.cli-root
+target: capability.runtime-harness.pm-dispatch
+intent: "Register the pm command"

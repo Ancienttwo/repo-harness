@@ -4,11 +4,25 @@ capabilityId: capability.runtime-harness.global-runtime-reconciliation
 name: Reconcile the global runtime closure
 applicability: required
 participants:
+  - id: cli-root
+    nodeId: component.global-runtime-reconciliation.cli-root
   - id: update-command
     nodeId: capability.runtime-harness.global-runtime-reconciliation
   - id: reconciler
     nodeId: component.global-runtime-reconciliation.primary
+  - id: archctx-closure
+    nodeId: component.global-runtime-reconciliation.archctx-closure
+  - id: hook-adapters
+    nodeId: capability.runtime-harness.hook-adapters
 steps:
+  - id: candidate-setup
+    from: cli-root
+    to: reconciler
+    label: Run setup inside the installed candidate after the parent token and package identity match
+    evidence:
+      entrypointId: entrypoint.global-runtime-reconciliation.cli-root
+      sourceSymbol: runCandidateRuntimeReconciliation
+      sinkId: sink.global-runtime-reconciliation.setup
   - id: install-and-readback
     from: update-command
     to: reconciler
@@ -22,20 +36,28 @@ outcomes:
     kind: success
     label: Mandatory closure and selected profile tooling are ready
     steps:
-      - id: return-success
-        from: update-command
-        to: reconciler
-        label: Return versioned reconciliation receipt
+      - id: configure-architecture
+        from: reconciler
+        to: archctx-closure
+        label: Ensure the global architecture projection configuration
         evidence:
-          entrypointId: entrypoint.global-runtime-reconciliation.candidate-readback
-          sourceSymbol: verifyInstalledManagedRuntime
-          sinkId: sink.global-runtime-reconciliation.candidate-readback
+          entrypointId: entrypoint.global-runtime-reconciliation.update
+          sourceSymbol: runGlobalRuntimeSetup
+          sinkId: sink.global-runtime-reconciliation.architecture-configuration
+      - id: install-adapters
+        from: reconciler
+        to: hook-adapters
+        label: Install the managed host adapters for the selected profile
+        evidence:
+          entrypointId: entrypoint.global-runtime-reconciliation.update
+          sourceSymbol: installHostAdapters
+          sinkId: sink.global-runtime-reconciliation.host-adapters
     terminal:
-      participant: update-command
+      participant: reconciler
       label: Continue host runtime refresh
   - id: error
     kind: error
-    label: Package, Node, capability, or tooling readback failed
+    label: Package or Node or capability or tooling readback failed
     steps:
       - id: return-failure
         from: update-command

@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.global-runtime-reconciliation.archctx-closure.hook-adapters
+kind: calls
+source: component.global-runtime-reconciliation.archctx-closure
+target: capability.runtime-harness.hook-adapters
+intent: "Write the private global configuration through the installer ownership writer"

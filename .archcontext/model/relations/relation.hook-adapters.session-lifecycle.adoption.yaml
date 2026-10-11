@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.hook-adapters.session-lifecycle.adoption
+kind: calls
+source: component.hook-adapters.session-lifecycle
+target: capability.public-surface.adoption
+intent: "Check run summary write paths with the shared path safety rules"

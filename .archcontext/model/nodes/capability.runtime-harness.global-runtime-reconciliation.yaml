@@ -9,6 +9,9 @@ responsibilities:
   - Require a compatible ArchContext Node runtime and a successful package-local capability handshake.
   - Refresh mutable Waza and Mermaid skills only when explicitly requested, plus the exact global CodeGraph CLI and MCP registration.
   - Fail closed before later host mutations when the mandatory runtime closure cannot be reconciled.
+  - Own the CLI composition root, the doctor and setup check diagnostics and the retired-surface upgrade.
+  - Own the architecture projection command and the shared archctx provider and model reader.
+  - Own the release gates, the package manifest and the runtime evidence receipt.
 source:
   include:
     - "package.json"
@@ -24,6 +27,32 @@ source:
     - "assets/reference-configs/external-tooling.md"
     - "docs/reference-configs/external-tooling.md"
     - "docs/reference-configs/install-profiles.md"
+    - "src/cli/runtime/**"
+    - "src/cli/tty-prompt.ts"
+    - "src/cli/commands/validators.ts"
+    - "src/cli/commands/doctor.ts"
+    - "src/cli/commands/init-hook.ts"
+    - "src/cli/commands/upgrade.ts"
+    - "src/core/upgrade/**"
+    - "src/effects/runtime/node-candidates.ts"
+    - "src/effects/runtime/protected-helper-platform.ts"
+    - "src/effects/skill-tree-integrity.ts"
+    - "src/effects/configuration/**"
+    - "src/core/architecture/projection.ts"
+    - "src/cli/commands/architecture-projection.ts"
+    - "src/cli/commands/architecture-configuration.ts"
+    - "scripts/axr5-archctx-clean-room.ts"
+    - "src/core/release/**"
+    - "src/effects/release/**"
+    - "scripts/check-npm-release.sh"
+    - "scripts/check-release-published.sh"
+    - "scripts/check-tarball-install-smoke.sh"
+    - "scripts/check-pi-package-smoke.ts"
+    - "scripts/sync-pi-package.ts"
+    - "scripts/runtime-evidence-receipt.ts"
+    - "install.sh"
+    - "install.ps1"
+    - "tsconfig.json"
   entrypoints:
     - id: entrypoint.global-runtime-reconciliation.update
       path: "src/cli/commands/global-runtime.ts"
@@ -33,6 +62,14 @@ source:
             - id: sink.global-runtime-reconciliation.readback
               path: "src/cli/commands/global-runtime.ts"
               symbol: "reconcileManagedRuntime"
+            - id: sink.global-runtime-reconciliation.architecture-configuration
+              path: "src/cli/commands/architecture-configuration.ts"
+              symbol: "ensureGlobalArchitectureProjection"
+        - name: "installHostAdapters"
+          sinks:
+            - id: sink.global-runtime-reconciliation.host-adapters
+              path: "src/cli/commands/install.ts"
+              symbol: "runInstall"
     - id: entrypoint.global-runtime-reconciliation.candidate-readback
       path: "src/cli/commands/global-runtime.ts"
       symbols:
@@ -49,4 +86,5 @@ extensions:
   verification:
     - "bun test tests/cli/global-runtime-init.test.ts tests/cli/global-runtime.test.ts"
     - "bun test tests/architecture-projection-provider.test.ts"
+    - "bun run test:files tests/unit/candidate-bound-global-runtime-reconciliation.test.ts tests/unit/global-architecture-projection.test.ts tests/cli/doctor.test.ts tests/cli/init-hook.test.ts tests/cli/upgrade.test.ts tests/runtime-evidence-receipt.test.ts --timeout 60000 --max-concurrency 1"
     - "bun run check:release"
