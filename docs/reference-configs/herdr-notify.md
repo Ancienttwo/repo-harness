@@ -38,6 +38,12 @@ The plugin sends JSON with the pane, workspace, session, agent, status, and time
 It sends the key in `Authorization: Bearer` and `x-webhook-key` headers.
 The receiving routine must check the key before it acts on an event.
 
+The payload does not name the repository or the branch.
+The routine maps the pane or workspace to the task it assigned.
+On `done`, the Bot assesses the worker's checks with `repo-harness-check`.
+When the branch changed source files, the Bot also reads the architecture evidence in that skill.
+On `blocked`, the Bot reads the pane and resolves the blocker.
+
 ## Slack incoming webhook
 
 1. Create a Slack app for your workspace.
