@@ -17,7 +17,6 @@ source:
     - src/cli/commands/operator.ts
     - src/cli/commands/module.ts
     - src/core/architecture/module-view.ts
-    - src/core/review/module-review-prompt.ts
     - src/core/docs/**
     - src/core/setup/**
     - src/effects/setup/**

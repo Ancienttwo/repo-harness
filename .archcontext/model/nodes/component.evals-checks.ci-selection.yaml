@@ -1,0 +1,21 @@
+schemaVersion: archcontext.node/v2
+id: component.evals-checks.ci-selection
+kind: component
+name: "CI Selection And Report"
+status: active
+parent: capability.verification.evals-checks
+summary: "GitHub workflows, CI coverage selection, the local CI gate and the CI report."
+responsibilities:
+  - Select full or documentation coverage from the event, the checked-out subject and the complete Git diff.
+  - Select and schedule test files from the measured duration inventory.
+  - Run the affected, governance and functional lanes and report CI results.
+source:
+  include:
+    - ".github/**"
+    - "scripts/check-ci.sh"
+    - "scripts/select-ci-coverage.ts"
+    - "scripts/replay-ci-coverage.ts"
+    - "scripts/report-ci.ts"
+    - "scripts/select-test-suite.ts"
+    - "scripts/ci-documentation-consumers.ts"
+    - "scripts/test-file-durations.json"

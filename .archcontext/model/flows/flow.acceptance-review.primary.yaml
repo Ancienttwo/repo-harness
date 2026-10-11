@@ -1,0 +1,68 @@
+schemaVersion: archcontext.flow/v1
+id: flow.acceptance-review.primary
+capabilityId: capability.verification.acceptance-review
+name: Run one generic acceptance review round
+applicability: required
+participants:
+  - id: capability
+    nodeId: capability.verification.acceptance-review
+  - id: round
+    nodeId: component.acceptance-review.primary
+  - id: circuit-breaker
+    nodeId: capability.runtime-harness.hook-adapters
+steps:
+  - id: start-round
+    from: capability
+    to: round
+    label: The review command starts one round for the contract and verification evidence
+    evidence:
+      entrypointId: entrypoint.acceptance-review.primary
+      sourceSymbol: buildReviewCommand
+      sinkId: sink.acceptance-review.primary
+  - id: admit-session
+    from: capability
+    to: circuit-breaker
+    label: Admit at most one persistent semantic review session per work package
+    evidence:
+      entrypointId: entrypoint.acceptance-review.primary
+      sourceSymbol: buildReviewCommand
+      sinkId: sink.acceptance-review.circuit-admission
+  - id: compose-packet
+    from: capability
+    to: round
+    label: Compose and save the complete review packet before the reviewer starts
+    evidence:
+      entrypointId: entrypoint.acceptance-review.round
+      sourceSymbol: runReviewRound
+      sinkId: sink.acceptance-review.packet
+outcomes:
+  - id: success
+    kind: success
+    label: Reviewer output is valid
+    steps:
+      - id: record-receipt
+        from: capability
+        to: round
+        label: Record the AcceptanceReceipt with the PASS or FAIL disposition
+        evidence:
+          entrypointId: entrypoint.acceptance-review.round
+          sourceSymbol: runReviewRound
+          sinkId: sink.acceptance-review.record-receipt
+    terminal:
+      participant: capability
+      label: Return accepted or rejected with the receipt
+  - id: error
+    kind: error
+    label: Reviewer output is malformed or inconsistent
+    steps:
+      - id: reject-output
+        from: capability
+        to: round
+        label: Reject output that breaks the closed schema or leaves a prior finding unaddressed
+        evidence:
+          entrypointId: entrypoint.acceptance-review.round
+          sourceSymbol: runReviewRound
+          sinkId: sink.acceptance-review.validate-output
+    terminal:
+      participant: capability
+      label: Fail the round without a receipt

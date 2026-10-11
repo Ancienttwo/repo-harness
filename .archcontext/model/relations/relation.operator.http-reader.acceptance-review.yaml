@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.operator.http-reader.acceptance-review
+kind: calls
+source: component.operator.primary
+target: capability.verification.acceptance-review
+intent: "Raise and map the typed module read errors that the module review prompt builder declares"

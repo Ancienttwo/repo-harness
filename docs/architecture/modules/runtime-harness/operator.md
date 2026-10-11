@@ -1,9 +1,9 @@
 # runtime-harness/operator 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-operator" sourceDigest="sha256:c7ed3b1e5d01a6f2e019d91e6cd8fe73f90e4f23de44ce2005d4a52c00fcada4" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:db421dad0dc68d0d9a7e724556c72b3b7f2507681894ed562e2bfd376d6372ac" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-operator" sourceDigest="sha256:3c33aa6e3b88a581082f0954699ab99796504b4f816844f8da944f5866cd4228" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:8e7a5ea98e2faaee743a6fe9bccb7c503f97c38aabf2eda0a8de6b2340b9b50f" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.operator`(kind `capability`)
-> **Matched Prefixes**:`src/core/operator/**`、`src/effects/operator/**`、`src/operator-web/**`、`src/cli/commands/operator.ts`、`src/cli/commands/module.ts`、`src/core/architecture/module-view.ts`、`src/core/review/module-review-prompt.ts`、`src/core/docs/**`、`src/core/setup/**`、`src/effects/setup/**`、`src/core/dev-activity/**`、`src/effects/dev-activity/**`、`src/effects/terminal/herdr-observation.ts`、`assets/operator/**`、`vite.operator.config.ts`
+> **Matched Prefixes**:`src/core/operator/**`、`src/effects/operator/**`、`src/operator-web/**`、`src/cli/commands/operator.ts`、`src/cli/commands/module.ts`、`src/core/architecture/module-view.ts`、`src/core/docs/**`、`src/core/setup/**`、`src/effects/setup/**`、`src/core/dev-activity/**`、`src/effects/dev-activity/**`、`src/effects/terminal/herdr-observation.ts`、`assets/operator/**`、`vite.operator.config.ts`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
@@ -25,11 +25,11 @@ flowchart LR
   p1_component_operator_activity_feeds_00325b96 -->|"Reuse public agent-config text filtering and runtime badge freshness rules"| p1_component_operator_view_projections_ca31e3bc
   p1_component_operator_architecture_view_0bdc3e1c -->|"List modules and export review prompts through the shared ArchitectureModelReader"| p1_capability_runtime_harness_global_runtime_reconciliation_401730e8
   p1_component_operator_primary_d8da79ba -->|"Start the bounded background collectors once and serve only their cached， re-decoded snapshots"| p1_component_operator_activity_feeds_00325b96
-  p1_component_operator_primary_d8da79ba -->|"Build module review prompts and the docs graph from committed repository content"| p1_component_operator_architecture_view_0bdc3e1c
+  p1_component_operator_primary_d8da79ba -->|"Build the docs graph from committed repository content"| p1_component_operator_architecture_view_0bdc3e1c
   p1_component_operator_primary_d8da79ba -->|"Read the committed architecture model through the shared ArchitectureModelReader"| p1_capability_runtime_harness_global_runtime_reconciliation_401730e8
   p1_component_operator_primary_d8da79ba -->|"Parse closed route requests and project or re-decode each observation before it leaves the server"| p1_component_operator_view_projections_ca31e3bc
   p1_capability_runtime_harness_operator_00133dd3 -->|"Return a read-only HTTP observation."| p1_component_operator_primary_d8da79ba
-  p1_component_operator_view_projections_ca31e3bc -->|"Decode the module index， module detail and review prompt shapes that the architecture view declares"| p1_component_operator_architecture_view_0bdc3e1c
+  p1_component_operator_view_projections_ca31e3bc -->|"Decode the module index and module detail shapes that the architecture view declares"| p1_component_operator_architecture_view_0bdc3e1c
   p1_component_operator_web_console_452bb61f -->|"Decode the development activity and setup snapshots with the decoders the server uses"| p1_component_operator_activity_feeds_00325b96
   p1_component_operator_web_console_452bb61f -->|"Fetch public JSON observations through GET and HEAD routes only"| p1_component_operator_primary_d8da79ba
   p1_component_operator_web_console_452bb61f -->|"Decode each observation body with the shared strict core decoder before render"| p1_component_operator_view_projections_ca31e3bc
@@ -39,7 +39,7 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:12a9ab196eab4a310d24a3e1d7b1a73f293635ea4ed4710abd0ed7c8200d446a`).
+- Proof: `proven` (`sha256:d030437a632128f234257b33d3d257c4b4ee079dc14da54ab26757fc36473a1b`).
 - Semantic nodes: `7`; declared relations: `11`.
 
 ### 1.2 模組職責表
@@ -50,8 +50,8 @@ flowchart LR
 
 ### 1.3 規模信號
 
-- 規模量級:`100–200` 個文件 / `10k–20k` 行
-- 匹配前綴:`src/core/operator/**`、`src/effects/operator/**`、`src/operator-web/**`、`src/cli/commands/operator.ts`、`src/cli/commands/module.ts`、`src/core/architecture/module-view.ts`、`src/core/review/module-review-prompt.ts`、`src/core/docs/**`、`src/core/setup/**`、`src/effects/setup/**`、`src/core/dev-activity/**`、`src/effects/dev-activity/**`、`src/effects/terminal/herdr-observation.ts`、`assets/operator/**`、`vite.operator.config.ts`
+- 規模量級:`50–100` 個文件 / `10k–20k` 行
+- 匹配前綴:`src/core/operator/**`、`src/effects/operator/**`、`src/operator-web/**`、`src/cli/commands/operator.ts`、`src/cli/commands/module.ts`、`src/core/architecture/module-view.ts`、`src/core/docs/**`、`src/core/setup/**`、`src/effects/setup/**`、`src/core/dev-activity/**`、`src/effects/dev-activity/**`、`src/effects/terminal/herdr-observation.ts`、`assets/operator/**`、`vite.operator.config.ts`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
 ### 1.4 依賴邊界
@@ -66,7 +66,7 @@ flowchart LR
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:12a9ab196eab4a310d24a3e1d7b1a73f293635ea4ed4710abd0ed7c8200d446a`); selectors `7/7`.
+> **Proof**: `proven` (`sha256:d030437a632128f234257b33d3d257c4b4ee079dc14da54ab26757fc36473a1b`); selectors `7/7`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
@@ -139,7 +139,7 @@ sequenceDiagram
 | `component.operator.primary`（HTTP Reader） | `src/effects/operator/**`、`src/cli/commands/operator.ts`、`assets/operator/**`、`src/effects/terminal/herdr-observation.ts` | 25 / 4884 | 路由、身份检查、worker 监督、collector 启动、Herdr 观测 |
 | `component.operator.view-projections` | `src/core/operator/**` | 16 / 2112 | 纯投影、请求解析、严格 decoder |
 | `component.operator.activity-feeds` | `src/core/setup/**`、`src/effects/setup/**`、`src/core/dev-activity/**`、`src/effects/dev-activity/**` | 10 / 1948 | 开发活动和 setup 的 collector 与投影 |
-| `component.operator.architecture-view` | `module-view.ts`、`module-review-prompt.ts`、`src/core/docs/**`、`src/cli/commands/module.ts` | 4 / 539 | 模块视图、review prompt、docs graph |
+| `component.operator.architecture-view` | `module-view.ts`、`src/core/docs/**`、`src/cli/commands/module.ts` | 3 / 425 | 模块视图、module CLI、docs graph |
 | `component.operator.web-console` | `src/operator-web/**`、`vite.operator.config.ts` | 45 / 9902 | 只读浏览器控制台 |
 
 依赖方向：web-console 通过 HTTP 调用 primary，并直接使用 view-projections 和 activity-feeds 的 decoder。primary 调用另外三个组件。view-projections 不调用 primary。scan 中 `view-projections` 的入向模块边是 73，`primary` 的出向模块边是 69。
@@ -178,7 +178,14 @@ sequenceDiagram
 - capability 的 include 增加了此前无归属的 setup、dev-activity、docs、module-view、review prompt、`module.ts`、Herdr 观测、`assets/operator` 和 Vite 配置。无归属文件数从 653 降到 637。多归属文件数保持 45。
 - `flow.operator.primary` 的参与者从"capability → component"改为"HTTP Reader → View Projections / 共享模型读取器"。selector 仍是真实调用。
 
+### review prompt builder 移到 acceptance-review（2026-10-11）
+
+- `src/core/review/**` 整个目录归 `capability.verification.acceptance-review`（brief 规则 6：一个目录先只给一个 owner）。
+- 本 capability 的 include 和 architecture-view 组件删除了 `src/core/review/module-review-prompt.ts`。这个条目只在本分支上加过，main 上没有。
+- 新增 3 条关系到 acceptance-review：primary 和 architecture-view 使用 `ModuleReadError`，view-projections 使用 `ModuleReviewPromptV1` 类型。
+
 ## Optimization Backlog
 
 - `src/effects/operator/server.ts` 有 1766 行。路由分发、collaboration 队列、Fleet 队列和任务读取监督都在同一个闭包里（`startOperatorServer`，`server.ts:1050`）。scan 报告 `component.operator.primary` 有 10 个跨模块循环。拆分顺序需要先有 profiling 或改动频率证据，目前没有。
 - docs graph reader 没有生产调用方（见 §3.4）。如果 Docs 工作区不在计划中，可以退役它和 `src/core/docs/**`。
+- 在 arch-context#296 之后，把 `src/core/review/module-review-prompt.ts` 放回 architecture-view 组件（归属提议 §5 的原方案）。那时 operator 到 acceptance-review 的 3 条关系可以删除。

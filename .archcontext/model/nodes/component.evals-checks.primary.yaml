@@ -5,3 +5,14 @@ name: "Verification Check Execution"
 status: active
 parent: capability.verification.evals-checks
 summary: "Executes the existing contract Verification Plan with exact snapshot, process result and evidence binding."
+responsibilities:
+  - Run the declared Verification Plan through the verification-plan CLI and migrate old contracts to it.
+  - Run each contract command in a bounded, detached process group with one absolute deadline.
+  - Refuse evidence-producer commands inside the verifier before execution.
+source:
+  include:
+    - "scripts/verification-plan.ts"
+    - "scripts/migrate-verification-plan.ts"
+    - "scripts/run-bounded-verifier-command.ts"
+    - "scripts/verify-contract.sh"
+    - "scripts/verify-sprint.sh"

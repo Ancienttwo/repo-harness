@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.acceptance-review.primary
+kind: calls
+source: capability.verification.acceptance-review
+target: component.acceptance-review.primary
+intent: "Run one generic acceptance review round for a contract"

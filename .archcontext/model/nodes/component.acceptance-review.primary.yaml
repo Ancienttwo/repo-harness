@@ -1,0 +1,18 @@
+schemaVersion: archcontext.node/v2
+id: component.acceptance-review.primary
+kind: component
+name: Generic Review Round
+status: active
+parent: capability.verification.acceptance-review
+summary: Composes the review packet, runs the isolated reviewer, validates its output and records the acceptance receipt.
+responsibilities:
+  - Save the complete review packet before any reviewer pane starts.
+  - Validate reviewer output against the closed review schema and prior findings.
+  - Record the AcceptanceReceipt only after the worktrees are unchanged and no cancel request exists.
+source:
+  include:
+    - src/core/review/**
+    - src/effects/review/**
+    - src/cli/commands/review.ts
+    - scripts/acceptance-receipt.ts
+    - scripts/change-assessment.ts

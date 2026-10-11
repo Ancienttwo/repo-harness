@@ -3,4 +3,4 @@ id: relation.operator.http-reader.architecture-view
 kind: calls
 source: component.operator.primary
 target: component.operator.architecture-view
-intent: "Build module review prompts and the docs graph from committed repository content"
+intent: "Build the docs graph from committed repository content"
