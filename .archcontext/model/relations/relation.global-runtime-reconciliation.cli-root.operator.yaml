@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.global-runtime-reconciliation.cli-root.operator
+kind: calls
+source: component.global-runtime-reconciliation.cli-root
+target: capability.runtime-harness.operator
+intent: "Register the operator command"

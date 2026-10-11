@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.refactor-program.archctx-provider.global-runtime-reconciliation
+kind: calls
+source: component.refactor-program.archctx-provider
+target: capability.runtime-harness.global-runtime-reconciliation
+intent: "Run the pinned package-local archctx CLI through the shared architecture provider"

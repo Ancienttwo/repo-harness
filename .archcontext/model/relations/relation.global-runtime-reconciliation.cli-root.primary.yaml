@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.global-runtime-reconciliation.cli-root.primary
+kind: calls
+source: component.global-runtime-reconciliation.cli-root
+target: component.global-runtime-reconciliation.primary
+intent: "Register the update and upgrade commands and run the setup inside the candidate runtime"

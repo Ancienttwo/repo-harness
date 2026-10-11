@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.hook-adapters.host-installer.global-runtime-reconciliation
+kind: calls
+source: component.hook-adapters.host-installer
+target: capability.runtime-harness.global-runtime-reconciliation
+intent: "Report architecture projection readiness in status"

@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.hook-adapters.route-runtime.global-runtime-reconciliation
+kind: calls
+source: component.hook-adapters.primary
+target: capability.runtime-harness.global-runtime-reconciliation
+intent: "Write host output through the shared blocking writer"

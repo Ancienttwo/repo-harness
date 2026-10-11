@@ -6,12 +6,14 @@ applicability: required
 participants:
   - id: capability
     nodeId: capability.runtime-harness.hook-adapters
-  - id: component
+  - id: route-runtime
     nodeId: component.hook-adapters.primary
+  - id: edit-guards
+    nodeId: component.hook-adapters.edit-guards
 steps:
   - id: dispatch
     from: capability
-    to: component
+    to: route-runtime
     label: "Resolve the typed handler for the route"
     evidence:
       entrypointId: entrypoint.hook-adapters.primary
@@ -20,26 +22,26 @@ steps:
 outcomes:
   - id: success
     kind: success
-    label: "The typed handler completes"
+    label: "The typed handler returns a structured result"
     steps:
-      - id: invoke-success
-        from: capability
-        to: component
-        label: "Run the typed handler"
+      - id: invoke-guard
+        from: route-runtime
+        to: edit-guards
+        label: "Run the bound handler such as the PreToolUse.edit mutation guard"
         evidence:
-          entrypointId: entrypoint.hook-adapters.primary
-          sourceSymbol: "runHook"
-          sinkId: sink.hook-adapters.primary
+          entrypointId: entrypoint.hook-adapters.handler-bindings
+          sourceSymbol: "handlers"
+          sinkId: sink.hook-adapters.mutation-guard
     terminal:
-      participant: capability
-      label: Return success receipt
+      participant: route-runtime
+      label: "Shape the host output and append one telemetry record"
   - id: error
     kind: error
     label: "An unknown route or unbound handler fails closed"
     steps:
       - id: invoke-error
         from: capability
-        to: component
+        to: route-runtime
         label: "Return the route failure"
         evidence:
           entrypointId: entrypoint.hook-adapters.primary

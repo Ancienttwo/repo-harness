@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.refactor-program.mcp-sidecar
+kind: calls
+source: capability.runtime-harness.refactor-program
+target: capability.runtime-harness.mcp-sidecar
+intent: "Resolve the canonical repository path through the repo registry"

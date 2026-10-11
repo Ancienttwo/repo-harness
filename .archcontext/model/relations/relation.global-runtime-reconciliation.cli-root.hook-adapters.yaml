@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.global-runtime-reconciliation.cli-root.hook-adapters
+kind: calls
+source: component.global-runtime-reconciliation.cli-root
+target: capability.runtime-harness.hook-adapters
+intent: "Register the install and status and security and hook commands and run host transactions with the install profile"

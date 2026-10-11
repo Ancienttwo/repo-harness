@@ -7,6 +7,8 @@ summary: Installs and runs typed Claude, Codex, and Pi host hook routes.
 responsibilities:
   - Own managed hook entries, route dispatch, mutation observation, and Stop handling.
   - Own the Pi package event adapter and its bounded Bun JSON bridge.
+  - Own the hook event log, its size-bounded archive and the run summary retention.
+  - Own the install, status, security and hook-lib commands that project and inspect the host adapters.
 source:
   include:
     - "assets/hooks/**"
@@ -15,6 +17,17 @@ source:
     - "src/cli/hook/**"
     - "src/cli/hook-entry.ts"
     - "src/pi/**"
+    - "src/core/loop/**"
+    - "src/effects/loop/**"
+    - "src/core/hook-work-budget.ts"
+    - "src/effects/hook-event-log.ts"
+    - "src/effects/run-summary-retention.ts"
+    - "src/cli/commands/install.ts"
+    - "src/cli/commands/status.ts"
+    - "src/cli/commands/security.ts"
+    - "src/cli/commands/hook.ts"
+    - "src/cli/commands/prompt-guard-decision.ts"
+    - "scripts/sync-hook-sources.ts"
   entrypoints:
     - id: entrypoint.hook-adapters.primary
       path: "src/cli/hook/runtime.ts"
@@ -31,4 +44,5 @@ extensions:
   lspProfile: "typescript-lsp"
   verification:
     - "bun test tests/hook-runtime.test.ts tests/hook-contracts.test.ts tests/workflow-contract.test.ts"
+    - "bun run test:files tests/cli/route-registry.test.ts tests/stop-handler.test.ts tests/cli/install.test.ts tests/cli/status.test.ts tests/cli/security.test.ts tests/cli/prompt-guard-decision.test.ts tests/loop-event-protocol.test.ts --timeout 60000 --max-concurrency 1"
     - "bash scripts/check-task-workflow.sh"
