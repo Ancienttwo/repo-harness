@@ -18,11 +18,13 @@ architecture evidence.
 
 Read the cheap signal first:
 
-1. Ownership of added files. Pipe the added paths, for example from
-   `git diff --name-only --diff-filter=A <base>...HEAD`, to
-   `repo-harness run capability-resolver match --repo <repo> --paths-from - --format json`.
-   An entry with `"matched": false` has no capability owner. Have a
-   `repo-harness-architecture` worker claim it in the same branch.
+1. Ownership of new paths. Pipe the added, copied and renamed destinations,
+   for example from
+   `git diff --name-only --diff-filter=ACR <base>...HEAD -- . ':!.archcontext' ':!docs'`,
+   to `repo-harness run capability-resolver match --repo <repo> --paths-from - --format json`.
+   An entry with `"matched": false` has no capability owner. Act only on source
+   or runtime config files. Plans, task files and CI files need no owner. Have a
+   `repo-harness-architecture` worker claim an unowned source file in the same branch.
 2. Documents. Run the `check` below. It can take a minute on a large model.
    `freshness.staleNodes` names the capabilities whose generated sections are stale.
 
