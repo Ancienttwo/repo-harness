@@ -93,7 +93,7 @@ interface NativeRoleRouting {
 const RETURN_CONTRACT_MARKER = '[repo-harness:return-channel]';
 const RETURN_CONTRACT_TEXT = '\n\n[repo-harness:return-channel] Your final text message is the only channel returned to your caller. Put the complete findings/report in final text. Do not call SendUserMessage for report delivery; content sent through SendUserMessage is delivered outside the Agent tool result.';
 export const LONG_COMMAND_GUARDRAIL_MARKER = '[repo-harness:long-command-guardrail]';
-const LONG_COMMAND_GUARDRAIL_TEXT = `${LONG_COMMAND_GUARDRAIL_MARKER} Do not foreground-wait on a verification, test, or gate command you expect to exceed roughly five minutes; the host stream watchdog terminates an agent after 600 seconds of silence. The default action is to hand that command back to the orchestrator: name the command and return BLOCKED on your role's machine-readable first line (RESULT:/VERDICT:/RECOMMENDATION:) instead of waiting on it. Run it yourself only when you can start it in the background and poll a log that keeps producing output.`;
+const LONG_COMMAND_GUARDRAIL_TEXT = `${LONG_COMMAND_GUARDRAIL_MARKER} Implementation workers do not run build, typecheck, or test commands; the orchestrator runs them after integration. Do not foreground-wait on any command you expect to exceed roughly five minutes; the host stream watchdog terminates an agent after 600 seconds of silence. The default action is to hand that command back to the orchestrator: name the command and return BLOCKED on your role's machine-readable first line (RESULT:/VERDICT:/RECOMMENDATION:) instead of waiting on it. Run it yourself only when you can start it in the background and poll a log that keeps producing output.`;
 export const EXECUTION_BOUNDARY_MARKER = '[repo-harness:execution-boundary/v1]';
 /**
  * The single runtime owner of the anti-extras clause on the Codex native-child
@@ -428,6 +428,7 @@ function runDelegationAdvisor(repoRoot: string, input: JsonObject, env: NodeJS.P
       `- Spawn no more than ${maxAgents} agents.`,
       '- Use explorer for read-only code mapping.',
       '- Use worker only for an isolated implementation slice.',
+      '- Workers do not run build, typecheck, or tests. They commit early and return early. Run all checks in the parent after integration.',
       '- Use reviewer for correctness, regression, security, and missing-test review.',
       '- Never give two agents overlapping write ownership.',
       `- Keep max spawn depth at ${maxDepth}.`,
@@ -438,6 +439,7 @@ function runDelegationAdvisor(repoRoot: string, input: JsonObject, env: NodeJS.P
       '- Wait for all requested agents.',
       '- Reconcile contradictory findings in the parent.',
       '- Close completed native agents.',
+      '- After integration, remove merged, clean worker worktrees and the intermediate build output the work created. Ask the user before any other deletion.',
       '- Do not spawn for a trivial or strictly sequential task.',
       '- A role label in the dispatch message does not prove selection. Only official SubagentStart agent_type/model evidence can verify the installed custom-agent profile.',
       '- If SubagentStart records unavailable, mismatch, invalid, or unverified routing, record and report the status; do not claim verified role routing or expand host permissions.',
