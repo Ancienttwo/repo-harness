@@ -66,6 +66,13 @@ Use `Next cut: <direction>. Reason: <open loop>. Entry: <path/command/verificati
 
 When a task requires broad research, repo archaeology, multi-source synthesis, or background surveys, delegate or isolate the research pass when the runtime supports it. Keep the main thread focused on planning, integration, and decisions.
 
+## Sub-agent Delegation
+
+- Investigate first, then split work by write ownership. Give each sub-agent one scope that no other agent writes.
+- Implementation sub-agents do not run build, typecheck or tests. They commit early and return early. An evidence role whose task is a named check, such as a root-cause reproduction, still runs that check.
+- The parent agent owns task management, conflict resolution, build, typecheck, tests and integration.
+- After integration, the parent removes each sub-agent worktree and branch whose commits are in the task branch and whose checkout is clean. It also removes the intermediate build output and temporary files that the work created. Other deletion still needs the user.
+
 ## Peer Harness Collaboration
 
 - When another coding harness (Claude Code, Codex, etc.) runs on the same machine, read its terminal scrollback before asking it to re-explain; ask only for what the scrollback lacks.

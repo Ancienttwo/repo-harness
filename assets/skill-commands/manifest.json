@@ -142,7 +142,7 @@
       "component": "adaptive-workflow",
       "requires": [],
       "mutatesRepoByDefault": true,
-      "summary": "Updates the architecture model and its projected docs or Mermaid diagrams without refreshing the harness. Router-only or explicit install; never implied by another profile.",
+      "summary": "Inspects or updates an assigned architecture model, document or Mermaid diagram without refreshing the harness. A real responsibility change goes through a model ChangeSet and archctx projection. Router-only or explicit install; never implied by another profile.",
       "retirementCandidate": null,
       "audience": "worker"
     },
