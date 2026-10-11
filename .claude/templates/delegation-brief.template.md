@@ -11,7 +11,8 @@ State any authorized deletion, credential/permission change or release/productio
 ## Verify
 Name the build, typecheck and affected tests that the parent runs after integration.
 State the expected observable result and relevant environment.
-The sub-agent does not run build, typecheck or tests. It commits its slice early and returns early.
+An implementation sub-agent does not run build, typecheck or tests. It commits early only in its own worktree, then returns. In a shared checkout it does not commit; the parent commits.
+An evidence role, such as a root-cause prover or an evaluator, runs the named check that is its task and does not commit.
 Report commits, changed paths, unchecked assumptions and remaining risks.
 
 ## Rollback
