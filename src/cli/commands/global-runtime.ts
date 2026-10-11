@@ -15,6 +15,7 @@ import { configureRequiredHerdrSkill } from "./herdr-skill";
 import { compareVersions, readLatestPackageVersion } from "./doctor";
 import { configureCodegraph } from "../tools/codegraph";
 import { runProcess as runBoundedProcess } from "../../effects/process-runner";
+import { formatLegacyLeftoverSummary, type LeftoverItem } from "../../core/upgrade/legacy-inventory";
 import { commitVerifiedSkillTree, skillTreeSha256 } from "../../effects/skill-tree-integrity";
 import {
   PROFILE_COMPONENTS,
@@ -774,6 +775,34 @@ function reconcileWithInstalledCandidate(
       stderr: child.stderr,
     };
   }
+}
+
+/**
+ * Bun replaces the package files in place, but the updater keeps its
+ * predecessor modules. Old modules cannot be trusted to parse new assets, so
+ * the package that now owns the runtime runs the leftover check.
+ */
+export function updateLeftoverSummary(cwd: string, installedCli: boolean): string {
+  const bunExecutable = resolveBunExecutable();
+  const env = bindBunRuntimeEnv(commandEnv(defaultSourceRoot()), bunExecutable);
+  const packageRoot = installedCli ? bunGlobalPackageRoot(env) : defaultSourceRoot();
+  if (packageRoot === null) return leftoverCheckWarning('unable to resolve the installed package root');
+  const check = runProcess(bunExecutable, [join(realPathOrResolved(packageRoot), 'src', 'cli', 'index.ts'), 'upgrade', '--json'], cwd, env);
+  let items: unknown;
+  try {
+    items = JSON.parse(check.stdout ?? '');
+  } catch (_error) {
+    items = null;
+  }
+  // The check exits 1 when leftovers exist. An empty list with exit 1 is a failed check.
+  if (!Array.isArray(items) || (check.status === 'failed' && items.length === 0)) {
+    return leftoverCheckWarning(check.stderr?.trim() || 'upgrade --json returned no leftover list');
+  }
+  return formatLegacyLeftoverSummary(items as LeftoverItem[]);
+}
+
+function leftoverCheckWarning(reason: string): string {
+  return `Leftover check failed: ${reason}. Run: repo-harness upgrade`;
 }
 
 const AGENT_FLEET_STEP = 'install agent fleet';
