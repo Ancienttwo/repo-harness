@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.task-fleet.primary
+kind: calls
+source: capability.organization.task-fleet
+target: component.task-fleet.primary
+intent: "Project read-time offers and acquire one execution-ready task through the owning stores"

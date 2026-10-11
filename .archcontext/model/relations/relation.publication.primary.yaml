@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.publication.primary
+kind: calls
+source: capability.organization.publication
+target: component.publication.primary
+intent: "Bind one claim generation to one PR receipt and derive fenced readiness at read time"

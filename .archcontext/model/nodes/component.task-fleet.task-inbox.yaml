@@ -1,0 +1,20 @@
+schemaVersion: archcontext.node/v2
+id: component.task-fleet.task-inbox
+kind: component
+name: Task Inbox
+status: active
+parent: capability.organization.task-fleet
+summary: Owns task-addressed message events, per-recipient delivery receipts, steer replies, document handoff payloads and the offline inbox layout migration.
+responsibilities:
+  - Write immutable TaskMessageEventV1 records and transition separate delivery receipts under the task lock.
+  - Fence claim-scoped messages to one claim and generation and supersede them on takeover.
+  - Migrate the inbox storage layout offline with exact-byte manifests and a rollback journal.
+source:
+  include:
+    - "src/core/fleet/task-message.ts"
+    - "src/core/fleet/task-reply.ts"
+    - "src/core/fleet/task-inbox-layout.ts"
+    - "src/effects/fleet/task-inbox.ts"
+    - "src/effects/fleet/task-inbox-layout.ts"
+    - "src/effects/fleet/task-inbox-layout-migration.ts"
+    - "src/core/messages/document-handoff.ts"

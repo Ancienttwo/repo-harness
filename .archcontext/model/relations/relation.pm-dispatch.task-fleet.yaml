@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.pm-dispatch.task-fleet
+kind: reads
+source: capability.runtime-harness.pm-dispatch
+target: capability.organization.task-fleet
+intent: "Read repository task offers for PM status without acquiring work"

@@ -1,0 +1,40 @@
+schemaVersion: archcontext.node/v2
+id: capability.organization.publication
+kind: capability
+name: PR Publication
+status: active
+summary: Binds one task claim generation to one pull request through an immutable publication receipt, moves the publication through its review lifecycle, derives fenced merge readiness at read time and stores provider feedback without ever merging.
+responsibilities:
+  - Create, cache and rebuild the immutable PublicationReceipt with a deterministic publication id and a full PR body marker.
+  - Move a publication through reviewing, reopen, takeover, abandon and reconcile under the task lock against the lease current_publication pointer.
+  - Derive MergeReadinessV1 at read time fenced to the exact head and base and never persist a ready flag.
+  - Intake provider feedback as immutable events with separate delivery receipts and report no_progress after repeated same-token repairs.
+  - Leave the merge click and branch protection with the provider and the user.
+source:
+  include:
+    - "src/core/publication/**"
+    - "src/effects/publication/**"
+    - "src/cli/commands/publication.ts"
+  entrypoints:
+    - id: entrypoint.publication.command
+      path: "src/cli/commands/publication.ts"
+      symbols:
+        - name: "buildPublicationCommand"
+          sinks:
+            - id: sink.publication.ensure-receipt
+              path: "src/effects/publication/publication-receipt.ts"
+              symbol: "ensurePublicationReceipt"
+            - id: sink.publication.enter-reviewing
+              path: "src/effects/publication/publication-lifecycle.ts"
+              symbol: "enterPublicationReviewing"
+            - id: sink.publication.readiness
+              path: "src/effects/publication/merge-readiness.ts"
+              symbol: "resolvePublicationReadiness"
+extensions:
+  contractFiles:
+    agents: "AGENTS.md"
+    claude: "CLAUDE.md"
+  lspProfile: "typescript-lsp"
+  verification:
+    - "bun run test:files tests/unit/publication-receipt.test.ts tests/unit/publication-lifecycle.test.ts tests/unit/publication-recovery-reconcile.test.ts tests/unit/merge-readiness-v1.test.ts tests/unit/publication-feedback-effect.test.ts tests/publication-feedback-concurrency.test.ts tests/cli/fleet-feedback.test.ts --timeout 60000 --max-concurrency 1"
+    - "bun run check:type"

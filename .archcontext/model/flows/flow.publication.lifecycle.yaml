@@ -1,0 +1,58 @@
+schemaVersion: archcontext.flow/v1
+id: flow.publication.lifecycle
+capabilityId: capability.organization.publication
+name: Publish one claim generation as a PR under review
+applicability: required
+participants:
+  - id: publication
+    nodeId: capability.organization.publication
+  - id: receipt
+    nodeId: component.publication.primary
+steps:
+  - id: ensure-receipt
+    from: publication
+    to: receipt
+    label: Ensure the immutable receipt and PR marker for one task claim generation and head
+    evidence:
+      entrypointId: entrypoint.publication.command
+      sourceSymbol: buildPublicationCommand
+      sinkId: sink.publication.ensure-receipt
+outcomes:
+  - id: success
+    kind: success
+    label: The publication is durable and enters review
+    steps:
+      - id: enter-reviewing
+        from: publication
+        to: receipt
+        label: Move the lease from completing to reviewing with the current publication pointer
+        evidence:
+          entrypointId: entrypoint.publication.command
+          sourceSymbol: buildPublicationCommand
+          sinkId: sink.publication.enter-reviewing
+      - id: derive-readiness
+        from: publication
+        to: receipt
+        label: Derive merge readiness fenced to the exact head and base at read time
+        evidence:
+          entrypointId: entrypoint.publication.command
+          sourceSymbol: buildPublicationCommand
+          sinkId: sink.publication.readiness
+    terminal:
+      participant: publication
+      label: Report ready or typed blockers and leave the merge to the provider
+  - id: incomplete
+    kind: error
+    label: The PR exists but its identity is not proven durable
+    steps:
+      - id: refuse-incomplete
+        from: publication
+        to: receipt
+        label: Fail typed publication_incomplete when receipt marker or provider facts do not match
+        evidence:
+          entrypointId: entrypoint.publication.command
+          sourceSymbol: buildPublicationCommand
+          sinkId: sink.publication.ensure-receipt
+    terminal:
+      participant: publication
+      label: Keep the lease completing for explicit recovery

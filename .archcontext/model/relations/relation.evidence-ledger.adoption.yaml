@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.evidence-ledger.adoption
+kind: calls
+source: capability.runtime-harness.evidence-ledger
+target: capability.public-surface.adoption
+intent: "Resolve blob and log paths inside the repository with the shared path-safety helper"

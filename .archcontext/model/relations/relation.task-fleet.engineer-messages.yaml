@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.task-fleet.engineer-messages
+kind: calls
+source: capability.organization.task-fleet
+target: capability.runtime-harness.engineer-messages
+intent: "Reuse bounded canonical message mechanics for task messages and document handoff"

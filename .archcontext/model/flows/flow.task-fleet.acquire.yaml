@@ -1,0 +1,50 @@
+schemaVersion: archcontext.flow/v1
+id: flow.task-fleet.acquire
+capabilityId: capability.organization.task-fleet
+name: Acquire one execution-ready task across registered repositories
+applicability: required
+participants:
+  - id: fleet
+    nodeId: capability.organization.task-fleet
+  - id: offers
+    nodeId: component.task-fleet.primary
+steps:
+  - id: collect-offers
+    from: fleet
+    to: offers
+    label: Join registry authorization canonical rows lease availability and plan proof into immutable offers
+    evidence:
+      entrypointId: entrypoint.task-fleet.command
+      sourceSymbol: buildFleetCommand
+      sinkId: sink.task-fleet.offers
+outcomes:
+  - id: success
+    kind: success
+    label: One execution-ready offer is claimed provisioned and bound
+    steps:
+      - id: acquire-task
+        from: fleet
+        to: offers
+        label: Re-read the owning stores then claim provision bind and issue the work envelope
+        evidence:
+          entrypointId: entrypoint.task-fleet.command
+          sourceSymbol: buildFleetCommand
+          sinkId: sink.task-fleet.acquire
+    terminal:
+      participant: fleet
+      label: Return one bound WorkEnvelope for the acquiring agent
+  - id: refused
+    kind: error
+    label: No offer is execution-ready or an owning store moved after the snapshot
+    steps:
+      - id: refuse-acquire
+        from: fleet
+        to: offers
+        label: Refuse a stale or ineligible offer at the acquisition seam
+        evidence:
+          entrypointId: entrypoint.task-fleet.command
+          sourceSymbol: buildFleetCommand
+          sinkId: sink.task-fleet.acquire
+    terminal:
+      participant: fleet
+      label: Return a typed refusal and claim nothing

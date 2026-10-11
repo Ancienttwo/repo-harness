@@ -1,0 +1,20 @@
+schemaVersion: archcontext.node/v2
+id: component.publication.primary
+kind: component
+name: Publication Receipt Lifecycle and Readiness
+status: active
+parent: capability.organization.publication
+summary: Owns the publication command surface, the immutable receipt and its marker, the lease-pointer review lifecycle and read-time merge readiness.
+responsibilities:
+  - Prepare, ensure and rebuild PublicationReceipt protocol 3 without reading a host merge seal.
+  - Run reviewing, reopen, takeover, abandon and reconcile transitions under the task lock.
+  - Classify integration with the packaged worktree merge helper and project readiness with typed blockers.
+source:
+  include:
+    - "src/core/publication/publication-receipt.ts"
+    - "src/core/publication/publication-lifecycle.ts"
+    - "src/core/publication/merge-readiness.ts"
+    - "src/effects/publication/publication-receipt.ts"
+    - "src/effects/publication/publication-lifecycle.ts"
+    - "src/effects/publication/merge-readiness.ts"
+    - "src/cli/commands/publication.ts"
