@@ -44,27 +44,55 @@ write nodes.
    `repo-harness architecture-projection status --json` (`projectionProvider.binaryPath`).
    Require ready status and use that binary with its supported Node runtime in the
    target repo. Do not install a repo-local archctx or select an unrelated PATH copy.
-   The following `archctx` notation means that resolved executable:
-
-   ```text
-   archctx plan --id <unique-changeset-id> --path .archcontext/model/nodes/capability.<domain>.<name>.yaml --expected-hash missing --body <complete-YAML-as-one-argument> --format json
-   archctx apply --id <same-changeset-id> --approved --expected-worktree-digest <data.draft.base.worktreeDigest-from-plan> --format json
-   ```
-
-   Inspect the plan's full draft and preview before applying. Keep the same daemon
-   and ChangeSet ID; pass body via a structured process argument, not shell interpolation.
-   `--approved` records the authorized Agent decision; it does not grant extra scope.
-   If the worktree changed, re-plan and re-inspect. In archctx 0.5.10 this public `plan`
-   route creates one entity only. It is not an update route: when an existing node must
-   change, report the required update and use a supported typed ChangeSet authoring
-   surface if available; do not overwrite YAML or disguise an update as creation.
+   The `archctx` notation below means that resolved executable. Write the model
+   through one ChangeSet as described in "Model ChangeSets". Do not edit model YAML
+   by hand when a ChangeSet route exists.
 5. Run `archctx validate --format json`, verify source matching with capability-resolver,
-   then `repo-harness architecture-projection plan --json --changed-path <node-path>`
-   and `repo-harness architecture-projection apply --json --changed-path <node-path>`.
-   Verify the expected module document exists and run the protocol's architecture checks.
-   Missing docs for an unchanged node need projection, not a duplicate node. Generated
-   module regions belong to archctx; preserve human-owned prose. Commit the model and
-   the projected documents in the same pull request.
+   then `repo-harness architecture-projection apply --json --request-id repo-harness.apply.<unique>`
+   and `repo-harness architecture-projection check --json` (expect `noop`).
+   Verify the expected module document exists and shows `Proof: proven`. Missing docs
+   for an unchanged node need projection, not a duplicate node. Generated module
+   regions belong to archctx; preserve human-owned prose. Commit the model and the
+   projected documents in the same pull request.
+
+## Model ChangeSets (archctx 0.7.0)
+
+- `plan` creates, updates and deletes entities. The operations are `create_entity`,
+  `update_entity_fields` and `delete_entity`. A body is the complete new YAML
+  document, not a field patch.
+- `expectedHash` is `missing` for a new file. For an existing file, read it with
+  `archctx hash --path <repo-relative file>`. It is not `sha256sum` of the file.
+- Put dependent changes (node, relation, flow) in one ChangeSet. While
+  arch-context#297 is open, `plan --operations-file` fails with
+  `AC_RUNTIME_UNAVAILABLE`. Send the same operations array through the MCP tool
+  `archcontext_plan_update` over `archctx mcp` stdio instead. The single-entity
+  route `archctx plan --id <id> --op <op> --path <file> --expected-hash <hash> --body-file <file>`
+  works. Input files must be repository-relative; use an ignored path such as
+  `.archcontext/tmp/` and delete it before commit.
+- Inspect the draft and preview, then run
+  `archctx apply --id <same-id> --approved --expected-worktree-digest <draft.base.worktreeDigest>`.
+  A draft lives in daemon memory. Plan again after a daemon restart or any worktree
+  change. `--approved` records the authorized Agent decision; it does not grant extra scope.
+- A component footprint is `source.include` on the `component.*` node. Until
+  arch-context#296 lands, the repo-harness model reader accepts only an exact path or
+  `dir/**` in any node include; a filename wildcard such as `src/x/foo-*.ts` makes
+  `repo-harness module` fail with `source_include_invalid`. The repo-harness registry
+  reads capability nodes only, so a file without an owner must also go into the
+  capability include. `archctx resolve --path` reports component files as ambiguous;
+  use `archctx refactor scan --json` and capability-resolver instead.
+- A flow step is proven only with a relation for the exact step, a source symbol that is
+  unique in its file, and a direct CodeGraph `calls` edge from source to sink.
+- Do not put commas in relation intents or node names; the renderer turns them into
+  full-width commas.
+- Every major-change `architecture-projection apply` in one workspace needs a new
+  `--request-id`; a reused id fails with `AC_PROJECTION_APPLY_COMMITTED`. A large model
+  can exceed the configured `projection_timeout_ms`; the archctx run may still finish,
+  so run `check` before you apply again.
+- A relation to another capability rewrites that capability's module page. When several
+  workers change the model in parallel, restore generated pages and shared projection
+  outputs outside your scope before commit. The integrator projects once.
+- `repo-harness module list` and `module review-prompt` read the committed HEAD
+  snapshot. Commit the model before you verify them.
 
 ## Failure Modes
 

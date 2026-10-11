@@ -43,7 +43,7 @@ const SUMMARY: Readonly<Record<string, string>> = {
   'repo-harness-check': 'Plan or review scoped work. Assess recorded verification and risk.',
   'repo-harness-test': 'Testing router for the repo-harness source checkout: test selection, execution and CI lanes.',
   'repo-harness-ship': 'Validates finished worktrees, commits through finish --no-merge, pushes branches, and creates GitHub PRs by default.',
-  'repo-harness-architecture': 'Resolves architecture drift requests and updates architecture docs or diagrams without refreshing the harness.',
+  'repo-harness-architecture': 'Updates the architecture model and its projected docs or Mermaid diagrams without refreshing the harness.',
   'obsidian-memory': "Cross-project long-term memory over the user's Obsidian brain vault.",
   herdr: 'Required Herdr control skill. Install the release-matched body from herdr --skill for both hosts.',
   think: 'Waza planning skill: turns rough ideas into approved, decision-complete plans.',

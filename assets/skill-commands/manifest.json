@@ -142,7 +142,7 @@
       "component": "adaptive-workflow",
       "requires": [],
       "mutatesRepoByDefault": true,
-      "summary": "Resolves architecture drift requests and updates architecture docs or diagrams without refreshing the harness. Router-only or explicit install; never implied by another profile.",
+      "summary": "Updates the architecture model and its projected docs or Mermaid diagrams without refreshing the harness. Router-only or explicit install; never implied by another profile.",
       "retirementCandidate": null,
       "audience": "worker"
     },

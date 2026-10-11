@@ -515,7 +515,7 @@ Canonical 的 rule-owner package 放在 `assets/skills/` 和 `assets/skill-comma
 | `repo-harness-product` | 面向上层产品规划的 PRD、Sprint 和 Goal mode |
 | `repo-harness-check` | 制定范围明确的计划。审阅计划。核对检查证据。 |
 | `repo-harness-ship` | 校验完成的 worktree，push 分支并开 PR |
-| `repo-harness-architecture` | Architecture 文档、drift request 和图表，不需要完整刷新 harness |
+| `repo-harness-architecture` | Architecture 模型、投影文档和图表，不需要完整刷新 harness |
 | `repo-harness-cross-review` | Generic acceptance through persistent fleet deep-reasoner task-agent + Herdr review; direct advisory runtime retired |
 | `repo-harness-chatgpt` | Oracle browser/GPT Pro consult、MCP Connector setup 和 bridge handoff；仅限显式 setup |
 | `obsidian-memory` | Bot：明确请求后读取或写入记忆。 |
