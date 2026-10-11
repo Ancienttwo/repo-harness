@@ -1,5 +1,5 @@
 # runtime-harness/mcp-sidecar 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-mcp-sidecar" sourceDigest="sha256:da45a89db0831b7ed8ee0dc14357381b2296d61aa1035712d2e1a4794db6fd4f" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:eaf5296b1ff1c934eed586eb0efafb8ee0663fdf6363eec3b55c95b63e213fe7" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-mcp-sidecar" sourceDigest="sha256:979484a569199cf5c21cf8000d6d8890e7852d57ceb678081658aeae0eafbf11" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:a83d3b94bb34d05de236def87ae7882ed254360407027fbc078dfe7704c8e5f2" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.mcp-sidecar`(kind `capability`)
 > **Matched Prefixes**:`src/cli/mcp/**`、`src/cli/commands/mcp.ts`、`src/cli/chatgpt-browser/file-policy.ts`、`src/effects/repo-registry.ts`、`docs/repo-harness-chatgpt-mcp-setup.md`、`docs/reference-configs/chatgpt-coding-mcp.md`、`docs/researches/20260711-devspace-chatgpt-local-control.md`、`src/core/security/**`
@@ -74,7 +74,12 @@ flowchart LR
 
 入向關係:
 
-- 無。
+- `calls` ← `capability.runtime-harness.agent-runtime-effects` — Read the strict repo registry and the authorization revision for the wake fence
+- `calls` ← `capability.runtime-harness.external-source-intake` — Read the strict repo registry snapshot for repository identity and authorization
+- `calls` ← `component.global-runtime-reconciliation.archctx-closure` — Resolve registered repositories for the model reader
+- `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the mcp command
+- `reads` ← `component.operator.primary` — Resolve a registered repository root from the strict repo-harness registry snapshot
+- `calls` ← `capability.runtime-harness.refactor-program` — Resolve the canonical repository path through the repo registry
 
 ## 2. P2:端到端數據流
 

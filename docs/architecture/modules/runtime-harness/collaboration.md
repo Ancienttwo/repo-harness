@@ -1,6 +1,6 @@
 # runtime-harness/collaboration 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-collaboration" sourceDigest="sha256:7d40bdf8de276eea25fbe120c54294bd442e24b30bf9372731bf707810665250" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:228fb0b7cc8737eec95aecaef21dd4aef3e17cd06ad1f3cda922ad24045dffc7" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-collaboration" sourceDigest="sha256:51a7e39ad8905951932e13285c49bfd146d008d1acfe684f5bfc960f273e3d88" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:f72f21d5cd6d7eaf45e1af0da2e1c72ab8bcc71db99aeea6616b04f3478dd190" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.collaboration`(kind `capability`)
 > **Matched Prefixes**:`src/core/collaboration/**`、`src/effects/collaboration/**`、`src/cli/commands/collaboration.ts`、`scripts/c9-collaboration-dispatch-runner.ts`
@@ -99,12 +99,16 @@ flowchart LR
 - `calls` → `capability.runtime-harness.delegated-runs` — Enforce the parent Engineer's delegation policy as a pre-step to the unchanged read-only admission, and turn one run's persisted output into a contribution the delegation plane's own WorkerResult then references
 - `calls` → `capability.runtime-harness.engineer-bindings` — Derive the publishing actor from the authenticated principal and current Binding instead of accepting a declared identity
 - `calls` → `capability.runtime-harness.engineer-scheduling` — Ask the scheduling plane for this exact authenticated principal's own offers, so a Work Exchange snapshot reports what the plane answered rather than defaulting an empty list
+- `calls` → `capability.workflow-engine.execution-primitives` — Hold exclusive directory locks under the Git common directory
 - `calls` → `component.collaboration.primary` — Persist immutable coordination signals under a per-thread lock without writing any delivery store
 
 入向關係:
 
 - `calls` ← `capability.runtime-harness.delegated-runs` — Run the collaboration dispatch fence inside the read-only dispatch effect itself, before any host action, refusing a run whose injected coordination context no binding accounts for
+- `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the collaboration command
 - `calls` ← `capability.runtime-harness.mcp-sidecar` — Serve the bounded Engineer collaboration tool set from the shared agent surface, deriving the author from the authenticated authorization and taking no actor, destination or recorded time from a caller
+- `calls` ← `component.operator.primary` — Collect the collaborative Work Exchange for one registered repository
+- `depends-on` ← `component.operator.view-projections` — Project Work Exchange, handoff and context packet records with the collaboration validators
 
 ## 2. P2:端到端數據流
 

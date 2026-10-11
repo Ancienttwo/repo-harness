@@ -1,6 +1,6 @@
 # runtime-harness/engineer-messages 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineer-messages" sourceDigest="sha256:1944ab7de47c999cd74b3552389abfcc5db3cc3540ccfbad2c545a275edd91cc" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:aadbe347c8a2a0945d0fd7dec12f56ef84b144bd340dae3c4f36394403f20e13" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineer-messages" sourceDigest="sha256:44f20fdd9abcfe56442dbd0ffaa23000338969d4d6d2ff36c65613d9d63e936c" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:a1d2f21f6fdeedb314aaa35f8ede80d9ca5d5058062cc1a4eb6bd25b3851bb83" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.engineer-messages`(kind `capability`)
 > **Matched Prefixes**:`src/core/messages/mechanics.ts`、`src/core/engineers/module-message.ts`、`src/effects/engineers/module-inbox.ts`
@@ -51,6 +51,7 @@ flowchart LR
 出向關係:
 
 - `calls` → `capability.runtime-harness.engineer-bindings` — Revalidate the exact target Engineer and current Binding before assignment delivery, transport and acknowledgement
+- `calls` → `capability.workflow-engine.execution-primitives` — Hold exclusive directory locks under the Git common directory
 - `calls` → `component.engineer-messages.primary` — Persist the immutable event and pending receipt under the inbox lock and continue the receipt chain only from exact observations
 
 入向關係:
@@ -58,6 +59,8 @@ flowchart LR
 - `calls` ← `capability.runtime-harness.agent-runtime-effects` — Consume one exact persisted message and record effect success only from its authoritative receipt
 - `calls` ← `capability.runtime-harness.engineering-overlay` — Observe pending and failed delivery facts from the existing ME-1C event and receipt authority
 - `calls` ← `capability.runtime-harness.mcp-sidecar` — Expose authenticated Engineer message send, list and acknowledgement without granting generic Fleet or Provider authority
+- `calls` ← `capability.organization.task-fleet` — Reuse bounded canonical message mechanics for task messages and document handoff
+- `calls` ← `capability.runtime-harness.verified-context` — Validate closed records and compute canonical digests with the shared message mechanics
 
 ## 2. P2:端到端數據流
 

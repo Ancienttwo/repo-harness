@@ -1,6 +1,6 @@
 # runtime-harness/engineer-scheduling 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineer-scheduling" sourceDigest="sha256:cd27dbf30f1de0493a22970f5ee25a24eafaf5de18c1521519c3433386f9676f" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:baae08ad7612bfbd82d952852fdc463951b39aa76ee536d3beac1e0ce81447f3" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineer-scheduling" sourceDigest="sha256:efa6bfb0176eb81a182085304d33f11516678e18b0639dfc6286500c75a9b88d" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:bd8b16112e5faf5cf8ed17d251ef8f4f74f09cedc1c4adf848d0f79d4539b329" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.engineer-scheduling`(kind `capability`)
 > **Matched Prefixes**:`src/core/engineers/scheduling.ts`、`src/effects/engineers/dependency-authority.ts`、`src/effects/engineers/scheduling.ts`、`src/effects/engineers/scheduling-acquire.ts`、`src/effects/engineers/scheduling-acquire-next.ts`
@@ -51,15 +51,22 @@ flowchart LR
 
 出向關係:
 
+- `calls` → `capability.verification.acceptance-review` — Compute the acceptance authority fingerprint for a dependency
 - `calls` → `capability.runtime-harness.engineer-bindings` — Revalidate the exact current Engineer contract and delegate the elected offer to the existing Engineer acquire authority
+- `calls` → `capability.workflow-engine.execution-primitives` — Hold exclusive directory locks under the Git common directory
 - `reads` → `capability.runtime-harness.integration-acceptance` — Read ME-4C product acceptance projections as one closed dependency authority and never reconstruct acceptance from prose
 - `calls` → `component.engineer-scheduling.primary` — Revalidate the asserted offer against a fresh offer projection before and inside the concurrency lock
+- `reads` → `capability.organization.publication` — Read cached publication receipts as dependency authority
+- `calls` → `capability.organization.task-fleet` — Collect fleet offers for the scheduling acquire path
+- `reads` → `capability.workflow-engine.workflow-state` — Project canonical Sprint tasks into the work graph
 
 入向關係:
 
+- `calls` ← `capability.runtime-harness.agent-runtime-effects` — Validate the whole offers document with the scheduling validator before a wake is armed
 - `calls` ← `capability.runtime-harness.collaboration` — Ask the scheduling plane for this exact authenticated principal's own offers, so a Work Exchange snapshot reports what the plane answered rather than defaulting an empty list
 - `calls` ← `capability.runtime-harness.interface-change` — Verify target-Engineer materialization against the exact tracked ME-1A Work Graph projection at one Git commit
 - `calls` ← `capability.runtime-harness.mcp-sidecar` — Project and acquire exact revision-fenced Engineer offers for a verified OAuth principal
+- `reads` ← `component.operator.primary` — Read the tracked work graph projection for the Planning view
 - `calls` ← `capability.runtime-harness.work-demand` — Validate the accepted Work Package against the same-commit canonical Sprint and Work Graph
 
 ## 2. P2:端到端數據流

@@ -1,6 +1,6 @@
 # runtime-harness/evidence-ledger 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-evidence-ledger" sourceDigest="sha256:efa9c3999e44c9c61d0d3711afc9eb65ae81ebaa3c5fa521bfd65d4db55e012c" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:0886d72e85be37f93127c8d02b6d6c33087aea9f801c9401e32c73185ab18be6" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-evidence-ledger" sourceDigest="sha256:5c499e394f1372e36be40dc04cf5b4d225d5e0bc8f5ffff3ae79775245c0db7c" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:ea3215fce6ce17eeef21dadd9a247f92e7397d4d196159224e435f794f29a2d4" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.evidence-ledger`(kind `capability`)
 > **Matched Prefixes**:`src/core/evidence/**`、`src/effects/evidence/**`、`scripts/evidence-gc.ts`、`scripts/recovery-view-cli.ts`、`scripts/prepare-handoff.sh`、`scripts/prepare-codex-handoff.sh`、`scripts/codex-handoff-resume.sh`
@@ -51,11 +51,22 @@ flowchart LR
 
 入向關係:
 
+- `calls` ← `component.acceptance-review.primary` — Canonicalize review records and load verification execution results
+- `calls` ← `capability.runtime-harness.bound-task-freezes` — Evaluate the verification contract in the frozen task worktree
+- `writes` ← `capability.runtime-harness.delegated-runs` — Store delegated run payloads in the evidence blob store
+- `calls` ← `component.evals-checks.primary` — Validate and execute verification plans through the evidence verification modules
+- `calls` ← `component.global-runtime-reconciliation.archctx-closure` — Canonicalize architecture closure records
+- `calls` ← `component.hook-adapters.edit-guards` — Import post-bash observations as evidence
+- `calls` ← `component.hook-adapters.session-lifecycle` — Build recovery context and handoff from checkpoint evidence
 - `calls` ← `capability.runtime-harness.pipeline-ledger` — Validate original verification execution provenance before admitting evidence
 - `calls` ← `capability.runtime-harness.pm-dispatch` — Hash coding session records with the evidence canonical JSON
 - `calls` ← `capability.organization.publication` — Append lifecycle journal records through the durable evidence append primitive
+- `calls` ← `component.refactor-program.archctx-provider` — Canonicalize refactor provider records
 - `calls` ← `capability.runtime-harness.task-agent-host` — Hash request context and result bytes with the evidence canonical JSON
 - `calls` ← `capability.organization.task-fleet` — Reuse canonical JSON and durable atomic append for task message records
+- `calls` ← `component.workflow-state.continuation-ledger` — Append attempt ledger lines durably
+- `calls` ← `component.workflow-state.coordination-plane` — Write lease and topology records durably through the atomic append primitive
+- `calls` ← `component.workflow-state.primary` — Evaluate the verification contract for effective state
 
 ## 2. P2:端到端數據流
 

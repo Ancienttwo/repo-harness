@@ -1,6 +1,6 @@
 # runtime-harness/global-runtime-reconciliation 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-global-runtime-reconciliation" sourceDigest="sha256:43624a70f54814d6bd1b4039665497606857aa91bbb599e68131ac0bc604fa11" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:a4f6500ea7f99b50ab10dc77ced27c78a0148906d36081b8a6721f7412374302" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-global-runtime-reconciliation" sourceDigest="sha256:df8ab784c6cb3435c4e67b63e3eab2e98893d404fb2b50d82d0c059edc321e8f" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:5f44f3c8c9e05a80cbf065a31b5fa27c22c40cc15779a8b7d414b570f44d11e3" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.global-runtime-reconciliation`(kind `capability`)
 > **Matched Prefixes**:`package.json`、`bun.lock`、`src/cli/index.ts`、`src/cli/commands/global-runtime.ts`、`scripts/check-managed-runtime.ts`、`scripts/sync-codex-installed-copies.sh`、`src/effects/architecture/**`、`tests/cli/global-runtime-init.test.ts`、`tests/cli/global-runtime.test.ts`、`tests/architecture-projection-provider.test.ts`、`assets/reference-configs/external-tooling.md`、`docs/reference-configs/external-tooling.md`、`docs/reference-configs/install-profiles.md`、`src/cli/runtime/**`、`src/cli/tty-prompt.ts`、`src/cli/commands/validators.ts`、`src/cli/commands/doctor.ts`、`src/cli/commands/init-hook.ts`、`src/cli/commands/upgrade.ts`、`src/core/upgrade/**`、`src/effects/runtime/node-candidates.ts`、`src/effects/runtime/protected-helper-platform.ts`、`src/effects/skill-tree-integrity.ts`、`src/effects/configuration/**`、`src/core/architecture/projection.ts`、`src/cli/commands/architecture-projection.ts`、`src/cli/commands/architecture-configuration.ts`、`scripts/axr5-archctx-clean-room.ts`、`src/core/release/**`、`src/effects/release/**`、`scripts/check-npm-release.sh`、`scripts/check-release-published.sh`、`scripts/check-tarball-install-smoke.sh`、`scripts/check-pi-package-smoke.ts`、`scripts/sync-pi-package.ts`、`scripts/runtime-evidence-receipt.ts`、`install.sh`、`install.ps1`、`tsconfig.json`
@@ -60,8 +60,11 @@ flowchart LR
 
 入向關係:
 
+- `calls` ← `component.contract-assets.template-projection` — Initialize the architecture projection provider preference
 - `calls` ← `component.hook-adapters.host-installer` — Report architecture projection readiness in status
 - `calls` ← `component.hook-adapters.primary` — Write host output through the shared blocking writer
+- `reads` ← `component.operator.architecture-view` — List modules and export review prompts through the shared ArchitectureModelReader
+- `reads` ← `component.operator.primary` — Read the committed architecture model through the shared ArchitectureModelReader
 - `calls` ← `component.refactor-program.archctx-provider` — Run the pinned package-local archctx CLI through the shared architecture provider
 
 ## 2. P2:端到端數據流

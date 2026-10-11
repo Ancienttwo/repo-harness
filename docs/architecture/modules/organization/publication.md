@@ -1,6 +1,6 @@
 # organization/publication 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-organization-publication" sourceDigest="sha256:aaade0f5c2d04d254ebdd4bd8a5744aa79512b3b226631d239b5fc8e532bc0b0" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:e64f2bde95ccee925a1b1ff68a2ad33227f7426f944d90082c6ea5823dd930f4" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-organization-publication" sourceDigest="sha256:c05c0165c830a1451919e83912a4246a139b9a50139428994848de932876ab05" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:da10b53ef1acaa957707dbf04f008e391e20f0e2a49c70e3cc9b12e44a8ee822" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.organization.publication`(kind `capability`)
 > **Matched Prefixes**:`src/core/publication/**`、`src/effects/publication/**`、`src/cli/commands/publication.ts`
@@ -51,7 +51,10 @@ flowchart LR
 
 入向關係:
 
+- `reads` ← `capability.runtime-harness.engineer-scheduling` — Read cached publication receipts as dependency authority
+- `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the publication command
 - `reads` ← `capability.runtime-harness.integration-acceptance` — Read cached immutable publication receipts and reuse their canonical JSON digest
+- `calls` ← `component.mcp-sidecar.primary` — Reopen and take over publications and read merge readiness
 - `calls` ← `capability.organization.task-fleet` — Read publication receipts readiness and provider feedback for fleet commands and board cards
 
 ## 2. P2:端到端數據流

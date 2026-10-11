@@ -1,5 +1,5 @@
 # workflow-engine/inspection-migration 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-inspection-migration" sourceDigest="sha256:7f2c4bd56b578ede2e2ef1a14c1b743d375eab83849f30dbfe72212700203c61" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:948dc1a7773b33b77e714524d482c0bb32911d552560f32cfe8d02b656962505" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-inspection-migration" sourceDigest="sha256:ac9e95ea634463056649d6771a617f2716fc5ba871786bb159330e9ce3c244b2" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:9bc9a965d7865509022f2d5ef555259a3fbe282f9b116e720f15e3368c800d52" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.workflow-engine.inspection-migration`(kind `capability`)
 > **Matched Prefixes**:`scripts/inspect-project-state.ts`、`scripts/create-project-dirs.sh`、`scripts/init-project.sh`、`scripts/lib/**`、`scripts/AGENTS.md`、`scripts/CLAUDE.md`
@@ -48,7 +48,7 @@ flowchart LR
 
 入向關係:
 
-- 無。
+- `calls` ← `component.evals-checks.ci-selection` — Run test files through the shared runner in scripts/lib/ci-run-tests.sh
 
 ## 2. P2:端到端數據流
 

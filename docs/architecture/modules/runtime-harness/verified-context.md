@@ -1,6 +1,6 @@
 # runtime-harness/verified-context 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-verified-context" sourceDigest="sha256:6425c3c1ff7219b245bc039885d48d6b8f9790fbad2368481e59148c81546fcc" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:0cbc90b1306e4fc937574c5654132bb88c7c468e4da55eeb6ca750d2d2224d32" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-verified-context" sourceDigest="sha256:94aad12e2f67675e1d1051153aef204c181a67f76095cef6e923a786d0d839bb" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:60d738346a6497987ef11f050cf255565e6bd4360ed8bb0a08ed4d2b07008380" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.verified-context`(kind `capability`)
 > **Matched Prefixes**:`src/core/engineers/verified-context.ts`、`src/effects/engineers/verified-context-store.ts`、`src/cli/commands/verified-context.ts`
@@ -60,6 +60,8 @@ flowchart LR
 入向關係:
 
 - `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the verified-context command
+- `reads` ← `component.operator.activity-feeds` — Read open Human Decisions for the board attention queue
+- `reads` ← `component.operator.primary` — Read the open Human Decision inventory
 
 ## 2. P2:端到端數據流
 

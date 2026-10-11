@@ -1,5 +1,5 @@
 # public-surface/root-router 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-root-router" sourceDigest="sha256:403073375c00d5903b6fd1661307287416ab031674500100c5ca779c320647ff" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:54de3adbee51d2321750d692c6a63b9ce3c1871c91282d491ec56ced218b0a72" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-root-router" sourceDigest="sha256:32ecc0ea023107a39e132a2cf8b62fdff7b064ea1fd7ebfa7282cefd3f3a3e49" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:caf95ca4a66ad132bbc485042a32b3951de77eedc8f8124960ca4cba14e6457b" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.public-surface.root-router`(kind `capability`)
 > **Matched Prefixes**:`SKILL.md`、`references/pm-boundary.md`、`README.md`、`AGENTS.md`、`CLAUDE.md`、`docs/spec.md`、`README.es.md`、`README.fr.md`、`README.ja.md`、`README.zh-CN.md`、`references/arch/**`、`src/cli/commands/docs.ts`
@@ -46,7 +46,7 @@ flowchart LR
 
 入向關係:
 
-- 無。
+- `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the docs command
 
 ## 2. P2:端到端數據流
 

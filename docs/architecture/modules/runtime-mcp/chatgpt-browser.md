@@ -1,6 +1,6 @@
 # runtime-mcp/chatgpt-browser 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-mcp-chatgpt-browser" sourceDigest="sha256:6efc18960360c1dc2b24f2684672825ee3405da91fce5cc7efcf335f305b3ec2" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:e9358d38ddad01b9087aacbb49a162cfbbb327928549f9c9ae5e7fda8082d1de" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-mcp-chatgpt-browser" sourceDigest="sha256:20e46a79a9a1db44551b6ed38a511e2226702a2b757ed8d7bf90f3b212403bbb" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:85c26fdfa69fdeeb89c82d59877ae476c10aa24d035c1b4c845f7d6a919ac379" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-mcp.chatgpt-browser`(kind `capability`)
 > **Matched Prefixes**:`src/cli/chatgpt-browser/binding.ts`、`src/cli/chatgpt-browser/engine.ts`、`src/cli/chatgpt-browser/native-provider.ts`、`src/cli/chatgpt-browser/oracle-provider.ts`、`src/cli/chatgpt-browser/oracle-session-evidence.ts`、`src/cli/chatgpt-browser/prompt-assembler.ts`、`src/cli/chatgpt-browser/secret-scan.ts`、`src/cli/chatgpt-browser/session-store.ts`、`src/cli/chatgpt-browser/types.ts`、`src/cli/chatgpt-skill/**`、`src/cli/commands/chatgpt.ts`、`docs/repo-harness-chatgpt-browser-engine.md`
@@ -47,6 +47,7 @@ flowchart LR
 
 入向關係:
 
+- `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the chatgpt command
 - `calls` ← `component.mcp-sidecar.host-setup` — Read the canonical ChatGPT bridge reference from the packaged skill source
 - `calls` ← `component.mcp-sidecar.primary` — Run the opt-in browser consult tools through the ChatGPT browser engine
 

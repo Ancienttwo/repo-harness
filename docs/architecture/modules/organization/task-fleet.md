@@ -1,6 +1,6 @@
 # organization/task-fleet 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-organization-task-fleet" sourceDigest="sha256:1b1ecbf76245f47e2648ae46ec0684fda40f2b784f2398f42ae13b38e0de3284" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:5a636ef54c1b0448cbb446722f8a291da00c6f7a90e23bdd4c92d63630c492aa" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-organization-task-fleet" sourceDigest="sha256:ec582a711c790ffb321ca0f55eb3917b2b5566081f8ba776dcc34e88c67e3c34" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:de3b7a7453400ba5d667bd7db013ed0db40a71497178f7a830ec58a8ff262260" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.organization.task-fleet`(kind `capability`)
 > **Matched Prefixes**:`src/core/fleet/**`、`src/effects/fleet/**`、`src/core/messages/document-handoff.ts`、`src/cli/commands/fleet.ts`
@@ -52,10 +52,17 @@ flowchart LR
 - `calls` → `capability.runtime-harness.evidence-ledger` — Reuse canonical JSON and durable atomic append for task message records
 - `calls` → `component.task-fleet.primary` — Project read-time offers and acquire one execution-ready task through the owning stores
 - `calls` → `capability.organization.publication` — Read publication receipts readiness and provider feedback for fleet commands and board cards
-- `reads` → `capability.runtime-harness.mcp-sidecar` — Read the strict repository registry snapshot for offer and board authorization
+- `reads` → `component.mcp-sidecar.repo-policy-registry` — Read the strict repository registry snapshot for offer and board authorization
 
 入向關係:
 
+- `depends-on` ← `capability.runtime-harness.delegated-runs` — Type the delegated run against the fleet work envelope
+- `calls` ← `capability.runtime-harness.engineer-scheduling` — Collect fleet offers for the scheduling acquire path
+- `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the fleet command
+- `calls` ← `component.hook-adapters.session-lifecycle` — Render task inbox messages as untrusted session context
+- `calls` ← `component.mcp-sidecar.primary` — Acquire fleet tasks and handle task steers from the MCP tools
+- `reads` ← `component.operator.primary` — Collect fleet offers and the fleet board for the console
+- `reads` ← `component.operator.view-projections` — Render fleet board errors and task message shapes
 - `reads` ← `capability.runtime-harness.pm-dispatch` — Read repository task offers for PM status without acquiring work
 
 ## 2. P2:端到端數據流

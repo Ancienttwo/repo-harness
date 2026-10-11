@@ -1,6 +1,6 @@
 # runtime-harness/pm-dispatch 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-pm-dispatch" sourceDigest="sha256:1400a138e08513dc96d0dbce5d9f4a935c017f095a9c1fde3dea96a79d57732f" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:2e17718dd7a84a4ad1ebd5446727f7a3c2a6fb642c665a3b0f7ae51ef2fed1e7" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-pm-dispatch" sourceDigest="sha256:3384283c7f5056d463dcb19b3dabede839d40d3978a17f4071e91b68e9d0ec96" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:9981c5ce34a98393195fa7d23401875b1db06f23e568358912c514a015b01b08" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.pm-dispatch`(kind `capability`)
 > **Matched Prefixes**:`src/core/pm/**`、`src/effects/pm/**`、`src/cli/commands/pm.ts`、`src/effects/terminal/coding-isolation.ts`、`src/effects/terminal/coding-session.ts`、`src/effects/terminal/oar-coding-host.ts`、`assets/hermes/**`、`references/pm-operations.md`
@@ -48,13 +48,14 @@ flowchart LR
 
 - `calls` → `capability.runtime-harness.evidence-ledger` — Hash coding session records with the evidence canonical JSON
 - `calls` → `component.pm-dispatch.primary` — Validate a task-level PM request before using existing task authority.
-- `reads` → `capability.runtime-harness.mcp-sidecar` — Read registry authorization and hold its lock through PM effects
+- `reads` → `component.mcp-sidecar.repo-policy-registry` — Read registry authorization and hold its lock through PM effects
 - `calls` → `capability.runtime-harness.task-agent-host` — Start the fixed OAR coding host and deliver requests through the existing task session
 - `reads` → `capability.organization.task-fleet` — Read repository task offers for PM status without acquiring work
 
 入向關係:
 
-- 無。
+- `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the pm command
+- `calls` ← `component.mcp-sidecar.primary` — Serve the PM MCP binding over the PM host protocol
 
 ## 2. P2:端到端數據流
 

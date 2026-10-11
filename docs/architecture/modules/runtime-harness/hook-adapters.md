@@ -1,5 +1,5 @@
 # runtime-harness/hook-adapters 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-hook-adapters" sourceDigest="sha256:bfd92e6fc95780144e38bb780248e7f15f5a8481b558c6a6576660c2a4ee0587" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:6d048a8f736a13ae2b60cce48db14ecf1c42e1c78c72a62916454d1c9f1fbcfb" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-hook-adapters" sourceDigest="sha256:ab5f9fbad571e4793a5e0baadca48c9bbaadc515326b40a1c7560e2808fd99b0" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:96227e1781f26d95d109010881055b70cbfedcdcc9e2404160ab3106a55bd418" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.hook-adapters`(kind `capability`)
 > **Matched Prefixes**:`assets/hooks/**`、`.ai/hooks/**`、`src/cli/installer/**`、`src/cli/hook/**`、`src/cli/hook-entry.ts`、`src/pi/**`、`src/core/loop/**`、`src/effects/loop/**`、`src/core/hook-work-budget.ts`、`src/effects/hook-event-log.ts`、`src/effects/run-summary-retention.ts`、`src/cli/commands/install.ts`、`src/cli/commands/status.ts`、`src/cli/commands/security.ts`、`src/cli/commands/hook.ts`、`src/cli/commands/prompt-guard-decision.ts`、`scripts/sync-hook-sources.ts`
@@ -55,9 +55,14 @@ flowchart LR
 
 入向關係:
 
+- `calls` ← `capability.verification.acceptance-review` — Admit at most one persistent semantic review session per work package through the circuit breaker
+- `calls` ← `component.contract-assets.template-projection` — Read the install profile and project skills during init
+- `reads` ← `component.evals-checks.evals-and-benchmarks` — Read hook event telemetry records to measure hook cost in profile benchmarks
 - `calls` ← `component.global-runtime-reconciliation.archctx-closure` — Write the private global configuration through the installer ownership writer
 - `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the install and status and security and hook commands and run host transactions with the install profile
 - `calls` ← `component.global-runtime-reconciliation.primary` — Install host adapters and project skills through the install profile under the host lock
+- `calls` ← `component.mcp-sidecar.host-setup` — Reuse installer configuration ownership receipts and the runtime host lock
+- `reads` ← `component.operator.activity-feeds` — Read the hook route registry and install profile components for the Hooks and Agents pages
 
 ## 2. P2:端到端數據流
 

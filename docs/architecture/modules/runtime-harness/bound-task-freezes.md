@@ -1,6 +1,6 @@
 # runtime-harness/bound-task-freezes 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-bound-task-freezes" sourceDigest="sha256:50bf95c298d1eb462bd2b05a273f7a34ea8be649f18ea2562b25433e1462eca5" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:557ff7976d47c8f901ab758192325809b7d4808fa7cb991eadba32878cb0e89e" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-bound-task-freezes" sourceDigest="sha256:04d9b59b1d87e2728f4ad7a039baa7769ddc03695e4b5af991cae889571edb52" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:cd91a6a26b3d7a2c50a9302ea3de3a2cfda244d5725b8bc04e340b03172fa83e" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.bound-task-freezes`(kind `capability`)
 > **Matched Prefixes**:`src/core/engineers/task-freeze.ts`、`src/effects/engineers/task-freeze-store.ts`、`src/effects/engineers/bound-task-rotation.ts`
@@ -49,8 +49,12 @@ flowchart LR
 
 出向關係:
 
+- `reads` → `capability.verification.acceptance-review` — Inspect acceptance evidence and the review subject for a frozen task
 - `calls` → `capability.runtime-harness.engineer-bindings` — Revalidate the current Binding and exact live ClaimActorReceipt before inspection or rotation refusal
+- `calls` → `capability.runtime-harness.evidence-ledger` — Evaluate the verification contract in the frozen task worktree
+- `calls` → `capability.workflow-engine.execution-primitives` — Resolve the Git common directory for freeze records
 - `calls` → `component.bound-task-freezes.primary` — Persist and revalidate immutable exact-state freeze receipts without transferring execution authority
+- `calls` → `capability.workflow-engine.workflow-state` — Read leases and plan links under the task lock before a freeze or rotation
 
 入向關係:
 

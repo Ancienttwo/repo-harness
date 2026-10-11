@@ -1,6 +1,6 @@
 # runtime-harness/engineer-bindings 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineer-bindings" sourceDigest="sha256:766a7e047ca8554da3f024cb026a87f986738225c1d5cf85ba1149063fcf1c59" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:aa78de4f4bdaa0a01e78ba7f4222e1d4d203cc2379bcd39dc72002cbe34e32a6" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineer-bindings" sourceDigest="sha256:6dfe0ebc11aa2ff612fe0dbe69f776ac4074edb8180b3b45318cb26c048ec1f4" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:8cf5face425b146f62a00de64d30436726d36cd9205675eddb25a4317e58a8dc" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.engineer-bindings`(kind `capability`)
 > **Matched Prefixes**:`agents/engineers/**`、`src/core/engineers/**`、`src/effects/engineers/**`、`src/cli/commands/engineer.ts`
@@ -46,7 +46,9 @@ flowchart LR
 
 出向關係:
 
+- `calls` → `capability.workflow-engine.execution-primitives` — Hold exclusive directory locks under the Git common directory
 - `calls` → `component.engineer-bindings.primary` — Publish one operator-authorized Engineer binding transition
+- `calls` → `capability.workflow-engine.workflow-state` — Process Sprint dependencies and release Sprint leases for bound engineer tasks
 
 入向關係:
 
@@ -57,8 +59,10 @@ flowchart LR
 - `calls` ← `capability.runtime-harness.engineer-messages` — Revalidate the exact target Engineer and current Binding before assignment delivery, transport and acknowledgement
 - `calls` ← `capability.runtime-harness.engineer-scheduling` — Revalidate the exact current Engineer contract and delegate the elected offer to the existing Engineer acquire authority
 - `calls` ← `capability.runtime-harness.engineering-overlay` — Observe exact current Profile, Binding and live ClaimActor revisions without mutating their stores
+- `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the engineer command
 - `calls` ← `capability.runtime-harness.interface-change` — Revalidate the exact current Binding for every Engineer-owned transition
 - `calls` ← `capability.runtime-harness.mcp-sidecar` — Resolve a verified OAuth authorization to the current Engineer Binding before acquiring a Fleet Claim
+- `calls` ← `capability.organization.task-fleet` — Validate principal claims and claim actor receipts before a steer reply is recorded
 - `calls` ← `capability.runtime-harness.verified-context` — Revalidate Engineer decision actors against the exact current active Binding fence
 - `calls` ← `capability.runtime-harness.work-demand` — Revalidate the exact current requester Binding for Engineer-owned transitions
 

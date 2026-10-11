@@ -1,6 +1,6 @@
 # runtime-harness/interface-change 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-interface-change" sourceDigest="sha256:75efb06638143eb3cefbe43209117391ab0cba8a352cf85bdbd760984c3770c1" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:60a77edc9d80143bba47f685fc5bbd20b4c096e2b732fe6401669c52f50dba3a" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-interface-change" sourceDigest="sha256:ca373de475c2677957aa7916ac8760fbbb8331ae6695d22dbc72fe6851fb7fbd" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:e449adf6559a72debbc929d60707a1a9b16045298edf80c2c1fefb6d06742722" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.interface-change`(kind `capability`)
 > **Matched Prefixes**:`src/core/engineers/interface-change.ts`、`src/effects/engineers/interface-change-store.ts`、`src/cli/commands/interface-change.ts`
@@ -53,10 +53,13 @@ flowchart LR
 
 - `calls` → `capability.runtime-harness.engineer-bindings` — Revalidate the exact current Binding for every Engineer-owned transition
 - `calls` → `capability.runtime-harness.engineer-scheduling` — Verify target-Engineer materialization against the exact tracked ME-1A Work Graph projection at one Git commit
+- `calls` → `capability.workflow-engine.execution-primitives` — Hold exclusive directory locks under the Git common directory
 - `calls` → `component.interface-change.primary` — Persist immutable request and transition evidence plus one recoverable CAS current projection
+- `reads` → `capability.workflow-engine.workflow-state` — Read the canonical target ref for an interface change
 
 入向關係:
 
+- `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the interface-change command
 - `calls` ← `capability.runtime-harness.mcp-sidecar` — Expose only authenticated Engineer propose, submit, cancel, materialize and implemented mutations through the server-derived OAuth principal
 
 ## 2. P2:端到端數據流

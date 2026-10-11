@@ -1,6 +1,6 @@
 # runtime-harness/operator 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-operator" sourceDigest="sha256:3c33aa6e3b88a581082f0954699ab99796504b4f816844f8da944f5866cd4228" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:8e7a5ea98e2faaee743a6fe9bccb7c503f97c38aabf2eda0a8de6b2340b9b50f" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-operator" sourceDigest="sha256:074d4cf9e6d1ad86dadda5ed9c35934adb795236ebec0e2ff094457ecb09cfa2" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:6669b2bddf62c2a117762dcbfc7d4bf77a6261b6b1bf8ea04b0c08b1d32b3a57" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.operator`(kind `capability`)
 > **Matched Prefixes**:`src/core/operator/**`、`src/effects/operator/**`、`src/operator-web/**`、`src/cli/commands/operator.ts`、`src/cli/commands/module.ts`、`src/core/architecture/module-view.ts`、`src/core/docs/**`、`src/core/setup/**`、`src/effects/setup/**`、`src/core/dev-activity/**`、`src/effects/dev-activity/**`、`src/effects/terminal/herdr-observation.ts`、`assets/operator/**`、`vite.operator.config.ts`
@@ -62,7 +62,7 @@ flowchart LR
 
 入向關係:
 
-- 無。
+- `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the operator command
 
 ## 2. P2:端到端數據流
 

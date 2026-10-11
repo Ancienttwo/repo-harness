@@ -1,6 +1,6 @@
 # runtime-harness/delegated-runs 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-delegated-runs" sourceDigest="sha256:792ad21d062cf1a1ed7b74a62da4c9b1cba72ae82a9b9457e68e4978692afed3" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:d6821aef7f07fe624417f5ed1a59826e48538df102f3bfa61d2667c7918082bc" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-delegated-runs" sourceDigest="sha256:ba73188c5f6c7a094e45c8e364377daac2dd54e449472f3a4db3aa10ce9f0ff5" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:e78a047f792291aaeb26683e71a9e17f8474aebcfbfd6222a0a3e2d4039f9419" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.delegated-runs`(kind `capability`)
 > **Matched Prefixes**:`src/core/engineers/delegation.ts`、`src/effects/engineers/delegated-run-store.ts`、`src/cli/commands/delegation.ts`、`scripts/me2b-runtime-admission-canary.ts`
@@ -56,11 +56,15 @@ flowchart LR
 
 - `calls` → `capability.runtime-harness.collaboration` — Run the collaboration dispatch fence inside the read-only dispatch effect itself, before any host action, refusing a run whose injected coordination context no binding accounts for
 - `calls` → `capability.runtime-harness.engineer-bindings` — Revalidate the exact current parent ClaimActorReceipt, WorkEnvelope and Engineer Binding before delegation admission
+- `writes` → `capability.runtime-harness.evidence-ledger` — Store delegated run payloads in the evidence blob store
+- `calls` → `capability.workflow-engine.execution-primitives` — Hold exclusive directory locks under the Git common directory and run child processes
 - `calls` → `component.delegated-runs.primary` — Persist immutable capability, admission, launch, process and result evidence without creating runtime or task authority
+- `depends-on` → `capability.organization.task-fleet` — Type the delegated run against the fleet work envelope
 
 入向關係:
 
 - `calls` ← `capability.runtime-harness.collaboration` — Enforce the parent Engineer's delegation policy as a pre-step to the unchanged read-only admission, and turn one run's persisted output into a contribution the delegation plane's own WorkerResult then references
+- `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the delegation command
 - `calls` ← `capability.runtime-harness.verified-context` — Revalidate existing immutable WorkerRunRef, process receipt, WorkerResult and evidence blobs as untrusted checkpoint inputs
 
 ## 2. P2:端到端數據流

@@ -1,6 +1,6 @@
 # runtime-harness/external-source-intake 架构文档
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-external-source-intake" sourceDigest="sha256:a3f970d6083ae852c35ffffd1361a774f2a3c32ff21f2f3611a7b3ed831d05e0" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:cfd572a69a9775ce83dbea249ab6e25119add3467250edcffaf13b3d62bca7ca" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-external-source-intake" sourceDigest="sha256:c2c30fdb22b62bcc185627578cee11ea587a28e631eed35536d77de1db6e6c95" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:e240acaab0a8c77be683dfded8a54d63034f4c6c241311facdbcf459b8b484d0" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.external-source-intake`(kind `capability`)
 > **Matched Prefixes**:`src/core/external-sources/**`、`src/effects/external-sources/**`、`src/cli/commands/external-source.ts`
@@ -48,6 +48,7 @@ flowchart LR
 
 - `calls` → `component.external-source-intake.immutable-evidence` — Persist provider-neutral immutable observations and typed refresh receipts before deriving a read-only projection
 - `calls` → `capability.runtime-harness.mcp-sidecar` — Read the strict repo registry snapshot for repository identity and authorization
+- `reads` → `capability.workflow-engine.workflow-state` — Look up the canonical task for an external source
 
 入向關係:
 

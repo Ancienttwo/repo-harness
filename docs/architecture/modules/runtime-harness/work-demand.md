@@ -1,5 +1,5 @@
 # runtime-harness/work-demand 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-work-demand" sourceDigest="sha256:192e17844f0c2df68cffa64821e48ec677a357bd1989480ef3954a76f687c4ea" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:ff7b43266866c78e6b4e488acd21a1484ce086bdace242e3415ab5bf39de2726" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-work-demand" sourceDigest="sha256:220b1d44c19ef866b100cbe5161977b13719b2897424cb003b750d2102563bed" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:340cdbadfd70873ef4066689be638c116e55085b2f02d2520503d4a142bccc23" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.work-demand`(kind `capability`)
 > **Matched Prefixes**:`src/core/engineers/work-demand.ts`、`src/effects/engineers/work-demand-store.ts`、`src/effects/engineers/work-demand-materialization.ts`
@@ -51,11 +51,13 @@ flowchart LR
 
 - `calls` → `capability.runtime-harness.engineer-bindings` — Revalidate the exact current requester Binding for Engineer-owned transitions
 - `calls` → `capability.runtime-harness.engineer-scheduling` — Validate the accepted Work Package against the same-commit canonical Sprint and Work Graph
+- `calls` → `capability.workflow-engine.execution-primitives` — Hold exclusive directory locks under the Git common directory
 - `calls` → `component.work-demand.primary` — Persist immutable lifecycle evidence and one recoverable current projection
+- `writes` → `capability.workflow-engine.workflow-state` — Materialize an accepted work demand as a canonical Sprint backlog row
 
 入向關係:
 
-- 無。
+- `calls` ← `component.mcp-sidecar.primary` — Propose and transition work demands from the engineer MCP tools
 
 ## 2. P2:端到端數據流
 

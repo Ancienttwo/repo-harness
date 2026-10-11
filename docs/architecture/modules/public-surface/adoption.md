@@ -1,5 +1,5 @@
 # public-surface/adoption 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-adoption" sourceDigest="sha256:74fb04f830246799709621a0b80c5c4fa039e1179ce1b37759af7f5e3d090611" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:b91915678540d2534a4afee7d80dcd19228fdf668793198472bb522e268314fe" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-adoption" sourceDigest="sha256:7ec5756fc74953f19c2c899aa0882faca7afb89df81fe5a43034a518ee38acb9" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:77d8ce598f7fd4e9d947e75ff86b582564b35a2dba08ea82c3de10bc62d42643" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.public-surface.adoption`(kind `capability`)
 > **Matched Prefixes**:`src/cli/commands/adoption-plan.ts`、`src/core/adoption/**`、`src/effects/fs-transaction.ts`、`src/effects/path-safety.ts`、`tests/cli/adoption-plan.test.ts`、`tests/fixtures/adoption/**`、`src/cli/repo-adoption/**`、`src/cli/commands/migrate.ts`
@@ -46,7 +46,12 @@ flowchart LR
 
 入向關係:
 
-- 無。
+- `calls` ← `component.contract-assets.template-projection` — Plan and apply the transactional adoption for repository init
+- `calls` ← `capability.runtime-harness.evidence-ledger` — Resolve blob and log paths inside the repository with the shared path-safety helper
+- `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the adoption-plan command and run the adoption plan for the setup check
+- `calls` ← `component.global-runtime-reconciliation.primary` — Classify retired surfaces with the adoption fingerprints and back up removals in an FsTransaction manifest under the target lock
+- `calls` ← `component.hook-adapters.host-installer` — Share the managed hook command fingerprints with the adoption migration
+- `calls` ← `component.hook-adapters.session-lifecycle` — Check run summary write paths with the shared path safety rules
 
 ## 2. P2:端到端數據流
 

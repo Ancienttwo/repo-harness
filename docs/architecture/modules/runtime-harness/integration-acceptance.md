@@ -1,6 +1,6 @@
 # runtime-harness/integration-acceptance 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-integration-acceptance" sourceDigest="sha256:095c4fb0c1a5d2d24b99b972ee1cdc4e3774738f3eb9d73f0eacf0f6199e0c7f" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:15948ea029c8ddbac765bc02294f4acea6e3e15cd1ecd9a234d76701c33fb266" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-integration-acceptance" sourceDigest="sha256:3edc85acc04214bce157db087bb85ff5719274732d44aa214428e701c94b1636" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:71e3a3f2182fc49582fe9dc28222e30f718f11cca0bc16f194c04aa01d254100" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.integration-acceptance`(kind `capability`)
 > **Matched Prefixes**:`src/core/integration/product-acceptance.ts`、`src/effects/integration/product-acceptance.ts`、`src/cli/commands/integration.ts`
@@ -58,7 +58,8 @@ flowchart LR
 
 入向關係:
 
-- 無。
+- `reads` ← `capability.runtime-harness.engineer-scheduling` — Read ME-4C product acceptance projections as one closed dependency authority and never reconstruct acceptance from prose
+- `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the integration command
 
 ## 2. P2:端到端數據流
 

@@ -1,6 +1,6 @@
 # runtime-harness/pipeline-ledger 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-pipeline-ledger" sourceDigest="sha256:e501f252d744c3507256a628693a4f74a163b25036218eb7f7babcd976e7bf9a" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:f246de6427fdc2c0612581218a32cd3c40f76faffaf58e58632fc2a71a494662" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-pipeline-ledger" sourceDigest="sha256:ab608c933872419910a63538b58870ab2e201250ba2a26a1436af6f67f4a7844" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:f846ebbd16a7758090a371bbb291584dc74ba0bdc50721df88e38bdcd45f079a" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.pipeline-ledger`(kind `capability`)
 > **Matched Prefixes**:`src/core/pipeline/**`、`src/effects/pipeline/**`、`src/cli/commands/pipeline.ts`、`assets/pipeline-record.v2.schema.json`
@@ -56,7 +56,10 @@ flowchart LR
 
 入向關係:
 
-- 無。
+- `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the pipeline command
+- `reads` ← `component.operator.activity-feeds` — Read pipeline records into the activity snapshot
+- `reads` ← `component.operator.primary` — Open pipeline ledger snapshots and decode the pipeline board
+- `reads` ← `component.operator.web-console` — Decode the pipeline board in the browser
 
 ## 2. P2:端到端數據流
 

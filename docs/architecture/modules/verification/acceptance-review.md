@@ -1,6 +1,6 @@
 # verification/acceptance-review 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-acceptance-review" sourceDigest="sha256:73923ab1525c1b385a9f177838d6083612929724a8c0800e5ad3bde1310af064" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:75aace5bd9348955eb1dd2d2faa4df258154762027ce1cc7e87bd6466f0b2378" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-acceptance-review" sourceDigest="sha256:95cf4927c3167df20f6ef6468d82cf58753688ef51f7d02095f186655e3919be" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:dc1f96881d6af869e79cb94cc55c0452621fc8b78a24eba7c9b58d72c6702fda" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.verification.acceptance-review`(kind `capability`)
 > **Matched Prefixes**:`src/core/review/**`、`src/effects/review/**`、`src/cli/commands/review.ts`、`scripts/acceptance-receipt.ts`、`scripts/change-assessment.ts`
@@ -51,6 +51,13 @@ flowchart LR
 
 入向關係:
 
+- `reads` ← `capability.runtime-harness.bound-task-freezes` — Inspect acceptance evidence and the review subject for a frozen task
+- `calls` ← `component.contract-assets.contract-worktree-lifecycle` — Locate the acceptance receipt and the protected Git runtime
+- `calls` ← `component.contract-assets.planning-helpers` — Read the acceptance policy for planning helpers
+- `calls` ← `capability.runtime-harness.engineer-scheduling` — Compute the acceptance authority fingerprint for a dependency
+- `calls` ← `component.global-runtime-reconciliation.archctx-closure` — Build the module review prompt from the committed architecture model
+- `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the review command
+- `calls` ← `component.integration-acceptance.primary` — Locate the acceptance receipt for an integration candidate
 - `calls` ← `component.operator.architecture-view` — Report module CLI failures with the typed module read error of the review prompt builder
 - `calls` ← `component.operator.primary` — Raise and map the typed module read errors that the module review prompt builder declares
 - `depends-on` ← `component.operator.view-projections` — Decode the module review prompt shape that the review prompt builder declares

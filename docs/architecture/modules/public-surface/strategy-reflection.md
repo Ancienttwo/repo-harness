@@ -1,6 +1,6 @@
 # public-surface/strategy-reflection 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-strategy-reflection" sourceDigest="sha256:64b404038dfa1cabc7bebf0f3b9618f19019694b8f702db2dd9ab1b181321a11" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:89cd53d74786cde8b33d474b483aec79147bf8fda860f954a5f5019ff7362df7" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-strategy-reflection" sourceDigest="sha256:7812e5ca7a273db81e154644606f7e96619205325088ad2363a7bc7042586fcf" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:cf3931a44c4b4459f4ea0d978fd4ca8a310662c8a625eec302f9f004d1cbb502" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.public-surface.strategy-reflection`(kind `capability`)
 > **Matched Prefixes**:`src/core/strategy/**`、`src/effects/strategy/**`、`src/cli/commands/strategy.ts`、`docs/strategy/**`
@@ -47,7 +47,7 @@ flowchart LR
 
 入向關係:
 
-- 無。
+- `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the strategy command
 
 ## 2. P2:端到端數據流
 

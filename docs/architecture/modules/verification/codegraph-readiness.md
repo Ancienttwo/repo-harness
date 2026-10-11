@@ -1,5 +1,5 @@
 # verification/codegraph-readiness 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-codegraph-readiness" sourceDigest="sha256:e9d5ee3e1e673d026312e38445b82b2e837ba5648d3a6f2fc33abdcaac47ffc0" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:e2564a20027351b457208927421e672fae650fa72bf43f994d344789b1bd3210" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-codegraph-readiness" sourceDigest="sha256:cee96bdc4be34765f0ef0b61417bdec56ca19878e0e294e991eeaa457551d300" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:e858431853aa390dd9a8baee74cce9cc14d1f8626426a23d22ead8d0d38fb04c" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.verification.codegraph-readiness`(kind `capability`)
 > **Matched Prefixes**:`scripts/ensure-codegraph.sh`、`src/cli/tools/codegraph.ts`、`src/cli/mcp/codegraph-adapter.ts`、`tests/cli/codegraph-resolver.test.ts`、`docs/architecture/modules/verification/codegraph-readiness.md`、`src/cli/commands/tools.ts`
@@ -46,7 +46,10 @@ flowchart LR
 
 入向關係:
 
+- `calls` ← `component.contract-assets.template-projection` — Ensure CodeGraph readiness during init
 - `calls` ← `component.general-repo-access.primary` — Read CodeGraph index metadata through the adapter after path authorization
+- `calls` ← `component.global-runtime-reconciliation.cli-root` — Probe CodeGraph readiness for doctor
+- `calls` ← `component.global-runtime-reconciliation.primary` — Configure the exact CodeGraph CLI and MCP registration
 - `calls` ← `component.mcp-sidecar.coding-profile` — Refresh the CodeGraph index after coding mutations
 - `calls` ← `component.mcp-sidecar.primary` — Construct the CodeGraph index adapter with repo-local binaries refused
 

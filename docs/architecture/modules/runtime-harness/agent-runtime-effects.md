@@ -1,6 +1,6 @@
 # runtime-harness/agent-runtime-effects 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-agent-runtime-effects" sourceDigest="sha256:c451447e81ced39ae55f91f7c45d6aa93a43d2fd8ce3bf8c2392945aaecf5b7a" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:05bb813d0046812ed3fa5e997131b49fd669e812f34af1a63d2207cbe344e98e" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-agent-runtime-effects" sourceDigest="sha256:d859eabcdbf74ad4e28c89d6dc33d90bf17c70d1a8c37d13b9eff683399ea3c9" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:a8f564dab6b77b32883625dac252f7429efb0adcc813edef46b3b739253cfd79" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.agent-runtime-effects`(kind `capability`)
 > **Matched Prefixes**:`src/core/engineers/agent-runtime-effect.ts`、`src/effects/engineers/agent-runtime-effect-store.ts`、`src/effects/engineers/agent-runtime-feature.ts`、`src/effects/engineers/agent-runtime-adapters/**`
@@ -60,11 +60,13 @@ flowchart LR
 - `calls` → `capability.runtime-harness.engineer-scheduling` — Validate the whole offers document with the scheduling validator before a wake is armed
 - `calls` → `component.agent-runtime-effects.journal` — Persist immutable effect intents and observations before one closed Host action or a reconcile-only state can be returned
 - `calls` → `capability.runtime-harness.mcp-sidecar` — Read the strict repo registry and the authorization revision for the wake fence
+- `calls` → `capability.runtime-harness.task-agent-host` — Run Herdr commands for task agent runtime effects
 
 入向關係:
 
 - `calls` ← `capability.runtime-harness.engineering-overlay` — Observe exact current runtime-effect and reconciliation states without executing or repairing an effect
 - `calls` ← `capability.runtime-harness.mcp-sidecar` — Expose read-only runtime capability and current-effect projections to the authenticated Engineer without Host mutation authority
+- `calls` ← `capability.organization.task-fleet` — Read task agent runtime effects as board observations only
 
 ## 2. P2:端到端數據流
 
