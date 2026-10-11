@@ -197,7 +197,16 @@ npx @biomejs/biome init
 ```yaml
 # .github/workflows/ci.yml
 name: CI
-on: [push, pull_request]
+# PR CI covers candidate branches. Push CI runs only on the default branch,
+# so one commit never runs both lanes.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   check:
