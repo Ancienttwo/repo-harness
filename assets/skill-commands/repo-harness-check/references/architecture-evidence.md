@@ -7,6 +7,29 @@ Read evidence in the target worktree for the subject revision. Read it again
 after edits. `check` and `recommendations` write no repository files.
 `apply` and `decide` write; run them only inside authorized scope.
 
+## When to read
+
+Read this evidence when a worker reports `done` for a branch that changed
+source, `.archcontext/model/` or `docs/architecture/` files. A Herdr `done`
+push is one such report. Also read it before you request review of such a
+branch, and when the user asks about architecture drift, ownership or
+refactors. A `blocked` report or a branch without such changes needs no
+architecture evidence.
+
+Read the cheap signal first:
+
+1. Ownership of added files. Pipe the added paths, for example from
+   `git diff --name-only --diff-filter=A <base>...HEAD`, to
+   `repo-harness run capability-resolver match --repo <repo> --paths-from - --format json`.
+   An entry with `"matched": false` has no capability owner. Have a
+   `repo-harness-architecture` worker claim it in the same branch.
+2. Documents. Run the `check` below. It can take a minute on a large model.
+   `freshness.staleNodes` names the capabilities whose generated sections are stale.
+
+Human-written sections have no drift signal. When a branch moves, renames or
+deletes a file or symbol, ask the worker to search the affected module pages
+for those names.
+
 ## Architecture documents
 
 Run `repo-harness architecture-projection check --json`. The result is an
