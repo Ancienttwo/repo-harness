@@ -6,45 +6,55 @@ applicability: required
 participants:
   - id: capability
     nodeId: capability.workflow-engine.inspection-migration
-  - id: component
+  - id: inspector
     nodeId: component.inspection-migration.primary
+  - id: contract
+    nodeId: capability.workflow-engine.contract-assets
 steps:
-  - id: dispatch
-    from: capability
-    to: component
-    label: "Dispatch Repository Inspector Process"
+  - id: load-contract
+    from: inspector
+    to: contract
+    label: "Load legacy paths and upgrade actions from the package workflow contract"
     evidence:
       entrypointId: entrypoint.inspection-migration.primary
-      sourceSymbol: "runProcess"
+      sourceSymbol: "inspectRepo"
+      sinkId: sink.inspection-migration.contract
+  - id: detect-mode
+    from: capability
+    to: inspector
+    label: "Detect the repository mode without writes"
+    evidence:
+      entrypointId: entrypoint.inspection-migration.primary
+      sourceSymbol: "inspectRepo"
       sinkId: sink.inspection-migration.primary
 outcomes:
   - id: success
     kind: success
-    label: "Inspect before migration completes"
+    label: "Inspection completes"
     steps:
-      - id: invoke-success
+      - id: record-drift
         from: capability
-        to: component
-        label: "Invoke Repository Inspector Process"
+        to: inspector
+        label: "Record drift signals and required decisions"
         evidence:
           entrypointId: entrypoint.inspection-migration.primary
-          sourceSymbol: "runProcess"
-          sinkId: sink.inspection-migration.primary
+          sourceSymbol: "inspectRepo"
+          sinkId: sink.inspection-migration.hook-drift
     terminal:
-      participant: capability
-      label: Return success receipt
+      participant: inspector
+      label: "Return the read-only inspection result"
   - id: error
     kind: error
-    label: "Inspect before migration is rejected or fails"
+    label: "The package contract is missing or malformed"
     steps:
-      - id: invoke-error
-        from: capability
-        to: component
-        label: "Propagate Repository Inspector Process failure"
+      - id: contract-fails
+        from: inspector
+        to: contract
+        label: "Fail closed on an unreadable contract inventory"
         evidence:
           entrypointId: entrypoint.inspection-migration.primary
-          sourceSymbol: "runProcess"
-          sinkId: sink.inspection-migration.primary
+          sourceSymbol: "inspectRepo"
+          sinkId: sink.inspection-migration.contract
     terminal:
       participant: capability
-      label: Return typed failure
+      label: "Exit non-zero without writes"

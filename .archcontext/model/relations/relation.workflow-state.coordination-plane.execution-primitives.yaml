@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.workflow-state.coordination-plane.execution-primitives
+kind: calls
+source: component.workflow-state.coordination-plane
+target: capability.workflow-engine.execution-primitives
+intent: "Take task and backlog locks and read the worktree topology"

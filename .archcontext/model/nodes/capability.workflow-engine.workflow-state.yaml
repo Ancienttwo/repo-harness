@@ -1,0 +1,96 @@
+schemaVersion: archcontext.node/v2
+id: capability.workflow-engine.workflow-state
+kind: capability
+name: Workflow State
+status: active
+summary: Resolves the one deterministic Effective State projection and owns the shared coordination plane and the continuation ledger.
+responsibilities:
+  - Project repository workflow artifacts into one deterministic Effective State. The JSON cache and tasks/current.md stay replaceable read models.
+  - Own Sprint task identity, the four-state lease machine with claim fencing, and the lock-free read-only board.
+  - Own the continuation envelope and the append-only attempt ledger with its no-progress breaker.
+  - Keep src/core/state and src/core/workflow pure. Effects do IO under directory locks.
+source:
+  include:
+    - src/core/state/**
+    - src/effects/state/**
+    - src/core/workflow/**
+    - interfaces/**
+    - src/core/worktree-location.mjs
+    - src/core/worktree-location.d.mts
+    - src/cli/commands/state.ts
+    - src/cli/commands/sprint.ts
+    - scripts/check-state-boundaries.ts
+    - scripts/sprint-backlog.sh
+  entrypoints:
+    - id: entrypoint.workflow-state.primary
+      path: src/effects/state/resolve-effective-state.ts
+      symbols:
+        - name: resolveEffectiveState
+          sinks:
+            - id: sink.workflow-state.primary
+              path: src/effects/state/state-lock.ts
+              symbol: withStateLock
+        - name: resolveEffectiveStateUnlocked
+          sinks:
+            - id: sink.workflow-state.project
+              path: src/core/state/project-effective-state.ts
+              symbol: projectEffectiveState
+        - name: resolveAndCommitEffectiveState
+          sinks:
+            - id: sink.workflow-state.version-commit
+              path: src/effects/state/git-state-version-store.ts
+              symbol: commitStateVersionAfter
+    - id: entrypoint.workflow-state.state-lock
+      path: src/effects/state/state-lock.ts
+      symbols:
+        - name: withStateLock
+          sinks:
+            - id: sink.workflow-state.directory-lock
+              path: src/effects/locking/exclusive-directory-lock.ts
+              symbol: withExclusiveDirectoryLock
+    - id: entrypoint.workflow-state.version-owner
+      path: src/effects/state/git-state-version-store.ts
+      symbols:
+        - name: commitStateVersionAfter
+          sinks:
+            - id: sink.workflow-state.git-common-dir
+              path: src/effects/git/common-directory.ts
+              symbol: resolveGitCommonDirectory
+    - id: entrypoint.workflow-state.board
+      path: src/effects/state/resolve-board.ts
+      symbols:
+        - name: resolveBoard
+          sinks:
+            - id: sink.workflow-state.board-inputs
+              path: src/effects/state/collect-board-inputs.ts
+              symbol: collectBoardInputs
+        - name: collectProjectCollect
+          sinks:
+            - id: sink.workflow-state.board-projection
+              path: src/core/state/project-board.ts
+              symbol: projectBoard
+    - id: entrypoint.workflow-state.board-inputs
+      path: src/effects/state/collect-board-inputs.ts
+      symbols:
+        - name: collectBoardInputs
+          sinks:
+            - id: sink.workflow-state.worktree-topology
+              path: src/effects/git/worktree-topology.ts
+              symbol: readWorktreeTopology
+        - name: observeOwnerWorktree
+          sinks:
+            - id: sink.workflow-state.owner-state
+              path: src/effects/state/resolve-effective-state.ts
+              symbol: resolveEffectiveStateReadOnly
+            - id: sink.workflow-state.owner-attempts
+              path: src/core/state/attempt-ledger.ts
+              symbol: parseAttemptLedger
+extensions:
+  contractFiles:
+    agents: AGENTS.md
+    claude: CLAUDE.md
+  lspProfile: typescript-lsp
+  verification:
+    - bun run check:type
+    - bun run check:state-boundaries
+    - bun run test:files tests/state/cli-state-golden.test.ts tests/state/state-concurrency.test.ts tests/state/state-effects.test.ts tests/state/adapter-parity.test.ts tests/effective-state.test.ts tests/coordination-lease-store.test.ts tests/board-projection.test.ts tests/continuation-envelope.test.ts tests/cli/sprint.test.ts tests/cli/state-command.test.ts tests/unit/sprint-schema-migrate.test.ts --timeout 60000 --max-concurrency 1

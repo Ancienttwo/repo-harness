@@ -1,0 +1,31 @@
+schemaVersion: archcontext.node/v2
+id: component.contract-assets.planning-helpers
+kind: component
+name: Planning Helpers
+status: active
+parent: capability.workflow-engine.contract-assets
+summary: Runs contract-listed planning, triage and factor-lab helpers through the protected helper runner.
+responsibilities:
+  - Resolve only helper ids that the workflow contract lists and run them as bounded children with a protected environment.
+  - Own the plan, spec, sprint, triage and factor-lab helper scripts.
+  - Own the run and brain CLI commands.
+source:
+  include:
+    - scripts/new-spec.sh
+    - scripts/new-sprint.sh
+    - scripts/new-plan.sh
+    - scripts/capture-plan.sh
+    - scripts/plan-to-todo.sh
+    - scripts/switch-plan.sh
+    - scripts/classify-historical-plans.ts
+    - scripts/ensure-task-workflow.sh
+    - scripts/refresh-current-status.sh
+    - scripts/summarize-failures.sh
+    - scripts/maintenance-triage.sh
+    - scripts/heartbeat-triage.sh
+    - scripts/check-deploy-sql-order.sh
+    - scripts/factor-lab-*.sh
+    - src/effects/runtime/helper-runner.ts
+    - src/cli/commands/run.ts
+    - src/cli/commands/brain.ts
+    - src/cli/commands/brain-root.ts

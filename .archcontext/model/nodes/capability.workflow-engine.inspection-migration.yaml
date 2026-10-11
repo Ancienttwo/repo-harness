@@ -12,15 +12,23 @@ source:
     - "scripts/create-project-dirs.sh"
     - "scripts/init-project.sh"
     - "scripts/lib/**"
+    - "scripts/AGENTS.md"
+    - "scripts/CLAUDE.md"
   entrypoints:
     - id: entrypoint.inspection-migration.primary
-      path: "src/cli/commands/init.ts"
+      path: "scripts/inspect-project-state.ts"
       symbols:
-        - name: "runProcess"
+        - name: "inspectRepo"
           sinks:
             - id: sink.inspection-migration.primary
-              path: "src/effects/process-runner.ts"
-              symbol: "runProcess"
+              path: "scripts/inspect-project-state.ts"
+              symbol: "detectMode"
+            - id: sink.inspection-migration.contract
+              path: "scripts/workflow-contract.ts"
+              symbol: "loadWorkflowContract"
+            - id: sink.inspection-migration.hook-drift
+              path: "scripts/inspect-project-state.ts"
+              symbol: "hasCustomClaudeHooks"
 extensions:
   contractFiles:
     agents: "scripts/AGENTS.md"

@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.contract-assets.template-projection.adoption
+kind: calls
+source: component.contract-assets.template-projection
+target: capability.public-surface.adoption
+intent: "Plan and apply the transactional adoption for repository init"

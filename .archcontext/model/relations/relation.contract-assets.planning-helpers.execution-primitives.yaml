@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.contract-assets.planning-helpers.execution-primitives
+kind: calls
+source: component.contract-assets.planning-helpers
+target: capability.workflow-engine.execution-primitives
+intent: "Run each helper as a bounded child process"

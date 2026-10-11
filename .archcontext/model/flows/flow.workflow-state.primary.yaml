@@ -1,0 +1,68 @@
+schemaVersion: archcontext.flow/v1
+id: flow.workflow-state.primary
+capabilityId: capability.workflow-engine.workflow-state
+name: Resolve and publish Effective State
+applicability: required
+participants:
+  - id: capability
+    nodeId: capability.workflow-engine.workflow-state
+  - id: resolver
+    nodeId: component.workflow-state.primary
+  - id: primitives
+    nodeId: capability.workflow-engine.execution-primitives
+steps:
+  - id: serialize
+    from: capability
+    to: resolver
+    label: Serialize resolution under the repository state lock
+    evidence:
+      entrypointId: entrypoint.workflow-state.primary
+      sourceSymbol: resolveEffectiveState
+      sinkId: sink.workflow-state.primary
+  - id: take-lock
+    from: resolver
+    to: primitives
+    label: Take the canonical-ancestor directory-token lock
+    evidence:
+      entrypointId: entrypoint.workflow-state.state-lock
+      sourceSymbol: withStateLock
+      sinkId: sink.workflow-state.directory-lock
+  - id: project
+    from: capability
+    to: resolver
+    label: Collect artifacts with a stability re-read and project the pure state
+    evidence:
+      entrypointId: entrypoint.workflow-state.primary
+      sourceSymbol: resolveEffectiveStateUnlocked
+      sinkId: sink.workflow-state.project
+outcomes:
+  - id: success
+    kind: success
+    label: Sources stay stable and both writes succeed
+    steps:
+      - id: commit-version
+        from: resolver
+        to: primitives
+        label: Publish the cache and then commit the shared version owner under the Git common dir
+        evidence:
+          entrypointId: entrypoint.workflow-state.version-owner
+          sourceSymbol: commitStateVersionAfter
+          sinkId: sink.workflow-state.git-common-dir
+    terminal:
+      participant: resolver
+      label: Return the Effective State with its state_version
+  - id: error
+    kind: error
+    label: Owner commit fails or sources move after the stability loop
+    steps:
+      - id: rollback
+        from: capability
+        to: resolver
+        label: Restore the prior cache bytes and retry the whole round once on a source mismatch
+        evidence:
+          entrypointId: entrypoint.workflow-state.primary
+          sourceSymbol: resolveAndCommitEffectiveState
+          sinkId: sink.workflow-state.version-commit
+    terminal:
+      participant: capability
+      label: Throw a typed failure and expose no consumed version

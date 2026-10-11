@@ -1,0 +1,19 @@
+schemaVersion: archcontext.node/v2
+id: component.contract-assets.capability-registry
+kind: component
+name: Capability Registry
+status: active
+parent: capability.workflow-engine.contract-assets
+summary: Maps archcontext capability nodes to path prefixes and resolves one owner per path by longest prefix.
+responsibilities:
+  - Translate source.include entries to exact files or dir prefixes and reject exclude and wildcard shapes.
+  - Validate duplicate prefixes and ambiguous matches and fail closed.
+  - Serve the resolver CLI, capability config and capability context commands.
+source:
+  include:
+    - .archcontext/**
+    - src/core/capabilities/**
+    - scripts/capability-resolver.ts
+    - scripts/capability-config.ts
+    - src/cli/commands/capability-context.ts
+    - scripts/workstream-sync.sh
