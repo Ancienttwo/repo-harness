@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.workflow-state.coordination-plane.continuation-ledger
+kind: calls
+source: component.workflow-state.coordination-plane
+target: component.workflow-state.continuation-ledger
+intent: "Append claim attempt receipts and read owner ledgers as progress evidence"

@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.inspection-migration.primary.contract-assets
+kind: reads
+source: component.inspection-migration.primary
+target: capability.workflow-engine.contract-assets
+intent: "Read directory and legacy path inventory from the package workflow contract"

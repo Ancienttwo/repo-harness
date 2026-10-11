@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.contract-assets.primary.capability-registry
+kind: reads
+source: component.contract-assets.primary
+target: component.contract-assets.capability-registry
+intent: "Check context map entries against the capability registry"

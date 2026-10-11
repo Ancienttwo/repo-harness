@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.contract-assets.template-projection.global-runtime-reconciliation
+kind: calls
+source: component.contract-assets.template-projection
+target: capability.runtime-harness.global-runtime-reconciliation
+intent: "Initialize the architecture projection provider preference"

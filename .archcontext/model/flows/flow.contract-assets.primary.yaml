@@ -1,50 +1,60 @@
 schemaVersion: archcontext.flow/v1
 id: flow.contract-assets.primary
 capabilityId: capability.workflow-engine.contract-assets
-name: "Project the workflow contract"
+name: "Project helper copies from the workflow contract"
 applicability: required
 participants:
   - id: capability
     nodeId: capability.workflow-engine.contract-assets
-  - id: component
+  - id: projection
+    nodeId: component.contract-assets.template-projection
+  - id: contract
     nodeId: component.contract-assets.primary
 steps:
-  - id: dispatch
-    from: capability
-    to: component
-    label: "Dispatch Workflow Contract Asset"
+  - id: load-contract
+    from: projection
+    to: contract
+    label: "Load the package workflow contract"
     evidence:
       entrypointId: entrypoint.contract-assets.primary
-      sourceSymbol: "loadWorkflowContractAsset"
+      sourceSymbol: "main"
       sinkId: sink.contract-assets.primary
+  - id: list-helpers
+    from: projection
+    to: contract
+    label: "Read helpers.scripts as the only helper id list"
+    evidence:
+      entrypointId: entrypoint.contract-assets.primary
+      sourceSymbol: "main"
+      sinkId: sink.contract-assets.helper-inventory
 outcomes:
   - id: success
     kind: success
-    label: "Project the workflow contract completes"
+    label: "Every helper copy matches its source"
     steps:
-      - id: invoke-success
+      - id: write-copies
         from: capability
-        to: component
-        label: "Invoke Workflow Contract Asset"
+        to: projection
+        label: "Write byte and mode identical helper copies atomically"
         evidence:
           entrypointId: entrypoint.contract-assets.primary
-          sourceSymbol: "loadWorkflowContractAsset"
-          sinkId: sink.contract-assets.primary
+          sourceSymbol: "main"
+          sinkId: sink.contract-assets.projection-write
     terminal:
-      participant: capability
-      label: Return success receipt
+      participant: projection
+      label: "Helper copies equal the contract inventory"
   - id: error
     kind: error
-    label: "Project the workflow contract is rejected or fails"
+    label: "A helper copy drifts or the inventory is unsafe"
     steps:
-      - id: invoke-error
+      - id: report-drift
         from: capability
-        to: component
-        label: "Propagate Workflow Contract Asset failure"
+        to: projection
+        label: "Compare projected bytes and report drift in check mode"
         evidence:
           entrypointId: entrypoint.contract-assets.primary
-          sourceSymbol: "loadWorkflowContractAsset"
-          sinkId: sink.contract-assets.primary
+          sourceSymbol: "main"
+          sinkId: sink.contract-assets.projection-compare
     terminal:
       participant: capability
-      label: Return typed failure
+      label: "Exit non-zero without a partial projection"

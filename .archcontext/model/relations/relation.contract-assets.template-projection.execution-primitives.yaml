@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.contract-assets.template-projection.execution-primitives
+kind: calls
+source: component.contract-assets.template-projection
+target: capability.workflow-engine.execution-primitives
+intent: "Run init steps as bounded child processes"

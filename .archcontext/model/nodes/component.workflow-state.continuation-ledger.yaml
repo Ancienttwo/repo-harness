@@ -1,0 +1,18 @@
+schemaVersion: archcontext.node/v2
+id: component.workflow-state.continuation-ledger
+kind: component
+name: Continuation Ledger
+status: active
+parent: capability.workflow-engine.workflow-state
+summary: Routes the next loop action from read-only Effective State and stops a loop that makes no progress.
+responsibilities:
+  - Project one continuation envelope from Effective State and the active Sprint text with a first-match route table.
+  - Append attempt receipts to the ignored per-worktree ledger and fail closed on an unparseable line.
+  - Convert an actionable route to halt after two trailing completed attempts with an unchanged progress token.
+source:
+  include:
+    - src/core/state/attempt-ledger.ts
+    - src/core/state/no-progress.ts
+    - src/core/state/project-continuation-envelope.ts
+    - src/effects/state/attempt-ledger-store.ts
+    - src/effects/state/resolve-continuation-envelope.ts

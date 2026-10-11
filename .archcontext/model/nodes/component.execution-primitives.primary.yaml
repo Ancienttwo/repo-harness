@@ -1,0 +1,19 @@
+schemaVersion: archcontext.node/v2
+id: component.execution-primitives.primary
+kind: component
+name: Bounded Process And Lock Primitives
+status: active
+parent: capability.workflow-engine.execution-primitives
+summary: Spawns supervised children and holds canonical directory locks under the Git common dir.
+responsibilities:
+  - Spawn the supervisor and the process-group launcher, kill TERM then KILL, and reconcile the receipt with the exit status.
+  - Keep the expensive-run lock while a process group is not confirmed dead.
+  - Create lock directories one ancestor at a time and reject symlinks and identity changes.
+source:
+  include:
+    - src/effects/process-runner.ts
+    - src/effects/process-supervisor.ts
+    - src/effects/process-group-launcher.ts
+    - src/effects/expensive-run-lock.ts
+    - src/effects/locking/**
+    - src/effects/git/**
