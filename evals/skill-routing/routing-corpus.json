@@ -187,7 +187,7 @@
       "id": "pos-architecture-drift-zh",
       "lang": "zh",
       "kind": "positive",
-      "prompt": "这次改动跨了模块边界，帮我记一条架构漂移请求。",
+      "prompt": "这次改动把一个能力的职责移到了别的模块，帮我更新架构模型和投影出来的架构文档。",
       "expected_route": "repo-harness-architecture"
     },
     {
@@ -201,7 +201,7 @@
       "id": "pos-architecture-drift-en",
       "lang": "en",
       "kind": "positive",
-      "prompt": "This change crosses a module boundary — can you file an architecture drift request for it?",
+      "prompt": "This change moved a capability's responsibilities to another module — can you update the architecture model and the projected docs?",
       "expected_route": "repo-harness-architecture"
     },
     {
@@ -452,7 +452,7 @@
       "id": "status-architecture-request-zh",
       "lang": "zh",
       "kind": "status-only",
-      "prompt": "我们之前提的那个架构漂移请求，后来处理完了没？",
+      "prompt": "我们之前那个更新架构模型的 PR，后来合进去了没？",
       "expected_route": "none"
     },
     {
