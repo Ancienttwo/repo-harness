@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.operator.activity-feeds.hook-adapters
+kind: reads
+source: component.operator.activity-feeds
+target: capability.runtime-harness.hook-adapters
+intent: "Read the hook route registry and install profile components for the Hooks and Agents pages"

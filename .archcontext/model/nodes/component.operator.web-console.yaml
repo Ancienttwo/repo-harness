@@ -1,0 +1,24 @@
+schemaVersion: archcontext.node/v2
+id: component.operator.web-console
+kind: component
+name: Operator Web Console
+status: active
+parent: capability.runtime-harness.operator
+summary: Prebuilt read-only browser console that renders operator JSON observations.
+responsibilities:
+  - Fetch observations with GET only and decode each body with the shared core decoder before render.
+  - Render the Board, Repositories, Agents, Skills, Hooks, Architecture and System pages.
+  - Show every action as a link or a copyable Bot command; never send a write request.
+source:
+  include:
+    - src/operator-web/**
+    - vite.operator.config.ts
+  entrypoints:
+    - id: entrypoint.operator.web-dev-activity
+      path: src/operator-web/dev-activity.ts
+      symbols:
+        - name: fetchDevActivity
+          sinks:
+            - id: sink.operator.web-dev-activity-decode
+              path: src/core/dev-activity/decode.ts
+              symbol: decodeDevActivitySnapshot

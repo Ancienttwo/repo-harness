@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.operator.web-console.activity-feeds
+kind: calls
+source: component.operator.web-console
+target: component.operator.activity-feeds
+intent: "Decode the development activity and setup snapshots with the decoders the server uses"

@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.operator.architecture-view.model-reader
+kind: reads
+source: component.operator.architecture-view
+target: capability.runtime-harness.global-runtime-reconciliation
+intent: "List modules and export review prompts through the shared ArchitectureModelReader"

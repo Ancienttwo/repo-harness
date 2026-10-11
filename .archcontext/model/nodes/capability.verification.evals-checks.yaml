@@ -6,6 +6,8 @@ status: active
 summary: Runs repository verification, contract gates, benchmarks, and evaluation suites.
 responsibilities:
   - Own machine-verifiable checks, bounded verifier execution, and evaluation evidence.
+  - Own the test suite, CI coverage selection and the CI report.
+  - Own the workflow gate scripts that check task sync, task workflow and agent tooling.
 source:
   include:
     - "tests/**"
@@ -21,6 +23,18 @@ source:
     - "scripts/check-agent-tooling.sh"
     - "scripts/check-brain-manifest.sh"
     - "scripts/sync-brain-docs.sh"
+    - "bunfig.toml"
+    - ".github/**"
+    - "scripts/test-file-durations.json"
+    - "scripts/verification-plan.ts"
+    - "scripts/migrate-verification-plan.ts"
+    - "scripts/check-ci.sh"
+    - "scripts/select-ci-coverage.ts"
+    - "scripts/replay-ci-coverage.ts"
+    - "scripts/report-ci.ts"
+    - "scripts/select-test-suite.ts"
+    - "scripts/ci-documentation-consumers.ts"
+    - "scripts/harness-trace-grade.sh"
   entrypoints:
     - id: entrypoint.evals-checks.primary
       path: "src/effects/evidence/verification-execution.ts"

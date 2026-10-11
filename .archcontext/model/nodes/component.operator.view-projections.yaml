@@ -1,0 +1,14 @@
+schemaVersion: archcontext.node/v2
+id: component.operator.view-projections
+kind: component
+name: Operator View Projections
+status: active
+parent: capability.runtime-harness.operator
+summary: Pure projections, route parsers and strict decoders for every operator observation schema.
+responsibilities:
+  - Project Fleet, collaboration, planning, organization, decision and task reads into public snapshot shapes.
+  - Decode each public schema with exact field sets so the server and the web console share one contract.
+  - Parse closed request shapes for task and architecture routes before any process starts.
+source:
+  include:
+    - src/core/operator/**
