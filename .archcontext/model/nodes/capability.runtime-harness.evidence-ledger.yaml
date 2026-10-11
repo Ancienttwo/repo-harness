@@ -1,0 +1,64 @@
+schemaVersion: archcontext.node/v2
+id: capability.runtime-harness.evidence-ledger
+kind: capability
+name: Evidence Ledger
+status: active
+summary: Appends and folds the per-worktree harness evidence event log, stores write-once blobs and checkpoints, imports observed and attested evidence and materializes handoff and resume recovery views.
+responsibilities:
+  - Require a genesis record before the first append and build every event through the single writer construction path.
+  - Fold accepted events in append order with idempotency deduplication and supersession and truncate a corrupt tail into quarantine under the log lock.
+  - Store content-addressed write-once blobs and redact secrets by construction before persistence.
+  - Publish validated checkpoints atomically and resolve them only through the last-published marker.
+  - Import PostBash observations only as observed events and attested receipts only through the closed trust mapping.
+  - Render handoff and resume views from the validated checkpoint projection and live workflow context.
+  - Execute contract verification plans and record execution facts until the verification-plan split after arch-context#296.
+source:
+  include:
+    - "src/core/evidence/**"
+    - "src/effects/evidence/**"
+    - "scripts/evidence-gc.ts"
+    - "scripts/recovery-view-cli.ts"
+    - "scripts/prepare-handoff.sh"
+    - "scripts/prepare-codex-handoff.sh"
+    - "scripts/codex-handoff-resume.sh"
+  entrypoints:
+    - id: entrypoint.evidence-ledger.post-bash
+      path: "src/effects/evidence/post-bash-importer.ts"
+      symbols:
+        - name: "importPostBashObservation"
+          sinks:
+            - id: sink.evidence-ledger.append
+              path: "src/effects/evidence/event-log.ts"
+              symbol: "appendEvidenceEvent"
+    - id: entrypoint.evidence-ledger.checkpoint
+      path: "src/effects/evidence/checkpoint-store.ts"
+      symbols:
+        - name: "publishCheckpointFromLedger"
+          sinks:
+            - id: sink.evidence-ledger.accepted-events
+              path: "src/effects/evidence/event-log.ts"
+              symbol: "readAcceptedEvents"
+    - id: entrypoint.evidence-ledger.recovery
+      path: "src/effects/evidence/recovery-materializer.ts"
+      symbols:
+        - name: "resolveRecoveryEvidence"
+          sinks:
+            - id: sink.evidence-ledger.last-checkpoint
+              path: "src/effects/evidence/checkpoint-store.ts"
+              symbol: "resolveLastPublishedCheckpoint"
+    - id: entrypoint.evidence-ledger.log-read
+      path: "src/effects/evidence/event-log.ts"
+      symbols:
+        - name: "readLogSnapshot"
+          sinks:
+            - id: sink.evidence-ledger.corrupt-tail
+              path: "src/core/evidence/fold.ts"
+              symbol: "findCorruptTail"
+extensions:
+  contractFiles:
+    agents: "AGENTS.md"
+    claude: "CLAUDE.md"
+  lspProfile: "typescript-lsp"
+  verification:
+    - "bun run test:files tests/evidence-event-store.test.ts tests/evidence-checkpoint.test.ts tests/evidence-blob-store.test.ts tests/evidence-attested-import.test.ts tests/evidence-recovery-materializer.test.ts tests/evidence-post-bash-importer.test.ts tests/evidence-replay-recovery.test.ts tests/evidence-projection-drift.test.ts tests/codex-handoff-resume.test.ts --timeout 60000 --max-concurrency 1"
+    - "bun run check:type"

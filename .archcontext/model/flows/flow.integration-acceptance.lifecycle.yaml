@@ -8,6 +8,8 @@ participants:
     nodeId: capability.runtime-harness.integration-acceptance
   - id: evidence-schema
     nodeId: component.integration-acceptance.primary
+  - id: publication
+    nodeId: capability.organization.publication
 steps:
   - id: freeze-requirement
     from: integration-plane
@@ -17,6 +19,14 @@ steps:
       entrypointId: entrypoint.integration-acceptance.contract-canonical
       sourceSymbol: buildIntegrationContract
       sinkId: sink.integration-acceptance.contract-canonical
+  - id: observe-publication
+    from: integration-plane
+    to: publication
+    label: Read the cached immutable PublicationReceipt behind each current reviewing pointer
+    evidence:
+      entrypointId: entrypoint.integration-acceptance.publication-observation
+      sourceSymbol: observeSelectedPublication
+      sinkId: sink.integration-acceptance.publication-cache
   - id: freeze-candidate
     from: integration-plane
     to: evidence-schema

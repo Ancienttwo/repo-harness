@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.task-agent-host.evidence-ledger
+kind: calls
+source: capability.runtime-harness.task-agent-host
+target: capability.runtime-harness.evidence-ledger
+intent: "Hash request context and result bytes with the evidence canonical JSON"

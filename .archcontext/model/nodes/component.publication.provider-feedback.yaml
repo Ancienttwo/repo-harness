@@ -1,0 +1,16 @@
+schemaVersion: archcontext.node/v2
+id: component.publication.provider-feedback
+kind: component
+name: Provider Feedback
+status: active
+parent: capability.organization.publication
+summary: Owns manual GitHub feedback observation, immutable FeedbackEventV1 records, delivery receipts, repair attempts and the no-progress breaker.
+responsibilities:
+  - Persist provider facts as immutable events keyed by stable provider ids and keep mutable delivery state in separate files.
+  - Project pending repair offers for reopen or takeover without mutating the lease.
+  - Record completed repair attempts and report no_progress after repeated same-token attempts.
+source:
+  include:
+    - "src/core/publication/feedback.ts"
+    - "src/effects/publication/feedback.ts"
+    - "src/effects/publication/feedback-store.ts"

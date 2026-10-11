@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.publication.provider-feedback.primary
+kind: calls
+source: component.publication.provider-feedback
+target: component.publication.primary
+intent: "Read the current receipt and lifecycle pointer before feedback intake and repair projection"

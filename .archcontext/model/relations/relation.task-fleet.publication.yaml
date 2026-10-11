@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.task-fleet.publication
+kind: calls
+source: capability.organization.task-fleet
+target: capability.organization.publication
+intent: "Read publication receipts readiness and provider feedback for fleet commands and board cards"

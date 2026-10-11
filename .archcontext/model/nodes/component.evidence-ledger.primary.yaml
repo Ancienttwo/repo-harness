@@ -1,0 +1,16 @@
+schemaVersion: archcontext.node/v2
+id: component.evidence-ledger.primary
+kind: component
+name: Evidence Event Store
+status: active
+parent: capability.runtime-harness.evidence-ledger
+summary: Owns the event log, fold, blob store, redaction, checkpoints, importers, recovery views and the verification-plan executor; expandable after the verification-plan split.
+source:
+  include:
+    - "src/core/evidence/**"
+    - "src/effects/evidence/**"
+    - "scripts/evidence-gc.ts"
+    - "scripts/recovery-view-cli.ts"
+    - "scripts/prepare-handoff.sh"
+    - "scripts/prepare-codex-handoff.sh"
+    - "scripts/codex-handoff-resume.sh"

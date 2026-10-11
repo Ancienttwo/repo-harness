@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.task-fleet.repo-registry
+kind: reads
+source: capability.organization.task-fleet
+target: capability.runtime-harness.mcp-sidecar
+intent: "Read the strict repository registry snapshot for offer and board authorization"

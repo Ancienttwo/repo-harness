@@ -5,3 +5,13 @@ name: PM Task Operation Surface
 status: active
 parent: capability.runtime-harness.pm-dispatch
 summary: Adapts PM host requests to the existing task and OAR execution boundaries.
+source:
+  include:
+    - "src/core/pm/**"
+    - "src/effects/pm/**"
+    - "src/cli/commands/pm.ts"
+    - "src/effects/terminal/coding-isolation.ts"
+    - "src/effects/terminal/coding-session.ts"
+    - "src/effects/terminal/oar-coding-host.ts"
+    - "assets/hermes/**"
+    - "references/pm-operations.md"

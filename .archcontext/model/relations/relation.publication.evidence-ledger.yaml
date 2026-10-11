@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.publication.evidence-ledger
+kind: calls
+source: capability.organization.publication
+target: capability.runtime-harness.evidence-ledger
+intent: "Append lifecycle journal records through the durable evidence append primitive"

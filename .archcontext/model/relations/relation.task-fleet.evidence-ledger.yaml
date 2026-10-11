@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.task-fleet.evidence-ledger
+kind: calls
+source: capability.organization.task-fleet
+target: capability.runtime-harness.evidence-ledger
+intent: "Reuse canonical JSON and durable atomic append for task message records"

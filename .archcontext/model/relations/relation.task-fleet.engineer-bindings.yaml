@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.task-fleet.engineer-bindings
+kind: calls
+source: capability.organization.task-fleet
+target: capability.runtime-harness.engineer-bindings
+intent: "Validate principal claims and claim actor receipts before a steer reply is recorded"

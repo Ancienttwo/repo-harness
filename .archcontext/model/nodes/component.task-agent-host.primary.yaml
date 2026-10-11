@@ -1,0 +1,21 @@
+schemaVersion: archcontext.node/v2
+id: component.task-agent-host.primary
+kind: component
+name: Herdr Task Session Host
+status: active
+parent: capability.runtime-harness.task-agent-host
+summary: Owns the Herdr transport, task sessions, task worktrees, request readback, role profiles, the task-agent and Herdr commands and the installed persona and plugin assets.
+source:
+  include:
+    - "src/effects/terminal/herdr.ts"
+    - "src/effects/terminal/task-session.ts"
+    - "src/effects/terminal/task-worktree.ts"
+    - "src/effects/terminal/task-request-readback.ts"
+    - "src/effects/terminal/task-role-profiles.ts"
+    - "src/cli/commands/task-agent.ts"
+    - "src/cli/commands/herdr.ts"
+    - "src/cli/commands/herdr-skill.ts"
+    - "assets/herdr/**"
+    - "agents/fleet/**"
+    - ".codex/agents/**"
+    - "scripts/install-agent-fleet.sh"
