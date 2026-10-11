@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.mcp-sidecar.host-setup.coding-profile
+kind: calls
+source: component.mcp-sidecar.host-setup
+target: component.mcp-sidecar.coding-profile
+intent: "List and clean up managed coding workspaces"

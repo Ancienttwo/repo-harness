@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.chatgpt-browser.primary
+kind: calls
+source: capability.runtime-mcp.chatgpt-browser
+target: component.chatgpt-browser.primary
+intent: "Run a ChatGPT Web consult"

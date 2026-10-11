@@ -1,7 +1,31 @@
 schemaVersion: archcontext.node/v2
 id: component.mcp-sidecar.primary
 kind: component
-name: "MCP Tool Dispatcher"
+name: "Server and Tool Dispatch"
 status: active
 parent: capability.runtime-harness.mcp-sidecar
-summary: "Executes the reviewed dispatch an mcp tool call boundary."
+summary: "Builds one MCP server per context and dispatches every tool call to the exact profile tool block."
+responsibilities:
+  - Build the server instructions and the closed tool inventory for the selected profile.
+  - Route each tool call to the state, Engineer, collaboration, Fleet, coding or reader block.
+  - Serve the PM MCP binding beside the main server.
+source:
+  include:
+    - src/cli/mcp/server.ts
+    - src/cli/mcp/tools.ts
+    - src/cli/mcp/state-tools.ts
+    - src/cli/mcp/engineer-tools.ts
+    - src/cli/mcp/collaboration-tools.ts
+    - src/cli/mcp/fleet-tools.ts
+    - src/cli/mcp/pm-server.ts
+    - src/cli/mcp/instructions.ts
+    - src/cli/mcp/version.ts
+  entrypoints:
+    - id: entrypoint.mcp-sidecar.tool-dispatch
+      path: src/cli/mcp/tools.ts
+      symbols:
+        - name: callMcpTool
+          sinks:
+            - id: sink.mcp-sidecar.path-policy
+              path: src/cli/mcp/paths.ts
+              symbol: resolveMcpPath

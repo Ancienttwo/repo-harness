@@ -1,0 +1,50 @@
+schemaVersion: archcontext.flow/v1
+id: flow.action-commands.profile-projection
+capabilityId: capability.public-surface.action-commands
+name: Select the skill projection for a profile
+applicability: required
+participants:
+  - id: capability
+    nodeId: capability.public-surface.action-commands
+  - id: catalog
+    nodeId: component.action-commands.skill-surface-catalog
+steps:
+  - id: select-facades
+    from: capability
+    to: catalog
+    label: Compute the facade set for the requested profile
+    evidence:
+      entrypointId: entrypoint.action-commands.profile-projection
+      sourceSymbol: main
+      sinkId: sink.action-commands.facades-for-profile
+outcomes:
+  - id: success
+    kind: success
+    label: Projection is printed for the sync script
+    steps:
+      - id: print-projection
+        from: capability
+        to: catalog
+        label: Print facades and host placements from the same selector the catalog self-check uses
+        evidence:
+          entrypointId: entrypoint.action-commands.profile-projection
+          sourceSymbol: main
+          sinkId: sink.action-commands.facades-for-profile
+    terminal:
+      participant: capability
+      label: Return the profile projection
+  - id: error
+    kind: error
+    label: Manifest is missing or invalid
+    steps:
+      - id: reject-catalog
+        from: capability
+        to: catalog
+        label: Parse manifest.json and print every diagnostic when it is not valid
+        evidence:
+          entrypointId: entrypoint.action-commands.profile-projection
+          sourceSymbol: loadCatalog
+          sinkId: sink.action-commands.parse-catalog
+    terminal:
+      participant: capability
+      label: Exit nonzero before any host mutation

@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.strategy-reflection.primary
+kind: calls
+source: capability.public-surface.strategy-reflection
+target: component.strategy-reflection.primary
+intent: "Collect strategy context and validate a proposal"

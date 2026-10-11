@@ -1,0 +1,50 @@
+schemaVersion: archcontext.flow/v1
+id: flow.strategy-reflection.primary
+capabilityId: capability.public-surface.strategy-reflection
+name: Collect strategy context and validate a proposal
+applicability: required
+participants:
+  - id: capability
+    nodeId: capability.public-surface.strategy-reflection
+  - id: collector
+    nodeId: component.strategy-reflection.primary
+steps:
+  - id: collect-context
+    from: capability
+    to: collector
+    label: strategy context reads the document and evidence under the request budget
+    evidence:
+      entrypointId: entrypoint.strategy-reflection.primary
+      sourceSymbol: buildStrategyCommand
+      sinkId: sink.strategy-reflection.primary
+outcomes:
+  - id: success
+    kind: success
+    label: Digest-bound context packet is exported
+    steps:
+      - id: export-packet
+        from: capability
+        to: collector
+        label: Export the packet with unknowns and truncation explicit and executionAuthorized false
+        evidence:
+          entrypointId: entrypoint.strategy-reflection.primary
+          sourceSymbol: buildStrategyCommand
+          sinkId: sink.strategy-reflection.primary
+    terminal:
+      participant: capability
+      label: Print the context packet as JSON
+  - id: error
+    kind: error
+    label: Proposal is invalid, stale or blocked
+    steps:
+      - id: validate-proposal
+        from: capability
+        to: collector
+        label: Validate the proposal against a fresh packet and reject forged provenance or a changed digest
+        evidence:
+          entrypointId: entrypoint.strategy-reflection.primary
+          sourceSymbol: buildStrategyCommand
+          sinkId: sink.strategy-reflection.validate
+    terminal:
+      participant: capability
+      label: Exit 1 with a status that never authorizes execution

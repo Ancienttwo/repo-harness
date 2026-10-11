@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.mcp-sidecar.primary.codegraph-readiness
+kind: calls
+source: component.mcp-sidecar.primary
+target: capability.verification.codegraph-readiness
+intent: "Construct the CodeGraph index adapter with repo-local binaries refused"

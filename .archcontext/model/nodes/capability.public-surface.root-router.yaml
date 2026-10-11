@@ -14,6 +14,12 @@ source:
     - "AGENTS.md"
     - "CLAUDE.md"
     - "docs/spec.md"
+    - "README.es.md"
+    - "README.fr.md"
+    - "README.ja.md"
+    - "README.zh-CN.md"
+    - "references/arch/**"
+    - "src/cli/commands/docs.ts"
   entrypoints:
     - id: entrypoint.root-router.primary
       path: "src/cli/commands/adoption-plan.ts"

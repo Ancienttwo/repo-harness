@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.mcp-sidecar.transport-auth.repo-policy-registry
+kind: reads
+source: component.mcp-sidecar.transport-auth
+target: component.mcp-sidecar.repo-policy-registry
+intent: "Load the local config and credentials at startup and recheck the profile on each new session"

@@ -6,6 +6,7 @@ status: active
 summary: Provides the local MCP sidecar and its repository access policy boundary.
 responsibilities:
   - Own MCP lifecycle, workspace registration, access policy, and local browser integration.
+  - Own the shared secret token patterns that MCP redaction and the operator architecture reads use.
   - Bind authorization-scoped MCP sessions to verified OAuth authorization IDs and expose the closed Engineer tool inventory without a coding runtime.
   - Extend that same closed inventory with the bounded collaboration block rather than opening a second profile, and keep the live doctor's expected inventory built from the same composition the server serves.
 source:
@@ -17,6 +18,7 @@ source:
     - "docs/repo-harness-chatgpt-mcp-setup.md"
     - "docs/reference-configs/chatgpt-coding-mcp.md"
     - "docs/researches/20260711-devspace-chatgpt-local-control.md"
+    - "src/core/security/**"
   entrypoints:
     - id: entrypoint.mcp-sidecar.primary
       path: "src/cli/mcp/server.ts"

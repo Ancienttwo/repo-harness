@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.strategy-reflection.primary.skill-surface-catalog
+kind: calls
+source: component.strategy-reflection.primary
+target: component.action-commands.skill-surface-catalog
+intent: "Read the skill catalog to keep the strategy skill explicit-setup before projection"

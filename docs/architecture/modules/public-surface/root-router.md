@@ -1,8 +1,8 @@
 # public-surface/root-router 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-root-router" sourceDigest="sha256:0ef4598222b136202f28cce16cedc9aa3c5400ac174b4d7cae7b141a2e58677d" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:680ff6695a68e7ffccd5290cb4476171d8bff7cbe0f13cfab495b7ff09d20a21" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-root-router" sourceDigest="sha256:403073375c00d5903b6fd1661307287416ab031674500100c5ca779c320647ff" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:54de3adbee51d2321750d692c6a63b9ce3c1871c91282d491ec56ced218b0a72" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.public-surface.root-router`(kind `capability`)
-> **Matched Prefixes**:`SKILL.md`、`references/pm-boundary.md`、`README.md`、`AGENTS.md`、`CLAUDE.md`、`docs/spec.md`
+> **Matched Prefixes**:`SKILL.md`、`references/pm-boundary.md`、`README.md`、`AGENTS.md`、`CLAUDE.md`、`docs/spec.md`、`README.es.md`、`README.fr.md`、`README.ja.md`、`README.zh-CN.md`、`references/arch/**`、`src/cli/commands/docs.ts`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
@@ -34,8 +34,8 @@ flowchart LR
 
 ### 1.3 規模信號
 
-- 規模量級:`5–10` 個文件 / `1000–2000` 行
-- 匹配前綴:`SKILL.md`、`references/pm-boundary.md`、`README.md`、`AGENTS.md`、`CLAUDE.md`、`docs/spec.md`
+- 規模量級:`10–20` 個文件 / `5000–10000` 行
+- 匹配前綴:`SKILL.md`、`references/pm-boundary.md`、`README.md`、`AGENTS.md`、`CLAUDE.md`、`docs/spec.md`、`README.es.md`、`README.fr.md`、`README.ja.md`、`README.zh-CN.md`、`references/arch/**`、`src/cli/commands/docs.ts`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
 ### 1.4 依賴邊界
@@ -70,37 +70,48 @@ sequenceDiagram
 <!-- END ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-root-router" -->
 ## 3. P3：设计决策与不变量
 
-### 3.1 为什么路由器故意做薄
+工作流里可由机器检查的不变量太多，prose 无法保持它们正确。所以 policy 放在 contract、script 和 test 里。根文档只做路由和定向。`SKILL.md` 只给命令名和 reference 名，协议在被指向的文件里。
 
-工作流的机器可检查不变量太多，prose 无法保持正确。因此策略是：**policy 住在 contract、script 和 test 里；root 文档只做路由和定向**。`SKILL.md` 里没有一条可以脱离 CLI 单独执行的规则——它给的是命令名和 reference 名，真正的协议在被指向的文件里。
+### 3.1 必须保持的不变量
 
-2048 字节的天花板不是风格约束，是**常驻上下文预算**：每个 host、每个 session、在任何动作被选中之前都要加载它。测试注释把这层理由写死在 `tests/bootstrap-files.test.ts:48-51`，防止后人把它读成可协商的 lint 规则。
+1. **根 router 有 2048 字节的常驻预算。** 每个 host 在每个 session 选择动作之前都加载 `SKILL.md`。测试注释写明这是常驻成本预算，不是风格规则（`tests/bootstrap-files.test.ts:48-52`）。当前正文 1999 字节（含 frontmatter）。
+2. **五个动作封闭。** setup、plan、execute、verify、handoff 的序号和加粗格式被逐字断言。新增公开命令不能变成第六个动作，只能挂在现有动作下作为 facade。
+3. **状态权威唯一。** `repo-harness state resolve --json` 是唯一入口。其他文件只在这个 JSON 指向时才读。router 不缓存也不复述状态。
+4. **`AGENTS.md` 与 `CLAUDE.md` 是两份独立的普通文件，共享规则逐字相同。** 两个文件在 host 专属章节（`## Codex` 与 `## Claude Code`）之前的部分必须相等（`tests/bootstrap-files.test.ts:160-162`）。两者不能是 symlink，也不能用 `@` 引用对方（`:153-155`）。PR #486 恢复了这个形状。
+5. **内部步骤不是公共命令。** `hooks-init`、`docs-init`、`create-project-dirs` 永远不公开。
+6. **专用 skill 不进入隐式发现。** `repo-harness-setup`、`repo-harness-architecture`、`repo-harness-chatgpt`、`repo-harness-strategy` 的 `profiles: []` 加上 `cli-reference` 或 `explicit-setup` 的 discoverability，使它们只能经 router 或显式安装到达。
+7. **没有兼容回落。** install state 从 protocol 1 到 2 只有一条显式迁移路径（`--migrate-profile-state`）。越界一律失败。
 
-### 3.2 必须保持的不变量
+### 3.2 关键权衡
 
-1. **五动作封闭**：setup / plan / execute / verify / handoff，序号与加粗格式被逐字断言。新增公开命令不能变成第六个动作，只能挂在现有动作下的 facade。
-2. **状态权威单一**：`repo-harness state resolve --json` 是唯一入口，其他文件"只在该 JSON 指向时才读"。路由器自身不缓存、不复述状态。
-3. **AGENTS.md ≡ CLAUDE.md**：两个 host 契约必须字节相同。任何单侧编辑都是漂移。
-4. **公开面与内部步骤分离**：`hooks-init` / `docs-init` / `create-project-dirs` 永远不是公开命令。
-5. **profile 只增不诱导**：`repo-harness-setup`、`repo-harness-architecture`、`repo-harness-chatgpt` 的 `profiles: []` + `discoverability: cli-reference|explicit-setup` 意味着它们**永不被任何 profile 隐式发现**，只能经路由器或显式安装到达。这是把发现面压在五动作之内的关键机制。
-6. **无兼容回落**：protocol 1 → 2 只有一条显式迁移路径，越界一律 throw。
+| 决策 | 权衡 |
+| --- | --- |
+| router 做薄，细节放到 `references/*.md` 和 reference configs | 常驻上下文小，并且与命令数无关。代价是 agent 要多读一次被指向的文件。 |
+| 公开命令要在 manifest、README 和 `tests/action-command-skills.test.ts` 三处同步 | 新命令不会悄悄进入默认发现面。代价是每个新命令有固定的摩擦。 |
+| `AGENTS.md` 与 `CLAUDE.md` 重复共享规则，不互相引用（PR #486） | 每个 host 可以独立读懂自己的文件。代价是共享规则有两份，靠测试保持一致。历史 inspection 仍按全文差异给出 `root-agent-context-divergent` advisory（PR #486 风险段）。 |
+| 规划只有一个生命周期所有者：父 agent | `geju` 在 contract 之前扩展设计空间。P1/P2/P3 和最终计划仍由父 agent 负责。不需要依赖 host 的外部规划门。 |
 
 ### 3.3 10x 规模下先垮的点
 
-**先垮的是发现面，不是文件大小。** 当公开命令从当前的 ~10 个（`manifest.json#packages`，其中 4 个是 profile-facade，5 个是 external）涨到 100 个时：
+先垮的是发现面，文件大小不会先垮。公开命令从约 10 个涨到 100 个时：
 
-- `SKILL.md` 本身不会垮：五动作是常数级，2048 B 预算与命令数无关。
-- 垮的是 **`manifest.json#expectedProjections` 的组合爆炸**。当前它手写枚举 `facadesByProfile` × `externalSkillsByProfile` × `hostSkillPlacementsByProfile` 三张表，共 2 个 profile × 2 个 host。命令数 10x 后，这三张表要么手写维护失败，要么必须从 package 条目派生——但派生就意味着 profile 归属从"显式枚举"变成"计算结果"，会削弱当前"新命令默认不可发现"的 fail-closed 姿态。
-- 第二个压力点是 `retiredPackages`：当前 18 条退役映射全部内联在同一个 JSON 里。它是只增不减的，10x 后会超过 packages 本身的体积。
-
-当前形状是正确的最小选择：profile-bounded facade 让专用命令**可用但不默认进入模型上下文**，代价是每加一个公开命令要在 manifest、README、`tests/action-command-skills.test.ts` 三处同步——这个代价是刻意的摩擦，不是遗漏。
+- `SKILL.md` 不受影响。五个动作是常数，2048 字节预算与命令数无关。
+- `manifest.json#expectedProjections` 先出问题。它手写三张表（facade、external skill、host placement），覆盖 2 个 profile 和 3 个 host。命令数增长后，要么手写维护失败，要么改成从 package 条目派生。派生会削弱"新命令默认不可发现"。
+- `retiredPackages` 只增不减（当前 20 条）。它最终会比 `packages` 本身大。
 
 ### 3.4 已知漂移
 
 | 项 | 声明 | 工作树事实 | 判定 |
 | --- | --- | --- | --- |
-| workstream 目录 | `.ai/context/capabilities.json` 声明 `tasks/workstreams/public-surface/root-router` | 目录不存在（`tasks/workstreams/public-surface/` 整个缺失） | **声明未落地**。该 capability 至今没有产生过需要跨会话承载的 durable progress；不是错误，但注册表与磁盘不一致 |
-| verify 命令形态 | `docs/spec.md:36` 规定 canonical helper 调用是 `repo-harness run <helper>`；`AGENTS.md:66` 用 `repo-harness run check-task-workflow` | `README.md:96` 的 Get Started 第 4 步写 `bash scripts/check-task-workflow.sh` | 在本自托管仓库两者都可执行（`scripts/check-task-workflow.sh` 存在，且 `docs/spec.md:46` 明确 root `scripts/` 是自托管 source/runtime）；但 README 是**下游读者**的入口，展示的是非 canonical 形态 |
+| verify 命令形态 | `docs/spec.md:58`、`:182` 规定 canonical helper 调用是 `repo-harness run <helper>` | `README.md:117` 写 `bash scripts/check-task-workflow.sh` | 本自托管仓库两种都能运行。README 是下游读者的入口，它展示的是非 canonical 形态。 |
+| 本文旧版的 workstream 漂移 | 旧版引用 `.ai/context/capabilities.json` 声明的 `tasks/workstreams/public-surface/root-router` | `.ai/context/capabilities.json` 已不存在；`.ai/context/context-map.json:92` 只声明 `tasks/workstreams/**/*.md` 模式 | 旧条目失效，已删除。 |
+
+### 3.5 归属与开放问题（2026-10-11）
+
+- include 增加原本没有归属的路径：四个 README 译本、`references/arch/**` 和 `src/cli/commands/docs.ts`。没有删除任何条目。
+- `src/cli/commands/docs.ts` 列出并读取 `assets/reference-configs/*.md`（`docs.ts:15`）。归属提议说它解析 `references/*.md`，这与源码不符。它的数据归 contract-assets。命令归本 capability，是因为 `repo-harness docs` 是面向用户的文档入口。这个选择的置信度是 MEDIUM。
+- `references/arch/**`（7 个技术栈推荐文档，来自 2026-03-19 的初始提交）在仓库里没有任何引用者。它应该保留为 router 的参考材料，还是退役？没有记录。
+- `SKILL.md` 指向 `references/bot-control.md`、`references/dot-pm-control.md` 和 `references/handoff.md`。这些文件和 `references/` 下其他松散文档目前没有归属。`references/pm-boundary.md` 归本 capability，`references/pm-operations.md` 归 pm-dispatch。
 
 ## 4. 历史决策记录（append-only）
 
@@ -198,7 +209,14 @@ commands available without making them default model context.
 - P2 第二条 route 中"`repo-harness init --repo <repo>` -> the command runs `inspect-project-state.ts`"——**与源码冲突**。`src/cli/**` 对 `inspect-project-state` 零引用；该探测是 `repo-harness-setup` 的 Shared Preflight 第 ② 步（`assets/skills/repo-harness-setup/SKILL.md:16`），发生在 mode selection **之前**、`init` 调用**之前**。所有者与时序两处都不同，正确形态见 §2.1。
 - P3 的三段判断——**复验通过**，§3 在其基础上补了 manifest 组合爆炸这个具体的 10x 失效机制。
 
+### 2026-10-11 归属扩展与 P3 复核
+
+- include 增加 `README.es.md`、`README.fr.md`、`README.ja.md`、`README.zh-CN.md`、`references/arch/**` 和 `src/cli/commands/docs.ts`。
+- §3.1 第 4 条按 PR #486 和 `tests/bootstrap-files.test.ts:160-162` 改写：两个 host 契约只要求共享规则相同，不再要求整个文件逐字节相同。
+
 ## Optimization Backlog
 
 - Keep the root router body at or below 2KB and default installed discovery at five actions or fewer.
 - If another public command is added, update `assets/skill-commands/manifest.json`, README, and `tests/action-command-skills.test.ts` in the same slice.
+- `references/*.md` 中 10 个没有归属的松散文档等待 arch-context#296 或 `source.exclude` 支持。目录 glob `references/**` 会让 `references/pm-operations.md`（pm-dispatch）变成重复归属。按用户决定，不用显式文件列表绕过。
+- 决定 `references/arch/**` 保留还是退役（见 §3.5）。
