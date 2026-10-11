@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdirSync, rmSync, writeFileSync } from 'fs';
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { runGlobalRuntimeSetup } from '../../src/cli/commands/global-runtime';
+import { runGlobalRuntimeSetup, updateLeftoverSummary } from '../../src/cli/commands/global-runtime';
 
 /**
  * Regression guard for the #169 base-dropping class on the setup-global surface.
@@ -81,6 +81,51 @@ describe('global runtime setup command env base', () => {
       const source = join(tmp, 'installed', 'repo-harness');
       mkdirSync(source, { recursive: true });
       expect(runWithSeededHome(source, home)).toThrow(statePath);
+    });
+  });
+});
+
+describe('update leftover summary', () => {
+  // The fake Bun stands in for the package entrypoint and prints a fixed upgrade --json result.
+  function withFakeUpgrade(stdout: string, stderr: string, body: () => void): void {
+    const root = mkdtempSync(join(tmpdir(), 'repo-harness-update-leftovers-'));
+    const previous = process.env.REPO_HARNESS_BUN_EXECUTABLE;
+    try {
+      const bun = join(root, 'bun');
+      writeFileSync(join(root, 'stdout.json'), stdout);
+      writeFileSync(bun, `#!/bin/bash\ncat "${join(root, 'stdout.json')}"\nprintf '%s' '${stderr}' >&2\nexit 1\n`);
+      chmodSync(bun, 0o755);
+      process.env.REPO_HARNESS_BUN_EXECUTABLE = bun;
+      body();
+    } finally {
+      if (previous === undefined) delete process.env.REPO_HARNESS_BUN_EXECUTABLE;
+      else process.env.REPO_HARNESS_BUN_EXECUTABLE = previous;
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+
+  test('counts a payload above the default output cap with secret-like path segments', () => {
+    const items = Array.from({ length: 400 }, (_, index) => ({
+      location: 'global',
+      surface: 'skill',
+      path: `/fixture/token=abc/skill-${index}`,
+      retiredBy: 'fixture',
+      ownership: index === 0 ? 'owned-clean' : 'unowned',
+      proof: null,
+      action: index === 0 ? 'remove' : 'report',
+      reason: 'Fixture leftover for the update summary parser.',
+    }));
+    const payload = `${JSON.stringify(items, null, 2)}\n`;
+    expect(Buffer.byteLength(payload)).toBeGreaterThan(64 * 1024);
+    withFakeUpgrade(payload, '', () => {
+      expect(updateLeftoverSummary(tmpdir(), false)).toBe('400 leftovers (1 removable). Run: repo-harness upgrade');
+    });
+  });
+
+  test('reports a failed check as a warning with redacted error text', () => {
+    withFakeUpgrade('[]\n', 'catalog failed token=hunter2', () => {
+      expect(updateLeftoverSummary(tmpdir(), false))
+        .toBe('Leftover check failed: catalog failed token=[redacted]. Run: repo-harness upgrade');
     });
   });
 });

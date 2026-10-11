@@ -14,7 +14,7 @@ import { runInstall, type InstallTargetSpec } from "./install";
 import { configureRequiredHerdrSkill } from "./herdr-skill";
 import { compareVersions, readLatestPackageVersion } from "./doctor";
 import { configureCodegraph } from "../tools/codegraph";
-import { runProcess as runBoundedProcess } from "../../effects/process-runner";
+import { DEFAULT_PROCESS_MAX_BUFFER_BYTES, redactProcessOutput, runProcess as runBoundedProcess } from "../../effects/process-runner";
 import { formatLegacyLeftoverSummary, type LeftoverItem } from "../../core/upgrade/legacy-inventory";
 import { commitVerifiedSkillTree, skillTreeSha256 } from "../../effects/skill-tree-integrity";
 import {
@@ -787,16 +787,23 @@ export function updateLeftoverSummary(cwd: string, installedCli: boolean): strin
   const env = bindBunRuntimeEnv(commandEnv(defaultSourceRoot()), bunExecutable);
   const packageRoot = installedCli ? bunGlobalPackageRoot(env) : defaultSourceRoot();
   if (packageRoot === null) return leftoverCheckWarning('unable to resolve the installed package root');
-  const check = runProcess(bunExecutable, [join(realPathOrResolved(packageRoot), 'src', 'cli', 'index.ts'), 'upgrade', '--json'], cwd, env);
+  // Parse the payload before any redaction or cap: a path such as token=x
+  // would otherwise lose its closing quote. Only the parsed count is printed.
+  const check = runBoundedProcess(bunExecutable, [join(realPathOrResolved(packageRoot), 'src', 'cli', 'index.ts'), 'upgrade', '--json'], {
+    cwd,
+    env,
+    redactions: [],
+    maxOutputBytes: DEFAULT_PROCESS_MAX_BUFFER_BYTES,
+  });
   let items: unknown;
   try {
-    items = JSON.parse(check.stdout ?? '');
+    items = JSON.parse(check.stdout);
   } catch (_error) {
     items = null;
   }
   // The check exits 1 when leftovers exist. An empty list with exit 1 is a failed check.
-  if (!Array.isArray(items) || (check.status === 'failed' && items.length === 0)) {
-    return leftoverCheckWarning(check.stderr?.trim() || 'upgrade --json returned no leftover list');
+  if (!Array.isArray(items) || (!check.ok && items.length === 0)) {
+    return leftoverCheckWarning(redactProcessOutput((check.stderr || check.error).trim()) || 'upgrade --json returned no leftover list');
   }
   return formatLegacyLeftoverSummary(items as LeftoverItem[]);
 }
