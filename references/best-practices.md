@@ -197,16 +197,15 @@ npx @biomejs/biome init
 ```yaml
 # .github/workflows/ci.yml
 name: CI
-# PR CI covers candidate branches. Push CI runs only on the default branch,
-# so one commit never runs both lanes.
+# Run checks once per PR head. Require branches to be up to date before
+# merging, so the PR run already covers the merged content; do not add a
+# push trigger that repeats the same checks.
 on:
   pull_request:
-  push:
-    branches: [main]
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 jobs:
   check:
