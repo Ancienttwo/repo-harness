@@ -1,0 +1,60 @@
+schemaVersion: archcontext.flow/v1
+id: flow.operator.dev-activity
+capabilityId: capability.runtime-harness.operator
+name: Serve the development activity board
+applicability: required
+participants:
+  - id: web-console
+    nodeId: component.operator.web-console
+  - id: http-reader
+    nodeId: component.operator.primary
+  - id: activity-feeds
+    nodeId: component.operator.activity-feeds
+steps:
+  - id: start-collector
+    from: http-reader
+    to: activity-feeds
+    label: Start the background collector once at server start; cycles never overlap
+    evidence:
+      entrypointId: entrypoint.operator.http-server
+      sourceSymbol: startOperatorServer
+      sinkId: sink.operator.dev-activity-collector
+  - id: serve-cache
+    from: http-reader
+    to: activity-feeds
+    label: GET /api/v1/dev-activity re-decodes the cached snapshot and starts no work
+    evidence:
+      entrypointId: entrypoint.operator.http-server
+      sourceSymbol: handleRequest
+      sinkId: sink.operator.dev-activity-decode
+outcomes:
+  - id: success
+    kind: success
+    label: Snapshot decodes in the browser
+    steps:
+      - id: decode-in-browser
+        from: web-console
+        to: activity-feeds
+        label: Decode the JSON body with the same strict decoder before render
+        evidence:
+          entrypointId: entrypoint.operator.web-dev-activity
+          sourceSymbol: fetchDevActivity
+          sinkId: sink.operator.web-dev-activity-decode
+    terminal:
+      participant: web-console
+      label: Render the board read-only
+  - id: error
+    kind: error
+    label: Cache is missing or invalid
+    steps:
+      - id: serve-unavailable
+        from: http-reader
+        to: activity-feeds
+        label: Replace a missing or invalid cache with the unavailable snapshot
+        evidence:
+          entrypointId: entrypoint.operator.http-server
+          sourceSymbol: handleRequest
+          sinkId: sink.operator.dev-activity-unavailable
+    terminal:
+      participant: http-reader
+      label: Return 200 with an unavailable snapshot and no writes

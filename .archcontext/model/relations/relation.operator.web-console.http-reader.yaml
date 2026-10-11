@@ -1,0 +1,8 @@
+schemaVersion: archcontext.relation/v1
+id: relation.operator.web-console.http-reader
+kind: calls
+source: component.operator.web-console
+target: component.operator.primary
+protocol: http
+synchrony: synchronous
+intent: "Fetch public JSON observations through GET and HEAD routes only"

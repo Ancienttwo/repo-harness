@@ -1,0 +1,17 @@
+schemaVersion: archcontext.node/v2
+id: component.operator.architecture-view
+kind: component
+name: Architecture View
+status: active
+parent: capability.runtime-harness.operator
+summary: Committed architecture module views, bounded review prompts and the docs graph projection.
+responsibilities:
+  - Build the module index, module detail and graph shapes from the committed architecture model.
+  - Build bounded, redacted module review prompts with the same builder for the CLI and the HTTP route.
+  - Project committed planning and spec documents into the docs graph.
+source:
+  include:
+    - src/core/architecture/module-view.ts
+    - src/core/review/module-review-prompt.ts
+    - src/core/docs/**
+    - src/cli/commands/module.ts

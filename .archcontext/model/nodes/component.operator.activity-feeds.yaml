@@ -1,0 +1,17 @@
+schemaVersion: archcontext.node/v2
+id: component.operator.activity-feeds
+kind: component
+name: Setup and Activity Feeds
+status: active
+parent: capability.runtime-harness.operator
+summary: Background collectors and projections for the development activity board and the setup pages.
+responsibilities:
+  - Collect Git worktrees, the user's GitHub pull requests, ledger records and runtime badges into one development activity snapshot.
+  - Run the setup check builder in a child process with a deadline and keep the last good setup snapshot.
+  - Keep a failed source local to its own repository or check, with a fixed reason code.
+source:
+  include:
+    - src/core/setup/**
+    - src/effects/setup/**
+    - src/core/dev-activity/**
+    - src/effects/dev-activity/**

@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.operator.view-projections.collaboration
+kind: depends-on
+source: component.operator.view-projections
+target: capability.runtime-harness.collaboration
+intent: "Project Work Exchange, handoff and context packet records with the collaboration validators"
