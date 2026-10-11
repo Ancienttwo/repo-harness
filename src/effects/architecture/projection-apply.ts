@@ -32,23 +32,27 @@ export interface ArchitectureProjectionApplyOptions extends ArchctxProviderOptio
 export function applyArchitectureProjection(repoRoot: string, options: ArchitectureProjectionApplyOptions = {}): ProjectionResultV2 {
   const run = options.runProjection ?? ((request, root) => runArchitectureProjection(request, root, options));
   const mode = options.mode ?? 'apply';
-  const request = (acceptedChange?: AcceptedChange): ProjectionRequestV1 => ({
+  const requestId = options.requestId ?? `repo-harness.${mode}`;
+  // ArchContext keys a committed accepted apply by requestId and replays only an
+  // identical request. Each observed major change therefore gets its own id, so a
+  // later model change is not refused under the id of an earlier one.
+  const request = (accepted?: { change: AcceptedChange; signalKey: string }): ProjectionRequestV1 => ({
     schemaVersion: PROJECTION_REQUEST_SCHEMA_VERSION,
-    requestId: `${options.requestId ?? `repo-harness.${mode}`}${acceptedChange ? '.accepted' : ''}`,
+    requestId: accepted ? `${requestId}.accepted.${accepted.signalKey}` : requestId,
     profile: 'repo-harness/v1',
     mode,
     targets: ['architecture-docs'],
     changedPaths: [...new Set(options.changedPaths ?? [])].sort(),
     expected: captureArchitectureProjectionSnapshot(repoRoot),
     ...(mode === 'adopt' ? { adoptionPlanId: options.adoptionPlanId } : {}),
-    ...(acceptedChange ? { acceptedChange } : {}),
+    ...(accepted ? { acceptedChange: accepted.change } : {}),
   });
 
   const first = run(request(), repoRoot);
   const signal = first.refreshSignals.find(isUnresolvedMajor);
   if (!signal) return first;
 
-  const accepted = request(acceptedChangeFor(signal));
+  const accepted = request({ change: acceptedChangeFor(signal), signalKey: signalKey(signal) });
   try {
     return run(accepted, repoRoot);
   } catch (error) {
@@ -61,11 +65,14 @@ function isUnresolvedMajor(signal: ArchitectureRefreshSignalV1): boolean {
   return signal.mode === 'human-action-required' && signal.cause === 'unresolved-major-candidate';
 }
 
+function signalKey(signal: ArchitectureRefreshSignalV1): string {
+  return signal.signalId.slice('sha256:'.length, 'sha256:'.length + 16);
+}
+
 function acceptedChangeFor(signal: ArchitectureRefreshSignalV1): AcceptedChange {
-  const id = signal.signalId.slice('sha256:'.length, 'sha256:'.length + 16);
   return {
     changeSetId: `changeset.docs-projection-${signal.resultingDigests.projectionDigest.slice('sha256:'.length, 'sha256:'.length + 16)}`,
-    eventId: `repo-harness.apply.${id}`,
+    eventId: `repo-harness.apply.${signalKey(signal)}`,
     reasonCodes: [...signal.reasonCodes] as AcceptedChange['reasonCodes'],
     affectedNodeIds: [...signal.affectedNodeIds],
   };
