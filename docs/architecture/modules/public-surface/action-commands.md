@@ -1,12 +1,12 @@
 # public-surface/action-commands 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-action-commands" sourceDigest="sha256:43d57c250cb76218cff0a85a9c3e86dc030fbedce5f8633d69d857745f9d72ab" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:cb3a95c4c88d943a6222b8835eeb45c31924a80fc9ac4b8ea1fc67e471614abf" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-action-commands" sourceDigest="sha256:f035d4c0e0c7aa7a8b098a52593879772ace5e5a92ac97afa3bba7f7897e8c6a" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:f1d4cca29d35267a5ee0a72e350416d58bb80cf1be668ab88aa58d4d0141e42d" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.public-surface.action-commands`(kind `capability`)
-> **Matched Prefixes**:`assets/skill-commands/**`
+> **Matched Prefixes**:`assets/skill-commands/**`、`assets/skills/**`、`assets/skill-version.json`、`.claude/.skill-version`、`src/core/skill-surface/**`、`scripts/skill-surface-select.ts`、`scripts/run-skill-routing-eval.ts`、`scripts/check-skill-version.ts`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
-Defines the user-facing action command skill surface and its evaluation boundary.
+Defines the user-facing action command skill surface, the bundled skill packages and the skill-surface catalog that projects them.
 
 ## 1. P1:能力架構地圖
 
@@ -15,16 +15,21 @@ Defines the user-facing action command skill surface and its evaluation boundary
 ```mermaid
 flowchart LR
   p1_capability_public_surface_action_commands_26efab87["Action Commands"]:::component
-  p1_component_action_commands_primary_c9e77bd1["Action Command Installer"]:::component
+  p1_component_action_commands_bundled_skills_d9a66507["Bundled Skill Packages"]:::component
+  p1_component_action_commands_primary_c9e77bd1["Command Facades and Manifest"]:::component
+  p1_component_action_commands_skill_surface_catalog_a72c29bc["Skill Surface Catalog"]:::component
   p1_capability_public_surface_action_commands_26efab87 -->|"Install action command skills"| p1_component_action_commands_primary_c9e77bd1
+  p1_component_action_commands_primary_c9e77bd1 -->|"Name bundled skill packages as manifest package sources"| p1_component_action_commands_bundled_skills_d9a66507
+  p1_capability_public_surface_action_commands_26efab87 -->|"Select the facade and host placement projection for a profile"| p1_component_action_commands_skill_surface_catalog_a72c29bc
+  p1_component_action_commands_skill_surface_catalog_a72c29bc -->|"Read manifest.json as the single catalog authority"| p1_component_action_commands_primary_c9e77bd1
   classDef actor fill:#111827,color:#ffffff,stroke:#f9fafb,stroke-width:2px
   classDef component fill:#075985,color:#ffffff,stroke:#bae6fd,stroke-width:2px
   classDef datastore fill:#3f6212,color:#ffffff,stroke:#d9f99d,stroke-width:2px
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:96137e3e1aed773a373e175732b24d13b569da24490013d68645597b845d1034`).
-- Semantic nodes: `2`; declared relations: `1`.
+- Proof: `proven` (`sha256:e5d3cbf83106534be399b61d9040ffed117f794fcd9d6302cd342253a347f07f`).
+- Semantic nodes: `4`; declared relations: `4`.
 
 ### 1.2 模組職責表
 
@@ -34,8 +39,8 @@ flowchart LR
 
 ### 1.3 規模信號
 
-- 規模量級:`10–20` 個文件 / `1000–2000` 行
-- 匹配前綴:`assets/skill-commands/**`
+- 規模量級:`50–100` 個文件 / `5000–10000` 行
+- 匹配前綴:`assets/skill-commands/**`、`assets/skills/**`、`assets/skill-version.json`、`.claude/.skill-version`、`src/core/skill-surface/**`、`scripts/skill-surface-select.ts`、`scripts/run-skill-routing-eval.ts`、`scripts/check-skill-version.ts`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
 ### 1.4 依賴邊界
@@ -43,6 +48,7 @@ flowchart LR
 出向關係:
 
 - `calls` → `component.action-commands.primary` — Install action command skills
+- `calls` → `component.action-commands.skill-surface-catalog` — Select the facade and host placement projection for a profile
 
 入向關係:
 
@@ -50,14 +56,14 @@ flowchart LR
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:96137e3e1aed773a373e175732b24d13b569da24490013d68645597b845d1034`); selectors `1/1`.
+> **Proof**: `proven` (`sha256:e5d3cbf83106534be399b61d9040ffed117f794fcd9d6302cd342253a347f07f`); selectors `3/3`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
 sequenceDiagram
   autonumber
   participant p2_capability_4262990f as Action Commands
-  participant p2_component_7b8d80ff as Action Command Installer
+  participant p2_component_7b8d80ff as Command Facades and Manifest
   p2_capability_4262990f->>p2_component_7b8d80ff: Dispatch Action Command Installer
   alt Install action command skills completes
   p2_capability_4262990f->>p2_component_7b8d80ff: Invoke Action Command Installer
@@ -67,46 +73,68 @@ sequenceDiagram
     Note over p2_capability_4262990f: Return typed failure
   end
 ```
+
+```mermaid
+%%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
+sequenceDiagram
+  autonumber
+  participant p2_capability_4262990f as Action Commands
+  participant p2_catalog_12ea5e22 as Skill Surface Catalog
+  p2_capability_4262990f->>p2_catalog_12ea5e22: Compute the facade set for the requested profile
+  alt Projection is printed for the sync script
+  p2_capability_4262990f->>p2_catalog_12ea5e22: Print facades and host placements from the same selector the catalog self-check uses
+    Note over p2_capability_4262990f: Return the profile projection
+  else Manifest is missing or invalid
+  p2_capability_4262990f->>p2_catalog_12ea5e22: Parse manifest.json and print every diagnostic when it is not valid
+    Note over p2_capability_4262990f: Exit nonzero before any host mutation
+  end
+```
 <!-- END ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-action-commands" -->
 ## 3. P3：设计决策与不变量
 
-### 3.1 为什么是"目录 + prose"而不是"命令实现"
+用户选择的是意图（plan、check、ship、architecture）。执行步骤属于 CLI 和 hooks。本 capability 只拥有意图的目录、目录背后的技能包，以及把目录投影到各 host 的选择器。
 
-用户选择的是**意图**（plan / check / ship / architecture），而执行步骤归 CLI + hooks。这条分工产生的可检验不变量是：`hooks-init`、`docs-init`、`create-project-dirs` 永远是内部步骤而非公共命令（manifest.json:342-346，由 tests/action-command-skills.test.ts:78-82 钉死；同时 tests/action-command-skills.test.ts:249-262 要求根 `SKILL.md`/`README.md`/`agentic-development-flow.md` 三份公共文档同时提到这三个名字并标注 `not public`）。
+### 3.1 必须保持的不变量
 
-### 3.2 单一真相 + 确定性投影
+1. **manifest 是唯一的发现权威。** `assets/skill-commands/manifest.json` 声明全部 22 个 package、两个 profile 和三个 host（claude、codex、pi）的投影。其余表示都是投影。
+2. **声明的投影必须等于计算的投影。** `expectedProjections` 是声明。catalog 用同一个 selector 重新计算 facade、external skill 和 host placement。二者不等就报 `PROJECTION_MISMATCH`（`src/core/skill-surface/catalog.ts:760-790`）。selector 只有一份实现，导出的 selector 与内部自检共用（`catalog.ts:214-215` 的注释）。
+3. **catalog 是纯函数。** `catalog.ts` 没有 import，不碰文件系统和进程。调用方负责读取 `manifest.json`（`catalog.ts:1-6`）。`profile-components.ts` 是 profile 组件表的唯一来源，installer 只是再导出（`src/cli/installer/install-profile.ts:35`、`:76`）。
+4. **shell 不复制选择逻辑。** 同步脚本调用一次 `scripts/skill-surface-select.ts profile-projection`，用它的输出决定 facade 与 host placement。
+5. **内部步骤永远不是公共命令。** `hooks-init`、`docs-init`、`create-project-dirs` 列在 `nonPublicInternalSteps`（`manifest.json:485-489`）。`tests/action-command-skills.test.ts:84`、`:267` 钉住这一点。
+6. **写 host skill 目录之前先证明归属。** 同步脚本只接受三种证明：指向包内目标的 symlink、三项全中的 owner marker（`owner`、`surface`、`content_hash`），或与包内源逐字节相同的目录。最后一种是 marker 引入前的一次性迁移分支（`scripts/sync-codex-installed-copies.sh:182-203`）。两个 host 根目录的 `preflight_skill_root` 在任何写入之前执行（`:406-407`）。未知或被改动的目录让整个同步以 exit 1 结束。
+7. **facade 必须编排多个 CLI 能力，或携带超出单个命令的领域规则。** 只给一个 CLI 子命令改名的 skill 不允许。每个 engine verb 一个 skill 也不允许。`repo-harness-chatgpt` 是 ChatGPT engine 唯一的 facade（`assets/skill-commands/CLAUDE.md:14-16`）。
+8. **退役是数据。** `retiredPackages` 有 20 条记录。每条指向替代者，或者是 `null`（`repo-harness-autoplan`、`codex-review`）。它不参与投影，只回答"这个名字去哪了"，并给出清理动作和历史指纹。
 
-`manifest.json` 是 discovery 的唯一权威，其余全是投影：
+### 3.2 关键权衡
 
-- `expectedProjections` 是**声明**，`computeFacadesForProfile` / `computeExternalSkillsForProfile` / `computeHostSkillPlacements` 是**复算**，两者不符即 `PROJECTION_MISMATCH`（catalog.ts:596-630）。selector 只有一份实现，导出的 selector 与内部自洽校验共用（catalog.ts:173-210 的注释即为此意图）。
-- shell 不复制选择逻辑。`sync-codex-installed-copies.sh` 调用一次 `skill-surface-select.ts profile-projection`。结果包含当前 profile 的 facade 和所有 provider host placement。provider 不受 profile 选择限制。facade sync 不处理 provider 的归属或删除。
-- PR-A 的 staged projection 诊断只覆盖 Waza。provider 匹配值为 `tw93/Waza`，与 runtime 安装组相同。Mermaid 保留 transaction ownership。doctor 暂不检查 Mermaid。
-- 校验层次也是单一的：`profileComponents` 交叉校验的数据源 `PROFILE_COMPONENTS` 由 core 拥有（profile-components.ts），`install-profile.ts` 原样再导出，因此 adapter 直接 import core 而不必把整个 installer 拉进一个薄壳。
+| 决策 | 权衡 |
+| --- | --- |
+| `expectedProjections` 手写并按顺序比较（`catalog.ts:202` 的 `arraysEqual`） | 新命令默认不可发现，必须显式加入投影表。代价是到 50 个以上 package 时，每次插入都要改三张表，`PROJECTION_MISMATCH` 会变成例行修补。 |
+| `kind: judge` 的 `merge-gate` 用空 `hosts` 和空 `profiles` 表示"不可选" | 所有 selector 已经按这两个字段过滤，不需要新增 `installable: false`。代价是读者要知道空数组的含义。 |
+| 只有 `minimal` 和 `full` 两个 profile | 默认发现面小而稳定。代价是出现第三类用户时，压力先落在 profile 词表上。 |
+| `tests/action-command-skills.test.ts` 用 `toContain` 钉住 facade 措辞 | boundary 不会被悄悄放宽。代价是每次改 prose 都要同步改测试。 |
+| 同步脚本对每个带 marker 的目标重算 `managed_tree_hash`（`sync-codex-installed-copies.sh:121`） | 归属证明不依赖时间戳。代价是 facade 数量增长时，每次 `init` 的哈希成本线性增长。 |
 
-### 3.3 fail-closed 的所有权模型
+### 3.3 组件拆分（2026-10-11）
 
-同步脚本对 host skill root 的每一次写入都先证明归属，证明手段有且仅有三种（sync 脚本 L186-234）：exact package-target symlink、owner marker（`owner` + `surface` + `content_hash` 三项全中）、与 package source byte-identical 的目录（这一条是 marker 引入前的一次性迁移分支）。任何未知或被改动的 surface 在事务开始前就 exit 1。两次 `preflight_skill_root` 在脚本 L405-406、即所有 mutation 之前执行，这是"不做半个事务"的结构保证。
+数据来源：`archctx refactor scan --json`（archctx 0.7.0）。组件 footprint 写在各 component 节点的 `source.include` 里。
 
-`kind: "judge"` 的 `merge-gate` 是这套模型的补角：它需要出现在 full profile 的 discovery 矩阵里作为一行分类，但 repo-harness 不发布它的 SKILL.md、也不为它做任何 runtime projection。用空 `hosts`/`profiles` 表达"不可选"，比加一个 `installable: false` 布尔更省——所有 selector 本来就按这两个字段过滤。
+| 组件 | footprint | 文件 / 行 | 职责 |
+| --- | --- | --- | --- |
+| `component.action-commands.primary`（Command Facades and Manifest） | `assets/skill-commands/**` | 13 / 1094 | manifest 与薄 facade |
+| `component.action-commands.bundled-skills` | `assets/skills/**` | 34 / 2340 | manifest 以 `source` 指向的技能包 |
+| `component.action-commands.skill-surface-catalog` | `src/core/skill-surface/**`、`scripts/skill-surface-select.ts`、`scripts/run-skill-routing-eval.ts`、`scripts/check-skill-version.ts`、`assets/skill-version.json`、`.claude/.skill-version` | 7 / 3339 | 解析目录、计算投影、检查 skill 版本 |
 
-### 3.4 退役是数据，不是删除
+依赖方向：catalog 读取 primary 的 `manifest.json`。primary 的 manifest 以 `source` 字段指向 bundled-skills 的包目录（例如 `manifest.json:34`）。bundled-skills 不调用任何组件。
 
-`retiredPackages[]` 是纯迁移诊断（**已实现、纯声明**）：18 条记录每条指向其 live 替代者或 `null`（完全退役，仅 `repo-harness-autoplan`）。它不参与任何投影，只用于让"这个名字去哪了"可被机器回答。与之配套的是同步脚本的退役分支：host 上留下的旧名字目录，只要还是干净的托管副本，就被安全回收而不是变成一条 preflight 硬失败。
+catalog 的消费者分布在多个 capability：`src/cli/commands/init.ts` 和 `global-runtime.ts`、`src/cli/installer/install-profile.ts` 和 `skill-projection.ts`、`src/cli/commands/doctor.ts`、`src/core/upgrade/legacy-inventory.ts`、`src/effects/setup/snapshot.ts`、`src/effects/strategy/skill.ts`。只有 strategy-reflection 的入向 relation 已声明，其他由各自的分组声明。
 
-### 3.5 facade 粒度闸门
+`.claude/.skill-version` 和 `assets/skill-version.json` 是版本 pin，由 `scripts/check-skill-version.ts` 检查。它们与 catalog 一起变化，所以放在 catalog 组件。
 
-局部契约 CLAUDE.md:14-16 挡住了这个目录最可能的腐化方向：每引入一个 CLI 动词就顺手加一个 skill。规则是 facade 必须编排多个 CLI 能力或携带超出单次命令调用的领域规则；单动词改名归 `--help` 或 `docs/reference-configs/`；per-engine-verb 的兄弟 skill 明令禁止（`repo-harness-chatgpt` 是那一整个 engine 的唯一 facade）。
+### 3.4 开放问题
 
-### 3.6 10x 规模下先垮的点
-
-目录本身可以无限增长——它是 on-demand catalog。真正会先垮的是**默认发现面与路由**：
-
-1. **投影表的人工维护成本**。`expectedProjections` 是顺序敏感的手写数组（catalog.ts:600 用 `arraysEqual` 而非集合比较）。到 50+ package 时，每次插入一个 package 都要手改三张表的对应行，`PROJECTION_MISMATCH` 会从"有效护栏"退化成"每次改动都要修一遍的仪式"。当前 16 条尚在人可读范围内。
-2. **两 profile 的表达力**。默认面被 `minimal`/`full` 二元投影钉死（full 是默认的 11 hook 面，显式 minimal 保留 7 hook 基线——由 tests/install-profiles.test.ts:105-106 实测断言）。第三类用户出现时，压力会先落在 profile 词表而不是 manifest 结构上。
-3. **同步脚本的 O(n) 目录扫描**。`preflight_skill_root` 与 `remove_retired_owned_facades` 都对 `$root/repo-harness-*` 全量遍历，且每个已 marker 的目标都要重算一次 `managed_tree_hash`（全树 cat + sha256）。facade 数量 ×10 时，每次 `init` 的哈希开销线性增长；这是纯本地 I/O，会先表现为安装变慢而非出错。
-4. **prose 与 test 的耦合密度**。`tests/action-command-skills.test.ts` 用 `toContain` 逐句钉死 facade 措辞（例如 ship 的 `Does not run \`git reset --hard\`…`）。这保证了 boundary 不被悄悄放宽，代价是每次改写 prose 都要同步改 test。命令数 ×10 后，这套断言的维护成本会先于 manifest 的结构复杂度成为瓶颈。
-
-新增命令改变路由行为时增加 eval case（见 §5），是对 (2) 的直接对冲。
+- `scripts/run-skill-routing-eval.ts`（1603 行）调用 evals-checks 的 `scripts/run-skill-evals.ts`。它归 catalog 还是归 evals-checks？归属提议 §1d 放在本 capability，理由是"Skill surface"。这个选择的置信度没有记录。
+- `scripts/skill-surface-select.ts` 动态 import `src/cli/installer/install-profile.ts`（hook-adapters）来计算树哈希。catalog 组件因此依赖 hook-adapters。这是否应该改为依赖一个共享的树哈希模块？没有记录。
 
 ## 4. 历史决策记录（append-only）
 
@@ -114,7 +142,15 @@ sequenceDiagram
 
 _（暂无条目）_
 
+### 2026-10-11 组件拆分与归属扩展
+
+- 本 capability 拆成三个组件：primary（Command Facades and Manifest）、bundled-skills、skill-surface-catalog。
+- capability include 增加原本没有归属的路径：`assets/skills/**`、`src/core/skill-surface/**`、三个 skill 脚本和两个版本 pin 文件。没有删除任何条目。
+- 新增 flow `flow.action-commands.profile-projection`。它证明 `skill-surface-select.ts` 的 profile 投影路径和 manifest 无效时的拒绝路径。
+
 ## 5. Optimization Backlog
 
 - Add an eval case whenever a new command changes routing behavior.
 - Keep command facades thin; move policy into scripts, manifests, or reference configs.
+- 集成步骤添加 hook-adapters（`install-profile.ts`、`skill-projection.ts`）和 global-runtime-reconciliation（`init.ts`、`global-runtime.ts`、`doctor.ts`）到 skill-surface-catalog 的入向 relation。这些 relation 的 `from` 节点不在本分组。
+- `expectedProjections` 超过约 50 个 package 时，评估从 package 条目派生投影表。派生会削弱"新命令默认不可发现"，需要一次显式决策。

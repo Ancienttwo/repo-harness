@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.mcp-sidecar.primary.coding-profile
+kind: calls
+source: component.mcp-sidecar.primary
+target: component.mcp-sidecar.coding-profile
+intent: "Build and dispatch the coding tool block and its process runtime"

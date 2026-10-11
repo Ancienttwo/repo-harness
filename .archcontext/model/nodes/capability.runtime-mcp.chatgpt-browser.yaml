@@ -1,0 +1,42 @@
+schemaVersion: archcontext.node/v2
+id: capability.runtime-mcp.chatgpt-browser
+kind: capability
+name: ChatGPT Browser Consult
+status: active
+summary: Runs local ChatGPT Web consult sessions through a pinned Oracle browser provider and projects the ChatGPT skill to hosts.
+responsibilities:
+  - Own browser setup, doctor, consult, follow-up, session readback and cleanup for ChatGPT Web.
+  - Build a policy-checked prompt bundle from explicit repository files and run the opt-in fail-closed secret scan before any provider side effect.
+  - Keep the repo-local session store as the audit record and never fall back silently to another provider.
+  - Project the canonical repo-harness-chatgpt skill to host skill roots through one owned symlink per host.
+source:
+  include:
+    - src/cli/chatgpt-browser/binding.ts
+    - src/cli/chatgpt-browser/engine.ts
+    - src/cli/chatgpt-browser/native-provider.ts
+    - src/cli/chatgpt-browser/oracle-provider.ts
+    - src/cli/chatgpt-browser/oracle-session-evidence.ts
+    - src/cli/chatgpt-browser/prompt-assembler.ts
+    - src/cli/chatgpt-browser/secret-scan.ts
+    - src/cli/chatgpt-browser/session-store.ts
+    - src/cli/chatgpt-browser/types.ts
+    - src/cli/chatgpt-skill/**
+    - src/cli/commands/chatgpt.ts
+    - docs/repo-harness-chatgpt-browser-engine.md
+  entrypoints:
+    - id: entrypoint.chatgpt-browser.primary
+      path: src/cli/commands/chatgpt.ts
+      symbols:
+        - name: buildChatgptCommand
+          sinks:
+            - id: sink.chatgpt-browser.primary
+              path: src/cli/chatgpt-browser/engine.ts
+              symbol: runBrowserConsult
+extensions:
+  contractFiles:
+    agents: "AGENTS.md"
+    claude: "CLAUDE.md"
+  lspProfile: "typescript-lsp"
+  verification:
+    - "bun run test:files tests/cli/chatgpt-browser.test.ts tests/unit/oracle-session-evidence.test.ts tests/skill-surface/chatgpt-package.test.ts --timeout 60000 --max-concurrency 1"
+    - "bun run check:type"

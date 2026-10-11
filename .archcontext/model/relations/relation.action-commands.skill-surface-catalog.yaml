@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.action-commands.skill-surface-catalog
+kind: calls
+source: capability.public-surface.action-commands
+target: component.action-commands.skill-surface-catalog
+intent: "Select the facade and host placement projection for a profile"

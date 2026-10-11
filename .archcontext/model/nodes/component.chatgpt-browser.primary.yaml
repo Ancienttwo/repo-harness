@@ -1,0 +1,33 @@
+schemaVersion: archcontext.node/v2
+id: component.chatgpt-browser.primary
+kind: component
+name: "Browser Consult Engine"
+status: active
+parent: capability.runtime-mcp.chatgpt-browser
+summary: "Assembles the prompt bundle, scans it, runs the Oracle or native provider and writes the session record."
+responsibilities:
+  - Resolve the browser binding and the provider and refuse an unbound or unsafe profile.
+  - Assemble and optionally secret-scan the exact rendered prompt and follow-ups.
+  - Write and read repo-local session records.
+source:
+  include:
+    - src/cli/chatgpt-browser/binding.ts
+    - src/cli/chatgpt-browser/engine.ts
+    - src/cli/chatgpt-browser/native-provider.ts
+    - src/cli/chatgpt-browser/oracle-provider.ts
+    - src/cli/chatgpt-browser/oracle-session-evidence.ts
+    - src/cli/chatgpt-browser/prompt-assembler.ts
+    - src/cli/chatgpt-browser/secret-scan.ts
+    - src/cli/chatgpt-browser/session-store.ts
+    - src/cli/chatgpt-browser/types.ts
+    - src/cli/chatgpt-skill/**
+    - src/cli/commands/chatgpt.ts
+  entrypoints:
+    - id: entrypoint.chatgpt-browser.consult
+      path: src/cli/chatgpt-browser/engine.ts
+      symbols:
+        - name: runBrowserConsult
+          sinks:
+            - id: sink.chatgpt-browser.secret-scan
+              path: src/cli/chatgpt-browser/secret-scan.ts
+              symbol: scanPromptBundle

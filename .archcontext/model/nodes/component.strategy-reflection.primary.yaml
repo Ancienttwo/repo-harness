@@ -1,0 +1,17 @@
+schemaVersion: archcontext.node/v2
+id: component.strategy-reflection.primary
+kind: component
+name: "Strategy Context Collector"
+status: active
+parent: capability.public-surface.strategy-reflection
+summary: "Reads strategy sources through one bounded request reader and validates proposals against the digest-bound packet."
+responsibilities:
+  - Parse the strategy document and select active memory by revision, expiry and topic.
+  - Verify each evidence hash against the working tree and the recorded Git revision.
+  - Return invalid, stale, blocked or reviewable with executionAuthorized false.
+source:
+  include:
+    - src/core/strategy/**
+    - src/effects/strategy/**
+    - src/cli/commands/strategy.ts
+    - docs/strategy/**

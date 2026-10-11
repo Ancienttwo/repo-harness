@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.mcp-sidecar.host-setup.hook-adapters
+kind: calls
+source: component.mcp-sidecar.host-setup
+target: capability.runtime-harness.hook-adapters
+intent: "Reuse installer configuration ownership receipts and the runtime host lock"

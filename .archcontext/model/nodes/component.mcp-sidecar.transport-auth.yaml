@@ -1,0 +1,33 @@
+schemaVersion: archcontext.node/v2
+id: component.mcp-sidecar.transport-auth
+kind: component
+name: "Transport and Authorization"
+status: active
+parent: capability.runtime-harness.mcp-sidecar
+summary: "Serves MCP over stdio or HTTP and binds each HTTP session to a verified OAuth authorization."
+responsibilities:
+  - Start the stdio and HTTP transports and pin HTTP sessions to the startup profile.
+  - Issue and verify OAuth codes and tokens and bind each session to one authorization ID.
+  - Bound, reuse and reclaim sessions per authorization.
+source:
+  include:
+    - src/cli/mcp/transports/**
+    - src/cli/mcp/oauth.ts
+    - src/cli/mcp/session-store.ts
+  entrypoints:
+    - id: entrypoint.mcp-sidecar.http-transport
+      path: src/cli/mcp/transports/http.ts
+      symbols:
+        - name: startMcpHttp
+          sinks:
+            - id: sink.mcp-sidecar.startup-config
+              path: src/cli/mcp/auth.ts
+              symbol: loadMcpLocalConfig
+        - name: handleMcpPost
+          sinks:
+            - id: sink.mcp-sidecar.session-server
+              path: src/cli/mcp/server.ts
+              symbol: createRepoHarnessMcpServer
+            - id: sink.mcp-sidecar.request-config
+              path: src/cli/mcp/auth.ts
+              symbol: loadMcpLocalConfig

@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.mcp-sidecar.primary.general-repo-access
+kind: calls
+source: component.mcp-sidecar.primary
+target: capability.runtime-mcp.general-repo-access
+intent: "Dispatch the general repository reader and writer tools"

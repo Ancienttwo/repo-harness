@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.mcp-sidecar.coding-profile.repo-policy-registry
+kind: calls
+source: component.mcp-sidecar.coding-profile
+target: component.mcp-sidecar.repo-policy-registry
+intent: "Contain workspace paths against registered roots then redact and audit coding results"

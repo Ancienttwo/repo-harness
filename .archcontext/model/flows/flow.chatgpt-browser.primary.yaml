@@ -1,0 +1,50 @@
+schemaVersion: archcontext.flow/v1
+id: flow.chatgpt-browser.primary
+capabilityId: capability.runtime-mcp.chatgpt-browser
+name: Run a ChatGPT Web consult
+applicability: required
+participants:
+  - id: capability
+    nodeId: capability.runtime-mcp.chatgpt-browser
+  - id: engine
+    nodeId: component.chatgpt-browser.primary
+steps:
+  - id: dispatch-consult
+    from: capability
+    to: engine
+    label: chatgpt browser-consult runs the consult engine
+    evidence:
+      entrypointId: entrypoint.chatgpt-browser.primary
+      sourceSymbol: buildChatgptCommand
+      sinkId: sink.chatgpt-browser.primary
+outcomes:
+  - id: success
+    kind: success
+    label: Provider answers and the session record is written
+    steps:
+      - id: record-session
+        from: capability
+        to: engine
+        label: Run the bound provider once and write the repo-local session record
+        evidence:
+          entrypointId: entrypoint.chatgpt-browser.primary
+          sourceSymbol: buildChatgptCommand
+          sinkId: sink.chatgpt-browser.primary
+    terminal:
+      participant: capability
+      label: Return the consult result and session ID
+  - id: error
+    kind: error
+    label: Secret scan is unavailable or finds a secret
+    steps:
+      - id: refuse-unscanned
+        from: capability
+        to: engine
+        label: Scan the exact rendered prompt and follow-ups and stop before any provider side effect
+        evidence:
+          entrypointId: entrypoint.chatgpt-browser.consult
+          sourceSymbol: runBrowserConsult
+          sinkId: sink.chatgpt-browser.secret-scan
+    terminal:
+      participant: capability
+      label: Return a typed refusal with no session written

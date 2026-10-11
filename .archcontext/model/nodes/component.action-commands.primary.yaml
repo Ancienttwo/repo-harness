@@ -1,7 +1,13 @@
 schemaVersion: archcontext.node/v2
 id: component.action-commands.primary
 kind: component
-name: "Action Command Installer"
+name: "Command Facades and Manifest"
 status: active
 parent: capability.public-surface.action-commands
-summary: "Executes the reviewed install action command skills boundary."
+summary: "Holds the skill package manifest and the thin command facade skills that it projects."
+responsibilities:
+  - Keep manifest.json as the single discovery authority for packages, profiles and host placements.
+  - Keep each command facade a thin router to CLI commands and reference configs.
+source:
+  include:
+    - assets/skill-commands/**
