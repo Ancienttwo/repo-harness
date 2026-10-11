@@ -428,7 +428,7 @@ function runDelegationAdvisor(repoRoot: string, input: JsonObject, env: NodeJS.P
       `- Spawn no more than ${maxAgents} agents.`,
       '- Use explorer for read-only code mapping.',
       '- Use worker only for an isolated implementation slice.',
-      '- Workers do not run build, typecheck, or tests. They commit early and return early. Run all checks in the parent after integration.',
+      '- Workers do not run build, typecheck, or tests. Give each parallel worker its own worktree from a clean source; a worker commits early only there and returns early. In the shared checkout the parent commits. Run all checks in the parent after integration.',
       '- Use reviewer for correctness, regression, security, and missing-test review.',
       '- Never give two agents overlapping write ownership.',
       `- Keep max spawn depth at ${maxDepth}.`,
