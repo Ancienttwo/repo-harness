@@ -73,14 +73,13 @@ write nodes.
   `archctx apply --id <same-id> --approved --expected-worktree-digest <draft.base.worktreeDigest>`.
   A draft lives in daemon memory. Plan again after a daemon restart or any worktree
   change. `--approved` records the authorized Agent decision; it does not grant extra scope.
-- A component footprint is `source.include` on the `component.*` node. Until
-  repo-harness#631 lands, the repo-harness model reader accepts only an exact path or
-  `dir/**` in any node include; a filename wildcard such as `src/x/foo-*.ts` makes
-  `repo-harness module` fail with `source_include_invalid`. The repo-harness registry
-  reads capability nodes only, so a file without an owner must also go into the
-  capability include. `archctx resolve --paths-from <file> --json` resolves many
-  paths in one call. When the candidates lie on one `parent` chain, the deepest node
-  owns the path, and the result reports `owningCapabilityId`.
+- A component footprint is `source.include` on the `component.*` node, with an
+  optional `source.exclude`. ArchContext validation owns the include and exclude
+  shapes. repo-harness resolves path ownership only through
+  `archctx resolve --paths-from <file> --json`. When the candidates lie on one
+  `parent` chain, the deepest node owns the path, and the result reports
+  `owningCapabilityId`. Every capability needs at least one include with a literal
+  leading path.
 - Before a `plan` that writes a node file, read `preview.ownershipDelta`: the files
   that become owned, contested or unowned, or change owner.
 - A flow step is proven only with a relation for the exact step, a source symbol that is

@@ -989,9 +989,15 @@ directory is never consulted. Under `archcontext` the JSON registry is not
 writable, so `repo-harness run capability-config add` refuses and points at the
 node files.
 
-Capability authority does not require the `archctx` CLI: node files are read
-directly with Bun's native YAML parser, so selecting `capability_source` never
-spawns a daemon or external process. Bun older than 1.3 has no `Bun.YAML`; that
+Capability metadata comes from the node files, which Bun's native YAML parser
+reads directly. Path ownership under `archcontext` comes only from the
+package-local `archctx resolve --paths-from`. One process resolves one batch of
+paths. It reads no daemon state and no CodeGraph index. The pre-edit hook,
+Effective State, `capability-resolver match` and `capability-context` all use
+this route. If archctx fails, the resolution is invalid, and Effective State
+reports the `capability_registry:invalid` blocker. The standalone helper copy
+in `assets/templates/helpers/` has no package-local archctx, so its `match`
+fails closed under `archcontext`. Bun older than 1.3 has no `Bun.YAML`; that
 fails closed with upgrade guidance and only when `capability_source` is
 `archcontext`.
 
@@ -1077,22 +1083,27 @@ deferred work. Every other managed route remains at 30 seconds, and installer
 refresh replaces only repo-harness-owned entries while preserving sibling user
 hooks.
 
-### `source.include` grammar
+### `source.include` anchors
 
-Upstream matches an include glob against the whole repo-relative path, so a
-wildcard-free literal addresses one file, not a directory subtree. To keep the
-two authorities from disagreeing about what a boundary covers, only two shapes
-are accepted:
+ArchContext validation owns the `source.include` and `source.exclude` grammar.
+repo-harness does not check include shapes and does not interpret globs for
+ownership. Each include gives one literal anchor: the leading path segments
+before the first segment with a glob character. Anchors are for display and
+directory discovery only.
 
-| Include | Capability prefix |
+| Include | Anchor |
 |---|---|
 | `src/core/adoption/**` | `src/core/adoption` |
-| `AGENTS.md` (wildcard-free, not an existing directory) | `AGENTS.md` |
+| `AGENTS.md` | `AGENTS.md` |
+| `src/core/state/coordination-*.ts` | `src/core/state` |
+| `**/*.md` | none |
 
-Everything else fails closed. A wildcard-free literal that names an existing
-directory is rejected as ambiguous with guidance to write `<dir>/**`.
-`source.exclude` is not supported, because capability prefixes have no exclusion
-form. Include order is preserved as prefix order.
+A capability needs at least one include with an anchor. Two capabilities can
+share an anchor. Include order is preserved as anchor order, without
+duplicates. `capability-resolver match` reports the owner's first anchor as
+`matched_prefix`, because ArchContext does not report which include matched. An
+existing directory is resolved as `<dir>/`, which asks ArchContext who owns its
+contents.
 
 ### Required node fields
 
@@ -1105,7 +1116,7 @@ form. Include order is preserved as prefix order.
 | `id` | derived | `<domain>-<name>` |
 | `architecture_module` | derived | `docs/architecture/modules/<domain>/<name>.md` |
 | `workstream_dir` | derived | `tasks/workstreams/<domain>/<name>` |
-| `prefixes` | `source.include` | include grammar above |
+| `prefixes` | `source.include` | include anchors above; never used for ownership |
 | `contract_files` | `extensions.contractFiles.agents` / `.claude` | declared, never derived: root-facing capabilities deliberately do not follow their prefix |
 | `lsp_profile` | `extensions.lspProfile` | required |
 | `verification_hints` | `extensions.verification` | required array; explicit `[]` is allowed |
@@ -1134,8 +1145,8 @@ Node-shape failures surface as `ARCHCONTEXT_*` registry diagnostics and make
 `capability-resolver validate` exit `1` with no stdout; missing/empty node/v2
 `name`, `summary`, or `responsibilities` is a structural error and never yields a
 partial registry. Derived registries then go through the same
-validation as the JSON registry, so duplicate ids, duplicate prefixes, and
-invalid paths keep their existing diagnostic codes.
+validation as the JSON registry, so duplicate ids and invalid paths keep their
+existing diagnostic codes. Shared anchors are not duplicates.
 
 ### Node/v2 export round-trip
 

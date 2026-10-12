@@ -3,7 +3,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { buildArchContextNodesV2, findMatch, type ArchContextNodeV2 } from '../scripts/capability-resolver';
-import { archcontextIncludeToPrefix, capabilityRegistryFromArchcontextNodes, type Capability, type CapabilityRegistry } from '../src/core/capabilities/registry';
+import { archcontextIncludeAnchor, capabilityRegistryFromArchcontextNodes, type Capability, type CapabilityRegistry } from '../src/core/capabilities/registry';
 
 const ROOT = join(import.meta.dir, '..');
 const capability = (id: string, domain: string, name: string, prefixes: string[]): Capability => ({
@@ -21,9 +21,10 @@ const registry: CapabilityRegistry = { version: 1, capabilities: [web, account, 
 const directory = (path: string) => path === 'apps/web' || path === 'apps/web/src/routes/account';
 
 function prefixFromNode(node: ArchContextNodeV2, inputPath: string): string | null {
+  // Exported includes are `dir/**` or file paths, so the anchor is the old prefix.
   const matches = node.source.include.flatMap((include) => {
-    const translated = archcontextIncludeToPrefix(include, { isExistingDirectory: directory });
-    return translated.status === 'prefix' && (inputPath === translated.prefix || inputPath.startsWith(`${translated.prefix}/`)) ? [translated.prefix] : [];
+    const anchor = archcontextIncludeAnchor(include);
+    return anchor !== null && (inputPath === anchor || inputPath.startsWith(`${anchor}/`)) ? [anchor] : [];
   });
   return matches.sort((left, right) => right.length - left.length)[0] ?? null;
 }
@@ -49,7 +50,7 @@ describe('capability-resolver archcontext-nodes-v2 export', () => {
 
   test('round-trips representative longest-prefix matches', () => {
     const nodes = buildArchContextNodesV2(registry, { isExistingDirectory: directory });
-    const roundTrip = capabilityRegistryFromArchcontextNodes(nodes.map((value, index) => ({ path: `${index}.yaml`, value })), { repoRoot: ROOT, isExistingDirectory: directory });
+    const roundTrip = capabilityRegistryFromArchcontextNodes(nodes.map((value, index) => ({ path: `${index}.yaml`, value })), { repoRoot: ROOT });
     expect(roundTrip.status).toBe('valid');
     if (roundTrip.status === 'valid') expect(roundTrip.registry.capabilities).toEqual([...registry.capabilities].sort((left, right) => left.id < right.id ? -1 : left.id > right.id ? 1 : 0));
     for (const path of ['apps/web/src/routes/account/page.tsx', 'apps/web/other.ts', 'AGENTS.md', 'README.md']) {

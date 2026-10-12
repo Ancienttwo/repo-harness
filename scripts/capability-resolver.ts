@@ -10,6 +10,8 @@ import {
   parseCapabilityRegistry,
   type ArchcontextNodeFile,
   type Capability,
+  type CapabilityPathMatch,
+  type CapabilityPathResolution,
   type CapabilityRegistry,
   type CapabilityRegistryDiagnostic,
   type CapabilityRegistryResolution,
@@ -238,16 +240,7 @@ function capabilityAuthorityPath(mode: CapabilitySourceMode): string {
 // the JSON registry never falls back to archcontext nodes.
 function loadRegistry(repo: string, mode: CapabilitySourceMode): CapabilityRegistryResolution {
   if (mode === "archcontext") {
-    return capabilityRegistryFromArchcontextNodes(readArchcontextNodeFiles(repo), {
-      repoRoot: repo,
-      isExistingDirectory: (path) => {
-        try {
-          return statSync(resolve(repo, path)).isDirectory();
-        } catch {
-          return false;
-        }
-      },
-    });
+    return capabilityRegistryFromArchcontextNodes(readArchcontextNodeFiles(repo), { repoRoot: repo });
   }
   const registryPath = resolve(repo, DEFAULT_REGISTRY);
   if (!existsSync(registryPath)) {
@@ -333,15 +326,11 @@ function validateRegistryEffects(registry: CapabilityRegistry, repo: string): st
   return errors;
 }
 
-export function findMatch(registry: CapabilityRegistry, repo: string, inputPath: string) {
-  const result = matchCapabilityPath(registry, inputPath, { repoRoot: repo });
-  if (result.status === "invalid") {
-    throw new Error(result.diagnostics.map((item) => item.message).join("; "));
-  }
-  if (result.status === "unmapped") {
+function matchRecord(filePath: string, winner: CapabilityPathMatch | null) {
+  if (winner === null) {
     return {
       matched: false,
-      file_path: result.filePath,
+      file_path: filePath,
       functional_block: "root",
       matched_prefix: "root",
       capability_id: "root",
@@ -351,7 +340,6 @@ export function findMatch(registry: CapabilityRegistry, repo: string, inputPath:
       workstream_dir: "tasks/workstreams/root/_root",
     };
   }
-  const winner = result.match;
   return {
     matched: true,
     file_path: winner.filePath,
@@ -367,6 +355,48 @@ export function findMatch(registry: CapabilityRegistry, repo: string, inputPath:
     lsp_profile: winner.capability.lsp_profile,
     verification_hints: winner.capability.verification_hints,
   };
+}
+
+/** Registry-mode longest-prefix match. Under `archcontext`, use findMatches. */
+export function findMatch(registry: CapabilityRegistry, repo: string, inputPath: string) {
+  const result = matchCapabilityPath(registry, inputPath, { repoRoot: repo });
+  if (result.status === "invalid") {
+    throw new Error(result.diagnostics.map((item) => item.message).join("; "));
+  }
+  return result.status === "matched" ? matchRecord(result.match.filePath, result.match) : matchRecord(result.filePath, null);
+}
+
+type ArchcontextPathResolver = (repo: string, registry: CapabilityRegistry, paths: readonly string[]) => CapabilityPathResolution;
+
+// The standalone projection of this helper has no package-local archctx, so the
+// import fails there and archcontext mode fails closed instead of guessing. The
+// specifier is not a literal, so the projection type-checks without that module.
+const ARCHCONTEXT_OWNERS_MODULE = "../src/effects/capabilities/archcontext-owners";
+
+async function archcontextPathResolver(): Promise<ArchcontextPathResolver> {
+  try {
+    const owners: { resolveArchcontextCapabilityPaths: ArchcontextPathResolver } = await import(ARCHCONTEXT_OWNERS_MODULE);
+    return owners.resolveArchcontextCapabilityPaths;
+  } catch (error) {
+    throw new CapabilitySourceError(
+      `${CAPABILITY_SOURCE_KEY}="archcontext" resolves paths through the repo-harness package; ` +
+        `run repo-harness run capability-resolver (${(error as Error).message})`
+    );
+  }
+}
+
+/** One match per input path. Under `archcontext`, one archctx call resolves the whole batch. */
+export async function findMatches(registry: CapabilityRegistry, repo: string, mode: CapabilitySourceMode, paths: readonly string[]) {
+  if (mode === "registry") return paths.map((path) => findMatch(registry, repo, path));
+  const resolution = (await archcontextPathResolver())(repo, registry, paths);
+  if (resolution.status === "invalid") {
+    throw new Error(resolution.diagnostics.map((item) => item.message).join("; "));
+  }
+  const byPath = new Map(resolution.matches.map((match) => [match.filePath, match]));
+  return paths.map((path) => {
+    const filePath = normalizeCapabilityPath(path, repo);
+    return matchRecord(filePath, byPath.get(filePath) ?? null);
+  });
 }
 
 function printJson(value: unknown): void {
@@ -447,9 +477,7 @@ async function main(): Promise<void> {
         "ARCHCONTEXT_NODE_SUMMARY_INVALID",
         "ARCHCONTEXT_NODE_RESPONSIBILITIES_INVALID",
         "ARCHCONTEXT_INCLUDE_REQUIRED",
-        "ARCHCONTEXT_EXCLUDE_UNSUPPORTED",
-        "ARCHCONTEXT_INCLUDE_SHAPE_UNSUPPORTED",
-        "ARCHCONTEXT_INCLUDE_SHAPE_AMBIGUOUS",
+        "ARCHCONTEXT_INCLUDE_ANCHOR_REQUIRED",
         "ARCHCONTEXT_EXTENSIONS_REQUIRED",
         "ARCHCONTEXT_LSP_PROFILE_REQUIRED",
         "ARCHCONTEXT_VERIFICATION_REQUIRED",
@@ -506,14 +534,7 @@ async function main(): Promise<void> {
     throw new Error(`capability registry is invalid:\n${errors.join("\n")}`);
   }
   if (args.pathsFrom) {
-    const paths = await readPathLines(args.pathsFrom);
-    const seen = new Set<string>();
-    const matches = [];
-    for (const path of paths) {
-      if (seen.has(path)) continue;
-      seen.add(path);
-      matches.push(findMatch(registry, repo, path));
-    }
+    const matches = await findMatches(registry, repo, mode, [...new Set(await readPathLines(args.pathsFrom))]);
     if (args.format === "json") {
       printJson(matches);
     } else {
@@ -524,7 +545,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  const match = findMatch(registry, repo, args.path);
+  const [match] = await findMatches(registry, repo, mode, [args.path]);
   if (args.format === "json") {
     printJson(match);
   } else {
