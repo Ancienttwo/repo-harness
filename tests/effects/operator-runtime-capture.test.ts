@@ -185,7 +185,7 @@ describe.skipIf(!HAS_CAPTURE_OWNERSHIP)('owned child transport (fixtures do not 
   });
   test.skipIf(!HAS_CAPTURE_PTY)('PTY input EOF disconnects owner, sends no synthetic input and waits for actual signal exit', async () => {
     const path = join(root(), 'capture.json'), input = new PassThrough(), output = collect(), diagnostic = collect();
-    const run = runRuntimeCapture({ provider: 'claude', source_id: 'eof', snapshot_path: path, argv: [process.execPath, '-e', 'process.stdin.setRawMode(true);console.log("ready");process.on("SIGTERM",()=>process.exit(23));for await(const b of process.stdin){console.log("unexpected-input")};await Bun.sleep(30000)'] }, { input, output: output.stream, diagnostics: diagnostic.stream });
+    const run = runRuntimeCapture({ provider: 'claude', source_id: 'eof', snapshot_path: path, argv: [process.execPath, '-e', 'process.stdin.setRawMode(true);process.on("SIGTERM",()=>process.exit(23));console.log("ready");for await(const b of process.stdin){console.log("unexpected-input")};await Bun.sleep(30000)'] }, { input, output: output.stream, diagnostics: diagnostic.stream });
     await until(() => Buffer.concat(output.chunks).toString().includes('ready')); input.end(); expect(await run).toBe(23);
     expect(Buffer.concat(output.chunks).toString()).not.toContain('unexpected-input'); expect(JSON.parse(readFileSync(path, 'utf8')).capture_status).toBe('disconnected');
   });
