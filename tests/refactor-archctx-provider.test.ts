@@ -9,7 +9,7 @@ const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 function repo(): string { const root = mkdtempSync(join(tmpdir(), "refactor-provider-")); roots.push(root); return root; }
 
-const capabilities = (version = "0.7.0") => ({ schemaVersion: "archcontext.capabilities/v1", package: { name: "archctx", version }, features: [] });
+const capabilities = (version = "0.7.1") => ({ schemaVersion: "archcontext.capabilities/v1", package: { name: "archctx", version }, features: [] });
 const envelope = (requestId: string, data: Record<string, unknown>) => ({ schemaVersion: "archcontext.envelope/v1", ok: true, requestId, data });
 
 function runner(calls: string[][], respond: (args: readonly string[]) => unknown) {
@@ -30,7 +30,7 @@ describe("refactor archctx provider", () => {
 
   test("fails on another archctx version and preserves upstream error codes", () => {
     const mismatch = (_binary: string, _args: readonly string[]) => ({ status: 0, signal: null, stderr: "", stdout: JSON.stringify(capabilities("0.0.1")) });
-    expect(() => runRefactorScan(repo(), { consumerRoot: process.cwd(), run: mismatch })).toThrow("expected archctx@0.7.0");
+    expect(() => runRefactorScan(repo(), { consumerRoot: process.cwd(), run: mismatch })).toThrow("expected archctx@0.7.1");
     const failing = runner([], () => ({ schemaVersion: "archcontext.envelope/v1", ok: false, requestId: "recommendations.accept", error: { code: "AC_SCHEMA_INVALID", message: "recommendation not found: rec.x" } }));
     try {
       decideRecommendation("rec.x", "accept", "user agreed", repo(), { consumerRoot: process.cwd(), run: failing });
