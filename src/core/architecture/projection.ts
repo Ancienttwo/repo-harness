@@ -11,7 +11,7 @@ import {
 import projectionResultSchema from 'archctx-contracts/schemas/runtime/projection-result.schema.json';
 import projectionReadbackSchema from 'archctx-contracts/schemas/runtime/projection-apply-readback.schema.json';
 
-export const ARCHCTX_REQUIRED_VERSION = '0.7.1' as const;
+export const ARCHCTX_REQUIRED_VERSION = '0.7.2' as const;
 
 export type ProjectionProvider = 'disabled' | 'archctx';
 export type ProjectionApplyMode = 'disabled' | 'manual';

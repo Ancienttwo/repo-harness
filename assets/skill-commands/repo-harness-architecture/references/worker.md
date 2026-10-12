@@ -56,7 +56,7 @@ write nodes.
    regions belong to archctx; preserve human-owned prose. Commit the model and the
    projected documents in the same pull request.
 
-## Model ChangeSets (archctx 0.7.1)
+## Model ChangeSets (archctx 0.7.2)
 
 - `plan` creates, updates and deletes entities. The operations are `create_entity`,
   `update_entity_fields` and `delete_entity`. A body is the complete new YAML
