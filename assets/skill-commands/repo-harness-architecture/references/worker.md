@@ -5,6 +5,7 @@ Worker reference. Use only within the assigned architecture scope.
 ## Protocol
 
 1. Confirm the target repo path and architecture scope.
+   Projection `check` and `apply` need CodeGraph code facts. In a new worktree run `codegraph init -y .`; when `.codegraph/` exists, run `codegraph index .`.
 2. Inspect `docs/architecture/index.md` and `.archcontext/model/nodes/`. For a coverage or registration scope, follow the coverage procedure below.
 3. When the scope maps to repo code or config, resolve the capability with:
    - `repo-harness run capability-resolver match --repo <repo> --path <path> --format json`
