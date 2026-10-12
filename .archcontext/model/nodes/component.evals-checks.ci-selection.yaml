@@ -13,9 +13,8 @@ source:
   include:
     - ".github/**"
     - "scripts/check-ci.sh"
-    - "scripts/select-ci-coverage.ts"
+    - "scripts/select-*.ts"
     - "scripts/replay-ci-coverage.ts"
     - "scripts/report-ci.ts"
-    - "scripts/select-test-suite.ts"
     - "scripts/ci-documentation-consumers.ts"
     - "scripts/test-file-durations.json"

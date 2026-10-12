@@ -20,6 +20,5 @@ source:
     - .ai/harness/brain-manifest.json
     - .ai/context/**
     - scripts/workflow-contract.ts
-    - scripts/check-context-map.ts
-    - scripts/check-context-files.sh
+    - scripts/check-context-*
     - scripts/select-agent-context-blocks.sh

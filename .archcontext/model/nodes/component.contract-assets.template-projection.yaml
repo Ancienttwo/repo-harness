@@ -19,8 +19,7 @@ source:
     - assets/project-structures/**
     - assets/plan-map.json
     - assets/versions.json
-    - assets/initializer-question-pack.v4.json
-    - assets/initializer-question-pack.v4.schema.json
+    - assets/initializer-*
     - .claude/templates/**
     - src/core/source-projection.ts
     - scripts/sync-helper-sources.ts
@@ -28,3 +27,8 @@ source:
     - scripts/assemble-template.ts
     - scripts/initializer-question-pack.ts
     - src/cli/commands/init.ts
+  exclude:
+    - assets/reference-configs/external-tooling.md
+    - docs/reference-configs/external-tooling.md
+    - docs/reference-configs/install-profiles.md
+    - docs/reference-configs/chatgpt-coding-mcp.md

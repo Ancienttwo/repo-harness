@@ -80,6 +80,11 @@ write nodes.
   `parent` chain, the deepest node owns the path, and the result reports
   `owningCapabilityId`. Every capability needs at least one include with a literal
   leading path.
+- In a capability include, use exact paths or `dir/**`. A file-name glob such as
+  `scripts/new-*.sh` widens the capability's literal anchor to `scripts`, and the
+  module review diff uses that anchor. Put file-name globs on a component. When one
+  node owns most of a directory, include `dir/**` and exclude the files that other
+  nodes own, so that no file has two owners off one `parent` chain.
 - Before a `plan` that writes a node file, read `preview.ownershipDelta`: the files
   that become owned, contested or unowned, or change owner.
 - A flow step is proven only with a relation for the exact step, a source symbol that is
