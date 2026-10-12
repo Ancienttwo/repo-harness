@@ -14,7 +14,5 @@ source:
     - "src/core/fleet/task-message.ts"
     - "src/core/fleet/task-reply.ts"
     - "src/core/fleet/task-inbox-layout.ts"
-    - "src/effects/fleet/task-inbox.ts"
-    - "src/effects/fleet/task-inbox-layout.ts"
-    - "src/effects/fleet/task-inbox-layout-migration.ts"
+    - "src/effects/fleet/task-*.ts"
     - "src/core/messages/document-handoff.ts"

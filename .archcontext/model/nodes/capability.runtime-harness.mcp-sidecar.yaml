@@ -19,6 +19,10 @@ source:
     - "docs/reference-configs/chatgpt-coding-mcp.md"
     - "docs/researches/20260711-devspace-chatgpt-local-control.md"
     - "src/core/security/**"
+  exclude:
+    - "src/cli/mcp/codegraph-adapter.ts"
+    - "src/cli/mcp/general-repo-access.ts"
+    - "src/cli/mcp/general-repo-access/**"
   entrypoints:
     - id: entrypoint.mcp-sidecar.primary
       path: "src/cli/mcp/server.ts"
