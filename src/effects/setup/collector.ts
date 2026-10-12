@@ -20,7 +20,7 @@ export const SETUP_INTERVAL_MS = 10 * 60_000;
 export const SETUP_TIMEOUT_MS = 90_000;
 const SETUP_STDOUT_LIMIT = 4 * 1024 * 1024;
 
-export const SETUP_CHILD_ARGV = Object.freeze([fileURLToPath(new URL('./setup-check-child.ts', import.meta.url))] as const);
+export const SETUP_CHILD_ARGV = Object.freeze([fileURLToPath(new URL('../../cli/commands/setup-check-child.ts', import.meta.url))] as const);
 
 export type SetupProcessFailure = 'timeout' | 'failed' | 'aborted';
 export type SetupProcessResult = { readonly ok: true; readonly stdout: string } | { readonly ok: false; readonly code: SetupProcessFailure };

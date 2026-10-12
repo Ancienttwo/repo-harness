@@ -16,7 +16,7 @@ import {
   type SetupProcessResult,
   type SetupProcessRunner,
 } from '../../src/effects/setup/collector';
-import { SETUP_FLEET_SOURCE_DIR, readFleetRoles } from '../../src/effects/setup/snapshot';
+import { SETUP_FLEET_SOURCE_DIR, readFleetRoles } from '../../src/cli/commands/setup-snapshot';
 import { PROFILE_COMPONENTS } from '../../src/cli/installer/install-profile';
 import { parseSkillSurfaceCatalog } from '../../src/core/skill-surface/catalog';
 
@@ -48,7 +48,7 @@ describe('setup collector', () => {
     expect(outcome.ok).toBe(true);
     expect(SETUP_TIMEOUT_MS).toBe(90_000);
     expect(seen[0]!.argv).toBe(SETUP_CHILD_ARGV);
-    expect(SETUP_CHILD_ARGV).toEqual([join(import.meta.dir, '../../src/effects/setup/setup-check-child.ts')]);
+    expect(SETUP_CHILD_ARGV).toEqual([join(import.meta.dir, '../../src/cli/commands/setup-check-child.ts')]);
     expect(seen[0]!.timeout).toBe(90_000);
     expect(seen[0]!.env.REPO_HARNESS_CHECK_UPDATES).toBeUndefined();
   });

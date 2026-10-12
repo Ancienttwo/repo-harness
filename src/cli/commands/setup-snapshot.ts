@@ -9,14 +9,14 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { skillProjectionSourceRoot } from '../../cli/commands/doctor';
-import { buildSetupCheck, type SetupCheckBuild } from '../../cli/commands/init-hook';
-import { ROUTES } from '../../cli/hook/route-registry';
-import { PROFILE_COMPONENTS } from '../../cli/installer/install-profile';
+import { skillProjectionSourceRoot } from './doctor';
+import { buildSetupCheck, type SetupCheckBuild } from './init-hook';
+import { ROUTES } from '../hook/route-registry';
+import { PROFILE_COMPONENTS } from '../installer/install-profile';
 import { projectSetupSnapshot, type SetupRawFleetRole } from '../../core/setup/projection';
 import type { SetupSnapshotV1 } from '../../core/setup/types';
 import { parseSkillSurfaceCatalog } from '../../core/skill-surface/catalog';
-import { parseFrontmatter } from '../terminal/task-role-profiles';
+import { parseFrontmatter } from '../../effects/terminal/task-role-profiles';
 
 /** The packaged fleet source, the same package-relative path the tooling check reads. */
 export const SETUP_FLEET_SOURCE_DIR = fileURLToPath(new URL('../../../agents/fleet/', import.meta.url));
