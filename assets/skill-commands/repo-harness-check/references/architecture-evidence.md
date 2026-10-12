@@ -39,7 +39,7 @@ ArchContext `ProjectionResultV2`. The command exits 1 when the status is not
 `noop`. Use `repo-harness architecture-projection status --json` when the
 provider state is unclear.
 The check needs CodeGraph code facts. In a new worktree, have the worker run
-`codegraph init -y .` first, or `codegraph index .` when `.codegraph/` exists.
+`codegraph init -y .` first, or `codegraph sync .` when `.codegraph/` exists.
 
 | Result | Meaning | Bot decision |
 | --- | --- | --- |
