@@ -6,6 +6,7 @@ import { join } from 'node:path';
 
 import {
   runDevActivityProcess,
+  DEV_ACTIVITY_SUBPROCESS_TIMEOUT_MS,
   collectDevActivity,
   startDevActivityCollector,
   devActivityGhPrListArgv,
@@ -216,11 +217,15 @@ require('node:fs').writeFileSync(${JSON.stringify(ready)}, String(child.pid));
 process.exit(0);
 `);
       chmodSync(executable, 0o755);
-      const pending = runDevActivityProcess('gh', [], { cwd, env: f.env, timeout_ms: 1000, signal: new AbortController().signal });
-      for (let waited = 0; waited < 800 && !existsSync(ready); waited += 10) await Bun.sleep(10);
+      const deadline_ms = DEV_ACTIVITY_SUBPROCESS_TIMEOUT_MS;
+      const started = Date.now();
+      const pending = runDevActivityProcess('gh', [], { cwd, env: f.env, timeout_ms: deadline_ms, signal: new AbortController().signal });
+      // Process startup shares the real production deadline. It has no 800 ms promise.
+      for (let waited = 0; waited < deadline_ms && !existsSync(ready); waited += 10) await Bun.sleep(10);
       expect(existsSync(ready)).toBe(true);
       pid = Number(readFileSync(ready, 'utf8'));
       expect(await pending).toEqual({ ok: false, code: 'timeout' });
+      expect(Date.now() - started).toBeLessThan(deadline_ms + 5000);
       expect(() => process.kill(pid!, 0)).not.toThrow();
     } finally {
       if (pid !== undefined) { try { process.kill(pid, 'SIGKILL'); } catch { /* fixture already exited */ } }
