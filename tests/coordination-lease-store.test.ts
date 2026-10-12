@@ -66,6 +66,7 @@ import {
   writeLeaseOwnerDurably,
 } from '../src/effects/state/coordination-lease-store';
 import { resolveGitCommonDirectory } from '../src/effects/git/common-directory';
+import { withExclusiveDirectoryLock } from '../src/effects/locking/exclusive-directory-lock';
 import { deriveLegacyTaskId } from '../src/core/state/sprint-schema-v1';
 import { CLAIM_TOKEN_DIR } from '../src/effects/state/coordination-claim-token';
 import { fixtureTaskId } from './helpers/sprint-fixture';
@@ -551,6 +552,31 @@ test('the backlog lock reclaims a dead owner and reports it in the shell\'s word
 
     const reclaimed: string[] = [];
     expect(withBacklogLock(repo, () => 'acquired', (path) => reclaimed.push(path))).toBe('acquired');
+    expect(reclaimed).toEqual([lockPath]);
+    expect(existsSync(lockPath)).toBe(false);
+  }, 60_000);
+
+  test('a reclaim that outlasts the wait budget still elects the freed lock', () => {
+    // CI measured an 83 ms reclaim against the 50 ms sweep budget. The reclaim
+    // removed the dead owner, but the deadline check then reported a timeout.
+    const repo = createRepo();
+    const common = resolveGitCommonDirectory(repo);
+    const relativeLockPath = 'repo-harness/coordination/locks/slow-reclaim.lock';
+    const lockPath = join(common, relativeLockPath);
+    mkdirSync(lockPath, { recursive: true });
+    const deadPid = 2 ** 22 - 1;
+    const token = `${deadPid}-${Date.now()}-33333333-3333-4333-8333-333333333333`;
+    writeFileSync(join(lockPath, `${token}.json`), `${JSON.stringify({ pid: deadPid, created_at: Date.now(), token })}\n`);
+
+    const reclaimed: string[] = [];
+    const acquired = withExclusiveDirectoryLock(common, relativeLockPath, () => existsSync(lockPath), {
+      waitTimeoutMs: 20,
+      onStaleReclaim(path) {
+        reclaimed.push(path);
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 40);
+      },
+    });
+    expect(acquired).toBe(true);
     expect(reclaimed).toEqual([lockPath]);
     expect(existsSync(lockPath)).toBe(false);
   }, 60_000);
