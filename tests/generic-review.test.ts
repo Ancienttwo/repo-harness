@@ -192,6 +192,11 @@ test.skipIf(process.platform !== 'darwin')('app-terminal round returns the exact
   writeSessionArtifact(join(f.dir, 'host-claim.json'), { pid: exited.pid });
   await expect(runReviewRound(options, f.effects)).rejects.toThrow('review_host_start_failed');
   expect((reviewStatus(f.root, f.options.contract) as { lifecycle: { status: string } }).lifecycle.status).toBe('launch_pending');
+  // After Session opening began, a host exit without a disposal receipt is not cleanup proof.
+  writeSessionArtifact(join(f.dir, 'session-opening.json'), { pid: exited.pid });
+  await expect(closeReview(f.root, f.options.contract, true, f.home)).rejects.toThrow('review_host_cleanup_pending');
+  expect(reviewStatus(f.root, f.options.contract).status).toBe('open');
+  writeSessionArtifact(join(f.dir, 'disposed.json'), { disposed: true, fixture: false });
   expect((await closeReview(f.root, f.options.contract, true, f.home)).status).toBe('closed');
   expect(existsSync(join(f.dir, 'close.request'))).toBe(true);
   expect(reviewStatus(f.root, f.options.contract).status).toBe('closed');

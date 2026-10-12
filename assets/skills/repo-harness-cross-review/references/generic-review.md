@@ -118,4 +118,6 @@ round fails. Read the terminal output, then run `review cancel`; do not launch
 again. Keep the tab open until `review close`. Closing the tab sends SIGHUP;
 the host disposes and exits, and the session can then only be cancelled.
 Cleanup never signals the terminal process. It waits for the host to dispose
-and exit. Terminal history is not available to the CLI.
+and exit. If a host exits after it began a Session but before `disposed.json`,
+cleanup stays pending; check for a leftover reviewer process. Terminal history
+is not available to the CLI.

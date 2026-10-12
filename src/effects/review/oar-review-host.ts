@@ -134,6 +134,9 @@ export async function openReviewHost(spec: ReviewHostSpec, print: (event: unknow
   if (spec.options.cwd !== spec.output) throw new Error('OAR_REVIEW_OUTPUT_CWD_REQUIRED');
   process.env.TMPDIR = reviewHostTemporaryDirectory(spec.output);
   delete process.env.OAR_CODEX_SANDBOX; // Never inherit: stock OAR default under the admitted child profile.
+  // From here a native reviewer child can exist until disposal. Cleanup of an
+  // unbound host that exits without disposed.json must stay pending.
+  writeSessionArtifact(join(spec.controlDirectory, 'session-opening.json'), { pid: process.pid });
   return new OarReviewHost(await reviewRuntime(spec.kind).session(spec.installation, spec.options), print);
 }
 

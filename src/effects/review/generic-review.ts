@@ -132,6 +132,7 @@ const runtime = { start: startTaskApplicationHost, bindTerminal: bindTerminalApp
     if (terminal && !existsSync(join(taskSessionDirectory(repo, task, GENERIC_REVIEW_ROLE), 'binding.json'))) {
       // Unbound app-terminal host: a claimed host disposes on close.request and
       // exits. Without a claim, the tombstone makes any later launch fail first.
+      // A host that began a Session and exits without disposal proof stays pending.
       if (!existsSync(request)) writeSessionArtifact(request, { close: true });
       const path = join(output, 'host-claim.json');
       try { writeSessionArtifact(path, { pid: null, closed: true }); return; }
@@ -142,6 +143,9 @@ const runtime = { start: startTaskApplicationHost, bindTerminal: bindTerminalApp
       while (claimedHostAlive(claim)) {
         if (Date.now() >= deadline) throw new Error('review_host_cleanup_pending; the app terminal host is still running');
         await Bun.sleep(25);
+      }
+      if (existsSync(join(output, 'session-opening.json')) && !existsSync(join(output, 'disposed.json'))) {
+        throw new Error('review_host_cleanup_pending; the host exited after it began a Session without a disposal receipt; check for a leftover reviewer process');
       }
       return;
     }
