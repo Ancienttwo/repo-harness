@@ -88,7 +88,7 @@ function fakeGh(wrongBase = false): NonNullable<PublicationReadinessInput['gh_ru
     baseRefOid: BASE,
     baseRefName: receipt.target_ref,
     body: `PR body\n${encodePublicationMarker(receipt)}\n`,
-    reviewDecision: null,
+    reviewDecision: '',
     mergeable: 'MERGEABLE',
   };
   return (args) => {
@@ -326,6 +326,61 @@ test('production read-only collector has no local lease/review/artifact collecto
   ]);
 });
 
+test.each([
+  ['missing', undefined], ['whitespace', ' '], ['unknown', 'UNKNOWN'],
+  ['boolean', false], ['number', 0], ['array', ['APPROVED']], ['object', { decision: 'APPROVED' }],
+] as const)('both identity adapters reject malformed CLI reviewDecision: %s', async (_label, decision) => {
+  const source = fakeGh();
+  const gh_runner: NonNullable<PublicationReadinessInput['gh_runner']> = args => {
+    const observed = source(args);
+    return args[0] === 'pr' && args[1] === 'view'
+      ? { ...observed, stdout: JSON.stringify({ ...JSON.parse(observed.stdout), reviewDecision: decision }) }
+      : observed;
+  };
+  expect(() => observeProviderReadinessIdentity(receipt, { ...input, gh_runner }))
+    .toThrow('provider PR reviewDecision is unknown');
+  await expect(observeProviderReadinessIdentityAbortable(receipt, {
+    ...input, gh_runner_async: async args => gh_runner(args),
+  })).rejects.toMatchObject({ code: 'provider_data_incomplete' });
+});
+
+test.each([null, '', 'APPROVED', 'CHANGES_REQUESTED', 'REVIEW_REQUIRED'] as const)(
+  'both identity adapters accept valid CLI reviewDecision %j', async decision => {
+    const source = fakeGh();
+    const gh_runner: NonNullable<PublicationReadinessInput['gh_runner']> = args => {
+      const observed = source(args);
+      return args[0] === 'pr' && args[1] === 'view'
+        ? { ...observed, stdout: JSON.stringify({ ...JSON.parse(observed.stdout), reviewDecision: decision }) }
+        : observed;
+    };
+    const synchronous = observeProviderReadinessIdentity(receipt, { ...input, gh_runner });
+    const abortable = await observeProviderReadinessIdentityAbortable(receipt, {
+      ...input, gh_runner_async: async args => gh_runner(args),
+    });
+    expect(synchronous.review_decision).toBe(decision === '' ? null : decision);
+    expect(abortable).toEqual(synchronous);
+  },
+);
+
+test.each([
+  ['missing', undefined], ['empty', ''], ['unknown', 'UNKNOWN'], ['changed', 'APPROVED'],
+] as const)('both facts adapters refuse GraphQL reviewDecision %s with empty CLI decision', async (_label, decision) => {
+  const source = fakeGh();
+  const gh_runner: NonNullable<PublicationReadinessInput['gh_runner']> = args => {
+    if (args[0] !== 'api' || args[1] !== 'graphql') return source(args);
+    const graph = reviewGraph();
+    Object.assign(graph.data.node.pullRequest, { reviewDecision: decision });
+    return { status: 0, stdout: JSON.stringify(graph) };
+  };
+  const identity = observeProviderReadinessIdentity(receipt, { ...input, gh_runner });
+  expect(() => observeProviderReadinessFacts(identity, receipt, { ...input, gh_runner }))
+    .toThrow('provider review decision changed during read');
+  const asyncInput = { ...input, gh_runner_async: async (args: readonly string[]) => gh_runner(args) };
+  const asyncIdentity = await observeProviderReadinessIdentityAbortable(receipt, asyncInput);
+  await expect(observeProviderReadinessFactsAbortable(asyncIdentity, receipt, asyncInput))
+    .rejects.toMatchObject({ code: 'provider_data_incomplete' });
+});
+
 test('ordinary PR consumer uses trusted CI head/base once and needs no local artifact or marker', () => {
   const source = fakeGh(); let ciCalls = 0;
   const gh_runner: NonNullable<PublicationReadinessInput['gh_runner']> = args => {
@@ -384,6 +439,28 @@ test.each(['changes', 'threads', 'dismissed', 'approved', 'outdated-unresolved',
     expect(facts.review_decision).toBe(scenario === 'changes' ? 'CHANGES_REQUESTED' : null);
     expect(facts.unresolved_thread_count).toBe(expected[0] === 'unresolved_threads' ? 1 : 0);
   }
+});
+
+test('ordinary provider collector blocks decision changes after normalized empty CLI reads', () => {
+  const source = fakeGh();
+  let identityReads = 0;
+  const gh_runner: NonNullable<PublicationReadinessInput['gh_runner']> = args => {
+    const observed = source(args);
+    if (args[0] === 'pr' && args[1] === 'view') return { ...observed, stdout: JSON.stringify({
+      ...JSON.parse(observed.stdout), reviewDecision: ++identityReads % 2 ? '' : 'APPROVED',
+    }) };
+    if (args[0] === 'pr' && args[1] === 'checks') return { status: 0, stdout: JSON.stringify([
+      { name: 'Required / CI', bucket: 'pass', link: 'https://github.com/example/repo-harness/actions/runs/123/job/456' },
+    ]) };
+    if (args[1]?.includes('/actions/runs/')) return { ...observed, stdout: JSON.stringify({
+      ...JSON.parse(observed.stdout), status: 'completed', conclusion: 'success',
+    }) };
+    return observed;
+  };
+  const verdict = collectPullRequestMergeReadiness({ ...input, pr_number: 42,
+    expected_head_sha: HEAD, expected_base_sha: BASE, gh_runner });
+  expect(verdict.blockers.map(blocker => blocker.code)).toEqual(['changed_during_read']);
+  expect(identityReads).toBe(4);
 });
 
 test('review decision movement after facts prevents a green verdict', () => {

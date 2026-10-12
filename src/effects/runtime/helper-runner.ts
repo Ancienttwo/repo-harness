@@ -7,6 +7,7 @@ import { trustedNodeCandidates } from './node-candidates';
 import {
   protectedHelperRuntimeEnv,
   resolveProtectedHelperPlatform,
+  resolveTrustedGhExecutable,
   type ProtectedHelperPlatform,
 } from './protected-helper-platform';
 
@@ -22,22 +23,7 @@ const VERIFIER_HELPER_TIMEOUT_MS = 3_660_000;
 const CLOSEOUT_HELPER_TIMEOUT_MS = 900_000;
 const ORDINARY_HELPER_TIMEOUT_MS = 120_000;
 
-function optionalHostExecutable(candidates: readonly string[]): string | undefined {
-  for (const candidate of candidates) {
-    if (!existsSync(candidate)) continue;
-    const actual = realpathSync(candidate);
-    const stat = lstatSync(actual);
-    if (stat.isFile() && (stat.mode & 0o111) !== 0) return actual;
-  }
-  return undefined;
-}
-
-const HOST_GH = optionalHostExecutable([
-  '/opt/homebrew/bin/gh',
-  '/usr/local/bin/gh',
-  '/usr/bin/gh',
-  '/home/linuxbrew/.linuxbrew/bin/gh',
-]);
+const HOST_GH = resolveTrustedGhExecutable();
 
 function protectedPath(runtime: ProtectedHelperPlatform): string {
   return [...new Set([

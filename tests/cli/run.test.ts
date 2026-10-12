@@ -194,7 +194,9 @@ describe("run command", () => {
       writeFileSync(node, `#!/bin/sh\ntouch "${marker}"\necho v24.18.0\n`);
       chmodSync(node, 0o755);
 
-      const env = protectedChildEnv({ ...process.env, PATH: fakeBin, REPO_HARNESS_NODE_BIN: "/attacker/node" });
+      const env = protectedChildEnv({ ...process.env, PATH: fakeBin,
+        REPO_HARNESS_NODE_BIN: "/attacker/node", REPO_HARNESS_GH_BIN: "/attacker/gh" });
+      expect(env.REPO_HARNESS_GH_BIN, "caller gh override must be discarded before the runner selects its host binary").toBeUndefined();
       expect(env.REPO_HARNESS_NODE_BIN).not.toBe(realpathSync(node));
       expect(existsSync(marker), "caller PATH Node must not execute during protected environment construction").toBe(false);
       expect(env.PATH?.split(":"), "caller PATH must not become a general command authority").not.toContain(fakeBin);
