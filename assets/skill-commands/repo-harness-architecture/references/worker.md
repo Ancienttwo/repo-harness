@@ -55,35 +55,35 @@ write nodes.
    regions belong to archctx; preserve human-owned prose. Commit the model and the
    projected documents in the same pull request.
 
-## Model ChangeSets (archctx 0.7.0)
+## Model ChangeSets (archctx 0.7.1)
 
 - `plan` creates, updates and deletes entities. The operations are `create_entity`,
   `update_entity_fields` and `delete_entity`. A body is the complete new YAML
   document, not a field patch.
 - `expectedHash` is `missing` for a new file. For an existing file, read it with
   `archctx hash --path <repo-relative file>`. It is not `sha256sum` of the file.
-- Put dependent changes (node, relation, flow) in one ChangeSet. While
-  arch-context#297 is open, `plan --operations-file` fails with
-  `AC_RUNTIME_UNAVAILABLE`. Send the same operations array through the MCP tool
-  `archcontext_plan_update` over `archctx mcp` stdio instead. The single-entity
-  route `archctx plan --id <id> --op <op> --path <file> --expected-hash <hash> --body-file <file>`
-  works. Input files must be repository-relative; use an ignored path such as
+- Put dependent changes (node, relation, flow) in one ChangeSet with
+  `archctx plan --operations-file <file>`; `-` reads the operations from stdin.
+  The single-entity route
+  `archctx plan --id <id> --op <op> --path <file> --expected-hash <hash> --body-file <file>`
+  also works. Input files must be repository-relative; use an ignored path such as
   `.archcontext/tmp/` and delete it before commit.
 - Inspect the draft and preview, then run
   `archctx apply --id <same-id> --approved --expected-worktree-digest <draft.base.worktreeDigest>`.
   A draft lives in daemon memory. Plan again after a daemon restart or any worktree
   change. `--approved` records the authorized Agent decision; it does not grant extra scope.
 - A component footprint is `source.include` on the `component.*` node. Until
-  arch-context#296 lands, the repo-harness model reader accepts only an exact path or
+  repo-harness#631 lands, the repo-harness model reader accepts only an exact path or
   `dir/**` in any node include; a filename wildcard such as `src/x/foo-*.ts` makes
   `repo-harness module` fail with `source_include_invalid`. The repo-harness registry
   reads capability nodes only, so a file without an owner must also go into the
-  capability include. `archctx resolve --path` reports component files as ambiguous;
-  use `archctx refactor scan --json` and capability-resolver instead.
+  capability include. `archctx resolve --paths-from <file> --json` resolves many
+  paths in one call. When the candidates lie on one `parent` chain, the deepest node
+  owns the path, and the result reports `owningCapabilityId`.
+- Before a `plan` that writes a node file, read `preview.ownershipDelta`: the files
+  that become owned, contested or unowned, or change owner.
 - A flow step is proven only with a relation for the exact step, a source symbol that is
   unique in its file, and a direct CodeGraph `calls` edge from source to sink.
-- Do not put commas in relation intents or node names; the renderer turns them into
-  full-width commas.
 - Every major-change `architecture-projection apply` in one workspace needs a new
   `--request-id`; a reused id fails with `AC_PROJECTION_APPLY_COMMITTED`. A large model
   can exceed the configured `projection_timeout_ms`; the archctx run may still finish,

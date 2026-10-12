@@ -1,9 +1,9 @@
 # runtime-harness/operator 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-operator" sourceDigest="sha256:074d4cf9e6d1ad86dadda5ed9c35934adb795236ebec0e2ff094457ecb09cfa2" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:6669b2bddf62c2a117762dcbfc7d4bf77a6261b6b1bf8ea04b0c08b1d32b3a57" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-operator" sourceDigest="sha256:97c3f7be75e1fd2beb3327c0a22963045a3bf1a7b75f0b0a946a3b607bd35b38" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:f872cfd85e3e55cae5eb525f8073d6642fcb5141e03c14da5c9202ff5aa778ce" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.operator`(kind `capability`)
-> **Matched Prefixes**:`src/core/operator/**`、`src/effects/operator/**`、`src/operator-web/**`、`src/cli/commands/operator.ts`、`src/cli/commands/module.ts`、`src/core/architecture/module-view.ts`、`src/core/docs/**`、`src/core/setup/**`、`src/effects/setup/**`、`src/core/dev-activity/**`、`src/effects/dev-activity/**`、`src/effects/terminal/herdr-observation.ts`、`assets/operator/**`、`vite.operator.config.ts`
+> **Matched Prefixes**:`src/core/operator/**`、`src/effects/operator/**`、`src/operator-web/**`、`src/cli/commands/operator.ts`、`src/cli/commands/module.ts`、`src/core/architecture/module-view.ts`、`src/core/docs/**`、`src/core/setup/**`、`src/effects/setup/**`、`src/cli/commands/setup-snapshot.ts`、`src/cli/commands/setup-check-child.ts`、`src/core/dev-activity/**`、`src/effects/dev-activity/**`、`src/effects/terminal/herdr-observation.ts`、`assets/operator/**`、`vite.operator.config.ts`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
@@ -24,7 +24,7 @@ flowchart LR
   p1_component_operator_web_console_452bb61f["Operator Web Console"]:::component
   p1_component_operator_activity_feeds_00325b96 -->|"Reuse public agent-config text filtering and runtime badge freshness rules"| p1_component_operator_view_projections_ca31e3bc
   p1_component_operator_architecture_view_0bdc3e1c -->|"List modules and export review prompts through the shared ArchitectureModelReader"| p1_capability_runtime_harness_global_runtime_reconciliation_401730e8
-  p1_component_operator_primary_d8da79ba -->|"Start the bounded background collectors once and serve only their cached， re-decoded snapshots"| p1_component_operator_activity_feeds_00325b96
+  p1_component_operator_primary_d8da79ba -->|"Start the bounded background collectors once and serve only their cached#44; re-decoded snapshots"| p1_component_operator_activity_feeds_00325b96
   p1_component_operator_primary_d8da79ba -->|"Build the docs graph from committed repository content"| p1_component_operator_architecture_view_0bdc3e1c
   p1_component_operator_primary_d8da79ba -->|"Read the committed architecture model through the shared ArchitectureModelReader"| p1_capability_runtime_harness_global_runtime_reconciliation_401730e8
   p1_component_operator_primary_d8da79ba -->|"Parse closed route requests and project or re-decode each observation before it leaves the server"| p1_component_operator_view_projections_ca31e3bc
@@ -39,7 +39,7 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:d030437a632128f234257b33d3d257c4b4ee079dc14da54ab26757fc36473a1b`).
+- Proof: `proven` (`sha256:76ab1159c9721f3262b330bc1996d8d091b2d943c82f5e95395e6208e2723e32`).
 - Semantic nodes: `7`; declared relations: `11`.
 
 ### 1.2 模組職責表
@@ -48,10 +48,18 @@ flowchart LR
 | --- | --- | --- |
 | `entrypoint.operator.primary` | `src/effects/operator/architecture.ts#readArchitecture` | `sink.operator.primary` → `src/core/operator/architecture.ts#decodeArchitectureModuleIndex`、`sink.operator.model-reader-list` → `src/effects/architecture/model-reader.ts#list` |
 
+組件入口:
+
+| 組件 | 宣告入口 | 錨點 | 職責 |
+| --- | --- | --- | --- |
+| `component.operator.primary` | `entrypoint.operator.http-server` | `src/effects/operator/server.ts#startOperatorServer` | `sink.operator.dev-activity-collector` → `src/effects/dev-activity/collector.ts#startDevActivityCollector` |
+| `component.operator.primary` | `entrypoint.operator.http-server` | `src/effects/operator/server.ts#handleRequest` | `sink.operator.dev-activity-decode` → `src/core/dev-activity/decode.ts#decodeDevActivitySnapshot`、`sink.operator.dev-activity-unavailable` → `src/core/dev-activity/decode.ts#unavailableDevActivitySnapshot`、`sink.operator.architecture-request` → `src/core/operator/architecture.ts#parseArchitectureRequest` |
+| `component.operator.web-console` | `entrypoint.operator.web-dev-activity` | `src/operator-web/dev-activity.ts#fetchDevActivity` | `sink.operator.web-dev-activity-decode` → `src/core/dev-activity/decode.ts#decodeDevActivitySnapshot` |
+
 ### 1.3 規模信號
 
 - 規模量級:`50–100` 個文件 / `10k–20k` 行
-- 匹配前綴:`src/core/operator/**`、`src/effects/operator/**`、`src/operator-web/**`、`src/cli/commands/operator.ts`、`src/cli/commands/module.ts`、`src/core/architecture/module-view.ts`、`src/core/docs/**`、`src/core/setup/**`、`src/effects/setup/**`、`src/core/dev-activity/**`、`src/effects/dev-activity/**`、`src/effects/terminal/herdr-observation.ts`、`assets/operator/**`、`vite.operator.config.ts`
+- 匹配前綴:`src/core/operator/**`、`src/effects/operator/**`、`src/operator-web/**`、`src/cli/commands/operator.ts`、`src/cli/commands/module.ts`、`src/core/architecture/module-view.ts`、`src/core/docs/**`、`src/core/setup/**`、`src/effects/setup/**`、`src/cli/commands/setup-snapshot.ts`、`src/cli/commands/setup-check-child.ts`、`src/core/dev-activity/**`、`src/effects/dev-activity/**`、`src/effects/terminal/herdr-observation.ts`、`assets/operator/**`、`vite.operator.config.ts`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
 ### 1.4 依賴邊界
@@ -64,9 +72,53 @@ flowchart LR
 
 - `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the operator command
 
+組件出向關係:
+
+- `component.operator.activity-feeds`:
+  - `reads` → `capability.runtime-harness.hook-adapters` — Read the hook route registry and install profile components for the Hooks and Agents pages
+  - `reads` → `capability.runtime-harness.pipeline-ledger` — Read pipeline records into the activity snapshot
+  - `reads` → `capability.runtime-harness.verified-context` — Read open Human Decisions for the board attention queue
+  - `calls` → `component.operator.view-projections` — Reuse public agent-config text filtering and runtime badge freshness rules
+- `component.operator.architecture-view`:
+  - `calls` → `capability.verification.acceptance-review` — Report module CLI failures with the typed module read error of the review prompt builder
+  - `reads` → `capability.runtime-harness.global-runtime-reconciliation` — List modules and export review prompts through the shared ArchitectureModelReader
+- `component.operator.primary`:
+  - `calls` → `capability.verification.acceptance-review` — Raise and map the typed module read errors that the module review prompt builder declares
+  - `calls` → `component.operator.activity-feeds` — Start the bounded background collectors once and serve only their cached, re-decoded snapshots
+  - `calls` → `component.operator.architecture-view` — Build the docs graph from committed repository content
+  - `calls` → `capability.runtime-harness.collaboration` — Collect the collaborative Work Exchange for one registered repository
+  - `reads` → `capability.runtime-harness.engineer-scheduling` — Read the tracked work graph projection for the Planning view
+  - `reads` → `capability.runtime-harness.engineering-overlay` — Collect the engineering board for the Organization view
+  - `reads` → `capability.runtime-harness.global-runtime-reconciliation` — Read the committed architecture model through the shared ArchitectureModelReader
+  - `reads` → `capability.runtime-harness.mcp-sidecar` — Resolve a registered repository root from the strict repo-harness registry snapshot
+  - `reads` → `capability.runtime-harness.verified-context` — Read the open Human Decision inventory
+  - `calls` → `component.operator.view-projections` — Parse closed route requests and project or re-decode each observation before it leaves the server
+  - `reads` → `capability.runtime-harness.pipeline-ledger` — Open pipeline ledger snapshots and decode the pipeline board
+  - `reads` → `capability.organization.task-fleet` — Collect fleet offers and the fleet board for the console
+- `component.operator.view-projections`:
+  - `depends-on` → `capability.verification.acceptance-review` — Decode the module review prompt shape that the review prompt builder declares
+  - `depends-on` → `component.operator.architecture-view` — Decode the module index and module detail shapes that the architecture view declares
+  - `depends-on` → `capability.runtime-harness.collaboration` — Project Work Exchange, handoff and context packet records with the collaboration validators
+  - `reads` → `capability.organization.task-fleet` — Render fleet board errors and task message shapes
+- `component.operator.web-console`:
+  - `calls` → `component.operator.activity-feeds` — Decode the development activity and setup snapshots with the decoders the server uses
+  - `calls` → `component.operator.primary` — Fetch public JSON observations through GET and HEAD routes only
+  - `reads` → `capability.runtime-harness.pipeline-ledger` — Decode the pipeline board in the browser
+  - `calls` → `component.operator.view-projections` — Decode each observation body with the shared strict core decoder before render
+
+### 1.5 組件結構
+
+| 組件 | 名稱 | 規模量級 | 宣告入口 |
+| --- | --- | --- | --- |
+| `component.operator.activity-feeds` | Setup and Activity Feeds | `10–20` 個文件 / `1000–2000` 行 | 未宣告 |
+| `component.operator.architecture-view` | Architecture View | `2–5` 個文件 / `200–500` 行 | 未宣告 |
+| `component.operator.primary` | Operator HTTP Reader | `20–50` 個文件 / `2000–5000` 行 | `entrypoint.operator.http-server` |
+| `component.operator.view-projections` | Operator View Projections | `10–20` 個文件 / `2000–5000` 行 | 未宣告 |
+| `component.operator.web-console` | Operator Web Console | `20–50` 個文件 / `5000–10000` 行 | `entrypoint.operator.web-dev-activity` |
+
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:d030437a632128f234257b33d3d257c4b4ee079dc14da54ab26757fc36473a1b`); selectors `7/7`.
+> **Proof**: `proven` (`sha256:76ab1159c9721f3262b330bc1996d8d091b2d943c82f5e95395e6208e2723e32`); selectors `7/7`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
@@ -75,7 +127,7 @@ sequenceDiagram
   participant p2_web_console_7ad4d9ac as Operator Web Console
   participant p2_http_reader_b98e0942 as Operator HTTP Reader
   participant p2_activity_feeds_9511dd1f as Setup and Activity Feeds
-  p2_http_reader_b98e0942->>p2_activity_feeds_9511dd1f: Start the background collector once at server start； cycles never overlap
+  p2_http_reader_b98e0942->>p2_activity_feeds_9511dd1f: Start the background collector once at server start#59; cycles never overlap
   p2_http_reader_b98e0942->>p2_activity_feeds_9511dd1f: GET /api/v1/dev-activity re-decodes the cached snapshot and starts no work
   alt Snapshot decodes in the browser
   p2_web_console_7ad4d9ac->>p2_activity_feeds_9511dd1f: Decode the JSON body with the same strict decoder before render

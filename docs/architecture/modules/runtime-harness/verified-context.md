@@ -1,6 +1,6 @@
 # runtime-harness/verified-context 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-verified-context" sourceDigest="sha256:94aad12e2f67675e1d1051153aef204c181a67f76095cef6e923a786d0d839bb" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:60d738346a6497987ef11f050cf255565e6bd4360ed8bb0a08ed4d2b07008380" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-verified-context" sourceDigest="sha256:3e9f4343183b37072703652c7ef33e5f858ca24e91f77db2c0c6db5a23623eb2" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:560bed61b9ea109a2af402bc6785eda4ae05c5e1ef8fa8024bb35dbe46025cf6" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.verified-context`(kind `capability`)
 > **Matched Prefixes**:`src/core/engineers/verified-context.ts`、`src/effects/engineers/verified-context-store.ts`、`src/cli/commands/verified-context.ts`
@@ -19,8 +19,8 @@ flowchart LR
   p1_capability_runtime_harness_engineer_bindings_34c00f72["Engineer Bindings"]:::component
   p1_capability_runtime_harness_verified_context_7d943429["Verified Evidence Context"]:::component
   p1_component_verified_context_primary_77f941fd["Verified Checkpoint Evidence Store"]:::component
-  p1_capability_runtime_harness_delegated_runs_e1654b07 -->|"Revalidate the exact current parent ClaimActorReceipt， WorkEnvelope and Engineer Binding before delegation admission"| p1_capability_runtime_harness_engineer_bindings_34c00f72
-  p1_capability_runtime_harness_verified_context_7d943429 -->|"Revalidate existing immutable WorkerRunRef， process receipt， WorkerResult and evidence blobs as untrusted checkpoint inputs"| p1_capability_runtime_harness_delegated_runs_e1654b07
+  p1_capability_runtime_harness_delegated_runs_e1654b07 -->|"Revalidate the exact current parent ClaimActorReceipt#44; WorkEnvelope and Engineer Binding before delegation admission"| p1_capability_runtime_harness_engineer_bindings_34c00f72
+  p1_capability_runtime_harness_verified_context_7d943429 -->|"Revalidate existing immutable WorkerRunRef#44; process receipt#44; WorkerResult and evidence blobs as untrusted checkpoint inputs"| p1_capability_runtime_harness_delegated_runs_e1654b07
   p1_capability_runtime_harness_verified_context_7d943429 -->|"Revalidate Engineer decision actors against the exact current active Binding fence"| p1_capability_runtime_harness_engineer_bindings_34c00f72
   p1_capability_runtime_harness_verified_context_7d943429 -->|"Persist and project exact checkpoint evidence without runtime or task authority"| p1_component_verified_context_primary_77f941fd
   classDef actor fill:#111827,color:#ffffff,stroke:#f9fafb,stroke-width:2px
@@ -29,7 +29,7 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:f89eb9ac51dcefd7469532cd4664e6ae88156d11bccdac09fca239172722dee9`).
+- Proof: `proven` (`sha256:0f6892c1ba87359a2e3a6ac8970926b95373de27cce1baa6dbf626c2b8fa48d4`).
 - Semantic nodes: `4`; declared relations: `4`.
 
 ### 1.2 模組職責表
@@ -41,6 +41,10 @@ flowchart LR
 | `entrypoint.verified-context.compile` | `src/effects/engineers/verified-context-store.ts#compileVerifiedCheckpointProjection` | `sink.verified-context.compile-schema` → `src/core/engineers/verified-context.ts#compileVerifiedEvidenceContext` |
 | `entrypoint.verified-context.decision` | `src/effects/engineers/verified-context-store.ts#buildVerifiedDecisionEvent` | `sink.verified-context.decision-schema` → `src/core/engineers/verified-context.ts#buildDecisionRequestEvent` |
 | `entrypoint.verified-context.binding-fence` | `src/effects/engineers/verified-context-store.ts#validateCurrentDecisionEngineerBinding` | `sink.verified-context.binding-current` → `src/effects/engineers/binding-store.ts#readEngineerBindingStatus` |
+
+組件入口:
+
+- 組件均未宣告 `source.entrypoints`。
 
 ### 1.3 規模信號
 
@@ -63,9 +67,20 @@ flowchart LR
 - `reads` ← `component.operator.activity-feeds` — Read open Human Decisions for the board attention queue
 - `reads` ← `component.operator.primary` — Read the open Human Decision inventory
 
+組件出向關係:
+
+- `component.verified-context.primary`:
+  - `calls` → `capability.workflow-engine.execution-primitives` — Hold exclusive directory locks under the Git common directory
+
+### 1.5 組件結構
+
+| 組件 | 名稱 | 規模量級 | 宣告入口 |
+| --- | --- | --- | --- |
+| `component.verified-context.primary` | Verified Checkpoint Evidence Store | `1–2` 個文件 / `500–1000` 行 | 未宣告 |
+
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:f89eb9ac51dcefd7469532cd4664e6ae88156d11bccdac09fca239172722dee9`); selectors `5/5`.
+> **Proof**: `proven` (`sha256:0f6892c1ba87359a2e3a6ac8970926b95373de27cce1baa6dbf626c2b8fa48d4`); selectors `5/5`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
@@ -75,15 +90,15 @@ sequenceDiagram
   participant p2_delegated_runs_6de9843b as Read-only Delegated Runs
   participant p2_checkpoint_store_c2e763cc as Verified Checkpoint Evidence Store
   participant p2_engineer_bindings_4e9749d0 as Engineer Bindings
-  p2_verified_context_643f3dc5->>p2_checkpoint_store_c2e763cc: Bind semantic constraint IDs to one exact tracked Contract commit， blob and byte digest
+  p2_verified_context_643f3dc5->>p2_checkpoint_store_c2e763cc: Bind semantic constraint IDs to one exact tracked Contract commit#44; blob and byte digest
   p2_verified_context_643f3dc5->>p2_delegated_runs_6de9843b: Revalidate immutable Worker run and result evidence while keeping every claim untrusted
   alt One unique continuous exact-subject checkpoint chain produces a content-addressed trusted/untrusted context
-  p2_verified_context_643f3dc5->>p2_checkpoint_store_c2e763cc: Validate proposal， round， candidate， assertion， evidence and answered decisions before projection
+  p2_verified_context_643f3dc5->>p2_checkpoint_store_c2e763cc: Validate proposal#44; round#44; candidate#44; assertion#44; evidence and answered decisions before projection
     Note over p2_verified_context_643f3dc5: Return VerifiedEvidenceContextV1 without any authority transition
   else Open Human decision or ambiguous evidence chain fails closed
   p2_verified_context_643f3dc5->>p2_engineer_bindings_4e9749d0: Revalidate an Engineer actor against the exact current active Binding before a decision transition
   p2_verified_context_643f3dc5->>p2_checkpoint_store_c2e763cc: Persist an actor-fenced DecisionRequest event/current transition for explicit Human resolution
-    Note over p2_verified_context_643f3dc5: Stop before the next bounded round； never infer an answer or latest assertion
+    Note over p2_verified_context_643f3dc5: Stop before the next bounded round#59; never infer an answer or latest assertion
   end
 ```
 <!-- END ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-verified-context" -->

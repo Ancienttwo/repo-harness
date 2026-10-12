@@ -1,6 +1,6 @@
 # runtime-harness/engineering-overlay 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineering-overlay" sourceDigest="sha256:1feeeb00b0ab08d4cdc864f0cd7380327c2196a3975ae15510964d9043ac9976" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:c2ed91e655e048af313f94b95621caaa823b69d8efe065f25291b6c69bb6fc06" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineering-overlay" sourceDigest="sha256:42cb62182d822207338fbe246d446d8706ab6c895cea284030c1d706cbe7109a" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:9a30c54ae626aafe67573776771d7d9c4b3c563f86a1315c16cc56bd3d977cb2" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.engineering-overlay`(kind `capability`)
 > **Matched Prefixes**:`src/core/engineers/engineering-overlay.ts`、`src/effects/engineers/engineering-overlay.ts`
@@ -24,7 +24,7 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:559d4d6312038098e0a8c276d4ab6185a5e2de6b144811876a09e78aaa920604`).
+- Proof: `proven` (`sha256:2fbf00f9a371a78bffaae5ffd5451b83d4e0ac5d4026a6fc9cd106bd981f13df`).
 - Semantic nodes: `2`; declared relations: `1`.
 
 ### 1.2 模組職責表
@@ -34,6 +34,10 @@ flowchart LR
 | `entrypoint.engineering-overlay.collect` | `src/effects/engineers/engineering-overlay.ts#collectEngineeringBoard` | `sink.engineering-overlay.binding` → `src/effects/engineers/binding-store.ts#readEngineerBindingStatus`、`sink.engineering-overlay.claim` → `src/effects/engineers/claim-actor-store.ts#listLiveClaimActorReceiptsForEngineer`、`sink.engineering-overlay.messages` → `src/effects/engineers/module-inbox.ts#observeModuleInboxSummary`、`sink.engineering-overlay.runtime-effects` → `src/effects/engineers/agent-runtime-effect-store.ts#observeAgentRuntimeEffects`、`sink.engineering-overlay.schema` → `src/core/engineers/engineering-overlay.ts#buildEngineeringOverlaySnapshot` |
 | `entrypoint.engineering-overlay.attention` | `src/core/engineers/engineering-overlay.ts#projectOrganizationAttention` | `sink.engineering-overlay.attention-schema` → `src/core/engineers/engineering-overlay.ts#validateOrganizationAttentionSnapshot` |
 | `entrypoint.engineering-overlay.overlay-schema` | `src/core/engineers/engineering-overlay.ts#buildEngineeringOverlaySnapshot` | `sink.engineering-overlay.overlay-validation` → `src/core/engineers/engineering-overlay.ts#validateEngineeringOverlaySnapshot` |
+
+組件入口:
+
+- 組件均未宣告 `source.entrypoints`。
 
 ### 1.3 規模信號
 
@@ -54,9 +58,20 @@ flowchart LR
 
 - `reads` ← `component.operator.primary` — Collect the engineering board for the Organization view
 
+組件出向關係:
+
+- `component.engineering-overlay.primary`:
+  - 無。
+
+### 1.5 組件結構
+
+| 組件 | 名稱 | 規模量級 | 宣告入口 |
+| --- | --- | --- | --- |
+| `component.engineering-overlay.primary` | Engineering Overlay Read Model | 未宣告 `source.include` | 未宣告 |
+
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:559d4d6312038098e0a8c276d4ab6185a5e2de6b144811876a09e78aaa920604`); selectors `3/3`.
+> **Proof**: `proven` (`sha256:2fbf00f9a371a78bffaae5ffd5451b83d4e0ac5d4026a6fc9cd106bd981f13df`); selectors `3/3`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
@@ -65,7 +80,7 @@ sequenceDiagram
   participant p2_overlay_65dd31ba as Engineering Overlay
   participant p2_schema_a50dde9a as Engineering Overlay Read Model
   p2_overlay_65dd31ba->>p2_schema_a50dde9a: Validate and content-address the double-read result with explicit component fences
-  alt Return stable， changed_during_read or degraded without changing an observed authority
+  alt Return stable#44; changed_during_read or degraded without changing an observed authority
   p2_overlay_65dd31ba->>p2_schema_a50dde9a: Validate and content-address organization attention from the exact overlay snapshot
     Note over p2_overlay_65dd31ba: Return read-only JSON/text projection with no authority mutation
   else Reject an illegal overlay shape or digest instead of inventing a compatible projection

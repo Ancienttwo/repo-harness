@@ -1,5 +1,5 @@
 # public-surface/root-router 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-root-router" sourceDigest="sha256:32ecc0ea023107a39e132a2cf8b62fdff7b064ea1fd7ebfa7282cefd3f3a3e49" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:caf95ca4a66ad132bbc485042a32b3951de77eedc8f8124960ca4cba14e6457b" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-root-router" sourceDigest="sha256:c3cfbec07fac8ed1f6331ec2e750d7bab75e9e395e37d26f7fc677d5ba0c04a9" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:8385cd9a6bb73192978d62bea97ff2f5a239b4eb3840b30bcceb8c9194e7fdde" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.public-surface.root-router`(kind `capability`)
 > **Matched Prefixes**:`SKILL.md`、`references/pm-boundary.md`、`README.md`、`AGENTS.md`、`CLAUDE.md`、`docs/spec.md`、`README.es.md`、`README.fr.md`、`README.ja.md`、`README.zh-CN.md`、`references/arch/**`、`src/cli/commands/docs.ts`
@@ -32,6 +32,10 @@ flowchart LR
 | --- | --- | --- |
 | `entrypoint.root-router.primary` | `src/cli/commands/adoption-plan.ts#runAdoptionPlan` | `sink.root-router.primary` → `src/cli/commands/adoption-plan.ts#createPlan` |
 
+組件入口:
+
+- 組件均未宣告 `source.entrypoints`。
+
 ### 1.3 規模信號
 
 - 規模量級:`10–20` 個文件 / `5000–10000` 行
@@ -47,6 +51,17 @@ flowchart LR
 入向關係:
 
 - `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the docs command
+
+組件出向關係:
+
+- `component.root-router.primary`:
+  - 無。
+
+### 1.5 組件結構
+
+| 組件 | 名稱 | 規模量級 | 宣告入口 |
+| --- | --- | --- | --- |
+| `component.root-router.primary` | Root Adoption Router | 未宣告 `source.include` | 未宣告 |
 
 ## 2. P2:端到端數據流
 

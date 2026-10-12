@@ -1,6 +1,6 @@
 # runtime-harness/engineer-messages 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineer-messages" sourceDigest="sha256:44f20fdd9abcfe56442dbd0ffaa23000338969d4d6d2ff36c65613d9d63e936c" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:a1d2f21f6fdeedb314aaa35f8ede80d9ca5d5058062cc1a4eb6bd25b3851bb83" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineer-messages" sourceDigest="sha256:49a89da26b1aac0fb6492b0923c0243a1126d2a4be4d6adb1b0f6fedad826d91" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:0b311f0435ff3b5ad816babd7cdd4c69a1226919207a48c5c0c8547f12362290" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.engineer-messages`(kind `capability`)
 > **Matched Prefixes**:`src/core/messages/mechanics.ts`、`src/core/engineers/module-message.ts`、`src/effects/engineers/module-inbox.ts`
@@ -18,7 +18,7 @@ flowchart LR
   p1_capability_runtime_harness_engineer_bindings_34c00f72["Engineer Bindings"]:::component
   p1_capability_runtime_harness_engineer_messages_f10d1d17["Engineer Messages"]:::component
   p1_component_engineer_messages_primary_96d07b30["Module Engineer Durable Inbox"]:::component
-  p1_capability_runtime_harness_engineer_messages_f10d1d17 -->|"Revalidate the exact target Engineer and current Binding before assignment delivery， transport and acknowledgement"| p1_capability_runtime_harness_engineer_bindings_34c00f72
+  p1_capability_runtime_harness_engineer_messages_f10d1d17 -->|"Revalidate the exact target Engineer and current Binding before assignment delivery#44; transport and acknowledgement"| p1_capability_runtime_harness_engineer_bindings_34c00f72
   p1_capability_runtime_harness_engineer_messages_f10d1d17 -->|"Persist the immutable event and pending receipt under the inbox lock and continue the receipt chain only from exact observations"| p1_component_engineer_messages_primary_96d07b30
   classDef actor fill:#111827,color:#ffffff,stroke:#f9fafb,stroke-width:2px
   classDef component fill:#075985,color:#ffffff,stroke:#bae6fd,stroke-width:2px
@@ -26,7 +26,7 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:30a9d2f080cd2e5d1f2b9b0e8650925ea865ea5ea94d5d9492a6bdce4fb0f3c9`).
+- Proof: `proven` (`sha256:647c089c6bcbc64afe1866423851fad5c50c053132fbc5d8e0c001dd73555ca4`).
 - Semantic nodes: `3`; declared relations: `2`.
 
 ### 1.2 模組職責表
@@ -39,6 +39,10 @@ flowchart LR
 | `entrypoint.engineer-messages.binding-fence` | `src/effects/engineers/module-inbox.ts#validateTarget` | `sink.engineer-messages.binding-fence` → `src/effects/engineers/binding-store.ts#readEngineerBindingStatus` |
 | `entrypoint.engineer-messages.external-delivery-observation` | `src/effects/engineers/module-inbox.ts#recordModuleMessageDeliveryObservation` | `sink.engineer-messages.delivery-receipt` → `src/core/engineers/module-message.ts#applyModuleMessageObservation` |
 | `entrypoint.engineer-messages.external-delivery-observation` | `src/effects/engineers/module-inbox.ts#appendObservation` | `sink.engineer-messages.observation-chain` → `src/core/engineers/module-message.ts#applyModuleMessageObservation` |
+
+組件入口:
+
+- 組件均未宣告 `source.entrypoints`。
 
 ### 1.3 規模信號
 
@@ -62,9 +66,20 @@ flowchart LR
 - `calls` ← `capability.organization.task-fleet` — Reuse bounded canonical message mechanics for task messages and document handoff
 - `calls` ← `capability.runtime-harness.verified-context` — Validate closed records and compute canonical digests with the shared message mechanics
 
+組件出向關係:
+
+- `component.engineer-messages.primary`:
+  - 無。
+
+### 1.5 組件結構
+
+| 組件 | 名稱 | 規模量級 | 宣告入口 |
+| --- | --- | --- | --- |
+| `component.engineer-messages.primary` | Module Engineer Durable Inbox | 未宣告 `source.include` | 未宣告 |
+
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:30a9d2f080cd2e5d1f2b9b0e8650925ea865ea5ea94d5d9492a6bdce4fb0f3c9`); selectors `4/4`.
+> **Proof**: `proven` (`sha256:647c089c6bcbc64afe1866423851fad5c50c053132fbc5d8e0c001dd73555ca4`); selectors `4/4`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%

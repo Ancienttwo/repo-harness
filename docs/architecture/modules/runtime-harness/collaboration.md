@@ -1,6 +1,6 @@
 # runtime-harness/collaboration 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-collaboration" sourceDigest="sha256:51a7e39ad8905951932e13285c49bfd146d008d1acfe684f5bfc960f273e3d88" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:f72f21d5cd6d7eaf45e1af0da2e1c72ab8bcc71db99aeea6616b04f3478dd190" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-collaboration" sourceDigest="sha256:017b2eb170cd023c17e3fb8e791e930a8b6737d2bf5039275d8b9eb2761ec837" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:1be590820b64a9f1622fc8cf9ce660ca08c47ba9f9275ff3e115d22bca2c9800" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.collaboration`(kind `capability`)
 > **Matched Prefixes**:`src/core/collaboration/**`、`src/effects/collaboration/**`、`src/cli/commands/collaboration.ts`、`scripts/c9-collaboration-dispatch-runner.ts`
@@ -24,16 +24,16 @@ flowchart LR
   p1_component_collaboration_primary_9383ae07["Append-only Collaboration Record Store"]:::component
   p1_component_delegated_runs_primary_0e9104c9["Read-only Delegated Run Journal"]:::component
   p1_capability_runtime_harness_bound_task_freezes_b47bdee4 -->|"Revalidate the current Binding and exact live ClaimActorReceipt before inspection or rotation refusal"| p1_capability_runtime_harness_engineer_bindings_34c00f72
-  p1_capability_runtime_harness_collaboration_5265febf -->|"Prove a handoff's bound_task execution context against the persisted TaskFreeze receipt it names， on publish and again on every read， so a caller-supplied Claim and Lease generation is never projected as a fact"| p1_capability_runtime_harness_bound_task_freezes_b47bdee4
-  p1_capability_runtime_harness_collaboration_5265febf -->|"Enforce the parent Engineer's delegation policy as a pre-step to the unchanged read-only admission， and turn one run's persisted output into a contribution the delegation plane's own WorkerResult then references"| p1_capability_runtime_harness_delegated_runs_e1654b07
+  p1_capability_runtime_harness_collaboration_5265febf -->|"Prove a handoff's bound_task execution context against the persisted TaskFreeze receipt it names#44; on publish and again on every read#44; so a caller-supplied Claim and Lease generation is never projected as a fact"| p1_capability_runtime_harness_bound_task_freezes_b47bdee4
+  p1_capability_runtime_harness_collaboration_5265febf -->|"Enforce the parent Engineer's delegation policy as a pre-step to the unchanged read-only admission#44; and turn one run's persisted output into a contribution the delegation plane's own WorkerResult then references"| p1_capability_runtime_harness_delegated_runs_e1654b07
   p1_capability_runtime_harness_collaboration_5265febf -->|"Derive the publishing actor from the authenticated principal and current Binding instead of accepting a declared identity"| p1_capability_runtime_harness_engineer_bindings_34c00f72
-  p1_capability_runtime_harness_collaboration_5265febf -->|"Ask the scheduling plane for this exact authenticated principal's own offers， so a Work Exchange snapshot reports what the plane answered rather than defaulting an empty list"| p1_capability_runtime_harness_engineer_scheduling_022bd8e0
+  p1_capability_runtime_harness_collaboration_5265febf -->|"Ask the scheduling plane for this exact authenticated principal's own offers#44; so a Work Exchange snapshot reports what the plane answered rather than defaulting an empty list"| p1_capability_runtime_harness_engineer_scheduling_022bd8e0
   p1_capability_runtime_harness_collaboration_5265febf -->|"Persist immutable coordination signals under a per-thread lock without writing any delivery store"| p1_component_collaboration_primary_9383ae07
-  p1_capability_runtime_harness_delegated_runs_e1654b07 -->|"Run the collaboration dispatch fence inside the read-only dispatch effect itself， before any host action， refusing a run whose injected coordination context no binding accounts for"| p1_capability_runtime_harness_collaboration_5265febf
-  p1_capability_runtime_harness_delegated_runs_e1654b07 -->|"Revalidate the exact current parent ClaimActorReceipt， WorkEnvelope and Engineer Binding before delegation admission"| p1_capability_runtime_harness_engineer_bindings_34c00f72
-  p1_capability_runtime_harness_delegated_runs_e1654b07 -->|"Persist immutable capability， admission， launch， process and result evidence without creating runtime or task authority"| p1_component_delegated_runs_primary_0e9104c9
+  p1_capability_runtime_harness_delegated_runs_e1654b07 -->|"Run the collaboration dispatch fence inside the read-only dispatch effect itself#44; before any host action#44; refusing a run whose injected coordination context no binding accounts for"| p1_capability_runtime_harness_collaboration_5265febf
+  p1_capability_runtime_harness_delegated_runs_e1654b07 -->|"Revalidate the exact current parent ClaimActorReceipt#44; WorkEnvelope and Engineer Binding before delegation admission"| p1_capability_runtime_harness_engineer_bindings_34c00f72
+  p1_capability_runtime_harness_delegated_runs_e1654b07 -->|"Persist immutable capability#44; admission#44; launch#44; process and result evidence without creating runtime or task authority"| p1_component_delegated_runs_primary_0e9104c9
   p1_capability_runtime_harness_engineer_scheduling_022bd8e0 -->|"Revalidate the exact current Engineer contract and delegate the elected offer to the existing Engineer acquire authority"| p1_capability_runtime_harness_engineer_bindings_34c00f72
-  p1_capability_runtime_harness_mcp_sidecar_4e12aaf3 -->|"Serve the bounded Engineer collaboration tool set from the shared agent surface， deriving the author from the authenticated authorization and taking no actor， destination or recorded time from a caller"| p1_capability_runtime_harness_collaboration_5265febf
+  p1_capability_runtime_harness_mcp_sidecar_4e12aaf3 -->|"Serve the bounded Engineer collaboration tool set from the shared agent surface#44; deriving the author from the authenticated authorization and taking no actor#44; destination or recorded time from a caller"| p1_capability_runtime_harness_collaboration_5265febf
   p1_capability_runtime_harness_mcp_sidecar_4e12aaf3 -->|"Resolve a verified OAuth authorization to the current Engineer Binding before acquiring a Fleet Claim"| p1_capability_runtime_harness_engineer_bindings_34c00f72
   p1_capability_runtime_harness_mcp_sidecar_4e12aaf3 -->|"Project and acquire exact revision-fenced Engineer offers for a verified OAuth principal"| p1_capability_runtime_harness_engineer_scheduling_022bd8e0
   classDef actor fill:#111827,color:#ffffff,stroke:#f9fafb,stroke-width:2px
@@ -42,7 +42,7 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:a29c0962e3b8eb03ef543478a03d91e8ca5e592977141b7a2e4a8300376b7570`).
+- Proof: `proven` (`sha256:5ab4f4df691ca832c3b24e69ac0021db388d4617122a970d200469461f7abf81`).
 - Semantic nodes: `8`; declared relations: `13`.
 
 ### 1.2 模組職責表
@@ -85,6 +85,10 @@ flowchart LR
 | `entrypoint.collaboration.command-family` | `src/cli/commands/collaboration.ts#packetBuildAction` | `sink.collaboration.command-packet-build` → `src/effects/collaboration/agent-surface.ts#collaborationPacketBuild` |
 | `entrypoint.collaboration.shared-mechanics` | `src/core/collaboration/signal.ts#buildCoordinationSignal` | `sink.collaboration.actor-union` → `src/core/collaboration/common.ts#validateCollaborationActorRef` |
 
+組件入口:
+
+- 組件均未宣告 `source.entrypoints`。
+
 ### 1.3 規模信號
 
 - 規模量級:`20–50` 個文件 / `5000–10000` 行
@@ -110,9 +114,20 @@ flowchart LR
 - `calls` ← `component.operator.primary` — Collect the collaborative Work Exchange for one registered repository
 - `depends-on` ← `component.operator.view-projections` — Project Work Exchange, handoff and context packet records with the collaboration validators
 
+組件出向關係:
+
+- `component.collaboration.primary`:
+  - 無。
+
+### 1.5 組件結構
+
+| 組件 | 名稱 | 規模量級 | 宣告入口 |
+| --- | --- | --- | --- |
+| `component.collaboration.primary` | Append-only Collaboration Record Store | 未宣告 `source.include` | 未宣告 |
+
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:a29c0962e3b8eb03ef543478a03d91e8ca5e592977141b7a2e4a8300376b7570`); selectors `49/49`.
+> **Proof**: `proven` (`sha256:5ab4f4df691ca832c3b24e69ac0021db388d4617122a970d200469461f7abf81`); selectors `49/49`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
@@ -125,25 +140,25 @@ sequenceDiagram
   participant p2_scheduling_authority_0fce7315 as Engineer Scheduling
   participant p2_delegated_run_store_75dc2bad as Read-only Delegated Run Journal
   p2_collaboration_50c48bca->>p2_scheduling_authority_0fce7315: Resolve the authenticated principal before collection and on each offer read
-  p2_collaboration_50c48bca->>p2_scheduling_authority_0fce7315: Ask the scheduling plane what this exact authenticated principal could pick up， so an empty offer list means the plane answered rather than that nobody asked
-  alt A Module Engineer reads the exchange and publishes bounded records whose author the Host derived， with every payload marked untrusted
-  p2_collaboration_50c48bca->>p2_collaboration_store_5c827af5: Collect the same double-read exchange the Host reads， so the surface adds no cache and no second answer that could disagree with snapshot_sha256
-  p2_collaboration_50c48bca->>p2_collaboration_store_5c827af5: Serve the command family from the shared surface， so the CLI restates none of the actor， destination or marking rules
-  p2_engineer_mcp_97bc42c0->>p2_collaboration_50c48bca: Serve the same surface to the closed Engineer tool inventory， which carries no arbitrary write， generic shell， acquire， publication， acceptance or merge tool
-  p2_collaboration_50c48bca->>p2_collaboration_store_5c827af5: Publish through the store that derives the author from the authorization， with no parameter anywhere that would accept a caller-declared actor
-  p2_collaboration_50c48bca->>p2_collaboration_store_5c827af5: Reject an undeclared key on the wire before publishing， so an identity claim is refused with the field named rather than silently dropped
-  p2_collaboration_50c48bca->>p2_collaboration_store_5c827af5: Record adoption as an identity statement that grants no Task， Claim or Lease， so distinct adopters never exclude one another
-    Note over p2_collaboration_50c48bca: Return the payload with its mode and its untrusted-coordination marking； no Task， Lease， Publication or Acceptance byte moved
-  else A packet build is refused while collaboration.mode is off， and reads keep answering so the flag stays observable
-  p2_collaboration_50c48bca->>p2_collaboration_store_5c827af5: Apply the mutation gate at the first boundary a caller can trigger a packet write from， since C6 built delivery as a Host step inside an already-gated round
-  p2_collaboration_50c48bca->>p2_collaboration_store_5c827af5: Return C6's rendering verbatim with its untrusted markers intact， rather than re-emitting them from a second producer
-    Note over p2_collaboration_50c48bca: Surface the typed refusal with the flag's own reason； a repository that has not opted in cannot grow collaboration state through this surface
+  p2_collaboration_50c48bca->>p2_scheduling_authority_0fce7315: Ask the scheduling plane what this exact authenticated principal could pick up#44; so an empty offer list means the plane answered rather than that nobody asked
+  alt A Module Engineer reads the exchange and publishes bounded records whose author the Host derived#44; with every payload marked untrusted
+  p2_collaboration_50c48bca->>p2_collaboration_store_5c827af5: Collect the same double-read exchange the Host reads#44; so the surface adds no cache and no second answer that could disagree with snapshot_sha256
+  p2_collaboration_50c48bca->>p2_collaboration_store_5c827af5: Serve the command family from the shared surface#44; so the CLI restates none of the actor#44; destination or marking rules
+  p2_engineer_mcp_97bc42c0->>p2_collaboration_50c48bca: Serve the same surface to the closed Engineer tool inventory#44; which carries no arbitrary write#44; generic shell#44; acquire#44; publication#44; acceptance or merge tool
+  p2_collaboration_50c48bca->>p2_collaboration_store_5c827af5: Publish through the store that derives the author from the authorization#44; with no parameter anywhere that would accept a caller-declared actor
+  p2_collaboration_50c48bca->>p2_collaboration_store_5c827af5: Reject an undeclared key on the wire before publishing#44; so an identity claim is refused with the field named rather than silently dropped
+  p2_collaboration_50c48bca->>p2_collaboration_store_5c827af5: Record adoption as an identity statement that grants no Task#44; Claim or Lease#44; so distinct adopters never exclude one another
+    Note over p2_collaboration_50c48bca: Return the payload with its mode and its untrusted-coordination marking#59; no Task#44; Lease#44; Publication or Acceptance byte moved
+  else A packet build is refused while collaboration.mode is off#44; and reads keep answering so the flag stays observable
+  p2_collaboration_50c48bca->>p2_collaboration_store_5c827af5: Apply the mutation gate at the first boundary a caller can trigger a packet write from#44; since C6 built delivery as a Host step inside an already-gated round
+  p2_collaboration_50c48bca->>p2_collaboration_store_5c827af5: Return C6's rendering verbatim with its untrusted markers intact#44; rather than re-emitting them from a second producer
+    Note over p2_collaboration_50c48bca: Surface the typed refusal with the flag's own reason#59; a repository that has not opted in cannot grow collaboration state through this surface
   else A dispatch carrying injected coordination context that no binding accounts for is refused before the host action
-  p2_collaboration_50c48bca->>p2_collaboration_store_5c827af5: Decide from Host-owned state whether this dispatch is a collaboration dispatch， treating a persisted binding and an untrusted marker in the goal as equally sufficient
-  p2_collaboration_50c48bca->>p2_collaboration_store_5c827af5: Re-run the whole binding check against the live run for a collaboration dispatch， and let a delegation-only run through untouched
-  p2_delegated_runs_6de9843b->>p2_delegated_run_store_75dc2bad: Call the one exported dispatch from the command adapter， which carries no collaboration pre-step of its own and no second opinion about which runs need a binding
-  p2_delegated_runs_6de9843b->>p2_collaboration_50c48bca: Run the fence as the first statement under the dispatch lock， so no caller reaches the host action by forgetting a pre-step and the fence decides on the same locked view the host action is taken from
-    Note over p2_delegated_runs_6de9843b: Surface the typed refusal naming the one fact that failed； injected context that no record accounts for cannot reach a Worker
+  p2_collaboration_50c48bca->>p2_collaboration_store_5c827af5: Decide from Host-owned state whether this dispatch is a collaboration dispatch#44; treating a persisted binding and an untrusted marker in the goal as equally sufficient
+  p2_collaboration_50c48bca->>p2_collaboration_store_5c827af5: Re-run the whole binding check against the live run for a collaboration dispatch#44; and let a delegation-only run through untouched
+  p2_delegated_runs_6de9843b->>p2_delegated_run_store_75dc2bad: Call the one exported dispatch from the command adapter#44; which carries no collaboration pre-step of its own and no second opinion about which runs need a binding
+  p2_delegated_runs_6de9843b->>p2_collaboration_50c48bca: Run the fence as the first statement under the dispatch lock#44; so no caller reaches the host action by forgetting a pre-step and the fence decides on the same locked view the host action is taken from
+    Note over p2_delegated_runs_6de9843b: Surface the typed refusal naming the one fact that failed#59; injected context that no record accounts for cannot reach a Worker
   end
 ```
 
@@ -156,25 +171,25 @@ sequenceDiagram
   participant p2_bound_task_freezes_60610ef7 as Bound Task Freezes
   participant p2_collaboration_store_5c827af5 as Append-only Collaboration Record Store
   p2_collaboration_50c48bca->>p2_collaboration_store_5c827af5: Double-read every mutable source and project one Work Exchange snapshot whose snapshot_consistency reports what the two reads observed
-  alt A stable snapshot becomes a bounded packet， an untrusted rendering composed into the run's goal， and a binding that records exactly what was embedded
-  p2_collaboration_50c48bca->>p2_collaboration_store_5c827af5: Read collaboration.mode in each full-source pass， so the collection detects a mode change inside the same overlapping consistency window
-  p2_collaboration_50c48bca->>p2_collaboration_store_5c827af5: Pass each existing EngineerOfferV1 through the scheduling authority's own validator， so the offer and its revision reach the snapshot unreinterpreted
-  p2_collaboration_50c48bca->>p2_collaboration_store_5c827af5: Select within budget from that exact collection， binding the source snapshot， estimator version， truncation evidence and canonical render digest
-  p2_collaboration_50c48bca->>p2_collaboration_store_5c827af5: Append the rendering inside the untrusted coordination markers， reversibly， so the block embedded in the goal can be split back out and compared
-  p2_collaboration_50c48bca->>p2_delegated_runs_6de9843b: Read the run's own intent and envelope， so the binding records what actually happened rather than what the caller believed
-  p2_collaboration_50c48bca->>p2_delegated_runs_6de9843b: Read the envelope behind the admission， keeping intent.context_packet_sha256 as the ExecutionPacket digest the delegation protocol already froze
-  p2_collaboration_50c48bca->>p2_collaboration_store_5c827af5: Build the additive run-context binding over the dispatch， intent， execution packet， collaboration packet， rendering and both goals， bumping no delegation protocol
-    Note over p2_collaboration_50c48bca: Return the packet， the rendering and the binding； no Task， Lease， Publication or Acceptance byte moved and no delegation record grew a field
-  else A handoff's bound_task execution context is shown against the freeze receipt it names， or withheld
+  alt A stable snapshot becomes a bounded packet#44; an untrusted rendering composed into the run's goal#44; and a binding that records exactly what was embedded
+  p2_collaboration_50c48bca->>p2_collaboration_store_5c827af5: Read collaboration.mode in each full-source pass#44; so the collection detects a mode change inside the same overlapping consistency window
+  p2_collaboration_50c48bca->>p2_collaboration_store_5c827af5: Pass each existing EngineerOfferV1 through the scheduling authority's own validator#44; so the offer and its revision reach the snapshot unreinterpreted
+  p2_collaboration_50c48bca->>p2_collaboration_store_5c827af5: Select within budget from that exact collection#44; binding the source snapshot#44; estimator version#44; truncation evidence and canonical render digest
+  p2_collaboration_50c48bca->>p2_collaboration_store_5c827af5: Append the rendering inside the untrusted coordination markers#44; reversibly#44; so the block embedded in the goal can be split back out and compared
+  p2_collaboration_50c48bca->>p2_delegated_runs_6de9843b: Read the run's own intent and envelope#44; so the binding records what actually happened rather than what the caller believed
+  p2_collaboration_50c48bca->>p2_delegated_runs_6de9843b: Read the envelope behind the admission#44; keeping intent.context_packet_sha256 as the ExecutionPacket digest the delegation protocol already froze
+  p2_collaboration_50c48bca->>p2_collaboration_store_5c827af5: Build the additive run-context binding over the dispatch#44; intent#44; execution packet#44; collaboration packet#44; rendering and both goals#44; bumping no delegation protocol
+    Note over p2_collaboration_50c48bca: Return the packet#44; the rendering and the binding#59; no Task#44; Lease#44; Publication or Acceptance byte moved and no delegation record grew a field
+  else A handoff's bound_task execution context is shown against the freeze receipt it names#44; or withheld
   p2_collaboration_50c48bca->>p2_collaboration_store_5c827af5: Run the read-time proof for every bound_task handoff before any projection can expose one
-  p2_collaboration_50c48bca->>p2_bound_task_freezes_60610ef7: Resolve the exact TaskFreeze receipt the context names， failing closed when the digest resolves to nothing
-  p2_collaboration_50c48bca->>p2_collaboration_store_5c827af5: Re-derive the whole branch from the receipt and compare canonical bytes， so a resolvable receipt describing a different Claim is caught too
-  p2_collaboration_50c48bca->>p2_collaboration_store_5c827af5: Publish the succession handoff through the ordinary handoff store， carrying knowledge and never a Claim or a Lease
-    Note over p2_collaboration_50c48bca: Expose the context only when it proved； otherwise withhold it and count the omission， leaving the handoff's knowledge readable
-  else A collaboration-mode run whose binding is missing， dangling， or describes a different goal is refused before it dispatches
-  p2_collaboration_50c48bca->>p2_collaboration_store_5c827af5: Read the persisted binding for this dispatch， treating its absence as a refusal rather than as permission
-  p2_collaboration_50c48bca->>p2_collaboration_store_5c827af5: Run the same pure check the recorder ran， against the live intent， execution packet and the goal actually being dispatched
-    Note over p2_collaboration_50c48bca: Surface the typed refusal naming the one fact that failed； the run does not dispatch and injected context that no record accounts for cannot reach a Worker
+  p2_collaboration_50c48bca->>p2_bound_task_freezes_60610ef7: Resolve the exact TaskFreeze receipt the context names#44; failing closed when the digest resolves to nothing
+  p2_collaboration_50c48bca->>p2_collaboration_store_5c827af5: Re-derive the whole branch from the receipt and compare canonical bytes#44; so a resolvable receipt describing a different Claim is caught too
+  p2_collaboration_50c48bca->>p2_collaboration_store_5c827af5: Publish the succession handoff through the ordinary handoff store#44; carrying knowledge and never a Claim or a Lease
+    Note over p2_collaboration_50c48bca: Expose the context only when it proved#59; otherwise withhold it and count the omission#44; leaving the handoff's knowledge readable
+  else A collaboration-mode run whose binding is missing#44; dangling#44; or describes a different goal is refused before it dispatches
+  p2_collaboration_50c48bca->>p2_collaboration_store_5c827af5: Read the persisted binding for this dispatch#44; treating its absence as a refusal rather than as permission
+  p2_collaboration_50c48bca->>p2_collaboration_store_5c827af5: Run the same pure check the recorder ran#44; against the live intent#44; execution packet and the goal actually being dispatched
+    Note over p2_collaboration_50c48bca: Surface the typed refusal naming the one fact that failed#59; the run does not dispatch and injected context that no record accounts for cannot reach a Worker
   end
 ```
 
@@ -187,22 +202,22 @@ sequenceDiagram
   participant p2_engineer_bindings_4e9749d0 as Engineer Bindings
   participant p2_record_store_d73a3e78 as Append-only Collaboration Record Store
   p2_collaboration_50c48bca->>p2_engineer_bindings_4e9749d0: Resolve the parent Module Engineer Profile from the parent claim so allowed_roles and max_parallel_readers are the values this admission decides against
-  alt A participant under the limit is admitted through the unchanged read-only admission， and its seat exists before the counting lock is released
-  p2_collaboration_50c48bca->>p2_delegated_runs_6de9843b: Load the tracked read-only Role Profile， because an open logical_role string is not authorization
-  p2_collaboration_50c48bca->>p2_delegated_runs_6de9843b: Forward the caller's admission input verbatim， leaving the existing admission semantics untouched
-  p2_collaboration_50c48bca->>p2_delegated_runs_6de9843b: Create the run intent inside the same critical section that counted for the seat， so the granted seat is never invisible to the next request
-    Note over p2_delegated_runs_6de9843b: Return the admission decision and the seat； the parallel-reader limit is now a runtime constraint rather than a declared value
-  else The run's exact persisted stdout becomes candidate records， one commit， and one WorkerResult that references it
-  p2_collaboration_50c48bca->>p2_delegated_runs_6de9843b: Take the draft only from the stdout blob the Host persisted for that run， never from a caller-supplied payload
-  p2_collaboration_50c48bca->>p2_delegated_runs_6de9843b: Derive the delegated Worker actor from the immutable run reference and admission receipt， ignoring anything the Worker said about itself
-  p2_collaboration_50c48bca->>p2_record_store_d73a3e78: Publish every candidate signal immutably under an identity derived from the run and the entry index， so a retry converges instead of duplicating
-  p2_collaboration_50c48bca->>p2_record_store_d73a3e78: Publish the contribution commit last， as the sole visibility boundary over the candidates already on disk
-  p2_collaboration_50c48bca->>p2_delegated_runs_6de9843b: Construct the one WorkerResult for this run， carrying the commit as an evidence reference and refusing a second result with different bytes
-  p2_collaboration_50c48bca->>p2_record_store_d73a3e78: Expose contributed records to projections only through committed contributions， so an uncommitted candidate is indistinguishable from one never written
-    Note over p2_collaboration_50c48bca: Return the commit and the single WorkerResult； the delivery plane holds the same bytes it held before the contribution
-  else An output that cannot be parsed is a typed rejection， never a synthesised empty contribution
-  p2_collaboration_50c48bca->>p2_record_store_d73a3e78: Validate the entire draft before any visible write， so a malformed later entry publishes none of the earlier ones
-    Note over p2_collaboration_50c48bca: Surface the typed rejection with its adapter version； the ordinary WorkerResult still persists and no candidate， commit or partial signal exists
+  alt A participant under the limit is admitted through the unchanged read-only admission#44; and its seat exists before the counting lock is released
+  p2_collaboration_50c48bca->>p2_delegated_runs_6de9843b: Load the tracked read-only Role Profile#44; because an open logical_role string is not authorization
+  p2_collaboration_50c48bca->>p2_delegated_runs_6de9843b: Forward the caller's admission input verbatim#44; leaving the existing admission semantics untouched
+  p2_collaboration_50c48bca->>p2_delegated_runs_6de9843b: Create the run intent inside the same critical section that counted for the seat#44; so the granted seat is never invisible to the next request
+    Note over p2_delegated_runs_6de9843b: Return the admission decision and the seat#59; the parallel-reader limit is now a runtime constraint rather than a declared value
+  else The run's exact persisted stdout becomes candidate records#44; one commit#44; and one WorkerResult that references it
+  p2_collaboration_50c48bca->>p2_delegated_runs_6de9843b: Take the draft only from the stdout blob the Host persisted for that run#44; never from a caller-supplied payload
+  p2_collaboration_50c48bca->>p2_delegated_runs_6de9843b: Derive the delegated Worker actor from the immutable run reference and admission receipt#44; ignoring anything the Worker said about itself
+  p2_collaboration_50c48bca->>p2_record_store_d73a3e78: Publish every candidate signal immutably under an identity derived from the run and the entry index#44; so a retry converges instead of duplicating
+  p2_collaboration_50c48bca->>p2_record_store_d73a3e78: Publish the contribution commit last#44; as the sole visibility boundary over the candidates already on disk
+  p2_collaboration_50c48bca->>p2_delegated_runs_6de9843b: Construct the one WorkerResult for this run#44; carrying the commit as an evidence reference and refusing a second result with different bytes
+  p2_collaboration_50c48bca->>p2_record_store_d73a3e78: Expose contributed records to projections only through committed contributions#44; so an uncommitted candidate is indistinguishable from one never written
+    Note over p2_collaboration_50c48bca: Return the commit and the single WorkerResult#59; the delivery plane holds the same bytes it held before the contribution
+  else An output that cannot be parsed is a typed rejection#44; never a synthesised empty contribution
+  p2_collaboration_50c48bca->>p2_record_store_d73a3e78: Validate the entire draft before any visible write#44; so a malformed later entry publishes none of the earlier ones
+    Note over p2_collaboration_50c48bca: Surface the typed rejection with its adapter version#59; the ordinary WorkerResult still persists and no candidate#44; commit or partial signal exists
   end
 ```
 
@@ -214,16 +229,16 @@ sequenceDiagram
   participant p2_engineer_bindings_4e9749d0 as Engineer Bindings
   participant p2_record_store_d73a3e78 as Append-only Collaboration Record Store
   p2_collaboration_50c48bca->>p2_record_store_d73a3e78: Refuse every handoff write unless collaboration.mode has been promoted past off
-  alt The attempted paths， dead ends， findings and next actions land as one immutable record
+  alt The attempted paths#44; dead ends#44; findings and next actions land as one immutable record
   p2_collaboration_50c48bca->>p2_record_store_d73a3e78: Require the four knowledge fields and one complete execution-context branch before any write
-    Note over p2_collaboration_50c48bca: Return the persisted handoff； knowledge moved and no Task， Lease or Claim byte did
-  else Any number of distinct adopters take the same handoff， and none of them gains a writer seat
+    Note over p2_collaboration_50c48bca: Return the persisted handoff#59; knowledge moved and no Task#44; Lease or Claim byte did
+  else Any number of distinct adopters take the same handoff#44; and none of them gains a writer seat
   p2_collaboration_50c48bca->>p2_engineer_bindings_4e9749d0: Derive the adopter from the authenticated principal and refuse any caller-declared identity
-  p2_collaboration_50c48bca->>p2_record_store_d73a3e78: Key the receipt on the handoff digest， the adopter actor digest and the context packet digest so distinct adopters never collide
-    Note over p2_collaboration_50c48bca: Return the receipt； execution succession still runs only through TaskFreeze plus the existing release， takeover and acquire lifecycle
+  p2_collaboration_50c48bca->>p2_record_store_d73a3e78: Key the receipt on the handoff digest#44; the adopter actor digest and the context packet digest so distinct adopters never collide
+    Note over p2_collaboration_50c48bca: Return the receipt#59; execution succession still runs only through TaskFreeze plus the existing release#44; takeover and acquire lifecycle
   else A disabled collaboration plane refuses knowledge transfer instead of degrading to a silent write
   p2_collaboration_50c48bca->>p2_record_store_d73a3e78: Refuse the adoption before any record is read or written when collaboration.mode is off
-    Note over p2_collaboration_50c48bca: Surface the typed collaboration_disabled rejection； the adoption shard is never created
+    Note over p2_collaboration_50c48bca: Surface the typed collaboration_disabled rejection#59; the adoption shard is never created
   end
 ```
 
@@ -238,11 +253,11 @@ sequenceDiagram
   p2_collaboration_50c48bca->>p2_engineer_bindings_4e9749d0: Resolve the authenticated principal and fence it against a second read of the principal mapping
   alt A new identity samples the recorded time once and lands as one immutable file
   p2_collaboration_50c48bca->>p2_signal_store_5a76fb32: Content-address the signal and write it with an exclusive create plus fsync
-    Note over p2_collaboration_50c48bca: Return the persisted signal； no Task， Lease， Publication or Acceptance byte moves
+    Note over p2_collaboration_50c48bca: Return the persisted signal#59; no Task#44; Lease#44; Publication or Acceptance byte moves
   else An invalid record or an unreadable shard fails closed
-  p2_collaboration_50c48bca->>p2_signal_store_5a76fb32: Reject an unknown field， an unsupported actor kind or a stale digest before any write
-  p2_collaboration_50c48bca->>p2_signal_store_5a76fb32: Validate the 64-hex record id before any path join， then fail loud on an unreadable or non-canonical shard rather than serving a healthy empty store
-    Note over p2_collaboration_50c48bca: Surface the typed rejection； a republished identity reuses its recorded time instead of re-sampling the clock
+  p2_collaboration_50c48bca->>p2_signal_store_5a76fb32: Reject an unknown field#44; an unsupported actor kind or a stale digest before any write
+  p2_collaboration_50c48bca->>p2_signal_store_5a76fb32: Validate the 64-hex record id before any path join#44; then fail loud on an unreadable or non-canonical shard rather than serving a healthy empty store
+    Note over p2_collaboration_50c48bca: Surface the typed rejection#59; a republished identity reuses its recorded time instead of re-sampling the clock
   end
 ```
 <!-- END ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-collaboration" -->

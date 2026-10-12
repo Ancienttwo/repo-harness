@@ -1,6 +1,6 @@
 # public-surface/strategy-reflection 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-strategy-reflection" sourceDigest="sha256:7812e5ca7a273db81e154644606f7e96619205325088ad2363a7bc7042586fcf" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:cf3931a44c4b4459f4ea0d978fd4ca8a310662c8a625eec302f9f004d1cbb502" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-strategy-reflection" sourceDigest="sha256:e07250fd6952588b54aa5e51f498564fb60f2e2af484666e0caef821d8dc7001" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:971d8ac50490cf393e68eac9171c33da868cc4d69e4e4be68f86c7a7097d4876" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.public-surface.strategy-reflection`(kind `capability`)
 > **Matched Prefixes**:`src/core/strategy/**`、`src/effects/strategy/**`、`src/cli/commands/strategy.ts`、`docs/strategy/**`
@@ -24,7 +24,7 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:9d77f9f208e0b70ca4efbe3c2b49f97dee203b7ff70b2029eb047b0de3682daf`).
+- Proof: `proven` (`sha256:168920c6c345980dec6497acbf74ca00c85486f701afc1313b76a583f1ad264d`).
 - Semantic nodes: `2`; declared relations: `1`.
 
 ### 1.2 模組職責表
@@ -32,6 +32,10 @@ flowchart LR
 | 宣告入口 | 錨點 | 職責 |
 | --- | --- | --- |
 | `entrypoint.strategy-reflection.primary` | `src/cli/commands/strategy.ts#buildStrategyCommand` | `sink.strategy-reflection.primary` → `src/effects/strategy/context.ts#collectStrategyContext`、`sink.strategy-reflection.validate` → `src/effects/strategy/context.ts#validateStrategyRequest` |
+
+組件入口:
+
+- 組件均未宣告 `source.entrypoints`。
 
 ### 1.3 規模信號
 
@@ -49,9 +53,21 @@ flowchart LR
 
 - `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the strategy command
 
+組件出向關係:
+
+- `component.strategy-reflection.primary`:
+  - `calls` → `component.action-commands.skill-surface-catalog` — Read the skill catalog to keep the strategy skill explicit-setup before projection
+  - `reads` → `capability.workflow-engine.workflow-state` — Resolve effective state read-only for strategy context
+
+### 1.5 組件結構
+
+| 組件 | 名稱 | 規模量級 | 宣告入口 |
+| --- | --- | --- | --- |
+| `component.strategy-reflection.primary` | Strategy Context Collector | `5–10` 個文件 / `500–1000` 行 | 未宣告 |
+
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:9d77f9f208e0b70ca4efbe3c2b49f97dee203b7ff70b2029eb047b0de3682daf`); selectors `2/2`.
+> **Proof**: `proven` (`sha256:168920c6c345980dec6497acbf74ca00c85486f701afc1313b76a583f1ad264d`); selectors `2/2`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
@@ -63,7 +79,7 @@ sequenceDiagram
   alt Digest-bound context packet is exported
   p2_capability_4262990f->>p2_collector_721becc8: Export the packet with unknowns and truncation explicit and executionAuthorized false
     Note over p2_capability_4262990f: Print the context packet as JSON
-  else Proposal is invalid， stale or blocked
+  else Proposal is invalid#44; stale or blocked
   p2_capability_4262990f->>p2_collector_721becc8: Validate the proposal against a fresh packet and reject forged provenance or a changed digest
     Note over p2_capability_4262990f: Exit 1 with a status that never authorizes execution
   end

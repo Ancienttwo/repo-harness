@@ -1,6 +1,6 @@
 # organization/publication 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-organization-publication" sourceDigest="sha256:c05c0165c830a1451919e83912a4246a139b9a50139428994848de932876ab05" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:da10b53ef1acaa957707dbf04f008e391e20f0e2a49c70e3cc9b12e44a8ee822" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-organization-publication" sourceDigest="sha256:70b55e001651c945aab5a4b900f7bf44a656c9d96ac6458e5af38ffb8e8743d7" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:dc66c14ffa22645f96a177b00f5ab1a8e066023ab39f2ff193617bb516017254" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.organization.publication`(kind `capability`)
 > **Matched Prefixes**:`src/core/publication/**`、`src/effects/publication/**`、`src/cli/commands/publication.ts`
@@ -35,6 +35,10 @@ flowchart LR
 | --- | --- | --- |
 | `entrypoint.publication.command` | `src/cli/commands/publication.ts#buildPublicationCommand` | `sink.publication.ensure-receipt` → `src/effects/publication/publication-receipt.ts#ensurePublicationReceipt`、`sink.publication.enter-reviewing` → `src/effects/publication/publication-lifecycle.ts#enterPublicationReviewing`、`sink.publication.readiness` → `src/effects/publication/merge-readiness.ts#resolvePublicationReadiness` |
 
+組件入口:
+
+- 組件均未宣告 `source.entrypoints`。
+
 ### 1.3 規模信號
 
 - 規模量級:`10–20` 個文件 / `5000–10000` 行
@@ -56,6 +60,23 @@ flowchart LR
 - `reads` ← `capability.runtime-harness.integration-acceptance` — Read cached immutable publication receipts and reuse their canonical JSON digest
 - `calls` ← `component.mcp-sidecar.primary` — Reopen and take over publications and read merge readiness
 - `calls` ← `capability.organization.task-fleet` — Read publication receipts readiness and provider feedback for fleet commands and board cards
+
+組件出向關係:
+
+- `component.publication.primary`:
+  - `calls` → `capability.workflow-engine.execution-primitives` — Read the worktree topology and the Git common directory
+  - `calls` → `capability.workflow-engine.workflow-state` — Move the publication lease through review and takeover states under the task lock
+- `component.publication.provider-feedback`:
+  - `calls` → `capability.workflow-engine.execution-primitives` — Resolve the Git common directory for feedback records
+  - `calls` → `component.publication.primary` — Read the current receipt and lifecycle pointer before feedback intake and repair projection
+  - `calls` → `capability.workflow-engine.workflow-state` — Read canonical tasks and leases to evaluate provider feedback progress
+
+### 1.5 組件結構
+
+| 組件 | 名稱 | 規模量級 | 宣告入口 |
+| --- | --- | --- | --- |
+| `component.publication.primary` | Publication Receipt Lifecycle and Readiness | `5–10` 個文件 / `2000–5000` 行 | 未宣告 |
+| `component.publication.provider-feedback` | Provider Feedback | `2–5` 個文件 / `2000–5000` 行 | 未宣告 |
 
 ## 2. P2:端到端數據流
 

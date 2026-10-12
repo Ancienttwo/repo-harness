@@ -1,6 +1,6 @@
 # runtime-harness/engineer-bindings 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineer-bindings" sourceDigest="sha256:6dfe0ebc11aa2ff612fe0dbe69f776ac4074edb8180b3b45318cb26c048ec1f4" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:8cf5face425b146f62a00de64d30436726d36cd9205675eddb25a4317e58a8dc" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineer-bindings" sourceDigest="sha256:44365fd6d13c87717e1dea9868b76a624c8d8455884dbd2308221d31375f9928" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:4deb3c09a263f565c8fdfa9852a42898f9188577f150cd607e57c37d049d55b8" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.engineer-bindings`(kind `capability`)
 > **Matched Prefixes**:`agents/engineers/**`、`src/core/engineers/**`、`src/effects/engineers/**`、`src/cli/commands/engineer.ts`
@@ -24,7 +24,7 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:8880eb9b31d191dff30547d88f4be31efc14f7a607fdea2169b2aecf9ab02a04`).
+- Proof: `proven` (`sha256:af61082437f1e931f6d7315ef188ada25e0a75f9b8a30710390e28586667937b`).
 - Semantic nodes: `2`; declared relations: `1`.
 
 ### 1.2 模組職責表
@@ -35,6 +35,10 @@ flowchart LR
 | `entrypoint.engineer-bindings.principal-resolution` | `src/effects/engineers/principal.ts#resolveEngineerPrincipal` | `sink.engineer-bindings.current-binding` → `src/effects/engineers/binding-store.ts#readEngineerBindingStatus` |
 | `entrypoint.engineer-bindings.acquire` | `src/effects/engineers/acquire.ts#acquireEngineerTask` | `sink.engineer-bindings.fleet-acquire` → `src/effects/fleet/acquire.ts#acquireFleetTask`、`sink.engineer-bindings.claim-actor-receipt` → `src/effects/engineers/claim-actor-store.ts#publishClaimActorReceipt` |
 | `entrypoint.engineer-bindings.acquire` | `src/effects/engineers/acquire.ts#acquireEngineerTaskLocked` | `sink.engineer-bindings.claim-actor-build` → `src/core/engineers/principal-claim.ts#buildClaimActorReceipt` |
+
+組件入口:
+
+- 組件均未宣告 `source.entrypoints`。
 
 ### 1.3 規模信號
 
@@ -66,9 +70,20 @@ flowchart LR
 - `calls` ← `capability.runtime-harness.verified-context` — Revalidate Engineer decision actors against the exact current active Binding fence
 - `calls` ← `capability.runtime-harness.work-demand` — Revalidate the exact current requester Binding for Engineer-owned transitions
 
+組件出向關係:
+
+- `component.engineer-bindings.primary`:
+  - 無。
+
+### 1.5 組件結構
+
+| 組件 | 名稱 | 規模量級 | 宣告入口 |
+| --- | --- | --- | --- |
+| `component.engineer-bindings.primary` | Shared Engineer Binding Store | 未宣告 `source.include` | 未宣告 |
+
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:8880eb9b31d191dff30547d88f4be31efc14f7a607fdea2169b2aecf9ab02a04`); selectors `3/3`.
+> **Proof**: `proven` (`sha256:af61082437f1e931f6d7315ef188ada25e0a75f9b8a30710390e28586667937b`); selectors `3/3`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
@@ -81,7 +96,7 @@ sequenceDiagram
   alt The principal matches every exact fence and its Claim gets a ClaimActorReceipt
   p2_engineer_authority_fd9ce331->>p2_binding_store_8e904230: Bind the authenticated principal to the canonical WorkEnvelope and live Lease of the new Claim
     Note over p2_engineer_authority_fd9ce331: Return the WorkEnvelope and the immutable ClaimActorReceipt
-  else Mapping， Profile， Binding， or exact fence validation fails
+  else Mapping#44; Profile#44; Binding#44; or exact fence validation fails
   p2_engineer_authority_fd9ce331->>p2_binding_store_8e904230: Propagate typed fail-closed refusal before any Claim
     Note over p2_engineer_authority_fd9ce331: Return typed error without acquiring a Claim
   end

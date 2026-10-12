@@ -1,5 +1,5 @@
 # runtime-harness/work-demand 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-work-demand" sourceDigest="sha256:220b1d44c19ef866b100cbe5161977b13719b2897424cb003b750d2102563bed" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:340cdbadfd70873ef4066689be638c116e55085b2f02d2520503d4a142bccc23" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-work-demand" sourceDigest="sha256:1e7662f33f262a63bb3eda153dbc7a6ab1b926813a8eff27890a2112d7eb931d" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:9f1cd4979a5b90bcc53c6aa96a3166a0c107b9561bee391c1dd42d2b8bc2655d" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.work-demand`(kind `capability`)
 > **Matched Prefixes**:`src/core/engineers/work-demand.ts`、`src/effects/engineers/work-demand-store.ts`、`src/effects/engineers/work-demand-materialization.ts`
@@ -28,7 +28,7 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:7f26c078e32e16ba967f44fbef6b1fde73fce7388d7a7c92f7fcbf2a025951fe`).
+- Proof: `proven` (`sha256:b229d23f772ee8790306a403966bde8837739be1e749d7782a5fb8cad82de868`).
 - Semantic nodes: `4`; declared relations: `4`.
 
 ### 1.2 模組職責表
@@ -38,6 +38,10 @@ flowchart LR
 | `entrypoint.work-demand.event` | `src/core/engineers/work-demand.ts#buildWorkDemandEvent` | `sink.work-demand.digest` → `src/core/messages/mechanics.ts#canonicalMessageDigest` |
 | `entrypoint.work-demand.binding` | `src/effects/engineers/work-demand-store.ts#validateEngineer` | `sink.work-demand.binding` → `src/effects/engineers/binding-store.ts#readEngineerBindingStatus` |
 | `entrypoint.work-demand.materialize` | `src/effects/engineers/work-demand-materialization.ts#materializeWorkDemand` | `sink.work-demand.graph` → `src/core/engineers/scheduling.ts#projectWorkGraph` |
+
+組件入口:
+
+- 組件均未宣告 `source.entrypoints`。
 
 ### 1.3 規模信號
 
@@ -59,9 +63,20 @@ flowchart LR
 
 - `calls` ← `component.mcp-sidecar.primary` — Propose and transition work demands from the engineer MCP tools
 
+組件出向關係:
+
+- `component.work-demand.primary`:
+  - 無。
+
+### 1.5 組件結構
+
+| 組件 | 名稱 | 規模量級 | 宣告入口 |
+| --- | --- | --- | --- |
+| `component.work-demand.primary` | Work Demand Authority Store | 未宣告 `source.include` | 未宣告 |
+
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:7f26c078e32e16ba967f44fbef6b1fde73fce7388d7a7c92f7fcbf2a025951fe`); selectors `3/3`.
+> **Proof**: `proven` (`sha256:b229d23f772ee8790306a403966bde8837739be1e749d7782a5fb8cad82de868`); selectors `3/3`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
@@ -72,12 +87,12 @@ sequenceDiagram
   participant p2_engineer_scheduling_873d6e50 as Engineer Scheduling
   participant p2_demand_store_99389b2e as Work Demand Authority Store
   p2_work_demand_869df62d->>p2_engineer_bindings_4e9749d0: Revalidate the exact requester Binding before Agent-owned transitions
-  p2_work_demand_869df62d->>p2_demand_store_99389b2e: Persist the exact request， event and Human-accepted projection under per-demand CAS
+  p2_work_demand_869df62d->>p2_demand_store_99389b2e: Persist the exact request#44; event and Human-accepted projection under per-demand CAS
   alt The accepted task becomes canonical in one Git commit
-  p2_work_demand_869df62d->>p2_engineer_scheduling_873d6e50: Validate both new authorities， write one Git tree and update the canonical ref by compare-and-swap
+  p2_work_demand_869df62d->>p2_engineer_scheduling_873d6e50: Validate both new authorities#44; write one Git tree and update the canonical ref by compare-and-swap
     Note over p2_work_demand_869df62d: Return a materialization receipt that creates no Claim or Lease
-  else Actor， digest or canonical revision mismatch fails closed
-  p2_work_demand_869df62d->>p2_demand_store_99389b2e: Leave the current demand， Sprint and Work Graph authorities unchanged
+  else Actor#44; digest or canonical revision mismatch fails closed
+  p2_work_demand_869df62d->>p2_demand_store_99389b2e: Leave the current demand#44; Sprint and Work Graph authorities unchanged
     Note over p2_work_demand_869df62d: Return one typed refusal without fallback materialization
   end
 ```

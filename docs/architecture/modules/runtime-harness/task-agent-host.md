@@ -1,6 +1,6 @@
 # runtime-harness/task-agent-host 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-task-agent-host" sourceDigest="sha256:b45dc7067ecb4d5057c7e9966b768b0c2e5913ba451a2d240beee7f8f2d21280" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:d902c77fd5fdd736325a3ca0891f66dace96bdcb5cc8daa007f9235d983ffc2b" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-task-agent-host" sourceDigest="sha256:1697a029185bf5e20ae8b05cc6621960db3d74b88f2683ff1bc7185c5d96ff4b" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:6da7ec3c4bcaa69eaec6c14785a7a0850731129b81a246cf1ee711a754ac33bb" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.task-agent-host`(kind `capability`)
 > **Matched Prefixes**:`src/effects/terminal/herdr.ts`、`src/effects/terminal/task-session.ts`、`src/effects/terminal/task-worktree.ts`、`src/effects/terminal/task-request-readback.ts`、`src/effects/terminal/task-role-profiles.ts`、`src/cli/commands/task-agent.ts`、`src/cli/commands/herdr.ts`、`src/cli/commands/herdr-skill.ts`、`assets/herdr/**`、`agents/fleet/**`、`.codex/agents/**`、`scripts/install-agent-fleet.sh`
@@ -33,6 +33,10 @@ flowchart LR
 | --- | --- | --- |
 | `entrypoint.task-agent-host.command` | `src/cli/commands/task-agent.ts#buildTaskAgentCommand` | `sink.task-agent-host.start` → `src/effects/terminal/task-session.ts#startTaskAgent`、`sink.task-agent-host.send` → `src/effects/terminal/task-session.ts#sendTaskRequest`、`sink.task-agent-host.collect` → `src/effects/terminal/task-session.ts#collectTaskResult`、`sink.task-agent-host.reconcile` → `src/effects/terminal/task-request-readback.ts#reconcileTaskRequest` |
 
+組件入口:
+
+- 組件均未宣告 `source.entrypoints`。
+
 ### 1.3 規模信號
 
 - 規模量級:`20–50` 個文件 / `2000–5000` 行
@@ -59,6 +63,17 @@ flowchart LR
 - `calls` ← `capability.runtime-harness.pipeline-ledger` — Validate persisted task requests and results with the original task-session readers
 - `calls` ← `capability.runtime-harness.pm-dispatch` — Start the fixed OAR coding host and deliver requests through the existing task session
 - `reads` ← `component.workflow-state.coordination-plane` — Confirm that the task runtime is closed before a worktree prune
+
+組件出向關係:
+
+- `component.task-agent-host.primary`:
+  - `calls` → `capability.workflow-engine.execution-primitives` — Run Git through the process runner and hold task session locks
+
+### 1.5 組件結構
+
+| 組件 | 名稱 | 規模量級 | 宣告入口 |
+| --- | --- | --- | --- |
+| `component.task-agent-host.primary` | Herdr Task Session Host | `20–50` 個文件 / `2000–5000` 行 | 未宣告 |
 
 ## 2. P2:端到端數據流
 

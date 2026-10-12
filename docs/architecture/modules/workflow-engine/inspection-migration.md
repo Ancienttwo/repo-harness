@@ -1,5 +1,5 @@
 # workflow-engine/inspection-migration 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-inspection-migration" sourceDigest="sha256:ac9e95ea634463056649d6771a617f2716fc5ba871786bb159330e9ce3c244b2" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:9bc9a965d7865509022f2d5ef555259a3fbe282f9b116e720f15e3368c800d52" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-inspection-migration" sourceDigest="sha256:d5431fc0629e1475f5525d572338e8aacbbffac6b87c404eaa6d80aa0687d133" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:42a407b956b890ea6f484739d07c5e63c4001b0ae32dd968abfbcc898727c592" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.workflow-engine.inspection-migration`(kind `capability`)
 > **Matched Prefixes**:`scripts/inspect-project-state.ts`、`scripts/create-project-dirs.sh`、`scripts/init-project.sh`、`scripts/lib/**`、`scripts/AGENTS.md`、`scripts/CLAUDE.md`
@@ -34,6 +34,10 @@ flowchart LR
 | --- | --- | --- |
 | `entrypoint.inspection-migration.primary` | `scripts/inspect-project-state.ts#inspectRepo` | `sink.inspection-migration.primary` → `scripts/inspect-project-state.ts#detectMode`、`sink.inspection-migration.contract` → `scripts/workflow-contract.ts#loadWorkflowContract`、`sink.inspection-migration.hook-drift` → `scripts/inspect-project-state.ts#hasCustomClaudeHooks` |
 
+組件入口:
+
+- 組件均未宣告 `source.entrypoints`。
+
 ### 1.3 規模信號
 
 - 規模量級:`5–10` 個文件 / `2000–5000` 行
@@ -49,6 +53,17 @@ flowchart LR
 入向關係:
 
 - `calls` ← `component.evals-checks.ci-selection` — Run test files through the shared runner in scripts/lib/ci-run-tests.sh
+
+組件出向關係:
+
+- `component.inspection-migration.primary`:
+  - `reads` → `capability.workflow-engine.contract-assets` — Read directory and legacy path inventory from the package workflow contract
+
+### 1.5 組件結構
+
+| 組件 | 名稱 | 規模量級 | 宣告入口 |
+| --- | --- | --- | --- |
+| `component.inspection-migration.primary` | Repository Inspector Process | `5–10` 個文件 / `2000–5000` 行 | 未宣告 |
 
 ## 2. P2:端到端數據流
 

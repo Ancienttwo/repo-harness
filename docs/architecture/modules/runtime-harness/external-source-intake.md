@@ -1,6 +1,6 @@
 # runtime-harness/external-source-intake 架构文档
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-external-source-intake" sourceDigest="sha256:c2c30fdb22b62bcc185627578cee11ea587a28e631eed35536d77de1db6e6c95" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:e240acaab0a8c77be683dfded8a54d63034f4c6c241311facdbcf459b8b484d0" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-external-source-intake" sourceDigest="sha256:fca126288d0056af07dd1a778634b451faf20cd7ba1512f41034569fcd181693" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:84a16c823c8f742a2ab6c54325740a096b8b85a67660b2a2ddbad76a40f469b4" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.external-source-intake`(kind `capability`)
 > **Matched Prefixes**:`src/core/external-sources/**`、`src/effects/external-sources/**`、`src/cli/commands/external-source.ts`
@@ -24,7 +24,7 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:6a93c93fd67f784afff33aee1fc2053c71546701f695987b89f4a73bc7a6a90b`).
+- Proof: `proven` (`sha256:1bc6eec61ff0d37ccfff5c48c99866b90680c0d61b4e1d43d95c71f1ef12932e`).
 - Semantic nodes: `2`; declared relations: `1`.
 
 ### 1.2 模組職責表
@@ -35,6 +35,10 @@ flowchart LR
 | `entrypoint.external-source-intake.list` | `src/effects/external-sources/refresh.ts#listExternalSourceProjection` | `sink.external-source-intake.read-only-projection` → `src/core/external-sources/projection.ts#buildExternalSourceProjection` |
 | `entrypoint.external-source-intake.bind` | `src/effects/external-sources/binding.ts#bindExternalSource` | `sink.external-source-intake.binding-receipt` → `src/effects/external-sources/store.ts#writeExternalSourceBindingReceipt` |
 | `entrypoint.external-source-intake.bind` | `src/effects/external-sources/binding.ts#listExternalSourceBindings` | `sink.external-source-intake.binding-projection` → `src/core/external-sources/binding.ts#ExternalSourceBindingProjectionV1` |
+
+組件入口:
+
+- 組件均未宣告 `source.entrypoints`。
 
 ### 1.3 規模信號
 
@@ -54,9 +58,20 @@ flowchart LR
 
 - `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the external-source command
 
+組件出向關係:
+
+- `component.external-source-intake.immutable-evidence`:
+  - `calls` → `capability.workflow-engine.execution-primitives` — Hold exclusive directory locks under the Git common directory
+
+### 1.5 組件結構
+
+| 組件 | 名稱 | 規模量級 | 宣告入口 |
+| --- | --- | --- | --- |
+| `component.external-source-intake.immutable-evidence` | Immutable External Evidence Store | `1–2` 個文件 / `200–500` 行 | 未宣告 |
+
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:6a93c93fd67f784afff33aee1fc2053c71546701f695987b89f4a73bc7a6a90b`); selectors `2/2`.
+> **Proof**: `proven` (`sha256:1bc6eec61ff0d37ccfff5c48c99866b90680c0d61b4e1d43d95c71f1ef12932e`); selectors `2/2`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
@@ -67,7 +82,7 @@ sequenceDiagram
   p2_intake_2d1003be->>p2_immutable_evidence_fee8abfe: Normalize bounded provider Issue JSON into immutable observation records
   alt Complete provider evidence remains a read-only projection
   p2_intake_2d1003be->>p2_immutable_evidence_fee8abfe: Persist the immutable complete attempt receipt before projection
-    Note over p2_intake_2d1003be: Return a provider-neutral projection with no Task， Claim， Lease， or runtime mutation
+    Note over p2_intake_2d1003be: Return a provider-neutral projection with no Task#44; Claim#44; Lease#44; or runtime mutation
   else Provider failures and bounds never become a healthy empty refresh
   p2_intake_2d1003be->>p2_immutable_evidence_fee8abfe: Persist the typed unavailable or incomplete attempt receipt
     Note over p2_intake_2d1003be: Return a non-zero typed refresh failure without fallback

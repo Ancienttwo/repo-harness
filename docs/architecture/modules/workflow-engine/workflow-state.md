@@ -1,6 +1,6 @@
 # workflow-engine/workflow-state 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-workflow-state" sourceDigest="sha256:90f46c85ab1ed18ee1ad5db307a74f1492bf0539081cdf14a01f933a0acac96f" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:e4371b8ec40e87a00a3c190e30fad53a8a6860239128d01923a386c966dd8849" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-workflow-state" sourceDigest="sha256:5553d1f6b6ee2c05444e88ade5579efea3526a37e72dae013ac0fe10a2f98458" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:ef796604502fefe9dc9e47addb3baf4e2c6cc71504f9c7a68f6fbe296df0b1e0" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.workflow-engine.workflow-state`(kind `capability`)
 > **Matched Prefixes**:`src/core/state/**`、`src/effects/state/**`、`src/core/workflow/**`、`interfaces/**`、`src/core/worktree-location.mjs`、`src/core/worktree-location.d.mts`、`src/cli/commands/state.ts`、`src/cli/commands/sprint.ts`、`scripts/check-state-boundaries.ts`、`scripts/sprint-backlog.sh`
@@ -51,6 +51,10 @@ flowchart LR
 | `entrypoint.workflow-state.board-inputs` | `src/effects/state/collect-board-inputs.ts#collectBoardInputs` | `sink.workflow-state.worktree-topology` → `src/effects/git/worktree-topology.ts#readWorktreeTopology` |
 | `entrypoint.workflow-state.board-inputs` | `src/effects/state/collect-board-inputs.ts#observeOwnerWorktree` | `sink.workflow-state.owner-state` → `src/effects/state/resolve-effective-state.ts#resolveEffectiveStateReadOnly`、`sink.workflow-state.owner-attempts` → `src/core/state/attempt-ledger.ts#parseAttemptLedger` |
 
+組件入口:
+
+- 組件均未宣告 `source.entrypoints`。
+
 ### 1.3 規模信號
 
 - 規模量級:`50–100` 個文件 / `10k–20k` 行
@@ -90,6 +94,31 @@ flowchart LR
 - `reads` ← `component.task-fleet.primary` — Read canonical Sprint tasks and leases to build offers and the board
 - `calls` ← `component.task-fleet.task-inbox` — Address task messages by canonical task under the task lock
 - `writes` ← `capability.runtime-harness.work-demand` — Materialize an accepted work demand as a canonical Sprint backlog row
+
+組件出向關係:
+
+- `component.workflow-state.continuation-ledger`:
+  - `calls` → `capability.runtime-harness.evidence-ledger` — Append attempt ledger lines durably
+  - `calls` → `capability.workflow-engine.execution-primitives` — Serialize attempt ledger appends under a directory lock
+  - `calls` → `component.workflow-state.primary` — Project the continuation envelope from read-only Effective State
+- `component.workflow-state.coordination-plane`:
+  - `calls` → `component.workflow-state.continuation-ledger` — Append claim attempt receipts and read owner ledgers as progress evidence
+  - `calls` → `capability.runtime-harness.evidence-ledger` — Write lease and topology records durably through the atomic append primitive
+  - `calls` → `capability.workflow-engine.execution-primitives` — Take task and backlog locks and read the worktree topology
+  - `calls` → `component.workflow-state.primary` — Read artifacts and owner Effective State through the shared resolver
+  - `reads` → `capability.runtime-harness.task-agent-host` — Confirm that the task runtime is closed before a worktree prune
+- `component.workflow-state.primary`:
+  - `calls` → `capability.workflow-engine.contract-assets` — Match changed paths to capability ids through the pure capability registry
+  - `calls` → `capability.runtime-harness.evidence-ledger` — Evaluate the verification contract for effective state
+  - `calls` → `capability.workflow-engine.execution-primitives` — Take the state lock and commit the version owner under the Git common dir
+
+### 1.5 組件結構
+
+| 組件 | 名稱 | 規模量級 | 宣告入口 |
+| --- | --- | --- | --- |
+| `component.workflow-state.continuation-ledger` | Continuation Ledger | `5–10` 個文件 / `500–1000` 行 | 未宣告 |
+| `component.workflow-state.coordination-plane` | Shared Coordination Plane | `20–50` 個文件 / `5000–10000` 行 | 未宣告 |
+| `component.workflow-state.primary` | Effective State Resolver | `10–20` 個文件 / `2000–5000` 行 | 未宣告 |
 
 ## 2. P2:端到端數據流
 

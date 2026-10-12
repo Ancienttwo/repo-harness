@@ -1,6 +1,6 @@
 # runtime-harness/delegated-runs 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-delegated-runs" sourceDigest="sha256:ba73188c5f6c7a094e45c8e364377daac2dd54e449472f3a4db3aa10ce9f0ff5" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:e78a047f792291aaeb26683e71a9e17f8474aebcfbfd6222a0a3e2d4039f9419" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-delegated-runs" sourceDigest="sha256:681830a9b1c4dd86a4cdadfbb8cbf8a8f884f73bb2d5682c8f4739de3b9d8e62" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:7dc34d2fb5dd6bb7f71b2bc7cc46fb7c5fe404cd33695f5c1d3e66e77f01e5bf" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.delegated-runs`(kind `capability`)
 > **Matched Prefixes**:`src/core/engineers/delegation.ts`、`src/effects/engineers/delegated-run-store.ts`、`src/cli/commands/delegation.ts`、`scripts/me2b-runtime-admission-canary.ts`
@@ -19,18 +19,18 @@ flowchart LR
   p1_capability_runtime_harness_delegated_runs_e1654b07["Read-only Delegated Runs"]:::component
   p1_capability_runtime_harness_engineer_bindings_34c00f72["Engineer Bindings"]:::component
   p1_component_delegated_runs_primary_0e9104c9["Read-only Delegated Run Journal"]:::component
-  p1_capability_runtime_harness_collaboration_5265febf -->|"Enforce the parent Engineer's delegation policy as a pre-step to the unchanged read-only admission， and turn one run's persisted output into a contribution the delegation plane's own WorkerResult then references"| p1_capability_runtime_harness_delegated_runs_e1654b07
+  p1_capability_runtime_harness_collaboration_5265febf -->|"Enforce the parent Engineer's delegation policy as a pre-step to the unchanged read-only admission#44; and turn one run's persisted output into a contribution the delegation plane's own WorkerResult then references"| p1_capability_runtime_harness_delegated_runs_e1654b07
   p1_capability_runtime_harness_collaboration_5265febf -->|"Derive the publishing actor from the authenticated principal and current Binding instead of accepting a declared identity"| p1_capability_runtime_harness_engineer_bindings_34c00f72
-  p1_capability_runtime_harness_delegated_runs_e1654b07 -->|"Run the collaboration dispatch fence inside the read-only dispatch effect itself， before any host action， refusing a run whose injected coordination context no binding accounts for"| p1_capability_runtime_harness_collaboration_5265febf
-  p1_capability_runtime_harness_delegated_runs_e1654b07 -->|"Revalidate the exact current parent ClaimActorReceipt， WorkEnvelope and Engineer Binding before delegation admission"| p1_capability_runtime_harness_engineer_bindings_34c00f72
-  p1_capability_runtime_harness_delegated_runs_e1654b07 -->|"Persist immutable capability， admission， launch， process and result evidence without creating runtime or task authority"| p1_component_delegated_runs_primary_0e9104c9
+  p1_capability_runtime_harness_delegated_runs_e1654b07 -->|"Run the collaboration dispatch fence inside the read-only dispatch effect itself#44; before any host action#44; refusing a run whose injected coordination context no binding accounts for"| p1_capability_runtime_harness_collaboration_5265febf
+  p1_capability_runtime_harness_delegated_runs_e1654b07 -->|"Revalidate the exact current parent ClaimActorReceipt#44; WorkEnvelope and Engineer Binding before delegation admission"| p1_capability_runtime_harness_engineer_bindings_34c00f72
+  p1_capability_runtime_harness_delegated_runs_e1654b07 -->|"Persist immutable capability#44; admission#44; launch#44; process and result evidence without creating runtime or task authority"| p1_component_delegated_runs_primary_0e9104c9
   classDef actor fill:#111827,color:#ffffff,stroke:#f9fafb,stroke-width:2px
   classDef component fill:#075985,color:#ffffff,stroke:#bae6fd,stroke-width:2px
   classDef datastore fill:#3f6212,color:#ffffff,stroke:#d9f99d,stroke-width:2px
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:8c5bdc6bd99cff95b2c0921cbc38d57c225a56ae1de5fd4288e79bb221cfe27f`).
+- Proof: `proven` (`sha256:80e34a3959d732c46f66177961f65f9bff0895ab162b9ed1a29a771012873cdd`).
 - Semantic nodes: `4`; declared relations: `5`.
 
 ### 1.2 模組職責表
@@ -43,6 +43,10 @@ flowchart LR
 | `entrypoint.delegated-runs.intent` | `src/effects/engineers/delegated-run-store.ts#persistIntent` | `sink.delegated-runs.intent-schema` → `src/core/engineers/delegation.ts#canonicalDelegatedRunIntentBytes` |
 | `entrypoint.delegated-runs.observation` | `src/effects/engineers/delegated-run-store.ts#appendObservation` | `sink.delegated-runs.observation` → `src/core/engineers/delegation.ts#buildDelegatedRunObservation` |
 | `entrypoint.delegated-runs.result` | `src/effects/engineers/delegated-run-store.ts#persistResult` | `sink.delegated-runs.worker-result` → `src/core/engineers/delegation.ts#canonicalWorkerResultBytes` |
+
+組件入口:
+
+- 組件均未宣告 `source.entrypoints`。
 
 ### 1.3 規模信號
 
@@ -67,9 +71,20 @@ flowchart LR
 - `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the delegation command
 - `calls` ← `capability.runtime-harness.verified-context` — Revalidate existing immutable WorkerRunRef, process receipt, WorkerResult and evidence blobs as untrusted checkpoint inputs
 
+組件出向關係:
+
+- `component.delegated-runs.primary`:
+  - 無。
+
+### 1.5 組件結構
+
+| 組件 | 名稱 | 規模量級 | 宣告入口 |
+| --- | --- | --- | --- |
+| `component.delegated-runs.primary` | Read-only Delegated Run Journal | 未宣告 `source.include` | 未宣告 |
+
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:8c5bdc6bd99cff95b2c0921cbc38d57c225a56ae1de5fd4288e79bb221cfe27f`); selectors `6/6`.
+> **Proof**: `proven` (`sha256:80e34a3959d732c46f66177961f65f9bff0895ab162b9ed1a29a771012873cdd`); selectors `6/6`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
@@ -79,14 +94,14 @@ sequenceDiagram
   participant p2_binding_authority_b56d10c4 as Engineer Bindings
   participant p2_delegated_run_schema_0652b33a as Read-only Delegated Run Journal
   participant p2_collaboration_fence_e27409aa as Collaboration Substrate
-  p2_delegated_run_journal_781391f9->>p2_binding_authority_b56d10c4: Revalidate current Task， Lease， WorkEnvelope， Engineer Binding and ClaimActorReceipt fences before admission
+  p2_delegated_run_journal_781391f9->>p2_binding_authority_b56d10c4: Revalidate current Task#44; Lease#44; WorkEnvelope#44; Engineer Binding and ClaimActorReceipt fences before admission
   p2_delegated_run_journal_781391f9->>p2_delegated_run_schema_0652b33a: Canonicalize and persist the immutable admitted run intent before any Host action
   p2_delegated_run_journal_781391f9->>p2_delegated_run_schema_0652b33a: Dispatch the admitted run through the journal that owns the one launch claim
   p2_delegated_run_journal_781391f9->>p2_collaboration_fence_e27409aa: Refuse a run whose injected coordination context has no recorded run-context binding before any host action
   alt One immutable launch claim admits at most one read-only host action and returns only untrusted receipt-bound evidence
   p2_delegated_run_journal_781391f9->>p2_delegated_run_schema_0652b33a: Bind the completed observation and bounded/redacted immutable process evidence into WorkerResult without authority mutation
-    Note over p2_delegated_run_journal_781391f9: Return completed observation and untrusted result； no Task or Acceptance transition
-  else Lost acknowledgement， stale authority or protected-state drift fails closed without another host action
+    Note over p2_delegated_run_journal_781391f9: Return completed observation and untrusted result#59; no Task or Acceptance transition
+  else Lost acknowledgement#44; stale authority or protected-state drift fails closed without another host action
   p2_delegated_run_journal_781391f9->>p2_delegated_run_schema_0652b33a: Append reconciliation_required or failed observation under the existing launch claim
     Note over p2_delegated_run_journal_781391f9: Return reconcile-only state and never retry or substitute a runtime
   end

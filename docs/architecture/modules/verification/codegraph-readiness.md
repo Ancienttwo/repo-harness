@@ -1,5 +1,5 @@
 # verification/codegraph-readiness 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-codegraph-readiness" sourceDigest="sha256:cee96bdc4be34765f0ef0b61417bdec56ca19878e0e294e991eeaa457551d300" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:e858431853aa390dd9a8baee74cce9cc14d1f8626426a23d22ead8d0d38fb04c" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-codegraph-readiness" sourceDigest="sha256:1139b0a14d54cfd9b4927ded8c98f3f7f273e77068942bc1c42168fa47ca7d8c" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:cdcd9c5cf5e3e7075dfffaf0bdb36b24557214695247f84b84d95cfa2c48559e" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.verification.codegraph-readiness`(kind `capability`)
 > **Matched Prefixes**:`scripts/ensure-codegraph.sh`、`src/cli/tools/codegraph.ts`、`src/cli/mcp/codegraph-adapter.ts`、`tests/cli/codegraph-resolver.test.ts`、`docs/architecture/modules/verification/codegraph-readiness.md`、`src/cli/commands/tools.ts`
@@ -32,6 +32,10 @@ flowchart LR
 | --- | --- | --- |
 | `entrypoint.codegraph-readiness.primary` | `src/cli/tools/codegraph.ts#ensureCodegraph` | `sink.codegraph-readiness.primary` → `src/cli/tools/codegraph.ts#checkCodegraph` |
 
+組件入口:
+
+- 組件均未宣告 `source.entrypoints`。
+
 ### 1.3 規模信號
 
 - 規模量級:`5–10` 個文件 / `1000–2000` 行
@@ -52,6 +56,17 @@ flowchart LR
 - `calls` ← `component.global-runtime-reconciliation.primary` — Configure the exact CodeGraph CLI and MCP registration
 - `calls` ← `component.mcp-sidecar.coding-profile` — Refresh the CodeGraph index after coding mutations
 - `calls` ← `component.mcp-sidecar.primary` — Construct the CodeGraph index adapter with repo-local binaries refused
+
+組件出向關係:
+
+- `component.codegraph-readiness.primary`:
+  - 無。
+
+### 1.5 組件結構
+
+| 組件 | 名稱 | 規模量級 | 宣告入口 |
+| --- | --- | --- | --- |
+| `component.codegraph-readiness.primary` | CodeGraph Readiness Check | 未宣告 `source.include` | 未宣告 |
 
 ## 2. P2:端到端數據流
 
