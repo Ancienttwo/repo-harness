@@ -1,5 +1,5 @@
 # runtime-harness/hook-adapters 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-hook-adapters" sourceDigest="sha256:ab5f9fbad571e4793a5e0baadca48c9bbaadc515326b40a1c7560e2808fd99b0" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:96227e1781f26d95d109010881055b70cbfedcdcc9e2404160ab3106a55bd418" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-hook-adapters" sourceDigest="sha256:6f4735dcbdd5e4a4a488b00644d4e0d985f5efa1b3eab6f5859bd0a448b1ffeb" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:24733d36d96f9ff5fd74dd9bf5fd5b09b4c431df674c1c622928251297b33e64" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.hook-adapters`(kind `capability`)
 > **Matched Prefixes**:`assets/hooks/**`、`.ai/hooks/**`、`src/cli/installer/**`、`src/cli/hook/**`、`src/cli/hook-entry.ts`、`src/pi/**`、`src/core/loop/**`、`src/effects/loop/**`、`src/core/hook-work-budget.ts`、`src/effects/hook-event-log.ts`、`src/effects/run-summary-retention.ts`、`src/cli/commands/install.ts`、`src/cli/commands/status.ts`、`src/cli/commands/security.ts`、`src/cli/commands/hook.ts`、`src/cli/commands/prompt-guard-decision.ts`、`scripts/sync-hook-sources.ts`
@@ -41,6 +41,14 @@ flowchart LR
 | --- | --- | --- |
 | `entrypoint.hook-adapters.primary` | `src/cli/hook/runtime.ts#runHook` | `sink.hook-adapters.primary` → `src/cli/hook/handler-registry.ts#getHandlerForRoute` |
 
+組件入口:
+
+| 組件 | 宣告入口 | 錨點 | 職責 |
+| --- | --- | --- | --- |
+| `component.hook-adapters.host-installer` | `entrypoint.hook-adapters.managed-entries` | `src/cli/installer/managed-entries.ts#buildManagedHooks` | `sink.hook-adapters.routes-for-host` → `src/cli/hook/route-registry.ts#routesForHost` |
+| `component.hook-adapters.primary` | `entrypoint.hook-adapters.handler-bindings` | `src/cli/hook/handler-registry.ts#handlers` | `sink.hook-adapters.mutation-guard` → `src/cli/hook/mutation-guard.ts#runMutationGuard`、`sink.hook-adapters.stop-handler` → `src/cli/hook/stop-handler.ts#runStopHandler` |
+| `component.hook-adapters.session-lifecycle` | `entrypoint.hook-adapters.stop` | `src/cli/hook/stop-handler.ts#runStopHandler` | `sink.hook-adapters.post-edit-journal` → `src/cli/hook/mutation-observed.ts#consumePendingPostEditEvents` |
+
 ### 1.3 規模信號
 
 - 規模量級:`50–100` 個文件 / `10k–20k` 行
@@ -63,6 +71,44 @@ flowchart LR
 - `calls` ← `component.global-runtime-reconciliation.primary` — Install host adapters and project skills through the install profile under the host lock
 - `calls` ← `component.mcp-sidecar.host-setup` — Reuse installer configuration ownership receipts and the runtime host lock
 - `reads` ← `component.operator.activity-feeds` — Read the hook route registry and install profile components for the Hooks and Agents pages
+
+組件出向關係:
+
+- `component.hook-adapters.edit-guards`:
+  - `calls` → `capability.runtime-harness.evidence-ledger` — Import post-bash observations as evidence
+  - `calls` → `capability.workflow-engine.execution-primitives` — Lock the edit journal and the circuit breaker records
+  - `depends-on` → `component.hook-adapters.primary` — Implement the typed handler contract and read hook input through the shared parsers
+  - `calls` → `capability.workflow-engine.workflow-state` — Check edit paths against the contract and claim tokens
+- `component.hook-adapters.host-installer`:
+  - `calls` → `capability.public-surface.adoption` — Share the managed hook command fingerprints with the adoption migration
+  - `calls` → `capability.workflow-engine.contract-assets` — Locate the packaged workflow-state helper for hook-lib path
+  - `calls` → `capability.workflow-engine.execution-primitives` — Hold the runtime host transaction lock
+  - `calls` → `capability.runtime-harness.global-runtime-reconciliation` — Report architecture projection readiness in status
+  - `calls` → `component.hook-adapters.primary` — Project the route registry into managed adapter entries and invoke the runtime for hook-lib and Pi events
+  - `calls` → `component.action-commands.skill-surface-catalog` — Read skill names and profile ownership from the skill surface catalog
+- `component.hook-adapters.primary`:
+  - `calls` → `capability.workflow-engine.execution-primitives` — Run the process supervisor and group launcher and hold hook locks
+  - `calls` → `capability.workflow-engine.workflow-state` — Resolve effective state and sweep managed worktrees for hook routes
+  - `calls` → `component.hook-adapters.edit-guards` — Bind guard and observer routes to their typed handlers and run the guard CLIs from the hook entry
+  - `calls` → `capability.runtime-harness.global-runtime-reconciliation` — Write host output through the shared blocking writer
+  - `calls` → `component.hook-adapters.session-lifecycle` — Bind SessionStart and Stop and subagent and inbox routes to their typed handlers
+- `component.hook-adapters.session-lifecycle`:
+  - `calls` → `capability.public-surface.adoption` — Check run summary write paths with the shared path safety rules
+  - `calls` → `component.hook-adapters.edit-guards` — Drain the post-edit journal at Stop and render the minimal change context
+  - `calls` → `capability.runtime-harness.evidence-ledger` — Build recovery context and handoff from checkpoint evidence
+  - `calls` → `capability.workflow-engine.execution-primitives` — Run setup check subprocesses and hold delegation and session locks
+  - `depends-on` → `component.hook-adapters.primary` — Implement the typed handler contract and read state through the event-scoped collector
+  - `calls` → `capability.organization.task-fleet` — Render task inbox messages as untrusted session context
+  - `calls` → `capability.workflow-engine.workflow-state` — Collect state and board slices and claim tokens for session context
+
+### 1.5 組件結構
+
+| 組件 | 名稱 | 規模量級 | 宣告入口 |
+| --- | --- | --- | --- |
+| `component.hook-adapters.edit-guards` | Guard and Observer Handlers | `10–20` 個文件 / `2000–5000` 行 | 未宣告 |
+| `component.hook-adapters.host-installer` | Host Adapter Installer | `20–50` 個文件 / `5000–10000` 行 | `entrypoint.hook-adapters.managed-entries` |
+| `component.hook-adapters.primary` | Hook Route Runtime | `10–20` 個文件 / `2000–5000` 行 | `entrypoint.hook-adapters.handler-bindings` |
+| `component.hook-adapters.session-lifecycle` | Session Lifecycle Handlers | `5–10` 個文件 / `2000–5000` 行 | `entrypoint.hook-adapters.stop` |
 
 ## 2. P2:端到端數據流
 

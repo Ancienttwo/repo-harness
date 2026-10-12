@@ -1,6 +1,6 @@
 # workflow-engine/execution-primitives 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-execution-primitives" sourceDigest="sha256:c2b0923cd09290c313b543d58eb2b799593747b9cdb00167207b347b538d0cbd" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:b85307db3fca0f3e441d0fbe3d49a6e55f7bc1b8e47f8297347c06c0b930bef0" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-execution-primitives" sourceDigest="sha256:0053654e7e87f1e5414f4aefdcd28a8338406eb248f1e91f7e0822f3152f77fa" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:e873dd264ad1c83c9b992b2ae6924088ac70487f4781ad2b98ba9f6cabfd0892" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.workflow-engine.execution-primitives`(kind `capability`)
 > **Matched Prefixes**:`src/effects/process-runner.ts`、`src/effects/process-supervisor.ts`、`src/effects/process-group-launcher.ts`、`src/effects/expensive-run-lock.ts`、`src/effects/locking/**`、`src/effects/git/**`
@@ -35,6 +35,10 @@ flowchart LR
 | `entrypoint.execution-primitives.primary` | `src/effects/process-runner.ts#runSupervisedProcess` | `sink.execution-primitives.abandoned-group` → `src/effects/process-runner.ts#terminateAbandonedProcessGroup` |
 | `entrypoint.execution-primitives.supervisor` | `src/effects/process-supervisor.ts#supervise` | `sink.execution-primitives.expensive-lock` → `src/effects/expensive-run-lock.ts#acquireExpensiveRunLock` |
 | `entrypoint.execution-primitives.expensive-lock` | `src/effects/expensive-run-lock.ts#acquireExpensiveRunLock` | `sink.execution-primitives.git-common-dir` → `src/effects/git/common-directory.ts#resolveGitCommonDirectory`、`sink.execution-primitives.directory-lock` → `src/effects/locking/exclusive-directory-lock.ts#acquireExclusiveDirectoryLock` |
+
+組件入口:
+
+- 組件均未宣告 `source.entrypoints`。
 
 ### 1.3 規模信號
 
@@ -88,6 +92,17 @@ flowchart LR
 - `calls` ← `component.workflow-state.continuation-ledger` — Serialize attempt ledger appends under a directory lock
 - `calls` ← `component.workflow-state.coordination-plane` — Take task and backlog locks and read the worktree topology
 - `calls` ← `component.workflow-state.primary` — Take the state lock and commit the version owner under the Git common dir
+
+組件出向關係:
+
+- `component.execution-primitives.primary`:
+  - 無。
+
+### 1.5 組件結構
+
+| 組件 | 名稱 | 規模量級 | 宣告入口 |
+| --- | --- | --- | --- |
+| `component.execution-primitives.primary` | Bounded Process And Lock Primitives | `5–10` 個文件 / `1000–2000` 行 | 未宣告 |
 
 ## 2. P2:端到端數據流
 

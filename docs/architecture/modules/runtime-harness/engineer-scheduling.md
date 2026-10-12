@@ -1,6 +1,6 @@
 # runtime-harness/engineer-scheduling 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineer-scheduling" sourceDigest="sha256:efa6bfb0176eb81a182085304d33f11516678e18b0639dfc6286500c75a9b88d" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:bd8b16112e5faf5cf8ed17d251ef8f4f74f09cedc1c4adf848d0f79d4539b329" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineer-scheduling" sourceDigest="sha256:3ef58930c6e26dafafa1569d2c139348cd893e575fc72c288857715c8d5bf30c" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:4f53bd97ae47dbcacb49498657f2594635a1facdf5be8c4a802b6d616710af67" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.engineer-scheduling`(kind `capability`)
 > **Matched Prefixes**:`src/core/engineers/scheduling.ts`、`src/effects/engineers/dependency-authority.ts`、`src/effects/engineers/scheduling.ts`、`src/effects/engineers/scheduling-acquire.ts`、`src/effects/engineers/scheduling-acquire-next.ts`
@@ -41,6 +41,10 @@ flowchart LR
 | `entrypoint.engineer-scheduling.dependency-readers` | `src/effects/engineers/dependency-authority.ts#defaultDependencyAuthorityReaders` | `sink.engineer-scheduling.product-acceptance` → `src/effects/integration/product-acceptance.ts#listProductAcceptanceProjections` |
 | `entrypoint.engineer-scheduling.acquire-next` | `src/effects/engineers/scheduling-acquire-next.ts#acquireNextScheduledEngineerTask` | `sink.engineer-scheduling.acquire-next-offers` → `src/effects/engineers/scheduling.ts#collectEngineerOffers`、`sink.engineer-scheduling.acquire-next-exact` → `src/effects/engineers/scheduling-acquire.ts#acquireScheduledEngineerTask` |
 
+組件入口:
+
+- 組件均未宣告 `source.entrypoints`。
+
 ### 1.3 規模信號
 
 - 規模量級:`5–10` 個文件 / `2000–5000` 行
@@ -68,6 +72,17 @@ flowchart LR
 - `calls` ← `capability.runtime-harness.mcp-sidecar` — Project and acquire exact revision-fenced Engineer offers for a verified OAuth principal
 - `reads` ← `component.operator.primary` — Read the tracked work graph projection for the Planning view
 - `calls` ← `capability.runtime-harness.work-demand` — Validate the accepted Work Package against the same-commit canonical Sprint and Work Graph
+
+組件出向關係:
+
+- `component.engineer-scheduling.primary`:
+  - 無。
+
+### 1.5 組件結構
+
+| 組件 | 名稱 | 規模量級 | 宣告入口 |
+| --- | --- | --- | --- |
+| `component.engineer-scheduling.primary` | Engineer Offer Projector | 未宣告 `source.include` | 未宣告 |
 
 ## 2. P2:端到端數據流
 

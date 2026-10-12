@@ -84,8 +84,6 @@ write nodes.
   that become owned, contested or unowned, or change owner.
 - A flow step is proven only with a relation for the exact step, a source symbol that is
   unique in its file, and a direct CodeGraph `calls` edge from source to sink.
-- Do not put commas in relation intents or node names; the renderer turns them into
-  full-width commas.
 - Every major-change `architecture-projection apply` in one workspace needs a new
   `--request-id`; a reused id fails with `AC_PROJECTION_APPLY_COMMITTED`. A large model
   can exceed the configured `projection_timeout_ms`; the archctx run may still finish,

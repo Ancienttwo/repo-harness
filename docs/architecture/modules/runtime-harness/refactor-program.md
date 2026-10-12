@@ -1,5 +1,5 @@
 # Refactor Program
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-refactor-program" sourceDigest="sha256:4502dd4e7b76e91b4b1f09dc90af89f1d709800d8fc33296a553770bb89a88a2" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:97375c49b3e16bb384416833c29e2525b166711c2c07ac9cefea87a89b250a3e" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-refactor-program" sourceDigest="sha256:79b9ef0aca4830ed612d94936465fa9b42f0a4eb5f44accec52b3bbd246a4ad3" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:13c281a005bf4975b21b976d76067f39b8d697c4b8a0b5c846b732de4143000d" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.refactor-program`(kind `capability`)
 > **Matched Prefixes**:`src/core/refactor/**`、`src/effects/refactor/**`、`src/cli/commands/refactor.ts`
@@ -23,7 +23,7 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:ca01f69fe60ae1e41e747adb8ee423415f10c1a048dcf8d81d02fb4dca31d472`).
+- Proof: `proven` (`sha256:af8597794113e9dd3284c6f4a7f390912ac84a60dd44b32adf7c3aab8810ab9a`).
 - Semantic nodes: `2`; declared relations: `1`.
 
 ### 1.2 模組職責表
@@ -32,6 +32,10 @@ flowchart LR
 | --- | --- | --- |
 | `entrypoint.refactor-program.observe` | `src/effects/refactor/recommendations.ts#discoverRefactorRecommendations` | `sink.refactor-program.provider-scan` → `src/effects/refactor/archctx-provider.ts#runRefactorScan` |
 | `entrypoint.refactor-program.decide` | `src/cli/commands/refactor.ts#decideRefactorRecommendation` | `sink.refactor-program.decision` → `src/effects/refactor/archctx-provider.ts#decideRecommendation` |
+
+組件入口:
+
+- 組件均未宣告 `source.entrypoints`。
 
 ### 1.3 規模信號
 
@@ -50,9 +54,21 @@ flowchart LR
 
 - `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the refactor command
 
+組件出向關係:
+
+- `component.refactor-program.archctx-provider`:
+  - `calls` → `capability.runtime-harness.evidence-ledger` — Canonicalize refactor provider records
+  - `calls` → `capability.runtime-harness.global-runtime-reconciliation` — Run the pinned package-local archctx CLI through the shared architecture provider
+
+### 1.5 組件結構
+
+| 組件 | 名稱 | 規模量級 | 宣告入口 |
+| --- | --- | --- | --- |
+| `component.refactor-program.archctx-provider` | Refactor ArchContext Provider Boundary | `1–2` 個文件 / `50–100` 行 | 未宣告 |
+
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:ca01f69fe60ae1e41e747adb8ee423415f10c1a048dcf8d81d02fb4dca31d472`); selectors `2/2`.
+> **Proof**: `proven` (`sha256:af8597794113e9dd3284c6f4a7f390912ac84a60dd44b32adf7c3aab8810ab9a`); selectors `2/2`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
@@ -60,7 +76,7 @@ sequenceDiagram
   autonumber
   participant p2_refactor_program_a8b792d5 as Refactor Recommendations
   participant p2_archctx_provider_3b536550 as Refactor ArchContext Provider Boundary
-  p2_refactor_program_a8b792d5->>p2_archctx_provider_3b536550: Record the scan when needed， then send accept， defer or reject with the user reason
+  p2_refactor_program_a8b792d5->>p2_archctx_provider_3b536550: Record the scan when needed#44; then send accept#44; defer or reject with the user reason
   alt ArchContext stores the decision and later scans hide the suggestion
   p2_refactor_program_a8b792d5->>p2_archctx_provider_3b536550: Return the new lifecycle status
     Note over p2_refactor_program_a8b792d5: Report the recorded status
@@ -80,7 +96,7 @@ sequenceDiagram
   alt Open suggestions are shown with their metrics and module statistics
   p2_refactor_program_a8b792d5->>p2_archctx_provider_3b536550: Keep observations without a recorded user decision
     Note over p2_refactor_program_a8b792d5: Return evidence-backed suggestions for the user to decide
-  else A missing model， provider or complete code facts produces no suggestion
+  else A missing model#44; provider or complete code facts produces no suggestion
   p2_refactor_program_a8b792d5->>p2_archctx_provider_3b536550: Report the provider failure or the incomplete code facts
     Note over p2_refactor_program_a8b792d5: Return an unavailable or proof_required status
   end

@@ -1,5 +1,5 @@
 # public-surface/adoption 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-adoption" sourceDigest="sha256:7ec5756fc74953f19c2c899aa0882faca7afb89df81fe5a43034a518ee38acb9" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:77d8ce598f7fd4e9d947e75ff86b582564b35a2dba08ea82c3de10bc62d42643" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-adoption" sourceDigest="sha256:f61255b2d479b5d225bcd6e0694dc4b4386d89ce4176ae6abfa74caee2ae5777" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:14dbc6f7efcc7d89aa6384de64ce7acca408d349bf90f12aef30a8876a9f0835" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.public-surface.adoption`(kind `capability`)
 > **Matched Prefixes**:`src/cli/commands/adoption-plan.ts`、`src/core/adoption/**`、`src/effects/fs-transaction.ts`、`src/effects/path-safety.ts`、`tests/cli/adoption-plan.test.ts`、`tests/fixtures/adoption/**`、`src/cli/repo-adoption/**`、`src/cli/commands/migrate.ts`
@@ -32,6 +32,10 @@ flowchart LR
 | --- | --- | --- |
 | `entrypoint.adoption.primary` | `src/cli/commands/adoption-plan.ts#runAdoptionApply` | `sink.adoption.primary` → `src/effects/fs-transaction.ts#applyAdoptionPlan` |
 
+組件入口:
+
+- 組件均未宣告 `source.entrypoints`。
+
 ### 1.3 規模信號
 
 - 規模量級:`20–50` 個文件 / `2000–5000` 行
@@ -52,6 +56,17 @@ flowchart LR
 - `calls` ← `component.global-runtime-reconciliation.primary` — Classify retired surfaces with the adoption fingerprints and back up removals in an FsTransaction manifest under the target lock
 - `calls` ← `component.hook-adapters.host-installer` — Share the managed hook command fingerprints with the adoption migration
 - `calls` ← `component.hook-adapters.session-lifecycle` — Check run summary write paths with the shared path safety rules
+
+組件出向關係:
+
+- `component.adoption.primary`:
+  - 無。
+
+### 1.5 組件結構
+
+| 組件 | 名稱 | 規模量級 | 宣告入口 |
+| --- | --- | --- | --- |
+| `component.adoption.primary` | Adoption Transaction | 未宣告 `source.include` | 未宣告 |
 
 ## 2. P2:端到端數據流
 

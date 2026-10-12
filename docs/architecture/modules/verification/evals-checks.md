@@ -1,5 +1,5 @@
 # verification/evals-checks 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-evals-checks" sourceDigest="sha256:c66236f0396d879038826c894c3ea58dcee928e4ced54f81a6e1158eac487702" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:e509ec785f5d899f4444d37e6aee9eb4df0a78951e7e9a93e4e26714a230755a" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-evals-checks" sourceDigest="sha256:302b23b6fefd6dd24182828c81ed82b2d5c49c278853c8edd7653698a73304cd" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:3a77303b0b2c586acea669aca450aa1e778a4734f1fe35191dee6cecadddd7b6" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.verification.evals-checks`(kind `capability`)
 > **Matched Prefixes**:`tests/**`、`evals/**`、`scripts/run-skill-evals.ts`、`scripts/run-harness-profile-benchmark.ts`、`scripts/validate-harness-profile-benchmark.ts`、`scripts/run-bounded-verifier-command.ts`、`scripts/verify-contract.sh`、`scripts/verify-sprint.sh`、`scripts/check-task-workflow.sh`、`scripts/check-task-sync.sh`、`scripts/check-agent-tooling.sh`、`scripts/check-brain-manifest.sh`、`scripts/sync-brain-docs.sh`、`bunfig.toml`、`.github/**`、`scripts/test-file-durations.json`、`scripts/verification-plan.ts`、`scripts/migrate-verification-plan.ts`、`scripts/check-ci.sh`、`scripts/select-ci-coverage.ts`、`scripts/replay-ci-coverage.ts`、`scripts/report-ci.ts`、`scripts/select-test-suite.ts`、`scripts/ci-documentation-consumers.ts`、`scripts/harness-trace-grade.sh`
@@ -38,6 +38,10 @@ flowchart LR
 | --- | --- | --- |
 | `entrypoint.evals-checks.primary` | `src/effects/evidence/verification-execution.ts#executeVerificationContract` | `sink.evals-checks.primary` → `src/effects/evidence/verification-execution.ts#executeCheck` |
 
+組件入口:
+
+- 組件均未宣告 `source.entrypoints`。
+
 ### 1.3 規模信號
 
 - 規模量級:`500–1000` 個文件 / `100k–200k` 行
@@ -53,6 +57,33 @@ flowchart LR
 入向關係:
 
 - 無。
+
+組件出向關係:
+
+- `component.evals-checks.ci-selection`:
+  - `calls` → `capability.workflow-engine.inspection-migration` — Run test files through the shared runner in scripts/lib/ci-run-tests.sh
+  - `calls` → `component.evals-checks.test-suite` — Select affected test files and run them in isolated file jobs
+  - `calls` → `component.evals-checks.workflow-gates` — Run the task sync and task workflow gates in the governance lane
+- `component.evals-checks.evals-and-benchmarks`:
+  - `calls` → `capability.workflow-engine.execution-primitives` — Take the expensive-run lock before a costly benchmark profile runs
+  - `reads` → `capability.runtime-harness.hook-adapters` — Read hook event telemetry records to measure hook cost in profile benchmarks
+- `component.evals-checks.primary`:
+  - `calls` → `capability.workflow-engine.contract-assets` — Consume trusted PR checks for a base ref through the merge gate without rerunning commands
+  - `calls` → `capability.runtime-harness.evidence-ledger` — Validate and execute verification plans through the evidence verification modules
+- `component.evals-checks.test-suite`:
+  - 無。
+- `component.evals-checks.workflow-gates`:
+  - 無。
+
+### 1.5 組件結構
+
+| 組件 | 名稱 | 規模量級 | 宣告入口 |
+| --- | --- | --- | --- |
+| `component.evals-checks.ci-selection` | CI Selection And Report | `10–20` 個文件 / `1000–2000` 行 | 未宣告 |
+| `component.evals-checks.evals-and-benchmarks` | Evals And Benchmarks | `100–200` 個文件 / `10k–20k` 行 | 未宣告 |
+| `component.evals-checks.primary` | Verification Check Execution | `5–10` 個文件 / `500–1000` 行 | 未宣告 |
+| `component.evals-checks.test-suite` | Test Suite | `500–1000` 個文件 / `100k–200k` 行 | 未宣告 |
+| `component.evals-checks.workflow-gates` | Workflow Gates | `5–10` 個文件 / `2000–5000` 行 | 未宣告 |
 
 ## 2. P2:端到端數據流
 

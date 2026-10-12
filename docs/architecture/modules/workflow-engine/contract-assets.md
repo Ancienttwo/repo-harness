@@ -1,5 +1,5 @@
 # workflow-engine/contract-assets 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-contract-assets" sourceDigest="sha256:f05b9512d66babafd704fa74f7b33a95d966329e9f39b3e75c5c36d73565f607" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:83096dc992fb8a8748599aafd205e624ce94d3c04cf5253f9dcca1673423fa50" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-contract-assets" sourceDigest="sha256:93c7c46689afcef2e28a333c2fdfd5c7886095566264eb6a8271606b2f0207a9" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:f5194623ad4f37c5ef49acc60cd0c90f563e818635a06fe4aa8c15c4f87bea1f" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.workflow-engine.contract-assets`(kind `capability`)
 > **Matched Prefixes**:`assets/workflow-contract.v1.json`、`.ai/harness/workflow-contract.json`、`.ai/harness/policy.json`、`.ai/context/context-map.json`、`.archcontext/model/nodes/**`、`scripts/capability-resolver.ts`、`scripts/capability-config.ts`、`scripts/contract-run.ts`、`scripts/contract-worktree.sh`、`scripts/archive-workflow.sh`、`scripts/merge-gate.ts`、`scripts/ship-worktrees.sh`、`src/cli/commands/init.ts`、`src/cli/commands/capability-context.ts`、`src/effects/runtime/helper-runner.ts`、`assets/templates/**`、`assets/reference-configs/**`、`docs/reference-configs/**`、`assets/AGENTS.md`、`assets/CLAUDE.md`、`.ai/context/**`、`.ai/harness/brain-manifest.json`、`.archcontext/**`、`src/core/capabilities/**`、`src/core/source-projection.ts`、`src/cli/commands/run.ts`、`src/cli/commands/brain.ts`、`src/cli/commands/brain-root.ts`、`assets/partials/**`、`assets/partials-agents/**`、`assets/project-structures/**`、`assets/plan-map.json`、`assets/versions.json`、`assets/initializer-question-pack.v4.json`、`assets/initializer-question-pack.v4.schema.json`、`.claude/templates/**`、`scripts/workflow-contract.ts`、`scripts/check-context-map.ts`、`scripts/check-context-files.sh`、`scripts/select-agent-context-blocks.sh`、`scripts/workstream-sync.sh`、`scripts/sync-helper-sources.ts`、`scripts/sync-reference-configs.ts`、`scripts/assemble-template.ts`、`scripts/initializer-question-pack.ts`、`scripts/contract-worktree-runtime.ts`、`scripts/worktree-merge-lib.sh`、`scripts/cutover-closure.ts`、`scripts/new-spec.sh`、`scripts/new-sprint.sh`、`scripts/new-plan.sh`、`scripts/capture-plan.sh`、`scripts/plan-to-todo.sh`、`scripts/switch-plan.sh`、`scripts/classify-historical-plans.ts`、`scripts/ensure-task-workflow.sh`、`scripts/refresh-current-status.sh`、`scripts/summarize-failures.sh`、`scripts/maintenance-triage.sh`、`scripts/heartbeat-triage.sh`、`scripts/check-deploy-sql-order.sh`、`scripts/factor-lab-new.sh`、`scripts/factor-lab-promote.sh`、`scripts/factor-lab-reject.sh`、`scripts/factor-lab-check.sh`
@@ -47,6 +47,10 @@ flowchart LR
 | `entrypoint.contract-assets.run-command` | `src/cli/commands/run.ts#buildRunCommand` | `sink.contract-assets.helper-runner` → `src/effects/runtime/helper-runner.ts#runHelper` |
 | `entrypoint.contract-assets.helper-runner` | `src/effects/runtime/helper-runner.ts#runHelper` | `sink.contract-assets.bounded-process` → `src/effects/process-runner.ts#runProcess` |
 
+組件入口:
+
+- 組件均未宣告 `source.entrypoints`。
+
 ### 1.3 規模信號
 
 - 規模量級:`500–1000` 個文件 / `50k–100k` 行
@@ -71,6 +75,42 @@ flowchart LR
 - `calls` ← `capability.organization.publication` — Recompute the candidate diff with the packaged merge gate and worktree merge helper
 - `calls` ← `capability.organization.task-fleet` — Run packaged contract worktree helpers to provision and bind an acquired task
 - `calls` ← `component.workflow-state.primary` — Match changed paths to capability ids through the pure capability registry
+
+組件出向關係:
+
+- `component.contract-assets.capability-registry`:
+  - 無。
+- `component.contract-assets.contract-worktree-lifecycle`:
+  - `calls` → `capability.verification.acceptance-review` — Locate the acceptance receipt and the protected Git runtime
+  - `calls` → `capability.workflow-engine.execution-primitives` — Resolve the configured Git binary for worktree lifecycle commands
+  - `calls` → `capability.runtime-harness.task-agent-host` — Register and clean up task worktrees and read session artifacts
+  - `calls` → `capability.workflow-engine.workflow-state` — Create and remove task worktrees under the worktree topology lock
+- `component.contract-assets.planning-helpers`:
+  - `calls` → `capability.verification.acceptance-review` — Read the acceptance policy for planning helpers
+  - `calls` → `capability.workflow-engine.execution-primitives` — Run each helper as a bounded child process
+- `component.contract-assets.primary`:
+  - `reads` → `component.contract-assets.capability-registry` — Check context map entries against the capability registry
+- `component.contract-assets.template-projection`:
+  - `calls` → `capability.public-surface.adoption` — Plan and apply the transactional adoption for repository init
+  - `calls` → `capability.verification.codegraph-readiness` — Ensure CodeGraph readiness during init
+  - `calls` → `capability.workflow-engine.execution-primitives` — Run init steps as bounded child processes
+  - `calls` → `capability.runtime-harness.global-runtime-reconciliation` — Initialize the architecture projection provider preference
+  - `calls` → `capability.runtime-harness.hook-adapters` — Read the install profile and project skills during init
+  - `calls` → `component.contract-assets.planning-helpers` — Initialize the brain export root during repository init
+  - `reads` → `component.contract-assets.primary` — Read the helper inventory from the package workflow contract
+  - `calls` → `component.action-commands.skill-surface-catalog` — Read host skill placements and install groups during init
+  - `calls` → `capability.runtime-harness.task-agent-host` — Install the required Herdr skill during init
+  - `calls` → `capability.workflow-engine.workflow-state` — Check cutover quiescence and record the coordination cutover during init
+
+### 1.5 組件結構
+
+| 組件 | 名稱 | 規模量級 | 宣告入口 |
+| --- | --- | --- | --- |
+| `component.contract-assets.capability-registry` | Capability Registry | `200–500` 個文件 / `10k–20k` 行 | 未宣告 |
+| `component.contract-assets.contract-worktree-lifecycle` | Contract Worktree Lifecycle | `5–10` 個文件 / `5000–10000` 行 | 未宣告 |
+| `component.contract-assets.planning-helpers` | Planning Helpers | `20–50` 個文件 / `2000–5000` 行 | 未宣告 |
+| `component.contract-assets.primary` | Workflow Contract And Policy | `10–20` 個文件 / `2000–5000` 行 | 未宣告 |
+| `component.contract-assets.template-projection` | Template Projection | `100–200` 個文件 / `20k–50k` 行 | 未宣告 |
 
 ## 2. P2:端到端數據流
 

@@ -1,6 +1,6 @@
 # runtime-harness/global-runtime-reconciliation 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-global-runtime-reconciliation" sourceDigest="sha256:df8ab784c6cb3435c4e67b63e3eab2e98893d404fb2b50d82d0c059edc321e8f" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:5f44f3c8c9e05a80cbf065a31b5fa27c22c40cc15779a8b7d414b570f44d11e3" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-global-runtime-reconciliation" sourceDigest="sha256:e30b434bcc01f6fddff7ca83ee4d995ad33408249a52c0f61d1140471bb67f91" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:82db64cbfa902bb4de594d37591f308f28876214ac78a2089a22c1a140b84be3" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.global-runtime-reconciliation`(kind `capability`)
 > **Matched Prefixes**:`package.json`、`bun.lock`、`src/cli/index.ts`、`src/cli/commands/global-runtime.ts`、`scripts/check-managed-runtime.ts`、`scripts/sync-codex-installed-copies.sh`、`src/effects/architecture/**`、`tests/cli/global-runtime-init.test.ts`、`tests/cli/global-runtime.test.ts`、`tests/architecture-projection-provider.test.ts`、`assets/reference-configs/external-tooling.md`、`docs/reference-configs/external-tooling.md`、`docs/reference-configs/install-profiles.md`、`src/cli/runtime/**`、`src/cli/tty-prompt.ts`、`src/cli/commands/validators.ts`、`src/cli/commands/doctor.ts`、`src/cli/commands/init-hook.ts`、`src/cli/commands/upgrade.ts`、`src/core/upgrade/**`、`src/effects/runtime/node-candidates.ts`、`src/effects/runtime/protected-helper-platform.ts`、`src/effects/skill-tree-integrity.ts`、`src/effects/configuration/**`、`src/core/architecture/projection.ts`、`src/cli/commands/architecture-projection.ts`、`src/cli/commands/architecture-configuration.ts`、`scripts/axr5-archctx-clean-room.ts`、`src/core/release/**`、`src/effects/release/**`、`scripts/check-npm-release.sh`、`scripts/check-release-published.sh`、`scripts/check-tarball-install-smoke.sh`、`scripts/check-pi-package-smoke.ts`、`scripts/sync-pi-package.ts`、`scripts/runtime-evidence-receipt.ts`、`install.sh`、`install.ps1`、`tsconfig.json`
@@ -46,6 +46,12 @@ flowchart LR
 | `entrypoint.global-runtime-reconciliation.update` | `src/cli/commands/global-runtime.ts#installHostAdapters` | `sink.global-runtime-reconciliation.host-adapters` → `src/cli/commands/install.ts#runInstall` |
 | `entrypoint.global-runtime-reconciliation.candidate-readback` | `src/cli/commands/global-runtime.ts#verifyInstalledManagedRuntime` | `sink.global-runtime-reconciliation.candidate-readback` → `src/cli/commands/global-runtime.ts#reconcileManagedRuntime` |
 
+組件入口:
+
+| 組件 | 宣告入口 | 錨點 | 職責 |
+| --- | --- | --- | --- |
+| `component.global-runtime-reconciliation.cli-root` | `entrypoint.global-runtime-reconciliation.cli-root` | `src/cli/index.ts#runCandidateRuntimeReconciliation` | `sink.global-runtime-reconciliation.setup` → `src/cli/commands/global-runtime.ts#runGlobalRuntimeSetup` |
+
 ### 1.3 規模信號
 
 - 規模量級:`20–50` 個文件 / `10k–20k` 行
@@ -66,6 +72,66 @@ flowchart LR
 - `reads` ← `component.operator.architecture-view` — List modules and export review prompts through the shared ArchitectureModelReader
 - `reads` ← `component.operator.primary` — Read the committed architecture model through the shared ArchitectureModelReader
 - `calls` ← `component.refactor-program.archctx-provider` — Run the pinned package-local archctx CLI through the shared architecture provider
+
+組件出向關係:
+
+- `component.global-runtime-reconciliation.archctx-closure`:
+  - `calls` → `capability.verification.acceptance-review` — Build the module review prompt from the committed architecture model
+  - `calls` → `capability.runtime-harness.evidence-ledger` — Canonicalize architecture closure records
+  - `calls` → `capability.workflow-engine.execution-primitives` — Run the archctx binary through the process runner
+  - `calls` → `capability.runtime-harness.hook-adapters` — Write the private global configuration through the installer ownership writer
+  - `calls` → `capability.runtime-harness.mcp-sidecar` — Resolve registered repositories for the model reader
+  - `reads` → `capability.workflow-engine.workflow-state` — Parse Markdown headers of plans and contracts
+- `component.global-runtime-reconciliation.cli-root`:
+  - `calls` → `capability.verification.acceptance-review` — Register the review command
+  - `calls` → `capability.public-surface.adoption` — Register the adoption-plan command and run the adoption plan for the setup check
+  - `calls` → `component.global-runtime-reconciliation.archctx-closure` — Register the architecture-projection command
+  - `calls` → `capability.runtime-mcp.chatgpt-browser` — Register the chatgpt command
+  - `calls` → `capability.verification.codegraph-readiness` — Probe CodeGraph readiness for doctor
+  - `calls` → `capability.runtime-harness.collaboration` — Register the collaboration command
+  - `calls` → `capability.workflow-engine.contract-assets` — Register the init and capability-context commands
+  - `calls` → `capability.runtime-harness.delegated-runs` — Register the delegation command
+  - `calls` → `capability.runtime-harness.engineer-bindings` — Register the engineer command
+  - `calls` → `capability.runtime-harness.external-source-intake` — Register the external-source command
+  - `calls` → `capability.runtime-harness.hook-adapters` — Register the install and status and security and hook commands and run host transactions with the install profile
+  - `calls` → `capability.runtime-harness.integration-acceptance` — Register the integration command
+  - `calls` → `capability.runtime-harness.interface-change` — Register the interface-change command
+  - `calls` → `capability.runtime-harness.mcp-sidecar` — Register the mcp command
+  - `calls` → `capability.runtime-harness.operator` — Register the operator command
+  - `calls` → `capability.runtime-harness.pipeline-ledger` — Register the pipeline command
+  - `calls` → `capability.runtime-harness.pm-dispatch` — Register the pm command
+  - `calls` → `component.global-runtime-reconciliation.primary` — Register the update and upgrade commands and run the setup inside the candidate runtime
+  - `calls` → `capability.organization.publication` — Register the publication command
+  - `calls` → `capability.runtime-harness.refactor-program` — Register the refactor command
+  - `calls` → `capability.public-surface.root-router` — Register the docs command
+  - `calls` → `component.action-commands.skill-surface-catalog` — Parse the skill surface catalog for CLI commands
+  - `calls` → `capability.public-surface.strategy-reflection` — Register the strategy command
+  - `calls` → `capability.runtime-harness.task-agent-host` — Register the herdr and task-agent commands
+  - `calls` → `capability.organization.task-fleet` — Register the fleet command
+  - `calls` → `capability.runtime-harness.verified-context` — Register the verified-context command
+  - `calls` → `capability.workflow-engine.workflow-state` — Register the sprint and state commands
+- `component.global-runtime-reconciliation.primary`:
+  - `calls` → `capability.public-surface.adoption` — Classify retired surfaces with the adoption fingerprints and back up removals in an FsTransaction manifest under the target lock
+  - `calls` → `component.global-runtime-reconciliation.archctx-closure` — Configure the global architecture projection and verify the archctx daemon handshake
+  - `calls` → `capability.verification.codegraph-readiness` — Configure the exact CodeGraph CLI and MCP registration
+  - `calls` → `capability.workflow-engine.contract-assets` — Sync the cross-review skills through the init command
+  - `calls` → `capability.workflow-engine.execution-primitives` — Run processes and read lock owners during runtime reconciliation
+  - `calls` → `capability.runtime-harness.hook-adapters` — Install host adapters and project skills through the install profile under the host lock
+  - `calls` → `component.action-commands.skill-surface-catalog` — Read external skill install groups from the skill surface catalog
+  - `calls` → `capability.runtime-harness.task-agent-host` — Configure the required Herdr skill during global runtime setup
+- `component.global-runtime-reconciliation.release-packaging`:
+  - `calls` → `component.global-runtime-reconciliation.cli-root` — Smoke the packed tarball CLI and hook binaries in a clean app
+  - `calls` → `capability.workflow-engine.execution-primitives` — Run installed binaries to read back runtime evidence
+  - `calls` → `component.action-commands.skill-surface-catalog` — Parse the skill surface catalog for release packaging
+
+### 1.5 組件結構
+
+| 組件 | 名稱 | 規模量級 | 宣告入口 |
+| --- | --- | --- | --- |
+| `component.global-runtime-reconciliation.archctx-closure` | ArchContext Closure | `10–20` 個文件 / `1000–2000` 行 | 未宣告 |
+| `component.global-runtime-reconciliation.cli-root` | CLI Root and Diagnostics | `5–10` 個文件 / `2000–5000` 行 | `entrypoint.global-runtime-reconciliation.cli-root` |
+| `component.global-runtime-reconciliation.primary` | Global Runtime Reconciler | `10–20` 個文件 / `2000–5000` 行 | 未宣告 |
+| `component.global-runtime-reconciliation.release-packaging` | Release Packaging | `10–20` 個文件 / `2000–5000` 行 | 未宣告 |
 
 ## 2. P2:端到端數據流
 

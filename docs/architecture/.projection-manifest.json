@@ -2,20 +2,20 @@
   "schemaVersion": "archcontext.architecture-docs-projection-manifest/v2",
   "rendererVersion": "archcontext.docs-renderer/v5",
   "profile": "repo-harness/v1",
-  "sourceDigest": "sha256:cbbccfd6824322f42c77802d563b81761359bdeea76580d95d90817b08c25bca",
+  "sourceDigest": "sha256:6146075f15e1e2e2862af5a117e1d4925088a4083e4b75bf407fd23fdb502c12",
   "provenance": {
     "schemaVersion": "archcontext.architecture-docs-projection-provenance/v3",
-    "sourceTreeDigest": "sha256:3876ed8f2a1d8815eb3e2f2942b7683ab9b6294d0f120745e35744bd5dd53ff0",
-    "modelDigest": "sha256:872de48d93f97d91756f39d5f7db205b9b4b09d12ce2a668c2109cd49baafbc3",
+    "sourceTreeDigest": "sha256:3954a4a8b86ac12f81fe05dc967ffe072ec338f2d8e95ab2ebcbaea35b32eb42",
+    "modelDigest": "sha256:7dd498bdf73405904ec9b34979ca7ec25d9710c5fff01b7b25a4d5387c0fdbc0",
     "rendererVersion": "archcontext.docs-renderer/v5",
     "layoutVersion": "archcontext.docs-layout/v1",
     "generatedFrom": {
       "codeGraphPackage": "@colbymchenry/codegraph",
       "codeGraphVersion": "1.6.1"
     },
-    "projectionInputDigest": "sha256:31259305c0fd01fa3f19d1824178fc75f70c3d3e9ef7063416ab78f08a05e7c7"
+    "projectionInputDigest": "sha256:565b850ec6d89acf7ecdc627f105108b8ba3650370f0f02ccba1e3e622f1c23f"
   },
-  "projectionDigest": "sha256:00280f62572825706c6af0324f42de946deb7a616bfa72ab96f215f922eb6d78",
+  "projectionDigest": "sha256:bc7c340a76601e6da8fda24471bfafd9c663de8c44157adcec7b1647d08f30c4",
   "semanticBaseline": {
     "semanticState": {
       "schemaVersion": "archcontext.architecture-semantic-state/v1",
@@ -156,7 +156,7 @@
             "component.strategy-reflection.primary"
           ],
           "semanticFingerprint": "sha256:92dcd6dc23d120305122ff05cefb33a0ee61e18a0b4f0a8db44762e0322788ca",
-          "flowProofFingerprint": "sha256:f4af40629a63abd65377bc426e7ecae6c5d77cb0e7f46c9918c40dd28715fe7b",
+          "flowProofFingerprint": "sha256:a195267e6ff5bb8f07b90c05b1e4b8723d149ec62edfd281121d389b85ffed12",
           "proofStatus": {
             "p1": "proven",
             "p2": "proven"
@@ -181,7 +181,7 @@
             "component.agent-runtime-effects.journal"
           ],
           "semanticFingerprint": "sha256:b5c4ddb75f13e6360e81d6959d253e63cc4d10adad0ed36bdfc06634560c2db7",
-          "flowProofFingerprint": "sha256:ac3c28cd084b0d197fa3b7feb6f310cb425cb2156425388a7a45e9f6df12e08e",
+          "flowProofFingerprint": "sha256:afbbff786dbd5daff0d7e2660d0d36185898c987eec99591e0bb8fc1f5086dbf",
           "proofStatus": {
             "p1": "proven",
             "p2": "proven"
@@ -206,7 +206,7 @@
             "component.bound-task-freezes.primary"
           ],
           "semanticFingerprint": "sha256:2003d45c2693c52a6268ba4a73cdc8cf15497ed2245131f95c47c10b0edebb32",
-          "flowProofFingerprint": "sha256:870371b8140d4537510c4c49f8c85e61c5f3b4866768f52443915794347db718",
+          "flowProofFingerprint": "sha256:c87f81ec98f26e76fc53e0e7a2cbc94fb830009a1731219e84319e93a258dc9b",
           "proofStatus": {
             "p1": "proven",
             "p2": "proven"
@@ -231,7 +231,7 @@
             "component.collaboration.primary"
           ],
           "semanticFingerprint": "sha256:95d250bcd411298c4b69adb5a85cf468a37fa9656a3911505e86ea96bb316bdf",
-          "flowProofFingerprint": "sha256:3ffb176e3398508b99f7f990931a7686696b3bfb649ed1d02c64a266fd9c87a4",
+          "flowProofFingerprint": "sha256:2feadb51b49b9262d95d923568317050759b8fc382d90d892a60c33c8d92025b",
           "proofStatus": {
             "p1": "proven",
             "p2": "proven"
@@ -256,7 +256,7 @@
             "component.delegated-runs.primary"
           ],
           "semanticFingerprint": "sha256:d0cd3996e84a97e1c306c8496d57cf653efb89f5fa0da8c886e1d48e0cc2f5d1",
-          "flowProofFingerprint": "sha256:6b605805726289d2dad1d3e702b2c9ec35c69c676d77859fe22df8fb8ab254c5",
+          "flowProofFingerprint": "sha256:9f86ba01956e04155223955c3176cf79c0fd766b610d260e92ee386bad884820",
           "proofStatus": {
             "p1": "proven",
             "p2": "proven"
@@ -281,7 +281,7 @@
             "component.engineer-bindings.primary"
           ],
           "semanticFingerprint": "sha256:d25f340bef9ad05dfb583aa69f907c568c1b3c0dfab5a875cc2f98163c538b29",
-          "flowProofFingerprint": "sha256:a24db6fae3cea667a950a102391bfd79550716adab5e926bdd7abe79d9e95289",
+          "flowProofFingerprint": "sha256:fc6cf10eb89cdad917bed6a465664e377e86c0f22ab620d71871b0b6f9975072",
           "proofStatus": {
             "p1": "proven",
             "p2": "proven"
@@ -306,7 +306,7 @@
             "component.engineer-messages.primary"
           ],
           "semanticFingerprint": "sha256:ed8c18853c1b50473a98ca66ee8d9e07415f6f8748a237034c0946901d0fc916",
-          "flowProofFingerprint": "sha256:251f7ca46e19862e809e043c81c9e277c08c4e3273abe366eaff8142bc60b021",
+          "flowProofFingerprint": "sha256:29af6e017942d49fb725ece8a076b03e38e21d9e3fa62a675569d367e4fd08c1",
           "proofStatus": {
             "p1": "proven",
             "p2": "proven"
@@ -356,7 +356,7 @@
             "component.engineering-overlay.primary"
           ],
           "semanticFingerprint": "sha256:793a51ff7b534e36830fe4006e0f7c44a98de71866a5159cadf02ddb832e86dd",
-          "flowProofFingerprint": "sha256:05cbc97f7c4fdab534d7b9a1223f08a1f8acc4352b85e7319a7f3df36d8e317a",
+          "flowProofFingerprint": "sha256:4c953aaca3db59d4365e82f5f58812ecd6a42a12b42b081ce617eedf554d4dc6",
           "proofStatus": {
             "p1": "proven",
             "p2": "proven"
@@ -406,7 +406,7 @@
             "component.external-source-intake.immutable-evidence"
           ],
           "semanticFingerprint": "sha256:b1f7d562f47484296a83ed0b1ec5d0557e1a178e1a83a45f395b3e8f91ce1be3",
-          "flowProofFingerprint": "sha256:7a2ba5a2560f60e521da816293ac0d0f83676cd5f1ffa4c30b3abb154cb364ab",
+          "flowProofFingerprint": "sha256:990f458dda7307831082d2dd7cb4f5c838f2ad4bf66a4f70771f01e1f8c5a95b",
           "proofStatus": {
             "p1": "proven",
             "p2": "proven"
@@ -487,7 +487,7 @@
             "component.integration-acceptance.primary"
           ],
           "semanticFingerprint": "sha256:d67b71c3894064cb8734c2d4c7d4562c945f56a6441ba817c378d4008f127010",
-          "flowProofFingerprint": "sha256:2bb0c67feb98c5ef752fda20c76bf16f51f365b2b0c93d9004e13af3b789b1ef",
+          "flowProofFingerprint": "sha256:0c19168bc900aad9d828496c5c1b94b803704899fbf82725c8e1257950f6c966",
           "proofStatus": {
             "p1": "proven",
             "p2": "proven"
@@ -512,7 +512,7 @@
             "component.interface-change.primary"
           ],
           "semanticFingerprint": "sha256:e82d0ddce3978641fec50503ba13de127876c50ffa7bc78f2140bdf17d1dbb53",
-          "flowProofFingerprint": "sha256:2d1b077074562b052287f63df025354241f64d45b47f1fd9f4156480f0dffea5",
+          "flowProofFingerprint": "sha256:433347ac4c32fb5d83ebf0e6c8faaa0dc21753a0eaa273b73059410951eb9738",
           "proofStatus": {
             "p1": "proven",
             "p2": "proven"
@@ -541,7 +541,7 @@
             "component.mcp-sidecar.transport-auth"
           ],
           "semanticFingerprint": "sha256:93d30dac5dfa264209dd3a2400597acd53f279684528ef2d5bf1b1d11e7836d2",
-          "flowProofFingerprint": "sha256:6805315ad70bae04d4c8f5dc294304c9267e597c6d70b136a7285a59678d22b5",
+          "flowProofFingerprint": "sha256:012bec378454302c6eedeaa40bf232413d1cf90863d14990b3f199dca8336618",
           "proofStatus": {
             "p1": "proven",
             "p2": "proven"
@@ -569,8 +569,8 @@
             "component.operator.view-projections",
             "component.operator.web-console"
           ],
-          "semanticFingerprint": "sha256:bf4e871d29155efe909d7286e38be3d64e664b7a50f04194e752ee12504148f9",
-          "flowProofFingerprint": "sha256:ed0cbe13bcf0eaf02c5757a6d60aea20d46423a929ca892efea98905bcc3a373",
+          "semanticFingerprint": "sha256:cf036ea072c20c2995824acbac24a7f2c239e55385a76fd4be818623be71fc47",
+          "flowProofFingerprint": "sha256:282c6b297f4c7b85fbcf1608d6c10a95691a89cc3b22c6d6b2d62e28fda34382",
           "proofStatus": {
             "p1": "proven",
             "p2": "proven"
@@ -581,7 +581,7 @@
             "interfaces": "sha256:858f8595fc2d4aa7b78070ff78a638ed53b2be5231f145fdc78b9e8861e7900b",
             "lifecycle": "sha256:399472ba565c6e41c2b4c124745a02585d4cb979561c811a7cc37a9963c446e8",
             "names": "sha256:b7cca9744c726fdeb48aaaa1d3e3c2541f031d7c11c493221710548881b19081",
-            "ownership": "sha256:9eb624efce669aebe1b0e405d3b86c774177834946393b7b0ae993002561279e",
+            "ownership": "sha256:d3160c4ab964d6684cd6d2f328269d8621e7aa58395722b2627dacb294de5051",
             "placement": "sha256:56dbc01dc1470559eceeda4a2a6610e9165ab3d3ec6f7c35c81cf34539c1399d",
             "relations": "sha256:5e92534d038f64e95a792524f15f27a0bda71b91b8743dcf5ab827d0abf822b3",
             "responsibilities": "sha256:fd610d640602c791af3cdc52e8935496c71911aa17450d89d7659df172d855c5",
@@ -645,7 +645,7 @@
             "component.refactor-program.archctx-provider"
           ],
           "semanticFingerprint": "sha256:fe46c54dd8bde19f8884353a412035d36196dc7967ff3890e44a9c947938d6a4",
-          "flowProofFingerprint": "sha256:3a6e341d83e2b04f0394561cd7ec2aca8f4ce50438e0a6e53199fb6247ab0daa",
+          "flowProofFingerprint": "sha256:6dde9a5cf5ee41961bca5ddedd0550e9ab880680cedc97bab28a36842c1bf915",
           "proofStatus": {
             "p1": "proven",
             "p2": "proven"
@@ -695,7 +695,7 @@
             "component.verified-context.primary"
           ],
           "semanticFingerprint": "sha256:aeb93efe8481a95b197f473ee781b1fbb0052ac330eddeced4a0153f500ca756",
-          "flowProofFingerprint": "sha256:80fdd702935f7822ac960b825fe503dae6e2609176f7f945ffaaa7dbf69b63c3",
+          "flowProofFingerprint": "sha256:5d1abe6fad637ee3ef8feacaaf85ba831be657cb7a1218a45f01c2e60a6e3180",
           "proofStatus": {
             "p1": "proven",
             "p2": "proven"
@@ -720,7 +720,7 @@
             "component.work-demand.primary"
           ],
           "semanticFingerprint": "sha256:9b71e0a885574e03c2dd78bccf1cc7906b2ba01ee29eee6b5f1d3890ffe70636",
-          "flowProofFingerprint": "sha256:0eb531a66fe993b838196ffe8b335ea5d9b8aa5e00594dcd4ce0d0b1a0c51348",
+          "flowProofFingerprint": "sha256:916ab74de64b16e62f391ba212947e0e3a9880e649f0ebd41016d7a6d06cd53f",
           "proofStatus": {
             "p1": "proven",
             "p2": "proven"
@@ -974,22 +974,22 @@
           }
         }
       ],
-      "semanticFingerprint": "sha256:f648b11006255820c8849bcccab36060e6df4db5a887b8488730cdaf00bd7938",
-      "flowProofFingerprint": "sha256:f0bf581271ce43f3b2d88d4cd15ef46f44569149213e3472fcb44483daa60690"
+      "semanticFingerprint": "sha256:e32918c708e643ee8690ccf51c6ad283eb2854f3d7346ea9a344fdc6369d4005",
+      "flowProofFingerprint": "sha256:9496722fca27d4d1fd3d8617339b3fa2763207d19b9fc043dfda50f53a69b5d2"
     },
     "digests": {
-      "modelDigest": "sha256:872de48d93f97d91756f39d5f7db205b9b4b09d12ce2a668c2109cd49baafbc3",
-      "sourceTreeDigest": "sha256:3876ed8f2a1d8815eb3e2f2942b7683ab9b6294d0f120745e35744bd5dd53ff0",
-      "flowProofDigest": "sha256:f0bf581271ce43f3b2d88d4cd15ef46f44569149213e3472fcb44483daa60690",
-      "projectionDigest": "sha256:00280f62572825706c6af0324f42de946deb7a616bfa72ab96f215f922eb6d78"
+      "modelDigest": "sha256:7dd498bdf73405904ec9b34979ca7ec25d9710c5fff01b7b25a4d5387c0fdbc0",
+      "sourceTreeDigest": "sha256:3954a4a8b86ac12f81fe05dc967ffe072ec338f2d8e95ab2ebcbaea35b32eb42",
+      "flowProofDigest": "sha256:9496722fca27d4d1fd3d8617339b3fa2763207d19b9fc043dfda50f53a69b5d2",
+      "projectionDigest": "sha256:bc7c340a76601e6da8fda24471bfafd9c663de8c44157adcec7b1647d08f30c4"
     },
     "evidence": {
-      "sourceTreeDigest": "sha256:3876ed8f2a1d8815eb3e2f2942b7683ab9b6294d0f120745e35744bd5dd53ff0",
+      "sourceTreeDigest": "sha256:3954a4a8b86ac12f81fe05dc967ffe072ec338f2d8e95ab2ebcbaea35b32eb42",
       "selectorEvidenceDigest": "sha256:d5af717285dd92ced26841a64358d3aabffb7da526a25ae190ebf54acf42e6b3",
       "rendererVersion": "archcontext.docs-renderer/v5"
     }
   },
-  "receiptDigest": "sha256:8ccafe5708ae84c3f46695dbcdc46aca766c907324e9ecce4c3819d49f857ad7",
+  "receiptDigest": "sha256:b18d04e6ebd12ed9655df4746481498f4ac964e3c25b9a41e77ff568f7600387",
   "targetCount": 43,
   "fileCount": 43,
   "targets": [
@@ -1003,7 +1003,7 @@
       "ownership": "mixed",
       "rendererVersion": "archcontext.docs-renderer/v5",
       "format": "markdown",
-      "sourceDigest": "sha256:cbbccfd6824322f42c77802d563b81761359bdeea76580d95d90817b08c25bca",
+      "sourceDigest": "sha256:6146075f15e1e2e2862af5a117e1d4925088a4083e4b75bf407fd23fdb502c12",
       "outputDigest": "sha256:7493e84acdcb236f0ae94e21492b501de2978b0a5d4181f5b76364b2cba75d56"
     },
     {
@@ -1018,8 +1018,8 @@
       "ownership": "mixed",
       "rendererVersion": "archcontext.docs-renderer/v5",
       "format": "markdown",
-      "sourceDigest": "sha256:c05c0165c830a1451919e83912a4246a139b9a50139428994848de932876ab05",
-      "outputDigest": "sha256:da10b53ef1acaa957707dbf04f008e391e20f0e2a49c70e3cc9b12e44a8ee822",
+      "sourceDigest": "sha256:70b55e001651c945aab5a4b900f7bf44a656c9d96ac6458e5af38ffb8e8743d7",
+      "outputDigest": "sha256:dc66c14ffa22645f96a177b00f5ab1a8e066023ab39f2ff193617bb516017254",
       "sourceFootprintDigest": "sha256:6301354c1f0edcafd91f5348ddf7012b06e9f73c0e13abffdba658b1f34a527c",
       "scale": {
         "fileCountBucket": {
@@ -1044,8 +1044,8 @@
       "ownership": "mixed",
       "rendererVersion": "archcontext.docs-renderer/v5",
       "format": "markdown",
-      "sourceDigest": "sha256:ec582a711c790ffb321ca0f55eb3917b2b5566081f8ba776dcc34e88c67e3c34",
-      "outputDigest": "sha256:de3b7a7453400ba5d667bd7db013ed0db40a71497178f7a830ec58a8ff262260",
+      "sourceDigest": "sha256:e260e742bc2b7fc70342649a055817d2b3c21e00a148ed98a12bb5710111bf04",
+      "outputDigest": "sha256:daab3348d33a3063b258a15e61b41ad0d01b5620970af9e0fa14c6682c36bdcf",
       "sourceFootprintDigest": "sha256:18c0e78036369d4518196e64d687ead865fbc86f87d5170db467b5a12ef6d4db",
       "scale": {
         "fileCountBucket": {
@@ -1070,9 +1070,9 @@
       "ownership": "mixed",
       "rendererVersion": "archcontext.docs-renderer/v5",
       "format": "markdown",
-      "sourceDigest": "sha256:f035d4c0e0c7aa7a8b098a52593879772ace5e5a92ac97afa3bba7f7897e8c6a",
-      "outputDigest": "sha256:f1d4cca29d35267a5ee0a72e350416d58bb80cf1be668ab88aa58d4d0141e42d",
-      "sourceFootprintDigest": "sha256:1971fbc7feb215ea50e40eb1013c546529833bce875e3a72d2d9eae3e7c9a1d7",
+      "sourceDigest": "sha256:d1e2b52e8bbdf46e7d467549aa004d7b3815d96f3a7ff5b31a241e57284f28f9",
+      "outputDigest": "sha256:69a1420fd2d8f9eb8155c6cc2381f6b563f164933d8a80730df0c4aba76f4cce",
+      "sourceFootprintDigest": "sha256:17bed0c1bc98f22df0daacf3a59b84308a4de4d2e454114440e6b4ee405f728a",
       "scale": {
         "fileCountBucket": {
           "lower": 50,
@@ -1096,8 +1096,8 @@
       "ownership": "mixed",
       "rendererVersion": "archcontext.docs-renderer/v5",
       "format": "markdown",
-      "sourceDigest": "sha256:7ec5756fc74953f19c2c899aa0882faca7afb89df81fe5a43034a518ee38acb9",
-      "outputDigest": "sha256:77d8ce598f7fd4e9d947e75ff86b582564b35a2dba08ea82c3de10bc62d42643",
+      "sourceDigest": "sha256:f61255b2d479b5d225bcd6e0694dc4b4386d89ce4176ae6abfa74caee2ae5777",
+      "outputDigest": "sha256:14dbc6f7efcc7d89aa6384de64ce7acca408d349bf90f12aef30a8876a9f0835",
       "sourceFootprintDigest": "sha256:e41c899257c8327c40c8e47d998b3ab2a32ca5d251490c9bd58afa9f276b1092",
       "scale": {
         "fileCountBucket": {
@@ -1122,9 +1122,9 @@
       "ownership": "mixed",
       "rendererVersion": "archcontext.docs-renderer/v5",
       "format": "markdown",
-      "sourceDigest": "sha256:32ecc0ea023107a39e132a2cf8b62fdff7b064ea1fd7ebfa7282cefd3f3a3e49",
-      "outputDigest": "sha256:caf95ca4a66ad132bbc485042a32b3951de77eedc8f8124960ca4cba14e6457b",
-      "sourceFootprintDigest": "sha256:892066505a7b511b4769f7e60e585c54a675d91f8adbe5c1b086750ffd15cde6",
+      "sourceDigest": "sha256:c3cfbec07fac8ed1f6331ec2e750d7bab75e9e395e37d26f7fc677d5ba0c04a9",
+      "outputDigest": "sha256:8385cd9a6bb73192978d62bea97ff2f5a239b4eb3840b30bcceb8c9194e7fdde",
+      "sourceFootprintDigest": "sha256:433b8b87fb8a2d44b4994df65fc9aaed3b17ab7c5a5ab7b62450a045e81642d9",
       "scale": {
         "fileCountBucket": {
           "lower": 10,
@@ -1148,8 +1148,8 @@
       "ownership": "mixed",
       "rendererVersion": "archcontext.docs-renderer/v5",
       "format": "markdown",
-      "sourceDigest": "sha256:7812e5ca7a273db81e154644606f7e96619205325088ad2363a7bc7042586fcf",
-      "outputDigest": "sha256:cf3931a44c4b4459f4ea0d978fd4ca8a310662c8a625eec302f9f004d1cbb502",
+      "sourceDigest": "sha256:e07250fd6952588b54aa5e51f498564fb60f2e2af484666e0caef821d8dc7001",
+      "outputDigest": "sha256:971d8ac50490cf393e68eac9171c33da868cc4d69e4e4be68f86c7a7097d4876",
       "sourceFootprintDigest": "sha256:05f162e501de298a581f4bb56e748a247b77f20bc81c7fd77bb3193bb864b5cd",
       "scale": {
         "fileCountBucket": {
@@ -1174,8 +1174,8 @@
       "ownership": "mixed",
       "rendererVersion": "archcontext.docs-renderer/v5",
       "format": "markdown",
-      "sourceDigest": "sha256:d859eabcdbf74ad4e28c89d6dc33d90bf17c70d1a8c37d13b9eff683399ea3c9",
-      "outputDigest": "sha256:a8f564dab6b77b32883625dac252f7429efb0adcc813edef46b3b739253cfd79",
+      "sourceDigest": "sha256:bd7fc7428e478ea9955ca08bfca21a391d9fb0ecc236b1401badc15ac09b66b7",
+      "outputDigest": "sha256:bdffb1352f91d6f0487130ede0cafc1a10d4482df8bb0ce61bbdfcaa059d5754",
       "sourceFootprintDigest": "sha256:72cdc96b50ac27311ebcdde88e67e486fc14b8e8498cc57df1ddb31e246cc064",
       "scale": {
         "fileCountBucket": {
@@ -1200,8 +1200,8 @@
       "ownership": "mixed",
       "rendererVersion": "archcontext.docs-renderer/v5",
       "format": "markdown",
-      "sourceDigest": "sha256:04d9b59b1d87e2728f4ad7a039baa7769ddc03695e4b5af991cae889571edb52",
-      "outputDigest": "sha256:cd91a6a26b3d7a2c50a9302ea3de3a2cfda244d5725b8bc04e340b03172fa83e",
+      "sourceDigest": "sha256:42f853750a1809dc162c12e337f6a2f24cc194521d6d0933f69bc43883975c9b",
+      "outputDigest": "sha256:9109098aa671cd2af508afd0d40a62c669f07d962570fa28c69ffa3588ae95d5",
       "sourceFootprintDigest": "sha256:437731de478ae4d8d4986030a5d95819838c982604b9a77533e9361163597211",
       "scale": {
         "fileCountBucket": {
@@ -1226,8 +1226,8 @@
       "ownership": "mixed",
       "rendererVersion": "archcontext.docs-renderer/v5",
       "format": "markdown",
-      "sourceDigest": "sha256:51a7e39ad8905951932e13285c49bfd146d008d1acfe684f5bfc960f273e3d88",
-      "outputDigest": "sha256:f72f21d5cd6d7eaf45e1af0da2e1c72ab8bcc71db99aeea6616b04f3478dd190",
+      "sourceDigest": "sha256:017b2eb170cd023c17e3fb8e791e930a8b6737d2bf5039275d8b9eb2761ec837",
+      "outputDigest": "sha256:1be590820b64a9f1622fc8cf9ce660ca08c47ba9f9275ff3e115d22bca2c9800",
       "sourceFootprintDigest": "sha256:3d3702804d21feee8ca957e3a8395a6a5bf5a8214bc45b0a364fc5b00d193048",
       "scale": {
         "fileCountBucket": {
@@ -1252,8 +1252,8 @@
       "ownership": "mixed",
       "rendererVersion": "archcontext.docs-renderer/v5",
       "format": "markdown",
-      "sourceDigest": "sha256:ba73188c5f6c7a094e45c8e364377daac2dd54e449472f3a4db3aa10ce9f0ff5",
-      "outputDigest": "sha256:e78a047f792291aaeb26683e71a9e17f8474aebcfbfd6222a0a3e2d4039f9419",
+      "sourceDigest": "sha256:681830a9b1c4dd86a4cdadfbb8cbf8a8f884f73bb2d5682c8f4739de3b9d8e62",
+      "outputDigest": "sha256:7dc34d2fb5dd6bb7f71b2bc7cc46fb7c5fe404cd33695f5c1d3e66e77f01e5bf",
       "sourceFootprintDigest": "sha256:55cbf389686435e6529a6786f844fa925b295b6945135204c4477ec6a646538e",
       "scale": {
         "fileCountBucket": {
@@ -1278,8 +1278,8 @@
       "ownership": "mixed",
       "rendererVersion": "archcontext.docs-renderer/v5",
       "format": "markdown",
-      "sourceDigest": "sha256:6dfe0ebc11aa2ff612fe0dbe69f776ac4074edb8180b3b45318cb26c048ec1f4",
-      "outputDigest": "sha256:8cf5face425b146f62a00de64d30436726d36cd9205675eddb25a4317e58a8dc",
+      "sourceDigest": "sha256:44365fd6d13c87717e1dea9868b76a624c8d8455884dbd2308221d31375f9928",
+      "outputDigest": "sha256:4deb3c09a263f565c8fdfa9852a42898f9188577f150cd607e57c37d049d55b8",
       "sourceFootprintDigest": "sha256:bfc230cfb5f5f9aa90b67f79cf2ba76b52f7c8eff74ead6ba69120bca67b5f35",
       "scale": {
         "fileCountBucket": {
@@ -1304,8 +1304,8 @@
       "ownership": "mixed",
       "rendererVersion": "archcontext.docs-renderer/v5",
       "format": "markdown",
-      "sourceDigest": "sha256:44f20fdd9abcfe56442dbd0ffaa23000338969d4d6d2ff36c65613d9d63e936c",
-      "outputDigest": "sha256:a1d2f21f6fdeedb314aaa35f8ede80d9ca5d5058062cc1a4eb6bd25b3851bb83",
+      "sourceDigest": "sha256:49a89da26b1aac0fb6492b0923c0243a1126d2a4be4d6adb1b0f6fedad826d91",
+      "outputDigest": "sha256:0b311f0435ff3b5ad816babd7cdd4c69a1226919207a48c5c0c8547f12362290",
       "sourceFootprintDigest": "sha256:69ee14f20ff2adc7df7a8395bcd72df959da48a3d476eeaeb9e1c726ef9c6382",
       "scale": {
         "fileCountBucket": {
@@ -1330,8 +1330,8 @@
       "ownership": "mixed",
       "rendererVersion": "archcontext.docs-renderer/v5",
       "format": "markdown",
-      "sourceDigest": "sha256:efa6bfb0176eb81a182085304d33f11516678e18b0639dfc6286500c75a9b88d",
-      "outputDigest": "sha256:bd8b16112e5faf5cf8ed17d251ef8f4f74f09cedc1c4adf848d0f79d4539b329",
+      "sourceDigest": "sha256:3ef58930c6e26dafafa1569d2c139348cd893e575fc72c288857715c8d5bf30c",
+      "outputDigest": "sha256:4f53bd97ae47dbcacb49498657f2594635a1facdf5be8c4a802b6d616710af67",
       "sourceFootprintDigest": "sha256:5cfe7b841e8ed5bef54ba4b1f7ced118eba39a176c386dc22e28d16f61960092",
       "scale": {
         "fileCountBucket": {
@@ -1356,8 +1356,8 @@
       "ownership": "mixed",
       "rendererVersion": "archcontext.docs-renderer/v5",
       "format": "markdown",
-      "sourceDigest": "sha256:1feeeb00b0ab08d4cdc864f0cd7380327c2196a3975ae15510964d9043ac9976",
-      "outputDigest": "sha256:c2ed91e655e048af313f94b95621caaa823b69d8efe065f25291b6c69bb6fc06",
+      "sourceDigest": "sha256:42cb62182d822207338fbe246d446d8706ab6c895cea284030c1d706cbe7109a",
+      "outputDigest": "sha256:9a30c54ae626aafe67573776771d7d9c4b3c563f86a1315c16cc56bd3d977cb2",
       "sourceFootprintDigest": "sha256:97336c160d737fe01faded4e479f80ac6b13c88f7ab56de8b2536dd76f3122cd",
       "scale": {
         "fileCountBucket": {
@@ -1382,8 +1382,8 @@
       "ownership": "mixed",
       "rendererVersion": "archcontext.docs-renderer/v5",
       "format": "markdown",
-      "sourceDigest": "sha256:5c499e394f1372e36be40dc04cf5b4d225d5e0bc8f5ffff3ae79775245c0db7c",
-      "outputDigest": "sha256:ea3215fce6ce17eeef21dadd9a247f92e7397d4d196159224e435f794f29a2d4",
+      "sourceDigest": "sha256:0f85d4e50d8bb2b85daae8167bc9fbac459085dc69172fba04fbb6adac21fd97",
+      "outputDigest": "sha256:26ec828ce56d6d438a096ea05b184f8bd1278693cc6e95d4772b156a4ca63a82",
       "sourceFootprintDigest": "sha256:5a3d4aa65de4adb3bd8c7386827ee2ff13795d89e221b22e16e0be9a4b185e73",
       "scale": {
         "fileCountBucket": {
@@ -1408,8 +1408,8 @@
       "ownership": "mixed",
       "rendererVersion": "archcontext.docs-renderer/v5",
       "format": "markdown",
-      "sourceDigest": "sha256:c2c30fdb22b62bcc185627578cee11ea587a28e631eed35536d77de1db6e6c95",
-      "outputDigest": "sha256:e240acaab0a8c77be683dfded8a54d63034f4c6c241311facdbcf459b8b484d0",
+      "sourceDigest": "sha256:fca126288d0056af07dd1a778634b451faf20cd7ba1512f41034569fcd181693",
+      "outputDigest": "sha256:84a16c823c8f742a2ab6c54325740a096b8b85a67660b2a2ddbad76a40f469b4",
       "sourceFootprintDigest": "sha256:654cfeb9d7444416b533991c85e9ca5a29279342ee12916aeeb171d528d4c719",
       "scale": {
         "fileCountBucket": {
@@ -1434,9 +1434,9 @@
       "ownership": "mixed",
       "rendererVersion": "archcontext.docs-renderer/v5",
       "format": "markdown",
-      "sourceDigest": "sha256:df8ab784c6cb3435c4e67b63e3eab2e98893d404fb2b50d82d0c059edc321e8f",
-      "outputDigest": "sha256:5f44f3c8c9e05a80cbf065a31b5fa27c22c40cc15779a8b7d414b570f44d11e3",
-      "sourceFootprintDigest": "sha256:6129554338122de55d39da2f9682026894ef0a433321a5862c20da2829ea6741",
+      "sourceDigest": "sha256:e30b434bcc01f6fddff7ca83ee4d995ad33408249a52c0f61d1140471bb67f91",
+      "outputDigest": "sha256:82db64cbfa902bb4de594d37591f308f28876214ac78a2089a22c1a140b84be3",
+      "sourceFootprintDigest": "sha256:6cbf5aa967d7a8ccb765aeb55f96978d1e423cff3d11ff7d277c19c906314704",
       "scale": {
         "fileCountBucket": {
           "lower": 20,
@@ -1460,9 +1460,9 @@
       "ownership": "mixed",
       "rendererVersion": "archcontext.docs-renderer/v5",
       "format": "markdown",
-      "sourceDigest": "sha256:ab5f9fbad571e4793a5e0baadca48c9bbaadc515326b40a1c7560e2808fd99b0",
-      "outputDigest": "sha256:96227e1781f26d95d109010881055b70cbfedcdcc9e2404160ab3106a55bd418",
-      "sourceFootprintDigest": "sha256:414b2350f15f18784c12d4e39e9886b9441decae0214d938f7528587c7f25155",
+      "sourceDigest": "sha256:6f4735dcbdd5e4a4a488b00644d4e0d985f5efa1b3eab6f5859bd0a448b1ffeb",
+      "outputDigest": "sha256:24733d36d96f9ff5fd74dd9bf5fd5b09b4c431df674c1c622928251297b33e64",
+      "sourceFootprintDigest": "sha256:8223fdc00876bea6d4738df0293b4defd13254d659ef9debc16d362ccc04d7ec",
       "scale": {
         "fileCountBucket": {
           "lower": 50,
@@ -1486,8 +1486,8 @@
       "ownership": "mixed",
       "rendererVersion": "archcontext.docs-renderer/v5",
       "format": "markdown",
-      "sourceDigest": "sha256:3edc85acc04214bce157db087bb85ff5719274732d44aa214428e701c94b1636",
-      "outputDigest": "sha256:71e3a3f2182fc49582fe9dc28222e30f718f11cca0bc16f194c04aa01d254100",
+      "sourceDigest": "sha256:cec3bf7f6e1e360b955094d1ee9c68795036d3772bc1ec3e748bd8161150d046",
+      "outputDigest": "sha256:98217ca34aee950a6e7efbd0cfcf40d8eb6b6edbcb185a3dbc82ae1a690f2278",
       "sourceFootprintDigest": "sha256:73f4745ad3ea1cb0ed5f04b9ac0246572c9cf1a10e9cfc91cbc57dc5156ee955",
       "scale": {
         "fileCountBucket": {
@@ -1512,8 +1512,8 @@
       "ownership": "mixed",
       "rendererVersion": "archcontext.docs-renderer/v5",
       "format": "markdown",
-      "sourceDigest": "sha256:ca373de475c2677957aa7916ac8760fbbb8331ae6695d22dbc72fe6851fb7fbd",
-      "outputDigest": "sha256:e449adf6559a72debbc929d60707a1a9b16045298edf80c2c1fefb6d06742722",
+      "sourceDigest": "sha256:d76c990e9247efdbeab7d52b0fcd17d1b65a7f23e6e6211f8feae45af8fdc19a",
+      "outputDigest": "sha256:973e587f5c92ebd1b3105e505ccde7608b62528f783173490992fff1d72454ec",
       "sourceFootprintDigest": "sha256:97b48e567d1d4856d61d17f1ef2017920c854cd34ec5eb1bd1679fa52e0664e3",
       "scale": {
         "fileCountBucket": {
@@ -1538,8 +1538,8 @@
       "ownership": "mixed",
       "rendererVersion": "archcontext.docs-renderer/v5",
       "format": "markdown",
-      "sourceDigest": "sha256:979484a569199cf5c21cf8000d6d8890e7852d57ceb678081658aeae0eafbf11",
-      "outputDigest": "sha256:a83d3b94bb34d05de236def87ae7882ed254360407027fbc078dfe7704c8e5f2",
+      "sourceDigest": "sha256:0bb823034c3797058604fee345d6b48e71abfc322c0e6af7f270ec506aee4f50",
+      "outputDigest": "sha256:e69da7355398cfcb0d1c174abf5ad4eb7f926df227c3d4f2438647e3175ef719",
       "sourceFootprintDigest": "sha256:99135d608338e4c2a0fc75861589dbbd7a6dab5f7bac1157b4a18ade1801da3f",
       "scale": {
         "fileCountBucket": {
@@ -1564,9 +1564,9 @@
       "ownership": "mixed",
       "rendererVersion": "archcontext.docs-renderer/v5",
       "format": "markdown",
-      "sourceDigest": "sha256:074d4cf9e6d1ad86dadda5ed9c35934adb795236ebec0e2ff094457ecb09cfa2",
-      "outputDigest": "sha256:6669b2bddf62c2a117762dcbfc7d4bf77a6261b6b1bf8ea04b0c08b1d32b3a57",
-      "sourceFootprintDigest": "sha256:14ced2df676785bcf0d12e23fb5dbaad4918146d74f6ba78c36e5f7cb7e0b049",
+      "sourceDigest": "sha256:97c3f7be75e1fd2beb3327c0a22963045a3bf1a7b75f0b0a946a3b607bd35b38",
+      "outputDigest": "sha256:f872cfd85e3e55cae5eb525f8073d6642fcb5141e03c14da5c9202ff5aa778ce",
+      "sourceFootprintDigest": "sha256:2a998986d5e457dc446acff294d8cfe361a6cbfccb3653ecbf7e8b4df4e5f662",
       "scale": {
         "fileCountBucket": {
           "lower": 50,
@@ -1590,8 +1590,8 @@
       "ownership": "mixed",
       "rendererVersion": "archcontext.docs-renderer/v5",
       "format": "markdown",
-      "sourceDigest": "sha256:ab608c933872419910a63538b58870ab2e201250ba2a26a1436af6f67f4a7844",
-      "outputDigest": "sha256:f846ebbd16a7758090a371bbb291584dc74ba0bdc50721df88e38bdcd45f079a",
+      "sourceDigest": "sha256:d23b64d10b2b9253257ae1d01c71d7f376295936e18b738df5f45102fb2cbd68",
+      "outputDigest": "sha256:7bc3e715707937749f1aafcd07c84641a7bba5fe173f8196afb74f8281f85286",
       "sourceFootprintDigest": "sha256:087341c65582147ded55204eb19212f2a01da32c8cc4d18d4da0b3b953ee044e",
       "scale": {
         "fileCountBucket": {
@@ -1616,8 +1616,8 @@
       "ownership": "mixed",
       "rendererVersion": "archcontext.docs-renderer/v5",
       "format": "markdown",
-      "sourceDigest": "sha256:3384283c7f5056d463dcb19b3dabede839d40d3978a17f4071e91b68e9d0ec96",
-      "outputDigest": "sha256:9981c5ce34a98393195fa7d23401875b1db06f23e568358912c514a015b01b08",
+      "sourceDigest": "sha256:b9d276eb309eb159e7112f4a3280e03412e4e473b0d9a5e2f40f79f66fb19f30",
+      "outputDigest": "sha256:0855a39e9e5fa0d116a3042136cf9e0cb311fb8c082e109bca39303cea2f04a9",
       "sourceFootprintDigest": "sha256:f1076f13a12f301cd6351529102b7d0ae647a083f180ccc172f12d83711e10b9",
       "scale": {
         "fileCountBucket": {
@@ -1642,8 +1642,8 @@
       "ownership": "mixed",
       "rendererVersion": "archcontext.docs-renderer/v5",
       "format": "markdown",
-      "sourceDigest": "sha256:4502dd4e7b76e91b4b1f09dc90af89f1d709800d8fc33296a553770bb89a88a2",
-      "outputDigest": "sha256:97375c49b3e16bb384416833c29e2525b166711c2c07ac9cefea87a89b250a3e",
+      "sourceDigest": "sha256:79b9ef0aca4830ed612d94936465fa9b42f0a4eb5f44accec52b3bbd246a4ad3",
+      "outputDigest": "sha256:13c281a005bf4975b21b976d76067f39b8d697c4b8a0b5c846b732de4143000d",
       "sourceFootprintDigest": "sha256:e228cdee6fa911f5613f70f48c2e6cdacde02cc48b0b67777a5ae12882841082",
       "scale": {
         "fileCountBucket": {
@@ -1668,9 +1668,9 @@
       "ownership": "mixed",
       "rendererVersion": "archcontext.docs-renderer/v5",
       "format": "markdown",
-      "sourceDigest": "sha256:b45dc7067ecb4d5057c7e9966b768b0c2e5913ba451a2d240beee7f8f2d21280",
-      "outputDigest": "sha256:d902c77fd5fdd736325a3ca0891f66dace96bdcb5cc8daa007f9235d983ffc2b",
-      "sourceFootprintDigest": "sha256:d8e1c9e9a1d59ccf05aad219a63eaa97eb1493d093402b5d03917c37b5db5e23",
+      "sourceDigest": "sha256:1697a029185bf5e20ae8b05cc6621960db3d74b88f2683ff1bc7185c5d96ff4b",
+      "outputDigest": "sha256:6da7ec3c4bcaa69eaec6c14785a7a0850731129b81a246cf1ee711a754ac33bb",
+      "sourceFootprintDigest": "sha256:181db72f5bfb003ebae8e462d474b55771fe1ff391341af9745502b187eefe0e",
       "scale": {
         "fileCountBucket": {
           "lower": 20,
@@ -1694,8 +1694,8 @@
       "ownership": "mixed",
       "rendererVersion": "archcontext.docs-renderer/v5",
       "format": "markdown",
-      "sourceDigest": "sha256:94aad12e2f67675e1d1051153aef204c181a67f76095cef6e923a786d0d839bb",
-      "outputDigest": "sha256:60d738346a6497987ef11f050cf255565e6bd4360ed8bb0a08ed4d2b07008380",
+      "sourceDigest": "sha256:3e9f4343183b37072703652c7ef33e5f858ca24e91f77db2c0c6db5a23623eb2",
+      "outputDigest": "sha256:560bed61b9ea109a2af402bc6785eda4ae05c5e1ef8fa8024bb35dbe46025cf6",
       "sourceFootprintDigest": "sha256:41482f551634913408c2f41fe7995c015c38c044295e632949b65d61db601e26",
       "scale": {
         "fileCountBucket": {
@@ -1720,8 +1720,8 @@
       "ownership": "mixed",
       "rendererVersion": "archcontext.docs-renderer/v5",
       "format": "markdown",
-      "sourceDigest": "sha256:220b1d44c19ef866b100cbe5161977b13719b2897424cb003b750d2102563bed",
-      "outputDigest": "sha256:340cdbadfd70873ef4066689be638c116e55085b2f02d2520503d4a142bccc23",
+      "sourceDigest": "sha256:1e7662f33f262a63bb3eda153dbc7a6ab1b926813a8eff27890a2112d7eb931d",
+      "outputDigest": "sha256:9f1cd4979a5b90bcc53c6aa96a3166a0c107b9561bee391c1dd42d2b8bc2655d",
       "sourceFootprintDigest": "sha256:40fcfcf3df544606f04cbbde72a53694a30753b9ae6c82e34f0c38bb75e8ea40",
       "scale": {
         "fileCountBucket": {
@@ -1746,8 +1746,8 @@
       "ownership": "mixed",
       "rendererVersion": "archcontext.docs-renderer/v5",
       "format": "markdown",
-      "sourceDigest": "sha256:20e46a79a9a1db44551b6ed38a511e2226702a2b757ed8d7bf90f3b212403bbb",
-      "outputDigest": "sha256:85c26fdfa69fdeeb89c82d59877ae476c10aa24d035c1b4c845f7d6a919ac379",
+      "sourceDigest": "sha256:47fcd4a488a1f787663da883c23d4219878e11c8c1cdc841ec87d3226a680ce2",
+      "outputDigest": "sha256:c001477d9d67a13bd76976f6d023321b42c73ac32bcc2da57e077974dc0c0fcf",
       "sourceFootprintDigest": "sha256:48ec7382eac5d971b6d73f75eb08e343b692481fd2b45d36ca717bdc1220e9b0",
       "scale": {
         "fileCountBucket": {
@@ -1772,8 +1772,8 @@
       "ownership": "mixed",
       "rendererVersion": "archcontext.docs-renderer/v5",
       "format": "markdown",
-      "sourceDigest": "sha256:cc27412cbfc6db3542727cf17d14fc45f4c00b27a45ccf8a7075aff789e08208",
-      "outputDigest": "sha256:61cf9b6b2cbbdd8378002670663b4f8fff41ec4a60c011a4449d23159395a735",
+      "sourceDigest": "sha256:fd944a350e677ffa0998c6750ee24393527ff4f7fae95c30a0c6275868d23c3d",
+      "outputDigest": "sha256:156ea882482b5f26c97cb6a0260b06e5f047fdf9019dc4c381df7280e714df3d",
       "sourceFootprintDigest": "sha256:ad812ee99430176c87f50fe6a72b95a01f032fc84372bdc175c78ca15c167358",
       "scale": {
         "fileCountBucket": {
@@ -1798,8 +1798,8 @@
       "ownership": "mixed",
       "rendererVersion": "archcontext.docs-renderer/v5",
       "format": "markdown",
-      "sourceDigest": "sha256:95cf4927c3167df20f6ef6468d82cf58753688ef51f7d02095f186655e3919be",
-      "outputDigest": "sha256:dc1f96881d6af869e79cb94cc55c0452621fc8b78a24eba7c9b58d72c6702fda",
+      "sourceDigest": "sha256:e4667f738f3fb4c30a42df97f8e6b3f6765762764a6b5562695e4da2ca58a357",
+      "outputDigest": "sha256:0ed9fa7d8b634fafe61790cdafd7d5031b91ffc9a853a74bd67ca6e24a316470",
       "sourceFootprintDigest": "sha256:aa7d7719f8e9c7fbcd56141e412539d76cfbd554e0a5211220a958068b28c2de",
       "scale": {
         "fileCountBucket": {
@@ -1824,8 +1824,8 @@
       "ownership": "mixed",
       "rendererVersion": "archcontext.docs-renderer/v5",
       "format": "markdown",
-      "sourceDigest": "sha256:cee96bdc4be34765f0ef0b61417bdec56ca19878e0e294e991eeaa457551d300",
-      "outputDigest": "sha256:e858431853aa390dd9a8baee74cce9cc14d1f8626426a23d22ead8d0d38fb04c",
+      "sourceDigest": "sha256:1139b0a14d54cfd9b4927ded8c98f3f7f273e77068942bc1c42168fa47ca7d8c",
+      "outputDigest": "sha256:cdcd9c5cf5e3e7075dfffaf0bdb36b24557214695247f84b84d95cfa2c48559e",
       "sourceFootprintDigest": "sha256:a9e200f6a4dfa888ae9425e572158976e6b310d6ecd5d70f02363639647cda8b",
       "scale": {
         "fileCountBucket": {
@@ -1850,9 +1850,9 @@
       "ownership": "mixed",
       "rendererVersion": "archcontext.docs-renderer/v5",
       "format": "markdown",
-      "sourceDigest": "sha256:c66236f0396d879038826c894c3ea58dcee928e4ced54f81a6e1158eac487702",
-      "outputDigest": "sha256:e509ec785f5d899f4444d37e6aee9eb4df0a78951e7e9a93e4e26714a230755a",
-      "sourceFootprintDigest": "sha256:2349a91dcab3aca5da4df39e322b9d3956aa9e178329029b29aa64ab17f0eaf6",
+      "sourceDigest": "sha256:302b23b6fefd6dd24182828c81ed82b2d5c49c278853c8edd7653698a73304cd",
+      "outputDigest": "sha256:3a77303b0b2c586acea669aca450aa1e778a4734f1fe35191dee6cecadddd7b6",
+      "sourceFootprintDigest": "sha256:a566a7e5426a6a382b41d4261daa97839f57f25fc4c28cc620e2ea10973873fb",
       "scale": {
         "fileCountBucket": {
           "lower": 500,
@@ -1876,9 +1876,9 @@
       "ownership": "mixed",
       "rendererVersion": "archcontext.docs-renderer/v5",
       "format": "markdown",
-      "sourceDigest": "sha256:f05b9512d66babafd704fa74f7b33a95d966329e9f39b3e75c5c36d73565f607",
-      "outputDigest": "sha256:83096dc992fb8a8748599aafd205e624ce94d3c04cf5253f9dcca1673423fa50",
-      "sourceFootprintDigest": "sha256:0bcb3b2cdea1bd6997886a2ff5f0ed0e01e51265853abc23fed9769f38681bb7",
+      "sourceDigest": "sha256:93c7c46689afcef2e28a333c2fdfd5c7886095566264eb6a8271606b2f0207a9",
+      "outputDigest": "sha256:f5194623ad4f37c5ef49acc60cd0c90f563e818635a06fe4aa8c15c4f87bea1f",
+      "sourceFootprintDigest": "sha256:3c0c856ed97564b5e7560a34435199135856a1b93de37fc8760964c73e9077de",
       "scale": {
         "fileCountBucket": {
           "lower": 500,
@@ -1902,8 +1902,8 @@
       "ownership": "mixed",
       "rendererVersion": "archcontext.docs-renderer/v5",
       "format": "markdown",
-      "sourceDigest": "sha256:c2b0923cd09290c313b543d58eb2b799593747b9cdb00167207b347b538d0cbd",
-      "outputDigest": "sha256:b85307db3fca0f3e441d0fbe3d49a6e55f7bc1b8e47f8297347c06c0b930bef0",
+      "sourceDigest": "sha256:0053654e7e87f1e5414f4aefdcd28a8338406eb248f1e91f7e0822f3152f77fa",
+      "outputDigest": "sha256:e873dd264ad1c83c9b992b2ae6924088ac70487f4781ad2b98ba9f6cabfd0892",
       "sourceFootprintDigest": "sha256:df23c3910b438c91d76ca3dfa0bc5b5cd7d81f99f1fd3b79b7a4b02cd5cd66e2",
       "scale": {
         "fileCountBucket": {
@@ -1928,8 +1928,8 @@
       "ownership": "mixed",
       "rendererVersion": "archcontext.docs-renderer/v5",
       "format": "markdown",
-      "sourceDigest": "sha256:ac9e95ea634463056649d6771a617f2716fc5ba871786bb159330e9ce3c244b2",
-      "outputDigest": "sha256:9bc9a965d7865509022f2d5ef555259a3fbe282f9b116e720f15e3368c800d52",
+      "sourceDigest": "sha256:d5431fc0629e1475f5525d572338e8aacbbffac6b87c404eaa6d80aa0687d133",
+      "outputDigest": "sha256:42a407b956b890ea6f484739d07c5e63c4001b0ae32dd968abfbcc898727c592",
       "sourceFootprintDigest": "sha256:dc231fc0f80cea1dd7a1895138b86e4de803aff88381574f80ee38d0b7d0e0d0",
       "scale": {
         "fileCountBucket": {
@@ -1954,8 +1954,8 @@
       "ownership": "mixed",
       "rendererVersion": "archcontext.docs-renderer/v5",
       "format": "markdown",
-      "sourceDigest": "sha256:90f46c85ab1ed18ee1ad5db307a74f1492bf0539081cdf14a01f933a0acac96f",
-      "outputDigest": "sha256:e4371b8ec40e87a00a3c190e30fad53a8a6860239128d01923a386c966dd8849",
+      "sourceDigest": "sha256:5553d1f6b6ee2c05444e88ade5579efea3526a37e72dae013ac0fe10a2f98458",
+      "outputDigest": "sha256:ef796604502fefe9dc9e47addb3baf4e2c6cc71504f9c7a68f6fbe296df0b1e0",
       "sourceFootprintDigest": "sha256:9eba5982ef9a496751cc8c51854c5327992e224b54fc4dbf13a6b5ee3c3b11b0",
       "scale": {
         "fileCountBucket": {
@@ -1978,7 +1978,7 @@
       "ownership": "mixed",
       "rendererVersion": "archcontext.docs-renderer/v5",
       "format": "markdown",
-      "sourceDigest": "sha256:cbbccfd6824322f42c77802d563b81761359bdeea76580d95d90817b08c25bca",
+      "sourceDigest": "sha256:6146075f15e1e2e2862af5a117e1d4925088a4083e4b75bf407fd23fdb502c12",
       "outputDigest": "sha256:34055a2aa0fbe868ce5dea7df5354de5da63830e5972ff683d9647f97374ec26"
     },
     {
@@ -1991,7 +1991,7 @@
       "ownership": "mixed",
       "rendererVersion": "archcontext.docs-renderer/v5",
       "format": "markdown",
-      "sourceDigest": "sha256:cbbccfd6824322f42c77802d563b81761359bdeea76580d95d90817b08c25bca",
+      "sourceDigest": "sha256:6146075f15e1e2e2862af5a117e1d4925088a4083e4b75bf407fd23fdb502c12",
       "outputDigest": "sha256:1f723aeb74466aae7d607eeab8c438a830c36f49a48e6622f868a8151afabea6"
     },
     {
@@ -2005,7 +2005,7 @@
       "ownership": "generated",
       "rendererVersion": "archcontext.docs-renderer/v5",
       "format": "mermaid",
-      "sourceDigest": "sha256:cbbccfd6824322f42c77802d563b81761359bdeea76580d95d90817b08c25bca",
+      "sourceDigest": "sha256:6146075f15e1e2e2862af5a117e1d4925088a4083e4b75bf407fd23fdb502c12",
       "outputDigest": "sha256:a687ef8e3d654e3fe6b73457978d6e271fdefa04ef0a55dd41d90477d27fdc95"
     },
     {
@@ -2019,7 +2019,7 @@
       "ownership": "generated",
       "rendererVersion": "archcontext.docs-renderer/v5",
       "format": "structurizr-json",
-      "sourceDigest": "sha256:cbbccfd6824322f42c77802d563b81761359bdeea76580d95d90817b08c25bca",
+      "sourceDigest": "sha256:6146075f15e1e2e2862af5a117e1d4925088a4083e4b75bf407fd23fdb502c12",
       "outputDigest": "sha256:b37381138a031b9d2d243e0c90dbec9c6f8fba0410ea3767ee57f09525316d3a"
     },
     {
@@ -2033,7 +2033,7 @@
       "ownership": "generated",
       "rendererVersion": "archcontext.docs-renderer/v5",
       "format": "likec4",
-      "sourceDigest": "sha256:cbbccfd6824322f42c77802d563b81761359bdeea76580d95d90817b08c25bca",
+      "sourceDigest": "sha256:6146075f15e1e2e2862af5a117e1d4925088a4083e4b75bf407fd23fdb502c12",
       "outputDigest": "sha256:7a682d37eff6fd93afec6332d3fcfcf97891d03312f749f2b0858d437d3fedff"
     }
   ]

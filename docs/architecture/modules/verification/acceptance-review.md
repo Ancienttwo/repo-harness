@@ -1,6 +1,6 @@
 # verification/acceptance-review 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-acceptance-review" sourceDigest="sha256:95cf4927c3167df20f6ef6468d82cf58753688ef51f7d02095f186655e3919be" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:dc1f96881d6af869e79cb94cc55c0452621fc8b78a24eba7c9b58d72c6702fda" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-acceptance-review" sourceDigest="sha256:e4667f738f3fb4c30a42df97f8e6b3f6765762764a6b5562695e4da2ca58a357" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:0ed9fa7d8b634fafe61790cdafd7d5031b91ffc9a853a74bd67ca6e24a316470" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.verification.acceptance-review`(kind `capability`)
 > **Matched Prefixes**:`src/core/review/**`、`src/effects/review/**`、`src/cli/commands/review.ts`、`scripts/acceptance-receipt.ts`、`scripts/change-assessment.ts`
@@ -36,6 +36,10 @@ flowchart LR
 | `entrypoint.acceptance-review.primary` | `src/cli/commands/review.ts#buildReviewCommand` | `sink.acceptance-review.primary` → `src/effects/review/generic-review.ts#runReviewRound`、`sink.acceptance-review.circuit-admission` → `src/cli/hook/circuit-breaker.ts#recordCircuitAttempt` |
 | `entrypoint.acceptance-review.round` | `src/effects/review/generic-review.ts#runReviewRound` | `sink.acceptance-review.packet` → `src/core/review/review-packet.ts#composeReviewPacket`、`sink.acceptance-review.validate-output` → `src/core/review/generic-review.ts#validateReviewOutput`、`sink.acceptance-review.record-receipt` → `scripts/acceptance-receipt.ts#recordAcceptance` |
 
+組件入口:
+
+- 組件均未宣告 `source.entrypoints`。
+
 ### 1.3 規模信號
 
 - 規模量級:`10–20` 個文件 / `2000–5000` 行
@@ -61,6 +65,20 @@ flowchart LR
 - `calls` ← `component.operator.architecture-view` — Report module CLI failures with the typed module read error of the review prompt builder
 - `calls` ← `component.operator.primary` — Raise and map the typed module read errors that the module review prompt builder declares
 - `depends-on` ← `component.operator.view-projections` — Decode the module review prompt shape that the review prompt builder declares
+
+組件出向關係:
+
+- `component.acceptance-review.primary`:
+  - `calls` → `capability.runtime-harness.evidence-ledger` — Canonicalize review records and load verification execution results
+  - `calls` → `capability.workflow-engine.execution-primitives` — Hold an exclusive directory lock around one generic review run
+  - `calls` → `capability.runtime-harness.task-agent-host` — Run the persistent review session on a Herdr task agent and read its session artifacts
+  - `reads` → `capability.workflow-engine.workflow-state` — Observe Git and files read-only and resolve the workflow profile for the review subject
+
+### 1.5 組件結構
+
+| 組件 | 名稱 | 規模量級 | 宣告入口 |
+| --- | --- | --- | --- |
+| `component.acceptance-review.primary` | Generic Review Round | `10–20` 個文件 / `2000–5000` 行 | 未宣告 |
 
 ## 2. P2:端到端數據流
 

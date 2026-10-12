@@ -1,6 +1,6 @@
 # runtime-mcp/chatgpt-browser 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-mcp-chatgpt-browser" sourceDigest="sha256:20e46a79a9a1db44551b6ed38a511e2226702a2b757ed8d7bf90f3b212403bbb" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:85c26fdfa69fdeeb89c82d59877ae476c10aa24d035c1b4c845f7d6a919ac379" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-mcp-chatgpt-browser" sourceDigest="sha256:47fcd4a488a1f787663da883c23d4219878e11c8c1cdc841ec87d3226a680ce2" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:c001477d9d67a13bd76976f6d023321b42c73ac32bcc2da57e077974dc0c0fcf" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-mcp.chatgpt-browser`(kind `capability`)
 > **Matched Prefixes**:`src/cli/chatgpt-browser/binding.ts`、`src/cli/chatgpt-browser/engine.ts`、`src/cli/chatgpt-browser/native-provider.ts`、`src/cli/chatgpt-browser/oracle-provider.ts`、`src/cli/chatgpt-browser/oracle-session-evidence.ts`、`src/cli/chatgpt-browser/prompt-assembler.ts`、`src/cli/chatgpt-browser/secret-scan.ts`、`src/cli/chatgpt-browser/session-store.ts`、`src/cli/chatgpt-browser/types.ts`、`src/cli/chatgpt-skill/**`、`src/cli/commands/chatgpt.ts`、`docs/repo-harness-chatgpt-browser-engine.md`
@@ -33,6 +33,12 @@ flowchart LR
 | --- | --- | --- |
 | `entrypoint.chatgpt-browser.primary` | `src/cli/commands/chatgpt.ts#buildChatgptCommand` | `sink.chatgpt-browser.primary` → `src/cli/chatgpt-browser/engine.ts#runBrowserConsult` |
 
+組件入口:
+
+| 組件 | 宣告入口 | 錨點 | 職責 |
+| --- | --- | --- | --- |
+| `component.chatgpt-browser.primary` | `entrypoint.chatgpt-browser.consult` | `src/cli/chatgpt-browser/engine.ts#runBrowserConsult` | `sink.chatgpt-browser.secret-scan` → `src/cli/chatgpt-browser/secret-scan.ts#scanPromptBundle` |
+
 ### 1.3 規模信號
 
 - 規模量級:`10–20` 個文件 / `2000–5000` 行
@@ -50,6 +56,17 @@ flowchart LR
 - `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the chatgpt command
 - `calls` ← `component.mcp-sidecar.host-setup` — Read the canonical ChatGPT bridge reference from the packaged skill source
 - `calls` ← `component.mcp-sidecar.primary` — Run the opt-in browser consult tools through the ChatGPT browser engine
+
+組件出向關係:
+
+- `component.chatgpt-browser.primary`:
+  - 無。
+
+### 1.5 組件結構
+
+| 組件 | 名稱 | 規模量級 | 宣告入口 |
+| --- | --- | --- | --- |
+| `component.chatgpt-browser.primary` | Browser Consult Engine | `10–20` 個文件 / `2000–5000` 行 | `entrypoint.chatgpt-browser.consult` |
 
 ## 2. P2:端到端數據流
 

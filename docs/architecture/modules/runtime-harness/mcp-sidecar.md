@@ -1,5 +1,5 @@
 # runtime-harness/mcp-sidecar 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-mcp-sidecar" sourceDigest="sha256:979484a569199cf5c21cf8000d6d8890e7852d57ceb678081658aeae0eafbf11" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:a83d3b94bb34d05de236def87ae7882ed254360407027fbc078dfe7704c8e5f2" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-mcp-sidecar" sourceDigest="sha256:0bb823034c3797058604fee345d6b48e71abfc322c0e6af7f270ec506aee4f50" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:e69da7355398cfcb0d1c174abf5ad4eb7f926df227c3d4f2438647e3175ef719" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.mcp-sidecar`(kind `capability`)
 > **Matched Prefixes**:`src/cli/mcp/**`、`src/cli/commands/mcp.ts`、`src/cli/chatgpt-browser/file-policy.ts`、`src/effects/repo-registry.ts`、`docs/repo-harness-chatgpt-mcp-setup.md`、`docs/reference-configs/chatgpt-coding-mcp.md`、`docs/researches/20260711-devspace-chatgpt-local-control.md`、`src/core/security/**`
@@ -23,7 +23,7 @@ flowchart LR
   p1_component_mcp_sidecar_repo_policy_registry_40f1ea26["Config Policy and Repository Registry"]:::component
   p1_component_mcp_sidecar_transport_auth_2511e63e["Transport and Authorization"]:::component
   p1_component_mcp_sidecar_coding_profile_c04b21a1 -->|"Contain workspace paths against registered roots then redact and audit coding results"| p1_component_mcp_sidecar_repo_policy_registry_40f1ea26
-  p1_capability_runtime_harness_mcp_sidecar_4e12aaf3 -->|"Expose authenticated Engineer message send， list and acknowledgement without granting generic Fleet or Provider authority"| p1_capability_runtime_harness_engineer_messages_f10d1d17
+  p1_capability_runtime_harness_mcp_sidecar_4e12aaf3 -->|"Expose authenticated Engineer message send#44; list and acknowledgement without granting generic Fleet or Provider authority"| p1_capability_runtime_harness_engineer_messages_f10d1d17
   p1_capability_runtime_harness_mcp_sidecar_4e12aaf3 -->|"Project and acquire exact revision-fenced Engineer offers for a verified OAuth principal"| p1_capability_runtime_harness_engineer_scheduling_022bd8e0
   p1_component_mcp_sidecar_host_setup_a05a1958 -->|"List and clean up managed coding workspaces"| p1_component_mcp_sidecar_coding_profile_c04b21a1
   p1_component_mcp_sidecar_host_setup_a05a1958 -->|"Build the expected tool inventory for the live doctor and run prepare-goal through the tool dispatcher"| p1_component_mcp_sidecar_primary_8f9b418c
@@ -40,7 +40,7 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:8d35181a067b71c26031d6cb3af71610da8121fe98eb7118d1ae3c1f8b2fb969`).
+- Proof: `proven` (`sha256:50577a08a65896807e215f8afaf84e683c4977f6e730ec19827f717b2a943657`).
 - Semantic nodes: `8`; declared relations: `12`.
 
 ### 1.2 模組職責表
@@ -53,6 +53,15 @@ flowchart LR
 | `entrypoint.mcp-sidecar.engineer-tools` | `src/cli/mcp/engineer-tools.ts#acquireAsEngineer` | `sink.mcp-sidecar.engineer-acquire` → `src/effects/engineers/scheduling-acquire-next.ts#acquireSelectedEngineerTask` |
 | `entrypoint.mcp-sidecar.engineer-tools` | `src/cli/mcp/engineer-tools.ts#callEngineerTool` | `sink.mcp-sidecar.agent-runtime-effect-status` → `src/effects/engineers/agent-runtime-effect-store.ts#observeAgentRuntimeEffectStatus`、`sink.mcp-sidecar.interface-change` → `src/effects/engineers/interface-change-store.ts#transitionInterfaceChangeRequest` |
 | `entrypoint.mcp-sidecar.collaboration-tools` | `src/cli/mcp/collaboration-tools.ts#callCollaborationTool` | `sink.mcp-sidecar.collaboration-exchange` → `src/effects/collaboration/agent-surface.ts#collaborationExchangeView`、`sink.mcp-sidecar.collaboration-signal-post` → `src/effects/collaboration/agent-surface.ts#collaborationSignalPost`、`sink.mcp-sidecar.collaboration-handoff-adopt` → `src/effects/collaboration/agent-surface.ts#collaborationHandoffAdopt` |
+
+組件入口:
+
+| 組件 | 宣告入口 | 錨點 | 職責 |
+| --- | --- | --- | --- |
+| `component.mcp-sidecar.host-setup` | `entrypoint.mcp-sidecar.cli` | `src/cli/commands/mcp.ts#buildMcpCommand` | `sink.mcp-sidecar.http-start` → `src/cli/mcp/transports/http.ts#startMcpHttp` |
+| `component.mcp-sidecar.primary` | `entrypoint.mcp-sidecar.tool-dispatch` | `src/cli/mcp/tools.ts#callMcpTool` | `sink.mcp-sidecar.path-policy` → `src/cli/mcp/paths.ts#resolveMcpPath` |
+| `component.mcp-sidecar.transport-auth` | `entrypoint.mcp-sidecar.http-transport` | `src/cli/mcp/transports/http.ts#startMcpHttp` | `sink.mcp-sidecar.startup-config` → `src/cli/mcp/auth.ts#loadMcpLocalConfig` |
+| `component.mcp-sidecar.transport-auth` | `entrypoint.mcp-sidecar.http-transport` | `src/cli/mcp/transports/http.ts#handleMcpPost` | `sink.mcp-sidecar.session-server` → `src/cli/mcp/server.ts#createRepoHarnessMcpServer`、`sink.mcp-sidecar.request-config` → `src/cli/mcp/auth.ts#loadMcpLocalConfig` |
 
 ### 1.3 規模信號
 
@@ -81,9 +90,54 @@ flowchart LR
 - `reads` ← `component.operator.primary` — Resolve a registered repository root from the strict repo-harness registry snapshot
 - `calls` ← `capability.runtime-harness.refactor-program` — Resolve the canonical repository path through the repo registry
 
+組件出向關係:
+
+- `component.mcp-sidecar.coding-profile`:
+  - `calls` → `capability.verification.codegraph-readiness` — Refresh the CodeGraph index after coding mutations
+  - `calls` → `capability.workflow-engine.execution-primitives` — Use the configured Git binary for coding workspaces
+  - `calls` → `component.mcp-sidecar.repo-policy-registry` — Contain workspace paths against registered roots then redact and audit coding results
+  - `calls` → `capability.runtime-harness.task-agent-host` — Clean up task worktrees for coding workspaces
+  - `calls` → `capability.workflow-engine.workflow-state` — Clean up exact worktrees under the system worktree root
+- `component.mcp-sidecar.host-setup`:
+  - `calls` → `capability.runtime-mcp.chatgpt-browser` — Read the canonical ChatGPT bridge reference from the packaged skill source
+  - `calls` → `component.mcp-sidecar.coding-profile` — List and clean up managed coding workspaces
+  - `calls` → `capability.workflow-engine.execution-primitives` — Hold the MCP setup ownership lock
+  - `calls` → `capability.runtime-harness.hook-adapters` — Reuse installer configuration ownership receipts and the runtime host lock
+  - `calls` → `component.mcp-sidecar.primary` — Build the expected tool inventory for the live doctor and run prepare-goal through the tool dispatcher
+  - `writes` → `component.mcp-sidecar.repo-policy-registry` — Write the user-level config and credentials and set repository access grants
+  - `calls` → `component.mcp-sidecar.transport-auth` — Start the stdio or HTTP transport for mcp serve
+- `component.mcp-sidecar.primary`:
+  - `calls` → `capability.runtime-mcp.chatgpt-browser` — Run the opt-in browser consult tools through the ChatGPT browser engine
+  - `calls` → `capability.verification.codegraph-readiness` — Construct the CodeGraph index adapter with repo-local binaries refused
+  - `calls` → `component.mcp-sidecar.coding-profile` — Build and dispatch the coding tool block and its process runtime
+  - `calls` → `capability.workflow-engine.execution-primitives` — Read the worktree topology for the PM server scope
+  - `calls` → `capability.runtime-mcp.general-repo-access` — Dispatch the general repository reader and writer tools
+  - `calls` → `capability.runtime-harness.pm-dispatch` — Serve the PM MCP binding over the PM host protocol
+  - `calls` → `capability.organization.publication` — Reopen and take over publications and read merge readiness
+  - `calls` → `component.mcp-sidecar.repo-policy-registry` — Resolve repositories and paths under the profile policy then redact and audit each result
+  - `calls` → `capability.runtime-harness.task-agent-host` — Start task agents and send task requests through Herdr
+  - `calls` → `capability.organization.task-fleet` — Acquire fleet tasks and handle task steers from the MCP tools
+  - `calls` → `capability.runtime-harness.work-demand` — Propose and transition work demands from the engineer MCP tools
+  - `reads` → `capability.workflow-engine.workflow-state` — Resolve effective state for the state MCP tools
+- `component.mcp-sidecar.repo-policy-registry`:
+  - `calls` → `capability.workflow-engine.execution-primitives` — Run Git for repository roots and lock guarded writes
+- `component.mcp-sidecar.transport-auth`:
+  - `calls` → `component.mcp-sidecar.primary` — Create one MCP server per authorized session and dispatch its tool calls
+  - `reads` → `component.mcp-sidecar.repo-policy-registry` — Load the local config and credentials at startup and recheck the profile on each new session
+
+### 1.5 組件結構
+
+| 組件 | 名稱 | 規模量級 | 宣告入口 |
+| --- | --- | --- | --- |
+| `component.mcp-sidecar.coding-profile` | Coding Profile Runtime | `2–5` 個文件 / `2000–5000` 行 | 未宣告 |
+| `component.mcp-sidecar.host-setup` | CLI and Host Setup | `5–10` 個文件 / `2000–5000` 行 | `entrypoint.mcp-sidecar.cli` |
+| `component.mcp-sidecar.primary` | Server and Tool Dispatch | `5–10` 個文件 / `2000–5000` 行 | `entrypoint.mcp-sidecar.tool-dispatch` |
+| `component.mcp-sidecar.repo-policy-registry` | Config Policy and Repository Registry | `10–20` 個文件 / `2000–5000` 行 | 未宣告 |
+| `component.mcp-sidecar.transport-auth` | Transport and Authorization | `2–5` 個文件 / `1000–2000` 行 | `entrypoint.mcp-sidecar.http-transport` |
+
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:8d35181a067b71c26031d6cb3af71610da8121fe98eb7118d1ae3c1f8b2fb969`); selectors `8/8`.
+> **Proof**: `proven` (`sha256:50577a08a65896807e215f8afaf84e683c4977f6e730ec19827f717b2a943657`); selectors `8/8`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
@@ -95,7 +149,7 @@ sequenceDiagram
   alt Exact WorkEnvelope and ClaimActorReceipt are returned
   p2_engineer_mcp_97bc42c0->>p2_scheduling_authority_0fce7315: Return the live-validated envelope and immutable receipt
     Note over p2_engineer_mcp_97bc42c0: Return authenticated acquire result
-  else Authorization， graph， dependency， concurrency， Binding， offer， receipt， or compensation validation fails
+  else Authorization#44; graph#44; dependency#44; concurrency#44; Binding#44; offer#44; receipt#44; or compensation validation fails
   p2_engineer_mcp_97bc42c0->>p2_scheduling_authority_0fce7315: Return typed refusal and never release a foreign Claim
     Note over p2_engineer_mcp_97bc42c0: Return typed fail-closed error
   end
@@ -111,7 +165,7 @@ sequenceDiagram
   alt Return canonical message or acknowledgement state
   p2_engineer_mcp_97bc42c0->>p2_message_authority_43d726e6: Return the persisted event and receipt projection
     Note over p2_engineer_mcp_97bc42c0: Return authenticated message result
-  else Principal， Binding， resource or transition validation fails closed
+  else Principal#44; Binding#44; resource or transition validation fails closed
   p2_engineer_mcp_97bc42c0->>p2_message_authority_43d726e6: Return a typed refusal without acknowledging or mutating another authority
     Note over p2_engineer_mcp_97bc42c0: Return typed refusal
   end

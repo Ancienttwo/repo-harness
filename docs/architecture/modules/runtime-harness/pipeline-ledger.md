@@ -1,6 +1,6 @@
 # runtime-harness/pipeline-ledger 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-pipeline-ledger" sourceDigest="sha256:ab608c933872419910a63538b58870ab2e201250ba2a26a1436af6f67f4a7844" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:f846ebbd16a7758090a371bbb291584dc74ba0bdc50721df88e38bdcd45f079a" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-pipeline-ledger" sourceDigest="sha256:d23b64d10b2b9253257ae1d01c71d7f376295936e18b738df5f45102fb2cbd68" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:7bc3e715707937749f1aafcd07c84641a7bba5fe173f8196afb74f8281f85286" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.pipeline-ledger`(kind `capability`)
 > **Matched Prefixes**:`src/core/pipeline/**`、`src/effects/pipeline/**`、`src/cli/commands/pipeline.ts`、`assets/pipeline-record.v2.schema.json`
@@ -40,6 +40,10 @@ flowchart LR
 | `entrypoint.pipeline-ledger.command` | `src/cli/commands/pipeline.ts#output` | `sink.pipeline-ledger.store-failure` → `src/effects/pipeline/store.ts#storeFailure` |
 | `entrypoint.pipeline-ledger.source-authority` | `src/effects/pipeline/authority.ts#validateOnSource` | `sink.pipeline-ledger.task-request` → `src/effects/terminal/task-session.ts#assertTaskRequest`、`sink.pipeline-ledger.outcome-provenance` → `src/effects/evidence/verification-execution.ts#verificationOutcomeProvenance` |
 
+組件入口:
+
+- 組件均未宣告 `source.entrypoints`。
+
 ### 1.3 規模信號
 
 - 規模量級:`10–20` 個文件 / `2000–5000` 行
@@ -60,6 +64,17 @@ flowchart LR
 - `reads` ← `component.operator.activity-feeds` — Read pipeline records into the activity snapshot
 - `reads` ← `component.operator.primary` — Open pipeline ledger snapshots and decode the pipeline board
 - `reads` ← `component.operator.web-console` — Decode the pipeline board in the browser
+
+組件出向關係:
+
+- `component.pipeline-ledger.primary`:
+  - 無。
+
+### 1.5 組件結構
+
+| 組件 | 名稱 | 規模量級 | 宣告入口 |
+| --- | --- | --- | --- |
+| `component.pipeline-ledger.primary` | Pipeline Store and Ledger | `10–20` 個文件 / `2000–5000` 行 | 未宣告 |
 
 ## 2. P2:端到端數據流
 

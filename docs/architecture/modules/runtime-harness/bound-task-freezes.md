@@ -1,6 +1,6 @@
 # runtime-harness/bound-task-freezes 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-bound-task-freezes" sourceDigest="sha256:04d9b59b1d87e2728f4ad7a039baa7769ddc03695e4b5af991cae889571edb52" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:cd91a6a26b3d7a2c50a9302ea3de3a2cfda244d5725b8bc04e340b03172fa83e" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-bound-task-freezes" sourceDigest="sha256:42f853750a1809dc162c12e337f6a2f24cc194521d6d0933f69bc43883975c9b" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:9109098aa671cd2af508afd0d40a62c669f07d962570fa28c69ffa3588ae95d5" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.bound-task-freezes`(kind `capability`)
 > **Matched Prefixes**:`src/core/engineers/task-freeze.ts`、`src/effects/engineers/task-freeze-store.ts`、`src/effects/engineers/bound-task-rotation.ts`
@@ -26,7 +26,7 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:7d292675a7cc468a54552f59363baa784657098859f7ac88ecbba67364b5db4c`).
+- Proof: `proven` (`sha256:0304d4098d1df2deb929e1e2c8570362f3fc7fb21087e1a16175b2027f6014af`).
 - Semantic nodes: `3`; declared relations: `2`.
 
 ### 1.2 模組職責表
@@ -38,6 +38,10 @@ flowchart LR
 | `entrypoint.bound-task-freezes.persist` | `src/effects/engineers/task-freeze-store.ts#inspectBoundTaskLocked` | `sink.bound-task-freezes.immutable-store` → `src/effects/engineers/task-freeze-store.ts#persistTaskFreezeReceipt` |
 | `entrypoint.bound-task-freezes.verify` | `src/effects/engineers/task-freeze-store.ts#verifyTaskFreeze` | `sink.bound-task-freezes.stale-compare` → `src/core/engineers/task-freeze.ts#taskFreezeReceiptChangedFields` |
 | `entrypoint.bound-task-freezes.rotation-refusal` | `src/effects/engineers/bound-task-rotation.ts#assertNoLiveClaimForBindingRotation` | `sink.bound-task-freezes.live-claim` → `src/effects/engineers/claim-actor-store.ts#listLiveClaimActorReceiptsForEngineer` |
+
+組件入口:
+
+- 組件均未宣告 `source.entrypoints`。
 
 ### 1.3 規模信號
 
@@ -60,9 +64,20 @@ flowchart LR
 
 - `calls` ← `capability.runtime-harness.collaboration` — Prove a handoff's bound_task execution context against the persisted TaskFreeze receipt it names, on publish and again on every read, so a caller-supplied Claim and Lease generation is never projected as a fact
 
+組件出向關係:
+
+- `component.bound-task-freezes.primary`:
+  - 無。
+
+### 1.5 組件結構
+
+| 組件 | 名稱 | 規模量級 | 宣告入口 |
+| --- | --- | --- | --- |
+| `component.bound-task-freezes.primary` | Immutable Task Freeze Store | 未宣告 `source.include` | 未宣告 |
+
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:7d292675a7cc468a54552f59363baa784657098859f7ac88ecbba67364b5db4c`); selectors `5/5`.
+> **Proof**: `proven` (`sha256:0304d4098d1df2deb929e1e2c8570362f3fc7fb21087e1a16175b2027f6014af`); selectors `5/5`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
@@ -74,12 +89,12 @@ sequenceDiagram
   p2_bound_task_freezes_60610ef7->>p2_engineer_bindings_4e9749d0: Resolve one current Binding and one exact live ClaimActorReceipt fenced to the bound Lease and persisted WorkEnvelope
   p2_bound_task_freezes_60610ef7->>p2_freeze_store_3c761068: Double-read exact Git and control-plane observations before building one canonical TaskFreezeReceipt
   alt Stable observations persist one immutable receipt with closed Human choices
-  p2_bound_task_freezes_60610ef7->>p2_freeze_store_3c761068: Publish content-addressed receipt bytes without Claim， Lease or Binding mutation
-    Note over p2_bound_task_freezes_60610ef7: Return clean-release evidence or freeze-required reasons； never elect a successor
+  p2_bound_task_freezes_60610ef7->>p2_freeze_store_3c761068: Publish content-addressed receipt bytes without Claim#44; Lease or Binding mutation
+    Note over p2_bound_task_freezes_60610ef7: Return clean-release evidence or freeze-required reasons#59; never elect a successor
   else Changed or stale state and active-Claim rotation fail closed
   p2_bound_task_freezes_60610ef7->>p2_engineer_bindings_4e9749d0: Refuse Binding replace or retire until the live Claim follows its explicit release path
   p2_bound_task_freezes_60610ef7->>p2_freeze_store_3c761068: Compare every receipt fence with a fresh double-read observation and reject any change
-    Note over p2_bound_task_freezes_60610ef7: Preserve the existing Claim and worktree topology； perform no takeover or implicit release
+    Note over p2_bound_task_freezes_60610ef7: Preserve the existing Claim and worktree topology#59; perform no takeover or implicit release
   end
 ```
 <!-- END ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-bound-task-freezes" -->

@@ -1,6 +1,6 @@
 # organization/task-fleet 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-organization-task-fleet" sourceDigest="sha256:ec582a711c790ffb321ca0f55eb3917b2b5566081f8ba776dcc34e88c67e3c34" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:de3b7a7453400ba5d667bd7db013ed0db40a71497178f7a830ec58a8ff262260" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-organization-task-fleet" sourceDigest="sha256:e260e742bc2b7fc70342649a055817d2b3c21e00a148ed98a12bb5710111bf04" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:daab3348d33a3063b258a15e61b41ad0d01b5620970af9e0fa14c6682c36bdcf" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.organization.task-fleet`(kind `capability`)
 > **Matched Prefixes**:`src/core/fleet/**`、`src/effects/fleet/**`、`src/core/messages/document-handoff.ts`、`src/cli/commands/fleet.ts`
@@ -35,6 +35,10 @@ flowchart LR
 | --- | --- | --- |
 | `entrypoint.task-fleet.command` | `src/cli/commands/fleet.ts#buildFleetCommand` | `sink.task-fleet.offers` → `src/effects/fleet/acquire.ts#collectFleetOffers`、`sink.task-fleet.acquire` → `src/effects/fleet/acquire.ts#acquireFleetTask`、`sink.task-fleet.send-message` → `src/effects/fleet/task-inbox.ts#sendTaskMessage`、`sink.task-fleet.deliver-message` → `src/effects/fleet/task-inbox.ts#deliverTaskInbox` |
 
+組件入口:
+
+- 組件均未宣告 `source.entrypoints`。
+
 ### 1.3 規模信號
 
 - 規模量級:`10–20` 個文件 / `5000–10000` 行
@@ -64,6 +68,23 @@ flowchart LR
 - `reads` ← `component.operator.primary` — Collect fleet offers and the fleet board for the console
 - `reads` ← `component.operator.view-projections` — Render fleet board errors and task message shapes
 - `reads` ← `capability.runtime-harness.pm-dispatch` — Read repository task offers for PM status without acquiring work
+
+組件出向關係:
+
+- `component.task-fleet.primary`:
+  - `calls` → `capability.workflow-engine.execution-primitives` — Read the worktree topology during fleet acquire
+  - `calls` → `component.task-fleet.task-inbox` — Send deliver and summarize task-addressed messages without lease mutation
+  - `reads` → `capability.workflow-engine.workflow-state` — Read canonical Sprint tasks and leases to build offers and the board
+- `component.task-fleet.task-inbox`:
+  - `calls` → `capability.workflow-engine.execution-primitives` — Hold exclusive directory locks under the Git common directory for the task inbox
+  - `calls` → `capability.workflow-engine.workflow-state` — Address task messages by canonical task under the task lock
+
+### 1.5 組件結構
+
+| 組件 | 名稱 | 規模量級 | 宣告入口 |
+| --- | --- | --- | --- |
+| `component.task-fleet.primary` | Fleet Offers Acquisition and Board | `5–10` 個文件 / `2000–5000` 行 | 未宣告 |
+| `component.task-fleet.task-inbox` | Task Inbox | `5–10` 個文件 / `2000–5000` 行 | 未宣告 |
 
 ## 2. P2:端到端數據流
 

@@ -1,5 +1,5 @@
 # public-surface/action-commands 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-action-commands" sourceDigest="sha256:f035d4c0e0c7aa7a8b098a52593879772ace5e5a92ac97afa3bba7f7897e8c6a" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:f1d4cca29d35267a5ee0a72e350416d58bb80cf1be668ab88aa58d4d0141e42d" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-action-commands" sourceDigest="sha256:d1e2b52e8bbdf46e7d467549aa004d7b3815d96f3a7ff5b31a241e57284f28f9" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:69a1420fd2d8f9eb8155c6cc2381f6b563f164933d8a80730df0c4aba76f4cce" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.public-surface.action-commands`(kind `capability`)
 > **Matched Prefixes**:`assets/skill-commands/**`、`assets/skills/**`、`assets/skill-version.json`、`.claude/.skill-version`、`src/core/skill-surface/**`、`scripts/skill-surface-select.ts`、`scripts/run-skill-routing-eval.ts`、`scripts/check-skill-version.ts`
@@ -37,6 +37,13 @@ flowchart LR
 | --- | --- | --- |
 | `entrypoint.action-commands.primary` | `src/cli/commands/init.ts#installExternalSkills` | `sink.action-commands.primary` → `src/cli/commands/init.ts#loadSkillSurfaceCatalog` |
 
+組件入口:
+
+| 組件 | 宣告入口 | 錨點 | 職責 |
+| --- | --- | --- | --- |
+| `component.action-commands.skill-surface-catalog` | `entrypoint.action-commands.profile-projection` | `scripts/skill-surface-select.ts#main` | `sink.action-commands.facades-for-profile` → `src/core/skill-surface/catalog.ts#facadesForProfile` |
+| `component.action-commands.skill-surface-catalog` | `entrypoint.action-commands.profile-projection` | `scripts/skill-surface-select.ts#loadCatalog` | `sink.action-commands.parse-catalog` → `src/core/skill-surface/catalog.ts#parseSkillSurfaceCatalog` |
+
 ### 1.3 規模信號
 
 - 規模量級:`50–100` 個文件 / `5000–10000` 行
@@ -53,6 +60,23 @@ flowchart LR
 入向關係:
 
 - 無。
+
+組件出向關係:
+
+- `component.action-commands.bundled-skills`:
+  - 無。
+- `component.action-commands.primary`:
+  - `depends-on` → `component.action-commands.bundled-skills` — Name bundled skill packages as manifest package sources
+- `component.action-commands.skill-surface-catalog`:
+  - `reads` → `component.action-commands.primary` — Read manifest.json as the single catalog authority
+
+### 1.5 組件結構
+
+| 組件 | 名稱 | 規模量級 | 宣告入口 |
+| --- | --- | --- | --- |
+| `component.action-commands.bundled-skills` | Bundled Skill Packages | `20–50` 個文件 / `2000–5000` 行 | 未宣告 |
+| `component.action-commands.primary` | Command Facades and Manifest | `10–20` 個文件 / `1000–2000` 行 | 未宣告 |
+| `component.action-commands.skill-surface-catalog` | Skill Surface Catalog | `5–10` 個文件 / `2000–5000` 行 | `entrypoint.action-commands.profile-projection` |
 
 ## 2. P2:端到端數據流
 

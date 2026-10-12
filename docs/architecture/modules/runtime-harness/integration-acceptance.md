@@ -1,6 +1,6 @@
 # runtime-harness/integration-acceptance 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-integration-acceptance" sourceDigest="sha256:3edc85acc04214bce157db087bb85ff5719274732d44aa214428e701c94b1636" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:71e3a3f2182fc49582fe9dc28222e30f718f11cca0bc16f194c04aa01d254100" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-integration-acceptance" sourceDigest="sha256:cec3bf7f6e1e360b955094d1ee9c68795036d3772bc1ec3e748bd8161150d046" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:98217ca34aee950a6e7efbd0cfcf40d8eb6b6edbcb185a3dbc82ae1a690f2278" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.integration-acceptance`(kind `capability`)
 > **Matched Prefixes**:`src/core/integration/product-acceptance.ts`、`src/effects/integration/product-acceptance.ts`、`src/cli/commands/integration.ts`
@@ -26,7 +26,7 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:43a19cce5d971dc0b3aba0e7a3306472b4374ad8bd6abc25f6f20dfe94183dc5`).
+- Proof: `proven` (`sha256:71a91f44f5cc2e16b65f31bc4a6c13e95a280db04db51b835ee8b0736bff35e1`).
 - Semantic nodes: `3`; declared relations: `2`.
 
 ### 1.2 模組職責表
@@ -42,6 +42,10 @@ flowchart LR
 | `entrypoint.integration-acceptance.envelope-canonical` | `src/core/integration/product-acceptance.ts#buildIntegrationEnvelope` | `sink.integration-acceptance.envelope-canonical` → `src/core/publication/publication-receipt.ts#stablePublicationJson` |
 | `entrypoint.integration-acceptance.matrix-canonical` | `src/core/integration/product-acceptance.ts#buildAcceptanceMatrix` | `sink.integration-acceptance.matrix-canonical` → `src/core/publication/publication-receipt.ts#stablePublicationJson` |
 | `entrypoint.integration-acceptance.product-canonical` | `src/core/integration/product-acceptance.ts#buildProductAcceptanceProjection` | `sink.integration-acceptance.product-canonical` → `src/core/publication/publication-receipt.ts#stablePublicationJson` |
+
+組件入口:
+
+- 組件均未宣告 `source.entrypoints`。
 
 ### 1.3 規模信號
 
@@ -61,9 +65,22 @@ flowchart LR
 - `reads` ← `capability.runtime-harness.engineer-scheduling` — Read ME-4C product acceptance projections as one closed dependency authority and never reconstruct acceptance from prose
 - `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the integration command
 
+組件出向關係:
+
+- `component.integration-acceptance.primary`:
+  - `calls` → `capability.verification.acceptance-review` — Locate the acceptance receipt for an integration candidate
+  - `calls` → `capability.workflow-engine.execution-primitives` — Resolve the Git common directory for integration records
+  - `reads` → `capability.workflow-engine.workflow-state` — Read the task lease for the integration envelope
+
+### 1.5 組件結構
+
+| 組件 | 名稱 | 規模量級 | 宣告入口 |
+| --- | --- | --- | --- |
+| `component.integration-acceptance.primary` | Integration Acceptance Evidence Plane | `2–5` 個文件 / `1000–2000` 行 | 未宣告 |
+
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:43a19cce5d971dc0b3aba0e7a3306472b4374ad8bd6abc25f6f20dfe94183dc5`); selectors `5/5`.
+> **Proof**: `proven` (`sha256:71a91f44f5cc2e16b65f31bc4a6c13e95a280db04db51b835ee8b0736bff35e1`); selectors `5/5`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
@@ -79,7 +96,7 @@ sequenceDiagram
   alt Current authority bytes and the existing passing AcceptanceReceipt project onto the exact candidate
   p2_integration_plane_da058c3e->>p2_evidence_schema_dd5fece0: Revalidate every fence and content-address the existing product verdict
     Note over p2_integration_plane_da058c3e: Return immutable ProductAcceptanceProjectionV1 with every authority unchanged
-  else Any stale requirement， publication， candidate， matrix， evidence or receipt fails closed
+  else Any stale requirement#44; publication#44; candidate#44; matrix#44; evidence or receipt fails closed
   p2_integration_plane_da058c3e->>p2_evidence_schema_dd5fece0: Reject the mismatched authority before persisting a product projection
     Note over p2_integration_plane_da058c3e: Return a typed integration error without mutation or fallback
   end

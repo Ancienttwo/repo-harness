@@ -1,6 +1,6 @@
 # runtime-harness/evidence-ledger 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-evidence-ledger" sourceDigest="sha256:5c499e394f1372e36be40dc04cf5b4d225d5e0bc8f5ffff3ae79775245c0db7c" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:ea3215fce6ce17eeef21dadd9a247f92e7397d4d196159224e435f794f29a2d4" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-evidence-ledger" sourceDigest="sha256:0f85d4e50d8bb2b85daae8167bc9fbac459085dc69172fba04fbb6adac21fd97" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:26ec828ce56d6d438a096ea05b184f8bd1278693cc6e95d4772b156a4ca63a82" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.evidence-ledger`(kind `capability`)
 > **Matched Prefixes**:`src/core/evidence/**`、`src/effects/evidence/**`、`scripts/evidence-gc.ts`、`scripts/recovery-view-cli.ts`、`scripts/prepare-handoff.sh`、`scripts/prepare-codex-handoff.sh`、`scripts/codex-handoff-resume.sh`
@@ -36,6 +36,10 @@ flowchart LR
 | `entrypoint.evidence-ledger.recovery` | `src/effects/evidence/recovery-materializer.ts#resolveRecoveryEvidence` | `sink.evidence-ledger.last-checkpoint` → `src/effects/evidence/checkpoint-store.ts#resolveLastPublishedCheckpoint` |
 | `entrypoint.evidence-ledger.log-read` | `src/effects/evidence/event-log.ts#readLogSnapshot` | `sink.evidence-ledger.corrupt-tail` → `src/core/evidence/fold.ts#findCorruptTail` |
 
+組件入口:
+
+- 組件均未宣告 `source.entrypoints`。
+
 ### 1.3 規模信號
 
 - 規模量級:`20–50` 個文件 / `5000–10000` 行
@@ -67,6 +71,17 @@ flowchart LR
 - `calls` ← `component.workflow-state.continuation-ledger` — Append attempt ledger lines durably
 - `calls` ← `component.workflow-state.coordination-plane` — Write lease and topology records durably through the atomic append primitive
 - `calls` ← `component.workflow-state.primary` — Evaluate the verification contract for effective state
+
+組件出向關係:
+
+- `component.evidence-ledger.primary`:
+  - `calls` → `capability.workflow-engine.execution-primitives` — Hold exclusive directory locks under the Git common directory and read the virtual tree
+
+### 1.5 組件結構
+
+| 組件 | 名稱 | 規模量級 | 宣告入口 |
+| --- | --- | --- | --- |
+| `component.evidence-ledger.primary` | Evidence Event Store | `20–50` 個文件 / `5000–10000` 行 | 未宣告 |
 
 ## 2. P2:端到端數據流
 

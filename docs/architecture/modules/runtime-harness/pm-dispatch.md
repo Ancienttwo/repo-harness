@@ -1,6 +1,6 @@
 # runtime-harness/pm-dispatch 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-pm-dispatch" sourceDigest="sha256:3384283c7f5056d463dcb19b3dabede839d40d3978a17f4071e91b68e9d0ec96" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:9981c5ce34a98393195fa7d23401875b1db06f23e568358912c514a015b01b08" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-pm-dispatch" sourceDigest="sha256:b9d276eb309eb159e7112f4a3280e03412e4e473b0d9a5e2f40f79f66fb19f30" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:0855a39e9e5fa0d116a3042136cf9e0cb311fb8c082e109bca39303cea2f04a9" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.pm-dispatch`(kind `capability`)
 > **Matched Prefixes**:`src/core/pm/**`、`src/effects/pm/**`、`src/cli/commands/pm.ts`、`src/effects/terminal/coding-isolation.ts`、`src/effects/terminal/coding-session.ts`、`src/effects/terminal/oar-coding-host.ts`、`assets/hermes/**`、`references/pm-operations.md`
@@ -36,6 +36,10 @@ flowchart LR
 | `entrypoint.pm-dispatch.request` | `src/cli/commands/pm.ts#runPmJson` | `sink.pm-dispatch.operation` → `src/effects/pm/operations.ts#executePmRequest` |
 | `entrypoint.pm-dispatch.coding-host` | `src/effects/terminal/coding-session.ts#startCodingTaskAgent` | `sink.pm-dispatch.task-binding` → `src/effects/terminal/task-session.ts#startTaskApplicationHost` |
 
+組件入口:
+
+- 組件均未宣告 `source.entrypoints`。
+
 ### 1.3 規模信號
 
 - 規模量級:`10–20` 個文件 / `1000–2000` 行
@@ -56,6 +60,18 @@ flowchart LR
 
 - `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the pm command
 - `calls` ← `component.mcp-sidecar.primary` — Serve the PM MCP binding over the PM host protocol
+
+組件出向關係:
+
+- `component.pm-dispatch.primary`:
+  - `calls` → `capability.workflow-engine.execution-primitives` — Read the worktree topology before dispatch
+  - `calls` → `capability.workflow-engine.workflow-state` — Read claim tokens and leases under the task and topology locks
+
+### 1.5 組件結構
+
+| 組件 | 名稱 | 規模量級 | 宣告入口 |
+| --- | --- | --- | --- |
+| `component.pm-dispatch.primary` | PM Task Operation Surface | `10–20` 個文件 / `1000–2000` 行 | 未宣告 |
 
 ## 2. P2:端到端數據流
 

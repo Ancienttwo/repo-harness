@@ -6,10 +6,12 @@ All notable changes to this skill are documented here.
 
 ### Changed
 
-- Pin `archctx` and `archctx-contracts` to exact version `0.7.0`. The
-  architecture docs now use renderer `archcontext.docs-renderer/v5` and
+- Pin `archctx` and `archctx-contracts` to exact version `0.7.1`. The
+  architecture docs use renderer `archcontext.docs-renderer/v5` and
   projection manifest v2. Manifest provenance records only the CodeGraph
-  package and version.
+  package and version. Module pages show component entrypoints, sizes and
+  outbound relations. Mermaid labels keep the model text. Path ownership
+  uses the archctx parent-chain rule.
 
 ## [0.21.2] - 2026-10-10
 

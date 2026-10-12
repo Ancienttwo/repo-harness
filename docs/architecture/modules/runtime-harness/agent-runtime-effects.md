@@ -1,6 +1,6 @@
 # runtime-harness/agent-runtime-effects 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-agent-runtime-effects" sourceDigest="sha256:d859eabcdbf74ad4e28c89d6dc33d90bf17c70d1a8c37d13b9eff683399ea3c9" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:a8f564dab6b77b32883625dac252f7429efb0adcc813edef46b3b739253cfd79" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-agent-runtime-effects" sourceDigest="sha256:bd7fc7428e478ea9955ca08bfca21a391d9fb0ecc236b1401badc15ac09b66b7" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:bdffb1352f91d6f0487130ede0cafc1a10d4482df8bb0ce61bbdfcaa059d5754" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.agent-runtime-effects`(kind `capability`)
 > **Matched Prefixes**:`src/core/engineers/agent-runtime-effect.ts`、`src/effects/engineers/agent-runtime-effect-store.ts`、`src/effects/engineers/agent-runtime-feature.ts`、`src/effects/engineers/agent-runtime-adapters/**`
@@ -22,14 +22,14 @@ flowchart LR
   p1_capability_runtime_harness_agent_runtime_effects_f1bcf433 -->|"Revalidate the exact current Engineer Binding endpoint before preparing or admitting one Host adapter action"| p1_capability_runtime_harness_engineer_bindings_34c00f72
   p1_capability_runtime_harness_agent_runtime_effects_f1bcf433 -->|"Consume one exact persisted message and record effect success only from its authoritative receipt"| p1_capability_runtime_harness_engineer_messages_f10d1d17
   p1_capability_runtime_harness_agent_runtime_effects_f1bcf433 -->|"Persist immutable effect intents and observations before one closed Host action or a reconcile-only state can be returned"| p1_component_agent_runtime_effects_journal_f6727f8f
-  p1_capability_runtime_harness_engineer_messages_f10d1d17 -->|"Revalidate the exact target Engineer and current Binding before assignment delivery， transport and acknowledgement"| p1_capability_runtime_harness_engineer_bindings_34c00f72
+  p1_capability_runtime_harness_engineer_messages_f10d1d17 -->|"Revalidate the exact target Engineer and current Binding before assignment delivery#44; transport and acknowledgement"| p1_capability_runtime_harness_engineer_bindings_34c00f72
   classDef actor fill:#111827,color:#ffffff,stroke:#f9fafb,stroke-width:2px
   classDef component fill:#075985,color:#ffffff,stroke:#bae6fd,stroke-width:2px
   classDef datastore fill:#3f6212,color:#ffffff,stroke:#d9f99d,stroke-width:2px
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:e466b6ca52dfbcc6e27d20584f7a353fe21bfee2b1694a9816130e992db82187`).
+- Proof: `proven` (`sha256:337b082aac3d671c755402862a32ec18a9367399c2fe99964daaff827929eadc`).
 - Semantic nodes: `4`; declared relations: `4`.
 
 ### 1.2 模組職責表
@@ -44,6 +44,10 @@ flowchart LR
 | `entrypoint.agent-runtime-effects.start` | `src/effects/engineers/agent-runtime-effect-store.ts#startAgentRuntimeEffect` | `sink.agent-runtime-effects.started-observation` → `src/core/engineers/agent-runtime-effect.ts#buildAgentRuntimeEffectObservation` |
 | `entrypoint.agent-runtime-effects.observe` | `src/effects/engineers/agent-runtime-effect-store.ts#observeAgentRuntimeEffect` | `sink.agent-runtime-effects.reconciliation-observation` → `src/core/engineers/agent-runtime-effect.ts#buildAgentRuntimeEffectObservation` |
 | `entrypoint.agent-runtime-effects.observe` | `src/effects/engineers/agent-runtime-effect-store.ts#receiptEvidence` | `sink.agent-runtime-effects.receipt-evidence` → `src/effects/engineers/module-inbox.ts#readModuleMessageDelivery` |
+
+組件入口:
+
+- 組件均未宣告 `source.entrypoints`。
 
 ### 1.3 規模信號
 
@@ -68,9 +72,21 @@ flowchart LR
 - `calls` ← `capability.runtime-harness.mcp-sidecar` — Expose read-only runtime capability and current-effect projections to the authenticated Engineer without Host mutation authority
 - `calls` ← `capability.organization.task-fleet` — Read task agent runtime effects as board observations only
 
+組件出向關係:
+
+- `component.agent-runtime-effects.journal`:
+  - `calls` → `capability.workflow-engine.execution-primitives` — Hold exclusive directory locks under the Git common directory
+  - `reads` → `capability.workflow-engine.workflow-state` — Read the task lease before a runtime effect is recorded
+
+### 1.5 組件結構
+
+| 組件 | 名稱 | 規模量級 | 宣告入口 |
+| --- | --- | --- | --- |
+| `component.agent-runtime-effects.journal` | Agent Runtime Effect Journal | `1–2` 個文件 / `500–1000` 行 | 未宣告 |
+
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:e466b6ca52dfbcc6e27d20584f7a353fe21bfee2b1694a9816130e992db82187`); selectors `4/4`.
+> **Proof**: `proven` (`sha256:337b082aac3d671c755402862a32ec18a9367399c2fe99964daaff827929eadc`); selectors `4/4`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
@@ -81,7 +97,7 @@ sequenceDiagram
   participant p2_message_authority_43d726e6 as Engineer Messages
   participant p2_effect_schema_e2bdceda as Agent Runtime Effect Journal
   p2_effect_journal_1eea3f14->>p2_message_authority_43d726e6: Read the exact persisted Module or Task message and its current delivery fact before action admission
-  p2_effect_journal_1eea3f14->>p2_binding_authority_b56d10c4: Revalidate Binding generation， Host， endpoint and contract revision
+  p2_effect_journal_1eea3f14->>p2_binding_authority_b56d10c4: Revalidate Binding generation#44; Host#44; endpoint and contract revision
   alt One immutable intent admits at most one Host action and exact receipt evidence closes the observation chain
   p2_effect_journal_1eea3f14->>p2_message_authority_43d726e6: Consume the exact authoritative delivery receipt before recording effect success
     Note over p2_effect_journal_1eea3f14: Return terminal effect current and no further Host action

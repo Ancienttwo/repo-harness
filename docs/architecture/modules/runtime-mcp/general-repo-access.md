@@ -1,5 +1,5 @@
 # runtime-mcp/general-repo-access 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-mcp-general-repo-access" sourceDigest="sha256:cc27412cbfc6db3542727cf17d14fc45f4c00b27a45ccf8a7075aff789e08208" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:61cf9b6b2cbbdd8378002670663b4f8fff41ec4a60c011a4449d23159395a735" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-mcp-general-repo-access" sourceDigest="sha256:fd944a350e677ffa0998c6750ee24393527ff4f7fae95c30a0c6275868d23c3d" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:156ea882482b5f26c97cb6a0260b06e5f047fdf9019dc4c381df7280e714df3d" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-mcp.general-repo-access`(kind `capability`)
 > **Matched Prefixes**:`src/cli/mcp/general-repo-access.ts`、`src/cli/mcp/general-repo-access/**`、`tests/cli/mcp-reader-tools.test.ts`、`tests/cli/mcp-codegraph-contract.test.ts`、`tests/cli/mcp-policy.test.ts`、`tests/cli/mcp-tools.test.ts`、`assets/mcp/**`
@@ -32,6 +32,10 @@ flowchart LR
 | --- | --- | --- |
 | `entrypoint.general-repo-access.primary` | `src/cli/mcp/reader-tools.ts#callReaderTool` | `sink.general-repo-access.primary` → `src/cli/mcp/general-repo-access.ts#callGeneralRepoTool` |
 
+組件入口:
+
+- 組件均未宣告 `source.entrypoints`。
+
 ### 1.3 規模信號
 
 - 規模量級:`5–10` 個文件 / `5000–10000` 行
@@ -47,6 +51,18 @@ flowchart LR
 入向關係:
 
 - `calls` ← `component.mcp-sidecar.primary` — Dispatch the general repository reader and writer tools
+
+組件出向關係:
+
+- `component.general-repo-access.primary`:
+  - `calls` → `capability.verification.codegraph-readiness` — Read CodeGraph index metadata through the adapter after path authorization
+  - `calls` → `component.mcp-sidecar.repo-policy-registry` — Resolve registered repositories then redact and audit through the shared MCP policy
+
+### 1.5 組件結構
+
+| 組件 | 名稱 | 規模量級 | 宣告入口 |
+| --- | --- | --- | --- |
+| `component.general-repo-access.primary` | Stable File Reader | 未宣告 `source.include` | 未宣告 |
 
 ## 2. P2:端到端數據流
 
