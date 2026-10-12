@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { execFileSync } from 'node:child_process';
 
 import {
   projectDevActivity,
@@ -271,6 +272,7 @@ describe('dev activity public text and health', () => {
     const cases: [string, string][] = [
       ['failed [/home/alice/secret]', 'failed [[private path]]'],
       ['failed,/home/alice/secret', 'failed,[private path]'],
+      ['path=/home/alice/secret', 'path=[private path]'],
       ['open ~/Projects/secret now', 'open ~[private path] now'],
       ['see <C:\\Users\\me>', 'see <[private path]>'],
       ['merge feat/x and and/or at 1/2 from ./rel', 'merge feat/x and and/or at 1/2 from ./rel'],
@@ -283,7 +285,8 @@ describe('dev activity public text and health', () => {
   });
 
   test('keeps Unicode branch names in worktree and PR cards', () => {
-    for (const branch of ['修复/问题', 'café/issue', 'δοκιμή/42', '分支１/修改']) {
+    for (const branch of ['修复/问题', 'café/issue', 'cafe\u0301/issue', 'δοκιμή/42', '分支１/修改', 'fix🔧/issue', 'fix👩‍💻/issue', 'fix❤️/issue']) {
+      expect(execFileSync('git', ['check-ref-format', '--branch', branch], { encoding: 'utf8' }).trim()).toBe(branch);
       const snapshot = project(repo({ worktrees: [worktree(branch)], pull_requests: [pr(branch)] }));
       expect(snapshot.items).toHaveLength(1);
       expect(snapshot.items[0]!.branch).toBe(branch);
