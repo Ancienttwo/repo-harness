@@ -94,9 +94,9 @@ if [[ "$lane" != functional ]]; then
   mkdir -p "$arch_home/.repo-harness"
   printf '%s\n' '{"architecture":{"projection_provider":"archctx","projection_apply":"manual","projection_timeout_ms":600000}}' > "$arch_home/.repo-harness/config.json"
   if [[ -d .codegraph ]]; then
-    HOME="$arch_home" node_modules/.bin/codegraph sync -q . </dev/null >/dev/null
+    HOME="$arch_home" npm exec --no -- codegraph sync -q . </dev/null >/dev/null
   else
-    HOME="$arch_home" node_modules/.bin/codegraph init -y . </dev/null >/dev/null
+    HOME="$arch_home" npm exec --no -- codegraph init -y . </dev/null >/dev/null
   fi
   arch_status=0
   HOME="$arch_home" bun src/cli/index.ts architecture-projection check --json > "$arch_home/check.json" || arch_status=$?
