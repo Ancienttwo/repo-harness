@@ -1,4 +1,4 @@
-# repo-harness 0.21.2 preparation
+# repo-harness 0.21.2 publication record
 
 ## Scope and authority
 
@@ -42,8 +42,9 @@
 - Kanban status is a read-only projection from native sources or optional
   Herdr. Runtime status grants no task completion authority. Python 3.9 or
   later is needed only for Claude and Pi capture.
-- No merge, tag, npm publish or installed user runtime update is authorized here.
-  Parent review and publication coordination must follow final acceptance.
+- The preparation phase did not authorize merge, tag, npm publication or
+  an installed user runtime update. The later owner approval below superseded
+  that preparation limit for the final 0.21.2 publication only.
 
 ## Integration decisions
 
@@ -110,13 +111,72 @@ Only fixture-owned processes and paths may be stopped or removed.
 - #615 squash merge: `daa49e202b49068418ead6a78e399d851ddf3d73`.
   Parent: `80e773fa1b91c075ddef0a0cc47203920a57e23e`.
   `git revert --no-edit daa49e202b49068418ead6a78e399d851ddf3d73`.
-- The integration PR has no main merge SHA until parent publication. Record
-  that exact SHA and parent before publication. Do not substitute a candidate
-  SHA for a future squash merge. No rollback command here undoes npm publication.
+- #604 release squash: `942f3fca4195facb298ffc48dc5c7f3c804de8ce`.
+  Parent: `62ad418b8640c71d15e3b0f207c70e523fe8d4cf`.
+  `git revert --no-edit 942f3fca4195facb298ffc48dc5c7f3c804de8ce`.
+  No rollback command here undoes npm publication.
 - Remove an explicitly installed strategy Skill with `strategy uninstall-skill`
   before package rollback. Project memory was not written by this feature.
 
 ## Acceptance status
 
-Preparation only. Final-tree release acceptance has not run. Historical checks
-from source PRs do not prove this integration candidate.
+- Full `bun run check:release` ran at `b358387e553a02200a91e5ef1064f299d3444428`.
+  417 test files ran. 416 passed. `tests/contract-worktree-closeout-journal.test.ts`
+  failed because the caller set `REPO_HARNESS_BUN_BIN`, which leaked into a
+  fixture subprocess. #618 fixed that test isolation. A rerun of that file
+  without the variable passed 26/26. The shared tarball smoke did not run in
+  that gate, so it ran alone at the same commit and returned 0.
+- Delta checks after the #615 and #616 syncs at
+  `13f18136`: typecheck, hook and helper projections, 8 affected test files
+  (289 tests, 0 failures) and the tarball smoke passed.
+- The Codex review finding on impossible expiry dates was fixed in
+  `aad32b8e` with a regression case. PR CI passed on the final head
+  `db80d59d29af5c41468f047c159bd1a8eb3bfb92`.
+- Strategy pilot at the source release commit with
+  `--load strategy-boundaries`: exit 0, `executionAuthorized: false`,
+  `truncated: false`, 10,849 output bytes, one 7,576-byte memory body. Git
+  status, including ignored files, was identical before and after. The packet
+  reports two unknowns: README evidence is unverified at this revision, and
+  one goal fact is unsupported. There is no business-success verdict.
+
+## Owner approval
+
+On 2026-10-12 (Asia/Singapore), the owner confirmed in the issue and PR
+closeout session that prior approval covered the final #604 merge, the
+`v0.21.2` tag, npm and GitHub publication, and the local runtime update.
+The owner authorized this confirmation to be added to this record.
+This records the earlier approval. It grants no new release authority.
+
+## Publication status
+
+- Status: npm and GitHub publication verified on 2026-10-11.
+- Source release commit: `942f3fca4195facb298ffc48dc5c7f3c804de8ce` (#604
+  squash merge). Parent: `62ad418b8640c71d15e3b0f207c70e523fe8d4cf` (#618).
+  Its tree equals the CI-verified head `db80d59d` plus the #618 test change.
+  #617 and later main commits are not in 0.21.2.
+- Annotated tag `v0.21.2`: object `00f3e874c773eeba381f0607123f29ea9b139350`,
+  pointing to the source release commit.
+- Tarball: `npm pack` in a clean checkout of the source release commit.
+  856 entries. SHA256
+  `42fe73c50e7ca0729639d8573310d6b12eb3237874dacc42b71acc2a64e03b3a`.
+- npm: the owner published that tarball after browser authentication.
+  Registry integrity and shasum equal the local tarball
+  (`a4c88737c4f02ed540983d3a2dc4e31daa5d2594`). The `latest` dist-tag is
+  0.21.2. `bun run check:release-published` returned 0; runtime evidence
+  receipt `sha256:d843c25f8322a7e25f778ed4811e6a7197fb1516dc6bf1370f222d2cb6c5f4ad`.
+  `/Volumes/D` was not mounted, so this check and the local update used a
+  temporary npm cache that was deleted afterwards.
+- GitHub Release: https://github.com/Ancienttwo/repo-harness/releases/tag/v0.21.2.
+  The downloaded asset SHA256 equals the tarball above.
+- Local runtime: `repo-harness update --version 0.21.2` installed the CLI,
+  then failed in the same process with `retirement inventory requires a valid
+  skill catalog`. The running 0.21.1 code does not know host `pi`, which the
+  new manifest declares. A second run on 0.21.2 code returned 0. The setup
+  check reports 32 ok, 1 warn (optional skills CLI), 0 fail.
+- Known issue: on macOS the pipeline ledger accepts only `statfs` types 17
+  and 26. These numbers are not stable, so some local HFS+ or APFS volumes are
+  refused with `store_location`. 0.21.1 has the same behavior. A fix is planned
+  for the next release.
+- Release rollback: `git revert --no-edit 942f3fca4195facb298ffc48dc5c7f3c804de8ce`.
+  The integration rollback commands above retain their separate scope.
+  A Git revert does not undo an npm publication.
