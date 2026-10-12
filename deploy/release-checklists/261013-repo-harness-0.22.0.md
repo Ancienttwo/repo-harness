@@ -2,10 +2,14 @@
 
 ## Scope and authority
 
-- Base: `25ca115e700b98e6001c3b47f1c4f2f28ea1aabb` (#646) on `main`.
+- Gate base: `25ca115e700b98e6001c3b47f1c4f2f28ea1aabb` (#646) on `main`.
   Parent: `b5f017dc816a69df32c6505e94821aaa47aca687` (#647).
+- Final base: `0760959ee2022b5d64d981cc8e3570fe8f5a5fc5` (#648 squash merge).
+  Parent: `25ca115e700b98e6001c3b47f1c4f2f28ea1aabb`. The owner chose to ship
+  #648 in 0.22.0. #648 adds the read-only architecture projection check to
+  the governance lane and the CodeGraph step to the worker guidance.
 - The release contains every main commit after `v0.21.2`
-  (`942f3fca4195facb298ffc48dc5c7f3c804de8ce`), from #617 to #647.
+  (`942f3fca4195facb298ffc48dc5c7f3c804de8ce`), from #617 to #648.
 - Pin `archctx` and `archctx-contracts` to exact version `0.7.1` (#647).
 - Set package, skill, template and README versions to `0.22.0`.
 - The version is a minor release. #617 retires the automatic projection
@@ -54,6 +58,14 @@
   `bash scripts/check-tarball-install-smoke.sh` exit 0.
   `repo-harness-0.22.0.tgz` installs, serves the packaged Operator, and the
   packaged CLI bins start.
+- Delta checks after the #648 merge (Node 24, temporary HOME, agent
+  variables removed):
+  - `bash scripts/check-ci.sh governance`: exit 0. The new architecture
+    projection step returned `noop` after the manifest refresh.
+  - 10 affected test files (#648 consumers and `skill-version`): 172 passed,
+    0 failed.
+  - Tarball install smoke: exit 0.
+  - `bun run check:type`: exit 0.
 - No assertion or timeout was changed for this release.
 
 ## Rollback evidence
