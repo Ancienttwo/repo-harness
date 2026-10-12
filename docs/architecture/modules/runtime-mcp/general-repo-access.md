@@ -1,8 +1,8 @@
 # runtime-mcp/general-repo-access 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-mcp-general-repo-access" sourceDigest="sha256:42b8f1e808805a06b5f8a604796875cd15075125ad6aae37781b919fc795e9e0" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:88c96e6dda01a1222e85a989f6049b5b6b0018f769029b42e4f6029f49e66d72" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-mcp-general-repo-access" sourceDigest="sha256:cc27412cbfc6db3542727cf17d14fc45f4c00b27a45ccf8a7075aff789e08208" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:61cf9b6b2cbbdd8378002670663b4f8fff41ec4a60c011a4449d23159395a735" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-mcp.general-repo-access`(kind `capability`)
-> **Matched Prefixes**:`src/cli/mcp/general-repo-access.ts`、`src/cli/mcp/general-repo-access/**`、`tests/cli/mcp-reader-tools.test.ts`、`tests/cli/mcp-codegraph-contract.test.ts`、`tests/cli/mcp-policy.test.ts`、`tests/cli/mcp-tools.test.ts`
+> **Matched Prefixes**:`src/cli/mcp/general-repo-access.ts`、`src/cli/mcp/general-repo-access/**`、`tests/cli/mcp-reader-tools.test.ts`、`tests/cli/mcp-codegraph-contract.test.ts`、`tests/cli/mcp-policy.test.ts`、`tests/cli/mcp-tools.test.ts`、`assets/mcp/**`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
@@ -35,7 +35,7 @@ flowchart LR
 ### 1.3 規模信號
 
 - 規模量級:`5–10` 個文件 / `5000–10000` 行
-- 匹配前綴:`src/cli/mcp/general-repo-access.ts`、`src/cli/mcp/general-repo-access/**`、`tests/cli/mcp-reader-tools.test.ts`、`tests/cli/mcp-codegraph-contract.test.ts`、`tests/cli/mcp-policy.test.ts`、`tests/cli/mcp-tools.test.ts`
+- 匹配前綴:`src/cli/mcp/general-repo-access.ts`、`src/cli/mcp/general-repo-access/**`、`tests/cli/mcp-reader-tools.test.ts`、`tests/cli/mcp-codegraph-contract.test.ts`、`tests/cli/mcp-policy.test.ts`、`tests/cli/mcp-tools.test.ts`、`assets/mcp/**`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
 ### 1.4 依賴邊界
@@ -46,7 +46,7 @@ flowchart LR
 
 入向關係:
 
-- 無。
+- `calls` ← `component.mcp-sidecar.primary` — Dispatch the general repository reader and writer tools
 
 ## 2. P2:端到端數據流
 
@@ -72,7 +72,7 @@ sequenceDiagram
 
 设计出处见 `docs/architecture/decisions/20260622-general-repo-codegraph-access.md`（Sprint 0 contract freeze，2026-06-22）。该 ADR 的核心判断——「不要把授权和索引搅在一起」——在当前源码里逐条可验证。
 
-### 3.1 不变量（源码复验）
+### 3.1 必须保持的不变量
 
 | # | 不变量 | 复验点 |
 | --- | --- | --- |
@@ -86,10 +86,10 @@ sequenceDiagram
 | I8 | 外部工具面只认 `repo_id` + repo-relative path | 所有 `inputSchema` 无绝对路径字段；`normalizeRepoRelativePath` 直接拒绝绝对路径 |
 | I9 | 目录形状变更不在 v1 变更层 | `move_path` / `delete_path` 只接受 regular file，目标父目录必须已存在，无递归删除 |
 
-### 3.2 约束与权衡
+### 3.2 关键权衡
 
 - **`.ignore` 是唯一内容级排除源。** `.gitignore`、`.rgignore`、dotfile、隐藏目录、扩展名、工作流产物身份都不是隐式策略。唯一的硬编码例外是 `.ignore` 文件自身恒被排除（`authority.ts:285`）——这是 ADR 文本里没写出来的一条额外规则。
-- **CodeGraph 是元数据来源，不是读取后端。** ADR 写的是「CodeGraph owns indexed code discovery and symbol/text retrieval where it can provide them」，但当前实现里 `GeneralRepoCodeGraphAdapter.searchText`（`codegraph-adapter.ts:59`）**零生产消费者**——`search_text` 全程自己扫文件，只用 `entry.indexed` 决定 `backend` 标签。这是**已实现、保留字段**，不是已接线能力。
+- **CodeGraph 是元数据来源，不是读取后端。** ADR 写的是「CodeGraph owns indexed code discovery and symbol/text retrieval where it can provide them」，但当前实现里 `GeneralRepoCodeGraphAdapter.searchText`（`codegraph-adapter.ts:59`）**零生产消费者**——`search_text` 全程自己扫文件，只用 `entry.indexed` 决定 `backend` 标签。`searchText` 是已实现但未接线的保留接口。
 - **快照优先于性能。** `SNAPSHOT_TTL_MS = 5min`、`MAX_SNAPSHOT_CACHE_ENTRIES = 16`、`MAX_ENTRY_METADATA_CACHE_ENTRIES = 200,000`。walk 完还要 `validateSnapshotRevision` 复算一遍 digest；漂移时最多重建一次，仍漂移就把 `stale` / `partial` 如实返回而不是重试到成功。
 - **变更层是 portable v1。** 保留 mode bits，不保留 ownership、xattr、平台特有元数据；mtime 随提交改变。无覆盖改名靠 `bun:ffi` 直调三个平台的原生 syscall（`:1684`–`:1714`），代价是这一段绑死 Bun runtime。
 - **锁是跨进程的但基于文件系统。** `linkSync` + owner.json + PID 存活检测。在 NFS 或容器跨节点共享的仓库上，PID 存活检测会误判。
@@ -104,7 +104,25 @@ sequenceDiagram
 3. **并发 MCP 会话 10x。** `SNAPSHOT_CACHE` 只有 16 条且是进程内全局，跨仓库共享；多仓库并发会互相驱逐，退化成每次全量重建。
 4. **变更频率 10x。** `index-events.jsonl` 只追加不轮转，`readRecentIndexEvents()` 每次 refresh 都要读尾部；`refreshRepo` 走的是 repo 级 `codegraph sync`（`path_refresh_supported: false`），单次变更触发全仓重索引。
 
-内部模块边界（entry ↔ authority）不会先垮——先垮的都是注册表查找与快照/缓存失效，这与 ADR 的 P3 判断一致。
+内部模块边界（entry ↔ authority）不在这个列表里。ADR 的 P3 判断也把注册表查找与快照失效排在前面。
+
+### 3.4 组件与依赖（2026-10-11）
+
+本 capability 只有一个组件 `component.general-repo-access.primary`（Stable File Reader）。它没有声明 footprint。
+
+已声明的出向 relation：
+
+- primary → codegraph-readiness：`general-repo-access.ts` 通过 `codegraph-adapter.ts` 读取索引元数据。路径先授权，再合并元数据（I1、I2）。
+- primary → `component.mcp-sidecar.repo-policy-registry`：`general-repo-access.ts` 和 `authority.ts` 调用 `repo-registry.ts`、`paths.ts`、`redaction.ts` 和 `audit.ts`。
+
+入向调用来自 mcp-sidecar 的 primary 组件：`tools.ts` 分派到 `reader-tools.ts`，`reader-tools.ts` 调用 `callGeneralRepoTool`。
+
+`assets/mcp/general-repo-reader-tools.v1.schema.json` 原本没有归属，现在加入本 capability 的 include。它是 reader 工具输出 schema（`git log -- assets/mcp`：2026-06-23 的 sprint 0 contract 提交）。
+
+### 3.5 开放问题
+
+- 本 capability 的声明入口 `src/cli/mcp/reader-tools.ts#callReaderTool` 归 mcp-sidecar 的 `src/cli/mcp/**` 所有。本 capability 的主文件 `general-repo-access.ts` 和 `general-repo-access/**` 同时被 mcp-sidecar 声明，是重复归属。两者都等待 include 收窄（arch-context#296）。
+- `general-repo-access.ts` 有 2924 行，是单文件 dispatch。§3.2 记录了不拆插件接口的理由。拆分的触发条件没有记录。
 
 ## 4. 历史决策记录（append-only）
 
@@ -142,6 +160,11 @@ sequenceDiagram
 > - `bun test tests/cli/mcp-policy.test.ts tests/cli/mcp-tools.test.ts`
 > - `bun run check:type`
 
+### 2026-10-11 归属扩展与依赖声明
+
+- include 增加 `assets/mcp/**`。没有删除任何条目。
+- 新增两条 relation：到 codegraph-readiness，以及到 mcp-sidecar 的 repo-policy-registry 组件。
+
 ## Verification
 
 来自 `.ai/context/capabilities.json` 的 `verification_hints`：
@@ -151,3 +174,8 @@ bun test tests/cli/mcp-reader-tools.test.ts tests/cli/mcp-codegraph-contract.tes
 bun test tests/cli/mcp-policy.test.ts tests/cli/mcp-tools.test.ts
 bun run check:type
 ```
+
+## Optimization Backlog
+
+- 在 arch-context#296 之后，把 `src/cli/mcp/reader-tools.ts` 移入本 capability，并从 mcp-sidecar 删除对 `general-repo-access*` 的重叠声明（归属提议 §2）。
+- 测试文件条目（`tests/cli/mcp-*.test.ts`）与 evals-checks 的 `tests/**` 重复归属。按用户决定，测试归 evals-checks。收窄时删除这四个条目，`verification` 命令保持不变。

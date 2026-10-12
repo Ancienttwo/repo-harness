@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.mcp-sidecar.primary.workflow-state
+kind: reads
+source: component.mcp-sidecar.primary
+target: capability.workflow-engine.workflow-state
+intent: "Resolve effective state for the state MCP tools"

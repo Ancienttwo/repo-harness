@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.hook-adapters.edit-guards.route-runtime
+kind: depends-on
+source: component.hook-adapters.edit-guards
+target: component.hook-adapters.primary
+intent: "Implement the typed handler contract and read hook input through the shared parsers"

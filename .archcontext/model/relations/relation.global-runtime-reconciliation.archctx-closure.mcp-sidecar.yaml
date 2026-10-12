@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.global-runtime-reconciliation.archctx-closure.mcp-sidecar
+kind: calls
+source: component.global-runtime-reconciliation.archctx-closure
+target: capability.runtime-harness.mcp-sidecar
+intent: "Resolve registered repositories for the model reader"

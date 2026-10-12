@@ -4,47 +4,57 @@ capabilityId: capability.runtime-harness.operator
 name: Read an architecture module index
 applicability: required
 participants:
-  - id: capability
-    nodeId: capability.runtime-harness.operator
-  - id: component
+  - id: http-reader
     nodeId: component.operator.primary
+  - id: view-projections
+    nodeId: component.operator.view-projections
+  - id: model-reader
+    nodeId: capability.runtime-harness.global-runtime-reconciliation
 steps:
-  - id: read
-    from: capability
-    to: component
-    label: Validate the public architecture module index
+  - id: parse-request
+    from: http-reader
+    to: view-projections
+    label: Parse the closed architecture route request before any process starts
+    evidence:
+      entrypointId: entrypoint.operator.http-server
+      sourceSymbol: handleRequest
+      sinkId: sink.operator.architecture-request
+  - id: read-model
+    from: http-reader
+    to: model-reader
+    label: List modules from the committed model through the shared reader
     evidence:
       entrypointId: entrypoint.operator.primary
       sourceSymbol: readArchitecture
-      sinkId: sink.operator.primary
+      sinkId: sink.operator.model-reader-list
 outcomes:
   - id: success
     kind: success
     label: Read completes
     steps:
       - id: return-data
-        from: capability
-        to: component
+        from: http-reader
+        to: view-projections
         label: Validate and return the public module index
         evidence:
           entrypointId: entrypoint.operator.primary
           sourceSymbol: readArchitecture
           sinkId: sink.operator.primary
     terminal:
-      participant: capability
+      participant: http-reader
       label: Return data without writes
   - id: error
     kind: error
     label: Read fails
     steps:
       - id: return-error
-        from: capability
-        to: component
+        from: http-reader
+        to: view-projections
         label: Reject an invalid public module index
         evidence:
           entrypointId: entrypoint.operator.primary
           sourceSymbol: readArchitecture
           sinkId: sink.operator.primary
     terminal:
-      participant: capability
+      participant: http-reader
       label: Return a failure without writes

@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.acceptance-review.primary.execution-primitives
+kind: calls
+source: component.acceptance-review.primary
+target: capability.workflow-engine.execution-primitives
+intent: "Hold an exclusive directory lock around one generic review run"

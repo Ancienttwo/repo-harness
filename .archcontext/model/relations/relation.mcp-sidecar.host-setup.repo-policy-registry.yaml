@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.mcp-sidecar.host-setup.repo-policy-registry
+kind: writes
+source: component.mcp-sidecar.host-setup
+target: component.mcp-sidecar.repo-policy-registry
+intent: "Write the user-level config and credentials and set repository access grants"

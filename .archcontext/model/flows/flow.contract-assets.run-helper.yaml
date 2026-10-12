@@ -1,0 +1,52 @@
+schemaVersion: archcontext.flow/v1
+id: flow.contract-assets.run-helper
+capabilityId: capability.workflow-engine.contract-assets
+name: "Run a contract-listed helper"
+applicability: required
+participants:
+  - id: capability
+    nodeId: capability.workflow-engine.contract-assets
+  - id: helpers
+    nodeId: component.contract-assets.planning-helpers
+  - id: primitives
+    nodeId: capability.workflow-engine.execution-primitives
+steps:
+  - id: resolve-helper
+    from: capability
+    to: helpers
+    label: "Resolve a helper id that the workflow contract lists"
+    evidence:
+      entrypointId: entrypoint.contract-assets.run-command
+      sourceSymbol: "buildRunCommand"
+      sinkId: sink.contract-assets.helper-runner
+outcomes:
+  - id: success
+    kind: success
+    label: "The helper exits zero inside its timeout class"
+    steps:
+      - id: run-child
+        from: helpers
+        to: primitives
+        label: "Run the helper as a bounded child with a protected environment"
+        evidence:
+          entrypointId: entrypoint.contract-assets.helper-runner
+          sourceSymbol: "runHelper"
+          sinkId: sink.contract-assets.bounded-process
+    terminal:
+      participant: capability
+      label: "Return the helper exit status"
+  - id: error
+    kind: error
+    label: "The helper is not listed or fails or times out"
+    steps:
+      - id: run-child-failed
+        from: helpers
+        to: primitives
+        label: "Propagate the bounded child failure"
+        evidence:
+          entrypointId: entrypoint.contract-assets.helper-runner
+          sourceSymbol: "runHelper"
+          sinkId: sink.contract-assets.bounded-process
+    terminal:
+      participant: capability
+      label: "Exit non-zero with the redacted child error"

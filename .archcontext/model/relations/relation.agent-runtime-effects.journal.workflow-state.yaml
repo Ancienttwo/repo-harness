@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.agent-runtime-effects.journal.workflow-state
+kind: reads
+source: component.agent-runtime-effects.journal
+target: capability.workflow-engine.workflow-state
+intent: "Read the task lease before a runtime effect is recorded"

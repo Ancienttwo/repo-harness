@@ -197,7 +197,15 @@ npx @biomejs/biome init
 ```yaml
 # .github/workflows/ci.yml
 name: CI
-on: [push, pull_request]
+# Run checks once per PR head. Require branches to be up to date before
+# merging, so the PR run already covers the merged content; do not add a
+# push trigger that repeats the same checks.
+on:
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 jobs:
   check:

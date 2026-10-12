@@ -7,6 +7,7 @@ summary: Provides local read-only HTTP views of registered repositories.
 responsibilities:
   - Serve public observations through GET and HEAD routes.
   - Read architecture facts through the shared model reader in a bounded worker.
+  - Collect setup and development activity in bounded background collectors; GET reads only their cache.
   - Keep commands in the Bot and CLI channel.
 source:
   include:
@@ -14,6 +15,16 @@ source:
     - src/effects/operator/**
     - src/operator-web/**
     - src/cli/commands/operator.ts
+    - src/cli/commands/module.ts
+    - src/core/architecture/module-view.ts
+    - src/core/docs/**
+    - src/core/setup/**
+    - src/effects/setup/**
+    - src/core/dev-activity/**
+    - src/effects/dev-activity/**
+    - src/effects/terminal/herdr-observation.ts
+    - assets/operator/**
+    - vite.operator.config.ts
   entrypoints:
     - id: entrypoint.operator.primary
       path: src/effects/operator/architecture.ts
@@ -23,6 +34,9 @@ source:
             - id: sink.operator.primary
               path: src/core/operator/architecture.ts
               symbol: decodeArchitectureModuleIndex
+            - id: sink.operator.model-reader-list
+              path: src/effects/architecture/model-reader.ts
+              symbol: list
 extensions:
   contractFiles:
     agents: AGENTS.md

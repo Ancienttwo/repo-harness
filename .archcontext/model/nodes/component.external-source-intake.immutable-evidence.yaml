@@ -5,3 +5,6 @@ name: Immutable External Evidence Store
 status: active
 parent: capability.runtime-harness.external-source-intake
 summary: Creates observations, refresh receipts, and source-to-canonical-task binding receipts once under the Git common directory and serves only validated immutable reads.
+source:
+  include:
+    - "src/effects/external-sources/store.ts"

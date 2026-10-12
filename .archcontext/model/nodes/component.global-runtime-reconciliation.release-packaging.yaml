@@ -1,0 +1,25 @@
+schemaVersion: archcontext.node/v2
+id: component.global-runtime-reconciliation.release-packaging
+kind: component
+name: Release Packaging
+status: active
+parent: capability.runtime-harness.global-runtime-reconciliation
+summary: Owns the package manifest, the npm release gates, the tarball install smoke and the runtime evidence receipt.
+responsibilities:
+  - Keep the package manifest, lockfile and TypeScript configuration.
+  - Refuse a publish when the version already exists and run the hook and helper drift checks first.
+  - Install the packed tarball in a clean app and smoke the CLI, hook and Pi entrypoints.
+  - Project the Pi skill entries into the package manifest from the skill catalog.
+source:
+  include:
+    - "package.json"
+    - "bun.lock"
+    - "tsconfig.json"
+    - "src/core/release/**"
+    - "src/effects/release/**"
+    - "scripts/check-npm-release.sh"
+    - "scripts/check-release-published.sh"
+    - "scripts/check-tarball-install-smoke.sh"
+    - "scripts/check-pi-package-smoke.ts"
+    - "scripts/sync-pi-package.ts"
+    - "scripts/runtime-evidence-receipt.ts"

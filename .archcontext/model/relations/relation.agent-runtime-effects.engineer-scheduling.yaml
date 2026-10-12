@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.agent-runtime-effects.engineer-scheduling
+kind: calls
+source: capability.runtime-harness.agent-runtime-effects
+target: capability.runtime-harness.engineer-scheduling
+intent: "Validate the whole offers document with the scheduling validator before a wake is armed"

@@ -8,6 +8,8 @@ participants:
     nodeId: capability.runtime-harness.pm-dispatch
   - id: operation
     nodeId: component.pm-dispatch.primary
+  - id: host
+    nodeId: capability.runtime-harness.task-agent-host
 steps:
   - id: validate-request
     from: pm
@@ -30,6 +32,14 @@ outcomes:
           entrypointId: entrypoint.pm-dispatch.request
           sourceSymbol: runPmJson
           sinkId: sink.pm-dispatch.operation
+      - id: start-coding-host
+        from: pm
+        to: host
+        label: Start the fixed OAR coding host as a task application host in Herdr
+        evidence:
+          entrypointId: entrypoint.pm-dispatch.coding-host
+          sourceSymbol: startCodingTaskAgent
+          sinkId: sink.pm-dispatch.task-binding
     terminal:
       participant: pm
       label: Report the observed result and remaining verification

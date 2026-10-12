@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.contract-assets.template-projection.task-agent-host
+kind: calls
+source: component.contract-assets.template-projection
+target: capability.runtime-harness.task-agent-host
+intent: "Install the required Herdr skill during init"

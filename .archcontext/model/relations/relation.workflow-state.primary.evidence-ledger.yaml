@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.workflow-state.primary.evidence-ledger
+kind: calls
+source: component.workflow-state.primary
+target: capability.runtime-harness.evidence-ledger
+intent: "Evaluate the verification contract for effective state"

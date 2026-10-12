@@ -1,0 +1,62 @@
+schemaVersion: archcontext.flow/v1
+id: flow.pipeline-ledger.record
+capabilityId: capability.runtime-harness.pipeline-ledger
+name: Record one source-validated pipeline fact
+applicability: required
+participants:
+  - id: pipeline
+    nodeId: capability.runtime-harness.pipeline-ledger
+  - id: ledger
+    nodeId: component.pipeline-ledger.primary
+  - id: host
+    nodeId: capability.runtime-harness.task-agent-host
+  - id: evidence
+    nodeId: capability.runtime-harness.evidence-ledger
+steps:
+  - id: record-fact
+    from: pipeline
+    to: ledger
+    label: Replay a known command key or apply one CAS mutation at the expected state version
+    evidence:
+      entrypointId: entrypoint.pipeline-ledger.command
+      sourceSymbol: buildPipelineCommand
+      sinkId: sink.pipeline-ledger.mutate
+  - id: validate-request
+    from: pipeline
+    to: host
+    label: Validate the persisted request and binding with the original task-session reader on the source host
+    evidence:
+      entrypointId: entrypoint.pipeline-ledger.source-authority
+      sourceSymbol: validateOnSource
+      sinkId: sink.pipeline-ledger.task-request
+outcomes:
+  - id: success
+    kind: success
+    label: Source authority admits the evidence
+    steps:
+      - id: admit-evidence
+        from: pipeline
+        to: evidence
+        label: Admit pass and non-pass outcomes only with matching original execution provenance
+        evidence:
+          entrypointId: entrypoint.pipeline-ledger.source-authority
+          sourceSymbol: validateOnSource
+          sinkId: sink.pipeline-ledger.outcome-provenance
+    terminal:
+      participant: ledger
+      label: Commit one revision and publish the next immutable generation for readers
+  - id: store-failure
+    kind: error
+    label: The store or source authority refuses the write
+    steps:
+      - id: report-failure
+        from: pipeline
+        to: ledger
+        label: Map the failure to a typed error code and exit status
+        evidence:
+          entrypointId: entrypoint.pipeline-ledger.command
+          sourceSymbol: output
+          sinkId: sink.pipeline-ledger.store-failure
+    terminal:
+      participant: pipeline
+      label: Report a telemetry gap while live work continues under its own rules

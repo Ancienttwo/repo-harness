@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.mcp-sidecar.primary.work-demand
+kind: calls
+source: component.mcp-sidecar.primary
+target: capability.runtime-harness.work-demand
+intent: "Propose and transition work demands from the engineer MCP tools"

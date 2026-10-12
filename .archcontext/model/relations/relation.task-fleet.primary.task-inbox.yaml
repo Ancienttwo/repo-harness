@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.task-fleet.primary.task-inbox
+kind: calls
+source: component.task-fleet.primary
+target: component.task-fleet.task-inbox
+intent: "Send deliver and summarize task-addressed messages without lease mutation"

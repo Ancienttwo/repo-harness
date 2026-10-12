@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.global-runtime-reconciliation.cli-root.adoption
+kind: calls
+source: component.global-runtime-reconciliation.cli-root
+target: capability.public-surface.adoption
+intent: "Register the adoption-plan command and run the adoption plan for the setup check"

@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.operator.http-reader.engineer-scheduling
+kind: reads
+source: component.operator.primary
+target: capability.runtime-harness.engineer-scheduling
+intent: "Read the tracked work graph projection for the Planning view"

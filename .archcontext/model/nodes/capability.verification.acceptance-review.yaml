@@ -1,0 +1,53 @@
+schemaVersion: archcontext.node/v2
+id: capability.verification.acceptance-review
+kind: capability
+name: Acceptance Review
+status: active
+summary: Runs the generic acceptance review through a persistent reviewer task agent and records one structured acceptance receipt.
+responsibilities:
+  - Run one bounded generic review round per request through the fleet reviewer role on a Herdr task agent and the OAR host.
+  - Isolate the reviewer process and its credentials and fail closed when isolation is unavailable.
+  - Prepare the deterministic final-subject change assessment and review selection packet.
+  - Record and verify the single structured AcceptanceReceipt.
+  - Build bounded module review prompts for the module CLI and the operator architecture view.
+source:
+  include:
+    - src/core/review/**
+    - src/effects/review/**
+    - src/cli/commands/review.ts
+    - scripts/acceptance-receipt.ts
+    - scripts/change-assessment.ts
+  entrypoints:
+    - id: entrypoint.acceptance-review.primary
+      path: src/cli/commands/review.ts
+      symbols:
+        - name: buildReviewCommand
+          sinks:
+            - id: sink.acceptance-review.primary
+              path: src/effects/review/generic-review.ts
+              symbol: runReviewRound
+            - id: sink.acceptance-review.circuit-admission
+              path: src/cli/hook/circuit-breaker.ts
+              symbol: recordCircuitAttempt
+    - id: entrypoint.acceptance-review.round
+      path: src/effects/review/generic-review.ts
+      symbols:
+        - name: runReviewRound
+          sinks:
+            - id: sink.acceptance-review.packet
+              path: src/core/review/review-packet.ts
+              symbol: composeReviewPacket
+            - id: sink.acceptance-review.validate-output
+              path: src/core/review/generic-review.ts
+              symbol: validateReviewOutput
+            - id: sink.acceptance-review.record-receipt
+              path: scripts/acceptance-receipt.ts
+              symbol: recordAcceptance
+extensions:
+  contractFiles:
+    agents: AGENTS.md
+    claude: CLAUDE.md
+  lspProfile: typescript-lsp
+  verification:
+    - bun run check:type
+    - bun run test:files tests/generic-review.test.ts tests/acceptance-receipt.test.ts tests/change-assessment.test.ts tests/cli/cross-review.test.ts tests/unit/module-review-prompt.test.ts --timeout 60000 --max-concurrency 1

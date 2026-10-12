@@ -1,0 +1,13 @@
+schemaVersion: archcontext.node/v2
+id: component.pipeline-ledger.primary
+kind: component
+name: Pipeline Store and Ledger
+status: active
+parent: capability.runtime-harness.pipeline-ledger
+summary: Owns the pipeline record schema, gates, stage machine, SQLite store, ledger mutations, source authority, event ingest and immutable readers.
+source:
+  include:
+    - "src/core/pipeline/**"
+    - "src/effects/pipeline/**"
+    - "src/cli/commands/pipeline.ts"
+    - "assets/pipeline-record.v2.schema.json"

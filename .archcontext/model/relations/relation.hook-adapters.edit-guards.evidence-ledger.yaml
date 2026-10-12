@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.hook-adapters.edit-guards.evidence-ledger
+kind: calls
+source: component.hook-adapters.edit-guards
+target: capability.runtime-harness.evidence-ledger
+intent: "Import post-bash observations as evidence"

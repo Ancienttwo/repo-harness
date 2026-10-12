@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.mcp-sidecar.host-setup.execution-primitives
+kind: calls
+source: component.mcp-sidecar.host-setup
+target: capability.workflow-engine.execution-primitives
+intent: "Hold the MCP setup ownership lock"

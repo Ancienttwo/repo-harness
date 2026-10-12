@@ -9,6 +9,7 @@
 import { bunGlobalPackageRoot, expectedSkillProjections, skillLinkMatches, type SkillProjection } from '../installer/skill-projection';
 import { hashManagedTree, installedCopyTreeOptions, installedProfileStatus, managedInstallSurfaceIsCurrent, readInstalledProfile, PROFILE_COMPONENTS } from '../installer/install-profile';
 import { parseSkillSurfaceCatalog } from '../../core/skill-surface/catalog';
+import type { SkillProjectionState } from '../../core/setup/types';
 
 import * as fs from 'fs';
 import * as os from 'os';
@@ -39,6 +40,19 @@ export interface DoctorCheckResult {
   describe: string;
   status: CheckStatus;
   detail: string;
+  /** `skill-projection` only: the typed per-skill judgments that `detail` is generated from. */
+  skills?: SkillProjectionRow[];
+  /** `codex-cli-version` only: the parsed CLI version. */
+  version?: string;
+}
+
+/** One per-skill judgment of the skill projection check. Paths stay in the CLI text only. */
+export interface SkillProjectionRow {
+  host: SkillProjection['host'];
+  name: string;
+  state: SkillProjectionState;
+  /** No problem for this skill: an ok state and no install ledger drift. */
+  ok: boolean;
 }
 
 export interface DoctorCheck {
@@ -162,6 +176,7 @@ function checkCodexCliVersion(): DoctorCheckResult {
       describe,
       status: 'warn',
       detail: `path=${resolved}; current=${version}; minimum=${MIN_CODEX_CLI_VERSION}`,
+      version,
     };
   }
   return {
@@ -169,6 +184,7 @@ function checkCodexCliVersion(): DoctorCheckResult {
     describe,
     status: 'ok',
     detail: `path=${resolved}; current=${version}; minimum=${MIN_CODEX_CLI_VERSION}`,
+    version,
   };
 }
 
@@ -487,7 +503,7 @@ function checkTypedHookRoutes(cwd: string): DoctorCheckResult {
   };
 }
 
-function skillProjectionState(projection: SkillProjection, contract: Parameters<typeof installedCopyTreeOptions>[1]): string {
+function skillProjectionState(projection: SkillProjection, contract: Parameters<typeof installedCopyTreeOptions>[1]): SkillProjectionState {
   const { destination, source, name, staged } = projection;
   let stat: fs.Stats;
   try { stat = fs.lstatSync(destination); } catch (error) {
@@ -496,13 +512,40 @@ function skillProjectionState(projection: SkillProjection, contract: Parameters<
   }
   if (stat.isSymbolicLink()) {
     if (!fs.existsSync(destination)) return 'dangling link';
-    return skillLinkMatches(destination, source) ? `ok link -> ${source}` : 'wrong link';
+    return skillLinkMatches(destination, source) ? 'ok link' : 'wrong link';
   }
   if (!stat.isDirectory()) return 'invalid path type';
   if (!fs.existsSync(path.join(source, 'SKILL.md'))) return 'source missing';
   const sourceHash = hashManagedTree(source, installedCopyTreeOptions(name === 'repo-harness' ? 'canonical-skill' : 'command-facade', contract));
   if (hashManagedTree(destination) !== sourceHash) return 'stale copy';
   return staged ? 'unowned real directory' : 'ok copy';
+}
+
+/** One per-skill judgment. The public row omits every path; the CLI line adds them. */
+interface SkillProjectionJudgment {
+  readonly row: SkillProjectionRow;
+  readonly projection: SkillProjection;
+  readonly ledgerDrift: boolean;
+}
+
+/** CLI text projection of one judgment. Only `ok link` names its target. */
+function formatSkillProjectionJudgment({ row, projection, ledgerDrift }: SkillProjectionJudgment, profile: string): string {
+  const { destination, source, host } = projection;
+  const fix = `repo-harness install --profile ${profile} --target ${host}`;
+  const problems: string[] = [];
+  if (!row.state.startsWith('ok ')) {
+    const preserve = row.state === 'missing' || row.state === 'source missing' ? '' : `preserve or move ${destination}, then `;
+    problems.push(`expected ${source}; ${preserve}run: ${fix}`);
+  }
+  if (ledgerDrift) problems.push(`ledger drift; inspect: repo-harness install --state; then run: ${fix}`);
+  const state = row.state === 'ok link' ? `ok link -> ${source}` : row.state;
+  return `${destination}: ${state}${problems.length > 0 ? '; ' + problems.join('; ') : ''}`;
+}
+
+/** The package root whose catalog and skills the projection check reads. */
+export function skillProjectionSourceRoot(env: NodeJS.ProcessEnv = process.env): string {
+  const globalRoot = bunGlobalPackageRoot(env);
+  return globalRoot && fs.existsSync(path.join(globalRoot, 'package.json')) ? globalRoot : PACKAGE_ROOT;
 }
 
 /** Read all selected host projections and the recorded install ownership. */
@@ -513,8 +556,7 @@ export function checkSkillProjection(target: DoctorTarget = 'both', env: NodeJS.
     const home = env.HOME ?? env.USERPROFILE ?? os.homedir();
     const installed = readInstalledProfile(env);
     const profile = installed?.profile ?? 'full';
-    const globalRoot = bunGlobalPackageRoot(env);
-    const sourceRoot = globalRoot && fs.existsSync(path.join(globalRoot, 'package.json')) ? globalRoot : PACKAGE_ROOT;
+    const sourceRoot = skillProjectionSourceRoot(env);
     const contractPath = path.join(sourceRoot, 'assets', 'workflow-contract.v1.json');
     const contract = JSON.parse(fs.readFileSync(contractPath, 'utf8'));
     for (const field of ['installedCopyExcludes', 'installedCopyIncludes']) {
@@ -528,25 +570,20 @@ export function checkSkillProjection(target: DoctorTarget = 'both', env: NodeJS.
     const manifestPath = path.join(sourceRoot, 'assets', 'skill-commands', 'manifest.json');
     const catalog = parseSkillSurfaceCatalog(fs.readFileSync(manifestPath, 'utf8'), { declared: true, profileComponents: PROFILE_COMPONENTS });
     if (catalog.status !== 'valid') throw new Error(`invalid skill catalog: ${manifestPath}`);
-    let warning = false;
-    const details: string[] = [];
+    const judgments: SkillProjectionJudgment[] = [];
     for (const projection of expectedSkillProjections(catalog.catalog, sourceRoot, home, profile)) {
       if (target !== 'both' && target !== projection.host) continue;
-      const { destination, source, host } = projection;
-      const fix = `repo-harness install --profile ${profile} --target ${host}`;
-      const problems: string[] = [];
       const state = skillProjectionState(projection, contract);
-      if (!state.startsWith('ok ')) {
-        const preserve = state === 'missing' || state === 'source missing' ? '' : `preserve or move ${destination}, then `;
-        problems.push(`expected ${source}; ${preserve}run: ${fix}`);
-      }
-      const records = installed?.ownership_manifest.filter(surface => surface.path === destination) ?? [];
-      if (records.some(surface => !managedInstallSurfaceIsCurrent(surface))) {
-        problems.push(`ledger drift; inspect: repo-harness install --state; then run: ${fix}`);
-      }
-      if (problems.length > 0) warning = true;
-      details.push(`${destination}: ${state}${problems.length > 0 ? '; ' + problems.join('; ') : ''}`);
+      const records = installed?.ownership_manifest.filter(surface => surface.path === projection.destination) ?? [];
+      const ledgerDrift = records.some(surface => !managedInstallSurfaceIsCurrent(surface));
+      judgments.push({
+        row: { host: projection.host, name: projection.name, state, ok: state.startsWith('ok ') && !ledgerDrift },
+        projection,
+        ledgerDrift,
+      });
     }
+    let warning = judgments.some(judgment => !judgment.row.ok);
+    const details = judgments.map(judgment => formatSkillProjectionJudgment(judgment, profile));
     if (installed) {
       const drift = installedProfileStatus(installed, env).drift;
       if (drift.status === 'drift') warning = true;
@@ -555,7 +592,7 @@ export function checkSkillProjection(target: DoctorTarget = 'both', env: NodeJS.
       warning = true;
       details.push('install ledger: missing; run: repo-harness install --profile ' + profile);
     }
-    return { id, describe, status: warning ? 'warn' : 'ok', detail: details.join('\n') };
+    return { id, describe, status: warning ? 'warn' : 'ok', detail: details.join('\n'), skills: judgments.map(judgment => judgment.row) };
   } catch (error) {
     return { id, describe, status: 'fail', detail: `${String((error as Error).message ?? error)}; inspect: repo-harness install --state` };
   }

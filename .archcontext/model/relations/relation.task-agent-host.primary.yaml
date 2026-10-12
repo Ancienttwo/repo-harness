@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.task-agent-host.primary
+kind: calls
+source: capability.runtime-harness.task-agent-host
+target: component.task-agent-host.primary
+intent: "Start send collect and read back persistent Herdr task agents"

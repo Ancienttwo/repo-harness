@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.global-runtime-reconciliation.cli-root.codegraph-readiness
+kind: calls
+source: component.global-runtime-reconciliation.cli-root
+target: capability.verification.codegraph-readiness
+intent: "Probe CodeGraph readiness for doctor"

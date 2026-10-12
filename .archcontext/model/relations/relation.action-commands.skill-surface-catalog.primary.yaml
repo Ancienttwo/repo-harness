@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.action-commands.skill-surface-catalog.primary
+kind: reads
+source: component.action-commands.skill-surface-catalog
+target: component.action-commands.primary
+intent: "Read manifest.json as the single catalog authority"

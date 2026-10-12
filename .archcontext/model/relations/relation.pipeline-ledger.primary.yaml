@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.pipeline-ledger.primary
+kind: calls
+source: capability.runtime-harness.pipeline-ledger
+target: component.pipeline-ledger.primary
+intent: "Record observer facts with CAS versions and publish immutable generations"

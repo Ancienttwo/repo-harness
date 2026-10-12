@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.mcp-sidecar.primary.chatgpt-browser
+kind: calls
+source: component.mcp-sidecar.primary
+target: capability.runtime-mcp.chatgpt-browser
+intent: "Run the opt-in browser consult tools through the ChatGPT browser engine"

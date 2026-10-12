@@ -1,0 +1,33 @@
+schemaVersion: archcontext.node/v2
+id: component.hook-adapters.host-installer
+kind: component
+name: "Host Adapter Installer"
+status: active
+parent: capability.runtime-harness.hook-adapters
+summary: "Projects the route registry into user-level Claude and Codex adapter entries, runs the Pi extension bridge and owns the hook asset projection."
+responsibilities:
+  - Build and compare managed hook entries for each host from the route registry.
+  - Apply and roll back install profiles under the runtime host lock.
+  - Map Pi native events to the shared typed handlers through the bounded Bun JSON bridge.
+  - Report host install status and scan local hook and task configurations for injection surfaces without mutation.
+source:
+  include:
+    - "src/cli/installer/**"
+    - "src/pi/extension.ts"
+    - "src/pi/hook-bridge.ts"
+    - "assets/hooks/**"
+    - ".ai/hooks/**"
+    - "src/cli/commands/install.ts"
+    - "src/cli/commands/status.ts"
+    - "src/cli/commands/security.ts"
+    - "src/cli/commands/hook.ts"
+    - "scripts/sync-hook-sources.ts"
+  entrypoints:
+    - id: entrypoint.hook-adapters.managed-entries
+      path: "src/cli/installer/managed-entries.ts"
+      symbols:
+        - name: "buildManagedHooks"
+          sinks:
+            - id: sink.hook-adapters.routes-for-host
+              path: "src/cli/hook/route-registry.ts"
+              symbol: "routesForHost"

@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.operator.http-reader.engineering-overlay
+kind: reads
+source: component.operator.primary
+target: capability.runtime-harness.engineering-overlay
+intent: "Collect the engineering board for the Organization view"

@@ -1,0 +1,28 @@
+schemaVersion: archcontext.node/v2
+id: component.global-runtime-reconciliation.cli-root
+kind: component
+name: CLI Root and Diagnostics
+status: active
+parent: capability.runtime-harness.global-runtime-reconciliation
+summary: Builds the repo-harness command tree, runs the update transactions and serves read-only doctor and setup check diagnostics.
+responsibilities:
+  - Register every top-level command module in one commander program.
+  - Run the profile projection and runtime refresh inside one host transaction with configuration restores.
+  - Validate shared CLI options for target, location and adoption mode.
+  - Report PATH, version, host install, trust, route and CodeGraph readiness without mutation.
+source:
+  include:
+    - "src/cli/index.ts"
+    - "src/cli/tty-prompt.ts"
+    - "src/cli/commands/validators.ts"
+    - "src/cli/commands/doctor.ts"
+    - "src/cli/commands/init-hook.ts"
+  entrypoints:
+    - id: entrypoint.global-runtime-reconciliation.cli-root
+      path: "src/cli/index.ts"
+      symbols:
+        - name: "runCandidateRuntimeReconciliation"
+          sinks:
+            - id: sink.global-runtime-reconciliation.setup
+              path: "src/cli/commands/global-runtime.ts"
+              symbol: "runGlobalRuntimeSetup"

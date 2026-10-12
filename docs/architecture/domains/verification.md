@@ -1,7 +1,7 @@
 # Architecture Domain: Verification
 
 > **Source**: `repo-harness run capability-resolver`
-> **Owner**: Regression tests, workflow gates, eval harness, CodeGraph readiness, and advisory tooling checks.
+> **Owner**: Regression tests, workflow gates, eval harness, acceptance review, CodeGraph readiness, and advisory tooling checks.
 
 ## Purpose
 
@@ -10,14 +10,15 @@ repos, command facades, hooks, migration helpers, and installed runtime copies.
 
 ## Capabilities
 
-- `verification-codegraph-readiness` -> `docs/architecture/modules/verification/codegraph-readiness.md`
-- `verification-evals-checks` -> `docs/architecture/modules/verification/evals-checks.md`
+- `verification-evals-checks` -> `docs/architecture/modules/verification/evals-checks.md`: runs repository verification, contract gates, benchmarks and evaluation suites.
+- `verification-acceptance-review` -> `docs/architecture/modules/verification/acceptance-review.md`: runs the generic acceptance review through a persistent reviewer task agent and records one acceptance receipt.
+- `verification-codegraph-readiness` -> `docs/architecture/modules/verification/codegraph-readiness.md`: resolves and verifies the CodeGraph runtime and index readiness.
 
 ## Stable Rules
 
 - Self-host and generated behavior must be checked together when shared assets change.
 - `bun test` is the broad regression gate.
-- `check-task-sync.sh` enforces that substantive repo changes update `tasks/`.
+- `check-task-sync.sh` is a read-only diff observation. It claims no synchronization fact when the repository or diff base is unavailable.
 - `check-task-workflow.sh` reports read-only workflow diagnostics.
 - External brain-manifest and vault drift are outside repo verification and run only as explicit operator actions.
 - External tooling probes remain read-only by default; CodeGraph readiness is required for agent code navigation, while other external tooling remains advisory.

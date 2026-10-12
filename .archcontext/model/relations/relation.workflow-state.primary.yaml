@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.workflow-state.primary
+kind: calls
+source: capability.workflow-engine.workflow-state
+target: component.workflow-state.primary
+intent: "Resolve Effective State under the state lock"

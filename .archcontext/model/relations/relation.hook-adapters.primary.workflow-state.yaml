@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.hook-adapters.primary.workflow-state
+kind: calls
+source: component.hook-adapters.primary
+target: capability.workflow-engine.workflow-state
+intent: "Resolve effective state and sweep managed worktrees for hook routes"

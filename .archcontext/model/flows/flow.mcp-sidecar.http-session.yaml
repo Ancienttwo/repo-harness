@@ -1,0 +1,70 @@
+schemaVersion: archcontext.flow/v1
+id: flow.mcp-sidecar.http-session
+capabilityId: capability.runtime-harness.mcp-sidecar
+name: Serve an authorized HTTP MCP session
+applicability: required
+participants:
+  - id: cli
+    nodeId: component.mcp-sidecar.host-setup
+  - id: transport
+    nodeId: component.mcp-sidecar.transport-auth
+  - id: dispatch
+    nodeId: component.mcp-sidecar.primary
+  - id: policy
+    nodeId: component.mcp-sidecar.repo-policy-registry
+steps:
+  - id: start-transport
+    from: cli
+    to: transport
+    label: mcp serve starts the HTTP transport
+    evidence:
+      entrypointId: entrypoint.mcp-sidecar.cli
+      sourceSymbol: buildMcpCommand
+      sinkId: sink.mcp-sidecar.http-start
+  - id: load-startup-config
+    from: transport
+    to: policy
+    label: Load the user-level config and credentials and fix the startup profile
+    evidence:
+      entrypointId: entrypoint.mcp-sidecar.http-transport
+      sourceSymbol: startMcpHttp
+      sinkId: sink.mcp-sidecar.startup-config
+  - id: create-session-server
+    from: transport
+    to: dispatch
+    label: Create one MCP server for the new authorized session
+    evidence:
+      entrypointId: entrypoint.mcp-sidecar.http-transport
+      sourceSymbol: handleMcpPost
+      sinkId: sink.mcp-sidecar.session-server
+outcomes:
+  - id: success
+    kind: success
+    label: Tool call runs under the profile path policy
+    steps:
+      - id: resolve-path
+        from: dispatch
+        to: policy
+        label: Resolve each tool path under the profile policy before any read or write
+        evidence:
+          entrypointId: entrypoint.mcp-sidecar.tool-dispatch
+          sourceSymbol: callMcpTool
+          sinkId: sink.mcp-sidecar.path-policy
+    terminal:
+      participant: dispatch
+      label: Return the redacted tool result
+  - id: error
+    kind: error
+    label: Local profile changed after startup
+    steps:
+      - id: recheck-profile
+        from: transport
+        to: policy
+        label: Reload the config for a new session and refuse a profile that differs from the startup profile
+        evidence:
+          entrypointId: entrypoint.mcp-sidecar.http-transport
+          sourceSymbol: handleMcpPost
+          sinkId: sink.mcp-sidecar.request-config
+    terminal:
+      participant: transport
+      label: Return 503 PROFILE_CHANGED without creating a session

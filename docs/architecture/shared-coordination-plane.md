@@ -12,10 +12,32 @@
 `docs/architecture/modules/` 下。后者是 capability 派生的封闭集合:路径由
 capability 的 domain 与 name 算出(`scripts/capability-config.ts`),不属于任何
 capability 的 `.md` 会被 `scripts/capability-resolver.ts` 判为 orphan,数量与
-生成形状还被 `tests/architecture-projection-e2e.test.ts` 钉死。共享协调面横跨
-`src/core/state/`、`src/effects/state/`、`src/effects/git/`、`src/cli/commands/`
-四个顶层区域,不是单一 longest-prefix 边界,因此也不该为它 mint 一个 capability
-node。
+生成形状还被 `tests/architecture-projection-e2e.test.ts` 钉死。
+
+### 架构模型归属(2026-10-11 决定,取代旧记录)
+
+旧记录:共享协调面横跨 `src/core/state/`、`src/effects/state/`、`src/effects/git/`、
+`src/cli/commands/` 四个顶层区域,不是单一 longest-prefix 边界,因此不为它 mint
+capability node。
+
+新决定:共享协调面是 `capability.workflow-engine.workflow-state` 的组件
+`component.workflow-state.coordination-plane`。它不是独立 capability。协议文本仍以
+本文为准,模块页是 [`modules/workflow-engine/workflow-state.md`](modules/workflow-engine/workflow-state.md)。
+
+理由:
+
+- 旧理由的前提已不成立。capability 节点可以声明多条 include(例如
+  `capability.runtime-harness.collaboration` 有三条),组件 footprint 还可以用文件名
+  通配符(`src/effects/state/coordination-*.ts`)。跨目录不再妨碍建模。
+- 协调面依赖 Effective State 的工件读取与只读解析:`collect-board-inputs.ts` 调用
+  `resolveEffectiveStateReadOnly`,多个协调文件复用 `collect-state-inputs.ts`。两者也共用
+  一个纯核心门禁(`scripts/check-state-boundaries.ts:36-40`)。独立成 capability 会把这些
+  内部调用变成跨 capability 依赖。
+- 用户在 2026-10-11 的架构建模工作中确认了这个方向。
+
+边界:`src/effects/git/worktree-topology.ts` 与 `src/effects/git/common-directory.ts` 归
+`capability.workflow-engine.execution-primitives`,不归本组件。本组件通过关系调用它们。
+`src/cli/hook/board-slice-context.ts` 与 `src/cli/hook/mutation-guard.ts` 仍归 hook-adapters。
 
 > **事实优先级**:源码 > 本文。冲突时以源码为准,并提一次 architecture drift request。
 

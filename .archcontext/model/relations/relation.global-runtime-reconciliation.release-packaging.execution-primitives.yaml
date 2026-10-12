@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.global-runtime-reconciliation.release-packaging.execution-primitives
+kind: calls
+source: component.global-runtime-reconciliation.release-packaging
+target: capability.workflow-engine.execution-primitives
+intent: "Run installed binaries to read back runtime evidence"

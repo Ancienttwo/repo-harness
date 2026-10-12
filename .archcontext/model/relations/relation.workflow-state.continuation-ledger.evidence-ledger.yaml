@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.workflow-state.continuation-ledger.evidence-ledger
+kind: calls
+source: component.workflow-state.continuation-ledger
+target: capability.runtime-harness.evidence-ledger
+intent: "Append attempt ledger lines durably"

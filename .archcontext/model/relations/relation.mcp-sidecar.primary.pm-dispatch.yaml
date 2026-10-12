@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.mcp-sidecar.primary.pm-dispatch
+kind: calls
+source: component.mcp-sidecar.primary
+target: capability.runtime-harness.pm-dispatch
+intent: "Serve the PM MCP binding over the PM host protocol"

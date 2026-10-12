@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.interface-change.execution-primitives
+kind: calls
+source: capability.runtime-harness.interface-change
+target: capability.workflow-engine.execution-primitives
+intent: "Hold exclusive directory locks under the Git common directory"

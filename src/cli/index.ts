@@ -31,7 +31,6 @@ import { buildReviewCommand } from './commands/review';
 import { buildTaskAgentCommand } from './commands/task-agent';
 import { buildPmCommand } from './commands/pm';
 import { buildUpgradeCommand } from './commands/upgrade';
-import { planLegacyLeftovers, formatLegacyLeftoverSummary } from '../core/upgrade/legacy-inventory';
 import { buildToolsCommand } from './commands/tools';
 import { buildHerdrCommand } from './commands/herdr';
 import { buildBrainCommand } from './commands/brain';
@@ -60,6 +59,7 @@ import {
   agentFleetVerified,
   bunVersionIsSupported,
   runGlobalRuntimeSetup,
+  updateLeftoverSummary,
   type GlobalRuntimeOptions,
   type GlobalRuntimeResult,
 } from './commands/global-runtime';
@@ -737,10 +737,7 @@ export function buildProgram(): Command {
         codegraph: rawOpts.codegraph === false ? false : rawOpts.configureCodegraph === true ? true : undefined,
         brainRoot: rawOpts.brainRoot,
       });
-      if (result.exitCode === 0) {
-        const leftovers = planLegacyLeftovers({ scope: 'all', cwd: process.cwd(), home: process.env.HOME ?? homedir(), packageRoot: candidateSourceRoot() });
-        result.lines.push(formatLegacyLeftoverSummary(leftovers.items));
-      }
+      if (result.exitCode === 0) result.lines.push(updateLeftoverSummary(process.cwd(), rawOpts.cli !== false));
       if (rawOpts.json === true) {
         console.log(JSON.stringify(result, null, 2));
       } else {

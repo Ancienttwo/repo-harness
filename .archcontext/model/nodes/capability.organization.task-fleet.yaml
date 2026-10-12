@@ -1,0 +1,44 @@
+schemaVersion: archcontext.node/v2
+id: capability.organization.task-fleet
+kind: capability
+name: Task Fleet
+status: active
+summary: Projects task offers across registered repositories, acquires one execution-ready task into a bound work envelope, delivers task-addressed messages through the Task Inbox and projects the read-only fleet board.
+responsibilities:
+  - Join registry authorization, canonical Sprint rows, lease availability and plan proof into immutable read-time task offers.
+  - Acquire only execution-ready offers through the existing claim, provision and bind path and return a bound work envelope.
+  - Store immutable task messages and separate per-recipient delivery receipts that never mutate a lease or wake a runtime.
+  - Render peer message bodies only inside a bounded untrusted-context block at a real turn boundary.
+  - Project the cross-repository fleet board from authority readers without persisting any column or readiness flag.
+source:
+  include:
+    - "src/core/fleet/**"
+    - "src/effects/fleet/**"
+    - "src/core/messages/document-handoff.ts"
+    - "src/cli/commands/fleet.ts"
+  entrypoints:
+    - id: entrypoint.task-fleet.command
+      path: "src/cli/commands/fleet.ts"
+      symbols:
+        - name: "buildFleetCommand"
+          sinks:
+            - id: sink.task-fleet.offers
+              path: "src/effects/fleet/acquire.ts"
+              symbol: "collectFleetOffers"
+            - id: sink.task-fleet.acquire
+              path: "src/effects/fleet/acquire.ts"
+              symbol: "acquireFleetTask"
+            - id: sink.task-fleet.send-message
+              path: "src/effects/fleet/task-inbox.ts"
+              symbol: "sendTaskMessage"
+            - id: sink.task-fleet.deliver-message
+              path: "src/effects/fleet/task-inbox.ts"
+              symbol: "deliverTaskInbox"
+extensions:
+  contractFiles:
+    agents: "AGENTS.md"
+    claude: "CLAUDE.md"
+  lspProfile: "typescript-lsp"
+  verification:
+    - "bun run test:files tests/fleet-acquire-concurrency.test.ts tests/effects/fleet-board.test.ts tests/effects/task-inbox.test.ts tests/effects/task-inbox-layout-migration.test.ts tests/cli/fleet-offer-acquire.test.ts tests/cli/fleet-task-inbox.test.ts tests/unit/task-message-v1.test.ts --timeout 60000 --max-concurrency 1"
+    - "bun run check:type"

@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.contract-assets.template-projection.primary
+kind: reads
+source: component.contract-assets.template-projection
+target: component.contract-assets.primary
+intent: "Read the helper inventory from the package workflow contract"

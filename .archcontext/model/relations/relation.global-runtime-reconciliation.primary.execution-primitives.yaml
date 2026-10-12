@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.global-runtime-reconciliation.primary.execution-primitives
+kind: calls
+source: component.global-runtime-reconciliation.primary
+target: capability.workflow-engine.execution-primitives
+intent: "Run processes and read lock owners during runtime reconciliation"

@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.workflow-state.coordination-plane.evidence-ledger
+kind: calls
+source: component.workflow-state.coordination-plane
+target: capability.runtime-harness.evidence-ledger
+intent: "Write lease and topology records durably through the atomic append primitive"

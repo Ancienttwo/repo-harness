@@ -1,0 +1,13 @@
+schemaVersion: archcontext.node/v2
+id: component.action-commands.bundled-skills
+kind: component
+name: "Bundled Skill Packages"
+status: active
+parent: capability.public-surface.action-commands
+summary: "Holds the bundled skill packages that the manifest names as package sources."
+responsibilities:
+  - Ship the setup, test, product, cross-review, ChatGPT, strategy and companion skill packages.
+  - Keep each package a SKILL.md router with on-demand references.
+source:
+  include:
+    - assets/skills/**

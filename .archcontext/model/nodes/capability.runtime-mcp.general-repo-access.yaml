@@ -14,6 +14,7 @@ source:
     - "tests/cli/mcp-codegraph-contract.test.ts"
     - "tests/cli/mcp-policy.test.ts"
     - "tests/cli/mcp-tools.test.ts"
+    - "assets/mcp/**"
   entrypoints:
     - id: entrypoint.general-repo-access.primary
       path: "src/cli/mcp/reader-tools.ts"

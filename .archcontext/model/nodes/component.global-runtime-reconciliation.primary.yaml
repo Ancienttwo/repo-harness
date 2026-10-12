@@ -5,3 +5,20 @@ name: Global Runtime Reconciler
 status: active
 parent: capability.runtime-harness.global-runtime-reconciliation
 summary: Executes bounded install, exact dependency readback, runtime handshake, and profile-tool refresh.
+responsibilities:
+  - Run the ordered setup steps and stop at the first failed mandatory step.
+  - Hand the rest of an update to the installed candidate entrypoint after dependency readback.
+  - Keep the protected helper platform contract and the verified skill tree commits.
+  - Remove retired repo-harness surfaces through the upgrade command with backups.
+source:
+  include:
+    - "src/cli/commands/global-runtime.ts"
+    - "src/cli/runtime/**"
+    - "src/effects/runtime/protected-helper-platform.ts"
+    - "src/effects/skill-tree-integrity.ts"
+    - "src/cli/commands/upgrade.ts"
+    - "src/core/upgrade/**"
+    - "scripts/check-managed-runtime.ts"
+    - "scripts/sync-codex-installed-copies.sh"
+    - "install.sh"
+    - "install.ps1"

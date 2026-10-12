@@ -1476,6 +1476,8 @@ describe('chatgpt browser command', () => {
             'while :; do sleep 1; done',
           ],
         });
+        // The fake Oracle must record submission before the watchdog fires. A
+        // 100ms budget lost that race on loaded CI runners (#637).
         const consult = await runChatgpt([
           'browser-consult',
           '--repo',
@@ -1483,13 +1485,13 @@ describe('chatgpt browser command', () => {
           '--oracle-bin',
           submittedPath,
           '--timeout-ms',
-          '100',
+          '2000',
           '--prompt',
           'Submit, then outlive the workload timeout.',
         ]);
         const payload = JSON.parse(consult.stdout);
         expect(payload).toMatchObject({ status: 'recoverable', error: { code: 'ORACLE_TIMEOUT_AFTER_SUBMIT' } });
-        expect(payload.error.message).toContain('timed out after 100ms');
+        expect(payload.error.message).toContain('timed out after 2000ms');
         const meta = JSON.parse(readFileSync(join(repoRoot, '.ai/harness/chatgpt/sessions', payload.sessionId, 'meta.json'), 'utf-8'));
         expect(meta.status).toBe('recoverable');
         expect(meta.providerSessionId).toBe('oracle_timeout_123');

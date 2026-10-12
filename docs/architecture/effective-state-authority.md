@@ -65,6 +65,21 @@ The retired hook-owned workflow policy path and the old monolithic state
 resolver no longer exist. There is no feature flag, compatibility fallback, or
 second steady-state authority.
 
+## Architecture Model Ownership
+
+Decision date: 2026-10-11. The architecture model now names the owners of this boundary.
+
+| Area | Model node |
+|---|---|
+| `src/core/state`, `src/core/workflow`, `src/effects/state` resolver, cache, lock and version store, `src/cli/commands/state.ts`, `interfaces/**`, `scripts/check-state-boundaries.ts` | `component.workflow-state.primary` in `capability.workflow-engine.workflow-state` |
+| Shared coordination plane (leases, board, Sprint identity) | `component.workflow-state.coordination-plane` |
+| Continuation envelope and attempt ledger | `component.workflow-state.continuation-ledger` |
+| `src/core/capabilities/registry.ts` | `component.contract-assets.capability-registry` in `capability.workflow-engine.contract-assets` |
+| `src/effects/locking/**`, `src/effects/git/**` | `capability.workflow-engine.execution-primitives` |
+| `src/effects/review/diff-fingerprint.ts` | `capability.verification.acceptance-review` (whole `src/effects/review/**`) |
+
+The registry is still part of the pure core that `scripts/check-state-boundaries.ts` guards. The model shows this as the relation `relation.workflow-state.primary.contract-assets`. The review-subject observer is named in Implemented Boundary above, but its file is owned by acceptance-review. A move of that one file needs `source.exclude` support (arch-context#296). The module page is `docs/architecture/modules/workflow-engine/workflow-state.md`.
+
 ## Baseline P1 Boundary
 
 At the baseline, `src/cli/hook/state-snapshot.ts` owns both deterministic rules and effects:

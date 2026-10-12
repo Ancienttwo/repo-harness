@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.task-agent-host.primary.execution-primitives
+kind: calls
+source: component.task-agent-host.primary
+target: capability.workflow-engine.execution-primitives
+intent: "Run Git through the process runner and hold task session locks"

@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.task-fleet.task-inbox.workflow-state
+kind: calls
+source: component.task-fleet.task-inbox
+target: capability.workflow-engine.workflow-state
+intent: "Address task messages by canonical task under the task lock"

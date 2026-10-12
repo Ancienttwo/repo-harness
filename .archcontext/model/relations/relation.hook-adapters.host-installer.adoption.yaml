@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.hook-adapters.host-installer.adoption
+kind: calls
+source: component.hook-adapters.host-installer
+target: capability.public-surface.adoption
+intent: "Share the managed hook command fingerprints with the adoption migration"

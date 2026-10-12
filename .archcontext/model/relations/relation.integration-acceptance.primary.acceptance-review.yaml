@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.integration-acceptance.primary.acceptance-review
+kind: calls
+source: component.integration-acceptance.primary
+target: capability.verification.acceptance-review
+intent: "Locate the acceptance receipt for an integration candidate"

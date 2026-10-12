@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.operator.activity-feeds.verified-context
+kind: reads
+source: component.operator.activity-feeds
+target: capability.runtime-harness.verified-context
+intent: "Read open Human Decisions for the board attention queue"

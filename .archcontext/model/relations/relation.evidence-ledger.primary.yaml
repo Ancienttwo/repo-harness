@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.evidence-ledger.primary
+kind: calls
+source: capability.runtime-harness.evidence-ledger
+target: component.evidence-ledger.primary
+intent: "Append fold and checkpoint evidence events through one writer path"

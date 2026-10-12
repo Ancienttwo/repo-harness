@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.strategy-reflection.primary.workflow-state
+kind: reads
+source: component.strategy-reflection.primary
+target: capability.workflow-engine.workflow-state
+intent: "Resolve effective state read-only for strategy context"

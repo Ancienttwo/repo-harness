@@ -365,7 +365,7 @@ diff -qr ~/.agents/skills/geju ~/.codex/skills/geju
 `CodeGraph` is required readiness for agent code navigation. It speeds up
 Codex and Claude exploration for indexed TypeScript and other supported languages, but it
 does not replace `.ai/context/capabilities.json`, workflow checks, tests,
-architecture drift events, or shell-script review.
+the architecture model, or shell-script review.
 
 This self-host repo vendors CodeGraph as a dev dependency so `bun install`
 materializes `node_modules/.bin/codegraph`; its source-only

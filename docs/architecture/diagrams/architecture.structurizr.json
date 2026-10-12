@@ -1,9 +1,25 @@
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.diagram.structurizr" sourceDigest="sha256:c2c495836f39fcc7416d4cb39a62866afd4ae2a2a5e692eac000d5af564e172a" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:d39054a2b21341f64a01b7091f746e5295899b73943c7a43995fac262162c37d" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.diagram.structurizr" sourceDigest="sha256:cbbccfd6824322f42c77802d563b81761359bdeea76580d95d90817b08c25bca" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:b37381138a031b9d2d243e0c90dbec9c6f8fba0410ea3767ee57f09525316d3a" -->
 {
   "schemaVersion": "archcontext.structurizr-export/v1",
   "name": "ArchContext Architecture",
   "model": {
     "elements": [
+      {
+        "id": "capability.organization.publication",
+        "name": "PR Publication",
+        "type": "Software System",
+        "tags": [
+          "capability"
+        ]
+      },
+      {
+        "id": "capability.organization.task-fleet",
+        "name": "Task Fleet",
+        "type": "Software System",
+        "tags": [
+          "capability"
+        ]
+      },
       {
         "id": "capability.public-surface.action-commands",
         "name": "Action Commands",
@@ -23,6 +39,14 @@
       {
         "id": "capability.public-surface.root-router",
         "name": "Root Router",
+        "type": "Software System",
+        "tags": [
+          "capability"
+        ]
+      },
+      {
+        "id": "capability.public-surface.strategy-reflection",
+        "name": "Strategy Reflection",
         "type": "Software System",
         "tags": [
           "capability"
@@ -93,6 +117,14 @@
         ]
       },
       {
+        "id": "capability.runtime-harness.evidence-ledger",
+        "name": "Evidence Ledger",
+        "type": "Software System",
+        "tags": [
+          "capability"
+        ]
+      },
+      {
         "id": "capability.runtime-harness.external-source-intake",
         "name": "External Source Intake",
         "type": "Software System",
@@ -149,6 +181,14 @@
         ]
       },
       {
+        "id": "capability.runtime-harness.pipeline-ledger",
+        "name": "Pipeline Observer Ledger",
+        "type": "Software System",
+        "tags": [
+          "capability"
+        ]
+      },
+      {
         "id": "capability.runtime-harness.pm-dispatch",
         "name": "PM Dispatch Boundary",
         "type": "Software System",
@@ -159,6 +199,14 @@
       {
         "id": "capability.runtime-harness.refactor-program",
         "name": "Refactor Recommendations",
+        "type": "Software System",
+        "tags": [
+          "capability"
+        ]
+      },
+      {
+        "id": "capability.runtime-harness.task-agent-host",
+        "name": "Task Agent Host",
         "type": "Software System",
         "tags": [
           "capability"
@@ -181,8 +229,24 @@
         ]
       },
       {
+        "id": "capability.runtime-mcp.chatgpt-browser",
+        "name": "ChatGPT Browser Consult",
+        "type": "Software System",
+        "tags": [
+          "capability"
+        ]
+      },
+      {
         "id": "capability.runtime-mcp.general-repo-access",
         "name": "General Repository Access",
+        "type": "Software System",
+        "tags": [
+          "capability"
+        ]
+      },
+      {
+        "id": "capability.verification.acceptance-review",
+        "name": "Acceptance Review",
         "type": "Software System",
         "tags": [
           "capability"
@@ -213,6 +277,14 @@
         ]
       },
       {
+        "id": "capability.workflow-engine.execution-primitives",
+        "name": "Execution Primitives",
+        "type": "Software System",
+        "tags": [
+          "capability"
+        ]
+      },
+      {
         "id": "capability.workflow-engine.inspection-migration",
         "name": "Inspection And Migration",
         "type": "Software System",
@@ -221,8 +293,40 @@
         ]
       },
       {
+        "id": "capability.workflow-engine.workflow-state",
+        "name": "Workflow State",
+        "type": "Software System",
+        "tags": [
+          "capability"
+        ]
+      },
+      {
+        "id": "component.acceptance-review.primary",
+        "name": "Generic Review Round",
+        "type": "Component",
+        "tags": [
+          "component"
+        ]
+      },
+      {
+        "id": "component.action-commands.bundled-skills",
+        "name": "Bundled Skill Packages",
+        "type": "Component",
+        "tags": [
+          "component"
+        ]
+      },
+      {
         "id": "component.action-commands.primary",
-        "name": "Action Command Installer",
+        "name": "Command Facades and Manifest",
+        "type": "Component",
+        "tags": [
+          "component"
+        ]
+      },
+      {
+        "id": "component.action-commands.skill-surface-catalog",
+        "name": "Skill Surface Catalog",
         "type": "Component",
         "tags": [
           "component"
@@ -253,6 +357,14 @@
         ]
       },
       {
+        "id": "component.chatgpt-browser.primary",
+        "name": "Browser Consult Engine",
+        "type": "Component",
+        "tags": [
+          "component"
+        ]
+      },
+      {
         "id": "component.codegraph-readiness.primary",
         "name": "CodeGraph Readiness Check",
         "type": "Component",
@@ -269,8 +381,40 @@
         ]
       },
       {
+        "id": "component.contract-assets.capability-registry",
+        "name": "Capability Registry",
+        "type": "Component",
+        "tags": [
+          "component"
+        ]
+      },
+      {
+        "id": "component.contract-assets.contract-worktree-lifecycle",
+        "name": "Contract Worktree Lifecycle",
+        "type": "Component",
+        "tags": [
+          "component"
+        ]
+      },
+      {
+        "id": "component.contract-assets.planning-helpers",
+        "name": "Planning Helpers",
+        "type": "Component",
+        "tags": [
+          "component"
+        ]
+      },
+      {
         "id": "component.contract-assets.primary",
-        "name": "Workflow Contract Asset",
+        "name": "Workflow Contract And Policy",
+        "type": "Component",
+        "tags": [
+          "component"
+        ]
+      },
+      {
+        "id": "component.contract-assets.template-projection",
+        "name": "Template Projection",
         "type": "Component",
         "tags": [
           "component"
@@ -317,8 +461,56 @@
         ]
       },
       {
+        "id": "component.evals-checks.ci-selection",
+        "name": "CI Selection And Report",
+        "type": "Component",
+        "tags": [
+          "component"
+        ]
+      },
+      {
+        "id": "component.evals-checks.evals-and-benchmarks",
+        "name": "Evals And Benchmarks",
+        "type": "Component",
+        "tags": [
+          "component"
+        ]
+      },
+      {
         "id": "component.evals-checks.primary",
         "name": "Verification Check Execution",
+        "type": "Component",
+        "tags": [
+          "component"
+        ]
+      },
+      {
+        "id": "component.evals-checks.test-suite",
+        "name": "Test Suite",
+        "type": "Component",
+        "tags": [
+          "component"
+        ]
+      },
+      {
+        "id": "component.evals-checks.workflow-gates",
+        "name": "Workflow Gates",
+        "type": "Component",
+        "tags": [
+          "component"
+        ]
+      },
+      {
+        "id": "component.evidence-ledger.primary",
+        "name": "Evidence Event Store",
+        "type": "Component",
+        "tags": [
+          "component"
+        ]
+      },
+      {
+        "id": "component.execution-primitives.primary",
+        "name": "Bounded Process And Lock Primitives",
         "type": "Component",
         "tags": [
           "component"
@@ -341,6 +533,22 @@
         ]
       },
       {
+        "id": "component.global-runtime-reconciliation.archctx-closure",
+        "name": "ArchContext Closure",
+        "type": "Component",
+        "tags": [
+          "component"
+        ]
+      },
+      {
+        "id": "component.global-runtime-reconciliation.cli-root",
+        "name": "CLI Root and Diagnostics",
+        "type": "Component",
+        "tags": [
+          "component"
+        ]
+      },
+      {
         "id": "component.global-runtime-reconciliation.primary",
         "name": "Global Runtime Reconciler",
         "type": "Component",
@@ -349,8 +557,40 @@
         ]
       },
       {
+        "id": "component.global-runtime-reconciliation.release-packaging",
+        "name": "Release Packaging",
+        "type": "Component",
+        "tags": [
+          "component"
+        ]
+      },
+      {
+        "id": "component.hook-adapters.edit-guards",
+        "name": "Guard and Observer Handlers",
+        "type": "Component",
+        "tags": [
+          "component"
+        ]
+      },
+      {
+        "id": "component.hook-adapters.host-installer",
+        "name": "Host Adapter Installer",
+        "type": "Component",
+        "tags": [
+          "component"
+        ]
+      },
+      {
         "id": "component.hook-adapters.primary",
-        "name": "Typed Route Dispatch",
+        "name": "Hook Route Runtime",
+        "type": "Component",
+        "tags": [
+          "component"
+        ]
+      },
+      {
+        "id": "component.hook-adapters.session-lifecycle",
+        "name": "Session Lifecycle Handlers",
         "type": "Component",
         "tags": [
           "component"
@@ -381,8 +621,56 @@
         ]
       },
       {
+        "id": "component.mcp-sidecar.coding-profile",
+        "name": "Coding Profile Runtime",
+        "type": "Component",
+        "tags": [
+          "component"
+        ]
+      },
+      {
+        "id": "component.mcp-sidecar.host-setup",
+        "name": "CLI and Host Setup",
+        "type": "Component",
+        "tags": [
+          "component"
+        ]
+      },
+      {
         "id": "component.mcp-sidecar.primary",
-        "name": "MCP Tool Dispatcher",
+        "name": "Server and Tool Dispatch",
+        "type": "Component",
+        "tags": [
+          "component"
+        ]
+      },
+      {
+        "id": "component.mcp-sidecar.repo-policy-registry",
+        "name": "Config Policy and Repository Registry",
+        "type": "Component",
+        "tags": [
+          "component"
+        ]
+      },
+      {
+        "id": "component.mcp-sidecar.transport-auth",
+        "name": "Transport and Authorization",
+        "type": "Component",
+        "tags": [
+          "component"
+        ]
+      },
+      {
+        "id": "component.operator.activity-feeds",
+        "name": "Setup and Activity Feeds",
+        "type": "Component",
+        "tags": [
+          "component"
+        ]
+      },
+      {
+        "id": "component.operator.architecture-view",
+        "name": "Architecture View",
         "type": "Component",
         "tags": [
           "component"
@@ -397,8 +685,48 @@
         ]
       },
       {
+        "id": "component.operator.view-projections",
+        "name": "Operator View Projections",
+        "type": "Component",
+        "tags": [
+          "component"
+        ]
+      },
+      {
+        "id": "component.operator.web-console",
+        "name": "Operator Web Console",
+        "type": "Component",
+        "tags": [
+          "component"
+        ]
+      },
+      {
+        "id": "component.pipeline-ledger.primary",
+        "name": "Pipeline Store and Ledger",
+        "type": "Component",
+        "tags": [
+          "component"
+        ]
+      },
+      {
         "id": "component.pm-dispatch.primary",
         "name": "PM Task Operation Surface",
+        "type": "Component",
+        "tags": [
+          "component"
+        ]
+      },
+      {
+        "id": "component.publication.primary",
+        "name": "Publication Receipt Lifecycle and Readiness",
+        "type": "Component",
+        "tags": [
+          "component"
+        ]
+      },
+      {
+        "id": "component.publication.provider-feedback",
+        "name": "Provider Feedback",
         "type": "Component",
         "tags": [
           "component"
@@ -421,6 +749,38 @@
         ]
       },
       {
+        "id": "component.strategy-reflection.primary",
+        "name": "Strategy Context Collector",
+        "type": "Component",
+        "tags": [
+          "component"
+        ]
+      },
+      {
+        "id": "component.task-agent-host.primary",
+        "name": "Herdr Task Session Host",
+        "type": "Component",
+        "tags": [
+          "component"
+        ]
+      },
+      {
+        "id": "component.task-fleet.primary",
+        "name": "Fleet Offers Acquisition and Board",
+        "type": "Component",
+        "tags": [
+          "component"
+        ]
+      },
+      {
+        "id": "component.task-fleet.task-inbox",
+        "name": "Task Inbox",
+        "type": "Component",
+        "tags": [
+          "component"
+        ]
+      },
+      {
         "id": "component.verified-context.primary",
         "name": "Verified Checkpoint Evidence Store",
         "type": "Component",
@@ -435,14 +795,92 @@
         "tags": [
           "component"
         ]
+      },
+      {
+        "id": "component.workflow-state.continuation-ledger",
+        "name": "Continuation Ledger",
+        "type": "Component",
+        "tags": [
+          "component"
+        ]
+      },
+      {
+        "id": "component.workflow-state.coordination-plane",
+        "name": "Shared Coordination Plane",
+        "type": "Component",
+        "tags": [
+          "component"
+        ]
+      },
+      {
+        "id": "component.workflow-state.primary",
+        "name": "Effective State Resolver",
+        "type": "Component",
+        "tags": [
+          "component"
+        ]
       }
     ],
     "relationships": [
+      {
+        "id": "relation.acceptance-review.hook-adapters",
+        "sourceId": "capability.verification.acceptance-review",
+        "destinationId": "capability.runtime-harness.hook-adapters",
+        "description": "calls"
+      },
+      {
+        "id": "relation.acceptance-review.primary",
+        "sourceId": "capability.verification.acceptance-review",
+        "destinationId": "component.acceptance-review.primary",
+        "description": "calls"
+      },
+      {
+        "id": "relation.acceptance-review.primary.evidence-ledger",
+        "sourceId": "component.acceptance-review.primary",
+        "destinationId": "capability.runtime-harness.evidence-ledger",
+        "description": "calls"
+      },
+      {
+        "id": "relation.acceptance-review.primary.execution-primitives",
+        "sourceId": "component.acceptance-review.primary",
+        "destinationId": "capability.workflow-engine.execution-primitives",
+        "description": "calls"
+      },
+      {
+        "id": "relation.acceptance-review.primary.task-agent-host",
+        "sourceId": "component.acceptance-review.primary",
+        "destinationId": "capability.runtime-harness.task-agent-host",
+        "description": "calls"
+      },
+      {
+        "id": "relation.acceptance-review.primary.workflow-state",
+        "sourceId": "component.acceptance-review.primary",
+        "destinationId": "capability.workflow-engine.workflow-state",
+        "description": "reads"
+      },
       {
         "id": "relation.action-commands.primary",
         "sourceId": "capability.public-surface.action-commands",
         "destinationId": "component.action-commands.primary",
         "description": "calls"
+      },
+      {
+        "id": "relation.action-commands.primary.bundled-skills",
+        "sourceId": "component.action-commands.primary",
+        "destinationId": "component.action-commands.bundled-skills",
+        "description": "depends-on"
+      },
+      {
+        "id": "relation.action-commands.skill-surface-catalog",
+        "sourceId": "capability.public-surface.action-commands",
+        "destinationId": "component.action-commands.skill-surface-catalog",
+        "description": "calls"
+      },
+      {
+        "id": "relation.action-commands.skill-surface-catalog.primary",
+        "sourceId": "component.action-commands.skill-surface-catalog",
+        "destinationId": "component.action-commands.primary",
+        "description": "reads"
       },
       {
         "id": "relation.adoption.primary",
@@ -463,10 +901,46 @@
         "description": "calls"
       },
       {
+        "id": "relation.agent-runtime-effects.engineer-scheduling",
+        "sourceId": "capability.runtime-harness.agent-runtime-effects",
+        "destinationId": "capability.runtime-harness.engineer-scheduling",
+        "description": "calls"
+      },
+      {
         "id": "relation.agent-runtime-effects.journal",
         "sourceId": "capability.runtime-harness.agent-runtime-effects",
         "destinationId": "component.agent-runtime-effects.journal",
         "description": "calls"
+      },
+      {
+        "id": "relation.agent-runtime-effects.journal.execution-primitives",
+        "sourceId": "component.agent-runtime-effects.journal",
+        "destinationId": "capability.workflow-engine.execution-primitives",
+        "description": "calls"
+      },
+      {
+        "id": "relation.agent-runtime-effects.journal.workflow-state",
+        "sourceId": "component.agent-runtime-effects.journal",
+        "destinationId": "capability.workflow-engine.workflow-state",
+        "description": "reads"
+      },
+      {
+        "id": "relation.agent-runtime-effects.mcp-sidecar",
+        "sourceId": "capability.runtime-harness.agent-runtime-effects",
+        "destinationId": "capability.runtime-harness.mcp-sidecar",
+        "description": "calls"
+      },
+      {
+        "id": "relation.agent-runtime-effects.task-agent-host",
+        "sourceId": "capability.runtime-harness.agent-runtime-effects",
+        "destinationId": "capability.runtime-harness.task-agent-host",
+        "description": "calls"
+      },
+      {
+        "id": "relation.bound-task-freezes.acceptance-review",
+        "sourceId": "capability.runtime-harness.bound-task-freezes",
+        "destinationId": "capability.verification.acceptance-review",
+        "description": "reads"
       },
       {
         "id": "relation.bound-task-freezes.engineer-bindings",
@@ -475,9 +949,33 @@
         "description": "calls"
       },
       {
+        "id": "relation.bound-task-freezes.evidence-ledger",
+        "sourceId": "capability.runtime-harness.bound-task-freezes",
+        "destinationId": "capability.runtime-harness.evidence-ledger",
+        "description": "calls"
+      },
+      {
+        "id": "relation.bound-task-freezes.execution-primitives",
+        "sourceId": "capability.runtime-harness.bound-task-freezes",
+        "destinationId": "capability.workflow-engine.execution-primitives",
+        "description": "calls"
+      },
+      {
         "id": "relation.bound-task-freezes.primary",
         "sourceId": "capability.runtime-harness.bound-task-freezes",
         "destinationId": "component.bound-task-freezes.primary",
+        "description": "calls"
+      },
+      {
+        "id": "relation.bound-task-freezes.workflow-state",
+        "sourceId": "capability.runtime-harness.bound-task-freezes",
+        "destinationId": "capability.workflow-engine.workflow-state",
+        "description": "calls"
+      },
+      {
+        "id": "relation.chatgpt-browser.primary",
+        "sourceId": "capability.runtime-mcp.chatgpt-browser",
+        "destinationId": "component.chatgpt-browser.primary",
         "description": "calls"
       },
       {
@@ -511,15 +1009,135 @@
         "description": "calls"
       },
       {
+        "id": "relation.collaboration.execution-primitives",
+        "sourceId": "capability.runtime-harness.collaboration",
+        "destinationId": "capability.workflow-engine.execution-primitives",
+        "description": "calls"
+      },
+      {
         "id": "relation.collaboration.primary",
         "sourceId": "capability.runtime-harness.collaboration",
         "destinationId": "component.collaboration.primary",
         "description": "calls"
       },
       {
+        "id": "relation.contract-assets.contract-worktree-lifecycle.acceptance-review",
+        "sourceId": "component.contract-assets.contract-worktree-lifecycle",
+        "destinationId": "capability.verification.acceptance-review",
+        "description": "calls"
+      },
+      {
+        "id": "relation.contract-assets.contract-worktree-lifecycle.execution-primitives",
+        "sourceId": "component.contract-assets.contract-worktree-lifecycle",
+        "destinationId": "capability.workflow-engine.execution-primitives",
+        "description": "calls"
+      },
+      {
+        "id": "relation.contract-assets.contract-worktree-lifecycle.task-agent-host",
+        "sourceId": "component.contract-assets.contract-worktree-lifecycle",
+        "destinationId": "capability.runtime-harness.task-agent-host",
+        "description": "calls"
+      },
+      {
+        "id": "relation.contract-assets.contract-worktree-lifecycle.workflow-state",
+        "sourceId": "component.contract-assets.contract-worktree-lifecycle",
+        "destinationId": "capability.workflow-engine.workflow-state",
+        "description": "calls"
+      },
+      {
+        "id": "relation.contract-assets.planning-helpers",
+        "sourceId": "capability.workflow-engine.contract-assets",
+        "destinationId": "component.contract-assets.planning-helpers",
+        "description": "calls"
+      },
+      {
+        "id": "relation.contract-assets.planning-helpers.acceptance-review",
+        "sourceId": "component.contract-assets.planning-helpers",
+        "destinationId": "capability.verification.acceptance-review",
+        "description": "calls"
+      },
+      {
+        "id": "relation.contract-assets.planning-helpers.execution-primitives",
+        "sourceId": "component.contract-assets.planning-helpers",
+        "destinationId": "capability.workflow-engine.execution-primitives",
+        "description": "calls"
+      },
+      {
         "id": "relation.contract-assets.primary",
         "sourceId": "capability.workflow-engine.contract-assets",
         "destinationId": "component.contract-assets.primary",
+        "description": "calls"
+      },
+      {
+        "id": "relation.contract-assets.primary.capability-registry",
+        "sourceId": "component.contract-assets.primary",
+        "destinationId": "component.contract-assets.capability-registry",
+        "description": "reads"
+      },
+      {
+        "id": "relation.contract-assets.template-projection",
+        "sourceId": "capability.workflow-engine.contract-assets",
+        "destinationId": "component.contract-assets.template-projection",
+        "description": "calls"
+      },
+      {
+        "id": "relation.contract-assets.template-projection.adoption",
+        "sourceId": "component.contract-assets.template-projection",
+        "destinationId": "capability.public-surface.adoption",
+        "description": "calls"
+      },
+      {
+        "id": "relation.contract-assets.template-projection.codegraph-readiness",
+        "sourceId": "component.contract-assets.template-projection",
+        "destinationId": "capability.verification.codegraph-readiness",
+        "description": "calls"
+      },
+      {
+        "id": "relation.contract-assets.template-projection.execution-primitives",
+        "sourceId": "component.contract-assets.template-projection",
+        "destinationId": "capability.workflow-engine.execution-primitives",
+        "description": "calls"
+      },
+      {
+        "id": "relation.contract-assets.template-projection.global-runtime-reconciliation",
+        "sourceId": "component.contract-assets.template-projection",
+        "destinationId": "capability.runtime-harness.global-runtime-reconciliation",
+        "description": "calls"
+      },
+      {
+        "id": "relation.contract-assets.template-projection.hook-adapters",
+        "sourceId": "component.contract-assets.template-projection",
+        "destinationId": "capability.runtime-harness.hook-adapters",
+        "description": "calls"
+      },
+      {
+        "id": "relation.contract-assets.template-projection.planning-helpers",
+        "sourceId": "component.contract-assets.template-projection",
+        "destinationId": "component.contract-assets.planning-helpers",
+        "description": "calls"
+      },
+      {
+        "id": "relation.contract-assets.template-projection.primary",
+        "sourceId": "component.contract-assets.template-projection",
+        "destinationId": "component.contract-assets.primary",
+        "description": "reads"
+      },
+      {
+        "id": "relation.contract-assets.template-projection.skill-surface-catalog",
+        "sourceId": "component.contract-assets.template-projection",
+        "destinationId": "component.action-commands.skill-surface-catalog",
+        "description": "calls"
+      },
+      {
+        "id": "relation.contract-assets.template-projection.task-agent-host",
+        "sourceId": "component.contract-assets.template-projection",
+        "destinationId": "capability.runtime-harness.task-agent-host",
+        "description": "calls"
+      },
+      {
+        "id": "relation.contract-assets.template-projection.workflow-state",
+        "sourceId": "component.contract-assets.template-projection",
+        "destinationId": "capability.workflow-engine.workflow-state",
         "description": "calls"
       },
       {
@@ -535,9 +1153,33 @@
         "description": "calls"
       },
       {
+        "id": "relation.delegated-runs.evidence-ledger",
+        "sourceId": "capability.runtime-harness.delegated-runs",
+        "destinationId": "capability.runtime-harness.evidence-ledger",
+        "description": "writes"
+      },
+      {
+        "id": "relation.delegated-runs.execution-primitives",
+        "sourceId": "capability.runtime-harness.delegated-runs",
+        "destinationId": "capability.workflow-engine.execution-primitives",
+        "description": "calls"
+      },
+      {
         "id": "relation.delegated-runs.primary",
         "sourceId": "capability.runtime-harness.delegated-runs",
         "destinationId": "component.delegated-runs.primary",
+        "description": "calls"
+      },
+      {
+        "id": "relation.delegated-runs.task-fleet",
+        "sourceId": "capability.runtime-harness.delegated-runs",
+        "destinationId": "capability.organization.task-fleet",
+        "description": "depends-on"
+      },
+      {
+        "id": "relation.engineer-bindings.execution-primitives",
+        "sourceId": "capability.runtime-harness.engineer-bindings",
+        "destinationId": "capability.workflow-engine.execution-primitives",
         "description": "calls"
       },
       {
@@ -547,9 +1189,33 @@
         "description": "calls"
       },
       {
+        "id": "relation.engineer-bindings.workflow-state",
+        "sourceId": "capability.runtime-harness.engineer-bindings",
+        "destinationId": "capability.workflow-engine.workflow-state",
+        "description": "calls"
+      },
+      {
         "id": "relation.engineer-messages.engineer-bindings",
         "sourceId": "capability.runtime-harness.engineer-messages",
         "destinationId": "capability.runtime-harness.engineer-bindings",
+        "description": "calls"
+      },
+      {
+        "id": "relation.engineer-messages.execution-primitives",
+        "sourceId": "capability.runtime-harness.engineer-messages",
+        "destinationId": "capability.workflow-engine.execution-primitives",
+        "description": "calls"
+      },
+      {
+        "id": "relation.engineer-messages.primary",
+        "sourceId": "capability.runtime-harness.engineer-messages",
+        "destinationId": "component.engineer-messages.primary",
+        "description": "calls"
+      },
+      {
+        "id": "relation.engineer-scheduling.acceptance-review",
+        "sourceId": "capability.runtime-harness.engineer-scheduling",
+        "destinationId": "capability.verification.acceptance-review",
         "description": "calls"
       },
       {
@@ -557,6 +1223,42 @@
         "sourceId": "capability.runtime-harness.engineer-scheduling",
         "destinationId": "capability.runtime-harness.engineer-bindings",
         "description": "calls"
+      },
+      {
+        "id": "relation.engineer-scheduling.execution-primitives",
+        "sourceId": "capability.runtime-harness.engineer-scheduling",
+        "destinationId": "capability.workflow-engine.execution-primitives",
+        "description": "calls"
+      },
+      {
+        "id": "relation.engineer-scheduling.integration-acceptance",
+        "sourceId": "capability.runtime-harness.engineer-scheduling",
+        "destinationId": "capability.runtime-harness.integration-acceptance",
+        "description": "reads"
+      },
+      {
+        "id": "relation.engineer-scheduling.primary",
+        "sourceId": "capability.runtime-harness.engineer-scheduling",
+        "destinationId": "component.engineer-scheduling.primary",
+        "description": "calls"
+      },
+      {
+        "id": "relation.engineer-scheduling.publication",
+        "sourceId": "capability.runtime-harness.engineer-scheduling",
+        "destinationId": "capability.organization.publication",
+        "description": "reads"
+      },
+      {
+        "id": "relation.engineer-scheduling.task-fleet",
+        "sourceId": "capability.runtime-harness.engineer-scheduling",
+        "destinationId": "capability.organization.task-fleet",
+        "description": "calls"
+      },
+      {
+        "id": "relation.engineer-scheduling.workflow-state",
+        "sourceId": "capability.runtime-harness.engineer-scheduling",
+        "destinationId": "capability.workflow-engine.workflow-state",
+        "description": "reads"
       },
       {
         "id": "relation.engineering-overlay.agent-runtime-effects",
@@ -583,9 +1285,75 @@
         "description": "calls"
       },
       {
+        "id": "relation.evals-checks.ci-selection.inspection-migration",
+        "sourceId": "component.evals-checks.ci-selection",
+        "destinationId": "capability.workflow-engine.inspection-migration",
+        "description": "calls"
+      },
+      {
+        "id": "relation.evals-checks.ci-selection.test-suite",
+        "sourceId": "component.evals-checks.ci-selection",
+        "destinationId": "component.evals-checks.test-suite",
+        "description": "calls"
+      },
+      {
+        "id": "relation.evals-checks.ci-selection.workflow-gates",
+        "sourceId": "component.evals-checks.ci-selection",
+        "destinationId": "component.evals-checks.workflow-gates",
+        "description": "calls"
+      },
+      {
+        "id": "relation.evals-checks.evals-and-benchmarks.execution-primitives",
+        "sourceId": "component.evals-checks.evals-and-benchmarks",
+        "destinationId": "capability.workflow-engine.execution-primitives",
+        "description": "calls"
+      },
+      {
+        "id": "relation.evals-checks.evals-and-benchmarks.hook-adapters",
+        "sourceId": "component.evals-checks.evals-and-benchmarks",
+        "destinationId": "capability.runtime-harness.hook-adapters",
+        "description": "reads"
+      },
+      {
         "id": "relation.evals-checks.primary",
         "sourceId": "capability.verification.evals-checks",
         "destinationId": "component.evals-checks.primary",
+        "description": "calls"
+      },
+      {
+        "id": "relation.evals-checks.primary.contract-assets",
+        "sourceId": "component.evals-checks.primary",
+        "destinationId": "capability.workflow-engine.contract-assets",
+        "description": "calls"
+      },
+      {
+        "id": "relation.evals-checks.primary.evidence-ledger",
+        "sourceId": "component.evals-checks.primary",
+        "destinationId": "capability.runtime-harness.evidence-ledger",
+        "description": "calls"
+      },
+      {
+        "id": "relation.evidence-ledger.adoption",
+        "sourceId": "capability.runtime-harness.evidence-ledger",
+        "destinationId": "capability.public-surface.adoption",
+        "description": "calls"
+      },
+      {
+        "id": "relation.evidence-ledger.primary",
+        "sourceId": "capability.runtime-harness.evidence-ledger",
+        "destinationId": "component.evidence-ledger.primary",
+        "description": "calls"
+      },
+      {
+        "id": "relation.evidence-ledger.primary.execution-primitives",
+        "sourceId": "component.evidence-ledger.primary",
+        "destinationId": "capability.workflow-engine.execution-primitives",
+        "description": "calls"
+      },
+      {
+        "id": "relation.execution-primitives.primary",
+        "sourceId": "capability.workflow-engine.execution-primitives",
+        "destinationId": "component.execution-primitives.primary",
         "description": "calls"
       },
       {
@@ -595,9 +1363,237 @@
         "description": "calls"
       },
       {
+        "id": "relation.external-source-intake.immutable-evidence.execution-primitives",
+        "sourceId": "component.external-source-intake.immutable-evidence",
+        "destinationId": "capability.workflow-engine.execution-primitives",
+        "description": "calls"
+      },
+      {
+        "id": "relation.external-source-intake.mcp-sidecar",
+        "sourceId": "capability.runtime-harness.external-source-intake",
+        "destinationId": "capability.runtime-harness.mcp-sidecar",
+        "description": "calls"
+      },
+      {
+        "id": "relation.external-source-intake.workflow-state",
+        "sourceId": "capability.runtime-harness.external-source-intake",
+        "destinationId": "capability.workflow-engine.workflow-state",
+        "description": "reads"
+      },
+      {
         "id": "relation.general-repo-access.primary",
         "sourceId": "capability.runtime-mcp.general-repo-access",
         "destinationId": "component.general-repo-access.primary",
+        "description": "calls"
+      },
+      {
+        "id": "relation.general-repo-access.primary.codegraph-readiness",
+        "sourceId": "component.general-repo-access.primary",
+        "destinationId": "capability.verification.codegraph-readiness",
+        "description": "calls"
+      },
+      {
+        "id": "relation.general-repo-access.primary.mcp-policy",
+        "sourceId": "component.general-repo-access.primary",
+        "destinationId": "component.mcp-sidecar.repo-policy-registry",
+        "description": "calls"
+      },
+      {
+        "id": "relation.global-runtime-reconciliation.archctx-closure.acceptance-review",
+        "sourceId": "component.global-runtime-reconciliation.archctx-closure",
+        "destinationId": "capability.verification.acceptance-review",
+        "description": "calls"
+      },
+      {
+        "id": "relation.global-runtime-reconciliation.archctx-closure.evidence-ledger",
+        "sourceId": "component.global-runtime-reconciliation.archctx-closure",
+        "destinationId": "capability.runtime-harness.evidence-ledger",
+        "description": "calls"
+      },
+      {
+        "id": "relation.global-runtime-reconciliation.archctx-closure.execution-primitives",
+        "sourceId": "component.global-runtime-reconciliation.archctx-closure",
+        "destinationId": "capability.workflow-engine.execution-primitives",
+        "description": "calls"
+      },
+      {
+        "id": "relation.global-runtime-reconciliation.archctx-closure.hook-adapters",
+        "sourceId": "component.global-runtime-reconciliation.archctx-closure",
+        "destinationId": "capability.runtime-harness.hook-adapters",
+        "description": "calls"
+      },
+      {
+        "id": "relation.global-runtime-reconciliation.archctx-closure.mcp-sidecar",
+        "sourceId": "component.global-runtime-reconciliation.archctx-closure",
+        "destinationId": "capability.runtime-harness.mcp-sidecar",
+        "description": "calls"
+      },
+      {
+        "id": "relation.global-runtime-reconciliation.archctx-closure.workflow-state",
+        "sourceId": "component.global-runtime-reconciliation.archctx-closure",
+        "destinationId": "capability.workflow-engine.workflow-state",
+        "description": "reads"
+      },
+      {
+        "id": "relation.global-runtime-reconciliation.cli-root.acceptance-review",
+        "sourceId": "component.global-runtime-reconciliation.cli-root",
+        "destinationId": "capability.verification.acceptance-review",
+        "description": "calls"
+      },
+      {
+        "id": "relation.global-runtime-reconciliation.cli-root.adoption",
+        "sourceId": "component.global-runtime-reconciliation.cli-root",
+        "destinationId": "capability.public-surface.adoption",
+        "description": "calls"
+      },
+      {
+        "id": "relation.global-runtime-reconciliation.cli-root.archctx-closure",
+        "sourceId": "component.global-runtime-reconciliation.cli-root",
+        "destinationId": "component.global-runtime-reconciliation.archctx-closure",
+        "description": "calls"
+      },
+      {
+        "id": "relation.global-runtime-reconciliation.cli-root.chatgpt-browser",
+        "sourceId": "component.global-runtime-reconciliation.cli-root",
+        "destinationId": "capability.runtime-mcp.chatgpt-browser",
+        "description": "calls"
+      },
+      {
+        "id": "relation.global-runtime-reconciliation.cli-root.codegraph-readiness",
+        "sourceId": "component.global-runtime-reconciliation.cli-root",
+        "destinationId": "capability.verification.codegraph-readiness",
+        "description": "calls"
+      },
+      {
+        "id": "relation.global-runtime-reconciliation.cli-root.collaboration",
+        "sourceId": "component.global-runtime-reconciliation.cli-root",
+        "destinationId": "capability.runtime-harness.collaboration",
+        "description": "calls"
+      },
+      {
+        "id": "relation.global-runtime-reconciliation.cli-root.contract-assets",
+        "sourceId": "component.global-runtime-reconciliation.cli-root",
+        "destinationId": "capability.workflow-engine.contract-assets",
+        "description": "calls"
+      },
+      {
+        "id": "relation.global-runtime-reconciliation.cli-root.delegated-runs",
+        "sourceId": "component.global-runtime-reconciliation.cli-root",
+        "destinationId": "capability.runtime-harness.delegated-runs",
+        "description": "calls"
+      },
+      {
+        "id": "relation.global-runtime-reconciliation.cli-root.engineer-bindings",
+        "sourceId": "component.global-runtime-reconciliation.cli-root",
+        "destinationId": "capability.runtime-harness.engineer-bindings",
+        "description": "calls"
+      },
+      {
+        "id": "relation.global-runtime-reconciliation.cli-root.external-source-intake",
+        "sourceId": "component.global-runtime-reconciliation.cli-root",
+        "destinationId": "capability.runtime-harness.external-source-intake",
+        "description": "calls"
+      },
+      {
+        "id": "relation.global-runtime-reconciliation.cli-root.hook-adapters",
+        "sourceId": "component.global-runtime-reconciliation.cli-root",
+        "destinationId": "capability.runtime-harness.hook-adapters",
+        "description": "calls"
+      },
+      {
+        "id": "relation.global-runtime-reconciliation.cli-root.integration-acceptance",
+        "sourceId": "component.global-runtime-reconciliation.cli-root",
+        "destinationId": "capability.runtime-harness.integration-acceptance",
+        "description": "calls"
+      },
+      {
+        "id": "relation.global-runtime-reconciliation.cli-root.interface-change",
+        "sourceId": "component.global-runtime-reconciliation.cli-root",
+        "destinationId": "capability.runtime-harness.interface-change",
+        "description": "calls"
+      },
+      {
+        "id": "relation.global-runtime-reconciliation.cli-root.mcp-sidecar",
+        "sourceId": "component.global-runtime-reconciliation.cli-root",
+        "destinationId": "capability.runtime-harness.mcp-sidecar",
+        "description": "calls"
+      },
+      {
+        "id": "relation.global-runtime-reconciliation.cli-root.operator",
+        "sourceId": "component.global-runtime-reconciliation.cli-root",
+        "destinationId": "capability.runtime-harness.operator",
+        "description": "calls"
+      },
+      {
+        "id": "relation.global-runtime-reconciliation.cli-root.pipeline-ledger",
+        "sourceId": "component.global-runtime-reconciliation.cli-root",
+        "destinationId": "capability.runtime-harness.pipeline-ledger",
+        "description": "calls"
+      },
+      {
+        "id": "relation.global-runtime-reconciliation.cli-root.pm-dispatch",
+        "sourceId": "component.global-runtime-reconciliation.cli-root",
+        "destinationId": "capability.runtime-harness.pm-dispatch",
+        "description": "calls"
+      },
+      {
+        "id": "relation.global-runtime-reconciliation.cli-root.primary",
+        "sourceId": "component.global-runtime-reconciliation.cli-root",
+        "destinationId": "component.global-runtime-reconciliation.primary",
+        "description": "calls"
+      },
+      {
+        "id": "relation.global-runtime-reconciliation.cli-root.publication",
+        "sourceId": "component.global-runtime-reconciliation.cli-root",
+        "destinationId": "capability.organization.publication",
+        "description": "calls"
+      },
+      {
+        "id": "relation.global-runtime-reconciliation.cli-root.refactor-program",
+        "sourceId": "component.global-runtime-reconciliation.cli-root",
+        "destinationId": "capability.runtime-harness.refactor-program",
+        "description": "calls"
+      },
+      {
+        "id": "relation.global-runtime-reconciliation.cli-root.root-router",
+        "sourceId": "component.global-runtime-reconciliation.cli-root",
+        "destinationId": "capability.public-surface.root-router",
+        "description": "calls"
+      },
+      {
+        "id": "relation.global-runtime-reconciliation.cli-root.skill-surface-catalog",
+        "sourceId": "component.global-runtime-reconciliation.cli-root",
+        "destinationId": "component.action-commands.skill-surface-catalog",
+        "description": "calls"
+      },
+      {
+        "id": "relation.global-runtime-reconciliation.cli-root.strategy-reflection",
+        "sourceId": "component.global-runtime-reconciliation.cli-root",
+        "destinationId": "capability.public-surface.strategy-reflection",
+        "description": "calls"
+      },
+      {
+        "id": "relation.global-runtime-reconciliation.cli-root.task-agent-host",
+        "sourceId": "component.global-runtime-reconciliation.cli-root",
+        "destinationId": "capability.runtime-harness.task-agent-host",
+        "description": "calls"
+      },
+      {
+        "id": "relation.global-runtime-reconciliation.cli-root.task-fleet",
+        "sourceId": "component.global-runtime-reconciliation.cli-root",
+        "destinationId": "capability.organization.task-fleet",
+        "description": "calls"
+      },
+      {
+        "id": "relation.global-runtime-reconciliation.cli-root.verified-context",
+        "sourceId": "component.global-runtime-reconciliation.cli-root",
+        "destinationId": "capability.runtime-harness.verified-context",
+        "description": "calls"
+      },
+      {
+        "id": "relation.global-runtime-reconciliation.cli-root.workflow-state",
+        "sourceId": "component.global-runtime-reconciliation.cli-root",
+        "destinationId": "capability.workflow-engine.workflow-state",
         "description": "calls"
       },
       {
@@ -607,9 +1603,207 @@
         "description": "calls"
       },
       {
+        "id": "relation.global-runtime-reconciliation.primary.adoption",
+        "sourceId": "component.global-runtime-reconciliation.primary",
+        "destinationId": "capability.public-surface.adoption",
+        "description": "calls"
+      },
+      {
+        "id": "relation.global-runtime-reconciliation.primary.archctx-closure",
+        "sourceId": "component.global-runtime-reconciliation.primary",
+        "destinationId": "component.global-runtime-reconciliation.archctx-closure",
+        "description": "calls"
+      },
+      {
+        "id": "relation.global-runtime-reconciliation.primary.codegraph-readiness",
+        "sourceId": "component.global-runtime-reconciliation.primary",
+        "destinationId": "capability.verification.codegraph-readiness",
+        "description": "calls"
+      },
+      {
+        "id": "relation.global-runtime-reconciliation.primary.contract-assets",
+        "sourceId": "component.global-runtime-reconciliation.primary",
+        "destinationId": "capability.workflow-engine.contract-assets",
+        "description": "calls"
+      },
+      {
+        "id": "relation.global-runtime-reconciliation.primary.execution-primitives",
+        "sourceId": "component.global-runtime-reconciliation.primary",
+        "destinationId": "capability.workflow-engine.execution-primitives",
+        "description": "calls"
+      },
+      {
+        "id": "relation.global-runtime-reconciliation.primary.hook-adapters",
+        "sourceId": "component.global-runtime-reconciliation.primary",
+        "destinationId": "capability.runtime-harness.hook-adapters",
+        "description": "calls"
+      },
+      {
+        "id": "relation.global-runtime-reconciliation.primary.skill-surface-catalog",
+        "sourceId": "component.global-runtime-reconciliation.primary",
+        "destinationId": "component.action-commands.skill-surface-catalog",
+        "description": "calls"
+      },
+      {
+        "id": "relation.global-runtime-reconciliation.primary.task-agent-host",
+        "sourceId": "component.global-runtime-reconciliation.primary",
+        "destinationId": "capability.runtime-harness.task-agent-host",
+        "description": "calls"
+      },
+      {
+        "id": "relation.global-runtime-reconciliation.release-packaging.cli-root",
+        "sourceId": "component.global-runtime-reconciliation.release-packaging",
+        "destinationId": "component.global-runtime-reconciliation.cli-root",
+        "description": "calls"
+      },
+      {
+        "id": "relation.global-runtime-reconciliation.release-packaging.execution-primitives",
+        "sourceId": "component.global-runtime-reconciliation.release-packaging",
+        "destinationId": "capability.workflow-engine.execution-primitives",
+        "description": "calls"
+      },
+      {
+        "id": "relation.global-runtime-reconciliation.release-packaging.skill-surface-catalog",
+        "sourceId": "component.global-runtime-reconciliation.release-packaging",
+        "destinationId": "component.action-commands.skill-surface-catalog",
+        "description": "calls"
+      },
+      {
+        "id": "relation.hook-adapters.edit-guards.evidence-ledger",
+        "sourceId": "component.hook-adapters.edit-guards",
+        "destinationId": "capability.runtime-harness.evidence-ledger",
+        "description": "calls"
+      },
+      {
+        "id": "relation.hook-adapters.edit-guards.execution-primitives",
+        "sourceId": "component.hook-adapters.edit-guards",
+        "destinationId": "capability.workflow-engine.execution-primitives",
+        "description": "calls"
+      },
+      {
+        "id": "relation.hook-adapters.edit-guards.route-runtime",
+        "sourceId": "component.hook-adapters.edit-guards",
+        "destinationId": "component.hook-adapters.primary",
+        "description": "depends-on"
+      },
+      {
+        "id": "relation.hook-adapters.edit-guards.workflow-state",
+        "sourceId": "component.hook-adapters.edit-guards",
+        "destinationId": "capability.workflow-engine.workflow-state",
+        "description": "calls"
+      },
+      {
+        "id": "relation.hook-adapters.host-installer.adoption",
+        "sourceId": "component.hook-adapters.host-installer",
+        "destinationId": "capability.public-surface.adoption",
+        "description": "calls"
+      },
+      {
+        "id": "relation.hook-adapters.host-installer.contract-assets",
+        "sourceId": "component.hook-adapters.host-installer",
+        "destinationId": "capability.workflow-engine.contract-assets",
+        "description": "calls"
+      },
+      {
+        "id": "relation.hook-adapters.host-installer.execution-primitives",
+        "sourceId": "component.hook-adapters.host-installer",
+        "destinationId": "capability.workflow-engine.execution-primitives",
+        "description": "calls"
+      },
+      {
+        "id": "relation.hook-adapters.host-installer.global-runtime-reconciliation",
+        "sourceId": "component.hook-adapters.host-installer",
+        "destinationId": "capability.runtime-harness.global-runtime-reconciliation",
+        "description": "calls"
+      },
+      {
+        "id": "relation.hook-adapters.host-installer.route-runtime",
+        "sourceId": "component.hook-adapters.host-installer",
+        "destinationId": "component.hook-adapters.primary",
+        "description": "calls"
+      },
+      {
+        "id": "relation.hook-adapters.host-installer.skill-surface-catalog",
+        "sourceId": "component.hook-adapters.host-installer",
+        "destinationId": "component.action-commands.skill-surface-catalog",
+        "description": "calls"
+      },
+      {
         "id": "relation.hook-adapters.primary",
         "sourceId": "capability.runtime-harness.hook-adapters",
         "destinationId": "component.hook-adapters.primary",
+        "description": "calls"
+      },
+      {
+        "id": "relation.hook-adapters.primary.execution-primitives",
+        "sourceId": "component.hook-adapters.primary",
+        "destinationId": "capability.workflow-engine.execution-primitives",
+        "description": "calls"
+      },
+      {
+        "id": "relation.hook-adapters.primary.workflow-state",
+        "sourceId": "component.hook-adapters.primary",
+        "destinationId": "capability.workflow-engine.workflow-state",
+        "description": "calls"
+      },
+      {
+        "id": "relation.hook-adapters.route-runtime.edit-guards",
+        "sourceId": "component.hook-adapters.primary",
+        "destinationId": "component.hook-adapters.edit-guards",
+        "description": "calls"
+      },
+      {
+        "id": "relation.hook-adapters.route-runtime.global-runtime-reconciliation",
+        "sourceId": "component.hook-adapters.primary",
+        "destinationId": "capability.runtime-harness.global-runtime-reconciliation",
+        "description": "calls"
+      },
+      {
+        "id": "relation.hook-adapters.route-runtime.session-lifecycle",
+        "sourceId": "component.hook-adapters.primary",
+        "destinationId": "component.hook-adapters.session-lifecycle",
+        "description": "calls"
+      },
+      {
+        "id": "relation.hook-adapters.session-lifecycle.adoption",
+        "sourceId": "component.hook-adapters.session-lifecycle",
+        "destinationId": "capability.public-surface.adoption",
+        "description": "calls"
+      },
+      {
+        "id": "relation.hook-adapters.session-lifecycle.edit-guards",
+        "sourceId": "component.hook-adapters.session-lifecycle",
+        "destinationId": "component.hook-adapters.edit-guards",
+        "description": "calls"
+      },
+      {
+        "id": "relation.hook-adapters.session-lifecycle.evidence-ledger",
+        "sourceId": "component.hook-adapters.session-lifecycle",
+        "destinationId": "capability.runtime-harness.evidence-ledger",
+        "description": "calls"
+      },
+      {
+        "id": "relation.hook-adapters.session-lifecycle.execution-primitives",
+        "sourceId": "component.hook-adapters.session-lifecycle",
+        "destinationId": "capability.workflow-engine.execution-primitives",
+        "description": "calls"
+      },
+      {
+        "id": "relation.hook-adapters.session-lifecycle.route-runtime",
+        "sourceId": "component.hook-adapters.session-lifecycle",
+        "destinationId": "component.hook-adapters.primary",
+        "description": "depends-on"
+      },
+      {
+        "id": "relation.hook-adapters.session-lifecycle.task-fleet",
+        "sourceId": "component.hook-adapters.session-lifecycle",
+        "destinationId": "capability.organization.task-fleet",
+        "description": "calls"
+      },
+      {
+        "id": "relation.hook-adapters.session-lifecycle.workflow-state",
+        "sourceId": "component.hook-adapters.session-lifecycle",
+        "destinationId": "capability.workflow-engine.workflow-state",
         "description": "calls"
       },
       {
@@ -619,10 +1813,40 @@
         "description": "calls"
       },
       {
+        "id": "relation.inspection-migration.primary.contract-assets",
+        "sourceId": "component.inspection-migration.primary",
+        "destinationId": "capability.workflow-engine.contract-assets",
+        "description": "reads"
+      },
+      {
         "id": "relation.integration-acceptance.primary",
         "sourceId": "capability.runtime-harness.integration-acceptance",
         "destinationId": "component.integration-acceptance.primary",
         "description": "calls"
+      },
+      {
+        "id": "relation.integration-acceptance.primary.acceptance-review",
+        "sourceId": "component.integration-acceptance.primary",
+        "destinationId": "capability.verification.acceptance-review",
+        "description": "calls"
+      },
+      {
+        "id": "relation.integration-acceptance.primary.execution-primitives",
+        "sourceId": "component.integration-acceptance.primary",
+        "destinationId": "capability.workflow-engine.execution-primitives",
+        "description": "calls"
+      },
+      {
+        "id": "relation.integration-acceptance.primary.workflow-state",
+        "sourceId": "component.integration-acceptance.primary",
+        "destinationId": "capability.workflow-engine.workflow-state",
+        "description": "reads"
+      },
+      {
+        "id": "relation.integration-acceptance.publication",
+        "sourceId": "capability.runtime-harness.integration-acceptance",
+        "destinationId": "capability.organization.publication",
+        "description": "reads"
       },
       {
         "id": "relation.interface-change.engineer-bindings",
@@ -637,15 +1861,57 @@
         "description": "calls"
       },
       {
+        "id": "relation.interface-change.execution-primitives",
+        "sourceId": "capability.runtime-harness.interface-change",
+        "destinationId": "capability.workflow-engine.execution-primitives",
+        "description": "calls"
+      },
+      {
         "id": "relation.interface-change.primary",
         "sourceId": "capability.runtime-harness.interface-change",
         "destinationId": "component.interface-change.primary",
         "description": "calls"
       },
       {
+        "id": "relation.interface-change.workflow-state",
+        "sourceId": "capability.runtime-harness.interface-change",
+        "destinationId": "capability.workflow-engine.workflow-state",
+        "description": "reads"
+      },
+      {
         "id": "relation.mcp-sidecar.agent-runtime-effects",
         "sourceId": "capability.runtime-harness.mcp-sidecar",
         "destinationId": "capability.runtime-harness.agent-runtime-effects",
+        "description": "calls"
+      },
+      {
+        "id": "relation.mcp-sidecar.coding-profile.codegraph-readiness",
+        "sourceId": "component.mcp-sidecar.coding-profile",
+        "destinationId": "capability.verification.codegraph-readiness",
+        "description": "calls"
+      },
+      {
+        "id": "relation.mcp-sidecar.coding-profile.execution-primitives",
+        "sourceId": "component.mcp-sidecar.coding-profile",
+        "destinationId": "capability.workflow-engine.execution-primitives",
+        "description": "calls"
+      },
+      {
+        "id": "relation.mcp-sidecar.coding-profile.repo-policy-registry",
+        "sourceId": "component.mcp-sidecar.coding-profile",
+        "destinationId": "component.mcp-sidecar.repo-policy-registry",
+        "description": "calls"
+      },
+      {
+        "id": "relation.mcp-sidecar.coding-profile.task-agent-host",
+        "sourceId": "component.mcp-sidecar.coding-profile",
+        "destinationId": "capability.runtime-harness.task-agent-host",
+        "description": "calls"
+      },
+      {
+        "id": "relation.mcp-sidecar.coding-profile.workflow-state",
+        "sourceId": "component.mcp-sidecar.coding-profile",
+        "destinationId": "capability.workflow-engine.workflow-state",
         "description": "calls"
       },
       {
@@ -673,6 +1939,48 @@
         "description": "calls"
       },
       {
+        "id": "relation.mcp-sidecar.host-setup.chatgpt-browser",
+        "sourceId": "component.mcp-sidecar.host-setup",
+        "destinationId": "capability.runtime-mcp.chatgpt-browser",
+        "description": "calls"
+      },
+      {
+        "id": "relation.mcp-sidecar.host-setup.coding-profile",
+        "sourceId": "component.mcp-sidecar.host-setup",
+        "destinationId": "component.mcp-sidecar.coding-profile",
+        "description": "calls"
+      },
+      {
+        "id": "relation.mcp-sidecar.host-setup.execution-primitives",
+        "sourceId": "component.mcp-sidecar.host-setup",
+        "destinationId": "capability.workflow-engine.execution-primitives",
+        "description": "calls"
+      },
+      {
+        "id": "relation.mcp-sidecar.host-setup.hook-adapters",
+        "sourceId": "component.mcp-sidecar.host-setup",
+        "destinationId": "capability.runtime-harness.hook-adapters",
+        "description": "calls"
+      },
+      {
+        "id": "relation.mcp-sidecar.host-setup.primary",
+        "sourceId": "component.mcp-sidecar.host-setup",
+        "destinationId": "component.mcp-sidecar.primary",
+        "description": "calls"
+      },
+      {
+        "id": "relation.mcp-sidecar.host-setup.repo-policy-registry",
+        "sourceId": "component.mcp-sidecar.host-setup",
+        "destinationId": "component.mcp-sidecar.repo-policy-registry",
+        "description": "writes"
+      },
+      {
+        "id": "relation.mcp-sidecar.host-setup.transport-auth",
+        "sourceId": "component.mcp-sidecar.host-setup",
+        "destinationId": "component.mcp-sidecar.transport-auth",
+        "description": "calls"
+      },
+      {
         "id": "relation.mcp-sidecar.interface-change",
         "sourceId": "capability.runtime-harness.mcp-sidecar",
         "destinationId": "capability.runtime-harness.interface-change",
@@ -685,9 +1993,279 @@
         "description": "calls"
       },
       {
+        "id": "relation.mcp-sidecar.primary.chatgpt-browser",
+        "sourceId": "component.mcp-sidecar.primary",
+        "destinationId": "capability.runtime-mcp.chatgpt-browser",
+        "description": "calls"
+      },
+      {
+        "id": "relation.mcp-sidecar.primary.codegraph-readiness",
+        "sourceId": "component.mcp-sidecar.primary",
+        "destinationId": "capability.verification.codegraph-readiness",
+        "description": "calls"
+      },
+      {
+        "id": "relation.mcp-sidecar.primary.coding-profile",
+        "sourceId": "component.mcp-sidecar.primary",
+        "destinationId": "component.mcp-sidecar.coding-profile",
+        "description": "calls"
+      },
+      {
+        "id": "relation.mcp-sidecar.primary.execution-primitives",
+        "sourceId": "component.mcp-sidecar.primary",
+        "destinationId": "capability.workflow-engine.execution-primitives",
+        "description": "calls"
+      },
+      {
+        "id": "relation.mcp-sidecar.primary.general-repo-access",
+        "sourceId": "component.mcp-sidecar.primary",
+        "destinationId": "capability.runtime-mcp.general-repo-access",
+        "description": "calls"
+      },
+      {
+        "id": "relation.mcp-sidecar.primary.pm-dispatch",
+        "sourceId": "component.mcp-sidecar.primary",
+        "destinationId": "capability.runtime-harness.pm-dispatch",
+        "description": "calls"
+      },
+      {
+        "id": "relation.mcp-sidecar.primary.publication",
+        "sourceId": "component.mcp-sidecar.primary",
+        "destinationId": "capability.organization.publication",
+        "description": "calls"
+      },
+      {
+        "id": "relation.mcp-sidecar.primary.repo-policy-registry",
+        "sourceId": "component.mcp-sidecar.primary",
+        "destinationId": "component.mcp-sidecar.repo-policy-registry",
+        "description": "calls"
+      },
+      {
+        "id": "relation.mcp-sidecar.primary.task-agent-host",
+        "sourceId": "component.mcp-sidecar.primary",
+        "destinationId": "capability.runtime-harness.task-agent-host",
+        "description": "calls"
+      },
+      {
+        "id": "relation.mcp-sidecar.primary.task-fleet",
+        "sourceId": "component.mcp-sidecar.primary",
+        "destinationId": "capability.organization.task-fleet",
+        "description": "calls"
+      },
+      {
+        "id": "relation.mcp-sidecar.primary.work-demand",
+        "sourceId": "component.mcp-sidecar.primary",
+        "destinationId": "capability.runtime-harness.work-demand",
+        "description": "calls"
+      },
+      {
+        "id": "relation.mcp-sidecar.primary.workflow-state",
+        "sourceId": "component.mcp-sidecar.primary",
+        "destinationId": "capability.workflow-engine.workflow-state",
+        "description": "reads"
+      },
+      {
+        "id": "relation.mcp-sidecar.repo-policy-registry.execution-primitives",
+        "sourceId": "component.mcp-sidecar.repo-policy-registry",
+        "destinationId": "capability.workflow-engine.execution-primitives",
+        "description": "calls"
+      },
+      {
+        "id": "relation.mcp-sidecar.transport-auth.primary",
+        "sourceId": "component.mcp-sidecar.transport-auth",
+        "destinationId": "component.mcp-sidecar.primary",
+        "description": "calls"
+      },
+      {
+        "id": "relation.mcp-sidecar.transport-auth.repo-policy-registry",
+        "sourceId": "component.mcp-sidecar.transport-auth",
+        "destinationId": "component.mcp-sidecar.repo-policy-registry",
+        "description": "reads"
+      },
+      {
+        "id": "relation.operator.activity-feeds.hook-adapters",
+        "sourceId": "component.operator.activity-feeds",
+        "destinationId": "capability.runtime-harness.hook-adapters",
+        "description": "reads"
+      },
+      {
+        "id": "relation.operator.activity-feeds.pipeline-ledger",
+        "sourceId": "component.operator.activity-feeds",
+        "destinationId": "capability.runtime-harness.pipeline-ledger",
+        "description": "reads"
+      },
+      {
+        "id": "relation.operator.activity-feeds.verified-context",
+        "sourceId": "component.operator.activity-feeds",
+        "destinationId": "capability.runtime-harness.verified-context",
+        "description": "reads"
+      },
+      {
+        "id": "relation.operator.activity-feeds.view-projections",
+        "sourceId": "component.operator.activity-feeds",
+        "destinationId": "component.operator.view-projections",
+        "description": "calls"
+      },
+      {
+        "id": "relation.operator.architecture-view.acceptance-review",
+        "sourceId": "component.operator.architecture-view",
+        "destinationId": "capability.verification.acceptance-review",
+        "description": "calls"
+      },
+      {
+        "id": "relation.operator.architecture-view.model-reader",
+        "sourceId": "component.operator.architecture-view",
+        "destinationId": "capability.runtime-harness.global-runtime-reconciliation",
+        "description": "reads"
+      },
+      {
+        "id": "relation.operator.http-reader.acceptance-review",
+        "sourceId": "component.operator.primary",
+        "destinationId": "capability.verification.acceptance-review",
+        "description": "calls"
+      },
+      {
+        "id": "relation.operator.http-reader.activity-feeds",
+        "sourceId": "component.operator.primary",
+        "destinationId": "component.operator.activity-feeds",
+        "description": "calls"
+      },
+      {
+        "id": "relation.operator.http-reader.architecture-view",
+        "sourceId": "component.operator.primary",
+        "destinationId": "component.operator.architecture-view",
+        "description": "calls"
+      },
+      {
+        "id": "relation.operator.http-reader.collaboration",
+        "sourceId": "component.operator.primary",
+        "destinationId": "capability.runtime-harness.collaboration",
+        "description": "calls"
+      },
+      {
+        "id": "relation.operator.http-reader.engineer-scheduling",
+        "sourceId": "component.operator.primary",
+        "destinationId": "capability.runtime-harness.engineer-scheduling",
+        "description": "reads"
+      },
+      {
+        "id": "relation.operator.http-reader.engineering-overlay",
+        "sourceId": "component.operator.primary",
+        "destinationId": "capability.runtime-harness.engineering-overlay",
+        "description": "reads"
+      },
+      {
+        "id": "relation.operator.http-reader.model-reader",
+        "sourceId": "component.operator.primary",
+        "destinationId": "capability.runtime-harness.global-runtime-reconciliation",
+        "description": "reads"
+      },
+      {
+        "id": "relation.operator.http-reader.repo-registry",
+        "sourceId": "component.operator.primary",
+        "destinationId": "capability.runtime-harness.mcp-sidecar",
+        "description": "reads"
+      },
+      {
+        "id": "relation.operator.http-reader.verified-context",
+        "sourceId": "component.operator.primary",
+        "destinationId": "capability.runtime-harness.verified-context",
+        "description": "reads"
+      },
+      {
+        "id": "relation.operator.http-reader.view-projections",
+        "sourceId": "component.operator.primary",
+        "destinationId": "component.operator.view-projections",
+        "description": "calls"
+      },
+      {
         "id": "relation.operator.primary",
         "sourceId": "capability.runtime-harness.operator",
         "destinationId": "component.operator.primary",
+        "description": "calls"
+      },
+      {
+        "id": "relation.operator.primary.pipeline-ledger",
+        "sourceId": "component.operator.primary",
+        "destinationId": "capability.runtime-harness.pipeline-ledger",
+        "description": "reads"
+      },
+      {
+        "id": "relation.operator.primary.task-fleet",
+        "sourceId": "component.operator.primary",
+        "destinationId": "capability.organization.task-fleet",
+        "description": "reads"
+      },
+      {
+        "id": "relation.operator.view-projections.acceptance-review",
+        "sourceId": "component.operator.view-projections",
+        "destinationId": "capability.verification.acceptance-review",
+        "description": "depends-on"
+      },
+      {
+        "id": "relation.operator.view-projections.architecture-view",
+        "sourceId": "component.operator.view-projections",
+        "destinationId": "component.operator.architecture-view",
+        "description": "depends-on"
+      },
+      {
+        "id": "relation.operator.view-projections.collaboration",
+        "sourceId": "component.operator.view-projections",
+        "destinationId": "capability.runtime-harness.collaboration",
+        "description": "depends-on"
+      },
+      {
+        "id": "relation.operator.view-projections.task-fleet",
+        "sourceId": "component.operator.view-projections",
+        "destinationId": "capability.organization.task-fleet",
+        "description": "reads"
+      },
+      {
+        "id": "relation.operator.web-console.activity-feeds",
+        "sourceId": "component.operator.web-console",
+        "destinationId": "component.operator.activity-feeds",
+        "description": "calls"
+      },
+      {
+        "id": "relation.operator.web-console.http-reader",
+        "sourceId": "component.operator.web-console",
+        "destinationId": "component.operator.primary",
+        "description": "calls"
+      },
+      {
+        "id": "relation.operator.web-console.pipeline-ledger",
+        "sourceId": "component.operator.web-console",
+        "destinationId": "capability.runtime-harness.pipeline-ledger",
+        "description": "reads"
+      },
+      {
+        "id": "relation.operator.web-console.view-projections",
+        "sourceId": "component.operator.web-console",
+        "destinationId": "component.operator.view-projections",
+        "description": "calls"
+      },
+      {
+        "id": "relation.pipeline-ledger.evidence-ledger",
+        "sourceId": "capability.runtime-harness.pipeline-ledger",
+        "destinationId": "capability.runtime-harness.evidence-ledger",
+        "description": "calls"
+      },
+      {
+        "id": "relation.pipeline-ledger.primary",
+        "sourceId": "capability.runtime-harness.pipeline-ledger",
+        "destinationId": "component.pipeline-ledger.primary",
+        "description": "calls"
+      },
+      {
+        "id": "relation.pipeline-ledger.task-agent-host",
+        "sourceId": "capability.runtime-harness.pipeline-ledger",
+        "destinationId": "capability.runtime-harness.task-agent-host",
+        "description": "calls"
+      },
+      {
+        "id": "relation.pm-dispatch.evidence-ledger",
+        "sourceId": "capability.runtime-harness.pm-dispatch",
+        "destinationId": "capability.runtime-harness.evidence-ledger",
         "description": "calls"
       },
       {
@@ -697,15 +2275,225 @@
         "description": "calls"
       },
       {
+        "id": "relation.pm-dispatch.primary.execution-primitives",
+        "sourceId": "component.pm-dispatch.primary",
+        "destinationId": "capability.workflow-engine.execution-primitives",
+        "description": "calls"
+      },
+      {
+        "id": "relation.pm-dispatch.primary.workflow-state",
+        "sourceId": "component.pm-dispatch.primary",
+        "destinationId": "capability.workflow-engine.workflow-state",
+        "description": "calls"
+      },
+      {
+        "id": "relation.pm-dispatch.repo-registry",
+        "sourceId": "capability.runtime-harness.pm-dispatch",
+        "destinationId": "component.mcp-sidecar.repo-policy-registry",
+        "description": "reads"
+      },
+      {
+        "id": "relation.pm-dispatch.task-agent-host",
+        "sourceId": "capability.runtime-harness.pm-dispatch",
+        "destinationId": "capability.runtime-harness.task-agent-host",
+        "description": "calls"
+      },
+      {
+        "id": "relation.pm-dispatch.task-fleet",
+        "sourceId": "capability.runtime-harness.pm-dispatch",
+        "destinationId": "capability.organization.task-fleet",
+        "description": "reads"
+      },
+      {
+        "id": "relation.publication.contract-assets",
+        "sourceId": "capability.organization.publication",
+        "destinationId": "capability.workflow-engine.contract-assets",
+        "description": "calls"
+      },
+      {
+        "id": "relation.publication.evidence-ledger",
+        "sourceId": "capability.organization.publication",
+        "destinationId": "capability.runtime-harness.evidence-ledger",
+        "description": "calls"
+      },
+      {
+        "id": "relation.publication.primary",
+        "sourceId": "capability.organization.publication",
+        "destinationId": "component.publication.primary",
+        "description": "calls"
+      },
+      {
+        "id": "relation.publication.primary.execution-primitives",
+        "sourceId": "component.publication.primary",
+        "destinationId": "capability.workflow-engine.execution-primitives",
+        "description": "calls"
+      },
+      {
+        "id": "relation.publication.primary.workflow-state",
+        "sourceId": "component.publication.primary",
+        "destinationId": "capability.workflow-engine.workflow-state",
+        "description": "calls"
+      },
+      {
+        "id": "relation.publication.provider-feedback.execution-primitives",
+        "sourceId": "component.publication.provider-feedback",
+        "destinationId": "capability.workflow-engine.execution-primitives",
+        "description": "calls"
+      },
+      {
+        "id": "relation.publication.provider-feedback.primary",
+        "sourceId": "component.publication.provider-feedback",
+        "destinationId": "component.publication.primary",
+        "description": "calls"
+      },
+      {
+        "id": "relation.publication.provider-feedback.workflow-state",
+        "sourceId": "component.publication.provider-feedback",
+        "destinationId": "capability.workflow-engine.workflow-state",
+        "description": "calls"
+      },
+      {
         "id": "relation.refactor-program.archctx-provider",
         "sourceId": "capability.runtime-harness.refactor-program",
         "destinationId": "component.refactor-program.archctx-provider",
         "description": "calls"
       },
       {
+        "id": "relation.refactor-program.archctx-provider.evidence-ledger",
+        "sourceId": "component.refactor-program.archctx-provider",
+        "destinationId": "capability.runtime-harness.evidence-ledger",
+        "description": "calls"
+      },
+      {
+        "id": "relation.refactor-program.archctx-provider.global-runtime-reconciliation",
+        "sourceId": "component.refactor-program.archctx-provider",
+        "destinationId": "capability.runtime-harness.global-runtime-reconciliation",
+        "description": "calls"
+      },
+      {
+        "id": "relation.refactor-program.mcp-sidecar",
+        "sourceId": "capability.runtime-harness.refactor-program",
+        "destinationId": "capability.runtime-harness.mcp-sidecar",
+        "description": "calls"
+      },
+      {
         "id": "relation.root-router.primary",
         "sourceId": "capability.public-surface.root-router",
         "destinationId": "component.root-router.primary",
+        "description": "calls"
+      },
+      {
+        "id": "relation.strategy-reflection.primary",
+        "sourceId": "capability.public-surface.strategy-reflection",
+        "destinationId": "component.strategy-reflection.primary",
+        "description": "calls"
+      },
+      {
+        "id": "relation.strategy-reflection.primary.skill-surface-catalog",
+        "sourceId": "component.strategy-reflection.primary",
+        "destinationId": "component.action-commands.skill-surface-catalog",
+        "description": "calls"
+      },
+      {
+        "id": "relation.strategy-reflection.primary.workflow-state",
+        "sourceId": "component.strategy-reflection.primary",
+        "destinationId": "capability.workflow-engine.workflow-state",
+        "description": "reads"
+      },
+      {
+        "id": "relation.task-agent-host.evidence-ledger",
+        "sourceId": "capability.runtime-harness.task-agent-host",
+        "destinationId": "capability.runtime-harness.evidence-ledger",
+        "description": "calls"
+      },
+      {
+        "id": "relation.task-agent-host.primary",
+        "sourceId": "capability.runtime-harness.task-agent-host",
+        "destinationId": "component.task-agent-host.primary",
+        "description": "calls"
+      },
+      {
+        "id": "relation.task-agent-host.primary.execution-primitives",
+        "sourceId": "component.task-agent-host.primary",
+        "destinationId": "capability.workflow-engine.execution-primitives",
+        "description": "calls"
+      },
+      {
+        "id": "relation.task-fleet.agent-runtime-effects",
+        "sourceId": "capability.organization.task-fleet",
+        "destinationId": "capability.runtime-harness.agent-runtime-effects",
+        "description": "calls"
+      },
+      {
+        "id": "relation.task-fleet.contract-assets",
+        "sourceId": "capability.organization.task-fleet",
+        "destinationId": "capability.workflow-engine.contract-assets",
+        "description": "calls"
+      },
+      {
+        "id": "relation.task-fleet.engineer-bindings",
+        "sourceId": "capability.organization.task-fleet",
+        "destinationId": "capability.runtime-harness.engineer-bindings",
+        "description": "calls"
+      },
+      {
+        "id": "relation.task-fleet.engineer-messages",
+        "sourceId": "capability.organization.task-fleet",
+        "destinationId": "capability.runtime-harness.engineer-messages",
+        "description": "calls"
+      },
+      {
+        "id": "relation.task-fleet.evidence-ledger",
+        "sourceId": "capability.organization.task-fleet",
+        "destinationId": "capability.runtime-harness.evidence-ledger",
+        "description": "calls"
+      },
+      {
+        "id": "relation.task-fleet.primary",
+        "sourceId": "capability.organization.task-fleet",
+        "destinationId": "component.task-fleet.primary",
+        "description": "calls"
+      },
+      {
+        "id": "relation.task-fleet.primary.execution-primitives",
+        "sourceId": "component.task-fleet.primary",
+        "destinationId": "capability.workflow-engine.execution-primitives",
+        "description": "calls"
+      },
+      {
+        "id": "relation.task-fleet.primary.task-inbox",
+        "sourceId": "component.task-fleet.primary",
+        "destinationId": "component.task-fleet.task-inbox",
+        "description": "calls"
+      },
+      {
+        "id": "relation.task-fleet.primary.workflow-state",
+        "sourceId": "component.task-fleet.primary",
+        "destinationId": "capability.workflow-engine.workflow-state",
+        "description": "reads"
+      },
+      {
+        "id": "relation.task-fleet.publication",
+        "sourceId": "capability.organization.task-fleet",
+        "destinationId": "capability.organization.publication",
+        "description": "calls"
+      },
+      {
+        "id": "relation.task-fleet.repo-registry",
+        "sourceId": "capability.organization.task-fleet",
+        "destinationId": "component.mcp-sidecar.repo-policy-registry",
+        "description": "reads"
+      },
+      {
+        "id": "relation.task-fleet.task-inbox.execution-primitives",
+        "sourceId": "component.task-fleet.task-inbox",
+        "destinationId": "capability.workflow-engine.execution-primitives",
+        "description": "calls"
+      },
+      {
+        "id": "relation.task-fleet.task-inbox.workflow-state",
+        "sourceId": "component.task-fleet.task-inbox",
+        "destinationId": "capability.workflow-engine.workflow-state",
         "description": "calls"
       },
       {
@@ -721,9 +2509,21 @@
         "description": "calls"
       },
       {
+        "id": "relation.verified-context.engineer-messages",
+        "sourceId": "capability.runtime-harness.verified-context",
+        "destinationId": "capability.runtime-harness.engineer-messages",
+        "description": "calls"
+      },
+      {
         "id": "relation.verified-context.primary",
         "sourceId": "capability.runtime-harness.verified-context",
         "destinationId": "component.verified-context.primary",
+        "description": "calls"
+      },
+      {
+        "id": "relation.verified-context.primary.execution-primitives",
+        "sourceId": "component.verified-context.primary",
+        "destinationId": "capability.workflow-engine.execution-primitives",
         "description": "calls"
       },
       {
@@ -739,9 +2539,99 @@
         "description": "calls"
       },
       {
+        "id": "relation.work-demand.execution-primitives",
+        "sourceId": "capability.runtime-harness.work-demand",
+        "destinationId": "capability.workflow-engine.execution-primitives",
+        "description": "calls"
+      },
+      {
         "id": "relation.work-demand.primary",
         "sourceId": "capability.runtime-harness.work-demand",
         "destinationId": "component.work-demand.primary",
+        "description": "calls"
+      },
+      {
+        "id": "relation.work-demand.workflow-state",
+        "sourceId": "capability.runtime-harness.work-demand",
+        "destinationId": "capability.workflow-engine.workflow-state",
+        "description": "writes"
+      },
+      {
+        "id": "relation.workflow-state.continuation-ledger.evidence-ledger",
+        "sourceId": "component.workflow-state.continuation-ledger",
+        "destinationId": "capability.runtime-harness.evidence-ledger",
+        "description": "calls"
+      },
+      {
+        "id": "relation.workflow-state.continuation-ledger.execution-primitives",
+        "sourceId": "component.workflow-state.continuation-ledger",
+        "destinationId": "capability.workflow-engine.execution-primitives",
+        "description": "calls"
+      },
+      {
+        "id": "relation.workflow-state.continuation-ledger.primary",
+        "sourceId": "component.workflow-state.continuation-ledger",
+        "destinationId": "component.workflow-state.primary",
+        "description": "calls"
+      },
+      {
+        "id": "relation.workflow-state.coordination-plane",
+        "sourceId": "capability.workflow-engine.workflow-state",
+        "destinationId": "component.workflow-state.coordination-plane",
+        "description": "calls"
+      },
+      {
+        "id": "relation.workflow-state.coordination-plane.continuation-ledger",
+        "sourceId": "component.workflow-state.coordination-plane",
+        "destinationId": "component.workflow-state.continuation-ledger",
+        "description": "calls"
+      },
+      {
+        "id": "relation.workflow-state.coordination-plane.evidence-ledger",
+        "sourceId": "component.workflow-state.coordination-plane",
+        "destinationId": "capability.runtime-harness.evidence-ledger",
+        "description": "calls"
+      },
+      {
+        "id": "relation.workflow-state.coordination-plane.execution-primitives",
+        "sourceId": "component.workflow-state.coordination-plane",
+        "destinationId": "capability.workflow-engine.execution-primitives",
+        "description": "calls"
+      },
+      {
+        "id": "relation.workflow-state.coordination-plane.primary",
+        "sourceId": "component.workflow-state.coordination-plane",
+        "destinationId": "component.workflow-state.primary",
+        "description": "calls"
+      },
+      {
+        "id": "relation.workflow-state.coordination-plane.task-agent-host",
+        "sourceId": "component.workflow-state.coordination-plane",
+        "destinationId": "capability.runtime-harness.task-agent-host",
+        "description": "reads"
+      },
+      {
+        "id": "relation.workflow-state.primary",
+        "sourceId": "capability.workflow-engine.workflow-state",
+        "destinationId": "component.workflow-state.primary",
+        "description": "calls"
+      },
+      {
+        "id": "relation.workflow-state.primary.contract-assets",
+        "sourceId": "component.workflow-state.primary",
+        "destinationId": "capability.workflow-engine.contract-assets",
+        "description": "calls"
+      },
+      {
+        "id": "relation.workflow-state.primary.evidence-ledger",
+        "sourceId": "component.workflow-state.primary",
+        "destinationId": "capability.runtime-harness.evidence-ledger",
+        "description": "calls"
+      },
+      {
+        "id": "relation.workflow-state.primary.execution-primitives",
+        "sourceId": "component.workflow-state.primary",
+        "destinationId": "capability.workflow-engine.execution-primitives",
         "description": "calls"
       }
     ]
@@ -750,9 +2640,12 @@
     "systemLandscape": {
       "key": "archcontext-landscape",
       "include": [
+        "capability.organization.publication",
+        "capability.organization.task-fleet",
         "capability.public-surface.action-commands",
         "capability.public-surface.adoption",
         "capability.public-surface.root-router",
+        "capability.public-surface.strategy-reflection",
         "capability.runtime-harness.agent-runtime-effects",
         "capability.runtime-harness.bound-task-freezes",
         "capability.runtime-harness.collaboration",
@@ -761,6 +2654,7 @@
         "capability.runtime-harness.engineer-messages",
         "capability.runtime-harness.engineer-scheduling",
         "capability.runtime-harness.engineering-overlay",
+        "capability.runtime-harness.evidence-ledger",
         "capability.runtime-harness.external-source-intake",
         "capability.runtime-harness.global-runtime-reconciliation",
         "capability.runtime-harness.hook-adapters",
@@ -768,42 +2662,86 @@
         "capability.runtime-harness.interface-change",
         "capability.runtime-harness.mcp-sidecar",
         "capability.runtime-harness.operator",
+        "capability.runtime-harness.pipeline-ledger",
         "capability.runtime-harness.pm-dispatch",
         "capability.runtime-harness.refactor-program",
+        "capability.runtime-harness.task-agent-host",
         "capability.runtime-harness.verified-context",
         "capability.runtime-harness.work-demand",
+        "capability.runtime-mcp.chatgpt-browser",
         "capability.runtime-mcp.general-repo-access",
+        "capability.verification.acceptance-review",
         "capability.verification.codegraph-readiness",
         "capability.verification.evals-checks",
         "capability.workflow-engine.contract-assets",
+        "capability.workflow-engine.execution-primitives",
         "capability.workflow-engine.inspection-migration",
+        "capability.workflow-engine.workflow-state",
+        "component.acceptance-review.primary",
+        "component.action-commands.bundled-skills",
         "component.action-commands.primary",
+        "component.action-commands.skill-surface-catalog",
         "component.adoption.primary",
         "component.agent-runtime-effects.journal",
         "component.bound-task-freezes.primary",
+        "component.chatgpt-browser.primary",
         "component.codegraph-readiness.primary",
         "component.collaboration.primary",
+        "component.contract-assets.capability-registry",
+        "component.contract-assets.contract-worktree-lifecycle",
+        "component.contract-assets.planning-helpers",
         "component.contract-assets.primary",
+        "component.contract-assets.template-projection",
         "component.delegated-runs.primary",
         "component.engineer-bindings.primary",
         "component.engineer-messages.primary",
         "component.engineer-scheduling.primary",
         "component.engineering-overlay.primary",
+        "component.evals-checks.ci-selection",
+        "component.evals-checks.evals-and-benchmarks",
         "component.evals-checks.primary",
+        "component.evals-checks.test-suite",
+        "component.evals-checks.workflow-gates",
+        "component.evidence-ledger.primary",
+        "component.execution-primitives.primary",
         "component.external-source-intake.immutable-evidence",
         "component.general-repo-access.primary",
+        "component.global-runtime-reconciliation.archctx-closure",
+        "component.global-runtime-reconciliation.cli-root",
         "component.global-runtime-reconciliation.primary",
+        "component.global-runtime-reconciliation.release-packaging",
+        "component.hook-adapters.edit-guards",
+        "component.hook-adapters.host-installer",
         "component.hook-adapters.primary",
+        "component.hook-adapters.session-lifecycle",
         "component.inspection-migration.primary",
         "component.integration-acceptance.primary",
         "component.interface-change.primary",
+        "component.mcp-sidecar.coding-profile",
+        "component.mcp-sidecar.host-setup",
         "component.mcp-sidecar.primary",
+        "component.mcp-sidecar.repo-policy-registry",
+        "component.mcp-sidecar.transport-auth",
+        "component.operator.activity-feeds",
+        "component.operator.architecture-view",
         "component.operator.primary",
+        "component.operator.view-projections",
+        "component.operator.web-console",
+        "component.pipeline-ledger.primary",
         "component.pm-dispatch.primary",
+        "component.publication.primary",
+        "component.publication.provider-feedback",
         "component.refactor-program.archctx-provider",
         "component.root-router.primary",
+        "component.strategy-reflection.primary",
+        "component.task-agent-host.primary",
+        "component.task-fleet.primary",
+        "component.task-fleet.task-inbox",
         "component.verified-context.primary",
-        "component.work-demand.primary"
+        "component.work-demand.primary",
+        "component.workflow-state.continuation-ledger",
+        "component.workflow-state.coordination-plane",
+        "component.workflow-state.primary"
       ]
     }
   }

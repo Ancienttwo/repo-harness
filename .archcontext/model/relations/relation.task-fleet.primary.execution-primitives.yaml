@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.task-fleet.primary.execution-primitives
+kind: calls
+source: component.task-fleet.primary
+target: capability.workflow-engine.execution-primitives
+intent: "Read the worktree topology during fleet acquire"

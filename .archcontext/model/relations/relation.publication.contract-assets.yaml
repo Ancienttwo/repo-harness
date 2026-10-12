@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.publication.contract-assets
+kind: calls
+source: capability.organization.publication
+target: capability.workflow-engine.contract-assets
+intent: "Recompute the candidate diff with the packaged merge gate and worktree merge helper"

@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.operator.activity-feeds.pipeline-ledger
+kind: reads
+source: component.operator.activity-feeds
+target: capability.runtime-harness.pipeline-ledger
+intent: "Read pipeline records into the activity snapshot"

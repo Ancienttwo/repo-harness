@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.global-runtime-reconciliation.cli-root.collaboration
+kind: calls
+source: component.global-runtime-reconciliation.cli-root
+target: capability.runtime-harness.collaboration
+intent: "Register the collaboration command"

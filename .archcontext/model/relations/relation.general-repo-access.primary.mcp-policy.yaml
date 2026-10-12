@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.general-repo-access.primary.mcp-policy
+kind: calls
+source: component.general-repo-access.primary
+target: component.mcp-sidecar.repo-policy-registry
+intent: "Resolve registered repositories then redact and audit through the shared MCP policy"

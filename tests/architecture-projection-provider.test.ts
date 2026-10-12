@@ -96,14 +96,14 @@ function fixture() {
   mkdirSync(join(repoRoot, '.ai', 'harness'), { recursive: true });
   mkdirSync(join(repoRoot, '.archcontext', 'model', 'nodes'), { recursive: true });
   mkdirSync(join(repoRoot, 'src', 'core'), { recursive: true });
-  writeFileSync(join(packageRoot, 'package.json'), `${JSON.stringify({ name: 'archctx', version: '0.6.3', engines: { node: '>=22.22 <26' }, bin: { archctx: './bin/archctx' } })}\n`);
+  writeFileSync(join(packageRoot, 'package.json'), `${JSON.stringify({ name: 'archctx', version: '0.7.0', engines: { node: '>=22.22 <26' }, bin: { archctx: './bin/archctx' } })}\n`);
   const binary = join(packageRoot, 'bin', 'archctx');
   writeFileSync(binary, '#!/bin/sh\nexit 99\n');
   chmodSync(binary, 0o755);
   symlinkSync(join('..', 'archctx', 'bin', 'archctx'), join(binRoot, 'archctx'));
   writeFileSync(join(repoRoot, '.ai', 'harness', 'policy.json'), `${JSON.stringify({
     context: { capability_source: 'archcontext' },
-    architecture: { projection_provider: 'archctx', projection_apply: 'manual', projection_version: '0.6.3', projection_timeout_ms: 120000 },
+    architecture: { projection_provider: 'archctx', projection_apply: 'manual', projection_version: '0.7.0', projection_timeout_ms: 120000 },
   })}\n`);
   writeFileSync(join(repoRoot, '.archcontext', 'model', 'nodes', 'capability.test.core.yaml'), `schemaVersion: archcontext.node/v2
 kind: capability
@@ -144,7 +144,7 @@ function vendorArchctx(root: string, version: string): string {
   return binary;
 }
 
-function capabilities(version = '0.6.3') {
+function capabilities(version = '0.7.0') {
   return {
     schemaVersion: 'archcontext.capabilities/v1',
     package: { name: 'archctx', version },
@@ -153,7 +153,7 @@ function capabilities(version = '0.6.3') {
       projectionResult: 'archcontext.projection-result/v2',
       architectureRefreshSignal: 'archcontext.architecture-refresh-signal/v1',
     },
-    renderers: { architectureDocs: 'archcontext.docs-renderer/v4', agentContext: 'archcontext.agent-context-renderer/v1' },
+    renderers: { architectureDocs: 'archcontext.docs-renderer/v5', agentContext: 'archcontext.agent-context-renderer/v1' },
     features: ['architecture-docs-renderer-v2', 'architecture-refresh-signal-v1', 'projection-apply-receipt-v1', 'projection-prior-committed-applies-v1', 'projection-protocol-v2', 'projection-apply-readback-v1'],
   };
 }
@@ -180,9 +180,9 @@ function projectionEnvelope(expected: ProjectionRequestV1['expected']) {
     codeGraphDigest: digest('4'),
     indexedWorktreeDigest: digest('1'),
     projectionInputDigest: digest('5'),
-    rendererVersion: 'archcontext.docs-renderer/v4' as const,
+    rendererVersion: 'archcontext.docs-renderer/v5' as const,
     layoutVersion: 'archcontext.docs-layout/v1' as const,
-    generatedFrom: { codeGraphPackage: '@colbymchenry/codegraph' as const, codeGraphVersion: '1.6.1' as const, codeGraphBinaryDigest: digest('6'), codeGraphStatus: 'ready' as const },
+    generatedFrom: { codeGraphPackage: '@colbymchenry/codegraph' as const, codeGraphVersion: '1.6.1' as const, codeGraphStatus: 'ready' as const },
   };
   const withoutReceipt = {
     schemaVersion: 'archcontext.projection-result/v2' as const,
@@ -208,9 +208,9 @@ function applyEnvelope(
     ...originalExpected,
     baseHeadSha: originalExpected.headSha,
     sourceTreeDigest: digest('2'), modelDigest: digest('3'), codeGraphDigest: digest('4'), indexedWorktreeDigest: digest('1'), projectionInputDigest: digest('5'),
-    rendererVersion: 'archcontext.docs-renderer/v4' as const,
+    rendererVersion: 'archcontext.docs-renderer/v5' as const,
     layoutVersion: 'archcontext.docs-layout/v1' as const,
-    generatedFrom: { codeGraphPackage: '@colbymchenry/codegraph' as const, codeGraphVersion: '1.6.1' as const, codeGraphBinaryDigest: digest('6'), codeGraphStatus: 'ready' as const },
+    generatedFrom: { codeGraphPackage: '@colbymchenry/codegraph' as const, codeGraphVersion: '1.6.1' as const, codeGraphStatus: 'ready' as const },
   };
   const applyReceipt = {
     schemaVersion: 'archcontext.projection-apply-identity/v1' as const,
@@ -321,7 +321,7 @@ function absentApplyReadback(request: ProjectionRequestV1) {
     data: { ...body, absenceDigest: digestProjectionJson(body) } };
 }
 
-function unresolvedAcceptanceResult(request: ProjectionRequestV1): ProjectionResultV2 {
+function unresolvedAcceptanceResult(request: ProjectionRequestV1, signalDigit = '9'): ProjectionResultV2 {
   const change: NonNullable<ProjectionRequestV1['acceptedChange']> = {
     changeSetId: 'changeset.pending-acceptance',
     eventId: 'event.pending-acceptance',
@@ -332,7 +332,7 @@ function unresolvedAcceptanceResult(request: ProjectionRequestV1): ProjectionRes
   const { acceptedChange: _acceptedChange, ...refreshSignal } = applied.refreshSignals[0]!;
   const signal: ArchitectureRefreshSignalV1 = {
     ...refreshSignal,
-    signalId: digest('9'),
+    signalId: digest(signalDigit),
     mode: 'human-action-required',
     cause: 'unresolved-major-candidate',
   };
@@ -376,10 +376,36 @@ describe('package-local ArchContext projection provider', () => {
     };
     const result = applyArchitectureProjection(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run });
     expect(result.status).toBe('applied');
-    expect(wireRequests.map((entry) => entry.requestId)).toEqual(['repo-harness.apply', 'repo-harness.apply.accepted']);
+    expect(wireRequests.map((entry) => entry.requestId)).toEqual(['repo-harness.apply', 'repo-harness.apply.accepted.9999999999999999']);
     expect(wireRequests[1]!.acceptedChange).toMatchObject({ reasonCodes: ['responsibility-changed'], affectedNodeIds: ['capability.test.core'] });
     expect(result.applyReceipt?.acceptedChange).toEqual(wireRequests[1]!.acceptedChange!);
     expect(existsSync(join(f.repoRoot, '.ai/harness/architecture-projection'))).toBe(false);
+  });
+
+  test('a second major change in the same workspace is applied under its own request id', () => {
+    const f = fixture();
+    const committedRequests = new Map<string, string>();
+    let signalDigit = '9';
+    const run: RunArchctxProcess = (_binary, args) => {
+      if (args[0] === 'capabilities') return { status: 0, signal: null, stdout: JSON.stringify(capabilities()), stderr: '' };
+      const wireRequest = JSON.parse(args[3]!) as ProjectionRequestV1;
+      if (!wireRequest.acceptedChange) {
+        return { status: 0, signal: null, stdout: JSON.stringify({ schemaVersion: 'archcontext.envelope/v1', ok: true, requestId: 'projection.run', data: unresolvedAcceptanceResult(wireRequest, signalDigit) }), stderr: '' };
+      }
+      // ArchContext replays only an identical request under a committed requestId.
+      const previous = committedRequests.get(wireRequest.requestId);
+      if (previous !== undefined && previous !== args[3]) {
+        return { status: 1, signal: null, stdout: '', stderr: `AC_PROJECTION_APPLY_COMMITTED: requestId ${wireRequest.requestId} already committed an apply for a different request` };
+      }
+      committedRequests.set(wireRequest.requestId, args[3]!);
+      return { status: 0, signal: null, stdout: JSON.stringify(committedApplyEnvelope(wireRequest)), stderr: '' };
+    };
+
+    expect(applyArchitectureProjection(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run }).status).toBe('applied');
+    writeFileSync(join(f.repoRoot, 'model-change.txt'), 'second responsibility change\n');
+    signalDigit = '7';
+    expect(applyArchitectureProjection(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run }).status).toBe('applied');
+    expect([...committedRequests.keys()]).toEqual(['repo-harness.apply.accepted.9999999999999999', 'repo-harness.apply.accepted.7777777777777777']);
   });
 
   test('apply without a major change runs the provider once', () => {
@@ -544,7 +570,7 @@ describe('package-local ArchContext projection provider', () => {
     const resolved = resolvePackageLocalArchctx(f.consumerRoot);
     expect(resolved.binaryPath).toBe(realpathSync(f.binary));
     writeFileSync(join(f.consumerRoot, 'node_modules', 'archctx', 'package.json'), '{"name":"archctx","version":"0.3.0"}\n');
-    expect(() => resolvePackageLocalArchctx(f.consumerRoot)).toThrow('expected archctx@0.6.3');
+    expect(() => resolvePackageLocalArchctx(f.consumerRoot)).toThrow('expected archctx@0.7.0');
   });
 
   test('resolves a hoisted package from an installed repo-harness package root', () => {
@@ -851,7 +877,7 @@ describe('package-local ArchContext projection provider', () => {
     expect(manifest.devDependencies?.['archctx-contracts']).toBeUndefined();
     expect(manifest.scripts?.['check:archctx-integration']).toBe('bun scripts/axr5-archctx-clean-room.ts');
     expect(readback.status).toBe('verified');
-    expect(readback.packages.contracts.version).toBe('0.6.3');
+    expect(readback.packages.contracts.version).toBe('0.7.0');
     expect(Object.keys(readback.packages.contracts).sort()).toEqual(['file', 'name', 'version']);
     expect(Object.keys(readback.packages.archctx).sort()).toEqual(['file', 'name', 'version']);
     expect(readback.consumer.authoritativeNodeSchema).toBe('archcontext.node/v2');

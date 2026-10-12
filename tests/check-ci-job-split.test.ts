@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -95,50 +95,34 @@ describe('single affected verification and daily fallback', () => {
     expect(reporter.jobs.report.steps.find((step: any) => step.uses === 'actions/checkout@v4').with.ref).toBe('main');
   });
 
-  test('Windows PR acceptance uses a read-only exact head and the unchanged native matrix', () => {
-    const native = Bun.YAML.parse(readFileSync(join(ROOT, '.github/workflows/windows-protected-helper.yml'), 'utf8')) as any;
-    expect(Object.keys(native.on)).toEqual(['pull_request']);
-    expect(native.on.pull_request.types).toEqual(['opened', 'synchronize', 'reopened']);
-    expect(native.on.pull_request.paths).toContain('src/effects/runtime/protected-helper-platform.ts');
-    expect(native.on.pull_request.paths).toContain('tests/cli/mcp-oauth.test.ts');
-    expect(native.on.pull_request.paths).toContain('.github/workflows/windows-protected-helper.yml');
-    expect(native.on.pull_request.paths).not.toContain('**');
-    expect(native.permissions).toEqual({ contents: 'read' });
-    const job = native.jobs['windows-protected-helper'];
-    expect(job['runs-on']).toBe('windows-latest');
-    expect(job['timeout-minutes']).toBe(60);
+  test('daily native path matrix owns the Windows protected helper contract and Git-layout smoke', () => {
+    for (const retired of ['pm-acceptance.yml', 'windows-protected-helper.yml']) {
+      expect(existsSync(join(ROOT, '.github/workflows', retired))).toBe(false);
+    }
+    for (const lane of ['governance', 'test', 'mcp-path-matrix']) {
+      expect(workflow.jobs[lane].if).toBe("needs.selection.outputs.mode == 'daily'");
+    }
+    const job = workflow.jobs['mcp-path-matrix'];
     expect(job['continue-on-error']).toBeUndefined();
-    expect(job.permissions).toBeUndefined();
-    expect(job.env.REPO_HARNESS_WINDOWS_PROTECTED_HELPER_SMOKE).toBe('1');
-    const checkout = job.steps.find((step: any) => step.uses === 'actions/checkout@v4');
-    expect(checkout.with).toEqual({ ref: '${{ github.event.pull_request.head.sha }}', 'persist-credentials': false });
-    expect(job.steps.find((step: any) => step.uses === 'actions/setup-node@v4').with['node-version']).toBe('24');
-    expect(job.steps.find((step: any) => step.uses === 'oven-sh/setup-bun@v2').with['bun-version']).toBe('1.4.3');
-    expect(job.steps.some((step: any) => step.run === 'bun install --frozen-lockfile')).toBe(true);
-    const matrix = job.steps.find((step: any) => step.name === 'Run the native Windows path matrix and contract tests');
-    const daily = workflow.jobs['mcp-path-matrix'].steps.find((step: any) => step.name === 'Run the native path tests');
     const testFiles = (command: string): string[] => command.match(/tests\/[\w/.-]+\.test\.ts/g) ?? [];
-    expect(testFiles(matrix.run)).toEqual([
-      ...testFiles(daily.run), 'tests/unit/windows-protected-helper-platform-contract.test.ts',
-    ]);
-    const forced = job.steps.find((step: any) => step.name === 'Run smoke with each installed internal Git first on PATH');
-    expect(forced.run).toContain('for layout in mingw64 ucrt64');
-    expect(forced.run).toContain('[[ ! -f "$internal/git.exe" ]]');
-    expect(forced.run).toContain('export PATH="$internal:$PATH"');
-    expect(forced.run).toContain('test "$tested" -gt 0');
-    expect(testFiles(forced.run)).toEqual(['tests/cli/windows-protected-helper-runtime-smoke.test.ts']);
-    const identity = job.steps.find((step: any) => step.name === 'Record the native candidate and tools');
-    expect(identity.env.EXPECTED_HEAD).toBe('${{ github.event.pull_request.head.sha }}');
-    expect(identity.run).toContain('test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"');
-    expect(identity.run).toContain('where.exe git');
-    expect(identity.run).toContain('git --version');
+    const matrix = job.steps.find((step: any) => step.name === 'Run the native path tests');
+    expect(testFiles(matrix.run)).toContain('tests/unit/windows-protected-helper-platform-contract.test.ts');
+    const forced = job.steps.filter((step: any) => step.name === 'Run smoke with each installed internal Git first on PATH');
+    expect(forced).toHaveLength(1);
+    expect(forced[0].if).toBe("matrix.os == 'windows-latest'");
+    expect(forced[0].shell).toBe('bash');
+    expect(forced[0].env.REPO_HARNESS_WINDOWS_PROTECTED_HELPER_SMOKE).toBe('1');
+    expect(forced[0].run).toContain('for layout in mingw64 ucrt64');
+    expect(forced[0].run).toContain('[[ ! -f "$internal/git.exe" ]]');
+    expect(forced[0].run).toContain('export PATH="$internal:$PATH"');
+    expect(forced[0].run).toContain('test "$tested" -gt 0');
+    expect(testFiles(forced[0].run)).toEqual(['tests/cli/windows-protected-helper-runtime-smoke.test.ts']);
     for (const step of job.steps) {
       expect(step['continue-on-error']).toBeUndefined();
       if (step.shell !== 'bash') continue;
       const syntax = spawnSync('/bin/bash', ['-n'], { input: step.run, encoding: 'utf8' });
       expect(syntax.status, syntax.stderr).toBe(0);
     }
-    expect(JSON.stringify(native)).not.toContain('secrets.');
   });
 
   test('real aggregate shell rejects failure, cancellation, omission and invalid coverage', () => {
@@ -192,40 +176,6 @@ describe('single affected verification and daily fallback', () => {
       'test -s dist/oar-coding-host.js',
       'bun run test:files tests/generic-review.test.ts tests/acceptance-receipt.test.ts tests/cli/cross-review.test.ts tests/herdr-task-lifecycle.test.ts tests/cli/pm.test.ts --timeout 60000 --max-concurrency 1',
     ]);
-  });
-
-  test('PM candidate acceptance runs full lanes on one immutable head with read-only permissions', () => {
-    const pm = Bun.YAML.parse(readFileSync(join(ROOT, '.github/workflows/pm-acceptance.yml'), 'utf8')) as any;
-    expect(Object.keys(pm.on)).toEqual(['pull_request']);
-    expect(pm.permissions).toEqual({ contents: 'read' });
-    expect(pm.on.pull_request.paths).toContain('tests/cli/pm.test.ts');
-    const job = pm.jobs.candidate;
-    expect(job.strategy.matrix.lane).toEqual(['governance', 'functional']);
-    expect(job.strategy['fail-fast']).toBe(false);
-    expect(job['continue-on-error']).toBeUndefined();
-    expect(job.steps.every((step: any) => step['continue-on-error'] === undefined)).toBe(true);
-    expect(job.steps.find((step: any) => step.uses === 'actions/checkout@v4').with).toEqual({
-      ref: '${{ github.event.pull_request.head.sha }}', 'fetch-depth': 0, 'persist-credentials': false,
-    });
-    expect(job.env.EXPECTED_SHA).toBe('${{ github.event.pull_request.head.sha }}');
-    expect(job.steps.find((step: any) => step.uses === 'oven-sh/setup-bun@v2').with['bun-version']).toBe('1.4.3');
-    // Functional fixtures own their own Git refs. Governance refs must not leak.
-    expect(job.env.REPO_HARNESS_DIFF_BASE).toBeUndefined();
-    expect(job.env.REPO_HARNESS_DIFF_MODE).toBeUndefined();
-    const governance = job.steps.find((step: any) => step.name === 'Run candidate governance');
-    expect(governance.if).toBe("matrix.lane == 'governance'");
-    expect(governance.env).toEqual({ REPO_HARNESS_DIFF_BASE: '${{ github.event.pull_request.base.sha }}', REPO_HARNESS_DIFF_MODE: 'direct' });
-    expect(governance.run).toBe('bash scripts/check-ci.sh governance');
-    expect(job.env.REPO_HARNESS_TEST_EXPENSIVE).toBe('1');
-    expect(job.steps.find((step: any) => step.name === 'Record the immutable candidate').run)
-      .toContain('test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"');
-    const functional = job.steps.find((step: any) => step.name === 'Run full functional acceptance');
-    expect(functional.if).toBe("matrix.lane == 'functional'");
-    expect(functional.env).toBeUndefined();
-    expect(functional.run).toBe('bash scripts/check-ci.sh functional');
-    for (const lane of ['governance', 'test', 'mcp-path-matrix']) {
-      expect(workflow.jobs[lane].if).toBe("needs.selection.outputs.mode == 'daily'");
-    }
   });
 
   test('selector uses actual complete Git PR diff and outputs selected files', () => {

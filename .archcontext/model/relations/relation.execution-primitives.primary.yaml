@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.execution-primitives.primary
+kind: calls
+source: capability.workflow-engine.execution-primitives
+target: component.execution-primitives.primary
+intent: "Run a bounded child process"

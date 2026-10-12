@@ -1,0 +1,33 @@
+schemaVersion: archcontext.node/v2
+id: component.action-commands.skill-surface-catalog
+kind: component
+name: "Skill Surface Catalog"
+status: active
+parent: capability.public-surface.action-commands
+summary: "Parses the manifest into a closed catalog and computes the facade, external skill and host placement projections per profile."
+responsibilities:
+  - Parse and validate manifest.json without file or process access.
+  - Compute the profile and host projections that installers, doctor and the routing eval consume.
+  - Check the skill version pins.
+source:
+  include:
+    - src/core/skill-surface/**
+    - scripts/skill-surface-select.ts
+    - scripts/run-skill-routing-eval.ts
+    - scripts/check-skill-version.ts
+    - assets/skill-version.json
+    - .claude/.skill-version
+  entrypoints:
+    - id: entrypoint.action-commands.profile-projection
+      path: scripts/skill-surface-select.ts
+      symbols:
+        - name: main
+          sinks:
+            - id: sink.action-commands.facades-for-profile
+              path: src/core/skill-surface/catalog.ts
+              symbol: facadesForProfile
+        - name: loadCatalog
+          sinks:
+            - id: sink.action-commands.parse-catalog
+              path: src/core/skill-surface/catalog.ts
+              symbol: parseSkillSurfaceCatalog

@@ -9,10 +9,11 @@ Preserve other workers' changes; do not broaden the task or add unrequested abst
 State any authorized deletion, credential/permission change or release/production operation.
 
 ## Verify
-Name typecheck and affected tests, the expected observable result and relevant environment.
-One execution owner runs the final checks once; reviewers consume its recorded evidence.
-Use `--timeout 60000 --max-concurrency 1` for affected Bun tests; hand long runs to the parent.
-Report actual command outcomes, evidence limits, changed paths and remaining risks.
+Name the build, typecheck and affected tests that the parent runs after integration.
+State the expected observable result and relevant environment.
+An implementation sub-agent does not run build, typecheck or tests. It commits early only in its own worktree, then returns. In a shared checkout it does not commit; the parent commits.
+An evidence role, such as a root-cause prover or an evaluator, runs the named check that is its task and does not commit.
+Report commits, changed paths, unchecked assumptions and remaining risks.
 
 ## Rollback
 Name the publication tag/commit and the exact revert command or bounded recovery action.

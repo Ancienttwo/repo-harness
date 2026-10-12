@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.integration-acceptance.primary.workflow-state
+kind: reads
+source: component.integration-acceptance.primary
+target: capability.workflow-engine.workflow-state
+intent: "Read the task lease for the integration envelope"

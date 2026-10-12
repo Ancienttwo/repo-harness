@@ -1,0 +1,66 @@
+schemaVersion: archcontext.flow/v1
+id: flow.execution-primitives.primary
+capabilityId: capability.workflow-engine.execution-primitives
+name: Run one bounded child process
+applicability: required
+participants:
+  - id: capability
+    nodeId: capability.workflow-engine.execution-primitives
+  - id: runner
+    nodeId: component.execution-primitives.primary
+steps:
+  - id: start
+    from: capability
+    to: runner
+    label: Start the child under the process-group supervisor when the caller asks for a group
+    evidence:
+      entrypointId: entrypoint.execution-primitives.primary
+      sourceSymbol: runProcess
+      sinkId: sink.execution-primitives.primary
+  - id: expensive-lock
+    from: capability
+    to: runner
+    label: Hold the clone-wide expensive-run lock before an expensive child starts
+    evidence:
+      entrypointId: entrypoint.execution-primitives.supervisor
+      sourceSymbol: supervise
+      sinkId: sink.execution-primitives.expensive-lock
+  - id: common-dir
+    from: capability
+    to: runner
+    label: Place the expensive-run lock under the Git common dir
+    evidence:
+      entrypointId: entrypoint.execution-primitives.expensive-lock
+      sourceSymbol: acquireExpensiveRunLock
+      sinkId: sink.execution-primitives.git-common-dir
+outcomes:
+  - id: success
+    kind: success
+    label: The child exits inside its deadline
+    steps:
+      - id: cap-output
+        from: capability
+        to: runner
+        label: Redact secrets and cap stdout and stderr
+        evidence:
+          entrypointId: entrypoint.execution-primitives.primary
+          sourceSymbol: runProcess
+          sinkId: sink.execution-primitives.output-cap
+    terminal:
+      participant: runner
+      label: Return the status with redacted capped output
+  - id: error
+    kind: error
+    label: The supervisor receipt disagrees with the exit or the deadline passes
+    steps:
+      - id: kill-group
+        from: capability
+        to: runner
+        label: Terminate the abandoned process group
+        evidence:
+          entrypointId: entrypoint.execution-primitives.primary
+          sourceSymbol: runSupervisedProcess
+          sinkId: sink.execution-primitives.abandoned-group
+    terminal:
+      participant: capability
+      label: Return ok false with a redacted error

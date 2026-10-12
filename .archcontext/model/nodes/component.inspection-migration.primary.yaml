@@ -4,4 +4,15 @@ kind: component
 name: "Repository Inspector Process"
 status: active
 parent: capability.workflow-engine.inspection-migration
-summary: "Executes the reviewed inspect before migration boundary."
+summary: "Reports repository mode, drift signals and required decisions without writes, and holds the shell scaffold library."
+responsibilities:
+  - "Inspect a repository read-only against the package contract inventory."
+  - "Create contract directories and install scaffold files through the shell scaffold library."
+source:
+  include:
+    - scripts/inspect-project-state.ts
+    - scripts/create-project-dirs.sh
+    - scripts/init-project.sh
+    - scripts/lib/**
+    - scripts/AGENTS.md
+    - scripts/CLAUDE.md

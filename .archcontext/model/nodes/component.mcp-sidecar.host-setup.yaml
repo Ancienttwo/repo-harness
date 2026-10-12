@@ -1,0 +1,27 @@
+schemaVersion: archcontext.node/v2
+id: component.mcp-sidecar.host-setup
+kind: component
+name: "CLI and Host Setup"
+status: active
+parent: capability.runtime-harness.mcp-sidecar
+summary: "Owns the mcp CLI command, host setup for ChatGPT and Codex, the doctors and owned uninstall."
+responsibilities:
+  - Parse mcp serve, doctor, set, list, cleanup, setup and uninstall commands.
+  - Write the user-level config and credentials under a setup lock with ownership receipts.
+  - Run the static and live doctors against the same tool composition the server serves.
+source:
+  include:
+    - src/cli/commands/mcp.ts
+    - src/cli/mcp/setup.ts
+    - src/cli/mcp/setup-ownership.ts
+    - src/cli/mcp/uninstall.ts
+    - docs/repo-harness-chatgpt-mcp-setup.md
+  entrypoints:
+    - id: entrypoint.mcp-sidecar.cli
+      path: src/cli/commands/mcp.ts
+      symbols:
+        - name: buildMcpCommand
+          sinks:
+            - id: sink.mcp-sidecar.http-start
+              path: src/cli/mcp/transports/http.ts
+              symbol: startMcpHttp

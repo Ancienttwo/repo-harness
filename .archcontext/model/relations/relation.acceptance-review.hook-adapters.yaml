@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.acceptance-review.hook-adapters
+kind: calls
+source: capability.verification.acceptance-review
+target: capability.runtime-harness.hook-adapters
+intent: "Admit at most one persistent semantic review session per work package through the circuit breaker"

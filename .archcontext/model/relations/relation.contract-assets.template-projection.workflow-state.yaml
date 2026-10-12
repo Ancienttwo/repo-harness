@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.contract-assets.template-projection.workflow-state
+kind: calls
+source: component.contract-assets.template-projection
+target: capability.workflow-engine.workflow-state
+intent: "Check cutover quiescence and record the coordination cutover during init"

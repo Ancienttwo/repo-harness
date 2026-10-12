@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.global-runtime-reconciliation.primary.codegraph-readiness
+kind: calls
+source: component.global-runtime-reconciliation.primary
+target: capability.verification.codegraph-readiness
+intent: "Configure the exact CodeGraph CLI and MCP registration"

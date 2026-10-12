@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.contract-assets.contract-worktree-lifecycle.workflow-state
+kind: calls
+source: component.contract-assets.contract-worktree-lifecycle
+target: capability.workflow-engine.workflow-state
+intent: "Create and remove task worktrees under the worktree topology lock"

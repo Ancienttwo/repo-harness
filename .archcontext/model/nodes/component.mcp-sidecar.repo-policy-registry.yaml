@@ -1,0 +1,25 @@
+schemaVersion: archcontext.node/v2
+id: component.mcp-sidecar.repo-policy-registry
+kind: component
+name: "Config Policy and Repository Registry"
+status: active
+parent: capability.runtime-harness.mcp-sidecar
+summary: "Holds the user-level MCP config and credentials, the profile path policy, redaction, audit and the registered repository grants."
+responsibilities:
+  - Read and write the single user-level MCP config and credential store.
+  - Resolve repository roots and paths under the profile policy and contain workspace paths.
+  - Redact secrets and append the redacted MCP audit log.
+  - Own registered repository records and read_write grants with their authorization revision.
+source:
+  include:
+    - src/cli/mcp/auth.ts
+    - src/cli/mcp/types.ts
+    - src/cli/mcp/policy.ts
+    - src/cli/mcp/paths.ts
+    - src/cli/mcp/repo.ts
+    - src/cli/mcp/redaction.ts
+    - src/cli/mcp/guarded-write.ts
+    - src/cli/mcp/workspaces.ts
+    - src/cli/mcp/audit.ts
+    - src/effects/repo-registry.ts
+    - src/core/security/**

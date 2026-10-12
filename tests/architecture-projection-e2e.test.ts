@@ -31,7 +31,7 @@ describe("AXR7 repo-harness architecture consumer", () => {
     expect(capabilities.length).toBeGreaterThan(0);
     expect(new Set(capabilities.map(node => node.id)).size).toBe(capabilities.length);
     expect(new Set(components.map(node => node.parent))).toEqual(new Set(capabilities.map(node => node.id)));
-    expect(components).toHaveLength(27);
+    expect(components).toHaveLength(65);
     // C4 declared the collaboration -> delegated-runs relation and the
     // delegated-contribution flow; C6 adds the collaboration -> bound-task-freezes
     // relation its read-time succession proof crosses, and the context-delivery
@@ -42,8 +42,11 @@ describe("AXR7 repo-harness architecture consumer", () => {
     // Retiring the Refactor Program lifecycle (one component, one relation)
     // and the automation scheduler (two components, two relations, two flows)
     // removes them from the model.
-    expect(relations).toHaveLength(51);
-    expect(flows).toHaveLength(34);
+    // The 2026-10-11 architecture coverage pass adds ten capabilities, 38
+    // components, 146 group relations, 105 verified cross-group relations and
+    // 18 flows.
+    expect(relations).toHaveLength(302);
+    expect(flows).toHaveLength(52);
     expect(flows.every((flow) => flow.schemaVersion === "archcontext.flow/v1")).toBe(true);
     expect(flows.every((flow) => flow.applicability === "required")).toBe(true);
     expect(new Set(flows.map((flow) => flow.capabilityId))).toEqual(new Set(capabilities.map((node) => node.id)));
@@ -84,17 +87,18 @@ describe("AXR7 repo-harness architecture consumer", () => {
       provenance?: {
         rendererVersion?: string;
         layoutVersion?: string;
-        indexedWorktreeDigest?: string | null;
+        sourceTreeDigest?: string;
         projectionInputDigest?: string;
-        generatedFrom?: { codeGraphVersion?: string; codeGraphStatus?: string };
+        generatedFrom?: { codeGraphPackage?: string; codeGraphVersion?: string };
       };
     };
     expect(manifest.profile).toBe("repo-harness/v1");
-    expect(manifest.targetCount).toBe(33);
-    expect(manifest.provenance?.rendererVersion).toBe("archcontext.docs-renderer/v4");
+    expect(manifest.targetCount).toBe(43);
+    expect(manifest.provenance?.rendererVersion).toBe("archcontext.docs-renderer/v5");
     expect(manifest.provenance?.layoutVersion).toBe("archcontext.docs-layout/v1");
-    expect(manifest.provenance?.generatedFrom).toMatchObject({ codeGraphVersion: "1.6.1", codeGraphStatus: "ready" });
-    expect(manifest.provenance?.indexedWorktreeDigest).toMatch(/^sha256:[a-f0-9]{64}$/);
+    // Provenance v3 keeps only the reproducible CodeGraph identity, not the local index state.
+    expect(manifest.provenance?.generatedFrom).toEqual({ codeGraphPackage: "@colbymchenry/codegraph", codeGraphVersion: "1.6.1" });
+    expect(manifest.provenance?.sourceTreeDigest).toMatch(/^sha256:[a-f0-9]{64}$/);
     expect(manifest.provenance?.projectionInputDigest).toMatch(/^sha256:[a-f0-9]{64}$/);
   });
 

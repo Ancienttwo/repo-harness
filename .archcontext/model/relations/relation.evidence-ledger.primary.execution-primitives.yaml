@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.evidence-ledger.primary.execution-primitives
+kind: calls
+source: component.evidence-ledger.primary
+target: capability.workflow-engine.execution-primitives
+intent: "Hold exclusive directory locks under the Git common directory and read the virtual tree"

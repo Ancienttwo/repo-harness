@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.mcp-sidecar.coding-profile.codegraph-readiness
+kind: calls
+source: component.mcp-sidecar.coding-profile
+target: capability.verification.codegraph-readiness
+intent: "Refresh the CodeGraph index after coding mutations"

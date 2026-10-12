@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.workflow-state.coordination-plane
+kind: calls
+source: capability.workflow-engine.workflow-state
+target: component.workflow-state.coordination-plane
+intent: "Serve the Sprint ownership verbs and the read-only board"

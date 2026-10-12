@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.publication.provider-feedback.execution-primitives
+kind: calls
+source: component.publication.provider-feedback
+target: capability.workflow-engine.execution-primitives
+intent: "Resolve the Git common directory for feedback records"

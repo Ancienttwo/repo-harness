@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.operator.view-projections.acceptance-review
+kind: depends-on
+source: component.operator.view-projections
+target: capability.verification.acceptance-review
+intent: "Decode the module review prompt shape that the review prompt builder declares"

@@ -1,0 +1,50 @@
+schemaVersion: archcontext.flow/v1
+id: flow.task-fleet.task-message
+capabilityId: capability.organization.task-fleet
+name: Deliver one task-addressed message at a turn boundary
+applicability: required
+participants:
+  - id: command
+    nodeId: component.task-fleet.primary
+  - id: inbox
+    nodeId: component.task-fleet.task-inbox
+steps:
+  - id: send-message
+    from: command
+    to: inbox
+    label: Write one immutable TaskMessageEvent for a task or exact claim scope
+    evidence:
+      entrypointId: entrypoint.task-fleet.command
+      sourceSymbol: buildFleetCommand
+      sinkId: sink.task-fleet.send-message
+outcomes:
+  - id: success
+    kind: success
+    label: The current recipient receives the message once
+    steps:
+      - id: deliver-message
+        from: command
+        to: inbox
+        label: Transition the per-recipient delivery receipt and render the body as untrusted context
+        evidence:
+          entrypointId: entrypoint.task-fleet.command
+          sourceSymbol: buildFleetCommand
+          sinkId: sink.task-fleet.deliver-message
+    terminal:
+      participant: inbox
+      label: Leave the lease byte-for-byte unchanged
+  - id: refused
+    kind: error
+    label: The sender lacks current authority or the claim scope is stale
+    steps:
+      - id: refuse-send
+        from: command
+        to: inbox
+        label: Refuse the send before any event is written
+        evidence:
+          entrypointId: entrypoint.task-fleet.command
+          sourceSymbol: buildFleetCommand
+          sinkId: sink.task-fleet.send-message
+    terminal:
+      participant: command
+      label: Return a typed task message error

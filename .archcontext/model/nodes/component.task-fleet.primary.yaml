@@ -1,0 +1,18 @@
+schemaVersion: archcontext.node/v2
+id: component.task-fleet.primary
+kind: component
+name: Fleet Offers Acquisition and Board
+status: active
+parent: capability.organization.task-fleet
+summary: Owns the fleet command surface, read-time task offers, the acquisition seam and the read-only fleet board projection.
+responsibilities:
+  - Build immutable FleetOffersV1 documents from registry, canonical board and plan proof facts.
+  - Re-read owning stores before claim, provision, bind and envelope issue so an offer never becomes authority.
+  - Project fleet board cards from offers, readiness, feedback, inbox and runtime readers with lock-free A/B observation.
+source:
+  include:
+    - "src/core/fleet/task-offer.ts"
+    - "src/core/fleet/board.ts"
+    - "src/effects/fleet/acquire.ts"
+    - "src/effects/fleet/board.ts"
+    - "src/cli/commands/fleet.ts"

@@ -3,12 +3,21 @@ id: capability.public-surface.action-commands
 kind: capability
 name: Action Commands
 status: active
-summary: Defines the user-facing action command skill surface and its evaluation boundary.
+summary: Defines the user-facing action command skill surface, the bundled skill packages and the skill-surface catalog that projects them.
 responsibilities:
   - Own action command assets and their behavior/evaluation contracts.
+  - Own the bundled skill packages under assets/skills and the skill version pins.
+  - Own the pure skill-surface catalog and the profile and host projection selector that hosts and installers consume.
 source:
   include:
     - "assets/skill-commands/**"
+    - "assets/skills/**"
+    - "assets/skill-version.json"
+    - ".claude/.skill-version"
+    - "src/core/skill-surface/**"
+    - "scripts/skill-surface-select.ts"
+    - "scripts/run-skill-routing-eval.ts"
+    - "scripts/check-skill-version.ts"
   entrypoints:
     - id: entrypoint.action-commands.primary
       path: "src/cli/commands/init.ts"
@@ -26,3 +35,4 @@ extensions:
   verification:
     - "bun test tests/action-command-skills.test.ts"
     - "bun run benchmark:skills --dry-run"
+    - "bun test tests/skill-surface/catalog.test.ts tests/skill-surface/canonical-packages.test.ts"

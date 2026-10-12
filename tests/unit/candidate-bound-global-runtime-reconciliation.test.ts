@@ -70,13 +70,16 @@ function writeCandidateSwitchingBun(
   logPath: string,
   globalPackagePath: string,
   candidateRoot: string,
+  replacedPredecessorAsset?: string,
 ): void {
   const canonicalCandidateRoot = realpathSync(candidateRoot);
+  // Bun replaces package files in place; the predecessor then sees assets it cannot parse.
+  const replaceAsset = replacedPredecessorAsset ? `printf '{}' > "${replacedPredecessorAsset}"; ` : '';
   writeExecutable(path, [
     '#!/bin/bash',
     `printf '%s\\n' "$*" >> "${logPath}"`,
     'if [[ "${1:-}" == "--version" ]]; then echo 1.4.0; exit 0; fi',
-    `if [[ "$1" == "add" && "$2" == "-g" ]]; then rm -rf "${globalPackagePath}"; ln -s "${candidateRoot}" "${globalPackagePath}"; exit 0; fi`,
+    `if [[ "$1" == "add" && "$2" == "-g" ]]; then ${replaceAsset}rm -rf "${globalPackagePath}"; ln -s "${candidateRoot}" "${globalPackagePath}"; exit 0; fi`,
     `if [[ "$1" == "${canonicalCandidateRoot}/src/cli/index.ts" ]]; then exec "${process.execPath}" "$@"; fi`,
     'exit 0',
     '',
@@ -446,6 +449,60 @@ describe('candidate-bound global runtime reconciliation', () => {
       expect(installed.custom).toEqual({ preserved: true });
       expect(realpathSync(globalPackagePath)).toBe(realpathSync(candidateRoot));
       expect(readFileSync(bunLog, 'utf-8')).toContain(`${candidateRoot}/src/cli/index.ts __reconcile-installed-runtime --request`);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test('the leftover summary comes from candidate C after B assets change in place', () => {
+    const root = mkdtempSync(join(tmpdir(), 'repo-harness-candidate-leftovers-'));
+    const home = join(root, 'home');
+    const repo = join(root, 'repo');
+    const bin = join(root, 'bin');
+    const parentRoot = join(root, 'parent-b');
+    const candidateRoot = join(root, 'candidate-c');
+    const bunLog = join(root, 'bun.log');
+    try {
+      mkdirSync(repo, { recursive: true });
+      mkdirSync(bin, { recursive: true });
+      copyRuntimeFixture(parentRoot, '0.17.0', 150);
+      copyRuntimeFixture(candidateRoot, '0.18.0', 150);
+      const globalPackagePath = join(home, '.bun', 'install', 'global', 'node_modules', 'repo-harness');
+      mkdirSync(join(home, '.bun', 'install', 'global', 'node_modules'), { recursive: true });
+      symlinkSync(parentRoot, globalPackagePath, 'dir');
+      writeMinimalInstallState(home);
+      writeCandidateSwitchingBun(
+        join(bin, 'bun'),
+        bunLog,
+        globalPackagePath,
+        candidateRoot,
+        join(parentRoot, 'assets', 'skill-commands', 'manifest.json'),
+      );
+
+      const result = spawnSync(process.execPath, [
+        join(parentRoot, 'src', 'cli', 'index.ts'),
+        'update',
+        '--target', 'codex',
+        '--no-sync-skill',
+        '--no-external-skills',
+        '--no-codegraph',
+        '--json',
+      ], {
+        cwd: repo,
+        encoding: 'utf-8',
+        env: {
+          ...process.env,
+          HOME: home,
+          BUN_INSTALL: join(home, '.bun'),
+          PATH: `${bin}:${process.env.PATH ?? ''}`,
+          REPO_HARNESS_BUN_EXECUTABLE: join(bin, 'bun'),
+        },
+      });
+
+      expect(result.status, `${result.stderr}\n${result.stdout}`).toBe(0);
+      const runtime = JSON.parse(result.stdout) as { lines: string[] };
+      expect(runtime.lines.at(-1)).toMatch(/^\d+ leftovers \(\d+ removable\)\. Run: repo-harness upgrade$/);
+      expect(readFileSync(bunLog, 'utf-8')).toContain(`${candidateRoot}/src/cli/index.ts upgrade --json`);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

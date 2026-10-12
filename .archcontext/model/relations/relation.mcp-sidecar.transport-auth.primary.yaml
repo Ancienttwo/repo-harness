@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.mcp-sidecar.transport-auth.primary
+kind: calls
+source: component.mcp-sidecar.transport-auth
+target: component.mcp-sidecar.primary
+intent: "Create one MCP server per authorized session and dispatch its tool calls"

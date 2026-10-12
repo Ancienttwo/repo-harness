@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.mcp-sidecar.primary.task-fleet
+kind: calls
+source: component.mcp-sidecar.primary
+target: capability.organization.task-fleet
+intent: "Acquire fleet tasks and handle task steers from the MCP tools"

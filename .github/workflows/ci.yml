@@ -237,7 +237,35 @@ jobs:
           tests/effects/operator-task-diff.test.ts tests/effects/operator-task-context.test.ts \
           tests/effects/operator-task-activity.test.ts tests/effects/task-inbox.test.ts \
           tests/effects/task-reply.test.ts tests/effects/task-inbox-layout-migration.test.ts \
-          tests/cli/windows-protected-helper-runtime-smoke.test.ts tests/evidence-checkpoint.test.ts
+          tests/cli/windows-protected-helper-runtime-smoke.test.ts tests/evidence-checkpoint.test.ts \
+          tests/unit/windows-protected-helper-platform-contract.test.ts
+      - name: Run smoke with each installed internal Git first on PATH
+        if: matrix.os == 'windows-latest'
+        shell: bash
+        env:
+          BUN_TEST_MAX_CONCURRENCY: '1'
+          REPO_HARNESS_WINDOWS_PROTECTED_HELPER_SMOKE: '1'
+        run: |
+          source scripts/lib/ci-run-tests.sh
+          echo "Git Bash installation: $(cygpath -w /)"
+          test -f /cmd/git.exe
+          tested=0
+          for layout in mingw64 ucrt64; do
+            internal="/$layout/bin"
+            if [[ ! -f "$internal/git.exe" ]]; then
+              echo "Layout $layout is not installed; no coverage is claimed."
+              continue
+            fi
+            (
+              export PATH="$internal:$PATH"
+              echo "Native smoke with $layout first on PATH"
+              where.exe git
+              "$internal/git.exe" --version
+              BUN_TEST_ISOLATE_FILES=0 run_bun_tests tests/cli/windows-protected-helper-runtime-smoke.test.ts
+            )
+            tested=$((tested + 1))
+          done
+          test "$tested" -gt 0
 
   required:
     name: Required / CI
