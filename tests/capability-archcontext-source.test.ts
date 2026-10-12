@@ -9,8 +9,12 @@ import {
 } from "../scripts/capability-resolver";
 import {
   capabilityRegistryFromArchcontextNodes,
+  type Capability,
+  type CapabilityRegistry,
   type CapabilityRegistryDiagnosticCode,
 } from "../src/core/capabilities/registry";
+
+import { resolveArchcontextCapabilityPaths } from "../src/effects/capabilities/archcontext-owners";
 
 const ROOT = join(import.meta.dir, "..");
 const NODES_DIR = ".archcontext/model/nodes";
@@ -34,10 +38,11 @@ function writePolicy(cwd: string, capabilitySource: string | null): void {
   writeFile(cwd, ".ai/harness/policy.json", `${JSON.stringify({ version: 1, context }, null, 2)}\n`);
 }
 
-function runResolver(cwd: string, args: string[]) {
+function runResolver(cwd: string, args: string[], input?: string) {
   return spawnSync("bun", [join(ROOT, "scripts/capability-resolver.ts"), ...args, "--repo", cwd], {
     cwd,
     encoding: "utf-8",
+    input,
   });
 }
 
@@ -237,11 +242,16 @@ describe("capability source: archcontext file-source parity", () => {
     }
   }, 60_000);
 
-  test("the standalone projected helper reads archcontext nodes identically", () => {
+  test("the standalone projected helper reads archcontext nodes identically and refuses to match", () => {
     const sourceCwd = archcontextWorkspace("capability-source-standalone-source");
     const projectedCwd = archcontextWorkspace("capability-source-standalone-projected");
     try {
-      for (const command of PARITY_COMMANDS) {
+      // Path ownership needs the package-local archctx, which a standalone copy does not have.
+      const refused = runStandaloneResolver(projectedCwd, ["match", "--path", "AGENTS.md", "--format", "json"]);
+      expect(refused.status).toBe(2);
+      expect(refused.stdout).toBe("");
+      expect(refused.stderr).toContain("run repo-harness run capability-resolver");
+      for (const command of PARITY_COMMANDS.filter((entry) => entry[0] !== "match")) {
         const fromSource = runResolver(sourceCwd, [...command]);
         const fromProjection = runStandaloneResolver(projectedCwd, [...command]);
         expect(fromSource.status, fromSource.stderr).toBe(0);
@@ -275,6 +285,56 @@ describe("capability source: archcontext file-source parity", () => {
       rmSync(shuffled, { recursive: true, force: true });
     }
   }, 60_000);
+});
+
+describe("capability source: ArchContext owns path ownership", () => {
+  test("match honors source.exclude and glob includes through archctx resolve", () => {
+    const cwd = archcontextWorkspace("capability-source-archctx-owner", [
+      { file: "web.yaml", lines: replaceLine(VALID_NODE_LINES, "    - apps/web/**", [
+        "    - apps/web/**",
+        "  exclude:",
+        "    - apps/web/legacy/**",
+      ]) },
+    ]);
+    try {
+      mkdirSync(join(cwd, "apps/web/legacy"), { recursive: true });
+      const res = runResolver(cwd, ["match", "--paths-from", "-", "--format", "json"], "apps/web/page.tsx\napps/web/legacy/old.ts\napps/web\n");
+      expect(res.status, res.stderr).toBe(0);
+      const matches = JSON.parse(res.stdout) as Array<{ file_path: string; matched: boolean; capability_id: string }>;
+      expect(matches.map((match) => [match.file_path, match.matched, match.capability_id])).toEqual([
+        ["apps/web/page.tsx", true, "apps-web-web"],
+        ["apps/web/legacy/old.ts", false, "root"],
+        ["apps/web", true, "apps-web-web"],
+      ]);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 60_000);
+});
+
+describe("capability source: archctx resolve envelope checks", () => {
+  const registry: CapabilityRegistry = { version: 1, capabilities: [TWIN_CAPABILITIES[0] as Capability] };
+  const envelope = (results: unknown) => JSON.stringify({ schemaVersion: "archcontext.envelope/v1", ok: true, requestId: "resolve", data: { results } });
+  const resolveWith = (stdout: string, status = 0) => resolveArchcontextCapabilityPaths(ROOT, registry, ["apps/web/page.tsx"], {
+    run: (_binary, args) => {
+      expect(args.slice(0, 2)).toEqual(["resolve", "--paths-from"]);
+      return { status, signal: null, stdout, stderr: "" };
+    },
+  });
+
+  test("maps a well-formed result and reports an unowned path", () => {
+    const resolution = resolveWith(envelope([{ path: "apps/web/page.tsx", matched: false, ambiguous: false, owningCapabilityId: null }]));
+    expect(resolution.status).toBe("valid");
+    expect(resolution.unmappedPaths).toEqual(["apps/web/page.tsx"]);
+  });
+
+  test("throws on an error envelope, a result-count mismatch, a path mismatch or a bad field", () => {
+    expect(() => resolveWith(JSON.stringify({ schemaVersion: "archcontext.envelope/v1", ok: false, error: { code: "AC_X", message: "boom" } }), 1)).toThrow("AC_X: boom");
+    expect(() => resolveWith(envelope([]))).toThrow("result count");
+    expect(() => resolveWith(envelope([{ path: "apps/web/other.tsx", matched: false, ambiguous: false, owningCapabilityId: null }]))).toThrow("invalid result");
+    expect(() => resolveWith(envelope([{ path: "apps/web/page.tsx", matched: "yes", ambiguous: false, owningCapabilityId: null }]))).toThrow("invalid result");
+    expect(() => resolveWith(JSON.stringify({ schemaVersion: "other", ok: true }))).toThrow("invalid envelope");
+  });
 });
 
 describe("capability source: no fallback in either direction", () => {
@@ -454,26 +514,10 @@ const NODE_CASES: ReadonlyArray<{
     fragment: "source.include must contain at least one entry",
   },
   {
-    label: "N7 source.exclude is not supported",
-    code: "ARCHCONTEXT_EXCLUDE_UNSUPPORTED",
-    lines: replaceLine(VALID_NODE_LINES, "    - apps/web/**", [
-      "    - apps/web/**",
-      "  exclude:",
-      "    - apps/web/legacy/**",
-    ]),
-    fragment: "source.exclude is not supported",
-  },
-  {
-    label: "N8 unsupported include glob shape",
-    code: "ARCHCONTEXT_INCLUDE_SHAPE_UNSUPPORTED",
-    lines: replaceLine(VALID_NODE_LINES, "    - apps/web/**", ["    - apps/**/*.ts"]),
-    fragment: "unsupported source.include shape apps/**/*.ts",
-  },
-  {
-    label: "N9 wildcard-free include that is an existing directory",
-    code: "ARCHCONTEXT_INCLUDE_SHAPE_AMBIGUOUS",
-    lines: replaceLine(VALID_NODE_LINES, "    - apps/web/**", ["    - apps/web"]),
-    fragment: "write apps/web/** for a directory boundary",
+    label: "N7 no source.include entry has a literal anchor",
+    code: "ARCHCONTEXT_INCLUDE_ANCHOR_REQUIRED",
+    lines: replaceLine(VALID_NODE_LINES, "    - apps/web/**", ["    - \"**/*.ts\""]),
+    fragment: "source.include needs at least one entry with a literal leading path",
   },
   {
     label: "N10 extensions is missing",
@@ -529,14 +573,11 @@ const NODE_CASES: ReadonlyArray<{
   },
 ];
 
-describe("capability source: node-layer matrix N1-N16", () => {
+describe("capability source: node-layer matrix N1-N16 (N8-N9 retired)", () => {
   for (const nodeCase of NODE_CASES) {
     test(`${nodeCase.label} fails closed`, () => {
       const parsed = Bun.YAML.parse(yaml(nodeCase.lines));
-      const resolution = capabilityRegistryFromArchcontextNodes(
-        [{ path: `${NODES_DIR}/case.yaml`, value: parsed }],
-        { isExistingDirectory: (path) => path === "apps/web" },
-      );
+      const resolution = capabilityRegistryFromArchcontextNodes([{ path: `${NODES_DIR}/case.yaml`, value: parsed }]);
       expect(resolution.status).toBe("invalid");
       expect(resolution.diagnostics.map((item) => item.code)).toEqual([nodeCase.code]);
       expect(resolution.diagnostics[0].message).toContain(nodeCase.fragment);

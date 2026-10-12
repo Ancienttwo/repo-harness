@@ -191,7 +191,7 @@ regressions verify these separate boundaries.
 | I2 | `helpers.scripts` 与 `helpers.descriptions` 一一对应，描述非空 | `src/effects/runtime/helper-runner.ts:246-268` + `tests/workflow-contract.test.ts` |
 | I3 | `helpers.scripts` 是“有哪些 helper”的唯一 id 列表；descriptions 只挂显示数据 | 契约结构 + 上述双向校验 |
 | I4 | `context.capability_source` 选择唯一 capability 权威。本仓库是 `archcontext`，读 `.archcontext/model/nodes/*.yaml`；不双读，不回退 | `.ai/harness/policy.json:101-102`；`src/core/capabilities/registry.ts:514` |
-| I5 | 注册表只接受精确文件或 `dir/**`，拒绝 `source.exclude` 与通配符；重复前缀与同长度歧义匹配 fail closed | `registry.ts:560-578`、`:691-696`、`:279`、`:463` |
+| I5 | archcontext 模式下，路径归属只由 `archctx resolve` 决定。注册表不检查 include 形状，也接受 `source.exclude`。歧义归属与 archctx 失败都 fail closed。registry 模式仍按最长前缀匹配，同长度歧义 fail closed | `registry.ts` 的 `capabilityPathResolutionFromArchcontextOwners`、`src/effects/capabilities/archcontext-owners.ts`、`registry.ts` 的 `matchCapabilityPath` |
 | I6 | 受保护 helper 的 source、helper、HOME、PATH 与解释器解析不受调用者影响 | `protectedChildEnv()`（`helper-runner.ts:73`）、`resolveHelperRuntime(env, !protectedHelper)`（`:367`） |
 | I7 | merge gate 的启用位来自目标 base commit，候选不能自我豁免 | `scripts/ship-worktrees.sh:868-871`（`merge-gate.ts fingerprint --base`） |
 | I8 | 55 个 helper 中 52 个与 `scripts/` 逐字节一致；3 个例外由投影脚本声明：`capability-resolver.ts` 与 `recovery-view-cli.ts` 带 `@generated-from` 头，`acceptance-receipt.ts` 只改写一条 import 路径 | `bun run check:helpers`；`scripts/sync-helper-sources.ts:48`、`:88`、`:108-113` |
@@ -597,7 +597,7 @@ template-projection 标记为可扩展。`assets/templates/helpers/**` 有 20,83
 - **contract-worktree-lifecycle 的外部依赖。** `scripts/contract-worktree-runtime.ts` 动态导入 `src/effects/terminal/task-session.ts` 与 `herdr.ts`；`scripts/merge-gate.ts` 导入 `scripts/acceptance-receipt.ts` 与 `src/effects/publication/merge-readiness.ts`。集成步骤声明了 contract-worktree-lifecycle → task-agent-host 与 → acceptance-review。到 publication 的关系没有声明：`relation.publication.contract-assets` 已经声明反向。本方向有 3 条边，反向有 2 条。是否翻转方向是开放问题。
 - **planning-helpers 的平台依赖。** `src/effects/runtime/helper-runner.ts` 导入 `node-candidates.ts` 与 `protected-helper-platform.ts`。它们现在归 global-runtime-reconciliation。集成步骤没有声明 planning-helpers → global-runtime-reconciliation：global-runtime-reconciliation 的 cli-root 与 primary 已经声明到本 capability 的关系，新增一条会加深双向依赖。
 - **reference configs 多重归属（after arch-context#296）。** `assets/reference-configs/external-tooling.md` 与 `docs/reference-configs/{external-tooling,install-profiles,chatgpt-coding-mcp}.md` 同时被 global-runtime-reconciliation 或 mcp-sidecar 认领。镜像对必须由一个 owner 持有。
-- **组件 footprint 用精确文件列表（use globs after arch-context#296）。** repo-harness model reader 只接受精确路径或 `dir/**`（`src/effects/architecture/model-reader.ts:85-89`）。`planning-helpers` 因此列出 4 个 `scripts/factor-lab-*.sh` 文件。`template-projection` 列出 2 个 `assets/initializer-question-pack.v4*.json` 文件。新增同名模式的文件不会自动进入组件。
+- **组件 footprint 仍用精确文件列表（#631 第二部分改成 glob）。** model reader 已不限制 include 形状。`planning-helpers` 仍列出 4 个 `scripts/factor-lab-*.sh` 文件。`template-projection` 仍列出 2 个 `assets/initializer-question-pack.v4*.json` 文件。改成 glob 之前，新增同名模式的文件不会自动进入组件。
 - **到 skill-surface-catalog 的回边。** template-projection → skill-surface-catalog 已声明（`init.ts` 读 host skill placements）。`scripts/check-skill-version.ts:15` 反向导入 `scripts/workflow-contract.ts`。按边数（5 对 3）只声明前者。
 
 - Run `bun scripts/capability-resolver.ts validate --format text` when capability data changes. The workflow helper remains a read-only diagnostic.

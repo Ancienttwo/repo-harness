@@ -11,6 +11,7 @@ import {
   type CapabilityRegistry,
   type ContractFiles,
 } from '../../../scripts/capability-resolver';
+import { resolveArchcontextCapabilityPaths } from '../../effects/capabilities/archcontext-owners';
 
 export type { Capability, ContractFiles };
 
@@ -178,16 +179,17 @@ function targetContractFiles(repo: string, capability: Capability): ContractFile
   };
 }
 
-// Delegates the longest-prefix decision to capability-resolver's canonical findMatch
-// (see .ai/harness/policy.json capability_match_rule) instead of re-implementing the
-// sort/tie-break here.
-function findCapabilityByPath(registry: CapabilityRegistry, repo: string, inputPath: string): {
-  capability: Capability;
-  matchedPrefix: string;
-} {
-  const match = findMatch(registry, repo, inputPath);
-  if (match.matched) {
-    return { capability: findCapabilityById(registry, match.capability_id), matchedPrefix: match.matched_prefix };
+// Delegates ownership to the selected authority: capability-resolver's findMatch
+// under `registry` (see .ai/harness/policy.json capability_match_rule), and
+// `archctx resolve` under `archcontext`. Nothing here re-implements either rule.
+function findCapabilityByPath(registry: CapabilityRegistry, repo: string, inputPath: string): Capability {
+  if (capabilitySourceMode(repo) === 'archcontext') {
+    const resolution = resolveArchcontextCapabilityPaths(repo, registry, [inputPath]);
+    if (resolution.status === 'invalid') throw new Error(resolution.diagnostics.map((item) => item.message).join('; '));
+    if (resolution.matches.length === 1) return resolution.matches[0].capability;
+  } else {
+    const match = findMatch(registry, repo, inputPath);
+    if (match.matched) return findCapabilityById(registry, match.capability_id);
   }
   throw new Error(`no capability matches path: ${inputPath}`);
 }
@@ -299,7 +301,7 @@ function replaceBlock(source: string, block: string): string {
 
 function selectCapabilities(registry: CapabilityRegistry, repo: string, opts: SyncOptions): Capability[] {
   if (opts.capabilityId) return [findCapabilityById(registry, opts.capabilityId)];
-  if (opts.inputPath) return [findCapabilityByPath(registry, repo, opts.inputPath).capability];
+  if (opts.inputPath) return [findCapabilityByPath(registry, repo, opts.inputPath)];
   throw new Error('sync requires --capability or --path');
 }
 

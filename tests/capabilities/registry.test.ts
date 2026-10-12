@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import {
-  archcontextIncludeToPrefix,
+  archcontextIncludeAnchor,
   architectureModulePathFor,
+  capabilityPathResolutionFromArchcontextOwners,
   capabilityRegistryFromArchcontextNodes,
   isCapabilityPathOutsideRepo,
   matchCapabilityPath,
@@ -172,54 +173,25 @@ describe("canonical capability registry", () => {
   });
 });
 
-describe("archcontextIncludeToPrefix", () => {
-  test("accepts directory globs and wildcard-free file literals", () => {
-    expect(archcontextIncludeToPrefix("apps/web/**")).toEqual({ status: "prefix", prefix: "apps/web" });
-    expect(archcontextIncludeToPrefix("src/core/adoption/**")).toEqual({
-      status: "prefix",
-      prefix: "src/core/adoption",
-    });
-    expect(archcontextIncludeToPrefix("AGENTS.md")).toEqual({ status: "prefix", prefix: "AGENTS.md" });
-    expect(archcontextIncludeToPrefix("src/effects/path-safety.ts")).toEqual({
-      status: "prefix",
-      prefix: "src/effects/path-safety.ts",
-    });
+describe("archcontextIncludeAnchor", () => {
+  test("keeps the literal leading path of every include shape", () => {
+    expect(archcontextIncludeAnchor("apps/web/**")).toBe("apps/web");
+    expect(archcontextIncludeAnchor("AGENTS.md")).toBe("AGENTS.md");
+    expect(archcontextIncludeAnchor("src/effects/path-safety.ts")).toBe("src/effects/path-safety.ts");
+    expect(archcontextIncludeAnchor("src/core/state/coordination-*.ts")).toBe("src/core/state");
+    expect(archcontextIncludeAnchor("src/{core,effects}/engineers/**")).toBe("src");
+    expect(archcontextIncludeAnchor("apps/web/")).toBe("apps/web");
   });
 
-  test("rejects every other glob shape", () => {
-    const unsupported = [
-      "",
-      "**",
-      "/**",
-      "**/*.ts",
-      "apps/*/web/**",
-      "apps/web/*",
-      "apps/web/**/*",
-      "apps/{web,api}/**",
-      "!apps/web/**",
-      "apps/[a-z]/**",
-    ];
-    for (const include of unsupported) {
-      expect(archcontextIncludeToPrefix(include), include).toEqual({ status: "unsupported" });
+  test("has no anchor when the first segment is a glob", () => {
+    for (const include of ["", "**", "/**", "**/*.ts", "*.md", "!apps/web/**", "{a,b}/**"]) {
+      expect(archcontextIncludeAnchor(include), include).toBeNull();
     }
-  });
-
-  test("flags a wildcard-free literal that names an existing directory", () => {
-    const isExistingDirectory = (path: string) => path === "apps/web";
-    expect(archcontextIncludeToPrefix("apps/web", { isExistingDirectory })).toEqual({ status: "ambiguous" });
-    expect(archcontextIncludeToPrefix("apps/web/**", { isExistingDirectory })).toEqual({
-      status: "prefix",
-      prefix: "apps/web",
-    });
-    expect(archcontextIncludeToPrefix("apps/web/page.tsx", { isExistingDirectory })).toEqual({
-      status: "prefix",
-      prefix: "apps/web/page.tsx",
-    });
   });
 });
 
 describe("capabilityRegistryFromArchcontextNodes", () => {
-  const node = (id: string, include: string[]) => ({
+  const node = (id: string, include: string[], exclude?: string[]) => ({
     schemaVersion: "archcontext.node/v2",
     id,
     kind: "capability",
@@ -227,7 +199,7 @@ describe("capabilityRegistryFromArchcontextNodes", () => {
     status: "active",
     summary: "fixture",
     responsibilities: ["fixture responsibility"],
-    source: { include },
+    source: exclude ? { include, exclude } : { include },
     extensions: {
       contractFiles: { agents: "apps/web/AGENTS.md", claude: "apps/web/CLAUDE.md" },
       lspProfile: "typescript-lsp",
@@ -276,15 +248,87 @@ describe("capabilityRegistryFromArchcontextNodes", () => {
       { path: "nodes/b.yaml", value: node("capability.apps-web.web", ["apps/web/**"]) },
     ]);
     expect(collision.status).toBe("invalid");
-    expect(collision.diagnostics.map((item) => item.code).sort()).toEqual([
-      "DUPLICATE_ID",
-      "DUPLICATE_PREFIX",
-    ]);
+    expect(collision.diagnostics.map((item) => item.code).sort()).toEqual(["DUPLICATE_ID"]);
 
     const traversal = capabilityRegistryFromArchcontextNodes([
       { path: "nodes/a.yaml", value: node("capability.apps-web.web", ["../outside/**"]) },
     ]);
     expect(traversal.status).toBe("invalid");
     expect(traversal.diagnostics.map((item) => item.code)).toEqual(["INVALID_PATH"]);
+  });
+
+  test("accepts glob includes and excludes, and lets capabilities share an anchor", () => {
+    const resolution = capabilityRegistryFromArchcontextNodes([
+      { path: "nodes/a.yaml", value: node("capability.workflow-engine.state", ["src/core/state/**"], ["src/core/state/coordination-*.ts"]) },
+      { path: "nodes/b.yaml", value: node("capability.workflow-engine.coordination", ["src/core/state/coordination-*.ts", "src/core/state/coordination-*.ts"]) },
+    ]);
+    if (resolution.status !== "valid") throw new Error(`expected valid registry: ${JSON.stringify(resolution.diagnostics)}`);
+    expect(resolution.registry.capabilities.map((capability) => [capability.id, capability.prefixes])).toEqual([
+      ["workflow-engine-coordination", ["src/core/state"]],
+      ["workflow-engine-state", ["src/core/state"]],
+    ]);
+  });
+
+  test("requires at least one include with a literal anchor", () => {
+    const resolution = capabilityRegistryFromArchcontextNodes([
+      { path: "nodes/a.yaml", value: node("capability.apps-web.web", ["**/*.md"]) },
+    ]);
+    expect(resolution.status).toBe("invalid");
+    expect(resolution.diagnostics.map((item) => item.code)).toEqual(["ARCHCONTEXT_INCLUDE_ANCHOR_REQUIRED"]);
+  });
+});
+
+describe("capabilityPathResolutionFromArchcontextOwners", () => {
+  const capability = (domain: string, name: string): Capability => ({
+    id: `${domain}-${name}`,
+    domain,
+    name,
+    prefixes: [`src/${name}`],
+    contract_files: { agents: "AGENTS.md", claude: "CLAUDE.md" },
+    architecture_module: architectureModulePathFor(domain, name),
+    workstream_dir: workstreamDirFor(domain, name),
+    lsp_profile: "typescript-lsp",
+    verification_hints: [],
+  });
+  const registry: CapabilityRegistry = { version: 1, capabilities: [capability("engine", "state"), capability("engine", "tasks")] };
+  const owner = (path: string, owningCapabilityId: string | null, flags: { matched?: boolean; ambiguous?: boolean } = {}) => ({
+    path,
+    matched: flags.matched ?? owningCapabilityId !== null,
+    ambiguous: flags.ambiguous ?? false,
+    owningCapabilityId,
+  });
+
+  test("joins ArchContext owners to registry capabilities and reports unowned paths", () => {
+    const resolution = capabilityPathResolutionFromArchcontextOwners(registry, [
+      owner("src/tasks/b.ts", "capability.engine.tasks"),
+      owner("src/state/a.ts", "capability.engine.state"),
+      owner("README.md", null),
+      owner("docs/x.md", null, { matched: true }),
+      owner("src/state/a.ts", "capability.engine.state"),
+    ]);
+    expect(resolution.status).toBe("valid");
+    expect(resolution.capabilityIds).toEqual(["engine-state", "engine-tasks"]);
+    expect(resolution.matches.map((match) => [match.filePath, match.capability.id, match.prefix])).toEqual([
+      ["src/state/a.ts", "engine-state", "src/state"],
+      ["src/tasks/b.ts", "engine-tasks", "src/tasks"],
+    ]);
+    expect(resolution.unmappedPaths).toEqual(["README.md", "docs/x.md"]);
+  });
+
+  test("keeps the owner of an ambiguous result whose candidates share one capability", () => {
+    const resolution = capabilityPathResolutionFromArchcontextOwners(registry, [
+      owner("src/state/a.ts", "capability.engine.state", { ambiguous: true }),
+    ]);
+    expect(resolution.status).toBe("valid");
+    expect(resolution.capabilityIds).toEqual(["engine-state"]);
+  });
+
+  test("fails closed on an ambiguous owner or an owner outside the registry", () => {
+    const resolution = capabilityPathResolutionFromArchcontextOwners(registry, [
+      owner("src/a.ts", null, { matched: true, ambiguous: true }),
+      owner("src/b.ts", "capability.engine.retired"),
+    ]);
+    expect(resolution.status).toBe("invalid");
+    expect(resolution.diagnostics.map((item) => item.code)).toEqual(["AMBIGUOUS_MATCH", "ARCHCONTEXT_OWNER_UNKNOWN"]);
   });
 });
