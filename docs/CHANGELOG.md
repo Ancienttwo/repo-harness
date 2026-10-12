@@ -34,6 +34,12 @@ All notable changes to this skill are documented here.
   architecture projection check. A result other than `noop` fails the lane,
   and the daily CI report opens a repair issue. The worker and Bot guidance
   build CodeGraph code facts first. (#648)
+- Under `capability_source: archcontext`, ArchContext is the only path
+  ownership authority. The resolver and the pre-edit hook call
+  `archctx resolve --paths-from` in one batch. Node `source.exclude` and glob
+  includes are accepted. An archctx failure fails closed with the
+  `capability_registry:invalid` blocker. Registry mode keeps longest-prefix
+  matching. (#649)
 
 ### Added
 
