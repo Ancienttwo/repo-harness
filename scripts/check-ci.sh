@@ -86,6 +86,27 @@ if [[ "$lane" != functional ]]; then
   bun scripts/inspect-project-state.ts --repo . --format text >/dev/null
   bun src/cli/index.ts init --repo . --dry-run >/dev/null
 
+  # Stale architecture docs fail this lane, so the daily report opens a repair
+  # issue for the Bot. The check writes no repository files. A private HOME
+  # enables the provider without touching the caller's global configuration.
+  echo "[ci] architecture projection"
+  arch_home="$(mktemp -d /tmp/rh-arch-home-XXXXXX)"
+  mkdir -p "$arch_home/.repo-harness"
+  printf '%s\n' '{"architecture":{"projection_provider":"archctx","projection_apply":"manual","projection_timeout_ms":600000}}' > "$arch_home/.repo-harness/config.json"
+  if [[ -d .codegraph ]]; then
+    HOME="$arch_home" node_modules/.bin/codegraph sync -q . </dev/null >/dev/null
+  else
+    HOME="$arch_home" node_modules/.bin/codegraph init -y . </dev/null >/dev/null
+  fi
+  arch_status=0
+  HOME="$arch_home" bun src/cli/index.ts architecture-projection check --json > "$arch_home/check.json" || arch_status=$?
+  bun -e 'const r = JSON.parse(await Bun.file(process.argv[1]).text()); console.log(JSON.stringify({ status: r.status, staleNodes: (r.freshness?.staleNodes ?? []).map(n => n.nodeId), files: (r.files ?? []).map(f => f.path), humanActions: r.humanActions ?? [] }, null, 2));' "$arch_home/check.json" || cat "$arch_home/check.json"
+  rm -rf "$arch_home"
+  if [[ "$arch_status" -ne 0 ]]; then
+    echo "[ci] Architecture projection is not noop. Fix the provider error, or run repo-harness architecture-projection apply in a PR." >&2
+    exit 1
+  fi
+
 fi
 
 if [[ "$lane" != governance ]]; then
