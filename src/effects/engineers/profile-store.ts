@@ -1,5 +1,5 @@
 import { execFileSync } from 'child_process';
-import { lstatSync, readFileSync, readdirSync, realpathSync, statSync } from 'fs';
+import { lstatSync, readFileSync, readdirSync, realpathSync } from 'fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'path';
 import { validateJsonSchema, type Json } from 'archctx-contracts';
 import architectureNodeSchema from 'archctx-contracts/schemas/repo/architecture-node.schema.json';
@@ -122,16 +122,7 @@ interface EngineerCapabilityAuthority {
 
 function loadCapabilityAuthority(repoRoot: string): EngineerCapabilityAuthority {
   const nodes = readArchcontextNodes(repoRoot);
-  const resolution = capabilityRegistryFromArchcontextNodes(nodes, {
-    repoRoot,
-    isExistingDirectory: (path) => {
-      try {
-        return statSync(resolve(repoRoot, path)).isDirectory();
-      } catch {
-        return false;
-      }
-    },
-  });
+  const resolution = capabilityRegistryFromArchcontextNodes(nodes, { repoRoot });
   if (resolution.status !== 'valid') {
     invalid(`ArchContext capability registry is invalid: ${resolution.diagnostics.map((item) => item.message).join('; ')}`);
   }

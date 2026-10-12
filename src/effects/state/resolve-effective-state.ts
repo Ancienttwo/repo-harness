@@ -17,9 +17,12 @@ import {
   parseCapabilityRegistry,
   resolveCapabilityPaths,
   type ArchcontextNodeFile,
+  type CapabilityPathResolution,
+  type CapabilityRegistry,
   type CapabilityRegistryResolution,
   type CapabilitySourceMode,
 } from '../../core/capabilities/registry';
+import { resolveArchcontextCapabilityPaths } from '../capabilities/archcontext-owners';
 import type {
   EffectiveState,
   EffectiveStateRiskInput,
@@ -410,16 +413,28 @@ function loadCapabilityRegistry(cwd: string, policy: WorkflowPolicy, readSource 
       };
     }
   }
-  return capabilityRegistryFromArchcontextNodes(files, {
-    repoRoot: cwd,
-    isExistingDirectory: (path) => {
-      try {
-        return statSync(repoPath(cwd, path)).isDirectory();
-      } catch {
-        return false;
-      }
-    },
-  });
+  return capabilityRegistryFromArchcontextNodes(files, { repoRoot: cwd });
+}
+
+/** Under `archcontext`, ArchContext owns path ownership; a failed resolve fails closed. */
+function resolveRegistryPaths(
+  cwd: string,
+  policy: WorkflowPolicy,
+  registry: CapabilityRegistry,
+  paths: readonly string[],
+): CapabilityPathResolution {
+  if (capabilitySourceMode(policy) === 'registry') return resolveCapabilityPaths(registry, paths, { repoRoot: cwd });
+  try {
+    return resolveArchcontextCapabilityPaths(cwd, registry, paths);
+  } catch (error) {
+    return {
+      status: 'invalid',
+      capabilityIds: [],
+      matches: [],
+      unmappedPaths: [],
+      diagnostics: [{ code: 'ARCHCONTEXT_RESOLVE_FAILED', path: CAPABILITY_NODES_DIR, message: (error as Error).message }],
+    };
+  }
 }
 
 function capabilityIdsForPaths(
@@ -454,7 +469,7 @@ function capabilityIdsForPaths(
       outOfRepoPathCount,
     };
   }
-  const resolution = resolveCapabilityPaths(registry.registry, inRepoPaths, { repoRoot: cwd });
+  const resolution = resolveRegistryPaths(cwd, policy, registry.registry, inRepoPaths);
   return {
     ids: resolution.capabilityIds,
     registryStatus: resolution.status,

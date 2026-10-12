@@ -587,6 +587,65 @@ describe('effective state resolver', () => {
       });
     }, 30_000);
 
+    function seedArchcontextCapability(cwd: string): void {
+      write(cwd, '.ai/harness/policy.json', JSON.stringify({ context: { capability_source: 'archcontext' } }));
+      write(cwd, '.archcontext/model/nodes/capability.fixture.feature.yaml', [
+        'schemaVersion: archcontext.node/v2',
+        'id: capability.fixture.feature',
+        'kind: capability',
+        'name: Feature',
+        'status: active',
+        'summary: Fixture feature',
+        'responsibilities:',
+        '  - Own the feature sources',
+        'source:',
+        '  include:',
+        '    - src/**',
+        '  exclude:',
+        '    - src/generated/**',
+        'extensions:',
+        '  contractFiles:',
+        '    agents: AGENTS.md',
+        '    claude: CLAUDE.md',
+        '  lspProfile: typescript-lsp',
+        '  verification: []',
+        '',
+      ].join('\n'));
+      commitFixture(cwd, 'seed archcontext capability');
+    }
+
+    test('archcontext ownership comes from archctx resolve, including source.exclude', () => {
+      withRepo((cwd) => {
+        seedArchcontextCapability(cwd);
+        const state = resolveEffectiveState(cwd, Date.now(), {
+          targetPaths: ['src/feature.ts', 'src/generated/out.ts'],
+          operationKind: 'edit',
+        });
+        expect(state.blockers).not.toContain('capability_registry:invalid');
+        expect(state.profile_reasons).toContain('capability:unmapped:1');
+      });
+    }, 60_000);
+
+    test('archcontext ownership fails closed when archctx cannot run', () => {
+      withRepo((cwd) => {
+        seedArchcontextCapability(cwd);
+        const previous = process.env.REPO_HARNESS_NODE_BIN;
+        // A non-executable runtime makes the package-local archctx unavailable.
+        process.env.REPO_HARNESS_NODE_BIN = join(cwd, '.ai/harness/policy.json');
+        try {
+          const state = resolveEffectiveState(cwd, Date.now(), {
+            targetPaths: ['src/feature.ts'],
+            operationKind: 'edit',
+          });
+          expect(state.blockers).toContain('capability_registry:invalid');
+          expect(state.profile_reasons).toContain('capability:registry:invalid');
+        } finally {
+          if (previous === undefined) delete process.env.REPO_HARNESS_NODE_BIN;
+          else process.env.REPO_HARNESS_NODE_BIN = previous;
+        }
+      });
+    }, 60_000);
+
     test('registry and policy changes advance the state revision, durable version, and authority revision', () => {
       withRepo((cwd) => {
         write(cwd, '.ai/context/capabilities.json', JSON.stringify({

@@ -4,15 +4,17 @@ kind: component
 name: Capability Registry
 status: active
 parent: capability.workflow-engine.contract-assets
-summary: Maps archcontext capability nodes to path prefixes and resolves one owner per path by longest prefix.
+summary: Maps capability authorities to registry metadata and resolves path owners through the selected authority.
 responsibilities:
-  - Translate source.include entries to exact files or dir prefixes and reject exclude and wildcard shapes.
-  - Validate duplicate prefixes and ambiguous matches and fail closed.
+  - Map archcontext capability nodes to registry metadata and literal include anchors.
+  - Resolve path owners by longest prefix under registry and through archctx resolve under archcontext.
+  - Fail closed on ambiguous owners and on an archctx resolve failure.
   - Serve the resolver CLI, capability config and capability context commands.
 source:
   include:
     - .archcontext/**
     - src/core/capabilities/**
+    - src/effects/capabilities/**
     - scripts/capability-resolver.ts
     - scripts/capability-config.ts
     - src/cli/commands/capability-context.ts

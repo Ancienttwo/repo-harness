@@ -5,7 +5,7 @@ import { validateJsonSchema, type Json } from 'archctx-contracts';
 import nodeSchema from 'archctx-contracts/schemas/repo/architecture-node.schema.json';
 import relationSchema from 'archctx-contracts/schemas/repo/architecture-relation.schema.json';
 import flowSchema from 'archctx-contracts/schemas/repo/architecture-flow.schema.json';
-import { capabilityRegistryFromArchcontextNodes, architectureModulePathFor, archcontextIncludeToPrefix } from '../../core/capabilities/registry';
+import { capabilityRegistryFromArchcontextNodes, architectureModulePathFor, archcontextIncludeAnchor } from '../../core/capabilities/registry';
 import { moduleDetail, section3FromMarkdown, type ModelNode, type ModelRelation, type ModelFlow, type ModuleIndexV1, type ModuleDetailV1, type LinkedModuleDoc } from '../../core/architecture/module-view';
 import { buildModuleReviewPrompt, ModuleReadError, sha256, type ModuleReviewPromptV1, type PromptSource } from '../../core/review/module-review-prompt';
 import { canonicalize } from '../../core/evidence/canonical-json';
@@ -63,9 +63,7 @@ export class ArchitectureModelReader {
     this.relations = this.modelFiles<ModelRelation>('relations', relationSchema);
     // The package's validator type omits contains/minContains from its own flow schema.
     this.flows = this.modelFiles<ModelFlow>('flows', flowSchema as unknown as Parameters<typeof validateJsonSchema>[0], true);
-    const registry = capabilityRegistryFromArchcontextNodes(this.nodes.map(file => ({ path: file.path, value: file.value })), {
-      repoRoot: this.root, isExistingDirectory: path => this.entry(path)?.type === 'tree',
-    });
+    const registry = capabilityRegistryFromArchcontextNodes(this.nodes.map(file => ({ path: file.path, value: file.value })), { repoRoot: this.root });
     if (registry.status !== 'valid') throw new ModuleReadError('model_invalid', registry.diagnostics[0]?.path);
     const ids = new Set<string>();
     for (const file of [...this.nodes, ...this.relations, ...this.flows]) {
@@ -83,12 +81,8 @@ export class ArchitectureModelReader {
     for (const file of this.nodes) {
       const node = file.value;
       if (node.parent && !nodeIds.has(node.parent)) throw new ModuleReadError('model_parent_invalid', file.path);
-      for (const include of node.source?.include ?? []) {
-        const translation = archcontextIncludeToPrefix(include, { isExistingDirectory: path => this.entry(path)?.type === 'tree' });
-        if (translation.status !== 'prefix') throw new ModuleReadError('source_include_invalid', file.path);
-        this.safePath(translation.prefix);
-        this.assertCommittedPath(translation.prefix);
-      }
+      // Include shapes belong to ArchContext validation; only literal anchors become paths here.
+      for (const anchor of this.anchors(node)) { this.safePath(anchor); this.assertCommittedPath(anchor); }
       for (const entry of node.source?.entrypoints ?? []) {
         this.safePath(entry.path); this.assertCommittedPath(entry.path);
         for (const symbol of entry.symbols) for (const sink of symbol.sinks) {
@@ -205,6 +199,9 @@ export class ArchitectureModelReader {
     if (!node) throw new ModuleReadError('capability_not_found');
     return node;
   }
+  private anchors(node: ModelNode): string[] {
+    return [...new Set((node.source?.include ?? []).map(archcontextIncludeAnchor).filter((anchor): anchor is string => anchor !== null))];
+  }
   private docPath(id: string): string { const [, domain, name] = id.split('.'); return architectureModulePathFor(domain, name); }
 
   detail(id: string): ModuleDetailV1 {
@@ -267,11 +264,8 @@ export class ArchitectureModelReader {
   reviewPrompt(id: string, options: { shard?: number; base?: string; head?: string } = {}): ModuleReviewPromptV1 {
     if ((options.base === undefined) !== (options.head === undefined)) throw new ModuleReadError('diff_refs_required');
     const node = this.capability(id), detail = this.detail(id), docPath = this.docPath(id), doc = this.read(docPath, true);
-    const prefixes = (node.source?.include ?? []).map(include => {
-      const translated = archcontextIncludeToPrefix(include, { isExistingDirectory: path => this.entry(path)?.type === 'tree' });
-      if (translated.status !== 'prefix') throw new ModuleReadError('source_include_invalid');
-      this.safePath(translated.prefix); return translated.prefix;
-    });
+    // Anchors bound a literal pathspec (GIT_LITERAL_PATHSPECS), so the diff is a superset of the owned files.
+    const prefixes = this.anchors(node);
     const base = options.base === undefined ? null : this.resolveCommit(options.base);
     const head = options.head === undefined ? null : this.resolveCommit(options.head);
     const diff = base && head ? this.git(['diff', '--no-ext-diff', '--no-textconv', base, head, '--', ...prefixes]).toString('utf8') : null;

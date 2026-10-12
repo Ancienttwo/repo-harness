@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-// @generated-from src/core/capabilities/registry.ts sha256:97d0cdf45a89d658b4be47f5116cebc53a88c833a669907df33840b6fb5a485f
+// @generated-from src/core/capabilities/registry.ts sha256:fd8fdf21c2ae2b3d257c6b7b7c17aebaa135c8cf09c6cae8a63b5a5747774f8b
 // Standalone typed Bun projection. Regenerate from scripts/capability-resolver.ts; do not edit by hand.
 export const CAPABILITY_REGISTRY_VERSION = 1 as const;
 
@@ -51,9 +51,9 @@ export type CapabilityRegistryDiagnosticCode =
   | "ARCHCONTEXT_NODE_SUMMARY_INVALID"
   | "ARCHCONTEXT_NODE_RESPONSIBILITIES_INVALID"
   | "ARCHCONTEXT_INCLUDE_REQUIRED"
-  | "ARCHCONTEXT_EXCLUDE_UNSUPPORTED"
-  | "ARCHCONTEXT_INCLUDE_SHAPE_UNSUPPORTED"
-  | "ARCHCONTEXT_INCLUDE_SHAPE_AMBIGUOUS"
+  | "ARCHCONTEXT_INCLUDE_ANCHOR_REQUIRED"
+  | "ARCHCONTEXT_OWNER_UNKNOWN"
+  | "ARCHCONTEXT_RESOLVE_FAILED"
   | "ARCHCONTEXT_EXTENSIONS_REQUIRED"
   | "ARCHCONTEXT_LSP_PROFILE_REQUIRED"
   | "ARCHCONTEXT_VERIFICATION_REQUIRED"
@@ -198,7 +198,7 @@ function validatePathField(
 
 export function validateCapabilityRegistryValue(
   value: unknown,
-  options: { readonly repoRoot?: string } = {},
+  options: { readonly repoRoot?: string; readonly sharedPrefixes?: boolean } = {},
 ): CapabilityRegistryResolution {
   const repoRoot = options.repoRoot ?? "";
   if (!isRecord(value)) {
@@ -276,7 +276,7 @@ export function validateCapabilityRegistryValue(
         }
         try {
           const normalized = normalizeCapabilityPath(prefix, repoRoot);
-          const owner = prefixes.get(normalized);
+          const owner = options.sharedPrefixes ? undefined : prefixes.get(normalized);
           if (owner) {
             diagnostics.push(diagnostic(
               "DUPLICATE_PREFIX",
@@ -524,10 +524,13 @@ export interface ArchcontextNodeFile {
   readonly value: unknown;
 }
 
-export type ArchcontextIncludeTranslation =
-  | { readonly status: "prefix"; readonly prefix: string }
-  | { readonly status: "unsupported" }
-  | { readonly status: "ambiguous" };
+/** One `archctx resolve --paths-from` result, reduced to the fields this registry reads. */
+export interface ArchcontextPathOwner {
+  readonly path: string;
+  readonly matched: boolean;
+  readonly ambiguous: boolean;
+  readonly owningCapabilityId: string | null;
+}
 
 const ARCHCONTEXT_NODE_SCHEMA_VERSION = "archcontext.node/v2";
 const ARCHCONTEXT_CAPABILITY_KIND = "capability";
@@ -535,7 +538,6 @@ const ARCHCONTEXT_ACTIVE_STATUS = "active";
 const ARCHCONTEXT_ID_PREFIX = "capability";
 const ARCHCONTEXT_ID_SEGMENT = /^[a-z0-9][a-z0-9-]*$/;
 const ARCHCONTEXT_GLOB_WILDCARD = /[*?[\]{}!]/;
-const ARCHCONTEXT_DIRECTORY_SUFFIX = "/**";
 
 export function architectureModulePathFor(domain: string, name: string): string {
   return `docs/architecture/modules/${domain}/${name}.md`;
@@ -546,33 +548,22 @@ export function workstreamDirFor(domain: string, name: string): string {
 }
 
 /**
- * Translates one archcontext `source.include` glob into a capability prefix.
+ * Projects one archcontext `source.include` pattern onto its literal anchor: the
+ * leading path segments before the first segment with a glob character. `D/**`
+ * gives `D`, a file path gives itself, and `src/x/foo-*.ts` gives `src/x`.
  *
- * Upstream matches an include entry against the whole repo-relative path, so a
- * literal without wildcards addresses a single file, not a directory. Only two
- * shapes are accepted so the two authorities cannot disagree about what a
- * boundary covers:
- *
- * - `D/**` -> directory prefix `D`
- * - a wildcard-free literal that is not an existing directory -> that literal
- *
- * A wildcard-free literal that IS an existing directory is ambiguous (upstream
- * would match only the directory entry itself) and fails closed instead of
- * guessing; everything else is unsupported.
+ * The anchor is a display and directory-discovery projection only. It never
+ * decides ownership: under `archcontext`, `archctx resolve` owns that rule.
+ * A pattern whose first segment is a glob has no anchor.
  */
-export function archcontextIncludeToPrefix(
-  include: string,
-  options: { readonly isExistingDirectory?: (path: string) => boolean } = {},
-): ArchcontextIncludeTranslation {
-  if (typeof include !== "string" || include === "") return { status: "unsupported" };
-  if (include.endsWith(ARCHCONTEXT_DIRECTORY_SUFFIX)) {
-    const prefix = include.slice(0, -ARCHCONTEXT_DIRECTORY_SUFFIX.length);
-    if (prefix === "" || ARCHCONTEXT_GLOB_WILDCARD.test(prefix)) return { status: "unsupported" };
-    return { status: "prefix", prefix };
+export function archcontextIncludeAnchor(include: string): string | null {
+  if (typeof include !== "string") return null;
+  const segments: string[] = [];
+  for (const segment of include.split("/")) {
+    if (segment === "" || ARCHCONTEXT_GLOB_WILDCARD.test(segment)) break;
+    segments.push(segment);
   }
-  if (ARCHCONTEXT_GLOB_WILDCARD.test(include)) return { status: "unsupported" };
-  if (options.isExistingDirectory?.(include)) return { status: "ambiguous" };
-  return { status: "prefix", prefix: include };
+  return segments.length > 0 ? segments.join("/") : null;
 }
 
 function archcontextIdParts(value: unknown): { readonly domain: string; readonly name: string } | null {
@@ -591,19 +582,15 @@ function nonEmptyString(value: unknown): value is string {
  * Maps archcontext capability nodes onto the canonical capability registry.
  *
  * This stays a pure structural mapper: callers own file reading and YAML
- * parsing, and inject `isExistingDirectory` so include-shape disambiguation
- * never needs a filesystem here. Node-shape failures are reported as
- * `ARCHCONTEXT_*` diagnostics; when the mapping succeeds the derived registry
- * goes through the same `validateCapabilityRegistryValue` contract as the JSON
- * authority, so duplicate ids, duplicate prefixes, and invalid paths keep their
- * existing diagnostic codes.
+ * parsing. Node-shape failures are reported as `ARCHCONTEXT_*` diagnostics;
+ * when the mapping succeeds the derived registry goes through the same
+ * `validateCapabilityRegistryValue` contract as the JSON authority, so
+ * duplicate ids and invalid paths keep their existing diagnostic codes.
+ * Prefixes here are include anchors, and two capabilities can share one.
  */
 export function capabilityRegistryFromArchcontextNodes(
   files: readonly ArchcontextNodeFile[],
-  options: {
-    readonly repoRoot?: string;
-    readonly isExistingDirectory?: (path: string) => boolean;
-  } = {},
+  options: { readonly repoRoot?: string } = {},
 ): CapabilityRegistryResolution {
   const diagnostics: CapabilityRegistryDiagnostic[] = [];
   const capabilities: Capability[] = [];
@@ -691,53 +678,32 @@ export function capabilityRegistryFromArchcontextNodes(
       ));
       continue;
     }
-    const exclude = isRecord(source) ? source.exclude : undefined;
-    if (exclude !== undefined && (!Array.isArray(exclude) || exclude.length > 0)) {
-      diagnostics.push(diagnostic(
-        "ARCHCONTEXT_EXCLUDE_UNSUPPORTED",
-        `${file.path}#source.exclude`,
-        `${file.path}: source.exclude is not supported; capability prefixes have no exclusion form`,
-      ));
-      continue;
-    }
-
+    // Include and exclude shapes belong to ArchContext validation. This mapper
+    // reads only the literal anchors for display and directory discovery.
     const prefixes: string[] = [];
     let includeRejected = false;
     for (const [index, entry] of include.entries()) {
-      const entryPath = `${file.path}#source.include[${index}]`;
       if (!nonEmptyString(entry)) {
         diagnostics.push(diagnostic(
           "ARCHCONTEXT_INCLUDE_REQUIRED",
-          entryPath,
+          `${file.path}#source.include[${index}]`,
           `${file.path}: source.include entries must be non-empty strings`,
         ));
         includeRejected = true;
         continue;
       }
-      const translation = archcontextIncludeToPrefix(entry, {
-        isExistingDirectory: options.isExistingDirectory,
-      });
-      if (translation.status === "ambiguous") {
-        diagnostics.push(diagnostic(
-          "ARCHCONTEXT_INCLUDE_SHAPE_AMBIGUOUS",
-          entryPath,
-          `${file.path}: source.include ${entry} is an existing directory but matches a single path; write ${entry}/** for a directory boundary`,
-        ));
-        includeRejected = true;
-        continue;
-      }
-      if (translation.status === "unsupported") {
-        diagnostics.push(diagnostic(
-          "ARCHCONTEXT_INCLUDE_SHAPE_UNSUPPORTED",
-          entryPath,
-          `${file.path}: unsupported source.include shape ${entry}; use <dir>/** or a wildcard-free file path`,
-        ));
-        includeRejected = true;
-        continue;
-      }
-      prefixes.push(translation.prefix);
+      const anchor = archcontextIncludeAnchor(entry);
+      if (anchor !== null && !prefixes.includes(anchor)) prefixes.push(anchor);
     }
     if (includeRejected) continue;
+    if (prefixes.length === 0) {
+      diagnostics.push(diagnostic(
+        "ARCHCONTEXT_INCLUDE_ANCHOR_REQUIRED",
+        `${file.path}#source.include`,
+        `${file.path}: source.include needs at least one entry with a literal leading path`,
+      ));
+      continue;
+    }
 
     const extensions = node.extensions;
     if (!isRecord(extensions)) {
@@ -801,8 +767,60 @@ export function capabilityRegistryFromArchcontextNodes(
   capabilities.sort((left, right) => byteCompare(left.id, right.id));
   return validateCapabilityRegistryValue(
     { version: CAPABILITY_REGISTRY_VERSION, capabilities },
-    { repoRoot: options.repoRoot },
+    { repoRoot: options.repoRoot, sharedPrefixes: true },
   );
+}
+
+/**
+ * Maps `archctx resolve` owners onto the registry. ArchContext decides the owner;
+ * this function only joins its capability id to registry metadata. An ambiguous
+ * owner fails closed like a same-length prefix tie. A path without an owning
+ * capability is unmapped. The match prefix is the owner's primary anchor,
+ * because ArchContext does not report which include entry matched.
+ */
+export function capabilityPathResolutionFromArchcontextOwners(
+  registry: CapabilityRegistry,
+  owners: readonly ArchcontextPathOwner[],
+): CapabilityPathResolution {
+  const byNodeId = new Map(registry.capabilities.map((capability) => [
+    `${ARCHCONTEXT_ID_PREFIX}.${capability.domain}.${capability.name}`,
+    capability,
+  ]));
+  const diagnostics: CapabilityRegistryDiagnostic[] = [];
+  const matches: CapabilityPathMatch[] = [];
+  const unmappedPaths: string[] = [];
+  const seenPaths = new Set<string>();
+  for (const owner of owners) {
+    if (seenPaths.has(owner.path)) continue;
+    seenPaths.add(owner.path);
+    if (owner.ambiguous) {
+      diagnostics.push(diagnostic("AMBIGUOUS_MATCH", "path", `ambiguous ArchContext owner for ${owner.path}`));
+      continue;
+    }
+    if (!owner.matched || owner.owningCapabilityId === null) {
+      unmappedPaths.push(owner.path);
+      continue;
+    }
+    const capability = byNodeId.get(owner.owningCapabilityId);
+    if (!capability) {
+      diagnostics.push(diagnostic(
+        "ARCHCONTEXT_OWNER_UNKNOWN",
+        "path",
+        `${owner.path}: ArchContext owner ${owner.owningCapabilityId} is not an active capability`,
+      ));
+      continue;
+    }
+    matches.push({ capability, prefix: capability.prefixes[0], filePath: owner.path });
+  }
+  matches.sort((left, right) => byteCompare(left.filePath, right.filePath));
+  unmappedPaths.sort(byteCompare);
+  return {
+    status: diagnostics.length > 0 ? "invalid" : "valid",
+    capabilityIds: Array.from(new Set(matches.map((match) => match.capability.id))).sort(byteCompare),
+    matches,
+    unmappedPaths,
+    diagnostics,
+  };
 }
 import { existsSync, readdirSync, readFileSync, statSync } from "fs";
 import { relative, resolve } from "path";
@@ -1029,16 +1047,7 @@ function capabilityAuthorityPath(mode: CapabilitySourceMode): string {
 // the JSON registry never falls back to archcontext nodes.
 function loadRegistry(repo: string, mode: CapabilitySourceMode): CapabilityRegistryResolution {
   if (mode === "archcontext") {
-    return capabilityRegistryFromArchcontextNodes(readArchcontextNodeFiles(repo), {
-      repoRoot: repo,
-      isExistingDirectory: (path) => {
-        try {
-          return statSync(resolve(repo, path)).isDirectory();
-        } catch {
-          return false;
-        }
-      },
-    });
+    return capabilityRegistryFromArchcontextNodes(readArchcontextNodeFiles(repo), { repoRoot: repo });
   }
   const registryPath = resolve(repo, DEFAULT_REGISTRY);
   if (!existsSync(registryPath)) {
@@ -1124,15 +1133,11 @@ function validateRegistryEffects(registry: CapabilityRegistry, repo: string): st
   return errors;
 }
 
-export function findMatch(registry: CapabilityRegistry, repo: string, inputPath: string) {
-  const result = matchCapabilityPath(registry, inputPath, { repoRoot: repo });
-  if (result.status === "invalid") {
-    throw new Error(result.diagnostics.map((item) => item.message).join("; "));
-  }
-  if (result.status === "unmapped") {
+function matchRecord(filePath: string, winner: CapabilityPathMatch | null) {
+  if (winner === null) {
     return {
       matched: false,
-      file_path: result.filePath,
+      file_path: filePath,
       functional_block: "root",
       matched_prefix: "root",
       capability_id: "root",
@@ -1142,7 +1147,6 @@ export function findMatch(registry: CapabilityRegistry, repo: string, inputPath:
       workstream_dir: "tasks/workstreams/root/_root",
     };
   }
-  const winner = result.match;
   return {
     matched: true,
     file_path: winner.filePath,
@@ -1158,6 +1162,44 @@ export function findMatch(registry: CapabilityRegistry, repo: string, inputPath:
     lsp_profile: winner.capability.lsp_profile,
     verification_hints: winner.capability.verification_hints,
   };
+}
+
+/** Registry-mode longest-prefix match. Under `archcontext`, use findMatches. */
+export function findMatch(registry: CapabilityRegistry, repo: string, inputPath: string) {
+  const result = matchCapabilityPath(registry, inputPath, { repoRoot: repo });
+  if (result.status === "invalid") {
+    throw new Error(result.diagnostics.map((item) => item.message).join("; "));
+  }
+  return result.status === "matched" ? matchRecord(result.match.filePath, result.match) : matchRecord(result.filePath, null);
+}
+
+type ArchcontextPathResolver = (repo: string, registry: CapabilityRegistry, paths: readonly string[]) => CapabilityPathResolution;
+
+// The standalone projection of this helper has no package-local archctx, so the
+// import fails there and archcontext mode fails closed instead of guessing.
+async function archcontextPathResolver(): Promise<ArchcontextPathResolver> {
+  try {
+    return (await import("../src/effects/capabilities/archcontext-owners")).resolveArchcontextCapabilityPaths;
+  } catch (error) {
+    throw new CapabilitySourceError(
+      `${CAPABILITY_SOURCE_KEY}="archcontext" resolves paths through the repo-harness package; ` +
+        `run repo-harness run capability-resolver (${(error as Error).message})`
+    );
+  }
+}
+
+/** One match per input path. Under `archcontext`, one archctx call resolves the whole batch. */
+export async function findMatches(registry: CapabilityRegistry, repo: string, mode: CapabilitySourceMode, paths: readonly string[]) {
+  if (mode === "registry") return paths.map((path) => findMatch(registry, repo, path));
+  const resolution = (await archcontextPathResolver())(repo, registry, paths);
+  if (resolution.status === "invalid") {
+    throw new Error(resolution.diagnostics.map((item) => item.message).join("; "));
+  }
+  const byPath = new Map(resolution.matches.map((match) => [match.filePath, match]));
+  return paths.map((path) => {
+    const filePath = normalizeCapabilityPath(path, repo);
+    return matchRecord(filePath, byPath.get(filePath) ?? null);
+  });
 }
 
 function printJson(value: unknown): void {
@@ -1238,9 +1280,7 @@ async function main(): Promise<void> {
         "ARCHCONTEXT_NODE_SUMMARY_INVALID",
         "ARCHCONTEXT_NODE_RESPONSIBILITIES_INVALID",
         "ARCHCONTEXT_INCLUDE_REQUIRED",
-        "ARCHCONTEXT_EXCLUDE_UNSUPPORTED",
-        "ARCHCONTEXT_INCLUDE_SHAPE_UNSUPPORTED",
-        "ARCHCONTEXT_INCLUDE_SHAPE_AMBIGUOUS",
+        "ARCHCONTEXT_INCLUDE_ANCHOR_REQUIRED",
         "ARCHCONTEXT_EXTENSIONS_REQUIRED",
         "ARCHCONTEXT_LSP_PROFILE_REQUIRED",
         "ARCHCONTEXT_VERIFICATION_REQUIRED",
@@ -1297,14 +1337,7 @@ async function main(): Promise<void> {
     throw new Error(`capability registry is invalid:\n${errors.join("\n")}`);
   }
   if (args.pathsFrom) {
-    const paths = await readPathLines(args.pathsFrom);
-    const seen = new Set<string>();
-    const matches = [];
-    for (const path of paths) {
-      if (seen.has(path)) continue;
-      seen.add(path);
-      matches.push(findMatch(registry, repo, path));
-    }
+    const matches = await findMatches(registry, repo, mode, [...new Set(await readPathLines(args.pathsFrom))]);
     if (args.format === "json") {
       printJson(matches);
     } else {
@@ -1315,7 +1348,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  const match = findMatch(registry, repo, args.path);
+  const [match] = await findMatches(registry, repo, mode, [args.path]);
   if (args.format === "json") {
     printJson(match);
   } else {

@@ -207,9 +207,10 @@ AcceptanceReceipt field.
   `tasks/workstreams/<domain>/<capability>/` that carries status across
   sessions and plans instead of living only in chat memory.
 - **Capability**: A functional block registered in the capability authority
-  selected by `.ai/harness/policy.json#context.capability_source` and resolved
-  by longest-prefix path match, owning local agent context and ownership
-  boundaries for the files under it.
+  selected by `.ai/harness/policy.json#context.capability_source`. The
+  `registry` source resolves paths by longest-prefix match. The `archcontext`
+  source resolves them through `archctx resolve`. A capability owns local agent
+  context and ownership boundaries for the files under it.
 - **Module Engineer**: A stable logical engineering role that references one
   canonical capability and a reviewed SOP. It is not a Session, task owner,
   Lease, or acceptance identity.
