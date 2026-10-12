@@ -1,4 +1,4 @@
-# repo-harness 0.21.2 preparation
+# repo-harness 0.21.2 publication record
 
 ## Scope and authority
 
@@ -42,8 +42,9 @@
 - Kanban status is a read-only projection from native sources or optional
   Herdr. Runtime status grants no task completion authority. Python 3.9 or
   later is needed only for Claude and Pi capture.
-- No merge, tag, npm publish or installed user runtime update is authorized here.
-  Parent review and publication coordination must follow final acceptance.
+- The preparation phase did not authorize merge, tag, npm publication or
+  an installed user runtime update. The later owner approval below superseded
+  that preparation limit for the final 0.21.2 publication only.
 
 ## Integration decisions
 
@@ -110,9 +111,10 @@ Only fixture-owned processes and paths may be stopped or removed.
 - #615 squash merge: `daa49e202b49068418ead6a78e399d851ddf3d73`.
   Parent: `80e773fa1b91c075ddef0a0cc47203920a57e23e`.
   `git revert --no-edit daa49e202b49068418ead6a78e399d851ddf3d73`.
-- The integration PR has no main merge SHA until parent publication. Record
-  that exact SHA and parent before publication. Do not substitute a candidate
-  SHA for a future squash merge. No rollback command here undoes npm publication.
+- #604 release squash: `942f3fca4195facb298ffc48dc5c7f3c804de8ce`.
+  Parent: `62ad418b8640c71d15e3b0f207c70e523fe8d4cf`.
+  `git revert --no-edit 942f3fca4195facb298ffc48dc5c7f3c804de8ce`.
+  No rollback command here undoes npm publication.
 - Remove an explicitly installed strategy Skill with `strategy uninstall-skill`
   before package rollback. Project memory was not written by this feature.
 
@@ -136,6 +138,14 @@ Only fixture-owned processes and paths may be stopped or removed.
   status, including ignored files, was identical before and after. The packet
   reports two unknowns: README evidence is unverified at this revision, and
   one goal fact is unsupported. There is no business-success verdict.
+
+## Owner approval
+
+On 2026-10-12 (Asia/Singapore), the owner confirmed in the issue and PR
+closeout session that prior approval covered the final #604 merge, the
+`v0.21.2` tag, npm and GitHub publication, and the local runtime update.
+The owner authorized this confirmation to be added to this record.
+This records the earlier approval. It grants no new release authority.
 
 ## Publication status
 
@@ -167,5 +177,6 @@ Only fixture-owned processes and paths may be stopped or removed.
   and 26. These numbers are not stable, so some local HFS+ or APFS volumes are
   refused with `store_location`. 0.21.1 has the same behavior. A fix is planned
   for the next release.
-- Rollback: revert each squash commit with `git revert <squash-commit>`.
+- Release rollback: `git revert --no-edit 942f3fca4195facb298ffc48dc5c7f3c804de8ce`.
+  The integration rollback commands above retain their separate scope.
   A Git revert does not undo an npm publication.
