@@ -59,16 +59,21 @@ export const DEV_ACTIVITY_GH_CLOSED_PR_FIELDS = DEV_ACTIVITY_GH_PR_BASE_FIELDS;
  * merged and closed-unmerged PRs are bounded to the shipped window by a GitHub
  * search date and carry no CI. The day-granular date is a superset bound; the
  * projection applies the exact window. There is no retry or fallback query.
+ * A query that returns more than DEV_ACTIVITY_GH_PR_LIMIT rows marks the
+ * GitHub source unavailable, because a partial PR set misplaces cards.
  * The only variable argv element is the window date, computed from the
  * collector clock.
  */
+/** Rows each PR query may return. One extra row is requested to detect truncation. */
+export const DEV_ACTIVITY_GH_PR_LIMIT = 200;
+
 export function devActivityGhPrListArgv(nowMs: number): readonly (readonly string[])[] {
   const since = new Date(nowMs - DEV_ACTIVITY_SHIPPED_WINDOW_MS).toISOString().slice(0, 10);
   return Object.freeze([
-    Object.freeze(['pr', 'list', '--state', 'open', '--author', '@me', '--limit', '50', '--json', DEV_ACTIVITY_GH_OPEN_PR_FIELDS]),
-    Object.freeze(['pr', 'list', '--state', 'merged', '--author', '@me', '--limit', '50', '--search', `merged:>=${since}`, '--json', DEV_ACTIVITY_GH_CLOSED_PR_FIELDS]),
+    Object.freeze(['pr', 'list', '--state', 'open', '--author', '@me', '--limit', String(DEV_ACTIVITY_GH_PR_LIMIT + 1), '--json', DEV_ACTIVITY_GH_OPEN_PR_FIELDS]),
+    Object.freeze(['pr', 'list', '--state', 'merged', '--author', '@me', '--limit', String(DEV_ACTIVITY_GH_PR_LIMIT + 1), '--search', `merged:>=${since}`, '--json', DEV_ACTIVITY_GH_CLOSED_PR_FIELDS]),
     // `--state closed` alone also matches merged PRs; `is:unmerged` keeps this query to closed-unmerged.
-    Object.freeze(['pr', 'list', '--state', 'closed', '--author', '@me', '--limit', '50', '--search', `closed:>=${since} is:unmerged`, '--json', DEV_ACTIVITY_GH_CLOSED_PR_FIELDS]),
+    Object.freeze(['pr', 'list', '--state', 'closed', '--author', '@me', '--limit', String(DEV_ACTIVITY_GH_PR_LIMIT + 1), '--search', `closed:>=${since} is:unmerged`, '--json', DEV_ACTIVITY_GH_CLOSED_PR_FIELDS]),
   ]);
 }
 
@@ -80,7 +85,7 @@ export type DevActivityProcessRunner = (
   options: { readonly cwd: string; readonly env: NodeJS.ProcessEnv; readonly timeout_ms: number; readonly signal: AbortSignal },
 ) => Promise<DevActivityProcessResult>;
 
-/** Spawn with no shell, no stdin and no stderr capture. The deadline kills the child. */
+/** Spawn with no shell, no stdin and no stderr capture. The deadline sends SIGTERM to the direct child. */
 export const runDevActivityProcess: DevActivityProcessRunner = (command, argv, options) => new Promise((settle) => {
   if (options.signal.aborted) { settle({ ok: false, code: 'aborted' }); return; }
   let child: ReturnType<typeof spawn>;
@@ -93,24 +98,45 @@ export const runDevActivityProcess: DevActivityProcessRunner = (command, argv, o
   const chunks: Buffer[] = [];
   let size = 0;
   let settled = false;
-  const kill = () => { try { child.kill('SIGKILL'); } catch { /* already exited */ } };
+  let failure: DevActivityProcessResult | null = null;
+  let directExited = false;
+  let escalation: ReturnType<typeof setTimeout> | undefined;
   const finish = (result: DevActivityProcessResult) => {
     if (settled) return;
     settled = true;
     clearTimeout(timer);
+    clearTimeout(escalation);
     options.signal.removeEventListener('abort', onAbort);
+    if (!result.ok) child.stdout!.destroy();
     settle(result);
   };
-  const onAbort = () => { kill(); finish({ ok: false, code: 'aborted' }); };
-  const timer = setTimeout(() => { kill(); finish({ ok: false, code: 'timeout' }); }, options.timeout_ms);
+  const terminate = (code: DevActivityProcessFailure) => {
+    if (settled || failure !== null) return;
+    failure = { ok: false, code };
+    clearTimeout(timer);
+    if (directExited) { finish(failure); return; }
+    try { child.kill('SIGTERM'); } catch { /* already exited */ }
+    // Reap the direct child before the next collection cycle. A grandchild
+    // must not hold its inherited stdout open after the direct child exits.
+    escalation = setTimeout(() => {
+      try { child.kill('SIGKILL'); } catch { /* already exited */ }
+    }, 1000);
+  };
+  const onAbort = () => terminate('aborted');
+  const timer = setTimeout(() => terminate('timeout'), options.timeout_ms);
   options.signal.addEventListener('abort', onAbort, { once: true });
   child.stdout!.on('data', (chunk: Buffer) => {
+    if (failure !== null) return;
     size += chunk.length;
-    if (size > DEV_ACTIVITY_STDOUT_LIMIT) { kill(); finish({ ok: false, code: 'failed' }); return; }
+    if (size > DEV_ACTIVITY_STDOUT_LIMIT) { terminate('failed'); return; }
     chunks.push(chunk);
   });
-  child.once('error', (error: NodeJS.ErrnoException) => finish({ ok: false, code: error.code === 'ENOENT' ? 'not_found' : 'failed' }));
-  child.once('close', (code) => finish(code === 0 ? { ok: true, stdout: Buffer.concat(chunks).toString('utf8') } : { ok: false, code: 'failed' }));
+  child.once('error', (error: NodeJS.ErrnoException) => finish(failure ?? { ok: false, code: error.code === 'ENOENT' ? 'not_found' : 'failed' }));
+  child.once('exit', () => {
+    directExited = true;
+    if (failure !== null) finish(failure);
+  });
+  child.once('close', (code) => finish(failure ?? (code === 0 ? { ok: true, stdout: Buffer.concat(chunks).toString('utf8') } : { ok: false, code: 'failed' })));
 });
 
 export interface DevActivityCollectorOptions {
@@ -324,9 +350,9 @@ Promise<{ health: DevActivitySourceHealth; github: string | null; default_branch
   try {
     const repository = parseGhRepoView(view.stdout);
     const byNumber = new Map<number, DevActivityRawPullRequest>();
-    outputs.forEach((stdout, index) => {
-      for (const pr of parseGhPullRequests(stdout, index === 0)) if (!byNumber.has(pr.number)) byNumber.set(pr.number, pr);
-    });
+    const lists = outputs.map((stdout, index) => parseGhPullRequests(stdout, index === 0));
+    if (lists.some(list => list.length > DEV_ACTIVITY_GH_PR_LIMIT)) return unavailable('github_truncated');
+    for (const list of lists) for (const pr of list) if (!byNumber.has(pr.number)) byNumber.set(pr.number, pr);
     return { health: { kind: 'github', status: 'ok', reason: null, observed_at: at() }, ...repository, pull_requests: [...byNumber.values()] };
   } catch {
     return unavailable('gh_output_invalid');
@@ -421,8 +447,15 @@ Promise<DevActivitySnapshotV1> {
   }
   const repositories = await boundedMap(readable, options.max_concurrency ?? DEV_ACTIVITY_REPOSITORY_CONCURRENCY,
     repo => collectRepository(repo, ledger, runtime, ctx));
-  const seen = new Set(repositories.flatMap(repo => repo.human_requests.map(request => `${repo.repository_id}:${request.decision_id}`)));
-  for (const key of [...ctx.first_seen.keys()]) if (!seen.has(key)) ctx.first_seen.delete(key);
+  // Only a complete, successful inventory proves a request closed; a failed or
+  // partial read keeps that repository's wait clocks.
+  for (const repo of repositories) {
+    if (!repo.sources.some(source => source.kind === 'decisions' && source.status === 'ok')) continue;
+    const open = new Set(repo.human_requests.map(request => `${repo.repository_id}:${request.decision_id}`));
+    for (const key of [...ctx.first_seen.keys()]) {
+      if (key.startsWith(`${repo.repository_id}:`) && !open.has(key)) ctx.first_seen.delete(key);
+    }
+  }
   return projectDevActivity({
     collected_at: new Date(now()).toISOString(),
     now_ms: now(),

@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { execFileSync } from 'node:child_process';
 
 import {
   projectDevActivity,
@@ -265,6 +266,41 @@ describe('dev activity public text and health', () => {
     expect(decoded.items[0]!.title).toBe(title);
     expect(decoded.items[0]!.pull_request?.title).toBe(title);
     expect(decoded.attention.find(entry => entry.kind === 'ready_to_merge')?.summary).toBe(title);
+  });
+
+  test('masks absolute paths after any punctuation but keeps branch and ratio slashes', () => {
+    const cases: [string, string][] = [
+      ['failed [/home/alice/secret]', 'failed [[private path]]'],
+      ['failed,/home/alice/secret', 'failed,[private path]'],
+      ['path=/home/alice/secret', 'path=[private path]'],
+      ['open ~/Projects/secret now', 'open ~[private path] now'],
+      ['see <C:\\Users\\me>', 'see <[private path]>'],
+      ['merge feat/x and and/or at 1/2 from ./rel', 'merge feat/x and and/or at 1/2 from ./rel'],
+    ];
+    for (const [title, expected] of cases) {
+      const snapshot = project(repo({ ledger: [ledger({ title })] }));
+      expect(snapshot.items[0]!.title).toBe(expected);
+      expect(decodeDevActivitySnapshot(JSON.parse(JSON.stringify(snapshot))).items[0]!.title).toBe(expected);
+    }
+  });
+
+  test('keeps Unicode branch names in worktree and PR cards', () => {
+    for (const branch of ['修复/问题', 'café/issue', 'cafe\u0301/issue', 'δοκιμή/42', '分支１/修改', 'fix🔧/issue', 'fix👩‍💻/issue', 'fix❤️/issue']) {
+      expect(execFileSync('git', ['check-ref-format', '--branch', branch], { encoding: 'utf8' }).trim()).toBe(branch);
+      const snapshot = project(repo({ worktrees: [worktree(branch)], pull_requests: [pr(branch)] }));
+      expect(snapshot.items).toHaveLength(1);
+      expect(snapshot.items[0]!.branch).toBe(branch);
+      expect(snapshot.items[0]!.worktrees).toHaveLength(1);
+      expect(snapshot.items[0]!.pull_request).not.toBeNull();
+      expect(decodeDevActivitySnapshot(JSON.parse(JSON.stringify(snapshot))).items[0]!.branch).toBe(branch);
+    }
+  });
+
+  test('the decoder rejects a path after punctuation in a guarded field', () => {
+    const snapshot = project(repo({ ledger: [ledger({ title: 'plain title' })] }));
+    const raw = JSON.parse(JSON.stringify(snapshot));
+    raw.items[0].title = 'failed [/home/alice/secret]';
+    expect(() => decodeDevActivitySnapshot(raw)).toThrow('dev activity projection invalid');
   });
 
   test('still masks a path in a ledger-only title', () => {
