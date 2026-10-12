@@ -127,7 +127,7 @@ sequenceDiagram
 
 依赖方向：catalog 读取 primary 的 `manifest.json`。primary 的 manifest 以 `source` 字段指向 bundled-skills 的包目录（例如 `manifest.json:34`）。bundled-skills 不调用任何组件。
 
-catalog 的消费者分布在多个 capability：`src/cli/commands/init.ts` 和 `global-runtime.ts`、`src/cli/installer/install-profile.ts` 和 `skill-projection.ts`、`src/cli/commands/doctor.ts`、`src/core/upgrade/legacy-inventory.ts`、`src/effects/setup/snapshot.ts`、`src/effects/strategy/skill.ts`。只有 strategy-reflection 的入向 relation 已声明，其他由各自的分组声明。
+catalog 的消费者分布在多个 capability：`src/cli/commands/init.ts` 和 `global-runtime.ts`、`src/cli/installer/install-profile.ts` 和 `skill-projection.ts`、`src/cli/commands/doctor.ts`、`src/core/upgrade/legacy-inventory.ts`、`src/cli/commands/setup-snapshot.ts`、`src/effects/strategy/skill.ts`。只有 strategy-reflection 的入向 relation 已声明，其他由各自的分组声明。
 
 `.claude/.skill-version` 和 `assets/skill-version.json` 是版本 pin，由 `scripts/check-skill-version.ts` 检查。它们与 catalog 一起变化，所以放在 catalog 组件。
 

@@ -13,5 +13,7 @@ source:
   include:
     - src/core/setup/**
     - src/effects/setup/**
+    - src/cli/commands/setup-snapshot.ts
+    - src/cli/commands/setup-check-child.ts
     - src/core/dev-activity/**
     - src/effects/dev-activity/**

@@ -20,6 +20,8 @@ source:
     - src/core/docs/**
     - src/core/setup/**
     - src/effects/setup/**
+    - src/cli/commands/setup-snapshot.ts
+    - src/cli/commands/setup-check-child.ts
     - src/core/dev-activity/**
     - src/effects/dev-activity/**
     - src/effects/terminal/herdr-observation.ts
