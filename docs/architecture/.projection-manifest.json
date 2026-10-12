@@ -5,7 +5,7 @@
   "sourceDigest": "sha256:682c66c2f8440c995b4db04fc80d99ff6261ba9ef8864b7bfc8b049598dafee5",
   "provenance": {
     "schemaVersion": "archcontext.architecture-docs-projection-provenance/v3",
-    "sourceTreeDigest": "sha256:3049f4d655fda7b428ee3615f6b1adbc8aa0b0b0e58e6f91ee5e9bdca647fb1e",
+    "sourceTreeDigest": "sha256:e11fa59783bc910d13bb9c5bffbc8be1b926489d60ae15e9805d2921ca0e3d29",
     "modelDigest": "sha256:d9b7a70fbf24f412d58c0eb795205c3b9f1f5c4ffcf0f773e161572163f6c247",
     "rendererVersion": "archcontext.docs-renderer/v5",
     "layoutVersion": "archcontext.docs-layout/v1",
@@ -13,9 +13,9 @@
       "codeGraphPackage": "@colbymchenry/codegraph",
       "codeGraphVersion": "1.6.1"
     },
-    "projectionInputDigest": "sha256:00c052f07040179d08ef33922f42cde3cc4e8a19dccef07eddcc4fb578367455"
+    "projectionInputDigest": "sha256:fbefc900ee26a818cfb533de077f9305d1ab2bfcd8d8e00ab472c38125529686"
   },
-  "projectionDigest": "sha256:bbe6ec22ac6b582c556e9779b54648919bbbb1278d424957766fc6d43028e9a4",
+  "projectionDigest": "sha256:879a6395d51f6532373355073f5ce8a08ec5579c83b76436587aa70b7acc1fd6",
   "semanticBaseline": {
     "semanticState": {
       "schemaVersion": "archcontext.architecture-semantic-state/v1",
@@ -979,17 +979,17 @@
     },
     "digests": {
       "modelDigest": "sha256:d9b7a70fbf24f412d58c0eb795205c3b9f1f5c4ffcf0f773e161572163f6c247",
-      "sourceTreeDigest": "sha256:3049f4d655fda7b428ee3615f6b1adbc8aa0b0b0e58e6f91ee5e9bdca647fb1e",
+      "sourceTreeDigest": "sha256:e11fa59783bc910d13bb9c5bffbc8be1b926489d60ae15e9805d2921ca0e3d29",
       "flowProofDigest": "sha256:9496722fca27d4d1fd3d8617339b3fa2763207d19b9fc043dfda50f53a69b5d2",
-      "projectionDigest": "sha256:bbe6ec22ac6b582c556e9779b54648919bbbb1278d424957766fc6d43028e9a4"
+      "projectionDigest": "sha256:879a6395d51f6532373355073f5ce8a08ec5579c83b76436587aa70b7acc1fd6"
     },
     "evidence": {
-      "sourceTreeDigest": "sha256:3049f4d655fda7b428ee3615f6b1adbc8aa0b0b0e58e6f91ee5e9bdca647fb1e",
+      "sourceTreeDigest": "sha256:e11fa59783bc910d13bb9c5bffbc8be1b926489d60ae15e9805d2921ca0e3d29",
       "selectorEvidenceDigest": "sha256:d5af717285dd92ced26841a64358d3aabffb7da526a25ae190ebf54acf42e6b3",
       "rendererVersion": "archcontext.docs-renderer/v5"
     }
   },
-  "receiptDigest": "sha256:6fea99e8566f5d41c1229289ca5c54739007e5e4688315868a8683bc52129b64",
+  "receiptDigest": "sha256:4385586650ca2c72422a34b2b2240b3bb4569cce2e3ba31663540c4ae2dbeaf1",
   "targetCount": 43,
   "fileCount": 43,
   "targets": [
@@ -1852,7 +1852,7 @@
       "format": "markdown",
       "sourceDigest": "sha256:302b23b6fefd6dd24182828c81ed82b2d5c49c278853c8edd7653698a73304cd",
       "outputDigest": "sha256:3a77303b0b2c586acea669aca450aa1e778a4734f1fe35191dee6cecadddd7b6",
-      "sourceFootprintDigest": "sha256:5ac03babd5489a44e0a8317674f024aef7874ab5e0b3b15c1bb110c205704d31",
+      "sourceFootprintDigest": "sha256:84ff1c8b9f0977d296f83c978c18d11a98fde49ab5ea1a49759db5bc032713bb",
       "scale": {
         "fileCountBucket": {
           "lower": 500,
@@ -1878,7 +1878,7 @@
       "format": "markdown",
       "sourceDigest": "sha256:93c7c46689afcef2e28a333c2fdfd5c7886095566264eb6a8271606b2f0207a9",
       "outputDigest": "sha256:f5194623ad4f37c5ef49acc60cd0c90f563e818635a06fe4aa8c15c4f87bea1f",
-      "sourceFootprintDigest": "sha256:f67d880edea9ebb8dd0b15d1907f461713fcfcad66f94b4850c32bc7e00cdb6a",
+      "sourceFootprintDigest": "sha256:027bf099b186881048e07c707fa0904aea9a9cc6397443fee3aa11cb75c22d30",
       "scale": {
         "fileCountBucket": {
           "lower": 500,
@@ -1956,7 +1956,7 @@
       "format": "markdown",
       "sourceDigest": "sha256:5553d1f6b6ee2c05444e88ade5579efea3526a37e72dae013ac0fe10a2f98458",
       "outputDigest": "sha256:ef796604502fefe9dc9e47addb3baf4e2c6cc71504f9c7a68f6fbe296df0b1e0",
-      "sourceFootprintDigest": "sha256:9e9aa0012085673a5b1109aa77720486181aba83d7d7d09a2346ae01f0d55a07",
+      "sourceFootprintDigest": "sha256:2a5905592ea5af67cfd50a80e978017b0b82f8fe7f2ea023826576870f6c3cea",
       "scale": {
         "fileCountBucket": {
           "lower": 50,
