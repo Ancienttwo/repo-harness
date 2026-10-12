@@ -587,7 +587,7 @@ describe('effective state resolver', () => {
       });
     }, 30_000);
 
-    function seedArchcontextCapability(cwd: string): void {
+    function seedArchcontextCapability(cwd: string, source = ['  include:', '    - src/**', '  exclude:', '    - src/generated/**']): void {
       write(cwd, '.ai/harness/policy.json', JSON.stringify({ context: { capability_source: 'archcontext' } }));
       write(cwd, '.archcontext/model/nodes/capability.fixture.feature.yaml', [
         'schemaVersion: archcontext.node/v2',
@@ -599,10 +599,7 @@ describe('effective state resolver', () => {
         'responsibilities:',
         '  - Own the feature sources',
         'source:',
-        '  include:',
-        '    - src/**',
-        '  exclude:',
-        '    - src/generated/**',
+        ...source,
         'extensions:',
         '  contractFiles:',
         '    agents: AGENTS.md',
@@ -623,6 +620,21 @@ describe('effective state resolver', () => {
         });
         expect(state.blockers).not.toContain('capability_registry:invalid');
         expect(state.profile_reasons).toContain('capability:unmapped:1');
+      });
+    }, 60_000);
+
+    test('archcontext ownership is not reused after a target path turns into a directory', () => {
+      withRepo((cwd) => {
+        // The exact include owns the file; ArchContext gives the directory contents no owner.
+        seedArchcontextCapability(cwd, ['  include:', '    - src/thing']);
+        write(cwd, 'src/thing', 'file\n');
+        commitFixture(cwd, 'add src/thing as a file');
+        const options = { targetPaths: ['src/thing'], operationKind: 'edit' as const };
+        expect(resolveEffectiveState(cwd, Date.now(), options).profile_reasons).not.toContain('capability:unmapped:1');
+        rmSync(join(cwd, 'src/thing'));
+        write(cwd, 'src/thing/inner.ts', 'export {};\n');
+        commitFixture(cwd, 'turn src/thing into a directory');
+        expect(resolveEffectiveState(cwd, Date.now(), options).profile_reasons).toContain('capability:unmapped:1');
       });
     }, 60_000);
 

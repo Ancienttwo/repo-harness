@@ -42,6 +42,25 @@ function readOwners(value: unknown, queries: readonly string[]): ArchctxResolveR
   });
 }
 
+function prepareQueries(repoRoot: string, inputPaths: readonly string[]) {
+  const diagnostics: CapabilityRegistryDiagnostic[] = [];
+  const paths: string[] = [];
+  for (const inputPath of inputPaths) {
+    try {
+      const path = normalizeCapabilityPath(inputPath, repoRoot);
+      if (!paths.includes(path)) paths.push(path);
+    } catch (error) {
+      diagnostics.push({ code: 'INVALID_PATH', path: 'path', message: (error as Error).message });
+    }
+  }
+  return { diagnostics, paths, queries: paths.map((path) => (isDirectory(repoRoot, path) ? `${path}/` : path)) };
+}
+
+/** The exact query lines archctx receives; a directory becomes `dir/`. Callers key caches on them. */
+export function archcontextResolveQueries(repoRoot: string, inputPaths: readonly string[]): string[] {
+  return prepareQueries(repoRoot, inputPaths).queries;
+}
+
 /**
  * Resolves path owners through the package-local `archctx resolve --paths-from`,
  * the only ownership authority under `capability_source: archcontext`. One
@@ -56,17 +75,7 @@ export function resolveArchcontextCapabilityPaths(
   inputPaths: readonly string[],
   options: ArchctxProviderOptions = {},
 ): CapabilityPathResolution {
-  const diagnostics: CapabilityRegistryDiagnostic[] = [];
-  const paths: string[] = [];
-  for (const inputPath of inputPaths) {
-    try {
-      const path = normalizeCapabilityPath(inputPath, repoRoot);
-      if (!paths.includes(path)) paths.push(path);
-    } catch (error) {
-      diagnostics.push({ code: 'INVALID_PATH', path: 'path', message: (error as Error).message });
-    }
-  }
-  const queries = paths.map((path) => (isDirectory(repoRoot, path) ? `${path}/` : path));
+  const { diagnostics, paths, queries } = prepareQueries(repoRoot, inputPaths);
   let results: ArchctxResolveResult[] = [];
   if (queries.length > 0) {
     const dir = mkdtempSync(join(tmpdir(), 'repo-harness-archctx-resolve-'));

@@ -22,7 +22,7 @@ import {
   type CapabilityRegistryResolution,
   type CapabilitySourceMode,
 } from '../../core/capabilities/registry';
-import { resolveArchcontextCapabilityPaths } from '../capabilities/archcontext-owners';
+import { archcontextResolveQueries, resolveArchcontextCapabilityPaths } from '../capabilities/archcontext-owners';
 import type {
   EffectiveState,
   EffectiveStateRiskInput,
@@ -417,7 +417,7 @@ function loadCapabilityRegistry(cwd: string, policy: WorkflowPolicy, readSource 
 }
 
 // One resolve runs several unlocked passes. The archctx answer depends only on
-// the node files and the paths, so a pass with the same inputs reuses a success.
+// the node files and the queried paths, so a pass with the same inputs reuses a success.
 let archcontextResolutionMemo: { key: string; resolution: CapabilityPathResolution } | null = null;
 
 /** Under `archcontext`, ArchContext owns path ownership; a failed resolve fails closed. */
@@ -430,7 +430,8 @@ function resolveRegistryPaths(
 ): CapabilityPathResolution {
   if (capabilitySourceMode(policy) === 'registry') return resolveCapabilityPaths(registry, paths, { repoRoot: cwd });
   const nodes = archcontextNodePaths(cwd).map((path) => [path, readSource(path)]);
-  const key = sha256(JSON.stringify([safeRealpath(cwd), nodes, paths]));
+  // The queries carry each path's directory state, which changes what archctx answers.
+  const key = sha256(JSON.stringify([safeRealpath(cwd), nodes, paths, archcontextResolveQueries(cwd, paths)]));
   if (archcontextResolutionMemo?.key === key) return archcontextResolutionMemo.resolution;
   try {
     const resolution = resolveArchcontextCapabilityPaths(cwd, registry, paths);
