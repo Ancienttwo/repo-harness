@@ -99,8 +99,11 @@ describe('main automatic check boundary', () => {
     const root = fixture(true);
     const observed = invoke(root, 'fingerprint', ['--format', 'required']);
     expect(observed.status).toBe(0); expect(observed.stdout.trim()).toBe('true');
-    const refused = invoke(root, 'run');
-    expect(refused.status).not.toBe(0); expect(refused.stderr).toContain('GitHub PR readback unavailable');
+    const refused = providerFixture(root, 'failed');
+    expect(refused.result.status).not.toBe(0);
+    expect(refused.result.stderr).toContain('GitHub PR readback unavailable');
+    expect(existsSync(refused.log)).toBe(true);
+    expect(seals(refused.home)).toEqual([]);
     expect(existsSync(join(root, 'tasks'))).toBe(false);
   });
   test('trusted absolute gh succeeds with a restricted PATH and caller override decoy', () => {
@@ -115,13 +118,15 @@ describe('main automatic check boundary', () => {
     expect(seals(f.home)).toHaveLength(1);
     expect(JSON.parse(readFileSync(seals(f.home)[0]!, 'utf8'))).toMatchObject({ head_sha: f.head, base_sha: f.base, pr_number: 7 });
   });
-  test('missing trusted gh never falls back to caller PATH or a caller binary override', () => {
-    const f = providerFixture(fixture(), 'missing');
-    expect(f.result.status).not.toBe(0);
-    expect(f.result.stderr).toContain('trusted GitHub CLI executable unavailable');
-    expect(existsSync(f.marker)).toBe(false);
-    expect(existsSync(f.log)).toBe(false);
-    expect(seals(f.home)).toEqual([]);
+  test('missing trusted gh refuses both enabled and disabled old policy without caller fallback', () => {
+    for (const disabled of [false, true]) {
+      const f = providerFixture(fixture(disabled), 'missing');
+      expect(f.result.status).not.toBe(0);
+      expect(f.result.stderr).toContain('trusted GitHub CLI executable unavailable');
+      expect(existsSync(f.marker)).toBe(false);
+      expect(existsSync(f.log)).toBe(false);
+      expect(seals(f.home)).toEqual([]);
+    }
   });
   test('failed or malformed provider readback and pending CI do not create a seal', () => {
     for (const mode of ['failed', 'malformed', 'pending']) {
