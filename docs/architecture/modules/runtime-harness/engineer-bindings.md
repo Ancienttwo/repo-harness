@@ -1,6 +1,6 @@
 # runtime-harness/engineer-bindings 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineer-bindings" sourceDigest="sha256:44365fd6d13c87717e1dea9868b76a624c8d8455884dbd2308221d31375f9928" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:4deb3c09a263f565c8fdfa9852a42898f9188577f150cd607e57c37d049d55b8" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineer-bindings" sourceDigest="sha256:d57e9513864d4f741a973ab25af96658b46182efc74b3dadbf6b797b49e4f266" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:3a74599cb5fe1254e3e289b051c9ea07376a09c66b4a7087758ee0fc1d477e5e" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.engineer-bindings`(kind `capability`)
 > **Matched Prefixes**:`agents/engineers/**`、`src/core/engineers/**`、`src/effects/engineers/**`、`src/cli/commands/engineer.ts`
@@ -42,8 +42,9 @@ flowchart LR
 
 ### 1.3 規模信號
 
-- 規模量級:`20–50` 個文件 / `10k–20k` 行
+- 規模量級:`10–20` 個文件 / `2000–5000` 行
 - 匹配前綴:`agents/engineers/**`、`src/core/engineers/**`、`src/effects/engineers/**`、`src/cli/commands/engineer.ts`
+- 排除前綴:`src/core/engineers/agent-runtime-effect.ts`、`src/effects/engineers/agent-runtime-adapters/**`、`src/effects/engineers/agent-runtime-effect-store.ts`、`src/effects/engineers/agent-runtime-feature.ts`、`src/core/engineers/task-freeze.ts`、`src/effects/engineers/bound-task-rotation.ts`、`src/effects/engineers/task-freeze-store.ts`、`src/core/engineers/delegation.ts`、`src/effects/engineers/delegated-run-store.ts`、`src/core/engineers/engineering-overlay.ts`、`src/core/engineers/interface-change.ts`、`src/core/engineers/module-message.ts`、`src/core/engineers/scheduling.ts`、`src/core/engineers/verified-context.ts`、`src/core/engineers/work-demand.ts`、`src/effects/engineers/dependency-authority.ts`、`src/effects/engineers/engineering-overlay.ts`、`src/effects/engineers/interface-change-store.ts`、`src/effects/engineers/module-inbox.ts`、`src/effects/engineers/scheduling-acquire-next.ts`、`src/effects/engineers/scheduling-acquire.ts`、`src/effects/engineers/scheduling.ts`、`src/effects/engineers/verified-context-store.ts`、`src/effects/engineers/work-demand-materialization.ts`、`src/effects/engineers/work-demand-store.ts`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
 ### 1.4 依賴邊界

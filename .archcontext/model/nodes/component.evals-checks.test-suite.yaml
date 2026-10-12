@@ -14,3 +14,14 @@ source:
   include:
     - "tests/**"
     - "bunfig.toml"
+  exclude:
+    - "tests/cli/adoption-plan.test.ts"
+    - "tests/fixtures/adoption/**"
+    - "tests/architecture-projection-provider.test.ts"
+    - "tests/cli/global-runtime-init.test.ts"
+    - "tests/cli/global-runtime.test.ts"
+    - "tests/cli/mcp-codegraph-contract.test.ts"
+    - "tests/cli/mcp-policy.test.ts"
+    - "tests/cli/mcp-reader-tools.test.ts"
+    - "tests/cli/mcp-tools.test.ts"
+    - "tests/cli/codegraph-resolver.test.ts"

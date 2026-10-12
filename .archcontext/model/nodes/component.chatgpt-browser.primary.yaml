@@ -11,17 +11,11 @@ responsibilities:
   - Write and read repo-local session records.
 source:
   include:
-    - src/cli/chatgpt-browser/binding.ts
-    - src/cli/chatgpt-browser/engine.ts
-    - src/cli/chatgpt-browser/native-provider.ts
-    - src/cli/chatgpt-browser/oracle-provider.ts
-    - src/cli/chatgpt-browser/oracle-session-evidence.ts
-    - src/cli/chatgpt-browser/prompt-assembler.ts
-    - src/cli/chatgpt-browser/secret-scan.ts
-    - src/cli/chatgpt-browser/session-store.ts
-    - src/cli/chatgpt-browser/types.ts
+    - src/cli/chatgpt-browser/**
     - src/cli/chatgpt-skill/**
     - src/cli/commands/chatgpt.ts
+  exclude:
+    - src/cli/chatgpt-browser/file-policy.ts
   entrypoints:
     - id: entrypoint.chatgpt-browser.consult
       path: src/cli/chatgpt-browser/engine.ts
