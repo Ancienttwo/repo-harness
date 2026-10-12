@@ -15,7 +15,6 @@ source:
     - .archcontext/**
     - src/core/capabilities/**
     - src/effects/capabilities/**
-    - scripts/capability-resolver.ts
-    - scripts/capability-config.ts
+    - scripts/capability-*.ts
     - src/cli/commands/capability-context.ts
     - scripts/workstream-sync.sh

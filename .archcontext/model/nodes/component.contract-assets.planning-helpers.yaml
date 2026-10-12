@@ -11,9 +11,7 @@ responsibilities:
   - Own the run and brain CLI commands.
 source:
   include:
-    - scripts/new-spec.sh
-    - scripts/new-sprint.sh
-    - scripts/new-plan.sh
+    - scripts/new-*.sh
     - scripts/capture-plan.sh
     - scripts/plan-to-todo.sh
     - scripts/switch-plan.sh
@@ -24,10 +22,7 @@ source:
     - scripts/maintenance-triage.sh
     - scripts/heartbeat-triage.sh
     - scripts/check-deploy-sql-order.sh
-    - scripts/factor-lab-check.sh
-    - scripts/factor-lab-new.sh
-    - scripts/factor-lab-promote.sh
-    - scripts/factor-lab-reject.sh
+    - scripts/factor-*.sh
     - src/effects/runtime/helper-runner.ts
     - src/cli/commands/run.ts
     - src/cli/commands/brain.ts

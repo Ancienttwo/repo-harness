@@ -12,18 +12,10 @@ responsibilities:
   - Classify user prompts and keep the circuit breaker and the minimal change policy.
 source:
   include:
-    - "src/cli/hook/mutation-guard.ts"
-    - "src/cli/hook/mutation-observed.ts"
-    - "src/cli/hook/minimal-change-cli.ts"
-    - "src/cli/hook/minimal-change-context.ts"
-    - "src/cli/hook/minimal-change-policy.ts"
-    - "src/cli/hook/minimal-change-signals.ts"
-    - "src/cli/hook/prompt-guard-decision.ts"
-    - "src/cli/hook/prompt-handler.ts"
-    - "src/cli/hook/prompt-intents.ts"
-    - "src/cli/hook/prompt-router.ts"
+    - "src/cli/hook/mutation-*.ts"
+    - "src/cli/hook/minimal-*.ts"
+    - "src/cli/hook/prompt-*.ts"
     - "src/cli/hook/circuit-breaker.ts"
     - "src/cli/hook/command-observed.ts"
-    - "src/cli/hook/review-rubric.ts"
-    - "src/cli/hook/review-subject.ts"
+    - "src/cli/hook/review-*.ts"
     - "src/cli/commands/prompt-guard-decision.ts"

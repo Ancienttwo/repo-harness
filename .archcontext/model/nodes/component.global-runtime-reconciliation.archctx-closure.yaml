@@ -14,8 +14,7 @@ source:
   include:
     - "src/effects/architecture/**"
     - "src/core/architecture/projection.ts"
-    - "src/cli/commands/architecture-projection.ts"
-    - "src/cli/commands/architecture-configuration.ts"
+    - "src/cli/commands/architecture-*.ts"
     - "src/effects/configuration/**"
     - "src/effects/runtime/node-candidates.ts"
     - "scripts/axr5-archctx-clean-room.ts"

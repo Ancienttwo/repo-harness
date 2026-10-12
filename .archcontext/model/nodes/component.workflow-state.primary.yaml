@@ -19,8 +19,7 @@ source:
     - src/core/workflow/**
     - src/effects/state/resolve-effective-state.ts
     - src/effects/state/collect-state-inputs.ts
-    - src/effects/state/state-cache.ts
-    - src/effects/state/state-lock.ts
+    - src/effects/state/state-*.ts
     - src/effects/state/git-state-version-store.ts
     - src/effects/state/readonly-observation.ts
     - interfaces/**

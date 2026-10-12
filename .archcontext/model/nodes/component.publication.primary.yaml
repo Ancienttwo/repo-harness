@@ -11,10 +11,9 @@ responsibilities:
   - Classify integration with the packaged worktree merge helper and project readiness with typed blockers.
 source:
   include:
-    - "src/core/publication/publication-receipt.ts"
-    - "src/core/publication/publication-lifecycle.ts"
-    - "src/core/publication/merge-readiness.ts"
-    - "src/effects/publication/publication-receipt.ts"
-    - "src/effects/publication/publication-lifecycle.ts"
+    - "src/core/publication/**"
+    - "src/effects/publication/publication-*.ts"
     - "src/effects/publication/merge-readiness.ts"
     - "src/cli/commands/publication.ts"
+  exclude:
+    - "src/core/publication/feedback.ts"
