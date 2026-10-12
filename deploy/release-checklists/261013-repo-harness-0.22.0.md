@@ -62,7 +62,7 @@
   variables removed):
   - `bash scripts/check-ci.sh governance`: exit 0. The new architecture
     projection step returned `noop` after the manifest refresh.
-  - 10 affected test files (#648 consumers and `skill-version`): 172 passed,
+  - 10 affected test files (#648 consumers and `skill-version`): 132 passed,
     0 failed.
   - Tarball install smoke: exit 0.
   - `bun run check:type`: exit 0.
