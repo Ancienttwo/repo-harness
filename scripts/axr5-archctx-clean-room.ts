@@ -7,7 +7,7 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { PROJECTION_REQUEST_SCHEMA_VERSION, type ProjectionRequestV1 } from 'archctx-contracts';
 import { archctxCapabilities, captureArchitectureProjectionSnapshot, runArchitectureProjection } from '../src/effects/architecture/archctx-provider';
 
-const VERSION = '0.7.1';
+const VERSION = '0.7.2';
 const repoRoot = resolve(import.meta.dir, '..');
 const archContextRoot = resolve(flag('--arch-context-root') ?? join(repoRoot, '..', 'arch-context'));
 const revision = flag('--revision') ?? git(archContextRoot, ['rev-parse', 'HEAD']);
