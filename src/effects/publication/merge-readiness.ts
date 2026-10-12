@@ -269,7 +269,10 @@ function parseProviderPullRequestIdentity(prNumber: number, repoValue: unknown, 
   if (!['OPEN', 'CLOSED', 'MERGED'].includes(String(pr.state))) {
     throw new MergeReadinessError('provider_data_incomplete', 'provider PR state is unknown');
   }
-  if (pr.reviewDecision !== null && !['APPROVED', 'CHANGES_REQUESTED', 'REVIEW_REQUIRED'].includes(String(pr.reviewDecision))) {
+  // gh pr view serializes an absent GraphQL review decision as an empty string.
+  const reviewDecision = pr.reviewDecision === '' ? null : pr.reviewDecision;
+  if (reviewDecision !== null && (typeof reviewDecision !== 'string'
+    || !['APPROVED', 'CHANGES_REQUESTED', 'REVIEW_REQUIRED'].includes(reviewDecision))) {
     throw new MergeReadinessError('provider_data_incomplete', 'provider PR reviewDecision is unknown');
   }
   if (pr.mergeable !== 'MERGEABLE' && pr.mergeable !== 'CONFLICTING') {
@@ -287,7 +290,7 @@ function parseProviderPullRequestIdentity(prNumber: number, repoValue: unknown, 
     base_sha: string(pr.baseRefOid, 'provider PR base OID'),
     base_ref: string(pr.baseRefName, 'provider PR base ref'),
     body: typeof pr.body === 'string' ? pr.body : '',
-    review_decision: pr.reviewDecision as string | null,
+    review_decision: reviewDecision,
     mergeable: pr.mergeable,
   });
   return identity;
