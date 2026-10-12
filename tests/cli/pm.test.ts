@@ -781,7 +781,7 @@ async function queuedHttpConfiguration(operation: 'dispatch' | 'collect', change
   // not change return values, locks, guards, credentials or production modules.
   writeFileSync(driver, `
 import { mock } from 'bun:test';
-import { appendFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, writeFileSync, renameSync } from 'node:fs';
 const oauthPath=${JSON.stringify(join(import.meta.dir, '../../src/cli/mcp/oauth.ts'))};
 const oauth=await import(oauthPath); const createProvider=oauth.createMcpOAuthProvider;
 mock.module(oauthPath,()=>({...oauth,createMcpOAuthProvider:(...args:any[])=>{
@@ -794,7 +794,11 @@ mock.module(oauthPath,()=>({...oauth,createMcpOAuthProvider:(...args:any[])=>{
 const commandPath=${JSON.stringify(join(import.meta.dir, '../../src/cli/commands/pm.ts'))};
 const commands=await import(commandPath); const runPm=commands.runPmJson;
 mock.module(commandPath,()=>({...commands,runPmJson:async(...args:any[])=>{
-  const result=await runPm(...args);writeFileSync(${JSON.stringify(responsePath)},JSON.stringify(result));return result;
+  const result=await runPm(...args);
+  const temporary=${JSON.stringify(responsePath + '.tmp')};
+  writeFileSync(temporary,JSON.stringify(result));
+  renameSync(temporary,${JSON.stringify(responsePath)});
+  return result;
 }}));
 const {startMcpHttp}=await import(${JSON.stringify(join(import.meta.dir, '../../src/cli/mcp/transports/http.ts'))});
 await startMcpHttp({repo:${JSON.stringify(f.repo)},profile:'pm',port:${port}});
