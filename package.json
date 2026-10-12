@@ -111,8 +111,8 @@
   "dependencies": {
     "@botiverse/oar": "0.45.1",
     "@modelcontextprotocol/sdk": "^1.31.0",
-    "archctx": "0.7.1",
-    "archctx-contracts": "0.7.1",
+    "archctx": "0.7.2",
+    "archctx-contracts": "0.7.2",
     "commander": "^15.0.0",
     "express": "^5.2.1"
   },
