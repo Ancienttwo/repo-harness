@@ -185,7 +185,7 @@ describe.skipIf(!HAS_CAPTURE_OWNERSHIP)('owned child transport (fixtures do not 
   });
   test.skipIf(!HAS_CAPTURE_PTY)('PTY input EOF disconnects owner, sends no synthetic input and waits for actual signal exit', async () => {
     const path = join(root(), 'capture.json'), input = new PassThrough(), output = collect(), diagnostic = collect();
-    const run = runRuntimeCapture({ provider: 'claude', source_id: 'eof', snapshot_path: path, argv: [process.execPath, '-e', 'process.stdin.setRawMode(true);process.on("SIGTERM",()=>process.exit(23));console.log("ready");for await(const b of process.stdin){console.log("unexpected-input")};await Bun.sleep(30000)'] }, { input, output: output.stream, diagnostics: diagnostic.stream });
+    const run = runRuntimeCapture({ provider: 'claude', source_id: 'eof', snapshot_path: path, argv: [process.execPath, '-e', 'process.on("SIGTERM",()=>process.exit(23));process.stdin.setRawMode(true);console.log("ready");for await(const b of process.stdin){console.log("unexpected-input")};await Bun.sleep(30000)'] }, { input, output: output.stream, diagnostics: diagnostic.stream });
     await until(() => Buffer.concat(output.chunks).toString().includes('ready')); input.end(); expect(await run).toBe(23);
     expect(Buffer.concat(output.chunks).toString()).not.toContain('unexpected-input'); expect(JSON.parse(readFileSync(path, 'utf8')).capture_status).toBe('disconnected');
   });
@@ -300,7 +300,7 @@ describe.skipIf(!HAS_CAPTURE_OWNERSHIP)('review regression: bounded capture reti
   for (const signalled of [false, true]) {
     test(`Codex ${signalled ? 'signal' : 'normal exit'} retires a reader held open by a descendant`, async () => {
       const dir = root(), path = join(dir, 'capture.json'), scriptPath = join(dir, 'reader-held.ts'), descendantPath = join(dir, 'descendant-pid');
-      const childScript = `const p=Bun.spawn([process.execPath,'-e','await Bun.sleep(30000)'],{stdin:'ignore',stdout:'inherit',stderr:'ignore'});await Bun.write(${JSON.stringify(descendantPath)},String(p.pid));${signalled ? 'process.on("SIGTERM",()=>process.exit(0));await Bun.sleep(30000)' : 'process.exit(0)'}`;
+      const childScript = `${signalled ? 'process.on("SIGTERM",()=>process.exit(0));' : ''}const p=Bun.spawn([process.execPath,'-e','await Bun.sleep(30000)'],{stdin:'ignore',stdout:'inherit',stderr:'ignore'});await Bun.write(${JSON.stringify(descendantPath)},String(p.pid));${signalled ? 'await Bun.sleep(30000)' : 'process.exit(0)'}`;
       writeFileSync(scriptPath, `import { runRuntimeCapture } from ${JSON.stringify(join(process.cwd(), 'src/effects/operator/runtime-capture.ts'))};
         try { await runRuntimeCapture({provider:'codex',source_id:'held-reader',snapshot_path:${JSON.stringify(path)},argv:[process.execPath,'-e',${JSON.stringify(childScript)}]});console.log('false-success');process.exitCode=44 }
         catch { console.log('reader-retired') }`);
