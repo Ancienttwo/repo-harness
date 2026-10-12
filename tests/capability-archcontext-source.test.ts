@@ -9,8 +9,12 @@ import {
 } from "../scripts/capability-resolver";
 import {
   capabilityRegistryFromArchcontextNodes,
+  type Capability,
+  type CapabilityRegistry,
   type CapabilityRegistryDiagnosticCode,
 } from "../src/core/capabilities/registry";
+
+import { resolveArchcontextCapabilityPaths } from "../src/effects/capabilities/archcontext-owners";
 
 const ROOT = join(import.meta.dir, "..");
 const NODES_DIR = ".archcontext/model/nodes";
@@ -306,6 +310,31 @@ describe("capability source: ArchContext owns path ownership", () => {
       rmSync(cwd, { recursive: true, force: true });
     }
   }, 60_000);
+});
+
+describe("capability source: archctx resolve envelope checks", () => {
+  const registry: CapabilityRegistry = { version: 1, capabilities: [TWIN_CAPABILITIES[0] as Capability] };
+  const envelope = (results: unknown) => JSON.stringify({ schemaVersion: "archcontext.envelope/v1", ok: true, requestId: "resolve", data: { results } });
+  const resolveWith = (stdout: string, status = 0) => resolveArchcontextCapabilityPaths(ROOT, registry, ["apps/web/page.tsx"], {
+    run: (_binary, args) => {
+      expect(args.slice(0, 2)).toEqual(["resolve", "--paths-from"]);
+      return { status, signal: null, stdout, stderr: "" };
+    },
+  });
+
+  test("maps a well-formed result and reports an unowned path", () => {
+    const resolution = resolveWith(envelope([{ path: "apps/web/page.tsx", matched: false, ambiguous: false, owningCapabilityId: null }]));
+    expect(resolution.status).toBe("valid");
+    expect(resolution.unmappedPaths).toEqual(["apps/web/page.tsx"]);
+  });
+
+  test("throws on an error envelope, a result-count mismatch, a path mismatch or a bad field", () => {
+    expect(() => resolveWith(JSON.stringify({ schemaVersion: "archcontext.envelope/v1", ok: false, error: { code: "AC_X", message: "boom" } }), 1)).toThrow("AC_X: boom");
+    expect(() => resolveWith(envelope([]))).toThrow("result count");
+    expect(() => resolveWith(envelope([{ path: "apps/web/other.tsx", matched: false, ambiguous: false, owningCapabilityId: null }]))).toThrow("invalid result");
+    expect(() => resolveWith(envelope([{ path: "apps/web/page.tsx", matched: "yes", ambiguous: false, owningCapabilityId: null }]))).toThrow("invalid result");
+    expect(() => resolveWith(JSON.stringify({ schemaVersion: "other", ok: true }))).toThrow("invalid envelope");
+  });
 });
 
 describe("capability source: no fallback in either direction", () => {

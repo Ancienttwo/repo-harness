@@ -102,15 +102,18 @@ helper_sibling() {
   return 1
 }
 
+# The packaged sibling comes first: it can reach the package-local archctx that
+# capability_source "archcontext" needs. A repo-local copy is a retired
+# generated helper and serves only repos without the package.
 capability_resolver() {
   local sibling=""
-  if command -v bun >/dev/null 2>&1 && [[ -f "scripts/capability-resolver.ts" ]]; then
-    bun scripts/capability-resolver.ts "$@"
-    return $?
-  fi
   sibling="$(helper_sibling capability-resolver.ts || true)"
   if command -v bun >/dev/null 2>&1 && [[ -n "$sibling" ]]; then
     bun "$sibling" "$@"
+    return $?
+  fi
+  if command -v bun >/dev/null 2>&1 && [[ -f "scripts/capability-resolver.ts" ]]; then
+    bun scripts/capability-resolver.ts "$@"
     return $?
   fi
   return 127

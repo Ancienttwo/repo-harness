@@ -416,17 +416,28 @@ function loadCapabilityRegistry(cwd: string, policy: WorkflowPolicy, readSource 
   return capabilityRegistryFromArchcontextNodes(files, { repoRoot: cwd });
 }
 
+// One resolve runs several unlocked passes. The archctx answer depends only on
+// the node files and the paths, so a pass with the same inputs reuses a success.
+let archcontextResolutionMemo: { key: string; resolution: CapabilityPathResolution } | null = null;
+
 /** Under `archcontext`, ArchContext owns path ownership; a failed resolve fails closed. */
 function resolveRegistryPaths(
   cwd: string,
   policy: WorkflowPolicy,
   registry: CapabilityRegistry,
   paths: readonly string[],
+  readSource: (path: string) => string | null,
 ): CapabilityPathResolution {
   if (capabilitySourceMode(policy) === 'registry') return resolveCapabilityPaths(registry, paths, { repoRoot: cwd });
+  const nodes = archcontextNodePaths(cwd).map((path) => [path, readSource(path)]);
+  const key = sha256(JSON.stringify([safeRealpath(cwd), nodes, paths]));
+  if (archcontextResolutionMemo?.key === key) return archcontextResolutionMemo.resolution;
   try {
-    return resolveArchcontextCapabilityPaths(cwd, registry, paths);
+    const resolution = resolveArchcontextCapabilityPaths(cwd, registry, paths);
+    archcontextResolutionMemo = { key, resolution };
+    return resolution;
   } catch (error) {
+    // A process failure is not memoized: the next resolve tries archctx again.
     return {
       status: 'invalid',
       capabilityIds: [],
@@ -469,7 +480,7 @@ function capabilityIdsForPaths(
       outOfRepoPathCount,
     };
   }
-  const resolution = resolveRegistryPaths(cwd, policy, registry.registry, inRepoPaths);
+  const resolution = resolveRegistryPaths(cwd, policy, registry.registry, inRepoPaths, readSource);
   return {
     ids: resolution.capabilityIds,
     registryStatus: resolution.status,

@@ -315,6 +315,14 @@ describe("capabilityPathResolutionFromArchcontextOwners", () => {
     expect(resolution.unmappedPaths).toEqual(["README.md", "docs/x.md"]);
   });
 
+  test("keeps the owner of an ambiguous result whose candidates share one capability", () => {
+    const resolution = capabilityPathResolutionFromArchcontextOwners(registry, [
+      owner("src/state/a.ts", "capability.engine.state", { ambiguous: true }),
+    ]);
+    expect(resolution.status).toBe("valid");
+    expect(resolution.capabilityIds).toEqual(["engine-state"]);
+  });
+
   test("fails closed on an ambiguous owner or an owner outside the registry", () => {
     const resolution = capabilityPathResolutionFromArchcontextOwners(registry, [
       owner("src/a.ts", null, { matched: true, ambiguous: true }),

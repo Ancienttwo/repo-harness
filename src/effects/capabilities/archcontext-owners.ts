@@ -12,7 +12,8 @@ import {
 } from '../../core/capabilities/registry';
 import { runPackageLocalArchctxJson, type ArchctxProviderOptions } from '../architecture/archctx-provider';
 
-const RESOLVE_TIMEOUT_MS = 30_000;
+// Stays well below the 30 s hook budget, so a stalled archctx becomes a recorded blocker.
+const RESOLVE_TIMEOUT_MS = 10_000;
 
 type ArchctxResolveResult = Omit<ArchcontextPathOwner, 'path'>;
 

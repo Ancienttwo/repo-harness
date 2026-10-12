@@ -771,8 +771,9 @@ export function capabilityRegistryFromArchcontextNodes(
 /**
  * Maps `archctx resolve` owners onto the registry. ArchContext decides the owner;
  * this function only joins its capability id to registry metadata. An ambiguous
- * owner fails closed like a same-length prefix tie. A path without an owning
- * capability is unmapped. The match prefix is the owner's primary anchor,
+ * result whose candidates share one capability keeps that owner; any other
+ * ambiguous result fails closed like a same-length prefix tie. A path without
+ * an owning capability is unmapped. The match prefix is the owner's primary anchor,
  * because ArchContext does not report which include entry matched.
  */
 export function capabilityPathResolutionFromArchcontextOwners(
@@ -790,7 +791,7 @@ export function capabilityPathResolutionFromArchcontextOwners(
   for (const owner of owners) {
     if (seenPaths.has(owner.path)) continue;
     seenPaths.add(owner.path);
-    if (owner.ambiguous) {
+    if (owner.ambiguous && owner.owningCapabilityId === null) {
       diagnostics.push(diagnostic("AMBIGUOUS_MATCH", "path", `ambiguous ArchContext owner for ${owner.path}`));
       continue;
     }

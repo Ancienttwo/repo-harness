@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-// @generated-from src/core/capabilities/registry.ts sha256:fd8fdf21c2ae2b3d257c6b7b7c17aebaa135c8cf09c6cae8a63b5a5747774f8b
+// @generated-from src/core/capabilities/registry.ts sha256:7bd5bd636c7dea8af63bffe490ebb5b51f6600be721a0319ee7c4eb828a6a24f
 // Standalone typed Bun projection. Regenerate from scripts/capability-resolver.ts; do not edit by hand.
 export const CAPABILITY_REGISTRY_VERSION = 1 as const;
 
@@ -774,8 +774,9 @@ export function capabilityRegistryFromArchcontextNodes(
 /**
  * Maps `archctx resolve` owners onto the registry. ArchContext decides the owner;
  * this function only joins its capability id to registry metadata. An ambiguous
- * owner fails closed like a same-length prefix tie. A path without an owning
- * capability is unmapped. The match prefix is the owner's primary anchor,
+ * result whose candidates share one capability keeps that owner; any other
+ * ambiguous result fails closed like a same-length prefix tie. A path without
+ * an owning capability is unmapped. The match prefix is the owner's primary anchor,
  * because ArchContext does not report which include entry matched.
  */
 export function capabilityPathResolutionFromArchcontextOwners(
@@ -793,7 +794,7 @@ export function capabilityPathResolutionFromArchcontextOwners(
   for (const owner of owners) {
     if (seenPaths.has(owner.path)) continue;
     seenPaths.add(owner.path);
-    if (owner.ambiguous) {
+    if (owner.ambiguous && owner.owningCapabilityId === null) {
       diagnostics.push(diagnostic("AMBIGUOUS_MATCH", "path", `ambiguous ArchContext owner for ${owner.path}`));
       continue;
     }
