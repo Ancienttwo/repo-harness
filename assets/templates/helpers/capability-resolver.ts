@@ -1177,10 +1177,14 @@ export function findMatch(registry: CapabilityRegistry, repo: string, inputPath:
 type ArchcontextPathResolver = (repo: string, registry: CapabilityRegistry, paths: readonly string[]) => CapabilityPathResolution;
 
 // The standalone projection of this helper has no package-local archctx, so the
-// import fails there and archcontext mode fails closed instead of guessing.
+// import fails there and archcontext mode fails closed instead of guessing. The
+// specifier is not a literal, so the projection type-checks without that module.
+const ARCHCONTEXT_OWNERS_MODULE = "../src/effects/capabilities/archcontext-owners";
+
 async function archcontextPathResolver(): Promise<ArchcontextPathResolver> {
   try {
-    return (await import("../src/effects/capabilities/archcontext-owners")).resolveArchcontextCapabilityPaths;
+    const owners: { resolveArchcontextCapabilityPaths: ArchcontextPathResolver } = await import(ARCHCONTEXT_OWNERS_MODULE);
+    return owners.resolveArchcontextCapabilityPaths;
   } catch (error) {
     throw new CapabilitySourceError(
       `${CAPABILITY_SOURCE_KEY}="archcontext" resolves paths through the repo-harness package; ` +
