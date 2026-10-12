@@ -7,6 +7,7 @@ import { dirname, isAbsolute, join } from 'path';
 import { fileURLToPath } from 'url';
 import { acceptanceReceiptPath, resolveProtectedGitRuntime } from './acceptance-receipt';
 import { collectPullRequestMergeReadiness } from '../src/effects/publication/merge-readiness';
+import { resolveTrustedGhExecutable } from '../src/effects/runtime/protected-helper-platform';
 
 type OutputFormat = 'json' | 'sha' | 'required';
 export type Candidate = { baseSha: string; headSha: string; diff: Buffer; diffFingerprint: string; changedFiles: string[] };
@@ -239,15 +240,24 @@ function writeSeal(path: string, seal: Seal): void {
 }
 
 function requireChecks(root: string, current: Candidate): number {
-  const result = spawnSync('gh', ['pr', 'view', '--json', 'number'], {
+  const ghBin = resolveTrustedGhExecutable();
+  if (!ghBin) fail('trusted GitHub CLI executable unavailable; no merge authorized');
+  const runGh = (args: readonly string[]) => spawnSync(ghBin, [...args], {
     cwd: root, env: lockedGitEnv(), encoding: 'utf8', timeout: 30_000, maxBuffer: 1024 * 1024,
   });
+  const result = runGh(['pr', 'view', '--json', 'number']);
   if (result.error || result.status !== 0) fail('GitHub PR readback unavailable; no merge authorized');
   let value: unknown;
   try { value = JSON.parse(result.stdout); } catch { fail('invalid GitHub PR readback'); }
   if (!isRecord(value) || !Number.isSafeInteger(value.number) || Number(value.number) < 1) fail('invalid GitHub PR identity');
   const number = Number(value.number);
-  const readiness = collectPullRequestMergeReadiness({ repo_root: root, pr_number: number,
+  const readiness = collectPullRequestMergeReadiness({ repo_root: root, pr_number: number, gh_bin: ghBin,
+    // Keep every provider query on the same binary and cleared caller environment.
+    gh_runner: args => {
+      const observed = runGh(args);
+      return { status: observed.status ?? -1, stdout: observed.stdout ?? '',
+        stderr: observed.stderr || observed.error?.message };
+    },
     expected_head_sha: current.headSha, expected_base_sha: current.baseSha });
   if (!readiness.ready) fail(`automatic merge checks refuse candidate: ${readiness.blockers.map(b => b.code).join(', ')}`);
   const after = candidate(root, current.baseSha);

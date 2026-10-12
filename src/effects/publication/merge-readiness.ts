@@ -42,7 +42,7 @@ export interface PublicationReadinessInput {
   /** Internal effect/test seam; HTTP callers never choose an authority store. */
   readonly authority_home?: string;
   readonly now_ms?: number;
-  /** Test/effect seam; production leaves this unset and invokes the configured gh binary. */
+  /** Internal effect/test seam for caller-owned provider execution, such as a protected helper environment. */
   readonly gh_runner?: (args: readonly string[]) => { readonly status: number; readonly stdout: string; readonly stderr?: string };
 }
 

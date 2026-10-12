@@ -60,6 +60,24 @@ const DEFAULT_FILE_ACCESS: ProtectedHelperFileAccess = {
   readFile: (path) => readFileSync(path, 'utf-8'),
 };
 
+/** Optional gh is operator-owned. Only fixed host install paths are candidates. */
+export function resolveTrustedGhExecutable(
+  access: Pick<ProtectedHelperFileAccess, 'exists' | 'lstat' | 'realpath'> = DEFAULT_FILE_ACCESS,
+): string | undefined {
+  for (const candidate of [
+    '/opt/homebrew/bin/gh',
+    '/usr/local/bin/gh',
+    '/usr/bin/gh',
+    '/home/linuxbrew/.linuxbrew/bin/gh',
+  ]) {
+    if (!access.exists(candidate)) continue;
+    const actual = access.realpath(candidate);
+    const stat = access.lstat(actual);
+    if (stat.isFile() && (stat.mode & 0o111) !== 0) return actual;
+  }
+  return undefined;
+}
+
 type ResolveOptions = {
   platform?: NodeJS.Platform;
   accountHome?: string;
