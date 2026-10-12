@@ -80,7 +80,7 @@ describe('fixed host gh selection', () => {
     const selected = resolveTrustedGhExecutable({
       exists: path => { observed.push(path); return path === '/opt/homebrew/bin/gh'; },
       realpath: () => realpathSync(link), lstat: lstatSync,
-    });
+    }, { platform: 'darwin' });
     expect(selected).toBe(realpathSync(binary));
     expect(observed).toEqual(['/opt/homebrew/bin/gh']);
   });
@@ -88,10 +88,10 @@ describe('fixed host gh selection', () => {
     const root = mkdtempSync(join(tmpdir(), 'trusted-gh-invalid-')); roots.push(root);
     const binary = join(root, 'non-executable'); writeFileSync(binary, 'data', { mode: 0o600 });
     for (const target of [root, binary]) {
-      expect(resolveTrustedGhExecutable({ exists: () => true, realpath: () => target, lstat: lstatSync })).toBeUndefined();
+      expect(resolveTrustedGhExecutable({ exists: () => true, realpath: () => target, lstat: lstatSync }, { platform: 'darwin' })).toBeUndefined();
     }
-    expect(resolveTrustedGhExecutable({ exists: () => false, realpath: () => { throw Error('unexpected read'); }, lstat: lstatSync })).toBeUndefined();
-    expect(() => resolveTrustedGhExecutable({ exists: () => true, realpath: () => { throw Error('unreadable executable'); }, lstat: lstatSync })).toThrow('unreadable executable');
+    expect(resolveTrustedGhExecutable({ exists: () => false, realpath: () => { throw Error('unexpected read'); }, lstat: lstatSync }, { platform: 'darwin' })).toBeUndefined();
+    expect(() => resolveTrustedGhExecutable({ exists: () => true, realpath: () => { throw Error('unreadable executable'); }, lstat: lstatSync }, { platform: 'darwin' })).toThrow('unreadable executable');
   });
 });
 describe('main automatic check boundary', () => {

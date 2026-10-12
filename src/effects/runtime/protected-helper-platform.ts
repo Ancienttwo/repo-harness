@@ -63,7 +63,22 @@ const DEFAULT_FILE_ACCESS: ProtectedHelperFileAccess = {
 /** Optional gh is operator-owned. Only fixed host install paths are candidates. */
 export function resolveTrustedGhExecutable(
   access: Pick<ProtectedHelperFileAccess, 'exists' | 'lstat' | 'realpath'> = DEFAULT_FILE_ACCESS,
+  options: { platform?: NodeJS.Platform; nativeSystemToolsDirectory?: string } = {},
 ): string | undefined {
+  if ((options.platform ?? process.platform) === 'win32') {
+    // Use the existing OS-native source, never caller ProgramFiles/SystemRoot/PATH.
+    // Only the standard installation on the native system volume is supported.
+    const systemDirectory = requireWindowsAbsolute(
+      options.nativeSystemToolsDirectory ?? nativeWindowsSystemToolsDirectory(), 'native system directory',
+    );
+    const volume = win32.parse(systemDirectory).root;
+    if (!/^[a-z]:\\$/i.test(volume)) throw new Error('trusted gh requires a local native Windows system volume');
+    const candidate = win32.join(volume, 'Program Files', 'GitHub CLI', 'gh.exe');
+    if (!access.exists(candidate)) return undefined;
+    const actual = requireRegularFile(candidate, 'gh.exe', access);
+    if (!sameWindowsPath(actual, candidate)) throw new Error('trusted gh must stay at the fixed host install path');
+    return actual;
+  }
   for (const candidate of [
     '/opt/homebrew/bin/gh',
     '/usr/local/bin/gh',
@@ -117,7 +132,7 @@ function requireWindowsAbsolute(value: unknown, label: string): string {
   return win32.normalize(value);
 }
 
-function requireRegularFile(path: string, label: string, access: ProtectedHelperFileAccess): string {
+function requireRegularFile(path: string, label: string, access: Pick<ProtectedHelperFileAccess, 'exists' | 'lstat' | 'realpath'>): string {
   if (!access.exists(path)) throw new Error(`Windows protected-helper ${label} is missing: ${path}`);
   const source = access.lstat(path);
   if (source.isSymbolicLink() || !source.isFile()) {
