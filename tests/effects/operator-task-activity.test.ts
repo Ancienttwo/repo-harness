@@ -49,67 +49,70 @@ function fixture(replyBody = '  Exact old reply.\n') {
 function tree(path:string): string {
   return readdirSync(path,{withFileTypes:true}).sort((a,b)=>a.name.localeCompare(b.name)).map(e=>e.isDirectory()?`${e.name}/{${tree(join(path,e.name))}}`:`${e.name}:${createHash('sha256').update(readFileSync(join(path,e.name))).digest('hex')}`).join('\n');
 }
+// Semantic assertions use real records without a host scheduling deadline.
+// The separate boundary test advances the clock. HTTP workers keep real time.
+function withFixedActivityClock<T>(read: () => T): T {
+  const clock = spyOn(Date, 'now').mockReturnValue(Date.now());
+  try { return read(); }
+  finally { clock.mockRestore(); }
+}
 test('historical exact reply needs no active sprint, Lease or Binding and never changes stored records', () => {
   const f=fixture(), before=tree(f.root);
-  const r=readOperatorTaskActivity({...f.input,message_id:id(2),limit:1});
+  const r=withFixedActivityClock(() => readOperatorTaskActivity({...f.input,message_id:id(2),limit:1}));
   expect(r.entries[0]).toMatchObject({provenance:'recorded_claim_actor',event:{body:'  Exact old reply.\n',task_revision:f.parent.task_revision},replies:[{state:'complete',actor:{binding_generation:1,claim_id:id(3)}}]});
   expect(r.coverage).toMatchObject({scope:'message',complete:true});
   expect(JSON.stringify(r)).not.toContain(f.root); expect(JSON.stringify(r)).not.toContain('private-session'); expect(JSON.stringify(r)).not.toContain('work_envelope');
   put(join(f.root,'plans/sprints/current.md'),'different current task revision');
   const changed=tree(f.root);
-  expect(readOperatorTaskActivity({...f.input,message_id:id(2),limit:1}).entries).toEqual(r.entries);
+  expect(withFixedActivityClock(() => readOperatorTaskActivity({...f.input,message_id:id(2),limit:1})).entries).toEqual(r.entries);
   expect(tree(f.root)).toBe(changed); expect(before).not.toBe(changed);
 });
 test('old recipient channel and interrupted chain stay explicit; absent actor cannot authenticate a raw reply', () => {
   const f=fixture(); unlinkSync(join(f.replyDir,'commit.json'));
-  let r=readOperatorTaskActivity(f.input);
+  let r=withFixedActivityClock(() => readOperatorTaskActivity(f.input));
   expect(r.entries[0]?.receipts[0]).toMatchObject({delivery_channel:'hook_session',delivery_state:'acknowledged'});
   expect(r.entries[1]).toMatchObject({provenance:'recorded_claim_actor',replies:[{state:'event_uncommitted'}]});
-  unlinkSync(f.actorPath); r=readOperatorTaskActivity(f.input);
+  unlinkSync(f.actorPath); r=withFixedActivityClock(() => readOperatorTaskActivity(f.input));
   expect(r.entries[1]).toMatchObject({provenance:'unverified',replies:[{actor:null}]});
   unlinkSync(join(f.replyDir,'intent.json'));
-  expect(readOperatorTaskActivity(f.input).entries[1]?.provenance).toBe('unverified');
+  expect(withFixedActivityClock(() => readOperatorTaskActivity(f.input)).entries[1]?.provenance).toBe('unverified');
 });
 test('registered scope and missing history fail closed without creating a store', () => {
   const f=fixture(), before=tree(f.root);
-  expect(()=>readOperatorTaskActivity({...f.input,repository_id:'repo_missing'})).toThrow('history_unavailable');
-  expect(()=>readOperatorTaskActivity({...f.input,task_id:'c'.repeat(64)})).toThrow('history_unavailable');
-  expect(()=>readOperatorTaskActivity({...f.input,message_id:id(99),limit:1})).toThrow('history_unavailable');
+  expect(()=>withFixedActivityClock(() => readOperatorTaskActivity({...f.input,repository_id:'repo_missing'}))).toThrow('history_unavailable');
+  expect(()=>withFixedActivityClock(() => readOperatorTaskActivity({...f.input,task_id:'c'.repeat(64)}))).toThrow('history_unavailable');
+  expect(()=>withFixedActivityClock(() => readOperatorTaskActivity({...f.input,message_id:id(99),limit:1}))).toThrow('history_unavailable');
   expect(tree(f.root)).toBe(before);
 });
 test('paging is exclusive and hard scan exhaustion remains partial while exact history is readable', () => {
   const f=fixture();
-  const page=readOperatorTaskActivity({...f.input,limit:1}); expect(page.next_cursor).toBe(id(1)); expect(page.coverage.reason).toBe('page');
-  expect(readOperatorTaskActivity({...f.input,limit:1,after:page.next_cursor}).entries[0]?.event.message_id).toBe(id(2));
+  const page=withFixedActivityClock(() => readOperatorTaskActivity({...f.input,limit:1})); expect(page.next_cursor).toBe(id(1)); expect(page.coverage.reason).toBe('page');
+  expect(withFixedActivityClock(() => readOperatorTaskActivity({...f.input,limit:1,after:page.next_cursor})).entries[0]?.event.message_id).toBe(id(2));
   for(let n=100;n<1101;n++) f.event(buildTaskMessageEvent({...f.parent,message_id:id(n)}));
-  const scan=readHistoricalTaskActivity({repo_root:f.root,task_id:f.input.task_id,limit:50,after:null,message_id:null,budget:{max_scan:1000,max_bytes:TASK_ACTIVITY_MAX_BYTES,deadline_ms:60000}});
+  const scan=withFixedActivityClock(() => readHistoricalTaskActivity({repo_root:f.root,task_id:f.input.task_id,limit:50,after:null,message_id:null,budget:{max_scan:1000,max_bytes:TASK_ACTIVITY_MAX_BYTES,deadline_ms:60000}}));
   expect(scan.coverage).toMatchObject({complete:false,reason:'scan',scanned:1000});
-  const r=readOperatorTaskActivity(f.input); expect(r.coverage.complete).toBe(false); expect(r.coverage.reason === 'scan' || r.coverage.reason === 'deadline').toBe(true); expect(r.next_cursor).toBeNull();
-  expect(readOperatorTaskActivity({...f.input,limit:1,message_id:id(2)}).entries[0]?.provenance).toBe('recorded_claim_actor');
+  const r=withFixedActivityClock(() => readOperatorTaskActivity(f.input)); expect(r.coverage.complete).toBe(false); expect(r.coverage.reason).toBe('scan'); expect(r.next_cursor).toBeNull();
+  expect(withFixedActivityClock(() => readOperatorTaskActivity({...f.input,limit:1,message_id:id(2)})).entries[0]?.provenance).toBe('recorded_claim_actor');
 });
 test('byte ceilings include nested reply/actor reads and never report an empty complete inbox', () => {
   const f=fixture();
-  const read=(max_bytes:number)=>readHistoricalTaskActivity({repo_root:f.root,task_id:f.input.task_id,limit:50,after:null,message_id:null,budget:{max_scan:1000,max_bytes,deadline_ms:250}});
+  const read=(max_bytes:number)=>withFixedActivityClock(() => readHistoricalTaskActivity({repo_root:f.root,task_id:f.input.task_id,limit:50,after:null,message_id:null,budget:{max_scan:1000,max_bytes,deadline_ms:250}}));
   expect(read(100).coverage).toMatchObject({complete:false,reason:'bytes'});
   expect(read(3000).coverage).toMatchObject({complete:false,reason:'bytes'});
   for(let n=100;n<400;n++) f.event(buildTaskMessageEvent({...f.parent,message_id:id(n),body:'x'.repeat(8000)}));
-  // The deadline has its own boundary test. Pin time to test only the byte ceiling.
-  const byteClock = spyOn(Date, 'now').mockReturnValue(Date.now());
-  let r: ReturnType<typeof readOperatorTaskActivity>;
-  try { r=readOperatorTaskActivity(f.input); }
-  finally { byteClock.mockRestore(); }
+  const r=withFixedActivityClock(() => readOperatorTaskActivity(f.input));
   expect(r.coverage.reason).toBe('bytes'); expect(JSON.stringify(r).length).toBeLessThan(TASK_ACTIVITY_MAX_OUTPUT_BYTES);
-  expect(readOperatorTaskActivity({...f.input,message_id:id(2),limit:1}).entries[0]?.provenance).toBe('recorded_claim_actor');
+  expect(withFixedActivityClock(() => readOperatorTaskActivity({...f.input,message_id:id(2),limit:1})).entries[0]?.provenance).toBe('recorded_claim_actor');
 });
 test('unsafe and mismatched event/receipt paths are unavailable, with no path disclosure', () => {
   const f=fixture();
   put(join(f.inbox,'events',`${id(99)}.json`),canonicalTaskMessageEventBytes(f.parent)+'\n');
-  expect(()=>readOperatorTaskActivity({...f.input,message_id:id(99),limit:1})).toThrow(new OperatorTaskActivityError('unavailable'));
+  expect(()=>withFixedActivityClock(() => readOperatorTaskActivity({...f.input,message_id:id(99),limit:1}))).toThrow(new OperatorTaskActivityError('unavailable'));
   unlinkSync(join(f.inbox,'events',`${id(99)}.json`)); symlinkSync(join(f.inbox,'events',`${id(1)}.json`),join(f.inbox,'events',`${id(99)}.json`));
-  expect(()=>readOperatorTaskActivity({...f.input,message_id:id(99),limit:1})).toThrow('unavailable');
+  expect(()=>withFixedActivityClock(() => readOperatorTaskActivity({...f.input,message_id:id(99),limit:1}))).toThrow('unavailable');
 });
 test('strict decoder binds scope and rejects injected fields, duplicate entries and false provenance', () => {
-  const f=fixture(), r=readOperatorTaskActivity(f.input);
+  const f=fixture(), r=withFixedActivityClock(() => readOperatorTaskActivity(f.input));
   expect(decodeOperatorTaskActivity(r,f.input)).toEqual(r);
   for(const bad of [{...r,repository_id:'other'},{...r,root:f.root},{...r,entries:[r.entries[0],r.entries[0]]},{...r,entries:[{...r.entries[0],secret:'x'}]},{...r,entries:[{...r.entries[1],provenance:'unverified'}]}]) expect(()=>decodeOperatorTaskActivity(bad,f.input)).toThrow();
   const reply = r.entries[1]!;
@@ -148,18 +151,14 @@ test.each(['legacy', 'migration'] as const)('production HTTP GET refuses %s layo
 
 test('serialized output and nested recipient scan limits are independently visible', () => {
   const f=fixture();
-  const nested=readHistoricalTaskActivity({repo_root:f.root,task_id:f.input.task_id,message_id:id(1),limit:1,after:null,budget:{max_scan:1,max_bytes:2*1024*1024,deadline_ms:250}});
+  const nested=withFixedActivityClock(() => readHistoricalTaskActivity({repo_root:f.root,task_id:f.input.task_id,message_id:id(1),limit:1,after:null,budget:{max_scan:1,max_bytes:2*1024*1024,deadline_ms:250}}));
   expect(nested.coverage).toMatchObject({complete:false,reason:'scan',scanned:1});
   for(let n=100;n<200;n++) f.event(buildTaskMessageEvent({...f.parent,message_id:id(n),body:'\\'.repeat(8000)}));
-  // Keep the output ceiling independent of host scheduling and the deadline.
-  const outputClock = spyOn(Date, 'now').mockReturnValue(Date.now());
-  let result: ReturnType<typeof readOperatorTaskActivity>;
-  try { result=readOperatorTaskActivity({...f.input,limit:100}); }
-  finally { outputClock.mockRestore(); }
+  const result=withFixedActivityClock(() => readOperatorTaskActivity({...f.input,limit:100}));
   expect(result.coverage).toMatchObject({complete:false,reason:'output'});
   expect(Buffer.byteLength(JSON.stringify(result))).toBeLessThanOrEqual(TASK_ACTIVITY_MAX_OUTPUT_BYTES);
   expect(result.next_cursor).toBeNull();
-  expect(readOperatorTaskActivity({...f.input,message_id:id(199),limit:1}).entries[0]?.event.message_id).toBe(id(199));
+  expect(withFixedActivityClock(() => readOperatorTaskActivity({...f.input,message_id:id(199),limit:1})).entries[0]?.event.message_id).toBe(id(199));
 });
 
 
@@ -178,7 +177,7 @@ test('activity preserves an empty canonical reply through the production HTTP re
 
 test('activity retains canonical UTF-8 body limits while metadata remains nonempty', () => {
   const f = fixture('界'.repeat(2730) + 'ab');
-  const result = readOperatorTaskActivity({ ...f.input, message_id: id(2), limit: 1 });
+  const result = withFixedActivityClock(() => readOperatorTaskActivity({ ...f.input, message_id: id(2), limit: 1 }));
   expect(result.entries[0]?.event.body).toBe(f.intent.reply.body);
   expect(Buffer.byteLength(f.intent.reply.body)).toBe(8192);
   const entry = result.entries[0]!;
@@ -189,14 +188,16 @@ test('activity retains canonical UTF-8 body limits while metadata remains nonemp
 // Real records and readers exercise the deadline at its exact boundary.
 test('activity deadline remains an independent hard boundary', () => {
   const f = fixture();
-  const read = () => readHistoricalTaskActivity({ repo_root:f.root, task_id:f.input.task_id, message_id:id(1), limit:1, after:null, budget:{max_scan:1000,max_bytes:2*1024*1024,deadline_ms:250} });
-  for (const elapsed of [249, 250]) {
-    const clock = spyOn(Date, 'now').mockReturnValueOnce(0).mockReturnValue(elapsed);
-    try {
-      const result = read();
-      expect(result.coverage).toMatchObject(elapsed === 249 ? {complete:true,reason:null} : {complete:false,reason:'deadline',scanned:0,bytes:0});
-      expect(result.entries.length).toBe(elapsed === 249 ? 1 : 0);
-      expect(result.next_cursor).toBeNull();
-    } finally { clock.mockRestore(); }
+  for (const message_id of [id(1), id(2)]) {
+    const read = () => readHistoricalTaskActivity({ repo_root:f.root, task_id:f.input.task_id, message_id, limit:1, after:null, budget:{max_scan:1000,max_bytes:2*1024*1024,deadline_ms:250} });
+    for (const elapsed of [249, 250]) {
+      const clock = spyOn(Date, 'now').mockReturnValueOnce(0).mockReturnValue(elapsed);
+      try {
+        const result = read();
+        expect(result.coverage).toMatchObject(elapsed === 249 ? {complete:true,reason:null} : {complete:false,reason:'deadline',scanned:0,bytes:0});
+        expect(result.entries.length).toBe(elapsed === 249 ? 1 : 0);
+        expect(result.next_cursor).toBeNull();
+      } finally { clock.mockRestore(); }
+    }
   }
 });
