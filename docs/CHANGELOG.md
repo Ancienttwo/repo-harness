@@ -4,6 +4,13 @@ All notable changes to this skill are documented here.
 
 ## Unreleased
 
+### Changed
+
+- Pin `archctx` and `archctx-contracts` to exact version `0.7.2`. A busy
+  archctx daemon now keeps its connection file after a timed-out health
+  check. The CLI then fails with `AC_RUNTIME_UNAVAILABLE` and names the
+  daemon pid. The contract schemas do not change.
+
 ## [0.22.0] - 2026-10-13
 
 ### Changed
