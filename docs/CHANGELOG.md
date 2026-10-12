@@ -30,6 +30,10 @@ All notable changes to this skill are documented here.
   (#626, #638)
 - SessionStart host configuration scans need explicit per-session scope.
   Findings contain no repeat-scan command. (#642)
+- The daily governance lane and `check:release` run the read-only
+  architecture projection check. A result other than `noop` fails the lane,
+  and the daily CI report opens a repair issue. The worker and Bot guidance
+  build CodeGraph code facts first. (#648)
 
 ### Added
 
