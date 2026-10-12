@@ -370,6 +370,8 @@ repo-harness review status --contract tasks/contracts/<task>.contract.md
 repo-harness review close --contract tasks/contracts/<task>.contract.md
 ```
 
+在没有 Herdr 的 Claude 桌面 app 里，加 `--launch app-terminal`，不传 `--herdr-endpoint`。第一次调用会输出固定的 host 命令。Claude 在 app 的 Terminal 里运行一次这个命令，再重跑同一轮。OAR、Seatbelt 和 Receipt 都不变。
+
 独立 linked checkout 里的 fleet `deep-reasoner` task-agent 在明确指定的 Herdr session 中最多执行三轮修复 review。默认选 owner 对侧 harness，`--harness` 可显式选择；只有启动前证明可执行文件缺失才允许明确提示的 fallback。文件 Result 通过领域绑定与 finding 校验，再由 generic-review Receipt writer/verifier 记录，close 重新验收；history 只是观察。Claude 使用精确结果文件 allowlist 与修改指纹，生产 OS 写隔离和大包完整读取仍未证。
 
 ## Hooks

@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
-import { readSessionArtifact, writeSessionArtifact, type TaskRequest } from '../terminal/task-session';
+import { processIdentity, readSessionArtifact, writeSessionArtifact, type TaskRequest } from '../terminal/task-session';
 import type { AvailableInstallation } from '@botiverse/oar';
 import { dirname } from 'node:path';
 import { reviewHostTemporaryDirectory, reviewIsolationPolicy, prepareReviewLauncher, assertReviewIsolation, type ReviewIsolationAdmission } from './review-isolation';
@@ -156,6 +156,10 @@ async function main(): Promise<void> {
       { kind: 'available', via: 'bundled' }, { cwd: spec.cwd }), view => console.log(JSON.stringify({ fixture: true, view })));
   } else {
     if (process.platform !== 'darwin' || spec.options.cwd !== spec.output) throw new Error('OAR_REVIEW_ISOLATION_UNSUPPORTED');
+    // An operator terminal can repeat the launch command. Only the first host
+    // claims the control directory; a later one exits before any Session or
+    // ready/disposed artifact.
+    writeSessionArtifact(join(spec.controlDirectory, 'host-claim.json'), { pid: process.pid, identity: processIdentity(process.pid) });
     // OAR launches the reviewer through the proved child Seatbelt executable.
     delete process.env.OAR_CODEX_SANDBOX;
     host = await openReviewHost(spec, view => console.log(JSON.stringify({ oar: view })));
@@ -167,7 +171,10 @@ async function main(): Promise<void> {
   const close = () => closing ??= host.dispose();
   // Disposal ack is written by finally, not inferred from a signal/idle.
   const signal = () => { void close(); };
-  process.once('SIGTERM', signal); process.once('SIGINT', signal);
+  // A closed terminal tab sends SIGHUP and removes the tty. Dispose anyway;
+  // console output is observation only, so a lost tty must not stop disposal.
+  process.stdout.on('error', () => {});
+  process.once('SIGTERM', signal); process.once('SIGINT', signal); process.once('SIGHUP', signal);
   try {
     writeSessionArtifact(readyFile, { pid: process.pid, session_id: host.sessionId, fixture: spec.mode === 'scripted' });
     console.log('OAR_HOST_READY');
@@ -183,7 +190,7 @@ async function main(): Promise<void> {
     await close();
     writeSessionArtifact(disposedFile, { disposed: true, fixture: spec.mode === 'scripted' });
     console.log('OAR_HOST_DISPOSED');
-    process.removeListener('SIGTERM', signal); process.removeListener('SIGINT', signal);
+    process.removeListener('SIGTERM', signal); process.removeListener('SIGINT', signal); process.removeListener('SIGHUP', signal);
   }
 }
 if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {

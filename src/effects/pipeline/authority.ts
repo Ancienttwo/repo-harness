@@ -62,6 +62,7 @@ export function validateOnSource(query:AuthorityQuery):Bundle {
           found={...session,req:raw,result:null};
         }
         const {req,binding,dir}=found;
+        if(binding.runtime!=='herdr') throw new PipelineError('runtime_unsupported',3,'Pipeline runs require a Herdr pane binding');
         runs.push({...req,source_host:query.key.source_host,attempt:req.round,session_ref:join(dir,'binding.json'),endpoint:binding.endpoint,harness_kind:binding.harness_kind,
           pane:{pane_id:binding.pane_id,tab_id:null,workspace_id:binding.workspace_id,herdr_session:binding.endpoint.session,host:query.key.source_host,registered_at:new Date().toISOString(),closed_at:existsSync(join(dir,'closed.json'))?new Date().toISOString():null},
           result_state:'missing',status:'running',progress:{last_observation_at:null,note:null}});

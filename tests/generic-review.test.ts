@@ -5,14 +5,14 @@ import { createHash } from 'crypto';
 import { join } from 'path';
 import { REVIEW_MAX_ROUNDS, validateReviewOutput } from '../src/core/review/generic-review';
 import { composeReviewPacket, type ReviewPacketInput } from '../src/core/review/review-packet';
-import { reviewLocation, reviewSessionOptions, runReviewRound, type ReviewEffects } from '../src/effects/review/generic-review';
+import { closeReview, reviewLocation, reviewSessionOptions, reviewStatus, runReviewRound, type ReviewEffects } from '../src/effects/review/generic-review';
 import { acceptanceReceiptPath } from '../scripts/acceptance-receipt';
 import { seedAcceptanceFixture } from './helpers/verification-plan-fixture';
 import { canonicalize } from '../src/core/evidence/canonical-json';
 import type { JsonValue } from '../src/core/evidence/types';
 import { prepareChangeAssessment } from '../src/effects/review/change-assessment';
 import { executeVerificationContract } from '../src/effects/evidence/verification-execution';
-import { ensureSessionDirectory, nextSessionRound, writeSessionArtifact } from '../src/effects/terminal/task-session';
+import { ensureSessionDirectory, nextSessionRound, readSessionArtifact, writeSessionArtifact } from '../src/effects/terminal/task-session';
 import { tmpWorkspace, tmpWorkspaceIn, run } from './helpers/repo-fixture';
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
@@ -164,6 +164,53 @@ test('packet survives launch failure; same input retries and changed subject fai
   expect(existsSync(f.packetPath(2))).toBe(false);
   expect(f.calls).not.toContain('send');
   expect(existsSync(acceptanceReceiptPath(f.root, f.home))).toBe(false);
+}, 60_000);
+
+test.skipIf(process.platform !== 'darwin')('app-terminal round returns the exact host command, sends nothing and never asks for a relaunch', async () => {
+  const f = packetRoundFixture();
+  await expect(runReviewRound({ ...f.options, launch: 'app-terminal' }, f.effects)).rejects.toThrow('review_launch_addressing_invalid');
+  const { endpoint: _endpoint, parentPane: _parentPane, ...base } = f.options;
+  await expect(runReviewRound(base, f.effects)).rejects.toThrow('review_launch_addressing_invalid');
+  const options = { ...base, launch: 'app-terminal' as const };
+  const first = await runReviewRound(options, f.effects);
+  if (first.status !== 'launch_required') throw new Error('fixture_launch_required_expected');
+  expect(first.argv.slice(1)).toEqual(['--disable-sigusr1', realpathSync(join(import.meta.dir, '../dist/oar-review-host.js')), join(f.dir, 'host.json')]);
+  expect(first.argv[0]!.startsWith('/')).toBe(true);
+  expect(first.command).toBe(first.argv.map(arg => "'" + arg + "'").join(' '));
+  expect(first.cwd).toBe(realpathSync(f.options.reviewerRepo));
+  const session = readSessionArtifact<Record<string, unknown>>(join(f.dir, 'session.json'));
+  expect([session.endpoint, session.parent_pane, session.actual_harness]).toEqual([null, null, 'claude']);
+  expect(existsSync(join(f.dir, 'request-1.json'))).toBe(false);
+  expect(readFileSync(f.packetPath(), 'utf8')).toContain('CURRENT SOURCE:');
+  // Repeating the round before any host claims the directory returns the same command and admits no new session.
+  expect(await runReviewRound(options, f.effects)).toEqual(first);
+  expect(f.calls.filter(call => call === 'admit')).toHaveLength(1);
+  expect(f.calls).not.toContain('start');
+  expect(f.calls).not.toContain('send');
+  // A host that claimed the directory and exited before ready is a failure, never a relaunch request.
+  const exited = spawnSync('/usr/bin/true');
+  writeSessionArtifact(join(f.dir, 'host-claim.json'), { pid: exited.pid });
+  await expect(runReviewRound(options, f.effects)).rejects.toThrow('review_host_start_failed');
+  expect((reviewStatus(f.root, f.options.contract) as { lifecycle: { status: string } }).lifecycle.status).toBe('launch_pending');
+  expect((await closeReview(f.root, f.options.contract, true, f.home)).status).toBe('closed');
+  expect(existsSync(join(f.dir, 'close.request'))).toBe(true);
+  expect(reviewStatus(f.root, f.options.contract).status).toBe('closed');
+  expect(existsSync(acceptanceReceiptPath(f.root, f.home))).toBe(false);
+}, 60_000);
+
+test.skipIf(process.platform !== 'darwin')('app-terminal cancel before any claim leaves a tombstone, so a late launch opens no Session', async () => {
+  const f = packetRoundFixture();
+  const { endpoint: _endpoint, parentPane: _parentPane, ...base } = f.options;
+  const launch = await runReviewRound({ ...base, launch: 'app-terminal' }, f.effects);
+  if (launch.status !== 'launch_required') throw new Error('fixture_launch_required_expected');
+  expect((await closeReview(f.root, f.options.contract, true, f.home)).status).toBe('closed');
+  const claim = join(f.dir, 'host-claim.json');
+  expect(JSON.parse(readFileSync(claim, 'utf8'))).toEqual({ pid: null, closed: true });
+  const late = spawnSync(launch.argv[0]!, launch.argv.slice(1), { encoding: 'utf8', timeout: 30_000 });
+  expect(late.status).not.toBe(0);
+  expect(late.stderr).toContain('EEXIST');
+  expect(existsSync(join(f.dir, 'ready.json'))).toBe(false);
+  expect(JSON.parse(readFileSync(claim, 'utf8'))).toEqual({ pid: null, closed: true });
 }, 60_000);
 
 test('packet fixtures keep valid socket paths with a long UTF-8 temporary root', () => {

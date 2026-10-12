@@ -9,7 +9,8 @@ export function buildReviewCommand(): Command {
     const child = command.command(operation).requiredOption('--contract <path>', 'Task contract')
       .option('--repo <path>', 'Owner repository worktree', process.cwd()).option('--json', 'Print JSON');
     if (operation === 'round') child.requiredOption('--reviewer-repo <path>', 'Dedicated linked reviewer checkout')
-      .requiredOption('--herdr-endpoint <file>', 'JSON {endpoint:{session,configPath?,home?},parent_pane}')
+      .option('--herdr-endpoint <file>', 'JSON {endpoint:{session,configPath?,home?},parent_pane}; required for --launch herdr')
+      .option('--launch <mode>', 'herdr, or app-terminal: the Claude app operator runs the printed host command', 'herdr')
       .option('--harness <kind>', 'Explicit claude or codex; no fallback for an explicit override')
       .requiredOption('--verification <path>', 'Native verification report under .ai/harness/runs/')
       .option('--timeout-ms <ms>', 'Round deadline, at most 1800000 ms');
@@ -17,10 +18,12 @@ export function buildReviewCommand(): Command {
       try {
         let result;
         if (operation === 'round') {
-          const addressing = JSON.parse(readFileSync(opts.herdrEndpoint, 'utf8'));
+          if (!['herdr', 'app-terminal'].includes(opts.launch)) throw new Error('review_launch_unsupported');
+          if ((opts.launch === 'herdr') !== (opts.herdrEndpoint !== undefined)) throw new Error('review_launch_addressing_invalid; --herdr-endpoint is required for herdr and refused for app-terminal');
+          const addressing = opts.herdrEndpoint ? JSON.parse(readFileSync(opts.herdrEndpoint, 'utf8')) : {};
           if (opts.harness && !['claude', 'codex'].includes(opts.harness)) throw new Error('review_harness_unsupported');
           result = await runReviewRound({ repoRoot: opts.repo, contract: opts.contract, verification: opts.verification,
-            reviewerRepo: opts.reviewerRepo, endpoint: addressing.endpoint, parentPane: addressing.parent_pane,
+            reviewerRepo: opts.reviewerRepo, endpoint: addressing.endpoint, parentPane: addressing.parent_pane, launch: opts.launch,
             harness: opts.harness, timeoutMs: opts.timeoutMs === undefined ? undefined : Number(opts.timeoutMs),
             admitSession: () => {
               const location = reviewLocation(opts.repo, opts.contract);

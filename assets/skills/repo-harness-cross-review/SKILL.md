@@ -13,14 +13,16 @@ ownership lives in `src/effects/review/generic-review.ts`, the OAR host and
 ## Mode Selection
 
 - Acceptance through persistent Herdr task-agent: `references/generic-review.md`.
+- Operator-attended acceptance in the Claude desktop app without Herdr:
+  `references/generic-review.md`, section "App terminal launch".
 - Migration from the retired direct Codex advisory command: `references/codex-mode.md`.
 - Explicit harness selection belongs to `repo-harness review round --harness`.
 
 ## Boundaries
 
 Prepare verification and the contract before review. The existing fleet
-`deep-reasoner` role, addressed Herdr pane, isolated reviewer checkout and OAR
-Session own the run. History/idle are observations; the request-bound file Result
+`deep-reasoner` role, addressed Herdr pane or app-terminal host, isolated
+reviewer checkout and OAR Session own the run. History/idle are observations; the request-bound file Result
 and generic-review Receipt own acceptance. Unknown model, delivery or cleanup
 stays unverified or pending. Never synthesize PASS, alias the retired command,
 replay an ambiguous request or bypass a frozen reviewer policy. Review does not
