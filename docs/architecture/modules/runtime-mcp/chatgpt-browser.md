@@ -1,9 +1,9 @@
 # runtime-mcp/chatgpt-browser 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-mcp-chatgpt-browser" sourceDigest="sha256:47fcd4a488a1f787663da883c23d4219878e11c8c1cdc841ec87d3226a680ce2" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:c001477d9d67a13bd76976f6d023321b42c73ac32bcc2da57e077974dc0c0fcf" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-mcp-chatgpt-browser" sourceDigest="sha256:ef1adc792ef7bfc073edb02070ee1f8e74d505020c9ad6292e8fb908b3efd095" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:21aede1b7c199588dd7c90886afdc992f001738e9ea41ddd585ad74ceded73e1" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-mcp.chatgpt-browser`(kind `capability`)
-> **Matched Prefixes**:`src/cli/chatgpt-browser/binding.ts`、`src/cli/chatgpt-browser/engine.ts`、`src/cli/chatgpt-browser/native-provider.ts`、`src/cli/chatgpt-browser/oracle-provider.ts`、`src/cli/chatgpt-browser/oracle-session-evidence.ts`、`src/cli/chatgpt-browser/prompt-assembler.ts`、`src/cli/chatgpt-browser/secret-scan.ts`、`src/cli/chatgpt-browser/session-store.ts`、`src/cli/chatgpt-browser/types.ts`、`src/cli/chatgpt-skill/**`、`src/cli/commands/chatgpt.ts`、`docs/repo-harness-chatgpt-browser-engine.md`
+> **Matched Prefixes**:`src/cli/chatgpt-browser/**`、`src/cli/chatgpt-skill/**`、`src/cli/commands/chatgpt.ts`、`docs/repo-harness-chatgpt-browser-engine.md`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
@@ -42,7 +42,8 @@ flowchart LR
 ### 1.3 規模信號
 
 - 規模量級:`10–20` 個文件 / `2000–5000` 行
-- 匹配前綴:`src/cli/chatgpt-browser/binding.ts`、`src/cli/chatgpt-browser/engine.ts`、`src/cli/chatgpt-browser/native-provider.ts`、`src/cli/chatgpt-browser/oracle-provider.ts`、`src/cli/chatgpt-browser/oracle-session-evidence.ts`、`src/cli/chatgpt-browser/prompt-assembler.ts`、`src/cli/chatgpt-browser/secret-scan.ts`、`src/cli/chatgpt-browser/session-store.ts`、`src/cli/chatgpt-browser/types.ts`、`src/cli/chatgpt-skill/**`、`src/cli/commands/chatgpt.ts`、`docs/repo-harness-chatgpt-browser-engine.md`
+- 匹配前綴:`src/cli/chatgpt-browser/**`、`src/cli/chatgpt-skill/**`、`src/cli/commands/chatgpt.ts`、`docs/repo-harness-chatgpt-browser-engine.md`
+- 排除前綴:`src/cli/chatgpt-browser/file-policy.ts`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
 ### 1.4 依賴邊界
