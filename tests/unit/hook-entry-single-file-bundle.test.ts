@@ -84,7 +84,7 @@ function runDetachedPopulate(entrypoint: string, fixture: PopulateFixture) {
     {
       cwd: fixture.repoRoot,
       encoding: 'utf-8',
-      env: { ...process.env, REPO_HARNESS_CLI: fixture.cliStub },
+      env: { ...process.env, REPO_HARNESS_SESSION_SECURITY_SCAN: '1', REPO_HARNESS_CLI: fixture.cliStub },
     },
   );
 }
@@ -159,6 +159,22 @@ describe('hook-entry single-file bundle', () => {
   test('bundled hook entry dispatches the detached tooling populate', () => {
     const fixture = populateFixture();
     expectPopulateRan(runDetachedPopulate(buildBundle('0.0.0-test'), fixture), fixture);
+  }, 30_000);
+
+  test('source and bundle refuse unauthorized detached setup checks', () => {
+    for (const entry of [HOOK_ENTRY, buildBundle('0.0.0-test')]) {
+      const fixture = populateFixture();
+      const result = spawnSync(process.execPath, [
+        entry, DETACHED_TOOLING_POPULATE_FLAG, fixture.repoRoot, 'codex', fixture.reportFile, fixture.lockDir,
+      ], {
+        cwd: fixture.repoRoot, encoding: 'utf8',
+        env: { ...process.env, REPO_HARNESS_SESSION_SECURITY_SCAN: '0', REPO_HARNESS_CLI: fixture.cliStub },
+      });
+      expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
+      expect(existsSync(join(fixture.repoRoot, fixture.reportFile))).toBe(false);
+      // The existing aged lock is not claimed, retired, or removed.
+      expect(existsSync(join(fixture.repoRoot, fixture.lockDir))).toBe(true);
+    }
   }, 30_000);
 
   test('bundled hook entry supervises a successful child through bundled re-entry', () => {

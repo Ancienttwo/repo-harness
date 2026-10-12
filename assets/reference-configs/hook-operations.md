@@ -81,8 +81,24 @@ explicit think/planning intent is matched first and routed to `/think`.
 
 The `SessionStart` builder assembles one bounded context from four sources
 before work begins: the prior handoff/resume packet, sprint status, advice-only
-minimal-change guidance, and a read-only fingerprint-gated security config scan.
+minimal-change guidance, and an explicitly authorized security config scan.
 They are emitted together as `additionalContext`.
+
+The security sentinel is off by default. A launcher may set
+`REPO_HARNESS_SESSION_SECURITY_SCAN=1` for a session only when its task permits
+reading the complete host and repository security config set. The session must
+also supply an absolute `HOME`. Missing, denied, or invalid inputs skip the
+sentinel before config fingerprints, scanning, or cache writes. Restricted
+worker launches must omit this opt-in or set it to `0`; do not place it in a
+shared shell profile. Task briefs and persona names are not parsed as permission.
+The same opt-in gates the startup tooling advisory and its sync/detached refresh:
+`setup check` also runs the doctor security scan and reads host configuration.
+A detached refresh checks the opt-in again before taking its lock or writing.
+
+Authorized startup scans remain fingerprint-gated. Their findings are facts,
+not permission to scan again or widen a task's read scope. Explicit
+`repo-harness security scan --json` remains available for an authorized task;
+it does not require this startup opt-in. Other guards remain active.
 
 Plan/spec/contract hints in `UserPromptSubmit` are advisory. Hard edit enforcement
 lives in `PreToolUse.edit` and the `mutation-guard` handler. The policy can select
