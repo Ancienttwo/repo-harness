@@ -282,6 +282,17 @@ describe('dev activity public text and health', () => {
     }
   });
 
+  test('keeps Unicode branch names in worktree and PR cards', () => {
+    for (const branch of ['修复/问题', 'café/issue', 'δοκιμή/42', '分支１/修改']) {
+      const snapshot = project(repo({ worktrees: [worktree(branch)], pull_requests: [pr(branch)] }));
+      expect(snapshot.items).toHaveLength(1);
+      expect(snapshot.items[0]!.branch).toBe(branch);
+      expect(snapshot.items[0]!.worktrees).toHaveLength(1);
+      expect(snapshot.items[0]!.pull_request).not.toBeNull();
+      expect(decodeDevActivitySnapshot(JSON.parse(JSON.stringify(snapshot))).items[0]!.branch).toBe(branch);
+    }
+  });
+
   test('the decoder rejects a path after punctuation in a guarded field', () => {
     const snapshot = project(repo({ ledger: [ledger({ title: 'plain title' })] }));
     const raw = JSON.parse(JSON.stringify(snapshot));

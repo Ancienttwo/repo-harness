@@ -5,6 +5,7 @@ import { hostname, tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import {
+  runDevActivityProcess,
   collectDevActivity,
   startDevActivityCollector,
   devActivityGhPrListArgv,
@@ -166,6 +167,63 @@ describe('dev activity collector on real repositories', () => {
       for (let waited = 0; waited < 5_000 && !existsSync(terminated); waited += 50) await Bun.sleep(50);
       expect(existsSync(terminated)).toBe(true);
     } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  for (const cause of ['timeout', 'aborted'] as const) {
+    test(`reaps a direct child that ignores SIGTERM on ${cause}`, async () => {
+      const f = fixture(['resistant'], 0);
+      const cwd = f.repos.resistant!;
+      const ready = join(cwd, '.git', 'resistant-ready');
+      const term = join(cwd, '.git', 'resistant-term');
+      let pid: number | undefined;
+      try {
+        const executable = join(f.root, 'bin', 'gh');
+        writeFileSync(executable, `#!/usr/bin/env node
+const fs = require('node:fs');
+process.on('SIGTERM', () => fs.writeFileSync(${JSON.stringify(term)}, 'received'));
+fs.writeFileSync(${JSON.stringify(ready)}, String(process.pid));
+setInterval(() => {}, 1000);
+`);
+        chmodSync(executable, 0o755);
+        const controller = new AbortController();
+        const pending = runDevActivityProcess('gh', [], { cwd, env: f.env, timeout_ms: cause === 'timeout' ? 2500 : 60000, signal: controller.signal });
+        for (let waited = 0; waited < 2000 && !existsSync(ready); waited += 10) await Bun.sleep(10);
+        expect(existsSync(ready)).toBe(true);
+        pid = Number(readFileSync(ready, 'utf8'));
+        if (cause === 'aborted') controller.abort();
+        expect(await pending).toEqual({ ok: false, code: cause });
+        expect(() => process.kill(pid!, 0)).toThrow();
+        expect(readFileSync(term, 'utf8')).toBe('received');
+      } finally {
+        if (pid !== undefined) { try { process.kill(pid, 'SIGKILL'); } catch { /* fixture already exited */ } }
+        rmSync(f.root, { recursive: true, force: true });
+      }
+    });
+  }
+
+  test('finishes a deadline when an exited child leaves stdout open in a grandchild', async () => {
+    const f = fixture(['inherited'], 0);
+    const cwd = f.repos.inherited!;
+    const ready = join(cwd, '.git', 'grandchild-pid');
+    let pid: number | undefined;
+    try {
+      const executable = join(f.root, 'bin', 'gh');
+      writeFileSync(executable, `#!/usr/bin/env node
+const child = require('node:child_process').spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: ['ignore', 'inherit', 'ignore'] });
+require('node:fs').writeFileSync(${JSON.stringify(ready)}, String(child.pid));
+process.exit(0);
+`);
+      chmodSync(executable, 0o755);
+      const pending = runDevActivityProcess('gh', [], { cwd, env: f.env, timeout_ms: 1000, signal: new AbortController().signal });
+      for (let waited = 0; waited < 800 && !existsSync(ready); waited += 10) await Bun.sleep(10);
+      expect(existsSync(ready)).toBe(true);
+      pid = Number(readFileSync(ready, 'utf8'));
+      expect(await pending).toEqual({ ok: false, code: 'timeout' });
+      expect(() => process.kill(pid!, 0)).not.toThrow();
+    } finally {
+      if (pid !== undefined) { try { process.kill(pid, 'SIGKILL'); } catch { /* fixture already exited */ } }
       rmSync(f.root, { recursive: true, force: true });
     }
   });
