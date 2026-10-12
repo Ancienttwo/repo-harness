@@ -12,9 +12,7 @@ responsibilities:
   - Run contract briefs and archive finished workflow artifacts.
 source:
   include:
-    - scripts/contract-run.ts
-    - scripts/contract-worktree.sh
-    - scripts/contract-worktree-runtime.ts
+    - scripts/contract-*
     - scripts/worktree-merge-lib.sh
     - scripts/ship-worktrees.sh
     - scripts/merge-gate.ts

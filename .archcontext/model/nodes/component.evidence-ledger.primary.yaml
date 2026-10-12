@@ -11,6 +11,5 @@ source:
     - "src/effects/evidence/**"
     - "scripts/evidence-gc.ts"
     - "scripts/recovery-view-cli.ts"
-    - "scripts/prepare-handoff.sh"
-    - "scripts/prepare-codex-handoff.sh"
+    - "scripts/prepare-*.sh"
     - "scripts/codex-handoff-resume.sh"

@@ -13,7 +13,7 @@ source:
     - "assets/workflow-contract.v1.json"
     - ".ai/harness/workflow-contract.json"
     - ".ai/harness/policy.json"
-    - ".ai/context/context-map.json"
+    - ".ai/context/**"
     - ".archcontext/model/nodes/**"
     - "scripts/capability-resolver.ts"
     - "scripts/capability-config.ts"
@@ -30,7 +30,6 @@ source:
     - "docs/reference-configs/**"
     - "assets/AGENTS.md"
     - "assets/CLAUDE.md"
-    - ".ai/context/**"
     - ".ai/harness/brain-manifest.json"
     - ".archcontext/**"
     - "src/core/capabilities/**"
@@ -75,6 +74,11 @@ source:
     - "scripts/factor-lab-promote.sh"
     - "scripts/factor-lab-reject.sh"
     - "scripts/factor-lab-check.sh"
+  exclude:
+    - "assets/reference-configs/external-tooling.md"
+    - "docs/reference-configs/external-tooling.md"
+    - "docs/reference-configs/install-profiles.md"
+    - "docs/reference-configs/chatgpt-coding-mcp.md"
   entrypoints:
     - id: entrypoint.contract-assets.primary
       path: "scripts/sync-helper-sources.ts"

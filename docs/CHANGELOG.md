@@ -4,14 +4,77 @@ All notable changes to this skill are documented here.
 
 ## Unreleased
 
+## [0.22.0] - 2026-10-13
+
 ### Changed
 
+- **Breaking:** repo-harness supplies tools and evidence, and the Bot
+  schedules work. The projection job queue, the hook architecture cascade
+  and the in-CLI automation scheduler are removed. Global
+  `projection_apply` accepts only `manual` or `disabled`.
+  `projection_failure_gate` is removed. `update` and `init` migrate a
+  retired section once (`automatic` becomes `manual`); readers refuse it
+  until then. (#617)
 - Pin `archctx` and `archctx-contracts` to exact version `0.7.1`. The
   architecture docs use renderer `archcontext.docs-renderer/v5` and
   projection manifest v2. Manifest provenance records only the CodeGraph
   package and version. Module pages show component entrypoints, sizes and
   outbound relations. Mermaid labels keep the model text. Path ownership
-  uses the archctx parent-chain rule.
+  uses the archctx parent-chain rule. (#629, #647)
+- Use Bun 1.4.3 in CI and in the Bun type definitions. (#620)
+- A PR runs typecheck and affected tests once. The full suite runs once a
+  day on `main`. (#625)
+- Implementation sub-agents do not run checks. The parent agent owns build,
+  typecheck, tests and integration. Committing workers use separate
+  worktrees. Evidence roles run their named check and do not commit.
+  (#626, #638)
+- SessionStart host configuration scans need explicit per-session scope.
+  Findings contain no repeat-scan command. (#642)
+- The daily governance lane and `check:release` run the read-only
+  architecture projection check. A result other than `noop` fails the lane,
+  and the daily CI report opens a repair issue. The worker and Bot guidance
+  build CodeGraph code facts first. (#648)
+- Under `capability_source: archcontext`, ArchContext is the only path
+  ownership authority. The resolver and the pre-edit hook call
+  `archctx resolve --paths-from` in one batch. Node `source.exclude` and glob
+  includes are accepted. An archctx failure fails closed with the
+  `capability_registry:invalid` blocker. Registry mode keeps longest-prefix
+  matching. (#649)
+- The architecture model owns directories with globs and excludes instead
+  of explicit file lists. Each of the 45 multiply-owned files now has one
+  owner. (#653)
+
+### Added
+
+- Rebuild the operator console on Kumo with a development progress board.
+  Add read-only Agents, Skills and Hooks pages. (#609, #611)
+- Read back a saved worker request after a lost response. The read path
+  never resends a request or starts a worker. (#610)
+- Add the `windows-python-first` Skill to the `minimal` and `full`
+  profiles. It applies only on native Windows. (#614)
+- Document the product architecture: one overview and one page for each of
+  37 capabilities in 6 domains. (#632)
+- Tell the Bot when to read architecture evidence: after a worker reports
+  `done` with source changes, and before review. Scan added and renamed
+  paths for ownership first, then run the projection check. (#635)
+
+### Fixed
+
+- A second accepted major change in one workspace is no longer refused with
+  `AC_PROJECTION_APPLY_COMMITTED`. Each accepted change gets its own
+  request id. (#634)
+- `update` runs the leftover check in the package that owns the runtime. An
+  older running CLI no longer fails on a newer skill catalog. (#628)
+- The macOS pipeline ledger identifies local filesystems by name, not by
+  `statfs` index. Local APFS and HFS+ volumes are accepted. (#621)
+- PM HTTP effects are fenced after disable. Accepted delivery receipts are
+  kept after a guard denial. Public errors are redacted. (#619)
+- Development activity sends SIGTERM on timeout, masks absolute paths and
+  marks a truncated PR list as partial. (#623)
+- Setup snapshot composition moves into the CLI layer. The state boundary
+  check passes. (#643)
+- Remove retired drift request wording from the routing corpus. (#633)
+- Stabilize timing-sensitive test fixtures. (#639, #645, #646)
 
 ## [0.21.2] - 2026-10-10
 

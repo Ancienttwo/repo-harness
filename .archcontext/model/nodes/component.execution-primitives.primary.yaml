@@ -11,9 +11,7 @@ responsibilities:
   - Create lock directories one ancestor at a time and reject symlinks and identity changes.
 source:
   include:
-    - src/effects/process-runner.ts
-    - src/effects/process-supervisor.ts
-    - src/effects/process-group-launcher.ts
+    - src/effects/process-*.ts
     - src/effects/expensive-run-lock.ts
     - src/effects/locking/**
     - src/effects/git/**

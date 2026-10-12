@@ -11,6 +11,5 @@ responsibilities:
   - Bound process count, duration and output per authorization.
 source:
   include:
-    - src/cli/mcp/coding-tools.ts
-    - src/cli/mcp/coding-workspaces.ts
+    - src/cli/mcp/coding-*.ts
     - src/cli/mcp/process-sessions.ts

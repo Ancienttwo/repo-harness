@@ -14,21 +14,10 @@ source:
   include:
     - src/core/state/coordination-identity.ts
     - src/core/state/lease-liveness.ts
-    - src/core/state/sprint-backlog-rows.ts
-    - src/core/state/sprint-row-completion.ts
-    - src/core/state/sprint-schema-migration.ts
-    - src/core/state/sprint-schema-v1.ts
-    - src/core/state/project-board-slice.ts
-    - src/core/state/project-board.ts
+    - src/core/state/sprint-*.ts
+    - src/core/state/project-board*.ts
     - src/core/state/command-outcome.ts
-    - src/effects/state/coordination-canonical-source.ts
-    - src/effects/state/coordination-claim-token.ts
-    - src/effects/state/coordination-cutover.ts
-    - src/effects/state/coordination-lease-liveness-store.ts
-    - src/effects/state/coordination-lease-reclaim.ts
-    - src/effects/state/coordination-lease-store.ts
-    - src/effects/state/coordination-sprint.ts
-    - src/effects/state/coordination-worktree-topology.ts
+    - src/effects/state/coordination-*.ts
     - src/effects/state/collect-board-inputs.ts
     - src/effects/state/collect-slice-inputs.ts
     - src/effects/state/resolve-board.ts
@@ -36,7 +25,6 @@ source:
     - src/effects/state/pruned-worktree-intents.ts
     - src/effects/state/worktree-trash.ts
     - src/effects/state/write-journal.ts
-    - src/core/worktree-location.mjs
-    - src/core/worktree-location.d.mts
+    - src/core/worktree-*
     - src/cli/commands/sprint.ts
     - scripts/sprint-backlog.sh
