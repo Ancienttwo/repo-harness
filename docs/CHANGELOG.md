@@ -40,6 +40,9 @@ All notable changes to this skill are documented here.
   includes are accepted. An archctx failure fails closed with the
   `capability_registry:invalid` blocker. Registry mode keeps longest-prefix
   matching. (#649)
+- The architecture model owns directories with globs and excludes instead
+  of explicit file lists. Each of the 45 multiply-owned files now has one
+  owner. (#653)
 
 ### Added
 

@@ -13,8 +13,11 @@
   merged it to resolve the conflict, so 0.22.0 includes it. #649 makes
   ArchContext the only path ownership authority under
   `capability_source: archcontext` (part 1 of #631).
+- #653 merged to main during review: `bedaf8ef85083df51d56b75e66d5f5f5b414b013`.
+  The release branch merged it to resolve the conflict. #653 changes only
+  model `source.include` and `source.exclude` (part 2 of #631).
 - The release contains every main commit after `v0.21.2`
-  (`942f3fca4195facb298ffc48dc5c7f3c804de8ce`), from #617 to #649.
+  (`942f3fca4195facb298ffc48dc5c7f3c804de8ce`), from #617 to #653.
 - Pin `archctx` and `archctx-contracts` to exact version `0.7.1` (#647).
 - Set package, skill, template and README versions to `0.22.0`.
 - The version is a minor release. #617 retires the automatic projection
