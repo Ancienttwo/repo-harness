@@ -1080,6 +1080,15 @@ then the worker flow of the `repo-harness-architecture` skill.
 review subject against `<ref>` (default: the policy review base). It needs no
 hook, so CI can call it for a pull request diff.
 
+CI uses the rule in two jobs. The PR job `PR architecture freshness (advisory)`
+runs `state owed` against the PR base. When a capability is owed, it runs
+`architecture-projection check --json` and prints warnings with the owed
+capability ids, the stale node ids and the apply command. It never fails the
+PR and is not part of `Required / CI`. The daily job `Daily architecture
+freshness` fails when the check status is not `noop`. Its repair issue names
+architecture freshness and contains the JSON summary and the matching action
+row from the `repo-harness-check` architecture evidence reference.
+
 Hook advisories for the Agent go out as `hookSpecificOutput.additionalContext`
 on Claude and Codex. Neither host gives plain stdout of `PreToolUse`,
 `PostToolUse` or `Stop` to the model. stderr of a successful hook is an operator
