@@ -3,7 +3,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { CIReportError, reportCI, renderReport, watchDailyCI, type GitHubAPI } from '../scripts/report-ci';
+import { ARCHITECTURE_EVIDENCE, ARCHITECTURE_JOB, CIReportError, architectureActionRow, parseArchitectureSummary, reportCI, renderReport, watchDailyCI, type GitHubAPI } from '../scripts/report-ci';
 
 function fixture(run: (f: { api: GitHubAPI; git: (...args: string[]) => string; before: string; after: string; prCommits: number; root: string; issues: any[]; calls: { path: string; method: string }[]; setConclusion: (value: string) => void; setRun: (id: number, attempt: number) => void; denyIssues: () => void }) => Promise<void>, candidateCommits = 1) {
   const root = mkdtempSync(join(tmpdir(), 'ci-report-fixture-'));
@@ -411,4 +411,63 @@ test('report and watchdog uploads include the real hidden report directory', () 
     expect(uploads[0].with['include-hidden-files']).toBe(true);
     expect(uploads[0].with['if-no-files-found']).toBe('error');
   }
+});
+
+const architectureEvidence = readFileSync(join(import.meta.dir, '..', ARCHITECTURE_EVIDENCE), 'utf8');
+const architectureSummary = { status: 'planned', staleNodes: ['capability.workflow-engine.workflow-state', 'capability.verification.evals-checks'],
+  files: ['docs/architecture/.projection-manifest.json'], humanActions: [] };
+// The fixture job is the daily architecture job; every other provider answer is the shared fixture.
+const architectureAPI = (f: { api: GitHubAPI }): GitHubAPI => async (path, method, body) => path.includes('/attempts/1/jobs')
+  ? { jobs: [{ id: 44, name: ARCHITECTURE_JOB, conclusion: 'failure', check_run_url: 'https://api.github.com/repos/test/repo/check-runs/55' }] }
+  : f.api(path, method, body);
+
+test('a daily architecture failure opens a named repair issue with the summary, stale nodes and action row', () => fixture(async f => {
+  f.setConclusion('failure');
+  const input = { summaryText: JSON.stringify(architectureSummary), evidence: architectureEvidence };
+  const first = await reportCI('test/repo', 12, architectureAPI(f), input);
+  expect(first.errors).toEqual([]);
+  expect(first.repairs).toEqual([{ key: 'ci-repair:12:1:check-55', issue_url: 'https://github.com/test/repo/issues/1', delivery: 'created' }]);
+  const issue = f.issues[0];
+  expect(issue.title).toBe(`[CI repair] architecture freshness planned @ ${f.after.slice(0, 12)}`);
+  expect(issue.body).toStartWith('<!-- ci-repair:12:1:check-55 -->');
+  expect(issue.body).toContain(`\`\`\`json\n${JSON.stringify(architectureSummary, null, 2)}\n\`\`\``);
+  expect(issue.body).toContain('Stale nodes: capability.workflow-engine.workflow-state, capability.verification.evals-checks');
+  expect(issue.body).toContain(architectureActionRow(parseArchitectureSummary(input.summaryText), architectureEvidence));
+  expect(issue.body).toContain('| `planned`, only `docs/architecture/.projection-manifest.json` in `files` |');
+  expect(issue.body).not.toContain('run typecheck + affected tests');
+  expect((await reportCI('test/repo', 12, architectureAPI(f), input)).repairs[0]?.delivery).toBe('reused');
+  expect(f.issues).toHaveLength(1);
+}));
+
+test('a daily architecture failure without a summary says so and routes to the command-error row', () => fixture(async f => {
+  f.setConclusion('failure');
+  const report = await reportCI('test/repo', 12, architectureAPI(f), { summaryText: null, evidence: architectureEvidence });
+  expect(report.errors).toEqual([]);
+  const issue = f.issues[0];
+  expect(issue.title).toBe(`[CI repair] architecture freshness without summary @ ${f.after.slice(0, 12)}`);
+  expect(issue.body).toContain('The job uploaded no architecture summary, so the check gave no JSON result.');
+  expect(issue.body).toContain('| Command error, `blocked` or a failure status |');
+}));
+
+test('an invalid architecture summary or a missing action row is reported, and the issue is still opened', () => fixture(async f => {
+  f.setConclusion('failure');
+  const report = await reportCI('test/repo', 12, architectureAPI(f), { summaryText: '{"status":"planned","staleNodes":[1],"files":[],"humanActions":[]}', evidence: '' });
+  expect(report.errors).toEqual([
+    'Architecture summary invalid: Architecture summary staleNodes must be a string array',
+    `Architecture action unavailable: No action row starts with Command error, \`blocked\` or a failure status in ${ARCHITECTURE_EVIDENCE}`,
+  ]);
+  expect(report.repairs[0]).toMatchObject({ key: 'ci-repair:12:1:check-55', delivery: 'created' });
+  expect(f.issues[0].body).toContain('The architecture summary is not valid');
+}));
+
+test.each([
+  [{ status: 'noop', files: [], humanActions: [] }, '| `noop` |'],
+  [{ status: 'planned', files: ['docs/architecture/.projection-manifest.json'], humanActions: [] }, '| `planned`, only `docs/architecture/.projection-manifest.json` in `files` |'],
+  [{ status: 'planned', files: ['docs/architecture/.projection-manifest.json', 'docs/architecture/modules/a/b.md'], humanActions: [] }, '| `planned`, other `docs/architecture/` files |'],
+  [{ status: 'human-action-required', files: [], humanActions: [{ reasonCode: 'unresolved-major-change' }] }, '| `human-action-required` with `unresolved-major-change` |'],
+  [{ status: 'human-action-required', files: [], humanActions: [{ reasonCode: 'unresolved-major-change' }, { reasonCode: 'ownership-conflict' }] }, '| Other `humanActions` reason codes, or `adoption-required` |'],
+  [{ status: 'adoption-required', files: [], humanActions: [] }, '| Other `humanActions` reason codes, or `adoption-required` |'],
+  [{ status: 'blocked', files: [], humanActions: [] }, '| Command error, `blocked` or a failure status |'],
+])('each architecture result maps to one row of the real evidence table: %j', (summary, row) => {
+  expect(architectureActionRow({ staleNodes: [], ...summary }, architectureEvidence)).toStartWith(row);
 });

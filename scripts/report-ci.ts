@@ -1,4 +1,5 @@
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 const validSha = (value: unknown): value is string => typeof value === 'string' && /^[0-9a-f]{40}$/.test(value) && value !== '0'.repeat(40);
 
 /** CI completion effect: GitHub is the authority for runs, repair issues and rollback boundaries. */
@@ -61,7 +62,54 @@ async function ensureRepairIssue(api: GitHubAPI, root: string, key: string, titl
   return { issue_url: winner.html_url, delivery: 'reused' };
 }
 
-export async function reportCI(repo: string, runId: number, api: GitHubAPI): Promise<CIReport> {
+/** The daily CI job whose failure means stale architecture documents. */
+export const ARCHITECTURE_JOB = 'Daily architecture freshness';
+/** The daily architecture job uploads this file; ci-report.yml downloads it here. */
+export const ARCHITECTURE_SUMMARY_PATH = '.ci-architecture/summary.json';
+/** The Bot decision table for each architecture check result. */
+export const ARCHITECTURE_EVIDENCE = 'assets/skill-commands/repo-harness-check/references/architecture-evidence.md';
+const ARCHITECTURE_MANIFEST = 'docs/architecture/.projection-manifest.json';
+/** First cell of each row in the architecture evidence table. */
+const ARCHITECTURE_ROWS = {
+  noop: '`noop`',
+  manifest: '`planned`, only `docs/architecture/.projection-manifest.json` in `files`',
+  rendered: '`planned`, other `docs/architecture/` files',
+  major: '`human-action-required` with `unresolved-major-change`',
+  decision: 'Other `humanActions` reason codes, or `adoption-required`',
+  error: 'Command error, `blocked` or a failure status',
+} as const;
+export interface ArchitectureSummary { status: string; staleNodes: string[]; files: string[]; humanActions: Record<string, unknown>[] }
+/** summaryText is null when the daily job uploaded no summary. */
+export interface ArchitectureInput { summaryText: string | null; evidence: string }
+
+export function parseArchitectureSummary(text: string): ArchitectureSummary {
+  const summary = record(JSON.parse(text), 'Architecture summary');
+  const strings = (value: unknown, label: string): string[] => {
+    if (!Array.isArray(value) || value.some(entry => typeof entry !== 'string')) throw new Error(`Architecture summary ${label} must be a string array`);
+    return value;
+  };
+  if (typeof summary.status !== 'string' || !summary.status) throw new Error('Architecture summary status must be a string');
+  if (!Array.isArray(summary.humanActions)) throw new Error('Architecture summary humanActions must be an array');
+  return { status: summary.status, staleNodes: strings(summary.staleNodes, 'staleNodes'), files: strings(summary.files, 'files'),
+    humanActions: summary.humanActions.map(action => record(action, 'Architecture human action')) };
+}
+
+/** Returns the evidence table row for a summary. A missing summary means the check gave no result. */
+export function architectureActionRow(summary: ArchitectureSummary | null, evidence: string): string {
+  const status = summary?.status;
+  const kind: keyof typeof ARCHITECTURE_ROWS = !summary ? 'error'
+    : status === 'noop' ? 'noop'
+    : status === 'planned' ? (summary.files.every(file => file === ARCHITECTURE_MANIFEST) ? 'manifest' : 'rendered')
+    : status === 'human-action-required' && summary.humanActions.length > 0
+      && summary.humanActions.every(action => action.reasonCode === 'unresolved-major-change') ? 'major'
+    : status === 'human-action-required' || status === 'adoption-required' ? 'decision'
+    : 'error';
+  const row = evidence.split('\n').find(line => line.startsWith(`| ${ARCHITECTURE_ROWS[kind]} |`));
+  if (!row) throw new Error(`No action row starts with ${ARCHITECTURE_ROWS[kind]} in ${ARCHITECTURE_EVIDENCE}`);
+  return row;
+}
+
+export async function reportCI(repo: string, runId: number, api: GitHubAPI, architecture?: ArchitectureInput): Promise<CIReport> {
   if (!/^[\w.-]+\/[\w.-]+$/.test(repo) || !positive(runId)) throw new Error('Invalid provider repository/run identity');
   const root = `/repos/${repo}`;
   const run = record(await api(`${root}/actions/runs/${runId}`), 'CI run');
@@ -75,18 +123,41 @@ export async function reportCI(repo: string, runId: number, api: GitHubAPI): Pro
   const headSha = run.head_sha;
   const report: CIReport = { run_id: runId, run_attempt: run.run_attempt, sha: run.head_sha,
     conclusion: run.conclusion, run_url: run.html_url, repairs: [], merges: [], unresolved_repairs: null, errors: [] };
-  const repair = async (identity: string, detail: string, requireOpen = false): Promise<void> => {
+  // The marker key stays the dedupe identity. An architecture repair only changes the title and body.
+  const repair = async (identity: string, detail: string, requireOpen = false, cause?: { subject: string; body: string }): Promise<void> => {
     const key = requireOpen ? `ci-repair:${identity}` : `ci-repair:${run.id}:${run.run_attempt}:${identity}`;
+    const action = cause ? `${cause.body}\n\nFollow this action in a repair PR. Do not weaken assertions.`
+      : 'Investigate the real failure; open a repair PR and run typecheck + affected tests once. Do not weaken assertions.';
     try {
       const task = await ensureRepairIssue(api, root, key,
-        `[CI repair] ${safeText(identity)} @ ${headSha.slice(0, 12)}`,
-        `Fixed main SHA: \`${run.head_sha}\`\nRun: ${run.html_url}\nAttempt: ${run.run_attempt}\nCheck: ${identity}\n\n${safeText(detail)}\n\nInvestigate the real failure; open a repair PR and run typecheck + affected tests once. Do not weaken assertions. Credentials/permissions and production operations require user approval.`, requireOpen);
+        `[CI repair] ${safeText(cause?.subject ?? identity)} @ ${headSha.slice(0, 12)}`,
+        `Fixed main SHA: \`${run.head_sha}\`\nRun: ${run.html_url}\nAttempt: ${run.run_attempt}\nCheck: ${identity}\n\n${safeText(detail)}\n\n${action} Credentials/permissions and production operations require user approval.`, requireOpen);
       report.repairs.push({ key, ...task });
     } catch (error) {
       // The artifact is the pending delivery record. An HTTP refusal never becomes a fake dispatch success.
       report.repairs.push({ key, issue_url: null, delivery: 'pending', error: message(error) });
       report.errors.push(`Repair dispatch pending: ${identity}: ${message(error)}`);
     }
+  };
+  const architectureCause = (): { subject: string; body: string } => {
+    const lines: string[] = [];
+    let summary: ArchitectureSummary | null = null;
+    if (!architecture || architecture.summaryText === null) {
+      lines.push('The job uploaded no architecture summary, so the check gave no JSON result. Read the job log.');
+    } else {
+      try { summary = parseArchitectureSummary(architecture.summaryText); } catch (error) {
+        lines.push(`The architecture summary is not valid: ${safeText(message(error))}`);
+        report.errors.push(`Architecture summary invalid: ${message(error)}`);
+      }
+    }
+    if (summary) lines.push('Architecture summary:', '', '```json', JSON.stringify(summary, null, 2), '```', '', `Stale nodes: ${summary.staleNodes.join(', ') || 'none'}`);
+    try {
+      lines.push('', `Action from \`${ARCHITECTURE_EVIDENCE}\`:`, '', '| Result | Meaning | Bot decision |', '| --- | --- | --- |', architectureActionRow(summary, architecture?.evidence ?? ''));
+    } catch (error) {
+      lines.push(safeText(message(error)));
+      report.errors.push(`Architecture action unavailable: ${message(error)}`);
+    }
+    return { subject: `architecture freshness ${summary?.status ?? 'without summary'}`, body: lines.join('\n') };
   };
   if (run.conclusion !== 'success') {
     try {
@@ -98,7 +169,8 @@ export async function reportCI(repo: string, runId: number, api: GitHubAPI): Pro
         if (!positive(job.id) || typeof job.check_run_url !== 'string') throw new Error('Failed job has no check identity');
         const check = record(await api(new URL(job.check_run_url).pathname), 'Failed check');
         if (!positive(check.id)) throw new Error('Failed check identity unavailable');
-        await repair(`check-${check.id}`, `${safeText(job.name)}: ${safeText(job.conclusion)}. Check: ${check.html_url ?? job.check_run_url}`);
+        await repair(`check-${check.id}`, `${safeText(job.name)}: ${safeText(job.conclusion)}. Check: ${check.html_url ?? job.check_run_url}`,
+          false, job.name === ARCHITECTURE_JOB ? architectureCause() : undefined);
       }
     } catch (error) { report.errors.push(`Failure observation incomplete: ${message(error)}`); await repair(`run-${run.id}`, 'Failed run/check observation was incomplete.'); }
   }
@@ -231,7 +303,11 @@ if (import.meta.main) {
       if (observation.delivery === 'pending') process.exitCode = 1;
     } else {
       if (!positive(selectedRunId)) throw new Error('CI event run identity unavailable');
-      const report = await reportCI(repo, selectedRunId, api);
+      const architecture: ArchitectureInput = {
+        summaryText: existsSync(ARCHITECTURE_SUMMARY_PATH) ? readFileSync(ARCHITECTURE_SUMMARY_PATH, 'utf8') : null,
+        evidence: readFileSync(join(import.meta.dir, '..', ARCHITECTURE_EVIDENCE), 'utf8'),
+      };
+      const report = await reportCI(repo, selectedRunId, api, architecture);
       writeFileSync('.ci-report/report.json', JSON.stringify(report, null, 2));
       writeFileSync('.ci-report/report.md', renderReport(report));
       if (process.env.GITHUB_STEP_SUMMARY) writeFileSync(process.env.GITHUB_STEP_SUMMARY, renderReport(report));

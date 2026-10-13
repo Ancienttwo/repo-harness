@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { selectAffectedTests, selectCoverage } from '../scripts/select-ci-coverage';
+import { ARCHITECTURE_JOB, ARCHITECTURE_SUMMARY_PATH } from '../scripts/report-ci';
 
 const ROOT = resolve(import.meta.dir, '..');
 const workflow = Bun.YAML.parse(readFileSync(join(ROOT, '.github/workflows/ci.yml'), 'utf8')) as any;
@@ -83,7 +84,7 @@ describe('single affected verification and daily fallback', () => {
     expect(upload.with.path).toBe('.ci-affected-tests.json');
     expect(upload.with['include-hidden-files']).toBe(true);
     expect(upload.with['if-no-files-found']).toBe('error');
-    for (const id of ['governance', 'test', 'mcp-path-matrix']) {
+    for (const id of ['governance', 'architecture', 'test', 'mcp-path-matrix']) {
       expect(jobs[id].if).toBe("needs.selection.outputs.mode == 'daily'");
       expect(jobs[id].steps.find((step: any) => step.uses === 'actions/checkout@v4').with.ref).toBe('${{ needs.selection.outputs.sha }}');
       expect(jobs[id]['continue-on-error']).toBeUndefined();
@@ -99,7 +100,7 @@ describe('single affected verification and daily fallback', () => {
     for (const retired of ['pm-acceptance.yml', 'windows-protected-helper.yml']) {
       expect(existsSync(join(ROOT, '.github/workflows', retired))).toBe(false);
     }
-    for (const lane of ['governance', 'test', 'mcp-path-matrix']) {
+    for (const lane of ['governance', 'architecture', 'test', 'mcp-path-matrix']) {
       expect(workflow.jobs[lane].if).toBe("needs.selection.outputs.mode == 'daily'");
     }
     const job = workflow.jobs['mcp-path-matrix'];
@@ -246,10 +247,126 @@ describe('single affected verification and daily fallback', () => {
   });
 
   test('local affected shell rejects invalid base arguments before running a gate', () => {
-    for (const args of [['affected', '--base'], ['all', '--base', 'origin/main'], ['affected', '--base', '--bad'], ['affected', '--base', 'origin/main', '--extra']]) {
+    for (const args of [['affected', '--base'], ['all', '--base', 'origin/main'], ['affected', '--base', '--bad'], ['affected', '--base', 'origin/main', '--extra'],
+      ['architecture', '--base', 'origin/main'], ['architecture-advisory'], ['architecture-advisory', '--base']]) {
       const result = spawnSync('/bin/bash', [join(ROOT, 'scripts/check-ci.sh'), ...args], { encoding: 'utf8' });
       expect(result.status).toBe(2); expect(result.stderr).toContain('Usage:');
       expect(result.stdout).not.toContain('[ci] install');
     }
+  });
+
+  test('architecture runs as one daily job and one advisory PR job outside the required aggregate', () => {
+    const { jobs } = workflow;
+    const daily = jobs.architecture;
+    expect(daily.name).toBe(ARCHITECTURE_JOB);
+    const check = daily.steps.find((step: any) => step.name === 'Check architecture documents');
+    expect(check.run).toBe('bash scripts/check-ci.sh architecture');
+    expect(check.env.ARCHITECTURE_SUMMARY).toBe('${{ runner.temp }}/architecture/summary.json');
+    const upload = daily.steps.find((step: any) => step.uses === 'actions/upload-artifact@v4');
+    expect(upload.if).toBe('always()');
+    expect(upload.with.name).toBe('architecture-freshness-${{ github.run_attempt }}');
+    expect(upload.with.path).toBe(check.env.ARCHITECTURE_SUMMARY);
+    expect(daily.steps.indexOf(upload)).toBeGreaterThan(daily.steps.indexOf(check));
+    expect(jobs.governance.steps.some((step: any) => step.run === 'bash scripts/check-ci.sh governance')).toBe(true);
+
+    const reporter = Bun.YAML.parse(readFileSync(join(ROOT, '.github/workflows/ci-report.yml'), 'utf8')) as any;
+    const download = reporter.jobs.report.steps.find((step: any) => step.uses === 'actions/download-artifact@v4');
+    expect(download.with).toEqual({
+      pattern: 'architecture-freshness-${{ github.event.workflow_run.run_attempt }}', path: ARCHITECTURE_SUMMARY_PATH.split('/')[0],
+      'merge-multiple': true, 'run-id': '${{ github.event.workflow_run.id }}', 'github-token': '${{ github.token }}',
+    });
+    expect(reporter.jobs.report.permissions).toEqual({ actions: 'read', contents: 'read', issues: 'write' });
+
+    const advisory = jobs['architecture-advisory'];
+    expect(advisory.if).toBe("needs.selection.outputs.mode == 'affected'");
+    expect(advisory.permissions).toBeUndefined();
+    expect(jobs.required.needs).not.toContain('architecture-advisory');
+    const warn = advisory.steps.find((step: any) => step.name === 'Warn about owed architecture documents');
+    expect(warn.env).toEqual({ BASE_SHA: '${{ github.event.pull_request.base.sha }}' });
+    expect(warn.run).toBe('bash scripts/check-ci.sh architecture-advisory --base "$BASE_SHA"');
+    expect(advisory.steps.find((step: any) => step.uses === 'actions/checkout@v4').with['fetch-depth']).toBe(0);
+  });
+});
+
+describe('architecture lanes', () => {
+  const owed = (status: string) => JSON.stringify({ protocol: 1, kind: 'repo-harness-owed-capabilities', base: 'base', status,
+    capabilities: status === 'owed' ? [{ id: 'workflow-engine-workflow-state', module_document: 'docs/architecture/modules/workflow-engine/workflow-state.md', paths: ['src/core/state/types.ts'] }] : [],
+    new_unowned_paths: [], next: [] });
+  const planned = JSON.stringify({ status: 'planned', freshness: { staleNodes: [{ nodeId: 'capability.workflow-engine.workflow-state' }, { nodeId: 'capability.verification.evals-checks' }] },
+    files: [{ path: 'docs/architecture/.projection-manifest.json' }], humanActions: [] });
+
+  // Real check-ci.sh with stub CLI results. `bun -e` and the shell logic stay real.
+  function runLane(args: string[], fixture: { owed?: string; owedExit?: number; check?: string; codegraphExit?: number; summary?: boolean }) {
+    const root = mkdtempSync(join(tmpdir(), 'rh-ci-architecture-'));
+    const bin = join(root, 'bin');
+    try {
+      mkdirSync(join(root, 'repo/scripts/lib'), { recursive: true }); mkdirSync(bin);
+      for (const path of ['scripts/check-ci.sh', 'scripts/lib/ci-run-tests.sh']) writeFileSync(join(root, 'repo', path), readFileSync(join(ROOT, path)));
+      writeFileSync(join(root, 'owed.json'), fixture.owed ?? '');
+      writeFileSync(join(root, 'check.json'), fixture.check ?? '');
+      writeFileSync(join(bin, 'bun'), [
+        '#!/bin/bash',
+        'if [[ "$1" == install ]]; then exit 0; fi',
+        `if [[ "$1" == src/cli/index.ts && "$2" == state ]]; then echo "$*" > ${JSON.stringify(join(root, 'owed-args'))}; cat ${JSON.stringify(join(root, 'owed.json'))}; if [[ ${fixture.owedExit ?? 0} -ne 0 ]]; then echo "Unknown base ref: missing" >&2; fi; exit ${fixture.owedExit ?? 0}; fi`,
+        `if [[ "$1" == src/cli/index.ts && "$2" == architecture-projection ]]; then touch ${JSON.stringify(join(root, 'checked'))}; cat ${JSON.stringify(join(root, 'check.json'))}; exit 1; fi`,
+        `exec ${JSON.stringify(process.execPath)} "$@"`,
+      ].join('\n'), { mode: 0o755 });
+      writeFileSync(join(bin, 'npm'), `#!/bin/bash\nexit ${fixture.codegraphExit ?? 0}\n`, { mode: 0o755 });
+      const summaryPath = join(root, 'out/architecture/summary.json');
+      const result = spawnSync('/bin/bash', ['scripts/check-ci.sh', ...args], {
+        cwd: join(root, 'repo'), encoding: 'utf8',
+        env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, ...(fixture.summary ? { ARCHITECTURE_SUMMARY: summaryPath } : {}) },
+      });
+      return {
+        status: result.status, stdout: result.stdout, stderr: result.stderr,
+        checked: existsSync(join(root, 'checked')),
+        owedArgs: existsSync(join(root, 'owed-args')) ? readFileSync(join(root, 'owed-args'), 'utf8').trim() : null,
+        summary: existsSync(summaryPath) ? JSON.parse(readFileSync(summaryPath, 'utf8')) : null,
+      };
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  }
+  const warnings = (stdout: string) => stdout.split('\n').filter(line => line.startsWith('::warning '));
+
+  test('an owed PR capability warns with its id, the stale nodes and the apply command, and exits 0', () => {
+    const result = runLane(['architecture-advisory', '--base', 'abc123'], { owed: owed('owed'), check: planned });
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.owedArgs).toBe('src/cli/index.ts state owed --json --base abc123');
+    expect(result.checked).toBe(true);
+    expect(warnings(result.stdout)).toEqual([
+      '::warning title=Architecture update owed::This PR changes paths owned by these capabilities after the last architecture manifest update: workflow-engine-workflow-state.',
+      '::warning title=Architecture documents stale::Status: planned. Stale nodes: capability.workflow-engine.workflow-state, capability.verification.evals-checks. Owed capabilities: workflow-engine-workflow-state. In this PR run: repo-harness architecture-projection apply --json. Then commit docs/architecture/.',
+    ]);
+  });
+
+  test('a clear PR runs no architecture check and prints no warning', () => {
+    const result = runLane(['architecture-advisory', '--base', 'abc123'], { owed: owed('clear') });
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.checked).toBe(false);
+    expect(warnings(result.stdout)).toEqual([]);
+    expect(result.stdout).toContain('[ci] No architecture check needed.');
+  });
+
+  test('owed-rule and check failures become warnings, not PR failures', () => {
+    const failed = runLane(['architecture-advisory', '--base', 'missing'], { owedExit: 1 });
+    expect(failed.status, failed.stderr).toBe(0);
+    expect(failed.checked).toBe(false);
+    expect(warnings(failed.stdout)).toHaveLength(1);
+    expect(warnings(failed.stdout)[0]).toStartWith('::warning title=Architecture owed check failed::repo-harness state owed --json --base missing failed: ');
+    expect(warnings(failed.stdout)[0]).toContain('Unknown base ref: missing');
+
+    const noFacts = runLane(['architecture-advisory', '--base', 'abc123'], { owed: owed('owed'), codegraphExit: 1 });
+    expect(noFacts.status, noFacts.stderr).toBe(0);
+    expect(noFacts.checked).toBe(false);
+    expect(warnings(noFacts.stdout)[1]).toStartWith('::warning title=Architecture check failed::');
+  });
+
+  test('the daily lane fails on stale documents and writes the summary for the report', () => {
+    const result = runLane(['architecture'], { check: planned, summary: true });
+    expect(result.status).toBe(1);
+    expect(result.checked).toBe(true);
+    expect(result.owedArgs).toBeNull();
+    expect(result.summary).toEqual({ status: 'planned', staleNodes: ['capability.workflow-engine.workflow-state', 'capability.verification.evals-checks'],
+      files: ['docs/architecture/.projection-manifest.json'], humanActions: [] });
+    expect(result.stdout).not.toContain('[ci] typecheck');
   });
 });

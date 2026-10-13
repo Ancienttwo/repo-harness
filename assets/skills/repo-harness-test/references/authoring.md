@@ -68,7 +68,7 @@ observed by a parent also need their actual process boundary.
 Existing opt-in cases use explicit environment gates for external dependencies.
 
 `REPO_HARNESS_TEST_EXPENSIVE` is the release-lane gate for real `npm pack`,
-real install, and real `herdr` cases. `scripts/check-ci.sh:95` is its single
+real install, and real `herdr` cases. `scripts/check-ci.sh` is its single
 naming authority -- the `all` lane exports it, `functional` and `governance`
 deliberately do not, and `tests/expensive-test-gate.test.ts` reads the exported
 name back out of that script so a rename cannot strand a gated file. Declared

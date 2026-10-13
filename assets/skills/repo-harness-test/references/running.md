@@ -41,11 +41,20 @@ and keeps going after a failure, then prints `[ci] failed test files (N):`.
 
 ## The gate lanes
 
-`scripts/check-ci.sh [affected|all|governance|functional]` defaults to `affected`.
-PR checks select affected tests. Daily CI selects `governance` and `functional`.
-The release gate selects `all`.
+`scripts/check-ci.sh [affected|all|governance|functional|architecture]` defaults to `affected`.
+PR checks select affected tests. Daily CI selects `governance`, `architecture`
+and `functional` as separate jobs. The release gate selects `all`, which runs
+all three.
 
-Only the `all` lane exports `REPO_HARNESS_TEST_EXPENSIVE=1` (line 95), which is
+The `architecture` lane runs `repo-harness architecture-projection check --json`
+and fails when the status is not `noop`. When `ARCHITECTURE_SUMMARY` names a
+file, the lane writes the JSON summary there. The daily report puts it in the
+repair issue. `architecture-advisory --base <ref>` is the PR lane. It runs
+`repo-harness state owed --json --base <ref>`. When a capability is owed, it runs
+the check and prints `::warning::` lines. It always exits 0, and its job is not
+part of `Required / CI`.
+
+Only the `all` lane exports `REPO_HARNESS_TEST_EXPENSIVE=1`, which is
 what unskips the real `npm pack`/install cases in
 `tests/harness-benchmark-matrix.test.ts`. Generic review domain fixtures are
 zero-model, with existing task-agent lifecycle coverage. A green hosted `functional` run has
