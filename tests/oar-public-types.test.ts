@@ -97,6 +97,11 @@ try{
  assert.equal(nativePrompt.body.inputId,request.request_id);
  release();const run=await pending;assert.equal(run.outcome.kind,'completed');
  assert.deepEqual(replayOarStatus(snapshot()),session.status().value);assert.equal(read().outcome,'completed');
+ const firstCapture=readFileSync(path,'utf8');
+ const next={request_id:'22222222-2222-4222-8222-222222222222',round:2};let checkedInitial=false;
+ await promptWithOarObservation(session,next,host,'second-input',{timeoutMs:1000},capture=>{save(capture);if(capture.records.length===0){checkedInitial=true;assert.equal(capture.initial_status.lastTurnOutcome.kind,'completed');assert.equal(readOarObservation(path,next,host).outcome,null)}});
+ assert.equal(checkedInitial,true);
+ writeFileSync(path,firstCapture);
  const valid=readFileSync(path,'utf8');
  for(const changed of [{...request,request_id:'other'},{...request,round:2}])assert.throws(()=>readOarObservation(path,changed,host),/IDENTITY_MISMATCH/);
  assert.throws(()=>readOarObservation(path,request,{...host,identity:'reused-pid'}),/IDENTITY_MISMATCH/);

@@ -1,5 +1,5 @@
 import type { AgentStatus, RawEvent, Session } from '@botiverse/oar';
-import { reduceStatus, promptAndWait, type PromptRunOptions } from '@botiverse/oar/observe';
+import { reduceStatus, promptAndWait, turnEndAfter, type PromptRunOptions } from '@botiverse/oar/observe';
 import { closeSync, constants, fstatSync, openSync, readFileSync } from 'node:fs';
 
 export const OAR_OBSERVATION_PROTOCOL = 'repo-harness.oar-observation.v1';
@@ -70,13 +70,15 @@ export function oarObservationView(snapshot: OarObservationSnapshot) {
     && record.agentPath.length === 0 && record.direction === 'toRuntime' && record.body.kind === 'prompt'
     && record.body.inputId === snapshot.request_id);
   const response = prompt?.kind === 'request' ? snapshot.records.find(record => record.kind === 'response' && record.requestId === prompt.id) : undefined;
+  const outcome = prompt?.kind === 'request' && response?.kind === 'response' && response.body.kind === 'accepted'
+    ? turnEndAfter(snapshot.records, prompt.seq, snapshot.session_id, snapshot.request_id) : null;
   return {
     session_id: snapshot.session_id, request_id: snapshot.request_id, input_id: snapshot.request_id,
     seq: snapshot.records.at(-1)?.seq ?? snapshot.initial_seq,
     status: status.kind,
     phase: status.kind === 'running' ? status.phase : null,
-    outcome: status.kind === 'idle' ? status.lastTurnOutcome?.kind ?? null : null,
-    failure: status.kind === 'idle' && status.lastTurnOutcome?.kind === 'failed' ? status.lastTurnOutcome.failure : null,
+    outcome: outcome?.kind ?? null,
+    failure: outcome?.kind === 'failed' ? outcome.failure : null,
     control: response?.kind === 'response' ? response.body.kind : null,
     rejection: response?.kind === 'response' && response.body.kind === 'rejected' ? response.body.code : null,
   };
