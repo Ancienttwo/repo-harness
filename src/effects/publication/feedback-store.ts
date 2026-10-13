@@ -83,24 +83,46 @@ function eventComponent(providerEventId: string): string {
   return hash(providerEventId);
 }
 
-function root(repoRoot: string, gitBin = 'git'): string {
-  return join(resolveGitCommonDirectory(repoRoot, gitBin), FEEDBACK_ROOT_RELATIVE_PATH);
+/** Every owned path of one publication inbox, derived from one Git common-directory read. */
+interface PublicationLayout {
+  readonly common: string;
+  readonly root: string;
+  readonly publication: string;
+  readonly events: string;
+  readonly deliveries: string;
+  readonly repairs: string;
+  readonly reactions: string;
 }
 
-function publicationDirectory(repoRoot: string, publicationId: string, gitBin = 'git'): string {
-  return join(root(repoRoot, gitBin), publicationComponent(publicationId));
+/**
+ * Resolve the Git common directory once per store operation.  Each resolution
+ * spawns Git, so derived paths must not resolve it again.
+ */
+function publicationLayout(repoRoot: string, publicationId: string, gitBin = 'git'): PublicationLayout {
+  const common = resolveGitCommonDirectory(repoRoot, gitBin);
+  const root = join(common, FEEDBACK_ROOT_RELATIVE_PATH);
+  const publication = join(root, publicationComponent(publicationId));
+  return {
+    common,
+    root,
+    publication,
+    events: join(publication, 'events'),
+    deliveries: join(publication, 'deliveries'),
+    repairs: join(publication, 'repairs'),
+    reactions: join(publication, 'reactions.jsonl'),
+  };
 }
 
-function eventDirectory(repoRoot: string, publicationId: string, gitBin = 'git'): string {
-  return join(publicationDirectory(repoRoot, publicationId, gitBin), 'events');
+function eventPathIn(layout: PublicationLayout, providerEventId: string): string {
+  return join(layout.events, `${eventComponent(providerEventId)}.json`);
 }
 
-function deliveryDirectory(repoRoot: string, publicationId: string, gitBin = 'git'): string {
-  return join(publicationDirectory(repoRoot, publicationId, gitBin), 'deliveries');
+function deliveryPathIn(layout: PublicationLayout, providerEventId: string): string {
+  return join(layout.deliveries, `${eventComponent(providerEventId)}.json`);
 }
 
-function repairsDirectory(repoRoot: string, publicationId: string, gitBin = 'git'): string {
-  return join(publicationDirectory(repoRoot, publicationId, gitBin), 'repairs');
+function repairProofPathIn(layout: PublicationLayout, repairId: string): string {
+  return join(layout.repairs, `${publicationComponent(repairId)}.json`);
 }
 
 export function feedbackEventPath(
@@ -109,7 +131,7 @@ export function feedbackEventPath(
   providerEventId: string,
   gitBin = 'git',
 ): string {
-  return join(eventDirectory(repoRoot, publicationId, gitBin), `${eventComponent(providerEventId)}.json`);
+  return eventPathIn(publicationLayout(repoRoot, publicationId, gitBin), providerEventId);
 }
 
 export function feedbackDeliveryReceiptPath(
@@ -118,11 +140,11 @@ export function feedbackDeliveryReceiptPath(
   providerEventId: string,
   gitBin = 'git',
 ): string {
-  return join(deliveryDirectory(repoRoot, publicationId, gitBin), `${eventComponent(providerEventId)}.json`);
+  return deliveryPathIn(publicationLayout(repoRoot, publicationId, gitBin), providerEventId);
 }
 
 export function feedbackReactionLedgerPath(repoRoot: string, publicationId: string, gitBin = 'git'): string {
-  return join(publicationDirectory(repoRoot, publicationId, gitBin), 'reactions.jsonl');
+  return publicationLayout(repoRoot, publicationId, gitBin).reactions;
 }
 
 export function repairDispatchProofPath(
@@ -131,7 +153,7 @@ export function repairDispatchProofPath(
   repairId: string,
   gitBin = 'git',
 ): string {
-  return join(repairsDirectory(repoRoot, publicationId, gitBin), `${publicationComponent(repairId)}.json`);
+  return repairProofPathIn(publicationLayout(repoRoot, publicationId, gitBin), repairId);
 }
 
 function ensureDirectory(path: string): void {
@@ -157,28 +179,25 @@ function requireDirectory(path: string, optional: boolean): boolean {
   }
 }
 
-function preparePublicationDirectories(repoRoot: string, publicationId: string, gitBin = 'git'): void {
-  const base = root(repoRoot, gitBin);
+function preparePublicationDirectories(layout: PublicationLayout): void {
   // Validate each owned level after creating it.  The common directory itself
   // is realpath-resolved by resolveGitCommonDirectory and is not ours to make.
-  ensureDirectory(join(resolveGitCommonDirectory(repoRoot, gitBin), 'repo-harness'));
-  ensureDirectory(join(resolveGitCommonDirectory(repoRoot, gitBin), 'repo-harness', 'feedback'));
-  ensureDirectory(base);
-  ensureDirectory(publicationDirectory(repoRoot, publicationId, gitBin));
-  ensureDirectory(eventDirectory(repoRoot, publicationId, gitBin));
-  ensureDirectory(deliveryDirectory(repoRoot, publicationId, gitBin));
-  ensureDirectory(repairsDirectory(repoRoot, publicationId, gitBin));
+  ensureDirectory(join(layout.common, 'repo-harness'));
+  ensureDirectory(join(layout.common, 'repo-harness', 'feedback'));
+  ensureDirectory(layout.root);
+  ensureDirectory(layout.publication);
+  ensureDirectory(layout.events);
+  ensureDirectory(layout.deliveries);
+  ensureDirectory(layout.repairs);
 }
 
 /** Validate every owned ancestor before following a read path below it. */
-function publicationTreeExists(repoRoot: string, publicationId: string, gitBin = 'git'): boolean {
-  const common = resolveGitCommonDirectory(repoRoot, gitBin);
-  const base = root(repoRoot, gitBin);
+function publicationTreeExists(layout: PublicationLayout): boolean {
   for (const path of [
-    join(common, 'repo-harness'),
-    join(common, 'repo-harness', 'feedback'),
-    base,
-    publicationDirectory(repoRoot, publicationId, gitBin),
+    join(layout.common, 'repo-harness'),
+    join(layout.common, 'repo-harness', 'feedback'),
+    layout.root,
+    layout.publication,
   ]) {
     if (!requireDirectory(path, true)) return false;
   }
@@ -293,8 +312,9 @@ function publishImmutable(path: string, bytes: Buffer, equivalent: () => boolean
  */
 export function writeFeedbackEvent(repoRoot: string, event: FeedbackEventV1, gitBin = 'git'): string {
   const valid = validateFeedbackEvent(event);
-  preparePublicationDirectories(repoRoot, valid.publication_id, gitBin);
-  const path = feedbackEventPath(repoRoot, valid.publication_id, valid.provider_event_id, gitBin);
+  const layout = publicationLayout(repoRoot, valid.publication_id, gitBin);
+  preparePublicationDirectories(layout);
+  const path = eventPathIn(layout, valid.provider_event_id);
   const bytes = Buffer.from(`${canonicalFeedbackEventBytes(valid)}\n`, 'utf-8');
   publishImmutable(path, bytes, () => {
     const current = readRegular(path, 'feedback event');
@@ -312,11 +332,12 @@ export function writeFeedbackDeliveryReceipt(
   gitBin = 'git',
 ): string {
   const valid = validateFeedbackDeliveryReceipt(receipt);
-  preparePublicationDirectories(repoRoot, publicationId, gitBin);
-  if (readFeedbackEvent(repoRoot, publicationId, valid.provider_event_id, gitBin) === null) {
+  const layout = publicationLayout(repoRoot, publicationId, gitBin);
+  preparePublicationDirectories(layout);
+  if (readFeedbackEventIn(layout, publicationId, valid.provider_event_id) === null) {
     throw incomplete('feedback delivery receipt has no immutable provider event');
   }
-  const path = feedbackDeliveryReceiptPath(repoRoot, publicationId, valid.provider_event_id, gitBin);
+  const path = deliveryPathIn(layout, valid.provider_event_id);
   const previous = existingRegular(path, 'feedback delivery receipt');
   if (previous !== null) {
     const current = parseDelivery(previous, path);
@@ -340,7 +361,7 @@ export function writeFeedbackDeliveryReceipt(
     }
   }
   const bytes = Buffer.from(`${canonicalFeedbackDeliveryReceiptBytes(valid)}\n`, 'utf-8');
-  const parent = deliveryDirectory(repoRoot, publicationId, gitBin);
+  const parent = layout.deliveries;
   const temporary = join(parent, `.${hash(path)}.${process.pid}.${randomUUID()}.tmp`);
   let fd: number | null = null;
   try {
@@ -369,8 +390,16 @@ export function readFeedbackEvent(
   providerEventId: string,
   gitBin = 'git',
 ): FeedbackEventV1 | null {
-  if (!publicationTreeExists(repoRoot, publicationId, gitBin)) return null;
-  const path = feedbackEventPath(repoRoot, publicationId, providerEventId, gitBin);
+  return readFeedbackEventIn(publicationLayout(repoRoot, publicationId, gitBin), publicationId, providerEventId);
+}
+
+function readFeedbackEventIn(
+  layout: PublicationLayout,
+  publicationId: string,
+  providerEventId: string,
+): FeedbackEventV1 | null {
+  if (!publicationTreeExists(layout)) return null;
+  const path = eventPathIn(layout, providerEventId);
   const bytes = existingRegular(path, 'feedback event');
   if (bytes === null) return null;
   const event = parseEvent(bytes, path);
@@ -386,8 +415,9 @@ export function readFeedbackDeliveryReceipt(
   providerEventId: string,
   gitBin = 'git',
 ): FeedbackDeliveryReceiptV1 | null {
-  if (!publicationTreeExists(repoRoot, publicationId, gitBin)) return null;
-  const path = feedbackDeliveryReceiptPath(repoRoot, publicationId, providerEventId, gitBin);
+  const layout = publicationLayout(repoRoot, publicationId, gitBin);
+  if (!publicationTreeExists(layout)) return null;
+  const path = deliveryPathIn(layout, providerEventId);
   const bytes = existingRegular(path, 'feedback delivery receipt');
   if (bytes === null) return null;
   const receipt = parseDelivery(bytes, path);
@@ -408,8 +438,9 @@ function listedFiles(directory: string, optional: boolean): readonly string[] {
 
 /** Read every immutable event, rejecting any unknown filename or malformed record. */
 export function readFeedbackEvents(repoRoot: string, publicationId: string, gitBin = 'git'): readonly FeedbackEventV1[] {
-  if (!publicationTreeExists(repoRoot, publicationId, gitBin)) return Object.freeze([]);
-  const directory = eventDirectory(repoRoot, publicationId, gitBin);
+  const layout = publicationLayout(repoRoot, publicationId, gitBin);
+  if (!publicationTreeExists(layout)) return Object.freeze([]);
+  const directory = layout.events;
   const events: FeedbackEventV1[] = [];
   for (const name of listedFiles(directory, true)) {
     if (!/^[0-9a-f]{64}\.json$/.test(name)) throw unreadable(`unexpected feedback event filename: ${name}`);
@@ -429,8 +460,9 @@ export function readFeedbackDeliveryReceipts(
   publicationId: string,
   gitBin = 'git',
 ): readonly FeedbackDeliveryReceiptV1[] {
-  if (!publicationTreeExists(repoRoot, publicationId, gitBin)) return Object.freeze([]);
-  const directory = deliveryDirectory(repoRoot, publicationId, gitBin);
+  const layout = publicationLayout(repoRoot, publicationId, gitBin);
+  if (!publicationTreeExists(layout)) return Object.freeze([]);
+  const directory = layout.deliveries;
   const receipts: FeedbackDeliveryReceiptV1[] = [];
   for (const name of listedFiles(directory, true)) {
     if (!/^[0-9a-f]{64}\.json$/.test(name)) throw unreadable(`unexpected feedback delivery filename: ${name}`);
@@ -451,9 +483,17 @@ export function readRepairDispatchProof(
   repairId: string,
   gitBin = 'git',
 ): RepairDispatchProofV1 | null {
-  if (!publicationTreeExists(repoRoot, publicationId, gitBin)) return null;
-  if (!requireDirectory(repairsDirectory(repoRoot, publicationId, gitBin), true)) return null;
-  const path = repairDispatchProofPath(repoRoot, publicationId, repairId, gitBin);
+  return readRepairDispatchProofIn(publicationLayout(repoRoot, publicationId, gitBin), publicationId, repairId);
+}
+
+function readRepairDispatchProofIn(
+  layout: PublicationLayout,
+  publicationId: string,
+  repairId: string,
+): RepairDispatchProofV1 | null {
+  if (!publicationTreeExists(layout)) return null;
+  if (!requireDirectory(layout.repairs, true)) return null;
+  const path = repairProofPathIn(layout, repairId);
   const bytes = existingRegular(path, 'repair dispatch proof');
   if (bytes === null) return null;
   const proof = parseRepairDispatchProof(bytes, path);
@@ -473,8 +513,9 @@ export function readRepairDispatchProofs(
   publicationId: string,
   gitBin = 'git',
 ): readonly RepairDispatchProofV1[] {
-  if (!publicationTreeExists(repoRoot, publicationId, gitBin)) return Object.freeze([]);
-  const directory = repairsDirectory(repoRoot, publicationId, gitBin);
+  const layout = publicationLayout(repoRoot, publicationId, gitBin);
+  if (!publicationTreeExists(layout)) return Object.freeze([]);
+  const directory = layout.repairs;
   const proofs: RepairDispatchProofV1[] = [];
   for (const name of listedFiles(directory, true)) {
     if (!/^[0-9a-f]{64}\.json$/u.test(name)) throw unreadable(`unexpected repair dispatch filename: ${name}`);
@@ -503,8 +544,9 @@ export function writeRepairDispatchProof(
   if (valid.publication_id !== publicationId) {
     throw new FeedbackStoreError('repair_dispatch_conflict', 'repair dispatch proof publication does not match its inbox');
   }
-  preparePublicationDirectories(repoRoot, publicationId, gitBin);
-  const path = repairDispatchProofPath(repoRoot, publicationId, valid.repair_id, gitBin);
+  const layout = publicationLayout(repoRoot, publicationId, gitBin);
+  preparePublicationDirectories(layout);
+  const path = repairProofPathIn(layout, valid.repair_id);
   const previous = existingRegular(path, 'repair dispatch proof');
   if (previous !== null) {
     const current = parseRepairDispatchProof(previous, path);
@@ -532,7 +574,7 @@ export function writeRepairDispatchProof(
   }
 
   const bytes = Buffer.from(`${canonicalRepairDispatchProofBytes(valid)}\n`, 'utf-8');
-  const parent = repairsDirectory(repoRoot, publicationId, gitBin);
+  const parent = layout.repairs;
   const temporary = join(parent, `.${hash(path)}.${process.pid}.${randomUUID()}.tmp`);
   let fd: number | null = null;
   try {
@@ -591,8 +633,9 @@ export function appendReactionAttemptReceipt(
   if (valid.publication_id !== publicationId) {
     throw new FeedbackStoreError('reaction_receipt_conflict', 'reaction receipt publication does not match its ledger');
   }
-  preparePublicationDirectories(repoRoot, publicationId, gitBin);
-  const proof = readRepairDispatchProof(repoRoot, publicationId, valid.repair_id, gitBin);
+  const layout = publicationLayout(repoRoot, publicationId, gitBin);
+  preparePublicationDirectories(layout);
+  const proof = readRepairDispatchProofIn(layout, publicationId, valid.repair_id);
   if (proof === null || proof.phase !== 'dispatched') {
     throw new FeedbackStoreError('repair_not_dispatched', 'reaction receipt has no dispatched repair proof');
   }
@@ -600,10 +643,10 @@ export function appendReactionAttemptReceipt(
     || proof.successor_generation !== valid.successor_generation) {
     throw new FeedbackStoreError('reaction_receipt_conflict', 'reaction receipt successor does not match its dispatched proof');
   }
-  const path = feedbackReactionLedgerPath(repoRoot, publicationId, gitBin);
+  const path = layout.reactions;
   const current = existingRegular(path, 'feedback reaction ledger');
   if (current !== null) {
-    const existing = readReactionAttemptReceipts(repoRoot, publicationId, gitBin);
+    const existing = readReactionAttemptReceiptsIn(layout, publicationId);
     for (const receipt of existing) {
       if (receipt.completion_id !== valid.completion_id) continue;
       if (canonicalReactionAttemptReceiptBytes(receipt) === canonicalReactionAttemptReceiptBytes(valid)) return path;
@@ -629,8 +672,15 @@ export function readReactionAttemptReceipts(
   publicationId: string,
   gitBin = 'git',
 ): readonly ReactionAttemptReceiptV1[] {
-  if (!publicationTreeExists(repoRoot, publicationId, gitBin)) return Object.freeze([]);
-  const path = feedbackReactionLedgerPath(repoRoot, publicationId, gitBin);
+  return readReactionAttemptReceiptsIn(publicationLayout(repoRoot, publicationId, gitBin), publicationId);
+}
+
+function readReactionAttemptReceiptsIn(
+  layout: PublicationLayout,
+  publicationId: string,
+): readonly ReactionAttemptReceiptV1[] {
+  if (!publicationTreeExists(layout)) return Object.freeze([]);
+  const path = layout.reactions;
   const bytes = existingRegular(path, 'feedback reaction ledger');
   if (bytes === null) return Object.freeze([]);
   const text = bytes.toString('utf-8');
