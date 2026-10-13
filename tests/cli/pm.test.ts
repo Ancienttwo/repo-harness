@@ -775,22 +775,25 @@ async function queuedHttpConfiguration(operation: 'dispatch' | 'collect', change
   store.setAccessToken('queued-http-token', { token: 'queued-http-token', clientId: client.client_id, authorizationId: 'queued-http-owner',
     profile: 'pm', authorizationRevision: 7, pmScopeFingerprint: createPmMcpBinding(f.env).fingerprint(), scopes: ['repo-harness', 'repo-harness.pm'], expiresAt: Math.floor(Date.now() / 1000) + 600 });
   const port = await pmHttpPort(), base = `http://127.0.0.1:${port}`;
-  const enteredPath = join(f.root, 'guard-entered.txt'), responsePath = join(f.root, 'executed-response.json');
+  const waitingPath = join(f.root, 'lock-waiting.txt'), responsePath = join(f.root, 'executed-response.json');
   const driver = join(f.root, 'http-observer.ts');
-  // Observe the real verifier and CLI result in this isolated child only. Do
-  // not change return values, locks, guards, credentials or production modules.
+  const targetLockPath = lock === 'task' ? join(f.repo, '.git', taskLockRelativePath(taskId))
+    : lock === 'topology' ? join(f.repo, '.git', 'repo-harness/coordination/locks/worktree-topology.lock')
+    : join(dir, 'caller.lock');
+  // Observe a real failed acquisition of the exact held lock. Guard-call counts
+  // can precede path preparation and do not prove the request is queued.
   writeFileSync(driver, `
 import { mock } from 'bun:test';
-import { appendFileSync, writeFileSync, renameSync } from 'node:fs';
-const oauthPath=${JSON.stringify(join(import.meta.dir, '../../src/cli/mcp/oauth.ts'))};
-const oauth=await import(oauthPath); const createProvider=oauth.createMcpOAuthProvider;
-mock.module(oauthPath,()=>({...oauth,createMcpOAuthProvider:(...args:any[])=>{
-  const provider=createProvider(...args);
-  const verify=provider.verifyAccessTokenCurrent.bind(provider);
-  provider.verifyAccessTokenCurrent=(...input:any[])=>{
-    const result=verify(...input);appendFileSync(${JSON.stringify(enteredPath)},'verified\\n');return result;
-  };return provider;
-}}));
+import { existsSync, writeFileSync, renameSync } from 'node:fs';
+const lockModule=${JSON.stringify(join(import.meta.dir, '../../src/effects/locking/exclusive-directory-lock.ts'))};
+const locks=await import(lockModule);const acquire=locks.acquireExclusiveDirectoryLock;
+const {observePmLockContention}=await import(${JSON.stringify(join(import.meta.dir, '../helpers/pm-lock-contention-observer.ts'))});
+mock.module(lockModule,()=>({...locks,acquireExclusiveDirectoryLock:observePmLockContention(acquire,${JSON.stringify(targetLockPath)},()=>{
+  if(!existsSync(${JSON.stringify(waitingPath)})){
+    const temporary=${JSON.stringify(waitingPath + '.tmp')};
+    writeFileSync(temporary,'contended\\n');renameSync(temporary,${JSON.stringify(waitingPath)});
+  }
+})}));
 const commandPath=${JSON.stringify(join(import.meta.dir, '../../src/cli/commands/pm.ts'))};
 const commands=await import(commandPath); const runPm=commands.runPmJson;
 mock.module(commandPath,()=>({...commands,runPmJson:async(...args:any[])=>{
@@ -834,14 +837,15 @@ await startMcpHttp({repo:${JSON.stringify(f.repo)},profile:'pm',port:${port}});
     held = lock === 'task' ? acquireExclusiveDirectoryLock(join(f.repo, '.git'), taskLockRelativePath(taskId))
       : lock === 'topology' ? acquireExclusiveDirectoryLock(join(f.repo, '.git'), 'repo-harness/coordination/locks/worktree-topology.lock')
       : acquireExclusiveDirectoryLock(f.repo, relative(f.repo, join(dir, 'caller.lock')));
-    // SSE headers prove ingress. The verifier count below proves the owning
-    // guard reached the real lock boundary before configuration changes.
+    // SSE headers prove ingress. The child marker proves an actual contention
+    // on this parent's held lock before the live configuration changes.
     const queued = await post(session, { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: `pm_${operation}`, arguments: args } });
     expect(queued.status).toBe(200); expect(queued.headers.get('content-type')).toContain('text/event-stream');
-    const guardEntries = lock === 'topology' ? 3 : lock === 'task' ? 4 : 8;
+    expect(held.lockPath).toBe(targetLockPath);
     const entryDeadline = Date.now() + 10_000;
-    while ((!existsSync(enteredPath) || readFileSync(enteredPath, 'utf8').trim().split('\n').length < guardEntries) && Date.now() < entryDeadline) await Bun.sleep(10);
-    expect(readFileSync(enteredPath, 'utf8').trim().split('\n').length).toBeGreaterThanOrEqual(guardEntries);
+    while (!existsSync(waitingPath) && Date.now() < entryDeadline) await Bun.sleep(10);
+    expect(existsSync(waitingPath), JSON.stringify({ phase: 'lock-wait', lock, childExitCode: proc.exitCode })).toBe(true);
+    held.assertOwned();
     expect(existsSync(responsePath)).toBe(false);
     expect(existsSync(join(dir, 'collected-1.json'))).toBe(false);
     const changed = change === 'enabled' ? { ...config, pm: { enabled: false } }
@@ -851,7 +855,7 @@ await startMcpHttp({repo:${JSON.stringify(f.repo)},profile:'pm',port:${port}});
     const wire = queued.text().catch(() => '');
     const completionDeadline = Date.now() + 10_000;
     while (!existsSync(responsePath) && Date.now() < completionDeadline) await Bun.sleep(10);
-    expect(existsSync(responsePath)).toBe(true);
+    expect(existsSync(responsePath), JSON.stringify({ phase: 'completion', lock, lockWaitObserved: existsSync(waitingPath), childExitCode: proc.exitCode })).toBe(true);
     const response = JSON.parse(readFileSync(responsePath, 'utf8'));
     const remote = await wire;
     if (remote) expect(JSON.parse(pmHttpPayload(remote).result.content[0].text)).toMatchObject({ ok: false });
