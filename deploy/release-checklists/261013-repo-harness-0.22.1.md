@@ -73,7 +73,9 @@
     digest of `capability.verification.evals-checks`. The manifest and
     `tests/` are not in the npm package. A later main PR refreshed the
     manifest.
-- No assertion or timeout was changed for this release.
+- The release work did not change, relax or remove any assertion or
+  timeout to pass a gate. The released tree contains new assertions from
+  #683 and #684. Those PRs record their own test changes.
 
 ## Rollback evidence
 
