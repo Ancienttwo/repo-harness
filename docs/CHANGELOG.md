@@ -2,21 +2,48 @@
 
 All notable changes to this skill are documented here.
 
-## Unreleased
+## [0.22.1] - 2026-10-13
+
+0.22.0 was tagged but not published to npm. 0.22.1 contains all of 0.22.0
+and the changes below.
+
+### Added
+
+- `repo-harness review round --launch app-terminal` runs acceptance review
+  in the Claude desktop app without Herdr. The first call returns the exact
+  OAR host command and sends no request. Claude runs the command once in an
+  app Terminal tab. The next call binds the host by its claim, process
+  identity and exact argv, then sends the round. The OAR host, the Seatbelt
+  profile and the Receipt do not change. (#657)
 
 ### Breaking
 
 - The Pi host extension now requires Pi `1.2.0` exactly. Pi `1.1.0` fails
   with `PI_HOOK_UNSUPPORTED_VERSION`. Upgrade Pi to `1.2.0` with the
   package. A Pi run started by a custom message gets its own run ID and
-  Stop check. It is not a `UserPromptSubmit`.
+  Stop check. It is not a `UserPromptSubmit`. (#683)
 
 ### Changed
 
 - Pin `archctx` and `archctx-contracts` to exact version `0.7.2`. A busy
   archctx daemon now keeps its connection file after a timed-out health
   check. The CLI then fails with `AC_RUNTIME_UNAVAILABLE` and names the
-  daemon pid. The contract schemas do not change.
+  daemon pid. The contract schemas do not change. (#659)
+
+### Fixed
+
+- Merge-gate provider reads use the shared trusted host `gh` resolver. An
+  empty CLI review decision is normalized to null. The standard native
+  Windows `gh.exe` installation is supported. (#654)
+- A lock acquire retries the single-owner election after a slow
+  stale-owner reclaim, so a free lock is no longer reported as a timeout.
+  (#656)
+- Sprint lease reconcile no longer keeps the lease token file because of a
+  `printf | grep -q` SIGPIPE race under `pipefail`. (#661)
+- The Pi hook bridge classifies a hook result after the child exits. A
+  child that closes stdin early no longer changes the error code. Every
+  rejection after the child starts includes the bounded child stderr.
+  (#673)
 
 ## [0.22.0] - 2026-10-13
 
