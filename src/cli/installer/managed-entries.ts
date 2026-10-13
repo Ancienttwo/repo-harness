@@ -353,7 +353,7 @@ export function stripManagedEntries(existing: HooksByEvent | undefined): HooksBy
 export function mergeHooks(existing: HooksByEvent, managed: HooksByEvent): HooksByEvent {
   const out: HooksByEvent = { ...existing };
   for (const [event, managedEntries] of Object.entries(managed)) {
-    out[event] = [...(out[event] ?? []), ...managedEntries];
+    out[event] = [...managedEntries, ...(out[event] ?? [])];
   }
   return out;
 }

@@ -1,4 +1,5 @@
 import { syncCrossReviewSkills } from '../src/cli/commands/init';
+import { hookInstallStatePath } from '../src/cli/installer/hook-install-state';
 import { describe, expect, test } from 'bun:test';
 import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { spawnSync, type SpawnSyncReturns } from 'child_process';
@@ -1406,3 +1407,22 @@ describe('skill projection ownership', () => {
     expect(readlinkSync(dest)).toBe(join(env.HOME!, '.codex/skills/mermaid'));
   }));
 });
+
+for (const existed of [false, true]) {
+  test(`host rollback ${existed ? 'restores' : 'removes'} the hook order migration record`, () => withHome(env => {
+    const file = hookInstallStatePath(env);
+    const original = '{"protocol":1,"order_migrations":{}}\n';
+    if (existed) {
+      mkdirSync(dirname(file), { recursive: true });
+      writeFileSync(file, original);
+    }
+    const paths = installProfileHostMutationPaths(env);
+    expect(paths).toContain(file);
+    const transaction = beginInstallHostTransaction(paths, env);
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, '{"protocol":1,"order_migrations":{"codex":{"version":1}}}\n');
+    rollbackInstallHostTransaction(transaction);
+    if (existed) expect(readFileSync(file, 'utf8')).toBe(original);
+    else expect(existsSync(file)).toBe(false);
+  }));
+}

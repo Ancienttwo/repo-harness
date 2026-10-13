@@ -6,6 +6,19 @@ All notable changes to this skill are documented here.
 
 ### Breaking
 
+- Managed hook blocks now run before user blocks for each event. User hooks,
+  their metadata and their relative order stay intact. Install and update
+  record the one-time order migration in `~/.repo-harness/hook-install-state.json`.
+  Existing Codex order migrations need one trust re-approval: start interactive
+  `codex`, enter `/hooks`, review the hooks marked for review, and trust only
+  those you recognise. User hooks can also need review after their positions
+  change. Then run `repo-harness install --acknowledge-codex-hook-trust`.
+  Doctor reports pending re-approval until that operator acknowledgement.
+  The command records acknowledgement; it does not grant or prove native
+  trust. Stable install/update reruns keep the record and emit no repeat
+  migration notice. Fresh installs emit no re-approval notice. Interrupted
+  migrations must finish installation before acknowledgement. The native
+  review step follows [Codex hook trust](https://learn.chatgpt.com/docs/hooks#review-and-trust-hooks). (#698)
 - Hook install and uninstall now accept only `--location global`.
   `--location local` exits with code 2 before configuration reads or writes.
   The installer no longer writes project-level Claude adapters. (#698)
