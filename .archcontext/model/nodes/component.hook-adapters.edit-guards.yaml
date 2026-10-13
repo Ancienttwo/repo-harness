@@ -4,12 +4,11 @@ kind: component
 name: "Guard and Observer Handlers"
 status: active
 parent: capability.runtime-harness.hook-adapters
-summary: "Typed handlers that guard edits, observe edits and shell commands, give prompt advice and review minimal change."
+summary: "Typed handlers that guard edits, observe shell commands and give prompt advice."
 responsibilities:
-  - Decide PreToolUse.edit with the mutation guard from resolved Effective State and the active contract scope.
-  - Write one post-edit journal event per edit and leave the heavy work for Stop.
-  - Observe Bash results and import post-command evidence.
-  - Give bounded prompt advice and keep the circuit breaker and the minimal change policy.
+  - Decide PreToolUse.edit with the mutation guard from the repository, _ref, _ops and target path boundaries.
+  - Observe Bash results, count known test failures in the repair circuit and report owed architecture updates after publication commands.
+  - Give bounded prompt advice and keep the circuit breaker and the minimal change policy text.
 source:
   include:
     - "src/cli/hook/mutation-*.ts"

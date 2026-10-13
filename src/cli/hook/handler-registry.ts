@@ -4,7 +4,6 @@ import {
   projectOwedCapabilitiesSessionSection,
   projectUnavailableStateSessionSection,
 } from './session-context';
-import { pendingPostEditJournalSection, runMutationObserved } from './mutation-observed';
 import { runMutationGuard } from './mutation-guard';
 import { runStopHandler } from './stop-handler';
 import { runPromptHandler } from './prompt-handler';
@@ -54,8 +53,6 @@ function runSessionContext(context: HookHandlerContext): HookHandlerResult {
     });
     sections.push(projectUnavailableStateSessionSection(resolution));
   }
-  const pending = pendingPostEditJournalSection(context.repoRoot);
-  if (pending) sections.push(pending);
   sections.push(...buildSessionStartSections(
     context.collector,
     context.env,
@@ -70,7 +67,7 @@ const handlers: Readonly<Record<HookHandlerId, TypedHookHandler>> = Object.freez
   'mutation-guard': {
     id: 'mutation-guard',
     run: (context: HookHandlerContext) => textResult(runMutationGuard({
-      collector: context.collector,
+      repoRoot: context.repoRoot,
       payload: context.payload,
       identity: context.identity,
     })),
@@ -86,21 +83,11 @@ const handlers: Readonly<Record<HookHandlerId, TypedHookHandler>> = Object.freez
       now: () => context.now,
     }),
   },
-  'mutation-observed': {
-    id: 'mutation-observed',
-    run: (context: HookHandlerContext) => textResult(runMutationObserved({
-      collector: context.collector,
-      payload: context.payload,
-      identity: context.identity,
-    })),
-  },
   'command-observed': {
     id: 'command-observed',
     run: (context: HookHandlerContext) => textResult(runCommandObserved({
       repoRoot: context.repoRoot,
       payload: context.payload,
-      identity: context.identity,
-      env: context.env,
     })),
   },
   'trace-observer': {

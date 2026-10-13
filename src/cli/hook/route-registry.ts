@@ -44,7 +44,6 @@ export type HookHandlerId =
   | 'session-context'
   | 'mutation-guard'
   | 'subagent'
-  | 'mutation-observed'
   | 'command-observed'
   | 'trace-observer'
   | 'prompt'

@@ -26,6 +26,6 @@ source:
       symbols:
         - name: "runStopHandler"
           sinks:
-            - id: sink.hook-adapters.post-edit-journal
-              path: "src/cli/hook/mutation-observed.ts"
-              symbol: "consumePendingPostEditEvents"
+            - id: sink.hook-adapters.evidence-checkpoint
+              path: "src/effects/evidence/checkpoint-store.ts"
+              symbol: "publishCheckpointFromLedger"

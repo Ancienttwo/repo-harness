@@ -1,12 +1,15 @@
 import { createHash } from 'crypto';
 import { mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'fs';
 import { dirname, join } from 'path';
-import type { WorkflowProfile } from '../../core/workflow/profile';
 import { withExclusiveDirectoryLock } from '../../effects/locking/exclusive-directory-lock';
 
-const CIRCUIT_KINDS = [
-  'guard', 'review', 'semantic-review', 'subagent', 'repair', 'cross-model-consult', 'minimal-change',
-] as const;
+const CIRCUIT_KINDS = ['repair', 'semantic-review'] as const;
+
+// Kinds an older runtime wrote. A state file that still holds one fails
+// closed until the operator runs the one-shot cleanup.
+const RETIRED_CIRCUIT_KINDS: ReadonlySet<string> = new Set([
+  'guard', 'review', 'subagent', 'cross-model-consult', 'minimal-change',
+]);
 
 export type CircuitKind = typeof CIRCUIT_KINDS[number];
 
@@ -17,10 +20,6 @@ export interface CircuitAttempt {
   readonly pathOrAction: string;
   readonly progressToken: string;
   readonly fingerprint: string;
-  readonly profile: WorkflowProfile;
-  readonly explicitHighRiskContract?: boolean;
-  readonly riskTriggeredConsult?: boolean;
-  readonly userRequestedConsult?: boolean;
   readonly strongBoundary?: boolean;
 }
 
@@ -67,16 +66,8 @@ const LOCK_TIMEOUT_MS = 2_000;
 
 export function circuitLimit(attempt: CircuitAttempt): number {
   switch (attempt.kind) {
-    case 'guard': return 2;
-    case 'review': return attempt.profile === 'high' ? 2 : 1;
-    case 'semantic-review': return 1;
-    case 'subagent': return attempt.profile === 'high' && attempt.explicitHighRiskContract ? 3 : 2;
     case 'repair': return 2;
-    // Stop's minimal_change enforce gate: at most two blocks per report
-    // fingerprint before the gate releases with a warning.
-    case 'minimal-change': return 2;
-    case 'cross-model-consult':
-      return attempt.riskTriggeredConsult || attempt.userRequestedConsult ? 1 : 0;
+    case 'semantic-review': return 1;
   }
 }
 
@@ -111,17 +102,8 @@ function isPersistedCircuitEntry(value: unknown): value is PersistedCircuitEntry
     && isCircuitPattern(entry.last_pattern);
 }
 
-function isLegacyCircuitState(value: Record<string, unknown>): boolean {
-  if (!value.entries || typeof value.entries !== 'object' || Array.isArray(value.entries)
-    || typeof value.updated_at !== 'string') return false;
-  return Object.entries(value.entries).every(([key, entry]) => {
-    if (!/^[0-9a-f]{64}$/.test(key) || !entry || typeof entry !== 'object') return false;
-    const legacy = entry as { count?: unknown; token?: unknown };
-    return Number.isSafeInteger(legacy.count)
-      && (legacy.count as number) >= 1
-      && typeof legacy.token === 'string'
-      && legacy.token.length > 0;
-  });
+function cleanupHint(repoRoot: string): string {
+  return `run the one-shot cleanup: bun scripts/evidence-gc.ts --repo ${repoRoot}`;
 }
 
 function readState(repoRoot: string): PersistedCircuitState | null {
@@ -145,10 +127,7 @@ function readState(repoRoot: string): PersistedCircuitState | null {
   }
   const envelope = parsed as Record<string, unknown>;
   if (envelope.protocol === 1) {
-    if (!isLegacyCircuitState(envelope)) {
-      throw new Error(`invalid protocol-1 circuit breaker state: ${statePath}`);
-    }
-    return null;
+    throw new Error(`retired protocol-1 circuit breaker state: ${statePath}; ${cleanupHint(repoRoot)}`);
   }
   if (envelope.protocol !== 2) {
     throw new Error(`unsupported circuit breaker state protocol: ${String(envelope.protocol)}`);
@@ -159,6 +138,9 @@ function readState(repoRoot: string): PersistedCircuitState | null {
   }
   const entries: Partial<Record<CircuitKind, PersistedCircuitEntry>> = {};
   for (const [kind, value] of Object.entries(envelope.entries)) {
+    if (RETIRED_CIRCUIT_KINDS.has(kind)) {
+      throw new Error(`retired circuit breaker kind ${kind}: ${statePath}; ${cleanupHint(repoRoot)}`);
+    }
     if (!isCircuitKind(kind) || !isPersistedCircuitEntry(value)) {
       throw new Error(`invalid protocol-2 circuit breaker entry: ${kind}`);
     }
@@ -182,9 +164,6 @@ export function recordCircuitAttempt(
 ): CircuitDecision {
   if (!isCircuitKind(attempt.kind)) {
     throw new Error(`invalid circuit kind: ${String(attempt.kind)}`);
-  }
-  if (!['routine', 'high'].includes(attempt.profile)) {
-    throw new Error(`invalid workflow profile: ${String(attempt.profile)}`);
   }
   for (const [field, value] of Object.entries({
     guard: attempt.guard,
