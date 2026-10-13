@@ -2,7 +2,7 @@ import { existsSync, lstatSync, readFileSync, readdirSync, readlinkSync, rmSync,
 import { homedir } from 'os';
 import { dirname, join } from 'path';
 import { createHash } from 'crypto';
-import { stripRepoHarnessManagedHooks } from '../../core/adoption/managed-hook-config';
+import { MANAGED_TAG, stripRepoHarnessManagedHooks } from '../../core/adoption/managed-hook-config';
 import { deepEqual } from './shared';
 import { installProfileStatePath, managedInstallSurfaceIsCurrent, readInstalledProfile, type ManagedInstallSurface } from './install-profile';
 import { assertConfigurationPath, configurationPaths, configurationReceiptPath, readConfigurationFragment, readConfigurationReceipt, replaceConfigurationFragment, writePrivateConfiguration } from './configuration-ownership';
@@ -117,7 +117,7 @@ export function runUserUninstall(opts: UninstallOptions): UninstallResult {
 
   for (const surface of state?.ownership_manifest ?? []) {
     if (!selected(surface.path, opts.target, home)) continue;
-    if (surface.managed_marker === 'repo-harness-managed-hook-v1') {
+    if (surface.managed_marker === MANAGED_TAG) {
       if (!items.some((item) => item.path === surface.path && item.action === 'unresolved')) removedSurfaces.add(surface);
       continue;
     }

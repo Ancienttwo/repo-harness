@@ -19,6 +19,7 @@ import { homedir } from 'os';
 import { basename, delimiter, dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import {
+  MANAGED_TAG,
   canonicalManagedHookProjection,
   compareManagedHookProjection,
   type HookHost,
@@ -177,7 +178,6 @@ const LEGACY_PROFILE_COMPONENTS: Readonly<Record<LegacyInstallProfile, readonly 
   ],
 });
 const OWNER_MARKER = '.repo-harness-owner.json';
-const MANAGED_HOOK_MARKER = 'repo-harness-managed-hook-v1';
 const CODEGRAPH_CONFIG_MARKER = 'codegraph-config-projection';
 
 function managedAdapterHash(path: string): string | null {
@@ -389,7 +389,7 @@ function captureManagedFile(
     path,
     type: 'managed-file',
     content_hash: contentHash,
-    managed_marker: MANAGED_HOOK_MARKER,
+    managed_marker: MANAGED_TAG,
     symlink_target: null,
   };
 }
@@ -553,7 +553,7 @@ function surfaceIsCurrent(surface: ManagedInstallSurface): boolean {
     }
     if (surface.type === 'managed-file') {
       if (!stat.isFile() || surface.content_hash === null) return false;
-      if (surface.managed_marker === MANAGED_HOOK_MARKER) {
+      if (surface.managed_marker === MANAGED_TAG) {
         return managedAdapterHash(surface.path) === surface.content_hash;
       }
       if (surface.managed_marker === CODEGRAPH_CONFIG_MARKER) {

@@ -20,14 +20,14 @@ const LEGACY_CODEX = `${JSON.stringify(
         {
           matcher: 'Edit|Write',
           hooks: [
-            { type: 'command', command: 'bash $repo/.ai/hooks/run-hook.sh worktree-guard.sh' },
+            { type: 'command', command: 'repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; HOOK_HOST=codex HOOK_REPO_ROOT="$repo" bash "$repo/.ai/hooks/run-hook.sh" worktree-guard.sh' },
           ],
         },
       ],
       SessionStart: [
         {
           hooks: [
-            { type: 'command', command: 'bash $repo/.ai/hooks/run-hook.sh session-start-context.sh' },
+            { type: 'command', command: 'repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; HOOK_HOST=codex HOOK_REPO_ROOT="$repo" bash "$repo/.ai/hooks/run-hook.sh" session-start-context.sh' },
           ],
         },
       ],
@@ -46,7 +46,7 @@ const LEGACY_WITH_SIBLING = `${JSON.stringify(
         {
           matcher: 'Edit|Write',
           hooks: [
-            { type: 'command', command: 'bash $repo/.ai/hooks/run-hook.sh pre-edit-guard.sh' },
+            { type: 'command', command: 'repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; HOOK_REPO_ROOT="$repo" bash "$repo/.ai/hooks/run-hook.sh" pre-edit-guard.sh' },
           ],
         },
       ],
@@ -57,6 +57,38 @@ const LEGACY_WITH_SIBLING = `${JSON.stringify(
 )}\n`;
 
 describe('migrate command (Phase 1C)', () => {
+  for (const rel of ['.codex/hooks.json', '.claude/settings.json']) {
+    for (const apply of [false, true]) {
+      test(`issue 698 migrate refuses a linked ${rel} before reads (apply=${apply})`, () => {
+        withTempRepo((repo) => {
+          const victim = path.join(repo, 'dotfile.json');
+          const filePath = path.join(repo, rel);
+          fs.mkdirSync(path.dirname(filePath));
+          fs.writeFileSync(victim, LEGACY_WITH_SIBLING);
+          fs.symlinkSync(victim, filePath);
+          expect(() => runMigrate({ cwd: repo, apply })).toThrow('symlink is not allowed');
+          expect(fs.lstatSync(filePath).isSymbolicLink()).toBe(true);
+          expect(fs.readFileSync(victim, 'utf8')).toBe(LEGACY_WITH_SIBLING);
+          expect(fs.existsSync(`${filePath}.repo-harness-migrate-backup`)).toBe(false);
+        });
+      });
+    }
+  }
+
+  test('issue 698 migrate preserves user commands that mention a retired path', () => {
+    withTempRepo((repo) => {
+      const filePath = path.join(repo, '.claude/settings.json');
+      const command = 'echo user-guard # see .ai/hooks/run-hook.sh docs';
+      fs.mkdirSync(path.dirname(filePath));
+      const original = JSON.stringify({ hooks: { SessionStart: [{ hooks: [{ type: 'command', command }] }] } });
+      fs.writeFileSync(filePath, original);
+      const plan = runMigrate({ cwd: repo, apply: true });
+      expect(plan.files[0]!.action).toBe('no-op');
+      expect(fs.readFileSync(filePath, 'utf8')).toBe(original);
+      expect(fs.existsSync(`${filePath}.repo-harness-migrate-backup`)).toBe(false);
+    });
+  });
+
   test('--dry-run identifies legacy entries but does not mutate', () => {
     withTempRepo((repo) => {
       const codexPath = path.join(repo, '.codex/hooks.json');

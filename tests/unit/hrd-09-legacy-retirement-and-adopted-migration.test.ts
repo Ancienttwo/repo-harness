@@ -74,14 +74,14 @@ describe('HRD-09 terminal runtime migration', () => {
       writeFileSync(join(repo, '.codex/hooks.json'), `${JSON.stringify({
         hooks: {
           PostToolUse: [{ matcher: 'Bash', hooks: [
-            { type: 'command', command: 'bash .ai/hooks/run-hook.sh post-bash.sh' },
+            { type: 'command', command: 'repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; HOOK_HOST=codex HOOK_REPO_ROOT="$repo" bash "$repo/.ai/hooks/run-hook.sh" post-bash.sh' },
             { type: 'command', command: 'bash scripts/custom-owner-hook.sh' },
           ] }],
         },
         ownerField: true,
       }, null, 2)}\n`);
       writeFileSync(join(repo, '.claude/settings.json'), `${JSON.stringify({
-        hooks: { UserPromptSubmit: [{ hooks: [{ type: 'command', command: '.ai/hooks/run-hook.sh prompt-guard.sh' }] }] },
+        hooks: { UserPromptSubmit: [{ hooks: [{ type: 'command', command: 'repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; HOOK_REPO_ROOT="$repo" bash "$repo/.ai/hooks/run-hook.sh" prompt-guard.sh' }] }] },
         permissions: { allow: ['Bash(git status:*)'] },
       }, null, 2)}\n`);
       mkdirSync(join(repo, 'src'), { recursive: true });

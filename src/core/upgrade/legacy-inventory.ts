@@ -2,7 +2,7 @@ import { createHash } from 'crypto';
 import { existsSync, lstatSync, readFileSync, readdirSync, readlinkSync } from 'fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'path';
 import { hashManagedTree, installedCopyTreeOptions } from '../../cli/installer/install-profile';
-import { isRepoHarnessLegacyTypedHookCommand, stripRepoHarnessManagedHooks } from '../adoption/managed-hook-config';
+import { isRepoHarnessLegacyTypedHookCommand, retiredHookCommands, stripRepoHarnessManagedHooks } from '../adoption/managed-hook-config';
 import { isRepoHarnessSourceCheckout } from '../adoption/source-checkout';
 import { loadWorkflowContractAsset } from '../adoption/workflow-contract-asset';
 import { parseSkillSurfaceCatalog, type SkillSurfacePackage } from '../skill-surface/catalog';
@@ -180,7 +180,7 @@ function actionsOf(): readonly RetirementAction[] {
 }
 
 function historicalCommands(actions: readonly RetirementAction[], shimPaths: readonly string[]): Set<string> {
-  const commands = new Set(actions.flatMap((action) => action.surface === 'hook-entry' ? [...(action.commands ?? [])] : []));
+  const commands = new Set(retiredHookCommands());
   const prefix = '.repo-harness/hooks/';
   for (const shim of shimPaths) {
     commands.add(shim);

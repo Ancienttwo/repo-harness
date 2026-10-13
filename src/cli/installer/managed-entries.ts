@@ -17,11 +17,12 @@
 import { routesForHost, type Route, type RouteHost } from '../hook/route-registry';
 import type { InstallProfile } from './install-profile';
 import {
+  MANAGED_TAG,
   isRepoHarnessManagedHookCommand,
   stripRepoHarnessManagedHooks,
 } from '../../core/adoption/managed-hook-config';
 
-export const MANAGED_TAG = 'repo-harness-managed-hook-v1';
+export { MANAGED_TAG } from '../../core/adoption/managed-hook-config';
 
 export interface HookCommand {
   type: 'command';

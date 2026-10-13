@@ -4,6 +4,8 @@ import * as path from 'path';
 import * as os from 'os';
 import { spawnSync } from 'child_process';
 import { runInstall, runUninstall } from '../../src/cli/commands/install';
+import { readConfigurationReceipt } from '../../src/cli/installer/configuration-ownership';
+import { isRepoHarnessManagedHookCommand } from '../../src/core/adoption/managed-hook-config';
 
 const ROOT = path.join(import.meta.dir, '..', '..');
 const CLI = path.join(ROOT, 'src/cli/index.ts');
@@ -24,6 +26,154 @@ function withTempHome(fn: (home: string) => void): void {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 }
+
+describe('issue 698 host configuration ownership', () => {
+  for (const topLevel of ['', 'default_mode_request_user_input = false\n']) {
+    test(`issue 698 installs and restores only the top-level TOML key (${topLevel ? 'replace' : 'add'})`, () => {
+      withTempHome((home) => {
+        const filePath = path.join(home, '.codex/config.toml');
+        const original = `${topLevel}model = "user"\n[profiles.work]\ndefault_mode_request_user_input = false\n`;
+        fs.mkdirSync(path.dirname(filePath), { recursive: true });
+        fs.writeFileSync(filePath, original);
+
+        const install = runInstall({ target: 'codex', location: 'global' });
+        expect(install.exitCode).toBe(0);
+        const installed = fs.readFileSync(filePath, 'utf8');
+        const parsed = Bun.TOML.parse(installed) as any;
+        expect(parsed.default_mode_request_user_input).toBe(true);
+        expect(parsed.profiles.work.default_mode_request_user_input).toBe(false);
+        expect(installed).toContain('[profiles.work]\ndefault_mode_request_user_input = false\n');
+        const receipt = readConfigurationReceipt({ HOME: home });
+        expect(receipt.pending).toBeUndefined();
+        expect(receipt.changes).toEqual([{
+          path: filePath,
+          selector: 'default_mode_request_user_input',
+          before: topLevel || null,
+          installed: 'default_mode_request_user_input = true\n',
+          active: true,
+        }]);
+        expect(runInstall({ target: 'codex', location: 'global' }).exitCode).toBe(0);
+        expect(fs.readFileSync(filePath, 'utf8')).toBe(installed);
+        expect(readConfigurationReceipt({ HOME: home })).toEqual(receipt);
+
+        expect(runUninstall({ target: 'codex', location: 'global' }).exitCode).toBe(0);
+        expect(fs.readFileSync(filePath, 'utf8')).toBe(original);
+      });
+    });
+  }
+
+  test('issue 698 leaves a true top-level TOML key and false profile key unchanged', () => {
+    withTempHome((home) => {
+      const filePath = path.join(home, '.codex/config.toml');
+      const original = 'default_mode_request_user_input = true # user setting\n[profiles.work]\ndefault_mode_request_user_input = false\n';
+      fs.mkdirSync(path.dirname(filePath), { recursive: true });
+      fs.writeFileSync(filePath, original);
+      expect(runInstall({ target: 'codex', location: 'global' }).exitCode).toBe(0);
+      expect(fs.readFileSync(filePath, 'utf8')).toBe(original);
+      expect(readConfigurationReceipt({ HOME: home }).changes).toEqual([]);
+    });
+  });
+
+  for (const raw of [
+    'default_mode_request_user_input = false\ndefault_mode_request_user_input = true\n',
+    '"default_mode_request_user_input" = false\n',
+    '[profiles.work\ndefault_mode_request_user_input = false\n',
+    'text = """\ndefault_mode_request_user_input = false\n"""\ndefault_mode_request_user_input = false\n',
+  ]) {
+    test(`issue 698 refuses unsupported TOML before any config write: ${JSON.stringify(raw)}`, () => {
+      withTempHome((home) => {
+        const filePath = path.join(home, '.codex/config.toml');
+        fs.mkdirSync(path.dirname(filePath), { recursive: true });
+        fs.writeFileSync(filePath, raw);
+        expect(runInstall({ target: 'codex', location: 'global' }).exitCode).toBe(1);
+        expect(fs.readFileSync(filePath, 'utf8')).toBe(raw);
+        expect(fs.existsSync(path.join(home, '.codex/hooks.json'))).toBe(false);
+        expect(fs.existsSync(path.join(home, '.repo-harness/configuration-restore.json'))).toBe(false);
+      });
+    });
+  }
+
+  for (const host of ['codex', 'claude'] as const) {
+    for (const shape of ['file', 'directory', 'dangling'] as const) {
+      test(`issue 698 ${host} install refuses a ${shape} symlink before writes`, () => {
+        withTempHome((home) => {
+          const name = host === 'codex' ? 'hooks.json' : 'settings.json';
+          const root = path.join(home, `.${host}`);
+          const filePath = path.join(root, name);
+          const outside = path.join(home, 'dotfiles');
+          const victim = path.join(outside, name);
+          const original = '{"theme":"user"}\n';
+          fs.mkdirSync(outside);
+          if (shape !== 'dangling') fs.writeFileSync(victim, original);
+          if (shape === 'directory') fs.symlinkSync(outside, root);
+          else {
+            fs.mkdirSync(root);
+            fs.symlinkSync(victim, filePath);
+          }
+          const linkPath = shape === 'directory' ? root : filePath;
+          const link = fs.readlinkSync(linkPath);
+          const install = runInstall({ target: host, location: 'global' });
+          expect(install.exitCode).toBe(1);
+          expect(install.lines.join('\n')).toContain('refusing symlink configuration path');
+          expect(fs.lstatSync(linkPath).isSymbolicLink()).toBe(true);
+          expect(fs.readlinkSync(linkPath)).toBe(link);
+          if (shape !== 'dangling') expect(fs.readFileSync(victim, 'utf8')).toBe(original);
+          else expect(fs.existsSync(victim)).toBe(false);
+          expect(fs.existsSync(path.join(root, 'config.toml'))).toBe(false);
+          expect(fs.existsSync(path.join(home, '.repo-harness/configuration-restore.json'))).toBe(false);
+          expect(runUninstall({ target: host, location: 'global' }).exitCode).toBe(1);
+          expect(fs.readlinkSync(linkPath)).toBe(link);
+        });
+      });
+    }
+  }
+
+  test('issue 698 local Claude install and uninstall refuse a settings symlink', () => {
+    withTempHome((home) => {
+      const repo = path.join(home, 'project');
+      fs.mkdirSync(path.join(repo, '.claude'), { recursive: true });
+      const victim = path.join(home, 'dotfile.json');
+      const original = '{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"repo-harness hook SessionStart --route default"}]}]}}\n';
+      fs.writeFileSync(victim, original);
+      const filePath = path.join(repo, '.claude/settings.json');
+      fs.symlinkSync(victim, filePath);
+      const previous = process.cwd();
+      process.chdir(repo);
+      try {
+        expect(runInstall({ target: 'claude', location: 'local' }).exitCode).toBe(1);
+        expect(runUninstall({ target: 'claude', location: 'local', dryRun: true }).exitCode).toBe(1);
+        expect(runUninstall({ target: 'claude', location: 'local' }).exitCode).toBe(1);
+        expect(fs.lstatSync(filePath).isSymbolicLink()).toBe(true);
+        expect(fs.readFileSync(victim, 'utf8')).toBe(original);
+      } finally { process.chdir(previous); }
+    });
+  });
+
+  test('issue 698 preserves user commands that mention retired paths or command prefixes', () => {
+    withTempHome((home) => {
+      const filePath = path.join(home, '.claude/settings.json');
+      const commands = [
+        'echo user-guard # see .ai/hooks/run-hook.sh docs',
+        'echo .claude/hooks/run-hook.sh',
+        `echo ${home}/.repo-harness/hook-shim.sh`,
+        'repo-harness hook Stop --route user',
+        'repo-harness hook SessionStart --route default; echo user',
+        'repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; export HOOK_REPO_ROOT="$repo"; echo repo-harness-hook exec repo-harness hook user',
+      ];
+      const historical = 'repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; HOOK_REPO_ROOT="$repo" bash "$repo/.ai/hooks/run-hook.sh" session-start-context.sh';
+      expect(isRepoHarnessManagedHookCommand(historical)).toBe(true);
+      fs.mkdirSync(path.dirname(filePath), { recursive: true });
+      fs.writeFileSync(filePath, JSON.stringify({ theme: 'user', hooks: { SessionStart: [{ hooks: [...commands, historical].map(command => ({ type: 'command', command })) }] } }));
+      expect(runInstall({ target: 'claude', location: 'global' }).exitCode).toBe(0);
+      const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+      expect(data.theme).toBe('user');
+      expect(data.hooks.SessionStart[0].hooks.map((hook: any) => hook.command)).toEqual(commands);
+      expect(JSON.stringify(data)).not.toContain('session-start-context.sh');
+      expect(runUninstall({ target: 'claude', location: 'global' }).exitCode).toBe(0);
+      expect(JSON.parse(fs.readFileSync(filePath, 'utf8')).hooks.SessionStart[0].hooks.map((hook: any) => hook.command)).toEqual(commands);
+    });
+  });
+});
 
 function writeReadyOfficialCodexPluginCli(home: string): string {
   const pluginRoot = path.join(home, '.claude', 'plugins', 'cache', 'openai-codex', 'codex', '1.0.6');
