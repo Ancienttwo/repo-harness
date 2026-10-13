@@ -364,12 +364,12 @@ Campaign execution moved to the existing Bot skills on 2026-10-04. Use [repo-har
 ### Refactor recommendations
 
 ```bash
-repo-harness refactor recommendations                       # measured suggestions with evidence
-repo-harness refactor decide <id> accept|defer|reject --reason "<text>"
+repo-harness refactor recommendations [--import-node-limit <n>]   # measured suggestions with evidence
+repo-harness refactor decide <id> accept|defer|reject --reason "<text>" [--import-node-limit <n>]
 ```
 
 ArchContext は循環や依存方向の違反などの構造上の問題を計測します。repo-harness は
-各提案をその指標とモジュール統計とともに表示し、ユーザーの判断を記録します。
+各提案をその指標、上限付きの根拠、モジュール統計とともに表示し、ユーザーの判断を記録します。
 リファクタリング自体は実行しません。受け入れた提案は通常の plan と pull request の
 流れで進めます。
 
