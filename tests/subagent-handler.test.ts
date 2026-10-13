@@ -32,7 +32,7 @@ const SUBAGENT_ROUTE: Readonly<Record<SubagentEvent, RouteId>> = {
 function collectorFor(repoRoot: string, event: SubagentEvent, env: NodeJS.ProcessEnv) {
   return createStateInputCollector({
     repoRoot,
-    resolveEffectiveState: (targetPaths) => resolveHookEffectiveState(repoRoot, Date.now()),
+    resolveEffectiveState: () => resolveHookEffectiveState(repoRoot, Date.now()),
   });
 }
 
@@ -232,7 +232,7 @@ async function spawnDirectSubagentStart(
     'const result = runSubagentContext({',
     '  collector: createStateInputCollector({',
     '    repoRoot,',
-    '    resolveEffectiveState: (paths) => resolveHookEffectiveState(repoRoot, Date.now()),',
+    '    resolveEffectiveState: () => resolveHookEffectiveState(repoRoot, Date.now()),',
     '  }),',
     '  payload,',
     '  identity: { host: "codex", sessionId: payload.session_id, runId: null, turnId: payload.turn_id },',

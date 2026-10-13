@@ -1245,7 +1245,7 @@ describe("check-agent-tooling", () => {
       writeFakeCodeGraph(envRoot.fakeBin);
       const collector = () => createStateInputCollector({
         repoRoot: envRoot.root,
-        resolveEffectiveState: (paths) => resolveHookEffectiveState(envRoot.root, Date.now()),
+        resolveEffectiveState: () => resolveHookEffectiveState(envRoot.root, Date.now()),
       });
       const hook = runSubagentContext({
         collector: collector(),

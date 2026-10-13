@@ -378,24 +378,8 @@ describe("create-project-dirs runtime smoke", () => {
       expect(policy.external_tooling.agent_fleet.install_command).toBe("repo-harness run install-agent-fleet");
       expect(policy.external_tooling.agent_fleet.source_policy).toBe("repo-owned-single-authority");
       expect(policy.external_tooling.fable_agents).toBeUndefined();
-      expect(policy.minimal_change).toMatchObject({
-        version: 1,
-        mode: "advice",
-        session_context: true,
-        prompt_advice: true,
-        post_edit_observer: false,
-        stop_review: true,
-        max_findings: 5,
-        max_context_words: 180,
-        new_dependency: "warn",
-        new_file: "observe",
-        new_abstraction: "warn",
-        report_path: ".ai/harness/checks/minimal-change.latest.json",
-        event_dedupe: true,
-      });
+      expect(policy.minimal_change).toEqual({ mode: "advice" });
       expect(policy.information_lifecycle.evidence.cache_globs).toEqual([".ai/harness/checks/*.latest.json", ".ai/harness/checks/*.latest.md"]);
-      expect(policy.minimal_change.protected_concerns).toContain("security");
-      expect(policy.minimal_change.protected_concerns).toContain("tests");
       expect(policy.tasks.notes_dir).toBe("tasks/notes");
       expect(policy.tasks.workstreams_dir).toBe("tasks/workstreams");
       expect(policy.reference_material.dir).toBe("_ref");
@@ -508,7 +492,7 @@ describe("create-project-dirs runtime smoke", () => {
       expect(policy.sidecar_research.spawn_decision).toContain("do not ask the user");
       expect(policy.sidecar_research.fallback_runner).toBe("main-thread trace");
       expect(policy.sidecar_research.main_thread_policy).toContain("if spawning is not worthwhile");
-      expect(policy.delegation.preferred_runners).toEqual(["task-agent"]);
+      expect(policy.delegation.preferred_runners).toBeUndefined();
       expect(policy.delegation.fallback_runner).toBeUndefined();
       expect(policy.delegation.brief_source).toBe("tasks/contracts/<stem>.contract.md");
       expect(policy.delegation.runner_rule).toContain(

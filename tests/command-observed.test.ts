@@ -28,7 +28,7 @@ function optInRepo(prefix: string): string {
 }
 
 function commandInput(command: string, stdout: string, exitCode: unknown): HookPayload {
-  return { tool_input: { command }, tool_response: { stdout, stderr: '', interrupted: false }, exit_code: exitCode };
+  return { tool_input: { command }, tool_response: { stdout, is_error: typeof exitCode === 'number' && exitCode !== 0 }, exit_code: exitCode };
 }
 
 function observe(repoRoot: string, payload: HookPayload, dependencies?: CommandObservedDependencies) {

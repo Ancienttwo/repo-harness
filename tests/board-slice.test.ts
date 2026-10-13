@@ -407,7 +407,7 @@ describe('claim tokens: ambiguity is never resolved by picking one', () => {
 function collectorFor(repoRoot: string): StateInputCollector {
   return createStateInputCollector({
     repoRoot,
-    resolveEffectiveState: (targetPaths) =>
+    resolveEffectiveState: () =>
       resolveHookEffectiveState(repoRoot, Date.now()),
   });
 }

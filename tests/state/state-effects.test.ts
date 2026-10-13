@@ -35,7 +35,7 @@ import {
   stateVersionOwnerPath,
   type StateVersionWriteEffects,
 } from '../../src/effects/state/git-state-version-store';
-import { resolveEffectiveState } from '../../src/effects/state/resolve-effective-state';
+import { readWorkflowPolicy, resolveEffectiveState } from '../../src/effects/state/resolve-effective-state';
 import { contentRevision, sha256 } from '../../src/effects/state/collect-state-inputs';
 
 describe('Effective State content revision', () => {
@@ -403,4 +403,28 @@ describe('Effective State version read effects', () => {
       fixture.cleanup();
     }
   }, 30_000);
+});
+
+describe('minimal_change.mode policy validation', () => {
+  const readPolicy = (policy: unknown) =>
+    readWorkflowPolicy('/repo', () => JSON.stringify(policy));
+
+  test('accepts off, advice, an absent mode and an absent block', () => {
+    expect(() => readPolicy({ minimal_change: { mode: 'off' } })).not.toThrow();
+    expect(() => readPolicy({ minimal_change: { mode: 'advice' } })).not.toThrow();
+    expect(() => readPolicy({ minimal_change: {} })).not.toThrow();
+    expect(() => readPolicy({})).not.toThrow();
+  });
+
+  test('rejects enforce and any other value', () => {
+    expect(() => readPolicy({ minimal_change: { mode: 'enforce' } })).toThrow(
+      'invalid workflow policy value .minimal_change.mode: enforce',
+    );
+    expect(() => readPolicy({ minimal_change: { mode: 'strict-ish' } })).toThrow(
+      'invalid workflow policy value .minimal_change.mode: strict-ish',
+    );
+    expect(() => readPolicy({ minimal_change: { mode: 1 } })).toThrow(
+      'invalid workflow policy value .minimal_change.mode: 1',
+    );
+  });
 });
