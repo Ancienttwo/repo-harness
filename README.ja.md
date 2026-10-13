@@ -157,7 +157,7 @@ repo-harness mcp uninstall --services-stopped # after stopping all MCP HTTP serv
 - **セッションの状態はファイルに残り、チャット履歴には残らない。** 別々の
   Claude セッションと Codex セッションは、リポジトリを介して同期を保ちます。
   `SessionStart` が前回セッションの resume packet を注入し、`Stop` が handoff
-  を書き出し、各編集は小さな journal event を記録します。セッションはタスクの
+  と resume を書き出します。セッションはタスクの
   途中で終了でき、次のセッションは正確な次の一手・blocker・変更ファイルを、
   推測し直すことなくそのまま引き継ぎます。
 - **設計上 token を節約する。** セッションのたびにリポジトリを grep-and-read
@@ -296,11 +296,11 @@ flowchart TD
   CurrentTree --> Implement
   ContractRun --> Changes
 
-  Implement["Edit and run commands"] --> PreHooks["Pre-edit guards<br/>PlanStatusGuard, ContractScopeGuard, WorktreeGuard"]
-  PreHooks -->|blocked| ScopeFix["Fix plan, contract, worktree, or scope"]
+  Implement["Edit and run commands"] --> PreHooks["Pre-edit guards<br/>RepoScopeGuard, ExternalReferenceGuard, OpsPrivateGuard"]
+  PreHooks -->|blocked| ScopeFix["Fix the target path"]
   ScopeFix --> Implement
   PreHooks -->|allowed| Changes["Code, docs, tests, or config changes"]
-  Changes --> PostHooks["Post-edit and post-bash hooks<br/>trace, handoff, check evidence"]
+  Changes --> PostHooks["Bash observer and Stop hook<br/>repair circuit, owed architecture, handoff"]
   PostHooks --> ArchUpdate["Explicit architecture update<br/>archctx ChangeSet when responsibilities change<br/>architecture-projection apply"]
   ArchUpdate --> Verify["Run verification<br/>tests plus repo workflow checks"]
 
@@ -430,13 +430,14 @@ adapter であり、Codex は hooks が動く前に Settings でそのファイ�
 adapter config -> `repo-harness-hook` -> route registry -> typed handler の
 順に確認してください。
 
-hook が作業を block したときは、まず構造化された terminal 出力 — `guard`、
-`reason`、`fix`、`failure_class`、`run_id` — を読んでください。持続的な記録は
-`.ai/harness/failures/latest.jsonl` にあり、周辺の tool activity は
-`.claude/.trace.jsonl` にあります。よくある guard は `PlanStatusGuard`(active
-または実行可能な plan がない)、`ContractGuard`(contract scaffold が存在
-しない、または contract が通る前に completion を主張した)、`WorktreeGuard`
-(誤った worktree からの書き込み)です。完全な playbook は
+hook が作業を block したときは、まず terminal 出力を読んでください。
+`[<Guard>] <reason>` の行と `Fix:` の行が 1 行ずつ出ます。持続的な記録は
+`.ai/harness/failures/latest.jsonl` にあり、`guard`、`reason`、`fix`、
+`failure_class`、`run_id` を持ちます。`.ai/harness/runs/hook-events.jsonl` は
+各 hook event を記録します。edit guard は `RepoScopeGuard`(リポジトリ外の
+パス)、`ExternalReferenceGuard`(`_ref/`)、`OpsPrivateGuard`(`_ops/`)、
+そして `ApplyPatchScopeGuard` と `EditScopeGuard`(解析できる対象パスがない)
+です。完全な playbook は
 [`docs/reference-configs/hook-operations.md`](docs/reference-configs/hook-operations.md)
 を参照してください。
 

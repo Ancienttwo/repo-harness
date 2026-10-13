@@ -139,9 +139,9 @@ repo-harness mcp uninstall --services-stopped # after stopping all MCP HTTP serv
 ## 为什么用 repo-harness
 
 - **会话状态落在文件里，而不是聊天记忆里。** 不同的 Claude 和 Codex 会话靠仓库
-  保持协调。`SessionStart` 注入上一个会话的 resume packet，`Stop` 写下 handoff，
-  每次 edit 都记一条小的 journal event。一个会话可以在任务中途结束，下一个会话
-  直接接上准确的下一步、blocker 和改动过的文件，不需要重新推导。
+  保持协调。`SessionStart` 注入上一个会话的 resume packet，`Stop` 写下 handoff
+  和 resume。一个会话可以在任务中途结束，下一个会话直接接上准确的下一步、
+  blocker 和改动过的文件，不需要重新推导。
 - **天生省 token。** Harness 不靠每个会话重新扫一遍仓库的 grep-and-read 循环，
   而是靠预建的 CodeGraph 索引做结构化查询，配合渐进式 context loading：一份稳定
   的约 12KB root context，加上只在你改到的文件需要时才加载的 capability 块。
@@ -263,11 +263,11 @@ flowchart TD
   CurrentTree --> Implement
   ContractRun --> Changes
 
-  Implement["Edit and run commands"] --> PreHooks["Pre-edit guards<br/>PlanStatusGuard, ContractScopeGuard, WorktreeGuard"]
-  PreHooks -->|blocked| ScopeFix["Fix plan, contract, worktree, or scope"]
+  Implement["Edit and run commands"] --> PreHooks["Pre-edit guards<br/>RepoScopeGuard, ExternalReferenceGuard, OpsPrivateGuard"]
+  PreHooks -->|blocked| ScopeFix["Fix the target path"]
   ScopeFix --> Implement
   PreHooks -->|allowed| Changes["Code, docs, tests, or config changes"]
-  Changes --> PostHooks["Post-edit and post-bash hooks<br/>trace, handoff, check evidence"]
+  Changes --> PostHooks["Bash observer and Stop hook<br/>repair circuit, owed architecture, handoff"]
   PostHooks --> ArchUpdate["Explicit architecture update<br/>archctx ChangeSet when responsibilities change<br/>architecture-projection apply"]
   ArchUpdate --> Verify["Run verification<br/>tests plus repo workflow checks"]
 
@@ -387,11 +387,12 @@ tuple 绑定唯一一个 typed in-process handler。带 Host 列的 route 表在
 `.claude/settings.json` 和 `.codex/hooks.json` 是需要退休的 legacy config。按顺序
 debug：adapter config -> `repo-harness-hook` -> route registry -> typed handler。
 
-当某个 hook 挡住工作时，先读 terminal 里结构化输出的 `guard`、`reason`、`fix`、
-`failure_class` 和 `run_id`。持久记录在 `.ai/harness/failures/latest.jsonl`，相关
-tool activity 在 `.claude/.trace.jsonl`。常见的 guard 有 `PlanStatusGuard`（没有
-active 或可执行的 plan）、`ContractGuard`（缺少 contract scaffold，或者在 contract
-通过之前就声称完成）和 `WorktreeGuard`（从错误的 worktree 写入）。完整 playbook 见
+当某个 hook 挡住工作时，先读 terminal 输出：一行 `[<Guard>] <reason>`，一行 `Fix:`。
+持久记录在 `.ai/harness/failures/latest.jsonl`，带 `guard`、`reason`、`fix`、
+`failure_class` 和 `run_id`。`.ai/harness/runs/hook-events.jsonl` 记录每个 hook
+event。Edit guard 有 `RepoScopeGuard`（路径在仓库之外）、`ExternalReferenceGuard`
+（`_ref/`）、`OpsPrivateGuard`（`_ops/`），以及 `ApplyPatchScopeGuard` 和
+`EditScopeGuard`（没有可解析的目标路径）。完整 playbook 见
 [`docs/reference-configs/hook-operations.md`](docs/reference-configs/hook-operations.md)。
 
 ### Pi 1.2.0 package

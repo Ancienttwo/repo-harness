@@ -509,19 +509,18 @@ For this repo, do not treat `codegraph affected` as an authoritative test
 selector. Many tests execute scripts by path or subprocess rather than import
 edges, so run the repo verification commands instead.
 
-### Bash Output Evidence and RTK
+### Bash Output and RTK
 
-`repo-harness` treats Bash output as runtime evidence, not durable task state.
-`PostToolUse:Bash` records command metadata in `.ai/harness/checks/` and stores
-large or failed command output under ignored `.ai/harness/runs/bash-output/` with
-the byte count, SHA-256 digest, and relative evidence path.
+`PostToolUse:Bash` stores no command output and writes no command record. It
+counts a known failing test run in the RepairLimit circuit when the payload
+carries an exit status, which only Pi sends. After a publication command it can
+report owed architecture updates. Verification evidence comes from explicit
+check commands, not from the Bash hook.
 
 RTK can be useful as a user-level compression tool for noisy successful shell
-commands, but it is optional and advisory-only. Hooks may suggest `rtk` when it
-is already on `PATH`, the command is broad, and the command succeeded; hooks must
-not rewrite Bash commands, require RTK, or suggest compression for failed
-commands. Failed command output stays raw so test, build, and review evidence is
-not hidden by a compressor.
+commands, but it is optional. Hooks do not suggest `rtk`, rewrite Bash
+commands or require RTK. Keep failed command output raw so test, build, and
+review evidence is not hidden by a compressor.
 
 ## Recommended Frontend and Design Resources
 
