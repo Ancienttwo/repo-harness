@@ -1,13 +1,13 @@
 # runtime-harness/evidence-ledger 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-evidence-ledger" sourceDigest="sha256:0f85d4e50d8bb2b85daae8167bc9fbac459085dc69172fba04fbb6adac21fd97" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:26ec828ce56d6d438a096ea05b184f8bd1278693cc6e95d4772b156a4ca63a82" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-evidence-ledger" sourceDigest="sha256:ddd0786b64df4aaed48a3e1a8c6905dd98da12c2b506e25c98aaeec1d710beea" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:745e42efdfa2d4e5e9380fd441f1c8011ca3329a1b422f6daa94174a72b97a4a" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.evidence-ledger`(kind `capability`)
 > **Matched Prefixes**:`src/core/evidence/**`、`src/effects/evidence/**`、`scripts/evidence-gc.ts`、`scripts/recovery-view-cli.ts`、`scripts/prepare-handoff.sh`、`scripts/prepare-codex-handoff.sh`、`scripts/codex-handoff-resume.sh`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
-Appends and folds the per-worktree harness evidence event log, stores write-once blobs and checkpoints, imports observed and attested evidence and materializes handoff and resume recovery views.
+Appends and folds the per-worktree harness evidence event log, stores write-once blobs and checkpoints, imports attested evidence and materializes handoff and resume recovery views.
 
 ## 1. P1:能力架構地圖
 
@@ -24,14 +24,14 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:ade70552e67b3d2441f7eed4047bed83c5a4a00ee9ecff7aa9ed24f550f85b74`).
+- Proof: `proven` (`sha256:92ba58a09b2b6f5fff50a2c6bd18218f56070accb5083e9d8b248bafbaa29385`).
 - Semantic nodes: `2`; declared relations: `1`.
 
 ### 1.2 模組職責表
 
 | 宣告入口 | 錨點 | 職責 |
 | --- | --- | --- |
-| `entrypoint.evidence-ledger.post-bash` | `src/effects/evidence/post-bash-importer.ts#importPostBashObservation` | `sink.evidence-ledger.append` → `src/effects/evidence/event-log.ts#appendEvidenceEvent` |
+| `entrypoint.evidence-ledger.attested-import` | `src/effects/evidence/attested-import.ts#importAttestedEvidence` | `sink.evidence-ledger.append` → `src/effects/evidence/event-log.ts#appendEvidenceEvent` |
 | `entrypoint.evidence-ledger.checkpoint` | `src/effects/evidence/checkpoint-store.ts#publishCheckpointFromLedger` | `sink.evidence-ledger.accepted-events` → `src/effects/evidence/event-log.ts#readAcceptedEvents` |
 | `entrypoint.evidence-ledger.recovery` | `src/effects/evidence/recovery-materializer.ts#resolveRecoveryEvidence` | `sink.evidence-ledger.last-checkpoint` → `src/effects/evidence/checkpoint-store.ts#resolveLastPublishedCheckpoint` |
 | `entrypoint.evidence-ledger.log-read` | `src/effects/evidence/event-log.ts#readLogSnapshot` | `sink.evidence-ledger.corrupt-tail` → `src/core/evidence/fold.ts#findCorruptTail` |
@@ -60,8 +60,7 @@ flowchart LR
 - `writes` ← `capability.runtime-harness.delegated-runs` — Store delegated run payloads in the evidence blob store
 - `calls` ← `component.evals-checks.primary` — Validate and execute verification plans through the evidence verification modules
 - `calls` ← `component.global-runtime-reconciliation.archctx-closure` — Canonicalize architecture closure records
-- `calls` ← `component.hook-adapters.edit-guards` — Import post-bash observations as evidence
-- `calls` ← `component.hook-adapters.session-lifecycle` — Build recovery context and handoff from checkpoint evidence
+- `calls` ← `component.hook-adapters.session-lifecycle` — Publish the evidence checkpoint and render handoff and resume from it
 - `calls` ← `capability.runtime-harness.pipeline-ledger` — Validate original verification execution provenance before admitting evidence
 - `calls` ← `capability.runtime-harness.pm-dispatch` — Hash coding session records with the evidence canonical JSON
 - `calls` ← `capability.organization.publication` — Append lifecycle journal records through the durable evidence append primitive
@@ -85,7 +84,7 @@ flowchart LR
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:ade70552e67b3d2441f7eed4047bed83c5a4a00ee9ecff7aa9ed24f550f85b74`); selectors `4/4`.
+> **Proof**: `proven` (`sha256:92ba58a09b2b6f5fff50a2c6bd18218f56070accb5083e9d8b248bafbaa29385`); selectors `4/4`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
@@ -93,7 +92,7 @@ sequenceDiagram
   autonumber
   participant p2_evidence_edecec53 as Evidence Ledger
   participant p2_store_52b5e20f as Evidence Event Store
-  p2_evidence_edecec53->>p2_store_52b5e20f: Import one PostBash observation as exactly one observed event through the writer path
+  p2_evidence_edecec53->>p2_store_52b5e20f: Import one attested receipt through the closed trust mapping and the writer path
   alt The accepted set folds and a validated checkpoint backs recovery
   p2_evidence_edecec53->>p2_store_52b5e20f: Fold accepted events and publish a validated content-addressed checkpoint
   p2_evidence_edecec53->>p2_store_52b5e20f: Resolve the checkpoint only through the last-published marker
