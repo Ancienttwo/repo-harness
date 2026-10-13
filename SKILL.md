@@ -24,7 +24,7 @@ Only an agent inside a Herdr pane may run those control commands.
    from `repo-harness-test` or `repo-harness-architecture` only when needed.
    Use `repo-harness-ship` for explicitly authorized publication.
 4. **verify** — use `repo-harness-check` to assess recorded checks and risk.
-   When a worker reports `done` with source changes, also read its architecture evidence.
+   When a worker reports `done` with source changes, read the cheap diff-scoped architecture signals. The repository-wide refactor scan runs once per merge, not at `done`.
 5. **handoff** — read `references/handoff.md` only when work must resume later.
 
 For a lost worker response or Bot control integration, read

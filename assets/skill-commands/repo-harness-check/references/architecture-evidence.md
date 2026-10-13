@@ -9,12 +9,19 @@ after edits. `check` and `recommendations` write no repository files.
 
 ## When to read
 
-Read this evidence when a worker reports `done` for a branch that changed
-source, `.archcontext/model/` or `docs/architecture/` files. A Herdr `done`
-push is one such report. Also read it before you request review of such a
-branch, and when the user asks about architecture drift, ownership or
-refactors. A `blocked` report or a branch without such changes needs no
-architecture evidence.
+Read the cheap diff-scoped evidence when a worker reports `done` for a branch
+that changed source, `.archcontext/model/` or `docs/architecture/` files. A
+Herdr `done` push is one such report. Also read it before you request review of
+such a branch, and when the user asks about architecture drift or ownership. A
+`blocked` report or a branch without such changes needs no architecture
+evidence.
+
+At `done`, run only the cheap checks below: path ownership, and
+`architecture-projection check` when the model or documents changed. Do not run
+`repo-harness refactor recommendations --json` at `done`. Run it once per merge,
+on a fixed checkout and branch (the main checkout after the merge), or when the
+user asks about refactors. The scan covers the whole repository, takes about
+30 s and gives the same output on every branch.
 
 Read the cheap signal first:
 
@@ -54,17 +61,23 @@ The check needs CodeGraph code facts. In a new worktree, have the worker run
 
 Run `repo-harness refactor recommendations --json`. The result
 `repo-harness.refactor-recommendations/v2` has a `status` and `candidates`.
-Each candidate gives its kind, subject, risk, confidence, uncertainty, metrics
-and affected module statistics.
+Each candidate gives its kind, subject, risk, confidence, uncertainty,
+`metrics`, bounded `evidence` and module statistics. The `evidence` has a
+`kind`, a `totalCount`, a `truncated` flag and the first items. Module
+statistics are files, lines, fan-in, fan-out, cycles and unresolved imports.
+archctx 0.7.2 does not measure instability, direction violations or test files,
+so they are not shown.
 
 | Status | Bot decision |
 | --- | --- |
 | `recommended` | Show the candidates and their evidence to the user, or schedule a bounded refactor task in the normal plan and pull request flow. |
 | `no_action` | Schedule nothing. |
-| `proof_required` | Code facts are incomplete or file ownership is ambiguous. The message names which. Run `codegraph init`, or schedule a model ownership fix, before you use this evidence. |
-| `unavailable` | No model or no provider. Schedule nothing. |
+| `proof_required` | The message names the cause. Missing code facts: run `codegraph init`. `code-facts-import-limit`: run again with a larger `--import-node-limit <n>` and use the same value on `decide`. Ambiguous ownership: schedule a model ownership fix. |
+| `unavailable` | Read `code`, `action` and `message`. A missing model or provider means schedule nothing. A code with an `action` has a fix: do it first. |
 
 Record only a decision that the user made:
 `repo-harness refactor decide <id> accept|defer|reject --reason "<text>"`.
-A decided suggestion is not shown again. A suggestion is evidence. It does not
-authorize a refactor.
+A decided suggestion is not shown again in the same worktree path and branch
+(Ancienttwo/arch-context#321). `decide` works for a recorded id or a fresh
+candidate in one call. Pass `--import-node-limit` if the scan used one. A
+suggestion is evidence. It does not authorize a refactor.

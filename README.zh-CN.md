@@ -326,11 +326,11 @@ Campaign execution moved to the existing Bot skills on 2026-10-04. Use [repo-har
 ### Refactor recommendations
 
 ```bash
-repo-harness refactor recommendations                       # measured suggestions with evidence
-repo-harness refactor decide <id> accept|defer|reject --reason "<text>"
+repo-harness refactor recommendations [--import-node-limit <n>]   # measured suggestions with evidence
+repo-harness refactor decide <id> accept|defer|reject --reason "<text>" [--import-node-limit <n>]
 ```
 
-ArchContext 测量循环依赖、依赖方向违规等结构问题。repo-harness 把每条建议连同其指标和
+ArchContext 测量循环依赖、依赖方向违规等结构问题。repo-harness 把每条建议连同其指标、有界证据和
 模块统计一起展示，并记录用户的决定。它从不执行重构；被接受的建议走正常的 plan 和
 pull request 流程。
 

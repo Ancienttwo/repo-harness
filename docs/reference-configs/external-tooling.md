@@ -1209,21 +1209,21 @@ repo-harness run sync-brain-docs --check
 repo-harness supplies refactor evidence on demand. No hook scans for it and no
 setting enables it. The Bot reads the evidence and decides whether to schedule
 work or ask the user. Incomplete code facts return `proof_required` with a
-`codegraph init` hint. The command never creates an index, a model, a plan or a
-code edit.
+`codegraph init` hint. An import limit gets a `--import-node-limit` hint
+instead. The command never creates an index, a model, a plan or a code edit.
 
 Read evidence and record a decision with:
 
 ```bash
-repo-harness refactor recommendations [--json]
-repo-harness refactor decide <recommendation-id> accept|defer|reject --reason "<text>"
+repo-harness refactor recommendations [--json] [--import-node-limit <n>]
+repo-harness refactor decide <recommendation-id> accept|defer|reject --reason "<text>" [--import-node-limit <n>]
 ```
 
 `recommendations` shows each open suggestion with its explanation, the metrics
 of its observation and the statistics of every affected module (files, lines,
-fan-in, fan-out, cycles, instability, direction violations, test files,
-unresolved imports). `decide` records the scan in ArchContext when needed and
-then stores the decision. Suggestions with a recorded decision are not shown
-again. repo-harness keeps no local delivery state; ArchContext owns the
+fan-in, fan-out, cycles, unresolved imports). Open suggestions are the
+ArchContext `open` records plus scan candidates not yet recorded. `decide`
+stores the decision in one ArchContext call, for a recorded id or a scan
+candidate. Suggestions with a recorded decision are not shown again. repo-harness keeps no local delivery state; ArchContext owns the
 recommendation lifecycle. Execution of an accepted suggestion uses the normal
 plan and pull request workflow.
