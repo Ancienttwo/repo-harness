@@ -1,0 +1,17 @@
+schemaVersion: archcontext.node/v2
+id: capability.old.legacy
+kind: capability
+name: capability.old.legacy
+status: deprecated
+summary: Fixture capability capability.old.legacy.
+responsibilities:
+  - Own fixture paths.
+source:
+  include:
+    - "legacy/**"
+extensions:
+  contractFiles:
+    agents: AGENTS.md
+    claude: CLAUDE.md
+  lspProfile: typescript-lsp
+  verification: []

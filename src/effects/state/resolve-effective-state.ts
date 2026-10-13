@@ -16,12 +16,15 @@ import {
   isCapabilityPathOutsideRepo,
   parseCapabilityRegistry,
   resolveCapabilityPaths,
+  type ArchcontextCapabilityOwners,
+  type ArchcontextCapabilityResolution,
   type ArchcontextNodeFile,
   type CapabilityPathResolution,
-  type CapabilityRegistry,
+  type CapabilityRegistryDiagnostic,
   type CapabilityRegistryResolution,
   type CapabilitySourceMode,
 } from '../../core/capabilities/registry';
+import { capabilityOwnershipBlocker, type CapabilityOwnershipBlocker } from '../../core/capabilities/ownership-blocker';
 import { archcontextResolveQueries, resolveArchcontextCapabilityPaths } from '../capabilities/archcontext-owners';
 import type {
   EffectiveState,
@@ -71,6 +74,8 @@ const CAPABILITY_REGISTRY_PATH = '.ai/context/capabilities.json';
 const CAPABILITY_NODES_DIR = '.archcontext/model/nodes';
 const CAPABILITY_NODE_FILE = /\.ya?ml$/;
 const POLICY_PATH = '.ai/harness/policy.json';
+// profile_reasons names at most this many unowned paths; the count reason carries the total.
+const UNOWNED_PATH_REASON_LIMIT = 20;
 
 type WorkflowPolicy = Readonly<Record<string, unknown>> | null;
 const POLICY_FIELD_ABSENT = Symbol('policy-field-absent');
@@ -339,9 +344,12 @@ export type CapabilityRegistryStatus = 'valid' | 'absent' | 'invalid';
 export interface CapabilityResolution {
   readonly ids: readonly string[];
   readonly registryStatus: CapabilityRegistryStatus;
+  /** Paths whose owner the authority answered as "none". Empty when ownership failed. */
   readonly unmappedPaths: readonly string[];
   readonly malformedEntryCount: number;
   readonly outOfRepoPathCount: number;
+  /** The blocker, with its first diagnostic, when ownership failed. */
+  readonly blocker: CapabilityOwnershipBlocker | null;
 }
 
 // Policy declares capability registry authority. Adoption and init, plus the
@@ -358,62 +366,35 @@ function policyDeclaresCapabilityRegistry(policy: WorkflowPolicy): boolean {
   return true;
 }
 
-/**
- * Load the registry from whichever authority `capability_source` selects. Under
- * `archcontext` the policy switch itself is the declaration, so a missing nodes
- * directory or an unreadable node is `invalid` (fail closed), never `absent`.
- */
-function loadCapabilityRegistry(cwd: string, policy: WorkflowPolicy, readSource = (path: string) => readText(cwd, path)): CapabilityRegistryResolution {
-  if (capabilitySourceMode(policy) === 'registry') {
-    const text = readSource(CAPABILITY_REGISTRY_PATH);
-    return parseCapabilityRegistry(text && text.length > 0 ? text : null, {
-      declared: policyDeclaresCapabilityRegistry(policy),
-      repoRoot: cwd,
-    });
-  }
+function invalidArchcontextAuthority(code: CapabilityRegistryDiagnostic['code'], path: string, message: string): ArchcontextCapabilityResolution {
+  return { status: 'invalid', registry: null, owners: null, diagnostics: [{ code, path, message }] };
+}
 
+/** Under `archcontext` the policy switch is the declaration: missing or unreadable nodes are `invalid`, never `absent`. */
+function loadArchcontextAuthority(cwd: string, readSource: (path: string) => string | null): ArchcontextCapabilityResolution {
   const nodePaths = archcontextNodePaths(cwd);
   if (nodePaths.length === 0) {
-    return {
-      status: 'invalid',
-      registry: null,
-      diagnostics: [{
-        code: 'REGISTRY_MISSING',
-        path: CAPABILITY_NODES_DIR,
-        message: `capability nodes are missing: ${CAPABILITY_NODES_DIR}`,
-      }],
-    };
+    return invalidArchcontextAuthority('REGISTRY_MISSING', CAPABILITY_NODES_DIR, `capability nodes are missing: ${CAPABILITY_NODES_DIR}`);
   }
-
   const files: ArchcontextNodeFile[] = [];
   for (const path of nodePaths) {
     const text = readSource(path);
-    if (text === null) {
-      return {
-        status: 'invalid',
-        registry: null,
-        diagnostics: [{
-          code: 'REGISTRY_MISSING',
-          path,
-          message: `capability node is unreadable: ${path}`,
-        }],
-      };
-    }
+    if (text === null) return invalidArchcontextAuthority('REGISTRY_MISSING', path, `capability node is unreadable: ${path}`);
     try {
       files.push({ path, value: parseNodeYaml(text) });
     } catch (error) {
-      return {
-        status: 'invalid',
-        registry: null,
-        diagnostics: [{
-          code: 'ARCHCONTEXT_NODE_NOT_OBJECT',
-          path,
-          message: `invalid capability node YAML: ${path}: ${(error as Error).message}`,
-        }],
-      };
+      return invalidArchcontextAuthority('ARCHCONTEXT_NODE_NOT_OBJECT', path, `invalid capability node YAML: ${path}: ${(error as Error).message}`);
     }
   }
   return capabilityRegistryFromArchcontextNodes(files, { repoRoot: cwd });
+}
+
+function loadRegistryAuthority(cwd: string, policy: WorkflowPolicy, readSource: (path: string) => string | null): CapabilityRegistryResolution {
+  const text = readSource(CAPABILITY_REGISTRY_PATH);
+  return parseCapabilityRegistry(text && text.length > 0 ? text : null, {
+    declared: policyDeclaresCapabilityRegistry(policy),
+    repoRoot: cwd,
+  });
 }
 
 // One resolve runs several unlocked passes. The archctx answer depends only on
@@ -421,26 +402,25 @@ function loadCapabilityRegistry(cwd: string, policy: WorkflowPolicy, readSource 
 let archcontextResolutionMemo: { key: string; resolution: CapabilityPathResolution } | null = null;
 
 /** Under `archcontext`, ArchContext owns path ownership; a failed resolve fails closed. */
-function resolveRegistryPaths(
+function resolveArchcontextPaths(
   cwd: string,
-  policy: WorkflowPolicy,
-  registry: CapabilityRegistry,
+  owners: ArchcontextCapabilityOwners,
   paths: readonly string[],
   readSource: (path: string) => string | null,
 ): CapabilityPathResolution {
-  if (capabilitySourceMode(policy) === 'registry') return resolveCapabilityPaths(registry, paths, { repoRoot: cwd });
   const nodes = archcontextNodePaths(cwd).map((path) => [path, readSource(path)]);
   // The queries carry each path's directory state, which changes what archctx answers.
   const key = sha256(JSON.stringify([safeRealpath(cwd), nodes, paths, archcontextResolveQueries(cwd, paths)]));
   if (archcontextResolutionMemo?.key === key) return archcontextResolutionMemo.resolution;
   try {
-    const resolution = resolveArchcontextCapabilityPaths(cwd, registry, paths);
-    archcontextResolutionMemo = { key, resolution };
+    const resolution = resolveArchcontextCapabilityPaths(cwd, owners, paths);
+    // An unavailable answer is not memoized: a later pass outside observation computes it.
+    if (resolution.status !== 'unavailable') archcontextResolutionMemo = { key, resolution };
     return resolution;
   } catch (error) {
     // A process failure is not memoized: the next resolve tries archctx again.
     return {
-      status: 'invalid',
+      status: 'unavailable',
       capabilityIds: [],
       matches: [],
       unmappedPaths: [],
@@ -463,9 +443,12 @@ function capabilityIdsForPaths(
   // own capability:out-of-repo:<n> reason instead.
   const inRepoPaths = paths.filter((path) => !isCapabilityPathOutsideRepo(path, cwd));
   const outOfRepoPathCount = paths.length - inRepoPaths.length;
-  const registry = loadCapabilityRegistry(cwd, policy, readSource);
+  const mode = capabilitySourceMode(policy);
+  const registry = mode === 'registry'
+    ? loadRegistryAuthority(cwd, policy, readSource)
+    : loadArchcontextAuthority(cwd, readSource);
   if (registry.status === 'absent') {
-    return { ids: [], registryStatus: 'absent', unmappedPaths: [], malformedEntryCount: 0, outOfRepoPathCount };
+    return { ids: [], registryStatus: 'absent', unmappedPaths: [], malformedEntryCount: 0, outOfRepoPathCount, blocker: null };
   }
   if (registry.status === 'invalid') {
     const malformedEntries = new Set(
@@ -473,21 +456,36 @@ function capabilityIdsForPaths(
         .map((entry) => /^capabilities\[(\d+)\]/.exec(entry.path)?.[1])
         .filter((index): index is string => Boolean(index)),
     );
+    // Ownership is unknown here, so no path is reported as unowned.
     return {
       ids: [],
       registryStatus: 'invalid',
-      unmappedPaths: [...inRepoPaths],
+      unmappedPaths: [],
       malformedEntryCount: malformedEntries.size,
       outOfRepoPathCount,
+      blocker: capabilityOwnershipBlocker(registry.diagnostics[0]!, mode),
     };
   }
-  const resolution = resolveRegistryPaths(cwd, policy, registry.registry, inRepoPaths, readSource);
+  const resolution = 'owners' in registry
+    ? resolveArchcontextPaths(cwd, registry.owners, inRepoPaths, readSource)
+    : resolveCapabilityPaths(registry.registry, inRepoPaths, { repoRoot: cwd });
+  if (resolution.status !== 'valid') {
+    return {
+      ids: [],
+      registryStatus: 'invalid',
+      unmappedPaths: [],
+      malformedEntryCount: 0,
+      outOfRepoPathCount,
+      blocker: capabilityOwnershipBlocker(resolution.diagnostics[0]!, mode),
+    };
+  }
   return {
     ids: resolution.capabilityIds,
-    registryStatus: resolution.status,
+    registryStatus: 'valid',
     unmappedPaths: resolution.unmappedPaths,
     malformedEntryCount: 0,
     outOfRepoPathCount,
+    blocker: null,
   };
 }
 
@@ -611,7 +609,7 @@ function resolveEffectiveStateUnlocked(
   // from the implementation-surface path set (capabilityIdsForPaths' contract
   // is stated in terms of "implementation paths").
   const capabilityResolution: CapabilityResolution | null = options.risk?.capabilityIds
-    ? { ids: options.risk.capabilityIds, registryStatus: 'valid', unmappedPaths: [], malformedEntryCount: 0, outOfRepoPathCount: 0 }
+    ? { ids: options.risk.capabilityIds, registryStatus: 'valid', unmappedPaths: [], malformedEntryCount: 0, outOfRepoPathCount: 0, blocker: null }
     : hasRawTargetPaths
       ? capabilityIdsForPaths(cwd, implementationTargetPaths, policy, readSource)
       : null;
@@ -625,13 +623,11 @@ function resolveEffectiveStateUnlocked(
   // resolveWorkflowProfile's signals-unavailable fail-closed branch -- that
   // branch exists for the genuinely unknown case (no target paths at all),
   // which stays untouched below.
-  // Out-of-repo paths remain diagnostic-only: they are not capabilities
-  // governed by this repo and therefore never contribute to capabilityCount.
+  // Out-of-repo and unowned paths remain diagnostic-only: neither is a
+  // capability, so neither contributes to capabilityCount. A new file next to
+  // an owned file must not read as a second capability.
   const declaredCapabilityCount = options.risk?.capabilityCount ?? (
-    hasRawTargetPaths
-      ? (observedCapabilityIds?.length ?? 0)
-        + (unmappedCapabilityCount > 0 ? 1 : 0)
-      : undefined
+    hasRawTargetPaths ? (observedCapabilityIds?.length ?? 0) : undefined
   );
 
   const contractOverride = contractText ? markdownHeader(contractText, 'Workflow Profile') : null;
@@ -672,16 +668,23 @@ function resolveEffectiveStateUnlocked(
   // itself -- the risk-floor ranking formula is untouched; only the reason
   // text is additive.
   const capabilityReasons: string[] = [];
+  const capabilityBlocker = capabilityResolution?.blocker ?? null;
   if (capabilityResolution?.registryStatus === 'absent') {
     capabilityReasons.push('capability:registry:absent');
+  } else if (capabilityBlocker?.key === 'capability_ownership:unavailable') {
+    capabilityReasons.push('capability:ownership:unavailable');
   } else if (capabilityResolution?.registryStatus === 'invalid') {
     capabilityReasons.push('capability:registry:invalid');
   }
+  if (capabilityBlocker) capabilityReasons.push(`capability:diagnostic:${capabilityBlocker.code}`);
   if (capabilityResolution && capabilityResolution.malformedEntryCount > 0) {
     capabilityReasons.push(`capability:registry:malformed-entries:${capabilityResolution.malformedEntryCount}`);
   }
   if (unmappedCapabilityCount > 0) {
-    capabilityReasons.push(`capability:unmapped:${unmappedCapabilityCount}`);
+    capabilityReasons.push(`capability:unowned:${unmappedCapabilityCount}`);
+    capabilityReasons.push(...capabilityResolution!.unmappedPaths
+      .slice(0, UNOWNED_PATH_REASON_LIMIT)
+      .map((path) => `capability:unowned-path:${path}`));
   }
   if (outOfRepoPathCount > 0) {
     capabilityReasons.push(`capability:out-of-repo:${outOfRepoPathCount}`);
@@ -834,7 +837,7 @@ function resolveEffectiveStateUnlocked(
     riskResolution,
     contractOverride,
     capabilityReasons,
-    capabilityRegistryInvalid: capabilityResolution?.registryStatus === 'invalid',
+    capabilityBlocker,
     staleSources,
     conflictingSources,
     reviewPath,

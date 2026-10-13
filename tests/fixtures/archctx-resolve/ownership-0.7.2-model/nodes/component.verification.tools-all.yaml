@@ -1,0 +1,12 @@
+schemaVersion: archcontext.node/v2
+id: component.verification.tools-all
+kind: component
+name: component.verification.tools-all
+status: active
+parent: capability.verification.tools
+summary: Fixture component component.verification.tools-all.
+responsibilities:
+  - Own fixture paths.
+source:
+  include:
+    - "src/cli/tools/**"

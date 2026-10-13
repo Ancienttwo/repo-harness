@@ -1,0 +1,17 @@
+schemaVersion: archcontext.node/v2
+id: capability.probe.anchorless
+kind: capability
+name: capability.probe.anchorless
+status: active
+summary: Fixture capability capability.probe.anchorless.
+responsibilities:
+  - Own fixture paths.
+source:
+  include:
+    - "**/*.probe"
+extensions:
+  contractFiles:
+    agents: AGENTS.md
+    claude: CLAUDE.md
+  lspProfile: typescript-lsp
+  verification: []

@@ -6,6 +6,7 @@ import {
   CapabilitySourceError,
   capabilitySourceMode,
   findMatch,
+  readArchcontextOwners,
   readRegistry as readCapabilityRegistry,
   type Capability,
   type CapabilityRegistry,
@@ -184,7 +185,7 @@ function targetContractFiles(repo: string, capability: Capability): ContractFile
 // `archctx resolve` under `archcontext`. Nothing here re-implements either rule.
 function findCapabilityByPath(registry: CapabilityRegistry, repo: string, inputPath: string): Capability {
   if (capabilitySourceMode(repo) === 'archcontext') {
-    const resolution = resolveArchcontextCapabilityPaths(repo, registry, [inputPath]);
+    const resolution = resolveArchcontextCapabilityPaths(repo, readArchcontextOwners(repo), [inputPath]);
     if (resolution.status === 'invalid') throw new Error(resolution.diagnostics.map((item) => item.message).join('; '));
     if (resolution.matches.length === 1) return resolution.matches[0].capability;
   } else {

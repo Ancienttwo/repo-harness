@@ -4,10 +4,13 @@ import { relative, resolve } from "path";
 import { spawnSync } from "child_process";
 import {
   CAPABILITY_SOURCE_MODES,
+  archcontextNodeId,
   capabilityRegistryFromArchcontextNodes,
   matchCapabilityPath,
   normalizeCapabilityPath,
   parseCapabilityRegistry,
+  type ArchcontextCapabilityOwners,
+  type ArchcontextCapabilityResolution,
   type ArchcontextNodeFile,
   type Capability,
   type CapabilityPathMatch,
@@ -238,7 +241,7 @@ function capabilityAuthorityPath(mode: CapabilitySourceMode): string {
 
 // One authority per mode: archcontext never falls back to the JSON registry and
 // the JSON registry never falls back to archcontext nodes.
-function loadRegistry(repo: string, mode: CapabilitySourceMode): CapabilityRegistryResolution {
+function loadRegistry(repo: string, mode: CapabilitySourceMode): CapabilityRegistryResolution | ArchcontextCapabilityResolution {
   if (mode === "archcontext") {
     return capabilityRegistryFromArchcontextNodes(readArchcontextNodeFiles(repo), { repoRoot: repo });
   }
@@ -268,7 +271,22 @@ export function readRegistry(repo: string): CapabilityRegistry {
   return resolution.registry;
 }
 
-function validateRegistryEffects(registry: CapabilityRegistry, repo: string): string[] {
+/** Every archcontext capability node by node id, whatever its status: the owner join input. */
+export function readArchcontextOwners(repo: string): ArchcontextCapabilityOwners {
+  const resolution = capabilityRegistryFromArchcontextNodes(readArchcontextNodeFiles(repo), { repoRoot: repo });
+  if (resolution.status === "invalid") {
+    throw malformedRegistryError(resolution.diagnostics, ARCHCONTEXT_NODES_DIR);
+  }
+  return resolution.owners;
+}
+
+// Anchors must exist only for listed (active) capabilities. Every capability
+// node, whatever its status, still owns its architecture module and workstreams.
+function validateRegistryEffects(
+  registry: CapabilityRegistry,
+  repo: string,
+  allCapabilities: readonly Capability[] = registry.capabilities,
+): string[] {
   const errors: string[] = [];
   const architectureModules = new Set<string>();
   const workstreamDirs = new Set<string>();
@@ -280,6 +298,8 @@ function validateRegistryEffects(registry: CapabilityRegistry, repo: string): st
         errors.push(`${capability.id}: prefix does not exist: ${normalized}`);
       }
     }
+  }
+  for (const capability of allCapabilities) {
     architectureModules.add(normalizeCapabilityPath(capability.architecture_module, repo));
     workstreamDirs.add(normalizeCapabilityPath(capability.workstream_dir, repo));
   }
@@ -326,6 +346,8 @@ function validateRegistryEffects(registry: CapabilityRegistry, repo: string): st
   return errors;
 }
 
+// Under `archcontext`, `winner.prefix` is the owner's stable node id: ArchContext
+// does not report which include matched, so no synthetic path prefix is shown.
 function matchRecord(filePath: string, winner: CapabilityPathMatch | null) {
   if (winner === null) {
     return {
@@ -366,7 +388,7 @@ export function findMatch(registry: CapabilityRegistry, repo: string, inputPath:
   return result.status === "matched" ? matchRecord(result.match.filePath, result.match) : matchRecord(result.filePath, null);
 }
 
-type ArchcontextPathResolver = (repo: string, registry: CapabilityRegistry, paths: readonly string[]) => CapabilityPathResolution;
+type ArchcontextPathResolver = (repo: string, owners: ArchcontextCapabilityOwners, paths: readonly string[]) => CapabilityPathResolution;
 
 // The standalone projection of this helper has no package-local archctx, so the
 // import fails there and archcontext mode fails closed instead of guessing. The
@@ -385,11 +407,18 @@ async function archcontextPathResolver(): Promise<ArchcontextPathResolver> {
   }
 }
 
-/** One match per input path. Under `archcontext`, one archctx call resolves the whole batch. */
-export async function findMatches(registry: CapabilityRegistry, repo: string, mode: CapabilitySourceMode, paths: readonly string[]) {
-  if (mode === "registry") return paths.map((path) => findMatch(registry, repo, path));
-  const resolution = (await archcontextPathResolver())(repo, registry, paths);
-  if (resolution.status === "invalid") {
+export type MatchAuthority =
+  | { readonly mode: "registry"; readonly registry: CapabilityRegistry }
+  | { readonly mode: "archcontext"; readonly owners: ArchcontextCapabilityOwners };
+
+/**
+ * One match per input path. Under `archcontext`, one archctx call resolves the
+ * whole batch, joined against every capability node whatever its status.
+ */
+export async function findMatches(authority: MatchAuthority, repo: string, paths: readonly string[]) {
+  if (authority.mode === "registry") return paths.map((path) => findMatch(authority.registry, repo, path));
+  const resolution = (await archcontextPathResolver())(repo, authority.owners, paths);
+  if (resolution.status !== "valid") {
     throw new Error(resolution.diagnostics.map((item) => item.message).join("; "));
   }
   const byPath = new Map(resolution.matches.map((match) => [match.filePath, match]));
@@ -447,6 +476,12 @@ export function buildArchContextNodesV2(
     .sort((left, right) => (left.id < right.id ? -1 : left.id > right.id ? 1 : 0));
 }
 
+function allCapabilities(
+  resolution: { readonly registry: CapabilityRegistry; readonly owners?: ArchcontextCapabilityOwners },
+): readonly Capability[] {
+  return resolution.owners ? [...resolution.owners.values()] : resolution.registry.capabilities;
+}
+
 async function readPathLines(input: string): Promise<string[]> {
   const text = input === "-" ? await Bun.stdin.text() : readFileSync(input, "utf-8");
   return text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
@@ -477,7 +512,6 @@ async function main(): Promise<void> {
         "ARCHCONTEXT_NODE_SUMMARY_INVALID",
         "ARCHCONTEXT_NODE_RESPONSIBILITIES_INVALID",
         "ARCHCONTEXT_INCLUDE_REQUIRED",
-        "ARCHCONTEXT_INCLUDE_ANCHOR_REQUIRED",
         "ARCHCONTEXT_EXTENSIONS_REQUIRED",
         "ARCHCONTEXT_LSP_PROFILE_REQUIRED",
         "ARCHCONTEXT_VERIFICATION_REQUIRED",
@@ -489,7 +523,7 @@ async function main(): Promise<void> {
     }
     const errors = resolution.status === "invalid"
       ? resolution.diagnostics.map((item) => item.message)
-      : validateRegistryEffects(resolution.registry, repo);
+      : validateRegistryEffects(resolution.registry, repo, allCapabilities(resolution));
     if (args.format === "json") {
       printJson({ ok: errors.length === 0, errors });
     } else if (errors.length === 0) {
@@ -502,6 +536,9 @@ async function main(): Promise<void> {
 
   if (resolution.status === "invalid") throw malformedRegistryError(resolution.diagnostics, authority);
   const registry = resolution.registry;
+  const matchAuthority: MatchAuthority = "owners" in resolution
+    ? { mode: "archcontext", owners: resolution.owners }
+    : { mode: "registry", registry };
 
   if (args.command === "list") {
     if (args.format === "json") {
@@ -513,8 +550,9 @@ async function main(): Promise<void> {
         }
       }
     } else {
+      // An anchorless ArchContext capability owns paths only through globs; show its node id.
       for (const capability of registry.capabilities) {
-        console.log(`${capability.id}\t${capability.prefixes.join(",")}`);
+        console.log(`${capability.id}\t${capability.prefixes.join(",") || archcontextNodeId(capability)}`);
       }
     }
     return;
@@ -529,12 +567,12 @@ async function main(): Promise<void> {
     return;
   }
 
-  const errors = validateRegistryEffects(registry, repo);
+  const errors = validateRegistryEffects(registry, repo, allCapabilities(resolution));
   if (errors.length > 0) {
     throw new Error(`capability registry is invalid:\n${errors.join("\n")}`);
   }
   if (args.pathsFrom) {
-    const matches = await findMatches(registry, repo, mode, [...new Set(await readPathLines(args.pathsFrom))]);
+    const matches = await findMatches(matchAuthority, repo, [...new Set(await readPathLines(args.pathsFrom))]);
     if (args.format === "json") {
       printJson(matches);
     } else {
@@ -545,7 +583,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  const [match] = await findMatches(registry, repo, mode, [args.path]);
+  const [match] = await findMatches(matchAuthority, repo, [args.path]);
   if (args.format === "json") {
     printJson(match);
   } else {

@@ -25,10 +25,68 @@ emit_existing_dirs() {
   done | sort -u
 }
 
-# The resolver reads whichever capability authority
-# .ai/harness/policy.json#context.capability_source selects, so it is tried
-# before the registry file is looked at. The direct JSON read below stays as the
-# no-Bun path for registry-mode repos only.
+# Reads .ai/harness/policy.json#context.capability_source with the JSON parser
+# of an available runtime. Without a runtime the mode stays unknown.
+capability_source() {
+  local policy_file="$repo/.ai/harness/policy.json" runtime=""
+  if [[ ! -f "$policy_file" ]]; then
+    echo registry
+    return 0
+  fi
+  if command -v bun >/dev/null 2>&1; then
+    runtime=bun
+  elif command -v node >/dev/null 2>&1; then
+    runtime=node
+  else
+    echo unknown
+    return 0
+  fi
+  POLICY_FILE="$policy_file" "$runtime" -e '
+const fs = require("fs");
+const policy = JSON.parse(fs.readFileSync(process.env.POLICY_FILE, "utf8"));
+console.log((policy && policy.context && policy.context.capability_source) || "registry");
+'
+}
+
+if ! source_mode="$(capability_source)"; then
+  echo "select-agent-context-blocks: cannot read .ai/harness/policy.json" >&2
+  exit 1
+fi
+
+# The packaged sibling resolver comes first, then a repo-local copy.
+archcontext_resolver() {
+  if [[ -n "${REPO_HARNESS_HELPER_SOURCE_PATH:-}" && -f "$REPO_HARNESS_HELPER_SOURCE_PATH" \
+        && "$(basename "$REPO_HARNESS_HELPER_SOURCE_PATH")" == "$(basename "$0")" ]]; then
+    local sibling
+    sibling="$(dirname "$REPO_HARNESS_HELPER_SOURCE_PATH")/capability-resolver.ts"
+    if [[ -f "$sibling" ]]; then
+      printf '%s\n' "$sibling"
+      return 0
+    fi
+  fi
+  if [[ -f "$repo/scripts/capability-resolver.ts" ]]; then
+    printf '%s\n' "$repo/scripts/capability-resolver.ts"
+    return 0
+  fi
+  return 1
+}
+
+# Under archcontext the resolver is the only authority. Its error is the result:
+# there is no fallback to the retired JSON registry or to directory discovery.
+if [[ "$source_mode" == "archcontext" ]]; then
+  if ! command -v bun >/dev/null 2>&1 || ! resolver="$(archcontext_resolver)"; then
+    echo "select-agent-context-blocks: capability_source \"archcontext\" needs bun and capability-resolver.ts" >&2
+    exit 1
+  fi
+  if ! resolver_prefixes="$(cd "$repo" && bun "$resolver" list --format prefixes)"; then
+    exit 1
+  fi
+  printf '%s\n' "$resolver_prefixes" | emit_existing_dirs
+  exit 0
+fi
+
+# Registry mode: the resolver reads the JSON registry. The direct JSON read
+# below stays as the no-Bun path for registry-mode repos only.
 if command -v bun >/dev/null 2>&1 && [[ -f "$repo/scripts/capability-resolver.ts" ]]; then
   resolver_prefixes="$(cd "$repo" && bun scripts/capability-resolver.ts list --format prefixes 2>/dev/null || true)"
   if [[ -n "$resolver_prefixes" ]]; then

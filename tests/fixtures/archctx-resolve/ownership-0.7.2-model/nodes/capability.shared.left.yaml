@@ -1,0 +1,17 @@
+schemaVersion: archcontext.node/v2
+id: capability.shared.left
+kind: capability
+name: capability.shared.left
+status: active
+summary: Fixture capability capability.shared.left.
+responsibilities:
+  - Own fixture paths.
+source:
+  include:
+    - "lib/**"
+extensions:
+  contractFiles:
+    agents: AGENTS.md
+    claude: CLAUDE.md
+  lspProfile: typescript-lsp
+  verification: []

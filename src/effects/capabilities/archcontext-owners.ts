@@ -5,12 +5,13 @@ import { ARCHCTX_REQUIRED_VERSION } from '../../core/architecture/projection';
 import {
   capabilityPathResolutionFromArchcontextOwners,
   normalizeCapabilityPath,
+  type ArchcontextCapabilityOwners,
   type ArchcontextPathOwner,
   type CapabilityPathResolution,
-  type CapabilityRegistry,
   type CapabilityRegistryDiagnostic,
 } from '../../core/capabilities/registry';
 import { runPackageLocalArchctxJson, type ArchctxProviderOptions } from '../architecture/archctx-provider';
+import { currentReadonlyObservation } from '../state/readonly-observation';
 
 // Stays well below the 30 s hook budget, so a stalled archctx becomes a recorded blocker.
 const RESOLVE_TIMEOUT_MS = 10_000;
@@ -35,10 +36,16 @@ function readOwners(value: unknown, queries: readonly string[]): ArchctxResolveR
   if (!Array.isArray(results) || results.length !== queries.length) throw new Error('archctx resolve returned a result count that does not match the request');
   return results.map((result, index) => {
     if (!isRecord(result) || result.path !== queries[index] || typeof result.matched !== 'boolean' || typeof result.ambiguous !== 'boolean'
-      || (result.owningCapabilityId !== null && typeof result.owningCapabilityId !== 'string')) {
+      || (result.owningCapabilityId !== null && typeof result.owningCapabilityId !== 'string')
+      || (result.candidates !== undefined && (!Array.isArray(result.candidates) || result.candidates.some((entry) => typeof entry !== 'string')))) {
       throw new Error(`archctx resolve returned an invalid result for ${queries[index]}`);
     }
-    return { matched: result.matched, ambiguous: result.ambiguous, owningCapabilityId: result.owningCapabilityId as string | null };
+    return {
+      matched: result.matched,
+      ambiguous: result.ambiguous,
+      owningCapabilityId: result.owningCapabilityId as string | null,
+      candidates: (result.candidates ?? []) as string[],
+    };
   });
 }
 
@@ -67,16 +74,30 @@ export function archcontextResolveQueries(repoRoot: string, inputPaths: readonly
  * process serves the whole batch. The path list goes through a private temp file
  * outside the repository, so a hook never writes into the worktree. An existing
  * directory is sent as `dir/`, which asks ArchContext who owns its contents.
- * Any archctx failure throws; callers fail closed.
+ * Any archctx failure throws; callers fail closed. Inside a read-only
+ * observation archctx never starts: the result is `unavailable` instead.
  */
 export function resolveArchcontextCapabilityPaths(
   repoRoot: string,
-  registry: CapabilityRegistry,
+  owners: ArchcontextCapabilityOwners,
   inputPaths: readonly string[],
   options: ArchctxProviderOptions = {},
 ): CapabilityPathResolution {
   const { diagnostics, paths, queries } = prepareQueries(repoRoot, inputPaths);
   let results: ArchctxResolveResult[] = [];
+  if (queries.length > 0 && currentReadonlyObservation()) {
+    return {
+      status: 'unavailable',
+      capabilityIds: [],
+      matches: [],
+      unmappedPaths: [],
+      diagnostics: [{
+        code: 'ARCHCONTEXT_RESOLVE_UNAVAILABLE',
+        path: '.archcontext/model/nodes',
+        message: 'path ownership needs archctx resolve, which a read-only observation does not start',
+      }],
+    };
+  }
   if (queries.length > 0) {
     const dir = mkdtempSync(join(tmpdir(), 'repo-harness-archctx-resolve-'));
     try {
@@ -89,7 +110,7 @@ export function resolveArchcontextCapabilityPaths(
       rmSync(dir, { recursive: true, force: true });
     }
   }
-  const resolution = capabilityPathResolutionFromArchcontextOwners(registry, results.map((result, index) => ({ ...result, path: paths[index] })));
+  const resolution = capabilityPathResolutionFromArchcontextOwners(owners, results.map((result, index) => ({ ...result, path: paths[index] })));
   if (diagnostics.length === 0) return resolution;
   return { ...resolution, status: 'invalid', diagnostics: [...diagnostics, ...resolution.diagnostics] };
 }
