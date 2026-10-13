@@ -40,15 +40,17 @@ archive_transaction_snapshot() {
 }
 
 archive_transaction_rollback() {
-  local index path
+  # Callers test this under `if !`, where errexit is off; count every failed step.
+  local index path failed=0
   for ((index = ${#archive_transaction_paths[@]} - 1; index >= 0; index--)); do
     path="${archive_transaction_paths[$index]}"
-    rm -rf "$path"
+    rm -rf "$path" || failed=1
     if [[ "${archive_transaction_existed[$index]}" == "1" ]]; then
-      mkdir -p "$(dirname "$path")"
-      cp -Rp "$archive_transaction_dir/$index/value" "$path"
+      mkdir -p "$(dirname "$path")" || failed=1
+      cp -Rp "$archive_transaction_dir/$index/value" "$path" || failed=1
     fi
   done
+  return "$failed"
 }
 
 archive_transaction_on_exit() {

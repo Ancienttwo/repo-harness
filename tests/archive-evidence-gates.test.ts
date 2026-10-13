@@ -1246,3 +1246,50 @@ describe("archive-workflow helper integration", () => {
     }
   }, 30_000);
 });
+
+describe("archive-workflow rollback trap", () => {
+  const script = readFileSync(join(ROOT, "scripts/archive-workflow.sh"), "utf8");
+  const extract = (name: string) => script.match(new RegExp(`^${name}\\(\\) \\{\\n[\\s\\S]*?\\n\\}\\n`, "m"))![0];
+  const trapFunctions = extract("archive_transaction_rollback") + extract("archive_transaction_on_exit");
+
+  function runTrap(snapshotFirstPath: boolean) {
+    const root = tmpWorkspace("archive-rollback-trap");
+    const snapshot = join(root, "snapshot");
+    for (const index of snapshotFirstPath ? ["0", "1"] : ["0"]) {
+      mkdirSync(join(snapshot, index), { recursive: true });
+      writeFileSync(join(snapshot, index, "value"), `restored-${index}\n`);
+    }
+    const body = `${trapFunctions}
+archive_transaction_dir="$1"; archive_transaction_active=1
+archive_transaction_paths=("$2/live/a" "$2/live/b"); archive_transaction_existed=(1 1)
+trap archive_transaction_on_exit EXIT
+exit 3`;
+    const result = spawnSync("bash", ["-c", body, "trap-test", snapshot, root], { encoding: "utf8" });
+    return { root, snapshot, result };
+  }
+
+  test("an early failed restore keeps the snapshot even when a later restore succeeds", () => {
+    // Rollback walks paths in reverse: live/b fails (no snapshot), then live/a succeeds last.
+    const { root, snapshot, result } = runTrap(false);
+    try {
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain("rollback failed; inspect");
+      expect(existsSync(join(snapshot, "0", "value"))).toBe(true);
+      expect(readFileSync(join(root, "live/a"), "utf8")).toBe("restored-0\n");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("a complete restore removes the snapshot and keeps the original exit status", () => {
+    const { root, snapshot, result } = runTrap(true);
+    try {
+      expect(result.status).toBe(3);
+      expect(result.stderr).toContain("restored live workflow artifacts");
+      expect(existsSync(snapshot)).toBe(false);
+      expect(readFileSync(join(root, "live/b"), "utf8")).toBe("restored-1\n");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
