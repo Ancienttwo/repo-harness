@@ -1906,6 +1906,7 @@ Generality: These are general working rules. Do not tailor behavior to any speci
 - Write a plan before cross-module changes, architecture changes, and dependency upgrades. Small changes do not need a plan.
 - Treat `docs/spec.md` as stable product truth, `tasks/current.md` as a derived status snapshot, and `tasks/todos.md` as the deferred-goal ledger.
 - Treat `docs/researches/`, `tasks/lessons.md`, `tasks/notes/`, `.ai/harness/policy.json`, and `.ai/harness/handoff/current.md` as durable workflow context.
+- Read `tasks/lessons.md` at session start and apply its active lessons. Current repo state and evidence override a lesson.
 - Use `.ai/context/context-map.json` and `.ai/context/capabilities.json` to discover functional-block contracts before adding local agent files.
 - Do not infer local `CLAUDE.md` or `AGENTS.md` files from broad physical layouts such as `apps/*`, `packages/*`, or `services/*`.
 - Put capability-specific ownership, entrypoints, and verification commands in explicitly selected functional-block contracts.

@@ -417,6 +417,7 @@ This is the root routing contract for Claude Code and Codex. Load this before ta
 ## Workflow Contract
 
 - Use first principles, one source of truth, and no steady-state compatibility paths.
+- Read \`tasks/lessons.md\` at session start and apply its active lessons. Current repo state and evidence override a lesson.
 - Treat \`docs/spec.md\` as product truth; \`tasks/current.md\` is derived state and \`tasks/todos.md\` is the deferred-goal ledger.
 - Write a plan before cross-module changes, architecture changes, and dependency upgrades. Small changes do not need a plan.
 - Read \`.ai/context/capabilities.json\` and \`.ai/context/context-map.json\` before adding scoped agent context.

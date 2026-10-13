@@ -16,6 +16,8 @@ Confirm the repo, scope, subject revision and worker ownership.
 - Assess verification: consume commands, results, revision and environment.
   Ask the worker for missing checks from the target repo's agent instructions.
 - Deployment readiness: `references/deploy-readiness.md`.
+- Pre-merge verification of a PR that this task did not author, such as an
+  external or other-agent PR: `references/pr-verification.md`.
 - Architecture or refactor evidence for a scheduling decision:
   `references/architecture-evidence.md`. repo-harness supplies the evidence;
   the Bot decides what to schedule.

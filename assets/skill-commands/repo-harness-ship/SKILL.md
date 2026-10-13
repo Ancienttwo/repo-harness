@@ -14,7 +14,10 @@ revision and independent review when risk requires it. Preserve unrelated work.
 Main publication, deletion, credentials/permissions and release/production
 have separate boundaries. Merge only when this task authorizes main publication,
 automated checks pass and GitHub has no change request or unresolved review thread.
-An explicit no-merge instruction wins. Record the squash commit, its revert
+An explicit no-merge instruction wins.
+A PR that this task did not author needs the `repo-harness-check` PR
+verification bundle and the owner's explicit GO for the reviewed head SHA.
+A `tasks/lessons.md` change needs that GO too. Record the squash commit, its revert
 command and the daily report after authorized publication.
 Auto-delete only merged, clean worktrees/branches. Ask for other deletion.
 Return PR URL, head SHA, verification, risk and rollback.
