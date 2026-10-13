@@ -217,11 +217,20 @@ _ci_run_bun_test_pool() {
   return "$pool_error"
 }
 
+# dist/ is ignored, so a stale local bundle silently runs old behavior. Build the
+# hook bundle only when a selected file spawns dist/hook-entry.js, directly or
+# through the Pi bridge; every other selection skips the build.
+_ci_build_hook_bundle_if_selected() {
+  grep -qsE 'hook-entry\.js|pi-session-fixture|pi/(extension|hook-bridge)' -- "$@" || return 0
+  (cd "$(dirname "${BASH_SOURCE[0]}")/../.." && bun run build:hook-bundle) || return $?
+}
+
 run_bun_tests() {
   if [[ "${BUN_TEST_ISOLATE_FILES:-0}" != "1" ]]; then
     local argument
     for argument in "$@"; do
       if [[ "$argument" == --coverage || "$argument" == --coverage=* ]]; then
+        _ci_build_hook_bundle_if_selected "$@" || return $?
         _ci_run_bun_tests_in_temporary_home "$@"
         return
       fi
@@ -269,6 +278,7 @@ run_bun_tests() {
       seen+="$argument"$'\n'
       unique[${#unique[@]}]="$argument"
     done
+    _ci_build_hook_bundle_if_selected "${unique[@]}" || return $?
     _ci_run_bun_tests_in_temporary_home --harness-file-list "${unique[@]}" --harness-options ${options[@]+"${options[@]}"}
     return
   fi

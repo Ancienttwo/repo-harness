@@ -2,6 +2,36 @@
 
 All notable changes to this skill are documented here.
 
+## [Unreleased]
+
+### Removed
+
+- The source checkout no longer keeps a `.ai/hooks/` mirror of the hook
+  assets. `scripts/sync-hook-sources.ts`, `assets/hooks/projection.json`,
+  and the `sync:hooks` and `check:hooks` scripts are gone. Every runtime
+  path already read `assets/hooks/lib/`. The package no longer ships
+  `projection.json`. (#696)
+- 65 shell functions in `assets/hooks/lib/workflow-state.sh` had no
+  shipped caller. They are deleted. The 34 functions that
+  `summarize-failures`, `prepare-handoff` and `contract-worktree` reach are
+  unchanged. (#696)
+- `archive-workflow.sh` and `ship-worktrees.sh` no longer require
+  `workflow-state.sh`. They never called it. (#696)
+
+### Changed
+
+- `assets/reference-configs/hook-operations.md` holds the one route table.
+  It has 12 routes and a Host column. The five READMEs and
+  `docs/architecture/global-hook-runtime.md` link to it. (#696)
+- `bun run test:files` builds `dist/hook-entry.js` before it runs a test file
+  that spawns it, such as `tests/pi-extension.test.ts`. Other selections do
+  not build. (#696)
+
+### Fixed
+
+- `minimal-change-hooks.md` no longer says that `PostToolUse.edit` writes a
+  report. It writes one journal event with dirty bits. (#696)
+
 ## [0.22.1] - 2026-10-13
 
 0.22.0 was tagged but not published to npm. 0.22.1 contains all of 0.22.0
