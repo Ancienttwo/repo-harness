@@ -18,12 +18,11 @@ import {
 } from "fs";
 import { join } from "path";
 
-import { commitAll, initGitRepo, run, sandboxEnv } from "./repo-fixture";
+import { commitAll, initGitRepo, run } from "./repo-fixture";
 
 export const ROOT = join(import.meta.dir, "../..");
 export const HELPER_DIR = join(ROOT, "scripts");
 export const TEMPLATE_DIR = join(ROOT, "assets/templates");
-export const ASSETS_HOOKS_DIR = join(ROOT, "assets/hooks");
 
 // The repository resolver imports the canonical core. Its packaged projection
 // is intentionally standalone and is source-hash/drift checked separately.
@@ -54,10 +53,6 @@ export function copyHelpers(cwd: string, { linkDependencies = true } = {}) {
   if (linkDependencies && !existsSync(join(cwd, "node_modules"))) {
     symlinkSync(join(ROOT, "node_modules"), join(cwd, "node_modules"), "dir");
   }
-  // Materialize the real package asset beside the copied package scripts.
-  // Direct package scripts no longer read a consumer's legacy hook library.
-  mkdirSync(join(cwd, 'assets/hooks/lib'), { recursive: true });
-  copyFileSync(join(ASSETS_HOOKS_DIR, 'lib/workflow-state.sh'), join(cwd, 'assets/hooks/lib/workflow-state.sh'));
   const scriptsDir = join(cwd, "scripts");
   const harnessScriptsDir = join(cwd, ".ai", "harness", "scripts");
   mkdirSync(scriptsDir, { recursive: true });
@@ -110,33 +105,6 @@ export function createTrustedMergeGateRuntime(path: string, authorityHome: strin
     ].join("\n"),
   );
   return path;
-}
-
-export function installHooks(cwd: string) {
-  const aiHooksDir = join(cwd, ".ai", "hooks");
-  mkdirSync(aiHooksDir, { recursive: true });
-  for (const f of readdirSync(ASSETS_HOOKS_DIR, { withFileTypes: true })) {
-    const src = join(ASSETS_HOOKS_DIR, f.name);
-    if (f.isDirectory()) {
-      cpSync(src, join(aiHooksDir, f.name), { recursive: true });
-    } else {
-      copyFileSync(src, join(aiHooksDir, f.name));
-    }
-  }
-  makeShellScriptsExecutable(aiHooksDir);
-}
-
-export function runHook(script: string, cwd: string, stdin: string, env?: NodeJS.ProcessEnv) {
-  return spawnSync("bash", [join(cwd, ".ai", "hooks", script)], {
-    cwd,
-    input: stdin,
-    encoding: "utf-8",
-    env: sandboxEnv({
-      REPO_HARNESS_CLI: join(ROOT, "src/cli/index.ts"),
-      REPO_HARNESS_HOOK_CLI: join(ROOT, "src/cli/hook-entry.ts"),
-      ...env,
-    }),
-  });
 }
 
 export function writeValidSprintChecks(cwd: string) {
@@ -346,7 +314,6 @@ export function installAutomaticProjectionVerifyFixture(
   options: { gatedTaskSync?: boolean } = {},
 ): string {
   for (const dir of [
-    ".ai/hooks/lib",
     "bin",
     "plans",
     "tasks/contracts",
@@ -358,10 +325,6 @@ export function installAutomaticProjectionVerifyFixture(
   rmSync(join(cwd, "src"), { recursive: true, force: true });
   cpSync(join(ROOT, "src"), join(cwd, "src"), { recursive: true });
   copyFileSync(join(ROOT, "package.json"), join(cwd, "package.json"));
-  copyFileSync(
-    join(ROOT, "assets/hooks/lib/workflow-state.sh"),
-    join(cwd, ".ai/hooks/lib/workflow-state.sh"),
-  );
   if (options.gatedTaskSync) {
     writeFileSync(
       join(cwd, "scripts/check-task-sync.sh"),

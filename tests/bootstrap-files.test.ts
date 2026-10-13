@@ -143,7 +143,7 @@ describe("Bootstrap Script Contracts", () => {
     expect(existsSync(join(ROOT, "src/cli/hook-entry.ts"))).toBe(true);
     expect(existsSync(join(ROOT, "src/cli/hook/runtime.ts"))).toBe(true);
     expect(existsSync(join(ROOT, "src/cli/hook/hook-input.ts"))).toBe(true);
-    expect(existsSync(join(ROOT, "assets/hooks/lib/workflow-state.sh"))).toBe(true);
+    expect(existsSync(join(ROOT, "assets/hooks"))).toBe(false);
     for (const retired of RETIRED_HOOK_RUNTIME_FILES) {
       expect(existsSync(join(ROOT, retired))).toBe(false);
     }
@@ -479,16 +479,14 @@ describe("Bootstrap Script Contracts", () => {
     expect(content).toContain("pi_print_external_tooling_report");
   });
 
-  test("typed hook runtime owns host events while workflow-state remains an operator helper", () => {
+  test("typed hook runtime owns host events", () => {
     const runtime = read("src/cli/hook/runtime.ts");
     const hookInput = read("src/cli/hook/hook-input.ts");
-    const workflowState = read("assets/hooks/lib/workflow-state.sh");
 
     expect(runtime).toContain("getHandlerForRoute");
     expect(runtime).toContain("runHook");
     expect(runtime).not.toContain("route.scripts");
     expect(hookInput).toContain("export function parseHookPayload");
-    expect(workflowState).toContain("tasks/todos.md");
   });
 
   // SSD-06 migration: the two live shell-embedded provider skills

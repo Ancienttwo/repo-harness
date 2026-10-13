@@ -593,8 +593,8 @@ repo-harness docs show harness-overview
 bun scripts/assemble-template.ts --plan C --name "MyProject"
 ```
 
-Les changements de l'operator library modifient seulement `assets/hooks/lib/` ; aucune
-copie projetée n'existe. Les changements de handler vont dans `src/cli/hook/`. Les reference docs sont canoniques sous
+Les changements de hook handler vont dans `src/cli/hook/`. Les operator helpers sont dans
+`scripts/` et s'exécutent avec `repo-harness run <helper>`. Les reference docs sont canoniques sous
 `assets/reference-configs/` et projetées dans `docs/reference-configs/` ;
 `bun run check:reference-configs` vérifie cette projection.
 

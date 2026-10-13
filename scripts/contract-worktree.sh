@@ -8,12 +8,10 @@ unset GH_TOKEN GITHUB_TOKEN ANTHROPIC_API_KEY CLAUDE_CODE_OAUTH_TOKEN SSH_AUTH_S
 GIT_BIN="${REPO_HARNESS_GIT_BIN:-/usr/bin/git}"
 BASH_BIN="${REPO_HARNESS_BASH_BIN:-/bin/bash}"
 BUN_BIN="${REPO_HARNESS_BUN_BIN:-}"
-WORKFLOW_STATE_LIB="${REPO_HARNESS_WORKFLOW_STATE_LIB:-$SCRIPT_DIR/../assets/hooks/lib/workflow-state.sh}"
 if [[ "${OS:-}" == "Windows_NT" ]]; then
   GIT_BIN="${GIT_BIN//\\//}"
   BASH_BIN="${BASH_BIN//\\//}"
   BUN_BIN="${BUN_BIN//\\//}"
-  WORKFLOW_STATE_LIB="${WORKFLOW_STATE_LIB//\\//}"
   REPO_HARNESS_TARGET_REPO_ROOT="${REPO_HARNESS_TARGET_REPO_ROOT:-}"
   REPO_HARNESS_TARGET_REPO_ROOT="${REPO_HARNESS_TARGET_REPO_ROOT//\\//}"
   REPO_HARNESS_HELPER_SOURCE_PATH="${REPO_HARNESS_HELPER_SOURCE_PATH:-}"
@@ -27,13 +25,8 @@ is_absolute_host_path() {
   return 1
 }
 is_trusted_executable() { is_absolute_host_path "$1" && [[ -f "$1" && ! -L "$1" && -x "$1" ]]; }
-is_trusted_regular_file() { is_absolute_host_path "$1" && [[ -f "$1" && ! -L "$1" ]]; }
 is_trusted_executable "$GIT_BIN" || { echo "contract-worktree: trusted git executable is unavailable" >&2; exit 1; }
 is_trusted_executable "$BASH_BIN" || { echo "contract-worktree: trusted bash executable is unavailable" >&2; exit 1; }
-if [[ -n "$BUN_BIN" ]] && ! is_trusted_regular_file "$WORKFLOW_STATE_LIB"; then
-  echo "contract-worktree: trusted workflow-state library is unavailable" >&2
-  exit 1
-fi
 export REPO_HARNESS_GIT_BIN="$GIT_BIN"
 git() { "$GIT_BIN" "$@"; }
 bash() { "$BASH_BIN" "$@"; }
@@ -615,53 +608,6 @@ status_worktree() {
 
   echo "branch: $(git branch --show-current 2>/dev/null || true)"
   echo "root: $REPO_ROOT"
-}
-
-is_local_runtime_marker_path() {
-  case "$1" in
-    .ai/harness/active-plan|.ai/harness/active-worktree)
-      return 0
-      ;;
-  esac
-  return 1
-}
-
-is_workflow_owned_projection_output() {
-  [[ "$1" == "docs/architecture/.projection-manifest.json" ]]
-}
-
-check_scope_against_contract() {
-  local contract_file="$1"
-  local changed_paths path blocked=0
-
-  [[ -f "$contract_file" ]] || return 0
-  if [[ ! -f "$WORKFLOW_STATE_LIB" ]]; then
-    return 0
-  fi
-
-  # shellcheck source=/dev/null
-  . "$WORKFLOW_STATE_LIB"
-
-  changed_paths="$(
-    {
-      git -c core.quotePath=false diff --name-only
-      git -c core.quotePath=false diff --cached --name-only
-      git -c core.quotePath=false ls-files --others --exclude-standard
-    } | awk 'NF && !seen[$0]++'
-  )"
-
-  while IFS= read -r path; do
-    [[ -n "$path" ]] || continue
-    if is_local_runtime_marker_path "$path" || is_workflow_owned_projection_output "$path"; then
-      continue
-    fi
-    if ! workflow_contract_allows_path "$contract_file" "$path"; then
-      echo "[ContractWorktree] Changed path is outside active contract allowed_paths: $path" >&2
-      blocked=1
-    fi
-  done <<< "$changed_paths"
-
-  [[ "$blocked" -eq 0 ]]
 }
 
 clean_local_runtime_markers() {

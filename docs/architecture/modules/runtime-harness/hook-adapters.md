@@ -173,7 +173,7 @@ sequenceDiagram
 3. **ROUTES 顺序是稳定契约。** Codex 按 `(absolute-path, event-snake, i, j)` 哈希 adapter 条目，重排会重新弹出信任提示（`route-registry.ts:14-16`）。新增 route 只能追加。
 4. **handler 不碰 fd。** typed `HookHandlerResult` 是 handler 的唯一出口。`hook-protocol.ts` 的 `HOST_RENDERERS` 表是唯一入海口。Claude、Codex 与 Pi 的输出语义差异只能在这张表里表达。
 5. **opt-in marker 是硬门。** 没有 `.ai/harness/workflow-contract.json` 就静默退出 —— 装了 CLI 的用户在非 harness 仓库不应付出任何代价。
-6. **`assets/hooks` 是唯一来源，没有投影副本。** 源码仓库自身也直接读 `assets/hooks/lib/`。
+6. **没有 shell operator library。** `assets/hooks/` 已删除。operator helper 经 `repo-harness run <helper>` 运行，policy 路径由 `resolveHarnessPaths` 一处解析，failure log 用 edit guard 写入的同一个 `FAILURE_LOG_FILE`（#696）。
 7. **遥测非安全权威，但消费者 fail-closed。** 字段缺失、畸形、重复或混协议时消费者必须停，不得补零。
 8. **Hook 不做架构工作。** Hook 不记录架构漂移，不运行投影，不写 capability 块。架构更新在 PR 里显式完成：ChangeSet 加 `architecture-projection apply`。
 
@@ -184,7 +184,7 @@ sequenceDiagram
 | `PostToolUse.edit` 与 `PostToolUse.always` 绑定 no-op `retired-observer`，route 保留到 #698 | route tuple 不变，Codex 不用重新信任。代价：每次编辑和每次工具调用仍付一次进程启动，直到 #698 删除这两条 route |
 | 四条 subagent route 各有一个 handler（`return-channel`、`delegation-advisor`、`subagent-context`、`subagent-quality`） | handler id 是内部名，tuple 不变。runtime 统一检查 host，handler 不按 event 或 host 分支 |
 | `hook-entry.ts` 与完整 commander CLI 分离 | 热路径不冷加载非 hook 命令模块（文件头 `:5` 明写理由），代价是子命令分派在 entry 里手写成一串 `if` |
-| 保留 `workflow-state.sh` 作为 operator helper | 保住 workflow-state 契约的 parity，代价是仓库里长期存在 1,884 行 × 2 份 Bash；它没有事件入口，所以不构成第二 dispatcher |
+| 删除 `workflow-state.sh`，helper 改调 TypeScript | 路径与 stem 只有一个 TypeScript 实现。代价：`prepare-handoff` 与 `summarize-failures` 现在需要 Bun，旧的 `hook-lib path` 下游调用方要改成 `repo-harness run <helper>` |
 | 空 lifecycle hooks 已移除 | Scaffold 和 template assembly 直接执行各自任务。它们不再调用空 runner。 |
 
 ### 3.3 组件拆分（2026-10-11）
@@ -196,7 +196,7 @@ sequenceDiagram
 | `component.hook-adapters.primary`（Hook Route Runtime） | `hook-entry.ts`、`hook/{runtime,route-registry,handler-registry,handler-contract,hook-input,hook-protocol,event-telemetry,session-context-budget}.ts`、`src/pi/hook-protocol.ts`、`src/effects/loop/**`、`hook-event-log.ts` | 12 / 1183（2026-10-13） | route 表、handler 绑定、opt-in 检查、payload 与 identity 解析、host 渲染表、遥测与日志轮转 |
 | `component.hook-adapters.edit-guards`（Guard and Observer Handlers） | `hook/{mutation-guard,prompt-handler,prompt-router,circuit-breaker,command-observed}.ts` | 5 / 712（2026-10-13） | PreToolUse.edit 路径边界、Bash 观测、prompt 的 `[OperationBoundaries]` 行、circuit breaker |
 | `component.hook-adapters.session-lifecycle`（Session Lifecycle Handlers） | `hook/{session-context,stop-handler,return-channel,delegation-advisor,subagent-context,subagent-quality,task-inbox-handler,board-slice-context,state-snapshot}.ts`、`run-summary-retention.ts` | 10 / 1532（2026-10-13） | SessionStart、Stop 恢复视图、subagent route、Task Inbox |
-| `component.hook-adapters.host-installer`（Host Adapter Installer） | `src/cli/installer/**`、`src/pi/{extension,hook-bridge}.ts`、`assets/hooks/**`、`commands/{install,status,security,hook}.ts` | 20 / 4702（2026-10-13） | managed entries、install profile、Pi bridge、status 与 security scan |
+| `component.hook-adapters.host-installer`（Host Adapter Installer） | `src/cli/installer/**`、`src/pi/{extension,hook-bridge}.ts`、`commands/{install,status,security}.ts` | 20 / 4702（2026-10-13） | managed entries、install profile、Pi bridge、status 与 security scan |
 
 与归属提议 §5 的两处偏差，都有源码证据：
 
@@ -207,7 +207,7 @@ sequenceDiagram
 
 | 关系 | 类型 | 证据 |
 | --- | --- | --- |
-| host-installer → route-runtime | calls | `buildManagedHooks` 调用 `routesForHost`（`managed-entries.ts:107`）；`commands/hook.ts` 调用 `runHook` |
+| host-installer → route-runtime | calls | `buildManagedHooks` 调用 `routesForHost`（`managed-entries.ts:107`）；Pi bridge 经 `hook-entry.ts` 运行 route |
 | route-runtime → edit-guards | calls | `handlers` 绑定 `runMutationGuard`、`runCommandObserved` 与 `runPromptHandler`（`handler-registry.ts`）。`hook-entry.ts` 只分派 hook route、`state-snapshot` 与进程 supervisor |
 | route-runtime → session-lifecycle | calls | `handlers` 绑定 `runStopHandler`、SessionStart、四个 subagent handler 与 inbox handler（`handler-registry.ts`） |
 | edit-guards → route-runtime、session-lifecycle → route-runtime | depends-on | handler 实现 typed `HookHandlerResult` 契约。handler 从 `HookHandlerContext` 读取 `payload` 与 `identity`，并读取 event 级 `StateInputCollector`。handler 不读取 session、run 或 turn 的环境变量 |
@@ -217,7 +217,6 @@ sequenceDiagram
 | 关系 | 证据 |
 | --- | --- |
 | host-installer → `public-surface.adoption` | `managed-entries.ts`、`uninstall.ts` 引用 `core/adoption/managed-hook-config.ts` |
-| host-installer → `workflow-engine.contract-assets` | `commands/hook.ts:41` 调用 `resolveWorkflowStateLibrary` |
 | host-installer → `global-runtime-reconciliation` | `status.ts:242` 调用 `inspectArchitectureProjectionReadiness` |
 | route-runtime → `global-runtime-reconciliation` | `hook-entry.ts` 与 `runtime.ts` 用 `src/cli/runtime/write-all-sync.ts` 写 host 输出 |
 | session-lifecycle → `public-surface.adoption` | `run-summary-retention.ts` 引用 `src/effects/path-safety.ts`。只有 `scripts/evidence-gc.ts` 调用它，这是一个版本的一次性清理 |

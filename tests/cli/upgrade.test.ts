@@ -537,7 +537,8 @@ describe('legacy workflow-state upgrade report', () => {
       expect(check.exitCode).toBe(1);
       expect(check.items).toHaveLength(1);
       expect(check.items[0]).toEqual(expect.objectContaining({ path, action: 'report', ownership: 'unowned', proof: null }));
-      expect(check.items[0]?.reason).toContain('repo-harness hook-lib path');
+      expect(check.items[0]?.reason).toContain('repo-harness run <helper>');
+      expect(check.items[0]?.reason).not.toContain('hook-lib');
       expect(check.items[0]?.reason).toContain('back up');
       expect(check.items[0]?.reason).toContain('review local edits');
       const apply = runUpgrade({ ...opts, scope: 'project', apply: true });
@@ -561,7 +562,7 @@ describe('legacy workflow-state upgrade report', () => {
     });
     const text = invoke([]); const json = invoke(['--json']);
     expect(text.status, text.stderr).toBe(1); expect(json.status, json.stderr).toBe(1);
-    expect(text.stdout).toContain(path); expect(text.stdout).toContain('repo-harness hook-lib path');
+    expect(text.stdout).toContain(path); expect(text.stdout).toContain('repo-harness run <helper>');
     const items = JSON.parse(json.stdout);
     expect(items).toHaveLength(1);
     expect(items[0]).toEqual(expect.objectContaining({ path, action: 'report' }));

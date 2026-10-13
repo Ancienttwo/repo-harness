@@ -624,7 +624,7 @@ function checkCapabilityRegistry(cwd: string): DoctorCheckResult {
 
 function checkLegacyWorkflowState(cwd: string): DoctorCheckResult {
   const id = 'legacy-workflow-state';
-  const describe = 'Repository operator library uses the installed package';
+  const describe = 'Repository keeps no legacy operator library copy';
   const repoRoot = resolveRepoRoot(cwd);
   if (!repoRoot) return { id, describe, status: 'na', detail: 'not in a git repository' };
   const legacy = path.join(repoRoot, '.ai/hooks/lib/workflow-state.sh');
@@ -638,7 +638,7 @@ function checkLegacyWorkflowState(cwd: string): DoctorCheckResult {
   }
   return {
     id, describe, status: 'warn',
-    detail: `Legacy copy: ${legacy}. Change callers to source "$(repo-harness hook-lib path)" or use repo-harness run <helper>. Test callers, back up the copy, then remove it manually. Keep edited copies until their changes are reviewed. Init and upgrade preserve this file.`,
+    detail: `Legacy copy: ${legacy}. The package no longer ships an operator library. Change callers to repo-harness run <helper>. Test callers, back up the copy, then remove it manually. Keep edited copies until their changes are reviewed. Init and upgrade preserve this file.`,
   };
 }
 

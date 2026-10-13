@@ -9,9 +9,9 @@ function read(relPath: string): string {
 }
 
 describe("Hook contracts", () => {
-  test("typed hook input parser and operator workflow helper should exist", () => {
+  test("typed hook input parser exists and the shell operator library is gone", () => {
     expect(existsSync(join(ROOT, "src/cli/hook/hook-input.ts"))).toBe(true);
-    expect(existsSync(join(ROOT, "assets/hooks/lib/workflow-state.sh"))).toBe(true);
+    expect(existsSync(join(ROOT, "assets/hooks/lib/workflow-state.sh"))).toBe(false);
     expect(existsSync(join(ROOT, "assets/hooks/hook-input.sh"))).toBe(false);
     expect(existsSync(join(ROOT, "assets/hooks/lib/session-state.sh"))).toBe(false);
     expect(existsSync(join(ROOT, "assets/hooks/lib/memory-state.sh"))).toBe(false);

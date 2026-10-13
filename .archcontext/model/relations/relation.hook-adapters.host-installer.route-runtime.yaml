@@ -3,4 +3,4 @@ id: relation.hook-adapters.host-installer.route-runtime
 kind: calls
 source: component.hook-adapters.host-installer
 target: component.hook-adapters.primary
-intent: "Project the route registry into managed adapter entries and invoke the runtime for hook-lib and Pi events"
+intent: "Project the route registry into managed adapter entries and invoke the runtime for Pi events"

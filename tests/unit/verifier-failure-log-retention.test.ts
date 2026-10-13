@@ -30,8 +30,7 @@ function runVerifier(script: string, command: string, inspect: (root: string, re
     git(['add', '.']);
     git(['commit', '-qm', 'fixture']);
     const result = spawnSync(process.execPath, [join(ROOT, script), 'execute', '--repo', root, '--contract', 'retention.contract.md',
-      '--report-file', '.ai/harness/checks/report.json'], { cwd: root, encoding: 'utf8',
-      env: { ...process.env, REPO_HARNESS_WORKFLOW_STATE_LIB: join(ROOT, 'assets/hooks/lib/workflow-state.sh') } });
+      '--report-file', '.ai/harness/checks/report.json'], { cwd: root, encoding: 'utf8' });
     expect(result.status).toBe(command.includes('exit 3') ? 1 : 0);
     inspect(root, JSON.parse(readFileSync(join(root, '.ai/harness/checks/report.json'), 'utf8')));
   } finally {

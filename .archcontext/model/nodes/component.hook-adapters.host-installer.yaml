@@ -4,7 +4,7 @@ kind: component
 name: "Host Adapter Installer"
 status: active
 parent: capability.runtime-harness.hook-adapters
-summary: "Projects the route registry into user-level Claude and Codex adapter entries, runs the Pi extension bridge and owns the hook asset projection."
+summary: "Projects the route registry into user-level Claude and Codex adapter entries and runs the Pi extension bridge."
 responsibilities:
   - Build and compare managed hook entries for each host from the route registry.
   - Apply and roll back install profiles under the runtime host lock.
@@ -15,11 +15,9 @@ source:
     - "src/cli/installer/**"
     - "src/pi/extension.ts"
     - "src/pi/hook-bridge.ts"
-    - "assets/hooks/**"
     - "src/cli/commands/install.ts"
     - "src/cli/commands/status.ts"
     - "src/cli/commands/security.ts"
-    - "src/cli/commands/hook.ts"
   entrypoints:
     - id: entrypoint.hook-adapters.managed-entries
       path: "src/cli/installer/managed-entries.ts"

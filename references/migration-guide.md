@@ -15,8 +15,9 @@ tasks-first contract. The canonical public entrypoint is `repo-harness init`.
 - **User-level host adapters**: `~/.claude/settings.json` and
   `~/.codex/hooks.json`; repo-local adapter files are user-owned inputs for
   manual review.
-- **Operator library**: `repo-harness hook-lib path` locates the installed
-  package copy of `workflow-state.sh`. Init preserves legacy repo copies.
+- **Operator helpers**: `repo-harness run <helper>` runs the installed package
+  helpers. No shell operator library ships. Init preserves legacy repo copies
+  of `workflow-state.sh`.
 - Stable product truth lives in `docs/spec.md`.
 - `plans/` is the timestamped plan catalog; `.ai/harness/active-plan` selects
   the active plan.
@@ -75,9 +76,9 @@ treats mutating update commands as probes.
 
 1. Review the user-level Claude/Codex adapter entries for project-specific
    command exceptions and trust the Codex settings entry.
-2. Run `repo-harness hook-lib path` to check the package library. Run doctor
-   for legacy copy guidance. Change callers and test them. Back up old copies
-   before manual removal. Review local edits first.
+2. Run doctor for legacy `workflow-state.sh` copy guidance. Change callers to
+   `repo-harness run <helper>` and test them. Back up old copies before manual
+   removal. Review local edits first.
 3. Confirm `.claude/settings.local.json` contains only personal overrides.
 4. Confirm `docs/spec.md`, `tasks/reviews/`, and `.ai/harness/` match the live
    workflow contract.

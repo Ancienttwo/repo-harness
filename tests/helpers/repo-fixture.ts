@@ -26,7 +26,6 @@ const SANDBOX_ENV_BLOCKLIST = [
   "REPO_HARNESS_HELPER_SOURCE_PATH",
   "REPO_HARNESS_SOURCE_ROOT",
   "REPO_HARNESS_BUN_BIN",
-  "REPO_HARNESS_WORKFLOW_STATE_LIB",
 ];
 
 export function tmpWorkspace(prefix: string): string {

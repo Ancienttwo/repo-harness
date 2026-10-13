@@ -8,8 +8,8 @@
 The runtime harness gives Claude, Codex and Pi a file-backed workflow shell.
 User-level host hooks call the `repo-harness-hook` binary. Its typed route
 registry selects one in-process handler. Repo-local hook adapters are retired.
-The package operator library is `assets/hooks/lib/workflow-state.sh`. This
-source repository keeps no copy of it.
+No shell operator library exists. Operator helpers run from the package through
+`repo-harness run <helper>`.
 
 ## Capabilities
 

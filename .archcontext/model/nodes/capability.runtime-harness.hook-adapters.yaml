@@ -8,12 +8,11 @@ responsibilities:
   - Own managed hook entries, route dispatch, edit path guarding, and Stop handling.
   - Own the Pi package event adapter and its bounded Bun JSON bridge.
   - Own the hook event log, its size-bounded archive and the one-release run summary cleanup module.
-  - Own the install, status, security and hook-lib commands that project and inspect the host adapters.
+  - Own the install, status and security commands that project and inspect the host adapters.
 source:
   include:
-    - "assets/hooks/**"
-    - "src/cli/installer/**"
     - "src/cli/hook/**"
+    - "src/cli/installer/**"
     - "src/cli/hook-entry.ts"
     - "src/pi/**"
     - "src/effects/loop/**"
@@ -22,7 +21,6 @@ source:
     - "src/cli/commands/install.ts"
     - "src/cli/commands/status.ts"
     - "src/cli/commands/security.ts"
-    - "src/cli/commands/hook.ts"
   entrypoints:
     - id: entrypoint.hook-adapters.primary
       path: "src/cli/hook/runtime.ts"
@@ -34,8 +32,8 @@ source:
               symbol: "getHandlerForRoute"
 extensions:
   contractFiles:
-    agents: "assets/hooks/AGENTS.md"
-    claude: "assets/hooks/CLAUDE.md"
+    agents: "src/cli/hook/AGENTS.md"
+    claude: "src/cli/hook/CLAUDE.md"
   lspProfile: "typescript-lsp"
   verification:
     - "bun test tests/hook-runtime.test.ts tests/hook-contracts.test.ts tests/workflow-contract.test.ts"

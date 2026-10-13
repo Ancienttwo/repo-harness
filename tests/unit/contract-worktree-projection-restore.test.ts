@@ -14,11 +14,11 @@ describe("contract-worktree projection publication ownership", () => {
     expect(helper.match(/target worktree is dirty, refusing merge/g)).toHaveLength(2);
   });
 
-  test("the exact manifest is workflow-owned but the architecture directory is not broadly exempted", () => {
+  test("closeout keeps no contract scope check and no architecture directory exemption", () => {
     const helper = readFileSync(SCRIPT, "utf8");
 
-    expect(helper).toContain("is_workflow_owned_projection_output()");
-    expect(helper).toContain('[[ "$1" == "docs/architecture/.projection-manifest.json" ]]');
+    expect(helper).not.toContain("check_scope_against_contract");
+    expect(helper).not.toContain("workflow_contract_allows_path");
     expect(helper).not.toContain('[[ "$1" == "docs/architecture/"* ]]');
   });
 

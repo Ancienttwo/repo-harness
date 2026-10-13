@@ -67,7 +67,8 @@ describe("README DX contract", () => {
     // command belongs in Maintainer Reference (asserted below), not in the
     // first-run path.
     expect(getStarted).not.toContain("bun scripts/assemble-template.ts");
-    expect(maintainer).toContain("assets/hooks/");
+    expect(maintainer).toContain("src/cli/hook/");
+    expect(maintainer).not.toContain("assets/hooks/");
     expect(hooksSection).toContain("repo-harness-hook");
     expect(hooksSection).toContain("route registry");
     // The route table lives only in hook-operations.md; the README links to it.

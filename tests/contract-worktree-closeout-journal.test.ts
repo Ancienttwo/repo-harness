@@ -48,7 +48,6 @@ const FIXTURE_AUTHORITY_ENV_KEYS = [
   "REPO_HARNESS_SOURCE_ROOT",
   "REPO_HARNESS_GIT_BIN",
   "REPO_HARNESS_BUN_BIN",
-  "REPO_HARNESS_WORKFLOW_STATE_LIB",
 ] as const;
 
 function fixtureEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
@@ -72,7 +71,6 @@ function runHelper(script: string, args: string[], cwd: string, env: NodeJS.Proc
     encoding: "utf-8",
     env: fixtureEnv({
       REPO_HARNESS_BUN_BIN: process.execPath,
-      REPO_HARNESS_WORKFLOW_STATE_LIB: join(cwd, ".ai/hooks/lib/workflow-state.sh"),
       ...fixtureCliEnv(cwd),
       ...env,
     }),
@@ -85,7 +83,6 @@ function runHelperAsync(script: string, args: string[], cwd: string, env: NodeJS
       cwd,
       env: fixtureEnv({
         REPO_HARNESS_BUN_BIN: process.execPath,
-        REPO_HARNESS_WORKFLOW_STATE_LIB: join(cwd, ".ai/hooks/lib/workflow-state.sh"),
         ...fixtureCliEnv(cwd),
         ...env,
       }),
@@ -116,7 +113,6 @@ function runHelperWithFault(
       encoding: "utf-8",
       env: fixtureEnv({
         REPO_HARNESS_BUN_BIN: process.execPath,
-        REPO_HARNESS_WORKFLOW_STATE_LIB: join(cwd, ".ai/hooks/lib/workflow-state.sh"),
         ...fixtureCliEnv(cwd),
         FAULT_PID_FILE: pidFile,
         ...env,
@@ -275,10 +271,6 @@ function installFixture(container: string): Fixture {
     copyFileSync(join(ROOT, "scripts", helper), join(primary, "scripts", helper));
     chmodSync(join(primary, "scripts", helper), 0o755);
   }
-  copyFileSync(
-    join(ROOT, "assets/hooks/lib/workflow-state.sh"),
-    join(primary, ".ai/hooks/lib/workflow-state.sh"),
-  );
   writeFileSync(join(primary, "scripts/acceptance-receipt.ts"), "process.exit(0);\n");
   writeFileSync(
     join(primary, ".ai/harness/policy.json"),

@@ -358,8 +358,7 @@ pi_write_hook_runtime_readme() {
 # Workflow Helpers
 
 Host events use the user-level `repo-harness-hook` typed runtime.
-Operator helpers use the installed package. Run `repo-harness hook-lib path`
-to locate `workflow-state.sh`. Use `repo-harness run <helper>` to run helpers.
+Operator helpers run from the installed package: use `repo-harness run <helper>`.
 Init preserves legacy files under `.ai/hooks/lib/`.
 Run `repo-harness doctor` for migration guidance.
 EOF_HOOK_README

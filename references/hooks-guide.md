@@ -13,9 +13,10 @@ library supplied by the installed package.
   `src/cli/hook/handler-registry.ts`.
 - User-level Claude and Codex adapters live in `~/.claude/settings.json` and
   `~/.codex/hooks.json`. Codex requires the latter to be trusted in Settings.
-- `repo-harness hook-lib path` locates the package operator library.
-  Init preserves old `.ai/hooks/lib/workflow-state.sh` copies.
-  Doctor reports them with manual migration steps.
+- Operator helpers run from the package through `repo-harness run <helper>`.
+  No shell operator library ships. Init preserves old
+  `.ai/hooks/lib/workflow-state.sh` copies. Doctor reports them with manual
+  migration steps.
 - Repo-local `.claude/settings.json` and `.codex/hooks.json` are user-owned
   legacy inputs and should be retired during migration.
 
@@ -77,7 +78,7 @@ the route tuple and typed handler registry unchanged.
 `repo-harness init` writes package helper guidance in `.ai/hooks/README.md`.
 It does not copy `workflow-state.sh`. It preserves existing copies and edits.
 Use `repo-harness run <helper>` to run packaged helpers. Change direct callers
-to the package path from `repo-harness hook-lib path`. Test them, back up the
+of the legacy library to `repo-harness run <helper>`. Test them, back up the
 legacy file, and remove it manually. Init removes retired generated entry
 scripts by manifest ownership.
 Run `repo-harness init --repo <repo> --dry-run` before applying a migration.

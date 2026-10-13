@@ -558,8 +558,8 @@ repo-harness docs show harness-overview
 bun scripts/assemble-template.ts --plan C --name "MyProject"
 ```
 
-Operator library 的变更只改 `assets/hooks/lib/`，不存在投射副本。Handler 的变更改
-`src/cli/hook/`。Reference doc 的 canonical 版本在
+Hook handler 的变更改 `src/cli/hook/`。Operator helper 在 `scripts/` 下，
+通过 `repo-harness run <helper>` 运行。Reference doc 的 canonical 版本在
 `assets/reference-configs/` 下，并投射到 `docs/reference-configs/`；
 `bun run check:reference-configs` 用来验证这次投射。
 
