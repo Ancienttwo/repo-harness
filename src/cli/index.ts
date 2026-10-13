@@ -54,6 +54,7 @@ import { buildCollaborationCommand } from './commands/collaboration';
 import { buildVerifiedContextCommand } from './commands/verified-context';
 import { buildInterfaceChangeCommand } from './commands/interface-change';
 import { buildExternalSourceCommand } from './commands/external-source';
+import { buildRetentionCommand } from './commands/retention';
 import { formatSecurityScan, runSecurityScan } from './commands/security';
 import {
   MIN_BUN_VERSION,
@@ -856,6 +857,7 @@ export function buildProgram(): Command {
   program.addCommand(buildVerifiedContextCommand());
   program.addCommand(buildInterfaceChangeCommand());
   program.addCommand(buildExternalSourceCommand());
+  program.addCommand(buildRetentionCommand());
   program
     .command('__reconcile-installed-runtime', { hidden: true })
     .description('Internal candidate-owned managed runtime reconciliation')

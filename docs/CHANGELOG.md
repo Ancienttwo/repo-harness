@@ -179,6 +179,16 @@ All notable changes to this skill are documented here.
   repository through a `harness.runs_dir` value with `..`. The capture is
   gone. (#695)
 
+### Added
+
+- `repo-harness retention` moves closed plans, closed task records and
+  check logs older than 30 days to a gitignored local archive root. It is a
+  dry run unless `--apply` is given. It skips Git-tracked entries and the
+  `keep` list, and it never deletes. `information_lifecycle.retention` in
+  `.ai/harness/policy.json` overrides the window, the archive root and the
+  `keep` list. The harness overview documents the ignore patterns for
+  repositories that keep workflow artifacts local. (#697)
+
 ## [0.22.1] - 2026-10-13
 
 0.22.0 was tagged but not published to npm. 0.22.1 contains all of 0.22.0

@@ -83,6 +83,29 @@ with the project.
 - Evidence: Native execution evaluation supplies current check facts, while `.ai/harness/runs/*.json` keeps ignored local verification snapshots for the current workflow audit. Task-specific `.ai/harness/checks/*.latest.{json,md}` reports are ignored runtime cache; promote durable conclusions into reviews, contracts, notes, or research.
 - Human reading surface: `docs/spec.md`, `docs/architecture/`, and durable `docs/researches/` conclusions are the default entrypoint. Root workflow artifacts should describe active work only; completed plan/contract/review/notes/todo artifacts move to `plans/archive/` or `tasks/archive/`, and `.rgignore` keeps those archives plus runtime evidence out of default `rg` results.
 - Closeout order: promote durable truth first, then archive the workflow artifacts. If a fact only lives in a review/contract/checks file, the workflow is not ready to disappear from the active reading surface.
+- Local retention: `repo-harness retention` moves closed artifacts to a gitignored local archive root after 30 days. It scans three classes: closed plans in `plans/archive/`, closed task records in `tasks/archive/`, and check logs (`.ai/harness/checks/*.log`). The command is a dry run by default. Add `--apply` to move the entries. It skips open work, entries with a Git-tracked file, entries in the `keep` list, entries newer than the window, and entries whose destination exists. It never deletes; the operator cleans the archive root. It does not touch `.ai/harness/runs/`, because acceptance and verification records there are bound by hash. Configure it in `.ai/harness/policy.json`:
+
+  ```json
+  "information_lifecycle": {
+    "retention": { "days": 30, "archive_root": ".ai/harness/archive/retention", "keep": [] }
+  }
+  ```
+
+  All fields are optional. A malformed field fails the command. The archive root must be gitignored. The default root is under `.ai/harness/archive/`, which the generated `.gitignore` block already ignores.
+- Local-only process artifacts: a repository that does not commit its workflow artifacts can add these patterns below the generated `.gitignore` block. The two negations keep the durable ledgers tracked. Leave out `*.jsonl` if the repository tracks JSONL data.
+
+  ```gitignore
+  plans/
+  tasks/*
+  !tasks/todos.md
+  !tasks/lessons.md
+  .ai/harness/architecture/archive/
+  .artifacts/
+  **/evidence/
+  *.jsonl
+  ```
+
+  The generated block already ignores `.ai/harness/runs/`, `.ai/harness/checks/`, `.ai/harness/archive/` and `_ops/`. Ignoring a path does not remove blobs that Git already tracks; untrack them with `git rm --cached` in a separate change.
 - Memory: `docs/researches/` and `tasks/lessons.md` are advisory. Current repo state and evidence override summaries.
 - External knowledge: `brain/<project>/*` is an optional operator-managed export surface for long-form explanations, runbooks, decisions, and patterns. Hooks and workflow checks never read, write, or gate on its state.
 - Assets: policies, hooks, scripts, templates, and reference configs only change when a pattern has evidence across tasks or fixtures.
