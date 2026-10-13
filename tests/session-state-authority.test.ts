@@ -350,7 +350,8 @@ describe('SessionStart Effective State authority', () => {
     expect(calls).toHaveLength(2);
     expect(calls.map(({ root }) => root)).toEqual(['/repo-b', '/repo-b']);
     expect(calls.map(({ nowMs }) => nowMs)).toEqual([123456, 123456]);
-    expect(calls[0].risk).toEqual({});
+    // No risk input: every hook resolves what `state resolve --json` resolves.
+    expect(calls[0].risk).toBeUndefined();
   });
 
   test('bounds transient retries at three and hashes unavailable evidence without raw errors', () => {
