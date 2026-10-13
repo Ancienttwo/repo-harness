@@ -123,6 +123,29 @@ setTimeout(() => console.log(JSON.stringify({${JSON.stringify(output()).slice(1,
       await expect(pending.invoke(request(f.root))).rejects.toThrow('PI_HOOK_OUTPUT_TOO_LARGE');
     } finally { f.cleanup(); }
   });
+
+  test('a child that exits before it reads stdin gets one stable code with its stderr', async () => {
+    const f = fixture();
+    try {
+      // The input is larger than any pipe buffer, so the write cannot complete before the child exits.
+      const large = request(f.root, { payload: { content: 'x'.repeat(4 * 1024 * 1024) } });
+      const pkg = fakePackage(f.root, 'console.error("hook boot failure"); console.log("not JSON"); process.exit(1);');
+      const bridge = new PiHookBridge(pkg, { env: f.env });
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        const error = await bridge.invoke(large).then(() => null, (reason: Error) => reason);
+        expect(error?.message).toStartWith('PI_HOOK_INVALID_RESULT: ');
+        expect(error?.message).toContain('hook boot failure');
+      }
+      writeFileSync(join(pkg, 'dist/hook-entry.js'), `console.error("skipped input"); console.log(${JSON.stringify(JSON.stringify(output()))});`);
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        const error = await bridge.invoke(large).then(() => null, (reason: Error) => reason);
+        expect(error?.message).toStartWith('PI_HOOK_INPUT_FAILED: ');
+        expect(error?.message).toContain('skipped input');
+      }
+      writeFileSync(join(pkg, 'dist/hook-entry.js'), 'console.error("still waiting"); setInterval(() => {}, 1000);');
+      await expect(new PiHookBridge(pkg, { env: f.env, timeoutMs: 2000 }).invoke(request(f.root))).rejects.toThrow(/^PI_HOOK_TIMEOUT: still waiting/);
+    } finally { f.cleanup(); }
+  });
 });
 
 describe('Pi package manifest', () => {
