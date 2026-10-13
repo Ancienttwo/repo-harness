@@ -230,10 +230,6 @@ export class ArchitectureModelReader {
       const node = file.value;
       if (node.parent && !nodeIds.has(node.parent)) throw new ModuleReadError('model_parent_invalid', file.path);
       // Include shapes belong to ArchContext validation; only literal anchors become paths here.
-      // An anchorless glob is valid, so an escaping pattern is refused on its own.
-      for (const pattern of [...node.source?.include ?? [], ...node.source?.exclude ?? []]) {
-        if (isAbsolute(pattern) || pattern.split('/').includes('..')) throw new ModuleReadError('path_escape', file.path);
-      }
       for (const anchor of this.anchors(node)) { this.safePath(anchor); this.snapshot.entry(anchor); }
       for (const entry of node.source?.entrypoints ?? []) {
         this.safePath(entry.path); this.snapshot.entry(entry.path);
