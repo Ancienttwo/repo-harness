@@ -109,7 +109,7 @@ describe('typed hook runtime', () => {
       writeFileSync(join(bin, 'repo-harness-hook'), `#!/bin/sh\nexec "${process.execPath}" "${HOOK_ENTRY}" "$@"\n`, { mode: 0o755 });
       const route = getRoute('PostToolUse', 'always');
       if (!route) throw new Error('missing PostToolUse.always route');
-      const hostEnv = { ...process.env, PATH: `${bin}:${process.env.PATH ?? ''}`, GIT_LOG: gitLog, REPO_HARNESS_WORKFLOW_PROFILE: 'routine' };
+      const hostEnv: NodeJS.ProcessEnv = { ...process.env, PATH: `${bin}:${process.env.PATH ?? ''}`, GIT_LOG: gitLog, REPO_HARNESS_WORKFLOW_PROFILE: 'routine' };
       delete hostEnv.HOOK_REPO_ROOT;
       delete hostEnv.HOOK_HOST;
       const result = spawnSync('sh', ['-c', buildHookCommand(route, 'claude')], {

@@ -73,7 +73,6 @@ const handlers: Readonly<Record<HookHandlerId, TypedHookHandler>> = Object.freez
       collector: context.collector,
       payload: context.payload,
       identity: context.identity,
-      env: context.env,
     })),
   },
   subagent: {
