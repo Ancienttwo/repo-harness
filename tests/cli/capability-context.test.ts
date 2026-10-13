@@ -179,6 +179,46 @@ describe('capability-context command', () => {
     }
   });
 
+  test('archcontext sync refuses an anchorless capability before it writes any contract file', () => {
+    const cwd = tmpWorkspace('capability-context-anchorless');
+    try {
+      fs.mkdirSync(path.join(cwd, '.ai/harness'), { recursive: true });
+      fs.writeFileSync(path.join(cwd, '.ai/harness/policy.json'), JSON.stringify({ context: { capability_source: 'archcontext' } }));
+      fs.mkdirSync(path.join(cwd, '.archcontext/model/nodes'), { recursive: true });
+      fs.writeFileSync(path.join(cwd, '.archcontext/model/nodes/capability.probe.anchorless.yaml'), [
+        'schemaVersion: archcontext.node/v2',
+        'id: capability.probe.anchorless',
+        'kind: capability',
+        'name: Probe',
+        'status: active',
+        'summary: Probe files',
+        'responsibilities:',
+        '  - Own the probe files',
+        'source:',
+        '  include:',
+        '    - "**/*.probe"',
+        'extensions:',
+        '  contractFiles:',
+        '    agents: probes/AGENTS.md',
+        '    claude: probes/CLAUDE.md',
+        '  lspProfile: typescript-lsp',
+        '  verification: []',
+        '',
+      ].join('\n'));
+      const rootContext = '# Root Agent Context\n\nRepository-wide rules.\n';
+      fs.writeFileSync(path.join(cwd, 'AGENTS.md'), rootContext);
+      fs.writeFileSync(path.join(cwd, 'CLAUDE.md'), rootContext);
+
+      expect(() => runCapabilityContextSync({ repo: cwd, capabilityId: 'probe-anchorless', apply: true }))
+        .toThrow('capability has no literal source.include anchor, so its contract files cannot be derived: probe-anchorless');
+      expect(fs.readFileSync(path.join(cwd, 'AGENTS.md'), 'utf-8')).toBe(rootContext);
+      expect(fs.readFileSync(path.join(cwd, 'CLAUDE.md'), 'utf-8')).toBe(rootContext);
+      expect(fs.existsSync(path.join(cwd, 'probes'))).toBe(false);
+    } finally {
+      fs.rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   test('CLI entrypoint registers capability-context status', () => {
     const cwd = tmpWorkspace('capability-context-entrypoint');
     try {

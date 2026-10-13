@@ -1,0 +1,17 @@
+schemaVersion: archcontext.node/v2
+id: capability.verification.tools
+kind: capability
+name: capability.verification.tools
+status: active
+summary: Fixture capability capability.verification.tools.
+responsibilities:
+  - Own fixture paths.
+source:
+  include:
+    - "src/cli/tools/**"
+extensions:
+  contractFiles:
+    agents: AGENTS.md
+    claude: CLAUDE.md
+  lspProfile: typescript-lsp
+  verification: []

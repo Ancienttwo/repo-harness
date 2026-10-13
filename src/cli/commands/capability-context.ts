@@ -6,6 +6,7 @@ import {
   CapabilitySourceError,
   capabilitySourceMode,
   findMatch,
+  readArchcontextOwners,
   readRegistry as readCapabilityRegistry,
   type Capability,
   type CapabilityRegistry,
@@ -184,7 +185,7 @@ function targetContractFiles(repo: string, capability: Capability): ContractFile
 // `archctx resolve` under `archcontext`. Nothing here re-implements either rule.
 function findCapabilityByPath(registry: CapabilityRegistry, repo: string, inputPath: string): Capability {
   if (capabilitySourceMode(repo) === 'archcontext') {
-    const resolution = resolveArchcontextCapabilityPaths(repo, registry, [inputPath]);
+    const resolution = resolveArchcontextCapabilityPaths(repo, readArchcontextOwners(repo), [inputPath]);
     if (resolution.status === 'invalid') throw new Error(resolution.diagnostics.map((item) => item.message).join('; '));
     if (resolution.matches.length === 1) return resolution.matches[0].capability;
   } else {
@@ -313,6 +314,15 @@ export function runCapabilityContextSync(opts: SyncOptions): SyncResult {
   const registry = readRegistry(repo);
   const manifest = readManifest(repo, manifestPath);
   const capabilities = selectCapabilities(registry, repo, opts);
+  // An anchorless ArchContext capability has no prefix to derive contract
+  // files from; `.` would target the root context files. Refuse before any write.
+  const anchorless = capabilities.filter((capability) => capability.prefixes.length === 0).map((capability) => capability.id);
+  if (authorityPath === NODES_DIR && anchorless.length > 0) {
+    throw new CapabilitySourceError(
+      `capability has no literal source.include anchor, so its contract files cannot be derived: ${anchorless.join(', ')}. `
+        + `Keep extensions.contractFiles in ${NODES_DIR} and edit those files directly.`,
+    );
+  }
   const changedManifestIds = new Set<string>();
   const changes: SyncChange[] = [];
   const lines: string[] = [];

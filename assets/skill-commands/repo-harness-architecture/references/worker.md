@@ -78,8 +78,8 @@ write nodes.
   shapes. repo-harness resolves path ownership only through
   `archctx resolve --paths-from <file> --json`. When the candidates lie on one
   `parent` chain, the deepest node owns the path, and the result reports
-  `owningCapabilityId`. Every capability needs at least one include with a literal
-  leading path.
+  `owningCapabilityId`. A capability can own paths only through globs. It then
+  has no literal anchor, and lists show it by its node id.
 - In a capability include, use exact paths or `dir/**`. A file-name glob such as
   `scripts/new-*.sh` widens the capability's literal anchor to `scripts`, and the
   module review diff uses that anchor. Put file-name globs on a component. When one

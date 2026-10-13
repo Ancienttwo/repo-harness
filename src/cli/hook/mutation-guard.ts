@@ -490,6 +490,7 @@ function runPerPathGuards(
   }
   if (effective?.blockers.length) {
     out(ctx, `[WorkflowObservation] ${effective.blockers.join(', ')}; edit may continue.`);
+    if (effective.next_action) out(ctx, `  Next: ${effective.next_action}`);
   }
 
   // ---- AssetLayer advisory --------------------------------------------------

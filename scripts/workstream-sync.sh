@@ -191,6 +191,9 @@ if [[ "$(json_get "$resolver_json" "matched" || true)" != "true" ]]; then
 fi
 
 capability_id="$(json_get "$resolver_json" "capability_id")"
+# Registry mode reports the matched prefix. ArchContext mode reports the owner's
+# stable node id, because it does not say which include matched; real paths in
+# the generated documents therefore come from the requested block.
 matched_prefix="$(json_get "$resolver_json" "matched_prefix")"
 architecture_domain="$(json_get "$resolver_json" "architecture_domain")"
 architecture_capability="$(json_get "$resolver_json" "architecture_capability")"
@@ -244,8 +247,8 @@ if [[ ! -f "$architecture_module" ]]; then
 ## Boundary
 
 - Responsibility: Keep the capability boundary, entrypoints, runtime path, dependency rules, and local verification pointers for \`${capability_id}\`.
-- Entrypoints: \`${matched_prefix}\`
-- Runtime path: \`${matched_prefix}\`
+- Entrypoints: \`${functional_block}\`
+- Runtime path: \`${functional_block}\`
 - Local contracts: \`${contract_agents:-none}\`, \`${contract_claude:-none}\`
 
 ## Active Workstreams

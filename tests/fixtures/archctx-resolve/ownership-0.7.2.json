@@ -1,0 +1,173 @@
+{
+  "schemaVersion": "archcontext.envelope/v1",
+  "ok": true,
+  "requestId": "resolve",
+  "data": {
+    "results": [
+      {
+        "path": "src/cli/tools/run.ts",
+        "matched": false,
+        "ambiguous": true,
+        "candidates": [
+          "component.verification.tools-all",
+          "component.verification.tools-ts"
+        ],
+        "owningCapabilityId": "capability.verification.tools"
+      },
+      {
+        "path": "lib/shared.ts",
+        "matched": false,
+        "ambiguous": true,
+        "candidates": [
+          "capability.shared.left",
+          "capability.shared.right"
+        ],
+        "owningCapabilityId": null
+      },
+      {
+        "path": "planned/a.ts",
+        "matched": true,
+        "ambiguous": false,
+        "stableId": "capability.future.planned",
+        "kind": "capability",
+        "name": "capability.future.planned",
+        "owningCapabilityId": "capability.future.planned",
+        "source": {
+          "include": [
+            "planned/**"
+          ]
+        },
+        "extensions": {
+          "contractFiles": {
+            "agents": "AGENTS.md",
+            "claude": "CLAUDE.md"
+          },
+          "lspProfile": "typescript-lsp",
+          "verification": []
+        }
+      },
+      {
+        "path": "legacy/b.ts",
+        "matched": true,
+        "ambiguous": false,
+        "stableId": "capability.old.legacy",
+        "kind": "capability",
+        "name": "capability.old.legacy",
+        "owningCapabilityId": "capability.old.legacy",
+        "source": {
+          "include": [
+            "legacy/**"
+          ]
+        },
+        "extensions": {
+          "contractFiles": {
+            "agents": "AGENTS.md",
+            "claude": "CLAUDE.md"
+          },
+          "lspProfile": "typescript-lsp",
+          "verification": []
+        }
+      },
+      {
+        "path": "probes/x.probe",
+        "matched": true,
+        "ambiguous": false,
+        "stableId": "capability.probe.anchorless",
+        "kind": "capability",
+        "name": "capability.probe.anchorless",
+        "owningCapabilityId": "capability.probe.anchorless",
+        "source": {
+          "include": [
+            "**/*.probe"
+          ]
+        },
+        "extensions": {
+          "contractFiles": {
+            "agents": "AGENTS.md",
+            "claude": "CLAUDE.md"
+          },
+          "lspProfile": "typescript-lsp",
+          "verification": []
+        }
+      },
+      {
+        "path": "src/app/[locale]/page.tsx",
+        "matched": true,
+        "ambiguous": false,
+        "stableId": "capability.web.locale",
+        "kind": "capability",
+        "name": "capability.web.locale",
+        "owningCapabilityId": "capability.web.locale",
+        "source": {
+          "include": [
+            "src/app/[locale]/**"
+          ]
+        },
+        "extensions": {
+          "contractFiles": {
+            "agents": "AGENTS.md",
+            "claude": "CLAUDE.md"
+          },
+          "lspProfile": "typescript-lsp",
+          "verification": []
+        }
+      },
+      {
+        "path": "README.md",
+        "matched": false,
+        "ambiguous": false,
+        "owningCapabilityId": null
+      },
+      {
+        "path": "owned/new-helper.ts",
+        "matched": true,
+        "ambiguous": false,
+        "stableId": "capability.owned.dir",
+        "kind": "capability",
+        "name": "capability.owned.dir",
+        "owningCapabilityId": "capability.owned.dir",
+        "source": {
+          "include": [
+            "owned/**"
+          ]
+        },
+        "extensions": {
+          "contractFiles": {
+            "agents": "AGENTS.md",
+            "claude": "CLAUDE.md"
+          },
+          "lspProfile": "typescript-lsp",
+          "verification": []
+        }
+      },
+      {
+        "path": "literal/existing.ts",
+        "matched": true,
+        "ambiguous": false,
+        "stableId": "capability.owned.literal",
+        "kind": "capability",
+        "name": "capability.owned.literal",
+        "owningCapabilityId": "capability.owned.literal",
+        "source": {
+          "include": [
+            "literal/existing.ts"
+          ]
+        },
+        "extensions": {
+          "contractFiles": {
+            "agents": "AGENTS.md",
+            "claude": "CLAUDE.md"
+          },
+          "lspProfile": "typescript-lsp",
+          "verification": []
+        }
+      },
+      {
+        "path": "literal/new-helper.ts",
+        "matched": false,
+        "ambiguous": false,
+        "owningCapabilityId": null
+      }
+    ]
+  }
+}

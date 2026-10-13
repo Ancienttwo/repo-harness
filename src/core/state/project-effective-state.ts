@@ -9,6 +9,10 @@ import {
 } from '../workflow/artifact-requirement-policy';
 import { evaluateReadiness, type EvaluateReadinessResult } from '../workflow/operation-readiness';
 import {
+  capabilityOwnershipNextAction,
+  type CapabilityOwnershipBlocker,
+} from '../capabilities/ownership-blocker';
+import {
   contractAllowsPath,
   firstOpenTask,
   markdownBullet,
@@ -47,7 +51,8 @@ export interface EffectiveStateInputs {
   readonly riskResolution: WorkflowProfileResult;
   readonly contractOverride: string | null;
   readonly capabilityReasons: readonly string[];
-  readonly capabilityRegistryInvalid: boolean;
+  /** Capability ownership failure: its key becomes a blocker; its cause and fix reach next_action. */
+  readonly capabilityBlocker: CapabilityOwnershipBlocker | null;
   readonly staleSources: readonly string[];
   readonly conflictingSources: readonly string[];
   readonly reviewPath: string | null;
@@ -214,7 +219,7 @@ export function projectEffectiveState(input: EffectiveStateInputs): EffectiveSta
   if (!input.riskResolution.ok) {
     blockers.push(`workflow_profile:${input.riskResolution.code.toLowerCase()}`);
   }
-  if (input.capabilityRegistryInvalid) blockers.push('capability_registry:invalid');
+  if (input.capabilityBlocker) blockers.push(input.capabilityBlocker.key);
 
   // Progress token: one deterministic content hash over exactly the audit's
   // recipe. It composes revisions and values the resolver/projector already
@@ -233,7 +238,7 @@ export function projectEffectiveState(input: EffectiveStateInputs): EffectiveSta
     ? 'blocked'
     : input.planPath ? input.planStatus : 'idle';
   const nextAction = blockers.length > 0
-    ? 'resolve blockers'
+    ? input.capabilityBlocker ? capabilityOwnershipNextAction(input.capabilityBlocker) : 'resolve blockers'
     : firstOpenTask(input.planText) ?? (
       handoffFreshness === 'fresh' && input.handoffText
         ? markdownBullet(input.handoffText, 'Exact Next Step')

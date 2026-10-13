@@ -295,6 +295,23 @@ describe('optional strategy and progressive memory', () => {
     }
     expect(snapshot(root)).toEqual(before);
   });
+  test('read-only observation reports archcontext ownership as unavailable instead of starting archctx', () => {
+    const { root } = fixture();
+    const node = '.archcontext/model/nodes/capability.test.fixture.yaml';
+    write(root, '.ai/harness/policy.json', JSON.stringify({ context: { capability_source: 'archcontext' } }));
+    write(root, node, [
+      'schemaVersion: archcontext.node/v2', 'id: capability.test.fixture', 'kind: capability', 'name: Fixture', 'status: active',
+      'summary: Fixture capability', 'responsibilities:', '  - Own the fixture sources', 'source:', '  include:', '    - src/**',
+      'extensions:', '  contractFiles:', '    agents: AGENTS.md', '    claude: CLAUDE.md', '  lspProfile: typescript-lsp', '  verification: []', '',
+    ].join('\n'));
+    git(root, 'add', node); git(root, 'commit', '-m', 'Synthetic archcontext capability');
+    const reader = new StrategyReader(root);
+    const observed = resolveEffectiveStateReadOnly(root, nowMs, { targetPaths: ['src/feature.ts'], operationKind: 'feature' }, reader.observationIO());
+    expect(observed.blockers).toContain('capability_ownership:unavailable');
+    expect(observed.blockers).not.toContain('capability_registry:invalid');
+    expect(observed.profile_reasons).toContain('capability:diagnostic:ARCHCONTEXT_RESOLVE_UNAVAILABLE');
+    expect(observed.next_action).toContain('fix: repo-harness state resolve --json');
+  });
   test('policy and capability edits between passes invalidate old context bindings', () => {
     for (const source of ['.ai/harness/policy.json', '.archcontext/model/nodes/capability.fixture.yaml']) {
       const { root } = fixture();
