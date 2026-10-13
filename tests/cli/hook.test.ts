@@ -8,6 +8,7 @@ import { getRoute } from '../../src/cli/hook/route-registry';
 import { buildHookCommand } from '../../src/cli/installer/managed-entries';
 
 const HOOK_ENTRY = join(import.meta.dir, '..', '..', 'src', 'cli', 'hook-entry.ts');
+import { inspectWorkflowMarker } from '../../src/core/adoption/minimum-harness-version';
 
 function repo(optIn = true): string {
   const root = mkdtempSync(join(tmpdir(), 'hrd09-runtime-'));
@@ -54,6 +55,57 @@ describe('typed hook runtime', () => {
       const result = runHook({ event: 'Stop', routeId: 'default', cwd: root, env: env(root) });
       expect(result.reason).toBe('non-opt-in');
       expect(result.handler).toBeUndefined();
+    } finally { clean(root); }
+  }, 30_000);
+
+  test('an older hook reports an upgrade instruction instead of capability_registry:invalid', () => {
+    const root = repo();
+    try {
+      // The model authority is archcontext without nodes, which an ordinary
+      // resolution reports as capability_registry:invalid.
+      writeFileSync(join(root, '.ai/harness/policy.json'), `${JSON.stringify({ context: { capability_source: 'archcontext' } })}\n`);
+      writeFileSync(join(root, '.ai/harness/workflow-contract.json'), `${JSON.stringify({ kind: 'repo-harness.workflow-contract-marker', protocol: 1, minimum_harness_version: '999.0.0' })}\n`);
+      const result = runHook({ event: 'Stop', routeId: 'default', cwd: root, env: env(root) });
+      expect(result).toMatchObject({ exitCode: 1, reason: 'harness-upgrade-required' });
+      expect(result.handler).toBeUndefined();
+
+      const cli = join(import.meta.dir, '..', '..', 'src', 'cli', 'index.ts');
+      const spawned = spawnSync(process.execPath, [cli, 'hook', 'SessionStart', '--route', 'default'], { cwd: root, env: env(root), input: '', encoding: 'utf8' });
+      expect(spawned.status).toBe(1);
+      expect(spawned.stderr).toContain('This repository requires repo-harness >= 999.0.0.');
+      expect(spawned.stderr).toContain('Run `repo-harness update`');
+      expect(`${spawned.stdout}${spawned.stderr}`).not.toContain('capability_registry:invalid');
+    } finally { clean(root); }
+  }, 30_000);
+
+  test('a declared minimum at or below the running version lets the hook run', () => {
+    const root = repo();
+    try {
+      const running = JSON.parse(readFileSync(join(import.meta.dir, '..', '..', 'package.json'), 'utf8')).version as string;
+      writeFileSync(join(root, '.ai/harness/workflow-contract.json'), `${JSON.stringify({ kind: 'repo-harness.workflow-contract-marker', protocol: 1, minimum_harness_version: running.replace(/-.*$/, '') })}\n`);
+      const result = runHook({ event: 'Stop', routeId: 'default', cwd: root, input: JSON.stringify({ stop_hook_active: false }), env: env(root) });
+      expect(result.handler).toBe('stop');
+    } finally { clean(root); }
+  }, 30_000);
+
+  test('an invalid marker or minimum version fails closed with its cause', () => {
+    const root = repo();
+    try {
+      for (const [marker, cause] of [
+        ['{ broken\n', 'workflow-contract.json is not valid JSON'],
+        [`${JSON.stringify({ minimum_harness_version: 'latest' })}\n`, 'minimum_harness_version must be a release version'],
+      ] as const) {
+        writeFileSync(join(root, '.ai/harness/workflow-contract.json'), marker);
+        expect(runHook({ event: 'Stop', routeId: 'default', cwd: root, env: env(root) })).toMatchObject({ exitCode: 1, reason: 'workflow-marker-invalid' });
+        const gate = inspectWorkflowMarker(root, () => '1.0.0');
+        expect(gate?.code).toBe('workflow-marker-invalid');
+        expect(gate?.message).toContain(cause);
+      }
+      writeFileSync(join(root, '.ai/harness/workflow-contract.json'), `${JSON.stringify({ minimum_harness_version: '1.2.3' })}\n`);
+      expect(inspectWorkflowMarker(root, () => '1.2.2')?.code).toBe('harness-upgrade-required');
+      expect(inspectWorkflowMarker(root, () => '1.2.3-beta.1')?.code).toBe('harness-upgrade-required');
+      expect(inspectWorkflowMarker(root, () => '1.2.3')).toBeNull();
+      expect(inspectWorkflowMarker(root, () => { throw new Error('no version'); })?.message).toContain('the running version is unreadable (no version)');
     } finally { clean(root); }
   }, 30_000);
 
