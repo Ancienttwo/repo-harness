@@ -107,6 +107,8 @@ try{
  assert.throws(()=>readOarObservation(path,request,{...host,identity:'reused-pid'}),/IDENTITY_MISMATCH/);
  const wrongSession=snapshot();wrongSession.session_id='other-session';save(wrongSession);assert.throws(read,/IDENTITY_MISMATCH/);
  writeFileSync(path,valid);const gap=snapshot();gap.records[0].seq+=1;save(gap);assert.throws(read,/INVALID/);
+	 writeFileSync(path,valid);const badInitial=snapshot();badInitial.initial_status={kind:'idle',lastTurnOutcome:{kind:'failed',failure:'private-error-prose',reason:'private'}};save(badInitial);assert.throws(read,/INVALID/);
+	 writeFileSync(path,valid);const badRejection=snapshot();const response=badRejection.records.find(record=>record.kind==='response'&&record.requestId===nativePrompt.id);assert(response);response.body={kind:'rejected',code:'private-rejection-prose',reason:'private'};save(badRejection);assert.throws(read,/INVALID/);
  writeFileSync(path,'{}');assert.throws(read,/INVALID/);writeFileSync(path,valid);
  const link=join(dir,'link.json');symlinkSync(path,link);assert.throws(()=>readOarObservation(link,request,host));
  assert.equal(readOarObservation(join(dir,'absent.json'),request,host),null);
@@ -118,6 +120,7 @@ try{
  assert.equal(view.outcome,'failed');assert.equal(view.failure,run.outcome.failure);
  assert.equal(JSON.stringify(view).includes('private-'),false);
  assert.deepEqual(replayOarStatus(JSON.parse(readFileSync(path,'utf8'))),failed.status().value);
+	 const badFailure=JSON.parse(readFileSync(path,'utf8'));const end=badFailure.records.flatMap(record=>record.kind==='frame'?record.body.events:[]).find(event=>event.kind==='turn_ended');assert(end);end.outcome.failure='private-error-prose';save(badFailure);assert.throws(()=>readOarObservation(path,request,host),/INVALID/);
 }finally{await failed.dispose()}
 const stopped=await scriptedRuntime({turn:async({signal})=>{await new Promise(resolve=>signal.addEventListener('abort',resolve,{once:true}))}}).session({kind:'available',via:'bundled'},{cwd:dir});
 let writes=0;

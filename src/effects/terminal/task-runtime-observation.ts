@@ -1,9 +1,18 @@
-import type { AgentStatus, RawEvent, Session } from '@botiverse/oar';
+import type { AgentStatus, FailureClass, RawEvent, RejectionCode, Session } from '@botiverse/oar';
 import { reduceStatus, promptAndWait, turnEndAfter, type PromptRunOptions } from '@botiverse/oar/observe';
 import { closeSync, constants, fstatSync, openSync, readFileSync } from 'node:fs';
 
 export const OAR_OBSERVATION_PROTOCOL = 'repo-harness.oar-observation.v1';
 export const OAR_OBSERVATION_MAX_BYTES = 64 * 1024 * 1024;
+const failureClasses: Record<FailureClass, true> = {
+  auth: true, quota: true, rate_limited: true, billing: true, model_unavailable: true,
+  input_too_large: true, invalid_request: true, overloaded: true, provider: true,
+  runtime_exited: true, limit_reached: true, output_schema: true, unknown: true,
+};
+const rejectionCodes: Record<RejectionCode, true> = {
+  busy: true, no_active_turn: true, not_queued: true, unsupported: true,
+  runtime_exited: true, disposed: true, runtime_refused: true, error: true,
+};
 interface HostIdentity { pid: number; identity: string }
 interface RequestIdentity { request_id: string; round: number }
 export interface OarObservationSnapshot extends RequestIdentity {
@@ -28,7 +37,7 @@ function validateStatus(value: unknown): asserts value is AgentStatus {
     if (state.lastTurnOutcome !== undefined) {
       const outcome = object(state.lastTurnOutcome);
       if (!['completed', 'aborted', 'failed'].includes(outcome.kind as string)
-        || outcome.kind === 'failed' && !nonempty(outcome.failure)) throw new Error('OAR_OBSERVATION_INVALID');
+        || outcome.kind === 'failed' && (!nonempty(outcome.failure) || !Object.hasOwn(failureClasses, outcome.failure))) throw new Error('OAR_OBSERVATION_INVALID');
     }
   } else if (state.kind === 'running') {
     if (!Number.isSafeInteger(state.sinceSeq) || !Number.isFinite(state.lastEventAt)) throw new Error('OAR_OBSERVATION_INVALID');
@@ -53,7 +62,7 @@ function validateRecord(value: unknown, seq: number): asserts value is RawEvent 
     if (['prompt', 'steer', 'queue'].includes(body.kind as string) && typeof body.input !== 'string') throw new Error('OAR_OBSERVATION_INVALID');
   } else if (record.kind === 'response') {
     if (typeof record.requestId !== 'string' || !['accepted', 'rejected', 'answered', 'exited'].includes(body.kind as string)
-      || body.kind === 'rejected' && (!nonempty(body.code) || typeof body.reason !== 'string')) throw new Error('OAR_OBSERVATION_INVALID');
+      || body.kind === 'rejected' && (!nonempty(body.code) || !Object.hasOwn(rejectionCodes, body.code) || typeof body.reason !== 'string')) throw new Error('OAR_OBSERVATION_INVALID');
   } else throw new Error('OAR_OBSERVATION_INVALID');
 }
 
@@ -72,6 +81,7 @@ export function oarObservationView(snapshot: OarObservationSnapshot) {
   const response = prompt?.kind === 'request' ? snapshot.records.find(record => record.kind === 'response' && record.requestId === prompt.id) : undefined;
   const outcome = prompt?.kind === 'request' && response?.kind === 'response' && response.body.kind === 'accepted'
     ? turnEndAfter(snapshot.records, prompt.seq, snapshot.session_id, snapshot.request_id) : null;
+  if (outcome) validateStatus({ kind: 'idle', lastTurnOutcome: outcome });
   return {
     session_id: snapshot.session_id, request_id: snapshot.request_id, input_id: snapshot.request_id,
     seq: snapshot.records.at(-1)?.seq ?? snapshot.initial_seq,

@@ -1,6 +1,6 @@
 # OAR request correlation and runtime observation
 
-The user approved this scope on 2026-10-14. The base is the OAR update in PR #733, commit `6f59f7e3`.
+The user approved this scope on 2026-10-14. PR #733 added OAR 0.62.1 and has merged. The final base is main at `89837e52`.
 
 ## P1: Map
 
