@@ -6,9 +6,9 @@ import { join } from 'path';
 import { runHook } from '../../src/cli/hook/runtime';
 import { getRoute } from '../../src/cli/hook/route-registry';
 import { buildHookCommand } from '../../src/cli/installer/managed-entries';
+import { inspectWorkflowMarker } from '../../src/core/adoption/minimum-harness-version';
 
 const HOOK_ENTRY = join(import.meta.dir, '..', '..', 'src', 'cli', 'hook-entry.ts');
-import { inspectWorkflowMarker } from '../../src/core/adoption/minimum-harness-version';
 
 function repo(optIn = true): string {
   const root = mkdtempSync(join(tmpdir(), 'hrd09-runtime-'));
@@ -100,7 +100,7 @@ describe('typed hook runtime', () => {
       expect(session.stderr).toContain('This repository needs repo-harness >= 999.0.0;');
 
       // The JSON form carries the message, so Pi can show it.
-      const json = runHook({ event: 'SessionStart', routeId: 'default', cwd: root, env: env(root, 'codex'), format: 'json', stdio: 'pipe' });
+      const json = runHook({ event: 'SessionStart', routeId: 'default', cwd: root, env: { ...env(root), HOOK_HOST: 'pi' } });
       expect(json.json).toMatchObject({ reason: 'harness-upgrade-required', exit_code: 1, decision: 'block' });
       expect(json.json?.diagnostics).toContain('This repository needs repo-harness >= 999.0.0;');
     } finally { clean(root); }
