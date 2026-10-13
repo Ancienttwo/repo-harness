@@ -516,5 +516,6 @@
     "worktree_guard": "advisory",
     "verification_gate": "main-automatic-checks",
     "completion_requires_checks": false
-  }
+  },
+  "internal_pr_authors": []
 }
