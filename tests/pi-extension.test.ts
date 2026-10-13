@@ -152,13 +152,13 @@ describe('Pi package manifest', () => {
   test('peer range is the exact Pi version that the extension accepts', () => {
     const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
     const extension = readFileSync(join(ROOT, 'src/pi/extension.ts'), 'utf8');
-    expect(extension).toContain("VERSION !== '1.1.0'");
-    expect(pkg.peerDependencies['@earendil-works/pi-coding-agent']).toBe('1.1.0');
+    expect(extension).toContain("VERSION !== '1.2.0'");
+    expect(pkg.peerDependencies['@earendil-works/pi-coding-agent']).toBe('1.2.0');
     expect(pkg.peerDependenciesMeta['@earendil-works/pi-coding-agent']).toEqual({ optional: true });
   });
 });
 
-describe('real Pi 1.1 tool pipeline with a scripted provider', () => {
+describe('real Pi 1.2 tool pipeline with a scripted provider', () => {
   test('checks direct and codemode edits, refuses private writes and reloads context', () => {
     const f = fixture();
     try {
@@ -314,6 +314,23 @@ describe('real Pi 1.1 tool pipeline with a scripted provider', () => {
       expect(new Set(stops.map(event => event.run_id)).size).toBe(3);
       expect(stops[0]?.session_id).toBe(result.sessionIds[0]);
       expect(stops.slice(1).every(event => event.session_id === result.sessionIds[1])).toBe(true);
+    } finally { f.cleanup(); }
+  }, 60_000);
+
+  test('a run started by a custom message skips UserPromptSubmit but keeps run bookkeeping and context', () => {
+    const f = fixture();
+    try {
+      const result = session(f.root, f.env, 'custom-message');
+      expect(readFileSync(join(f.root, 'custom-run.txt'), 'utf8')).toBe('custom run');
+      const write = result.messages.find((message: any) => message.role === 'toolResult' && message.toolCallId === 'custom-write');
+      expect(write?.isError).toBe(false);
+      expect(result.messages.filter((message: any) => message.role === 'custom' && message.customType === 'repo-harness-context')).toHaveLength(1);
+      const events = records(f.root);
+      expect(events.filter(event => event.event === 'UserPromptSubmit')).toHaveLength(0);
+      expect(events.filter(event => event.event === 'PreToolUse')).toHaveLength(1);
+      const stops = events.filter(event => event.event === 'Stop');
+      expect(stops).toHaveLength(1);
+      expect(stops[0]?.run_id).toBe(events.find(event => event.event === 'PreToolUse')?.run_id);
     } finally { f.cleanup(); }
   }, 60_000);
 

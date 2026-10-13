@@ -17,7 +17,8 @@ const install = spawnSync(process.execPath, [join(sdkRoot, 'dist/bundle/cli.js')
 assert.equal(install.status, 0, `Pi install failed: ${install.stdout}\n${install.stderr}`);
 const sdk: typeof import('@earendil-works/pi-coding-agent') = await import(pathToFileURL(join(sdkRoot, 'dist/index.js')).href);
 const ai: typeof import('@earendil-works/pi-ai') = await import(pathToFileURL(join(app, 'node_modules/@earendil-works/pi-ai/dist/index.js')).href);
-assert.equal(sdk.VERSION, '1.1.0');
+const installedPackage = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8'));
+assert.equal(sdk.VERSION, installedPackage.peerDependencies['@earendil-works/pi-coding-agent']);
 const settingsManager = sdk.SettingsManager.create(cwd, agentDir);
 const loader = new sdk.DefaultResourceLoader({ cwd, agentDir, settingsManager, noContextFiles: true,
   noPromptTemplates: true, noThemes: true, extensionFactories: [sdk.createCodemodeExtension({ models: false })] });

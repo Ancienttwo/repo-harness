@@ -409,7 +409,7 @@ active 或可执行的 plan）、`ContractGuard`（缺少 contract scaffold，�
 通过之前就声称完成）和 `WorktreeGuard`（从错误的 worktree 写入）。完整 playbook 见
 [`docs/reference-configs/hook-operations.md`](docs/reference-configs/hook-operations.md)。
 
-### Pi 1.1.0 package
+### Pi 1.2.0 package
 
 Pi 使用官方 package loader。先构建候选包，再安装：
 
@@ -420,7 +420,7 @@ pi install /absolute/path/to/repo-harness
 包提供 `repo-harness` router 和 `repo-harness-check` 技能。
 安装后在现有会话中执行 `/reload`。仓库必须有
 `.ai/harness/workflow-contract.json`，才会启用 hooks。
-首版需要 Pi `1.1.0`、Bun `>=1.4.0` 和 SDK 安装中的路径解析函数。
+首版需要 Pi `1.2.0`、Bun `>=1.4.0` 和 SDK 安装中的路径解析函数。
 其他版本或缺少该函数的发行包会标为 unavailable。
 
 extension 检查原生 edit/write，包括 codemode 的嵌套调用。

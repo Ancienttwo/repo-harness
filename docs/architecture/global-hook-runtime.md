@@ -100,7 +100,7 @@ JSON output and a ten-second deadline for ordinary checks. Stop uses the shared
 150-second managed host limit. It limits stdin to 16 MiB and diagnostics
 to 8 KiB. It cancels its own child processes on shutdown or session replacement.
 
-The adapter uses Pi 1.1.0's installed `resolveToCwd` implementation. It resolves
+The adapter uses Pi 1.2.0's installed `resolveToCwd` implementation. It resolves
 paths against the session directory before guard and journal dispatch. This
 keeps `@`, `~`, file URLs and subdirectory calls bound to the native tool target.
 Pi does not export this resolver from its public SDK. The version is exact;

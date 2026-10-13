@@ -99,8 +99,8 @@ export default function repoHarnessPi(pi: ExtensionAPI): void {
     current = state;
     if (!active) return;
     try {
-      if (VERSION !== '1.1.0') throw new Error(`PI_HOOK_UNSUPPORTED_VERSION: ${VERSION}; requires Pi 1.1.0`);
-      // Pi has no public path resolver. Use the exact installed 1.1.0 tool resolver;
+      if (VERSION !== '1.2.0') throw new Error(`PI_HOOK_UNSUPPORTED_VERSION: ${VERSION}; requires Pi 1.2.0`);
+      // Pi has no public path resolver. Use the exact installed 1.2.0 tool resolver;
       // unavailable distributions fail closed instead of duplicating its grammar.
       const paths = await import(pathToFileURL(join(getPackageDir(), 'dist/core/tools/path-utils.js')).href);
       if (typeof paths.resolveToCwd !== 'function') throw new Error('PI_HOOK_PATH_RESOLVER_UNAVAILABLE');
@@ -124,10 +124,14 @@ export default function repoHarnessPi(pi: ExtensionAPI): void {
     state.stop = null;
     state.tools.clear();
     let output: HookJsonOutput | null = null;
-    try {
-      output = await invoke(state, 'UserPromptSubmit', 'default', { prompt: event.prompt }, state.runId, ctx.signal);
-      if (output.exit_code !== 0) throw new Error(output.diagnostics || output.reason);
-    } catch (error) { failed(state, error, ctx); }
+    // A custom-message run (pi.sendMessage with triggerTurn) has no user prompt, so
+    // UserPromptSubmit is skipped. The run still makes tool calls and reaches Stop.
+    if (event.messageType === 'user') {
+      try {
+        output = await invoke(state, 'UserPromptSubmit', 'default', { prompt: event.prompt }, state.runId, ctx.signal);
+        if (output.exit_code !== 0) throw new Error(output.diagnostics || output.reason);
+      } catch (error) { failed(state, error, ctx); }
+    }
     if (current !== state) return;
     const content = [state.context, output?.additional_context, output?.diagnostics,
       state.availability === 'unavailable' ? `[HarnessUnavailable] ${state.diagnostic}. Edits are blocked. Resolve the failure and run /reload.` : null]

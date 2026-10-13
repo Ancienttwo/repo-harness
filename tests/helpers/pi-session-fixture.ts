@@ -137,6 +137,11 @@ try {
     await session.bindExtensions({ onError: event => { errors.push(event.error); } });
     await prompt('edit', { path: 'README.md', edits: [{ oldText: 'seed', newText: 'replaced' }] }, 'after-replacement');
     await prompt('write', { path: '_ops/replaced.txt', content: 'forbidden' }, 'replaced-private');
+  } else if (mode === 'custom-message') {
+    // An idle sendMessage with triggerTurn starts a run without a user prompt.
+    provider.setResponses([fauxAssistantMessage(fauxToolCall('write', { path: 'custom-run.txt', content: 'custom run' }, { id: 'custom-write' }),
+      { stopReason: 'toolUse' }), fauxAssistantMessage('Done.')]);
+    await session.sendCustomMessage({ customType: 'fixture-trigger', content: 'start without a user prompt', display: false }, { triggerTurn: true });
   } else if (mode === 'inactive') {
     await prompt('write', { path: '_ops/private.txt', content: 'allowed outside opt-in' }, 'inactive-write');
   } else if (mode === 'unavailable') {
