@@ -1145,10 +1145,9 @@ Never delete the shared database or all repository indexes as recovery.
 The runtime snapshot excludes `.ai/harness/**`, so concurrent harness receipts
 and traces cannot invalidate a provider snapshot.
 
-Managed host adapters give only `Stop.default` 150 seconds for its bounded
-deferred work. Every other managed route remains at 30 seconds, and installer
-refresh replaces only repo-harness-owned entries while preserving sibling user
-hooks.
+Managed host adapters and Pi bridge calls use 30 seconds for every route.
+Installer refresh replaces only repo-harness-owned entries and preserves
+sibling user hooks.
 
 ### `source.include` anchors
 

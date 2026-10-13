@@ -69,7 +69,7 @@ export class PiHookBridge {
           killTimer = setTimeout(() => { child.kill('SIGKILL'); finish(failure(code, detail)); }, 250);
         };
         const abort = () => stop('PI_HOOK_CANCELLED');
-        const timeoutMs = this.options.timeoutMs ?? (request.event === 'Stop' ? 30_000 : 10_000);
+        const timeoutMs = this.options.timeoutMs ?? 30_000;
         const timer = setTimeout(() => stop('PI_HOOK_TIMEOUT'), timeoutMs);
         controller.signal.addEventListener('abort', abort, { once: true });
         for (const [stream, chunks] of [[child.stdout, stdout], [child.stderr, stderr]] as const) {

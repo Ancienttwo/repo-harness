@@ -23,55 +23,18 @@ library supplied by the installed package.
 The runtime is deterministic and fail-closed. Use hooks as advisory accelerators
 and guards, not as a second source of workflow truth.
 
-## Managed Routes
+## Managed Routes and Profiles
 
-| Event and route | Typed handler | Purpose |
-| --- | --- | --- |
-| `SessionStart.default` | `session-context` | Bounded resume, sprint, and security context. |
-| `PreToolUse.edit` | `mutation-guard` | Worktree and plan/contract readiness before edits. |
-| `PreToolUse.subagent` | `subagent` | Delegated return-channel enforcement. |
-| `PostToolUse.edit` | `mutation-observed` | Edit journal and controlled-file observations. |
-| `PostToolUse.bash` | `command-observed` | Command result and verification evidence. |
-| `PostToolUse.always` | `trace-observer` | Low-noise tool trace. |
-| `UserPromptSubmit.default` | `prompt` | Prompt intent and file-backed workflow guidance. |
-| `UserPromptSubmit.delegation` | `subagent` | Explicit Codex delegation authorization. |
-| `SubagentStart.context` / `SubagentStop.quality` | `subagent` | Delegation context and report quality. |
-| `Stop.default` | `stop` | Flush observations and finalize the handoff projection. |
+The [Hook Operations Reference](../docs/reference-configs/hook-operations.md#hook-authority-map)
+owns the route inventory. Claude installs five routes. Codex installs six.
+Pi maps four routes. The minimal host profile installs four routes.
+Use `repo-harness install --profile minimal|full` to select a profile.
+Use `--no-hooks` to skip host adapter installation.
 
-## Presets
-
-### A) Balanced Shared Guardrails (recommended)
-
-- `PreToolUse.edit`: `mutation-guard` with worktree and plan/contract checks.
-- `PostToolUse.edit`: `mutation-observed` with the optional minimal-change
-  observer.
-- `PostToolUse.bash`: `command-observed` for command evidence.
-- `PostToolUse.always`: `trace-observer` for the structured tool trace.
-- `UserPromptSubmit.default`: `prompt` for plan sync and workflow guidance.
-- `Stop.default`: `stop` for handoff and completion readiness.
-
-### B) Balanced + Release Guard
-
-Use preset A and the explicit release command for changelog checks. Release
-checks are not implemented as a second hook runtime.
-
-### C) Balanced + Advisory Extras
-
-Use preset A and enable the declared policy observers. Additional advisory work
-must run from explicit CLI commands and must not add another route authority.
-
-### D) Minimal
-
-Install `UserPromptSubmit.default` only.
-
-### E) No Hooks
-
-Skip host adapter configuration.
-
-### F) Custom
-
-Define explicit matcher and command sets in the user-level adapter while keeping
-the route tuple and typed handler registry unchanged.
+After a package upgrade, reinstall the adapters and trust the new Codex
+command tuples once. Old adapters call removed routes and get exit 2.
+Managed commands require `repo-harness-hook` on PATH in opted-in repositories.
+All routes use a 30-second timeout.
 
 ## Operator Helpers and Migration
 

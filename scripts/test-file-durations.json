@@ -193,8 +193,6 @@
     "tests/prepare-codex-handoff.test.ts": 363.56,
     "tests/prepare-handoff.test.ts": 2794.17,
     "tests/process-runner.test.ts": 82.69,
-    "tests/prompt-handler.test.ts": 4.16,
-    "tests/prompt-routing-explicit-first.test.ts": 60.8,
     "tests/publication-feedback-concurrency.test.ts": 13866.13,
     "tests/readme-dx.test.ts": 298.71,
     "tests/refactor-archctx-provider.test.ts": 9.49,

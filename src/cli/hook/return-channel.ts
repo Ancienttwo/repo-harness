@@ -1,6 +1,6 @@
 /**
  * PreToolUse.subagent: stamp the delivery contract and the board slice onto a
- * Task/Agent spawn prompt. The runtime decides which hosts run this route.
+ * Claude Agent spawn prompt. The runtime decides which hosts run this route.
  */
 
 import { BOARD_SLICE_MARKER, resolveBoardSliceBlock, type BoardSliceCollector } from './board-slice-context';
@@ -35,7 +35,7 @@ function appendBoardSlice(collector: BoardSliceCollector, prompt: string): strin
  */
 export function runReturnChannel(input: ReturnChannelInput): HookHandlerResult {
   const toolName = payloadString(input.payload, 'tool_name');
-  if (toolName !== 'Task' && toolName !== 'Agent') return NO_OUTPUT;
+  if (toolName !== 'Agent') return NO_OUTPUT;
   const toolInput = payloadValue(input.payload, 'tool_input');
   if (!toolInput || typeof toolInput !== 'object' || Array.isArray(toolInput)) return NO_OUTPUT;
   const prompt = (toolInput as Readonly<Record<string, unknown>>).prompt;

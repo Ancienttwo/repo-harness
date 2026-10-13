@@ -17,7 +17,6 @@ source:
     - "src/cli/hook/return-channel.ts"
     - "src/cli/hook/delegation-advisor.ts"
     - "src/cli/hook/subagent-context.ts"
-    - "src/cli/hook/subagent-quality.ts"
     - "src/cli/hook/task-inbox-handler.ts"
     - "src/cli/hook/board-slice-context.ts"
     - "src/cli/hook/state-snapshot.ts"

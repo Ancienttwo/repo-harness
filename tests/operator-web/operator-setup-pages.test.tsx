@@ -255,14 +255,14 @@ describe('Skills page', () => {
 describe('Hooks page', () => {
   test('routes group by event with per-host support, and mismatches list under their host', async () => {
     await mount('#hooks', props(degradedSetup(NOW)));
-    expect(all('[data-hook-event]').map(row => row.getAttribute('data-hook-event'))).toEqual(['SessionStart', 'PreToolUse', 'PostToolUse', 'UserPromptSubmit', 'SubagentStart', 'SubagentStop', 'Stop']);
+    expect(all('[data-hook-event]').map(row => row.getAttribute('data-hook-event'))).toEqual(['SessionStart', 'PreToolUse', 'PostToolUse', 'UserPromptSubmit', 'SubagentStart', 'Stop']);
     const subagent = document.querySelector('[data-hook-event="PreToolUse"] [data-route="subagent"]')!;
-    expect(subagent.querySelector('[data-host-cell="codex"] [data-route-host]')!.getAttribute('data-route-host')).toBe('supported');
+    expect(subagent.querySelector('[data-host-cell="codex"] [data-route-host]')!.getAttribute('data-route-host')).toBe('unsupported');
     expect(subagent.querySelector('[data-host-cell="pi"] [data-route-host]')!.getAttribute('data-route-host')).toBe('unsupported');
-    expect(subagent.textContent).toContain('Task|Agent|SendUserMessage');
+    expect(subagent.textContent).toContain('Agent');
     expect(text('[data-hook-event="SessionStart"] [data-route="default"]')).toContain('every tool');
     expect(all('[data-managed-host="codex"] [data-mismatch]').map(row => row.textContent)).toEqual([
-      'SubagentStart · context · missing', 'SubagentStop · quality · missing', 'Stop · default · timeout differs', 'PreToolUse · entry without a route id · unexpected entry',
+      'SubagentStart · context · missing', 'Stop · default · timeout differs', 'PreToolUse · entry without a route id · unexpected entry',
     ]);
     expect(all('[data-managed-host="claude"] [data-mismatch]')).toHaveLength(0);
     expect(text('[data-managed-host="pi"]')).toContain('Setup check does not report Pi install status');

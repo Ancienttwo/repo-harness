@@ -21,7 +21,7 @@ function parseCliArgs(argv: readonly string[]): { event: HookEvent; routeId: Rou
   return { event: argv[0] as HookEvent, routeId: argv[2] as RouteId };
 }
 
-/** The one hook dispatch path, shared by `repo-harness-hook` and `repo-harness hook`. */
+/** The hook dispatch path for `repo-harness-hook`. */
 export function runHookCli(argv: readonly string[]): number {
   const parsed = parseCliArgs(argv);
   if (!parsed) {

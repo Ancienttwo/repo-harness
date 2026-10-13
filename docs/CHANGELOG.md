@@ -13,7 +13,18 @@ All notable changes to this skill are documented here.
   any script that sources `$(repo-harness hook-lib path)` to
   `repo-harness run <helper>`. `repo-harness doctor` and `repo-harness upgrade`
   still report an old `.ai/hooks/lib/workflow-state.sh` copy and keep its
-  bytes. (#696)
+  bytes. The same release removes `PostToolUse.edit`, `PostToolUse.always`,
+  `UserPromptSubmit.default` and `SubagentStop.quality`, with their handlers.
+  `PostToolUse.bash` stays on Pi only. `PreToolUse.subagent` stays on Claude
+  only, with the verified `Agent` matcher. Claude installs 5 routes, Codex 6,
+  and Pi maps 4. `repo-harness hook` and the managed full-CLI fallback are
+  removed. Managed commands skip non-opt-in repositories and require
+  `repo-harness-hook` on PATH for opted-in repositories. All managed entries
+  and Pi bridge calls use 30 seconds, including Stop. Update the package and
+  reinstall hooks once; trust the new Codex tuples once. Old adapters get
+  exit 2 for removed routes until reinstall. Doctor reports projection
+  mismatch and a missing hook bin. Keep the package and adapters on the same
+  release (#680). (#696, #705)
 - `prepare-handoff` runs only `recovery-view-cli.ts`, for both the write and
   `--status`. It no longer appends `handoff_refresh` events to
   `.ai/harness/events.jsonl` or writes run summaries under
@@ -36,7 +47,7 @@ All notable changes to this skill are documented here.
   exit 1 for a crash. (#691)
 - `repo-harness-hook` requires `HOOK_HOST`. A missing host, a malformed
   payload and a route that is not installed for the host now stop before a
-  handler runs. `SubagentStop --route quality` on Claude exits 2 with
+  handler runs. A host that does not support a current route gets exit 2 with
   `unsupported-host-route`. (#691)
 - Hook identity comes only from the payload `session_id`, `run_id` and
   `turn_id`. Handlers no longer read `HOOK_SESSION_ID`, `HOOK_RUN_ID`,
@@ -48,9 +59,7 @@ All notable changes to this skill are documented here.
   fields. A policy block and a crash have different reasons. (#691)
 - The `review-subject`, `review-rubric`, `prompt-guard-decide`,
   `prompt-route`, `minimal-change` and `circuit-breaker-record` hook
-  subcommands are removed. The
-  `repo-harness hook` command and `repo-harness-hook` share one dispatch
-  path. (#691)
+  subcommands are removed. (#691)
 - `PreToolUse.edit` keeps only the path checks that block: repository scope,
   `_ref/`, `_ops/` and a parseable `apply_patch` target. A new
   `EditScopeGuard` blocks an `Edit` or `Write` call that has no
@@ -164,12 +173,8 @@ All notable changes to this skill are documented here.
   `contract-worktree start`. It runs under the topology lock and never blocks
   start. `ship-worktrees --cleanup-merged` stays the manual path. SessionStart
   prints no `[WorktreeSweep]` line. (#693)
-- The four subagent routes have one handler each: `return-channel`,
-  `delegation-advisor`, `subagent-context` and `subagent-quality`. The runtime
-  checks the host; handlers do not. A `SendUserMessage` call gets no output.
-  `SubagentStop.quality` reads only `last_assistant_message`. (#694)
-- `UserPromptSubmit.default` adds only the `[OperationBoundaries]` line, and
-  only for an explicit workflow command at the start of the prompt. (#694)
+- The three subagent routes have one handler each: `return-channel`,
+  `delegation-advisor` and `subagent-context`. The runtime checks the host. (#694)
 - Stop renders `handoff.md` and `resume.md` from `recovery-materializer` and
   publishes the evidence checkpoint. Pi gives Stop 30 seconds. The recovery
   helper in `assets/templates/helpers/` is a generated projection; the hand
@@ -179,15 +184,6 @@ All notable changes to this skill are documented here.
   Both cleanups go away in the next release. (#692, #695)
 - No hook appends to or rotates `.ai/harness/events.jsonl`. Only
   `prepare-handoff` still appends to it. (#693, #695)
-- `PostToolUse.edit` and `PostToolUse.always` stay installed but run one
-  no-op handler, `retired-observer`: exit 0, no output, no writes. #698
-  removes both routes. (#692, #695)
-- The managed Claude and Codex `Stop` entry keeps its 150-second timeout
-  until #698. (#695)
-- #698 also removes the Claude and Codex `PostToolUse.bash` entries. (#695)
-- #698 retires `UserPromptSubmit.default` and `SubagentStop.quality` and
-  narrows the hosts of `PreToolUse.subagent`. Until then the route tuple is
-  unchanged. (#694)
 
 ### Fixed
 

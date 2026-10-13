@@ -180,8 +180,8 @@ sequenceDiagram
 
 | 决策 | 权衡 |
 | --- | --- |
-| `PostToolUse.edit` 与 `PostToolUse.always` 绑定 no-op `retired-observer`，route 保留到 #698 | route tuple 不变，Codex 不用重新信任。代价：每次编辑和每次工具调用仍付一次进程启动，直到 #698 删除这两条 route |
-| 四条 subagent route 各有一个 handler（`return-channel`、`delegation-advisor`、`subagent-context`、`subagent-quality`） | handler id 是内部名，tuple 不变。runtime 统一检查 host，handler 不按 event 或 host 分支 |
+| 退役 routes 与 managed command 在同一 release 删除（#705） | Codex 只重新信任一次。旧 adapter 在 reinstall 前会收到 exit 2。 |
+| 三条 subagent route 各有一个 handler（`return-channel`、`delegation-advisor`、`subagent-context`） | `PreToolUse.subagent` 只处理 Claude `Agent`。runtime 统一检查 host。 |
 | `hook-entry.ts` 与完整 commander CLI 分离 | 热路径不冷加载非 hook 命令模块（文件头 `:5` 明写理由），代价是子命令分派在 entry 里手写成一串 `if` |
 | 删除 `workflow-state.sh`，helper 改调 TypeScript | 路径与 stem 只有一个 TypeScript 实现。代价：`prepare-handoff` 与 `summarize-failures` 现在需要 Bun，旧的 `hook-lib path` 下游调用方要改成 `repo-harness run <helper>` |
 | 空 lifecycle hooks 已移除 | Scaffold 和 template assembly 直接执行各自任务。它们不再调用空 runner。 |
@@ -193,8 +193,8 @@ sequenceDiagram
 | 组件 | footprint 摘要 | 文件 / 行 | 职责 |
 | --- | --- | --- | --- |
 | `component.hook-adapters.primary`（Hook Route Runtime） | `hook-entry.ts`、`hook/{runtime,route-registry,handler-registry,handler-contract,hook-input,hook-protocol,event-telemetry,session-context-budget}.ts`、`src/pi/hook-protocol.ts`、`src/effects/loop/**`、`hook-event-log.ts` | 12 / 1183（2026-10-13） | route 表、handler 绑定、opt-in 检查、payload 与 identity 解析、host 渲染表、遥测与日志轮转 |
-| `component.hook-adapters.edit-guards`（Guard and Observer Handlers） | `hook/{mutation-guard,prompt-handler,prompt-router,circuit-breaker,command-observed}.ts` | 5 / 712（2026-10-13） | PreToolUse.edit 路径边界、Bash 观测、prompt 的 `[OperationBoundaries]` 行、circuit breaker |
-| `component.hook-adapters.session-lifecycle`（Session Lifecycle Handlers） | `hook/{session-context,stop-handler,return-channel,delegation-advisor,subagent-context,subagent-quality,task-inbox-handler,board-slice-context,state-snapshot}.ts`、`run-summary-retention.ts` | 10 / 1532（2026-10-13） | SessionStart、Stop 恢复视图、subagent route、Task Inbox |
+| `component.hook-adapters.edit-guards`（Guard and Observer Handlers） | `hook/{mutation-guard,circuit-breaker,command-observed}.ts` | 3 / 657（2026-10-13） | PreToolUse.edit 路径边界、Pi Bash 观测、circuit breaker |
+| `component.hook-adapters.session-lifecycle`（Session Lifecycle Handlers） | `hook/{session-context,stop-handler,return-channel,delegation-advisor,subagent-context,task-inbox-handler,board-slice-context,state-snapshot}.ts`、`run-summary-retention.ts` | 9 / 1456（2026-10-13） | SessionStart、Stop 恢复视图、subagent route、Task Inbox |
 | `component.hook-adapters.host-installer`（Host Adapter Installer） | `src/cli/installer/**`、`src/pi/{extension,hook-bridge}.ts`、`commands/{install,status,security}.ts` | 20 / 4702（2026-10-13） | managed entries、install profile、Pi bridge、status 与 security scan |
 
 与归属提议 §5 的两处偏差，都有源码证据：
@@ -240,7 +240,7 @@ host-installer 有 20 个文件、4702 行（2026-10-13），标记为 expandabl
 按实测的可证伪顺序：
 
 1. **Stop 的延迟工作。** 旧采样里 Stop 是唯一贴到硬上限的 route：675 次 Stop 里 93 次超过 5s、77 次超过 10s，p99 24.4s。当时的主要成本是架构 cascade 和投影 drain。二者已删除（2026-10-10）。refactor recommendation observer 也已移出 Stop（2026-10-10），改由 Bot 按需读取证据。#695 又删除了 journal pass、run summary、状态解析、readiness 行与 140 s deadline。Stop 现在只发布 checkpoint 并渲染 handoff 与 resume。需要重新采样，再判断 Stop 是否仍是最先垮的点。
-2. **`PostToolUse.bash` 的单位成本 × 调用量。** p50 52ms 单看不贵，但它是第二高频 route（16,398 次），乘出来就是 26.7% 的总时间。它没有尾延迟问题（p99 244ms），垮的方式是稳态吞吐：命令密度上去后每次 Bash 调用都固定付这 50ms。#695 删除了 importer、输出捕获与 `post-bash-latest.json`，单位成本需要重新采样。
+2. **`PostToolUse.bash` 的单位成本 × 调用量。** p50 52ms 单看不贵，但它是第二高频 route（16,398 次），乘出来就是 26.7% 的总时间。它没有尾延迟问题（p99 244ms），垮的方式是稳态吞吐：命令密度上去后每次 Bash 调用都固定付这 50ms。#695 删除了 importer、输出捕获与 `post-bash-latest.json`，#705 又删除了 Claude/Codex 的这条 route。Pi 的单位成本需要重新采样。
 3. **`PreToolUse.edit` 阻塞编辑热路径。** mutation-guard 是**同步前置**门，p50 253ms 直接计入用户可感知的编辑延迟，且 max 10.9s 说明它在状态解析退化时会长尾。#692 删除了状态解析、lease 检查、circuit breaker 与 advisory。现在只剩路径边界，以及 owned path 的一次 `git status`。需要重新采样。
 4. **SessionStart 上下文预算（#693 已修正）。** 旧实现把五个 provider 拼成一整块 section，超预算时一起消失。现在每个 provider 是独立 section，各有 id 与 source。`budgetSessionContext` 按 priority 排序，保留 mandatory section，放不下的 optional section 变成 `[ContextRef:<id>] <source>` 指针。延迟本身不是瓶颈（4.6%、p95 711ms）。
 5. **`resolveEffectiveState` 的锁竞争。** `runtime.ts` 的 `resolveHookEffectiveState` 是唯一的重试策略：三次有界重试（`EFFECTIVE_STATE_RESOLUTION_MAX_ATTEMPTS = 3`），只覆盖两种已知瞬时签名（stability 重读耗尽、独占锁超时）。并行 agent 数量上去后，重试耗尽会把 SessionStart 推进 `[HarnessStateUnavailable]` 分支 —— 这是正确的 fail-closed，但用户侧表现为上下文突然消失。
@@ -249,9 +249,9 @@ host-installer 有 20 个文件、4702 行（2026-10-13），标记为 expandabl
 两个 sink 不是同一个东西，早期版本把它们混为一谈：
 
 - `.ai/harness/runs/hook-events.jsonl` 由 dispatcher 的 `createHookEventTelemetry().finalize`（`event-telemetry.ts`）在**每条 route** 完成后经 `appendHookEventLog`（`src/effects/hook-event-log.ts:87`）同步追加一条，因此它是上表的数据来源，也是唯一全 route 覆盖的写入。
-- `.claude/.trace.jsonl` 的 writer `trace-observer.ts` 已删除（#695）。`PostToolUse.always` 现在绑定 no-op `retired-observer`，不写任何文件。
+- `.claude/.trace.jsonl` 的 writer `trace-observer.ts` 已删除（#695）。`PostToolUse.always` 已退役（#705）。
 
-`PostToolUse.always` 确实是调用量最大的 route（21,217 次，超过 bash）。旧实测里它是**最便宜**的高频路径：p50 3.2ms、总占比 2.6%。现在它不做任何工作，只付进程启动成本，直到 #698 删除这条 route。
+`PostToolUse.always` 确实是调用量最大的 route（21,217 次，超过 bash）。旧实测里它是**最便宜**的高频路径：p50 3.2ms、总占比 2.6%。#705 已删除这条 route。现在没有这项进程启动成本。
 
 注意遥测本身的边界：`metrics.child_processes` 在全部 44,301 条记录里都是 `0`，它属于 `measurement.incomplete_metrics`，不能用来反推 Stop 的子进程数量；上表只依赖 `elapsed_ms` 这个被标记为 complete 的字段。
 
@@ -465,7 +465,7 @@ bash scripts/check-task-workflow.sh
 本模块历史记录的补充验证命令：
 
 - `bun test tests/cli/route-registry.test.ts tests/cli/hook.test.ts`
-- `bun test tests/prompt-handler.test.ts tests/subagent-handler.test.ts`
+- `bun test tests/cli/route-registry.test.ts tests/subagent-handler.test.ts`
 - `bun test tests/command-observed.test.ts tests/mutation-guard.test.ts`
 - `bun test tests/stop-handler.test.ts tests/session-context.test.ts`
 - `bun test tests/hook-contracts.test.ts tests/hook-protocol.test.ts`

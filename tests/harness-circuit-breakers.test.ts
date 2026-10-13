@@ -15,7 +15,6 @@ import { execFileSync, spawn, spawnSync } from 'child_process';
 import { circuitLimit, recordCircuitAttempt, type CircuitAttempt } from '../src/cli/hook/circuit-breaker';
 import { withExclusiveDirectoryLock } from '../src/effects/locking/exclusive-directory-lock';
 import { runCommandObserved } from '../src/cli/hook/command-observed';
-import { runPromptHandler } from '../src/cli/hook/prompt-handler';
 
 const HOOK_ENTRY = join(import.meta.dir, '../src/cli/hook-entry.ts');
 
@@ -423,17 +422,5 @@ describe('workflow circuit breakers', () => {
     expect(existsSync(join(cwd, '.ai/harness/state/effective.json'))).toBe(false);
   }), 60_000);
 
-  test('repeated review prompts give boundary advice and consume no circuit', () => withRepo((cwd) => {
-    for (const profile of ['routine', 'high']) {
-      mkdirSync(join(cwd, '.ai/harness/state'), { recursive: true });
-      writeFileSync(join(cwd, '.ai/harness/state/effective.json'), JSON.stringify({ workflow_profile: profile }));
-      for (let index = 0; index < 3; index += 1) {
-        const result = runPromptHandler({ payload: { prompt: '/check' } });
-        expect(result.exitCode).toBe(0);
-        expect(result.additionalContext).toContain('[OperationBoundaries]');
-        expect(result.diagnostics).toBeUndefined();
-      }
-      expect(existsSync(join(cwd, '.ai/harness/state/circuit-breaker.json'))).toBe(false);
-    }
-  }), 30_000);
+
 });

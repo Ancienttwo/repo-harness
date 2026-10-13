@@ -157,7 +157,8 @@ export function runHook(opts: RunHookOptions): RunHookResult {
   if (!repoRoot) return early(0, 'not-in-git-repo', null);
   if (!isOptIn(repoRoot)) return early(0, 'non-opt-in', repoRoot);
   if (!route) {
-    return early(2, 'unknown-route', repoRoot, `${HOOK_COMMAND_NAME}: unknown route ${opts.event}.${opts.routeId}\n`);
+    const repair = host === 'pi' ? 'Reload the Pi extension.' : `Run repo-harness install --target ${host} --location global.`;
+    return early(2, 'unknown-route', repoRoot, `${HOOK_COMMAND_NAME}: unknown route ${opts.event}.${opts.routeId}. ${repair}\n`);
   }
   if (!routeSupportsHost(route, host)) {
     return early(2, 'unsupported-host-route', repoRoot,

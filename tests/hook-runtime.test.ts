@@ -174,23 +174,6 @@ describe('hook runtime typed dispatch', () => {
     } finally { rmSync(root, { recursive: true, force: true }); }
   }, 30_000);
 
-  test('an exported PROMPT never replaces the payload prompt', () => {
-    const root = fixture();
-    try {
-      const script = `const { runHook } = await import(${JSON.stringify(RUNTIME_MODULE)});
-        runHook({ event: 'UserPromptSubmit', routeId: 'default', cwd: process.env.FIXTURE_ROOT,
-          input: JSON.stringify({ prompt: '/plan add login flow' }) });`;
-      const child = spawnSync(process.execPath, ['-e', script], {
-        cwd: root,
-        encoding: 'utf8',
-        env: { ...env(root), FIXTURE_ROOT: root, PROMPT: '%n@%m %1~ %# ' },
-      });
-      expect(child.status).toBe(0);
-      const output = JSON.parse(child.stdout.trim());
-      expect(output.hookSpecificOutput).toMatchObject({ hookEventName: 'UserPromptSubmit' });
-      expect(output.hookSpecificOutput.additionalContext).toContain('[OperationBoundaries]');
-    } finally { rmSync(root, { recursive: true, force: true }); }
-  }, 30_000);
 
   test('passes host payload once to the command observer and records its result', () => {
     const root = fixture();
@@ -200,13 +183,13 @@ describe('hook runtime typed dispatch', () => {
         routeId: 'bash',
         cwd: root,
         input: JSON.stringify({ tool_input: { command: 'echo hello' }, tool_response: { stdout: 'hello\n', stderr: '', interrupted: false }, exit_code: 0 }),
-        env: env(root),
+        env: env(root, 'pi'),
       });
       expect(result).toMatchObject({ exitCode: 0, reason: 'ok', handler: 'command-observed' });
       const [record] = telemetry(root);
       expect(record).toMatchObject({
         protocol: HOOK_EVENT_TELEMETRY_PROTOCOL,
-        host: 'claude',
+        host: 'pi',
         event: 'PostToolUse',
         route_id: 'bash',
         exit_code: 0,
@@ -235,12 +218,12 @@ describe('hook runtime typed dispatch', () => {
     try {
       const result = runHook({
         event: 'PostToolUse',
-        routeId: 'always',
+        routeId: 'bash',
         cwd: root,
-        input: JSON.stringify({ hook_event_name: 'PostToolUse', tool_name: 'Read' }),
-        env: env(root),
+        input: JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'echo hi' }, exit_code: 0 }),
+        env: env(root, 'pi'),
       });
-      expect(result.handler).toBe('retired-observer');
+      expect(result.handler).toBe('command-observed');
       const [record] = telemetry(root);
       expect(Object.keys(record).sort()).toEqual([
         'blocked', 'completed_at', 'elapsed_ms', 'event', 'event_id', 'exit_code', 'fingerprint', 'host',
@@ -305,7 +288,7 @@ describe('host envelopes on the real hook entry (#678)', () => {
     return envelope.hookSpecificOutput.additionalContext;
   }
 
-  test('edit, prompt, session and bash advisories reach both hosts as additionalContext', () => {
+  test('edit and session advisories reach both hosts as additionalContext', () => {
     const root = owedFixture();
     try {
       for (const hostName of ['claude', 'codex'] as const) {
@@ -313,10 +296,6 @@ describe('host envelopes on the real hook entry (#678)', () => {
         expect(edit.status).toBe(0);
         expect(context(edit.stdout, 'PreToolUse'))
           .toBe('[CapabilityOwner] src/owned/a.ts belongs to core-owned (docs/architecture/modules/core/owned.md).');
-
-        const prompt = host(root, hostName, 'UserPromptSubmit', 'default', { prompt: '/check my branch' });
-        expect(prompt.status).toBe(0);
-        expect(context(prompt.stdout, 'UserPromptSubmit')).toContain('[OperationBoundaries]');
 
         const session = host(root, hostName, 'SessionStart', 'default', { session_id: `owed-${hostName}` });
         expect(session.status).toBe(0);
@@ -327,16 +306,16 @@ describe('host envelopes on the real hook entry (#678)', () => {
         const push = host(root, hostName, 'PostToolUse', 'bash', {
           tool_input: { command: 'git push origin feature' }, tool_response: { stdout: '', stderr: '' }, exit_code: 0,
         });
-        expect(push.status).toBe(0);
-        expect(context(push.stdout, 'PostToolUse')).toContain('repo-harness architecture-projection check --json');
+        expect(push.status).toBe(2);
+        expect(push.stderr).toContain('unsupported-host-route');
       }
     } finally { rmSync(root, { recursive: true, force: true }); }
   }, 120_000);
 
-  test('PreToolUse.subagent keeps its updatedInput prompt rewrite on Claude and Codex', () => {
+  test('PreToolUse.subagent keeps its updatedInput prompt rewrite on Claude', () => {
     const root = owedFixture();
     try {
-      for (const hostName of ['claude', 'codex'] as const) {
+      for (const hostName of ['claude'] as const) {
         const spawn = host(root, hostName, 'PreToolUse', 'subagent', { tool_name: 'Agent', tool_input: { description: 'probe', prompt: 'inspect the repo' } });
         expect(spawn.status).toBe(0);
         const envelope = JSON.parse(spawn.stdout) as { hookSpecificOutput: Record<string, unknown> };

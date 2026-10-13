@@ -33,11 +33,9 @@ export type RouteId =
   | 'edit'
   | 'subagent'
   | 'bash'
-  | 'always'
   | 'delegation'
   | 'inbox'
-  | 'context'
-  | 'quality';
+  | 'context';
 
 /** The in-process authority bound to a public route. */
 export type HookHandlerId =
@@ -46,12 +44,9 @@ export type HookHandlerId =
   | 'return-channel'
   | 'delegation-advisor'
   | 'subagent-context'
-  | 'subagent-quality'
   | 'command-observed'
-  | 'prompt'
   | 'task-inbox'
-  | 'stop'
-  | 'retired-observer';
+  | 'stop';
 
 export interface Route {
   readonly event: HookEvent;
@@ -92,36 +87,16 @@ export const ROUTES: readonly Route[] = Object.freeze([
   Object.freeze({
     event: 'PreToolUse' as const,
     routeId: 'subagent' as const,
-    matcher: 'Task|Agent|SendUserMessage',
-    hosts: ['claude', 'codex'] as const,
+    matcher: 'Agent',
+    hosts: ['claude'] as const,
     handler: 'return-channel',
-  }),
-  Object.freeze({
-    event: 'PostToolUse' as const,
-    routeId: 'edit' as const,
-    matcher: 'Edit|Write',
-    // The post-edit journal is retired. The route stays installed until the
-    // route-registry trust transition (#698) removes it.
-    handler: 'retired-observer',
   }),
   Object.freeze({
     event: 'PostToolUse' as const,
     routeId: 'bash' as const,
     matcher: 'Bash',
+    hosts: ['pi'] as const,
     handler: 'command-observed',
-  }),
-  Object.freeze({
-    event: 'PostToolUse' as const,
-    routeId: 'always' as const,
-    // The trace observer is retired. The route stays installed until the
-    // route-registry trust transition (#698) removes it.
-    handler: 'retired-observer',
-    hosts: ['claude', 'codex'] as const,
-  }),
-  Object.freeze({
-    event: 'UserPromptSubmit' as const,
-    routeId: 'default' as const,
-    handler: 'prompt',
   }),
   Object.freeze({
     event: 'UserPromptSubmit' as const,
@@ -143,12 +118,6 @@ export const ROUTES: readonly Route[] = Object.freeze([
     routeId: 'context' as const,
     hosts: Object.freeze(['codex'] as const),
     handler: 'subagent-context',
-  }),
-  Object.freeze({
-    event: 'SubagentStop' as const,
-    routeId: 'quality' as const,
-    hosts: Object.freeze(['codex'] as const),
-    handler: 'subagent-quality',
   }),
   Object.freeze({
     event: 'Stop' as const,

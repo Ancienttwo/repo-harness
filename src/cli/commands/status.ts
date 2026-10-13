@@ -120,13 +120,13 @@ function expectedManagedEntryCount(
     .reduce((count, entries) => count + entries.length, 0);
 }
 
-function expectedManagedProfile(
+export function expectedManagedProfile(
   installedProfile: StatusReport['installedProfile'],
 ): InstallProfile {
   return installedProfile.recorded === true ? installedProfile.profile : 'full';
 }
 
-function inspectManagedProjection(
+export function inspectManagedProjection(
   filePath: string | undefined,
   host: HookHost,
   profile: InstallProfile,
@@ -167,7 +167,7 @@ export function formatManagedHookProjectionMismatch(
   return `${route} ${mismatch.field} expected=${formatProjectionValue(mismatch.expected)} actual=${formatProjectionValue(mismatch.actual)}`;
 }
 
-function readInstalledProfileForStatus(): StatusReport['installedProfile'] {
+export function readInstalledProfileForStatus(): StatusReport['installedProfile'] {
   const statePath = installProfileStatePath();
   try {
     const state = readInstalledProfile();

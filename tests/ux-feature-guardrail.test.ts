@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync } from "fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { spawnSync } from "child_process";
@@ -56,12 +56,11 @@ describe("UX feature pre-implementation guard", () => {
 
   test("keeps explicit PRD guidance while retiring automatic prompt guard advice", () => {
     const prd = read("assets/skills/repo-harness-product/references/prd.md");
-    const promptHandler = read("src/cli/hook/prompt-handler.ts");
+
 
     expect(prd).toContain("first read `repo-harness docs show ux-feature-guard`");
     expect(prd).toContain("do not restate or replace that field schema in the PRD");
-    expect(promptHandler).not.toContain("[UXFeatureGuard]");
-    expect(promptHandler).not.toContain("if (shouldEmitUxFeatureGuardAdvice(context))");
+    expect(existsSync(join(ROOT, "src/cli/hook/prompt-handler.ts"))).toBe(false);
   });
 
   test("includes the convention in minimal-agentic adoption without a second product surface", () => {

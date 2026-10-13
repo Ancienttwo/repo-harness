@@ -11,7 +11,6 @@ import {
   LONG_COMMAND_GUARDRAIL_MARKER,
   runSubagentContext,
 } from '../src/cli/hook/subagent-context';
-import { runSubagentQuality } from '../src/cli/hook/subagent-quality';
 import { payloadIdentityField, type HookIdentity, type HookPayload } from '../src/cli/hook/hook-input';
 import { HOST_RENDERERS } from '../src/cli/hook/hook-protocol';
 import type { HookHandlerResult } from '../src/cli/hook/handler-contract';
@@ -19,13 +18,12 @@ import type { RouteHost, RouteId } from '../src/cli/hook/route-registry';
 import { resolveHookEffectiveState, runHook } from '../src/cli/hook/runtime';
 import { createStateInputCollector } from '../src/effects/loop/state-input-collector';
 
-type SubagentEvent = 'PreToolUse' | 'UserPromptSubmit' | 'SubagentStart' | 'SubagentStop';
+type SubagentEvent = 'PreToolUse' | 'UserPromptSubmit' | 'SubagentStart';
 
 const SUBAGENT_ROUTE: Readonly<Record<SubagentEvent, RouteId>> = {
   PreToolUse: 'subagent',
   UserPromptSubmit: 'delegation',
   SubagentStart: 'context',
-  SubagentStop: 'quality',
 };
 
 /** The real collector wiring the runtime builds for one hook event. */
@@ -62,9 +60,7 @@ function invokeSubagent(opts: {
     ? runReturnChannel({ collector, payload: opts.payload })
     : opts.event === 'UserPromptSubmit'
       ? runDelegationAdvisor({ collector, payload: opts.payload })
-      : opts.event === 'SubagentStart'
-        ? runSubagentContext({ collector, payload: opts.payload, identity, env, now: opts.now })
-        : runSubagentQuality({ repoRoot: opts.repoRoot, payload: opts.payload, identity, now: opts.now });
+      : runSubagentContext({ collector, payload: opts.payload, identity, env, now: opts.now });
   const rendered = HOST_RENDERERS[host]({
     event: opts.event,
     routeId: SUBAGENT_ROUTE[opts.event],
@@ -255,7 +251,7 @@ async function spawnDirectSubagentStart(
 }
 
 describe('typed subagent hook handlers', () => {
-  test('the return channel stamps Task/Agent prompts once and ignores SendUserMessage', () => {
+  test('the return channel stamps Agent prompts once and ignores SendUserMessage', () => {
     const repoRoot = tempRepo();
     try {
       const spawn = invokeSubagent({
@@ -263,7 +259,7 @@ describe('typed subagent hook handlers', () => {
         repoRoot,
         payload: {
           hook_event_name: 'PreToolUse',
-          tool_name: 'Task',
+          tool_name: 'Agent',
           tool_input: { description: 'Explore repo', prompt: 'Write the report.' },
         },
       });
@@ -282,8 +278,9 @@ describe('typed subagent hook handlers', () => {
         payload: { tool_name: 'Agent', tool_input: { prompt: updated.prompt } },
       });
       expect(idempotent.stdout).toBe('');
+      expect(invokeSubagent({ event: 'PreToolUse', repoRoot, payload: { tool_name: 'Task', tool_input: { prompt: 'inspect' } } }).stdout).toBe('');
 
-      // Every Task/Agent prompt already carries the return contract, so the
+      // Every Agent prompt already carries the return contract, so the
       // SendUserMessage tool gets no second copy of it.
       const subagentMessage = invokeSubagent({
         event: 'PreToolUse',
@@ -672,57 +669,14 @@ describe('typed subagent hook handlers', () => {
     }
   });
 
-  test('SubagentStop quality reads last_assistant_message and dedupes per session and agent', () => {
-    const repoRoot = tempRepo();
-    try {
-      const stop = (payload: Record<string, unknown>) => invokeSubagent({
-        event: 'SubagentStop',
-        repoRoot,
-        env: codexEnv(),
-        payload: { hook_event_name: 'SubagentStop', ...payload },
-        now: () => new Date('2026-07-21T12:02:00.000Z'),
-      });
-      const thin = stop({ session_id: 'session-a', agent_id: 'agent-a', last_assistant_message: 'looks good' });
-      expect(thin.exitCode).toBe(0);
-      expect(additionalContext(thin.stdout)).toContain('[SubagentQuality]');
-
-      expect(stop({ session_id: 'session-a', agent_id: 'agent-a', last_assistant_message: 'looks good' }).stdout).toBe('');
-      expect(additionalContext(stop({ session_id: 'session-a', agent_id: 'agent-b', last_assistant_message: 'looks good' }).stdout))
-        .toContain('[SubagentQuality]');
-      expect(additionalContext(stop({ session_id: 'session-b', agent_id: 'agent-a', last_assistant_message: 'looks good' }).stdout))
-        .toContain('[SubagentQuality]');
-
-      const unresolvedError = stop({
-        session_id: 'session-error',
-        agent_id: 'agent-error',
-        last_assistant_message: 'The investigation failed with a timeout while reading the repository. The operation failed again and the requested mapping remains blocked without any further explanation or parent action.',
-      });
-      expect(additionalContext(unresolvedError.stdout)).toContain('unresolved error');
-
-      expect(stop({ stop_hook_active: true, last_assistant_message: 'looks good' }).stdout).toBe('');
-      // Only the documented Codex field is read.
-      expect(stop({ session_id: 'session-c', agent_id: 'agent-c', final_message: 'looks good' }).stdout).toBe('');
-
-      const complete = stop({
-        last_assistant_message: 'Inspected src/cli/hook/subagent-context.ts and tests/subagent-handler.test.ts. Evidence: typed route decisions and state writes match the routes. Ran bun test tests/subagent-handler.test.ts. Risk: host payload fields may evolve; parent should verify route fixtures.',
-      });
-      expect(complete.stdout).toBe('');
-    } finally {
-      rmSync(repoRoot, { recursive: true, force: true });
-    }
-  });
-
-  // WP3: the slice mounts must be invisible in a repository that runs no
-  // sprint. Byte-equality across hosts, the arming predicate, and the five
-  // fail-closed steps live in tests/board-slice.test.ts, which builds the real
-  // git/lease fixtures those claims need.
+  // Board slice coverage also checks the arming predicate and lease identity in tests/board-slice.test.ts.
   test('a repository with no coordination state receives no slice on either mount', () => {
     const repoRoot = tempRepo();
     try {
       const spawn = invokeSubagent({
         event: 'PreToolUse',
         repoRoot,
-        payload: { tool_name: 'Task', tool_input: { prompt: 'Write the report.' } },
+        payload: { tool_name: 'Agent', tool_input: { prompt: 'Write the report.' } },
       });
       const prompt = String(
         ((jsonResult(spawn.stdout).hookSpecificOutput as Record<string, unknown>)

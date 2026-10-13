@@ -95,15 +95,15 @@ describe('Pi JSON hook bridge', () => {
     } finally { f.cleanup(); }
   });
 
-  test('Stop can finish after ten seconds while ordinary checks remain bounded', async () => {
+  test('all routes use the same thirty-second deadline', async () => {
     const f = fixture();
     try {
       const pkg = fakePackage(f.root, `const event = process.argv[2];
 setTimeout(() => console.log(JSON.stringify({${JSON.stringify(output()).slice(1, -1)},event,route_id:'default',decision:'none'})), 11_000);`);
       expect(await new PiHookBridge(pkg, { env: f.env }).invoke(request(f.root, { event: 'Stop', route: 'default' })))
         .toMatchObject({ event: 'Stop', exit_code: 0 });
-      await expect(new PiHookBridge(pkg, { env: f.env })
-        .invoke(request(f.root, { event: 'SessionStart', route: 'default' }))).rejects.toThrow('PI_HOOK_TIMEOUT');
+      expect(await new PiHookBridge(pkg, { env: f.env })
+        .invoke(request(f.root, { event: 'SessionStart', route: 'default' }))).toMatchObject({ event: 'SessionStart', exit_code: 0 });
     } finally { f.cleanup(); }
   }, 60_000);
 
@@ -247,12 +247,12 @@ describe('real Pi 1.2 tool pipeline with a scripted provider', () => {
       expect(new Set(writes.map((call: any) => call.id)).size).toBe(2);
       expect(result.messages.find((message: any) => message.role === 'toolResult' && message.toolCallId === 'parallel-parent')?.isError).toBe(true);
       const events = records(f.root);
-      expect(events.filter(event => event.event === 'PostToolUse' && event.route_id === 'edit')).toHaveLength(2);
+      expect(events.filter(event => event.event === 'PostToolUse' && event.route_id === 'edit')).toHaveLength(0);
       expect(events.filter(event => event.event === 'Stop')).toHaveLength(1);
     } finally { f.cleanup(); }
   }, 60_000);
 
-  test('cancel after native write and edit preserves observation and never replays either write', () => {
+  test('cancel after native write and edit keeps pre-edit identity and never replays either write', () => {
     const f = fixture();
     try {
       const result = session(f.root, f.env, 'cancel-after-write');
@@ -267,7 +267,8 @@ describe('real Pi 1.2 tool pipeline with a scripted provider', () => {
       }
       expect(readFileSync(join(f.root, 'after-cancelled-writes.txt'), 'utf8')).toBe('later run');
       const events = records(f.root);
-      const observed = events.filter(event => event.event === 'PostToolUse' && event.route_id === 'edit');
+      const observed = events.filter(event => event.event === 'PreToolUse' && event.route_id === 'edit');
+      expect(events.some(event => event.event === 'PostToolUse' && event.route_id === 'edit')).toBe(false);
       const stops = events.filter(event => event.event === 'Stop');
       expect(observed).toHaveLength(3);
       expect(stops).toHaveLength(3);
@@ -303,7 +304,7 @@ describe('real Pi 1.2 tool pipeline with a scripted provider', () => {
       const results = result.messages.filter((message: any) => message.role === 'toolResult');
       expect(results.map((message: any) => [message.toolCallId, message.isError])).toEqual([['user-run', false], ['custom-run', false]]);
       const events = records(f.root);
-      expect(events.filter(event => event.event === 'UserPromptSubmit')).toHaveLength(1);
+      expect(events.filter(event => event.event === 'UserPromptSubmit')).toHaveLength(0);
       const toolRuns = events.filter(event => event.event === 'PreToolUse').map(event => event.run_id);
       const stops = events.filter(event => event.event === 'Stop');
       expect(toolRuns).toHaveLength(2);

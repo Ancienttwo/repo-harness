@@ -43,12 +43,12 @@ function copyRuntimeFixture(
   writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
   const managedEntriesPath = join(destination, 'src', 'cli', 'installer', 'managed-entries.ts');
   const managedEntries = readFileSync(managedEntriesPath, 'utf-8');
-  const authority = "const timeout = route.event === 'Stop' && route.routeId === 'default' ? 150 : 30;";
+  const authority = "timeout: 30";
   if (!managedEntries.includes(authority)) throw new Error('fixture requires the managed Stop timeout authority');
-  if (stopTimeout === 30) {
+  if (stopTimeout === 150) {
     writeFileSync(managedEntriesPath, managedEntries.replace(
       authority,
-      "const timeout = route.event === 'Stop' && route.routeId === 'default' ? 30 : 30;",
+      "timeout: route.event === 'Stop' ? 150 : 30",
     ));
   }
   if (legacyParent) {

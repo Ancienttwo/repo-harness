@@ -8,7 +8,7 @@ import { runHook } from '../src/cli/hook/runtime';
 import { HOOK_EVENT_TELEMETRY_PROTOCOL } from '../src/cli/hook/event-telemetry';
 
 interface FixtureRoute {
-  readonly host: 'claude' | 'codex';
+  readonly host: 'claude' | 'codex' | 'pi';
   readonly input?: string;
 }
 
@@ -16,15 +16,11 @@ function fixtureInput(event: HookEvent, routeId: RouteId): FixtureRoute {
   switch (`${event}.${routeId}`) {
     case 'SessionStart.default': return { host: 'claude', input: JSON.stringify({ session_id: 'characterization-session' }) };
     case 'PreToolUse.edit': return { host: 'claude', input: JSON.stringify({ tool_input: { file_path: 'src/example.ts' } }) };
-    case 'PreToolUse.subagent': return { host: 'claude', input: JSON.stringify({ tool_name: 'Task', tool_input: { prompt: 'Inspect the repository and report findings.' } }) };
-    case 'PostToolUse.edit': return { host: 'claude', input: JSON.stringify({ tool_input: { file_path: 'src/example.ts' } }) };
-    case 'PostToolUse.bash': return { host: 'claude', input: JSON.stringify({ tool_input: { command: 'echo hello' }, tool_response: { stdout: 'hello\n', stderr: '', interrupted: false }, exit_code: 0 }) };
-    case 'PostToolUse.always': return { host: 'claude', input: JSON.stringify({ hook_event_name: 'PostToolUse', tool_name: 'Read' }) };
-    case 'UserPromptSubmit.default': return { host: 'claude', input: JSON.stringify({ prompt: 'Please review this function for correctness.' }) };
+    case 'PreToolUse.subagent': return { host: 'claude', input: JSON.stringify({ tool_name: 'Agent', tool_input: { prompt: 'Inspect the repository and report findings.' } }) };
+    case 'PostToolUse.bash': return { host: 'pi', input: JSON.stringify({ tool_input: { command: 'echo hello' }, tool_response: { stdout: 'hello\n', stderr: '', interrupted: false }, exit_code: 0 }) };
     case 'UserPromptSubmit.inbox': return { host: 'claude', input: JSON.stringify({ prompt: 'Check the task inbox.' }) };
     case 'UserPromptSubmit.delegation': return { host: 'codex', input: JSON.stringify({ session_id: 'characterization-session', prompt: 'implement the next sequential task' }) };
     case 'SubagentStart.context': return { host: 'codex', input: JSON.stringify({ hook_event_name: 'SubagentStart', session_id: 'characterization-session' }) };
-    case 'SubagentStop.quality': return { host: 'codex', input: JSON.stringify({ hook_event_name: 'SubagentStop', last_assistant_message: 'Inspected src/cli/hook/runtime.ts. Evidence: ran bun test tests/cli/hook.test.ts. Risk: none identified.' }) };
     case 'Stop.default': return { host: 'claude', input: JSON.stringify({ hook_event_name: 'Stop', stop_hook_active: false }) };
     default: throw new Error(`missing fixture for ${event}.${routeId}`);
   }

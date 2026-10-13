@@ -18,7 +18,7 @@ import { spawnSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import { ALL_TARGETS } from '../installer/targets/registry';
 import { checkCodegraph, type CodegraphCheckResult } from '../tools/codegraph';
-import { CLI_VERSION } from './status';
+import { CLI_VERSION, expectedManagedProfile, formatManagedHookProjectionMismatch, inspectManagedProjection, readInstalledProfileForStatus } from './status';
 import { runSecurityScan, type SecurityScanReport } from './security';
 import { isOptIn, resolveRepoRoot } from '../hook/runtime';
 import { ROUTES } from '../hook/route-registry';
@@ -107,16 +107,17 @@ function findCommandOnPath(command: string): string | null {
 
 function checkPath(): DoctorCheckResult {
   const id = 'cli-on-path';
-  const describe = 'repo-harness resolvable via PATH';
+  const describe = 'repo-harness and repo-harness-hook resolvable via PATH';
   const resolved = findCommandOnPath('repo-harness');
-  if (resolved) {
-    return { id, describe, status: 'ok', detail: resolved };
+  const hook = findCommandOnPath('repo-harness-hook');
+  if (resolved && hook) {
+    return { id, describe, status: 'ok', detail: `${resolved}; repo-harness-hook: ${hook}` };
   }
   return {
     id,
     describe,
     status: 'warn',
-    detail: 'repo-harness not on PATH (host adapter shim exits 0 silently when CLI is missing)',
+    detail: `${[!resolved && 'repo-harness', !hook && 'repo-harness-hook'].filter(Boolean).join(' and ')} not on PATH; reinstall the repo-harness package. Opted-in repositories require repo-harness-hook.`,
   };
 }
 
@@ -269,6 +270,13 @@ function checkTargetInstall(target: (typeof ALL_TARGETS)[number]): DoctorCheckRe
       describe,
       status: 'warn',
       detail: `host detected but repo-harness not installed (run: repo-harness install --target ${target.id} --location global)`,
+    };
+  }
+  const projection = inspectManagedProjection(det.configPath, target.id, expectedManagedProfile(readInstalledProfileForStatus()));
+  if (projection.status === 'drift') {
+    return {
+      id, describe, status: 'warn',
+      detail: `projection mismatch: ${projection.mismatches.map(formatManagedHookProjectionMismatch).join('; ')}. Reinstall hooks: repo-harness install --target ${target.id} --location global. Replace hook-lib path callers with repo-harness run <helper>.`,
     };
   }
   return { id, describe, status: 'ok', detail: `installed at ${det.configPath}` };

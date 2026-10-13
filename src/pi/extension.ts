@@ -5,7 +5,7 @@ import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { PiHookBridge } from './hook-bridge';
-import { boundedHookDiagnostic, type HookJsonOutput } from '../cli/hook/hook-protocol';
+import { boundedHookDiagnostic } from '../cli/hook/hook-protocol';
 import { isWorkflowMarkerGateCode } from '../core/adoption/minimum-harness-version';
 
 type ToolPathResolver = (path: string, cwd: string) => string;
@@ -81,7 +81,7 @@ export default function repoHarnessPi(pi: ExtensionAPI): void {
     state.diagnostic = boundedHookDiagnostic(error instanceof Error ? error.message : String(error));
     notify(ctx, `${state.diagnostic}. Run /reload after resolving the hook failure.`);
   };
-  const invoke = (state: SessionState, event: 'SessionStart' | 'UserPromptSubmit' | 'PreToolUse' | 'PostToolUse' | 'Stop',
+  const invoke = (state: SessionState, event: 'SessionStart' | 'PreToolUse' | 'PostToolUse' | 'Stop',
     route: 'default' | 'edit' | 'bash', payload: Record<string, unknown>, runId = state.runId, signal?: AbortSignal) =>
     bridge.invoke({ event, route, payload, cwd: state.cwd, sessionId: state.sessionId, runId, signal });
   const stop = (state: SessionState, ctx: ExtensionContext, aborted: boolean): Promise<void> => {
@@ -139,15 +139,9 @@ export default function repoHarnessPi(pi: ExtensionAPI): void {
     state.stop = null;
     state.tools.clear();
     // Pi 1.2.0 also starts a run for an idle custom message with triggerTurn.
-    // That run gets its own run ID and Stop; only a user prompt is a UserPromptSubmit.
+    // That run gets its own run ID and Stop.
     if (event.messageType !== 'user') return;
-    let output: HookJsonOutput | null = null;
-    try {
-      output = await invoke(state, 'UserPromptSubmit', 'default', { prompt: event.prompt }, state.runId, ctx.signal);
-      if (output.exit_code !== 0 && !isWorkflowMarkerGateCode(output.reason)) throw new Error(output.diagnostics || output.reason);
-    } catch (error) { failed(state, error, ctx); }
-    if (current !== state) return;
-    const content = [state.context, output?.additional_context, output?.diagnostics,
+    const content = [state.context,
       state.availability === 'unavailable' ? `[HarnessUnavailable] ${state.diagnostic}. Edits are blocked. Resolve the failure and run /reload.` : null]
       .filter(Boolean).join('\n\n');
     state.context = null;
@@ -181,7 +175,7 @@ export default function repoHarnessPi(pi: ExtensionAPI): void {
           return { block: true, reason: output.diagnostics || output.reason };
         }
       }
-      state.tools.set(event.toolCallId, { payload, runId });
+      if (!mutation) state.tools.set(event.toolCallId, { payload, runId });
     } catch (error) {
       if (mutation) return { block: true, reason: boundedHookDiagnostic(error instanceof Error ? error.message : String(error)) };
       notify(ctx, 'PI_HOOK_COMMAND_OBSERVATION_UNAVAILABLE');
@@ -193,25 +187,21 @@ export default function repoHarnessPi(pi: ExtensionAPI): void {
     const binding = state?.tools.get(event.toolCallId);
     if (!state || !binding || state.sessionId !== ctx.sessionManager.getSessionId()) return;
     state.tools.delete(event.toolCallId);
-    // Native tools can report an error after bytes reach disk. Observe the attempt
-    // with its original binding even when execution has already been cancelled.
+    // Keep the original Bash binding even when execution has been cancelled.
     const text = event.content.filter(part => part.type === 'text').map(part => part.text).join('\n');
     const structured = event.structuredContent as { exit_code?: unknown } | undefined;
     const exitCode = typeof structured?.exit_code === 'number' && Number.isSafeInteger(structured.exit_code) ? structured.exit_code : null;
     try {
-      const output = await invoke(state, 'PostToolUse', event.toolName === 'bash' ? 'bash' : 'edit', {
+      const output = await invoke(state, 'PostToolUse', 'bash', {
         ...binding.payload, tool_response: { stdout: text, is_error: event.isError }, exit_code: exitCode,
       }, binding.runId);
       if (output.exit_code !== 0) throw new Error(output.diagnostics || output.reason);
     } catch (error) {
-      if (event.toolName === 'bash') {
-        const diagnostic = boundedHookDiagnostic(`PI_HOOK_COMMAND_OBSERVATION_FAILED: ${String(error)}`);
-        notify(ctx, diagnostic);
-        // Tool-result content reaches print/RPC models as well as interactive sessions.
-        return { content: [...event.content, { type: 'text' as const, text: diagnostic }],
-          structuredContent: event.structuredContent, isError: event.isError };
-      }
-      failed(state, error, ctx);
+      const diagnostic = boundedHookDiagnostic(`PI_HOOK_COMMAND_OBSERVATION_FAILED: ${String(error)}`);
+      notify(ctx, diagnostic);
+      // Tool-result content reaches print/RPC models as well as interactive sessions.
+      return { content: [...event.content, { type: 'text' as const, text: diagnostic }],
+        structuredContent: event.structuredContent, isError: event.isError };
     }
   });
 
