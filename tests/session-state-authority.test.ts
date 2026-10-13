@@ -328,7 +328,7 @@ describe('SessionStart Effective State authority', () => {
     });
     const blocked = fixtureState({ task_id: null, blockers: ['contract:missing'] });
     const resolveSession = (state: EffectiveState) =>
-      resolveHookEffectiveState('/repo-b', 'SessionStart', [], {}, 123, (() => state) as StateResolver);
+      resolveHookEffectiveState('/repo-b', 123, (() => state) as StateResolver);
     expect(resolveSession(actionable)).toEqual({ ok: true, state: actionable });
     expect(projectEffectiveStateSessionSection(actionable)?.content).toStartWith('[HarnessState] ');
     expect(resolveSession(nonActionable)).toEqual({ ok: true, state: nonActionable });
@@ -345,7 +345,7 @@ describe('SessionStart Effective State authority', () => {
       if (calls.length === 1) throw lockContention();
       return fixtureState();
     }) as StateResolver;
-    const outcome = resolveHookEffectiveState('/repo-b', 'SessionStart', [], {}, 123456, resolveAttempt);
+    const outcome = resolveHookEffectiveState('/repo-b', 123456, resolveAttempt);
     expect(outcome.ok).toBe(true);
     expect(calls).toHaveLength(2);
     expect(calls.map(({ root }) => root)).toEqual(['/repo-b', '/repo-b']);
@@ -355,7 +355,7 @@ describe('SessionStart Effective State authority', () => {
 
   test('bounds transient retries at three and hashes unavailable evidence without raw errors', () => {
     let attempts = 0;
-    const outcome = resolveHookEffectiveState('/private/repo-b', 'SessionStart', [], {}, 123, (() => {
+    const outcome = resolveHookEffectiveState('/private/repo-b', 123, (() => {
       attempts += 1;
       throw lockContention();
     }) as StateResolver);
@@ -374,7 +374,7 @@ describe('SessionStart Effective State authority', () => {
 
   test('does not retry a non-transient resolver failure', () => {
     let attempts = 0;
-    const outcome = resolveHookEffectiveState('/repo-b', 'SessionStart', [], {}, 123, (() => {
+    const outcome = resolveHookEffectiveState('/repo-b', 123, (() => {
       attempts += 1;
       throw new TypeError('bad state /private/secret');
     }) as StateResolver);
@@ -402,17 +402,12 @@ describe('SessionStart Effective State authority', () => {
     }
   }, 20000);
 
-  test('preserves PreEdit non-transient and residual-transient adapter semantics', () => {
-    const nonTransient = runMockedPreEdit('non-transient');
-    expect(nonTransient.attempts).toBe(1);
-    expect(nonTransient.result).toMatchObject({ exitCode: 0, reason: 'ok' });
-    expect(nonTransient.output).not.toContain('[WorkflowProfileGuard]');
-    expect(nonTransient.output).not.toContain('[WorkflowResolutionUnstableGuard]');
-
-    const transient = runMockedPreEdit('transient');
-    expect(transient.attempts).toBe(3);
-    expect(transient.result).toMatchObject({ exitCode: 0, reason: 'ok' });
-    expect(transient.output).toContain('[WorkflowObservation]');
-    expect(transient.output).toContain('edit may continue');
+  test('PreEdit never calls the Effective State resolver, even when it would fail', () => {
+    for (const kind of ['non-transient', 'transient'] as const) {
+      const run = runMockedPreEdit(kind);
+      expect(run.attempts).toBe(0);
+      expect(run.result).toMatchObject({ exitCode: 0, reason: 'ok' });
+      expect(run.output).not.toContain('[WorkflowObservation]');
+    }
   }, 20000);
 });

@@ -423,14 +423,13 @@ describe('workflow circuit breakers', () => {
     expect(existsSync(join(cwd, '.ai/harness/state/effective.json'))).toBe(false);
   }), 60_000);
 
-  test('repeated review prompts give advice without consuming review or consult circuits', () => withRepo((cwd) => {
+  test('repeated review prompts give boundary advice and consume no circuit', () => withRepo((cwd) => {
     for (const profile of ['routine', 'high']) {
       mkdirSync(join(cwd, '.ai/harness/state'), { recursive: true });
       writeFileSync(join(cwd, '.ai/harness/state/effective.json'), JSON.stringify({ workflow_profile: profile }));
       for (let index = 0; index < 3; index += 1) {
         const result = runPromptHandler({ payload: { prompt: '/check' } });
         expect(result.exitCode).toBe(0);
-        expect(result.additionalContext).toContain('[ReviewAdvice]');
         expect(result.additionalContext).toContain('[OperationBoundaries]');
         expect(result.diagnostics).toBeUndefined();
       }

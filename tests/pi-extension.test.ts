@@ -173,8 +173,8 @@ describe('real Pi 1.2 tool pipeline with a scripted provider', () => {
       expect(results.find((message: any) => message.toolCallId === 'direct-private')?.isError).toBe(true);
       expect(results.find((message: any) => message.toolCallId === 'nested-private')?.isError).toBe(true);
       expect(result.calls.some((call: any) => call.name === 'edit' && call.parent === 'nested-edit')).toBe(true);
-      // The shared budget also deduplicates the unchanged snapshot on same-session /reload.
-      expect(result.messages.filter((message: any) => message.role === 'custom' && message.customType === 'repo-harness-context')).toHaveLength(1);
+      // SessionStart has no same-session dedupe (#693): /reload delivers the context again.
+      expect(result.messages.filter((message: any) => message.role === 'custom' && message.customType === 'repo-harness-context')).toHaveLength(2);
       const events = records(f.root);
       expect(events.filter(event => event.event === 'SessionStart')).toHaveLength(2);
       expect(events.filter(event => event.event === 'Stop')).toHaveLength(6);

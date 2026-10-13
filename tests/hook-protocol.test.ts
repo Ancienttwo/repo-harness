@@ -2,6 +2,7 @@ import { describe, test, expect, setDefaultTimeout } from "bun:test";
 import {
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   realpathSync,
   rmSync,
   writeFileSync,
@@ -9,42 +10,22 @@ import {
 import { tmpdir } from "os";
 import { join } from "path";
 import { spawnSync } from "child_process";
-import { runMutationGuard, type MutationGuardCollector } from "../src/cli/hook/mutation-guard";
+import { runMutationGuard } from "../src/cli/hook/mutation-guard";
 import { runPromptHandler } from "../src/cli/hook/prompt-handler";
-import { resolveHookEffectiveState } from "../src/cli/hook/runtime";
-import { createStateInputCollector } from "../src/effects/loop/state-input-collector";
-import type { WorkflowProfile } from "../src/core/workflow/profile";
 import { hookIdentity } from "./helpers/hook-identity";
 
 // Some fixtures resolve full effective state and can exceed the default under
 // parallel session load.
 setDefaultTimeout(20000);
 
-// HRD-03: worktree-guard.sh + pre-edit-guard.sh are retired; the tests below
-// that used to spawn them directly (via the local `runHook` bash-script
-// helper) are retargeted to call the in-process mutation-guard handler
-// directly -- the same "no subprocess, real resolveEffectiveState authority"
-// pattern tests/mutation-guard.test.ts uses. Prompt protocol checks likewise
-// call the typed prompt handler directly.
-function mutationGuardCollector(repoRoot: string, explicitOverride?: WorkflowProfile): MutationGuardCollector {
-  const env = explicitOverride ? { REPO_HARNESS_WORKFLOW_PROFILE: explicitOverride } : {};
-  return createStateInputCollector({
-    repoRoot,
-    resolveEffectiveState: (targetPaths) =>
-      resolveHookEffectiveState(repoRoot, "PreToolUse", targetPaths, env, Date.now()),
-  });
-}
-
+// The edit tests call the in-process mutation-guard handler directly, the
+// same "no subprocess" pattern tests/mutation-guard.test.ts uses. Prompt
+// protocol checks call the typed prompt handler directly.
 function runEditHandler(
   cwd: string,
   payload: Record<string, unknown>,
-  options: { readonly profile?: WorkflowProfile } = {},
 ): { status: number; stdout: string; stderr: string } {
-  const result = runMutationGuard({
-    collector: mutationGuardCollector(cwd, options.profile),
-    payload,
-    identity: hookIdentity(),
-  });
+  const result = runMutationGuard({ repoRoot: cwd, payload, identity: hookIdentity() });
   return { status: result.exitCode, stdout: result.stdout, stderr: result.stderr };
 }
 
@@ -119,47 +100,6 @@ describe("Claude Code hook protocol compliance", () => {
     }
   }, 30_000);
 
-  test("pre-edit-guard: contract scope deviation is advisory", () => {
-    // This is the exact regression that surfaced as
-    // "PreToolUse:Edit hook error / Failed with non-blocking status code: No stderr output".
-    const cwd = tmpWorkspace("hook-proto-contract-scope");
-    try {
-      initGitRepo(cwd);
-      mkdirSync(join(cwd, "plans"), { recursive: true });
-      mkdirSync(join(cwd, "tasks/contracts"), { recursive: true });
-
-      const planPath = "plans/plan-20260528-1906-scope.md";
-      writeFileSync(join(cwd, planPath), "# Plan: scope\n\n> **Status**: Approved\n");
-      writeActivePlan(cwd, planPath);
-      writeFileSync(
-        join(cwd, "tasks/contracts/scope.contract.md"),
-        [
-          "# Task Contract: scope",
-          "",
-          "> **Status**: Pending",
-          `> **Plan**: ${planPath}`,
-          "",
-          "## Allowed Paths",
-          "",
-          "```yaml",
-          "allowed_paths:",
-          "  - src/",
-          "```",
-          "",
-        ].join("\n")
-      );
-
-      const res = runEditHandler(cwd, { tool_input: { file_path: "README.md" } });
-      expect(res.status).toBe(0);
-      expect(res.stdout).toContain("[ContractScopeGuard] Advisory:");
-      expect(res.stdout).toContain("outside");
-      expect(res.stdout).toContain("include the scope deviation in the PR");
-      expect(res.stderr).toBe("");
-    } finally {
-      rmSync(cwd, { recursive: true, force: true });
-    }
-  }, 30_000);
-
   test("pre-edit-guard: plan transition does not gate ordinary edits", () => {
     const cwd = tmpWorkspace("hook-proto-plan-transition");
     try {
@@ -202,8 +142,8 @@ describe("Claude Code hook protocol compliance", () => {
       expect(promptRes.exitCode).toBe(0);
       expect(promptRes.additionalContext).toContain("[OperationBoundaries]");
 
-      // Real malformed capability authority remains visible in Effective State
-      // and edit advice; it cannot become an ordinary edit permission gate.
+      // Malformed capability authority cannot become an edit permission gate.
+      // The edit guard reads no workflow state, so it gives no advice either.
       mkdirSync(join(cwd, ".ai/context"), { recursive: true });
       writeFileSync(
         join(cwd, ".ai/harness/policy.json"),
@@ -211,10 +151,10 @@ describe("Claude Code hook protocol compliance", () => {
       );
       writeFileSync(join(cwd, ".ai/context/capabilities.json"), "{not json");
 
-      const res = runEditHandler(cwd, { tool_input: { file_path: "src/app.ts" } }, { profile: 'routine' });
+      const res = runEditHandler(cwd, { tool_input: { file_path: "src/app.ts" } });
       expect(res.status).toBe(0);
-      expect(res.stdout).toContain("[WorkflowObservation]");
-      expect(res.stdout).toContain("capability_registry");
+      expect(res.stdout).toBe("");
+      expect(res.stderr).toBe("");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -355,9 +295,8 @@ describe("Claude Code hook protocol compliance", () => {
       writeFileSync(join(cwd, ".ai/hooks/sample.sh"), "#!/bin/bash\necho sample\n");
 
       const res = runEditHandler(cwd, { tool_input: { file_path: `${cwd}/.ai/hooks/sample.sh` } });
-      // ContractScopeGuard must NOT trip — the path is inside an allowed
-      // directory. Other guards may emit advisories on stdout (TDD/BDD
-      // reminders) but the hook must exit 0.
+      // An edit inside the repository is allowed; the guard has no
+      // contract-scope check.
       expect(res.status).toBe(0);
       expect(res.stderr).not.toContain("[ContractScopeGuard]");
       expect(res.stdout).not.toContain("[ContractScopeGuard]");
@@ -366,9 +305,9 @@ describe("Claude Code hook protocol compliance", () => {
     }
   }, 30_000);
 
-  test("hook_structured_error: writes the diagnostic to stderr while keeping stdout telemetry JSON", () => {
-    // Spec: the structured error MUST be readable by both the human (stderr → Claude / user)
-    // and by automated trace consumers (stdout JSON unchanged for backwards compatibility).
+  test("hook_structured_error: writes the diagnostic to stderr and one failure record", () => {
+    // The host reads the stderr reason. Trace consumers read the failure
+    // record; a denial writes nothing to stdout.
     const cwd = tmpWorkspace("hook-proto-emit-shape");
     try {
       initGitRepo(cwd);
@@ -379,9 +318,11 @@ describe("Claude Code hook protocol compliance", () => {
       expect(res.status).toBe(2);
       // stderr keeps the human-readable diagnostic (this is what Claude / the user reads).
       expect(res.stderr).toContain("[OpsPrivateGuard]");
-      // stdout still emits the structured telemetry JSON (existing trace/log consumers depend on it).
-      expect(res.stdout).toContain('"failure_class":"state_violation"');
-      expect(res.stdout).toContain('"guard":"OpsPrivateGuard"');
+      expect(res.stdout).toBe("");
+      const records = readFileSync(join(cwd, ".ai/harness/failures/latest.jsonl"), "utf-8").trim().split("\n");
+      expect(records).toHaveLength(1);
+      expect(records[0]).toContain('"failure_class":"state_violation"');
+      expect(records[0]).toContain('"guard":"OpsPrivateGuard"');
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

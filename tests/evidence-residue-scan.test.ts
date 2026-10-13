@@ -168,10 +168,10 @@ describe("residue scan: direct re-assertion of each named retired surface", () =
     expect(body).not.toContain("Codex Resume Packet");
   });
 
-  test("session-context.ts no longer re-derives resume availability by string-scanning the marker (EPC-08)", () => {
+  test("session-context.ts reads the resume file itself, not a marker scan or the evidence ledger (EPC-08, #695)", () => {
     const text = readFileSync(join(REPO_ROOT, "src/cli/hook/session-context.ts"), "utf-8");
     expect(text).not.toMatch(/text\.includes\(['"]<!-- generated-by: repo-harness codex-handoff-resume v1 -->['"]\)/);
-    expect(text).toContain("resolveRecoveryEvidence");
+    expect(text).not.toContain("resolveRecoveryEvidence");
   });
 });
 

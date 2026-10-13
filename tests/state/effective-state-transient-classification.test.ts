@@ -79,7 +79,7 @@ function realLockTimeoutFailure(): unknown {
 
 function classifyResolutionFailure(failure: unknown): string {
   let attempts = 0;
-  const outcome = resolveHookEffectiveState('/private/repo-b', 'SessionStart', [], {}, 123, (() => {
+  const outcome = resolveHookEffectiveState('/private/repo-b', 123, (() => {
     attempts += 1;
     throw failure;
   }) as StateResolver);

@@ -31,7 +31,7 @@ import {
 } from '../src/cli/hook/board-slice-context';
 import { runReturnChannel } from '../src/cli/hook/return-channel';
 import { runSubagentContext } from '../src/cli/hook/subagent-context';
-import { createStateInputCollector } from '../src/effects/loop/state-input-collector';
+import { createStateInputCollector, type StateInputCollector } from '../src/effects/loop/state-input-collector';
 import { resolveHookEffectiveState } from '../src/cli/hook/runtime';
 import { hookIdentity } from './helpers/hook-identity';
 import { findClaimTokenByUnitRef } from '../src/effects/state/coordination-claim-token';
@@ -403,6 +403,14 @@ describe('claim tokens: ambiguity is never resolved by picking one', () => {
 // ---------------------------------------------------------------------------
 // Byte-equality across hosts
 // ---------------------------------------------------------------------------
+
+function collectorFor(repoRoot: string): StateInputCollector {
+  return createStateInputCollector({
+    repoRoot,
+    resolveEffectiveState: (targetPaths) =>
+      resolveHookEffectiveState(repoRoot, Date.now()),
+  });
+}
 
 describe('one slice, two hosts, identical bytes', () => {
   let fixture: Fixture;

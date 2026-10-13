@@ -108,7 +108,7 @@ describe('risk-based runtime profile enforcement', () => {
       const result = preEdit(cwd, 'src/math.ts');
       expect(result.status).toBe(0);
       expect(`${result.stdout}${result.stderr}`).not.toContain('PlanStatusGuard');
-      expect(`${result.stdout}${result.stderr}`).toContain('TDD Guard');
+      expect(result.stdout).toBe('');
     } finally { rmSync(cwd, { recursive: true, force: true }); }
   }, 30_000);
 
@@ -329,7 +329,7 @@ describe('apply_patch batch-scope resolves the full pending write scope (guard g
         { REPO_HARNESS_WORKFLOW_PROFILE: 'routine' },
       );
       expect(result.status).toBe(0);
-      expect(`${result.stdout}${result.stderr}`).toContain('WorkflowObservation');
+      expect(result.stdout).toBe('');
 
       const direct = resolveStateDirect(cwd, FOUR_NORMAL_FILES, ['--profile', 'routine']);
       expect(direct.json.workflow_profile).toBeNull();
@@ -456,7 +456,7 @@ describe('Canonical risk failures remain visible without preventing local repair
 
       const result = preEdit(cwd, 'src/feature.ts');
       expect(result.status).toBe(0);
-      expect(`${result.stdout}${result.stderr}`).toContain('WorkflowObservation');
+      expect(result.stdout).toBe('');
     } finally { rmSync(cwd, { recursive: true, force: true }); }
   }, 30_000);
 
