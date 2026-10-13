@@ -28,6 +28,16 @@ fences. Collection can write an immutable evidence record, so it requires the
 repository write grant. It does not require permission to start a coding host.
 Status remains available for read-only observation.
 
+Each worker request has a `runtime_observation` field. It is `null` when no OAR
+capture is available. Otherwise it reports the native session ID, canonical
+input ID, captured sequence, phase, control outcome and failure class. It is
+the last captured observation for that request. It is not a liveness guarantee.
+The hosts capture during the prompt and save the final observation when it ends.
+Status reads the saved records with OAR's reducer. It does not start a provider.
+The raw prompt, native payload and error prose stay in a private snapshot.
+Invalid data and request or host identity mismatches fail the query.
+An OAR completion does not change `result_saved` or authorize acceptance.
+
 No operation takes a shell command, executable, environment, permission setting,
 arbitrary output path or publication command from the model. Unknown fields fail.
 
@@ -73,7 +83,7 @@ an approval. Every path, identity and authorization reference needs real values.
 }
 ```
 
-OAR 0.37.0 disables interactive approval by default. This implementation does
+OAR disables interactive approval by default. This implementation does
 not treat that default as user approval. Activation needs approval of the exact
 `never` policy together with the enforced child boundary. The PM has no tool to
 write or broaden this configuration.
