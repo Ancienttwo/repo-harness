@@ -5,6 +5,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSyn
 import { dirname, join } from 'path';
 import { copyHelpers } from './helpers/helper-script-fixture';
 import { herdrEnvironment } from '../src/effects/terminal/herdr';
+import type { HerdrTaskBinding } from '../src/effects/terminal/task-session';
 
 // This file owns the feasibility boundary, not model judgment. Fixture peers
 // expose explicit deterministic protocol/session IDs under recognizable names.
@@ -282,7 +283,7 @@ writeFileSync(spec.role+'-'+mode+'.binding',JSON.stringify(binding));
     const secondBinding = JSON.parse(readFileSync(join(fixture, 'advisor-second.binding'), 'utf8'));
     expect(secondBinding).toEqual(firstBinding);
     expect(readFileSync(join(fixture, 'launches'), 'utf8')).toBe('advisor\n');
-    const binding = api.readTaskAgent(fixture, spec.task, spec.role).binding;
+    const binding = api.readTaskAgent(fixture, spec.task, spec.role).binding as HerdrTaskBinding;
     expect(binding.capabilities.read_only.status).toBe('unverified');
     api.assertTaskBinding(binding);
     const reordered = { max_requests: spec.max_requests, args: spec.args, parent_pane: spec.parent_pane,
@@ -365,8 +366,8 @@ writeFileSync(spec.role+'-'+mode+'.binding',JSON.stringify(binding));
     } finally { process.env.PATH = savedPath; }
     const linkedOwner = owner('linked', linkedPath, checkout); await exited(linkedOwner.child);
     if (linkedOwner.child.exitCode !== 0) throw new Error(linkedOwner.errors());
-    const fromPrimary = api.readTaskAgent(fixture, spec.task, linkedSpec.role);
-    const fromLinked = api.readTaskAgent(checkout, spec.task, linkedSpec.role);
+    const fromPrimary = api.readTaskAgent(fixture, spec.task, linkedSpec.role) as { dir: string; binding: HerdrTaskBinding };
+    const fromLinked = api.readTaskAgent(checkout, spec.task, linkedSpec.role) as { dir: string; binding: HerdrTaskBinding };
     expect(fromLinked.dir).toBe(fromPrimary.dir);
     expect(fromLinked.binding).toEqual(fromPrimary.binding);
     expect(fromPrimary.binding.execution_root).toBe(checkout);
@@ -901,6 +902,60 @@ test.skipIf(process.platform !== 'darwin')('OAR fixed host runs visibly in a pri
   }
 }, 60000);
 
+test.skipIf(process.platform !== 'darwin')('operator-terminal OAR host binds by exact command and process identity without Herdr', async () => {
+  const api = await import('../src/effects/terminal/task-session');
+  const { reviewIsolationPolicy, reviewHostCommand } = await import('../src/effects/review/review-isolation');
+  const fixture = realpathSync(mkdtempSync('/tmp/ot-'));
+  const repo = join(fixture, 'p'), output = join(fixture, 'out');
+  for (const path of [repo, output]) mkdirSync(path);
+  const env = { ...process.env, REPO_HARNESS_OAR_SCRIPTED_FIXTURE: '1', GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' };
+  run('git', ['init', '-qb', 'main'], repo, env);
+  run('git', ['-c','user.name=fixture','-c','user.email=fixture@localhost','commit','--allow-empty','-qm','fixture'], repo, env);
+  const closeRequest = join(output, 'close.request'), readyFile = join(output, 'ready.json'), disposedFile = join(output, 'disposed.json');
+  const specFile = join(fixture, 'fixture.json'), profile = join(fixture, 'profile.sb');
+  const paths = { subject: repo, primary: repo, ownerRecord: repo, journal: repo, gitCommonDir: join(repo,'.git'), output };
+  writeFileSync(profile, reviewIsolationPolicy(paths));
+  writeFileSync(specFile, JSON.stringify({ mode: 'scripted', cwd: repo, inputs: [], closeRequest, readyFile, disposedFile, isolation: { paths, policyFile: profile } }));
+  const command = reviewHostCommand(realpathSync(Bun.which('node')!), realpathSync(join(import.meta.dir,'../dist/oar-review-host.js')), specFile);
+  const spec = { task: 'oar-terminal', role: 'deep-reasoner', harness_kind: 'codex', max_requests: 3 };
+  const proof = (pid: number) => ({ pid, identity: api.processIdentity(pid) });
+  const readyPid = async () => { await until(() => existsSync(readyFile)); return proof(JSON.parse(readFileSync(readyFile, 'utf8')).pid); };
+  let host: ChildProcess | undefined;
+  try {
+    // Nothing launched: the owner returns without a binding and never starts a process.
+    expect(await api.bindTerminalApplicationHost(repo, spec, command, async () => null)).toBeNull();
+    expect(api.taskAgentStatus(repo, spec.task, spec.role).status).toBe('launch_pending');
+    await expect(api.bindTerminalApplicationHost(repo, spec, [...command.slice(0, 3), join(fixture, 'other.json')], async () => null)).rejects.toThrow('task_agent_spec_changed');
+    // A process with other argv is refused even when it is live and owned by this user.
+    await expect(api.bindTerminalApplicationHost(repo, { ...spec, task: 'oar-terminal-other' }, command, async () => proof(process.pid))).rejects.toThrow('task_agent_terminal_host_command_mismatch');
+
+    host = spawn(command[0]!, command.slice(1), { env, stdio: 'ignore' });
+    const binding = await api.bindTerminalApplicationHost(repo, spec, command, readyPid);
+    if (binding?.runtime !== 'terminal') throw new Error('fixture_terminal_binding_missing');
+    expect(binding.provider.pid).toBe(host.pid!);
+    expect(binding.command).toEqual([...command]);
+    expect(binding.host).toBeNull();
+    expect(await api.bindTerminalApplicationHost(repo, spec, command, async () => { throw new Error('must not observe again'); })).toEqual(binding);
+    expect(api.readTaskAgent(repo, spec.task, spec.role).binding).toEqual(binding);
+    expect(api.taskAgentStatus(repo, spec.task, spec.role).status).toBe('idle');
+    expect(() => api.readTaskAgentHistory(repo, spec.task, spec.role)).toThrow('task_agent_history_unavailable');
+    writeFileSync(join(repo, 'context.txt'), 'fixture context\n');
+    await expect(api.sendTaskRequest(repo, spec.task, spec.role, 'context.txt')).rejects.toThrow('task_agent_application_delivery_required');
+    // Cleanup never signals the operator's process; it waits for the host's own disposal and exit.
+    expect(await api.cancelTaskAgent(repo, spec.task, spec.role)).toEqual({ status: 'cleanup_pending', pids: [host.pid!], reason: 'terminal_host_alive' });
+    // Closing the operator's tab sends SIGHUP; the host still disposes before it exits.
+    process.kill(host.pid!, 'SIGHUP');
+    await until(() => existsSync(disposedFile));
+    await until(() => !live(host!.pid!));
+    expect((await api.cancelTaskAgent(repo, spec.task, spec.role)).status).toBe('closed');
+    await expect(api.bindTerminalApplicationHost(repo, spec, command, readyPid)).rejects.toThrow('task_agent_session_closed');
+  } finally {
+    writeFileSync(closeRequest, 'close');
+    if (host?.pid && live(host.pid)) await until(() => !live(host!.pid!));
+    rmSync(fixture, { recursive: true, force: true });
+  }
+}, 60000);
+
 test('pipeline observer recovers a real Herdr request after post-send registration is lost', async () => {
   const { preparePipelineSQLite } = await import('./helpers/pipeline-sqlite-fixture');
   preparePipelineSQLite();
@@ -1078,7 +1133,7 @@ test.skipIf(process.platform !== 'darwin')('OAR scripted coding session keeps ta
   const execute = (args: string[]) => { requireFixtureSession(session); return run(herdr, ['--session', session, ...args], repo, env); };
   const call = (args: string[]) => JSON.parse(execute(args)).result;
   const server = spawn(herdr, ['--session', session, 'server'], { env, stdio: 'ignore' }); server.on('error', () => {});
-  let binding: import('../src/effects/terminal/task-session').TaskPaneBinding | undefined;
+  let binding: import('../src/effects/terminal/task-session').HerdrTaskBinding | undefined;
   let control = '';
   const driver = join(fixture, 'scripted-host.mjs');
   writeFileSync(driver, `
@@ -1184,7 +1239,7 @@ test.skipIf(process.platform !== 'darwin')('OAR coding host waits for request pu
   const execute=(args:string[])=>{requireFixtureSession(session);return run(herdr,['--session',session,...args],repo,env)};
   const call=(args:string[])=>JSON.parse(execute(args)).result;
   const server=spawn(herdr,['--session',session,'server'],{env,stdio:'ignore'});server.on('error',()=>{});
-  const owned: import('../src/effects/terminal/task-session').TaskPaneBinding[]=[];
+  const owned: import('../src/effects/terminal/task-session').HerdrTaskBinding[]=[];
   const driver=join(fixture,'publication-host.mjs');
   writeFileSync(driver,`
 import {existsSync,readFileSync,writeFileSync,renameSync} from 'node:fs';

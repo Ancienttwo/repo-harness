@@ -415,6 +415,8 @@ repo-harness review status --contract tasks/contracts/<task>.contract.md
 repo-harness review close --contract tasks/contracts/<task>.contract.md
 ```
 
+En la app de escritorio de Claude sin Herdr, añada `--launch app-terminal` y omita `--herdr-endpoint`. La primera llamada imprime el comando fijo del host. Claude lo ejecuta una vez en una pestaña Terminal de la app y repite la misma ronda. OAR, Seatbelt y el Receipt no cambian.
+
 Un task-agent fleet `deep-reasoner` persiste en un linked checkout dedicado y la sesión Herdr indicada, durante un máximo de tres rondas. Por defecto se elige el harness opuesto al owner; `--harness` permite elegirlo explícitamente. Sólo un ejecutable ausente antes de iniciar permite fallback anunciado. El Result de archivo pasa la validación de dominio y el writer/verifier Receipt generic-review; close verifica el Receipt otra vez. History es observación. Claude usa una allowlist de archivos resultado y fingerprints; aislamiento OS de producción e ingestión completa de paquetes grandes siguen sin verificar.
 
 ## Hooks

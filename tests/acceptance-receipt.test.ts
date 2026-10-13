@@ -1,5 +1,5 @@
 import { runReviewRound, closeReview, reviewLocation, type ReviewEffects } from '../src/effects/review/generic-review';
-import { readSessionArtifact, writeSessionArtifact, taskSessionDirectory as importedTaskDir, type TaskRequest, type TaskPaneBinding } from '../src/effects/terminal/task-session';
+import { readSessionArtifact, writeSessionArtifact, taskSessionDirectory as importedTaskDir, type TaskRequest, type HerdrTaskBinding } from '../src/effects/terminal/task-session';
 import { recordFixtureAcceptance, fixtureReviewResult } from './helpers/repo-fixture';
 import { afterEach, describe, expect, test } from 'bun:test';
 import { existsSync, mkdtempSync, mkdirSync, realpathSync, readFileSync, rmSync, writeFileSync } from 'fs';
@@ -758,7 +758,7 @@ function reviewFixture() {
   const calls: string[] = [];
   let request: TaskRequest; let domain: Record<string, unknown>; let sent = 0;
   let verdict: 'PASS' | 'FAIL' = 'FAIL'; let prior = false;
-  const binding = { pane_id: 'fixture-reviewer-pane' } as unknown as TaskPaneBinding;
+  const binding = { pane_id: 'fixture-reviewer-pane' } as unknown as HerdrTaskBinding;
   const effects: ReviewEffects = {
     owner: () => 'codex', installation: async (_kind, executable) => ({ kind: 'available', via: 'executable', command: executable ?? '/usr/bin/true' }), model: () => 'fixture-model', assertBinding: () => {}, ready: async () => {}, dispose: async () => { calls.push('dispose'); },
     start: async (_repo, spec) => { calls.push(`start:${spec.harness_kind}:${spec.role}`); return binding; },

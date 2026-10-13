@@ -410,6 +410,8 @@ repo-harness review status --contract tasks/contracts/<task>.contract.md
 repo-harness review close --contract tasks/contracts/<task>.contract.md
 ```
 
+Herdr のない Claude デスクトップアプリでは `--launch app-terminal` を付け、`--herdr-endpoint` は渡しません。最初の呼び出しが固定の host コマンドを出力します。Claude がそれをアプリの Terminal で一度実行し、同じラウンドを再実行します。OAR、Seatbelt、Receipt は変わりません。
+
 専用 linked checkout の fleet `deep-reasoner` task-agent が、指定した Herdr session で最大 3 回の repair review を行います。既定は owner と反対の harness、`--harness` で明示選択できます。起動前の executable 不在だけが通知付き fallback を許可します。ファイル Result の domain binding と findings を検証し、generic-review Receipt を記録・再検証して close します。history は観察のみです。Claude の保護は結果ファイル allowlist と変更 fingerprint であり、production OS isolation と大きい packet の完全読み取りは未検証です。
 
 ## Hooks
