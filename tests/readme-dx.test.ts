@@ -187,8 +187,9 @@ describe("README DX contract", () => {
       expect(localized).toContain("repo-harness update");
       expect(localized).toContain("repo-harness init");
       expect(localized).toContain("repo-harness docs list");
-      expect(localized).toContain("SessionStart.default");
-      expect(localized).toContain("PostToolUse.always");
+      // #696 step 1 moved the route table to hook-operations.md; every README links to it.
+      expect(localized).toContain("docs/reference-configs/hook-operations.md");
+      expect(localized).not.toContain("| Route |");
       // SSD-xx: "Generated vs Self-Hosted Hook Projection", "Package Manager
       // Defaults", "Runtime Profiles", and the benchmark:skills eval command
       // example all moved into docs/reference-configs (harness-overview.md,

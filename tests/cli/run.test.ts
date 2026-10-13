@@ -606,7 +606,8 @@ test('state helpers return a clear error when their selected source library is m
 test('direct state scripts reject an explicitly missing library', () => {
   const root = mkdtempSync(join(tmpdir(), 'workflow-state-direct-missing-'));
   try {
-    for (const helper of ['summarize-failures', 'archive-workflow']) {
+    // #696 step 1 deleted the library check in archive-workflow.sh, which never called the library.
+    for (const helper of ['summarize-failures']) {
       const result = spawnSync('bash', [join(ROOT, 'scripts', `${helper}.sh`), '--help'], {
         cwd: root, encoding: 'utf8', env: { ...process.env, REPO_HARNESS_BUN_BIN: process.execPath, REPO_HARNESS_WORKFLOW_STATE_LIB: join(root, 'missing.sh') },
       });
