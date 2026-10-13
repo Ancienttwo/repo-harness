@@ -96,8 +96,10 @@ write nodes.
 - A relation to another capability rewrites that capability's module page. When several
   workers change the model in parallel, restore generated pages and shared projection
   outputs outside your scope before commit. The integrator projects once.
-- `repo-harness module list` and `module review-prompt` read the committed HEAD
-  snapshot. Commit the model before you verify them.
+- `repo-harness module list`, `module review-prompt` and Engineer contract
+  revisions read the committed HEAD snapshot. Commit the model before you verify
+  them. An uncommitted model change shows in `worktree_dirty_paths`. An
+  uncommitted new capability returns `capability_uncommitted`.
 
 ## Failure Modes
 
