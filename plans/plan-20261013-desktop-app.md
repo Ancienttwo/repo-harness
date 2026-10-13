@@ -1,8 +1,8 @@
 # Plan: repo-harness 桌面版（Operator 控制台的桌面壳）
 
-> **Status**: Draft，第七轮。只是设计，不是实施 GO。Aimpact 2026-10-13 确认本 work-package 只做到 DP0：DP0 完成后停止，DP1 及以后要另给 GO（§11 第 2 项）。Dot 复审通过、Aimpact 批准后，DP0 第 1–3 项已实测，结果见 §8.1：权限边界和外壳侧生命周期通过，T-NAV-5 失败。§11 第 1–16 项 LOCKED，第 17、18 项 PENDING。
+> **Status**: Draft，第八轮。只是设计，不是实施 GO。Aimpact 2026-10-13 确认本 work-package 只做到 DP0：DP0 完成后停止，DP1 及以后要另给 GO（§11 第 2 项）。Dot 复审通过、Aimpact 批准后，DP0 第 1–3 项已实测，结果见 §8.1：权限边界和外壳侧生命周期通过，T-NAV-5 失败。§11 第 1–18 项 LOCKED：外链用规则 (b)（§4.7），DP0 只补做第 8 项。
 > **Created**: 20261013
-> **Revised**: 20261013（第二轮：按 Dot 在 Slack #bot-worker 的评审锁定 §11 默认值，补上必改项 A–E；第三轮：按 Aimpact 2026-10-13 的确认锁定 §11 第 2、13 项；第四轮：按 Dot 复审修正清理负责方和端口冲突判断；第五轮、第六轮：按 Aimpact 的确认锁定 Bundle ID 为 `com.repoharness.app`；第七轮：写入 DP0 第 1–3 项的结果，新增 §11 第 17、18 项。见 §12）
+> **Revised**: 20261013（第二轮：按 Dot 在 Slack #bot-worker 的评审锁定 §11 默认值，补上必改项 A–E；第三轮：按 Aimpact 2026-10-13 的确认锁定 §11 第 2、13 项；第四轮：按 Dot 复审修正清理负责方和端口冲突判断；第五轮、第六轮：按 Aimpact 的确认锁定 Bundle ID 为 `com.repoharness.app`；第七轮：写入 DP0 第 1–3 项的结果，新增 §11 第 17、18 项；第八轮：按 Dot 和 Aimpact 的决定锁定 §11 第 17、18 项。见 §12）
 > **Slug**: desktop-app
 > **Artifact Level**: work-package
 > **Baseline**: `main@0ef9ed11`（0.22.1 已发布）
@@ -85,7 +85,7 @@
 ### 2.1 约束（来自 §0，已核对）
 - 服务端必须在 Bun 上运行（Bun API 与 `process.execPath` 子进程）。任何外壳都需要一个 Bun 进程，Node 运行时替代不了它。
 - WebView 必须在顶层打开 `http://127.0.0.1:<port>/`，否则 Origin 检查返回 403，iframe 被 `frame-ancestors 'none'` 拒绝。
-- 页面外链用 `target="_blank"`，外壳要拦截新窗口并把合规的链接交给系统浏览器（§4.7）。
+- 页面外链用 `target="_blank"`。外壳在导航回调和新窗口回调里都要判断，只把匹配 PR 规则的 URL 交给系统浏览器，其他外链不打开（§4.7）。
 - 「复制命令」是页面唯一的输出通道，只用 `navigator.clipboard.writeText`，失败时报错，没有备用方法（`clipboard.ts:1-13`）。WebView 必须允许这个 API。
 - 主题、语言、看板仓库筛选存在 `localStorage`（`theme.ts:16-26`、`i18n.ts:2185-2215`、`App.tsx:124-131`）。`localStorage` 按 origin 区分，所以端口必须固定。
 
@@ -236,21 +236,29 @@ CLI 的查找、环境和配置统一在 §4.5 定义。版本检查：每次启
 - 状态窗口的命令只有五个（§5 S3），只在状态窗口、只对本地 origin 授权。
 
 ### 4.7 导航与新窗口（必改项 D）
-外壳用一个纯函数判断每个 URL，结果只有三种：留在窗口内、交给系统浏览器、拒绝。
+外壳用一个纯函数判断每个 URL，结果只有三种：留在窗口内、交给系统浏览器、拒绝。外链规则是 §11 第 17 项的 (b)（LOCKED）。
 
 | 窗口 | 留在窗口内 | 交给系统浏览器 | 其他 |
 |---|---|---|---|
-| 控制台窗口 | scheme 是 `http`，host 解析后是 IPv4 `127.0.0.1`，端口等于自己子进程的端口，没有 userinfo | scheme 是 `https`，host 精确等于 `github.com`，端口为空或 443，没有 userinfo，并且来自用户手势（**已推翻（DP0）**：公开回调拿不到手势，规则待 §11 第 17 项决定） | 拒绝 |
+| 控制台窗口 | scheme 是 `http`，host 解析后是 IPv4 `127.0.0.1`，端口等于自己子进程的端口，没有 userinfo | 只有 PR URL：scheme 是 `https`；host 精确等于 `github.com`；端口为空或 443；没有 userinfo；path 严格是 `/<owner>/<repo>/pull/<digits>`；没有 query 和 fragment。并且通过频率限制 | 拒绝 |
 | 状态窗口 | 只有 app 自带的本地页面 | 无 | 拒绝 |
 
-- 解析用标准 URL 解析器，按解析后的 scheme、host、port 比较，不做字符串前缀匹配。`localhost`、`[::1]`、其他端口、`file:`、`data:`、`blob:`、`javascript:`、`about:`、自定义 scheme 都拒绝。
+- 解析用标准 URL 解析器，按解析后的 scheme、host、port、userinfo、path、query、fragment 比较，不做字符串前缀匹配。`localhost`、`[::1]`、其他端口、`file:`、`data:`、`blob:`、`javascript:`、`about:`、自定义 scheme 都拒绝。
+- PR URL 的 path 规则：
+  - 解析后的 path 必须完全匹配 `^/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[0-9]+$`。`owner` 和 `repo` 的字符集与解码器相同（`decode.ts:75`）。
+  - 其他 path 都不匹配，例如 `/o/r`、`/o/r/issues/1`、`/o/r/pull/1/files`、`/o/r/pull/abc`、带 `%2F` 或末尾 `/` 的写法。
+  - `http:` 和其他 scheme、`github.com.evil.example` 这类仿冒 host、`www.github.com`、带 userinfo 的 URL 都不匹配。
+  - 外壳不检查 `owner/repo` 是否是已注册的仓库。外壳不读快照（S2），这个数据只在服务端。
+- 频率限制：两次交出之间至少间隔 1 秒，每分钟最多交出 10 次。超出限制的请求丢弃，不排队，只写日志。
 - 覆盖的入口：顶层导航（含重定向）、`window.open`、`target="_blank"`、下载、权限请求。
-  - 重定向：每一跳都过同一个判断函数。服务端今天没有重定向（§0 P1），T-NAV-3 用一个测试服务验证外壳确实拦截了重定向（**已核对（DP0）**：T-NAV-3，重定向的每一跳都进入导航回调并被拒绝）。
-  - 新窗口：外壳从不创建新的 WebView 窗口。合规的 GitHub 链接交给系统浏览器，其他一律丢弃。
-  - 用户手势（**已推翻（DP0）**）：wry 的导航回调和新窗口回调只有 URL，没有手势信息。macOS WKWebView 默认允许脚本打开窗口，所以没有手势的 `window.open` 会到达新窗口回调（T-NAV-5 失败）。`target="_blank"` 链接先作为顶层导航到达导航回调，按现在的规则被拒绝，PR 链接点了没有反应（**inferred**：只测了脚本触发的点击）。外链规则待 §11 第 17 项决定。
+  - 重定向：每一跳都过同一个判断函数。服务端今天没有重定向（§0 P1），T-NAV-3 用一个测试服务验证外壳确实拦截了重定向（**已核对（DP0）**：T-NAV-3，重定向的每一跳都进入导航回调并被拒绝）。跳到 PR URL 的重定向和其他 PR URL 请求一样处理：窗口不离开，URL 交给系统浏览器。
+  - 导航回调：PR URL 一律不在窗口内打开；通过频率限制时交给系统浏览器。`target="_blank"` 链接先作为顶层导航到达这里（DP0 F2，**inferred**：只测了脚本触发的点击）。
+  - 新窗口：外壳从不创建新的 WebView 窗口。PR URL 通过频率限制时交给系统浏览器，其他一律丢弃。
+  - 用户手势（**已推翻（DP0）**）：wry 的导航回调和新窗口回调只有 URL，没有手势信息。规则 (b) 不依赖手势，也不声称验证过手势。没有手势的脚本仍可请求打开一个匹配的 PR URL（DP0 F1）。Dot 和 Aimpact 接受这个剩余风险：能打开的只有 GitHub 上的 PR 页面，次数受频率限制。
   - 下载：全部拒绝，不写文件。
   - 权限请求（摄像头、麦克风、定位、通知、剪贴板读取）：全部拒绝，不弹系统对话框。剪贴板写入是页面「复制命令」需要的，DP0 验证它在拒绝其他权限后仍然可用。wry 在没有权限回调时默认授予摄像头和麦克风，所以外壳必须在 app 和控制台窗口两级设置拒绝回调（DP0 原型已这样做，§8.1）。
-- 交给系统浏览器：Rust 侧调用系统打开方法，只传通过判断的 URL。这个能力不暴露给任何页面。
+- 交给系统浏览器：Rust 侧调用系统打开方法，只传通过判断和频率限制的 PR URL。这个能力不暴露给任何页面。
+- 不匹配的外链：外壳不在窗口内打开，不交给系统浏览器，不弹对话框。页面在每个外链旁边加一个复制按钮，复制完整 URL，用现有的 `CopyButton`（`ui.tsx:43`）。复制失败时，按钮显示「复制失败」，并由 `aria-live` 播报（现有行为）。不加备用复制方法，不加原生桥。这个按钮在浏览器版里也显示，所以页面不用判断自己是否在桌面版里。这是 DP2 的一个前端小改动。
 
 ### 4.8 Dock 角标（DP2b，§11 第 5 项 LOCKED）
 - 来源：控制台窗口的标题。严格匹配 `^\((\d+)\) repo-harness$` 时，角标显示 N。标题是 `repo-harness` 时不显示角标。其他标题不显示角标。
@@ -292,7 +300,7 @@ CLI 的查找、环境和配置统一在 §4.5 定义。版本检查：每次启
   - 五个应用命令在 `build.rs` 的 app manifest 里声明，让它们受 capability 控制。`invoke_handler` 注册的命令集合必须和 app manifest 完全相同（T-BRG-3 做漂移检查）。
   - 插件只用 single-instance，并且只用它的 Rust 回调。
   - `withGlobalTauri` 关闭，但这只是减少暴露面，不是权限边界。权限边界由编译后的 capability 和运行时拒绝测试证明（T-BRG），不由「页面里没有某个全局对象」证明。参考 https://v2.tauri.app/security/capabilities/ 。
-- **S4 导航白名单**：§4.7 的判断函数覆盖导航、重定向、新窗口、下载和权限请求。
+- **S4 导航白名单**：§4.7 的判断函数覆盖导航、重定向、新窗口、下载和权限请求。交给系统浏览器的只有严格匹配的 GitHub PR URL，并且受频率限制。其他外链不打开，页面只提供复制。
 - **S5 唯一清理负责方**：每个进程组只有一个负责方（§4.2 的表）。外壳只结束 serve 和 serve 自己的进程组，从不向其他进程发信号，不按名字停止进程。外层期限比内层多 5 秒。lifeline 保证外壳或 serve 死亡时，下层进程组仍被回收。
 - **S6 不放宽服务端**：任何阶段都不为桌面版修改 Host、Origin、`Sec-Fetch-Site`、CSP、`X-Frame-Options`。
 - **S7 最小环境**：子进程环境和配置文件按 §4.5 的白名单，token 不写盘。
@@ -332,9 +340,9 @@ Operator 写入期的约束（§11 第 16 项 LOCKED，本 plan 只记录）：
 
 | 阶段 | 内容 | 产出 | 退出条件 |
 |---|---|---|---|
-| DP0 实测（不改仓库代码） | 1. 权限边界：最小 Tauri app 按 S3 配置，跑 T-BRG。2. 生命周期：用假 CLI 跑外壳侧 T-LIFE。3. 导航：T-NAV 中标为 unverified 的项。4. WebKit：在 Safari 和最小 Tauri 窗口里打开当前服务，亮/暗、1440 与 390 宽；剪贴板复制；`localStorage` 重启后保留。5. 两个服务同时运行的冲突（§4.9）。6. setup check 在主仓库 cwd 下的输出。7. Finder 启动时的 PATH。8. Safari「添加到程序坞」能否用于 `http://127.0.0.1`。9. 最小 Tauri app 的体积 | 本 plan 增加「DP0 结果」一节，所有 **inferred/unverified** 改为已核对或推翻；第 8 项的结果写成日常用法说明 | 结果写进本 plan 后，本 work-package 停止（§11 第 2 项）。以后另给 GO 时，1、2 都必须已通过 |
+| DP0 实测（不改仓库代码） | 1. 权限边界：最小 Tauri app 按 S3 配置，跑 T-BRG。2. 生命周期：用假 CLI 跑外壳侧 T-LIFE。3. 导航：T-NAV 中标为 unverified 的项。4. WebKit：在 Safari 和最小 Tauri 窗口里打开当前服务，亮/暗、1440 与 390 宽；剪贴板复制；`localStorage` 重启后保留。5. 两个服务同时运行的冲突（§4.9）。6. setup check 在主仓库 cwd 下的输出。7. Finder 启动时的 PATH。8. Safari「添加到程序坞」能否用于 `http://127.0.0.1`。9. 最小 Tauri app 的体积 | 本 plan 增加「DP0 结果」一节，所有 **inferred/unverified** 改为已核对或推翻；第 8 项的结果写成日常用法说明 | 第 1–3 项已完成（§8.1）。按 §11 第 18 项，只再补做第 8 项。第 8 项结果写进本 plan 后，本 work-package 停止（§11 第 2 项）。以后另给 GO 时，1、2 都必须已通过 |
 | DP1 CLI 启动合约 | `operator serve --exit-on-stdin-eof`；独立进程组组长的 lifeline；setup builder 移进 Worker；结构化错误码 `port_in_use`（§4.4）；固定「stdout 第一行严格是 URL」；tarball smoke 增加 lifeline 检查 | 一个 PR，只改 CLI 和测试 | CLI 侧 T-LIFE（含 T-LIFE-12、13）和 `smoke:tarball-install` 通过；发布一个包含它的 CLI 版本 |
-| DP2 外壳 MVP（本机自用） | `desktop/` Tauri 项目：探测与配置、版本检查、子进程生命周期、固定端口、两个窗口、导航判断、启动画面与失败页、诊断命令、日志、单实例、原生标题栏、图标 | ad-hoc 签名的本地 `.app` | §10 的 T-OWN、T-BRG、T-LIFE、T-NAV、T-ENV、T-DIAG、T-E2E 在 Mac mini 上从 Finder 启动全部通过 |
+| DP2 外壳 MVP（本机自用） | `desktop/` Tauri 项目：探测与配置、版本检查、子进程生命周期、固定端口、两个窗口、导航判断（含 PR URL 规则和频率限制）、启动画面与失败页、诊断命令、日志、单实例、原生标题栏、图标；前端外链旁的复制按钮（§4.7） | ad-hoc 签名的本地 `.app` | §10 的 T-OWN、T-BRG、T-LIFE、T-NAV、T-ENV、T-DIAG、T-E2E 在 Mac mini 上从 Finder 启动全部通过 |
 | DP2b Dock 角标 | §4.8 的角标；前端标题在 Dev Activity 读取失败时不带数字 | 外壳增量 PR 和一个前端小 PR | T-BADGE 通过 |
 | DP3 对外分发（条件：另给的 GO；发版前核实 Team ID 和证书） | Developer ID 签名、公证、`desktop-v*` GitHub Release、发布记录 | 公证后的 `.dmg` | T-REL 通过 |
 | DP4 以后 | 菜单栏图标、系统通知、自动更新、Homebrew cask、其他平台、与 Operator 写入期对齐 | 各自单独批准 | — |
@@ -365,7 +373,7 @@ DP0 状态：第 1–3 项已实测（§8.1）。第 4–9 项没有做（§11 �
 - T-NAV-1、2、3、6、8 通过。T-NAV-3 证明重定向的每一跳都进入导航回调。
 - T-NAV-5 失败：定时器里没有手势的 `window.open` 到达了新窗口回调（§4.7）。
 - `target="_blank"` 链接先作为顶层导航到达，并被拒绝（**inferred**：只测了脚本触发的点击）。
-- 结论：用 Tauri 2.12 的公开回调，做不到「只在用户手势后交出 GitHub 链接」。外链规则要重新决定（§11 第 17 项）。
+- 结论：用 Tauri 2.12 的公开回调，做不到「只在用户手势后交出 GitHub 链接」。外链规则要重新决定（§11 第 17 项）。第八轮决定用 (b)，见 §4.7。
 - T-NAV-7 部分通过：没有出现授权。但这个 WKWebView 里没有 `navigator.mediaDevices`，拒绝回调没有被触发。定位请求超时，原因不明。
 
 **T-ENV（DP0 部分）**
@@ -380,7 +388,7 @@ DP0 状态：第 1–3 项已实测（§8.1）。第 4–9 项没有做（§11 �
 - 仓库 CI 的覆盖选择器要求每个代码路径都有 bun 测试消费者，所以 PR #718 的 CI 失败。`desktop/` 进 main 之前，要先决定 Rust 测试怎样进 CI。
 
 **没有验证的项**
-- §8 DP0 第 4–9 项：WebKit 渲染、剪贴板、`localStorage`、两个服务同时运行、setup 的 cwd、Finder 启动的 PATH、Safari「添加到程序坞」、体积。这些不在本次批准的范围内（§11 第 18 项）。所以这些标记保持不变：§0 压力点 1、§2.2 体积、§2.3 同一个 WebView、§4.7 剪贴板写入、§4.9 共享状态、§6 Tailwind。
+- §8 DP0 第 4–9 项：WebKit 渲染、剪贴板、`localStorage`、两个服务同时运行、setup 的 cwd、Finder 启动的 PATH、Safari「添加到程序坞」、体积。这些不在本次批准的范围内。§11 第 18 项决定只补做第 8 项；第 4–7、9 项留到以后的 GO。所以这些标记保持不变：§0 压力点 1、§2.2 体积、§2.3 同一个 WebView、§4.7 剪贴板写入、§4.9 共享状态、§6 Tailwind。
 - §4.4 setup builder 在 Bun Worker 里运行：没有做，标记保持 **unverified**。
 - T-LIFE-10：需要 4318 上有终端服务。本次规定不碰 4318，所以没做。
 - T-NAV-4：没有测真实手势点击，也没有打开系统浏览器。
@@ -408,7 +416,8 @@ DP0 状态：第 1–3 项已实测（§8.1）。第 4–9 项没有做（§11 �
 | WebKit 和 Chrome 渲染不同 | Kumo 组件或 Tailwind v4 样式在 WKWebView 里错位 | DP0 用 Safari 验收；以后 UI PR 的截图同时覆盖 WebKit |
 | WKWebView 拒绝 `navigator.clipboard` | 「复制命令」失效，页面唯一的输出通道断了 | DP0 实测；不通过时回到本 plan 重新决定，不在前端加备用复制方法 |
 | `localStorage` 不持久 | 每次启动丢主题、语言、看板筛选 | 固定端口 4319；DP0 核对 WebView 数据目录持久 |
-| 服务端重定向或新窗口绕过判断 | 控制台窗口加载外部页面 | S4；T-NAV-3 已通过（§8.1）。没有手势的新窗口拦不住，外链规则待 §11 第 17 项 |
+| 服务端重定向或新窗口绕过判断 | 控制台窗口加载外部页面 | S4；T-NAV-3 已通过（§8.1）。没有手势的新窗口拦不住，所以规则 (b) 只交出严格匹配的 PR URL，其他外链拒绝（§4.7） |
+| 没有手势的脚本打开 PR 页面 | 系统浏览器打开一个用户没有点击的 GitHub PR 页面 | 已接受的剩余风险（§11 第 17 项）。只匹配 PR URL，并有频率限制；T-NAV-5 验证限制 |
 | wry 默认授予摄像头和麦克风 | 页面不经提示就拿到媒体权限 | app 和控制台窗口两级设置拒绝回调；打包后补测 T-NAV-7（§4.7） |
 | 诊断命令转义错误 | 用户复制后执行了错误的命令 | POSIX 单引号转义；T-DIAG 覆盖空格、引号、`$`、反引号、换行 |
 | 角标显示过期计数 | 用户看到不存在的待办 | §4.8：断开和读取失败时清除；T-BADGE |
@@ -461,11 +470,16 @@ E2E：
 - T-LIFE-10：先在终端运行 `repo-harness operator serve`（4318）。打开并退出桌面版。只有桌面版自己的 PID 和进程组消失。4318 的 `/healthz` 在前后都返回 200。测试不使用 `pkill` 或 `killall`。
 
 **T-NAV 导航（D）**
-- T-NAV-1（单元）：判断函数的表格测试：允许的 origin；`localhost`、`[::1]`、其他端口、带 userinfo、`file:`、`data:`、`blob:`、`javascript:`、`about:blank`、自定义 scheme 都拒绝；`https://github.com/o/r/pull/1` 交给系统浏览器；`http://github.com`、`https://github.com.evil.example`、`https://user@github.com` 拒绝。
+- T-NAV-1（单元）：判断函数的表格测试。
+  - 留在窗口内：允许的 origin。
+  - 拒绝：`localhost`、`[::1]`、其他端口、带 userinfo、`file:`、`data:`、`blob:`、`javascript:`、`about:blank`、自定义 scheme。
+  - 交给系统浏览器：只有 `https://github.com/o/r/pull/1` 和 `https://github.com:443/o/r/pull/1` 这类严格匹配的 PR URL。
+  - 拒绝的 GitHub 写法：`http://github.com/o/r/pull/1`、`https://github.com.evil.example/o/r/pull/1`、`https://www.github.com/o/r/pull/1`、`https://user@github.com/o/r/pull/1`、`https://github.com/o/r`、`/o/r/issues/1`、`/o/r/pull/1/files`、`/o/r/pull/1/`、`/o/r/pull/abc`、`/o%2Fr/pull/1`、带 `?x=1` 或 `#x` 的 PR URL。
+  - 频率限制的单元测试：间隔不到 1 秒的第二次请求被丢弃；一分钟内第 11 次请求被丢弃。
 - T-NAV-2：控制台页面里 `location.href = 'https://example.com'`。窗口不离开服务 URL，系统浏览器不打开。
 - T-NAV-3：用测试服务返回 302 到外部地址。外壳拦截，窗口不加载外部页面。
-- T-NAV-4：点击 PR 链接（`target="_blank"`）。系统浏览器打开该 PR，没有新窗口，主窗口不动。
-- T-NAV-5：在定时器里调用 `window.open('https://github.com/o/r/pull/1')`（没有用户手势）。没有窗口，系统浏览器不打开。DP0 结果：失败（§8.1）。§11 第 17 项决定后，改写本条和 T-NAV-4。
+- T-NAV-4：用系统级点击（真实鼠标事件）点 PR 链接（`target="_blank"`）。系统浏览器打开该 PR，没有新窗口，主窗口不动。再点一个不匹配的外链：窗口不动，系统浏览器不打开；旁边的复制按钮把完整 URL 写进剪贴板。本条只证明点击的路径，不证明外壳识别了手势。
+- T-NAV-5：在定时器里调用 `window.open('https://github.com/o/r/pull/1')`（没有用户手势）。按规则 (b)，这是已接受的剩余风险：没有新窗口，系统浏览器可以打开该 PR。在 1 秒内再调用一次：第二次被丢弃，日志有记录。再调用 `window.open('https://example.com')`：没有窗口，系统浏览器不打开。DP0 的「失败」结果针对旧的手势规则（§8.1）。
 - T-NAV-6：触发一个下载链接。没有文件写入，没有对话框。
 - T-NAV-7：调用 `getUserMedia`、`geolocation.getCurrentPosition`、`Notification.requestPermission`。全部被拒绝，没有系统权限对话框。
 - T-NAV-8：状态窗口里导航到服务 URL 或任何外部地址。被拒绝。
@@ -526,12 +540,13 @@ E2E：
 14. **分发渠道** — LOCKED：首次对外发布用 GitHub Release 手动下载，Tag 用 `desktop-v*`。Homebrew cask 和自动更新以后再说。对外发布在 DP3，要另给 GO，并且在 Team ID 和证书核实之后。（§7）
 15. **其他平台** — LOCKED：只做 arm64 macOS，不给其他平台编时间表。（§1、§6）
 16. **Operator 写入期的体验** — LOCKED：桌面版和浏览器共用同一条写入通道、确认语义和审计。外观可以不同。没有私有的 IPC 写入捷径。（§5）
-17. **外链交给系统浏览器的规则** — PENDING（Dot 决定）：DP0 证明公开回调拿不到用户手势（§8.1）。可选方向：
-    - (a) 桌面版不交出任何外链，PR 链接改为可复制。这要改前端。
-    - (b) 只交出与解码器规则完全一致的 PR URL（`decode.ts:75`），加频率限制，接受脚本也能触发这类打开。
-    - (c) 用平台 API 关掉脚本自动打开窗口，并在导航回调里放行 GitHub 链接。公开回调分不清新窗口和顶层导航，要再实测。
-    - 建议 (a) 或 (b)。决定后改写 §4.7、S4、T-NAV-4、T-NAV-5。（§4.7）
-18. **DP0 第 4–9 项** — PENDING（Aimpact 决定）：本次只批准了第 1–3 项。§8 规定 DP0 结果写进本 plan 后，本 work-package 停止。要决定：补做第 4–9 项，或者到此停止，把它们留到以后的 GO。第 8 项（Safari「添加到程序坞」）的结果是 §2.3 日常用法说明的依据。（§8）
+17. **外链交给系统浏览器的规则** — LOCKED（Dot 和 Aimpact 2026-10-13 决定 (b)）：DP0 证明公开回调拿不到用户手势（§8.1）。规则：
+    - 只交出严格匹配的 GitHub PR URL：只用 `https`；host 精确等于 `github.com`；path 只能是 `/<owner>/<repo>/pull/<digits>`；没有 userinfo、query 和 fragment。其他 path、scheme 和仿冒 host 都拒绝。
+    - 保留频率限制：间隔至少 1 秒，每分钟最多 10 次。
+    - 不声称验证了用户手势。没有手势的脚本仍可请求打开一个匹配的 PR URL，这个剩余风险已接受。
+    - 不匹配的外链：不在窗口内打开，不交给系统浏览器；页面提供复制按钮；复制失败时明确提示；不加原生桥。
+    - 没有选的方向：(a) 不交出任何外链，只能复制；(c) 用平台 API 关掉脚本自动打开窗口，要再实测。（§4.7、S4、T-NAV-1、4、5）
+18. **DP0 第 4–9 项** — LOCKED（Dot 和 Aimpact 2026-10-13 决定）：只补做第 8 项（Safari「添加到程序坞」能否用于 `http://127.0.0.1`），它的结果是 §2.3 日常用法说明的依据。第 4–7、9 项不做，留到以后的 GO。DP1 及以后仍没有 GO。（§8）
 
 ---
 
@@ -575,3 +590,9 @@ E2E：
 - 标记更新：§2.2 应用命令受 capability 控制、§4.4 close-on-exec、§4.7 重定向改为已核对。§4.7 用户手势改为已推翻。
 - §4.4 增加 close-on-exec 并发情况的 DP2 要求。§4.7 增加 wry 默认授予媒体权限的要求。§9 增加对应风险，更新导航风险。§10 T-NAV-5 记录失败。
 - §11 新增第 17 项（外链规则，Dot 决定）和第 18 项（DP0 第 4–9 项，Aimpact 决定）。第 1–16 项不变。
+
+**第八轮（20261013，Dot 和 Aimpact 决定）**
+- §11 第 17 项 LOCKED 为 (b)。这取代第七轮「建议 (a) 或 (b)」的未决状态，也取代任何把它记为 (a) 的说法。只交出严格匹配的 GitHub PR URL：`https`、host 精确等于 `github.com`、path 只能是 `/<owner>/<repo>/pull/<digits>`，没有 userinfo、query 和 fragment。保留频率限制。接受没有手势的脚本打开匹配 PR URL 的剩余风险。不匹配的外链只能复制，复制失败时明确提示，不加原生桥。
+- 改动见 §2.1、§4.7、S4、§8 DP2、§9、T-NAV-1、T-NAV-4、T-NAV-5。§4.7 不再要求用户手势。T-NAV-1 不再把所有 `https://github.com` 链接交给系统浏览器。
+- §11 第 18 项 LOCKED：DP0 只补做第 8 项。第 4–7、9 项和 DP1 及以后不展开。改动见页首 Status、§8 DP0、§8.1。
+- 第二轮记录里「外链只放行有用户手势的 `https://github.com`」已被本轮取代。
