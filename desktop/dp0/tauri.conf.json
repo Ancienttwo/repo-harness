@@ -1,0 +1,14 @@
+{
+  "productName": "repo-harness",
+  "version": "0.0.0",
+  "identifier": "com.repoharness.app",
+  "build": { "frontendDist": "pages/app" },
+  "app": {
+    "withGlobalTauri": false,
+    "windows": [],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' ipc: http://ipc.localhost http://127.0.0.1:4319"
+    }
+  },
+  "bundle": { "active": false }
+}

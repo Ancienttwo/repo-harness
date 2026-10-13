@@ -1,0 +1,12 @@
+{
+  "identifier": "status-window",
+  "description": "The bundled status page only. No remote origin, no plugin or core permission.",
+  "windows": ["status"],
+  "permissions": [
+    "allow-status-report",
+    "allow-retry-start",
+    "allow-choose-main-repo",
+    "allow-open-config",
+    "allow-quit-app"
+  ]
+}

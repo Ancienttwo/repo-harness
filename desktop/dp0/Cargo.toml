@@ -1,0 +1,31 @@
+[package]
+name = "repo-harness-desktop-dp0"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[lib]
+name = "dp0"
+path = "src/lib.rs"
+
+[[bin]]
+name = "dp0-shell"
+path = "src/main.rs"
+
+[[bin]]
+name = "fake-serve"
+path = "src/bin/fake_serve.rs"
+
+[dependencies]
+tauri = { version = "2", features = [] }
+url = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+libc = "0.2"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[[bin]]
+name = "supervise-once"
+path = "src/bin/supervise_once.rs"
