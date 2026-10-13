@@ -522,12 +522,10 @@ workflow_write_handoff() {
 
   # EPC-07: independent handoff/resume content assembly retired same-package
   # (Phase A/B: tasks/contracts/20260722-2246-epc-07-recovery-view-cutover.contract.md).
-  # Rendering now lives in the single standalone materializer,
+  # Rendering lives in src/effects/evidence/recovery-materializer.ts, which
+  # the Stop handler imports. This function calls its CLI,
   # scripts/recovery-view-cli.ts (generated into
-  # assets/templates/helpers/recovery-view-cli.ts with a generated prefix),
-  # kept consistent by inspection with src/effects/evidence/recovery-materializer.ts -- the
-  # authoritative in-process implementation the TS Stop handler imports
-  # directly at real Stop time. This function still owns the
+  # assets/templates/helpers/recovery-view-cli.ts). This function still owns the
   # event-journal/run-summary bookkeeping below: those are not among
   # EPC-07's four named recovery views.
   workflow_ensure_harness_surface
