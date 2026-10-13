@@ -59,11 +59,27 @@
   - `bash scripts/check-ci.sh governance`: exit 0. The architecture
     projection step returned `noop`.
 - #683 PR CI passed on its final head `a7a252d5`.
+- #687 PR CI passed on its final head `e5b487bd`. Codex review had no
+  findings.
+- #684 merged to main after the gate and before the #687 merge. It adds
+  four assertion lines to `tests/pi-extension.test.ts`. The release merge
+  commit therefore contains #684. Delta checks at `dc0efeb2` in a clean
+  checkout (Node 24, temporary HOME, agent variables removed):
+  - `bun run check:type`: exit 0.
+  - `tests/pi-extension.test.ts`: 19 passed, 0 failed.
+  - `bash scripts/check-tarball-install-smoke.sh`: exit 0, including the
+    Pi package smoke.
+  - `architecture-projection check`: `planned`. #684 changed the source
+    digest of `capability.verification.evals-checks`. The manifest and
+    `tests/` are not in the npm package. A later main PR refreshed the
+    manifest.
 - No assertion or timeout was changed for this release.
 
 ## Rollback evidence
 
-- Release squash merge: pending.
+- Release squash merge (#687): `dc0efeb20da72ee47b1c5946cd424838003c2972`.
+  Parent: `9ab7dd02f0b3fde11c47f726cc8e1a2ab01abe88` (#684).
+  `git revert --no-edit dc0efeb2`.
 - #683 squash merge: `4703dd9017ec14abbbff5937ad00432f456edb30`.
   Parent: `f79b6838`. `git revert --no-edit 4703dd90`. A revert restores
   the Pi `1.1.0` pin; a fresh install then resolves Pi `1.2.0` again and
@@ -72,4 +88,25 @@
 
 ## Publication status
 
-- Status: prepared. Not published.
+- Status: npm and GitHub publication verified on 2026-10-13.
+- Source release commit: `dc0efeb20da72ee47b1c5946cd424838003c2972`.
+- Annotated tag `v0.22.1`: object `a97c2c5ee032a0826f8c88d570d9e598689f7495`,
+  pointing to the source release commit.
+- Tarball: `npm pack` in a clean checkout of the source release commit.
+  814 entries. SHA256
+  `3daf74ca38097c2ae848cb2a9a9996ff027df388381be28ed4bdae980a396110`.
+- npm: the owner published that tarball after browser authentication.
+  Registry shasum `a4033498065491d776eb67e9652f8a2fab45df4f` and integrity
+  equal the local tarball. The `latest` dist-tag is 0.22.1.
+  `bun run check:release-published 0.22.1` returned OK; runtime evidence
+  receipt `sha256:5f92ba5e0ee3f67ee7af3020a743783de756850e677ec90c9f229637516b2e40`.
+- GitHub Release: https://github.com/Ancienttwo/repo-harness/releases/tag/v0.22.1.
+  The downloaded asset SHA256 equals the tarball above.
+- Local runtime: `repo-harness update --version 0.22.1` on the 0.21.2 CLI
+  failed. The first run hit a stale Bun manifest cache. The second run
+  failed with `archctx architecture docs renderer mismatch`: the 0.21.2
+  verifier requires renderer v4, and archctx 0.7.2 reports v5 (#699). The
+  owner's CLI stayed at 0.21.2. `bun add -g repo-harness@0.22.1` then
+  installed 0.22.1, and `repo-harness update` on 0.22.1 code returned 0.
+  The setup check reports no failure. The GitHub Release notes give this
+  workaround.
