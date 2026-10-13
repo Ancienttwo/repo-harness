@@ -16,6 +16,7 @@ import { assertConfigurationPath, readConfigurationFragment, replaceConfiguratio
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { CODEX_HOOK_TRUST_STEP, completeHookOrderMigration, prepareHookOrderMigration } from '../hook-install-state';
 import type {
   AgentTarget,
   DetectionResult,
@@ -113,21 +114,20 @@ class CodexTarget implements AgentTarget {
     const merged = mergeHooks(cleaned, managed);
     const next: HooksFile = { ...data, hooks: merged };
     const nextContent = formatJson(next);
+    const migration = prepareHookOrderMigration('codex', data.hooks, opts.profile);
     const tomlResult = ensureRequestUserInputToml();
 
     const created = !fs.existsSync(filePath);
     if (!created) {
       const current = fs.readFileSync(filePath, 'utf-8');
       if (current === nextContent) {
-        return { files: [{ path: filePath, action: 'unchanged' }, tomlResult] };
+        return { files: [{ path: filePath, action: 'unchanged' }, tomlResult], notes: completeHookOrderMigration('codex', migration) };
       }
     }
     atomicWriteFileSync(filePath, nextContent);
     return {
       files: [{ path: filePath, action: created ? 'created' : 'updated' }, tomlResult],
-      notes: created
-        ? ['Restart Codex to register new hook trust hashes.']
-        : ['Existing hash entries stay trusted; only new (command, key) tuples re-prompt.'],
+      notes: migration ? completeHookOrderMigration('codex', migration) : [CODEX_HOOK_TRUST_STEP],
     };
   }
 

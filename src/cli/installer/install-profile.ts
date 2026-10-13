@@ -1,5 +1,6 @@
 import { bunGlobalPackageRoot, expectedSkillProjections, skillLinkMatches } from './skill-projection';
 import { configurationReceiptPath } from './configuration-ownership';
+import { hookInstallStatePath } from './hook-install-state';
 import { createHash, randomUUID } from 'crypto';
 import {
   cpSync,
@@ -722,6 +723,7 @@ export function installProfileHostMutationPaths(env: NodeJS.ProcessEnv = process
     join(home, '.repo-harness', 'config.json'),
     installProfileStatePath(env),
     configurationReceiptPath(env),
+    hookInstallStatePath(env),
     join(home, '.agents', '.skill-lock.json'),
   ];
   for (const host of ['.codex', '.claude']) {

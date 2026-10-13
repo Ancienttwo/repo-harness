@@ -8,6 +8,9 @@ import { claudeTarget } from '../../src/cli/installer/targets/claude';
 import type { Location } from '../../src/cli/installer/types';
 import { readConfigurationReceipt } from '../../src/cli/installer/configuration-ownership';
 import { isRepoHarnessManagedHookCommand } from '../../src/core/adoption/managed-hook-config';
+import { buildManagedHooks, mergeHooks, stripManagedEntries } from '../../src/cli/installer/managed-entries';
+import { acknowledgeCodexHookTrust, hookInstallStatePath, prepareHookOrderMigration, readHookInstallState } from '../../src/cli/installer/hook-install-state';
+import { checkCodexHookOrderTrust } from '../../src/cli/commands/doctor';
 
 const ROOT = path.join(import.meta.dir, '..', '..');
 const CLI = path.join(ROOT, 'src/cli/index.ts');
@@ -179,7 +182,7 @@ describe('issue 698 host configuration ownership', () => {
       expect(runInstall({ target: 'claude', location: 'global' }).exitCode).toBe(0);
       const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
       expect(data.theme).toBe('user');
-      expect(data.hooks.SessionStart[0].hooks.map((hook: any) => hook.command)).toEqual(commands);
+      expect(data.hooks.SessionStart[1].hooks.map((hook: any) => hook.command)).toEqual(commands);
       expect(JSON.stringify(data)).not.toContain('session-start-context.sh');
       expect(runUninstall({ target: 'claude', location: 'global' }).exitCode).toBe(0);
       expect(JSON.parse(fs.readFileSync(filePath, 'utf8')).hooks.SessionStart[0].hooks.map((hook: any) => hook.command)).toEqual(commands);
@@ -520,10 +523,10 @@ describe('install command (Phase 1B)', () => {
       const pre = data.hooks.PreToolUse as { hooks: { command: string }[] }[];
       // 2 siblings + 2 managed
       expect(pre.length).toBe(4);
-      expect(pre[0].hooks[0].command).toBe('rtk hook claude');
-      expect(pre[1].hooks[0].command).toBe('echo repo-harness hook is documented');
-      expect(pre[2].hooks[0].command).toContain('repo-harness-hook PreToolUse');
-      expect(pre[3].hooks[0].command).toContain('repo-harness-hook PreToolUse');
+      expect(pre[0].hooks[0].command).toContain('repo-harness-hook PreToolUse');
+      expect(pre[1].hooks[0].command).toContain('repo-harness-hook PreToolUse');
+      expect(pre[2].hooks[0].command).toBe('rtk hook claude');
+      expect(pre[3].hooks[0].command).toBe('echo repo-harness hook is documented');
     });
   });
 
@@ -704,4 +707,201 @@ describe('install native Codex delegation authority', () => {
       expect(fs.existsSync(path.join(home, '.repo-harness', 'config.json'))).toBe(false);
     });
   }, 30_000);
+});
+
+describe('managed-first hook order migration', () => {
+  for (const host of ['codex', 'claude'] as const) {
+    const relative = host === 'codex' ? '.codex/hooks.json' : '.claude/settings.json';
+    test(`${host}: migrate old order, preserve duplicate, empty and mixed user blocks, then rerun without writes or notice`, () => {
+      withTempHome(home => {
+        const file = path.join(home, relative);
+        const managed = buildManagedHooks(host);
+        const user = { matcher: 'custom', metadata: { keep: true }, hooks: [
+          { type: 'command', command: 'echo same', timeout: 9, statusMessage: 'User guard' },
+          { type: 'command', command: 'echo same', timeout: 9, statusMessage: 'User guard' },
+        ] };
+        const empty = { matcher: 'empty', hooks: [], label: 'Keep user empty block' };
+        const mixed = { matcher: 'startup|resume', label: 'Keep metadata', timeout: 17, hooks: [
+          user.hooks[0], managed.SessionStart[0].hooks[0], user.hooks[1],
+        ] };
+        const hooks = { ...managed, SessionStart: [user, mixed, user, ...managed.SessionStart],
+          PreToolUse: [empty, ...managed.PreToolUse], UserEvent: [empty, user], EmptyUserEvent: [] };
+        const original = JSON.stringify({ theme: 'user', hooks });
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+        fs.writeFileSync(file, original);
+        const result = runInstall({ target: host, location: 'global' });
+        expect(result.exitCode).toBe(0);
+        const installed = fs.readFileSync(file, 'utf8');
+        const after = JSON.parse(installed);
+        expect(after.theme).toBe('user');
+        expect(after.hooks.SessionStart.slice(0, managed.SessionStart.length)).toEqual(managed.SessionStart);
+        expect(after.hooks.SessionStart.slice(managed.SessionStart.length)).toEqual([
+          user, { ...mixed, hooks: [user.hooks[0], user.hooks[1]] }, user,
+        ]);
+        expect(after.hooks.PreToolUse).toEqual([...managed.PreToolUse, empty]);
+        expect(after.hooks.UserEvent).toEqual([empty, user]);
+        expect(after.hooks.EmptyUserEvent).toEqual([]);
+        // The source objects must also keep their commands and metadata.
+        expect(JSON.stringify({ theme: 'user', hooks })).toBe(original);
+        const recordFile = hookInstallStatePath();
+        const record = fs.readFileSync(recordFile, 'utf8');
+        const migration = readHookInstallState().order_migrations[host]!;
+        expect(migration.version).toBe(1);
+        expect(migration.profile).toBe('full');
+        expect(migration.events).toEqual(['SessionStart', 'PreToolUse']);
+        expect(Number.isFinite(Date.parse(migration.started_at))).toBe(true);
+        expect(Number.isFinite(Date.parse(migration.completed_at!))).toBe(true);
+        expect(migration.codex_trust_acknowledged_at).toBeUndefined();
+        expect(result.lines.some(line => line.includes('Migration recorded'))).toBe(true);
+        expect(result.lines.some(line => line.includes('Pending Codex trust re-approval'))).toBe(host === 'codex');
+        if (host === 'codex') {
+          expect(result.lines.join('\n')).toContain('enter /hooks');
+          expect(result.lines.join('\n')).toContain('install --acknowledge-codex-hook-trust');
+        }
+        const rerun = runInstall({ target: host, location: 'global' });
+        expect(rerun.exitCode).toBe(0);
+        expect(rerun.lines.every(line => line.includes('unchanged:'))).toBe(true);
+        expect(fs.readFileSync(file, 'utf8')).toBe(installed);
+        expect(fs.readFileSync(recordFile, 'utf8')).toBe(record);
+      });
+    });
+
+    for (const withUsers of [false, true]) {
+      test(`${host}: fresh install ${withUsers ? 'with existing user hooks' : 'without user hooks'} has no re-approval notice`, () => {
+        withTempHome(home => {
+          const file = path.join(home, relative);
+          const user = { matcher: 'custom', hooks: [{ type: 'command', command: 'echo fresh user', timeout: 3 }] };
+          if (withUsers) {
+            fs.mkdirSync(path.dirname(file), { recursive: true });
+            fs.writeFileSync(file, JSON.stringify({ hooks: { SessionStart: [user], UserEvent: [{ hooks: [] }] } }));
+          }
+          const result = runInstall({ target: host, location: 'global' });
+          expect(result.exitCode).toBe(0);
+          expect(result.lines.join('\n')).not.toContain('re-approval');
+          expect(fs.existsSync(hookInstallStatePath())).toBe(false);
+          if (withUsers) {
+            const after = JSON.parse(fs.readFileSync(file, 'utf8'));
+            expect(after.hooks.SessionStart).toEqual([...buildManagedHooks(host).SessionStart, user]);
+            expect(after.hooks.UserEvent).toEqual([{ hooks: [] }]);
+          }
+        });
+      });
+    }
+  }
+
+  for (const writeCompleted of [false, true]) {
+    test(`Codex resumes an intent interrupted ${writeCompleted ? 'after' : 'before'} the adapter write`, () => {
+      withTempHome(home => {
+        const file = path.join(home, '.codex/hooks.json');
+        const managed = buildManagedHooks('codex');
+        const user = { hooks: [{ type: 'command' as const, command: 'echo recovery', timeout: 7 }] };
+        const hooks = { ...managed, SessionStart: [user, ...managed.SessionStart] };
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+        fs.writeFileSync(file, JSON.stringify({ hooks }));
+        const intent = prepareHookOrderMigration('codex', hooks)!;
+        expect(checkCodexHookOrderTrust().detail).toContain('install is incomplete');
+        expect(() => acknowledgeCodexHookTrust()).toThrow('no completed Codex');
+        if (writeCompleted) fs.writeFileSync(file, `${JSON.stringify({ hooks: mergeHooks(stripManagedEntries(hooks), managed) }, null, 2)}\n`);
+        const result = runInstall({ target: 'codex', location: 'global' });
+        expect(result.exitCode).toBe(0);
+        expect(readHookInstallState().order_migrations.codex!.started_at).toBe(intent.started_at);
+        expect(result.lines.join('\n')).toContain('Pending Codex trust re-approval');
+        expect(checkCodexHookOrderTrust().detail).toContain('pending Codex trust re-approval');
+        expect(runInstall({ target: 'codex', location: 'global' }).lines.join('\n')).not.toContain('re-approval');
+      });
+    });
+  }
+
+  test('an interrupted migration remains recoverable when the wall clock moves backward', () => {
+    withTempHome(home => {
+      const file = path.join(home, '.codex/hooks.json');
+      const managed = buildManagedHooks('codex');
+      const hooks = { ...managed, SessionStart: [{ hooks: [{ type: 'command' as const, command: 'echo clock', timeout: 3 }] }, ...managed.SessionStart] };
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, JSON.stringify({ hooks }));
+      prepareHookOrderMigration('codex', hooks);
+      const state = readHookInstallState();
+      state.order_migrations.codex!.started_at = '2999-01-01T00:00:00.000Z';
+      fs.writeFileSync(hookInstallStatePath(), JSON.stringify(state));
+      expect(runInstall({ target: 'codex', location: 'global' }).exitCode).toBe(0);
+      expect(readHookInstallState().order_migrations.codex!.started_at).toBe('2999-01-01T00:00:00.000Z');
+      expect(checkCodexHookOrderTrust().status).toBe('warn');
+      expect(acknowledgeCodexHookTrust()).toContain('acknowledged by operator');
+      expect(checkCodexHookOrderTrust().status).toBe('ok');
+    });
+  });
+
+  test('acknowledgement CLI clears pending state without an adapter, profile or native trust write; later migration clears acknowledgement', () => {
+    withTempHome(home => {
+      const file = path.join(home, '.codex/hooks.json');
+      const user = { hooks: [{ type: 'command' as const, command: 'echo user', timeout: 3 }] };
+      const managed = buildManagedHooks('codex');
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, JSON.stringify({ hooks: { ...managed, SessionStart: [user, ...managed.SessionStart] } }));
+      expect(runInstall({ target: 'codex', location: 'global' }).exitCode).toBe(0);
+      const hookBytes = fs.readFileSync(file, 'utf8');
+      const nativeBytes = fs.readFileSync(path.join(home, '.codex/config.toml'), 'utf8');
+      const receiptBytes = fs.readFileSync(path.join(home, '.repo-harness/configuration-restore.json'), 'utf8');
+      const migration = readHookInstallState().order_migrations.codex!;
+      expect(checkCodexHookOrderTrust().status).toBe('warn');
+      const ack = spawnSync(process.execPath, [CLI, 'install', '--acknowledge-codex-hook-trust'], { env: process.env, encoding: 'utf8' });
+      expect(ack.status).toBe(0);
+      expect(ack.stdout).toContain('acknowledged by operator');
+      const acknowledged = readHookInstallState().order_migrations.codex!;
+      expect(acknowledged.events).toEqual(migration.events);
+      expect(acknowledged.version).toBe(migration.version);
+      expect(acknowledged.started_at).toBe(migration.started_at);
+      expect(acknowledged.codex_trust_acknowledged_at).toBeDefined();
+      expect(checkCodexHookOrderTrust().status).toBe('ok');
+      expect(checkCodexHookOrderTrust().detail).toContain('acknowledged by operator');
+      expect(fs.readFileSync(file, 'utf8')).toBe(hookBytes);
+      expect(fs.readFileSync(path.join(home, '.codex/config.toml'), 'utf8')).toBe(nativeBytes);
+      expect(fs.readFileSync(path.join(home, '.repo-harness/configuration-restore.json'), 'utf8')).toBe(receiptBytes);
+      expect(fs.existsSync(path.join(home, '.repo-harness/install-state.json'))).toBe(false);
+      const record = fs.readFileSync(hookInstallStatePath(), 'utf8');
+      expect(acknowledgeCodexHookTrust()).toContain('already acknowledged');
+      expect(fs.readFileSync(hookInstallStatePath(), 'utf8')).toBe(record);
+      fs.writeFileSync(file, JSON.stringify({ hooks: { ...managed, SessionStart: [user, ...managed.SessionStart] } }));
+      expect(() => acknowledgeCodexHookTrust()).toThrow('Codex hook config changed');
+      expect(runInstall({ target: 'codex', location: 'global' }).exitCode).toBe(0);
+      expect(readHookInstallState().order_migrations.codex!.codex_trust_acknowledged_at).toBeUndefined();
+      expect(checkCodexHookOrderTrust().status).toBe('warn');
+      expect(runUninstall({ target: 'codex', location: 'global' }).exitCode).toBe(0);
+      expect(checkCodexHookOrderTrust().status).toBe('na');
+    });
+  });
+
+  test('acknowledgement refuses absent intent and combined install options', () => {
+    withTempHome(() => {
+      expect(() => acknowledgeCodexHookTrust()).toThrow('no completed Codex');
+      const result = spawnSync(process.execPath, [CLI, 'install', '--acknowledge-codex-hook-trust', '--location', 'global'], { env: process.env, encoding: 'utf8' });
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('cannot be combined');
+      expect(fs.existsSync(hookInstallStatePath())).toBe(false);
+    });
+  });
+
+  for (const recordKind of ['linked', 'malformed', 'truncated'] as const) {
+    test(`refuse ${recordKind} migration records before hook or TOML writes`, () => {
+      withTempHome(home => {
+        const file = path.join(home, '.codex/hooks.json');
+        const original = JSON.stringify({ hooks: buildManagedHooks('codex') });
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+        fs.writeFileSync(file, original);
+        fs.mkdirSync(path.dirname(hookInstallStatePath()), { recursive: true });
+        if (recordKind === 'linked') {
+          const source = path.join(home, 'user-record.json');
+          fs.writeFileSync(source, '{"protocol":1,"order_migrations":{}}');
+          fs.symlinkSync(source, hookInstallStatePath());
+        } else fs.writeFileSync(hookInstallStatePath(), recordKind === 'truncated' ? '{' : '{"protocol":1,"order_migrations":{"codex":{"version":99}}}');
+        const result = runInstall({ target: 'codex', location: 'global' });
+        expect(result.exitCode).toBe(1);
+        expect(result.lines.join('\n')).toContain(hookInstallStatePath());
+        expect(fs.readFileSync(file, 'utf8')).toBe(original);
+        expect(fs.existsSync(path.join(home, '.codex/config.toml'))).toBe(false);
+        expect(checkCodexHookOrderTrust().status).toBe('fail');
+        expect(() => acknowledgeCodexHookTrust()).toThrow();
+      });
+    });
+  }
 });

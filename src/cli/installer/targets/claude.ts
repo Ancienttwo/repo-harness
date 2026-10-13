@@ -14,6 +14,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { completeHookOrderMigration, prepareHookOrderMigration } from '../hook-install-state';
 import { assertConfigurationPath } from '../configuration-ownership';
 import type {
   AgentTarget,
@@ -88,20 +89,21 @@ class ClaudeTarget implements AgentTarget {
     const merged = mergeHooks(cleaned, managed);
     const next: SettingsFile = { ...data, hooks: merged };
     const nextContent = formatJson(next);
+    const migration = prepareHookOrderMigration('claude', data.hooks, opts.profile);
 
     const created = !fs.existsSync(filePath);
     if (!created) {
       const current = fs.readFileSync(filePath, 'utf-8');
       if (current === nextContent) {
-        return { files: [{ path: filePath, action: 'unchanged' }] };
+        return { files: [{ path: filePath, action: 'unchanged' }], notes: completeHookOrderMigration('claude', migration) };
       }
     }
     atomicWriteFileSync(filePath, nextContent);
     return {
       files: [{ path: filePath, action: created ? 'created' : 'updated' }],
-      notes: created
+      notes: [...completeHookOrderMigration('claude', migration), ...(created
         ? ['Claude Code will pick up hooks on next ConfigChange event; no restart needed.']
-        : ['Claude Code auto-reloads settings.json on write (verified Phase 0).'],
+        : ['Claude Code auto-reloads settings.json on write (verified Phase 0).'])],
     };
   }
 

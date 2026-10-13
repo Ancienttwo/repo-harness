@@ -20,6 +20,7 @@ import { createInterface } from 'readline/promises';
 import { fileURLToPath } from 'url';
 import { askConfirm } from './tty-prompt';
 import { runInstall, runUninstall, type InstallTargetSpec } from './commands/install';
+import { acknowledgeCodexHookTrust } from './installer/hook-install-state';
 import { writeAllSync } from './runtime/write-all-sync';
 import { runInit } from './commands/init';
 import { CLI_VERSION, formatStatus, runStatus } from './commands/status';
@@ -517,6 +518,7 @@ export function buildProgram(): Command {
     .option('--dry-run', 'Print install/skip/remove plan without writing')
     .option('--state', 'Print effective installed profile state without writing')
     .option('--rollback', 'Restore the previous installed profile state')
+    .option('--acknowledge-codex-hook-trust', 'Record operator acknowledgement after reviewing and trusting reordered hooks in Codex /hooks')
     .option('--location <location>', `Adapter-only install location: ${LOCATION_HELP}`)
     .option('--no-cli', 'Skip installing the repo-harness CLI globally')
     .option('--no-sync-skill', 'Skip refreshing repo-harness skill aliases under host skill roots')
@@ -527,7 +529,15 @@ export function buildProgram(): Command {
     .option('--no-codegraph', 'Skip CodeGraph CLI/MCP configuration')
     .option('--brain-root <path>', 'Brain vault root to persist for repo-harness brain commands')
     .option('--json', 'Output JSON instead of human-readable text')
-    .action(async (rawOpts: GlobalRuntimeCommandOptions & { location?: string; state?: boolean; rollback?: boolean }, cmd: Command) => {
+    .action(async (rawOpts: GlobalRuntimeCommandOptions & { location?: string; state?: boolean; rollback?: boolean; acknowledgeCodexHookTrust?: boolean }, cmd: Command) => {
+      if (rawOpts.acknowledgeCodexHookTrust === true) {
+        const other = cmd.options.find(option => !['acknowledgeCodexHookTrust', 'json'].includes(option.attributeName())
+          && cmd.getOptionValueSource(option.attributeName()) === 'cli');
+        if (other) throw new Error(`--acknowledge-codex-hook-trust cannot be combined with ${other.long}`);
+        const detail = withRuntimeHostTransactionLock(process.env, () => acknowledgeCodexHookTrust());
+        console.log(rawOpts.json === true ? JSON.stringify({ detail }) : detail);
+        return;
+      }
       const target = assertTarget(rawOpts.target, 'install');
       const location = rawOpts.location === undefined ? undefined : assertLocation(rawOpts.location, 'install');
       if (

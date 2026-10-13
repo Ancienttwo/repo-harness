@@ -84,10 +84,11 @@ export function stripRepoHarnessManagedHooks(value: unknown): StrippedManagedHoo
         return false;
       });
 
-      if (keptCommands.length > 0) keptBlocks.push({ ...block, hooks: keptCommands });
+      if (keptCommands.length === block.hooks.length) keptBlocks.push(block);
+      else if (keptCommands.length > 0) keptBlocks.push({ ...block, hooks: keptCommands });
     }
 
-    if (keptBlocks.length > 0) hooks[event] = keptBlocks;
+    if (keptBlocks.length > 0 || blocks.length === 0) hooks[event] = keptBlocks;
   }
 
   return { hooks, removed };
