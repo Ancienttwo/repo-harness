@@ -204,10 +204,14 @@ describe("Hook contracts", () => {
 
   // HRD-05 retired assets/hooks/post-edit-guard.sh; doc-drift coverage now
   // lives in the in-process mutation-observed journal handler.
-  test("mutation-observed should retain doc-drift coverage for apps/*/src/** and wrangler*.toml", () => {
+  // #678: architecture drift is the owed-capability signal. DocDrift keeps
+  // wrangler*.toml and no longer points at the legacy docs/architecture.md
+  // or docs/packages.md targets, which the archctx layout does not have.
+  test("mutation-observed keeps wrangler doc drift and drops legacy architecture targets", () => {
     const script = read("src/cli/hook/mutation-observed.ts");
-    expect(script).toContain("apps\\/[^/]+\\/src\\/.+");
     expect(script).toContain("wrangler.*\\.toml");
+    expect(script).not.toContain("docs/architecture.md");
+    expect(script).not.toContain("docs/packages.md");
   });
 
   // HRD-05: post-edit-guard.sh's per-edit task-handoff regeneration
@@ -221,10 +225,11 @@ describe("Hook contracts", () => {
     expect(script).not.toContain("'architecture-queue'");
     expect(script).not.toContain("sync-brain-docs");
     expect(read("assets/templates/helpers/workstream-sync.sh")).toContain("tasks/workstreams");
-    expect(script).toContain("tasks/todos.md");
-    expect(script).toContain("'contract-verification': false");
-    expect(script).toContain("capability: false");
-    expect(script).toContain("context: true");
+    // #678: new journal events keep only the minimal-change bit.
+    expect(script).toContain("const dirty: PostEditJournalDirtyBits = { 'minimal-change': minimalChangeEnabled };");
+    expect(script).not.toContain("'contract-verification'");
+    expect(script).not.toContain("capability: false");
+    expect(script).not.toContain("context: true");
   });
 
   test("workflow verification should not gate on external brain vault state", () => {

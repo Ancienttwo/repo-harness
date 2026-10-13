@@ -195,16 +195,16 @@ describe('mutation-observed: journal schema', () => {
 });
 
 describe('mutation-observed: dirty-bit derivation', () => {
-  test('context is recorded; no automatic capability projection is requested', () => {
+  test('a new event carries only the minimal-change bit; no capability or architecture datum', () => {
     const cwd = tmpWorkspace('mo-arch-bits');
     try {
       initRepo(cwd);
       runMutationObserved({ collector: collectorFor(cwd), input: editPayload('src/unrelated.ts') });
       const [event] = pendingEvents(cwd);
-      expect(event.dirty.context).toBe(true);
-      expect(event.dirty.capability).toBe(false);
-      // The journal carries no architecture datum for any consumer to read.
-      expect(Object.keys(event.dirty)).not.toContain('architecture');
+      // minimal-change is the only bit with a reader. The journal does not see
+      // Bash or apply_patch writes, so it carries no capability or
+      // architecture datum for any consumer to read.
+      expect(Object.keys(event.dirty)).toEqual(['minimal-change']);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -266,22 +266,22 @@ describe('mutation-observed: dirty-bit derivation', () => {
       const events = pendingEvents(cwd);
       const targetEvent = events.find((e) => e.changed_paths.includes('src/target.ts'))!;
       const otherEvent = events.find((e) => e.changed_paths.includes('src/other.ts'))!;
-      expect(targetEvent.dirty['contract-verification']).toBe(false);
+      expect(targetEvent.dirty).not.toHaveProperty('contract-verification');
       expect(Reflect.get(targetEvent.payload, "contract_verification")).toBeUndefined();
-      expect(otherEvent.dirty['contract-verification']).toBe(false);
+      expect(otherEvent.dirty).not.toHaveProperty('contract-verification');
       expect(Reflect.get(otherEvent.payload, "contract_verification")).toBeUndefined();
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
   }, 30_000);
 
-  test('contract-verification is false with no active plan', () => {
+  test('contract-verification is not requested with no active plan', () => {
     const cwd = tmpWorkspace('mo-contract-bit-no-plan');
     try {
       initRepo(cwd);
       runMutationObserved({ collector: collectorFor(cwd), input: editPayload('src/target.ts') });
       const [event] = pendingEvents(cwd);
-      expect(event.dirty['contract-verification']).toBe(false);
+      expect(event.dirty).not.toHaveProperty('contract-verification');
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -331,27 +331,28 @@ describe('mutation-observed: dirty-bit derivation', () => {
     }
   }, 30_000);
 
-  test('checkpoint is true for tasks/todos.md, plans/*.md, tasks/reviews/*.review.md,, false otherwise', () => {
+  test('task and review paths no longer request checkpoint work', () => {
     const cwd = tmpWorkspace('mo-checkpoint-bit');
     try {
       initRepo(cwd);
       const collector = collectorFor(cwd);
-      const cases: Array<[string, boolean]> = [
-        ['tasks/todos.md', true],
-        ['plans/plan-20260101-0000-demo.md', true],
-        ['plans/nested/plan-x.md', true],
-        ['tasks/reviews/demo.review.md', true],
-        ['.ai/harness/checks/latest.json', false],
-        ['src/unrelated.ts', false],
-        ['tasks/notes/demo.notes.md', false],
+      const paths = [
+        'tasks/todos.md',
+        'plans/plan-20260101-0000-demo.md',
+        'plans/nested/plan-x.md',
+        'tasks/reviews/demo.review.md',
+        '.ai/harness/checks/latest.json',
+        'src/unrelated.ts',
+        'tasks/notes/demo.notes.md',
       ];
-      for (const [path, expected] of cases) {
+      for (const path of paths) {
         runMutationObserved({ collector, input: editPayload(path) });
       }
       const events = pendingEvents(cwd);
-      for (const [path, expected] of cases) {
+      for (const path of paths) {
         const event = events.find((e) => e.changed_paths.includes(path));
-        expect(event?.dirty.checkpoint).toBe(expected);
+        expect(event).toBeDefined();
+        expect(event!.dirty).not.toHaveProperty('checkpoint');
       }
     } finally {
       rmSync(cwd, { recursive: true, force: true });
@@ -431,13 +432,12 @@ describe('mutation-observed: session-scoped dedupe', () => {
       const collector = collectorFor(cwd, planPath);
       const env = { ...process.env, HOOK_SESSION_ID: 'session-or' };
 
-      // First edit: policy disabled (minimal-change false), but path is a
-      // checkpoint path AND is referenced by the contract's exit_criteria.
+      // First edit: policy disabled (minimal-change false). The path is a
+      // task path referenced by the contract's exit_criteria, which no longer
+      // adds a bit.
       runMutationObserved({ collector, input: editPayload('tasks/todos.md'), env });
       let [event] = pendingEvents(cwd);
-      expect(event.dirty.checkpoint).toBe(true);
-      expect(event.dirty['contract-verification']).toBe(false);
-      expect(event.dirty['minimal-change']).toBe(false);
+      expect(event.dirty).toEqual({ 'minimal-change': false });
 
       // Second edit to the SAME path, same session, now with minimal-change
       // enabled: the bit flips true and STAYS true; earlier-true bits do not
@@ -449,9 +449,13 @@ describe('mutation-observed: session-scoped dedupe', () => {
       );
       runMutationObserved({ collector, input: editPayload('tasks/todos.md'), env });
       [event] = pendingEvents(cwd);
-      expect(event.dirty.checkpoint).toBe(true);
-      expect(event.dirty['contract-verification']).toBe(false);
-      expect(event.dirty['minimal-change']).toBe(true);
+      expect(event.dirty).toEqual({ 'minimal-change': true });
+
+      // A third edit with the policy disabled again keeps the earlier true bit.
+      writeFileSync(join(cwd, '.ai/harness/policy.json'), JSON.stringify({ minimal_change: { mode: 'off' } }, null, 2));
+      runMutationObserved({ collector, input: editPayload('tasks/todos.md'), env });
+      [event] = pendingEvents(cwd);
+      expect(event.dirty).toEqual({ 'minimal-change': true });
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -661,13 +665,17 @@ describe('mutation-observed: advisory stdout parity', () => {
     }
   }, 30_000);
 
-  test('turbo.json and wrangler advisories match the base script verbatim', () => {
+  test('DocDrift no longer points at legacy architecture targets; wrangler advice stays', () => {
     const cwd = tmpWorkspace('mo-advisories-misc');
     try {
       initRepo(cwd);
       const collector = collectorFor(cwd);
-      const turbo = runMutationObserved({ collector, input: editPayload('turbo.json') });
-      expect(turbo.stdout).toContain('[DocDrift] Turborepo config changed');
+      for (const path of ['turbo.json', 'packages/core/package.json', 'packages/core/src/feature/index.ts', 'apps/web/src/page.ts', 'packages/core/tsconfig.json']) {
+        const legacy = runMutationObserved({ collector, input: editPayload(path) });
+        expect(legacy.stdout).not.toContain('[DocDrift]');
+        expect(legacy.stdout).not.toContain('docs/architecture.md');
+        expect(legacy.stdout).not.toContain('docs/packages.md');
+      }
 
       const metro = runMutationObserved({ collector, input: editPayload('metro.config.js') });
       expect(metro.stdout).not.toContain('[DocDrift]');
@@ -760,7 +768,7 @@ describe("mutation does not author acceptance evidence", () => {
 
       const events = readPendingPostEditEvents(cwd);
       for (const event of events) {
-        expect(event.dirty["contract-verification"]).toBe(false);
+        expect(event.dirty).not.toHaveProperty("contract-verification");
         expect(Reflect.get(event.payload, "contract_verification")).toBeUndefined();
       }
       expect(existsSync(join(cwd, ".ai/harness/checks/latest.json"))).toBe(false);

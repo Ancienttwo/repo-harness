@@ -194,7 +194,7 @@ function hostOutput(
 }
 
 /** Successful handler stdout as the host envelope: structured output as is, advisory text as additionalContext. */
-export function hostEnvelope(event: HookEvent, stdout: string): string {
+function hostEnvelope(event: HookEvent, stdout: string): string {
   if (!stdout.trim()) return '';
   if (isStructuredHookOutput(stdout, event)) return stdout;
   return `${JSON.stringify({ hookSpecificOutput: { hookEventName: event, additionalContext: stdout.trimEnd() } })}\n`;

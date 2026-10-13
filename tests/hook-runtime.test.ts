@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { execFileSync } from 'child_process';
+import { execFileSync, spawnSync } from 'child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -251,4 +251,119 @@ describe('hook runtime typed dispatch', () => {
       });
     } finally { rmSync(root, { recursive: true, force: true }); }
   }, 30_000);
+});
+
+describe('host envelopes on the real hook entry (#678)', () => {
+  const HOOK_ENTRY = join(import.meta.dir, '../src/cli/hook-entry.ts');
+
+  /** Registry-mode repo: `src/owned` belongs to `core-owned`; `feature` changed it after the manifest. */
+  function owedFixture(): string {
+    const root = fixture();
+    const gitIn = (...args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
+    writeFileSync(join(root, '.gitignore'), '.ai/harness/state/\n.ai/harness/runs/\n.ai/harness/handoff/\n.ai/harness/journal/\n.ai/harness/checks/\n.ai/harness/events.jsonl\nhome/\n');
+    writeFileSync(join(root, '.ai/harness/policy.json'), `${JSON.stringify({ context: { capability_registry_file: '.ai/context/capabilities.json' } })}\n`);
+    mkdirSync(join(root, '.ai/context'), { recursive: true });
+    writeFileSync(join(root, '.ai/context/capabilities.json'), `${JSON.stringify({
+      version: 1,
+      capabilities: [{
+        id: 'core-owned', domain: 'core', name: 'owned', prefixes: ['src/owned'],
+        contract_files: { agents: 'AGENTS.md', claude: 'CLAUDE.md' },
+        architecture_module: 'docs/architecture/modules/core/owned.md',
+        workstream_dir: 'tasks/workstreams/core/owned', lsp_profile: 'typescript-lsp', verification_hints: [],
+      }],
+    })}\n`);
+    mkdirSync(join(root, 'src/owned'), { recursive: true });
+    mkdirSync(join(root, 'docs/architecture'), { recursive: true });
+    writeFileSync(join(root, 'src/owned/a.ts'), 'export const a = 1;\n');
+    writeFileSync(join(root, 'src/owned/a.test.ts'), 'export {};\n');
+    writeFileSync(join(root, 'docs/architecture/.projection-manifest.json'), '{}\n');
+    gitIn('add', '-A'); gitIn('commit', '-q', '-m', 'projected');
+    gitIn('checkout', '-q', '-b', 'feature');
+    writeFileSync(join(root, 'src/owned/a.ts'), 'export const a = 2;\n');
+    gitIn('commit', '-q', '-am', 'change owned code');
+    mkdirSync(join(root, 'home'), { recursive: true });
+    return root;
+  }
+
+  /** The bytes the host reads from fd 1 and fd 2 of `repo-harness-hook`. */
+  function host(root: string, hostName: 'claude' | 'codex', event: string, route: string, input: unknown) {
+    const result = spawnSync(process.execPath, [HOOK_ENTRY, event, '--route', route], {
+      cwd: root,
+      input: JSON.stringify(input),
+      encoding: 'utf8',
+      env: {
+        PATH: process.env.PATH, TMPDIR: process.env.TMPDIR, HOME: join(root, 'home'),
+        HOOK_HOST: hostName, HOOK_REPO_ROOT: root, REPO_HARNESS_TOOLING_ADVISORY: '0',
+      },
+    });
+    return { status: result.status, stdout: result.stdout, stderr: result.stderr };
+  }
+
+  function context(stdout: string, event: string): string {
+    expect(stdout.endsWith('\n')).toBe(true);
+    const envelope = JSON.parse(stdout) as { hookSpecificOutput: { hookEventName: string; additionalContext: string } };
+    expect(Object.keys(envelope)).toEqual(['hookSpecificOutput']);
+    expect(envelope.hookSpecificOutput.hookEventName).toBe(event);
+    return envelope.hookSpecificOutput.additionalContext;
+  }
+
+  test('edit, prompt, session and bash advisories reach both hosts as additionalContext', () => {
+    const root = owedFixture();
+    try {
+      for (const hostName of ['claude', 'codex'] as const) {
+        const edit = host(root, hostName, 'PreToolUse', 'edit', { tool_name: 'Edit', tool_input: { file_path: 'src/owned/a.ts' } });
+        expect(edit.status).toBe(0);
+        expect(context(edit.stdout, 'PreToolUse'))
+          .toBe('[CapabilityOwner] src/owned/a.ts belongs to core-owned (docs/architecture/modules/core/owned.md).');
+
+        const prompt = host(root, hostName, 'UserPromptSubmit', 'default', { prompt: '/check my branch' });
+        expect(prompt.status).toBe(0);
+        expect(context(prompt.stdout, 'UserPromptSubmit')).toContain('[ReviewAdvice]');
+
+        const session = host(root, hostName, 'SessionStart', 'default', { session_id: `owed-${hostName}` });
+        expect(session.status).toBe(0);
+        const sessionContext = context(session.stdout, 'SessionStart');
+        expect(sessionContext).toContain('[ArchitectureOwed]');
+        expect(sessionContext).toContain('core-owned (docs/architecture/modules/core/owned.md)');
+
+        const push = host(root, hostName, 'PostToolUse', 'bash', {
+          tool_input: { command: 'git push origin feature' }, tool_response: { stdout: '', stderr: '' }, exit_code: 0,
+        });
+        expect(push.status).toBe(0);
+        expect(context(push.stdout, 'PostToolUse')).toContain('repo-harness architecture-projection check --json');
+      }
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  }, 120_000);
+
+  test('Stop: Claude gets one envelope per owed set; Codex Stop writes no bytes', () => {
+    const root = owedFixture();
+    try {
+      const codex = host(root, 'codex', 'Stop', 'default', { stop_hook_active: false });
+      expect(codex.status).toBe(0);
+      expect(codex.stdout).toBe('');
+
+      const claude = host(root, 'claude', 'Stop', 'default', { stop_hook_active: false });
+      expect(claude.status).toBe(0);
+      expect(context(claude.stdout, 'Stop')).toContain('[ArchitectureOwed]');
+      expect(host(root, 'claude', 'Stop', 'default', { stop_hook_active: false }).stdout).toBe('');
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  }, 60_000);
+
+  test('no owed line once the manifest changed later in the branch', () => {
+    const root = owedFixture();
+    try {
+      writeFileSync(join(root, 'docs/architecture/.projection-manifest.json'), '{"refreshed":true}\n');
+      execFileSync('git', ['commit', '-q', '-am', 'refresh the projection'], { cwd: root });
+      for (const hostName of ['claude', 'codex'] as const) {
+        const session = host(root, hostName, 'SessionStart', 'default', { session_id: `clear-${hostName}` });
+        expect(session.status).toBe(0);
+        expect(session.stdout).not.toContain('ArchitectureOwed');
+        const push = host(root, hostName, 'PostToolUse', 'bash', {
+          tool_input: { command: 'git commit -m done' }, tool_response: { stdout: '', stderr: '' }, exit_code: 0,
+        });
+        expect(push.stdout).toBe('');
+      }
+      expect(host(root, 'claude', 'Stop', 'default', { stop_hook_active: false }).stdout).toBe('');
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  }, 60_000);
 });
