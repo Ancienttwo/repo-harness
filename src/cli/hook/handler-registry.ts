@@ -1,11 +1,9 @@
 import { buildSessionStartSections } from './session-context';
 import { runMutationGuard } from './mutation-guard';
 import { runStopHandler } from './stop-handler';
-import { runPromptHandler } from './prompt-handler';
 import { runReturnChannel } from './return-channel';
 import { runDelegationAdvisor } from './delegation-advisor';
 import { runSubagentContext } from './subagent-context';
-import { runSubagentQuality } from './subagent-quality';
 import { runCommandObserved } from './command-observed';
 import { runTaskInboxHandler } from './task-inbox-handler';
 import type { HookHandlerId, Route } from './route-registry';
@@ -68,15 +66,6 @@ const handlers: Readonly<Record<HookHandlerId, TypedHookHandler>> = Object.freez
       now: () => context.now,
     }),
   },
-  'subagent-quality': {
-    id: 'subagent-quality',
-    run: (context: HookHandlerContext) => runSubagentQuality({
-      repoRoot: context.repoRoot,
-      payload: context.payload,
-      identity: context.identity,
-      now: () => context.now,
-    }),
-  },
   'command-observed': {
     id: 'command-observed',
     run: (context: HookHandlerContext) => textResult(runCommandObserved({
@@ -84,22 +73,12 @@ const handlers: Readonly<Record<HookHandlerId, TypedHookHandler>> = Object.freez
       payload: context.payload,
     })),
   },
-  prompt: {
-    id: 'prompt',
-    run: (context: HookHandlerContext) => runPromptHandler({ payload: context.payload }),
-  },
   'task-inbox': {
     id: 'task-inbox',
     run: (context: HookHandlerContext) => runTaskInboxHandler({
       collector: context.collector,
       now: () => context.now,
     }),
-  },
-  // A route that stays installed for the trust transition (#698) but has no
-  // work left. It writes nothing and always exits 0.
-  'retired-observer': {
-    id: 'retired-observer',
-    run: () => ({ exitCode: 0, reason: 'retired-route' }),
   },
   stop: {
     id: 'stop',

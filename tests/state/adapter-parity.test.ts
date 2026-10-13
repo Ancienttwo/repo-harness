@@ -325,7 +325,7 @@ describe('Effective State adapter authority parity and policy boundaries', () =>
 
       // #695: Stop no longer consumes readiness. A blocked ship decision
       // neither blocks Stop nor prints a readiness line.
-      const hook = spawnSync(process.execPath, [CLI, 'hook', 'Stop', '--route', 'default'], {
+      const hook = spawnSync(process.execPath, [HOOK_ENTRY, 'Stop', '--route', 'default'], {
         cwd: fixture.cwd,
         input: JSON.stringify({ stop_hook_active: false, last_assistant_message: '' }),
         encoding: 'utf-8',

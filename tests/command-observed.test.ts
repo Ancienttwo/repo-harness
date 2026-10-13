@@ -50,15 +50,15 @@ const TRIPPED = {
 };
 
 describe('runCommandObserved', () => {
-  test('a Claude PostToolUse payload without an exit status writes no status record', () => {
-    const root = optInRepo('command-observed-claude-unknown');
+  test('a Pi PostToolUse payload without exit_code ignores an exported EXIT_CODE', () => {
+    const root = optInRepo('command-observed-pi-unknown');
     try {
       const result = runHook({
         event: 'PostToolUse',
         routeId: 'bash',
         cwd: root,
         input: JSON.stringify({
-          session_id: 'claude-session',
+          session_id: 'pi-session',
           hook_event_name: 'PostToolUse',
           tool_name: 'Bash',
           tool_input: { command: 'bun test', description: 'Run tests' },
@@ -66,7 +66,7 @@ describe('runCommandObserved', () => {
           tool_use_id: 'toolu_01',
           duration_ms: 812,
         }),
-        env: { ...process.env, HOOK_REPO_ROOT: root, HOOK_HOST: 'claude', EXIT_CODE: '1' },
+        env: { ...process.env, HOOK_REPO_ROOT: root, HOOK_HOST: 'pi', EXIT_CODE: '1' },
       });
       expect(result).toMatchObject({ exitCode: 0, reason: 'ok', handler: 'command-observed' });
       expect(existsSync(join(root, '.ai/harness/checks'))).toBe(false);

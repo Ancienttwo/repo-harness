@@ -99,13 +99,13 @@ describe('install command (Phase 1B)', () => {
     withTempHome((home) => {
       runInstall({ target: 'codex', location: 'global', profile: 'minimal' });
       let hooks = JSON.parse(fs.readFileSync(path.join(home, '.codex/hooks.json'), 'utf-8')).hooks;
-      expect(Object.values(hooks as Record<string, unknown[]>).flat()).toHaveLength(8);
-      expect(hooks.UserPromptSubmit).toHaveLength(2);
+      expect(Object.values(hooks as Record<string, unknown[]>).flat()).toHaveLength(4);
+      expect(hooks.UserPromptSubmit).toHaveLength(1);
       expect(hooks.SubagentStart).toBeUndefined();
 
       runInstall({ target: 'codex', location: 'global', profile: 'full' as never });
       hooks = JSON.parse(fs.readFileSync(path.join(home, '.codex/hooks.json'), 'utf-8')).hooks;
-      expect(Object.values(hooks as Record<string, unknown[]>).flat()).toHaveLength(12);
+      expect(Object.values(hooks as Record<string, unknown[]>).flat()).toHaveLength(6);
       expect(hooks.SubagentStart).toHaveLength(1);
     });
   });
@@ -170,7 +170,7 @@ describe('install command (Phase 1B)', () => {
     });
   });
 
-  test('codex --location global creates ~/.codex/hooks.json with 12 matcher-grouped entries', () => {
+  test('codex --location global creates ~/.codex/hooks.json with 6 matcher-grouped entries', () => {
     withTempHome((home) => {
       const result = runInstall({ target: 'codex', location: 'global' });
       expect(result.exitCode).toBe(0);
@@ -182,30 +182,23 @@ describe('install command (Phase 1B)', () => {
       const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
       const entries = data.hooks;
       const total = Object.values(entries as Record<string, unknown[]>).flat().length;
-      expect(total).toBe(12);
+      expect(total).toBe(6);
 
-      // PostToolUse must have 3 matcher-disjoint entries
-      expect((entries.PostToolUse as { matcher?: string }[]).map((e) => e.matcher)).toEqual([
-        'Edit|Write',
-        'Bash',
-        undefined,
-      ]);
-      // PreToolUse must have isolated edit and subagent entries
+      expect(entries.PostToolUse).toBeUndefined();
+      // Codex has only the edit guard.
       expect((entries.PreToolUse as { matcher?: string }[]).map((e) => e.matcher)).toEqual([
         'Edit|Write',
-        'Task|Agent|SendUserMessage',
       ]);
-      // SessionStart / Stop / SubagentStart / SubagentStop have 1 matcher-less entry each;
-      // UserPromptSubmit has default + inbox + delegation.
+      // UserPromptSubmit has inbox + delegation.
       expect(entries.SessionStart.length).toBe(1);
       expect(entries.Stop.length).toBe(1);
-      expect(entries.UserPromptSubmit.length).toBe(3);
+      expect(entries.UserPromptSubmit.length).toBe(2);
       expect(entries.SubagentStart.length).toBe(1);
-      expect(entries.SubagentStop.length).toBe(1);
+      expect(entries.SubagentStop).toBeUndefined();
     });
   });
 
-  test('every adapter command embeds the CLI-missing fallback shim', () => {
+  test('every adapter command requires the hook bin only in opted-in repositories', () => {
     withTempHome((home) => {
       runInstall({ target: 'codex', location: 'global' });
       const data = JSON.parse(
@@ -218,13 +211,13 @@ describe('install command (Phase 1B)', () => {
           expect(cmd).toContain('git rev-parse --show-toplevel');
           expect(cmd).toContain('repo-harness-managed-hook-v1');
           expect(cmd).toContain('export HOOK_REPO_ROOT="$repo"');
-          expect(cmd).toContain('command -v repo-harness-hook');
+          expect(cmd).toContain('[ -f "$repo/.ai/harness/workflow-contract.json" ]');
           expect(cmd).toContain('exec repo-harness-hook ');
           expect(cmd).not.toContain('&& exit 0');
-          expect(cmd).toContain('command -v repo-harness');
           expect(cmd).toContain('HOOK_HOST=codex');
-          expect(cmd).toContain('exec repo-harness hook ');
-          expect(hook.timeout).toBe(event === 'Stop' ? 150 : 30);
+          expect(cmd).not.toContain('exec repo-harness hook ');
+          expect(cmd).not.toContain('command -v');
+          expect(hook.timeout).toBe(30);
         }
       }
     });
@@ -266,7 +259,7 @@ describe('install command (Phase 1B)', () => {
     });
   });
 
-  test('claude --location global creates ~/.claude/settings.json with 9 shared hooks', () => {
+  test('claude --location global creates ~/.claude/settings.json with 5 shared hooks', () => {
     withTempHome((home) => {
       const result = runInstall({ target: 'claude', location: 'global' });
       expect(result.exitCode).toBe(0);
@@ -274,20 +267,20 @@ describe('install command (Phase 1B)', () => {
         fs.readFileSync(path.join(home, '.claude/settings.json'), 'utf-8'),
       );
       const total = Object.values(data.hooks as Record<string, unknown[]>).flat().length;
-      expect(total).toBe(9);
-      expect(data.hooks.UserPromptSubmit.length).toBe(2);
+      expect(total).toBe(5);
+      expect(data.hooks.UserPromptSubmit.length).toBe(1);
       expect(data.hooks.SubagentStart).toBeUndefined();
       expect(data.hooks.SubagentStop).toBeUndefined();
       for (const [event, entries] of Object.entries(data.hooks) as [string, { hooks: { command: string; timeout?: number }[] }[]][]) {
         for (const entry of entries) {
           expect(entry.hooks[0].command).toContain('HOOK_HOST=claude');
-          expect(entry.hooks[0].timeout).toBe(event === 'Stop' ? 150 : 30);
+          expect(entry.hooks[0].timeout).toBe(30);
         }
       }
     });
   });
 
-  test('claude install self-heals legacy Codex-only managed entries back to 9 shared hooks', () => {
+  test('claude install self-heals legacy Codex-only managed entries back to 5 shared hooks', () => {
     withTempHome((home) => {
       const filePath = path.join(home, '.claude/settings.json');
       fs.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -312,8 +305,8 @@ describe('install command (Phase 1B)', () => {
       expect(result.exitCode).toBe(0);
       const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
       const total = Object.values(data.hooks as Record<string, unknown[]>).flat().length;
-      expect(total).toBe(9);
-      expect(data.hooks.UserPromptSubmit.length).toBe(2);
+      expect(total).toBe(5);
+      expect(data.hooks.UserPromptSubmit.length).toBe(1);
       expect(data.hooks.SubagentStart).toBeUndefined();
       expect(data.hooks.SubagentStop).toBeUndefined();
     });
@@ -341,8 +334,8 @@ describe('install command (Phase 1B)', () => {
       expect(pre.length).toBe(4);
       expect(pre[0].hooks[0].command).toBe('rtk hook claude');
       expect(pre[1].hooks[0].command).toBe('echo repo-harness hook is documented');
-      expect(pre[2].hooks[0].command).toContain('repo-harness hook PreToolUse');
-      expect(pre[3].hooks[0].command).toContain('repo-harness hook PreToolUse');
+      expect(pre[2].hooks[0].command).toContain('repo-harness-hook PreToolUse');
+      expect(pre[3].hooks[0].command).toContain('repo-harness-hook PreToolUse');
     });
   });
 
@@ -362,7 +355,7 @@ describe('install command (Phase 1B)', () => {
       runInstall({ target: 'claude', location: 'global' });
       const beforeUninstall = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
       expect(beforeUninstall.theme).toBe('dark');
-      expect(beforeUninstall.hooks.UserPromptSubmit.length).toBe(3);
+      expect(beforeUninstall.hooks.UserPromptSubmit.length).toBe(2);
 
       const uninstall = runUninstall({ target: 'claude', location: 'global' });
       expect(uninstall.exitCode).toBe(0);

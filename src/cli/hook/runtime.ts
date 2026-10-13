@@ -156,12 +156,13 @@ export function runHook(opts: RunHookOptions): RunHookResult {
   const repoRoot = resolveHookRepoRoot(cwd, env);
   if (!repoRoot) return early(0, 'not-in-git-repo', null);
   if (!isOptIn(repoRoot)) return early(0, 'non-opt-in', repoRoot);
+  const repair = host === 'pi' ? 'Reload the Pi extension.' : `Run repo-harness install --target ${host} --location global.`;
   if (!route) {
-    return early(2, 'unknown-route', repoRoot, `${HOOK_COMMAND_NAME}: unknown route ${opts.event}.${opts.routeId}\n`);
+    return early(2, 'unknown-route', repoRoot, `${HOOK_COMMAND_NAME}: unknown route ${opts.event}.${opts.routeId}. ${repair}\n`);
   }
   if (!routeSupportsHost(route, host)) {
     return early(2, 'unsupported-host-route', repoRoot,
-      `${HOOK_COMMAND_NAME}: unsupported-host-route: ${opts.event}.${opts.routeId} is not installed for ${host}\n`);
+      `${HOOK_COMMAND_NAME}: unsupported-host-route: ${opts.event}.${opts.routeId} is not installed for ${host}. ${repair}\n`);
   }
   // Session and turn events report the gate with exit 1, which does not block. Tool events skip it, so every guard still runs.
   const markerGate = WORKFLOW_MARKER_GATE_EVENTS.has(opts.event) ? inspectWorkflowMarker(repoRoot) : null;

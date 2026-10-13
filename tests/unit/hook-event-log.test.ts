@@ -12,7 +12,7 @@ afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: 
 function fixture() { const root = mkdtempSync(join(tmpdir(), 'hook-log-')); roots.push(root); return root; }
 const IDENTITY = { host: 'claude', sessionId: null, runId: null, turnId: null } as const;
 function emit(root: string) {
-  return createHookEventTelemetry({ repoRoot: root, event: 'PostToolUse', routeId: 'always' })
+  return createHookEventTelemetry({ repoRoot: root, event: 'PostToolUse', routeId: 'bash' })
     .finalize({ identity: IDENTITY, exitCode: 0, blocked: false, reason: 'ok' });
 }
 function seedFull(root: string) {
@@ -121,7 +121,7 @@ describe('bounded hook event history', () => {
   test('concurrent processes preserve every event across rotation', async () => {
     const root = fixture(); const first = seedFull(root);
     const module = join(import.meta.dir, '../../src/cli/hook/event-telemetry.ts');
-    const children = Array.from({ length: 6 }, () => Bun.spawn([process.execPath, '-e', `import { createHookEventTelemetry } from ${JSON.stringify(module)}; for (let i=0;i<30;i++) createHookEventTelemetry({repoRoot:${JSON.stringify(root)},event:'PostToolUse',routeId:'always'}).finalize({identity:{host:'claude',sessionId:null,runId:null,turnId:null},exitCode:0,blocked:false,reason:'ok'});`], { stdout: 'pipe', stderr: 'pipe' }));
+    const children = Array.from({ length: 6 }, () => Bun.spawn([process.execPath, '-e', `import { createHookEventTelemetry } from ${JSON.stringify(module)}; for (let i=0;i<30;i++) createHookEventTelemetry({repoRoot:${JSON.stringify(root)},event:'PostToolUse',routeId:'bash'}).finalize({identity:{host:'claude',sessionId:null,runId:null,turnId:null},exitCode:0,blocked:false,reason:'ok'});`], { stdout: 'pipe', stderr: 'pipe' }));
     expect(await Promise.all(children.map(child => child.exited))).toEqual(Array(6).fill(0));
     const records = readHookMetrics(root);
     expect(records).toHaveLength(181);

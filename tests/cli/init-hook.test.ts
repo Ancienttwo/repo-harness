@@ -42,8 +42,8 @@ function baseStatusReport(overrides: Partial<StatusReport['targets'][number]> = 
         installed: true,
         alreadyConfigured: true,
         configPath: '/tmp/.codex/hooks.json',
-        managedEntryCount: 12,
-        expectedEntryCount: 12,
+        managedEntryCount: 6,
+        expectedEntryCount: 6,
         ...overrides,
       },
       {
@@ -64,14 +64,13 @@ function baseStatusReport(overrides: Partial<StatusReport['targets'][number]> = 
       optInMarker: '.ai/harness/workflow-contract.json',
     },
     routes: {
-      total: 12,
+      total: 8,
       byEvent: {
         SessionStart: 1,
         PreToolUse: 2,
-        PostToolUse: 3,
-        UserPromptSubmit: 3,
+        PostToolUse: 1,
+        UserPromptSubmit: 2,
         SubagentStart: 1,
-        SubagentStop: 1,
         Stop: 1,
       },
     },
@@ -249,15 +248,15 @@ describe('init-hook command', () => {
         statusReport: baseStatusReport({
           projection: {
             status: 'drift',
-            expectedEntryCount: 12,
-            managedEntryCount: 12,
+            expectedEntryCount: 6,
+            managedEntryCount: 6,
             mismatches: [{
               kind: 'field-mismatch',
               event: 'Stop',
               routeId: 'default',
               field: 'timeout',
-              expected: 150,
-              actual: 30,
+              expected: 30,
+              actual: 150,
             }],
           },
         }),
@@ -268,7 +267,7 @@ describe('init-hook command', () => {
       const adapter = report.checks.find((entry) => entry.id === 'status.adapter.codex');
       const action = report.agent_actions.find((entry) => entry.id === 'adapter.codex.install');
       expect(adapter?.status).toBe('needs_agent');
-      expect(adapter?.detail).toContain('Stop.default timeout expected=150 actual=30');
+      expect(adapter?.detail).toContain('Stop.default timeout expected=30 actual=150');
       expect(action?.command).toBe('repo-harness install --target codex --location global');
     });
   });

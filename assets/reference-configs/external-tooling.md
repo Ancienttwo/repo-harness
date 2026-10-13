@@ -1105,8 +1105,6 @@ diagnostic only. The owed report reaches the Agent at these points:
   its last commit.
 - `SessionStart` on Claude, Codex and Pi: a short section when the branch
   already owes updates.
-- `PostToolUse` Bash: after a successful `git commit`, `git push` or
-  `gh pr create`.
 - `Stop` on Claude: once per branch and owed set. A Stop that runs because of
   a Stop hook (`stop_hook_active`) adds nothing. Codex Stop stays silent,
   because Codex Desktop renders Stop JSON as "Unsupported content type".
@@ -1145,10 +1143,10 @@ Never delete the shared database or all repository indexes as recovery.
 The runtime snapshot excludes `.ai/harness/**`, so concurrent harness receipts
 and traces cannot invalidate a provider snapshot.
 
-Managed host adapters give only `Stop.default` 150 seconds for its bounded
-deferred work. Every other managed route remains at 30 seconds, and installer
-refresh replaces only repo-harness-owned entries while preserving sibling user
-hooks.
+Managed host adapters use 30 seconds for every route. Pi uses 10 seconds
+for ordinary calls and 30 seconds for Stop.
+Installer refresh replaces only repo-harness-owned entries and preserves
+sibling user hooks.
 
 ### `source.include` anchors
 

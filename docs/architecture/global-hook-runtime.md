@@ -18,9 +18,8 @@ The boundary has four layers:
    `~/.claude/settings.json` selects the event, matcher, and stable route id.
 2. The installed command resolves the repository, checks the opt-in marker
    `.ai/harness/workflow-contract.json`, and invokes the hook-only CLI entry
-   point (with the full CLI as the install-time command fallback when the
-   small binary is unavailable).
-3. `ROUTES` contains the 12 public `(event, routeId, matcher)` tuples. Every
+   point. Opted-in repositories require this bin on PATH.
+3. `ROUTES` contains the 8 public `(event, routeId, matcher)` tuples. Every
    tuple has exactly one `handler`; there is no `scripts` field and no Bash
    host-event dispatcher.
 4. `handler-registry.ts` runs one typed in-process handler. The handler
@@ -83,7 +82,7 @@ authorization. Two pre-existing rows carry the board slice:
 | Route | WP3 addition | Failure mode |
 | --- | --- | --- |
 | `SubagentStart` / `context` | `BoardSliceV1` in the child context | advisory; resolution failure means no block |
-| `PreToolUse` / `subagent` | the same slice appended once to the `Task\|Agent` prompt, gated by its marker; a `SendUserMessage` call gets no output | advisory |
+| `PreToolUse` / `subagent` | the same slice appended once to the Claude `Agent` prompt, gated by its marker | advisory |
 
 `PreToolUse.edit` has no lease check. `LeaseOwnershipGuard` was advisory since
 #483 and is deleted (#692). The lease authority stays in `start-task`,
@@ -111,7 +110,7 @@ Pi does not export this resolver from its public SDK. The version is exact;
 a missing resolver or another version leaves opt-in edits blocked.
 
 Session context uses the one SessionStart budget. The adapter sends each
-SessionStart snapshot once. It leaves later prompt context to UserPromptSubmit.
+SessionStart snapshot once. Pi invokes no UserPromptSubmit route.
 Each model run has a fresh run ID. Tool call IDs bind the original payload to its result. Nested calls keep
 the parent tool call ID. Stop runs once at `agent_settled`, after retries and
 queued input have settled. The bridge never retries an external operation.
@@ -203,7 +202,7 @@ unmatched bytes and custom sibling hooks remain untouched.
 ## Verification surfaces
 
 - `bun test tests/cli/route-registry.test.ts tests/cli/hook.test.ts`
-- `bun test tests/prompt-handler.test.ts tests/subagent-handler.test.ts`
+- `bun test tests/cli/route-registry.test.ts tests/subagent-handler.test.ts`
 - `bun test tests/command-observed.test.ts tests/stop-handler.test.ts`
 - `bun run check:type`
 - `bun src/cli/index.ts architecture-projection check --json`

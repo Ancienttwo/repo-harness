@@ -22,7 +22,6 @@ import { askConfirm } from './tty-prompt';
 import { runInstall, runUninstall, type InstallTargetSpec } from './commands/install';
 import { writeAllSync } from './runtime/write-all-sync';
 import { runInit } from './commands/init';
-import { runHookCli } from './hook-entry';
 import { CLI_VERSION, formatStatus, runStatus } from './commands/status';
 import { formatDoctor, runDoctor } from './commands/doctor';
 import { buildInitHookCommand, buildSetupCommand, formatInitHook, runInitHook } from './commands/init-hook';
@@ -115,7 +114,6 @@ export const SUBCOMMANDS = [
   'init-hook',
   'install',
   'uninstall',
-  'hook',
   'status',
   'doctor',
   'migrate',
@@ -769,15 +767,6 @@ export function buildProgram(): Command {
       if (rawOpts.json) console.log(JSON.stringify(result, null, 2));
       else for (const line of result.lines) console.log(line);
       process.exit(result.exitCode);
-    });
-
-  program
-    .command('hook')
-    .description('Dispatch one host hook event through the repo-harness-hook runtime')
-    .argument('<event>', 'Hook event name')
-    .requiredOption('--route <route>', 'Route id from the hook route registry')
-    .action((event: string, rawOpts: { route: string }) => {
-      process.exit(runHookCli([event, '--route', rawOpts.route]));
     });
 
   program

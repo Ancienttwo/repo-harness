@@ -21,40 +21,42 @@ authority names and are not selected by installation location or host provider.
 The runtime checks that a route is installed for the host before a handler
 runs. Handlers do not check the host.
 Codex must trust `~/.codex/hooks.json` in Settings before it executes the
-adapter. Generated adapters use 30 seconds except `Stop.default`. That entry
-keeps its 150-second deadline until the route-registry trust transition (#698).
-Pi gives Stop 30 seconds. Stop has no deferred work: it publishes the evidence
+adapter. All managed entries use a 30-second deadline.
+Pi uses 10 seconds for ordinary calls and 30 seconds for Stop.
+Stop has no deferred work: it publishes the evidence
 checkpoint and renders the handoff and resume views. Stop does not run
 architecture projection and does not record architecture drift.
 
-Measure `Stop.default` and `SubagentStop.quality` separately using
+Measure `Stop.default` using
 `.ai/harness/runs/hook-events.jsonl` `elapsed_ms`. The terminal's Working
 time is the whole turn, not the duration of its currently displayed hook.
 
-This table is the one route inventory. It lists the 12 entries of `ROUTES` in
+This table is the one route inventory. It lists the 8 entries of `ROUTES` in
 `src/cli/hook/route-registry.ts`, in registry order. The Host column follows the
-`hosts` field of each route: Claude installs 9 routes, Codex installs 12, and
-Pi installs 6. Other documents link here. They do not copy this table.
+`hosts` field of each route: Claude installs 5 routes, Codex installs 6, and
+Pi maps 4. Other documents link here. They do not copy this table.
 
 | Route | Matcher | Host | Typed handler | Responsibility |
 | --- | --- | --- | --- | --- |
 | `SessionStart.default` | all sessions | Claude, Codex, Pi | `session-context` | Emit the Effective State section first, then the owed-architecture, pending-plan, active-sprint and resume sections under one budget. |
 | `PreToolUse.edit` | `Edit\|Write` | Claude, Codex, Pi | `mutation-guard` | Block an edit outside the repository, under `_ref/` or `_ops/`, or without a parseable target path. |
-| `PreToolUse.subagent` | `Task\|Agent\|SendUserMessage` | Claude, Codex | `return-channel` | Append the return-channel contract and the board slice to a `Task` or `Agent` prompt. A `SendUserMessage` call gets no output. |
-| `PostToolUse.edit` | `Edit\|Write` | Claude, Codex, Pi | `retired-observer` | Retired. Exit 0 with no output and no writes. The route stays installed until #698. |
-| `PostToolUse.bash` | `Bash` | Claude, Codex, Pi | `command-observed` | Count a known failing test run in the RepairLimit circuit when the payload has an exit status (Pi only). Report owed architecture updates after a publication command. |
-| `PostToolUse.always` | all tools | Claude, Codex | `retired-observer` | Retired. Exit 0 with no output and no writes. The route stays installed until #698. |
-| `UserPromptSubmit.default` | all prompts | Claude, Codex, Pi | `prompt` | Add the `[OperationBoundaries]` line when the prompt starts with an explicit workflow command. |
-| `UserPromptSubmit.inbox` | all prompts | Claude, Codex | `task-inbox` | Deliver task messages at the turn boundary, outside prompt handling. |
+| `PreToolUse.subagent` | `Agent` | Claude | `return-channel` | Append the return-channel contract and the board slice to a Claude `Agent` prompt. |
+| `PostToolUse.bash` | `Bash` | Pi | `command-observed` | Count a known failing test run in the RepairLimit circuit when the payload has an exit status. The extension shows failure diagnostics. Successful publication advisories have no consumer. |
+| `UserPromptSubmit.inbox` | all prompts | Claude, Codex | `task-inbox` | Deliver task messages at the turn boundary, outside delegation advice. |
 | `UserPromptSubmit.delegation` | all prompts | Codex | `delegation-advisor` | Render the `policy.json` delegation rules for an explicit `/delegate` or `/parallel` prompt. |
 | `SubagentStart.context` | subagent start | Codex | `subagent-context` | Record the native role and model observation. Add the bounded child context and the board slice. |
-| `SubagentStop.quality` | subagent stop | Codex | `subagent-quality` | Add one advisory note when the child's final report is too thin or has no evidence. |
 | `Stop.default` | session stop | Claude, Codex, Pi | `stop` | Publish the evidence checkpoint and render handoff and resume. Claude can get the owed-architecture line. |
 
-The route-registry trust transition (#698) removes `PostToolUse.edit` and
-`PostToolUse.always`, retires `UserPromptSubmit.default` and
-`SubagentStop.quality`, and narrows the hosts of `PreToolUse.subagent`. Until
-then, the tuple above stays unchanged.
+After upgrading the package, reinstall the host adapters. Codex must trust the
+new command tuples once. Old adapters invoke removed routes and get exit 2.
+`repo-harness hook` is removed. Use `repo-harness-hook` for direct hook calls.
+Doctor reports projection mismatch and a missing hook bin. The new runtime
+returns exit 2 for a removed tuple or an unsupported host route.
+
+Publication-command architecture and `[PostBash]` advisories no longer reach
+the Agent. Claude and Codex still get owed context at SessionStart. Claude
+also gets it at Stop. Pi does not render successful tool-result
+`additional_context`. Failure diagnostics remain visible.
 
 ## Host Output
 
@@ -72,7 +74,7 @@ a host file descriptor.
   model. A successful Stop writes nothing to stderr.
 - A non-zero exit keeps its refusal channel. Claude reads stdout and stderr.
   Codex gets both on stderr.
-- Pi uses `--format json`. Its SessionStart sections reach `additional_context`.
+- Pi receives protocol-1 JSON. Its SessionStart sections reach `additional_context`.
 
 No shell operator library exists. Product changes to handler behavior belong
 in `src/cli/hook/` and its tests. Run packaged helpers with
@@ -85,20 +87,13 @@ edits. Doctor reports it as legacy. Change its callers to
 `repo-harness run <helper>`. Test the callers. Back up the old file before
 manual removal. Review local changes first.
 
-The prompt handler reads only the payload `prompt` field. A prompt that starts
-with `/setup`, `/init`, `/plan`, `/execute`, `/run`, `/check`, `/verify` or
-`/handoff` gets one `[OperationBoundaries]` line. Every other prompt gets no
-output. The handler does not classify intent, check a contract or a receipt,
-or route to `/think`.
-
 The delegation advisor runs only for a prompt that starts with `/delegate` or
 `/parallel`. It renders `delegation.rule` and `delegation.runner_rule` from
 `.ai/harness/policy.json` word for word. The caps are fixed in the handler: 2
 agents, 3 for a high-risk workflow profile, and spawn depth 1. Policy numeric
 fields are not read. Missing or empty policy text exits 1 with the reason
 `delegation-policy-invalid`. The advisor keeps no state.
-`.ai/harness/delegation/` holds only the native-role evidence and
-`subagent-stop-quality.json`.
+`.ai/harness/delegation/` holds only the native-role evidence.
 
 `SessionStart` resolves Effective State once. The `[HarnessState]` section, or
 `[HarnessStateUnavailable]` when the resolution fails, comes first and always.
@@ -211,7 +206,6 @@ The Agent gets the report at these points:
 | --- | --- | --- |
 | `PreToolUse.edit` | Claude, Codex | `[CapabilityOwner]` line on the first edit of an owned path after its last commit |
 | `SessionStart.default` | Claude, Codex, Pi | the branch already owes updates |
-| `PostToolUse.bash` | Claude, Codex | after a `git commit`, `git push` or `gh pr create` that is not known to fail; Claude and Codex send no exit status, so every such command counts |
 | `Stop.default` | Claude only | once per branch and owed set; nothing when `stop_hook_active` is true |
 
 CI and operators use the same rule without hooks:

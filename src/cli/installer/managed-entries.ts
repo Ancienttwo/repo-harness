@@ -10,9 +10,8 @@
  * verified for Claude in Phase 0: `~/.claude/settings.json` already had a
  * non-repo-harness `rtk hook claude` entry that must survive install).
  *
- * Command shape includes the `command -v repo-harness || exit 0` shim
- * (Codex consult constraint #5: CLI-missing fallback — adapter must not
- * fail when CLI is uninstalled or not on PATH).
+ * Commands check the repository opt-in marker before starting the hook bin.
+ * An opted-in repository requires `repo-harness-hook` on PATH.
  */
 
 import { routesForHost, type Route, type RouteHost } from '../hook/route-registry';
@@ -69,14 +68,12 @@ export interface ManagedHookProjectionReport {
 }
 
 export function buildHookCommand(route: Route, host: HookHost): string {
-  return `: ${MANAGED_TAG}; repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; export HOOK_REPO_ROOT="$repo"; if command -v repo-harness-hook >/dev/null 2>&1; then HOOK_HOST=${host} exec repo-harness-hook ${route.event} --route ${route.routeId}; fi; command -v repo-harness >/dev/null 2>&1 || exit 0; HOOK_HOST=${host} exec repo-harness hook ${route.event} --route ${route.routeId}`;
+  return `: ${MANAGED_TAG}; repo=$(git rev-parse --show-toplevel 2>/dev/null) && [ -f "$repo/.ai/harness/workflow-contract.json" ] || exit 0; export HOOK_REPO_ROOT="$repo"; HOOK_HOST=${host} exec repo-harness-hook ${route.event} --route ${route.routeId}`;
 }
 
 export function buildHookEntry(route: Route, host: HookHost): HookEntry {
-  // Stop keeps its installed 150 s timeout until the timeout projection change (#698).
-  const timeout = route.event === 'Stop' && route.routeId === 'default' ? 150 : 30;
   const entry: HookEntry = {
-    hooks: [{ type: 'command', command: buildHookCommand(route, host), timeout }],
+    hooks: [{ type: 'command', command: buildHookCommand(route, host), timeout: 30 }],
   };
   if (route.matcher !== undefined) entry.matcher = route.matcher;
   return entry;
@@ -92,12 +89,9 @@ function routeInProfile(route: Route, profile: InstallProfile): boolean {
   const key = `${route.event}.${route.routeId}`;
   const minimal = new Set([
     'SessionStart.default',
-    'UserPromptSubmit.default',
     'UserPromptSubmit.inbox',
     'PreToolUse.edit',
-    'PostToolUse.edit',
     'PostToolUse.bash',
-    'PostToolUse.always',
     'Stop.default',
   ]);
   return minimal.has(key);
@@ -165,7 +159,7 @@ export function canonicalManagedHookProjection(value: unknown): HooksByEvent {
 function routeFromManagedCommand(command: unknown): { event: string; routeId: string } | null {
   if (typeof command !== 'string') return null;
   const match = command.match(
-    /(?:repo-harness-hook|repo-harness\s+hook)\s+(SessionStart|PreToolUse|PostToolUse|UserPromptSubmit|SubagentStart|SubagentStop|Stop)\s+--route\s+([A-Za-z0-9_-]+)/,
+    /repo-harness-hook\s+(SessionStart|PreToolUse|PostToolUse|UserPromptSubmit|SubagentStart|SubagentStop|Stop)\s+--route\s+([A-Za-z0-9_-]+)/,
   );
   return match ? { event: match[1], routeId: match[2] } : null;
 }

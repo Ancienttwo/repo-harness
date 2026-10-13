@@ -77,9 +77,6 @@ describe("Hook contracts", () => {
     expect(advisor).toContain("/(delegate|parallel)");
     expect(advisor).toContain("permission only");
     expect(read("src/cli/hook/subagent-context.ts")).toContain("[repo-harness:subagent-context]");
-    const quality = read("src/cli/hook/subagent-quality.ts");
-    expect(quality).toContain("[SubagentQuality]");
-    expect(quality).toContain("Record the report gap");
   });
 
   test("delegation requires an explicit slash command and has no standing authorization", () => {
@@ -93,15 +90,6 @@ describe("Hook contracts", () => {
     expect(sessionStart).not.toContain("effectiveDelegationMode");
   });
 
-  test("typed prompt handler gives bounded advice without automatic workflow gates", () => {
-    const script = read("src/cli/hook/prompt-handler.ts");
-    expect(script).toContain("[OperationBoundaries]");
-    expect(script).toContain("routePromptExplicitFirst");
-    expect(script).not.toContain("writePendingOrchestration");
-    expect(script).not.toContain("ContractGuard");
-    expect(script).not.toContain("acceptance-receipt");
-    expect(existsSync(join(ROOT, "src/cli/hook/prompt-intents.ts"))).toBe(false);
-  });
 
   test("session-start should not spend the global budget on cross-review availability", () => {
     const script = read("src/cli/hook/session-context.ts");

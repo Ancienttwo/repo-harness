@@ -20,20 +20,16 @@ const HOOKS: SetupHookEvent[] = [
   { event: 'SessionStart', routes: [{ route_id: 'default', matcher: null, hosts: ['claude', 'codex', 'pi'] }] },
   { event: 'PreToolUse', routes: [
     { route_id: 'edit', matcher: 'Edit|Write', hosts: ['claude', 'codex', 'pi'] },
-    { route_id: 'subagent', matcher: 'Task|Agent|SendUserMessage', hosts: ['claude', 'codex'] },
+    { route_id: 'subagent', matcher: 'Agent', hosts: ['claude'] },
   ] },
   { event: 'PostToolUse', routes: [
-    { route_id: 'edit', matcher: 'Edit|Write', hosts: ['claude', 'codex', 'pi'] },
-    { route_id: 'bash', matcher: 'Bash', hosts: ['claude', 'codex', 'pi'] },
-    { route_id: 'always', matcher: null, hosts: ['claude', 'codex'] },
+    { route_id: 'bash', matcher: 'Bash', hosts: ['pi'] },
   ] },
   { event: 'UserPromptSubmit', routes: [
-    { route_id: 'default', matcher: null, hosts: ['claude', 'codex', 'pi'] },
     { route_id: 'inbox', matcher: null, hosts: ['claude', 'codex'] },
     { route_id: 'delegation', matcher: null, hosts: ['codex'] },
   ] },
   { event: 'SubagentStart', routes: [{ route_id: 'context', matcher: null, hosts: ['codex'] }] },
-  { event: 'SubagentStop', routes: [{ route_id: 'quality', matcher: null, hosts: ['codex'] }] },
   { event: 'Stop', routes: [{ route_id: 'default', matcher: null, hosts: ['claude', 'codex', 'pi'] }] },
 ];
 
@@ -101,9 +97,9 @@ export function readySetup(now: number): SetupSnapshotV1 {
     ],
     hosts: [
       { host: 'claude', reported: true, adapter_check: 'ok', detected: true, cli_version: null,
-        adapter: { configured: true, managed_entries: 9, expected_entries: 9, projection: 'consistent', mismatches: [] } },
+        adapter: { configured: true, managed_entries: 5, expected_entries: 5, projection: 'consistent', mismatches: [] } },
       { host: 'codex', reported: true, adapter_check: 'ok', detected: true, cli_version: '0.162.0',
-        adapter: { configured: true, managed_entries: 12, expected_entries: 12, projection: 'consistent', mismatches: [] } },
+        adapter: { configured: true, managed_entries: 6, expected_entries: 6, projection: 'consistent', mismatches: [] } },
       PI,
     ],
     skills: readySkills(),
@@ -132,7 +128,7 @@ export function degradedSetup(now: number): SetupSnapshotV1 {
       },
       {
         id: 'status.adapter.codex', status: 'warn', title: 'Codex global hook adapter',
-        detail: '10/12 managed entries at [private path]\nprojection drift: 3 mismatches',
+        detail: '5/6 managed entries at [private path]\nprojection drift: 3 mismatches',
         command: 'repo-harness install --host codex',
       },
       {
@@ -151,11 +147,10 @@ export function degradedSetup(now: number): SetupSnapshotV1 {
     ],
     hosts: [
       { host: 'claude', reported: true, adapter_check: 'ok', detected: true, cli_version: null,
-        adapter: { configured: true, managed_entries: 9, expected_entries: 9, projection: null, mismatches: [] } },
+        adapter: { configured: true, managed_entries: 5, expected_entries: 5, projection: null, mismatches: [] } },
       { host: 'codex', reported: true, adapter_check: 'warn', detected: true, cli_version: '0.162.0',
-        adapter: { configured: true, managed_entries: 10, expected_entries: 12, projection: 'drift', mismatches: [
+        adapter: { configured: true, managed_entries: 5, expected_entries: 6, projection: 'drift', mismatches: [
           { kind: 'missing', event: 'SubagentStart', route_id: 'context', field: null },
-          { kind: 'missing', event: 'SubagentStop', route_id: 'quality', field: null },
           { kind: 'field-mismatch', event: 'Stop', route_id: 'default', field: 'timeout' },
           { kind: 'unexpected', event: 'PreToolUse', route_id: null, field: null },
         ] } },

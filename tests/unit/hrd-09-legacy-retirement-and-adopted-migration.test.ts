@@ -33,19 +33,15 @@ const RETIRED_BASENAMES = [
   'repo-harness.sh',
 ] as const;
 
-function routeInput(event: HookEvent, routeId: RouteId): { readonly host: 'claude' | 'codex'; readonly input?: string } {
+function routeInput(event: HookEvent, routeId: RouteId): { readonly host: 'claude' | 'codex' | 'pi'; readonly input?: string } {
   switch (`${event}.${routeId}`) {
     case 'SessionStart.default': return { host: 'claude' };
     case 'PreToolUse.edit': return { host: 'claude', input: JSON.stringify({ tool_input: { file_path: 'src/example.ts' } }) };
-    case 'PreToolUse.subagent': return { host: 'claude', input: JSON.stringify({ tool_name: 'Task', tool_input: { prompt: 'Inspect the fixture and report evidence.' } }) };
-    case 'PostToolUse.edit': return { host: 'claude', input: JSON.stringify({ tool_input: { file_path: 'src/example.ts' } }) };
-    case 'PostToolUse.bash': return { host: 'claude', input: JSON.stringify({ tool_input: { command: 'echo fixture' }, tool_response: { stdout: 'fixture\n', stderr: '', interrupted: false }, exit_code: 0 }) };
-    case 'PostToolUse.always': return { host: 'claude', input: JSON.stringify({ hook_event_name: 'PostToolUse', tool_name: 'Read' }) };
-    case 'UserPromptSubmit.default': return { host: 'claude', input: JSON.stringify({ prompt: 'status update' }) };
+    case 'PreToolUse.subagent': return { host: 'claude', input: JSON.stringify({ tool_name: 'Agent', tool_input: { prompt: 'Inspect the fixture and report evidence.' } }) };
+    case 'PostToolUse.bash': return { host: 'pi', input: JSON.stringify({ tool_input: { command: 'echo fixture' }, tool_response: { stdout: 'fixture\n', stderr: '', interrupted: false }, exit_code: 0 }) };
     case 'UserPromptSubmit.inbox': return { host: 'claude', input: JSON.stringify({ prompt: 'check task inbox' }) };
     case 'UserPromptSubmit.delegation': return { host: 'codex', input: JSON.stringify({ session_id: 'hrd09-fixture', prompt: 'implement the next sequential task' }) };
     case 'SubagentStart.context': return { host: 'codex', input: JSON.stringify({ hook_event_name: 'SubagentStart', session_id: 'hrd09-fixture' }) };
-    case 'SubagentStop.quality': return { host: 'codex', input: JSON.stringify({ hook_event_name: 'SubagentStop', final_message: 'Inspected src/example.ts. Evidence: fixture assertion passed. Risk: none. Recommended action: continue.' }) };
     case 'Stop.default': return { host: 'claude', input: JSON.stringify({ hook_event_name: 'Stop', stop_hook_active: false }) };
     default: throw new Error(`missing route fixture for ${event}.${routeId}`);
   }
@@ -60,7 +56,7 @@ function readEventRecords(repo: string): unknown[] {
 }
 
 describe('HRD-09 terminal runtime migration', () => {
-  test('one adoption transaction retires the exact Bash runtime and all twelve routes stay on one typed authority', () => {
+  test('one adoption transaction retires the exact Bash runtime and all current routes stay on one typed authority', () => {
     const repo = mkdtempSync(join(tmpdir(), 'hrd09-integrated-'));
     // HOME is isolated so no route reads the real ~/.claude or ~/.codex, and it
     // has to live outside `repo`: Bun writes its transpile cache under

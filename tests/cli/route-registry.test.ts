@@ -15,7 +15,7 @@ function matchers(event: HookEvent): (string | undefined)[] {
 describe('typed hook route registry', () => {
   test('routes are frozen, ordered, and carry no legacy script field', () => {
     expect(Object.isFrozen(ROUTES)).toBe(true);
-    expect(ROUTES).toHaveLength(12);
+    expect(ROUTES).toHaveLength(8);
     for (const route of ROUTES) {
       expect(Object.isFrozen(route)).toBe(true);
       expect('scripts' in route).toBe(false);
@@ -24,15 +24,12 @@ describe('typed hook route registry', () => {
   });
 
   test('host-scoped route views preserve the public adapter contract', () => {
-    expect(routesForHost('codex')).toHaveLength(12);
+    expect(routesForHost('codex')).toHaveLength(6);
+    expect(routesForHost('pi').map(route => `${route.event}.${route.routeId}`)).toEqual(['SessionStart.default', 'PreToolUse.edit', 'PostToolUse.bash', 'Stop.default']);
     expect(routesForHost('claude').map((route) => `${route.event}.${route.routeId}`)).toEqual([
       'SessionStart.default',
       'PreToolUse.edit',
       'PreToolUse.subagent',
-      'PostToolUse.edit',
-      'PostToolUse.bash',
-      'PostToolUse.always',
-      'UserPromptSubmit.default',
       'UserPromptSubmit.inbox',
       'Stop.default',
     ]);
@@ -41,12 +38,12 @@ describe('typed hook route registry', () => {
   });
 
   test('matcher partitions remain disjoint', () => {
-    expect(matchers('PostToolUse')).toEqual(['Edit|Write', 'Bash', undefined]);
-    expect(matchers('PreToolUse')).toEqual(['Edit|Write', 'Task|Agent|SendUserMessage']);
+    expect(matchers('PostToolUse')).toEqual(['Bash']);
+    expect(matchers('PreToolUse')).toEqual(['Edit|Write', 'Agent']);
   });
 
   test('every route has exactly one exhaustive typed handler binding', () => {
-    expect(new Set(ROUTES.map((route) => `${route.event}.${route.routeId}`)).size).toBe(12);
+    expect(new Set(ROUTES.map((route) => `${route.event}.${route.routeId}`)).size).toBe(8);
     for (const route of ROUTES) expect(getHandlerForRoute(route).id).toBe(route.handler);
   });
 
@@ -55,12 +52,10 @@ describe('typed hook route registry', () => {
       getRoute('PreToolUse', 'subagent'),
       getRoute('UserPromptSubmit', 'delegation'),
       getRoute('SubagentStart', 'context'),
-      getRoute('SubagentStop', 'quality'),
     ].map((route) => route?.handler)).toEqual([
       'return-channel',
       'delegation-advisor',
       'subagent-context',
-      'subagent-quality',
     ]);
   });
 
@@ -76,7 +71,6 @@ describe('typed hook route registry', () => {
       'PostToolUse',
       'UserPromptSubmit',
       'SubagentStart',
-      'SubagentStop',
       'Stop',
     ]);
     expect(getRoute('Stop', 'edit')).toBeUndefined();

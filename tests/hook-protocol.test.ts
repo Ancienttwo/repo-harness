@@ -11,7 +11,6 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { spawnSync } from "child_process";
 import { runMutationGuard } from "../src/cli/hook/mutation-guard";
-import { runPromptHandler } from "../src/cli/hook/prompt-handler";
 import { hookIdentity } from "./helpers/hook-identity";
 
 // Some fixtures resolve full effective state and can exceed the default under
@@ -19,8 +18,7 @@ import { hookIdentity } from "./helpers/hook-identity";
 setDefaultTimeout(20000);
 
 // The edit tests call the in-process mutation-guard handler directly, the
-// same "no subprocess" pattern tests/mutation-guard.test.ts uses. Prompt
-// protocol checks call the typed prompt handler directly.
+// same "no subprocess" pattern tests/mutation-guard.test.ts uses.
 function runEditHandler(
   cwd: string,
   payload: Record<string, unknown>,
@@ -137,11 +135,6 @@ describe("Claude Code hook protocol compliance", () => {
       );
       writeActivePlan(cwd, "plans/plan-20260528-1300-demo.md");
 
-      // Ordinary prompt/edit routes observe workflow state without gating on it.
-      const promptRes = runPromptHandler({ payload: { prompt: "/execute" } });
-      expect(promptRes.exitCode).toBe(0);
-      expect(promptRes.additionalContext).toContain("[OperationBoundaries]");
-
       // Malformed capability authority cannot become an edit permission gate.
       // The edit guard reads no workflow state, so it gives no advice either.
       mkdirSync(join(cwd, ".ai/context"), { recursive: true });
@@ -160,38 +153,6 @@ describe("Claude Code hook protocol compliance", () => {
     }
   }, 30_000);
 
-  test("ordinary completion prompt bypasses task-contract ceremony", () => {
-    const cwd = tmpWorkspace("hook-proto-contract-missing");
-    try {
-      initGitRepo(cwd);
-      mkdirSync(join(cwd, "plans"), { recursive: true });
-
-      writeFileSync(
-        join(cwd, "plans/plan-20260528-1400-demo.md"),
-        [
-          "# Plan: demo",
-          "",
-          "> **Status**: Approved",
-          "",
-          "## Evidence Contract",
-          "- State/progress path: tasks/current.md",
-          "- Verification evidence: verify-sprint",
-          "- Evaluator rubric: prompt protocol",
-          "- Stop condition: stop on missing contract",
-          "- Rollback surface: revert fixture",
-          "",
-        ].join("\n")
-      );
-      writeActivePlan(cwd, "plans/plan-20260528-1400-demo.md");
-
-      const res = runPromptHandler({ payload: { prompt: "done" } });
-      expect(res.exitCode).toBe(0);
-      expect(res.additionalContext).toBeUndefined();
-      expect(res.diagnostics).toBeUndefined();
-    } finally {
-      rmSync(cwd, { recursive: true, force: true });
-    }
-  }, 30_000);
 
   test("hook_get_file_path: normalizes absolute paths inside the repo to repo-relative paths", () => {
     // Background: Edit/Write/post-edit hooks receive `tool_input.file_path` as an

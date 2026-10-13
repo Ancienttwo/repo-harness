@@ -16,6 +16,7 @@ import {
 } from '../../src/cli/commands/doctor';
 import { writeShellExecutableFixture } from '../helpers/repo-fixture';
 import { expectedSkillProjections, type SkillProjection } from '../../src/cli/installer/skill-projection';
+import { buildManagedHooks, MANAGED_TAG } from '../../src/cli/installer/managed-entries';
 import { parseSkillSurfaceCatalog } from '../../src/core/skill-surface/catalog';
 
 const DOCTOR_CHECK_TIMEOUT_MS = 15000;
@@ -148,16 +149,46 @@ describe('doctor command (Phase 1C)', () => {
         fs.mkdirSync(fakeBin, { recursive: true });
         const fakeCli = path.join(fakeBin, 'repo-harness');
         writeExecutable(fakeCli, '#!/bin/bash\nexit 0\n');
+        const fakeHook = path.join(fakeBin, 'repo-harness-hook');
+        writeExecutable(fakeHook, '#!/bin/bash\nexit 0\n');
 
         withEnv({ PATH: fakeBin }, () => {
           const r = runDoctor(tmp);
           const pathCheck = r.checks.find((c) => c.id === 'cli-on-path')!;
           expect(pathCheck.status).toBe('ok');
-          expect(pathCheck.detail).toBe(fakeCli);
+          expect(pathCheck.detail).toBe(`${fakeCli}; repo-harness-hook: ${fakeHook}`);
         });
       } finally {
         fs.rmSync(tmp, { recursive: true, force: true });
       }
+    });
+  }, DOCTOR_CHECK_TIMEOUT_MS);
+
+  test('an old adapter reports projection mismatch and a missing hook bin', () => {
+    withTempHome(home => {
+      const bin = path.join(home, 'bin');
+      fs.mkdirSync(bin);
+      writeExecutable(path.join(bin, 'repo-harness'), '#!/bin/sh\nexit 0\n');
+      const hooks = buildManagedHooks('codex');
+      hooks.Stop[0].hooks[0].timeout = 150;
+      hooks.UserPromptSubmit.push({ hooks: [{ type: 'command', timeout: 30,
+        command: `: ${MANAGED_TAG}; HOOK_HOST=codex exec repo-harness-hook UserPromptSubmit --route default` }] });
+      fs.mkdirSync(path.join(home, '.codex'));
+      fs.writeFileSync(path.join(home, '.codex/hooks.json'), JSON.stringify({ hooks }));
+      const before = fs.readFileSync(path.join(home, '.codex/hooks.json'), 'utf8');
+      withEnv({ PATH: bin }, () => {
+        const report = runDoctor(home, 'codex');
+        const pathCheck = report.checks.find(check => check.id === 'cli-on-path')!;
+        expect(pathCheck.status).toBe('warn');
+        expect(pathCheck.detail).toContain('repo-harness-hook not on PATH');
+        const adapter = report.checks.find(check => check.id === 'codex-adapter')!;
+        expect(adapter.status).toBe('warn');
+        expect(adapter.detail).toContain('UserPromptSubmit.default unexpected');
+        expect(adapter.detail).toContain('Stop.default timeout expected=30 actual=150');
+        expect(adapter.detail).toContain('repo-harness install --target codex --location global');
+        expect(adapter.detail).toContain('repo-harness run <helper>');
+      });
+      expect(fs.readFileSync(path.join(home, '.codex/hooks.json'), 'utf8')).toBe(before);
     });
   }, DOCTOR_CHECK_TIMEOUT_MS);
 
@@ -217,7 +248,7 @@ describe('doctor command (Phase 1C)', () => {
       const r = runDoctor(repoRoot);
       const hooks = r.checks.find((c) => c.id === 'typed-hook-routes')!;
       expect(hooks.status).toBe('ok');
-      expect(hooks.detail).toContain('all 12 public routes');
+      expect(hooks.detail).toContain('all 8 public routes');
       expect(hooks.detail).toContain('typed in-process handler');
     });
   }, DOCTOR_CHECK_TIMEOUT_MS);
