@@ -1091,8 +1091,9 @@ hooks.
 ### `source.include` anchors
 
 ArchContext validation owns the `source.include` and `source.exclude` grammar.
-repo-harness does not check include shapes and does not interpret globs for
-ownership. Each include gives one literal anchor: the leading path segments
+repo-harness rejects absolute and `..` patterns in `source.include` and
+`source.exclude` (INVALID_PATH). ArchContext checks the rest of the glob
+grammar. repo-harness does not interpret globs for ownership. Each include gives one literal anchor: the leading path segments
 before the first segment that contains `*` or `?`. These are the only
 ArchContext glob characters. `[`, `]`, `{`, `}` and `!` are literal. Anchors are
 for display and directory discovery only.
@@ -1107,15 +1108,16 @@ for display and directory discovery only.
 
 A capability without an anchor is valid. Lists show it by its node id. Two
 capabilities can share an anchor. Include order is preserved as anchor order,
-without duplicates. `capability-resolver match` reports the owner's stable node
-id as `matched_prefix`, because ArchContext does not report which include
-matched.
+without duplicates. In archcontext mode, `capability-resolver match` reports the
+owner's stable node id as `matched_prefix` and as `functional_block`, because
+ArchContext does not report which include matched.
 
 Path ownership covers every capability node, whatever its status. Lists,
 anchors and contract files show only `active` capabilities. A path without an
 owner is reported as `capability:unowned:<n>`, with one
-`capability:unowned-path:<path>` entry for each path. An unowned path does not
-count as a capability. An
+`capability:unowned-path:<path>` entry for each path. The list holds at most 20
+`capability:unowned-path` entries. The `capability:unowned:<n>` count gives the
+total. An unowned path does not count as a capability. An
 existing directory is resolved as `<dir>/`, which asks ArchContext who owns its
 contents.
 

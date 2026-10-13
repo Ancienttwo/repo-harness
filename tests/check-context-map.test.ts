@@ -394,6 +394,34 @@ describe("check-context-map", () => {
     });
   }, 60_000);
 
+  test("--write maps an anchorless capability to its node id and the check accepts it", () => {
+    withFixture((repo) => {
+      write(
+        repo,
+        ".archcontext/model/nodes/capability.gamma.three.yaml",
+        nodeYaml({
+          id: "capability.gamma.three",
+          name: "Gamma Three",
+          include: ["**/*.txt"],
+          agents: "gamma/AGENTS.md",
+          claude: "gamma/CLAUDE.md",
+        }),
+      );
+      write(repo, "gamma/CLAUDE.md", contractFile("capability.gamma.three"));
+      write(repo, "gamma/AGENTS.md", contractFile("capability.gamma.three"));
+
+      const written = runCheck(repo, ["--write"]);
+      expect(written.status).toBe(0);
+      const entry = readMap(repo).discoverable_contexts.find((candidate) => candidate.path === "gamma/CLAUDE.md");
+      expect(entry?.functional_block).toBe("capability.gamma.three");
+      expect(entry?.matched_prefix).toBe("capability.gamma.three");
+
+      const checked = runCheck(repo);
+      expect(checked.output).not.toContain("prefix_not_owned");
+      expect(checked.status).toBe(0);
+    });
+  }, 60_000);
+
   test("--write fails closed when a disk contract resolves to no capability node", () => {
     withFixture((repo) => {
       write(repo, "orphan/CLAUDE.md", contractFile("orphan"));

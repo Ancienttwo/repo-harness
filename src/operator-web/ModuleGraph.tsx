@@ -152,7 +152,7 @@ export function ModuleGraph({ graph, onSelect, t }: {
       <ul className="module-graph__relations" aria-label={t('architecture.graph.relations')}>
         {graph.edges.map((edge, index) => <li key={index} data-direction={edge.direction}>
           <span>{names.get(edge.source) ?? edge.source}</span>
-          <span>{edge.direction === 'directed' ? ' → ' : ' — '}</span>
+          <span>{' → '}</span>
           <span>{names.get(edge.target) ?? edge.target}</span>
           <span className="module-graph__intent">{edge.intent}</span>
           <code>{edge.relation_kind}</code>

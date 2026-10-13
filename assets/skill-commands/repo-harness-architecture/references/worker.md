@@ -18,6 +18,7 @@ Worker reference. Use only within the assigned architecture scope.
    - `repo-harness architecture-projection check --json` (expect `noop` after the projection is committed)
    - `repo-harness run capability-resolver validate --repo <repo> --format text`
    - `repo-harness run check-task-workflow` when repo workflow surfaces changed
+   - The module reader and the review diff read the committed HEAD model, but `archctx resolve` reads the worktree model. Commit the model before a review diff.
 
 ## Coverage and Agent-owned registration
 

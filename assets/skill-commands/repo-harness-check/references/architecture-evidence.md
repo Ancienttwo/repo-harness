@@ -42,9 +42,11 @@ Read the cheap signal first:
 Human-written sections have a citation signal. Run
 `repo-harness architecture-projection anchors --json`. The command is read-only
 and writes no file. It lists cited paths that are missing, line numbers out of
-range, symbols that are missing and lines that moved. It reads §3, the backlog
-and the node prose. A finding does not fail the command. Save the output to a
-file and give it to `repo-harness module review-prompt <id> --anchors <file>`.
+range, symbols that are missing and lines that moved. It reads all human-written
+text after the generated summary, including §3, §4 History, the backlog and the
+node prose. A finding does not fail the command. The anchors report carries no
+commit. Run the command at the same HEAD as the review, on a clean worktree.
+Save the output to a file and give it to `repo-harness module review-prompt <id> --anchors <file>`.
 The prompt then has a STALE CITATIONS section.
 
 ## Architecture documents
