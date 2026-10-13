@@ -30,9 +30,16 @@ export interface ArchitectureProjectionPolicy {
 export interface ArchitectureProjectionReadinessV1 {
   schemaVersion: 'repo-harness.architecture-projection-readiness/v1';
   modelAuthority: { source: 'registry' | 'archcontext'; ready: boolean };
-  projectionProvider: { provider: ProjectionProvider; state: 'disabled' | 'missing' | 'mismatch' | 'error' | 'ready'; binaryPath: string | null; version: string | null; reason: string };
+  /**
+   * `command` is the managed invocation `[nodePath, binaryPath]`. Guidance runs
+   * archctx only through it, never through a PATH copy. It is null unless the
+   * provider is ready.
+   */
+  projectionProvider: { provider: ProjectionProvider; state: 'disabled' | 'missing' | 'mismatch' | 'error' | 'ready'; binaryPath: string | null; nodePath: string | null; command: [string, string] | null; version: string | null; reason: string };
   codeFacts: { requirement: 'required'; state: 'not-evaluated' | 'ready' | 'unavailable' };
   apply: { mode: ProjectionApplyMode; enabled: boolean };
+  /** The adoption step when the repository has no complete ArchContext model; null when it has one. */
+  next: string | null;
 }
 
 type JsonRecord = Record<string, unknown>;

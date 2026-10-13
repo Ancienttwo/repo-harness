@@ -248,11 +248,14 @@ describe('status command (Phase 1C)', () => {
             provider: 'disabled',
             state: 'disabled',
             binaryPath: null,
+            nodePath: null,
+            command: null,
             version: null,
             reason: 'global architecture configuration is missing; run repo-harness update once',
           },
           codeFacts: { requirement: 'required', state: 'not-evaluated' },
           apply: { mode: 'disabled', enabled: false },
+          next: null,
         });
         const text = formatStatus(report, false);
         expect(text).toContain('model authority: archcontext (ready)');

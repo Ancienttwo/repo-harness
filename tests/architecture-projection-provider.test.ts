@@ -647,6 +647,15 @@ describe('package-local ArchContext projection provider', () => {
     expect(readiness.projectionProvider.version).toBe(ARCHCTX_REQUIRED_VERSION);
     expect(readiness.projectionProvider.binaryPath).toBe(resolvePackageLocalArchctx(join(import.meta.dir, '..')).binaryPath);
     expect(JSON.parse(readFileSync(join(f.repoRoot, 'node_modules', 'archctx', 'package.json'), 'utf8')).version).toBe('0.0.1');
+    // The guides run "$NODE" "$ARCHCTX" from this field, so it must run as given.
+    const [node, archctx] = readiness.projectionProvider.command;
+    expect(readiness.projectionProvider.command).toEqual([readiness.projectionProvider.nodePath, readiness.projectionProvider.binaryPath]);
+    const handshake = JSON.parse(execFileSync(node, [archctx, 'capabilities', '--json'], { cwd: f.repoRoot, encoding: 'utf8', timeout: 10_000 }));
+    expect(handshake.package.version).toBe(ARCHCTX_REQUIRED_VERSION);
+    // The fixture has nodes but no manifest or product file, so the model is not ready.
+    const reference = /in (\/.+worker\.md)\.$/.exec(readiness.next)?.[1];
+    expect(realpathSync(reference!)).toBe(realpathSync(join(import.meta.dir, '..', 'assets', 'skill-commands', 'repo-harness-architecture', 'references', 'worker.md')));
+    expect(readFileSync(reference!, 'utf8')).toContain('## Adopt ArchContext in a repository');
   });
 
   test('fails closed when the provider reports another package version', () => {
@@ -673,14 +682,25 @@ describe('package-local ArchContext projection provider', () => {
   test('does not enable apply for a partial model that lacks manifest and product authority', () => {
     const f = fixture();
     const calls: Array<{ binary: string; args: readonly string[] }> = [];
+    // Readiness now resolves the Node runtime for its command field. A fixed fake
+    // runtime keeps the result independent of the Node on the test machine.
+    const fakeBin = join(f.root, 'bin');
+    mkdirSync(fakeBin, { recursive: true });
+    const node = join(fakeBin, 'node');
+    writeFileSync(node, '#!/bin/sh\necho v24.1.0\n');
+    chmodSync(node, 0o755);
     const readiness = inspectArchitectureProjectionReadiness(f.repoRoot, {
       consumerRoot: f.consumerRoot,
       policy,
+      env: { PATH: fakeBin },
+      trustedNodeCandidateSource: () => [],
       run: runner(calls, projectionEnvelope(captureArchitectureProjectionSnapshot(f.repoRoot))),
     });
     expect(readiness.projectionProvider.state).toBe('ready');
+    expect(readiness.projectionProvider.command).toEqual([realpathSync(node), resolvePackageLocalArchctx(f.consumerRoot).binaryPath]);
     expect(readiness.modelAuthority.ready).toBe(true);
     expect(readiness.apply.enabled).toBe(false);
+    expect(readiness.next).toContain('Adopt ArchContext in a repository');
   });
 
   test('fails closed when neither PATH nor the trusted candidates carry a compatible Node runtime', () => {

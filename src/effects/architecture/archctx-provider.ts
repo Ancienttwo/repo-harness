@@ -237,22 +237,28 @@ export function verifyArchctxDaemonRuntime(repoRoot: string, options: ArchctxPro
 export function inspectArchitectureProjectionReadiness(repoRoot: string, options: ArchctxProviderOptions = {}): ArchitectureProjectionReadinessV1 {
   const policy = options.policy ?? loadArchitectureProjectionPolicy(options.env);
   const source = capabilitySource(repoRoot);
+  const modelReady = architectureModelReady(repoRoot);
+  const next = source === 'archcontext' && modelReady ? null : architectureAdoptionStep();
   if (policy.provider === 'disabled') return {
     schemaVersion: 'repo-harness.architecture-projection-readiness/v1',
     modelAuthority: { source, ready: capabilityAuthorityReady(repoRoot) },
-    projectionProvider: { provider: 'disabled', state: 'disabled', binaryPath: null, version: null, reason: readGlobalArchitectureConfiguration(options.env).initialized ? 'global architecture.projection_provider=disabled' : 'global architecture configuration is missing; run repo-harness update once' },
+    projectionProvider: { provider: 'disabled', state: 'disabled', binaryPath: null, nodePath: null, command: null, version: null, reason: readGlobalArchitectureConfiguration(options.env).initialized ? 'global architecture.projection_provider=disabled' : 'global architecture configuration is missing; run repo-harness update once' },
     codeFacts: { requirement: 'required', state: 'not-evaluated' },
     apply: { mode: policy.applyMode, enabled: false },
+    next,
   };
   try {
+    // The handshake resolves the same runtime again; status reports it so a
+    // caller can run archctx without a PATH copy.
+    const nodePath = resolveCompatibleNodeRuntime(options.env ?? process.env, options.trustedNodeCandidateSource);
     const handshake = archctxCapabilities(repoRoot, options);
-    const modelReady = architectureModelReady(repoRoot);
     return {
       schemaVersion: 'repo-harness.architecture-projection-readiness/v1',
       modelAuthority: { source, ready: capabilityAuthorityReady(repoRoot) },
-      projectionProvider: { provider: 'archctx', state: 'ready', binaryPath: handshake.resolved.binaryPath, version: handshake.resolved.version, reason: 'exact package-local capability handshake passed' },
+      projectionProvider: { provider: 'archctx', state: 'ready', binaryPath: handshake.resolved.binaryPath, nodePath, command: [nodePath, handshake.resolved.binaryPath], version: handshake.resolved.version, reason: 'exact package-local capability handshake passed' },
       codeFacts: { requirement: 'required', state: 'not-evaluated' },
       apply: { mode: policy.applyMode, enabled: policy.applyMode !== 'disabled' && modelReady },
+      next,
     };
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
@@ -264,11 +270,18 @@ export function inspectArchitectureProjectionReadiness(repoRoot: string, options
     return {
       schemaVersion: 'repo-harness.architecture-projection-readiness/v1',
       modelAuthority: { source, ready: capabilityAuthorityReady(repoRoot) },
-      projectionProvider: { provider: 'archctx', state, binaryPath: null, version: null, reason },
+      projectionProvider: { provider: 'archctx', state, binaryPath: null, nodePath: null, command: null, version: null, reason },
       codeFacts: { requirement: 'required', state: 'unavailable' },
       apply: { mode: policy.applyMode, enabled: false },
+      next,
     };
   }
+}
+
+/** The worker guidance ships in the running package, so the path is valid for every host. */
+function architectureAdoptionStep(): string {
+  const reference = join(findConsumerRoot(), 'assets', 'skill-commands', 'repo-harness-architecture', 'references', 'worker.md');
+  return `The repository has no complete ArchContext model. Follow "Adopt ArchContext in a repository" in ${reference}.`;
 }
 
 export function runArchitectureProjection(request: ProjectionRequestV1, repoRoot: string, options: ArchctxProviderOptions = {}): ProjectionResultV2 {
