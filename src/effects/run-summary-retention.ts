@@ -4,6 +4,11 @@
  * `scripts/evidence-gc.ts` calls this module, and both go away one release
  * after the Stop change.
  *
+ * Stop is not the only writer left. `workflow_write_handoff` in
+ * `assets/hooks/lib/workflow-state.sh` (run by prepare-handoff) still writes
+ * run summaries and appends `handoff_refresh` events. #696 owns that shell
+ * writer.
+ *
  * The non-obvious rule is which files this removes. Several writers share the
  * directory, and two of them produce durable evidence that a filename rule
  * cannot tell apart from the old Stop records:

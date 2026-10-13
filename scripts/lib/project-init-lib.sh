@@ -1577,11 +1577,6 @@ pi_write_harness_policy() {
   },
   "delegation": {
     "mode": "explicit",
-    "max_agents": 2,
-    "strict_max_agents": 3,
-    "max_depth": 1,
-    "allow_parallel_writers": false,
-    "preferred_runners": ["task-agent"],
     "brief_source": "tasks/contracts/<stem>.contract.md",
     "runner_rule": "the active task contract is the authoritative execution brief. Use task-agent in an explicitly addressed Herdr session and parent pane for persistent collaborators. Reuse the task binding across owner turns; history and idle are observation, not Result or acceptance. Missing Herdr fails closed without an alternate agent runner. Real harness permission and model capabilities remain unverified until evidenced.",
     "rule": "UserPromptSubmit.delegation injects bounded delegation context only for the typed /delegate or /parallel command. Natural-language inference and SessionStart standing authorization are not delegation authorities."
@@ -1780,20 +1775,7 @@ pi_write_harness_policy() {
     }
   },
   "minimal_change": {
-    "version": 1,
-    "mode": "advice",
-    "session_context": true,
-    "prompt_advice": true,
-    "post_edit_observer": false,
-    "stop_review": true,
-    "max_findings": 5,
-    "max_context_words": 180,
-    "new_dependency": "warn",
-    "new_file": "observe",
-    "new_abstraction": "warn",
-    "protected_concerns": ["security", "validation", "data_loss", "error_handling", "accessibility", "explicit_requirement", "tests"],
-    "report_path": ".ai/harness/checks/minimal-change.latest.json",
-    "event_dedupe": true
+    "mode": "advice"
   },
   "enforcement": {
     "worktree_guard": "warn-by-default",

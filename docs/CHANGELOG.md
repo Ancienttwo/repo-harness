@@ -33,9 +33,15 @@ All notable changes to this skill are documented here.
   lease, runs a circuit breaker or prints advisories. It no longer reads the
   `harness.failure_log_file` override and always writes
   `.ai/harness/failures/latest.jsonl`. (#692)
-- `minimal_change` mode `enforce` has no effect. No code reads the
-  `minimal_change` policy, so Stop never blocks on a minimal-change finding.
-  This repository now uses `mode: "advice"`. (#692, #695)
+- A `minimal_change.mode` other than `off` or `advice` now fails policy
+  validation, so state resolution fails until the operator sets `advice` or
+  `off`. The mode `enforce` is retired. No code reads the `minimal_change`
+  policy, so Stop never blocks on a minimal-change finding. The block now has
+  only the `mode` key. This repository uses `mode: "advice"`. (#692, #695)
+- The unread `delegation` keys `max_agents`, `strict_max_agents`, `max_depth`,
+  `allow_parallel_writers` and `preferred_runners` are removed from the policy
+  template and from this repository policy. The delegation advisor keeps its
+  caps in code.
 - The circuit breaker keeps the `repair` and `semantic-review` kinds only. A
   `.ai/harness/state/circuit-breaker.json` with protocol 1 or a retired kind
   (`guard`, `review`, `subagent`, `cross-model-consult` or `minimal-change`)
@@ -161,7 +167,8 @@ All notable changes to this skill are documented here.
 ### Fixed
 
 - `minimal-change-hooks.md` no longer describes hooks that no code runs. It
-  says that no hook reads the `minimal_change` policy. (#692, #696)
+  says that no hook reads the `minimal_change` policy and that only `off` and
+  `advice` are valid modes. (#692, #696)
 - SessionStart shows the resume section when the resume file has content.
   Before, it depended on Bash telemetry that filled the evidence ledger.
   (#693, #695)

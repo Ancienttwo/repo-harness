@@ -1,8 +1,7 @@
 # Minimal Change Hooks
 
-No hook reads the `minimal_change` policy. The block in
-`.ai/harness/policy.json` is inert. Hook wave 2 deleted the runtime that used
-it (#692, #695):
+No hook reads the `minimal_change` policy. Hook wave 2 deleted the runtime
+that used it (#692, #695):
 
 - the `SessionStart` minimal-change section;
 - the `UserPromptSubmit` minimal-change advice;
@@ -12,11 +11,12 @@ it (#692, #695):
 
 ## Policy Status
 
-`mode: "enforce"` has no effect. Stop never blocks on a minimal-change finding.
-This repository sets `mode: "advice"`. `repo-harness init` still writes the
-block with `mode: "advice"`. No code reads `mode`, `session_context`,
-`prompt_advice`, `post_edit_observer`, `stop_review`, `report_path` or any
-other field of the block.
+The only key of the block is `mode`. Policy validation accepts `off` and
+`advice`. Any other value, such as the retired `enforce`, fails policy
+validation. State resolution then fails until the operator sets `advice` or
+`off`. Stop never blocks on a minimal-change finding. This repository sets
+`mode: "advice"`. `repo-harness init` writes `{ "mode": "advice" }`. No code
+reads the value after validation.
 
 `.ai/harness/checks/minimal-change.latest.json` and
 `.ai/harness/checks/minimal-change-audit.latest.json` have no writer and no

@@ -192,6 +192,19 @@ function validateWorkflowPolicy(policy: WorkflowPolicy): void {
     );
   }
   capabilitySourceMode(policy);
+  minimalChangeMode(policy);
+}
+
+const MINIMAL_CHANGE_MODES: readonly string[] = ['off', 'advice'];
+
+// No code reads the minimal_change policy. The mode check only rejects the
+// retired `enforce` value (and any other unknown value) so an operator
+// does not rely on a gate that no longer exists.
+function minimalChangeMode(policy: WorkflowPolicy): void {
+  const value = policyValue(policy, '.minimal_change.mode');
+  if (value === POLICY_FIELD_ABSENT) return;
+  if (typeof value === 'string' && MINIMAL_CHANGE_MODES.includes(value)) return;
+  throw new Error(`invalid workflow policy value .minimal_change.mode: ${String(value)}`);
 }
 
 /**

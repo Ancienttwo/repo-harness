@@ -33,28 +33,15 @@ export interface CommandObservedResult {
   readonly reason?: string;
 }
 
-function outputText(value: unknown): string {
-  if (value == null) return '';
-  if (typeof value === 'string') return value;
-  if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') return String(value);
-  try { return JSON.stringify(value); } catch { return String(value); }
-}
-
 /**
- * `tool_response` is the only host field for the command result. Claude Code
- * sends Bash results as `{ stdout, stderr, interrupted, ... }`; the observed
- * output is both streams, in that order. Codex documents the field only as
- * the model-facing output, so a string is kept and any other shape is
- * serialized.
+ * The command output, read from `tool_response.stdout`. The failure path runs
+ * only with a safe-integer `exit_code`, which only Pi sends. Pi sets
+ * `tool_response` to `{ stdout, is_error }` (src/pi/extension.ts). Any other
+ * shape has no output here.
  */
-function toolResponseOutput(response: unknown): unknown {
-  if (!response || typeof response !== 'object' || Array.isArray(response)) return response;
-  const { stdout, stderr } = response as { stdout?: unknown; stderr?: unknown };
-  if (typeof stdout !== 'string' && typeof stderr !== 'string') return response;
-  const out = typeof stdout === 'string' ? stdout : '';
-  const err = typeof stderr === 'string' ? stderr : '';
-  if (!out || !err) return out || err;
-  return out.endsWith('\n') ? `${out}${err}` : `${out}\n${err}`;
+function toolResponseStdout(payload: HookPayload): string {
+  const stdout = payloadValue(payload, 'tool_response.stdout');
+  return typeof stdout === 'string' ? stdout : '';
 }
 
 /** The host exit status, or null when the payload carries no safe integer. */
@@ -169,7 +156,7 @@ export function runCommandObserved(opts: CommandObservedInput): CommandObservedR
 
   let stdout = '';
   if (exitCode !== null && exitCode !== 0
-    && failureSignal(outputText(toolResponseOutput(payloadValue(payload, 'tool_response') ?? '')))) {
+    && failureSignal(toolResponseStdout(payload))) {
     const circuit = circuitFailure(opts.repoRoot, command, deps);
     if (circuit.denied) return { exitCode: 2, stdout: '', stderr: circuit.stderr, reason: 'repair-circuit-tripped' };
     stdout += '[PostBash] Tests failed. Reminder: failure = rewrite module, not patching.\n';
