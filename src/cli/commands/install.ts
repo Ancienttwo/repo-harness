@@ -1,19 +1,16 @@
 import { runUserUninstall } from '../installer/uninstall';
 /**
- * `repo-harness install|uninstall --target codex|claude|both --location global|local`
+ * `repo-harness install|uninstall --target codex|claude|both --location global`
  *
- * Resolves --target to AgentTarget list, calls target install/uninstall for
- * each, prints WriteResult lines. Idempotent: re-run with no diff returns
+ * Resolves --target to AgentTarget list for install. Uninstall restores
+ * owned user configuration. Idempotent: re-run with no diff returns
  * `action: 'unchanged'` or `action: 'not-found'` (verified by
  * tests/cli/install.test.ts).
  *
  * Target/location matrix:
  *   - codex + global → writes ~/.codex/hooks.json
- *   - codex + local  → exit 2 (Codex has no project-local hook concept)
  *   - claude + global → writes ~/.claude/settings.json
- *   - claude + local  → writes <cwd>/.claude/settings.json (Phase 1C concern)
  *   - both + global   → codex + claude
- *   - both + local    → codex skipped silently, claude installed
  */
 
 import type { Location } from '../installer/types';
@@ -35,8 +32,6 @@ export interface InstallCommandResult {
   lines: string[];
 }
 
-type AdapterAction = 'install' | 'uninstall';
-
 function resolveTargets(spec: InstallTargetSpec) {
   if (spec === 'both') return [...ALL_TARGETS];
   const t = getTarget(spec);
@@ -48,25 +43,17 @@ function resolveTargets(spec: InstallTargetSpec) {
   return [t];
 }
 
-function runAdapterAction(action: AdapterAction, opts: InstallCommandOptions): InstallCommandResult {
+export function runInstall(opts: InstallCommandOptions): InstallCommandResult {
+  if (opts.location !== 'global') {
+    return { exitCode: 2, lines: [`repo-harness install: invalid --location "${opts.location}" (expected: global)`] };
+  }
   const targets = resolveTargets(opts.target);
   const lines: string[] = [];
   let exitCode = 0;
 
   for (const target of targets) {
-    if (!target.supportsLocation(opts.location)) {
-      if (opts.target === 'both') {
-        lines.push(`[${target.id}] skipped: --location ${opts.location} not supported`);
-        continue;
-      }
-      lines.push(`[${target.id}] error: --location ${opts.location} not supported`);
-      exitCode = 2;
-      continue;
-    }
     try {
-      const result = action === 'install'
-        ? target.install(opts.location, { profile: opts.profile })
-        : target.uninstall(opts.location, { dryRun: opts.dryRun });
+      const result = target.install(opts.location, { profile: opts.profile });
       for (const file of result.files) {
         lines.push(`[${target.id}] ${file.action}: ${file.path}`);
       }
@@ -82,11 +69,9 @@ function runAdapterAction(action: AdapterAction, opts: InstallCommandOptions): I
   return { exitCode, lines };
 }
 
-export function runInstall(opts: InstallCommandOptions): InstallCommandResult {
-  return runAdapterAction('install', opts);
-}
-
 export function runUninstall(opts: InstallCommandOptions): InstallCommandResult {
-  if (opts.location !== 'global' && opts.recoverInterrupted) return { exitCode: 2, lines: ['--recover-interrupted requires --location global'] };
-  return opts.location === 'global' ? runUserUninstall(opts) : runAdapterAction('uninstall', opts);
+  if (opts.location !== 'global') {
+    return { exitCode: 2, lines: [`repo-harness uninstall: invalid --location "${opts.location}" (expected: global)`] };
+  }
+  return runUserUninstall(opts);
 }
