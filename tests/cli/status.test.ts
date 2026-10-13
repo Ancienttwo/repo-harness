@@ -235,6 +235,27 @@ describe('status command (Phase 1C)', () => {
         fs.writeFileSync(path.join(repo, '.ai/harness/workflow-contract.json'), '{}');
         fs.writeFileSync(path.join(repo, '.archcontext/manifest.yaml'), 'schema_version: archcontext/v1\n');
         fs.writeFileSync(path.join(repo, '.archcontext/product.yaml'), 'name: fixture\n');
+        // The capability loader must accept the model, so `next` is null only with a valid node.
+        fs.writeFileSync(path.join(repo, '.archcontext/model/nodes/capability.fixture.core.yaml'), [
+          'schemaVersion: archcontext.node/v2',
+          'kind: capability',
+          'id: capability.fixture.core',
+          'name: Fixture Core',
+          'summary: Fixture capability.',
+          'responsibilities:',
+          '  - Own the fixture source.',
+          'status: active',
+          'source:',
+          '  include:',
+          '    - src/**',
+          'extensions:',
+          '  lspProfile: ts',
+          '  verification: []',
+          '  contractFiles:',
+          '    agents: AGENTS.md',
+          '    claude: CLAUDE.md',
+          '',
+        ].join('\n'));
         fs.writeFileSync(
           path.join(repo, '.ai/harness/policy.json'),
           JSON.stringify({ context: { capability_source: 'archcontext' } }),

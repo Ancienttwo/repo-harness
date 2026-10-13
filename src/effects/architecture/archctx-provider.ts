@@ -8,6 +8,8 @@ import { ARCHCONTEXT_NODE_RANGE, digestJson, type ArchctxCapabilitiesV1, type Do
 import { trustedNodeCandidates } from '../runtime/node-candidates';
 import { runProcess } from '../process-runner';
 import { normalizeCapabilityPath } from '../../core/capabilities/registry';
+import { readText } from '../state/collect-state-inputs';
+import { loadArchcontextAuthority } from '../state/resolve-effective-state';
 import {
   ARCHCTX_REQUIRED_VERSION,
   assertArchctxVersion,
@@ -73,10 +75,15 @@ const DEFAULT_RUNNER: RunArchctxProcess = (binary, args, options) => {
 };
 
 
+/**
+ * The model is ready when the hooks' capability loader accepts the nodes and
+ * finds at least one active capability. An empty, sample-only or invalid nodes
+ * directory is not ready, so apply stays off and status keeps the adoption step.
+ */
 function architectureModelReady(repoRoot: string): boolean {
-  return existsSync(join(repoRoot, '.archcontext', 'manifest.yaml'))
-    && existsSync(join(repoRoot, '.archcontext', 'product.yaml'))
-    && existsSync(join(repoRoot, '.archcontext', 'model', 'nodes'));
+  if (!existsSync(join(repoRoot, '.archcontext', 'manifest.yaml')) || !existsSync(join(repoRoot, '.archcontext', 'product.yaml'))) return false;
+  const authority = loadArchcontextAuthority(repoRoot, (path) => readText(repoRoot, path));
+  return authority.status === 'valid' && authority.registry.capabilities.length > 0;
 }
 
 function capabilityAuthorityReady(repoRoot: string): boolean {

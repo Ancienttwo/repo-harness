@@ -703,6 +703,30 @@ describe('package-local ArchContext projection provider', () => {
     expect(readiness.next).toContain('Adopt ArchContext in a repository');
   });
 
+  test('keeps the adoption step until the capability loader accepts the model', () => {
+    const f = fixture();
+    writeFileSync(join(f.repoRoot, '.archcontext', 'manifest.yaml'), 'schema_version: archcontext/v1\n');
+    writeFileSync(join(f.repoRoot, '.archcontext', 'product.yaml'), 'name: fixture\n');
+    const nodes = join(f.repoRoot, '.archcontext', 'model', 'nodes');
+    const inspect = () => inspectArchitectureProjectionReadiness(f.repoRoot, { consumerRoot: f.consumerRoot, policy: { ...policy, provider: 'disabled', applyMode: 'disabled' } });
+    // A valid capability node is a complete model, so status gives no next step.
+    expect(inspect().next).toBeNull();
+    // Empty nodes directory.
+    rmSync(join(nodes, 'capability.test.core.yaml'));
+    expect(inspect().next).toContain('Adopt ArchContext in a repository');
+    // Only the sample node that `archctx init` writes; it has no responsibilities.
+    writeFileSync(join(nodes, 'capability.architecture.context.yaml'), [
+      'id: "capability.architecture.context"',
+      'kind: "capability"',
+      'name: "Architecture Context"',
+      'schemaVersion: "archcontext.node/v2"',
+      'status: "active"',
+      'summary: "Keeps product and architecture intent available to coding agents."',
+      '',
+    ].join('\n'));
+    expect(inspect().next).toContain('Adopt ArchContext in a repository');
+  });
+
   test('fails closed when neither PATH nor the trusted candidates carry a compatible Node runtime', () => {
     const f = fixture();
     const fakeBin = join(f.root, 'bin');
