@@ -11,6 +11,12 @@ All notable changes to this skill are documented here.
   package. A Pi run started by a custom message keeps the current run and
   is not a `UserPromptSubmit`.
 
+### Fixed
+
+- A Pi run started by a custom message now ends with its own `Stop`. Before,
+  its post-edit journal entries stayed pending until a later user run. This
+  gap also existed with Pi `1.1.0`.
+
 ### Changed
 
 - Pin `archctx` and `archctx-contracts` to exact version `0.7.2`. A busy

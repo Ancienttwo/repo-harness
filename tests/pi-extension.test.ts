@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { readPendingPostEditEvents } from '../src/cli/hook/mutation-observed';
 import { readAcceptedEvents } from '../src/effects/evidence/event-log';
 import { PiHookBridge, type HookRequest } from '../src/pi/hook-bridge';
 import { parseHookJsonOutput, type HookJsonOutput } from '../src/pi/hook-protocol';
@@ -299,7 +300,7 @@ describe('real Pi 1.2 tool pipeline with a scripted provider', () => {
     } finally { f.cleanup(); }
   }, 60_000);
 
-  test('a custom-message run keeps the current run and is not a user prompt', () => {
+  test('a custom-message run keeps the current run, is not a user prompt and ends with Stop', () => {
     const f = fixture();
     try {
       const result = session(f.root, f.env, 'custom-turn');
@@ -312,6 +313,12 @@ describe('real Pi 1.2 tool pipeline with a scripted provider', () => {
       const toolRuns = events.filter(event => event.event === 'PreToolUse').map(event => event.run_id);
       expect(toolRuns).toHaveLength(2);
       expect(new Set(toolRuns).size).toBe(1);
+      // Each run, user or custom, ends with its own Stop. The custom run's Stop
+      // consumes the post-edit journal entry that its write queued.
+      expect(events.filter(event => ['PreToolUse', 'Stop'].includes(event.event)).map(event => [event.event, event.run_id]))
+        .toEqual([['PreToolUse', toolRuns[0]], ['Stop', toolRuns[0]], ['PreToolUse', toolRuns[0]], ['Stop', toolRuns[0]]]);
+      expect(result.journalPaths).toContain('custom-run.txt');
+      expect(readPendingPostEditEvents(f.root)).toEqual([]);
     } finally { f.cleanup(); }
   }, 60_000);
 

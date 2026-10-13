@@ -117,14 +117,15 @@ export default function repoHarnessPi(pi: ExtensionAPI): void {
   });
 
   pi.on('before_agent_start', async (event, ctx) => {
+    const state = current;
+    if (!state || !state.optedIn) return;
+    // Every agent run ends with Stop, which consumes the post-edit journal.
+    state.pendingStop = true;
+    state.stop = null;
     // Pi 1.2.0 also starts a run for an idle custom message with triggerTurn.
     // Only a user prompt is a UserPromptSubmit; a custom run keeps the current run.
     if (event.messageType !== 'user') return;
-    const state = current;
-    if (!state || !state.optedIn) return;
     state.runId = `run-pi-${randomUUID()}`;
-    state.pendingStop = true;
-    state.stop = null;
     state.tools.clear();
     let output: HookJsonOutput | null = null;
     try {
