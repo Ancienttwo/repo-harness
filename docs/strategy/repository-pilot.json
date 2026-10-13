@@ -62,8 +62,8 @@
   "evidence": [
     {
       "path": "README.md",
-      "revision": "f4ed93d91575c470d72560c1bab3d2fb14e117ab",
-      "sha256": "a4e6e09041964e198e1952d705b11946766163b9299f6a384f56aba8372c8291"
+      "revision": "f7ffaef7b35a8d92941c90ab6b8c7235fb6681fa",
+      "sha256": "15ff93f7a0caa5cdff6e6d541ae01d639e1f1de95490187e2b62b2f38c6455f1"
     },
     {
       "path": "docs/plans/optional-strategy-memory.md",
