@@ -1,9 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 import { execFileSync, spawnSync } from 'child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { runHook } from '../../src/cli/hook/runtime';
+import { getRoute } from '../../src/cli/hook/route-registry';
+import { buildHookCommand } from '../../src/cli/installer/managed-entries';
+
+const HOOK_ENTRY = join(import.meta.dir, '..', '..', 'src', 'cli', 'hook-entry.ts');
 
 function repo(optIn = true): string {
   const root = mkdtempSync(join(tmpdir(), 'hrd09-runtime-'));
@@ -24,8 +28,6 @@ function env(root: string, host: 'claude' | 'codex' = 'claude'): NodeJS.ProcessE
     ...process.env,
     HOOK_REPO_ROOT: root,
     HOOK_HOST: host,
-    HOOK_SESSION_ID: 'test-session',
-    HOOK_RUN_ID: 'test-run',
     REPO_HARNESS_WORKFLOW_PROFILE: 'routine',
   };
 }
@@ -52,7 +54,7 @@ describe('typed hook runtime', () => {
     } finally { clean(root); }
   }, 30_000);
 
-  test('rejects an explicit repo-root mismatch before route dispatch', () => {
+  test('the managed HOOK_REPO_ROOT is the root without a second git lookup', () => {
     const root = repo();
     const other = repo();
     try {
@@ -60,10 +62,66 @@ describe('typed hook runtime', () => {
         event: 'Stop',
         routeId: 'default',
         cwd: root,
+        input: JSON.stringify({ stop_hook_active: true }),
         env: { ...env(root), HOOK_REPO_ROOT: other },
       });
-      expect(result).toEqual({ exitCode: 0, reason: 'repo-root-mismatch' });
+      expect(result.repoRoot).toBe(realpathSync(other));
     } finally { clean(root); clean(other); }
+  }, 30_000);
+
+  test('a missing HOOK_HOST fails before any handler runs', () => {
+    const root = repo();
+    try {
+      const hostless = { ...env(root) };
+      delete hostless.HOOK_HOST;
+      expect(runHook({ event: 'Stop', routeId: 'default', cwd: root, env: hostless }))
+        .toEqual({ exitCode: 1, reason: 'unknown-host' });
+      expect(runHook({ event: 'PreToolUse', routeId: 'edit', cwd: root, env: hostless }))
+        .toEqual({ exitCode: 2, reason: 'unknown-host' });
+      expect(existsSync(join(root, '.ai/harness/runs/hook-events.jsonl'))).toBe(false);
+    } finally { clean(root); }
+  }, 30_000);
+
+  test('a route that is not installed for the host exits 2 with one stderr line', () => {
+    const root = repo();
+    try {
+      const result = spawnSync(process.execPath, [HOOK_ENTRY, 'SubagentStop', '--route', 'quality'], {
+        cwd: root,
+        env: env(root, 'claude'),
+        input: JSON.stringify({ hook_event_name: 'SubagentStop', final_message: 'ok' }),
+        encoding: 'utf8',
+      });
+      expect(result.status).toBe(2);
+      expect(result.stdout).toBe('');
+      expect(result.stderr.trim().split('\n')).toHaveLength(1);
+      expect(result.stderr).toContain('unsupported-host-route');
+      expect(existsSync(join(root, '.ai/harness/delegation'))).toBe(false);
+    } finally { clean(root); }
+  }, 30_000);
+
+  test('a managed call spawns one git process to find the root', () => {
+    const root = repo();
+    const bin = mkdtempSync(join(tmpdir(), 'hrd09-managed-bin-'));
+    try {
+      const realGit = execFileSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).trim();
+      const gitLog = join(bin, 'git.log');
+      writeFileSync(join(bin, 'git'), `#!/bin/sh\nprintf '%s\\n' "$*" >> "$GIT_LOG"\nexec "${realGit}" "$@"\n`, { mode: 0o755 });
+      writeFileSync(join(bin, 'repo-harness-hook'), `#!/bin/sh\nexec "${process.execPath}" "${HOOK_ENTRY}" "$@"\n`, { mode: 0o755 });
+      const route = getRoute('PostToolUse', 'always');
+      if (!route) throw new Error('missing PostToolUse.always route');
+      const hostEnv = { ...process.env, PATH: `${bin}:${process.env.PATH ?? ''}`, GIT_LOG: gitLog, REPO_HARNESS_WORKFLOW_PROFILE: 'routine' };
+      delete hostEnv.HOOK_REPO_ROOT;
+      delete hostEnv.HOOK_HOST;
+      const result = spawnSync('sh', ['-c', buildHookCommand(route, 'claude')], {
+        cwd: root,
+        env: hostEnv,
+        input: JSON.stringify({ hook_event_name: 'PostToolUse', tool_name: 'Read' }),
+        encoding: 'utf8',
+      });
+      expect(result.status, result.stderr).toBe(0);
+      expect(readFileSync(gitLog, 'utf8').trim().split('\n')).toEqual(['rev-parse --show-toplevel']);
+      expect(existsSync(join(root, '.ai/harness/runs/hook-events.jsonl'))).toBe(true);
+    } finally { clean(root); clean(bin); }
   }, 30_000);
 
   test('unknown routes do not create a handler or telemetry record', () => {
@@ -129,17 +187,14 @@ describe('typed hook runtime', () => {
     } finally { clean(root); }
   }, 30_000);
 
-  test('one telemetry record stays opaque-free without fabricating file-metric completeness', () => {
+  test('one handled event writes one telemetry record', () => {
     const root = repo();
     try {
       const result = runHook({ event: 'PostToolUse', routeId: 'bash', cwd: root, input: JSON.stringify({ tool_input: { command: 'echo hi' }, tool_response: { stdout: 'hi\n', stderr: '', interrupted: false }, exit_code: 0 }), env: env(root) });
       expect(result.handler).toBe('command-observed');
-      const raw = readFileSync(join(root, '.ai/harness/runs/hook-events.jsonl'), 'utf8').trim();
-      const record = JSON.parse(raw) as { steps: Array<{ execution: string }>; measurement: { complete: boolean; incomplete_metrics: unknown[]; opaque_steps: unknown[] } };
-      expect(record.steps).toHaveLength(1);
-      expect(record.steps[0].execution).toBe('in_process');
-      expect(record.measurement).toMatchObject({ complete: false, opaque_steps: [] });
-      expect(record.measurement.incomplete_metrics).toContain('files_read');
+      const lines = readFileSync(join(root, '.ai/harness/runs/hook-events.jsonl'), 'utf8').trim().split('\n');
+      expect(lines).toHaveLength(1);
+      expect(JSON.parse(lines[0])).toMatchObject({ event: 'PostToolUse', route_id: 'bash', reason: 'ok' });
     } finally { clean(root); }
   }, 30_000);
 });

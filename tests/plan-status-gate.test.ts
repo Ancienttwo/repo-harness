@@ -90,6 +90,7 @@ function preEdit(cwd: string, path: string, extraEnv: NodeJS.ProcessEnv = {}) {
     encoding: 'utf-8',
     env: {
       ...process.env,
+      HOOK_HOST: 'claude',
       HOOK_REPO_ROOT: cwd,
       REPO_HARNESS_WORKFLOW_PROFILE: 'routine',
       ...extraEnv,

@@ -1,12 +1,14 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import {
   createHookEventTelemetry,
   HOOK_EVENT_TELEMETRY_PATH,
-  isHookEventTelemetryRecord,
+  HOOK_EVENT_TELEMETRY_PROTOCOL,
 } from '../../src/cli/hook/event-telemetry';
+import type { HookIdentity } from '../../src/cli/hook/hook-input';
+import { readHookMetrics } from '../../scripts/run-harness-profile-benchmark';
 
 const scratch: string[] = [];
 
@@ -20,192 +22,84 @@ function tempDir(prefix: string): string {
   return path;
 }
 
+function identity(overrides: Partial<HookIdentity> = {}): HookIdentity {
+  return { host: 'claude', sessionId: null, runId: null, turnId: null, ...overrides };
+}
+
 describe('HRD-08 event telemetry authority', () => {
-  test('writes one complete event record and finalization is idempotent', () => {
+  test('writes one v2 record that carries the resolved identity', () => {
     const repoRoot = tempDir('hrd08-event-telemetry-');
-    const telemetry = createHookEventTelemetry({
-      repoRoot,
-      event: 'PostToolUse',
-      routeId: 'edit',
-      input: JSON.stringify({ session_id: 'session-1', run_id: 'run-1', turn_id: 'turn-1' }),
-      env: { HOOK_HOST: 'codex' },
-    });
-
-    telemetry.recordStateResolution();
-    telemetry.recordDirectChildProcess();
-    telemetry.recordFilesRead(['tasks/contracts/example.contract.md']);
-    telemetry.recordEventWrite('.ai/harness/journal/post-edit/pending/example.json');
-    telemetry.recordWriteTransaction();
-    telemetry.recordStep({
-      name: 'mutation-observed',
-      execution: 'in_process',
-      startedAt: new Date('2026-07-21T08:00:00.000Z'),
-      elapsedMs: 12.345,
+    const record = createHookEventTelemetry({ repoRoot, event: 'PostToolUse', routeId: 'edit' }).finalize({
+      identity: identity({ host: 'codex', sessionId: 'session-1', runId: 'run-1', turnId: 'turn-1' }),
       exitCode: 0,
-      outputBytes: 0,
+      blocked: false,
+      reason: 'ok',
     });
-    telemetry.markMetricsComplete([
-      'state_resolutions',
-      'files_read',
-      'files_written',
-      'durable_writes',
-      'write_transactions',
-      'full_projection_writes',
-      'event_writes',
-    ]);
-
-    const first = telemetry.finalize({ exitCode: 0, reason: 'ok' });
-    const second = telemetry.finalize({ exitCode: 1, reason: 'script-failed' });
     const lines = readFileSync(join(repoRoot, HOOK_EVENT_TELEMETRY_PATH), 'utf8').trim().split('\n');
-
-    expect(second).toEqual(first);
     expect(lines).toHaveLength(1);
-    const record: unknown = JSON.parse(lines[0]);
-    expect(isHookEventTelemetryRecord(record)).toBe(true);
-    if (!isHookEventTelemetryRecord(record)) throw new Error('record failed validation');
-    expect(record.protocol).toBe('loop-engine-hook-event/v1');
-    expect(record.runtime_entries).toBe(1);
-    expect(record.host).toBe('codex');
-    expect(record.session_id).toBe('session-1');
-    expect(record.metrics).toMatchObject({
-      state_resolutions: 1,
-      child_processes: 1,
-      files_read: 1,
-      files_written: 1,
-      durable_writes: 1,
-      write_transactions: 1,
-      full_projection_writes: 0,
-      event_writes: 1,
+    expect(JSON.parse(lines[0])).toEqual(record);
+    expect(Object.keys(record).sort()).toEqual([
+      'blocked', 'completed_at', 'elapsed_ms', 'event', 'event_id', 'exit_code', 'fingerprint',
+      'host', 'protocol', 'reason', 'route_id', 'run_id', 'session_id', 'started_at', 'turn_id',
+    ]);
+    expect(record).toMatchObject({
+      protocol: HOOK_EVENT_TELEMETRY_PROTOCOL,
+      host: 'codex',
+      session_id: 'session-1',
+      run_id: 'run-1',
+      turn_id: 'turn-1',
+      event: 'PostToolUse',
+      route_id: 'edit',
+      exit_code: 0,
+      blocked: false,
+      reason: 'ok',
     });
-    expect(record.measurement.complete).toBe(true);
-    expect(record.measurement.incomplete_metrics).toEqual([]);
-    expect(record.steps).toHaveLength(1);
+    expect(record.elapsed_ms).toBeGreaterThanOrEqual(0);
   });
 
   test('Pi hook events carry host pi', () => {
     const repoRoot = tempDir('hrd08-event-pi-host-');
-    const telemetry = createHookEventTelemetry({
-      repoRoot,
-      event: 'PreToolUse',
-      routeId: 'edit',
-      input: JSON.stringify({ session_id: 'pi-session' }),
-      env: { HOOK_HOST: 'pi' },
+    const record = createHookEventTelemetry({ repoRoot, event: 'PreToolUse', routeId: 'edit' }).finalize({
+      identity: identity({ host: 'pi', sessionId: 'pi-session' }),
+      exitCode: 0,
+      blocked: false,
+      reason: 'ok',
     });
-
-    const record = telemetry.finalize({ exitCode: 0, reason: 'ok' });
-    expect(isHookEventTelemetryRecord(record)).toBe(true);
     expect(record.host).toBe('pi');
     expect(record.session_id).toBe('pi-session');
   });
 
-  test('opaque steps are explicit and do not fabricate hidden I/O completeness', () => {
-    const repoRoot = tempDir('hrd08-event-opaque-');
-    const telemetry = createHookEventTelemetry({
-      repoRoot,
-      event: 'UserPromptSubmit',
-      routeId: 'default',
-    });
-    telemetry.recordDirectChildProcess();
-    telemetry.markOpaqueStep('prompt-guard.sh');
-    telemetry.recordStep({
-      name: 'prompt-guard.sh',
-      execution: 'subprocess',
-      startedAt: new Date(),
-      elapsedMs: 2,
-      exitCode: 0,
-      outputBytes: null,
-    });
-
-    const record = telemetry.finalize({ exitCode: 0, reason: 'ok' });
-    expect(record.measurement.complete).toBe(false);
-    expect(record.measurement.opaque_steps).toEqual(['prompt-guard.sh']);
-    expect(record.measurement.complete_metrics).toEqual([
-      'runtime_entries',
-      'child_processes',
-      'elapsed_ms',
-    ]);
-    expect(record.metrics.files_read).toBe(0);
-    expect(record.measurement.incomplete_metrics).toContain('files_read');
-  });
-
   test('semantic fingerprints detect repeated equivalent blocked events', () => {
     const repoRoot = tempDir('hrd08-event-fingerprint-');
-    const run = () => {
-      const telemetry = createHookEventTelemetry({
-        repoRoot,
-        event: 'PreToolUse',
-        routeId: 'edit',
-      });
-      telemetry.recordStateResolution();
-      telemetry.markMetricsComplete(['state_resolutions']);
-      telemetry.recordStep({
-        name: 'mutation-guard',
-        execution: 'in_process',
-        startedAt: new Date(),
-        elapsedMs: Math.random() * 100,
-        exitCode: 2,
-        outputBytes: 42,
-        blocked: true,
-      });
-      return telemetry.finalize({ exitCode: 2, reason: 'script-failed', blocked: true });
-    };
+    const run = (reason: string) => createHookEventTelemetry({ repoRoot, event: 'PreToolUse', routeId: 'edit' }).finalize({
+      identity: identity(),
+      exitCode: 2,
+      blocked: true,
+      reason,
+    });
 
-    const first = run();
-    const second = run();
+    const first = run('blocked');
+    const second = run('blocked');
     expect(first.event_id).not.toBe(second.event_id);
     expect(first.fingerprint).toBe(second.fingerprint);
+    expect(run('handler-failed').fingerprint).not.toBe(first.fingerprint);
   });
 
   test('telemetry write failure never changes the hook result record', () => {
     const parent = tempDir('hrd08-event-fail-open-');
     const notDirectory = join(parent, 'not-a-directory');
     writeFileSync(notDirectory, 'occupied', 'utf8');
-    const telemetry = createHookEventTelemetry({
-      repoRoot: notDirectory,
-      event: 'Stop',
-      routeId: 'default',
-    });
+    const telemetry = createHookEventTelemetry({ repoRoot: notDirectory, event: 'Stop', routeId: 'default' });
+    const result = { identity: identity(), exitCode: 0, blocked: false, reason: 'ok' };
 
-    expect(() => telemetry.finalize({ exitCode: 0, reason: 'ok' })).not.toThrow();
-    expect(telemetry.finalize({ exitCode: 0, reason: 'ok' }).result_reason).toBe('ok');
+    expect(() => telemetry.finalize(result)).not.toThrow();
+    expect(telemetry.finalize(result).reason).toBe('ok');
   });
 
-  test('strict validator rejects the retired per-script protocol', () => {
-    expect(isHookEventTelemetryRecord({ protocol: 1, script: 'prompt-guard.sh' })).toBe(false);
-  });
-
-  test('effect observations are additive, validated, and fingerprinted', () => {
-    const repoRoot = tempDir('hrd08-effect-observation-');
-    const base = () => createHookEventTelemetry({ repoRoot, event: 'PostToolUse', routeId: 'edit' });
-    const complete = base().finalize({
-      exitCode: 0,
-      reason: 'ok',
-      effectObservation: {
-        contract_id: 'mutation-observed.durable-journal.v1',
-        boundary: 'durable-emission',
-        cardinality: 'zero-or-one',
-        recovery: 'retry-converges',
-        state: 'committed_complete',
-        committed_phases: ['journal'],
-        last_committed_phase: 'journal',
-      },
-    });
-    const partial = base().finalize({
-      exitCode: 1,
-      reason: 'handler-failed',
-      effectObservation: {
-        contract_id: 'mutation-observed.durable-journal.v1',
-        boundary: 'durable-emission',
-        cardinality: 'zero-or-one',
-        recovery: 'retry-converges',
-        state: 'unknown_partial',
-        committed_phases: [],
-        last_committed_phase: null,
-      },
-    });
-    expect(isHookEventTelemetryRecord(complete)).toBe(true);
-    expect(isHookEventTelemetryRecord(partial)).toBe(true);
-    expect(complete.fingerprint).not.toBe(partial.fingerprint);
-    expect(isHookEventTelemetryRecord({ ...complete, effect_observation: { ...complete.effect_observation!, state: 'bogus' } })).toBe(false);
+  test('the benchmark reader rejects the retired per-script protocol', () => {
+    const repoRoot = tempDir('hrd08-retired-protocol-');
+    mkdirSync(join(repoRoot, '.ai/harness/runs'), { recursive: true });
+    writeFileSync(join(repoRoot, HOOK_EVENT_TELEMETRY_PATH), `${JSON.stringify({ protocol: 1, script: 'prompt-guard.sh' })}\n`);
+    expect(() => readHookMetrics(repoRoot)).toThrow('invalid or mixed hook event telemetry protocol');
   });
 });

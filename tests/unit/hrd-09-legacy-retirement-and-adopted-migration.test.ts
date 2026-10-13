@@ -14,7 +14,7 @@ import { tmpdir } from 'os';
 import { delimiter, join } from 'path';
 import { planAdoption } from '../../src/core/adoption/plan';
 import { applyAdoptionPlan } from '../../src/effects/fs-transaction';
-import { isHookEventTelemetryRecord } from '../../src/cli/hook/event-telemetry';
+import { HOOK_EVENT_TELEMETRY_PROTOCOL } from '../../src/cli/hook/event-telemetry';
 import { ROUTES, type HookEvent, type RouteId } from '../../src/cli/hook/route-registry';
 import { runHook } from '../../src/cli/hook/runtime';
 
@@ -152,15 +152,12 @@ describe('HRD-09 terminal runtime migration', () => {
           routeId: route.routeId,
           cwd: repo,
           input: fixture.input,
-          stdio: 'ignore',
           env: {
             ...process.env,
             HOME: home,
             PATH: `${fakeBin}${delimiter}${process.env.PATH ?? ''}`,
             HOOK_REPO_ROOT: repo,
             HOOK_HOST: fixture.host,
-            HOOK_SESSION_ID: 'hrd09-fixture',
-            HOOK_RUN_ID: 'hrd09-fixture-run',
             REPO_HARNESS_WORKFLOW_PROFILE: 'routine',
             REPO_HARNESS_CLI: join(ROOT, 'src/cli/index.ts'),
           },
@@ -174,19 +171,9 @@ describe('HRD-09 terminal runtime migration', () => {
       expect(new Set(records.map((record) => `${(record as { event: string }).event}.${(record as { route_id: string }).route_id}`)))
         .toEqual(new Set(ROUTES.map((route) => `${route.event}.${route.routeId}`)));
       for (const record of records) {
-        expect(isHookEventTelemetryRecord(record)).toBe(true);
-        const typed = record as {
-          runtime_entries: number;
-          steps: Array<{ name: string; execution: string }>;
-          metrics: { child_processes: number };
-          measurement: { opaque_steps: string[] };
-        };
-        expect(typed.runtime_entries).toBe(1);
-        expect(typed.steps).toHaveLength(1);
-        expect(typed.steps[0]?.execution).toBe('in_process');
-        expect(typed.metrics.child_processes).toBe(0);
-        expect(typed.measurement.opaque_steps).toEqual([]);
-        for (const retired of RETIRED_BASENAMES) expect(typed.steps[0]?.name).not.toContain(retired);
+        expect((record as { protocol: string }).protocol).toBe(HOOK_EVENT_TELEMETRY_PROTOCOL);
+        // v2 records carry no step names; nothing in a record may name a retired script.
+        for (const retired of RETIRED_BASENAMES) expect(JSON.stringify(record)).not.toContain(retired);
       }
       expect(existsSync(providerLog) ? readFileSync(providerLog, 'utf8') : '').toBe('');
     } finally {

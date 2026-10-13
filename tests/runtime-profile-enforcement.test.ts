@@ -62,7 +62,7 @@ function preEdit(cwd: string, path: string, extraEnv: NodeJS.ProcessEnv = {}) {
     cwd,
     input: JSON.stringify({ tool_input: { file_path: path } }),
     encoding: 'utf-8',
-    env: { ...process.env, HOOK_REPO_ROOT: cwd, ...extraEnv },
+    env: { ...process.env, HOOK_HOST: 'claude', HOOK_REPO_ROOT: cwd, ...extraEnv },
   });
 }
 
@@ -71,7 +71,7 @@ function preApplyPatch(cwd: string, patch: string, extraEnv: NodeJS.ProcessEnv =
     cwd,
     input: JSON.stringify({ tool_name: 'apply_patch', tool_input: { command: patch } }),
     encoding: 'utf-8',
-    env: { ...process.env, HOOK_REPO_ROOT: cwd, ...extraEnv },
+    env: { ...process.env, HOOK_HOST: 'claude', HOOK_REPO_ROOT: cwd, ...extraEnv },
   });
 }
 
@@ -107,8 +107,8 @@ describe('risk-based runtime profile enforcement', () => {
       initRepo(cwd);
       const result = preEdit(cwd, 'src/math.ts');
       expect(result.status).toBe(0);
-      expect(result.stdout).not.toContain('PlanStatusGuard');
-      expect(result.stdout).toContain('TDD Guard');
+      expect(`${result.stdout}${result.stderr}`).not.toContain('PlanStatusGuard');
+      expect(`${result.stdout}${result.stderr}`).toContain('TDD Guard');
     } finally { rmSync(cwd, { recursive: true, force: true }); }
   }, 30_000);
 
@@ -143,7 +143,7 @@ describe('risk-based runtime profile enforcement', () => {
       const result = preEdit(cwd, target);
       expect(result.status).toBe(0);
       expect(`${result.stdout}${result.stderr}`).not.toContain('unsafe state source path');
-      expect(result.stdout).not.toContain('TDD Guard');
+      expect(`${result.stdout}${result.stderr}`).not.toContain('TDD Guard');
     } finally {
       rmSync(cwd, { recursive: true, force: true });
       rmSync(outside, { recursive: true, force: true });
@@ -161,7 +161,7 @@ describe('risk-based runtime profile enforcement', () => {
         const result = preEdit(cwd, target);
         expect(result.status).toBe(0);
         expect(`${result.stdout}${result.stderr}`).not.toContain('unsafe state source path');
-        expect(result.stdout).not.toContain('TDD Guard');
+        expect(`${result.stdout}${result.stderr}`).not.toContain('TDD Guard');
       }
     } finally { rmSync(cwd, { recursive: true, force: true }); }
   }, 30_000);
@@ -173,7 +173,7 @@ describe('risk-based runtime profile enforcement', () => {
       writeFileSync(join(cwd, 'docs.spec.tmp'), '');
       const result = preEdit(cwd, 'src/feature.ts', { REPO_HARNESS_WORKFLOW_PROFILE: 'routine' });
       expect(result.status).toBe(0);
-      expect(result.stdout).not.toContain('action\":\"block');
+      expect(`${result.stdout}${result.stderr}`).not.toContain('action\":\"block');
     } finally { rmSync(cwd, { recursive: true, force: true }); }
   }, 30_000);
 
@@ -188,7 +188,7 @@ describe('risk-based runtime profile enforcement', () => {
         '*** End Patch',
       ].join('\n'));
       expect(migration.status).toBe(0);
-      expect(migration.stdout).not.toContain('action\":\"block');
+      expect(`${migration.stdout}${migration.stderr}`).not.toContain('action\":\"block');
 
       // _ops/secret.txt is listed first: OpsPrivateGuard is a pure path match
       // evaluated before workflow-profile resolution, so checking it first keeps
@@ -214,7 +214,7 @@ describe('risk-based runtime profile enforcement', () => {
       initRepo(cwd);
       const result = preEdit(cwd, '.github/workflows/release.yml');
       expect(result.status).toBe(0);
-      expect(result.stdout).not.toContain('action\":\"block');
+      expect(`${result.stdout}${result.stderr}`).not.toContain('action\":\"block');
     } finally { rmSync(cwd, { recursive: true, force: true }); }
   }, 30_000);
 });
@@ -226,8 +226,8 @@ describe('apply_patch batch-scope resolves the full pending write scope (guard g
       initRepo(cwd);
       const result = preApplyPatch(cwd, patchFromFiles(['src/alpha.ts', 'src/beta.ts', 'src/gamma.ts']));
       expect(result.status).toBe(0);
-      expect(result.stdout).not.toContain('PlanStatusGuard');
-      expect(result.stdout).not.toContain('SpecGuard');
+      expect(`${result.stdout}${result.stderr}`).not.toContain('PlanStatusGuard');
+      expect(`${result.stdout}${result.stderr}`).not.toContain('SpecGuard');
     } finally { rmSync(cwd, { recursive: true, force: true }); }
   }, 30_000);
 
@@ -237,7 +237,7 @@ describe('apply_patch batch-scope resolves the full pending write scope (guard g
       initRepo(cwd);
       const result = preApplyPatch(cwd, patchFromFiles(FOUR_NORMAL_FILES));
       expect(result.status).toBe(0);
-      expect(result.stdout).not.toContain('action\":\"block');
+      expect(`${result.stdout}${result.stderr}`).not.toContain('action\":\"block');
     } finally { rmSync(cwd, { recursive: true, force: true }); }
   }, 30_000);
 
@@ -281,7 +281,7 @@ describe('apply_patch batch-scope resolves the full pending write scope (guard g
       }));
       const result = preApplyPatch(cwd, patchFromFiles(['src/module-a/a.ts', 'src/module-b/b.ts']));
       expect(result.status).toBe(0);
-      expect(result.stdout).not.toContain('action\":\"block');
+      expect(`${result.stdout}${result.stderr}`).not.toContain('action\":\"block');
     } finally { rmSync(cwd, { recursive: true, force: true }); }
   }, 30_000);
 
@@ -294,7 +294,7 @@ describe('apply_patch batch-scope resolves the full pending write scope (guard g
       ];
       const result = preApplyPatch(cwd, patchFromFiles(reorderedWithDuplicate));
       expect(result.status).toBe(0);
-      expect(result.stdout).not.toContain('action\":\"block');
+      expect(`${result.stdout}${result.stderr}`).not.toContain('action\":\"block');
 
       const direct = resolveStateDirect(cwd, reorderedWithDuplicate);
       expect(direct.json.profile_signals?.targetPathCount).toBe(4);
@@ -315,7 +315,7 @@ describe('apply_patch batch-scope resolves the full pending write scope (guard g
         '*** End Patch',
       ].join('\n'));
       expect(result.status).toBe(0);
-      expect(result.stdout).not.toContain('action\":\"block');
+      expect(`${result.stdout}${result.stderr}`).not.toContain('action\":\"block');
     } finally { rmSync(cwd, { recursive: true, force: true }); }
   }, 30_000);
 
@@ -329,7 +329,7 @@ describe('apply_patch batch-scope resolves the full pending write scope (guard g
         { REPO_HARNESS_WORKFLOW_PROFILE: 'routine' },
       );
       expect(result.status).toBe(0);
-      expect(result.stdout).toContain('WorkflowObservation');
+      expect(`${result.stdout}${result.stderr}`).toContain('WorkflowObservation');
 
       const direct = resolveStateDirect(cwd, FOUR_NORMAL_FILES, ['--profile', 'routine']);
       expect(direct.json.workflow_profile).toBeNull();
@@ -388,8 +388,8 @@ describe('implementation-surface predicate excludes workflow-surface paths from 
       initRepo(cwd);
       const result = preApplyPatch(cwd, patchFromFiles(['docs/a.md', 'docs/b.md', 'docs/c.md', 'docs/d.md']));
       expect(result.status).toBe(0);
-      expect(result.stdout).not.toContain('PlanStatusGuard');
-      expect(result.stdout).not.toContain('SpecGuard');
+      expect(`${result.stdout}${result.stderr}`).not.toContain('PlanStatusGuard');
+      expect(`${result.stdout}${result.stderr}`).not.toContain('SpecGuard');
     } finally { rmSync(cwd, { recursive: true, force: true }); }
   }, 30_000);
 
@@ -456,7 +456,7 @@ describe('Canonical risk failures remain visible without preventing local repair
 
       const result = preEdit(cwd, 'src/feature.ts');
       expect(result.status).toBe(0);
-      expect(result.stdout).toContain('WorkflowObservation');
+      expect(`${result.stdout}${result.stderr}`).toContain('WorkflowObservation');
     } finally { rmSync(cwd, { recursive: true, force: true }); }
   }, 30_000);
 

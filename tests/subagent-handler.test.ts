@@ -8,7 +8,59 @@ import {
   EXECUTION_BOUNDARY_MARKER,
   LONG_COMMAND_GUARDRAIL_MARKER,
   runSubagentHandler,
+  type SubagentHandlerEvent,
 } from '../src/cli/hook/subagent-handler';
+import { payloadIdentityField, type HookPayload } from '../src/cli/hook/hook-input';
+import { HOST_RENDERERS } from '../src/cli/hook/hook-protocol';
+import type { RouteHost, RouteId } from '../src/cli/hook/route-registry';
+
+const SUBAGENT_ROUTE: Readonly<Record<SubagentHandlerEvent, RouteId>> = {
+  PreToolUse: 'subagent',
+  UserPromptSubmit: 'delegation',
+  SubagentStart: 'context',
+  SubagentStop: 'quality',
+};
+
+/**
+ * Runs the typed handler with the identity the runtime derives (host from
+ * HOOK_HOST, ids from the payload) and renders it through the host table.
+ * The default env is a Claude host, as the runtime sees it without Codex.
+ */
+function invokeSubagent(opts: {
+  readonly event: SubagentHandlerEvent;
+  readonly repoRoot: string;
+  readonly payload: HookPayload;
+  readonly env?: NodeJS.ProcessEnv;
+  readonly now?: () => Date;
+}) {
+  const env = opts.env ?? { ...process.env, HOOK_HOST: 'claude' };
+  const host = env.HOOK_HOST;
+  if (host !== 'claude' && host !== 'codex' && host !== 'pi') throw new Error(`invokeSubagent needs HOOK_HOST, got ${String(host)}`);
+  const result = runSubagentHandler({
+    event: opts.event,
+    repoRoot: opts.repoRoot,
+    payload: opts.payload,
+    identity: {
+      host: host satisfies RouteHost,
+      sessionId: payloadIdentityField(opts.payload, 'session_id'),
+      runId: payloadIdentityField(opts.payload, 'run_id'),
+      turnId: payloadIdentityField(opts.payload, 'turn_id'),
+    },
+    env,
+    now: opts.now,
+  });
+  const rendered = HOST_RENDERERS[host]({
+    event: opts.event,
+    routeId: SUBAGENT_ROUTE[opts.event],
+    repoRoot: opts.repoRoot,
+    exitCode: result.exitCode,
+    reason: result.reason ?? 'ok',
+    permission: result.permission,
+    additionalContext: result.additionalContext ?? null,
+    diagnostics: result.diagnostics ?? '',
+  });
+  return { ...result, stdout: rendered.stdout, stderr: rendered.stderr };
+}
 
 const REPO_ROOT = join(import.meta.dir, '..');
 const BOUNDARY_MARKER = EXECUTION_BOUNDARY_MARKER;
@@ -53,11 +105,11 @@ function composedChildStack(
   env: NodeJS.ProcessEnv,
 ): { composed: string; startContext: string; advisorContext: string; personaInstructions: string } {
   const persona = installGoldenPersona(repoRoot, agent);
-  const advisor = runSubagentHandler({
+  const advisor = invokeSubagent({
     event: 'UserPromptSubmit',
     repoRoot,
     env,
-    input: JSON.stringify({ session_id: `session-${agent}`, prompt: '/delegate run two bounded workstreams' }),
+    payload: { session_id: `session-${agent}`, prompt: '/delegate run two bounded workstreams' },
   });
   const advisorContext = advisor.stdout ? additionalContext(advisor.stdout) : '';
   const start = startSubagent(repoRoot, {
@@ -91,11 +143,11 @@ function seedDelegation(
   env: NodeJS.ProcessEnv = codexEnv(),
 ): void {
   mkdirSync(join(repoRoot, '.ai/harness'), { recursive: true });
-  const seeded = runSubagentHandler({
+  const seeded = invokeSubagent({
     event: 'UserPromptSubmit',
     repoRoot,
     env,
-    input: JSON.stringify({ prompt: '/delegate use bounded subagents', ...payload }),
+    payload: { prompt: '/delegate use bounded subagents', ...payload },
   });
   expect(seeded.exitCode).toBe(0);
   expect(seeded.stdout).not.toBe('');
@@ -106,11 +158,11 @@ function startSubagent(
   payload: Record<string, unknown>,
   env: NodeJS.ProcessEnv = codexEnv(),
 ) {
-  return runSubagentHandler({
+  return invokeSubagent({
     event: 'SubagentStart',
     repoRoot,
     env,
-    input: JSON.stringify({ hook_event_name: 'SubagentStart', ...payload }),
+    payload: { hook_event_name: 'SubagentStart', ...payload },
   });
 }
 
@@ -160,8 +212,9 @@ async function spawnDirectSubagentStart(
     'const result = runSubagentHandler({',
     '  event: "SubagentStart",',
     '  repoRoot: process.argv[1],',
-    '  env: { ...process.env, HOOK_HOST: "codex" },',
-    '  input: process.argv[2],',
+    '  payload: JSON.parse(process.argv[2]),',
+    '  identity: { host: "codex", sessionId: null, runId: null, turnId: null },',
+    '  env: process.env,',
     '});',
     'process.stdout.write(JSON.stringify(result));',
     'process.exitCode = result.exitCode;',
@@ -183,14 +236,14 @@ describe('typed subagent hook handlers', () => {
   test('ports the return-channel allow/deny decisions and idempotence', () => {
     const repoRoot = tempRepo();
     try {
-      const spawn = runSubagentHandler({
+      const spawn = invokeSubagent({
         event: 'PreToolUse',
         repoRoot,
-        input: JSON.stringify({
+        payload: {
           hook_event_name: 'PreToolUse',
           tool_name: 'Task',
           tool_input: { description: 'Explore repo', prompt: 'Write the report.' },
-        }),
+        },
       });
       expect(spawn.exitCode).toBe(0);
       const spawnOutput = jsonResult(spawn.stdout);
@@ -201,25 +254,25 @@ describe('typed subagent hook handlers', () => {
       expect(updated.prompt).toContain('[repo-harness:return-channel]');
       expect(updated.prompt).toContain('final text');
 
-      const idempotent = runSubagentHandler({
+      const idempotent = invokeSubagent({
         event: 'PreToolUse',
         repoRoot,
-        input: JSON.stringify({ tool_name: 'Agent', tool_input: { prompt: updated.prompt } }),
+        payload: { tool_name: 'Agent', tool_input: { prompt: updated.prompt } },
       });
       expect(idempotent.stdout).toBe('');
 
-      const deny = runSubagentHandler({
+      const deny = invokeSubagent({
         event: 'PreToolUse',
         repoRoot,
-        input: JSON.stringify({ tool_name: 'SendUserMessage', agent_id: 'agent-a', tool_input: { message: 'report' } }),
+        payload: { tool_name: 'SendUserMessage', agent_id: 'agent-a', tool_input: { message: 'report' } },
       });
       expect((jsonResult(deny.stdout).hookSpecificOutput as Record<string, unknown>).permissionDecision).toBeUndefined();
       expect((jsonResult(deny.stdout).hookSpecificOutput as Record<string, unknown>).additionalContext).toContain('final text');
 
-      const mainLoop = runSubagentHandler({
+      const mainLoop = invokeSubagent({
         event: 'PreToolUse',
         repoRoot,
-        input: JSON.stringify({ tool_name: 'SendUserMessage', tool_input: { message: 'main loop' } }),
+        payload: { tool_name: 'SendUserMessage', tool_input: { message: 'main loop' } },
       });
       expect(mainLoop.stdout).toBe('');
     } finally {
@@ -245,11 +298,11 @@ describe('typed subagent hook handlers', () => {
       writeFileSync(join(repoRoot, 'plans/plan-test.md'), '# plan\n');
       writeFileSync(join(repoRoot, 'tasks/contracts/test.contract.md'), '> **Status**: Active\n');
       const env = codexEnv({ HOME: tempRepo() });
-      const output = runSubagentHandler({
+      const output = invokeSubagent({
         event: 'UserPromptSubmit',
         repoRoot,
         env,
-        input: JSON.stringify({ session_id: 'session-1', prompt: '/delegate inspect in parallel' }),
+        payload: { session_id: 'session-1', prompt: '/delegate inspect in parallel' },
         now: () => new Date('2026-07-21T12:00:00.000Z'),
       });
       expect(output.exitCode).toBe(0);
@@ -278,32 +331,32 @@ describe('typed subagent hook handlers', () => {
       expect(state).not.toHaveProperty('stop_fallback');
       expect(state).not.toHaveProperty('fallback_used');
 
-      const silent = runSubagentHandler({
+      const silent = invokeSubagent({
         event: 'UserPromptSubmit',
         repoRoot,
         env,
-        input: JSON.stringify({ session_id: 'session-silent', prompt: 'Should we use subagents for this?' }),
+        payload: { session_id: 'session-silent', prompt: 'Should we use subagents for this?' },
       });
       expect(silent.stdout).toBe('');
-      const quoted = runSubagentHandler({
+      const quoted = invokeSubagent({
         event: 'UserPromptSubmit',
         repoRoot,
         env,
-        input: JSON.stringify({ session_id: 'session-quoted', prompt: 'Explain /delegate; do not spawn anything.' }),
+        payload: { session_id: 'session-quoted', prompt: 'Explain /delegate; do not spawn anything.' },
       });
       expect(quoted.stdout).toBe('');
-      const commandLikeProse = runSubagentHandler({
+      const commandLikeProse = invokeSubagent({
         event: 'UserPromptSubmit',
         repoRoot,
         env,
-        input: JSON.stringify({ session_id: 'session-command-like', prompt: '/delegate? Explain the command without running it.' }),
+        payload: { session_id: 'session-command-like', prompt: '/delegate? Explain the command without running it.' },
       });
       expect(commandLikeProse.stdout).toBe('');
-      const nonCodex = runSubagentHandler({
+      const nonCodex = invokeSubagent({
         event: 'UserPromptSubmit',
         repoRoot,
         env: { ...env, HOOK_HOST: 'claude' },
-        input: JSON.stringify({ prompt: '/delegate inspect in parallel' }),
+        payload: { prompt: '/delegate inspect in parallel' },
       });
       expect(nonCodex.stdout).toBe('');
     } finally {
@@ -319,24 +372,24 @@ describe('typed subagent hook handlers', () => {
       mkdirSync(join(repoRoot, '.codex/agents'), { recursive: true });
       writeFileSync(join(repoRoot, '.codex/agents/worker.toml'), 'name = "fast-worker"\ndescription = "Bounded worker"\ndeveloper_instructions = "Stay in scope."\nmodel = "gpt-5.6-sol"\nsandbox_mode = "workspace-write"\n');
       const env = codexEnv({ HOME: home });
-      runSubagentHandler({
+      invokeSubagent({
         event: 'UserPromptSubmit',
         repoRoot,
         env,
-        input: JSON.stringify({ session_id: 'session-role', prompt: '/delegate use a worker' }),
+        payload: { session_id: 'session-role', prompt: '/delegate use a worker' },
       });
-      const output = runSubagentHandler({
+      const output = invokeSubagent({
         event: 'SubagentStart',
         repoRoot,
         env,
-        input: JSON.stringify({
+        payload: {
           hook_event_name: 'SubagentStart',
           session_id: 'session-role',
           turn_id: 'turn-role',
           agent_id: 'agent-worker',
           agent_type: 'fast-worker',
           model: 'gpt-5.6-sol',
-        }),
+        },
         now: () => new Date('2026-07-21T12:01:00.000Z'),
       });
       expect(output.exitCode).toBe(0);
@@ -705,66 +758,66 @@ describe('typed subagent hook handlers', () => {
   test('ports SubagentStop quality gating and same-scope idempotence', () => {
     const repoRoot = tempRepo();
     try {
-      const thin = runSubagentHandler({
+      const thin = invokeSubagent({
         event: 'SubagentStop',
         repoRoot,
         env: codexEnv(),
-        input: JSON.stringify({ session_id: 'session-a', subagent_id: 'agent-a', final_message: 'looks good' }),
+        payload: { session_id: 'session-a', subagent_id: 'agent-a', final_message: 'looks good' },
         now: () => new Date('2026-07-21T12:02:00.000Z'),
       });
       expect(thin.exitCode).toBe(0);
       expect(((jsonResult(thin.stdout).hookSpecificOutput as Record<string, unknown>).additionalContext as string)).toContain('[SubagentQuality]');
       expect(jsonResult(thin.stdout).decision).toBeUndefined();
 
-      const repeated = runSubagentHandler({
+      const repeated = invokeSubagent({
         event: 'SubagentStop',
         repoRoot,
         env: codexEnv(),
-        input: JSON.stringify({ session_id: 'session-a', subagent_id: 'agent-a', final_message: 'looks good' }),
+        payload: { session_id: 'session-a', subagent_id: 'agent-a', final_message: 'looks good' },
       });
       expect(repeated.stdout).toBe('');
 
-      const differentSubagent = runSubagentHandler({
+      const differentSubagent = invokeSubagent({
         event: 'SubagentStop',
         repoRoot,
         env: codexEnv(),
-        input: JSON.stringify({ session_id: 'session-a', subagent_id: 'agent-b', final_message: 'looks good' }),
+        payload: { session_id: 'session-a', subagent_id: 'agent-b', final_message: 'looks good' },
       });
       expect(jsonResult(differentSubagent.stdout).decision).toBeUndefined();
 
-      const differentSession = runSubagentHandler({
+      const differentSession = invokeSubagent({
         event: 'SubagentStop',
         repoRoot,
         env: codexEnv(),
-        input: JSON.stringify({ session_id: 'session-b', subagent_id: 'agent-a', final_message: 'looks good' }),
+        payload: { session_id: 'session-b', subagent_id: 'agent-a', final_message: 'looks good' },
       });
       expect(jsonResult(differentSession.stdout).decision).toBeUndefined();
 
-      const unresolvedError = runSubagentHandler({
+      const unresolvedError = invokeSubagent({
         event: 'SubagentStop',
         repoRoot,
         env: codexEnv(),
-        input: JSON.stringify({
+        payload: {
           session_id: 'session-error',
           subagent_id: 'agent-error',
           final_message: 'The investigation failed with a timeout while reading the repository. The operation failed again and the requested mapping remains blocked without any further explanation or parent action.',
-        }),
+        },
       });
       expect(((jsonResult(unresolvedError.stdout).hookSpecificOutput as Record<string, unknown>).additionalContext as string)).toContain('unresolved error');
 
-      const recursiveStop = runSubagentHandler({
+      const recursiveStop = invokeSubagent({
         event: 'SubagentStop',
         repoRoot,
         env: codexEnv(),
-        input: JSON.stringify({ subagent_stop_hook_active: true, final_message: 'looks good' }),
+        payload: { subagent_stop_hook_active: true, final_message: 'looks good' },
       });
       expect(recursiveStop.stdout).toBe('');
 
-      const complete = runSubagentHandler({
+      const complete = invokeSubagent({
         event: 'SubagentStop',
         repoRoot,
         env: codexEnv(),
-        input: JSON.stringify({ final_message: 'Inspected src/cli/hook/subagent-handler.ts and tests/subagent-handler.test.ts. Evidence: typed route decisions and state writes match the four retired scripts. Ran bun test tests/subagent-handler.test.ts. Risk: host payload fields may evolve; parent should verify route fixtures.' }),
+        payload: { final_message: 'Inspected src/cli/hook/subagent-handler.ts and tests/subagent-handler.test.ts. Evidence: typed route decisions and state writes match the four retired scripts. Ran bun test tests/subagent-handler.test.ts. Risk: host payload fields may evolve; parent should verify route fixtures.' },
       });
       expect(complete.stdout).toBe('');
     } finally {
@@ -779,10 +832,10 @@ describe('typed subagent hook handlers', () => {
   test('a repository with no coordination state receives no slice on either mount', () => {
     const repoRoot = tempRepo();
     try {
-      const spawn = runSubagentHandler({
+      const spawn = invokeSubagent({
         event: 'PreToolUse',
         repoRoot,
-        input: JSON.stringify({ tool_name: 'Task', tool_input: { prompt: 'Write the report.' } }),
+        payload: { tool_name: 'Task', tool_input: { prompt: 'Write the report.' } },
       });
       const prompt = String(
         ((jsonResult(spawn.stdout).hookSpecificOutput as Record<string, unknown>)
@@ -791,11 +844,11 @@ describe('typed subagent hook handlers', () => {
       expect(prompt).toContain('[repo-harness:return-channel]');
       expect(prompt).not.toContain('[repo-harness:board-slice]');
 
-      const start = runSubagentHandler({
+      const start = invokeSubagent({
         event: 'SubagentStart',
         repoRoot,
         env: codexEnv(),
-        input: JSON.stringify({ agent_type: 'default', model: 'gpt-x', agent_id: 'a-1', turn_id: 't-1' }),
+        payload: { agent_type: 'default', model: 'gpt-x', agent_id: 'a-1', turn_id: 't-1' },
       });
       const context = String(
         (jsonResult(start.stdout).hookSpecificOutput as Record<string, unknown>).additionalContext,

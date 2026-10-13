@@ -1,5 +1,6 @@
 import { expect } from "bun:test";
 import { listHelperFiles } from "../../src/effects/runtime/helper-runner";
+import { buildReviewSubject } from "../../src/effects/review/diff-fingerprint";
 import { spawnSync } from "child_process";
 import {
   chmodSync,
@@ -286,9 +287,7 @@ export function currentReviewBinding(cwd: string): { subject: string; targetRevi
     initGitRepo(cwd);
     commitAll(cwd, "fixture review baseline");
   }
-  const result = run("bun", [join(ROOT, "src/cli/hook-entry.ts"), "review-subject", "--target", "main", "--format", "json"], cwd);
-  expect(result.status).toBe(0);
-  const parsed = JSON.parse(result.stdout);
+  const parsed = buildReviewSubject(cwd, { targetRef: "main" });
   expect(parsed.status).toBe("ok");
   return { subject: parsed.review_subject_sha256, targetRevision: parsed.target_rev };
 }

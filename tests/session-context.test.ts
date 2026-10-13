@@ -26,6 +26,7 @@ import {
   buildSessionStartSections,
   minimalChangeSessionContent,
   minimalChangeSessionSection,
+  projectOwedCapabilitiesSessionSection,
   runDetachedToolingPopulate,
   securitySentinelSessionContent,
   securitySentinelSessionSection,
@@ -36,7 +37,6 @@ import {
   type SessionContextCollector,
 } from "../src/cli/hook/session-context";
 import { budgetSessionContext } from "../src/cli/hook/session-context-budget";
-import { projectOwedCapabilitiesSessionSection } from "../src/cli/hook/runtime";
 import type { EffectiveState } from "../src/core/state/types";
 import { createStateInputCollector } from "../src/effects/loop/state-input-collector";
 import { appendEvidenceEvent, appendGenesisRecord } from "../src/effects/evidence/event-log";
@@ -114,9 +114,13 @@ function withTmpHome(fn: (home: string) => void): void {
 
 function freshCollector(repoRoot: string): SessionContextCollector {
   return createStateInputCollector({
-    event: "SessionStart",
     repoRoot,
-    resolveSessionEffectiveState: () => null,
+    resolveEffectiveState: () => ({
+      ok: false,
+      reason_code: "state_resolution_failed",
+      error_hash: "sha256:unused",
+      message: "session sections do not resolve Effective State",
+    }),
   });
 }
 
@@ -1238,11 +1242,11 @@ describe("tooling-advisory detached populate (gatekeeper MEDIUM finding)", () =>
     }
 
     function sessionStart(repoRoot: string, sessionId: string): string {
-      const env: NodeJS.ProcessEnv = { ...process.env, REPO_HARNESS_SESSION_SECURITY_SCAN: "1", HOOK_HOST: "codex", HOOK_REPO_ROOT: repoRoot, HOOK_SESSION_ID: sessionId };
+      const env: NodeJS.ProcessEnv = { ...process.env, REPO_HARNESS_SESSION_SECURITY_SCAN: "1", HOOK_HOST: "codex", HOOK_REPO_ROOT: repoRoot };
       for (const key of Object.keys(env)) if (key.startsWith("REPO_HARNESS_TOOLING_ADVISORY")) delete env[key];
       const output = execFileSync(process.execPath, [HOOK_ENTRY, "SessionStart", "--route", "default"], {
         cwd: repoRoot,
-        input: "{}",
+        input: JSON.stringify({ session_id: sessionId }),
         encoding: "utf-8",
         env,
       }).trim();

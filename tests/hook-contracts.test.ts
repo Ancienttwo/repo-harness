@@ -25,7 +25,6 @@ describe("Hook contracts", () => {
     expect(routes).toContain("readonly handler: HookHandlerId");
     expect(routes).not.toContain("readonly scripts");
     expect(registry).toContain("getHandlerForRoute");
-    expect(registry).toContain("ROUTES.map");
     expect(runtime).toContain("getHandlerForRoute");
     expect(runtime).not.toContain("run-hook.sh");
     expect(existsSync(join(ROOT, "assets/hooks/run-hook.sh"))).toBe(false);
@@ -49,18 +48,6 @@ describe("Hook contracts", () => {
     expect(handler).not.toContain("transcript");
     expect(handler).not.toContain("pty");
     expect(handler).not.toContain("resume");
-  });
-
-  test("typed hook input parser owns prompt, session, run, tool, and path accessors", () => {
-    const parser = read("src/cli/hook/hook-input.ts");
-    expect(parser).toContain("getPrompt");
-    expect(parser).toContain("getSessionId");
-    expect(parser).toContain("getRunId");
-    expect(parser).toContain("getToolName");
-    expect(parser).toContain("getFilePath");
-    expect(parser).toContain("getApplyPatchPaths");
-    expect(parser).toContain("CODEX_SESSION_ID");
-    expect(parser).toContain("[HookInput] WARN");
   });
 
 
@@ -201,7 +188,7 @@ describe("Hook contracts", () => {
     expect(handler).toContain("stop_hook_active");
     expect(handler).toContain("StopProjectionBatch");
     expect(handler).toContain("Stop may continue");
-    expect(handler).toContain("getStopEffectiveState");
+    expect(handler).toContain("getEffectiveState");
   });
 
   // HRD-05 retired assets/hooks/post-edit-guard.sh; doc-drift coverage now

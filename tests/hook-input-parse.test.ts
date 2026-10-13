@@ -1,59 +1,62 @@
 import { describe, expect, test } from "bun:test";
+import { mkdtempSync, realpathSync, rmSync } from "fs";
+import { tmpdir } from "os";
 import { join } from "path";
-import { parseHookInput } from "../src/cli/hook/hook-input";
+import {
+  HookPayloadError,
+  normalizeRepoRelativePath,
+  parseHookPayload,
+  payloadIdentityField,
+  payloadString,
+  payloadValue,
+} from "../src/cli/hook/hook-input";
 
-const ROOT = join(import.meta.dir, "..");
-
-describe("typed hook input", () => {
-  test("returns a value when a key is present in valid JSON", () => {
-    const input = parseHookInput(JSON.stringify({ run_id: "xyz" }), { repoRoot: ROOT });
-    expect(input.valid).toBe(true);
-    expect(input.getString(".run_id")).toBe("xyz");
-    expect(input.warnings).toEqual([]);
+describe("hook payload", () => {
+  test("parses one JSON object and reads dotted paths", () => {
+    const payload = parseHookPayload(JSON.stringify({ run_id: "xyz", tool_input: { command: "ls" } }));
+    expect(payloadString(payload, "run_id")).toBe("xyz");
+    expect(payloadString(payload, "tool_input.command")).toBe("ls");
+    expect(payloadValue(payload, "tool_input")).toEqual({ command: "ls" });
   });
 
-  test("returns the caller default silently when a key is absent from valid JSON", () => {
-    const input = parseHookInput(JSON.stringify({
-      session_id: "abc",
-      prompt: "hi",
-      hook_event_name: "UserPromptSubmit",
-    }), { repoRoot: ROOT });
-
-    expect(input.getString(".run_id")).toBe("");
-    expect(input.getString(".missing", "fallback")).toBe("fallback");
-    expect(input.warnings).toEqual([]);
+  test("an absent or non-string field reads as an empty string", () => {
+    const payload = parseHookPayload(JSON.stringify({ session_id: "abc", count: 3 }));
+    expect(payloadString(payload, "run_id")).toBe("");
+    expect(payloadString(payload, "count")).toBe("");
+    expect(payloadValue(payload, "session_id.deeper")).toBeUndefined();
   });
 
-  test("returns the caller default and records a warning for malformed JSON", () => {
-    const input = parseHookInput("not valid json{", { repoRoot: ROOT });
-
-    expect(input.valid).toBe(false);
-    expect(input.getString(".run_id")).toBe("");
-    expect(input.warnings).toHaveLength(1);
-    expect(input.warnings[0]).toContain("[HookInput] WARN");
-    expect(input.warnings[0]).toContain(".run_id");
+  test("empty input is an empty payload", () => {
+    expect(parseHookPayload(undefined)).toEqual({});
+    expect(parseHookPayload("")).toEqual({});
+    expect(parseHookPayload(Buffer.from("  \n"))).toEqual({});
   });
 
-  test("returns a caller default silently for empty input", () => {
-    const input = parseHookInput(undefined, { repoRoot: ROOT });
-
-    expect(input.valid).toBe(true);
-    expect(input.getString(".run_id", "fallback")).toBe("fallback");
-    expect(input.warnings).toEqual([]);
+  test("malformed JSON and non-object JSON fail instead of degrading to defaults", () => {
+    expect(() => parseHookPayload("not valid json{")).toThrow(HookPayloadError);
+    expect(() => parseHookPayload("[1, 2]")).toThrow(HookPayloadError);
+    expect(() => parseHookPayload("\"text\"")).toThrow(HookPayloadError);
+    expect(() => parseHookPayload("null")).toThrow(HookPayloadError);
   });
 
-  test("extracts every Codex apply_patch target path", () => {
-    const command = [
-      "*** Begin Patch",
-      "*** Update File: src/a.ts",
-      "@@",
-      "+a",
-      "*** Add File: deploy/sql/0001_demo.sql",
-      "+select 1;",
-      "*** End Patch",
-    ].join("\n");
-    const input = parseHookInput(JSON.stringify({ tool_input: { command } }), { repoRoot: ROOT });
+  test("identity fields are trimmed non-empty strings or null", () => {
+    const payload = parseHookPayload(JSON.stringify({ session_id: "  s-1  ", run_id: "   ", turn_id: 7 }));
+    expect(payloadIdentityField(payload, "session_id")).toBe("s-1");
+    expect(payloadIdentityField(payload, "run_id")).toBeNull();
+    expect(payloadIdentityField(payload, "turn_id")).toBeNull();
+    expect(payloadIdentityField(payload, "missing")).toBeNull();
+  });
+});
 
-    expect(input.getApplyPatchPaths()).toEqual(["src/a.ts", "deploy/sql/0001_demo.sql"]);
+describe("repository-relative paths", () => {
+  test("keeps relative paths, strips the repo root and keeps outside paths absolute", () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "hook-input-paths-")));
+    try {
+      expect(normalizeRepoRelativePath(root, "src/a.ts")).toBe("src/a.ts");
+      expect(normalizeRepoRelativePath(root, `${root}/src/a.ts`)).toBe("src/a.ts");
+      expect(normalizeRepoRelativePath(root, "/var/tmp/outside.txt")).toBe("/var/tmp/outside.txt");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

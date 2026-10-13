@@ -5,7 +5,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { ROUTES, type HookEvent, type RouteId } from '../src/cli/hook/route-registry';
 import { runHook } from '../src/cli/hook/runtime';
-import { isHookEventTelemetryRecord } from '../src/cli/hook/event-telemetry';
+import { HOOK_EVENT_TELEMETRY_PROTOCOL } from '../src/cli/hook/event-telemetry';
 
 interface FixtureRoute {
   readonly host: 'claude' | 'codex';
@@ -14,7 +14,7 @@ interface FixtureRoute {
 
 function fixtureInput(event: HookEvent, routeId: RouteId): FixtureRoute {
   switch (`${event}.${routeId}`) {
-    case 'SessionStart.default': return { host: 'claude' };
+    case 'SessionStart.default': return { host: 'claude', input: JSON.stringify({ session_id: 'characterization-session' }) };
     case 'PreToolUse.edit': return { host: 'claude', input: JSON.stringify({ tool_input: { file_path: 'src/example.ts' } }) };
     case 'PreToolUse.subagent': return { host: 'claude', input: JSON.stringify({ tool_name: 'Task', tool_input: { prompt: 'Inspect the repository and report findings.' } }) };
     case 'PostToolUse.edit': return { host: 'claude', input: JSON.stringify({ tool_input: { file_path: 'src/example.ts' } }) };
@@ -52,7 +52,7 @@ function telemetry(root: string): Record<string, unknown>[] {
 }
 
 describe('HRD-09 typed runtime characterization', () => {
-  test('all twelve public routes use one valid in-process telemetry step with no opaque runtime', () => {
+  test('every public route runs its typed handler and writes one v2 telemetry record', () => {
     const root = fixtureRepo();
     try {
       for (const route of ROUTES) {
@@ -66,31 +66,20 @@ describe('HRD-09 typed runtime characterization', () => {
             ...process.env,
             HOOK_REPO_ROOT: root,
             HOOK_HOST: fixture.host,
-            HOOK_SESSION_ID: 'characterization-session',
-            HOOK_RUN_ID: 'characterization-run',
             REPO_HARNESS_WORKFLOW_PROFILE: 'routine',
           },
         });
         expect(result.handler).toBe(route.handler);
-        expect(result.reason).toBe(result.exitCode === 0 ? 'ok' : 'handler-failed');
       }
 
       const records = telemetry(root);
       expect(records).toHaveLength(ROUTES.length);
       for (const record of records) {
-        expect(isHookEventTelemetryRecord(record)).toBe(true);
-        expect(record.runtime_entries).toBe(1);
-        expect(record.steps).toHaveLength(1);
-        const step = (record.steps as Array<Record<string, unknown>>)[0];
-        expect(step.execution).toBe('in_process');
-        expect(record.metrics).toMatchObject({ child_processes: 0 });
-        expect(record.measurement).toMatchObject({ opaque_steps: [] });
+        expect(record.protocol).toBe(HOOK_EVENT_TELEMETRY_PROTOCOL);
+        expect(record.fingerprint).toMatch(/^sha256:[0-9a-f]{64}$/);
       }
       const sessionStart = records.find((record) => record.event === 'SessionStart');
-      expect(sessionStart?.metrics).toMatchObject({
-        state_resolutions: 1,
-        child_processes: 0,
-      });
+      expect(sessionStart?.session_id).toBe('characterization-session');
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

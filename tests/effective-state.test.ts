@@ -16,9 +16,10 @@ import {
   resolveEffectiveState,
 } from '../src/effects/state/resolve-effective-state';
 import { stateVersionOwnerPath } from '../src/effects/state/git-state-version-store';
-import { projectEffectiveStateSessionSection } from '../src/cli/hook/runtime';
+import { projectEffectiveStateSessionSection } from '../src/cli/hook/session-context';
 import { runMutationGuard } from '../src/cli/hook/mutation-guard';
 import { createStateInputCollector } from '../src/effects/loop/state-input-collector';
+import { hookIdentity } from './helpers/hook-identity';
 import type { EffectiveState } from '../src/core/state/types';
 import {
   CONTRACT,
@@ -824,15 +825,14 @@ describe('effective state resolver', () => {
 
         const guard = runMutationGuard({
           collector: createStateInputCollector({
-            event: 'PreToolUse',
             repoRoot: cwd,
-            resolveSessionEffectiveState: () => null,
-            resolvePreEditEffectiveState: (targetPaths: readonly string[]): EffectiveState | null => (
-              resolveEffectiveState(cwd, Date.now(), { targetPaths, operationKind: 'edit' })
-            ),
+            resolveEffectiveState: (targetPaths) => ({
+              ok: true,
+              state: resolveEffectiveState(cwd, Date.now(), { targetPaths, operationKind: 'edit' }),
+            }),
           }),
-          input: JSON.stringify({ tool_input: { file_path: targetPath } }),
-          env: {},
+          payload: { tool_input: { file_path: targetPath } },
+          identity: hookIdentity(),
         });
         expect(guard.exitCode).toBe(0);
         expect(guard.stdout).toContain(`[WorkflowObservation] ${cause.key}; edit may continue.`);

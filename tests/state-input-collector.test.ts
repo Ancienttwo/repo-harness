@@ -2,7 +2,8 @@ import { describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { createStateInputCollector } from '../src/effects/loop/state-input-collector';
+import type { EffectiveState } from '../src/core/state/types';
+import { createStateInputCollector, type EffectiveStateResolution } from '../src/effects/loop/state-input-collector';
 
 interface Fixture {
   readonly root: string;
@@ -46,35 +47,33 @@ function normalize(snapshot: unknown, root: string): unknown {
   return JSON.parse(text);
 }
 
-function snapshotOf(collector: {
-  getRepoRoot(): string;
-  getWorktreeOwnership(): unknown;
-  getActivePlanMarker(): string | null;
-  getSessionEffectiveState(): unknown;
-}): unknown {
+function snapshotOf(collector: ReturnType<typeof createStateInputCollector>): unknown {
   return {
     repoRoot: collector.getRepoRoot(),
     worktreeOwnership: collector.getWorktreeOwnership(),
     activePlanMarker: collector.getActivePlanMarker(),
-    sessionEffectiveState: collector.getSessionEffectiveState(),
+    effectiveState: collector.getEffectiveState(),
   };
 }
 
-// A fixed, non-random stand-in for effectiveStateSessionSection: the real
-// function's own determinism is covered by tests/state/*; this test file is
-// about the collector's memoizing mechanics, not the CLI's resolve path.
-const FIXED_SESSION_STATE = {
-  id: 'effective-state',
-  priority: 2 as const,
-  content: '[HarnessState] {"task_id":null}',
-  mandatory: true,
-  actionable: true,
-  reference: 'repo-harness state resolve --json',
+// A fixed, non-random stand-in for a resolved Effective State: the resolver's
+// own determinism is covered by tests/state/*; this test file is about the
+// collector's memoizing mechanics, not the resolve path.
+const FIXED_RESOLUTION: EffectiveStateResolution = {
+  ok: true,
+  state: { task_id: null } as unknown as EffectiveState,
+};
+
+const FIXED_FAILURE: EffectiveStateResolution = {
+  ok: false,
+  reason_code: 'state_resolution_failed',
+  error_hash: 'sha256:fixture',
+  message: 'fixture failure',
 };
 
 describe('createStateInputCollector: laziness', () => {
   test('construction performs zero collections', () => {
-    let sessionCalls = 0;
+    let resolveCalls = 0;
     // A NUL byte makes every real fs call on this path throw synchronously
     // (Node rejects paths with embedded NUL bytes before touching the OS),
     // and the injected resolver throws outright -- so if construction
@@ -83,84 +82,83 @@ describe('createStateInputCollector: laziness', () => {
     let collector!: ReturnType<typeof createStateInputCollector>;
     expect(() => {
       collector = createStateInputCollector({
-        event: 'SessionStart',
         repoRoot: poisonedRoot,
-        resolveSessionEffectiveState: () => {
-          sessionCalls += 1;
-          throw new Error('resolveSessionEffectiveState must not run at construction');
+        resolveEffectiveState: () => {
+          resolveCalls += 1;
+          throw new Error('resolveEffectiveState must not run at construction');
         },
       });
     }).not.toThrow();
-    expect(sessionCalls).toBe(0);
+    expect(resolveCalls).toBe(0);
 
     // The poison is real, not merely unreachable: invoking any getter after
     // construction does hit it, confirming construction truly touched none
     // of them.
     expect(() => collector.getWorktreeOwnership()).toThrow();
     expect(() => collector.getActivePlanMarker()).toThrow();
-    expect(() => collector.getSessionEffectiveState()).toThrow();
-    expect(sessionCalls).toBe(1);
+    expect(() => collector.getEffectiveState()).toThrow();
+    expect(resolveCalls).toBe(1);
   });
 });
 
 describe('createStateInputCollector: memoization', () => {
-  test('getStopEffectiveState resolves at most once across downstream reads', () => {
+  test('getEffectiveState resolves at most once across N calls', () => {
     let calls = 0;
     const collector = createStateInputCollector({
-      event: 'Stop',
-      repoRoot: '/tmp/repo-harness-stop-collector',
-      resolveSessionEffectiveState: () => null,
-      resolveStopEffectiveState: () => ({ revision: ++calls }),
-    });
-
-    expect(collector.getStopEffectiveState()).toEqual({ revision: 1 });
-    expect(collector.getStopEffectiveState()).toEqual({ revision: 1 });
-    expect(calls).toBe(1);
-  });
-
-  test('getSessionEffectiveState collects at most once across N calls', () => {
-    let calls = 0;
-    const collector = createStateInputCollector({
-      event: 'SessionStart',
       repoRoot: '/does/not/matter/for/this/getter',
-      resolveSessionEffectiveState: () => {
+      resolveEffectiveState: () => {
         calls += 1;
-        return FIXED_SESSION_STATE;
+        return FIXED_RESOLUTION;
       },
     });
 
-    const first = collector.getSessionEffectiveState();
-    const second = collector.getSessionEffectiveState();
-    const third = collector.getSessionEffectiveState();
+    const first = collector.getEffectiveState();
+    const second = collector.getEffectiveState();
+    const third = collector.getEffectiveState();
 
     expect(calls).toBe(1);
     expect(first).toBe(second);
     expect(second).toBe(third);
   });
 
-  test('a resolver that legitimately returns null is still cached (not retried)', () => {
-    let calls = 0;
+  test('the first call target paths win; later calls reuse that resolution', () => {
+    const seen: (readonly string[])[] = [];
     const collector = createStateInputCollector({
-      event: 'Stop',
       repoRoot: '/does/not/matter/for/this/getter',
-      resolveSessionEffectiveState: () => {
-        calls += 1;
-        return null;
+      resolveEffectiveState: (targetPaths) => {
+        seen.push(targetPaths);
+        return FIXED_RESOLUTION;
       },
     });
 
-    expect(collector.getSessionEffectiveState()).toBeNull();
-    expect(collector.getSessionEffectiveState()).toBeNull();
-    expect(collector.getSessionEffectiveState()).toBeNull();
+    collector.getEffectiveState(['src/a.ts', 'src/b.ts']);
+    collector.getEffectiveState(['src/c.ts']);
+    collector.getEffectiveState();
+
+    expect(seen).toEqual([['src/a.ts', 'src/b.ts']]);
+  });
+
+  test('a failed resolution is still cached (not retried)', () => {
+    let calls = 0;
+    const collector = createStateInputCollector({
+      repoRoot: '/does/not/matter/for/this/getter',
+      resolveEffectiveState: () => {
+        calls += 1;
+        return FIXED_FAILURE;
+      },
+    });
+
+    expect(collector.getEffectiveState()).toEqual(FIXED_FAILURE);
+    expect(collector.getEffectiveState()).toEqual(FIXED_FAILURE);
+    expect(collector.getEffectiveState()).toEqual(FIXED_FAILURE);
     expect(calls).toBe(1);
   });
 
   test('getWorktreeOwnership and getActivePlanMarker collect at most once each', () => {
     withFixture((root) => {
       const collector = createStateInputCollector({
-        event: 'SessionStart',
         repoRoot: root,
-        resolveSessionEffectiveState: () => FIXED_SESSION_STATE,
+        resolveEffectiveState: () => FIXED_RESOLUTION,
       });
 
       const firstOwnership = collector.getWorktreeOwnership();
@@ -184,14 +182,12 @@ describe('createStateInputCollector: determinism', () => {
     const fixtureB = buildFixture();
     try {
       const collectorA = createStateInputCollector({
-        event: 'SessionStart',
         repoRoot: fixtureA.root,
-        resolveSessionEffectiveState: () => FIXED_SESSION_STATE,
+        resolveEffectiveState: () => FIXED_RESOLUTION,
       });
       const collectorB = createStateInputCollector({
-        event: 'SessionStart',
         repoRoot: fixtureB.root,
-        resolveSessionEffectiveState: () => FIXED_SESSION_STATE,
+        resolveEffectiveState: () => FIXED_RESOLUTION,
       });
 
       const snapshotA = normalize(snapshotOf(collectorA), fixtureA.root);
@@ -207,9 +203,8 @@ describe('createStateInputCollector: determinism', () => {
   test('worktree ownership reflects the current fixture root once normalized', () => {
     withFixture((root) => {
       const collector = createStateInputCollector({
-        event: 'SessionStart',
         repoRoot: root,
-        resolveSessionEffectiveState: () => FIXED_SESSION_STATE,
+        resolveEffectiveState: () => FIXED_RESOLUTION,
       });
 
       expect(collector.getWorktreeOwnership()).toEqual({
@@ -221,64 +216,33 @@ describe('createStateInputCollector: determinism', () => {
   });
 });
 
-describe('createStateInputCollector: SessionStart single-resolution invariant', () => {
-  test('any number of downstream reads within one event resolve Effective State exactly once', () => {
-    let calls = 0;
-    const collector = createStateInputCollector({
-      event: 'SessionStart',
-      repoRoot: '/does/not/matter/for/this/getter',
-      resolveSessionEffectiveState: () => {
-        calls += 1;
-        return FIXED_SESSION_STATE;
-      },
-    });
-
-    // Simulate several independent call sites within the same event (e.g.
-    // the SessionStart context budget plus a future HRD consumer) all
-    // asking for the Effective State section.
-    for (let i = 0; i < 5; i += 1) {
-      collector.getSessionEffectiveState();
-    }
-
-    expect(calls).toBe(1);
-  });
-
+describe('createStateInputCollector: single-resolution invariant', () => {
   test('a fresh collector per event means a new event gets its own resolution', () => {
     let calls = 0;
-    const resolveSessionEffectiveState = () => {
+    const resolveEffectiveState = () => {
       calls += 1;
-      return FIXED_SESSION_STATE;
+      return FIXED_RESOLUTION;
     };
 
-    const first = createStateInputCollector({
-      event: 'SessionStart',
-      repoRoot: '/does/not/matter/for/this/getter',
-      resolveSessionEffectiveState,
-    });
-    first.getSessionEffectiveState();
-    first.getSessionEffectiveState();
+    const first = createStateInputCollector({ repoRoot: '/does/not/matter/for/this/getter', resolveEffectiveState });
+    first.getEffectiveState();
+    first.getEffectiveState();
     expect(calls).toBe(1);
 
-    const second = createStateInputCollector({
-      event: 'SessionStart',
-      repoRoot: '/does/not/matter/for/this/getter',
-      resolveSessionEffectiveState,
-    });
-    second.getSessionEffectiveState();
+    const second = createStateInputCollector({ repoRoot: '/does/not/matter/for/this/getter', resolveEffectiveState });
+    second.getEffectiveState();
     expect(calls).toBe(2);
   });
 });
 
 describe('createStateInputCollector: basic shape', () => {
-  test('exposes the constructing event and repo root unchanged', () => {
+  test('exposes the repo root unchanged', () => {
     withFixture((root) => {
       const collector = createStateInputCollector({
-        event: 'PreToolUse',
         repoRoot: root,
-        resolveSessionEffectiveState: () => null,
+        resolveEffectiveState: () => FIXED_RESOLUTION,
       });
 
-      expect(collector.event).toBe('PreToolUse');
       expect(collector.getRepoRoot()).toBe(root);
     });
   });

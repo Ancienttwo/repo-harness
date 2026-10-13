@@ -9,14 +9,11 @@ function fixture(run: (root: string) => void): void {
 }
 describe('prompt observation', () => {
   test('completion without plan, checks or receipt never blocks or dispatches a helper', () => fixture(root => {
-    const commands: string[][] = [];
-    const result = runPromptHandler({ repoRoot: root, prompt: '/check done', dependencies: {
-      runCommand: args => { commands.push([...args]); throw new Error('prompt must not execute'); },
-    } });
+    const result = runPromptHandler({ payload: { prompt: '/check done' } });
     expect(result.exitCode).toBe(0);
-    expect(result.stdout).toContain('Completion is observed');
-    expect(result.stdout).not.toContain('decision: block');
-    expect(commands).toEqual([]);
+    expect(result.additionalContext).toContain('Completion is observed');
+    expect(result.additionalContext).not.toContain('decision: block');
+    expect(result.permission).toBeUndefined();
     expect(readdirSync(root)).toEqual([]);
   }));
   test('old incomplete plan/check artifacts remain observations, never an approval or archive operation', () => fixture(root => {
@@ -25,9 +22,7 @@ describe('prompt observation', () => {
     writeFileSync(join(root, '.ai/harness/active-plan'), 'plans/old.md');
     writeFileSync(join(root, 'plans/old.md'), '> **Status**: Draft\n- [ ] unfinished\n');
     const before = readFileSync(join(root, 'plans/old.md'));
-    const result = runPromptHandler({ repoRoot: root, input: JSON.stringify({ prompt: '/check done' }), dependencies: {
-      runCommand: () => { throw new Error('no side effects'); },
-    } });
+    const result = runPromptHandler({ payload: { prompt: '/check done' } });
     expect(result.exitCode).toBe(0);
     expect(readFileSync(join(root, 'plans/old.md'))).toEqual(before);
     expect(readFileSync(join(root, '.ai/harness/active-plan'), 'utf8')).toBe('plans/old.md');
@@ -35,17 +30,15 @@ describe('prompt observation', () => {
   }));
   test('ordinary questions and quoted reports bypass workflow routing', () => fixture(root => {
     for (const prompt of ['What is this repository?', '日志写着“done”，请解释']) {
-      const result = runPromptHandler({ repoRoot: root, prompt });
-      expect(result.exitCode).toBe(0);
-      expect(result.stdout).toBe('');
+      const result = runPromptHandler({ payload: { prompt } });
+      expect(result).toEqual({ exitCode: 0 });
     }
   }));
   test('explicit planning advice does not create four execution artifacts or grant permission', () => fixture(root => {
-    const result = runPromptHandler({ repoRoot: root, prompt: '/plan improve the module', dependencies: {
-      runCommand: () => { throw new Error('no automatic capture'); },
-    } });
+    const result = runPromptHandler({ payload: { prompt: '/plan improve the module' } });
     expect(result.exitCode).toBe(0);
-    expect(result.stdout).toContain('OperationBoundaries');
+    expect(result.additionalContext).toContain('OperationBoundaries');
+    expect(result.permission).toBeUndefined();
     expect(readdirSync(root)).toEqual([]);
   }));
 });

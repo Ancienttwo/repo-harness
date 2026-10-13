@@ -1,13 +1,16 @@
 import { describe, expect, test } from 'bun:test';
 import {
   ROUTES,
-  allEvents,
   getRoute,
-  listRoutesForEvent,
   routeSupportsHost,
   routesForHost,
+  type HookEvent,
 } from '../../src/cli/hook/route-registry';
-import { getHandlerForRoute, handlerIdForRoute, listHandlerBindings } from '../../src/cli/hook/handler-registry';
+import { getHandlerForRoute } from '../../src/cli/hook/handler-registry';
+
+function matchers(event: HookEvent): (string | undefined)[] {
+  return ROUTES.filter((route) => route.event === event).map((route) => route.matcher);
+}
 
 describe('typed hook route registry', () => {
   test('routes are frozen, ordered, and carry no legacy script field', () => {
@@ -38,23 +41,22 @@ describe('typed hook route registry', () => {
   });
 
   test('matcher partitions remain disjoint', () => {
-    expect(listRoutesForEvent('PostToolUse').map((route) => route.matcher)).toEqual(['Edit|Write', 'Bash', undefined]);
-    expect(listRoutesForEvent('PreToolUse').map((route) => route.matcher)).toEqual(['Edit|Write', 'Task|Agent|SendUserMessage']);
+    expect(matchers('PostToolUse')).toEqual(['Edit|Write', 'Bash', undefined]);
+    expect(matchers('PreToolUse')).toEqual(['Edit|Write', 'Task|Agent|SendUserMessage']);
   });
 
   test('every route has exactly one exhaustive typed handler binding', () => {
-    const bindings = listHandlerBindings();
-    expect(Object.keys(bindings)).toHaveLength(12);
-    for (const route of ROUTES) {
-      const key = `${route.event}.${route.routeId}`;
-      expect(handlerIdForRoute(route.event, route.routeId)).toBe(route.handler);
-      expect(getHandlerForRoute(route)?.id).toBe(route.handler);
-      expect(bindings[key]).toBe(route.handler);
-    }
+    expect(new Set(ROUTES.map((route) => `${route.event}.${route.routeId}`)).size).toBe(12);
+    for (const route of ROUTES) expect(getHandlerForRoute(route).id).toBe(route.handler);
+  });
+
+  test('only the edit guard fails closed', () => {
+    expect(ROUTES.filter((route) => route.failClosed).map((route) => `${route.event}.${route.routeId}`))
+      .toEqual(['PreToolUse.edit']);
   });
 
   test('events and unknown tuples stay stable', () => {
-    expect(allEvents()).toEqual([
+    expect([...new Set(ROUTES.map((route) => route.event))]).toEqual([
       'SessionStart',
       'PreToolUse',
       'PostToolUse',

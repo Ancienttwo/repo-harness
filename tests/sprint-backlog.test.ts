@@ -1248,9 +1248,13 @@ describe("sprint projection", () => {
     const cwd = tmpWorkspace("sprint-session-start");
     try {
       const freshCollector = () => createStateInputCollector({
-        event: "SessionStart",
         repoRoot: cwd,
-        resolveSessionEffectiveState: () => null,
+        resolveEffectiveState: () => ({
+          ok: false,
+          reason_code: "state_resolution_failed",
+          error_hash: "sha256:unused",
+          message: "session sections do not resolve Effective State",
+        }),
       });
 
       const inert = sessionStartMainContent(freshCollector(), process.env, Date.now());
