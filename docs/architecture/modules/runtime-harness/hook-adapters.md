@@ -453,7 +453,7 @@ does not inspect legacy command shapes, so there is no dual-read path.
 
 - P1：#692 把 `PreToolUse.edit` 缩成路径边界检查。post-edit journal、minimal-change 模块、lease 检查与 advisory 已删除。#693 把 SessionStart 改成一个 read-mostly handler，各 section 独立。security sentinel、tooling advisory、worktree 提示与 run identity 生成已删除。#694 删除 prompt 分类器与 delegation state，四条 subagent route 各有一个 handler。#695 让 Stop 只发布 checkpoint 并渲染 handoff 与 resume。trace observer、PostBash importer 与 `hook-work-budget.ts` 已删除。
 - P2：route tuple 不变。`PostToolUse.edit` 与 `PostToolUse.always` 绑定 no-op `retired-observer`，直到 #698。`flow.hook-adapters.stop` 改为 Stop → `publishCheckpointFromLedger`。hook identity 只来自 payload，缺失时为 null。2026-08-12 那条记录里的 post-edit journal 与 `session-run-identity.json` 都已不存在。
-- P3：没有读者的工作不应该在热路径上付成本。minimal_change 的 `enforce` 不再有效果，因为没有代码读这个 policy。旧的 circuit-breaker state 带退役 kind 时 fail closed，由 `evidence-gc` 一次性清理。
+- P3：没有读者的工作不应该在热路径上付成本。hook 不再读 minimal_change policy。`minimal_change.mode` 只能是 `off` 或 `advice`。`enforce` 等其他值在 policy 校验时失败，state resolution 随之失败。旧的 circuit-breaker state 带退役 kind 时 fail closed，由 `evidence-gc` 一次性清理。
 
 ## 5. 验证面
 
