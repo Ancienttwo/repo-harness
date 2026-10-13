@@ -44,8 +44,6 @@ const PROJECTION_WORKTREE_IGNORE_ROOTS = new Set([
 const PROJECTION_WORKTREE_IGNORE_PATHS = new Set([
   '.ai/harness',
   '.archcontext/.local',
-  '.claude/.session-id',
-  '.claude/.trace.jsonl',
   'docs/architecture',
 ]);
 

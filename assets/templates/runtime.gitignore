@@ -37,12 +37,9 @@ _ops/
 # Runtime evidence and local agent state
 .claude/settings.local.json
 .claude/.atomic_pending
-.claude/.session-id
-.claude/.trace.jsonl
 .claude/.session-handoff.md
 .claude/.task-state.json
 .claude/.task-handoff.md
-.claude/.codegraph-state/
 .claude/*.tmp
 .claude/*.bak
 .claude/*.bak.*

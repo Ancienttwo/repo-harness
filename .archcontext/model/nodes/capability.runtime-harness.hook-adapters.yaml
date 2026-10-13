@@ -17,7 +17,6 @@ source:
     - "src/cli/hook-entry.ts"
     - "src/pi/**"
     - "src/effects/loop/**"
-    - "src/core/hook-work-budget.ts"
     - "src/effects/hook-event-log.ts"
     - "src/effects/run-summary-retention.ts"
     - "src/cli/commands/install.ts"

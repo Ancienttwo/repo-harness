@@ -868,9 +868,6 @@ describe('package-local ArchContext projection provider', () => {
     writeFileSync(join(f.repoRoot, '.ai', 'harness', 'runtime-state.json'), '{"updated":true}\n');
     expect(captureArchitectureProjectionSnapshot(f.repoRoot)).toEqual(before);
     mkdirSync(join(f.repoRoot, '.claude'), { recursive: true });
-    writeFileSync(join(f.repoRoot, '.claude', '.session-id'), 'session-one\n');
-    writeFileSync(join(f.repoRoot, '.claude', '.trace.jsonl'), '{"event":"one"}\n');
-    expect(captureArchitectureProjectionSnapshot(f.repoRoot)).toEqual(before);
     writeFileSync(join(f.repoRoot, '.claude', 'settings.json'), '{}\n');
     expect(captureArchitectureProjectionSnapshot(f.repoRoot).worktreeDigest).not.toBe(before.worktreeDigest);
     rmSync(join(f.repoRoot, '.claude', 'settings.json'));
