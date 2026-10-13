@@ -339,6 +339,17 @@ describe('real Pi 1.2 tool pipeline with a scripted provider', () => {
     } finally { f.cleanup(); }
   }, 60_000);
 
+  test('a repository that opts in after session start blocks writes until reload', () => {
+    const f = fixture(false);
+    try {
+      const result = session(f.root, f.env, 'late-opt-in');
+      expect(existsSync(join(f.root, 'late.txt'))).toBe(false);
+      const blocked = result.messages.find((message: any) => message.role === 'toolResult' && message.toolCallId === 'late-opt-in-write');
+      expect(blocked?.isError).toBe(true);
+      expect(JSON.stringify(blocked)).toContain('PI_HOOK_RELOAD_REQUIRED');
+    } finally { f.cleanup(); }
+  }, 60_000);
+
   test('a broken Bun bridge prevents native writes in an opted-in repository', () => {
     const f = fixture();
     try {

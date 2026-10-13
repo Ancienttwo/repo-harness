@@ -17,6 +17,8 @@ interface ToolBinding {
 interface SessionState {
   readonly sessionId: string;
   readonly cwd: string;
+  /** Resolved once at session start; null outside a git repository. */
+  readonly gitRoot: string | null;
   readonly optedIn: boolean;
   availability: 'inactive' | 'ready' | 'unavailable';
   context: string | null;
@@ -28,13 +30,16 @@ interface SessionState {
   readonly tools: Map<string, ToolBinding>;
 }
 
-function optedIn(cwd: string): boolean {
+function gitRoot(cwd: string): string | null {
   try {
-    const root = execFileSync('git', ['-C', cwd, 'rev-parse', '--show-toplevel'], {
+    return execFileSync('git', ['-C', cwd, 'rev-parse', '--show-toplevel'], {
       encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 3000,
-    }).trim();
-    return existsSync(join(root, '.ai/harness/workflow-contract.json'));
-  } catch { return false; }
+    }).trim() || null;
+  } catch { return null; }
+}
+
+function optedIn(root: string | null): boolean {
+  return root !== null && existsSync(join(root, '.ai/harness/workflow-contract.json'));
 }
 
 function toolPayload(event: ToolCallEvent, cwd: string, resolveToolPath: ToolPathResolver | null): Record<string, unknown> {
@@ -92,9 +97,10 @@ export default function repoHarnessPi(pi: ExtensionAPI): void {
 
   pi.on('session_start', async (_event, ctx) => {
     bridge.cancel();
-    const active = optedIn(ctx.cwd);
+    const root = gitRoot(ctx.cwd);
+    const active = optedIn(root);
     const state: SessionState = {
-      sessionId: ctx.sessionManager.getSessionId(), cwd: ctx.cwd, optedIn: active,
+      sessionId: ctx.sessionManager.getSessionId(), cwd: ctx.cwd, gitRoot: root, optedIn: active,
       availability: active ? 'unavailable' : 'inactive', context: null, diagnostic: '', resolveToolPath: null,
       runId: `run-pi-${randomUUID()}`, pendingStop: false, stop: null, tools: new Map(),
     };
@@ -153,7 +159,10 @@ export default function repoHarnessPi(pi: ExtensionAPI): void {
     const state = current;
     const mutation = event.toolName !== 'bash';
     if (!state || !state.optedIn) {
-      if (mutation && optedIn(ctx.cwd)) return { block: true, reason: 'PI_HOOK_RELOAD_REQUIRED' };
+      // A repository that opts in mid-session needs /reload. The session's git
+      // root is cached, so an edit outside the harness spawns no git process.
+      const root = state && state.cwd === ctx.cwd ? state.gitRoot : gitRoot(ctx.cwd);
+      if (mutation && optedIn(root)) return { block: true, reason: 'PI_HOOK_RELOAD_REQUIRED' };
       return;
     }
     if (state.sessionId !== ctx.sessionManager.getSessionId() || state.cwd !== ctx.cwd) {

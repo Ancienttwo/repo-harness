@@ -141,6 +141,10 @@ try {
     await session.waitForIdle();
   } else if (mode === 'inactive') {
     await prompt('write', { path: '_ops/private.txt', content: 'allowed outside opt-in' }, 'inactive-write');
+  } else if (mode === 'late-opt-in') {
+    await mkdir(join(cwd, '.ai/harness'), { recursive: true });
+    await writeFile(join(cwd, '.ai/harness/workflow-contract.json'), '{}\n');
+    await prompt('write', { path: 'late.txt', content: 'needs reload' }, 'late-opt-in-write');
   } else if (mode === 'unavailable') {
     await prompt('write', { path: 'blocked.txt', content: 'must not write' }, 'unavailable-write');
   } else throw new Error(`Unknown fixture mode: ${mode}`);
