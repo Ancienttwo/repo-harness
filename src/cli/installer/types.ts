@@ -11,7 +11,7 @@
  * settings.json), not MCP server registration.
  */
 
-export type Location = 'global' | 'local';
+export type Location = 'global';
 
 /**
  * Stable id for the --target CLI flag and registry lookup.
@@ -61,9 +61,7 @@ export interface AgentTarget {
   readonly displayName: string;
   readonly docsUrl?: string;
   /**
-   * Whether this target supports the given install location. Codex
-   * returns false for 'local' (no project-local hook concept verified
-   * Phase 0 2026-05-28); Claude returns true for both.
+   * Hook adapters support only the user-level global location.
    */
   supportsLocation(loc: Location): boolean;
   detect(loc: Location): DetectionResult;

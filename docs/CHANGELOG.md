@@ -6,6 +6,9 @@ All notable changes to this skill are documented here.
 
 ### Breaking
 
+- Hook install and uninstall now accept only `--location global`.
+  `--location local` exits with code 2 before configuration reads or writes.
+  The installer no longer writes project-level Claude adapters. (#698)
 - Downstream contract change: the shell operator library is gone. The package
   no longer ships `assets/hooks/` or `workflow-state.sh`, and the
   `repo-harness hook-lib path` command is removed. Helpers no longer source a

@@ -103,7 +103,8 @@ marketplace plugins. User-managed plugins remain outside repo-harness installati
 configuration, locks or receipts. `repo-harness uninstall` applies it; `--json`
 returns `status`, `exitCode`, `dryRun` and per-path actions. `--target codex|claude`
 limits host cleanup; shared brain/profile surfaces are retired on `--target both`
-(the default). `--location local` retains its narrower Claude adapter-only scope.
+(the default). Install and uninstall accept only `--location global`.
+`--location local` is rejected before configuration reads or writes.
 
 Cleanup removes tagged hook commands and global working-rule blocks, unchanged
 profile-owned skills/rules/agents/links, proven CodeGraph registrations, and the

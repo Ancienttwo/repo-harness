@@ -2,13 +2,8 @@
  * Claude Code hook-runtime target.
  *
  * Writes route-registry managed adapter entries under the `hooks` field of
- * either ~/.claude/settings.json (--location global) or .claude/settings.json
- * (--location local, project-scoped). Phase 0 verified Claude auto-reloads
+ * ~/.claude/settings.json (--location global). Phase 0 verified Claude auto-reloads
  * settings.json via ConfigChange seconds after a write, no restart needed.
- *
- * Both locations are supported because Claude documents user-level +
- * project-level scopes with merging precedence
- * (managed > local > project > user) — verified Phase 0.
  *
  * `settings.json` carries non-hook config too (themes, MCP, etc.), so the
  * installer must merge into the existing object rather than overwrite.
@@ -46,18 +41,13 @@ interface SettingsFile {
   [key: string]: unknown;
 }
 
-function userConfigPath(): string {
+function userConfigPath(loc: Location): string {
+  if (loc !== 'global') {
+    throw new Error('claudeTarget: hook adapters require --location global');
+  }
   // Prefer $HOME env so tests can isolate via temp dirs; os.homedir() is
   // cached and ignores runtime $HOME mutations in some Node/Bun versions.
   return path.join(process.env.HOME ?? os.homedir(), '.claude', 'settings.json');
-}
-
-function projectConfigPath(cwd: string): string {
-  return path.join(cwd, '.claude', 'settings.json');
-}
-
-function resolvePath(loc: Location, cwd: string): string {
-  return loc === 'global' ? userConfigPath() : projectConfigPath(cwd);
 }
 
 class ClaudeTarget implements AgentTarget {
@@ -65,12 +55,12 @@ class ClaudeTarget implements AgentTarget {
   readonly displayName = 'Claude Code';
   readonly docsUrl = 'https://code.claude.com';
 
-  supportsLocation(_loc: Location): boolean {
-    return true;
+  supportsLocation(loc: Location): boolean {
+    return loc === 'global';
   }
 
   detect(loc: Location): DetectionResult {
-    const filePath = resolvePath(loc, process.cwd());
+    const filePath = userConfigPath(loc);
     const installed = fs.existsSync(path.dirname(filePath));
     let alreadyConfigured = false;
     if (fs.existsSync(filePath)) {
@@ -90,8 +80,8 @@ class ClaudeTarget implements AgentTarget {
   }
 
   install(loc: Location, opts: InstallOptions): WriteResult {
-    const filePath = resolvePath(loc, process.cwd());
-    assertConfigurationPath(filePath, loc === 'global' ? process.env : { HOME: process.cwd() });
+    const filePath = userConfigPath(loc);
+    assertConfigurationPath(filePath);
     const data = readJsonOrEmpty<SettingsFile>(filePath);
     const cleaned = stripManagedEntries(data.hooks);
     const managed = buildManagedHooks('claude', opts.profile);
@@ -116,8 +106,8 @@ class ClaudeTarget implements AgentTarget {
   }
 
   uninstall(loc: Location, opts: { dryRun?: boolean } = {}): WriteResult {
-    const filePath = resolvePath(loc, process.cwd());
-    assertConfigurationPath(filePath, loc === 'global' ? process.env : { HOME: process.cwd() });
+    const filePath = userConfigPath(loc);
+    assertConfigurationPath(filePath);
     if (!fs.existsSync(filePath)) {
       return { files: [{ path: filePath, action: 'not-found' }] };
     }
@@ -132,7 +122,7 @@ class ClaudeTarget implements AgentTarget {
   }
 
   describePaths(loc: Location): string[] {
-    return [resolvePath(loc, process.cwd())];
+    return [userConfigPath(loc)];
   }
 }
 

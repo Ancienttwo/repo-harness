@@ -29,7 +29,7 @@ export function assertTarget(raw: string, commandName: string): InstallTargetSpe
 // Location
 // ---------------------------------------------------------------------------
 
-const VALID_LOCATIONS: readonly Location[] = ['global', 'local'];
+const VALID_LOCATIONS: readonly Location[] = ['global'];
 
 export function assertLocation(raw: string, commandName: string): Location {
   if ((VALID_LOCATIONS as readonly string[]).includes(raw)) {

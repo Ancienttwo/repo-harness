@@ -4,6 +4,8 @@ import * as path from 'path';
 import * as os from 'os';
 import { spawnSync } from 'child_process';
 import { runInstall, runUninstall } from '../../src/cli/commands/install';
+import { claudeTarget } from '../../src/cli/installer/targets/claude';
+import type { Location } from '../../src/cli/installer/types';
 import { readConfigurationReceipt } from '../../src/cli/installer/configuration-ownership';
 import { isRepoHarnessManagedHookCommand } from '../../src/core/adoption/managed-hook-config';
 
@@ -128,7 +130,7 @@ describe('issue 698 host configuration ownership', () => {
     }
   }
 
-  test('issue 698 local Claude install and uninstall refuse a settings symlink', () => {
+  test('issue 698 rejects local commands and Claude target calls without touching settings', () => {
     withTempHome((home) => {
       const repo = path.join(home, 'project');
       fs.mkdirSync(path.join(repo, '.claude'), { recursive: true });
@@ -140,11 +142,21 @@ describe('issue 698 host configuration ownership', () => {
       const previous = process.cwd();
       process.chdir(repo);
       try {
-        expect(runInstall({ target: 'claude', location: 'local' }).exitCode).toBe(1);
-        expect(runUninstall({ target: 'claude', location: 'local', dryRun: true }).exitCode).toBe(1);
-        expect(runUninstall({ target: 'claude', location: 'local' }).exitCode).toBe(1);
+        const local = 'local' as Location; // Deliberately invalid runtime input.
+        for (const target of ['codex', 'claude', 'both'] as const) {
+          expect(runInstall({ target, location: local }).exitCode).toBe(2);
+          expect(runUninstall({ target, location: local, dryRun: true }).exitCode).toBe(2);
+          expect(runUninstall({ target, location: local, recoverInterrupted: true }).exitCode).toBe(2);
+          expect(runUninstall({ target, location: local }).exitCode).toBe(2);
+        }
+        expect(() => claudeTarget.install(local, {})).toThrow('--location global');
+        expect(() => claudeTarget.uninstall(local)).toThrow('--location global');
+        expect(() => claudeTarget.detect(local)).toThrow('--location global');
         expect(fs.lstatSync(filePath).isSymbolicLink()).toBe(true);
         expect(fs.readFileSync(victim, 'utf8')).toBe(original);
+        expect(fs.existsSync(path.join(home, '.claude'))).toBe(false);
+        expect(fs.existsSync(path.join(home, '.codex'))).toBe(false);
+        expect(fs.existsSync(path.join(home, '.repo-harness'))).toBe(false);
       } finally { process.chdir(previous); }
     });
   });
@@ -312,13 +324,39 @@ describe('install command (Phase 1B)', () => {
     });
   }, 30_000);
 
-  test('codex --location local errors with exit 2 (no project-local hook concept)', () => {
-    withTempHome(() => {
-      const result = runInstall({ target: 'codex', location: 'local' });
-      expect(result.exitCode).toBe(2);
-      expect(result.lines.some((l) => l.includes('[codex]') && l.includes('not supported'))).toBe(true);
-    });
-  });
+  for (const command of ['install', 'uninstall']) {
+    for (const target of ['codex', 'claude', 'both']) {
+      test(`CLI ${command} --target ${target} rejects local before any configuration read or write`, () => {
+        withTempHome((home) => {
+          const repo = path.join(home, 'project');
+          fs.mkdirSync(repo);
+          const files = {
+            '.claude/settings.json': '{"theme":"user"}\n',
+            '.codex/hooks.json': '{"hooks":{}}\n',
+            '.repo-harness/install-state.json': 'invalid profile state\n',
+            'project/.claude/settings.json': '{"permissions":{"allow":["user"]}}\n',
+          };
+          for (const [relativePath, content] of Object.entries(files)) {
+            const filePath = path.join(home, relativePath);
+            fs.mkdirSync(path.dirname(filePath), { recursive: true });
+            fs.writeFileSync(filePath, content);
+          }
+          const before = fs.readdirSync(home, { recursive: true }).sort();
+          const result = spawnSync(process.execPath, [CLI, command, '--target', target, '--location', 'local'], {
+            cwd: repo,
+            env: { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: '0' },
+            encoding: 'utf-8',
+          });
+          expect(result.status, result.stderr).toBe(2);
+          expect(result.stderr).toContain('invalid --location "local" (expected: global)');
+          expect(fs.readdirSync(home, { recursive: true }).sort()).toEqual(before);
+          for (const [relativePath, content] of Object.entries(files)) {
+            expect(fs.readFileSync(path.join(home, relativePath), 'utf8')).toBe(content);
+          }
+        });
+      }, 30_000);
+    }
+  }
 
   test('codex --location global creates ~/.codex/hooks.json with 6 matcher-grouped entries', () => {
     withTempHome((home) => {
@@ -590,22 +628,29 @@ describe('install command (Phase 1B)', () => {
     });
   });
 
-  test('CLI exposes uninstall command', () => {
+  test('CLI global install and uninstall work for both hosts', () => {
     withTempHome((home) => {
-      const install = spawnSync('bun', [CLI, 'install', '--target', 'codex', '--location', 'global'], {
+      const install = spawnSync('bun', [CLI, 'install', '--target', 'both', '--location', 'global'], {
         cwd: ROOT,
         env: { ...process.env, HOME: home },
         encoding: 'utf-8',
       });
       expect(install.status).toBe(0);
+      const claudePath = path.join(home, '.claude/settings.json');
+      const codexPath = path.join(home, '.codex/hooks.json');
+      expect(fs.existsSync(claudePath)).toBe(true);
+      expect(fs.existsSync(codexPath)).toBe(true);
 
-      const uninstall = spawnSync('bun', [CLI, 'uninstall'], {
+      const uninstall = spawnSync('bun', [CLI, 'uninstall', '--location', 'global'], {
         cwd: ROOT,
         env: { ...process.env, HOME: home },
         encoding: 'utf-8',
       });
       expect(uninstall.status).toBe(0);
       expect(uninstall.stdout).toContain('codex managed hooks');
+      expect(uninstall.stdout).toContain('claude managed hooks');
+      expect(fs.existsSync(claudePath)).toBe(false);
+      expect(fs.existsSync(codexPath)).toBe(false);
     });
   }, 30_000);
 

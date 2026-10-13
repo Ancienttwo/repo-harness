@@ -255,9 +255,9 @@ host-installer 有 20 个文件、4702 行（2026-10-13），标记为 expandabl
 
 注意遥测本身的边界：`metrics.child_processes` 在全部 44,301 条记录里都是 `0`，它属于 `measurement.incomplete_metrics`，不能用来反推 Stop 的子进程数量；上表只依赖 `elapsed_ms` 这个被标记为 complete 的字段。
 
-### 3.5 prose ↔ 源码冲突（需上层裁决）
+### 3.5 安装范围与归属
 
-- 根 `CLAUDE.md` 写"repo-local `.claude/settings.json` 与 `.codex/hooks.json` hook adapters 已退役"，但 `src/cli/installer/targets/claude.ts:67` 的 `supportsLocation` 仍恒返回 `true`，`resolvePath`（`:58`）在 `--location local` 时写 `<cwd>/.claude/settings.json`，`install.ts:63` 也仍把 `local` 当合法输入。Codex 侧已经真正关死（`codex.ts` 的 `supportsLocation('local') === false`）。**当前源码事实：Claude 的 repo-local 安装路径仍可执行。** 本文按源码记录，退役声明与实现之间的落差需要一次显式裁决（收紧实现，或把根 `CLAUDE.md` 的表述改成"不作为产品交付面推荐"）。
+- #698 移除 `--location local`。CLI 在读取安装状态或取得 host lock 前拒绝该值。`src/cli/commands/install.ts` 也拒绝直接传入的 local 值。Claude target 只解析 user-level `~/.claude/settings.json`。Global uninstall 继续使用 ownership receipt。`AgentTarget` 接口保留，`Location` 只接受 `global`。
 - 本文档旧版 P1 把 `standard-plan.ts` / `fs-transaction.ts` 列为本 capability 模块。`.ai/context/capabilities.json` 已不存在。registry 现在只读 `.archcontext/model/nodes/` 里的 capability 节点（`src/core/capabilities/registry.ts:643`）。`capability-resolver match` 把这两个文件解析到 `public-surface-adoption`（2026-10-11 实测）。它们仍是跨 capability 的一次性迁移依赖。dispatch 路径不消费它们的结论。
 
 ### 3.6 Typed durable-effect failure boundary (2026-08-14)

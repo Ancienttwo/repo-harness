@@ -143,7 +143,7 @@ export const SUBCOMMANDS = [
 export type Subcommand = (typeof SUBCOMMANDS)[number];
 
 const TARGET_HELP = 'codex|claude|both';
-const LOCATION_HELP = 'global|local';
+const LOCATION_HELP = 'global';
 
 interface GlobalRuntimeCommandOptions {
   target: string;
@@ -529,6 +529,7 @@ export function buildProgram(): Command {
     .option('--json', 'Output JSON instead of human-readable text')
     .action(async (rawOpts: GlobalRuntimeCommandOptions & { location?: string; state?: boolean; rollback?: boolean }, cmd: Command) => {
       const target = assertTarget(rawOpts.target, 'install');
+      const location = rawOpts.location === undefined ? undefined : assertLocation(rawOpts.location, 'install');
       if (
         rawOpts.migrateProfileState === true
         && (rawOpts.state === true || rawOpts.rollback === true || rawOpts.location !== undefined)
@@ -563,7 +564,7 @@ export function buildProgram(): Command {
         }
         process.exit(result.exitCode);
       }
-      if (rawOpts.location === undefined) {
+      if (location === undefined) {
         await runGlobalRuntimeBootstrap(rawOpts, cmd);
         return;
       }
@@ -571,15 +572,12 @@ export function buildProgram(): Command {
       // the installed-state protocol before touching it so legacy protocol-1
       // state cannot be mixed with a new protocol-2 route projection.
       readInstalledProfile();
-      const location = assertLocation(rawOpts.location!, 'install');
       const installAdapters = () => runInstall({
         target,
         location,
         profile: assertInstallProfile(rawOpts.profile ?? 'full'),
       });
-      const result = location === 'global'
-        ? withRuntimeHostTransactionLock(process.env, installAdapters)
-        : installAdapters();
+      const result = withRuntimeHostTransactionLock(process.env, installAdapters);
       for (const line of result.lines) console.log(line);
       process.exit(result.exitCode);
     });
@@ -761,7 +759,7 @@ export function buildProgram(): Command {
       const target = assertTarget(rawOpts.target, 'uninstall');
       const location = assertLocation(rawOpts.location, 'uninstall');
       const uninstallAdapters = () => runUninstall({ target, location, dryRun: rawOpts.dryRun, recoverInterrupted: rawOpts.recoverInterrupted });
-      const result = location === 'global' && !rawOpts.dryRun
+      const result = !rawOpts.dryRun
         ? withRuntimeHostTransactionLock(process.env, uninstallAdapters)
         : uninstallAdapters();
       if (rawOpts.json) console.log(JSON.stringify(result, null, 2));

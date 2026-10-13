@@ -9,6 +9,7 @@ import {
 } from '../../src/cli/installer/targets/registry';
 import { codexTarget } from '../../src/cli/installer/targets/codex';
 import { claudeTarget } from '../../src/cli/installer/targets/claude';
+import type { Location } from '../../src/cli/installer/types';
 import {
   applyRepoHarnessRegistryBatch,
   readRegisteredRepoHarnessRepos,
@@ -46,22 +47,22 @@ describe('installer target registry', () => {
 
   test('codex supportsLocation is global-only (Phase 0 verified contract)', () => {
     expect(codexTarget.supportsLocation('global')).toBe(true);
-    expect(codexTarget.supportsLocation('local')).toBe(false);
+    expect(codexTarget.supportsLocation('local' as Location)).toBe(false);
   });
 
-  test('claude supportsLocation accepts both global and local', () => {
+  test('claude supportsLocation is global-only', () => {
     expect(claudeTarget.supportsLocation('global')).toBe(true);
-    expect(claudeTarget.supportsLocation('local')).toBe(true);
+    expect(claudeTarget.supportsLocation('local' as Location)).toBe(false);
   });
 
-  test('describePaths returns expected host slot for each location (Phase 1B: absolute paths)', () => {
+  test('describePaths returns global host slots and refuses local Claude paths', () => {
     // Phase 1A scaffolds returned literal ~/ paths; Phase 1B resolves to
     // absolute via $HOME / os.homedir(), so we assert the endpoint shape
     // rather than the literal prefix.
     expect(codexTarget.describePaths('global')[0]).toMatch(/\/\.codex\/hooks\.json$/);
-    expect(codexTarget.describePaths('local')).toEqual([]);
+    expect(codexTarget.describePaths('local' as Location)).toEqual([]);
     expect(claudeTarget.describePaths('global')[0]).toMatch(/\/\.claude\/settings\.json$/);
-    expect(claudeTarget.describePaths('local')[0]).toMatch(/\/\.claude\/settings\.json$/);
+    expect(() => claudeTarget.describePaths('local' as Location)).toThrow('--location global');
   });
 });
 
