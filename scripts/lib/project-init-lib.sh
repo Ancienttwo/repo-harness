@@ -1581,7 +1581,6 @@ pi_write_harness_policy() {
     "strict_max_agents": 3,
     "max_depth": 1,
     "allow_parallel_writers": false,
-    "state_file": ".ai/harness/delegation/latest.json",
     "preferred_runners": ["task-agent"],
     "brief_source": "tasks/contracts/<stem>.contract.md",
     "runner_rule": "the active task contract is the authoritative execution brief. Use task-agent in an explicitly addressed Herdr session and parent pane for persistent collaborators. Reuse the task binding across owner turns; history and idle are observation, not Result or acceptance. Missing Herdr fails closed without an alternate agent runner. Real harness permission and model capabilities remain unverified until evidenced.",

@@ -143,14 +143,14 @@ describe('typed hook runtime', () => {
       const cases = [
         ['SessionStart', 'default', undefined, 'session-context'],
         ['PreToolUse', 'edit', JSON.stringify({ tool_input: { file_path: 'README.md' } }), 'mutation-guard'],
-        ['PreToolUse', 'subagent', JSON.stringify({ tool_name: 'Task', tool_input: { prompt: 'inspect' } }), 'subagent'],
+        ['PreToolUse', 'subagent', JSON.stringify({ tool_name: 'Task', tool_input: { prompt: 'inspect' } }), 'return-channel'],
         ['PostToolUse', 'edit', JSON.stringify({ tool_input: { file_path: 'README.md' } }), 'retired-observer'],
         ['PostToolUse', 'bash', JSON.stringify({ tool_input: { command: 'echo hi' }, tool_response: { stdout: 'hi\n', stderr: '', interrupted: false }, exit_code: 0 }), 'command-observed'],
         ['PostToolUse', 'always', JSON.stringify({ hook_event_name: 'PostToolUse', tool_name: 'Read' }), 'retired-observer'],
         ['UserPromptSubmit', 'default', JSON.stringify({ prompt: 'review this' }), 'prompt'],
-        ['UserPromptSubmit', 'delegation', JSON.stringify({ prompt: 'implement next task' }), 'subagent'],
-        ['SubagentStart', 'context', JSON.stringify({ hook_event_name: 'SubagentStart' }), 'subagent'],
-        ['SubagentStop', 'quality', JSON.stringify({ hook_event_name: 'SubagentStop', final_message: 'inspected files and ran bun test; no risks identified' }), 'subagent'],
+        ['UserPromptSubmit', 'delegation', JSON.stringify({ prompt: 'implement next task' }), 'delegation-advisor'],
+        ['SubagentStart', 'context', JSON.stringify({ hook_event_name: 'SubagentStart' }), 'subagent-context'],
+        ['SubagentStop', 'quality', JSON.stringify({ hook_event_name: 'SubagentStop', last_assistant_message: 'inspected files and ran bun test; no risks identified' }), 'subagent-quality'],
         ['Stop', 'default', JSON.stringify({ stop_hook_active: false }), 'stop'],
       ] as const;
       for (const [event, routeId, input, handler] of cases) {

@@ -2,7 +2,10 @@ import { buildSessionStartSections } from './session-context';
 import { runMutationGuard } from './mutation-guard';
 import { runStopHandler } from './stop-handler';
 import { runPromptHandler } from './prompt-handler';
-import { runSubagentHandler } from './subagent-handler';
+import { runReturnChannel } from './return-channel';
+import { runDelegationAdvisor } from './delegation-advisor';
+import { runSubagentContext } from './subagent-context';
+import { runSubagentQuality } from './subagent-quality';
 import { runCommandObserved } from './command-observed';
 import { runTaskInboxHandler } from './task-inbox-handler';
 import type { HookHandlerId, Route } from './route-registry';
@@ -41,14 +44,36 @@ const handlers: Readonly<Record<HookHandlerId, TypedHookHandler>> = Object.freez
       identity: context.identity,
     })),
   },
-  subagent: {
-    id: 'subagent',
-    run: (context: HookHandlerContext) => runSubagentHandler({
-      event: context.event as 'PreToolUse' | 'UserPromptSubmit' | 'SubagentStart' | 'SubagentStop',
-      repoRoot: context.repoRoot,
+  'return-channel': {
+    id: 'return-channel',
+    run: (context: HookHandlerContext) => runReturnChannel({
+      collector: context.collector,
+      payload: context.payload,
+    }),
+  },
+  'delegation-advisor': {
+    id: 'delegation-advisor',
+    run: (context: HookHandlerContext) => runDelegationAdvisor({
+      collector: context.collector,
+      payload: context.payload,
+    }),
+  },
+  'subagent-context': {
+    id: 'subagent-context',
+    run: (context: HookHandlerContext) => runSubagentContext({
+      collector: context.collector,
       payload: context.payload,
       identity: context.identity,
       env: context.env,
+      now: () => context.now,
+    }),
+  },
+  'subagent-quality': {
+    id: 'subagent-quality',
+    run: (context: HookHandlerContext) => runSubagentQuality({
+      repoRoot: context.repoRoot,
+      payload: context.payload,
+      identity: context.identity,
       now: () => context.now,
     }),
   },
@@ -66,7 +91,7 @@ const handlers: Readonly<Record<HookHandlerId, TypedHookHandler>> = Object.freez
   'task-inbox': {
     id: 'task-inbox',
     run: (context: HookHandlerContext) => runTaskInboxHandler({
-      repoRoot: context.repoRoot,
+      collector: context.collector,
       now: () => context.now,
     }),
   },

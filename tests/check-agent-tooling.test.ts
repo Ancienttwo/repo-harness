@@ -13,7 +13,9 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { spawnSync } from "child_process";
 import { createHash } from "crypto";
-import { runSubagentHandler } from "../src/cli/hook/subagent-handler";
+import { runSubagentContext } from "../src/cli/hook/subagent-context";
+import { createStateInputCollector } from "../src/effects/loop/state-input-collector";
+import { resolveHookEffectiveState } from "../src/cli/hook/runtime";
 import { writeShellExecutableFixture } from "./helpers/repo-fixture";
 
 const ROOT = join(import.meta.dir, "..");
@@ -1240,9 +1242,12 @@ describe("check-agent-tooling", () => {
         );
       }
       writeFakeCodeGraph(envRoot.fakeBin);
-      const hook = runSubagentHandler({
-        event: "SubagentStart",
+      const collector = () => createStateInputCollector({
         repoRoot: envRoot.root,
+        resolveEffectiveState: (paths) => resolveHookEffectiveState(envRoot.root, "SubagentStart", paths, process.env, Date.now()),
+      });
+      const hook = runSubagentContext({
+        collector: collector(),
         env: {
           ...process.env,
           HOME: envRoot.home,
@@ -1283,9 +1288,8 @@ describe("check-agent-tooling", () => {
         }),
       ]);
 
-      const incompleteHook = runSubagentHandler({
-        event: "SubagentStart",
-        repoRoot: envRoot.root,
+      const incompleteHook = runSubagentContext({
+        collector: collector(),
         env: {
           ...process.env,
           HOME: envRoot.home,

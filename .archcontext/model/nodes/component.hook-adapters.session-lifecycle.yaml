@@ -8,14 +8,16 @@ summary: "Typed handlers for SessionStart context, Stop deferred work, subagent 
 responsibilities:
   - Build the SessionStart sections from Effective State and the session providers.
   - Drain the post-edit journal, refresh handoff and resume projections and sweep run summaries at Stop.
-  - Validate native subagent starts and keep the delegation advisor state.
+  - Record native subagent starts and render the delegation advisor from policy text.
   - Deliver Task Inbox messages and the board slice as untrusted context.
 source:
   include:
     - "src/cli/hook/session-context.ts"
     - "src/cli/hook/stop-handler.ts"
-    - "src/cli/hook/subagent-handler.ts"
-    - "src/cli/hook/delegation-state.ts"
+    - "src/cli/hook/return-channel.ts"
+    - "src/cli/hook/delegation-advisor.ts"
+    - "src/cli/hook/subagent-context.ts"
+    - "src/cli/hook/subagent-quality.ts"
     - "src/cli/hook/task-inbox-handler.ts"
     - "src/cli/hook/board-slice-context.ts"
     - "src/cli/hook/state-snapshot.ts"

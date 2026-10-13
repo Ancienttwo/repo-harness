@@ -29,7 +29,10 @@ import {
   BOARD_SLICE_MAX_BYTES,
   renderBoardSlice,
 } from '../src/cli/hook/board-slice-context';
-import { runSubagentHandler } from '../src/cli/hook/subagent-handler';
+import { runReturnChannel } from '../src/cli/hook/return-channel';
+import { runSubagentContext } from '../src/cli/hook/subagent-context';
+import { createStateInputCollector } from '../src/effects/loop/state-input-collector';
+import { resolveHookEffectiveState } from '../src/cli/hook/runtime';
 import { hookIdentity } from './helpers/hook-identity';
 import { findClaimTokenByUnitRef } from '../src/effects/state/coordination-claim-token';
 import {
@@ -407,21 +410,16 @@ describe('one slice, two hosts, identical bytes', () => {
   afterEach(() => fixture.cleanup());
 
   test('Codex additionalContext and Claude updatedInput.prompt carry the same block', () => {
-    const codex = runSubagentHandler({
-      event: 'SubagentStart',
-      repoRoot: fixture.worktree,
+    const codex = runSubagentContext({
+      collector: collectorFor(fixture.worktree),
       identity: hookIdentity({ host: 'codex' }),
       payload: { agent_type: 'default', model: 'gpt-x', agent_id: 'agent-1', turn_id: 'turn-1' },
+      env: { ...process.env, HOOK_HOST: 'codex' },
     });
     expect(codex.exitCode).toBe(0);
     const codexContext = String(codex.additionalContext);
 
-    const claude = runSubagentHandler({
-      event: 'PreToolUse',
-      repoRoot: fixture.worktree,
-      identity: hookIdentity(),
-      payload: { tool_name: 'Task', tool_input: { prompt: 'do the work' } },
-    });
+    const claude = returnChannel({ tool_name: 'Task', tool_input: { prompt: 'do the work' } });
     expect(claude.exitCode).toBe(0);
     const claudePrompt = String(claude.permission?.updatedInput?.prompt);
 
@@ -432,66 +430,30 @@ describe('one slice, two hosts, identical bytes', () => {
     expect(block).toContain(`claim=${CLAIM_ID}`);
   });
 
-  test('the Codex host never receives the block through the Claude branch too', () => {
-    const claudeBranchOnCodex = runSubagentHandler({
-      event: 'PreToolUse',
-      repoRoot: fixture.worktree,
-      identity: hookIdentity({ host: 'codex' }),
-      payload: { tool_name: 'Task', tool_input: { prompt: 'do the work' } },
-    });
-    const prompt = String(claudeBranchOnCodex.permission?.updatedInput?.prompt);
-    expect(prompt).toContain('[repo-harness:return-channel]');
-    expect(prompt).not.toContain(BOARD_SLICE_MARKER);
-  });
-
   test('the appendices are independently idempotent: a re-spawn still gets the slice', () => {
-    const first = runSubagentHandler({
-      event: 'PreToolUse',
-      repoRoot: fixture.worktree,
-      identity: hookIdentity(),
-      payload: { tool_name: 'Task', tool_input: { prompt: 'do the work' } },
-    });
+    const first = returnChannel({ tool_name: 'Task', tool_input: { prompt: 'do the work' } });
     const stamped = String(first.permission?.updatedInput?.prompt);
     // Replaying the fully-stamped prompt is a no-op ...
-    const replay = runSubagentHandler({
-      event: 'PreToolUse',
-      repoRoot: fixture.worktree,
-      identity: hookIdentity(),
-      payload: { tool_name: 'Agent', tool_input: { prompt: stamped } },
-    });
+    const replay = returnChannel({ tool_name: 'Agent', tool_input: { prompt: stamped } });
     expect(replay).toEqual({ exitCode: 0 });
 
     // ... but a prompt carrying only the return contract still receives the
     // slice. The old RETURN_CONTRACT_MARKER early-exit would have swallowed it.
     const contractOnly = stamped.slice(0, stamped.indexOf(BOARD_SLICE_MARKER));
-    const second = runSubagentHandler({
-      event: 'PreToolUse',
-      repoRoot: fixture.worktree,
-      identity: hookIdentity(),
-      payload: { tool_name: 'Agent', tool_input: { prompt: contractOnly } },
-    });
+    const second = returnChannel({ tool_name: 'Agent', tool_input: { prompt: contractOnly } });
     const secondPrompt = String(second.permission?.updatedInput?.prompt);
     expect(secondPrompt).toContain(BOARD_SLICE_MARKER);
     expect(secondPrompt.match(/\[repo-harness:return-channel\]/g)?.length).toBe(1);
   });
 
-  test('SendUserMessage records return-channel guidance and carries no slice or permission decision', () => {
-    const deny = runSubagentHandler({
-      event: 'PreToolUse',
-      repoRoot: fixture.worktree,
-      identity: hookIdentity(),
-      payload: { tool_name: 'SendUserMessage', agent_id: 'agent-a', tool_input: { message: 'report' } },
-    });
-    expect(deny.additionalContext).not.toContain(BOARD_SLICE_MARKER);
-    expect(deny.permission).toBeUndefined();
-    expect(deny.additionalContext).toContain('full report in final text');
-
-    const mainLoop = runSubagentHandler({
-      event: 'PreToolUse',
-      repoRoot: fixture.worktree,
-      identity: hookIdentity(),
-      payload: { tool_name: 'SendUserMessage', tool_input: { message: 'main loop' } },
-    });
-    expect(mainLoop).toEqual({ exitCode: 0 });
+  test('SendUserMessage gets no slice, no permission decision and no context', () => {
+    expect(returnChannel({ tool_name: 'SendUserMessage', agent_id: 'agent-a', tool_input: { message: 'report' } }))
+      .toEqual({ exitCode: 0 });
+    expect(returnChannel({ tool_name: 'SendUserMessage', tool_input: { message: 'main loop' } }))
+      .toEqual({ exitCode: 0 });
   });
+
+  function returnChannel(payload: Record<string, unknown>) {
+    return runReturnChannel({ collector: collectorFor(fixture.worktree), payload });
+  }
 });

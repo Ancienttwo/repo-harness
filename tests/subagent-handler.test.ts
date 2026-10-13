@@ -1,33 +1,48 @@
 import { describe, expect, test } from 'bun:test';
-import { createHash } from 'crypto';
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'fs';
+import { execFileSync } from 'child_process';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
+import { runDelegationAdvisor } from '../src/cli/hook/delegation-advisor';
+import { runReturnChannel } from '../src/cli/hook/return-channel';
 import {
   appendLongCommandGuardrail,
   EXECUTION_BOUNDARY_MARKER,
   LONG_COMMAND_GUARDRAIL_MARKER,
-  runSubagentHandler,
-  type SubagentHandlerEvent,
-} from '../src/cli/hook/subagent-handler';
-import { payloadIdentityField, type HookPayload } from '../src/cli/hook/hook-input';
+  runSubagentContext,
+} from '../src/cli/hook/subagent-context';
+import { runSubagentQuality } from '../src/cli/hook/subagent-quality';
+import { payloadIdentityField, type HookIdentity, type HookPayload } from '../src/cli/hook/hook-input';
 import { HOST_RENDERERS } from '../src/cli/hook/hook-protocol';
+import type { HookHandlerResult } from '../src/cli/hook/handler-contract';
 import type { RouteHost, RouteId } from '../src/cli/hook/route-registry';
+import { resolveHookEffectiveState, runHook } from '../src/cli/hook/runtime';
+import { createStateInputCollector } from '../src/effects/loop/state-input-collector';
 
-const SUBAGENT_ROUTE: Readonly<Record<SubagentHandlerEvent, RouteId>> = {
+type SubagentEvent = 'PreToolUse' | 'UserPromptSubmit' | 'SubagentStart' | 'SubagentStop';
+
+const SUBAGENT_ROUTE: Readonly<Record<SubagentEvent, RouteId>> = {
   PreToolUse: 'subagent',
   UserPromptSubmit: 'delegation',
   SubagentStart: 'context',
   SubagentStop: 'quality',
 };
 
+/** The real collector wiring the runtime builds for one hook event. */
+function collectorFor(repoRoot: string, event: SubagentEvent, env: NodeJS.ProcessEnv) {
+  return createStateInputCollector({
+    repoRoot,
+    resolveEffectiveState: (targetPaths) => resolveHookEffectiveState(repoRoot, event, targetPaths, env, Date.now()),
+  });
+}
+
 /**
- * Runs the typed handler with the identity the runtime derives (host from
- * HOOK_HOST, ids from the payload) and renders it through the host table.
+ * Runs the route's typed handler with the identity the runtime derives (host
+ * from HOOK_HOST, ids from the payload) and renders it through the host table.
  * The default env is a Claude host, as the runtime sees it without Codex.
  */
 function invokeSubagent(opts: {
-  readonly event: SubagentHandlerEvent;
+  readonly event: SubagentEvent;
   readonly repoRoot: string;
   readonly payload: HookPayload;
   readonly env?: NodeJS.ProcessEnv;
@@ -36,19 +51,20 @@ function invokeSubagent(opts: {
   const env = opts.env ?? { ...process.env, HOOK_HOST: 'claude' };
   const host = env.HOOK_HOST;
   if (host !== 'claude' && host !== 'codex' && host !== 'pi') throw new Error(`invokeSubagent needs HOOK_HOST, got ${String(host)}`);
-  const result = runSubagentHandler({
-    event: opts.event,
-    repoRoot: opts.repoRoot,
-    payload: opts.payload,
-    identity: {
-      host: host satisfies RouteHost,
-      sessionId: payloadIdentityField(opts.payload, 'session_id'),
-      runId: payloadIdentityField(opts.payload, 'run_id'),
-      turnId: payloadIdentityField(opts.payload, 'turn_id'),
-    },
-    env,
-    now: opts.now,
-  });
+  const identity: HookIdentity = {
+    host: host satisfies RouteHost,
+    sessionId: payloadIdentityField(opts.payload, 'session_id'),
+    runId: payloadIdentityField(opts.payload, 'run_id'),
+    turnId: payloadIdentityField(opts.payload, 'turn_id'),
+  };
+  const collector = collectorFor(opts.repoRoot, opts.event, env);
+  const result: HookHandlerResult = opts.event === 'PreToolUse'
+    ? runReturnChannel({ collector, payload: opts.payload })
+    : opts.event === 'UserPromptSubmit'
+      ? runDelegationAdvisor({ collector, payload: opts.payload })
+      : opts.event === 'SubagentStart'
+        ? runSubagentContext({ collector, payload: opts.payload, identity, env, now: opts.now })
+        : runSubagentQuality({ repoRoot: opts.repoRoot, payload: opts.payload, identity, now: opts.now });
   const rendered = HOST_RENDERERS[host]({
     event: opts.event,
     routeId: SUBAGENT_ROUTE[opts.event],
@@ -65,9 +81,20 @@ function invokeSubagent(opts: {
 const REPO_ROOT = join(import.meta.dir, '..');
 const BOUNDARY_MARKER = EXECUTION_BOUNDARY_MARKER;
 const BOUNDARY_SENTENCE = 'Execution boundary: implement exactly the parent brief Goal/Scope/Verify/Rollback.';
+const REPO_POLICY = JSON.parse(readFileSync(join(REPO_ROOT, '.ai/harness/policy.json'), 'utf8')) as {
+  readonly delegation: { readonly rule: string; readonly runner_rule: string };
+};
 
+/** A real git repository, so Effective State resolves exactly as it does under the runtime. */
 function tempRepo(): string {
-  return mkdtempSync(join(tmpdir(), 'repo-harness-subagent-handler-'));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-subagent-handler-')));
+  execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: root });
+  return root;
+}
+
+/** A plain directory outside any repository. */
+function tempDir(): string {
+  return realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-subagent-outside-')));
 }
 
 function occurrences(haystack: string, needle: string): number {
@@ -87,13 +114,21 @@ function installGoldenPersona(repoRoot: string, agent: string): { instructions: 
   return { instructions: String(parsed.developer_instructions), model: String(parsed.model) };
 }
 
-function seedActiveContract(repoRoot: string, slug = 'composed'): string {
+/** This repository's delegation policy text, plus any extra policy fields a case needs. */
+function seedDelegationPolicy(repoRoot: string, extra: Record<string, unknown> = {}): void {
+  mkdirSync(join(repoRoot, '.ai/harness'), { recursive: true });
+  writeFileSync(join(repoRoot, '.ai/harness/policy.json'), JSON.stringify({
+    delegation: { ...REPO_POLICY.delegation, ...extra },
+  }));
+}
+
+function seedActiveContract(repoRoot: string, contractHeaders = '> **Status**: Active\n', slug = '20260101-0000-composed'): string {
   mkdirSync(join(repoRoot, '.ai/harness'), { recursive: true });
   mkdirSync(join(repoRoot, 'plans'), { recursive: true });
   mkdirSync(join(repoRoot, 'tasks/contracts'), { recursive: true });
   writeFileSync(join(repoRoot, '.ai/harness/active-plan'), `plans/plan-${slug}.md\n`);
   writeFileSync(join(repoRoot, `plans/plan-${slug}.md`), '# plan\n');
-  writeFileSync(join(repoRoot, `tasks/contracts/${slug}.contract.md`), '> **Status**: Active\n');
+  writeFileSync(join(repoRoot, `tasks/contracts/${slug}.contract.md`), contractHeaders);
   return `tasks/contracts/${slug}.contract.md`;
 }
 
@@ -105,13 +140,15 @@ function composedChildStack(
   env: NodeJS.ProcessEnv,
 ): { composed: string; startContext: string; advisorContext: string; personaInstructions: string } {
   const persona = installGoldenPersona(repoRoot, agent);
+  seedDelegationPolicy(repoRoot);
   const advisor = invokeSubagent({
     event: 'UserPromptSubmit',
     repoRoot,
     env,
     payload: { session_id: `session-${agent}`, prompt: '/delegate run two bounded workstreams' },
   });
-  const advisorContext = advisor.stdout ? additionalContext(advisor.stdout) : '';
+  expect(advisor.exitCode).toBe(0);
+  const advisorContext = additionalContext(advisor.stdout);
   const start = startSubagent(repoRoot, {
     session_id: `session-${agent}`,
     turn_id: `turn-${agent}`,
@@ -137,22 +174,6 @@ function jsonResult(stdout: string): Record<string, unknown> {
   return JSON.parse(stdout) as Record<string, unknown>;
 }
 
-function seedDelegation(
-  repoRoot: string,
-  payload: Record<string, unknown>,
-  env: NodeJS.ProcessEnv = codexEnv(),
-): void {
-  mkdirSync(join(repoRoot, '.ai/harness'), { recursive: true });
-  const seeded = invokeSubagent({
-    event: 'UserPromptSubmit',
-    repoRoot,
-    env,
-    payload: { prompt: '/delegate use bounded subagents', ...payload },
-  });
-  expect(seeded.exitCode).toBe(0);
-  expect(seeded.stdout).not.toBe('');
-}
-
 function startSubagent(
   repoRoot: string,
   payload: Record<string, unknown>,
@@ -168,10 +189,6 @@ function startSubagent(
 
 function additionalContext(stdout: string): string {
   return ((jsonResult(stdout).hookSpecificOutput as Record<string, unknown>).additionalContext as string);
-}
-
-function readLatest(repoRoot: string): Record<string, unknown> {
-  return JSON.parse(readFileSync(join(repoRoot, '.ai/harness/delegation/latest.json'), 'utf8')) as Record<string, unknown>;
 }
 
 function readNativeRoutingState(repoRoot: string): Record<string, unknown> {
@@ -206,14 +223,19 @@ async function spawnDirectSubagentStart(
   repoRoot: string,
   payload: Record<string, unknown>,
 ): Promise<{ exitCode: number; result: Record<string, unknown>; stderr: string }> {
-  const modulePath = join(import.meta.dir, '../src/cli/hook/subagent-handler.ts');
   const source = [
-    `import { runSubagentHandler } from ${JSON.stringify(modulePath)};`,
-    'const result = runSubagentHandler({',
-    '  event: "SubagentStart",',
-    '  repoRoot: process.argv[1],',
-    '  payload: JSON.parse(process.argv[2]),',
-    '  identity: { host: "codex", sessionId: null, runId: null, turnId: null },',
+    `import { runSubagentContext } from ${JSON.stringify(join(import.meta.dir, '../src/cli/hook/subagent-context.ts'))};`,
+    `import { resolveHookEffectiveState } from ${JSON.stringify(join(import.meta.dir, '../src/cli/hook/runtime.ts'))};`,
+    `import { createStateInputCollector } from ${JSON.stringify(join(import.meta.dir, '../src/effects/loop/state-input-collector.ts'))};`,
+    'const repoRoot = process.argv[1];',
+    'const payload = JSON.parse(process.argv[2]);',
+    'const result = runSubagentContext({',
+    '  collector: createStateInputCollector({',
+    '    repoRoot,',
+    '    resolveEffectiveState: (paths) => resolveHookEffectiveState(repoRoot, "SubagentStart", paths, process.env, Date.now()),',
+    '  }),',
+    '  payload,',
+    '  identity: { host: "codex", sessionId: payload.session_id, runId: null, turnId: payload.turn_id },',
     '  env: process.env,',
     '});',
     'process.stdout.write(JSON.stringify(result));',
@@ -233,7 +255,7 @@ async function spawnDirectSubagentStart(
 }
 
 describe('typed subagent hook handlers', () => {
-  test('ports the return-channel allow/deny decisions and idempotence', () => {
+  test('the return channel stamps Task/Agent prompts once and ignores SendUserMessage', () => {
     const repoRoot = tempRepo();
     try {
       const spawn = invokeSubagent({
@@ -261,13 +283,15 @@ describe('typed subagent hook handlers', () => {
       });
       expect(idempotent.stdout).toBe('');
 
-      const deny = invokeSubagent({
+      // Every Task/Agent prompt already carries the return contract, so the
+      // SendUserMessage tool gets no second copy of it.
+      const subagentMessage = invokeSubagent({
         event: 'PreToolUse',
         repoRoot,
         payload: { tool_name: 'SendUserMessage', agent_id: 'agent-a', tool_input: { message: 'report' } },
       });
-      expect((jsonResult(deny.stdout).hookSpecificOutput as Record<string, unknown>).permissionDecision).toBeUndefined();
-      expect((jsonResult(deny.stdout).hookSpecificOutput as Record<string, unknown>).additionalContext).toContain('final text');
+      expect(subagentMessage).toMatchObject({ exitCode: 0, stdout: '' });
+      expect(subagentMessage.additionalContext).toBeUndefined();
 
       const mainLoop = invokeSubagent({
         event: 'PreToolUse',
@@ -280,108 +304,120 @@ describe('typed subagent hook handlers', () => {
     }
   });
 
-  test('ports explicit delegation state, scope, policy limits, and contract context', () => {
+  test('the delegation advisor renders the policy.json delegation text word for word', () => {
     const repoRoot = tempRepo();
     try {
-      mkdirSync(join(repoRoot, '.ai/harness'), { recursive: true });
-      mkdirSync(join(repoRoot, 'plans'), { recursive: true });
-      mkdirSync(join(repoRoot, 'tasks/contracts'), { recursive: true });
-      writeFileSync(join(repoRoot, '.ai/harness/policy.json'), JSON.stringify({
-        delegation: {
-          max_agents: 4,
-          max_depth: 2,
-          preferred_runners: ['herdr-cli-agent', 'codex-exec', 'main-thread'],
-          fallback_runner: 'main-thread',
-        },
-      }));
-      writeFileSync(join(repoRoot, '.ai/harness/active-plan'), 'plans/plan-test.md\n');
-      writeFileSync(join(repoRoot, 'plans/plan-test.md'), '# plan\n');
-      writeFileSync(join(repoRoot, 'tasks/contracts/test.contract.md'), '> **Status**: Active\n');
-      const env = codexEnv({ HOME: tempRepo() });
+      // Policy numeric fields are not read: the caps are one constant.
+      seedDelegationPolicy(repoRoot, { max_agents: 4, strict_max_agents: 6, max_depth: 2 });
+      const contract = seedActiveContract(repoRoot);
+      const env = codexEnv();
       const output = invokeSubagent({
         event: 'UserPromptSubmit',
         repoRoot,
         env,
         payload: { session_id: 'session-1', prompt: '/delegate inspect in parallel' },
-        now: () => new Date('2026-07-21T12:00:00.000Z'),
       });
       expect(output.exitCode).toBe(0);
-      const context = ((jsonResult(output.stdout).hookSpecificOutput as Record<string, unknown>).additionalContext as string);
+      const context = additionalContext(output.stdout);
       expect(context).toContain('[repo-harness:delegation]');
-      expect(context).toContain('Spawn no more than 2 agents.');
-      expect(context).toContain('active task contract (tasks/contracts/test.contract.md)');
-      expect(context).toContain('Runner authority: Codex native spawn_agent with the exact installed agent_type.');
-      expect(context).toContain('If matching evidence is unavailable, record routing as unverified');
-      expect(context).toContain('- Call native spawn_agent with the requested installed agent_type and fork_turns="none"');
-      expect(context).toContain('Reasoning effort is configured_unverified');
-      expect(context).not.toContain('codex_app__create_thread');
-      expect(context).toContain('Do not dispatch the fleet role through an App thread, codex-exec, the main thread, or another runner.');
+      expect(context).toContain(`Delegation rule: ${REPO_POLICY.delegation.rule}`);
+      expect(context).toContain(`Runner rule: ${REPO_POLICY.delegation.runner_rule}`);
+      expect(context).toContain('Spawn no more than 2 agents. Keep max spawn depth at 1.');
+      expect(context).toContain(`active task contract (${contract})`);
       // Parent permission and routing only: the advisor is not an owner of the
       // execution boundary, and children spawn with fork_turns="none" anyway.
       expect(context).not.toContain(BOUNDARY_SENTENCE);
       expect(context).not.toContain(BOUNDARY_MARKER);
-      const state = JSON.parse(readFileSync(join(repoRoot, '.ai/harness/delegation/latest.json'), 'utf8')) as Record<string, unknown>;
-      expect(state.scope_id).toBe('session-session-1');
-      expect(state.state_file).toBe('turns/session-session-1.json');
-      expect(state.max_agents).toBe(2);
-      expect(state.max_depth).toBe(2);
-      expect(state.preferred_runners).toEqual(['subagent']);
-      expect(state).not.toHaveProperty('fallback_runner');
-      expect(state).not.toHaveProperty('native_role_routing');
-      expect(state).not.toHaveProperty('stop_fallback');
-      expect(state).not.toHaveProperty('fallback_used');
+      // The advisor keeps no delegation state.
+      expect(existsSync(join(repoRoot, '.ai/harness/delegation'))).toBe(false);
 
-      const silent = invokeSubagent({
+      for (const prompt of [
+        'Should we use subagents for this?',
+        'Explain /delegate; do not spawn anything.',
+        '/delegate? Explain the command without running it.',
+      ]) {
+        expect(invokeSubagent({ event: 'UserPromptSubmit', repoRoot, env, payload: { prompt } }).stdout).toBe('');
+      }
+      // Only the documented prompt field is read.
+      expect(invokeSubagent({
         event: 'UserPromptSubmit',
         repoRoot,
         env,
-        payload: { session_id: 'session-silent', prompt: 'Should we use subagents for this?' },
-      });
-      expect(silent.stdout).toBe('');
-      const quoted = invokeSubagent({
-        event: 'UserPromptSubmit',
-        repoRoot,
-        env,
-        payload: { session_id: 'session-quoted', prompt: 'Explain /delegate; do not spawn anything.' },
-      });
-      expect(quoted.stdout).toBe('');
-      const commandLikeProse = invokeSubagent({
-        event: 'UserPromptSubmit',
-        repoRoot,
-        env,
-        payload: { session_id: 'session-command-like', prompt: '/delegate? Explain the command without running it.' },
-      });
-      expect(commandLikeProse.stdout).toBe('');
-      const nonCodex = invokeSubagent({
-        event: 'UserPromptSubmit',
-        repoRoot,
-        env: { ...env, HOOK_HOST: 'claude' },
-        payload: { prompt: '/delegate inspect in parallel' },
-      });
-      expect(nonCodex.stdout).toBe('');
+        payload: { user_prompt: '/delegate inspect in parallel' },
+      }).stdout).toBe('');
     } finally {
       rmSync(repoRoot, { recursive: true, force: true });
     }
   });
 
-  test('ports SubagentStart role context, spawned state, and custom-agent evidence', () => {
+  test('the delegation advisor raises the cap to three for a high-risk workflow profile', () => {
     const repoRoot = tempRepo();
-    const home = tempRepo();
     try {
-      mkdirSync(join(repoRoot, '.ai/harness'), { recursive: true });
-      mkdirSync(join(repoRoot, '.codex/agents'), { recursive: true });
-      writeFileSync(join(repoRoot, '.codex/agents/worker.toml'), 'name = "fast-worker"\ndescription = "Bounded worker"\ndeveloper_instructions = "Stay in scope."\nmodel = "gpt-5.6-sol"\nsandbox_mode = "workspace-write"\n');
-      const env = codexEnv({ HOME: home });
-      invokeSubagent({
+      seedDelegationPolicy(repoRoot);
+      seedActiveContract(repoRoot, '> **Status**: Active\n> **Workflow Profile**: high\n');
+      const output = invokeSubagent({
         event: 'UserPromptSubmit',
         repoRoot,
-        env,
-        payload: { session_id: 'session-role', prompt: '/delegate use a worker' },
+        env: codexEnv(),
+        payload: { prompt: '/parallel two bounded workstreams' },
       });
+      expect(output.exitCode).toBe(0);
+      expect(additionalContext(output.stdout)).toContain('Spawn no more than 3 agents. Keep max spawn depth at 1.');
+    } finally {
+      rmSync(repoRoot, { recursive: true, force: true });
+    }
+  });
+
+  test('the delegation advisor fails with a named error when the policy text is missing', () => {
+    const repoRoot = tempRepo();
+    try {
+      mkdirSync(join(repoRoot, '.ai/harness'), { recursive: true });
+      writeFileSync(join(repoRoot, '.ai/harness/policy.json'), JSON.stringify({
+        delegation: { runner_rule: REPO_POLICY.delegation.runner_rule },
+      }));
+      const output = invokeSubagent({
+        event: 'UserPromptSubmit',
+        repoRoot,
+        env: codexEnv(),
+        payload: { prompt: '/delegate inspect in parallel' },
+      });
+      expect(output.exitCode).toBe(1);
+      expect(output.additionalContext).toBeUndefined();
+      expect(output.reason).toBe('delegation-policy-invalid');
+      expect(output.diagnostics).toContain('delegation.rule');
+    } finally {
+      rmSync(repoRoot, { recursive: true, force: true });
+    }
+  });
+
+  test('SubagentStart on Claude fails closed with unsupported-host-route', () => {
+    const repoRoot = tempRepo();
+    try {
+      mkdirSync(join(repoRoot, '.ai/harness'), { recursive: true });
+      writeFileSync(join(repoRoot, '.ai/harness/workflow-contract.json'), '{}\n');
+      const result = runHook({
+        event: 'SubagentStart',
+        routeId: 'context',
+        cwd: repoRoot,
+        input: JSON.stringify({ hook_event_name: 'SubagentStart', agent_type: 'default', model: 'gpt-x' }),
+        env: { ...process.env, HOOK_REPO_ROOT: repoRoot, HOOK_HOST: 'claude' },
+      });
+      expect(result).toMatchObject({ exitCode: 2, reason: 'unsupported-host-route' });
+      expect(existsSync(join(repoRoot, '.ai/harness/delegation'))).toBe(false);
+    } finally {
+      rmSync(repoRoot, { recursive: true, force: true });
+    }
+  });
+
+  test('SubagentStart records verified custom-agent evidence', () => {
+    const repoRoot = tempRepo();
+    const home = tempDir();
+    try {
+      writeWorkerProfile(repoRoot);
       const output = invokeSubagent({
         event: 'SubagentStart',
         repoRoot,
-        env,
+        env: codexEnv({ HOME: home }),
         payload: {
           hook_event_name: 'SubagentStart',
           session_id: 'session-role',
@@ -393,24 +429,19 @@ describe('typed subagent hook handlers', () => {
         now: () => new Date('2026-07-21T12:01:00.000Z'),
       });
       expect(output.exitCode).toBe(0);
-      const context = ((jsonResult(output.stdout).hookSpecificOutput as Record<string, unknown>).additionalContext as string);
+      const context = additionalContext(output.stdout);
       expect(context).toContain('[repo-harness:native-role-routing] verified');
       expect(context).toContain('reasoning-effort routing remains unverified');
-      const latest = JSON.parse(readFileSync(join(repoRoot, '.ai/harness/delegation/latest.json'), 'utf8')) as Record<string, unknown>;
-      expect(latest.spawned).toBe(true);
-      expect(latest.spawned_at).toBeTruthy();
-      // The prompt hash is intentionally part of the evidence scope; inspect
-      // the directory shape instead of reconstructing that opaque digest here.
-      const roleRoot = join(repoRoot, '.ai/harness/delegation', 'role-routing');
-      expect(exists(roleRoot)).toBe(true);
-      expect(findJsonFile(roleRoot)).not.toBeNull();
+      expect(readRoutingObservations(repoRoot)).toEqual([
+        expect.objectContaining({ status: 'verified', checked_at: '2026-07-21T12:01:00.000Z' }),
+      ]);
     } finally {
       rmSync(repoRoot, { recursive: true, force: true });
       rmSync(home, { recursive: true, force: true });
     }
   });
 
-  test('persists native role/model evidence without advisor-created delegation state', () => {
+  test('persists native role/model evidence without delegation state', () => {
     const repoRoot = tempRepo();
     try {
       writeWorkerProfile(repoRoot);
@@ -506,7 +537,6 @@ describe('typed subagent hook handlers', () => {
       const repoRoot = tempRepo();
       try {
         writeWorkerProfile(repoRoot, testCase.config);
-        seedDelegation(repoRoot, { session_id: `session-${testCase.name}` });
         const output = startSubagent(repoRoot, {
           session_id: `session-${testCase.name}`,
           turn_id: `turn-${testCase.name}`,
@@ -547,7 +577,6 @@ describe('typed subagent hook handlers', () => {
     const repoRoot = tempRepo();
     try {
       writeWorkerProfile(repoRoot);
-      seedDelegation(repoRoot, { session_id: 'session-concurrent' });
       const common = {
         hook_event_name: 'SubagentStart',
         session_id: 'session-concurrent',
@@ -566,100 +595,26 @@ describe('typed subagent hook handlers', () => {
       const observations = readRoutingObservations(repoRoot);
       expect(observations).toHaveLength(2);
       expect(observations.map((entry) => entry.status).sort()).toEqual(['unavailable', 'verified']);
-      expect(readLatest(repoRoot).spawned).toBe(true);
     } finally {
       rmSync(repoRoot, { recursive: true, force: true });
     }
   }, 30_000);
 
-  test('does not roll latest.json back when a stale scoped SubagentStart arrives', () => {
-    const repoRoot = tempRepo();
-    try {
-      seedDelegation(repoRoot, { session_id: 'session-stale', turn_id: 'stale-a' });
-      const stateAPath = join(repoRoot, '.ai/harness/delegation/turns/turn-stale-a.json');
-      expect((JSON.parse(readFileSync(stateAPath, 'utf8')) as Record<string, unknown>).spawned).toBe(false);
-      seedDelegation(repoRoot, { session_id: 'session-stale', turn_id: 'stale-b' });
-      const latestBefore = readFileSync(join(repoRoot, '.ai/harness/delegation/latest.json'), 'utf8');
-      expect((JSON.parse(latestBefore) as Record<string, unknown>).scope_id).toBe('turn-stale-b');
-
-      const stale = startSubagent(repoRoot, {
-        session_id: 'session-stale',
-        turn_id: 'stale-a',
-        agent_id: 'agent-stale-a',
-        agent_type: 'default',
-        model: 'gpt-5.6-sol',
-      });
-      expect(stale.exitCode).toBe(0);
-      expect(readFileSync(join(repoRoot, '.ai/harness/delegation/latest.json'), 'utf8')).toBe(latestBefore);
-      expect((JSON.parse(readFileSync(stateAPath, 'utf8')) as Record<string, unknown>).spawned).toBe(false);
-      expect(additionalContext(stale.stdout)).toContain('[repo-harness:native-role-routing] unavailable');
-      expect(readNativeRoutingState(repoRoot)).toMatchObject({
-        evidence_dir: 'role-routing/session-session-stale',
-      });
-    } finally {
-      rmSync(repoRoot, { recursive: true, force: true });
-    }
-  });
-
-  test('keeps native event evidence independent from a held advisor-state lock', () => {
-    const repoRoot = tempRepo();
-    try {
-      seedDelegation(repoRoot, { session_id: 'session-held', turn_id: 'held-a' });
-      const latestPath = join(repoRoot, '.ai/harness/delegation/latest.json');
-      const lockPath = `${latestPath}.lock`;
-      const turnPath = join(repoRoot, '.ai/harness/delegation/turns/turn-held-a.json');
-      const latestBefore = readFileSync(latestPath, 'utf8');
-      const heldLock = JSON.stringify({ pid: 999_999, token: 'external-owner', acquired_at: '2026-07-21T12:00:00.000Z' });
-      writeFileSync(lockPath, heldLock, { flag: 'wx' });
-      const startedAt = Date.now();
-      const output = startSubagent(repoRoot, {
-        session_id: 'session-held',
-        turn_id: 'held-a',
-        agent_id: 'agent-held',
-        agent_type: 'default',
-        model: 'gpt-5.6-sol',
-      });
-      const elapsedMs = Date.now() - startedAt;
-      expect(output.exitCode).toBe(0);
-      expect(elapsedMs).toBeLessThan(4_500);
-      expect(additionalContext(output.stdout)).toContain('[repo-harness:native-role-routing] unavailable');
-      expect(readNativeRoutingState(repoRoot)).toMatchObject({
-        evidence_dir: 'role-routing/session-session-held',
-        reasoning_effort_status: 'configured_unverified',
-      });
-      expect(readFileSync(lockPath, 'utf8')).toBe(heldLock);
-      expect(readFileSync(latestPath, 'utf8')).toBe(latestBefore);
-      const isolated = JSON.parse(readFileSync(turnPath, 'utf8')) as Record<string, unknown>;
-      expect(isolated.spawned).toBe(false);
-      expect(isolated.spawned_at).toBeUndefined();
-    } finally {
-      rmSync(repoRoot, { recursive: true, force: true });
-    }
-  }, 8_000);
-
   test('retains only the current scope and its latest 32 native observations', () => {
     const repoRoot = tempRepo();
     try {
       writeWorkerProfile(repoRoot);
-      const stateDir = join(repoRoot, '.ai/harness/state');
-      mkdirSync(stateDir, { recursive: true });
-      const startWithProgress = (sessionId: string, index: number) => {
-        writeFileSync(join(stateDir, 'effective.json'), JSON.stringify({
-          workflow_profile: 'routine',
-          progress_token: `progress-${sessionId}-${index}`,
-        }));
-        return startSubagent(repoRoot, {
-          session_id: sessionId,
-          turn_id: `turn-${index}`,
-          agent_id: `agent-${index}`,
-          agent_type: 'fast-worker',
-          model: 'gpt-5.6-sol',
-        });
-      };
+      const start = (sessionId: string, index: number) => startSubagent(repoRoot, {
+        session_id: sessionId,
+        turn_id: `turn-${index}`,
+        agent_id: `agent-${index}`,
+        agent_type: 'fast-worker',
+        model: 'gpt-5.6-sol',
+      });
 
-      expect(startWithProgress('old', 0).exitCode).toBe(0);
+      expect(start('old', 0).exitCode).toBe(0);
       for (let index = 1; index <= 40; index += 1) {
-        const output = startWithProgress('current', index);
+        const output = start('current', index);
         expect(output.exitCode).toBe(0);
         expect(additionalContext(output.stdout)).toContain('[repo-harness:native-role-routing] verified');
       }
@@ -677,15 +632,14 @@ describe('typed subagent hook handlers', () => {
   }, 30_000);
 
   test('rejects symlinked custom-agent and role-routing evidence directories', () => {
-    const agentOutside = tempRepo();
-    const evidenceOutside = tempRepo();
+    const agentOutside = tempDir();
+    const evidenceOutside = tempDir();
     const linkedAgentRepo = tempRepo();
     const linkedEvidenceRepo = tempRepo();
     try {
       writeFileSync(join(agentOutside, 'worker.toml'), 'name = "fast-worker"\ndescription = "Bounded worker"\ndeveloper_instructions = "Stay in scope."\nmodel = "gpt-5.6-sol"\nsandbox_mode = "workspace-write"\n');
       mkdirSync(join(linkedAgentRepo, '.codex'), { recursive: true });
       symlinkDirectory(agentOutside, join(linkedAgentRepo, '.codex/agents'));
-      seedDelegation(linkedAgentRepo, { session_id: 'session-config-link' });
       const linkedConfig = startSubagent(linkedAgentRepo, {
         session_id: 'session-config-link',
         turn_id: 'turn-config-link',
@@ -697,7 +651,6 @@ describe('typed subagent hook handlers', () => {
       expect(readRoutingObservations(linkedAgentRepo)[0].config_path).toBeNull();
 
       writeWorkerProfile(linkedEvidenceRepo);
-      seedDelegation(linkedEvidenceRepo, { session_id: 'session-evidence-link' });
       const evidencePath = join(linkedEvidenceRepo, '.ai/harness/delegation/role-routing/session-session-evidence-link');
       mkdirSync(join(evidencePath, '..'), { recursive: true });
       symlinkDirectory(evidenceOutside, evidencePath);
@@ -719,105 +672,39 @@ describe('typed subagent hook handlers', () => {
     }
   });
 
-  test('resolves delegation scope in turn, run, session, transcript order', () => {
+  test('SubagentStop quality reads last_assistant_message and dedupes per session and agent', () => {
     const repoRoot = tempRepo();
     try {
-      seedDelegation(repoRoot, {
-        turn_id: 'turn-priority',
-        run_id: 'run-priority',
-        session_id: 'session-priority',
-        transcript_path: '/tmp/transcript-priority.jsonl',
-      });
-      expect(readLatest(repoRoot)).toMatchObject({ scope_source: 'turn_id', scope_id: 'turn-turn-priority' });
-
-      seedDelegation(repoRoot, {
-        run_id: 'run-priority',
-        session_id: 'session-priority',
-        transcript_path: '/tmp/transcript-priority.jsonl',
-      });
-      expect(readLatest(repoRoot)).toMatchObject({ scope_source: 'run_id', scope_id: 'run-run-priority' });
-
-      seedDelegation(repoRoot, {
-        session_id: 'session-priority',
-        transcript_path: '/tmp/transcript-priority.jsonl',
-      });
-      expect(readLatest(repoRoot)).toMatchObject({ scope_source: 'session_id', scope_id: 'session-session-priority' });
-
-      const transcriptPath = '  /tmp/transcript-priority.jsonl  ';
-      const digest = createHash('sha1').update(transcriptPath.trim()).digest('hex').slice(0, 16);
-      seedDelegation(repoRoot, { transcript_path: transcriptPath });
-      expect(readLatest(repoRoot)).toMatchObject({
-        scope_source: 'transcript_path',
-        scope_id: `transcript-${digest}`,
-      });
-    } finally {
-      rmSync(repoRoot, { recursive: true, force: true });
-    }
-  });
-
-  test('ports SubagentStop quality gating and same-scope idempotence', () => {
-    const repoRoot = tempRepo();
-    try {
-      const thin = invokeSubagent({
+      const stop = (payload: Record<string, unknown>) => invokeSubagent({
         event: 'SubagentStop',
         repoRoot,
         env: codexEnv(),
-        payload: { session_id: 'session-a', subagent_id: 'agent-a', final_message: 'looks good' },
+        payload: { hook_event_name: 'SubagentStop', ...payload },
         now: () => new Date('2026-07-21T12:02:00.000Z'),
       });
+      const thin = stop({ session_id: 'session-a', agent_id: 'agent-a', last_assistant_message: 'looks good' });
       expect(thin.exitCode).toBe(0);
-      expect(((jsonResult(thin.stdout).hookSpecificOutput as Record<string, unknown>).additionalContext as string)).toContain('[SubagentQuality]');
-      expect(jsonResult(thin.stdout).decision).toBeUndefined();
+      expect(additionalContext(thin.stdout)).toContain('[SubagentQuality]');
 
-      const repeated = invokeSubagent({
-        event: 'SubagentStop',
-        repoRoot,
-        env: codexEnv(),
-        payload: { session_id: 'session-a', subagent_id: 'agent-a', final_message: 'looks good' },
+      expect(stop({ session_id: 'session-a', agent_id: 'agent-a', last_assistant_message: 'looks good' }).stdout).toBe('');
+      expect(additionalContext(stop({ session_id: 'session-a', agent_id: 'agent-b', last_assistant_message: 'looks good' }).stdout))
+        .toContain('[SubagentQuality]');
+      expect(additionalContext(stop({ session_id: 'session-b', agent_id: 'agent-a', last_assistant_message: 'looks good' }).stdout))
+        .toContain('[SubagentQuality]');
+
+      const unresolvedError = stop({
+        session_id: 'session-error',
+        agent_id: 'agent-error',
+        last_assistant_message: 'The investigation failed with a timeout while reading the repository. The operation failed again and the requested mapping remains blocked without any further explanation or parent action.',
       });
-      expect(repeated.stdout).toBe('');
+      expect(additionalContext(unresolvedError.stdout)).toContain('unresolved error');
 
-      const differentSubagent = invokeSubagent({
-        event: 'SubagentStop',
-        repoRoot,
-        env: codexEnv(),
-        payload: { session_id: 'session-a', subagent_id: 'agent-b', final_message: 'looks good' },
-      });
-      expect(jsonResult(differentSubagent.stdout).decision).toBeUndefined();
+      expect(stop({ stop_hook_active: true, last_assistant_message: 'looks good' }).stdout).toBe('');
+      // Only the documented Codex field is read.
+      expect(stop({ session_id: 'session-c', agent_id: 'agent-c', final_message: 'looks good' }).stdout).toBe('');
 
-      const differentSession = invokeSubagent({
-        event: 'SubagentStop',
-        repoRoot,
-        env: codexEnv(),
-        payload: { session_id: 'session-b', subagent_id: 'agent-a', final_message: 'looks good' },
-      });
-      expect(jsonResult(differentSession.stdout).decision).toBeUndefined();
-
-      const unresolvedError = invokeSubagent({
-        event: 'SubagentStop',
-        repoRoot,
-        env: codexEnv(),
-        payload: {
-          session_id: 'session-error',
-          subagent_id: 'agent-error',
-          final_message: 'The investigation failed with a timeout while reading the repository. The operation failed again and the requested mapping remains blocked without any further explanation or parent action.',
-        },
-      });
-      expect(((jsonResult(unresolvedError.stdout).hookSpecificOutput as Record<string, unknown>).additionalContext as string)).toContain('unresolved error');
-
-      const recursiveStop = invokeSubagent({
-        event: 'SubagentStop',
-        repoRoot,
-        env: codexEnv(),
-        payload: { subagent_stop_hook_active: true, final_message: 'looks good' },
-      });
-      expect(recursiveStop.stdout).toBe('');
-
-      const complete = invokeSubagent({
-        event: 'SubagentStop',
-        repoRoot,
-        env: codexEnv(),
-        payload: { final_message: 'Inspected src/cli/hook/subagent-handler.ts and tests/subagent-handler.test.ts. Evidence: typed route decisions and state writes match the four retired scripts. Ran bun test tests/subagent-handler.test.ts. Risk: host payload fields may evolve; parent should verify route fixtures.' },
+      const complete = stop({
+        last_assistant_message: 'Inspected src/cli/hook/subagent-context.ts and tests/subagent-handler.test.ts. Evidence: typed route decisions and state writes match the routes. Ran bun test tests/subagent-handler.test.ts. Risk: host payload fields may evolve; parent should verify route fixtures.',
       });
       expect(complete.stdout).toBe('');
     } finally {
@@ -867,7 +754,7 @@ describe('typed subagent hook handlers', () => {
   describe('composed native-child stack owns the execution boundary exactly once', () => {
     test('active contract + workspace-write child: the boundary appears once, with the contract path', () => {
       const repoRoot = tempRepo();
-      const home = tempRepo();
+      const home = tempDir();
       try {
         const contract = seedActiveContract(repoRoot);
         const stack = composedChildStack(repoRoot, 'fast-worker', 'gpt-6.1-sol', codexEnv({ HOME: home }));
@@ -887,7 +774,7 @@ describe('typed subagent hook handlers', () => {
 
     test('active contract + read-only child: zero implementation boundary, read-only scope note instead', () => {
       const repoRoot = tempRepo();
-      const home = tempRepo();
+      const home = tempDir();
       try {
         const contract = seedActiveContract(repoRoot);
         const stack = composedChildStack(repoRoot, 'explorer', 'gpt-6-luna', codexEnv({ HOME: home }));
@@ -904,7 +791,7 @@ describe('typed subagent hook handlers', () => {
 
     test('no active contract: writable child receives exactly one boundary from its parent brief', () => {
       const repoRoot = tempRepo();
-      const home = tempRepo();
+      const home = tempDir();
       try {
         const stack = composedChildStack(repoRoot, 'fast-worker', 'gpt-6.1-sol', codexEnv({ HOME: home }));
         expect(stack.startContext).toContain('[repo-harness:native-role-routing] verified');
@@ -921,7 +808,7 @@ describe('typed subagent hook handlers', () => {
     });
 
     test('no active contract: verified read-only child has no write boundary or fabricated contract', () => {
-      const repoRoot=tempRepo(), home=tempRepo();
+      const repoRoot=tempRepo(), home=tempDir();
       try {
         const stack=composedChildStack(repoRoot,'explorer','gpt-6-luna',codexEnv({HOME:home}));
         expect(occurrences(stack.composed,BOUNDARY_MARKER)).toBe(0);
@@ -932,7 +819,7 @@ describe('typed subagent hook handlers', () => {
 
     test('unverified routing on a writable persona: fail-closed notice, zero boundary', () => {
       const repoRoot = tempRepo();
-      const home = tempRepo();
+      const home = tempDir();
       try {
         seedActiveContract(repoRoot);
         const stack = composedChildStack(repoRoot, 'fast-worker', 'gpt-5.6-sol', codexEnv({ HOME: home }));
@@ -949,7 +836,7 @@ describe('typed subagent hook handlers', () => {
 
     test('a persona without a declared sandbox_mode fails closed and receives no boundary', () => {
       const repoRoot = tempRepo();
-      const home = tempRepo();
+      const home = tempDir();
       try {
         seedActiveContract(repoRoot);
         writeWorkerProfile(repoRoot, 'name = "fast-worker"\ndescription = "Bounded worker"\ndeveloper_instructions = "Stay in scope."\nmodel = "gpt-5.6-sol"\n');
@@ -974,7 +861,7 @@ describe('typed subagent hook handlers', () => {
 
     test('verified routing records the scanned sandbox_mode in role evidence', () => {
       const repoRoot = tempRepo();
-      const home = tempRepo();
+      const home = tempDir();
       try {
         installGoldenPersona(repoRoot, 'gatekeeper');
         const output = startSubagent(repoRoot, {
@@ -997,25 +884,3 @@ describe('typed subagent hook handlers', () => {
     });
   });
 });
-
-function exists(path: string): boolean {
-  return existsSync(path);
-}
-
-function findJsonFile(root: string): string | null {
-  try {
-    const entries = readdirSync(root, { withFileTypes: true });
-    for (const entry of entries) {
-      const candidate = join(root, entry.name);
-      if (entry.isDirectory()) {
-        const nested = findJsonFile(candidate);
-        if (nested) return nested;
-      } else if (entry.name.endsWith('.json')) {
-        return candidate;
-      }
-    }
-  } catch {
-    return null;
-  }
-  return null;
-}

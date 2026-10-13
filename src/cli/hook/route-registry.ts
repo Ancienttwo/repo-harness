@@ -43,7 +43,10 @@ export type RouteId =
 export type HookHandlerId =
   | 'session-context'
   | 'mutation-guard'
-  | 'subagent'
+  | 'return-channel'
+  | 'delegation-advisor'
+  | 'subagent-context'
+  | 'subagent-quality'
   | 'command-observed'
   | 'prompt'
   | 'task-inbox'
@@ -91,7 +94,7 @@ export const ROUTES: readonly Route[] = Object.freeze([
     routeId: 'subagent' as const,
     matcher: 'Task|Agent|SendUserMessage',
     hosts: ['claude', 'codex'] as const,
-    handler: 'subagent',
+    handler: 'return-channel',
   }),
   Object.freeze({
     event: 'PostToolUse' as const,
@@ -133,19 +136,19 @@ export const ROUTES: readonly Route[] = Object.freeze([
     event: 'UserPromptSubmit' as const,
     routeId: 'delegation' as const,
     hosts: Object.freeze(['codex'] as const),
-    handler: 'subagent',
+    handler: 'delegation-advisor',
   }),
   Object.freeze({
     event: 'SubagentStart' as const,
     routeId: 'context' as const,
     hosts: Object.freeze(['codex'] as const),
-    handler: 'subagent',
+    handler: 'subagent-context',
   }),
   Object.freeze({
     event: 'SubagentStop' as const,
     routeId: 'quality' as const,
     hosts: Object.freeze(['codex'] as const),
-    handler: 'subagent',
+    handler: 'subagent-quality',
   }),
   Object.freeze({
     event: 'Stop' as const,

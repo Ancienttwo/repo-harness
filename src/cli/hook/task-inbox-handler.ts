@@ -8,11 +8,8 @@
  * interpreted as prompt or workflow input by this route.
  */
 
-import { readText } from '../../effects/state/collect-state-inputs';
-import {
-  findClaimTokenByUnitRef,
-  type ClaimTokenRead,
-} from '../../effects/state/coordination-claim-token';
+import { findClaimTokenForActivePlan } from '../../effects/state/coordination-claim-token';
+import type { StateInputCollector } from '../../effects/loop/state-input-collector';
 import { readLease } from '../../effects/state/coordination-lease-store';
 import { TaskInboxError, deliverTaskInbox, type TaskInboxDelivery } from '../../effects/fleet/task-inbox';
 import {
@@ -22,36 +19,19 @@ import {
 } from '../../core/fleet/task-message';
 import type { HookHandlerResult } from './handler-contract';
 
-const ACTIVE_PLAN_MARKER = '.ai/harness/active-plan';
-
 export interface TaskInboxHandlerInput {
-  readonly repoRoot: string;
+  readonly collector: Pick<StateInputCollector, 'getRepoRoot' | 'getActivePlanMarker'>;
   readonly now?: () => Date;
   readonly dependencies?: TaskInboxHandlerDependencies;
 }
 
 export interface TaskInboxHandlerDependencies {
-  readonly findClaimToken?: typeof findClaimTokenByUnitRef;
+  readonly findClaimToken?: typeof findClaimTokenForActivePlan;
   readonly readOwnerLease?: typeof readLease;
   readonly deliver?: typeof deliverTaskInbox;
 }
 
 const NO_DELIVERY: HookHandlerResult = { exitCode: 0 };
-
-function activePlanUnitRef(repoRoot: string): string | null {
-  const marker = readText(repoRoot, ACTIVE_PLAN_MARKER);
-  const value = marker?.trim() ?? '';
-  return value.length > 0 ? value : null;
-}
-
-function tokenForCurrentWorktree(
-  repoRoot: string,
-  deps: TaskInboxHandlerDependencies,
-): ClaimTokenRead {
-  const unitRef = activePlanUnitRef(repoRoot);
-  if (unitRef === null) return { outcome: 'none' };
-  return (deps.findClaimToken ?? findClaimTokenByUnitRef)(repoRoot, unitRef);
-}
 
 function renderContext(deliveries: readonly TaskInboxDelivery[]): string {
   return renderTaskMessageUntrustedContext(deliveries.map((delivery) => delivery.event));
@@ -74,14 +54,15 @@ function errorResult(error: unknown): HookHandlerResult {
  */
 export function runTaskInboxHandler(opts: TaskInboxHandlerInput): HookHandlerResult {
   const deps = opts.dependencies ?? {};
-  const token = tokenForCurrentWorktree(opts.repoRoot, deps);
+  const repoRoot = opts.collector.getRepoRoot();
+  const token = (deps.findClaimToken ?? findClaimTokenForActivePlan)(repoRoot, opts.collector.getActivePlanMarker());
   if (token.outcome === 'none') return NO_DELIVERY;
   if (token.outcome === 'ambiguous') {
     return errorResult(new Error(`ambiguous claim token for active plan: ${token.matches.join(', ')}`));
   }
 
   try {
-    const leaseRead = (deps.readOwnerLease ?? readLease)(opts.repoRoot, token.token.task_id);
+    const leaseRead = (deps.readOwnerLease ?? readLease)(repoRoot, token.token.task_id);
     if (leaseRead.record === null) return NO_DELIVERY;
     const lease = leaseRead.record;
     // The effect owns canonical worktree comparison.  Do not compare a
@@ -89,10 +70,8 @@ export function runTaskInboxHandler(opts: TaskInboxHandlerInput): HookHandlerRes
     // as `/var/...` at the shell boundary and `/private/var/...` through
     // realpath, while the bound lease preserves the path written by bind.
     if (lease.claim_id !== token.token.claim_id) return NO_DELIVERY;
-    const worktree = opts.repoRoot;
-
     const delivered = (deps.deliver ?? deliverTaskInbox)({
-      repo_root: opts.repoRoot,
+      repo_root: repoRoot,
       task_id: token.token.task_id,
       canonical_source: {
         targetRef: lease.target_ref,
@@ -103,7 +82,7 @@ export function runTaskInboxHandler(opts: TaskInboxHandlerInput): HookHandlerRes
         claim_id: lease.claim_id,
         generation: lease.generation,
       },
-      execution_worktree: worktree,
+      execution_worktree: repoRoot,
       delivery_channel: 'hook_session',
       delivered_at: (opts.now ?? (() => new Date()))().toISOString(),
     });

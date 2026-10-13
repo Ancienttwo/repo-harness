@@ -9,6 +9,15 @@ import {
   TASK_INBOX_CONTEXT_START,
 } from '../src/cli/hook/task-inbox-handler';
 import { HOST_RENDERERS } from '../src/cli/hook/hook-protocol';
+import { createStateInputCollector } from '../src/effects/loop/state-input-collector';
+
+/** The inbox reads only the tree and its active plan marker; Effective State is never resolved. */
+function collectorFor(root: string) {
+  return createStateInputCollector({
+    repoRoot: root,
+    resolveEffectiveState: () => { throw new Error('the task inbox must not resolve Effective State'); },
+  });
+}
 
 function fixture(): string {
   const root = mkdtempSync(join(tmpdir(), 'task-inbox-hook-'));
@@ -21,13 +30,18 @@ describe('UserPromptSubmit.inbox typed route', () => {
   test('does not guess a recipient when the worktree has no claim token', () => {
     const root = fixture();
     try {
+      const markers: (string | null)[] = [];
       const output = runTaskInboxHandler({
-        repoRoot: root,
+        collector: collectorFor(root),
         dependencies: {
-          findClaimToken: () => ({ outcome: 'none' }),
+          findClaimToken: (_cwd, activePlanMarker) => {
+            markers.push(activePlanMarker);
+            return { outcome: 'none' };
+          },
         },
       });
       expect(output).toEqual({ exitCode: 0 });
+      expect(markers).toEqual(['plans/plan-task-inbox.md']);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -38,7 +52,7 @@ describe('UserPromptSubmit.inbox typed route', () => {
     try {
       const worktree = realpathSync(root);
       const output = runTaskInboxHandler({
-        repoRoot: root,
+        collector: collectorFor(root),
         now: () => new Date('2026-08-23T01:02:03.000Z'),
         dependencies: {
           findClaimToken: () => ({

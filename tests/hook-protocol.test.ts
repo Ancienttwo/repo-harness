@@ -198,7 +198,7 @@ describe("Claude Code hook protocol compliance", () => {
       writeActivePlan(cwd, "plans/plan-20260528-1300-demo.md");
 
       // Ordinary prompt/edit routes observe workflow state without gating on it.
-      const promptRes = runPromptHandler({ payload: { user_message: "/execute" } });
+      const promptRes = runPromptHandler({ payload: { prompt: "/execute" } });
       expect(promptRes.exitCode).toBe(0);
       expect(promptRes.additionalContext).toContain("[OperationBoundaries]");
 
@@ -244,7 +244,7 @@ describe("Claude Code hook protocol compliance", () => {
       );
       writeActivePlan(cwd, "plans/plan-20260528-1400-demo.md");
 
-      const res = runPromptHandler({ payload: { user_message: "done" } });
+      const res = runPromptHandler({ payload: { prompt: "done" } });
       expect(res.exitCode).toBe(0);
       expect(res.additionalContext).toBeUndefined();
       expect(res.diagnostics).toBeUndefined();
