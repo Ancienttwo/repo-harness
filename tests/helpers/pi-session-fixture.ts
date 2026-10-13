@@ -20,6 +20,7 @@ const errors: string[] = [];
 const journalPaths: string[] = [];
 const writes: string[] = [];
 const bashObservations: Array<{ id: string; check: Record<string, unknown>; structured: unknown }> = [];
+const agentStarts: string[] = [];
 // Use the native tools' filesystem seam to cancel after real bytes reach disk.
 // Their own post-write abort check must produce the error tool result.
 const cancelAfterWrite = async (path: string, content: string) => {
@@ -38,6 +39,7 @@ const resourceLoader = new DefaultResourceLoader({ cwd, agentDir, settingsManage
       pi.registerTool(createEditToolDefinition(cwd, { operations: { writeFile: cancelAfterWrite, readFile,
         access: async path => { await access(path, constants.R_OK | constants.W_OK); } } }));
     }
+    pi.on('before_agent_start', event => { agentStarts.push(event.messageType); });
     pi.on('tool_call', (event: ToolCallEvent) => { calls.push({ name: event.toolName, id: event.toolCallId, parent: event.parentToolCallId ?? null }); });
     pi.on('tool_result', event => {
       journalPaths.push(...readPendingPostEditEvents(repoRoot).flatMap(event => event.changed_paths));
@@ -150,7 +152,7 @@ try {
   } else if (mode === 'unavailable') {
     await prompt('write', { path: 'blocked.txt', content: 'must not write' }, 'unavailable-write');
   } else throw new Error(`Unknown fixture mode: ${mode}`);
-  console.log(JSON.stringify({ calls, errors, journalPaths, writes, bashObservations, messages: session.state.messages, sessionId: session.sessionId, sessionIds,
+  console.log(JSON.stringify({ calls, errors, journalPaths, writes, bashObservations, agentStarts, messages: session.state.messages, sessionId: session.sessionId, sessionIds,
     readme: readFileSync(join(repoRoot, 'README.md'), 'utf8') }));
 } finally {
   await session.abort();

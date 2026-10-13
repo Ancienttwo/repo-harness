@@ -4,6 +4,13 @@ All notable changes to this skill are documented here.
 
 ## Unreleased
 
+### Breaking
+
+- The Pi host extension now requires Pi `1.2.0` exactly. Pi `1.1.0` fails
+  with `PI_HOOK_UNSUPPORTED_VERSION`. Upgrade Pi to `1.2.0` with the
+  package. A Pi run started by a custom message keeps the current run and
+  is not a `UserPromptSubmit`.
+
 ### Changed
 
 - Pin `archctx` and `archctx-contracts` to exact version `0.7.2`. A busy

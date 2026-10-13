@@ -303,6 +303,7 @@ describe('real Pi 1.2 tool pipeline with a scripted provider', () => {
     const f = fixture();
     try {
       const result = session(f.root, f.env, 'custom-turn');
+      expect(result.agentStarts).toEqual(['user', 'custom']);
       expect(readFileSync(join(f.root, 'custom-run.txt'), 'utf8')).toBe('custom run');
       const results = result.messages.filter((message: any) => message.role === 'toolResult');
       expect(results.map((message: any) => [message.toolCallId, message.isError])).toEqual([['user-run', false], ['custom-run', false]]);
