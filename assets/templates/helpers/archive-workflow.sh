@@ -40,29 +40,34 @@ archive_transaction_snapshot() {
 }
 
 archive_transaction_rollback() {
-  local index path
+  # Callers test this under `if !`, where errexit is off; count every failed step.
+  local index path failed=0
   for ((index = ${#archive_transaction_paths[@]} - 1; index >= 0; index--)); do
     path="${archive_transaction_paths[$index]}"
-    rm -rf "$path"
+    rm -rf "$path" || failed=1
     if [[ "${archive_transaction_existed[$index]}" == "1" ]]; then
-      mkdir -p "$(dirname "$path")"
-      cp -Rp "$archive_transaction_dir/$index/value" "$path"
+      mkdir -p "$(dirname "$path")" || failed=1
+      cp -Rp "$archive_transaction_dir/$index/value" "$path" || failed=1
     fi
   done
+  return "$failed"
 }
 
 archive_transaction_on_exit() {
   local status=$?
+  local keep_snapshot=0
   trap - EXIT
   if [[ "$archive_transaction_active" -eq 1 && "$status" -ne 0 ]]; then
     if ! archive_transaction_rollback; then
       echo "archive-workflow: rollback failed; inspect $archive_transaction_dir before retrying" >&2
       status=1
+      keep_snapshot=1
     else
       echo "archive-workflow: archive failed; restored live workflow artifacts" >&2
     fi
   fi
-  [[ -z "$archive_transaction_dir" ]] || rm -rf "$archive_transaction_dir"
+  # A failed rollback keeps the snapshot so the operator can restore from it.
+  [[ -z "$archive_transaction_dir" || "$keep_snapshot" -eq 1 ]] || rm -rf "$archive_transaction_dir"
   exit "$status"
 }
 

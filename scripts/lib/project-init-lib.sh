@@ -1,8 +1,11 @@
 #!/bin/bash
 # Shared install helpers for repo-harness scaffolding scripts.
 
-PI_RUNTIME_BLOCK_BEGIN="# BEGIN: claude-runtime-temp (managed by repo-harness)"
-PI_RUNTIME_BLOCK_END="# END: claude-runtime-temp"
+PI_RUNTIME_BLOCK_BEGIN="# BEGIN: repo-harness generated-runtime"
+PI_RUNTIME_BLOCK_END="# END: repo-harness generated-runtime"
+# Same retired marker as LEGACY_GITIGNORE_MANAGED_MARKERS in gitignore-plan.ts; replaced in place.
+PI_LEGACY_RUNTIME_BLOCK_BEGIN="# BEGIN: claude-runtime-temp (managed by repo-harness)"
+PI_LEGACY_RUNTIME_BLOCK_END="# END: claude-runtime-temp"
 # The packaged asset is shared with the TS adoption planner; neither reader owns a list.
 PI_DEFAULT_GITIGNORE_CONTENT=""
 PI_EXTERNAL_TOOLING_HOSTS_DEFAULT=$(cat <<'EOF_EXTERNAL_TOOLING_HOSTS'
@@ -417,14 +420,17 @@ pi_legacy_root_helper_paths() {
   done
 }
 
-pi_is_runtime_block_begin() {
-  local line="$1"
-  [[ "$line" == "$PI_RUNTIME_BLOCK_BEGIN" ]]
+pi_runtime_block_end_for() {
+  case "$1" in
+    "$PI_RUNTIME_BLOCK_BEGIN") printf '%s' "$PI_RUNTIME_BLOCK_END" ;;
+    "$PI_LEGACY_RUNTIME_BLOCK_BEGIN") printf '%s' "$PI_LEGACY_RUNTIME_BLOCK_END" ;;
+    *) return 1 ;;
+  esac
 }
 
 pi_has_runtime_block() {
   local file_path="$1"
-  grep -Fq "$PI_RUNTIME_BLOCK_BEGIN" "$file_path"
+  grep -Fxq -e "$PI_RUNTIME_BLOCK_BEGIN" -e "$PI_LEGACY_RUNTIME_BLOCK_BEGIN" "$file_path"
 }
 
 pi_ensure_gitignore_block() {
@@ -459,18 +465,27 @@ pi_ensure_gitignore_block() {
   local block_written=0
   tmp_file="$(mktemp)"
 
+  local block_end
   while IFS= read -r line || [[ -n "$line" ]]; do
-    if pi_is_runtime_block_begin "$line"; then
+    if block_end="$(pi_runtime_block_end_for "$line")"; then
       if [[ "$block_written" -eq 0 ]]; then
         printf '%s\n' "$block" >> "$tmp_file"
         block_written=1
       fi
 
+      local found_end=0
       while IFS= read -r inner_line || [[ -n "$inner_line" ]]; do
-        if [[ "$inner_line" == "$PI_RUNTIME_BLOCK_END" ]]; then
+        if [[ "$inner_line" == "$block_end" ]]; then
+          found_end=1
           break
         fi
       done
+      if [[ "$found_end" -eq 0 ]]; then
+        # Match the TS planner: never drop user lines after an unterminated block.
+        rm -f "$tmp_file"
+        echo "managed block is missing end marker: $block_end" >&2
+        return 1
+      fi
       continue
     fi
 

@@ -75,12 +75,13 @@ tasks/current.md
 .ai/harness/evidence/
 .ai/harness/runs/
 .ai/harness/state/
-.ai/harness/chatgpt/browser-lock.json
-.ai/harness/chatgpt/tmp/
-.ai/harness/chatgpt/sessions/
+.ai/harness/chatgpt/
+.ai/harness/handoff/gptpro/
+.ai/harness/mcp/
 .ai/harness/triage/*
 !.ai/harness/triage/.gitkeep
 .repo-harness/
 .codex/*
 .claude/.active-plan
+.claude/worktrees/
 .claude/.plan-state/
