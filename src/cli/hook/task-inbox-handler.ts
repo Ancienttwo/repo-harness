@@ -20,20 +20,12 @@ import {
   TASK_MESSAGE_CONTEXT_START,
   renderTaskMessageUntrustedContext,
 } from '../../core/fleet/task-message';
+import type { HookHandlerResult } from './handler-contract';
 
 const ACTIVE_PLAN_MARKER = '.ai/harness/active-plan';
 
-export interface TaskInboxHandlerResult {
-  readonly exitCode: number;
-  readonly stdout: string;
-  readonly stderr: string;
-  readonly reason?: string;
-}
-
 export interface TaskInboxHandlerInput {
   readonly repoRoot: string;
-  readonly input?: string | Buffer;
-  readonly env?: NodeJS.ProcessEnv;
   readonly now?: () => Date;
   readonly dependencies?: TaskInboxHandlerDependencies;
 }
@@ -44,14 +36,7 @@ export interface TaskInboxHandlerDependencies {
   readonly deliver?: typeof deliverTaskInbox;
 }
 
-function result(
-  exitCode: number,
-  stdout = '',
-  stderr = '',
-  reason?: string,
-): TaskInboxHandlerResult {
-  return { exitCode, stdout, stderr, ...(reason ? { reason } : {}) };
-}
+const NO_DELIVERY: HookHandlerResult = { exitCode: 0 };
 
 function activePlanUnitRef(repoRoot: string): string | null {
   const marker = readText(repoRoot, ACTIVE_PLAN_MARKER);
@@ -72,19 +57,14 @@ function renderContext(deliveries: readonly TaskInboxDelivery[]): string {
   return renderTaskMessageUntrustedContext(deliveries.map((delivery) => delivery.event));
 }
 
-function structuredContext(context: string): string {
-  return `${JSON.stringify({
-    hookSpecificOutput: {
-      hookEventName: 'UserPromptSubmit',
-      additionalContext: context,
-    },
-  })}\n`;
-}
-
-function errorResult(error: unknown): TaskInboxHandlerResult {
+function errorResult(error: unknown): HookHandlerResult {
   const message = error instanceof Error ? error.message : String(error);
   const code = error instanceof TaskInboxError ? error.code : 'task_message_unreadable';
-  return result(1, '', `${JSON.stringify({ ok: false, error: code, message })}\n`, 'task-message-failed');
+  return {
+    exitCode: 1,
+    diagnostics: `${JSON.stringify({ ok: false, error: code, message })}\n`,
+    reason: 'task-message-failed',
+  };
 }
 
 /**
@@ -92,23 +72,23 @@ function errorResult(error: unknown): TaskInboxHandlerResult {
  * worktree.  A missing token is a normal no-op: it means this worktree is not
  * a task owner and therefore must not guess a task or recipient.
  */
-export function runTaskInboxHandler(opts: TaskInboxHandlerInput): TaskInboxHandlerResult {
+export function runTaskInboxHandler(opts: TaskInboxHandlerInput): HookHandlerResult {
   const deps = opts.dependencies ?? {};
   const token = tokenForCurrentWorktree(opts.repoRoot, deps);
-  if (token.outcome === 'none') return result(0);
+  if (token.outcome === 'none') return NO_DELIVERY;
   if (token.outcome === 'ambiguous') {
     return errorResult(new Error(`ambiguous claim token for active plan: ${token.matches.join(', ')}`));
   }
 
   try {
     const leaseRead = (deps.readOwnerLease ?? readLease)(opts.repoRoot, token.token.task_id);
-    if (leaseRead.record === null) return result(0);
+    if (leaseRead.record === null) return NO_DELIVERY;
     const lease = leaseRead.record;
     // The effect owns canonical worktree comparison.  Do not compare a
     // symlinked host path here: macOS commonly exposes the same temp/repo path
     // as `/var/...` at the shell boundary and `/private/var/...` through
     // realpath, while the bound lease preserves the path written by bind.
-    if (lease.claim_id !== token.token.claim_id) return result(0);
+    if (lease.claim_id !== token.token.claim_id) return NO_DELIVERY;
     const worktree = opts.repoRoot;
 
     const delivered = (deps.deliver ?? deliverTaskInbox)({
@@ -127,8 +107,8 @@ export function runTaskInboxHandler(opts: TaskInboxHandlerInput): TaskInboxHandl
       delivery_channel: 'hook_session',
       delivered_at: (opts.now ?? (() => new Date()))().toISOString(),
     });
-    if (!delivered || !Array.isArray(delivered.deliveries) || delivered.deliveries.length === 0) return result(0);
-    return result(0, structuredContext(renderContext(delivered.deliveries)));
+    if (!delivered || !Array.isArray(delivered.deliveries) || delivered.deliveries.length === 0) return NO_DELIVERY;
+    return { exitCode: 0, additionalContext: renderContext(delivered.deliveries) };
   } catch (error) {
     return errorResult(error);
   }

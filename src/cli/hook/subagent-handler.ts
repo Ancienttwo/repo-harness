@@ -1,11 +1,10 @@
 /**
  * In-process ports for the four Codex/subagent hook routes.
  *
- * The handlers intentionally keep the shell routes' observable contract:
- * payloads are parsed once, decisions are emitted as the same JSON envelopes,
- * delegation state uses the same paths and scope keys, and all filesystem
- * writes remain fail-open for hook callers.  Runtime dispatch owns host I/O;
- * this module only returns a result.
+ * The handlers keep the shell routes' observable contract: delegation state
+ * uses the same paths and scope keys, and all filesystem writes remain
+ * fail-open for hook callers. The runtime parses the payload once and renders
+ * the typed result for the host; this module never builds host JSON.
  */
 
 import {
@@ -30,6 +29,8 @@ import { BOARD_SLICE_MARKER, resolveBoardSliceBlock } from './board-slice-contex
 import { recordCircuitAttempt } from './circuit-breaker';
 import { withExclusiveDirectoryLock } from '../../effects/locking/exclusive-directory-lock';
 import type { WorkflowProfile } from '../../core/workflow/profile';
+import type { HookHandlerResult } from './handler-contract';
+import type { HookIdentity, HookPayload } from './hook-input';
 import {
   DELEGATION_STATE_RELATIVE,
   delegationScope,
@@ -47,15 +48,10 @@ export type SubagentHandlerEvent =
 export interface SubagentHandlerInput {
   readonly event: SubagentHandlerEvent;
   readonly repoRoot: string;
-  readonly input?: string | Buffer;
+  readonly payload: HookPayload;
+  readonly identity: HookIdentity;
   readonly env?: NodeJS.ProcessEnv;
   readonly now?: () => Date;
-}
-
-export interface SubagentHandlerResult {
-  readonly exitCode: number;
-  readonly stdout: string;
-  readonly stderr: string;
 }
 
 interface JsonObject {
@@ -117,22 +113,10 @@ const NATIVE_ROLE_ROUTING_STATE_FILE = 'native-role-routing.json';
 const NATIVE_ROLE_ROUTING_LOCK_RELATIVE = `${DELEGATION_STATE_RELATIVE}/native-role-routing.lock`;
 const MAX_NATIVE_ROLE_OBSERVATIONS = 32;
 
-function result(stdout = '', stderr = '', exitCode = 0): SubagentHandlerResult {
-  return { exitCode, stdout, stderr };
-}
+const NO_OUTPUT: HookHandlerResult = { exitCode: 0 };
 
-function parsePayload(input: string | Buffer | undefined): JsonObject {
-  if (input === undefined) return {};
-  const text = input.toString().trim();
-  if (!text) return {};
-  try {
-    const parsed: unknown = JSON.parse(text);
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-      ? parsed as JsonObject
-      : {};
-  } catch {
-    return {};
-  }
+function context(additionalContext: string): HookHandlerResult {
+  return { exitCode: 0, additionalContext };
 }
 
 function firstString(input: JsonObject | undefined, keys: readonly string[]): string {
@@ -297,28 +281,19 @@ function delegationTrigger(prompt: string): { readonly name: string } | null {
     : null;
 }
 
-function renderDelegationOutput(context: string): string {
-  return `${JSON.stringify({
-    hookSpecificOutput: {
-      hookEventName: 'UserPromptSubmit',
-      additionalContext: context,
-    },
-  })}\n`;
-}
-
 /**
  * Append the read-only board slice once. Advisory in every direction: a
  * resolution failure means no block, and an already-present marker means no
  * second block.
  *
- * The `HOOK_HOST !== 'codex'` guard is what makes injection exactly-once. On
+ * The Codex host guard is what makes injection exactly-once. On
  * the Codex host the same slice already rides `SubagentStart.context`, and
  * `runReturnChannel` has no other host discrimination -- Codex spawning
  * through `Agent` would otherwise receive the block twice, from two routes,
  * with no marker shared between them at the moment the prompt is built.
  */
-function appendBoardSlice(repoRoot: string, prompt: string, env: NodeJS.ProcessEnv): string {
-  if (env.HOOK_HOST === 'codex') return prompt;
+function appendBoardSlice(repoRoot: string, prompt: string, host: HookIdentity['host']): string {
+  if (host === 'codex') return prompt;
   if (prompt.includes(BOARD_SLICE_MARKER)) return prompt;
   const block = resolveBoardSliceBlock(repoRoot);
   return block === null ? prompt : `${prompt}\n\n${block}`;
@@ -334,46 +309,41 @@ function appendBoardSlice(repoRoot: string, prompt: string, env: NodeJS.ProcessE
  * decides for itself, and the envelope is emitted whenever either one changed
  * the prompt.
  */
-function runReturnChannel(repoRoot: string, input: JsonObject, env: NodeJS.ProcessEnv): SubagentHandlerResult {
+function runReturnChannel(repoRoot: string, input: JsonObject, host: HookIdentity['host']): HookHandlerResult {
   const toolName = String(input.tool_name ?? '');
   if (toolName === 'Task' || toolName === 'Agent') {
     const toolInput = input.tool_input;
-    if (!toolInput || typeof toolInput !== 'object' || Array.isArray(toolInput)) return result();
+    if (!toolInput || typeof toolInput !== 'object' || Array.isArray(toolInput)) return NO_OUTPUT;
     const prompt = (toolInput as JsonObject).prompt;
-    if (typeof prompt !== 'string') return result();
+    if (typeof prompt !== 'string') return NO_OUTPUT;
     const withContract = prompt.includes(RETURN_CONTRACT_MARKER)
       ? prompt
       : prompt + RETURN_CONTRACT_TEXT;
-    const updatedPrompt = appendBoardSlice(repoRoot, withContract, env);
-    if (updatedPrompt === prompt) return result();
-    return result(`${JSON.stringify({
-      hookSpecificOutput: {
-        hookEventName: 'PreToolUse',
-        permissionDecision: 'allow',
-        permissionDecisionReason: 'subagent-return-channel-guard: delivery contract appended to spawn prompt',
+    const updatedPrompt = appendBoardSlice(repoRoot, withContract, host);
+    if (updatedPrompt === prompt) return NO_OUTPUT;
+    return {
+      exitCode: 0,
+      permission: {
+        decision: 'allow',
+        reason: 'subagent-return-channel-guard: delivery contract appended to spawn prompt',
         updatedInput: { ...(toolInput as JsonObject), prompt: updatedPrompt },
       },
-    })}\n`);
+    };
   }
   if (toolName === 'SendUserMessage') {
     const agentId = String(input.agent_id ?? '');
     const transcriptPath = String(input.transcript_path ?? '');
-    if (!agentId && !transcriptPath.includes('/subagents/agent-')) return result();
-    return result(`${JSON.stringify({
-      hookSpecificOutput: {
-        hookEventName: 'PreToolUse',
-        additionalContext: 'subagent-return-channel-guard: SendUserMessage does not reach the caller Agent tool result. Put the full report in final text.',
-      },
-    })}\n`);
+    if (!agentId && !transcriptPath.includes('/subagents/agent-')) return NO_OUTPUT;
+    return context('subagent-return-channel-guard: SendUserMessage does not reach the caller Agent tool result. Put the full report in final text.');
   }
-  return result();
+  return NO_OUTPUT;
 }
 
-function runDelegationAdvisor(repoRoot: string, input: JsonObject, env: NodeJS.ProcessEnv, now: Date): SubagentHandlerResult {
+function runDelegationAdvisor(repoRoot: string, input: JsonObject, now: Date): HookHandlerResult {
   const prompt = firstString(input, ['prompt', 'user_prompt', 'user_message', 'message', 'input']);
-  if (!prompt) return result();
+  if (!prompt) return NO_OUTPUT;
   const trigger = delegationTrigger(prompt);
-  if (!trigger) return result();
+  if (!trigger) return NO_OUTPUT;
 
   try {
     const policy = policyDelegation(repoRoot);
@@ -384,7 +354,7 @@ function runDelegationAdvisor(repoRoot: string, input: JsonObject, env: NodeJS.P
     const maxAgents = highRiskContract ? Math.min(highRiskMax, 3) : Math.min(defaultMax, 2);
     const maxDepth = Number.isInteger(policy.max_depth) ? policy.max_depth as number : 1;
     const preferredRunners = ['subagent'];
-    const scope = delegationScope(input, env);
+    const scope = delegationScope(input);
     const relativeStateFile = scope ? join('turns', `${scope.id}.json`) : 'latest.json';
     const promptHash = hash(prompt, 'sha1');
     const state: DelegationState = {
@@ -471,11 +441,11 @@ function runDelegationAdvisor(repoRoot: string, input: JsonObject, env: NodeJS.P
       '',
       ...sharedRules,
     ].join('\n');
-    return result(renderDelegationOutput(activeContract ? contractContext : permissionContext));
+    return context(activeContract ? contractContext : permissionContext);
   } catch {
     // The shell route is deliberately fail-open for advisor state/context
     // failures. A lost convenience pointer must not block the user turn.
-    return result();
+    return NO_OUTPUT;
   }
 }
 
@@ -620,8 +590,8 @@ function nativeRoleRoutingEvidence(repoRoot: string, input: JsonObject, env: Nod
   return { ...base, status: 'verified', reason: `Codex started custom agent ${agentType} on its configured model ${observedModel}.`, configured_model: profile.model ?? null, config_path: profile.configPath ?? null, config_sha256: profile.configSha256 ?? null, sandbox_mode: sandboxMode };
 }
 
-function nativeRoleRoutingScope(input: JsonObject, env: NodeJS.ProcessEnv): string {
-  const session = firstString(input, ['session_id', 'run_id']) || env.CODEX_SESSION_ID || '';
+function nativeRoleRoutingScope(input: JsonObject): string {
+  const session = firstString(input, ['session_id', 'run_id']);
   if (session) return `session-${sanitize(session)}`;
   const turnId = firstString(input, ['turn_id']);
   return turnId ? `turn-${sanitize(turnId)}` : 'unscoped';
@@ -669,7 +639,7 @@ function persistNativeRoleRoutingEvidence(
   return withExclusiveDirectoryLock(canonicalRepoRoot, NATIVE_ROLE_ROUTING_LOCK_RELATIVE, () => {
     const stateDir = join(canonicalRepoRoot, DELEGATION_STATE_RELATIVE);
     const observation = nativeRoleRoutingEvidence(repoRoot, input, env, now);
-    const evidenceRelative = join('role-routing', nativeRoleRoutingScope(input, env));
+    const evidenceRelative = join('role-routing', nativeRoleRoutingScope(input));
     const evidenceDir = resolveEvidenceDir(stateDir, evidenceRelative);
     if (!evidenceDir) {
       return {
@@ -730,7 +700,7 @@ export function appendLongCommandGuardrail(context: string): string {
     : `${context}\n\n${LONG_COMMAND_GUARDRAIL_TEXT}`;
 }
 
-function runSubagentStart(repoRoot: string, input: JsonObject, env: NodeJS.ProcessEnv, now: Date): SubagentHandlerResult {
+function runSubagentStart(repoRoot: string, input: JsonObject, env: NodeJS.ProcessEnv, now: Date): HookHandlerResult {
   const effective = parseEffectiveState(repoRoot);
   let profile = typeof effective?.workflow_profile === 'string' ? effective.workflow_profile : '';
   let explicitHighRisk = false;
@@ -771,7 +741,7 @@ function runSubagentStart(repoRoot: string, input: JsonObject, env: NodeJS.Proce
   try {
     withDelegationStateTransaction(
       repoRoot,
-      delegationScopes(input, env),
+      delegationScopes(input),
       (transaction) => {
         const state = transaction.snapshot.state;
         if (state?.eligible) {
@@ -816,7 +786,7 @@ function runSubagentStart(repoRoot: string, input: JsonObject, env: NodeJS.Proce
   const scopeMode: SandboxMode | null = contextRouting.status === 'verified'
     ? contextRouting.sandbox_mode
     : null;
-  const context = appendLongCommandGuardrail([
+  const startContext = appendLongCommandGuardrail([
     '[repo-harness:subagent-context]',
     '',
     ...(boardSlice ? [boardSlice, ''] : []),
@@ -845,13 +815,13 @@ function runSubagentStart(repoRoot: string, input: JsonObject, env: NodeJS.Proce
     ...(scopeMode === 'workspace-write' ? ['', EXECUTION_BOUNDARY_BLOCK] : []),
     ...(scopeMode === 'read-only' ? ['', READ_ONLY_SCOPE_NOTE] : []),
   ].join('\n'));
-  return result(`${JSON.stringify({ hookSpecificOutput: { hookEventName: 'SubagentStart', additionalContext: context } })}\n`);
+  return { exitCode: 0, additionalContext: startContext };
 }
 
-function runStopQuality(repoRoot: string, input: JsonObject, env: NodeJS.ProcessEnv, now: Date): SubagentHandlerResult {
-  if (input.stop_hook_active === true || input.subagent_stop_hook_active === true) return result();
+function runStopQuality(repoRoot: string, input: JsonObject, now: Date): HookHandlerResult {
+  if (input.stop_hook_active === true || input.subagent_stop_hook_active === true) return NO_OUTPUT;
   const message = firstString(input, ['final_message', 'last_assistant_message', 'subagent_result', 'result', 'response', 'output', 'message', 'assistant_message']);
-  if (!message) return result();
+  if (!message) return NO_OUTPUT;
   const trimmed = message.trim();
   const tooThin = trimmed.length < 120;
   const looksLikeBareApproval = /^(looks good|lgtm|ok|done|no issues|all good)[.!\s]*$/i.test(trimmed);
@@ -862,16 +832,16 @@ function runStopQuality(repoRoot: string, input: JsonObject, env: NodeJS.Process
   if (looksLikeBareApproval || tooThin) reason = 'The subagent final report is too thin for repo-harness delegation.';
   else if (mentionsUnresolvedError) reason = 'The subagent reported an unresolved error without a risk or parent-action recommendation.';
   else if (!hasEvidence && /\b(review|explore|investigate|audit|map)\b/i.test(trimmed)) reason = 'The subagent report lacks file, symbol, command, or evidence references.';
-  if (!reason) return result();
+  if (!reason) return NO_OUTPUT;
 
   const statePath = join(repoRoot, DELEGATION_STATE_RELATIVE, 'subagent-stop-quality.json');
   const reportHash = hash(trimmed, 'sha1');
-  const sessionIdentity = firstString(input, ['run_id', 'session_id', 'transcript_path']) || env.CODEX_SESSION_ID || env.CLAUDE_SESSION_ID || '';
+  const sessionIdentity = firstString(input, ['run_id', 'session_id', 'transcript_path']);
   const subagentIdentity = firstString(input, ['subagent_id', 'agent_id', 'task_id', 'thread_id', 'name', 'role']);
   const scopeKey = [sessionIdentity ? sanitize(sessionIdentity) : 'unscoped-session', subagentIdentity ? sanitize(subagentIdentity) : 'unscoped-subagent', reportHash].join(':');
   try {
     const state = readJson(statePath);
-    if (state?.last_observed_key === scopeKey) return result();
+    if (state?.last_observed_key === scopeKey) return NO_OUTPUT;
     writeJson(statePath, {
       version: 1,
       last_observed_key: scopeKey,
@@ -883,27 +853,20 @@ function runStopQuality(repoRoot: string, input: JsonObject, env: NodeJS.Process
       updated_at: now.toISOString(),
     });
   } catch {
-    return result();
+    return NO_OUTPUT;
   }
-  return result(`${JSON.stringify({
-    hookSpecificOutput: { hookEventName: 'SubagentStop', additionalContext: `[SubagentQuality] ${reason} Record the report gap; return a complete final response with: files and symbols inspected, evidence, risks or uncertainty, tests or commands run when relevant, and recommended parent action. Do not claim overall task completion.` },
-  })}\n`);
+  return context(`[SubagentQuality] ${reason} Record the report gap; return a complete final response with: files and symbols inspected, evidence, risks or uncertainty, tests or commands run when relevant, and recommended parent action. Do not claim overall task completion.`);
 }
 
 /** Dispatch one of the four formerly shell-backed routes. */
-export function runSubagentHandler(opts: SubagentHandlerInput): SubagentHandlerResult {
+export function runSubagentHandler(opts: SubagentHandlerInput): HookHandlerResult {
   const env = opts.env ?? process.env;
-  const input = parsePayload(opts.input);
+  const input: JsonObject = opts.payload;
+  const host = opts.identity.host;
   const now = opts.now?.() ?? new Date();
-  if (opts.event === 'PreToolUse') return runReturnChannel(opts.repoRoot, input, env);
-  if (opts.event === 'UserPromptSubmit') {
-    if (env.HOOK_HOST !== 'codex') return result();
-    return runDelegationAdvisor(opts.repoRoot, input, env, now);
-  }
-  if (opts.event === 'SubagentStart') {
-    if (env.HOOK_HOST !== 'codex') return result();
-    return runSubagentStart(opts.repoRoot, input, env, now);
-  }
-  if (env.HOOK_HOST !== 'codex') return result();
-  return runStopQuality(opts.repoRoot, input, env, now);
+  if (opts.event === 'PreToolUse') return runReturnChannel(opts.repoRoot, input, host);
+  if (host !== 'codex') return NO_OUTPUT;
+  if (opts.event === 'UserPromptSubmit') return runDelegationAdvisor(opts.repoRoot, input, now);
+  if (opts.event === 'SubagentStart') return runSubagentStart(opts.repoRoot, input, env, now);
+  return runStopQuality(opts.repoRoot, input, now);
 }

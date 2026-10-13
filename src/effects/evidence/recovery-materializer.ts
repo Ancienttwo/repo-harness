@@ -361,6 +361,8 @@ export interface BuildRecoveryContextOptions {
   readonly reason?: string;
   readonly now?: () => Date;
   readonly codexHome?: string;
+  /** The hook identity's run; a missing run mints a local one. */
+  readonly runId?: string | null;
 }
 
 /** The "minimal live workflow context" a recovery view legitimately needs
@@ -384,7 +386,7 @@ export function buildRecoveryContext(
   const contextMap = safeHarnessPath(nestedString(config, ['context', 'map_file']), '.ai/context/context-map.json');
   const researchDir = nestedString(config, ['tasks', 'research_dir']) || 'docs/researches';
   const todoFile = safeHarnessPath(nestedString(config, ['tasks', 'todo_file']), 'tasks/todos.md');
-  const runId = env.HOOK_RUN_ID ?? env.CLAUDE_RUN_ID ?? env.CODEX_RUN_ID ?? `run-${formatCompact(now)}-${process.pid}`;
+  const runId = options.runId ?? `run-${formatCompact(now)}-${process.pid}`;
   const artifacts = recoveryArtifacts(repoRoot, activePlan);
   const changed = changedFiles(repoRoot);
   const sourcePlan = todoSourcePlan(repoRoot);

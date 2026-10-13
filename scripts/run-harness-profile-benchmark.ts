@@ -11,9 +11,9 @@ import { acquireExpensiveRunLock } from '../src/effects/expensive-run-lock';
 import type { ExclusiveDirectoryLockHandle } from '../src/effects/locking/exclusive-directory-lock';
 import {
   HOOK_EVENT_TELEMETRY_PATH,
-  isHookEventTelemetryRecord,
+  HOOK_EVENT_TELEMETRY_PROTOCOL,
+  type HookEventTelemetryRecord,
 } from '../src/cli/hook/event-telemetry';
-import type { HookEventTelemetryRecord } from '../src/core/loop/loop-event-protocol';
 import { readHookEventLog } from '../src/effects/hook-event-log';
 
 const ROOT = resolve(import.meta.dir, '..');
@@ -91,7 +91,6 @@ export interface BenchmarkRunRecord {
   hook_p50_ms: number | null;
   hook_p95_ms: number | null;
   hook_p99_ms: number | null;
-  hook_output_bytes: number | null;
   session_start_context_tokens: number | null;
   guard_block_count: number;
   repeated_guard_fingerprint_count: number;
@@ -1027,10 +1026,12 @@ export function readHookMetrics(workspace: string): HookEventTelemetryRecord[] {
     } catch {
       throw new Error(`invalid hook event telemetry JSON in ${path}`);
     }
-    if (!isHookEventTelemetryRecord(parsed)) {
+    const record = parsed as Partial<HookEventTelemetryRecord> | null;
+    if (record?.protocol !== HOOK_EVENT_TELEMETRY_PROTOCOL || typeof record.elapsed_ms !== 'number'
+      || typeof record.blocked !== 'boolean' || typeof record.fingerprint !== 'string') {
       throw new Error(`invalid or mixed hook event telemetry protocol in ${path}`);
     }
-    records.push(parsed);
+    records.push(record as HookEventTelemetryRecord);
   }
   return records;
 }
@@ -1131,7 +1132,6 @@ async function executeRun(
       // benchmark host by isolatedHarnessEnvironment.
       HOME: provider === 'codex' ? hostRoot : process.env.HOME,
       CODEX_HOME: provider === 'codex' ? join(hostRoot, '.codex') : process.env.CODEX_HOME,
-      HOOK_SESSION_ID: `${base.profile}-${scenario.id}`,
     }, deadlineMs);
   const poll = setInterval(() => {
     if (firstEdit === null && benchmarkChangedFiles(workspace, baselineRevision).length > 0) firstEdit = Date.now() - started;
@@ -1151,10 +1151,7 @@ async function executeRun(
     ? changed.length === 0
     : scenario.expected_paths.every((path) => changed.includes(path));
   const hooks = readHookMetrics(workspace);
-  const hookDurations = hooks.map((entry) => entry.metrics.elapsed_ms);
-  const knownOutputBytes = hooks.every((entry) => entry.steps.every((step) => step.output_bytes !== null))
-    ? hooks.reduce((sum, entry) => sum + entry.steps.reduce((stepSum, step) => stepSum + (step.output_bytes ?? 0), 0), 0)
-    : null;
+  const hookDurations = hooks.map((entry) => entry.elapsed_ms);
   const fingerprints = new Set<string>();
   let repeated = 0;
   for (const hook of hooks.filter((entry) => entry.blocked)) {
@@ -1182,7 +1179,7 @@ async function executeRun(
     total_duration_ms: duration, hook_invocation_count: hooks.length,
     hook_total_duration_ms: hookDurations.reduce((sum, value) => sum + value, 0),
     hook_p50_ms: percentile(hookDurations, 0.5), hook_p95_ms: percentile(hookDurations, 0.95), hook_p99_ms: percentile(hookDurations, 0.99),
-    hook_output_bytes: knownOutputBytes, session_start_context_tokens: contextTokens,
+    session_start_context_tokens: contextTokens,
     guard_block_count: hooks.filter((entry) => entry.blocked).length,
     repeated_guard_fingerprint_count: repeated, artifact_files_created: artifactFiles.length, artifact_files: artifactFiles,
     profile_projection_artifact_files: base.profile === 'strict-harness' ? 2 : 0,
@@ -1206,7 +1203,7 @@ function dryRunRecord(provider: BenchmarkProvider, scenario: HarnessScenario, la
     provider_exit_code: null, usage_authority: 'unavailable', provider_unavailable_reason: 'dry-run', input_tokens: null, cached_input_tokens: null, output_tokens: null,
     model_call_count: null, subagent_call_count: null, time_to_first_edit_ms: null, total_duration_ms: null,
     hook_invocation_count: 0, hook_total_duration_ms: 0, hook_p50_ms: null, hook_p95_ms: null, hook_p99_ms: null,
-    hook_output_bytes: null, session_start_context_tokens: null, guard_block_count: 0,
+    session_start_context_tokens: null, guard_block_count: 0,
     repeated_guard_fingerprint_count: 0, artifact_files_created: 0, artifact_files: [], profile_projection_artifact_files: profile === 'strict-harness' ? 2 : 0,
     grader_acceptance: 'unavailable', no_harness_isolation: 'unavailable',
     evidence_hashes: { provider_stream: null, provider_stderr: null, grader_stdout: null, grader_stderr: null, workspace: null },

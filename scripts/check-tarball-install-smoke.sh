@@ -499,8 +499,6 @@ if ! grep -qx 'sprint: plans/sprints/20991231-2359-tarball-root.sprint.md' "$TMP
   exit 1
 fi
 
-printf '{"prompt":"review release readiness"}\n' | "$HOOK" prompt-guard-decide >/dev/null
-
 (cd "$TARGET_REPO" && printf '{"prompt":"inspect repository state"}\n' | \
   HOOK_REPO_ROOT="$TARGET_REPO" \
   HOOK_HOST="claude" \

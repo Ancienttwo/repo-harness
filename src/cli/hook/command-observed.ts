@@ -10,13 +10,16 @@ import { accessSync, constants, existsSync, mkdirSync, readFileSync, realpathSyn
 import { createHash } from 'crypto';
 import { join, dirname } from 'path';
 import { recordCircuitAttempt, type CircuitDecision } from './circuit-breaker';
-import { parseHookInput, type HookInputFs } from './hook-input';
+import { payloadString, payloadValue, type HookIdentity, type HookPayload } from './hook-input';
 import { importPostBashObservation } from '../../effects/evidence/post-bash-importer';
-import { resolveRunIdentity } from './run-identity';
 import { resolveCapabilityOwnership } from '../../effects/state/resolve-effective-state';
 import { owedCapabilities, renderOwedCapabilities } from '../../effects/state/owed-capabilities';
 
-export interface CommandObservedFs extends HookInputFs {
+export interface CommandObservedFs {
+  existsSync(path: string): boolean;
+  readFileSync(path: string, encoding: 'utf8'): string;
+  realpathSync(path: string): string;
+  statSync(path: string): { isFile(): boolean; readonly mtimeMs?: number };
   mkdirSync(path: string, options?: { readonly recursive?: boolean }): void;
   writeFileSync(path: string, data: string): void;
 }
@@ -30,7 +33,8 @@ export interface CommandObservedDependencies {
 
 export interface CommandObservedInput {
   readonly repoRoot: string;
-  readonly input?: string | Buffer;
+  readonly payload: HookPayload;
+  readonly identity: HookIdentity;
   readonly env?: NodeJS.ProcessEnv;
   readonly dependencies?: CommandObservedDependencies;
 }
@@ -246,16 +250,14 @@ export function runCommandObserved(opts: CommandObservedInput): CommandObservedR
   const deps = opts.dependencies ?? {};
   const fsApi = deps.fs ?? DEFAULT_FS;
   const now = (deps.now ?? (() => new Date()))();
-  const parsed = parseHookInput(opts.input, { env, repoRoot: opts.repoRoot });
-  // Hook input parsing is lazy; accessors add warnings on first use.
-  const warnings = (): string => parsed.warnings.length > 0 ? `${parsed.warnings.join('\n')}\n` : '';
-  const command = parsed.getString('.tool_input.command', '');
-  const toolOutput = outputText(toolResponseOutput(parsed.get('.tool_response', '')));
+  const payload = opts.payload;
+  const command = payloadString(payload, 'tool_input.command');
+  const toolOutput = outputText(toolResponseOutput(payloadValue(payload, 'tool_response') ?? ''));
   // post-bash.sh reads the top-level exit_code (its host adapter historically
   // passes this field separately from the trace observer's tool_response).
-  const piExitCode = (parsed.value as { exit_code?: unknown } | null)?.exit_code;
-  const exitCode = env.HOOK_HOST === 'pi' && (typeof piExitCode !== 'number' || !Number.isSafeInteger(piExitCode))
-    ? null : numberValue(parsed.get('.exit_code', env.EXIT_CODE ?? '0'), 0);
+  const piExitCode = payload.exit_code;
+  const exitCode = opts.identity.host === 'pi' && (typeof piExitCode !== 'number' || !Number.isSafeInteger(piExitCode))
+    ? null : numberValue(payload.exit_code ?? env.EXIT_CODE ?? '0', 0);
   const lines = outputLineCount(toolOutput);
   const bytes = Buffer.byteLength(toolOutput, 'utf8');
   const broad = broadCommand(command);
@@ -287,7 +289,7 @@ export function runCommandObserved(opts: CommandObservedInput): CommandObservedR
     let stdout = '';
     if (exitCode !== null && exitCode !== 0 && failed) {
       const circuit = circuitFailure(opts.repoRoot, env, fsApi, command, deps);
-      if (circuit.denied) return { exitCode: 2, stdout: '', stderr: `${warnings()}${circuit.stderr}`, reason: 'repair-circuit-tripped' };
+      if (circuit.denied) return { exitCode: 2, stdout: '', stderr: circuit.stderr, reason: 'repair-circuit-tripped' };
       stdout += '[PostBash] Tests failed. Reminder: failure = rewrite module, not patching.\n';
     }
 
@@ -322,18 +324,13 @@ export function runCommandObserved(opts: CommandObservedInput): CommandObservedR
     // thrown message is caught by the same `catch` below and produces the
     // same exitCode 1 / reason 'write-failed' envelope as any other
     // failure in this try block; no new fallback, no new severity.
-    const durationMs = numberValue(parsed.get('.duration_ms', parsed.get('.tool_response.duration_ms', env.HOOK_DURATION_MS ?? '0')), 0);
-    // Unified run-identity resolution (payload -> HOOK_RUN_ID -> CODEX_RUN_ID
-    // -> CLAUDE_RUN_ID -> session-state lookup by session_id -> null). When a
-    // session-scoped run identity is resolvable, it is threaded through so
-    // this hook-path write never relies on the writer's own
-    // `run-${Date.now()}` self-mint; only a fully unresolvable case (no
-    // session ever started) reaches that pre-existing fallback.
-    const runIdentity = resolveRunIdentity(
-      opts.repoRoot,
-      { session_id: parsed.get('.session_id'), run_id: parsed.get('.run_id') },
-      env,
+    const durationMs = numberValue(
+      payload.duration_ms ?? payloadValue(payload, 'tool_response.duration_ms') ?? env.HOOK_DURATION_MS ?? '0',
+      0,
     );
+    // The hook identity carries the session's run, so this write never
+    // relies on the writer's own `run-${Date.now()}` self-mint unless no
+    // session ever started.
     if (exitCode !== null) {
       const importResult = importPostBashObservation({
         repoRoot: opts.repoRoot,
@@ -341,7 +338,7 @@ export function runCommandObserved(opts: CommandObservedInput): CommandObservedR
         exitCode,
         durationMs,
         rawOutputPath: rawPath,
-        correlationRunId: runIdentity.runId ?? undefined,
+        correlationRunId: opts.identity.runId ?? undefined,
       });
       if (!importResult.ok) {
         throw new Error(`ledger import failed (${importResult.reason}): ${importResult.message}`);
@@ -349,9 +346,9 @@ export function runCommandObserved(opts: CommandObservedInput): CommandObservedR
     }
 
     stdout += publicationOwedSignal(opts.repoRoot, command, exitCode);
-    return { exitCode: 0, stdout, stderr: warnings(), reason: 'ok' };
+    return { exitCode: 0, stdout, stderr: '', reason: 'ok' };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    return { exitCode: 1, stdout: '', stderr: `${warnings()}[PostBash] ${message}\n`, reason: 'write-failed' };
+    return { exitCode: 1, stdout: '', stderr: `[PostBash] ${message}\n`, reason: 'write-failed' };
   }
 }

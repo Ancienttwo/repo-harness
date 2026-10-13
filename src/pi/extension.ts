@@ -5,7 +5,7 @@ import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { PiHookBridge } from './hook-bridge';
-import { boundedHookDiagnostic, type HookJsonOutput } from './hook-protocol';
+import { boundedHookDiagnostic, type HookJsonOutput } from '../cli/hook/hook-protocol';
 
 type ToolPathResolver = (path: string, cwd: string) => string;
 

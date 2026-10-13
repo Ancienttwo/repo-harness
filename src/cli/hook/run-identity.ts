@@ -1,68 +1,30 @@
 /**
- * Single run-identity resolution + minting authority for the hook path
- * (run-identity threading slice).
+ * Hook identity: one resolution per hook process, from the host payload only.
  *
- * Unified resolution order applied by every consumption point
- * (`event-telemetry.ts`, `command-observed.ts`): `payload.run_id` ->
- * `HOOK_RUN_ID` -> `CODEX_RUN_ID` -> `CLAUDE_RUN_ID` -> session-state lookup
- * by `session_id` -> null. This mirrors the pre-existing chain in
- * `event-telemetry.ts` (`firstString(payload.run_id, env.HOOK_RUN_ID,
- * env.CODEX_RUN_ID, env.CLAUDE_RUN_ID)`), extended with one more fallback
- * tier here rather than duplicated as a second, potentially divergent chain.
+ * `session_id`, `run_id` and `turn_id` come from the payload. Claude, Codex
+ * and the Pi bridge all put them there; no environment alias is read. When the
+ * payload has no `run_id`, the run is the one SessionStart stored for the same
+ * `session_id`.
  *
- * Minting is SessionStart-only (`mintOrAdoptSessionRunIdentity`): when
- * payload/env already carry an upstream run identity (loop-engine is the
- * upstream authority), it is adopted verbatim and persisted, never minted
- * over. Otherwise a fresh id is minted at most once per `session_id` --
- * re-entry with the same `session_id` and no upstream override reuses the
- * stored value instead of re-minting.
+ * SessionStart is the only minting point. An upstream `run_id` in its payload
+ * is adopted and stored verbatim. Otherwise a stored entry for the same
+ * `session_id` is reused, and only a new `session_id` mints a fresh id.
  *
- * Storage: `.ai/harness/state/session-run-identity.json`, a single-slot JSON
- * object (pattern reference: `session-context-budget.ts`'s
- * `session-context-budget.json` -- one current entry, overwritten on the
- * next session rather than an ever-growing map keyed by every historical
- * session_id). Bounded by construction: exactly one entry at all times.
- *
- * Hook processes are one-shot per invocation (`hook-entry.ts` spawns a fresh
- * process per event and exits), so a bare module-level cache safely bounds
- * the state-file read to at most once per invocation regardless of how many
- * call sites in the same process ask for it -- mirrors
- * `state-input-collector.ts`'s private `once()` memoization idiom without
- * importing that unexported helper.
+ * Storage: `.ai/harness/state/session-run-identity.json`, one slot that the
+ * next session overwrites.
  */
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'fs';
 import { dirname, join } from 'path';
+import { payloadIdentityField, type HookIdentity, type HookPayload } from './hook-input';
+import type { HookEvent, RouteHost } from './route-registry';
 
 const STATE_RELATIVE_PATH = '.ai/harness/state/session-run-identity.json';
-
-/** Structural subset of a hook's parsed JSON payload this module needs. */
-export interface RunIdentityPayload {
-  readonly session_id?: unknown;
-  readonly run_id?: unknown;
-}
-
-export interface ResolvedRunIdentity {
-  readonly sessionId: string | null;
-  readonly runId: string | null;
-}
 
 interface SessionRunIdentityState {
   readonly protocol: 1;
   readonly session_id: string;
   readonly run_id: string;
   readonly created_at: string;
-}
-
-function stringField(value: unknown): string | null {
-  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
-}
-
-function firstString(...values: readonly unknown[]): string | null {
-  for (const value of values) {
-    const resolved = stringField(value);
-    if (resolved !== null) return resolved;
-  }
-  return null;
 }
 
 function isSessionRunIdentityState(value: unknown): value is SessionRunIdentityState {
@@ -91,83 +53,42 @@ function writeStateFile(repoRoot: string, state: SessionRunIdentityState): void 
   renameSync(temp, target);
 }
 
-// Module-level, one-shot-per-process memoization (see module doc). A fresh
-// hook process starts with both at UNCOMPUTED; `persist` below sets the
-// cache directly from the value it just wrote so a same-process re-read
-// (e.g. event-telemetry.ts's lookup right after SessionStart's own mint)
-// never re-touches disk. Keyed by repoRoot so distinct fixture repos within
-// one test process never see each other's cached state.
-const UNCOMPUTED = Symbol('run-identity-state-uncomputed');
-let cachedRepoRoot: string | typeof UNCOMPUTED = UNCOMPUTED;
-let cachedState: SessionRunIdentityState | null | typeof UNCOMPUTED = UNCOMPUTED;
-
-function readStateOnce(repoRoot: string): SessionRunIdentityState | null {
-  if (cachedState === UNCOMPUTED || cachedRepoRoot !== repoRoot) {
-    cachedRepoRoot = repoRoot;
-    cachedState = readStateFile(repoRoot);
-  }
-  return cachedState;
-}
-
-function persist(repoRoot: string, state: SessionRunIdentityState): void {
-  writeStateFile(repoRoot, state);
-  cachedRepoRoot = repoRoot;
-  cachedState = state;
-}
-
-/**
- * The unified chain every consumption point applies: `payload.run_id` ->
- * `HOOK_RUN_ID` -> `CODEX_RUN_ID` -> `CLAUDE_RUN_ID` -> session-state lookup
- * by `session_id` -> null. Never mints -- SessionStart's
- * `mintOrAdoptSessionRunIdentity` is the only place a new id is fabricated.
- */
-export function resolveRunIdentity(
-  repoRoot: string,
-  payload: RunIdentityPayload,
-  env: NodeJS.ProcessEnv,
-): ResolvedRunIdentity {
-  const sessionId = firstString(payload.session_id, env.HOOK_SESSION_ID, env.CODEX_SESSION_ID, env.CLAUDE_SESSION_ID);
-  const directRunId = firstString(payload.run_id, env.HOOK_RUN_ID, env.CODEX_RUN_ID, env.CLAUDE_RUN_ID);
-  if (directRunId) return { sessionId, runId: directRunId };
-  if (!sessionId) return { sessionId, runId: null };
-  const state = readStateOnce(repoRoot);
-  return { sessionId, runId: state && state.session_id === sessionId ? state.run_id : null };
-}
-
-/** `run-<timestamp>-<pid>` (pattern reference: `scripts/verify-sprint.sh`'s `run_id="${HOOK_RUN_ID:-${CLAUDE_RUN_ID:-${CODEX_RUN_ID:-run-${run_stamp}-$$}}}"`). */
 function mintRunId(now: Date): string {
   const pad = (value: number): string => String(value).padStart(2, '0');
   const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}T${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
   return `run-${stamp}-${process.pid}`;
 }
 
-/**
- * SessionStart's single minting point. If payload/env already carry an
- * upstream run identity, it is adopted (persisted verbatim, never minted
- * over) -- loop-engine is the upstream authority. Otherwise, a prior stored
- * entry for the SAME session_id is reused untouched (re-entry never changes
- * the id); only a new/absent session_id triggers a fresh mint. Returns null
- * only when no session_id is resolvable at all (nothing to key storage on).
- */
-export function mintOrAdoptSessionRunIdentity(
-  repoRoot: string,
-  payload: RunIdentityPayload,
-  env: NodeJS.ProcessEnv,
-  now: Date = new Date(),
-): string | null {
-  const sessionId = firstString(payload.session_id, env.HOOK_SESSION_ID, env.CODEX_SESSION_ID, env.CLAUDE_SESSION_ID);
-  if (!sessionId) return null;
-
-  const upstream = firstString(payload.run_id, env.HOOK_RUN_ID, env.CODEX_RUN_ID, env.CLAUDE_RUN_ID);
+function sessionStartRunId(repoRoot: string, sessionId: string | null, upstream: string | null, now: Date): string | null {
+  if (!sessionId) return upstream;
   if (upstream) {
-    persist(repoRoot, { protocol: 1, session_id: sessionId, run_id: upstream, created_at: now.toISOString() });
+    writeStateFile(repoRoot, { protocol: 1, session_id: sessionId, run_id: upstream, created_at: now.toISOString() });
     return upstream;
   }
-
-  const existing = readStateOnce(repoRoot);
+  const existing = readStateFile(repoRoot);
   if (existing && existing.session_id === sessionId) return existing.run_id;
-
   const minted = mintRunId(now);
-  persist(repoRoot, { protocol: 1, session_id: sessionId, run_id: minted, created_at: now.toISOString() });
+  writeStateFile(repoRoot, { protocol: 1, session_id: sessionId, run_id: minted, created_at: now.toISOString() });
   return minted;
+}
+
+function storedRunId(repoRoot: string, sessionId: string | null): string | null {
+  if (!sessionId) return null;
+  const state = readStateFile(repoRoot);
+  return state && state.session_id === sessionId ? state.run_id : null;
+}
+
+export function resolveHookIdentity(
+  repoRoot: string,
+  event: HookEvent,
+  payload: HookPayload,
+  host: RouteHost,
+  now: Date = new Date(),
+): HookIdentity {
+  const sessionId = payloadIdentityField(payload, 'session_id');
+  const payloadRunId = payloadIdentityField(payload, 'run_id');
+  const runId = event === 'SessionStart'
+    ? sessionStartRunId(repoRoot, sessionId, payloadRunId, now)
+    : payloadRunId ?? storedRunId(repoRoot, sessionId);
+  return { host, sessionId, runId, turnId: payloadIdentityField(payload, 'turn_id') };
 }

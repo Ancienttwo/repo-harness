@@ -75,18 +75,23 @@ function hash(value: string): string {
   return `sha256:${createHash('sha256').update(value).digest('hex')}`;
 }
 
+/** A stable digest of an error that does not expose its message. */
+export function errorHash(error: unknown): string {
+  const errorName = error instanceof Error ? error.name : typeof error;
+  const errorMessage = error instanceof Error ? error.message : String(error);
+  return hash(`${errorName}\0${errorMessage}`);
+}
+
 export function createSessionContextProviderDiagnostic(
   providerId: SessionContextProviderId,
   reasonCode: SessionContextDiagnosticReason,
   error: unknown,
   requiredAction?: string,
 ): SessionContextProviderDiagnostic {
-  const errorName = error instanceof Error ? error.name : typeof error;
-  const errorMessage = error instanceof Error ? error.message : String(error);
   return {
     provider_id: providerId,
     reason_code: reasonCode,
-    error_hash: hash(`${errorName}\0${errorMessage}`),
+    error_hash: errorHash(error),
     ...(requiredAction ? { required_action: requiredAction } : {}),
   };
 }

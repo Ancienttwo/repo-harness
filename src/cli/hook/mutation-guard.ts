@@ -32,7 +32,8 @@ import {
   collectSliceInputs,
   resolveSliceOptions,
 } from '../../effects/state/collect-slice-inputs';
-import type { WorktreeOwnership } from '../../effects/loop/state-input-collector';
+import type { StateInputCollector } from '../../effects/loop/state-input-collector';
+import { payloadString, type HookIdentity, type HookPayload } from './hook-input';
 import {
   contractAllowsPath,
 } from '../../core/state/artifact-parsers';
@@ -41,19 +42,12 @@ import {
 // Public entry surface
 // ---------------------------------------------------------------------------
 
-/** Structural subset of `StateInputCollector` this handler consumes. */
-export interface MutationGuardCollector {
-  getRepoRoot(): string;
-  getWorktreeOwnership(): WorktreeOwnership;
-  getActivePlanMarker(): string | null;
-  getPreEditEffectiveState(targetPaths: readonly string[]): EffectiveState | null;
-}
+export type MutationGuardCollector = Pick<StateInputCollector, 'getRepoRoot' | 'getActivePlanMarker' | 'getEffectiveState'>;
 
 export interface MutationGuardInput {
   readonly collector: MutationGuardCollector;
-  /** Raw host event payload (the same bytes `runHook()` would replay to a script's stdin). */
-  readonly input?: string | Buffer;
-  readonly env?: NodeJS.ProcessEnv;
+  readonly payload: HookPayload;
+  readonly identity: HookIdentity;
 }
 
 export interface MutationGuardResult {
@@ -64,22 +58,20 @@ export interface MutationGuardResult {
 
 export function runMutationGuard(opts: MutationGuardInput): MutationGuardResult {
   const repoRoot = opts.collector.getRepoRoot();
-  const env = opts.env ?? process.env;
-  const payload = parsePayload(opts.input);
+  const payload = opts.payload;
   const ctx: Ctx = {
     repoRoot,
     collector: opts.collector,
-    env,
     payload,
     stdout: [],
     stderr: [],
-    runId: null,
+    runId: opts.identity.runId,
     resolvedProfileHint: null,
     leaseOwnership: null,
   };
 
   try {
-    const applyPatchCommand = stringAt(payload, ['tool_input', 'command']);
+    const applyPatchCommand = payloadString(payload, 'tool_input.command');
     let targetPaths: readonly string[];
     let writePayloadFor: (filePath: string) => string;
 
@@ -96,24 +88,19 @@ export function runMutationGuard(opts: MutationGuardInput): MutationGuardResult 
       // batch's patch text, not just its own path's slice.
       writePayloadFor = () => applyPatchCommand;
     } else {
-      // hook_get_file_path() port: falls back to the CLAUDE_FILE_PATH env
-      // var (gate round-1 parity closure) only when none of the four JSON
-      // fields resolved -- `git show c6504231:assets/hooks/hook-input.sh`
-      // lines 224-241.
       const filePath = normalizeFilePath(repoRoot, firstNonEmpty([
-        stringAt(payload, ['file_path']),
-        stringAt(payload, ['tool_input', 'file_path']),
-        stringAt(payload, ['trigger_file_path']),
-        stringAt(payload, ['parent_file_path']),
-        env.CLAUDE_FILE_PATH ?? '',
+        payloadString(payload, 'file_path'),
+        payloadString(payload, 'tool_input.file_path'),
+        payloadString(payload, 'trigger_file_path'),
+        payloadString(payload, 'parent_file_path'),
       ]));
       if (!filePath) return finish(ctx, 0);
       targetPaths = [filePath];
       writePayloadFor = () => firstNonEmpty([
-        stringAt(payload, ['tool_input', 'content']),
-        stringAt(payload, ['tool_input', 'new_string']),
-        stringAt(payload, ['tool_input', 'text']),
-        stringAt(payload, ['tool_input', 'command']),
+        payloadString(payload, 'tool_input.content'),
+        payloadString(payload, 'tool_input.new_string'),
+        payloadString(payload, 'tool_input.text'),
+        payloadString(payload, 'tool_input.command'),
       ]);
     }
 
@@ -139,11 +126,10 @@ function finish(ctx: Ctx, exitCode: number): MutationGuardResult {
 interface Ctx {
   readonly repoRoot: string;
   readonly collector: MutationGuardCollector;
-  readonly env: NodeJS.ProcessEnv;
-  readonly payload: unknown;
+  readonly payload: HookPayload;
   readonly stdout: string[];
   readonly stderr: string[];
-  runId: string | null;
+  readonly runId: string | null;
   /** The current invocation's own resolved profile, once known (even if the overall resolution is blocked -- matches bash's `${WORKFLOW_PROFILE:-}`). */
   resolvedProfileHint: string | null;
   /**
@@ -477,11 +463,10 @@ function runPerPathGuards(
   leaseOwnershipGuard(ctx, filePath);
 
   // Workflow artifacts are observations, never edit permissions.
-  let effective: EffectiveState | null = null;
-  try {
-    effective = ctx.collector.getPreEditEffectiveState(allTargetPaths);
-  } catch (error) {
-    out(ctx, `[WorkflowObservation] State unavailable: ${describeError(error)}; edit may continue.`);
+  const resolution = ctx.collector.getEffectiveState(allTargetPaths);
+  const effective: EffectiveState | null = resolution.ok ? resolution.state : null;
+  if (!resolution.ok) {
+    out(ctx, `[WorkflowObservation] State unavailable (${resolution.reason_code} ${resolution.error_hash}): ${resolution.message}; edit may continue.`);
   }
   ctx.resolvedProfileHint = effective?.workflow_profile ?? null;
   const activeContract = effective?.contract?.path;
@@ -649,26 +634,6 @@ function extractApplyPatchPaths(repoRoot: string, command: string): readonly str
 // JSON payload helpers (hook_get_file_path / hook_get_write_payload port)
 // ---------------------------------------------------------------------------
 
-function parsePayload(input: string | Buffer | undefined): unknown {
-  if (input === undefined) return {};
-  const text = input.toString().trim();
-  if (!text) return {};
-  try {
-    return JSON.parse(text);
-  } catch {
-    return {};
-  }
-}
-
-function stringAt(payload: unknown, path: readonly string[]): string {
-  let current: unknown = payload;
-  for (const segment of path) {
-    if (current === null || typeof current !== 'object') return '';
-    current = (current as Record<string, unknown>)[segment];
-  }
-  return typeof current === 'string' ? current : '';
-}
-
 function firstNonEmpty(values: readonly string[]): string {
   return values.find((value) => value.length > 0) ?? '';
 }
@@ -757,7 +722,7 @@ function appendFailureRecord(
   reason: string,
   fix: string,
   failureClass: FailureClass,
-  runId: string,
+  runId: string | null,
 ): void {
   const target = join(repoRoot, failureLogFile(repoRoot));
   mkdirSync(dirname(target), { recursive: true });
@@ -806,15 +771,15 @@ function structuredError(
   failureClass: FailureClass,
   action: 'block' | 'warn' | 'advisory' = 'block',
 ): void {
-  const runId = getRunId(ctx);
+  const runId = ctx.runId;
   const strongBoundary = STRONG_BOUNDARY_GUARDS.has(guard)
     || guard.includes('Security')
     || guard.includes('Secret')
     || guard.includes('Destructive');
 
   // The cache and the failure log are diagnostics. Their I/O errors must not
-  // escape: runtime.ts maps a throw to exit 1, which the host reads as
-  // non-blocking, so a failed write would turn this guard's deny into an allow.
+  // escape: the runtime turns a throw on this route into a crash block, so a
+  // failed diagnostic write would replace this guard's own decision.
   let profile = ctx.resolvedProfileHint ?? '';
   let progressToken = 'unknown';
   let cache: Record<string, unknown> | null = null;
@@ -875,81 +840,4 @@ function structuredError(
     failure_class: failureClass,
     run_id: runId,
   })}\n`);
-}
-
-// ---------------------------------------------------------------------------
-// hook_get_run_id port
-// ---------------------------------------------------------------------------
-
-function getRunId(ctx: Ctx): string {
-  if (ctx.runId) return ctx.runId;
-
-  if (ctx.env.HOOK_RUN_ID) {
-    ctx.runId = ctx.env.HOOK_RUN_ID;
-    return ctx.runId;
-  }
-
-  const payloadRunId = firstNonEmpty([stringAt(ctx.payload, ['run_id']), stringAt(ctx.payload, ['tool_input', 'run_id'])]);
-  if (payloadRunId) {
-    ctx.runId = payloadRunId;
-    return ctx.runId;
-  }
-
-  if (ctx.env.CLAUDE_RUN_ID || ctx.env.CODEX_RUN_ID) {
-    ctx.runId = (ctx.env.CLAUDE_RUN_ID || ctx.env.CODEX_RUN_ID) as string;
-    return ctx.runId;
-  }
-
-  const sessionId = getSessionId(ctx);
-  if (sessionId) {
-    const source = getSessionSource(ctx);
-    ctx.runId = `run-${sanitizeToken(source || 'session')}-${sanitizeToken(sessionId)}`;
-    return ctx.runId;
-  }
-
-  const transcriptPath = getTranscriptPath(ctx);
-  if (transcriptPath) {
-    ctx.runId = `run-transcript-${sanitizeToken(transcriptPath)}`;
-    return ctx.runId;
-  }
-
-  ctx.runId = `run-${formatDateStamp(new Date())}-${process.pid}`;
-  return ctx.runId;
-}
-
-function getSessionId(ctx: Ctx): string {
-  if (ctx.env.HOOK_SESSION_ID) return ctx.env.HOOK_SESSION_ID;
-  const payloadValue = stringAt(ctx.payload, ['session_id']);
-  if (payloadValue) return payloadValue;
-  return ctx.env.CLAUDE_SESSION_ID || ctx.env.CODEX_SESSION_ID || '';
-}
-
-function getSessionSource(ctx: Ctx): string {
-  const payloadValue = stringAt(ctx.payload, ['source']);
-  if (payloadValue) return payloadValue;
-  return ctx.env.CLAUDE_SESSION_SOURCE || '';
-}
-
-function getTranscriptPath(ctx: Ctx): string {
-  const payloadValue = stringAt(ctx.payload, ['transcript_path']);
-  if (payloadValue) return payloadValue;
-  return ctx.env.CLAUDE_TRANSCRIPT_PATH || ctx.env.CODEX_TRANSCRIPT_PATH || '';
-}
-
-function sanitizeToken(value: string): string {
-  const sanitized = value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+/, '')
-    .replace(/-+$/, '')
-    .replace(/-{2,}/g, '-');
-  return sanitized || 'unknown';
-}
-
-function formatDateStamp(date: Date): string {
-  const pad = (value: number, length = 2): string => String(value).padStart(length, '0');
-  return (
-    `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}` +
-    `T${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`
-  );
 }

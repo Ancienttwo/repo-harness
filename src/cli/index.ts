@@ -13,7 +13,7 @@ import { captureConfigurationRestores } from './installer/configuration-ownershi
 
 import { Command, CommanderError } from 'commander';
 import { randomBytes } from 'crypto';
-import { readFileSync, realpathSync } from 'fs';
+import { realpathSync } from 'fs';
 import { homedir } from 'os';
 import { dirname, join } from 'path';
 import { createInterface } from 'readline/promises';
@@ -22,7 +22,8 @@ import { askConfirm } from './tty-prompt';
 import { runInstall, runUninstall, type InstallTargetSpec } from './commands/install';
 import { writeAllSync } from './runtime/write-all-sync';
 import { runInit } from './commands/init';
-import { buildHookLibCommand, runHook } from './commands/hook';
+import { buildHookLibCommand } from './commands/hook';
+import { runHookCli } from './hook-entry';
 import { CLI_VERSION, formatStatus, runStatus } from './commands/status';
 import { formatDoctor, runDoctor } from './commands/doctor';
 import { buildInitHookCommand, buildSetupCommand, formatInitHook, runInitHook } from './commands/init-hook';
@@ -107,7 +108,6 @@ import {
   assertLocation,
   assertAdoptionMode,
 } from './commands/validators';
-import type { HookEvent, RouteId } from './hook/route-registry';
 import type { Location } from './installer/types';
 
 export const SUBCOMMANDS = [
@@ -768,22 +768,11 @@ export function buildProgram(): Command {
 
   program
     .command('hook')
-    .description('Dispatch a hook event to opt-in repo .ai/hooks/<script>')
+    .description('Dispatch one host hook event through the repo-harness-hook runtime')
     .argument('<event>', 'Hook event name')
-    .requiredOption('--route <route>', 'Route id (default, edit, bash, always)')
+    .requiredOption('--route <route>', 'Route id from the hook route registry')
     .action((event: string, rawOpts: { route: string }) => {
-      let input: Buffer | undefined;
-      try {
-        input = readFileSync(0);
-      } catch {
-        input = undefined;
-      }
-      const result = runHook({
-        event: event as HookEvent,
-        routeId: rawOpts.route as RouteId,
-        input,
-      });
-      process.exit(result.exitCode);
+      process.exit(runHookCli([event, '--route', rawOpts.route]));
     });
 
   program

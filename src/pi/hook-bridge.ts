@@ -2,7 +2,8 @@ import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { MANAGED_STOP_TIMEOUT_SECONDS } from '../core/hook-work-budget';
 import type { HookEvent, RouteId } from '../cli/hook/route-registry';
-import { boundedHookDiagnostic, parseHookJsonOutput, type HookJsonOutput } from './hook-protocol';
+import { boundedHookDiagnostic, type HookJsonOutput } from '../cli/hook/hook-protocol';
+import { parseHookJsonOutput } from './hook-protocol';
 
 const MAX_INPUT_BYTES = 16 * 1024 * 1024;
 const MAX_OUTPUT_BYTES = 1024 * 1024;
@@ -33,16 +34,15 @@ export class PiHookBridge {
     request.signal?.addEventListener('abort', cancel, { once: true });
     const env = { ...(this.options.env ?? process.env) };
     for (const key of Object.keys(env)) {
-      if (key.startsWith('HOOK_') || /^(CLAUDE|CODEX)_(SESSION_ID|SESSION_SOURCE|RUN_ID|TURN_ID|AGENT_NAME|FILE_PATH|TRANSCRIPT_PATH)$/.test(key)
-        || ['PROMPT', 'EXIT_CODE', 'SESSION_KEY', 'REPO_HARNESS_SOURCE_ROOT', 'REPO_HARNESS_HELPER_SOURCE_PATH',
-          'REPO_HARNESS_TARGET_REPO_ROOT', 'REPO_HARNESS_WORKFLOW_STATE_LIB'].includes(key)) delete env[key];
+      if (key.startsWith('HOOK_') || ['REPO_HARNESS_SOURCE_ROOT', 'REPO_HARNESS_HELPER_SOURCE_PATH',
+        'REPO_HARNESS_TARGET_REPO_ROOT', 'REPO_HARNESS_WORKFLOW_STATE_LIB'].includes(key)) delete env[key];
     }
-    Object.assign(env, { HOOK_HOST: 'pi', HOOK_SESSION_ID: request.sessionId, HOOK_RUN_ID: request.runId,
-      REPO_HARNESS_CLI: join(this.packageRoot, 'src/cli/index.ts') });
+    // Identity travels only in the payload; HOOK_HOST selects the Pi JSON renderer.
+    Object.assign(env, { HOOK_HOST: 'pi', REPO_HARNESS_CLI: join(this.packageRoot, 'src/cli/index.ts') });
     try {
       return await new Promise<HookJsonOutput>((resolve, reject) => {
         const child = spawn(this.options.bun ?? 'bun', [join(this.packageRoot, 'dist/hook-entry.js'), request.event,
-          '--route', request.route, '--format', 'json'], { cwd: request.cwd, env, stdio: ['pipe', 'pipe', 'pipe'] });
+          '--route', request.route], { cwd: request.cwd, env, stdio: ['pipe', 'pipe', 'pipe'] });
         const stdout: Buffer[] = [], stderr: Buffer[] = [];
         let bytes = 0, settled = false;
         let stopReason: { code: string; detail: string } | null = null;

@@ -38,10 +38,10 @@ import { renderMinimalChangeSessionContext } from './minimal-change-context';
 import { runSecurityScan, type SecurityScanReport } from '../commands/security';
 import { fileExists, readText } from '../../effects/state/collect-state-inputs';
 import { backlogRows, type BacklogRow } from '../../core/state/sprint-backlog-rows';
-import type { WorktreeOwnership } from '../../effects/loop/state-input-collector';
+import type { StateInputCollector } from '../../effects/loop/state-input-collector';
+import type { EffectiveState } from '../../core/state/types';
 import { resolveRecoveryEvidence } from '../../effects/evidence/recovery-materializer';
-import { parseHookInput } from './hook-input';
-import { mintOrAdoptSessionRunIdentity } from './run-identity';
+import { owedCapabilities, renderOwedCapabilities } from '../../effects/state/owed-capabilities';
 import {
   acquireExclusiveDirectoryLock,
   ExclusiveLockContentionError,
@@ -50,33 +50,93 @@ import {
 import { DEFAULT_PROCESS_MAX_BUFFER_BYTES, runProcess } from '../../effects/process-runner';
 
 // ---------------------------------------------------------------------------
-// run-identity threading -- SessionStart's single mint/adopt point
+// Effective State section -- the single SessionStart state projection
 // ---------------------------------------------------------------------------
 
+function effectiveStateIsActionable(state: EffectiveState): boolean {
+  return state.task_id !== null || state.blockers.length > 0 ||
+    Boolean(state.active_sprint.path && state.active_sprint.freshness === 'fresh');
+}
+
+export function projectEffectiveStateSessionSection(
+  state: EffectiveState,
+): SessionContextSection | null {
+  if (!effectiveStateIsActionable(state)) return null;
+  const compact = {
+    task_id: state.task_id,
+    phase: state.phase,
+    state_version: state.state_version,
+    state_revision: state.state_revision,
+    workflow_profile: state.workflow_profile,
+    next_action: state.next_action,
+    guidance: state.guidance,
+    blockers: state.blockers,
+    allowed_paths: state.allowed_paths,
+    checks: state.checks,
+    references: {
+      plan: state.authoritative_plan?.path ?? null,
+      contract: state.contract?.path ?? null,
+      sprint: state.active_sprint.path,
+      handoff: state.handoff.path,
+      resume: state.resume.path,
+    },
+  };
+  return {
+    id: 'effective-state',
+    priority: 2,
+    content: `[HarnessState] ${JSON.stringify(compact)}`,
+    mandatory: true,
+    actionable: true,
+    reference: 'repo-harness state resolve --json',
+  };
+}
+
 /**
- * SessionStart's single run-identity mint/adopt point (design freeze: run
- * identity threading slice). Parses `.session_id`/`.run_id` from the raw
- * hook payload via the same `parseHookInput` every other typed handler uses,
- * then delegates to `mintOrAdoptSessionRunIdentity` for the actual
- * mint-vs-adopt-vs-reuse decision. The return value is intentionally
- * unused by the caller -- later hook invocations (including this
- * SessionStart event's own telemetry record) resolve it through
- * `resolveRunIdentity`'s session-state fallback tier, not through this
- * function's return.
+ * The short SessionStart section for a branch that already owes architecture
+ * updates. It reuses the ownership result of the session state resolution.
+ * Architecture diagnostics never block, so a Git failure only drops it.
  */
-export function ensureSessionRunIdentity(
+export function projectOwedCapabilitiesSessionSection(
   repoRoot: string,
-  input: string | Buffer | undefined,
-  env: NodeJS.ProcessEnv,
-  now: Date,
-): void {
-  const hookInput = parseHookInput(input, { env, repoRoot });
-  mintOrAdoptSessionRunIdentity(
-    repoRoot,
-    { session_id: hookInput.get('.session_id'), run_id: hookInput.get('.run_id') },
-    env,
-    now,
-  );
+  state: EffectiveState,
+): SessionContextSection | null {
+  if (!state.capability_ownership) return null;
+  let content: string | null = null;
+  try {
+    content = renderOwedCapabilities(owedCapabilities(repoRoot, state.capability_ownership));
+  } catch {
+    return null;
+  }
+  if (!content) return null;
+  return {
+    id: 'architecture-owed',
+    priority: 3,
+    content,
+    mandatory: false,
+    actionable: true,
+    reference: 'repo-harness state owed --json',
+  };
+}
+
+/** Names the failure by code and hash only; the raw error can carry private paths. */
+export function projectUnavailableStateSessionSection(
+  failure: Pick<SessionContextProviderDiagnostic, 'reason_code' | 'error_hash'>,
+): SessionContextSection {
+  const content = `[HarnessStateUnavailable] ${JSON.stringify({
+    fail_closed: true,
+    reason_code: failure.reason_code,
+    error_hash: failure.error_hash,
+    guidance: 'Do not infer task, scope, or edit permission.',
+    required_action: 'repo-harness state resolve --json',
+  })}`;
+  return {
+    id: 'effective-state',
+    priority: 2,
+    content,
+    mandatory: true,
+    actionable: true,
+    reference: 'repo-harness state resolve --json',
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -249,12 +309,8 @@ export function securitySentinelSessionSection(
 // session-start-context.sh port (641 lines) -- shared small helpers
 // ---------------------------------------------------------------------------
 
-/** Structural subset of `StateInputCollector` this builder consumes -- no Effective State getter: none of these sections need it (the single resolution stays `effectiveStateSessionSection` in runtime.ts). */
-export interface SessionContextCollector {
-  getRepoRoot(): string;
-  getWorktreeOwnership(): WorktreeOwnership;
-  getActivePlanMarker(): string | null;
-}
+/** No Effective State getter: the session handler projects that section itself. */
+export type SessionContextCollector = Pick<StateInputCollector, 'getRepoRoot' | 'getWorktreeOwnership' | 'getActivePlanMarker'>;
 
 /** `xargs` with no command: word-splits on whitespace and rejoins with single spaces, in addition to trimming edges (not just `.trim()`). Several bash extractors this script uses (`get_plan_status`, sprint status, `current_status_field`) pipe through it. */
 function xargsTrim(value: string): string {
@@ -1486,10 +1542,9 @@ export function worktreeBacklogSessionSection(repoRoot: string): SessionContextS
  * All three retired scripts' sections, in their former script-loop order
  * (`session-start-context.sh`, `minimal-change-context.sh`,
  * `security-sentinel.sh`), followed by the cleanable-worktree notice, which
- * was never a script. `runtime.ts` prepends the unchanged
- * `effective-state` section (still the single Effective State resolution,
- * still added before any of these) and feeds the combined array to the
- * existing `budgetSessionContext` exactly once.
+ * was never a script. The session handler in `handler-registry.ts` prepends
+ * the `effective-state` section (the single Effective State resolution) and
+ * the runtime feeds the combined array to `budgetSessionContext` once.
  */
 export function buildSessionStartSections(
   collector: SessionContextCollector,
@@ -1516,7 +1571,7 @@ export function buildSessionStartSections(
 // Only activates when THIS file is the directly-invoked entry point (a
 // `bun session-context.ts --detached-tooling-populate ...` process spawned
 // detached+unref'd) -- false whenever the module is merely imported (the
-// normal case: runtime.ts imports buildSessionStartSections), so this never
+// normal case: handler-registry.ts imports buildSessionStartSections), so this never
 // runs as a side effect of importing the module.
 if (import.meta.main && process.argv[2] === DETACHED_TOOLING_POPULATE_FLAG) {
   const [, , , repoRootArg, targetArg, reportFileArg, lockDirArg] = process.argv;
