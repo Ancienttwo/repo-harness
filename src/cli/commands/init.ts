@@ -934,7 +934,9 @@ export function runInit(
         step: 'architecture projection readiness',
         status: !initialized ? 'skipped' : provider.state === 'ready' || provider.state === 'disabled' ? 'ok' : 'failed',
         detail: !initialized ? 'global architecture is not initialized; run repo-harness update once for this account' : provider.state === 'ready' && !readiness.apply.enabled
-          ? 'global provider ready; project architecture model is not ready for apply; run repo-harness architecture-projection status --json'
+          ? readiness.next
+            ? `global provider ready; ${readiness.next}`
+            : 'global provider ready; global architecture.projection_apply=disabled'
           : provider.reason,
       });
     } catch (error) {

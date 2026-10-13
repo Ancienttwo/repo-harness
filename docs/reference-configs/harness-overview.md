@@ -191,8 +191,9 @@ rather than inferring those values from turns, tool names, or timestamps.
 ## Capability Context
 
 - Do not infer agent context boundaries from physical layout globs such as `apps/*`, `packages/*`, or `services/*`.
-- Declare capabilities in `.ai/context/capabilities.json`; each capability owns prefixes, paired contract files, an architecture module, a workstream directory, and local verification hints.
-- Add selected capabilities with `repo-harness-setup` (capability mode) or `repo-harness run capability-config add --prefix <path>` when the harness already exists and a full init/migrate/upgrade pass would be too broad.
+- Under `capability_source: registry`, declare capabilities in `.ai/context/capabilities.json`; each capability owns prefixes, paired contract files, an architecture module, a workstream directory, and local verification hints.
+- Under `capability_source: registry`, add selected capabilities with `repo-harness-setup` (capability mode) or `repo-harness run capability-config add --prefix <path>` when the harness already exists and a full init/migrate/upgrade pass would be too broad.
+- Under `capability_source: archcontext`, `.archcontext/model/nodes/` declares the capabilities. Change them only through an archctx ChangeSet, as `repo-harness-architecture` describes. To move a registry repository to ArchContext, follow "Adopt ArchContext in a repository" in that skill's worker reference. `repo-harness architecture-projection status --json` names that step in `next`.
 - Resolve edited paths through `repo-harness run capability-resolver match --path <path>`; longest prefix wins and equal-length ambiguity fails.
 - Treat `.ai/context/agent-context-blocks.txt`,
   `REPO_HARNESS_CONTEXT_BLOCKS`, and existing nested `CLAUDE.md`/`AGENTS.md`
@@ -201,7 +202,8 @@ rather than inferring those values from turns, tool names, or timestamps.
 - Use `repo-harness capability-context status|sync` to keep paired local context files aligned with the registry. The command writes only the controlled `CAPABILITY CONTEXT` block and preserves hand-authored content plus the separate architecture contract block.
 - `.ai/context/capability-source-map.json` is the optional human-edited source-map manifest for capability positioning and source pointers. Missing entries fall back to registry/architecture/workstream metadata; `--auto-fill-positioning` writes deterministic draft entries explicitly, not from hooks.
 - Under `capability_source: archcontext`, the sync target is the node's declared `extensions.contractFiles`. The block positioning is the node summary. Sync refuses a contract file that another capability also declares, for example the root `AGENTS.md`. It then writes no file.
-- No hook queues capability-context work. The Agent runs `repo-harness capability-context sync --capability <id> --apply` or `--path <path> --apply` when a change needs it.
+- No hook queues capability-context work. Under `capability_source: registry`, the Agent runs `repo-harness capability-context sync --capability <id> --apply` or `--path <path> --apply` when a change needs it.
+- Under `capability_source: archcontext`, the Agent runs `repo-harness architecture-projection apply --json` for a model change. It runs `capability-context sync --apply` only to write the declared contract files of one capability, as the item above describes. It does not run sync to repair the root contract.
 
 ## Initializer and Runtime Model
 
@@ -214,6 +216,7 @@ Maintainer-facing detail on how the initializer and runtime defaults are wired.
 - Question-pack source of truth: `assets/initializer-question-pack.v4.json`.
 - Generated repos default to the repo-local harness flow: `docs/spec.md -> plans/ -> tasks/contracts/ -> tasks/reviews/ -> .ai/context/context-map.json -> .ai/harness/*`.
 - Generated and self-hosted repos use `.ai/harness/workflow-contract.json` as the opt-in marker.
+- The marker can declare `minimum_harness_version`, a release version such as `0.22.1`. A hook that runs an older repo-harness then reports an upgrade instruction (`repo-harness update`) on SessionStart, UserPromptSubmit, Stop and SubagentStop. It exits 1, which does not block, and does not resolve state for these events. PreToolUse and PostToolUse skip this check, so every edit guard still runs. `repo-harness doctor` and `repo-harness update --check` report the same instruction. Declare it when a release changes the model shape that older readers cannot parse. Adoption keeps the declared value.
 - The package asset `assets/workflow-contract.v1.json` defines the workflow contract.
 - `repo-harness init` writes the marker and `.ai/harness/policy.json`. Shell scaffold scripts do not write the marker.
 - Host events use the user-level managed adapter projection, the 11-tuple

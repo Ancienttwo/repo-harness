@@ -5,6 +5,7 @@ import {
   mkdtempSync,
   mkdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -1715,6 +1716,72 @@ describe("check-agent-tooling", () => {
       expect(report.tools.archctx.node_count).toBe(0);
       expect(report.tools.archctx.contracts_package_version).toBe("0.3.0");
       expect(report.tools.archctx.impact.hook_correctness).toBe("unaffected");
+    } finally {
+      rmSync(envRoot.root, { recursive: true, force: true });
+    }
+  }, 15000);
+
+  test("reports the managed archctx and marks a PATH copy of another version as unrelated", () => {
+    const envRoot = setupFakeEnvironment("check-agent-tooling-archctx-path-copy");
+    try {
+      writeArchctxRepo(envRoot.root, "registry");
+      writeExecutable(join(envRoot.fakeBin, "archctx"), "#!/bin/sh\necho 0.5.13\n");
+
+      const res = spawnSync("bash", [SCRIPT, "--json", "--host", "claude"], {
+        cwd: envRoot.root,
+        encoding: "utf-8",
+        env: { ...process.env, HOME: envRoot.home, PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}` },
+      });
+
+      expect(res.status).toBe(0);
+      const archctx = JSON.parse(res.stdout).tools.archctx;
+      const packaged = JSON.parse(readFileSync(join(ROOT, "node_modules", "archctx", "package.json"), "utf-8"));
+      expect(archctx.managed).toMatchObject({
+        status: "present",
+        version: packaged.version,
+        required_version: JSON.parse(readFileSync(join(ROOT, "package.json"), "utf-8")).dependencies.archctx,
+        node_range: packaged.engines.node,
+        command_source: "repo-harness architecture-projection status --json",
+      });
+      expect(archctx.path_copy).toEqual({ bin_path: join(envRoot.fakeBin, "archctx"), version: "0.5.13", relation: "unrelated" });
+      expect(archctx.warnings).toHaveLength(1);
+      expect(archctx.warnings[0]).toContain(`PATH archctx 0.5.13 at ${join(envRoot.fakeBin, "archctx")} is unrelated to the managed archctx ${packaged.version}`);
+      expect(archctx.reason).toContain(archctx.warnings[0]);
+      // The report stays advisory: a PATH copy never changes the tool status.
+      expect(archctx.status).toBe("present");
+    } finally {
+      rmSync(envRoot.root, { recursive: true, force: true });
+    }
+  }, 15000);
+
+  test("reports a managed archctx with the right version but a missing binary as invalid", () => {
+    const envRoot = setupFakeEnvironment("check-agent-tooling-archctx-missing-binary");
+    try {
+      writeArchctxRepo(envRoot.root, "registry");
+      // A repo-harness package root whose archctx package declares a binary that is not installed.
+      const packageRoot = join(envRoot.root, "package");
+      mkdirSync(join(packageRoot, "scripts"), { recursive: true });
+      copyFileSync(SCRIPT, join(packageRoot, "scripts", "check-agent-tooling.sh"));
+      for (const dir of ["agents", "assets", "src"]) symlinkSync(join(ROOT, dir), join(packageRoot, dir));
+      writeFileSync(join(packageRoot, "package.json"), JSON.stringify({ name: "repo-harness" }));
+      const packaged = JSON.parse(readFileSync(join(ROOT, "node_modules", "archctx", "package.json"), "utf-8"));
+      const archctxRoot = join(packageRoot, "node_modules", "archctx");
+      mkdirSync(archctxRoot, { recursive: true });
+      writeFileSync(join(archctxRoot, "package.json"), JSON.stringify({ name: "archctx", version: packaged.version, engines: packaged.engines, bin: { archctx: "./bin/archctx.mjs" } }));
+
+      const res = spawnSync("bash", [join(packageRoot, "scripts", "check-agent-tooling.sh"), "--json", "--host", "claude"], {
+        cwd: envRoot.root,
+        encoding: "utf-8",
+        env: { ...process.env, HOME: envRoot.home },
+      });
+
+      expect(res.status).toBe(0);
+      const archctx = JSON.parse(res.stdout).tools.archctx;
+      const missing = join(realpathSync(packageRoot), "node_modules", "archctx", "bin", "archctx.mjs");
+      expect(archctx.managed).toMatchObject({ status: "invalid", version: null, bin_path: null, reason: `package-local archctx@${packaged.version} binary is missing: ${missing}` });
+      expect(archctx.warnings).toContain(`Managed archctx is not usable: ${archctx.managed.reason}. Run repo-harness update.`);
+      // The managed CLI is advisory: a broken install never changes the tool status.
+      expect(archctx.status).toBe("present");
     } finally {
       rmSync(envRoot.root, { recursive: true, force: true });
     }

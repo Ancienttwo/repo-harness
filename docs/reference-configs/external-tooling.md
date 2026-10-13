@@ -1007,7 +1007,7 @@ node files.
 
 Capability metadata comes from the node files, which Bun's native YAML parser
 reads directly. Path ownership under `archcontext` comes only from the
-package-local `archctx resolve --paths-from`. One process resolves one batch of
+package-local archctx `resolve --paths-from` command. One process resolves one batch of
 paths. It reads no daemon state and no CodeGraph index. The pre-edit hook,
 Effective State, `capability-resolver match` and `capability-context` all use
 this route. If archctx cannot run, Effective State reports the
@@ -1047,7 +1047,13 @@ the global apply mode does not authorize ownership adoption or semantic acceptan
 Use `repo-harness architecture-projection policy --json` to inspect the global
 source path, initialization state and effective execution settings without a
 provider process. `repo-harness architecture-projection status --json` adds the
-exact package capability handshake and project apply readiness. The running
+exact package capability handshake and project apply readiness.
+`projectionProvider.command` is the managed invocation `[nodePath, binaryPath]`.
+Guidance runs archctx only as `"$NODE" "$ARCHCTX" <command>`, with `NODE` and
+`ARCHCTX` taken from that field. A bare archctx on PATH is an unrelated copy and
+can have another version. When the repository has no complete ArchContext model,
+`next` names the adoption flow in the `repo-harness-architecture` worker
+reference. The running
 repo-harness package owns the `archctx` executable and exact dependency version;
 its dependency tree is refreshed by the global update transaction. A target
 repository's `node_modules/archctx` never overrides that runtime dependency.

@@ -22,6 +22,9 @@ import { CLI_VERSION } from './status';
 import { runSecurityScan, type SecurityScanReport } from './security';
 import { isOptIn, resolveRepoRoot } from '../hook/runtime';
 import { ROUTES } from '../hook/route-registry';
+import { inspectWorkflowMarker } from '../../core/adoption/minimum-harness-version';
+import { capabilitySourceMode, loadArchcontextAuthority, loadRegistryAuthority, readWorkflowPolicy } from '../../effects/state/resolve-effective-state';
+import { readText } from '../../effects/state/collect-state-inputs';
 
 const TRUST_STATE_LINE = /^\[hooks\.state\."[^"]+\/\.codex\/hooks\.json:/;
 const PACKAGE_NAME = 'repo-harness';
@@ -584,6 +587,41 @@ export function checkSkillProjection(target: DoctorTarget = 'both', env: NodeJS.
 
 }
 
+/**
+ * Loads the repository capability authority with this installed runtime,
+ * through the loaders that the hooks use. A model that this runtime cannot
+ * parse fails here and not only in every hook. Node files that exist are not
+ * proof that they load.
+ */
+function checkCapabilityRegistry(cwd: string): DoctorCheckResult {
+  const id = 'capability-registry';
+  const describe = 'This repo-harness runtime loads the repository capability model';
+  const repoRoot = resolveRepoRoot(cwd);
+  if (!repoRoot) return { id, describe, status: 'na', detail: 'not in a git repository' };
+  if (!isOptIn(repoRoot)) {
+    return { id, describe, status: 'na', detail: 'repo is not opted in (.ai/harness/workflow-contract.json missing)' };
+  }
+  // A declared newer minimum explains a parse error before the parser reports it.
+  const gate = inspectWorkflowMarker(repoRoot);
+  if (gate) return { id, describe, status: 'fail', detail: gate.message };
+  const next = `Next: run repo-harness run capability-resolver validate --repo ${repoRoot} --format text; fix the model, or run repo-harness update when the model uses a shape that this runtime cannot read.`;
+  try {
+    const policy = readWorkflowPolicy(repoRoot);
+    const mode = capabilitySourceMode(policy);
+    const readSource = (relPath: string) => readText(repoRoot, relPath);
+    const resolution = mode === 'archcontext'
+      ? loadArchcontextAuthority(repoRoot, readSource)
+      : loadRegistryAuthority(repoRoot, policy, readSource);
+    if (resolution.status === 'absent') return { id, describe, status: 'na', detail: 'no capability registry is declared' };
+    if (resolution.status === 'invalid') {
+      return { id, describe, status: 'fail', detail: `${mode} authority does not load: ${resolution.diagnostics.map((entry) => entry.message).join('; ')}. ${next}` };
+    }
+    return { id, describe, status: 'ok', detail: `${mode} authority loads ${resolution.registry.capabilities.length} capabilities` };
+  } catch (error) {
+    return { id, describe, status: 'fail', detail: `${(error as Error).message}. ${next}` };
+  }
+}
+
 function checkLegacyWorkflowState(cwd: string): DoctorCheckResult {
   const id = 'legacy-workflow-state';
   const describe = 'Repository operator library uses the installed package';
@@ -625,6 +663,7 @@ export function runDoctor(cwd: string = process.cwd(), target: DoctorTarget = 'b
   checks.push(checkCodegraphIndex(codegraphProbe));
   checks.push(checkSecurityConfig(securityReport));
   checks.push(checkTypedHookRoutes(cwd));
+  checks.push(checkCapabilityRegistry(cwd));
   checks.push(checkLegacyWorkflowState(cwd));
   for (const plugin of REGISTERED_CHECKS) {
     const r = plugin.run();

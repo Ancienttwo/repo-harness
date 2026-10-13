@@ -440,6 +440,25 @@ describe("canonical adoption plan", () => {
     }
   });
 
+  test("adoption keeps a declared minimum harness version and rejects an invalid one", () => {
+    const repo = tempRepo();
+    try {
+      mkdirSync(join(repo, ".ai", "harness"), { recursive: true });
+      const target = join(repo, ".ai", "harness", "workflow-contract.json");
+      writeFileSync(target, `${JSON.stringify({ minimum_harness_version: "0.22.1", kind: "repo-harness.workflow-contract-marker", protocol: 1 })}\n`);
+      const apply = applyAdoptionPlan(planAdoption({ repoRoot: repo, mode: "minimal", apply: true }));
+      expect(apply.ok).toBe(true);
+      expect(JSON.parse(readFileSync(target, "utf8"))).toEqual({ kind: "repo-harness.workflow-contract-marker", protocol: 1, minimum_harness_version: "0.22.1" });
+      const next = planAdoption({ repoRoot: repo, mode: "minimal", apply: true });
+      expect(next.operations.find((operation) => operation.path === ".ai/harness/workflow-contract.json")?.status).toBe("skipped");
+
+      writeFileSync(target, `${JSON.stringify({ kind: "repo-harness.workflow-contract-marker", protocol: 1, minimum_harness_version: 22 })}\n`);
+      expect(() => planAdoption({ repoRoot: repo, mode: "minimal", apply: true })).toThrow("minimum_harness_version must be a release version");
+    } finally {
+      cleanup(repo);
+    }
+  });
+
   test("self-host is rejected before the standard scaffold is created", () => {
     const repo = tempRepo();
     try {

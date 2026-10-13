@@ -459,7 +459,7 @@ describe("skill-surface catalog: target post-cutover discovery matrix", () => {
     ]);
     expect(facadesForProfile(catalog, "full")).toEqual([
       "repo-harness-check", "repo-harness-test", "repo-harness-product", "repo-harness-ship",
-      "obsidian-memory", "windows-python-first",
+      "repo-harness-architecture", "obsidian-memory", "windows-python-first",
     ]);
   });
 
@@ -470,11 +470,12 @@ describe("skill-surface catalog: target post-cutover discovery matrix", () => {
     expect(facadesForProfile(catalog, "minimal")).not.toContain("repo-harness-ship");
   });
 
-  test("repo-harness-setup and repo-harness-architecture are router-only progressive load, never auto-discovered", () => {
+  test("repo-harness-setup is router-only progressive load and full installs repo-harness-architecture", () => {
     for (const profile of SKILL_SURFACE_PROFILES) {
       expect(facadesForProfile(catalog, profile)).not.toContain("repo-harness-setup");
-      expect(facadesForProfile(catalog, profile)).not.toContain("repo-harness-architecture");
     }
+    expect(facadesForProfile(catalog, "full")).toContain("repo-harness-architecture");
+    expect(facadesForProfile(catalog, "minimal")).not.toContain("repo-harness-architecture");
   });
 
   test("hostSkillPlacements: full places repo-harness-cross-review on both hosts without retired plan skill", () => {
@@ -575,7 +576,7 @@ describe("skill-surface catalog: target post-cutover discovery matrix", () => {
     const { repoHarnessSkills, externalSkills } = mutationPathSkillNames(catalog);
     expect(repoHarnessSkills).toEqual([
       "repo-harness", "repo-harness-check", "repo-harness-test", "repo-harness-product",
-      "repo-harness-ship", "obsidian-memory", "windows-python-first",
+      "repo-harness-ship", "repo-harness-architecture", "obsidian-memory", "windows-python-first",
     ]);
     expect(externalSkills).toEqual([
       "repo-harness-cross-review", "herdr", "think", "hunt", "check", "health", "mermaid", "reverse-skill-router",
@@ -619,9 +620,9 @@ describe("skill-surface catalog: explicit-only projection onto host-native switc
     return existsSync(path) && /^\s*allow_implicit_invocation:\s*false\s*$/m.test(readFileSync(path, "utf-8"));
   }
 
-  test("the explicit-only set is exactly repo-harness-ship and obsidian-memory", () => {
+  test("the explicit-only set is exactly repo-harness-architecture, repo-harness-ship and obsidian-memory", () => {
     expect(facades.filter((pkg) => pkg.discoverability === "explicit-only").map((pkg) => pkg.name).sort()).toEqual([
-      "obsidian-memory", "repo-harness-ship",
+      "obsidian-memory", "repo-harness-architecture", "repo-harness-ship",
     ]);
   });
 
@@ -635,7 +636,7 @@ describe("skill-surface catalog: explicit-only projection onto host-native switc
 
   test("explicit-only facades stay installed: facade selection filters kind and profile, never discoverability", () => {
     expect(facadesForProfile(catalog, "minimal")).toContain("obsidian-memory");
-    for (const name of ["repo-harness-ship", "obsidian-memory"]) expect(facadesForProfile(catalog, "full")).toContain(name);
+    for (const name of ["repo-harness-ship", "repo-harness-architecture", "obsidian-memory"]) expect(facadesForProfile(catalog, "full")).toContain(name);
   });
 });
 
