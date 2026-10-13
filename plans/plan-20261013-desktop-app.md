@@ -1,8 +1,8 @@
 # Plan: repo-harness 桌面版（Operator 控制台的桌面壳）
 
-> **Status**: Draft，第四轮。只是设计，不是实施 GO。Aimpact 2026-10-13 确认本 work-package 只做到 DP0：DP0 完成后停止，DP1 及以后要另给 GO（§11 第 2 项）。§11 第 11 项的 Bundle ID 仍是 PENDING CONFIRM。
+> **Status**: Draft，第五轮。只是设计，不是实施 GO。Aimpact 2026-10-13 确认本 work-package 只做到 DP0：DP0 完成后停止，DP1 及以后要另给 GO（§11 第 2 项）。DP0 实测要等 Dot 复审通过后再开始。§11 的 16 项全部 LOCKED。
 > **Created**: 20261013
-> **Revised**: 20261013（第二轮：按 Dot 在 Slack #bot-worker 的评审锁定 §11 默认值，补上必改项 A–E；第三轮：按 Aimpact 2026-10-13 的确认锁定 §11 第 2、13 项；第四轮：按 Dot 复审修正清理负责方和端口冲突判断。见 §12）
+> **Revised**: 20261013（第二轮：按 Dot 在 Slack #bot-worker 的评审锁定 §11 默认值，补上必改项 A–E；第三轮：按 Aimpact 2026-10-13 的确认锁定 §11 第 2、13 项；第四轮：按 Dot 复审修正清理负责方和端口冲突判断；第五轮：按 Aimpact 的确认锁定 Bundle ID。见 §12）
 > **Slug**: desktop-app
 > **Artifact Level**: work-package
 > **Baseline**: `main@0ef9ed11`（0.22.1 已发布）
@@ -311,7 +311,7 @@ Operator 写入期的约束（§11 第 16 项 LOCKED，本 plan 只记录）：
 - 发版走 Developer ID Application 签名，开 Hardened Runtime，用 `notarytool` 公证，用 `stapler` 装订（§11 第 13 项 LOCKED：Aimpact 2026-10-13 确认有 Apple Developer 账号）。
 - 发版前核实三件事：用哪个 Apple Developer 账号、Team ID、Developer ID 证书。账号标识、Team ID、证书和公证凭据都不写进仓库，也不提交到任何文件。它们只放在发布主机（Mac mini）的钥匙串里。每次使用都是凭据边界，需要 Aimpact 批准。
 - 标题栏用 macOS 原生标题栏（§11 第 10 项 LOCKED）。
-- 名称是 `repo-harness`。图标从现有 `src/operator-web/favicon.svg` 制作成正规的 macOS 图标（1024 px 母版，按 macOS 图标网格）。Bundle ID `io.github.ancienttwo.repo-harness` 在任何发布前要确认（§11 第 11 项 PENDING CONFIRM）。本 plan 里的日志和配置路径先用这个 ID。
+- 名称是 `repo-harness`。图标从现有 `src/operator-web/favicon.svg` 制作成正规的 macOS 图标（1024 px 母版，按 macOS 图标网格）。Bundle ID 是 `io.github.ancienttwo.repo-harness`（§11 第 11 项 LOCKED）。日志和配置路径用这个 ID。
 
 ---
 
@@ -321,7 +321,7 @@ Operator 写入期的约束（§11 第 16 项 LOCKED，本 plan 只记录）：
 - **版本**：外壳有自己的版本号，和 npm 包版本分开。外壳只声明 `MIN_CLI_VERSION`。CLI 正常发版不需要重新构建 app。
 - **npm**：npm 包不带 app 二进制，tarball 不变。CLI 只增加 `--exit-on-stdin-eof`，随正常版本发布。
 - **本机自用（DP2）**：在 Mac mini 上本地构建、ad-hoc 签名、自己安装。DP2 不发布 GitHub Release，因为没有 Developer ID 签名的 app 下载后会被 Gatekeeper 拦截。
-- **GitHub Release（DP3。条件：DP1 及以后另给的 GO；§11 第 11 项的 Bundle ID 已确认；发版前已核实 Team ID 和证书）**：Tag 用 `desktop-v<semver>`，不和 `v<npm 版本>` 混用。资产是签名并公证的 `.dmg` 和 `SHA256SUMS`。用户手动下载。发布后把资产下载回来比较 sha256，并在新建用户下安装验证（T-REL）。README 的 Local Human Control Board 一节同时加一句下载位置。
+- **GitHub Release（DP3。条件：DP1 及以后另给的 GO；发版前已核实 Team ID 和证书）**：Tag 用 `desktop-v<semver>`，不和 `v<npm 版本>` 混用。资产是签名并公证的 `.dmg` 和 `SHA256SUMS`。用户手动下载。发布后把资产下载回来比较 sha256，并在新建用户下安装验证（T-REL）。README 的 Local Human Control Board 一节同时加一句下载位置。
 - **发布记录**：沿用 `deploy/release-checklists/`，文件名用 `YYMMDD-repo-harness-desktop-<version>.md`。
 - **以后再说**：Homebrew cask、自动更新（§11 第 14 项 LOCKED）。自动更新需要一把新的更新签名密钥，是凭据边界，要单独批准。
 - **不做**：`repo-harness desktop install` 这类由 CLI 下载并安装 app 的命令。它会在 CLI 里加入下载和运行二进制的路径，安全面大。
@@ -336,7 +336,7 @@ Operator 写入期的约束（§11 第 16 项 LOCKED，本 plan 只记录）：
 | DP1 CLI 启动合约 | `operator serve --exit-on-stdin-eof`；独立进程组组长的 lifeline；setup builder 移进 Worker；结构化错误码 `port_in_use`（§4.4）；固定「stdout 第一行严格是 URL」；tarball smoke 增加 lifeline 检查 | 一个 PR，只改 CLI 和测试 | CLI 侧 T-LIFE（含 T-LIFE-12、13）和 `smoke:tarball-install` 通过；发布一个包含它的 CLI 版本 |
 | DP2 外壳 MVP（本机自用） | `desktop/` Tauri 项目：探测与配置、版本检查、子进程生命周期、固定端口、两个窗口、导航判断、启动画面与失败页、诊断命令、日志、单实例、原生标题栏、图标 | ad-hoc 签名的本地 `.app` | §10 的 T-OWN、T-BRG、T-LIFE、T-NAV、T-ENV、T-DIAG、T-E2E 在 Mac mini 上从 Finder 启动全部通过 |
 | DP2b Dock 角标 | §4.8 的角标；前端标题在 Dev Activity 读取失败时不带数字 | 外壳增量 PR 和一个前端小 PR | T-BADGE 通过 |
-| DP3 对外分发（条件：另给的 GO；§11 第 11 项确认；发版前核实 Team ID 和证书） | Developer ID 签名、公证、`desktop-v*` GitHub Release、发布记录 | 公证后的 `.dmg` | T-REL 通过 |
+| DP3 对外分发（条件：另给的 GO；发版前核实 Team ID 和证书） | Developer ID 签名、公证、`desktop-v*` GitHub Release、发布记录 | 公证后的 `.dmg` | T-REL 通过 |
 | DP4 以后 | 菜单栏图标、系统通知、自动更新、Homebrew cask、其他平台、与 Operator 写入期对齐 | 各自单独批准 | — |
 
 每个阶段一个 PR，单独回滚。DP1 对终端用户也有用（脚本化启动时防止孤儿进程）。
@@ -466,7 +466,7 @@ E2E：
 
 ## 11. Open Questions for Dot
 
-第二轮按 Dot 的评审（Slack #bot-worker，编排者已逐字核对）锁定。第三轮按 Aimpact 2026-10-13 的确认锁定第 2、13 项。**LOCKED** 已写进正文。**PENDING CONFIRM** 等 Aimpact 确认，确认前按默认值执行。
+第二轮按 Dot 的评审（Slack #bot-worker，编排者已逐字核对）锁定。第三轮按 Aimpact 2026-10-13 的确认锁定第 2、13 项。第五轮按 Aimpact 的确认锁定第 11 项的 Bundle ID。**LOCKED** 已写进正文。现在没有 PENDING CONFIRM 项。
 
 1. **外壳技术** — LOCKED：Tauri v2。DP0 先证明权限边界和生命周期（T-BRG、T-LIFE）。只有决定桌面版长期只做 macOS 时才改用 Swift。（§2.3）
 2. **只用 Safari「添加到程序坞」就结束** — LOCKED（Aimpact 2026-10-13 确认）：手动启动服务够用。本 work-package 做到 DP0 就停。DP1 及以后要另给 GO。（§2.3、§8）
@@ -478,10 +478,10 @@ E2E：
 8. **系统通知** — LOCKED：MVP 不做。以后只通知新出现的、确实需要人处理的正式请求，要去重、不通知首次快照里已有的项、限制频率。（§1、§8 DP4）
 9. **开机自动启动** — LOCKED：不做。（§1）
 10. **窗口外观** — LOCKED：原生标题栏。（§6）
-11. **名称、Bundle ID、图标** — 名称 LOCKED：`repo-harness`。图标 LOCKED：从 favicon 制作正规的 macOS 图标。Bundle ID `io.github.ancienttwo.repo-harness` — PENDING CONFIRM，任何发布前确认。（§6）
+11. **名称、Bundle ID、图标** — LOCKED：名称是 `repo-harness`。图标从 favicon 制作成正规的 macOS 图标。Bundle ID 是 `io.github.ancienttwo.repo-harness`（Aimpact 确认）。（§6）
 12. **启动画面与失败页** — LOCKED：轻量启动画面，单独的失败页，有复制诊断命令、重试、打开配置文件、退出。命令反映真实的 CLI 路径、cwd 和端口，正确做 shell 转义，不含凭据。（§4.6）
 13. **Apple Developer 账号** — LOCKED（Aimpact 2026-10-13 确认）：Aimpact 有 Apple Developer 账号。发版走 Developer ID 签名加公证。账号、Team ID 和证书在发版前核实，不写进仓库，也不提交任何凭据。（§6、§7）
-14. **分发渠道** — LOCKED：首次对外发布用 GitHub Release 手动下载，Tag 用 `desktop-v*`。Homebrew cask 和自动更新以后再说。对外发布在 DP3，要另给 GO，并且在 Bundle ID 确认、Team ID 和证书核实之后。（§7）
+14. **分发渠道** — LOCKED：首次对外发布用 GitHub Release 手动下载，Tag 用 `desktop-v*`。Homebrew cask 和自动更新以后再说。对外发布在 DP3，要另给 GO，并且在 Team ID 和证书核实之后。（§7）
 15. **其他平台** — LOCKED：只做 arm64 macOS，不给其他平台编时间表。（§1、§6）
 16. **Operator 写入期的体验** — LOCKED：桌面版和浏览器共用同一条写入通道、确认语义和审计。外观可以不同。没有私有的 IPC 写入捷径。（§5）
 
@@ -510,3 +510,8 @@ E2E：
 - 清理超时竞态：§4.2 改为每个进程组只有一个负责方。外壳只关 serve 的 stdin，只在 `T_shell` = `T_serve` + 5 秒到期后向 serve 自己的进程组发 SIGKILL。§4.4 增加独立进程组组长的 lifeline 和 setup builder 移进 Worker。§0 P1 补充进程组现状。S5 改名为唯一清理负责方。新增 T-LIFE-12..15。T-OWN-4 改为断言真实进程状态。
 - 端口冲突：§4.1 默认按「服务启动失败」处理，只有结构化的 `port_in_use` 才显示端口被占用。§4.4 增加这个错误码（依据错误对象的 `EADDRINUSE` code）。§4.3 只严格解码 stderr 第一行。新增 T-OWN-6，扩展 T-OWN-1 和 T-LIFE-11。
 - §8 DP1、§9 风险表同步更新。§11 不变：第 2、13 项保持 LOCKED，只有第 11 项的 Bundle ID 是 PENDING CONFIRM。
+
+**第五轮（20261013，Aimpact 确认）**
+- §11 第 11 项 LOCKED：Bundle ID 是 `io.github.ancienttwo.repo-harness`。§11 的 16 项现在全部 LOCKED。
+- 页首 Status、§6、§7、§8 DP3、§11 第 14 项：去掉「Bundle ID 待确认」的条件。
+- DP0 实测要等 Dot 复审通过后再开始。
