@@ -2,13 +2,12 @@ import { describe, expect, test } from 'bun:test';
 import { mkdtempSync, mkdirSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { normalizeMinimalChangePolicy } from '../src/cli/hook/minimal-change-policy';
+import { loadMinimalChangePolicy, normalizeMinimalChangePolicy } from '../src/cli/hook/minimal-change-policy';
 import {
   minimalChangeContextWordCount,
   renderMinimalChangePromptAdvice,
   renderMinimalChangeSessionContext,
 } from '../src/cli/hook/minimal-change-context';
-import { runMinimalChangeCli } from '../src/cli/hook/minimal-change-cli';
 
 describe('minimal-change context', () => {
   test('renders stable session context within policy budget', () => {
@@ -38,30 +37,22 @@ describe('minimal-change context', () => {
     expect(renderMinimalChangePromptAdvice(policy, 'planning_discussion')).toBe('');
   });
 
-  test('hook-only CLI emits session text and respects repo policy', () => {
-    const repo = mkdtempSync(join(tmpdir(), 'minimal-change-cli-'));
+  test('session text respects repo policy', () => {
+    const repo = mkdtempSync(join(tmpdir(), 'minimal-change-context-'));
     mkdirSync(join(repo, '.ai/harness'), { recursive: true });
 
-    const defaultOff = runMinimalChangeCli(['context', '--phase', 'session'], { cwd: repo });
-    expect(defaultOff.exitCode).toBe(0);
-    expect(defaultOff.stdout).toBe('');
-    expect(defaultOff.stderr).toBe('');
+    expect(renderMinimalChangeSessionContext(loadMinimalChangePolicy(repo))).toBe('');
 
     writeFileSync(
       join(repo, '.ai/harness/policy.json'),
       JSON.stringify({ minimal_change: { mode: 'advice' } }, null, 2),
     );
-    const enabled = runMinimalChangeCli(['context', '--phase', 'session'], { cwd: repo });
-    expect(enabled.exitCode).toBe(0);
-    expect(enabled.stdout).toContain('Minimal-change policy');
-    expect(enabled.stderr).toBe('');
+    expect(renderMinimalChangeSessionContext(loadMinimalChangePolicy(repo))).toContain('Minimal-change policy');
 
     writeFileSync(
       join(repo, '.ai/harness/policy.json'),
       JSON.stringify({ minimal_change: { mode: 'off' } }, null, 2),
     );
-    const disabled = runMinimalChangeCli(['context', '--phase', 'session'], { cwd: repo });
-    expect(disabled.exitCode).toBe(0);
-    expect(disabled.stdout).toBe('');
+    expect(renderMinimalChangeSessionContext(loadMinimalChangePolicy(repo))).toBe('');
   });
 });

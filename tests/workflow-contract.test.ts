@@ -267,7 +267,7 @@ describe("workflow contract manifest", () => {
     const unownedCache = ".ai/harness/checks/unowned-cache.json";
     const oldRuntimeBytes = '{"history":"retained private runtime bytes"}\n';
     const caches = [
-      "change-assessment.latest.json", "minimal-change.latest.json", "post-bash-latest.json",
+      "change-assessment.latest.json", "minimal-change.latest.json",
       "contract-verify.latest.json", "runtime-evidence-release.latest.json",
     ].map((name) => `.ai/harness/checks/${name}`);
     try {

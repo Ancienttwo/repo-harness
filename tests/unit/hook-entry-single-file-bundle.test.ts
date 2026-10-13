@@ -11,10 +11,8 @@
  *    `import.meta.main` to `false` and eliminates that bootstrap. Without the
  *    `hook-entry.ts` dispatch branch the respawn lands on the usage error
  *    (exit 2) and the tooling report never populates again.
- * 2. `post-bash-importer.ts` derives its package root from `import.meta.url` at
- *    `src/effects/evidence` depth. In the bundle that depth is gone, so the
- *    provider version must come from the build-time `--define`, never from the
- *    "0.0.0" catch.
+ * 2. The build-time `--define` marks the single-file bundle for the process
+ *    runner and supervisor, so it must land in the bundle.
  */
 import { afterEach, describe, expect, test } from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'fs';
@@ -255,9 +253,8 @@ describe('hook-entry single-file bundle', () => {
     expect(bundle).toContain('runDetachedToolingPopulate');
   }, 30_000);
 
-  test('bundle carries the injected provider version and never the undefined identifier', () => {
+  test('bundle never carries the undefined bundle marker identifier', () => {
     const bundle = readFileSync(buildBundle('9.9.9-injected'), 'utf-8');
-    expect(bundle).toContain('9.9.9-injected');
     // A surviving identifier means the --define did not land; that is a build
     // defect, and the prepack script fails on exactly this condition.
     expect(bundle).not.toContain('REPO_HARNESS_BUNDLED_CLI_VERSION');

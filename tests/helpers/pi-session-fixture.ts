@@ -6,7 +6,6 @@ import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join, relative } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import repoHarnessPi from '../../src/pi/extension';
-import { readPendingPostEditEvents } from '../../src/cli/hook/mutation-observed';
 
 // A scripted provider drives the real Pi session, tools, codemode and extension runner.
 // This fixture proves the tool boundary. It does not claim live-provider acceptance.
@@ -17,9 +16,8 @@ const agentDir = join(process.env.HOME!, '.pi/agent');
 const settingsManager = SettingsManager.inMemory({ compaction: { enabled: false }, retry: { enabled: false }, cacheWarming: 'off' });
 const calls: Array<{ name: string; id: string; parent: string | null }> = [];
 const errors: string[] = [];
-const journalPaths: string[] = [];
 const writes: string[] = [];
-const bashObservations: Array<{ id: string; check: Record<string, unknown>; structured: unknown }> = [];
+const bashObservations: Array<{ id: string; structured: unknown }> = [];
 const agentStarts: string[] = [];
 // Use the native tools' filesystem seam to cancel after real bytes reach disk.
 // Their own post-write abort check must produce the error tool result.
@@ -42,13 +40,7 @@ const resourceLoader = new DefaultResourceLoader({ cwd, agentDir, settingsManage
     pi.on('before_agent_start', event => { agentStarts.push(event.messageType); });
     pi.on('tool_call', (event: ToolCallEvent) => { calls.push({ name: event.toolName, id: event.toolCallId, parent: event.parentToolCallId ?? null }); });
     pi.on('tool_result', event => {
-      journalPaths.push(...readPendingPostEditEvents(repoRoot).flatMap(event => event.changed_paths));
-      if (event.toolName === 'bash') {
-        const path = join(repoRoot, '.ai/harness/checks/post-bash-latest.json');
-        if (mode !== 'inactive') {
-          bashObservations.push({ id: event.toolCallId, check: JSON.parse(readFileSync(path, 'utf8')), structured: event.structuredContent });
-        }
-      }
+      if (event.toolName === 'bash') bashObservations.push({ id: event.toolCallId, structured: event.structuredContent });
     });
   }],
 });
@@ -152,7 +144,7 @@ try {
   } else if (mode === 'unavailable') {
     await prompt('write', { path: 'blocked.txt', content: 'must not write' }, 'unavailable-write');
   } else throw new Error(`Unknown fixture mode: ${mode}`);
-  console.log(JSON.stringify({ calls, errors, journalPaths, writes, bashObservations, agentStarts, messages: session.state.messages, sessionId: session.sessionId, sessionIds,
+  console.log(JSON.stringify({ calls, errors, writes, bashObservations, agentStarts, messages: session.state.messages, sessionId: session.sessionId, sessionIds,
     readme: readFileSync(join(repoRoot, 'README.md'), 'utf8') }));
 } finally {
   await session.abort();

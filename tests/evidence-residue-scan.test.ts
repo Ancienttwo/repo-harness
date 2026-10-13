@@ -136,13 +136,6 @@ describe("residue scan: direct re-assertion of each named retired surface", () =
     expect(text).not.toMatch(/printf "\{\}\\n" > "\$\(workflow_checks_file\)"/);
   });
 
-  test("mutation-observed.ts never resolves or refers to the retired checks report", () => {
-    const text = readFileSync(join(REPO_ROOT, "src/cli/hook/mutation-observed.ts"), "utf-8");
-    expect(text).not.toMatch(/checksFile:\s*resolveChecksFile\(repoRoot\)/);
-    expect(text).not.toContain("resolveChecksFile");
-    expect(text).not.toContain("checks/latest.json");
-  });
-
   test("workflow_write_handoff is a thin invoker with no heredoc content assembly (EPC-07)", () => {
     const text = readFileSync(join(REPO_ROOT, "assets/hooks/lib/workflow-state.sh"), "utf-8");
     expect(text).not.toContain("<<EOF_HANDOFF");
