@@ -46,6 +46,8 @@ export function formatRetentionReport(report: RetentionReport): string {
     if (entry.reason === 'destination-exists') lines.push(`  skipped (destination exists): ${entry.path}`);
   }
   for (const entry of report.failed) lines.push(`  failed: ${entry.path}: ${entry.error}`);
+  const leaving = report.archived.filter((entry) => entry.tracked).length;
+  if (leaving > 0) lines.push(`${leaving} archived entries are tracked by Git. Retention does not stage or commit; commit their removal.`);
   if (report.mode === 'dry-run' && report.archived.length > 0) lines.push('Run again with --apply to move these entries.');
   return `${lines.join('\n')}\n`;
 }

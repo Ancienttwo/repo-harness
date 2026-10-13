@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'child_process';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, statSync, utimesSync, writeFileSync } from 'fs';
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readlinkSync, realpathSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { dirname, join } from 'path';
 import { DEFAULT_ARCHIVE_ROOT, readRetentionConfig, runArtifactRetention } from '../../src/effects/artifact-retention';
+import { formatRetentionReport } from '../../src/cli/commands/retention';
 import { runCliInProcess } from '../helpers/cli-in-process';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -12,8 +13,8 @@ const NOW = Date.UTC(2026, 9, 13);
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 
-/** A consumer repo that keeps plans/ and tasks/ out of Git, as byok-sdk does. */
-function fixture(gitignore = 'plans/\ntasks/\n.ai/harness/checks/\n.ai/harness/archive/\n'): string {
+/** A consumer repo that commits plans/ and keeps tasks/ and checks out of Git. */
+function fixture(gitignore = 'tasks/\n.ai/harness/checks/\n.ai/harness/archive/\n'): string {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'artifact-retention-')));
   roots.push(root);
   execFileSync('git', ['init', '-q', root]);
@@ -30,6 +31,20 @@ function seed(root: string, path: string, days: number): void {
   for (let current = absolute; current !== root; current = dirname(current)) utimesSync(current, seconds, seconds);
 }
 
+/** Commits `paths` with author and committer time `days` before NOW. */
+function commitAt(root: string, paths: readonly string[], days: number): void {
+  const date = `@${Math.floor((NOW - days * DAY_MS) / 1000)} +0000`;
+  execFileSync('git', ['-C', root, 'add', '-f', '--', ...paths]);
+  execFileSync('git', ['-C', root, '-c', 'user.name=t', '-c', 'user.email=t@example.com', '-c', 'commit.gpgsign=false',
+    '-c', 'core.hooksPath=/dev/null', 'commit', '-q', '-m', `seed ${days}d`], {
+    env: { ...process.env, GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date },
+  });
+}
+
+function git(root: string, args: readonly string[]): string {
+  return execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' });
+}
+
 function policy(root: string, retention: unknown): void {
   mkdirSync(join(root, '.ai/harness'), { recursive: true });
   writeFileSync(join(root, '.ai/harness/policy.json'), JSON.stringify({ version: 1, information_lifecycle: { retention } }));
@@ -41,6 +56,8 @@ describe('artifact retention selection', () => {
     seed(root, 'plans/archive/plan-old.md', 45);
     seed(root, 'plans/archive/plan-new.md', 3);
     seed(root, 'plans/plan-open.md', 90);
+    seed(root, 'plans/archive/.gitkeep', 90);
+    seed(root, 'tasks/archive/.gitkeep', 90);
     seed(root, 'tasks/archive/gate-audit/contracts/a.contract.md', 60);
     seed(root, 'tasks/contracts/open.contract.md', 90);
     seed(root, '.ai/harness/checks/verify.log', 31);
@@ -132,22 +149,72 @@ describe('artifact retention selection', () => {
     expect(report.skipped.map((entry) => [entry.path, entry.reason, entry.ageDays])).toEqual([['tasks/archive/batch', 'recent', 2]]);
   });
 
-  test('entries with a Git-tracked file are skipped so apply never stages a deletion', () => {
+  test('committed plans stay in Git for the window, counted from the last commit, then leave it unstaged', () => {
+    const root = fixture();
+    seed(root, 'plans/archive/plan-old.md', 1);
+    seed(root, 'plans/archive/plan-recent.md', 90);
+    seed(root, 'plans/archive/plan-edited.md', 90);
+    commitAt(root, ['plans/archive/plan-old.md', 'plans/archive/plan-edited.md'], 90);
+    commitAt(root, ['plans/archive/plan-recent.md'], 5);
+    writeFileSync(join(root, 'plans/archive/plan-edited.md'), 'uncommitted edit\n');
+
+    const report = runArtifactRetention({ repoRoot: root, apply: true, now: NOW });
+
+    // File times say the opposite of the commit times; the commit time decides.
+    expect(report.archived.map((entry) => [entry.path, entry.ageDays, entry.tracked])).toEqual([['plans/archive/plan-old.md', 90, true]]);
+    expect(report.skipped.map((entry) => [entry.path, entry.reason])).toEqual([
+      ['plans/archive/plan-edited.md', 'modified'],
+      ['plans/archive/plan-recent.md', 'recent'],
+    ]);
+    expect(existsSync(join(root, DEFAULT_ARCHIVE_ROOT, 'plans/archive/plan-old.md'))).toBe(true);
+    expect(git(root, ['diff', '--cached', '--name-only'])).toBe('');
+    expect(git(root, ['status', '--porcelain', '--', 'plans']).split('\n').filter(Boolean).sort()).toEqual([
+      ' D plans/archive/plan-old.md',
+      ' M plans/archive/plan-edited.md',
+    ]);
+    expect(formatRetentionReport(report)).toContain('1 archived entries are tracked by Git. Retention does not stage or commit; commit their removal.');
+  });
+
+  test('task records with a committed file stay in place', () => {
     const root = fixture('.ai/harness/archive/\n');
-    seed(root, 'plans/archive/plan-tracked.md', 90);
     seed(root, 'tasks/archive/mixed/tracked.md', 90);
     seed(root, 'tasks/archive/mixed/local.md', 90);
-    execFileSync('git', ['-C', root, 'add', 'plans/archive/plan-tracked.md', 'tasks/archive/mixed/tracked.md']);
+    commitAt(root, ['tasks/archive/mixed/tracked.md'], 90);
 
     const report = runArtifactRetention({ repoRoot: root, apply: true, now: NOW });
 
     expect(report.archived).toEqual([]);
-    expect(report.skipped.map((entry) => [entry.path, entry.reason])).toEqual([
-      ['plans/archive/plan-tracked.md', 'tracked'],
-      ['tasks/archive/mixed', 'tracked'],
-    ]);
-    expect(execFileSync('git', ['-C', root, 'status', '--porcelain', '--', 'plans', 'tasks'], { encoding: 'utf8' })).not.toContain(' D ');
+    expect(report.skipped.map((entry) => [entry.path, entry.reason])).toEqual([['tasks/archive/mixed', 'tracked']]);
+    expect(git(root, ['status', '--porcelain', '--untracked-files=no', '--', 'tasks'])).toBe('');
     expect(existsSync(join(root, 'tasks/archive/mixed/local.md'))).toBe(true);
+  });
+
+  test('a scanned directory reached through a symlink is refused before anything moves', () => {
+    const root = fixture();
+    seed(root, 'plans/live/open.md', 90);
+    commitAt(root, ['plans/live/open.md'], 90);
+    symlinkSync('live', join(root, 'plans/archive'));
+
+    expect(() => runArtifactRetention({ repoRoot: root, apply: true, now: NOW }))
+      .toThrow('retention refuses a path through a symlink: plans/archive');
+    expect(existsSync(join(root, 'plans/live/open.md'))).toBe(true);
+    expect(git(root, ['status', '--porcelain', '--untracked-files=no'])).toBe('');
+  });
+
+  test('a dangling symlink at the destination counts as occupied', () => {
+    const root = fixture();
+    seed(root, 'tasks/archive/notes-old.md', 90);
+    const destination = join(root, DEFAULT_ARCHIVE_ROOT, 'tasks/archive/notes-old.md');
+    mkdirSync(dirname(destination), { recursive: true });
+    symlinkSync('missing-target', destination);
+
+    const report = runArtifactRetention({ repoRoot: root, apply: true, now: NOW });
+
+    expect(report.archived).toEqual([]);
+    expect(report.skipped.map((entry) => [entry.path, entry.reason])).toEqual([['tasks/archive/notes-old.md', 'destination-exists']]);
+    expect(lstatSync(destination).isSymbolicLink()).toBe(true);
+    expect(readlinkSync(destination)).toBe('missing-target');
+    expect(existsSync(join(root, 'tasks/archive/notes-old.md'))).toBe(true);
   });
 
   test('keep paths, entries that contain one, and occupied destinations are skipped', () => {
@@ -170,7 +237,7 @@ describe('artifact retention selection', () => {
   });
 
   test('policy overrides the window and the archive root', () => {
-    const root = fixture('plans/\n/local-archive/\n');
+    const root = fixture('/local-archive/\n');
     policy(root, { days: 7, archive_root: 'local-archive/' });
     seed(root, 'plans/archive/plan-week.md', 8);
 
@@ -181,18 +248,38 @@ describe('artifact retention selection', () => {
     expect(existsSync(join(root, 'local-archive/plans/archive/plan-week.md'))).toBe(true);
   });
 
-  test('an archive root Git would track is refused before anything moves', () => {
-    const root = fixture('plans/\n');
+  test.each([
+    ['no rule', '', 'archive root local-archive is not gitignored'],
+    ['a rule that matches only a probe name', '.retention-probe\n', 'archive root local-archive is not gitignored'],
+    ['an exception below the root', 'local-archive/*\n!local-archive/plans/\n', 'archive destinations are not gitignored: local-archive/plans/archive/plan-old.md'],
+  ])('an archive destination Git would see (%s) is refused before anything moves', (_, gitignore, message) => {
+    const root = fixture(gitignore);
+    policy(root, { archive_root: 'local-archive' });
     seed(root, 'plans/archive/plan-old.md', 90);
 
-    expect(() => runArtifactRetention({ repoRoot: root, apply: true, now: NOW }))
-      .toThrow(`archive root ${DEFAULT_ARCHIVE_ROOT} is not gitignored`);
+    expect(() => runArtifactRetention({ repoRoot: root, apply: true, now: NOW })).toThrow(message);
     expect(existsSync(join(root, 'plans/archive/plan-old.md'))).toBe(true);
+    expect(existsSync(join(root, 'local-archive'))).toBe(false);
+  });
+
+  test('an explicit null policy field fails closed instead of taking the default', () => {
+    const root = fixture();
+    policy(root, { days: null });
+    seed(root, 'tasks/archive/notes-old.md', 90);
+
+    expect(() => runArtifactRetention({ repoRoot: root, apply: true, now: NOW })).toThrow('retention.days must be a positive integer');
+    expect(existsSync(join(root, 'tasks/archive/notes-old.md'))).toBe(true);
+    expect(existsSync(join(root, DEFAULT_ARCHIVE_ROOT))).toBe(false);
   });
 
   test.each([
     [{ days: 0 }, 'retention.days must be a positive integer'],
     [{ days: '30' }, 'retention.days must be a positive integer'],
+    [{ days: null }, 'retention.days must be a positive integer'],
+    [{ keep: null }, 'retention.keep must be an array'],
+    [{ keep: ['plans/archive/./pinned.md'] }, 'retention.keep[0] must be a canonical path'],
+    [{ keep: ['plans//archive/pinned.md'] }, 'retention.keep[0] must be a canonical path'],
+    [{ archive_root: 'plans//archive/old' }, 'retention.archive_root must be a canonical path'],
     [{ archive_root: '/var/archive' }, 'absolute paths are not allowed'],
     [{ archive_root: '../outside' }, 'path traversal is not allowed'],
     [{ archive_root: 'plans/archive/old' }, 'overlaps scanned directory plans/archive'],
