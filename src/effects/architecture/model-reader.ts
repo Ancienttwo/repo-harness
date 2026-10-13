@@ -38,7 +38,7 @@ function runGit(cwd: string, args: string[], input?: Buffer): Buffer {
  * `git cat-file --batch` per `load` call. Every reader of the same commit in
  * this process shares one snapshot.
  */
-export class CommitSnapshot {
+class CommitSnapshot {
   private readonly entries = new Map<string, SnapshotEntry>();
   private readonly blobs = new Map<string, Buffer>();
   private nodes: ArchcontextNodeFile[] | null = null;
