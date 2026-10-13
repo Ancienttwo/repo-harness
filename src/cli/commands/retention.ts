@@ -37,9 +37,13 @@ export function formatRetentionReport(report: RetentionReport): string {
     `retention ${report.mode}: ${verb} ${report.archived.length}, skipped ${report.skipped.length}, failed ${report.failed.length}`,
     `window ${config.days} days; archive root ${config.archiveRoot}`,
   ];
+  const reasons = new Map<string, number>();
+  for (const entry of report.skipped) reasons.set(entry.reason, (reasons.get(entry.reason) ?? 0) + 1);
+  if (reasons.size > 0) lines.push(`skipped by reason: ${[...reasons].map(([reason, count]) => `${reason} ${count}`).join(', ')}`);
   for (const entry of report.archived) lines.push(`  ${verb}: ${entry.path} (${entry.ageDays}d) -> ${entry.destination}`);
+  // The only skip an operator has to resolve by hand; --json lists every skip.
   for (const entry of report.skipped) {
-    if (entry.reason !== 'recent') lines.push(`  skipped (${entry.reason}): ${entry.path}`);
+    if (entry.reason === 'destination-exists') lines.push(`  skipped (destination exists): ${entry.path}`);
   }
   for (const entry of report.failed) lines.push(`  failed: ${entry.path}: ${entry.error}`);
   if (report.mode === 'dry-run' && report.archived.length > 0) lines.push('Run again with --apply to move these entries.');
