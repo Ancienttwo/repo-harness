@@ -999,7 +999,10 @@ this route. If archctx cannot run, Effective State reports the
 `capability_ownership:unavailable` blocker. A model fault or an ownership fault
 reports the `capability_registry:invalid` blocker. `profile_reasons` names the
 first diagnostic as `capability:diagnostic:<CODE>`. `next_action` and the edit
-hook show the message and the fix command. A read-only observation does not
+hook show the message and the fix command. `state resolve --json` reports the
+same ownership answer in `capability_ownership`: `capability_ids`, each
+capability's `module_document` and owned paths, and `unowned_paths`. The field
+is `null` when ownership was not computed. A read-only observation does not
 start archctx. It reports `capability_ownership:unavailable`. The standalone helper copy
 in `assets/templates/helpers/` has no package-local archctx, so its `match`
 fails closed under `archcontext`. Bun older than 1.3 has no `Bun.YAML`; that
@@ -1048,6 +1051,33 @@ responsibilities, entrypoints, relations or flows, the Agent uses the
 ChangeSet, and runs `repo-harness architecture-projection apply --json` in the
 same branch. `check` and `plan` show the effect without writes. The projected
 `docs/architecture/` files are committed with the change.
+
+A capability is owed when one of its owned implementation paths in the review
+subject changed after the last change to
+`docs/architecture/.projection-manifest.json`. The rule reuses the ownership
+answer of state resolution and runs at most two Git commands. It writes no
+queue and no drift cursor. Hooks report it to the Agent as evidence, never as a
+gate. The report names the capability, its module document, new unowned source
+paths and the next step: `repo-harness architecture-projection check --json`,
+then the worker flow of the `repo-harness-architecture` skill.
+`repo-harness state owed --json [--base <ref>]` prints the same rule for the
+review subject against `<ref>` (default: the policy review base). It needs no
+hook, so CI can call it for a pull request diff.
+
+Hook advisories for the Agent go out as `hookSpecificOutput.additionalContext`
+on Claude and Codex. Neither host gives plain stdout of `PreToolUse`,
+`PostToolUse` or `Stop` to the model. stderr of a successful hook is an operator
+diagnostic only. The owed report reaches the Agent at these points:
+
+- `PreToolUse` edit: the owner line on the first edit of an owned path after
+  its last commit.
+- `SessionStart` on Claude, Codex and Pi: a short section when the branch
+  already owes updates.
+- `PostToolUse` Bash: after a successful `git commit`, `git push` or
+  `gh pr create`.
+- `Stop` on Claude: once per branch and owed set. A Stop that runs because of
+  a Stop hook (`stop_hook_active`) adds nothing. Codex Stop stays silent,
+  because Codex Desktop renders Stop JSON as "Unsupported content type".
 
 `apply` accepts a major change in the same call. When ArchContext returns an
 unresolved-major signal, `apply` copies its reason codes and affected node ids

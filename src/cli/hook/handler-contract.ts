@@ -88,7 +88,7 @@ export interface HookHandlerContext {
   readonly input?: string | Buffer;
   readonly env: NodeJS.ProcessEnv;
   readonly now: Date;
-  readonly collector: StateInputCollector<HookEvent, SessionContextSection | null, EffectiveState | null, EffectiveState | null>;
+  readonly collector: StateInputCollector<HookEvent, readonly SessionContextSection[], EffectiveState | null, EffectiveState | null>;
   readonly dependencies: HookHandlerDependencies;
   readonly collectSessionStdout: boolean;
 }

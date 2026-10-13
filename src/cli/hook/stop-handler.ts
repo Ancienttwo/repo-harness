@@ -31,6 +31,7 @@ import {
 } from '../../effects/evidence/recovery-materializer';
 import { STOP_WORK_BUDGET_MS } from '../../core/hook-work-budget';
 import { HookEffectReconciliationRequired } from './handler-contract';
+import { owedCapabilities, renderOwedCapabilities } from '../../effects/state/owed-capabilities';
 
 export interface StopCollector {
   getRepoRoot(): string;
@@ -40,7 +41,8 @@ export interface StopCollector {
 }
 
 export interface StopProjectionTarget {
-  readonly kind: 'handoff' | 'resume' | 'event' | 'run-summary';
+  /** `owed-signal` is the delivery marker of the owed-architecture line; it is not a projection phase. */
+  readonly kind: 'handoff' | 'resume' | 'event' | 'run-summary' | 'owed-signal';
   readonly path: string;
 }
 
@@ -463,6 +465,40 @@ function minimalChangeReview(repoRoot: string, policy: MinimalChangePolicy): Min
   }
 }
 
+const OWED_SIGNAL_MARKER = '.ai/harness/state/stop-owed-signal';
+
+/**
+ * The owed-architecture line for Claude Stop, once per branch and owed set.
+ * Stop additionalContext continues the turn, so the marker keeps a repeated
+ * Stop from asking again; `stop_hook_active` already ended this run earlier.
+ * Codex Stop stays silent. Architecture diagnostics never block, so any
+ * failure only drops the line.
+ */
+function owedStopSignal(
+  repoRoot: string,
+  env: NodeJS.ProcessEnv,
+  state: EffectiveState | null,
+  observeWrite?: (target: StopProjectionTarget) => void,
+): string {
+  if (env.HOOK_HOST !== 'claude' || !state?.capability_ownership) return '';
+  try {
+    const owed = owedCapabilities(repoRoot, state.capability_ownership);
+    const content = renderOwedCapabilities(owed);
+    if (!content || !owed) return '';
+    const branch = execFileSync('git', ['-C', repoRoot, 'rev-parse', '--abbrev-ref', 'HEAD'], {
+      encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5_000,
+    }).trim();
+    const key = createHash('sha256').update(JSON.stringify([branch, owed.capabilities.map((capability) => capability.id)])).digest('hex');
+    const marker = join(repoRoot, OWED_SIGNAL_MARKER);
+    if (existsSync(marker) && readFileSync(marker, 'utf8').trim() === key) return '';
+    atomicWrite(repoRoot, marker, `${key}\n`);
+    observeWrite?.({ kind: 'owed-signal', path: OWED_SIGNAL_MARKER });
+    return `${content}\n`;
+  } catch {
+    return '';
+  }
+}
+
 /** Stop records recovery and observed gaps; it never grants publication permission. */
 export function runStopHandler(opts: StopHandlerInput): StopHandlerResult {
   const repoRoot = opts.collector.getRepoRoot();
@@ -508,5 +544,5 @@ export function runStopHandler(opts: StopHandlerInput): StopHandlerResult {
   }
   const minimal = minimalChangeReview(repoRoot, loadMinimalChangePolicy(repoRoot));
   if (minimal.summary) stderr.push(`${minimal.summary}\n`);
-  return { exitCode: 0, stdout: '', stderr: stderr.join('') };
+  return { exitCode: 0, stdout: owedStopSignal(repoRoot, env, state, dependencies.observeProjectionWrite), stderr: stderr.join('') };
 }

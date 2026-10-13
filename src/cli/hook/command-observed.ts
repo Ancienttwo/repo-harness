@@ -13,6 +13,8 @@ import { recordCircuitAttempt, type CircuitDecision } from './circuit-breaker';
 import { parseHookInput, type HookInputFs } from './hook-input';
 import { importPostBashObservation } from '../../effects/evidence/post-bash-importer';
 import { resolveRunIdentity } from './run-identity';
+import { resolveCapabilityOwnership } from '../../effects/state/resolve-effective-state';
+import { owedCapabilities, renderOwedCapabilities } from '../../effects/state/owed-capabilities';
 
 export interface CommandObservedFs extends HookInputFs {
   mkdirSync(path: string, options?: { readonly recursive?: boolean }): void;
@@ -174,6 +176,23 @@ function circuitFailure(
   }
 }
 
+const PUBLICATION_COMMAND = /(?:^|[\s;&|(])(?:git\s+(?:-C\s+\S+\s+)?(?:commit|push)|gh\s+pr\s+create)(?:\s|$)/u;
+
+/**
+ * Before a pull request, a successful `git commit`, `git push` or `gh pr
+ * create` reports owed architecture updates. Architecture diagnostics never
+ * block, so an ownership or Git failure only drops the line.
+ */
+function publicationOwedSignal(repoRoot: string, command: string, exitCode: number | null): string {
+  if (exitCode !== 0 || !PUBLICATION_COMMAND.test(command)) return '';
+  try {
+    const content = renderOwedCapabilities(owedCapabilities(repoRoot, resolveCapabilityOwnership(repoRoot)));
+    return content ? `${content}\n` : '';
+  } catch {
+    return '';
+  }
+}
+
 export function runCommandObserved(opts: CommandObservedInput): CommandObservedResult {
   const env = opts.env ?? process.env;
   const deps = opts.dependencies ?? {};
@@ -281,6 +300,7 @@ export function runCommandObserved(opts: CommandObservedInput): CommandObservedR
       }
     }
 
+    stdout += publicationOwedSignal(opts.repoRoot, command, exitCode);
     return { exitCode: 0, stdout, stderr: warnings(), reason: 'ok' };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
