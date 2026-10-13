@@ -291,7 +291,7 @@ describe('workflow circuit breakers', () => {
       updated_at: new Date().toISOString(),
     });
     expect(() => recordCircuitAttempt(cwd, attempt()))
-      .toThrow(/retired protocol-1 circuit breaker state: .*; run the one-shot cleanup: bun scripts\/evidence-gc\.ts --repo /);
+      .toThrow(/retired protocol-1 circuit breaker state: .*; run the one-shot cleanup: repo-harness run evidence-gc --repo /);
     expect(readFileSync(join(cwd, '.ai/harness/state/circuit-breaker.json'), 'utf-8')).toBe(legacy);
   }));
 
@@ -308,7 +308,7 @@ describe('workflow circuit breakers', () => {
         updated_at: new Date().toISOString(),
       });
       expect(() => recordCircuitAttempt(cwd, attempt()))
-        .toThrow(new RegExp(`retired circuit breaker kind ${kind}: .*bun scripts/evidence-gc\\.ts --repo `));
+        .toThrow(new RegExp(`retired circuit breaker kind ${kind}: .*repo-harness run evidence-gc --repo `));
       expect(readFileSync(join(cwd, '.ai/harness/state/circuit-breaker.json'), 'utf-8')).toBe(retired);
     }
   }));

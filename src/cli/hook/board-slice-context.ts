@@ -27,10 +27,8 @@ import type { StateInputCollector } from '../../effects/loop/state-input-collect
 export const BOARD_SLICE_MARKER = '[repo-harness:board-slice]';
 
 /**
- * Structural cap. Not a budget negotiated with anything else in the context --
- * `session-context-budget` is a SessionStart-only surface with a single
- * evidence file and session-scoped dedupe, and reusing it would blank the
- * second subagent's slice in the same session. Two thousand bytes fits the
+ * Structural cap. Not a budget negotiated with anything else in the context:
+ * `session-context-budget` orders SessionStart sections only. Two thousand bytes fits the
  * whole shape below with every peer line and leaves the receiving agent's
  * window essentially untouched.
  */

@@ -39,8 +39,8 @@ All notable changes to this skill are documented here.
 - The circuit breaker keeps the `repair` and `semantic-review` kinds only. A
   `.ai/harness/state/circuit-breaker.json` with protocol 1 or a retired kind
   (`guard`, `review`, `subagent`, `cross-model-consult` or `minimal-change`)
-  fails closed. Run `bun scripts/evidence-gc.ts --repo <path>` (or
-  `repo-harness run evidence-gc --repo <path>`) once after the upgrade. The
+  fails closed. Run `repo-harness run evidence-gc --repo <path>` (or
+  `bun scripts/evidence-gc.ts --repo <path>` in the source checkout) once after the upgrade. The
   cleanup ships for one release. (#692, #694)
 - Claude and Codex send no exit status in a Bash payload. `PostToolUse.bash`
   now records no status for them and does not feed the repair circuit.
