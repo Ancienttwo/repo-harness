@@ -11,7 +11,7 @@ import { configuredGitBinary, resolveGitCommonDirectory } from '../git/common-di
 import { withExclusiveDirectoryLock, withExclusiveDirectoryLockAsync } from '../locking/exclusive-directory-lock';
 import { taskWorktreeRuntimeClosed } from '../terminal/task-session';
 import { parseWorktreeTopology } from '../git/worktree-topology';
-import { worktreeUid, assertOwnedTrashDirectory, discardWorktreeTrashApproval, deleteUnpublishedTrash, deleteWorktreeTrash, prepareWorktreeTrash, readWorktreeTrash, renameWorktreeToTrash, trashPayload, worktreeTrashNames, type WorktreeRemovalOptions, type WorktreeTrashReceipt } from './worktree-trash';
+import { worktreeUid, assertOwnedTrashDirectory, discardWorktreeTrashApproval, deleteUnpublishedTrash, deleteWorktreeTrash, prepareWorktreeTrash, readWorktreeTrash, renameWorktreeToTrash, trashPayload, worktreeTrashNames, WorktreeTrashBudgetReached, type WorktreeRemovalOptions, type WorktreeTrashReceipt } from './worktree-trash';
 
 /** Locate the owning package in source and in the shipped hook bundle. */
 function mergeLibraryPath(): string {
@@ -305,6 +305,7 @@ interface SweepContext {
   readonly managedRoot: string;
   readonly managed: (path: string) => boolean;
   readonly limits: Limits & { deadline: number };
+  readonly trashDeadline: number;
   readonly options: WorktreeRemovalOptions;
 }
 function protectsCwd(path: string, cwd: string): boolean {
@@ -471,7 +472,7 @@ function resumeSweepTrashAttempt(context: SweepContext, directory: string): void
     // Re-read immutable identity after the lock boundary. Partly deleted data needs no new Git status check.
     const current = readWorktreeTrash(context.common, context.managedRoot, directory);
     if (!current) throw new Error('trash approval disappeared');
-    deleteWorktreeTrash(current, context.limits.deadline, context.options);
+    deleteWorktreeTrash(current, context.trashDeadline, context.options);
   }, context.limits);
 }
 
@@ -499,7 +500,11 @@ function resumeSweepTrash(context: SweepContext, directory: string): 'resumed' |
  * everything below it are never removed.
  */
 export function sweepManagedWorktrees(root: string, callerCwd: string, env: NodeJS.ProcessEnv = process.env, options: WorktreeRemovalOptions = {}): string | null {
-  const limits = { deadline: Date.now() + (options.deadlineMs ?? 2_000), gitBin: configuredGitBinary(env) };
+  const started = Date.now();
+  const budget = options.deadlineMs ?? 2_000;
+  const limits = { deadline: started + budget, gitBin: configuredGitBinary(env) };
+  // Old and new payloads share this half. Live selection keeps the rest.
+  const trashDeadline = started + Math.floor(budget / 2);
   const notes: string[] = [];
   let removed = 0, pruned = 0, resumed = 0, deferred = 0;
   try {
@@ -512,7 +517,7 @@ export function sweepManagedWorktrees(root: string, callerCwd: string, env: Node
     const prefix = `${basename(main)}-wt-`;
     const managed = (path: string) => dirname(path) === managedRoot && basename(path).startsWith(prefix) && basename(path).length > prefix.length;
     const common = resolveGitCommonDirectory(main, gitBinary(limits), timeout(limits));
-    const context: SweepContext = { main, cwd, common, managedRoot, managed, limits, options };
+    const context: SweepContext = { main, cwd, common, managedRoot, managed, limits, trashDeadline, options };
     // Recovery precedes live selection, so an interrupted registration is not mistaken for reboot loss.
     const trash = worktreeTrashNames(common, managedRoot);
     let trashBlocked = false;
@@ -521,7 +526,10 @@ export function sweepManagedWorktrees(root: string, callerCwd: string, env: Node
       try { assertOwnedTrashDirectory(directory); }
       catch (error) { ignoredTrash = true; notes.push(`${directory}: ignored; ${error instanceof Error ? error.message : String(error)}`); continue; }
       try { timeout(limits); const outcome = resumeSweepTrash(context, directory); if (outcome === 'resumed') resumed++; notes.push(`${directory}: ${outcome}`); }
-      catch (error) { trashBlocked = true; notes.push(`${directory}: kept; ${error instanceof Error ? error.message.split('\n')[0] : String(error)}`); }
+      catch (error) {
+        if (error instanceof WorktreeTrashBudgetReached) notes.push(`${directory}: pending; ${error.message}`);
+        else { trashBlocked = true; notes.push(`${directory}: kept; ${error instanceof Error ? error.message.split('\n')[0] : String(error)}`); }
+      }
     }
     deferred += Math.max(0, trash.length - 8);
     if (trashBlocked || trash.length > 8) return `[WorktreeSweep] removed=0 pruned=0 resumed=${resumed} deferred=${deferred}\n${notes.join('\n')}`;
@@ -602,7 +610,7 @@ export function sweepManagedWorktrees(root: string, callerCwd: string, env: Node
         const receipt = commitSweepRemoval(context, { worktree: path, branch, head_sha: entry.head, target_ref: targetRef, target_oid: target, merge_commit_sha: target });
         removed++;
         notes.push(`${path}: removed`);
-        // No detached child: each unlink is resumable and checks the same deadline.
+        // No detached child: each unlink checks the shared trash deadline.
         try { resumeSweepTrash(context, receipt.directory); }
         catch (error) { notes.push(`${receipt.directory}: pending; ${error instanceof Error ? error.message.split('\n')[0] : String(error)}`); }
       } catch (error) {

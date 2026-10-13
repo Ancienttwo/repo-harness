@@ -2018,6 +2018,7 @@ describe('exact cleanup and contract-worktree start sweep', () => {
       expect(session.status, session.stderr).toBe(0);
       expect(session.stdout + session.stderr).not.toContain('[WorktreeSweep]');
       expect(session.stdout + session.stderr).not.toContain('worktree sweep');
+      expect(session.stdout + session.stderr).not.toContain('trash deletion will resume');
       expect(existsSync(directory)).toBe(true);
       const start = startCheck(f);
       expect(start.status, start.stderr).toBe(0); expect(start.stderr).toContain('resumed=1');
@@ -2340,6 +2341,104 @@ describe('exact cleanup and contract-worktree start sweep', () => {
       expect(existsSync(directory)).toBe(false);
     } finally { f.cleanup(); }
   }, 15000);
+
+  async function pendingTrashFixture() {
+    const f = fixture();
+    try {
+      const payload = join(f.path, '.ai/payload');
+      mkdirSync(payload, { recursive: true });
+      for (let index = 0; index < 24; index++) writeFileSync(join(payload, `file-${index}`), 'trash data');
+      const directory = await interruptSweep(f, 'branch-deleted');
+      return { ...f, directory };
+    } catch (error) { f.cleanup(); throw error; }
+  }
+
+  /** Real Git and filesystem work; only elapsed deletion time is controlled. */
+  function sweepWithSlowDeletion(f: ReturnType<typeof fixture>): string | null {
+    const realNow = Date.now;
+    let offset = 0;
+    try {
+      Date.now = () => realNow() + offset;
+      return productionSweep(f.root, f.root, f.env, {
+        deadlineMs: 60_000,
+        afterRemovalStep(step) { if (step === 'trash-entry-deleted') offset += 10_000; },
+      });
+    } finally { Date.now = realNow; }
+  }
+
+  function addMergedSweepWorktree(f: ReturnType<typeof fixture>) {
+    const other = join(f.managed, 'repo-wt-other');
+    f.git('worktree', 'add', '-q', '-b', 'other', other);
+    f.git('-C', other, 'commit', '--allow-empty', '-qm', 'other task');
+    f.git('merge', '--ff-only', 'other'); f.git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+    return other;
+  }
+
+  test.each(['live', 'missing'])('W8 pending trash leaves time to clean a %s worktree in the same sweep', async state => {
+    const f = await pendingTrashFixture(); try {
+      const other = addMergedSweepWorktree(f);
+      if (state === 'missing') rmSync(other, { recursive: true });
+      const before = readdirSync(f.directory, { recursive: true }).length;
+      const result = sweepWithSlowDeletion(f);
+      expect(result).toContain('trash deletion will resume');
+      expect(existsSync(f.directory)).toBe(true);
+      expect(readdirSync(f.directory, { recursive: true }).length).toBeLessThan(before);
+      expect(result).toContain('removed=1');
+      expect(result).not.toContain('worktree sweep skipped');
+      if (state === 'missing') expect(result).toContain('pruned=1');
+      expect(existsSync(other)).toBe(false);
+      expect(f.git('worktree', 'list', '--porcelain')).not.toContain(other);
+      expect(f.git('branch', '--list', 'other')).toBe('');
+    } finally { f.cleanup(); }
+  }, 30000);
+
+  test('W8 repeated bounded sweeps finish real trash with progress in each run', async () => {
+    const f = await pendingTrashFixture(); try {
+      const entryCount = () => existsSync(f.directory) ? readdirSync(f.directory, { recursive: true }).length + 1 : 0;
+      const bound = entryCount();
+      let runs = 0;
+      while (existsSync(f.directory) && runs < bound) {
+        const before = entryCount();
+        const result = sweepWithSlowDeletion(f);
+        runs++;
+        expect(entryCount(), result ?? '').toBeLessThan(before);
+      }
+      expect(runs).toBeGreaterThan(1);
+      expect(existsSync(f.directory)).toBe(false);
+      expect(worktreeTrashNames(join(f.root, '.git'), f.managed)).toEqual([]);
+      expect(f.git('branch', '--list', 'codex/demo')).toBe('');
+    } finally { f.cleanup(); }
+  }, 30000);
+
+  test('W8 inline trash deletion leaves time for the next live worktree', () => {
+    const f = fixture(); try {
+      const other = addMergedSweepWorktree(f);
+      const payload = join(f.path, '.ai/payload');
+      mkdirSync(payload, { recursive: true });
+      for (let index = 0; index < 24; index++) writeFileSync(join(payload, `file-${index}`), 'trash data');
+      const result = sweepWithSlowDeletion(f);
+      expect(result).toContain('removed=2');
+      expect(result).toContain('trash deletion will resume');
+      expect(existsSync(f.path)).toBe(false); expect(existsSync(other)).toBe(false);
+      expect(f.git('branch', '--list', 'codex/demo', 'other')).toBe('');
+      expect(f.git('worktree', 'list', '--porcelain')).not.toContain(f.managed);
+      expect(worktreeTrashNames(join(f.root, '.git'), f.managed)).toHaveLength(2);
+    } finally { f.cleanup(); }
+  }, 30000);
+
+  test('W8 unsafe trash recovery still blocks live cleanup', async () => {
+    const f = fixture(); try {
+      const directory = await interruptSweep(f, 'renamed');
+      f.git('worktree', 'repair', join(directory, 'worktree'));
+      const other = addMergedSweepWorktree(f);
+      const result = sweepWithSlowDeletion(f);
+      expect(result).toContain('trash is still registered');
+      expect(result).toContain('removed=0');
+      expect(existsSync(other)).toBe(true);
+      expect(f.git('branch', '--list', 'other')).toContain('other');
+      expect(readFileSync(join(directory, 'worktree/source'), 'utf8')).toBe('base\n');
+    } finally { f.cleanup(); }
+  }, 30000);
 
   test('W1 recovery accepts a local integration ref advance after the rename', async () => {
     const f = fixture(); try {
