@@ -151,7 +151,7 @@ describe("canonical adoption plan", () => {
           PostToolUse: [{
             matcher: "Bash",
             hooks: [
-              { type: "command", command: "repo-harness hook post-bash" },
+              { type: "command", command: 'repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; HOOK_HOST=codex HOOK_REPO_ROOT="$repo" bash "$repo/.ai/hooks/run-hook.sh" post-bash.sh' },
               { type: "command", command: "bash scripts/custom-hook.sh" },
             ],
           }],
@@ -160,7 +160,7 @@ describe("canonical adoption plan", () => {
       };
       const claudeBefore = {
         hooks: {
-          UserPromptSubmit: [{ hooks: [{ type: "command", command: ".ai/hooks/run-hook.sh prompt-guard.sh" }] }],
+          UserPromptSubmit: [{ hooks: [{ type: "command", command: 'repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; HOOK_REPO_ROOT="$repo" bash "$repo/.ai/hooks/run-hook.sh" prompt-guard.sh' }] }],
         },
         permissions: { allow: ["Bash(git status:*)"] },
       };
@@ -196,6 +196,7 @@ describe("canonical adoption plan", () => {
       }
       const codexAfter = readFileSync(join(repo, ".codex/hooks.json"), "utf8");
       expect(codexAfter).not.toContain("repo-harness hook");
+      expect(codexAfter).not.toContain("run-hook.sh");
       expect(codexAfter).toContain("custom-hook.sh");
       expect(codexAfter).toContain("ownerField");
       const claudeAfter = readFileSync(join(repo, ".claude/settings.json"), "utf8");

@@ -72,7 +72,11 @@ function tomlSpan(raw: string, selector: string): { start: number; end: number }
   const pattern = selector === 'default_mode_request_user_input'
     ? /^default_mode_request_user_input\s*=.*(?:\r?\n|$)/gm
     : new RegExp(`^\\[mcp_servers\\.${selector.slice(12)}\\][^\\S\\r\\n]*(?:\\r?\\n|$)[\\s\\S]*?(?=^\\s*\\[|(?![\\s\\S]))`, 'gm');
-  const matches = [...raw.matchAll(pattern)];
+  // This selector belongs to the root table. A profile may use the same key.
+  // The parsed equality check below rejects misleading text in strings or arrays.
+  const tableStart = selector === 'default_mode_request_user_input' ? raw.search(/^[ \t]*\[/m) : -1;
+  const source = tableStart === -1 ? raw : raw.slice(0, tableStart);
+  const matches = [...source.matchAll(pattern)];
   if (matches.length !== 1) throw new Error(`unsupported TOML spelling for ${selector}; preserving configuration`);
   const match = matches[0]!;
   const span = { start: match.index!, end: match.index! + match[0].length };

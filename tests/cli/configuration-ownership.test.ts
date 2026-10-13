@@ -2,12 +2,26 @@ import { test, expect } from 'bun:test';
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, existsSync, symlinkSync, statSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { configurationReceiptPath, readConfigurationReceipt, writeOwnedConfiguration, recordConfigurationChange } from '../../src/cli/installer/configuration-ownership';
+import { configurationReceiptPath, readConfigurationReceipt, writeOwnedConfiguration, recordConfigurationChange, readConfigurationFragment, replaceConfigurationFragment } from '../../src/cli/installer/configuration-ownership';
 
 function fixture(run: (home: string, env: NodeJS.ProcessEnv) => void) {
   const home = mkdtempSync(join(tmpdir(), 'configuration-ownership-'));
   try { run(home, { HOME: home }); } finally { rmSync(home, { recursive: true, force: true }); }
 }
+test('issue 698 TOML fragment selects the root key and preserves profile keys', () => fixture((home) => {
+  const path = join(home, '.codex/config.toml');
+  const raw = 'default_mode_request_user_input = false\n[profiles.work]\ndefault_mode_request_user_input = false\n';
+  expect(readConfigurationFragment(path, raw, 'default_mode_request_user_input')).toBe('default_mode_request_user_input = false\n');
+  const next = replaceConfigurationFragment(path, raw, 'default_mode_request_user_input', 'default_mode_request_user_input = true\n');
+  expect(next).toBe('default_mode_request_user_input = true\n[profiles.work]\ndefault_mode_request_user_input = false\n');
+  expect(replaceConfigurationFragment(path, next, 'default_mode_request_user_input', 'default_mode_request_user_input = false\n')).toBe(raw);
+}));
+
+test('issue 698 ambiguous top-level TOML keys refuse a fragment mutation', () => fixture((home) => {
+  const path = join(home, '.codex/config.toml');
+  const raw = 'default_mode_request_user_input = false\ndefault_mode_request_user_input = true\n';
+  expect(() => replaceConfigurationFragment(path, raw, 'default_mode_request_user_input', 'default_mode_request_user_input = true\n')).toThrow();
+}));
 test('records earliest original and private receipt across repeat installs', () => fixture((home, env) => {
   const path = join(home, '.codex/config.toml');
   mkdirSync(join(home, '.codex'));

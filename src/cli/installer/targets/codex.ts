@@ -1,4 +1,4 @@
-import { writeOwnedConfiguration } from '../configuration-ownership';
+import { assertConfigurationPath, readConfigurationFragment, replaceConfigurationFragment, writeOwnedConfiguration } from '../configuration-ownership';
 /**
  * Codex CLI hook-runtime target.
  *
@@ -56,33 +56,17 @@ function globalTomlConfigPath(): string {
 
 function ensureRequestUserInputToml(): WriteResult['files'][number] {
   const filePath = globalTomlConfigPath();
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-
-  const desiredLine = 'default_mode_request_user_input = true';
-  if (!fs.existsSync(filePath)) {
-    writeOwnedConfiguration(filePath, `${desiredLine}\n`);
-    return { path: filePath, action: 'created' };
-  }
-
-  const current = fs.readFileSync(filePath, 'utf-8');
-  if (/^default_mode_request_user_input\s*=\s*true\s*$/m.test(current)) {
+  assertConfigurationPath(filePath);
+  const created = !fs.existsSync(filePath);
+  const current = created ? '' : fs.readFileSync(filePath, 'utf-8');
+  const selector = 'default_mode_request_user_input';
+  const fragment = readConfigurationFragment(filePath, current, selector);
+  if (fragment !== null && (Bun.TOML.parse(fragment) as Record<string, unknown>)[selector] === true) {
     return { path: filePath, action: 'unchanged' };
   }
-
-  let next: string;
-  if (/^default_mode_request_user_input\s*=/m.test(current)) {
-    next = current.replace(/^default_mode_request_user_input\s*=.*$/m, desiredLine);
-  } else if (/^\[/m.test(current)) {
-    next = current.replace(/^\[/m, `${desiredLine}\n\n[`);
-  } else {
-    next = `${current.replace(/\s*$/, '')}\n${desiredLine}\n`;
-  }
-
-  if (next === current) {
-    return { path: filePath, action: 'unchanged' };
-  }
+  const next = replaceConfigurationFragment(filePath, current, selector, `${selector} = true\n`);
   writeOwnedConfiguration(filePath, next);
-  return { path: filePath, action: 'updated' };
+  return { path: filePath, action: created ? 'created' : 'updated' };
 }
 
 class CodexTarget implements AgentTarget {
@@ -124,6 +108,7 @@ class CodexTarget implements AgentTarget {
       );
     }
     const filePath = globalConfigPath();
+    assertConfigurationPath(filePath);
     const data = readJsonOrEmpty<HooksFile>(filePath);
     const cleaned = stripManagedEntries(data.hooks);
     const managed = buildManagedHooks('codex', opts.profile);
@@ -151,6 +136,7 @@ class CodexTarget implements AgentTarget {
   uninstall(loc: Location): WriteResult {
     if (loc !== 'global') return { files: [] };
     const filePath = globalConfigPath();
+    assertConfigurationPath(filePath);
     if (!fs.existsSync(filePath)) {
       return { files: [{ path: filePath, action: 'not-found' }] };
     }

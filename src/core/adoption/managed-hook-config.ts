@@ -1,3 +1,5 @@
+import { loadWorkflowContractAsset } from './workflow-contract-asset';
+
 export interface RemovedManagedHook {
   readonly event: string;
   readonly command: string;
@@ -8,10 +10,22 @@ export interface StrippedManagedHookConfig {
   readonly removed: readonly RemovedManagedHook[];
 }
 
-const MANAGED_TAG = 'repo-harness-managed-hook-v1';
+export const MANAGED_TAG = 'repo-harness-managed-hook-v1';
 const LEGACY_TYPED_MANAGED = /^(?:HOOK_HOST=(?:codex|claude) )?repo-harness hook (?:SessionStart|PreToolUse|PostToolUse|UserPromptSubmit|SubagentStart|SubagentStop|Stop) --route (?:default|edit|subagent|bash|always|delegation|context|quality)$/;
-const LEGACY_BARE_MANAGED = /^repo-harness hook(?:\s|$)/;
-const LEGACY_MANAGED_PREFIX = 'repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; export HOOK_REPO_ROOT="$repo";';
+
+let retiredCommands: ReadonlySet<string> | undefined;
+
+/** The contract asset is the sole inventory of retired template commands. */
+export function retiredHookCommands(): ReadonlySet<string> {
+  if (!retiredCommands) {
+    const contract = loadWorkflowContractAsset<{
+      migrations: { upgrade: { actions: readonly { surface?: string; commands?: readonly string[] }[] } };
+    }>();
+    retiredCommands = new Set(contract.migrations.upgrade.actions.flatMap((action) =>
+      action.surface === 'hook-entry' ? [...(action.commands ?? [])] : []));
+  }
+  return retiredCommands;
+}
 
 // Both project adoption and global cleanup share the full legacy typed form.
 export function isRepoHarnessLegacyTypedHookCommand(command: unknown): boolean {
@@ -33,17 +47,7 @@ export function isRepoHarnessManagedHookCommand(command: unknown): command is st
   if (typeof command !== 'string') return false;
   if (command.startsWith(`: ${MANAGED_TAG}; `)) return true;
   if (isRepoHarnessLegacyTypedHookCommand(command)) return true;
-  if (LEGACY_BARE_MANAGED.test(command.trimStart())) return true;
-  if (
-    command.startsWith(LEGACY_MANAGED_PREFIX)
-    && command.includes('repo-harness-hook ')
-    && command.includes('exec repo-harness hook ')
-  ) {
-    return true;
-  }
-  return command.includes('.ai/hooks/run-hook.sh')
-    || command.includes('.claude/hooks/run-hook.sh')
-    || command.includes('/.repo-harness/hook-shim.sh');
+  return retiredHookCommands().has(command);
 }
 
 /**
