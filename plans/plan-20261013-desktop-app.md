@@ -1,8 +1,8 @@
 # Plan: repo-harness 桌面版（Operator 控制台的桌面壳）
 
-> **Status**: Draft，第二轮。只是设计，不是实施 GO。写任何产品代码之前，要 Aimpact 批准本 plan，并确认 §11 中标为 PENDING CONFIRM 的项。
+> **Status**: Draft，第三轮。只是设计，不是实施 GO。Aimpact 2026-10-13 确认本 work-package 只做到 DP0：DP0 完成后停止，DP1 及以后要另给 GO（§11 第 2 项）。§11 第 11 项的 Bundle ID 仍是 PENDING CONFIRM。
 > **Created**: 20261013
-> **Revised**: 20261013（第二轮：按 Dot 在 Slack #bot-worker 的评审锁定 §11 默认值，补上必改项 A–E，见 §12）
+> **Revised**: 20261013（第二轮：按 Dot 在 Slack #bot-worker 的评审锁定 §11 默认值，补上必改项 A–E；第三轮：按 Aimpact 2026-10-13 的确认锁定 §11 第 2、13 项。见 §12）
 > **Slug**: desktop-app
 > **Artifact Level**: work-package
 > **Baseline**: `main@0ef9ed11`（0.22.1 已发布）
@@ -105,7 +105,8 @@
 
 ### 2.3 决定：Tauri v2 纯外壳（LOCKED）
 - 排除 Electron：它带一整套 Chromium 和 Node，但服务端仍要 Bun。体积是 Tauri 的十倍以上，换来的只有和 Chrome 一致的渲染。这个好处由 DP0 的 WebKit 验收替代。
-- 排除只做 PWA：它不能启动和停止服务，做不到「不用终端」这个目标。只有 Aimpact 确认手动启动服务已经够用时，才接受在 DP0 结束（§11 第 2 项，PENDING CONFIRM）。
+- 排除把 PWA 作为最终形态：它不能启动和停止服务，做不到「不用终端」这个目标。
+- Aimpact 2026-10-13 确认手动启动服务目前已经够用（§11 第 2 项 LOCKED）。所以本 work-package 做到 DP0 就停。DP0 期间的日常用法：手动运行 `repo-harness operator serve`，再用 Safari「添加到程序坞」打开 `http://127.0.0.1:4318`。如果 DP0 实测 Safari 不支持对 loopback http 地址添加到程序坞，就继续用普通浏览器标签页（现状）。Tauri 外壳的设计保留在本 plan 里，等以后另给 GO。
 - Tauri v2 和 Swift 外壳在 macOS 上用同一个 WebView，外壳代码量相近（**inferred**）。选 Tauri 的理由：
   1. 仓库的 CLI 已支持 Windows（`install.ps1`、`server.ts:690`），以后如果要做 Windows，外壳代码可以复用。本 plan 不为此排时间。
   2. 打包 `.app`/`.dmg`、签名、公证是现成流程，不用自己写脚本。
@@ -277,8 +278,9 @@ Operator 写入期的约束（§11 第 16 项 LOCKED，本 plan 只记录）：
 
 ## 6. macOS Apple Silicon 优先
 - 只构建 `aarch64-apple-darwin`（§11 第 15 项 LOCKED）。最低系统版本按 DP0 结果定。Tailwind v4 要求 Safari 16.4 以上（**inferred**），实际按 WKWebView 实测决定。
-- 默认是本机自用（§11 第 13 项 PENDING CONFIRM）：只做 ad-hoc 签名，arm64 可执行文件必须有签名才能运行（**inferred**）。本机构建的 app 没有 quarantine 属性，不需要公证就能打开（**inferred**）。本 plan 不承诺签名或公证。
-- 只有 Aimpact 确认有 Apple Developer Program 账号和 Developer ID 证书之后，才做对外分发：Developer ID Application 签名，开 Hardened Runtime，`notarytool` 公证，`stapler` 装订。证书和公证凭据放在发布主机（Mac mini）的钥匙串里。这是凭据边界，每次使用需要 Aimpact 批准。
+- DP2 的本机构建只做 ad-hoc 签名。arm64 可执行文件必须有签名才能运行（**inferred**）。本机构建的 app 没有 quarantine 属性，不需要公证就能打开（**inferred**）。
+- 发版走 Developer ID Application 签名，开 Hardened Runtime，用 `notarytool` 公证，用 `stapler` 装订（§11 第 13 项 LOCKED：Aimpact 2026-10-13 确认有 Apple Developer 账号）。
+- 发版前核实三件事：用哪个 Apple Developer 账号、Team ID、Developer ID 证书。账号标识、Team ID、证书和公证凭据都不写进仓库，也不提交到任何文件。它们只放在发布主机（Mac mini）的钥匙串里。每次使用都是凭据边界，需要 Aimpact 批准。
 - 标题栏用 macOS 原生标题栏（§11 第 10 项 LOCKED）。
 - 名称是 `repo-harness`。图标从现有 `src/operator-web/favicon.svg` 制作成正规的 macOS 图标（1024 px 母版，按 macOS 图标网格）。Bundle ID `io.github.ancienttwo.repo-harness` 在任何发布前要确认（§11 第 11 项 PENDING CONFIRM）。本 plan 里的日志和配置路径先用这个 ID。
 
@@ -289,8 +291,8 @@ Operator 写入期的约束（§11 第 16 项 LOCKED，本 plan 只记录）：
 - **代码位置**：同一仓库的 `desktop/`（Tauri 项目和 `Cargo.lock`）。它不加入 npm `files`，不是 Bun workspace，不改 `package.json` 和 `bun.lock`。外壳依赖的启动合约（stdout 第一行 URL、`--exit-on-stdin-eof`）在本仓库定义和测试，放在一起改动时可以一起验证。外壳不消费任何共享 TS 包，所以不需要 workspace。
 - **版本**：外壳有自己的版本号，和 npm 包版本分开。外壳只声明 `MIN_CLI_VERSION`。CLI 正常发版不需要重新构建 app。
 - **npm**：npm 包不带 app 二进制，tarball 不变。CLI 只增加 `--exit-on-stdin-eof`，随正常版本发布。
-- **本机自用（默认）**：在 Mac mini 上本地构建、ad-hoc 签名、自己安装。不发布 GitHub Release，因为未签名的 app 下载后会被 Gatekeeper 拦截。
-- **GitHub Release（条件：§11 第 13 项和第 11 项确认后）**：Tag 用 `desktop-v<semver>`，不和 `v<npm 版本>` 混用。资产是签名并公证的 `.dmg` 和 `SHA256SUMS`。用户手动下载。发布后把资产下载回来比较 sha256，并在新建用户下安装验证（T-REL）。README 的 Local Human Control Board 一节同时加一句下载位置。
+- **本机自用（DP2）**：在 Mac mini 上本地构建、ad-hoc 签名、自己安装。DP2 不发布 GitHub Release，因为没有 Developer ID 签名的 app 下载后会被 Gatekeeper 拦截。
+- **GitHub Release（DP3。条件：DP1 及以后另给的 GO；§11 第 11 项的 Bundle ID 已确认；发版前已核实 Team ID 和证书）**：Tag 用 `desktop-v<semver>`，不和 `v<npm 版本>` 混用。资产是签名并公证的 `.dmg` 和 `SHA256SUMS`。用户手动下载。发布后把资产下载回来比较 sha256，并在新建用户下安装验证（T-REL）。README 的 Local Human Control Board 一节同时加一句下载位置。
 - **发布记录**：沿用 `deploy/release-checklists/`，文件名用 `YYMMDD-repo-harness-desktop-<version>.md`。
 - **以后再说**：Homebrew cask、自动更新（§11 第 14 项 LOCKED）。自动更新需要一把新的更新签名密钥，是凭据边界，要单独批准。
 - **不做**：`repo-harness desktop install` 这类由 CLI 下载并安装 app 的命令。它会在 CLI 里加入下载和运行二进制的路径，安全面大。
@@ -301,14 +303,16 @@ Operator 写入期的约束（§11 第 16 项 LOCKED，本 plan 只记录）：
 
 | 阶段 | 内容 | 产出 | 退出条件 |
 |---|---|---|---|
-| DP0 实测（不改仓库代码） | 1. 权限边界：最小 Tauri app 按 S3 配置，跑 T-BRG。2. 生命周期：用假 CLI 跑外壳侧 T-LIFE。3. 导航：T-NAV 中标为 unverified 的项。4. WebKit：在 Safari 和最小 Tauri 窗口里打开当前服务，亮/暗、1440 与 390 宽；剪贴板复制；`localStorage` 重启后保留。5. 两个服务同时运行的冲突（§4.9）。6. setup check 在主仓库 cwd 下的输出。7. Finder 启动时的 PATH。8. Safari「添加到程序坞」能否用于 `http://127.0.0.1`。9. 最小 Tauri app 的体积 | 本 plan 增加「DP0 结果」一节，所有 **inferred/unverified** 改为已核对或推翻 | 1、2 都通过才进入 DP1。Aimpact 对 §11 第 2 项作出决定 |
+| DP0 实测（不改仓库代码） | 1. 权限边界：最小 Tauri app 按 S3 配置，跑 T-BRG。2. 生命周期：用假 CLI 跑外壳侧 T-LIFE。3. 导航：T-NAV 中标为 unverified 的项。4. WebKit：在 Safari 和最小 Tauri 窗口里打开当前服务，亮/暗、1440 与 390 宽；剪贴板复制；`localStorage` 重启后保留。5. 两个服务同时运行的冲突（§4.9）。6. setup check 在主仓库 cwd 下的输出。7. Finder 启动时的 PATH。8. Safari「添加到程序坞」能否用于 `http://127.0.0.1`。9. 最小 Tauri app 的体积 | 本 plan 增加「DP0 结果」一节，所有 **inferred/unverified** 改为已核对或推翻；第 8 项的结果写成日常用法说明 | 结果写进本 plan 后，本 work-package 停止（§11 第 2 项）。以后另给 GO 时，1、2 都必须已通过 |
 | DP1 CLI 启动合约 | `operator serve --exit-on-stdin-eof`（§4.4）；固定「stdout 第一行严格是 URL」；tarball smoke 增加 lifeline 检查 | 一个小 PR，只改 CLI 和测试 | CLI 侧 T-LIFE 和 `smoke:tarball-install` 通过；发布一个包含它的 CLI 版本 |
 | DP2 外壳 MVP（本机自用） | `desktop/` Tauri 项目：探测与配置、版本检查、子进程生命周期、固定端口、两个窗口、导航判断、启动画面与失败页、诊断命令、日志、单实例、原生标题栏、图标 | ad-hoc 签名的本地 `.app` | §10 的 T-OWN、T-BRG、T-LIFE、T-NAV、T-ENV、T-DIAG、T-E2E 在 Mac mini 上从 Finder 启动全部通过 |
 | DP2b Dock 角标 | §4.8 的角标；前端标题在 Dev Activity 读取失败时不带数字 | 外壳增量 PR 和一个前端小 PR | T-BADGE 通过 |
-| DP3 对外分发（条件：§11 第 11、13 项确认） | Developer ID 签名、公证、`desktop-v*` GitHub Release、发布记录 | 公证后的 `.dmg` | T-REL 通过 |
+| DP3 对外分发（条件：另给的 GO；§11 第 11 项确认；发版前核实 Team ID 和证书） | Developer ID 签名、公证、`desktop-v*` GitHub Release、发布记录 | 公证后的 `.dmg` | T-REL 通过 |
 | DP4 以后 | 菜单栏图标、系统通知、自动更新、Homebrew cask、其他平台、与 Operator 写入期对齐 | 各自单独批准 | — |
 
 每个阶段一个 PR，单独回滚。DP1 对终端用户也有用（脚本化启动时防止孤儿进程）。
+
+当前授权只到 DP0（§11 第 2 项）。DP1–DP4 的内容是设计，没有 GO。
 
 架构模型：DP2 在 `.archcontext/model` 里给桌面壳加一个节点，依赖 `component.operator.primary`，走正常的 architecture-projection 流程。
 
@@ -337,7 +341,7 @@ Operator 写入期的约束（§11 第 16 项 LOCKED，本 plan 只记录）：
 | 外壳要求的最低 CLI 版本过高或过低 | 用户卡在升级页，或旧 CLI 缺少 lifeline | `MIN_CLI_VERSION` 只跟随启动合约变化，变化时写进发布记录 |
 | 源码 checkout 里没有构建 `dist/operator-ui` | 控制台窗口显示 404 | 失败页文案提示 `bun run build:operator-web`；npm 安装由 tarball smoke 保证有 UI |
 | 仓库引入 Rust 工具链 | CI 和维护成本增加 | 只在 `desktop/`；默认只在本机构建；是否加 macOS CI job 在 DP3 决定 |
-| Apple 签名与公证凭据 | 凭据泄露或过期导致无法发布 | 凭据只放发布主机钥匙串；每次使用需要 Aimpact 批准；没有凭据时停在本机自用 |
+| Apple 签名与公证凭据 | 凭据泄露或过期导致无法发布 | 账号标识、Team ID、证书和公证凭据不写进仓库；凭据只放发布主机钥匙串；发版前核实账号、Team ID 和证书；每次使用需要 Aimpact 批准 |
 
 ---
 
@@ -425,10 +429,10 @@ E2E：
 
 ## 11. Open Questions for Dot
 
-第二轮按 Dot 的评审（Slack #bot-worker，编排者已逐字核对）锁定。**LOCKED** 已写进正文。**PENDING CONFIRM** 等 Aimpact 确认，确认前按默认值执行。
+第二轮按 Dot 的评审（Slack #bot-worker，编排者已逐字核对）锁定。第三轮按 Aimpact 2026-10-13 的确认锁定第 2、13 项。**LOCKED** 已写进正文。**PENDING CONFIRM** 等 Aimpact 确认，确认前按默认值执行。
 
 1. **外壳技术** — LOCKED：Tauri v2。DP0 先证明权限边界和生命周期（T-BRG、T-LIFE）。只有决定桌面版长期只做 macOS 时才改用 Swift。（§2.3）
-2. **只用 Safari「添加到程序坞」就结束** — PENDING CONFIRM（Aimpact）：只有 Aimpact 确认「手动启动服务」已经够用时，才接受在 DP0 结束。否则它做不到「不用终端」这个目标，继续 DP1。（§2.3、§8）
+2. **只用 Safari「添加到程序坞」就结束** — LOCKED（Aimpact 2026-10-13 确认）：手动启动服务够用。本 work-package 做到 DP0 就停。DP1 及以后要另给 GO。（§2.3、§8）
 3. **关闭窗口** — LOCKED：关闭最后一个窗口时退出 app，只停止本 app 启动的服务。（§4.2）
 4. **菜单栏图标** — LOCKED：MVP 不做。以后出现常驻需求时，再考虑服务状态、打开、退出三项。（§1、§8 DP4）
 5. **Dock 角标** — LOCKED：DP2b 显示「需要你 N」，严格沿用 Kumo plan §3.4，不加新的排除规则。CI 失败等不是「需要你」。断开时清除过期数字，不显示假的 0。（§4.8）
@@ -439,8 +443,8 @@ E2E：
 10. **窗口外观** — LOCKED：原生标题栏。（§6）
 11. **名称、Bundle ID、图标** — 名称 LOCKED：`repo-harness`。图标 LOCKED：从 favicon 制作正规的 macOS 图标。Bundle ID `io.github.ancienttwo.repo-harness` — PENDING CONFIRM，任何发布前确认。（§6）
 12. **启动画面与失败页** — LOCKED：轻量启动画面，单独的失败页，有复制诊断命令、重试、打开配置文件、退出。命令反映真实的 CLI 路径、cwd 和端口，正确做 shell 转义，不含凭据。（§4.6）
-13. **Apple Developer 账号** — PENDING CONFIRM：状态未知。默认只在本机自用，不承诺签名或公证。（§6、§7）
-14. **分发渠道** — LOCKED：首次对外发布用 GitHub Release 手动下载，Tag 用 `desktop-v*`。Homebrew cask 和自动更新以后再说。对外发布本身以第 13 项为条件。（§7）
+13. **Apple Developer 账号** — LOCKED（Aimpact 2026-10-13 确认）：Aimpact 有 Apple Developer 账号。发版走 Developer ID 签名加公证。账号、Team ID 和证书在发版前核实，不写进仓库，也不提交任何凭据。（§6、§7）
+14. **分发渠道** — LOCKED：首次对外发布用 GitHub Release 手动下载，Tag 用 `desktop-v*`。Homebrew cask 和自动更新以后再说。对外发布在 DP3，要另给 GO，并且在 Bundle ID 确认、Team ID 和证书核实之后。（§7）
 15. **其他平台** — LOCKED：只做 arm64 macOS，不给其他平台编时间表。（§1、§6）
 16. **Operator 写入期的体验** — LOCKED：桌面版和浏览器共用同一条写入通道、确认语义和审计。外观可以不同。没有私有的 IPC 写入捷径。（§5）
 
@@ -458,3 +462,9 @@ E2E：
 - I5 只约束外壳本身；服务端 collector 访问 GitHub 是已有行为。
 - 阶段改名为 DP0–DP4，写入阶段改称 Operator 写入期，外壳不变量改为 S1–S8，避免和 revamp plan 的 D0/D1 冲突。
 - §6、§7：签名、公证和 GitHub Release 改为以第 13 项为条件，默认本机自用。
+
+**第三轮（20261013，Aimpact 确认）**
+- §11 第 2 项 LOCKED：手动启动服务够用。本 work-package 做到 DP0 就停，DP1 及以后要另给 GO。改动见页首 Status、§2.3、§8。
+- §11 第 13 项 LOCKED：Aimpact 有 Apple Developer 账号。发版走 Developer ID 签名加公证。账号、Team ID 和证书在发版前核实，不写进仓库，不提交凭据。改动见 §6、§7、§9。
+- §11 第 11 项的 Bundle ID 仍是 PENDING CONFIRM。
+- §11 第 14 项：对外发布的条件改为另给的 GO、Bundle ID 确认、Team ID 和证书核实。
