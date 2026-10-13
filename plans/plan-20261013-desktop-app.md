@@ -1,8 +1,8 @@
 # Plan: repo-harness 桌面版（Operator 控制台的桌面壳）
 
-> **Status**: Draft，第六轮。只是设计，不是实施 GO。Aimpact 2026-10-13 确认本 work-package 只做到 DP0：DP0 完成后停止，DP1 及以后要另给 GO（§11 第 2 项）。DP0 实测要等 Dot 复审通过后再开始。§11 的 16 项全部 LOCKED。
+> **Status**: Draft，第七轮。只是设计，不是实施 GO。Aimpact 2026-10-13 确认本 work-package 只做到 DP0：DP0 完成后停止，DP1 及以后要另给 GO（§11 第 2 项）。Dot 复审通过、Aimpact 批准后，DP0 第 1–3 项已实测，结果见 §8.1：权限边界和外壳侧生命周期通过，T-NAV-5 失败。§11 第 1–16 项 LOCKED，第 17、18 项 PENDING。
 > **Created**: 20261013
-> **Revised**: 20261013（第二轮：按 Dot 在 Slack #bot-worker 的评审锁定 §11 默认值，补上必改项 A–E；第三轮：按 Aimpact 2026-10-13 的确认锁定 §11 第 2、13 项；第四轮：按 Dot 复审修正清理负责方和端口冲突判断；第五轮、第六轮：按 Aimpact 的确认锁定 Bundle ID 为 `com.repoharness.app`。见 §12）
+> **Revised**: 20261013（第二轮：按 Dot 在 Slack #bot-worker 的评审锁定 §11 默认值，补上必改项 A–E；第三轮：按 Aimpact 2026-10-13 的确认锁定 §11 第 2、13 项；第四轮：按 Dot 复审修正清理负责方和端口冲突判断；第五轮、第六轮：按 Aimpact 的确认锁定 Bundle ID 为 `com.repoharness.app`；第七轮：写入 DP0 第 1–3 项的结果，新增 §11 第 17、18 项。见 §12）
 > **Slug**: desktop-app
 > **Artifact Level**: work-package
 > **Baseline**: `main@0ef9ed11`（0.22.1 已发布）
@@ -16,7 +16,7 @@
 - Kumo plan §7 的「第三期：写入」在本 plan 里叫 **Operator 写入期**。桌面版没有自己的写入阶段。
 - 桌面壳的不变量叫 **S1–S8**（§5）。测试编号见 §10。
 
-**事实标记**：带 `file:line` 的内容已在 `0ef9ed11` 上核对。**inferred** 表示从代码或文档推断，没有运行。**unverified** 表示要在 DP0 实测。
+**事实标记**：带 `file:line` 的内容已在 `0ef9ed11` 上核对。**inferred** 表示从代码或文档推断，没有运行。**unverified** 表示要在 DP0 实测。**已核对（DP0）** 和 **已推翻（DP0）** 是 DP0 实测的结论，证据见 §8.1。
 
 ---
 
@@ -99,7 +99,7 @@
 | 签名与公证 | `tauri build` 支持 Developer ID 签名和 notarytool 公证（**inferred**，按官方文档） | electron-builder 支持 | 手写 `codesign` + `notarytool` 脚本 | 不需要 |
 | 自动更新 | 官方 updater 插件，更新包要签名 | electron-updater | 要引入 Sparkle 或自己写 | 跟随服务端，无需更新 |
 | 跨平台 | macOS / Windows（WebView2）/ Linux（WebKitGTK） | 三个平台 | 只有 macOS | 看浏览器 |
-| 给页面的能力 | 按 capability 授权；应用命令要在 `build.rs` 的 app manifest 里声明后才受 capability 控制（**inferred**，按 https://v2.tauri.app/security/capabilities/ ）；必须审计并实测（§5、T-BRG） | 要关 `nodeIntegration`、开 `contextIsolation` 和 sandbox | 只在 Swift 侧加什么才有什么 | 浏览器沙箱 |
+| 给页面的能力 | 按 capability 授权；应用命令要在 `build.rs` 的 app manifest 里声明后才受 capability 控制（**已核对（DP0）**：T-BRG-1、3、4，§8.1）；必须审计并实测（§5、T-BRG） | 要关 `nodeIntegration`、开 `contextIsolation` 和 sandbox | 只在 Swift 侧加什么才有什么 | 浏览器沙箱 |
 | 新工具链 | Rust + Cargo（只在 `desktop/`） | 无（Node），但依赖闭包大 | Xcode / Swift（本机已有） | 无 |
 | 渲染差异 | 和 Safari 同一引擎，UI 要在 WebKit 上验收 | 和 Chrome 一样 | 同 Tauri | 同所用浏览器 |
 | 生命周期（启动/停止/孤儿） | 外壳负责 | 外壳负责 | 外壳负责 | 做不到 |
@@ -195,7 +195,7 @@ CLI 的查找、环境和配置统一在 §4.5 定义。版本检查：每次启
 - 启动期间收到 EOF：放弃启动，关闭已启动的 collector，不打印 URL，退出。
 - EOF 和 SIGTERM/SIGINT 同时到达：只关闭一次（沿用 `operator.ts` 现有的 `shuttingDown` 标记）。
 - 关闭总期限 `T_serve` = 10 秒。超时时 serve 向它创建的所有独立进程组发 SIGKILL，确认这些组为空后以非 0 退出。
-- 管道写端只能由外壳持有：外壳创建的管道必须带 close-on-exec，外壳之后启动的其他进程（登录 shell 探测、`--version`、打开配置文件、打开外链）不能继承它。Rust 标准库默认这样做（**inferred**，T-LIFE-4 验证）。
+- 管道写端只能由外壳持有：外壳创建的管道必须带 close-on-exec，外壳之后启动的其他进程（登录 shell 探测、`--version`、打开配置文件、打开外链）不能继承它。Rust 标准库默认这样做（**已核对（DP0）**：T-LIFE-4，只覆盖顺序启动）。macOS 上标准库先建管道、再设 close-on-exec，另一个线程恰好在两步之间启动进程时可能继承写端（**inferred**）。DP2 让外壳的所有子进程启动串行，或补一个并发用例。
 - 不用「外壳定时 ping」或「服务端检查父 PID」：前者需要新路由，后者在 macOS 上要轮询，都比管道 EOF 复杂。
 
 **独立进程组组长的 lifeline**：serve 被 `kill -9`，或卡住后被外壳 SIGKILL 时，没有 serve 代码能运行。这时独立进程组只能由组长自己回收。
@@ -240,16 +240,16 @@ CLI 的查找、环境和配置统一在 §4.5 定义。版本检查：每次启
 
 | 窗口 | 留在窗口内 | 交给系统浏览器 | 其他 |
 |---|---|---|---|
-| 控制台窗口 | scheme 是 `http`，host 解析后是 IPv4 `127.0.0.1`，端口等于自己子进程的端口，没有 userinfo | scheme 是 `https`，host 精确等于 `github.com`，端口为空或 443，没有 userinfo，并且来自用户手势 | 拒绝 |
+| 控制台窗口 | scheme 是 `http`，host 解析后是 IPv4 `127.0.0.1`，端口等于自己子进程的端口，没有 userinfo | scheme 是 `https`，host 精确等于 `github.com`，端口为空或 443，没有 userinfo，并且来自用户手势（**已推翻（DP0）**：公开回调拿不到手势，规则待 §11 第 17 项决定） | 拒绝 |
 | 状态窗口 | 只有 app 自带的本地页面 | 无 | 拒绝 |
 
 - 解析用标准 URL 解析器，按解析后的 scheme、host、port 比较，不做字符串前缀匹配。`localhost`、`[::1]`、其他端口、`file:`、`data:`、`blob:`、`javascript:`、`about:`、自定义 scheme 都拒绝。
 - 覆盖的入口：顶层导航（含重定向）、`window.open`、`target="_blank"`、下载、权限请求。
-  - 重定向：每一跳都过同一个判断函数。服务端今天没有重定向（§0 P1），T-NAV-3 用一个测试服务验证外壳确实拦截了重定向（**unverified**：Tauri 的导航回调是否覆盖服务端重定向）。
+  - 重定向：每一跳都过同一个判断函数。服务端今天没有重定向（§0 P1），T-NAV-3 用一个测试服务验证外壳确实拦截了重定向（**已核对（DP0）**：T-NAV-3，重定向的每一跳都进入导航回调并被拒绝）。
   - 新窗口：外壳从不创建新的 WebView 窗口。合规的 GitHub 链接交给系统浏览器，其他一律丢弃。
-  - 用户手势：如果 DP0 证明新窗口回调能拿到用户手势信息，就要求手势。拿不到时，依赖 WKWebView 默认禁止脚本自动打开窗口，并用 T-NAV-5 证明没有手势的 `window.open` 什么也打不开（**unverified**）。
+  - 用户手势（**已推翻（DP0）**）：wry 的导航回调和新窗口回调只有 URL，没有手势信息。macOS WKWebView 默认允许脚本打开窗口，所以没有手势的 `window.open` 会到达新窗口回调（T-NAV-5 失败）。`target="_blank"` 链接先作为顶层导航到达导航回调，按现在的规则被拒绝，PR 链接点了没有反应（**inferred**：只测了脚本触发的点击）。外链规则待 §11 第 17 项决定。
   - 下载：全部拒绝，不写文件。
-  - 权限请求（摄像头、麦克风、定位、通知、剪贴板读取）：全部拒绝，不弹系统对话框。剪贴板写入是页面「复制命令」需要的，DP0 验证它在拒绝其他权限后仍然可用。
+  - 权限请求（摄像头、麦克风、定位、通知、剪贴板读取）：全部拒绝，不弹系统对话框。剪贴板写入是页面「复制命令」需要的，DP0 验证它在拒绝其他权限后仍然可用。wry 在没有权限回调时默认授予摄像头和麦克风，所以外壳必须在 app 和控制台窗口两级设置拒绝回调（DP0 原型已这样做，§8.1）。
 - 交给系统浏览器：Rust 侧调用系统打开方法，只传通过判断的 URL。这个能力不暴露给任何页面。
 
 ### 4.8 Dock 角标（DP2b，§11 第 5 项 LOCKED）
@@ -343,7 +343,48 @@ Operator 写入期的约束（§11 第 16 项 LOCKED，本 plan 只记录）：
 
 当前授权只到 DP0（§11 第 2 项）。DP1–DP4 的内容是设计，没有 GO。
 
+DP0 状态：第 1–3 项已实测（§8.1）。第 4–9 项没有做（§11 第 18 项）。
+
 架构模型：DP2 在 `.archcontext/model` 里给桌面壳加一个节点，依赖 `component.operator.primary`，走正常的 architecture-projection 流程。
+
+### 8.1 DP0 结果
+
+> 2026-10-13 实测，证据在 PR #718（分支 `claude/desktop-dp0`，`5f0efe8b`）的 `desktop/dp0/RESULTS.md`。PR #718 是参考原型，不合并。只做了第 1–3 项，这是 Aimpact 批准的桥接与生命周期范围。环境：macOS 26.5 arm64，Tauri 2.12.3，wry 0.57.0。测试只用 4319 端口，没有连接 4318。
+
+**第 1 项 权限边界：通过。**
+- T-BRG-1 到 T-BRG-7 全部通过。
+- 远程控制台页面里有 `__TAURI_INTERNALS__`。拦住调用的是 ACL。Tauri 2.12 默认拒绝远程 origin 调用应用命令。S3 的证明依据是运行时拒绝，不是全局对象不存在。
+- `plugin:__TAURI_CHANNEL__|fetch` 不经过 ACL。从控制台调用时没有副作用。
+
+**第 2 项 生命周期（外壳侧）：通过。**
+- T-OWN-1 到 T-OWN-6，以及 T-LIFE-3、4、7、8、9、14、15，用假 CLI 全部通过。T-OWN-1、2、6 只验证外壳层，失败页属于 DP2。
+- 假 CLI 模拟 DP1 的合约：`--exit-on-stdin-eof`、`port_in_use`、组长 lifeline。CLI 侧没有验证。
+- 已安装的 CLI 0.22.1 不认识 `--exit-on-stdin-eof`，外壳报普通启动失败。DP2 之前必须先完成 DP1，并设置 `MIN_CLI_VERSION`。
+
+**第 3 项 导航：T-NAV-5 失败。**
+- T-NAV-1、2、3、6、8 通过。T-NAV-3 证明重定向的每一跳都进入导航回调。
+- T-NAV-5 失败：定时器里没有手势的 `window.open` 到达了新窗口回调（§4.7）。
+- `target="_blank"` 链接先作为顶层导航到达，并被拒绝（**inferred**：只测了脚本触发的点击）。
+- 结论：用 Tauri 2.12 的公开回调，做不到「只在用户手势后交出 GitHub 链接」。外链规则要重新决定（§11 第 17 项）。
+- T-NAV-7 部分通过：没有出现授权。但这个 WKWebView 里没有 `navigator.mediaDevices`，拒绝回调没有被触发。定位请求超时，原因不明。
+
+**T-ENV（DP0 部分）**
+- T-ENV-1、T-ENV-3 通过。真实 `/bin/zsh` 探测用时 84–515 ms。
+- T-ENV-2 部分通过：`GH_TOKEN` 没有进入子进程环境和证据文件。配置文件部分属于 DP2。
+
+**DP2 的输入**
+- close-on-exec 的并发情况（§4.4）。
+- 权限拒绝回调设在 app 和控制台窗口两级（§4.7），打包后补测 T-NAV-7。
+- 没打包时，WebKit 数据目录按可执行文件名建立。打包后应按 Bundle ID 建立（**inferred**，打包后核对）。
+- 原型里的测试专用代码不进 DP2：状态页上报结果的 HTTP 请求、CSP 对 4319 的放行、和外壳同包的测试替身。
+- 仓库 CI 的覆盖选择器要求每个代码路径都有 bun 测试消费者，所以 PR #718 的 CI 失败。`desktop/` 进 main 之前，要先决定 Rust 测试怎样进 CI。
+
+**没有验证的项**
+- §8 DP0 第 4–9 项：WebKit 渲染、剪贴板、`localStorage`、两个服务同时运行、setup 的 cwd、Finder 启动的 PATH、Safari「添加到程序坞」、体积。这些不在本次批准的范围内（§11 第 18 项）。所以这些标记保持不变：§0 压力点 1、§2.2 体积、§2.3 同一个 WebView、§4.7 剪贴板写入、§4.9 共享状态、§6 Tailwind。
+- §4.4 setup builder 在 Bun Worker 里运行：没有做，标记保持 **unverified**。
+- T-LIFE-10：需要 4318 上有终端服务。本次规定不碰 4318，所以没做。
+- T-NAV-4：没有测真实手势点击，也没有打开系统浏览器。
+- 其他 **inferred/unverified** 标记属于 DP1 及以后，或属于已拒绝的选项，保持不变。
 
 ---
 
@@ -367,7 +408,8 @@ Operator 写入期的约束（§11 第 16 项 LOCKED，本 plan 只记录）：
 | WebKit 和 Chrome 渲染不同 | Kumo 组件或 Tailwind v4 样式在 WKWebView 里错位 | DP0 用 Safari 验收；以后 UI PR 的截图同时覆盖 WebKit |
 | WKWebView 拒绝 `navigator.clipboard` | 「复制命令」失效，页面唯一的输出通道断了 | DP0 实测；不通过时回到本 plan 重新决定，不在前端加备用复制方法 |
 | `localStorage` 不持久 | 每次启动丢主题、语言、看板筛选 | 固定端口 4319；DP0 核对 WebView 数据目录持久 |
-| 服务端重定向或新窗口绕过判断 | 控制台窗口加载外部页面 | S4；T-NAV-3、T-NAV-4 |
+| 服务端重定向或新窗口绕过判断 | 控制台窗口加载外部页面 | S4；T-NAV-3 已通过（§8.1）。没有手势的新窗口拦不住，外链规则待 §11 第 17 项 |
+| wry 默认授予摄像头和麦克风 | 页面不经提示就拿到媒体权限 | app 和控制台窗口两级设置拒绝回调；打包后补测 T-NAV-7（§4.7） |
 | 诊断命令转义错误 | 用户复制后执行了错误的命令 | POSIX 单引号转义；T-DIAG 覆盖空格、引号、`$`、反引号、换行 |
 | 角标显示过期计数 | 用户看到不存在的待办 | §4.8：断开和读取失败时清除；T-BADGE |
 | 外壳要求的最低 CLI 版本过高或过低 | 用户卡在升级页，或旧 CLI 缺少 lifeline | `MIN_CLI_VERSION` 只跟随启动合约变化，变化时写进发布记录 |
@@ -423,7 +465,7 @@ E2E：
 - T-NAV-2：控制台页面里 `location.href = 'https://example.com'`。窗口不离开服务 URL，系统浏览器不打开。
 - T-NAV-3：用测试服务返回 302 到外部地址。外壳拦截，窗口不加载外部页面。
 - T-NAV-4：点击 PR 链接（`target="_blank"`）。系统浏览器打开该 PR，没有新窗口，主窗口不动。
-- T-NAV-5：在定时器里调用 `window.open('https://github.com/o/r/pull/1')`（没有用户手势）。没有窗口，系统浏览器不打开。
+- T-NAV-5：在定时器里调用 `window.open('https://github.com/o/r/pull/1')`（没有用户手势）。没有窗口，系统浏览器不打开。DP0 结果：失败（§8.1）。§11 第 17 项决定后，改写本条和 T-NAV-4。
 - T-NAV-6：触发一个下载链接。没有文件写入，没有对话框。
 - T-NAV-7：调用 `getUserMedia`、`geolocation.getCurrentPosition`、`Notification.requestPermission`。全部被拒绝，没有系统权限对话框。
 - T-NAV-8：状态窗口里导航到服务 URL 或任何外部地址。被拒绝。
@@ -466,7 +508,7 @@ E2E：
 
 ## 11. Open Questions for Dot
 
-第二轮按 Dot 的评审（Slack #bot-worker，编排者已逐字核对）锁定。第三轮按 Aimpact 2026-10-13 的确认锁定第 2、13 项。第五轮、第六轮按 Aimpact 的确认锁定第 11 项的 Bundle ID（第六轮为最终值）。**LOCKED** 已写进正文。现在没有 PENDING CONFIRM 项。
+第二轮按 Dot 的评审（Slack #bot-worker，编排者已逐字核对）锁定。第三轮按 Aimpact 2026-10-13 的确认锁定第 2、13 项。第五轮、第六轮按 Aimpact 的确认锁定第 11 项的 Bundle ID（第六轮为最终值）。**LOCKED** 已写进正文。第七轮按 DP0 结果新增第 17、18 项，状态是 PENDING。
 
 1. **外壳技术** — LOCKED：Tauri v2。DP0 先证明权限边界和生命周期（T-BRG、T-LIFE）。只有决定桌面版长期只做 macOS 时才改用 Swift。（§2.3）
 2. **只用 Safari「添加到程序坞」就结束** — LOCKED（Aimpact 2026-10-13 确认）：手动启动服务够用。本 work-package 做到 DP0 就停。DP1 及以后要另给 GO。（§2.3、§8）
@@ -484,6 +526,12 @@ E2E：
 14. **分发渠道** — LOCKED：首次对外发布用 GitHub Release 手动下载，Tag 用 `desktop-v*`。Homebrew cask 和自动更新以后再说。对外发布在 DP3，要另给 GO，并且在 Team ID 和证书核实之后。（§7）
 15. **其他平台** — LOCKED：只做 arm64 macOS，不给其他平台编时间表。（§1、§6）
 16. **Operator 写入期的体验** — LOCKED：桌面版和浏览器共用同一条写入通道、确认语义和审计。外观可以不同。没有私有的 IPC 写入捷径。（§5）
+17. **外链交给系统浏览器的规则** — PENDING（Dot 决定）：DP0 证明公开回调拿不到用户手势（§8.1）。可选方向：
+    - (a) 桌面版不交出任何外链，PR 链接改为可复制。这要改前端。
+    - (b) 只交出与解码器规则完全一致的 PR URL（`decode.ts:75`），加频率限制，接受脚本也能触发这类打开。
+    - (c) 用平台 API 关掉脚本自动打开窗口，并在导航回调里放行 GitHub 链接。公开回调分不清新窗口和顶层导航，要再实测。
+    - 建议 (a) 或 (b)。决定后改写 §4.7、S4、T-NAV-4、T-NAV-5。（§4.7）
+18. **DP0 第 4–9 项** — PENDING（Aimpact 决定）：本次只批准了第 1–3 项。§8 规定 DP0 结果写进本 plan 后，本 work-package 停止。要决定：补做第 4–9 项，或者到此停止，把它们留到以后的 GO。第 8 项（Safari「添加到程序坞」）的结果是 §2.3 日常用法说明的依据。（§8）
 
 ---
 
@@ -520,3 +568,10 @@ E2E：
 - §11 第 11 项 LOCKED：Bundle ID 最终是 `com.repoharness.app`（Aimpact 拥有 repoharness.com 域名）。这取代第五轮记录的值。
 - §4.3 日志路径、§4.5 配置路径、§6 的 Bundle ID 同步改为 `com.repoharness.app`。
 - DP0 实测仍要等 Dot 复审通过后再开始。
+
+**第七轮（20261013，DP0 结果）**
+- Dot 对 `2ba3f8e6` 的设计复审通过。Aimpact 2026-10-13 批准开始 DP0。DP0 第 1–3 项已实测（PR #718，`5f0efe8b`）。
+- 新增 §8.1 DP0 结果。§8 增加 DP0 状态。
+- 标记更新：§2.2 应用命令受 capability 控制、§4.4 close-on-exec、§4.7 重定向改为已核对。§4.7 用户手势改为已推翻。
+- §4.4 增加 close-on-exec 并发情况的 DP2 要求。§4.7 增加 wry 默认授予媒体权限的要求。§9 增加对应风险，更新导航风险。§10 T-NAV-5 记录失败。
+- §11 新增第 17 项（外链规则，Dot 决定）和第 18 项（DP0 第 4–9 项，Aimpact 决定）。第 1–16 项不变。
