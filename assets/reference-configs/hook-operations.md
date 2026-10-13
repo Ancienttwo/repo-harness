@@ -29,19 +29,25 @@ Measure `Stop.default` and `SubagentStop.quality` separately using
 `.ai/harness/runs/hook-events.jsonl` `metrics.elapsed_ms`. The terminal's Working
 time is the whole turn, not the duration of its currently displayed hook.
 
-| Route | Matcher | Typed handler | Responsibility |
-| --- | --- | --- | --- |
-| `SessionStart.default` | all sessions | `session-context` | Build the bounded resume, sprint, and security context. |
-| `PreToolUse.edit` | `Edit|Write` | `mutation-guard` | Enforce worktree and plan/contract readiness before edits. |
-| `PreToolUse.subagent` | `Task|Agent|SendUserMessage` | `subagent` | Enforce the delegated return-channel contract. |
-| `PostToolUse.edit` | `Edit|Write` | `mutation-observed` | Record the edit journal and controlled-file observations. |
-| `PostToolUse.bash` | `Bash` | `command-observed` | Record command results and verification evidence. |
-| `PostToolUse.always` | all tools | `trace-observer` | Append the low-noise tool trace. |
-| `UserPromptSubmit.default` | all prompts | `prompt` | Classify intent and render workflow guidance from file-backed state. |
-| `UserPromptSubmit.delegation` | all prompts (Codex) | `subagent` | Handle explicit delegation authorization. |
-| `SubagentStart.context` | subagent start (Codex) | `subagent` | Add the bounded role and evidence contract. |
-| `SubagentStop.quality` | subagent stop (Codex) | `subagent` | Check the delegated report and request one bounded continuation when required. |
-| `Stop.default` | session stop | `stop` | Flush pending observations and finalize the handoff projection. |
+This table is the one route inventory. It lists the 12 entries of `ROUTES` in
+`src/cli/hook/route-registry.ts`, in registry order. The Host column follows the
+`hosts` field of each route: Claude installs 9 routes, Codex installs 12, and
+Pi installs 6. Other documents link here. They do not copy this table.
+
+| Route | Matcher | Host | Typed handler | Responsibility |
+| --- | --- | --- | --- | --- |
+| `SessionStart.default` | all sessions | Claude, Codex, Pi | `session-context` | Build the bounded resume, sprint, and security context. |
+| `PreToolUse.edit` | `Edit\|Write` | Claude, Codex, Pi | `mutation-guard` | Enforce worktree and plan/contract readiness before edits. |
+| `PreToolUse.subagent` | `Task\|Agent\|SendUserMessage` | Claude, Codex | `subagent` | Enforce the delegated return-channel contract. |
+| `PostToolUse.edit` | `Edit\|Write` | Claude, Codex, Pi | `mutation-observed` | Write one coalesced journal event that carries dirty bits. Stop drains the journal. |
+| `PostToolUse.bash` | `Bash` | Claude, Codex, Pi | `command-observed` | Record command results and verification evidence. |
+| `PostToolUse.always` | all tools | Claude, Codex | `trace-observer` | Append the low-noise tool trace. |
+| `UserPromptSubmit.default` | all prompts | Claude, Codex, Pi | `prompt` | Classify intent and render workflow guidance from file-backed state. |
+| `UserPromptSubmit.inbox` | all prompts | Claude, Codex | `task-inbox` | Deliver task messages at the turn boundary, outside prompt classification. |
+| `UserPromptSubmit.delegation` | all prompts | Codex | `subagent` | Handle explicit delegation authorization. |
+| `SubagentStart.context` | subagent start | Codex | `subagent` | Add the bounded role and evidence contract. |
+| `SubagentStop.quality` | subagent stop | Codex | `subagent` | Check the delegated report and request one bounded continuation when required. |
+| `Stop.default` | session stop | Claude, Codex, Pi | `stop` | Flush pending observations and finalize the handoff projection. |
 
 ## Host Output
 
@@ -65,8 +71,7 @@ a host file descriptor.
 `assets/hooks/lib/workflow-state.sh` is the package operator library.
 Consumer repositories do not receive a copy. The library has no hook dispatch
 or route authority. Product changes to handler
-behavior belong in `src/cli/hook/` and its tests; run `bun run check:hooks` after
-updating the generated asset projection.
+behavior belong in `src/cli/hook/` and its tests.
 
 Use the package library in an operator shell:
 
@@ -84,7 +89,7 @@ Init and upgrade preserve `.ai/hooks/lib/workflow-state.sh`, including edits.
 Old scripts that source this file still work. Doctor reports it as legacy.
 Change callers to the package path or `repo-harness run`. Test the callers.
 Back up the old file before manual removal. Review local changes first.
-This source repository keeps its own helper for self-hosting.
+This source repository has no copy. Its helpers read `assets/hooks/lib/`.
 
 The prompt handler consumes the typed prompt-intent and workflow-state decision
 table, then verifies the file-backed contract and the typed `AcceptanceReceipt`
@@ -219,10 +224,9 @@ Agents author semantic snapshots and diagrams. Hooks do not spawn LLM agents or
 long-running commands. Deterministic execution belongs in explicit CLI commands
 such as `scripts/contract-run.ts`.
 
-`assets/hooks/` is the package asset source; the self-hosted `.ai/hooks/` tree
-contains the generated operator-helper projection. Keep the two declared asset
-manifests aligned with `bun run sync:hooks`, and validate the typed route
-registry with `bun test` and `repo-harness init --repo . --dry-run`.
+`assets/hooks/` is the package asset source. No projection copy exists.
+Validate the typed route registry with `bun test` and
+`repo-harness init --repo . --dry-run`.
 
 ## Evidence Retention
 

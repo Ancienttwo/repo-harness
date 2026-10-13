@@ -170,7 +170,7 @@ sequenceDiagram
 5. **daemon 维护不回滚已验证的包。** update 中 daemon 检查失败时，该步骤记为 `skipped` 并说明原因。已安装并回读成功的包保留（`global-runtime.ts:1486-1490`）。严格的 `verifyInstalledManagedRuntime` 仍然把 daemon 失败判为失败（`global-runtime.ts:557-558`）。
 6. **诊断命令不改任何东西。** `doctor` 和 `init-hook`（`setup check`）只读（文件头 `doctor.ts:1-7`、`init-hook.ts:1-8`）。修复动作只出现在 `update`、`install`、`upgrade` 这类显式命令里。
 7. **apply 自己接受 major change。** `architecture-projection apply` 在同一次调用里接受 ArchContext 报告的 major change。人的关口是 PR review。丢失响应时读回已提交的 apply，不重复 apply（`projection-apply.ts:24-30`；PR #617）。
-8. **发布前先确认版本不存在。** `check-npm-release.sh` 先跑 `check:hooks` 和 `check:helpers`，再查询 npm。版本已存在时拒绝发布（`check-npm-release.sh:24-30`）。
+8. **发布前先确认版本不存在。** `check-npm-release.sh` 先跑 `check:helpers`，再查询 npm。版本已存在时拒绝发布（`check-npm-release.sh:24-29`）。
 
 ### 3.2 关键权衡
 

@@ -26,10 +26,10 @@ The boundary has four layers:
 4. `handler-registry.ts` runs one typed in-process handler. `runtime.ts` owns
    host output shaping and writes one event-level telemetry record.
 
-The only shell file left in the hook projection is
-`assets/hooks/lib/workflow-state.sh`. Only the source checkout mirrors it to
-`.ai/hooks/lib/`. Consumer repositories use the package asset. It is an
-operator/workflow-state helper and is not a host-event route. The deleted
+The only shell file left under `assets/hooks/` is
+`assets/hooks/lib/workflow-state.sh`. Consumer repositories and this source
+checkout both use the package asset. It is an operator/workflow-state helper
+and is not a host-event route. The deleted
 `run-hook.sh`, per-event guards, hook shims, and root helper runtime are not
 read by host-event execution.
 
@@ -55,22 +55,10 @@ Handlers return a structured result; they do not write directly to host file
 descriptors. `runtime.ts` decides whether Claude or Codex receives stdout,
 stderr, a decision envelope, or SessionStart context.
 
-The public route inventory is:
-
-| Event | Route | Matcher / host | Typed handler |
-| --- | --- | --- | --- |
-| `SessionStart` | `default` | all | `session-context` |
-| `PreToolUse` | `edit` | `Edit\|Write` | `mutation-guard` |
-| `PreToolUse` | `subagent` | `Task\|Agent\|SendUserMessage` | `subagent` |
-| `PostToolUse` | `edit` | `Edit\|Write` | `mutation-observed` |
-| `PostToolUse` | `bash` | `Bash` | `command-observed` |
-| `PostToolUse` | `always` | all | `trace-observer` |
-| `UserPromptSubmit` | `default` | all | `prompt` |
-| `UserPromptSubmit` | `inbox` | all | `task-inbox` |
-| `UserPromptSubmit` | `delegation` | Codex only | `subagent` |
-| `SubagentStart` | `context` | Codex only | `subagent` |
-| `SubagentStop` | `quality` | Codex only | `subagent` |
-| `Stop` | `default` | all | `stop` |
+The public route inventory has 12 `(event, routeId, matcher)` tuples. The
+Host column of the route table in
+[`hook-operations.md`](../reference-configs/hook-operations.md#hook-authority-map)
+lists the matcher, host and typed handler of each tuple.
 
 The tuple order and membership are a stable public contract that Codex trust-
 hashes, so additions require an explicit installer projection and trust
@@ -203,7 +191,6 @@ unmatched bytes and custom sibling hooks remain untouched.
 - `bun test tests/prompt-handler.test.ts tests/subagent-handler.test.ts`
 - `bun test tests/command-observed.test.ts tests/trace-observer.test.ts`
 - `bun run check:type`
-- `bun run check:hooks`
 - `bun src/cli/index.ts architecture-projection check --json`
 
 Historical canary observations remain in archived research and are not runtime

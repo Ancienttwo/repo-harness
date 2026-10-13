@@ -54,7 +54,7 @@
 
 ## Codex
 - Own backend implementation and testing; Claude owns frontend implementation and interaction, and the parent coordinates scope and integration.
-- User-level `~/.codex/hooks.json` hooks invoke `repo-harness-hook`; its typed route registry selects one in-process handler. Repo-local hook adapters are retired. Operator helpers use the package path from `repo-harness hook-lib path`. This source repo keeps `.ai/hooks/lib/workflow-state.sh` for self-hosting.
+- User-level `~/.codex/hooks.json` hooks invoke `repo-harness-hook`; its typed route registry selects one in-process handler. Repo-local hook adapters are retired. Operator helpers use the package path from `repo-harness hook-lib path`. The library lives at `assets/hooks/lib/`; this source repo keeps no copy under `.ai/hooks/`.
 - Use `~/.codex/skills` as the runtime skill source; `~/.agents/skills` is staging/cache only. Keep `think`, `hunt`, `check` and `health` updates verified before runtime use.
 - The Codex automation profile requires runtime-provided `health`, `check` and `mermaid`; do not vendor their bodies.
 - Treat auto-compact as a fallback; prepare ignored `.ai/harness/handoff/current.md` and `resume.md` when long-task rollover is needed.

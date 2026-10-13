@@ -68,20 +68,11 @@ describe("README DX contract", () => {
     // first-run path.
     expect(getStarted).not.toContain("bun scripts/assemble-template.ts");
     expect(maintainer).toContain("assets/hooks/");
-    expect(maintainer).toContain("bun run sync:hooks");
     expect(hooksSection).toContain("repo-harness-hook");
     expect(hooksSection).toContain("route registry");
-    // HRD-04 retired minimal-change-context.sh (folded into the in-process
-    // session-context builder). HRD-05 retired post-edit-guard.sh and
-    // minimal-change-observer.sh (folded into the in-process
-    // mutation-observed journal handler). The 14-section rewrite folded the
-    // former "Hook Authority Map" section into "Hooks" and "Maintainer
-    // Reference"; the handler filenames are the placement invariant that
-    // replaces it.
-    expect(hooksSection).toContain("session-context.ts");
-    expect(hooksSection).toContain("mutation-guard.ts");
-    expect(hooksSection).toContain("mutation-observed.ts");
-    expect(hooksSection).toContain("stop-handler.ts");
+    // The route table lives only in hook-operations.md; the README links to it.
+    expect(hooksSection).toContain("docs/reference-configs/hook-operations.md");
+    expect(hooksSection).not.toContain("| Route |");
     expect(readme).not.toContain("finalize-handoff.sh");
     expect(readme).not.toContain("session-start-context.sh");
     expect(readme).not.toContain("post-edit-guard.sh");
@@ -94,11 +85,8 @@ describe("README DX contract", () => {
     const hookOps = read("docs/reference-configs/hook-operations.md");
 
     expect(readme).toContain("docs/reference-configs/hook-operations.md");
-    // SSD-xx: the README's own "Generated vs Self-Hosted Hook Projection"
-    // heading retired in the 14-section rewrite; the projection contract now
-    // lives solely in hook-operations.md, so pin its phrasing there instead
-    // of duplicating it back into the README.
-    expect(hookOps).toContain("generated operator-helper projection");
+    // hook-operations.md holds the one route table, with a Host column.
+    expect(hookOps).toContain("| Route | Matcher | Host | Typed handler | Responsibility |");
     expect(hookOps).toContain("## Hook Authority Map");
     expect(hookOps).toContain("## Hook Failure Playbook");
     expect(hookOps).toContain("PlanStatusGuard");
@@ -107,7 +95,6 @@ describe("README DX contract", () => {
     expect(hookOps).toContain("WorktreeGuard");
     expect(hookOps).toContain(".ai/harness/failures/latest.jsonl");
     expect(hookOps).toContain(".claude/.trace.jsonl");
-    expect(hookOps).toContain("self-host");
     expect(hookOps).toContain("generated");
   });
 

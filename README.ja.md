@@ -217,7 +217,7 @@ Layer 2 は Layer 1 を置き換えるものではありません。program の�
 | | |
 | --- | --- |
 | **File-backed sessions** | Plan、contract、check、handoff がリポジトリに残るので、新しいセッションはチャットスレッドではなく artifacts から再開します |
-| **Typed hook runtime** | 8 本の共有 managed route と 3 本の Codex 専用 delegation route があり、それぞれが exactly one の typed in-process handler に bind され、edit boundary で fail-closed な guard がかかります |
+| **Typed hook runtime** | 12 本の公開 route（Claude 9 本、Codex 12 本、Pi 6 本）があり、それぞれが exactly one の typed in-process handler に bind され、edit boundary で fail-closed な guard がかかります |
 | **Plan → Contract → Review** | approved plan から投射された contract、隔離された worktree、構造化された evidence、review 可能な closeout までの 1 本の lifecycle |
 | **Bot-scheduled programs** | engineer task offer と更新可能な lease を持つ collaboration program。Bot がスケジュールし、repo-harness が tools と evidence を提供します |
 | **Progressive context loading** | 安定した約 12KB の root context に、実際に触れるファイルにだけ読み込まれる約 1KB の capability contract が加わります |
@@ -416,26 +416,11 @@ Herdr のない Claude デスクトップアプリでは `--launch app-terminal`
 
 ## Hooks
 
-インストールされた adapter は、8 本の共有 managed hook route を所有します。
-`event + routeId + matcher` の route tuple が安定した契約であり、各 tuple は
-exactly one の typed in-process handler に bind されます。
-
-| Route | Matcher | Handler | 機能 |
-| --- | --- | --- | --- |
-| `SessionStart.default` | all sessions | `src/cli/hook/session-context.ts` (in-process builder) | 作業開始前に、直前の handoff、sprint status、minimal-change guidance、read-only な config-security の findings を注入します。 |
-| `PreToolUse.edit` | `Edit\|Write` | `src/cli/hook/mutation-guard.ts` (in-process handler) | 実装編集の前に worktree policy と plan/contract の readiness を強制します。 |
-| `PreToolUse.subagent` | `Task\|Agent\|SendUserMessage` | `src/cli/hook/subagent-handler.ts` | delegate された作業が completion claim を漏らさず、parent session を経由して戻るようにします。 |
-| `PostToolUse.edit` | `Edit\|Write` | `src/cli/hook/mutation-observed.ts` (in-process handler) | 該当する編集ごとに、dirty bits を伴う小さな journal event を高々 1 件書き込みます。contract verification、architecture/context/capability sync、minimal-change evidence は編集ごとには実行されず、Stop まで遅延されます。 |
-| `PostToolUse.bash` | `Bash` | `src/cli/hook/command-observed.ts` | command runner を置き換えることなく、command の結果を観測し verification evidence を取得します。 |
-| `PostToolUse.always` | all tools | `src/cli/hook/trace-observer.ts` | low-noise で常時稼働する trace と runtime observation を提供します。 |
-| `UserPromptSubmit.default` | all prompts | `src/cli/hook/prompt-handler.ts` | prompt の intent を分類し、planning/check の hint を route し、host-safe な workflow guidance を描画します。 |
-| `Stop.default` | session stop | `src/cli/hook/stop-handler.ts` (in-process handler) | handoff を finalize し、未解決の draft-plan や completion evidence の gap を残したまま終了しないよう防ぎます。 |
-
-Codex はさらに、3 本の Codex 専用 bounded-delegation route —
-`UserPromptSubmit.delegation`、`SubagentStart.context`、`SubagentStop.quality`
-— をインストールし、すべて `src/cli/hook/subagent-handler.ts` に bind
-されます。Claude 側は共有の `PreToolUse.subagent` return-channel route だけを
-保持します。
+インストールされた adapter は 12 本の公開 hook route を bind します。Claude は 9 本、
+Codex は 12 本、Pi は 6 本をインストールします。`event + routeId + matcher` の
+route tuple が安定した契約であり、各 tuple は exactly one の typed in-process
+handler に bind されます。Host 列つきの route 表は
+[`docs/reference-configs/hook-operations.md`](docs/reference-configs/hook-operations.md#hook-authority-map) にあります。
 
 `repo-harness-hook` とその typed handler registry が host-event の runtime
 です。`~/.claude/settings.json` と `~/.codex/hooks.json` が user-level の
@@ -607,9 +592,8 @@ repo-harness docs show harness-overview
 bun scripts/assemble-template.ts --plan C --name "MyProject"
 ```
 
-Hook の変更は、まず canonical な `assets/hooks/` を更新し、その後
-`bun run sync:hooks` を実行し、verification で `bun run check:hooks` を
-使います。Reference docs は `assets/reference-configs/` 配下が canonical であり、
+Operator library の変更は `assets/hooks/lib/` だけを編集します。投射コピーはありません。
+Handler の変更は `src/cli/hook/` を編集します。Reference docs は `assets/reference-configs/` 配下が canonical であり、
 `docs/reference-configs/` へ投射されます。`bun run check:reference-configs`
 がその投射を検証します。
 

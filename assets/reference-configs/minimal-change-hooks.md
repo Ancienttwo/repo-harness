@@ -15,10 +15,11 @@ advisory and fail-open. A repo opts into blocking explicitly with
 - `UserPromptSubmit.default` invokes the typed `prompt` handler. When the prompt
   is allowed and looks execution-oriented, that handler appends the same
   advisory context.
-- `PostToolUse.edit` invokes the typed `mutation-observed` handler, which then
-  runs the minimal-change observer. The observer is silent unless policy
-  explicitly sets `post_edit_observer: true`; when enabled it writes a
-  deterministic report to `.ai/harness/checks/minimal-change.latest.json`.
+- `PostToolUse.edit` invokes the typed `mutation-observed` handler. The handler
+  writes one coalesced journal event with dirty bits. It does not write a
+  report. It sets the `minimal-change` dirty bit only when policy sets
+  `post_edit_observer: true`. The report path is
+  `.ai/harness/checks/minimal-change.latest.json`.
 - `Stop.default` runs the in-process `src/cli/hook/stop-handler.ts`. Stop
   review reads the canonical latest report for diagnostics and block-reason
   suffixes without rewriting the recovery handoff. Under `mode: "advice"` it

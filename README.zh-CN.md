@@ -192,7 +192,7 @@ task offer。Bot 决定调度什么。repo-harness 提供工具和证据。见
 | | |
 | --- | --- |
 | **会话状态落在文件里** | Plan、contract、check 和 handoff 都留在仓库里，新会话从 artifact 而不是聊天线程恢复 |
-| **Typed hook runtime** | 八条共享 managed route 加三条 Codex-only delegation route，每条都绑定唯一一个 typed in-process handler，在 edit boundary 上做 fail-closed guard |
+| **Typed hook runtime** | 12 条公开 route（Claude 9 条，Codex 12 条，Pi 6 条），每条都绑定唯一一个 typed in-process handler，在 edit boundary 上做 fail-closed guard |
 | **Plan → Contract → Review** | 从 approved plan 到 projected contract、隔离 worktree、结构化证据，再到可审查 closeout 的完整生命周期 |
 | **Bot 调度的 program** | 带 engineer task offer 和可续期 lease 的 collaboration program；Bot 负责调度，repo-harness 提供工具和证据 |
 | **渐进式 context loading** | 约 12KB 的稳定 root context，加上只为实际改动文件加载的约 1KB capability contract |
@@ -376,25 +376,10 @@ repo-harness review close --contract tasks/contracts/<task>.contract.md
 
 ## Hooks
 
-安装好的 adapter 拥有八条共享的 managed hook route。Route tuple
-`event + routeId + matcher` 是稳定的 contract；每个 tuple 绑定唯一一个 typed
-in-process handler。
-
-| Route | Matcher | Handler | Function |
-| --- | --- | --- | --- |
-| `SessionStart.default` | all sessions | `src/cli/hook/session-context.ts` (in-process builder) | 在开工前注入之前的 handoff、sprint 状态、minimal-change 指引，以及只读的 config-security 发现项。 |
-| `PreToolUse.edit` | `Edit\|Write` | `src/cli/hook/mutation-guard.ts` (in-process handler) | 在实现性 edit 之前，强制执行 worktree policy 和 plan/contract 就绪检查。 |
-| `PreToolUse.subagent` | `Task\|Agent\|SendUserMessage` | `src/cli/hook/subagent-handler.ts` | 让 delegated 工作始终经由 parent session 回流，避免泄漏未经确认的 completion 声明。 |
-| `PostToolUse.edit` | `Edit\|Write` | `src/cli/hook/mutation-observed.ts` (in-process handler) | 每次符合条件的 edit 最多写一条带 dirty bits 的小 journal event；contract verification、architecture/context/capability sync 和 minimal-change 证据都延后到 Stop 才跑，而不是每次 edit 都跑。 |
-| `PostToolUse.bash` | `Bash` | `src/cli/hook/command-observed.ts` | 观察命令结果并捕获 verification 证据，不替代命令本身的 runner。 |
-| `PostToolUse.always` | all tools | `src/cli/hook/trace-observer.ts` | 提供低噪音、常驻的 trace 和 runtime observation。 |
-| `UserPromptSubmit.default` | all prompts | `src/cli/hook/prompt-handler.ts` | 对 prompt intent 分类，路由 planning/check 提示，并渲染 host-safe 的 workflow 指引。 |
-| `Stop.default` | session stop | `src/cli/hook/stop-handler.ts` (in-process handler) | 收尾 handoff，并防止在 draft-plan 未解决或 completion 证据有缺口时结束会话。 |
-
-Codex 还会额外安装三条 Codex-only 的 bounded-delegation route——
-`UserPromptSubmit.delegation`、`SubagentStart.context` 和
-`SubagentStop.quality`，全部绑定到 `src/cli/hook/subagent-handler.ts`；
-Claude 只保留共享的 `PreToolUse.subagent` return-channel route。
+安装好的 adapter 绑定 12 条公开的 hook route：Claude 装 9 条，Codex 装 12 条，
+Pi 装 6 条。Route tuple `event + routeId + matcher` 是稳定的 contract；每个
+tuple 绑定唯一一个 typed in-process handler。带 Host 列的 route 表在
+[`docs/reference-configs/hook-operations.md`](docs/reference-configs/hook-operations.md#hook-authority-map)。
 
 `repo-harness-hook` 和它的 typed handler registry 是 host-event runtime；
 `~/.claude/settings.json` 和 `~/.codex/hooks.json` 是 user-level adapter，Codex
@@ -572,8 +557,8 @@ repo-harness docs show harness-overview
 bun scripts/assemble-template.ts --plan C --name "MyProject"
 ```
 
-Hook 变更只更新一次 canonical 的 `assets/hooks/`，然后跑 `bun run sync:hooks`，并在
-验证里包含 `bun run check:hooks`。Reference doc 的 canonical 版本在
+Operator library 的变更只改 `assets/hooks/lib/`，不存在投射副本。Handler 的变更改
+`src/cli/hook/`。Reference doc 的 canonical 版本在
 `assets/reference-configs/` 下，并投射到 `docs/reference-configs/`；
 `bun run check:reference-configs` 用来验证这次投射。
 
