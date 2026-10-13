@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from 'node:fs';
 import { userInfo } from 'node:os';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { ARCHCONTEXT_NODE_RANGE, digestJson, type ArchctxCapabilitiesV1, type DocsAnchorsReportV1, type Json, type ProjectionApplyReadbackResultV1, type ProjectionRequestV1, type ProjectionResultV2 } from 'archctx-contracts';
+import { ARCHCONTEXT_NODE_RANGE, ERROR_CATALOG, PROJECTION_REQUEST_SCHEMA_VERSION, digestJson, type ArchContextError, type ArchctxCapabilitiesV1, type DocsAnchorsReportV1, type Json, type ProjectionApplyReadbackResultV1, type ProjectionMode, type ProjectionRequestV1, type ProjectionResultV2 } from 'archctx-contracts';
 import { trustedNodeCandidates } from '../runtime/node-candidates';
 import { runProcess } from '../process-runner';
 import { normalizeCapabilityPath } from '../../core/capabilities/registry';
@@ -20,7 +20,7 @@ import {
   type ArchitectureProjectionReadinessV1,
 } from '../../core/architecture/projection';
 
-export interface ArchctxProcessResult { status: number | null; signal: NodeJS.Signals | null; stdout: string; stderr: string; error?: string }
+export interface ArchctxProcessResult { status: number | null; signal: NodeJS.Signals | null; stdout: string; stderr: string; error?: string; timedOut?: boolean }
 export type RunArchctxProcess = (binary: string, args: readonly string[], options: { cwd: string; timeoutMs: number; env: NodeJS.ProcessEnv }) => ArchctxProcessResult;
 
 export interface ArchctxProviderOptions {
@@ -71,7 +71,7 @@ const DEFAULT_RUNNER: RunArchctxProcess = (binary, args, options) => {
     processGroup: true,
   });
   const overflow = Buffer.byteLength(result.stdout, 'utf8') > ARCHCTX_MAX_OUTPUT_BYTES || Buffer.byteLength(result.stderr, 'utf8') > ARCHCTX_MAX_OUTPUT_BYTES;
-  return { status: overflow ? 1 : result.status, signal: result.signal, stdout: result.stdout, stderr: result.stderr, ...((overflow ? 'archctx output exceeded maxBuffer' : result.error) ? { error: overflow ? 'archctx output exceeded maxBuffer' : result.error } : {}) };
+  return { status: overflow ? 1 : result.status, signal: result.signal, timedOut: result.timedOut, stdout: result.stdout, stderr: result.stderr, ...((overflow ? 'archctx output exceeded maxBuffer' : result.error) ? { error: overflow ? 'archctx output exceeded maxBuffer' : result.error } : {}) };
 };
 
 
@@ -94,7 +94,7 @@ export function resolvePackageLocalArchctx(consumerRoot: string, requiredVersion
   const packageRoot = findInstalledArchctxPackageRoot(consumerRoot, requiredVersion);
   const manifestPath = join(packageRoot, 'package.json');
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as { name?: unknown; version?: unknown; bin?: unknown; engines?: unknown };
-  if (manifest.name !== 'archctx' || manifest.version !== requiredVersion) throw new Error(`package-local archctx mismatch: expected archctx@${requiredVersion}, got ${String(manifest.name)}@${String(manifest.version)} (resolved from consumer root ${resolve(consumerRoot)})`);
+  if (manifest.name !== 'archctx' || manifest.version !== requiredVersion) throw new ArchctxClientError({ code: 'RH_ARCHCTX_PACKAGE_MISMATCH', action: 'update-repo-harness', message: `package-local archctx mismatch: expected archctx@${requiredVersion}, got ${String(manifest.name)}@${String(manifest.version)} (resolved from consumer root ${resolve(consumerRoot)})` });
   const engines = isRecord(manifest.engines) ? manifest.engines : null;
   if (engines?.node !== ARCHCONTEXT_NODE_RANGE) throw new Error(`package-local archctx@${requiredVersion} Node runtime contract mismatch: expected ${ARCHCONTEXT_NODE_RANGE}, got ${String(engines?.node)}`);
   const bin = isRecord(manifest.bin) && typeof manifest.bin.archctx === 'string' ? manifest.bin.archctx : null;
@@ -188,8 +188,79 @@ function runArchctxProcess(
   const now = options.nowMs ?? Date.now;
   const deadlineMs = options.deadlineMs ?? now() + timeoutMs;
   const nodeExecutable = resolveCompatibleNodeRuntime(env, options.trustedNodeCandidateSource, { deadlineMs, nowMs: now });
-  return DEFAULT_RUNNER(nodeExecutable, [resolved.binaryPath, ...args], { cwd, timeoutMs: remainingTimeout({ deadlineMs, nowMs: now }, timeoutMs, args.join(' ')), env });
+  return DEFAULT_RUNNER(nodeExecutable, [resolved.binaryPath, ...args], { cwd, timeoutMs: remainingTimeout({ deadlineMs, nowMs: now }, timeoutMs, commandLabel(args)), env });
 }
+
+/** One transport and envelope reader for projection, refactor and ownership. */
+export class ArchctxClient {
+  readonly resolved: ResolvedArchctxPackage;
+
+  constructor(readonly repoRoot: string, requiredVersion: string, readonly options: ArchctxProviderOptions = {}) {
+    this.resolved = resolvePackageLocalArchctx(options.consumerRoot ?? findConsumerRoot(), requiredVersion);
+  }
+
+  json(args: readonly string[], maximumMs = 120_000, allowErrorEnvelope = false): unknown {
+    const label = commandLabel(args);
+    const result = runArchctxProcess(this.resolved, args, this.options, this.repoRoot, remainingTimeout(this.options, maximumMs, label));
+    if (result.timedOut) {
+      throw new ArchctxClientError({ code: 'RH_ARCHCTX_TIMEOUT', action: 'check-and-retry-same-request', message: `${label} timed out; outcome unknown. Run repo-harness architecture-projection check --json, then retry with the same request id.` });
+    }
+    if (Buffer.byteLength(result.stdout, 'utf8') > ARCHCTX_MAX_OUTPUT_BYTES || Buffer.byteLength(result.stderr, 'utf8') > ARCHCTX_MAX_OUTPUT_BYTES) throw new Error(`${label} output exceeded maxBuffer`);
+    // Process errors can contain argv, including request-json. Do not print them.
+    if (result.signal || result.error) throw new Error(`${label} process failed${result.signal ? `: signal ${result.signal}` : ''}`);
+    if (result.stdout.trim() === '') throw new Error(`${label} failed: exit ${result.status}: ${result.stderr.trim()}`);
+    const value = parseJson(result.stdout, label);
+    if (args[0] === 'capabilities' && result.status === 0) return value;
+    // Daemon lifecycle readback is not a request-scoped command and carries no
+    // requestId; its caller validates the lifecycle envelope itself.
+    if (args[0] === 'daemon' && result.status === 0) return value;
+    if (!isRecord(value) || value.schemaVersion !== 'archcontext.envelope/v1' || typeof value.ok !== 'boolean' || typeof value.requestId !== 'string') throw new Error(`${label} returned an invalid envelope`);
+    if (value.ok === false) {
+      const error = decodeArchctxError(value.error);
+      if (!allowErrorEnvelope) throw new ArchctxClientError(error);
+    } else if (!isRecord(value.data)) throw new Error(`${label} returned an invalid envelope`);
+    if (result.status !== 0 && !allowErrorEnvelope && value.ok) throw new Error(`${label} failed: exit ${result.status}`);
+    return value;
+  }
+
+  data(args: readonly string[], maximumMs: number): unknown {
+    return (this.json(args, maximumMs) as Record<string, unknown>).data;
+  }
+}
+
+export class ArchctxClientError extends Error {
+  readonly code: string;
+  readonly action: string;
+  readonly reasonCode?: string;
+  readonly details?: ArchContextError['details'];
+  readonly retryable?: boolean;
+  readonly providerMessage: string;
+
+  constructor(error: Pick<ArchContextError, 'message' | 'action'> & { code: string } & Partial<Omit<ArchContextError, 'code' | 'message' | 'action'>>) {
+    const maintenance = error.code === 'AC_RUNTIME_VERSION_UNSUPPORTED' && error.action === 'upgrade-archctx-runtime' ? ` ${ARCHCTX_MAINTENANCE_REMINDER}` : '';
+    super(`${error.code}: ${error.message}${maintenance}${error.reasonCode ? ` (reasonCode: ${error.reasonCode})` : ''}; action: ${error.action}`);
+    this.name = 'ArchctxClientError';
+    this.code = error.code;
+    this.action = error.action;
+    this.reasonCode = error.reasonCode;
+    this.details = error.details;
+    this.retryable = error.retryable;
+    this.providerMessage = error.message;
+  }
+}
+
+function decodeArchctxError(value: unknown): ArchContextError {
+  if (!isRecord(value) || typeof value.code !== 'string' || typeof value.message !== 'string' || typeof value.action !== 'string'
+    || !Object.hasOwn(ERROR_CATALOG, value.code)
+    || value.action !== ERROR_CATALOG[value.code as ArchContextError['code']].action
+    || value.retryable !== ERROR_CATALOG[value.code as ArchContextError['code']].retryable
+    || value.severity !== ERROR_CATALOG[value.code as ArchContextError['code']].severity
+    || (value.reasonCode !== undefined && typeof value.reasonCode !== 'string')
+    || (value.details !== undefined && (!isRecord(value.details) || Buffer.byteLength(JSON.stringify(value.details), 'utf8') > 256 * 1024))) throw new Error('archctx returned an invalid error envelope');
+  return value as unknown as ArchContextError;
+}
+
+function commandLabel(args: readonly string[]): string { return `archctx ${args.slice(0, args[1]?.startsWith('-') ? 1 : 2).join(' ')}`; }
 
 export function runPackageLocalArchctxJson(
   repoRoot: string,
@@ -199,20 +270,16 @@ export function runPackageLocalArchctxJson(
   maximumMs = 120_000,
   allowErrorEnvelope = false,
 ): { resolved: ResolvedArchctxPackage; value: unknown } {
-  // The runtime package owns the executable; the target repo supplies cwd/model
-  // data only. Candidate verification may explicitly select its consumer root.
-  const resolved = resolvePackageLocalArchctx(options.consumerRoot ?? findConsumerRoot(), requiredVersion);
-  const result = runArchctxProcess(resolved, args, options, repoRoot, remainingTimeout(options, maximumMs, args.join(' ')));
-  if ((result.status !== 0 || result.signal || result.error) && !allowErrorEnvelope) throw new Error(`archctx ${args.join(' ')} failed: ${processFailure(result)}`);
-  if (result.signal || result.error || result.stdout.trim() === '') throw new Error(`archctx ${args.join(' ')} failed: ${processFailure(result)}`);
-  return { resolved, value: parseJson(result.stdout, `archctx ${args.join(' ')}`) };
+  const client = new ArchctxClient(repoRoot, requiredVersion, options);
+  return { resolved: client.resolved, value: client.json(args, maximumMs, allowErrorEnvelope) };
 }
 
 export function archctxCapabilities(repoRoot: string, options: ArchctxProviderOptions = {}): { resolved: ResolvedArchctxPackage; capabilities: ArchctxCapabilitiesV1 } {
   const policy = options.policy ?? loadArchitectureProjectionPolicy(options.env);
   if (policy.provider === 'disabled') throw new Error('architecture projection provider is disabled');
   const { resolved, value } = runPackageLocalArchctxJson(repoRoot, policy.requiredVersion, ['capabilities', '--json'], options, Math.min(policy.timeoutMs, 10_000));
-  assertArchctxVersion(value, policy.requiredVersion);
+  try { assertArchctxVersion(value, policy.requiredVersion); }
+  catch (error) { throw new ArchctxClientError({ code: 'RH_ARCHCTX_PACKAGE_MISMATCH', action: 'update-repo-harness', message: error instanceof Error ? error.message : String(error) }); }
   return { resolved, capabilities: value as ArchctxCapabilitiesV1 };
 }
 
@@ -234,7 +301,7 @@ export function verifyArchctxDaemonRuntime(repoRoot: string, options: ArchctxPro
     if (!isRecord(issue) || typeof issue.reason !== 'string' || typeof issue.expected !== 'string' || typeof issue.received !== 'string' || issue.action !== 'upgrade-archctx-runtime' || issue.command !== 'archctx daemon upgrade') {
       throw new Error('archctx daemon status returned an invalid versionUnsupported diagnostic');
     }
-    throw new Error(`AC_RUNTIME_VERSION_UNSUPPORTED: managed archctx@${resolved.version}; daemon ${issue.reason}: expected ${issue.expected}, received ${issue.received}. ${ARCHCTX_MAINTENANCE_REMINDER}`);
+    throw new ArchctxClientError({ code: 'AC_RUNTIME_VERSION_UNSUPPORTED', action: 'upgrade-archctx-runtime', reasonCode: issue.reason, message: `managed archctx@${resolved.version}; daemon ${issue.reason}: expected ${issue.expected}, received ${issue.received}.` });
   }
   if (data.running && (data.rpcVersionCompatible !== true || data.productVersionCompatible !== true)) {
     throw new Error('archctx daemon status did not prove runtime compatibility');
@@ -243,46 +310,90 @@ export function verifyArchctxDaemonRuntime(repoRoot: string, options: ArchctxPro
 
 export function inspectArchitectureProjectionReadiness(repoRoot: string, options: ArchctxProviderOptions = {}): ArchitectureProjectionReadinessV1 {
   const policy = options.policy ?? loadArchitectureProjectionPolicy(options.env);
-  const source = capabilitySource(repoRoot);
-  const modelReady = architectureModelReady(repoRoot);
-  const next = source === 'archcontext' && modelReady ? null : architectureAdoptionStep();
-  if (policy.provider === 'disabled') return {
-    schemaVersion: 'repo-harness.architecture-projection-readiness/v1',
-    modelAuthority: { source, ready: capabilityAuthorityReady(repoRoot) },
-    projectionProvider: { provider: 'disabled', state: 'disabled', binaryPath: null, nodePath: null, command: null, version: null, reason: readGlobalArchitectureConfiguration(options.env).initialized ? 'global architecture.projection_provider=disabled' : 'global architecture configuration is missing; run repo-harness update once' },
-    codeFacts: { requirement: 'required', state: 'not-evaluated' },
-    apply: { mode: policy.applyMode, enabled: false },
-    next,
+  let source: ArchitectureProjectionReadinessV1['modelAuthority']['source'] = 'unadopted';
+  let daemonState: ArchitectureProjectionReadinessV1['daemonRuntime']['state'] = 'not-evaluated';
+  const codeFacts: ArchitectureProjectionReadinessV1['codeFacts'] = {
+    requirement: 'required', state: policy.provider === 'disabled' || existsSync(join(repoRoot, '.codegraph')) ? 'not-evaluated' : 'unavailable',
   };
+  const base = () => ({
+    schemaVersion: 'repo-harness.architecture-projection-readiness/v1' as const,
+    modelAuthority: { source, ready: source !== 'unadopted' && capabilityAuthorityReady(repoRoot) },
+    codeFacts,
+    daemonRuntime: { state: daemonState },
+    apply: { mode: policy.applyMode, enabled: false },
+  });
   try {
-    // The handshake resolves the same runtime again; status reports it so a
-    // caller can run archctx without a PATH copy.
+    source = capabilitySource(repoRoot);
+    if (policy.provider === 'disabled') return {
+      ...base(),
+      projectionProvider: { provider: 'disabled', state: 'disabled', binaryPath: null, nodePath: null, command: null, version: null, reason: readGlobalArchitectureConfiguration(options.env).initialized ? 'global architecture.projection_provider=disabled' : 'global architecture configuration is missing; run repo-harness update once' },
+      next: source === 'archcontext' && architectureModelReady(repoRoot) ? null : architectureAdoptionStep(),
+    };
+    if (source === 'unadopted') throw new ArchctxClientError({ code: 'RH_ARCHCTX_POLICY_MISSING', action: 'adopt-repository', message: 'repository policy is missing; run repo-harness init' });
     const nodePath = resolveCompatibleNodeRuntime(options.env ?? process.env, options.trustedNodeCandidateSource);
     const handshake = archctxCapabilities(repoRoot, options);
+    assertRendererFloor(repoRoot, handshake.capabilities);
+    try { verifyArchctxDaemonRuntime(repoRoot, options); daemonState = 'compatible'; }
+    catch (error) { daemonState = error instanceof ArchctxClientError && error.code === 'AC_RUNTIME_VERSION_UNSUPPORTED' ? 'mismatch' : 'error'; throw error; }
+    const modelReady = architectureModelReady(repoRoot);
     return {
-      schemaVersion: 'repo-harness.architecture-projection-readiness/v1',
-      modelAuthority: { source, ready: capabilityAuthorityReady(repoRoot) },
-      projectionProvider: { provider: 'archctx', state: 'ready', binaryPath: handshake.resolved.binaryPath, nodePath, command: [nodePath, handshake.resolved.binaryPath], version: handshake.resolved.version, reason: 'exact package-local capability handshake passed' },
-      codeFacts: { requirement: 'required', state: 'not-evaluated' },
-      apply: { mode: policy.applyMode, enabled: policy.applyMode !== 'disabled' && modelReady },
-      next,
+      ...base(),
+      projectionProvider: { provider: 'archctx', state: 'ready', binaryPath: handshake.resolved.binaryPath, nodePath, command: [nodePath, handshake.resolved.binaryPath], version: handshake.resolved.version, reason: 'exact package-local handshake and daemon runtime check passed; code facts are reported separately' },
+      apply: { mode: policy.applyMode, enabled: policy.applyMode !== 'disabled' && modelReady && codeFacts.state !== 'unavailable' },
+      next: source !== 'archcontext' || !modelReady ? architectureAdoptionStep() : codeFacts.state === 'unavailable' ? 'codegraph init' : null,
     };
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
-    const state: ArchitectureProjectionReadinessV1['projectionProvider']['state'] = reason.includes('is missing')
-      ? 'missing'
-      : reason.includes('mismatch')
-        ? 'mismatch'
-        : 'error';
+    const state: ArchitectureProjectionReadinessV1['projectionProvider']['state'] = error instanceof ArchctxClientError
+      ? ['RH_ARCHCTX_PACKAGE_MISSING', 'RH_ARCHCTX_POLICY_MISSING'].includes(error.code) ? 'missing'
+        : ['RH_ARCHCTX_PACKAGE_MISMATCH', 'RH_ARCHCTX_RENDERER_MISMATCH', 'AC_RUNTIME_VERSION_UNSUPPORTED'].includes(error.code) ? 'mismatch' : 'error'
+      : 'error';
     return {
-      schemaVersion: 'repo-harness.architecture-projection-readiness/v1',
-      modelAuthority: { source, ready: capabilityAuthorityReady(repoRoot) },
-      projectionProvider: { provider: 'archctx', state, binaryPath: null, nodePath: null, command: null, version: null, reason },
-      codeFacts: { requirement: 'required', state: 'unavailable' },
-      apply: { mode: policy.applyMode, enabled: false },
-      next,
+      ...base(),
+      projectionProvider: { provider: policy.provider, state, binaryPath: null, nodePath: null, command: null, version: null, reason },
+      next: error instanceof ArchctxClientError ? error.action === 'update-repo-harness' ? 'update repo-harness' : error.action : 'repair the reported provider error',
     };
   }
+}
+
+/** A package must not rewrite documents made by a newer renderer. */
+function assertRendererFloor(repoRoot: string, capabilities: ArchctxCapabilitiesV1): void {
+  const path = join(repoRoot, 'docs/architecture/.projection-manifest.json');
+  if (!existsSync(path)) return;
+  const manifest: unknown = parseJson(readFileSync(path, 'utf8'), 'committed projection manifest');
+  const committed = isRecord(manifest) ? manifest.rendererVersion : undefined;
+  const provider = capabilities.renderers.architectureDocs;
+  const revision = (value: unknown): number | null => {
+    if (typeof value !== 'string' || !/^archcontext\.docs-renderer\/v[1-9]\d*$/.test(value)) return null;
+    const number = Number(value.slice(value.lastIndexOf('/v') + 2));
+    return Number.isSafeInteger(number) ? number : null;
+  };
+  const committedRevision = revision(committed);
+  const providerRevision = revision(provider);
+  if (committedRevision === null || providerRevision === null || committedRevision > providerRevision) {
+    throw new ArchctxClientError({ code: 'RH_ARCHCTX_RENDERER_MISMATCH', action: 'update-repo-harness', message: `committed renderer ${String(committed)} cannot be served by ${provider}; update repo-harness` });
+  }
+}
+
+export interface ArchitectureProjectionRequestOptions {
+  changedPaths?: readonly string[];
+  requestId?: string;
+  adoptionPlanId?: string;
+  expectedWorktreeDigest?: string;
+}
+
+/** One immutable input identity for the whole call, including observed acceptance. */
+export function architectureProjectionRequest(mode: ProjectionMode, repoRoot: string, options: ArchitectureProjectionRequestOptions = {}): ProjectionRequestV1 {
+  const expected = captureArchitectureProjectionSnapshot(repoRoot);
+  if (options.expectedWorktreeDigest !== undefined && options.expectedWorktreeDigest !== expected.worktreeDigest) throw new ArchctxClientError({ code: 'RH_ARCHCTX_PLAN_MISMATCH', action: 'rebuild-plan', message: 'worktree differs from the reviewed plan; run architecture-projection plan --json' });
+  const body: Omit<ProjectionRequestV1, 'requestId'> = {
+    schemaVersion: PROJECTION_REQUEST_SCHEMA_VERSION,
+    profile: 'repo-harness/v1', mode, targets: ['architecture-docs'],
+    changedPaths: [...new Set(options.changedPaths ?? [])].sort(), expected,
+    ...(mode === 'adopt' ? { adoptionPlanId: options.adoptionPlanId } : {}),
+    ...(mode === 'apply' || mode === 'adopt' ? { acceptObservedMajorChange: true as const } : {}),
+  };
+  return { ...body, requestId: options.requestId ?? `repo-harness.${mode}.${digestJson(body as unknown as Json).slice('sha256:'.length)}` };
 }
 
 /** The worker guidance ships in the running package, so the path is valid for every host. */
@@ -306,25 +417,22 @@ export function readArchitectureProjectionApply(request: ProjectionRequestV1, re
  */
 export function readArchitectureDocsAnchors(repoRoot: string, options: ArchctxProviderOptions = {}): DocsAnchorsReportV1 {
   const policy = options.policy ?? loadArchitectureProjectionPolicy(options.env);
-  const { resolved } = archctxCapabilities(repoRoot, { ...options, policy });
-  const label = 'archctx docs anchors';
-  const processResult = runArchctxProcess(resolved, ['docs', 'anchors', '--json'], options, repoRoot, remainingTimeout(options, policy.timeoutMs, label));
-  if (processResult.status !== 0 || processResult.signal || processResult.error) throw new Error(`${label} failed: ${processFailure(processResult)}`);
-  const envelope = parseJson(processResult.stdout, label) as Record<string, unknown>;
-  if (envelope.schemaVersion !== 'archcontext.envelope/v1' || envelope.ok !== true || !isRecord(envelope.data)) throw new Error(`${label} returned an invalid envelope: ${safeError(envelope)}`);
-  return decodeDocsAnchorsReport(envelope.data);
+  archctxCapabilities(repoRoot, { ...options, policy });
+  const client = new ArchctxClient(repoRoot, policy.requiredVersion, options);
+  return decodeDocsAnchorsReport(client.data(['docs', 'anchors', '--json'], policy.timeoutMs));
 }
 
 function runProjectionCommand(command: 'run' | 'readback', request: ProjectionRequestV1, repoRoot: string, options: ArchctxProviderOptions): unknown {
   const policy = options.policy ?? loadArchitectureProjectionPolicy(options.env);
   if ((request.mode === 'apply' || request.mode === 'adopt') && policy.applyMode === 'disabled') throw new Error('architecture projection apply is disabled');
-  const { resolved } = archctxCapabilities(repoRoot, { ...options, policy });
-  const label = `archctx projection ${command}`;
-  const processResult = runArchctxProcess(resolved, ['projection', command, '--request-json', JSON.stringify(request)], options, repoRoot, remainingTimeout(options, policy.timeoutMs, label));
-  if (processResult.status !== 0 || processResult.signal || processResult.error) throw new Error(`${label} failed: ${processFailure(processResult)}`);
-  const envelope = parseJson(processResult.stdout, label) as Record<string, unknown>;
-  if (envelope.schemaVersion !== 'archcontext.envelope/v1' || envelope.ok !== true || !isRecord(envelope.data)) throw new Error(`${label} returned an invalid envelope: ${safeError(envelope)}`);
-  return envelope.data;
+  const handshake = archctxCapabilities(repoRoot, { ...options, policy });
+  assertRendererFloor(repoRoot, handshake.capabilities);
+  const client = new ArchctxClient(repoRoot, policy.requiredVersion, options);
+  try { return client.data(['projection', command, '--request-json', JSON.stringify(request)], policy.timeoutMs); }
+  catch (error) {
+    if (error instanceof ArchctxClientError && error.code === 'RH_ARCHCTX_TIMEOUT') throw new ArchctxClientError({ code: error.code, action: error.action, message: `${error.message} Retry with --request-id ${request.requestId}.` });
+    throw error;
+  }
 }
 
 function remainingTimeout(options: Pick<ArchctxProviderOptions, 'deadlineMs' | 'nowMs'>, maximumMs: number, phase: string): number {
@@ -418,7 +526,7 @@ function listProjectionInputFiles(root: string, ignored: Set<string>): string[] 
 
 function findInstalledArchctxPackageRoot(consumerRoot: string, requiredVersion: string): string {
   const packageRoot = findArchctxPackageRoot(consumerRoot);
-  if (!packageRoot) throw new Error(`package-local archctx@${requiredVersion} is missing from the consumer dependency tree rooted at ${resolve(consumerRoot)}`);
+  if (!packageRoot) throw new ArchctxClientError({ code: 'RH_ARCHCTX_PACKAGE_MISSING', action: 'update-repo-harness', message: `package-local archctx@${requiredVersion} is missing from the consumer dependency tree rooted at ${resolve(consumerRoot)}` });
   return packageRoot;
 }
 
@@ -446,31 +554,14 @@ function findConsumerRoot(): string {
   }
 }
 
-function capabilitySource(repoRoot: string): 'registry' | 'archcontext' {
-  const policy = JSON.parse(readFileSync(join(repoRoot, '.ai', 'harness', 'policy.json'), 'utf8')) as { context?: { capability_source?: unknown } };
+function capabilitySource(repoRoot: string): ArchitectureProjectionReadinessV1['modelAuthority']['source'] {
+  const path = join(repoRoot, '.ai/harness/policy.json');
+  if (!existsSync(path)) return 'unadopted';
+  const policy = JSON.parse(readFileSync(path, 'utf8')) as { context?: { capability_source?: unknown } };
   return policy.context?.capability_source === 'archcontext' ? 'archcontext' : 'registry';
 }
 
 function parseJson(text: string, label: string): unknown {
   try { return JSON.parse(text); } catch { throw new Error(`${label} returned corrupt JSON`); }
-}
-function processFailure(result: ArchctxProcessResult): string {
-  if (result.error) return result.error;
-  if (result.signal) return `signal ${result.signal}`;
-  // The provider's typed action is authoritative; stderr prose cannot authorize recovery.
-  try {
-    const value: unknown = JSON.parse(result.stdout);
-    if (isRecord(value) && value.schemaVersion === 'archcontext.envelope/v1' && value.ok === false && isRecord(value.error) && value.error.code === 'AC_RUNTIME_VERSION_UNSUPPORTED' && value.error.action === 'upgrade-archctx-runtime') {
-      return `exit ${result.status}: ${safeError(value)}`;
-    }
-  } catch { /* retain ordinary bounded process diagnostics */ }
-  return `exit ${result.status}: ${(result.stderr || result.stdout).trim().slice(0, 300)}`;
-}
-function safeError(value: Record<string, unknown>): string {
-  if (!isRecord(value.error) || typeof value.error.message !== 'string') return 'unknown error';
-  if (value.schemaVersion === 'archcontext.envelope/v1' && value.ok === false && value.error.code === 'AC_RUNTIME_VERSION_UNSUPPORTED' && value.error.action === 'upgrade-archctx-runtime') {
-    return `AC_RUNTIME_VERSION_UNSUPPORTED: ${value.error.message.slice(0, 1000)} ${ARCHCTX_MAINTENANCE_REMINDER}`;
-  }
-  return value.error.message;
 }
 function isRecord(value: unknown): value is Record<string, unknown> { return !!value && typeof value === 'object' && !Array.isArray(value); }

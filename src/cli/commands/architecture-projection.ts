@@ -1,8 +1,8 @@
 import { readGlobalArchitectureConfiguration } from '../../effects/architecture/projection-config';
 import { execFileSync } from 'node:child_process';
 import { Command } from 'commander';
-import { PROJECTION_REQUEST_SCHEMA_VERSION, type ProjectionMode } from 'archctx-contracts';
-import { captureArchitectureProjectionSnapshot, inspectArchitectureProjectionReadiness, readArchitectureDocsAnchors, runArchitectureProjection } from '../../effects/architecture/archctx-provider';
+import type { ProjectionMode } from 'archctx-contracts';
+import { architectureProjectionRequest, inspectArchitectureProjectionReadiness, readArchitectureDocsAnchors, runArchitectureProjection } from '../../effects/architecture/archctx-provider';
 import { applyArchitectureProjection } from '../../effects/architecture/projection-apply';
 
 export interface ProjectionCommandOptions {
@@ -10,6 +10,7 @@ export interface ProjectionCommandOptions {
   changedPath?: string[];
   requestId?: string;
   adoptionPlanId?: string;
+  expectedWorktreeDigest?: string;
 }
 
 export function buildArchitectureProjectionCommand(): Command {
@@ -33,11 +34,13 @@ export function buildArchitectureProjectionCommand(): Command {
       .requiredOption('--json', 'Output ProjectionResultV2 JSON')
       .option('--changed-path <path...>', 'Changed repository-relative paths')
       .option('--request-id <id>', 'Stable request id')
+      .option('--expected-worktree-digest <digest>', 'Refuse a worktree that differs from the reviewed plan')
       .action((options: ProjectionCommandOptions) => execute(name, options));
   }
   command.command('adopt')
     .requiredOption('--json', 'Output ProjectionResultV2 JSON')
     .requiredOption('--adoption-plan-id <id>', 'Approved ArchContext adoption plan id')
+    .option('--expected-worktree-digest <digest>', 'Refuse a worktree that differs from the reviewed plan')
     .option('--changed-path <path...>', 'Changed repository-relative paths')
     .option('--request-id <id>', 'Stable request id')
     .action((options: ProjectionCommandOptions) => execute('adopt', options));
@@ -52,18 +55,13 @@ export function buildArchitectureProjectionCommand(): Command {
 function execute(mode: ProjectionMode, options: ProjectionCommandOptions): void {
   try {
     const root = repositoryRoot();
+    const requestOptions = { adoptionPlanId: options.adoptionPlanId, changedPaths: options.changedPath, requestId: options.requestId, expectedWorktreeDigest: options.expectedWorktreeDigest };
     const result = mode === 'apply' || mode === 'adopt'
-      ? applyArchitectureProjection(root, { mode, adoptionPlanId: options.adoptionPlanId, changedPaths: options.changedPath, requestId: options.requestId })
-      : runArchitectureProjection({
-        schemaVersion: PROJECTION_REQUEST_SCHEMA_VERSION,
-        requestId: options.requestId ?? `repo-harness.${mode}`,
-        profile: 'repo-harness/v1',
-        mode,
-        targets: ['architecture-docs'],
-        changedPaths: [...new Set(options.changedPath ?? [])].sort(),
-        expected: captureArchitectureProjectionSnapshot(root),
-      }, root);
+      ? applyArchitectureProjection(root, { mode, ...requestOptions })
+      : runArchitectureProjection(architectureProjectionRequest(mode, root, requestOptions), root);
+
     write(result);
+    if (result.majorChangeAcceptance === 'declined-unprovable-proof') process.stderr.write('archctx declined an unprovable major change; next: archctx flows check --json\n');
     if (architectureProjectionExitCode(mode, result.status) !== 0) process.exitCode = 1;
   } catch (error) {
     fail(error);

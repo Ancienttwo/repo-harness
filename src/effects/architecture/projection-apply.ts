@@ -1,79 +1,51 @@
+import { digestJson, type Json, type ProjectionResultV2, type ProjectionRequestV1 } from 'archctx-contracts';
+import { lstatSync, readFileSync, realpathSync, type Stats } from 'node:fs';
+import { isAbsolute, resolve, sep } from 'node:path';
 import {
-  PROJECTION_REQUEST_SCHEMA_VERSION,
-  type ArchitectureRefreshSignalV1,
-  type ProjectionRequestV1,
-  type ProjectionResultV2,
-} from 'archctx-contracts';
-import {
-  captureArchitectureProjectionSnapshot,
+  ArchctxClientError,
+  architectureProjectionRequest,
   readArchitectureProjectionApply,
   runArchitectureProjection,
+  type ArchitectureProjectionRequestOptions,
   type ArchctxProviderOptions,
 } from './archctx-provider';
 
-type AcceptedChange = NonNullable<ProjectionRequestV1['acceptedChange']>;
-
-export interface ArchitectureProjectionApplyOptions extends ArchctxProviderOptions {
+export interface ArchitectureProjectionApplyOptions extends ArchctxProviderOptions, ArchitectureProjectionRequestOptions {
   readonly mode?: 'apply' | 'adopt';
-  readonly adoptionPlanId?: string;
-  readonly changedPaths?: readonly string[];
-  readonly requestId?: string;
   readonly runProjection?: (request: ProjectionRequestV1, repoRoot: string) => ProjectionResultV2;
   readonly runReadback?: typeof readArchitectureProjectionApply;
 }
 
-/**
- * Apply the projection for the current worktree. The Agent that runs apply owns
- * the architecture decision, and the pull request review is the human gate. So a
- * major change that ArchContext reports is accepted from its own signal, in the
- * same call. A lost provider response for a committed accepted apply is read back
- * instead of applied twice.
- */
+/** archctx observes and accepts at one snapshot under its writer lock. */
 export function applyArchitectureProjection(repoRoot: string, options: ArchitectureProjectionApplyOptions = {}): ProjectionResultV2 {
-  const run = options.runProjection ?? ((request, root) => runArchitectureProjection(request, root, options));
-  const mode = options.mode ?? 'apply';
-  const requestId = options.requestId ?? `repo-harness.${mode}`;
-  // ArchContext keys a committed accepted apply by requestId and replays only an
-  // identical request. Each observed major change therefore gets its own id, so a
-  // later model change is not refused under the id of an earlier one.
-  const request = (accepted?: { change: AcceptedChange; signalKey: string }): ProjectionRequestV1 => ({
-    schemaVersion: PROJECTION_REQUEST_SCHEMA_VERSION,
-    requestId: accepted ? `${requestId}.accepted.${accepted.signalKey}` : requestId,
-    profile: 'repo-harness/v1',
-    mode,
-    targets: ['architecture-docs'],
-    changedPaths: [...new Set(options.changedPaths ?? [])].sort(),
-    expected: captureArchitectureProjectionSnapshot(repoRoot),
-    ...(mode === 'adopt' ? { adoptionPlanId: options.adoptionPlanId } : {}),
-    ...(accepted ? { acceptedChange: accepted.change } : {}),
-  });
-
-  const first = run(request(), repoRoot);
-  const signal = first.refreshSignals.find(isUnresolvedMajor);
-  if (!signal) return first;
-
-  const accepted = request({ change: acceptedChangeFor(signal), signalKey: signalKey(signal) });
+  const request = architectureProjectionRequest(options.mode ?? 'apply', repoRoot, options);
+  let result: ProjectionResultV2;
   try {
-    return run(accepted, repoRoot);
+    result = (options.runProjection ?? ((input, root) => runArchitectureProjection(input, root, options)))(request, repoRoot);
   } catch (error) {
-    if (mode !== 'apply' || !/committed projection receipt/i.test(error instanceof Error ? error.message : String(error))) throw error;
-    return (options.runReadback ?? readArchitectureProjectionApply)(accepted, repoRoot, options).receipt.result;
+    if (!(error instanceof ArchctxClientError) || error.code !== 'AC_PROJECTION_APPLY_COMMITTED' || error.action !== 'readback-committed-projection-apply') throw error;
+    const readbackRequest = error.details?.readbackRequest;
+    if (!readbackRequest || typeof readbackRequest !== 'object' || Array.isArray(readbackRequest)) throw new Error('committed apply has no typed readbackRequest; cannot prove its result');
+    // archctx validates this exact producer-owned request and the current outputs.
+    result = (options.runReadback ?? readArchitectureProjectionApply)(readbackRequest as unknown as ProjectionRequestV1, repoRoot, options).receipt.result;
+    // A readback proves the earlier apply. It cannot accept a different request.
+    if (error.reasonCode !== 'projection-accepted-change-committed') throw error;
   }
+  if (result.status === 'applied') verifyArchitectureProjectionOutputs(result, repoRoot);
+  return result;
 }
 
-function isUnresolvedMajor(signal: ArchitectureRefreshSignalV1): boolean {
-  return signal.mode === 'human-action-required' && signal.cause === 'unresolved-major-candidate';
-}
-
-function signalKey(signal: ArchitectureRefreshSignalV1): string {
-  return signal.signalId.slice('sha256:'.length, 'sha256:'.length + 16);
-}
-
-function acceptedChangeFor(signal: ArchitectureRefreshSignalV1): AcceptedChange {
-  return {
-    changeSetId: `changeset.docs-projection-${signal.resultingDigests.projectionDigest.slice('sha256:'.length, 'sha256:'.length + 16)}`,
-    eventId: `repo-harness.apply.${signalKey(signal)}`,
-    reasonCodes: [...signal.reasonCodes] as AcceptedChange['reasonCodes'],
-    affectedNodeIds: [...signal.affectedNodeIds],
-  };
+/** Read back each provider-owned output, including the absence proof for deletes. */
+export function verifyArchitectureProjectionOutputs(result: ProjectionResultV2, repoRoot: string): void {
+  const root = realpathSync(repoRoot);
+  for (const file of result.files) {
+    const path = resolve(root, file.path);
+    if (isAbsolute(file.path) || !path.startsWith(`${root}${sep}`)) throw new Error(`projection output path escapes repository: ${file.path}`);
+    let entry: Stats | null;
+    try { entry = lstatSync(path); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; entry = null; }
+    if (entry && !realpathSync(path).startsWith(`${root}${sep}`)) throw new Error(`projection output symlink escapes repository: ${file.path}`);
+    const actual = entry ? digestJson({ path: file.path, body: readFileSync(path, 'utf8') } as Json) : null;
+    if (actual !== file.outputDigest) throw new ArchctxClientError({ code: 'RH_ARCHCTX_OUTPUT_MISMATCH', action: 'check-projection-outputs', message: `${result.replayed ? 'a replayed receipt did not write' : 'applied receipt does not match'} ${file.path}; run architecture-projection check --json; a different request needs a new --request-id. archctx 0.7.2 cannot restore reverted outputs by receipt replay (arch-context#325)` });
+  }
 }
