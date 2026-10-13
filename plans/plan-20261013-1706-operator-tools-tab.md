@@ -1,6 +1,6 @@
 # Plan: Operator 控制台 Tools 页
 
-> **Status**: Draft，等 owner GO。GO 之前不写 UI 或代码。
+> **Status**: LOCKED（owner 2026-10-13 锁定 Q1–Q6，全部按推荐，见 §8）。实施还要等 owner 单独 GO。GO 之前不写 UI 或代码。
 > **Created**: 20261013-1706
 > **Slug**: operator-tools-tab
 > **Artifact Level**: work-package
@@ -52,7 +52,7 @@
 
 - **T1 单一权威**：推荐清单只有一个来源（catalog JSON）。markdown 表格是确定性投影，`check:reference-configs` 检查漂移。
 - **T2 探测只来自 detector**：catalog 不含可执行的探测命令。服务端不根据 catalog 内容拼 argv。一个 tool 有状态，前提是 detector 报告了它。
-- **T3 安装命令只有一个来源**：本机工具的安装命令来自 detector 的 `install_command`。catalog 不重复写。远程资源默认没有安装命令（见 §8 Q3）。
+- **T3 安装命令只有一个来源**：本机工具的安装命令来自 detector 的 `install_command`。catalog 不重复写。远程资源没有安装命令（§8 Q3 已锁定）。
 - **T4 不推断**：setup 快照缺少某个 tool 时，状态是 `unknown`。不能把「没有 warn/fail check」当成「已安装」。
 - **T5 只读**：控制台继续是 read-only。复制失败要显示出来，不静默。
 - **T6 隐私**：detector 的 `reason` 和命令文本经过 `publicAgentConfigText` 脱敏，和现有 setup check 文本一致。不显示本机绝对路径。
@@ -90,7 +90,7 @@
 id            稳定 id，小写短横线，用于 #tools/<id>
 name          显示名，例如 "shader-effects-inc/shaders"
 kind          "resource" | "local_tool"
-category      封闭枚举，例如 frontend | design | agent_skills | code_navigation | orchestration
+category      封闭枚举：frontend | design | agent_skills | code_navigation | orchestration
 url           上游主页，必须是 https
 license       SPDX id，例如 "MIT"；不知道时为 null，UI 显示「未知」
 summary       en / zh 两种文字，一两句用途
@@ -139,14 +139,14 @@ docs_anchor   external-tooling.md 里对应小节的锚点，例如 "#codegraph"
 ## 7. 分期
 
 **P0：catalog 和只读列表**（依赖 #713 合入）
-- 新建 `assets/tool-catalog.v1.json`，条目包括 #713 的两个资源，和 external-tooling.md 已经写安装说明的本机工具（Waza、hai-stack、CodeGraph 等，最终清单见 Q2）。
+- 新建 `assets/tool-catalog.v1.json`，条目包括 #713 的两个资源，和三个本机工具：Waza、CodeGraph、herdr skill（Q2 已锁定）。hai-stack 和 agent fleet 不进 catalog。
 - `sync-reference-configs.ts` 渲染 markdown 表格区，`--check` 检查漂移。
 - Tools 页、导航、hash 路由、详情、i18n。
 - 本机工具在 P0 全部显示 `unknown`，详情只给 `docs_anchor` 链接，不给命令。P0 不改服务端。
 
 **P1：接入已有 detector 的状态和命令**
 - setup 快照加一个字段，例如 `tools: { key, status, reason, install_command }[]`，内容是 detector `tools.*` 的投影。全部 tool 都放进去，包括 `ok` 的，解决 §0 P2 里「已安装看不见」的问题。文本经过 `publicAgentConfigText`。
-- 这是 `repo-harness.setup.v1` 的结构变化。解码器是精确 key，所以服务端和前端必须同一版本发布。版本号是否升到 v2 见 Q5。
+- 这是 `repo-harness.setup.v1` 的结构变化。解码器是精确 key，所以服务端和前端必须同一版本发布。版本号保持 v1（Q5 已锁定）。
 - 浏览器把 catalog 的 `detector` key 和快照的 `tools[].key` 做 join。catalog 里写了 detector key、但 detector 不报告的条目，显示 `unknown`。
 - 不加新的 API 路由，不加新的子进程。setup check 已经跑 detector。
 
@@ -155,14 +155,14 @@ docs_anchor   external-tooling.md 里对应小节的锚点，例如 "#codegraph"
 - 显示 `--check-updates` 的结果。这需要网络，默认不开。
 - 项目级「已采用」状态，例如仓库里有没有 `DESIGN.md`。这是仓库事实，不是本机安装事实，需要单独的数据源设计。
 
-## 8. 需要 owner 决定的问题
+## 8. Owner 决定（2026-10-13 锁定，全部按推荐）
 
-1. **Q1 数据源**：同意 B（JSON catalog 作权威，markdown 表格生成）吗？如果坚持 markdown 作权威，需要接受一个只认标记区的严格表格解析器，并把表格扩成更多列。
-2. **Q2 P0 的本机工具清单**：建议放 Waza、CodeGraph、herdr skill，它们都有 detector key。hai-stack 在 external-tooling.md 有安装说明，但 detector 不探测它。按 T2/T3，它的状态是 `n/a`，详情只给文档链接，不给命令。要列它，还是先给 detector 加探测（这是独立的后端改动）？Agent fleet 已经在 Agents 页显示，建议 Tools 页不再列，避免两个页面显示同一个状态。
-3. **Q3 资源的「安装命令」**：#713 写明 repo-harness 不安装这些资源。owner 想要「给安装命令」。建议资源只给上游链接，不给命令。如果要给命令（例如某个 npm 包名），命令必须从上游 README 抄写，并在 catalog 里记上游 revision。这份计划不编造包名。
-4. **Q4 类别枚举**：`frontend | design | agent_skills | code_navigation | orchestration` 够用吗？
-5. **Q5 快照版本**：P1 给 setup 快照加字段时，保持 `repo-harness.setup.v1` 并同版本发布，还是升到 v2？建议保持 v1：浏览器包和服务端总是同一个 npm 版本，没有外部消费者。
-6. **Q6 页面名称**：英文 `Tools`，中文用「工具」吗？
+1. **Q1 数据源**：选 B。`assets/tool-catalog.v1.json` 是权威，`external-tooling.md` 的表格区由它生成，`check:reference-configs` 检查漂移。
+2. **Q2 P0 的本机工具清单**：Waza、CodeGraph、herdr skill。它们都有 detector key。hai-stack 只留在 external-tooling.md 的文档里，不进 catalog，也不给 detector 加探测。agent fleet 不在 Tools 页重复列出，它留在 Agents 页。
+3. **Q3 资源的安装命令**：资源只给上游链接，不给安装命令。catalog 不写包名。
+4. **Q4 类别枚举**：`frontend | design | agent_skills | code_navigation | orchestration` 够用。
+5. **Q5 快照版本**：P1 保持 `repo-harness.setup.v1`。服务端和浏览器包同一个 npm 版本发布。
+6. **Q6 页面名称**：英文 `Tools`，中文「工具」。
 
 ## 9. 测试要点（计划层，不写代码）
 
