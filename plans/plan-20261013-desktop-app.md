@@ -1,8 +1,8 @@
 # Plan: repo-harness 桌面版（Operator 控制台的桌面壳）
 
-> **Status**: Draft，第八轮。只是设计，不是实施 GO。Aimpact 2026-10-13 确认本 work-package 只做到 DP0：DP0 完成后停止，DP1 及以后要另给 GO（§11 第 2 项）。Dot 复审通过、Aimpact 批准后，DP0 第 1–3 项已实测，结果见 §8.1：权限边界和外壳侧生命周期通过，T-NAV-5 失败。§11 第 1–18 项 LOCKED：外链用规则 (b)（§4.7），DP0 只补做第 8 项。
+> **Status**: Draft，第九轮。只是设计，不是实施 GO。Aimpact 2026-10-13 确认本 work-package 只做到 DP0：DP0 完成后停止，DP1 及以后要另给 GO（§11 第 2 项）。Dot 复审通过、Aimpact 批准后，DP0 第 1–3 项已实测，结果见 §8.1：权限边界和外壳侧生命周期通过，T-NAV-5 失败。§11 第 1–18 项 LOCKED：外链用规则 (b)（§4.7），DP0 只补做第 8 项。
 > **Created**: 20261013
-> **Revised**: 20261013（第二轮：按 Dot 在 Slack #bot-worker 的评审锁定 §11 默认值，补上必改项 A–E；第三轮：按 Aimpact 2026-10-13 的确认锁定 §11 第 2、13 项；第四轮：按 Dot 复审修正清理负责方和端口冲突判断；第五轮、第六轮：按 Aimpact 的确认锁定 Bundle ID 为 `com.repoharness.app`；第七轮：写入 DP0 第 1–3 项的结果，新增 §11 第 17、18 项；第八轮：按 Dot 和 Aimpact 的决定锁定 §11 第 17、18 项。见 §12）
+> **Revised**: 20261013（第二轮：按 Dot 在 Slack #bot-worker 的评审锁定 §11 默认值，补上必改项 A–E；第三轮：按 Aimpact 2026-10-13 的确认锁定 §11 第 2、13 项；第四轮：按 Dot 复审修正清理负责方和端口冲突判断；第五轮、第六轮：按 Aimpact 的确认锁定 Bundle ID 为 `com.repoharness.app`；第七轮：写入 DP0 第 1–3 项的结果，新增 §11 第 17、18 项；第八轮：按 Dot 和 Aimpact 的决定锁定 §11 第 17、18 项；第九轮：按 Dot 收紧规则 (b) 的匹配和频率限制。见 §12）
 > **Slug**: desktop-app
 > **Artifact Level**: work-package
 > **Baseline**: `main@0ef9ed11`（0.22.1 已发布）
@@ -240,16 +240,25 @@ CLI 的查找、环境和配置统一在 §4.5 定义。版本检查：每次启
 
 | 窗口 | 留在窗口内 | 交给系统浏览器 | 其他 |
 |---|---|---|---|
-| 控制台窗口 | scheme 是 `http`，host 解析后是 IPv4 `127.0.0.1`，端口等于自己子进程的端口，没有 userinfo | 只有 PR URL：scheme 是 `https`；host 精确等于 `github.com`；端口为空或 443；没有 userinfo；path 严格是 `/<owner>/<repo>/pull/<digits>`；没有 query 和 fragment。并且通过频率限制 | 拒绝 |
+| 控制台窗口 | scheme 是 `http`，host 解析后是 IPv4 `127.0.0.1`，端口等于自己子进程的端口，没有 userinfo | 只有 PR URL：scheme 是 `https`；host 精确等于 `github.com`；默认端口；没有 userinfo；path 严格是 `/<owner>/<repo>/pull/<n>`，`n` 匹配 `[1-9][0-9]*`；没有 query 和 fragment。并且通过频率限制 | 拒绝 |
 | 状态窗口 | 只有 app 自带的本地页面 | 无 | 拒绝 |
 
 - 解析用标准 URL 解析器，按解析后的 scheme、host、port、userinfo、path、query、fragment 比较，不做字符串前缀匹配。`localhost`、`[::1]`、其他端口、`file:`、`data:`、`blob:`、`javascript:`、`about:`、自定义 scheme 都拒绝。
 - PR URL 的 path 规则：
-  - 解析后的 path 必须完全匹配 `^/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[0-9]+$`。`owner` 和 `repo` 的字符集与解码器相同（`decode.ts:75`）。
-  - 其他 path 都不匹配，例如 `/o/r`、`/o/r/issues/1`、`/o/r/pull/1/files`、`/o/r/pull/abc`、带 `%2F` 或末尾 `/` 的写法。
+  - 只按解析后的结果匹配：scheme 精确等于 `https`，host 精确等于 `github.com`，path 完全匹配 `^/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[1-9][0-9]*$`。不对原始字符串做匹配。
+  - `owner` 和 `repo` 各是一个路径段，字符集与解码器相同（`decode.ts:75`）。
+  - PR 编号不能是 0，也不能有前导零：`/o/r/pull/0`、`/o/r/pull/01` 拒绝。
+  - 端口：解析后必须是默认端口。解析器把 `:443` 规范化为默认端口，所以它和不写端口相同。其他端口（例如 `:8443`）拒绝。
+  - 编码的路径分隔符（`%2F`、`%2f`、`%5C` 等）拒绝。字符集里没有 `%`，所以任何编码字符都不匹配。
+  - 其他 path 都不匹配，例如 `/o/r`、`/o/r/issues/1`、`/o/r/pull/1/files`、`/o/r/pull/abc`、末尾带 `/` 的写法。
+  - v1 拒绝任何 query 和 fragment，包括空的 `?` 和 `#`。
   - `http:` 和其他 scheme、`github.com.evil.example` 这类仿冒 host、`www.github.com`、带 userinfo 的 URL 都不匹配。
-  - 外壳不检查 `owner/repo` 是否是已注册的仓库。外壳不读快照（S2），这个数据只在服务端。
-- 频率限制：两次交出之间至少间隔 1 秒，每分钟最多交出 10 次。超出限制的请求丢弃，不排队，只写日志。
+  - `owner/repo` 只做形状检查，不是可信仓库的授权。外壳不在运行时检查它是否是已注册的仓库：外壳不读快照（S2），这个数据只在服务端。任何符合形状的 GitHub PR URL 都可以交出。
+- 频率限制：两个条件同时成立时才交出。
+  - 距本 app 实例上一次交出至少 1 秒。
+  - 本 app 实例在最近 60 秒的滑动窗口内交出不到 10 次。
+  - 计数对所有 URL 共用，不按 URL 分桶。换一个 PR URL 不能绕过限制。
+  - 只有真正交出的请求才计数。超出限制的请求丢弃，不排队，只写日志。
 - 覆盖的入口：顶层导航（含重定向）、`window.open`、`target="_blank"`、下载、权限请求。
   - 重定向：每一跳都过同一个判断函数。服务端今天没有重定向（§0 P1），T-NAV-3 用一个测试服务验证外壳确实拦截了重定向（**已核对（DP0）**：T-NAV-3，重定向的每一跳都进入导航回调并被拒绝）。跳到 PR URL 的重定向和其他 PR URL 请求一样处理：窗口不离开，URL 交给系统浏览器。
   - 导航回调：PR URL 一律不在窗口内打开；通过频率限制时交给系统浏览器。`target="_blank"` 链接先作为顶层导航到达这里（DP0 F2，**inferred**：只测了脚本触发的点击）。
@@ -473,13 +482,15 @@ E2E：
 - T-NAV-1（单元）：判断函数的表格测试。
   - 留在窗口内：允许的 origin。
   - 拒绝：`localhost`、`[::1]`、其他端口、带 userinfo、`file:`、`data:`、`blob:`、`javascript:`、`about:blank`、自定义 scheme。
-  - 交给系统浏览器：只有 `https://github.com/o/r/pull/1` 和 `https://github.com:443/o/r/pull/1` 这类严格匹配的 PR URL。
-  - 拒绝的 GitHub 写法：`http://github.com/o/r/pull/1`、`https://github.com.evil.example/o/r/pull/1`、`https://www.github.com/o/r/pull/1`、`https://user@github.com/o/r/pull/1`、`https://github.com/o/r`、`/o/r/issues/1`、`/o/r/pull/1/files`、`/o/r/pull/1/`、`/o/r/pull/abc`、`/o%2Fr/pull/1`、带 `?x=1` 或 `#x` 的 PR URL。
-  - 频率限制的单元测试：间隔不到 1 秒的第二次请求被丢弃；一分钟内第 11 次请求被丢弃。
+  - 交给系统浏览器：只有严格匹配的 PR URL，例如 `https://github.com/o/r/pull/1`、`https://github.com/o/r/pull/10`，以及解析后相同的 `https://github.com:443/o/r/pull/1`。
+  - 拒绝的 GitHub 写法：`http://github.com/o/r/pull/1`、`https://github.com.evil.example/o/r/pull/1`、`https://www.github.com/o/r/pull/1`、`https://user@github.com/o/r/pull/1`、`https://user:pw@github.com/o/r/pull/1`、`https://github.com:8443/o/r/pull/1`。
+  - 拒绝的 path：`/o/r`、`/o/r/issues/1`、`/o/r/pull/1/files`、`/o/r/pull/1/`、`/o/r/pull/abc`、`/o/r/pull/0`、`/o/r/pull/01`、`/o%2Fr/pull/1`、`/o%2fr/pull/1`、`/o%5Cr/pull/1`、`/o/r%2Fpull/1`。
+  - 拒绝的 query 和 fragment：`?x=1`、`#x`、空的 `?` 和空的 `#`。
+  - 频率限制的单元测试（用可注入的时钟）：距上一次交出不到 1 秒的请求被丢弃，换一个 PR URL 也一样；以 1 秒以上的间隔发 11 个不同的 PR URL，滑动 60 秒窗口内第 11 个被丢弃；最早一次交出满 60 秒后，下一个请求可以交出；被丢弃的请求不计数。
 - T-NAV-2：控制台页面里 `location.href = 'https://example.com'`。窗口不离开服务 URL，系统浏览器不打开。
 - T-NAV-3：用测试服务返回 302 到外部地址。外壳拦截，窗口不加载外部页面。
 - T-NAV-4：用系统级点击（真实鼠标事件）点 PR 链接（`target="_blank"`）。系统浏览器打开该 PR，没有新窗口，主窗口不动。再点一个不匹配的外链：窗口不动，系统浏览器不打开；旁边的复制按钮把完整 URL 写进剪贴板。本条只证明点击的路径，不证明外壳识别了手势。
-- T-NAV-5：在定时器里调用 `window.open('https://github.com/o/r/pull/1')`（没有用户手势）。按规则 (b)，这是已接受的剩余风险：没有新窗口，系统浏览器可以打开该 PR。在 1 秒内再调用一次：第二次被丢弃，日志有记录。再调用 `window.open('https://example.com')`：没有窗口，系统浏览器不打开。DP0 的「失败」结果针对旧的手势规则（§8.1）。
+- T-NAV-5：在定时器里调用 `window.open('https://github.com/o/r/pull/1')`（没有用户手势）。按规则 (b)，这是已接受的剩余风险：没有新窗口，系统浏览器可以打开该 PR。在 1 秒内再调用一次，用另一个 PR URL（`https://github.com/o/r/pull/2`）：第二次被丢弃，日志有记录。再调用 `window.open('https://example.com')`：没有窗口，系统浏览器不打开。DP0 的「失败」结果针对旧的手势规则（§8.1）。
 - T-NAV-6：触发一个下载链接。没有文件写入，没有对话框。
 - T-NAV-7：调用 `getUserMedia`、`geolocation.getCurrentPosition`、`Notification.requestPermission`。全部被拒绝，没有系统权限对话框。
 - T-NAV-8：状态窗口里导航到服务 URL 或任何外部地址。被拒绝。
@@ -541,8 +552,9 @@ E2E：
 15. **其他平台** — LOCKED：只做 arm64 macOS，不给其他平台编时间表。（§1、§6）
 16. **Operator 写入期的体验** — LOCKED：桌面版和浏览器共用同一条写入通道、确认语义和审计。外观可以不同。没有私有的 IPC 写入捷径。（§5）
 17. **外链交给系统浏览器的规则** — LOCKED（Dot 和 Aimpact 2026-10-13 决定 (b)）：DP0 证明公开回调拿不到用户手势（§8.1）。规则：
-    - 只交出严格匹配的 GitHub PR URL：只用 `https`；host 精确等于 `github.com`；path 只能是 `/<owner>/<repo>/pull/<digits>`；没有 userinfo、query 和 fragment。其他 path、scheme 和仿冒 host 都拒绝。
-    - 保留频率限制：间隔至少 1 秒，每分钟最多 10 次。
+    - 只交出严格匹配的 GitHub PR URL：按解析后的结果匹配；只用 `https`；host 精确等于 `github.com`；默认端口；path 只能是 `/<owner>/<repo>/pull/<n>`，`n` 匹配 `[1-9][0-9]*`；没有 userinfo、编码的路径分隔符、query 和 fragment。其他 path、scheme、端口和仿冒 host 都拒绝。
+    - `owner/repo` 只做单个路径段的形状检查，不在运行时检查已注册的仓库，不是可信仓库的授权。
+    - 保留频率限制：两个条件同时成立才交出：间隔至少 1 秒；每个 app 实例在滑动 60 秒内最多 10 次。计数对所有 URL 共用，不按 URL 分桶。
     - 不声称验证了用户手势。没有手势的脚本仍可请求打开一个匹配的 PR URL，这个剩余风险已接受。
     - 不匹配的外链：不在窗口内打开，不交给系统浏览器；页面提供复制按钮；复制失败时明确提示；不加原生桥。
     - 没有选的方向：(a) 不交出任何外链，只能复制；(c) 用平台 API 关掉脚本自动打开窗口，要再实测。（§4.7、S4、T-NAV-1、4、5）
@@ -596,3 +608,9 @@ E2E：
 - 改动见 §2.1、§4.7、S4、§8 DP2、§9、T-NAV-1、T-NAV-4、T-NAV-5。§4.7 不再要求用户手势。T-NAV-1 不再把所有 `https://github.com` 链接交给系统浏览器。
 - §11 第 18 项 LOCKED：DP0 只补做第 8 项。第 4–7、9 项和 DP1 及以后不展开。改动见页首 Status、§8 DP0、§8.1。
 - 第二轮记录里「外链只放行有用户手势的 `https://github.com`」已被本轮取代。
+
+**第九轮（20261013，Dot 收紧规则 (b)）**
+- 频率限制：距上一次交出至少 1 秒，并且每个 app 实例在滑动 60 秒内最多 10 次。两个条件同时成立才交出。计数对所有 URL 共用，换一个 URL 不能绕过。
+- `owner/repo`：只做单个路径段的形状检查，不在运行时检查已注册的仓库，不写成可信仓库的授权。
+- PR 编号改为 `[1-9][0-9]*`，拒绝 `/pull/0` 和前导零。只按解析后的 scheme、host、port、path 匹配。拒绝凭据、非默认端口、编码的路径分隔符（`%2F`、`%5C` 等）；v1 拒绝任何 query 和 fragment。
+- 改动见页首、§4.7、§11 第 17 项、T-NAV-1、T-NAV-5。
