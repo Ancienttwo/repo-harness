@@ -468,7 +468,8 @@ function minimalChangeReview(repoRoot: string, policy: MinimalChangePolicy): Min
 const OWED_SIGNAL_MARKER = '.ai/harness/state/stop-owed-signal';
 
 /**
- * The owed-architecture line for Claude Stop, once per branch and owed set.
+ * The owed-architecture line for Claude Stop, once per branch, manifest change
+ * and owed set.
  * Stop additionalContext continues the turn, so the marker keeps a repeated
  * Stop from asking again; `stop_hook_active` already ended this run earlier.
  * Codex Stop stays silent. Architecture diagnostics never block, so any
@@ -488,7 +489,13 @@ function owedStopSignal(
     const branch = execFileSync('git', ['-C', repoRoot, 'rev-parse', '--abbrev-ref', 'HEAD'], {
       encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5_000,
     }).trim();
-    const key = createHash('sha256').update(JSON.stringify([branch, owed.capabilities.map((capability) => capability.id)])).digest('hex');
+    // The manifest change bounds one obligation: after a projection refresh,
+    // a new change to the same capability is a new owed set.
+    const key = createHash('sha256').update(JSON.stringify([
+      branch,
+      owed.manifest_change,
+      owed.capabilities.map((capability) => capability.id),
+    ])).digest('hex');
     const marker = join(repoRoot, OWED_SIGNAL_MARKER);
     if (existsSync(marker) && readFileSync(marker, 'utf8').trim() === key) return '';
     atomicWrite(repoRoot, marker, `${key}\n`);

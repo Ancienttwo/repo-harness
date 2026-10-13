@@ -612,6 +612,20 @@ describe('Stop reports owed architecture updates on Claude only (#678)', () => {
     expect(git(cwd, ['status', '--porcelain'])).toBe('');
   });
 
+  test('a new obligation for the same capability after a manifest refresh is reported again', () => {
+    const { cwd, state } = owedFixture();
+    expect(runStopHandler({ collector: collector(cwd, state), env: { HOOK_HOST: 'claude' } }).stdout).toContain('[ArchitectureOwed]');
+    writeFileSync(join(cwd, 'docs/architecture/.projection-manifest.json'), '{"refreshed":true}\n');
+    git(cwd, ['commit', '-am', 'refresh the projection']);
+    expect(runStopHandler({ collector: collector(cwd, state), env: { HOOK_HOST: 'claude' } }).stdout).toBe('');
+
+    writeFileSync(join(cwd, 'src/owned/a.ts'), 'export const a = 3;\n');
+    git(cwd, ['commit', '-am', 'change owned code again']);
+    const renewed = runStopHandler({ collector: collector(cwd, state), env: { HOOK_HOST: 'claude' } });
+    expect(renewed.stdout).toContain('core-owned (docs/architecture/modules/core/owned.md)');
+    expect(runStopHandler({ collector: collector(cwd, state), env: { HOOK_HOST: 'claude' } }).stdout).toBe('');
+  });
+
   test('a Stop continued by a Stop hook, Codex and Pi add nothing', () => {
     const { cwd, state } = owedFixture();
     const continued = runStopHandler({

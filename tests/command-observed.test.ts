@@ -10,7 +10,7 @@ import {
 } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { runCommandObserved, type CommandObservedFs } from '../src/cli/hook/command-observed';
+import { runCommandObserved, runsPublicationCommand, type CommandObservedFs } from '../src/cli/hook/command-observed';
 import { mintOrAdoptSessionRunIdentity } from '../src/cli/hook/run-identity';
 import { readAcceptedEvents } from '../src/effects/evidence/event-log';
 
@@ -424,5 +424,36 @@ describe('runCommandObserved', () => {
     } finally {
       rmSync(repoRoot, { recursive: true, force: true });
     }
+  });
+});
+
+describe('publication commands that report owed architecture updates (#678)', () => {
+  test.each([
+    'git commit -m x',
+    'git push',
+    'git -c user.name=Bot commit -m x',
+    'git -c "user.name=Bot Name" commit -m x',
+    'git --no-pager push origin feature',
+    'git -C ../repo --git-dir=.git --work-tree=. commit -am x',
+    'git --git-dir .git --work-tree . push',
+    'git --namespace ns --config-env=core.editor=EDITOR -P --no-optional-locks commit',
+    'GIT_AUTHOR_NAME=Bot git commit -m x',
+    'bun test && git commit -m "done" && git push',
+    'cd repo; gh pr create --fill',
+    '(git push)',
+  ])('matches %s', (command) => {
+    expect(runsPublicationCommand(command)).toBe(true);
+  });
+
+  test.each([
+    'git status',
+    'git log --grep commit',
+    'git -c alias.ci=commit ci',
+    'echo git commit',
+    'gh pr view',
+    'git -C push status',
+    'rg "git push" src',
+  ])('does not match %s', (command) => {
+    expect(runsPublicationCommand(command)).toBe(false);
   });
 });
