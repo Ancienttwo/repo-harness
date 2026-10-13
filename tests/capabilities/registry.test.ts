@@ -297,6 +297,16 @@ describe("capabilityRegistryFromArchcontextNodes", () => {
     ]);
     expect(traversal.status).toBe("invalid");
     expect(traversal.diagnostics.map((item) => item.code)).toEqual(["INVALID_PATH"]);
+
+    // An anchorless include is valid, so path safety cannot rely on the anchor.
+    const absolute = capabilityRegistryFromArchcontextNodes([
+      { path: "nodes/a.yaml", value: node("capability.apps-web.web", ["/tmp/outside/**"]) },
+    ]);
+    expect(absolute.diagnostics.map((item) => [item.code, item.path])).toEqual([["INVALID_PATH", "nodes/a.yaml#source.include[0]"]]);
+    const escapingExclude = capabilityRegistryFromArchcontextNodes([
+      { path: "nodes/a.yaml", value: node("capability.apps-web.web", ["apps/web/**"], ["../outside/**"]) },
+    ]);
+    expect(escapingExclude.diagnostics.map((item) => [item.code, item.path])).toEqual([["INVALID_PATH", "nodes/a.yaml#source.exclude[0]"]]);
   });
 
   test("accepts glob includes and excludes, and lets capabilities share an anchor", () => {

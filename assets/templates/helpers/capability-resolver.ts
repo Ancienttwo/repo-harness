@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-// @generated-from src/core/capabilities/registry.ts sha256:793cd8d031ef57fcd47a1d00ecbcdcc2ef05b15185f65b92d9f0dcf65ddae167
+// @generated-from src/core/capabilities/registry.ts sha256:0076225810b6506432835775bfbb0388db4a16e074f3705a5624c8a296123452
 // Standalone typed Bun projection. Regenerate from scripts/capability-resolver.ts; do not edit by hand.
 export const CAPABILITY_REGISTRY_VERSION = 1 as const;
 
@@ -725,8 +725,9 @@ export function capabilityRegistryFromArchcontextNodes(
       ));
       continue;
     }
-    // Include and exclude shapes belong to ArchContext validation. This mapper
-    // reads only the literal anchors for display and directory discovery.
+    // Include and exclude grammar belongs to ArchContext validation. This mapper
+    // reads only the literal anchors for display and directory discovery, and
+    // enforces path safety: no pattern may be absolute or climb out of the repo.
     const prefixes: string[] = [];
     let includeRejected = false;
     for (const [index, entry] of include.entries()) {
@@ -743,6 +744,27 @@ export function capabilityRegistryFromArchcontextNodes(
       if (anchor !== null && !prefixes.includes(anchor)) prefixes.push(anchor);
     }
     if (includeRejected) continue;
+    const exclude = isRecord(source) && Array.isArray(source.exclude) ? source.exclude : [];
+    const unsafe = [
+      ...include.map((entry, index) => ({ field: `source.include[${index}]`, entry })),
+      ...exclude.map((entry, index) => ({ field: `source.exclude[${index}]`, entry })),
+    ].flatMap(({ field, entry }) => {
+      if (typeof entry !== "string") return [];
+      try {
+        normalizeCapabilityPath(entry);
+        return [];
+      } catch (error) {
+        return [diagnostic(
+          "INVALID_PATH",
+          `${file.path}#${field}`,
+          `${file.path}: ${field} must stay inside the repository: ${(error as Error).message}`,
+        )];
+      }
+    });
+    if (unsafe.length > 0) {
+      diagnostics.push(...unsafe);
+      continue;
+    }
 
     const extensions = node.extensions;
     if (!isRecord(extensions)) {
