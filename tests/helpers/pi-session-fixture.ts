@@ -20,6 +20,7 @@ const errors: string[] = [];
 const journalPaths: string[] = [];
 const writes: string[] = [];
 const bashObservations: Array<{ id: string; check: Record<string, unknown>; structured: unknown }> = [];
+const agentStarts: string[] = [];
 // Use the native tools' filesystem seam to cancel after real bytes reach disk.
 // Their own post-write abort check must produce the error tool result.
 const cancelAfterWrite = async (path: string, content: string) => {
@@ -38,6 +39,7 @@ const resourceLoader = new DefaultResourceLoader({ cwd, agentDir, settingsManage
       pi.registerTool(createEditToolDefinition(cwd, { operations: { writeFile: cancelAfterWrite, readFile,
         access: async path => { await access(path, constants.R_OK | constants.W_OK); } } }));
     }
+    pi.on('before_agent_start', event => { agentStarts.push(event.messageType); });
     pi.on('tool_call', (event: ToolCallEvent) => { calls.push({ name: event.toolName, id: event.toolCallId, parent: event.parentToolCallId ?? null }); });
     pi.on('tool_result', event => {
       journalPaths.push(...readPendingPostEditEvents(repoRoot).flatMap(event => event.changed_paths));
@@ -137,12 +139,20 @@ try {
     await session.bindExtensions({ onError: event => { errors.push(event.error); } });
     await prompt('edit', { path: 'README.md', edits: [{ oldText: 'seed', newText: 'replaced' }] }, 'after-replacement');
     await prompt('write', { path: '_ops/replaced.txt', content: 'forbidden' }, 'replaced-private');
+  } else if (mode === 'custom-turn') {
+    // Pi 1.2.0 starts a run for an idle custom message with triggerTurn and
+    // emits before_agent_start without a user prompt.
+    await prompt('write', { path: 'user-run.txt', content: 'user run' }, 'user-run');
+    provider.setResponses([fauxAssistantMessage(fauxToolCall('write', { path: 'custom-run.txt', content: 'custom run' }, { id: 'custom-run' }),
+      { stopReason: 'toolUse' }), fauxAssistantMessage('Done.')]);
+    await session.sendCustomMessage({ customType: 'fixture-custom', content: 'Continue with the fixture write.', display: false }, { triggerTurn: true });
+    await session.waitForIdle();
   } else if (mode === 'inactive') {
     await prompt('write', { path: '_ops/private.txt', content: 'allowed outside opt-in' }, 'inactive-write');
   } else if (mode === 'unavailable') {
     await prompt('write', { path: 'blocked.txt', content: 'must not write' }, 'unavailable-write');
   } else throw new Error(`Unknown fixture mode: ${mode}`);
-  console.log(JSON.stringify({ calls, errors, journalPaths, writes, bashObservations, messages: session.state.messages, sessionId: session.sessionId, sessionIds,
+  console.log(JSON.stringify({ calls, errors, journalPaths, writes, bashObservations, agentStarts, messages: session.state.messages, sessionId: session.sessionId, sessionIds,
     readme: readFileSync(join(repoRoot, 'README.md'), 'utf8') }));
 } finally {
   await session.abort();

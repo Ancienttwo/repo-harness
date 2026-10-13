@@ -152,13 +152,13 @@ describe('Pi package manifest', () => {
   test('peer range is the exact Pi version that the extension accepts', () => {
     const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
     const extension = readFileSync(join(ROOT, 'src/pi/extension.ts'), 'utf8');
-    expect(extension).toContain("VERSION !== '1.1.0'");
-    expect(pkg.peerDependencies['@earendil-works/pi-coding-agent']).toBe('1.1.0');
+    expect(extension).toContain("VERSION !== '1.2.0'");
+    expect(pkg.peerDependencies['@earendil-works/pi-coding-agent']).toBe('1.2.0');
     expect(pkg.peerDependenciesMeta['@earendil-works/pi-coding-agent']).toEqual({ optional: true });
   });
 });
 
-describe('real Pi 1.1 tool pipeline with a scripted provider', () => {
+describe('real Pi 1.2 tool pipeline with a scripted provider', () => {
   test('checks direct and codemode edits, refuses private writes and reloads context', () => {
     const f = fixture();
     try {
@@ -296,6 +296,24 @@ describe('real Pi 1.1 tool pipeline with a scripted provider', () => {
       expect(stops.every(event => event.session_id === result.sessionId)).toBe(true);
       const journal = readFileSync(join(f.root, '.ai/harness/runs/hook-events.jsonl'), 'utf8');
       expect(journal).toContain(result.sessionId);
+    } finally { f.cleanup(); }
+  }, 60_000);
+
+  test('a custom-message run has its own lifecycle and is not a user prompt', () => {
+    const f = fixture();
+    try {
+      const result = session(f.root, f.env, 'custom-turn');
+      expect(result.agentStarts).toEqual(['user', 'custom']);
+      expect(readFileSync(join(f.root, 'custom-run.txt'), 'utf8')).toBe('custom run');
+      const results = result.messages.filter((message: any) => message.role === 'toolResult');
+      expect(results.map((message: any) => [message.toolCallId, message.isError])).toEqual([['user-run', false], ['custom-run', false]]);
+      const events = records(f.root);
+      expect(events.filter(event => event.event === 'UserPromptSubmit')).toHaveLength(1);
+      const toolRuns = events.filter(event => event.event === 'PreToolUse').map(event => event.run_id);
+      const stops = events.filter(event => event.event === 'Stop');
+      expect(toolRuns).toHaveLength(2);
+      expect(new Set(toolRuns).size).toBe(2);
+      expect(stops.map(event => event.run_id)).toEqual(toolRuns);
     } finally { f.cleanup(); }
   }, 60_000);
 
