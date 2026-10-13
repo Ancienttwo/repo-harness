@@ -1,6 +1,6 @@
 # Plan: 以「架构债」重建架构闭环（epic #690）
 
-> **Status**: DRAFT。只是设计，不含实现代码。§8 的问题要 owner 决定。每个子 issue 开工前还要单独 GO。
+> **Status**: LOCKED（Aimpact 2026-10-14 决定 §8 Q1–Q9，全部采用推荐默认值）。只是设计，不含实现代码。每个子 issue 开工前还要单独 GO。
 > **Created**: 20261014-0209
 > **Slug**: architecture-debt-loop-690
 > **Artifact Level**: epic design
@@ -177,7 +177,7 @@ DebtItemV1
 | 什么时候算、给谁、走哪个 host 渠道 | 不管 | 拥有（hook 事件、CI job、Bot） |
 | 渠道预算、去重、截断文字 | 不管 | 拥有（`AgentNotice`） |
 | 生命周期绑定（worktree、PR、closeout） | 提供命令 | 拥有调用时机 |
-| advisory 还是 required | 不管 | owner 决定（§8 Q5） |
+| advisory 还是 required | 不管 | 保持 advisory（§8 Q5 已决定） |
 
 ### 3.4 repo-harness 一侧的形状
 
@@ -216,7 +216,7 @@ DebtItemV1
 | Agent 的任务 | 无 | 无 | 每次逻辑修改都要 apply |
 | 前置条件 | #327 | #327 加人写区迁移设计 | 无 |
 
-### 4.3 推荐：A，用滚动 bot PR 加 auto-merge
+### 4.3 决定：A，用滚动 bot PR 加 auto-merge（§8 Q2）
 
 理由：
 - B 要先把 40 个 mixed 文件里的人写区迁出去。这是一次大的格式迁移，还会改变下游合同。A 不需要。
@@ -235,7 +235,7 @@ PR 一侧的规则：
 - PR 不改生成区和 manifest。PR check 用 archctx 判断 diff 是否手改了生成区（上游需求，见 U2），手改时给 `::warning::`。repo-harness 不自己解析标记。
 - main 上的 freshness 定义为「渲染结果等于已提交字节」。daily lane 检查这个等式。不相等时，repair issue 报告写入者失败（job 失败、bot PR 未合入或被挡的 capability），不列 stale 节点。
 
-如果 owner 不批准 bot 凭据（Q3），选 B，并为人写区迁移单独出设计。不保留 C。
+Q3 已决定使用只授权本仓库的 GitHub App token。App 的创建、安装和 secret 由 owner 执行，必须在 R3 开工前完成。不选 B，不保留 C。
 
 ## 5. 会话内信号路径
 
@@ -348,8 +348,8 @@ repo-harness：
 
 - **R1 升级 pin，删除快照副本**。依赖 U1。删除 §6.1 第 1、2、4、5 项。验收：hook bundle、`architecture-projection` 测试、clean-room 脚本改用 archctx 快照。
 - **R2 消费债务报告**。依赖 U3、R1。删除 §6.1 第 3 项（最低 renderer 声明随 U3 的合同一起交付）。`ArchctxClient` 的债务解码；`repo-harness architecture debt --json`；PR lane 改用 `complete`；删除 `state owed` 和 `owed-capabilities.ts` 的 CLI 与 CI 消费者。
-- **R3 唯一写入者**。依赖 U2、R1，以及 Q2、Q3。render workflow、bot PR、PR 手改生成区警告、daily 改为渲染等价检查；删除 §6.1 第 10 项的 stale 失败和第 11 项的指导文字。
-- **R4 会话内 `AgentNotice`**。依赖 R2，以及 Q1、Q4。替换 SessionStart、Stop、Pi PostToolUse 的 owed 投递，新增 Codex UserPromptSubmit；删除 §6.1 第 9 项剩余部分；更新 #617 相关测试。
+- **R3 唯一写入者**。依赖 U2、R1，以及 owner 创建的 GitHub App 和 secret（Q2、Q3 已决定）。render workflow、bot PR、PR 手改生成区警告、daily 改为渲染等价检查；删除 §6.1 第 10 项的 stale 失败和第 11 项的指导文字。
+- **R4 会话内 `AgentNotice`**。依赖 R2（Q1、Q4 已决定）。替换 SessionStart、Stop、Pi PostToolUse 的 owed 投递，新增 Codex UserPromptSubmit；删除 §6.1 第 9 项剩余部分；更新 #617 相关测试。
 - **R5 生命周期绑定**。依赖 U1（#322）。closeout 时按 state 目录 `daemon stop`。
 - **R6 读者经 archctx**（#677 剩余部分）。依赖 U4。删除 §6.1 第 6–8 项。
 
@@ -365,11 +365,10 @@ graph LR
   R1 --> R3
   R2 --> R4["R4 AgentNotice in session"]
   U4["U4 read API fit"] --> R6["R6 readers through archctx"]
-  Q2Q3{{"Q2 + Q3 owner"}} --> R3
-  Q1Q4{{"Q1 + Q4 owner"}} --> R4
+  APP{{"owner action: GitHub App + secret (Q3)"}} --> R3
 ```
 
-建议顺序：R1 → R2 → R4；R3 在 U2 和 owner 决定之后与 R2 并行开发；R5 在 R1 之后任意时间；R6 独立。
+建议顺序：R1 → R2 → R4；R3 在 U2 和 GitHub App 就绪之后与 R2 并行开发；R5 在 R1 之后任意时间；R6 独立。
 
 发布约束：R3 和 R4 进同一个版本（§8 Q6）。R3 让 PR 不再改 manifest；如果 R4 还没发布，hook 里的 owed 规则会对每次编辑报 owed，并让 Agent 跑 apply，与唯一写入者冲突。
 
@@ -390,31 +389,31 @@ graph LR
 - 加一条未声明的跨 capability import，或弄坏一个 flow proof：Agent 在 3 s 内收到一条 `additionalContext` 提示（Claude 在 Stop，Codex 在下一次 UserPromptSubmit），提示里有 capability、模型字段和修复命令。
 - 连续 10 个合入的 PR 之后，main 上 introduced 未处理的债保持为 0，生成文件与渲染结果一致。今天最近 5 个 PR 中有 5 个留下漂移。
 
-## 8. 待 owner（Aimpact）决定的问题
+## 8. Owner 决定（Aimpact 2026-10-14 决定，Q1–Q9 全部采用推荐默认值）
 
 1. **#617 与会话内架构内容**。worker 会话要不要收到债务提示？
-   推荐：要。提示发给改代码的那个会话，worker 会话也算，因为它手里有上下文。hook 里仍然不跑 projection、apply 或扫描（D5）。`tests/stop-handler.test.ts` 和 `tests/session-context.test.ts` 里钉住旧决定的用例在 R4 中按条修改。
+   决定（采用推荐，2026-10-14）：要。提示发给改代码的那个会话，worker 会话也算，因为它手里有上下文。hook 里仍然不跑 projection、apply 或扫描（D5）。`tests/stop-handler.test.ts` 和 `tests/session-context.test.ts` 里钉住旧决定的用例在 R4 中按条修改。
 2. **唯一写入者选哪个**。
-   推荐：A，post-merge job，用滚动 bot PR 加 squash auto-merge（§4.3）。不直接 push main。
+   决定（采用推荐，2026-10-14）：A，post-merge job，用滚动 bot PR 加 squash auto-merge（§4.3）。不直接 push main。
 3. **bot 凭据**。`GITHUB_TOKEN` 开的 PR 不触发 CI，所以需要别的凭据。
-   推荐：只授权本仓库的 GitHub App installation token，权限 `contents: write` 和 `pull_requests: write`，secret 由 owner 创建和保管。这属于凭据和权限边界，需要 owner 批准。
+   决定（采用推荐，2026-10-14）：只授权本仓库的 GitHub App installation token，权限 `contents: write` 和 `pull_requests: write`，secret 由 owner 创建和保管。这属于凭据和权限边界，owner 已批准这个方向。App 的创建和安装也由 owner 执行。
 4. **Codex 的投递事件**。Codex Stop 必须静默，`PostToolUse.bash` 只给 Pi。
-   推荐：Codex 用 UserPromptSubmit，带同样的 3 s 预算和去重。不加跨事件的待投递缓存。
+   决定（采用推荐，2026-10-14）：Codex 用 UserPromptSubmit，带同样的 3 s 预算和去重。不加跨事件的待投递缓存。
 5. **PR 债务检查是否变成 required**。
-   推荐：保持 advisory。连续 10 个 PR 后看度量；如果 introduced 债仍然累积，再由 owner 决定。今天的规则是架构诊断不阻塞工作。
+   决定（采用推荐，2026-10-14）：保持 advisory。连续 10 个 PR 后看度量；如果 introduced 债仍然累积，再由 owner 决定。今天的规则是架构诊断不阻塞工作。
 6. **`minimum_harness_version`**。0.22.1 已经是 npm `latest`，epic 的「发布 0.22.x」已完成。仓库 marker（`.ai/harness/workflow-contract.json`）还没有声明最低版本。
-   推荐：R3 和 R4 放进同一个版本发布，marker 的 `minimum_harness_version` 设为这个版本。原因：R3 之后 PR 不再改 manifest，旧 hook 的 owed 规则会对每次编辑都报 owed，并让 Agent 去跑 apply。设了最低版本，旧 hook 只提示升级。
+   决定（采用推荐，2026-10-14）：R3 和 R4 放进同一个版本发布，marker 的 `minimum_harness_version` 设为这个版本。原因：R3 之后 PR 不再改 manifest，旧 hook 的 owed 规则会对每次编辑都报 owed，并让 Agent 去跑 apply。设了最低版本，旧 hook 只提示升级。
 7. **下游仓库**。render workflow 是否随模板发给下游？
-   推荐：先只在本仓库运行一个发布周期。之后作为可选模板提供，默认不启用，因为它需要 Q3 的凭据。
+   决定（采用推荐，2026-10-14）：先只在本仓库运行一个发布周期。之后作为可选模板提供，默认不启用，因为它需要 Q3 的凭据。
 8. **`stale-citation` 的会话投递**。
-   推荐：上游修好误报（U2）之前只进 daily。之后只在被触及 capability 的文档中作为 medium 投递。
+   决定（采用推荐，2026-10-14）：上游修好误报（U2）之前只进 daily。之后只在被触及 capability 的文档中作为 medium 投递。
 9. **债务计算的 base**。
-   推荐：会话用 `review_base` 的 merge-base；PR 用 PR 的 base SHA；daily 用全量。三者都由 repo-harness 解析好 SHA 再传给 archctx。
+   决定（采用推荐，2026-10-14）：会话用 `review_base` 的 merge-base；PR 用 PR 的 base SHA；daily 用全量。三者都由 repo-harness 解析好 SHA 再传给 archctx。
 
 ## 9. 风险
 
 - 上游排期：R2、R3、R4 都依赖还没发布的 archctx 版本。U3 合同变化会推迟 R2。在 U1 发布前，repo-harness 不开工任何删除。
 - 3 s 预算可能达不到。届时按 §5.5 收缩会话内的种类，不加缓存层。
-- bot 凭据是新的长期 secret。泄露面是本仓库的写权限。Q3 不批准时走 B，需要单独设计。
+- bot 凭据是新的长期 secret。泄露面是本仓库的写权限。owner 负责它的保管和轮换。
 - 写入者落后期间，GitHub 上的生成文档比 main 晚一个 job。人写文字不受影响。
 - 未知 kind 按通用格式显示。如果上游加了高噪声的 kind，会话提示会变多；去重和 3 条上限限制最坏情况。
