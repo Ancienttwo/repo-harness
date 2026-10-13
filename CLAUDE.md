@@ -22,6 +22,15 @@
 - Preserve `agents/fleet/`, release checklists and downstream `assets/templates` / `assets/partials*`. `.ai/harness/workflow-contract.json` is the opt-in marker. `assets/workflow-contract.v1.json` is the contract.
 - `_ops/` is ignored private operations state: never commit or agent-edit it. `_ref/` is an ignored reference cache; cite influential revisions. Follow deploy SQL policy, otherwise use ascending 4-digit files under `deploy/sql/`.
 
+## GitHub Issue Claims
+- Before an agent starts work on a GitHub issue, read its current state, assignees and all comments through `gh` or the GitHub API. Use pagination for comments. Check existing work claims, linked PRs and handoff notes.
+- An active claim is an assignee other than the current task owner, an open PR that links the issue, or an active claim comment that no later status comment released. If another agent or person has an active claim, do not start duplicate work. Coordinate with that owner within the authorized task scope. Take over only after an explicit handoff or user instruction. Silence, an old timestamp or a disconnected session does not release a claim.
+- When taking an unclaimed issue or an approved handoff, post a claim comment before edits, tests or worker dispatch. Use `gh issue comment <issue-url> --body-file <file>`. This rule authorizes claim and status comments for an issue within the user's task scope. It grants no other GitHub write authority.
+- Start the comment with `repo-harness issue claim`. Include `Status: active`, the agent kind and unique session or task ID, the branch, the work scope and any prior claim comment URL for a handoff. Use this identity in later status comments. A shared GitHub login is not an agent identity. Do not include secrets or private host paths.
+- Read the issue comments again after posting. Confirm the published comment URL and body. If a competing claim appeared, stop duplicate work and resolve ownership before continuing. For simultaneous claims without an explicit assignment or handoff, the earliest GitHub comment wins; break timestamp ties by comment ID. These comments coordinate agents; they are not an atomic lock and do not replace canonical task claims or leases.
+- On resume, check the current claim before continuing. Reuse the same active claim instead of posting it again. If a read or post fails, or delivery is uncertain, stop and report the failure. Read back before retrying an uncertain post.
+- Post a status comment that links the claim when the work is blocked, ready for review, complete or released. Keep a blocked or review-pending claim active. Include the PR or result when available. Release ownership explicitly on cancellation or handoff. Do not close the issue unless the task authorizes closure.
+
 ## Code Optimization Principles
 - Identify observable conditions, controllable inputs, the invariant and the actual pressure point before changing structure.
 - Keep one source of truth for each datum; other representations are deterministic projections with drift checks.
