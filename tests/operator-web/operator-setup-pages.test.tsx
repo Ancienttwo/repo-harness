@@ -94,16 +94,16 @@ describe('navigation', () => {
     }
   });
 
-  test('on a phone, Skills, Hooks and Architecture sit behind More, which opens, routes and closes', async () => {
+  test('on a phone, Skills, Hooks, Tools and Architecture sit behind More, which opens, routes and closes', async () => {
     await mount('', props(readySetup(NOW)));
-    for (const workspace of ['skills', 'hooks', 'architecture']) expect(navLink(workspace).closest('li')!.className).toContain('max-md:hidden');
+    for (const workspace of ['skills', 'hooks', 'tools', 'architecture']) expect(navLink(workspace).closest('li')!.className).toContain('max-md:hidden');
     for (const workspace of ['board', 'repositories', 'agents', 'system']) expect(navLink(workspace).closest('li')!.className).not.toContain('max-md:hidden');
     const more = document.querySelector<HTMLButtonElement>('[data-nav-more] button')!;
     expect(more.getAttribute('aria-expanded')).toBe('false');
     expect(document.querySelector('#nav-more-menu')).toBeNull();
     await act(async () => more.click());
     expect(more.getAttribute('aria-expanded')).toBe('true');
-    expect(all('#nav-more-menu a').map(link => link.getAttribute('data-more-workspace'))).toEqual(['skills', 'hooks', 'architecture']);
+    expect(all('#nav-more-menu a').map(link => link.getAttribute('data-more-workspace'))).toEqual(['skills', 'hooks', 'tools', 'architecture']);
     await act(async () => document.querySelector<HTMLAnchorElement>('#nav-more-menu a[data-more-workspace="hooks"]')!.click());
     expect(window.location.hash).toBe('#hooks');
     expect(document.querySelector('#nav-more-menu')).toBeNull();
@@ -310,6 +310,76 @@ describe('first read and failures', () => {
     await act(async () => navLink('hooks').click());
     expect(page().getAttribute('data-setup-state')).toBe('refresh-failed');
     expect(all('[data-route]').length).toBeGreaterThan(0);
+  });
+});
+
+describe('Tools page', () => {
+  const tools = () => document.querySelector<HTMLElement>('[data-tools-page]');
+  const row = (id: string) => document.querySelector<HTMLButtonElement>(`[data-tool="${id}"] button`)!;
+  const drawer = () => document.querySelector<HTMLElement>('[data-tool-drawer]');
+
+  test('#tools lists the catalog; #tools/<id> opens a catalog entry; anything else is the Board', () => {
+    expect(parseWorkspaceLocation('#tools')).toEqual({ workspace: 'tools', module: null, item: null });
+    expect(parseWorkspaceLocation('#tools/codegraph')).toEqual({ workspace: 'tools', module: null, item: 'codegraph' });
+    expect(workspaceHash({ workspace: 'tools', module: null, item: null })).toBe('#tools');
+    expect(workspaceHash({ workspace: 'tools', module: null, item: 'codegraph' })).toBe('#tools/codegraph');
+    for (const hash of ['#tools/CodeGraph', '#tools/code_graph', '#tools/%2e%2e', '#tools/not-in-catalog', '#tools/codegraph/extra', '#tools/']) {
+      expect(parseWorkspaceLocation(hash)).toEqual({ workspace: 'board', module: null, item: null });
+    }
+  });
+
+  test('Tools sits after Hooks in the nav and routes by hash without a setup read', async () => {
+    let reads = 0;
+    await mount('', props(null, { readSetup: async () => { reads++; return readySetup(NOW); } }));
+    const order = all('.workspace-nav a[data-workspace]').map(link => link.getAttribute('data-workspace'));
+    expect(order.indexOf('tools')).toBe(order.indexOf('hooks') + 1);
+    await act(async () => navLink('tools').click());
+    expect(window.location.hash).toBe('#tools');
+    expect(navLink('tools').getAttribute('aria-current')).toBe('page');
+    expect(tools()).not.toBeNull();
+    expect(reads).toBe(0);
+  });
+
+  test('local tools and resources list with counts; no tool reads as installed', async () => {
+    await mount('#tools', props(readySetup(NOW)));
+    expect(all('[data-tool-group]').map(group => group.getAttribute('data-tool-group'))).toEqual(['local_tool', 'resource']);
+    expect(text('#tools-local_tool-heading')).toBe('Local tools4');
+    expect(text('#tools-resource-heading')).toBe('Recommended resources2');
+    const status = Object.fromEntries(all('[data-tool]').map(item => [item.getAttribute('data-tool'), item.querySelector('[data-tool-status]')!.getAttribute('data-tool-status')]));
+    expect(status).toEqual({ waza: 'unknown', codegraph: 'unknown', 'herdr-skill': 'unknown', 'hai-stack': 'na', shaders: 'na', 'awesome-design-md': 'na' });
+    expect(text('[data-tool="hai-stack"] [data-tool-status]')).toBe('N/A');
+    // hai-stack declares no SPDX license; the license cell says so.
+    expect(text('[data-tool="hai-stack"]')).toContain('Unknown');
+    expect(text('[data-tool="shaders"]')).toContain('MIT');
+    // The only command on the page is the read-only detector report.
+    expect(all('[data-command] code').map(code => code.textContent)).toEqual(['repo-harness run check-agent-tooling']);
+  });
+
+  test('a row opens its drawer with links and no install command; Escape closes and returns focus', async () => {
+    await mount('#tools', props(readySetup(NOW)));
+    row('codegraph').focus();
+    await act(async () => row('codegraph').click());
+    expect(window.location.hash).toBe('#tools/codegraph');
+    expect(drawer()?.getAttribute('data-tool-drawer')).toBe('codegraph');
+    expect(text('#tool-drawer-title')).toBe('CodeGraph');
+    expect(drawer()!.querySelectorAll('[data-command]')).toHaveLength(0);
+    const links = Array.from(drawer()!.querySelectorAll('a')).map(link => [link.getAttribute('href'), link.getAttribute('rel')]);
+    expect(links).toEqual([
+      ['https://github.com/colbymchenry/codegraph', 'noreferrer noopener'],
+      ['https://github.com/Ancienttwo/repo-harness/blob/main/docs/reference-configs/external-tooling.md#codegraph', 'noreferrer noopener'],
+    ]);
+    await act(async () => { document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }) as unknown as Event); });
+    expect(window.location.hash).toBe('#tools');
+    expect(drawer()).toBeNull();
+    expect(document.activeElement).toBe(row('codegraph'));
+  });
+
+  test('a resource drawer says it is not detected; the summary follows the locale', async () => {
+    await mount('#tools/awesome-design-md', props(readySetup(NOW), { initialLocale: 'zh' }));
+    expect(drawer()?.getAttribute('data-tool-drawer')).toBe('awesome-design-md');
+    expect(drawer()!.textContent).toContain('来自知名品牌设计系统的 DESIGN.md 文件');
+    expect(text('[data-tool-status-reason]')).toBe('repo-harness 不安装、也不探测资源。');
+    expect(navLink('tools').textContent).toBe('工具');
   });
 });
 

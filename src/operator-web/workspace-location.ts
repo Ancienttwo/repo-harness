@@ -1,8 +1,10 @@
+import { TOOL_CATALOG } from '../core/tools/catalog';
+
 /** The `<cap>` path parameter of the architecture routes. */
 export const CAPABILITY_ID = /^capability\.[a-z0-9-]+(\.[a-z0-9-]+)+$/u;
 
 /** Navigation order. Every entry has a data source; no placeholder pages. */
-export const WORKSPACES = ['board', 'repositories', 'agents', 'skills', 'hooks', 'architecture', 'system'] as const;
+export const WORKSPACES = ['board', 'repositories', 'agents', 'skills', 'hooks', 'tools', 'architecture', 'system'] as const;
 /** The three pages read from one `repo-harness setup check` result. */
 export const SETUP_WORKSPACES = ['agents', 'skills', 'hooks'] as const;
 /** `repository` is the detail page of one repository; it is reached from the list, not the nav. */
@@ -12,7 +14,10 @@ export interface WorkspaceLocation {
   readonly workspace: Workspace;
   /** `#architecture/<cap>` selects a module. */
   readonly module: string | null;
-  /** `#board/<item>` opens one board item in the drawer. The id is URI-encoded in the hash. */
+  /**
+   * The drawer subject. `#board/<item>` opens one board item; its id is
+   * URI-encoded in the hash. `#tools/<id>` opens one catalog entry.
+   */
   readonly item: string | null;
 }
 
@@ -37,6 +42,11 @@ export function parseWorkspaceLocation(hash: string): WorkspaceLocation {
     if (parameter === undefined) return { workspace: 'architecture', module: null, item: null };
     return CAPABILITY_ID.test(parameter) ? { workspace: 'architecture', module: parameter, item: null } : BOARD;
   }
+  if (name === 'tools') {
+    if (parameter === undefined) return { workspace: 'tools', module: null, item: null };
+    // Catalog ids already match the decoder's strict id pattern.
+    return TOOL_CATALOG.tools.some(tool => tool.id === parameter) ? { workspace: 'tools', module: null, item: parameter } : BOARD;
+  }
   if (name === 'board' && parameter !== undefined) {
     const item = decodeItem(parameter);
     return item === null ? BOARD : { workspace: 'board', module: null, item };
@@ -47,5 +57,6 @@ export function parseWorkspaceLocation(hash: string): WorkspaceLocation {
 export function workspaceHash({ workspace, module, item }: WorkspaceLocation): string {
   if (workspace === 'board') return item === null ? '#board' : `#board/${encodeURIComponent(item)}`;
   if (workspace === 'architecture' && module !== null) return `#architecture/${module}`;
+  if (workspace === 'tools' && item !== null) return `#tools/${item}`;
   return `#${workspace}`;
 }
