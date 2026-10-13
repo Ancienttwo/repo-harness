@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { dirname, join } from "path";
 import { spawnSync } from "child_process";
@@ -9,12 +9,13 @@ import {
 } from "../scripts/capability-resolver";
 import {
   capabilityRegistryFromArchcontextNodes,
+  type ArchcontextCapabilityOwners,
   type Capability,
-  type CapabilityRegistry,
   type CapabilityRegistryDiagnosticCode,
 } from "../src/core/capabilities/registry";
 
 import { resolveArchcontextCapabilityPaths } from "../src/effects/capabilities/archcontext-owners";
+import { withReadonlyObservation } from "../src/effects/state/readonly-observation";
 
 const ROOT = join(import.meta.dir, "..");
 const NODES_DIR = ".archcontext/model/nodes";
@@ -222,8 +223,22 @@ const PARITY_COMMANDS: ReadonlyArray<readonly string[]> = [
   ["export", "--format", "archcontext-nodes-v2"],
 ];
 
+// Under archcontext a match names the owner's stable node id, because ArchContext
+// does not report which include matched (#676 finding 5). Registry mode keeps the prefix.
+const MATCH_OWNER_IDS: Readonly<Record<string, string>> = {
+  "apps/web/src/routes/account/page.tsx": "capability.apps-web.account",
+  "apps/web/other/page.tsx": "capability.apps-web.web",
+  "AGENTS.md": "capability.public-surface.root-router",
+};
+
+function withOwnerId(command: readonly string[], stdout: string): string {
+  if (command[0] !== "match") return stdout;
+  const ownerId = MATCH_OWNER_IDS[command[2]!]!;
+  return stdout.replace(/^(\s*"?(?:functional_block|matched_prefix)"?: "?)[^",\n]+/gm, `$1${ownerId}`);
+}
+
 describe("capability source: archcontext file-source parity", () => {
-  test("both authorities produce byte-identical stdout for every read command", () => {
+  test("both authorities produce the same stdout for every read command, with owner ids for matches", () => {
     const registryCwd = registryWorkspace("capability-source-registry");
     const archcontextCwd = archcontextWorkspace("capability-source-archcontext");
     try {
@@ -233,7 +248,7 @@ describe("capability source: archcontext file-source parity", () => {
         expect(fromRegistry.status, fromRegistry.stderr).toBe(0);
         expect(fromArchcontext.status, fromArchcontext.stderr).toBe(0);
         expect(fromArchcontext.stdout, `stdout parity for: ${command.join(" ")}`)
-          .toBe(fromRegistry.stdout);
+          .toBe(withOwnerId(command, fromRegistry.stdout));
         expect(fromArchcontext.stderr).toBe(fromRegistry.stderr);
       }
     } finally {
@@ -313,9 +328,9 @@ describe("capability source: ArchContext owns path ownership", () => {
 });
 
 describe("capability source: archctx resolve envelope checks", () => {
-  const registry: CapabilityRegistry = { version: 1, capabilities: [TWIN_CAPABILITIES[0] as Capability] };
+  const owners: ArchcontextCapabilityOwners = new Map([["capability.apps-web.account", TWIN_CAPABILITIES[0] as Capability]]);
   const envelope = (results: unknown) => JSON.stringify({ schemaVersion: "archcontext.envelope/v1", ok: true, requestId: "resolve", data: { results } });
-  const resolveWith = (stdout: string, status = 0) => resolveArchcontextCapabilityPaths(ROOT, registry, ["apps/web/page.tsx"], {
+  const resolveWith = (stdout: string, status = 0) => resolveArchcontextCapabilityPaths(ROOT, owners, ["apps/web/page.tsx"], {
     run: (_binary, args) => {
       expect(args.slice(0, 2)).toEqual(["resolve", "--paths-from"]);
       return { status, signal: null, stdout, stderr: "" };
@@ -334,6 +349,54 @@ describe("capability source: archctx resolve envelope checks", () => {
     expect(() => resolveWith(envelope([{ path: "apps/web/other.tsx", matched: false, ambiguous: false, owningCapabilityId: null }]))).toThrow("invalid result");
     expect(() => resolveWith(envelope([{ path: "apps/web/page.tsx", matched: "yes", ambiguous: false, owningCapabilityId: null }]))).toThrow("invalid result");
     expect(() => resolveWith(JSON.stringify({ schemaVersion: "other", ok: true }))).toThrow("invalid envelope");
+    expect(() => resolveWith(envelope([{ path: "apps/web/page.tsx", matched: false, ambiguous: true, owningCapabilityId: null, candidates: "a" }]))).toThrow("invalid result");
+  });
+
+  test("joins the recorded archctx 0.7.2 batch, exit 2 included, through the owner model", () => {
+    const fixtures = join(ROOT, "tests/fixtures/archctx-resolve");
+    const nodesDir = join(fixtures, "ownership-0.7.2-model/nodes");
+    const model = capabilityRegistryFromArchcontextNodes(readdirSync(nodesDir).sort().map((name) => ({
+      path: `${NODES_DIR}/${name}`,
+      value: Bun.YAML.parse(readFileSync(join(nodesDir, name), "utf-8")),
+    })));
+    if (model.status !== "valid") throw new Error(JSON.stringify(model.diagnostics));
+    const paths = readFileSync(join(fixtures, "ownership-0.7.2-paths.txt"), "utf-8").trim().split("\n");
+    const cwd = tmpWorkspace("capability-source-recorded");
+    try {
+      const resolution = resolveArchcontextCapabilityPaths(cwd, model.owners, paths, {
+        run: () => ({ status: 2, signal: null, stdout: readFileSync(join(fixtures, "ownership-0.7.2.json"), "utf-8"), stderr: "" }),
+      });
+      expect(resolution.status).toBe("invalid");
+      expect(resolution.diagnostics.map((item) => [item.code, item.path])).toEqual([["AMBIGUOUS_MATCH", "lib/shared.ts"]]);
+      expect(resolution.capabilityIds).toEqual([
+        "future-planned",
+        "old-legacy",
+        "owned-dir",
+        "owned-literal",
+        "probe-anchorless",
+        "verification-tools",
+        "web-locale",
+      ]);
+      expect(resolution.unmappedPaths).toEqual(["README.md", "literal/new-helper.ts"]);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("a read-only observation gets an unavailable result and never starts archctx", () => {
+    let started = 0;
+    const io = {
+      readFile: () => { throw new Error("unexpected read"); },
+      readDirectory: () => { throw new Error("unexpected directory read"); },
+      validatePath: () => {},
+      exec: () => { throw new Error("unexpected exec"); },
+    };
+    const resolution = withReadonlyObservation(io, () => resolveArchcontextCapabilityPaths(ROOT, owners, ["apps/web/page.tsx"], {
+      run: () => { started += 1; return { status: 0, signal: null, stdout: "", stderr: "" }; },
+    }));
+    expect(started).toBe(0);
+    expect(resolution.status).toBe("unavailable");
+    expect(resolution.diagnostics.map((item) => item.code)).toEqual(["ARCHCONTEXT_RESOLVE_UNAVAILABLE"]);
   });
 });
 
@@ -514,12 +577,6 @@ const NODE_CASES: ReadonlyArray<{
     fragment: "source.include must contain at least one entry",
   },
   {
-    label: "N7 no source.include entry has a literal anchor",
-    code: "ARCHCONTEXT_INCLUDE_ANCHOR_REQUIRED",
-    lines: replaceLine(VALID_NODE_LINES, "    - apps/web/**", ["    - \"**/*.ts\""]),
-    fragment: "source.include needs at least one entry with a literal leading path",
-  },
-  {
     label: "N10 extensions is missing",
     code: "ARCHCONTEXT_EXTENSIONS_REQUIRED",
     lines: [
@@ -573,7 +630,7 @@ const NODE_CASES: ReadonlyArray<{
   },
 ];
 
-describe("capability source: node-layer matrix N1-N16 (N8-N9 retired)", () => {
+describe("capability source: node-layer matrix N1-N16 (N7-N9 retired)", () => {
   for (const nodeCase of NODE_CASES) {
     test(`${nodeCase.label} fails closed`, () => {
       const parsed = Bun.YAML.parse(yaml(nodeCase.lines));
@@ -597,7 +654,7 @@ describe("capability source: node-layer matrix N1-N16 (N8-N9 retired)", () => {
     }, 30_000);
   }
 
-  test("non-capability kinds and non-active statuses are skipped without claiming prefixes", () => {
+  test("non-capability kinds are skipped and non-active capabilities are not listed", () => {
     const cwd = archcontextWorkspace("capability-source-skipped", [
       TWIN_NODES[0],
       {
@@ -622,8 +679,7 @@ describe("capability source: node-layer matrix N1-N16 (N8-N9 retired)", () => {
       expect(list.status, list.stderr).toBe(0);
       expect(list.stdout).toBe("apps-web-web\tapps/web\n");
 
-      // The skipped nodes carry the same include, so a duplicate prefix would be
-      // reported if either had been mapped.
+      // The planned node stays a valid owner; only active capabilities are listed.
       const validate = runResolver(cwd, ["validate", "--format", "text"]);
       expect(validate.status, validate.stderr).toBe(0);
       expect(validate.stdout).toBe("[CapabilityResolver] OK\n");
@@ -631,5 +687,47 @@ describe("capability source: node-layer matrix N1-N16 (N8-N9 retired)", () => {
       rmSync(cwd, { recursive: true, force: true });
     }
   }, 30_000);
+
+  test("planned, deprecated, anchorless and [locale] capabilities resolve through archctx", () => {
+    const capabilityNode = (id: string, status: string, include: string) => replaceLine(
+      replaceLine(replaceLine(VALID_NODE_LINES, "status: active", [`status: ${status}`]), "id: capability.apps-web.web", [`id: ${id}`]),
+      "    - apps/web/**",
+      [`    - "${include}"`],
+    );
+    const cwd = archcontextWorkspace("capability-source-owner-status", [
+      { file: "planned.yaml", lines: capabilityNode("capability.future.planned", "planned", "planned/**") },
+      { file: "legacy.yaml", lines: capabilityNode("capability.old.legacy", "deprecated", "legacy/**") },
+      { file: "probe.yaml", lines: capabilityNode("capability.probe.anchorless", "active", "**/*.probe") },
+      { file: "locale.yaml", lines: capabilityNode("capability.web.locale", "active", "src/app/[locale]/**") },
+    ]);
+    try {
+      mkdirSync(join(cwd, "src/app/[locale]"), { recursive: true });
+      // A non-active capability still owns its architecture module, so it is no orphan.
+      writeFile(cwd, "docs/architecture/modules/future/planned.md", "# Planned\n");
+
+      const list = runResolver(cwd, ["list", "--format", "text"]);
+      expect(list.status, list.stderr).toBe(0);
+      expect(list.stdout).toBe("probe-anchorless\tcapability.probe.anchorless\nweb-locale\tsrc/app/[locale]\n");
+      const prefixes = runResolver(cwd, ["list", "--format", "prefixes"]);
+      expect(prefixes.stdout).toBe("src/app/[locale]\n");
+      const validate = runResolver(cwd, ["validate", "--format", "text"]);
+      expect(validate.status, validate.stdout).toBe(0);
+      expect(validate.stdout).toBe("[CapabilityResolver] OK\n");
+
+      const res = runResolver(cwd, ["match", "--paths-from", "-", "--format", "json"],
+        "planned/a.ts\nlegacy/b.ts\nprobes/x.probe\nsrc/app/[locale]/page.tsx\nREADME.md\n");
+      expect(res.status, res.stderr).toBe(0);
+      const matches = JSON.parse(res.stdout) as Array<{ file_path: string; matched: boolean; capability_id: string; matched_prefix: string }>;
+      expect(matches.map((match) => [match.file_path, match.matched, match.capability_id, match.matched_prefix])).toEqual([
+        ["planned/a.ts", true, "future-planned", "capability.future.planned"],
+        ["legacy/b.ts", true, "old-legacy", "capability.old.legacy"],
+        ["probes/x.probe", true, "probe-anchorless", "capability.probe.anchorless"],
+        ["src/app/[locale]/page.tsx", true, "web-locale", "capability.web.locale"],
+        ["README.md", false, "root", "root"],
+      ]);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 60_000);
 
 });

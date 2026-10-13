@@ -4,6 +4,7 @@ import {
   type EffectiveStateInputs,
 } from '../../src/core/state/project-effective-state';
 import { projectStateSnapshot } from '../../src/core/state/project-state-snapshot';
+import { capabilityOwnershipBlocker } from '../../src/core/capabilities/ownership-blocker';
 
 const NOW = Date.parse('2026-07-15T12:00:00Z');
 const PLAN = 'plans/plan-20260715-1200-fixture.md';
@@ -14,6 +15,14 @@ const EVIDENCE_REVISION = 'sha256:evidence';
 const PROJECTION_REVISION = 'sha256:projection';
 const SUBJECT = `sha256:${'a'.repeat(64)}`;
 const TARGET = 'b'.repeat(40);
+const INVALID_REGISTRY = capabilityOwnershipBlocker(
+  { code: 'INVALID_JSON', path: '$', message: 'invalid JSON: Unexpected token' },
+  'registry',
+);
+const UNAVAILABLE_OWNERSHIP = capabilityOwnershipBlocker(
+  { code: 'ARCHCONTEXT_RESOLVE_FAILED', path: '.archcontext/model/nodes', message: 'package-local archctx@0.7.2 is missing\n  from the consumer dependency tree' },
+  'archcontext',
+);
 
 function input(overrides: Partial<EffectiveStateInputs> = {}): EffectiveStateInputs {
   return {
@@ -53,7 +62,7 @@ function input(overrides: Partial<EffectiveStateInputs> = {}): EffectiveStateInp
     },
     contractOverride: 'standard',
     capabilityReasons: [],
-    capabilityRegistryInvalid: false,
+    capabilityBlocker: null,
     staleSources: [],
     conflictingSources: [],
     reviewPath: null,
@@ -104,7 +113,7 @@ describe('pure Effective State projection', () => {
     expect(after.progress_token).toBe(before.progress_token);
     expect(after.phase).toBe(before.phase);
     expect(before.readiness?.ok && before.readiness.allowedToEdit.decision).toBe('allow');
-    const invalidAuthority = projectEffectiveState(input({ currentSnapshotText: snapshot, nowMs: NOW, capabilityRegistryInvalid: true }));
+    const invalidAuthority = projectEffectiveState(input({ currentSnapshotText: snapshot, nowMs: NOW, capabilityBlocker: INVALID_REGISTRY }));
     expect(invalidAuthority.blockers).toContain('capability_registry:invalid');
     expect(invalidAuthority.readiness?.ok && invalidAuthority.readiness.allowedToEdit.decision).toBe('allow');
   });
@@ -204,12 +213,15 @@ describe('pure Effective State projection', () => {
         riskFloor: 'high',
         reasons: ['risk-floor:strict:signals-unavailable'],
       },
-      capabilityRegistryInvalid: true,
+      capabilityBlocker: INVALID_REGISTRY,
       staleSources: ['active_plan_marker', 'active_plan_marker'],
       conflictingSources: ['worktree_owner', 'worktree_owner'],
     }));
     expect(state.phase).toBe('blocked');
-    expect(state.next_action).toBe('resolve blockers');
+    // The capability blocker keeps its cause and fix in next_action (#676 finding 1).
+    expect(state.next_action).toBe(
+      'resolve blockers: capability_registry:invalid INVALID_JSON: invalid JSON: Unexpected token; fix: repo-harness run capability-resolver validate',
+    );
     expect(state.blockers).toEqual([
       'conflict:worktree_owner',
       'conflict:worktree_owner',
@@ -219,6 +231,22 @@ describe('pure Effective State projection', () => {
     expect(state.stale_sources).toEqual(['active_plan_marker']);
     expect(state.conflicting_sources).toEqual(['worktree_owner']);
     expect(state.guidance).toBeNull();
+  });
+
+  test('an archctx failure projects the unavailable key with a one-line cause and the update command', () => {
+    const state = projectEffectiveState(input({ capabilityBlocker: UNAVAILABLE_OWNERSHIP }));
+    expect(state.blockers).toEqual(['capability_ownership:unavailable']);
+    expect(state.blockers).not.toContain('capability_registry:invalid');
+    expect(state.phase).toBe('blocked');
+    expect(state.next_action).toBe(
+      'resolve blockers: capability_ownership:unavailable ARCHCONTEXT_RESOLVE_FAILED: package-local archctx@0.7.2 is missing from the consumer dependency tree; fix: repo-harness update',
+    );
+  });
+
+  test('ordinary blockers keep the plain next action', () => {
+    const state = projectEffectiveState(input({ conflictingSources: ['worktree_owner'] }));
+    expect(state.blockers).toEqual(['conflict:worktree_owner']);
+    expect(state.next_action).toBe('resolve blockers');
   });
 
   test('projects checks_failed only from a fresh subject-bound failed check', () => {
