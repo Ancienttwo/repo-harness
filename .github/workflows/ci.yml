@@ -144,6 +144,38 @@ jobs:
         uses: ./.github/actions/install-pinned-herdr
       - run: bash scripts/check-ci.sh affected
 
+  architecture:
+    name: Architecture freshness
+    needs: selection
+    if: needs.selection.outputs.mode == 'affected' || needs.selection.outputs.mode == 'daily'
+    # PR diagnostics do not join Required / CI. Daily failures open repair issues.
+    continue-on-error: ${{ needs.selection.outputs.mode == 'affected' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      REPO_HARNESS_ARCHITECTURE_MODE: ${{ needs.selection.outputs.mode }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.selection.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.3
+      - name: Check architecture freshness
+        run: bash scripts/check-ci.sh architecture
+      - uses: actions/upload-artifact@v4
+        if: always() && needs.selection.outputs.mode == 'daily'
+        with:
+          name: ci-architecture-${{ github.run_attempt }}
+          path: .ai/harness/checks/ci-architecture/report.json
+          include-hidden-files: true
+          if-no-files-found: error
+
   governance:
     name: Daily governance
     needs: selection

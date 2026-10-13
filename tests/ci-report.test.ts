@@ -4,6 +4,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CIReportError, reportCI, renderReport, watchDailyCI, type GitHubAPI } from '../scripts/report-ci';
+import { ARCHITECTURE_JOB, ARCHITECTURE_EVIDENCE, summarizeArchitecture } from '../scripts/check-ci-architecture';
 
 function fixture(run: (f: { api: GitHubAPI; git: (...args: string[]) => string; before: string; after: string; prCommits: number; root: string; issues: any[]; calls: { path: string; method: string }[]; setConclusion: (value: string) => void; setRun: (id: number, attempt: number) => void; denyIssues: () => void }) => Promise<void>, candidateCommits = 1) {
   const root = mkdtempSync(join(tmpdir(), 'ci-report-fixture-'));
@@ -412,3 +413,45 @@ test('report and watchdog uploads include the real hidden report directory', () 
     expect(uploads[0].with['if-no-files-found']).toBe('error');
   }
 });
+
+
+test('daily architecture repair names the failed job and preserves all provider evidence beyond 300 characters', () => fixture(async f => {
+  f.setConclusion('failure');
+  const staleNodes = Array.from({ length: 24 }, (_, i) => `capability.test.stale-${i}`);
+  const summary = summarizeArchitecture({ status: 'human-action-required', freshness: { staleNodes: staleNodes.map(nodeId => ({ nodeId })) },
+    files: [{ path: 'docs/architecture/.projection-manifest.json' }], humanActions: [{ reasonCode: 'unresolved-major-change', affectedNodeIds: staleNodes }] },
+    f.after, 1, readFileSync(join(import.meta.dir, '..', ARCHITECTURE_EVIDENCE), 'utf8'));
+  const api: GitHubAPI = (path, method, body) => path.includes('/attempts/1/jobs')
+    ? Promise.resolve({ jobs: [{ id: 44, name: ARCHITECTURE_JOB, conclusion: 'failure', check_run_url: 'https://api.github.com/repos/test/repo/check-runs/55' }] })
+    : f.api(path, method, body);
+  const report = await reportCI('test/repo', 12, api, async (sha, attempt) => {
+    expect(sha).toBe(f.after); expect(attempt).toBe(1); return summary;
+  });
+  expect(report.errors).toEqual([]);
+  expect(report.repairs[0]?.delivery).toBe('created');
+  expect(f.issues[0].title).toContain('Architecture freshness');
+  for (const node of staleNodes) expect(f.issues[0].body).toContain(node);
+  expect(f.issues[0].body).toContain('"status": "human-action-required"');
+  expect(f.issues[0].body).toContain('"files"');
+  expect(f.issues[0].body).toContain('"humanActions"');
+  expect(f.issues[0].body).toContain(summary.actionRows[0]);
+  expect(f.issues[0].body).toContain(f.after);
+  expect((await reportCI('test/repo', 12, api, async () => summary)).repairs[0]?.delivery).toBe('reused');
+  expect(f.issues).toHaveLength(1);
+}));
+
+test.each(['missing', 'wrong-sha', 'wrong-attempt'])('architecture evidence %s reports unavailable without inventing stale nodes', scenario => fixture(async f => {
+  f.setConclusion('failure');
+  const api: GitHubAPI = (path, method, body) => path.includes('/attempts/1/jobs')
+    ? Promise.resolve({ jobs: [{ id: 44, name: ARCHITECTURE_JOB, conclusion: 'failure', check_run_url: 'https://api.github.com/repos/test/repo/check-runs/55' }] })
+    : f.api(path, method, body);
+  const report = await reportCI('test/repo', 12, api, async () => {
+    if (scenario === 'missing') throw Error('artifact missing');
+    return { sha: scenario === 'wrong-sha' ? 'a'.repeat(40) : f.after, runAttempt: scenario === 'wrong-attempt' ? 2 : 1,
+      status: 'planned', staleNodes: ['must-not-deliver'], files: [], humanActions: [], actionRows: ['row'] };
+  });
+  expect(report.errors.join('\n')).toContain('Architecture evidence unavailable');
+  expect(f.issues[0].title).toContain('Architecture freshness');
+  expect(f.issues[0].body).toContain('Read the fixed-run job log');
+  expect(f.issues[0].body).not.toContain('must-not-deliver');
+}));

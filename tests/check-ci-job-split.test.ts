@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { selectAffectedTests, selectCoverage } from '../scripts/select-ci-coverage';
+import { architectureWarning, owedCapabilities, owedImplementationPaths, summarizeArchitecture, readArchitectureSummary, ARCHITECTURE_EVIDENCE } from '../scripts/check-ci-architecture';
 
 const ROOT = resolve(import.meta.dir, '..');
 const workflow = Bun.YAML.parse(readFileSync(join(ROOT, '.github/workflows/ci.yml'), 'utf8')) as any;
@@ -252,4 +253,99 @@ describe('single affected verification and daily fallback', () => {
       expect(result.stdout).not.toContain('[ci] install');
     }
   });
+});
+
+
+describe('architecture CI delivery', () => {
+  test('PR warnings stay outside required checks; daily runs retain complete evidence', () => {
+    const job = workflow.jobs.architecture;
+    expect(job.if).toBe("needs.selection.outputs.mode == 'affected' || needs.selection.outputs.mode == 'daily'");
+    expect(job['continue-on-error']).toBe("${{ needs.selection.outputs.mode == 'affected' }}");
+    expect(workflow.jobs.required.needs).not.toContain('architecture');
+    expect(job.steps.find((step: any) => step.uses === 'actions/checkout@v4').with).toEqual({
+      ref: '${{ needs.selection.outputs.sha }}', 'fetch-depth': 0, 'persist-credentials': false,
+    });
+    expect(job.steps.find((step: any) => step.run)?.run).toBe('bash scripts/check-ci.sh architecture');
+    const upload = job.steps.find((step: any) => step.uses === 'actions/upload-artifact@v4');
+    expect(upload.if).toBe("always() && needs.selection.outputs.mode == 'daily'");
+    expect(upload.with).toEqual({ name: 'ci-architecture-${{ github.run_attempt }}', path: '.ai/harness/checks/ci-architecture/report.json', 'include-hidden-files': true, 'if-no-files-found': 'error' });
+    const shell = readFileSync(join(ROOT, 'scripts/check-ci.sh'), 'utf8');
+    expect(shell).toContain('bun scripts/check-ci-architecture.ts');
+    expect(shell).not.toContain('architecture-projection check');
+    expect(spawnSync('/bin/bash', ['-n', join(ROOT, 'scripts/check-ci.sh')]).status).toBe(0);
+  });
+
+  test('only authoritative matches owe capabilities; malformed ownership fails', () => {
+    const matched = { matched: true, capability_id: 'capability.test.core', file_path: 'src/main.ts' };
+    expect(owedCapabilities([matched, matched, { matched: false, capability_id: 'root', file_path: 'README.md' }])).toEqual(['capability.test.core']);
+    expect(owedCapabilities([])).toEqual([]);
+    expect(() => owedCapabilities([{ matched: true }])).toThrow('Invalid capability ownership');
+  });
+
+  test.each([
+    { status: 'noop', files: [], actions: [], row: '| `noop` |' },
+    { status: 'planned', files: ['docs/architecture/.projection-manifest.json'], actions: [], row: '| `planned`, only ' },
+    { status: 'planned', files: ['docs/architecture/index.md'], actions: [], row: '| `planned`, other ' },
+    { status: 'human-action-required', files: [], actions: [{ reasonCode: 'unresolved-major-change' }], row: '| `human-action-required` with ' },
+    { status: 'human-action-required', files: [], actions: [{ reasonCode: 'unprovable-required-flow' }], row: '| Other `humanActions`' },
+    { status: 'blocked', files: [], actions: [], row: '| Command error,' },
+  ])('provider status $status copies its exact action row and keeps stale ids', ({ status, files, actions, row }) => {
+    const reference = readFileSync(join(ROOT, ARCHITECTURE_EVIDENCE), 'utf8');
+    const summary = summarizeArchitecture({ status, freshness: { staleNodes: [{ nodeId: 'capability.test.core' }] }, files: files.map(path => ({ path })), humanActions: actions }, sha, 2, reference);
+    expect(summary.actionRows).toEqual([reference.split('\n').find(line => line.startsWith(row))!]);
+    expect(summary.staleNodes).toEqual(['capability.test.core']);
+    expect(readArchitectureSummary(summary, sha, 2)).toEqual(summary);
+    expect(() => readArchitectureSummary(summary, sha, 1)).toThrow('SHA and attempt');
+    expect(() => readArchitectureSummary(summary, '2'.repeat(40), 2)).toThrow('SHA and attempt');
+    const warning = architectureWarning(summary, ['capability.test.core']);
+    if (status === 'noop') expect(warning).toBeNull();
+    else {
+      expect(warning).toContain('::warning::');
+      expect(warning).toContain('capability.test.core');
+      expect(warning).toContain('repo-harness architecture-projection apply --json');
+    }
+  });
+
+  test('malformed projection cannot synthesize an empty successful report; warnings cannot inject commands', () => {
+    const reference = readFileSync(join(ROOT, ARCHITECTURE_EVIDENCE), 'utf8');
+    expect(() => summarizeArchitecture({ status: 'noop' }, sha, 1, reference)).toThrow('Invalid architecture');
+    const summary = summarizeArchitecture({ status: 'planned', freshness: { staleNodes: [{ nodeId: 'capability.test%\n::error::injected' }] }, files: [], humanActions: [] }, sha, 1, reference);
+    const warning = architectureWarning(summary, [])!;
+    expect(warning).toContain('%25%0A::error::injected');
+    expect(warning.split('\n')).toHaveLength(1);
+  });
+});
+
+
+test('owed paths follow the real PR diff after the latest manifest commit', () => {
+  const root = mkdtempSync(join(tmpdir(), 'rh-ci-owed-paths-'));
+  const original = process.cwd();
+  const git = (...args: string[]) => spawnSync('git', args, { cwd: root, encoding: 'utf8' });
+  const commit = (message: string) => { expect(git('add', '.').status).toBe(0); expect(git('commit', '-qm', message).status).toBe(0); return git('rev-parse', 'HEAD').stdout.trim(); };
+  try {
+    expect(git('init', '-q').status).toBe(0);
+    git('config', 'user.name', 'CI fixture'); git('config', 'user.email', 'ci@example.invalid'); git('config', 'commit.gpgsign', 'false');
+    mkdirSync(join(root, 'src')); mkdirSync(join(root, 'docs/architecture'), { recursive: true });
+    writeFileSync(join(root, 'src/feature.ts'), 'export const value=1;');
+    writeFileSync(join(root, 'docs/architecture/.projection-manifest.json'), '{}');
+    const base = commit('base'); process.chdir(root);
+    writeFileSync(join(root, 'src/feature.ts'), 'export const value=2;');
+    const source = commit('source');
+    expect(owedImplementationPaths(base, source)).toEqual(['src/feature.ts']);
+    writeFileSync(join(root, 'docs/architecture/.projection-manifest.json'), '{"updated":true}');
+    const manifest = commit('manifest');
+    expect(owedImplementationPaths(base, manifest)).toEqual([]);
+    writeFileSync(join(root, 'src/feature.ts'), 'export const value=3;');
+    const later = commit('later source');
+    expect(owedImplementationPaths(base, later)).toEqual(['src/feature.ts']);
+    writeFileSync(join(root, 'docs/guide.md'), '# Guide');
+    expect(owedImplementationPaths(base, later, true)).toEqual(['src/feature.ts']);
+    expect(() => owedImplementationPaths('invalid', later)).toThrow('Invalid architecture diff');
+  } finally { process.chdir(original); rmSync(root, { recursive: true, force: true }); }
+});
+
+test('failure results with no freshness preserve unavailable data', () => {
+  const summary = summarizeArchitecture({ status: 'blocked', files: [], humanActions: [] }, sha, 1, readFileSync(join(ROOT, ARCHITECTURE_EVIDENCE), 'utf8'));
+  expect(summary.staleNodes).toBeNull();
+  expect(architectureWarning(summary, [])).toContain('Stale nodes: unavailable');
 });

@@ -12,8 +12,8 @@ if [[ "$#" -eq 2 && "$1" == --base && -n "$2" && "$2" != -* ]]; then
   base="$2"
   shift 2
 fi
-if [[ "$#" -gt 0 || ( -n "$base" && "$lane" != affected ) ]] || [[ "$lane" != all && "$lane" != governance && "$lane" != functional && "$lane" != affected ]]; then
-  echo "Usage: scripts/check-ci.sh [affected|all|governance|functional] [--base <git-ref>]" >&2
+if [[ "$#" -gt 0 || ( -n "$base" && "$lane" != affected ) ]] || [[ "$lane" != all && "$lane" != governance && "$lane" != functional && "$lane" != affected && "$lane" != architecture ]]; then
+  echo "Usage: scripts/check-ci.sh [affected|architecture|all|governance|functional] [--base <git-ref>]" >&2
   exit 2
 fi
 
@@ -25,6 +25,17 @@ BUN_TEST_SCHEDULE_FILES=1
 BUN_TEST_SUITE=full
 
 source "$ROOT/scripts/lib/ci-run-tests.sh"
+
+if [[ "$lane" == architecture ]]; then
+  echo "[ci] install"
+  bun install --frozen-lockfile
+  if [[ -n "${REPO_HARNESS_ARCHITECTURE_BASE:-}" ]]; then
+    bun scripts/check-ci-architecture.ts affected --base "$REPO_HARNESS_ARCHITECTURE_BASE"
+  else
+    bun scripts/check-ci-architecture.ts "${REPO_HARNESS_ARCHITECTURE_MODE:-daily}"
+  fi
+  exit $?
+fi
 
 echo "[ci] install"
 bun install --frozen-lockfile
@@ -85,28 +96,10 @@ if [[ "$lane" != functional ]]; then
   echo "[ci] repository inspection"
   bun scripts/inspect-project-state.ts --repo . --format text >/dev/null
   bun src/cli/index.ts init --repo . --dry-run >/dev/null
+fi
 
-  # Stale architecture docs fail this lane, so the daily report opens a repair
-  # issue for the Bot. The check writes no repository files. A private HOME
-  # enables the provider without touching the caller's global configuration.
-  echo "[ci] architecture projection"
-  arch_home="$(mktemp -d /tmp/rh-arch-home-XXXXXX)"
-  mkdir -p "$arch_home/.repo-harness"
-  printf '%s\n' '{"architecture":{"projection_provider":"archctx","projection_apply":"manual","projection_timeout_ms":600000}}' > "$arch_home/.repo-harness/config.json"
-  if [[ -d .codegraph ]]; then
-    HOME="$arch_home" npm exec --no -- codegraph sync -q . </dev/null >/dev/null
-  else
-    HOME="$arch_home" npm exec --no -- codegraph init -y . </dev/null >/dev/null
-  fi
-  arch_status=0
-  HOME="$arch_home" bun src/cli/index.ts architecture-projection check --json > "$arch_home/check.json" || arch_status=$?
-  bun -e 'const r = JSON.parse(await Bun.file(process.argv[1]).text()); console.log(JSON.stringify({ status: r.status, staleNodes: (r.freshness?.staleNodes ?? []).map(n => n.nodeId), files: (r.files ?? []).map(f => f.path), humanActions: r.humanActions ?? [] }, null, 2));' "$arch_home/check.json" || cat "$arch_home/check.json"
-  rm -rf "$arch_home"
-  if [[ "$arch_status" -ne 0 ]]; then
-    echo "[ci] Architecture projection is not noop. Fix the provider error, or run repo-harness architecture-projection apply in a PR." >&2
-    exit 1
-  fi
-
+if [[ "$lane" == all ]]; then
+  bun scripts/check-ci-architecture.ts daily
 fi
 
 if [[ "$lane" != governance ]]; then

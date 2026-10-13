@@ -1,4 +1,8 @@
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { ARCHITECTURE_JOB, ARCHITECTURE_EVIDENCE, readArchitectureSummary, type ArchitectureSummary } from './check-ci-architecture';
 const validSha = (value: unknown): value is string => typeof value === 'string' && /^[0-9a-f]{40}$/.test(value) && value !== '0'.repeat(40);
 
 /** CI completion effect: GitHub is the authority for runs, repair issues and rollback boundaries. */
@@ -61,7 +65,28 @@ async function ensureRepairIssue(api: GitHubAPI, root: string, key: string, titl
   return { issue_url: winner.html_url, delivery: 'reused' };
 }
 
-export async function reportCI(repo: string, runId: number, api: GitHubAPI): Promise<CIReport> {
+export type ArchitectureEvidenceReader = (sha: string, attempt: number) => Promise<unknown>;
+async function downloadArchitectureEvidence(repo: string, runId: number, sha: string, attempt: number, api: GitHubAPI): Promise<unknown> {
+  const name = `ci-architecture-${attempt}`;
+  const artifacts = await githubPages(api, `/repos/${repo}/actions/runs/${runId}/artifacts`, 'artifacts');
+  const matches = artifacts.filter(artifact => artifact.name === name && artifact.expired === false);
+  if (matches.length !== 1) throw new Error('Exact architecture artifact is unavailable');
+  const artifact = matches[0]!;
+  const subject = record(artifact.workflow_run, 'Architecture artifact run');
+  if (!positive(artifact.id) || subject.id !== runId || subject.head_sha !== sha) throw new Error('Architecture artifact subject mismatch');
+  const directory = mkdtempSync(join(tmpdir(), 'rh-ci-architecture-report-'));
+  try {
+    execFileSync('gh', ['run', 'download', String(runId), '--repo', repo, '--name', name, '--dir', directory], {
+      encoding: 'utf8', timeout: 60_000, stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    return JSON.parse(readFileSync(join(directory, 'report.json'), 'utf8'));
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+}
+function architectureRepairDetail(summary: ArchitectureSummary): string {
+  return `Architecture JSON summary:\n\n\`\`\`json\n${JSON.stringify({ status: summary.status, staleNodes: summary.staleNodes, files: summary.files, humanActions: summary.humanActions }, null, 2)}\n\`\`\`\n\nMatching action row from ${ARCHITECTURE_EVIDENCE}:\n\n| Result | Meaning | Bot decision |\n| --- | --- | --- |\n${summary.actionRows.join('\n')}`;
+}
+
+export async function reportCI(repo: string, runId: number, api: GitHubAPI, architectureEvidence?: ArchitectureEvidenceReader): Promise<CIReport> {
   if (!/^[\w.-]+\/[\w.-]+$/.test(repo) || !positive(runId)) throw new Error('Invalid provider repository/run identity');
   const root = `/repos/${repo}`;
   const run = record(await api(`${root}/actions/runs/${runId}`), 'CI run');
@@ -75,12 +100,12 @@ export async function reportCI(repo: string, runId: number, api: GitHubAPI): Pro
   const headSha = run.head_sha;
   const report: CIReport = { run_id: runId, run_attempt: run.run_attempt, sha: run.head_sha,
     conclusion: run.conclusion, run_url: run.html_url, repairs: [], merges: [], unresolved_repairs: null, errors: [] };
-  const repair = async (identity: string, detail: string, requireOpen = false): Promise<void> => {
+  const repair = async (identity: string, detail: string, requireOpen = false, evidence = '', titleName = identity): Promise<void> => {
     const key = requireOpen ? `ci-repair:${identity}` : `ci-repair:${run.id}:${run.run_attempt}:${identity}`;
     try {
       const task = await ensureRepairIssue(api, root, key,
-        `[CI repair] ${safeText(identity)} @ ${headSha.slice(0, 12)}`,
-        `Fixed main SHA: \`${run.head_sha}\`\nRun: ${run.html_url}\nAttempt: ${run.run_attempt}\nCheck: ${identity}\n\n${safeText(detail)}\n\nInvestigate the real failure; open a repair PR and run typecheck + affected tests once. Do not weaken assertions. Credentials/permissions and production operations require user approval.`, requireOpen);
+        `[CI repair] ${safeText(titleName)} @ ${headSha.slice(0, 12)}`,
+        `Fixed main SHA: \`${run.head_sha}\`\nRun: ${run.html_url}\nAttempt: ${run.run_attempt}\nCheck: ${identity}\n\n${safeText(detail)}${evidence ? `\n\n${evidence}` : ''}\n\nInvestigate the real failure; open a repair PR and run typecheck + affected tests once. Do not weaken assertions. Credentials/permissions and production operations require user approval.`, requireOpen);
       report.repairs.push({ key, ...task });
     } catch (error) {
       // The artifact is the pending delivery record. An HTTP refusal never becomes a fake dispatch success.
@@ -98,7 +123,19 @@ export async function reportCI(repo: string, runId: number, api: GitHubAPI): Pro
         if (!positive(job.id) || typeof job.check_run_url !== 'string') throw new Error('Failed job has no check identity');
         const check = record(await api(new URL(job.check_run_url).pathname), 'Failed check');
         if (!positive(check.id)) throw new Error('Failed check identity unavailable');
-        await repair(`check-${check.id}`, `${safeText(job.name)}: ${safeText(job.conclusion)}. Check: ${check.html_url ?? job.check_run_url}`);
+        let evidence = '';
+        if (job.name === ARCHITECTURE_JOB) {
+          try {
+            const value = architectureEvidence ? await architectureEvidence(headSha, run.run_attempt as number)
+              : await downloadArchitectureEvidence(repo, runId, headSha, run.run_attempt as number, api);
+            evidence = architectureRepairDetail(readArchitectureSummary(value, headSha, run.run_attempt as number));
+          } catch (error) {
+            report.errors.push(`Architecture evidence unavailable: ${message(error)}`);
+            evidence = `Architecture evidence unavailable: ${safeText(message(error))}. Read the fixed-run job log. Do not infer stale nodes.`;
+          }
+        }
+        await repair(`check-${check.id}`, `${safeText(job.name)}: ${safeText(job.conclusion)}. Check: ${check.html_url ?? job.check_run_url}`,
+          false, evidence, job.name === ARCHITECTURE_JOB ? `${ARCHITECTURE_JOB} / check-${check.id}` : `check-${check.id}`);
       }
     } catch (error) { report.errors.push(`Failure observation incomplete: ${message(error)}`); await repair(`run-${run.id}`, 'Failed run/check observation was incomplete.'); }
   }
