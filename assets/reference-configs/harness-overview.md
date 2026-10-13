@@ -83,6 +83,29 @@ with the project.
 - Evidence: Native execution evaluation supplies current check facts, while `.ai/harness/runs/*.json` keeps ignored local verification snapshots for the current workflow audit. Task-specific `.ai/harness/checks/*.latest.{json,md}` reports are ignored runtime cache; promote durable conclusions into reviews, contracts, notes, or research.
 - Human reading surface: `docs/spec.md`, `docs/architecture/`, and durable `docs/researches/` conclusions are the default entrypoint. Root workflow artifacts should describe active work only; completed plan/contract/review/notes/todo artifacts move to `plans/archive/` or `tasks/archive/`, and `.rgignore` keeps those archives plus runtime evidence out of default `rg` results.
 - Closeout order: promote durable truth first, then archive the workflow artifacts. If a fact only lives in a review/contract/checks file, the workflow is not ready to disappear from the active reading surface.
+- Local retention: `repo-harness retention` moves closed artifacts to a gitignored local archive root after 30 days. It scans four classes: closed plans in `plans/archive/`, closed task records in `tasks/archive/`, check logs (`.ai/harness/checks/*.log`), and run records that no code reads back (`.ai/harness/runs/verification-vx-*.log`, `*-heartbeat-triage.json`, and finished `contract-run-*` directories with a `manifest.json`). The command is a dry run by default. Add `--apply` to move the entries. It skips open work, entries in the `keep` list, entries newer than the window, and entries whose destination exists. It never deletes; the operator cleans the archive root. Other run records stay in place: verification records and reports are bound by hash or named by receipts, session directories keep a `closed.json` tombstone, ledgers and hook telemetry are live, and `evidence-gc` owns run summaries. Configure it in `.ai/harness/policy.json`:
+
+  ```json
+  "information_lifecycle": {
+    "retention": { "days": 30, "archive_root": ".ai/harness/archive/retention", "keep": [] }
+  }
+  ```
+
+  All fields are optional. A malformed or non-canonical field fails the command. The archive root and every destination must be gitignored. A scanned or archive path through a symlink fails the command. The default root is under `.ai/harness/archive/`, which the generated `.gitignore` block already ignores.
+- Plans stay committed: keep `plans/` tracked in Git. A closed plan stays in `plans/archive/` and in Git for the retention window. The window counts from the last commit of a tracked plan, and from the file time of an untracked plan. After the window, retention moves the plan to the archive root, and the plan leaves the working tree. Retention does not stage or commit; commit the removal. A plan with uncommitted changes is skipped. In the other classes, an entry with a Git-tracked file is skipped, because those classes are local-only.
+- Local-only process artifacts: a repository that does not commit its task records and run evidence can add these patterns below the generated `.gitignore` block. Do not ignore `plans/`; plans stay committed. The two negations keep the durable ledgers tracked. Leave out `*.jsonl` if the repository tracks JSONL data.
+
+  ```gitignore
+  tasks/*
+  !tasks/todos.md
+  !tasks/lessons.md
+  .ai/harness/architecture/archive/
+  .artifacts/
+  **/evidence/
+  *.jsonl
+  ```
+
+  The generated block already ignores `.ai/harness/runs/`, `.ai/harness/checks/`, `.ai/harness/archive/` and `_ops/`. Ignoring a path does not remove blobs that Git already tracks; untrack them with `git rm --cached` in a separate change.
 - Memory: `docs/researches/` and `tasks/lessons.md` are advisory. Current repo state and evidence override summaries.
 - External knowledge: `brain/<project>/*` is an optional operator-managed export surface for long-form explanations, runbooks, decisions, and patterns. Hooks and workflow checks never read, write, or gate on its state.
 - Assets: policies, hooks, scripts, templates, and reference configs only change when a pattern has evidence across tasks or fixtures.
