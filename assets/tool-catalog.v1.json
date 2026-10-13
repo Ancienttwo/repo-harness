@@ -1,0 +1,89 @@
+{
+  "catalog_version": "repo-harness.tool-catalog.v1",
+  "tools": [
+    {
+      "id": "waza",
+      "name": "Waza",
+      "kind": "local_tool",
+      "category": "agent_skills",
+      "url": "https://github.com/tw93/Waza",
+      "license": "MIT",
+      "summary": {
+        "en": "Agent skills for planning, debugging, review and project health: think, hunt, check and health.",
+        "zh": "规划、排查、审查和项目体检的 agent skill：think、hunt、check 和 health。"
+      },
+      "detector": "waza",
+      "docs_anchor": "#waza"
+    },
+    {
+      "id": "codegraph",
+      "name": "CodeGraph",
+      "kind": "local_tool",
+      "category": "code_navigation",
+      "url": "https://github.com/colbymchenry/codegraph",
+      "license": "MIT",
+      "summary": {
+        "en": "A local code index and MCP server. Agents use it to find symbols and call paths faster.",
+        "zh": "本机代码索引和 MCP server。Agent 用它更快地找到符号和调用路径。"
+      },
+      "detector": "codegraph",
+      "docs_anchor": "#codegraph"
+    },
+    {
+      "id": "herdr-skill",
+      "name": "herdr skill",
+      "kind": "local_tool",
+      "category": "orchestration",
+      "url": "https://github.com/herdrdev/herdr",
+      "license": "Apache-2.0",
+      "summary": {
+        "en": "The skill text from herdr --skill. The repo-harness skill needs it to control Herdr panes on Claude and Codex.",
+        "zh": "来自 herdr --skill 的 skill 文本。repo-harness skill 在 Claude 和 Codex 上要用它控制 Herdr pane。"
+      },
+      "detector": "herdr_skill",
+      "docs_anchor": "#runtime-ownership-boundary"
+    },
+    {
+      "id": "hai-stack",
+      "name": "hai-stack",
+      "kind": "local_tool",
+      "category": "agent_skills",
+      "url": "https://github.com/hylarucoder/hai-stack",
+      "license": null,
+      "summary": {
+        "en": "Optional agent skills. repo-harness recommends the geju skill for direction judgments.",
+        "zh": "可选的 agent skill。repo-harness 推荐其中的 geju skill，用于方向判断。"
+      },
+      "detector": null,
+      "docs_anchor": "#hai-stack"
+    },
+    {
+      "id": "shaders",
+      "name": "shader-effects-inc/shaders",
+      "kind": "resource",
+      "category": "frontend",
+      "url": "https://github.com/shader-effects-inc/shaders",
+      "license": "MIT",
+      "summary": {
+        "en": "WebGPU shader components for React, Vue, Svelte, Solid, plain JavaScript and Framer",
+        "zh": "WebGPU shader 组件，支持 React、Vue、Svelte、Solid、原生 JavaScript 和 Framer"
+      },
+      "detector": null,
+      "docs_anchor": "#recommended-frontend-and-design-resources"
+    },
+    {
+      "id": "awesome-design-md",
+      "name": "VoltAgent/awesome-design-md",
+      "kind": "resource",
+      "category": "design",
+      "url": "https://github.com/VoltAgent/awesome-design-md",
+      "license": "MIT",
+      "summary": {
+        "en": "DESIGN.md files from popular brand design systems. Put one in a project, and coding agents make UI that matches it",
+        "zh": "来自知名品牌设计系统的 DESIGN.md 文件。把一份放进项目，coding agent 做出的 UI 就会和它一致"
+      },
+      "detector": null,
+      "docs_anchor": "#recommended-frontend-and-design-resources"
+    }
+  ]
+}

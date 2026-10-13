@@ -13,6 +13,7 @@ import {
   RobotIcon,
   SunIcon,
   TreeStructureIcon,
+  WrenchIcon,
 } from '@phosphor-icons/react';
 import type { SetupSnapshotV1 } from '../core/setup/types';
 import type { DevActivitySnapshotV1 } from '../core/dev-activity/types';
@@ -56,6 +57,7 @@ import {
 } from './RepositoryWorkspace';
 import { fetchRuntimeOverlay, useRuntimeOverlay, type RuntimeOverlayReader } from './RuntimeBadges';
 import { SystemPage } from './SystemPage';
+import { ToolsPage } from './ToolsPage';
 import type { TaskActivityReader, TaskContextReader } from './TaskEvidence';
 import type { TaskHistoryReader } from './TaskHistory';
 import { parseTaskLocation, taskLocationSearch, type TaskLocation } from './task-location';
@@ -141,12 +143,13 @@ const NAV_ICON: Readonly<Record<typeof WORKSPACES[number], ReactNode>> = {
   agents: <RobotIcon size={18} />,
   skills: <PuzzlePieceIcon size={18} />,
   hooks: <PlugsConnectedIcon size={18} />,
+  tools: <WrenchIcon size={18} />,
   architecture: <TreeStructureIcon size={18} />,
   system: <CpuIcon size={18} />,
 };
 
-/** Seven sections do not fit a phone's bottom bar; these sit behind "More" below the md breakpoint. */
-const PHONE_OVERFLOW: ReadonlySet<Workspace> = new Set<Workspace>(['skills', 'hooks', 'architecture']);
+/** Eight sections do not fit a phone's bottom bar; these sit behind "More" below the md breakpoint. */
+const PHONE_OVERFLOW: ReadonlySet<Workspace> = new Set<Workspace>(['skills', 'hooks', 'tools', 'architecture']);
 
 function isActive(current: Workspace, workspace: Workspace): boolean {
   return current === workspace || (workspace === 'repositories' && current === 'repository');
@@ -561,6 +564,8 @@ export function OperatorApp({
           {workspace === 'agents' && <AgentsPage view={setup} now={now} t={t} />}
           {workspace === 'skills' && <SkillsPage view={setup} now={now} t={t} />}
           {workspace === 'hooks' && <HooksPage view={setup} now={now} t={t} />}
+          {workspace === 'tools' && <ToolsPage toolId={place.item} onOpen={id => openPlace({ workspace: 'tools', module: null, item: id })}
+            onClose={() => openPlace({ workspace: 'tools', module: null, item: null })} locale={locale} t={t} />}
           {workspace === 'repository' && <RepositoryWorkspace
             state={state} activeRepository={activeRepository} activeRepositoryId={activeRepositoryId} onRepository={switchRepository}
             location={location} selection={selection} selectedCard={selectedCard} revisionChangedFrom={revisionChangedFrom}
