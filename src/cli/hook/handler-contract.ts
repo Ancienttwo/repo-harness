@@ -1,6 +1,6 @@
 import type { StateInputCollector } from '../../effects/loop/state-input-collector';
 import type { HookIdentity, HookPayload } from './hook-input';
-import type { SessionContextProviderDiagnostic, SessionContextSection } from './session-context-budget';
+import type { SessionContextSection } from './session-context-budget';
 import type { HookEvent, HookHandlerId } from './route-registry';
 
 /** A tool admission decision. `updatedInput` replaces the tool input on allow. */
@@ -33,14 +33,11 @@ export interface HookHandlerResult {
 export interface HookHandlerContext {
   readonly event: HookEvent;
   readonly repoRoot: string;
-  readonly sessionCwd: string;
   readonly payload: HookPayload;
   readonly identity: HookIdentity;
   readonly env: NodeJS.ProcessEnv;
   readonly now: Date;
   readonly collector: StateInputCollector;
-  readonly worktreeSweepDeadlineMs?: number;
-  readonly observeSessionContextDiagnostic: (diagnostic: SessionContextProviderDiagnostic) => void;
 }
 
 export interface TypedHookHandler {

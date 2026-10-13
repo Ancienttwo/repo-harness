@@ -4,8 +4,6 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { writeGlobalContextFiles } from "../src/cli/commands/init";
 import type { ReportingLanguagePreset } from "../src/cli/commands/init";
-import { normalizeMinimalChangePolicy } from "../src/cli/hook/minimal-change-policy";
-import { renderMinimalChangeSessionContext } from "../src/cli/hook/minimal-change-context";
 
 const ROOT = join(import.meta.dir, "..");
 const ASSETS_TEMPLATE = join(ROOT, "assets/reference-configs/global-working-rules.md");
@@ -104,17 +102,6 @@ describe("global working rules distribution", () => {
     expect(countOccurrences(rendered, "include a short `下一刀` section")).toBe(1);
     expect(rendered).toContain("Use `下一刀: <direction>. Reason: <open loop>. Entry: <path/command/verification surface>.`");
     expect(rendered).not.toContain("Next cut");
-  });
-
-  test("renderMinimalChangeSessionContext carries the no-fallback rule within budget", () => {
-    const policy = normalizeMinimalChangePolicy({ mode: "advice", max_context_words: 180 });
-    const context = renderMinimalChangeSessionContext(policy);
-    expect(context).toContain("Reason from first principles");
-    expect(context).toContain("No compatibility fallbacks");
-    expect(context).toContain("one source of truth per datum");
-    expect(context).toContain("at least two real consumers");
-    expect(context).toContain("monorepo workspace");
-    expect(context).toContain("fail closed");
   });
 
   test("generated root context carries the same code optimization constraints", () => {

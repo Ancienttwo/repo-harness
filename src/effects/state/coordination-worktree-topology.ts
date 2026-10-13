@@ -492,8 +492,13 @@ function resumeSweepTrash(context: SweepContext, directory: string): 'resumed' |
   }
 }
 
-/** Local refs and this clone's Git inventory are the only live worktree inputs. */
-export function sweepManagedWorktrees(root: string, sessionCwd: string, env: NodeJS.ProcessEnv = process.env, options: WorktreeRemovalOptions = {}): string | null {
+/**
+ * Local refs and this clone's Git inventory are the only live worktree inputs.
+ * `contract-worktree start` runs this before it creates a checkout. Every
+ * destructive step takes the same topology lock as start. `callerCwd` and
+ * everything below it are never removed.
+ */
+export function sweepManagedWorktrees(root: string, callerCwd: string, env: NodeJS.ProcessEnv = process.env, options: WorktreeRemovalOptions = {}): string | null {
   const limits = { deadline: Date.now() + (options.deadlineMs ?? 2_000), gitBin: configuredGitBinary(env) };
   const notes: string[] = [];
   let removed = 0, pruned = 0, resumed = 0, deferred = 0;
@@ -502,7 +507,7 @@ export function sweepManagedWorktrees(root: string, sessionCwd: string, env: Nod
     const primary = topology[0];
     if (!primary) return null;
     const main = checkoutPath(primary.path);
-    const cwd = realpathSync(sessionCwd);
+    const cwd = realpathSync(callerCwd);
     const managedRoot = realpathSync(env.REPO_HARNESS_WORKTREE_ROOT ?? systemWorktreeRoot(process.platform, tmpdir()));
     const prefix = `${basename(main)}-wt-`;
     const managed = (path: string) => dirname(path) === managedRoot && basename(path).startsWith(prefix) && basename(path).length > prefix.length;
@@ -593,17 +598,13 @@ export function sweepManagedWorktrees(root: string, sessionCwd: string, env: Nod
           withWorktreeTopologyLock(main, () => { pruned += pruneManagedWorktrees(context); }, limits);
           notes.push(`${path}: pruned; branch cleanup deferred (${branch})`);
           continue;
-        } else {
-          const receipt = commitSweepRemoval(context, { worktree: path, branch, head_sha: entry.head, target_ref: targetRef, target_oid: target, merge_commit_sha: target });
-          removed++;
-          notes.push(`${path}: removed`);
-          // No detached child: each unlink is resumable and checks the same deadline.
-          try { resumeSweepTrash(context, receipt.directory); }
-          catch (error) { notes.push(`${receipt.directory}: pending; ${error instanceof Error ? error.message.split('\n')[0] : String(error)}`); }
-          continue;
         }
+        const receipt = commitSweepRemoval(context, { worktree: path, branch, head_sha: entry.head, target_ref: targetRef, target_oid: target, merge_commit_sha: target });
         removed++;
         notes.push(`${path}: removed`);
+        // No detached child: each unlink is resumable and checks the same deadline.
+        try { resumeSweepTrash(context, receipt.directory); }
+        catch (error) { notes.push(`${receipt.directory}: pending; ${error instanceof Error ? error.message.split('\n')[0] : String(error)}`); }
       } catch (error) {
         notes.push(`${path}: kept; ${error instanceof Error ? error.message.split('\n')[0] : String(error)}`);
       }

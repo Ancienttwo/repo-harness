@@ -157,26 +157,20 @@ describe('hook runtime typed dispatch', () => {
     } finally { rmSync(root, { recursive: true, force: true }); }
   });
 
-  test('one SessionStart writes the same session_id to telemetry and budget evidence', () => {
+  test('one SessionStart writes the payload session_id and run_id to telemetry', () => {
     const root = fixture();
     try {
-      // A pending post-edit event makes SessionStart emit a budgeted section.
-      runHook({ event: 'PostToolUse', routeId: 'edit', cwd: root, env: env(root),
-        input: JSON.stringify({ session_id: 'sess-claude-1', tool_input: { file_path: 'README.md' } }) });
       const result = runHook({
         event: 'SessionStart',
         routeId: 'default',
         cwd: root,
-        env: { ...env(root), REPO_HARNESS_TOOLING_ADVISORY: '0' },
-        input: JSON.stringify({ session_id: 'sess-claude-1' }),
+        env: env(root),
+        input: JSON.stringify({ session_id: 'sess-claude-1', run_id: 'run-claude-1' }),
       });
       expect(result.exitCode).toBe(0);
       const sessionStart = telemetry(root).find((record) => record.event === 'SessionStart');
-      const evidence = JSON.parse(readFileSync(join(root, '.ai/harness/state/session-context-budget.json'), 'utf8'));
-      const identity = JSON.parse(readFileSync(join(root, '.ai/harness/state/session-run-identity.json'), 'utf8'));
       expect(sessionStart?.session_id).toBe('sess-claude-1');
-      expect(evidence.session_id).toBe('sess-claude-1');
-      expect(sessionStart?.run_id).toBe(identity.run_id);
+      expect(sessionStart?.run_id).toBe('run-claude-1');
     } finally { rmSync(root, { recursive: true, force: true }); }
   }, 30_000);
 

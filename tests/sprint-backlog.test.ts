@@ -19,8 +19,8 @@ import {
 import { tmpdir } from "os";
 import { join } from "path";
 import { spawn, spawnSync } from "child_process";
-import { sessionStartMainContent } from "../src/cli/hook/session-context";
-import { createStateInputCollector } from "../src/effects/loop/state-input-collector";
+import { SESSION_CONTEXT_PROVIDERS } from "../src/cli/hook/session-context";
+import type { EffectiveState } from "../src/core/state/types";
 import { backlogRows, sprintBacklogSchema } from '../src/core/state/sprint-backlog-rows';
 import { readCanonicalSprint } from '../src/effects/state/coordination-canonical-source';
 import { fixtureTaskId } from './helpers/sprint-fixture';
@@ -1240,33 +1240,29 @@ describe("sprint projection", () => {
     }
   }, 30_000);
 
-  // HRD-04 retired session-start-context.sh; the direct-spawn vehicle
-  // retargets through the in-process session-context builder with identical
-  // Active Sprint assertions (installHooks() is no longer needed -- the
-  // builder reads repo facts directly, not a vendored script).
-  test("session-start hook injects active sprint context and stays inert without a marker", () => {
+  test("session-start sprint section names the next task from the resolved state and stays inert without a sprint", () => {
     const cwd = tmpWorkspace("sprint-session-start");
     try {
-      const freshCollector = () => createStateInputCollector({
-        repoRoot: cwd,
-        resolveEffectiveState: () => ({
-          ok: false,
-          reason_code: "state_resolution_failed",
-          error_hash: "sha256:unused",
-          message: "session sections do not resolve Effective State",
-        }),
-      });
+      const sprint = "plans/sprints/20260610-0000-fixture-sprint.sprint.md";
+      const provider = SESSION_CONTEXT_PROVIDERS.find(({ id }) => id === "active-sprint")!;
+      const state = (path: string | null) => ({
+        blockers: [],
+        stale_sources: [],
+        authoritative_plan: null,
+        next_action: null,
+        active_sprint: { path, freshness: path ? "fresh" : "not_applicable" },
+        authority_revision: "sha256:authority",
+        progress_token: "sha256:progress",
+      }) as unknown as EffectiveState;
 
-      const inert = sessionStartMainContent(freshCollector(), process.env, Date.now());
-      expect(inert === null || !inert.includes("Active Sprint")).toBe(true);
+      expect(provider.render({ repoRoot: cwd, state: state(null), nowMs: Date.now() })).toBeNull();
 
-      writeActiveSprintFixture(cwd, "plans/sprints/20260610-0000-fixture-sprint.sprint.md");
-      const active = sessionStartMainContent(freshCollector(), process.env, Date.now());
-      expect(active).not.toBeNull();
-      expect(active).toContain("Active Sprint");
-      expect(active).toContain("backlog=0/2");
-      expect(active).toContain("task-a");
-      expect(active).toContain("Use `$think` to expand the next sprint task");
+      writeActiveSprintFixture(cwd, sprint);
+      const active = provider.render({ repoRoot: cwd, state: state(sprint), nowMs: Date.now() });
+      expect(active?.source).toBe(sprint);
+      expect(active?.content).toContain("# Active Sprint");
+      expect(active?.content).toContain("start-task --task 'task-a'");
+      expect(active?.content).toContain("Use `$think` to expand the next sprint task");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

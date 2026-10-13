@@ -3,173 +3,21 @@ import { execFileSync } from 'child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { resolveHookIdentity } from '../src/cli/hook/run-identity';
+import { hookIdentity } from '../src/cli/hook/hook-input';
 import { runHook } from '../src/cli/hook/runtime';
-import { readAcceptedEvents } from '../src/effects/evidence/event-log';
 
-const STATE_RELATIVE_PATH = '.ai/harness/state/session-run-identity.json';
-
-function workspace(prefix: string): string {
-  return mkdtempSync(join(tmpdir(), `${prefix}-`));
-}
-
-function readStateFileRaw(repoRoot: string): Record<string, unknown> {
-  return JSON.parse(readFileSync(join(repoRoot, STATE_RELATIVE_PATH), 'utf-8')) as Record<string, unknown>;
-}
-
-/** SessionStart's run id: it mints, adopts or reuses the stored entry. */
-function sessionStart(repoRoot: string, payload: Record<string, unknown>, now?: Date): string | null {
-  return resolveHookIdentity(repoRoot, 'SessionStart', payload, 'claude', now).runId;
-}
-
-describe('run-identity: identity for events after SessionStart', () => {
+describe('hook identity comes from the payload only', () => {
   test('takes session, run and turn from the payload', () => {
-    const repoRoot = workspace('run-identity-resolve-payload');
-    try {
-      expect(resolveHookIdentity(
-        repoRoot,
-        'PostToolUse',
-        { session_id: 'sess-1', run_id: 'run-from-payload', turn_id: 'turn-1' },
-        'codex',
-      )).toEqual({ host: 'codex', sessionId: 'sess-1', runId: 'run-from-payload', turnId: 'turn-1' });
-    } finally {
-      rmSync(repoRoot, { recursive: true, force: true });
-    }
+    expect(hookIdentity({ session_id: 'sess-1', run_id: 'run-from-payload', turn_id: 'turn-1' }, 'codex'))
+      .toEqual({ host: 'codex', sessionId: 'sess-1', runId: 'run-from-payload', turnId: 'turn-1' });
   });
 
-  test('a payload run_id wins over the stored SessionStart entry', () => {
-    const repoRoot = workspace('run-identity-resolve-payload-wins');
-    try {
-      sessionStart(repoRoot, { session_id: 'sess-1' });
-      expect(resolveHookIdentity(repoRoot, 'Stop', { session_id: 'sess-1', run_id: 'run-from-payload' }, 'claude').runId)
-        .toBe('run-from-payload');
-    } finally {
-      rmSync(repoRoot, { recursive: true, force: true });
-    }
-  });
-
-  test('falls back to the stored SessionStart entry by session_id when the payload has no run_id', () => {
-    const repoRoot = workspace('run-identity-resolve-session-state');
-    try {
-      const minted = sessionStart(repoRoot, { session_id: 'sess-lookup' });
-      expect(minted).not.toBeNull();
-      expect(resolveHookIdentity(repoRoot, 'PostToolUse', { session_id: 'sess-lookup' }, 'claude'))
-        .toEqual({ host: 'claude', sessionId: 'sess-lookup', runId: minted, turnId: null });
-    } finally {
-      rmSync(repoRoot, { recursive: true, force: true });
-    }
-  });
-
-  test('returns a null runId when session_id does not match the stored state entry', () => {
-    const repoRoot = workspace('run-identity-resolve-session-mismatch');
-    try {
-      sessionStart(repoRoot, { session_id: 'sess-a' });
-      expect(resolveHookIdentity(repoRoot, 'PostToolUse', { session_id: 'sess-b' }, 'claude'))
-        .toEqual({ host: 'claude', sessionId: 'sess-b', runId: null, turnId: null });
-    } finally {
-      rmSync(repoRoot, { recursive: true, force: true });
-    }
-  });
-
-  test('returns null ids when nothing resolves at all and never mints', () => {
-    const repoRoot = workspace('run-identity-resolve-empty');
-    try {
-      expect(resolveHookIdentity(repoRoot, 'PostToolUse', {}, 'pi'))
-        .toEqual({ host: 'pi', sessionId: null, runId: null, turnId: null });
-      expect(existsSync(join(repoRoot, STATE_RELATIVE_PATH))).toBe(false);
-    } finally {
-      rmSync(repoRoot, { recursive: true, force: true });
-    }
+  test('a missing or blank id stays null and nothing is minted', () => {
+    expect(hookIdentity({}, 'pi')).toEqual({ host: 'pi', sessionId: null, runId: null, turnId: null });
+    expect(hookIdentity({ session_id: ' ', run_id: 7, turn_id: null }, 'claude'))
+      .toEqual({ host: 'claude', sessionId: null, runId: null, turnId: null });
   });
 });
-
-describe('run-identity: SessionStart', () => {
-  test('mints a run-<timestamp>-<pid> id when nothing upstream and no prior state', () => {
-    const repoRoot = workspace('run-identity-mint-fresh');
-    try {
-      const minted = sessionStart(repoRoot, { session_id: 'sess-fresh' });
-      expect(minted).toMatch(/^run-\d{8}T\d{6}-\d+$/);
-      expect(readStateFileRaw(repoRoot)).toEqual({
-        protocol: 1,
-        session_id: 'sess-fresh',
-        run_id: minted,
-        created_at: expect.any(String),
-      });
-    } finally {
-      rmSync(repoRoot, { recursive: true, force: true });
-    }
-  });
-
-  test('re-entry with the same session_id and no upstream override reuses the previously minted id', () => {
-    const repoRoot = workspace('run-identity-mint-idempotent');
-    try {
-      const first = sessionStart(repoRoot, { session_id: 'sess-repeat' }, new Date('2026-08-01T09:00:00.000Z'));
-      const second = sessionStart(repoRoot, { session_id: 'sess-repeat' }, new Date('2026-08-01T09:05:00.000Z'));
-      expect(second).toBe(first);
-      expect(readStateFileRaw(repoRoot).run_id).toBe(first);
-    } finally {
-      rmSync(repoRoot, { recursive: true, force: true });
-    }
-  });
-
-  test('adopts an upstream-provided run_id verbatim instead of minting', () => {
-    const repoRoot = workspace('run-identity-mint-adopt');
-    try {
-      const adopted = sessionStart(repoRoot, { session_id: 'sess-upstream', run_id: 'loop-engine-run-77' });
-      expect(adopted).toBe('loop-engine-run-77');
-      expect(readStateFileRaw(repoRoot).run_id).toBe('loop-engine-run-77');
-    } finally {
-      rmSync(repoRoot, { recursive: true, force: true });
-    }
-  });
-
-  test('a later upstream-provided value for the same session overwrites the stored id (upstream stays authoritative)', () => {
-    const repoRoot = workspace('run-identity-mint-upstream-override');
-    try {
-      sessionStart(repoRoot, { session_id: 'sess-loop', run_id: 'loop-run-1' });
-      const second = sessionStart(repoRoot, { session_id: 'sess-loop', run_id: 'loop-run-2' });
-      expect(second).toBe('loop-run-2');
-      expect(readStateFileRaw(repoRoot).run_id).toBe('loop-run-2');
-    } finally {
-      rmSync(repoRoot, { recursive: true, force: true });
-    }
-  });
-
-  test('returns null and stores nothing when the payload has no session_id', () => {
-    const repoRoot = workspace('run-identity-mint-no-session');
-    try {
-      expect(sessionStart(repoRoot, {})).toBeNull();
-      expect(existsSync(join(repoRoot, STATE_RELATIVE_PATH))).toBe(false);
-    } finally {
-      rmSync(repoRoot, { recursive: true, force: true });
-    }
-  });
-
-  test('storage stays a single bounded slot across distinct sessions, not a growing map', () => {
-    const repoRoot = workspace('run-identity-mint-bounded');
-    try {
-      sessionStart(repoRoot, { session_id: 'sess-first' });
-      sessionStart(repoRoot, { session_id: 'sess-second' });
-      sessionStart(repoRoot, { session_id: 'sess-third' });
-      const state = readStateFileRaw(repoRoot);
-      expect(Object.keys(state).sort()).toEqual(['created_at', 'protocol', 'run_id', 'session_id']);
-      expect(state.session_id).toBe('sess-third');
-      // A prior session's identity must not be resolvable once overwritten --
-      // no cross-session history is retained (bounded growth).
-      expect(resolveHookIdentity(repoRoot, 'PostToolUse', { session_id: 'sess-first' }, 'claude').runId).toBeNull();
-      expect(resolveHookIdentity(repoRoot, 'PostToolUse', { session_id: 'sess-second' }, 'claude').runId).toBeNull();
-    } finally {
-      rmSync(repoRoot, { recursive: true, force: true });
-    }
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Acceptance probe: SessionStart -> PostToolUse.bash via the real runHook()
-// runtime, demonstrating the two required joins:
-//   (a) a newly produced hook event has a non-empty run_id
-//   (b) that same run_id appears as an evidence ledger correlation_run_id
-// ---------------------------------------------------------------------------
 
 function fixtureRepo(prefix: string): string {
   const root = mkdtempSync(join(tmpdir(), `${prefix}-`));
@@ -190,58 +38,19 @@ function hookEvents(root: string): Record<string, unknown>[] {
   return readFileSync(file, 'utf8').trim().split('\n').filter(Boolean).map((line) => JSON.parse(line));
 }
 
-describe('run-identity acceptance probe: SessionStart -> PostToolUse.bash', () => {
-  test('a fresh SessionStart mints a run identity that threads to hook telemetry and the evidence ledger correlation_run_id', () => {
-    const root = fixtureRepo('run-identity-acceptance');
+describe('SessionStart identity in telemetry', () => {
+  test('telemetry carries the payload ids, a null run without a payload run_id, and no identity file', () => {
+    const root = fixtureRepo('run-identity-telemetry');
     try {
-      const env = {
-        ...process.env,
-        HOOK_REPO_ROOT: root,
-        HOOK_HOST: 'claude',
-        REPO_HARNESS_WORKFLOW_PROFILE: 'routine',
-        // This fixture owns synchronous identity hooks, not detached tooling probes.
-        // Detached advisory lifecycle has separate coverage in session-context.test.ts.
-        REPO_HARNESS_TOOLING_ADVISORY: '0',
-      };
-      // Deliberately no payload run_id: SessionStart must mint the run.
-      const sessionId = 'run-identity-acceptance-session';
-
-      const sessionStartResult = runHook({
-        event: 'SessionStart',
-        routeId: 'default',
-        cwd: root,
-        env,
-        input: JSON.stringify({ session_id: sessionId }),
-      });
-      expect(sessionStartResult.exitCode).toBe(0);
-      expect(existsSync(join(root, '.ai/harness/security/tooling-update-advisory-claude.lock'))).toBe(false);
-
-      const bashResult = runHook({
-        event: 'PostToolUse',
-        routeId: 'bash',
-        cwd: root,
-        env,
-        input: JSON.stringify({ session_id: sessionId, tool_input: { command: 'echo hello' }, tool_response: { stdout: 'hello\n', stderr: '', interrupted: false }, exit_code: 0 }),
-      });
-      expect(bashResult.exitCode).toBe(0);
-
-      // (a) newly produced hook events carry a non-empty run_id.
-      const events = hookEvents(root);
-      const sessionStartEvent = events.find((event) => event.event === 'SessionStart');
-      const bashEvent = events.find((event) => event.event === 'PostToolUse' && event.route_id === 'bash');
-      expect(typeof sessionStartEvent?.run_id).toBe('string');
-      expect(sessionStartEvent?.run_id).not.toBe('');
-      expect(typeof bashEvent?.run_id).toBe('string');
-      expect(bashEvent?.run_id).not.toBe('');
-      // The same run identity threads across both hook invocations of one session.
-      expect(bashEvent?.run_id).toBe(sessionStartEvent?.run_id);
-
-      // (b) join instance: the identical run_id shows up as the evidence
-      // ledger's correlation_run_id for the PostBash-observed event.
-      const ledger = readAcceptedEvents(root);
-      const observed = ledger.accepted.find((event) => event.event_type === 'post_bash.command_observed');
-      expect(observed).toBeDefined();
-      expect(observed?.correlation_run_id).toBe(sessionStartEvent?.run_id as string);
+      const env = { ...process.env, HOOK_REPO_ROOT: root, HOOK_HOST: 'claude' };
+      expect(runHook({ event: 'SessionStart', routeId: 'default', cwd: root, env,
+        input: JSON.stringify({ session_id: 'sess-without-run' }) }).exitCode).toBe(0);
+      expect(runHook({ event: 'SessionStart', routeId: 'default', cwd: root, env,
+        input: JSON.stringify({ session_id: 'sess-with-run', run_id: 'loop-engine-run-77' }) }).exitCode).toBe(0);
+      const [first, second] = hookEvents(root).filter((event) => event.event === 'SessionStart');
+      expect(first).toMatchObject({ session_id: 'sess-without-run', run_id: null });
+      expect(second).toMatchObject({ session_id: 'sess-with-run', run_id: 'loop-engine-run-77' });
+      expect(existsSync(join(root, '.ai/harness/state/session-run-identity.json'))).toBe(false);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

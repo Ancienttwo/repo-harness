@@ -38,6 +38,15 @@ function markActiveWorktree(worktree: string): void {
 }
 try {
   if (action === 'assert-unused-path' || action === 'check-start-path') {
+    if (action === 'check-start-path') {
+      // Start is the only creator of managed worktrees, so it also retires
+      // merged ones before it reads the topology. Each destructive step takes
+      // the topology lock. A sweep failure is reported and never blocks start.
+      // An operator command can wait longer than the sweep's hook-era default.
+      const { sweepManagedWorktrees } = await import(pathToFileURL(join(packageRoot, 'src/effects/state/coordination-worktree-topology.ts')).href) as typeof import('../src/effects/state/coordination-worktree-topology');
+      const sweep = sweepManagedWorktrees(value('--repo'), process.cwd(), process.env, { deadlineMs: 30_000 });
+      if (sweep) console.error(sweep);
+    }
     let stat;
     try { stat = lstatSync(value('--worktree')); }
     catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }

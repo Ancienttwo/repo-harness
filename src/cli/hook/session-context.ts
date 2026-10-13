@@ -1,67 +1,28 @@
 /**
- * Session context builder -- HRD-04 in-process section emitters for
- * `SessionStart.default`, replacing `session-start-context.sh` (641 lines),
- * `minimal-change-context.sh` (16 lines), and `security-sentinel.sh` (115
- * lines). Each retired script becomes one pure(-ish) section emitter over
- * collector facts / already-exported TS authorities, composed by
- * `buildSessionStartSections()` in the scripts' own former order and fed to
- * the EXISTING `budgetSessionContext` exactly once (see `runtime.ts`).
- *
- * See `tasks/notes/20260720-0829-hrd-04-session-start-consolidation.notes.md`
- * for the falsifier result, section port table, and golden delta.
+ * SessionStart context. The handler resolves Effective State once. The state
+ * section, or `[HarnessStateUnavailable]`, comes first and always. Every other
+ * provider is an independent nullable section with a stable id and the source
+ * that holds its full content. Providers read the resolved state; they do not
+ * parse the plan, the sprint marker or the policy again. A provider that
+ * throws becomes one `[SessionContextProviderFailed] <id>` line and does not
+ * remove the state section or a sibling.
  */
 
-import { execFileSync, spawn } from 'child_process';
-import { createHash } from 'crypto';
-import {
-  appendFileSync,
-  existsSync,
-  lstatSync,
-  mkdirSync,
-  readFileSync,
-  realpathSync,
-  renameSync,
-  rmdirSync,
-  statSync,
-  writeFileSync,
-} from 'fs';
-import { fileURLToPath } from 'url';
-import { basename, dirname, isAbsolute, join, relative, resolve } from 'path';
-import {
-  createSessionContextProviderDiagnostic,
-  type SessionContextProviderDiagnostic,
-  type SessionContextProviderId,
-  type SessionContextSection,
-} from './session-context-budget';
-import { loadMinimalChangePolicy } from './minimal-change-policy';
-import { renderMinimalChangeSessionContext } from './minimal-change-context';
-import { runSecurityScan, type SecurityScanReport } from '../commands/security';
-import { fileExists, readText } from '../../effects/state/collect-state-inputs';
-import { backlogRows, type BacklogRow } from '../../core/state/sprint-backlog-rows';
-import type { StateInputCollector } from '../../effects/loop/state-input-collector';
+import type { SessionContextSection } from './session-context-budget';
+import { readText } from '../../effects/state/collect-state-inputs';
+import type { EffectiveStateResolution } from '../../effects/loop/state-input-collector';
+import { buildStateSnapshotFromEffectiveState } from '../../effects/state/resolve-effective-state';
+import { readAttemptLedger } from '../../effects/state/attempt-ledger-store';
+import { projectContinuationEnvelope } from '../../core/state/project-continuation-envelope';
 import type { EffectiveState } from '../../core/state/types';
-import { resolveRecoveryEvidence } from '../../effects/evidence/recovery-materializer';
 import { owedCapabilities, renderOwedCapabilities } from '../../effects/state/owed-capabilities';
-import {
-  acquireExclusiveDirectoryLock,
-  ExclusiveLockContentionError,
-  type ExclusiveDirectoryLockHandle,
-} from '../../effects/locking/exclusive-directory-lock';
-import { DEFAULT_PROCESS_MAX_BUFFER_BYTES, runProcess } from '../../effects/process-runner';
 
-// ---------------------------------------------------------------------------
-// Effective State section -- the single SessionStart state projection
-// ---------------------------------------------------------------------------
+const STATE_SOURCE = 'repo-harness state resolve --json';
+const OWED_SOURCE = 'repo-harness state owed --json';
+/** The resolver reads the pending capture record at this default path. */
+const PENDING_PLAN_SOURCE = '.ai/harness/planning/pending.json';
 
-function effectiveStateIsActionable(state: EffectiveState): boolean {
-  return state.task_id !== null || state.blockers.length > 0 ||
-    Boolean(state.active_sprint.path && state.active_sprint.freshness === 'fresh');
-}
-
-export function projectEffectiveStateSessionSection(
-  state: EffectiveState,
-): SessionContextSection | null {
-  if (!effectiveStateIsActionable(state)) return null;
+export function projectEffectiveStateSessionSection(state: EffectiveState): SessionContextSection {
   const compact = {
     task_id: state.task_id,
     phase: state.phase,
@@ -83,23 +44,56 @@ export function projectEffectiveStateSessionSection(
   };
   return {
     id: 'effective-state',
-    priority: 2,
+    priority: 1,
     content: `[HarnessState] ${JSON.stringify(compact)}`,
     mandatory: true,
-    actionable: true,
-    reference: 'repo-harness state resolve --json',
+    source: STATE_SOURCE,
   };
 }
 
+/** Names the failure by code and hash only; the raw error can carry private paths. */
+export function projectUnavailableStateSessionSection(
+  failure: Pick<Extract<EffectiveStateResolution, { ok: false }>, 'reason_code' | 'error_hash'>,
+): SessionContextSection {
+  const content = `[HarnessStateUnavailable] ${JSON.stringify({
+    fail_closed: true,
+    reason_code: failure.reason_code,
+    error_hash: failure.error_hash,
+    guidance: 'Do not infer task, scope, or edit permission.',
+    required_action: STATE_SOURCE,
+  })}`;
+  return {
+    id: 'effective-state',
+    priority: 1,
+    content,
+    mandatory: true,
+    source: STATE_SOURCE,
+  };
+}
+
+export interface SessionContextProviderInput {
+  readonly repoRoot: string;
+  readonly state: EffectiveState;
+  readonly nowMs: number;
+}
+
+export interface SessionContextBody {
+  readonly content: string;
+  readonly source: string;
+}
+
+export interface SessionContextProvider {
+  readonly id: string;
+  readonly priority: number;
+  readonly render: (input: SessionContextProviderInput) => SessionContextBody | null;
+}
+
 /**
- * The short SessionStart section for a branch that already owes architecture
- * updates. It reuses the ownership result of the session state resolution.
- * Architecture diagnostics never block, so a Git failure only drops it.
+ * The short section for a branch that already owes architecture updates. It
+ * reuses the ownership result of the session state resolution. Architecture
+ * diagnostics never block, so a Git failure only drops it.
  */
-export function projectOwedCapabilitiesSessionSection(
-  repoRoot: string,
-  state: EffectiveState,
-): SessionContextSection | null {
+export function owedCapabilitiesSessionBody(repoRoot: string, state: EffectiveState): SessionContextBody | null {
   if (!state.capability_ownership) return null;
   let content: string | null = null;
   try {
@@ -107,1473 +101,98 @@ export function projectOwedCapabilitiesSessionSection(
   } catch {
     return null;
   }
-  if (!content) return null;
+  return content ? { content, source: OWED_SOURCE } : null;
+}
+
+/** A fresh pending plan capture with no active plan. Freshness is the resolver's own rule. */
+function pendingPlanCaptureBody({ repoRoot, state, nowMs }: SessionContextProviderInput): SessionContextBody | null {
+  if (state.authoritative_plan) return null;
+  if (buildStateSnapshotFromEffectiveState(state, repoRoot, nowMs).states.pending !== 'fresh') return null;
   return {
-    id: 'architecture-owed',
-    priority: 3,
-    content,
-    mandatory: false,
-    actionable: true,
-    reference: 'repo-harness state owed --json',
+    content: [
+      '# Pending Plan Capture',
+      '',
+      'A host/thread planning discussion is pending capture and no active repo plan is selected.',
+      '',
+      `- Record: \`${PENDING_PLAN_SOURCE}\` (kind, slug and draft path)`,
+      '- Rule: continue discussion freely, but do not edit implementation files until the final plan body is captured into `plans/`.',
+      "- Capture: `printf '%s\\n' '<decision-complete plan body>' | repo-harness run capture-plan --slug <slug> --title <title>`",
+    ].join('\n'),
+    source: PENDING_PLAN_SOURCE,
   };
 }
 
-/** Names the failure by code and hash only; the raw error can carry private paths. */
-export function projectUnavailableStateSessionSection(
-  failure: Pick<SessionContextProviderDiagnostic, 'reason_code' | 'error_hash'>,
-): SessionContextSection {
-  const content = `[HarnessStateUnavailable] ${JSON.stringify({
-    fail_closed: true,
-    reason_code: failure.reason_code,
-    error_hash: failure.error_hash,
-    guidance: 'Do not infer task, scope, or edit permission.',
-    required_action: 'repo-harness state resolve --json',
-  })}`;
-  return {
-    id: 'effective-state',
-    priority: 2,
-    content,
-    mandatory: true,
-    actionable: true,
-    reference: 'repo-harness state resolve --json',
-  };
-}
-
-// ---------------------------------------------------------------------------
-// minimal-change-context.sh port (16 lines)
-// ---------------------------------------------------------------------------
-
-/**
- * `minimal-change-context.sh` reduces to one subprocess indirection:
- * `minimal_change_hook_entry context --phase session` ->
- * `repo_harness_hook_cli minimal-change context --phase session` -> spawns
- * `bun $CLI minimal-change context --phase session`, whose own handler
- * (`runMinimalChangeCli`, `src/cli/hook/minimal-change-cli.ts`) is exactly:
- * `renderMinimalChangeSessionContext(loadMinimalChangePolicy(repoRoot))`.
- * Calling that pair directly in-process (mirroring HRD-03's
- * `resolveEffectiveState` reuse) is what collapses this section's `bun_cli`
- * cost to 0 -- same function, same policy file read, no wrapping subprocess.
- */
-export function minimalChangeSessionContent(repoRoot: string): string {
-  const policy = loadMinimalChangePolicy(repoRoot);
-  return renderMinimalChangeSessionContext(policy);
-}
-
-/** `reference`/`priority`/`mandatory`/`actionable` mirror the retired script's assignment in runtime.ts's old script-loop branch verbatim (`taskState` false for this id -> the `setup check` reference, not `state resolve`). */
-export function minimalChangeSessionSection(repoRoot: string): SessionContextSection | null {
-  const content = minimalChangeSessionContent(repoRoot);
-  if (!content) return null;
-  return {
-    id: 'minimal-change-context.sh',
-    priority: 6,
-    content,
-    mandatory: false,
-    actionable: false,
-    reference: 'repo-harness setup check --json',
-  };
-}
-
-// ---------------------------------------------------------------------------
-// security-sentinel.sh port (115 lines)
-// ---------------------------------------------------------------------------
-
-const SECURITY_DIR = '.ai/harness/security';
-const SECURITY_STATE_FILE = `${SECURITY_DIR}/state.sha256`;
-const SECURITY_LATEST_FILE = `${SECURITY_DIR}/latest.json`;
-
-/** Raw lowercase hex sha256, matching `shasum -a 256 file | awk '{print $1}'` / `sha256sum` (not the `sha256:`-prefixed helper in collect-state-inputs.ts, which is a different, unrelated format). */
-function rawSha256(content: Buffer): string {
-  return createHash('sha256').update(content).digest('hex');
-}
-
-/**
- * `fingerprint_files()` port. Bash gates the two HOME-rooted paths on
- * `${HOME:-}` being non-empty (an unset HOME drops both entries from the
- * list entirely, not just marks them missing); the three repo-rooted paths
- * are unconditional. Order matters -- it is hashed as one joined string.
- */
-function securityFingerprintPaths(repoRoot: string, env: NodeJS.ProcessEnv): readonly string[] {
-  const home = env.HOME ?? '';
-  const paths: string[] = [];
-  if (home) {
-    paths.push(join(home, '.claude', 'settings.json'));
-    paths.push(join(home, '.codex', 'hooks.json'));
-  }
-  paths.push(join(repoRoot, '.vscode', 'tasks.json'));
-  paths.push(join(repoRoot, '.claude', 'settings.json'));
-  paths.push(join(repoRoot, '.codex', 'hooks.json'));
-  return paths;
-}
-
-function fingerprintLine(filePath: string): string {
-  if (!existsSync(filePath)) return `missing ${filePath}`;
-  try {
-    return `${rawSha256(readFileSync(filePath))} ${filePath}`;
-  } catch {
-    return `missing ${filePath}`;
-  }
-}
-
-/** `current_fingerprint="$(fingerprint_files)"` -- command substitution strips only the trailing newline(s); `join('\n')` over per-file lines reproduces that exactly. */
-function computeSecurityFingerprint(repoRoot: string, env: NodeJS.ProcessEnv): string {
-  return securityFingerprintPaths(repoRoot, env).map(fingerprintLine).join('\n');
-}
-
-function readPreviousFingerprint(repoRoot: string): string {
-  try {
-    // `cat "$STATE_FILE"` via command substitution strips trailing newlines identically.
-    return readFileSync(join(repoRoot, SECURITY_STATE_FILE), 'utf-8').replace(/\n+$/, '');
-  } catch {
-    return '';
-  }
-}
-
-/**
- * `render_context()` port. `report.status === 'ok'` or an empty findings
- * array both suppress the section (mirrors the bash JS's
- * `report.status === "ok" || !Array.isArray(report.findings) ||
- * report.findings.length === 0` early exit).
- */
-function renderSecurityContext(report: SecurityScanReport): string | null {
-  if (report.status === 'ok' || report.findings.length === 0) return null;
-  const high = report.findings.filter((finding) => finding.severity === 'high').length;
-  const fail = report.findings.filter((finding) => finding.severity === 'fail').length;
-  const warn = report.findings.filter((finding) => finding.severity === 'warn').length;
-  const first = report.findings[0];
-  const bits = [`${report.findings.length} finding(s)`, `${high} high`, `${warn} warn`, `${fail} fail`];
-  return `[SecurityConfig] ${bits.join(', ')}. First: ${first.ruleId} at ${first.filePath}. Review findings only within the task's authorized read scope. This diagnostic does not authorize another scan.`;
-}
-
-/** Exact per-session authorization for startup operations that scan host configuration. */
-function authorizedSessionSecurityHome(env: NodeJS.ProcessEnv): string | null {
-  if (env.REPO_HARNESS_SESSION_SECURITY_SCAN !== '1') return null;
-  const home = env.HOME;
-  // Never let a scanner fall back to the hook process's real HOME.
-  return home && isAbsolute(home) ? home : null;
-}
-
-/**
- * Startup cannot infer permission from a task brief or a host/persona name.
- * The launcher must opt in for this session, with permission to read the
- * complete host/repo config set. Check it before fingerprints or cache effects.
- * Explicit CLI security checks remain independent of this startup opt-in.
- */
-export function securitySentinelSessionContent(
-  repoRoot: string,
-  env: NodeJS.ProcessEnv,
-): string | null {
-  const home = authorizedSessionSecurityHome(env);
-  if (home === null) return null;
-
-  mkdirSync(join(repoRoot, SECURITY_DIR), { recursive: true });
-
-  const currentFingerprint = computeSecurityFingerprint(repoRoot, env);
-  const previousFingerprint = readPreviousFingerprint(repoRoot);
-  if (currentFingerprint === previousFingerprint) return null;
-
-  let report: SecurityScanReport;
-  try {
-    // Explicit `home` (rather than leaving runSecurityScan to default to
-    // its own homeDir(), which reads process.env.HOME directly) keeps this
-    // call honoring the SAME injected `env` the fingerprint above just used
-    // -- they must agree on which HOME they are looking at.
-    report = runSecurityScan({ cwd: repoRoot, home });
-  } catch {
-    return null;
-  }
-
-  writeFileSync(join(repoRoot, SECURITY_LATEST_FILE), `${JSON.stringify(report, null, 2)}\n`);
-  writeFileSync(join(repoRoot, SECURITY_STATE_FILE), `${currentFingerprint}\n`);
-
-  return renderSecurityContext(report);
-}
-
-/** Retain authorized findings in the context budget; retention does not grant task authority. */
-export function securitySentinelSessionSection(
-  repoRoot: string,
-  env: NodeJS.ProcessEnv,
-): SessionContextSection | null {
-  const content = securitySentinelSessionContent(repoRoot, env);
-  if (!content) return null;
-  return {
-    id: 'security-sentinel.sh',
-    priority: 2,
-    content,
-    mandatory: true,
-    actionable: true,
-    reference: "Review findings only within the task's authorized read scope.",
-  };
-}
-
-// ---------------------------------------------------------------------------
-// session-start-context.sh port (641 lines) -- shared small helpers
-// ---------------------------------------------------------------------------
-
-/** No Effective State getter: the session handler projects that section itself. */
-export type SessionContextCollector = Pick<StateInputCollector, 'getRepoRoot' | 'getWorktreeOwnership' | 'getActivePlanMarker'>;
-
-/** `xargs` with no command: word-splits on whitespace and rejoins with single spaces, in addition to trimming edges (not just `.trim()`). Several bash extractors this script uses (`get_plan_status`, sprint status, `current_status_field`) pipe through it. */
-function xargsTrim(value: string): string {
-  return value.trim().split(/\s+/).filter(Boolean).join(' ');
-}
-
-/** `workflow_repo_relative_path()` port -- verbatim duplicate of mutation-guard.ts's private `repoRelativePath` (that file is outside this package's Allowed Paths, so the ~10-line helper is re-ported here rather than shared). */
-function repoRelativePath(value: string, defaultValue: string, allowedPrefix: string): string {
-  if (!value || value.startsWith('/') || value.includes('\n') || value.includes('\r')) return defaultValue;
-  if (value === '..' || value.startsWith('../') || value.endsWith('/..') || value.includes('/../')) {
-    return defaultValue;
-  }
-  if (allowedPrefix && !value.startsWith(allowedPrefix)) return defaultValue;
-  return value;
-}
-
-/** `workflow_policy_get()` port -- verbatim duplicate of mutation-guard.ts's private `policyGet` (nested-path variant), same "outside Allowed Paths" reasoning as `repoRelativePath` above. */
-function policyGet(repoRoot: string, path: readonly string[], fallback: string): string {
-  const raw = readText(repoRoot, '.ai/harness/policy.json');
-  if (!raw) return fallback;
-  try {
-    let current: unknown = JSON.parse(raw);
-    for (const segment of path) {
-      if (current === null || typeof current !== 'object') return fallback;
-      current = (current as Record<string, unknown>)[segment];
-    }
-    return typeof current === 'string' && current.length > 0 ? current : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function workflowResumePacketFile(repoRoot: string): string {
-  const value = policyGet(repoRoot, ['handoff_resume', 'resume_packet_file'], '.ai/harness/handoff/resume.md');
-  return repoRelativePath(value, '.ai/harness/handoff/resume.md', '.ai/harness/');
-}
-
-function workflowHandoffFile(repoRoot: string): string {
-  const value = policyGet(repoRoot, ['harness', 'handoff_file'], '.ai/harness/handoff/current.md');
-  return repoRelativePath(value, '.ai/harness/handoff/current.md', '.ai/harness/');
-}
-
-function workflowPendingOrchestrationFile(repoRoot: string): string {
-  const value = policyGet(repoRoot, ['planning', 'pending_orchestration_file'], '.ai/harness/planning/pending.json');
-  return repoRelativePath(value, '.ai/harness/planning/pending.json', '.ai/harness/');
-}
-
-function workflowEventsFile(repoRoot: string): string {
-  const value = policyGet(repoRoot, ['harness', 'events_file'], '.ai/harness/events.jsonl');
-  return repoRelativePath(value, '.ai/harness/events.jsonl', '.ai/harness/');
-}
-
-function workflowTargetBranch(repoRoot: string): string {
-  let target = policyGet(repoRoot, ['worktree_strategy', 'merge_back', 'target'], '');
-  if (!target) target = policyGet(repoRoot, ['worktree_strategy', 'base_branch'], 'main');
-  return target || 'main';
-}
-
-/** `find LABEL line, strip through the LAST marker occurrence, xargs` -- shared shape behind `get_plan_status` and the sprint-status awk (both search any line containing `**Status**:`, not just lines anchored at `> `). */
-function findMarkerLine(text: string, marker: string): string | null {
-  for (const rawLine of text.split('\n')) {
-    if (!rawLine.includes(marker)) continue;
-    const idx = rawLine.lastIndexOf(marker);
-    return rawLine.slice(idx + marker.length).replace(/\r/g, '');
-  }
-  return null;
-}
-
-function planStatusField(text: string): string {
-  const raw = findMarkerLine(text, '**Status**:');
-  return raw === null ? '' : xargsTrim(raw);
-}
-
-function fileMtimeSec(repoRoot: string, relPath: string): number | null {
-  try {
-    return Math.floor(statSync(join(repoRoot, relPath)).mtimeMs / 1000);
-  } catch {
-    return null;
-  }
-}
-
-function gitCurrentBranch(repoRoot: string): string {
-  try {
-    return execFileSync('git', ['branch', '--show-current'], {
-      cwd: repoRoot,
-      encoding: 'utf-8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-    }).trim();
-  } catch {
-    return '';
-  }
-}
-
-/** `get_active_plan()` port -- verbatim duplicate of mutation-guard.ts's private `getActivePlan(ctx)` over this module's own (smaller) collector shape. */
-function getActivePlan(collector: SessionContextCollector): string | null {
-  const ownership = collector.getWorktreeOwnership();
-  const matchesCwd = ownership.owner === null || ownership.ownedByCurrent;
-  if (!matchesCwd) return null;
-  const marker = collector.getActivePlanMarker();
-  if (!marker) return null;
-  return fileExists(collector.getRepoRoot(), marker) ? marker : null;
-}
-
-// ---------------------------------------------------------------------------
-// session-start-context.sh port -- cold-path event-log rotation
-// ---------------------------------------------------------------------------
-//
-// Gatekeeper blocking finding (PORT decision): the base script's own
-// top-of-file housekeeping --
-//   workflow_rotate_events_file "$(workflow_events_file)" 2>/dev/null || true
-// -- was dropped in the first pass. Operator helpers still append lifecycle
-// events, while typed host handlers may write trace/runtime evidence; without
-// rotation those durable files grow unbounded. Ported
-// verbatim from `assets/hooks/lib/workflow-state.sh`'s
-// `workflow_rotate_events_file` / `_locked` / `workflow_with_lock`
-// (thresholds: 2000 lines / 524288 bytes / keep 500), including the mkdir-based
-// mutual-exclusion lock (protects against a concurrent operator helper or
-// typed host process appending mid-rotation; this is a genuine cross-process
-// race the architecture still needs to guard
-// against, not merely an old bash implementation detail). Produces no
-// session content -- pure housekeeping, called before any of the 8
-// sub-blocks below, matching the base script's own call order.
-
-/** `wc -l`/`wc -c` port: `wc -l` counts NEWLINE BYTES, not "lines" in the text sense (a file lacking a trailing newline is undercounted by one relative to its visual line count) -- this must stay a raw byte count to match bash exactly. */
-function fileLineAndByteCount(absPath: string): { lines: number; bytes: number } | null {
-  let content: Buffer;
-  try {
-    content = readFileSync(absPath);
-  } catch {
-    return null;
-  }
-  let lines = 0;
-  for (let i = 0; i < content.length; i += 1) if (content[i] === 0x0a) lines += 1;
-  return { lines, bytes: content.length };
-}
-
-/**
- * `head -n N "$file"` / `tail -n N "$file"` port, splitting on `\n` the same
- * way both POSIX tools do: a trailing partial (non-newline-terminated)
- * final segment still counts as one more "line" for head/tail purposes even
- * though `wc -l` (byte-newline-count) does not count it -- so
- * `lines.length` can be one more than `wcLineCount` for a file missing its
- * final newline. `cut`/`keep` are always computed from the `wc -l`-based
- * count (matching bash's own `cut=$((lines - keep))`), so this mirrors
- * bash's own behavior byte-for-byte for the well-formed (trailing-newline)
- * case this system's own writer (`workflow_locked_append_line`) always
- * produces, and reproduces the same (bash-inherent, not TS-introduced)
- * "one line unaccounted for" quirk on a malformed/truncated file missing
- * its final newline, rather than engineering something bash itself doesn't do.
- */
-function readEventsFileForRotation(absPath: string): { lines: readonly string[]; wcLineCount: number } | null {
-  let content: string;
-  try {
-    content = readFileSync(absPath, 'utf-8');
-  } catch {
-    return null;
-  }
-  if (content === '') return { lines: [], wcLineCount: 0 };
-  const endsWithNewline = content.endsWith('\n');
-  let lines = content.split('\n');
-  if (endsWithNewline) lines = lines.slice(0, -1);
-  const wcLineCount = endsWithNewline ? lines.length : lines.length - 1;
-  return { lines, wcLineCount };
-}
-
-/** Synchronous blocking sleep (bash's own `sleep 0.05` blocks its single-threaded script too) -- `Atomics.wait` on a value that never changes is the standard synchronous-sleep primitive in Node/Bun. */
-function sleepSyncMs(ms: number): void {
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
-}
-
-/**
- * `workflow_with_lock()` port: mkdir-based mutual exclusion. Spins up to 40
- * times at 50ms (~2s), breaks a lock older than 60s (crashed holder), and as
- * a last resort skips the cold-path callback rather than racing an event writer
- * -- verbatim thresholds from the bash source. `lockRoot` is always
- * `dirname(workflowEventsFile()) + "/.locks"`, computed ONCE by the caller
- * and reused for both rotation targets, matching bash's own
- * `workflow_with_lock`'s unconditional `lock_root="$(dirname "$(workflow_events_file)")/.locks"`
- * regardless of which file is actually being locked (so both rotation calls
- * share one lock namespace root, differentiated only by `name`).
- */
-function withEventsLock(repoRoot: string, lockRoot: string, name: string, fn: () => void): void {
-  const lockDir = join(lockRoot, `${name}.lock`);
-  if (!isSafeRepoPath(repoRoot, lockRoot)) return;
-  try {
-    mkdirSync(lockRoot, { recursive: true });
-  } catch {
-    fn();
-    return;
-  }
-
-  let waited = 0;
-  for (;;) {
-    try {
-      mkdirSync(lockDir);
-      break;
-    } catch {
-      if (waited >= 40) {
-        let mtimeSec: number | null = null;
-        try {
-          mtimeSec = Math.floor(statSync(lockDir).mtimeMs / 1000);
-        } catch {
-          mtimeSec = null;
-        }
-        const nowSec = Math.floor(Date.now() / 1000);
-        if (mtimeSec !== null && mtimeSec > 0 && nowSec - mtimeSec >= 60) {
-          try {
-            rmdirSync(lockDir);
-          } catch {
-            // matches bash's `rmdir ... || true`
-          }
-          waited = 0;
-          continue;
-        }
-        // Rotation is best-effort; running unlocked can overwrite a concurrent
-        // architecture event transaction, so preserve the live log and retry
-        // on a later SessionStart instead.
-        return;
-      }
-      sleepSyncMs(50);
-      waited += 1;
-    }
-  }
-
-  try {
-    if (!isSafeRepoPath(repoRoot, lockRoot) || !isSafeRepoPath(repoRoot, lockDir)) return;
-    fn();
-  } finally {
-    try {
-      rmdirSync(lockDir);
-    } catch {
-      // matches bash's `rmdir ... || true`
-    }
-  }
-}
-
-/** `workflow_rotate_events_file_locked()` port. */
-function isSafeRepoPath(repoRoot: string, target: string): boolean {
-  const root = realpathSync(repoRoot);
-  const lexicalRoot = resolve(repoRoot);
-  const lexicalTarget = resolve(target);
-  const targetRelative = relative(lexicalRoot, lexicalTarget);
-  if (targetRelative === '..' || targetRelative.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`)) return false;
-  let cursor = root;
-  for (const part of targetRelative.split(process.platform === 'win32' ? '\\' : '/').filter(Boolean)) {
-    cursor = join(cursor, part);
-    if (!existsSync(cursor)) break;
-    if (lstatSync(cursor).isSymbolicLink()) return false;
-  }
-  return true;
-}
-
-function workflowRotateEventsFileLocked(repoRoot: string, relPath: string, wcLineCount: number, keep: number): void {
-  const absPath = join(repoRoot, relPath);
-  if (!isSafeRepoPath(repoRoot, absPath)) return;
-  const parsed = readEventsFileForRotation(absPath);
-  if (parsed === null) return;
-
-  const cut = wcLineCount - keep;
-  const archiveDir = join(dirname(absPath), 'archive');
-  const stamp = (() => {
-    const now = new Date();
-    return `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
-  })();
-  const base = basename(relPath).replace(/\.jsonl$/, '');
-  const archiveFile = join(archiveDir, `${base}-${stamp}.jsonl`);
-
-  const root = realpathSync(repoRoot);
-  const archiveRelative = relative(resolve(repoRoot), resolve(archiveDir));
-  if (archiveRelative === '..' || archiveRelative.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`)) return;
-  const archivePath = join(root, archiveRelative);
-  if (!isSafeRepoPath(repoRoot, archiveDir)) return;
-
-  try {
-    mkdirSync(archiveDir, { recursive: true });
-    if (realpathSync(archiveDir) !== archivePath) return;
-    if (existsSync(archiveFile) && lstatSync(archiveFile).isSymbolicLink()) return;
-  } catch {
-    return;
-  }
-
-  const headLines = parsed.lines.slice(0, cut);
-  const tailLines = parsed.lines.slice(cut);
-  const archiveChunk = headLines.map((line) => `${line}\n`).join('');
-  const keptContent = tailLines.map((line) => `${line}\n`).join('');
-
-  try {
-    appendFileSync(archiveFile, archiveChunk);
-    const tmpPath = `${absPath}.tmp-${process.pid}-${Date.now()}`;
-    writeFileSync(tmpPath, keptContent);
-    renameSync(tmpPath, absPath);
-  } catch {
-    // matches bash's `else rm -f "$tmp"` fallback -- best-effort, never
-    // throws out of a cold-path housekeeping step.
-  }
-}
-
-/** `workflow_rotate_events_file()` port. */
-function workflowRotateEventsFile(
-  repoRoot: string,
-  relPath: string,
-  lockRoot: string,
-  maxLines = 2000,
-  maxBytes = 524288,
-  keep = 500,
-): void {
-  const absPath = join(repoRoot, relPath);
-  if (!existsSync(absPath)) return;
-  if (!isSafeRepoPath(repoRoot, absPath)) return;
-  const counts = fileLineAndByteCount(absPath);
-  if (counts === null) return;
-  if (counts.lines <= maxLines && counts.bytes <= maxBytes) return;
-  if (!(counts.lines > keep)) return;
-
-  withEventsLock(repoRoot, lockRoot, `evt-${basename(relPath)}`, () => {
-    workflowRotateEventsFileLocked(repoRoot, relPath, counts.lines, keep);
+/** The next sprint task, from the continuation projection over the resolved state. */
+function activeSprintBody({ repoRoot, state }: SessionContextProviderInput): SessionContextBody | null {
+  const sprintPath = state.active_sprint.path;
+  if (!sprintPath || state.active_sprint.freshness !== 'fresh') return null;
+  const envelope = projectContinuationEnvelope({
+    state,
+    sprintText: readText(repoRoot, sprintPath),
+    attemptLedger: readAttemptLedger(repoRoot),
   });
+  if (envelope.route !== 'advance_sprint' || !envelope.command) return null;
+  return {
+    content: [
+      '# Active Sprint',
+      '',
+      `- Sprint: \`${sprintPath}\``,
+      `- Next step: \`${envelope.command}\``,
+      '- Rule: a Sprint is a long-task container. Use `$think` to expand the next sprint task into a detailed `plans/plan-*.md`, then run the existing plan -> contract -> worktree flow. `tasks/todos.md` stays the deferred-goal ledger.',
+    ].join('\n'),
+    source: sprintPath,
+  };
 }
 
-/** Cold-path rotation of the workflow event log. Never throws (mirrors `2>/dev/null || true`). */
-function rotateSessionStartEventLogs(repoRoot: string): void {
-  const lockRoot = join(dirname(join(repoRoot, workflowEventsFile(repoRoot))), '.locks');
-  try {
-    workflowRotateEventsFile(repoRoot, workflowEventsFile(repoRoot), lockRoot);
-  } catch {
-    /* cold-path housekeeping must never fail the session */
-  }
+/** The resume file itself decides whether a resume exists. */
+function resumeBody({ repoRoot, state }: SessionContextProviderInput): SessionContextBody | null {
+  const resumePath = state.resume.path;
+  const text = readText(repoRoot, resumePath)?.trim();
+  if (!resumePath || !text) return null;
+  return {
+    content: [
+      `# Resume (\`${resumePath}\`, ${state.resume.freshness})`,
+      '',
+      'Recovery context only. Read the files and attachments that the current user message names first.',
+      '',
+      text,
+    ].join('\n'),
+    source: resumePath,
+  };
 }
 
-// ---------------------------------------------------------------------------
-// session-start-context.sh port -- the 8 composed sub-blocks, in file order
-// ---------------------------------------------------------------------------
-
-const ACTIVE_PLAN_STATUSES = new Set([
-  'approved', 'executing', 'review', 'reviewing', 'active', 'in-progress', 'in progress',
+export const SESSION_CONTEXT_PROVIDERS: readonly SessionContextProvider[] = Object.freeze([
+  { id: 'architecture-owed', priority: 2, render: ({ repoRoot, state }) => owedCapabilitiesSessionBody(repoRoot, state) },
+  { id: 'pending-plan-capture', priority: 3, render: pendingPlanCaptureBody },
+  { id: 'active-sprint', priority: 4, render: activeSprintBody },
+  { id: 'resume', priority: 5, render: resumeBody },
 ]);
 
-function activePlanExists(collector: SessionContextCollector): boolean {
-  const planFile = getActivePlan(collector);
-  if (!planFile) return false;
-  const text = readText(collector.getRepoRoot(), planFile) ?? '';
-  return ACTIVE_PLAN_STATUSES.has(planStatusField(text).toLowerCase());
-}
-
-function activeTodoExists(repoRoot: string): boolean {
-  const text = readText(repoRoot, 'tasks/todos.md');
-  if (text === null) return false;
-  if (/^> \*\*Status\*\*:[ \t]*(Executing|Active|Review|Reviewing|In Progress)[ \t]*$/m.test(text)) return true;
-  const hasUnchecked = /^[ \t]*-[ \t]\[[ \t]\][ \t]+/m.test(text);
-  return hasUnchecked && !text.includes('No active execution checklist');
-}
-
-function handoffSectionHasSignal(repoRoot: string, handoffFile: string, header: string): boolean {
-  const text = readText(repoRoot, handoffFile);
-  if (text === null) return false;
-  let inSection = false;
-  let found = false;
-  for (const rawLine of text.split('\n')) {
-    const line = rawLine.replace(/\r$/, '');
-    if (line === header) {
-      inSection = true;
-      continue;
-    }
-    if (inSection && /^## /.test(line)) break;
-    if (!inSection) continue;
-    const stripped = line.replace(/^[\s-]+/, '').replace(/\s+$/, '');
-    if (stripped === '' || stripped === '```' || stripped === '(none)' || stripped === '(none recorded)') continue;
-    found = true;
-  }
-  return found;
-}
-
-/**
- * EPC-08 cutover: availability is resolved from the canonical
- * checkpoint-backed evidence reader (`resolveRecoveryEvidence`, EPC-06/07,
- * read-only import) instead of re-deriving it by scanning the rendered
- * resume.md for a legacy marker/header string. `resolveRecoveryEvidence`
- * already degrades to `available: false` for both "no checkpoint yet" and
- * "dangling/invalid marker" and never throws for those cases, so this stays
- * exactly as safe as the string-scan it replaces; `resumeFile`'s own text is
- * still read separately below (`capResumeContent`) to quote the projection's
- * rendered body verbatim -- only the availability PREDICATE moves off the
- * Markdown scan.
- */
-function resumeAvailable(repoRoot: string): boolean {
-  return resolveRecoveryEvidence(repoRoot).available;
-}
-
-function resumeCurrentForHandoff(repoRoot: string, resumeFile: string, handoffFile: string): boolean {
-  if (!resumeAvailable(repoRoot)) return false;
-  if (!fileExists(repoRoot, handoffFile)) return true;
-  const resumeMtime = fileMtimeSec(repoRoot, resumeFile);
-  const handoffMtime = fileMtimeSec(repoRoot, handoffFile);
-  if (resumeMtime === null || handoffMtime === null) return true;
-  return resumeMtime >= handoffMtime;
-}
-
-/**
- * `awk 'length(total) < 12000 { total = total $0 "\n" } END { printf "%s", total }'`
- * -- keeps whole lines while the running total is under the cap (checked
- * BEFORE appending), so the result can overshoot by up to one line's length
- * but never truncates mid-line.
- *
- * Gatekeeper S5 fix: the awk `total` variable (and `printf "%s", total`)
- * itself ends with `\n` after the last appended line, but bash captures
- * this via `context="$(awk ...)"` -- command substitution strips ALL
- * trailing newlines from the captured value. Without stripping here too,
- * `resumeBlock`'s caller (`appendBlock`) would join a later section with an
- * extra blank line (this value's own trailing `\n` plus appendBlock's own
- * `\n` separator).
- */
-function capResumeContent(text: string, capChars = 12000): string {
-  let lines = text.split('\n');
-  if (lines.length > 0 && lines[lines.length - 1] === '') lines = lines.slice(0, -1);
-  let total = '';
-  for (const line of lines) {
-    if (total.length >= capChars) break;
-    total += `${line}\n`;
-  }
-  return total.replace(/\n+$/, '');
-}
-
-/** 1. `resume_current_for_handoff` gate + the capped resume.md blob. */
-function resumeBlock(repoRoot: string, collector: SessionContextCollector): string {
-  const resumeFile = workflowResumePacketFile(repoRoot);
-  const handoffFile = workflowHandoffFile(repoRoot);
-  if (!resumeCurrentForHandoff(repoRoot, resumeFile, handoffFile)) return '';
-  const signal =
-    activePlanExists(collector) ||
-    activeTodoExists(repoRoot) ||
-    handoffSectionHasSignal(repoRoot, handoffFile, '## Blockers') ||
-    handoffSectionHasSignal(repoRoot, handoffFile, '## Changed Files');
-  if (!signal) return '';
-  return capResumeContent(readText(repoRoot, resumeFile) ?? '');
-}
-
-interface PendingOrchestration {
-  readonly [field: string]: unknown;
-}
-
-function readPendingOrchestration(repoRoot: string): PendingOrchestration | null {
-  const raw = readText(repoRoot, workflowPendingOrchestrationFile(repoRoot));
-  if (!raw || raw.trim() === '') return null;
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as PendingOrchestration) : null;
-  } catch {
-    return null;
-  }
-}
-
-function pendingOrchestrationField(pending: PendingOrchestration | null, field: string): string {
-  const value = pending?.[field];
-  return typeof value === 'string' && value !== '' && value !== 'null' ? value : '';
-}
-
-function pendingOrchestrationIsFresh(
-  repoRoot: string,
-  pending: PendingOrchestration | null,
-  nowMs: number,
-  maxAgeSec = 259200,
-): boolean {
-  if (!pending) return false;
-  const mtimeSec = fileMtimeSec(repoRoot, workflowPendingOrchestrationFile(repoRoot));
-  const nowSec = Math.floor(nowMs / 1000);
-  if (mtimeSec !== null && nowSec - mtimeSec <= maxAgeSec) return true;
-
-  const draftPath = pendingOrchestrationField(pending, 'draft_plan_path');
-  if (draftPath && fileExists(repoRoot, draftPath)) {
-    const status = planStatusField(readText(repoRoot, draftPath) ?? '').toLowerCase();
-    if (status === 'draft' || status === 'annotating' || status === '') {
-      if (mtimeSec !== null && nowSec - mtimeSec <= 604800) return true;
-    }
-  }
-  return false;
-}
-
-function pendingOrchestrationSummary(pending: PendingOrchestration | null): string {
-  const kind = pendingOrchestrationField(pending, 'kind');
-  const host = pendingOrchestrationField(pending, 'host');
-  const promptSlug = pendingOrchestrationField(pending, 'prompt_slug');
-  const draftPath = pendingOrchestrationField(pending, 'draft_plan_path');
-  const sourceRef = pendingOrchestrationField(pending, 'source_ref');
-  const expectedArtifact = pendingOrchestrationField(pending, 'expected_artifact');
-  const cwd = pendingOrchestrationField(pending, 'cwd');
-  let out = `kind=${kind || 'unknown'} host=${host || 'unknown'} expected=${expectedArtifact || 'plan'} slug=${promptSlug || 'planning'}`;
-  if (draftPath) out += ` draft=${draftPath}`;
-  if (sourceRef) out += ` source_ref=${sourceRef}`;
-  if (cwd) out += ` cwd=${cwd}`;
-  return out;
-}
-
-/** 4. `pending_plan_capture_context`. */
-function pendingPlanCaptureContext(repoRoot: string, collector: SessionContextCollector, nowMs: number): string | null {
-  const pending = readPendingOrchestration(repoRoot);
-  if (!pendingOrchestrationIsFresh(repoRoot, pending, nowMs)) return null;
-  const activePlan = getActivePlan(collector);
-  if (activePlan && fileExists(repoRoot, activePlan)) return null;
-
-  const summary = pendingOrchestrationSummary(pending);
-  const draftPath = pendingOrchestrationField(pending, 'draft_plan_path');
-  const promptSlug = pendingOrchestrationField(pending, 'prompt_slug');
-  const kind = pendingOrchestrationField(pending, 'kind');
-  const sourceRef = pendingOrchestrationField(pending, 'source_ref');
-  const captureSource = kind || 'host-plan';
-  const sourceArg = sourceRef ? ' --source-ref <source-ref>' : '';
-  const captureCmd = 'repo-harness run capture-plan';
-
-  return [
-    '# Pending Plan Capture',
-    '',
-    'A host/thread planning discussion is pending capture and no active repo plan is selected.',
-    '',
-    `- State: ${summary}`,
-    `- Draft plan: ${draftPath || '(none captured yet)'}`,
-    '- Rule: continue discussion freely, but do not edit implementation files until the final plan body is captured into `plans/`.',
-    '',
-    'Capture the decision-complete plan body:',
-    '',
-    '```bash',
-    `printf '%s\\n' '<decision-complete plan body>' | ${captureCmd} --slug ${promptSlug || '<slug>'} --title <title> --status Draft --source ${captureSource} --orchestration-kind ${captureSource} --route planning${sourceArg}`,
-    '```',
-    '',
-    'If the user has already approved implementation:',
-    '',
-    '```bash',
-    `printf '%s\\n' '<approved plan body>' | ${captureCmd} --slug ${promptSlug || '<slug>'} --title <title> --artifact-level work-package --promotion-reason human_decision_boundary --status Approved --source ${captureSource} --orchestration-kind ${captureSource} --route planning --execute${sourceArg}`,
-    '```',
-  ].join('\n');
-}
-
-function currentStatusField(text: string, label: string): string {
-  const prefix = `> **${label}**:`;
-  for (const rawLine of text.split('\n')) {
-    if (!rawLine.startsWith(prefix)) continue;
-    const rest = rawLine.slice(prefix.length).replace(/^ */, '').replace(/\r/g, '');
-    return xargsTrim(rest);
-  }
-  return '';
-}
-
-/** 5. `current_status_snapshot_context` -- a single bash heredoc. `tasks/current.md` is an ignored local read model, so it is read only from this worktree: an absent or status-less file yields no section rather than a cross-branch fallback. */
-function currentStatusSnapshotContext(repoRoot: string): string | null {
-  const target = workflowTargetBranch(repoRoot);
-  const branch = gitCurrentBranch(repoRoot);
-  const currentText = readText(repoRoot, 'tasks/current.md') ?? '';
-  const status = currentText ? currentStatusField(currentText, 'Status') : '';
-  const updated = currentText ? currentStatusField(currentText, 'Updated At') : '';
-  const sourceCommit = currentText ? currentStatusField(currentText, 'Source Commit') : '';
-
-  if (!status) return null;
-  if (status === 'Idle' && branch === target) return null;
-
-  return [
-    '# Current Status Snapshot',
-    '',
-    `- Local snapshot: \`tasks/current.md\` status=${status} updated=${updated || '(unknown)'} source_commit=${sourceCommit || '(unknown)'}`,
-    '- Rule: this is an ignored local read model only; verify stale or surprising state against plans, workstreams, handoff, and checks before acting.',
-  ].join('\n');
-}
-
-function activeSprintMarkerPath(repoRoot: string): string {
-  const raw = readText(repoRoot, '.ai/harness/policy.json');
-  if (raw) {
-    try {
-      const policy = JSON.parse(raw) as { sprints?: { active_marker_file?: unknown } };
-      const marker = policy.sprints?.active_marker_file;
-      if (typeof marker === 'string' && marker.trim()) return marker;
-    } catch {
-      /* fall through to default */
-    }
-  }
-  return '.ai/harness/sprint/active-sprint';
-}
-
-/**
- * Read-only backlog tally for the panel: done/total plus the first unchecked
- * Task cell. Rows come from `backlogRows`, the one owner of the backlog grammar,
- * so the panel cannot disagree with the awk authority about which cell is the
- * Status column once a sprint carries the schema 2 `ID` column. This is a
- * display surface and mints no identity, so it reads both schemas.
- */
-function sprintBacklogProgress(text: string): { progress: string; nextTask: string } {
-  let rows: readonly BacklogRow[];
-  try {
-    rows = backlogRows(text);
-  } catch {
-    return { progress: '0/0', nextTask: '(none)' };
-  }
-  let done = 0;
-  let nextTask: string | null = null;
-  for (const row of rows) {
-    if (/^\[[xX]\]$/.test(row.status)) done += 1;
-    if (nextTask === null && row.status === '[ ]') nextTask = row.task;
-  }
-  return { progress: `${done}/${rows.length}`, nextTask: nextTask ?? '(none)' };
-}
-
-/** 6. `active_sprint_context`. */
-function activeSprintContext(repoRoot: string): string | null {
-  const marker = activeSprintMarkerPath(repoRoot);
-  if (!fileExists(repoRoot, marker)) return null;
-  const sprintFile = xargsTrim(readText(repoRoot, marker) ?? '');
-  if (!sprintFile || !fileExists(repoRoot, sprintFile)) return null;
-
-  const sprintText = readText(repoRoot, sprintFile) ?? '';
-  const status = planStatusField(sprintText);
-  const { progress, nextTask } = sprintBacklogProgress(sprintText);
-
-  return [
-    '# Active Sprint',
-    '',
-    `- Sprint: \`${sprintFile}\` status=${status || 'unknown'} backlog=${progress}`,
-    `- Next sprint task: ${nextTask}`,
-    '- Rule: a Sprint is a long-task container. Use `$think` to expand the next sprint task into a detailed `plans/plan-*.md`, then run the existing plan -> contract -> worktree flow. `tasks/todos.md` stays the deferred-goal ledger.',
-    `- Entrypoint: inspect with \`repo-harness run sprint-backlog next\`; after \`$think\` produces an approved plan, capture it with \`repo-harness run capture-plan --source waza-think --source-ref sprint:${sprintFile}#${nextTask}\`.`,
-  ].join('\n');
-}
-
-const TOOLING_ADVISORY_STATE_DIR = '.ai/harness/security';
-
-function toolingUpdateTarget(env: NodeJS.ProcessEnv): string {
-  return env.HOOK_HOST === 'codex' || env.HOOK_HOST === 'claude' ? env.HOOK_HOST : 'both';
-}
-
-function toolingAdvisoryTtlSeconds(env: NodeJS.ProcessEnv): number {
-  const raw = env.REPO_HARNESS_TOOLING_ADVISORY_TTL_SECONDS;
-  if (raw === undefined) return 604800;
-  if (!/^\d+$/.test(raw)) return 86400;
-  return Number(raw);
-}
-
-function toolingUpdateCacheIsFresh(repoRoot: string, reportFile: string, env: NodeJS.ProcessEnv, nowMs: number): boolean {
-  if (!fileExists(repoRoot, reportFile)) return false;
-  const ttl = toolingAdvisoryTtlSeconds(env);
-  if (!(ttl > 0)) return false;
-  if (env.REPO_HARNESS_TOOLING_ADVISORY_FORCE === '1') return false;
-  const mtimeSec = fileMtimeSec(repoRoot, reportFile);
-  if (mtimeSec === null) return false;
-  const nowSec = Math.floor(nowMs / 1000);
-  if (nowSec < mtimeSec) return false;
-  return nowSec - mtimeSec < ttl;
-}
-
-function renderToolingUpdateContext(repoRoot: string, reportFile: string): string | null {
-  const raw = readText(repoRoot, reportFile);
-  if (!raw) return null;
-  let report: { agent_actions?: unknown };
-  try {
-    report = JSON.parse(raw) as { agent_actions?: unknown };
-  } catch {
-    return null;
-  }
-  const actions = Array.isArray(report.agent_actions) ? (report.agent_actions as Record<string, unknown>[]) : [];
-  const updateActions = actions.filter((action) => {
-    const id = typeof action?.id === 'string' ? action.id : '';
-    return id === 'cli.update' || /^tooling\.[^.]+\.update$/.test(id);
-  });
-  if (updateActions.length === 0) return null;
-
-  const lines: string[] = [
-    '# Tooling Update Advisory',
-    '',
-    'repo-harness setup check found version updates. Agent should run the bounded update command(s), then verify.',
-  ];
-  for (const action of updateActions.slice(0, 5)) {
-    const id = typeof action.id === 'string' ? action.id : 'unknown';
-    const reason = typeof action.reason === 'string' ? action.reason : 'update available';
-    lines.push(`- ${id}: ${reason}`);
-    if (typeof action.command === 'string' && action.command) lines.push(`  command: \`${action.command}\``);
-    if (typeof action.verification === 'string' && action.verification) lines.push(`  verify: \`${action.verification}\``);
-  }
-  if (updateActions.length > 5) {
-    lines.push(`- ${updateActions.length - 5} more update action(s): run \`repo-harness setup check --check-updates --json\`.`);
-  }
-  return lines.join('\n');
-}
-
-function toolingUpdateReportWasRendered(repoRoot: string, reportFile: string, markerFile: string): boolean {
-  if (!fileExists(repoRoot, reportFile) || !fileExists(repoRoot, markerFile)) return false;
-  const reportMtime = fileMtimeSec(repoRoot, reportFile);
-  const markerRaw = (readText(repoRoot, markerFile) ?? '').replace(/\s/g, '');
-  return reportMtime !== null && String(reportMtime) === markerRaw;
-}
-
-/** Rendered advisory plus the marker commit that consumes it. Runtime calls `markDelivered` only after the host output includes the advisory. */
-interface ToolingUpdateAdvisory {
-  readonly content: string;
-  readonly markDelivered: () => void;
-}
-
-function renderToolingUpdateAdvisory(repoRoot: string, reportFile: string, markerFile: string): ToolingUpdateAdvisory | null {
-  // Capture the rendered report's mtime now: a later refresh can replace the
-  // report before delivery, and the marker must name only the delivered one.
-  const reportMtime = fileMtimeSec(repoRoot, reportFile);
-  const content = renderToolingUpdateContext(repoRoot, reportFile);
-  if (reportMtime === null || content === null) return null;
-  return {
-    content,
-    markDelivered: () => {
-      try {
-        writeFileSync(join(repoRoot, markerFile), `${reportMtime}\n`);
-      } catch {
-        // An unwritten marker only repeats the advisory in a later session.
-      }
-    },
-  };
-}
-
-/**
- * `repo_harness_setup_check()` port. Kept as a real subprocess call (unlike
- * every other CLI indirection in this file) for two reasons: (1) it is the
- * one path a test (tests/hook-runtime.test.ts "emits tooling update agent
- * actions once per cached report") deliberately intercepts via a fake
- * PATH-injected `repo-harness` binary to keep the report content
- * controlled/deterministic -- calling `runInitHook()` in-process would
- * bypass that interception point entirely and make the section depend on
- * whatever this machine's real tooling state happens to be; (2) this branch
- * requires `REPO_HARNESS_TOOLING_ADVISORY_SYNC=1` (an opt-in escape hatch
- * that never fires in the golden characterization run), so it does not
- * touch the `bun_cli` cost story either way. Two-tier resolution mirrors
- * bash exactly: `bun $REPO_HARNESS_CLI` when that path is a real file, else
- * `repo-harness` on PATH; either tier's failure returns null with no
- * fallthrough, matching bash's own `return $?` inside the first `if`.
- */
-function repoHarnessSetupCheckSubprocess(
-  repoRoot: string,
-  env: NodeJS.ProcessEnv,
-  target: string,
-  timeoutMs: number,
-): string | null {
-  const args = ['setup', 'check', '--target', target, '--check-updates', '--json'];
-  const cliPath = env.REPO_HARNESS_CLI;
-  const [command, commandArgs] = cliPath && existsSync(cliPath)
-    ? ['bun', [cliPath, ...args]]
-    : ['repo-harness', args];
-  // The process group bound stops the whole check tree, so a stuck check
-  // cannot hold the refresh lock forever. The report is kept verbatim.
-  const result = runProcess(command, commandArgs, {
-    cwd: repoRoot,
-    env,
-    inheritEnv: false,
-    processGroup: true,
-    timeoutMs,
-    maxOutputBytes: DEFAULT_PROCESS_MAX_BUFFER_BYTES,
-    redactions: [],
-  });
-  return result.ok ? result.stdout : null;
-}
-
-/** Bound for one setup check: its tooling script stops itself after 30 seconds, plus CLI start-up. */
-const TOOLING_SETUP_CHECK_TIMEOUT_MS = 60_000;
-
-/** Long enough to reclaim a dead owner and retry once; a live owner makes a second refresh exit after this wait. */
-const TOOLING_REFRESH_LOCK_WAIT_MS = 1_000;
-
-/** `REPO_HARNESS_TOOLING_ADVISORY_SYNC=1` branch: populate the cache synchronously, then render exactly like the fresh-cache path. On any subprocess failure, mirrors bash: no cache write, no render. */
-function toolingUpdateSyncPopulateAndRender(
-  repoRoot: string,
-  env: NodeJS.ProcessEnv,
-  target: string,
-  reportFile: string,
-  markerFile: string,
-): ToolingUpdateAdvisory | null {
-  const stdout = repoHarnessSetupCheckSubprocess(repoRoot, env, target, TOOLING_SETUP_CHECK_TIMEOUT_MS);
-  if (stdout === null) return null;
-  writeFileSync(join(repoRoot, reportFile), stdout);
-  if (toolingUpdateReportWasRendered(repoRoot, reportFile, markerFile)) return null;
-  return renderToolingUpdateAdvisory(repoRoot, reportFile, markerFile);
-}
-
-/**
- * Marks a `<entrypoint> <flag> <repoRoot> <target> <reportFile> <lockDir>`
- * standalone invocation. Two dispatch surfaces receive it and both delegate to
- * the single `runDetachedToolingPopulate` authority below: the `import.meta.main`
- * bootstrap at the bottom of this file (unbundled -- `import.meta.url` in
- * `triggerDetachedToolingPopulate` resolves to this module), and the branch in
- * `src/cli/hook-entry.ts` (bundled -- `bun build` folds this file's
- * `import.meta.main` to `false` and eliminates the bootstrap, while
- * `import.meta.url` resolves to the bundle).
- */
-export const DETACHED_TOOLING_POPULATE_FLAG = '--detached-tooling-populate';
-
-/**
- * Gatekeeper MEDIUM (adjudicated fix): restores the cross-session TTL
- * refresh cycle bash's detached background subshell provided. Runs in its
- * OWN separate, `unref()`'d process (spawned by `triggerDetachedToolingPopulate`
- * below) so it outlives the triggering SessionStart hook, which exits
- * immediately after spawning -- that is the entire point of "detached".
- * Populates the report cache on success. Never renders/marks-rendered here
- * -- exactly like bash, only a LATER session that finds the cache fresh
- * does that.
- *
- * This process, not the short-lived trigger, owns the refresh lock, so the
- * lock names a process that is alive for the whole check. A live refresh
- * is never evicted by age; only a dead owner (crash, forced kill) or an
- * abandoned ownerless directory is reclaimed. A second refresh that finds
- * a live owner exits after a short wait. Release removes only this
- * process' own token.
- */
-export function runDetachedToolingPopulate(
-  repoRoot: string,
-  env: NodeJS.ProcessEnv,
-  target: string,
-  reportFile: string,
-  lockDir: string,
-  timeoutMs: number = TOOLING_SETUP_CHECK_TIMEOUT_MS,
-): void {
-  if (authorizedSessionSecurityHome(env) === null) return;
-  let lock: ExclusiveDirectoryLockHandle;
-  try {
-    lock = acquireExclusiveDirectoryLock(realpathSync(repoRoot), lockDir, {
-      waitTimeoutMs: TOOLING_REFRESH_LOCK_WAIT_MS,
-      reclaimStaleEmptyDirectory: true,
-    });
-  } catch (error) {
-    if (error instanceof ExclusiveLockContentionError) return;
-    throw error;
-  }
-  try {
-    // Every stale SessionStart spawns a refresh. One that gets the lock after
-    // another refresh published a fresh report has nothing left to do.
-    if (toolingUpdateCacheIsFresh(repoRoot, reportFile, env, Date.now())) return;
-    const stdout = repoHarnessSetupCheckSubprocess(repoRoot, env, target, timeoutMs);
-    if (stdout !== null) {
-      // Publish only as the current owner, and atomically, so a reader never
-      // sees a partial report.
-      lock.assertOwned();
-      const report = join(repoRoot, reportFile);
-      const temp = `${report}.tmp-${process.pid}`;
-      writeFileSync(temp, stdout);
-      renameSync(temp, report);
-    }
-  } finally {
-    lock.release();
-  }
-}
-
-/**
- * Spawns the detached populate as a standalone `bun session-context.ts
- * --detached-tooling-populate ...` process (not a plain callback in this
- * process: a `spawn(...).unref()`'d NODE-SIDE callback would never run --
- * this process's own event loop stops the moment SessionStart returns and
- * the host hook process exits, which is the whole reason bash used a
- * backgrounded, independent subshell instead of "do it later in the same
- * script"). `detached: true` + `unref()` means the parent never waits, and
- * the child is reparented (survives the parent exiting), matching bash's
- * own orphaned-background-job semantics. The child acquires the refresh
- * lock itself (see `runDetachedToolingPopulate`).
- */
-function triggerDetachedToolingPopulate(
-  repoRoot: string,
-  env: NodeJS.ProcessEnv,
-  target: string,
-  reportFile: string,
-  lockDir: string,
-): void {
-  const child = spawn(
-    process.execPath,
-    [fileURLToPath(import.meta.url), DETACHED_TOOLING_POPULATE_FLAG, repoRoot, target, reportFile, lockDir],
-    { cwd: repoRoot, env, detached: true, stdio: 'ignore' },
-  );
-  child.unref();
-}
-
-/**
- * 7. `tooling_update_advisory_context`. The fresh-cache render path (the
- * steady-state case) and the `REPO_HARNESS_TOOLING_ADVISORY_SYNC=1` path require
- * startup scan authorization. The authorized stale-cache path also
- * triggers a detached background populate (see `triggerDetachedToolingPopulate`)
- * restoring bash's own cross-session TTL refresh cycle; either way it
- * contributes ZERO content to the *triggering* session's own stdout, exactly
- * like bash's backgrounded subshell.
- */
-function toolingUpdateAdvisoryContext(repoRoot: string, env: NodeJS.ProcessEnv, nowMs: number): ToolingUpdateAdvisory | null {
-  // setup check runs the doctor security scan and probes host configuration.
-  // Gate both sync/async refresh and cached advice before any provider effects.
-  if (authorizedSessionSecurityHome(env) === null) return null;
-  if (!fileExists(repoRoot, '.ai/harness/workflow-contract.json')) return null;
-  if (env.REPO_HARNESS_TOOLING_ADVISORY === '0') return null;
-
-  const target = toolingUpdateTarget(env);
-  const reportFile = `${TOOLING_ADVISORY_STATE_DIR}/tooling-update-advisory-${target}.json`;
-  const markerFile = `${TOOLING_ADVISORY_STATE_DIR}/tooling-update-advisory-${target}.rendered`;
-  const lockDir = `${TOOLING_ADVISORY_STATE_DIR}/tooling-update-advisory-${target}.lock`;
-
-  if (toolingUpdateCacheIsFresh(repoRoot, reportFile, env, nowMs)) {
-    if (toolingUpdateReportWasRendered(repoRoot, reportFile, markerFile)) return null;
-    return renderToolingUpdateAdvisory(repoRoot, reportFile, markerFile);
-  }
-
-  mkdirSync(join(repoRoot, TOOLING_ADVISORY_STATE_DIR), { recursive: true });
-
-  if (env.REPO_HARNESS_TOOLING_ADVISORY_SYNC === '1') {
-    return toolingUpdateSyncPopulateAndRender(repoRoot, env, target, reportFile, markerFile);
-  }
-
-  triggerDetachedToolingPopulate(repoRoot, env, target, reportFile, lockDir);
-  return null;
-}
-
-/** Exported so parity fixtures (tests/session-context.test.ts) can assert exact joined output without duplicating this literal. */
-export const INPUT_PRIORITY_CONTEXT = [
-  '# Input Priority',
-  '',
-  'If the current user message mentions `# Files mentioned by the user`, `pasted-text.txt`, or an explicit attachment/file path, read those current-input files first. Treat handoff, resume, and `tasks/current.md` as recovery context only.',
-].join('\n');
-
-function appendBlock(context: string, block: string | null): string {
-  if (!block) return context;
-  return context ? `${context}\n${block}` : block;
-}
-
-/**
- * Runs one sub-block emitter and swallows any unexpected throw (mirrors
- * bash's pervasive `|| true` fail-open style: one section's bug must never
- * take down the rest of SessionStart).
- */
-function safely<T>(
-  providerId: SessionContextProviderId,
-  observeDiagnostic: ((diagnostic: SessionContextProviderDiagnostic) => void) | undefined,
-  fn: () => T | null,
-): T | null {
-  try {
-    return fn();
-  } catch (error) {
-    observeDiagnostic?.(createSessionContextProviderDiagnostic(providerId, 'provider_threw', error));
-    return null;
-  }
-}
-
-/**
- * The full `session-start-context.sh` composition, verbatim order: resume
- * blob (gated), capability queue, architecture queue, pending plan capture,
- * current status snapshot, active sprint, and tooling update advisory -- each appended with a single `\n`
- * separator, then the whole thing prefixed with the input-priority block IFF
- * non-empty.
- */
-function sessionStartMain(
-  collector: SessionContextCollector,
-  env: NodeJS.ProcessEnv,
-  nowMs: number,
-  observeDiagnostic?: (diagnostic: SessionContextProviderDiagnostic) => void,
-): { readonly content: string; readonly tooling: ToolingUpdateAdvisory | null } | null {
-  const repoRoot = collector.getRepoRoot();
-
-  // Cold-path housekeeping, matching the base script's own call order
-  // (before resume_file is even resolved): both event logs grow unbounded
-  // otherwise. Produces no session content.
-  rotateSessionStartEventLogs(repoRoot);
-
-  let context = safely('resume', observeDiagnostic, () => resumeBlock(repoRoot, collector) || null) ?? '';
-  context = appendBlock(context, safely('pending-plan-capture', observeDiagnostic, () => pendingPlanCaptureContext(repoRoot, collector, nowMs)));
-  context = appendBlock(context, safely('current-status-snapshot', observeDiagnostic, () => currentStatusSnapshotContext(repoRoot)));
-  context = appendBlock(context, safely('active-sprint', observeDiagnostic, () => activeSprintContext(repoRoot)));
-  const tooling = safely('tooling-update-advisory', observeDiagnostic, () => toolingUpdateAdvisoryContext(repoRoot, env, nowMs));
-  context = appendBlock(context, tooling?.content ?? null);
-
-  if (!context) return null;
-  return { content: `${INPUT_PRIORITY_CONTEXT}\n${context}`, tooling };
-}
-
-export function sessionStartMainContent(
-  collector: SessionContextCollector,
-  env: NodeJS.ProcessEnv,
-  nowMs: number,
-  observeDiagnostic?: (diagnostic: SessionContextProviderDiagnostic) => void,
-): string | null {
-  return sessionStartMain(collector, env, nowMs, observeDiagnostic)?.content ?? null;
-}
-
-/** Headers that flip the old script-loop branch's `actionable` bit for this id. The tooling advisory names an agent update action, so it counts too. */
-const SESSION_START_ACTIONABLE_HEADERS =
-  /^# (Pending Plan Capture|Active Sprint|Tooling Update Advisory)/m;
-
-export function sessionStartMainSection(
-  collector: SessionContextCollector,
-  env: NodeJS.ProcessEnv,
-  nowMs: number,
-  observeDiagnostic?: (diagnostic: SessionContextProviderDiagnostic) => void,
-): SessionContextSection | null {
-  const main = sessionStartMain(collector, env, nowMs, observeDiagnostic);
-  if (!main) return null;
-  return {
-    id: 'session-start-context.sh',
-    priority: 5,
-    content: main.content,
-    mandatory: false,
-    actionable: SESSION_START_ACTIONABLE_HEADERS.test(main.content),
-    reference: 'repo-harness state resolve --json',
-    ...(main.tooling ? { onDelivered: main.tooling.markDelivered } : {}),
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Cleanable contract worktree notice (issue #196)
-// ---------------------------------------------------------------------------
-//
-// The four merged fixes made contract-worktree cleanup actually reach
-// squash-merged worktrees; none of them tell anyone there is something to
-// clean, which is how 100+ worktree directories accumulated. This section only
-// notices. Deletion stays operator-executed: a worktree can hold unpushed work
-// and removal is irreversible.
-
-/**
- * Bound on how many contract worktrees one SessionStart classifies. Each
- * classification costs one `git merge-tree --write-tree` (~22ms measured),
- * which holds the whole scan near half a second at this cap. Worktrees past
- * the cap are reported as an explicit unchecked count -- never silently
- * dropped, because a silent truncation would make the notice's own silence
- * unreadable.
- */
-const WORKTREE_BACKLOG_SCAN_CAP = 24;
-
-const WORKTREE_MERGE_LIB = 'scripts/worktree-merge-lib.sh';
-const WORKTREE_CLEANUP_DRY_RUN = 'repo-harness run ship-worktrees --cleanup-merged --dry-run';
-const WORKTREE_CLEANUP_COMMAND = 'repo-harness run ship-worktrees --cleanup-merged';
-
-interface LinkedWorktreeEntry {
-  readonly branch: string;
-  readonly path: string;
-}
-
-/** `list_contract_worktrees()`'s awk in ship-worktrees.sh, minus the prefix filter (applied by the caller) and keeping the first `worktree` line so the main worktree stays identifiable. */
-function listWorktreeEntries(repoRoot: string): { main: string | null; entries: LinkedWorktreeEntry[] } {
-  let output: string;
-  try {
-    output = execFileSync('git', ['worktree', 'list', '--porcelain'], {
-      cwd: repoRoot,
-      encoding: 'utf-8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-    });
-  } catch {
-    return { main: null, entries: [] };
-  }
-
-  const entries: LinkedWorktreeEntry[] = [];
-  let main: string | null = null;
-  let path = '';
-  for (const line of output.split('\n')) {
-    if (line.startsWith('worktree ')) {
-      path = line.slice('worktree '.length);
-      if (main === null) main = path;
-      continue;
-    }
-    if (!line.startsWith('branch ') || !path) continue;
-    const ref = line.slice('branch '.length);
-    entries.push({
-      branch: ref.startsWith('refs/heads/') ? ref.slice('refs/heads/'.length) : ref,
-      path,
-    });
-  }
-  return { main, entries };
-}
-
-function samePath(left: string, right: string): boolean {
-  try {
-    return realpathSync(left) === realpathSync(right);
-  } catch {
-    return left === right;
-  }
-}
-
-type WorktreeCleanupState = 'clean' | 'dirty' | 'locked' | 'unreadable';
-
-/**
- * `worktree_status_for_cleanup`'s own probe, verbatim
- * (`git -C <path> status --porcelain=v1 --untracked-files=all`), read once per
- * merged candidate.
- *
- * This is not a second authority in the sense `worktree_merge_mode` is one.
- * That function *decides* -- ancestry or tree-equivalence, fail-closed, a
- * predicate that can drift when either implementation changes. This observes:
- * git reports whether a working tree has changes, nothing is derived, and both
- * existing consumers already read it independently (`dirty_paths_for_worktree`
- * in ship-worktrees.sh, `worktree_status_for_cleanup` in contract-worktree.sh).
- */
-function worktreeCleanupState(path: string): WorktreeCleanupState {
-  try {
-    const status = execFileSync('git', ['-C', path, 'status', '--porcelain=v1', '--untracked-files=all'], {
-      encoding: 'utf-8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-    });
-    const lockPath = execFileSync('git', ['-C', path, 'rev-parse', '--git-path', 'locked'], {
-      encoding: 'utf-8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-    }).trim();
-    if (existsSync(resolve(path, lockPath))) return 'locked';
-    return status.trim().length === 0 ? 'clean' : 'dirty';
-  } catch {
-    return 'unreadable';
-  }
-}
-
-/**
- * Classifies contract worktrees through the batch entrypoint of
- * `scripts/worktree-merge-lib.sh`. That function is the single merge
- * authority as of `b456121a`; re-deriving `git merge-tree --write-tree` here
- * would put the same datum back under two authorities, which is the defect
- * issue #196 actually was. One spawn classifies the whole scan.
- *
- * Merged candidates are split using Git's status and lock metadata. Retained
- * dirty or locked worktrees are named separately while the batch continues
- * with safe entries; an unreadable candidate is never offered as cleanable.
- */
-export function worktreeBacklogSessionContent(repoRoot: string): string | null {
-  const libPath = join(repoRoot, WORKTREE_MERGE_LIB);
-  if (!existsSync(libPath)) return null;
-
-  const { main, entries } = listWorktreeEntries(repoRoot);
-  if (!main) return null;
-  // Both cleanup entrypoints refuse from a linked worktree
-  // (`is_linked_worktree` in ship-worktrees.sh, the primary-worktree check in
-  // contract-worktree.sh's cleanup). Read from inside one, this notice could
-  // only name a command that cannot run where it is read.
-  if (!samePath(main, repoRoot)) return null;
-
-  const prefix = policyGet(repoRoot, ['worktree_strategy', 'branch_prefix'], 'codex/');
-  const contractWorktrees = entries.filter(
-    (entry) => entry.branch.startsWith(prefix) && !samePath(entry.path, repoRoot),
-  );
-  if (contractWorktrees.length === 0) return null;
-
-  const scanned = contractWorktrees.slice(0, WORKTREE_BACKLOG_SCAN_CAP);
-  const unchecked = contractWorktrees.length - scanned.length;
-  const target = workflowTargetBranch(repoRoot);
-
-  let modeOutput: string;
-  try {
-    modeOutput = execFileSync('bash', [libPath, '--target', target, ...scanned.map((entry) => entry.branch)], {
-      cwd: repoRoot,
-      encoding: 'utf-8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-    });
-  } catch {
-    return null;
-  }
-
-  // Enumerate the two proving modes rather than negating `unmerged`: the lib
-  // is fail-closed, and a mode this reader does not recognize must land on the
-  // silent side, not in a list the operator is invited to act on.
-  const merged = new Set(
-    modeOutput
-      .split('\n')
-      .map((line) => line.split('\t'))
-      .filter((cells) => cells[1] === 'ancestor' || cells[1] === 'absorbed')
-      .map((cells) => cells[0]),
-  );
-
-  const cleanable: LinkedWorktreeEntry[] = [];
-  const blocked: (LinkedWorktreeEntry & { reason: 'dirty' | 'locked' })[] = [];
-  for (const entry of scanned) {
-    if (!merged.has(entry.branch)) continue;
-    const cleanliness = worktreeCleanupState(entry.path);
-    if (cleanliness === 'clean') cleanable.push(entry);
-    else if (cleanliness === 'dirty' || cleanliness === 'locked') blocked.push({ ...entry, reason: cleanliness });
-    // `unreadable` is a prunable registration: the directory is gone but the
-    // worktree is still registered. `contract-worktree cleanup` dies on an
-    // unhandled `cd` into that path, and `ship-worktrees --cleanup-merged
-    // --slug` exits with "linked worktree status unavailable after repair
-    // attempt". Withheld from both lists -- `git worktree prune` is the
-    // remedy, and neither list is the place to invite it.
-  }
-  if (cleanable.length === 0 && blocked.length === 0 && unchecked === 0) return null;
-
-  const describe = (entry: LinkedWorktreeEntry): string => {
-    const slug = entry.branch.slice(prefix.length) || entry.branch;
-    return `  - \`${slug}\` at \`${entry.path}\` (branch \`${entry.branch}\`)`;
-  };
-
-  // The header states what the body actually contains. A section whose every
-  // entry is blocked is not a list of cleanable worktrees, and titling it as
-  // one repeats -- at smaller scale -- the misdescription this section exists
-  // to avoid.
-  const header =
-    cleanable.length > 0
-      ? '# Cleanable Contract Worktrees'
-      : blocked.length > 0
-        ? '# Blocked Contract Worktrees'
-        : '# Contract Worktree Scan Incomplete';
-
-  const lines = [header, ''];
-  // Put retained WIP first so the operator can see what requires resolution.
-  if (blocked.length > 0) {
-    lines.push(
-      `- Retained worktrees: ${blocked.length} worktree(s) merged into \`${target}\` but dirty or locked. \`--cleanup-merged\` preserves these and continues with safe entries; \`--dry-run\` previews the full batch. The command returns nonzero when entries remain blocked. Resolve the reported state before retrying these entries; \`--discard-scaffold-only\` discards dirty scaffold changes and does not unlock worktrees.`,
-    );
-    lines.push(...blocked.map((entry) => `${describe(entry)} — ${entry.reason}`));
-  }
-  if (cleanable.length > 0) {
-    lines.push(`- Cleanable now: ${cleanable.length} worktree(s) merged into \`${target}\` and clean.`);
-    lines.push(...cleanable.map(describe));
-    lines.push(`- Review with \`${WORKTREE_CLEANUP_DRY_RUN}\`, then run \`${WORKTREE_CLEANUP_COMMAND}\` from this worktree.`);
-  } else if (blocked.length === 0) {
-    // "are cleanable", not "are merged into <target>": a merged worktree whose
-    // directory is gone was withheld above, so it is inside `scanned.length`
-    // and merged, which made the stronger claim literally false. Only
-    // reachable past the cap, since all three lists empty returns null.
-    lines.push(`- None of the first ${scanned.length} contract worktree(s) are cleanable.`);
-  }
-  if (unchecked > 0) {
-    lines.push(
-      `- Scan capped at ${WORKTREE_BACKLOG_SCAN_CAP}; ${unchecked} further worktree(s) were not checked. Run \`${WORKTREE_CLEANUP_DRY_RUN}\` for the full list.`,
-    );
-  }
-  lines.push('- This notice deleted nothing. Every command above is yours to run.');
-  return lines.join('\n');
-}
-
-/** Same shape as the two sibling sections above: repo root in, section or null out. `actionable` is true because the content names an operator action; `mandatory` stays false -- an unnoticed backlog is untidy, not unsafe. */
-export function worktreeBacklogSessionSection(repoRoot: string): SessionContextSection | null {
-  const content = worktreeBacklogSessionContent(repoRoot);
-  if (!content) return null;
-  return {
-    id: 'worktree-backlog-notice',
-    priority: 6,
-    content,
-    mandatory: false,
-    actionable: true,
-    reference: WORKTREE_CLEANUP_DRY_RUN,
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Top-level composition -- feeds runtime.ts's single budgetSessionContext call
-// ---------------------------------------------------------------------------
-
-/**
- * All three retired scripts' sections, in their former script-loop order
- * (`session-start-context.sh`, `minimal-change-context.sh`,
- * `security-sentinel.sh`), followed by the cleanable-worktree notice, which
- * was never a script. The session handler in `handler-registry.ts` prepends
- * the `effective-state` section (the single Effective State resolution) and
- * the runtime feeds the combined array to `budgetSessionContext` once.
- */
+/** All SessionStart sections, state first. The runtime budgets them once. */
 export function buildSessionStartSections(
-  collector: SessionContextCollector,
-  env: NodeJS.ProcessEnv,
+  repoRoot: string,
+  resolution: EffectiveStateResolution,
   nowMs: number,
-  observeDiagnostic?: (diagnostic: SessionContextProviderDiagnostic) => void,
+  providers: readonly SessionContextProvider[] = SESSION_CONTEXT_PROVIDERS,
 ): SessionContextSection[] {
-  const sections: SessionContextSection[] = [];
-  const main = sessionStartMainSection(collector, env, nowMs, observeDiagnostic);
-  if (main) sections.push(main);
-  const minimalChange = minimalChangeSessionSection(collector.getRepoRoot());
-  if (minimalChange) sections.push(minimalChange);
-  const security = securitySentinelSessionSection(collector.getRepoRoot(), env);
-  if (security) sections.push(security);
-  const worktreeBacklog = worktreeBacklogSessionSection(collector.getRepoRoot());
-  if (worktreeBacklog) sections.push(worktreeBacklog);
+  if (!resolution.ok) return [projectUnavailableStateSessionSection(resolution)];
+  const sections = [projectEffectiveStateSessionSection(resolution.state)];
+  for (const provider of providers) {
+    let body: SessionContextBody | null;
+    try {
+      body = provider.render({ repoRoot, state: resolution.state, nowMs });
+    } catch {
+      // Mandatory so the budget never hides that a section is missing.
+      sections.push({
+        id: provider.id,
+        priority: provider.priority,
+        content: `[SessionContextProviderFailed] ${provider.id}`,
+        mandatory: true,
+        source: STATE_SOURCE,
+      });
+      continue;
+    }
+    if (body) sections.push({ id: provider.id, priority: provider.priority, mandatory: false, ...body });
+  }
   return sections;
-}
-
-// ---------------------------------------------------------------------------
-// Standalone detached-populate entry point (see triggerDetachedToolingPopulate)
-// ---------------------------------------------------------------------------
-//
-// Only activates when THIS file is the directly-invoked entry point (a
-// `bun session-context.ts --detached-tooling-populate ...` process spawned
-// detached+unref'd) -- false whenever the module is merely imported (the
-// normal case: handler-registry.ts imports buildSessionStartSections), so this never
-// runs as a side effect of importing the module.
-if (import.meta.main && process.argv[2] === DETACHED_TOOLING_POPULATE_FLAG) {
-  const [, , , repoRootArg, targetArg, reportFileArg, lockDirArg] = process.argv;
-  runDetachedToolingPopulate(repoRootArg, process.env, targetArg, reportFileArg, lockDirArg);
 }
