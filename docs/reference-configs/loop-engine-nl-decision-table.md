@@ -1,9 +1,15 @@
 # Loop Engine NL Decision Table
 
-This document is the natural-language projection of the current prompt guard
-`intent x workflow-state` behavior. It is an evaluation input for the loop
-engine sprint; it is not the runtime authority until a later cutover task
-explicitly switches the hook path.
+> **Status**: historical. The prompt guard that this table described is
+> deleted. The prompt-guard-decision modules went in #691; `prompt-intents.ts`
+> and its test went in #694. The `UserPromptSubmit.default` handler does not
+> classify intent or check workflow state. It only adds the
+> `[OperationBoundaries]` line for an explicit workflow command. Read the rules
+> below as research history, not as runtime behavior.
+
+This document was the natural-language projection of the prompt guard
+`intent x workflow-state` behavior. It was an evaluation input for the loop
+engine sprint.
 
 ## Runtime Boundary
 
@@ -97,10 +103,9 @@ Allowed `action` values:
 
 ## Current Checks
 
-The NL/TS shadow evaluation and its standing gate are retired.
-`tests/cli/prompt-intents.test.ts` and `tests/cli/prompt-guard-decision.test.ts`
-check the runtime classifier and decision engine. This table is historical
-research guidance. It does not replace the TypeScript runtime authority.
+The NL/TS shadow evaluation and its standing gate are retired. The runtime
+classifier, the decision engine and their tests are deleted (#691, #694). No check
+reads this table. It is historical research guidance.
 
 ## Decision Rules
 
