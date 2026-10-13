@@ -157,26 +157,20 @@ describe('hook runtime typed dispatch', () => {
     } finally { rmSync(root, { recursive: true, force: true }); }
   });
 
-  test('one SessionStart writes the same session_id to telemetry and budget evidence', () => {
+  test('one SessionStart writes the payload session_id and run_id to telemetry', () => {
     const root = fixture();
     try {
-      // A pending post-edit event makes SessionStart emit a budgeted section.
-      runHook({ event: 'PostToolUse', routeId: 'edit', cwd: root, env: env(root),
-        input: JSON.stringify({ session_id: 'sess-claude-1', tool_input: { file_path: 'README.md' } }) });
       const result = runHook({
         event: 'SessionStart',
         routeId: 'default',
         cwd: root,
-        env: { ...env(root), REPO_HARNESS_TOOLING_ADVISORY: '0' },
-        input: JSON.stringify({ session_id: 'sess-claude-1' }),
+        env: env(root),
+        input: JSON.stringify({ session_id: 'sess-claude-1', run_id: 'run-claude-1' }),
       });
       expect(result.exitCode).toBe(0);
       const sessionStart = telemetry(root).find((record) => record.event === 'SessionStart');
-      const evidence = JSON.parse(readFileSync(join(root, '.ai/harness/state/session-context-budget.json'), 'utf8'));
-      const identity = JSON.parse(readFileSync(join(root, '.ai/harness/state/session-run-identity.json'), 'utf8'));
       expect(sessionStart?.session_id).toBe('sess-claude-1');
-      expect(evidence.session_id).toBe('sess-claude-1');
-      expect(sessionStart?.run_id).toBe(identity.run_id);
+      expect(sessionStart?.run_id).toBe('run-claude-1');
     } finally { rmSync(root, { recursive: true, force: true }); }
   }, 30_000);
 
@@ -222,48 +216,6 @@ describe('hook runtime typed dispatch', () => {
     } finally { rmSync(root, { recursive: true, force: true }); }
   }, 30_000);
 
-  test('measures and captures Bash output from the Claude PostToolUse tool_response', () => {
-    const root = fixture();
-    try {
-      // Claude Code builds PostToolUse input as { tool_name, tool_input,
-      // tool_response, tool_use_id, duration_ms }; the Bash tool_response is
-      // { stdout, stderr, interrupted, isImage? }.
-      const stdout = `${Array.from({ length: 201 }, (_, index) => `line-${index}`).join('\n')}\n`;
-      const stderr = 'warning: slow test\n';
-      const hostEnv = env(root);
-      delete hostEnv.EXIT_CODE;
-      const result = runHook({
-        event: 'PostToolUse',
-        routeId: 'bash',
-        cwd: root,
-        input: JSON.stringify({
-          session_id: 'claude-session',
-          hook_event_name: 'PostToolUse',
-          tool_name: 'Bash',
-          tool_input: { command: 'bun test', description: 'Run tests' },
-          tool_response: { stdout, stderr, interrupted: false, isImage: false },
-          tool_use_id: 'toolu_01',
-          duration_ms: 812,
-        }),
-        env: hostEnv,
-      });
-      expect(result).toMatchObject({ exitCode: 0, reason: 'ok', handler: 'command-observed' });
-      const record = JSON.parse(readFileSync(join(root, '.ai/harness/checks/post-bash-latest.json'), 'utf8')) as Record<string, unknown>;
-      const observed = `${stdout}${stderr}`;
-      expect(record).toMatchObject({
-        command: 'bun test',
-        exit_code: 0,
-        status: 'pass',
-        output_line_count: 202,
-        verbosity_class: 'long',
-        suggested_runner: 'raw',
-        raw_output_bytes: Buffer.byteLength(observed),
-      });
-      expect(typeof record.raw_output_path).toBe('string');
-      expect(readFileSync(join(root, record.raw_output_path as string), 'utf8')).toBe(observed);
-    } finally { rmSync(root, { recursive: true, force: true }); }
-  }, 30_000);
-
   test('host output policy is centralized and does not leak successful Codex stdout', () => {
     const root = fixture();
     try {
@@ -274,7 +226,7 @@ describe('hook runtime typed dispatch', () => {
         input: JSON.stringify({ prompt: 'implement the next task' }),
         env: env(root, 'codex'),
       });
-      expect(result.handler).toBe('subagent');
+      expect(result.handler).toBe('delegation-advisor');
     } finally { rmSync(root, { recursive: true, force: true }); }
   }, 30_000);
 
@@ -288,7 +240,7 @@ describe('hook runtime typed dispatch', () => {
         input: JSON.stringify({ hook_event_name: 'PostToolUse', tool_name: 'Read' }),
         env: env(root),
       });
-      expect(result.handler).toBe('trace-observer');
+      expect(result.handler).toBe('retired-observer');
       const [record] = telemetry(root);
       expect(Object.keys(record).sort()).toEqual([
         'blocked', 'completed_at', 'elapsed_ms', 'event', 'event_id', 'exit_code', 'fingerprint', 'host',
@@ -364,7 +316,7 @@ describe('host envelopes on the real hook entry (#678)', () => {
 
         const prompt = host(root, hostName, 'UserPromptSubmit', 'default', { prompt: '/check my branch' });
         expect(prompt.status).toBe(0);
-        expect(context(prompt.stdout, 'UserPromptSubmit')).toContain('[ReviewAdvice]');
+        expect(context(prompt.stdout, 'UserPromptSubmit')).toContain('[OperationBoundaries]');
 
         const session = host(root, hostName, 'SessionStart', 'default', { session_id: `owed-${hostName}` });
         expect(session.status).toBe(0);

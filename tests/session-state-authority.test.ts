@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'bun:test';
 import { spawnSync } from 'child_process';
-import { createHash } from 'crypto';
 import {
   mkdirSync,
   mkdtempSync,
@@ -131,8 +130,6 @@ function captureHealthyBaseline(): Record<string, unknown> {
           ...gitEnv,
           HOOK_REPO_ROOT: root,
           HOOK_HOST: 'claude',
-          // This state-authority fixture must not leave a detached tooling refresh.
-          REPO_HARNESS_TOOLING_ADVISORY: '0',
           REPO_HARNESS_MAIN_LOOP_EDIT_GUARD: undefined,
         },
       },
@@ -143,7 +140,6 @@ function captureHealthyBaseline(): Record<string, unknown> {
     const observed = JSON.parse(context.slice('[HarnessState] '.length));
     expect(observed.state_revision).toBe(state.state_revision);
     expect(observed.blockers).toEqual(state.blockers);
-    const evidence = JSON.parse(readFileSync(join(root, '.ai/harness/state/session-context-budget.json'), 'utf8'));
     const event = JSON.parse(readFileSync(join(root, '.ai/harness/runs/hook-events.jsonl'), 'utf8').trim());
     return {
       protocol: 1,
@@ -151,7 +147,6 @@ function captureHealthyBaseline(): Record<string, unknown> {
       context,
       output_bytes: Buffer.byteLength(context, 'utf8'),
       estimated_tokens: Math.ceil(Buffer.byteLength(context, 'utf8') / 4),
-      evidence,
       telemetry: {
         session_id: event.session_id,
         exit_code: event.exit_code,
@@ -168,7 +163,6 @@ function runMockedFailure(kind: 'transient' | 'non-transient'): {
   readonly envelope: Record<string, unknown>;
   readonly result: Record<string, unknown>;
   readonly attempts: number;
-  readonly evidence: Record<string, unknown>;
 } {
   const root = mkdtempSync(join(tmpdir(), 'session-state-authority-failure-'));
   try {
@@ -227,7 +221,6 @@ function runMockedFailure(kind: 'transient' | 'non-transient'): {
       envelope: JSON.parse(envelopeText.trim()),
       result: resultPayload.result,
       attempts: resultPayload.attempts,
-      evidence: JSON.parse(readFileSync(join(root, '.ai/harness/state/session-context-budget.json'), 'utf8')),
     };
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -310,7 +303,7 @@ describe('SessionStart Effective State authority', () => {
     expect(runtime).not.toContain("'state', 'resolve', '--json'");
   }, 30_000);
 
-  test('preserves exact healthy context, budget evidence, and the telemetry record', () => {
+  test('preserves exact healthy context and the telemetry record', () => {
     const expected = JSON.parse(readFileSync(
       join(import.meta.dir, 'fixtures/session-start/state-authority-baseline.json'),
       'utf8',
@@ -319,21 +312,14 @@ describe('SessionStart Effective State authority', () => {
     const context = actual.context as string;
     const payload = JSON.parse(context.slice('[HarnessState] '.length));
     expect(payload.state_revision).toMatch(/^sha256:[0-9a-f]{64}$/);
-    const sectionBytes = JSON.stringify({
-      id: 'effective-state', priority: 2, mandatory: true, actionable: true,
-      reference: 'repo-harness state resolve --json', content: context,
-    });
-    expect((actual.evidence as Record<string, unknown>).content_hash)
-      .toBe(`sha256:${createHash('sha256').update(sectionBytes).digest('hex')}`);
-    // Profile vocabulary changes the authority bytes and therefore both hashes;
-    // preserve the complete context/telemetry comparison apart from those derived hashes.
+    // Profile vocabulary changes the authority bytes and therefore the revision;
+    // preserve the complete context/telemetry comparison apart from that derived hash.
     const previous = JSON.parse(expected.context.slice('[HarnessState] '.length));
     expected.context = '[HarnessState] ' + JSON.stringify({ ...previous, state_revision: payload.state_revision });
-    expected.evidence.content_hash = (actual.evidence as Record<string, unknown>).content_hash;
     expect(actual).toEqual(expected);
   }, 30_000);
 
-  test('distinguishes actionable, non-actionable, and blocked-but-resolved state', () => {
+  test('projects idle, active and blocked-but-resolved state, and never hides the state section', () => {
     const actionable = fixtureState();
     const nonActionable = fixtureState({
       task_id: null,
@@ -342,11 +328,11 @@ describe('SessionStart Effective State authority', () => {
     });
     const blocked = fixtureState({ task_id: null, blockers: ['contract:missing'] });
     const resolveSession = (state: EffectiveState) =>
-      resolveHookEffectiveState('/repo-b', 'SessionStart', [], {}, 123, (() => state) as StateResolver);
+      resolveHookEffectiveState('/repo-b', 123, (() => state) as StateResolver);
     expect(resolveSession(actionable)).toEqual({ ok: true, state: actionable });
     expect(projectEffectiveStateSessionSection(actionable)?.content).toStartWith('[HarnessState] ');
     expect(resolveSession(nonActionable)).toEqual({ ok: true, state: nonActionable });
-    expect(projectEffectiveStateSessionSection(nonActionable)).toBeNull();
+    expect(projectEffectiveStateSessionSection(nonActionable).content).toStartWith('[HarnessState] ');
     expect(resolveSession(blocked)).toEqual({ ok: true, state: blocked });
     expect(projectEffectiveStateSessionSection(blocked)?.content).toStartWith('[HarnessState] ');
     expect(projectEffectiveStateSessionSection(blocked)?.content).not.toContain('[HarnessStateUnavailable]');
@@ -359,17 +345,18 @@ describe('SessionStart Effective State authority', () => {
       if (calls.length === 1) throw lockContention();
       return fixtureState();
     }) as StateResolver;
-    const outcome = resolveHookEffectiveState('/repo-b', 'SessionStart', [], {}, 123456, resolveAttempt);
+    const outcome = resolveHookEffectiveState('/repo-b', 123456, resolveAttempt);
     expect(outcome.ok).toBe(true);
     expect(calls).toHaveLength(2);
     expect(calls.map(({ root }) => root)).toEqual(['/repo-b', '/repo-b']);
     expect(calls.map(({ nowMs }) => nowMs)).toEqual([123456, 123456]);
-    expect(calls[0].risk).toEqual({});
+    // No risk input: every hook resolves what `state resolve --json` resolves.
+    expect(calls[0].risk).toBeUndefined();
   });
 
   test('bounds transient retries at three and hashes unavailable evidence without raw errors', () => {
     let attempts = 0;
-    const outcome = resolveHookEffectiveState('/private/repo-b', 'SessionStart', [], {}, 123, (() => {
+    const outcome = resolveHookEffectiveState('/private/repo-b', 123, (() => {
       attempts += 1;
       throw lockContention();
     }) as StateResolver);
@@ -379,7 +366,6 @@ describe('SessionStart Effective State authority', () => {
     expect(outcome.error_hash).toMatch(/^sha256:[0-9a-f]{64}$/);
     const section = projectUnavailableStateSessionSection(outcome);
     expect(section.mandatory).toBe(true);
-    expect(section.actionable).toBe(true);
     expect(section.content).toStartWith('[HarnessStateUnavailable] ');
     expect(section.content).not.toContain('[HarnessState] ');
     expect(section.content).not.toContain('/private/repo-b');
@@ -389,7 +375,7 @@ describe('SessionStart Effective State authority', () => {
 
   test('does not retry a non-transient resolver failure', () => {
     let attempts = 0;
-    const outcome = resolveHookEffectiveState('/repo-b', 'SessionStart', [], {}, 123, (() => {
+    const outcome = resolveHookEffectiveState('/repo-b', 123, (() => {
       attempts += 1;
       throw new TypeError('bad state /private/secret');
     }) as StateResolver);
@@ -408,27 +394,21 @@ describe('SessionStart Effective State authority', () => {
       expect(captured.attempts).toBe(attempts);
       const context = ((captured.envelope.hookSpecificOutput as Record<string, unknown>).additionalContext as string);
       expect(context).toStartWith('[HarnessStateUnavailable] ');
-      expect(context).not.toContain('/private/secret');
-      expect(captured.evidence.provider_diagnostics).toEqual([expect.objectContaining({
-        provider_id: 'effective-state',
+      expect(context.split('\n')).toHaveLength(1);
+      expect(JSON.parse(context.slice('[HarnessStateUnavailable] '.length))).toMatchObject({
         reason_code: reason,
         error_hash: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
-      })]);
-      expect(JSON.stringify(captured.evidence)).not.toContain('/private/secret');
+      });
+      expect(context).not.toContain('/private/secret');
     }
   }, 20000);
 
-  test('preserves PreEdit non-transient and residual-transient adapter semantics', () => {
-    const nonTransient = runMockedPreEdit('non-transient');
-    expect(nonTransient.attempts).toBe(1);
-    expect(nonTransient.result).toMatchObject({ exitCode: 0, reason: 'ok' });
-    expect(nonTransient.output).not.toContain('[WorkflowProfileGuard]');
-    expect(nonTransient.output).not.toContain('[WorkflowResolutionUnstableGuard]');
-
-    const transient = runMockedPreEdit('transient');
-    expect(transient.attempts).toBe(3);
-    expect(transient.result).toMatchObject({ exitCode: 0, reason: 'ok' });
-    expect(transient.output).toContain('[WorkflowObservation]');
-    expect(transient.output).toContain('edit may continue');
+  test('PreEdit never calls the Effective State resolver, even when it would fail', () => {
+    for (const kind of ['non-transient', 'transient'] as const) {
+      const run = runMockedPreEdit(kind);
+      expect(run.attempts).toBe(0);
+      expect(run.result).toMatchObject({ exitCode: 0, reason: 'ok' });
+      expect(run.output).not.toContain('[WorkflowObservation]');
+    }
   }, 20000);
 });

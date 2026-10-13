@@ -58,58 +58,32 @@ describe("Hook contracts", () => {
   // bash hook_structured_error helper) are dropped as not applicable to a
   // TypeScript module; every guard-name/message-text string stays checked
   // against the new handler's source.
-  test("mutation-guard handler should combine asset-layer and test reminders", () => {
-    const script = read("src/cli/hook/mutation-guard.ts");
-    expect(script).toContain("[AssetLayer]");
-    expect(script).toContain("[BDD Guard]");
-    expect(script).toContain("[TDD Guard]");
-    expect(script).toContain("PlanTransitionGuard");
-    expect(script).toContain("ExternalReferenceGuard");
-    expect(script).toContain("OpsPrivateGuard");
-    expect(script).toContain("deploy/");
-  });
-
-  test("mutation-guard preserves private path fences and treats workflow scope as advice", () => {
+  test("mutation-guard preserves private path fences", () => {
     const script = read("src/cli/hook/mutation-guard.ts");
     expect(script).toContain("canonicalRepoRelativePath");
     expect(script).toContain("RepoScopeGuard");
     expect(script).toContain("OpsPrivateGuard");
     expect(script).toContain("ExternalReferenceGuard");
-    expect(script).toContain("[ContractScopeGuard] Advisory:");
-    expect(script).toContain("[WorkflowObservation]");
     expect(script).not.toContain(".claude/.require-worktree");
   });
 
-  test("typed trace observer keeps trace, CodeGraph session state, and plan annotation without budget probes", () => {
-    const observer = read("src/cli/hook/trace-observer.ts");
-    expect(observer).toContain(".claude/.session-id");
-    expect(observer).toContain(".claude/.trace.jsonl");
-    expect(observer).toContain(".claude/.codegraph-state");
-    expect(observer).toContain("[AnnotationGuard]");
-    expect(observer).toContain("event_type");
-    expect(observer).toContain("run_id");
-    expect(observer).not.toContain(".tool-call-count");
-    expect(observer).not.toContain("context-budget");
-    expect(observer).not.toContain("/compact");
-  });
-
-  test("typed subagent handler owns return channel, delegation, context, and quality", () => {
-    const handler = read("src/cli/hook/subagent-handler.ts");
-    expect(handler).toContain("[repo-harness:return-channel]");
-    expect(handler).toContain("updatedInput");
+  test("one typed handler owns each subagent route", () => {
+    const returnChannel = read("src/cli/hook/return-channel.ts");
+    expect(returnChannel).toContain("[repo-harness:return-channel]");
+    expect(returnChannel).toContain("updatedInput");
     // #691 finding 9: the handler returns a typed permission; the host renderer writes permissionDecision.
-    expect(handler).toContain("decision: 'allow'");
-    expect(handler).toContain("/(delegate|parallel)");
-    expect(handler).toContain("max_agents");
-    expect(handler).toContain("max_depth");
-    expect(handler).toContain("permission only");
-    expect(handler).toContain("[repo-harness:subagent-context]");
-    expect(handler).toContain("[SubagentQuality]");
-    expect(handler).toContain("Record the report gap");
+    expect(returnChannel).toContain("decision: 'allow'");
+    const advisor = read("src/cli/hook/delegation-advisor.ts");
+    expect(advisor).toContain("/(delegate|parallel)");
+    expect(advisor).toContain("permission only");
+    expect(read("src/cli/hook/subagent-context.ts")).toContain("[repo-harness:subagent-context]");
+    const quality = read("src/cli/hook/subagent-quality.ts");
+    expect(quality).toContain("[SubagentQuality]");
+    expect(quality).toContain("Record the report gap");
   });
 
   test("delegation requires an explicit slash command and has no standing authorization", () => {
-    const advisor = read("src/cli/hook/subagent-handler.ts");
+    const advisor = read("src/cli/hook/delegation-advisor.ts");
     expect(advisor).toContain("activeContractPath");
     expect(advisor).not.toContain("policyDelegation.mode");
     expect(advisor).not.toContain("auto-mode");
@@ -121,105 +95,37 @@ describe("Hook contracts", () => {
 
   test("typed prompt handler gives bounded advice without automatic workflow gates", () => {
     const script = read("src/cli/hook/prompt-handler.ts");
-    for (const advice of ["[ReviewAdvice]", "[DiagnosisAdvice]", "[PlanningAdvice]", "[OperationBoundaries]", "[WorkflowObservation]"]) {
-      expect(script).toContain(advice);
-    }
+    expect(script).toContain("[OperationBoundaries]");
     expect(script).toContain("routePromptExplicitFirst");
-    expect(script).toContain("no plan, receipt or archive step is required");
     expect(script).not.toContain("writePendingOrchestration");
     expect(script).not.toContain("ContractGuard");
     expect(script).not.toContain("acceptance-receipt");
+    expect(existsSync(join(ROOT, "src/cli/hook/prompt-intents.ts"))).toBe(false);
   });
 
-  test("prompt intent classifier owns Chinese bug/feature keywords with Unicode semantics", () => {
-    const intents = read("src/cli/hook/prompt-intents.ts");
-    expect(intents).toContain("修复");
-    expect(intents).toContain("修bug");
-    expect(intents).toContain("新功能");
-    expect(intents).toContain("实现");
-    expect(intents).toContain("执行");
-    expect(intents).toContain("收工");
-    expect(intents).toContain("完成");
-    expect(intents).toContain("下一刀");
-    expect(intents).toContain("\\p{P}");
-  });
-
-  // HRD-04 retired session-start-context.sh; its content now lives in the
-  // in-process session-context builder. Bash-syntax assertions
-  // (`:-604800` default-value syntax, `"$target"` interpolation) retarget to
-  // the equivalent TS constructs; every underlying claim (default TTL 604800,
-  // report/marker file naming, update-action id filter) is unchanged.
   test("session-start should not spend the global budget on cross-review availability", () => {
     const script = read("src/cli/hook/session-context.ts");
     expect(script).not.toContain("[CrossReview]");
     expect(script).toContain("Pending Plan Capture");
-    expect(script).toContain("pendingOrchestrationIsFresh");
     expect(script).not.toContain("claude-review");
     expect(script).not.toContain("worth the tokens");
   });
 
-  test("session-start owns throttled tooling update advisories", () => {
-    const script = read("src/cli/hook/session-context.ts");
-    expect(script).toContain("Tooling Update Advisory");
-    expect(script).toContain("'setup', 'check', '--target', target, '--check-updates', '--json'");
-    expect(script).toContain("if (raw === undefined) return 604800;");
-    expect(script).toContain("tooling-update-advisory-${target}.json");
-    expect(script).toContain("tooling-update-advisory-${target}.rendered");
-    expect(script).toContain("cli.update");
-    expect(script).toContain("tooling\\.[^.]+\\.update");
-  });
-
-  test("security sentinel should stay changed-only and advisory", () => {
-    const script = read("src/cli/hook/session-context.ts");
-    // Ports to a direct in-process runSecurityScan() call (no CLI text to
-    // match); the fingerprint-gated, changed-only, advisory shape it owns is
-    // still verified via the surrounding state/state.sha256/[SecurityConfig]
-    // markers and the absence of any --strict escalation.
-    expect(script).toContain("runSecurityScan");
-    expect(script).toContain("state.sha256");
-    expect(script).toContain(".ai/harness/security");
-    expect(script).toContain("[SecurityConfig]");
-    expect(script).not.toContain("--strict");
-  });
-
-  test("in-process stop handler should own Stop JSON control and recovery projection", () => {
+  test("in-process stop handler renders the recovery views and resolves no workflow state", () => {
     const handler = read("src/cli/hook/stop-handler.ts");
-    expect(handler).toContain("[StopReadiness]");
     // #691 finding 10 removed the private Stop payload type, the only place that named last_assistant_message.
     expect(handler).toContain("stop_hook_active");
-    expect(handler).toContain("StopProjectionBatch");
-    expect(handler).toContain("Stop may continue");
-    expect(handler).toContain("getEffectiveState");
+    expect(handler).toContain("renderRecoveryHandoff");
+    expect(handler).toContain("renderRecoveryResume");
+    expect(handler).toContain("publishCheckpointFromLedger");
+    // #695: no readiness lines, no state resolution, no events.jsonl append.
+    expect(handler).not.toContain("[StopReadiness]");
+    expect(handler).not.toContain("getEffectiveState");
+    expect(handler).not.toContain("handoff_refresh");
   });
 
-  // HRD-05 retired assets/hooks/post-edit-guard.sh; doc-drift coverage now
-  // lives in the in-process mutation-observed journal handler.
-  // #678: architecture drift is the owed-capability signal. DocDrift keeps
-  // wrangler*.toml and no longer points at the legacy docs/architecture.md
-  // or docs/packages.md targets, which the archctx layout does not have.
-  test("mutation-observed keeps wrangler doc drift and drops legacy architecture targets", () => {
-    const script = read("src/cli/hook/mutation-observed.ts");
-    expect(script).toContain("wrangler.*\\.toml");
-    expect(script).not.toContain("docs/architecture.md");
-    expect(script).not.toContain("docs/packages.md");
-  });
-
-  // HRD-05: post-edit-guard.sh's per-edit task-handoff regeneration
-  // ("[TaskHandoff]") is retired -- deferred to Stop's existing unconditional
-  // handoff refresh instead of reprinted per edit -- so that assertion does
-  // not carry over. Edits never start architecture queue work.
-  test("mutation-observed preserves doc drift and disables automatic contract verification", () => {
-    const script = read("src/cli/hook/mutation-observed.ts");
-    expect(script).toContain("[DocDrift]");
-    expect(script).toContain("[DeployAsset]");
-    expect(script).not.toContain("'architecture-queue'");
-    expect(script).not.toContain("sync-brain-docs");
+  test("workstream sync helper keeps the workstreams directory", () => {
     expect(read("assets/templates/helpers/workstream-sync.sh")).toContain("tasks/workstreams");
-    // #678: new journal events keep only the minimal-change bit.
-    expect(script).toContain("const dirty: PostEditJournalDirtyBits = { 'minimal-change': minimalChangeEnabled };");
-    expect(script).not.toContain("'contract-verification'");
-    expect(script).not.toContain("capability: false");
-    expect(script).not.toContain("context: true");
   });
 
   test("workflow verification should not gate on external brain vault state", () => {
@@ -229,42 +135,15 @@ describe("Hook contracts", () => {
     expect(script).not.toContain("Brain doc sync check failed");
   });
 
-  test("mutation observer owns first-principles anti-overengineering advice in-process", () => {
-    const observer = read("src/cli/hook/mutation-observed.ts");
-    expect(observer).toContain("renderFirstPrinciplesAdvisory");
-    expect(observer).toContain("[FirstPrinciples]");
-    expect(observer).toContain("must this exist");
-    expect(observer).toContain("trust-boundary validation");
+  test("retired post-edit hooks stay deleted", () => {
+    expect(existsSync(join(ROOT, "src/cli/hook/mutation-observed.ts"))).toBe(false);
     expect(existsSync(join(ROOT, "assets/hooks/first-principles-guard.sh"))).toBe(false);
     expect(existsSync(join(ROOT, "assets/hooks/anti-simplification.sh"))).toBe(false);
   });
 
-  test("typed trace observer records one structured JSONL event per call", () => {
-    const observer = read("src/cli/hook/trace-observer.ts");
-    expect(observer).toContain(".claude/.trace.jsonl");
-    expect(observer).toContain("event_type");
-    expect(observer).toContain("run_id");
-    expect(observer).toContain("appendFileSync");
-    expect(observer).not.toContain("workflow_append_event");
+  test("the trace observer and its shell predecessors are retired", () => {
+    expect(existsSync(join(ROOT, "src/cli/hook/trace-observer.ts"))).toBe(false);
     expect(existsSync(join(ROOT, "assets/hooks/trace-event.sh"))).toBe(false);
     expect(existsSync(join(ROOT, "assets/hooks/context-pressure-hook.sh"))).toBe(false);
-  });
-
-  test("typed command observer keeps Bash output evidence additive and advisory-only", () => {
-    const script = read("src/cli/hook/command-observed.ts");
-    expect(script).toContain("verbosity_class");
-    expect(script).toContain("suggested_runner");
-    expect(script).toContain("raw_output_path");
-    expect(script).toContain("raw_output_bytes");
-    expect(script).toContain("raw_output_sha256");
-    expect(script).toContain("failure_signal");
-    expect(script).toContain("rtk_available");
-    expect(script).toContain("policyRunsDir");
-    expect(script).toContain("bash-output");
-    expect(script).toContain("hasExecutable");
-    expect(script).toContain("recommended_next_tool");
-    expect(script).toContain("codegraph_context");
-    expect(script).not.toContain("rtk $COMMAND_TEXT");
-    expect(script).not.toContain("exec rtk");
   });
 });

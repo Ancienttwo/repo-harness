@@ -197,14 +197,6 @@
   },
   "delegation": {
     "mode": "explicit",
-    "max_agents": 2,
-    "strict_max_agents": 3,
-    "max_depth": 1,
-    "allow_parallel_writers": false,
-    "state_file": ".ai/harness/delegation/latest.json",
-    "preferred_runners": [
-      "subagent"
-    ],
     "brief_source": ".claude/templates/delegation-brief.template.md",
     "runner_rule": "the active task contract is the authoritative execution brief. Claude uses its native subagent surface. Codex uses native spawn_agent with the exact installed agent_type and fork_turns=none; official SubagentStart agent_type/model fields are the runtime observation. Missing, default, mismatched, invalid, or unverified native routing fails closed without an alternate fleet runner. Reasoning effort remains configured_unverified until Codex exposes an official runtime field.",
     "rule": "The bot chooses scope/worker by risk; the worker receives Goal, Scope, Verify and Rollback and loads concrete techniques on demand. Implementation sub-agents do not run build, typecheck or tests; each parallel writer gets its own worktree, commits early only there and returns early; in a shared checkout the parent commits. Evidence roles run their named check and do not commit. The parent runs all checks after integration and removes merged, clean sub-agent worktrees and intermediate build output."
@@ -474,28 +466,7 @@
     }
   },
   "minimal_change": {
-    "version": 1,
-    "mode": "enforce",
-    "session_context": true,
-    "prompt_advice": true,
-    "post_edit_observer": true,
-    "stop_review": true,
-    "max_findings": 5,
-    "max_context_words": 180,
-    "new_dependency": "warn",
-    "new_file": "observe",
-    "new_abstraction": "warn",
-    "protected_concerns": [
-      "security",
-      "validation",
-      "data_loss",
-      "error_handling",
-      "accessibility",
-      "explicit_requirement",
-      "tests"
-    ],
-    "report_path": ".ai/harness/checks/minimal-change.latest.json",
-    "event_dedupe": true
+    "mode": "advice"
   },
   "circuit_breakers": {
     "guard_repeat": 2,

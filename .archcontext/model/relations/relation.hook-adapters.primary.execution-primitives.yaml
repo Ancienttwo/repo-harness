@@ -3,4 +3,4 @@ id: relation.hook-adapters.primary.execution-primitives
 kind: calls
 source: component.hook-adapters.primary
 target: capability.workflow-engine.execution-primitives
-intent: "Run the process supervisor and group launcher and hold hook locks"
+intent: "Run the process supervisor and group launcher entries and classify lock contention"

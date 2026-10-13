@@ -3,12 +3,7 @@ import * as path from 'path';
 import { execFileSync } from 'child_process';
 import { getRoute, routeSupportsHost, type HookEvent, type HookHandlerId, type RouteHost, type RouteId } from './route-registry';
 import { getHandlerForRoute } from './handler-registry';
-import {
-  budgetSessionContext,
-  errorHash,
-  type SessionContextProviderDiagnostic,
-  type SessionContextSection,
-} from './session-context-budget';
+import { budgetSessionContext, errorHash } from './session-context-budget';
 import { writeAllSync } from '../runtime/write-all-sync';
 import {
   createStateInputCollector,
@@ -20,11 +15,9 @@ import {
   StateResolutionUnstableError,
 } from '../../effects/state/resolve-effective-state';
 import { ExclusiveLockContentionError } from '../../effects/locking/exclusive-directory-lock';
-import type { EffectiveState, EffectiveStateRiskInput } from '../../core/state/types';
-import type { WorkflowProfile } from '../../core/workflow/profile';
+import type { EffectiveState } from '../../core/state/types';
 import type { HookHandlerResult } from './handler-contract';
-import { HookPayloadError, parseHookPayload, type HookIdentity } from './hook-input';
-import { resolveHookIdentity } from './run-identity';
+import { HookPayloadError, hookIdentity, parseHookPayload, type HookIdentity } from './hook-input';
 import { boundedHookDiagnostic, HOST_RENDERERS, type HookJsonOutput, type HookOutcome } from './hook-protocol';
 import { inspectWorkflowMarker, WORKFLOW_MARKER_GATE_EVENTS } from '../../core/adoption/minimum-harness-version';
 
@@ -38,7 +31,6 @@ export interface RunHookOptions {
   readonly cwd?: string;
   readonly input?: string | Buffer;
   readonly env?: NodeJS.ProcessEnv;
-  readonly worktreeSweepDeadlineMs?: number;
 }
 
 export interface RunHookResult {
@@ -93,43 +85,23 @@ function isTransientResolutionInstability(error: unknown): boolean {
     || error instanceof ExclusiveLockContentionError;
 }
 
-type EffectiveStateResolver = (
-  repoRoot: string,
-  nowMs: number,
-  risk?: EffectiveStateRiskInput,
-) => EffectiveState;
-
-function effectiveStateRisk(
-  event: HookEvent,
-  targetPaths: readonly string[],
-  env: NodeJS.ProcessEnv,
-): EffectiveStateRiskInput {
-  const explicitOverride = env.REPO_HARNESS_WORKFLOW_PROFILE as WorkflowProfile | undefined;
-  if (event === 'PreToolUse') return { targetPaths, operationKind: 'edit', explicitOverride };
-  if (event === 'Stop') return { operationKind: 'inspect', explicitOverride };
-  // SessionStart matches `repo-harness state resolve --json` exactly: no
-  // operation or profile override, even when hook-only env vars are set.
-  return {};
-}
+type EffectiveStateResolver = (repoRoot: string, nowMs: number) => EffectiveState;
 
 /**
- * The single Effective State policy for every hook event: one timestamp,
- * at most three attempts for transient contention, and a hashed failure that
- * each handler renders in its own advisory.
+ * The single Effective State policy for every hook event: the same
+ * resolution as `repo-harness state resolve --json`, one timestamp, at most
+ * three attempts for transient contention, and a hashed failure that each
+ * handler renders in its own advisory.
  */
 export function resolveHookEffectiveState(
   repoRoot: string,
-  event: HookEvent,
-  targetPaths: readonly string[],
-  env: NodeJS.ProcessEnv,
   nowMs: number,
   resolve: EffectiveStateResolver = resolveEffectiveState,
 ): EffectiveStateResolution {
-  const risk = effectiveStateRisk(event, targetPaths, env);
   let failure: unknown = null;
   for (let attempt = 1; attempt <= EFFECTIVE_STATE_RESOLUTION_MAX_ATTEMPTS; attempt += 1) {
     try {
-      return { ok: true, state: resolve(repoRoot, nowMs, risk) };
+      return { ok: true, state: resolve(repoRoot, nowMs) };
     } catch (error) {
       failure = error;
       if (!isTransientResolutionInstability(error)) break;
@@ -152,29 +124,6 @@ function writeText(fd: 1 | 2, value: string): void {
   if (value) writeAllSync(fd, value);
 }
 
-interface Delivery {
-  readonly additionalContext: string | null;
-  readonly delivered: () => void;
-}
-
-/** Budget SessionStart sections once; `delivered` runs after the host write. */
-function sessionDelivery(
-  repoRoot: string,
-  sections: readonly SessionContextSection[],
-  sessionId: string | null,
-  diagnostics: readonly SessionContextProviderDiagnostic[],
-): Delivery {
-  if (sections.length === 0 && diagnostics.length === 0) return { additionalContext: null, delivered: () => {} };
-  const budgeted = budgetSessionContext(repoRoot, sections, sessionId, diagnostics);
-  return {
-    additionalContext: budgeted.context || null,
-    delivered: () => {
-      const included = new Set(budgeted.evidence.included_sections);
-      for (const section of sections) if (included.has(section.id)) section.onDelivered?.();
-    },
-  };
-}
-
 function outcomeReason(result: HookHandlerResult): string {
   if (result.reason) return result.reason;
   if (result.exitCode === 0) return result.permission?.decision === 'deny' ? 'blocked' : 'ok';
@@ -191,11 +140,10 @@ export function runHook(opts: RunHookOptions): RunHookResult {
     return { exitCode: route?.failClosed ? 2 : 1, reason: 'unknown-host' };
   }
   const render = HOST_RENDERERS[host];
-  const emit = (outcome: HookOutcome, delivered?: () => void): HookJsonOutput | undefined => {
+  const emit = (outcome: HookOutcome): HookJsonOutput | undefined => {
     const output = render(outcome);
     writeText(2, output.stderr);
     writeText(1, output.stdout);
-    if (output.stdout) delivered?.();
     return output.json;
   };
   const early = (exitCode: number, reason: string, repoRoot: string | null, diagnostics = ''): RunHookResult => {
@@ -221,12 +169,11 @@ export function runHook(opts: RunHookOptions): RunHookResult {
 
   const handler = getHandlerForRoute(route);
   const telemetry = createHookEventTelemetry({ repoRoot, event: opts.event, routeId: opts.routeId });
-  const providerDiagnostics: SessionContextProviderDiagnostic[] = [];
   const now = new Date();
   const collector = createStateInputCollector({
     repoRoot,
-    resolveEffectiveState: (targetPaths) =>
-      resolveHookEffectiveState(repoRoot, opts.event, targetPaths, env, now.getTime()),
+    resolveEffectiveState: () =>
+      resolveHookEffectiveState(repoRoot, now.getTime()),
   });
 
   let identity: HookIdentity = { host, sessionId: null, runId: null, turnId: null };
@@ -234,19 +181,8 @@ export function runHook(opts: RunHookOptions): RunHookResult {
   let reason: string;
   try {
     const payload = parseHookPayload(opts.input);
-    identity = resolveHookIdentity(repoRoot, opts.event, payload, host, now);
-    result = handler.run({
-      event: opts.event,
-      repoRoot,
-      sessionCwd: cwd,
-      payload,
-      identity,
-      env,
-      now,
-      collector,
-      worktreeSweepDeadlineMs: opts.worktreeSweepDeadlineMs,
-      observeSessionContextDiagnostic: (diagnostic) => { providerDiagnostics.push(diagnostic); },
-    });
+    identity = hookIdentity(payload, host);
+    result = handler.run({ event: opts.event, repoRoot, payload, identity, env, now, collector });
     reason = outcomeReason(result);
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
@@ -259,9 +195,9 @@ export function runHook(opts: RunHookOptions): RunHookResult {
     reason = error instanceof HookPayloadError ? 'invalid-payload' : 'handler-failed';
   }
 
-  const session = result.sessionContexts
-    ? sessionDelivery(repoRoot, result.sessionContexts, identity.sessionId, providerDiagnostics)
-    : null;
+  const additionalContext = result.sessionContexts
+    ? budgetSessionContext(result.sessionContexts) || null
+    : result.additionalContext ?? null;
   const exitCode = result.exitCode;
   const json = emit({
     event: opts.event,
@@ -270,9 +206,9 @@ export function runHook(opts: RunHookOptions): RunHookResult {
     exitCode,
     reason,
     permission: result.permission,
-    additionalContext: session ? session.additionalContext : result.additionalContext ?? null,
+    additionalContext,
     diagnostics: result.diagnostics ?? '',
-  }, session?.delivered);
+  });
   telemetry.finalize({
     identity,
     exitCode,

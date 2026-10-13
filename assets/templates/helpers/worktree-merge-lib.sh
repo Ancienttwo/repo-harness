@@ -57,9 +57,9 @@ worktree_merge_mode() {
 #
 # Prints one `<branch>\t<mode>` line per input branch, in input order, using
 # the same `worktree_merge_mode` the two sourcing consumers call. It exists so
-# a caller that is not bash -- the SessionStart cleanable-worktree notice in
-# src/cli/hook/session-context.ts -- can consume this authority instead of
-# re-deriving the predicate, which is the two-authority defect issue #196 was.
+# a caller that is not bash -- the TypeScript worktree sweep, publication and
+# merge-readiness checks -- can consume this authority instead of re-deriving
+# the predicate, which is the two-authority defect issue #196 was.
 #
 # Batch rather than per-branch: a scan of N worktrees costs one process spawn,
 # not N.

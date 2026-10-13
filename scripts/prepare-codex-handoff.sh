@@ -3,9 +3,9 @@ set -euo pipefail
 
 # Thin invoker (EPC-07 recovery-view cutover): zero independent content
 # assembly. The task-handoff (Codex-global packet) payload is now an
-# additional output target of the same single materializer,
-# scripts/recovery-view-cli.ts (mirrored to
-# assets/templates/helpers/recovery-view-cli.ts) -- the prior independent
+# additional output target of the same materializer,
+# src/effects/evidence/recovery-materializer.ts, through its CLI
+# scripts/recovery-view-cli.ts -- the prior independent
 # Node/Python heredoc that spliced the per-repo global-packet section is
 # retired same-package. This script's public name and flags are preserved.
 

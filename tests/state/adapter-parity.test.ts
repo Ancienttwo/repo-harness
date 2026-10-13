@@ -323,8 +323,8 @@ describe('Effective State adapter authority parity and policy boundaries', () =>
       expect(mcp.readiness).toEqual(authority.readiness);
       expect(mcp.guidance).toBe(authority.guidance);
 
-      // The Stop hook's own readiness consumption through the production
-      // in-process route; only observes its emitted decision/reason.
+      // #695: Stop no longer consumes readiness. A blocked ship decision
+      // neither blocks Stop nor prints a readiness line.
       const hook = spawnSync(process.execPath, [CLI, 'hook', 'Stop', '--route', 'default'], {
         cwd: fixture.cwd,
         input: JSON.stringify({ stop_hook_active: false, last_assistant_message: '' }),
@@ -333,10 +333,7 @@ describe('Effective State adapter authority parity and policy boundaries', () =>
       });
       expect(hook.status).toBe(0);
       expect(hook.stdout).not.toContain('"decision":"block"');
-      const shipReasons = readiness.readyToShip.decision === 'block' ? readiness.readyToShip.reasons.join(',') : '';
-      expect(hook.stderr).toContain(
-        `[ReadinessGate] Publication not verified: ${shipReasons}. Stop may continue.`,
-      );
+      expect(hook.stderr).not.toContain('[ReadinessGate]');
     } finally {
       fixture.cleanup();
     }

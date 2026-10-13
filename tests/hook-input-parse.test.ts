@@ -1,10 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, realpathSync, rmSync } from "fs";
-import { tmpdir } from "os";
-import { join } from "path";
 import {
   HookPayloadError,
-  normalizeRepoRelativePath,
   parseHookPayload,
   payloadIdentityField,
   payloadString,
@@ -45,18 +41,5 @@ describe("hook payload", () => {
     expect(payloadIdentityField(payload, "run_id")).toBeNull();
     expect(payloadIdentityField(payload, "turn_id")).toBeNull();
     expect(payloadIdentityField(payload, "missing")).toBeNull();
-  });
-});
-
-describe("repository-relative paths", () => {
-  test("keeps relative paths, strips the repo root and keeps outside paths absolute", () => {
-    const root = realpathSync(mkdtempSync(join(tmpdir(), "hook-input-paths-")));
-    try {
-      expect(normalizeRepoRelativePath(root, "src/a.ts")).toBe("src/a.ts");
-      expect(normalizeRepoRelativePath(root, `${root}/src/a.ts`)).toBe("src/a.ts");
-      expect(normalizeRepoRelativePath(root, "/var/tmp/outside.txt")).toBe("/var/tmp/outside.txt");
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
   });
 });

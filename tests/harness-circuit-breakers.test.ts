@@ -11,37 +11,49 @@ import {
 } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { spawn, spawnSync } from 'child_process';
+import { execFileSync, spawn, spawnSync } from 'child_process';
 import { circuitLimit, recordCircuitAttempt, type CircuitAttempt } from '../src/cli/hook/circuit-breaker';
 import { withExclusiveDirectoryLock } from '../src/effects/locking/exclusive-directory-lock';
-import { runMutationGuard, type MutationGuardCollector } from '../src/cli/hook/mutation-guard';
-import { runSubagentHandler } from '../src/cli/hook/subagent-handler';
 import { runCommandObserved } from '../src/cli/hook/command-observed';
 import { runPromptHandler } from '../src/cli/hook/prompt-handler';
-import { createStateInputCollector } from '../src/effects/loop/state-input-collector';
-import { resolveHookEffectiveState } from '../src/cli/hook/runtime';
-import { hookIdentity } from './helpers/hook-identity';
 
-// All real-caller phases invoke the single typed handler authority directly.
-function editHandlerResult(cwd: string, filePath: string): { status: number | null; stdout: string; stderr: string } {
-  const collector: MutationGuardCollector = createStateInputCollector({
-    repoRoot: cwd,
-    resolveEffectiveState: (targetPaths) => resolveHookEffectiveState(cwd, 'PreToolUse', targetPaths, {}, Date.now()),
-  });
-  const result = runMutationGuard({ collector, payload: { tool_input: { file_path: filePath } }, identity: hookIdentity() });
-  return { status: result.exitCode, stdout: result.stdout, stderr: result.stderr };
-}
+const HOOK_ENTRY = join(import.meta.dir, '../src/cli/hook-entry.ts');
 
 function attempt(overrides: Partial<CircuitAttempt> = {}): CircuitAttempt {
   return {
-    kind: 'guard', guard: 'scope', reason: 'outside allowed paths', pathOrAction: 'src/secret.ts',
-    progressToken: 'sha256:progress', fingerprint: 'sha256:guard', profile: 'routine', ...overrides,
+    kind: 'repair', guard: 'scope', reason: 'outside allowed paths', pathOrAction: 'src/secret.ts',
+    progressToken: 'sha256:progress', fingerprint: 'sha256:repair', ...overrides,
   };
 }
 
 function withRepo(run: (cwd: string) => void): void {
   const cwd = mkdtempSync(join(tmpdir(), 'repo-harness-circuit-'));
   try { run(cwd); } finally { rmSync(cwd, { recursive: true, force: true }); }
+}
+
+/** An opt-in Git repository with one commit, so hook routes and state resolution run for real. */
+function withOptInRepo(run: (cwd: string) => void): void {
+  const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-circuit-repo-')));
+  try {
+    const gitIn = (...args: string[]) => execFileSync('git', args, { cwd, stdio: 'ignore' });
+    gitIn('init', '-q', '-b', 'main');
+    gitIn('config', 'user.name', 'Fixture');
+    gitIn('config', 'user.email', 'fixture@example.com');
+    mkdirSync(join(cwd, '.ai/harness'), { recursive: true });
+    writeFileSync(join(cwd, '.ai/harness/workflow-contract.json'), '{}\n');
+    writeFileSync(join(cwd, 'README.md'), '# fixture\n');
+    gitIn('add', '.');
+    gitIn('commit', '-q', '-m', 'fixture');
+    run(cwd);
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
+}
+
+function writeCircuitState(cwd: string, state: unknown): string {
+  const statePath = join(cwd, '.ai/harness/state/circuit-breaker.json');
+  mkdirSync(join(cwd, '.ai/harness/state'), { recursive: true });
+  const text = `${JSON.stringify(state)}\n`;
+  writeFileSync(statePath, text);
+  return text;
 }
 
 function readCircuitState(cwd: string): {
@@ -69,7 +81,7 @@ function readCircuitState(cwd: string): {
 }
 
 describe('workflow circuit breakers', () => {
-  test('same guard fingerprint blocks at most twice before structured trip', () => withRepo((cwd) => {
+  test('same repair fingerprint blocks at most twice before structured trip', () => withRepo((cwd) => {
     expect(recordCircuitAttempt(cwd, attempt()).allowed).toBe(true);
     expect(recordCircuitAttempt(cwd, attempt()).allowed).toBe(true);
     const third = recordCircuitAttempt(cwd, attempt());
@@ -93,9 +105,9 @@ describe('workflow circuit breakers', () => {
     expect(third).toMatchObject({ allowed: false, tripped: true, repeat_count: 3 });
     const state = readCircuitState(cwd);
     expect(state.protocol).toBe(2);
-    expect(Object.keys(state.entries)).toEqual(['guard']);
-    expect(state.entries.guard.last_pattern).toBe('exact-repeat');
-    expect(state.entries.guard.recent_blockers).toHaveLength(2);
+    expect(Object.keys(state.entries)).toEqual(['repair']);
+    expect(state.entries.repair.last_pattern).toBe('exact-repeat');
+    expect(state.entries.repair.recent_blockers).toHaveLength(2);
   }));
 
   test('render-only reason, path, and fingerprint churn cannot reset one blocker', () => withRepo((cwd) => {
@@ -106,9 +118,9 @@ describe('workflow circuit breakers', () => {
     expect(second).toMatchObject({ allowed: true, repeat_count: 2 });
     expect(third).toMatchObject({ allowed: false, tripped: true, repeat_count: 3 });
     const state = readCircuitState(cwd);
-    expect(state.entries.guard.last_pattern).toBe('superficial-churn');
-    expect(state.entries.guard.recent_blockers).toHaveLength(2);
-    expect(state.entries.guard.recent_blockers[0]).toBe(state.entries.guard.recent_blockers[1]);
+    expect(state.entries.repair.last_pattern).toBe('superficial-churn');
+    expect(state.entries.repair.recent_blockers).toHaveLength(2);
+    expect(state.entries.repair.recent_blockers[0]).toBe(state.entries.repair.recent_blockers[1]);
   }));
 
   test('A-B-A trips immediately under one unchanged progress token', () => withRepo((cwd) => {
@@ -118,7 +130,7 @@ describe('workflow circuit breakers', () => {
     expect(recordCircuitAttempt(cwd, blockerB)).toMatchObject({ allowed: true, repeat_count: 1 });
     const oscillation = recordCircuitAttempt(cwd, blockerA);
     expect(oscillation).toMatchObject({ allowed: false, tripped: true, repeat_count: 3, limit: 2 });
-    expect(readCircuitState(cwd).entries.guard.last_pattern).toBe('oscillation');
+    expect(readCircuitState(cwd).entries.repair.last_pattern).toBe('oscillation');
   }));
 
   test('non-cycling blocker changes do not trip and do not inherit the old count', () => withRepo((cwd) => {
@@ -128,7 +140,7 @@ describe('workflow circuit breakers', () => {
     expect(recordCircuitAttempt(cwd, first).repeat_count).toBe(1);
     expect(recordCircuitAttempt(cwd, second).repeat_count).toBe(1);
     expect(recordCircuitAttempt(cwd, third)).toMatchObject({ allowed: true, repeat_count: 1 });
-    expect(readCircuitState(cwd).entries.guard.last_pattern).toBe('new-blocker');
+    expect(readCircuitState(cwd).entries.repair.last_pattern).toBe('new-blocker');
   }));
 
   test('A-A-B is a new blocker, not an A-B-A oscillation', () => withRepo((cwd) => {
@@ -137,7 +149,7 @@ describe('workflow circuit breakers', () => {
     expect(recordCircuitAttempt(cwd, blockerA).repeat_count).toBe(1);
     expect(recordCircuitAttempt(cwd, blockerA)).toMatchObject({ allowed: true, repeat_count: 2 });
     expect(recordCircuitAttempt(cwd, blockerB)).toMatchObject({ allowed: true, repeat_count: 1 });
-    expect(readCircuitState(cwd).entries.guard.last_pattern).toBe('new-blocker');
+    expect(readCircuitState(cwd).entries.repair.last_pattern).toBe('new-blocker');
   }));
 
   test('a progress-token change prevents A-B-A classification and resets bounded history', () => withRepo((cwd) => {
@@ -148,8 +160,8 @@ describe('workflow circuit breakers', () => {
     const progressed = recordCircuitAttempt(cwd, { ...blockerA, progressToken: 'sha256:advanced' });
     expect(progressed).toMatchObject({ allowed: true, repeat_count: 1, progress_token: 'sha256:advanced' });
     const state = readCircuitState(cwd);
-    expect(state.entries.guard.last_pattern).toBe('real-progress-reset');
-    expect(state.entries.guard.recent_blockers).toHaveLength(1);
+    expect(state.entries.repair.last_pattern).toBe('real-progress-reset');
+    expect(state.entries.repair.recent_blockers).toHaveLength(1);
   }));
 
   test('projection-only churn never changes the progress token, so repeats keep accumulating on it', () => withRepo((cwd) => {
@@ -180,22 +192,20 @@ describe('workflow circuit breakers', () => {
     expect(fourth).toMatchObject({ allowed: false, tripped: true, repeat_count: 3, limit: 2 });
   }));
 
-  test('profile caps match review, subagent, repair, and consult contracts', () => {
-    expect(circuitLimit(attempt({ kind: 'review', profile: 'routine' }))).toBe(1);
-    expect(circuitLimit(attempt({ kind: 'review', profile: 'high' }))).toBe(2);
-    expect(circuitLimit(attempt({ kind: 'subagent', profile: 'routine' }))).toBe(2);
-    expect(circuitLimit(attempt({ kind: 'subagent', profile: 'high', explicitHighRiskContract: true }))).toBe(3);
+  test('caps match the repair and semantic-review contracts', () => {
     expect(circuitLimit(attempt({ kind: 'repair' }))).toBe(2);
-    expect(circuitLimit(attempt({ kind: 'cross-model-consult' }))).toBe(0);
-    expect(circuitLimit(attempt({ kind: 'cross-model-consult', riskTriggeredConsult: true }))).toBe(1);
-    expect(circuitLimit(attempt({ kind: 'cross-model-consult', userRequestedConsult: true }))).toBe(1);
     expect(circuitLimit(attempt({ kind: 'semantic-review' }))).toBe(1);
   });
 
+  test('a retired circuit kind is not accepted as an attempt', () => withRepo((cwd) => {
+    expect(() => recordCircuitAttempt(cwd, attempt({ kind: 'guard' as CircuitAttempt['kind'] }))).toThrow(/invalid circuit kind: guard/);
+    expect(existsSync(join(cwd, '.ai/harness/state/circuit-breaker.json'))).toBe(false);
+  }));
+
   test('keeps independent runtime counters per circuit kind', () => withRepo((cwd) => {
-    expect(recordCircuitAttempt(cwd, attempt({ kind: 'review', profile: 'routine' })).allowed).toBe(true);
-    expect(recordCircuitAttempt(cwd, attempt({ kind: 'subagent' })).allowed).toBe(true);
-    expect(recordCircuitAttempt(cwd, attempt({ kind: 'review', profile: 'routine' }))).toMatchObject({
+    expect(recordCircuitAttempt(cwd, attempt({ kind: 'semantic-review' })).allowed).toBe(true);
+    expect(recordCircuitAttempt(cwd, attempt({ kind: 'repair' })).allowed).toBe(true);
+    expect(recordCircuitAttempt(cwd, attempt({ kind: 'semantic-review' }))).toMatchObject({
       allowed: false,
       repeat_count: 2,
       limit: 1,
@@ -274,19 +284,33 @@ describe('workflow circuit breakers', () => {
     }
   }, 30_000);
 
-  test('protocol-1 state is ignored and the first protocol-2 attempt starts at one', () => withRepo((cwd) => {
-    const statePath = join(cwd, '.ai/harness/state/circuit-breaker.json');
-    mkdirSync(join(cwd, '.ai/harness/state'), { recursive: true });
-    writeFileSync(statePath, JSON.stringify({
+  test('protocol-1 state fails closed and names the one-shot cleanup without overwriting it', () => withRepo((cwd) => {
+    const legacy = writeCircuitState(cwd, {
       protocol: 1,
       entries: { ['a'.repeat(64)]: { count: 2, token: 'legacy-token' } },
       updated_at: new Date().toISOString(),
-    }));
-    expect(recordCircuitAttempt(cwd, attempt())).toMatchObject({ allowed: true, repeat_count: 1 });
-    const state = readCircuitState(cwd);
-    expect(state.protocol).toBe(2);
-    expect(state.entries.guard.count).toBe(1);
-    expect(state.entries.legacy).toBeUndefined();
+    });
+    expect(() => recordCircuitAttempt(cwd, attempt()))
+      .toThrow(/retired protocol-1 circuit breaker state: .*; run the one-shot cleanup: repo-harness run evidence-gc --repo /);
+    expect(readFileSync(join(cwd, '.ai/harness/state/circuit-breaker.json'), 'utf-8')).toBe(legacy);
+  }));
+
+  test('a retired kind in protocol-2 state fails closed and names the one-shot cleanup', () => withRepo((cwd) => {
+    for (const kind of ['guard', 'review', 'subagent', 'cross-model-consult', 'minimal-change']) {
+      const retired = writeCircuitState(cwd, {
+        protocol: 2,
+        entries: {
+          [kind]: {
+            progress_token: 'sha256:progress', blocker_key: 'b', count: 1, render_key: 'r',
+            recent_blockers: ['b'], last_pattern: 'initial',
+          },
+        },
+        updated_at: new Date().toISOString(),
+      });
+      expect(() => recordCircuitAttempt(cwd, attempt()))
+        .toThrow(new RegExp(`retired circuit breaker kind ${kind}: .*repo-harness run evidence-gc --repo `));
+      expect(readFileSync(join(cwd, '.ai/harness/state/circuit-breaker.json'), 'utf-8')).toBe(retired);
+    }
   }));
 
   test('malformed protocol-2 state fails closed without overwriting evidence', () => withRepo((cwd) => {
@@ -294,7 +318,7 @@ describe('workflow circuit breakers', () => {
     mkdirSync(join(cwd, '.ai/harness/state'), { recursive: true });
     const malformed = `${JSON.stringify({
       protocol: 2,
-      entries: { guard: { count: 2 } },
+      entries: { repair: { count: 2 } },
       updated_at: new Date().toISOString(),
     })}\n`;
     writeFileSync(statePath, malformed);
@@ -364,74 +388,48 @@ describe('workflow circuit breakers', () => {
     }
   }));
 
-  test('private guards and repair caps block while authorized subagent starts remain observational', () => withRepo((cwd) => {
-    const env = {
-      ...process.env,
-      HOOK_REPO_ROOT: cwd,
-      HOOK_HOST: 'codex',
-    };
-
+  test('three consecutive _ops writes through the Claude host each exit 2 with the reason and fix on stderr', () => withOptInRepo((cwd) => {
+    const home = join(cwd, '.home');
+    mkdirSync(home, { recursive: true });
     for (let index = 1; index <= 3; index += 1) {
-      const result = editHandlerResult(cwd, '_ops/secret.env');
-      expect(result.status).toBe(2);
-      if (index < 3) {
-        expect(result.stderr).toContain('Fix:');
-      } else {
-        expect(result.stdout).toContain('"tripped":true');
-        expect(result.stdout).toContain('terminal:');
-        expect(result.stderr).not.toContain('Fix:');
-        expect(result.stdout).not.toContain('circuit-override');
-      }
+      const result = spawnSync(process.execPath, [HOOK_ENTRY, 'PreToolUse', '--route', 'edit'], {
+        cwd,
+        encoding: 'utf-8',
+        input: JSON.stringify({ tool_name: 'Write', tool_input: { file_path: '_ops/x.env', content: 'secret' } }),
+        env: { PATH: process.env.PATH, TMPDIR: process.env.TMPDIR, HOME: home, HOOK_HOST: 'claude', HOOK_REPO_ROOT: cwd },
+      });
+      expect({ index, status: result.status }).toEqual({ index, status: 2 });
+      expect(result.stdout).toBe('');
+      expect(result.stderr).toContain('[OpsPrivateGuard] _ops/x.env is under _ops/');
+      expect(result.stderr).toContain('  Fix: ');
+      expect(result.stderr).not.toContain('"tripped"');
     }
+    expect(existsSync(join(cwd, '.ai/harness/state/circuit-breaker.json'))).toBe(false);
+  }), 60_000);
 
-    rmSync(join(cwd, '.ai/harness/state/circuit-breaker.json'));
-    mkdirSync(join(cwd, '.ai/harness/state'), { recursive: true });
-    writeFileSync(join(cwd, '.ai/harness/state/effective.json'), JSON.stringify({
-      state_version: 'sha256:state',
-      workflow_profile: 'routine',
-    }));
-    for (let index = 1; index <= 3; index += 1) {
-      const result = runSubagentHandler({ event: 'SubagentStart', repoRoot: cwd, env, payload: {}, identity: hookIdentity({ host: 'codex' }) });
-      expect(result.exitCode).toBe(0);
-      expect(result.additionalContext).toContain('[repo-harness:subagent-context]');
-      if (index === 3) expect(readCircuitState(cwd).entries.subagent.count).toBe(3);
-    }
-
-    rmSync(join(cwd, '.ai/harness/state/circuit-breaker.json'));
-    writeFileSync(join(cwd, '.ai/harness/state/effective.json'), JSON.stringify({
-      state_version: 'sha256:strict-state',
-      workflow_profile: 'high',
-    }));
-    writeFileSync(join(cwd, '.ai/harness/active-plan'), 'plans/plan-20260713-0100-risk.md');
-    mkdirSync(join(cwd, 'tasks/contracts'), { recursive: true });
-    writeFileSync(join(cwd, 'tasks/contracts/20260713-0100-risk.contract.md'), '> **Risk**: high\n');
-    for (let index = 1; index <= 4; index += 1) {
-      const result = runSubagentHandler({ event: 'SubagentStart', repoRoot: cwd, env, payload: {}, identity: hookIdentity({ host: 'codex' }) });
-      expect(result.exitCode).toBe(0);
-      if (index === 4) expect(readCircuitState(cwd).entries.subagent.count).toBe(4);
-    }
-
-    rmSync(join(cwd, '.ai/harness/state/circuit-breaker.json'));
+  test('the repair cap trips on the third known test failure with a read-only progress token', () => withOptInRepo((cwd) => {
     for (let index = 1; index <= 3; index += 1) {
       const result = runCommandObserved({
         repoRoot: cwd,
-        env: { ...env, REPO_HARNESS_WORKFLOW_PROFILE: 'routine' },
         payload: { tool_input: { command: 'bun test' }, tool_response: { stdout: 'FAIL test', stderr: '', interrupted: false }, exit_code: 1 },
-        identity: hookIdentity({ host: 'codex' }),
       });
       expect(result.exitCode).toBe(index < 3 ? 0 : 2);
       if (index === 3) expect(result.stderr).toContain('"limit":2');
     }
-  }), 30_000);
+    const state = readCircuitState(cwd);
+    expect(Object.keys(state.entries)).toEqual(['repair']);
+    expect(state.entries.repair.progress_token).toMatch(/\S/);
+    expect(state.entries.repair.progress_token).not.toBe('unknown');
+    expect(existsSync(join(cwd, '.ai/harness/state/effective.json'))).toBe(false);
+  }), 60_000);
 
-  test('repeated review prompts give advice without consuming review or consult circuits', () => withRepo((cwd) => {
+  test('repeated review prompts give boundary advice and consume no circuit', () => withRepo((cwd) => {
     for (const profile of ['routine', 'high']) {
       mkdirSync(join(cwd, '.ai/harness/state'), { recursive: true });
       writeFileSync(join(cwd, '.ai/harness/state/effective.json'), JSON.stringify({ workflow_profile: profile }));
       for (let index = 0; index < 3; index += 1) {
         const result = runPromptHandler({ payload: { prompt: '/check' } });
         expect(result.exitCode).toBe(0);
-        expect(result.additionalContext).toContain('[ReviewAdvice]');
         expect(result.additionalContext).toContain('[OperationBoundaries]');
         expect(result.diagnostics).toBeUndefined();
       }

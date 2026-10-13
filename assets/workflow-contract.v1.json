@@ -300,7 +300,6 @@
       "docs/researches/README.md"
     ],
     "runtimeFiles": [
-      ".ai/harness/checks/post-bash-latest.json",
       ".ai/harness/events.jsonl",
       ".ai/harness/archive/",
       ".ai/harness/failures/latest.jsonl",
@@ -2682,8 +2681,6 @@
     ".codex/",
     ".claude/settings.local.json",
     ".claude/.atomic_pending",
-    ".claude/.session-id",
-    ".claude/.trace.jsonl",
     ".claude/.session-handoff.md",
     ".claude/.task-state.json",
     ".claude/.task-handoff.md",
@@ -2692,7 +2689,6 @@
     ".claude/*.bak.*",
     ".claude/*.backup-*",
     ".ai/harness/checks/",
-    ".ai/harness/checks/post-bash-latest.json",
     ".ai/harness/checks/*.latest.json",
     ".ai/harness/checks/*.latest.md",
     ".ai/harness/events.jsonl",
@@ -2708,7 +2704,6 @@
     "artifacts/",
     "coverage/",
     ".claude/worktrees/",
-    ".claude/.codegraph-state/",
     ".claude/.plan-state/",
     ".claude/.active-plan",
     ".ai/harness/state/",

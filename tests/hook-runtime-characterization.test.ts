@@ -24,7 +24,7 @@ function fixtureInput(event: HookEvent, routeId: RouteId): FixtureRoute {
     case 'UserPromptSubmit.inbox': return { host: 'claude', input: JSON.stringify({ prompt: 'Check the task inbox.' }) };
     case 'UserPromptSubmit.delegation': return { host: 'codex', input: JSON.stringify({ session_id: 'characterization-session', prompt: 'implement the next sequential task' }) };
     case 'SubagentStart.context': return { host: 'codex', input: JSON.stringify({ hook_event_name: 'SubagentStart', session_id: 'characterization-session' }) };
-    case 'SubagentStop.quality': return { host: 'codex', input: JSON.stringify({ hook_event_name: 'SubagentStop', final_message: 'Inspected src/cli/hook/runtime.ts. Evidence: ran bun test tests/cli/hook.test.ts. Risk: none identified.' }) };
+    case 'SubagentStop.quality': return { host: 'codex', input: JSON.stringify({ hook_event_name: 'SubagentStop', last_assistant_message: 'Inspected src/cli/hook/runtime.ts. Evidence: ran bun test tests/cli/hook.test.ts. Risk: none identified.' }) };
     case 'Stop.default': return { host: 'claude', input: JSON.stringify({ hook_event_name: 'Stop', stop_hook_active: false }) };
     default: throw new Error(`missing fixture for ${event}.${routeId}`);
   }

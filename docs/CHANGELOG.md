@@ -26,6 +26,44 @@ All notable changes to this skill are documented here.
   subcommands are removed. The
   `repo-harness hook` command and `repo-harness-hook` share one dispatch
   path. (#691)
+- `PreToolUse.edit` keeps only the path checks that block: repository scope,
+  `_ref/`, `_ops/` and a parseable `apply_patch` target. A new
+  `EditScopeGuard` blocks an `Edit` or `Write` call that has no
+  `tool_input.file_path`. The guard no longer resolves state, checks the task
+  lease, runs a circuit breaker or prints advisories. It no longer reads the
+  `harness.failure_log_file` override and always writes
+  `.ai/harness/failures/latest.jsonl`. (#692)
+- A `minimal_change.mode` other than `off` or `advice` now fails policy
+  validation, so state resolution fails until the operator sets `advice` or
+  `off`. The mode `enforce` is retired. No code reads the `minimal_change`
+  policy, so Stop never blocks on a minimal-change finding. The block now has
+  only the `mode` key. This repository uses `mode: "advice"`. (#692, #695)
+- The unread `delegation` keys `max_agents`, `strict_max_agents`, `max_depth`,
+  `allow_parallel_writers` and `preferred_runners` are removed from the policy
+  template and from this repository policy. The delegation advisor keeps its
+  caps in code.
+- The circuit breaker keeps the `repair` and `semantic-review` kinds only. A
+  `.ai/harness/state/circuit-breaker.json` with protocol 1 or a retired kind
+  (`guard`, `review`, `subagent`, `cross-model-consult` or `minimal-change`)
+  fails closed. Run `repo-harness run evidence-gc --repo <path>` (or
+  `bun scripts/evidence-gc.ts --repo <path>` in the source checkout) once after the upgrade. The
+  cleanup ships for one release. (#692, #694)
+- Claude and Codex send no exit status in a Bash payload. `PostToolUse.bash`
+  now records no status for them and does not feed the repair circuit.
+  RepairLimit works only on Pi. Before, a missing status counted as exit 0.
+  (#695)
+- Stop is silent on every host. The one exception is the Claude
+  owed-architecture line, once per branch and owed set. Stop no longer prints
+  `[StopReadiness]`, `[ReadinessGate]` or minimal-change lines. (#695)
+- No hook mints a run id. `.ai/harness/state/session-run-identity.json` is no
+  longer written. A missing payload `run_id` stays null, and the handoff shows
+  `Parent Run ID: (unresolved)`. (#693, #695)
+- `repo-harness state migrate-post-edit-journal-v1` is removed with the
+  post-edit journal. (#692)
+- `policy.delegation.state_file` is removed. The delegation advisor renders
+  `delegation.rule` and `delegation.runner_rule` word for word. Its caps are
+  fixed: 2 agents, 3 for a high-risk workflow profile, spawn depth 1. Missing
+  rule text exits 1 with the reason `delegation-policy-invalid`. (#694)
 
 ### Removed
 
@@ -40,6 +78,41 @@ All notable changes to this skill are documented here.
   unchanged. (#696)
 - `archive-workflow.sh` and `ship-worktrees.sh` no longer require
   `workflow-state.sh`. They never called it. (#696)
+- The post-edit journal is gone: `mutation-observed.ts`, the minimal-change
+  signal, CLI, policy and context modules, the SessionStart pending section,
+  and the Stop journal pass and minimal-change review. (#692)
+- SessionStart no longer runs the security sentinel
+  (`REPO_HARNESS_SESSION_SECURITY_SCAN`), the tooling update advisory and its
+  detached child, the worktree backlog notice, the minimal-change text, the
+  current-status section or the `events.jsonl` rotation. The
+  `session-context-budget.json` evidence file is gone. Run
+  `repo-harness security scan --json` and
+  `repo-harness setup check --check-updates --json` when a task needs them.
+  (#693)
+- `prompt-intents.ts`, the prompt word lists and the active-task branch are
+  gone. The prompt handler no longer classifies intent, checks contracts or
+  receipts, or routes to `/think`. (#694)
+- `delegation-state.ts` is gone, with `.ai/harness/delegation/latest.json` and
+  `.ai/harness/delegation/turns/`. SubagentStart no longer records a circuit
+  attempt. `.ai/harness/delegation/` keeps the native-role evidence and
+  `subagent-stop-quality.json`. (#694)
+- Stop no longer appends `handoff_refresh` to `events.jsonl`, writes or sweeps
+  run summaries, resolves state, or runs under a 140-second deadline.
+  `src/core/hook-work-budget.ts` is deleted. The handoff and resume views have
+  no "## Commands Run" section. (#695)
+- `post-bash-importer.ts`, `.ai/harness/checks/post-bash-latest.json`, the
+  `.ai/harness/runs/bash-output/` capture, the observed ledger events and the
+  rtk, broad-command and verbosity classifiers are gone. (#695)
+- `trace-observer.ts` and AnnotationGuard are gone. Hooks no longer write
+  `.claude/.trace.jsonl`, `.claude/.session-id` or `.claude/.codegraph-state/`.
+  The workflow contract and the gitignore template no longer list them. (#695)
+- After the upgrade, nothing reads these local files. Operators can delete
+  them: `.claude/.trace.jsonl`, `.claude/.session-id`,
+  `.claude/.codegraph-state/`, `.ai/harness/checks/post-bash-latest.json`,
+  `.ai/harness/runs/bash-output/`, `.ai/harness/delegation/latest.json`,
+  `.ai/harness/delegation/turns/`,
+  `.ai/harness/state/session-run-identity.json` and
+  `.ai/harness/state/session-context-budget.json`. (#692, #693, #694, #695)
 
 ### Changed
 
@@ -55,11 +128,56 @@ All notable changes to this skill are documented here.
 - `bun run test:files` builds `dist/hook-entry.js` before it runs a test file
   that spawns it, such as `tests/pi-extension.test.ts`. Other selections do
   not build. (#696)
+- SessionStart is one read-mostly handler. `[HarnessState]`, or
+  `[HarnessStateUnavailable]`, comes first and always. The optional sections
+  follow by priority: `architecture-owed`, `pending-plan-capture`,
+  `active-sprint` and `resume`. A provider that throws becomes one
+  `[SessionContextProviderFailed] <id>` line. The 1,500-token budget keeps the
+  mandatory sections and turns an overflow section into a
+  `[ContextRef:<id>] <source>` pointer. (#693)
+- The managed worktree sweep moves from SessionStart to
+  `contract-worktree start`. It runs under the topology lock and never blocks
+  start. `ship-worktrees --cleanup-merged` stays the manual path. SessionStart
+  prints no `[WorktreeSweep]` line. (#693)
+- The four subagent routes have one handler each: `return-channel`,
+  `delegation-advisor`, `subagent-context` and `subagent-quality`. The runtime
+  checks the host; handlers do not. A `SendUserMessage` call gets no output.
+  `SubagentStop.quality` reads only `last_assistant_message`. (#694)
+- `UserPromptSubmit.default` adds only the `[OperationBoundaries]` line, and
+  only for an explicit workflow command at the start of the prompt. (#694)
+- Stop renders `handoff.md` and `resume.md` from `recovery-materializer` and
+  publishes the evidence checkpoint. Pi gives Stop 30 seconds. The recovery
+  helper in `assets/templates/helpers/` is a generated projection; the hand
+  copy is gone. (#695)
+- `scripts/evidence-gc.ts` adds two one-release cleanups. It deletes the old
+  Stop run summaries by their shape and removes retired circuit-breaker state.
+  Both cleanups go away in the next release. (#692, #695)
+- No hook appends to or rotates `.ai/harness/events.jsonl`. Only
+  `prepare-handoff` still appends to it. (#693, #695)
+- `PostToolUse.edit` and `PostToolUse.always` stay installed but run one
+  no-op handler, `retired-observer`: exit 0, no output, no writes. #698
+  removes both routes. (#692, #695)
+- The managed Claude and Codex `Stop` entry keeps its 150-second timeout
+  until #698. (#695)
+- #698 also removes the Claude and Codex `PostToolUse.bash` entries. (#695)
+- #698 retires `UserPromptSubmit.default` and `SubagentStop.quality` and
+  narrows the hosts of `PreToolUse.subagent`. Until then the route tuple is
+  unchanged. (#694)
 
 ### Fixed
 
-- `minimal-change-hooks.md` no longer says that `PostToolUse.edit` writes a
-  report. It writes one journal event with dirty bits. (#696)
+- `minimal-change-hooks.md` no longer describes hooks that no code runs. It
+  says that no hook reads the `minimal_change` policy and that only `off` and
+  `advice` are valid modes. (#692, #696)
+- SessionStart shows the resume section when the resume file has content.
+  Before, it depended on Bash telemetry that filled the evidence ledger.
+  (#693, #695)
+- A SessionStart payload over the budget no longer drops all session
+  providers at once. Each section that does not fit becomes a pointer to its
+  source. (#693)
+- The Bash observer can no longer write a raw output log outside the
+  repository through a `harness.runs_dir` value with `..`. The capture is
+  gone. (#695)
 
 ## [0.22.1] - 2026-10-13
 

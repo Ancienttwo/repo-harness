@@ -1,7 +1,7 @@
 schemaVersion: archcontext.flow/v1
 id: flow.evidence-ledger.append-and-recover
 capabilityId: capability.runtime-harness.evidence-ledger
-name: Append one observation and recover views from the accepted set
+name: Append one attested receipt and recover views from the accepted set
 applicability: required
 participants:
   - id: evidence
@@ -9,13 +9,13 @@ participants:
   - id: store
     nodeId: component.evidence-ledger.primary
 steps:
-  - id: import-observation
+  - id: import-attested
     from: evidence
     to: store
-    label: Import one PostBash observation as exactly one observed event through the writer path
+    label: Import one attested receipt through the closed trust mapping and the writer path
     evidence:
-      entrypointId: entrypoint.evidence-ledger.post-bash
-      sourceSymbol: importPostBashObservation
+      entrypointId: entrypoint.evidence-ledger.attested-import
+      sourceSymbol: importAttestedEvidence
       sinkId: sink.evidence-ledger.append
 outcomes:
   - id: success

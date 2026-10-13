@@ -28,7 +28,6 @@ import {
   owedCapabilities,
   type OwedCapabilities,
 } from '../../effects/state/owed-capabilities';
-import { migratePendingPostEditJournalV1 } from '../hook/mutation-observed';
 
 export interface StateCommandOptions {
   readonly targetPath?: readonly string[];
@@ -356,18 +355,6 @@ export function buildStateCommand(): Command {
         canonicalTargetRef: () => readCanonicalTargetRef(repoRoot),
         resolveBoard,
       }));
-    });
-
-  state
-    .command('migrate-post-edit-journal-v1')
-    .description('Explicit one-way migration of pending post-edit journal v1 events')
-    .requiredOption('--json', 'Output the migration result as JSON')
-    .option('--limit <count>', 'Maximum events to migrate, from 1 to 1000', '100')
-    .action((opts: { limit: string }) => {
-      try {
-        const result = migratePendingPostEditJournalV1(process.cwd(), Number(opts.limit));
-        writeOutcome({ exitCode: 0, stdout: `${JSON.stringify(result, null, 2)}\n`, stderr: '' });
-      } catch (error) { writeOutcome(operationalFailure(error)); }
     });
 
   return state;

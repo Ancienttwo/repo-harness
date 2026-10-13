@@ -1,29 +1,16 @@
 /**
- * WP3's falsifiers: the hook board slice and the PreEdit lease-ownership gate.
+ * WP3's falsifier: the hook board slice.
  *
- * Three claims are under test, and each is written so that the obvious wrong
- * implementation fails it:
- *
- * 1. **One slice, two hosts, identical bytes.** The Codex `SubagentStart`
- *    payload and the Claude `PreToolUse.subagent` prompt appendix are built by
- *    two different handlers; the marker block extracted from each is compared
- *    byte for byte against real fixture state. A second renderer, a host-
- *    dependent field, or a clock would break this.
- * 2. **Arming is a double predicate.** Claim tokens are never garbage
- *    collected, so "a token exists" cannot arm the gate. The stale-token and
- *    primary-tree cases assert exit 0 AND zero collector invocations -- the
- *    only assertable form of "the unarmed path costs nothing".
- * 3. **Armed failures fail closed, individually.** One case per step, each
- *    asserting exit 2 and its own reason token, because a gate that collapsed
- *    five refusals into one message would still pass a test that only checked
- *    the exit code.
+ * **One slice, two hosts, identical bytes.** The Codex `SubagentStart`
+ * payload and the Claude `PreToolUse.subagent` prompt appendix are built by
+ * two different handlers; the marker block extracted from each is compared
+ * byte for byte against real fixture state. A second renderer, a host-
+ * dependent field, or a clock would break this.
  *
  * The lease/topology/canonical fixtures are real: a real git repository, a
- * real linked worktree, real owner records on the shared plane. Mocking them
- * would prove nothing about a gate whose whole job is to compare a worktree
- * against git's own view of it.
+ * real linked worktree, real owner records on the shared plane.
  */
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { spawnSync } from 'child_process';
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
@@ -42,9 +29,9 @@ import {
   BOARD_SLICE_MAX_BYTES,
   renderBoardSlice,
 } from '../src/cli/hook/board-slice-context';
-import { runMutationGuard, type MutationGuardCollector } from '../src/cli/hook/mutation-guard';
-import { runSubagentHandler } from '../src/cli/hook/subagent-handler';
-import { createStateInputCollector } from '../src/effects/loop/state-input-collector';
+import { runReturnChannel } from '../src/cli/hook/return-channel';
+import { runSubagentContext } from '../src/cli/hook/subagent-context';
+import { createStateInputCollector, type StateInputCollector } from '../src/effects/loop/state-input-collector';
 import { resolveHookEffectiveState } from '../src/cli/hook/runtime';
 import { hookIdentity } from './helpers/hook-identity';
 import { findClaimTokenByUnitRef } from '../src/effects/state/coordination-claim-token';
@@ -53,38 +40,7 @@ import {
   LEASE_OWNER_FILE_NAME,
 } from '../src/effects/state/coordination-lease-store';
 import { resolveRepoIdentity } from '../src/effects/state/coordination-canonical-source';
-import * as sliceInputs from '../src/effects/state/collect-slice-inputs';
 import { fixtureTaskId } from './helpers/sprint-fixture';
-
-// ---------------------------------------------------------------------------
-// Collector spy: the assertable form of "the unarmed path collects nothing"
-// ---------------------------------------------------------------------------
-
-let collectCalls = 0;
-/** Set by a test that needs the armed collection itself to fail. */
-let collectThrows: string | null = null;
-
-/**
- * Snapshotted BEFORE `mock.module`, and that ordering is load-bearing: Bun
- * patches the module registry in place, so the imported namespace object is
- * live-bound. A wrapper that called `sliceInputs.collectSliceInputs` would
- * resolve to itself and recurse forever.
- */
-const realSliceInputs = { ...sliceInputs };
-
-mock.module('../src/effects/state/collect-slice-inputs', () => ({
-  ...realSliceInputs,
-  collectSliceInputs: (cwd: string, options: sliceInputs.SliceCollectionOptions) => {
-    collectCalls += 1;
-    if (collectThrows !== null) throw new Error(collectThrows);
-    return realSliceInputs.collectSliceInputs(cwd, options);
-  },
-}));
-
-beforeEach(() => {
-  collectCalls = 0;
-  collectThrows = null;
-});
 
 // ---------------------------------------------------------------------------
 // Fixture: one clone, one canonical sprint, one linked execution worktree
@@ -92,7 +48,6 @@ beforeEach(() => {
 
 const SPRINT_PATH = 'plans/sprints/wp3.sprint.md';
 const PLAN_PATH = 'plans/plan-20260820-0159-wp3-fixture.md';
-const STALE_PLAN_PATH = 'plans/plan-20260101-0000-retired.md';
 const OWN_TASK_CELL = 'wire the hook slice';
 const PEER_TASK_CELL = 'relocate worktree metadata';
 const CLAIM_ID = 'claim-wp3-own';
@@ -262,29 +217,6 @@ function armFixture(fixture: Fixture): void {
 // ---------------------------------------------------------------------------
 // Handler invocation helpers
 // ---------------------------------------------------------------------------
-
-/**
- * The same real, non-mocked resolution wiring `tests/mutation-guard.test.ts`
- * uses, pinned to `lite` so every guard downstream of the lease gate passes and
- * the exit code these cases assert can only come from the lease gate itself.
- */
-function collectorFor(repoRoot: string, onResolve?: () => void): MutationGuardCollector {
-  return createStateInputCollector({
-    repoRoot,
-    resolveEffectiveState: (targetPaths) => {
-      onResolve?.();
-      return resolveHookEffectiveState(repoRoot, 'PreToolUse', targetPaths, { REPO_HARNESS_WORKFLOW_PROFILE: 'routine' }, Date.now());
-    },
-  });
-}
-
-function edit(repoRoot: string, filePath = 'src/feature.ts') {
-  return runMutationGuard({
-    collector: collectorFor(repoRoot),
-    payload: { tool_input: { file_path: filePath } },
-    identity: hookIdentity(),
-  });
-}
 
 /** Extract the slice block from a host payload: marker line through the pointer line. */
 function extractSliceBlock(text: string): string {
@@ -472,27 +404,30 @@ describe('claim tokens: ambiguity is never resolved by picking one', () => {
 // Byte-equality across hosts
 // ---------------------------------------------------------------------------
 
+function collectorFor(repoRoot: string): StateInputCollector {
+  return createStateInputCollector({
+    repoRoot,
+    resolveEffectiveState: () =>
+      resolveHookEffectiveState(repoRoot, Date.now()),
+  });
+}
+
 describe('one slice, two hosts, identical bytes', () => {
   let fixture: Fixture;
   beforeEach(() => { fixture = buildFixture(); armFixture(fixture); });
   afterEach(() => fixture.cleanup());
 
   test('Codex additionalContext and Claude updatedInput.prompt carry the same block', () => {
-    const codex = runSubagentHandler({
-      event: 'SubagentStart',
-      repoRoot: fixture.worktree,
+    const codex = runSubagentContext({
+      collector: collectorFor(fixture.worktree),
       identity: hookIdentity({ host: 'codex' }),
       payload: { agent_type: 'default', model: 'gpt-x', agent_id: 'agent-1', turn_id: 'turn-1' },
+      env: { ...process.env, HOOK_HOST: 'codex' },
     });
     expect(codex.exitCode).toBe(0);
     const codexContext = String(codex.additionalContext);
 
-    const claude = runSubagentHandler({
-      event: 'PreToolUse',
-      repoRoot: fixture.worktree,
-      identity: hookIdentity(),
-      payload: { tool_name: 'Task', tool_input: { prompt: 'do the work' } },
-    });
+    const claude = returnChannel({ tool_name: 'Task', tool_input: { prompt: 'do the work' } });
     expect(claude.exitCode).toBe(0);
     const claudePrompt = String(claude.permission?.updatedInput?.prompt);
 
@@ -503,260 +438,30 @@ describe('one slice, two hosts, identical bytes', () => {
     expect(block).toContain(`claim=${CLAIM_ID}`);
   });
 
-  test('the Codex host never receives the block through the Claude branch too', () => {
-    const claudeBranchOnCodex = runSubagentHandler({
-      event: 'PreToolUse',
-      repoRoot: fixture.worktree,
-      identity: hookIdentity({ host: 'codex' }),
-      payload: { tool_name: 'Task', tool_input: { prompt: 'do the work' } },
-    });
-    const prompt = String(claudeBranchOnCodex.permission?.updatedInput?.prompt);
-    expect(prompt).toContain('[repo-harness:return-channel]');
-    expect(prompt).not.toContain(BOARD_SLICE_MARKER);
-  });
-
   test('the appendices are independently idempotent: a re-spawn still gets the slice', () => {
-    const first = runSubagentHandler({
-      event: 'PreToolUse',
-      repoRoot: fixture.worktree,
-      identity: hookIdentity(),
-      payload: { tool_name: 'Task', tool_input: { prompt: 'do the work' } },
-    });
+    const first = returnChannel({ tool_name: 'Task', tool_input: { prompt: 'do the work' } });
     const stamped = String(first.permission?.updatedInput?.prompt);
     // Replaying the fully-stamped prompt is a no-op ...
-    const replay = runSubagentHandler({
-      event: 'PreToolUse',
-      repoRoot: fixture.worktree,
-      identity: hookIdentity(),
-      payload: { tool_name: 'Agent', tool_input: { prompt: stamped } },
-    });
+    const replay = returnChannel({ tool_name: 'Agent', tool_input: { prompt: stamped } });
     expect(replay).toEqual({ exitCode: 0 });
 
     // ... but a prompt carrying only the return contract still receives the
     // slice. The old RETURN_CONTRACT_MARKER early-exit would have swallowed it.
     const contractOnly = stamped.slice(0, stamped.indexOf(BOARD_SLICE_MARKER));
-    const second = runSubagentHandler({
-      event: 'PreToolUse',
-      repoRoot: fixture.worktree,
-      identity: hookIdentity(),
-      payload: { tool_name: 'Agent', tool_input: { prompt: contractOnly } },
-    });
+    const second = returnChannel({ tool_name: 'Agent', tool_input: { prompt: contractOnly } });
     const secondPrompt = String(second.permission?.updatedInput?.prompt);
     expect(secondPrompt).toContain(BOARD_SLICE_MARKER);
     expect(secondPrompt.match(/\[repo-harness:return-channel\]/g)?.length).toBe(1);
   });
 
-  test('SendUserMessage records return-channel guidance and carries no slice or permission decision', () => {
-    const deny = runSubagentHandler({
-      event: 'PreToolUse',
-      repoRoot: fixture.worktree,
-      identity: hookIdentity(),
-      payload: { tool_name: 'SendUserMessage', agent_id: 'agent-a', tool_input: { message: 'report' } },
-    });
-    expect(deny.additionalContext).not.toContain(BOARD_SLICE_MARKER);
-    expect(deny.permission).toBeUndefined();
-    expect(deny.additionalContext).toContain('full report in final text');
-
-    const mainLoop = runSubagentHandler({
-      event: 'PreToolUse',
-      repoRoot: fixture.worktree,
-      identity: hookIdentity(),
-      payload: { tool_name: 'SendUserMessage', tool_input: { message: 'main loop' } },
-    });
-    expect(mainLoop).toEqual({ exitCode: 0 });
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Arming: the double predicate, and what it costs when it does not fire
-// ---------------------------------------------------------------------------
-
-describe('the lease gate stays inert unless the unit is verifiably sprint-bound', () => {
-  let fixture: Fixture;
-  beforeEach(() => { fixture = buildFixture(); });
-  afterEach(() => fixture.cleanup());
-
-  test('no claim token: exit 0 with zero collector invocations', () => {
-    write(fixture.worktree, '.ai/harness/active-plan', `${PLAN_PATH}\n`);
-    writeLease(fixture, ownerRecord(fixture, { claim_id: 'claim-someone-else' }));
-    const result = edit(fixture.worktree);
-    expect(result.exitCode).toBe(0);
-    expect(result.stdout).not.toContain('LeaseOwnershipGuard');
-    expect(collectCalls).toBe(0);
+  test('SendUserMessage gets no slice, no permission decision and no context', () => {
+    expect(returnChannel({ tool_name: 'SendUserMessage', agent_id: 'agent-a', tool_input: { message: 'report' } }))
+      .toEqual({ exitCode: 0 });
+    expect(returnChannel({ tool_name: 'SendUserMessage', tool_input: { message: 'main loop' } }))
+      .toEqual({ exitCode: 0 });
   });
 
-  test('stale token: a unit_ref naming a retired plan does not arm under the current plan', () => {
-    write(fixture.worktree, '.ai/harness/active-plan', `${PLAN_PATH}\n`);
-    writeClaimToken(fixture.worktree, {
-      taskId: fixture.ownTaskId,
-      claimId: 'claim-from-a-past-life',
-      taskCell: OWN_TASK_CELL,
-      unitRef: STALE_PLAN_PATH,
-    });
-    // A lease that would fail every armed step, proving the gate never looked.
-    writeLease(fixture, ownerRecord(fixture, { claim_id: 'claim-someone-else', state: 'completing' }));
-    const result = edit(fixture.worktree);
-    expect(result.exitCode).toBe(0);
-    expect(collectCalls).toBe(0);
-  });
-
-  test('primary tree: a matching token does not arm outside a linked worktree', () => {
-    write(fixture.primary, '.ai/harness/active-plan', `${PLAN_PATH}\n`);
-    writeClaimToken(fixture.primary, {
-      taskId: fixture.ownTaskId,
-      claimId: 'claim-inline-from-months-ago',
-      taskCell: OWN_TASK_CELL,
-      unitRef: PLAN_PATH,
-    });
-    writeLease(fixture, ownerRecord(fixture, { claim_id: 'claim-someone-else' }));
-    const result = edit(fixture.primary);
-    expect(result.exitCode).toBe(0);
-    expect(collectCalls).toBe(0);
-  });
-
-  test('no active-plan marker: nothing to bind a token to, nothing collected', () => {
-    writeClaimToken(fixture.worktree, {
-      taskId: fixture.ownTaskId,
-      claimId: CLAIM_ID,
-      taskCell: OWN_TASK_CELL,
-      unitRef: PLAN_PATH,
-    });
-    const result = edit(fixture.worktree);
-    expect(result.exitCode).toBe(0);
-    expect(collectCalls).toBe(0);
-  });
-
-  test('an unarmed tree passes even when the collector would throw', () => {
-    collectThrows = 'collector exploded';
-    write(fixture.worktree, '.ai/harness/active-plan', `${PLAN_PATH}\n`);
-    const result = edit(fixture.worktree);
-    expect(result.exitCode).toBe(0);
-    expect(collectCalls).toBe(0);
-  });
-
-  test('armed and consistent: the gate passes and collects exactly once per event', () => {
-    armFixture(fixture);
-    const result = edit(fixture.worktree);
-    expect(result.exitCode).toBe(0);
-    expect(result.stdout).not.toContain('LeaseOwnershipGuard');
-    expect(collectCalls).toBe(1);
-  });
-
-  test('a multi-path apply_patch batch pays one collection, not one per path', () => {
-    armFixture(fixture);
-    const patch = [
-      'apply_patch <<PATCH',
-      '*** Begin Patch',
-      '*** Update File: src/a.ts',
-      '*** Update File: src/b.ts',
-      '*** Update File: src/c.ts',
-      '*** End Patch',
-      'PATCH',
-    ].join('\n');
-    const result = runMutationGuard({
-      collector: collectorFor(fixture.worktree),
-      payload: { tool_input: { command: patch } },
-      identity: hookIdentity(),
-    });
-    expect(result.exitCode).toBe(0);
-    expect(collectCalls).toBe(1);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Armed refusals: one case per step, each with its own reason token
-// ---------------------------------------------------------------------------
-
-describe('once armed, lease anomalies remain advisory with their own reason token', () => {
-  let fixture: Fixture;
-  beforeEach(() => { fixture = buildFixture(); armFixture(fixture); });
-  afterEach(() => fixture.cleanup());
-
-  function expectLeaseObservation(result: ReturnType<typeof edit>, token: string): void {
-    expect(result.exitCode).toBe(0);
-    expect(result.stdout).toContain(`[LeaseOwnershipGuard] ${token}:`);
-    const record = result.stdout.split('\n').filter(line => line.startsWith('{'))
-      .map(line => JSON.parse(line) as Record<string, unknown>).find(entry => entry.guard === 'LeaseOwnershipGuard')!;
-    expect(record.guard).toBe('LeaseOwnershipGuard');
-    expect(record.failure_class).toBe('contract_failure');
-    expect(record.action).toBe('advisory');
+  function returnChannel(payload: Record<string, unknown>) {
+    return runReturnChannel({ collector: collectorFor(fixture.worktree), payload });
   }
-
-  test('step 1 -- two tokens name the same unit: lease_claim_token_ambiguous', () => {
-    writeClaimToken(fixture.worktree, {
-      taskId: fixture.peerTaskId,
-      claimId: PEER_CLAIM_ID,
-      taskCell: PEER_TASK_CELL,
-      unitRef: PLAN_PATH,
-    });
-    const result = edit(fixture.worktree);
-    expectLeaseObservation(result, 'lease_claim_token_ambiguous');
-    // Ambiguity is recorded before collection: there is nothing to validate.
-    expect(collectCalls).toBe(0);
-  });
-
-  test('step 2 -- no readable owner record: lease_owner_unreadable', () => {
-    rmSync(join(coordinationRoot(fixture.primary), 'leases', fixture.ownTaskId), { recursive: true, force: true });
-    expectLeaseObservation(edit(fixture.worktree), 'lease_owner_unreadable');
-  });
-
-  test('step 2 -- the claim moved: lease_owner_claim_mismatch', () => {
-    writeLease(fixture, ownerRecord(fixture, { claim_id: 'claim-taken-over', generation: 2 }));
-    const result = edit(fixture.worktree);
-    expectLeaseObservation(result, 'lease_owner_claim_mismatch');
-    expect(result.stdout).toContain('claim-taken-over');
-  });
-
-  test('step 3 -- the lease is not bound: lease_state_not_bound', () => {
-    writeLease(fixture, ownerRecord(fixture, { state: 'reserving', execution_worktree: null, branch: null }));
-    expectLeaseObservation(edit(fixture.worktree), 'lease_state_not_bound');
-  });
-
-  test('step 4 -- bound to a different worktree: lease_owner_tree_mismatch', () => {
-    writeLease(fixture, ownerRecord(fixture, { execution_worktree: join(fixture.primary, '..', 'other-tree') }));
-    expectLeaseObservation(edit(fixture.worktree), 'lease_owner_tree_mismatch');
-  });
-
-  test('step 4 -- bound to a different branch: lease_owner_tree_mismatch', () => {
-    writeLease(fixture, ownerRecord(fixture, { branch: 'codex/some-other-branch' }));
-    expectLeaseObservation(edit(fixture.worktree), 'lease_owner_tree_mismatch');
-  });
-
-  test('step 5 -- the canonical definition drifted: lease_task_revision_drifted', () => {
-    // A well-formed revision the row no longer has: what the acceptance cell
-    // used to hash to before somebody edited it on the canonical ref.
-    writeLease(fixture, ownerRecord(fixture, {
-      task_revision: deriveTaskRevision({
-        taskId: fixture.ownTaskId,
-        taskCell: OWN_TASK_CELL,
-        modeCell: 'contract',
-        acceptanceCell: 'the acceptance line this row used to carry',
-      }),
-    }));
-    expectLeaseObservation(edit(fixture.worktree), 'lease_task_revision_drifted');
-  });
-
-  test('an armed collection failure is recorded without blocking the edit', () => {
-    collectThrows = 'coordination state unreadable';
-    const result = edit(fixture.worktree);
-    expectLeaseObservation(result, 'lease_state_unreadable');
-    expect(collectCalls).toBe(1);
-  });
-
-  test('an armed tree with no active sprint marker records an advisory', () => {
-    rmSync(join(fixture.worktree, '.ai/harness/sprint/active-sprint'), { force: true });
-    expectLeaseObservation(edit(fixture.worktree), 'lease_sprint_unresolvable');
-  });
-
-  test('a lease anomaly does not prevent Effective State resolution', () => {
-    writeLease(fixture, ownerRecord(fixture, { claim_id: 'claim-taken-over' }));
-    let resolutions = 0;
-    const result = runMutationGuard({
-      collector: collectorFor(fixture.worktree, () => { resolutions += 1; }),
-      payload: { tool_input: { file_path: 'src/feature.ts' } },
-      identity: hookIdentity(),
-    });
-    expect(result.exitCode).toBe(0);
-    expect(resolutions).toBe(1);
-  });
 });

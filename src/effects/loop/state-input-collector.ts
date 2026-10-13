@@ -35,8 +35,7 @@ export type EffectiveStateResolution =
  */
 export interface StateInputCollectorDeps {
   readonly repoRoot: string;
-  /** Receives the full pending write-scope path batch; empty outside edits. */
-  readonly resolveEffectiveState: (targetPaths: readonly string[]) => EffectiveStateResolution;
+  readonly resolveEffectiveState: () => EffectiveStateResolution;
 }
 
 export interface StateInputCollector {
@@ -44,20 +43,17 @@ export interface StateInputCollector {
   getWorktreeOwnership(): WorktreeOwnership;
   /** Raw `.ai/harness/active-plan` marker text, or null when absent. */
   getActivePlanMarker(): string | null;
-  /**
-   * Resolves Effective State at most once per event. The `targetPaths` of the
-   * first call win, so an edit handler gathers its full path batch first.
-   */
-  getEffectiveState(targetPaths?: readonly string[]): EffectiveStateResolution;
+  /** Resolves Effective State at most once per event. */
+  getEffectiveState(): EffectiveStateResolution;
 }
 
 const UNCOMPUTED = Symbol('state-input-collector-uncomputed');
 
 /** Caches the first result, including a legitimate null. */
-function once<TArg, T>(compute: (arg: TArg) => T): (arg: TArg) => T {
+function once<T>(compute: () => T): () => T {
   let cached: T | typeof UNCOMPUTED = UNCOMPUTED;
-  return (arg: TArg) => {
-    if (cached === UNCOMPUTED) cached = compute(arg);
+  return () => {
+    if (cached === UNCOMPUTED) cached = compute();
     return cached;
   };
 }
@@ -77,8 +73,8 @@ export function createStateInputCollector(deps: StateInputCollectorDeps): StateI
 
   return {
     getRepoRoot: () => deps.repoRoot,
-    getWorktreeOwnership: () => getWorktreeOwnership(undefined),
-    getActivePlanMarker: () => getActivePlanMarker(undefined),
-    getEffectiveState: (targetPaths = []) => getEffectiveState(targetPaths),
+    getWorktreeOwnership,
+    getActivePlanMarker,
+    getEffectiveState,
   };
 }

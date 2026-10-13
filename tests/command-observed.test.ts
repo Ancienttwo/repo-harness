@@ -1,431 +1,152 @@
 import { describe, expect, test } from 'bun:test';
-import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  realpathSync,
-  rmSync,
-  writeFileSync,
-} from 'fs';
+import { execFileSync } from 'child_process';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { runCommandObserved, runsPublicationCommand, type CommandObservedDependencies, type CommandObservedFs } from '../src/cli/hook/command-observed';
+import { runCommandObserved, runsPublicationCommand, type CommandObservedDependencies } from '../src/cli/hook/command-observed';
 import type { HookPayload } from '../src/cli/hook/hook-input';
-import type { RouteHost } from '../src/cli/hook/route-registry';
-import { resolveHookIdentity } from '../src/cli/hook/run-identity';
-import { readAcceptedEvents } from '../src/effects/evidence/event-log';
+import { runHook } from '../src/cli/hook/runtime';
 
 function workspace(prefix: string): string {
   return realpathSync(mkdtempSync(join(tmpdir(), `${prefix}-`)));
 }
 
-function checks(repoRoot: string): Record<string, unknown> {
-  return JSON.parse(readFileSync(join(repoRoot, '.ai/harness/checks/post-bash-latest.json'), 'utf8')) as Record<string, unknown>;
+/** An opt-in Git repository with one commit, so the hook route and state resolution run for real. */
+function optInRepo(prefix: string): string {
+  const root = workspace(prefix);
+  const gitIn = (...args: string[]) => execFileSync('git', args, { cwd: root, stdio: 'ignore' });
+  gitIn('init', '-q', '-b', 'main');
+  gitIn('config', 'user.name', 'Fixture');
+  gitIn('config', 'user.email', 'fixture@example.com');
+  mkdirSync(join(root, '.ai/harness'), { recursive: true });
+  writeFileSync(join(root, '.ai/harness/workflow-contract.json'), '{}\n');
+  writeFileSync(join(root, '.ai/harness/policy.json'), '{}\n');
+  writeFileSync(join(root, 'README.md'), '# fixture\n');
+  gitIn('add', '.');
+  gitIn('commit', '-q', '-m', 'fixture');
+  return root;
 }
 
-function commandInput(command: string, stdout: string, exitCode: number): HookPayload {
-  return { tool_input: { command }, tool_response: { stdout, stderr: '', interrupted: false }, exit_code: exitCode };
+function commandInput(command: string, stdout: string, exitCode: unknown): HookPayload {
+  return { tool_input: { command }, tool_response: { stdout, is_error: typeof exitCode === 'number' && exitCode !== 0 }, exit_code: exitCode };
 }
 
-/** The observer with the identity the runtime resolves for this payload. */
-function observe(opts: {
-  readonly repoRoot: string;
-  readonly payload: HookPayload;
-  readonly host?: RouteHost;
-  readonly env?: NodeJS.ProcessEnv;
-  readonly dependencies?: CommandObservedDependencies;
-}) {
-  return runCommandObserved({
-    repoRoot: opts.repoRoot,
-    payload: opts.payload,
-    identity: resolveHookIdentity(opts.repoRoot, 'PostToolUse', opts.payload, opts.host ?? 'claude'),
-    env: opts.env,
-    dependencies: opts.dependencies,
-  });
+function observe(repoRoot: string, payload: HookPayload, dependencies?: CommandObservedDependencies) {
+  return runCommandObserved({ repoRoot, payload, dependencies });
 }
+
+const TRIPPED = {
+  protocol: 1 as const,
+  allowed: false,
+  tripped: true,
+  guard: 'RepairLimit',
+  reason: 'automatic repair loop cap',
+  path_action: 'bun test',
+  progress_token: 'sha256:progress',
+  repeat_count: 3,
+  limit: 2,
+  required_action: 'terminal: stop automatic retries; change state or wait for an explicit user decision',
+  explicit_override_command: null,
+};
 
 describe('runCommandObserved', () => {
-  test('writes the structured post-bash check and preserves broad-command metadata', () => {
-    const repoRoot = workspace('command-observed');
+  test('a Claude PostToolUse payload without an exit status writes no status record', () => {
+    const root = optInRepo('command-observed-claude-unknown');
     try {
-      const result = observe({
-        repoRoot,
-        payload: {
-          tool_input: { command: 'rg foo' },
-          tool_response: { stdout: 'src/a.ts:foo\nsrc/b.ts:foo\n', stderr: '', interrupted: false },
-          exit_code: 0,
-        },
-        env: { PATH: '' },
-        dependencies: { hasExecutable: () => false },
-      });
-      expect(result.exitCode).toBe(0);
-      expect(result.reason).toBe('ok');
-      expect(result.stdout).toBe('');
-      const checks = JSON.parse(readFileSync(join(repoRoot, '.ai/harness/checks/post-bash-latest.json'), 'utf8')) as Record<string, unknown>;
-      expect(checks).toMatchObject({
-        source: 'post-bash',
-        command: 'rg foo',
-        exit_code: 0,
-        status: 'pass',
-        broad_command: true,
-        output_line_count: 2,
-        verbosity_class: 'inline',
-        suggested_runner: 'inline',
-        raw_output_path: null,
-        raw_output_bytes: Buffer.byteLength('src/a.ts:foo\nsrc/b.ts:foo\n'),
-        raw_output_sha256: null,
-        failure_signal: false,
-        recommended_next_tool: 'codegraph_context',
-      });
-    } finally {
-      rmSync(repoRoot, { recursive: true, force: true });
-    }
-  });
-
-  test('Pi cannot import passing verification evidence without an explicit integer exit code', () => {
-    for (const exitCode of [undefined, null, '0', 0.5]) {
-      const repoRoot = workspace('command-observed-pi-unknown');
-      try {
-        const result = observe({
-          repoRoot,
-          payload: { tool_input: { command: 'bun run check:type' }, tool_response: { output: 'All checks passed', isError: false }, exit_code: exitCode },
-          host: 'pi',
-          env: { PATH: '', EXIT_CODE: '0' },
-          dependencies: { hasExecutable: () => false },
-        });
-        expect(result).toMatchObject({ exitCode: 0, reason: 'ok' });
-        expect(checks(repoRoot)).toMatchObject({ exit_code: null, status: 'unknown', verbosity_class: 'inline',
-          suggested_runner: 'inline', raw_output_path: null, raw_output_sha256: null });
-        expect(existsSync(join(repoRoot, '.ai/harness/runs/bash-output'))).toBe(false);
-        expect(readAcceptedEvents(repoRoot).accepted).toHaveLength(0);
-      } finally {
-        rmSync(repoRoot, { recursive: true, force: true });
-      }
-    }
-  });
-
-  test('stores long output as raw evidence and uses an injected runner probe', () => {
-    const repoRoot = workspace('command-observed-long');
-    try {
-      const output = Array.from({ length: 201 }, (_, index) => `line-${index}`).join('\n');
-      const result = observe({
-        repoRoot,
-        payload: { tool_input: { command: 'rg foo' }, tool_response: { stdout: output, stderr: '', interrupted: false }, exit_code: 0 },
-        dependencies: { hasExecutable: (name) => name === 'rtk', now: () => new Date('2026-07-21T12:34:56.000Z') },
-      });
-      expect(result.exitCode).toBe(0);
-      const checks = JSON.parse(readFileSync(join(repoRoot, '.ai/harness/checks/post-bash-latest.json'), 'utf8')) as { verbosity_class: string; raw_output_path: string; suggested_runner: string; raw_output_sha256: string };
-      expect(checks.verbosity_class).toBe('long');
-      expect(checks.suggested_runner).toBe('rtk');
-      expect(checks.raw_output_path).toMatch(/^\.ai\/harness\/runs\/bash-output\/post-bash-20260721T123456-\d+-[a-f0-9]{12}\.log$/);
-      expect(readFileSync(join(repoRoot, checks.raw_output_path), 'utf8')).toBe(output);
-      expect(checks.raw_output_sha256).toMatch(/^[a-f0-9]{64}$/);
-    } finally {
-      rmSync(repoRoot, { recursive: true, force: true });
-    }
-  });
-
-  test('preserves verify-sprint checks while writing an additive post-bash record', () => {
-    const repoRoot = workspace('command-observed-preserve');
-    try {
-      mkdirSync(join(repoRoot, '.ai/harness/checks'), { recursive: true });
-      const existing = { source: 'verify-sprint', status: 'pass', exit_code: 0, run_id: 'run-1' };
-      writeFileSync(join(repoRoot, '.ai/harness/checks/latest.json'), `${JSON.stringify(existing)}\n`);
-
-      const result = observe({
-        repoRoot,
-        payload: commandInput('git status --short', '', 0),
-        env: { PATH: '' },
-        dependencies: { hasExecutable: () => false },
-      });
-
-      expect(result).toMatchObject({ exitCode: 0, reason: 'ok' });
-      expect(result.stdout).toBe('');
-      expect(JSON.parse(readFileSync(join(repoRoot, '.ai/harness/checks/latest.json'), 'utf8'))).toEqual(existing);
-      expect(checks(repoRoot)).toMatchObject({
-        source: 'post-bash',
-        command: 'git status --short',
-        status: 'pass',
-        verbosity_class: 'inline',
-        suggested_runner: 'inline',
-        raw_output_path: null,
-        raw_output_bytes: 0,
-        raw_output_sha256: null,
-      });
-    } finally {
-      rmSync(repoRoot, { recursive: true, force: true });
-    }
-  });
-
-  test('keeps the retired broad-command classifier boundaries and output counts', () => {
-    const repoRoot = workspace('command-observed-broad-boundaries');
-    try {
-      const cases: Array<[string, boolean]> = [
-        ['find ./', true],
-        ['ls -R', true],
-        ['rg foo', true],
-        ['grep -R foo', true],
-        ['cat src/*.ts', true],
-        ['rg foo src/', false],
-        ['grep foo src/', false],
-        ['cat README.md', false],
-        ['git status --short', false],
-      ];
-      for (const [command, broad] of cases) {
-        const output = 'line-one\nline-two\n';
-        const result = observe({
-          repoRoot,
-          payload: commandInput(command, output, 0),
-          env: { PATH: '' },
-          dependencies: { hasExecutable: () => false },
-        });
-        expect(result.exitCode, command).toBe(0);
-        expect(checks(repoRoot), command).toMatchObject({
-          command,
-          broad_command: broad,
-          recommended_next_tool: broad ? 'codegraph_context' : '',
-          output_line_count: 2,
-          raw_output_bytes: Buffer.byteLength(output),
-          failure_signal: false,
-        });
-      }
-    } finally {
-      rmSync(repoRoot, { recursive: true, force: true });
-    }
-  });
-
-  test('serializes structured tool output and honors host environment fallbacks', () => {
-    const repoRoot = workspace('command-observed-input-fallbacks');
-    try {
-      const structured = { nested: true, values: [1, 2] };
-      const result = observe({
-        repoRoot,
-        payload: { tool_input: { command: 'bun test' }, tool_response: structured },
-        env: { PATH: '', EXIT_CODE: '0' },
-        dependencies: { hasExecutable: () => false },
-      });
-      expect(result.exitCode).toBe(0);
-      expect(checks(repoRoot)).toMatchObject({
-        command: 'bun test',
-        exit_code: 0,
-        output_line_count: 1,
-        raw_output_bytes: Buffer.byteLength(JSON.stringify(structured)),
-      });
-    } finally {
-      rmSync(repoRoot, { recursive: true, force: true });
-    }
-  });
-
-  test('reads stdout and stderr from the host tool_response on separate lines', () => {
-    const repoRoot = workspace('command-observed-tool-response');
-    try {
-      const result = observe({
-        repoRoot,
-        payload: {
+      const result = runHook({
+        event: 'PostToolUse',
+        routeId: 'bash',
+        cwd: root,
+        input: JSON.stringify({
+          session_id: 'claude-session',
+          hook_event_name: 'PostToolUse',
           tool_name: 'Bash',
-          tool_input: { command: 'git status --short' },
-          tool_response: { stdout: ' M src/a.ts', stderr: 'hint: advice', interrupted: false },
-        },
-        env: { PATH: '' },
-        dependencies: { hasExecutable: () => false },
+          tool_input: { command: 'bun test', description: 'Run tests' },
+          tool_response: { stdout: 'FAIL tests/a.test.ts\n', stderr: '', interrupted: false, isImage: false },
+          tool_use_id: 'toolu_01',
+          duration_ms: 812,
+        }),
+        env: { ...process.env, HOOK_REPO_ROOT: root, HOOK_HOST: 'claude', EXIT_CODE: '1' },
       });
-      expect(result.exitCode).toBe(0);
-      expect(checks(repoRoot)).toMatchObject({
-        command: 'git status --short',
-        exit_code: 0,
-        output_line_count: 2,
-        raw_output_bytes: Buffer.byteLength(' M src/a.ts\nhint: advice'),
-      });
+      expect(result).toMatchObject({ exitCode: 0, reason: 'ok', handler: 'command-observed' });
+      expect(existsSync(join(root, '.ai/harness/checks'))).toBe(false);
+      expect(existsSync(join(root, '.ai/harness/evidence'))).toBe(false);
+      expect(existsSync(join(root, '.ai/harness/state/circuit-breaker.json'))).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test('only a safe-integer exit_code is an exit status', () => {
+    const repoRoot = workspace('command-observed-exit-status');
+    try {
+      let calls = 0;
+      const dependencies: CommandObservedDependencies = { recordCircuit: () => { calls += 1; return TRIPPED; } };
+      for (const exitCode of [undefined, null, '1', 1.5]) {
+        const result = observe(repoRoot, commandInput('bun test', 'FAILED test\n', exitCode), dependencies);
+        expect({ exitCode, result }).toEqual({ exitCode, result: { exitCode: 0, stdout: '', stderr: '', reason: 'ok' } });
+      }
+      expect(calls).toBe(0);
+      expect(readdirSync(repoRoot)).toEqual([]);
     } finally {
       rmSync(repoRoot, { recursive: true, force: true });
     }
   });
 
-  test('preserves failed command output as raw evidence and emits the rewrite reminder', () => {
-    const repoRoot = workspace('command-observed-failure');
+  test('a known failing test run emits the rewrite reminder', () => {
+    const root = optInRepo('command-observed-failure');
     try {
-      const output = 'FAIL tests/command-observed.test.ts\nexpected pass\n';
-      const result = observe({
-        repoRoot,
-        payload: commandInput('bun test tests/command-observed.test.ts', output, 1),
-        env: { PATH: '' },
-        dependencies: { hasExecutable: () => false },
-      });
+      const result = observe(root, commandInput('bun test tests/command-observed.test.ts', 'FAIL tests/command-observed.test.ts\nexpected pass\n', 1));
       expect(result).toMatchObject({ exitCode: 0, reason: 'ok' });
       expect(result.stdout).toContain('[PostBash] Tests failed. Reminder: failure = rewrite module, not patching.');
-      const record = checks(repoRoot);
-      expect(record).toMatchObject({
-        status: 'fail',
-        verbosity_class: 'failure',
-        suggested_runner: 'raw',
-        failure_signal: true,
-        raw_output_bytes: Buffer.byteLength(output),
-      });
-      expect(typeof record.raw_output_path).toBe('string');
-      expect(readFileSync(join(repoRoot, record.raw_output_path as string), 'utf8')).toBe(output);
     } finally {
-      rmSync(repoRoot, { recursive: true, force: true });
+      rmSync(root, { recursive: true, force: true });
     }
   });
 
   test('does not turn a successful command into a failure when output contains a failure signal', () => {
     const repoRoot = workspace('command-observed-successful-failure-signal');
     try {
-      const output = 'docs/debug.md:Traceback appears in this example\n';
-      const result = observe({
-        repoRoot,
-        payload: commandInput('rg Traceback docs/', output, 0),
-        env: { PATH: '' },
-        dependencies: { hasExecutable: () => false },
-      });
-      expect(result).toMatchObject({ exitCode: 0, stdout: expect.not.stringContaining('[PostBash]') });
-      expect(checks(repoRoot)).toMatchObject({
-        status: 'pass',
-        verbosity_class: 'inline',
-        suggested_runner: 'inline',
-        failure_signal: true,
-        raw_output_path: null,
-      });
+      const result = observe(repoRoot, commandInput('rg Traceback docs/', 'docs/debug.md:Traceback appears in this example\n', 0));
+      expect(result).toEqual({ exitCode: 0, stdout: '', stderr: '', reason: 'ok' });
     } finally {
       rmSync(repoRoot, { recursive: true, force: true });
     }
   });
 
-  test('records a failed exit without a matching failure signal as raw evidence but stays advisory-only', () => {
+  test('a failed exit without a failure signal stays silent and records no circuit', () => {
     const repoRoot = workspace('command-observed-failed-no-signal');
     try {
-      const output = 'command returned status 1\n';
-      const result = observe({
-        repoRoot,
-        payload: commandInput('bun run check:type', output, 1),
-        env: { PATH: '' },
-        dependencies: { hasExecutable: () => false },
-      });
-      expect(result).toMatchObject({ exitCode: 0, reason: 'ok' });
-      expect(result.stdout).not.toContain('[PostBash] Tests failed');
-      const record = checks(repoRoot);
-      expect(record).toMatchObject({ status: 'fail', verbosity_class: 'failure', suggested_runner: 'raw', failure_signal: false });
-      expect(readFileSync(join(repoRoot, record.raw_output_path as string), 'utf8')).toBe(output);
+      const result = observe(repoRoot, commandInput('bun run check:type', 'command returned status 1\n', 1));
+      expect(result).toEqual({ exitCode: 0, stdout: '', stderr: '', reason: 'ok' });
+      expect(existsSync(join(repoRoot, '.ai/harness/state/circuit-breaker.json'))).toBe(false);
     } finally {
       rmSync(repoRoot, { recursive: true, force: true });
     }
   });
 
   test('fails closed when the repair circuit denies a failing command', () => {
-    const repoRoot = workspace('command-observed-circuit');
+    const root = optInRepo('command-observed-circuit');
     try {
-      const result = observe({
-        repoRoot,
-        payload: commandInput('bun test', 'FAILED test\n', 1),
-        env: { PATH: '' },
-        dependencies: {
-          hasExecutable: () => false,
-          recordCircuit: () => ({
-            protocol: 1,
-            allowed: false,
-            tripped: true,
-            guard: 'RepairLimit',
-            reason: 'automatic repair loop cap',
-            path_action: 'bun test',
-            progress_token: 'unknown',
-            repeat_count: 3,
-            limit: 2,
-            required_action: 'terminal: stop automatic retries; change state or wait for an explicit user decision',
-            explicit_override_command: null,
-          }),
-        },
-      });
+      const result = observe(root, commandInput('bun test', 'FAILED test\n', 1), { recordCircuit: () => TRIPPED });
       expect(result.exitCode).toBe(2);
       expect(result.reason).toBe('repair-circuit-tripped');
       expect(result.stdout).toBe('');
       expect(result.stderr).toContain('"tripped":true');
-      expect(existsSync(join(repoRoot, '.ai/harness/checks/post-bash-latest.json'))).toBe(false);
     } finally {
-      rmSync(repoRoot, { recursive: true, force: true });
+      rmSync(root, { recursive: true, force: true });
     }
   });
 
-  test('returns a write error rather than dispatching the retired shell route', () => {
-    const repoRoot = workspace('command-observed-write-error');
+  test('fails closed when the repair circuit cannot be recorded', () => {
+    const root = optInRepo('command-observed-circuit-error');
     try {
-      const fsApi: CommandObservedFs = {
-        existsSync: () => false,
-        readFileSync: () => '',
-        realpathSync: (path) => path,
-        statSync: () => ({ isFile: () => true }),
-        mkdirSync: () => undefined,
-        writeFileSync: () => { throw new Error('disk full'); },
-      };
-      const result = observe({
-        repoRoot,
-        payload: commandInput('git status --short', '', 0),
-        env: { PATH: '' },
-        dependencies: { fs: fsApi, hasExecutable: () => false },
+      const result = observe(root, commandInput('bun test', 'FAILED test\n', 1), {
+        recordCircuit: () => { throw new Error('circuit state unreadable'); },
       });
-      expect(result.exitCode).toBe(1);
-      expect(result.reason).toBe('write-failed');
-      expect(result.stderr).toContain('[PostBash] disk full');
-      expect(result.stderr).not.toContain('run-hook.sh');
-      expect(result.stderr).not.toContain('post-bash.sh');
+      expect(result).toEqual({ exitCode: 2, stdout: '', stderr: '[RepairLimit] circuit state unreadable\n', reason: 'repair-circuit-tripped' });
     } finally {
-      rmSync(repoRoot, { recursive: true, force: true });
-    }
-  });
-
-  test('threads the payload run identity into the evidence ledger correlation_run_id instead of self-minting', () => {
-    const repoRoot = workspace('command-observed-run-identity-threaded');
-    try {
-      const result = observe({
-        repoRoot,
-        payload: { ...commandInput('echo hello', 'hello\n', 0), session_id: 'cmd-observed-session', run_id: 'cmd-observed-run-77' },
-        env: { PATH: '' },
-        dependencies: { hasExecutable: () => false },
-      });
-      expect(result.exitCode).toBe(0);
-      const ledger = readAcceptedEvents(repoRoot);
-      const observed = ledger.accepted.find((event) => event.event_type === 'post_bash.command_observed');
-      expect(observed?.correlation_run_id).toBe('cmd-observed-run-77');
-    } finally {
-      rmSync(repoRoot, { recursive: true, force: true });
-    }
-  });
-
-  test('threads a session-state-derived run identity (minted during SessionStart) into the evidence ledger', () => {
-    const repoRoot = workspace('command-observed-run-identity-session-state');
-    try {
-      const minted = resolveHookIdentity(repoRoot, 'SessionStart', { session_id: 'cmd-observed-state-session' }, 'claude').runId;
-      expect(minted).not.toBeNull();
-      const result = observe({
-        repoRoot,
-        payload: { ...commandInput('echo hello', 'hello\n', 0), session_id: 'cmd-observed-state-session' },
-        env: { PATH: '' },
-        dependencies: { hasExecutable: () => false },
-      });
-      expect(result.exitCode).toBe(0);
-      const ledger = readAcceptedEvents(repoRoot);
-      const observed = ledger.accepted.find((event) => event.event_type === 'post_bash.command_observed');
-      expect(observed?.correlation_run_id).toBe(minted as string);
-    } finally {
-      rmSync(repoRoot, { recursive: true, force: true });
-    }
-  });
-
-  test('falls back to the writer own self-minted id when no run identity is resolvable at all (unchanged fallback)', () => {
-    const repoRoot = workspace('command-observed-run-identity-unresolved');
-    try {
-      const result = observe({
-        repoRoot,
-        payload: commandInput('echo hello', 'hello\n', 0),
-        env: { PATH: '' },
-        dependencies: { hasExecutable: () => false },
-      });
-      expect(result.exitCode).toBe(0);
-      const ledger = readAcceptedEvents(repoRoot);
-      const observed = ledger.accepted.find((event) => event.event_type === 'post_bash.command_observed');
-      expect(observed?.correlation_run_id).toMatch(/^run-\d+$/);
-    } finally {
-      rmSync(repoRoot, { recursive: true, force: true });
+      rmSync(root, { recursive: true, force: true });
     }
   });
 });

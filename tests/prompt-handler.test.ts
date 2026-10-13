@@ -8,14 +8,13 @@ function fixture(run: (root: string) => void): void {
   try { run(root); } finally { rmSync(root, { recursive: true, force: true }); }
 }
 describe('prompt observation', () => {
-  test('completion without plan, checks or receipt never blocks or dispatches a helper', () => fixture(root => {
+  test('an explicit command gets the operation boundaries and never blocks or grants permission', () => {
     const result = runPromptHandler({ payload: { prompt: '/check done' } });
     expect(result.exitCode).toBe(0);
-    expect(result.additionalContext).toContain('Completion is observed');
+    expect(result.additionalContext).toContain('[OperationBoundaries]');
     expect(result.additionalContext).not.toContain('decision: block');
     expect(result.permission).toBeUndefined();
-    expect(readdirSync(root)).toEqual([]);
-  }));
+  });
   test('old incomplete plan/check artifacts remain observations, never an approval or archive operation', () => fixture(root => {
     mkdirSync(join(root, '.ai/harness'), { recursive: true });
     mkdirSync(join(root, 'plans'));
@@ -28,17 +27,13 @@ describe('prompt observation', () => {
     expect(readFileSync(join(root, '.ai/harness/active-plan'), 'utf8')).toBe('plans/old.md');
     expect(readdirSync(join(root, '.ai/harness'))).toEqual(['active-plan']);
   }));
-  test('ordinary questions and quoted reports bypass workflow routing', () => fixture(root => {
+  test('ordinary questions and quoted reports bypass workflow routing', () => {
     for (const prompt of ['What is this repository?', '日志写着“done”，请解释']) {
       const result = runPromptHandler({ payload: { prompt } });
       expect(result).toEqual({ exitCode: 0 });
     }
-  }));
-  test('explicit planning advice does not create four execution artifacts or grant permission', () => fixture(root => {
-    const result = runPromptHandler({ payload: { prompt: '/plan improve the module' } });
-    expect(result.exitCode).toBe(0);
-    expect(result.additionalContext).toContain('OperationBoundaries');
-    expect(result.permission).toBeUndefined();
-    expect(readdirSync(root)).toEqual([]);
-  }));
+  });
+  test('only the documented prompt field is read', () => {
+    expect(runPromptHandler({ payload: { user_message: '/plan improve the module' } })).toEqual({ exitCode: 0 });
+  });
 });

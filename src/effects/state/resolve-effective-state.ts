@@ -192,6 +192,19 @@ function validateWorkflowPolicy(policy: WorkflowPolicy): void {
     );
   }
   capabilitySourceMode(policy);
+  minimalChangeMode(policy);
+}
+
+const MINIMAL_CHANGE_MODES: readonly string[] = ['off', 'advice'];
+
+// No code reads the minimal_change policy. The mode check only rejects the
+// retired `enforce` value (and any other unknown value) so an operator
+// does not rely on a gate that no longer exists.
+function minimalChangeMode(policy: WorkflowPolicy): void {
+  const value = policyValue(policy, '.minimal_change.mode');
+  if (value === POLICY_FIELD_ABSENT) return;
+  if (typeof value === 'string' && MINIMAL_CHANGE_MODES.includes(value)) return;
+  throw new Error(`invalid workflow policy value .minimal_change.mode: ${String(value)}`);
 }
 
 /**
@@ -541,6 +554,34 @@ export function resolveCapabilityOwnership(cwd: string, targetRef?: string): Cap
   }
   if (resolution.registryStatus === 'absent') return null;
   return capabilityOwnershipFrom(resolution, false, reviewSubject.target_rev)!;
+}
+
+export interface CapabilityPathOwner {
+  readonly id: string;
+  readonly module_document: string;
+}
+
+/**
+ * The owning capability of each owned repository-relative path. It reads the
+ * same authority as `state resolve`, but it builds no review subject, takes no
+ * state lock and writes nothing. A path is absent from the map when it is not
+ * an implementation surface or has no owner; the map is empty when the
+ * repository declares no registry. One call resolves the whole batch, so an
+ * archcontext repository starts one `archctx resolve`. It throws when
+ * ownership is unavailable.
+ */
+export function capabilityOwnersForPaths(cwd: string, paths: readonly string[]): ReadonlyMap<string, CapabilityPathOwner> {
+  const owners = new Map<string, CapabilityPathOwner>();
+  const surfaces = paths.filter(isImplementationSurfacePath);
+  if (surfaces.length === 0) return owners;
+  const resolution = capabilityIdsForPaths(cwd, surfaces, readWorkflowPolicy(cwd));
+  if (resolution.blocker) {
+    throw new Error(`${resolution.blocker.key} ${resolution.blocker.code}: ${resolution.blocker.message}; fix: ${resolution.blocker.fix}`);
+  }
+  for (const match of resolution.matches) {
+    owners.set(match.filePath, { id: match.capability.id, module_document: match.capability.architecture_module });
+  }
+  return owners;
 }
 
 function policyReviewBase(policy: WorkflowPolicy): string {

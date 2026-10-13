@@ -343,3 +343,12 @@ export function findClaimTokenByUnitRef(cwd: string, unitRef: string): ClaimToke
   }
   return { outcome: 'found', token: matches[0]! };
 }
+
+/**
+ * The token this tree holds for its active plan. `activePlanMarker` is the
+ * trimmed `.ai/harness/active-plan` text from the state collector; no marker
+ * names no unit, so it names no token.
+ */
+export function findClaimTokenForActivePlan(cwd: string, activePlanMarker: string | null): ClaimTokenRead {
+  return activePlanMarker ? findClaimTokenByUnitRef(cwd, activePlanMarker) : { outcome: 'none' };
+}

@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { readPendingPostEditEvents } from '../src/cli/hook/mutation-observed';
 import { readAcceptedEvents } from '../src/effects/evidence/event-log';
 import { PiHookBridge, type HookRequest } from '../src/pi/hook-bridge';
 import { parseHookJsonOutput } from '../src/pi/hook-protocol';
@@ -174,30 +173,29 @@ describe('real Pi 1.2 tool pipeline with a scripted provider', () => {
       expect(results.find((message: any) => message.toolCallId === 'direct-private')?.isError).toBe(true);
       expect(results.find((message: any) => message.toolCallId === 'nested-private')?.isError).toBe(true);
       expect(result.calls.some((call: any) => call.name === 'edit' && call.parent === 'nested-edit')).toBe(true);
-      // The shared budget also deduplicates the unchanged snapshot on same-session /reload.
-      expect(result.messages.filter((message: any) => message.role === 'custom' && message.customType === 'repo-harness-context')).toHaveLength(1);
+      // SessionStart has no same-session dedupe (#693): /reload delivers the context again.
+      expect(result.messages.filter((message: any) => message.role === 'custom' && message.customType === 'repo-harness-context')).toHaveLength(2);
       const events = records(f.root);
       expect(events.filter(event => event.event === 'SessionStart')).toHaveLength(2);
       expect(events.filter(event => event.event === 'Stop')).toHaveLength(6);
       expect(events.every(event => event.host === 'pi')).toBe(true);
-      const observed = JSON.parse(readFileSync(join(f.root, '.ai/harness/checks/post-bash-latest.json'), 'utf8'));
-      expect(observed).toMatchObject({ exit_code: 0, status: 'pass', verbosity_class: 'inline', raw_output_path: null });
+      expect(existsSync(join(f.root, '.ai/harness/checks/post-bash-latest.json'))).toBe(false);
     } finally { f.cleanup(); }
   }, 60_000);
 
-  test('native Bash carries real passing and failing Bun exit codes into checks and evidence', () => {
+  test('native Bash carries real passing and failing Bun exit codes to the observer without a status record', () => {
     const f = fixture();
     try {
       const result = session(f.root, f.env, 'bash-status');
       expect(result.bashObservations).toMatchObject([
-        { id: 'native-bash-pass', check: { exit_code: 0, status: 'pass', verbosity_class: 'inline', raw_output_path: null } },
-        { id: 'native-bash-fail', check: { exit_code: 1, status: 'fail', verbosity_class: 'failure', failure_signal: true } },
+        { id: 'native-bash-pass', structured: { exit_code: 0 } },
+        { id: 'native-bash-fail', structured: { exit_code: 1 } },
       ]);
       const messages = result.messages.filter((message: any) => message.role === 'toolResult');
       expect(messages.find((message: any) => message.toolCallId === 'native-bash-pass')?.isError).toBe(false);
       expect(messages.find((message: any) => message.toolCallId === 'native-bash-fail')?.isError).toBe(true);
       const accepted = readAcceptedEvents(f.root).accepted;
-      expect(accepted.filter(event => event.event_type === 'post_bash.command_observed')).toHaveLength(2);
+      expect(accepted.filter(event => event.event_type === 'post_bash.command_observed')).toHaveLength(0);
       expect(records(f.root).filter(event => event.event === 'PostToolUse' && event.route_id === 'bash')).toHaveLength(2);
       expect(records(f.root).filter(event => event.event === 'Stop')).toHaveLength(2);
     } finally { f.cleanup(); }
@@ -230,7 +228,6 @@ describe('real Pi 1.2 tool pipeline with a scripted provider', () => {
       const result = session(nested, f.env, 'paths');
       for (const file of ['relative.txt', 'at.txt', 'url.txt', 'tilde.txt']) expect(existsSync(join(f.root, '_ops', file))).toBe(false);
       expect(readFileSync(join(f.root, 'normal.txt'), 'utf8')).toBe('tilde');
-      expect(result.journalPaths).toContain('normal.txt');
       expect(result.calls.filter((call: any) => call.name === 'write').map((call: any) => call.id)).toEqual(['normal-relative']);
       expect(result.calls.filter((call: any) => call.name === 'edit').map((call: any) => call.id)).toEqual(['normal-at', 'normal-url', 'normal-tilde']);
       expect(records(f.root).filter(event => event.event === 'PreToolUse')).toHaveLength(8);
@@ -244,8 +241,6 @@ describe('real Pi 1.2 tool pipeline with a scripted provider', () => {
       expect(readFileSync(join(f.root, 'alpha.txt'), 'utf8')).toBe('alpha');
       expect(readFileSync(join(f.root, 'beta.txt'), 'utf8')).toBe('beta');
       expect(existsSync(join(f.root, '_ops/parallel.txt'))).toBe(false);
-      expect(result.journalPaths).toContain('alpha.txt');
-      expect(result.journalPaths).toContain('beta.txt');
       const writes = result.calls.filter((call: any) => call.name === 'write');
       expect(writes).toHaveLength(2);
       expect(writes.every((call: any) => call.parent === 'parallel-parent')).toBe(true);
@@ -270,8 +265,6 @@ describe('real Pi 1.2 tool pipeline with a scripted provider', () => {
         expect(results[0].isError).toBe(true);
         expect(results[0].content[0].text).toContain('aborted');
       }
-      expect(result.journalPaths).toContain('cancelled.txt');
-      expect(result.journalPaths).toContain('README.md');
       expect(readFileSync(join(f.root, 'after-cancelled-writes.txt'), 'utf8')).toBe('later run');
       const events = records(f.root);
       const observed = events.filter(event => event.event === 'PostToolUse' && event.route_id === 'edit');
@@ -316,9 +309,6 @@ describe('real Pi 1.2 tool pipeline with a scripted provider', () => {
       expect(toolRuns).toHaveLength(2);
       expect(new Set(toolRuns).size).toBe(2);
       expect(stops.map(event => event.run_id)).toEqual(toolRuns);
-      // The custom run's Stop consumes the post-edit journal entry that its write queued.
-      expect(result.journalPaths).toContain('custom-run.txt');
-      expect(readPendingPostEditEvents(f.root)).toEqual([]);
     } finally { f.cleanup(); }
   }, 60_000);
 

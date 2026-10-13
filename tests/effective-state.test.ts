@@ -17,9 +17,6 @@ import {
 } from '../src/effects/state/resolve-effective-state';
 import { stateVersionOwnerPath } from '../src/effects/state/git-state-version-store';
 import { projectEffectiveStateSessionSection } from '../src/cli/hook/session-context';
-import { runMutationGuard } from '../src/cli/hook/mutation-guard';
-import { createStateInputCollector } from '../src/effects/loop/state-input-collector';
-import { hookIdentity } from './helpers/hook-identity';
 import type { EffectiveState } from '../src/core/state/types';
 import {
   CONTRACT,
@@ -783,7 +780,7 @@ describe('effective state resolver', () => {
       });
     }, 30_000);
 
-    describe('blocker causes reach state resolve --json and the hook output (#676)', () => {
+    describe('blocker causes reach state resolve --json and the SessionStart section (#676)', () => {
       function archcontextNode(id: string, include: string, extra: readonly string[] = ['summary: Fixture capability']): string {
         return [
           'schemaVersion: archcontext.node/v2',
@@ -822,23 +819,6 @@ describe('effective state resolver', () => {
         const session = projectEffectiveStateSessionSection(state)?.content ?? '';
         expect(session).toContain(cause.key);
         expect(session).toContain(`fix: ${cause.fix}`);
-
-        const guard = runMutationGuard({
-          collector: createStateInputCollector({
-            repoRoot: cwd,
-            resolveEffectiveState: (targetPaths) => ({
-              ok: true,
-              state: resolveEffectiveState(cwd, Date.now(), { targetPaths, operationKind: 'edit' }),
-            }),
-          }),
-          payload: { tool_input: { file_path: targetPath } },
-          identity: hookIdentity(),
-        });
-        expect(guard.exitCode).toBe(0);
-        expect(guard.stdout).toContain(`[WorkflowObservation] ${cause.key}; edit may continue.`);
-        expect(guard.stdout).toContain(`  Next: resolve blockers: ${cause.key} ${cause.code}: `);
-        expect(guard.stdout).toContain(cause.message);
-        expect(guard.stdout).toContain(`fix: ${cause.fix}`);
       }
 
       test('an unparseable JSON registry names INVALID_JSON and the validate command', () => {

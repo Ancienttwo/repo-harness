@@ -13,9 +13,7 @@ import {
   writeFixtureStateLock,
 } from './effective-state-fixture';
 import { resolveEffectiveState } from '../../src/effects/state/resolve-effective-state';
-import { runMutationGuard, type MutationGuardCollector } from '../../src/cli/hook/mutation-guard';
-import { createStateInputCollector } from '../../src/effects/loop/state-input-collector';
-import { resolveHookEffectiveState } from '../../src/cli/hook/runtime';
+import { runMutationGuard } from '../../src/cli/hook/mutation-guard';
 import { hookIdentity } from '../helpers/hook-identity';
 import type { EffectiveState } from '../../src/core/state/types';
 
@@ -187,7 +185,7 @@ describe('Effective State stability contract: authority-only partition (hook-gua
       // 'contract_plan_relationship' into conflictingSources, which
       // projectEffectiveState turns into the hard blocker
       // 'conflict:contract_plan_relationship'. State keeps the exact blocker;
-      // the ordinary edit adapter reports it as advice.
+      // the edit guard reads no workflow state and allows the edit.
       const current = readFileSync(join(fixture.cwd, CONTRACT), 'utf-8');
       writeFixture(fixture.cwd, CONTRACT, current.replace(
         /^> \*\*Plan\*\*: .*$/m,
@@ -200,19 +198,14 @@ describe('Effective State stability contract: authority-only partition (hook-gua
       });
       expect(directResolution.blockers).toContain('conflict:contract_plan_relationship');
 
-      const collector: MutationGuardCollector = createStateInputCollector({
-        repoRoot: fixture.cwd,
-        resolveEffectiveState: (targetPaths) =>
-          resolveHookEffectiveState(fixture.cwd, 'PreToolUse', targetPaths, {}, Date.now()),
-      });
       const result = runMutationGuard({
-        collector,
+        repoRoot: fixture.cwd,
         payload: { tool_input: { file_path: 'src/feature.ts' } },
         identity: hookIdentity(),
       });
 
       expect(result.exitCode).toBe(0);
-      expect(result.stdout).toContain('[WorkflowObservation] conflict:contract_plan_relationship; edit may continue.');
+      expect(result.stdout).toBe('');
       expect(result.stderr).toBe('');
     } finally {
       fixture.cleanup();

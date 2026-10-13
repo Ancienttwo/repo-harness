@@ -121,23 +121,6 @@ describe('createStateInputCollector: memoization', () => {
     expect(second).toBe(third);
   });
 
-  test('the first call target paths win; later calls reuse that resolution', () => {
-    const seen: (readonly string[])[] = [];
-    const collector = createStateInputCollector({
-      repoRoot: '/does/not/matter/for/this/getter',
-      resolveEffectiveState: (targetPaths) => {
-        seen.push(targetPaths);
-        return FIXED_RESOLUTION;
-      },
-    });
-
-    collector.getEffectiveState(['src/a.ts', 'src/b.ts']);
-    collector.getEffectiveState(['src/c.ts']);
-    collector.getEffectiveState();
-
-    expect(seen).toEqual([['src/a.ts', 'src/b.ts']]);
-  });
-
   test('a failed resolution is still cached (not retried)', () => {
     let calls = 0;
     const collector = createStateInputCollector({

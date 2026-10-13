@@ -223,14 +223,14 @@ describe('typed hook runtime', () => {
       const cases = [
         ['SessionStart', 'default', undefined, 'session-context'],
         ['PreToolUse', 'edit', JSON.stringify({ tool_input: { file_path: 'README.md' } }), 'mutation-guard'],
-        ['PreToolUse', 'subagent', JSON.stringify({ tool_name: 'Task', tool_input: { prompt: 'inspect' } }), 'subagent'],
-        ['PostToolUse', 'edit', JSON.stringify({ tool_input: { file_path: 'README.md' } }), 'mutation-observed'],
+        ['PreToolUse', 'subagent', JSON.stringify({ tool_name: 'Task', tool_input: { prompt: 'inspect' } }), 'return-channel'],
+        ['PostToolUse', 'edit', JSON.stringify({ tool_input: { file_path: 'README.md' } }), 'retired-observer'],
         ['PostToolUse', 'bash', JSON.stringify({ tool_input: { command: 'echo hi' }, tool_response: { stdout: 'hi\n', stderr: '', interrupted: false }, exit_code: 0 }), 'command-observed'],
-        ['PostToolUse', 'always', JSON.stringify({ hook_event_name: 'PostToolUse', tool_name: 'Read' }), 'trace-observer'],
+        ['PostToolUse', 'always', JSON.stringify({ hook_event_name: 'PostToolUse', tool_name: 'Read' }), 'retired-observer'],
         ['UserPromptSubmit', 'default', JSON.stringify({ prompt: 'review this' }), 'prompt'],
-        ['UserPromptSubmit', 'delegation', JSON.stringify({ prompt: 'implement next task' }), 'subagent'],
-        ['SubagentStart', 'context', JSON.stringify({ hook_event_name: 'SubagentStart' }), 'subagent'],
-        ['SubagentStop', 'quality', JSON.stringify({ hook_event_name: 'SubagentStop', final_message: 'inspected files and ran bun test; no risks identified' }), 'subagent'],
+        ['UserPromptSubmit', 'delegation', JSON.stringify({ prompt: 'implement next task' }), 'delegation-advisor'],
+        ['SubagentStart', 'context', JSON.stringify({ hook_event_name: 'SubagentStart' }), 'subagent-context'],
+        ['SubagentStop', 'quality', JSON.stringify({ hook_event_name: 'SubagentStop', last_assistant_message: 'inspected files and ran bun test; no risks identified' }), 'subagent-quality'],
         ['Stop', 'default', JSON.stringify({ stop_hook_active: false }), 'stop'],
       ] as const;
       for (const [event, routeId, input, handler] of cases) {
@@ -244,15 +244,15 @@ describe('typed hook runtime', () => {
     const root = repo();
     try {
       const cli = join(import.meta.dir, '..', '..', 'src', 'cli', 'index.ts');
-      const result = spawnSync(process.execPath, [cli, 'hook', 'PostToolUse', '--route', 'edit'], {
+      const result = spawnSync(process.execPath, [cli, 'hook', 'PreToolUse', '--route', 'edit'], {
         cwd: root,
         env: env(root, 'codex'),
-        input: `${JSON.stringify({ session_id: 'fallback-session', tool_input: { file_path: join(root, 'README.md') } })}\n`,
+        input: `${JSON.stringify({ session_id: 'fallback-session', tool_input: { file_path: join(root, '_ops/secret.env') } })}\n`,
         encoding: 'utf8',
       });
-      expect(result.status).toBe(0);
-      const pending = join(root, '.ai', 'harness', 'journal', 'post-edit', 'pending');
-      expect(readdirSync(pending).filter((name) => name.endsWith('.json'))).toHaveLength(1);
+      // Only the forwarded payload names this target; without stdin the guard would refuse a missing path instead.
+      expect(result.status).toBe(2);
+      expect(result.stderr).toContain('[OpsPrivateGuard] _ops/secret.env is under _ops/');
     } finally { clean(root); }
   }, 30_000);
 

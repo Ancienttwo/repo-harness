@@ -71,10 +71,6 @@ function formatDisplay(date: Date): string {
   return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())} ${pad2(date.getHours())}:${pad2(date.getMinutes())}:${pad2(date.getSeconds())}`;
 }
 
-function formatCompact(date: Date): string {
-  return `${date.getFullYear()}${pad2(date.getMonth() + 1)}${pad2(date.getDate())}T${pad2(date.getHours())}${pad2(date.getMinutes())}${pad2(date.getSeconds())}`;
-}
-
 function yymmdd(date: Date): string {
   return `${String(date.getFullYear()).slice(-2)}${pad2(date.getMonth() + 1)}${pad2(date.getDate())}`;
 }
@@ -261,15 +257,6 @@ function nextAction(repoRoot: string, artifacts: RecoveryArtifactPaths): Recover
   };
 }
 
-function recentCommands(repoRoot: string): string {
-  try {
-    const lines = readFileSync(join(repoRoot, '.claude/.trace.jsonl'), 'utf8').trimEnd().split('\n').slice(-5);
-    return lines.length > 0 && lines.some(Boolean) ? lines.map((line) => `- ${line}`).join('\n') : '- (none captured)';
-  } catch {
-    return '- (none captured)';
-  }
-}
-
 function supersededPlan(repoRoot: string): string {
   const state = readJson(join(repoRoot, '.claude/.task-state.json'));
   return typeof state?.source_plan === 'string' && state.source_plan ? state.source_plan : '(none)';
@@ -331,7 +318,8 @@ function latestGlobalHandoff(codexHome: string): string {
 export interface RecoveryWorkflowContext {
   readonly repoRoot: string;
   readonly reason: string;
-  readonly runId: string;
+  /** The hook identity's run; null when the host sent none. */
+  readonly runId: string | null;
   readonly generatedAtDisplay: string;
   readonly generatedAtIso: string;
   readonly workingDirectory: string;
@@ -342,12 +330,10 @@ export interface RecoveryWorkflowContext {
   readonly nextTask: string;
   readonly goal: string;
   readonly changed: { readonly files: string; readonly summary: string };
-  readonly recentCommandsText: string;
   readonly supersedes: string;
   readonly paths: {
     readonly handoff: string;
     readonly resume: string;
-    readonly events: string;
     readonly runsDir: string;
     readonly policyFile: string;
     readonly contextMap: string;
@@ -361,7 +347,7 @@ export interface BuildRecoveryContextOptions {
   readonly reason?: string;
   readonly now?: () => Date;
   readonly codexHome?: string;
-  /** The hook identity's run; a missing run mints a local one. */
+  /** The hook identity's run. Nothing mints one; a missing run renders as `(unresolved)`. */
   readonly runId?: string | null;
 }
 
@@ -380,13 +366,12 @@ export function buildRecoveryContext(
   const config = policy(repoRoot);
   const handoff = safeHarnessPath(nestedString(config, ['harness', 'handoff_file']), '.ai/harness/handoff/current.md');
   const resume = safeHarnessPath(nestedString(config, ['handoff_resume', 'resume_packet_file']), '.ai/harness/handoff/resume.md');
-  const events = safeHarnessPath(nestedString(config, ['harness', 'events_file']), '.ai/harness/events.jsonl');
   const runsDir = safeHarnessPath(nestedString(config, ['harness', 'runs_dir']), '.ai/harness/runs');
   const policyFile = '.ai/harness/policy.json';
   const contextMap = safeHarnessPath(nestedString(config, ['context', 'map_file']), '.ai/context/context-map.json');
   const researchDir = nestedString(config, ['tasks', 'research_dir']) || 'docs/researches';
   const todoFile = safeHarnessPath(nestedString(config, ['tasks', 'todo_file']), 'tasks/todos.md');
-  const runId = options.runId ?? `run-${formatCompact(now)}-${process.pid}`;
+  const runId = options.runId ?? null;
   const artifacts = recoveryArtifacts(repoRoot, activePlan);
   const changed = changedFiles(repoRoot);
   const sourcePlan = todoSourcePlan(repoRoot);
@@ -415,9 +400,8 @@ export function buildRecoveryContext(
     nextTask,
     goal,
     changed,
-    recentCommandsText: recentCommands(repoRoot),
     supersedes: supersededPlan(repoRoot),
-    paths: { handoff, resume, events, runsDir, policyFile, contextMap, researchDir, todoFile },
+    paths: { handoff, resume, runsDir, policyFile, contextMap, researchDir, todoFile },
     globalHandoffPath: latestGlobalHandoff(codexHome),
   };
 }
@@ -601,10 +585,6 @@ export function renderRecoveryHandoff(
     context.changed.files,
     '```',
     '',
-    '## Commands Run',
-    '',
-    context.recentCommandsText,
-    '',
     '## Evidence',
     '',
     ...evidenceLines(evidence),
@@ -647,7 +627,7 @@ export function renderRecoveryHandoff(
     `- Next action stage: ${context.action.stage}`,
     `- Next recommended action: ${context.nextTask}`,
     `- Working tree: ${context.changed.summary}`,
-    `- Parent Run ID: ${context.runId}`,
+    `- Parent Run ID: ${context.runId ?? '(unresolved)'}`,
     `- Supersedes: ${context.supersedes}`,
     '',
     '## Changed Files',
@@ -818,8 +798,8 @@ export function updateGlobalHandoffFile(codexHome: string, repoKey: string, sect
 
 // ---------------------------------------------------------------------------
 // Orchestrator: content only, no disk write for handoff/resume themselves --
-// callers keep their own write path (`StopProjectionBatch.commit()`'s
-// existing `atomicWrite`, or the CLI command's own writer).
+// callers keep their own write path (the Stop handler's `atomicWrite`, or the
+// recovery-view-cli adapter's writer).
 // ---------------------------------------------------------------------------
 
 export interface MaterializeRecoveryViewsResult {

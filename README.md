@@ -188,9 +188,9 @@ release line have no supported historical proof and remain report-only.
 
 - **File-backed sessions, not chat memory.** Separate Claude and Codex sessions
   stay coordinated through the repo. `SessionStart` injects the prior session's
-  resume packet, `Stop` writes the handoff, and each edit records a small journal
-  event. A session can end mid-task and the next one resumes the exact next step,
-  blockers, and changed files without re-deriving them.
+  resume packet, and `Stop` writes the handoff and resume views. A session can
+  end mid-task and the next one resumes the exact next step, blockers, and
+  changed files without re-deriving them.
 - **Token-lean by design.** Instead of grep-and-read loops that re-scan the repo
   every session, the harness leans on a pre-built CodeGraph index for structural
   queries and on progressive context loading: a stable ~12KB root context plus
@@ -319,11 +319,11 @@ flowchart TD
   CurrentTree --> Implement
   ContractRun --> Changes
 
-  Implement["Edit and run commands"] --> PreHooks["Pre-edit guards<br/>PlanStatusGuard, ContractScopeGuard, WorktreeGuard"]
-  PreHooks -->|blocked| ScopeFix["Fix plan, contract, worktree, or scope"]
+  Implement["Edit and run commands"] --> PreHooks["Pre-edit guards<br/>RepoScopeGuard, ExternalReferenceGuard, OpsPrivateGuard"]
+  PreHooks -->|blocked| ScopeFix["Fix the target path"]
   ScopeFix --> Implement
   PreHooks -->|allowed| Changes["Code, docs, tests, or config changes"]
-  Changes --> PostHooks["Post-edit and post-bash hooks<br/>trace, handoff, check evidence"]
+  Changes --> PostHooks["Bash observer and Stop hook<br/>repair circuit, owed architecture, handoff"]
   PostHooks --> ArchUpdate["Explicit architecture update<br/>archctx ChangeSet when responsibilities change<br/>architecture-projection apply"]
   ArchUpdate --> Verify["Run verification<br/>tests plus repo workflow checks"]
 
@@ -457,13 +457,14 @@ Repo-local `.claude/settings.json` and `.codex/hooks.json` are legacy config to
 retire. Debug in order: adapter config -> `repo-harness-hook` -> route registry
 -> typed handler.
 
-When a hook blocks work, read the structured terminal output first: `guard`,
-`reason`, `fix`, `failure_class`, and `run_id`. Durable records live in
-`.ai/harness/failures/latest.jsonl`, with surrounding tool activity in
-`.claude/.trace.jsonl`. The common guards are `PlanStatusGuard` (no active or
-executable plan), `ContractGuard` (missing contract scaffold, or completion
-claimed before the contract passed), and `WorktreeGuard` (writes from the wrong
-worktree). Full playbook:
+When a hook blocks work, read the terminal output first: one `[<Guard>] <reason>`
+line and one `Fix:` line. The durable record in
+`.ai/harness/failures/latest.jsonl` carries `guard`, `reason`, `fix`,
+`failure_class`, and `run_id`. `.ai/harness/runs/hook-events.jsonl` records
+each hook event. The edit guards are `RepoScopeGuard` (a path outside the
+repository), `ExternalReferenceGuard` (`_ref/`), `OpsPrivateGuard` (`_ops/`),
+and `ApplyPatchScopeGuard` and `EditScopeGuard` (no parseable target path).
+Full playbook:
 [`docs/reference-configs/hook-operations.md`](docs/reference-configs/hook-operations.md).
 
 ### Pi 1.2.0 package

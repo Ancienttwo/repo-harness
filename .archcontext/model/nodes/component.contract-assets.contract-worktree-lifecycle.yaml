@@ -6,7 +6,7 @@ status: active
 parent: capability.workflow-engine.contract-assets
 summary: Starts, finishes, publishes and archives contract work packages in task worktrees behind the local merge gate.
 responsibilities:
-  - Create and recover task worktrees under the worktree topology lock.
+  - Create and recover task worktrees and sweep merged managed worktrees at start under the worktree topology lock.
   - Seal a work package and publish one commit per work package to the target.
   - Run the local merge gate with the enable bit read from the target base commit.
   - Run contract briefs and archive finished workflow artifacts.

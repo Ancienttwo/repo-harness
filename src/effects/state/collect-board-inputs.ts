@@ -77,8 +77,7 @@ export function readActiveSprintPath(cwd: string): string | null {
  * The policy read is local rather than shared because the existing reader in
  * `resolve-effective-state.ts` is private to that module and that file is
  * outside this work package's allowed paths -- the same reason
- * `mutation-guard.ts`, `mutation-observed.ts`, and `session-context.ts` each
- * carry their own `policyGet`.
+ * `session-context.ts` carries its own `policyGet`.
  */
 export function readCanonicalTargetRef(cwd: string): string {
   const text = readText(cwd, POLICY_PATH);

@@ -85,32 +85,17 @@ function buildCapabilityProjection(): ProjectionFileRecord {
   };
 }
 
-function buildRecoveryProjection(): ProjectionFileRecord {
-  const readerPath = "src/effects/evidence/checkpoint-snapshot.ts";
-  const reader = readFileSync(join(REPO_ROOT, readerPath), "utf8");
-  const script = readFileSync(join(CANONICAL_ROOT, "recovery-view-cli.ts"), "utf8");
-  const importLine = 'import { readCheckpointSnapshot } from "../src/effects/evidence/checkpoint-snapshot";';
-  if (script.split(importLine).length !== 2) throw new Error("recovery helper must import the canonical snapshot reader exactly once");
-  const adapter = script.replace("#!/usr/bin/env bun\n", "").replace(importLine, "");
-  const sourceHash = createHash("sha256").update(reader).digest("hex");
-  return {
-    relPath: "recovery-view-cli.ts",
-    bytes: Buffer.from([
-      "#!/usr/bin/env bun",
-      `// @generated-from ${readerPath} sha256:${sourceHash}`,
-      "// Regenerate with scripts/sync-helper-sources.ts; do not edit by hand.",
-      reader.trimEnd(), adapter.trim(), "",
-    ].join("\n")),
-    mode: "100755",
-  };
-}
-
-function buildAcceptanceProjection(): ProjectionFileRecord {
-  const file = readProjectionFile(CANONICAL_ROOT, "acceptance-receipt.ts");
+/**
+ * The package runs helpers from scripts/, where `../src` resolves. The
+ * assets/templates/helpers projection sits three levels below the package root,
+ * so its one import of a canonical src module is rebased there.
+ */
+function buildPackageImportProjection(name: string, importPath: string): ProjectionFileRecord {
+  const file = readProjectionFile(CANONICAL_ROOT, name);
   const source = file.bytes.toString("utf8");
-  const importPath = "from '../src/effects/state/readonly-observation';";
-  if (source.split(importPath).length !== 2) throw new Error("acceptance helper must import the canonical observation owner exactly once");
-  return { ...file, bytes: Buffer.from(source.replace(importPath, "from '../../../src/effects/state/readonly-observation';")) };
+  if (source.split(importPath).length !== 2) throw new Error(`${name} must import its canonical src module exactly once`);
+  const rebased = importPath.replace(/(["'])\.\.\/src\//, "$1../../../src/");
+  return { ...file, bytes: Buffer.from(source.replace(importPath, rebased)) };
 }
 
 function main(): void {
@@ -133,9 +118,9 @@ function main(): void {
     return name === CAPABILITY_HELPER
       ? buildCapabilityProjection()
       : name === "recovery-view-cli.ts"
-        ? buildRecoveryProjection()
+        ? buildPackageImportProjection(name, 'from "../src/effects/evidence/recovery-materializer";')
         : name === "acceptance-receipt.ts"
-          ? buildAcceptanceProjection()
+          ? buildPackageImportProjection(name, "from '../src/effects/state/readonly-observation';")
           : readProjectionFile(CANONICAL_ROOT, name);
   }).filter((file) => file !== null);
 

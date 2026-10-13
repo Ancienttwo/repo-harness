@@ -156,9 +156,8 @@ repo-harness mcp uninstall --services-stopped # after stopping all MCP HTTP serv
 - **Sesiones respaldadas por archivos, no por historial de chat.** Las
   sesiones separadas de Claude y Codex se mantienen coordinadas a través del
   repositorio. `SessionStart` inyecta el resume packet de la sesión anterior,
-  `Stop` escribe el handoff, y cada edición registra un pequeño evento de
-  bitácora. Una sesión puede terminar a mitad de tarea, y la siguiente retoma
-  exactamente el próximo paso, los blockers y los archivos modificados, sin
+  y `Stop` escribe el handoff y el resume. Una sesión puede terminar a mitad
+  de tarea, y la siguiente retoma exactamente el próximo paso, los blockers y los archivos modificados, sin
   tener que volver a inferirlos.
 - **Ahorro de tokens por diseño.** En lugar de bucles de grep-and-read que
   reescanean el repositorio en cada sesión, el harness se apoya en un índice
@@ -299,11 +298,11 @@ flowchart TD
   CurrentTree --> Implement
   ContractRun --> Changes
 
-  Implement["Edit and run commands"] --> PreHooks["Pre-edit guards<br/>PlanStatusGuard, ContractScopeGuard, WorktreeGuard"]
-  PreHooks -->|blocked| ScopeFix["Fix plan, contract, worktree, or scope"]
+  Implement["Edit and run commands"] --> PreHooks["Pre-edit guards<br/>RepoScopeGuard, ExternalReferenceGuard, OpsPrivateGuard"]
+  PreHooks -->|blocked| ScopeFix["Fix the target path"]
   ScopeFix --> Implement
   PreHooks -->|allowed| Changes["Code, docs, tests, or config changes"]
-  Changes --> PostHooks["Post-edit and post-bash hooks<br/>trace, handoff, check evidence"]
+  Changes --> PostHooks["Bash observer and Stop hook<br/>repair circuit, owed architecture, handoff"]
   PostHooks --> ArchUpdate["Explicit architecture update<br/>archctx ChangeSet when responsibilities change<br/>architecture-projection apply"]
   ArchUpdate --> Verify["Run verification<br/>tests plus repo workflow checks"]
 
@@ -434,13 +433,14 @@ esos hooks corran. `.claude/settings.json` y `.codex/hooks.json` repo-locales
 son config legacy a retirar. Depura en este orden: adapter config ->
 `repo-harness-hook` -> route registry -> typed handler.
 
-Cuando un hook bloquea el trabajo, lee primero el structured terminal
-output: `guard`, `reason`, `fix`, `failure_class`, y `run_id`. Los registros
-durables viven en `.ai/harness/failures/latest.jsonl`, con la actividad de
-tools circundante en `.claude/.trace.jsonl`. Los guards comunes son
-`PlanStatusGuard` (no hay plan activo o ejecutable), `ContractGuard` (falta
-el contract scaffold, o se afirma completion antes de que el contract
-pasara), y `WorktreeGuard` (escrituras desde el worktree equivocado).
+Cuando un hook bloquea el trabajo, lee primero la salida del terminal: una
+línea `[<Guard>] <reason>` y una línea `Fix:`. El registro durable en
+`.ai/harness/failures/latest.jsonl` lleva `guard`, `reason`, `fix`,
+`failure_class`, y `run_id`. `.ai/harness/runs/hook-events.jsonl` registra
+cada evento de hook. Los edit guards son `RepoScopeGuard` (una ruta fuera del
+repositorio), `ExternalReferenceGuard` (`_ref/`), `OpsPrivateGuard`
+(`_ops/`), y `ApplyPatchScopeGuard` y `EditScopeGuard` (sin una ruta de
+destino legible).
 Playbook completo:
 [`docs/reference-configs/hook-operations.md`](docs/reference-configs/hook-operations.md).
 

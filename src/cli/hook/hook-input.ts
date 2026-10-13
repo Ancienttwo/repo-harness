@@ -1,5 +1,3 @@
-import { realpathSync } from 'fs';
-import { basename, dirname } from 'path';
 import type { RouteHost } from './route-registry';
 
 /**
@@ -62,33 +60,15 @@ export function payloadIdentityField(payload: HookPayload, key: string): string 
 }
 
 /**
- * Make a host-reported absolute path repository relative. Paths outside the
- * repository stay absolute; the host may report a symlinked temp directory for
- * a file that does not exist yet, so only the parent is resolved.
+ * The hook identity is the payload's own `session_id`, `run_id` and
+ * `turn_id`. No environment alias is read, and no id is minted or stored: a
+ * missing value stays null.
  */
-export function normalizeRepoRelativePath(repoRoot: string, raw: string): string {
-  if (!raw || !raw.startsWith('/')) return raw;
-  if (raw === repoRoot || raw.startsWith(`${repoRoot}/`)) return raw.slice(repoRoot.length + 1);
-
-  let rootReal = '';
-  try {
-    rootReal = realpathSync(repoRoot);
-  } catch {
-    rootReal = '';
-  }
-  if (rootReal && (raw === rootReal || raw.startsWith(`${rootReal}/`))) {
-    return raw.slice(rootReal.length + 1);
-  }
-  try {
-    const canonical = `${realpathSync(dirname(raw))}/${basename(raw)}`;
-    if (rootReal && (canonical === rootReal || canonical.startsWith(`${rootReal}/`))) {
-      return canonical.slice(rootReal.length + 1);
-    }
-    if (canonical === repoRoot || canonical.startsWith(`${repoRoot}/`)) {
-      return canonical.slice(repoRoot.length + 1);
-    }
-  } catch {
-    // An unresolvable parent keeps the original absolute path.
-  }
-  return raw;
+export function hookIdentity(payload: HookPayload, host: RouteHost): HookIdentity {
+  return {
+    host,
+    sessionId: payloadIdentityField(payload, 'session_id'),
+    runId: payloadIdentityField(payload, 'run_id'),
+    turnId: payloadIdentityField(payload, 'turn_id'),
+  };
 }
