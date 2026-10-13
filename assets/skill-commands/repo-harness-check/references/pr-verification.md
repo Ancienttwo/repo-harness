@@ -1,8 +1,33 @@
 # Check Reference: PR Verification
 
-Use before the merge of a PR that the current task did not author, such as an
-external contributor PR or a PR that another agent opened. The result is a
-ready-for-GO bundle. This pass does not merge, push or post.
+Classify every PR first. Use the rest of this reference only for an external PR.
+The result is a ready-for-GO bundle. This pass does not merge, push or post.
+
+## Classification
+
+This is the single rule. Run:
+
+```bash
+gh pr view <pr> --json author,isCrossRepository,headRepositoryOwner
+gh repo view --json owner --jq .owner.login
+```
+
+The allowlist is the repository owner login plus the logins in a root
+`AGENTS.md` line `Internal PR authors: <login>, <login>`. Without that line,
+the allowlist is the owner login only.
+
+The PR is external when any one of these is true:
+
+- `isCrossRepository` is `true`, so the head is in a fork.
+- `headRepositoryOwner.login` is not the repository owner login.
+- `author.login` is not in the allowlist.
+- A command fails, or a field is missing or empty.
+
+Otherwise the PR is internal. There is no third class. Treat an ambiguous
+result as external. Do not classify from the title, branch, labels or body.
+Record the command output in the bundle.
+
+An internal PR uses the normal merge flow and does not use this reference.
 
 ## Protocol
 
@@ -48,6 +73,7 @@ ready-for-GO bundle. This pass does not merge, push or post.
 ## Ready-for-GO Bundle
 
 - PR number, reviewed head SHA and base SHA.
+- Classification: external, with the `gh` output that decided it.
 - Hazard-scan result: clean, or stop with each `file:line`.
 - Commands, exit codes, output excerpts and log paths.
 - Break-it result: red without the fix, green with the fix.

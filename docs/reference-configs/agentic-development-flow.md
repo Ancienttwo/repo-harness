@@ -9,7 +9,7 @@
 2. Open a branch; isolate a worktree when concurrent edits overlap. Preserve unrelated work.
 3. Make small, bounded commits. Ordinary tasks live in the PR description: goal, changes, verification, risk and rollback.
 4. Freeze the candidate and verify once: typecheck plus affected tests. Reviewers and closeout consume the same evidence.
-5. A model may squash-merge into main only when the current task explicitly authorizes main publication, automatic checks pass, and GitHub has no outstanding change requests or unresolved review threads. An explicit no-merge instruction always wins. Record the GitHub merge SHA and parent SHA. Record `git revert --no-edit <squash-commit>`. Do not create rollback tags. A PR that needs GO also follows the GO rule in [Four operation boundaries](#four-operation-boundaries).
+5. A model may squash-merge into main only when the current task explicitly authorizes main publication, automatic checks pass, and GitHub has no outstanding change requests or unresolved review threads. An explicit no-merge instruction always wins. Record the GitHub merge SHA and parent SHA. Record `git revert --no-edit <squash-commit>`. Do not create rollback tags.
 6. Run the full suite daily, automatically open a repair task on failure, and produce the daily merge/check/rollback report. Run the [Lessons Retro](#lessons-retro) in the same nightly window.
 7. Use the [Report SOP](#report-sop) for formal progress, phase and final reports to the user, including the daily user summary. Raw automated CI reports are evidence inputs; they do not replace that summary and do not require this format.
 
@@ -41,11 +41,19 @@
 - For a repeat, copy the `Mistake pattern` text exactly. Maintenance triage groups entries by that text. `Seen` counts the entries with that text, this entry included. Do not edit `Seen` on older entries.
 - At `Seen: 3×`, the lesson occurred on three different days. Promote its prevention rule into root `AGENTS.md` and root `CLAUDE.md` in the same PR. Add `- Promoted: <PR>` to that entry.
 - Each retro advances the watermark to the last reviewed commit, also when it finds no lesson. If an earlier retro PR is still open, update that PR. Do not open a second retro PR.
-- Every change to `tasks/lessons.md` goes through a PR and merges only after GO. Lessons are not task notes. Ordinary tasks still write notes only for non-obvious decisions. A correction in a task can add an entry; that entry follows the same PR and GO rule.
+- Every change to `tasks/lessons.md` goes through a PR and merges only after GO. GO is an explicit go-ahead from the repository owner (Aimpact for repo-harness) for one reviewed head SHA. Task-level publication authorization does not replace it. Merge with `gh pr merge <pr> --squash --match-head-commit <reviewed-sha>`. Lessons are not task notes. Ordinary tasks still write notes only for non-obvious decisions. A correction in a task can add an entry; that entry follows the same PR and GO rule.
+
+## Internal and external PRs
+Every PR is internal or external, never both. Classify it with the single rule in the `repo-harness-check` reference `references/pr-verification.md`, section Classification. An ambiguous result is external.
+
+### Internal PR flow
+An internal PR uses Daily Flow step 5 and the main-merge boundary in [Four operation boundaries](#four-operation-boundaries). The external PR flow does not apply to it. A `tasks/lessons.md` change also follows the GO rule in [Lessons Retro](#lessons-retro).
+
+### External PR flow
+An external PR never uses the internal flow. A worker produces the ready-for-GO bundle from `references/pr-verification.md`. The PR merges only after automated checks pass and the repository owner gives an explicit GO for the reviewed head SHA. Merge with `gh pr merge <pr> --squash --match-head-commit <reviewed-sha>`. A new head SHA needs a new bundle and a new GO.
 
 ## Four operation boundaries
 - Main merge requires explicit current-task authorization, current automated checks, no outstanding change requests or unresolved review threads, exact head/base and conflict safety.
-- GO is an explicit go-ahead from the repository owner (Aimpact for repo-harness) for one reviewed head SHA. Task-level publication authorization does not replace it. A PR that the current task did not author, such as an external or other-agent PR, needs the `repo-harness-check` PR verification bundle and GO. A change to `tasks/lessons.md` needs GO. Merge these PRs with `gh pr merge <pr> --squash --match-head-commit <reviewed-sha>`.
 - Only merged, clean, inactive worktrees/branches may be deleted automatically; other deletion requires the user.
 - Credentials, permissions, sandbox/write grants and confirmation-bypass settings require user approval of the exact change.
 - Release and production effects require user approval of the exact artifact and operation.
