@@ -102,7 +102,8 @@ if [[ "$lane" == architecture-advisory ]]; then
   if [[ "$owed_status" -eq 0 ]]; then
     owed_ids="$(bun -e 'const r = JSON.parse(await Bun.file(process.argv[1]).text()); if (r.kind !== "repo-harness-owed-capabilities") throw new Error("not an owed-capabilities report"); console.error(`[ci] Owed status: ${r.status}`); if (r.status === "owed") console.log(r.capabilities.map(c => c.id).join(", "));' "$owed_json" 2>> "$owed_err")" || owed_status=$?
   fi
-  cat "$owed_err" >&2
+  # A workflow command must start its own line, so end the output with a newline.
+  printf '%s\n' "$(cat "$owed_err")" >&2
   if [[ "$owed_status" -ne 0 ]]; then
     warn "Architecture owed check failed" "repo-harness state owed --json --base $base failed: $(tail -n 5 "$owed_err")"
   fi
@@ -117,7 +118,7 @@ if [[ "$lane" == architecture-advisory ]]; then
   arch_json="$(mktemp /tmp/rh-arch-check-XXXXXX)"
   run_architecture_check "$arch_json" || true
   arch_line="$(bun -e 'const r = JSON.parse(await Bun.file(process.argv[1]).text()); console.log([r.status, (r.freshness?.staleNodes ?? []).map(n => n.nodeId).join(", ") || "none"].join("\t"));' "$arch_json")" || arch_line=""
-  cat "$arch_json"
+  printf '%s\n' "$(cat "$arch_json")"
   rm -f "$arch_json"
   if [[ -z "$arch_line" ]]; then
     warn "Architecture check failed" "repo-harness architecture-projection check --json returned no result. Read the job log. Owed capabilities: $owed_ids."
