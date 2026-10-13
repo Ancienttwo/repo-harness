@@ -83,4 +83,8 @@
 
 ## Publication status
 
-- Status: prepared. Not published.
+- Status: not published. Superseded by 0.22.1.
+- The `v0.22.0` tag exists. npm and GitHub Releases have no 0.22.0. The
+  tarball smoke for 0.22.1 found that a fresh install resolves Pi 1.2.0,
+  which the 0.22.0 extension refuses. The owner chose to publish 0.22.1
+  instead. See `261013-repo-harness-0.22.1.md`.
