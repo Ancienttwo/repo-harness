@@ -119,14 +119,13 @@ export default function repoHarnessPi(pi: ExtensionAPI): void {
   pi.on('before_agent_start', async (event, ctx) => {
     const state = current;
     if (!state || !state.optedIn) return;
-    // Every agent run ends with Stop, which consumes the post-edit journal.
+    state.runId = `run-pi-${randomUUID()}`;
     state.pendingStop = true;
     state.stop = null;
-    // Pi 1.2.0 also starts a run for an idle custom message with triggerTurn.
-    // Only a user prompt is a UserPromptSubmit; a custom run keeps the current run.
-    if (event.messageType !== 'user') return;
-    state.runId = `run-pi-${randomUUID()}`;
     state.tools.clear();
+    // Pi 1.2.0 also starts a run for an idle custom message with triggerTurn.
+    // That run gets its own run ID and Stop; only a user prompt is a UserPromptSubmit.
+    if (event.messageType !== 'user') return;
     let output: HookJsonOutput | null = null;
     try {
       output = await invoke(state, 'UserPromptSubmit', 'default', { prompt: event.prompt }, state.runId, ctx.signal);

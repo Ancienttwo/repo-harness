@@ -8,14 +8,8 @@ All notable changes to this skill are documented here.
 
 - The Pi host extension now requires Pi `1.2.0` exactly. Pi `1.1.0` fails
   with `PI_HOOK_UNSUPPORTED_VERSION`. Upgrade Pi to `1.2.0` with the
-  package. A Pi run started by a custom message keeps the current run and
-  is not a `UserPromptSubmit`.
-
-### Fixed
-
-- A Pi run started by a custom message now ends with its own `Stop`. Before,
-  its post-edit journal entries stayed pending until a later user run. This
-  gap also existed with Pi `1.1.0`.
+  package. A Pi run started by a custom message gets its own run ID and
+  Stop check. It is not a `UserPromptSubmit`.
 
 ### Changed
 

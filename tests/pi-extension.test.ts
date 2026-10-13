@@ -300,7 +300,7 @@ describe('real Pi 1.2 tool pipeline with a scripted provider', () => {
     } finally { f.cleanup(); }
   }, 60_000);
 
-  test('a custom-message run keeps the current run, is not a user prompt and ends with Stop', () => {
+  test('a custom-message run has its own lifecycle and is not a user prompt', () => {
     const f = fixture();
     try {
       const result = session(f.root, f.env, 'custom-turn');
@@ -311,12 +311,11 @@ describe('real Pi 1.2 tool pipeline with a scripted provider', () => {
       const events = records(f.root);
       expect(events.filter(event => event.event === 'UserPromptSubmit')).toHaveLength(1);
       const toolRuns = events.filter(event => event.event === 'PreToolUse').map(event => event.run_id);
+      const stops = events.filter(event => event.event === 'Stop');
       expect(toolRuns).toHaveLength(2);
-      expect(new Set(toolRuns).size).toBe(1);
-      // Each run, user or custom, ends with its own Stop. The custom run's Stop
-      // consumes the post-edit journal entry that its write queued.
-      expect(events.filter(event => ['PreToolUse', 'Stop'].includes(event.event)).map(event => [event.event, event.run_id]))
-        .toEqual([['PreToolUse', toolRuns[0]], ['Stop', toolRuns[0]], ['PreToolUse', toolRuns[0]], ['Stop', toolRuns[0]]]);
+      expect(new Set(toolRuns).size).toBe(2);
+      expect(stops.map(event => event.run_id)).toEqual(toolRuns);
+      // The custom run's Stop consumes the post-edit journal entry that its write queued.
       expect(result.journalPaths).toContain('custom-run.txt');
       expect(readPendingPostEditEvents(f.root)).toEqual([]);
     } finally { f.cleanup(); }
