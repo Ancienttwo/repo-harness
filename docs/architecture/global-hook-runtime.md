@@ -23,8 +23,10 @@ The boundary has four layers:
 3. `ROUTES` contains the 12 public `(event, routeId, matcher)` tuples. Every
    tuple has exactly one `handler`; there is no `scripts` field and no Bash
    host-event dispatcher.
-4. `handler-registry.ts` runs one typed in-process handler. `runtime.ts` owns
-   host output shaping and writes one event-level telemetry record.
+4. `handler-registry.ts` runs one typed in-process handler. The handler
+   returns a typed result. The `HOST_RENDERERS` table in `hook-protocol.ts`
+   renders it for Claude, Codex or Pi. `runtime.ts` writes one event-level
+   telemetry record.
 
 The only shell file left under `assets/hooks/` is
 `assets/hooks/lib/workflow-state.sh`. Consumer repositories and this source
@@ -40,20 +42,34 @@ For a Claude or Codex event, the path is:
 ```text
 host event
   -> managed user-level adapter command
-  -> resolve git root + opt-in marker
-  -> getRoute(event, routeId)
+  -> HOOK_HOST check
+  -> resolve root (HOOK_REPO_ROOT, else one git rev-parse) + opt-in marker
+  -> getRoute(event, routeId) + host support check
+  -> parse the payload once + resolve the identity once
   -> getHandlerForRoute(route)
   -> one typed handler.run(context)
-  -> hostOutput(result)
-  -> one loop-engine-hook-event/v1 record
+  -> HOST_RENDERERS[host](outcome)
+  -> one loop-engine-hook-event/v2 record
 ```
 
-The input payload is captured once by the CLI. The typed handler receives the
-payload, repository root, environment, and the event-scoped
-`StateInputCollector`. State reads are memoized at the collector boundary.
-Handlers return a structured result; they do not write directly to host file
-descriptors. `runtime.ts` decides whether Claude or Codex receives stdout,
-stderr, a decision envelope, or SessionStart context.
+The CLI reads the payload once. A malformed payload stops the event before any
+handler runs. The identity comes from the payload only: `session_id`,
+`run_id` and `turn_id`. When the payload has no `run_id`, the run is the one
+that SessionStart stored for the same `session_id`. No handler reads a
+session, run or turn environment variable.
+
+The typed handler receives the payload, the identity, the repository root, the
+environment and the event-scoped `StateInputCollector`. The collector resolves
+Effective State at most once per event. Handlers return a typed result with an
+exit code, an optional permission, optional model context and diagnostics.
+They do not write to host file descriptors. The host table renders the result:
+Claude and Codex get `hookSpecificOutput` on exit 0 and diagnostics on stderr;
+Pi gets one protocol 1 JSON object.
+
+A thrown handler exits 1, except the edit guard. The edit guard route is
+fail-closed: a throw exits 2 on Claude and Codex and gives `decision: block`
+on Pi. A missing `HOOK_HOST`, an unknown route and a route that is not
+installed for the host also stop before a handler runs.
 
 The public route inventory has 12 `(event, routeId, matcher)` tuples. The
 Host column of the route table in
@@ -131,9 +147,9 @@ The active threshold may be exceeded by the last record or concurrent appends;
 individual records larger than 8 MiB are rejected by the non-authoritative sink.
 No elapsed-time retention setting or operator configuration is required.
 
-The telemetry reader and the harness profile benchmark read the retained archive
+The harness profile benchmark reads the retained archive
 plus the active file as UTF-8 lines. Samples describe retained history, not
-lifetime history. An explicitly selected custom telemetry log is a single file.
+lifetime history.
 Rotation/retention and snapshot file opening share the existing owner-fenced
 lock; appends remain O_APPEND, and a renamed inode is never truncated. Readers
 open their descriptors under that lock and consume them unlocked, so subsequent
@@ -142,24 +158,23 @@ symlink targets are never pruned. Telemetry write failure cannot change hook
 safety. Existing large logs within the archive budget are preserved as one
 segment on their first rotation; no migration command or second writer exists.
 
-A valid handled event record has:
+A handled event record has protocol `loop-engine-hook-event/v2` and these
+fields: `event_id`, `started_at`, `completed_at`, `host`, `session_id`,
+`run_id`, `turn_id`, `event`, `route_id`, `exit_code`, `blocked`, `reason`,
+`elapsed_ms` and `fingerprint`.
 
-- protocol `loop-engine-hook-event/v1`;
-- `runtime_entries: 1`;
-- one ordered `in_process` handler step;
-- `child_processes: 0` for typed route dispatch;
-- `measurement.opaque_steps: []`.
+- `blocked` is true only for exit 2 or a deny decision.
+- `reason` is `handler-failed` only for a thrown handler, `invalid-payload`
+  for a malformed payload, `blocked` for a policy block, `handler-exit` for
+  another non-zero exit, or the handler's own reason. A policy denial and a
+  crash therefore never share a reason.
+- `session_id` is the same value that the SessionStart context budget
+  evidence records.
 
-The direct-child metric does not claim to count internal `git`, Bun, or OS
-processes that a handler may use. File, durable-write, and transaction counts
-are only evidence at boundaries where the handler supplies an explicit
-observer. Consumers must inspect `complete_metrics` and
-`incomplete_metrics`; they must not turn an unobserved file count into proof of
-complete filesystem coverage or infer provider calls from the event record.
-Telemetry append failure never changes hook safety, while malformed, duplicate,
-or incomplete records must not be used as complete runtime evidence.
-The telemetry reader reports invalid input, mixed protocols, and duplicate IDs.
-The one-time diet report script is retired.
+The record has no step, metric or measurement fields. Telemetry append failure
+never changes hook safety. The benchmark reader rejects a record from another
+protocol or with a missing `elapsed_ms`, `blocked` or `fingerprint`. The
+one-time diet report script is retired.
 
 ## P3 — Design decision
 

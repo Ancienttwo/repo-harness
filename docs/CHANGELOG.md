@@ -4,6 +4,29 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+### Breaking
+
+- The edit guard fails closed. A crash in `PreToolUse.edit` now exits 2 on
+  Claude and Codex and returns `decision: block` on Pi. Other routes keep
+  exit 1 for a crash. (#691)
+- `repo-harness-hook` requires `HOOK_HOST`. A missing host, a malformed
+  payload and a route that is not installed for the host now stop before a
+  handler runs. `SubagentStop --route quality` on Claude exits 2 with
+  `unsupported-host-route`. (#691)
+- Hook identity comes only from the payload `session_id`, `run_id` and
+  `turn_id`. Handlers no longer read `HOOK_SESSION_ID`, `HOOK_RUN_ID`,
+  `CLAUDE_*` or `CODEX_*` session, run or turn variables, `SESSION_KEY`,
+  `PROMPT`, `CLAUDE_FILE_PATH` or `HOOK_TOOL_NAME`. (#691)
+- Hook telemetry moves to `loop-engine-hook-event/v2`. A record has the
+  identity, `exit_code`, `blocked`, `reason`, `elapsed_ms` and
+  `fingerprint`. It has no step, metric, measurement or effect observation
+  fields. A policy block and a crash have different reasons. (#691)
+- The `review-subject`, `review-rubric`, `prompt-guard-decide`,
+  `prompt-route`, `minimal-change` and `circuit-breaker-record` hook
+  subcommands are removed. The
+  `repo-harness hook` command and `repo-harness-hook` share one dispatch
+  path. (#691)
+
 ### Removed
 
 - The source checkout no longer keeps a `.ai/hooks/` mirror of the hook
@@ -20,6 +43,12 @@ All notable changes to this skill are documented here.
 
 ### Changed
 
+- Every hook handler returns a typed result. One host table renders it for
+  Claude, Codex and Pi. Prompt advice now reaches Codex as
+  `additionalContext`. (#691)
+- A managed hook call uses `HOOK_REPO_ROOT` as the root and runs one git
+  process at most to resolve it. Effective State is resolved at most once
+  per event with one retry policy. (#691)
 - `assets/reference-configs/hook-operations.md` holds the one route table.
   It has 12 routes and a Host column. The five READMEs and
   `docs/architecture/global-hook-runtime.md` link to it. (#696)
