@@ -995,8 +995,12 @@ reads directly. Path ownership under `archcontext` comes only from the
 package-local `archctx resolve --paths-from`. One process resolves one batch of
 paths. It reads no daemon state and no CodeGraph index. The pre-edit hook,
 Effective State, `capability-resolver match` and `capability-context` all use
-this route. If archctx fails, the resolution is invalid, and Effective State
-reports the `capability_registry:invalid` blocker. The standalone helper copy
+this route. If archctx cannot run, Effective State reports the
+`capability_ownership:unavailable` blocker. A model fault or an ownership fault
+reports the `capability_registry:invalid` blocker. `profile_reasons` names the
+first diagnostic as `capability:diagnostic:<CODE>`. `next_action` and the edit
+hook show the message and the fix command. A read-only observation does not
+start archctx. It reports `capability_ownership:unavailable`. The standalone helper copy
 in `assets/templates/helpers/` has no package-local archctx, so its `match`
 fails closed under `archcontext`. Bun older than 1.3 has no `Bun.YAML`; that
 fails closed with upgrade guidance and only when `capability_source` is
@@ -1089,20 +1093,29 @@ hooks.
 ArchContext validation owns the `source.include` and `source.exclude` grammar.
 repo-harness does not check include shapes and does not interpret globs for
 ownership. Each include gives one literal anchor: the leading path segments
-before the first segment with a glob character. Anchors are for display and
-directory discovery only.
+before the first segment that contains `*` or `?`. These are the only
+ArchContext glob characters. `[`, `]`, `{`, `}` and `!` are literal. Anchors are
+for display and directory discovery only.
 
 | Include | Anchor |
 |---|---|
 | `src/core/adoption/**` | `src/core/adoption` |
 | `AGENTS.md` | `AGENTS.md` |
 | `src/core/state/coordination-*.ts` | `src/core/state` |
+| `src/app/[locale]/**` | `src/app/[locale]` |
 | `**/*.md` | none |
 
-A capability needs at least one include with an anchor. Two capabilities can
-share an anchor. Include order is preserved as anchor order, without
-duplicates. `capability-resolver match` reports the owner's first anchor as
-`matched_prefix`, because ArchContext does not report which include matched. An
+A capability without an anchor is valid. Lists show it by its node id. Two
+capabilities can share an anchor. Include order is preserved as anchor order,
+without duplicates. `capability-resolver match` reports the owner's stable node
+id as `matched_prefix`, because ArchContext does not report which include
+matched.
+
+Path ownership covers every capability node, whatever its status. Lists,
+anchors and contract files show only `active` capabilities. A path without an
+owner is reported as `capability:unowned:<n>`, with one
+`capability:unowned-path:<path>` entry for each path. An unowned path does not
+count as a capability. An
 existing directory is resolved as `<dir>/`, which asks ArchContext who owns its
 contents.
 

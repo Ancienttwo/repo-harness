@@ -444,15 +444,9 @@ function capabilityIdsForPaths(
   const inRepoPaths = paths.filter((path) => !isCapabilityPathOutsideRepo(path, cwd));
   const outOfRepoPathCount = paths.length - inRepoPaths.length;
   const mode = capabilitySourceMode(policy);
-  const registry = mode === 'registry'
-    ? loadRegistryAuthority(cwd, policy, readSource)
-    : loadArchcontextAuthority(cwd, readSource);
-  if (registry.status === 'absent') {
-    return { ids: [], registryStatus: 'absent', unmappedPaths: [], malformedEntryCount: 0, outOfRepoPathCount, blocker: null };
-  }
-  if (registry.status === 'invalid') {
+  const invalidAuthority = (diagnostics: readonly CapabilityRegistryDiagnostic[]): CapabilityResolution => {
     const malformedEntries = new Set(
-      registry.diagnostics
+      diagnostics
         .map((entry) => /^capabilities\[(\d+)\]/.exec(entry.path)?.[1])
         .filter((index): index is string => Boolean(index)),
     );
@@ -463,12 +457,22 @@ function capabilityIdsForPaths(
       unmappedPaths: [],
       malformedEntryCount: malformedEntries.size,
       outOfRepoPathCount,
-      blocker: capabilityOwnershipBlocker(registry.diagnostics[0]!, mode),
+      blocker: capabilityOwnershipBlocker(diagnostics[0]!, mode),
     };
+  };
+  let resolution: CapabilityPathResolution;
+  if (mode === 'registry') {
+    const registry = loadRegistryAuthority(cwd, policy, readSource);
+    if (registry.status === 'absent') {
+      return { ids: [], registryStatus: 'absent', unmappedPaths: [], malformedEntryCount: 0, outOfRepoPathCount, blocker: null };
+    }
+    if (registry.status === 'invalid') return invalidAuthority(registry.diagnostics);
+    resolution = resolveCapabilityPaths(registry.registry, inRepoPaths, { repoRoot: cwd });
+  } else {
+    const authority = loadArchcontextAuthority(cwd, readSource);
+    if (authority.status === 'invalid') return invalidAuthority(authority.diagnostics);
+    resolution = resolveArchcontextPaths(cwd, authority.owners, inRepoPaths, readSource);
   }
-  const resolution = 'owners' in registry
-    ? resolveArchcontextPaths(cwd, registry.owners, inRepoPaths, readSource)
-    : resolveCapabilityPaths(registry.registry, inRepoPaths, { repoRoot: cwd });
   if (resolution.status !== 'valid') {
     return {
       ids: [],
