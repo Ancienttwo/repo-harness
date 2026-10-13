@@ -3,18 +3,20 @@ id: capability.runtime-harness.task-agent-host
 kind: capability
 name: Task Agent Host
 status: active
-summary: Hosts persistent task-agent participants in Herdr panes with role profiles, task worktrees, request send, request-bound result collection and saved-request readback, and installs the Herdr notify plugin and the agent fleet personas.
+summary: Hosts persistent task-agent participants in Herdr panes with role profiles, task worktrees, request send, request-bound result collection, saved-request readback and OAR runtime observation, and installs the Herdr notify plugin and the agent fleet personas.
 responsibilities:
   - Start one persistent task agent per repository, task and role in a Herdr pane and record its binding.
   - Save each request before delivery and treat a lost response as unknown delivery that is never replayed.
   - Collect only a request-bound TaskResult validated by the owner and keep history as observation only.
   - Read one saved request by stable id without delivery, launch, collection or acceptance.
+  - Read request-bound OAR records with the SDK reducer and expose runtime observations without task acceptance.
   - Close Herdr workspaces and panes without removing Git checkouts.
   - Install the shipped Herdr notify plugin, the release-matched Herdr skill and the fleet persona definitions.
 source:
   include:
     - "src/effects/terminal/herdr.ts"
     - "src/effects/terminal/task-session.ts"
+    - "src/effects/terminal/task-runtime-observation.ts"
     - "src/effects/terminal/task-worktree.ts"
     - "src/effects/terminal/task-request-readback.ts"
     - "src/effects/terminal/task-role-profiles.ts"
