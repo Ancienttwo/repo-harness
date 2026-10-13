@@ -22,6 +22,8 @@ import { CLI_VERSION } from './status';
 import { runSecurityScan, type SecurityScanReport } from './security';
 import { isOptIn, resolveRepoRoot } from '../hook/runtime';
 import { ROUTES } from '../hook/route-registry';
+import { inspectWorkflowMarker } from '../../core/adoption/minimum-harness-version';
+import { capabilitySourceMode, readRegistry } from '../../../scripts/capability-resolver';
 
 const TRUST_STATE_LINE = /^\[hooks\.state\."[^"]+\/\.codex\/hooks\.json:/;
 const PACKAGE_NAME = 'repo-harness';
@@ -584,6 +586,46 @@ export function checkSkillProjection(target: DoctorTarget = 'both', env: NodeJS.
 
 }
 
+function policyDeclaresCapabilityRegistry(repoRoot: string): boolean {
+  const policyPath = path.join(repoRoot, '.ai/harness/policy.json');
+  if (!fs.existsSync(policyPath)) return false;
+  const policy = JSON.parse(fs.readFileSync(policyPath, 'utf-8')) as { context?: { capability_registry_file?: unknown } };
+  return policy.context?.capability_registry_file !== undefined;
+}
+
+/**
+ * Loads the repository capability authority with this installed runtime. The
+ * resolver and the hooks share the core registry parsers, so a model that this
+ * runtime cannot parse fails here and not only in every hook. Node files that
+ * exist are not proof that they load.
+ */
+function checkCapabilityRegistry(cwd: string): DoctorCheckResult {
+  const id = 'capability-registry';
+  const describe = 'This repo-harness runtime loads the repository capability model';
+  const repoRoot = resolveRepoRoot(cwd);
+  if (!repoRoot) return { id, describe, status: 'na', detail: 'not in a git repository' };
+  if (!isOptIn(repoRoot)) {
+    return { id, describe, status: 'na', detail: 'repo is not opted in (.ai/harness/workflow-contract.json missing)' };
+  }
+  // A declared newer minimum explains a parse error before the parser reports it.
+  const gate = inspectWorkflowMarker(repoRoot);
+  if (gate) return { id, describe, status: 'fail', detail: gate.message };
+  try {
+    const mode = capabilitySourceMode(repoRoot);
+    // Like the hooks, an undeclared absent JSON registry is not a fault.
+    if (mode === 'registry' && !fs.existsSync(path.join(repoRoot, '.ai/context/capabilities.json')) && !policyDeclaresCapabilityRegistry(repoRoot)) {
+      return { id, describe, status: 'na', detail: 'no capability registry is declared' };
+    }
+    const registry = readRegistry(repoRoot);
+    return { id, describe, status: 'ok', detail: `${mode} authority loads ${registry.capabilities.length} capabilities` };
+  } catch (error) {
+    return {
+      id, describe, status: 'fail',
+      detail: `${(error as Error).message}. Next: run repo-harness run capability-resolver validate --repo ${repoRoot} --format text; fix the model, or run repo-harness update when the model uses a shape that this runtime cannot read.`,
+    };
+  }
+}
+
 function checkLegacyWorkflowState(cwd: string): DoctorCheckResult {
   const id = 'legacy-workflow-state';
   const describe = 'Repository operator library uses the installed package';
@@ -625,6 +667,7 @@ export function runDoctor(cwd: string = process.cwd(), target: DoctorTarget = 'b
   checks.push(checkCodegraphIndex(codegraphProbe));
   checks.push(checkSecurityConfig(securityReport));
   checks.push(checkTypedHookRoutes(cwd));
+  checks.push(checkCapabilityRegistry(cwd));
   checks.push(checkLegacyWorkflowState(cwd));
   for (const plugin of REGISTERED_CHECKS) {
     const r = plugin.run();

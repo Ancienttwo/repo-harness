@@ -72,7 +72,7 @@ describe('typed hook runtime', () => {
       const cli = join(import.meta.dir, '..', '..', 'src', 'cli', 'index.ts');
       const spawned = spawnSync(process.execPath, [cli, 'hook', 'SessionStart', '--route', 'default'], { cwd: root, env: env(root), input: '', encoding: 'utf8' });
       expect(spawned.status).toBe(1);
-      expect(spawned.stderr).toContain('This repository requires repo-harness >= 999.0.0.');
+      expect(spawned.stderr).toContain('This repository needs repo-harness >= 999.0.0;');
       expect(spawned.stderr).toContain('Run `repo-harness update`');
       expect(`${spawned.stdout}${spawned.stderr}`).not.toContain('capability_registry:invalid');
     } finally { clean(root); }

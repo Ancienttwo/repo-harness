@@ -222,6 +222,39 @@ describe('doctor command (Phase 1C)', () => {
     });
   }, DOCTOR_CHECK_TIMEOUT_MS);
 
+  test('capability-registry loads the model and fails with the cause and the next step', () => {
+    withTempRepo({ optIn: true }, (repoRoot) => {
+      const registryCheck = () => runDoctor(repoRoot).checks.find((c) => c.id === 'capability-registry')!;
+      expect(registryCheck()).toMatchObject({ status: 'na', detail: 'no capability registry is declared' });
+
+      fs.writeFileSync(path.join(repoRoot, '.ai/harness/policy.json'), `${JSON.stringify({ context: { capability_source: 'archcontext' } })}\n`);
+      const nodes = path.join(repoRoot, '.archcontext/model/nodes');
+      fs.mkdirSync(nodes, { recursive: true });
+      // Node files exist, but this one has no status, so the model does not load.
+      fs.writeFileSync(path.join(nodes, 'capability.a.b.yaml'), 'schemaVersion: archcontext.node/v2\nid: capability.a.b\nkind: capability\n');
+      const invalid = registryCheck();
+      expect(invalid.status).toBe('fail');
+      expect(invalid.detail).toContain('malformed capability registry: .archcontext/model/nodes');
+      expect(invalid.detail).toContain('Next: run repo-harness run capability-resolver validate');
+
+      // A declared newer minimum names the upgrade, not the parse error.
+      fs.writeFileSync(path.join(repoRoot, '.ai/harness/workflow-contract.json'), `${JSON.stringify({ minimum_harness_version: '999.0.0' })}\n`);
+      const upgrade = registryCheck();
+      expect(upgrade.status).toBe('fail');
+      expect(upgrade.detail).toContain('This repository needs repo-harness >= 999.0.0;');
+      expect(upgrade.detail).not.toContain('malformed capability registry');
+    });
+  }, DOCTOR_CHECK_TIMEOUT_MS);
+
+  test('capability-registry is ok when the declared model loads', () => {
+    withTempRepo({ optIn: true }, (repoRoot) => {
+      fs.mkdirSync(path.join(repoRoot, '.ai/context'), { recursive: true });
+      fs.writeFileSync(path.join(repoRoot, '.ai/context/capabilities.json'), `${JSON.stringify({ version: 1, capabilities: [] })}\n`);
+      const check = runDoctor(repoRoot).checks.find((c) => c.id === 'capability-registry')!;
+      expect(check).toMatchObject({ status: 'ok', detail: 'registry authority loads 0 capabilities' });
+    });
+  }, DOCTOR_CHECK_TIMEOUT_MS);
+
   test('codex-trust-state reports n/a when ~/.codex/config.toml is missing', () => {
     withTempHome(() => {
       const r = runDoctor();

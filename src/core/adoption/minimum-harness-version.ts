@@ -73,12 +73,12 @@ export function inspectWorkflowMarker(
   } catch (error) {
     return {
       code: "harness-upgrade-required",
-      message: `This repository requires repo-harness >= ${minimum}, and the running version is unreadable (${(error as Error).message}). Run \`repo-harness update\`.`,
+      message: `This repository needs repo-harness >= ${minimum}, and the running version is unreadable (${(error as Error).message}). Run \`repo-harness update\`.`,
     };
   }
   if (Bun.semver.order(running, minimum) >= 0) return null;
   return {
     code: "harness-upgrade-required",
-    message: `This repository requires repo-harness >= ${minimum}. This hook runs repo-harness ${running}. Run \`repo-harness update\`, then start a new session.`,
+    message: `This repository needs repo-harness >= ${minimum}; the running repo-harness is ${running}. Run \`repo-harness update\`, then start a new session.`,
   };
 }
