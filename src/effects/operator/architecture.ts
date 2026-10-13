@@ -33,7 +33,9 @@ export function readArchitecture(input: ArchitectureRequest, env?: NodeJS.Proces
     try { reader.resolveCommit(input.base); reader.resolveCommit(input.head); }
     catch { throw new ModuleReadError('commit_not_found'); }
   }
-  const packet = reader.reviewPrompt(input.capability_id, { shard: input.shard, base: input.base, head: input.head });
+  // GET routes run no probe: no projection check and no docs anchors, so generated_summary stays unknown.
+  // Diff mode still needs `archctx resolve`, because ArchContext owns path ownership.
+  const packet = reader.reviewPrompt(input.capability_id, { shard: input.shard, base: input.base, head: input.head, archctx: { env: env ?? process.env } });
   const home = env?.HOME ?? process.env.HOME;
   if (containsSecret(packet.prompt) || packet.prompt.includes(reader.root) || (home && home.length > 1 && packet.prompt.includes(home))) throw new ModuleReadError('secret_detected');
   return decodeArchitectureReviewPrompt(packet);

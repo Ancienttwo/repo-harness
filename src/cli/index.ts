@@ -11,7 +11,7 @@ import { captureConfigurationRestores } from './installer/configuration-ownershi
  * hook adapter, status, doctor, migrate, security, and tool command bodies.
  */
 
-import { Command } from 'commander';
+import { Command, CommanderError } from 'commander';
 import { randomBytes } from 'crypto';
 import { readFileSync, realpathSync } from 'fs';
 import { homedir } from 'os';
@@ -904,8 +904,8 @@ if (import.meta.main) {
     await runCli(process.argv);
   } catch (err) {
     const e = err as { exitCode?: number; message?: string };
-    if (typeof e.exitCode === 'number') process.exit(e.exitCode);
-    if (e.message) console.error(e.message);
-    process.exit(1);
+    // Commander already printed its own parse and help messages. Every other error prints here, also one with an exitCode.
+    if (!(err instanceof CommanderError) && e.message) console.error(e.message);
+    process.exit(typeof e.exitCode === 'number' ? e.exitCode : 1);
   }
 }

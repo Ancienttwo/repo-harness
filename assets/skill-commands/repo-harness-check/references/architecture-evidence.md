@@ -34,10 +34,20 @@ Read the cheap signal first:
    `repo-harness-architecture` worker claim an unowned source file in the same branch.
 2. Documents. Run the `check` below. It can take a minute on a large model.
    `freshness.staleNodes` names the capabilities whose generated sections are stale.
+   Save the check output to a file. Give the file to `repo-harness module list`
+   or `module review-prompt` with `--projection-check <file>`. Then
+   `generated_summary` is `fresh` or `stale`. Without the file it is `unknown`.
+   The file must come from a check at the current HEAD.
 
-Human-written sections have no drift signal. When a branch moves, renames or
-deletes a file or symbol, ask the worker to search the affected module pages
-for those names.
+Human-written sections have a citation signal. Run
+`repo-harness architecture-projection anchors --json`. The command is read-only
+and writes no file. It lists cited paths that are missing, line numbers out of
+range, symbols that are missing and lines that moved. It reads all human-written
+text after the generated summary, including §3, §4 History, the backlog and the
+node prose. A finding does not fail the command. The anchors report carries no
+commit. Run the command at the same HEAD as the review, on a clean worktree.
+Save the output to a file and give it to `repo-harness module review-prompt <id> --anchors <file>`.
+The prompt then has a STALE CITATIONS section.
 
 ## Architecture documents
 

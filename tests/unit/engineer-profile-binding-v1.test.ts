@@ -58,7 +58,13 @@ function profileRepository(): string {
   cpSync(join(process.cwd(), '.archcontext/model/nodes'), join(root, '.archcontext/model/nodes'), { recursive: true });
   cpSync(join(process.cwd(), 'agents/engineers'), join(root, 'agents/engineers'), { recursive: true });
   execFileSync('git', ['add', '.archcontext'], { cwd: root });
+  // Capability revisions read the committed HEAD nodes; Profiles and SOPs stay untracked here.
+  commit(root, 'nodes');
   return root;
+}
+
+function commit(root: string, message: string): void {
+  execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '-qm', message], { cwd: root });
 }
 
 afterEach(() => {
@@ -131,6 +137,12 @@ describe('ModuleEngineerProfileV1', () => {
       'Runs repository verification, contract gates, benchmarks, and evaluation suites.',
       'Runs repository verification, contract gates, benchmarks, evaluation suites, and exact Engineer fencing.',
     ));
+    // An uncommitted node edit changes nothing: the revision binds the HEAD snapshot the architecture reader shows.
+    const uncommitted = listEngineerProfiles(root).find((item) => item.profile.engineer_id === profile.engineer_id)!;
+    expect(uncommitted.capability_revision).toBe(baseline.capability_revision);
+    expect(uncommitted.engineer_contract_revision).toBe(baseline.engineer_contract_revision);
+    execFileSync('git', ['add', nodePath], { cwd: root });
+    commit(root, 'capability edit');
     const capabilityChanged = listEngineerProfiles(root).find((item) => item.profile.engineer_id === profile.engineer_id)!;
     expect(capabilityChanged.capability_revision).not.toBe(baseline.capability_revision);
     expect(capabilityChanged.engineer_contract_revision).not.toBe(baseline.engineer_contract_revision);

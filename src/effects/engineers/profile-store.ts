@@ -1,6 +1,7 @@
 import { execFileSync } from 'child_process';
 import { lstatSync, readFileSync, readdirSync, realpathSync } from 'fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'path';
+import { readCommittedArchcontextNodes } from '../architecture/model-reader';
 import { validateJsonSchema, type Json } from 'archctx-contracts';
 import architectureNodeSchema from 'archctx-contracts/schemas/repo/architecture-node.schema.json';
 
@@ -94,25 +95,16 @@ function resolveTrackedFile(repoRoot: string, repoPath: string, trackedPaths: Re
   return absolute;
 }
 
+/**
+ * The capability revision binds the committed HEAD node, the same snapshot the
+ * architecture reader shows. An uncommitted node edit changes no revision.
+ */
 function readArchcontextNodes(repoRoot: string): readonly ArchcontextNodeFile[] {
-  const nodeRoot = resolve(repoRoot, ARCHCONTEXT_NODE_ROOT);
-  let entries;
   try {
-    entries = readdirSync(nodeRoot, { withFileTypes: true });
+    return readCommittedArchcontextNodes(repoRoot).nodes;
   } catch (error) {
-    return invalid(`cannot read ${ARCHCONTEXT_NODE_ROOT}`, error);
+    return invalid(`cannot read committed ${ARCHCONTEXT_NODE_ROOT} at HEAD: ${error instanceof Error ? error.message : String(error)}`, error);
   }
-  return entries
-    .filter((entry) => entry.isFile() && (entry.name.endsWith('.yaml') || entry.name.endsWith('.yml')))
-    .sort((left, right) => Buffer.compare(Buffer.from(left.name), Buffer.from(right.name)))
-    .map((entry) => {
-      const path = `${ARCHCONTEXT_NODE_ROOT}/${entry.name}`;
-      try {
-        return { path, value: Bun.YAML.parse(readFileSync(join(nodeRoot, entry.name), 'utf8')) };
-      } catch (error) {
-        return invalid(`cannot parse ${path}`, error);
-      }
-    });
 }
 
 interface EngineerCapabilityAuthority {

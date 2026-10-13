@@ -38,14 +38,15 @@ const relations: ModelRelation[] = [
 function detailFor(id = CENTER, section3: string | null = 'Decision text.\n**not bold** <script>alert(1)</script>'): ModuleDetailV1 {
   const center = nodes.find(item => item.id === id) ?? node(id, 'capability');
   return moduleDetail(COMMIT, center, nodes.some(item => item.id === id) ? nodes : [...nodes, center], relations, [], section3,
-    [{ path: 'tasks/contracts/pipeline.contract.md', kind: 'contract', status: 'Active' }, { path: 'plans/pipeline.md', kind: 'plan', status: null }], 'valid');
+    [{ path: 'tasks/contracts/pipeline.contract.md', kind: 'contract', status: 'Active' }, { path: 'plans/pipeline.md', kind: 'plan', status: null }],
+    { model_valid: 'valid', generated_summary: 'unknown' });
 }
 
 function promptFor(detail: ModuleDetailV1, shard: number): ModuleReviewPromptV1 {
   return buildModuleReviewPrompt({
     detail, package_version: '0.21.0', repository_id: 'repo_0123456789abcdef', input_cap_bytes: 2048, worktree_dirty_paths: [], dirty_content_sha256: null,
     model_sha256: 'a'.repeat(64), doc_sha256: null, sources: [], source_sections: {}, module_doc_path: 'docs/architecture/modules/pipeline.md',
-    base: null, head: null, diff: null,
+    base: null, head: null, diff: null, backlog: null, stale_citations: null,
   }, shard);
 }
 
@@ -257,7 +258,8 @@ describe('one-hop module graph', () => {
         expect(edge.querySelector('text')?.textContent).toBe('shares-schema');
       }
     }
-    expect(edges.map(edge => edge.getAttribute('data-direction'))).toEqual(['directed', 'directed', 'directed', 'undirected']);
+    // ArchContext reads every relation from source to target, `shares-schema` included.
+    expect(edges.map(edge => edge.getAttribute('data-direction'))).toEqual(['directed', 'directed', 'directed', 'directed']);
     const box = (id: string) => {
       const rect = document.querySelector(`[data-node-id="${id}"] rect`)!;
       return ['x', 'y', 'width', 'height'].map(name => Number(rect.getAttribute(name)));

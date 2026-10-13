@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from 'node:fs';
 import { userInfo } from 'node:os';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { ARCHCONTEXT_NODE_RANGE, digestJson, type ArchctxCapabilitiesV1, type Json, type ProjectionApplyReadbackResultV1, type ProjectionRequestV1, type ProjectionResultV2 } from 'archctx-contracts';
+import { ARCHCONTEXT_NODE_RANGE, digestJson, type ArchctxCapabilitiesV1, type DocsAnchorsReportV1, type Json, type ProjectionApplyReadbackResultV1, type ProjectionRequestV1, type ProjectionResultV2 } from 'archctx-contracts';
 import { trustedNodeCandidates } from '../runtime/node-candidates';
 import { runProcess } from '../process-runner';
 import { normalizeCapabilityPath } from '../../core/capabilities/registry';
@@ -13,6 +13,7 @@ import {
   assertArchctxVersion,
   assertProjectionApplyReadbackResult,
   assertProjectionResult,
+  decodeDocsAnchorsReport,
   type ArchitectureProjectionPolicy,
   type ArchitectureProjectionReadinessV1,
 } from '../../core/architecture/projection';
@@ -277,6 +278,21 @@ export function runArchitectureProjection(request: ProjectionRequestV1, repoRoot
 /** Read an existing committed apply; this operation never invokes projection run/apply. */
 export function readArchitectureProjectionApply(request: ProjectionRequestV1, repoRoot: string, options: ArchctxProviderOptions = {}): ProjectionApplyReadbackResultV1 {
   return assertProjectionApplyReadbackResult(runProjectionCommand('readback', request, repoRoot, options), request);
+}
+
+/**
+ * Runs the read-only `archctx docs anchors`. It reports stale citations in
+ * human-owned document regions and node prose. It writes nothing.
+ */
+export function readArchitectureDocsAnchors(repoRoot: string, options: ArchctxProviderOptions = {}): DocsAnchorsReportV1 {
+  const policy = options.policy ?? loadArchitectureProjectionPolicy(options.env);
+  const { resolved } = archctxCapabilities(repoRoot, { ...options, policy });
+  const label = 'archctx docs anchors';
+  const processResult = runArchctxProcess(resolved, ['docs', 'anchors', '--json'], options, repoRoot, remainingTimeout(options, policy.timeoutMs, label));
+  if (processResult.status !== 0 || processResult.signal || processResult.error) throw new Error(`${label} failed: ${processFailure(processResult)}`);
+  const envelope = parseJson(processResult.stdout, label) as Record<string, unknown>;
+  if (envelope.schemaVersion !== 'archcontext.envelope/v1' || envelope.ok !== true || !isRecord(envelope.data)) throw new Error(`${label} returned an invalid envelope: ${safeError(envelope)}`);
+  return decodeDocsAnchorsReport(envelope.data);
 }
 
 function runProjectionCommand(command: 'run' | 'readback', request: ProjectionRequestV1, repoRoot: string, options: ArchctxProviderOptions): unknown {

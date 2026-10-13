@@ -6,6 +6,7 @@ import {
   CapabilitySourceError,
   capabilitySourceMode,
   findMatch,
+  readArchcontextNodeFiles,
   readArchcontextOwners,
   readRegistry as readCapabilityRegistry,
   type Capability,
@@ -164,7 +165,7 @@ function isLikelyFile(repo: string, relPath: string): boolean {
   return path.extname(path.basename(relPath)) !== '';
 }
 
-function targetContractFiles(repo: string, capability: Capability): ContractFiles {
+function derivedContractFiles(repo: string, capability: Capability): ContractFiles {
   const primary = normalizeRepoPath(capability.prefixes[0] || '.', repo, true);
   const dir = primary === '.'
     ? '.'
@@ -180,13 +181,34 @@ function targetContractFiles(repo: string, capability: Capability): ContractFile
   };
 }
 
+/**
+ * Under `archcontext` the node declares its contract files in
+ * `extensions.contractFiles`; that declaration is the target. Under `registry`
+ * the target is derived from the primary prefix and sync normalizes the registry.
+ */
+function targetContractFiles(repo: string, capability: Capability): ContractFiles {
+  return capabilitySourceMode(repo) === 'archcontext' ? { ...capability.contract_files } : derivedContractFiles(repo, capability);
+}
+
+/** Node summaries by registry id. Under `archcontext` the block positioning comes from the node. */
+function archcontextSummaries(repo: string): Map<string, string> {
+  const summaries = new Map<string, string>();
+  for (const { value } of readArchcontextNodeFiles(repo)) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
+    const node = value as Record<string, unknown>;
+    const parts = typeof node.id === 'string' ? node.id.split('.') : [];
+    if (node.kind === 'capability' && parts.length === 3 && typeof node.summary === 'string') summaries.set(`${parts[1]}-${parts[2]}`, node.summary);
+  }
+  return summaries;
+}
+
 // Delegates ownership to the selected authority: capability-resolver's findMatch
 // under `registry` (see .ai/harness/policy.json capability_match_rule), and
 // `archctx resolve` under `archcontext`. Nothing here re-implements either rule.
 function findCapabilityByPath(registry: CapabilityRegistry, repo: string, inputPath: string): Capability {
   if (capabilitySourceMode(repo) === 'archcontext') {
     const resolution = resolveArchcontextCapabilityPaths(repo, readArchcontextOwners(repo), [inputPath]);
-    if (resolution.status === 'invalid') throw new Error(resolution.diagnostics.map((item) => item.message).join('; '));
+    if (resolution.status !== 'valid') throw new Error(resolution.diagnostics.map((item) => item.message).join('; '));
     if (resolution.matches.length === 1) return resolution.matches[0].capability;
   } else {
     const match = findMatch(registry, repo, inputPath);
@@ -256,7 +278,7 @@ function manifestEntryFor(
   return { entry: generated, changed: false };
 }
 
-function renderCapabilityBlock(capability: Capability, entry: ManifestCapability): string {
+function renderCapabilityBlock(capability: Capability, entry: ManifestCapability, positioning: string | undefined): string {
   const sourceMap = (entry.source_map || [])
     .map((item) => `- ${item.label}: \`${item.path}\` (${item.role})`)
     .join('\n') || '- (none recorded)';
@@ -277,7 +299,7 @@ function renderCapabilityBlock(capability: Capability, entry: ManifestCapability
     '',
     '## Positioning',
     '',
-    entry.positioning || `Owns the ${capability.id} capability boundary.`,
+    positioning || entry.positioning || `Owns the ${capability.id} capability boundary.`,
     '',
     '## Source Map',
     '',
@@ -311,30 +333,43 @@ export function runCapabilityContextSync(opts: SyncOptions): SyncResult {
   const apply = opts.apply === true;
   const manifestPath = opts.sourceMapManifest || DEFAULT_MANIFEST_PATH;
   const authorityPath = capabilityAuthorityPath(repo);
+  const archcontext = authorityPath === NODES_DIR;
   const registry = readRegistry(repo);
   const manifest = readManifest(repo, manifestPath);
   const capabilities = selectCapabilities(registry, repo, opts);
-  // An anchorless ArchContext capability has no prefix to derive contract
-  // files from; `.` would target the root context files. Refuse before any write.
-  const anchorless = capabilities.filter((capability) => capability.prefixes.length === 0).map((capability) => capability.id);
-  if (authorityPath === NODES_DIR && anchorless.length > 0) {
-    throw new CapabilitySourceError(
-      `capability has no literal source.include anchor, so its contract files cannot be derived: ${anchorless.join(', ')}. `
-        + `Keep extensions.contractFiles in ${NODES_DIR} and edit those files directly.`,
-    );
-  }
+  // Under archcontext the target is the declared extensions.contractFiles, never an
+  // anchor, so an anchorless capability still has a target. readRegistry already
+  // refused a node that declares no contract files, before any write.
+  const summaries = archcontext ? archcontextSummaries(repo) : new Map<string, string>();
   const changedManifestIds = new Set<string>();
   const changes: SyncChange[] = [];
   const lines: string[] = [];
+  const writes: { target: ContractFiles; next: string }[] = [];
 
   for (const capability of capabilities) {
     const target = targetContractFiles(repo, capability);
+    // Under archcontext a declared file that another capability also declares is a
+    // shared contract (for example the root AGENTS.md). One block cannot describe
+    // several capabilities, so sync refuses before it writes anything.
+    if (archcontext) {
+      // Compare across slots too: one capability's `agents` file can be another's `claude` file.
+      const targets = new Set([target.agents, target.claude]);
+      const sharing = registry.capabilities.filter((other) => other.id !== capability.id
+        && (targets.has(other.contract_files.agents) || targets.has(other.contract_files.claude)));
+      if (sharing.length > 0) {
+        throw new CapabilitySourceError(
+          `capability ${capability.id} declares shared contract files ${target.agents}, ${target.claude} `
+            + `(also declared by ${sharing.length} other capabilities). `
+            + `Declare capability-local files in extensions.contractFiles in ${NODES_DIR} before sync. No file was written.`,
+        );
+      }
+    }
     const registryNormalized =
       capability.contract_files?.agents === target.agents &&
       capability.contract_files?.claude === target.claude;
     const { entry, changed } = manifestEntryFor(capability, manifest, opts.autoFillPositioning === true, authorityPath);
     if (changed) changedManifestIds.add(capability.id);
-    const block = renderCapabilityBlock(capability, entry);
+    const block = renderCapabilityBlock(capability, entry, summaries.get(capability.id));
     const basePath = fs.existsSync(path.join(repo, target.agents))
       ? path.join(repo, target.agents)
       : fs.existsSync(path.join(repo, target.claude))
@@ -343,15 +378,7 @@ export function runCapabilityContextSync(opts: SyncOptions): SyncResult {
     const base = basePath
       ? fs.readFileSync(basePath, 'utf-8')
       : '# Functional Block Agent Context\n\nKeep this file focused on the local contract for this primary functional block.\n';
-    const next = replaceBlock(base, block);
-
-    if (apply) {
-      fs.mkdirSync(path.dirname(path.join(repo, target.agents)), { recursive: true });
-      fs.mkdirSync(path.dirname(path.join(repo, target.claude)), { recursive: true });
-      fs.writeFileSync(path.join(repo, target.agents), next);
-      fs.writeFileSync(path.join(repo, target.claude), next);
-      capability.contract_files = target;
-    }
+    writes.push({ target, next: replaceBlock(base, block) });
 
     changes.push({
       capability_id: capability.id,
@@ -366,20 +393,15 @@ export function runCapabilityContextSync(opts: SyncOptions): SyncResult {
   }
 
   if (apply) {
-    // Under archcontext the JSON registry is retired, so contract_files drift
-    // has to be fixed in the node that declares it. Writing the registry here
-    // would recreate a second authority.
-    if (authorityPath === NODES_DIR) {
-      const drifted = changes.filter((change) => !change.registry_normalized).map((change) => change.capability_id);
-      if (drifted.length > 0) {
-        throw new CapabilitySourceError(
-          `capability source is "archcontext"; ${REGISTRY_PATH} is not writable. `
-            + `Update extensions.contractFiles in ${NODES_DIR} for: ${drifted.join(', ')}`,
-        );
-      }
-    } else {
-      writeRegistry(repo, registry);
+    for (const [index, { target, next }] of writes.entries()) {
+      fs.mkdirSync(path.dirname(path.join(repo, target.agents)), { recursive: true });
+      fs.mkdirSync(path.dirname(path.join(repo, target.claude)), { recursive: true });
+      fs.writeFileSync(path.join(repo, target.agents), next);
+      fs.writeFileSync(path.join(repo, target.claude), next);
+      capabilities[index].contract_files = target;
     }
+    // Under archcontext the JSON registry is retired; the node already declares the target.
+    if (!archcontext) writeRegistry(repo, registry);
     if (changedManifestIds.size > 0) writeManifest(repo, manifestPath, manifest);
   }
 
