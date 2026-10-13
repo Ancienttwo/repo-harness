@@ -1835,36 +1835,53 @@ function archctxNodeCount(nodesDir) {
   }
 }
 
+function bunExecutable() {
+  if (process.versions.bun) return process.execPath;
+  const onPath = resolvePathCommand("bun");
+  if (onPath) return onPath;
+  const homeBun = path.join(HOME, ".bun", "bin", "bun");
+  return fileIsExecutable(homeBun) ? homeBun : null;
+}
+
 /**
- * The package-local archctx that repo-harness runs. It mirrors the provider's
- * upward node_modules lookup from the repo-harness package root. The runnable
- * command, with the resolved Node path, comes from
+ * The package-local archctx that repo-harness runs. The provider's
+ * resolvePackageLocalArchctx() is the only rule: it checks the version, the
+ * Node engine contract, bin.archctx and the binary. This probe runs that
+ * function under Bun from the repo-harness package root and reports its
+ * answer. The runnable command, with the resolved Node path, comes from
  * `repo-harness architecture-projection status --json`.
  */
 function detectManagedArchctx() {
-  const manifest = readJson(path.join(PACKAGE_ROOT, "package.json"));
-  const requiredVersion = manifest?.dependencies?.[ARCHCTX_CLI_PACKAGE] ?? null;
-  let current = PACKAGE_ROOT;
-  while (true) {
-    const packageRoot = path.join(current, "node_modules", ARCHCTX_CLI_PACKAGE);
-    const pkg = readJson(path.join(packageRoot, "package.json"));
-    if (pkg && typeof pkg === "object") {
-      const version = typeof pkg.version === "string" ? pkg.version : null;
-      return {
-        status: version !== null && version === requiredVersion ? "present" : "mismatch",
-        version,
-        required_version: requiredVersion,
-        bin_path: typeof pkg.bin?.archctx === "string" ? path.resolve(packageRoot, pkg.bin.archctx) : null,
-        node_range: typeof pkg.engines?.node === "string" ? pkg.engines.node : null,
-        command_source: ARCHCTX_STATUS_COMMAND,
-      };
-    }
-    const parent = path.dirname(current);
-    if (parent === current) {
-      return { status: "missing", version: null, required_version: requiredVersion, bin_path: null, node_range: null, command_source: ARCHCTX_STATUS_COMMAND };
-    }
-    current = parent;
+  const unusable = (reason) => ({ status: "invalid", version: null, required_version: null, bin_path: null, node_range: null, reason, command_source: ARCHCTX_STATUS_COMMAND });
+  const bun = bunExecutable();
+  if (!bun) return unusable("bun is not available, so the managed archctx cannot be resolved");
+  const script = [
+    "const [provider, projection, consumerRoot] = process.argv.slice(1);",
+    "const { resolvePackageLocalArchctx } = await import(provider);",
+    "const { ARCHCTX_REQUIRED_VERSION } = await import(projection);",
+    "try { console.log(JSON.stringify({ ok: true, required: ARCHCTX_REQUIRED_VERSION, resolved: resolvePackageLocalArchctx(consumerRoot) })); }",
+    "catch (error) { console.log(JSON.stringify({ ok: false, required: ARCHCTX_REQUIRED_VERSION, reason: error instanceof Error ? error.message : String(error) })); }",
+  ].join("\n");
+  const result = run(bun, [
+    "-e", script,
+    path.join(PACKAGE_ROOT, "src", "effects", "architecture", "archctx-provider.ts"),
+    path.join(PACKAGE_ROOT, "src", "core", "architecture", "projection.ts"),
+    PACKAGE_ROOT,
+  ], { cwd: PACKAGE_ROOT, timeoutMs: 15000 });
+  const answer = result.ok ? parseJson(result.stdout.trim()) : null;
+  if (!answer || typeof answer !== "object") {
+    return unusable(`the provider resolution did not run: ${(result.error || result.stderr || result.stdout).trim().slice(0, 300) || `exit ${result.status}`}`);
   }
+  if (!answer.ok) return { ...unusable(answer.reason), required_version: answer.required };
+  return {
+    status: "present",
+    version: answer.resolved.version,
+    required_version: answer.required,
+    bin_path: answer.resolved.binaryPath,
+    node_range: answer.resolved.nodeRange,
+    reason: null,
+    command_source: ARCHCTX_STATUS_COMMAND,
+  };
 }
 
 /**
@@ -1883,7 +1900,7 @@ function detectArchctx() {
   const pathVersion = versionOutput && !versionOutput.includes("\n") ? versionOutput : null;
   const warnings = [];
   if (managed.status !== "present") {
-    warnings.push(`Managed archctx is ${managed.status}: expected ${managed.required_version ?? "a declared version"}, found ${managed.version ?? "none"}. Run repo-harness update.`);
+    warnings.push(`Managed archctx is not usable: ${managed.reason}. Run repo-harness update.`);
   }
   if (pathBin && pathVersion !== managed.version) {
     warnings.push(`PATH archctx ${pathVersion ?? "(unknown version)"} at ${pathBin} is unrelated to the managed archctx ${managed.version ?? "(missing)"}. Do not run a bare archctx; use the command from ${ARCHCTX_STATUS_COMMAND}.`);
