@@ -123,6 +123,12 @@ const handlers: Readonly<Record<HookHandlerId, TypedHookHandler>> = Object.freez
       now: () => context.now,
     }),
   },
+  // A route that stays installed for the trust transition (#698) but has no
+  // work left. It writes nothing and always exits 0.
+  'retired-observer': {
+    id: 'retired-observer',
+    run: () => ({ exitCode: 0, reason: 'retired-route' }),
+  },
   stop: {
     id: 'stop',
     run: (context: HookHandlerContext) => textResult(runStopHandler({

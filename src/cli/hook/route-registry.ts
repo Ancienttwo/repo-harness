@@ -49,7 +49,8 @@ export type HookHandlerId =
   | 'trace-observer'
   | 'prompt'
   | 'task-inbox'
-  | 'stop';
+  | 'stop'
+  | 'retired-observer';
 
 export interface Route {
   readonly event: HookEvent;
@@ -98,8 +99,9 @@ export const ROUTES: readonly Route[] = Object.freeze([
     event: 'PostToolUse' as const,
     routeId: 'edit' as const,
     matcher: 'Edit|Write',
-    // HRD-05: the post-edit journal is owned by the in-process observer.
-    handler: 'mutation-observed',
+    // The post-edit journal is retired. The route stays installed until the
+    // route-registry trust transition (#698) removes it.
+    handler: 'retired-observer',
   }),
   Object.freeze({
     event: 'PostToolUse' as const,
@@ -110,7 +112,9 @@ export const ROUTES: readonly Route[] = Object.freeze([
   Object.freeze({
     event: 'PostToolUse' as const,
     routeId: 'always' as const,
-    handler: 'trace-observer',
+    // The trace observer is retired. The route stays installed until the
+    // route-registry trust transition (#698) removes it.
+    handler: 'retired-observer',
     hosts: ['claude', 'codex'] as const,
   }),
   Object.freeze({
