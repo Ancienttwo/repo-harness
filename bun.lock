@@ -5,7 +5,7 @@
     "": {
       "name": "repo-harness",
       "dependencies": {
-        "@botiverse/oar": "0.45.1",
+        "@botiverse/oar": "0.62.1",
         "@modelcontextprotocol/sdk": "^1.31.0",
         "archctx": "0.7.2",
         "archctx-contracts": "0.7.2",
@@ -87,7 +87,7 @@
 
     "@base-ui/utils": ["@base-ui/utils@0.5.0", "", { "dependencies": { "@babel/runtime": "^7.29.7 || ^8.0.0", "@floating-ui/utils": "^0.2.12", "reselect": "^5.3.0", "use-sync-external-store": "^1.7.0" }, "peerDependencies": { "@types/react": "^17 || ^18 || ^19", "react": "^17 || ^18 || ^19", "react-dom": "^17 || ^18 || ^19" }, "optionalPeers": ["@types/react"] }, "sha512-dYGGcEttjkYiMoa5nHm8vLaJ2UcuTWxo3BFAwOYXeRg/q7UVVvA6cacEIXEs3FgBfK1CGtW1ptElqs7wsx+t9A=="],
 
-    "@botiverse/oar": ["@botiverse/oar@0.45.1", "", { "dependencies": { "@agentclientprotocol/sdk": "^1.4.0", "@earendil-works/pi-ai": "^1.1.0", "@earendil-works/pi-coding-agent": "^1.1.0", "cross-spawn": "^7.0.6", "undici": "8.10.2", "which": "^2.0.2" }, "peerDependencies": { "@cursor/sdk": "1.0.37" }, "optionalPeers": ["@cursor/sdk"] }, "sha512-epVqBhVRn7vT3U1hy5yhhgRLAgeRNxuxnnik4/Zo0Fi1qJFQAPVlnc/hVik7Q1U8IO4pNquAos2H4HhSVkNBzQ=="],
+    "@botiverse/oar": ["@botiverse/oar@0.62.1", "", { "dependencies": { "@agentclientprotocol/sdk": "^1.4.0", "@earendil-works/pi-ai": "^1.2.0", "@earendil-works/pi-coding-agent": "^1.2.0", "cross-spawn": "^7.0.6", "undici": "8.10.2", "which": "^2.0.2" }, "peerDependencies": { "@cursor/sdk": "1.0.37", "@earendil-works/chord": "~1.2.0", "@earendil-works/pi-durable": "~1.2.0" }, "optionalPeers": ["@cursor/sdk", "@earendil-works/chord", "@earendil-works/pi-durable"] }, "sha512-18O/GcYW2/sBcNLg2gtjitQQ/kccLjj7ToDQBNIwvSCIIvgmGKMyQEngb+dAGO99Ve/kswktKXklEvlQ+PcoUA=="],
 
     "@cloudflare/kumo": ["@cloudflare/kumo@2.14.0", "", { "dependencies": { "@base-ui/react": "^1.8.0", "@shikijs/langs": "^4.0.0", "@shikijs/themes": "^4.0.0", "cnfast": "^0.0.8", "d3-geo": "^3.1.1", "motion": "^12.34.1", "react-day-picker": "^9.13.2", "shiki": "^4.0.0", "use-sync-external-store": "^1.6.0" }, "peerDependencies": { "@phosphor-icons/react": "^2.1.10", "echarts": "^6.0.0", "react": "^18.0.0 || ^19.0.0", "react-dom": "^18.0.0 || ^19.0.0", "zod": "^4.0.0" }, "optionalPeers": ["echarts", "zod"], "bin": { "kumo": "./bin/kumo.js" } }, "sha512-XPGW1KVz9ZbElTQxuy3qVnckVzj8RSfN8FKWWQSkZYfMgvmwviCq9byaVwugnw9mbg+n6vXmJTVDIS5ceS73BA=="],
 
