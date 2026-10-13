@@ -23,8 +23,8 @@ import { runSecurityScan, type SecurityScanReport } from './security';
 import { isOptIn, resolveRepoRoot } from '../hook/runtime';
 import { ROUTES } from '../hook/route-registry';
 import { inspectWorkflowMarker } from '../../core/adoption/minimum-harness-version';
-import { capabilitySourceMode, readArchcontextNodeFiles } from '../../../scripts/capability-resolver';
-import { capabilityRegistryFromArchcontextNodes, parseCapabilityRegistry } from '../../core/capabilities/registry';
+import { capabilitySourceMode, loadArchcontextAuthority, loadRegistryAuthority, readWorkflowPolicy } from '../../effects/state/resolve-effective-state';
+import { readText } from '../../effects/state/collect-state-inputs';
 
 const TRUST_STATE_LINE = /^\[hooks\.state\."[^"]+\/\.codex\/hooks\.json:/;
 const PACKAGE_NAME = 'repo-harness';
@@ -587,33 +587,9 @@ export function checkSkillProjection(target: DoctorTarget = 'both', env: NodeJS.
 
 }
 
-const CAPABILITY_REGISTRY_PATH = '.ai/context/capabilities.json';
-
-/**
- * The hooks' registry rule, which is private to resolve-effective-state.ts: the
- * policy may name only the canonical registry path, and an empty registry file
- * counts as missing.
- */
-function policyDeclaresCapabilityRegistry(repoRoot: string): boolean {
-  const policyPath = path.join(repoRoot, '.ai/harness/policy.json');
-  if (!fs.existsSync(policyPath)) return false;
-  const policy = JSON.parse(fs.readFileSync(policyPath, 'utf-8')) as { context?: { capability_registry_file?: unknown } };
-  const declared = policy.context?.capability_registry_file;
-  if (declared === undefined) return false;
-  if (declared !== CAPABILITY_REGISTRY_PATH) throw new Error('invalid workflow policy path .context.capability_registry_file');
-  return true;
-}
-
-function registryText(repoRoot: string): string | null {
-  const registryPath = path.join(repoRoot, CAPABILITY_REGISTRY_PATH);
-  if (!fs.existsSync(registryPath)) return null;
-  const text = fs.readFileSync(registryPath, 'utf-8');
-  return text.length > 0 ? text : null;
-}
-
 /**
  * Loads the repository capability authority with this installed runtime,
- * through the core parsers that the hooks use. A model that this runtime cannot
+ * through the loaders that the hooks use. A model that this runtime cannot
  * parse fails here and not only in every hook. Node files that exist are not
  * proof that they load.
  */
@@ -630,10 +606,12 @@ function checkCapabilityRegistry(cwd: string): DoctorCheckResult {
   if (gate) return { id, describe, status: 'fail', detail: gate.message };
   const next = `Next: run repo-harness run capability-resolver validate --repo ${repoRoot} --format text; fix the model, or run repo-harness update when the model uses a shape that this runtime cannot read.`;
   try {
-    const mode = capabilitySourceMode(repoRoot);
+    const policy = readWorkflowPolicy(repoRoot);
+    const mode = capabilitySourceMode(policy);
+    const readSource = (relPath: string) => readText(repoRoot, relPath);
     const resolution = mode === 'archcontext'
-      ? capabilityRegistryFromArchcontextNodes(readArchcontextNodeFiles(repoRoot), { repoRoot })
-      : parseCapabilityRegistry(registryText(repoRoot), { declared: policyDeclaresCapabilityRegistry(repoRoot), repoRoot });
+      ? loadArchcontextAuthority(repoRoot, readSource)
+      : loadRegistryAuthority(repoRoot, policy, readSource);
     if (resolution.status === 'absent') return { id, describe, status: 'na', detail: 'no capability registry is declared' };
     if (resolution.status === 'invalid') {
       return { id, describe, status: 'fail', detail: `${mode} authority does not load: ${resolution.diagnostics.map((entry) => entry.message).join('; ')}. ${next}` };
