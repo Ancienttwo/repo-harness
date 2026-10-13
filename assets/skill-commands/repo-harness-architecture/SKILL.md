@@ -2,6 +2,7 @@
 name: repo-harness-architecture
 description: Inspect or update an assigned architecture model, document, or Mermaid diagram. Exclude unrelated code edits and full harness setup.
 when_to_use: "repo-harness-architecture"
+disable-model-invocation: true
 ---
 
 # repo-harness-architecture

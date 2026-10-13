@@ -441,6 +441,31 @@ describe("Codex installed copy sync", () => {
     }
   }, 30_000);
 
+  test("the default profile installs the architecture worker guidance on both hosts", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "repo-harness-default-architecture-"));
+    const source = join(tmp, "source");
+    const roots = [join(tmp, "codex-skills"), join(tmp, "claude-skills")];
+    try {
+      seedSkillSurfaceRuntime(source);
+      cpSync(join(ROOT, "assets", "skill-commands", "repo-harness-architecture"), join(source, "assets", "skill-commands", "repo-harness-architecture"), { recursive: true });
+      writeFileSync(join(source, "SKILL.md"), "---\nname: repo-harness\n---\n");
+      for (const root of roots) mkdirSync(root, { recursive: true });
+      // `repo-harness init` runs this script without a profile; the script default is the profile under test.
+      const env: NodeJS.ProcessEnv = { ...process.env, AGENTIC_DEV_SOURCE_ROOT: source, AGENTIC_DEV_LINK_INSTALLED_COPIES: "0", CODEX_SKILLS_ROOT: roots[0], CLAUDE_SKILLS_ROOT: roots[1] };
+      delete env.REPO_HARNESS_INSTALL_PROFILE;
+      const result = spawnSync("bash", [join(ROOT, "scripts", "sync-codex-installed-copies.sh")], { cwd: ROOT, encoding: "utf-8", timeout: 60000, env });
+      expect(result.status, result.stderr + result.stdout).toBe(0);
+      for (const root of roots) {
+        const installed = join(root, "repo-harness-architecture");
+        expect(readFileSync(join(installed, "references", "worker.md"), "utf-8"))
+          .toBe(readFileSync(join(ROOT, "assets", "skill-commands", "repo-harness-architecture", "references", "worker.md"), "utf-8"));
+        expect(readFileSync(join(installed, "SKILL.md"), "utf-8")).toContain("disable-model-invocation: true");
+      }
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  }, 60_000);
+
   test("copy sync installs a selected facade when the profile projection exceeds pipe capacity", () => {
     const tmp = mkdtempSync(join(tmpdir(), "repo-harness-profile-pipe-"));
     const source = join(tmp, "source");
