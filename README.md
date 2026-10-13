@@ -480,7 +480,7 @@ claimed before the contract passed), and `WorktreeGuard` (writes from the wrong
 worktree). Full playbook:
 [`docs/reference-configs/hook-operations.md`](docs/reference-configs/hook-operations.md).
 
-### Pi 1.1.0 package
+### Pi 1.2.0 package
 
 Pi uses the official package loader. Install a built candidate with:
 
@@ -490,7 +490,7 @@ pi install /absolute/path/to/repo-harness
 
 The package provides the `repo-harness` router and `repo-harness-check` skill.
 Use `/reload` in an open session after installation. The repository must have
-`.ai/harness/workflow-contract.json` to enable hooks. Pi 1.1.0 and Bun >= 1.4
+`.ai/harness/workflow-contract.json` to enable hooks. Pi 1.2.0 and Bun >= 1.4
 must be available. This first adapter uses the installed Pi SDK path resolver.
 Other Pi versions or distributions without that resolver are unavailable.
 

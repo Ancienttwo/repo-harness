@@ -2,7 +2,7 @@
 
 The host chooses when to wake, which native agents to dispatch, and how to schedule them. repo-harness supplies the upstream admission and closeout contract: authorized scope, isolated ownership, durable workflow authority, and acceptance of the exact subject. Scheduling belongs to the host; repo-harness ships no scheduler as part of this contract. Follow [Long-Run Continuation](long-run-continuation.md) for the tick and recovery protocol (`docs/reference-configs/long-run-continuation.md:5`).
 
-These requirements apply to Claude Code, Codex, and Pi 1.1 with the repo-harness Pi package. The tables distinguish what a host must do from what the current repository actually enforces. A host must not infer enforcement from a policy field, an injected sentence, a tool annotation, or a successful exit code.
+These requirements apply to Claude Code, Codex, and Pi 1.2 with the repo-harness Pi package. The tables distinguish what a host must do from what the current repository actually enforces. A host must not infer enforcement from a policy field, an injected sentence, a tool annotation, or a successful exit code.
 
 ## Enforcement Levels
 

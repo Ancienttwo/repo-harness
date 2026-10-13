@@ -87,9 +87,9 @@ describe('Pi JSON hook bridge', () => {
       expect(await new PiHookBridge(ROOT, { env: f.env }).invoke(request(f.root))).toMatchObject({ reason: 'non-opt-in', decision: 'none' });
       expect(existsSync(join(f.root, '.ai/harness/runs'))).toBe(false);
       await expect(new PiHookBridge(ROOT, { bun: join(f.root, 'missing'), env: f.env }).invoke(request(f.root))).rejects.toThrow('PI_HOOK_START_FAILED');
-      const pkg = fakePackage(f.root, 'console.log("not JSON");');
+      const pkg = fakePackage(f.root, 'await Bun.stdin.text(); console.log("not JSON");');
       await expect(new PiHookBridge(pkg, { env: f.env }).invoke(request(f.root))).rejects.toThrow('PI_HOOK_INVALID_RESULT');
-      writeFileSync(join(pkg, 'dist/hook-entry.js'), `console.log(${JSON.stringify(JSON.stringify(output({ exit_code: 2, decision: 'block' })))});`);
+      writeFileSync(join(pkg, 'dist/hook-entry.js'), `await Bun.stdin.text(); console.log(${JSON.stringify(JSON.stringify(output({ exit_code: 2, decision: 'block' })))});`);
       await expect(new PiHookBridge(pkg, { env: f.env }).invoke(request(f.root))).rejects.toThrow('PI_HOOK_EXIT_MISMATCH');
     } finally { f.cleanup(); }
   });
@@ -123,19 +123,42 @@ setTimeout(() => console.log(JSON.stringify({${JSON.stringify(output()).slice(1,
       await expect(pending.invoke(request(f.root))).rejects.toThrow('PI_HOOK_OUTPUT_TOO_LARGE');
     } finally { f.cleanup(); }
   });
+
+  test('a child that exits before it reads stdin gets one stable code with its stderr', async () => {
+    const f = fixture();
+    try {
+      // The input is larger than any pipe buffer, so the write cannot complete before the child exits.
+      const large = request(f.root, { payload: { content: 'x'.repeat(4 * 1024 * 1024) } });
+      const pkg = fakePackage(f.root, 'console.error("hook boot failure"); console.log("not JSON"); process.exit(1);');
+      const bridge = new PiHookBridge(pkg, { env: f.env });
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        const error = await bridge.invoke(large).then(() => null, (reason: Error) => reason);
+        expect(error?.message).toStartWith('PI_HOOK_INVALID_RESULT: ');
+        expect(error?.message).toContain('hook boot failure');
+      }
+      writeFileSync(join(pkg, 'dist/hook-entry.js'), `console.error("skipped input"); console.log(${JSON.stringify(JSON.stringify(output()))});`);
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        const error = await bridge.invoke(large).then(() => null, (reason: Error) => reason);
+        expect(error?.message).toStartWith('PI_HOOK_INPUT_FAILED: ');
+        expect(error?.message).toContain('skipped input');
+      }
+      writeFileSync(join(pkg, 'dist/hook-entry.js'), 'console.error("still waiting"); setInterval(() => {}, 1000);');
+      await expect(new PiHookBridge(pkg, { env: f.env, timeoutMs: 2000 }).invoke(request(f.root))).rejects.toThrow(/^PI_HOOK_TIMEOUT: still waiting/);
+    } finally { f.cleanup(); }
+  });
 });
 
 describe('Pi package manifest', () => {
   test('peer range is the exact Pi version that the extension accepts', () => {
     const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
     const extension = readFileSync(join(ROOT, 'src/pi/extension.ts'), 'utf8');
-    expect(extension).toContain("VERSION !== '1.1.0'");
-    expect(pkg.peerDependencies['@earendil-works/pi-coding-agent']).toBe('1.1.0');
+    expect(extension).toContain("VERSION !== '1.2.0'");
+    expect(pkg.peerDependencies['@earendil-works/pi-coding-agent']).toBe('1.2.0');
     expect(pkg.peerDependenciesMeta['@earendil-works/pi-coding-agent']).toEqual({ optional: true });
   });
 });
 
-describe('real Pi 1.1 tool pipeline with a scripted provider', () => {
+describe('real Pi 1.2 tool pipeline with a scripted provider', () => {
   test('checks direct and codemode edits, refuses private writes and reloads context', () => {
     const f = fixture();
     try {
@@ -273,6 +296,24 @@ describe('real Pi 1.1 tool pipeline with a scripted provider', () => {
       expect(stops.every(event => event.session_id === result.sessionId)).toBe(true);
       const journal = readFileSync(join(f.root, '.ai/harness/runs/hook-events.jsonl'), 'utf8');
       expect(journal).toContain(result.sessionId);
+    } finally { f.cleanup(); }
+  }, 60_000);
+
+  test('a custom-message run has its own lifecycle and is not a user prompt', () => {
+    const f = fixture();
+    try {
+      const result = session(f.root, f.env, 'custom-turn');
+      expect(result.agentStarts).toEqual(['user', 'custom']);
+      expect(readFileSync(join(f.root, 'custom-run.txt'), 'utf8')).toBe('custom run');
+      const results = result.messages.filter((message: any) => message.role === 'toolResult');
+      expect(results.map((message: any) => [message.toolCallId, message.isError])).toEqual([['user-run', false], ['custom-run', false]]);
+      const events = records(f.root);
+      expect(events.filter(event => event.event === 'UserPromptSubmit')).toHaveLength(1);
+      const toolRuns = events.filter(event => event.event === 'PreToolUse').map(event => event.run_id);
+      const stops = events.filter(event => event.event === 'Stop');
+      expect(toolRuns).toHaveLength(2);
+      expect(new Set(toolRuns).size).toBe(2);
+      expect(stops.map(event => event.run_id)).toEqual(toolRuns);
     } finally { f.cleanup(); }
   }, 60_000);
 

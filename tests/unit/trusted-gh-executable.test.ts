@@ -137,38 +137,32 @@ test('version probe retains actual timeout evidence and signal', () => {
 });
 
 const nativeWindows = process.platform === 'win32' ? test : test.skip;
-function nativeVersionProbe(systemDirectoryEnv: 'hostile' | 'native') {
+// Prior runs show slower first launches, but did not capture the historical
+// null-status error/signal. Retain main's possible cold-start mitigation budget;
+// diagnostics below do not claim that the original cause is confirmed.
+const COLD_GH_LAUNCH_MS = 45_000;
+nativeWindows('native Windows executes the preinstalled fixed gh with hostile caller environment', () => {
   const module = fileURLToPath(new URL('../../src/effects/runtime/protected-helper-platform.ts', import.meta.url));
   const code = `import {resolveTrustedGhExecutable} from ${JSON.stringify(module)};
 import {spawnSync} from 'node:child_process';
 const bin=resolveTrustedGhExecutable();
 if(!bin) throw Error('fixed standard GitHub CLI installation unavailable');
-const args=['--version'],timeoutMs=10000;
+const args=['--version'],timeoutMs=${COLD_GH_LAUNCH_MS};
 ${VERSION_PROBE_BODY}`;
   const started = performance.now();
   const child = spawnSync(process.execPath, ['-e', code], {
-    encoding: 'utf8', timeout: 20000,
+    encoding: 'utf8', timeout: COLD_GH_LAUNCH_MS + 5_000,
     env: { ...process.env, PATH: 'C:\\repo-harness-attacker',
       GH_BIN: 'C:\\repo-harness-attacker\\gh.exe', REPO_HARNESS_GH_BIN: 'C:\\repo-harness-attacker\\gh.exe',
       ProgramFiles: 'C:\\repo-harness-attacker',
-      ...(systemDirectoryEnv === 'hostile' ? { SystemRoot: 'C:\\repo-harness-attacker', WINDIR: 'C:\\repo-harness-attacker' } : {}) },
+      SystemRoot: 'C:\\repo-harness-attacker', WINDIR: 'C:\\repo-harness-attacker' },
   });
-  const outer = processDiagnostic(child, performance.now() - started, 20000);
-  expect(child.status, JSON.stringify({ layer: 'outer-bun', systemDirectoryEnv, ...outer })).toBe(0);
+  const outer = processDiagnostic(child, performance.now() - started, COLD_GH_LAUNCH_MS + 5_000);
+  expect(child.status, JSON.stringify({ layer: 'outer-bun', systemDirectoryEnv: 'hostile', ...outer })).toBe(0);
   const observed = JSON.parse(child.stdout);
-  console.info('[trusted-gh-version-probe]', JSON.stringify({ systemDirectoryEnv, outer, inner: observed.probe }));
+  console.info('[trusted-gh-version-probe]', JSON.stringify({ systemDirectoryEnv: 'hostile', outer, inner: observed.probe }));
   const expected = win32.join(win32.parse(nativeWindowsSystemToolsDirectory()).root, 'Program Files', 'GitHub CLI', 'gh.exe');
   expect(observed.bin.toLowerCase()).toBe(expected.toLowerCase());
-  expect(observed.status, JSON.stringify({ layer: 'inner-gh', systemDirectoryEnv, ...observed.probe })).toBe(0);
+  expect(observed.status, JSON.stringify({ layer: 'inner-gh', systemDirectoryEnv: 'hostile', ...observed.probe })).toBe(0);
   expect(observed.stdout).toMatch(/^gh version /);
-}
-
-nativeWindows('native Windows executes the preinstalled fixed gh with hostile caller environment', () => {
-  nativeVersionProbe('hostile');
-});
-
-// Keep the original hostile case first and authoritative. This control changes
-// only the two OS bootstrap variables; it is not a retry or a success fallback.
-nativeWindows('native Windows version control retains native SystemRoot and WINDIR', () => {
-  nativeVersionProbe('native');
-});
+}, COLD_GH_LAUNCH_MS + 10_000);

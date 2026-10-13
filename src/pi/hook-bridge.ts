@@ -45,8 +45,15 @@ export class PiHookBridge {
           '--route', request.route, '--format', 'json'], { cwd: request.cwd, env, stdio: ['pipe', 'pipe', 'pipe'] });
         const stdout: Buffer[] = [], stderr: Buffer[] = [];
         let bytes = 0, settled = false;
-        let stopReason: string | null = null;
+        let stopReason: { code: string; detail: string } | null = null;
         let killTimer: ReturnType<typeof setTimeout> | undefined;
+        // 'pending' until the request is fully written. An Error means the child did not receive the complete input.
+        let delivery: 'pending' | 'written' | Error = 'pending';
+        let exit: { code: number | null; signal: NodeJS.Signals | null } | null = null;
+        const failure = (code: string, detail = '') => {
+          const diagnostic = [detail, Buffer.concat(stderr).toString('utf8')].filter(Boolean).join('\n');
+          return new Error(diagnostic ? `${code}: ${boundedHookDiagnostic(diagnostic)}` : code);
+        };
         const finish = (error?: Error, output?: HookJsonOutput) => {
           if (settled) return;
           settled = true;
@@ -56,11 +63,11 @@ export class PiHookBridge {
           child.stdin.destroy(); child.stdout.destroy(); child.stderr.destroy();
           if (error) reject(error); else resolve(output!);
         };
-        const stop = (reason: string) => {
+        const stop = (code: string, detail = '') => {
           if (settled || killTimer) return;
-          stopReason = reason;
+          stopReason = { code, detail };
           child.kill('SIGTERM');
-          killTimer = setTimeout(() => { child.kill('SIGKILL'); finish(new Error(reason)); }, 250);
+          killTimer = setTimeout(() => { child.kill('SIGKILL'); finish(failure(code, detail)); }, 250);
         };
         const abort = () => stop('PI_HOOK_CANCELLED');
         const timeoutMs = this.options.timeoutMs ?? (request.event === 'Stop' ? MANAGED_STOP_TIMEOUT_SECONDS * 1000 : 10_000);
@@ -73,19 +80,32 @@ export class PiHookBridge {
             else chunks.push(chunk);
           });
         }
-        child.on('error', error => finish(new Error(`PI_HOOK_START_FAILED: ${error.message}`)));
-        child.stdin.on('error', error => { stop(`PI_HOOK_INPUT_FAILED: ${error.message}`); });
-        child.on('close', (code, signal) => {
-          if (stopReason) { finish(new Error(stopReason)); return; }
+        // Classify only after exit. An invalid result is reported as such whatever the stdin timing.
+        // A valid result is accepted only after the complete input was written to the child.
+        const classify = () => {
+          if (!exit) return;
+          if (stopReason) { finish(failure(stopReason.code, stopReason.detail)); return; }
+          let output: HookJsonOutput;
           try {
-            if (signal || code === null) throw new Error('PI_HOOK_TERMINATED');
-            const output = parseHookJsonOutput(Buffer.concat(stdout).toString('utf8'), request.event, request.route);
-            if (code !== output.exit_code) throw new Error('PI_HOOK_EXIT_MISMATCH');
-            finish(undefined, output);
+            if (exit.signal || exit.code === null) throw new Error('PI_HOOK_TERMINATED');
+            output = parseHookJsonOutput(Buffer.concat(stdout).toString('utf8'), request.event, request.route);
+            if (exit.code !== output.exit_code) throw new Error('PI_HOOK_EXIT_MISMATCH');
           } catch (error) {
-            finish(new Error(`PI_HOOK_INVALID_RESULT: ${boundedHookDiagnostic(`${error instanceof Error ? error.message : String(error)}\n${Buffer.concat(stderr).toString('utf8')}`)}`));
+            finish(failure('PI_HOOK_INVALID_RESULT', error instanceof Error ? error.message : String(error)));
+            return;
           }
+          if (delivery === 'written') finish(undefined, output);
+          else if (delivery instanceof Error) finish(failure('PI_HOOK_INPUT_FAILED', delivery.message));
+        };
+        child.on('error', error => finish(new Error(`PI_HOOK_START_FAILED: ${error.message}`)));
+        child.stdin.on('finish', () => { if (delivery === 'pending') delivery = 'written'; classify(); });
+        child.stdin.on('error', (error: NodeJS.ErrnoException) => {
+          if (delivery === 'pending') delivery = error;
+          // EPIPE means the child closed its input. Wait for its exit so the result keeps its stderr.
+          if (error.code !== 'EPIPE') stop('PI_HOOK_INPUT_FAILED', error.message);
+          classify();
         });
+        child.on('close', (code, signal) => { exit = { code, signal }; classify(); });
         child.stdin.end(input);
         if (controller.signal.aborted) abort();
       });
