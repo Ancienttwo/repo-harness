@@ -45,7 +45,6 @@ export type HookHandlerId =
   | 'mutation-guard'
   | 'subagent'
   | 'command-observed'
-  | 'trace-observer'
   | 'prompt'
   | 'task-inbox'
   | 'stop'

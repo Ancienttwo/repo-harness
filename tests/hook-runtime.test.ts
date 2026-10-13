@@ -246,7 +246,7 @@ describe('hook runtime typed dispatch', () => {
         input: JSON.stringify({ hook_event_name: 'PostToolUse', tool_name: 'Read' }),
         env: env(root),
       });
-      expect(result.handler).toBe('trace-observer');
+      expect(result.handler).toBe('retired-observer');
       const [record] = telemetry(root);
       expect(Object.keys(record).sort()).toEqual([
         'blocked', 'completed_at', 'elapsed_ms', 'event', 'event_id', 'exit_code', 'fingerprint', 'host',

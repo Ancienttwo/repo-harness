@@ -67,19 +67,6 @@ describe("Hook contracts", () => {
     expect(script).not.toContain(".claude/.require-worktree");
   });
 
-  test("typed trace observer keeps trace, CodeGraph session state, and plan annotation without budget probes", () => {
-    const observer = read("src/cli/hook/trace-observer.ts");
-    expect(observer).toContain(".claude/.session-id");
-    expect(observer).toContain(".claude/.trace.jsonl");
-    expect(observer).toContain(".claude/.codegraph-state");
-    expect(observer).toContain("[AnnotationGuard]");
-    expect(observer).toContain("event_type");
-    expect(observer).toContain("run_id");
-    expect(observer).not.toContain(".tool-call-count");
-    expect(observer).not.toContain("context-budget");
-    expect(observer).not.toContain("/compact");
-  });
-
   test("typed subagent handler owns return channel, delegation, context, and quality", () => {
     const handler = read("src/cli/hook/subagent-handler.ts");
     expect(handler).toContain("[repo-harness:return-channel]");
@@ -169,14 +156,17 @@ describe("Hook contracts", () => {
     expect(script).not.toContain("--strict");
   });
 
-  test("in-process stop handler should own Stop JSON control and recovery projection", () => {
+  test("in-process stop handler renders the recovery views and resolves no workflow state", () => {
     const handler = read("src/cli/hook/stop-handler.ts");
-    expect(handler).toContain("[StopReadiness]");
     // #691 finding 10 removed the private Stop payload type, the only place that named last_assistant_message.
     expect(handler).toContain("stop_hook_active");
-    expect(handler).toContain("StopProjectionBatch");
-    expect(handler).toContain("Stop may continue");
-    expect(handler).toContain("getEffectiveState");
+    expect(handler).toContain("renderRecoveryHandoff");
+    expect(handler).toContain("renderRecoveryResume");
+    expect(handler).toContain("publishCheckpointFromLedger");
+    // #695: no readiness lines, no state resolution, no events.jsonl append.
+    expect(handler).not.toContain("[StopReadiness]");
+    expect(handler).not.toContain("getEffectiveState");
+    expect(handler).not.toContain("handoff_refresh");
   });
 
   test("workstream sync helper keeps the workstreams directory", () => {
@@ -196,13 +186,8 @@ describe("Hook contracts", () => {
     expect(existsSync(join(ROOT, "assets/hooks/anti-simplification.sh"))).toBe(false);
   });
 
-  test("typed trace observer records one structured JSONL event per call", () => {
-    const observer = read("src/cli/hook/trace-observer.ts");
-    expect(observer).toContain(".claude/.trace.jsonl");
-    expect(observer).toContain("event_type");
-    expect(observer).toContain("run_id");
-    expect(observer).toContain("appendFileSync");
-    expect(observer).not.toContain("workflow_append_event");
+  test("the trace observer and its shell predecessors are retired", () => {
+    expect(existsSync(join(ROOT, "src/cli/hook/trace-observer.ts"))).toBe(false);
     expect(existsSync(join(ROOT, "assets/hooks/trace-event.sh"))).toBe(false);
     expect(existsSync(join(ROOT, "assets/hooks/context-pressure-hook.sh"))).toBe(false);
   });

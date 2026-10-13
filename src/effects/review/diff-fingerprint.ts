@@ -415,10 +415,7 @@ function isOperationalReviewPath(path: string): boolean {
     path === 'evals/harness/reports/profile-comparison.json' ||
     path === 'evals/harness/reports/profile-comparison.md' ||
     path === 'evals/harness/reports/profile-comparison.sha256.json' ||
-    path === '.claude/.active-plan' ||
-    path === '.claude/.session-id' ||
-    path === '.claude/.trace.jsonl' ||
-    path.startsWith('.claude/.codegraph-state/')
+    path === '.claude/.active-plan'
   );
 }
 

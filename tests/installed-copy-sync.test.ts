@@ -161,7 +161,7 @@ describe("Codex installed copy sync", () => {
       mkdirSync(join(source, ".codex"), { recursive: true });
       writeFileSync(join(source, ".ai", "harness", "checks", "minimal-change.latest.json"), "{}\n");
       writeFileSync(join(source, ".ai", "harness", "checks", "minimal-change.latest.md"), "# local\n");
-      writeFileSync(join(source, ".claude", ".trace.jsonl"), "{\"local\":true}\n");
+      writeFileSync(join(source, ".claude", ".task-state.json"), "{\"local\":true}\n");
       writeFileSync(join(source, ".codex", "hooks.json"), "{}\n");
 
       const result = spawnSync("bash", [join(ROOT, "scripts", "sync-codex-installed-copies.sh")], {
@@ -182,13 +182,13 @@ describe("Codex installed copy sync", () => {
       expect(existsSync(join(codexSkills, "repo-harness", "evals", "benchmark.md"))).toBe(false);
       expect(existsSync(join(codexSkills, "repo-harness", ".ai", "harness", "checks", "minimal-change.latest.json"))).toBe(false);
       expect(existsSync(join(codexSkills, "repo-harness", ".ai", "harness", "checks", "minimal-change.latest.md"))).toBe(false);
-      expect(existsSync(join(codexSkills, "repo-harness", ".claude", ".trace.jsonl"))).toBe(false);
+      expect(existsSync(join(codexSkills, "repo-harness", ".claude", ".task-state.json"))).toBe(false);
       expect(existsSync(join(codexSkills, "repo-harness", ".codex", "hooks.json"))).toBe(false);
 
       expect(existsSync(join(claudeSkills, "repo-harness", "SKILL.md"))).toBe(true);
       expect(existsSync(join(claudeSkills, "repo-harness", ".ai", "harness", "checks", "minimal-change.latest.json"))).toBe(false);
       expect(existsSync(join(claudeSkills, "repo-harness", ".ai", "harness", "checks", "minimal-change.latest.md"))).toBe(false);
-      expect(existsSync(join(claudeSkills, "repo-harness", ".claude", ".trace.jsonl"))).toBe(false);
+      expect(existsSync(join(claudeSkills, "repo-harness", ".claude", ".task-state.json"))).toBe(false);
       expect(existsSync(join(claudeSkills, "repo-harness", ".codex", "hooks.json"))).toBe(false);
       // Each facade is also registered as its own host skill (copy mode).
       expect(existsSync(join(codexSkills, "repo-harness-check", "SKILL.md"))).toBe(true);

@@ -146,7 +146,7 @@ describe('typed hook runtime', () => {
         ['PreToolUse', 'subagent', JSON.stringify({ tool_name: 'Task', tool_input: { prompt: 'inspect' } }), 'subagent'],
         ['PostToolUse', 'edit', JSON.stringify({ tool_input: { file_path: 'README.md' } }), 'retired-observer'],
         ['PostToolUse', 'bash', JSON.stringify({ tool_input: { command: 'echo hi' }, tool_response: { stdout: 'hi\n', stderr: '', interrupted: false }, exit_code: 0 }), 'command-observed'],
-        ['PostToolUse', 'always', JSON.stringify({ hook_event_name: 'PostToolUse', tool_name: 'Read' }), 'trace-observer'],
+        ['PostToolUse', 'always', JSON.stringify({ hook_event_name: 'PostToolUse', tool_name: 'Read' }), 'retired-observer'],
         ['UserPromptSubmit', 'default', JSON.stringify({ prompt: 'review this' }), 'prompt'],
         ['UserPromptSubmit', 'delegation', JSON.stringify({ prompt: 'implement next task' }), 'subagent'],
         ['SubagentStart', 'context', JSON.stringify({ hook_event_name: 'SubagentStart' }), 'subagent'],

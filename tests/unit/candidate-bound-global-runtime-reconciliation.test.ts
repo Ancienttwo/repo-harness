@@ -41,14 +41,14 @@ function copyRuntimeFixture(
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8')) as { version?: string };
   manifest.version = version;
   writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
-  const workBudgetPath = join(destination, 'src', 'core', 'hook-work-budget.ts');
-  const workBudget = readFileSync(workBudgetPath, 'utf-8');
-  const authority = 'export const MANAGED_STOP_TIMEOUT_SECONDS = 150;';
-  if (!workBudget.includes(authority)) throw new Error('fixture requires the managed Stop timeout authority');
+  const managedEntriesPath = join(destination, 'src', 'cli', 'installer', 'managed-entries.ts');
+  const managedEntries = readFileSync(managedEntriesPath, 'utf-8');
+  const authority = "const timeout = route.event === 'Stop' && route.routeId === 'default' ? 150 : 30;";
+  if (!managedEntries.includes(authority)) throw new Error('fixture requires the managed Stop timeout authority');
   if (stopTimeout === 30) {
-    writeFileSync(workBudgetPath, workBudget.replace(
+    writeFileSync(managedEntriesPath, managedEntries.replace(
       authority,
-      'export const MANAGED_STOP_TIMEOUT_SECONDS = 30;',
+      "const timeout = route.event === 'Stop' && route.routeId === 'default' ? 30 : 30;",
     ));
   }
   if (legacyParent) {

@@ -9,7 +9,6 @@ import { runStopHandler } from './stop-handler';
 import { runPromptHandler } from './prompt-handler';
 import { runSubagentHandler } from './subagent-handler';
 import { runCommandObserved } from './command-observed';
-import { runTraceObserver } from './trace-observer';
 import { runTaskInboxHandler } from './task-inbox-handler';
 import type { HookHandlerId, Route } from './route-registry';
 import type { HookHandlerContext, HookHandlerResult, TypedHookHandler } from './handler-contract';
@@ -88,15 +87,6 @@ const handlers: Readonly<Record<HookHandlerId, TypedHookHandler>> = Object.freez
     run: (context: HookHandlerContext) => textResult(runCommandObserved({
       repoRoot: context.repoRoot,
       payload: context.payload,
-    })),
-  },
-  'trace-observer': {
-    id: 'trace-observer',
-    run: (context: HookHandlerContext) => textResult(runTraceObserver({
-      repoRoot: context.repoRoot,
-      payload: context.payload,
-      identity: context.identity,
-      env: context.env,
     })),
   },
   prompt: {

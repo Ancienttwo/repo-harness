@@ -246,7 +246,6 @@
     "tests/task-inbox-hook.test.ts": 4.8,
     "tests/test-timeout-contract.test.ts": 12116.48,
     "tests/tooling/codegraph-integration.test.ts": 2552.79,
-    "tests/trace-observer.test.ts": 14.28,
     "tests/unit/ai-native-scaffold-architecture-profile.test.ts": 5.15,
     "tests/unit/brc10-reclaim-time-boundary.test.ts": 2349.62,
     "tests/unit/brc10-supervised-renewal.test.ts": 3438.6,
