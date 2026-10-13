@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { errorEnvelope } from "archctx-contracts";
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { dirname, join } from "path";
@@ -344,13 +345,19 @@ describe("capability source: archctx resolve envelope checks", () => {
   });
 
   test("an error envelope is a model fault, not an unavailable runtime", () => {
-    const resolution = resolveWith(JSON.stringify({ schemaVersion: "archcontext.envelope/v1", ok: false, error: { code: "AC_X", message: "boom" } }), 1);
+    const resolution = resolveWith(JSON.stringify(errorEnvelope("resolve", "AC_SCHEMA_INVALID", "boom")), 1);
     expect(resolution.status).toBe("invalid");
     expect(resolution.diagnostics).toEqual([{
       code: "ARCHCONTEXT_MODEL_REJECTED",
       path: ".archcontext/model/nodes",
-      message: "archctx resolve rejected the model: AC_X: boom",
+      message: "archctx resolve rejected the model: AC_SCHEMA_INVALID: boom",
     }]);
+  });
+
+  test("an unknown error code fails closed instead of becoming a model result", () => {
+    const invalid = errorEnvelope("resolve", "AC_SCHEMA_INVALID", "boom");
+    const envelope = { ...invalid, error: { ...invalid.error, code: "AC_X" } };
+    expect(() => resolveWith(JSON.stringify(envelope), 1)).toThrow("invalid error envelope");
   });
 
   test("throws on a result-count mismatch, a path mismatch or a bad field", () => {

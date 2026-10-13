@@ -14,8 +14,9 @@ import projectionResultSchema from 'archctx-contracts/schemas/runtime/projection
 import projectionReadbackSchema from 'archctx-contracts/schemas/runtime/projection-apply-readback.schema.json';
 import docsAnchorsSchema from 'archctx-contracts/schemas/runtime/docs-anchors.schema.json';
 import type { GeneratedSummaryFreshness } from './module-view';
+import packageManifest from '../../../package.json';
 
-export const ARCHCTX_REQUIRED_VERSION = '0.7.2' as const;
+export const ARCHCTX_REQUIRED_VERSION = packageManifest.dependencies.archctx;
 
 export type ProjectionProvider = 'disabled' | 'archctx';
 export type ProjectionApplyMode = 'disabled' | 'manual';
@@ -29,16 +30,17 @@ export interface ArchitectureProjectionPolicy {
 
 export interface ArchitectureProjectionReadinessV1 {
   schemaVersion: 'repo-harness.architecture-projection-readiness/v1';
-  modelAuthority: { source: 'registry' | 'archcontext'; ready: boolean };
+  modelAuthority: { source: 'registry' | 'archcontext' | 'unadopted'; ready: boolean };
   /**
    * `command` is the managed invocation `[nodePath, binaryPath]`. Guidance runs
    * archctx only through it, never through a PATH copy. It is null unless the
-   * provider is ready.
+   * package and Node runtime resolve.
    */
   projectionProvider: { provider: ProjectionProvider; state: 'disabled' | 'missing' | 'mismatch' | 'error' | 'ready'; binaryPath: string | null; nodePath: string | null; command: [string, string] | null; version: string | null; reason: string };
   codeFacts: { requirement: 'required'; state: 'not-evaluated' | 'ready' | 'unavailable' };
+  daemonRuntime: { state: 'not-evaluated' | 'compatible' | 'mismatch' | 'error' };
   apply: { mode: ProjectionApplyMode; enabled: boolean };
-  /** The adoption step when the repository has no complete ArchContext model; null when it has one. */
+  /** The next operator step for adoption, code facts or provider repair; null when none is needed. */
   next: string | null;
 }
 
@@ -49,7 +51,7 @@ export function readArchitectureProjectionPolicy(value: unknown): ArchitecturePr
   const architecture = root.architecture === undefined ? {} : record(root.architecture, 'policy.architecture');
   const provider = architecture.projection_provider ?? 'disabled';
   const applyMode = architecture.projection_apply ?? 'disabled';
-  const requiredVersion = architecture.projection_version ?? ARCHCTX_REQUIRED_VERSION;
+  const requiredVersion = ARCHCTX_REQUIRED_VERSION;
   const timeoutMs = architecture.projection_timeout_ms ?? 120_000;
   if (provider !== 'disabled' && provider !== 'archctx') throw new Error('policy.architecture.projection_provider must be disabled|archctx');
   if (applyMode !== 'disabled' && applyMode !== 'manual') throw new Error('policy.architecture.projection_apply must be disabled|manual');
@@ -57,7 +59,6 @@ export function readArchitectureProjectionPolicy(value: unknown): ArchitecturePr
     if (applyMode !== 'disabled') throw new Error('projection_apply must be disabled when projection_provider is disabled');
     return { provider, applyMode, requiredVersion: ARCHCTX_REQUIRED_VERSION, timeoutMs: 120_000 };
   }
-  if (typeof requiredVersion !== 'string' || requiredVersion.trim() === '') throw new Error('policy.architecture.projection_version must be a non-empty string');
   if (!Number.isInteger(timeoutMs) || (timeoutMs as number) < 1_000 || (timeoutMs as number) > 600_000) throw new Error('policy.architecture.projection_timeout_ms must be 1000..600000');
   return { provider, applyMode, requiredVersion, timeoutMs: timeoutMs as number };
 }
