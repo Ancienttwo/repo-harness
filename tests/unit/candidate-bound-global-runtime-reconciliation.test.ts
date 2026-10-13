@@ -55,7 +55,7 @@ function copyRuntimeFixture(
     const globalRuntimePath = join(destination, 'src', 'cli', 'commands', 'global-runtime.ts');
     const globalRuntime = readFileSync(globalRuntimePath, 'utf-8');
     const frozenLegacy = globalRuntime.replace(
-      'if (updateMode && opts.installCli !== false && opts.installSpec && opts.candidateHandoff) {',
+      "if (updateMode && install.status === 'ok' && opts.installSpec && opts.candidateHandoff) {",
       'if (false) {',
     );
     if (frozenLegacy === globalRuntime) throw new Error('fixture requires the candidate handoff branch');
@@ -86,6 +86,17 @@ function writeCandidateSwitchingBun(
     'exit 0',
     '',
   ].join('\n'));
+}
+
+// Restore the renderer check from v0.21.2 in one CLI copy. The provider is real.
+function requireLegacyRenderer(packageRoot: string): void {
+  const path = join(packageRoot, 'src', 'core', 'architecture', 'projection.ts');
+  const source = readFileSync(path, 'utf-8');
+  const anchor = "  const pkg = record(input.package, 'archctx capabilities.package');";
+  if (!source.includes(anchor)) throw new Error('fixture requires assertArchctxVersion');
+  writeFileSync(path, source.replace(anchor, `${anchor}
+  const renderers = record(input.renderers, 'archctx capabilities.renderers');
+  if (renderers.architectureDocs !== 'archcontext.docs-renderer/v4') throw new Error('archctx architecture docs renderer mismatch');`));
 }
 
 function writeMinimalInstallState(home: string): void {
@@ -153,6 +164,9 @@ function runCandidateChild(
   env: NodeJS.ProcessEnv,
 ): ReturnType<typeof spawnSync> {
   const home = realpathSync(env.HOME!);
+  const globalModules = join(env.BUN_INSTALL!, 'install', 'global', 'node_modules');
+  mkdirSync(globalModules, { recursive: true });
+  symlinkSync(request.candidate.root, join(globalModules, 'repo-harness'), 'dir');
   const lock = acquireExclusiveDirectoryLock(home, '.repo-harness/transactions/global-runtime.lock');
   try {
     publishCandidateReconciliationCapability({
@@ -455,6 +469,109 @@ describe('candidate-bound global runtime reconciliation', () => {
       rmSync(root, { recursive: true, force: true });
     }
   }, 30_000);
+
+  for (const scenario of ['parent-renderer', 'candidate-renderer', 'wrong-version', 'candidate-daemon'] as const) {
+    test(`#699 ${scenario}: update binds verification to the installed candidate`, () => {
+      const root = mkdtempSync(join(tmpdir(), 'repo-harness-update-699-'));
+      const home = join(root, 'home');
+      const repo = join(root, 'repo');
+      const bin = join(root, 'bin');
+      const parentRoot = join(root, 'parent');
+      const candidateRoot = join(root, 'candidate');
+      const bunLog = join(root, 'bun.log');
+      try {
+        mkdirSync(repo, { recursive: true });
+        mkdirSync(bin, { recursive: true });
+        copyRuntimeFixture(parentRoot, '0.21.2', 30);
+        copyRuntimeFixture(candidateRoot, '0.22.1', 150);
+        if (scenario === 'parent-renderer') requireLegacyRenderer(parentRoot);
+        if (scenario === 'candidate-renderer') requireLegacyRenderer(candidateRoot);
+        if (scenario === 'candidate-daemon') {
+          // Inject a daemon status failure without starting or changing any shared daemon.
+          const providerPath = join(candidateRoot, 'src', 'effects', 'architecture', 'archctx-provider.ts');
+          const provider = readFileSync(providerPath, 'utf-8');
+          const anchor = 'export function verifyArchctxDaemonRuntime(repoRoot: string, options: ArchctxProviderOptions = {}): void {';
+          if (!provider.includes(anchor)) throw new Error('fixture requires the daemon inspector');
+          writeFileSync(providerPath, provider.replace(anchor, `${anchor}
+  throw new Error('User authorization required: daemon fixture needs maintenance');`));
+        }
+        const globalRoot = join(home, '.bun', 'install', 'global');
+        const globalPackage = join(globalRoot, 'node_modules', 'repo-harness');
+        mkdirSync(join(globalRoot, 'node_modules'), { recursive: true });
+        symlinkSync(parentRoot, globalPackage, 'dir');
+        writeMinimalInstallState(home);
+        const globalManifest = join(globalRoot, 'package.json');
+        const oldManifest = JSON.stringify({ dependencies: { 'repo-harness': '^0.21.2' } });
+        writeFileSync(globalManifest, oldManifest);
+        const cliBin = join(home, '.bun', 'bin', 'repo-harness');
+        mkdirSync(join(home, '.bun', 'bin'), { recursive: true });
+        const oldBin = '#!/bin/sh\necho 0.21.2\n';
+        writeExecutable(cliBin, oldBin);
+        const hookPath = join(home, '.codex', 'hooks.json');
+        mkdirSync(join(home, '.codex'), { recursive: true });
+        const oldHooks = JSON.stringify({ hooks: {}, custom: 'preserve' });
+        writeFileSync(hookPath, oldHooks);
+        const statePath = join(home, '.repo-harness', 'install-state.json');
+        const oldState = readFileSync(statePath, 'utf-8');
+        writeCandidateSwitchingBun(join(bin, 'bun'), bunLog, globalPackage, candidateRoot);
+        // Model the package manager's manifest and bin writes as well as its package link.
+        const bunSource = readFileSync(join(bin, 'bun'), 'utf-8');
+        writeExecutable(join(bin, 'bun'), bunSource.replace(
+          'if [[ "$1" == "add" && "$2" == "-g" ]]; then ',
+          `if [[ "$1" == "add" && "$2" == "-g" ]]; then printf '%s' '{"dependencies":{"repo-harness":"^0.22.1"}}' > "${globalManifest}"; printf '#!/bin/sh\\necho 0.22.1\\n' > "${cliBin}"; `,
+        ));
+        const env = {
+          ...process.env, HOME: home, BUN_INSTALL: join(home, '.bun'),
+          PATH: `${bin}:${process.env.PATH ?? ''}`,
+          REPO_HARNESS_BUN_EXECUTABLE: join(bin, 'bun'),
+        };
+        const args = ['update', '--target', 'codex', '--no-sync-skill', '--no-external-skills', '--no-codegraph', '--json'];
+        const result = spawnSync(process.execPath, [join(parentRoot, 'src', 'cli', 'index.ts'), ...args,
+          '--version', scenario === 'wrong-version' ? '0.22.2' : '0.22.1'], { cwd: repo, encoding: 'utf-8', env });
+        const runtime = JSON.parse(result.stdout);
+        const handoff = runtime.steps.find((step: { step: string }) => step.step === 'reconcile installed candidate runtime');
+        const log = readFileSync(bunLog, 'utf-8');
+        if (scenario === 'parent-renderer' || scenario === 'candidate-daemon') {
+          expect(result.status, `${result.stderr}\n${result.stdout}`).toBe(0);
+          expect(handoff.status).toBe('ok');
+          expect(handoff.detail).toContain('candidate=0.22.1');
+          expect(runtime.steps.some((step: { step: string }) => step.step === 'verify managed runtime dependencies')).toBe(false);
+          expect(realpathSync(globalPackage)).toBe(realpathSync(candidateRoot));
+          expect(JSON.parse(readFileSync(globalManifest, 'utf-8')).dependencies['repo-harness']).toBe('^0.22.1');
+          expect(readFileSync(cliBin, 'utf-8')).toContain('0.22.1');
+          expect(JSON.parse(readFileSync(hookPath, 'utf-8')).hooks.Stop[0].hooks[0].timeout).toBe(150);
+          if (scenario === 'candidate-daemon') {
+            expect(handoff.detail).toContain('Daemon readiness pending');
+            expect(runtime.lines.join('\n')).toContain('User authorization required: daemon fixture needs maintenance');
+          }
+          // The same parent verifier must still reject v5 without a handoff.
+          if (scenario === 'parent-renderer') {
+            const noCli = spawnSync(process.execPath, [join(parentRoot, 'src', 'cli', 'index.ts'), ...args,
+              '--version', '0.22.1', '--no-cli'], { cwd: repo, encoding: 'utf-8', env });
+            expect(noCli.status).toBe(1);
+            expect(noCli.stdout).toContain('archctx architecture docs renderer mismatch');
+          }
+        } else {
+          expect(result.status, `${result.stderr}\n${result.stdout}`).toBe(1);
+          expect(handoff).toMatchObject({ status: 'failed' });
+          if (scenario === 'candidate-renderer') {
+            expect(handoff.stderr).toContain('archctx architecture docs renderer mismatch');
+          } else {
+            expect(handoff.detail).toContain('expected 0.22.2, got 0.22.1');
+          }
+          expect(realpathSync(globalPackage)).toBe(realpathSync(parentRoot));
+          expect(readFileSync(globalManifest, 'utf-8')).toBe(oldManifest);
+          expect(readFileSync(cliBin, 'utf-8')).toBe(oldBin);
+          expect(readFileSync(hookPath, 'utf-8')).toBe(oldHooks);
+          expect(readFileSync(statePath, 'utf-8')).toBe(oldState);
+        }
+        expect(log.includes('__reconcile-installed-runtime')).toBe(scenario !== 'wrong-version');
+        expect(log).toContain(`add -g repo-harness@${scenario === 'wrong-version' ? '0.22.2' : '0.22.1'} --no-cache`);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    }, 60_000);
+  }
 
   test('the leftover summary comes from candidate C after B assets change in place', () => {
     const root = mkdtempSync(join(tmpdir(), 'repo-harness-candidate-leftovers-'));

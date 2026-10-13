@@ -312,6 +312,7 @@ export function runCandidateRuntimeReconciliation(
     target: request.target,
     profile: request.profile,
     installCli: false,
+    installSpec: `repo-harness@${candidate.version}`,
     syncSkill: request.sync_skill,
     hostAdapters: request.host_adapters,
     externalSkills: request.external_skills,
@@ -324,6 +325,10 @@ export function runCandidateRuntimeReconciliation(
   if (runtime.exitCode !== 0) {
     throw new Error(`candidate reconciliation failed: ${runtime.lines.join('; ')}`);
   }
+  // Stdout is the protocol-1 receipt. Keep maintenance advice visible without
+  // changing the receipt parsed by an already released parent.
+  const daemon = runtime.steps.find(step => step.step === 'check shared ArchContext daemon');
+  if (daemon?.status === 'skipped') console.error(daemon.detail);
 
   const complete = request.sync_skill && request.host_adapters;
   const adapterDigests = request.host_adapters

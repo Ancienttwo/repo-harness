@@ -230,6 +230,7 @@ describe('registry-bound CLI update (#701)', () => {
     cliVersion?: string;
     cliExit?: number;
     channel?: 'latest' | 'next';
+    version?: string;
     installExit?: number;
   } = {}) {
     const root = mkdtempSync(join(tmpdir(), 'repo-harness-registry-update-'));
@@ -263,7 +264,7 @@ describe('registry-bound CLI update (#701)', () => {
       ].join('\n'));
       const result = runGlobalRuntimeSetup({
         sourceRoot: source, cwd: root, profile: 'minimal', target: 'codex',
-        installSpec: `repo-harness@${options.channel ?? 'latest'}`, updateMode: true,
+        installSpec: `repo-harness@${options.version ?? options.channel ?? 'latest'}`, updateMode: true,
         syncSkill: false, hostAdapters: false, externalSkills: false, codegraph: false,
         env: {
           ...sanitizedChildEnv(), HOME: home, BUN_INSTALL: join(home, '.bun'),
@@ -277,12 +278,19 @@ describe('registry-bound CLI update (#701)', () => {
     }
   }
 
+  test('explicit versions bypass the Bun manifest cache without resolving a channel', () => {
+    const { result, commands } = runUpdateFixture({ version: '0.22.1' });
+    expect(result.exitCode).toBe(0);
+    expect(commands).toContain('add -g repo-harness@0.22.1 --no-cache');
+    expect(commands.some(command => command.startsWith('pm view '))).toBe(false);
+  });
+
   test('rejects a successful Bun install that leaves an older CLI than registry latest', () => {
     const { result, commands } = runUpdateFixture({ installed: '0.21.2' });
     expect(result.exitCode).toBe(1);
     expect(result.lines).toContain('[runtime] failed: install repo-harness CLI - spec=repo-harness@0.22.1; installed CLI version mismatch: expected=0.22.1; actual=0.21.2; package=0.21.2');
     expect(commands).toContain('pm view repo-harness@latest version --json --no-cache');
-    expect(commands).toContain('add -g repo-harness@0.22.1');
+    expect(commands).toContain('add -g repo-harness@0.22.1 --no-cache');
     expect(commands).not.toContain('add -g repo-harness@latest');
     expect(result.steps.at(-1)?.step).toBe('install repo-harness CLI');
   });
@@ -291,7 +299,7 @@ describe('registry-bound CLI update (#701)', () => {
     const { result, commands } = runUpdateFixture();
     expect(result.exitCode).toBe(0);
     expect(result.lines).toContain('[runtime] ok: install repo-harness CLI - spec=repo-harness@0.22.1; 0.21.2 -> 0.22.1');
-    expect(commands.indexOf('pm view repo-harness@latest version --json --no-cache')).toBeLessThan(commands.indexOf('add -g repo-harness@0.22.1'));
+    expect(commands.indexOf('pm view repo-harness@latest version --json --no-cache')).toBeLessThan(commands.indexOf('add -g repo-harness@0.22.1 --no-cache'));
   });
 
   test('reports already current only after version readback', () => {
@@ -305,7 +313,7 @@ describe('registry-bound CLI update (#701)', () => {
     const { result, commands } = runUpdateFixture({ channel: 'next', registryOutput: '"0.23.0-rc.1"', installed: '0.23.0-rc.1' });
     expect(result.exitCode).toBe(0);
     expect(commands).toContain('pm view repo-harness@next version --json --no-cache');
-    expect(commands).toContain('add -g repo-harness@0.23.0-rc.1');
+    expect(commands).toContain('add -g repo-harness@0.23.0-rc.1 --no-cache');
     expect(result.lines).toContain('[runtime] ok: install repo-harness CLI - spec=repo-harness@0.23.0-rc.1; 0.21.2 -> 0.23.0-rc.1');
   });
 

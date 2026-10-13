@@ -165,9 +165,9 @@ sequenceDiagram
 
 1. **必选闭包先验证，后改 host。** `runGlobalRuntimeSetup` 按固定顺序执行步骤。Bun 版本、受保护 helper 平台、CLI 安装与依赖回读任一失败，函数立即返回（`global-runtime.ts:1462-1483`）。架构投影配置失败也立即返回（`global-runtime.ts:1502-1504`）。host adapter、skill、agent fleet 都在这些检查之后。
 2. **回读只认精确版本。** `reconcileManagedRuntime` 从 Bun 全局包根读回 repo-harness、archctx、archctx-contracts 和 CodeGraph 的版本。不一致即失败。它不自动卸载重装。理由写在报错里：重装失败会删掉正在工作的 CLI（`global-runtime.ts:524`）。
-3. **update 的后半段只由新包执行。** 安装新包的进程已经加载了旧模块。依赖回读成功后，只有候选包的绝对入口可以写 managed runtime 表面（`global-runtime.ts:1495`）。候选入口 `runCandidateRuntimeReconciliation` 要求父事务的 token，并核对包根、版本和包摘要（`index.ts:294`、`index.ts:305`）。它不取全局 runtime 锁，因为父进程持有锁和事务（`index.ts:282`）。PR #628 把遗留检查也改成在新包里运行，原因相同：旧解析器读不了新目录格式。
+3. **新包验证自己的 runtime。** 父进程安装新包，并核对请求版本和候选包身份。随后立即通过候选包的绝对入口交接。依赖和 daemon 检查都在候选进程中执行，先于 host 写入（`runGlobalRuntimeSetup`、`runCandidateRuntimeReconciliation`）。旧进程不能用已加载的 renderer 或 Node 合约验证新包。候选入口仍核对父事务 token、包根、版本和包摘要。父进程持有锁和事务，并在候选验证失败时恢复原 CLI 和 host 状态。PR #628 的遗留检查同样在新包中运行。
 4. **archctx 只通过包内 CLI 和精确版本运行。** `ARCHCTX_REQUIRED_VERSION` 是唯一的能力检查（`src/core/architecture/projection.ts:14`、`:55`；PR #617）。Node 运行时按三级顺序选择：`REPO_HARNESS_NODE_BIN`、PATH、受信任候选扫描。每一级都检查 `ARCHCONTEXT_NODE_RANGE`，全部失败时 fail closed（`archctx-provider.ts:103-110`）。
-5. **daemon 维护不回滚已验证的包。** update 中 daemon 检查失败时，该步骤记为 `skipped` 并说明原因。已安装并回读成功的包保留（`global-runtime.ts:1486-1490`）。严格的 `verifyInstalledManagedRuntime` 仍然把 daemon 失败判为失败（`global-runtime.ts:557-558`）。
+5. **daemon 维护不回滚已验证的包。** 候选进程把 daemon 检查失败记为 `skipped`。候选通过 stderr 传回维护说明，父进程把说明加入 update 输出。protocol-1 receipt 的格式不变。`verifyInstalledManagedRuntime` 仍把 daemon 失败判为失败。
 6. **诊断命令不改任何东西。** `doctor` 和 `init-hook`（`setup check`）只读（文件头 `doctor.ts:1-7`、`init-hook.ts:1-8`）。修复动作只出现在 `update`、`install`、`upgrade` 这类显式命令里。
 7. **apply 自己接受 major change。** `architecture-projection apply` 在同一次调用里接受 ArchContext 报告的 major change。人的关口是 PR review。丢失响应时读回已提交的 apply，不重复 apply（`projection-apply.ts:24-30`；PR #617）。
 8. **发布前先确认版本不存在。** `check-npm-release.sh` 先跑 `check:helpers`，再查询 npm。版本已存在时拒绝发布（`check-npm-release.sh:24-29`）。
