@@ -20,7 +20,7 @@ import { fileURLToPath, pathToFileURL } from "url";
 
 type CheckpointStoreModule = typeof import("../src/effects/evidence/checkpoint-store");
 type RunSummaryRetentionModule = typeof import("../src/effects/run-summary-retention");
-type RecoveryMaterializerModule = typeof import("../src/effects/evidence/recovery-materializer");
+type HarnessPathsModule = typeof import("../src/effects/state/resolve-effective-state");
 type ExclusiveDirectoryLockModule = typeof import("../src/effects/locking/exclusive-directory-lock");
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
@@ -41,7 +41,7 @@ function usage(): string {
     "Removes superseded evidence checkpoints.",
     "",
     "One-release cleanups (removed in the next release):",
-    "  - deletes the run summaries Stop no longer writes; acceptance snapshots",
+    "  - deletes the run summaries nothing writes now; acceptance snapshots",
     "    and verification execution records are left to their owners;",
     "  - removes circuit-breaker entries of the retired kinds guard, review,",
     "    subagent, cross-model-consult and minimal-change, and deletes a",
@@ -188,14 +188,14 @@ async function main(argv: readonly string[]): Promise<number> {
 
   const checkpointStore = await load<CheckpointStoreModule>("src", "effects", "evidence", "checkpoint-store.ts");
   const retention = await load<RunSummaryRetentionModule>("src", "effects", "run-summary-retention.ts");
-  const recovery = await load<RecoveryMaterializerModule>("src", "effects", "evidence", "recovery-materializer.ts");
+  const harness = await load<HarnessPathsModule>("src", "effects", "state", "resolve-effective-state.ts");
   const locking = await load<ExclusiveDirectoryLockModule>("src", "effects", "locking", "exclusive-directory-lock.ts");
 
   const errors: string[] = [];
 
   // Reuse the single `harness.runs_dir` reader rather than adding a second
   // policy reading of the same datum.
-  const paths = recovery.buildRecoveryContext(options.repo, null, process.env).paths;
+  const paths = harness.resolveHarnessPaths(options.repo);
 
   const checkpointsDir = checkpointStore.resolveCheckpointsDir(options.repo);
   const before = retention.directoryBytes(checkpointsDir);

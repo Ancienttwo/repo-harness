@@ -1,6 +1,0 @@
-schemaVersion: archcontext.relation/v1
-id: relation.hook-adapters.host-installer.contract-assets
-kind: calls
-source: component.hook-adapters.host-installer
-target: capability.workflow-engine.contract-assets
-intent: "Locate the packaged workflow-state helper for hook-lib path"

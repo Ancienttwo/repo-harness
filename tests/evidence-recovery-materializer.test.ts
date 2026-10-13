@@ -77,6 +77,40 @@ function seedEvent(
 }
 
 
+describe("recovery-materializer: active artifact paths", () => {
+  test("a transient-slug plan with a title names the real-title contract, and policy directories hold the review and notes", () => {
+    withTempRepo("recovery-artifacts-transient", (repoRoot) => {
+      const plan = "plans/plan-20260101-1200-think-plan-123.md";
+      mkdirSync(join(repoRoot, "plans"), { recursive: true });
+      mkdirSync(join(repoRoot, "tasks/contracts"), { recursive: true });
+      writeFileSync(join(repoRoot, plan), "# Plan: Real Title\n\n> **Status**: Executing\n");
+      writeFileSync(join(repoRoot, "tasks/contracts/20260101-1200-real-title.contract.md"), "# Task Contract: real title\n");
+      writeFileSync(join(repoRoot, ".ai/harness/policy.json"), JSON.stringify({
+        tasks: { reviews_dir: "tasks/custom-reviews", notes_dir: "tasks/custom-notes" },
+      }));
+
+      const context = buildRecoveryContext(repoRoot, plan, {}, { reason: "unit-test", now: FIXED_NOW });
+
+      expect(context.artifacts).toEqual({
+        plan,
+        contract: "tasks/contracts/20260101-1200-real-title.contract.md",
+        review: "tasks/custom-reviews/20260101-1200-real-title.review.md",
+        notes: "tasks/custom-notes/20260101-1200-real-title.notes.md",
+      });
+      expect(renderRecoveryHandoff(context, resolveRecoveryEvidence(repoRoot), context.artifacts.contract))
+        .toContain("Contract: tasks/contracts/20260101-1200-real-title.contract.md");
+    });
+  });
+
+  test("a policy path outside its root fails closed instead of taking the default", () => {
+    withTempRepo("recovery-artifacts-unsafe-policy", (repoRoot) => {
+      writeFileSync(join(repoRoot, ".ai/harness/policy.json"), JSON.stringify({ tasks: { reviews_dir: "../reviews" } }));
+      expect(() => buildRecoveryContext(repoRoot, null, {}, { reason: "unit-test", now: FIXED_NOW }))
+        .toThrow("unsafe workflow policy path .tasks.reviews_dir: ../reviews");
+    });
+  });
+});
+
 describe("recovery-materializer: determinism", () => {
   test("same context + evidence + injected clock renders byte-identical handoff and resume", () => {
     withTempRepo("recovery-determinism", (repoRoot) => {
@@ -284,7 +318,8 @@ describe("recovery-view-cli.ts: end-to-end", () => {
 
 describe("no-independent-authoring: the retired writers carry zero content assembly", () => {
   const CANDIDATE_FILES = [
-    "assets/hooks/lib/workflow-state.sh",
+    "scripts/prepare-handoff.sh",
+    "assets/templates/helpers/prepare-handoff.sh",
     "scripts/codex-handoff-resume.sh",
     "assets/templates/helpers/codex-handoff-resume.sh",
     "scripts/prepare-codex-handoff.sh",
@@ -319,15 +354,6 @@ describe("no-independent-authoring: the retired writers carry zero content assem
       expect(text).not.toContain("# Harness Handoff");
       expect(text).not.toContain("## Provenance");
     }
-  });
-
-  test("workflow_ensure_harness_surface no longer bootstraps handoff/resume placeholder content", () => {
-    const text = readFileSync(join(REPO_ROOT, "assets/hooks/lib/workflow-state.sh"), "utf-8");
-    const start = text.indexOf("workflow_ensure_harness_surface() {");
-    const end = text.indexOf("\n}\n", start);
-    const body = text.slice(start, end);
-    expect(body).not.toContain("Harness Handoff");
-    expect(body).not.toContain("Codex Resume Packet");
   });
 });
 

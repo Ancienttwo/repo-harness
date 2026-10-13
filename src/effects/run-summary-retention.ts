@@ -1,21 +1,15 @@
 /**
- * One-release operator cleanup of the run summaries Stop used to write under
- * the policy `harness.runs_dir`. Stop no longer writes them; only
- * `scripts/evidence-gc.ts` calls this module, and both go away one release
- * after the Stop change.
- *
- * Stop is not the only writer left. `workflow_write_handoff` in
- * `assets/hooks/lib/workflow-state.sh` (run by prepare-handoff) still writes
- * run summaries and appends `handoff_refresh` events. #696 owns that shell
- * writer.
+ * One-release operator cleanup of the run summaries that Stop and the retired
+ * shell `prepare-handoff` writer left under the policy `harness.runs_dir`.
+ * Nothing writes them now; only `scripts/evidence-gc.ts` calls this module,
+ * and both go away one release later.
  *
  * The non-obvious rule is which files this removes. Several writers share the
  * directory, and two of them produce durable evidence that a filename rule
- * cannot tell apart from the old Stop records:
+ * cannot tell apart from the old run summaries:
  *
- * - `workflow_write_run_summary` in `assets/hooks/lib/workflow-state.sh`
- *   writes `${runId}.json` in the same shape as the retired Stop record --
- *   disposable session history with free-form `reason` values.
+ * - A run summary is `${runId}.json` -- disposable session history with
+ *   free-form `reason` values.
  * - `scripts/verify-sprint.sh` freezes an acceptance snapshot whose exact path a
  *   checks projection records in `.run_file` and reads back at finalization.
  *   Its `runId` prefix is the same as Stop's.
@@ -38,8 +32,8 @@ import { lstatSync, readdirSync, readFileSync, statSync, unlinkSync, type Dirent
 import { join } from 'path';
 import { resolveInsideRepo } from './path-safety';
 
-/** The resolved projection paths every run summary carries; see
- * `workflow_write_run_summary`. Present together only in that record. */
+/** The resolved projection paths every run summary carries. Present together
+ * only in that record. */
 const RUN_SUMMARY_PATH_FIELDS = ['handoff_file', 'policy_file', 'context_map_file'] as const;
 
 export interface RunSummaryRetentionInput {

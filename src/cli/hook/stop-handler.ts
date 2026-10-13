@@ -5,6 +5,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from 'path';
 import { execFileSync } from 'child_process';
 import { publishCheckpointFromLedger } from '../../effects/evidence/checkpoint-store';
 import {
+  activePlanForRecovery,
   buildRecoveryContext,
   renderRecoveryHandoff,
   renderRecoveryResume,
@@ -160,9 +161,7 @@ export function runStopHandler(opts: StopHandlerInput): StopHandlerResult {
   if (stopHookActive === true || stopHookActive === 'true') {
     return { exitCode: 0, stdout: '', stderr: '' };
   }
-  const ownership = opts.collector.getWorktreeOwnership();
-  const activePlan = ownership.owner === null || ownership.ownedByCurrent
-    ? opts.collector.getActivePlanMarker() : null;
+  const activePlan = activePlanForRecovery(opts.collector);
   // The views name the checkpoint they read, so a failed publish renders the
   // last published one.
   try { publishCheckpointFromLedger(repoRoot, () => now); } catch { /* see above */ }

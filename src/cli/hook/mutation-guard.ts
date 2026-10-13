@@ -17,7 +17,7 @@ import {
   canonicalRepoRelativePath,
   isForeignDriveAbsolutePath,
 } from '../../effects/state/collect-state-inputs';
-import { capabilityOwnersForPaths, type CapabilityPathOwner } from '../../effects/state/resolve-effective-state';
+import { capabilityOwnersForPaths, FAILURE_LOG_FILE, type CapabilityPathOwner } from '../../effects/state/resolve-effective-state';
 import { payloadString, type HookIdentity, type HookPayload } from './hook-input';
 
 export interface MutationGuardInput {
@@ -37,8 +37,6 @@ interface Denial {
   readonly reason: string;
   readonly fix: string;
 }
-
-const FAILURE_LOG_FILE = '.ai/harness/failures/latest.jsonl';
 
 const APPLY_PATCH_SCOPE_DENIAL: Denial = {
   guard: 'ApplyPatchScopeGuard',

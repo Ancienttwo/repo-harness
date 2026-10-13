@@ -10,8 +10,6 @@ elif REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null)"; 
 else
   cd "$SCRIPT_DIR/.."
 fi
-helper_dir="$SCRIPT_DIR"
-workflow_state_lib="${REPO_HARNESS_WORKFLOW_STATE_LIB:-$SCRIPT_DIR/../assets/hooks/lib/workflow-state.sh}"
 
 reason="manual"
 mode="write"
@@ -41,24 +39,19 @@ USAGE_EOF
   esac
 done
 
-if [[ -f "$workflow_state_lib" ]]; then
-  # shellcheck source=/dev/null
-  . "$workflow_state_lib"
-  if [[ "$mode" == "status" ]]; then
-    echo "Active plan: $(get_active_plan || printf '(none)')"
-    echo "Active contract: $(workflow_active_contract || printf '(none)')"
-    echo "Review file: $(workflow_active_review || printf '(none)')"
-    echo "Handoff: $(workflow_handoff_file)"
-    echo "Resume packet: $(workflow_resume_packet_file)"
-    exit 0
-  fi
-  workflow_write_handoff "$reason"
-  echo "Updated $(workflow_handoff_file)"
-  if [[ "${REPO_HARNESS_SKIP_RESUME_REFRESH:-0}" != "1" && -f "$helper_dir/codex-handoff-resume.sh" ]]; then
-    bash "$helper_dir/codex-handoff-resume.sh" --cwd "$(pwd -P)" --reason "$reason" >/dev/null
-  fi
-  exit 0
+# The recovery materializer comes from the same helper runtime as this script.
+recovery_view_cli="$SCRIPT_DIR/recovery-view-cli.ts"
+if [[ ! -f "$recovery_view_cli" ]]; then
+  echo "prepare-handoff: recovery materializer is missing: $recovery_view_cli" >&2
+  exit 1
+fi
+bun_bin="${REPO_HARNESS_BUN_BIN:-bun}"
+
+if [[ "$mode" == "status" ]]; then
+  exec "$bun_bin" "$recovery_view_cli" --status
 fi
 
-echo "prepare-handoff: workflow-state library is unavailable" >&2
-exit 1
+"$bun_bin" "$recovery_view_cli" --reason "$reason"
+if [[ "${REPO_HARNESS_SKIP_RESUME_REFRESH:-0}" != "1" && -f "$SCRIPT_DIR/codex-handoff-resume.sh" ]]; then
+  bash "$SCRIPT_DIR/codex-handoff-resume.sh" --cwd "$(pwd -P)" --reason "$reason" >/dev/null
+fi
