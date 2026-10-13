@@ -4,10 +4,10 @@ kind: component
 name: "Session Lifecycle Handlers"
 status: active
 parent: capability.runtime-harness.hook-adapters
-summary: "Typed handlers for SessionStart context, Stop deferred work, subagent routes and the Task Inbox."
+summary: "Typed handlers for SessionStart context, the Stop recovery views, subagent routes and the Task Inbox."
 responsibilities:
   - Build the SessionStart sections from Effective State and the session providers.
-  - Drain the post-edit journal, refresh handoff and resume projections and sweep run summaries at Stop.
+  - Publish the evidence checkpoint and render handoff and resume at Stop, with the Claude owed-architecture line.
   - Record native subagent starts and render the delegation advisor from policy text.
   - Deliver Task Inbox messages and the board slice as untrusted context.
 source:
