@@ -65,59 +65,20 @@ test('Windows propagates unreadable file metadata without a caller fallback', ()
 });
 
 const nativeWindows = process.platform === 'win32' ? test : test.skip;
-
-// TEMPORARY DIAGNOSTIC (#664): remove before the final commit.
-nativeWindows('DIAG gh --version timing by environment variant', async () => {
-  const platform = await import('../../src/effects/runtime/protected-helper-platform');
-  const system = nativeWindowsSystemToolsDirectory();
-  const bin = resolveTrustedGhExecutable()!;
-  const evil = 'C:\\repo-harness-attacker';
-  let production: NodeJS.ProcessEnv | undefined;
-  try {
-    const contract = platform.discoverWindowsProtectedHelperContract({ env: process.env });
-    production = platform.protectedHelperRuntimeEnv(platform.resolveProtectedHelperPlatform({ contract }));
-  } catch (error) { console.log('DIAG production env unavailable:', String(error)); }
-  const variants: Record<string, NodeJS.ProcessEnv | undefined> = {
-    hostileAll: { ...process.env, PATH: evil, ProgramFiles: evil, SystemRoot: evil, WINDIR: evil },
-    real: { ...process.env },
-    hostileSystemRoot: { ...process.env, SystemRoot: evil },
-    hostileWindir: { ...process.env, WINDIR: evil },
-    hostilePath: { ...process.env, PATH: evil },
-    hostileProgramFiles: { ...process.env, ProgramFiles: evil },
-    production,
-  };
-  console.log('DIAG bin', bin, 'system', system, 'productionKeys', production ? Object.keys(production).join(',') : 'none');
-  for (let round = 1; round <= 2; round++) {
-    for (const [name, env] of Object.entries(variants)) {
-      if (!env) continue;
-      const started = performance.now();
-      const result = spawnSync(bin, ['--version'], { encoding: 'utf8', timeout: 55000, env });
-      const elapsed = Math.round(performance.now() - started);
-      console.log(`DIAG round=${round} variant=${name} ms=${elapsed} status=${result.status} signal=${result.signal} error=${result.error?.message ?? ''} stdout=${JSON.stringify((result.stdout ?? '').slice(0, 40))} stderr=${JSON.stringify((result.stderr ?? '').slice(0, 300))}`);
-    }
-  }
-  const debugStarted = performance.now();
-  const debug = spawnSync(bin, ['--version'], { encoding: 'utf8', timeout: 12000,
-    env: { ...process.env, PATH: evil, ProgramFiles: evil, SystemRoot: evil, WINDIR: evil, GH_DEBUG: '1' } });
-  console.log(`DIAG ghdebug hostile ms=${Math.round(performance.now() - debugStarted)} status=${debug.status} stderr=${JSON.stringify((debug.stderr ?? '').slice(0, 3000))}`);
-  const child = (env: NodeJS.ProcessEnv) => {
-    const started = performance.now();
-    const result = spawnSync(process.execPath, ['-e', '0'], { encoding: 'utf8', timeout: 55000, env });
-    return `${Math.round(performance.now() - started)}ms status=${result.status}`;
-  };
-  console.log('DIAG bun -e 0 real', child({ ...process.env }), 'hostile', child(variants.hostileAll!));
-}, 400000);
-
+// The first gh.exe launch on a fresh Windows runner is a cold start. CI measured
+// 3.2 s to 5.8 s for that launch and 80-110 ms for later launches, with or
+// without the hostile variables (#664). The budgets cover the cold start only.
+const COLD_GH_LAUNCH_MS = 45_000;
 nativeWindows('native Windows executes the preinstalled fixed gh with hostile caller environment', () => {
   const module = fileURLToPath(new URL('../../src/effects/runtime/protected-helper-platform.ts', import.meta.url));
   const code = `import {resolveTrustedGhExecutable} from ${JSON.stringify(module)};
 import {spawnSync} from 'node:child_process';
 const bin=resolveTrustedGhExecutable();
 if(!bin) throw Error('fixed standard GitHub CLI installation unavailable');
-const result=spawnSync(bin,['--version'],{encoding:'utf8',timeout:10000});
+const result=spawnSync(bin,['--version'],{encoding:'utf8',timeout:${COLD_GH_LAUNCH_MS}});
 console.log(JSON.stringify({bin,status:result.status,stdout:result.stdout,stderr:result.stderr}));`;
   const child = spawnSync(process.execPath, ['-e', code], {
-    encoding: 'utf8', timeout: 20000,
+    encoding: 'utf8', timeout: COLD_GH_LAUNCH_MS + 5_000,
     env: { ...process.env, PATH: 'C:\\repo-harness-attacker',
       GH_BIN: 'C:\\repo-harness-attacker\\gh.exe', REPO_HARNESS_GH_BIN: 'C:\\repo-harness-attacker\\gh.exe',
       ProgramFiles: 'C:\\repo-harness-attacker', SystemRoot: 'C:\\repo-harness-attacker', WINDIR: 'C:\\repo-harness-attacker' },
@@ -128,4 +89,4 @@ console.log(JSON.stringify({bin,status:result.status,stdout:result.stdout,stderr
   expect(observed.bin.toLowerCase()).toBe(expected.toLowerCase());
   expect(observed.status, observed.stderr).toBe(0);
   expect(observed.stdout).toMatch(/^gh version /);
-});
+}, COLD_GH_LAUNCH_MS + 10_000);
