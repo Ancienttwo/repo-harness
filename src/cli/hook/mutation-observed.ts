@@ -1,8 +1,8 @@
 /**
  * Mutation observed — HRD-05 in-process journal handler for `PostToolUse.edit`.
  *
- * A qualifying edit writes at most one durable journal event carrying dirty
- * bits. The deferred consumers (`consumePendingPostEditEvents`, invoked at Stop by
+ * A qualifying edit writes at most one durable journal event carrying the
+ * `minimal-change` dirty bit. The deferred consumers (`consumePendingPostEditEvents`, invoked at Stop by
  * `runtime.ts`, and `pendingPostEditJournalSection`, surfaced at
  * SessionStart) consume deferred changes; contract verification reads execution
  * evidence without starting contract commands. See
@@ -10,7 +10,7 @@
  * the condition-by-condition dirty-bit derivation table and the falsifier
  * record.
  *
- * Host-visible advisory stdout (DocDrift/DeployAsset echoes, and the
+ * Model-facing advisory stdout (DeployAsset/DocDrift echoes, and the
  * former first-principles advisory) is ported in-process — those never wrote
  * anything durable, so they stay on the hot path without a second route
  * runtime.
@@ -90,7 +90,7 @@ export function runMutationObserved(opts: MutationObservedInput): MutationObserv
   const out: string[] = [];
   const errOut: string[] = [];
 
-  emitAdvisories(out, filePath, basename(filePath), dirname(filePath));
+  emitAdvisories(out, filePath, basename(filePath));
 
   const advisory = renderFirstPrinciplesAdvisory(repoRoot, filePath);
   if (advisory) out.push(advisory);
@@ -98,13 +98,7 @@ export function runMutationObserved(opts: MutationObservedInput): MutationObserv
   const policy = loadMinimalChangePolicy(repoRoot);
   const minimalChangeEnabled = policy.mode !== 'off' && policy.post_edit_observer;
 
-  const dirty: PostEditJournalDirtyBits = {
-    'contract-verification': false,
-    context: true,
-    capability: false,
-    'minimal-change': minimalChangeEnabled,
-    checkpoint: isCheckpointPath(filePath),
-  };
+  const dirty: PostEditJournalDirtyBits = { 'minimal-change': minimalChangeEnabled };
 
   const journalPath = writeOrCoalesceJournalEvent(repoRoot, {
     sessionId: sessionIdFor(payload, env),
@@ -201,45 +195,16 @@ function tryRealpath(path: string): string | null {
 }
 
 // ---------------------------------------------------------------------------
-// DocDrift / DeployAsset advisories (post-edit-guard.sh:104-148, ported
-// verbatim -- pure stdout, no durable write, host-visible parity surface).
+// DeployAsset and Wrangler DocDrift advisories: pure stdout, no durable
+// write. Architecture documentation drift is the owed-capability signal
+// (src/effects/state/owed-capabilities.ts), not a path-pattern guess.
 // ---------------------------------------------------------------------------
 
-function emitAdvisories(out: string[], filePath: string, base: string, dir: string): void {
+function emitAdvisories(out: string[], filePath: string, base: string): void {
   if (filePath.startsWith('deploy/')) {
     out.push(`[DeployAsset] Deployment operations asset changed: ${filePath}\n`);
     out.push('  Confirm secrets, real env files, provider state, artifacts, logs, and scratch files remain in ignored _ops/ before committing.\n');
     out.push('  Follow operations.deploy_sql in .ai/harness/policy.json when configured; otherwise keep SQL directly under deploy/sql/ with 4-digit ascending prefixes.\n');
-  }
-
-  if (base === 'package.json') {
-    const match = /(^|\/)packages\/([^/]+)/.exec(dir);
-    if (match) {
-      const pkgName = `packages/${match[2]}`;
-      out.push(`[DocDrift] ${pkgName}/package.json changed\n`);
-      out.push('  Check: docs/packages.md exports table may need updating\n');
-    }
-  }
-
-  const moduleMatch = /(^|\/)packages\/([^/]+)\/src\/([^/]+)\/index\.ts$/.exec(filePath);
-  if (moduleMatch) {
-    out.push(`[DocDrift] New module '${moduleMatch[3]}' in ${moduleMatch[2]}\n`);
-    out.push('  Check: docs/packages.md and docs/architecture.md may need updating\n');
-  }
-
-  if (/(^|\/)apps\/[^/]+\/src\/.+/.test(filePath)) {
-    out.push(`[DocDrift] App source changed: ${filePath}\n`);
-    out.push('  Check: docs/architecture.md source tree may need updating\n');
-  }
-
-  if (base === 'tsconfig.json' && /(^|\/)(packages|apps)\//.test(dir)) {
-    out.push(`[DocDrift] TypeScript config changed in ${basename(dir)}\n`);
-    out.push('  Check: docs/packages.md may need updating\n');
-  }
-
-  if (base === 'turbo.json') {
-    out.push('[DocDrift] Turborepo config changed\n');
-    out.push('  Check: docs/architecture.md pipeline section may need updating\n');
   }
 
   if (/^wrangler.*\.toml$/.test(base)) {
@@ -296,19 +261,6 @@ function renderFirstPrinciplesAdvisory(repoRoot: string, filePath: string): stri
 }
 
 // ---------------------------------------------------------------------------
-// checkpoint dirty bit: post-edit-guard.sh:162-168's `case "$FILE_PATH"`
-// gate for the (retired) task-handoff regeneration.
-// ---------------------------------------------------------------------------
-
-/** Only task and review edits request checkpoint work. */
-function isCheckpointPath(filePath: string): boolean {
-  if (filePath === 'tasks/todos.md') return true;
-  if (/^plans\/.*\.md$/.test(filePath)) return true;
-  if (/^tasks\/reviews\/.*\.review\.md$/.test(filePath)) return true;
-  return false;
-}
-
-// ---------------------------------------------------------------------------
 // session id (mirrors mutation-guard.ts's getSessionId priority, simplified:
 // this handler only needs a coalesce bucket, not a full run-id derivation).
 // ---------------------------------------------------------------------------
@@ -341,12 +293,13 @@ function currentGitRevision(repoRoot: string): string | null {
 // .ai/harness/ -- per the contract's evidence-store crash-safety guidance).
 // ---------------------------------------------------------------------------
 
+/**
+ * `minimal-change` is the only dirty bit with a reader (the Stop consumer).
+ * The journal sees only Edit/Write tools, never Bash or apply_patch writes,
+ * so it cannot carry a signal that needs the full changed set.
+ */
 export interface PostEditJournalDirtyBits {
-  readonly 'contract-verification': boolean;
-  readonly context: boolean;
-  readonly capability: boolean;
   readonly 'minimal-change': boolean;
-  readonly checkpoint: boolean;
 }
 
 export interface PostEditJournalEvent {
@@ -432,13 +385,7 @@ function writeOrCoalesceJournalEventLocked(repoRoot: string, input: WriteJournal
   const existing = current;
 
   const dirty: PostEditJournalDirtyBits = existing
-    ? {
-        'contract-verification': existing.dirty['contract-verification'] || input.dirty['contract-verification'],
-        context: existing.dirty.context || input.dirty.context,
-        capability: existing.dirty.capability || input.dirty.capability,
-        'minimal-change': existing.dirty['minimal-change'] || input.dirty['minimal-change'],
-        checkpoint: existing.dirty.checkpoint || input.dirty.checkpoint,
-      }
+    ? { 'minimal-change': existing.dirty['minimal-change'] === true || input.dirty['minimal-change'] }
     : input.dirty;
 
   const changedPaths = existing

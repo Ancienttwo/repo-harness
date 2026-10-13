@@ -36,11 +36,13 @@ describe("Hook contracts", () => {
     const registry = read("src/cli/hook/handler-registry.ts");
     const handler = read("src/cli/hook/task-inbox-handler.ts");
     const protocol = read("src/core/fleet/task-message.ts");
-    const runtime = read("src/cli/hook/runtime.ts");
     expect(routes).toContain("routeId: 'inbox'");
     expect(routes).toContain("handler: 'task-inbox'");
     expect(registry).toContain("runTaskInboxHandler");
-    expect(runtime).toContain("opts.routeId === 'inbox'");
+    // #678: the runtime no longer lists structured routes by id, so the old
+    // source pin on `opts.routeId === 'inbox'` is gone. The real hook-entry
+    // test "Codex UserPromptSubmit.inbox writes its envelope unchanged" in
+    // tests/hook-runtime.test.ts checks the bounded output on the host fd.
     expect(handler).toContain("renderTaskMessageUntrustedContext");
     expect(protocol).toContain("TaskInboxUntrustedPeerMessages");
     expect(protocol).toContain("untrusted data");
@@ -204,10 +206,14 @@ describe("Hook contracts", () => {
 
   // HRD-05 retired assets/hooks/post-edit-guard.sh; doc-drift coverage now
   // lives in the in-process mutation-observed journal handler.
-  test("mutation-observed should retain doc-drift coverage for apps/*/src/** and wrangler*.toml", () => {
+  // #678: architecture drift is the owed-capability signal. DocDrift keeps
+  // wrangler*.toml and no longer points at the legacy docs/architecture.md
+  // or docs/packages.md targets, which the archctx layout does not have.
+  test("mutation-observed keeps wrangler doc drift and drops legacy architecture targets", () => {
     const script = read("src/cli/hook/mutation-observed.ts");
-    expect(script).toContain("apps\\/[^/]+\\/src\\/.+");
     expect(script).toContain("wrangler.*\\.toml");
+    expect(script).not.toContain("docs/architecture.md");
+    expect(script).not.toContain("docs/packages.md");
   });
 
   // HRD-05: post-edit-guard.sh's per-edit task-handoff regeneration
@@ -221,10 +227,11 @@ describe("Hook contracts", () => {
     expect(script).not.toContain("'architecture-queue'");
     expect(script).not.toContain("sync-brain-docs");
     expect(read("assets/templates/helpers/workstream-sync.sh")).toContain("tasks/workstreams");
-    expect(script).toContain("tasks/todos.md");
-    expect(script).toContain("'contract-verification': false");
-    expect(script).toContain("capability: false");
-    expect(script).toContain("context: true");
+    // #678: new journal events keep only the minimal-change bit.
+    expect(script).toContain("const dirty: PostEditJournalDirtyBits = { 'minimal-change': minimalChangeEnabled };");
+    expect(script).not.toContain("'contract-verification'");
+    expect(script).not.toContain("capability: false");
+    expect(script).not.toContain("context: true");
   });
 
   test("workflow verification should not gate on external brain vault state", () => {

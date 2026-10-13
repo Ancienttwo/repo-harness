@@ -21,6 +21,7 @@ import {
   parseIsoOrLocalTimestamp,
 } from './artifact-parsers';
 import type {
+  CapabilityOwnership,
   EffectiveState,
   FreshnessState,
   SnapshotPlanState,
@@ -53,6 +54,7 @@ export interface EffectiveStateInputs {
   readonly capabilityReasons: readonly string[];
   /** Capability ownership failure: its key becomes a blocker; its cause and fix reach next_action. */
   readonly capabilityBlocker: CapabilityOwnershipBlocker | null;
+  readonly capabilityOwnership: CapabilityOwnership | null;
   readonly staleSources: readonly string[];
   readonly conflictingSources: readonly string[];
   readonly reviewPath: string | null;
@@ -328,6 +330,7 @@ export function projectEffectiveState(input: EffectiveStateInputs): EffectiveSta
     risk_floor: input.riskResolution.riskFloor,
     profile_reasons: [...input.riskResolution.reasons, ...input.capabilityReasons],
     profile_signals: input.riskResolution.ok ? input.riskResolution.signals : null,
+    capability_ownership: input.capabilityOwnership,
     allowed_paths: allowedPaths,
     next_action: nextAction,
     guidance: workflowProfile

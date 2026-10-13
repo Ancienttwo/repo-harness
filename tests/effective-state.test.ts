@@ -450,6 +450,29 @@ describe('effective state resolver', () => {
       });
     }, 30_000);
 
+    test('capability_ownership reports ids, module documents and unowned paths from the one ownership answer (#678)', () => {
+      withRepo((cwd) => {
+        write(cwd, '.ai/context/capabilities.json', JSON.stringify({
+          version: 1,
+          capabilities: [capability('feature-cap', ['src/feature'])],
+        }));
+        const options = { targetPaths: ['src/feature/index.ts', 'src/loose.ts'], operationKind: 'edit' as const };
+        const state = resolveFixtureState(cwd, Date.now(), options);
+        expect(state.capability_ownership?.capability_ids).toEqual(['feature-cap']);
+        expect(state.capability_ownership?.capabilities).toEqual([{
+          id: 'feature-cap',
+          module_document: 'docs/architecture/modules/fixture/feature-cap.md',
+          paths: ['src/feature/index.ts'],
+        }]);
+        expect(state.capability_ownership?.unowned_paths).toContain('src/loose.ts');
+        // The count signal and the ownership field come from the same answer.
+        expect(state.profile_signals?.capabilityCount).toBe(state.capability_ownership?.capability_ids.length);
+
+        write(cwd, '.ai/context/capabilities.json', '{not json');
+        expect(resolveFixtureState(cwd, Date.now(), options).capability_ownership).toBeNull();
+      });
+    }, 30_000);
+
     test('a NUL-bearing absolute path fails canonical validation instead of bypassing it', () => {
       withRepo((cwd) => {
         write(cwd, '.ai/context/capabilities.json', JSON.stringify({ version: 1, capabilities: [] }));

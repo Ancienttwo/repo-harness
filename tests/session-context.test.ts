@@ -36,6 +36,8 @@ import {
   type SessionContextCollector,
 } from "../src/cli/hook/session-context";
 import { budgetSessionContext } from "../src/cli/hook/session-context-budget";
+import { projectOwedCapabilitiesSessionSection } from "../src/cli/hook/runtime";
+import type { EffectiveState } from "../src/core/state/types";
 import { createStateInputCollector } from "../src/effects/loop/state-input-collector";
 import { appendEvidenceEvent, appendGenesisRecord } from "../src/effects/evidence/event-log";
 import { LEDGER_EPOCH_START_SHA } from "../src/effects/evidence/epoch";
@@ -1615,7 +1617,11 @@ describe("worktreeBacklogSessionSection — cleanable contract worktree notice",
 });
 
 describe('architecture on demand', () => {
-  test('normal SessionStart emits no architecture section and writes no architecture state', () => {
+  // #678 product decision: a branch that already owes architecture updates
+  // gets one short SessionStart section from the effective-state provider
+  // (see the next test). The main SessionStart section stays free of
+  // architecture content and no SessionStart path writes architecture state.
+  test('the main SessionStart section emits no architecture section and writes no architecture state', () => {
     withTmpRepo('architecture-on-demand', (repo) => withTmpHome((home) => {
       initGit(repo);
       writeFileSync(join(repo, '.ai/harness/policy.json'), JSON.stringify({ context: { capability_source: 'archcontext' } }));
@@ -1625,5 +1631,41 @@ describe('architecture on demand', () => {
       expect(readdirSync(join(repo, '.archcontext/model/nodes'))).toEqual([]);
       expect(existsSync(join(repo, 'docs/architecture/requests'))).toBe(false);
     }));
+  });
+
+  test('a branch that owes architecture updates gets one short section until the manifest changes', () => {
+    withTmpRepo('architecture-owed', (repo) => {
+      const git = (...args: string[]) => execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...args], { cwd: repo, encoding: 'utf8' }).trim();
+      initGit(repo);
+      writeFileSync(join(repo, '.gitignore'), '.ai/\n');
+      mkdirSync(join(repo, 'docs/architecture'), { recursive: true });
+      mkdirSync(join(repo, 'src/owned'), { recursive: true });
+      writeFileSync(join(repo, 'docs/architecture/.projection-manifest.json'), '{}\n');
+      writeFileSync(join(repo, 'src/owned/a.ts'), 'export const a = 1;\n');
+      git('add', '-A'); git('commit', '-q', '-m', 'projected');
+      const base = git('rev-parse', 'HEAD');
+      git('checkout', '-q', '-b', 'feature');
+      writeFileSync(join(repo, 'src/owned/a.ts'), 'export const a = 2;\n');
+      git('commit', '-q', '-am', 'change owned code');
+      const state = {
+        capability_ownership: {
+          review_base: base,
+          capability_ids: ['core-owned'],
+          capabilities: [{ id: 'core-owned', module_document: 'docs/architecture/modules/core/owned.md', paths: ['src/owned/a.ts'] }],
+          unowned_paths: [],
+        },
+      } as unknown as EffectiveState;
+
+      const section = projectOwedCapabilitiesSessionSection(repo, state);
+      expect(section).toMatchObject({ id: 'architecture-owed', actionable: true, mandatory: false });
+      expect(section!.content).toContain('[ArchitectureOwed]');
+      expect(section!.content).toContain('core-owned (docs/architecture/modules/core/owned.md)');
+      expect(section!.content.split('\n').length).toBeLessThanOrEqual(3);
+
+      writeFileSync(join(repo, 'docs/architecture/.projection-manifest.json'), '{"refreshed":true}\n');
+      git('commit', '-q', '-am', 'refresh the projection');
+      expect(projectOwedCapabilitiesSessionSection(repo, state)).toBeNull();
+      expect(git('status', '--porcelain')).toBe('');
+    });
   });
 });

@@ -572,6 +572,76 @@ describe('Stop recovery and safety invariants', () => {
 });
 
 
+describe('Stop reports owed architecture updates on Claude only (#678)', () => {
+  /** `main` holds the manifest; `feature` changed the owned file after it. */
+  function owedFixture(): { cwd: string; state: () => EffectiveState } {
+    const { cwd, head } = gitFixture();
+    mkdirSync(join(cwd, 'docs/architecture'), { recursive: true });
+    mkdirSync(join(cwd, 'src/owned'), { recursive: true });
+    writeFileSync(join(cwd, 'docs/architecture/.projection-manifest.json'), '{}\n');
+    writeFileSync(join(cwd, 'src/owned/a.ts'), 'export const a = 1;\n');
+    git(cwd, ['add', '-A']); git(cwd, ['commit', '-m', 'projected']);
+    const base = git(cwd, ['rev-parse', 'HEAD']);
+    expect(base).not.toBe(head);
+    git(cwd, ['checkout', '-b', 'feature']);
+    writeFileSync(join(cwd, 'src/owned/a.ts'), 'export const a = 2;\n');
+    git(cwd, ['commit', '-am', 'change owned code']);
+    const state = () => ({
+      ...canonicalState(),
+      capability_ownership: {
+        review_base: base,
+        capability_ids: ['core-owned'],
+        capabilities: [{ id: 'core-owned', module_document: 'docs/architecture/modules/core/owned.md', paths: ['src/owned/a.ts'] }],
+        unowned_paths: [],
+      },
+    }) as EffectiveState;
+    return { cwd, state };
+  }
+
+  test('Claude Stop names the owed capability once per branch and owed set', () => {
+    const { cwd, state } = owedFixture();
+    const first = runStopHandler({ collector: collector(cwd, state), env: { HOOK_HOST: 'claude' } });
+    expect(first.exitCode).toBe(0);
+    expect(first.stdout).toContain('[ArchitectureOwed]');
+    expect(first.stdout).toContain('core-owned (docs/architecture/modules/core/owned.md)');
+    expect(first.stdout).toContain('repo-harness architecture-projection check --json');
+    expect(first.stdout.trimEnd().split('\n').length).toBeLessThanOrEqual(3);
+
+    const repeated = runStopHandler({ collector: collector(cwd, state), env: { HOOK_HOST: 'claude' } });
+    expect(repeated.stdout).toBe('');
+    expect(git(cwd, ['status', '--porcelain'])).toBe('');
+  });
+
+  test('a new obligation for the same capability after a manifest refresh is reported again', () => {
+    const { cwd, state } = owedFixture();
+    expect(runStopHandler({ collector: collector(cwd, state), env: { HOOK_HOST: 'claude' } }).stdout).toContain('[ArchitectureOwed]');
+    writeFileSync(join(cwd, 'docs/architecture/.projection-manifest.json'), '{"refreshed":true}\n');
+    git(cwd, ['commit', '-am', 'refresh the projection']);
+    expect(runStopHandler({ collector: collector(cwd, state), env: { HOOK_HOST: 'claude' } }).stdout).toBe('');
+
+    writeFileSync(join(cwd, 'src/owned/a.ts'), 'export const a = 3;\n');
+    git(cwd, ['commit', '-am', 'change owned code again']);
+    const renewed = runStopHandler({ collector: collector(cwd, state), env: { HOOK_HOST: 'claude' } });
+    expect(renewed.stdout).toContain('core-owned (docs/architecture/modules/core/owned.md)');
+    expect(runStopHandler({ collector: collector(cwd, state), env: { HOOK_HOST: 'claude' } }).stdout).toBe('');
+  });
+
+  test('a Stop continued by a Stop hook, Codex and Pi add nothing', () => {
+    const { cwd, state } = owedFixture();
+    const continued = runStopHandler({
+      collector: collector(cwd, state),
+      env: { HOOK_HOST: 'claude' },
+      input: JSON.stringify({ stop_hook_active: true }),
+    });
+    expect(continued.stdout).toBe('');
+    for (const host of ['codex', 'pi']) {
+      expect(runStopHandler({ collector: collector(cwd, state), env: { HOOK_HOST: host } }).stdout).toBe('');
+    }
+    // The once-per-set marker was never written, so Claude still gets the line.
+    expect(runStopHandler({ collector: collector(cwd, state), env: { HOOK_HOST: 'claude' } }).stdout).toContain('[ArchitectureOwed]');
+  });
+});
+
 describe('Stop observes workflow gaps without permission gates', () => {
   test('missing recovery/readiness/review receipts do not prevent stopping', () => {
     const cwd = fixture(); seedMinimalChangeEnforce(cwd);
@@ -584,7 +654,10 @@ describe('Stop observes workflow gaps without permission gates', () => {
   test('Stop writes no architecture or capability runtime state', () => {
     const { cwd } = gitFixture();
     mkdirSync(join(cwd, 'src'), { recursive: true }); writeFileSync(join(cwd, 'src/change.ts'), 'export const x = 1;');
-    const result = runStopHandler({ collector: collector(cwd, () => canonicalState()) });
+    // #678: stdout is now the Claude Stop channel for owed architecture
+    // updates. This state has no ownership answer, so the Claude channel
+    // stays empty; it never starts projection or records drift.
+    const result = runStopHandler({ collector: collector(cwd, () => canonicalState()), env: { HOOK_HOST: 'claude' } });
     expect(result.stdout).toBe('');
     expect(existsSync(join(cwd, '.ai/harness/architecture-projection'))).toBe(false);
     expect(existsSync(join(cwd, '.ai/harness/state/architecture-drift-cursor.json'))).toBe(false);

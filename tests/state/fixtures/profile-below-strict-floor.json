@@ -39,6 +39,7 @@
       "capability:registry:absent"
     ],
     "profile_signals": null,
+    "capability_ownership": null,
     "allowed_paths": [
       "src/",
       "tests/effective-state.test.ts"

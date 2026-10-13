@@ -30,6 +30,7 @@ function effectiveState(overrides: Partial<EffectiveState> = {}): EffectiveState
     risk_floor: 'routine',
     profile_reasons: ['explicit-override:raise:high'],
     profile_signals: null,
+    capability_ownership: null,
     allowed_paths: ['src/'],
     next_action: 'implement adapter convergence',
     guidance: 'full envelope',

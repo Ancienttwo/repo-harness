@@ -46,6 +46,7 @@
       "mediumScope": false,
       "crossCapability": false
     },
+    "capability_ownership": null,
     "allowed_paths": [
       "src/",
       "tests/effective-state.test.ts"
