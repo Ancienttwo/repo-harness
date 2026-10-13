@@ -4,13 +4,16 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { runHook } from '../src/cli/hook/runtime';
-import { isHookEventTelemetryRecord } from '../src/cli/hook/event-telemetry';
+import { HOOK_EVENT_TELEMETRY_PROTOCOL } from '../src/cli/hook/event-telemetry';
 import { buildTaskMessageEvent } from '../src/core/fleet/task-message';
 import { bindLeaseRecord, buildLeaseOwnerRecord, deriveTaskRevision } from '../src/core/state/coordination-identity';
 import { sendTaskMessage } from '../src/effects/fleet/task-inbox';
 import { writeClaimTokenForBoundLease } from '../src/effects/state/coordination-claim-token';
 import { createLeaseDirectory, writeLeaseOwnerDurably } from '../src/effects/state/coordination-lease-store';
 import { fixtureTaskId } from './helpers/sprint-fixture';
+
+const RUNTIME_MODULE = join(import.meta.dir, '../src/cli/hook/runtime.ts');
+const GUARD_MODULE = join(import.meta.dir, '../src/cli/hook/mutation-guard.ts');
 
 function fixture(): string {
   const root = mkdtempSync(join(tmpdir(), 'hrd09-hook-'));
@@ -30,34 +33,170 @@ function env(root: string, host: 'claude' | 'codex' | 'pi' = 'claude'): NodeJS.P
   return { ...process.env, HOOK_REPO_ROOT: root, HOOK_HOST: host, REPO_HARNESS_WORKFLOW_PROFILE: 'routine' };
 }
 
+function telemetry(root: string): Array<Record<string, unknown>> {
+  return readFileSync(join(root, '.ai/harness/runs/hook-events.jsonl'), 'utf8')
+    .trim().split('\n').map((line) => JSON.parse(line) as Record<string, unknown>);
+}
+
+const EDIT_PAYLOAD = JSON.stringify({ tool_name: 'Write', tool_input: { file_path: 'README.md', content: 'safe' } });
+
+/** Run PreToolUse.edit in a child whose mutation guard throws. */
+function crashGuard(root: string, host: 'claude' | 'codex' | 'pi'): {
+  readonly result: Record<string, unknown>;
+  readonly hostStdout: string;
+  readonly hostStderr: string;
+} {
+  const worker = `
+    import { mock } from 'bun:test';
+    const guard = await import(process.env.GUARD_MODULE);
+    mock.module(process.env.GUARD_MODULE, () => ({
+      ...guard,
+      runMutationGuard() { throw new Error('injected guard crash'); },
+    }));
+    const { runHook } = await import(process.env.RUNTIME_MODULE);
+    const result = runHook({
+      event: 'PreToolUse',
+      routeId: 'edit',
+      cwd: process.env.FIXTURE_ROOT,
+      input: process.env.FIXTURE_INPUT,
+      env: { ...process.env, HOOK_REPO_ROOT: process.env.FIXTURE_ROOT, HOOK_HOST: process.env.FIXTURE_HOST },
+    });
+    process.stdout.write('@@RESULT@@' + JSON.stringify(result) + '\\n');
+  `;
+  const child = spawnSync(process.execPath, ['-e', worker], {
+    cwd: root,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      FIXTURE_ROOT: root,
+      FIXTURE_HOST: host,
+      FIXTURE_INPUT: EDIT_PAYLOAD,
+      GUARD_MODULE,
+      RUNTIME_MODULE,
+      REPO_HARNESS_WORKFLOW_PROFILE: 'routine',
+    },
+  });
+  if (child.status !== 0) throw new Error(child.stderr || child.stdout);
+  const [hostStdout, resultText] = child.stdout.split('@@RESULT@@');
+  return { result: JSON.parse(resultText.trim()), hostStdout, hostStderr: child.stderr };
+}
+
 describe('hook runtime typed dispatch', () => {
   test('Pi JSON maps guard decisions and refuses host-specific routes', () => {
     const root = fixture();
     try {
-      const allowed = runHook({ event: 'PreToolUse', routeId: 'edit', cwd: root, env: env(root, 'pi'), format: 'json', stdio: 'ignore',
-        input: JSON.stringify({ tool_name: 'Write', tool_input: { file_path: 'README.md', content: 'safe' } }) });
+      const allowed = runHook({ event: 'PreToolUse', routeId: 'edit', cwd: root, env: env(root, 'pi'), input: EDIT_PAYLOAD });
       expect(allowed.json).toMatchObject({ protocol: 1, host: 'pi', exit_code: 0, decision: 'allow', reason: 'ok' });
-      const refused = runHook({ event: 'PreToolUse', routeId: 'edit', cwd: root, env: env(root, 'pi'), format: 'json', stdio: 'ignore',
+      const refused = runHook({ event: 'PreToolUse', routeId: 'edit', cwd: root, env: env(root, 'pi'),
         input: JSON.stringify({ tool_name: 'Write', tool_input: { file_path: '_ops/private', content: 'forbidden' } }) });
       expect(refused.json).toMatchObject({ host: 'pi', exit_code: 2, decision: 'block' });
       expect(refused.json?.diagnostics).toContain('OpsPrivateGuard');
-      expect(runHook({ event: 'PreToolUse', routeId: 'subagent', cwd: root, env: env(root, 'pi'), format: 'json', stdio: 'ignore' }).json)
+      expect(runHook({ event: 'PreToolUse', routeId: 'subagent', cwd: root, env: env(root, 'pi') }).json)
         .toMatchObject({ decision: 'block', reason: 'unsupported-host-route', exit_code: 2 });
     } finally { rmSync(root, { recursive: true, force: true }); }
   });
 
-  test('Pi JSON keeps the existing pipe and ignore fd contract', () => {
+  test('an edit guard crash exits 2 on Claude and Codex and blocks on Pi', () => {
     const root = fixture();
     try {
-      for (const stdio of ['pipe', 'ignore']) {
-        const script = `import { runHook } from ${JSON.stringify(join(import.meta.dir, '../src/cli/hook/runtime.ts'))};
-          const result = runHook({ event: 'PreToolUse', routeId: 'edit', cwd: ${JSON.stringify(root)}, format: 'json', stdio: ${JSON.stringify(stdio)},
-            input: JSON.stringify({ tool_name: 'Write', tool_input: { file_path: 'README.md', content: 'safe' } }) });
-          if (result.json?.decision !== 'allow') process.exit(1);`;
-        expect(execFileSync('bun', ['-e', script], { cwd: root, env: env(root, 'pi'), encoding: 'utf8' })).toBe('');
+      for (const host of ['claude', 'codex'] as const) {
+        const crashed = crashGuard(root, host);
+        expect(crashed.result).toMatchObject({ exitCode: 2, reason: 'handler-failed', handler: 'mutation-guard' });
+        expect(crashed.hostStderr).toContain('repo-harness-hook: mutation-guard failed: injected guard crash');
+        expect(crashed.hostStdout).toBe('');
       }
+      const pi = crashGuard(root, 'pi');
+      expect(pi.result).toMatchObject({ exitCode: 2, reason: 'handler-failed' });
+      expect(JSON.parse(pi.hostStdout.trim())).toMatchObject({
+        host: 'pi', exit_code: 2, decision: 'block', reason: 'handler-failed',
+      });
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  }, 60_000);
+
+  test('a crash outside the edit route keeps a non-blocking exit 1', () => {
+    const root = fixture();
+    const outside = mkdtempSync(join(tmpdir(), 'hrd09-stop-outside-'));
+    try {
+      symlinkSync(outside, join(root, '.ai/harness/handoff'));
+      const result = runHook({
+        event: 'Stop',
+        routeId: 'default',
+        cwd: root,
+        input: JSON.stringify({ stop_hook_active: false }),
+        env: env(root),
+      });
+      expect(result).toMatchObject({ exitCode: 1, reason: 'handler-failed', handler: 'stop' });
+      expect(telemetry(root).at(-1)).toMatchObject({ exit_code: 1, blocked: false, reason: 'handler-failed' });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+      rmSync(outside, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test('telemetry gives a policy denial and a crash different reasons', () => {
+    const root = fixture();
+    try {
+      const denied = runHook({ event: 'PreToolUse', routeId: 'edit', cwd: root, env: env(root),
+        input: JSON.stringify({ tool_name: 'Write', tool_input: { file_path: '_ops/private', content: 'forbidden' } }) });
+      expect(denied).toMatchObject({ exitCode: 2, reason: 'blocked' });
+      crashGuard(root, 'claude');
+      const [denial, crash] = telemetry(root);
+      expect(denial).toMatchObject({ exit_code: 2, blocked: true, reason: 'blocked' });
+      expect(crash).toMatchObject({ exit_code: 2, blocked: true, reason: 'handler-failed' });
+      expect(denial.fingerprint).not.toBe(crash.fingerprint);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  }, 60_000);
+
+  test('a malformed payload is refused before any handler runs', () => {
+    const root = fixture();
+    try {
+      const result = runHook({ event: 'PreToolUse', routeId: 'edit', cwd: root, env: env(root, 'pi'), input: 'not json{' });
+      expect(result).toMatchObject({ exitCode: 2, reason: 'invalid-payload' });
+      expect(result.json).toMatchObject({ decision: 'block', reason: 'invalid-payload' });
+      expect(result.json?.diagnostics).toContain('hook payload is not valid JSON');
     } finally { rmSync(root, { recursive: true, force: true }); }
   });
+
+  test('one SessionStart writes the same session_id to telemetry and budget evidence', () => {
+    const root = fixture();
+    try {
+      // A pending post-edit event makes SessionStart emit a budgeted section.
+      runHook({ event: 'PostToolUse', routeId: 'edit', cwd: root, env: env(root),
+        input: JSON.stringify({ session_id: 'sess-claude-1', tool_input: { file_path: 'README.md' } }) });
+      const result = runHook({
+        event: 'SessionStart',
+        routeId: 'default',
+        cwd: root,
+        env: { ...env(root), REPO_HARNESS_TOOLING_ADVISORY: '0' },
+        input: JSON.stringify({ session_id: 'sess-claude-1' }),
+      });
+      expect(result.exitCode).toBe(0);
+      const sessionStart = telemetry(root).find((record) => record.event === 'SessionStart');
+      const evidence = JSON.parse(readFileSync(join(root, '.ai/harness/state/session-context-budget.json'), 'utf8'));
+      const identity = JSON.parse(readFileSync(join(root, '.ai/harness/state/session-run-identity.json'), 'utf8'));
+      expect(sessionStart?.session_id).toBe('sess-claude-1');
+      expect(evidence.session_id).toBe('sess-claude-1');
+      expect(sessionStart?.run_id).toBe(identity.run_id);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  }, 30_000);
+
+  test('an exported PROMPT never replaces the payload prompt', () => {
+    const root = fixture();
+    try {
+      const script = `const { runHook } = await import(${JSON.stringify(RUNTIME_MODULE)});
+        runHook({ event: 'UserPromptSubmit', routeId: 'default', cwd: process.env.FIXTURE_ROOT,
+          input: JSON.stringify({ prompt: '/plan add login flow' }) });`;
+      const child = spawnSync(process.execPath, ['-e', script], {
+        cwd: root,
+        encoding: 'utf8',
+        env: { ...env(root), FIXTURE_ROOT: root, PROMPT: '%n@%m %1~ %# ' },
+      });
+      expect(child.status).toBe(0);
+      const output = JSON.parse(child.stdout.trim());
+      expect(output.hookSpecificOutput).toMatchObject({ hookEventName: 'UserPromptSubmit' });
+      expect(output.hookSpecificOutput.additionalContext).toContain('[OperationBoundaries]');
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  }, 30_000);
 
   test('passes host payload once to the command observer and records its result', () => {
     const root = fixture();
@@ -70,10 +209,16 @@ describe('hook runtime typed dispatch', () => {
         env: env(root),
       });
       expect(result).toMatchObject({ exitCode: 0, reason: 'ok', handler: 'command-observed' });
-      const record = JSON.parse(readFileSync(join(root, '.ai/harness/runs/hook-events.jsonl'), 'utf8').trim()) as Record<string, unknown>;
-      expect(record.steps).toEqual([expect.objectContaining({ name: 'command-observed', execution: 'in_process', exit_code: 0 })]);
-      expect(record.measurement).toMatchObject({ opaque_steps: [] });
-      expect((record.measurement as { incomplete_metrics: string[] }).incomplete_metrics).toContain('files_read');
+      const [record] = telemetry(root);
+      expect(record).toMatchObject({
+        protocol: HOOK_EVENT_TELEMETRY_PROTOCOL,
+        host: 'claude',
+        event: 'PostToolUse',
+        route_id: 'bash',
+        exit_code: 0,
+        blocked: false,
+        reason: 'ok',
+      });
     } finally { rmSync(root, { recursive: true, force: true }); }
   }, 30_000);
 
@@ -133,7 +278,7 @@ describe('hook runtime typed dispatch', () => {
     } finally { rmSync(root, { recursive: true, force: true }); }
   }, 30_000);
 
-  test('typed handlers do not consult a route filesystem or spawn a route child', () => {
+  test('typed handlers do not consult a route filesystem and write one v2 record', () => {
     const root = fixture();
     try {
       const result = runHook({
@@ -144,117 +289,12 @@ describe('hook runtime typed dispatch', () => {
         env: env(root),
       });
       expect(result.handler).toBe('trace-observer');
-      const raw = readFileSync(join(root, '.ai/harness/runs/hook-events.jsonl'), 'utf8').trim();
-      const record = JSON.parse(raw) as { metrics: { child_processes: number }; steps: Array<{ execution: string }> };
-      expect(record.metrics.child_processes).toBe(0);
-      expect(record.steps.every((step) => step.execution === 'in_process')).toBe(true);
+      const [record] = telemetry(root);
+      expect(Object.keys(record).sort()).toEqual([
+        'blocked', 'completed_at', 'elapsed_ms', 'event', 'event_id', 'exit_code', 'fingerprint', 'host',
+        'protocol', 'reason', 'route_id', 'run_id', 'session_id', 'started_at', 'turn_id',
+      ]);
       expect(existsSync(join(root, '.ai/hooks'))).toBe(false);
-    } finally { rmSync(root, { recursive: true, force: true }); }
-  }, 30_000);
-
-  test('targeted commit-then-throw is a complete effect observation but incomplete metrics', () => {
-    const root = fixture();
-    try {
-      const result = runHook({
-        event: 'PostToolUse',
-        routeId: 'edit',
-        cwd: root,
-        input: JSON.stringify({ tool_input: { file_path: 'src/example.ts' } }),
-        env: env(root),
-        afterEffectCommit: (phase) => {
-          if (phase === 'journal') throw new Error('injected after journal commit');
-        },
-      });
-      expect(result).toMatchObject({ exitCode: 1, reason: 'handler-failed', handler: 'mutation-observed' });
-      const record: unknown = JSON.parse(readFileSync(join(root, '.ai/harness/runs/hook-events.jsonl'), 'utf8').trim());
-      expect(isHookEventTelemetryRecord(record)).toBe(true);
-      if (!isHookEventTelemetryRecord(record)) throw new Error('record failed validation');
-      expect(record.effect_observation).toMatchObject({
-        contract_id: 'mutation-observed.durable-journal.v1',
-        state: 'committed_complete',
-        committed_phases: ['journal'],
-        last_committed_phase: 'journal',
-      });
-      expect(record.measurement.complete).toBe(false);
-      expect(record.measurement.incomplete_metrics).toContain('event_writes');
-    } finally { rmSync(root, { recursive: true, force: true }); }
-  }, 30_000);
-
-  test('handlers without an effect contract omit effect observation instead of claiming zero effects', () => {
-    const root = fixture();
-    try {
-      runHook({
-        event: 'PostToolUse',
-        routeId: 'bash',
-        cwd: root,
-        input: JSON.stringify({ tool_input: { command: 'echo hello' }, tool_response: { stdout: 'hello\n', stderr: '', interrupted: false }, exit_code: 0 }),
-        env: env(root),
-      });
-      const record = JSON.parse(readFileSync(join(root, '.ai/harness/runs/hook-events.jsonl'), 'utf8').trim()) as Record<string, unknown>;
-      expect(record).not.toHaveProperty('effect_observation');
-      expect(isHookEventTelemetryRecord(record)).toBe(true);
-    } finally { rmSync(root, { recursive: true, force: true }); }
-  }, 30_000);
-
-  test('failure before the first observed Stop commit is unknown-partial, not false zero', () => {
-    const root = fixture();
-    const outside = mkdtempSync(join(tmpdir(), 'hrd09-stop-outside-'));
-    try {
-      symlinkSync(outside, join(root, '.ai/harness/handoff'));
-      const result = runHook({
-        event: 'Stop',
-        routeId: 'default',
-        cwd: root,
-        input: JSON.stringify({ stop_hook_active: false }),
-        env: env(root),
-      });
-      expect(result).toMatchObject({ exitCode: 1, reason: 'handler-failed', handler: 'stop' });
-      const record: unknown = JSON.parse(readFileSync(join(root, '.ai/harness/runs/hook-events.jsonl'), 'utf8').trim());
-      expect(isHookEventTelemetryRecord(record)).toBe(true);
-      if (!isHookEventTelemetryRecord(record)) throw new Error('record failed validation');
-      expect(record.effect_observation).toMatchObject({ state: 'unknown_partial', committed_phases: [] });
-      expect(record.measurement.complete).toBe(false);
-      expect(record.measurement.incomplete_metrics).toContain('durable_writes');
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-      rmSync(outside, { recursive: true, force: true });
-    }
-  }, 30_000);
-
-  test('bounded Stop overflow keeps public failure stable and marks reconciliation telemetry', () => {
-    const root = fixture();
-    try {
-      const runEnv = { ...env(root), HOOK_RUN_ID: 'runtime-overflow-run' };
-      const first = runHook({
-        event: 'Stop', routeId: 'default', cwd: root,
-        input: JSON.stringify({ stop_hook_active: false }), env: runEnv,
-        afterEffectCommit: (phase) => {
-          if (phase === 'event') throw new Error('fault after event');
-        },
-      });
-      expect(first).toMatchObject({ exitCode: 1, reason: 'handler-failed', handler: 'stop' });
-      const eventsPath = join(root, '.ai/harness/events.jsonl');
-      writeFileSync(eventsPath, `${readFileSync(eventsPath, 'utf8')}${JSON.stringify({
-        ts: '2026-08-14T08:00:30+0800', event_type: 'operator-event', reason: 'overflow', run_id: 'operator',
-        extra: { payload: 'x'.repeat(2 * 1024 * 1024) },
-      })}\n`);
-
-      const retry = runHook({
-        event: 'Stop', routeId: 'default', cwd: root,
-        input: JSON.stringify({ stop_hook_active: false }), env: runEnv,
-      });
-      expect(retry).toMatchObject({ exitCode: 1, reason: 'handler-failed', handler: 'stop' });
-      const records = readFileSync(join(root, '.ai/harness/runs/hook-events.jsonl'), 'utf8')
-        .trim().split('\n').map((line) => JSON.parse(line));
-      const record: unknown = records.at(-1);
-      expect(isHookEventTelemetryRecord(record)).toBe(true);
-      if (!isHookEventTelemetryRecord(record)) throw new Error('record failed validation');
-      expect(record.result_reason).toBe('effect-reconcile-required');
-      expect(record.effect_observation).toMatchObject({
-        state: 'committed_partial',
-        committed_phases: ['handoff', 'resume'],
-        recovery: 'reconcile-required',
-      });
     } finally { rmSync(root, { recursive: true, force: true }); }
   }, 30_000);
 });

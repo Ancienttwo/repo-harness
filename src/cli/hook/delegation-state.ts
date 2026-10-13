@@ -81,10 +81,7 @@ function sanitizeScope(value: string): string {
 }
 
 /** Resolve scope candidates in the same priority order for every writer. */
-export function delegationScopes(
-  input: JsonObject,
-  env: NodeJS.ProcessEnv,
-): DelegationScope[] {
+export function delegationScopes(input: JsonObject): DelegationScope[] {
   const scopes: DelegationScope[] = [];
   const turnId = firstString(input, ['turn_id']);
   if (turnId) scopes.push({ source: 'turn_id', id: `turn-${sanitizeScope(turnId)}` });
@@ -97,16 +94,11 @@ export function delegationScopes(
     source: 'transcript_path',
     id: `transcript-${createHash('sha1').update(transcriptPath).digest('hex').slice(0, 16)}`,
   });
-  const envSession = env.CODEX_SESSION_ID || env.CLAUDE_SESSION_ID || '';
-  if (envSession) scopes.push({ source: 'env_session', id: `session-${sanitizeScope(envSession)}` });
   return scopes;
 }
 
-export function delegationScope(
-  input: JsonObject,
-  env: NodeJS.ProcessEnv,
-): DelegationScope | null {
-  return delegationScopes(input, env)[0] ?? null;
+export function delegationScope(input: JsonObject): DelegationScope | null {
+  return delegationScopes(input)[0] ?? null;
 }
 
 function readJson(path: string): DelegationState | null {

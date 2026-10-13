@@ -8,12 +8,10 @@ unset GH_TOKEN GITHUB_TOKEN ANTHROPIC_API_KEY CLAUDE_CODE_OAUTH_TOKEN SSH_AUTH_S
 GIT_BIN="${REPO_HARNESS_GIT_BIN:-/usr/bin/git}"
 BASH_BIN="${REPO_HARNESS_BASH_BIN:-/bin/bash}"
 BUN_BIN="${REPO_HARNESS_BUN_BIN:-}"
-WORKFLOW_STATE_LIB="${REPO_HARNESS_WORKFLOW_STATE_LIB:-$SCRIPT_DIR/../assets/hooks/lib/workflow-state.sh}"
 if [[ "${OS:-}" == "Windows_NT" ]]; then
   GIT_BIN="${GIT_BIN//\\//}"
   BASH_BIN="${BASH_BIN//\\//}"
   BUN_BIN="${BUN_BIN//\\//}"
-  WORKFLOW_STATE_LIB="${WORKFLOW_STATE_LIB//\\//}"
   REPO_HARNESS_TARGET_REPO_ROOT="${REPO_HARNESS_TARGET_REPO_ROOT:-}"
   REPO_HARNESS_TARGET_REPO_ROOT="${REPO_HARNESS_TARGET_REPO_ROOT//\\//}"
   REPO_HARNESS_HELPER_SOURCE_PATH="${REPO_HARNESS_HELPER_SOURCE_PATH:-}"
@@ -27,13 +25,8 @@ is_absolute_host_path() {
   return 1
 }
 is_trusted_executable() { is_absolute_host_path "$1" && [[ -f "$1" && ! -L "$1" && -x "$1" ]]; }
-is_trusted_regular_file() { is_absolute_host_path "$1" && [[ -f "$1" && ! -L "$1" ]]; }
 is_trusted_executable "$GIT_BIN" || { echo "ship-worktrees: trusted git executable is unavailable" >&2; exit 1; }
 is_trusted_executable "$BASH_BIN" || { echo "ship-worktrees: trusted bash executable is unavailable" >&2; exit 1; }
-if [[ -n "$BUN_BIN" ]] && ! is_trusted_regular_file "$WORKFLOW_STATE_LIB"; then
-  echo "ship-worktrees: trusted workflow-state library is unavailable" >&2
-  exit 1
-fi
 export REPO_HARNESS_GIT_BIN="$GIT_BIN"
 git() { "$GIT_BIN" "$@"; }
 bash() { "$BASH_BIN" "$@"; }
@@ -119,13 +112,6 @@ is_linked_worktree() {
 
 current_branch() {
   git branch --show-current 2>/dev/null || true
-}
-
-load_workflow_state() {
-  if [[ -f "$WORKFLOW_STATE_LIB" ]]; then
-    # shellcheck source=/dev/null
-    . "$WORKFLOW_STATE_LIB"
-  fi
 }
 
 run_cmd() {
@@ -595,12 +581,6 @@ ship_transaction_write_index() {
   } | closeout_journal_write "$ship_transaction_dir/paths.tsv"
 }
 
-ship_active_contract_or_empty() {
-  if declare -F workflow_active_contract >/dev/null 2>&1; then
-    workflow_active_contract 2>/dev/null || true
-  fi
-}
-
 ship_transaction_begin() {
   [[ "$DRY_RUN" -eq 0 ]] || return 0
   local branch gate_base_ref base_sha original_head plan contract key begin_status=0
@@ -822,9 +802,7 @@ guard_dirty_merged_worktree() {
 
 active_plan_or_empty() {
   local active_plan=""
-  if declare -F get_active_plan >/dev/null 2>&1; then
-    active_plan="$(get_active_plan 2>/dev/null || true)"
-  elif [[ -f ".ai/harness/active-plan" ]]; then
+  if [[ -f ".ai/harness/active-plan" ]]; then
     active_plan="$(cat ".ai/harness/active-plan" 2>/dev/null | xargs)"
   fi
   printf '%s' "$active_plan"

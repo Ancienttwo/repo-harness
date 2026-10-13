@@ -1,23 +1,5 @@
 import type { HookEvent, RouteId } from '../cli/hook/route-registry';
-
-export interface HookJsonOutput {
-  readonly protocol: 1;
-  readonly event: HookEvent;
-  readonly route_id: RouteId;
-  readonly host: string;
-  readonly repo_root: string | null;
-  readonly exit_code: number;
-  readonly reason: string;
-  readonly decision: 'allow' | 'block' | 'none';
-  readonly additional_context: string | null;
-  readonly diagnostics: string;
-}
-
-export const HOOK_DIAGNOSTIC_BYTES = 8 * 1024;
-
-export function boundedHookDiagnostic(text: string): string {
-  return Buffer.from(text).subarray(0, HOOK_DIAGNOSTIC_BYTES).toString('utf8').replace(/\uFFFD$/u, '');
-}
+import { HOOK_DIAGNOSTIC_BYTES, type HookJsonOutput } from '../cli/hook/hook-protocol';
 
 /** Validate the wire result before a Pi tool can use it as an admission decision. */
 export function parseHookJsonOutput(text: string, event: HookEvent, route: RouteId): HookJsonOutput {

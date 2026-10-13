@@ -34,7 +34,8 @@ import { loadMinimalChangePolicy } from './minimal-change-policy';
 import { collectMinimalChangeSignals } from './minimal-change-signals';
 import { canonicalRepoRelativePath, fileExists, readText } from '../../effects/state/collect-state-inputs';
 import { withExclusiveDirectoryLock } from '../../effects/locking/exclusive-directory-lock';
-import type { WorktreeOwnership } from '../../effects/loop/state-input-collector';
+import type { StateInputCollector } from '../../effects/loop/state-input-collector';
+import { payloadString, type HookIdentity, type HookPayload } from './hook-input';
 import {
   artifactStemFromPlan,
   markdownHeader,
@@ -45,22 +46,13 @@ import {
 // Public entry surface
 // ---------------------------------------------------------------------------
 
-/** Structural subset of `StateInputCollector` this handler consumes. No
- * Effective State getter: the contract requires NOT adding one to this route
- * (`post-edit-guard.sh` historically never ran `state resolve`). */
-export interface MutationObservedCollector {
-  getRepoRoot(): string;
-  getWorktreeOwnership(): WorktreeOwnership;
-  getActivePlanMarker(): string | null;
-}
+/** No Effective State getter: this route never resolves state. */
+export type MutationObservedCollector = Pick<StateInputCollector, 'getRepoRoot' | 'getWorktreeOwnership' | 'getActivePlanMarker'>;
 
 export interface MutationObservedInput {
   readonly collector: MutationObservedCollector;
-  /** Raw host event payload (the same bytes `runHook()` would replay to a script's stdin). */
-  readonly input?: string | Buffer;
-  readonly env?: NodeJS.ProcessEnv;
-  /** HRD-08 event telemetry observer, invoked only after one journal transaction commits. */
-  readonly observeJournalWrite?: (path: string) => void;
+  readonly payload: HookPayload;
+  readonly identity: HookIdentity;
   /** Narrow post-commit fault/observation seam; never driven by an env flag. */
   readonly afterJournalWrite?: (path: string) => void;
 }
@@ -73,10 +65,7 @@ export interface MutationObservedResult {
 
 export function runMutationObserved(opts: MutationObservedInput): MutationObservedResult {
   const repoRoot = opts.collector.getRepoRoot();
-  const env = opts.env ?? process.env;
-  const payload = parsePayload(opts.input);
-
-  const filePath = getFilePath(repoRoot, payload, env);
+  const filePath = getFilePath(repoRoot, opts.payload);
   if (!filePath || canonicalRepoRelativePath(repoRoot, filePath) === null) {
     // Mirrors `[[ -z "$FILE_PATH" ]] && exit 0` -- the non-qualifying case --
     // extended fail-closed to targets that do not canonicalize inside this
@@ -101,13 +90,12 @@ export function runMutationObserved(opts: MutationObservedInput): MutationObserv
   const dirty: PostEditJournalDirtyBits = { 'minimal-change': minimalChangeEnabled };
 
   const journalPath = writeOrCoalesceJournalEvent(repoRoot, {
-    sessionId: sessionIdFor(payload, env),
+    sessionId: opts.identity.sessionId ?? 'no-session',
     filePath,
     subjectRevision: currentGitRevision(repoRoot),
     dirty,
     minimalChangeInfo: minimalChangeEnabled ? { path: filePath, baseRef: 'HEAD' } : null,
   });
-  if (journalPath) opts.observeJournalWrite?.(journalPath);
   if (journalPath) opts.afterJournalWrite?.(journalPath);
 
   return { exitCode: 0, stdout: out.join(''), stderr: errOut.join('') };
@@ -121,37 +109,16 @@ export function runMutationObserved(opts: MutationObservedInput): MutationObserv
 // branch already uses).
 // ---------------------------------------------------------------------------
 
-function parsePayload(input: string | Buffer | undefined): unknown {
-  if (input === undefined) return {};
-  const text = input.toString().trim();
-  if (!text) return {};
-  try {
-    return JSON.parse(text);
-  } catch {
-    return {};
-  }
-}
-
-function stringAt(payload: unknown, path: readonly string[]): string {
-  let current: unknown = payload;
-  for (const segment of path) {
-    if (current === null || typeof current !== 'object') return '';
-    current = (current as Record<string, unknown>)[segment];
-  }
-  return typeof current === 'string' ? current : '';
-}
-
 function firstNonEmpty(values: readonly string[]): string {
   return values.find((value) => value.length > 0) ?? '';
 }
 
-function getFilePath(repoRoot: string, payload: unknown, env: NodeJS.ProcessEnv): string {
+function getFilePath(repoRoot: string, payload: HookPayload): string {
   const raw = firstNonEmpty([
-    stringAt(payload, ['file_path']),
-    stringAt(payload, ['tool_input', 'file_path']),
-    stringAt(payload, ['trigger_file_path']),
-    stringAt(payload, ['parent_file_path']),
-    env.CLAUDE_FILE_PATH ?? '',
+    payloadString(payload, 'file_path'),
+    payloadString(payload, 'tool_input.file_path'),
+    payloadString(payload, 'trigger_file_path'),
+    payloadString(payload, 'parent_file_path'),
   ]);
   return normalizeFilePath(repoRoot, raw);
 }
@@ -258,18 +225,6 @@ function renderFirstPrinciplesAdvisory(repoRoot: string, filePath: string): stri
   }
   lines.push('  Boundary: keep trust-boundary validation, data-loss prevention, security, accessibility, and explicit user-requested behavior.');
   return `${lines.join('\n')}\n`;
-}
-
-// ---------------------------------------------------------------------------
-// session id (mirrors mutation-guard.ts's getSessionId priority, simplified:
-// this handler only needs a coalesce bucket, not a full run-id derivation).
-// ---------------------------------------------------------------------------
-
-function sessionIdFor(payload: unknown, env: NodeJS.ProcessEnv): string {
-  if (env.HOOK_SESSION_ID) return env.HOOK_SESSION_ID;
-  const payloadValue = stringAt(payload, ['session_id']);
-  if (payloadValue) return payloadValue;
-  return env.CLAUDE_SESSION_ID || env.CODEX_SESSION_ID || 'no-session';
 }
 
 /** Plain git read (NOT an Effective State resolution -- the contract

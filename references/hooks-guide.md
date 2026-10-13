@@ -92,8 +92,7 @@ runtime contract.
   configs rather than hidden runtime caches.
 - Use `tasks/lessons.md` for repeated corrections and `docs/researches/*.md`
   for deep findings.
-- Handler changes belong in `src/cli/hook/` with focused tests; update the
-  declared asset projection with `bun run sync:hooks`.
+- Handler changes belong in `src/cli/hook/` with focused tests.
 
 ## Failure Logging
 

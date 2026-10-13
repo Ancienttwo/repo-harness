@@ -1,205 +1,51 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { execFileSync } from 'child_process';
-import { getRoute, type HookEvent, type HookHandlerId, type RouteId } from './route-registry';
+import { getRoute, routeSupportsHost, type HookEvent, type HookHandlerId, type RouteHost, type RouteId } from './route-registry';
 import { getHandlerForRoute } from './handler-registry';
 import {
   budgetSessionContext,
-  createSessionContextProviderDiagnostic,
+  errorHash,
   type SessionContextProviderDiagnostic,
   type SessionContextSection,
 } from './session-context-budget';
 import { writeAllSync } from '../runtime/write-all-sync';
-import { createStateInputCollector } from '../../effects/loop/state-input-collector';
+import {
+  createStateInputCollector,
+  type EffectiveStateResolution,
+} from '../../effects/loop/state-input-collector';
 import { createHookEventTelemetry } from './event-telemetry';
 import {
   resolveEffectiveState,
   StateResolutionUnstableError,
 } from '../../effects/state/resolve-effective-state';
 import { ExclusiveLockContentionError } from '../../effects/locking/exclusive-directory-lock';
-import { owedCapabilities, renderOwedCapabilities } from '../../effects/state/owed-capabilities';
 import type { EffectiveState, EffectiveStateRiskInput } from '../../core/state/types';
 import type { WorkflowProfile } from '../../core/workflow/profile';
-import { createHookEffectTracker, hookEffectFailureMetadata, type HookHandlerResult } from './handler-contract';
+import type { HookHandlerResult } from './handler-contract';
+import { HookPayloadError, parseHookPayload, type HookIdentity } from './hook-input';
+import { resolveHookIdentity } from './run-identity';
+import { boundedHookDiagnostic, HOST_RENDERERS, type HookJsonOutput, type HookOutcome } from './hook-protocol';
 
-import { boundedHookDiagnostic, type HookJsonOutput } from '../../pi/hook-protocol';
-
+export const HOOK_COMMAND_NAME = 'repo-harness-hook';
 const OPT_IN_MARKER = '.ai/harness/workflow-contract.json';
+const HOOK_HOSTS: readonly RouteHost[] = ['claude', 'codex', 'pi'];
 
 export interface RunHookOptions {
-  readonly worktreeSweepDeadlineMs?: number;
   readonly event: HookEvent;
   readonly routeId: RouteId;
   readonly cwd?: string;
-  /** Host output mode. The runtime owns all fd shaping; handlers never write to host fds. */
-  readonly stdio?: 'inherit' | 'pipe' | 'ignore';
-  readonly format?: 'json';
-  readonly commandName?: string;
   readonly input?: string | Buffer;
   readonly env?: NodeJS.ProcessEnv;
-  /**
-   * Narrow observer seam used by fault-injection tests. It is invoked only
-   * after an existing handler-owned durable phase has committed; production
-   * hosts do not supply a retry scheduler or fault flag.
-   */
-  readonly afterEffectCommit?: (phase: string) => void;
+  readonly worktreeSweepDeadlineMs?: number;
 }
 
 export interface RunHookResult {
   readonly exitCode: number;
-  readonly reason:
-    | 'not-in-git-repo'
-    | 'repo-root-mismatch'
-    | 'non-opt-in'
-    | 'unknown-route'
-    | 'handler-unbound'
-    | 'unsupported-host-route'
-    | 'handler-failed'
-    | 'ok';
+  readonly reason: string;
   readonly repoRoot?: string;
   readonly handler?: HookHandlerId;
   readonly json?: HookJsonOutput;
-}
-
-function outputBytes(output: string | null | undefined): number | null {
-  return output == null ? null : Buffer.byteLength(output, 'utf8');
-}
-
-function parseJson(output: string): Record<string, unknown> | null {
-  const text = output.trim();
-  if (!text.startsWith('{')) return null;
-  try {
-    const parsed: unknown = JSON.parse(text);
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-      ? parsed as Record<string, unknown>
-      : null;
-  } catch {
-    return null;
-  }
-}
-
-function isDecisionOutput(output: string): boolean {
-  const decision = parseJson(output)?.decision;
-  return decision === 'allow' || decision === 'block';
-}
-
-/**
- * A `hookSpecificOutput` envelope for this event, whatever it carries:
- * additionalContext, permissionDecision or updatedInput. Every structured
- * handler output names its event, so this is the one pass-through rule.
- */
-function isHookSpecificOutput(output: string, event: HookEvent): boolean {
-  const specific = parseJson(output)?.hookSpecificOutput;
-  return Boolean(
-    specific && typeof specific === 'object' && !Array.isArray(specific) &&
-    (specific as Record<string, unknown>).hookEventName === event,
-  );
-}
-
-function isStructuredHookOutput(output: string, event: HookEvent): boolean {
-  return isDecisionOutput(output) || isHookSpecificOutput(output, event);
-}
-
-function writeText(fd: 1 | 2, value: string): void {
-  if (value) writeAllSync(fd, value);
-}
-
-function writeJsonOutput(opts: RunHookOptions, output: HookJsonOutput): boolean {
-  if (opts.stdio === 'ignore' || opts.stdio === 'pipe') return false;
-  writeText(1, `${JSON.stringify(output)}\n`);
-  return true;
-}
-
-function sessionOutput(
-  opts: RunHookOptions,
-  result: HookHandlerResult,
-  repoRoot: string,
-  diagnostics: readonly SessionContextProviderDiagnostic[],
-): { context: string | null; delivered: () => void } {
-  const sections = result.sessionContexts ?? [];
-  if (sections.length === 0 && diagnostics.length === 0) return { context: null, delivered: () => {} };
-  const env = opts.env ?? process.env;
-  const sessionId = env.HOOK_SESSION_ID ?? env.CODEX_SESSION_ID ?? env.CLAUDE_SESSION_ID ?? null;
-  const budgeted = budgetSessionContext(repoRoot, sections, sessionId, diagnostics);
-  return {
-    context: budgeted.context || null,
-    delivered: () => {
-      const included = new Set(budgeted.evidence.included_sections);
-      for (const section of sections) if (included.has(section.id)) section.onDelivered?.();
-    },
-  };
-}
-
-function jsonOutput(opts: RunHookOptions, result: RunHookResult, output?: HookHandlerResult, context: string | null = null,
-  unavailable = false): HookJsonOutput {
-  const parsed = output ? parseJson(output.stdout) : null;
-  const specific = parsed?.hookSpecificOutput as Record<string, unknown> | undefined;
-  const decision = result.exitCode !== 0 || unavailable ? 'block'
-    : parsed?.decision === 'block' ? 'block'
-    : parsed?.decision === 'allow' || (opts.event === 'PreToolUse' && result.reason === 'ok') ? 'allow' : 'none';
-  return {
-    protocol: 1, event: opts.event, route_id: opts.routeId,
-    host: (opts.env ?? process.env).HOOK_HOST ?? 'unknown', repo_root: result.repoRoot ?? null,
-    exit_code: result.exitCode, reason: unavailable ? 'context-unavailable' : result.reason, decision,
-    additional_context: context ?? (typeof specific?.additionalContext === 'string' ? specific.additionalContext : null),
-    diagnostics: boundedHookDiagnostic(output ? [output.stderr, isStructuredHookOutput(output.stdout, opts.event) ? '' : output.stdout].filter(Boolean).join('\n') : ''),
-  };
-}
-
-function hostOutput(
-  opts: RunHookOptions,
-  result: HookHandlerResult,
-  repoRoot: string,
-  providerDiagnostics: readonly SessionContextProviderDiagnostic[],
-): void {
-  const env = opts.env ?? process.env;
-  const mode = opts.stdio;
-  if (mode === 'ignore' || mode === 'pipe') return;
-
-  const isSessionDefault = opts.event === 'SessionStart' && opts.routeId === 'default';
-  const isDefaultSessionCapture = isSessionDefault && mode === undefined;
-  if (isDefaultSessionCapture) {
-    if (result.stderr) writeText(2, result.stderr);
-    const session = sessionOutput(opts, result, repoRoot, providerDiagnostics);
-    if (!session.context) return;
-    writeText(1, `${JSON.stringify({
-      hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: session.context },
-    })}\n`);
-    session.delivered();
-    return;
-  }
-
-  if (mode === 'inherit') {
-    writeText(1, result.stdout);
-    writeText(2, result.stderr);
-    return;
-  }
-
-  const codex = env.HOOK_HOST === 'codex';
-  if (result.exitCode !== 0) {
-    // A refusal keeps its exit-code channel: Claude reads stderr of exit 2.
-    // Codex reads no plain stdout, so failure stdout joins its diagnostics.
-    if (!codex) writeText(1, result.stdout);
-    writeText(2, result.stderr);
-    if (codex && result.stdout) writeText(2, result.stdout);
-    return;
-  }
-
-  // Neither host gives plain stdout of PreToolUse, PostToolUse or Stop to the
-  // model, and Codex reads no plain stdout at all. Successful stdout is the
-  // model-facing advisory, so it goes out as one hookSpecificOutput envelope.
-  // Codex Desktop renders Stop JSON as "Unsupported content type", so Codex
-  // Stop stays silent. stderr stays an operator diagnostic: no host gives
-  // stderr of a successful hook to the model.
-  if (!(codex && opts.event === 'Stop')) writeText(1, hostEnvelope(opts.event, result.stdout));
-  writeText(2, result.stderr);
-}
-
-/** Successful handler stdout as the host envelope: structured output as is, advisory text as additionalContext. */
-function hostEnvelope(event: HookEvent, stdout: string): string {
-  if (!stdout.trim()) return '';
-  if (isStructuredHookOutput(stdout, event)) return stdout;
-  return `${JSON.stringify({ hookSpecificOutput: { hookEventName: event, additionalContext: stdout.trimEnd() } })}\n`;
 }
 
 export function resolveRepoRoot(cwd: string): string | null {
@@ -214,38 +60,37 @@ export function resolveRepoRoot(cwd: string): string | null {
   }
 }
 
-function canonicalPath(input: string): string {
-  const resolved = path.resolve(input);
-  try {
-    return fs.realpathSync(resolved);
-  } catch {
-    return resolved;
-  }
-}
-
-function resolveExplicitRepoRoot(cwd: string, env: NodeJS.ProcessEnv): {
-  readonly repoRoot: string | null;
-  readonly mismatch: boolean;
-} {
+/**
+ * The managed command already ran `git rev-parse --show-toplevel` in the hook
+ * cwd and exported the result, so a managed call spawns no second git. Pi
+ * strips `HOOK_REPO_ROOT` and resolves from its cwd.
+ */
+export function resolveHookRepoRoot(cwd: string, env: NodeJS.ProcessEnv): string | null {
   const explicit = env.HOOK_REPO_ROOT?.trim();
-  if (!explicit) return { repoRoot: resolveRepoRoot(cwd), mismatch: false };
-  const explicitRoot = resolveRepoRoot(explicit);
-  if (!explicitRoot) return { repoRoot: null, mismatch: false };
-  const cwdRoot = resolveRepoRoot(cwd);
-  if (cwdRoot && canonicalPath(cwdRoot) !== canonicalPath(explicitRoot)) {
-    return { repoRoot: null, mismatch: true };
+  if (!explicit) return resolveRepoRoot(cwd);
+  try {
+    return fs.realpathSync(explicit);
+  } catch {
+    return null;
   }
-  return { repoRoot: explicitRoot, mismatch: false };
 }
 
 export function isOptIn(repoRoot: string): boolean {
   return fs.existsSync(path.join(repoRoot, OPT_IN_MARKER));
 }
 
-export type SessionStateResolution =
-  | { readonly kind: 'resolved_actionable'; readonly state: EffectiveState }
-  | { readonly kind: 'resolved_non_actionable'; readonly state: EffectiveState }
-  | { readonly kind: 'unavailable'; readonly diagnostic: SessionContextProviderDiagnostic };
+const EFFECTIVE_STATE_RESOLUTION_MAX_ATTEMPTS = 3;
+
+/**
+ * The transient throw signatures of resolveEffectiveState: the stability
+ * contract's re-read exhaustion and exclusive state-lock contention. Both are
+ * concurrent-write contention, so a bounded retry can clear them. Each throw
+ * site owns its error type; this classifier never inspects message text.
+ */
+function isTransientResolutionInstability(error: unknown): boolean {
+  return error instanceof StateResolutionUnstableError
+    || error instanceof ExclusiveLockContentionError;
+}
 
 type EffectiveStateResolver = (
   repoRoot: string,
@@ -253,329 +98,182 @@ type EffectiveStateResolver = (
   risk?: EffectiveStateRiskInput,
 ) => EffectiveState;
 
-function effectiveStateIsActionable(state: EffectiveState): boolean {
-  return state.task_id !== null || state.blockers.length > 0 ||
-    Boolean(state.active_sprint.path && state.active_sprint.freshness === 'fresh');
-}
-
-export function projectEffectiveStateSessionSection(
-  state: EffectiveState,
-): SessionContextSection | null {
-  if (!effectiveStateIsActionable(state)) return null;
-  const compact = {
-    task_id: state.task_id,
-    phase: state.phase,
-    state_version: state.state_version,
-    state_revision: state.state_revision,
-    workflow_profile: state.workflow_profile,
-    next_action: state.next_action,
-    guidance: state.guidance,
-    blockers: state.blockers,
-    allowed_paths: state.allowed_paths,
-    checks: state.checks,
-    references: {
-      plan: state.authoritative_plan?.path ?? null,
-      contract: state.contract?.path ?? null,
-      sprint: state.active_sprint.path,
-      handoff: state.handoff.path,
-      resume: state.resume.path,
-    },
-  };
-  return {
-    id: 'effective-state',
-    priority: 2,
-    content: `[HarnessState] ${JSON.stringify(compact)}`,
-    mandatory: true,
-    actionable: true,
-    reference: 'repo-harness state resolve --json',
-  };
-}
-
-/**
- * The short SessionStart section for a branch that already owes architecture
- * updates. It reuses the ownership result of the session state resolution.
- * Architecture diagnostics never block, so a Git failure only drops it.
- */
-export function projectOwedCapabilitiesSessionSection(
-  repoRoot: string,
-  state: EffectiveState,
-): SessionContextSection | null {
-  if (!state.capability_ownership) return null;
-  let content: string | null = null;
-  try {
-    content = renderOwedCapabilities(owedCapabilities(repoRoot, state.capability_ownership));
-  } catch {
-    return null;
-  }
-  if (!content) return null;
-  return {
-    id: 'architecture-owed',
-    priority: 3,
-    content,
-    mandatory: false,
-    actionable: true,
-    reference: 'repo-harness state owed --json',
-  };
-}
-
-export function projectUnavailableStateSessionSection(
-  diagnostic: SessionContextProviderDiagnostic,
-): SessionContextSection {
-  const content = `[HarnessStateUnavailable] ${JSON.stringify({
-    fail_closed: true,
-    reason_code: diagnostic.reason_code,
-    error_hash: diagnostic.error_hash,
-    guidance: 'Do not infer task, scope, or edit permission.',
-    required_action: 'repo-harness state resolve --json',
-  })}`;
-  return {
-    id: 'effective-state',
-    priority: 2,
-    content,
-    mandatory: true,
-    actionable: true,
-    reference: 'repo-harness state resolve --json',
-  };
-}
-
-export function resolveSessionEffectiveState(
-  repoRoot: string,
-  nowMs: number,
-  resolve: EffectiveStateResolver = resolveEffectiveState,
-): SessionStateResolution {
-  try {
-    // Match `repo-harness state resolve --json` exactly: that command passes
-    // no operation/profile override, even when hook-only env vars are set.
-    const state = resolveEffectiveStateWithTransientRetry(() => resolve(repoRoot, nowMs, {}));
-    return effectiveStateIsActionable(state)
-      ? { kind: 'resolved_actionable', state }
-      : { kind: 'resolved_non_actionable', state };
-  } catch (error) {
-    return {
-      kind: 'unavailable',
-      diagnostic: createSessionContextProviderDiagnostic(
-        'effective-state',
-        isTransientResolutionInstability(error) ? 'state_resolution_unstable' : 'state_resolution_failed',
-        error,
-        'repo-harness state resolve --json',
-      ),
-    };
-  }
-}
-
-const EFFECTIVE_STATE_RESOLUTION_MAX_ATTEMPTS = 3;
-
-/**
- * The transient-instability throw signatures resolveEffectiveState can raise:
- * the stability contract's re-read exhaustion (partitioned to authority
- * sources only in resolve-effective-state.ts, but still reachable under
- * sustained AUTHORITY churn) and exclusive state-lock contention -- acquire
- * timeout or lost ownership (src/effects/locking/exclusive-directory-lock.ts).
- * All are concurrent-write contention, not a genuinely unresolvable workflow
- * profile -- the bounded retry below gives ordinary contention a chance to
- * clear. Each throw site owns its error type, so this classifier never
- * inspects message text. Each adapter owns the final mapping: PreEdit
- * preserves its existing null versus re-throw partition, while SessionStart
- * emits bounded unavailable evidence.
- */
-function isTransientResolutionInstability(error: unknown): boolean {
-  return error instanceof StateResolutionUnstableError
-    || error instanceof ExclusiveLockContentionError;
-}
-
-function resolveEffectiveStateWithTransientRetry(
-  resolveAttempt: () => EffectiveState,
-): EffectiveState {
-  let lastInstability: unknown = null;
-  for (let attempt = 1; attempt <= EFFECTIVE_STATE_RESOLUTION_MAX_ATTEMPTS; attempt += 1) {
-    try {
-      return resolveAttempt();
-    } catch (error) {
-      if (!isTransientResolutionInstability(error)) throw error;
-      lastInstability = error;
-    }
-  }
-  throw lastInstability;
-}
-
-function resolvePreEditEffectiveState(
-  repoRoot: string,
+function effectiveStateRisk(
+  event: HookEvent,
   targetPaths: readonly string[],
   env: NodeJS.ProcessEnv,
-): EffectiveState | null {
+): EffectiveStateRiskInput {
   const explicitOverride = env.REPO_HARNESS_WORKFLOW_PROFILE as WorkflowProfile | undefined;
-  try {
-    return resolveEffectiveStateWithTransientRetry(() => resolveEffectiveState(repoRoot, Date.now(), {
-      targetPaths,
-      operationKind: 'edit',
-      explicitOverride,
-    }));
-  } catch (error) {
-    if (!isTransientResolutionInstability(error)) return null;
-    throw error;
-  }
+  if (event === 'PreToolUse') return { targetPaths, operationKind: 'edit', explicitOverride };
+  if (event === 'Stop') return { operationKind: 'inspect', explicitOverride };
+  // SessionStart matches `repo-harness state resolve --json` exactly: no
+  // operation or profile override, even when hook-only env vars are set.
+  return {};
 }
 
-function resolveStopEffectiveState(repoRoot: string, env: NodeJS.ProcessEnv): EffectiveState | null {
-  const explicitOverride = env.REPO_HARNESS_WORKFLOW_PROFILE as WorkflowProfile | undefined;
-  try {
-    return resolveEffectiveState(repoRoot, Date.now(), {
-      operationKind: 'inspect',
-      explicitOverride,
-    });
-  } catch {
-    return null;
+/**
+ * The single Effective State policy for every hook event: one timestamp,
+ * at most three attempts for transient contention, and a hashed failure that
+ * each handler renders in its own advisory.
+ */
+export function resolveHookEffectiveState(
+  repoRoot: string,
+  event: HookEvent,
+  targetPaths: readonly string[],
+  env: NodeJS.ProcessEnv,
+  nowMs: number,
+  resolve: EffectiveStateResolver = resolveEffectiveState,
+): EffectiveStateResolution {
+  const risk = effectiveStateRisk(event, targetPaths, env);
+  let failure: unknown = null;
+  for (let attempt = 1; attempt <= EFFECTIVE_STATE_RESOLUTION_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      return { ok: true, state: resolve(repoRoot, nowMs, risk) };
+    } catch (error) {
+      failure = error;
+      if (!isTransientResolutionInstability(error)) break;
+    }
   }
+  return {
+    ok: false,
+    reason_code: isTransientResolutionInstability(failure) ? 'state_resolution_unstable' : 'state_resolution_failed',
+    error_hash: errorHash(failure),
+    message: failure instanceof Error ? failure.message : String(failure),
+  };
+}
+
+function hostFrom(env: NodeJS.ProcessEnv): RouteHost | null {
+  const host = env.HOOK_HOST;
+  return HOOK_HOSTS.includes(host as RouteHost) ? host as RouteHost : null;
+}
+
+function writeText(fd: 1 | 2, value: string): void {
+  if (value) writeAllSync(fd, value);
+}
+
+interface Delivery {
+  readonly additionalContext: string | null;
+  readonly delivered: () => void;
+}
+
+/** Budget SessionStart sections once; `delivered` runs after the host write. */
+function sessionDelivery(
+  repoRoot: string,
+  sections: readonly SessionContextSection[],
+  sessionId: string | null,
+  diagnostics: readonly SessionContextProviderDiagnostic[],
+): Delivery {
+  if (sections.length === 0 && diagnostics.length === 0) return { additionalContext: null, delivered: () => {} };
+  const budgeted = budgetSessionContext(repoRoot, sections, sessionId, diagnostics);
+  return {
+    additionalContext: budgeted.context || null,
+    delivered: () => {
+      const included = new Set(budgeted.evidence.included_sections);
+      for (const section of sections) if (included.has(section.id)) section.onDelivered?.();
+    },
+  };
+}
+
+function outcomeReason(result: HookHandlerResult): string {
+  if (result.reason) return result.reason;
+  if (result.exitCode === 0) return result.permission?.decision === 'deny' ? 'blocked' : 'ok';
+  return result.exitCode === 2 ? 'blocked' : 'handler-exit';
 }
 
 export function runHook(opts: RunHookOptions): RunHookResult {
   const env = opts.env ?? process.env;
   const cwd = opts.cwd ?? process.cwd();
-  const commandName = opts.commandName ?? 'repo-harness hook';
-  const complete = (result: RunHookResult): RunHookResult => {
-    if (opts.format !== 'json') return result;
-    const json = jsonOutput(opts, result);
-    writeJsonOutput(opts, json);
-    return { ...result, json };
-  };
-  const resolved = resolveExplicitRepoRoot(cwd, env);
-  if (resolved.mismatch) return complete({ exitCode: 0, reason: 'repo-root-mismatch' });
-  const repoRoot = resolved.repoRoot;
-  if (!repoRoot) return complete({ exitCode: 0, reason: 'not-in-git-repo' });
-  if (!isOptIn(repoRoot)) return complete({ exitCode: 0, reason: 'non-opt-in', repoRoot });
-
   const route = getRoute(opts.event, opts.routeId);
+  const host = hostFrom(env);
+  if (!host) {
+    writeText(2, `${HOOK_COMMAND_NAME}: HOOK_HOST must be one of ${HOOK_HOSTS.join(', ')}\n`);
+    return { exitCode: route?.failClosed ? 2 : 1, reason: 'unknown-host' };
+  }
+  const render = HOST_RENDERERS[host];
+  const emit = (outcome: HookOutcome, delivered?: () => void): HookJsonOutput | undefined => {
+    const output = render(outcome);
+    writeText(2, output.stderr);
+    writeText(1, output.stdout);
+    if (output.stdout) delivered?.();
+    return output.json;
+  };
+  const early = (exitCode: number, reason: string, repoRoot: string | null, diagnostics = ''): RunHookResult => {
+    const json = emit({
+      event: opts.event, routeId: opts.routeId, repoRoot, exitCode, reason, additionalContext: null, diagnostics,
+    });
+    return { exitCode, reason, ...(repoRoot ? { repoRoot } : {}), ...(json ? { json } : {}) };
+  };
+
+  const repoRoot = resolveHookRepoRoot(cwd, env);
+  if (!repoRoot) return early(0, 'not-in-git-repo', null);
+  if (!isOptIn(repoRoot)) return early(0, 'non-opt-in', repoRoot);
   if (!route) {
-    writeAllSync(2, `${commandName}: unknown route ${opts.event}.${opts.routeId}\n`);
-    return complete({ exitCode: 2, reason: 'unknown-route', repoRoot });
+    return early(2, 'unknown-route', repoRoot, `${HOOK_COMMAND_NAME}: unknown route ${opts.event}.${opts.routeId}\n`);
   }
-  if (env.HOOK_HOST === 'pi' && route.hosts && !route.hosts.includes('pi')) {
-    return complete({ exitCode: 2, reason: 'unsupported-host-route', repoRoot });
-  }
-  const handler = getHandlerForRoute(route);
-  if (!handler) {
-    writeAllSync(2, `${commandName}: no typed handler for ${opts.event}.${opts.routeId}\n`);
-    return complete({ exitCode: 2, reason: 'handler-unbound', repoRoot });
+  if (!routeSupportsHost(route, host)) {
+    return early(2, 'unsupported-host-route', repoRoot,
+      `${HOOK_COMMAND_NAME}: unsupported-host-route: ${opts.event}.${opts.routeId} is not installed for ${host}\n`);
   }
 
-  const telemetry = createHookEventTelemetry({ repoRoot, event: opts.event, routeId: opts.routeId, input: opts.input, env });
+  const handler = getHandlerForRoute(route);
+  const telemetry = createHookEventTelemetry({ repoRoot, event: opts.event, routeId: opts.routeId });
   const providerDiagnostics: SessionContextProviderDiagnostic[] = [];
-  const observeSessionContextDiagnostic = (diagnostic: SessionContextProviderDiagnostic): void => {
-    providerDiagnostics.push(diagnostic);
-  };
+  const now = new Date();
   const collector = createStateInputCollector({
-    event: opts.event,
     repoRoot,
-    resolveSessionEffectiveState: () => {
-      telemetry.recordStateResolution();
-      telemetry.markMetricsComplete(['state_resolutions']);
-      const outcome = resolveSessionEffectiveState(repoRoot, Date.now());
-      if (outcome.kind === 'unavailable') {
-        observeSessionContextDiagnostic(outcome.diagnostic);
-        return [projectUnavailableStateSessionSection(outcome.diagnostic)];
-      }
-      const sections: SessionContextSection[] = [];
-      if (outcome.kind === 'resolved_actionable') sections.push(projectEffectiveStateSessionSection(outcome.state)!);
-      const owed = projectOwedCapabilitiesSessionSection(repoRoot, outcome.state);
-      if (owed) sections.push(owed);
-      return sections;
-    },
-    resolvePreEditEffectiveState: (targetPaths) => {
-      telemetry.recordStateResolution();
-      telemetry.markMetricsComplete(['state_resolutions']);
-      return resolvePreEditEffectiveState(repoRoot, targetPaths, env);
-    },
-    resolveStopEffectiveState: () => {
-      telemetry.recordStateResolution();
-      telemetry.markMetricsComplete(['state_resolutions']);
-      return resolveStopEffectiveState(repoRoot, env);
-    },
+    resolveEffectiveState: (targetPaths) =>
+      resolveHookEffectiveState(repoRoot, opts.event, targetPaths, env, now.getTime()),
   });
 
-  let handlerResult: HookHandlerResult;
-  let handlerThrew = false;
-  let effectRecoveryOverride: ReturnType<typeof hookEffectFailureMetadata> = null;
-  const effectTracker = handler.effectContract ? createHookEffectTracker(handler.effectContract) : null;
-  const startedAt = new Date();
+  let identity: HookIdentity = { host, sessionId: null, runId: null, turnId: null };
+  let result: HookHandlerResult;
+  let reason: string;
   try {
-    handlerResult = handler.run({
+    const payload = parseHookPayload(opts.input);
+    identity = resolveHookIdentity(repoRoot, opts.event, payload, host, now);
+    result = handler.run({
       event: opts.event,
-      routeId: opts.routeId,
       repoRoot,
       sessionCwd: cwd,
-      worktreeSweepDeadlineMs: opts.worktreeSweepDeadlineMs,
-      input: opts.input,
+      payload,
+      identity,
       env,
-      now: startedAt,
+      now,
       collector,
-      dependencies: {
-        observeJournalWrite: (journalPath) => {
-          telemetry.recordEventWrite(journalPath);
-          telemetry.recordWriteTransaction();
-          effectTracker?.recordCommittedPhase('journal');
-        },
-        observeProjectionWrite: (target) => {
-          telemetry.recordDurableWrite(target.path);
-          effectTracker?.recordCommittedPhase(target.kind);
-        },
-        observeProjectionTransaction: () => telemetry.recordWriteTransaction(),
-        observeSessionContextDiagnostic,
-        afterEffectCommit: opts.afterEffectCommit,
-      },
-      collectSessionStdout: opts.event === 'SessionStart' && opts.stdio === undefined,
+      worktreeSweepDeadlineMs: opts.worktreeSweepDeadlineMs,
+      observeSessionContextDiagnostic: (diagnostic) => { providerDiagnostics.push(diagnostic); },
     });
+    reason = outcomeReason(result);
   } catch (error) {
-    handlerThrew = true;
-    effectRecoveryOverride = hookEffectFailureMetadata(error);
     const detail = error instanceof Error ? error.message : String(error);
-    handlerResult = {
-      exitCode: 1,
-      stdout: '',
-      stderr: `${commandName}: ${handler.id} failed: ${detail}\n`,
-      reason: effectRecoveryOverride?.telemetryReason ?? 'handler-failed',
+    // A crash of an admission route must not admit the tool call: hosts read
+    // only exit 2 as a block.
+    result = {
+      exitCode: route.failClosed ? 2 : 1,
+      diagnostics: boundedHookDiagnostic(`${HOOK_COMMAND_NAME}: ${handler.id} failed: ${detail}\n`),
     };
+    reason = error instanceof HookPayloadError ? 'invalid-payload' : 'handler-failed';
   }
 
-  telemetry.recordStep({
-    name: handler.id,
-    execution: 'in_process',
-    startedAt,
-    elapsedMs: Date.now() - startedAt.getTime(),
-    exitCode: handlerResult.exitCode,
-    outputBytes: outputBytes(handlerResult.stdout),
-    blocked: isDecisionOutput(handlerResult.stdout) && parseJson(handlerResult.stdout)?.decision === 'block',
-  });
-  // A typed step is observable, but being in-process does not make every
-  // logical filesystem access observable automatically. The handler's
-  // optional effect contract is the sole authority for complete write metrics;
-  // handlers without one remain explicitly uninstrumented. A thrown targeted
-  // handler never receives complete write metrics merely because a counter is
-  // zero.
-  if (!handlerThrew && handler.effectContract) {
-    telemetry.markMetricsComplete(handler.effectContract.completeMetrics);
-  }
-  if (opts.format !== 'json') hostOutput(opts, handlerResult, repoRoot, providerDiagnostics);
-  const exitCode = handlerResult.exitCode;
-  const publicReason: RunHookResult['reason'] = exitCode === 0 ? 'ok' : 'handler-failed';
-  // Handler-specific detail is retained only in the event telemetry record;
-  // the public runtime result has one stable success/failure vocabulary.
-  telemetry.finalize({
+  const session = result.sessionContexts
+    ? sessionDelivery(repoRoot, result.sessionContexts, identity.sessionId, providerDiagnostics)
+    : null;
+  const exitCode = result.exitCode;
+  const json = emit({
+    event: opts.event,
+    routeId: opts.routeId,
+    repoRoot,
     exitCode,
-    reason: handlerResult.reason ?? publicReason,
-    blocked: exitCode !== 0,
-    effectObservation: effectTracker?.observation(
-      exitCode === 0,
-      handlerThrew,
-      effectRecoveryOverride?.recovery,
-    ),
+    reason,
+    permission: result.permission,
+    additionalContext: session ? session.additionalContext : result.additionalContext ?? null,
+    diagnostics: result.diagnostics ?? '',
+  }, session?.delivered);
+  telemetry.finalize({
+    identity,
+    exitCode,
+    blocked: exitCode === 2 || result.permission?.decision === 'deny',
+    reason,
   });
-  const result: RunHookResult = { exitCode, reason: publicReason, repoRoot, handler: handler.id };
-  if (opts.format !== 'json') return result;
-  const session = opts.event === 'SessionStart'
-    ? sessionOutput(opts, handlerResult, repoRoot, providerDiagnostics) : null;
-  const unavailable = providerDiagnostics.some(diagnostic => diagnostic.provider_id === 'effective-state');
-  const json = jsonOutput(opts, result, handlerResult, session?.context ?? null, unavailable);
-  const delivered = writeJsonOutput(opts, json);
-  if (delivered && session?.context) session.delivered();
-  return { ...result, json };
+  return { exitCode, reason, repoRoot, handler: handler.id, ...(json ? { json } : {}) };
 }

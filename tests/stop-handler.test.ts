@@ -7,6 +7,7 @@ import type { EffectiveState } from '../src/core/state/types';
 import { runStopHandler as runStopHandlerRuntime, type StopProjectionTarget } from '../src/cli/hook/stop-handler';
 import { RUN_SUMMARY_RETENTION_COUNT } from '../src/effects/run-summary-retention';
 import { consumePendingPostEditEvents, readPendingPostEditEvents } from '../src/cli/hook/mutation-observed';
+import { hookIdentity } from './helpers/hook-identity';
 
 const fixtures: string[] = [];
 
@@ -14,8 +15,16 @@ afterEach(() => {
   while (fixtures.length > 0) rmSync(fixtures.pop()!, { recursive: true, force: true });
 });
 
-function runStopHandler(options: Parameters<typeof runStopHandlerRuntime>[0]) {
-  return runStopHandlerRuntime({ ...options, env: { ...process.env, ...options.env, HOME: join(options.collector.getRepoRoot(), '.ai/harness/test-home') } });
+type StopRuntimeInput = Parameters<typeof runStopHandlerRuntime>[0];
+
+/** Defaults an empty payload and a run-less Claude identity; isolates HOME. */
+function runStopHandler(options: Omit<StopRuntimeInput, 'payload' | 'identity'> & Partial<Pick<StopRuntimeInput, 'payload' | 'identity'>>) {
+  return runStopHandlerRuntime({
+    payload: {},
+    identity: hookIdentity(),
+    ...options,
+    env: { ...process.env, ...options.env, HOME: join(options.collector.getRepoRoot(), '.ai/harness/test-home') },
+  });
 }
 
 function fixture(): string {
@@ -72,9 +81,9 @@ function canonicalState(options: {
 function collector(cwd: string, resolveState: () => EffectiveState, activePlan: string | null = null) {
   return {
     getRepoRoot: () => cwd,
-    getWorktreeOwnership: () => ({ owner: null, ownedByCurrent: false }),
+    getWorktreeOwnership: () => ({ current: cwd, owner: null, ownedByCurrent: false }),
     getActivePlanMarker: () => activePlan,
-    getStopEffectiveState: resolveState,
+    getEffectiveState: () => ({ ok: true as const, state: resolveState() }),
   };
 }
 
@@ -174,8 +183,8 @@ describe('Stop recovery and safety invariants', () => {
         expect(observed.map((item) => item.kind)).toEqual(['handoff', 'resume', 'event', 'run-summary']);
         return canonicalState();
       }),
-      input: JSON.stringify({ stop_hook_active: false }),
-      env: { HOOK_RUN_ID: 'stop-write-count' },
+      payload: { stop_hook_active: false },
+      identity: hookIdentity({ runId: 'stop-write-count' }),
       dependencies: { observeProjectionWrite: (target) => observed.push(target) },
     });
 
@@ -216,7 +225,7 @@ describe('Stop recovery and safety invariants', () => {
 
     const result = runStopHandler({
       collector: collector(cwd, () => canonicalState(), plan),
-      env: { HOOK_RUN_ID: 'projection-parity' },
+      identity: hookIdentity({ runId: 'projection-parity' }),
     });
 
     expect(result.exitCode).toBe(0);
@@ -253,7 +262,7 @@ describe('Stop recovery and safety invariants', () => {
 
     runStopHandler({
       collector: collector(cwd, () => canonicalState(), plan),
-      env: { HOOK_RUN_ID: 'projection-complete-plan' },
+      identity: hookIdentity({ runId: 'projection-complete-plan' }),
     });
 
     const handoff = readFileSync(join(cwd, '.ai/harness/handoff/current.md'), 'utf8');
@@ -269,10 +278,10 @@ describe('Stop recovery and safety invariants', () => {
     writeFileSync(join(cwd, plan), '# Foreign plan\n## Task Breakdown\n- [ ] must not leak\n');
     const foreignCollector = {
       ...collector(cwd, () => canonicalState(), plan),
-      getWorktreeOwnership: () => ({ owner: '/tmp/other-worktree', ownedByCurrent: false }),
+      getWorktreeOwnership: () => ({ current: cwd, owner: '/tmp/other-worktree', ownedByCurrent: false }),
     };
 
-    runStopHandler({ collector: foreignCollector, env: { HOOK_RUN_ID: 'projection-foreign-owner' } });
+    runStopHandler({ collector: foreignCollector, identity: hookIdentity({ runId: 'projection-foreign-owner' }) });
 
     const handoff = readFileSync(join(cwd, '.ai/harness/handoff/current.md'), 'utf8');
     expect(handoff).toContain('- Active plan: (none)');
@@ -290,7 +299,7 @@ describe('Stop recovery and safety invariants', () => {
 
     expect(() => runStopHandler({
       collector: collector(cwd, () => canonicalState()),
-      env: { HOOK_RUN_ID: 'symlink-run' },
+      identity: hookIdentity({ runId: 'symlink-run' }),
     })).toThrow('symlinked write path is forbidden');
     expect(existsSync(join(outside, 'current.md'))).toBe(false);
   });
@@ -303,7 +312,7 @@ describe('Stop recovery and safety invariants', () => {
 
     expect(() => runStopHandler({
       collector: collector(cwd, () => canonicalState()),
-      env: { HOOK_RUN_ID: 'event-lock-symlink' },
+      identity: hookIdentity({ runId: 'event-lock-symlink' }),
     })).toThrow('symlinked write path is forbidden');
     expect(existsSync(join(outside, 'evt-events.jsonl.lock'))).toBe(false);
   });
@@ -313,7 +322,7 @@ describe('Stop recovery and safety invariants', () => {
     const outside = join(dirname(cwd), 'outside-run.json');
     expect(() => runStopHandler({
       collector: collector(cwd, () => canonicalState()),
-      env: { HOOK_RUN_ID: '../../../../outside-run' },
+      identity: hookIdentity({ runId: '../../../../outside-run' }),
     })).toThrow('write path escapes repository');
     expect(existsSync(outside)).toBe(false);
   });
@@ -327,7 +336,7 @@ describe('Stop recovery and safety invariants', () => {
     const baselineRoot = fixture();
     runStopHandler({
       collector: collector(baselineRoot, () => canonicalState()),
-      env: { HOOK_RUN_ID: runId },
+      identity: hookIdentity({ runId }),
       dependencies: { now: () => retryNow },
     });
     const baseline = normalizedStopArtifacts(baselineRoot, runId);
@@ -336,7 +345,7 @@ describe('Stop recovery and safety invariants', () => {
       const retryRoot = fixture();
       expect(() => runStopHandler({
         collector: collector(retryRoot, () => canonicalState()),
-        env: { HOOK_RUN_ID: runId },
+        identity: hookIdentity({ runId }),
         dependencies: {
           now: () => faultNow,
           afterProjectionWrite: (target) => {
@@ -347,7 +356,7 @@ describe('Stop recovery and safety invariants', () => {
 
       runStopHandler({
         collector: collector(retryRoot, () => canonicalState()),
-        env: { HOOK_RUN_ID: runId },
+        identity: hookIdentity({ runId }),
         dependencies: { now: () => retryNow },
       });
       expect(normalizedStopArtifacts(retryRoot, runId)).toEqual(baseline);
@@ -361,7 +370,7 @@ describe('Stop recovery and safety invariants', () => {
     const runId = 'interleaved-event-run';
     expect(() => runStopHandler({
       collector: collector(cwd, () => canonicalState()),
-      env: { HOOK_RUN_ID: runId },
+      identity: hookIdentity({ runId }),
       dependencies: {
         now: () => new Date('2026-08-14T08:00:00.000Z'),
         afterProjectionWrite: (target) => {
@@ -381,7 +390,7 @@ describe('Stop recovery and safety invariants', () => {
 
     runStopHandler({
       collector: collector(cwd, () => canonicalState()),
-      env: { HOOK_RUN_ID: runId },
+      identity: hookIdentity({ runId }),
       dependencies: { now: () => new Date('2026-08-14T08:01:00.000Z') },
     });
     const events = readFileSync(eventsPath, 'utf8').trim().split('\n').filter(Boolean);
@@ -394,7 +403,7 @@ describe('Stop recovery and safety invariants', () => {
     const runId = 'latest-stop-run';
     const run = (minute: number) => runStopHandler({
       collector: collector(cwd, () => canonicalState()),
-      env: { HOOK_RUN_ID: runId },
+      identity: hookIdentity({ runId }),
       dependencies: { now: () => new Date(`2026-08-14T08:0${minute}:00.000Z`) },
     });
     run(0);
@@ -409,7 +418,7 @@ describe('Stop recovery and safety invariants', () => {
     const overflowRoot = fixture();
     expect(() => runStopHandler({
       collector: collector(overflowRoot, () => canonicalState()),
-      env: { HOOK_RUN_ID: 'overflow-run' },
+      identity: hookIdentity({ runId: 'overflow-run' }),
       dependencies: {
         now: () => new Date('2026-08-14T08:00:00.000Z'),
         afterProjectionWrite: (target) => {
@@ -424,7 +433,7 @@ describe('Stop recovery and safety invariants', () => {
     })}\n`);
     expect(() => runStopHandler({
       collector: collector(overflowRoot, () => canonicalState()),
-      env: { HOOK_RUN_ID: 'overflow-run' },
+      identity: hookIdentity({ runId: 'overflow-run' }),
       dependencies: { now: () => new Date('2026-08-14T08:01:00.000Z') },
     })).toThrow('latest Stop event is outside the 1048576-byte reconciliation window');
     events = readFileSync(overflowEvents, 'utf8').trim().split('\n').filter(Boolean);
@@ -441,13 +450,13 @@ describe('Stop recovery and safety invariants', () => {
     const now = new Date('2026-08-14T08:00:00.000Z');
     runStopHandler({
       collector: collector(cwd, () => canonicalState(), 'plans/one.md'),
-      env: { HOOK_RUN_ID: 'semantic-run' },
+      identity: hookIdentity({ runId: 'semantic-run' }),
       dependencies: { now: () => now },
     });
     writeFileSync(join(cwd, 'tasks/todos.md'), '# Deferred\n> **Source Plan**: plans/two.md\n');
     runStopHandler({
       collector: collector(cwd, () => canonicalState(), 'plans/two.md'),
-      env: { HOOK_RUN_ID: 'semantic-run' },
+      identity: hookIdentity({ runId: 'semantic-run' }),
       dependencies: { now: () => new Date('2026-08-14T08:01:00.000Z') },
     });
 
@@ -462,14 +471,14 @@ describe('Stop recovery and safety invariants', () => {
     const firstNow = new Date('2026-08-14T08:00:00.000Z');
     runStopHandler({
       collector: collector(cwd, () => canonicalState(), null),
-      env: { HOOK_RUN_ID: 'changed-set-run' },
+      identity: hookIdentity({ runId: 'changed-set-run' }),
       dependencies: { now: () => firstNow },
     });
     mkdirSync(join(cwd, 'src'), { recursive: true });
     writeFileSync(join(cwd, 'src/new-change.ts'), 'export const changed = true;\n');
     runStopHandler({
       collector: collector(cwd, () => canonicalState(), null),
-      env: { HOOK_RUN_ID: 'changed-set-run' },
+      identity: hookIdentity({ runId: 'changed-set-run' }),
       dependencies: { now: () => new Date('2026-08-14T08:01:00.000Z') },
     });
     const events = readFileSync(join(cwd, '.ai/harness/events.jsonl'), 'utf8').trim().split('\n').filter(Boolean);
@@ -500,13 +509,13 @@ describe('Stop recovery and safety invariants', () => {
       const codexHome = join(cwd, 'codex-home');
       runStopHandler({
         collector: collector(cwd, () => canonicalState()),
-        env: { HOOK_RUN_ID: runId, CODEX_HOME: codexHome },
+        identity: hookIdentity({ runId }), env: { CODEX_HOME: codexHome },
         dependencies: { now: () => new Date('2026-08-14T08:00:00.000Z') },
       });
       mutate(cwd);
       runStopHandler({
         collector: collector(cwd, () => canonicalState()),
-        env: { HOOK_RUN_ID: runId, CODEX_HOME: codexHome },
+        identity: hookIdentity({ runId }), env: { CODEX_HOME: codexHome },
         dependencies: { now: () => new Date('2026-08-14T08:01:00.000Z') },
       });
       const events = readFileSync(join(cwd, '.ai/harness/events.jsonl'), 'utf8').trim().split('\n').filter(Boolean);
@@ -515,15 +524,16 @@ describe('Stop recovery and safety invariants', () => {
 
     const cwd = fixture();
     const codexHome = join(cwd, 'codex-home');
-    const env = { HOOK_RUN_ID: 'global-handoff-run', CODEX_HOME: codexHome };
+    const env = { CODEX_HOME: codexHome };
+    const identity = hookIdentity({ runId: 'global-handoff-run' });
     runStopHandler({
-      collector: collector(cwd, () => canonicalState()), env,
+      collector: collector(cwd, () => canonicalState()), env, identity,
       dependencies: { now: () => new Date('2026-08-14T08:00:00.000Z') },
     });
     mkdirSync(join(codexHome, 'handoffs'), { recursive: true });
     writeFileSync(join(codexHome, 'handoffs/handoff-20260814.md'), '# global\n');
     runStopHandler({
-      collector: collector(cwd, () => canonicalState()), env,
+      collector: collector(cwd, () => canonicalState()), env, identity,
       dependencies: { now: () => new Date('2026-08-14T08:01:00.000Z') },
     });
     const events = readFileSync(join(cwd, '.ai/harness/events.jsonl'), 'utf8').trim().split('\n').filter(Boolean);
@@ -546,7 +556,7 @@ describe('Stop recovery and safety invariants', () => {
     writeFileSync(join(artifactRoot, plan), planBody('tasks/reviews/one.review.md', 'tasks/notes/one.notes.md'));
     const artifactRun = (minute: number) => runStopHandler({
       collector: collector(artifactRoot, () => canonicalState(), plan),
-      env: { HOOK_RUN_ID: 'artifact-key-run' },
+      identity: hookIdentity({ runId: 'artifact-key-run' }),
       dependencies: { now: () => new Date(`2026-08-14T08:0${minute}:00.000Z`) },
     });
     artifactRun(0);
@@ -557,7 +567,7 @@ describe('Stop recovery and safety invariants', () => {
     const policyRoot = fixture();
     const policyRun = (minute: number) => runStopHandler({
       collector: collector(policyRoot, () => canonicalState()),
-      env: { HOOK_RUN_ID: 'policy-path-key-run' },
+      identity: hookIdentity({ runId: 'policy-path-key-run' }),
       dependencies: { now: () => new Date(`2026-08-14T08:0${minute}:00.000Z`) },
     });
     policyRun(0);
@@ -600,45 +610,45 @@ describe('Stop reports owed architecture updates on Claude only (#678)', () => {
 
   test('Claude Stop names the owed capability once per branch and owed set', () => {
     const { cwd, state } = owedFixture();
-    const first = runStopHandler({ collector: collector(cwd, state), env: { HOOK_HOST: 'claude' } });
+    const first = runStopHandler({ collector: collector(cwd, state), identity: hookIdentity({ host: 'claude' }) });
     expect(first.exitCode).toBe(0);
     expect(first.stdout).toContain('[ArchitectureOwed]');
     expect(first.stdout).toContain('core-owned (docs/architecture/modules/core/owned.md)');
     expect(first.stdout).toContain('repo-harness architecture-projection check --json');
     expect(first.stdout.trimEnd().split('\n').length).toBeLessThanOrEqual(3);
 
-    const repeated = runStopHandler({ collector: collector(cwd, state), env: { HOOK_HOST: 'claude' } });
+    const repeated = runStopHandler({ collector: collector(cwd, state), identity: hookIdentity({ host: 'claude' }) });
     expect(repeated.stdout).toBe('');
     expect(git(cwd, ['status', '--porcelain'])).toBe('');
   });
 
   test('a new obligation for the same capability after a manifest refresh is reported again', () => {
     const { cwd, state } = owedFixture();
-    expect(runStopHandler({ collector: collector(cwd, state), env: { HOOK_HOST: 'claude' } }).stdout).toContain('[ArchitectureOwed]');
+    expect(runStopHandler({ collector: collector(cwd, state), identity: hookIdentity({ host: 'claude' }) }).stdout).toContain('[ArchitectureOwed]');
     writeFileSync(join(cwd, 'docs/architecture/.projection-manifest.json'), '{"refreshed":true}\n');
     git(cwd, ['commit', '-am', 'refresh the projection']);
-    expect(runStopHandler({ collector: collector(cwd, state), env: { HOOK_HOST: 'claude' } }).stdout).toBe('');
+    expect(runStopHandler({ collector: collector(cwd, state), identity: hookIdentity({ host: 'claude' }) }).stdout).toBe('');
 
     writeFileSync(join(cwd, 'src/owned/a.ts'), 'export const a = 3;\n');
     git(cwd, ['commit', '-am', 'change owned code again']);
-    const renewed = runStopHandler({ collector: collector(cwd, state), env: { HOOK_HOST: 'claude' } });
+    const renewed = runStopHandler({ collector: collector(cwd, state), identity: hookIdentity({ host: 'claude' }) });
     expect(renewed.stdout).toContain('core-owned (docs/architecture/modules/core/owned.md)');
-    expect(runStopHandler({ collector: collector(cwd, state), env: { HOOK_HOST: 'claude' } }).stdout).toBe('');
+    expect(runStopHandler({ collector: collector(cwd, state), identity: hookIdentity({ host: 'claude' }) }).stdout).toBe('');
   });
 
   test('a Stop continued by a Stop hook, Codex and Pi add nothing', () => {
     const { cwd, state } = owedFixture();
     const continued = runStopHandler({
       collector: collector(cwd, state),
-      env: { HOOK_HOST: 'claude' },
-      input: JSON.stringify({ stop_hook_active: true }),
+      identity: hookIdentity({ host: 'claude' }),
+      payload: { stop_hook_active: true },
     });
     expect(continued.stdout).toBe('');
-    for (const host of ['codex', 'pi']) {
-      expect(runStopHandler({ collector: collector(cwd, state), env: { HOOK_HOST: host } }).stdout).toBe('');
+    for (const host of ['codex', 'pi'] as const) {
+      expect(runStopHandler({ collector: collector(cwd, state), identity: hookIdentity({ host }) }).stdout).toBe('');
     }
     // The once-per-set marker was never written, so Claude still gets the line.
-    expect(runStopHandler({ collector: collector(cwd, state), env: { HOOK_HOST: 'claude' } }).stdout).toContain('[ArchitectureOwed]');
+    expect(runStopHandler({ collector: collector(cwd, state), identity: hookIdentity({ host: 'claude' }) }).stdout).toContain('[ArchitectureOwed]');
   });
 });
 
@@ -657,7 +667,7 @@ describe('Stop observes workflow gaps without permission gates', () => {
     // #678: stdout is now the Claude Stop channel for owed architecture
     // updates. This state has no ownership answer, so the Claude channel
     // stays empty; it never starts projection or records drift.
-    const result = runStopHandler({ collector: collector(cwd, () => canonicalState()), env: { HOOK_HOST: 'claude' } });
+    const result = runStopHandler({ collector: collector(cwd, () => canonicalState()), identity: hookIdentity({ host: 'claude' }) });
     expect(result.stdout).toBe('');
     expect(existsSync(join(cwd, '.ai/harness/architecture-projection'))).toBe(false);
     expect(existsSync(join(cwd, '.ai/harness/state/architecture-drift-cursor.json'))).toBe(false);

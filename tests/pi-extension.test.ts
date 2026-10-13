@@ -4,7 +4,8 @@ import { join } from 'node:path';
 import { readPendingPostEditEvents } from '../src/cli/hook/mutation-observed';
 import { readAcceptedEvents } from '../src/effects/evidence/event-log';
 import { PiHookBridge, type HookRequest } from '../src/pi/hook-bridge';
-import { parseHookJsonOutput, type HookJsonOutput } from '../src/pi/hook-protocol';
+import { parseHookJsonOutput } from '../src/pi/hook-protocol';
+import type { HookJsonOutput } from '../src/cli/hook/hook-protocol';
 import { commitAll, initGitRepo, run, sandboxEnv, tmpWorkspace } from './helpers/repo-fixture';
 
 const ROOT = join(import.meta.dir, '..');

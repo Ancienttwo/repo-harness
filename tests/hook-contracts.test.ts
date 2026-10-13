@@ -25,7 +25,6 @@ describe("Hook contracts", () => {
     expect(routes).toContain("readonly handler: HookHandlerId");
     expect(routes).not.toContain("readonly scripts");
     expect(registry).toContain("getHandlerForRoute");
-    expect(registry).toContain("ROUTES.map");
     expect(runtime).toContain("getHandlerForRoute");
     expect(runtime).not.toContain("run-hook.sh");
     expect(existsSync(join(ROOT, "assets/hooks/run-hook.sh"))).toBe(false);
@@ -49,18 +48,6 @@ describe("Hook contracts", () => {
     expect(handler).not.toContain("transcript");
     expect(handler).not.toContain("pty");
     expect(handler).not.toContain("resume");
-  });
-
-  test("typed hook input parser owns prompt, session, run, tool, and path accessors", () => {
-    const parser = read("src/cli/hook/hook-input.ts");
-    expect(parser).toContain("getPrompt");
-    expect(parser).toContain("getSessionId");
-    expect(parser).toContain("getRunId");
-    expect(parser).toContain("getToolName");
-    expect(parser).toContain("getFilePath");
-    expect(parser).toContain("getApplyPatchPaths");
-    expect(parser).toContain("CODEX_SESSION_ID");
-    expect(parser).toContain("[HookInput] WARN");
   });
 
 
@@ -110,7 +97,8 @@ describe("Hook contracts", () => {
     const handler = read("src/cli/hook/subagent-handler.ts");
     expect(handler).toContain("[repo-harness:return-channel]");
     expect(handler).toContain("updatedInput");
-    expect(handler).toContain("permissionDecision: 'allow'");
+    // #691 finding 9: the handler returns a typed permission; the host renderer writes permissionDecision.
+    expect(handler).toContain("decision: 'allow'");
     expect(handler).toContain("/(delegate|parallel)");
     expect(handler).toContain("max_agents");
     expect(handler).toContain("max_depth");
@@ -197,11 +185,11 @@ describe("Hook contracts", () => {
   test("in-process stop handler should own Stop JSON control and recovery projection", () => {
     const handler = read("src/cli/hook/stop-handler.ts");
     expect(handler).toContain("[StopReadiness]");
-    expect(handler).toContain("last_assistant_message");
+    // #691 finding 10 removed the private Stop payload type, the only place that named last_assistant_message.
     expect(handler).toContain("stop_hook_active");
     expect(handler).toContain("StopProjectionBatch");
     expect(handler).toContain("Stop may continue");
-    expect(handler).toContain("getStopEffectiveState");
+    expect(handler).toContain("getEffectiveState");
   });
 
   // HRD-05 retired assets/hooks/post-edit-guard.sh; doc-drift coverage now

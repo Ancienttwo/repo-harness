@@ -6,8 +6,7 @@
  * invisible until an agent loads the wrong local contract. This check derives
  * every fact from an existing authority -- archcontext capability nodes for
  * ids, prefixes, and declared contract files; the harness policy for the map
- * path; disk for contract existence; the hook projection manifest for the
- * generated-projection exemption -- and never re-derives them locally.
+ * path; disk for contract existence -- and never re-derives them locally.
  *
  * `--write` performs the one-shot repair of the `capability-contract` subset
  * from the same authorities and fails closed rather than guessing.
@@ -18,7 +17,6 @@ import { archcontextNodeId } from "../src/core/capabilities/registry";
 import { readRegistry, type Capability, type CapabilityRegistry } from "./capability-resolver";
 
 const HARNESS_POLICY = ".ai/harness/policy.json";
-const HOOK_PROJECTION_MANIFEST = "assets/hooks/projection.json";
 const CONTRACT_MARKER = "BEGIN ARCHITECTURE CONTRACT";
 const CONTRACT_FILE_NAMES = ["CLAUDE.md", "AGENTS.md"] as const;
 const SKIPPED_DIRECTORIES = new Set([".git", "node_modules", "dist", ".codegraph", "_ref", "_ops"]);
@@ -92,28 +90,8 @@ function contextMapPath(repo: string): string {
   return mapFile.trim();
 }
 
-/**
- * Declared generated-projection targets. Contract files under a target are
- * copies of their canonical source and are owned by the projection, not by the
- * map.
- */
-function projectionTargets(repo: string): string[] {
-  const manifestPath = resolve(repo, HOOK_PROJECTION_MANIFEST);
-  if (!existsSync(manifestPath)) return [];
-  const manifest = readJson(manifestPath, HOOK_PROJECTION_MANIFEST);
-  const target = isRecord(manifest) ? manifest.projection_target : undefined;
-  if (typeof target !== "string" || target.trim() === "") {
-    throw new FailClosedError(`${HOOK_PROJECTION_MANIFEST}#projection_target must be a path`);
-  }
-  return [target.trim().replace(/\/+$/, "")];
-}
-
-function underAnyTarget(path: string, targets: readonly string[]): boolean {
-  return targets.some((target) => path === target || path.startsWith(`${target}/`));
-}
-
 /** Non-root contract files on disk, in stable path order. */
-function diskContractFiles(repo: string, rootContextFiles: ReadonlySet<string>, targets: readonly string[]): string[] {
+function diskContractFiles(repo: string, rootContextFiles: ReadonlySet<string>): string[] {
   const found: string[] = [];
   const stack = [repo];
   while (stack.length > 0) {
@@ -135,7 +113,6 @@ function diskContractFiles(repo: string, rootContextFiles: ReadonlySet<string>, 
       if (!(CONTRACT_FILE_NAMES as readonly string[]).includes(entry.name)) continue;
       const relativePath = relative(repo, absolute).replaceAll("\\", "/");
       if (rootContextFiles.has(relativePath)) continue;
-      if (underAnyTarget(relativePath, targets)) continue;
       if (!readFileSync(absolute, "utf-8").includes(CONTRACT_MARKER)) continue;
       found.push(relativePath);
     }
@@ -325,8 +302,7 @@ function main(): void {
     throw new FailClosedError(`capability authority is unavailable: ${(error as Error).message}`);
   }
 
-  const targets = projectionTargets(repo);
-  const diskContracts = diskContractFiles(repo, rootContextFiles, targets);
+  const diskContracts = diskContractFiles(repo, rootContextFiles);
 
   if (args.write) {
     const beforeContracts = entries.filter((entry) => entry.purpose === CONTRACT_PURPOSE).length;

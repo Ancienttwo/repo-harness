@@ -19,24 +19,16 @@ import { runSubagentHandler } from '../src/cli/hook/subagent-handler';
 import { runCommandObserved } from '../src/cli/hook/command-observed';
 import { runPromptHandler } from '../src/cli/hook/prompt-handler';
 import { createStateInputCollector } from '../src/effects/loop/state-input-collector';
-import { resolveEffectiveState } from '../src/effects/state/resolve-effective-state';
-import type { EffectiveState } from '../src/core/state/types';
+import { resolveHookEffectiveState } from '../src/cli/hook/runtime';
+import { hookIdentity } from './helpers/hook-identity';
 
 // All real-caller phases invoke the single typed handler authority directly.
 function editHandlerResult(cwd: string, filePath: string): { status: number | null; stdout: string; stderr: string } {
   const collector: MutationGuardCollector = createStateInputCollector({
-    event: 'PreToolUse',
     repoRoot: cwd,
-    resolveSessionEffectiveState: () => null,
-    resolvePreEditEffectiveState: (targetPaths: readonly string[]): EffectiveState | null => {
-      try {
-        return resolveEffectiveState(cwd, Date.now(), { targetPaths, operationKind: 'edit' });
-      } catch {
-        return null;
-      }
-    },
+    resolveEffectiveState: (targetPaths) => resolveHookEffectiveState(cwd, 'PreToolUse', targetPaths, {}, Date.now()),
   });
-  const result = runMutationGuard({ collector, input: JSON.stringify({ tool_input: { file_path: filePath } }) });
+  const result = runMutationGuard({ collector, payload: { tool_input: { file_path: filePath } }, identity: hookIdentity() });
   return { status: result.exitCode, stdout: result.stdout, stderr: result.stderr };
 }
 
@@ -399,9 +391,9 @@ describe('workflow circuit breakers', () => {
       workflow_profile: 'routine',
     }));
     for (let index = 1; index <= 3; index += 1) {
-      const result = runSubagentHandler({ event: 'SubagentStart', repoRoot: cwd, env, input: '{}' });
+      const result = runSubagentHandler({ event: 'SubagentStart', repoRoot: cwd, env, payload: {}, identity: hookIdentity({ host: 'codex' }) });
       expect(result.exitCode).toBe(0);
-      expect(result.stdout).toContain('[repo-harness:subagent-context]');
+      expect(result.additionalContext).toContain('[repo-harness:subagent-context]');
       if (index === 3) expect(readCircuitState(cwd).entries.subagent.count).toBe(3);
     }
 
@@ -414,7 +406,7 @@ describe('workflow circuit breakers', () => {
     mkdirSync(join(cwd, 'tasks/contracts'), { recursive: true });
     writeFileSync(join(cwd, 'tasks/contracts/20260713-0100-risk.contract.md'), '> **Risk**: high\n');
     for (let index = 1; index <= 4; index += 1) {
-      const result = runSubagentHandler({ event: 'SubagentStart', repoRoot: cwd, env, input: '{}' });
+      const result = runSubagentHandler({ event: 'SubagentStart', repoRoot: cwd, env, payload: {}, identity: hookIdentity({ host: 'codex' }) });
       expect(result.exitCode).toBe(0);
       if (index === 4) expect(readCircuitState(cwd).entries.subagent.count).toBe(4);
     }
@@ -424,7 +416,8 @@ describe('workflow circuit breakers', () => {
       const result = runCommandObserved({
         repoRoot: cwd,
         env: { ...env, REPO_HARNESS_WORKFLOW_PROFILE: 'routine' },
-        input: JSON.stringify({ tool_input: { command: 'bun test' }, tool_response: { stdout: 'FAIL test', stderr: '', interrupted: false }, exit_code: 1 }),
+        payload: { tool_input: { command: 'bun test' }, tool_response: { stdout: 'FAIL test', stderr: '', interrupted: false }, exit_code: 1 },
+        identity: hookIdentity({ host: 'codex' }),
       });
       expect(result.exitCode).toBe(index < 3 ? 0 : 2);
       if (index === 3) expect(result.stderr).toContain('"limit":2');
@@ -436,11 +429,11 @@ describe('workflow circuit breakers', () => {
       mkdirSync(join(cwd, '.ai/harness/state'), { recursive: true });
       writeFileSync(join(cwd, '.ai/harness/state/effective.json'), JSON.stringify({ workflow_profile: profile }));
       for (let index = 0; index < 3; index += 1) {
-        const result = runPromptHandler({ repoRoot: cwd, input: '{"prompt":"/check"}' });
+        const result = runPromptHandler({ payload: { prompt: '/check' } });
         expect(result.exitCode).toBe(0);
-        expect(result.stdout).toContain('[ReviewAdvice]');
-        expect(result.stdout).toContain('[OperationBoundaries]');
-        expect(result.stderr).toBe('');
+        expect(result.additionalContext).toContain('[ReviewAdvice]');
+        expect(result.additionalContext).toContain('[OperationBoundaries]');
+        expect(result.diagnostics).toBeUndefined();
       }
       expect(existsSync(join(cwd, '.ai/harness/state/circuit-breaker.json'))).toBe(false);
     }

@@ -6,7 +6,7 @@ import {
   acquireExclusiveDirectoryLock,
   type ExclusiveDirectoryLockHandle,
 } from '../../src/effects/locking/exclusive-directory-lock';
-import { resolveSessionEffectiveState } from '../../src/cli/hook/runtime';
+import { resolveHookEffectiveState } from '../../src/cli/hook/runtime';
 import type { EffectiveState, EffectiveStateRiskInput } from '../../src/core/state/types';
 
 // Regression guard for
@@ -79,13 +79,13 @@ function realLockTimeoutFailure(): unknown {
 
 function classifyResolutionFailure(failure: unknown): string {
   let attempts = 0;
-  const outcome = resolveSessionEffectiveState('/private/repo-b', 123, (() => {
+  const outcome = resolveHookEffectiveState('/private/repo-b', 'SessionStart', [], {}, 123, (() => {
     attempts += 1;
     throw failure;
   }) as StateResolver);
-  if (outcome.kind !== 'unavailable') throw new Error(`expected unavailable, got ${outcome.kind}`);
+  if (outcome.ok) throw new Error('expected unavailable, got a resolved state');
   expect(attempts).toBeGreaterThan(0);
-  return outcome.diagnostic.reason_code;
+  return outcome.reason_code;
 }
 
 describe('effective-state transient classification', () => {

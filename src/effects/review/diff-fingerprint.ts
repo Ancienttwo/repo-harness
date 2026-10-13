@@ -372,13 +372,7 @@ function parseNameStatusZ(tokens: readonly string[]): string[] {
 // Canonical source for "workflow surface" -- ceremony/administrative paths
 // that stay editable without an active plan and never inflate the risk
 // floor's medium-scope, cross-capability, or strict-token counters (Phase C2,
-// docs/architecture/modules/runtime-harness/hook-adapters.md). This must stay
-// byte-identical in shape to assets/hooks/pre-edit-guard.sh's
-// is_workflow_surface_path() case list; scripts/sync-hook-sources.ts --check
-// (bun run check:hooks) fails on drift between the two.
-// Exported (not just used locally) so scripts/sync-hook-sources.ts can build
-// the expected shell case-pattern from these same values and fail --check on
-// drift, instead of maintaining a second hand-copied list.
+// docs/architecture/modules/runtime-harness/hook-adapters.md).
 export const WORKFLOW_SURFACE_DIR_PREFIXES = Object.freeze([
   'plans/', 'tasks/', 'docs/', '.ai/', '.claude/', '.codex/',
 ]);

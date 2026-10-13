@@ -1,8 +1,5 @@
 import { describe, test, expect } from "bun:test";
 import {
-  chmodSync,
-  copyFileSync,
-  existsSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -17,7 +14,6 @@ import { join } from "path";
 import { spawnSync } from "child_process";
 
 const ROOT = join(import.meta.dir, "..");
-const HELPER_DIR = join(ROOT, "assets", "templates", "helpers");
 
 // Fixture subprocesses must never see the host repo's REPO_HARNESS_*/HOOK_REPO_ROOT
 // env: verify-sprint.sh cds into REPO_HARNESS_TARGET_REPO_ROOT when set, which lets
@@ -31,22 +27,6 @@ function fixtureEnv(): NodeJS.ProcessEnv {
   }
   return env;
 }
-
-function git(cwd: string, ...args: string[]): string {
-  const result = spawnSync("git", args, { cwd, encoding: "utf-8" });
-  expect(result.status, result.stderr).toBe(0);
-  return result.stdout.trim();
-}
-
-function evidenceAcceptanceEnv(): NodeJS.ProcessEnv {
-  return {
-    ...fixtureEnv(),
-    WORKFLOW_STATE: join(ROOT, "assets/hooks/lib/workflow-state.sh"),
-    REPO_HARNESS_HOOK_CLI: join(ROOT, "src/cli/hook-entry.ts"),
-  };
-}
-
-
 
 function runEvidenceRequirement(cwd: string, contractRelPath: string) {
   const initialized = spawnSync("git", ["init", "-q", cwd], { encoding: "utf-8", env: fixtureEnv() });
@@ -63,59 +43,9 @@ describe("workflow-state shared library", () => {
       "utf-8"
     );
 
-    expect(content).toContain("is_git_repo()");
-    expect(content).toContain("load_changed_paths()");
-    expect(content).toContain("has_changes()");
-    expect(content).toContain("has_changes_glob()");
     expect(content).toContain("get_active_plan()");
     expect(content).toContain("derive_contract_path()");
-    expect(content).toContain("workflow_todo_total()");
-    expect(content).toContain("workflow_todo_done()");
-    expect(content).toContain("workflow_plan_task_state()");
-    expect(content).toContain("workflow_next_action()");
-    expect(content).toContain("stage its coherent diff first");
-    expect(content).toContain("workflow_cleanup_candidate()");
-    expect(content).toContain("workflow_sync_task_state_from_todo()");
-    expect(content).toContain("has_research_for_new_plan()");
-    expect(content).toContain("validate_plan_transition()");
-    expect(content).toContain("workflow_plan_status_projection()");
-    expect(content).toContain("workflow_plan_status_is_terminal()");
-    expect(content).toContain("contract_references_path()");
-    // EPC-07: workflow_write_handoff's own `next_action="$(workflow_next_action)"`
-    // call site was retired along with the rest of its independent
-    // handoff/resume content assembly (now scripts/recovery-view-cli.ts's
-    // job); workflow_next_action() the function definition is still
-    // asserted two lines above and remains a callable library export.
-    expect(content).toContain("## Task Breakdown");
   });
-
-  test("projects plan lifecycle roles from policy and fails closed when the projection is malformed", () => {
-    const cwd = mkdtempSync(join(tmpdir(), "workflow-plan-status-policy-"));
-    try {
-      mkdirSync(join(cwd, ".ai/harness"), { recursive: true });
-      writeFileSync(join(cwd, ".ai/harness/policy.json"), JSON.stringify({
-        active_plan: {
-          statuses: ["Idea", "Annotate", "Go", "Run", "Paused", "Review", "Closed", "Archived"],
-          lifecycle: { annotation_end: "Annotate", approved: "Go", executing: "Run", terminal_start: "Closed" },
-        },
-      }));
-      const env = { ...fixtureEnv(), WORKFLOW_STATE: join(ROOT, "assets/hooks/lib/workflow-state.sh") };
-      const terminal = spawnSync("bash", ["-lc", 'source "$WORKFLOW_STATE"; workflow_plan_status_projection terminal'], { cwd, encoding: "utf8", env });
-      expect(terminal.status, terminal.stderr).toBe(0);
-      expect(terminal.stdout.trim().split("\n")).toEqual(["Closed", "Archived"]);
-
-      const missingNote = spawnSync("bash", ["-lc", 'source "$WORKFLOW_STATE"; validate_plan_transition Idea Annotate 0'], { cwd, encoding: "utf8", env });
-      expect(missingNote.status).toBe(1);
-      expect(missingNote.stdout).toContain("Idea -> Annotate requires at least one [NOTE]: annotation.");
-
-      writeFileSync(join(cwd, ".ai/harness/policy.json"), JSON.stringify({ active_plan: { statuses: ["Idea", "Run"] } }));
-      const malformed = spawnSync("bash", ["-lc", 'source "$WORKFLOW_STATE"; validate_plan_transition Idea Run 0'], { cwd, encoding: "utf8", env });
-      expect(malformed.status).toBe(1);
-      expect(malformed.stdout).toContain("Plan-status authority is unavailable or malformed.");
-    } finally {
-      rmSync(cwd, { recursive: true, force: true });
-    }
-  }, 30_000);
 
   test("explicit verification does not consume review prose or create acceptance receipts", () => {
     for (const path of ["scripts/verify-sprint.sh", "assets/templates/helpers/verify-sprint.sh"]) {
@@ -135,7 +65,7 @@ describe("workflow-state shared library", () => {
     expect(source).not.toContain("workflow_review_recommends_pass()");
   });
 
-  test("workflow_contract_evidence_requirement fails closed on a duplicate benchmark: key, a sibling-nested benchmark:, and a grandchild-nested benchmark:", () => {
+  test("evidence-requirement fails closed on a duplicate benchmark: key, a sibling-nested benchmark:, and a grandchild-nested benchmark:", () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), "workflow-evidence-requirement-hardening-")));
     try {
       writeFileSync(
@@ -203,7 +133,7 @@ describe("workflow-state shared library", () => {
   // "not_applicable#required" -- was stripped as if it were a trailing
   // comment, silently truncating the malformed value into a valid-looking
   // "not_applicable" instead of failing closed on the garbage suffix.
-  test("workflow_contract_evidence_requirement fails closed on a value with no whitespace before a trailing #, and still strips a real whitespace-separated comment", () => {
+  test("evidence-requirement fails closed on a value with no whitespace before a trailing #, and still strips a real whitespace-separated comment", () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), "workflow-evidence-requirement-comment-")));
     try {
       writeFileSync(
@@ -273,7 +203,7 @@ describe("workflow-state shared library", () => {
     }
   }, 30_000);
 
-  test("workflow_contract_evidence_requirement fails closed when parser sentinels appear as yaml content", () => {
+  test("evidence-requirement fails closed when parser sentinels appear as yaml content", () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), "workflow-evidence-requirement-sentinel-")));
     try {
       for (const [name, marker] of [
@@ -304,7 +234,7 @@ describe("workflow-state shared library", () => {
     }
   }, 30_000);
 
-  test("workflow_contract_evidence_requirement fails closed on quoted spellings of canonical evidence keys", () => {
+  test("evidence-requirement fails closed on quoted spellings of canonical evidence keys", () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), "workflow-evidence-requirement-quoted-key-")));
     try {
       for (const [name, quotedLine] of [
@@ -333,7 +263,7 @@ describe("workflow-state shared library", () => {
     }
   }, 30_000);
 
-  test("workflow_contract_evidence_requirement fails closed on whitespace-before-colon spellings of canonical evidence keys", () => {
+  test("evidence-requirement fails closed on whitespace-before-colon spellings of canonical evidence keys", () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), "workflow-evidence-requirement-spaced-key-")));
     try {
       writeFileSync(
@@ -356,84 +286,6 @@ describe("workflow-state shared library", () => {
       rmSync(cwd, { recursive: true, force: true });
     }
   }, 30_000);
-
-  test("recorder path resolves the review target from worktree_strategy.review_base, matching the acceptance-receipt validator, even when local main lags origin/main", () => {
-    const upstream = realpathSync(mkdtempSync(join(tmpdir(), "workflow-subject-split-upstream-")));
-    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "workflow-subject-split-work-")));
-    try {
-      // Upstream C0: the commit both the clone's local main and origin/main
-      // start at.
-      git(upstream, "init", "-q");
-      git(upstream, "config", "user.name", "Workflow Test");
-      git(upstream, "config", "user.email", "workflow-test@example.com");
-      writeFileSync(join(upstream, "base.txt"), "base\n");
-      git(upstream, "add", "-A");
-      git(upstream, "commit", "-q", "-m", "init");
-      git(upstream, "branch", "-M", "main");
-
-      // Clone: local main and origin/main both start at C0.
-      git(tmpdir(), "clone", "-q", upstream, cwd);
-      git(cwd, "config", "user.name", "Workflow Test");
-      git(cwd, "config", "user.email", "workflow-test@example.com");
-
-      // Upstream advances by C1 -- simulates another PR merging after the
-      // clone was made, before this task branched off origin/main.
-      writeFileSync(join(upstream, "upstream-change.txt"), "upstream only\n");
-      git(upstream, "add", "-A");
-      git(upstream, "commit", "-q", "-m", "upstream catches up");
-
-      // Fetch updates origin/main to C1, but the clone's local main branch
-      // pointer is intentionally left behind at C0 -- the standard
-      // control-clone worktree pattern this bug report describes.
-      git(cwd, "fetch", "-q", "origin");
-      expect(git(cwd, "rev-parse", "origin/main")).not.toBe(git(cwd, "rev-parse", "main"));
-
-      // The task branch is cut from origin/main (fresh), exactly like this
-      // repo's own codex/<slug> worktree-start convention -- NOT from the
-      // clone's stale local main. Diffing against stale main would sweep in
-      // C1's unrelated upstream-only file; diffing against origin/main
-      // correctly scopes to just this commit's own new work.
-      git(cwd, "checkout", "-q", "-b", "codex/demo", "origin/main");
-      writeFileSync(join(cwd, "feature.txt"), "new work\n");
-      mkdirSync(join(cwd, ".ai", "harness"), { recursive: true });
-      writeFileSync(
-        join(cwd, ".ai", "harness", "policy.json"),
-        `${JSON.stringify({
-          worktree_strategy: { review_base: "origin/main", merge_back: { target: "main" } },
-        }, null, 2)}\n`,
-      );
-      git(cwd, "add", "-A");
-      git(cwd, "commit", "-q", "-m", "feature work");
-
-      const recorded = spawnSync(
-        "bash",
-        ["-lc", 'source "$WORKFLOW_STATE"; workflow_current_review_subject_value'],
-        { cwd, encoding: "utf-8", env: evidenceAcceptanceEnv() },
-      );
-      expect(recorded.status).toBe(0);
-
-      const validator = spawnSync(
-        "bun",
-        [join(ROOT, "src/cli/hook-entry.ts"), "review-subject", "--target", "origin/main", "--format", "json"],
-        { cwd, encoding: "utf-8" },
-      );
-      expect(validator.status).toBe(0);
-      const validatorParsed = JSON.parse(validator.stdout);
-      expect(validatorParsed.status).toBe("ok");
-      expect(validatorParsed.review_subject_sha256).toMatch(/^sha256:[0-9a-f]{64}$/);
-
-      // The recorder must bind to the SAME ref the acceptance-receipt
-      // validator diffs against (review_base = origin/main here), never
-      // merge_back.target (main, stale by one commit here) -- otherwise the
-      // receipt fails purely because the two sides scoped their diff against
-      // different refs.
-      expect(recorded.stdout.trim()).toBe(validatorParsed.review_subject_sha256);
-    } finally {
-      rmSync(upstream, { recursive: true, force: true });
-      rmSync(cwd, { recursive: true, force: true });
-    }
-  }, 30_000);
-
 });
 
 describe("run summary shape is one authoring contract", () => {

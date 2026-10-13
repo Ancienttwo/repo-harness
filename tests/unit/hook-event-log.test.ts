@@ -4,14 +4,17 @@ import { randomUUID } from 'crypto';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { createHookEventTelemetry, HOOK_EVENT_TELEMETRY_PATH } from '../../src/cli/hook/event-telemetry';
-import { readHookEventTelemetry } from '../../src/cli/hook/event-telemetry';
 import { readHookMetrics } from '../../scripts/run-harness-profile-benchmark';
 import { appendHookEventLog, HOOK_LOG_ARCHIVE_BYTES, readHookEventLog } from '../../src/effects/hook-event-log';
 
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 function fixture() { const root = mkdtempSync(join(tmpdir(), 'hook-log-')); roots.push(root); return root; }
-function emit(root: string) { return createHookEventTelemetry({ repoRoot: root, event: 'PostToolUse', routeId: 'always' }).finalize({ exitCode: 0, reason: 'ok' }); }
+const IDENTITY = { host: 'claude', sessionId: null, runId: null, turnId: null } as const;
+function emit(root: string) {
+  return createHookEventTelemetry({ repoRoot: root, event: 'PostToolUse', routeId: 'always' })
+    .finalize({ identity: IDENTITY, exitCode: 0, blocked: false, reason: 'ok' });
+}
 function seedFull(root: string) {
   const first = emit(root);
   writeFileSync(join(root, HOOK_EVENT_TELEMETRY_PATH), `${' \n'.repeat(4 * 1024 * 1024)}${JSON.stringify(first)}\n`);
@@ -118,56 +121,25 @@ describe('bounded hook event history', () => {
   test('concurrent processes preserve every event across rotation', async () => {
     const root = fixture(); const first = seedFull(root);
     const module = join(import.meta.dir, '../../src/cli/hook/event-telemetry.ts');
-    const children = Array.from({ length: 6 }, () => Bun.spawn([process.execPath, '-e', `import { createHookEventTelemetry } from ${JSON.stringify(module)}; for (let i=0;i<30;i++) createHookEventTelemetry({repoRoot:${JSON.stringify(root)},event:'PostToolUse',routeId:'always'}).finalize({exitCode:0,reason:'ok'});`], { stdout: 'pipe', stderr: 'pipe' }));
+    const children = Array.from({ length: 6 }, () => Bun.spawn([process.execPath, '-e', `import { createHookEventTelemetry } from ${JSON.stringify(module)}; for (let i=0;i<30;i++) createHookEventTelemetry({repoRoot:${JSON.stringify(root)},event:'PostToolUse',routeId:'always'}).finalize({identity:{host:'claude',sessionId:null,runId:null,turnId:null},exitCode:0,blocked:false,reason:'ok'});`], { stdout: 'pipe', stderr: 'pipe' }));
     expect(await Promise.all(children.map(child => child.exited))).toEqual(Array(6).fill(0));
     const records = readHookMetrics(root);
     expect(records).toHaveLength(181);
     expect(new Set(records.map(r => r.event_id)).size).toBe(181);
     expect(records[0]!.event_id).toBe(first.event_id);
-    expect(readHookEventTelemetry(root).invalidRecordCount).toBe(0);
   });
-  test('rotation preserves old records in both report consumers', () => {
+  test('rotation preserves old records for the benchmark reader', () => {
     const root = fixture();
     const first = seedFull(root);
     const second = emit(root);
     expect(statSync(join(root, HOOK_EVENT_TELEMETRY_PATH)).size).toBeLessThan(8 * 1024 * 1024);
     expect(readHookMetrics(root).map(r => r.event_id)).toEqual([first.event_id, second.event_id]);
-    const report = readHookEventTelemetry(root);
-    expect(report.records.map(r => r.event_id)).toEqual([first.event_id, second.event_id]);
-    expect(report.invalidRecordCount).toBe(0);
-    expect(report.duplicateEventIdCount).toBe(0);
   });
 
-  test('reader preserves malformed, invalid, mixed and duplicate diagnostics', () => {
+  test('the benchmark reader rejects a record from another protocol', () => {
     const root = fixture();
     const record = emit(root);
-    const variants = [
-      { ...record, protocol: 'old/v1' },
-      { ...record, started_at: 'invalid' },
-      { ...record, route_id: 'missing-route' },
-      { ...record, measurement: { ...record.measurement, opaque_steps: [1] } },
-      { ...record, steps: [{ name: 'bad', execution: 'in_process', started_at: record.started_at, elapsed_ms: -1, exit_code: 0, output_bytes: null }] },
-    ];
-    writeFileSync(join(root, 'invalid.jsonl'), ['{', ...[record, record, ...variants].map(value => JSON.stringify(value))].join('\n'));
-    const report = readHookEventTelemetry(root, 'invalid.jsonl');
-    expect(report.records.map(value => value.event_id)).toEqual([record.event_id, record.event_id]);
-    expect(report.sampleCount).toBe(8);
-    expect(report.invalidRecordCount).toBe(6);
-    expect(report.malformedRecordCount).toBe(1);
-    expect(report.mixedProtocol).toBe(true);
-    expect(report.duplicateEventIdCount).toBe(1);
-    expect(report.missing).toBe(false);
-    expect(readHookEventTelemetry(root, 'absent.jsonl')).toEqual({
-      records: [], sampleCount: 0, invalidRecordCount: 0, malformedRecordCount: 0,
-      mixedProtocol: false, duplicateEventIdCount: 0, missing: true,
-    });
-  });
-
-  test('an explicit custom report file does not include the default history', () => {
-    const root = fixture();
-    seedFull(root);
-    const second = emit(root);
-    writeFileSync(join(root, 'custom.jsonl'), `${JSON.stringify(second)}\n`);
-    expect(readHookEventTelemetry(root, 'custom.jsonl').records).toHaveLength(1);
+    writeFileSync(join(root, HOOK_EVENT_TELEMETRY_PATH), `${JSON.stringify(record)}\n${JSON.stringify({ ...record, protocol: 'old/v1' })}\n`);
+    expect(() => readHookMetrics(root)).toThrow('invalid or mixed hook event telemetry protocol');
   });
 });

@@ -15,6 +15,8 @@ import {
 import { resolveEffectiveState } from '../../src/effects/state/resolve-effective-state';
 import { runMutationGuard, type MutationGuardCollector } from '../../src/cli/hook/mutation-guard';
 import { createStateInputCollector } from '../../src/effects/loop/state-input-collector';
+import { resolveHookEffectiveState } from '../../src/cli/hook/runtime';
+import { hookIdentity } from '../helpers/hook-identity';
 import type { EffectiveState } from '../../src/core/state/types';
 
 // hook-guard-stability regression guard (2026-07-23 root-cause-prover
@@ -199,24 +201,14 @@ describe('Effective State stability contract: authority-only partition (hook-gua
       expect(directResolution.blockers).toContain('conflict:contract_plan_relationship');
 
       const collector: MutationGuardCollector = createStateInputCollector({
-        event: 'PreToolUse',
         repoRoot: fixture.cwd,
-        resolveSessionEffectiveState: () => null,
-        resolvePreEditEffectiveState: (targetPaths: readonly string[]): EffectiveState | null => {
-          try {
-            return resolveEffectiveState(fixture.cwd, Date.now(), {
-              targetPaths,
-              operationKind: 'edit',
-            });
-          } catch {
-            return null;
-          }
-        },
+        resolveEffectiveState: (targetPaths) =>
+          resolveHookEffectiveState(fixture.cwd, 'PreToolUse', targetPaths, {}, Date.now()),
       });
       const result = runMutationGuard({
         collector,
-        input: JSON.stringify({ tool_input: { file_path: 'src/feature.ts' } }),
-        env: {},
+        payload: { tool_input: { file_path: 'src/feature.ts' } },
+        identity: hookIdentity(),
       });
 
       expect(result.exitCode).toBe(0);

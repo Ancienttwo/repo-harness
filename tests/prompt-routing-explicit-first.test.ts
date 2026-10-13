@@ -1,9 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { spawnSync } from 'child_process';
-import { join } from 'path';
 import { routePromptExplicitFirst } from '../src/cli/hook/prompt-router';
-
-const HOOK_ENTRY = join(import.meta.dir, '../src/cli/hook-entry.ts');
 
 describe('explicit-first prompt routing', () => {
   test.each([
@@ -41,15 +37,4 @@ describe('explicit-first prompt routing', () => {
   test('does not treat command mentions away from prompt start as commands', () => {
     expect(routePromptExplicitFirst('请解释 /execute 是什么', { hasActiveTask: true })).toEqual({ kind: 'bypass' });
   });
-
-  test('hook fast path returns bypass without loading the historical classifier', () => {
-    const result = spawnSync(process.execPath, [HOOK_ENTRY, 'prompt-route'], {
-      input: JSON.stringify({ prompt: '解释一下这个模块' }),
-      encoding: 'utf-8',
-      env: { ...process.env, PROMPT_ROUTE_ACTIVE_TASK: '1' },
-    });
-    expect(result.status).toBe(0);
-    expect(JSON.parse(result.stdout)).toEqual({ kind: 'bypass' });
-    expect(result.stderr).toBe('');
-  }, 30_000);
 });

@@ -173,9 +173,9 @@ describe("projection drift: recovery views (checkpoint -> handoff/resume)", () =
       expect(published.status).toBe("published");
       if (published.status !== "published") return;
 
-      const env = { HOOK_RUN_ID: "drift-fixed-run" };
-      const resultA = materializeRecoveryViews(repoRoot, null, env, { reason: "drift-check", now: FIXED_NOW });
-      const resultB = materializeRecoveryViews(repoRoot, null, env, { reason: "drift-check", now: FIXED_NOW });
+      const options = { reason: "drift-check", now: FIXED_NOW, runId: "drift-fixed-run" };
+      const resultA = materializeRecoveryViews(repoRoot, null, {}, options);
+      const resultB = materializeRecoveryViews(repoRoot, null, {}, options);
 
       expect(resultA.handoff).toBe(resultB.handoff);
       expect(resultA.resume).toBe(resultB.resume);

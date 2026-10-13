@@ -222,7 +222,7 @@ escrito un humano.
 | | |
 | --- | --- |
 | **Sesiones respaldadas por archivos** | Plans, contracts, checks y handoffs viven en el repositorio, de modo que una sesión nueva retoma desde artefactos en vez de un hilo de chat |
-| **Typed hook runtime** | Ocho managed routes compartidas, más tres delegation routes exclusivas de Codex, cada una atada a exactamente un typed handler in-process, con guards fail-closed en el límite de edición |
+| **Typed hook runtime** | 12 routes públicas (Claude 9, Codex 12, Pi 6), cada una atada a exactamente un typed handler in-process, con guards fail-closed en el límite de edición |
 | **Plan → Contract → Review** | Un solo ciclo de vida desde el plan aprobado hasta el contract proyectado, el worktree aislado, la evidencia estructurada y un closeout revisable |
 | **Programas planificados por el Bot** | Programas de collaboration con task offers de engineer y leases renovables; el Bot planifica, repo-harness aporta herramientas y evidencia |
 | **Carga de contexto progresiva** | Un root context estable de ~12KB más capability contracts de ~1KB que solo se cargan para los archivos que realmente se están tocando |
@@ -421,26 +421,11 @@ Un task-agent fleet `deep-reasoner` persiste en un linked checkout dedicado y la
 
 ## Hooks
 
-El adapter instalado posee ocho managed hook routes compartidas. El route
-tuple `event + routeId + matcher` es el contract estable; cada tuple ata
-exactamente un typed handler in-process.
-
-| Route | Matcher | Handler | Función |
-| --- | --- | --- | --- |
-| `SessionStart.default` | all sessions | `src/cli/hook/session-context.ts` (in-process builder) | Inyecta el handoff anterior, el estado del sprint, guía de minimal-change y hallazgos de config-security de solo lectura antes de que empiece el trabajo. |
-| `PreToolUse.edit` | `Edit\|Write` | `src/cli/hook/mutation-guard.ts` (in-process handler) | Aplica la worktree policy y la readiness de plan/contract antes de las ediciones de implementación. |
-| `PreToolUse.subagent` | `Task\|Agent\|SendUserMessage` | `src/cli/hook/subagent-handler.ts` | Mantiene el trabajo delegado retornando a través de la sesión padre, en lugar de dejar escapar afirmaciones de finalización. |
-| `PostToolUse.edit` | `Edit\|Write` | `src/cli/hook/mutation-observed.ts` (in-process handler) | Escribe como máximo un pequeño evento de bitácora con dirty bits por cada edición calificada; la verificación del contract, el sync de architecture/context/capability y la evidencia de minimal-change se difieren a Stop en vez de ejecutarse por cada edición. |
-| `PostToolUse.bash` | `Bash` | `src/cli/hook/command-observed.ts` | Observa los resultados de comandos y captura evidencia de verificación sin reemplazar el command runner. |
-| `PostToolUse.always` | all tools | `src/cli/hook/trace-observer.ts` | Provee trace y runtime observation de bajo ruido y siempre activo. |
-| `UserPromptSubmit.default` | all prompts | `src/cli/hook/prompt-handler.ts` | Clasifica la intención del prompt, enruta hints de planning/check y renderiza guía de workflow host-safe. |
-| `Stop.default` | session stop | `src/cli/hook/stop-handler.ts` (in-process handler) | Finaliza el handoff y protege contra terminar con draft-plans sin resolver o vacíos de evidencia de completion. |
-
-Codex también instala tres Codex-only bounded-delegation routes —
-`UserPromptSubmit.delegation`, `SubagentStart.context`, y
-`SubagentStop.quality`, todas atadas a `src/cli/hook/subagent-handler.ts`;
-Claude solo conserva la route compartida de return-channel,
-`PreToolUse.subagent`.
+El adapter instalado ata 12 hook routes públicas: Claude instala 9, Codex instala 12
+y Pi instala 6. El route tuple `event + routeId + matcher` es el contract estable;
+cada tuple ata exactamente un typed handler in-process. La tabla de routes, con una
+columna Host, está en
+[`docs/reference-configs/hook-operations.md`](docs/reference-configs/hook-operations.md#hook-authority-map).
 
 `repo-harness-hook` y su typed handler registry son el host-event runtime;
 `~/.claude/settings.json` y `~/.codex/hooks.json` son los adapters a nivel de
@@ -611,8 +596,8 @@ repo-harness docs show harness-overview
 bun scripts/assemble-template.ts --plan C --name "MyProject"
 ```
 
-Los cambios de hook actualizan `assets/hooks/` canónico una vez, y luego
-corren `bun run sync:hooks` con `bun run check:hooks` en la verificación. Los
+Los cambios de la operator library editan solo `assets/hooks/lib/`; no existe copia
+proyectada. Los cambios de handler van a `src/cli/hook/`. Los
 reference docs son canónicos bajo `assets/reference-configs/` y se proyectan
 en `docs/reference-configs/`; `bun run check:reference-configs` verifica esa
 proyección.

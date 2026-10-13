@@ -1249,17 +1249,18 @@ describe("check-agent-tooling", () => {
           PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}`,
           HOOK_HOST: "codex",
         },
-        input: JSON.stringify({
+        payload: {
           hook_event_name: "SubagentStart",
           session_id: "session-hook-e2e",
           turn_id: "turn-hook-e2e",
           agent_id: "agent-hook-e2e",
           agent_type: "fast-worker",
           model: "gpt-6.1-sol",
-        }),
+        },
+        identity: { host: "codex", sessionId: "session-hook-e2e", runId: null, turnId: "turn-hook-e2e" },
       });
       expect(hook.exitCode).toBe(0);
-      expect(hook.stdout).toContain("[repo-harness:native-role-routing] verified");
+      expect(hook.additionalContext).toContain("[repo-harness:native-role-routing] verified");
 
       const res = spawnSync("bash", [SCRIPT, "--json", "--host", "codex", "--strict-readiness"], {
         cwd: envRoot.root,
@@ -1291,14 +1292,15 @@ describe("check-agent-tooling", () => {
           PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}`,
           HOOK_HOST: "codex",
         },
-        input: JSON.stringify({
+        payload: {
           hook_event_name: "SubagentStart",
           session_id: "session-hook-e2e",
           agent_type: "fast-worker",
           model: "gpt-5.6-luna",
-        }),
+        },
+        identity: { host: "codex", sessionId: "session-hook-e2e", runId: null, turnId: null },
       });
-      expect(incompleteHook.stdout).toContain("[repo-harness:native-role-routing] unverified");
+      expect(incompleteHook.additionalContext).toContain("[repo-harness:native-role-routing] unverified");
 
       const incompleteRes = spawnSync("bash", [SCRIPT, "--json", "--host", "codex", "--strict-readiness"], {
         cwd: envRoot.root,

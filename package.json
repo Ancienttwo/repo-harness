@@ -53,8 +53,6 @@
     "test:full": "bash scripts/lib/ci-run-tests.sh full",
     "test:coverage": "bash -c 'source scripts/lib/ci-run-tests.sh; BUN_TEST_ISOLATE_FILES=0 run_bun_tests --coverage \"$@\"' --",
     "check:type": "node node_modules/typescript/bin/tsc --noEmit",
-    "sync:hooks": "bun scripts/sync-hook-sources.ts --write",
-    "check:hooks": "bun scripts/sync-hook-sources.ts --check",
     "sync:helpers": "bun scripts/sync-helper-sources.ts --write",
     "check:helpers": "bun scripts/sync-helper-sources.ts --check",
     "sync:reference-configs": "bun scripts/sync-reference-configs.ts --write",

@@ -13,6 +13,7 @@ import {
 } from "fs";
 import { join } from "path";
 import { copyHelpers } from "./helpers/helper-script-fixture";
+import { buildReviewSubject } from "../src/effects/review/diff-fingerprint";
 import { run as scriptRun, tmpWorkspace, withTempRepo } from "./helpers/repo-fixture";
 
 import { hashVerificationPlan, parseVerificationPlanFromContractText } from "../src/core/evidence/verification-plan";
@@ -271,13 +272,7 @@ function ensureReviewBaseline(cwd: string): void {
 
 function currentReviewBinding(cwd: string): { subject: string; targetRevision: string } {
   ensureReviewBaseline(cwd);
-  const result = runProcess(
-    "bun",
-    [join(ROOT, "src/cli/hook-entry.ts"), "review-subject", "--target", "main", "--format", "json"],
-    cwd,
-  );
-  expect(result.status).toBe(0);
-  const parsed = JSON.parse(result.stdout);
+  const parsed = buildReviewSubject(cwd, { targetRef: "main" });
   expect(parsed.status).toBe("ok");
   return {
     subject: parsed.review_subject_sha256,

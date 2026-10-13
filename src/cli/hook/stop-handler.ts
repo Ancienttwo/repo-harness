@@ -17,7 +17,6 @@ import {
 import { createHash, randomBytes } from 'crypto';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'path';
 import { execFileSync } from 'child_process';
-import type { EffectiveState } from '../../core/state/types';
 import { consumePendingPostEditEvents } from './mutation-observed';
 import { runMinimalChangeCli } from './minimal-change-cli';
 import { sweepRunSummaries } from '../../effects/run-summary-retention';
@@ -30,15 +29,12 @@ import {
   resolveRecoveryEvidence,
 } from '../../effects/evidence/recovery-materializer';
 import { STOP_WORK_BUDGET_MS } from '../../core/hook-work-budget';
-import { HookEffectReconciliationRequired } from './handler-contract';
+import type { StateInputCollector } from '../../effects/loop/state-input-collector';
+import type { EffectiveState } from '../../core/state/types';
+import { payloadValue, type HookIdentity, type HookPayload } from './hook-input';
 import { owedCapabilities, renderOwedCapabilities } from '../../effects/state/owed-capabilities';
 
-export interface StopCollector {
-  getRepoRoot(): string;
-  getWorktreeOwnership(): { readonly owner: string | null; readonly ownedByCurrent: boolean };
-  getActivePlanMarker(): string | null;
-  getStopEffectiveState(): EffectiveState | null;
-}
+export type StopCollector = Pick<StateInputCollector, 'getRepoRoot' | 'getWorktreeOwnership' | 'getActivePlanMarker' | 'getEffectiveState'>;
 
 export interface StopProjectionTarget {
   /** `owed-signal` is the delivery marker of the owed-architecture line; it is not a projection phase. */
@@ -51,15 +47,14 @@ export interface StopHandlerDependencies {
   /** Wall clock shared by all bounded Stop work. */
   readonly wallClockMs?: () => number;
   readonly observeProjectionWrite?: (target: StopProjectionTarget) => void;
-  /** Invoked once after the complete Stop projection batch commits. */
-  readonly observeProjectionTransaction?: () => void;
   /** Narrow post-commit fault/observation seam; never driven by an env flag. */
   readonly afterProjectionWrite?: (target: StopProjectionTarget) => void;
 }
 
 export interface StopHandlerInput {
   readonly collector: StopCollector;
-  readonly input?: string | Buffer;
+  readonly payload: HookPayload;
+  readonly identity: HookIdentity;
   readonly env?: NodeJS.ProcessEnv;
   readonly dependencies?: StopHandlerDependencies;
 }
@@ -68,15 +63,6 @@ export interface StopHandlerResult {
   readonly exitCode: number;
   readonly stdout: string;
   readonly stderr: string;
-}
-
-interface StopPayload {
-  readonly stop_hook_active?: unknown;
-  readonly last_assistant_message?: unknown;
-  readonly turn_id?: unknown;
-  readonly run_id?: unknown;
-  readonly session_id?: unknown;
-  readonly transcript_path?: unknown;
 }
 
 interface MinimalChangeReview {
@@ -94,18 +80,6 @@ interface ProjectionPaths {
   readonly resume: string;
   readonly events: string;
   readonly runSummary: string;
-}
-
-function parsePayload(input: string | Buffer | undefined): StopPayload {
-  if (input === undefined) return {};
-  const text = input.toString().trim();
-  if (!text) return {};
-  try {
-    const parsed = JSON.parse(text);
-    return parsed && typeof parsed === 'object' ? parsed as StopPayload : {};
-  } catch {
-    return {};
-  }
 }
 
 // EPC-07: runId/formatCompact/formatDisplay moved to
@@ -263,7 +237,7 @@ function eventAlreadyRecorded(eventsPath: string, content: string): boolean {
       return prior.projectionKey === semanticKey;
     }
     if (start > 0) {
-      throw new HookEffectReconciliationRequired(
+      throw new Error(
         `stop-handler: latest Stop event is outside the ${STOP_EVENT_RECONCILE_WINDOW_BYTES}-byte reconciliation window`,
       );
     }
@@ -349,7 +323,7 @@ class StopProjectionBatch {
   }
 }
 
-function projection(repoRoot: string, activePlan: string | null, env: NodeJS.ProcessEnv, now: Date): {
+function projection(repoRoot: string, activePlan: string | null, env: NodeJS.ProcessEnv, runId: string | null, now: Date): {
   paths: ProjectionPaths;
   content: { handoff: string; resume: string; event: string; runSummary: string };
   retention: { runsDir: string };
@@ -362,7 +336,7 @@ function projection(repoRoot: string, activePlan: string | null, env: NodeJS.Pro
   // function used to resolve itself), same event/run-summary content this
   // function still owns directly (those two targets are not among EPC-07's
   // four named recovery views).
-  const context = buildRecoveryContext(repoRoot, activePlan, env, { reason: 'session-stop', now: () => now });
+  const context = buildRecoveryContext(repoRoot, activePlan, env, { reason: 'session-stop', now: () => now, runId });
   const evidence = resolveRecoveryEvidence(repoRoot);
   const contractPath = context.artifacts.contract;
   const handoffContent = renderRecoveryHandoff(context, evidence, contractPath);
@@ -477,11 +451,11 @@ const OWED_SIGNAL_MARKER = '.ai/harness/state/stop-owed-signal';
  */
 function owedStopSignal(
   repoRoot: string,
-  env: NodeJS.ProcessEnv,
+  host: HookIdentity['host'],
   state: EffectiveState | null,
   observeWrite?: (target: StopProjectionTarget) => void,
 ): string {
-  if (env.HOOK_HOST !== 'claude' || !state?.capability_ownership) return '';
+  if (host !== 'claude' || !state?.capability_ownership) return '';
   try {
     const owed = owedCapabilities(repoRoot, state.capability_ownership);
     const content = renderOwedCapabilities(owed);
@@ -514,8 +488,8 @@ export function runStopHandler(opts: StopHandlerInput): StopHandlerResult {
   const wallClockMs = dependencies.wallClockMs ?? Date.now;
   const deadlineMs = wallClockMs() + STOP_WORK_BUDGET_MS;
   const now = dependencies.now?.() ?? new Date();
-  const payload = parsePayload(opts.input);
-  if (payload.stop_hook_active === true || payload.stop_hook_active === 'true') {
+  const stopHookActive = payloadValue(opts.payload, 'stop_hook_active');
+  if (stopHookActive === true || stopHookActive === 'true') {
     return { exitCode: 0, stdout: '', stderr: '' };
   }
   const ownership = opts.collector.getWorktreeOwnership();
@@ -533,23 +507,24 @@ export function runStopHandler(opts: StopHandlerInput): StopHandlerResult {
   // Real path and projection transaction errors still refuse unsafe writes.
   // Recovery availability itself is best effort and cannot trap a Stop turn.
   let projected: ReturnType<typeof projection> | null = null;
-  try { projected = projection(repoRoot, activePlan, env, now); } catch (error) {
+  try { projected = projection(repoRoot, activePlan, env, opts.identity.runId, now); } catch (error) {
     stderr.push(`[RecoveryObservation] ${error instanceof Error ? error.message : String(error)}\n`);
   }
   if (projected) {
     new StopProjectionBatch(repoRoot, projected.paths, projected.content,
       dependencies.observeProjectionWrite, dependencies.afterProjectionWrite).commit();
-    dependencies.observeProjectionTransaction?.();
     stderr.push(`[FinalizeHandoff] Refreshed ${projected.paths.handoff}.\n`);
     try { sweepRunSummaries({ repoRoot, ...projected.retention }); } catch { /* retention is advisory */ }
   }
-  let state: EffectiveState | null = null;
-  try { state = opts.collector.getStopEffectiveState(); } catch { /* advisory */ }
-  if (!state) stderr.push('[StopReadiness] State unavailable; Stop may continue.\n');
+  const resolution = opts.collector.getEffectiveState();
+  const state = resolution.ok ? resolution.state : null;
+  if (!resolution.ok) {
+    stderr.push(`[StopReadiness] State unavailable (${resolution.reason_code} ${resolution.error_hash}): ${resolution.message}; Stop may continue.\n`);
+  }
   if (state?.readiness?.ok && state.readiness.readyToShip.decision === 'block') {
     stderr.push(`[ReadinessGate] Publication not verified: ${state.readiness.readyToShip.reasons.join(',')}. Stop may continue.\n`);
   }
   const minimal = minimalChangeReview(repoRoot, loadMinimalChangePolicy(repoRoot));
   if (minimal.summary) stderr.push(`${minimal.summary}\n`);
-  return { exitCode: 0, stdout: owedStopSignal(repoRoot, env, state, dependencies.observeProjectionWrite), stderr: stderr.join('') };
+  return { exitCode: 0, stdout: owedStopSignal(repoRoot, opts.identity.host, state, dependencies.observeProjectionWrite), stderr: stderr.join('') };
 }

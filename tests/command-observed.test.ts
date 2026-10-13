@@ -10,8 +10,10 @@ import {
 } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { runCommandObserved, runsPublicationCommand, type CommandObservedFs } from '../src/cli/hook/command-observed';
-import { mintOrAdoptSessionRunIdentity } from '../src/cli/hook/run-identity';
+import { runCommandObserved, runsPublicationCommand, type CommandObservedDependencies, type CommandObservedFs } from '../src/cli/hook/command-observed';
+import type { HookPayload } from '../src/cli/hook/hook-input';
+import type { RouteHost } from '../src/cli/hook/route-registry';
+import { resolveHookIdentity } from '../src/cli/hook/run-identity';
 import { readAcceptedEvents } from '../src/effects/evidence/event-log';
 
 function workspace(prefix: string): string {
@@ -22,21 +24,38 @@ function checks(repoRoot: string): Record<string, unknown> {
   return JSON.parse(readFileSync(join(repoRoot, '.ai/harness/checks/post-bash-latest.json'), 'utf8')) as Record<string, unknown>;
 }
 
-function commandInput(command: string, stdout: string, exitCode: number): string {
-  return JSON.stringify({ tool_input: { command }, tool_response: { stdout, stderr: '', interrupted: false }, exit_code: exitCode });
+function commandInput(command: string, stdout: string, exitCode: number): HookPayload {
+  return { tool_input: { command }, tool_response: { stdout, stderr: '', interrupted: false }, exit_code: exitCode };
+}
+
+/** The observer with the identity the runtime resolves for this payload. */
+function observe(opts: {
+  readonly repoRoot: string;
+  readonly payload: HookPayload;
+  readonly host?: RouteHost;
+  readonly env?: NodeJS.ProcessEnv;
+  readonly dependencies?: CommandObservedDependencies;
+}) {
+  return runCommandObserved({
+    repoRoot: opts.repoRoot,
+    payload: opts.payload,
+    identity: resolveHookIdentity(opts.repoRoot, 'PostToolUse', opts.payload, opts.host ?? 'claude'),
+    env: opts.env,
+    dependencies: opts.dependencies,
+  });
 }
 
 describe('runCommandObserved', () => {
   test('writes the structured post-bash check and preserves broad-command metadata', () => {
     const repoRoot = workspace('command-observed');
     try {
-      const result = runCommandObserved({
+      const result = observe({
         repoRoot,
-        input: JSON.stringify({
+        payload: {
           tool_input: { command: 'rg foo' },
           tool_response: { stdout: 'src/a.ts:foo\nsrc/b.ts:foo\n', stderr: '', interrupted: false },
           exit_code: 0,
-        }),
+        },
         env: { PATH: '' },
         dependencies: { hasExecutable: () => false },
       });
@@ -68,10 +87,11 @@ describe('runCommandObserved', () => {
     for (const exitCode of [undefined, null, '0', 0.5]) {
       const repoRoot = workspace('command-observed-pi-unknown');
       try {
-        const result = runCommandObserved({
+        const result = observe({
           repoRoot,
-          input: JSON.stringify({ tool_input: { command: 'bun run check:type' }, tool_response: { output: 'All checks passed', isError: false }, exit_code: exitCode }),
-          env: { PATH: '', HOOK_HOST: 'pi', EXIT_CODE: '0' },
+          payload: { tool_input: { command: 'bun run check:type' }, tool_response: { output: 'All checks passed', isError: false }, exit_code: exitCode },
+          host: 'pi',
+          env: { PATH: '', EXIT_CODE: '0' },
           dependencies: { hasExecutable: () => false },
         });
         expect(result).toMatchObject({ exitCode: 0, reason: 'ok' });
@@ -89,9 +109,9 @@ describe('runCommandObserved', () => {
     const repoRoot = workspace('command-observed-long');
     try {
       const output = Array.from({ length: 201 }, (_, index) => `line-${index}`).join('\n');
-      const result = runCommandObserved({
+      const result = observe({
         repoRoot,
-        input: JSON.stringify({ tool_input: { command: 'rg foo' }, tool_response: { stdout: output, stderr: '', interrupted: false }, exit_code: 0 }),
+        payload: { tool_input: { command: 'rg foo' }, tool_response: { stdout: output, stderr: '', interrupted: false }, exit_code: 0 },
         dependencies: { hasExecutable: (name) => name === 'rtk', now: () => new Date('2026-07-21T12:34:56.000Z') },
       });
       expect(result.exitCode).toBe(0);
@@ -113,9 +133,9 @@ describe('runCommandObserved', () => {
       const existing = { source: 'verify-sprint', status: 'pass', exit_code: 0, run_id: 'run-1' };
       writeFileSync(join(repoRoot, '.ai/harness/checks/latest.json'), `${JSON.stringify(existing)}\n`);
 
-      const result = runCommandObserved({
+      const result = observe({
         repoRoot,
-        input: commandInput('git status --short', '', 0),
+        payload: commandInput('git status --short', '', 0),
         env: { PATH: '' },
         dependencies: { hasExecutable: () => false },
       });
@@ -154,9 +174,9 @@ describe('runCommandObserved', () => {
       ];
       for (const [command, broad] of cases) {
         const output = 'line-one\nline-two\n';
-        const result = runCommandObserved({
+        const result = observe({
           repoRoot,
-          input: commandInput(command, output, 0),
+          payload: commandInput(command, output, 0),
           env: { PATH: '' },
           dependencies: { hasExecutable: () => false },
         });
@@ -179,9 +199,9 @@ describe('runCommandObserved', () => {
     const repoRoot = workspace('command-observed-input-fallbacks');
     try {
       const structured = { nested: true, values: [1, 2] };
-      const result = runCommandObserved({
+      const result = observe({
         repoRoot,
-        input: JSON.stringify({ tool_input: { command: 'bun test' }, tool_response: structured }),
+        payload: { tool_input: { command: 'bun test' }, tool_response: structured },
         env: { PATH: '', EXIT_CODE: '0' },
         dependencies: { hasExecutable: () => false },
       });
@@ -200,13 +220,13 @@ describe('runCommandObserved', () => {
   test('reads stdout and stderr from the host tool_response on separate lines', () => {
     const repoRoot = workspace('command-observed-tool-response');
     try {
-      const result = runCommandObserved({
+      const result = observe({
         repoRoot,
-        input: JSON.stringify({
+        payload: {
           tool_name: 'Bash',
           tool_input: { command: 'git status --short' },
           tool_response: { stdout: ' M src/a.ts', stderr: 'hint: advice', interrupted: false },
-        }),
+        },
         env: { PATH: '' },
         dependencies: { hasExecutable: () => false },
       });
@@ -226,9 +246,9 @@ describe('runCommandObserved', () => {
     const repoRoot = workspace('command-observed-failure');
     try {
       const output = 'FAIL tests/command-observed.test.ts\nexpected pass\n';
-      const result = runCommandObserved({
+      const result = observe({
         repoRoot,
-        input: commandInput('bun test tests/command-observed.test.ts', output, 1),
+        payload: commandInput('bun test tests/command-observed.test.ts', output, 1),
         env: { PATH: '' },
         dependencies: { hasExecutable: () => false },
       });
@@ -253,9 +273,9 @@ describe('runCommandObserved', () => {
     const repoRoot = workspace('command-observed-successful-failure-signal');
     try {
       const output = 'docs/debug.md:Traceback appears in this example\n';
-      const result = runCommandObserved({
+      const result = observe({
         repoRoot,
-        input: commandInput('rg Traceback docs/', output, 0),
+        payload: commandInput('rg Traceback docs/', output, 0),
         env: { PATH: '' },
         dependencies: { hasExecutable: () => false },
       });
@@ -276,9 +296,9 @@ describe('runCommandObserved', () => {
     const repoRoot = workspace('command-observed-failed-no-signal');
     try {
       const output = 'command returned status 1\n';
-      const result = runCommandObserved({
+      const result = observe({
         repoRoot,
-        input: commandInput('bun run check:type', output, 1),
+        payload: commandInput('bun run check:type', output, 1),
         env: { PATH: '' },
         dependencies: { hasExecutable: () => false },
       });
@@ -295,9 +315,9 @@ describe('runCommandObserved', () => {
   test('fails closed when the repair circuit denies a failing command', () => {
     const repoRoot = workspace('command-observed-circuit');
     try {
-      const result = runCommandObserved({
+      const result = observe({
         repoRoot,
-        input: commandInput('bun test', 'FAILED test\n', 1),
+        payload: commandInput('bun test', 'FAILED test\n', 1),
         env: { PATH: '' },
         dependencies: {
           hasExecutable: () => false,
@@ -337,9 +357,9 @@ describe('runCommandObserved', () => {
         mkdirSync: () => undefined,
         writeFileSync: () => { throw new Error('disk full'); },
       };
-      const result = runCommandObserved({
+      const result = observe({
         repoRoot,
-        input: commandInput('git status --short', '', 0),
+        payload: commandInput('git status --short', '', 0),
         env: { PATH: '' },
         dependencies: { fs: fsApi, hasExecutable: () => false },
       });
@@ -353,30 +373,13 @@ describe('runCommandObserved', () => {
     }
   });
 
-  test('keeps malformed host input observable while preserving the neutral check side effect', () => {
-    const repoRoot = workspace('command-observed-malformed-input');
-    try {
-      const result = runCommandObserved({
-        repoRoot,
-        input: 'not json',
-        env: { PATH: '' },
-        dependencies: { hasExecutable: () => false },
-      });
-      expect(result.exitCode).toBe(0);
-      expect(result.stderr).toContain('[HookInput] WARN');
-      expect(checks(repoRoot)).toMatchObject({ command: '', status: 'pass', exit_code: 0 });
-    } finally {
-      rmSync(repoRoot, { recursive: true, force: true });
-    }
-  });
-
-  test('threads an env-resolved run identity into the evidence ledger correlation_run_id instead of self-minting', () => {
+  test('threads the payload run identity into the evidence ledger correlation_run_id instead of self-minting', () => {
     const repoRoot = workspace('command-observed-run-identity-threaded');
     try {
-      const result = runCommandObserved({
+      const result = observe({
         repoRoot,
-        input: commandInput('echo hello', 'hello\n', 0),
-        env: { PATH: '', HOOK_SESSION_ID: 'cmd-observed-session', HOOK_RUN_ID: 'cmd-observed-run-77' },
+        payload: { ...commandInput('echo hello', 'hello\n', 0), session_id: 'cmd-observed-session', run_id: 'cmd-observed-run-77' },
+        env: { PATH: '' },
         dependencies: { hasExecutable: () => false },
       });
       expect(result.exitCode).toBe(0);
@@ -391,12 +394,12 @@ describe('runCommandObserved', () => {
   test('threads a session-state-derived run identity (minted during SessionStart) into the evidence ledger', () => {
     const repoRoot = workspace('command-observed-run-identity-session-state');
     try {
-      const minted = mintOrAdoptSessionRunIdentity(repoRoot, { session_id: 'cmd-observed-state-session' }, {});
+      const minted = resolveHookIdentity(repoRoot, 'SessionStart', { session_id: 'cmd-observed-state-session' }, 'claude').runId;
       expect(minted).not.toBeNull();
-      const result = runCommandObserved({
+      const result = observe({
         repoRoot,
-        input: commandInput('echo hello', 'hello\n', 0),
-        env: { PATH: '', HOOK_SESSION_ID: 'cmd-observed-state-session' },
+        payload: { ...commandInput('echo hello', 'hello\n', 0), session_id: 'cmd-observed-state-session' },
+        env: { PATH: '' },
         dependencies: { hasExecutable: () => false },
       });
       expect(result.exitCode).toBe(0);
@@ -411,9 +414,9 @@ describe('runCommandObserved', () => {
   test('falls back to the writer own self-minted id when no run identity is resolvable at all (unchanged fallback)', () => {
     const repoRoot = workspace('command-observed-run-identity-unresolved');
     try {
-      const result = runCommandObserved({
+      const result = observe({
         repoRoot,
-        input: commandInput('echo hello', 'hello\n', 0),
+        payload: commandInput('echo hello', 'hello\n', 0),
         env: { PATH: '' },
         dependencies: { hasExecutable: () => false },
       });

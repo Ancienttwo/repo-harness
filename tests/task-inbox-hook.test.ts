@@ -8,6 +8,7 @@ import {
   TASK_INBOX_CONTEXT_END,
   TASK_INBOX_CONTEXT_START,
 } from '../src/cli/hook/task-inbox-handler';
+import { HOST_RENDERERS } from '../src/cli/hook/hook-protocol';
 
 function fixture(): string {
   const root = mkdtempSync(join(tmpdir(), 'task-inbox-hook-'));
@@ -22,12 +23,11 @@ describe('UserPromptSubmit.inbox typed route', () => {
     try {
       const output = runTaskInboxHandler({
         repoRoot: root,
-        env: { HOOK_HOST: 'claude' },
         dependencies: {
           findClaimToken: () => ({ outcome: 'none' }),
         },
       });
-      expect(output).toEqual({ exitCode: 0, stdout: '', stderr: '' });
+      expect(output).toEqual({ exitCode: 0 });
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -39,7 +39,6 @@ describe('UserPromptSubmit.inbox typed route', () => {
       const worktree = realpathSync(root);
       const output = runTaskInboxHandler({
         repoRoot: root,
-        env: { HOOK_HOST: 'codex' },
         now: () => new Date('2026-08-23T01:02:03.000Z'),
         dependencies: {
           findClaimToken: () => ({
@@ -79,7 +78,16 @@ describe('UserPromptSubmit.inbox typed route', () => {
         },
       });
       expect(output.exitCode).toBe(0);
-      const envelope = JSON.parse(output.stdout) as {
+      const rendered = HOST_RENDERERS.codex({
+        event: 'UserPromptSubmit',
+        routeId: 'inbox',
+        repoRoot: root,
+        exitCode: output.exitCode,
+        reason: output.reason ?? 'ok',
+        additionalContext: output.additionalContext ?? null,
+        diagnostics: output.diagnostics ?? '',
+      });
+      const envelope = JSON.parse(rendered.stdout) as {
         hookSpecificOutput: { hookEventName: string; additionalContext: string };
       };
       const context = envelope.hookSpecificOutput.additionalContext;

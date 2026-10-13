@@ -63,6 +63,12 @@ export interface Route {
   readonly hosts?: readonly RouteHost[];
   /** Exactly one typed in-process handler owns this route. */
   readonly handler: HookHandlerId;
+  /**
+   * A handler crash exits 2, so the host blocks the tool call. Only an
+   * admission route sets this: exit 2 on Stop or UserPromptSubmit would trap
+   * the user. Installer projections do not read this field.
+   */
+  readonly failClosed?: true;
 }
 
 export const ROUTES: readonly Route[] = Object.freeze([
@@ -79,6 +85,7 @@ export const ROUTES: readonly Route[] = Object.freeze([
     matcher: 'Edit|Write',
     // HRD-03: mutation decisions are owned by the in-process guard handler.
     handler: 'mutation-guard',
+    failClosed: true as const,
   }),
   Object.freeze({
     event: 'PreToolUse' as const,
@@ -150,26 +157,10 @@ export function getRoute(event: HookEvent, routeId: RouteId): Route | undefined 
   return ROUTES.find((r) => r.event === event && r.routeId === routeId);
 }
 
-export function listRoutesForEvent(event: HookEvent): readonly Route[] {
-  return ROUTES.filter((r) => r.event === event);
-}
-
 export function routeSupportsHost(route: Route, host: RouteHost): boolean {
   return route.hosts === undefined || route.hosts.includes(host);
 }
 
 export function routesForHost(host: RouteHost): readonly Route[] {
   return ROUTES.filter((route) => routeSupportsHost(route, host));
-}
-
-export function allEvents(): readonly HookEvent[] {
-  const seen = new Set<HookEvent>();
-  const out: HookEvent[] = [];
-  for (const r of ROUTES) {
-    if (!seen.has(r.event)) {
-      seen.add(r.event);
-      out.push(r.event);
-    }
-  }
-  return out;
 }

@@ -10,12 +10,22 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, realpathSync, stat
 import { execFileSync } from 'child_process';
 import { dirname, join } from 'path';
 import { randomUUID } from 'crypto';
-import { parseHookInput, type HookInputFs } from './hook-input';
+import {
+  normalizeRepoRelativePath,
+  payloadString,
+  payloadValue,
+  type HookIdentity,
+  type HookPayload,
+} from './hook-input';
 import { withExclusiveDirectoryLock } from '../../effects/locking/exclusive-directory-lock';
 
 const TRACE_LOCK_PATH = '.ai/harness/state/claude-trace.lock';
 
-export interface TraceObserverFs extends HookInputFs {
+export interface TraceObserverFs {
+  existsSync(path: string): boolean;
+  readFileSync(path: string, encoding: 'utf8'): string;
+  realpathSync(path: string): string;
+  statSync(path: string): { isFile(): boolean; readonly mtimeMs?: number };
   mkdirSync(path: string, options?: { readonly recursive?: boolean }): void;
   writeFileSync(path: string, data: string): void;
   appendFileSync(path: string, data: string): void;
@@ -29,7 +39,8 @@ export interface TraceObserverDependencies {
 
 export interface TraceObserverInput {
   readonly repoRoot: string;
-  readonly input?: string | Buffer;
+  readonly payload: HookPayload;
+  readonly identity: HookIdentity;
   readonly env?: NodeJS.ProcessEnv;
   readonly dependencies?: TraceObserverDependencies;
 }
@@ -82,8 +93,8 @@ function sessionIdentifier(now: Date): string {
   return `session-${now.toISOString()}-${randomUUID()}`;
 }
 
-function sessionKey(repoRoot: string, parsed: ReturnType<typeof parseHookInput>, env: NodeJS.ProcessEnv, fsApi: TraceObserverFs, now: Date): string {
-  const explicit = parsed.getSessionId('');
+function sessionKey(repoRoot: string, identity: HookIdentity, fsApi: TraceObserverFs, now: Date): string {
+  const explicit = identity.sessionId;
   if (explicit) {
     try {
       fsApi.mkdirSync(join(repoRoot, '.claude'), { recursive: true });
@@ -104,24 +115,11 @@ function sessionKey(repoRoot: string, parsed: ReturnType<typeof parseHookInput>,
   return generated;
 }
 
-function sourceValue(parsed: ReturnType<typeof parseHookInput>, env: NodeJS.ProcessEnv): string {
-  return valueString(parsed.get('.source', ''), env.CLAUDE_SESSION_SOURCE ?? env.CODEX_SESSION_SOURCE ?? '');
-}
-
-function runId(parsed: ReturnType<typeof parseHookInput>, env: NodeJS.ProcessEnv, session: string, source: string, now: Date): string {
-  const direct = parsed.getRunId('');
-  if (direct) return direct;
-  const explicit = env.CLAUDE_RUN_ID ?? env.CODEX_RUN_ID ?? '';
-  if (explicit) return explicit;
+function runId(payload: HookPayload, identity: HookIdentity, session: string, source: string, now: Date): string {
+  if (identity.runId) return identity.runId;
   if (session) return `run-${sanitize(source || 'session')}-${sanitize(session)}`;
-  const transcript = parsed.getString('.transcript_path', env.CLAUDE_TRANSCRIPT_PATH ?? env.CODEX_TRANSCRIPT_PATH ?? '');
+  const transcript = payloadString(payload, 'transcript_path');
   return transcript ? `run-transcript-${sanitize(transcript)}` : runIdentifier(now, process.pid);
-}
-
-function eventHost(sessionSource: string, env: NodeJS.ProcessEnv): 'codex' | 'claude' | 'unknown' {
-  if (env.CODEX_SESSION_ID || env.CODEX_AGENT_NAME || /codex/iu.test(sessionSource)) return 'codex';
-  if (env.CLAUDE_SESSION_ID || env.CLAUDE_AGENT_NAME || /claude/iu.test(sessionSource)) return 'claude';
-  return 'unknown';
 }
 
 function changedPlan(repoRoot: string, runGit: (args: readonly string[]) => string): string {
@@ -150,23 +148,29 @@ export function runTraceObserver(opts: TraceObserverInput): TraceObserverResult 
   const deps = opts.dependencies ?? {};
   const fsApi = deps.fs ?? DEFAULT_FS;
   const now = (deps.now ?? (() => new Date()))();
-  const parsed = parseHookInput(opts.input, { env, repoRoot: opts.repoRoot });
-  // Input parsing is lazy: accessors populate warnings on first use, so render
-  // them only at the return boundary after the event fields were consumed.
-  const warningStderr = (): string => parsed.warnings.length > 0 ? `${parsed.warnings.join('\n')}\n` : '';
+  const payload = opts.payload;
   const tracePath = join(opts.repoRoot, '.claude/.trace.jsonl');
   try {
     fsApi.mkdirSync(dirname(tracePath), { recursive: true });
-    const session = sessionKey(opts.repoRoot, parsed, env, fsApi, now);
-    const sessionSource = sourceValue(parsed, env) || 'unknown';
-    const eventType = valueString(parsed.get('.hook_event_name', ''), 'PostToolUse');
-    const toolName = valueString(parsed.get('.tool_name', ''), parsed.getToolName('unknown')) || 'unknown';
-    const filePath = parsed.getFilePath('');
-    const exitCode = numberValue(parsed.get('.tool_response.exit_code', parsed.get('.exit_code', env.EXIT_CODE ?? '0')), 0);
-    const durationMs = numberValue(parsed.get('.duration_ms', parsed.get('.tool_response.duration_ms', env.HOOK_DURATION_MS ?? '0')), 0);
-    const id = runId(parsed, env, session, sessionSource, now);
+    const session = sessionKey(opts.repoRoot, opts.identity, fsApi, now);
+    const sessionSource = valueString(payload.source, 'unknown');
+    const eventType = valueString(payload.hook_event_name, 'PostToolUse');
+    const toolName = valueString(payload.tool_name, 'unknown');
+    const filePath = normalizeRepoRelativePath(
+      opts.repoRoot,
+      payloadString(payload, 'file_path') || payloadString(payload, 'tool_input.file_path'),
+    );
+    const exitCode = numberValue(
+      payloadValue(payload, 'tool_response.exit_code') ?? payload.exit_code ?? env.EXIT_CODE ?? '0',
+      0,
+    );
+    const durationMs = numberValue(
+      payload.duration_ms ?? payloadValue(payload, 'tool_response.duration_ms') ?? env.HOOK_DURATION_MS ?? '0',
+      0,
+    );
+    const id = runId(payload, opts.identity, session, sessionSource, now);
     const agentName = env.CLAUDE_AGENT_NAME ?? env.CODEX_AGENT_NAME ?? env.HOOK_AGENT_NAME ?? 'unknown';
-    const host = eventHost(sessionSource, env);
+    const host = opts.identity.host;
 
     if (/^(?:mcp__codegraph__|codegraph_)/u.test(toolName)) {
       const marker = join(opts.repoRoot, '.claude/.codegraph-state', `${sanitize(session)}.used`);
@@ -201,9 +205,9 @@ export function runTraceObserver(opts: TraceObserverInput): TraceObserverResult 
       const plan = changedPlan(opts.repoRoot, deps.runGit ?? ((args) => execFileSync('git', ['-C', opts.repoRoot, ...args], { encoding: 'utf8' })));
       if (plan) stdout = `[AnnotationGuard] ${plan} has annotations. Process all notes and revise. Do not implement yet.\n`;
     }
-    return { exitCode: 0, stdout, stderr: warningStderr(), reason: 'ok' };
+    return { exitCode: 0, stdout, stderr: '', reason: 'ok' };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    return { exitCode: 1, stdout: '', stderr: `${warningStderr()}[TraceObserver] ${message}\n`, reason: 'write-failed' };
+    return { exitCode: 1, stdout: '', stderr: `[TraceObserver] ${message}\n`, reason: 'write-failed' };
   }
 }

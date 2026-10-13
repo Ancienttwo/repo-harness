@@ -245,7 +245,7 @@ same plan, contract, and review artifacts a human would have written.
 | | |
 | --- | --- |
 | **File-backed sessions** | Plans, contracts, checks, and handoffs live in the repo, so a new session resumes from artifacts instead of a chat thread |
-| **Typed hook runtime** | Eight shared managed routes plus three Codex-only delegation routes, each bound to exactly one typed in-process handler, with fail-closed guards at the edit boundary |
+| **Typed hook runtime** | 12 public routes (Claude 9, Codex 12, Pi 6), each bound to exactly one typed in-process handler, with fail-closed guards at the edit boundary |
 | **Plan → Contract → Review** | One lifecycle from approved plan to projected contract, isolated worktree, structured evidence, and a reviewable closeout |
 | **Bot-scheduled programs** | Collaboration programs with engineer task offers and renewable leases; the Bot schedules, repo-harness supplies tools and evidence |
 | **Progressive context loading** | A ~12KB stable root context plus ~1KB capability contracts loaded only for the files actually being touched |
@@ -444,25 +444,11 @@ A dedicated linked checkout hosts one fleet `deep-reasoner` task-agent in the ad
 
 ## Hooks
 
-The installed adapter owns eight shared managed hook routes. The route tuple
-`event + routeId + matcher` is the stable contract; each tuple binds exactly
-one typed in-process handler.
-
-| Route | Matcher | Handler | Function |
-| --- | --- | --- | --- |
-| `SessionStart.default` | all sessions | `src/cli/hook/session-context.ts` (in-process builder) | Injects prior handoff, sprint status, minimal-change guidance, and read-only config-security findings before work starts. |
-| `PreToolUse.edit` | `Edit\|Write` | `src/cli/hook/mutation-guard.ts` (in-process handler) | Enforces worktree policy and plan/contract readiness before implementation edits. |
-| `PreToolUse.subagent` | `Task\|Agent\|SendUserMessage` | `src/cli/hook/subagent-handler.ts` | Keeps delegated work returning through the parent session instead of leaking completion claims. |
-| `PostToolUse.edit` | `Edit\|Write` | `src/cli/hook/mutation-observed.ts` (in-process handler) | Writes at most one small journal event with dirty bits per qualifying edit; contract verification, architecture/context/capability sync, and minimal-change evidence are deferred to Stop instead of run per edit. |
-| `PostToolUse.bash` | `Bash` | `src/cli/hook/command-observed.ts` | Observes command results and captures verification evidence without replacing the command runner. |
-| `PostToolUse.always` | all tools | `src/cli/hook/trace-observer.ts` | Provides low-noise always-on trace and runtime observation. |
-| `UserPromptSubmit.default` | all prompts | `src/cli/hook/prompt-handler.ts` | Classifies prompt intent, routes planning/check hints, and renders host-safe workflow guidance. |
-| `Stop.default` | session stop | `src/cli/hook/stop-handler.ts` (in-process handler) | Finalizes handoff and guards against ending with unresolved draft-plan or completion evidence gaps. |
-
-Codex also installs three Codex-only bounded-delegation routes —
-`UserPromptSubmit.delegation`, `SubagentStart.context`, and `SubagentStop.quality`,
-all bound to `src/cli/hook/subagent-handler.ts`; Claude keeps only the shared
-`PreToolUse.subagent` return-channel route.
+The installed adapter binds 12 public hook routes: Claude installs 9, Codex
+installs 12, and Pi installs 6. The route tuple `event + routeId + matcher` is
+the stable contract; each tuple binds exactly one typed in-process handler. The
+route table, with a Host column, is in
+[`docs/reference-configs/hook-operations.md`](docs/reference-configs/hook-operations.md#hook-authority-map).
 
 `repo-harness-hook` and its typed handler registry are the host-event runtime;
 `~/.claude/settings.json` and `~/.codex/hooks.json` are the user-level adapters,
@@ -658,8 +644,8 @@ repo-harness docs show harness-overview
 bun scripts/assemble-template.ts --plan C --name "MyProject"
 ```
 
-Hook changes update canonical `assets/hooks/` once, then run `bun run sync:hooks`
-with `bun run check:hooks` in verification. Reference docs are canonical under
+Operator library changes edit `assets/hooks/lib/` once; no projection copy
+exists. Handler changes go to `src/cli/hook/`. Reference docs are canonical under
 `assets/reference-configs/` and projected into `docs/reference-configs/`;
 `bun run check:reference-configs` verifies that projection.
 

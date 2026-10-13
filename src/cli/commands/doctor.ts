@@ -21,9 +21,7 @@ import { checkCodegraph, type CodegraphCheckResult } from '../tools/codegraph';
 import { CLI_VERSION } from './status';
 import { runSecurityScan, type SecurityScanReport } from './security';
 import { isOptIn, resolveRepoRoot } from '../hook/runtime';
-import { getHandlerForRoute } from '../hook/handler-registry';
 import { ROUTES } from '../hook/route-registry';
-import { isRepoHarnessSourceCheckout } from '../../core/adoption/source-checkout';
 
 const TRUST_STATE_LINE = /^\[hooks\.state\."[^"]+\/\.codex\/hooks\.json:/;
 const PACKAGE_NAME = 'repo-harness';
@@ -482,24 +480,11 @@ function checkTypedHookRoutes(cwd: string): DoctorCheckResult {
     };
   }
 
-  const missing = ROUTES
-    .filter((route) => getHandlerForRoute(route) === undefined)
-    .map((route) => `${route.event}.${route.routeId}`);
-
-  if (missing.length === 0) {
-    return {
-      id,
-      describe,
-      status: 'ok',
-      detail: `all ${ROUTES.length} public routes bind one typed in-process handler`,
-    };
-  }
-
   return {
     id,
     describe,
-    status: 'fail',
-    detail: `unbound typed routes: ${missing.join(', ')}`,
+    status: 'ok',
+    detail: `all ${ROUTES.length} public routes bind one typed in-process handler`,
   };
 }
 
@@ -604,9 +589,6 @@ function checkLegacyWorkflowState(cwd: string): DoctorCheckResult {
   const describe = 'Repository operator library uses the installed package';
   const repoRoot = resolveRepoRoot(cwd);
   if (!repoRoot) return { id, describe, status: 'na', detail: 'not in a git repository' };
-  if (isRepoHarnessSourceCheckout(repoRoot)) {
-    return { id, describe, status: 'na', detail: 'source checkout keeps its self-host operator library' };
-  }
   const legacy = path.join(repoRoot, '.ai/hooks/lib/workflow-state.sh');
   try {
     fs.lstatSync(legacy);

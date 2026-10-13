@@ -45,7 +45,8 @@ import {
 import { runMutationGuard, type MutationGuardCollector } from '../src/cli/hook/mutation-guard';
 import { runSubagentHandler } from '../src/cli/hook/subagent-handler';
 import { createStateInputCollector } from '../src/effects/loop/state-input-collector';
-import { resolveEffectiveState } from '../src/effects/state/resolve-effective-state';
+import { resolveHookEffectiveState } from '../src/cli/hook/runtime';
+import { hookIdentity } from './helpers/hook-identity';
 import { findClaimTokenByUnitRef } from '../src/effects/state/coordination-claim-token';
 import {
   coordinationRoot,
@@ -53,7 +54,6 @@ import {
 } from '../src/effects/state/coordination-lease-store';
 import { resolveRepoIdentity } from '../src/effects/state/coordination-canonical-source';
 import * as sliceInputs from '../src/effects/state/collect-slice-inputs';
-import type { EffectiveState } from '../src/core/state/types';
 import { fixtureTaskId } from './helpers/sprint-fixture';
 
 // ---------------------------------------------------------------------------
@@ -270,20 +270,10 @@ function armFixture(fixture: Fixture): void {
  */
 function collectorFor(repoRoot: string, onResolve?: () => void): MutationGuardCollector {
   return createStateInputCollector({
-    event: 'PreToolUse',
     repoRoot,
-    resolveSessionEffectiveState: () => null,
-    resolvePreEditEffectiveState: (targetPaths: readonly string[]): EffectiveState | null => {
+    resolveEffectiveState: (targetPaths) => {
       onResolve?.();
-      try {
-        return resolveEffectiveState(repoRoot, Date.now(), {
-          targetPaths,
-          operationKind: 'edit',
-          explicitOverride: 'routine',
-        });
-      } catch {
-        return null;
-      }
+      return resolveHookEffectiveState(repoRoot, 'PreToolUse', targetPaths, { REPO_HARNESS_WORKFLOW_PROFILE: 'routine' }, Date.now());
     },
   });
 }
@@ -291,8 +281,8 @@ function collectorFor(repoRoot: string, onResolve?: () => void): MutationGuardCo
 function edit(repoRoot: string, filePath = 'src/feature.ts') {
   return runMutationGuard({
     collector: collectorFor(repoRoot),
-    input: JSON.stringify({ tool_input: { file_path: filePath } }),
-    env: {},
+    payload: { tool_input: { file_path: filePath } },
+    identity: hookIdentity(),
   });
 }
 
@@ -491,26 +481,20 @@ describe('one slice, two hosts, identical bytes', () => {
     const codex = runSubagentHandler({
       event: 'SubagentStart',
       repoRoot: fixture.worktree,
-      env: { HOOK_HOST: 'codex' },
-      input: JSON.stringify({ agent_type: 'default', model: 'gpt-x', agent_id: 'agent-1', turn_id: 'turn-1' }),
+      identity: hookIdentity({ host: 'codex' }),
+      payload: { agent_type: 'default', model: 'gpt-x', agent_id: 'agent-1', turn_id: 'turn-1' },
     });
     expect(codex.exitCode).toBe(0);
-    const codexContext = String(
-      (JSON.parse(codex.stdout) as { hookSpecificOutput: { additionalContext: string } })
-        .hookSpecificOutput.additionalContext,
-    );
+    const codexContext = String(codex.additionalContext);
 
     const claude = runSubagentHandler({
       event: 'PreToolUse',
       repoRoot: fixture.worktree,
-      env: {},
-      input: JSON.stringify({ tool_name: 'Task', tool_input: { prompt: 'do the work' } }),
+      identity: hookIdentity(),
+      payload: { tool_name: 'Task', tool_input: { prompt: 'do the work' } },
     });
     expect(claude.exitCode).toBe(0);
-    const claudePrompt = String(
-      (JSON.parse(claude.stdout) as { hookSpecificOutput: { updatedInput: { prompt: string } } })
-        .hookSpecificOutput.updatedInput.prompt,
-    );
+    const claudePrompt = String(claude.permission?.updatedInput?.prompt);
 
     const block = extractSliceBlock(codexContext);
     expect(extractSliceBlock(claudePrompt)).toBe(block);
@@ -523,13 +507,10 @@ describe('one slice, two hosts, identical bytes', () => {
     const claudeBranchOnCodex = runSubagentHandler({
       event: 'PreToolUse',
       repoRoot: fixture.worktree,
-      env: { HOOK_HOST: 'codex' },
-      input: JSON.stringify({ tool_name: 'Task', tool_input: { prompt: 'do the work' } }),
+      identity: hookIdentity({ host: 'codex' }),
+      payload: { tool_name: 'Task', tool_input: { prompt: 'do the work' } },
     });
-    const prompt = String(
-      (JSON.parse(claudeBranchOnCodex.stdout) as { hookSpecificOutput: { updatedInput: { prompt: string } } })
-        .hookSpecificOutput.updatedInput.prompt,
-    );
+    const prompt = String(claudeBranchOnCodex.permission?.updatedInput?.prompt);
     expect(prompt).toContain('[repo-harness:return-channel]');
     expect(prompt).not.toContain(BOARD_SLICE_MARKER);
   });
@@ -538,21 +519,18 @@ describe('one slice, two hosts, identical bytes', () => {
     const first = runSubagentHandler({
       event: 'PreToolUse',
       repoRoot: fixture.worktree,
-      env: {},
-      input: JSON.stringify({ tool_name: 'Task', tool_input: { prompt: 'do the work' } }),
+      identity: hookIdentity(),
+      payload: { tool_name: 'Task', tool_input: { prompt: 'do the work' } },
     });
-    const stamped = String(
-      (JSON.parse(first.stdout) as { hookSpecificOutput: { updatedInput: { prompt: string } } })
-        .hookSpecificOutput.updatedInput.prompt,
-    );
+    const stamped = String(first.permission?.updatedInput?.prompt);
     // Replaying the fully-stamped prompt is a no-op ...
     const replay = runSubagentHandler({
       event: 'PreToolUse',
       repoRoot: fixture.worktree,
-      env: {},
-      input: JSON.stringify({ tool_name: 'Agent', tool_input: { prompt: stamped } }),
+      identity: hookIdentity(),
+      payload: { tool_name: 'Agent', tool_input: { prompt: stamped } },
     });
-    expect(replay.stdout).toBe('');
+    expect(replay).toEqual({ exitCode: 0 });
 
     // ... but a prompt carrying only the return contract still receives the
     // slice. The old RETURN_CONTRACT_MARKER early-exit would have swallowed it.
@@ -560,13 +538,10 @@ describe('one slice, two hosts, identical bytes', () => {
     const second = runSubagentHandler({
       event: 'PreToolUse',
       repoRoot: fixture.worktree,
-      env: {},
-      input: JSON.stringify({ tool_name: 'Agent', tool_input: { prompt: contractOnly } }),
+      identity: hookIdentity(),
+      payload: { tool_name: 'Agent', tool_input: { prompt: contractOnly } },
     });
-    const secondPrompt = String(
-      (JSON.parse(second.stdout) as { hookSpecificOutput: { updatedInput: { prompt: string } } })
-        .hookSpecificOutput.updatedInput.prompt,
-    );
+    const secondPrompt = String(second.permission?.updatedInput?.prompt);
     expect(secondPrompt).toContain(BOARD_SLICE_MARKER);
     expect(secondPrompt.match(/\[repo-harness:return-channel\]/g)?.length).toBe(1);
   });
@@ -575,23 +550,20 @@ describe('one slice, two hosts, identical bytes', () => {
     const deny = runSubagentHandler({
       event: 'PreToolUse',
       repoRoot: fixture.worktree,
-      env: {},
-      input: JSON.stringify({ tool_name: 'SendUserMessage', agent_id: 'agent-a', tool_input: { message: 'report' } }),
+      identity: hookIdentity(),
+      payload: { tool_name: 'SendUserMessage', agent_id: 'agent-a', tool_input: { message: 'report' } },
     });
-    expect(deny.stdout).not.toContain(BOARD_SLICE_MARKER);
-    const output = (JSON.parse(deny.stdout) as {
-      hookSpecificOutput: { permissionDecision?: string; additionalContext: string };
-    }).hookSpecificOutput;
-    expect(output.permissionDecision).toBeUndefined();
-    expect(output.additionalContext).toContain('full report in final text');
+    expect(deny.additionalContext).not.toContain(BOARD_SLICE_MARKER);
+    expect(deny.permission).toBeUndefined();
+    expect(deny.additionalContext).toContain('full report in final text');
 
     const mainLoop = runSubagentHandler({
       event: 'PreToolUse',
       repoRoot: fixture.worktree,
-      env: {},
-      input: JSON.stringify({ tool_name: 'SendUserMessage', tool_input: { message: 'main loop' } }),
+      identity: hookIdentity(),
+      payload: { tool_name: 'SendUserMessage', tool_input: { message: 'main loop' } },
     });
-    expect(mainLoop.stdout).toBe('');
+    expect(mainLoop).toEqual({ exitCode: 0 });
   });
 });
 
@@ -683,8 +655,8 @@ describe('the lease gate stays inert unless the unit is verifiably sprint-bound'
     ].join('\n');
     const result = runMutationGuard({
       collector: collectorFor(fixture.worktree),
-      input: JSON.stringify({ tool_input: { command: patch } }),
-      env: {},
+      payload: { tool_input: { command: patch } },
+      identity: hookIdentity(),
     });
     expect(result.exitCode).toBe(0);
     expect(collectCalls).toBe(1);
@@ -781,8 +753,8 @@ describe('once armed, lease anomalies remain advisory with their own reason toke
     let resolutions = 0;
     const result = runMutationGuard({
       collector: collectorFor(fixture.worktree, () => { resolutions += 1; }),
-      input: JSON.stringify({ tool_input: { file_path: 'src/feature.ts' } }),
-      env: {},
+      payload: { tool_input: { file_path: 'src/feature.ts' } },
+      identity: hookIdentity(),
     });
     expect(result.exitCode).toBe(0);
     expect(resolutions).toBe(1);

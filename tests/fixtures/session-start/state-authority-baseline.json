@@ -21,8 +21,9 @@
     "within_budget": true
   },
   "telemetry": {
-    "child_processes": 0,
-    "state_resolutions": 1,
-    "runtime_entries": 1
+    "session_id": "session-state-authority-baseline",
+    "exit_code": 0,
+    "blocked": false,
+    "reason": "ok"
   }
 }

@@ -1,8 +1,0 @@
-{
-  "version": 1,
-  "canonical_root": "assets/hooks",
-  "projection_target": ".ai/hooks",
-  "manifest": "assets/hooks/projection.json",
-  "digest": "sha256:5ae561be0b76182137686b800e242fd4abf998f613b53c669efefd48f676d125",
-  "file_count": 3
-}

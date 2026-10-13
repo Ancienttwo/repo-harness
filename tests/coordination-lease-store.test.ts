@@ -2239,7 +2239,7 @@ describe('exact cleanup and SessionStart worktree sweep', () => {
       const bundle = join(packageRoot, 'dist/hook-entry.js');
       const built = spawnSync(process.execPath, ['build', join(import.meta.dir, '../src/cli/hook-entry.ts'), '--target=bun', '--outfile', bundle, '--define', 'REPO_HARNESS_BUNDLED_CLI_VERSION="0.21.1"'], { encoding: 'utf8', env: f.env });
       expect(built.status, built.stderr).toBe(0);
-      const result = spawnSync(process.execPath, ['-e', `const {runHookEntry}=await import(${JSON.stringify(bundle)});process.exitCode=runHookEntry({event:'SessionStart',routeId:'default',input:'{}',worktreeSweepDeadlineMs:60000}).exitCode;`], {
+      const result = spawnSync(process.execPath, ['-e', `const {runHook}=await import(${JSON.stringify(bundle)});process.exitCode=runHook({event:'SessionStart',routeId:'default',input:'{}',worktreeSweepDeadlineMs:60000}).exitCode;`], {
         cwd: f.root, encoding: 'utf8', input: '{}', env: { ...f.env, HOOK_REPO_ROOT: f.root, HOOK_HOST: 'codex' },
       });
       expect(result.status).toBe(0); expect(result.stdout + result.stderr).toContain('removed=1');
@@ -2248,7 +2248,7 @@ describe('exact cleanup and SessionStart worktree sweep', () => {
       f.git('-C', f.path, 'commit', '--allow-empty', '-qm', 'recreated task');
       f.git('merge', '--ff-only', 'codex/demo'); f.git('update-ref', 'refs/remotes/origin/main', 'HEAD');
       rmSync(join(packageRoot, 'scripts/worktree-merge-lib.sh'));
-      const missing = spawnSync(process.execPath, ['-e', `const {runHookEntry}=await import(${JSON.stringify(bundle)});process.exitCode=runHookEntry({event:'SessionStart',routeId:'default',input:'{}',worktreeSweepDeadlineMs:60000}).exitCode;`], {
+      const missing = spawnSync(process.execPath, ['-e', `const {runHook}=await import(${JSON.stringify(bundle)});process.exitCode=runHook({event:'SessionStart',routeId:'default',input:'{}',worktreeSweepDeadlineMs:60000}).exitCode;`], {
         cwd: f.root, encoding: 'utf8', input: '{}', env: { ...f.env, HOOK_REPO_ROOT: f.root, HOOK_HOST: 'codex' },
       });
       expect(missing.status).toBe(0); expect(missing.stdout + missing.stderr).toContain('worktree merge library is unavailable');
@@ -2544,7 +2544,7 @@ exec /usr/bin/git "$@"
       mkdirSync(join(f.root, '.ai/harness'), { recursive: true });
       writeFileSync(join(f.root, '.ai/harness/workflow-contract.json'), '{}');
       f.git('update-ref', '-d', 'refs/remotes/origin/main');
-      const result = spawnSync(process.execPath, ['-e', `const {runHookEntry}=await import(${JSON.stringify(join(import.meta.dir, '../src/cli/hook-entry.ts'))});process.exitCode=runHookEntry({event:'SessionStart',routeId:'default',input:'{}',worktreeSweepDeadlineMs:60000}).exitCode;`], {
+      const result = spawnSync(process.execPath, ['-e', `const {runHook}=await import(${JSON.stringify(join(import.meta.dir, '../src/cli/hook-entry.ts'))});process.exitCode=runHook({event:'SessionStart',routeId:'default',input:'{}',worktreeSweepDeadlineMs:60000}).exitCode;`], {
         cwd: f.root, encoding: 'utf8', input: JSON.stringify({ cwd: f.root }), env: { ...f.env, HOOK_REPO_ROOT: f.root, HOOK_HOST: 'codex' },
       });
       expect(result.status).toBe(0); expect(result.stdout + result.stderr).toContain('worktree sweep skipped: local integration target is unavailable');

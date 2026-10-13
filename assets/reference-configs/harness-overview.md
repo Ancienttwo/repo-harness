@@ -113,18 +113,16 @@ The current evidence sources and their reader are:
 
 - `.ai/harness/runs/hook-events.jsonl` is the sole hook runtime telemetry
   authority. `src/cli/hook/runtime.ts` appends exactly one
-  `loop-engine-hook-event/v1` record per eligible handled host event. Typed
-  dispatch evidence contains one `in_process` handler step, direct
-  `child_processes: 0`, and no opaque steps. File/write metrics are only
-  authoritative at explicit observer boundaries; consumers inspect
-  `complete_metrics` and `incomplete_metrics` instead of treating zero as
-  proof of complete filesystem coverage. The telemetry append itself is
-  excluded from write amplification metrics and is non-authoritative: append
-  failure never changes hook safety.
-- `readHookEventTelemetry` in `src/cli/hook/event-telemetry.ts` reads the
-  active log and its owned archives. It validates records and reports malformed
-  input, mixed protocols, and duplicate event IDs. The HRD-08 measurement
-  script is retired. Its removal does not change runtime telemetry.
+  `loop-engine-hook-event/v2` record per eligible handled host event. The
+  record carries the payload identity (`session_id`, `run_id`, `turn_id`), the
+  exit code, `blocked`, `reason`, `elapsed_ms` and a semantic fingerprint. It
+  has no step or metric fields. `reason` separates a policy block (`blocked`)
+  from a thrown handler (`handler-failed`). The telemetry append is
+  non-authoritative: append failure never changes hook safety.
+- `readHookMetrics` in `scripts/run-harness-profile-benchmark.ts` reads the
+  active log and its owned archives. It rejects malformed records and records
+  from another protocol. The HRD-08 measurement script is retired. Its removal
+  does not change runtime telemetry.
 - `scripts/run-skill-evals.ts` for end-to-end benchmark duration, changed-file
   evidence, graders, and provider-structured usage. Claude single-result JSON
   and Codex JSONL are parsed independently. Raw output remains an artifact, and

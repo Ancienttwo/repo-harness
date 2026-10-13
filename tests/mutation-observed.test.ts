@@ -12,6 +12,7 @@ import {
   type PostEditJournalEvent,
 } from '../src/cli/hook/mutation-observed';
 import { GITIGNORE_MANAGED_BLOCK_CONTENT } from '../src/core/adoption/gitignore-plan';
+import { hookIdentity } from './helpers/hook-identity';
 
 // HRD-05 journal-schema + dirty-bit-derivation + crash-replay fixtures for
 // the in-process mutation-observed handler that replaces
@@ -57,8 +58,8 @@ function collectorFor(repoRoot: string, activePlan: string | null = null): Mutat
   };
 }
 
-function editPayload(filePath: string, extra: Record<string, unknown> = {}): string {
-  return JSON.stringify({ tool_input: { file_path: filePath }, ...extra });
+function editPayload(filePath: string, extra: Record<string, unknown> = {}): Record<string, unknown> {
+  return { tool_input: { file_path: filePath }, ...extra };
 }
 
 function pendingEvents(cwd: string): readonly PostEditJournalEvent[] {
@@ -114,7 +115,7 @@ describe('mutation-observed: non-qualifying edits', () => {
     const cwd = tmpWorkspace('mo-non-qualifying');
     try {
       initRepo(cwd);
-      const result = runMutationObserved({ collector: collectorFor(cwd), input: '{}' });
+      const result = runMutationObserved({ collector: collectorFor(cwd), payload: {}, identity: hookIdentity() });
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toBe('');
       expect(result.stderr).toBe('');
@@ -133,7 +134,8 @@ describe('mutation-observed: non-qualifying edits', () => {
       writeFileSync(join(outside, 'plans', 'session-plan.md'), '# host-side plan\n');
       const result = runMutationObserved({
         collector: collectorFor(cwd),
-        input: editPayload(join(outside, 'plans', 'session-plan.md')),
+        payload: editPayload(join(outside, 'plans', 'session-plan.md')),
+        identity: hookIdentity(),
       });
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toBe('');
@@ -151,7 +153,8 @@ describe('mutation-observed: non-qualifying edits', () => {
       initRepo(cwd);
       const result = runMutationObserved({
         collector: collectorFor(cwd),
-        input: editPayload('../escaped.md'),
+        payload: editPayload('../escaped.md'),
+        identity: hookIdentity(),
       });
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toBe('');
@@ -170,8 +173,8 @@ describe('mutation-observed: journal schema', () => {
       initRepo(cwd);
       const result = runMutationObserved({
         collector: collectorFor(cwd),
-        input: editPayload('src/example.ts'),
-        env: { HOOK_SESSION_ID: 'session-a', ...process.env },
+        payload: editPayload('src/example.ts'),
+        identity: hookIdentity({ sessionId: 'session-a' }),
       });
       expect(result.exitCode).toBe(0);
 
@@ -199,7 +202,7 @@ describe('mutation-observed: dirty-bit derivation', () => {
     const cwd = tmpWorkspace('mo-arch-bits');
     try {
       initRepo(cwd);
-      runMutationObserved({ collector: collectorFor(cwd), input: editPayload('src/unrelated.ts') });
+      runMutationObserved({ collector: collectorFor(cwd), payload: editPayload('src/unrelated.ts'), identity: hookIdentity() });
       const [event] = pendingEvents(cwd);
       // minimal-change is the only bit with a reader. The journal does not see
       // Bash or apply_patch writes, so it carries no capability or
@@ -221,7 +224,7 @@ describe('mutation-observed: dirty-bit derivation', () => {
       // payload must stay a no-op rather than grow a second path extractor.
       const result = runMutationObserved({
         collector: collectorFor(cwd),
-        input: JSON.stringify({
+        payload: {
           session_id: 'codex-fleet-session',
           hook_event_name: 'PostToolUse',
           tool_name: 'apply_patch',
@@ -238,7 +241,8 @@ describe('mutation-observed: dirty-bit derivation', () => {
               '',
             ].join('\n'),
           },
-        }),
+        },
+        identity: hookIdentity({ host: 'codex', sessionId: 'codex-fleet-session' }),
       });
 
       expect(result.exitCode).toBe(0);
@@ -260,8 +264,8 @@ describe('mutation-observed: dirty-bit derivation', () => {
       const planPath = writeActivePlan(cwd, contractPath);
       const collector = collectorFor(cwd, planPath);
 
-      runMutationObserved({ collector, input: editPayload('src/target.ts') });
-      runMutationObserved({ collector, input: editPayload('src/other.ts') });
+      runMutationObserved({ collector, payload: editPayload('src/target.ts'), identity: hookIdentity() });
+      runMutationObserved({ collector, payload: editPayload('src/other.ts'), identity: hookIdentity() });
 
       const events = pendingEvents(cwd);
       const targetEvent = events.find((e) => e.changed_paths.includes('src/target.ts'))!;
@@ -279,7 +283,7 @@ describe('mutation-observed: dirty-bit derivation', () => {
     const cwd = tmpWorkspace('mo-contract-bit-no-plan');
     try {
       initRepo(cwd);
-      runMutationObserved({ collector: collectorFor(cwd), input: editPayload('src/target.ts') });
+      runMutationObserved({ collector: collectorFor(cwd), payload: editPayload('src/target.ts'), identity: hookIdentity() });
       const [event] = pendingEvents(cwd);
       expect(event.dirty).not.toHaveProperty('contract-verification');
     } finally {
@@ -293,7 +297,7 @@ describe('mutation-observed: dirty-bit derivation', () => {
       initRepo(cwd);
 
       // No policy file at all -> disabled (mirrors minimal_change_post_edit_enabled()'s `[[ -f "$policy_file" ]] || return 1`).
-      runMutationObserved({ collector: collectorFor(cwd), input: editPayload('src/a.ts') });
+      runMutationObserved({ collector: collectorFor(cwd), payload: editPayload('src/a.ts'), identity: hookIdentity() });
       expect(pendingEvents(cwd).find((e) => e.changed_paths.includes('src/a.ts'))!.dirty['minimal-change']).toBe(false);
 
       mkdirSync(join(cwd, '.ai/harness'), { recursive: true });
@@ -306,7 +310,7 @@ describe('mutation-observed: dirty-bit derivation', () => {
         join(cwd, '.ai/harness/policy.json'),
         JSON.stringify({ minimal_change: { mode: 'advice', post_edit_observer: false } }, null, 2),
       );
-      runMutationObserved({ collector: collectorFor(cwd), input: editPayload('src/advice-only.ts') });
+      runMutationObserved({ collector: collectorFor(cwd), payload: editPayload('src/advice-only.ts'), identity: hookIdentity() });
       const adviceOnlyEvent = pendingEvents(cwd).find((e) => e.changed_paths.includes('src/advice-only.ts'))!;
       expect(adviceOnlyEvent.dirty['minimal-change']).toBe(false);
       expect(adviceOnlyEvent.payload.minimal_change).toBeUndefined();
@@ -315,7 +319,7 @@ describe('mutation-observed: dirty-bit derivation', () => {
         join(cwd, '.ai/harness/policy.json'),
         JSON.stringify({ minimal_change: { mode: 'advice', post_edit_observer: true } }, null, 2),
       );
-      runMutationObserved({ collector: collectorFor(cwd), input: editPayload('src/b.ts') });
+      runMutationObserved({ collector: collectorFor(cwd), payload: editPayload('src/b.ts'), identity: hookIdentity() });
       const enabledEvent = pendingEvents(cwd).find((e) => e.changed_paths.includes('src/b.ts'))!;
       expect(enabledEvent.dirty['minimal-change']).toBe(true);
       expect(enabledEvent.payload.minimal_change).toEqual({ path: 'src/b.ts', base_ref: 'HEAD' });
@@ -324,7 +328,7 @@ describe('mutation-observed: dirty-bit derivation', () => {
         join(cwd, '.ai/harness/policy.json'),
         JSON.stringify({ minimal_change: { mode: 'off', post_edit_observer: true } }, null, 2),
       );
-      runMutationObserved({ collector: collectorFor(cwd), input: editPayload('src/c.ts') });
+      runMutationObserved({ collector: collectorFor(cwd), payload: editPayload('src/c.ts'), identity: hookIdentity() });
       expect(pendingEvents(cwd).find((e) => e.changed_paths.includes('src/c.ts'))!.dirty['minimal-change']).toBe(false);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
@@ -346,7 +350,7 @@ describe('mutation-observed: dirty-bit derivation', () => {
         'tasks/notes/demo.notes.md',
       ];
       for (const path of paths) {
-        runMutationObserved({ collector, input: editPayload(path) });
+        runMutationObserved({ collector, payload: editPayload(path), identity: hookIdentity() });
       }
       const events = pendingEvents(cwd);
       for (const path of paths) {
@@ -365,8 +369,8 @@ describe('mutation-observed: session-scoped dedupe', () => {
     const cwd = tmpWorkspace('mo-coalesce');
     try {
       initRepo(cwd);
-      const env = { ...process.env, HOOK_SESSION_ID: 'session-x' };
-      runMutationObserved({ collector: collectorFor(cwd), input: editPayload('src/repeat.ts'), env });
+      const identity = hookIdentity({ sessionId: 'session-x' });
+      runMutationObserved({ collector: collectorFor(cwd), payload: editPayload('src/repeat.ts'), identity });
       const firstEvents = pendingEvents(cwd);
       expect(firstEvents.length).toBe(1);
       const firstEventId = firstEvents[0].event_id;
@@ -374,7 +378,7 @@ describe('mutation-observed: session-scoped dedupe', () => {
       const firstCreatedAt = firstEvents[0].created_at;
       const firstNames = readdirSync(join(cwd, '.ai/harness/journal/post-edit/pending'));
 
-      runMutationObserved({ collector: collectorFor(cwd), input: editPayload('src/repeat.ts'), env });
+      runMutationObserved({ collector: collectorFor(cwd), payload: editPayload('src/repeat.ts'), identity });
       const secondEvents = pendingEvents(cwd);
       expect(secondEvents.length).toBe(1);
       expect(readdirSync(join(cwd, '.ai/harness/journal/post-edit/pending'))).toEqual(firstNames);
@@ -391,11 +395,11 @@ describe('mutation-observed: session-scoped dedupe', () => {
     const cwd = tmpWorkspace('mo-new-delivery-after-ack');
     try {
       initRepo(cwd);
-      const env = { ...process.env, HOOK_SESSION_ID: 'session-x' };
-      runMutationObserved({ collector: collectorFor(cwd), input: editPayload('src/repeat.ts'), env });
+      const identity = hookIdentity({ sessionId: 'session-x' });
+      runMutationObserved({ collector: collectorFor(cwd), payload: editPayload('src/repeat.ts'), identity });
       const firstEventId = pendingEvents(cwd)[0].event_id;
-      consumePendingPostEditEvents(cwd, env);
-      runMutationObserved({ collector: collectorFor(cwd), input: editPayload('src/repeat.ts'), env });
+      consumePendingPostEditEvents(cwd, process.env);
+      runMutationObserved({ collector: collectorFor(cwd), payload: editPayload('src/repeat.ts'), identity });
       expect(pendingEvents(cwd)[0].event_id).not.toBe(firstEventId);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
@@ -408,13 +412,13 @@ describe('mutation-observed: session-scoped dedupe', () => {
       initRepo(cwd);
       runMutationObserved({
         collector: collectorFor(cwd),
-        input: editPayload('src/repeat.ts'),
-        env: { ...process.env, HOOK_SESSION_ID: 'session-a' },
+        payload: editPayload('src/repeat.ts'),
+        identity: hookIdentity({ sessionId: 'session-a' }),
       });
       runMutationObserved({
         collector: collectorFor(cwd),
-        input: editPayload('src/repeat.ts'),
-        env: { ...process.env, HOOK_SESSION_ID: 'session-b' },
+        payload: editPayload('src/repeat.ts'),
+        identity: hookIdentity({ sessionId: 'session-b' }),
       });
       expect(pendingEvents(cwd).length).toBe(2);
     } finally {
@@ -430,12 +434,12 @@ describe('mutation-observed: session-scoped dedupe', () => {
       writeContractWithExitCriteria(cwd, contractPath, 'tasks/todos.md');
       const planPath = writeActivePlan(cwd, contractPath);
       const collector = collectorFor(cwd, planPath);
-      const env = { ...process.env, HOOK_SESSION_ID: 'session-or' };
+      const identity = hookIdentity({ sessionId: 'session-or' });
 
       // First edit: policy disabled (minimal-change false). The path is a
       // task path referenced by the contract's exit_criteria, which no longer
       // adds a bit.
-      runMutationObserved({ collector, input: editPayload('tasks/todos.md'), env });
+      runMutationObserved({ collector, payload: editPayload('tasks/todos.md'), identity });
       let [event] = pendingEvents(cwd);
       expect(event.dirty).toEqual({ 'minimal-change': false });
 
@@ -447,13 +451,13 @@ describe('mutation-observed: session-scoped dedupe', () => {
         join(cwd, '.ai/harness/policy.json'),
         JSON.stringify({ minimal_change: { mode: 'advice', post_edit_observer: true } }, null, 2),
       );
-      runMutationObserved({ collector, input: editPayload('tasks/todos.md'), env });
+      runMutationObserved({ collector, payload: editPayload('tasks/todos.md'), identity });
       [event] = pendingEvents(cwd);
       expect(event.dirty).toEqual({ 'minimal-change': true });
 
       // A third edit with the policy disabled again keeps the earlier true bit.
       writeFileSync(join(cwd, '.ai/harness/policy.json'), JSON.stringify({ minimal_change: { mode: 'off' } }, null, 2));
-      runMutationObserved({ collector, input: editPayload('tasks/todos.md'), env });
+      runMutationObserved({ collector, payload: editPayload('tasks/todos.md'), identity });
       [event] = pendingEvents(cwd);
       expect(event.dirty).toEqual({ 'minimal-change': true });
     } finally {
@@ -467,7 +471,7 @@ describe('mutation-observed: crash-replay', () => {
     const cwd = tmpWorkspace('mo-crash-replay');
     try {
       initRepo(cwd);
-      const result = runMutationObserved({ collector: collectorFor(cwd), input: editPayload('src/crash.ts') });
+      const result = runMutationObserved({ collector: collectorFor(cwd), payload: editPayload('src/crash.ts'), identity: hookIdentity() });
       expect(result.exitCode).toBe(0);
 
       const beforePending = pendingEvents(cwd);
@@ -512,8 +516,8 @@ describe('mutation-observed: crash-replay', () => {
       const planPath = writeActivePlan(cwd, contractPath);
       const cli = join(cwd, 'record-cli.ts');
       writeFileSync(cli, String.raw`import { appendFileSync } from 'fs'; appendFileSync('calls.jsonl', JSON.stringify(process.argv.slice(2)) + '\n');`);
-      const env = { ...process.env, REPO_HARNESS_CLI: cli, HOOK_SESSION_ID: 'reader-only' };
-      runMutationObserved({ collector: collectorFor(cwd, planPath), input: editPayload(contractPath), env });
+      const env = { ...process.env, REPO_HARNESS_CLI: cli };
+      runMutationObserved({ collector: collectorFor(cwd, planPath), payload: editPayload(contractPath), identity: hookIdentity({ sessionId: 'reader-only' }) });
       consumePendingPostEditEvents(cwd, env);
       expect(existsSync(join(cwd, 'calls.jsonl'))).toBe(false);
     } finally {
@@ -536,7 +540,7 @@ describe('mutation-observed: crash-replay', () => {
     const cwd = tmpWorkspace('mo-corrupt-pending');
     try {
       initRepo(cwd);
-      runMutationObserved({ collector: collectorFor(cwd), input: editPayload('src/valid.ts') });
+      runMutationObserved({ collector: collectorFor(cwd), payload: editPayload('src/valid.ts'), identity: hookIdentity() });
       const validEventId = pendingEvents(cwd)[0].event_id;
 
       const pendingDir = join(cwd, '.ai/harness/journal/post-edit/pending');
@@ -583,19 +587,19 @@ describe('mutation-observed: effect failure contract', () => {
     try {
       initRepo(baselineRoot);
       initRepo(retryRoot);
-      const baselineEnv = { ...process.env, HOOK_SESSION_ID: 'effect-session' };
-      runMutationObserved({ collector: collectorFor(baselineRoot), input: editPayload('src/effect.ts'), env: baselineEnv });
+      const identity = hookIdentity({ sessionId: 'effect-session' });
+      runMutationObserved({ collector: collectorFor(baselineRoot), payload: editPayload('src/effect.ts'), identity });
       const baseline = pendingEvents(baselineRoot)[0];
 
       expect(() => runMutationObserved({
         collector: collectorFor(retryRoot),
-        input: editPayload('src/effect.ts'),
-        env: baselineEnv,
+        payload: editPayload('src/effect.ts'),
+        identity,
         afterJournalWrite: () => { throw new Error('fault after journal commit'); },
       })).toThrow('fault after journal commit');
       expect(pendingEvents(retryRoot)).toHaveLength(1);
 
-      runMutationObserved({ collector: collectorFor(retryRoot), input: editPayload('src/effect.ts'), env: baselineEnv });
+      runMutationObserved({ collector: collectorFor(retryRoot), payload: editPayload('src/effect.ts'), identity });
       const retried = pendingEvents(retryRoot)[0];
       expect(retried).toMatchObject({
         schema: baseline.schema,
@@ -620,8 +624,9 @@ describe('mutation-observed: effect failure contract', () => {
       let observed = 0;
       const result = runMutationObserved({
         collector: collectorFor(cwd),
-        input: '{}',
+        payload: {},
         afterJournalWrite: () => { observed += 1; },
+        identity: hookIdentity(),
       });
       expect(result.exitCode).toBe(0);
       expect(observed).toBe(0);
@@ -635,7 +640,7 @@ describe('mutation-observed: advisory stdout parity', () => {
     const cwd = tmpWorkspace('mo-advisories-no-hooksdir');
     try {
       initRepo(cwd);
-      const result = runMutationObserved({ collector: collectorFor(cwd), input: editPayload('deploy/sql/0001.sql') });
+      const result = runMutationObserved({ collector: collectorFor(cwd), payload: editPayload('deploy/sql/0001.sql'), identity: hookIdentity() });
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain('[DeployAsset] Deployment operations asset changed: deploy/sql/0001.sql');
       expect(result.stdout).toContain('operations.deploy_sql');
@@ -654,7 +659,7 @@ describe('mutation-observed: advisory stdout parity', () => {
       git(cwd, ['commit', '-m', 'add tracked source']);
       writeFileSync(join(cwd, 'src/compat.ts'), 'export const stable = true;\n// legacy-shim must be removed\n');
 
-      const result = runMutationObserved({ collector: collectorFor(cwd), input: editPayload('src/compat.ts') });
+      const result = runMutationObserved({ collector: collectorFor(cwd), payload: editPayload('src/compat.ts'), identity: hookIdentity() });
 
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain('[FirstPrinciples] Compatibility debt additions detected in src/compat.ts');
@@ -671,16 +676,16 @@ describe('mutation-observed: advisory stdout parity', () => {
       initRepo(cwd);
       const collector = collectorFor(cwd);
       for (const path of ['turbo.json', 'packages/core/package.json', 'packages/core/src/feature/index.ts', 'apps/web/src/page.ts', 'packages/core/tsconfig.json']) {
-        const legacy = runMutationObserved({ collector, input: editPayload(path) });
+        const legacy = runMutationObserved({ collector, payload: editPayload(path), identity: hookIdentity() });
         expect(legacy.stdout).not.toContain('[DocDrift]');
         expect(legacy.stdout).not.toContain('docs/architecture.md');
         expect(legacy.stdout).not.toContain('docs/packages.md');
       }
 
-      const metro = runMutationObserved({ collector, input: editPayload('metro.config.js') });
+      const metro = runMutationObserved({ collector, payload: editPayload('metro.config.js'), identity: hookIdentity() });
       expect(metro.stdout).not.toContain('[DocDrift]');
 
-      const wrangler = runMutationObserved({ collector, input: editPayload('apps/api/wrangler.staging.toml') });
+      const wrangler = runMutationObserved({ collector, payload: editPayload('apps/api/wrangler.staging.toml'), identity: hookIdentity() });
       expect(wrangler.stdout).toContain('[DocDrift] Wrangler config changed: wrangler.staging.toml');
     } finally {
       rmSync(cwd, { recursive: true, force: true });
@@ -697,7 +702,7 @@ describe('mutation-observed: gitignore coverage (gate round-1 second widening)',
       git(cwd, ['add', '.gitignore']);
       git(cwd, ['commit', '-m', 'add managed gitignore block']);
 
-      runMutationObserved({ collector: collectorFor(cwd), input: editPayload('src/tracked.ts') });
+      runMutationObserved({ collector: collectorFor(cwd), payload: editPayload('src/tracked.ts'), identity: hookIdentity() });
       const [event] = pendingEvents(cwd);
       expect(event).toBeDefined();
       const eventPath = `.ai/harness/journal/post-edit/pending/${event.event_id}.json`;
@@ -762,7 +767,8 @@ describe("mutation does not author acceptance evidence", () => {
       };
       const result = runMutationObserved({
         collector,
-        input: JSON.stringify({ tool_input: { file_path: "src/target.ts" } }),
+        payload: { tool_input: { file_path: "src/target.ts" } },
+        identity: hookIdentity(),
       });
       expect(result.exitCode).toBe(0);
 

@@ -98,9 +98,8 @@ describe("recovery-materializer: determinism", () => {
 
   test("a different injected clock changes the rendered generated-at text (and, since the display timestamp is part of the hashed body, its content_hash) but not the rest of the workflow-context fields", () => {
     withTempRepo("recovery-determinism-clock", (repoRoot) => {
-      const env = { HOOK_RUN_ID: "fixed-run-id" };
-      const contextA = buildRecoveryContext(repoRoot, null, env, { reason: "unit-test", now: FIXED_NOW });
-      const contextB = buildRecoveryContext(repoRoot, null, env, { reason: "unit-test", now: () => new Date("2026-07-23T00:00:00.000Z") });
+      const contextA = buildRecoveryContext(repoRoot, null, {}, { reason: "unit-test", now: FIXED_NOW, runId: "fixed-run-id" });
+      const contextB = buildRecoveryContext(repoRoot, null, {}, { reason: "unit-test", now: () => new Date("2026-07-23T00:00:00.000Z"), runId: "fixed-run-id" });
       const evidence = resolveRecoveryEvidence(repoRoot);
 
       const handoffA = renderRecoveryHandoff(contextA, evidence, "");
@@ -285,7 +284,6 @@ describe("recovery-view-cli.ts: standalone end-to-end", () => {
 
 describe("no-independent-authoring: the retired writers carry zero content assembly", () => {
   const CANDIDATE_FILES = [
-    ".ai/hooks/lib/workflow-state.sh",
     "assets/hooks/lib/workflow-state.sh",
     "scripts/codex-handoff-resume.sh",
     "assets/templates/helpers/codex-handoff-resume.sh",

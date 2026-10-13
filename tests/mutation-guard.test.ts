@@ -4,11 +4,11 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { spawnSync } from 'child_process';
 import { runMutationGuard, type MutationGuardCollector } from '../src/cli/hook/mutation-guard';
+import { resolveHookEffectiveState } from '../src/cli/hook/runtime';
 import { createStateInputCollector } from '../src/effects/loop/state-input-collector';
-import { resolveEffectiveState } from '../src/effects/state/resolve-effective-state';
 import { buildReviewSubject } from '../src/effects/review/diff-fingerprint';
-import type { EffectiveState } from '../src/core/state/types';
 import type { WorkflowProfile } from '../src/core/workflow/profile';
+import { hookIdentity } from './helpers/hook-identity';
 import {
   beginLeaseCompletionRecord,
   bindLeaseRecord,
@@ -168,37 +168,27 @@ function installPublicationGuardFixture(state: 'completing' | 'reviewing'): Publ
 
 /** Builds a real, non-mocked collector: same `resolveEffectiveState` authority production wiring uses. */
 function buildCollector(repoRoot: string, explicitOverride?: WorkflowProfile): MutationGuardCollector {
+  const env = explicitOverride ? { REPO_HARNESS_WORKFLOW_PROFILE: explicitOverride } : {};
   return createStateInputCollector({
-    event: 'PreToolUse',
     repoRoot,
-    resolveSessionEffectiveState: () => null,
-    resolvePreEditEffectiveState: (targetPaths: readonly string[]): EffectiveState | null => {
-      try {
-        return resolveEffectiveState(repoRoot, Date.now(), {
-          targetPaths,
-          operationKind: 'edit',
-          explicitOverride,
-        });
-      } catch {
-        return null;
-      }
-    },
+    resolveEffectiveState: (targetPaths) =>
+      resolveHookEffectiveState(repoRoot, 'PreToolUse', targetPaths, env, Date.now()),
   });
 }
 
 function invoke(
   cwd: string,
-  payload: unknown,
-  options: { readonly env?: NodeJS.ProcessEnv; readonly profile?: WorkflowProfile } = {},
+  payload: Record<string, unknown>,
+  options: { readonly profile?: WorkflowProfile } = {},
 ) {
   return runMutationGuard({
     collector: buildCollector(cwd, options.profile),
-    input: JSON.stringify(payload),
-    env: options.env ?? {},
+    payload,
+    identity: hookIdentity(),
   });
 }
 
-function edit(cwd: string, filePath: string, options: { readonly env?: NodeJS.ProcessEnv; readonly profile?: WorkflowProfile } = {}) {
+function edit(cwd: string, filePath: string, options: { readonly profile?: WorkflowProfile } = {}) {
   return invoke(cwd, { tool_input: { file_path: filePath } }, options);
 }
 
@@ -222,9 +212,7 @@ describe('mutation boundaries after workflow cutover', () => {
       initRepo(cwd); writePolicy(cwd);
       mkdirSync(join(cwd, '.claude'), { recursive: true });
       writeFileSync(join(cwd, '.claude/.require-worktree'), '');
-      const result = edit(cwd, 'src/security/feature.ts', { profile: 'high', env: {
-        HOOK_HOST: 'claude', REPO_HARNESS_MAIN_LOOP_EDIT_GUARD: '1', REPO_HARNESS_EDIT_PLAN_GATE: 'enforce',
-      } });
+      const result = edit(cwd, 'src/security/feature.ts', { profile: 'high' });
       expect(result.exitCode).toBe(0);
       expect(result.stdout).not.toContain('action":"block');
     } finally { rmSync(cwd, { recursive: true, force: true }); }
@@ -265,11 +253,11 @@ describe('mutation boundaries after workflow cutover', () => {
       for (const filePath of refused) {
         const result = hostEdit(cwd, home, { file_path: filePath });
         expect({ filePath, status: result.status }).toEqual({ filePath, status: 2 });
-        expect(result.stdout).toMatch(/\[(RepoScopeGuard|OpsPrivateGuard|ExternalReferenceGuard)\]/);
+        expect(result.stderr).toMatch(/\[(RepoScopeGuard|OpsPrivateGuard|ExternalReferenceGuard)\]/);
       }
       const patched = hostEdit(cwd, home, { command: `*** Begin Patch\n*** Add File: ${cwd}/src/../_ops/secret.env\n+secret\n*** End Patch` });
       expect(patched.status).toBe(2);
-      expect(patched.stdout).toContain('[RepoScopeGuard]');
+      expect(patched.stderr).toContain('[RepoScopeGuard]');
 
       const external = hostEdit(cwd, home, { file_path: `${outside}/notes.md` });
       expect(external.status).toBe(0);
@@ -381,9 +369,16 @@ describe('mutation boundaries after workflow cutover', () => {
     try {
       initRepo(cwd);
       const collector = buildCollector(cwd);
-      const result = runMutationGuard({ collector: { ...collector, getPreEditEffectiveState() { throw new Error('unstable'); } },
-        input: JSON.stringify({ tool_input: { file_path: 'src/feature.ts' } }), env: {} });
-      expect(result.exitCode).toBe(0); expect(result.stdout).toContain('State unavailable');
+      const result = runMutationGuard({
+        collector: {
+          ...collector,
+          getEffectiveState: () => ({ ok: false, reason_code: 'state_resolution_unstable', error_hash: 'sha256:fixture', message: 'unstable' }),
+        },
+        payload: { tool_input: { file_path: 'src/feature.ts' } },
+        identity: hookIdentity(),
+      });
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain('State unavailable (state_resolution_unstable sha256:fixture): unstable');
     } finally { rmSync(cwd, { recursive: true, force: true }); }
   });
   test('unparseable patch fails closed and a private target stops the batch', () => {

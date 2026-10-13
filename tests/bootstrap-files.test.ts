@@ -487,11 +487,8 @@ describe("Bootstrap Script Contracts", () => {
     expect(runtime).toContain("getHandlerForRoute");
     expect(runtime).toContain("runHook");
     expect(runtime).not.toContain("route.scripts");
-    expect(hookInput).toContain("export function parseHookInput");
-    expect(hookInput).toContain("getApplyPatchPaths");
-    expect(workflowState).toContain("git status --porcelain=v1");
+    expect(hookInput).toContain("export function parseHookPayload");
     expect(workflowState).toContain("tasks/todos.md");
-    expect(workflowState).toContain("workflow_hook_cli_json");
   });
 
   // SSD-06 migration: the two live shell-embedded provider skills

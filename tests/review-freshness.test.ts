@@ -8,7 +8,6 @@ import {
   buildReviewSubject,
   splitNul,
 } from '../src/effects/review/diff-fingerprint';
-import { runReviewSubjectCli } from '../src/cli/hook/review-subject';
 
 function tmpRepo(prefix: string): string {
   const cwd = mkdtempSync(join(tmpdir(), `${prefix}-`));
@@ -382,13 +381,5 @@ describe('review subject', () => {
     const clean = { degraded: false };
     splitNul(Buffer.from('src/ok.ts ', 'utf-8'), clean);
     expect(clean.degraded).toBe(false);
-  });
-
-  test('CLI is fail-open for malformed arguments', () => {
-    const result = runReviewSubjectCli(['--format', 'text']);
-
-    expect(result.exitCode).toBe(0);
-    expect(result.stdout).toBe('');
-    expect(result.stderr).toContain('repo-harness-hook review-subject');
   });
 });

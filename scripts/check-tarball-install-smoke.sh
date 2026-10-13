@@ -49,7 +49,6 @@ const entry = Array.isArray(pack) ? pack[0] : pack;
 const files = new Set((entry.files ?? []).map((file) => file.path));
 const required = [
   "assets/hooks/lib/workflow-state.sh",
-  "assets/hooks/projection.json",
   "src/cli/hook/handler-registry.ts",
   "src/cli/hook/route-registry.ts",
   "src/cli/hook/runtime.ts",
@@ -499,8 +498,6 @@ if ! grep -qx 'sprint: plans/sprints/20991231-2359-tarball-root.sprint.md' "$TMP
   cat "$TMP_DIR/sprint-status.txt" >&2
   exit 1
 fi
-
-printf '{"prompt":"review release readiness"}\n' | "$HOOK" prompt-guard-decide >/dev/null
 
 (cd "$TARGET_REPO" && printf '{"prompt":"inspect repository state"}\n' | \
   HOOK_REPO_ROOT="$TARGET_REPO" \

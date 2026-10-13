@@ -11,10 +11,10 @@ import { join } from "path";
 import { spawnSync } from "child_process";
 import { runMutationGuard, type MutationGuardCollector } from "../src/cli/hook/mutation-guard";
 import { runPromptHandler } from "../src/cli/hook/prompt-handler";
+import { resolveHookEffectiveState } from "../src/cli/hook/runtime";
 import { createStateInputCollector } from "../src/effects/loop/state-input-collector";
-import { resolveEffectiveState } from "../src/effects/state/resolve-effective-state";
-import type { EffectiveState } from "../src/core/state/types";
 import type { WorkflowProfile } from "../src/core/workflow/profile";
+import { hookIdentity } from "./helpers/hook-identity";
 
 // Some fixtures resolve full effective state and can exceed the default under
 // parallel session load.
@@ -27,33 +27,23 @@ setDefaultTimeout(20000);
 // pattern tests/mutation-guard.test.ts uses. Prompt protocol checks likewise
 // call the typed prompt handler directly.
 function mutationGuardCollector(repoRoot: string, explicitOverride?: WorkflowProfile): MutationGuardCollector {
+  const env = explicitOverride ? { REPO_HARNESS_WORKFLOW_PROFILE: explicitOverride } : {};
   return createStateInputCollector({
-    event: "PreToolUse",
     repoRoot,
-    resolveSessionEffectiveState: () => null,
-    resolvePreEditEffectiveState: (targetPaths: readonly string[]): EffectiveState | null => {
-      try {
-        return resolveEffectiveState(repoRoot, Date.now(), {
-          targetPaths,
-          operationKind: "edit",
-          explicitOverride,
-        });
-      } catch {
-        return null;
-      }
-    },
+    resolveEffectiveState: (targetPaths) =>
+      resolveHookEffectiveState(repoRoot, "PreToolUse", targetPaths, env, Date.now()),
   });
 }
 
 function runEditHandler(
   cwd: string,
-  payload: unknown,
-  options: { readonly env?: NodeJS.ProcessEnv; readonly profile?: WorkflowProfile } = {},
+  payload: Record<string, unknown>,
+  options: { readonly profile?: WorkflowProfile } = {},
 ): { status: number; stdout: string; stderr: string } {
   const result = runMutationGuard({
     collector: mutationGuardCollector(cwd, options.profile),
-    input: JSON.stringify(payload),
-    env: options.env ?? {},
+    payload,
+    identity: hookIdentity(),
   });
   return { status: result.exitCode, stdout: result.stdout, stderr: result.stderr };
 }
@@ -208,9 +198,9 @@ describe("Claude Code hook protocol compliance", () => {
       writeActivePlan(cwd, "plans/plan-20260528-1300-demo.md");
 
       // Ordinary prompt/edit routes observe workflow state without gating on it.
-      const promptRes = runPromptHandler({ repoRoot: cwd, input: JSON.stringify({ user_message: "/execute" }) });
+      const promptRes = runPromptHandler({ payload: { user_message: "/execute" } });
       expect(promptRes.exitCode).toBe(0);
-      expect(promptRes.stdout).toContain("[OperationBoundaries]");
+      expect(promptRes.additionalContext).toContain("[OperationBoundaries]");
 
       // Real malformed capability authority remains visible in Effective State
       // and edit advice; it cannot become an ordinary edit permission gate.
@@ -254,10 +244,10 @@ describe("Claude Code hook protocol compliance", () => {
       );
       writeActivePlan(cwd, "plans/plan-20260528-1400-demo.md");
 
-      const res = runPromptHandler({ repoRoot: cwd, input: JSON.stringify({ user_message: "done" }) });
+      const res = runPromptHandler({ payload: { user_message: "done" } });
       expect(res.exitCode).toBe(0);
-      expect(res.stdout).toBe("");
-      expect(res.stderr).toBe("");
+      expect(res.additionalContext).toBeUndefined();
+      expect(res.diagnostics).toBeUndefined();
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

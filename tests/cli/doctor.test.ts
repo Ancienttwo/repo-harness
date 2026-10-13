@@ -748,16 +748,3 @@ describe('legacy workflow-state diagnostic', () => {
     }));
   }, DOCTOR_CHECK_TIMEOUT_MS);
 });
-
-test('doctor preserves the source checkout self-host library without migration warnings', () => {
-  withTempHome(() => withEnv({ PATH: '/usr/bin:/bin', REPO_HARNESS_CHECK_UPDATES: '0' }, () => {
-    const root = path.join(import.meta.dir, '../..');
-    const library = path.join(root, '.ai/hooks/lib/workflow-state.sh');
-    const before = fs.readFileSync(library, 'utf8');
-    const check = runDoctor(root).checks.find((check) => check.id === 'legacy-workflow-state');
-    expect(check?.status).toBe('na');
-    expect(check?.detail).toContain('self-host');
-    expect(check?.detail).not.toContain('remove');
-    expect(fs.readFileSync(library, 'utf8')).toBe(before);
-  }));
-}, DOCTOR_CHECK_TIMEOUT_MS);

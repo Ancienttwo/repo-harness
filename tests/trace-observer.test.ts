@@ -15,7 +15,27 @@ import {
 } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { runTraceObserver, type TraceObserverFs } from '../src/cli/hook/trace-observer';
+import { runTraceObserver, type TraceObserverDependencies, type TraceObserverFs } from '../src/cli/hook/trace-observer';
+import type { HookPayload } from '../src/cli/hook/hook-input';
+import type { RouteHost } from '../src/cli/hook/route-registry';
+import { resolveHookIdentity } from '../src/cli/hook/run-identity';
+
+/** The observer with the identity the runtime resolves for this payload. */
+function observe(opts: {
+  readonly repoRoot: string;
+  readonly payload: HookPayload;
+  readonly host?: RouteHost;
+  readonly env?: NodeJS.ProcessEnv;
+  readonly dependencies?: TraceObserverDependencies;
+}) {
+  return runTraceObserver({
+    repoRoot: opts.repoRoot,
+    payload: opts.payload,
+    identity: resolveHookIdentity(opts.repoRoot, 'PostToolUse', opts.payload, opts.host ?? 'claude'),
+    env: opts.env ?? {},
+    dependencies: opts.dependencies,
+  });
+}
 
 function workspace(prefix: string): string {
   return realpathSync(mkdtempSync(join(tmpdir(), `${prefix}-`)));
@@ -35,9 +55,9 @@ describe('runTraceObserver', () => {
   test('appends one structured trace record and preserves host attribution', () => {
     const repoRoot = workspace('trace-observer');
     try {
-      const result = runTraceObserver({
+      const result = observe({
         repoRoot,
-        input: JSON.stringify({
+        payload: {
           hook_event_name: 'PostToolUse',
           tool_name: 'Read',
           source: 'claude-code',
@@ -45,12 +65,8 @@ describe('runTraceObserver', () => {
           duration_ms: 42,
           tool_input: { file_path: 'src/demo.ts' },
           tool_response: { exit_code: 0 },
-        }),
-        env: {
-          CLAUDE_AGENT_NAME: 'main-claude',
-          CLAUDE_SESSION_ID: 'session-1',
-          CLAUDE_SESSION_SOURCE: 'claude-code',
         },
+        env: { CLAUDE_AGENT_NAME: 'main-claude' },
         dependencies: { now: () => new Date('2026-07-21T12:34:56.000Z') },
       });
       expect(result.exitCode).toBe(0);
@@ -77,9 +93,9 @@ describe('runTraceObserver', () => {
   test('emits the plan annotation advisory and marks CodeGraph use without a second observer', () => {
     const repoRoot = workspace('trace-observer-plan');
     try {
-      const result = runTraceObserver({
+      const result = observe({
         repoRoot,
-        input: JSON.stringify({ hook_event_name: 'PostToolUse', tool_name: 'mcp__codegraph__context', session_id: 'codex-session' }),
+        payload: { hook_event_name: 'PostToolUse', tool_name: 'mcp__codegraph__context', session_id: 'codex-session' },
         env: {},
         dependencies: {
           runGit: () => ' M plans/plan-20260721-1200-example.md\n',
@@ -90,9 +106,9 @@ describe('runTraceObserver', () => {
       expect(result.stdout).toBe('');
       expect(existsSync(join(repoRoot, '.claude/.codegraph-state/codex-session.used'))).toBe(true);
 
-      const annotation = runTraceObserver({
+      const annotation = observe({
         repoRoot,
-        input: JSON.stringify({ hook_event_name: 'PostToolUse', tool_name: 'apply_patch', session_id: 'codex-session' }),
+        payload: { hook_event_name: 'PostToolUse', tool_name: 'apply_patch', session_id: 'codex-session' },
         env: {},
         dependencies: { runGit: () => ' M plans/plan-20260721-1200-example.md\n' },
       });
@@ -108,9 +124,9 @@ describe('runTraceObserver', () => {
   test('persists the resolved session key and keeps observer state free of context-budget side effects', () => {
     const repoRoot = workspace('trace-observer-session-state');
     try {
-      const first = runTraceObserver({
+      const first = observe({
         repoRoot,
-        input: JSON.stringify({ hook_event_name: 'PostToolUse', tool_name: 'Read' }),
+        payload: { hook_event_name: 'PostToolUse', tool_name: 'Read' },
         env: {},
         dependencies: { now: () => new Date('2026-07-21T12:34:56.000Z') },
       });
@@ -119,9 +135,9 @@ describe('runTraceObserver', () => {
       const session = readFileSync(sessionFile, 'utf8').trim();
       expect(session).toMatch(/^session-2026-07-21T12:34:56\.000Z-/);
 
-      const second = runTraceObserver({
+      const second = observe({
         repoRoot,
-        input: JSON.stringify({ hook_event_name: 'PostToolUse', tool_name: 'Read' }),
+        payload: { hook_event_name: 'PostToolUse', tool_name: 'Read' },
         env: {},
         dependencies: { now: () => new Date('2026-07-21T12:35:56.000Z') },
       });
@@ -136,21 +152,22 @@ describe('runTraceObserver', () => {
     }
   });
 
-  test('preserves nested tool response fields, path normalization, and explicit run-id precedence', () => {
+  test('preserves nested tool response fields, path normalization, and payload run-id precedence', () => {
     const repoRoot = workspace('trace-observer-fields');
     try {
-      const result = runTraceObserver({
+      const result = observe({
         repoRoot,
-        input: JSON.stringify({
+        payload: {
           hook_event_name: 'PostToolUse',
           tool_name: 'Read',
           file_path: join(repoRoot, 'src/demo.ts'),
+          session_id: 'session-fields',
           run_id: 'input-run',
           exit_code: 3,
           duration_ms: 4,
           tool_response: { exit_code: 7, duration_ms: 12 },
-        }),
-        env: { HOOK_RUN_ID: 'env-run', CLAUDE_SESSION_ID: 'session-fields' },
+        },
+        env: {},
       });
       expect(result.exitCode).toBe(0);
       expect(traceRecords(repoRoot)[0]).toMatchObject({
@@ -159,7 +176,7 @@ describe('runTraceObserver', () => {
         file_path: 'src/demo.ts',
         exit_code: 7,
         duration_ms: 4,
-        run_id: 'env-run',
+        run_id: 'input-run',
         session_key: 'session-fields',
       });
     } finally {
@@ -167,24 +184,25 @@ describe('runTraceObserver', () => {
     }
   });
 
-  test('keeps outside-repo absolute paths unchanged and unknown host attribution explicit', () => {
+  test('keeps outside-repo absolute paths unchanged and attributes the resolved host', () => {
     const repoRoot = workspace('trace-observer-paths');
     try {
-      const result = runTraceObserver({
+      const result = observe({
         repoRoot,
-        input: JSON.stringify({
+        payload: {
           hook_event_name: 'PostToolUse',
           tool_name: 'Read',
           file_path: '/var/tmp/external.txt',
           session_id: 'external-session',
           source: 'other-host',
-        }),
+        },
+        host: 'codex',
         env: {},
       });
       expect(result.exitCode).toBe(0);
       expect(traceRecords(repoRoot)[0]).toMatchObject({
         file_path: '/var/tmp/external.txt',
-        host: 'unknown',
+        host: 'codex',
         session_key: 'external-session',
         session_source: 'other-host',
         agent_name: 'unknown',
@@ -198,18 +216,18 @@ describe('runTraceObserver', () => {
     const repoRoot = workspace('trace-observer-codegraph');
     try {
       const gitCalls: string[][] = [];
-      const ordinary = runTraceObserver({
+      const ordinary = observe({
         repoRoot,
-        input: JSON.stringify({ hook_event_name: 'PostToolUse', tool_name: 'Read', session_id: 'session ordinary' }),
+        payload: { hook_event_name: 'PostToolUse', tool_name: 'Read', session_id: 'session ordinary' },
         env: {},
         dependencies: { runGit: (args) => { gitCalls.push([...args]); return ''; } },
       });
       expect(ordinary.exitCode).toBe(0);
       expect(gitCalls).toEqual([]);
 
-      const codegraph = runTraceObserver({
+      const codegraph = observe({
         repoRoot,
-        input: JSON.stringify({ hook_event_name: 'PostToolUse', tool_name: 'mcp__codegraph__context', session_id: 'session/ordinary' }),
+        payload: { hook_event_name: 'PostToolUse', tool_name: 'mcp__codegraph__context', session_id: 'session/ordinary' },
         env: {},
       });
       expect(codegraph.exitCode).toBe(0);
@@ -227,9 +245,9 @@ describe('runTraceObserver', () => {
       const oldRecords = Array.from({ length: 10001 }, (_, index) => JSON.stringify({ legacy: index })).join('\n') + '\n';
       writeFileSync(join(repoRoot, '.claude/.trace.jsonl'), oldRecords);
 
-      const result = runTraceObserver({
+      const result = observe({
         repoRoot,
-        input: JSON.stringify({ hook_event_name: 'PostToolUse', tool_name: 'Read', session_id: 'rotation-session' }),
+        payload: { hook_event_name: 'PostToolUse', tool_name: 'Read', session_id: 'rotation-session' },
         env: {},
       });
       expect(result.exitCode).toBe(0);
@@ -269,7 +287,8 @@ describe('runTraceObserver', () => {
       };
       const result = runTraceObserver({
         repoRoot: process.env.REPO_ROOT,
-        input: JSON.stringify({ hook_event_name: 'PostToolUse', tool_name: 'Read', session_id: process.env.WRITER_SESSION }),
+        payload: { hook_event_name: 'PostToolUse', tool_name: 'Read', session_id: process.env.WRITER_SESSION },
+        identity: { host: 'claude', sessionId: process.env.WRITER_SESSION, runId: null, turnId: null },
         env: {},
         dependencies: { fs: fsApi },
       });
@@ -281,7 +300,8 @@ describe('runTraceObserver', () => {
       fs.writeFileSync(process.env.START_SIGNAL, 'start\\n');
       const result = runTraceObserver({
         repoRoot: process.env.REPO_ROOT,
-        input: JSON.stringify({ hook_event_name: 'PostToolUse', tool_name: 'Read', session_id: process.env.WRITER_SESSION }),
+        payload: { hook_event_name: 'PostToolUse', tool_name: 'Read', session_id: process.env.WRITER_SESSION },
+        identity: { host: 'claude', sessionId: process.env.WRITER_SESSION, runId: null, turnId: null },
         env: {},
       });
       process.stdout.write(JSON.stringify(result));
@@ -337,9 +357,9 @@ describe('runTraceObserver', () => {
         await waitForFile(readSignal, writerA);
 
         // A holds its stale 10001-line snapshot. B runs to completion now.
-        const writerB = runTraceObserver({
+        const writerB = observe({
           repoRoot,
-          input: JSON.stringify({ hook_event_name: 'PostToolUse', tool_name: 'Read', session_id: 'writer-b' }),
+          payload: { hook_event_name: 'PostToolUse', tool_name: 'Read', session_id: 'writer-b' },
           env: {},
         });
 
@@ -399,9 +419,9 @@ describe('runTraceObserver', () => {
   test('suppresses annotation when git status fails but still records the observer event', () => {
     const repoRoot = workspace('trace-observer-git-error');
     try {
-      const result = runTraceObserver({
+      const result = observe({
         repoRoot,
-        input: JSON.stringify({ hook_event_name: 'PostToolUse', tool_name: 'apply_patch', session_id: 'session-git-error' }),
+        payload: { hook_event_name: 'PostToolUse', tool_name: 'apply_patch', session_id: 'session-git-error' },
         env: {},
         dependencies: { runGit: () => { throw new Error('git unavailable'); } },
       });
@@ -412,19 +432,9 @@ describe('runTraceObserver', () => {
     }
   });
 
-  test('reports malformed payloads and append failures without invoking a legacy shell dispatcher', () => {
+  test('reports append failures without invoking a legacy shell dispatcher', () => {
     const repoRoot = workspace('trace-observer-errors');
     try {
-      const malformed = runTraceObserver({
-        repoRoot,
-        input: 'not json',
-        env: {},
-        dependencies: { now: () => new Date('2026-07-21T12:34:56.000Z') },
-      });
-      expect(malformed.exitCode).toBe(0);
-      expect(malformed.stderr).toContain('[HookInput] WARN');
-      expect(traceRecords(repoRoot)).toHaveLength(1);
-
       const fsApi: TraceObserverFs = {
         existsSync: () => false,
         readFileSync: () => '',
@@ -434,9 +444,9 @@ describe('runTraceObserver', () => {
         writeFileSync: () => undefined,
         appendFileSync: () => { throw new Error('trace disk full'); },
       };
-      const failed = runTraceObserver({
+      const failed = observe({
         repoRoot,
-        input: JSON.stringify({ hook_event_name: 'PostToolUse', tool_name: 'Read' }),
+        payload: { hook_event_name: 'PostToolUse', tool_name: 'Read' },
         env: {},
         dependencies: { fs: fsApi },
       });

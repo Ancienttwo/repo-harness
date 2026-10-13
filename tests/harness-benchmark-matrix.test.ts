@@ -598,13 +598,10 @@ describe('No Harness / Lite / Strict benchmark authority', () => {
       mkdirSync(runs, { recursive: true });
       writeFileSync(join(runs, 'hook-invocations.jsonl'), '{"protocol":1,"duration_ms":999}\n');
       writeFileSync(join(runs, 'hook-events.jsonl'), `${JSON.stringify({
-        protocol: 'loop-engine-hook-event/v1', kind: 'hook_event', event_id: 'event-1',
+        protocol: 'loop-engine-hook-event/v2', event_id: 'event-1',
         started_at: '2026-07-21T00:00:00.000Z', completed_at: '2026-07-21T00:00:00.100Z',
-        host: null, session_id: null, run_id: null, turn_id: null,
-        event: 'PreToolUse', route_id: 'edit', exit_code: 0, blocked: false, result_reason: 'ok', runtime_entries: 1,
-        steps: [{ name: 'handler', execution: 'in_process', started_at: '2026-07-21T00:00:00.000Z', elapsed_ms: 100, exit_code: 0, output_bytes: 0 }],
-        metrics: { state_resolutions: 1, child_processes: 0, files_read: 1, files_written: 0, durable_writes: 0, write_transactions: 0, full_projection_writes: 0, event_writes: 0, elapsed_ms: 100 },
-        measurement: { complete: true, complete_metrics: ['runtime_entries', 'state_resolutions', 'child_processes', 'files_read', 'files_written', 'durable_writes', 'write_transactions', 'full_projection_writes', 'event_writes', 'elapsed_ms'], incomplete_metrics: [], opaque_steps: [] },
+        host: 'claude', session_id: null, run_id: null, turn_id: null,
+        event: 'PreToolUse', route_id: 'edit', exit_code: 0, blocked: false, reason: 'ok', elapsed_ms: 100,
         fingerprint: `sha256:${'0'.repeat(64)}`,
       })}\n`);
       expect(readHookMetrics(dir)).toHaveLength(1);
