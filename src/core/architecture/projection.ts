@@ -14,9 +14,9 @@ import projectionResultSchema from 'archctx-contracts/schemas/runtime/projection
 import projectionReadbackSchema from 'archctx-contracts/schemas/runtime/projection-apply-readback.schema.json';
 import docsAnchorsSchema from 'archctx-contracts/schemas/runtime/docs-anchors.schema.json';
 import type { GeneratedSummaryFreshness } from './module-view';
-import packageManifest from '../../../package.json';
+import { dependencies } from '../../../package.json';
 
-export const ARCHCTX_REQUIRED_VERSION = packageManifest.dependencies.archctx;
+export const ARCHCTX_REQUIRED_VERSION = dependencies.archctx;
 
 export type ProjectionProvider = 'disabled' | 'archctx';
 export type ProjectionApplyMode = 'disabled' | 'manual';
