@@ -66,8 +66,8 @@ test('Windows propagates unreadable file metadata without a caller fallback', ()
 
 const nativeWindows = process.platform === 'win32' ? test : test.skip;
 // The first gh.exe launch on a fresh Windows runner is a cold start. CI measured
-// 3.2 s to 5.8 s for that launch and 80-110 ms for later launches, with or
-// without the hostile variables (#664). The budgets cover the cold start only.
+// 3.2 s to more than 10 s for that launch and 80-110 ms for later launches, with
+// or without the hostile variables (#664). The budgets cover the cold start only.
 const COLD_GH_LAUNCH_MS = 45_000;
 nativeWindows('native Windows executes the preinstalled fixed gh with hostile caller environment', () => {
   const module = fileURLToPath(new URL('../../src/effects/runtime/protected-helper-platform.ts', import.meta.url));
