@@ -60,10 +60,10 @@ function listFiles(dir: string, exts: readonly string[]): string[] {
 }
 
 describe("residue scan: epc-retired-surfaces.json is well-formed", () => {
-  test("carries the frozen schema, the four sweep roots, and at least the EPC-05/07/08 deletion union (8 surfaces)", () => {
+  test("carries the frozen schema, the three sweep roots, and at least the EPC-05/07/08 deletion union (8 surfaces)", () => {
     const data = loadRetiredSurfaces();
     expect(data.schema).toBe("repo-harness-epc-retired-surfaces.v1");
-    expect(data.scan_roots).toEqual(["src", "scripts", ".ai/hooks", "assets"]);
+    expect(data.scan_roots).toEqual(["src", "scripts", "assets"]);
     expect(data.scan_extensions).toEqual([".ts", ".sh"]);
     expect(data.surfaces.length).toBeGreaterThanOrEqual(8);
 
@@ -90,7 +90,7 @@ describe("residue scan: epc-retired-surfaces.json is well-formed", () => {
   });
 });
 
-describe("residue scan: zero unexcepted hits across src/, scripts/, .ai/hooks/, assets/", () => {
+describe("residue scan: zero unexcepted hits across src/, scripts/, assets/", () => {
   test("no retired surface's pattern matches outside its documented allowed_exceptions", () => {
     const data = loadRetiredSurfaces();
     const files: string[] = [];
@@ -132,10 +132,8 @@ describe("residue scan: direct re-assertion of each named retired surface", () =
   });
 
   test("workflow-state.sh no longer bootstraps checks/latest.json with {} (EPC-05)", () => {
-    const text = readFileSync(join(REPO_ROOT, ".ai/hooks/lib/workflow-state.sh"), "utf-8");
+    const text = readFileSync(join(REPO_ROOT, "assets/hooks/lib/workflow-state.sh"), "utf-8");
     expect(text).not.toMatch(/printf "\{\}\\n" > "\$\(workflow_checks_file\)"/);
-    const mirror = readFileSync(join(REPO_ROOT, "assets/hooks/lib/workflow-state.sh"), "utf-8");
-    expect(mirror).not.toMatch(/printf "\{\}\\n" > "\$\(workflow_checks_file\)"/);
   });
 
   test("mutation-observed.ts never resolves or refers to the retired checks report", () => {
@@ -146,7 +144,7 @@ describe("residue scan: direct re-assertion of each named retired surface", () =
   });
 
   test("workflow_write_handoff is a thin invoker with no heredoc content assembly (EPC-07)", () => {
-    const text = readFileSync(join(REPO_ROOT, ".ai/hooks/lib/workflow-state.sh"), "utf-8");
+    const text = readFileSync(join(REPO_ROOT, "assets/hooks/lib/workflow-state.sh"), "utf-8");
     expect(text).not.toContain("<<EOF_HANDOFF");
     expect(text).not.toContain("<<EOF_RESUME");
     expect(text).not.toContain("generated-by: workflow_write_handoff v1");
@@ -168,7 +166,7 @@ describe("residue scan: direct re-assertion of each named retired surface", () =
   });
 
   test("workflow_ensure_harness_surface no longer bootstraps handoff/resume placeholders (EPC-07)", () => {
-    const text = readFileSync(join(REPO_ROOT, ".ai/hooks/lib/workflow-state.sh"), "utf-8");
+    const text = readFileSync(join(REPO_ROOT, "assets/hooks/lib/workflow-state.sh"), "utf-8");
     const start = text.indexOf("workflow_ensure_harness_surface() {");
     expect(start).toBeGreaterThan(-1);
     const end = text.indexOf("\n}\n", start);

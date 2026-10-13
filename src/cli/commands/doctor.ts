@@ -23,7 +23,6 @@ import { runSecurityScan, type SecurityScanReport } from './security';
 import { isOptIn, resolveRepoRoot } from '../hook/runtime';
 import { getHandlerForRoute } from '../hook/handler-registry';
 import { ROUTES } from '../hook/route-registry';
-import { isRepoHarnessSourceCheckout } from '../../core/adoption/source-checkout';
 
 const TRUST_STATE_LINE = /^\[hooks\.state\."[^"]+\/\.codex\/hooks\.json:/;
 const PACKAGE_NAME = 'repo-harness';
@@ -604,9 +603,6 @@ function checkLegacyWorkflowState(cwd: string): DoctorCheckResult {
   const describe = 'Repository operator library uses the installed package';
   const repoRoot = resolveRepoRoot(cwd);
   if (!repoRoot) return { id, describe, status: 'na', detail: 'not in a git repository' };
-  if (isRepoHarnessSourceCheckout(repoRoot)) {
-    return { id, describe, status: 'na', detail: 'source checkout keeps its self-host operator library' };
-  }
   const legacy = path.join(repoRoot, '.ai/hooks/lib/workflow-state.sh');
   try {
     fs.lstatSync(legacy);

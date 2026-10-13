@@ -4,13 +4,11 @@ import {
   mkdtempSync,
   mkdirSync,
   readFileSync,
-  readdirSync,
   rmSync,
-  statSync,
   writeFileSync,
 } from "fs";
 import { tmpdir } from "os";
-import { join, relative } from "path";
+import { join } from "path";
 import { spawnSync } from "child_process";
 import { inspectRepo } from "../scripts/inspect-project-state";
 import { planAdoption } from "../src/core/adoption/plan";
@@ -21,23 +19,6 @@ import { captureGitVirtualTreeSnapshot } from "../src/effects/evidence/verificat
 import { hashManagedTree } from "../src/cli/installer/install-profile";
 
 const ROOT = join(import.meta.dir, "..");
-
-function collectFiles(root: string, current = root): string[] {
-  const entries = readdirSync(current).sort();
-  const files: string[] = [];
-
-  for (const entry of entries) {
-    const fullPath = join(current, entry);
-    const relPath = `./${relative(root, fullPath)}`.replaceAll("\\", "/");
-    if (statSync(fullPath).isDirectory()) {
-      files.push(...collectFiles(root, fullPath));
-      continue;
-    }
-    files.push(relPath);
-  }
-
-  return files;
-}
 
 describe("workflow contract manifest", () => {
   test("registers the closed cutover closure protocol", () => {
@@ -59,24 +40,6 @@ describe("workflow contract manifest", () => {
     const runtime = readFileSync(join(ROOT, ".ai/harness/workflow-contract.json"), "utf-8");
     expect(runtime).toBe(renderWorkflowContractMarker());
     expect(JSON.parse(runtime)).toEqual({ kind: "repo-harness.workflow-contract-marker", protocol: 1 });
-  });
-
-  test("hook asset files should stay in projection parity with self-hosted .ai/hooks", () => {
-    const manifest = JSON.parse(
-      readFileSync(join(ROOT, "assets/hooks/projection.json"), "utf-8"),
-    ) as { package_only: string[]; repo_only: string[] };
-    const packageOnly = new Set(manifest.package_only.map((file) => `./${file}`));
-    const repoOnly = new Set(manifest.repo_only.map((file) => `./${file}`));
-    const assetFiles = collectFiles(join(ROOT, "assets/hooks")).filter((file) => !packageOnly.has(file));
-    const runtimeFiles = collectFiles(join(ROOT, ".ai/hooks")).filter((file) => file !== "./.projection.json");
-
-    expect(runtimeFiles.filter((file) => !repoOnly.has(file))).toEqual(assetFiles);
-
-    for (const relPath of assetFiles) {
-      const assetContent = readFileSync(join(ROOT, "assets/hooks", relPath.slice(2)), "utf-8");
-      const runtimeContent = readFileSync(join(ROOT, ".ai/hooks", relPath.slice(2)), "utf-8");
-      expect(runtimeContent).toBe(assetContent);
-    }
   });
 
   test("each real delegated runner owns one boundary for its own brief protocol", () => {

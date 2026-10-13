@@ -173,7 +173,6 @@
     "tests/hook-recursive-copy.test.ts": 69.91,
     "tests/hook-runtime-characterization.test.ts": 1973.2,
     "tests/hook-runtime.test.ts": 1634.51,
-    "tests/hook-source-projection.test.ts": 93.26,
     "tests/init-project.settings.runtime.test.ts": 1139.57,
     "tests/initializer-question-pack.test.ts": 1.9,
     "tests/install-agent-fleet.test.ts": 7376.44,

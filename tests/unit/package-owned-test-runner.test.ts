@@ -122,7 +122,7 @@ function runVerifier(root: string, contract: string): VerificationResult {
       encoding: 'utf-8',
       env: {
         ...process.env,
-        REPO_HARNESS_WORKFLOW_STATE_LIB: join(ROOT, '.ai/hooks/lib/workflow-state.sh'),
+        REPO_HARNESS_WORKFLOW_STATE_LIB: join(ROOT, 'assets/hooks/lib/workflow-state.sh'),
       },
     },
   );

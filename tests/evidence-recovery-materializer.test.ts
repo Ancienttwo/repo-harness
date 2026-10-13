@@ -285,7 +285,6 @@ describe("recovery-view-cli.ts: standalone end-to-end", () => {
 
 describe("no-independent-authoring: the retired writers carry zero content assembly", () => {
   const CANDIDATE_FILES = [
-    ".ai/hooks/lib/workflow-state.sh",
     "assets/hooks/lib/workflow-state.sh",
     "scripts/codex-handoff-resume.sh",
     "assets/templates/helpers/codex-handoff-resume.sh",

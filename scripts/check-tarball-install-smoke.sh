@@ -49,7 +49,6 @@ const entry = Array.isArray(pack) ? pack[0] : pack;
 const files = new Set((entry.files ?? []).map((file) => file.path));
 const required = [
   "assets/hooks/lib/workflow-state.sh",
-  "assets/hooks/projection.json",
   "src/cli/hook/handler-registry.ts",
   "src/cli/hook/route-registry.ts",
   "src/cli/hook/runtime.ts",

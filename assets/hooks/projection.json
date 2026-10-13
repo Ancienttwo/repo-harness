@@ -1,9 +1,0 @@
-{
-  "version": 1,
-  "canonical_root": "assets/hooks",
-  "projection_target": ".ai/hooks",
-  "package_only": [
-    "projection.json"
-  ],
-  "repo_only": []
-}

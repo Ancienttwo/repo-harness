@@ -59,9 +59,6 @@ if [[ "$lane" != functional ]]; then
   echo "[ci] state boundaries"
   bun run check:state-boundaries
 
-  echo "[ci] hook projection"
-  bun run check:hooks
-
   echo "[ci] helper projection"
   bun run check:helpers
 

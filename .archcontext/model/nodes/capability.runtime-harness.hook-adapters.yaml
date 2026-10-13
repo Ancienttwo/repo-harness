@@ -12,7 +12,6 @@ responsibilities:
 source:
   include:
     - "assets/hooks/**"
-    - ".ai/hooks/**"
     - "src/cli/installer/**"
     - "src/cli/hook/**"
     - "src/cli/hook-entry.ts"
@@ -27,7 +26,6 @@ source:
     - "src/cli/commands/security.ts"
     - "src/cli/commands/hook.ts"
     - "src/cli/commands/prompt-guard-decision.ts"
-    - "scripts/sync-hook-sources.ts"
   entrypoints:
     - id: entrypoint.hook-adapters.primary
       path: "src/cli/hook/runtime.ts"

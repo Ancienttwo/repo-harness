@@ -106,8 +106,7 @@ function readMap(repo: string): { discoverable_contexts: ContextEntry[] } {
 
 /**
  * Clean fixture: two capability nodes (one nested, one root-facing), a nested
- * contract pair on disk, a root contract pair that must never be mapped, and a
- * generated-projection contract under the declared projection target.
+ * contract pair on disk, and a root contract pair that must never be mapped.
  */
 function makeFixture(): string {
   const repo = mkdtempSync(join(tmpdir(), "check-context-map-"));
@@ -132,16 +131,6 @@ function makeFixture(): string {
   write(repo, "pkg/AGENTS.md", contractFile("pkg"));
   write(repo, "CLAUDE.md", contractFile("README.md"));
   write(repo, "AGENTS.md", contractFile("README.md"));
-  write(
-    repo,
-    "assets/hooks/projection.json",
-    `${JSON.stringify(
-      { version: 1, canonical_root: "assets/hooks", projection_target: ".ai/hooks", package_only: [], repo_only: [] },
-      null,
-      2,
-    )}\n`,
-  );
-  write(repo, ".ai/hooks/CLAUDE.md", contractFile("assets/hooks"));
   write(
     repo,
     ".archcontext/model/nodes/capability.alpha.one.yaml",
@@ -196,7 +185,7 @@ function withFixture(body: (repo: string) => void): void {
 }
 
 describe("check-context-map", () => {
-  test("passes on a clean map and exempts the declared generated projection", () => {
+  test("passes on a clean map", () => {
     withFixture((repo) => {
       const result = runCheck(repo);
       expect(result.output).not.toContain("unmapped_contract");
@@ -319,15 +308,6 @@ describe("check-context-map", () => {
       const result = runCheck(repo);
       expect(result.status).toBe(1);
       expect(result.output).toContain("unmapped_contract extra/CLAUDE.md");
-    });
-  }, 30_000);
-
-  test("stops exempting the projection target when the manifest no longer declares it", () => {
-    withFixture((repo) => {
-      rmSync(join(repo, "assets/hooks/projection.json"));
-      const result = runCheck(repo);
-      expect(result.status).toBe(1);
-      expect(result.output).toContain("unmapped_contract .ai/hooks/CLAUDE.md");
     });
   }, 30_000);
 

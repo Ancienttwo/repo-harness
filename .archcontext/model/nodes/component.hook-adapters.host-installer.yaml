@@ -16,12 +16,10 @@ source:
     - "src/pi/extension.ts"
     - "src/pi/hook-bridge.ts"
     - "assets/hooks/**"
-    - ".ai/hooks/**"
     - "src/cli/commands/install.ts"
     - "src/cli/commands/status.ts"
     - "src/cli/commands/security.ts"
     - "src/cli/commands/hook.ts"
-    - "scripts/sync-hook-sources.ts"
   entrypoints:
     - id: entrypoint.hook-adapters.managed-entries
       path: "src/cli/installer/managed-entries.ts"

@@ -86,7 +86,7 @@ function fixture(name: string, checks: unknown[]): { root: string; counter: stri
   mkdirSync(join(root, ".ai", "hooks", "lib"), { recursive: true });
   mkdirSync(join(root, "tasks", "contracts"), { recursive: true });
   symlinkSync(join(ROOT, "src"), join(root, "src"), "dir");
-  cpSync(join(ROOT, ".ai", "hooks", "lib", "workflow-state.sh"), join(root, ".ai", "hooks", "lib", "workflow-state.sh"));
+  cpSync(join(ROOT, "assets", "hooks", "lib", "workflow-state.sh"), join(root, ".ai", "hooks", "lib", "workflow-state.sh"));
   for (const destination of [join(root, "scripts"), join(root, "assets", "templates", "helpers")]) {
     cpSync(join(ROOT, "scripts", "verification-plan.ts"), join(destination, "verification-plan.ts"));
   }
