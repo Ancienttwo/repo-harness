@@ -211,6 +211,9 @@ export class ArchctxClient {
     if (result.stdout.trim() === '') throw new Error(`${label} failed: exit ${result.status}: ${result.stderr.trim()}`);
     const value = parseJson(result.stdout, label);
     if (args[0] === 'capabilities' && result.status === 0) return value;
+    // Daemon lifecycle readback is not a request-scoped command and carries no
+    // requestId; its caller validates the lifecycle envelope itself.
+    if (args[0] === 'daemon' && result.status === 0) return value;
     if (!isRecord(value) || value.schemaVersion !== 'archcontext.envelope/v1' || typeof value.ok !== 'boolean' || typeof value.requestId !== 'string') throw new Error(`${label} returned an invalid envelope`);
     if (value.ok === false) {
       const error = decodeArchctxError(value.error);
