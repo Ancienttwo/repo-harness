@@ -523,6 +523,20 @@ not rewrite Bash commands, require RTK, or suggest compression for failed
 commands. Failed command output stays raw so test, build, and review evidence is
 not hidden by a compressor.
 
+## Recommended Frontend and Design Resources
+
+These resources are optional. repo-harness does not install, detect or update
+them. Read the upstream README and license before you add one to a project.
+
+| Repo | Use it for | License |
+| --- | --- | --- |
+| [`shader-effects-inc/shaders`](https://github.com/shader-effects-inc/shaders) | WebGPU shader components for React, Vue, Svelte, Solid, plain JavaScript and Framer | MIT |
+| [`VoltAgent/awesome-design-md`](https://github.com/VoltAgent/awesome-design-md) | `DESIGN.md` files from popular brand design systems. Put one in a project, and coding agents make UI that matches it | MIT |
+
+The user selects a `DESIGN.md`. The agent does not select one. A selected file
+is a decided direction, so [design options](design-options.md) do not apply to
+it.
+
 ## External Verification Evidence
 
 Runtime-heavy projects often prove work outside normal source files and unit
