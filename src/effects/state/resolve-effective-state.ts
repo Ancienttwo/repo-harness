@@ -79,7 +79,7 @@ const POLICY_PATH = '.ai/harness/policy.json';
 // profile_reasons names at most this many unowned paths; the count reason carries the total.
 const UNOWNED_PATH_REASON_LIMIT = 20;
 
-type WorkflowPolicy = Readonly<Record<string, unknown>> | null;
+export type WorkflowPolicy = Readonly<Record<string, unknown>> | null;
 const POLICY_FIELD_ABSENT = Symbol('policy-field-absent');
 
 export interface EffectiveStatePublicationEffects {
@@ -87,7 +87,7 @@ export interface EffectiveStatePublicationEffects {
   readonly version?: StateVersionWriteEffects;
 }
 
-function readWorkflowPolicy(cwd: string, readSource = (path: string) => readText(cwd, path)): WorkflowPolicy {
+export function readWorkflowPolicy(cwd: string, readSource = (path: string) => readText(cwd, path)): WorkflowPolicy {
   const text = readSource(POLICY_PATH);
   if (text === null) return null;
   let parsed: unknown;
@@ -204,7 +204,7 @@ function validateWorkflowPolicy(policy: WorkflowPolicy): void {
  * and is therefore inert under `archcontext` -- the adoption seeders keep
  * writing it as a default for registry-mode repos.
  */
-function capabilitySourceMode(policy: WorkflowPolicy): CapabilitySourceMode {
+export function capabilitySourceMode(policy: WorkflowPolicy): CapabilitySourceMode {
   const value = policyValue(policy, '.context.capability_source');
   if (value === POLICY_FIELD_ABSENT) return 'registry';
   if (typeof value === 'string' && (CAPABILITY_SOURCE_MODES as readonly string[]).includes(value)) {
@@ -375,7 +375,7 @@ function invalidArchcontextAuthority(code: CapabilityRegistryDiagnostic['code'],
 }
 
 /** Under `archcontext` the policy switch is the declaration: missing or unreadable nodes are `invalid`, never `absent`. */
-function loadArchcontextAuthority(cwd: string, readSource: (path: string) => string | null): ArchcontextCapabilityResolution {
+export function loadArchcontextAuthority(cwd: string, readSource: (path: string) => string | null): ArchcontextCapabilityResolution {
   const nodePaths = archcontextNodePaths(cwd);
   if (nodePaths.length === 0) {
     return invalidArchcontextAuthority('REGISTRY_MISSING', CAPABILITY_NODES_DIR, `capability nodes are missing: ${CAPABILITY_NODES_DIR}`);
@@ -393,7 +393,7 @@ function loadArchcontextAuthority(cwd: string, readSource: (path: string) => str
   return capabilityRegistryFromArchcontextNodes(files, { repoRoot: cwd });
 }
 
-function loadRegistryAuthority(cwd: string, policy: WorkflowPolicy, readSource: (path: string) => string | null): CapabilityRegistryResolution {
+export function loadRegistryAuthority(cwd: string, policy: WorkflowPolicy, readSource: (path: string) => string | null): CapabilityRegistryResolution {
   const text = readSource(CAPABILITY_REGISTRY_PATH);
   return parseCapabilityRegistry(text && text.length > 0 ? text : null, {
     declared: policyDeclaresCapabilityRegistry(policy),

@@ -9,6 +9,13 @@ capability-specific addition to that preflight).
 
 ## Protocol
 
+Read `.ai/harness/policy.json#context.capability_source` first. The steps below
+apply to `registry`. Under `archcontext`, `capability-config add` refuses to
+write. Add the capability through an archctx ChangeSet in
+`repo-harness-architecture` instead. To move a registry repository to
+ArchContext, follow "Adopt ArchContext in a repository" in that skill's worker
+reference.
+
 1. For each selected prefix, run `bun scripts/capability-config.ts add --repo <repo> --prefix <path>`.
 2. Add explicit `--id`, `--domain`, `--name`, and `--verification-hint` values when the inferred names would be unclear.
 3. Verify with `bun scripts/capability-resolver.ts validate --repo <repo> --format text` and `bun scripts/capability-resolver.ts match --repo <repo> --path <path> --format json`.

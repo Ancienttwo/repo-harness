@@ -9,6 +9,7 @@ import { adoptionTemplateFile } from "./manifest-templates";
 import { gitignoreManagedBlockOperation } from "./gitignore-plan";
 import { managedBlockNeedsUpdate } from "./managed-block";
 import { renderWorkflowContractMarker } from "./workflow-contract-asset";
+import { minimumHarnessVersionOf } from "./minimum-harness-version";
 import { planLegacyLeftovers, stripLegacyHookEntries } from "../upgrade/legacy-inventory";
 
 const ASSET_ROOT = join(import.meta.dir, "..", "..", "..", "assets");
@@ -410,6 +411,23 @@ export function defaultPolicy(documentationProfile: string, documentationLanguag
   };
 }
 
+/**
+ * Adoption rewrites the marker but keeps a declared minimum harness version.
+ * A marker that is not JSON is replaced as before. An invalid declared value
+ * fails the plan.
+ */
+function declaredMinimumHarnessVersion(markerText: string | undefined): string | undefined {
+  if (markerText === undefined) return undefined;
+  let marker: unknown;
+  try {
+    marker = JSON.parse(markerText);
+  } catch {
+    return undefined;
+  }
+  if (!marker || typeof marker !== "object" || Array.isArray(marker)) return undefined;
+  return minimumHarnessVersionOf(marker) ?? undefined;
+}
+
 function rootContextContent(): string {
   return `# Repo Agent Context
 
@@ -422,6 +440,7 @@ This is the root routing contract for Claude Code and Codex. Load this before ta
 - Treat \`docs/spec.md\` as product truth; \`tasks/current.md\` is derived state and \`tasks/todos.md\` is the deferred-goal ledger.
 - Write a plan before cross-module changes, architecture changes, and dependency upgrades. Small changes do not need a plan.
 - Read \`.ai/context/capabilities.json\` and \`.ai/context/context-map.json\` before adding scoped agent context.
+- When a branch changes a capability's responsibility, entrypoints, relations or flows, run \`repo-harness architecture-projection check --json\` before review and follow \`repo-harness-architecture\` (\`assets/skill-commands/repo-harness-architecture/references/worker.md\` in the installed \`repo-harness\` skill: \`~/.claude/skills/repo-harness/\` or \`~/.codex/skills/repo-harness/\`).
 - Write human-facing documents (\`docs/\`, \`plans/prds/\`, design briefs) in the language set by \`.ai/harness/policy.json#documentation.language\`; keep section headers, field keys, and technical terms in English. Agent-facing artifacts stay English.
 - Keep \`_ref/\` ignored external reference material and \`_ops/\` ignored local operations state.
 `;
@@ -776,7 +795,7 @@ export function planStandardAdoption(opts: StandardPlanOptions): { operations: A
     operations.push(writeOperation(opts.repoRoot, file.path, file.content, file.reason, { ifMissing: true }));
   }
   addTodoMigrations(opts.repoRoot, operations);
-  operations.push(writeOperation(opts.repoRoot, ".ai/harness/workflow-contract.json", renderWorkflowContractMarker(), "Install the repo-harness opt-in marker"));
+  operations.push(writeOperation(opts.repoRoot, ".ai/harness/workflow-contract.json", renderWorkflowContractMarker(declaredMinimumHarnessVersion(fileContent(opts.repoRoot, ".ai/harness/workflow-contract.json"))), "Install the repo-harness opt-in marker"));
 
   const gitignore = fileContent(opts.repoRoot, ".gitignore") ?? "";
   const gitignoreOperation = gitignoreManagedBlockOperation("planned");

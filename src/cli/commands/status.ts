@@ -305,6 +305,7 @@ export function formatStatus(report: StatusReport, asJson = false): string {
       lines.push(`  provider: ${report.architectureProjection.projectionProvider.provider} (${report.architectureProjection.projectionProvider.state})`);
       lines.push(`  code facts: ${report.architectureProjection.codeFacts.state}`);
       lines.push(`  apply: ${report.architectureProjection.apply.mode}`);
+      if (report.architectureProjection.next) lines.push(`  next: ${report.architectureProjection.next}`);
     }
   }
   return lines.join('\n');

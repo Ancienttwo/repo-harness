@@ -281,9 +281,9 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
   });
 
   describe("referenceOnlySkillPackages (cli-reference packages, never profile-gated)", () => {
-    test("repo-harness-setup and repo-harness-architecture are always reachable regardless of profile", () => {
+    test("repo-harness-setup is always reachable regardless of profile", () => {
       const names = referenceOnlySkillPackages(catalog).map((e) => e.name).sort();
-      expect(names).toEqual(["repo-harness-architecture", "repo-harness-setup"]);
+      expect(names).toEqual(["repo-harness-setup"]);
     });
   });
 
@@ -507,11 +507,11 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
       expect(report.metrics.double_trigger).toEqual({ count: 0, denominator: 68, rate: 0 });
       expect(report.metrics.provider_error_count).toBe(0);
       expect(report.discovered_surface.map((d) => d.name).sort()).toEqual(
-        ["obsidian-memory", "repo-harness", "repo-harness-check", "repo-harness-chatgpt", "repo-harness-cross-review", "repo-harness-product", "repo-harness-ship", "repo-harness-strategy", "repo-harness-test", "windows-python-first"].sort(),
+        ["obsidian-memory", "repo-harness", "repo-harness-architecture", "repo-harness-check", "repo-harness-chatgpt", "repo-harness-cross-review", "repo-harness-product", "repo-harness-ship", "repo-harness-strategy", "repo-harness-test", "windows-python-first"].sort(),
       );
     }, 30_000);
 
-    test("minimal/claude excludes product, ship, and cross-review from scoring", () => {
+    test("minimal/claude excludes product, ship, architecture, and cross-review from scoring", () => {
       const reportPath = tmpReportPath("minimal-perfect");
       const report = runProviderEval({
         profile: "minimal",
@@ -524,7 +524,8 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
       expect(report.metrics.per_route_recall["repo-harness-product"]).toEqual({ numerator: 0, denominator: 0, rate: null, reachable: false });
       expect(report.metrics.per_route_recall["repo-harness-ship"]).toEqual({ numerator: 0, denominator: 0, rate: null, reachable: false });
       expect(report.metrics.per_route_recall["repo-harness-cross-review"]).toEqual({ numerator: 0, denominator: 0, rate: null, reachable: false });
-      expect(report.metrics.excluded_unreachable_count).toBe(12);
+      expect(report.metrics.per_route_recall["repo-harness-architecture"]).toEqual({ numerator: 0, denominator: 0, rate: null, reachable: false });
+      expect(report.metrics.excluded_unreachable_count).toBe(16);
     }, 30_000);
 
     test("host-awareness changes nothing about route scoring for full", () => {
@@ -637,8 +638,8 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
       const productRecords = report.records.filter((r) => r.expected_route === "repo-harness-product");
       expect(productRecords).toHaveLength(4);
       expect(productRecords.every((r) => r.excluded_unreachable === true)).toBe(true);
-      expect(report.records.filter((r) => r.excluded_unreachable === true)).toHaveLength(12);
-      expect(report.metrics.excluded_unreachable_count).toBe(12);
+      expect(report.records.filter((r) => r.excluded_unreachable === true)).toHaveLength(16);
+      expect(report.metrics.excluded_unreachable_count).toBe(16);
 
       expect(report.thresholds.per_route_recall["repo-harness-product"]).toEqual({
         floor: 0.9,

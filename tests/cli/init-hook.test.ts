@@ -9,7 +9,7 @@ import {
   runInitHook,
   type ToolingReport,
 } from '../../src/cli/commands/init-hook';
-import type { DoctorReport } from '../../src/cli/commands/doctor';
+import { runDoctor, type DoctorReport } from '../../src/cli/commands/doctor';
 import type { StatusReport } from '../../src/cli/commands/status';
 import { planAdoption } from '../../src/core/adoption/plan';
 import { applyAdoptionPlan } from '../../src/effects/fs-transaction';
@@ -400,6 +400,33 @@ describe('init-hook command', () => {
           expect(report.status).toBe('attention');
         }
       }
+    });
+  });
+
+  test('the update check fails when this runtime cannot serve the repository model', () => {
+    withTempHome((home, repo) => {
+      mkdirSync(join(home, '.codex'), { recursive: true });
+      writeFileSync(join(home, '.codex', 'AGENTS.md'), '# Global Working Rules\n');
+      spawnSync('git', ['init', '-q'], { cwd: repo });
+      mkdirSync(join(repo, '.ai', 'harness'), { recursive: true });
+      writeFileSync(join(repo, '.ai', 'harness', 'workflow-contract.json'), `${JSON.stringify({ minimum_harness_version: '999.0.0' })}\n`);
+      // The real doctor check, projected through the update check.
+      const registry = runDoctor(repo, 'codex').checks.find((entry) => entry.id === 'capability-registry')!;
+
+      const report = runInitHook({
+        cwd: repo,
+        target: 'codex',
+        checkUpdates: true,
+        env: { ...process.env, HOME: home },
+        statusReport: baseStatusReport(),
+        doctorReport: baseDoctorReport([registry]),
+        toolingReport: baseToolingReport(),
+      });
+
+      const check = report.checks.find((entry) => entry.id === 'doctor.capability-registry');
+      expect(check?.status).toBe('fail');
+      expect(check?.detail).toContain('This repository needs repo-harness >= 999.0.0;');
+      expect(report.summary.fail).toBeGreaterThanOrEqual(1);
     });
   });
 

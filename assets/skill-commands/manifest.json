@@ -137,12 +137,14 @@
         "claude",
         "codex"
       ],
-      "profiles": [],
-      "discoverability": "cli-reference",
+      "profiles": [
+        "full"
+      ],
+      "discoverability": "explicit-only",
       "component": "adaptive-workflow",
       "requires": [],
       "mutatesRepoByDefault": true,
-      "summary": "Inspects or updates an assigned architecture model, document or Mermaid diagram without refreshing the harness. A real responsibility change goes through a model ChangeSet and archctx projection. Router-only or explicit install; never implied by another profile.",
+      "summary": "Inspects or updates an assigned architecture model, document or Mermaid diagram without refreshing the harness. A real responsibility change goes through a model ChangeSet and archctx projection. The full profile installs it; agents load it explicitly.",
       "retirementCandidate": null,
       "audience": "worker"
     },
@@ -451,6 +453,7 @@
         "repo-harness-test",
         "repo-harness-product",
         "repo-harness-ship",
+        "repo-harness-architecture",
         "obsidian-memory",
         "windows-python-first"
       ]
