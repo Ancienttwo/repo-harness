@@ -243,6 +243,17 @@ describe('pure Effective State projection', () => {
     );
   });
 
+  test('an archctx error envelope is a registry fault, not an unavailable runtime', () => {
+    const rejected = capabilityOwnershipBlocker(
+      { code: 'ARCHCONTEXT_MODEL_REJECTED', path: '.archcontext/model/nodes', message: 'archctx resolve rejected the model: AC_X: boom' },
+      'archcontext',
+    );
+    const state = projectEffectiveState(input({ capabilityBlocker: rejected }));
+    expect(state.blockers).toEqual(['capability_registry:invalid']);
+    expect(state.next_action).toStartWith('resolve blockers: capability_registry:invalid ARCHCONTEXT_MODEL_REJECTED: archctx resolve rejected the model: AC_X: boom; fix: ');
+    expect(state.next_action).not.toContain('repo-harness update');
+  });
+
   test('ordinary blockers keep the plain next action', () => {
     const state = projectEffectiveState(input({ conflictingSources: ['worktree_owner'] }));
     expect(state.blockers).toEqual(['conflict:worktree_owner']);

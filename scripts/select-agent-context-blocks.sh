@@ -26,7 +26,7 @@ emit_existing_dirs() {
 }
 
 # Reads .ai/harness/policy.json#context.capability_source with the JSON parser
-# of an available runtime. Without a runtime the mode stays unknown.
+# of an available runtime. A missing policy or field means "registry".
 capability_source() {
   local policy_file="$repo/.ai/harness/policy.json" runtime=""
   if [[ ! -f "$policy_file" ]]; then
@@ -38,20 +38,30 @@ capability_source() {
   elif command -v node >/dev/null 2>&1; then
     runtime=node
   else
-    echo unknown
-    return 0
+    echo "select-agent-context-blocks: bun or node is required to read .ai/harness/policy.json" >&2
+    return 1
   fi
   POLICY_FILE="$policy_file" "$runtime" -e '
 const fs = require("fs");
 const policy = JSON.parse(fs.readFileSync(process.env.POLICY_FILE, "utf8"));
-console.log((policy && policy.context && policy.context.capability_source) || "registry");
+const context = policy && policy.context;
+console.log(context && Object.prototype.hasOwnProperty.call(context, "capability_source") ? String(context.capability_source) : "registry");
 '
 }
 
 if ! source_mode="$(capability_source)"; then
-  echo "select-agent-context-blocks: cannot read .ai/harness/policy.json" >&2
+  echo "select-agent-context-blocks: cannot read .ai/harness/policy.json#context.capability_source" >&2
   exit 1
 fi
+# Only the two capability sources exist. Any other value fails closed instead
+# of reaching the registry or directory-discovery path.
+case "$source_mode" in
+  registry|archcontext) ;;
+  *)
+    echo "select-agent-context-blocks: unknown capability_source \"$source_mode\"; .ai/harness/policy.json#context.capability_source must be registry or archcontext" >&2
+    exit 1
+    ;;
+esac
 
 # The packaged sibling resolver comes first, then a repo-local copy.
 archcontext_resolver() {

@@ -26,12 +26,18 @@ function isDirectory(repoRoot: string, path: string): boolean {
   try { return statSync(resolve(repoRoot, path)).isDirectory(); } catch { return false; }
 }
 
+/**
+ * archctx ran and answered with an error envelope: it rejected the model, so
+ * the model needs repair. This is a registry fault, not an unavailable runtime.
+ */
+function rejectedModel(value: unknown): CapabilityRegistryDiagnostic | null {
+  if (!isRecord(value) || value.schemaVersion !== 'archcontext.envelope/v1' || value.ok !== false) return null;
+  const error = isRecord(value.error) ? `${String(value.error.code)}: ${String(value.error.message)}` : 'unknown error';
+  return { code: 'ARCHCONTEXT_MODEL_REJECTED', path: '.archcontext/model/nodes', message: `archctx resolve rejected the model: ${error}` };
+}
+
 function readOwners(value: unknown, queries: readonly string[]): ArchctxResolveResult[] {
-  if (!isRecord(value) || value.schemaVersion !== 'archcontext.envelope/v1') throw new Error('archctx resolve returned an invalid envelope');
-  if (value.ok !== true) {
-    const error = isRecord(value.error) ? `${String(value.error.code)}: ${String(value.error.message)}` : 'unknown error';
-    throw new Error(`archctx resolve failed: ${error}`);
-  }
+  if (!isRecord(value) || value.schemaVersion !== 'archcontext.envelope/v1' || value.ok !== true) throw new Error('archctx resolve returned an invalid envelope');
   const results = isRecord(value.data) ? value.data.results : undefined;
   if (!Array.isArray(results) || results.length !== queries.length) throw new Error('archctx resolve returned a result count that does not match the request');
   return results.map((result, index) => {
@@ -74,7 +80,8 @@ export function archcontextResolveQueries(repoRoot: string, inputPaths: readonly
  * process serves the whole batch. The path list goes through a private temp file
  * outside the repository, so a hook never writes into the worktree. An existing
  * directory is sent as `dir/`, which asks ArchContext who owns its contents.
- * Any archctx failure throws; callers fail closed. Inside a read-only
+ * A process, version or runtime failure throws; callers fail closed. An archctx
+ * error envelope is an `invalid` result with `ARCHCONTEXT_MODEL_REJECTED`. Inside a read-only
  * observation archctx never starts: the result is `unavailable` instead.
  */
 export function resolveArchcontextCapabilityPaths(
@@ -105,6 +112,10 @@ export function resolveArchcontextCapabilityPaths(
       writeFileSync(listPath, `${queries.join('\n')}\n`, { mode: 0o600 });
       // Exit 2 means at least one ambiguous path; the envelope still carries every result.
       const { value } = runPackageLocalArchctxJson(repoRoot, ARCHCTX_REQUIRED_VERSION, ['resolve', '--paths-from', listPath, '--json'], options, RESOLVE_TIMEOUT_MS, true);
+      const rejected = rejectedModel(value);
+      if (rejected) {
+        return { status: 'invalid', capabilityIds: [], matches: [], unmappedPaths: [], diagnostics: [...diagnostics, rejected] };
+      }
       results = readOwners(value, queries);
     } finally {
       rmSync(dir, { recursive: true, force: true });

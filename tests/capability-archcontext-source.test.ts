@@ -343,8 +343,17 @@ describe("capability source: archctx resolve envelope checks", () => {
     expect(resolution.unmappedPaths).toEqual(["apps/web/page.tsx"]);
   });
 
-  test("throws on an error envelope, a result-count mismatch, a path mismatch or a bad field", () => {
-    expect(() => resolveWith(JSON.stringify({ schemaVersion: "archcontext.envelope/v1", ok: false, error: { code: "AC_X", message: "boom" } }), 1)).toThrow("AC_X: boom");
+  test("an error envelope is a model fault, not an unavailable runtime", () => {
+    const resolution = resolveWith(JSON.stringify({ schemaVersion: "archcontext.envelope/v1", ok: false, error: { code: "AC_X", message: "boom" } }), 1);
+    expect(resolution.status).toBe("invalid");
+    expect(resolution.diagnostics).toEqual([{
+      code: "ARCHCONTEXT_MODEL_REJECTED",
+      path: ".archcontext/model/nodes",
+      message: "archctx resolve rejected the model: AC_X: boom",
+    }]);
+  });
+
+  test("throws on a result-count mismatch, a path mismatch or a bad field", () => {
     expect(() => resolveWith(envelope([]))).toThrow("result count");
     expect(() => resolveWith(envelope([{ path: "apps/web/other.tsx", matched: false, ambiguous: false, owningCapabilityId: null }]))).toThrow("invalid result");
     expect(() => resolveWith(envelope([{ path: "apps/web/page.tsx", matched: "yes", ambiguous: false, owningCapabilityId: null }]))).toThrow("invalid result");

@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-// @generated-from src/core/capabilities/registry.ts sha256:51a9470119ba8ce5ac0a9cc251ebf94b9af4ae575d0a9e4e61761266bf391d10
+// @generated-from src/core/capabilities/registry.ts sha256:793cd8d031ef57fcd47a1d00ecbcdcc2ef05b15185f65b92d9f0dcf65ddae167
 // Standalone typed Bun projection. Regenerate from scripts/capability-resolver.ts; do not edit by hand.
 export const CAPABILITY_REGISTRY_VERSION = 1 as const;
 
@@ -53,6 +53,7 @@ export type CapabilityRegistryDiagnosticCode =
   | "ARCHCONTEXT_INCLUDE_REQUIRED"
   | "ARCHCONTEXT_OWNER_UNKNOWN"
   | "ARCHCONTEXT_RESOLVE_FAILED"
+  | "ARCHCONTEXT_MODEL_REJECTED"
   | "ARCHCONTEXT_RESOLVE_UNAVAILABLE"
   | "ARCHCONTEXT_EXTENSIONS_REQUIRED"
   | "ARCHCONTEXT_LSP_PROFILE_REQUIRED"

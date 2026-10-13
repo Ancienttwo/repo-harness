@@ -56,6 +56,26 @@ describe("select-agent-context-blocks helper integration", () => {
     }
   }, 30_000);
 
+  test("select-agent-context-blocks rejects an unknown or empty capability source before any discovery", () => {
+    for (const source of ["nodes", ""]) {
+      const cwd = tmpWorkspace("helper-select-context-unknown-source");
+      try {
+        copyHelpers(cwd);
+        mkdirSync(join(cwd, "apps", "web"), { recursive: true });
+        writeFileSync(join(cwd, "apps", "web", "AGENTS.md"), "# Web Contract\n");
+        writeFileSync(join(cwd, ".ai", "harness", "policy.json"), JSON.stringify({ context: { capability_source: source } }));
+
+        const res = run("bash", ["scripts/select-agent-context-blocks.sh"], cwd);
+
+        expect(res.status, source).not.toBe(0);
+        expect(res.stdout).toBe("");
+        expect(res.stderr).toContain(`unknown capability_source "${source}"`);
+      } finally {
+        rmSync(cwd, { recursive: true, force: true });
+      }
+    }
+  }, 60_000);
+
   test("select-agent-context-blocks lists archcontext anchors from the resolver", () => {
     const cwd = tmpWorkspace("helper-select-context-archcontext");
     try {

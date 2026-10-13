@@ -38,6 +38,8 @@ function fixFor(diagnostic: CapabilityRegistryDiagnostic, mode: CapabilitySource
       return 'repo-harness update';
     case 'ARCHCONTEXT_RESOLVE_UNAVAILABLE':
       return 'repo-harness state resolve --json';
+    case 'ARCHCONTEXT_MODEL_REJECTED':
+      return 'edit .archcontext/model/nodes, then run repo-harness run capability-resolver match --path <path>';
     case 'AMBIGUOUS_MATCH':
     case 'ARCHCONTEXT_OWNER_UNKNOWN':
       return mode === 'archcontext'
