@@ -63,6 +63,7 @@ function input(overrides: Partial<EffectiveStateInputs> = {}): EffectiveStateInp
     contractOverride: 'standard',
     capabilityReasons: [],
     capabilityBlocker: null,
+    capabilityOwnership: null,
     staleSources: [],
     conflictingSources: [],
     reviewPath: null,

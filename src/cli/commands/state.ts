@@ -6,6 +6,7 @@ import {
 import type {
   AttemptReceiptV1,
   BoardDocumentV1,
+  CapabilityOwnership,
   ContinuationEnvelopeV1,
   EffectiveState,
   EffectiveStateRiskInput,
@@ -20,7 +21,13 @@ import {
 } from '../../effects/state/collect-board-inputs';
 import { resolveBoard } from '../../effects/state/resolve-board';
 import { resolveContinuationEnvelope } from '../../effects/state/resolve-continuation-envelope';
-import { resolveEffectiveState } from '../../effects/state/resolve-effective-state';
+import { resolveCapabilityOwnership, resolveEffectiveState } from '../../effects/state/resolve-effective-state';
+import {
+  OWED_NEXT_COMMAND,
+  OWED_WORKER_FLOW,
+  owedCapabilities,
+  type OwedCapabilities,
+} from '../../effects/state/owed-capabilities';
 import { migratePendingPostEditJournalV1 } from '../hook/mutation-observed';
 
 export interface StateCommandOptions {
@@ -217,6 +224,40 @@ export function boardStateCommand(
   }
 }
 
+export interface OwedCommandOptions {
+  readonly base?: string;
+}
+
+export interface OwedCommandDependencies {
+  readonly repoRoot: string;
+  readonly resolveOwnership: (repoRoot: string, targetRef?: string) => CapabilityOwnership;
+  readonly owed: (repoRoot: string, ownership: CapabilityOwnership) => OwedCapabilities | null;
+}
+
+/**
+ * Pure command projection for `state owed`. It applies the one owed rule to
+ * the review subject against `--base` (default: the policy review base). It
+ * needs no hook and writes nothing, so CI can run it in a plain checkout.
+ * A document exits 0, owed or not: architecture diagnostics never block.
+ */
+export function owedStateCommand(options: OwedCommandOptions, deps: OwedCommandDependencies): CommandOutcome {
+  let owed: OwedCapabilities | null;
+  try {
+    owed = deps.owed(deps.repoRoot, deps.resolveOwnership(deps.repoRoot, options.base));
+  } catch (error) {
+    return operationalFailure(error);
+  }
+  if (!owed) return operationalFailure(new Error('review subject is unavailable'));
+  const document = {
+    protocol: 1,
+    kind: 'repo-harness-owed-capabilities',
+    base: options.base ?? null,
+    ...owed,
+    next: owed.status === 'owed' ? [OWED_NEXT_COMMAND, OWED_WORKER_FLOW] : [],
+  };
+  return { exitCode: 0, stdout: `${JSON.stringify(document, null, 2)}\n`, stderr: '' };
+}
+
 function writeOutcome(outcome: CommandOutcome): void {
   if (outcome.stdout) process.stdout.write(outcome.stdout);
   if (outcome.stderr) process.stderr.write(outcome.stderr);
@@ -242,6 +283,19 @@ export function buildStateCommand(): Command {
         repoRoot: process.cwd(),
         nowMs: Date.now(),
         resolve: resolveEffectiveState,
+      }));
+    });
+
+  state
+    .command('owed')
+    .description('Report capabilities whose owned paths changed after the last projection manifest change')
+    .requiredOption('--json', 'Output the owed capabilities as JSON')
+    .option('--base <ref>', 'Review base ref, such as the pull request base; defaults to the policy review base')
+    .action((opts: OwedCommandOptions) => {
+      writeOutcome(owedStateCommand(opts, {
+        repoRoot: process.cwd(),
+        resolveOwnership: resolveCapabilityOwnership,
+        owed: owedCapabilities,
       }));
     });
 

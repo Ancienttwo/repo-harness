@@ -38,6 +38,7 @@
       "mediumScope": false,
       "crossCapability": false
     },
+    "capability_ownership": null,
     "allowed_paths": [],
     "next_action": null,
     "guidance": "Implement the authorized scope; verify typecheck and affected tests once; record goal/change/verification/risk/rollback in the PR. This is a state snapshot, not a session-wide restriction; re-resolve for the proposed edit and current diff when scope changes. Current edit-time requirements supersede earlier snapshot guidance.",
