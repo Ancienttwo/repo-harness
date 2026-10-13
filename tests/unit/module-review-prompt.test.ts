@@ -6,6 +6,7 @@ import { MODEL_NODE_KINDS, generatedSummaryState, moduleGraph, section3FromMarkd
 import { decodeDocsAnchorsReport, decodeProjectionCheckFreshness } from '../../src/core/architecture/projection';
 import { decodeArchitectureModuleDetail, decodeArchitectureReviewPrompt } from '../../src/core/operator/architecture';
 import nodeSchema from 'archctx-contracts/schemas/repo/architecture-node.schema.json';
+import { projectionResultReceiptDigest } from 'archctx-contracts';
 import { sha256 } from '../../src/core/review/module-review-prompt';
 import type { JsonValue } from '../../src/core/evidence/types';
 import { canonicalize } from '../../src/core/evidence/canonical-json';
@@ -250,7 +251,7 @@ const anchorsReport = (findingPath = 'src/module/read.ts') => ({
 
 describe('issue 677 architecture readers', () => {
   test('node kinds follow the published archcontext.node/v2 enum', () => {
-    expect([...MODEL_NODE_KINDS]).toEqual(nodeSchema.properties.kind.enum);
+    expect(nodeSchema.properties.kind.enum).toEqual([...MODEL_NODE_KINDS]);
   });
 
   test('generated_summary comes from a projection check for HEAD and stays unknown without one', () => {
@@ -265,8 +266,9 @@ describe('issue 677 architecture readers', () => {
     // A check that failed for a reason that is not per node proves no node fresh.
     const incomplete = decodeProjectionCheckFreshness(projectionCheckResult(reader.commit, [], ['projection-manifest-missing']));
     expect(generatedSummaryState(incomplete, MODULE_ID)).toBe('unknown');
-    const { freshness: _freshness, ...withoutFreshness } = projectionCheckResult(reader.commit, []);
-    expect(() => decodeProjectionCheckFreshness(withoutFreshness)).toThrow('no freshness');
+    // A result without freshness keeps a valid receipt digest, so only the missing field fails.
+    const { freshness: _freshness, receiptDigest: _digest, ...withoutFreshness } = projectionCheckResult(reader.commit, []);
+    expect(() => decodeProjectionCheckFreshness({ ...withoutFreshness, receiptDigest: projectionResultReceiptDigest(withoutFreshness) })).toThrow('no freshness');
     // An uncommitted model edit keeps HEAD, so the check still applies; a new commit does not.
     const node = moduleNode(root); node.summary = 'Uncommitted summary.'; fixtureWrite(root, MODULE_NODE, fixtureYaml(node));
     expect(new ArchitectureModelReader(root).list({ freshness: stale }).modules[0].state.generated_summary).toBe('stale');
