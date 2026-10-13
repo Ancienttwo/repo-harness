@@ -668,7 +668,7 @@ function collectStateSnapshotFacts(
 function resolveEffectiveStateUnlocked(
   cwd = process.cwd(),
   nowMs = Date.now(),
-  options: { risk?: EffectiveStateRiskInput },
+  options: { risk?: EffectiveStateRiskInput; authorityOnly?: boolean },
 ): EffectiveState {
   const currentWorktree = safeRealpath(cwd);
   // Only these named facts are shared, and only within this unlocked read-only
@@ -838,7 +838,7 @@ function resolveEffectiveStateUnlocked(
   let assessmentFingerprint = sha256('missing:assessment');
   let acceptanceFingerprint = sha256('missing:acceptance');
   const authorityHome = process.env.HOME;
-  if (contractPath && contractText) {
+  if (!options.authorityOnly && contractPath && contractText) {
     try {
       const outcome = evaluateVerificationContract({ repoRoot: cwd, contractPath });
       executionFingerprint = sha256(JSON.stringify(outcome));
@@ -1013,6 +1013,14 @@ function resolveEffectiveStateUnlocked(
   });
 }
 
+/** Evidence is excluded from authority comparisons. Keep partial states private. */
+function resolveAuthoritySourceHashes(
+  cwd: string,
+  nowMs: number,
+  risk?: EffectiveStateRiskInput,
+): Readonly<Record<string, string>> {
+  return authoritySourceHashes(resolveEffectiveStateUnlocked(cwd, nowMs, { risk, authorityOnly: true }).source_hashes);
+}
 
 /**
  * Thrown when the stability contract exhausts its bounded re-reads because an
@@ -1050,8 +1058,7 @@ function resolveAndCommitEffectiveState(
     finalized = candidate;
     return publication;
   }, publicationEffects?.version, () => {
-    const recheck = resolveEffectiveStateUnlocked(cwd, nowMs, { risk });
-    return JSON.stringify(authoritySourceHashes(recheck.source_hashes))
+    return JSON.stringify(resolveAuthoritySourceHashes(cwd, nowMs, risk))
       === JSON.stringify(authoritySourceHashes(confirmed.source_hashes));
   });
   if (finalized === null) throw new Error('effective-state publication did not produce a final state');
@@ -1105,14 +1112,14 @@ function resolveStableEffectiveState(
   nowMs: number,
   risk?: EffectiveStateRiskInput,
 ): EffectiveState {
-  let state = resolveEffectiveStateUnlocked(cwd, nowMs, { risk });
+  let authority = resolveAuthoritySourceHashes(cwd, nowMs, risk);
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const confirmed = resolveEffectiveStateUnlocked(cwd, nowMs, { risk });
-    if (JSON.stringify(authoritySourceHashes(state.source_hashes))
+    if (JSON.stringify(authority)
       === JSON.stringify(authoritySourceHashes(confirmed.source_hashes))) {
       return confirmed;
     }
-    state = confirmed;
+    authority = authoritySourceHashes(confirmed.source_hashes);
   }
   throw new StateResolutionUnstableError();
 }

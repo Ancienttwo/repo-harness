@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   mkdirSync,
   readFileSync,
+  rmSync,
   writeFileSync,
 } from 'fs';
 import { join } from 'path';
@@ -9,10 +10,11 @@ import { spawn, spawnSync } from 'child_process';
 import {
   CONTRACT,
   createEffectiveStateFixture,
+  makeFreshEvidence,
   writeFixture,
   writeFixtureStateLock,
 } from './effective-state-fixture';
-import { resolveEffectiveState } from '../../src/effects/state/resolve-effective-state';
+import { resolveEffectiveState, resolveEffectiveStateReadOnly } from '../../src/effects/state/resolve-effective-state';
 import { runMutationGuard } from '../../src/cli/hook/mutation-guard';
 import { hookIdentity } from '../helpers/hook-identity';
 import type { EffectiveState } from '../../src/core/state/types';
@@ -130,6 +132,46 @@ function waitForBarrier(path: string): void {
 }
 
 describe('Effective State stability contract: authority-only partition (hook-guard-stability)', () => {
+  test('authority comparisons do not repeat evidence capture or hide changed evidence', () => {
+    const fixture = createEffectiveStateFixture();
+    const previousTrace = process.env.GIT_TRACE2_EVENT;
+    try {
+      const nowMs = Date.now();
+      makeFreshEvidence(fixture.cwd, nowMs);
+      const risk = { targetPaths: ['src/feature.ts'], operationKind: 'feature' } as const;
+      const trace = join(fixture.cwd, '.ai/harness/runs/git-trace.jsonl');
+      process.env.GIT_TRACE2_EVENT = trace;
+      const captureCount = () => readFileSync(trace, 'utf8').trim().split('\n')
+        .map(line => JSON.parse(line) as { event: string; argv?: string[] })
+        .filter(event => event.event === 'start' && event.argv?.includes('write-tree')).length;
+
+      writeFileSync(trace, '');
+      const fresh = resolveEffectiveState(fixture.cwd, nowMs, risk);
+      expect(fresh.checks.status).toBe('passed');
+      expect(fresh.checks.freshness).toBe('fresh');
+      // Each exact capture checks two complete virtual trees. The comparison
+      // and commit confirmation consume only authority hashes.
+      expect(captureCount()).toBe(2);
+
+      writeFileSync(trace, '');
+      const readonly = resolveEffectiveStateReadOnly(fixture.cwd, nowMs, risk);
+      expect(readonly.checks).toEqual(fresh.checks);
+      expect(readonly.evidence_revision).toBe(fresh.evidence_revision);
+      expect(captureCount()).toBe(2);
+
+      const report = JSON.parse(readFileSync(join(fixture.cwd, '.ai/harness/runs/state-fixture-report.json'), 'utf8'));
+      rmSync(join(fixture.cwd, report.results[0].run_file));
+      const changed = resolveEffectiveState(fixture.cwd, nowMs, risk);
+      expect(changed.checks.status).toBe('missing');
+      expect(changed.evidence_revision).not.toBe(fresh.evidence_revision);
+      expect(changed.authority_revision).toBe(fresh.authority_revision);
+    } finally {
+      if (previousTrace === undefined) delete process.env.GIT_TRACE2_EVENT;
+      else process.env.GIT_TRACE2_EVENT = previousTrace;
+      fixture.cleanup();
+    }
+  }, 15_000);
+
   test('sustained churn confined to a non-authority source (checks/change-assessment.latest.json) does not abort resolution', async () => {
     const fixture = createEffectiveStateFixture();
     try {
