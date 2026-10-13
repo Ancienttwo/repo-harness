@@ -19,7 +19,7 @@ Worker reference. Use only within the assigned architecture scope.
    - `repo-harness architecture-projection anchors --json` (read-only; see "Drift signals")
    - `repo-harness run capability-resolver validate --repo <repo> --format text`
    - `repo-harness run check-task-workflow` when repo workflow surfaces changed
-   - The module reader and the review diff read the committed HEAD model, but `archctx resolve` reads the worktree model. Commit the model before a review diff.
+   - The module reader and the review diff read the committed HEAD model, but archctx `resolve` reads the worktree model. Commit the model before a review diff.
 
 ## Managed archctx command
 
