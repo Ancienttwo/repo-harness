@@ -1229,7 +1229,7 @@ function architectureFiles(root: string, path = ''): Record<string, string> {
 function architectureGit(scratch: string, slow = false) {
   const realGit = spawnSync('which', ['git'], { encoding: 'utf8' }).stdout.trim();
   const log = join(scratch, 'git.jsonl');
-  const wrapper = `#!${process.execPath}\nimport {execFileSync} from 'node:child_process';\nimport {appendFileSync,writeFileSync} from 'node:fs';\nconst args=process.argv.slice(2);\nappendFileSync(${JSON.stringify(log)},JSON.stringify({args,gitEnv:[process.env.GIT_LITERAL_PATHSPECS,process.env.GIT_NO_LAZY_FETCH]})+'\\n');\n${slow ? "writeFileSync(" + JSON.stringify(join(scratch, 'entered')) + ",'entered'); Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,30000);" : ''}\ntry {const out=execFileSync(${JSON.stringify(realGit)},args);appendFileSync(${JSON.stringify(log)},JSON.stringify({args,out:out.toString()})+'\\n');process.stdout.write(out);}catch{process.exit(1);}\n`;
+  const wrapper = `#!${process.execPath}\nimport {execFileSync} from 'node:child_process';\nimport {appendFileSync,readFileSync,writeFileSync} from 'node:fs';\nconst args=process.argv.slice(2);\nappendFileSync(${JSON.stringify(log)},JSON.stringify({args,gitEnv:[process.env.GIT_LITERAL_PATHSPECS,process.env.GIT_NO_LAZY_FETCH]})+'\\n');\n${slow ? "writeFileSync(" + JSON.stringify(join(scratch, 'entered')) + ",'entered'); Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,30000);" : ''}\ntry {const out=execFileSync(${JSON.stringify(realGit)},args,{input:readFileSync(0)});appendFileSync(${JSON.stringify(log)},JSON.stringify({args,out:out.toString()})+'\\n');process.stdout.write(out);}catch{process.exit(1);}\n`;
   writeFileSync(join(scratch, 'git'), wrapper); chmodSync(join(scratch, 'git'), 0o755);
   return { log, env: { PATH: scratch + ':' + process.env.PATH } };
 }
@@ -1252,15 +1252,22 @@ function assertArchitectureArgv(records: ReturnType<typeof architectureArgv>): v
         expect(tail[4]).toMatch(/^(?:HEAD|[0-9a-f]{40}|[0-9a-f]{64})\^\{commit\}$/);
         if (out) { expect(out.trim()).toMatch(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/); resolved.add(out.trim()); }
       }
+    } else if (tail[0] === 'ls-tree') {
+      expect(tail.slice(0, 5)).toEqual(['ls-tree', '-r', '-t', '-z', '--full-tree']); expect(tail).toHaveLength(6);
+      expect(resolved.has(tail[5])).toBe(true);
     } else if (tail[0] === 'cat-file') {
-      expect(tail.slice(0, 2)).toEqual(['cat-file', '-p']); expect(tail).toHaveLength(3);
-      const colon = tail[2].indexOf(':');
-      expect(resolved.has(tail[2].slice(0, colon))).toBe(true); expect(safePath(tail[2].slice(colon + 1))).toBe(true);
+      // Object ids arrive on stdin from the ls-tree output of a resolved commit.
+      expect(tail).toEqual(['cat-file', '--batch']);
     } else if (tail[0] === 'status') {
       expect(tail.slice(0, 6)).toEqual(['status', '--porcelain=v2', '-z', '--untracked-files=all', '--ignore-submodules=dirty', '--']);
       expect(tail.slice(6).every(safePath)).toBe(true);
     } else {
       expect(tail.slice(0, 3)).toEqual(['diff', '--no-ext-diff', '--no-textconv']);
+      if (tail[3] === '--no-renames') {
+        expect(tail.slice(4, 6)).toEqual(['--name-only', '-z']); expect(tail).toHaveLength(8);
+        expect(resolved.has(tail[6])).toBe(true); expect(resolved.has(tail[7])).toBe(true);
+        continue;
+      }
       expect(resolved.has(tail[3])).toBe(true); expect(resolved.has(tail[4])).toBe(true);
       expect(tail[5]).toBe('--'); expect(tail.slice(6).every(safePath)).toBe(true);
     }

@@ -35,6 +35,8 @@ function fixture(): string {
     agent_runtime: { mode: 'active', adapters: { 'herdr-cli-agent': { enabled: true } } },
   }));
   execFileSync('git', ['add', '.archcontext', 'agents/engineers'], { cwd: root });
+  // Engineer contract revisions read the committed HEAD nodes.
+  execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '-qm', 'fixture'], { cwd: root });
   return root;
 }
 
