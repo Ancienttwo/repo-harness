@@ -144,6 +144,31 @@ jobs:
         uses: ./.github/actions/install-pinned-herdr
       - run: bash scripts/check-ci.sh affected
 
+  # Advisory only: this job is not in the Required / CI aggregate, and its
+  # script exits 0 for every architecture result.
+  architecture-advisory:
+    name: PR architecture freshness (advisory)
+    needs: selection
+    if: needs.selection.outputs.mode == 'affected'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.selection.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.3
+      - name: Warn about owed architecture documents
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: bash scripts/check-ci.sh architecture-advisory --base "$BASE_SHA"
+
   governance:
     name: Daily governance
     needs: selection
@@ -170,6 +195,36 @@ jobs:
           git config --global user.name 'github-actions[bot]'
           git config --global user.email '41898282+github-actions[bot]@users.noreply.github.com'
       - run: bash scripts/check-ci.sh governance
+
+  architecture:
+    name: Daily architecture freshness
+    needs: selection
+    if: needs.selection.outputs.mode == 'daily'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.selection.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.3
+      - name: Check architecture documents
+        env:
+          ARCHITECTURE_SUMMARY: ${{ runner.temp }}/architecture/summary.json
+        run: bash scripts/check-ci.sh architecture
+      # scripts/report-ci.ts reads this summary for the repair issue.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: architecture-freshness-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/architecture/summary.json
+          if-no-files-found: warn
 
   test:
     name: Daily full tests and package

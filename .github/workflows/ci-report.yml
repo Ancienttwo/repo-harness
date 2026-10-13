@@ -36,6 +36,15 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.3
+      # Present only when the daily architecture job ran. No match downloads nothing.
+      - name: Download the daily architecture summary
+        uses: actions/download-artifact@v4
+        with:
+          pattern: architecture-freshness-${{ github.event.workflow_run.run_attempt }}
+          path: .ci-architecture
+          merge-multiple: true
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
       - name: Read provider rollback commits, dispatch failures and write report
         env:
           GH_TOKEN: ${{ github.token }}
