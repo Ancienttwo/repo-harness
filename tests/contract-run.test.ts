@@ -453,7 +453,7 @@ describe("contract-run helper", () => {
           'test "$CONTRACT_RUN_ROLE" = "worker"',
           'test -f "$CONTRACT_RUN_PROMPT"',
           'test "$CONTRACT_RUN_CONTRACT" = "tasks/contracts/pilot.contract.md"',
-          'printf "%s" "$CONTRACT_RUN_ALLOWED_PATHS" | grep -q "src/"',
+          '[[ "$CONTRACT_RUN_ALLOWED_PATHS" == *"src/"* ]]',
           "mkdir -p src",
           "printf 'worker-output\\n' > src/pilot.txt",
           "",
@@ -467,7 +467,7 @@ describe("contract-run helper", () => {
           "set -euo pipefail",
           'test "$CONTRACT_RUN_ROLE" = "verifier"',
           'test -f "$CONTRACT_RUN_PROMPT"',
-          'printf "%s" "$CONTRACT_RUN_VERIFIER_RUBRIC" | grep -q "files_exist"',
+          '[[ "$CONTRACT_RUN_VERIFIER_RUBRIC" == *"files_exist"* ]]',
           "mkdir -p \"$(dirname \"$CONTRACT_RUN_REVIEW\")\"",
           "cat > \"$CONTRACT_RUN_REVIEW\" <<'REVIEW_EOF'",
           "# Contract Review: pilot",
@@ -504,7 +504,7 @@ describe("contract-run helper", () => {
         "--json",
       ]);
 
-      expect(res.status).toBe(0);
+      expect(res.status, res.stderr + res.stdout).toBe(0);
       const manifest = parseJson(res.stdout);
       expect(manifest.status).toBe("pass");
       expect((manifest.budget_usage as { runner_invocations: number }).runner_invocations).toBe(2);
