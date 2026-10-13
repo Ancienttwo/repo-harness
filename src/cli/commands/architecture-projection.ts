@@ -2,7 +2,7 @@ import { readGlobalArchitectureConfiguration } from '../../effects/architecture/
 import { execFileSync } from 'node:child_process';
 import { Command } from 'commander';
 import { PROJECTION_REQUEST_SCHEMA_VERSION, type ProjectionMode } from 'archctx-contracts';
-import { captureArchitectureProjectionSnapshot, inspectArchitectureProjectionReadiness, runArchitectureProjection } from '../../effects/architecture/archctx-provider';
+import { captureArchitectureProjectionSnapshot, inspectArchitectureProjectionReadiness, readArchitectureDocsAnchors, runArchitectureProjection } from '../../effects/architecture/archctx-provider';
 import { applyArchitectureProjection } from '../../effects/architecture/projection-apply';
 
 export interface ProjectionCommandOptions {
@@ -41,6 +41,11 @@ export function buildArchitectureProjectionCommand(): Command {
     .option('--changed-path <path...>', 'Changed repository-relative paths')
     .option('--request-id <id>', 'Stable request id')
     .action((options: ProjectionCommandOptions) => execute('adopt', options));
+  // A signal, not a gate: findings keep exit 0. Only a failed run exits 1.
+  command.command('anchors').requiredOption('--json', 'Output the read-only archctx docs anchors report').action(() => {
+    try { write(readArchitectureDocsAnchors(repositoryRoot())); }
+    catch (error) { fail(error); }
+  });
   return command;
 }
 

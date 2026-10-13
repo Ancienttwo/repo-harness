@@ -1,4 +1,4 @@
-import type { ModuleIndexV1, ModuleDetailV1 } from '../architecture/module-view';
+import { MODEL_NODE_KINDS, type ModuleIndexV1, type ModuleDetailV1 } from '../architecture/module-view';
 import type { ModuleReviewPromptV1 } from '../review/module-review-prompt';
 
 export const ARCHITECTURE_CAPABILITY_ID = /^capability\.[a-z0-9-]+(\.[a-z0-9-]+)+$/;
@@ -10,7 +10,8 @@ export const OPERATOR_ARCHITECTURE_REVIEW_PROMPT_ROUTE = /^\/api\/v1\/repositori
 export const ARCHITECTURE_FAILURES = ['repository_not_found', 'capability_not_found', 'commit_not_found', 'invalid_request', 'unavailable', 'timeout',
   'model_invalid', 'model_missing', 'path_escape', 'secret_detected', 'worktree_changed_during_read', 'shard_out_of_range', 'budget_too_small', 'context_budget_invalid', 'diff_refs_required', 'dirty_path_invalid', 'git_path_encoding_invalid', 'git_read_failed',
   'model_duplicate_id', 'model_flow_target_invalid', 'model_parent_invalid', 'model_relation_target_invalid', 'model_validation_unavailable', 'path_invalid',
-  'revision_invalid', 'source_include_invalid', 'source_missing', 'tree_path_invalid', 'yaml_invalid'] as const;
+  'revision_invalid', 'source_include_invalid', 'source_missing', 'tree_path_invalid', 'yaml_invalid',
+  'capability_uncommitted', 'diff_owner_resolution_failed'] as const;
 
 type Check = (value: unknown) => boolean;
 const text: Check = value => typeof value === 'string';
@@ -40,14 +41,17 @@ const flow: Check = value => object({ id: text, capabilityId: capability, name: 
   || object({ id: text, capabilityId: capability, name: text, applicability: one('required'),
     participants: list(object({ id: text, nodeId: text })), steps: list(step),
     outcomes: list(object({ id: text, kind: one('success', 'error'), label: text, steps: list(step), terminal: object({ participant: text, label: text }) })) })(value);
-const graphNode: Check = value => object({ id: text, kind: one('capability', 'component'), name: text, role: one('center', 'child', 'caller', 'callee') })(value)
+const nodeKind = one(...MODEL_NODE_KINDS);
+const footprint = object({ include: list(text), exclude: list(text) });
+const graphNode: Check = value => object({ id: text, kind: nodeKind, name: text, role: one('center', 'child', 'caller', 'callee') })(value)
   || object({ id: text, kind: one('group'), role: one('caller', 'callee'), count: positive, members: list(object({ id: text, name: text })) })(value);
 const index = object({ schema_version: one('repo-harness.architecture-modules.v1'), commit,
   modules: list(object({ id: capability, domain: text, name: text, status: text, components: integer, state })) });
 const detail = object({ schema_version: one('repo-harness.architecture-module.v1'), commit,
-  module: object({ id: capability, name: text, status: text, summary: text, responsibilities: list(text), verification: list(text),
-    entrypoints: list(object({ id: text, path, symbols: list(object({ name: text, sinks: list(object({ id: text, path, symbol: text })) })) })) }),
-  graph: object({ center: capability, nodes: list(graphNode), edges: list(object({ source: text, target: text, intent: text, relation_kind: text, direction: one('directed', 'undirected') })) }),
+  module: object({ id: capability, name: text, status: text, summary: text, responsibilities: list(text), notes: list(text), source: footprint, verification: list(text),
+    entrypoints: list(object({ id: text, path, symbols: list(object({ name: text, sinks: list(object({ id: text, path, symbol: text })) })) })),
+    components: list(object({ id: text, kind: nodeKind, name: text, summary: text, source: footprint })) }),
+  graph: object({ center: capability, nodes: list(graphNode), edges: list(object({ source: text, target: text, intent: text, relation_kind: text, direction: one('directed') })) }),
   flows: list(flow), section3: nullable(text), linked_docs: list(object({ path, kind: one('contract', 'plan'), status: nullable(text) })), state });
 const prompt = object({ schema_version: one('repo-harness.module-review-prompt.v1'), prompt_version: text, package_version: text,
   repository_id: match(/^repo_[0-9a-f]{16}$/), capability_id: capability, commit, mode: one('module', 'diff'), base: nullable(commit), head: nullable(commit),
