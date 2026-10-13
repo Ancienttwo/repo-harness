@@ -57,6 +57,11 @@ ArchContext `ProjectionResultV2`. The command exits 1 when the status is not
 provider state is unclear.
 The check needs CodeGraph code facts. In a new worktree, have the worker run
 `codegraph init -y .` first, or `codegraph sync .` when `.codegraph/` exists.
+Before `apply`, the worker runs archctx `flows check` through the managed
+command in `repo-harness-architecture`. A flow selector error then shows in
+seconds, not in the slower check.
+When `status` returns a `next` step, the repository has no complete model.
+Assign the adoption flow in `repo-harness-architecture` before other model work.
 
 | Result | Meaning | Bot decision |
 | --- | --- | --- |

@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { execFileSync } from "child_process";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import { assertChatGptMcpContract } from "./helpers/chatgpt-mcp-contract";
@@ -228,6 +229,39 @@ describe("repo-harness action command skills", () => {
     expect(handoff).toContain("repo-harness run prepare-codex-handoff");
     expect(handoff).toContain("repo-harness run codex-handoff-resume");
     expect(handoff).toContain("handoff packet");
+  });
+
+  test("architecture worker runs archctx through the status command and has an adoption flow", () => {
+    const architecture = readFileSync(join(COMMAND_ROOT, "repo-harness-architecture/references/worker.md"), "utf-8");
+
+    expect(architecture).toContain("`projectionProvider.command[0]`");
+    expect(architecture).toContain("`projectionProvider.command[1]`");
+    expect(architecture).toContain('`"$NODE" "$ARCHCTX" flows check --json`');
+    expect(architecture).toContain("`repo-harness architecture-projection anchors --json`");
+    // projection-apply derives the accepted request id; a per-apply id rule is obsolete.
+    expect(architecture).toContain("Do not pass `--request-id`");
+    expect(architecture.match(/--request-id/g)).toHaveLength(1);
+    expect(architecture).toContain("## Adopt ArchContext in a repository");
+    for (const step of [
+      "repo-harness run capability-resolver export --format archcontext-nodes-v2",
+      '"$NODE" "$ARCHCTX" init --name <product name>',
+      '"$NODE" "$ARCHCTX" docs adopt --profile repo-harness/v1',
+      "repo-harness architecture-projection adopt --json --adoption-plan-id <adoptionPlanId>",
+    ]) expect(architecture).toContain(step);
+  });
+
+  test("shipped guidance runs archctx only through the managed command", () => {
+    // A bare archctx resolves through PATH and can run an unrelated version.
+    const pkg = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf-8")) as { files: string[] };
+    const shipped = execFileSync("git", ["ls-files", "-z", "--", ...pkg.files], { cwd: ROOT, encoding: "utf-8" })
+      .split("\0")
+      .filter((path) => path.endsWith(".md"));
+    const bareInvocation = /(?:^|`)\s*archctx [a-z]/;
+    const offenders = shipped.flatMap((path) => readFileSync(join(ROOT, path), "utf-8")
+      .split("\n")
+      .flatMap((line, index) => (bareInvocation.test(line) ? [`${path}:${index + 1}: ${line.trim()}`] : [])));
+    expect(shipped).toContain("assets/skill-commands/repo-harness-architecture/references/worker.md");
+    expect(offenders).toEqual([]);
   });
 
   test("check's deploy-readiness reference stays read-only and scoped to deploy/operations checks", () => {
