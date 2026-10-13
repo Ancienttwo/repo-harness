@@ -398,7 +398,8 @@ export class ArchitectureModelReader {
     let resolution;
     try { resolution = resolveArchcontextCapabilityPaths(this.root, this.owners, names, options); }
     catch { throw new ModuleReadError('diff_owner_resolution_failed'); }
-    // Unavailable ownership, and an ambiguous or invalid path, can hide a path of this module.
+    // Unavailable ownership, a model that archctx rejected (ARCHCONTEXT_MODEL_REJECTED) and an
+    // ambiguous or invalid path can each hide a path of this module.
     // An owner that is no capability node at HEAD (for example an uncommitted one) is never this module.
     if (resolution.status === 'unavailable' || resolution.diagnostics.some(item => item.code !== 'ARCHCONTEXT_OWNER_UNKNOWN')) {
       throw new ModuleReadError('diff_owner_resolution_failed');

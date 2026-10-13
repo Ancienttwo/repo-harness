@@ -179,7 +179,7 @@ describe('capability-context command', () => {
     }
   });
 
-  test('archcontext sync refuses an anchorless capability before it writes any contract file', () => {
+  test('archcontext sync writes an anchorless capability only to its declared files and refuses one without them', () => {
     const cwd = tmpWorkspace('capability-context-anchorless');
     try {
       fs.mkdirSync(path.join(cwd, '.ai/harness'), { recursive: true });
@@ -209,8 +209,18 @@ describe('capability-context command', () => {
       fs.writeFileSync(path.join(cwd, 'AGENTS.md'), rootContext);
       fs.writeFileSync(path.join(cwd, 'CLAUDE.md'), rootContext);
 
+      // The target is the declared contract files, not an anchor: the root files stay unchanged.
+      runCapabilityContextSync({ repo: cwd, capabilityId: 'probe-anchorless', apply: true });
+      expect(fs.readFileSync(path.join(cwd, 'AGENTS.md'), 'utf-8')).toBe(rootContext);
+      expect(fs.readFileSync(path.join(cwd, 'CLAUDE.md'), 'utf-8')).toBe(rootContext);
+      expect(fs.readFileSync(path.join(cwd, 'probes/AGENTS.md'), 'utf-8')).toContain('Probe files');
+
+      // A node that declares no contract files is refused before any write.
+      const nodePath = path.join(cwd, '.archcontext/model/nodes/capability.probe.anchorless.yaml');
+      fs.writeFileSync(nodePath, fs.readFileSync(nodePath, 'utf-8').replace(/  contractFiles:\n    agents: probes\/AGENTS\.md\n    claude: probes\/CLAUDE\.md\n/, ''));
+      fs.rmSync(path.join(cwd, 'probes'), { recursive: true, force: true });
       expect(() => runCapabilityContextSync({ repo: cwd, capabilityId: 'probe-anchorless', apply: true }))
-        .toThrow('capability has no literal source.include anchor, so its contract files cannot be derived: probe-anchorless');
+        .toThrow('extensions.contractFiles.agents and extensions.contractFiles.claude are required');
       expect(fs.readFileSync(path.join(cwd, 'AGENTS.md'), 'utf-8')).toBe(rootContext);
       expect(fs.readFileSync(path.join(cwd, 'CLAUDE.md'), 'utf-8')).toBe(rootContext);
       expect(fs.existsSync(path.join(cwd, 'probes'))).toBe(false);
