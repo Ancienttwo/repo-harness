@@ -299,7 +299,7 @@ describe('real Pi 1.2 tool pipeline with a scripted provider', () => {
     } finally { f.cleanup(); }
   }, 60_000);
 
-  test('a custom-message run keeps the current run and is not a user prompt', () => {
+  test('a custom-message run has its own lifecycle and is not a user prompt', () => {
     const f = fixture();
     try {
       const result = session(f.root, f.env, 'custom-turn');
@@ -310,8 +310,10 @@ describe('real Pi 1.2 tool pipeline with a scripted provider', () => {
       const events = records(f.root);
       expect(events.filter(event => event.event === 'UserPromptSubmit')).toHaveLength(1);
       const toolRuns = events.filter(event => event.event === 'PreToolUse').map(event => event.run_id);
+      const stops = events.filter(event => event.event === 'Stop');
       expect(toolRuns).toHaveLength(2);
-      expect(new Set(toolRuns).size).toBe(1);
+      expect(new Set(toolRuns).size).toBe(2);
+      expect(stops.map(event => event.run_id)).toEqual(toolRuns);
     } finally { f.cleanup(); }
   }, 60_000);
 
