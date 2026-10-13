@@ -291,7 +291,7 @@ describe('registry-bound CLI update (#701)', () => {
     expect(result.lines).toContain('[runtime] failed: install repo-harness CLI - spec=repo-harness@0.22.1; installed CLI version mismatch: expected=0.22.1; actual=0.21.2; package=0.21.2');
     expect(commands).toContain('pm view repo-harness@latest version --json --no-cache');
     expect(commands).toContain('add -g repo-harness@0.22.1 --no-cache');
-    expect(commands).not.toContain('add -g repo-harness@latest');
+    expect(commands.some(command => command.startsWith('add -g repo-harness@latest'))).toBe(false);
     expect(result.steps.at(-1)?.step).toBe('install repo-harness CLI');
   });
 
@@ -618,7 +618,7 @@ describe('install command global runtime bootstrap', () => {
       });
 
       expect(result.exitCode).toBe(0);
-      expect(readFileSync(bunLog, 'utf-8')).toContain(`add -g ${source}`);
+      expect(readFileSync(bunLog, 'utf-8').trim().split('\n')).toContain(`add -g ${source}`);
       expect(result.steps.find((step) => step.step === 'sync repo-harness skill runtime')?.stdout).toContain(
         'sync runtime',
       );

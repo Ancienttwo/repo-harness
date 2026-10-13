@@ -47,10 +47,11 @@ Bun's manifest cache. Package channels still resolve to an exact version first.
 
 The published 0.21.2 updater checks new dependencies in the old process. It can
 reject the 0.22.x renderer and restore 0.21.2. New package code cannot change that
-running process. Bootstrap once with a direct install, then run the installed CLI:
+running process. The corrected verification order needs an updater that contains
+this fix. Bootstrap once with a direct install, then run the installed CLI:
 
 ```bash
-bun add -g repo-harness@0.22.1 --no-cache
+bun add -g repo-harness@latest --no-cache
 repo-harness update
 ```
 
