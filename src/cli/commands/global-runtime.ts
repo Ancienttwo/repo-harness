@@ -591,6 +591,9 @@ function installCli(
       detail: `${base}${updateAvailableHint(version, env)}`,
     };
   }
+  if (installSpec === "repo-harness@latest" || installSpec === "repo-harness@next") {
+    return installCliFromRegistry(cwd, bunExecutable, env, installSpec);
+  }
   const spec = installSpec ?? (existsSync(join(sourceRoot, "package.json")) ? sourceRoot : "repo-harness");
   const step = runProcess(bunExecutable, ["add", "-g", spec], cwd, env);
   if (installSpec === undefined && name === "repo-harness" && step.status === "failed" && isBunDependencyLoop(step)) {
@@ -601,6 +604,46 @@ function installCli(
     "install repo-harness CLI",
     installSpec ? `spec=${installSpec}` : version ? `version=${version}` : undefined,
   );
+}
+
+function installCliFromRegistry(
+  cwd: string,
+  bunExecutable: string,
+  env: NodeJS.ProcessEnv | undefined,
+  installSpec: string,
+): GlobalRuntimeStep {
+  const name = "install repo-harness CLI";
+  const lookup = runProcess(bunExecutable, ["pm", "view", installSpec, "version", "--json", "--no-cache"], cwd, env);
+  if (lookup.status !== "ok") return withStepName(lookup, name, `unable to resolve ${installSpec} from registry`);
+  let expected: unknown;
+  try {
+    expected = JSON.parse(lookup.stdout ?? "");
+  } catch {
+    return withStepName({ ...lookup, status: "failed" }, name, `invalid registry version for ${installSpec}: expected a JSON version string`);
+  }
+  // Reject tags, ranges and paths before they can become an install argument.
+  if (typeof expected !== "string" || !/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/.test(expected)) {
+    return withStepName({ ...lookup, status: "failed" }, name, `invalid registry version for ${installSpec}: expected an exact version`);
+  }
+  const globalRoot = bunGlobalPackageRoot(env);
+  if (globalRoot === null) return { step: name, status: "failed", detail: "unable to resolve Bun global package root" };
+  const previous = packageVersion(globalRoot);
+  const spec = `repo-harness@${expected}`;
+  const install = runProcess(bunExecutable, ["add", "-g", spec], cwd, env);
+  if (install.status !== "ok") return withStepName(install, name, `spec=${spec}`);
+
+  const readback = runProcess(bunExecutable, [join(globalRoot, "src", "cli", "index.ts"), "--version"], cwd, env);
+  const actual = readback.stdout?.trim();
+  const packageReadback = packageVersion(globalRoot);
+  if (readback.status !== "ok" || actual !== expected || packageReadback !== expected) {
+    return withStepName({
+      ...install,
+      status: "failed",
+      stderr: appendOutput(install.stderr, readback.stderr),
+    }, name, `spec=${spec}; installed CLI version mismatch: expected=${expected}; actual=${actual || "unavailable"}; package=${packageReadback ?? "unavailable"}`);
+  }
+  const result = previous === actual ? `already at ${actual}` : `${previous ?? "unavailable"} -> ${actual}`;
+  return withStepName(install, name, `spec=${spec}; ${result}`);
 }
 
 function installCliFromPackedTarball(
