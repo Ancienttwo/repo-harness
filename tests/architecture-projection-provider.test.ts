@@ -927,6 +927,16 @@ describe('package-local ArchContext projection provider', () => {
     expect(captureArchitectureProjectionSnapshot(f.repoRoot).worktreeDigest).not.toBe(before.worktreeDigest);
   });
 
+  test.each(['.claude/.session-id', '.claude/.trace.jsonl'])('ignores retired agent runtime state at %s in the snapshot', (path) => {
+    const f = fixture();
+    const before = captureArchitectureProjectionSnapshot(f.repoRoot);
+    mkdirSync(join(f.repoRoot, '.claude'), { recursive: true });
+    writeFileSync(join(f.repoRoot, path), 'first session state\n');
+    expect(captureArchitectureProjectionSnapshot(f.repoRoot)).toEqual(before);
+    writeFileSync(join(f.repoRoot, path), 'rewritten session state with more bytes\n');
+    expect(captureArchitectureProjectionSnapshot(f.repoRoot)).toEqual(before);
+  });
+
   test('refuses apply and adopt while projection apply is disabled', () => {
     const f = fixture();
     const projectionRequest = request(f.repoRoot);

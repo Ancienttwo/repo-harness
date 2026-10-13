@@ -40,6 +40,21 @@ CodeGraph CLI/MCP by default. Waza and Mermaid remain mutable third-party
 providers and refresh only with explicit `--with-external-skills`;
 `--no-codegraph` is the bounded CodeGraph opt-out.
 
+The installed candidate verifies its own dependency and daemon contracts before
+it writes host surfaces. The parent owns the transaction and restores the prior
+CLI and host state if candidate verification fails. Registry installs ignore
+Bun's manifest cache. Package channels still resolve to an exact version first.
+
+The published 0.21.2 updater checks new dependencies in the old process. It can
+reject the 0.22.x renderer and restore 0.21.2. New package code cannot change that
+running process. The corrected verification order needs an updater that contains
+this fix. Bootstrap once with a direct install, then run the installed CLI:
+
+```bash
+bun add -g repo-harness@latest --no-cache
+repo-harness update
+```
+
 Full always projects the package-bundled cross-review Skill
 required by its provider surfaces. Marketplace Waza and Mermaid are mutable
 third-party providers and are selected only by an explicit install prompt or

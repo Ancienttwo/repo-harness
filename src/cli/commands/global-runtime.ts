@@ -595,7 +595,7 @@ function installCli(
     return installCliFromRegistry(cwd, bunExecutable, env, installSpec);
   }
   const spec = installSpec ?? (existsSync(join(sourceRoot, "package.json")) ? sourceRoot : "repo-harness");
-  const step = runProcess(bunExecutable, ["add", "-g", spec], cwd, env);
+  const step = runProcess(bunExecutable, ["add", "-g", spec, ...(installSpec?.startsWith("repo-harness@") ? ["--no-cache"] : [])], cwd, env);
   if (installSpec === undefined && name === "repo-harness" && step.status === "failed" && isBunDependencyLoop(step)) {
     return installCliFromPackedTarball(sourceRoot, cwd, bunExecutable, env, version, step);
   }
@@ -629,7 +629,7 @@ function installCliFromRegistry(
   if (globalRoot === null) return { step: name, status: "failed", detail: "unable to resolve Bun global package root" };
   const previous = packageVersion(globalRoot);
   const spec = `repo-harness@${expected}`;
-  const install = runProcess(bunExecutable, ["add", "-g", spec], cwd, env);
+  const install = runProcess(bunExecutable, ["add", "-g", spec, "--no-cache"], cwd, env);
   if (install.status !== "ok") return withStepName(install, name, `spec=${spec}`);
 
   const readback = runProcess(bunExecutable, [join(globalRoot, "src", "cli", "index.ts"), "--version"], cwd, env);
@@ -750,6 +750,14 @@ function reconcileWithInstalledCandidate(
       detail: error instanceof Error ? error.message : String(error),
     };
   }
+  const requested = opts.installSpec?.startsWith('repo-harness@') ? opts.installSpec.slice('repo-harness@'.length) : null;
+  if (requested && requested !== 'latest' && requested !== 'next' && candidate.version !== requested) {
+    return {
+      step: 'reconcile installed candidate runtime',
+      status: 'failed',
+      detail: `repo-harness version mismatch: expected ${requested}, got ${candidate.version}`,
+    };
+  }
   const candidateEntrypoint = join(candidate.root, 'src', 'cli', 'index.ts');
   if (!existsSync(candidateEntrypoint)) {
     return {
@@ -807,7 +815,8 @@ function reconcileWithInstalledCandidate(
     return {
       step: 'reconcile installed candidate runtime',
       status: 'ok',
-      detail: `candidate=${receipt.candidate_version}; scope=${receipt.reconciliation_scope}; receipt=${receipt.route_registry_digest}`,
+      detail: appendOutput(`candidate=${receipt.candidate_version}; scope=${receipt.reconciliation_scope}; receipt=${receipt.route_registry_digest}`, child.stderr),
+      stderr: child.stderr,
     };
   } catch (error) {
     return {
@@ -1513,6 +1522,13 @@ export function runGlobalRuntimeSetup(
   if (opts.installCli !== false) {
     const install = installCli(sourceRoot, cwd, bunExecutable, env, opts.installSpec);
     steps.push(install);
+    if (updateMode && install.status === 'failed') return finalizeRuntimeResult(steps);
+    // The parent has loaded predecessor contracts. The installed candidate owns
+    // dependency and daemon verification as well as later host writes.
+    if (updateMode && install.status === 'ok' && opts.installSpec && opts.candidateHandoff) {
+      steps.push(reconcileWithInstalledCandidate(opts, cwd, bunExecutable, env, target, profile));
+      return finalizeRuntimeResult(steps);
+    }
     if (updateMode && install.status === "ok" && opts.installSpec) {
       steps.push(reconcileManagedRuntime(cwd, bunExecutable, env, opts.installSpec));
     }
@@ -1532,14 +1548,6 @@ export function runGlobalRuntimeSetup(
     steps.push(daemon.status === 'failed'
       ? { ...daemon, status: 'skipped', detail: `Daemon readiness pending; verified packages retained. ${daemon.detail}` }
       : daemon);
-  }
-
-  // The updater that installed the package has already loaded predecessor
-  // modules. Once dependency readback succeeds, only the candidate's absolute
-  // entrypoint may write managed runtime surfaces.
-  if (updateMode && opts.installCli !== false && opts.installSpec && opts.candidateHandoff) {
-    steps.push(reconcileWithInstalledCandidate(opts, cwd, bunExecutable, env, target, profile));
-    return finalizeRuntimeResult(steps);
   }
 
   const architectureConfiguration = ensureGlobalArchitectureProjection(env);
