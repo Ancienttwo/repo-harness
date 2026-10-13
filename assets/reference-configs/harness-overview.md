@@ -216,7 +216,7 @@ Maintainer-facing detail on how the initializer and runtime defaults are wired.
 - Question-pack source of truth: `assets/initializer-question-pack.v4.json`.
 - Generated repos default to the repo-local harness flow: `docs/spec.md -> plans/ -> tasks/contracts/ -> tasks/reviews/ -> .ai/context/context-map.json -> .ai/harness/*`.
 - Generated and self-hosted repos use `.ai/harness/workflow-contract.json` as the opt-in marker.
-- The marker can declare `minimum_harness_version`, a release version such as `0.22.1`. A hook that runs an older repo-harness then exits 1 with an upgrade instruction (`repo-harness update`) and does not resolve state. Declare it when a release changes the model shape that older readers cannot parse. Adoption keeps the declared value.
+- The marker can declare `minimum_harness_version`, a release version such as `0.22.1`. A hook that runs an older repo-harness then reports an upgrade instruction (`repo-harness update`) on SessionStart, UserPromptSubmit, Stop and SubagentStop. It exits 1, which does not block, and does not resolve state for these events. PreToolUse and PostToolUse skip this check, so every edit guard still runs. `repo-harness doctor` and `repo-harness update --check` report the same instruction. Declare it when a release changes the model shape that older readers cannot parse. Adoption keeps the declared value.
 - The package asset `assets/workflow-contract.v1.json` defines the workflow contract.
 - `repo-harness init` writes the marker and `.ai/harness/policy.json`. Shell scaffold scripts do not write the marker.
 - Host events use the user-level managed adapter projection, the 11-tuple

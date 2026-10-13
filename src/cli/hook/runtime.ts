@@ -26,7 +26,7 @@ import type { HookHandlerResult } from './handler-contract';
 import { HookPayloadError, parseHookPayload, type HookIdentity } from './hook-input';
 import { resolveHookIdentity } from './run-identity';
 import { boundedHookDiagnostic, HOST_RENDERERS, type HookJsonOutput, type HookOutcome } from './hook-protocol';
-import { inspectWorkflowMarker } from '../../core/adoption/minimum-harness-version';
+import { inspectWorkflowMarker, WORKFLOW_MARKER_GATE_EVENTS } from '../../core/adoption/minimum-harness-version';
 
 export const HOOK_COMMAND_NAME = 'repo-harness-hook';
 const OPT_IN_MARKER = '.ai/harness/workflow-contract.json';
@@ -215,8 +215,8 @@ export function runHook(opts: RunHookOptions): RunHookResult {
     return early(2, 'unsupported-host-route', repoRoot,
       `${HOOK_COMMAND_NAME}: unsupported-host-route: ${opts.event}.${opts.routeId} is not installed for ${host}\n`);
   }
-  // Exit 1 reports without blocking: exit 2 would hold Stop and UserPromptSubmit hosts.
-  const markerGate = inspectWorkflowMarker(repoRoot);
+  // Session and turn events report the gate with exit 1, which does not block. Tool events skip it, so every guard still runs.
+  const markerGate = WORKFLOW_MARKER_GATE_EVENTS.has(opts.event) ? inspectWorkflowMarker(repoRoot) : null;
   if (markerGate) return early(1, markerGate.code, repoRoot, `${HOOK_COMMAND_NAME}: ${markerGate.message}\n`);
 
   const handler = getHandlerForRoute(route);

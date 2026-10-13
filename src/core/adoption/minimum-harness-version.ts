@@ -22,6 +22,16 @@ declare const REPO_HARNESS_BUNDLED_CLI_VERSION: string | undefined;
 
 export type WorkflowMarkerGateCode = "harness-upgrade-required" | "workflow-marker-invalid";
 
+/**
+ * Session and turn events report the gate. Tool events skip it, so the edit
+ * guards still decide every PreToolUse and PostToolUse.
+ */
+export const WORKFLOW_MARKER_GATE_EVENTS: ReadonlySet<string> = new Set(["SessionStart", "UserPromptSubmit", "Stop", "SubagentStop"]);
+
+export function isWorkflowMarkerGateCode(reason: string): reason is WorkflowMarkerGateCode {
+  return reason === "harness-upgrade-required" || reason === "workflow-marker-invalid";
+}
+
 export interface WorkflowMarkerGate {
   readonly code: WorkflowMarkerGateCode;
   readonly message: string;

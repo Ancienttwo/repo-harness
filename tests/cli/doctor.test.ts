@@ -234,7 +234,7 @@ describe('doctor command (Phase 1C)', () => {
       fs.writeFileSync(path.join(nodes, 'capability.a.b.yaml'), 'schemaVersion: archcontext.node/v2\nid: capability.a.b\nkind: capability\n');
       const invalid = registryCheck();
       expect(invalid.status).toBe('fail');
-      expect(invalid.detail).toContain('malformed capability registry: .archcontext/model/nodes');
+      expect(invalid.detail).toContain('archcontext authority does not load: .archcontext/model/nodes/capability.a.b.yaml: status is required');
       expect(invalid.detail).toContain('Next: run repo-harness run capability-resolver validate');
 
       // A declared newer minimum names the upgrade, not the parse error.
@@ -242,7 +242,7 @@ describe('doctor command (Phase 1C)', () => {
       const upgrade = registryCheck();
       expect(upgrade.status).toBe('fail');
       expect(upgrade.detail).toContain('This repository needs repo-harness >= 999.0.0;');
-      expect(upgrade.detail).not.toContain('malformed capability registry');
+      expect(upgrade.detail).not.toContain('does not load');
     });
   }, DOCTOR_CHECK_TIMEOUT_MS);
 
@@ -252,6 +252,26 @@ describe('doctor command (Phase 1C)', () => {
       fs.writeFileSync(path.join(repoRoot, '.ai/context/capabilities.json'), `${JSON.stringify({ version: 1, capabilities: [] })}\n`);
       const check = runDoctor(repoRoot).checks.find((c) => c.id === 'capability-registry')!;
       expect(check).toMatchObject({ status: 'ok', detail: 'registry authority loads 0 capabilities' });
+    });
+  }, DOCTOR_CHECK_TIMEOUT_MS);
+
+  test('capability-registry applies the hook rules for an empty registry and the declared path', () => {
+    withTempRepo({ optIn: true }, (repoRoot) => {
+      const registryCheck = () => runDoctor(repoRoot).checks.find((c) => c.id === 'capability-registry')!;
+      fs.mkdirSync(path.join(repoRoot, '.ai/context'), { recursive: true });
+      fs.writeFileSync(path.join(repoRoot, '.ai/context/capabilities.json'), '');
+      // An empty file counts as missing; without a declaration that is not a fault.
+      expect(registryCheck()).toMatchObject({ status: 'na', detail: 'no capability registry is declared' });
+
+      fs.writeFileSync(path.join(repoRoot, '.ai/harness/policy.json'), `${JSON.stringify({ context: { capability_registry_file: '.ai/context/capabilities.json' } })}\n`);
+      const missing = registryCheck();
+      expect(missing.status).toBe('fail');
+      expect(missing.detail).toContain('registry authority does not load: capability registry is missing');
+
+      fs.writeFileSync(path.join(repoRoot, '.ai/harness/policy.json'), `${JSON.stringify({ context: { capability_registry_file: 'other.json' } })}\n`);
+      const nonCanonical = registryCheck();
+      expect(nonCanonical.status).toBe('fail');
+      expect(nonCanonical.detail).toContain('invalid workflow policy path .context.capability_registry_file');
     });
   }, DOCTOR_CHECK_TIMEOUT_MS);
 

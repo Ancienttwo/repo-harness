@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { PiHookBridge } from './hook-bridge';
 import { boundedHookDiagnostic, type HookJsonOutput } from '../cli/hook/hook-protocol';
+import { isWorkflowMarkerGateCode } from '../core/adoption/minimum-harness-version';
 
 type ToolPathResolver = (path: string, cwd: string) => string;
 
@@ -83,6 +84,7 @@ export default function repoHarnessPi(pi: ExtensionAPI): void {
     if (!state.pendingStop || !state.optedIn) return Promise.resolve();
     state.pendingStop = false;
     state.stop = invoke(state, 'Stop', 'default', { aborted }).then(output => {
+      if (isWorkflowMarkerGateCode(output.reason)) { notify(ctx, output.diagnostics); return; }
       if (output.exit_code !== 0) throw new Error(output.diagnostics || output.reason);
     }).catch(error => { failed(state, error, ctx); });
     return state.stop;
@@ -108,6 +110,13 @@ export default function repoHarnessPi(pi: ExtensionAPI): void {
       state.resolveToolPath = paths.resolveToCwd;
       const output = await invoke(state, 'SessionStart', 'default', {});
       if (current !== state) return;
+      // The marker gate reports and does not block edits: every PreToolUse guard still runs.
+      if (isWorkflowMarkerGateCode(output.reason)) {
+        notify(ctx, output.diagnostics);
+        state.context = output.diagnostics;
+        state.availability = 'ready';
+        return;
+      }
       if (output.exit_code !== 0 || output.decision === 'block' || output.reason !== 'ok') {
         throw new Error(output.diagnostics || output.reason);
       }
@@ -129,7 +138,7 @@ export default function repoHarnessPi(pi: ExtensionAPI): void {
     let output: HookJsonOutput | null = null;
     try {
       output = await invoke(state, 'UserPromptSubmit', 'default', { prompt: event.prompt }, state.runId, ctx.signal);
-      if (output.exit_code !== 0) throw new Error(output.diagnostics || output.reason);
+      if (output.exit_code !== 0 && !isWorkflowMarkerGateCode(output.reason)) throw new Error(output.diagnostics || output.reason);
     } catch (error) { failed(state, error, ctx); }
     if (current !== state) return;
     const content = [state.context, output?.additional_context, output?.diagnostics,

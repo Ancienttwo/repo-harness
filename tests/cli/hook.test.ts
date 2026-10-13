@@ -78,11 +78,39 @@ describe('typed hook runtime', () => {
     } finally { clean(root); }
   }, 30_000);
 
+  test('a newer declared minimum leaves every edit guard in force and reports on SessionStart', () => {
+    const root = repo();
+    try {
+      writeFileSync(join(root, '.ai/harness/workflow-contract.json'), `${JSON.stringify({ minimum_harness_version: '999.0.0' })}\n`);
+      const cli = join(import.meta.dir, '..', '..', 'src', 'cli', 'index.ts');
+      const edit = (filePath: string) => spawnSync(process.execPath, [cli, 'hook', 'PreToolUse', '--route', 'edit'], {
+        cwd: root, env: env(root), encoding: 'utf8',
+        input: `${JSON.stringify({ tool_name: 'Write', tool_input: { file_path: filePath, content: 'x' } })}\n`,
+      });
+      // The tool route runs; the gate does not turn a deny into an allow.
+      const denied = edit(join(root, '_ops', 'private'));
+      expect(denied.status).toBe(2);
+      expect(denied.stderr).toContain('OpsPrivateGuard');
+      expect(denied.stderr).not.toContain('needs repo-harness');
+      expect(existsSync(join(root, '_ops', 'private'))).toBe(false);
+      expect(edit(join(root, 'README.md')).status).toBe(0);
+
+      const session = spawnSync(process.execPath, [cli, 'hook', 'SessionStart', '--route', 'default'], { cwd: root, env: env(root), input: '', encoding: 'utf8' });
+      expect(session.status).toBe(1);
+      expect(session.stderr).toContain('This repository needs repo-harness >= 999.0.0;');
+
+      // The JSON form carries the message, so Pi can show it.
+      const json = runHook({ event: 'SessionStart', routeId: 'default', cwd: root, env: env(root, 'codex'), format: 'json', stdio: 'pipe' });
+      expect(json.json).toMatchObject({ reason: 'harness-upgrade-required', exit_code: 1, decision: 'block' });
+      expect(json.json?.diagnostics).toContain('This repository needs repo-harness >= 999.0.0;');
+    } finally { clean(root); }
+  }, 30_000);
+
   test('a declared minimum at or below the running version lets the hook run', () => {
     const root = repo();
     try {
       const running = JSON.parse(readFileSync(join(import.meta.dir, '..', '..', 'package.json'), 'utf8')).version as string;
-      writeFileSync(join(root, '.ai/harness/workflow-contract.json'), `${JSON.stringify({ kind: 'repo-harness.workflow-contract-marker', protocol: 1, minimum_harness_version: running.replace(/-.*$/, '') })}\n`);
+      writeFileSync(join(root, '.ai/harness/workflow-contract.json'), `${JSON.stringify({ kind: 'repo-harness.workflow-contract-marker', protocol: 1, minimum_harness_version: running })}\n`);
       const result = runHook({ event: 'Stop', routeId: 'default', cwd: root, input: JSON.stringify({ stop_hook_active: false }), env: env(root) });
       expect(result.handler).toBe('stop');
     } finally { clean(root); }
