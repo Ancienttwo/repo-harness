@@ -16,12 +16,12 @@
  */
 import { projectBoardSlice } from '../../core/state/project-board-slice';
 import type { BoardSliceV1 } from '../../core/state/types';
-import { findClaimTokenByUnitRef } from '../../effects/state/coordination-claim-token';
+import { findClaimTokenForActivePlan } from '../../effects/state/coordination-claim-token';
 import {
   collectSliceInputs,
   resolveSliceOptions,
 } from '../../effects/state/collect-slice-inputs';
-import { readTrimmed } from '../../effects/state/collect-state-inputs';
+import type { StateInputCollector } from '../../effects/loop/state-input-collector';
 
 /** Idempotence marker; presence in a target string is authoritative. */
 export const BOARD_SLICE_MARKER = '[repo-harness:board-slice]';
@@ -41,7 +41,8 @@ const MAX_RENDERED_PEERS = 8;
 
 const POINTER_LINE = 'progress/stall not computed here — repo-harness state board --json';
 
-const ACTIVE_PLAN_MARKER = '.ai/harness/active-plan';
+/** The two state facts a slice needs: the tree and its active plan marker. */
+export type BoardSliceCollector = Pick<StateInputCollector, 'getRepoRoot' | 'getActivePlanMarker'>;
 
 /** Short, stable prefix of a 64-hex task id; the full id stays in the actions. */
 function shortId(taskId: string): string {
@@ -149,13 +150,11 @@ export function renderBoardSlice(slice: BoardSliceV1): string {
  * swallowing internally so the `PreToolUse.edit` gate, whose failure semantics
  * differ from a spawn advisory's, can decide for itself.
  */
-export function resolveBoardSlice(repoRoot: string): BoardSliceV1 | null {
+export function resolveBoardSlice(collector: BoardSliceCollector): BoardSliceV1 | null {
+  const repoRoot = collector.getRepoRoot();
   const options = resolveSliceOptions(repoRoot);
   if (options === null) return null;
-  const unitRef = readTrimmed(repoRoot, ACTIVE_PLAN_MARKER);
-  const token = unitRef === null
-    ? { outcome: 'none' as const }
-    : findClaimTokenByUnitRef(repoRoot, unitRef);
+  const token = findClaimTokenForActivePlan(repoRoot, collector.getActivePlanMarker());
   const collection = collectSliceInputs(repoRoot, options);
   const slice = projectBoardSlice({
     canonical_target: collection.canonical_target,
@@ -174,9 +173,9 @@ export function resolveBoardSlice(repoRoot: string): BoardSliceV1 | null {
  * canonical ref that does not resolve, a sprint file that left the ref -- is
  * absence of advice, never a failed hook.
  */
-export function resolveBoardSliceBlock(repoRoot: string): string | null {
+export function resolveBoardSliceBlock(collector: BoardSliceCollector): string | null {
   try {
-    const slice = resolveBoardSlice(repoRoot);
+    const slice = resolveBoardSlice(collector);
     return slice === null ? null : renderBoardSlice(slice);
   } catch {
     return null;
