@@ -40,7 +40,10 @@ describe('typed hook runtime', () => {
   test('fails open outside a git repository', () => {
     const root = mkdtempSync(join(tmpdir(), 'hrd09-not-git-'));
     try {
-      const result = runHook({ event: 'Stop', routeId: 'default', cwd: root, env: env(root) });
+      // #691 finding 7: HOOK_REPO_ROOT is trusted as the root, so only a call
+      // without it (Pi, or a direct call) resolves the root from a non-git cwd.
+      const { HOOK_REPO_ROOT: _managedRoot, ...unmanaged } = env(root);
+      const result = runHook({ event: 'Stop', routeId: 'default', cwd: root, env: unmanaged });
       expect(result).toEqual({ exitCode: 0, reason: 'not-in-git-repo' });
     } finally { clean(root); }
   });
