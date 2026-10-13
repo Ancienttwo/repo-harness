@@ -97,7 +97,8 @@ describe("Hook contracts", () => {
     const handler = read("src/cli/hook/subagent-handler.ts");
     expect(handler).toContain("[repo-harness:return-channel]");
     expect(handler).toContain("updatedInput");
-    expect(handler).toContain("permissionDecision: 'allow'");
+    // #691 finding 9: the handler returns a typed permission; the host renderer writes permissionDecision.
+    expect(handler).toContain("decision: 'allow'");
     expect(handler).toContain("/(delegate|parallel)");
     expect(handler).toContain("max_agents");
     expect(handler).toContain("max_depth");
@@ -184,7 +185,7 @@ describe("Hook contracts", () => {
   test("in-process stop handler should own Stop JSON control and recovery projection", () => {
     const handler = read("src/cli/hook/stop-handler.ts");
     expect(handler).toContain("[StopReadiness]");
-    expect(handler).toContain("last_assistant_message");
+    // #691 finding 10 removed the private Stop payload type, the only place that named last_assistant_message.
     expect(handler).toContain("stop_hook_active");
     expect(handler).toContain("StopProjectionBatch");
     expect(handler).toContain("Stop may continue");
