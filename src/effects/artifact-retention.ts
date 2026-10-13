@@ -14,10 +14,16 @@
  * `.ai/harness/checks/` is finished once nothing has written to it for the
  * window. Open work lives elsewhere and is never scanned.
  *
- * Run snapshots under `.ai/harness/runs/` are out of scope: acceptance
- * snapshots and verification records there are bound by sha256 and read back
- * at finalization (see `run-summary-retention.ts`), so moving them by age
- * could strand an acceptance.
+ * Most of `.ai/harness/runs/` must stay in place. Verification records
+ * (`verification-vx-*.json`) are bound by sha256 in the evidence ledger, and a
+ * missing one fails a baseline or a receipt check permanently. Report files are
+ * named by acceptance receipts. Task-agent, task-workspace and review session
+ * directories keep a `closed.json` tombstone that blocks a restart. Ledgers and
+ * hook telemetry are live and rotate on their own. Run summaries belong to
+ * `evidence-gc.ts`. Only terminal records that no code reads back are taken:
+ * failure logs of verification records, heartbeat triage snapshots, and
+ * `contract-run-*` output directories that finished (`manifest.json` is the
+ * last write of a run).
  *
  * An entry with any Git-tracked file is skipped. Moving it into an ignored
  * root would turn a local cleanup into a staged deletion.
@@ -33,19 +39,26 @@ const POLICY_FILE = '.ai/harness/policy.json';
 const CONFIG_KEYS = new Set(['days', 'archive_root', 'keep']);
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-export type RetentionClassId = 'closed-plans' | 'closed-task-records' | 'check-logs';
+export type RetentionClassId = 'closed-plans' | 'closed-task-records' | 'check-logs' | 'run-records';
 
 interface RetentionClass {
   readonly id: RetentionClassId;
   readonly dir: string;
   /** Which direct children of `dir` belong to the class. */
-  readonly accepts: (name: string, entry: Stats) => boolean;
+  readonly accepts: (name: string, entry: Stats, absolute: string) => boolean;
+}
+
+function isRunRecord(name: string, entry: Stats, absolute: string): boolean {
+  if (entry.isFile()) return /^verification-vx-[0-9a-f]{20}\.log$/.test(name) || name.endsWith('-heartbeat-triage.json');
+  return entry.isDirectory() && name.startsWith('contract-run-') && existsSync(join(absolute, 'manifest.json'));
 }
 
 const CLASSES: readonly RetentionClass[] = [
   { id: 'closed-plans', dir: 'plans/archive', accepts: (_, entry) => entry.isFile() || entry.isDirectory() },
   { id: 'closed-task-records', dir: 'tasks/archive', accepts: (_, entry) => entry.isFile() || entry.isDirectory() },
   { id: 'check-logs', dir: '.ai/harness/checks', accepts: (name, entry) => entry.isFile() && name.endsWith('.log') },
+  // The writers hard-code this directory, so `harness.runs_dir` does not apply.
+  { id: 'run-records', dir: '.ai/harness/runs', accepts: isRunRecord },
 ];
 
 export interface RetentionConfig {
@@ -180,7 +193,7 @@ export function runArtifactRetention(input: RetentionInput): RetentionReport {
     for (const name of readdirSync(dir).sort()) {
       const absolute = join(dir, name);
       const stats = lstatSync(absolute);
-      if (!retentionClass.accepts(name, stats)) continue;
+      if (!retentionClass.accepts(name, stats, absolute)) continue;
       const path = `${retentionClass.dir}/${name}`;
       const destination = `${config.archiveRoot}/${path}`;
       const ageDays = Math.floor((now - newestMtimeMs(absolute, stats)) / DAY_MS);

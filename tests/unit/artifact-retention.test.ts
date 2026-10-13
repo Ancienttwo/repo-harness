@@ -83,6 +83,42 @@ describe('artifact retention selection', () => {
     expect(rerun.skipped).toEqual([]);
   });
 
+  test('only run records that nothing reads back leave the runs directory', () => {
+    const root = fixture('.ai/harness/runs/\n.ai/harness/archive/\n');
+    const runs = '.ai/harness/runs';
+    seed(root, `${runs}/verification-vx-0123456789abcdef0123.log`, 60);
+    seed(root, `${runs}/heartbeat-20260801T010203-42-heartbeat-triage.json`, 60);
+    seed(root, `${runs}/contract-run-20260801T010203-fix/manifest.json`, 60);
+    seed(root, `${runs}/contract-run-20260801T010204-crashed/worker.stdout.log`, 60);
+    seed(root, `${runs}/verification-vx-0123456789abcdef0123.json`, 60);
+    seed(root, `${runs}/plan-a.report.json`, 60);
+    seed(root, `${runs}/run-20260801T010203-42.json`, 60);
+    seed(root, `${runs}/hook-events.jsonl`, 60);
+    seed(root, `${runs}/continuation/attempts.jsonl`, 60);
+    seed(root, `${runs}/task-agents/abc/closed.json`, 60);
+    seed(root, `${runs}/.gitkeep`, 60);
+
+    const report = runArtifactRetention({ repoRoot: root, apply: true, now: NOW });
+
+    expect(report.archived.map((entry) => [entry.class, entry.path])).toEqual([
+      ['run-records', `${runs}/contract-run-20260801T010203-fix`],
+      ['run-records', `${runs}/heartbeat-20260801T010203-42-heartbeat-triage.json`],
+      ['run-records', `${runs}/verification-vx-0123456789abcdef0123.log`],
+    ]);
+    expect(report.skipped).toEqual([]);
+    expect(existsSync(join(root, DEFAULT_ARCHIVE_ROOT, runs, 'contract-run-20260801T010203-fix/manifest.json'))).toBe(true);
+    expect(readdirSync(join(root, runs)).sort()).toEqual([
+      '.gitkeep',
+      'continuation',
+      'contract-run-20260801T010204-crashed',
+      'hook-events.jsonl',
+      'plan-a.report.json',
+      'run-20260801T010203-42.json',
+      'task-agents',
+      'verification-vx-0123456789abcdef0123.json',
+    ]);
+  });
+
   test('a directory entry is as recent as the newest file inside it', () => {
     const root = fixture();
     seed(root, 'tasks/archive/batch/old.md', 90);
@@ -160,6 +196,7 @@ describe('artifact retention selection', () => {
     [{ archive_root: '/var/archive' }, 'absolute paths are not allowed'],
     [{ archive_root: '../outside' }, 'path traversal is not allowed'],
     [{ archive_root: 'plans/archive/old' }, 'overlaps scanned directory plans/archive'],
+    [{ archive_root: '.ai/harness/runs/archive' }, 'overlaps scanned directory .ai/harness/runs'],
     [{ keep: 'plans/archive' }, 'retention.keep must be an array'],
     [{ retain: 30 }, 'unknown information_lifecycle.retention key: retain'],
     [[], 'information_lifecycle.retention must be an object'],

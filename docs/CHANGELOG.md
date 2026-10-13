@@ -181,8 +181,10 @@ All notable changes to this skill are documented here.
 
 ### Added
 
-- `repo-harness retention` moves closed plans, closed task records and
-  check logs older than 30 days to a gitignored local archive root. It is a
+- `repo-harness retention` moves closed plans, closed task records, check
+  logs and run records that no code reads back (verification failure logs,
+  heartbeat triage snapshots and finished `contract-run-*` directories)
+  older than 30 days to a gitignored local archive root. It is a
   dry run unless `--apply` is given. It skips Git-tracked entries and the
   `keep` list, and it never deletes. `information_lifecycle.retention` in
   `.ai/harness/policy.json` overrides the window, the archive root and the
