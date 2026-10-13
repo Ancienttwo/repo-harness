@@ -15,8 +15,7 @@ import {
   StateResolutionUnstableError,
 } from '../../effects/state/resolve-effective-state';
 import { ExclusiveLockContentionError } from '../../effects/locking/exclusive-directory-lock';
-import type { EffectiveState, EffectiveStateRiskInput } from '../../core/state/types';
-import type { WorkflowProfile } from '../../core/workflow/profile';
+import type { EffectiveState } from '../../core/state/types';
 import type { HookHandlerResult } from './handler-contract';
 import { HookPayloadError, hookIdentity, parseHookPayload, type HookIdentity } from './hook-input';
 import { boundedHookDiagnostic, HOST_RENDERERS, type HookJsonOutput, type HookOutcome } from './hook-protocol';
@@ -85,43 +84,23 @@ function isTransientResolutionInstability(error: unknown): boolean {
     || error instanceof ExclusiveLockContentionError;
 }
 
-type EffectiveStateResolver = (
-  repoRoot: string,
-  nowMs: number,
-  risk?: EffectiveStateRiskInput,
-) => EffectiveState;
-
-function effectiveStateRisk(
-  event: HookEvent,
-  targetPaths: readonly string[],
-  env: NodeJS.ProcessEnv,
-): EffectiveStateRiskInput {
-  const explicitOverride = env.REPO_HARNESS_WORKFLOW_PROFILE as WorkflowProfile | undefined;
-  if (event === 'PreToolUse') return { targetPaths, operationKind: 'edit', explicitOverride };
-  if (event === 'Stop') return { operationKind: 'inspect', explicitOverride };
-  // SessionStart matches `repo-harness state resolve --json` exactly: no
-  // operation or profile override, even when hook-only env vars are set.
-  return {};
-}
+type EffectiveStateResolver = (repoRoot: string, nowMs: number) => EffectiveState;
 
 /**
- * The single Effective State policy for every hook event: one timestamp,
- * at most three attempts for transient contention, and a hashed failure that
- * each handler renders in its own advisory.
+ * The single Effective State policy for every hook event: the same
+ * resolution as `repo-harness state resolve --json`, one timestamp, at most
+ * three attempts for transient contention, and a hashed failure that each
+ * handler renders in its own advisory.
  */
 export function resolveHookEffectiveState(
   repoRoot: string,
-  event: HookEvent,
-  targetPaths: readonly string[],
-  env: NodeJS.ProcessEnv,
   nowMs: number,
   resolve: EffectiveStateResolver = resolveEffectiveState,
 ): EffectiveStateResolution {
-  const risk = effectiveStateRisk(event, targetPaths, env);
   let failure: unknown = null;
   for (let attempt = 1; attempt <= EFFECTIVE_STATE_RESOLUTION_MAX_ATTEMPTS; attempt += 1) {
     try {
-      return { ok: true, state: resolve(repoRoot, nowMs, risk) };
+      return { ok: true, state: resolve(repoRoot, nowMs) };
     } catch (error) {
       failure = error;
       if (!isTransientResolutionInstability(error)) break;
@@ -189,8 +168,8 @@ export function runHook(opts: RunHookOptions): RunHookResult {
   const now = new Date();
   const collector = createStateInputCollector({
     repoRoot,
-    resolveEffectiveState: (targetPaths) =>
-      resolveHookEffectiveState(repoRoot, opts.event, targetPaths, env, now.getTime()),
+    resolveEffectiveState: () =>
+      resolveHookEffectiveState(repoRoot, now.getTime()),
   });
 
   let identity: HookIdentity = { host, sessionId: null, runId: null, turnId: null };

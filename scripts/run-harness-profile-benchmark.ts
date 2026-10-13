@@ -91,7 +91,6 @@ export interface BenchmarkRunRecord {
   hook_p50_ms: number | null;
   hook_p95_ms: number | null;
   hook_p99_ms: number | null;
-  session_start_context_tokens: number | null;
   guard_block_count: number;
   repeated_guard_fingerprint_count: number;
   artifact_files_created: number;
@@ -1158,12 +1157,6 @@ async function executeRun(
     if (fingerprints.has(hook.fingerprint)) repeated += 1;
     fingerprints.add(hook.fingerprint);
   }
-  let contextTokens: number | null = null;
-  const contextEvidence = join(workspace, '.ai/harness/state/session-context-budget.json');
-  if (existsSync(contextEvidence)) {
-    const parsed = JSON.parse(readFileSync(contextEvidence, 'utf-8')) as { estimated_tokens?: unknown };
-    if (typeof parsed.estimated_tokens === 'number') contextTokens = parsed.estimated_tokens;
-  }
   const artifactFiles = changed.filter((path) => /^(plans|tasks|\.ai\/harness)\//.test(path));
   const graderPassed = grader.status === 0 && expectedPathsPassed;
   const workspaceHash = workspaceEvidenceHash(workspace, baselineRevision);
@@ -1179,7 +1172,6 @@ async function executeRun(
     total_duration_ms: duration, hook_invocation_count: hooks.length,
     hook_total_duration_ms: hookDurations.reduce((sum, value) => sum + value, 0),
     hook_p50_ms: percentile(hookDurations, 0.5), hook_p95_ms: percentile(hookDurations, 0.95), hook_p99_ms: percentile(hookDurations, 0.99),
-    session_start_context_tokens: contextTokens,
     guard_block_count: hooks.filter((entry) => entry.blocked).length,
     repeated_guard_fingerprint_count: repeated, artifact_files_created: artifactFiles.length, artifact_files: artifactFiles,
     profile_projection_artifact_files: base.profile === 'strict-harness' ? 2 : 0,
@@ -1203,7 +1195,7 @@ function dryRunRecord(provider: BenchmarkProvider, scenario: HarnessScenario, la
     provider_exit_code: null, usage_authority: 'unavailable', provider_unavailable_reason: 'dry-run', input_tokens: null, cached_input_tokens: null, output_tokens: null,
     model_call_count: null, subagent_call_count: null, time_to_first_edit_ms: null, total_duration_ms: null,
     hook_invocation_count: 0, hook_total_duration_ms: 0, hook_p50_ms: null, hook_p95_ms: null, hook_p99_ms: null,
-    session_start_context_tokens: null, guard_block_count: 0,
+    guard_block_count: 0,
     repeated_guard_fingerprint_count: 0, artifact_files_created: 0, artifact_files: [], profile_projection_artifact_files: profile === 'strict-harness' ? 2 : 0,
     grader_acceptance: 'unavailable', no_harness_isolation: 'unavailable',
     evidence_hashes: { provider_stream: null, provider_stderr: null, grader_stdout: null, grader_stderr: null, workspace: null },

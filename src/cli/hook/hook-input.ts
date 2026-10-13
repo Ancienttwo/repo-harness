@@ -1,5 +1,3 @@
-import { realpathSync } from 'fs';
-import { basename, dirname } from 'path';
 import type { RouteHost } from './route-registry';
 
 /**
@@ -73,36 +71,4 @@ export function hookIdentity(payload: HookPayload, host: RouteHost): HookIdentit
     runId: payloadIdentityField(payload, 'run_id'),
     turnId: payloadIdentityField(payload, 'turn_id'),
   };
-}
-
-/**
- * Make a host-reported absolute path repository relative. Paths outside the
- * repository stay absolute; the host may report a symlinked temp directory for
- * a file that does not exist yet, so only the parent is resolved.
- */
-export function normalizeRepoRelativePath(repoRoot: string, raw: string): string {
-  if (!raw || !raw.startsWith('/')) return raw;
-  if (raw === repoRoot || raw.startsWith(`${repoRoot}/`)) return raw.slice(repoRoot.length + 1);
-
-  let rootReal = '';
-  try {
-    rootReal = realpathSync(repoRoot);
-  } catch {
-    rootReal = '';
-  }
-  if (rootReal && (raw === rootReal || raw.startsWith(`${rootReal}/`))) {
-    return raw.slice(rootReal.length + 1);
-  }
-  try {
-    const canonical = `${realpathSync(dirname(raw))}/${basename(raw)}`;
-    if (rootReal && (canonical === rootReal || canonical.startsWith(`${rootReal}/`))) {
-      return canonical.slice(rootReal.length + 1);
-    }
-    if (canonical === repoRoot || canonical.startsWith(`${repoRoot}/`)) {
-      return canonical.slice(repoRoot.length + 1);
-    }
-  } catch {
-    // An unresolvable parent keeps the original absolute path.
-  }
-  return raw;
 }
