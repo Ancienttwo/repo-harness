@@ -65,6 +65,49 @@ test('Windows propagates unreadable file metadata without a caller fallback', ()
 });
 
 const nativeWindows = process.platform === 'win32' ? test : test.skip;
+
+// TEMPORARY DIAGNOSTIC (#664): remove before the final commit.
+nativeWindows('DIAG gh --version timing by environment variant', async () => {
+  const platform = await import('../../src/effects/runtime/protected-helper-platform');
+  const system = nativeWindowsSystemToolsDirectory();
+  const bin = resolveTrustedGhExecutable()!;
+  const evil = 'C:\\repo-harness-attacker';
+  let production: NodeJS.ProcessEnv | undefined;
+  try {
+    const contract = platform.discoverWindowsProtectedHelperContract({ env: process.env });
+    production = platform.protectedHelperRuntimeEnv(platform.resolveProtectedHelperPlatform({ contract }));
+  } catch (error) { console.log('DIAG production env unavailable:', String(error)); }
+  const variants: Record<string, NodeJS.ProcessEnv | undefined> = {
+    real: { ...process.env },
+    hostileAll: { ...process.env, PATH: evil, ProgramFiles: evil, SystemRoot: evil, WINDIR: evil },
+    hostileSystemRoot: { ...process.env, SystemRoot: evil },
+    hostileWindir: { ...process.env, WINDIR: evil },
+    hostilePath: { ...process.env, PATH: evil },
+    hostileProgramFiles: { ...process.env, ProgramFiles: evil },
+    production,
+  };
+  console.log('DIAG bin', bin, 'system', system, 'productionKeys', production ? Object.keys(production).join(',') : 'none');
+  for (let round = 1; round <= 3; round++) {
+    for (const [name, env] of Object.entries(variants)) {
+      if (!env) continue;
+      const started = performance.now();
+      const result = spawnSync(bin, ['--version'], { encoding: 'utf8', timeout: 12000, env });
+      const elapsed = Math.round(performance.now() - started);
+      console.log(`DIAG round=${round} variant=${name} ms=${elapsed} status=${result.status} signal=${result.signal} error=${result.error?.message ?? ''} stdout=${JSON.stringify((result.stdout ?? '').slice(0, 40))} stderr=${JSON.stringify((result.stderr ?? '').slice(0, 300))}`);
+    }
+  }
+  const debugStarted = performance.now();
+  const debug = spawnSync(bin, ['--version'], { encoding: 'utf8', timeout: 12000,
+    env: { ...process.env, PATH: evil, ProgramFiles: evil, SystemRoot: evil, WINDIR: evil, GH_DEBUG: '1' } });
+  console.log(`DIAG ghdebug hostile ms=${Math.round(performance.now() - debugStarted)} status=${debug.status} stderr=${JSON.stringify((debug.stderr ?? '').slice(0, 3000))}`);
+  const child = (env: NodeJS.ProcessEnv) => {
+    const started = performance.now();
+    const result = spawnSync(process.execPath, ['-e', '0'], { encoding: 'utf8', timeout: 12000, env });
+    return `${Math.round(performance.now() - started)}ms status=${result.status}`;
+  };
+  console.log('DIAG bun -e 0 real', child({ ...process.env }), 'hostile', child(variants.hostileAll!));
+}, 400000);
+
 nativeWindows('native Windows executes the preinstalled fixed gh with hostile caller environment', () => {
   const module = fileURLToPath(new URL('../../src/effects/runtime/protected-helper-platform.ts', import.meta.url));
   const code = `import {resolveTrustedGhExecutable} from ${JSON.stringify(module)};
