@@ -29,7 +29,7 @@
 - 前端：`src/operator-web/`，构建到 `dist/operator-ui`（`vite.operator.config.ts`）。服务端从包内 `dist/operator-ui` 提供静态文件（`server.ts:85-88`）。所有 API 请求都是相对路径（例如 `dev-activity.ts:21`、`setup.ts:24`、`fleet-api.ts:76`）。外链只有 PR 链接（`Board.tsx:72`、:172，`ItemDrawer.tsx:99`、:169，`ui.tsx:78-80`），解码器只接受 `https://github.com/<owner>/<repo>/…`（`src/core/dev-activity/decode.ts:75`）。
 - 标题计数：`document.title` 在「需要你」数量大于 0 时是 `(N) repo-harness`，数量为 0 或未知时是 `repo-harness`（`App.tsx:112-114`、:398-402）。
 - 运行时：`bin.repo-harness` 是 `src/cli/index.ts`，shebang 是 `#!/usr/bin/env bun`。`engines` 要求 Bun ≥1.4.0。服务端直接用 Bun API：`Bun.sleep`（`server.ts:672`）、`Bun.YAML`（`docs-graph.ts:120`）、`Bun.which`（`runtime-capture-pty.ts:21`）。
-- 子进程：Fleet collector 和任务读取进程都由 `readSupervisedOperatorProcess` 用 `spawn(process.execPath, [<ts 文件>])` 启动，各自是独立进程组，stdin 是管道（`server.ts:686-688`、:735-760、:1422-1423）。正常结束时 serve 对组发 SIGTERM，500 ms 后发 SIGKILL，等组为空之后才 `stdin.end()`（:52、:776-787、:819-834）。Fleet collector 读到 stdin 关闭时结束自己（`fleet-collector-process.ts:85-87`），任务读取进程只取消（`task-read-process.ts:26`）；两者都不向自己的组发信号。任务读取进程内部再起 `Worker`（`task-read-process.ts:42`）。setup collector 同样用 `process.execPath`，独立进程组，stdin 为 `ignore`，子进程里的 builder 是同步的（`src/effects/setup/collector.ts:1-10`、:22、:39-42）。Dev Activity 的 `git`、`gh` 不建新组，属于 serve 自己的组（`src/effects/dev-activity/collector.ts:93`）。
+- 子进程：Fleet collector 和任务读取进程都由 `readSupervisedOperatorProcess` 用 `spawn(process.execPath, [<ts 文件>])` 启动，各自是独立进程组，stdin 是管道（`server.ts:686-688`、:735-760、:1422-1423）。正常结束时 serve 对组发 SIGTERM，500 ms 后发 SIGKILL，等组为空之后才 `stdin.end()`（:52、:775-787、:822-837）。Fleet collector 读到 stdin 关闭时结束自己（`fleet-collector-process.ts:85-87`），任务读取进程只取消（`task-read-process.ts:26`）；两者都不向自己的组发信号。任务读取进程内部再起 `Worker`（`task-read-process.ts:42`）。setup collector 同样用 `process.execPath`，独立进程组，stdin 为 `ignore`，子进程里的 builder 是同步的（`src/effects/setup/collector.ts:1-10`、:22、:39-42）。Dev Activity 的 `git`、`gh` 不建新组，属于 serve 自己的组（`src/effects/dev-activity/collector.ts:93`）。
 - 错误映射：除参数错误外，CLI 把所有启动错误（包括 listen 失败）都输出为 `operator_server_unavailable` 加原始 `message`（`operator.ts:84-90`）。没有结构化的「端口被占用」错误码。Dev Activity collector 从 PATH 调用 `git`、`gh`（`src/effects/dev-activity/collector.ts:311`、:335）。runtime capture 从 PATH 找 `python3`（`runtime-capture-pty.ts:21`）。
 - 环境：registry 根目录是 `REPO_HARNESS_HOME`，没有时是 `~/.repo-harness`（`src/effects/repo-registry.ts:98`）。漏传这个变量会让服务读另一个 registry。
 - cwd：setup collector 用 `process.cwd()`（`setup/collector.ts:103`）。setup check 用 cwd 跑 `runStatus` 和 `runDoctor`（`src/cli/commands/init-hook.ts:748-756`）。其他读取器按 Fleet registry id 找仓库（例如 `architecture.ts:23-26`）。
@@ -201,7 +201,7 @@ CLI 的查找、环境和配置统一在 §4.5 定义。版本检查：每次启
 **独立进程组组长的 lifeline**：serve 被 `kill -9`，或卡住后被外壳 SIGKILL 时，没有 serve 代码能运行。这时独立进程组只能由组长自己回收。
 - 现状（§0 P1）：Fleet collector 读到 stdin 关闭时结束自己，但不回收组里已启动的 `git`（**inferred**）。任务读取进程只取消。setup 子进程的 stdin 是 `ignore`，并阻塞在同步 builder 里，察觉不到 serve 死亡。
 - 改动：每个组长读到 stdin EOF 时，向自己的进程组发 SIGKILL（含自己）。
-- EOF 的含义不变：serve 现在等组为空之后才 `stdin.end()`（`server.ts:776-787`、:819-834），所以组长只会在 serve 死亡后读到「组还在时的 EOF」。DP1 要核对 serve 的所有结束路径都保持这个顺序。
+- EOF 的含义不变：serve 现在等组为空之后才 `stdin.end()`（`server.ts:775-787`、:822-837），所以组长只会在 serve 死亡后读到「组还在时的 EOF」。DP1 要核对 serve 的所有结束路径都保持这个顺序。
 - setup 子进程的 stdin 改为管道。builder 会用 `spawnSync` 阻塞约 20 秒，所以 builder 移进 Worker，主线程只读 stdin（**unverified**：在 Bun Worker 里运行 `buildSetupCheck` 是否可行，DP0 验证）。
 
 **结构化端口错误**：listen 失败且错误对象的 `code` 是 `EADDRINUSE` 时，stderr 输出 `{"ok":false,"error":"port_in_use"}`，退出码仍是 1。其他错误的输出不变（`operator_server_unavailable` 或 `invalid_argument`）。判断依据是错误对象的 `code`，不是 `message` 文本。
