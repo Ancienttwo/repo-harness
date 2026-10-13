@@ -59,21 +59,29 @@ impl Case {
 
 impl Drop for Case {
     fn drop(&mut self) {
-        // Kill only processes this case recorded, by pid or by own group.
-        for key in ["collector-grandchild", "serve"] {
+        // Kill only processes this case recorded, and only after checking that
+        // the pid still runs the expected program (a reaped pid can be reused).
+        for (key, program) in [("collector-grandchild", "sleep"), ("serve", "fake-serve")] {
             for pid in self.pids(key) {
-                if alive(pid) && pid > 1 {
+                if pid > 1 && runs(pid, program) {
                     unsafe { libc::kill(pid, libc::SIGKILL) };
                 }
             }
         }
         for pgid in self.pids("collector-group") {
-            if group_alive(pgid) && pgid > 1 {
+            if pgid > 1 && runs(pgid, "fake-serve") {
                 unsafe { libc::killpg(pgid, libc::SIGKILL) };
             }
         }
         let _ = fs::remove_dir_all(&self.root);
     }
+}
+
+/// True when `pid` is alive and its executable name is `program`.
+pub fn runs(pid: i32, program: &str) -> bool {
+    let Ok(out) = std::process::Command::new("/bin/ps").args(["-o", "comm=", "-p", &pid.to_string()]).output() else { return false };
+    let comm = String::from_utf8_lossy(&out.stdout);
+    comm.trim().rsplit('/').next() == Some(program)
 }
 
 pub fn alive(pid: i32) -> bool {

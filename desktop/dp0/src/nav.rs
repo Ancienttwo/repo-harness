@@ -1,10 +1,11 @@
 //! Navigation and new-window decisions (plan section 4.7, S4).
 //!
 //! Top-level navigation never opens anything outside the window: the
-//! navigation callback carries no user-gesture signal. A GitHub link reaches
-//! the system browser only through a new-window request, which WKWebView
-//! raises for `target="_blank"` and `window.open` only when it allows the
-//! popup. T-NAV-5 measures whether a script without a gesture gets that far.
+//! navigation callback carries no user-gesture signal. DP0 measured that this
+//! rule is not enough (RESULTS.md F1, F2): on macOS a script's `window.open`
+//! reaches the new-window callback without a gesture (T-NAV-5 fails), and a
+//! `target="_blank"` link arrives first as a navigation, which is denied.
+//! The hand-off rule needs a design decision before DP2.
 
 use url::{Host, Url};
 

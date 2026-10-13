@@ -30,6 +30,7 @@ pub enum ProbeError {
     MarkersMissing,
     CliNotFound,
     NotAbsolute,
+    NotUtf8,
 }
 
 /// Run `<shell> -l -i -c <script>` with stdin `/dev/null`.
@@ -71,13 +72,18 @@ pub fn run(shell: &Path, timeout: Duration) -> Result<ProbeValues, ProbeError> {
         Ok(Err(error)) => return Err(error),
         Err(_) => return Err(ProbeError::Timeout),
     };
-    parse(&String::from_utf8_lossy(&bytes))
+    parse(&bytes)
 }
 
-pub fn parse(output: &str) -> Result<ProbeValues, ProbeError> {
-    let start = output.find(BEGIN).ok_or(ProbeError::MarkersMissing)? + BEGIN.len();
-    let len = output[start..].find(END).ok_or(ProbeError::MarkersMissing)?;
-    let fields: Vec<&str> = output[start..start + len].split('\x1e').collect();
+/// Only the bytes between the markers are decoded, strictly: rc-file noise
+/// may be in any encoding, but a value with non-UTF-8 bytes is refused, not
+/// rewritten.
+pub fn parse(output: &[u8]) -> Result<ProbeValues, ProbeError> {
+    let find = |hay: &[u8], needle: &[u8]| hay.windows(needle.len()).position(|w| w == needle);
+    let start = find(output, BEGIN.as_bytes()).ok_or(ProbeError::MarkersMissing)? + BEGIN.len();
+    let len = find(&output[start..], END.as_bytes()).ok_or(ProbeError::MarkersMissing)?;
+    let values = std::str::from_utf8(&output[start..start + len]).map_err(|_| ProbeError::NotUtf8)?;
+    let fields: Vec<&str> = values.split('\x1e').collect();
     let [path, cli, home] = fields[..] else { return Err(ProbeError::MarkersMissing) };
     if cli.is_empty() {
         return Err(ProbeError::CliNotFound);
@@ -88,4 +94,26 @@ pub fn parse(output: &str) -> Result<ProbeValues, ProbeError> {
         return Err(ProbeError::NotAbsolute);
     }
     Ok(ProbeValues { path: path.to_string(), cli_path, repo_harness_home })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn framed(values: &[u8]) -> Vec<u8> {
+        [b"\xff\xfe noise\n".as_slice(), BEGIN.as_bytes(), values, END.as_bytes(), b"\n".as_slice()].concat()
+    }
+
+    // T-ENV-1: non-UTF-8 noise outside the markers is ignored; a non-UTF-8
+    // value inside them fails closed.
+    #[test]
+    fn decodes_only_the_framed_values_strictly() {
+        let ok = parse(&framed(b"/usr/bin:/bin\x1e/opt/bin/repo-harness\x1e")).unwrap();
+        assert_eq!(ok.cli_path, PathBuf::from("/opt/bin/repo-harness"));
+        assert_eq!(ok.repo_harness_home, None);
+        assert_eq!(parse(&framed(b"/usr/bin\x1e/opt/b\xffin/repo-harness\x1e")), Err(ProbeError::NotUtf8));
+        assert_eq!(parse(&framed(b"/usr/bin\x1erepo-harness\x1e")), Err(ProbeError::NotAbsolute));
+        assert_eq!(parse(&framed(b"/usr/bin\x1e\x1e")), Err(ProbeError::CliNotFound));
+        assert_eq!(parse(b"no markers"), Err(ProbeError::MarkersMissing));
+    }
 }
