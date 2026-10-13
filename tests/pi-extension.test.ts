@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { readPendingPostEditEvents } from '../src/cli/hook/mutation-observed';
 import { readAcceptedEvents } from '../src/effects/evidence/event-log';
 import { PiHookBridge, type HookRequest } from '../src/pi/hook-bridge';
 import { parseHookJsonOutput, type HookJsonOutput } from '../src/pi/hook-protocol';
@@ -314,6 +315,9 @@ describe('real Pi 1.2 tool pipeline with a scripted provider', () => {
       expect(toolRuns).toHaveLength(2);
       expect(new Set(toolRuns).size).toBe(2);
       expect(stops.map(event => event.run_id)).toEqual(toolRuns);
+      // The custom run's Stop consumes the post-edit journal entry that its write queued.
+      expect(result.journalPaths).toContain('custom-run.txt');
+      expect(readPendingPostEditEvents(f.root)).toEqual([]);
     } finally { f.cleanup(); }
   }, 60_000);
 
