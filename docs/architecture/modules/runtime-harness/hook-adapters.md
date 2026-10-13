@@ -181,8 +181,8 @@ sequenceDiagram
 
 | 决策 | 权衡 |
 | --- | --- |
-| PostToolUse.edit 只写一条 journal event，重活推到 Stop | 换来编辑热路径近乎零成本，代价是副作用可见性延迟到 Stop；host 若在 Stop 前被杀，pending 事件留在队列等下次 Stop 重试 |
-| `subagent` handler 复用 4 条 route | 避免四份近似实现，代价是该 handler 必须在内部按 `context.event` 分支（`handler-registry.ts:49` 的窄化断言即此处的类型缝合点） |
+| `PostToolUse.edit` 与 `PostToolUse.always` 绑定 no-op `retired-observer`，route 保留到 #698 | route tuple 不变，Codex 不用重新信任。代价：每次编辑和每次工具调用仍付一次进程启动，直到 #698 删除这两条 route |
+| 四条 subagent route 各有一个 handler（`return-channel`、`delegation-advisor`、`subagent-context`、`subagent-quality`） | handler id 是内部名，tuple 不变。runtime 统一检查 host，handler 不按 event 或 host 分支 |
 | `hook-entry.ts` 与完整 commander CLI 分离 | 热路径不冷加载非 hook 命令模块（文件头 `:5` 明写理由），代价是子命令分派在 entry 里手写成一串 `if` |
 | 保留 `workflow-state.sh` 作为 operator helper | 保住 workflow-state 契约的 parity，代价是仓库里长期存在 1,884 行 × 2 份 Bash；它没有事件入口，所以不构成第二 dispatcher |
 | 空 lifecycle hooks 已移除 | Scaffold 和 template assembly 直接执行各自任务。它们不再调用空 runner。 |
@@ -193,10 +193,10 @@ sequenceDiagram
 
 | 组件 | footprint 摘要 | 文件 / 行 | 职责 |
 | --- | --- | --- | --- |
-| `component.hook-adapters.primary`（Hook Route Runtime） | `hook-entry.ts`、`hook/{runtime,route-registry,handler-registry,handler-contract,hook-input,hook-protocol,event-telemetry,run-identity,trace-observer,session-context-budget}.ts`、`src/pi/hook-protocol.ts`、`src/effects/loop/**`、`hook-work-budget.ts`、`hook-event-log.ts` | 15 / 2006（2026-10-13） | route 表、handler 绑定、opt-in 检查、payload 与 identity 解析、host 渲染表、遥测与日志轮转 |
-| `component.hook-adapters.edit-guards`（Guard and Observer Handlers） | `hook/{mutation-*,minimal-change-*,prompt-*,circuit-breaker,command-observed}.ts`（逐个列出） | 11 / 3774（2026-10-13） | PreToolUse.edit 守卫、post-edit journal、Bash 观测、prompt 建议、minimal change |
-| `component.hook-adapters.session-lifecycle`（Session Lifecycle Handlers） | `hook/{session-context,stop-handler,subagent-handler,delegation-state,task-inbox-handler,board-slice-context,state-snapshot}.ts`、`run-summary-retention.ts` | 8 / 3801 | SessionStart、Stop 延迟工作、subagent、Task Inbox |
-| `component.hook-adapters.host-installer`（Host Adapter Installer） | `src/cli/installer/**`、`src/pi/{extension,hook-bridge}.ts`、`assets/hooks/**`、`.ai/hooks/**`、`commands/{install,status,security,hook}.ts`、`scripts/sync-hook-sources.ts` | 26 / 7729 | managed entries、install profile、Pi bridge、status 与 security scan |
+| `component.hook-adapters.primary`（Hook Route Runtime） | `hook-entry.ts`、`hook/{runtime,route-registry,handler-registry,handler-contract,hook-input,hook-protocol,event-telemetry,session-context-budget}.ts`、`src/pi/hook-protocol.ts`、`src/effects/loop/**`、`hook-event-log.ts` | 12 / 1183（2026-10-13） | route 表、handler 绑定、opt-in 检查、payload 与 identity 解析、host 渲染表、遥测与日志轮转 |
+| `component.hook-adapters.edit-guards`（Guard and Observer Handlers） | `hook/{mutation-guard,prompt-handler,prompt-router,circuit-breaker,command-observed}.ts` | 5 / 712（2026-10-13） | PreToolUse.edit 路径边界、Bash 观测、prompt 的 `[OperationBoundaries]` 行、circuit breaker |
+| `component.hook-adapters.session-lifecycle`（Session Lifecycle Handlers） | `hook/{session-context,stop-handler,return-channel,delegation-advisor,subagent-context,subagent-quality,task-inbox-handler,board-slice-context,state-snapshot}.ts`、`run-summary-retention.ts` | 10 / 1532（2026-10-13） | SessionStart、Stop 恢复视图、subagent route、Task Inbox |
+| `component.hook-adapters.host-installer`（Host Adapter Installer） | `src/cli/installer/**`、`src/pi/{extension,hook-bridge}.ts`、`assets/hooks/**`、`commands/{install,status,security,hook}.ts` | 20 / 4702（2026-10-13） | managed entries、install profile、Pi bridge、status 与 security scan |
 
 与归属提议 §5 的两处偏差，都有源码证据：
 
@@ -208,9 +208,8 @@ sequenceDiagram
 | 关系 | 类型 | 证据 |
 | --- | --- | --- |
 | host-installer → route-runtime | calls | `buildManagedHooks` 调用 `routesForHost`（`managed-entries.ts:107`）；`commands/hook.ts` 调用 `runHook` |
-| route-runtime → edit-guards | calls | `handlers` 绑定 `runMutationGuard`（`handler-registry.ts`）。`hook-entry.ts` 只分派 hook route、`state-snapshot`、进程 supervisor 与 detached populate；minimal-change 只由 Stop handler 调用 |
-| route-runtime → session-lifecycle | calls | `handlers` 绑定 `runStopHandler`（`handler-registry.ts:150`）和 SessionStart、subagent、inbox handler |
-| session-lifecycle → edit-guards | calls | `runStopHandler` 调用 `consumePendingPostEditEvents`（`stop-handler.ts:483`）；SessionStart 渲染 minimal change 上下文 |
+| route-runtime → edit-guards | calls | `handlers` 绑定 `runMutationGuard`、`runCommandObserved` 与 `runPromptHandler`（`handler-registry.ts`）。`hook-entry.ts` 只分派 hook route、`state-snapshot` 与进程 supervisor |
+| route-runtime → session-lifecycle | calls | `handlers` 绑定 `runStopHandler`、SessionStart、四个 subagent handler 与 inbox handler（`handler-registry.ts`） |
 | edit-guards → route-runtime、session-lifecycle → route-runtime | depends-on | handler 实现 typed `HookHandlerResult` 契约。handler 从 `HookHandlerContext` 读取 `payload` 与 `identity`，并读取 event 级 `StateInputCollector`。handler 不读取 session、run 或 turn 的环境变量 |
 
 组件到其他 capability 的关系（生成区 §1.4 不显示组件级出向关系，所以列在这里）：
@@ -221,11 +220,11 @@ sequenceDiagram
 | host-installer → `workflow-engine.contract-assets` | `commands/hook.ts:41` 调用 `resolveWorkflowStateLibrary` |
 | host-installer → `global-runtime-reconciliation` | `status.ts:242` 调用 `inspectArchitectureProjectionReadiness` |
 | route-runtime → `global-runtime-reconciliation` | `hook-entry.ts` 与 `runtime.ts` 用 `src/cli/runtime/write-all-sync.ts` 写 host 输出 |
-| session-lifecycle → `public-surface.adoption` | `run-summary-retention.ts` 引用 `src/effects/path-safety.ts` |
+| session-lifecycle → `public-surface.adoption` | `run-summary-retention.ts` 引用 `src/effects/path-safety.ts`。只有 `scripts/evidence-gc.ts` 调用它，这是一个版本的一次性清理 |
 
-依赖方向说明：route-runtime 与两个 handler 组件之间有双向边。registry 组合 handler（calls），handler 实现 registry 的契约（depends-on）。这是插件式组合，不是层次倒置。如果以后要消除这个环，把 `handler-contract.ts`、`hook-input.ts`、`run-identity.ts` 移到一个叶子组件即可。目前没有证据说明这个环造成了问题。
+依赖方向说明：route-runtime 与两个 handler 组件之间有双向边。registry 组合 handler（calls），handler 实现 registry 的契约（depends-on）。这是插件式组合，不是层次倒置。如果以后要消除这个环，把 `handler-contract.ts` 与 `hook-input.ts` 移到一个叶子组件即可。目前没有证据说明这个环造成了问题。
 
-host-installer 有 26 个文件、7729 行，标记为 expandable。可以按 host 拆成 installer、Pi bridge、asset projection 三块。现在不拆。
+host-installer 有 20 个文件、4702 行（2026-10-13），标记为 expandable。可以按 host 拆成 installer、Pi bridge、asset projection 三块。现在不拆。
 
 ### 3.4 10x 规模下先垮的点
 
@@ -242,19 +241,19 @@ host-installer 有 26 个文件、7729 行，标记为 expandable。可以按 ho
 
 按实测的可证伪顺序：
 
-1. **Stop 的延迟工作。** 旧采样里 Stop 是唯一贴到硬上限的 route：675 次 Stop 里 93 次超过 5s、77 次超过 10s，p99 24.4s。当时的主要成本是架构 cascade 和投影 drain。二者已删除（2026-10-10）。refactor recommendation observer 也已移出 Stop（2026-10-10），改由 Bot 按需读取证据。剩下的是 post-edit journal。需要重新采样，再判断 Stop 是否仍是最先垮的点。
-2. **`PostToolUse.bash` 的单位成本 × 调用量。** p50 52ms 单看不贵，但它是第二高频 route（16,398 次），乘出来就是 26.7% 的总时间。它没有尾延迟问题（p99 244ms），垮的方式是稳态吞吐：命令密度上去后每次 Bash 调用都固定付这 50ms。
-3. **`PreToolUse.edit` 阻塞编辑热路径。** mutation-guard 是**同步前置**门，p50 253ms 直接计入用户可感知的编辑延迟，且 max 10.9s 说明它在状态解析退化时会长尾。§3.2 那条"编辑热路径近乎零成本"的权衡只对 `PostToolUse.edit`（0.8%、p50 13ms）成立，对 PreToolUse 一侧不成立。
-4. **SessionStart 上下文预算是全有或全无。** 五个 provider（resume、pending-plan-capture、current-status-snapshot、active-sprint、tooling-update-advisory）被 `appendBlock` 拼成**一整块** priority-5 的 `session-start-context.sh` section。`budgetSessionContext` 的裁剪粒度是 section（`session-context-budget.ts:437`），不是 provider —— 超预算时整块被丢掉、只留一行 `[ContextRef:session-start-context.sh]` 占位。所以这里不存在"低优先级 provider 先被牺牲"，而是五块内容一起消失。延迟本身不是瓶颈（4.6%、p95 711ms）。
+1. **Stop 的延迟工作。** 旧采样里 Stop 是唯一贴到硬上限的 route：675 次 Stop 里 93 次超过 5s、77 次超过 10s，p99 24.4s。当时的主要成本是架构 cascade 和投影 drain。二者已删除（2026-10-10）。refactor recommendation observer 也已移出 Stop（2026-10-10），改由 Bot 按需读取证据。#695 又删除了 journal pass、run summary、状态解析、readiness 行与 140 s deadline。Stop 现在只发布 checkpoint 并渲染 handoff 与 resume。需要重新采样，再判断 Stop 是否仍是最先垮的点。
+2. **`PostToolUse.bash` 的单位成本 × 调用量。** p50 52ms 单看不贵，但它是第二高频 route（16,398 次），乘出来就是 26.7% 的总时间。它没有尾延迟问题（p99 244ms），垮的方式是稳态吞吐：命令密度上去后每次 Bash 调用都固定付这 50ms。#695 删除了 importer、输出捕获与 `post-bash-latest.json`，单位成本需要重新采样。
+3. **`PreToolUse.edit` 阻塞编辑热路径。** mutation-guard 是**同步前置**门，p50 253ms 直接计入用户可感知的编辑延迟，且 max 10.9s 说明它在状态解析退化时会长尾。#692 删除了状态解析、lease 检查、circuit breaker 与 advisory。现在只剩路径边界，以及 owned path 的一次 `git status`。需要重新采样。
+4. **SessionStart 上下文预算（#693 已修正）。** 旧实现把五个 provider 拼成一整块 section，超预算时一起消失。现在每个 provider 是独立 section，各有 id 与 source。`budgetSessionContext` 按 priority 排序，保留 mandatory section，放不下的 optional section 变成 `[ContextRef:<id>] <source>` 指针。延迟本身不是瓶颈（4.6%、p95 711ms）。
 5. **`resolveEffectiveState` 的锁竞争。** `runtime.ts` 的 `resolveHookEffectiveState` 是唯一的重试策略：三次有界重试（`EFFECTIVE_STATE_RESOLUTION_MAX_ATTEMPTS = 3`），只覆盖两种已知瞬时签名（stability 重读耗尽、独占锁超时）。并行 agent 数量上去后，重试耗尽会把 SessionStart 推进 `[HarnessStateUnavailable]` 分支 —— 这是正确的 fail-closed，但用户侧表现为上下文突然消失。
 6. **`install-profile.ts` 1,441 行的单点（2026-10-11 实测，旧版记录为 1,167 行）。** profile 组件矩阵继续增长时，这里是最先需要拆分的文件。不在 dispatch 热路径上。
 
 两个 sink 不是同一个东西，早期版本把它们混为一谈：
 
 - `.ai/harness/runs/hook-events.jsonl` 由 dispatcher 的 `createHookEventTelemetry().finalize`（`event-telemetry.ts`）在**每条 route** 完成后经 `appendHookEventLog`（`src/effects/hook-event-log.ts:87`）同步追加一条，因此它是上表的数据来源，也是唯一全 route 覆盖的写入。
-- `.claude/.trace.jsonl` 只由 `trace-observer.ts:196` 写，而 `trace-observer` 只挂在 `PostToolUse.always` 这一条 route 上（`route-registry.ts:104-107`）。
+- `.claude/.trace.jsonl` 的 writer `trace-observer.ts` 已删除（#695）。`PostToolUse.always` 现在绑定 no-op `retired-observer`，不写任何文件。
 
-`PostToolUse.always` 确实是调用量最大的 route（21,217 次，超过 bash），但实测它是**最便宜**的高频路径：p50 3.2ms、总占比 2.6%。同步追加争用在当前量级下不是排名靠前的风险；真要成为瓶颈，先出问题的会是 dispatcher 那条全 route 追加，而不是 trace 这一条。
+`PostToolUse.always` 确实是调用量最大的 route（21,217 次，超过 bash）。旧实测里它是**最便宜**的高频路径：p50 3.2ms、总占比 2.6%。现在它不做任何工作，只付进程启动成本，直到 #698 删除这条 route。
 
 注意遥测本身的边界：`metrics.child_processes` 在全部 44,301 条记录里都是 `0`，它属于 `measurement.incomplete_metrics`，不能用来反推 Stop 的子进程数量；上表只依赖 `elapsed_ms` 这个被标记为 complete 的字段。
 
@@ -288,10 +287,11 @@ host-installer 有 26 个文件、7729 行，标记为 expandable。可以按 ho
   Missing observer evidence fails closed as unknown and never authorizes
   cleanup.
 - 2026-10-13（#691）：effect contract、tracker 与 `effect_observation` 字段已删除。遥测协议升到 `loop-engine-hook-event/v2`，不再携带 steps、metrics、measurement 或 effect observation。恢复权威仍是 post-edit journal 与 Stop projection 的 handler 内幂等。
+- 2026-10-13（#692、#695）：post-edit journal 已删除。Stop 的 events.jsonl 追加与 run summary 也已删除。Stop 只渲染 handoff 与 resume，每次替换整个文件，所以重试会收敛。
 
 ### 3.7 开放问题
 
-- `session-context.ts` 的 `securitySentinelSessionContent` 调用 CLI 命令模块 `commands/security.ts` 的 `runSecurityScan`（`session-context.ts:215`）。这是 handler 组件对 CLI 命令文件的依赖，没有声明为关系。扫描逻辑是否应该移到 installer 或 effects 层？没有记录。
+- 已解决（#693）：SessionStart 不再调用 `runSecurityScan`。session-lifecycle 不再依赖 CLI 命令文件。
 - `edit-guards` 与 `session-lifecycle` 依赖的 state、locking、evidence、fleet 模块目前没有归属。它们的关系等其他分组建立 `workflow-state`、`execution-primitives`、`evidence-ledger`、`task-fleet` 后再补。
 
 ## 4. 历史决策记录（append-only）
@@ -449,6 +449,12 @@ does not inspect legacy command shapes, so there is no dual-read path.
 - P2：capability include 增加了此前无归属的文件：`src/core/loop/**`、`src/effects/loop/**`、`hook-work-budget.ts`、`hook-event-log.ts`、`run-summary-retention.ts`、`commands/{install,status,security,hook,prompt-guard-decision}.ts`、`scripts/sync-hook-sources.ts`。依据是归属提议 §1b、§1c、§1d：这些文件只被 `src/cli/hook/**` 或 installer 引用。
 - P3：`flow.hook-adapters.primary` 的成功分支改为 route-runtime → edit-guards。新增 `flow.hook-adapters.stop`（Stop 消费 post-edit journal）和 `flow.hook-adapters.install`（route 表投影成 managed entries）。全部 selector 都是 CodeGraph 中的直接调用。
 
+### Hook wave 2：删除没有读者的 hook 工作（2026-10-13）
+
+- P1：#692 把 `PreToolUse.edit` 缩成路径边界检查。post-edit journal、minimal-change 模块、lease 检查与 advisory 已删除。#693 把 SessionStart 改成一个 read-mostly handler，各 section 独立。security sentinel、tooling advisory、worktree 提示与 run identity 生成已删除。#694 删除 prompt 分类器与 delegation state，四条 subagent route 各有一个 handler。#695 让 Stop 只发布 checkpoint 并渲染 handoff 与 resume。trace observer、PostBash importer 与 `hook-work-budget.ts` 已删除。
+- P2：route tuple 不变。`PostToolUse.edit` 与 `PostToolUse.always` 绑定 no-op `retired-observer`，直到 #698。`flow.hook-adapters.stop` 改为 Stop → `publishCheckpointFromLedger`。hook identity 只来自 payload，缺失时为 null。2026-08-12 那条记录里的 post-edit journal 与 `session-run-identity.json` 都已不存在。
+- P3：没有读者的工作不应该在热路径上付成本。minimal_change 的 `enforce` 不再有效果，因为没有代码读这个 policy。旧的 circuit-breaker state 带退役 kind 时 fail closed，由 `evidence-gc` 一次性清理。
+
 ## 5. 验证面
 
 capabilities.json 的 `verification_hints`：
@@ -462,8 +468,8 @@ bash scripts/check-task-workflow.sh
 
 - `bun test tests/cli/route-registry.test.ts tests/cli/hook.test.ts`
 - `bun test tests/prompt-handler.test.ts tests/subagent-handler.test.ts`
-- `bun test tests/command-observed.test.ts tests/trace-observer.test.ts`
-- `bun test tests/stop-handler.test.ts tests/mutation-observed.test.ts`
+- `bun test tests/command-observed.test.ts tests/mutation-guard.test.ts`
+- `bun test tests/stop-handler.test.ts tests/session-context.test.ts`
 - `bun test tests/hook-contracts.test.ts tests/hook-protocol.test.ts`
 - `bun run check:type`
 - `bun src/cli/index.ts architecture-projection check --json`
@@ -479,8 +485,6 @@ The event route registry remains the host adapter authority. Ordinary edits and 
 ## Optimization Backlog
 
 - `install-profile.ts` 有 1,441 行，是本 capability 最大的文件。它同时承担 profile 计划、事务、ownership 记录和遗留迁移（`planLegacyInstallProfileMigration`、`beginInstallHostTransaction`、`recordVerifiedAgentFleetOwnership`）。拆分顺序需要改动频率证据，目前没有。
-- `session-context.ts` 有 1,515 行。五个 provider 拼成一个 section，超预算时整块丢弃（见 §3.4 第 4 点）。按 provider 拆成独立 section 可以让预算按优先级裁剪。
 - route-runtime 与 handler 组件之间的环（§3.3）。如果 archctx 的环检测开始阻塞，把 handler 契约移到叶子组件。
 - `write-all-sync.ts` 归 global-runtime-reconciliation，但 hook 热路径也用它。它造成 hook-adapters → global-runtime-reconciliation 的一条边，而 global-runtime-reconciliation 也调用 hook-adapters。这个 26 行的工具可以移到 `execution-primitives`（G2 新建），以去掉这条 capability 级回边。
-- session-lifecycle → host-installer 的 `runSecurityScan` 调用（§3.7）是反向依赖证据，没有声明为关系。
 - host-installer 与 edit-guards → acceptance-review 没有声明。`relation.acceptance-review.hook-adapters` 已经声明反向（review 命令调用 circuit breaker）。本方向有 5 条边，反向有 2 条。集成不新增反向关系。是否翻转方向是开放问题。

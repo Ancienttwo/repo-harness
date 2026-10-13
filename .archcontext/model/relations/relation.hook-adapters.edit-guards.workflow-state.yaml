@@ -3,4 +3,4 @@ id: relation.hook-adapters.edit-guards.workflow-state
 kind: calls
 source: component.hook-adapters.edit-guards
 target: capability.workflow-engine.workflow-state
-intent: "Check edit paths against the contract and claim tokens"
+intent: "Canonicalize edit paths, resolve the owners of edited paths and read the repair progress token"

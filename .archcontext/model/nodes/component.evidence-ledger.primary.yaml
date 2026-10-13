@@ -4,7 +4,7 @@ kind: component
 name: Evidence Event Store
 status: active
 parent: capability.runtime-harness.evidence-ledger
-summary: Owns the event log, fold, blob store, redaction, checkpoints, importers, recovery views and the verification-plan executor; expandable after the verification-plan split.
+summary: Owns the event log, fold, blob store, redaction, checkpoints, the attested importer, recovery views and the verification-plan executor; expandable after the verification-plan split.
 source:
   include:
     - "src/core/evidence/**"

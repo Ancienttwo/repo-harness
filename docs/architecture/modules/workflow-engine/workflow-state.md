@@ -232,7 +232,6 @@ coordination-plane 用文件名通配符声明 footprint（例如 `src/effects/s
 - **continuation-ledger → coordination-plane 回边。** `src/core/state/project-continuation-envelope.ts:45` 导入 `sprint-backlog-rows.ts`。该文件是 Sprint backlog 的纯解析器。候选做法：把它和 `artifact-parsers.ts` 放在一起。
 - **coordination-plane → engineer-scheduling 回边。** `src/cli/commands/sprint.ts:4`、`:12` 与 `src/effects/state/sprint-schema-migration.ts:26` 导入 engineers scheduling。
 - **coordination-plane → mcp-sidecar 回边。** `src/cli/commands/sprint.ts:8` 导入 `src/effects/repo-registry.ts`。
-- **primary → hook-adapters 回边。** `src/cli/commands/state.ts:24` 导入 `src/cli/hook/mutation-observed.ts` 的 `migratePendingPostEditJournalV1`。
 - **coordination-plane → task-agent-host。** `src/effects/state/coordination-worktree-topology.ts:12` 导入 `src/effects/terminal/task-session.ts`，在 prune 前确认 task runtime 已关闭。集成时没有发现 task-agent-host → workflow-state 的边。模型因此声明 coordination-plane → task-agent-host（`reads`）。
 - **持久写原语在 evidence 目录。** 协调面与 ledger 的 7 个文件导入 `src/effects/evidence/atomic-append.ts`（例如 `coordination-lease-store.ts:48`）。它是通用持久写原语。候选做法：移到 execution-primitives。
 - **`readonly-observation.ts` 被下层导入。** `src/effects/git/common-directory.ts:1` 与 `readonly-virtual-tree.ts:4` 导入它，evidence 与 `scripts/acceptance-receipt.ts:3` 也导入它。候选做法：移到 execution-primitives。

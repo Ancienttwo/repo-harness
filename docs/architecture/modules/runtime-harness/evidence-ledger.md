@@ -113,7 +113,7 @@ sequenceDiagram
 2. **损坏尾部截断，不跳过。** 第一条无法解析的记录之后的所有行都是损坏尾部。系统从不跳过损坏的中间记录再继续（`src/core/evidence/fold.ts:92-97`）。
 3. **修复持有日志锁。** Genesis、append 与尾部修复共用一个按 ledger 的锁。修复在锁内重读，先写隔离副本，再截断（`event-log.ts:20-24`、`:140-152`，#547）。只读观察不能修复（`event-log.ts:159`）。
 4. **Accepted 集合是纯函数。** 全序是 append 位置。按幂等键去重，先出现者胜。被 supersede 的事件排除（`fold.ts:112-118`）。
-5. **信任等级默认拒绝。** 没有显式允许时，`external_attested` 对门禁等同 `observed`（`src/core/evidence/types.ts:13`）。PostBash importer 只产生 `observed` 事件（`src/effects/evidence/post-bash-importer.ts:4-11`）。Attested import 只有两条映射：`external_pass` → `external_attested`，`user_waiver` → `human_acceptance`（`src/effects/evidence/attested-import.ts:2-7`）。
+5. **信任等级默认拒绝。** 没有显式允许时，`external_attested` 对门禁等同 `observed`（`src/core/evidence/types.ts:13`）。Attested import 只有两条映射：`external_pass` → `external_attested`，`user_waiver` → `human_acceptance`（`src/effects/evidence/attested-import.ts:2-7`）。
 6. **Payload 与 blob 二选一。** 每个事件恰好有其中一个（`types.ts:41-45`）。Blob 按 sha256 命名，只写一次，不解引用 symlink（`src/effects/evidence/blob-store.ts:2-5`、`:32`）。
 7. **秘密从不以原文落盘。** 脱敏按构造拒绝（`src/core/evidence/redaction.ts:2-6`）。
 8. **Checkpoint 只经 marker 解析。** 发布在一个 staged 事务中验证后原子 rename。`last-published` marker 是唯一权威。读者从不按 mtime 或文件名扫描（`src/effects/evidence/checkpoint-store.ts:1-22`）。
@@ -133,13 +133,13 @@ sequenceDiagram
 
 | 组件 | 文件 / 行 | 职责 |
 | --- | --- | --- |
-| `component.evidence-ledger.primary` | 28 / 6,313 | 事件日志、fold、blob、脱敏、checkpoint、importer、恢复视图、verification-plan 执行器 |
+| `component.evidence-ledger.primary` | 27 / 5,300（2026-10-13） | 事件日志、fold、blob、脱敏、checkpoint、attested importer、恢复视图、verification-plan 执行器 |
 
 该组件可展开。其中 `verification-plan.ts` 与 `verification-execution.ts` 共 2 个文件、1,499 行。
 
 ### 3.4 未决问题
 
-- 当前源码没有说明为什么 PostBash 与 attested importer 各自保留私有的 git 与 contract 辅助函数，只说明不导入已退役的 producer（`post-bash-importer.ts:13-17`）。合并这些辅助函数是否安全，需要 owner 判断。
+- 无。原问题问 PostBash 与 attested importer 是否可以合并私有辅助函数。#695 删除了 PostBash importer，这个问题不再存在。
 
 ## 4. 歷史決策記錄(append-only)
 
@@ -149,10 +149,15 @@ sequenceDiagram
 - P2：协议来自 EPC 计划的冻结决策 D1-D9（`plans/archive/20260722-0001-evidence-projection-convergence.sprint.md`）。
 - P3：Ownership proposal 把两个 verification-plan 文件分给 evals-checks。Registry 不支持 `source.exclude`。这次变更把两个目录整体交给本能力，拆分推迟到 arch-context#296 之后。
 
+### PostBash importer 退役 (2026-10-13)
+
+- P1：`src/effects/evidence/post-bash-importer.ts` 已删除（#695）。它写的 `observed` 事件不满足任何门禁。`verification-execution.ts` 也过滤掉这类事件。Claude 与 Codex 的 Bash payload 没有退出码，所以这些事件都记成退出码 0。
+- P2：本能力的 append 入口改为 `entrypoint.evidence-ledger.attested-import`（`importAttestedEvidence`）。`flow.evidence-ledger.append-and-recover` 的第一步改为 attested import。旧 ledger 里已有的 `post_bash.command_observed` 事件留在原处，fold 照常处理。
+- P3：Stop 先发布 checkpoint，再渲染 handoff 与 resume。视图不再有 "## Commands Run" 段。`scripts/recovery-view-cli.ts` 只是命令行适配器，每个视图都来自 `recovery-materializer.ts`。手写的第二个渲染器已删除。`scripts/sync-helper-sources.ts` 把适配器投影到 `assets/templates/helpers/recovery-view-cli.ts`。
+
 ## Optimization Backlog
 
 - **After arch-context#296：拆出 verification-plan。** 把 `src/core/evidence/verification-plan.ts` 与 `src/effects/evidence/verification-execution.ts` 移给 evals-checks（ownership proposal §4.6）。之后 pipeline-ledger 的出处验证关系改指 evals-checks。
 - **与 workflow-state 的双向依赖（重构证据）。** `event-log.ts` 通过 `src/effects/state/readonly-observation.ts` 读文件。State 代码也导入 evidence。集成按边数决定方向：workflow-state → evidence-ledger 28 条边，evidence-ledger → workflow-state 21 条边。模型只声明 workflow-state → evidence-ledger。本方向是回边，不声明。
 - **共享的 path-safety 原语。** `src/effects/path-safety.ts` 属于 adoption，本能力有 6 个导入。候选：移到 execution-primitives。
-- **到 acceptance-review 的回边。** `src/effects/evidence/post-bash-importer.ts:29` 导入 `src/effects/review/diff-fingerprint.ts` 的 `uniqueSorted`。acceptance-review → evidence-ledger 有 17 条边，本方向只有 2 条。模型只声明 acceptance-review → evidence-ledger。候选：把 `uniqueSorted` 移到本 capability 或 execution-primitives。
-- **到 hook-adapters 的回边。** `scripts/evidence-gc.ts:19` 动态导入 `src/effects/run-summary-retention.ts`。hook-adapters 的 session-lifecycle 与 edit-guards 调用本 capability。模型不声明本方向。
+- **到 hook-adapters 的回边。** `scripts/evidence-gc.ts:22`、`:190` 动态导入 `src/effects/run-summary-retention.ts`。这是一个版本的一次性清理，下一个版本删除。hook-adapters 的 session-lifecycle 调用本 capability。模型不声明本方向。

@@ -54,9 +54,8 @@ host event
 
 The CLI reads the payload once. A malformed payload stops the event before any
 handler runs. The identity comes from the payload only: `session_id`,
-`run_id` and `turn_id`. When the payload has no `run_id`, the run is the one
-that SessionStart stored for the same `session_id`. No handler reads a
-session, run or turn environment variable.
+`run_id` and `turn_id`. A missing value stays null. No hook mints or stores
+an id, and no handler reads a session, run or turn environment variable.
 
 The typed handler receives the payload, the identity, the repository root, the
 environment and the event-scoped `StateInputCollector`. The collector resolves
@@ -79,17 +78,19 @@ lists the matcher, host and typed handler of each tuple.
 The tuple order and membership are a stable public contract that Codex trust-
 hashes, so additions require an explicit installer projection and trust
 transition. Task Inbox uses a dedicated `UserPromptSubmit.inbox` row because
-peer bodies are untrusted and must remain outside prompt classification and
-authorization. Three pre-existing rows carry the earlier coordination surface:
+peer bodies are untrusted and must remain outside prompt handling and
+authorization. Two pre-existing rows carry the board slice:
 
 | Route | WP3 addition | Failure mode |
 | --- | --- | --- |
-| `SubagentStart` / `context` | `BoardSliceV1` appended to the context array | advisory; resolution failure means no block |
-| `PreToolUse` / `subagent` | the same slice appended to the `Task\|Agent` prompt, guarded by `HOOK_HOST != codex` for exactly-once; the `SendUserMessage` branch is untouched | advisory |
-| `PreToolUse` / `edit` | `LeaseOwnershipGuard`, armed only by a claim token whose `unit_ref` is the active-plan marker AND a linked worktree | fail-closed `exit(2)` once armed; advisory before arming |
+| `SubagentStart` / `context` | `BoardSliceV1` in the child context | advisory; resolution failure means no block |
+| `PreToolUse` / `subagent` | the same slice appended once to the `Task\|Agent` prompt, gated by its marker; a `SendUserMessage` call gets no output | advisory |
 
-See `docs/architecture/shared-coordination-plane.md` §9 for the arming
-predicate, the five ownership steps, and the measured cost basis.
+`PreToolUse.edit` has no lease check. `LeaseOwnershipGuard` was advisory since
+#483 and is deleted (#692). The lease authority stays in `start-task`,
+`complete-task` and `contract-worktree finish`. See
+`docs/architecture/shared-coordination-plane.md` §9 for the board slice and
+its measured cost basis.
 
 The event result is fail-closed for unknown routes and missing handler
 bindings. A non-git or non-opt-in repository exits quietly without creating a
@@ -100,17 +101,17 @@ runtime event record.
 Pi owns the agent loop and tool execution. `src/pi/extension.ts` maps supported
 native events to the shared typed handlers. It invokes the current package's
 `dist/hook-entry.js` through `src/pi/hook-bridge.ts`. The bridge uses protocol 1
-JSON output and a ten-second deadline for ordinary checks. Stop uses the shared
-150-second managed host limit. It limits stdin to 16 MiB and diagnostics
+JSON output and a ten-second deadline for ordinary checks. Stop uses 30
+seconds. It limits stdin to 16 MiB and diagnostics
 to 8 KiB. It cancels its own child processes on shutdown or session replacement.
 
 The adapter uses Pi 1.2.0's installed `resolveToCwd` implementation. It resolves
-paths against the session directory before guard and journal dispatch. This
+paths against the session directory before guard dispatch. This
 keeps `@`, `~`, file URLs and subdirectory calls bound to the native tool target.
 Pi does not export this resolver from its public SDK. The version is exact;
 a missing resolver or another version leaves opt-in edits blocked.
 
-Session context keeps the existing provider budgets. The adapter sends each
+Session context uses the one SessionStart budget. The adapter sends each
 SessionStart snapshot once. It leaves later prompt context to UserPromptSubmit.
 Each model run has a fresh run ID. Tool call IDs bind the original payload to its result. Nested calls keep
 the parent tool call ID. Stop runs once at `agent_settled`, after retries and
@@ -120,10 +121,11 @@ The extension checks native edit/write calls in opt-in repositories. Hook
 refusal, timeout, process failure or invalid output prevents execution. A failed
 session context or observation blocks later edits until `/reload` succeeds.
 Shell writes, direct extension writes and third-party MCP writes are outside
-this tool gate. Bash uses Pi's `structuredContent.exit_code` field. A result
-without an integer exit code stays `unknown`. Short unknown output stays inline.
-It cannot create passing verification evidence. Bash observation diagnostics
-also reach the model through tool-result content. The native output, structured
+this tool gate. Bash uses Pi's `structuredContent.exit_code` field and sends
+it as the payload `exit_code`. A result without a safe integer stays unknown,
+and the observer records nothing for it. The observer writes no verification
+evidence. Bash observation diagnostics also reach the model through
+tool-result content. The native output, structured
 content and error flag stay intact.
 
 The bridge records tool results with the original call binding. A native edit
@@ -168,8 +170,7 @@ fields: `event_id`, `started_at`, `completed_at`, `host`, `session_id`,
   for a malformed payload, `blocked` for a policy block, `handler-exit` for
   another non-zero exit, or the handler's own reason. A policy denial and a
   crash therefore never share a reason.
-- `session_id` is the same value that the SessionStart context budget
-  evidence records.
+- `session_id`, `run_id` and `turn_id` are the payload values, or null.
 
 The record has no step, metric or measurement fields. Telemetry append failure
 never changes hook safety. The benchmark reader rejects a record from another
@@ -204,7 +205,7 @@ unmatched bytes and custom sibling hooks remain untouched.
 
 - `bun test tests/cli/route-registry.test.ts tests/cli/hook.test.ts`
 - `bun test tests/prompt-handler.test.ts tests/subagent-handler.test.ts`
-- `bun test tests/command-observed.test.ts tests/trace-observer.test.ts`
+- `bun test tests/command-observed.test.ts tests/stop-handler.test.ts`
 - `bun run check:type`
 - `bun src/cli/index.ts architecture-projection check --json`
 

@@ -5,9 +5,9 @@ name: Hook Adapters
 status: active
 summary: Installs and runs typed Claude, Codex, and Pi host hook routes.
 responsibilities:
-  - Own managed hook entries, route dispatch, mutation observation, and Stop handling.
+  - Own managed hook entries, route dispatch, edit path guarding, and Stop handling.
   - Own the Pi package event adapter and its bounded Bun JSON bridge.
-  - Own the hook event log, its size-bounded archive and the run summary retention.
+  - Own the hook event log, its size-bounded archive and the one-release run summary cleanup module.
   - Own the install, status, security and hook-lib commands that project and inspect the host adapters.
 source:
   include:

@@ -154,10 +154,9 @@ repo-harness mcp uninstall --services-stopped # after stopping all MCP HTTP serv
 
 - **Des sessions file-backed, pas de mémoire de chat.** Les sessions Claude et
   Codex séparées restent coordonnées via le dépôt. `SessionStart` injecte le
-  resume packet de la session précédente, `Stop` écrit le handoff, et chaque
-  édition enregistre un petit événement de journal. Une session peut
-  s'arrêter en plein milieu d'une tâche, et la suivante reprend directement à
-  l'étape suivante exacte, avec les blockers et les fichiers modifiés, sans
+  resume packet de la session précédente, et `Stop` écrit le handoff et le
+  resume. Une session peut s'arrêter en plein milieu d'une tâche, et la
+  suivante reprend directement à l'étape suivante exacte, avec les blockers et les fichiers modifiés, sans
   avoir à les redéduire.
 - **Économe en tokens par conception.** Au lieu de boucles grep-and-read qui
   rescannent le dépôt à chaque session, le harness s'appuie sur un index
@@ -297,11 +296,11 @@ flowchart TD
   CurrentTree --> Implement
   ContractRun --> Changes
 
-  Implement["Edit and run commands"] --> PreHooks["Pre-edit guards<br/>PlanStatusGuard, ContractScopeGuard, WorktreeGuard"]
-  PreHooks -->|blocked| ScopeFix["Fix plan, contract, worktree, or scope"]
+  Implement["Edit and run commands"] --> PreHooks["Pre-edit guards<br/>RepoScopeGuard, ExternalReferenceGuard, OpsPrivateGuard"]
+  PreHooks -->|blocked| ScopeFix["Fix the target path"]
   ScopeFix --> Implement
   PreHooks -->|allowed| Changes["Code, docs, tests, or config changes"]
-  Changes --> PostHooks["Post-edit and post-bash hooks<br/>trace, handoff, check evidence"]
+  Changes --> PostHooks["Bash observer and Stop hook<br/>repair circuit, owed architecture, handoff"]
   PostHooks --> ArchUpdate["Explicit architecture update<br/>archctx ChangeSet when responsibilities change<br/>architecture-projection apply"]
   ArchUpdate --> Verify["Run verification<br/>tests plus repo workflow checks"]
 
@@ -434,13 +433,14 @@ Settings avant que ces hooks ne s'exécutent. Les `.claude/settings.json` et
 l'ordre : adapter config -> `repo-harness-hook` -> route registry -> typed
 handler.
 
-Quand un hook bloque le travail, lisez d'abord la sortie terminal structurée :
-`guard`, `reason`, `fix`, `failure_class` et `run_id`. Les enregistrements
-durables vivent dans `.ai/harness/failures/latest.jsonl`, avec l'activité
-outil environnante dans `.claude/.trace.jsonl`. Les guards courants sont
-`PlanStatusGuard` (pas de plan actif ou exécutable), `ContractGuard` (contract
-scaffold manquant, ou complétion déclarée avant que le contract ne passe), et
-`WorktreeGuard` (écritures depuis le mauvais worktree). Guide complet :
+Quand un hook bloque le travail, lisez d'abord la sortie terminal : une ligne
+`[<Guard>] <reason>` et une ligne `Fix:`. L'enregistrement durable dans
+`.ai/harness/failures/latest.jsonl` contient `guard`, `reason`, `fix`,
+`failure_class` et `run_id`. `.ai/harness/runs/hook-events.jsonl` enregistre
+chaque événement de hook. Les edit guards sont `RepoScopeGuard` (un chemin
+hors du dépôt), `ExternalReferenceGuard` (`_ref/`), `OpsPrivateGuard`
+(`_ops/`), et `ApplyPatchScopeGuard` et `EditScopeGuard` (aucun chemin cible
+lisible). Guide complet :
 [`docs/reference-configs/hook-operations.md`](docs/reference-configs/hook-operations.md).
 
 ## Console de contrôle humaine locale

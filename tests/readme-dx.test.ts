@@ -89,12 +89,14 @@ describe("README DX contract", () => {
     expect(hookOps).toContain("| Route | Matcher | Host | Typed handler | Responsibility |");
     expect(hookOps).toContain("## Hook Authority Map");
     expect(hookOps).toContain("## Hook Failure Playbook");
-    expect(hookOps).toContain("PlanStatusGuard");
+    expect(hookOps).toContain("RepoScopeGuard");
     expect(hookOps).not.toContain("TodoGuard");
-    expect(hookOps).toContain("ContractGuard");
-    expect(hookOps).toContain("WorktreeGuard");
+    expect(hookOps).toContain("ExternalReferenceGuard");
+    expect(hookOps).toContain("OpsPrivateGuard");
     expect(hookOps).toContain(".ai/harness/failures/latest.jsonl");
-    expect(hookOps).toContain(".claude/.trace.jsonl");
+    // The trace observer is retired; the playbook reads hook telemetry instead.
+    expect(hookOps).not.toContain(".claude/.trace.jsonl");
+    expect(hookOps).toContain(".ai/harness/runs/hook-events.jsonl");
     expect(hookOps).toContain("generated");
   });
 

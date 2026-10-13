@@ -3,4 +3,4 @@ id: relation.hook-adapters.route-runtime.edit-guards
 kind: calls
 source: component.hook-adapters.primary
 target: component.hook-adapters.edit-guards
-intent: "Bind guard and observer routes to their typed handlers and run the guard CLIs from the hook entry"
+intent: "Bind the edit guard, Bash observer and prompt routes to their typed handlers"
