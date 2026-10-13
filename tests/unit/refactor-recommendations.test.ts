@@ -1,8 +1,10 @@
 import { afterEach, expect, test } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { observeRefactorRecommendations, type RefactorDiscovery } from '../../src/effects/refactor/recommendations';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { RefactorProviderError } from '../../src/core/refactor/provider-contract';
+import { observeRefactorRecommendations, refactorCandidates, type RefactorDiscovery } from '../../src/effects/refactor/recommendations';
 import { formatRefactorRecommendations } from '../../src/cli/commands/refactor';
 
 const roots: string[] = [];
@@ -15,62 +17,87 @@ function fixture() {
   return { root, repo, env: { ...process.env, HOME: home } };
 }
 
-function observation(id: string) {
-  return {
-    recommendationId: id, category: 'structural_observation', subject: 'module.a', subjectSelectorId: `selector.${id}`, status: 'open',
-    confidence: 'high', risk: 'medium', uncertainty: 'low', explanation: ['Structural observation cycle on module.a'], evidenceBindingIds: ['binding.cycle'],
-    payload: { kind: 'cycle', affectedNodeIds: ['module.a', 'module.b'], assessmentDigest: 'sha256:'.padEnd(71, '1'), baselineSnapshotDigest: 'sha256:'.padEnd(71, '2'), derivedOutcomes: [] },
-  };
-}
-function module(nodeId: string) {
-  return {
-    nodeId, footprint: { fileCount: 12, lineCount: 3400, includePatterns: [], excludePatterns: [] },
-    dependencyGraph: { fanIn: 4, fanOut: 9, cycleCount: 2, instability: 0.69, directionViolationCount: 1 },
-    tests: { testFileCount: 3 }, uncertainty: { unresolvedImports: 0 },
-  };
-}
-function discovery(options: { coverage?: string; multiplyOwned?: number; ids?: string[]; records?: Array<{ recommendationId: string; status: string }> } = {}): RefactorDiscovery {
-  const ids = options.ids ?? ['rec.0'];
-  return {
-    scan: {
-      snapshot: { codeFacts: { coverage: options.coverage ?? 'complete', truncated: false }, repositorySummary: { multiplyOwnedFileCount: options.multiplyOwned ?? 0 },
-        modules: [module('module.a'), module('module.b')] },
-      assessment: { observations: ids.map((id) => ({ kind: 'cycle', subjectSelectorId: `selector.${id}`, signalIds: ['signal.cycle'], metrics: { cycleCount: 2, sccSize: 2 } })) },
-      proposedRecommendations: ids.map(observation),
-    },
-    records: options.records ?? [],
-  } as unknown as RefactorDiscovery;
+// The archctx-contracts package ships these 0.7.2 fixtures: a real scan result and one recorded open suggestion.
+const shipped = (name: string) => JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.resolve('archctx-contracts'))), '../fixtures/valid', name), 'utf8'));
+const shippedScan = () => shipped('runtime-refactor-scan.json');
+const shippedRecord = () => shipped('recommendation-v3.json');
+
+/** The shipped scan has unknown code facts; the tests that need suggestions start from a complete read of it. */
+function discovery(options: { codeFacts?: Record<string, unknown>; multiplyOwned?: number; scan?: Record<string, unknown>; open?: unknown[] } = {}): RefactorDiscovery {
+  const scan = shippedScan();
+  scan.snapshot.codeFacts = { ...scan.snapshot.codeFacts, coverage: 'complete', truncated: false, reasonCodes: [], ...options.codeFacts };
+  scan.snapshot.repositorySummary.multiplyOwnedFileCount = options.multiplyOwned ?? 0;
+  return { scan: { ...scan, ...options.scan }, open: options.open ?? [] } as unknown as RefactorDiscovery;
 }
 
-test('each suggestion carries its measured metrics and module evidence and no state is written', () => {
+test('each suggestion carries the metrics and bounded evidence of its own observation and no state is written', () => {
   const f = fixture();
   const value = observeRefactorRecommendations(f.repo, { env: f.env, discover: () => discovery() });
   expect(value.status).toBe('recommended');
-  expect(value.candidates).toHaveLength(1);
-  expect(value.candidates[0]).toMatchObject({
-    recommendationId: 'rec.0', kind: 'cycle', subject: 'module.a', metrics: { cycleCount: 2, sccSize: 2 },
-    modules: [
-      { nodeId: 'module.a', files: 12, lines: 3400, fanIn: 4, fanOut: 9, cycles: 2, instability: 0.69, directionViolations: 1, testFiles: 3, unresolvedImports: 0 },
-      { nodeId: 'module.b', files: 12 },
-    ],
+  expect(value.candidates.map((entry) => entry.kind)).toEqual(['undeclared-footprint', 'evidence-gap']);
+  expect(value.candidates[1]).toMatchObject({
+    subject: 'repository:repo.537182127c5f2134',
+    metrics: { unresolvedImportCount: 0, edgeLimit: 5000 },
+    evidence: { kind: 'evidence-gap', coverage: 'unknown', totalCount: 0, truncated: false },
   });
-  expect(formatRefactorRecommendations(value)).toContain('metrics: cycleCount=2, sccSize=2');
+  expect(value.candidates[0]).toMatchObject({
+    metrics: {},
+    evidence: { kind: 'undeclared-footprint', paths: [], totalCount: 0, truncated: false },
+    modules: [{ nodeId: 'capability.architecture.context', files: null, unresolvedImports: 0 }],
+  });
+  // archctx 0.7.2 does not measure these, so they are not part of the module evidence.
+  expect(Object.keys(value.candidates[0]!.modules[0]!)).not.toContain('instability');
+  expect(Object.keys(value.candidates[0]!.modules[0]!)).not.toContain('directionViolations');
+  expect(Object.keys(value.candidates[0]!.modules[0]!)).not.toContain('testFiles');
+  const text = formatRefactorRecommendations(value);
+  expect(text).toContain('metrics: unresolvedImportCount=0, edgeLimit=5000');
+  expect(text).toContain('evidence: evidence-gap, 0 total');
   expect(existsSync(join(f.repo, '.ai/harness/runs'))).toBe(false);
 });
 
-test('suggestions with a recorded user decision are not shown again', () => {
+test('the text view lists the first items of a truncated evidence sample', () => {
+  const record = shippedRecord();
+  record.payload = {
+    ...record.payload, kind: 'cycle', affectedNodeIds: [], metrics: { memberCount: 64, cycleEdgeCount: 444 },
+    evidence: {
+      kind: 'cycle', memberNodeIds: ['module.a', 'module.b'], totalCount: 444, truncated: true,
+      edges: Array.from({ length: 8 }, (_, index) => ({ fromPath: `src/a${index}.ts`, fromLine: index + 1, toPath: 'src/b.ts', specifier: './b', fromNodeId: 'module.a', toNodeId: 'module.b' })),
+    },
+  };
+  const [candidate] = refactorCandidates(discovery({ scan: { proposedRecommendations: [] }, open: [record] }));
+  expect(candidate).toMatchObject({ kind: 'cycle', metrics: { memberCount: 64, cycleEdgeCount: 444 } });
+  const text = formatRefactorRecommendations({ schemaVersion: 'repo-harness.refactor-recommendations/v2', status: 'recommended', candidates: [candidate!] });
+  expect(text).toContain('metrics: memberCount=64, cycleEdgeCount=444');
+  expect(text).toContain('evidence: cycle, 444 total (sample is truncated)');
+  expect(text).toContain('- src/a0.ts:1 -> src/b.ts');
+  expect(text).toContain('- src/a4.ts:5 -> src/b.ts');
+  expect(text).not.toContain('src/a5.ts');
+});
+
+test('a recorded open suggestion that the scan suppresses is still listed, once, next to new scan candidates', () => {
   const f = fixture();
-  const value = observeRefactorRecommendations(f.repo, { env: f.env, discover: () => discovery({
-    ids: ['rec.0', 'rec.1', 'rec.2'], records: [{ recommendationId: 'rec.0', status: 'rejected' }, { recommendationId: 'rec.1', status: 'acknowledged' }],
-  }) });
-  expect(value.candidates.map((entry) => entry.recommendationId)).toEqual(['rec.1', 'rec.2']);
-  const none = observeRefactorRecommendations(f.repo, { env: f.env, discover: () => discovery({ ids: ['rec.0'], records: [{ recommendationId: 'rec.0', status: 'deferred' }] }) });
-  expect(none.status).toBe('no_action');
+  const record = shippedRecord();
+  // archctx suppresses a scan candidate whose fingerprint is already recorded, so the scan no longer proposes it.
+  const scanned = shippedScan().proposedRecommendations;
+  const onlyRecorded = observeRefactorRecommendations(f.repo, { env: f.env, discover: () => discovery({ scan: { proposedRecommendations: [], suppressed: [{ reasonCode: 'duplicate-active-fingerprint' }] }, open: [record] }) });
+  expect(onlyRecorded.status).toBe('recommended');
+  expect(onlyRecorded.candidates.map((entry) => entry.recommendationId)).toEqual([record.recommendationId]);
+  // The shipped record is also a scan candidate, so a second recorded suggestion needs its own id.
+  const second = { ...record, recommendationId: 'recommendation.recorded-elsewhere' };
+  const mixed = observeRefactorRecommendations(f.repo, { env: f.env, discover: () => discovery({ open: [second] }) });
+  expect(mixed.candidates.map((entry) => entry.recommendationId)).toEqual([second.recommendationId, ...scanned.map((entry: { recommendationId: string }) => entry.recommendationId)]);
+  const listedTwice = observeRefactorRecommendations(f.repo, { env: f.env, discover: () => discovery({ open: [scanned[0]] }) });
+  expect(listedTwice.candidates.map((entry) => entry.recommendationId)).toEqual(scanned.map((entry: { recommendationId: string }) => entry.recommendationId));
+});
+
+test('no open record and no scan candidate means no action', () => {
+  const f = fixture();
+  expect(observeRefactorRecommendations(f.repo, { env: f.env, discover: () => discovery({ scan: { proposedRecommendations: [] } }) }).status).toBe('no_action');
 });
 
 test('incomplete code facts or ambiguous ownership withhold suggestions', () => {
   const f = fixture();
-  const partial = observeRefactorRecommendations(f.repo, { env: f.env, discover: () => discovery({ coverage: 'partial' }) });
+  const partial = observeRefactorRecommendations(f.repo, { env: f.env, discover: () => discovery({ codeFacts: { coverage: 'partial', reasonCodes: ['code-facts-missing'] } }) });
   expect(partial).toMatchObject({ status: 'proof_required', candidates: [] });
   expect(partial.message).toContain('codegraph init');
   const ambiguous = observeRefactorRecommendations(f.repo, { env: f.env, discover: () => discovery({ multiplyOwned: 75 }) });
@@ -78,10 +105,36 @@ test('incomplete code facts or ambiguous ownership withhold suggestions', () => 
   expect(ambiguous.message).toContain('75 files have more than one owning capability');
 });
 
+test('the import node limit reaches the scan and its remedy is a larger limit, not a new index', () => {
+  const f = fixture();
+  const limits: Array<number | undefined> = [];
+  const limited = observeRefactorRecommendations(f.repo, {
+    env: f.env, importNodeLimit: 100,
+    discover: (_root, _provider, limit) => { limits.push(limit); return discovery({ codeFacts: { coverage: 'partial', reasonCodes: ['code-facts-import-limit'], edgeLimit: 100, importNodeCount: 6145 } }); },
+  });
+  expect(limits).toEqual([100]);
+  expect(limited).toMatchObject({ status: 'proof_required', candidates: [] });
+  expect(limited.message).toContain('6145 import nodes');
+  expect(limited.message).toContain('limit of 100');
+  expect(limited.message).toContain('--import-node-limit');
+  expect(limited.message).not.toContain('codegraph init');
+  observeRefactorRecommendations(f.repo, { env: f.env, discover: (_root, _provider, limit) => { limits.push(limit); return discovery(); } });
+  expect(limits).toEqual([100, undefined]);
+});
+
+test('a provider error keeps its code, action and full message', () => {
+  const f = fixture();
+  const message = `repository state is stale: ${'x'.repeat(1500)}`;
+  const failed = observeRefactorRecommendations(f.repo, { env: f.env, discover: () => { throw new RefactorProviderError('AC_REFACTOR_STALE', message, 'run-refactor-scan'); } });
+  expect(failed).toMatchObject({ status: 'unavailable', candidates: [], code: 'AC_REFACTOR_STALE', action: 'run-refactor-scan', message });
+  expect(formatRefactorRecommendations(failed)).toBe(`[RefactorRecommendations] unavailable: AC_REFACTOR_STALE: ${message} (action: run-refactor-scan)\n`);
+});
+
 test('an unavailable provider or a missing model reports unavailable without a scan', () => {
   const f = fixture();
   const failed = observeRefactorRecommendations(f.repo, { env: f.env, discover: () => { throw new Error('archctx missing'); } });
   expect(failed).toMatchObject({ status: 'unavailable', message: 'archctx missing' });
+  expect(failed.code).toBeUndefined();
   rmSync(join(f.repo, '.archcontext'), { recursive: true });
   expect(observeRefactorRecommendations(f.repo, { env: f.env, discover: () => { throw new Error('must not scan'); } }).status).toBe('unavailable');
 });

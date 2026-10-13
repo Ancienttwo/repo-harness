@@ -8,7 +8,7 @@ import type {
 } from "archctx-contracts";
 
 export class RefactorProviderError extends Error {
-  constructor(readonly code: string, message: string) { super(message); this.name = "RefactorProviderError"; }
+  constructor(readonly code: string, message: string, readonly action?: string) { super(message); this.name = "RefactorProviderError"; }
 }
 
 export interface RefactorScanResultV1 {
@@ -32,7 +32,11 @@ export function refactorEnvelopeData(value: unknown, requestId: string, schemaVe
   const envelope = record(value, requestId);
   if (envelope.ok === false) {
     const error = record(envelope.error, `${requestId}.error`);
-    throw new RefactorProviderError(typeof error.code === "string" ? error.code : "refactor_provider_result_invalid", typeof error.message === "string" ? error.message : `${requestId} failed`);
+    throw new RefactorProviderError(
+      typeof error.code === "string" ? error.code : "refactor_provider_result_invalid",
+      typeof error.message === "string" ? error.message : `${requestId} failed`,
+      typeof error.action === "string" ? error.action : undefined,
+    );
   }
   const data = record(envelope.data, `${requestId}.data`);
   if (envelope.schemaVersion !== "archcontext.envelope/v1" || data.schemaVersion !== schemaVersion) {
