@@ -155,7 +155,7 @@ normalize_plan_path() {
 append_unique_line() {
   local line="$1"
   [[ -n "$line" ]] || return 0
-  if ! printf '%s\n' "$active_refs" | grep -Fxq -- "$line"; then
+  if ! grep -Fxq -- "$line" <<<"$active_refs"; then
     active_refs="${active_refs}${line}"$'\n'
   fi
 }

@@ -1608,7 +1608,7 @@ sprint_lease_reconcile_after_publication() {
     echo "[ContractWorktree] Warning: the sprint lease survived publication (claim $sprint_lease_claim_id); run 'repo-harness sprint reconcile --task-id $sprint_lease_task_id --target-ref $target_branch' to clear it" >&2
     return 0
   fi
-  if ! printf '%s' "$output" | grep -q '"action": "cleared_completed_lease"'; then
+  if [[ "$output" != *'"action": "cleared_completed_lease"'* ]]; then
     printf '%s\n' "$output" >&2
     echo "[ContractWorktree] Warning: reconcile left the sprint lease in place (claim $sprint_lease_claim_id); the canonical row on $target_branch does not read [x] yet" >&2
     return 0

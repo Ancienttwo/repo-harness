@@ -202,7 +202,7 @@ has_changes() {
 
   load_changed_paths
 
-  if [[ -n "$WORKFLOW_CHANGED_PATHS" ]] && printf '%s\n' "$WORKFLOW_CHANGED_PATHS" | grep -Fxq -- "$file"; then
+  if [[ -n "$WORKFLOW_CHANGED_PATHS" ]] && grep -Fxq -- "$file" <<<"$WORKFLOW_CHANGED_PATHS"; then
     return 0
   fi
   return 1
