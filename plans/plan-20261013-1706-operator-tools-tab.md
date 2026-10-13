@@ -139,7 +139,7 @@ docs_anchor   external-tooling.md 里对应小节的锚点，例如 "#codegraph"
 ## 7. 分期
 
 **P0：catalog 和只读列表**（依赖 #713 合入）
-- 新建 `assets/tool-catalog.v1.json`，条目包括 #713 的两个资源，和三个本机工具：Waza、CodeGraph、herdr skill（Q2 已锁定）。hai-stack 和 agent fleet 不进 catalog。
+- 新建 `assets/tool-catalog.v1.json`，条目包括 #713 的两个资源，和四个本机工具：Waza、CodeGraph、herdr skill 有 detector key；hai-stack 的 `detector` 为 null，`docs_anchor` 为 `#hai-stack`（Q2 已锁定）。agent fleet 不进 catalog。
 - `sync-reference-configs.ts` 渲染 markdown 表格区，`--check` 检查漂移。
 - Tools 页、导航、hash 路由、详情、i18n。
 - 本机工具在 P0 全部显示 `unknown`，详情只给 `docs_anchor` 链接，不给命令。P0 不改服务端。
@@ -158,7 +158,7 @@ docs_anchor   external-tooling.md 里对应小节的锚点，例如 "#codegraph"
 ## 8. Owner 决定（2026-10-13 锁定，全部按推荐）
 
 1. **Q1 数据源**：选 B。`assets/tool-catalog.v1.json` 是权威，`external-tooling.md` 的表格区由它生成，`check:reference-configs` 检查漂移。
-2. **Q2 P0 的本机工具清单**：Waza、CodeGraph、herdr skill。它们都有 detector key。hai-stack 只留在 external-tooling.md 的文档里，不进 catalog，也不给 detector 加探测。agent fleet 不在 Tools 页重复列出，它留在 Agents 页。
+2. **Q2 P0 的本机工具清单**：Waza、CodeGraph、herdr skill，它们都有 detector key。hai-stack 也进 catalog，在 Tools 页显示，`detector` 为 null，状态是 `n/a`。它的详情只给 `docs_anchor`（external-tooling.md 的 `#hai-stack`），不给安装命令。不给 detector 加探测。agent fleet 不在 Tools 页重复列出，它留在 Agents 页。（owner 2026-10-13 澄清：之前的「docs-only」说法以此为准。）
 3. **Q3 资源的安装命令**：资源只给上游链接，不给安装命令。catalog 不写包名。
 4. **Q4 类别枚举**：`frontend | design | agent_skills | code_navigation | orchestration` 够用。
 5. **Q5 快照版本**：P1 保持 `repo-harness.setup.v1`。服务端和浏览器包同一个 npm 版本发布。
