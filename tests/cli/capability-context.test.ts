@@ -291,6 +291,24 @@ describe('capability-context command', () => {
     }
   }, 30_000);
 
+  test('archcontext sync refuses a contract file that another capability declares in the other slot', () => {
+    const cwd = archcontextWorkspace('capability-context-cross-slot', [
+      { id: 'capability.apps.web', include: 'apps/web/**', contractFiles: { agents: 'apps/web/AGENTS.md', claude: 'apps/web/CLAUDE.md' } },
+      { id: 'capability.apps.docs', include: 'apps/docs/**', contractFiles: { agents: 'apps/docs/AGENTS.md', claude: 'apps/web/AGENTS.md' } },
+    ]);
+    try {
+      const shared = '# Web contract\n';
+      fs.writeFileSync(path.join(cwd, 'apps/web/AGENTS.md'), shared);
+      for (const capabilityId of ['apps-web', 'apps-docs']) {
+        expect(() => runCapabilityContextSync({ repo: cwd, capabilityId, apply: true })).toThrow('declares shared contract files');
+      }
+      expect(fs.readFileSync(path.join(cwd, 'apps/web/AGENTS.md'), 'utf-8')).toBe(shared);
+      for (const file of ['apps/web/CLAUDE.md', 'apps/docs/AGENTS.md']) expect(fs.existsSync(path.join(cwd, file))).toBe(false);
+    } finally {
+      fs.rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   test('CLI prints the message of a capability source error before it exits 2', () => {
     const cwd = archcontextWorkspace('capability-context-broken-node', []);
     try {

@@ -352,8 +352,10 @@ export function runCapabilityContextSync(opts: SyncOptions): SyncResult {
     // shared contract (for example the root AGENTS.md). One block cannot describe
     // several capabilities, so sync refuses before it writes anything.
     if (archcontext) {
+      // Compare across slots too: one capability's `agents` file can be another's `claude` file.
+      const targets = new Set([target.agents, target.claude]);
       const sharing = registry.capabilities.filter((other) => other.id !== capability.id
-        && (other.contract_files.agents === target.agents || other.contract_files.claude === target.claude));
+        && (targets.has(other.contract_files.agents) || targets.has(other.contract_files.claude)));
       if (sharing.length > 0) {
         throw new CapabilitySourceError(
           `capability ${capability.id} declares shared contract files ${target.agents}, ${target.claude} `
