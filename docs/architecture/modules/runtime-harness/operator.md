@@ -1,6 +1,6 @@
 # runtime-harness/operator 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-operator" sourceDigest="sha256:97c3f7be75e1fd2beb3327c0a22963045a3bf1a7b75f0b0a946a3b607bd35b38" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:f872cfd85e3e55cae5eb525f8073d6642fcb5141e03c14da5c9202ff5aa778ce" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-operator" sourceDigest="sha256:43d9bf75cdc61b2172c0355782cf367b912f59d4d0caf3d3a0da17d2e78dffde" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:bd375c0ec673384c643823a63460f4911b1e162492f1b8494bfa8e994e69701a" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.operator`(kind `capability`)
 > **Matched Prefixes**:`src/core/operator/**`、`src/effects/operator/**`、`src/operator-web/**`、`src/cli/commands/operator.ts`、`src/cli/commands/module.ts`、`src/core/architecture/module-view.ts`、`src/core/docs/**`、`src/core/setup/**`、`src/effects/setup/**`、`src/cli/commands/setup-snapshot.ts`、`src/cli/commands/setup-check-child.ts`、`src/core/dev-activity/**`、`src/effects/dev-activity/**`、`src/effects/terminal/herdr-observation.ts`、`assets/operator/**`、`vite.operator.config.ts`
@@ -58,7 +58,7 @@ flowchart LR
 
 ### 1.3 規模信號
 
-- 規模量級:`50–100` 個文件 / `10k–20k` 行
+- 規模量級:`100–200` 個文件 / `10k–20k` 行
 - 匹配前綴:`src/core/operator/**`、`src/effects/operator/**`、`src/operator-web/**`、`src/cli/commands/operator.ts`、`src/cli/commands/module.ts`、`src/core/architecture/module-view.ts`、`src/core/docs/**`、`src/core/setup/**`、`src/effects/setup/**`、`src/cli/commands/setup-snapshot.ts`、`src/cli/commands/setup-check-child.ts`、`src/core/dev-activity/**`、`src/effects/dev-activity/**`、`src/effects/terminal/herdr-observation.ts`、`assets/operator/**`、`vite.operator.config.ts`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
@@ -114,7 +114,7 @@ flowchart LR
 | `component.operator.architecture-view` | Architecture View | `2–5` 個文件 / `200–500` 行 | 未宣告 |
 | `component.operator.primary` | Operator HTTP Reader | `20–50` 個文件 / `2000–5000` 行 | `entrypoint.operator.http-server` |
 | `component.operator.view-projections` | Operator View Projections | `10–20` 個文件 / `2000–5000` 行 | 未宣告 |
-| `component.operator.web-console` | Operator Web Console | `20–50` 個文件 / `5000–10000` 行 | `entrypoint.operator.web-dev-activity` |
+| `component.operator.web-console` | Operator Web Console | `20–50` 個文件 / `10k–20k` 行 | `entrypoint.operator.web-dev-activity` |
 
 ## 2. P2:端到端數據流
 

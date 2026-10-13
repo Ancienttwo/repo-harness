@@ -1,6 +1,6 @@
 # workflow-engine/workflow-state 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-workflow-state" sourceDigest="sha256:5553d1f6b6ee2c05444e88ade5579efea3526a37e72dae013ac0fe10a2f98458" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:ef796604502fefe9dc9e47addb3baf4e2c6cc71504f9c7a68f6fbe296df0b1e0" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-workflow-state" sourceDigest="sha256:bd5349fbc1709323df0506ebd8b3bb75157500b3ec538034d23e26b23aa0b986" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:32b02a26001eb523416faf77f536738b1a9d3beee49004c588f16f203551856b" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.workflow-engine.workflow-state`(kind `capability`)
 > **Matched Prefixes**:`src/core/state/**`、`src/effects/state/**`、`src/core/workflow/**`、`interfaces/**`、`src/core/worktree-location.mjs`、`src/core/worktree-location.d.mts`、`src/cli/commands/state.ts`、`src/cli/commands/sprint.ts`、`scripts/check-state-boundaries.ts`、`scripts/sprint-backlog.sh`
@@ -73,15 +73,15 @@ flowchart LR
 - `reads` ← `component.acceptance-review.primary` — Observe Git and files read-only and resolve the workflow profile for the review subject
 - `reads` ← `component.agent-runtime-effects.journal` — Read the task lease before a runtime effect is recorded
 - `calls` ← `capability.runtime-harness.bound-task-freezes` — Read leases and plan links under the task lock before a freeze or rotation
-- `calls` ← `component.contract-assets.contract-worktree-lifecycle` — Create and remove task worktrees under the worktree topology lock
+- `calls` ← `component.contract-assets.contract-worktree-lifecycle` — Create and remove task worktrees and sweep merged managed worktrees at start under the worktree topology lock
 - `calls` ← `component.contract-assets.template-projection` — Check cutover quiescence and record the coordination cutover during init
 - `calls` ← `capability.runtime-harness.engineer-bindings` — Process Sprint dependencies and release Sprint leases for bound engineer tasks
 - `reads` ← `capability.runtime-harness.engineer-scheduling` — Project canonical Sprint tasks into the work graph
 - `reads` ← `capability.runtime-harness.external-source-intake` — Look up the canonical task for an external source
 - `reads` ← `component.global-runtime-reconciliation.archctx-closure` — Parse Markdown headers of plans and contracts
 - `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the sprint and state commands
-- `calls` ← `component.hook-adapters.edit-guards` — Check edit paths against the contract and claim tokens
-- `calls` ← `component.hook-adapters.primary` — Resolve effective state and sweep managed worktrees for hook routes
+- `calls` ← `component.hook-adapters.edit-guards` — Canonicalize edit paths, resolve the owners of edited paths and read the repair progress token
+- `calls` ← `component.hook-adapters.primary` — Resolve effective state at most once per hook event
 - `calls` ← `component.hook-adapters.session-lifecycle` — Collect state and board slices and claim tokens for session context
 - `reads` ← `component.integration-acceptance.primary` — Read the task lease for the integration envelope
 - `reads` ← `capability.runtime-harness.interface-change` — Read the canonical target ref for an interface change

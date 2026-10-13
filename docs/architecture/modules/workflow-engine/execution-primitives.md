@@ -1,6 +1,6 @@
 # workflow-engine/execution-primitives 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-execution-primitives" sourceDigest="sha256:0053654e7e87f1e5414f4aefdcd28a8338406eb248f1e91f7e0822f3152f77fa" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:e873dd264ad1c83c9b992b2ae6924088ac70487f4781ad2b98ba9f6cabfd0892" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-execution-primitives" sourceDigest="sha256:caa5815405bbba54c64f82924e90491ac1bd1403085bb7ca9ee851591b54f094" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:b327df14a05f1ff20653a62fb3f531f1d4ee98bff354f8fe1ad071df080c3f87" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.workflow-engine.execution-primitives`(kind `capability`)
 > **Matched Prefixes**:`src/effects/process-runner.ts`、`src/effects/process-supervisor.ts`、`src/effects/process-group-launcher.ts`、`src/effects/expensive-run-lock.ts`、`src/effects/locking/**`、`src/effects/git/**`
@@ -71,10 +71,10 @@ flowchart LR
 - `calls` ← `component.global-runtime-reconciliation.archctx-closure` — Run the archctx binary through the process runner
 - `calls` ← `component.global-runtime-reconciliation.primary` — Run processes and read lock owners during runtime reconciliation
 - `calls` ← `component.global-runtime-reconciliation.release-packaging` — Run installed binaries to read back runtime evidence
-- `calls` ← `component.hook-adapters.edit-guards` — Lock the edit journal and the circuit breaker records
+- `calls` ← `component.hook-adapters.edit-guards` — Lock the circuit breaker records
 - `calls` ← `component.hook-adapters.host-installer` — Hold the runtime host transaction lock
-- `calls` ← `component.hook-adapters.primary` — Run the process supervisor and group launcher and hold hook locks
-- `calls` ← `component.hook-adapters.session-lifecycle` — Run setup check subprocesses and hold delegation and session locks
+- `calls` ← `component.hook-adapters.primary` — Run the process supervisor and group launcher entries and classify lock contention
+- `calls` ← `component.hook-adapters.session-lifecycle` — Hold the native role evidence lock
 - `calls` ← `component.integration-acceptance.primary` — Resolve the Git common directory for integration records
 - `calls` ← `capability.runtime-harness.interface-change` — Hold exclusive directory locks under the Git common directory
 - `calls` ← `component.mcp-sidecar.coding-profile` — Use the configured Git binary for coding workspaces

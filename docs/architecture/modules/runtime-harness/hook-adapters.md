@@ -1,8 +1,8 @@
 # runtime-harness/hook-adapters 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-hook-adapters" sourceDigest="sha256:6f4735dcbdd5e4a4a488b00644d4e0d985f5efa1b3eab6f5859bd0a448b1ffeb" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:24733d36d96f9ff5fd74dd9bf5fd5b09b4c431df674c1c622928251297b33e64" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-hook-adapters" sourceDigest="sha256:2f33bc2a438bd9a13022af340a67c00d0f596c6228600ee22d9259bf03e1e961" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:53cade118abb3c5c7267232d854d78681c0608b5657313f2c74dafbee25a5230" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.hook-adapters`(kind `capability`)
-> **Matched Prefixes**:`assets/hooks/**`、`.ai/hooks/**`、`src/cli/installer/**`、`src/cli/hook/**`、`src/cli/hook-entry.ts`、`src/pi/**`、`src/core/loop/**`、`src/effects/loop/**`、`src/core/hook-work-budget.ts`、`src/effects/hook-event-log.ts`、`src/effects/run-summary-retention.ts`、`src/cli/commands/install.ts`、`src/cli/commands/status.ts`、`src/cli/commands/security.ts`、`src/cli/commands/hook.ts`、`src/cli/commands/prompt-guard-decision.ts`、`scripts/sync-hook-sources.ts`
+> **Matched Prefixes**:`assets/hooks/**`、`src/cli/installer/**`、`src/cli/hook/**`、`src/cli/hook-entry.ts`、`src/pi/**`、`src/effects/loop/**`、`src/effects/hook-event-log.ts`、`src/effects/run-summary-retention.ts`、`src/cli/commands/install.ts`、`src/cli/commands/status.ts`、`src/cli/commands/security.ts`、`src/cli/commands/hook.ts`
 > **Local Contracts**:`assets/hooks/AGENTS.md`、`assets/hooks/CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
@@ -14,6 +14,7 @@ Installs and runs typed Claude, Codex, and Pi host hook routes.
 
 ```mermaid
 flowchart LR
+  p1_capability_runtime_harness_evidence_ledger_2fe63ef5["Evidence Ledger"]:::component
   p1_capability_runtime_harness_hook_adapters_75a11743["Hook Adapters"]:::component
   p1_component_hook_adapters_edit_guards_019fd22c["Guard and Observer Handlers"]:::component
   p1_component_hook_adapters_host_installer_cd378e80["Host Adapter Installer"]:::component
@@ -22,9 +23,9 @@ flowchart LR
   p1_component_hook_adapters_edit_guards_019fd22c -->|"Implement the typed handler contract and read hook input through the shared parsers"| p1_component_hook_adapters_primary_1659ffb9
   p1_component_hook_adapters_host_installer_cd378e80 -->|"Project the route registry into managed adapter entries and invoke the runtime for hook-lib and Pi events"| p1_component_hook_adapters_primary_1659ffb9
   p1_capability_runtime_harness_hook_adapters_75a11743 -->|"Dispatch a host hook route to its typed handler"| p1_component_hook_adapters_primary_1659ffb9
-  p1_component_hook_adapters_primary_1659ffb9 -->|"Bind guard and observer routes to their typed handlers and run the guard CLIs from the hook entry"| p1_component_hook_adapters_edit_guards_019fd22c
+  p1_component_hook_adapters_primary_1659ffb9 -->|"Bind the edit guard#44; Bash observer and prompt routes to their typed handlers"| p1_component_hook_adapters_edit_guards_019fd22c
   p1_component_hook_adapters_primary_1659ffb9 -->|"Bind SessionStart and Stop and subagent and inbox routes to their typed handlers"| p1_component_hook_adapters_session_lifecycle_e389d412
-  p1_component_hook_adapters_session_lifecycle_e389d412 -->|"Drain the post-edit journal at Stop and render the minimal change context"| p1_component_hook_adapters_edit_guards_019fd22c
+  p1_component_hook_adapters_session_lifecycle_e389d412 -->|"Publish the evidence checkpoint and render handoff and resume from it"| p1_capability_runtime_harness_evidence_ledger_2fe63ef5
   p1_component_hook_adapters_session_lifecycle_e389d412 -->|"Implement the typed handler contract and read state through the event-scoped collector"| p1_component_hook_adapters_primary_1659ffb9
   classDef actor fill:#111827,color:#ffffff,stroke:#f9fafb,stroke-width:2px
   classDef component fill:#075985,color:#ffffff,stroke:#bae6fd,stroke-width:2px
@@ -32,8 +33,8 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:a2a008a7505889f1e9cc7e66b83f7e36c226e4d37940f7f0b088605ea09cb6a4`).
-- Semantic nodes: `5`; declared relations: `7`.
+- Proof: `proven` (`sha256:ad8809cb262638bf0c8a101f1962e85ba057eb89a3801d08e0a7c36a6ad06d70`).
+- Semantic nodes: `6`; declared relations: `7`.
 
 ### 1.2 模組職責表
 
@@ -47,12 +48,12 @@ flowchart LR
 | --- | --- | --- | --- |
 | `component.hook-adapters.host-installer` | `entrypoint.hook-adapters.managed-entries` | `src/cli/installer/managed-entries.ts#buildManagedHooks` | `sink.hook-adapters.routes-for-host` → `src/cli/hook/route-registry.ts#routesForHost` |
 | `component.hook-adapters.primary` | `entrypoint.hook-adapters.handler-bindings` | `src/cli/hook/handler-registry.ts#handlers` | `sink.hook-adapters.mutation-guard` → `src/cli/hook/mutation-guard.ts#runMutationGuard`、`sink.hook-adapters.stop-handler` → `src/cli/hook/stop-handler.ts#runStopHandler` |
-| `component.hook-adapters.session-lifecycle` | `entrypoint.hook-adapters.stop` | `src/cli/hook/stop-handler.ts#runStopHandler` | `sink.hook-adapters.post-edit-journal` → `src/cli/hook/mutation-observed.ts#consumePendingPostEditEvents` |
+| `component.hook-adapters.session-lifecycle` | `entrypoint.hook-adapters.stop` | `src/cli/hook/stop-handler.ts#runStopHandler` | `sink.hook-adapters.evidence-checkpoint` → `src/effects/evidence/checkpoint-store.ts#publishCheckpointFromLedger` |
 
 ### 1.3 規模信號
 
-- 規模量級:`50–100` 個文件 / `10k–20k` 行
-- 匹配前綴:`assets/hooks/**`、`.ai/hooks/**`、`src/cli/installer/**`、`src/cli/hook/**`、`src/cli/hook-entry.ts`、`src/pi/**`、`src/core/loop/**`、`src/effects/loop/**`、`src/core/hook-work-budget.ts`、`src/effects/hook-event-log.ts`、`src/effects/run-summary-retention.ts`、`src/cli/commands/install.ts`、`src/cli/commands/status.ts`、`src/cli/commands/security.ts`、`src/cli/commands/hook.ts`、`src/cli/commands/prompt-guard-decision.ts`、`scripts/sync-hook-sources.ts`
+- 規模量級:`20–50` 個文件 / `5000–10000` 行
+- 匹配前綴:`assets/hooks/**`、`src/cli/installer/**`、`src/cli/hook/**`、`src/cli/hook-entry.ts`、`src/pi/**`、`src/effects/loop/**`、`src/effects/hook-event-log.ts`、`src/effects/run-summary-retention.ts`、`src/cli/commands/install.ts`、`src/cli/commands/status.ts`、`src/cli/commands/security.ts`、`src/cli/commands/hook.ts`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
 ### 1.4 依賴邊界
@@ -75,10 +76,9 @@ flowchart LR
 組件出向關係:
 
 - `component.hook-adapters.edit-guards`:
-  - `calls` → `capability.runtime-harness.evidence-ledger` — Import post-bash observations as evidence
-  - `calls` → `capability.workflow-engine.execution-primitives` — Lock the edit journal and the circuit breaker records
+  - `calls` → `capability.workflow-engine.execution-primitives` — Lock the circuit breaker records
   - `depends-on` → `component.hook-adapters.primary` — Implement the typed handler contract and read hook input through the shared parsers
-  - `calls` → `capability.workflow-engine.workflow-state` — Check edit paths against the contract and claim tokens
+  - `calls` → `capability.workflow-engine.workflow-state` — Canonicalize edit paths, resolve the owners of edited paths and read the repair progress token
 - `component.hook-adapters.host-installer`:
   - `calls` → `capability.public-surface.adoption` — Share the managed hook command fingerprints with the adoption migration
   - `calls` → `capability.workflow-engine.contract-assets` — Locate the packaged workflow-state helper for hook-lib path
@@ -87,16 +87,15 @@ flowchart LR
   - `calls` → `component.hook-adapters.primary` — Project the route registry into managed adapter entries and invoke the runtime for hook-lib and Pi events
   - `calls` → `component.action-commands.skill-surface-catalog` — Read skill names and profile ownership from the skill surface catalog
 - `component.hook-adapters.primary`:
-  - `calls` → `capability.workflow-engine.execution-primitives` — Run the process supervisor and group launcher and hold hook locks
-  - `calls` → `capability.workflow-engine.workflow-state` — Resolve effective state and sweep managed worktrees for hook routes
-  - `calls` → `component.hook-adapters.edit-guards` — Bind guard and observer routes to their typed handlers and run the guard CLIs from the hook entry
+  - `calls` → `capability.workflow-engine.execution-primitives` — Run the process supervisor and group launcher entries and classify lock contention
+  - `calls` → `capability.workflow-engine.workflow-state` — Resolve effective state at most once per hook event
+  - `calls` → `component.hook-adapters.edit-guards` — Bind the edit guard, Bash observer and prompt routes to their typed handlers
   - `calls` → `capability.runtime-harness.global-runtime-reconciliation` — Write host output through the shared blocking writer
   - `calls` → `component.hook-adapters.session-lifecycle` — Bind SessionStart and Stop and subagent and inbox routes to their typed handlers
 - `component.hook-adapters.session-lifecycle`:
-  - `calls` → `capability.public-surface.adoption` — Check run summary write paths with the shared path safety rules
-  - `calls` → `component.hook-adapters.edit-guards` — Drain the post-edit journal at Stop and render the minimal change context
-  - `calls` → `capability.runtime-harness.evidence-ledger` — Build recovery context and handoff from checkpoint evidence
-  - `calls` → `capability.workflow-engine.execution-primitives` — Run setup check subprocesses and hold delegation and session locks
+  - `calls` → `capability.public-surface.adoption` — Check the one-release run summary cleanup paths with the shared path safety rules
+  - `calls` → `capability.runtime-harness.evidence-ledger` — Publish the evidence checkpoint and render handoff and resume from it
+  - `calls` → `capability.workflow-engine.execution-primitives` — Hold the native role evidence lock
   - `depends-on` → `component.hook-adapters.primary` — Implement the typed handler contract and read state through the event-scoped collector
   - `calls` → `capability.organization.task-fleet` — Render task inbox messages as untrusted session context
   - `calls` → `capability.workflow-engine.workflow-state` — Collect state and board slices and claim tokens for session context
@@ -105,14 +104,14 @@ flowchart LR
 
 | 組件 | 名稱 | 規模量級 | 宣告入口 |
 | --- | --- | --- | --- |
-| `component.hook-adapters.edit-guards` | Guard and Observer Handlers | `10–20` 個文件 / `2000–5000` 行 | 未宣告 |
-| `component.hook-adapters.host-installer` | Host Adapter Installer | `20–50` 個文件 / `5000–10000` 行 | `entrypoint.hook-adapters.managed-entries` |
-| `component.hook-adapters.primary` | Hook Route Runtime | `10–20` 個文件 / `2000–5000` 行 | `entrypoint.hook-adapters.handler-bindings` |
-| `component.hook-adapters.session-lifecycle` | Session Lifecycle Handlers | `5–10` 個文件 / `2000–5000` 行 | `entrypoint.hook-adapters.stop` |
+| `component.hook-adapters.edit-guards` | Guard and Observer Handlers | `5–10` 個文件 / `500–1000` 行 | 未宣告 |
+| `component.hook-adapters.host-installer` | Host Adapter Installer | `20–50` 個文件 / `2000–5000` 行 | `entrypoint.hook-adapters.managed-entries` |
+| `component.hook-adapters.primary` | Hook Route Runtime | `10–20` 個文件 / `1000–2000` 行 | `entrypoint.hook-adapters.handler-bindings` |
+| `component.hook-adapters.session-lifecycle` | Session Lifecycle Handlers | `10–20` 個文件 / `1000–2000` 行 | `entrypoint.hook-adapters.stop` |
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:a2a008a7505889f1e9cc7e66b83f7e36c226e4d37940f7f0b088605ea09cb6a4`); selectors `5/5`.
+> **Proof**: `proven` (`sha256:ad8809cb262638bf0c8a101f1962e85ba057eb89a3801d08e0a7c36a6ad06d70`); selectors `5/5`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
@@ -153,14 +152,14 @@ sequenceDiagram
   autonumber
   participant p2_route_runtime_281dbb1e as Hook Route Runtime
   participant p2_session_lifecycle_f33a8ef2 as Session Lifecycle Handlers
-  participant p2_edit_guards_5119ddfa as Guard and Observer Handlers
-  p2_route_runtime_281dbb1e->>p2_session_lifecycle_f33a8ef2: Run the stop handler under its declared effect contract
-  alt Pending post-edit events are consumed inside the Stop work budget
-  p2_session_lifecycle_f33a8ef2->>p2_edit_guards_5119ddfa: Consume the pending post-edit journal events before the deadline
-    Note over p2_session_lifecycle_f33a8ef2: Refresh handoff and resume projections and exit 0
-  else A journal failure becomes a diagnostic and Stop continues
-  p2_session_lifecycle_f33a8ef2->>p2_edit_guards_5119ddfa: Catch the journal error and keep the unconsumed events for the next Stop
-    Note over p2_session_lifecycle_f33a8ef2: Write a PostEditJournal line to stderr and exit 0
+  participant p2_evidence_edecec53 as Evidence Ledger
+  p2_route_runtime_281dbb1e->>p2_session_lifecycle_f33a8ef2: Run the stop handler with the payload identity
+  alt The checkpoint is published and the recovery views are rendered
+  p2_session_lifecycle_f33a8ef2->>p2_evidence_edecec53: Publish the evidence checkpoint from the ledger
+    Note over p2_session_lifecycle_f33a8ef2: Render handoff and resume and exit 0
+  else A failed publish leaves the last published checkpoint in place
+  p2_session_lifecycle_f33a8ef2->>p2_evidence_edecec53: Catch the publish error and keep the last published checkpoint
+    Note over p2_session_lifecycle_f33a8ef2: Render handoff and resume from the last published checkpoint and exit 0
   end
 ```
 <!-- END ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-hook-adapters" -->

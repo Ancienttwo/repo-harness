@@ -1,5 +1,5 @@
 # public-surface/adoption 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-adoption" sourceDigest="sha256:f61255b2d479b5d225bcd6e0694dc4b4386d89ce4176ae6abfa74caee2ae5777" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:14dbc6f7efcc7d89aa6384de64ce7acca408d349bf90f12aef30a8876a9f0835" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-adoption" sourceDigest="sha256:b142a04872b9b07f03e484e47d2c04898b17853d551e66f23920ef81a6e2d211" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:9e1f3dfe4e96d039898f65566b3afd06ef91675b371fea3ce51eb5a8e74edb4c" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.public-surface.adoption`(kind `capability`)
 > **Matched Prefixes**:`src/cli/commands/adoption-plan.ts`、`src/core/adoption/**`、`src/effects/fs-transaction.ts`、`src/effects/path-safety.ts`、`tests/cli/adoption-plan.test.ts`、`tests/fixtures/adoption/**`、`src/cli/repo-adoption/**`、`src/cli/commands/migrate.ts`
@@ -38,7 +38,7 @@ flowchart LR
 
 ### 1.3 規模信號
 
-- 規模量級:`20–50` 個文件 / `2000–5000` 行
+- 規模量級:`20–50` 個文件 / `5000–10000` 行
 - 匹配前綴:`src/cli/commands/adoption-plan.ts`、`src/core/adoption/**`、`src/effects/fs-transaction.ts`、`src/effects/path-safety.ts`、`tests/cli/adoption-plan.test.ts`、`tests/fixtures/adoption/**`、`src/cli/repo-adoption/**`、`src/cli/commands/migrate.ts`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
@@ -55,7 +55,7 @@ flowchart LR
 - `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the adoption-plan command and run the adoption plan for the setup check
 - `calls` ← `component.global-runtime-reconciliation.primary` — Classify retired surfaces with the adoption fingerprints and back up removals in an FsTransaction manifest under the target lock
 - `calls` ← `component.hook-adapters.host-installer` — Share the managed hook command fingerprints with the adoption migration
-- `calls` ← `component.hook-adapters.session-lifecycle` — Check run summary write paths with the shared path safety rules
+- `calls` ← `component.hook-adapters.session-lifecycle` — Check the one-release run summary cleanup paths with the shared path safety rules
 
 組件出向關係:
 

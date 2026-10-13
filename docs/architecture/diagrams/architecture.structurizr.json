@@ -1,4 +1,4 @@
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.diagram.structurizr" sourceDigest="sha256:cd0d3187198f3beec244f1d33964d353906234f23b0f909f9fce85221a0c2490" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:b37381138a031b9d2d243e0c90dbec9c6f8fba0410ea3767ee57f09525316d3a" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.diagram.structurizr" sourceDigest="sha256:bec950f25fdfdcbfc6d2c0bad74bda674c7ef83a268f1d31d0a2f567ba90ba6c" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:899e18e733efd076f5f9946eb18e6aa2dc061c82244924b49dfe9cd8e5d0d0ba" -->
 {
   "schemaVersion": "archcontext.structurizr-export/v1",
   "name": "ArchContext Architecture",
@@ -1669,12 +1669,6 @@
         "description": "calls"
       },
       {
-        "id": "relation.hook-adapters.edit-guards.evidence-ledger",
-        "sourceId": "component.hook-adapters.edit-guards",
-        "destinationId": "capability.runtime-harness.evidence-ledger",
-        "description": "calls"
-      },
-      {
         "id": "relation.hook-adapters.edit-guards.execution-primitives",
         "sourceId": "component.hook-adapters.edit-guards",
         "destinationId": "capability.workflow-engine.execution-primitives",
@@ -1768,12 +1762,6 @@
         "id": "relation.hook-adapters.session-lifecycle.adoption",
         "sourceId": "component.hook-adapters.session-lifecycle",
         "destinationId": "capability.public-surface.adoption",
-        "description": "calls"
-      },
-      {
-        "id": "relation.hook-adapters.session-lifecycle.edit-guards",
-        "sourceId": "component.hook-adapters.session-lifecycle",
-        "destinationId": "component.hook-adapters.edit-guards",
         "description": "calls"
       },
       {
