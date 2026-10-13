@@ -12,9 +12,10 @@ gh pr view <pr> --json author,isCrossRepository,headRepositoryOwner
 gh repo view --json owner --jq .owner.login
 ```
 
-The allowlist is the repository owner login plus the logins in a root
-`AGENTS.md` line `Internal PR authors: <login>, <login>`. Without that line,
-the allowlist is the owner login only.
+The allowlist is the repository owner login plus the GitHub logins in
+`.ai/harness/policy.json#internal_pr_authors`. The default is `[]`, so the
+allowlist is the owner login only. A missing key also means owner only. A value
+that is not an array of strings is ambiguous.
 
 The PR is external when any one of these is true:
 

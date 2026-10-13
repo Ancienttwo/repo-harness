@@ -406,6 +406,7 @@ export function defaultPolicy(documentationProfile: string, documentationLanguag
       remove_only_ownership: "known_generated",
       unknown_files: "preserve-or-archive",
     },
+    internal_pr_authors: [],
   };
 }
 

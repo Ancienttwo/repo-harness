@@ -1785,7 +1785,8 @@ pi_write_harness_policy() {
     "worktree_guard": "warn-by-default",
     "verification_gate": "contract-and-review",
     "completion_requires_checks": true
-  }
+  },
+  "internal_pr_authors": []
 }
 EOF_POLICY
 
