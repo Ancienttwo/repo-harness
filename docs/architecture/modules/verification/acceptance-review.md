@@ -1,6 +1,6 @@
 # verification/acceptance-review 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-acceptance-review" sourceDigest="sha256:e4667f738f3fb4c30a42df97f8e6b3f6765762764a6b5562695e4da2ca58a357" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:0ed9fa7d8b634fafe61790cdafd7d5031b91ffc9a853a74bd67ca6e24a316470" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-acceptance-review" sourceDigest="sha256:3e8e45ec9a33af9f3343f6bea5cd219ba7418dc999648e3fca036769f549d639" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:0f3ba6c398a4d4c48b34e8decbdcf346f77851a0453e497eae1428d85504485e" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.verification.acceptance-review`(kind `capability`)
 > **Matched Prefixes**:`src/core/review/**`、`src/effects/review/**`、`src/cli/commands/review.ts`、`scripts/acceptance-receipt.ts`、`scripts/change-assessment.ts`
@@ -26,7 +26,7 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:a1dff2d2a2be9197ed5a6543ae73fd6a654c790664501f8eb7b794cca651a7ff`).
+- Proof: `proven` (`sha256:bd533de1a6de62b9fb143156c3a252194dbb5d596ba2d8aa73e815a2152cdb40`).
 - Semantic nodes: `3`; declared relations: `2`.
 
 ### 1.2 模組職責表
@@ -34,7 +34,7 @@ flowchart LR
 | 宣告入口 | 錨點 | 職責 |
 | --- | --- | --- |
 | `entrypoint.acceptance-review.primary` | `src/cli/commands/review.ts#buildReviewCommand` | `sink.acceptance-review.primary` → `src/effects/review/generic-review.ts#runReviewRound`、`sink.acceptance-review.circuit-admission` → `src/cli/hook/circuit-breaker.ts#recordCircuitAttempt` |
-| `entrypoint.acceptance-review.round` | `src/effects/review/generic-review.ts#runReviewRound` | `sink.acceptance-review.packet` → `src/core/review/review-packet.ts#composeReviewPacket`、`sink.acceptance-review.validate-output` → `src/core/review/generic-review.ts#validateReviewOutput`、`sink.acceptance-review.record-receipt` → `scripts/acceptance-receipt.ts#recordAcceptance` |
+| `entrypoint.acceptance-review.round` | `src/effects/review/generic-review.ts#reviewRound` | `sink.acceptance-review.packet` → `src/core/review/review-packet.ts#composeReviewPacket`、`sink.acceptance-review.validate-output` → `src/core/review/generic-review.ts#validateReviewOutput`、`sink.acceptance-review.record-receipt` → `scripts/acceptance-receipt.ts#recordAcceptance` |
 
 組件入口:
 
@@ -82,7 +82,7 @@ flowchart LR
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:a1dff2d2a2be9197ed5a6543ae73fd6a654c790664501f8eb7b794cca651a7ff`); selectors `5/5`.
+> **Proof**: `proven` (`sha256:bd533de1a6de62b9fb143156c3a252194dbb5d596ba2d8aa73e815a2152cdb40`); selectors `5/5`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%

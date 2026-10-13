@@ -33,7 +33,7 @@ steps:
     label: Compose and save the complete review packet before the reviewer starts
     evidence:
       entrypointId: entrypoint.acceptance-review.round
-      sourceSymbol: runReviewRound
+      sourceSymbol: reviewRound
       sinkId: sink.acceptance-review.packet
 outcomes:
   - id: success
@@ -46,7 +46,7 @@ outcomes:
         label: Record the AcceptanceReceipt with the PASS or FAIL disposition
         evidence:
           entrypointId: entrypoint.acceptance-review.round
-          sourceSymbol: runReviewRound
+          sourceSymbol: reviewRound
           sinkId: sink.acceptance-review.record-receipt
     terminal:
       participant: capability
@@ -61,7 +61,7 @@ outcomes:
         label: Reject output that breaks the closed schema or leaves a prior finding unaddressed
         evidence:
           entrypointId: entrypoint.acceptance-review.round
-          sourceSymbol: runReviewRound
+          sourceSymbol: reviewRound
           sinkId: sink.acceptance-review.validate-output
     terminal:
       participant: capability

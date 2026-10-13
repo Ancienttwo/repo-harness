@@ -32,7 +32,7 @@ source:
     - id: entrypoint.acceptance-review.round
       path: src/effects/review/generic-review.ts
       symbols:
-        - name: runReviewRound
+        - name: reviewRound
           sinks:
             - id: sink.acceptance-review.packet
               path: src/core/review/review-packet.ts
