@@ -16,6 +16,8 @@ export interface RefactorModuleEvidence {
   fanIn: number | null;
   fanOut: number | null;
   cycles: number | null;
+  /** Filled only when the model declares constraints; archctx 0.7.2 leaves instability and test files unmeasured. */
+  directionViolations: number | null;
   unresolvedImports: number;
 }
 export interface RefactorRecommendation {
@@ -30,6 +32,10 @@ export interface RefactorRecommendation {
   metrics: Readonly<Record<string, number | null>>;
   /** Bounded by archctx: `totalCount` is the population, `truncated` says the item list is a prefix of it. */
   evidence: Observation['payload']['evidence'];
+  /** The snapshot the metrics and evidence were measured on. */
+  baselineSnapshotDigest: string;
+  /** `current` when that snapshot is the scan just taken. `earlier` marks a record from an older scan, whose module statistics are left out. */
+  snapshot: 'current' | 'earlier';
   modules: readonly RefactorModuleEvidence[];
 }
 export interface RefactorRecommendationResult {
@@ -66,18 +72,21 @@ export function refactorCandidates({ scan, open }: RefactorDiscovery): RefactorR
   const listed = new Set(open.map((entry) => entry.recommendationId));
   return [...open, ...scan.proposedRecommendations.filter((entry) => !listed.has(entry.recommendationId))]
     .filter((entry): entry is Observation => entry.category === 'structural_observation')
-    .map((entry) => present(entry, modules));
+    .map((entry) => present(entry, modules, scan.snapshot.snapshotDigest));
 }
 
-function present(value: Observation, modules: ReadonlyMap<string, ModuleStatistics>): RefactorRecommendation {
+/** Module statistics come from the current scan, so they join only a suggestion measured on that same snapshot. */
+function present(value: Observation, modules: ReadonlyMap<string, ModuleStatistics>, currentSnapshotDigest: string): RefactorRecommendation {
+  const current = value.payload.baselineSnapshotDigest === currentSnapshotDigest;
   return {
     recommendationId: value.recommendationId, kind: value.payload.kind, subject: value.subject, affectedNodeIds: value.payload.affectedNodeIds,
     confidence: value.confidence, risk: value.risk, uncertainty: value.uncertainty, explanation: value.explanation,
     metrics: value.payload.metrics, evidence: value.payload.evidence,
-    modules: value.payload.affectedNodeIds.flatMap((nodeId) => {
+    baselineSnapshotDigest: value.payload.baselineSnapshotDigest, snapshot: current ? 'current' : 'earlier',
+    modules: current ? value.payload.affectedNodeIds.flatMap((nodeId) => {
       const entry = modules.get(nodeId);
       return entry ? [moduleEvidence(entry)] : [];
-    }),
+    }) : [],
   };
 }
 
@@ -85,7 +94,8 @@ function moduleEvidence(entry: ModuleStatistics): RefactorModuleEvidence {
   return {
     nodeId: entry.nodeId, files: entry.footprint?.fileCount ?? null, lines: entry.footprint?.lineCount ?? null,
     fanIn: entry.dependencyGraph?.fanIn ?? null, fanOut: entry.dependencyGraph?.fanOut ?? null,
-    cycles: entry.dependencyGraph?.cycleCount ?? null, unresolvedImports: entry.uncertainty.unresolvedImports,
+    cycles: entry.dependencyGraph?.cycleCount ?? null, directionViolations: entry.dependencyGraph?.directionViolationCount ?? null,
+    unresolvedImports: entry.uncertainty.unresolvedImports,
   };
 }
 

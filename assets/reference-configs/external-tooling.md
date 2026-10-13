@@ -1220,10 +1220,19 @@ repo-harness refactor decide <recommendation-id> accept|defer|reject --reason "<
 ```
 
 `recommendations` shows each open suggestion with its explanation, the metrics
-of its observation and the statistics of every affected module (files, lines,
-fan-in, fan-out, cycles, unresolved imports). Open suggestions are the
-ArchContext `open` records plus scan candidates not yet recorded. `decide`
-stores the decision in one ArchContext call, for a recorded id or a scan
-candidate. Suggestions with a recorded decision are not shown again. repo-harness keeps no local delivery state; ArchContext owns the
-recommendation lifecycle. Execution of an accepted suggestion uses the normal
+and bounded `evidence` of its observation (`kind`, `totalCount`, `truncated`
+and the first items) and the statistics of every affected module (files, lines,
+fan-in, fan-out, cycles, direction violations, unresolved imports). Direction
+violations are filled only when the model declares constraints. archctx 0.7.2
+does not measure instability or test files, so they are not shown. A suggestion
+recorded by an earlier scan has `snapshot: "earlier"`, keeps its recorded
+metrics and evidence, and shows no module statistics.
+
+Open suggestions are the ArchContext `open` records plus scan candidates not yet
+recorded. `decide` stores the decision in one ArchContext call, for a recorded
+id or a scan candidate. A suggestion with a recorded decision is not shown again
+in the same worktree path and branch (Ancienttwo/arch-context#321). Pass the
+same `--import-node-limit` to `decide` that the scan used. repo-harness keeps no
+local delivery state; ArchContext owns the recommendation lifecycle. Execution
+of an accepted suggestion uses the normal
 plan and pull request workflow.

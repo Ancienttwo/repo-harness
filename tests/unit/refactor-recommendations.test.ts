@@ -43,11 +43,11 @@ test('each suggestion carries the metrics and bounded evidence of its own observ
   expect(value.candidates[0]).toMatchObject({
     metrics: {},
     evidence: { kind: 'undeclared-footprint', paths: [], totalCount: 0, truncated: false },
-    modules: [{ nodeId: 'capability.architecture.context', files: null, unresolvedImports: 0 }],
+    snapshot: 'current',
+    modules: [{ nodeId: 'capability.architecture.context', files: null, directionViolations: null, unresolvedImports: 0 }],
   });
-  // archctx 0.7.2 does not measure these, so they are not part of the module evidence.
+  // archctx 0.7.2 never measures these, so they are not part of the module evidence.
   expect(Object.keys(value.candidates[0]!.modules[0]!)).not.toContain('instability');
-  expect(Object.keys(value.candidates[0]!.modules[0]!)).not.toContain('directionViolations');
   expect(Object.keys(value.candidates[0]!.modules[0]!)).not.toContain('testFiles');
   const text = formatRefactorRecommendations(value);
   expect(text).toContain('metrics: unresolvedImportCount=0, edgeLimit=5000');
@@ -90,6 +90,18 @@ test('a recorded open suggestion that the scan suppresses is still listed, once,
   expect(listedTwice.candidates.map((entry) => entry.recommendationId)).toEqual(scanned.map((entry: { recommendationId: string }) => entry.recommendationId));
 });
 
+test('a recorded suggestion from an earlier snapshot keeps its own metrics and gets no current module statistics', () => {
+  const stale = { ...shippedRecord(), payload: { ...shippedRecord().payload, baselineSnapshotDigest: `sha256:${'0'.repeat(64)}`, metrics: { unownedFileCount: 218 } } };
+  const scan = { proposedRecommendations: [] };
+  const [earlier] = refactorCandidates(discovery({ scan, open: [stale] }));
+  expect(earlier).toMatchObject({ snapshot: 'earlier', baselineSnapshotDigest: stale.payload.baselineSnapshotDigest, metrics: { unownedFileCount: 218 }, modules: [] });
+  const [current] = refactorCandidates(discovery({ scan, open: [shippedRecord()] }));
+  expect(current).toMatchObject({ snapshot: 'current', modules: [{ nodeId: 'capability.architecture.context' }] });
+  const text = formatRefactorRecommendations({ schemaVersion: 'repo-harness.refactor-recommendations/v2', status: 'recommended', candidates: [earlier!] });
+  expect(text).toContain(`recorded on an earlier snapshot (${stale.payload.baselineSnapshotDigest})`);
+  expect(text).not.toContain('modules:');
+});
+
 test('no open record and no scan candidate means no action', () => {
   const f = fixture();
   expect(observeRefactorRecommendations(f.repo, { env: f.env, discover: () => discovery({ scan: { proposedRecommendations: [] } }) }).status).toBe('no_action');
@@ -125,9 +137,9 @@ test('the import node limit reaches the scan and its remedy is a larger limit, n
 test('a provider error keeps its code, action and full message', () => {
   const f = fixture();
   const message = `repository state is stale: ${'x'.repeat(1500)}`;
-  const failed = observeRefactorRecommendations(f.repo, { env: f.env, discover: () => { throw new RefactorProviderError('AC_REFACTOR_STALE', message, 'run-refactor-scan'); } });
-  expect(failed).toMatchObject({ status: 'unavailable', candidates: [], code: 'AC_REFACTOR_STALE', action: 'run-refactor-scan', message });
-  expect(formatRefactorRecommendations(failed)).toBe(`[RefactorRecommendations] unavailable: AC_REFACTOR_STALE: ${message} (action: run-refactor-scan)\n`);
+  const failed = observeRefactorRecommendations(f.repo, { env: f.env, discover: () => { throw new RefactorProviderError('AC_REFACTOR_STALE', message, 'rerun-refactor-scan'); } });
+  expect(failed).toMatchObject({ status: 'unavailable', candidates: [], code: 'AC_REFACTOR_STALE', action: 'rerun-refactor-scan', message });
+  expect(formatRefactorRecommendations(failed)).toBe(`[RefactorRecommendations] unavailable: AC_REFACTOR_STALE: ${message} (action: rerun-refactor-scan)\n`);
 });
 
 test('an unavailable provider or a missing model reports unavailable without a scan', () => {

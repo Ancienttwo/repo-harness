@@ -37,13 +37,14 @@ function evidenceLines(evidence: RefactorRecommendation['evidence']): string[] {
 
 function formatCandidate(entry: RefactorRecommendation, index: number): string {
   const metrics = Object.entries(entry.metrics).map(([key, metric]) => `${key}=${metric ?? 'n/a'}`).join(', ');
-  const modules = entry.modules.map((module) => `  - ${module.nodeId}: ${module.files ?? '?'} files / ${module.lines ?? '?'} lines, fan-in ${module.fanIn ?? '?'}, fan-out ${module.fanOut ?? '?'}, cycles ${module.cycles ?? '?'}, unresolved imports ${module.unresolvedImports}`);
+  const modules = entry.modules.map((module) => `  - ${module.nodeId}: ${module.files ?? '?'} files / ${module.lines ?? '?'} lines, fan-in ${module.fanIn ?? '?'}, fan-out ${module.fanOut ?? '?'}, cycles ${module.cycles ?? '?'}, direction violations ${module.directionViolations ?? '?'}, unresolved imports ${module.unresolvedImports}`);
   return [
     `${index + 1}. ${entry.kind} on ${entry.subject} (risk ${entry.risk}, confidence ${entry.confidence}, uncertainty ${entry.uncertainty})`,
     `  id: ${entry.recommendationId}`,
     ...entry.explanation.map((line) => `  ${line}`),
     ...(metrics ? [`  metrics: ${metrics}`] : []),
     ...evidenceLines(entry.evidence),
+    ...(entry.snapshot === 'earlier' ? [`  recorded on an earlier snapshot (${entry.baselineSnapshotDigest}); current module statistics are not shown`] : []),
     ...(modules.length ? ['  modules:', ...modules.map((line) => `  ${line}`)] : []),
     '',
   ].join('\n');

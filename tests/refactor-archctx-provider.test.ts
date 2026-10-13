@@ -57,13 +57,13 @@ describe("refactor archctx provider", () => {
   test("fails on another archctx version and preserves upstream error code, action and message", () => {
     const mismatch = (_binary: string, _args: readonly string[]) => ({ status: 0, signal: null, stderr: "", stdout: JSON.stringify(capabilities("0.0.1")) });
     expect(() => runRefactorScan(repo(), { consumerRoot: process.cwd(), run: mismatch })).toThrow("expected archctx@0.7.2");
-    const failing = runner([], () => ({ schemaVersion: "archcontext.envelope/v1", ok: false, requestId: "recommendations.accept", error: { code: "AC_REFACTOR_STALE", action: "run-refactor-scan", message: "recommendation not found: rec.x" } }));
+    const failing = runner([], () => ({ schemaVersion: "archcontext.envelope/v1", ok: false, requestId: "recommendations.accept", error: { code: "AC_REFACTOR_STALE", action: "rerun-refactor-scan", message: "recommendation not found: rec.x" } }));
     try {
       decideRecommendation("rec.x", "accept", "user agreed", repo(), { consumerRoot: process.cwd(), run: failing });
       throw new Error("expected failure");
     } catch (error) {
       expect(error).toBeInstanceOf(RefactorProviderError);
-      expect(error).toMatchObject({ code: "AC_REFACTOR_STALE", action: "run-refactor-scan", message: "recommendation not found: rec.x" });
+      expect(error).toMatchObject({ code: "AC_REFACTOR_STALE", action: "rerun-refactor-scan", message: "recommendation not found: rec.x" });
     }
   });
 
