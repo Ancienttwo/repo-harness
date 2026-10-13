@@ -1,8 +1,8 @@
 # Plan: repo-harness 桌面版（Operator 控制台的桌面壳）
 
-> **Status**: Draft，第三轮。只是设计，不是实施 GO。Aimpact 2026-10-13 确认本 work-package 只做到 DP0：DP0 完成后停止，DP1 及以后要另给 GO（§11 第 2 项）。§11 第 11 项的 Bundle ID 仍是 PENDING CONFIRM。
+> **Status**: Draft，第四轮。只是设计，不是实施 GO。Aimpact 2026-10-13 确认本 work-package 只做到 DP0：DP0 完成后停止，DP1 及以后要另给 GO（§11 第 2 项）。§11 第 11 项的 Bundle ID 仍是 PENDING CONFIRM。
 > **Created**: 20261013
-> **Revised**: 20261013（第二轮：按 Dot 在 Slack #bot-worker 的评审锁定 §11 默认值，补上必改项 A–E；第三轮：按 Aimpact 2026-10-13 的确认锁定 §11 第 2、13 项。见 §12）
+> **Revised**: 20261013（第二轮：按 Dot 在 Slack #bot-worker 的评审锁定 §11 默认值，补上必改项 A–E；第三轮：按 Aimpact 2026-10-13 的确认锁定 §11 第 2、13 项；第四轮：按 Dot 复审修正清理负责方和端口冲突判断。见 §12）
 > **Slug**: desktop-app
 > **Artifact Level**: work-package
 > **Baseline**: `main@0ef9ed11`（0.22.1 已发布）
@@ -29,7 +29,8 @@
 - 前端：`src/operator-web/`，构建到 `dist/operator-ui`（`vite.operator.config.ts`）。服务端从包内 `dist/operator-ui` 提供静态文件（`server.ts:85-88`）。所有 API 请求都是相对路径（例如 `dev-activity.ts:21`、`setup.ts:24`、`fleet-api.ts:76`）。外链只有 PR 链接（`Board.tsx:72`、:172，`ItemDrawer.tsx:99`、:169，`ui.tsx:78-80`），解码器只接受 `https://github.com/<owner>/<repo>/…`（`src/core/dev-activity/decode.ts:75`）。
 - 标题计数：`document.title` 在「需要你」数量大于 0 时是 `(N) repo-harness`，数量为 0 或未知时是 `repo-harness`（`App.tsx:112-114`、:398-402）。
 - 运行时：`bin.repo-harness` 是 `src/cli/index.ts`，shebang 是 `#!/usr/bin/env bun`。`engines` 要求 Bun ≥1.4.0。服务端直接用 Bun API：`Bun.sleep`（`server.ts:672`）、`Bun.YAML`（`docs-graph.ts:120`）、`Bun.which`（`runtime-capture-pty.ts:21`）。
-- 子进程：Fleet collector 用 `spawn(process.execPath, [<ts 文件>])`，独立进程组（`server.ts:686-688`、:744-752）。setup collector 同样用 `process.execPath`，stdin 为 `ignore`，独立进程组（`src/effects/setup/collector.ts:22`、:41）。任务读取起 `Worker`（`task-read-process.ts:42`）。Dev Activity collector 从 PATH 调用 `git`、`gh`（`src/effects/dev-activity/collector.ts:311`、:335）。runtime capture 从 PATH 找 `python3`（`runtime-capture-pty.ts:21`）。
+- 子进程：Fleet collector 和任务读取进程都由 `readSupervisedOperatorProcess` 用 `spawn(process.execPath, [<ts 文件>])` 启动，各自是独立进程组，stdin 是管道（`server.ts:686-688`、:735-760、:1422-1423）。正常结束时 serve 对组发 SIGTERM，500 ms 后发 SIGKILL，等组为空之后才 `stdin.end()`（:52、:776-787、:819-834）。Fleet collector 读到 stdin 关闭时结束自己（`fleet-collector-process.ts:85-87`），任务读取进程只取消（`task-read-process.ts:26`）；两者都不向自己的组发信号。任务读取进程内部再起 `Worker`（`task-read-process.ts:42`）。setup collector 同样用 `process.execPath`，独立进程组，stdin 为 `ignore`，子进程里的 builder 是同步的（`src/effects/setup/collector.ts:1-10`、:22、:39-42）。Dev Activity 的 `git`、`gh` 不建新组，属于 serve 自己的组（`src/effects/dev-activity/collector.ts:93`）。
+- 错误映射：除参数错误外，CLI 把所有启动错误（包括 listen 失败）都输出为 `operator_server_unavailable` 加原始 `message`（`operator.ts:84-90`）。没有结构化的「端口被占用」错误码。Dev Activity collector 从 PATH 调用 `git`、`gh`（`src/effects/dev-activity/collector.ts:311`、:335）。runtime capture 从 PATH 找 `python3`（`runtime-capture-pty.ts:21`）。
 - 环境：registry 根目录是 `REPO_HARNESS_HOME`，没有时是 `~/.repo-harness`（`src/effects/repo-registry.ts:98`）。漏传这个变量会让服务读另一个 registry。
 - cwd：setup collector 用 `process.cwd()`（`setup/collector.ts:103`）。setup check 用 cwd 跑 `runStatus` 和 `runDoctor`（`src/cli/commands/init-hook.ts:748-756`）。其他读取器按 Fleet registry id 找仓库（例如 `architecture.ts:23-26`）。
 - 发布：npm 包的 `files` 含 `dist/operator-ui/`，`prepack` 会构建它（`package.json`）。`scripts/check-tarball-install-smoke.sh:153-198` 已经用 `operator serve --host 127.0.0.1 --port 0` 启动打包后的服务，读 URL，再查 `/healthz`。发布在本机手动完成，有发布记录（`deploy/release-checklists/261013-repo-harness-0.22.1.md`）。仓库里没有 codesign、notarization 或 Apple 证书相关的内容（grep 为 0）。
@@ -150,32 +151,60 @@ CLI 的查找、环境和配置统一在 §4.5 定义。版本检查：每次启
 7. 打开控制台窗口，导航到该 URL，关闭启动画面。setup 首次采集约 20 秒（Kumo plan §8.1），页面已有「正在读取配置」的状态，外壳不用等它。
 
 失败规则：
-- 端口绑定失败（子进程以退出码 1 结束，没有 URL 行）：显示「端口 4319 已被占用」。外壳**不**探测这个端口，**不**连接端口上已有的服务，即使它的 `/healthz` 正常；**不**停止占用者；**不**换端口。
+- 默认分类是「服务启动失败」：子进程在 URL 行之前退出、stderr 第一行无法解码、错误码不认识，都归这一类。「退出码 1 且没有 URL 行」不等于端口被占用。失败页显示错误码（有的话）和诊断命令。
+- 只有拿到结构化证据才显示「端口 4319 已被占用」：stderr 第一行严格解码为 `{"ok":false,"error":"port_in_use"}`。这个错误码由 DP1 新增（§4.4）。外壳不解析 `message` 文本，不按退出码推断原因。
+- 两类失败的共同规则：外壳**不**探测这个端口，**不**连接端口上已有的服务，即使它的 `/healthz` 正常；**不**停止占用者；**不**换端口。
 - 任何一步失败：先停止并回收子进程（§4.2），再显示失败页。
 - 子进程在运行中退出：立即把控制台窗口切到失败页，清除 Dock 角标。这样页面的下一次 30 秒刷新不会打到之后占用这个端口的其他进程。
 - 以后如果要给外壳加任何对服务的 HTTP 请求，规则是：不跟随重定向，响应上限 64 KiB，超时 2 秒，严格解码。这条规则写进 S2，DP2 本身不加这类请求。
 
 威胁模型边界：同一用户下的恶意本机进程抢先占用端口或在子进程退出后抢占端口，不在本 plan 范围内。同一用户的进程本来就能读取用户文件。要防它，需要单独设计服务端认证（例如每次启动生成的密钥），这和 Operator 写入期的认证设计放在一起做，作为后续项记录。
 
-### 4.2 停止（必改项 C）
+### 4.2 停止与清理负责方（必改项 C）
+
+**负责方：每个进程组只有一个负责方。**
+
+| 进程 | 唯一负责方 | 机制 |
+|---|---|---|
+| serve 进程，以及 serve 自己进程组里的进程（Dev Activity 的 `git`、`gh`） | 外壳 | 外壳关闭 serve 的 stdin 管道写端；超过外层期限后向 serve 的进程组发 SIGKILL |
+| 每个独立进程组（Fleet collector、任务读取、setup 子进程，以及它们的子进程） | serve | serve 活着时，用现有关闭流程回收。serve 死亡后，没有 serve 代码能运行，组长从 stdin 读到 EOF，自己向本组发 SIGKILL（§4.4）。这段代码属于 serve 的实现，不是第二个负责方 |
+
+外壳从不向 serve 以外的进程或进程组发信号，不按名字查找进程（不用 `pkill`、`killall`）。
+
+**期限：外层比内层多留 5 秒。**
+- 内层：serve 的关闭总期限 `T_serve` = 10 秒（§4.4）。collector 组现有的 500 ms 宽限包含在这 10 秒以内（`server.ts:52`、:826-829）。
+- 外层：外壳的等待期限 `T_shell` = `T_serve` + 5 秒 = 15 秒。只有 `T_shell` 到期、serve 仍未退出时，外壳才发 SIGKILL。正常情况下 serve 在 `T_serve` 内清理完并退出，外壳不发任何信号。
+- `T_shell ≥ T_serve + 5 秒` 由测试固定（T-LIFE-15）。改任何一个常量都要同时改测试。
+
+**步骤**
 - 关闭最后一个窗口：退出 app（§11 第 3 项 LOCKED）。
-- 外壳只停止自己的子进程：先向子进程 PID 发 SIGTERM，服务端的关闭流程停止 collector 并回收它们的进程组（`operator.ts:100-110`、`server.ts:1732-1758`）。等最多 10 秒。仍未退出时，向子进程的进程组发 SIGKILL，再 `wait()` 回收。外壳从不按名字查找或停止进程（不用 `pkill`、`killall`）。
-- 重试前：先按上面的步骤停止并 `wait()` 旧子进程，确认它已回收，再启动新子进程。任何时刻最多一个自己的子进程。
-- 外壳崩溃或被 `kill -9`：外壳的清理代码不会运行，靠 §4.4 的 lifeline。
+- 外壳关闭 serve 的 stdin 管道写端。serve 读到 EOF，走和 SIGTERM 相同的关闭流程（`operator.ts:100-110`、`server.ts:1732-1758`）。外壳不另外发 SIGTERM。退出和外壳崩溃用同一个触发方式。
+- 外壳 `wait()` serve，最多等 `T_shell`。超时后向 serve 的进程组发 SIGKILL，再 `wait()`。serve 死亡后，各独立进程组的组长读到 EOF 并回收自己的组（§4.4）。
+- 重试前：按上面的步骤结束并 `wait()` 旧 serve，再启动新的。任何时刻最多一个自己的 serve。
+- 外壳崩溃或被 `kill -9`：内核关闭管道写端，serve 读到 EOF，走同一条路径。
 
 ### 4.3 输出读取
 - stdout：读出第一行后继续读，丢弃后续内容，不让管道写满。
-- stderr：持续读出，写入 `~/Library/Logs/io.github.ancienttwo.repo-harness/serve.log`（权限 0600，单文件 1 MiB，保留 2 份）。失败页只显示 stderr JSON 里的 `error` 字段。
+- stderr：持续读出，写入 `~/Library/Logs/io.github.ancienttwo.repo-harness/serve.log`（权限 0600，单文件 1 MiB，保留 2 份）。外壳只严格解码 stderr 第一行（最长 4 KiB）里的 `error` 字段，失败页只显示这个字段。
 - 读取在独立线程或异步任务里，不阻塞窗口事件循环。
 
-### 4.4 需要的 CLI 改动：stdin lifeline（DP1）
-新参数 `operator serve --exit-on-stdin-eof`。不传时行为不变。传入时：
+### 4.4 需要的 CLI 改动（DP1）
+
+**serve 的 stdin lifeline**：新参数 `operator serve --exit-on-stdin-eof`。不传时行为不变。传入时：
 - 服务端从启动开始就读 stdin，读到 EOF 时走和 SIGTERM 相同的关闭流程。外壳进程死亡时，内核关闭管道写端，服务端收到 EOF。
 - 启动期间收到 EOF：放弃启动，关闭已启动的 collector，不打印 URL，退出。
 - EOF 和 SIGTERM/SIGINT 同时到达：只关闭一次（沿用 `operator.ts` 现有的 `shuttingDown` 标记）。
-- 关闭有总期限（10 秒）。超时时向所有自己启动的子进程组发 SIGKILL，然后以非 0 退出。退出后，服务启动的进程组里不能留下进程。
-- 管道写端只能由外壳持有：外壳创建的管道必须带 close-on-exec，外壳之后启动的其他进程（登录 shell 探测、`--version`、打开配置文件、打开外链）不能继承它。Rust 标准库默认这样做（**inferred**，T-LIFE-4 验证）。服务端的子进程用自己的 stdin（`ignore` 或新管道，§0 P1），不影响 EOF。
+- 关闭总期限 `T_serve` = 10 秒。超时时 serve 向它创建的所有独立进程组发 SIGKILL，确认这些组为空后以非 0 退出。
+- 管道写端只能由外壳持有：外壳创建的管道必须带 close-on-exec，外壳之后启动的其他进程（登录 shell 探测、`--version`、打开配置文件、打开外链）不能继承它。Rust 标准库默认这样做（**inferred**，T-LIFE-4 验证）。
 - 不用「外壳定时 ping」或「服务端检查父 PID」：前者需要新路由，后者在 macOS 上要轮询，都比管道 EOF 复杂。
+
+**独立进程组组长的 lifeline**：serve 被 `kill -9`，或卡住后被外壳 SIGKILL 时，没有 serve 代码能运行。这时独立进程组只能由组长自己回收。
+- 现状（§0 P1）：Fleet collector 读到 stdin 关闭时结束自己，但不回收组里已启动的 `git`（**inferred**）。任务读取进程只取消。setup 子进程的 stdin 是 `ignore`，并阻塞在同步 builder 里，察觉不到 serve 死亡。
+- 改动：每个组长读到 stdin EOF 时，向自己的进程组发 SIGKILL（含自己）。
+- EOF 的含义不变：serve 现在等组为空之后才 `stdin.end()`（`server.ts:776-787`、:819-834），所以组长只会在 serve 死亡后读到「组还在时的 EOF」。DP1 要核对 serve 的所有结束路径都保持这个顺序。
+- setup 子进程的 stdin 改为管道。builder 会用 `spawnSync` 阻塞约 20 秒，所以 builder 移进 Worker，主线程只读 stdin（**unverified**：在 Bun Worker 里运行 `buildSetupCheck` 是否可行，DP0 验证）。
+
+**结构化端口错误**：listen 失败且错误对象的 `code` 是 `EADDRINUSE` 时，stderr 输出 `{"ok":false,"error":"port_in_use"}`，退出码仍是 1。其他错误的输出不变（`operator_server_unavailable` 或 `invalid_argument`）。判断依据是错误对象的 `code`，不是 `message` 文本。
 
 ### 4.5 环境、CLI 查找和配置（必改项 E）
 **探测（只在首次启动，或用户在失败页选择重试探测时运行）**
@@ -264,7 +293,7 @@ CLI 的查找、环境和配置统一在 §4.5 定义。版本检查：每次启
   - 插件只用 single-instance，并且只用它的 Rust 回调。
   - `withGlobalTauri` 关闭，但这只是减少暴露面，不是权限边界。权限边界由编译后的 capability 和运行时拒绝测试证明（T-BRG），不由「页面里没有某个全局对象」证明。参考 https://v2.tauri.app/security/capabilities/ 。
 - **S4 导航白名单**：§4.7 的判断函数覆盖导航、重定向、新窗口、下载和权限请求。
-- **S5 唯一生命周期所有者**：外壳只停止自己的子进程，从不按名字停止进程。lifeline 保证外壳死亡时服务退出。
+- **S5 唯一清理负责方**：每个进程组只有一个负责方（§4.2 的表）。外壳只结束 serve 和 serve 自己的进程组，从不向其他进程发信号，不按名字停止进程。外层期限比内层多 5 秒。lifeline 保证外壳或 serve 死亡时，下层进程组仍被回收。
 - **S6 不放宽服务端**：任何阶段都不为桌面版修改 Host、Origin、`Sec-Fetch-Site`、CSP、`X-Frame-Options`。
 - **S7 最小环境**：子进程环境和配置文件按 §4.5 的白名单，token 不写盘。
 - **S8 诊断命令**：只含 `cli_path`、`main_repo`、`port` 和常量，正确转义，不含凭据（§4.6）。
@@ -304,7 +333,7 @@ Operator 写入期的约束（§11 第 16 项 LOCKED，本 plan 只记录）：
 | 阶段 | 内容 | 产出 | 退出条件 |
 |---|---|---|---|
 | DP0 实测（不改仓库代码） | 1. 权限边界：最小 Tauri app 按 S3 配置，跑 T-BRG。2. 生命周期：用假 CLI 跑外壳侧 T-LIFE。3. 导航：T-NAV 中标为 unverified 的项。4. WebKit：在 Safari 和最小 Tauri 窗口里打开当前服务，亮/暗、1440 与 390 宽；剪贴板复制；`localStorage` 重启后保留。5. 两个服务同时运行的冲突（§4.9）。6. setup check 在主仓库 cwd 下的输出。7. Finder 启动时的 PATH。8. Safari「添加到程序坞」能否用于 `http://127.0.0.1`。9. 最小 Tauri app 的体积 | 本 plan 增加「DP0 结果」一节，所有 **inferred/unverified** 改为已核对或推翻；第 8 项的结果写成日常用法说明 | 结果写进本 plan 后，本 work-package 停止（§11 第 2 项）。以后另给 GO 时，1、2 都必须已通过 |
-| DP1 CLI 启动合约 | `operator serve --exit-on-stdin-eof`（§4.4）；固定「stdout 第一行严格是 URL」；tarball smoke 增加 lifeline 检查 | 一个小 PR，只改 CLI 和测试 | CLI 侧 T-LIFE 和 `smoke:tarball-install` 通过；发布一个包含它的 CLI 版本 |
+| DP1 CLI 启动合约 | `operator serve --exit-on-stdin-eof`；独立进程组组长的 lifeline；setup builder 移进 Worker；结构化错误码 `port_in_use`（§4.4）；固定「stdout 第一行严格是 URL」；tarball smoke 增加 lifeline 检查 | 一个 PR，只改 CLI 和测试 | CLI 侧 T-LIFE（含 T-LIFE-12、13）和 `smoke:tarball-install` 通过；发布一个包含它的 CLI 版本 |
 | DP2 外壳 MVP（本机自用） | `desktop/` Tauri 项目：探测与配置、版本检查、子进程生命周期、固定端口、两个窗口、导航判断、启动画面与失败页、诊断命令、日志、单实例、原生标题栏、图标 | ad-hoc 签名的本地 `.app` | §10 的 T-OWN、T-BRG、T-LIFE、T-NAV、T-ENV、T-DIAG、T-E2E 在 Mac mini 上从 Finder 启动全部通过 |
 | DP2b Dock 角标 | §4.8 的角标；前端标题在 Dev Activity 读取失败时不带数字 | 外壳增量 PR 和一个前端小 PR | T-BADGE 通过 |
 | DP3 对外分发（条件：另给的 GO；§11 第 11 项确认；发版前核实 Team ID 和证书） | Developer ID 签名、公证、`desktop-v*` GitHub Release、发布记录 | 公证后的 `.dmg` | T-REL 通过 |
@@ -330,6 +359,9 @@ Operator 写入期的约束（§11 第 16 项 LOCKED，本 plan 只记录）：
 | `/healthz` 被当成归属证明 | 外壳显示别人的服务 | S2：只信任自己的子进程和它的 URL 行（T-OWN） |
 | 子进程退出后端口被其他进程占用 | 页面下一次刷新读到其他进程的数据 | 子进程退出时立即切到失败页并清除角标；恶意本机进程不在威胁模型内，认证设计放到 Operator 写入期（§4.1） |
 | 外壳崩溃留下孤儿服务 | 端口被占用，下次启动失败 | lifeline、写端 close-on-exec、关闭总期限、进程组回收（T-LIFE） |
+| 外壳在 serve 清理完之前杀掉它 | 独立进程组里的 collector 成为孤儿 | 单一负责方；`T_shell = T_serve + 5 秒`；外壳只关 stdin，不发 SIGTERM（T-LIFE-14、15） |
+| serve 被 `kill -9` 或卡住 | 独立进程组不被回收（杀 serve 的进程组到不了它们） | 组长 lifeline（§4.4，T-LIFE-12、13、14） |
+| 把非端口原因的失败报成端口被占用 | 用户排查错误的原因 | 默认归为启动失败；只认结构化的 `port_in_use`（T-OWN-1、T-OWN-6） |
 | 外壳误停用户在终端运行的服务 | 用户的工作被打断 | S5：只按自己的 PID 和进程组停止，不用 `pkill`（T-LIFE-10） |
 | 两个服务同时运行 | `gh`/`git` 调用加倍，可能限流 | DP0 实测（§4.9）；不自动关闭任何 collector |
 | WebKit 和 Chrome 渲染不同 | Kumo 组件或 Tailwind v4 样式在 WKWebView 里错位 | DP0 用 Safari 验收；以后 UI PR 的截图同时覆盖 WebKit |
@@ -350,11 +382,12 @@ Operator 写入期的约束（§11 第 16 项 LOCKED，本 plan 只记录）：
 测试编号按必改项分组。T-OWN 对应 A，T-BRG 对应 B，T-LIFE 对应 C，T-NAV 对应 D，T-ENV 对应 E。
 
 **T-OWN 归属（A）**
-- T-OWN-1：端口 4319 已被一个返回正常 `/healthz` 的服务占用。外壳的子进程绑定失败后，外壳显示端口占用失败页。控制台窗口从未加载 4319。外壳没有向 4319 发任何请求。
+- T-OWN-1：端口 4319 已被一个返回正常 `/healthz` 的服务占用。真实 CLI 输出 `port_in_use`，外壳显示端口占用失败页。控制台窗口从未加载 4319。外壳没有向 4319 发任何请求。
 - T-OWN-2：假 CLI 打印正确的 URL 行后立即退出。外壳不打开控制台窗口，或打开后立即切到失败页。
 - T-OWN-3：stdout 第一行多一个字符、端口不同、host 是 `localhost`、超过 256 字节时，外壳拒绝并停止子进程。
-- T-OWN-4：子进程运行中被外部 `kill -9`。控制台窗口立即切到失败页，角标清除。
+- T-OWN-4：serve 运行中被外部 `kill -9`。断言真实进程状态：外壳的 `Child` 报告这个 PID 因 SIGKILL 退出，并已被 `wait()` 回收；外壳没有自动启动新的 serve（外壳的子进程列表为空）；serve 启动过的独立进程组在 T-LIFE-12 的期限内全部为空。然后在 4319 启动一个记录请求的测试服务，60 秒内它收不到控制台窗口的任何请求。失败页和角标清除只作为附加检查，不能代替上面的进程断言。
 - T-OWN-5（静态）：外壳代码里没有 HTTP 客户端依赖。如果以后加，测试改为检查不跟随重定向、64 KiB 上限、2 秒超时。
+- T-OWN-6：非端口原因的启动失败。假 CLI 分别 (a) 输出 `{"ok":false,"error":"operator_server_unavailable"}` 后退出 1，(b) 退出 1 且没有 stderr，(c) stderr 第一行不是 JSON，(d) stderr 第一行超过 4 KiB。四种都显示「服务启动失败」，失败页里没有「端口被占用」的文案。
 
 **T-BRG 原生桥（B）**
 - T-BRG-1（静态）：编译后的 capability 只有一个，绑定状态窗口，不含 `remote`，权限正好是五个应用命令。
@@ -369,10 +402,14 @@ Operator 写入期的约束（§11 第 16 项 LOCKED，本 plan 只记录）：
 CLI 侧（`tests/cli/operator-serve.test.ts`，DP1）：
 - T-LIFE-1：带 `--exit-on-stdin-eof` 启动，在 URL 行出现之前关闭 stdin。服务不打印 URL，退出，collector 进程组为空。
 - T-LIFE-2：同时发送 SIGTERM 和关闭 stdin。服务只关闭一次，退出码 0。
-- T-LIFE-5：让一个 collector 子进程忽略 SIGTERM。关闭超过总期限后，服务向进程组发 SIGKILL，以非 0 退出，没有进程留下。
+- T-LIFE-5：让一个 collector 子进程忽略 SIGTERM。关闭超过 `T_serve` 后，服务向进程组发 SIGKILL，以非 0 退出，没有进程留下。
 - T-LIFE-6：正常 EOF 关闭后，服务启动过的所有进程组里都没有进程。
-- T-LIFE-11：不带参数时，关闭 stdin 不影响服务。stdout 第一行严格等于 `http://127.0.0.1:<实际端口>`。
+- T-LIFE-11：不带参数时，关闭 stdin 不影响服务。stdout 第一行严格等于 `http://127.0.0.1:<实际端口>`。端口被占用时，stderr 第一行是 `port_in_use`。参数错误（例如 `--runtime-status-config` 用相对路径）时是 `invalid_argument`，不是 `port_in_use`。
+- T-LIFE-12：Fleet collector 运行中（用一个很慢的假 `git`），对 serve 发 `kill -9`。测试事先从进程表记录 serve 的所有后代进程组 ID。5 秒内这些组全部为空。
+- T-LIFE-13：setup 子进程运行 builder 时（用一个很慢的探测 fixture），对 serve 发 `kill -9`。5 秒内 setup 子进程组为空。
 外壳侧（`cargo test`，用假 CLI 脚本，DP0 原型、DP2 正式）：
+- T-LIFE-14：serve 卡住（测试对它发 SIGSTOP）后退出外壳。外壳在 `T_shell` 之前不发任何信号；到期后向 serve 的进程组发 SIGKILL；之后 5 秒内 serve 的所有后代进程组为空。
+- T-LIFE-15：单元测试固定 `T_shell ≥ T_serve + 5 秒`。正常退出（serve 在 `T_serve` 内完成）时，外壳日志里没有 SIGKILL 记录。
 - T-LIFE-3：`kill -9` 外壳。自己的服务在限定时间内退出。
 - T-LIFE-4：外壳启动服务之后再启动探测、`--version` 和打开配置文件，然后 `kill -9` 外壳。服务仍然收到 EOF 并退出（写端没有被继承）。
 - T-LIFE-7：假 CLI 持续向 stdout 和 stderr 各写 10 MiB。外壳不阻塞，日志不超过上限。
@@ -468,3 +505,8 @@ E2E：
 - §11 第 13 项 LOCKED：Aimpact 有 Apple Developer 账号。发版走 Developer ID 签名加公证。账号、Team ID 和证书在发版前核实，不写进仓库，不提交凭据。改动见 §6、§7、§9。
 - §11 第 11 项的 Bundle ID 仍是 PENDING CONFIRM。
 - §11 第 14 项：对外发布的条件改为另给的 GO、Bundle ID 确认、Team ID 和证书核实。
+
+**第四轮（20261013，Dot 复审）**
+- 清理超时竞态：§4.2 改为每个进程组只有一个负责方。外壳只关 serve 的 stdin，只在 `T_shell` = `T_serve` + 5 秒到期后向 serve 自己的进程组发 SIGKILL。§4.4 增加独立进程组组长的 lifeline 和 setup builder 移进 Worker。§0 P1 补充进程组现状。S5 改名为唯一清理负责方。新增 T-LIFE-12..15。T-OWN-4 改为断言真实进程状态。
+- 端口冲突：§4.1 默认按「服务启动失败」处理，只有结构化的 `port_in_use` 才显示端口被占用。§4.4 增加这个错误码（依据错误对象的 `EADDRINUSE` code）。§4.3 只严格解码 stderr 第一行。新增 T-OWN-6，扩展 T-OWN-1 和 T-LIFE-11。
+- §8 DP1、§9 风险表同步更新。§11 不变：第 2、13 项保持 LOCKED，只有第 11 项的 Bundle ID 是 PENDING CONFIRM。
