@@ -1,9 +1,4 @@
-import {
-  buildSessionStartSections,
-  projectEffectiveStateSessionSection,
-  projectOwedCapabilitiesSessionSection,
-  projectUnavailableStateSessionSection,
-} from './session-context';
+import { buildSessionStartSections } from './session-context';
 import { pendingPostEditJournalSection, runMutationObserved } from './mutation-observed';
 import { runMutationGuard } from './mutation-guard';
 import { runStopHandler } from './stop-handler';
@@ -15,7 +10,6 @@ import { runTaskInboxHandler } from './task-inbox-handler';
 import type { HookHandlerId, Route } from './route-registry';
 import type { HookHandlerContext, HookHandlerResult, TypedHookHandler } from './handler-contract';
 import type { SessionContextSection } from './session-context-budget';
-import { sweepManagedWorktrees } from '../../effects/state/coordination-worktree-topology';
 
 /**
  * A text handler's result. Successful stdout is the model-facing advisory, so
@@ -34,35 +28,11 @@ function textResult(value: { readonly exitCode: number; readonly stdout: string;
 }
 
 function runSessionContext(context: HookHandlerContext): HookHandlerResult {
-  const sections: SessionContextSection[] = [];
-  const sweep = sweepManagedWorktrees(context.repoRoot, context.sessionCwd, context.env, { deadlineMs: context.worktreeSweepDeadlineMs });
-  if (sweep) sections.push({ id: 'worktree-sweep', priority: 1, content: sweep, mandatory: true, actionable: true });
   const resolution = context.collector.getEffectiveState();
-  let unavailable = false;
-  if (resolution.ok) {
-    const stateSection = projectEffectiveStateSessionSection(resolution.state);
-    if (stateSection) sections.push(stateSection);
-    const owed = projectOwedCapabilitiesSessionSection(context.repoRoot, resolution.state);
-    if (owed) sections.push(owed);
-  } else {
-    unavailable = true;
-    context.observeSessionContextDiagnostic({
-      provider_id: 'effective-state',
-      reason_code: resolution.reason_code,
-      error_hash: resolution.error_hash,
-      required_action: 'repo-harness state resolve --json',
-    });
-    sections.push(projectUnavailableStateSessionSection(resolution));
-  }
+  const sections: SessionContextSection[] = buildSessionStartSections(context.repoRoot, resolution, context.now.getTime());
   const pending = pendingPostEditJournalSection(context.repoRoot);
   if (pending) sections.push(pending);
-  sections.push(...buildSessionStartSections(
-    context.collector,
-    context.env,
-    context.now.getTime(),
-    context.observeSessionContextDiagnostic,
-  ));
-  return { exitCode: 0, sessionContexts: sections, ...(unavailable ? { reason: 'context-unavailable' } : {}) };
+  return { exitCode: 0, sessionContexts: sections, ...(resolution.ok ? {} : { reason: 'context-unavailable' }) };
 }
 
 const handlers: Readonly<Record<HookHandlerId, TypedHookHandler>> = Object.freeze({

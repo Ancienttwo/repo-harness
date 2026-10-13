@@ -19,7 +19,6 @@ source:
     - "src/cli/hook/hook-input.ts"
     - "src/cli/hook/hook-protocol.ts"
     - "src/cli/hook/event-telemetry.ts"
-    - "src/cli/hook/run-identity.ts"
     - "src/cli/hook/trace-observer.ts"
     - "src/cli/hook/session-context-budget.ts"
     - "src/pi/hook-protocol.ts"
