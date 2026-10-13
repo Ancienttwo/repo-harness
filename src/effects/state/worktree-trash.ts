@@ -127,10 +127,18 @@ export function renameWorktreeToTrash(receipt: WorktreeTrashReceipt): void {
 function checkDeadline(deadline: number): void {
   if (Date.now() >= deadline) throw new Error('time budget reached; trash deletion will resume');
 }
+
+/** Only payload deletion, after recovery readback, may yield to live cleanup. */
+export class WorktreeTrashBudgetReached extends Error {
+  constructor() { super('time budget reached; trash deletion will resume'); }
+}
+function checkDeletionDeadline(deadline: number): void {
+  if (Date.now() >= deadline) throw new WorktreeTrashBudgetReached();
+}
 function deletePayload(path: string, deadline: number, options: WorktreeRemovalOptions): void {
   const pending = [path];
   while (pending.length > 0) {
-    checkDeadline(deadline);
+    checkDeletionDeadline(deadline);
     const current = pending[pending.length - 1]!;
     const stat = present(current);
     if (!stat) { pending.pop(); continue; }
@@ -145,7 +153,7 @@ function deletePayload(path: string, deadline: number, options: WorktreeRemovalO
     const directory = opendirSync(current);
     let entry;
     try { entry = directory.readSync(); } finally { directory.closeSync(); }
-    checkDeadline(deadline);
+    checkDeletionDeadline(deadline);
     if (entry) pending.push(join(current, entry.name));
     else {
       rmdirSync(current);
@@ -158,9 +166,9 @@ function deletePayload(path: string, deadline: number, options: WorktreeRemovalO
 /** Partial deletion stays private, unregistered, approved and safe to repeat. */
 export function deleteWorktreeTrash(receipt: WorktreeTrashReceipt, deadline: number, options: WorktreeRemovalOptions): void {
   deletePayload(trashPayload(receipt), deadline, options);
-  checkDeadline(deadline);
+  checkDeletionDeadline(deadline);
   unlinkSync(join(receipt.directory, RECEIPT));
-  checkDeadline(deadline);
+  checkDeletionDeadline(deadline);
   rmdirSync(receipt.directory);
 }
 export function deleteUnpublishedTrash(directory: string, deadline: number): void {
