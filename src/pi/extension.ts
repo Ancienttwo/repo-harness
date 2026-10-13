@@ -99,8 +99,8 @@ export default function repoHarnessPi(pi: ExtensionAPI): void {
     current = state;
     if (!active) return;
     try {
-      if (VERSION !== '1.1.0') throw new Error(`PI_HOOK_UNSUPPORTED_VERSION: ${VERSION}; requires Pi 1.1.0`);
-      // Pi has no public path resolver. Use the exact installed 1.1.0 tool resolver;
+      if (VERSION !== '1.2.0') throw new Error(`PI_HOOK_UNSUPPORTED_VERSION: ${VERSION}; requires Pi 1.2.0`);
+      // Pi has no public path resolver. Use the exact installed 1.2.0 tool resolver;
       // unavailable distributions fail closed instead of duplicating its grammar.
       const paths = await import(pathToFileURL(join(getPackageDir(), 'dist/core/tools/path-utils.js')).href);
       if (typeof paths.resolveToCwd !== 'function') throw new Error('PI_HOOK_PATH_RESOLVER_UNAVAILABLE');
@@ -117,6 +117,9 @@ export default function repoHarnessPi(pi: ExtensionAPI): void {
   });
 
   pi.on('before_agent_start', async (event, ctx) => {
+    // Pi 1.2.0 also starts a run for an idle custom message with triggerTurn.
+    // Only a user prompt is a UserPromptSubmit; a custom run keeps the current run.
+    if (event.messageType !== 'user') return;
     const state = current;
     if (!state || !state.optedIn) return;
     state.runId = `run-pi-${randomUUID()}`;

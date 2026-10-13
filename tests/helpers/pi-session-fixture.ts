@@ -137,6 +137,14 @@ try {
     await session.bindExtensions({ onError: event => { errors.push(event.error); } });
     await prompt('edit', { path: 'README.md', edits: [{ oldText: 'seed', newText: 'replaced' }] }, 'after-replacement');
     await prompt('write', { path: '_ops/replaced.txt', content: 'forbidden' }, 'replaced-private');
+  } else if (mode === 'custom-turn') {
+    // Pi 1.2.0 starts a run for an idle custom message with triggerTurn and
+    // emits before_agent_start without a user prompt.
+    await prompt('write', { path: 'user-run.txt', content: 'user run' }, 'user-run');
+    provider.setResponses([fauxAssistantMessage(fauxToolCall('write', { path: 'custom-run.txt', content: 'custom run' }, { id: 'custom-run' }),
+      { stopReason: 'toolUse' }), fauxAssistantMessage('Done.')]);
+    await session.sendCustomMessage({ customType: 'fixture-custom', content: 'Continue with the fixture write.', display: false }, { triggerTurn: true });
+    await session.waitForIdle();
   } else if (mode === 'inactive') {
     await prompt('write', { path: '_ops/private.txt', content: 'allowed outside opt-in' }, 'inactive-write');
   } else if (mode === 'unavailable') {
