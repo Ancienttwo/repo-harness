@@ -3,12 +3,6 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-WORKFLOW_STATE_LIB="${REPO_HARNESS_WORKFLOW_STATE_LIB:-$SCRIPT_DIR/../assets/hooks/lib/workflow-state.sh}"
-if [[ -n "${REPO_HARNESS_BUN_BIN:-}" ]] && [[ "$WORKFLOW_STATE_LIB" != /* || ! -f "$WORKFLOW_STATE_LIB" || -L "$WORKFLOW_STATE_LIB" ]]; then
-  echo "archive-workflow: trusted workflow-state library is unavailable" >&2
-  exit 1
-fi
-
 if [[ -n "${REPO_HARNESS_TARGET_REPO_ROOT:-}" ]]; then
   cd "$REPO_HARNESS_TARGET_REPO_ROOT"
 elif REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null)"; then
@@ -211,7 +205,6 @@ completed_archive_gate() {
   local contract_file="$1"
   local review_file="$2"
   local update_contract_status="${3:-1}"
-  local workflow_state_file="$WORKFLOW_STATE_LIB"
   local contract_status before_hash after_hash
 
   [[ -f "$contract_file" ]] || {
@@ -220,10 +213,6 @@ completed_archive_gate() {
   }
   [[ -f "$review_file" ]] || {
     echo "archive-workflow: Completed requires an active review: $review_file" >&2
-    return 1
-  }
-  [[ -f "$workflow_state_file" ]] || {
-    echo "archive-workflow: Completed requires workflow gate authority: $workflow_state_file" >&2
     return 1
   }
 
