@@ -224,11 +224,14 @@ test('packet fixtures keep valid socket paths with a long UTF-8 temporary root',
   expect(Buffer.byteLength(temp, 'utf8')).toBeGreaterThan(107);
   // Set startup variables only in the child. Keep the real isolation preload
   // and run the original assertions, including the Darwin launch failure.
+  const env: Record<string, string | undefined> = { ...process.env, TMPDIR: temp, TEMP: temp, TMP: temp, NO_COLOR: '1' };
+  // Bun hides pass lines in agent environments, even with onlyFailures=false.
+  for (const key of ['CLAUDECODE', 'REPL_ID', 'AGENT']) delete env[key];
   const result = spawnSync(process.execPath, ['--no-env-file', 'test', import.meta.path,
     '--test-name-pattern', '^packet (composition failure|survives launch failure)',
     '--timeout', '60000', '--max-concurrency', '1'], {
     cwd: join(import.meta.dir, '..'),
-    env: { ...process.env, TMPDIR: temp, TEMP: temp, TMP: temp, NO_COLOR: '1' },
+    env,
     encoding: 'utf8', timeout: 50_000,
   });
   const output = `${result.stdout ?? ''}\n${result.stderr ?? ''}`;
