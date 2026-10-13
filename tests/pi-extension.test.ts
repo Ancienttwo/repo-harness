@@ -87,9 +87,9 @@ describe('Pi JSON hook bridge', () => {
       expect(await new PiHookBridge(ROOT, { env: f.env }).invoke(request(f.root))).toMatchObject({ reason: 'non-opt-in', decision: 'none' });
       expect(existsSync(join(f.root, '.ai/harness/runs'))).toBe(false);
       await expect(new PiHookBridge(ROOT, { bun: join(f.root, 'missing'), env: f.env }).invoke(request(f.root))).rejects.toThrow('PI_HOOK_START_FAILED');
-      const pkg = fakePackage(f.root, 'console.log("not JSON");');
+      const pkg = fakePackage(f.root, 'await Bun.stdin.text(); console.log("not JSON");');
       await expect(new PiHookBridge(pkg, { env: f.env }).invoke(request(f.root))).rejects.toThrow('PI_HOOK_INVALID_RESULT');
-      writeFileSync(join(pkg, 'dist/hook-entry.js'), `console.log(${JSON.stringify(JSON.stringify(output({ exit_code: 2, decision: 'block' })))});`);
+      writeFileSync(join(pkg, 'dist/hook-entry.js'), `await Bun.stdin.text(); console.log(${JSON.stringify(JSON.stringify(output({ exit_code: 2, decision: 'block' })))});`);
       await expect(new PiHookBridge(pkg, { env: f.env }).invoke(request(f.root))).rejects.toThrow('PI_HOOK_EXIT_MISMATCH');
     } finally { f.cleanup(); }
   });
