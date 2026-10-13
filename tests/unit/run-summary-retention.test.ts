@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { RUN_SUMMARY_RETENTION_COUNT, sweepRunSummaries } from '../../src/effects/run-summary-retention';
+import { sweepRunSummaries } from '../../src/effects/run-summary-retention';
 
 const RUNS_DIR = '.ai/harness/runs';
 
@@ -21,7 +21,7 @@ function age(root: string, name: string, index: number): void {
   utimesSync(join(root, RUNS_DIR, name), seconds, seconds);
 }
 
-/** `index` orders age: 0 is the newest. Mirrors `stop-handler.ts`'s record. */
+/** `index` orders age: 0 is the newest. Mirrors `workflow_write_run_summary`'s record. */
 function seedStopSummary(root: string, name: string, index: number, reason = 'session-stop'): void {
   writeFileSync(join(root, RUNS_DIR, name), JSON.stringify({
     generated_at: '2026-09-11T02:16:42+0800',
@@ -68,29 +68,25 @@ function remaining(root: string): string[] {
   return readdirSync(join(root, RUNS_DIR)).sort();
 }
 
-describe('run summary retention', () => {
-  test('keeps the newest N Stop summaries and removes the rest', () => {
+describe('run summary one-release cleanup', () => {
+  test('removes every run summary, newest included', () => {
     const root = fixture();
     for (let index = 0; index < 5; index++) seedStopSummary(root, `run-${index}.json`, index);
 
-    const result = sweepRunSummaries({ repoRoot: root, runsDir: RUNS_DIR, retain: 2 });
+    const result = sweepRunSummaries({ repoRoot: root, runsDir: RUNS_DIR });
 
     expect(result.scanned).toBe(5);
-    expect([...result.removed].sort()).toEqual([
-      `${RUNS_DIR}/run-2.json`, `${RUNS_DIR}/run-3.json`, `${RUNS_DIR}/run-4.json`,
-    ]);
-    expect(remaining(root)).toEqual(['run-0.json', 'run-1.json']);
-    expect(result.retained).toBe(2);
+    expect([...result.removed].sort()).toEqual([0, 1, 2, 3, 4].map((index) => `${RUNS_DIR}/run-${index}.json`));
+    expect(remaining(root)).toEqual([]);
   });
 
   test('a ledger-bound verification execution record is never a candidate', () => {
     const root = fixture();
-    // Oldest file in the directory, and the only one a count-only or
-    // newest-N-by-name rule would delete first.
+    // Only the record shape keeps it: the cleanup removes every run summary.
     const record = seedVerificationRecord(root, 'vx-0c2998f10e2847ccbb86', 99);
     for (let index = 0; index < 3; index++) seedStopSummary(root, `run-${index}.json`, index);
 
-    const result = sweepRunSummaries({ repoRoot: root, runsDir: RUNS_DIR, retain: 0 });
+    const result = sweepRunSummaries({ repoRoot: root, runsDir: RUNS_DIR });
 
     expect(result.foreign).toBe(1);
     expect(result.scanned).toBe(3);
@@ -100,11 +96,11 @@ describe('run summary retention', () => {
 
   test("verify-sprint's frozen acceptance snapshot is never a candidate", () => {
     const root = fixture();
-    // Shares Stop's `run-` prefix, so only the record shape separates them.
+    // Shares the run summary `run-` prefix, so only the record shape separates them.
     seedAcceptanceSnapshot(root, 'run-20260829T025442-29360-operator-board.json', 99);
     for (let index = 0; index < 3; index++) seedStopSummary(root, `run-${index}.json`, index);
 
-    sweepRunSummaries({ repoRoot: root, runsDir: RUNS_DIR, retain: 0 });
+    sweepRunSummaries({ repoRoot: root, runsDir: RUNS_DIR });
 
     expect(remaining(root)).toEqual(['run-20260829T025442-29360-operator-board.json']);
   });
@@ -117,7 +113,7 @@ describe('run summary retention', () => {
     writeFileSync(join(root, RUNS_DIR, 'run-array.json'), '[]');
     seedStopSummary(root, 'run-0.json', 0);
 
-    const result = sweepRunSummaries({ repoRoot: root, runsDir: RUNS_DIR, retain: 0 });
+    const result = sweepRunSummaries({ repoRoot: root, runsDir: RUNS_DIR });
 
     expect(result.foreign).toBe(3);
     expect(result.removed).toEqual([`${RUNS_DIR}/run-0.json`]);
@@ -133,7 +129,7 @@ describe('run summary retention', () => {
     seedStopSummary(root, 'run-1.json', 1, 'repo-harness-migration-verify');
     seedStopSummary(root, 'run-2.json', 2, 'C4 shipped via PR #226; main at 8134a2af');
 
-    const result = sweepRunSummaries({ repoRoot: root, runsDir: RUNS_DIR, retain: 0 });
+    const result = sweepRunSummaries({ repoRoot: root, runsDir: RUNS_DIR });
 
     expect(result.scanned).toBe(3);
     expect(result.foreign).toBe(0);
@@ -147,7 +143,7 @@ describe('run summary retention', () => {
     symlinkSync(outside, join(root, RUNS_DIR, 'run-link.json'));
     seedStopSummary(root, 'run-0.json', 0);
 
-    const result = sweepRunSummaries({ repoRoot: root, runsDir: RUNS_DIR, retain: 0 });
+    const result = sweepRunSummaries({ repoRoot: root, runsDir: RUNS_DIR });
 
     expect(result.skipped).toEqual(['run-link.json: not a regular file']);
     expect(existsSync(outside)).toBe(true);
@@ -162,7 +158,7 @@ describe('run summary retention', () => {
     mkdirSync(join(root, RUNS_DIR, 'bash-output'));
     writeFileSync(join(root, RUNS_DIR, 'bash-output', 'run-nested.json'), '{}');
 
-    const result = sweepRunSummaries({ repoRoot: root, runsDir: RUNS_DIR, retain: 0 });
+    const result = sweepRunSummaries({ repoRoot: root, runsDir: RUNS_DIR });
 
     expect(result.scanned).toBe(1);
     expect(remaining(root)).toEqual(['bash-output', 'hook-events.jsonl', 'verification-vx-abc.log']);
@@ -173,9 +169,9 @@ describe('run summary retention', () => {
     const root = fixture();
     for (let index = 0; index < 3; index++) seedStopSummary(root, `run-${index}.json`, index);
 
-    const result = sweepRunSummaries({ repoRoot: root, runsDir: RUNS_DIR, retain: 1, dryRun: true });
+    const result = sweepRunSummaries({ repoRoot: root, runsDir: RUNS_DIR, dryRun: true });
 
-    expect(result.removed.length).toBe(2);
+    expect(result.removed.length).toBe(3);
     expect(result.reclaimedBytes).toBeGreaterThan(0);
     expect(remaining(root)).toEqual(['run-0.json', 'run-1.json', 'run-2.json']);
   });
@@ -184,29 +180,6 @@ describe('run summary retention', () => {
     const root = fixture();
     rmSync(join(root, RUNS_DIR), { recursive: true, force: true });
     expect(sweepRunSummaries({ repoRoot: root, runsDir: RUNS_DIR }).scanned).toBe(0);
-  });
-
-  test('the default bound is the exported retention count', () => {
-    const root = fixture();
-    for (let index = 0; index < RUN_SUMMARY_RETENTION_COUNT + 3; index++) seedStopSummary(root, `run-${index}.json`, index);
-
-    const result = sweepRunSummaries({ repoRoot: root, runsDir: RUNS_DIR });
-
-    expect(result.removed.length).toBe(3);
-    expect(result.retained).toBe(RUN_SUMMARY_RETENTION_COUNT);
-  });
-
-  test('foreign records never consume the retention window', () => {
-    const root = fixture();
-    // Newer than every Stop summary: a rule that counted them would evict one.
-    for (let index = 0; index < 5; index++) seedVerificationRecord(root, `vx-newer-${index}`, -index - 1);
-    for (let index = 0; index < 3; index++) seedStopSummary(root, `run-${index}.json`, index);
-
-    const result = sweepRunSummaries({ repoRoot: root, runsDir: RUNS_DIR, retain: 3 });
-
-    expect(result.removed).toEqual([]);
-    expect(result.retained).toBe(3);
-    expect(result.foreign).toBe(5);
   });
 
   test('a runs directory outside the repository is refused', () => {

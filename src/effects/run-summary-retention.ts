@@ -1,24 +1,16 @@
 /**
- * Retention for Stop's per-run summaries under the policy `harness.runs_dir`.
+ * One-release operator cleanup of the run summaries Stop used to write under
+ * the policy `harness.runs_dir`. Stop no longer writes them; only
+ * `scripts/evidence-gc.ts` calls this module, and both go away one release
+ * after the Stop change.
  *
- * `src/cli/hook/stop-handler.ts` writes one `${runId}.json` per Stop and, until
- * this module existed, nothing ever removed it. Its sibling
- * `hook-event-log.ts` already bounds the other unbounded file in the same
- * directory (the rotated hook telemetry log); this bounds the summaries.
+ * The non-obvious rule is which files this removes. Several writers share the
+ * directory, and two of them produce durable evidence that a filename rule
+ * cannot tell apart from the old Stop records:
  *
- * The bound is a count, not a byte budget: summaries are fixed-shape ~4 KB
- * records, so "how many runs of history" is the honest unit, and it mirrors
- * `HOOK_LOG_ARCHIVE_SEGMENTS` rather than adding a policy surface no second
- * consumer has asked for.
- *
- * The non-obvious rule is which files the count applies to. Several writers
- * share this directory, and two of them produce durable evidence that a
- * filename rule cannot tell apart from Stop churn:
- *
- * - `stop-handler.ts` and `workflow_write_run_summary` in
- *   `assets/hooks/lib/workflow-state.sh` both write `${runId}.json` in the same
- *   shape -- disposable session history. The shell writer is the larger
- *   producer by volume and supplies the free-form `reason` values.
+ * - `workflow_write_run_summary` in `assets/hooks/lib/workflow-state.sh`
+ *   writes `${runId}.json` in the same shape as the retired Stop record --
+ *   disposable session history with free-form `reason` values.
  * - `scripts/verify-sprint.sh` freezes an acceptance snapshot whose exact path a
  *   checks projection records in `.run_file` and reads back at finalization.
  *   Its `runId` prefix is the same as Stop's.
@@ -28,45 +20,35 @@
  *   which fails a `baseline_with_delta` criterion permanently, because a rerun
  *   only ever mints a new execution id.
  *
- * Deleting either evidence class strands an acceptance with no operator exit, so
- * this sweep never reasons about what to keep. It deletes only files whose
- * content is the run-summary record `stop-handler.ts` itself writes: a `run_id`
- * plus the three resolved projection paths. Every field in that record is a
- * pointer recomputed from live policy on the next Stop, which is what makes the
- * record disposable; the other two shapes carry results. Anything else in the
- * directory -- including a shape a fourth writer adds later -- belongs to its
- * own owner and is left alone.
+ * Deleting either evidence class strands an acceptance with no operator exit,
+ * so this cleanup deletes only files whose content is the run-summary record: a
+ * `run_id` plus the three resolved projection paths. Every field in that record
+ * is a pointer that no code reads. Anything else in the directory belongs to
+ * its own owner and is left alone.
  *
  * The discriminator is the shape, not `reason`. `reason` is free-form operator
- * text (this repository's own history holds ~190 distinct values), so matching
- * on one value would leave every other run summary unreclaimable forever.
+ * text, so matching on one value would leave every other run summary in place.
  */
 import { lstatSync, readdirSync, readFileSync, statSync, unlinkSync, type Dirent } from 'fs';
 import { join } from 'path';
 import { resolveInsideRepo } from './path-safety';
 
-/** Runs of Stop history retained. */
-export const RUN_SUMMARY_RETENTION_COUNT = 200;
-
 /** The resolved projection paths every run summary carries; see
- * `stop-handler.ts`'s `runSummaryContent` and `workflow_write_run_summary`.
- * Present together only in that record. */
-const STOP_SUMMARY_PATH_FIELDS = ['handoff_file', 'policy_file', 'context_map_file'] as const;
+ * `workflow_write_run_summary`. Present together only in that record. */
+const RUN_SUMMARY_PATH_FIELDS = ['handoff_file', 'policy_file', 'context_map_file'] as const;
 
 export interface RunSummaryRetentionInput {
   readonly repoRoot: string;
   /** Repo-relative, as resolved by the single `harness.runs_dir` reader. */
   readonly runsDir: string;
-  readonly retain?: number;
   readonly dryRun?: boolean;
 }
 
 export interface RunSummaryRetentionResult {
-  /** Files positively identified as Stop summaries. */
+  /** Files positively identified as run summaries. */
   readonly scanned: number;
-  /** Files left alone because they are not Stop summaries. */
+  /** Files left alone because they are not run summaries. */
   readonly foreign: number;
-  readonly retained: number;
   /** Repo-relative paths removed, or that a dry run would remove. */
   readonly removed: readonly string[];
   readonly reclaimedBytes: number;
@@ -75,19 +57,19 @@ export interface RunSummaryRetentionResult {
 }
 
 const EMPTY: RunSummaryRetentionResult = {
-  scanned: 0, foreign: 0, retained: 0, removed: [], reclaimedBytes: 0, skipped: [],
+  scanned: 0, foreign: 0, removed: [], reclaimedBytes: 0, skipped: [],
 };
 
 function resolveOrThrow(repoRoot: string, relativePath: string): string {
   const result = resolveInsideRepo(repoRoot, relativePath);
   if (!result.ok || !result.path) {
-    throw new Error(result.error ?? `invalid run-summary retention path: ${relativePath}`);
+    throw new Error(result.error ?? `invalid run-summary path: ${relativePath}`);
   }
   return result.path;
 }
 
-/** True only for a record with Stop's own run-summary shape. */
-function isStopSummary(text: string): boolean {
+/** True only for a record with the run-summary shape. */
+function isRunSummary(text: string): boolean {
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
@@ -97,26 +79,16 @@ function isStopSummary(text: string): boolean {
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return false;
   const record = parsed as Record<string, unknown>;
   if (typeof record.run_id !== 'string' || record.run_id === '') return false;
-  return STOP_SUMMARY_PATH_FIELDS.every((field) => typeof record[field] === 'string');
-}
-
-interface Candidate {
-  readonly name: string;
-  readonly relative: string;
-  readonly absolute: string;
-  readonly mtimeMs: number;
-  readonly size: number;
+  return RUN_SUMMARY_PATH_FIELDS.every((field) => typeof record[field] === 'string');
 }
 
 /**
- * Removes Stop run summaries beyond the newest `retain`. Only regular `*.json`
- * files directly inside `runsDir` are ever read: subdirectories
- * (`bash-output/`, coordination state), the rotated hook telemetry log, and
- * verification failure `.log` diagnostics own their own lifecycles.
+ * Removes every run summary. Only regular `*.json` files directly inside
+ * `runsDir` are ever read: subdirectories (coordination state), the rotated
+ * hook telemetry log, and verification failure `.log` diagnostics own their
+ * own lifecycles.
  */
 export function sweepRunSummaries(input: RunSummaryRetentionInput): RunSummaryRetentionResult {
-  const retain = input.retain ?? RUN_SUMMARY_RETENTION_COUNT;
-  if (retain < 0) throw new Error('run summary retention count must not be negative');
   const runsDir = resolveOrThrow(input.repoRoot, input.runsDir);
 
   let names: readonly string[];
@@ -128,8 +100,10 @@ export function sweepRunSummaries(input: RunSummaryRetentionInput): RunSummaryRe
   }
 
   const skipped: string[] = [];
-  const candidates: Candidate[] = [];
+  const removed: string[] = [];
+  let scanned = 0;
   let foreign = 0;
+  let reclaimedBytes = 0;
   for (const name of names) {
     if (!name.endsWith('.json')) continue;
     const absolute = join(runsDir, name);
@@ -151,38 +125,21 @@ export function sweepRunSummaries(input: RunSummaryRetentionInput): RunSummaryRe
       skipped.push(`${name}: ${error instanceof Error ? error.message : String(error)}`);
       continue;
     }
-    if (!isStopSummary(text)) { foreign++; continue; }
-    candidates.push({ name, relative: `${input.runsDir}/${name}`, absolute, mtimeMs: entry.mtimeMs, size: entry.size });
+    if (!isRunSummary(text)) { foreign++; continue; }
+    scanned++;
+    if (!input.dryRun) {
+      try {
+        unlinkSync(absolute);
+      } catch (error) {
+        skipped.push(`${name}: ${error instanceof Error ? error.message : String(error)}`);
+        continue;
+      }
+    }
+    removed.push(`${input.runsDir}/${name}`);
+    reclaimedBytes += entry.size;
   }
 
-  const obsolete = candidates
-    .sort((left, right) => right.mtimeMs - left.mtimeMs)
-    .slice(retain);
-  const removed: string[] = [];
-  let reclaimedBytes = 0;
-  for (const candidate of obsolete) {
-    if (input.dryRun) {
-      removed.push(candidate.relative);
-      reclaimedBytes += candidate.size;
-      continue;
-    }
-    try {
-      unlinkSync(candidate.absolute);
-      removed.push(candidate.relative);
-      reclaimedBytes += candidate.size;
-    } catch (error) {
-      skipped.push(`${candidate.name}: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }
-
-  return {
-    scanned: candidates.length,
-    foreign,
-    retained: candidates.length - removed.length,
-    removed,
-    reclaimedBytes,
-    skipped,
-  };
+  return { scanned, foreign, removed, reclaimedBytes, skipped };
 }
 
 /** Bytes currently held by a checkpoint directory, for gc reporting only. */
