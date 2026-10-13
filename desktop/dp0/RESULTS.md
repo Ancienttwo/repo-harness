@@ -54,6 +54,7 @@
     - (b) 只交出与解码器规则完全一致的 PR URL（`https://github.com/<owner>/<repo>/…`），加频率限制，接受脚本也能触发这一类打开。
     - (c) 通过平台 API 关掉 `javaScriptCanOpenWindowsAutomatically`，并在导航回调里放行 GitHub 新窗口。这需要能区分新窗口和顶层导航的信息，而公开回调里没有，要额外实测。
   - 建议先选 (a) 或 (b)，由 Dot 决定。
+  - **决定（2026-10-13，Dot 和 Aimpact）：DP2 用 (b)。** 只把严格匹配的 GitHub PR URL 交给系统浏览器：只用 `https`，host 精确等于 `github.com`，path 只能是 `/<owner>/<repo>/pull/<digits>`，没有 userinfo、query 和 fragment。保留频率限制。没有手势的脚本仍可打开匹配的 PR URL，这个剩余风险已接受。不匹配的外链不打开，页面只提供复制，复制失败时明确提示，不加原生桥。完整规则见计划 §4.7、§11 第 17 项（PR #704）。本原型的 `nav.rs` 没有按 (b) 修改。
 - **F3：远程页面里确实有 `__TAURI_INTERNALS__`。** 拦住调用的是 ACL，不是没有注入。这印证了 Dot 第二轮评审的 B 点。Tauri 2.12 对远程 origin 的应用命令默认就会拒绝（`tauri/src/webview/mod.rs` 中 `!is_local` 的判断）。调试构建的拒绝信息会说出窗口名和权限名；按源码，发布构建只返回 `Command … not allowed by ACL`。
 - **F4：** `plugin:__TAURI_CHANNEL__|fetch` 是 Tauri 源码里唯一不经 ACL 的命令。从控制台调用时返回 `missing channel id header`，没有副作用。
 - **F5：wry 默认会授予媒体权限。** 没有设置权限回调时，wry 对摄像头和麦克风返回 `Grant`（`wry_web_view_ui_delegate.rs` 的 `requestMediaCapturePermission`）。原型在 app 和控制台窗口两级都设置了 `on_permission_request → Deny`。DP2 必须保留这一点，并在打包后的 app 里补测拒绝路径。
@@ -79,7 +80,7 @@
 - **T-NAV-4**：真实手势点击和真正打开系统浏览器都没有测。DP0 从不打开浏览器。
 - **T-NAV-7**：拒绝回调没有被触发过；定位请求超时的原因不明。
 - **T-LIFE-10**：需要在 4318 上有一个终端服务。本次规定不碰 4318，所以没做。
-- **§8 DP0 第 4–9 项**：真实控制台在 WebKit 里的渲染、剪贴板、`localStorage` 持久化、两个服务同时运行、setup 的 cwd、从 Finder 启动时的 PATH、Safari「添加到程序坞」、发布版 app 的体积。这些不在本次批准的范围内（只做桥接与生命周期）。
+- **§8 DP0 第 4–9 项**：真实控制台在 WebKit 里的渲染、剪贴板、`localStorage` 持久化、两个服务同时运行、setup 的 cwd、从 Finder 启动时的 PATH、Safari「添加到程序坞」、发布版 app 的体积。这些不在本次批准的范围内（只做桥接与生命周期）。之后的决定：只补做第 8 项，其他项留到以后的 GO（计划 §11 第 18 项）。
 
 ## 复现
 
