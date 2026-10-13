@@ -11,6 +11,7 @@ import {
   chmodSync,
   cpSync,
   copyFileSync,
+  symlinkSync,
 } from "fs";
 import { spawnSync } from "child_process";
 import { tmpdir } from "os";
@@ -100,6 +101,16 @@ function setupFakeSource(root: string): void {
     join(root, "assets", "skill-commands", "manifest.json"),
   );
   cpSync(join(ROOT, "assets", "templates", "helpers"), join(root, "scripts"), { recursive: true });
+  // The package ships scripts/ beside src/. A helper that imports package
+  // modules is a projection whose imports are rebased for
+  // assets/templates/helpers, so the package keeps its scripts/ form.
+  symlinkSync(join(ROOT, "src"), join(root, "src"), "dir");
+  for (const name of readdirSync(join(root, "scripts"))) {
+    const helper = join(root, "scripts", name);
+    if (name.endsWith(".ts") && /["']\.\.\/\.\.\/\.\.\/src\//.test(readFileSync(helper, "utf-8"))) {
+      copyFileSync(join(ROOT, "scripts", name), helper);
+    }
+  }
   copyFileSync(join(ROOT, "assets", "workflow-contract.v1.json"), join(root, "assets", "workflow-contract.v1.json"));
   writeFileSync(
     join(root, "assets", "reference-configs", "global-working-rules.md"),
