@@ -1,8 +1,8 @@
 # Plan: repo-harness 桌面版（Operator 控制台的桌面壳）
 
-> **Status**: Draft，第五轮。只是设计，不是实施 GO。Aimpact 2026-10-13 确认本 work-package 只做到 DP0：DP0 完成后停止，DP1 及以后要另给 GO（§11 第 2 项）。DP0 实测要等 Dot 复审通过后再开始。§11 的 16 项全部 LOCKED。
+> **Status**: Draft，第六轮。只是设计，不是实施 GO。Aimpact 2026-10-13 确认本 work-package 只做到 DP0：DP0 完成后停止，DP1 及以后要另给 GO（§11 第 2 项）。DP0 实测要等 Dot 复审通过后再开始。§11 的 16 项全部 LOCKED。
 > **Created**: 20261013
-> **Revised**: 20261013（第二轮：按 Dot 在 Slack #bot-worker 的评审锁定 §11 默认值，补上必改项 A–E；第三轮：按 Aimpact 2026-10-13 的确认锁定 §11 第 2、13 项；第四轮：按 Dot 复审修正清理负责方和端口冲突判断；第五轮：按 Aimpact 的确认锁定 Bundle ID。见 §12）
+> **Revised**: 20261013（第二轮：按 Dot 在 Slack #bot-worker 的评审锁定 §11 默认值，补上必改项 A–E；第三轮：按 Aimpact 2026-10-13 的确认锁定 §11 第 2、13 项；第四轮：按 Dot 复审修正清理负责方和端口冲突判断；第五轮、第六轮：按 Aimpact 的确认锁定 Bundle ID 为 `com.repoharness.app`。见 §12）
 > **Slug**: desktop-app
 > **Artifact Level**: work-package
 > **Baseline**: `main@0ef9ed11`（0.22.1 已发布）
@@ -185,7 +185,7 @@ CLI 的查找、环境和配置统一在 §4.5 定义。版本检查：每次启
 
 ### 4.3 输出读取
 - stdout：读出第一行后继续读，丢弃后续内容，不让管道写满。
-- stderr：持续读出，写入 `~/Library/Logs/io.github.ancienttwo.repo-harness/serve.log`（权限 0600，单文件 1 MiB，保留 2 份）。外壳只严格解码 stderr 第一行（最长 4 KiB）里的 `error` 字段，失败页只显示这个字段。
+- stderr：持续读出，写入 `~/Library/Logs/com.repoharness.app/serve.log`（权限 0600，单文件 1 MiB，保留 2 份）。外壳只严格解码 stderr 第一行（最长 4 KiB）里的 `error` 字段，失败页只显示这个字段。
 - 读取在独立线程或异步任务里，不阻塞窗口事件循环。
 
 ### 4.4 需要的 CLI 改动（DP1）
@@ -214,7 +214,7 @@ CLI 的查找、环境和配置统一在 §4.5 定义。版本检查：每次启
 - 探测失败：失败页说明原因，并提供「打开配置文件」。用户手动填写 `cli_path`（绝对路径）和 `path`。这是用户提供的值，外壳只校验，不猜。
 
 **配置文件（唯一的持久化位置）**
-- 位置：`~/Library/Application Support/io.github.ancienttwo.repo-harness/config.json`，权限 0600。
+- 位置：`~/Library/Application Support/com.repoharness.app/config.json`，权限 0600。
 - 只有五个字段：`cli_path`（绝对路径）、`path`（PATH 字符串）、`repo_harness_home`（绝对路径或 null）、`main_repo`（绝对路径）、`port`（默认 4319）。解码器拒绝未知字段和非法值。
 - `cli_path` 必须是存在的可执行文件。`main_repo` 必须是真实目录，不是符号链接。
 
@@ -311,7 +311,7 @@ Operator 写入期的约束（§11 第 16 项 LOCKED，本 plan 只记录）：
 - 发版走 Developer ID Application 签名，开 Hardened Runtime，用 `notarytool` 公证，用 `stapler` 装订（§11 第 13 项 LOCKED：Aimpact 2026-10-13 确认有 Apple Developer 账号）。
 - 发版前核实三件事：用哪个 Apple Developer 账号、Team ID、Developer ID 证书。账号标识、Team ID、证书和公证凭据都不写进仓库，也不提交到任何文件。它们只放在发布主机（Mac mini）的钥匙串里。每次使用都是凭据边界，需要 Aimpact 批准。
 - 标题栏用 macOS 原生标题栏（§11 第 10 项 LOCKED）。
-- 名称是 `repo-harness`。图标从现有 `src/operator-web/favicon.svg` 制作成正规的 macOS 图标（1024 px 母版，按 macOS 图标网格）。Bundle ID 是 `io.github.ancienttwo.repo-harness`（§11 第 11 项 LOCKED）。日志和配置路径用这个 ID。
+- 名称是 `repo-harness`。图标从现有 `src/operator-web/favicon.svg` 制作成正规的 macOS 图标（1024 px 母版，按 macOS 图标网格）。Bundle ID 是 `com.repoharness.app`（§11 第 11 项 LOCKED）。日志和配置路径用这个 ID。
 
 ---
 
@@ -466,7 +466,7 @@ E2E：
 
 ## 11. Open Questions for Dot
 
-第二轮按 Dot 的评审（Slack #bot-worker，编排者已逐字核对）锁定。第三轮按 Aimpact 2026-10-13 的确认锁定第 2、13 项。第五轮按 Aimpact 的确认锁定第 11 项的 Bundle ID。**LOCKED** 已写进正文。现在没有 PENDING CONFIRM 项。
+第二轮按 Dot 的评审（Slack #bot-worker，编排者已逐字核对）锁定。第三轮按 Aimpact 2026-10-13 的确认锁定第 2、13 项。第五轮、第六轮按 Aimpact 的确认锁定第 11 项的 Bundle ID（第六轮为最终值）。**LOCKED** 已写进正文。现在没有 PENDING CONFIRM 项。
 
 1. **外壳技术** — LOCKED：Tauri v2。DP0 先证明权限边界和生命周期（T-BRG、T-LIFE）。只有决定桌面版长期只做 macOS 时才改用 Swift。（§2.3）
 2. **只用 Safari「添加到程序坞」就结束** — LOCKED（Aimpact 2026-10-13 确认）：手动启动服务够用。本 work-package 做到 DP0 就停。DP1 及以后要另给 GO。（§2.3、§8）
@@ -478,7 +478,7 @@ E2E：
 8. **系统通知** — LOCKED：MVP 不做。以后只通知新出现的、确实需要人处理的正式请求，要去重、不通知首次快照里已有的项、限制频率。（§1、§8 DP4）
 9. **开机自动启动** — LOCKED：不做。（§1）
 10. **窗口外观** — LOCKED：原生标题栏。（§6）
-11. **名称、Bundle ID、图标** — LOCKED：名称是 `repo-harness`。图标从 favicon 制作成正规的 macOS 图标。Bundle ID 是 `io.github.ancienttwo.repo-harness`（Aimpact 确认）。（§6）
+11. **名称、Bundle ID、图标** — LOCKED：名称是 `repo-harness`。图标从 favicon 制作成正规的 macOS 图标。Bundle ID 是 `com.repoharness.app`（Aimpact 最终确认，Aimpact 拥有 repoharness.com 域名）。（§6）
 12. **启动画面与失败页** — LOCKED：轻量启动画面，单独的失败页，有复制诊断命令、重试、打开配置文件、退出。命令反映真实的 CLI 路径、cwd 和端口，正确做 shell 转义，不含凭据。（§4.6）
 13. **Apple Developer 账号** — LOCKED（Aimpact 2026-10-13 确认）：Aimpact 有 Apple Developer 账号。发版走 Developer ID 签名加公证。账号、Team ID 和证书在发版前核实，不写进仓库，也不提交任何凭据。（§6、§7）
 14. **分发渠道** — LOCKED：首次对外发布用 GitHub Release 手动下载，Tag 用 `desktop-v*`。Homebrew cask 和自动更新以后再说。对外发布在 DP3，要另给 GO，并且在 Team ID 和证书核实之后。（§7）
@@ -512,6 +512,11 @@ E2E：
 - §8 DP1、§9 风险表同步更新。§11 不变：第 2、13 项保持 LOCKED，只有第 11 项的 Bundle ID 是 PENDING CONFIRM。
 
 **第五轮（20261013，Aimpact 确认）**
-- §11 第 11 项 LOCKED：Bundle ID 是 `io.github.ancienttwo.repo-harness`。§11 的 16 项现在全部 LOCKED。
+- §11 第 11 项 LOCKED：当时记录的 Bundle ID 已被第六轮更正。§11 的 16 项现在全部 LOCKED。
 - 页首 Status、§6、§7、§8 DP3、§11 第 14 项：去掉「Bundle ID 待确认」的条件。
 - DP0 实测要等 Dot 复审通过后再开始。
+
+**第六轮（20261013，Aimpact 最终确认）**
+- §11 第 11 项 LOCKED：Bundle ID 最终是 `com.repoharness.app`（Aimpact 拥有 repoharness.com 域名）。这取代第五轮记录的值。
+- §4.3 日志路径、§4.5 配置路径、§6 的 Bundle ID 同步改为 `com.repoharness.app`。
+- DP0 实测仍要等 Dot 复审通过后再开始。
