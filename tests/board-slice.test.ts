@@ -427,7 +427,7 @@ describe('one slice, two hosts, identical bytes', () => {
     expect(codex.exitCode).toBe(0);
     const codexContext = String(codex.additionalContext);
 
-    const claude = returnChannel({ tool_name: 'Task', tool_input: { prompt: 'do the work' } });
+    const claude = returnChannel({ tool_name: 'Agent', tool_input: { prompt: 'do the work' } });
     expect(claude.exitCode).toBe(0);
     const claudePrompt = String(claude.permission?.updatedInput?.prompt);
 
@@ -439,7 +439,7 @@ describe('one slice, two hosts, identical bytes', () => {
   });
 
   test('the appendices are independently idempotent: a re-spawn still gets the slice', () => {
-    const first = returnChannel({ tool_name: 'Task', tool_input: { prompt: 'do the work' } });
+    const first = returnChannel({ tool_name: 'Agent', tool_input: { prompt: 'do the work' } });
     const stamped = String(first.permission?.updatedInput?.prompt);
     // Replaying the fully-stamped prompt is a no-op ...
     const replay = returnChannel({ tool_name: 'Agent', tool_input: { prompt: stamped } });

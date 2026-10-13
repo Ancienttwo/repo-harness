@@ -20,11 +20,15 @@ All notable changes to this skill are documented here.
   and Pi maps 4. `repo-harness hook` and the managed full-CLI fallback are
   removed. Managed commands skip non-opt-in repositories and require
   `repo-harness-hook` on PATH for opted-in repositories. All managed entries
-  and Pi bridge calls use 30 seconds, including Stop. Update the package and
+  use 30 seconds, including Stop. Pi keeps its 10-second bound for ordinary
+  calls and its 30-second Stop bound. Update the package and
   reinstall hooks once; trust the new Codex tuples once. Old adapters get
-  exit 2 for removed routes until reinstall. Doctor reports projection
+  exit 2 for removed or unsupported host routes until reinstall. Doctor reports projection
   mismatch and a missing hook bin. Keep the package and adapters on the same
-  release (#680). (#696, #705)
+  release (#680). Publication-command architecture and `[PostBash]` advisories
+  are no longer delivered. Claude and Codex still get owed context at
+  SessionStart; Claude also gets it at Stop. Pi does not render successful
+  tool-result `additional_context`. (#696, #705)
 - `prepare-handoff` runs only `recovery-view-cli.ts`, for both the write and
   `--status`. It no longer appends `handoff_refresh` events to
   `.ai/harness/events.jsonl` or writes run summaries under

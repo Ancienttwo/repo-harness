@@ -176,6 +176,16 @@ describe('typed hook runtime', () => {
       expect(result.stdout).toBe('');
       expect(result.stderr.trim().split('\n')).toHaveLength(1);
       expect(result.stderr).toContain('unsupported-host-route');
+      expect(result.stderr).toContain('repo-harness install --target codex --location global');
+      for (const host of ['claude', 'codex'] as const) {
+        const bash = spawnSync(process.execPath, [HOOK_ENTRY, 'PostToolUse', '--route', 'bash'], {
+          cwd: root, env: env(root, host), input: '{}', encoding: 'utf8',
+        });
+        expect(bash.status).toBe(2);
+        expect(bash.stdout).toBe('');
+        expect(bash.stderr).toContain('unsupported-host-route');
+        expect(bash.stderr).toContain(`repo-harness install --target ${host} --location global`);
+      }
       expect(existsSync(join(root, '.ai/harness/delegation'))).toBe(false);
     } finally { clean(root); }
   }, 30_000);

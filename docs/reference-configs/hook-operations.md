@@ -21,7 +21,8 @@ authority names and are not selected by installation location or host provider.
 The runtime checks that a route is installed for the host before a handler
 runs. Handlers do not check the host.
 Codex must trust `~/.codex/hooks.json` in Settings before it executes the
-adapter. All managed entries and Pi bridge calls use a 30-second deadline.
+adapter. All managed entries use a 30-second deadline.
+Pi uses 10 seconds for ordinary calls and 30 seconds for Stop.
 Stop has no deferred work: it publishes the evidence
 checkpoint and renders the handoff and resume views. Stop does not run
 architecture projection and does not record architecture drift.
@@ -40,7 +41,7 @@ Pi maps 4. Other documents link here. They do not copy this table.
 | `SessionStart.default` | all sessions | Claude, Codex, Pi | `session-context` | Emit the Effective State section first, then the owed-architecture, pending-plan, active-sprint and resume sections under one budget. |
 | `PreToolUse.edit` | `Edit\|Write` | Claude, Codex, Pi | `mutation-guard` | Block an edit outside the repository, under `_ref/` or `_ops/`, or without a parseable target path. |
 | `PreToolUse.subagent` | `Agent` | Claude | `return-channel` | Append the return-channel contract and the board slice to a Claude `Agent` prompt. |
-| `PostToolUse.bash` | `Bash` | Pi | `command-observed` | Count a known failing test run in the RepairLimit circuit when the payload has an exit status. Report owed architecture updates after a publication command. |
+| `PostToolUse.bash` | `Bash` | Pi | `command-observed` | Count a known failing test run in the RepairLimit circuit when the payload has an exit status. The extension shows failure diagnostics. Successful publication advisories have no consumer. |
 | `UserPromptSubmit.inbox` | all prompts | Claude, Codex | `task-inbox` | Deliver task messages at the turn boundary, outside delegation advice. |
 | `UserPromptSubmit.delegation` | all prompts | Codex | `delegation-advisor` | Render the `policy.json` delegation rules for an explicit `/delegate` or `/parallel` prompt. |
 | `SubagentStart.context` | subagent start | Codex | `subagent-context` | Record the native role and model observation. Add the bounded child context and the board slice. |
@@ -49,7 +50,13 @@ Pi maps 4. Other documents link here. They do not copy this table.
 After upgrading the package, reinstall the host adapters. Codex must trust the
 new command tuples once. Old adapters invoke removed routes and get exit 2.
 `repo-harness hook` is removed. Use `repo-harness-hook` for direct hook calls.
-Doctor reports projection mismatch and a missing hook bin.
+Doctor reports projection mismatch and a missing hook bin. The new runtime
+returns exit 2 for a removed tuple or an unsupported host route.
+
+Publication-command architecture and `[PostBash]` advisories no longer reach
+the Agent. Claude and Codex still get owed context at SessionStart. Claude
+also gets it at Stop. Pi does not render successful tool-result
+`additional_context`. Failure diagnostics remain visible.
 
 ## Host Output
 
@@ -199,7 +206,6 @@ The Agent gets the report at these points:
 | --- | --- | --- |
 | `PreToolUse.edit` | Claude, Codex | `[CapabilityOwner]` line on the first edit of an owned path after its last commit |
 | `SessionStart.default` | Claude, Codex, Pi | the branch already owes updates |
-| `PostToolUse.bash` | Claude, Codex | after a `git commit`, `git push` or `gh pr create` that is not known to fail; Claude and Codex send no exit status, so every such command counts |
 | `Stop.default` | Claude only | once per branch and owed set; nothing when `stop_hook_active` is true |
 
 CI and operators use the same rule without hooks:

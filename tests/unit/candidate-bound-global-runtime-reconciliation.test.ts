@@ -109,7 +109,7 @@ function fixtureCandidate(ownerRoot?: string): CandidatePackageIdentity {
   const root = ownerRoot ?? mkdtempSync(join(tmpdir(), 'repo-harness-candidate-identity-'));
   if (!ownerRoot) candidateRoots.push(root);
   const version = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf-8')).version;
-  return candidatePackageIdentity(copyRuntimeFixture(join(root, 'candidate'), version, 150));
+  return candidatePackageIdentity(copyRuntimeFixture(join(root, 'candidate'), version, 30));
 }
 
 function candidateReceipt(identity: CandidatePackageIdentity, adapterDigest: string): CandidateReconciliationReceipt {
@@ -176,9 +176,9 @@ describe('candidate-bound global runtime reconciliation', () => {
     const predecessor = structuredClone(candidate);
     const stop = predecessor.Stop?.find((entry) => entry.hooks[0]?.command.includes(' Stop --route default'));
     if (!stop) throw new Error('fixture requires Stop.default');
-    stop.hooks[0]!.timeout = 30;
+    stop.hooks[0]!.timeout = 150;
 
-    expect(candidate.Stop?.[0]?.hooks[0]?.timeout).toBe(150);
+    expect(candidate.Stop?.[0]?.hooks[0]?.timeout).toBe(30);
     expect(managedProjectionDigest(predecessor)).not.toBe(managedProjectionDigest(candidate));
     expect(() => assertCandidateReconciliationReceipt(candidateReceipt(identity, managedProjectionDigest(predecessor)), {
       transaction_id: 'transaction-fixture',
@@ -221,7 +221,7 @@ describe('candidate-bound global runtime reconciliation', () => {
       const predecessor = structuredClone(buildManagedHooks('codex', 'minimal'));
       const stop = predecessor.Stop?.find((entry) => entry.hooks[0]?.command.includes(' Stop --route default'));
       if (!stop) throw new Error('fixture requires Stop.default');
-      stop.hooks[0]!.timeout = 30;
+      stop.hooks[0]!.timeout = 150;
       const hookPath = join(home, '.codex', 'hooks.json');
       mkdirSync(join(home, '.codex'), { recursive: true });
       writeFileSync(hookPath, JSON.stringify({
@@ -251,7 +251,7 @@ describe('candidate-bound global runtime reconciliation', () => {
 
       const installed = JSON.parse(readFileSync(hookPath, 'utf-8')) as { hooks: Record<string, Array<{ hooks: Array<{ timeout: number }> }>>; custom: unknown };
       const installedStop = installed.hooks.Stop?.[0]?.hooks[0]?.timeout;
-      expect(installedStop).toBe(150);
+      expect(installedStop).toBe(30);
       expect(installed.custom).toEqual({ untouched: true });
       expect(receipt.reconciliation_scope).toBe('partial');
       expect(receipt.adapter_projection_digests.codex).toBe(managedProjectionDigest(buildManagedHooks('codex', 'minimal')));
@@ -275,7 +275,7 @@ describe('candidate-bound global runtime reconciliation', () => {
       const predecessor = structuredClone(buildManagedHooks('codex', 'minimal'));
       const stop = predecessor.Stop?.find((entry) => entry.hooks[0]?.command.includes(' Stop --route default'));
       if (!stop) throw new Error('fixture requires Stop.default');
-      stop.hooks[0]!.timeout = 30;
+      stop.hooks[0]!.timeout = 150;
       const hookPath = join(home, '.codex', 'hooks.json');
       mkdirSync(join(home, '.codex'), { recursive: true });
       writeFileSync(hookPath, JSON.stringify({ hooks: predecessor }, null, 2));
@@ -301,7 +301,7 @@ describe('candidate-bound global runtime reconciliation', () => {
         transaction_backup_root: forgedBackup,
       };
       expect(invokeCandidateChild(forged, env).status).toBe(1);
-      expect(JSON.parse(readFileSync(hookPath, 'utf-8')).hooks.Stop[0].hooks[0].timeout).toBe(30);
+      expect(JSON.parse(readFileSync(hookPath, 'utf-8')).hooks.Stop[0].hooks[0].timeout).toBe(150);
 
       const invalidLockRequest: CandidateReconciliationRequest = {
         ...requestBase,
@@ -322,7 +322,7 @@ describe('candidate-bound global runtime reconciliation', () => {
       } finally {
         lock.release();
       }
-      expect(JSON.parse(readFileSync(hookPath, 'utf-8')).hooks.Stop[0].hooks[0].timeout).toBe(30);
+      expect(JSON.parse(readFileSync(hookPath, 'utf-8')).hooks.Stop[0].hooks[0].timeout).toBe(150);
       rollbackInstallHostTransaction(transaction);
 
       const activeTransaction = beginInstallHostTransaction([], env);
@@ -332,7 +332,7 @@ describe('candidate-bound global runtime reconciliation', () => {
         transaction_backup_root: activeTransaction.backup_root,
       };
       expect(runCandidateChild(request, env).status).toBe(0);
-      expect(JSON.parse(readFileSync(hookPath, 'utf-8')).hooks.Stop[0].hooks[0].timeout).toBe(150);
+      expect(JSON.parse(readFileSync(hookPath, 'utf-8')).hooks.Stop[0].hooks[0].timeout).toBe(30);
       expect(invokeCandidateChild(request, env).status).toBe(1);
       rollbackInstallHostTransaction(activeTransaction);
     } finally {

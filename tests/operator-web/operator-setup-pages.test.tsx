@@ -168,7 +168,7 @@ describe('Agents page', () => {
     expect(checks.map(row => row.getAttribute('data-check'))).toEqual(['doctor.security-config', 'runtime.skills_cli']);
     expect(checks[0]!.querySelector('[data-command]')?.textContent).toContain('repo-harness security scan --json');
     expect(all('[data-host-row]').map(row => row.getAttribute('data-host-row'))).toEqual(['claude', 'codex', 'pi']);
-    expect(text('[data-host-row="claude"] [data-host-sentence]')).toBe('Connected · 9/9 managed hooks');
+    expect(text('[data-host-row="claude"] [data-host-sentence]')).toBe('Connected · 5/5 managed hooks');
     expect(text('[data-host-row="codex"]')).toContain('v0.162.0');
     expect(all('[data-fleet-role]')).toHaveLength(7);
     expect(text('[data-fleet-role="gatekeeper"] [data-host-cell="pi"]')).toContain('not reported');
@@ -200,10 +200,10 @@ describe('Agents page', () => {
     await act(async () => more.click());
     expect(all('[data-check]').map(row => row.getAttribute('data-check-status'))).toEqual(['fail', 'fail', 'needs_agent', 'warn', 'warn']);
     expect(more.textContent).toBe('Show fewer');
-    expect(text('[data-host-row="codex"] [data-host-sentence]')).toBe('Connected · 10/12 managed hooks · 4 projection mismatches');
+    expect(text('[data-host-row="codex"] [data-host-sentence]')).toBe('Connected · 5/6 managed hooks · 3 projection mismatches');
     expect(text('[data-host-row="codex"] [data-host-mismatch-summary]')).toContain('SubagentStart · context · missing');
     expect(text('[data-host-row="codex"] [data-command]')).toContain('repo-harness install --host codex');
-    expect(text('[data-host-row="claude"] [data-host-sentence]')).toBe('Connected · 9/9 managed hooks · projection not compared');
+    expect(text('[data-host-row="claude"] [data-host-sentence]')).toBe('Connected · 5/5 managed hooks · projection not compared');
     expect(text('[data-fleet-role="gatekeeper"] [data-host-cell="codex"]')).toContain('missing');
     // A check without a command says so instead of inventing one.
     expect(text('[data-check="runtime.skills_cli"]')).toContain('No command · see details');

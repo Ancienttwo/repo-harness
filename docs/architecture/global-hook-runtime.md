@@ -82,7 +82,7 @@ authorization. Two pre-existing rows carry the board slice:
 | Route | WP3 addition | Failure mode |
 | --- | --- | --- |
 | `SubagentStart` / `context` | `BoardSliceV1` in the child context | advisory; resolution failure means no block |
-| `PreToolUse` / `subagent` | the same slice appended once to the `Task\|Agent` prompt, gated by its marker; a `SendUserMessage` call gets no output | advisory |
+| `PreToolUse` / `subagent` | the same slice appended once to the Claude `Agent` prompt, gated by its marker | advisory |
 
 `PreToolUse.edit` has no lease check. `LeaseOwnershipGuard` was advisory since
 #483 and is deleted (#692). The lease authority stays in `start-task`,
@@ -99,7 +99,8 @@ runtime event record.
 Pi owns the agent loop and tool execution. `src/pi/extension.ts` maps supported
 native events to the shared typed handlers. It invokes the current package's
 `dist/hook-entry.js` through `src/pi/hook-bridge.ts`. The bridge uses protocol 1
-JSON output and a 30-second deadline for every call. It limits stdin to 16 MiB and diagnostics
+JSON output and a ten-second deadline for ordinary checks. Stop uses 30
+seconds. It limits stdin to 16 MiB and diagnostics
 to 8 KiB. It cancels its own child processes on shutdown or session replacement.
 
 The adapter uses Pi 1.2.0's installed `resolveToCwd` implementation. It resolves

@@ -65,7 +65,7 @@ describe('security scan command', () => {
   test('managed marker does not exempt a command that differs from the generated adapter', () => {
     withTempHomeAndRepo(({ home, repo }) => {
       const generated = buildHookCommand(getRoute('PreToolUse', 'edit')!, 'codex');
-      const altered = generated.replace('if command -v', 'touch "$HOME/altered"; if command -v');
+      const altered = generated.replace('export HOOK_REPO_ROOT', 'touch "$HOME/altered"; export HOOK_REPO_ROOT');
       expect(altered).not.toBe(generated);
       fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
       fs.mkdirSync(path.join(home, '.codex'), { recursive: true });

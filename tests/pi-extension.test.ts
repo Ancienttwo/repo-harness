@@ -95,15 +95,15 @@ describe('Pi JSON hook bridge', () => {
     } finally { f.cleanup(); }
   });
 
-  test('all routes use the same thirty-second deadline', async () => {
+  test('Stop can finish after ten seconds while ordinary checks remain bounded', async () => {
     const f = fixture();
     try {
       const pkg = fakePackage(f.root, `const event = process.argv[2];
 setTimeout(() => console.log(JSON.stringify({${JSON.stringify(output()).slice(1, -1)},event,route_id:'default',decision:'none'})), 11_000);`);
       expect(await new PiHookBridge(pkg, { env: f.env }).invoke(request(f.root, { event: 'Stop', route: 'default' })))
         .toMatchObject({ event: 'Stop', exit_code: 0 });
-      expect(await new PiHookBridge(pkg, { env: f.env })
-        .invoke(request(f.root, { event: 'SessionStart', route: 'default' }))).toMatchObject({ event: 'SessionStart', exit_code: 0 });
+      await expect(new PiHookBridge(pkg, { env: f.env })
+        .invoke(request(f.root, { event: 'SessionStart', route: 'default' }))).rejects.toThrow('PI_HOOK_TIMEOUT');
     } finally { f.cleanup(); }
   }, 60_000);
 
