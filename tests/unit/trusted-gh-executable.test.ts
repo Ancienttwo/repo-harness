@@ -78,8 +78,8 @@ nativeWindows('DIAG gh --version timing by environment variant', async () => {
     production = platform.protectedHelperRuntimeEnv(platform.resolveProtectedHelperPlatform({ contract }));
   } catch (error) { console.log('DIAG production env unavailable:', String(error)); }
   const variants: Record<string, NodeJS.ProcessEnv | undefined> = {
-    real: { ...process.env },
     hostileAll: { ...process.env, PATH: evil, ProgramFiles: evil, SystemRoot: evil, WINDIR: evil },
+    real: { ...process.env },
     hostileSystemRoot: { ...process.env, SystemRoot: evil },
     hostileWindir: { ...process.env, WINDIR: evil },
     hostilePath: { ...process.env, PATH: evil },
@@ -87,11 +87,11 @@ nativeWindows('DIAG gh --version timing by environment variant', async () => {
     production,
   };
   console.log('DIAG bin', bin, 'system', system, 'productionKeys', production ? Object.keys(production).join(',') : 'none');
-  for (let round = 1; round <= 3; round++) {
+  for (let round = 1; round <= 2; round++) {
     for (const [name, env] of Object.entries(variants)) {
       if (!env) continue;
       const started = performance.now();
-      const result = spawnSync(bin, ['--version'], { encoding: 'utf8', timeout: 12000, env });
+      const result = spawnSync(bin, ['--version'], { encoding: 'utf8', timeout: 55000, env });
       const elapsed = Math.round(performance.now() - started);
       console.log(`DIAG round=${round} variant=${name} ms=${elapsed} status=${result.status} signal=${result.signal} error=${result.error?.message ?? ''} stdout=${JSON.stringify((result.stdout ?? '').slice(0, 40))} stderr=${JSON.stringify((result.stderr ?? '').slice(0, 300))}`);
     }
@@ -102,7 +102,7 @@ nativeWindows('DIAG gh --version timing by environment variant', async () => {
   console.log(`DIAG ghdebug hostile ms=${Math.round(performance.now() - debugStarted)} status=${debug.status} stderr=${JSON.stringify((debug.stderr ?? '').slice(0, 3000))}`);
   const child = (env: NodeJS.ProcessEnv) => {
     const started = performance.now();
-    const result = spawnSync(process.execPath, ['-e', '0'], { encoding: 'utf8', timeout: 12000, env });
+    const result = spawnSync(process.execPath, ['-e', '0'], { encoding: 'utf8', timeout: 55000, env });
     return `${Math.round(performance.now() - started)}ms status=${result.status}`;
   };
   console.log('DIAG bun -e 0 real', child({ ...process.env }), 'hostile', child(variants.hostileAll!));
