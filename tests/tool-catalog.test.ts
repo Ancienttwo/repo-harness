@@ -20,8 +20,8 @@ const RESOURCE = catalogJson.tools.findIndex((tool) => tool.kind === "resource")
 const LOCAL = catalogJson.tools.findIndex((tool) => tool.kind === "local_tool");
 
 describe("tool catalog decode", () => {
-  test("the packaged catalog decodes and holds the P0 entries", () => {
-    expect(decodeToolCatalog(catalogJson)).toEqual(TOOL_CATALOG);
+  // TOOL_CATALOG is decoded at module load; a decode failure fails this file.
+  test("the packaged catalog holds the P0 entries", () => {
     const entries = TOOL_CATALOG.tools.map((tool) => [tool.id, tool.kind, tool.detector]);
     expect(entries).toEqual([
       ["waza", "local_tool", "waza"],
@@ -53,6 +53,15 @@ describe("tool catalog decode", () => {
   test("a resource with a detector fails; a local tool may have none", () => {
     expect(() => decodeToolCatalog(withTool(RESOURCE, (tool) => { tool.detector = "waza"; }))).toThrow("detector");
     expect(() => decodeToolCatalog(withTool(LOCAL, (tool) => { tool.detector = null; }))).not.toThrow();
+  });
+
+  test("a wrong version, an empty list or a malformed scalar fails", () => {
+    expect(() => decodeToolCatalog({ ...catalogJson, catalog_version: "repo-harness.tool-catalog.v2" })).toThrow("catalog_version");
+    expect(() => decodeToolCatalog({ ...catalogJson, tools: [] })).toThrow("tools");
+    expect(() => decodeToolCatalog(withTool(0, (tool) => { tool.license = "MIT License"; }))).toThrow("license");
+    expect(() => decodeToolCatalog(withTool(0, (tool) => { tool.docs_anchor = "waza"; }))).toThrow("docs_anchor");
+    expect(() => decodeToolCatalog(withTool(LOCAL, (tool) => { tool.detector = "tools.waza"; }))).toThrow("detector");
+    expect(() => decodeToolCatalog(withTool(0, (tool) => { tool.id = "Waza"; }))).toThrow("tool id");
   });
 
   test("a duplicate id fails", () => {

@@ -347,6 +347,8 @@ describe('Tools page', () => {
     expect(text('#tools-resource-heading')).toBe('Recommended resources2');
     const status = Object.fromEntries(all('[data-tool]').map(item => [item.getAttribute('data-tool'), item.querySelector('[data-tool-status]')!.getAttribute('data-tool-status')]));
     expect(status).toEqual({ waza: 'unknown', codegraph: 'unknown', 'herdr-skill': 'unknown', 'hai-stack': 'na', shaders: 'na', 'awesome-design-md': 'na' });
+    expect(text('[data-tool="hai-stack"] [data-tool-status]')).toBe('N/A');
+    // hai-stack declares no SPDX license; the license cell says so.
     expect(text('[data-tool="hai-stack"]')).toContain('Unknown');
     expect(text('[data-tool="shaders"]')).toContain('MIT');
     // The only command on the page is the read-only detector report.
