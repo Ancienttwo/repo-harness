@@ -73,14 +73,16 @@ function writeCandidateSwitchingBun(
   replacedPredecessorAsset?: string,
 ): void {
   const canonicalCandidateRoot = realpathSync(candidateRoot);
+  const candidateVersion = JSON.parse(readFileSync(join(candidateRoot, 'package.json'), 'utf-8')).version;
   // Bun replaces package files in place; the predecessor then sees assets it cannot parse.
   const replaceAsset = replacedPredecessorAsset ? `printf '{}' > "${replacedPredecessorAsset}"; ` : '';
   writeExecutable(path, [
     '#!/bin/bash',
     `printf '%s\\n' "$*" >> "${logPath}"`,
     'if [[ "${1:-}" == "--version" ]]; then echo 1.4.0; exit 0; fi',
+    `if [[ "\${1:-}" == "pm" && "\${2:-}" == "view" ]]; then printf '%s\\n' '${JSON.stringify(candidateVersion)}'; exit 0; fi`,
     `if [[ "$1" == "add" && "$2" == "-g" ]]; then ${replaceAsset}rm -rf "${globalPackagePath}"; ln -s "${candidateRoot}" "${globalPackagePath}"; exit 0; fi`,
-    `if [[ "$1" == "${canonicalCandidateRoot}/src/cli/index.ts" ]]; then exec "${process.execPath}" "$@"; fi`,
+    `if [[ "$1" == "${canonicalCandidateRoot}/src/cli/index.ts" || "$1" == "${globalPackagePath}/src/cli/index.ts" ]]; then exec "${process.execPath}" "$@"; fi`,
     'exit 0',
     '',
   ].join('\n'));
@@ -598,7 +600,8 @@ describe('candidate-bound global runtime reconciliation', () => {
       writeExecutable(join(bin, 'bun'), [
         '#!/bin/bash',
         'if [[ "${1:-}" == "--version" ]]; then echo 1.4.0; exit 0; fi',
-        `if [[ "\${1:-}" == "${ROOT}/src/cli/index.ts" || "\${1:-}" == "${ROOT}/scripts/"* ]]; then exec "${process.execPath}" "$@"; fi`,
+        `if [[ "\${1:-}" == "pm" && "\${2:-}" == "view" ]]; then printf '%s\\n' '${JSON.stringify(JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf-8')).version)}'; exit 0; fi`,
+        `if [[ "\${1:-}" == "${ROOT}/src/cli/index.ts" || "\${1:-}" == "${join(globalModules, 'repo-harness', 'src', 'cli', 'index.ts')}" || "\${1:-}" == "${ROOT}/scripts/"* ]]; then exec "${process.execPath}" "$@"; fi`,
         'exit 0',
         '',
       ].join('\n'));

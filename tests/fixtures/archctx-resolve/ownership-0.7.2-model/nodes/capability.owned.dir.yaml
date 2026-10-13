@@ -1,0 +1,17 @@
+schemaVersion: archcontext.node/v2
+id: capability.owned.dir
+kind: capability
+name: capability.owned.dir
+status: active
+summary: Fixture capability capability.owned.dir.
+responsibilities:
+  - Own fixture paths.
+source:
+  include:
+    - "owned/**"
+extensions:
+  contractFiles:
+    agents: AGENTS.md
+    claude: CLAUDE.md
+  lspProfile: typescript-lsp
+  verification: []

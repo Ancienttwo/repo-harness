@@ -2,12 +2,16 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { readFileSync, rmSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { ArchitectureModelReader } from '../../src/effects/architecture/model-reader';
-import { moduleGraph, section3FromMarkdown, type ModelNode } from '../../src/core/architecture/module-view';
+import { MODEL_NODE_KINDS, generatedSummaryState, moduleGraph, section3FromMarkdown, type ModelNode } from '../../src/core/architecture/module-view';
+import { decodeDocsAnchorsReport, decodeProjectionCheckFreshness } from '../../src/core/architecture/projection';
+import { decodeArchitectureModuleDetail, decodeArchitectureReviewPrompt } from '../../src/core/operator/architecture';
+import nodeSchema from 'archctx-contracts/schemas/repo/architecture-node.schema.json';
+import { projectionResultReceiptDigest } from 'archctx-contracts';
 import { sha256 } from '../../src/core/review/module-review-prompt';
 import type { JsonValue } from '../../src/core/evidence/types';
 import { canonicalize } from '../../src/core/evidence/canonical-json';
 import { containsSecret } from '../../src/core/security/secret-patterns';
-import { MODULE_DOC, MODULE_FLOW, MODULE_ID, fixtureCommit, fixtureGit, fixtureWrite, moduleRepository } from '../helpers/module-repository';
+import { MODULE_DOC, MODULE_FLOW, MODULE_ID, MODULE_NODE, fixtureCommit, fixtureGit, fixtureWrite, fixtureYaml, moduleRepository, projectionCheckResult } from '../helpers/module-repository';
 
 const roots: string[] = [];
 function repo(options: Parameters<typeof moduleRepository>[0] = {}): string { const root = moduleRepository(options); roots.push(root); return root; }
@@ -209,12 +213,13 @@ describe('committed module review prompt', () => {
 test('graph containment has no inferred calls and folds each side after eight neighbors', () => {
   const nodes: ModelNode[] = [{ id: MODULE_ID, name: 'Module', kind: 'capability', status: 'active', summary: '' },
     { id: 'component.child', parent: MODULE_ID, name: 'Child', kind: 'component', status: 'active', summary: '' },
-    ...Array.from({ length: 10 }, (_, i) => ({ id: `capability.test.caller${i}`, name: `Caller ${i}`, kind: 'capability', status: 'active', summary: '' }))];
+    ...Array.from({ length: 10 }, (_, i) => ({ id: `capability.test.caller${i}`, name: `Caller ${i}`, kind: 'capability' as const, status: 'active', summary: '' }))];
   const graph = moduleGraph(MODULE_ID, nodes, nodes.slice(2).map((node, i) => ({ id: `relation.${i}`, source: node.id, target: MODULE_ID, kind: i ? 'calls' : 'depends-on', intent: 'Call' })));
   expect(graph.nodes.filter(node => node.role === 'caller' && node.kind !== 'group')).toHaveLength(8);
   expect(graph.nodes.find(node => node.kind === 'group')).toMatchObject({ count: 2, id: `group.caller.${MODULE_ID}` });
   expect(graph.edges.some(edge => edge.source === 'component.child' || edge.target === 'component.child')).toBe(false);
-  expect(graph.edges[0].direction).toBe('undirected');
+  // ArchContext reads every relation from source to target, `depends-on` included.
+  expect(graph.edges.every(edge => edge.direction === 'directed')).toBe(true);
   const ids = new Set(graph.nodes.map(node => node.id)); expect(graph.edges.every(edge => ids.has(edge.source) && ids.has(edge.target))).toBe(true);
 });
 
@@ -229,4 +234,161 @@ test('OpenAI prompt detection uses a token boundary without shrinking MCP redact
   expect(containsSecret('bound-task-abcdefghijklmnopqrstuv')).toBe(false);
   expect(containsSecret('"sk-'+'A'.repeat(24)+'"')).toBe(true);
   expect(containsSecret('TOKEN=prefixsk-'+'A'.repeat(24))).toBe(true);
+});
+
+function moduleNode(root: string): Record<string, unknown> & { source: Record<string, unknown> } {
+  return JSON.parse(readFileSync(join(root, MODULE_NODE), 'utf8'));
+}
+const anchorsReport = (findingPath = 'src/module/read.ts') => ({
+  schemaVersion: 'archcontext.docs-anchors/v1', profile: 'repo-harness/v1', codeGraph: { availability: 'unavailable', reasonCode: 'index-missing' },
+  summary: { nodes: 2, documents: 1, citations: 3, findings: 2, unchecked: 0, byKind: { 'line-moved': 0, 'line-out-of-range': 1, 'missing-path': 1, 'missing-symbol': 0 } },
+  nodes: [
+    { nodeId: 'capability.other.module', citationCount: 1, findings: [{ kind: 'missing-path', origin: { kind: 'node-summary' }, citation: { text: 'gone/other.ts', path: 'gone/other.ts' } }], unchecked: [] },
+    { nodeId: MODULE_ID, documentPath: MODULE_DOC, citationCount: 2,
+      findings: [{ kind: 'line-out-of-range', origin: { kind: 'document', path: MODULE_DOC, line: 5 }, citation: { text: `${findingPath}:99`, path: findingPath, line: 99 }, lineCount: 1 }], unchecked: [] },
+  ],
+});
+
+describe('issue 677 architecture readers', () => {
+  test('node kinds follow the published archcontext.node/v2 enum', () => {
+    expect(nodeSchema.properties.kind.enum).toEqual([...MODEL_NODE_KINDS]);
+  });
+
+  test('generated_summary comes from a projection check for HEAD and stays unknown without one', () => {
+    const root = repo(), reader = new ArchitectureModelReader(root);
+    expect(reader.list().modules[0].state.generated_summary).toBe('unknown');
+    const stale = decodeProjectionCheckFreshness(projectionCheckResult(reader.commit, [MODULE_ID]));
+    const fresh = decodeProjectionCheckFreshness(projectionCheckResult(reader.commit, []));
+    expect(reader.list({ freshness: stale }).modules[0].state.generated_summary).toBe('stale');
+    expect(reader.detail(MODULE_ID, { freshness: fresh }).state.generated_summary).toBe('fresh');
+    expect(reader.reviewPrompt(MODULE_ID, { freshness: stale }).prompt).toContain('"generated_summary":"stale"');
+    expect(reader.reviewPrompt(MODULE_ID).prompt).toContain('"generated_summary":"unknown"');
+    // A check that failed for a reason that is not per node proves no node fresh.
+    const incomplete = decodeProjectionCheckFreshness(projectionCheckResult(reader.commit, [], ['projection-manifest-missing']));
+    expect(generatedSummaryState(incomplete, MODULE_ID)).toBe('unknown');
+    // A result without freshness keeps a valid receipt digest, so only the missing field fails.
+    const { freshness: _freshness, receiptDigest: _digest, ...withoutFreshness } = projectionCheckResult(reader.commit, []);
+    expect(() => decodeProjectionCheckFreshness({ ...withoutFreshness, receiptDigest: projectionResultReceiptDigest(withoutFreshness) })).toThrow('no freshness');
+    // An uncommitted model edit keeps HEAD, so the check still applies; a new commit does not.
+    const node = moduleNode(root); node.summary = 'Uncommitted summary.'; fixtureWrite(root, MODULE_NODE, fixtureYaml(node));
+    expect(new ArchitectureModelReader(root).list({ freshness: stale }).modules[0].state.generated_summary).toBe('stale');
+    fixtureCommit(root);
+    expect(() => new ArchitectureModelReader(root).list({ freshness: stale })).toThrow('projection_check_commit_mismatch');
+  });
+
+  test('the prompt carries notes, source footprint, components and an optional backlog; uncommitted text stays out', () => {
+    const root = repo();
+    const node = moduleNode(root);
+    node.notes = ['Readers never write.'];
+    node.source.exclude = ['src/module/generated/**'];
+    fixtureWrite(root, MODULE_NODE, fixtureYaml(node));
+    const reader = new ArchitectureModelReader(root);
+    expect(reader.reviewPrompt(MODULE_ID).prompt).not.toContain('\n\nBACKLOG\n');
+    fixtureWrite(root, MODULE_DOC, '## 3. Decisions\nKeep one model authority.\n\n## 4. History\nOld.\n\n## Optimization Backlog\n- Split the committed reader.\n');
+    fixtureCommit(root);
+    const next = new ArchitectureModelReader(root), detail = next.detail(MODULE_ID);
+    expect(detail.module.notes).toEqual(['Readers never write.']);
+    expect(detail.module.source).toEqual({ include: ['src/module/**'], exclude: ['src/module/generated/**'] });
+    expect(detail.module.components).toEqual([{ id: 'component.module.core', kind: 'component', name: 'Module Core', summary: 'Project facts.', source: { include: [], exclude: [] } }]);
+    expect(decodeArchitectureModuleDetail(detail)).toEqual(detail);
+    const packet = next.reviewPrompt(MODULE_ID);
+    expect(packet.prompt).toContain('\n\nBACKLOG\n- Split the committed reader.');
+    expect(packet.prompt).toContain('Readers never write.'); expect(packet.prompt).toContain('src/module/generated/**'); expect(packet.prompt).toContain('Project facts.');
+    expect(packet.prompt).not.toContain('Old.');
+    fixtureWrite(root, MODULE_DOC, '## Optimization Backlog\n- Uncommitted backlog item.\n');
+    const dirty = new ArchitectureModelReader(root).reviewPrompt(MODULE_ID);
+    expect(dirty.prompt).toContain('Split the committed reader.'); expect(dirty.prompt).not.toContain('Uncommitted backlog item.');
+    expect(dirty.worktree_dirty_paths).toEqual([MODULE_DOC]);
+  });
+
+  test('a docs anchors report adds the module stale citations only', () => {
+    const root = repo(), reader = new ArchitectureModelReader(root);
+    const report = decodeDocsAnchorsReport(anchorsReport());
+    const plain = reader.reviewPrompt(MODULE_ID);
+    expect(plain.prompt).not.toContain('\n\nSTALE CITATIONS\n'); expect(plain.sources.map(source => source.path)).not.toContain('anchors');
+    const packet = reader.reviewPrompt(MODULE_ID, { anchors: report });
+    expect(packet.prompt).toContain('\n\nSTALE CITATIONS\n'); expect(packet.prompt).toContain('src/module/read.ts:99');
+    expect(packet.prompt).not.toContain('gone/other.ts');
+    expect(packet.sources.find(source => source.path === 'anchors')).toMatchObject({ class: 'optional', disposition: 'included' });
+    expect(packet.digest).not.toBe(plain.digest);
+    expect(decodeArchitectureReviewPrompt(packet)).toEqual(packet);
+    expect(reader.reviewPrompt(MODULE_ID, { anchors: decodeDocsAnchorsReport(anchorsReport('src/module/core.ts')) }).digest).not.toBe(packet.digest);
+    expect(() => decodeDocsAnchorsReport({ ...anchorsReport(), summary: { ...anchorsReport().summary, findings: 5 } })).toThrow('docs anchors report invalid');
+    // Uncommitted document edits do not change the report the caller supplied.
+    fixtureWrite(root, MODULE_DOC, '## 3. Decisions\nDirty.\n');
+    const dirty = new ArchitectureModelReader(root).reviewPrompt(MODULE_ID, { anchors: report });
+    expect(dirty.prompt).toContain('src/module/read.ts:99'); expect(dirty.worktree_dirty_paths).toEqual([MODULE_DOC]);
+  });
+
+  test('every schema node kind is accepted and relations stay directed', () => {
+    const root = repo();
+    fixtureWrite(root, '.archcontext/model/nodes/interface.module.api.yaml', fixtureYaml({ schemaVersion: 'archcontext.node/v2', id: 'interface.module.api', kind: 'interface', name: 'Module API', status: 'active', summary: 'Public read API.' }));
+    fixtureWrite(root, '.archcontext/model/relations/relation.module.api.yaml', fixtureYaml({ schemaVersion: 'archcontext.relation/v1', id: 'relation.module.api', kind: 'implements', source: 'component.module.core', target: 'interface.module.api', intent: 'Serve the API.' }));
+    fixtureCommit(root);
+    const reader = new ArchitectureModelReader(root);
+    expect(reader.list().modules[0].state.model_valid).toBe('valid');
+    const detail = reader.detail(MODULE_ID);
+    expect(detail.graph.nodes.find(node => node.id === 'interface.module.api')).toMatchObject({ kind: 'interface', role: 'callee' });
+    expect(detail.graph.edges.find(edge => edge.relation_kind === 'implements')).toMatchObject({ source: 'component.module.core', target: 'interface.module.api', direction: 'directed' });
+    expect(decodeArchitectureModuleDetail(detail)).toEqual(detail);
+    expect(reader.reviewPrompt(MODULE_ID).prompt).toContain('interface.module.api');
+    // An uncommitted node of another kind is reported as dirty model work, not read.
+    fixtureWrite(root, '.archcontext/model/nodes/event.module.read.yaml', fixtureYaml({ schemaVersion: 'archcontext.node/v2', id: 'event.module.read', kind: 'event', name: 'Read', status: 'active', summary: 'Read event.' }));
+    const dirty = new ArchitectureModelReader(root).reviewPrompt(MODULE_ID);
+    expect(dirty.worktree_dirty_paths).toEqual(['.archcontext/model/nodes/event.module.read.yaml']);
+    expect(dirty.prompt).not.toContain('Read event.');
+  });
+
+  test('unrelated plan names do not block reads; a linked unsafe name fails closed', () => {
+    const root = repo();
+    fixtureWrite(root, 'plans/plan-a\\b.md', '> **Status**: Draft\n');
+    fixtureCommit(root);
+    const reader = new ArchitectureModelReader(root);
+    expect(reader.list().modules[0].state.model_valid).toBe('valid');
+    expect(reader.reviewPrompt(MODULE_ID).capability_id).toBe(MODULE_ID);
+    expect(reader.detail(MODULE_ID).linked_docs.map(doc => doc.path)).toEqual(['plans/plan-test.md', 'tasks/contracts/test.contract.md']);
+    fixtureWrite(root, 'plans/plan-c\\d.md', `> **Capability ID**: ${MODULE_ID}\n> **Status**: Draft\n`);
+    expect(new ArchitectureModelReader(root).detail(MODULE_ID).linked_docs).toHaveLength(2);
+    fixtureCommit(root);
+    expect(() => new ArchitectureModelReader(root).detail(MODULE_ID)).toThrow('path_invalid');
+  });
+
+  test('the dirty scope covers the model directory; an uncommitted capability has its own error', () => {
+    const root = repo(), next = 'capability.test.next';
+    const node = { ...moduleNode(root), id: next, name: 'Next Module' };
+    fixtureWrite(root, '.archcontext/model/nodes/capability.test.next.yaml', fixtureYaml(node));
+    const reader = new ArchitectureModelReader(root);
+    expect(reader.list().modules.map(module => module.id)).toEqual([MODULE_ID]);
+    expect(() => reader.reviewPrompt(next)).toThrow('capability_uncommitted');
+    expect(() => reader.reviewPrompt('capability.test.absent')).toThrow('capability_not_found');
+    expect(reader.reviewPrompt(MODULE_ID).worktree_dirty_paths).toEqual(['.archcontext/model/nodes/capability.test.next.yaml']);
+    fixtureCommit(root);
+    const committed = new ArchitectureModelReader(root);
+    expect(committed.list().modules.map(module => module.id)).toEqual([MODULE_ID, next]);
+    expect(committed.reviewPrompt(next).capability_id).toBe(next);
+  });
+
+  test('the review diff keeps the changed paths that archctx resolve assigns to the module', () => {
+    const root = repo();
+    const node = moduleNode(root); node.source.exclude = ['src/module/generated/**'];
+    fixtureWrite(root, MODULE_NODE, fixtureYaml(node));
+    fixtureWrite(root, '.archcontext/model/nodes/component.module.extra.yaml', fixtureYaml({ schemaVersion: 'archcontext.node/v2', id: 'component.module.extra', kind: 'component', name: 'Extra', status: 'active', summary: 'Extra glob.', parent: MODULE_ID, source: { include: ['lib/extra/**'] } }));
+    fixtureWrite(root, 'lib/extra/y.ts', 'export const y = 1;\n'); fixtureWrite(root, 'src/module/generated/x.ts', 'export const x = 1;\n');
+    const base = fixtureCommit(root);
+    fixtureWrite(root, 'src/module/read.ts', 'export const read = () => 2;\n'); fixtureWrite(root, 'lib/extra/y.ts', 'export const y = 2; // COMPONENT GLOB\n');
+    fixtureWrite(root, 'src/module/generated/x.ts', 'export const x = 2; // EXCLUDED\n'); fixtureWrite(root, 'unrelated.ts', 'OUTSIDE DIFF\n');
+    const head = fixtureCommit(root);
+    const packet = new ArchitectureModelReader(root).reviewPrompt(MODULE_ID, { base, head });
+    expect(packet.prompt).toContain('export const read = () => 2;'); expect(packet.prompt).toContain('COMPONENT GLOB');
+    expect(packet.prompt).not.toContain('EXCLUDED'); expect(packet.prompt).not.toContain('OUTSIDE DIFF');
+    // Uncommitted edits never enter the diff between two commits.
+    fixtureWrite(root, 'lib/extra/y.ts', 'UNCOMMITTED EDIT\n');
+    const dirty = new ArchitectureModelReader(root).reviewPrompt(MODULE_ID, { base, head });
+    expect(dirty.prompt).toContain('COMPONENT GLOB'); expect(dirty.prompt).not.toContain('UNCOMMITTED EDIT');
+    // A diff with no owned path is empty, never the whole repository.
+    fixtureWrite(root, 'lib/extra/y.ts', 'export const y = 2; // COMPONENT GLOB\n');
+    fixtureWrite(root, 'unrelated.ts', 'ONLY UNRELATED\n');
+    const unrelated = fixtureCommit(root);
+    expect(new ArchitectureModelReader(root).reviewPrompt(MODULE_ID, { base: head, head: unrelated }).prompt).not.toContain('ONLY UNRELATED');
+  });
 });

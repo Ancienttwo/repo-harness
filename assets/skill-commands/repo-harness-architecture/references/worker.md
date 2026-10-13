@@ -18,6 +18,7 @@ Worker reference. Use only within the assigned architecture scope.
    - `repo-harness architecture-projection check --json` (expect `noop` after the projection is committed)
    - `repo-harness run capability-resolver validate --repo <repo> --format text`
    - `repo-harness run check-task-workflow` when repo workflow surfaces changed
+   - The module reader and the review diff read the committed HEAD model, but `archctx resolve` reads the worktree model. Commit the model before a review diff.
 
 ## Coverage and Agent-owned registration
 
@@ -78,8 +79,8 @@ write nodes.
   shapes. repo-harness resolves path ownership only through
   `archctx resolve --paths-from <file> --json`. When the candidates lie on one
   `parent` chain, the deepest node owns the path, and the result reports
-  `owningCapabilityId`. Every capability needs at least one include with a literal
-  leading path.
+  `owningCapabilityId`. A capability can own paths only through globs. It then
+  has no literal anchor, and lists show it by its node id.
 - In a capability include, use exact paths or `dir/**`. A file-name glob such as
   `scripts/new-*.sh` widens the capability's literal anchor to `scripts`, and the
   module review diff uses that anchor. Put file-name globs on a component. When one
@@ -96,8 +97,10 @@ write nodes.
 - A relation to another capability rewrites that capability's module page. When several
   workers change the model in parallel, restore generated pages and shared projection
   outputs outside your scope before commit. The integrator projects once.
-- `repo-harness module list` and `module review-prompt` read the committed HEAD
-  snapshot. Commit the model before you verify them.
+- `repo-harness module list`, `module review-prompt` and Engineer contract
+  revisions read the committed HEAD snapshot. Commit the model before you verify
+  them. An uncommitted model change shows in `worktree_dirty_paths`. An
+  uncommitted new capability returns `capability_uncommitted`.
 
 ## Failure Modes
 

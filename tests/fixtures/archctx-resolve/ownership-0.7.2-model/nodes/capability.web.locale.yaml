@@ -1,0 +1,17 @@
+schemaVersion: archcontext.node/v2
+id: capability.web.locale
+kind: capability
+name: capability.web.locale
+status: active
+summary: Fixture capability capability.web.locale.
+responsibilities:
+  - Own fixture paths.
+source:
+  include:
+    - "src/app/[locale]/**"
+extensions:
+  contractFiles:
+    agents: AGENTS.md
+    claude: CLAUDE.md
+  lspProfile: typescript-lsp
+  verification: []

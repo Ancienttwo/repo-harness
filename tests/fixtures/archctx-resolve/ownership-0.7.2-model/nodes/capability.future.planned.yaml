@@ -1,0 +1,17 @@
+schemaVersion: archcontext.node/v2
+id: capability.future.planned
+kind: capability
+name: capability.future.planned
+status: planned
+summary: Fixture capability capability.future.planned.
+responsibilities:
+  - Own fixture paths.
+source:
+  include:
+    - "planned/**"
+extensions:
+  contractFiles:
+    agents: AGENTS.md
+    claude: CLAUDE.md
+  lspProfile: typescript-lsp
+  verification: []

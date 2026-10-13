@@ -179,6 +179,56 @@ describe('capability-context command', () => {
     }
   });
 
+  test('archcontext sync writes an anchorless capability only to its declared files and refuses one without them', () => {
+    const cwd = tmpWorkspace('capability-context-anchorless');
+    try {
+      fs.mkdirSync(path.join(cwd, '.ai/harness'), { recursive: true });
+      fs.writeFileSync(path.join(cwd, '.ai/harness/policy.json'), JSON.stringify({ context: { capability_source: 'archcontext' } }));
+      fs.mkdirSync(path.join(cwd, '.archcontext/model/nodes'), { recursive: true });
+      fs.writeFileSync(path.join(cwd, '.archcontext/model/nodes/capability.probe.anchorless.yaml'), [
+        'schemaVersion: archcontext.node/v2',
+        'id: capability.probe.anchorless',
+        'kind: capability',
+        'name: Probe',
+        'status: active',
+        'summary: Probe files',
+        'responsibilities:',
+        '  - Own the probe files',
+        'source:',
+        '  include:',
+        '    - "**/*.probe"',
+        'extensions:',
+        '  contractFiles:',
+        '    agents: probes/AGENTS.md',
+        '    claude: probes/CLAUDE.md',
+        '  lspProfile: typescript-lsp',
+        '  verification: []',
+        '',
+      ].join('\n'));
+      const rootContext = '# Root Agent Context\n\nRepository-wide rules.\n';
+      fs.writeFileSync(path.join(cwd, 'AGENTS.md'), rootContext);
+      fs.writeFileSync(path.join(cwd, 'CLAUDE.md'), rootContext);
+
+      // The target is the declared contract files, not an anchor: the root files stay unchanged.
+      runCapabilityContextSync({ repo: cwd, capabilityId: 'probe-anchorless', apply: true });
+      expect(fs.readFileSync(path.join(cwd, 'AGENTS.md'), 'utf-8')).toBe(rootContext);
+      expect(fs.readFileSync(path.join(cwd, 'CLAUDE.md'), 'utf-8')).toBe(rootContext);
+      expect(fs.readFileSync(path.join(cwd, 'probes/AGENTS.md'), 'utf-8')).toContain('Probe files');
+
+      // A node that declares no contract files is refused before any write.
+      const nodePath = path.join(cwd, '.archcontext/model/nodes/capability.probe.anchorless.yaml');
+      fs.writeFileSync(nodePath, fs.readFileSync(nodePath, 'utf-8').replace(/  contractFiles:\n    agents: probes\/AGENTS\.md\n    claude: probes\/CLAUDE\.md\n/, ''));
+      fs.rmSync(path.join(cwd, 'probes'), { recursive: true, force: true });
+      expect(() => runCapabilityContextSync({ repo: cwd, capabilityId: 'probe-anchorless', apply: true }))
+        .toThrow('extensions.contractFiles.agents and extensions.contractFiles.claude are required');
+      expect(fs.readFileSync(path.join(cwd, 'AGENTS.md'), 'utf-8')).toBe(rootContext);
+      expect(fs.readFileSync(path.join(cwd, 'CLAUDE.md'), 'utf-8')).toBe(rootContext);
+      expect(fs.existsSync(path.join(cwd, 'probes'))).toBe(false);
+    } finally {
+      fs.rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   test('CLI entrypoint registers capability-context status', () => {
     const cwd = tmpWorkspace('capability-context-entrypoint');
     try {
@@ -194,4 +244,103 @@ describe('capability-context command', () => {
       fs.rmSync(cwd, { recursive: true, force: true });
     }
   }, 30_000);
+
+  test('archcontext mode targets declared contract files and renders the node summary', () => {
+    const cwd = archcontextWorkspace('capability-context-archcontext', [
+      { id: 'capability.apps.web', include: 'apps/web/**', contractFiles: { agents: 'apps/web/AGENTS.md', claude: 'apps/web/CLAUDE.md' } },
+    ]);
+    try {
+      const status = runCapabilityContextStatus(cwd);
+      expect(status.registry_file).toBe('.archcontext/model/nodes');
+      expect(status.capabilities[0]).toMatchObject({
+        id: 'apps-web',
+        target_contract_files: { agents: 'apps/web/AGENTS.md', claude: 'apps/web/CLAUDE.md' },
+        normalized: true,
+      });
+      const result = runCapabilityContextSync({ repo: cwd, capabilityId: 'apps-web', apply: true });
+      expect(result.changes[0]).toMatchObject({ registry_normalized: true, wrote_contracts: true });
+      const agents = fs.readFileSync(path.join(cwd, 'apps/web/AGENTS.md'), 'utf-8');
+      expect(agents).toBe(fs.readFileSync(path.join(cwd, 'apps/web/CLAUDE.md'), 'utf-8'));
+      expect(agents).toContain('Summary of capability.apps.web.');
+      expect(fs.existsSync(path.join(cwd, '.ai/context/capabilities.json'))).toBe(false);
+    } finally {
+      fs.rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test('archcontext sync refuses a shared declared contract before it writes and the CLI prints why', () => {
+    const cwd = archcontextWorkspace('capability-context-shared', [
+      { id: 'capability.runtime.operator', include: 'src/core/operator/**', contractFiles: { agents: 'AGENTS.md', claude: 'CLAUDE.md' } },
+      { id: 'capability.runtime.other', include: 'src/core/other/**', contractFiles: { agents: 'AGENTS.md', claude: 'CLAUDE.md' } },
+    ]);
+    try {
+      expect(() => runCapabilityContextSync({ repo: cwd, capabilityId: 'runtime-operator', apply: true })).toThrow('declares shared contract files AGENTS.md, CLAUDE.md');
+      const res = spawnSync(
+        'bun',
+        [path.join(import.meta.dir, '../../src/cli/index.ts'), 'capability-context', 'sync', '--repo', cwd, '--capability', 'runtime-operator', '--apply'],
+        { cwd, encoding: 'utf-8' },
+      );
+      expect(res.status).toBe(2);
+      expect(res.stderr).toContain('declares shared contract files AGENTS.md, CLAUDE.md');
+      expect(res.stderr).toContain('No file was written.');
+      for (const file of ['AGENTS.md', 'CLAUDE.md', 'src/core/operator/AGENTS.md', 'src/core/operator/CLAUDE.md']) {
+        expect(fs.existsSync(path.join(cwd, file))).toBe(false);
+      }
+    } finally {
+      fs.rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test('archcontext sync refuses a contract file that another capability declares in the other slot', () => {
+    const cwd = archcontextWorkspace('capability-context-cross-slot', [
+      { id: 'capability.apps.web', include: 'apps/web/**', contractFiles: { agents: 'apps/web/AGENTS.md', claude: 'apps/web/CLAUDE.md' } },
+      { id: 'capability.apps.docs', include: 'apps/docs/**', contractFiles: { agents: 'apps/docs/AGENTS.md', claude: 'apps/web/AGENTS.md' } },
+    ]);
+    try {
+      const shared = '# Web contract\n';
+      fs.writeFileSync(path.join(cwd, 'apps/web/AGENTS.md'), shared);
+      for (const capabilityId of ['apps-web', 'apps-docs']) {
+        expect(() => runCapabilityContextSync({ repo: cwd, capabilityId, apply: true })).toThrow('declares shared contract files');
+      }
+      expect(fs.readFileSync(path.join(cwd, 'apps/web/AGENTS.md'), 'utf-8')).toBe(shared);
+      for (const file of ['apps/web/CLAUDE.md', 'apps/docs/AGENTS.md']) expect(fs.existsSync(path.join(cwd, file))).toBe(false);
+    } finally {
+      fs.rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test('CLI prints the message of a capability source error before it exits 2', () => {
+    const cwd = archcontextWorkspace('capability-context-broken-node', []);
+    try {
+      fs.writeFileSync(path.join(cwd, '.archcontext/model/nodes/broken.yaml'), 'not: [valid\n');
+      const res = spawnSync(
+        'bun',
+        [path.join(import.meta.dir, '../../src/cli/index.ts'), 'capability-context', 'status', '--repo', cwd],
+        { cwd, encoding: 'utf-8' },
+      );
+      expect(res.status).toBe(2);
+      expect(res.stderr).toContain('.archcontext/model/nodes/broken.yaml');
+    } finally {
+      fs.rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
 });
+
+function archcontextWorkspace(
+  prefix: string,
+  nodes: Array<{ id: string; include: string; contractFiles: { agents: string; claude: string } }>,
+): string {
+  const cwd = tmpWorkspace(prefix);
+  fs.mkdirSync(path.join(cwd, '.ai/harness'), { recursive: true });
+  fs.writeFileSync(path.join(cwd, '.ai/harness/policy.json'), `${JSON.stringify({ context: { capability_source: 'archcontext' } })}\n`);
+  fs.mkdirSync(path.join(cwd, '.archcontext/model/nodes'), { recursive: true });
+  for (const node of nodes) {
+    fs.mkdirSync(path.join(cwd, node.include.replace('/**', '')), { recursive: true });
+    fs.writeFileSync(path.join(cwd, `.archcontext/model/nodes/${node.id}.yaml`), `${JSON.stringify({
+      schemaVersion: 'archcontext.node/v2', id: node.id, kind: 'capability', name: node.id, status: 'active',
+      summary: `Summary of ${node.id}.`, responsibilities: ['Own the fixture.'], source: { include: [node.include] },
+      extensions: { contractFiles: node.contractFiles, lspProfile: 'typescript-lsp', verification: ['bun test'] },
+    }, null, 2)}\n`);
+  }
+  return cwd;
+}

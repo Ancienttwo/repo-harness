@@ -523,6 +523,20 @@ not rewrite Bash commands, require RTK, or suggest compression for failed
 commands. Failed command output stays raw so test, build, and review evidence is
 not hidden by a compressor.
 
+## Recommended Frontend and Design Resources
+
+These resources are optional. repo-harness does not install, detect or update
+them. Read the upstream README and license before you add one to a project.
+
+| Repo | Use it for | License |
+| --- | --- | --- |
+| [`shader-effects-inc/shaders`](https://github.com/shader-effects-inc/shaders) | WebGPU shader components for React, Vue, Svelte, Solid, plain JavaScript and Framer | MIT |
+| [`VoltAgent/awesome-design-md`](https://github.com/VoltAgent/awesome-design-md) | `DESIGN.md` files from popular brand design systems. Put one in a project, and coding agents make UI that matches it | MIT |
+
+The user selects a `DESIGN.md`. The agent does not select one. A selected file
+is a decided direction, so [design options](design-options.md) do not apply to
+it.
+
 ## External Verification Evidence
 
 Runtime-heavy projects often prove work outside normal source files and unit
@@ -995,8 +1009,15 @@ reads directly. Path ownership under `archcontext` comes only from the
 package-local `archctx resolve --paths-from`. One process resolves one batch of
 paths. It reads no daemon state and no CodeGraph index. The pre-edit hook,
 Effective State, `capability-resolver match` and `capability-context` all use
-this route. If archctx fails, the resolution is invalid, and Effective State
-reports the `capability_registry:invalid` blocker. The standalone helper copy
+this route. If archctx cannot run, Effective State reports the
+`capability_ownership:unavailable` blocker. A model fault or an ownership fault
+reports the `capability_registry:invalid` blocker. `profile_reasons` names the
+first diagnostic as `capability:diagnostic:<CODE>`. `next_action` and the edit
+hook show the message and the fix command. `state resolve --json` reports the
+same ownership answer in `capability_ownership`: `capability_ids`, each
+capability's `module_document` and owned paths, and `unowned_paths`. The field
+is `null` when ownership was not computed. A read-only observation does not
+start archctx. It reports `capability_ownership:unavailable`. The standalone helper copy
 in `assets/templates/helpers/` has no package-local archctx, so its `match`
 fails closed under `archcontext`. Bun older than 1.3 has no `Bun.YAML`; that
 fails closed with upgrade guidance and only when `capability_source` is
@@ -1045,6 +1066,35 @@ ChangeSet, and runs `repo-harness architecture-projection apply --json` in the
 same branch. `check` and `plan` show the effect without writes. The projected
 `docs/architecture/` files are committed with the change.
 
+A capability is owed when one of its owned implementation paths in the review
+subject changed after the last change to
+`docs/architecture/.projection-manifest.json`. Hooks that already resolve
+state reuse its ownership answer; `PostToolUse.bash` and `state owed` run one
+ownership resolution of their own. The rule then runs at most two Git
+commands. It writes no
+queue and no drift cursor. Hooks report it to the Agent as evidence, never as a
+gate. The report names the capability, its module document, new unowned source
+paths and the next step: `repo-harness architecture-projection check --json`,
+then the worker flow of the `repo-harness-architecture` skill.
+`repo-harness state owed --json [--base <ref>]` prints the same rule for the
+review subject against `<ref>` (default: the policy review base). It needs no
+hook, so CI can call it for a pull request diff.
+
+Hook advisories for the Agent go out as `hookSpecificOutput.additionalContext`
+on Claude and Codex. Neither host gives plain stdout of `PreToolUse`,
+`PostToolUse` or `Stop` to the model. stderr of a successful hook is an operator
+diagnostic only. The owed report reaches the Agent at these points:
+
+- `PreToolUse` edit: the owner line on the first edit of an owned path after
+  its last commit.
+- `SessionStart` on Claude, Codex and Pi: a short section when the branch
+  already owes updates.
+- `PostToolUse` Bash: after a successful `git commit`, `git push` or
+  `gh pr create`.
+- `Stop` on Claude: once per branch and owed set. A Stop that runs because of
+  a Stop hook (`stop_hook_active`) adds nothing. Codex Stop stays silent,
+  because Codex Desktop renders Stop JSON as "Unsupported content type".
+
 `apply` accepts a major change in the same call. When ArchContext returns an
 unresolved-major signal, `apply` copies its reason codes and affected node ids
 into `acceptedChange` and applies again. The Agent that runs `apply` owns the
@@ -1087,22 +1137,33 @@ hooks.
 ### `source.include` anchors
 
 ArchContext validation owns the `source.include` and `source.exclude` grammar.
-repo-harness does not check include shapes and does not interpret globs for
-ownership. Each include gives one literal anchor: the leading path segments
-before the first segment with a glob character. Anchors are for display and
-directory discovery only.
+repo-harness rejects absolute and `..` patterns in `source.include` and
+`source.exclude` (INVALID_PATH). ArchContext checks the rest of the glob
+grammar. repo-harness does not interpret globs for ownership. Each include gives one literal anchor: the leading path segments
+before the first segment that contains `*` or `?`. These are the only
+ArchContext glob characters. `[`, `]`, `{`, `}` and `!` are literal. Anchors are
+for display and directory discovery only.
 
 | Include | Anchor |
 |---|---|
 | `src/core/adoption/**` | `src/core/adoption` |
 | `AGENTS.md` | `AGENTS.md` |
 | `src/core/state/coordination-*.ts` | `src/core/state` |
+| `src/app/[locale]/**` | `src/app/[locale]` |
 | `**/*.md` | none |
 
-A capability needs at least one include with an anchor. Two capabilities can
-share an anchor. Include order is preserved as anchor order, without
-duplicates. `capability-resolver match` reports the owner's first anchor as
-`matched_prefix`, because ArchContext does not report which include matched. An
+A capability without an anchor is valid. Lists show it by its node id. Two
+capabilities can share an anchor. Include order is preserved as anchor order,
+without duplicates. In archcontext mode, `capability-resolver match` reports the
+owner's stable node id as `matched_prefix` and as `functional_block`, because
+ArchContext does not report which include matched.
+
+Path ownership covers every capability node, whatever its status. Lists,
+anchors and contract files show only `active` capabilities. A path without an
+owner is reported as `capability:unowned:<n>`, with one
+`capability:unowned-path:<path>` entry for each path. The list holds at most 20
+`capability:unowned-path` entries. The `capability:unowned:<n>` count gives the
+total. An unowned path does not count as a capability. An
 existing directory is resolved as `<dir>/`, which asks ArchContext who owns its
 contents.
 
@@ -1209,21 +1270,30 @@ repo-harness run sync-brain-docs --check
 repo-harness supplies refactor evidence on demand. No hook scans for it and no
 setting enables it. The Bot reads the evidence and decides whether to schedule
 work or ask the user. Incomplete code facts return `proof_required` with a
-`codegraph init` hint. The command never creates an index, a model, a plan or a
-code edit.
+`codegraph init` hint. An import limit gets a `--import-node-limit` hint
+instead. The command never creates an index, a model, a plan or a code edit.
 
 Read evidence and record a decision with:
 
 ```bash
-repo-harness refactor recommendations [--json]
-repo-harness refactor decide <recommendation-id> accept|defer|reject --reason "<text>"
+repo-harness refactor recommendations [--json] [--import-node-limit <n>]
+repo-harness refactor decide <recommendation-id> accept|defer|reject --reason "<text>" [--import-node-limit <n>]
 ```
 
 `recommendations` shows each open suggestion with its explanation, the metrics
-of its observation and the statistics of every affected module (files, lines,
-fan-in, fan-out, cycles, instability, direction violations, test files,
-unresolved imports). `decide` records the scan in ArchContext when needed and
-then stores the decision. Suggestions with a recorded decision are not shown
-again. repo-harness keeps no local delivery state; ArchContext owns the
-recommendation lifecycle. Execution of an accepted suggestion uses the normal
+and bounded `evidence` of its observation (`kind`, `totalCount`, `truncated`
+and the first items) and the statistics of every affected module (files, lines,
+fan-in, fan-out, cycles, direction violations, unresolved imports). Direction
+violations are filled only when the model declares constraints. archctx 0.7.2
+does not measure instability or test files, so they are not shown. A suggestion
+recorded by an earlier scan has `snapshot: "earlier"`, keeps its recorded
+metrics and evidence, and shows no module statistics.
+
+Open suggestions are the ArchContext `open` records plus scan candidates not yet
+recorded. `decide` stores the decision in one ArchContext call, for a recorded
+id or a scan candidate. A suggestion with a recorded decision is not shown again
+in the same worktree path and branch (Ancienttwo/arch-context#321). Pass the
+same `--import-node-limit` to `decide` that the scan used. repo-harness keeps no
+local delivery state; ArchContext owns the recommendation lifecycle. Execution
+of an accepted suggestion uses the normal
 plan and pull request workflow.

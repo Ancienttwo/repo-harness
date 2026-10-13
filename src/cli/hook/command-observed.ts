@@ -13,6 +13,8 @@ import { recordCircuitAttempt, type CircuitDecision } from './circuit-breaker';
 import { parseHookInput, type HookInputFs } from './hook-input';
 import { importPostBashObservation } from '../../effects/evidence/post-bash-importer';
 import { resolveRunIdentity } from './run-identity';
+import { resolveCapabilityOwnership } from '../../effects/state/resolve-effective-state';
+import { owedCapabilities, renderOwedCapabilities } from '../../effects/state/owed-capabilities';
 
 export interface CommandObservedFs extends HookInputFs {
   mkdirSync(path: string, options?: { readonly recursive?: boolean }): void;
@@ -174,6 +176,71 @@ function circuitFailure(
   }
 }
 
+// `git -h` global options that take the next word as their value. The long
+// ones also accept `--option=value`. Every other leading `-` word is a flag.
+const GIT_OPTIONS_WITH_VALUE: ReadonlySet<string> = new Set(['-C', '-c', '--git-dir', '--work-tree', '--namespace', '--config-env']);
+
+/** Shell words of one command line, split into simple commands at `;`, `&`, `|`, `(`, `)` and newlines. */
+function simpleCommands(command: string): string[][] {
+  const commands: string[][] = [[]];
+  let word: string | null = null;
+  let quote: '"' | "'" | null = null;
+  const endWord = () => { if (word !== null) commands.at(-1)!.push(word); word = null; };
+  for (const char of command) {
+    if (quote) {
+      if (char === quote) quote = null;
+      else word = (word ?? '') + char;
+    } else if (char === '"' || char === "'") {
+      quote = char;
+      word = word ?? '';
+    } else if (/\s/u.test(char) && char !== '\n') {
+      endWord();
+    } else if (';&|()\n'.includes(char)) {
+      endWord();
+      commands.push([]);
+    } else {
+      word = (word ?? '') + char;
+    }
+  }
+  endWord();
+  return commands.filter((words) => words.length > 0);
+}
+
+/** True for `git [global options] commit|push` and `gh pr create`, after leading `NAME=value` words. */
+function isPublicationCommand(words: readonly string[]): boolean {
+  let index = 0;
+  while (index < words.length && /^[A-Za-z_][A-Za-z0-9_]*=/u.test(words[index]!)) index += 1;
+  const program = words[index];
+  if (program === 'gh') return words[index + 1] === 'pr' && words[index + 2] === 'create';
+  if (program !== 'git') return false;
+  index += 1;
+  while (index < words.length && words[index]!.startsWith('-')) {
+    index += GIT_OPTIONS_WITH_VALUE.has(words[index]!) ? 2 : 1;
+  }
+  return words[index] === 'commit' || words[index] === 'push';
+}
+
+/**
+ * Before a pull request, a successful `git commit`, `git push` or `gh pr
+ * create` reports owed architecture updates. Architecture diagnostics never
+ * block, so an ownership or Git failure only drops the line.
+ */
+function publicationOwedSignal(repoRoot: string, command: string, exitCode: number | null): string {
+  if (exitCode !== 0 || !runsPublicationCommand(command)) return '';
+  try {
+    const ownership = resolveCapabilityOwnership(repoRoot);
+    const content = ownership ? renderOwedCapabilities(owedCapabilities(repoRoot, ownership)) : null;
+    return content ? `${content}\n` : '';
+  } catch {
+    return '';
+  }
+}
+
+/** Whether a shell command line runs `git commit`, `git push` or `gh pr create` in any simple command. */
+export function runsPublicationCommand(command: string): boolean {
+  return simpleCommands(command).some(isPublicationCommand);
+}
+
 export function runCommandObserved(opts: CommandObservedInput): CommandObservedResult {
   const env = opts.env ?? process.env;
   const deps = opts.dependencies ?? {};
@@ -281,6 +348,7 @@ export function runCommandObserved(opts: CommandObservedInput): CommandObservedR
       }
     }
 
+    stdout += publicationOwedSignal(opts.repoRoot, command, exitCode);
     return { exitCode: 0, stdout, stderr: warnings(), reason: 'ok' };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

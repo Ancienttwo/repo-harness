@@ -1,10 +1,16 @@
 import { describe, expect, test } from 'bun:test';
-import { execFileSync } from 'child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'fs';
+import { execFileSync, spawnSync } from 'child_process';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { runHook } from '../src/cli/hook/runtime';
 import { isHookEventTelemetryRecord } from '../src/cli/hook/event-telemetry';
+import { buildTaskMessageEvent } from '../src/core/fleet/task-message';
+import { bindLeaseRecord, buildLeaseOwnerRecord, deriveTaskRevision } from '../src/core/state/coordination-identity';
+import { sendTaskMessage } from '../src/effects/fleet/task-inbox';
+import { writeClaimTokenForBoundLease } from '../src/effects/state/coordination-claim-token';
+import { createLeaseDirectory, writeLeaseOwnerDurably } from '../src/effects/state/coordination-lease-store';
+import { fixtureTaskId } from './helpers/sprint-fixture';
 
 function fixture(): string {
   const root = mkdtempSync(join(tmpdir(), 'hrd09-hook-'));
@@ -251,4 +257,183 @@ describe('hook runtime typed dispatch', () => {
       });
     } finally { rmSync(root, { recursive: true, force: true }); }
   }, 30_000);
+});
+
+describe('host envelopes on the real hook entry (#678)', () => {
+  const HOOK_ENTRY = join(import.meta.dir, '../src/cli/hook-entry.ts');
+
+  /** Registry-mode repo: `src/owned` belongs to `core-owned`; `feature` changed it after the manifest. */
+  function owedFixture(): string {
+    const root = fixture();
+    const gitIn = (...args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
+    writeFileSync(join(root, '.gitignore'), '.ai/harness/state/\n.ai/harness/runs/\n.ai/harness/handoff/\n.ai/harness/journal/\n.ai/harness/checks/\n.ai/harness/events.jsonl\nhome/\n');
+    writeFileSync(join(root, '.ai/harness/policy.json'), `${JSON.stringify({ context: { capability_registry_file: '.ai/context/capabilities.json' } })}\n`);
+    mkdirSync(join(root, '.ai/context'), { recursive: true });
+    writeFileSync(join(root, '.ai/context/capabilities.json'), `${JSON.stringify({
+      version: 1,
+      capabilities: [{
+        id: 'core-owned', domain: 'core', name: 'owned', prefixes: ['src/owned'],
+        contract_files: { agents: 'AGENTS.md', claude: 'CLAUDE.md' },
+        architecture_module: 'docs/architecture/modules/core/owned.md',
+        workstream_dir: 'tasks/workstreams/core/owned', lsp_profile: 'typescript-lsp', verification_hints: [],
+      }],
+    })}\n`);
+    mkdirSync(join(root, 'src/owned'), { recursive: true });
+    mkdirSync(join(root, 'docs/architecture'), { recursive: true });
+    writeFileSync(join(root, 'src/owned/a.ts'), 'export const a = 1;\n');
+    writeFileSync(join(root, 'src/owned/a.test.ts'), 'export {};\n');
+    writeFileSync(join(root, 'docs/architecture/.projection-manifest.json'), '{}\n');
+    gitIn('add', '-A'); gitIn('commit', '-q', '-m', 'projected');
+    gitIn('checkout', '-q', '-b', 'feature');
+    writeFileSync(join(root, 'src/owned/a.ts'), 'export const a = 2;\n');
+    gitIn('commit', '-q', '-am', 'change owned code');
+    mkdirSync(join(root, 'home'), { recursive: true });
+    return root;
+  }
+
+  /** The bytes the host reads from fd 1 and fd 2 of `repo-harness-hook`. */
+  function host(root: string, hostName: 'claude' | 'codex', event: string, route: string, input: unknown) {
+    const result = spawnSync(process.execPath, [HOOK_ENTRY, event, '--route', route], {
+      cwd: root,
+      input: JSON.stringify(input),
+      encoding: 'utf8',
+      env: {
+        PATH: process.env.PATH, TMPDIR: process.env.TMPDIR, HOME: join(root, 'home'),
+        HOOK_HOST: hostName, HOOK_REPO_ROOT: root, REPO_HARNESS_TOOLING_ADVISORY: '0',
+      },
+    });
+    return { status: result.status, stdout: result.stdout, stderr: result.stderr };
+  }
+
+  function context(stdout: string, event: string): string {
+    expect(stdout.endsWith('\n')).toBe(true);
+    const envelope = JSON.parse(stdout) as { hookSpecificOutput: { hookEventName: string; additionalContext: string } };
+    expect(Object.keys(envelope)).toEqual(['hookSpecificOutput']);
+    expect(envelope.hookSpecificOutput.hookEventName).toBe(event);
+    return envelope.hookSpecificOutput.additionalContext;
+  }
+
+  test('edit, prompt, session and bash advisories reach both hosts as additionalContext', () => {
+    const root = owedFixture();
+    try {
+      for (const hostName of ['claude', 'codex'] as const) {
+        const edit = host(root, hostName, 'PreToolUse', 'edit', { tool_name: 'Edit', tool_input: { file_path: 'src/owned/a.ts' } });
+        expect(edit.status).toBe(0);
+        expect(context(edit.stdout, 'PreToolUse'))
+          .toBe('[CapabilityOwner] src/owned/a.ts belongs to core-owned (docs/architecture/modules/core/owned.md).');
+
+        const prompt = host(root, hostName, 'UserPromptSubmit', 'default', { prompt: '/check my branch' });
+        expect(prompt.status).toBe(0);
+        expect(context(prompt.stdout, 'UserPromptSubmit')).toContain('[ReviewAdvice]');
+
+        const session = host(root, hostName, 'SessionStart', 'default', { session_id: `owed-${hostName}` });
+        expect(session.status).toBe(0);
+        const sessionContext = context(session.stdout, 'SessionStart');
+        expect(sessionContext).toContain('[ArchitectureOwed]');
+        expect(sessionContext).toContain('core-owned (docs/architecture/modules/core/owned.md)');
+
+        const push = host(root, hostName, 'PostToolUse', 'bash', {
+          tool_input: { command: 'git push origin feature' }, tool_response: { stdout: '', stderr: '' }, exit_code: 0,
+        });
+        expect(push.status).toBe(0);
+        expect(context(push.stdout, 'PostToolUse')).toContain('repo-harness architecture-projection check --json');
+      }
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  }, 120_000);
+
+  test('PreToolUse.subagent keeps its updatedInput prompt rewrite on Claude and Codex', () => {
+    const root = owedFixture();
+    try {
+      for (const hostName of ['claude', 'codex'] as const) {
+        const spawn = host(root, hostName, 'PreToolUse', 'subagent', { tool_name: 'Agent', tool_input: { description: 'probe', prompt: 'inspect the repo' } });
+        expect(spawn.status).toBe(0);
+        const envelope = JSON.parse(spawn.stdout) as { hookSpecificOutput: Record<string, unknown> };
+        expect(Object.keys(envelope)).toEqual(['hookSpecificOutput']);
+        expect(envelope.hookSpecificOutput).toMatchObject({ hookEventName: 'PreToolUse', permissionDecision: 'allow' });
+        expect(envelope.hookSpecificOutput).not.toHaveProperty('additionalContext');
+        const updated = envelope.hookSpecificOutput.updatedInput as { description: string; prompt: string };
+        expect(updated.description).toBe('probe');
+        expect(updated.prompt.startsWith('inspect the repo')).toBe(true);
+        expect(updated.prompt).toContain('[repo-harness:return-channel]');
+      }
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  }, 60_000);
+
+  test('Codex UserPromptSubmit.inbox writes its envelope unchanged', () => {
+    const root = owedFixture();
+    try {
+      const sprintPath = 'plans/sprints/inbox.sprint.md';
+      const taskCell = 'deliver the inbox envelope';
+      const unitRef = 'plans/plan-inbox.md';
+      const claimId = '44444444-4444-4444-8444-444444444444';
+      mkdirSync(join(root, 'plans/sprints'), { recursive: true });
+      writeFileSync(join(root, sprintPath), [
+        '# Sprint: inbox', '', '> **Status**: Executing', '> **Backlog Schema**: 2', '', '## Backlog', '',
+        '| # | ID | Status | Task | Mode | Acceptance | Plan |', '|---|---|---|---|---|---|---|',
+        `| 1 | ${fixtureTaskId(taskCell)} | [ ] | ${taskCell} | contract | envelope | (pending) |`, '',
+      ].join('\n'));
+      execFileSync('git', ['add', sprintPath], { cwd: root });
+      execFileSync('git', ['commit', '-q', '-m', 'task authority'], { cwd: root });
+      const taskId = fixtureTaskId(taskCell);
+      const taskRevision = deriveTaskRevision({ taskCell, taskId, modeCell: 'contract', acceptanceCell: 'envelope' });
+      // The lease names the canonical worktree path, as the hook runtime resolves it.
+      const worktree = realpathSync(root);
+      const claimed = buildLeaseOwnerRecord({ claimId, taskId, taskRevision, sprintPath, targetRef: 'HEAD', generation: 1, sessionId: 'inbox-session', sourceWorktree: worktree });
+      const bound = bindLeaseRecord(claimed, { claimId, executionWorktree: worktree, branch: 'feature', unitRef });
+      if (!bound.ok) throw new Error(bound.error);
+      createLeaseDirectory(root, taskId);
+      writeLeaseOwnerDurably(root, taskId, bound.record);
+      writeClaimTokenForBoundLease(root, { task_id: taskId, claim_id: claimId, worktree, sprint: sprintPath, task: taskCell, unit_ref: unitRef });
+      writeFileSync(join(root, '.ai/harness/active-plan'), `${unitRef}\n`);
+      sendTaskMessage({
+        repo_root: root,
+        canonical_source: { targetRef: 'HEAD', sprintPath },
+        event: buildTaskMessageEvent({
+          message_id: '66666666-6666-4666-8666-666666666666', task_id: taskId, task_revision: taskRevision,
+          scope: 'claim', target_claim_id: claimId, target_generation: 1, sender_kind: 'operator', sender_id: 'inbox-test',
+          sender_trust: 'local_operator', audience: 'owner', body: 'peer body for the owner', created_at: '2026-10-13T01:00:00.000Z', in_reply_to: null,
+        }),
+      });
+
+      const inbox = host(root, 'codex', 'UserPromptSubmit', 'inbox', { prompt: 'continue' });
+      expect(inbox.status).toBe(0);
+      const inboxContext = context(inbox.stdout, 'UserPromptSubmit');
+      // The handler's own envelope: the bounded untrusted block, not a second wrapper.
+      expect(inboxContext.startsWith('[TaskInboxUntrustedPeerMessages]')).toBe(true);
+      expect(inboxContext).toContain('peer body for the owner');
+      expect(inboxContext).not.toContain('hookSpecificOutput');
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  }, 60_000);
+
+  test('Stop: Claude gets one envelope per owed set; Codex Stop writes no bytes', () => {
+    const root = owedFixture();
+    try {
+      const codex = host(root, 'codex', 'Stop', 'default', { stop_hook_active: false });
+      expect(codex.status).toBe(0);
+      expect(codex.stdout).toBe('');
+
+      const claude = host(root, 'claude', 'Stop', 'default', { stop_hook_active: false });
+      expect(claude.status).toBe(0);
+      expect(context(claude.stdout, 'Stop')).toContain('[ArchitectureOwed]');
+      expect(host(root, 'claude', 'Stop', 'default', { stop_hook_active: false }).stdout).toBe('');
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  }, 60_000);
+
+  test('no owed line once the manifest changed later in the branch', () => {
+    const root = owedFixture();
+    try {
+      writeFileSync(join(root, 'docs/architecture/.projection-manifest.json'), '{"refreshed":true}\n');
+      execFileSync('git', ['commit', '-q', '-am', 'refresh the projection'], { cwd: root });
+      for (const hostName of ['claude', 'codex'] as const) {
+        const session = host(root, hostName, 'SessionStart', 'default', { session_id: `clear-${hostName}` });
+        expect(session.status).toBe(0);
+        expect(session.stdout).not.toContain('ArchitectureOwed');
+        const push = host(root, hostName, 'PostToolUse', 'bash', {
+          tool_input: { command: 'git commit -m done' }, tool_response: { stdout: '', stderr: '' }, exit_code: 0,
+        });
+        expect(push.stdout).toBe('');
+      }
+      expect(host(root, 'claude', 'Stop', 'default', { stop_hook_active: false }).stdout).toBe('');
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  }, 60_000);
 });

@@ -50,6 +50,27 @@ export interface EffectiveStateSource {
   readonly detail?: string;
 }
 
+/** One capability that owns some of the resolved implementation paths. */
+export interface CapabilityOwnershipEntry {
+  readonly id: string;
+  readonly module_document: string;
+  /** The resolved implementation paths this capability owns, sorted. */
+  readonly paths: readonly string[];
+}
+
+/**
+ * The capability ownership answer for the resolved implementation paths: the
+ * explicit target paths plus the review subject. It is a projection of the
+ * one ownership result the resolver already computes.
+ */
+export interface CapabilityOwnership {
+  /** The commit the review subject was diffed against; null when the subject was unavailable. */
+  readonly review_base: string | null;
+  readonly capability_ids: readonly string[];
+  readonly capabilities: readonly CapabilityOwnershipEntry[];
+  readonly unowned_paths: readonly string[];
+}
+
 export interface EffectiveStateV1 {
   readonly protocol: 1;
   readonly kind: 'repo-harness-effective-state';
@@ -88,6 +109,11 @@ export interface EffectiveStateV1 {
   readonly risk_floor: WorkflowProfile;
   readonly profile_reasons: readonly string[];
   readonly profile_signals: WorkflowProfileSignals | null;
+  /**
+   * Null when ownership was not computed: no implementation path, an absent
+   * registry, an ownership blocker, or capability ids the caller declared.
+   */
+  readonly capability_ownership: CapabilityOwnership | null;
   readonly allowed_paths: readonly string[];
   readonly next_action: string | null;
   readonly guidance: string | null;

@@ -490,6 +490,11 @@ function runPerPathGuards(
   }
   if (effective?.blockers.length) {
     out(ctx, `[WorkflowObservation] ${effective.blockers.join(', ')}; edit may continue.`);
+    if (effective.next_action) out(ctx, `  Next: ${effective.next_action}`);
+  }
+  const owner = effective?.capability_ownership?.capabilities.find((capability) => capability.paths.includes(filePath));
+  if (owner && hasNoUncommittedChange(ctx.repoRoot, filePath)) {
+    out(ctx, `[CapabilityOwner] ${filePath} belongs to ${owner.id} (${owner.module_document}).`);
   }
 
   // ---- AssetLayer advisory --------------------------------------------------
@@ -517,6 +522,23 @@ function runPerPathGuards(
       out(ctx, `[TDD Guard] No test file found for ${basename(filePath)}`);
       out(ctx, '  Reminder: write a failing test first, then implement.');
     }
+  }
+}
+
+/**
+ * The owner line appears on the first edit of a path after its last commit:
+ * Git, not a session cursor, says whether the path already changed. A Git
+ * failure only drops the advisory line.
+ */
+function hasNoUncommittedChange(repoRoot: string, filePath: string): boolean {
+  try {
+    return execFileSync('git', ['-C', repoRoot, '--literal-pathspecs', 'status', '--porcelain', '-z', '--untracked-files=all', '--', filePath], {
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 5_000,
+    }) === '';
+  } catch {
+    return false;
   }
 }
 

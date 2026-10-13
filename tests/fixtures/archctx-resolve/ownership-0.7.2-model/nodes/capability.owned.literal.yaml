@@ -1,0 +1,17 @@
+schemaVersion: archcontext.node/v2
+id: capability.owned.literal
+kind: capability
+name: capability.owned.literal
+status: active
+summary: Fixture capability capability.owned.literal.
+responsibilities:
+  - Own fixture paths.
+source:
+  include:
+    - "literal/existing.ts"
+extensions:
+  contractFiles:
+    agents: AGENTS.md
+    claude: CLAUDE.md
+  lspProfile: typescript-lsp
+  verification: []

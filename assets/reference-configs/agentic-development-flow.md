@@ -10,7 +10,7 @@
 3. Make small, bounded commits. Ordinary tasks live in the PR description: goal, changes, verification, risk and rollback.
 4. Freeze the candidate and verify once: typecheck plus affected tests. Reviewers and closeout consume the same evidence.
 5. A model may squash-merge into main only when the current task explicitly authorizes main publication, automatic checks pass, and GitHub has no outstanding change requests or unresolved review threads. An explicit no-merge instruction always wins. Record the GitHub merge SHA and parent SHA. Record `git revert --no-edit <squash-commit>`. Do not create rollback tags.
-6. Run the full suite daily, automatically open a repair task on failure, and produce the daily merge/check/rollback report.
+6. Run the full suite daily, automatically open a repair task on failure, and produce the daily merge/check/rollback report. Run the [Lessons Retro](#lessons-retro) in the same nightly window.
 7. Use the [Report SOP](#report-sop) for formal progress, phase and final reports to the user, including the daily user summary. Raw automated CI reports are evidence inputs; they do not replace that summary and do not require this format.
 
 ## Report SOP
@@ -20,6 +20,37 @@
 - Keep planned, dispatched, implemented, verified, merged and released states distinct. Mark unknown and failed states as such. A worker report or an Agent `done` signal is not proof of verification, merge or release.
 - Render the diagram when a permitted renderer is available. If rendering fails or is unavailable, state the limit and keep the source. Do not upload private material to an external renderer without user authorization.
 - Keep the report proportional to the work. Routine confirmations, short updates and tool logs do not require a full report. This SOP adds no approval gate or separate status store. Use existing task, PR and verification sources.
+
+## Lessons Retro
+`tasks/lessons.md` is the one lessons ledger. It has the role of a root `LESSONS.md`. Do not add a second lessons file. Generated root `CLAUDE.md` and `AGENTS.md` tell each session to read it. Add that line by hand to an existing root file.
+
+- The ledger keeps one watermark line before the first entry: `reviewed-through: <full commit SHA>`. If the line is missing, the first retro reviews the last 24 hours and adds it.
+- Each night, review the default-branch history after the watermark: `git log --first-parent <watermark>..origin/main`. Skip commits that change only `tasks/lessons.md`.
+- Look for three signals: a fix that repairs recent work, a change that should not have merged, and verification that was too thin for the changed behavior. A revert or a follow-up hotfix is evidence.
+- Add at most one entry for each theme on one day. Keep the fields that `repo-harness run maintenance-triage` reads. `- Date:` starts each entry:
+
+```markdown
+- Date: <YYYY-MM-DD>
+- Mistake pattern: <stable theme key>
+- Prevention rule: <rule>
+- Why: <what failed and what it cost>
+- Triggered by correction: <commit SHA, PR or issue>
+- Seen: <N>×
+```
+
+- For a repeat, copy the `Mistake pattern` text exactly. Maintenance triage groups entries by that text. `Seen` counts the entries with that text, this entry included. Do not edit `Seen` on older entries.
+- At `Seen: 3×`, the lesson occurred on three different days. Promote its prevention rule into root `AGENTS.md` and root `CLAUDE.md` in the same PR. Add `- Promoted: <PR>` to that entry.
+- Each retro advances the watermark to the last reviewed commit, also when it finds no lesson. If an earlier retro PR is still open, update that PR. Do not open a second retro PR.
+- Every change to `tasks/lessons.md` goes through a PR and merges only after GO. GO is an explicit go-ahead from the repository owner (Aimpact for repo-harness) for one reviewed head SHA. Task-level publication authorization does not replace it. Merge with `gh pr merge <pr> --squash --match-head-commit <reviewed-sha>`. Lessons are not task notes. Ordinary tasks still write notes only for non-obvious decisions. A correction in a task can add an entry; that entry follows the same PR and GO rule.
+
+## Internal and external PRs
+Every PR is internal or external, never both. Classify it with the single rule in the `repo-harness-check` reference `references/pr-verification.md`, section Classification. An ambiguous result is external.
+
+### Internal PR flow
+An internal PR uses Daily Flow step 5 and the main-merge boundary in [Four operation boundaries](#four-operation-boundaries). The external PR flow does not apply to it. A `tasks/lessons.md` change also follows the GO rule in [Lessons Retro](#lessons-retro).
+
+### External PR flow
+An external PR never uses the internal flow. A worker produces the ready-for-GO bundle from `references/pr-verification.md`. The PR merges only after automated checks pass and the repository owner gives an explicit GO for the reviewed head SHA. Merge with `gh pr merge <pr> --squash --match-head-commit <reviewed-sha>`. A new head SHA needs a new bundle and a new GO.
 
 ## Four operation boundaries
 - Main merge requires explicit current-task authorization, current automated checks, no outstanding change requests or unresolved review threads, exact head/base and conflict safety.

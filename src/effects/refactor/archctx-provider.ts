@@ -25,31 +25,26 @@ function invoke(repoRoot: string, args: readonly string[], options: ArchctxProvi
   }
 }
 
-export function runRefactorScan(repoRoot: string, options: ArchctxProviderOptions = {}): RefactorScanResultV1 {
+export function runRefactorScan(repoRoot: string, options: ArchctxProviderOptions = {}, importNodeLimit?: number): RefactorScanResultV1 {
   const request = { schemaVersion: "archcontext.refactor-request/v1", scope: { kind: "repository" } };
-  const value = invoke(repoRoot, ["refactor", "scan", "--request-json", canonicalize(request as never), "--json"], options);
+  const value = invoke(repoRoot, ["refactor", "scan", "--request-json", canonicalize(request as never), ...importNodeLimitArgs(importNodeLimit), "--json"], options);
   return refactorEnvelopeData(value, "refactor.scan", "archcontext.runtime-refactor-scan/v1") as unknown as RefactorScanResultV1;
 }
 
-export function readRecommendationRecords(repoRoot: string, options: ArchctxProviderOptions = {}): readonly RecommendationV3[] {
-  const data = refactorEnvelopeData(invoke(repoRoot, ["book", "recommendations", "--json"], options), "book.recommendations", "archcontext.architecture-book-recommendations/v1");
-  return Array.isArray(data.recommendations) ? data.recommendations as RecommendationV3[] : [];
+/** Recorded suggestions the user has not decided yet. A scan no longer proposes these, because archctx suppresses a candidate whose fingerprint is already recorded. */
+export function listOpenRecommendations(repoRoot: string, options: ArchctxProviderOptions = {}): readonly RecommendationV3[] {
+  const data = refactorEnvelopeData(invoke(repoRoot, ["recommendations", "list", "--status", "open", "--json"], options), "recommendations.list", "archcontext.runtime-recommendation-list/v1");
+  if (!Array.isArray(data.recommendations)) throw new RefactorProviderError("refactor_provider_result_invalid", "recommendations.list returned no recommendations array");
+  return data.recommendations as RecommendationV3[];
 }
 
-/** Puts a scan's observations into the ArchContext lifecycle ledger so they can take a decision. */
-export function recordRefactorScan(scan: RefactorScanResultV1, repoRoot: string, options: ArchctxProviderOptions = {}): void {
-  refactorEnvelopeData(invoke(repoRoot, ["refactor", "record", "--assessment-digest", assessmentDigestOf(scan),
-    "--expected-worktree-digest", scan.worktree.worktreeDigest, "--json"], options), "refactor.record", "archcontext.runtime-refactor-record/v1");
-}
-
-export function decideRecommendation(recommendationId: string, decision: RefactorDecision, reason: string, repoRoot: string, options: ArchctxProviderOptions = {}): RecommendationV3 {
-  const data = refactorEnvelopeData(invoke(repoRoot, ["recommendations", decision, "--id", recommendationId, "--reason", reason, "--json"], options),
+/** One call decides a recorded suggestion or a fresh scan candidate. archctx requires the scan's import node limit here. */
+export function decideRecommendation(recommendationId: string, decision: RefactorDecision, reason: string, repoRoot: string, options: ArchctxProviderOptions = {}, importNodeLimit?: number): RecommendationV3 {
+  const data = refactorEnvelopeData(invoke(repoRoot, ["recommendations", decision, "--id", recommendationId, "--reason", reason, ...importNodeLimitArgs(importNodeLimit), "--json"], options),
     `recommendations.${decision}`, "archcontext.runtime-recommendation-lifecycle/v1");
   return data.recommendation as RecommendationV3;
 }
 
-function assessmentDigestOf(scan: RefactorScanResultV1): string {
-  const observation = scan.proposedRecommendations.find((entry) => entry.category === "structural_observation");
-  if (!observation || observation.category !== "structural_observation") throw new RefactorProviderError("refactor_provider_result_invalid", "refactor scan has no observation to record");
-  return observation.payload.assessmentDigest;
+function importNodeLimitArgs(importNodeLimit: number | undefined): string[] {
+  return importNodeLimit === undefined ? [] : ["--import-node-limit", String(importNodeLimit)];
 }

@@ -221,6 +221,130 @@ function installCandidateRuntimeFixture(home: string, version: string): string {
   return candidate;
 }
 
+describe('registry-bound CLI update (#701)', () => {
+  function runUpdateFixture(options: {
+    previous?: string;
+    installed?: string;
+    registryOutput?: string;
+    registryExit?: number;
+    cliVersion?: string;
+    cliExit?: number;
+    channel?: 'latest' | 'next';
+    installExit?: number;
+  } = {}) {
+    const root = mkdtempSync(join(tmpdir(), 'repo-harness-registry-update-'));
+    const home = join(root, 'home');
+    const source = join(root, 'source');
+    const bin = join(root, 'bin');
+    const logPath = join(root, 'bun.log');
+    const installed = options.installed ?? '0.22.1';
+    const harness = join(home, '.bun', 'install', 'global', 'node_modules', 'repo-harness');
+    try {
+      mkdirSync(bin, { recursive: true });
+      mkdirSync(source, { recursive: true });
+      setupFakeSource(source);
+      setupManagedRuntimeReadback(home, bin, options.previous ?? '0.21.2');
+      writeFileSync(join(root, 'registry.json'), options.registryOutput ?? '"0.22.1"');
+      writeFileSync(join(root, 'installed.json'), JSON.stringify({
+        name: 'repo-harness', version: installed,
+        dependencies: { archctx: '0.7.2', 'archctx-contracts': '0.7.2' },
+      }));
+      // Model the package manager's side effect. Registry and installed versions
+      // are independent inputs, so a zero exit can still leave an old CLI.
+      writeExecutable(join(bin, 'bun'), [
+        '#!/bin/bash',
+        `printf '%s\\n' "$*" >> "${logPath}"`,
+        'if [[ "${1:-}" == "--version" ]]; then echo 1.4.3; exit 0; fi',
+        `if [[ "\${1:-}" == "pm" && "\${2:-}" == "view" ]]; then cat "${join(root, 'registry.json')}"; exit ${options.registryExit ?? 0}; fi`,
+        `if [[ "\${1:-}" == "add" && "\${2:-}" == "-g" ]]; then cp "${join(root, 'installed.json')}" "${join(harness, 'package.json')}"; exit ${options.installExit ?? 0}; fi`,
+        `if [[ "\${1:-}" == "${join(harness, 'src', 'cli', 'index.ts')}" && "\${2:-}" == "--version" ]]; then echo '${options.cliVersion ?? installed}'; exit ${options.cliExit ?? 0}; fi`,
+        'exit 97',
+        '',
+      ].join('\n'));
+      const result = runGlobalRuntimeSetup({
+        sourceRoot: source, cwd: root, profile: 'minimal', target: 'codex',
+        installSpec: `repo-harness@${options.channel ?? 'latest'}`, updateMode: true,
+        syncSkill: false, hostAdapters: false, externalSkills: false, codegraph: false,
+        env: {
+          ...sanitizedChildEnv(), HOME: home, BUN_INSTALL: join(home, '.bun'),
+          PATH: `${bin}:${process.env.PATH ?? ''}`,
+          REPO_HARNESS_BUN_EXECUTABLE: join(bin, 'bun'),
+        },
+      });
+      return { result, commands: readFileSync(logPath, 'utf-8').trim().split('\n') };
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+
+  test('rejects a successful Bun install that leaves an older CLI than registry latest', () => {
+    const { result, commands } = runUpdateFixture({ installed: '0.21.2' });
+    expect(result.exitCode).toBe(1);
+    expect(result.lines).toContain('[runtime] failed: install repo-harness CLI - spec=repo-harness@0.22.1; installed CLI version mismatch: expected=0.22.1; actual=0.21.2; package=0.21.2');
+    expect(commands).toContain('pm view repo-harness@latest version --json --no-cache');
+    expect(commands).toContain('add -g repo-harness@0.22.1');
+    expect(commands).not.toContain('add -g repo-harness@latest');
+    expect(result.steps.at(-1)?.step).toBe('install repo-harness CLI');
+  });
+
+  test('reports the prior and installed versions after an exact update', () => {
+    const { result, commands } = runUpdateFixture();
+    expect(result.exitCode).toBe(0);
+    expect(result.lines).toContain('[runtime] ok: install repo-harness CLI - spec=repo-harness@0.22.1; 0.21.2 -> 0.22.1');
+    expect(commands.indexOf('pm view repo-harness@latest version --json --no-cache')).toBeLessThan(commands.indexOf('add -g repo-harness@0.22.1'));
+  });
+
+  test('reports already current only after version readback', () => {
+    const { result, commands } = runUpdateFixture({ previous: '0.22.1' });
+    expect(result.exitCode).toBe(0);
+    expect(result.lines).toContain('[runtime] ok: install repo-harness CLI - spec=repo-harness@0.22.1; already at 0.22.1');
+    expect(commands.some(command => command.endsWith('/src/cli/index.ts --version'))).toBe(true);
+  });
+
+  test('resolves next to an exact prerelease without the manifest cache', () => {
+    const { result, commands } = runUpdateFixture({ channel: 'next', registryOutput: '"0.23.0-rc.1"', installed: '0.23.0-rc.1' });
+    expect(result.exitCode).toBe(0);
+    expect(commands).toContain('pm view repo-harness@next version --json --no-cache');
+    expect(commands).toContain('add -g repo-harness@0.23.0-rc.1');
+    expect(result.lines).toContain('[runtime] ok: install repo-harness CLI - spec=repo-harness@0.23.0-rc.1; 0.21.2 -> 0.23.0-rc.1');
+  });
+
+  test('stops before installing when the registry lookup fails', () => {
+    const { result, commands } = runUpdateFixture({ registryExit: 1 });
+    expect(result.exitCode).toBe(1);
+    expect(result.steps.at(-1)).toMatchObject({ status: 'failed', detail: 'unable to resolve repo-harness@latest from registry' });
+    expect(commands.some(command => command.startsWith('add '))).toBe(false);
+  });
+
+  test('rejects malformed registry data without a cached install fallback', () => {
+    for (const registryOutput of ['0.22.1', '{}', '["0.22.1"]', '"latest"', '"^0.22.1"', '""', '"/tmp/package"', '"0.22.1-01"', '"0.22.1-.."', '"01.22.1"']) {
+      const { result, commands } = runUpdateFixture({ registryOutput });
+      expect(result.exitCode, registryOutput).toBe(1);
+      expect(result.steps.at(-1)).toMatchObject({ status: 'failed', detail: expect.stringContaining('invalid registry version') });
+      expect(commands.some(command => command.startsWith('add '))).toBe(false);
+    }
+  });
+
+  test('rejects a CLI mismatch even when the package manifest has the expected version', () => {
+    const { result } = runUpdateFixture({ cliVersion: '0.21.2' });
+    expect(result.exitCode).toBe(1);
+    expect(result.steps.at(-1)?.detail).toContain('expected=0.22.1; actual=0.21.2; package=0.22.1');
+  });
+
+  test('rejects failed CLI readback even when its output names the expected version', () => {
+    const { result } = runUpdateFixture({ cliExit: 1 });
+    expect(result.exitCode).toBe(1);
+    expect(result.steps.at(-1)?.detail).toContain('installed CLI version mismatch');
+  });
+
+  test('stops at a failed install without reading back or refreshing host surfaces', () => {
+    const { result, commands } = runUpdateFixture({ installExit: 1 });
+    expect(result.exitCode).toBe(1);
+    expect(result.steps.at(-1)).toMatchObject({ status: 'failed', detail: 'spec=repo-harness@0.22.1' });
+    expect(commands.some(command => command.endsWith('/src/cli/index.ts --version'))).toBe(false);
+  });
+});
+
 describe('install command global runtime bootstrap', () => {
   test('the CLI rejects Bun 1.3.14 before command dispatch', async () => {
     const originalVersion = process.versions.bun;
@@ -1738,7 +1862,8 @@ exit 0
         ownership_manifest: [],
         previous: null,
       })}\n`);
-      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.4.0; exit 0; fi\nif [[ "\${1:-}" == */src/cli/index.ts ]]; then exec "${process.execPath}" "$@"; fi\nexit 0\n`);
+      const candidateVersion = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf-8')).version;
+      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.4.0; exit 0; fi\nif [[ "\${1:-}" == "pm" && "\${2:-}" == "view" ]]; then printf '%s\\n' '${JSON.stringify(candidateVersion)}'; exit 0; fi\nif [[ "\${1:-}" == */src/cli/index.ts ]]; then exec "${process.execPath}" "$@"; fi\nexit 0\n`);
 
       const res = spawnSync(
         process.execPath,
@@ -1767,7 +1892,8 @@ exit 0
 
       expect(res.status, `${res.stderr}\n${res.stdout}`).toBe(0);
       const result = JSON.parse(res.stdout);
-      expect(readFileSync(bunLog, 'utf-8')).toContain('add -g repo-harness@latest');
+      expect(readFileSync(bunLog, 'utf-8')).toContain('pm view repo-harness@latest version --json --no-cache');
+      expect(readFileSync(bunLog, 'utf-8')).toContain(`add -g repo-harness@${candidateVersion}`);
       expect(result.steps.find((step: { step: string }) => step.step === 'reconcile installed candidate runtime')).toMatchObject({
         status: 'ok',
         detail: expect.stringContaining('scope=partial'),

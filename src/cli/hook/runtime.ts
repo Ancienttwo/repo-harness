@@ -17,6 +17,7 @@ import {
   StateResolutionUnstableError,
 } from '../../effects/state/resolve-effective-state';
 import { ExclusiveLockContentionError } from '../../effects/locking/exclusive-directory-lock';
+import { owedCapabilities, renderOwedCapabilities } from '../../effects/state/owed-capabilities';
 import type { EffectiveState, EffectiveStateRiskInput } from '../../core/state/types';
 import type { WorkflowProfile } from '../../core/workflow/profile';
 import { createHookEffectTracker, hookEffectFailureMetadata, type HookHandlerResult } from './handler-contract';
@@ -82,19 +83,21 @@ function isDecisionOutput(output: string): boolean {
   return decision === 'allow' || decision === 'block';
 }
 
-function isAdditionalContextOutput(output: string, event: HookEvent): boolean {
-  const parsed = parseJson(output);
-  const specific = parsed?.hookSpecificOutput;
+/**
+ * A `hookSpecificOutput` envelope for this event, whatever it carries:
+ * additionalContext, permissionDecision or updatedInput. Every structured
+ * handler output names its event, so this is the one pass-through rule.
+ */
+function isHookSpecificOutput(output: string, event: HookEvent): boolean {
+  const specific = parseJson(output)?.hookSpecificOutput;
   return Boolean(
     specific && typeof specific === 'object' && !Array.isArray(specific) &&
-    (specific as Record<string, unknown>).hookEventName === event &&
-    typeof (specific as Record<string, unknown>).additionalContext === 'string' &&
-    String((specific as Record<string, unknown>).additionalContext).trim(),
+    (specific as Record<string, unknown>).hookEventName === event,
   );
 }
 
 function isStructuredHookOutput(output: string, event: HookEvent): boolean {
-  return isDecisionOutput(output) || isAdditionalContextOutput(output, event);
+  return isDecisionOutput(output) || isHookSpecificOutput(output, event);
 }
 
 function writeText(fd: 1 | 2, value: string): void {
@@ -172,29 +175,31 @@ function hostOutput(
     return;
   }
 
-  // Claude's default adapter consumes both streams. Codex's adapter consumes
-  // only the explicitly structured success envelope for decision/context
-  // routes; all other successful stdout is intentionally quiet.
-  if (env.HOOK_HOST !== 'codex') {
-    writeText(1, result.stdout);
+  const codex = env.HOOK_HOST === 'codex';
+  if (result.exitCode !== 0) {
+    // A refusal keeps its exit-code channel: Claude reads stderr of exit 2.
+    // Codex reads no plain stdout, so failure stdout joins its diagnostics.
+    if (!codex) writeText(1, result.stdout);
     writeText(2, result.stderr);
+    if (codex && result.stdout) writeText(2, result.stdout);
     return;
   }
 
-  const structuredSuccess = result.exitCode === 0 && isStructuredHookOutput(result.stdout, opts.event);
-  const structuredRoute =
-    (opts.event === 'PreToolUse' && opts.routeId === 'subagent') ||
-    (opts.event === 'UserPromptSubmit' && opts.routeId === 'delegation') ||
-    (opts.event === 'UserPromptSubmit' && opts.routeId === 'inbox') ||
-    (opts.event === 'SubagentStart' && opts.routeId === 'context') ||
-    (opts.event === 'SubagentStop' && opts.routeId === 'quality');
-  if (structuredRoute && structuredSuccess) writeText(1, result.stdout);
-  if (result.exitCode !== 0) {
-    writeText(2, result.stderr);
-    if (result.stdout) writeText(2, result.stdout);
-  } else {
-    writeText(2, result.stderr);
-  }
+  // Neither host gives plain stdout of PreToolUse, PostToolUse or Stop to the
+  // model, and Codex reads no plain stdout at all. Successful stdout is the
+  // model-facing advisory, so it goes out as one hookSpecificOutput envelope.
+  // Codex Desktop renders Stop JSON as "Unsupported content type", so Codex
+  // Stop stays silent. stderr stays an operator diagnostic: no host gives
+  // stderr of a successful hook to the model.
+  if (!(codex && opts.event === 'Stop')) writeText(1, hostEnvelope(opts.event, result.stdout));
+  writeText(2, result.stderr);
+}
+
+/** Successful handler stdout as the host envelope: structured output as is, advisory text as additionalContext. */
+function hostEnvelope(event: HookEvent, stdout: string): string {
+  if (!stdout.trim()) return '';
+  if (isStructuredHookOutput(stdout, event)) return stdout;
+  return `${JSON.stringify({ hookSpecificOutput: { hookEventName: event, additionalContext: stdout.trimEnd() } })}\n`;
 }
 
 export function resolveRepoRoot(cwd: string): string | null {
@@ -283,6 +288,33 @@ export function projectEffectiveStateSessionSection(
     mandatory: true,
     actionable: true,
     reference: 'repo-harness state resolve --json',
+  };
+}
+
+/**
+ * The short SessionStart section for a branch that already owes architecture
+ * updates. It reuses the ownership result of the session state resolution.
+ * Architecture diagnostics never block, so a Git failure only drops it.
+ */
+export function projectOwedCapabilitiesSessionSection(
+  repoRoot: string,
+  state: EffectiveState,
+): SessionContextSection | null {
+  if (!state.capability_ownership) return null;
+  let content: string | null = null;
+  try {
+    content = renderOwedCapabilities(owedCapabilities(repoRoot, state.capability_ownership));
+  } catch {
+    return null;
+  }
+  if (!content) return null;
+  return {
+    id: 'architecture-owed',
+    priority: 3,
+    content,
+    mandatory: false,
+    actionable: true,
+    reference: 'repo-harness state owed --json',
   };
 }
 
@@ -440,10 +472,13 @@ export function runHook(opts: RunHookOptions): RunHookResult {
       const outcome = resolveSessionEffectiveState(repoRoot, Date.now());
       if (outcome.kind === 'unavailable') {
         observeSessionContextDiagnostic(outcome.diagnostic);
-        return projectUnavailableStateSessionSection(outcome.diagnostic);
+        return [projectUnavailableStateSessionSection(outcome.diagnostic)];
       }
-      if (outcome.kind === 'resolved_non_actionable') return null;
-      return projectEffectiveStateSessionSection(outcome.state);
+      const sections: SessionContextSection[] = [];
+      if (outcome.kind === 'resolved_actionable') sections.push(projectEffectiveStateSessionSection(outcome.state)!);
+      const owed = projectOwedCapabilitiesSessionSection(repoRoot, outcome.state);
+      if (owed) sections.push(owed);
+      return sections;
     },
     resolvePreEditEffectiveState: (targetPaths) => {
       telemetry.recordStateResolution();

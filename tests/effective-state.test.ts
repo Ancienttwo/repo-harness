@@ -16,14 +16,20 @@ import {
   resolveEffectiveState,
 } from '../src/effects/state/resolve-effective-state';
 import { stateVersionOwnerPath } from '../src/effects/state/git-state-version-store';
+import { projectEffectiveStateSessionSection } from '../src/cli/hook/runtime';
+import { runMutationGuard } from '../src/cli/hook/mutation-guard';
+import { createStateInputCollector } from '../src/effects/loop/state-input-collector';
+import type { EffectiveState } from '../src/core/state/types';
 import {
   CONTRACT,
   PLAN,
   commitFixture,
   createEffectiveStateFixture,
+  effectiveStateCliRiskArgs,
   makeFreshEvidence,
   nativeVerificationPlan,
   resolveFixtureState,
+  runStateCli,
   withRepo,
   writeFixture as write,
 } from './state/effective-state-fixture';
@@ -408,7 +414,7 @@ describe('effective state resolver', () => {
       });
     }, 30_000);
 
-    test('a mixed batch keeps in-repo unmapped accounting alongside out-of-repo paths', () => {
+    test('a mixed batch keeps in-repo unowned accounting alongside out-of-repo paths', () => {
       withRepo((cwd) => {
         write(cwd, '.ai/context/capabilities.json', JSON.stringify({ version: 1, capabilities: [] }));
         const state = resolveFixtureState(cwd, Date.now(), {
@@ -416,9 +422,11 @@ describe('effective state resolver', () => {
           operationKind: 'edit',
         });
         expect(state.blockers).not.toContain('capability_registry:invalid');
-        expect(state.profile_reasons).toContain('capability:unmapped:1');
+        expect(state.profile_reasons).toContain('capability:unowned:1');
+        expect(state.profile_reasons).toContain('capability:unowned-path:src/feature.ts');
         expect(state.profile_reasons).toContain('capability:out-of-repo:1');
-        expect(state.profile_signals?.capabilityCount).toBe(1);
+        // An unowned path is not a capability (#676 finding 4).
+        expect(state.profile_signals?.capabilityCount).toBe(0);
         expect(state.profile_signals?.crossCapability).toBe(false);
         expect(state.risk_floor).toBe('routine');
       });
@@ -435,10 +443,33 @@ describe('effective state resolver', () => {
           operationKind: 'edit',
         });
         expect(state.profile_reasons).toContain('capability:out-of-repo:1');
-        expect(state.profile_reasons).not.toContain('capability:unmapped:1');
+        expect(state.profile_reasons).not.toContain('capability:unowned:1');
         expect(state.profile_signals?.capabilityCount).toBe(1);
         expect(state.profile_signals?.crossCapability).toBe(false);
         expect(state.risk_floor).toBe('routine');
+      });
+    }, 30_000);
+
+    test('capability_ownership reports ids, module documents and unowned paths from the one ownership answer (#678)', () => {
+      withRepo((cwd) => {
+        write(cwd, '.ai/context/capabilities.json', JSON.stringify({
+          version: 1,
+          capabilities: [capability('feature-cap', ['src/feature'])],
+        }));
+        const options = { targetPaths: ['src/feature/index.ts', 'src/loose.ts'], operationKind: 'edit' as const };
+        const state = resolveFixtureState(cwd, Date.now(), options);
+        expect(state.capability_ownership?.capability_ids).toEqual(['feature-cap']);
+        expect(state.capability_ownership?.capabilities).toEqual([{
+          id: 'feature-cap',
+          module_document: 'docs/architecture/modules/fixture/feature-cap.md',
+          paths: ['src/feature/index.ts'],
+        }]);
+        expect(state.capability_ownership?.unowned_paths).toContain('src/loose.ts');
+        // The count signal and the ownership field come from the same answer.
+        expect(state.profile_signals?.capabilityCount).toBe(state.capability_ownership?.capability_ids.length);
+
+        write(cwd, '.ai/context/capabilities.json', '{not json');
+        expect(resolveFixtureState(cwd, Date.now(), options).capability_ownership).toBeNull();
       });
     }, 30_000);
 
@@ -455,7 +486,7 @@ describe('effective state resolver', () => {
       });
     }, 30_000);
 
-    test('an invalid registry does not also count out-of-repo paths as unmapped', () => {
+    test('an invalid registry does not also count out-of-repo paths as unowned', () => {
       withRepo((cwd) => {
         write(cwd, '.ai/context/capabilities.json', '{not json');
         const state = resolveFixtureState(cwd, Date.now(), {
@@ -464,7 +495,7 @@ describe('effective state resolver', () => {
         });
         expect(state.blockers).toContain('capability_registry:invalid');
         expect(state.profile_reasons).toContain('capability:out-of-repo:1');
-        expect(state.profile_reasons).not.toContain('capability:unmapped:1');
+        expect(state.profile_reasons).not.toContain('capability:unowned:1');
       });
     }, 30_000);
 
@@ -571,7 +602,7 @@ describe('effective state resolver', () => {
       }, 30_000);
     }
 
-    test('a valid registry with no matching prefix produces no blocker but records the unmapped reason', () => {
+    test('a valid registry with no matching prefix produces no blocker but records the unowned reason', () => {
       withRepo((cwd) => {
         write(cwd, '.ai/context/capabilities.json', JSON.stringify({
           version: 1,
@@ -583,7 +614,8 @@ describe('effective state resolver', () => {
           operationKind: 'edit',
         });
         expect(state.blockers).not.toContain('capability_registry:invalid');
-        expect(state.profile_reasons).toContain('capability:unmapped:1');
+        expect(state.profile_reasons).toContain('capability:unowned:1');
+        expect(state.profile_reasons).toContain('capability:unowned-path:src/feature.ts');
       });
     }, 30_000);
 
@@ -619,7 +651,8 @@ describe('effective state resolver', () => {
           operationKind: 'edit',
         });
         expect(state.blockers).not.toContain('capability_registry:invalid');
-        expect(state.profile_reasons).toContain('capability:unmapped:1');
+        expect(state.profile_reasons).toContain('capability:unowned:1');
+        expect(state.profile_reasons).toContain('capability:unowned-path:src/generated/out.ts');
       });
     }, 60_000);
 
@@ -630,11 +663,11 @@ describe('effective state resolver', () => {
         write(cwd, 'src/thing', 'file\n');
         commitFixture(cwd, 'add src/thing as a file');
         const options = { targetPaths: ['src/thing'], operationKind: 'edit' as const };
-        expect(resolveEffectiveState(cwd, Date.now(), options).profile_reasons).not.toContain('capability:unmapped:1');
+        expect(resolveEffectiveState(cwd, Date.now(), options).profile_reasons).not.toContain('capability:unowned:1');
         rmSync(join(cwd, 'src/thing'));
         write(cwd, 'src/thing/inner.ts', 'export {};\n');
         commitFixture(cwd, 'turn src/thing into a directory');
-        expect(resolveEffectiveState(cwd, Date.now(), options).profile_reasons).toContain('capability:unmapped:1');
+        expect(resolveEffectiveState(cwd, Date.now(), options).profile_reasons).toContain('capability:unowned:1');
       });
     }, 60_000);
 
@@ -649,8 +682,11 @@ describe('effective state resolver', () => {
             targetPaths: ['src/feature.ts'],
             operationKind: 'edit',
           });
-          expect(state.blockers).toContain('capability_registry:invalid');
-          expect(state.profile_reasons).toContain('capability:registry:invalid');
+          // A runtime failure is not a model fault, so it has its own key (#676 finding 1).
+          expect(state.blockers).toEqual(['capability_ownership:unavailable']);
+          expect(state.profile_reasons).toContain('capability:ownership:unavailable');
+          expect(state.profile_reasons).toContain('capability:diagnostic:ARCHCONTEXT_RESOLVE_FAILED');
+          expect(state.profile_reasons).not.toContain('capability:registry:invalid');
         } finally {
           if (previous === undefined) delete process.env.REPO_HARNESS_NODE_BIN;
           else process.env.REPO_HARNESS_NODE_BIN = previous;
@@ -709,7 +745,7 @@ describe('effective state resolver', () => {
       });
     }, 30_000);
 
-    test('an unmapped implementation path contributes one cross-capability bucket without lowering the floor', () => {
+    test('an unowned implementation path is reported by path and does not count as a second capability', () => {
       withRepo((cwd) => {
         write(cwd, '.ai/context/capabilities.json', JSON.stringify({
           version: 1,
@@ -720,8 +756,12 @@ describe('effective state resolver', () => {
           targetPaths: ['src/mapped/a.ts', 'src/unmapped/b.ts'],
           operationKind: 'edit',
         });
-        expect(state.profile_reasons).toContain('capability:unmapped:1');
-        expect(state.risk_floor).toBe('high');
+        expect(state.profile_reasons).toContain('capability:unowned:1');
+        expect(state.profile_reasons).toContain('capability:unowned-path:src/unmapped/b.ts');
+        expect(state.profile_reasons).not.toContain('risk-floor:high:cross-capability');
+        expect(state.profile_signals?.capabilityCount).toBe(1);
+        expect(state.profile_signals?.crossCapability).toBe(false);
+        expect(state.risk_floor).toBe('routine');
         expect(state.blockers).not.toContain('capability_registry:invalid');
       });
     }, 30_000);
@@ -737,10 +777,136 @@ describe('effective state resolver', () => {
           targetPaths: ['docs/a.md', 'docs/b.md'],
           operationKind: 'edit',
         });
-        expect(state.profile_reasons).not.toContain('capability:unmapped:1');
+        expect(state.profile_reasons).not.toContain('capability:unowned:1');
         expect(state.profile_signals?.capabilityCount).toBe(0);
       });
     }, 30_000);
+
+    describe('blocker causes reach state resolve --json and the hook output (#676)', () => {
+      function archcontextNode(id: string, include: string, extra: readonly string[] = ['summary: Fixture capability']): string {
+        return [
+          'schemaVersion: archcontext.node/v2',
+          `id: ${id}`,
+          'kind: capability',
+          `name: ${id}`,
+          'status: active',
+          ...extra,
+          'responsibilities:',
+          '  - Own the fixture sources',
+          'source:',
+          '  include:',
+          `    - "${include}"`,
+          'extensions:',
+          '  contractFiles:',
+          '    agents: AGENTS.md',
+          '    claude: CLAUDE.md',
+          '  lspProfile: typescript-lsp',
+          '  verification: []',
+          '',
+        ].join('\n');
+      }
+
+      function expectCause(cwd: string, targetPath: string, cause: { key: string; reason: string; code: string; fix: string; message: string }): void {
+        const risk = { targetPaths: [targetPath], operationKind: 'edit' as const };
+        const cli = runStateCli(cwd, ['state', 'resolve', '--json', ...effectiveStateCliRiskArgs(risk)]);
+        expect(cli.status, cli.stderr).toBe(1);
+        const state = JSON.parse(cli.stdout) as EffectiveState;
+        expect(state.blockers).toEqual([cause.key]);
+        expect(state.profile_reasons).toContain(cause.reason);
+        expect(state.profile_reasons).toContain(`capability:diagnostic:${cause.code}`);
+        expect(state.next_action).toStartWith(`resolve blockers: ${cause.key} ${cause.code}: `);
+        expect(state.next_action).toContain(cause.message);
+        expect(state.next_action).toEndWith(`; fix: ${cause.fix}`);
+
+        const session = projectEffectiveStateSessionSection(state)?.content ?? '';
+        expect(session).toContain(cause.key);
+        expect(session).toContain(`fix: ${cause.fix}`);
+
+        const guard = runMutationGuard({
+          collector: createStateInputCollector({
+            event: 'PreToolUse',
+            repoRoot: cwd,
+            resolveSessionEffectiveState: () => null,
+            resolvePreEditEffectiveState: (targetPaths: readonly string[]): EffectiveState | null => (
+              resolveEffectiveState(cwd, Date.now(), { targetPaths, operationKind: 'edit' })
+            ),
+          }),
+          input: JSON.stringify({ tool_input: { file_path: targetPath } }),
+          env: {},
+        });
+        expect(guard.exitCode).toBe(0);
+        expect(guard.stdout).toContain(`[WorkflowObservation] ${cause.key}; edit may continue.`);
+        expect(guard.stdout).toContain(`  Next: resolve blockers: ${cause.key} ${cause.code}: `);
+        expect(guard.stdout).toContain(cause.message);
+        expect(guard.stdout).toContain(`fix: ${cause.fix}`);
+      }
+
+      test('an unparseable JSON registry names INVALID_JSON and the validate command', () => {
+        withRepo((cwd) => {
+          write(cwd, '.ai/context/capabilities.json', '{not json');
+          commitFixture(cwd, 'seed invalid registry');
+          expectCause(cwd, 'src/feature.ts', {
+            key: 'capability_registry:invalid',
+            reason: 'capability:registry:invalid',
+            code: 'INVALID_JSON',
+            message: 'invalid JSON',
+            fix: 'repo-harness run capability-resolver validate',
+          });
+        });
+      }, 60_000);
+
+      test('an invalid archcontext node names its node diagnostic and the validate command', () => {
+        withRepo((cwd) => {
+          write(cwd, '.ai/harness/policy.json', JSON.stringify({ context: { capability_source: 'archcontext' } }));
+          write(cwd, '.archcontext/model/nodes/capability.fixture.feature.yaml', archcontextNode('capability.fixture.feature', 'src/**', []));
+          commitFixture(cwd, 'seed node without summary');
+          expectCause(cwd, 'src/feature.ts', {
+            key: 'capability_registry:invalid',
+            reason: 'capability:registry:invalid',
+            code: 'ARCHCONTEXT_NODE_SUMMARY_INVALID',
+            message: 'summary is required',
+            fix: 'repo-harness run capability-resolver validate',
+          });
+        });
+      }, 60_000);
+
+      test('an archctx runtime failure uses the unavailable key and names the update command', () => {
+        withRepo((cwd) => {
+          seedArchcontextCapability(cwd);
+          const previous = process.env.REPO_HARNESS_NODE_BIN;
+          // A non-executable runtime makes the package-local archctx unavailable.
+          process.env.REPO_HARNESS_NODE_BIN = join(cwd, '.ai/harness/policy.json');
+          try {
+            expectCause(cwd, 'src/feature.ts', {
+              key: 'capability_ownership:unavailable',
+              reason: 'capability:ownership:unavailable',
+              code: 'ARCHCONTEXT_RESOLVE_FAILED',
+              message: 'REPO_HARNESS_NODE_BIN',
+              fix: 'repo-harness update',
+            });
+          } finally {
+            if (previous === undefined) delete process.env.REPO_HARNESS_NODE_BIN;
+            else process.env.REPO_HARNESS_NODE_BIN = previous;
+          }
+        });
+      }, 90_000);
+
+      test('an ambiguous owner without an owning capability names the candidates and the match command', () => {
+        withRepo((cwd) => {
+          write(cwd, '.ai/harness/policy.json', JSON.stringify({ context: { capability_source: 'archcontext' } }));
+          write(cwd, '.archcontext/model/nodes/capability.shared.left.yaml', archcontextNode('capability.shared.left', 'src/**'));
+          write(cwd, '.archcontext/model/nodes/capability.shared.right.yaml', archcontextNode('capability.shared.right', 'src/**'));
+          commitFixture(cwd, 'seed two capabilities with one include');
+          expectCause(cwd, 'src/feature.ts', {
+            key: 'capability_registry:invalid',
+            reason: 'capability:registry:invalid',
+            code: 'AMBIGUOUS_MATCH',
+            message: 'capability.shared.left, capability.shared.right',
+            fix: 'repo-harness run capability-resolver match --path src/feature.ts',
+          });
+        });
+      }, 90_000);
+    });
   });
 
 });

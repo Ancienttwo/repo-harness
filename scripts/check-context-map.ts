@@ -14,6 +14,7 @@
  */
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "fs";
 import { basename, join, relative, resolve } from "path";
+import { archcontextNodeId } from "../src/core/capabilities/registry";
 import { readRegistry, type Capability, type CapabilityRegistry } from "./capability-resolver";
 
 const HARNESS_POLICY = ".ai/harness/policy.json";
@@ -153,9 +154,14 @@ function capabilityOwning(registry: CapabilityRegistry, contractPath: string): C
   );
 }
 
+/** The first anchor, or the owner node id for a capability without an anchor. */
+function capabilityOwnerLabel(capability: Capability): string {
+  return capability.prefixes[0] ?? archcontextNodeId(capability);
+}
+
 function buildEntry(capability: Capability, contractPath: string, retained: UnknownRecord | undefined): UnknownRecord {
   const fileName = basename(contractPath);
-  const prefix = capability.prefixes[0];
+  const prefix = capabilityOwnerLabel(capability);
   return {
     path: contractPath,
     priority: retained?.priority ?? "high",
@@ -210,7 +216,11 @@ function checkFindings(
     }
 
     const matchedPrefix = typeof entry.matched_prefix === "string" ? entry.matched_prefix : "";
-    if (!capability.prefixes.includes(matchedPrefix)) {
+    const ownsPrefix =
+      capability.prefixes.length === 0
+        ? matchedPrefix === archcontextNodeId(capability)
+        : capability.prefixes.includes(matchedPrefix);
+    if (!ownsPrefix) {
       findings.push(`prefix_not_owned ${entryPath} ${matchedPrefix || "(missing)"}`);
     }
     if (entry.architecture_domain !== capability.domain) {

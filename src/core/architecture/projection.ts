@@ -1,8 +1,10 @@
 import {
   ARCHCTX_CAPABILITIES_SCHEMA_VERSION,
+  docsAnchorsReportIssues,
   projectionApplyReadbackResultInvariantIssues,
   projectionResultInvariantIssues,
   validateJsonSchema,
+  type DocsAnchorsReportV1,
   type Json,
   type ProjectionApplyReadbackResultV1,
   type ProjectionRequestV1,
@@ -10,6 +12,8 @@ import {
 } from 'archctx-contracts';
 import projectionResultSchema from 'archctx-contracts/schemas/runtime/projection-result.schema.json';
 import projectionReadbackSchema from 'archctx-contracts/schemas/runtime/projection-apply-readback.schema.json';
+import docsAnchorsSchema from 'archctx-contracts/schemas/runtime/docs-anchors.schema.json';
+import type { GeneratedSummaryFreshness } from './module-view';
 
 export const ARCHCTX_REQUIRED_VERSION = '0.7.2' as const;
 
@@ -77,6 +81,30 @@ export function assertProjectionApplyReadbackResult(value: unknown, request: Pro
   const issues = projectionApplyReadbackResultInvariantIssues(result, request);
   if (issues.length > 0) throw new Error(`projection readback invalid: ${issues.join('; ')}`);
   return result;
+}
+
+/**
+ * Reads generated-summary freshness from a saved `architecture-projection check`
+ * result. Only a check result carries `freshness`; any other result is refused.
+ */
+export function decodeProjectionCheckFreshness(value: unknown): GeneratedSummaryFreshness {
+  const result = decode(projectionResultSchema, value, 'projection check result') as unknown as ProjectionResultV2;
+  const issues = projectionResultInvariantIssues(result);
+  if (issues.length > 0) throw new Error(`projection check result invalid: ${issues.join('; ')}`);
+  if (!result.freshness) throw new Error('projection result has no freshness; save the output of architecture-projection check');
+  return {
+    commit: result.inputSnapshot.baseHeadSha,
+    staleNodeIds: new Set(result.freshness.staleNodes.map((node) => node.nodeId)),
+    complete: result.freshness.reasonCodes.every((code) => code === 'projection-source-changed-since-stamp'),
+  };
+}
+
+/** ArchContext owns the `docs anchors` report contract; this applies its schema and invariants. */
+export function decodeDocsAnchorsReport(value: unknown): DocsAnchorsReportV1 {
+  const report = decode(docsAnchorsSchema, value, 'docs anchors report') as unknown as DocsAnchorsReportV1;
+  const issues = docsAnchorsReportIssues(report);
+  if (issues.length > 0) throw new Error(`docs anchors report invalid: ${issues.join('; ')}`);
+  return report;
 }
 
 function decode(schema: unknown, value: unknown, label: string): JsonRecord {

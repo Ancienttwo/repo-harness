@@ -37,21 +37,22 @@
       "risk-floor:routine:local-change",
       "explicit-override:equal:routine",
       "capability:registry:invalid",
-      "capability:unmapped:1"
+      "capability:diagnostic:INVALID_JSON"
     ],
     "profile_signals": {
       "targetPathCount": 1,
-      "capabilityCount": 1,
+      "capabilityCount": 0,
       "operationKind": "edit",
       "strictCategories": [],
       "mediumScope": false,
       "crossCapability": false
     },
+    "capability_ownership": null,
     "allowed_paths": [
       "src/",
       "tests/effective-state.test.ts"
     ],
-    "next_action": "resolve blockers",
+    "next_action": "resolve blockers: capability_registry:invalid INVALID_JSON: invalid JSON: JSON Parse error: Expected '}'; fix: repo-harness run capability-resolver validate",
     "guidance": "Implement the authorized scope; verify typecheck and affected tests once; record goal/change/verification/risk/rollback in the PR. This is a state snapshot, not a session-wide restriction; re-resolve for the proposed edit and current diff when scope changes. Current edit-time requirements supersede earlier snapshot guidance.",
     "blockers": [
       "capability_registry:invalid"

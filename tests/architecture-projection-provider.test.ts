@@ -23,6 +23,7 @@ import {
   captureArchitectureProjectionSnapshot,
   resolveCompatibleNodeRuntime,
   resolvePackageLocalArchctx,
+  readArchitectureDocsAnchors,
   readArchitectureProjectionApply,
   runArchitectureProjection,
   type ArchctxProcessResult,
@@ -544,13 +545,36 @@ describe('package-local ArchContext projection provider', () => {
 
   test('exposes projection commands without a separate acceptance authority', () => {
     const command = buildArchitectureProjectionCommand();
-    expect(command.commands.map((entry) => entry.name())).toEqual(['policy', 'status', 'check', 'plan', 'apply', 'adopt']);
+    expect(command.commands.map((entry) => entry.name())).toEqual(['policy', 'status', 'check', 'plan', 'apply', 'adopt', 'anchors']);
     for (const name of ['check', 'plan', 'apply', 'adopt']) {
       const subcommand = command.commands.find((candidate) => candidate.name() === name);
       expect(subcommand!.options.map((option) => option.long)).not.toContain('--accepted-change-set-id');
       expect(subcommand!.options.map((option) => option.long)).not.toContain('--approval-reference');
     }
 
+  });
+
+  test('docs anchors runs read-only archctx docs anchors after the handshake and decodes its report', () => {
+    const f = fixture();
+    const calls: Array<readonly string[]> = [];
+    const report = {
+      schemaVersion: 'archcontext.docs-anchors/v1', profile: 'repo-harness/v1', codeGraph: { availability: 'ready' },
+      summary: { nodes: 1, documents: 1, citations: 1, findings: 1, unchecked: 0, byKind: { 'line-moved': 0, 'line-out-of-range': 0, 'missing-path': 0, 'missing-symbol': 1 } },
+      nodes: [{ nodeId: 'capability.test.core', documentPath: 'docs/architecture/modules/test/core.md', citationCount: 1,
+        findings: [{ kind: 'missing-symbol', origin: { kind: 'document', path: 'docs/architecture/modules/test/core.md', line: 3 }, citation: { text: 'index.ts#gone', path: 'index.ts', symbol: 'gone' } }], unchecked: [] }],
+    };
+    const run = (data: unknown): RunArchctxProcess => (_binary, args) => {
+      calls.push(args);
+      return { status: 0, signal: null, stdout: JSON.stringify(args[0] === 'capabilities' ? capabilities() : { schemaVersion: 'archcontext.envelope/v1', ok: true, requestId: 'docs.anchors', data }), stderr: '' };
+    };
+    const before = captureArchitectureProjectionSnapshot(f.repoRoot);
+    expect(readArchitectureDocsAnchors(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: run(report) })).toEqual(report as never);
+    expect(calls).toEqual([['capabilities', '--json'], ['docs', 'anchors', '--json']]);
+    expect(captureArchitectureProjectionSnapshot(f.repoRoot)).toEqual(before);
+    expect(() => readArchitectureDocsAnchors(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: run({ ...report, summary: { ...report.summary, findings: 0 } }) }))
+      .toThrow('docs anchors report invalid');
+    expect(() => readArchitectureDocsAnchors(f.repoRoot, { consumerRoot: f.consumerRoot, policy: { ...policy, provider: 'disabled', applyMode: 'disabled' }, run: run(report) }))
+      .toThrow('architecture projection provider is disabled');
   });
 
   test('manual command exit status distinguishes clean/planned from human and failure outcomes', () => {

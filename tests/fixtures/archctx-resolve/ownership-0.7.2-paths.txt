@@ -1,0 +1,10 @@
+src/cli/tools/run.ts
+lib/shared.ts
+planned/a.ts
+legacy/b.ts
+probes/x.probe
+src/app/[locale]/page.tsx
+README.md
+owned/new-helper.ts
+literal/existing.ts
+literal/new-helper.ts

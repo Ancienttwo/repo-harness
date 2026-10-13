@@ -291,9 +291,12 @@ AcceptanceReceipt field.
 - **Refactor recommendations**: Evidence on demand. No hook scans for them.
   The Bot reads `repo-harness refactor recommendations --json` and decides
   whether to schedule work or ask the user.
-  `repo-harness refactor recommendations` shows each suggestion with its
-  metrics and module statistics; `repo-harness refactor decide` records the
-  user's accept, defer or reject decision in ArchContext. repo-harness never
+  `repo-harness refactor recommendations` shows each open suggestion with the
+  metrics and bounded evidence of its observation and the statistics of the
+  affected modules. Open suggestions are the ArchContext `open` records plus
+  unrecorded scan candidates. `repo-harness refactor decide` records the
+  user's accept, defer or reject decision in one ArchContext call.
+  `--import-node-limit` applies to both commands. repo-harness never
   executes a refactor and keeps no local delivery state. An accepted suggestion
   enters the normal plan and pull request workflow. Incomplete code facts are
   reported, never synthesized.

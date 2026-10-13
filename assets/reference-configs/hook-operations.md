@@ -43,6 +43,25 @@ time is the whole turn, not the duration of its currently displayed hook.
 | `SubagentStop.quality` | subagent stop (Codex) | `subagent` | Check the delegated report and request one bounded continuation when required. |
 | `Stop.default` | session stop | `stop` | Flush pending observations and finalize the handoff projection. |
 
+## Host Output
+
+The runtime alone writes to the host. Handlers return text; they never write to
+a host file descriptor.
+
+- Exit 0: handler stdout is advice for the Agent. The runtime writes it as one
+  `{"hookSpecificOutput":{"hookEventName":"<event>","additionalContext":"..."}}`
+  envelope on Claude and Codex. Output that is already a decision or an
+  envelope goes out unchanged. Neither host gives plain stdout of `PreToolUse`,
+  `PostToolUse` or `Stop` to the model, and Codex reads no plain stdout.
+- Codex `Stop` writes no bytes. Codex Desktop renders Stop JSON as
+  "Unsupported content type".
+- stderr is for operators. Lines such as `[ReadinessGate]`, `[FinalizeHandoff]`
+  and `[MinimalChange]` stay on stderr. No host gives stderr of a successful
+  hook to the model.
+- A non-zero exit keeps its refusal channel. Claude reads stdout and stderr.
+  Codex gets both on stderr.
+- Pi uses `--format json`. Its SessionStart sections reach `additional_context`.
+
 `assets/hooks/lib/workflow-state.sh` is the package operator library.
 Consumer repositories do not receive a copy. The library has no hook dispatch
 or route authority. Product changes to handler
@@ -82,7 +101,8 @@ explicit think/planning intent is matched first and routed to `/think`.
 The `SessionStart` builder assembles one bounded context from four sources
 before work begins: the prior handoff/resume packet, sprint status, advice-only
 minimal-change guidance, and an explicitly authorized security config scan.
-They are emitted together as `additionalContext`.
+When the branch already owes architecture updates, a short `architecture-owed`
+section joins them. They are emitted together as `additionalContext`.
 
 The security sentinel is off by default. A launcher may set
 `REPO_HARNESS_SESSION_SECURITY_SCAN=1` for a session only when its task permits
@@ -145,10 +165,55 @@ verifying that no hook process is active, an operator may remove
 
 ## Architecture Drift and Parity
 
-Hooks do not record architecture drift. Architecture updates are explicit:
+Hooks do not record architecture drift. They keep no queue and no drift cursor,
+and they run no projection or LLM work. Architecture updates are explicit:
 
 - `repo-harness run workstream-sync` maintains durable capability workstreams.
 - Agents read architecture documents on demand and update real boundaries explicitly.
+
+`repo-harness state resolve --json` reports `capability_ownership`. It is a
+projection of the ownership answer that state resolution already computed:
+`review_base`, `capability_ids`, each capability's `module_document` and owned
+`paths`, and `unowned_paths`. It is `null` when ownership was not computed: no
+implementation path, an absent registry, an ownership blocker, or capability
+ids that the caller declared.
+
+A capability is owed when one of its owned implementation paths in the review
+subject changed after the last change to
+`docs/architecture/.projection-manifest.json`. ArchContext is the only
+ownership authority, and Git gives the changed set: one `git log` and one
+`git status`. `SessionStart`, `PreToolUse.edit` and `Stop` use the ownership
+answer of the state resolution that the hook already runs. `PostToolUse.bash`
+and `state owed` run one ownership resolution of their own for the review
+subject. An uncommitted manifest change counts as the newest change. A
+checkout without the manifest, or a repository without a capability
+registry, is `not_projected`. The owed report has at most
+three lines: the capability and its module document, new unowned source paths,
+and the next step (`repo-harness architecture-projection check --json`, then
+the worker flow of the `repo-harness-architecture` skill). It is evidence, not
+a gate.
+
+The Agent gets the report at these points:
+
+| Point | Hosts | When |
+| --- | --- | --- |
+| `PreToolUse.edit` | Claude, Codex | `[CapabilityOwner]` line on the first edit of an owned path after its last commit |
+| `SessionStart.default` | Claude, Codex, Pi | the branch already owes updates |
+| `PostToolUse.bash` | Claude, Codex | after a successful `git commit`, `git push` or `gh pr create` |
+| `Stop.default` | Claude only | once per branch and owed set; nothing when `stop_hook_active` is true |
+
+CI and operators use the same rule without hooks:
+
+```bash
+repo-harness state owed --json                     # policy review base
+repo-harness state owed --json --base origin/main  # pull request base
+```
+
+The command writes nothing. A document exits 0, owed or not. `status` is
+`owed`, `clear` or `not_projected`. A repository without a capability
+registry gets a `not_projected` document. An unknown base, a malformed
+registry or unavailable ownership (for example, archctx cannot run) exits 1
+with the reason on stderr.
 
 Agents author semantic snapshots and diagrams. Hooks do not spawn LLM agents or
 long-running commands. Deterministic execution belongs in explicit CLI commands
