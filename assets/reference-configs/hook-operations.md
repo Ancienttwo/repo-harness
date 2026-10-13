@@ -182,8 +182,12 @@ A capability is owed when one of its owned implementation paths in the review
 subject changed after the last change to
 `docs/architecture/.projection-manifest.json`. ArchContext is the only
 ownership authority, and Git gives the changed set: one `git log` and one
-`git status`. An uncommitted manifest change counts as the newest change. A
-checkout without the manifest is `not_projected`. The owed report has at most
+`git status`. `SessionStart`, `PreToolUse.edit` and `Stop` use the ownership
+answer of the state resolution that the hook already runs. `PostToolUse.bash`
+and `state owed` run one ownership resolution of their own for the review
+subject. An uncommitted manifest change counts as the newest change. A
+checkout without the manifest, or a repository without a capability
+registry, is `not_projected`. The owed report has at most
 three lines: the capability and its module document, new unowned source paths,
 and the next step (`repo-harness architecture-projection check --json`, then
 the worker flow of the `repo-harness-architecture` skill). It is evidence, not
@@ -206,8 +210,10 @@ repo-harness state owed --json --base origin/main  # pull request base
 ```
 
 The command writes nothing. A document exits 0, owed or not. `status` is
-`owed`, `clear` or `not_projected`. An unknown base or an ownership failure
-exits 1 with the reason on stderr.
+`owed`, `clear` or `not_projected`. A repository without a capability
+registry gets a `not_projected` document. An unknown base, a malformed
+registry or unavailable ownership (for example, archctx cannot run) exits 1
+with the reason on stderr.
 
 Agents author semantic snapshots and diagrams. Hooks do not spawn LLM agents or
 long-running commands. Deterministic execution belongs in explicit CLI commands

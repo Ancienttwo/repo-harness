@@ -1054,8 +1054,10 @@ same branch. `check` and `plan` show the effect without writes. The projected
 
 A capability is owed when one of its owned implementation paths in the review
 subject changed after the last change to
-`docs/architecture/.projection-manifest.json`. The rule reuses the ownership
-answer of state resolution and runs at most two Git commands. It writes no
+`docs/architecture/.projection-manifest.json`. Hooks that already resolve
+state reuse its ownership answer; `PostToolUse.bash` and `state owed` run one
+ownership resolution of their own. The rule then runs at most two Git
+commands. It writes no
 queue and no drift cursor. Hooks report it to the Agent as evidence, never as a
 gate. The report names the capability, its module document, new unowned source
 paths and the next step: `repo-harness architecture-projection check --json`,

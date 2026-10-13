@@ -65,7 +65,7 @@ function ownedRepo(options: { readonly manifest?: boolean } = {}): string {
 }
 
 function owedFor(cwd: string) {
-  return owedCapabilities(cwd, resolveCapabilityOwnership(cwd, 'main'));
+  return owedCapabilities(cwd, resolveCapabilityOwnership(cwd, 'main')!);
 }
 
 describe('owed-capability rule', () => {
@@ -165,5 +165,38 @@ describe('owed-capability rule', () => {
     });
     expect(unknownBase.exitCode).toBe(1);
     expect(unknownBase.stderr).toContain('review subject is unavailable');
+
+    write(cwd, '.ai/context/capabilities.json', '{not json');
+    const malformed = owedStateCommand({ base: 'main' }, {
+      repoRoot: cwd,
+      resolveOwnership: resolveCapabilityOwnership,
+      owed: owedCapabilities,
+    });
+    expect(malformed.exitCode).toBe(1);
+    expect(malformed.stderr).toContain('capability_registry:invalid');
+  });
+
+  test('state owed --json reports not_projected for a repository without a capability registry', () => {
+    const cwd = ownedRepo();
+    rmSync(join(cwd, '.ai/context/capabilities.json'));
+    write(cwd, '.ai/harness/policy.json', '{}\n');
+    commit(cwd, 'drop the capability registry');
+    const outcome = owedStateCommand({}, {
+      repoRoot: cwd,
+      resolveOwnership: resolveCapabilityOwnership,
+      owed: owedCapabilities,
+    });
+    expect(outcome.exitCode).toBe(0);
+    expect(JSON.parse(outcome.stdout)).toEqual({
+      protocol: 1,
+      kind: 'repo-harness-owed-capabilities',
+      base: null,
+      status: 'not_projected',
+      review_base: null,
+      manifest_change: null,
+      capabilities: [],
+      new_unowned_paths: [],
+      next: [],
+    });
   });
 });

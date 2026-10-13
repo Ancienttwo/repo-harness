@@ -1,10 +1,16 @@
 import { describe, expect, test } from 'bun:test';
 import { execFileSync, spawnSync } from 'child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { runHook } from '../src/cli/hook/runtime';
 import { isHookEventTelemetryRecord } from '../src/cli/hook/event-telemetry';
+import { buildTaskMessageEvent } from '../src/core/fleet/task-message';
+import { bindLeaseRecord, buildLeaseOwnerRecord, deriveTaskRevision } from '../src/core/state/coordination-identity';
+import { sendTaskMessage } from '../src/effects/fleet/task-inbox';
+import { writeClaimTokenForBoundLease } from '../src/effects/state/coordination-claim-token';
+import { createLeaseDirectory, writeLeaseOwnerDurably } from '../src/effects/state/coordination-lease-store';
+import { fixtureTaskId } from './helpers/sprint-fixture';
 
 function fixture(): string {
   const root = mkdtempSync(join(tmpdir(), 'hrd09-hook-'));
@@ -334,6 +340,70 @@ describe('host envelopes on the real hook entry (#678)', () => {
       }
     } finally { rmSync(root, { recursive: true, force: true }); }
   }, 120_000);
+
+  test('PreToolUse.subagent keeps its updatedInput prompt rewrite on Claude and Codex', () => {
+    const root = owedFixture();
+    try {
+      for (const hostName of ['claude', 'codex'] as const) {
+        const spawn = host(root, hostName, 'PreToolUse', 'subagent', { tool_name: 'Agent', tool_input: { description: 'probe', prompt: 'inspect the repo' } });
+        expect(spawn.status).toBe(0);
+        const envelope = JSON.parse(spawn.stdout) as { hookSpecificOutput: Record<string, unknown> };
+        expect(Object.keys(envelope)).toEqual(['hookSpecificOutput']);
+        expect(envelope.hookSpecificOutput).toMatchObject({ hookEventName: 'PreToolUse', permissionDecision: 'allow' });
+        expect(envelope.hookSpecificOutput).not.toHaveProperty('additionalContext');
+        const updated = envelope.hookSpecificOutput.updatedInput as { description: string; prompt: string };
+        expect(updated.description).toBe('probe');
+        expect(updated.prompt.startsWith('inspect the repo')).toBe(true);
+        expect(updated.prompt).toContain('[repo-harness:return-channel]');
+      }
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  }, 60_000);
+
+  test('Codex UserPromptSubmit.inbox writes its envelope unchanged', () => {
+    const root = owedFixture();
+    try {
+      const sprintPath = 'plans/sprints/inbox.sprint.md';
+      const taskCell = 'deliver the inbox envelope';
+      const unitRef = 'plans/plan-inbox.md';
+      const claimId = '44444444-4444-4444-8444-444444444444';
+      mkdirSync(join(root, 'plans/sprints'), { recursive: true });
+      writeFileSync(join(root, sprintPath), [
+        '# Sprint: inbox', '', '> **Status**: Executing', '> **Backlog Schema**: 2', '', '## Backlog', '',
+        '| # | ID | Status | Task | Mode | Acceptance | Plan |', '|---|---|---|---|---|---|---|',
+        `| 1 | ${fixtureTaskId(taskCell)} | [ ] | ${taskCell} | contract | envelope | (pending) |`, '',
+      ].join('\n'));
+      execFileSync('git', ['add', sprintPath], { cwd: root });
+      execFileSync('git', ['commit', '-q', '-m', 'task authority'], { cwd: root });
+      const taskId = fixtureTaskId(taskCell);
+      const taskRevision = deriveTaskRevision({ taskCell, taskId, modeCell: 'contract', acceptanceCell: 'envelope' });
+      // The lease names the canonical worktree path, as the hook runtime resolves it.
+      const worktree = realpathSync(root);
+      const claimed = buildLeaseOwnerRecord({ claimId, taskId, taskRevision, sprintPath, targetRef: 'HEAD', generation: 1, sessionId: 'inbox-session', sourceWorktree: worktree });
+      const bound = bindLeaseRecord(claimed, { claimId, executionWorktree: worktree, branch: 'feature', unitRef });
+      if (!bound.ok) throw new Error(bound.error);
+      createLeaseDirectory(root, taskId);
+      writeLeaseOwnerDurably(root, taskId, bound.record);
+      writeClaimTokenForBoundLease(root, { task_id: taskId, claim_id: claimId, worktree, sprint: sprintPath, task: taskCell, unit_ref: unitRef });
+      writeFileSync(join(root, '.ai/harness/active-plan'), `${unitRef}\n`);
+      sendTaskMessage({
+        repo_root: root,
+        canonical_source: { targetRef: 'HEAD', sprintPath },
+        event: buildTaskMessageEvent({
+          message_id: '66666666-6666-4666-8666-666666666666', task_id: taskId, task_revision: taskRevision,
+          scope: 'claim', target_claim_id: claimId, target_generation: 1, sender_kind: 'operator', sender_id: 'inbox-test',
+          sender_trust: 'local_operator', audience: 'owner', body: 'peer body for the owner', created_at: '2026-10-13T01:00:00.000Z', in_reply_to: null,
+        }),
+      });
+
+      const inbox = host(root, 'codex', 'UserPromptSubmit', 'inbox', { prompt: 'continue' });
+      expect(inbox.status).toBe(0);
+      const inboxContext = context(inbox.stdout, 'UserPromptSubmit');
+      // The handler's own envelope: the bounded untrusted block, not a second wrapper.
+      expect(inboxContext.startsWith('[TaskInboxUntrustedPeerMessages]')).toBe(true);
+      expect(inboxContext).toContain('peer body for the owner');
+      expect(inboxContext).not.toContain('hookSpecificOutput');
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  }, 60_000);
 
   test('Stop: Claude gets one envelope per owed set; Codex Stop writes no bytes', () => {
     const root = owedFixture();

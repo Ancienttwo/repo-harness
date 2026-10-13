@@ -83,19 +83,21 @@ function isDecisionOutput(output: string): boolean {
   return decision === 'allow' || decision === 'block';
 }
 
-function isAdditionalContextOutput(output: string, event: HookEvent): boolean {
-  const parsed = parseJson(output);
-  const specific = parsed?.hookSpecificOutput;
+/**
+ * A `hookSpecificOutput` envelope for this event, whatever it carries:
+ * additionalContext, permissionDecision or updatedInput. Every structured
+ * handler output names its event, so this is the one pass-through rule.
+ */
+function isHookSpecificOutput(output: string, event: HookEvent): boolean {
+  const specific = parseJson(output)?.hookSpecificOutput;
   return Boolean(
     specific && typeof specific === 'object' && !Array.isArray(specific) &&
-    (specific as Record<string, unknown>).hookEventName === event &&
-    typeof (specific as Record<string, unknown>).additionalContext === 'string' &&
-    String((specific as Record<string, unknown>).additionalContext).trim(),
+    (specific as Record<string, unknown>).hookEventName === event,
   );
 }
 
 function isStructuredHookOutput(output: string, event: HookEvent): boolean {
-  return isDecisionOutput(output) || isAdditionalContextOutput(output, event);
+  return isDecisionOutput(output) || isHookSpecificOutput(output, event);
 }
 
 function writeText(fd: 1 | 2, value: string): void {

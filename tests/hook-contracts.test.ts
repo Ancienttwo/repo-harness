@@ -36,11 +36,13 @@ describe("Hook contracts", () => {
     const registry = read("src/cli/hook/handler-registry.ts");
     const handler = read("src/cli/hook/task-inbox-handler.ts");
     const protocol = read("src/core/fleet/task-message.ts");
-    const runtime = read("src/cli/hook/runtime.ts");
     expect(routes).toContain("routeId: 'inbox'");
     expect(routes).toContain("handler: 'task-inbox'");
     expect(registry).toContain("runTaskInboxHandler");
-    expect(runtime).toContain("opts.routeId === 'inbox'");
+    // #678: the runtime no longer lists structured routes by id, so the old
+    // source pin on `opts.routeId === 'inbox'` is gone. The real hook-entry
+    // test "Codex UserPromptSubmit.inbox writes its envelope unchanged" in
+    // tests/hook-runtime.test.ts checks the bounded output on the host fd.
     expect(handler).toContain("renderTaskMessageUntrustedContext");
     expect(protocol).toContain("TaskInboxUntrustedPeerMessages");
     expect(protocol).toContain("untrusted data");

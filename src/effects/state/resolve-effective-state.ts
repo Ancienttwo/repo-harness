@@ -525,10 +525,11 @@ function capabilityOwnershipFrom(
  * Capability ownership of the review subject against `targetRef`, or the
  * policy review base when it is omitted. It reads the same authority and runs
  * the same ownership resolution as `state resolve`, without the state
- * lock, the cache or the version store. It throws when the review subject or
- * ownership is unavailable.
+ * lock, the cache or the version store. Null means the repository declares no
+ * capability registry, so nothing is owned. It throws when the review subject
+ * or ownership is unavailable.
  */
-export function resolveCapabilityOwnership(cwd: string, targetRef?: string): CapabilityOwnership {
+export function resolveCapabilityOwnership(cwd: string, targetRef?: string): CapabilityOwnership | null {
   const policy = readWorkflowPolicy(cwd);
   const reviewSubject = buildReviewSubject(cwd, { targetRef: targetRef ?? policyReviewBase(policy) });
   if (reviewSubject.status !== 'ok') {
@@ -538,7 +539,7 @@ export function resolveCapabilityOwnership(cwd: string, targetRef?: string): Cap
   if (resolution.blocker) {
     throw new Error(`${resolution.blocker.key} ${resolution.blocker.code}: ${resolution.blocker.message}; fix: ${resolution.blocker.fix}`);
   }
-  if (resolution.registryStatus === 'absent') throw new Error('capability registry is absent');
+  if (resolution.registryStatus === 'absent') return null;
   return capabilityOwnershipFrom(resolution, false, reviewSubject.target_rev)!;
 }
 

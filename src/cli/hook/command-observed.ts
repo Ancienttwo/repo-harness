@@ -228,7 +228,8 @@ function isPublicationCommand(words: readonly string[]): boolean {
 function publicationOwedSignal(repoRoot: string, command: string, exitCode: number | null): string {
   if (exitCode !== 0 || !runsPublicationCommand(command)) return '';
   try {
-    const content = renderOwedCapabilities(owedCapabilities(repoRoot, resolveCapabilityOwnership(repoRoot)));
+    const ownership = resolveCapabilityOwnership(repoRoot);
+    const content = ownership ? renderOwedCapabilities(owedCapabilities(repoRoot, ownership)) : null;
     return content ? `${content}\n` : '';
   } catch {
     return '';

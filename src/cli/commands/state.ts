@@ -230,7 +230,7 @@ export interface OwedCommandOptions {
 
 export interface OwedCommandDependencies {
   readonly repoRoot: string;
-  readonly resolveOwnership: (repoRoot: string, targetRef?: string) => CapabilityOwnership;
+  readonly resolveOwnership: (repoRoot: string, targetRef?: string) => CapabilityOwnership | null;
   readonly owed: (repoRoot: string, ownership: CapabilityOwnership) => OwedCapabilities | null;
 }
 
@@ -238,12 +238,17 @@ export interface OwedCommandDependencies {
  * Pure command projection for `state owed`. It applies the one owed rule to
  * the review subject against `--base` (default: the policy review base). It
  * needs no hook and writes nothing, so CI can run it in a plain checkout.
+ * A repository without a capability registry is `not_projected`.
  * A document exits 0, owed or not: architecture diagnostics never block.
  */
 export function owedStateCommand(options: OwedCommandOptions, deps: OwedCommandDependencies): CommandOutcome {
   let owed: OwedCapabilities | null;
   try {
-    owed = deps.owed(deps.repoRoot, deps.resolveOwnership(deps.repoRoot, options.base));
+    const ownership = deps.resolveOwnership(deps.repoRoot, options.base);
+    // No capability registry: nothing is owned, so nothing is projected.
+    owed = ownership
+      ? deps.owed(deps.repoRoot, ownership)
+      : { status: 'not_projected', review_base: null, manifest_change: null, capabilities: [], new_unowned_paths: [] };
   } catch (error) {
     return operationalFailure(error);
   }

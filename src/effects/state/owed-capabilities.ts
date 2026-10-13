@@ -31,7 +31,8 @@ export interface OwedCapabilities {
    * not apply. `clear`: no owned path changed after the last manifest change.
    */
   readonly status: 'owed' | 'clear' | 'not_projected';
-  readonly review_base: string;
+  /** Null only when the repository declares no capability registry. */
+  readonly review_base: string | null;
   /**
    * The newest branch commit that changed the manifest, `working-tree` when the
    * manifest has an uncommitted change, or null when the branch never changed it.
