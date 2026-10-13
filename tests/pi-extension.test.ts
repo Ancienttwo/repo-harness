@@ -94,6 +94,30 @@ describe('Pi JSON hook bridge', () => {
     } finally { f.cleanup(); }
   });
 
+  test('a child that exits before it reads its input gets one result code and keeps its stderr', async () => {
+    const f = fixture();
+    try {
+      // The input is larger than a pipe buffer, so the write cannot complete before the child exits.
+      const large = request(f.root, { payload: { content: 'x'.repeat(1024 * 1024) } });
+      const pkg = fakePackage(f.root, 'process.stderr.write("startup-crash\\n"); process.exit(3);');
+      const crash = new PiHookBridge(pkg, { env: f.env }).invoke(large);
+      await expect(crash).rejects.toThrow('PI_HOOK_INVALID_RESULT');
+      await expect(crash).rejects.toThrow('startup-crash');
+      writeFileSync(join(pkg, 'dist/hook-entry.js'), `process.stderr.write("skipped-input\\n"); console.log(${JSON.stringify(JSON.stringify(output()))});`);
+      const skipped = new PiHookBridge(pkg, { env: f.env }).invoke(large);
+      await expect(skipped).rejects.toThrow('PI_HOOK_INPUT_FAILED');
+      await expect(skipped).rejects.toThrow('skipped-input');
+      const marker = join(f.root, 'stderr-written');
+      writeFileSync(join(pkg, 'dist/hook-entry.js'), `process.stderr.write("before-cancel\\n"); require("node:fs").writeFileSync(${JSON.stringify(marker)}, ""); setInterval(() => {}, 1000);`);
+      const bridge = new PiHookBridge(pkg, { env: f.env });
+      const cancelled = bridge.invoke(request(f.root));
+      for (const end = Date.now() + 10_000; !existsSync(marker) && Date.now() < end;) await Bun.sleep(10);
+      bridge.cancel();
+      await expect(cancelled).rejects.toThrow('PI_HOOK_CANCELLED');
+      await expect(cancelled).rejects.toThrow('before-cancel');
+    } finally { f.cleanup(); }
+  });
+
   test('Stop can finish after ten seconds while ordinary checks remain bounded', async () => {
     const f = fixture();
     try {
