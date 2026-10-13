@@ -97,7 +97,7 @@ describe("create-project-dirs scaffold parity", () => {
       ]);
 
       const gitignore = readFileSync(join(cwd, ".gitignore"), "utf-8");
-      expect(gitignore).toContain("# BEGIN: claude-runtime-temp (managed by repo-harness)");
+      expect(gitignore).toContain("# BEGIN: repo-harness generated-runtime");
       expect(gitignore).toContain(".claude/.codegraph-state/");
       expect(gitignore).toContain(".ai/harness/checks/*.latest.json");
       expect(gitignore).toContain(".ai/harness/checks/*.latest.md");

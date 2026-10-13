@@ -1,35 +1,58 @@
-# Dependencies
-node_modules/
-
-# Test coverage
-coverage/
-
-# HOME isolation test scratch
-/.home-iso-unsafe-*/
-
-# Notification test workspaces
-/.notify-workspace-*/
-
 # Prepack-built single-file hook bundle (projection of src/cli/hook-entry.ts)
 dist/
 
 # Bun
 bun.lockb
 
-# OS
-.DS_Store
-
 # IDE
 .idea/
 .vscode/settings.json
 .cursor/
 
-# Sisyphus internal state (not project deliverables)
+# Local tool state (not project deliverables)
 .sisyphus/boulder.json
 .sisyphus/notepads/
+.understand-anything/
+autoresearch/
 
-# Local Claude overrides/state
-# BEGIN: claude-runtime-temp (managed by repo-harness)
+# BEGIN: repo-harness generated-runtime
+# Dependencies
+node_modules/
+
+# Project-specific
+artifacts/
+coverage/
+*.tar.gz
+*.tgz
+
+# External references
+_ref/
+.archcontext/*
+!.archcontext/manifest.yaml
+!.archcontext/product.yaml
+!.archcontext/model/
+.archcontext/model/*
+!.archcontext/model/nodes/
+!.archcontext/model/relations/
+!.archcontext/model/flows/
+!.archcontext/decisions/
+!.archcontext/policies/
+!.archcontext/practices/
+!.archcontext/projections/
+.codegraph/
+
+# Local operations state
+_ops/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# OS metadata
+.DS_Store
+
+# Runtime evidence and local agent state
 .claude/settings.local.json
 .claude/.atomic_pending
 .claude/.session-id
@@ -50,6 +73,7 @@ tasks/current.md
 .ai/harness/checks/post-bash-latest.json
 .ai/harness/events.jsonl
 .ai/harness/archive/
+.ai/harness/backups/
 .ai/harness/failures/latest.jsonl
 .ai/harness/handoff/current.md
 .ai/harness/handoff/resume.md
@@ -69,52 +93,19 @@ tasks/current.md
 .ai/harness/evidence/
 .ai/harness/runs/
 .ai/harness/state/
-.ai/harness/chatgpt/browser-lock.json
-.ai/harness/chatgpt/oracle-home/
-.ai/harness/chatgpt/tmp/
-.ai/harness/chatgpt/sessions/
-.ai/harness/chatgpt/delegations/
-.ai/harness/handoff/gptpro/*
-!.ai/harness/handoff/gptpro/.gitkeep
-.ai/harness/mcp/*
-!.ai/harness/mcp/.gitkeep
+.ai/harness/chatgpt/
+.ai/harness/handoff/gptpro/
+.ai/harness/mcp/
 .ai/harness/triage/*
 !.ai/harness/triage/.gitkeep
 .repo-harness/
 .codex/*
+.claude/.active-plan
+.claude/worktrees/
+.claude/.plan-state/
+# END: repo-harness generated-runtime
+
+# Project-specific: track the Codex fleet agent definitions under the managed .codex/* rule
 !.codex/
 !.codex/agents/
 !.codex/agents/*.toml
-.claude/.active-plan
-.claude/.plan-state/
-# END: claude-runtime-temp
-# Project-specific
-artifacts/
-autoresearch/
-*.tar.gz
-*.tgz
-_ref/
-_ops/
-.archcontext/*
-!.archcontext/manifest.yaml
-!.archcontext/product.yaml
-!.archcontext/model/
-.archcontext/model/*
-!.archcontext/model/nodes/
-!.archcontext/model/relations/
-!.archcontext/model/flows/
-!.archcontext/decisions/
-!.archcontext/policies/
-!.archcontext/practices/
-!.archcontext/projections/
-.codegraph/
-.understand-anything/
-# Environment
-.env
-.env.*
-!.env.example
-# OS metadata
-# External references
-# Operations
-# Local operations state
-.claude/worktrees/

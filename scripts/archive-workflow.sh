@@ -53,16 +53,19 @@ archive_transaction_rollback() {
 
 archive_transaction_on_exit() {
   local status=$?
+  local keep_snapshot=0
   trap - EXIT
   if [[ "$archive_transaction_active" -eq 1 && "$status" -ne 0 ]]; then
     if ! archive_transaction_rollback; then
       echo "archive-workflow: rollback failed; inspect $archive_transaction_dir before retrying" >&2
       status=1
+      keep_snapshot=1
     else
       echo "archive-workflow: archive failed; restored live workflow artifacts" >&2
     fi
   fi
-  [[ -z "$archive_transaction_dir" ]] || rm -rf "$archive_transaction_dir"
+  # A failed rollback keeps the snapshot so the operator can restore from it.
+  [[ -z "$archive_transaction_dir" || "$keep_snapshot" -eq 1 ]] || rm -rf "$archive_transaction_dir"
   exit "$status"
 }
 
