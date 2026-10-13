@@ -137,7 +137,7 @@ function activeSprintBody({ repoRoot, state }: SessionContextProviderInput): Ses
       '# Active Sprint',
       '',
       `- Sprint: \`${sprintPath}\``,
-      `- Next sprint task: \`${envelope.command}\``,
+      `- Next step: \`${envelope.command}\``,
       '- Rule: a Sprint is a long-task container. Use `$think` to expand the next sprint task into a detailed `plans/plan-*.md`, then run the existing plan -> contract -> worktree flow. `tasks/todos.md` stays the deferred-goal ledger.',
     ].join('\n'),
     source: sprintPath,
