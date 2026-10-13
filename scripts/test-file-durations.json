@@ -81,7 +81,6 @@
     "tests/cli/mcp.test.ts": 2318.66,
     "tests/cli/migrate.test.ts": 8.11,
     "tests/cli/operator-serve.test.ts": 16193.09,
-    "tests/cli/prompt-intents.test.ts": 4.42,
     "tests/cli/registry-prune.test.ts": 1658.29,
     "tests/cli/registry.test.ts": 730.34,
     "tests/cli/route-registry.test.ts": 0.25,

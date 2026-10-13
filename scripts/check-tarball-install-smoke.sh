@@ -90,7 +90,6 @@ const retired = [
   "src/effects/operator/task-message-process.ts",
   "src/effects/fleet/task-message-request.ts",
   "src/core/adoption/workflow-contract-plan.ts",
-  "assets/hooks/prompt-guard.sh",
   "assets/hooks/run-hook.sh",
   "scripts/hook-shim.sh",
   "scripts/repo-harness.sh",

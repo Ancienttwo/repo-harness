@@ -201,7 +201,6 @@
     "strict_max_agents": 3,
     "max_depth": 1,
     "allow_parallel_writers": false,
-    "state_file": ".ai/harness/delegation/latest.json",
     "preferred_runners": [
       "subagent"
     ],

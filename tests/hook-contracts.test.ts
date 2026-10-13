@@ -93,23 +93,23 @@ describe("Hook contracts", () => {
     expect(observer).not.toContain("/compact");
   });
 
-  test("typed subagent handler owns return channel, delegation, context, and quality", () => {
-    const handler = read("src/cli/hook/subagent-handler.ts");
-    expect(handler).toContain("[repo-harness:return-channel]");
-    expect(handler).toContain("updatedInput");
+  test("one typed handler owns each subagent route", () => {
+    const returnChannel = read("src/cli/hook/return-channel.ts");
+    expect(returnChannel).toContain("[repo-harness:return-channel]");
+    expect(returnChannel).toContain("updatedInput");
     // #691 finding 9: the handler returns a typed permission; the host renderer writes permissionDecision.
-    expect(handler).toContain("decision: 'allow'");
-    expect(handler).toContain("/(delegate|parallel)");
-    expect(handler).toContain("max_agents");
-    expect(handler).toContain("max_depth");
-    expect(handler).toContain("permission only");
-    expect(handler).toContain("[repo-harness:subagent-context]");
-    expect(handler).toContain("[SubagentQuality]");
-    expect(handler).toContain("Record the report gap");
+    expect(returnChannel).toContain("decision: 'allow'");
+    const advisor = read("src/cli/hook/delegation-advisor.ts");
+    expect(advisor).toContain("/(delegate|parallel)");
+    expect(advisor).toContain("permission only");
+    expect(read("src/cli/hook/subagent-context.ts")).toContain("[repo-harness:subagent-context]");
+    const quality = read("src/cli/hook/subagent-quality.ts");
+    expect(quality).toContain("[SubagentQuality]");
+    expect(quality).toContain("Record the report gap");
   });
 
   test("delegation requires an explicit slash command and has no standing authorization", () => {
-    const advisor = read("src/cli/hook/subagent-handler.ts");
+    const advisor = read("src/cli/hook/delegation-advisor.ts");
     expect(advisor).toContain("activeContractPath");
     expect(advisor).not.toContain("policyDelegation.mode");
     expect(advisor).not.toContain("auto-mode");
@@ -121,27 +121,12 @@ describe("Hook contracts", () => {
 
   test("typed prompt handler gives bounded advice without automatic workflow gates", () => {
     const script = read("src/cli/hook/prompt-handler.ts");
-    for (const advice of ["[ReviewAdvice]", "[DiagnosisAdvice]", "[PlanningAdvice]", "[OperationBoundaries]", "[WorkflowObservation]"]) {
-      expect(script).toContain(advice);
-    }
+    expect(script).toContain("[OperationBoundaries]");
     expect(script).toContain("routePromptExplicitFirst");
-    expect(script).toContain("no plan, receipt or archive step is required");
     expect(script).not.toContain("writePendingOrchestration");
     expect(script).not.toContain("ContractGuard");
     expect(script).not.toContain("acceptance-receipt");
-  });
-
-  test("prompt intent classifier owns Chinese bug/feature keywords with Unicode semantics", () => {
-    const intents = read("src/cli/hook/prompt-intents.ts");
-    expect(intents).toContain("修复");
-    expect(intents).toContain("修bug");
-    expect(intents).toContain("新功能");
-    expect(intents).toContain("实现");
-    expect(intents).toContain("执行");
-    expect(intents).toContain("收工");
-    expect(intents).toContain("完成");
-    expect(intents).toContain("下一刀");
-    expect(intents).toContain("\\p{P}");
+    expect(existsSync(join(ROOT, "src/cli/hook/prompt-intents.ts"))).toBe(false);
   });
 
   // HRD-04 retired session-start-context.sh; its content now lives in the

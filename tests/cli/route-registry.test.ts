@@ -50,6 +50,20 @@ describe('typed hook route registry', () => {
     for (const route of ROUTES) expect(getHandlerForRoute(route).id).toBe(route.handler);
   });
 
+  test('each subagent route binds its own handler', () => {
+    expect([
+      getRoute('PreToolUse', 'subagent'),
+      getRoute('UserPromptSubmit', 'delegation'),
+      getRoute('SubagentStart', 'context'),
+      getRoute('SubagentStop', 'quality'),
+    ].map((route) => route?.handler)).toEqual([
+      'return-channel',
+      'delegation-advisor',
+      'subagent-context',
+      'subagent-quality',
+    ]);
+  });
+
   test('only the edit guard fails closed', () => {
     expect(ROUTES.filter((route) => route.failClosed).map((route) => `${route.event}.${route.routeId}`))
       .toEqual(['PreToolUse.edit']);

@@ -274,7 +274,7 @@ describe('hook runtime typed dispatch', () => {
         input: JSON.stringify({ prompt: 'implement the next task' }),
         env: env(root, 'codex'),
       });
-      expect(result.handler).toBe('subagent');
+      expect(result.handler).toBe('delegation-advisor');
     } finally { rmSync(root, { recursive: true, force: true }); }
   }, 30_000);
 
@@ -364,7 +364,7 @@ describe('host envelopes on the real hook entry (#678)', () => {
 
         const prompt = host(root, hostName, 'UserPromptSubmit', 'default', { prompt: '/check my branch' });
         expect(prompt.status).toBe(0);
-        expect(context(prompt.stdout, 'UserPromptSubmit')).toContain('[ReviewAdvice]');
+        expect(context(prompt.stdout, 'UserPromptSubmit')).toContain('[OperationBoundaries]');
 
         const session = host(root, hostName, 'SessionStart', 'default', { session_id: `owed-${hostName}` });
         expect(session.status).toBe(0);
