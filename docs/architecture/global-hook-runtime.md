@@ -28,12 +28,11 @@ The boundary has four layers:
    renders it for Claude, Codex or Pi. `runtime.ts` writes one event-level
    telemetry record.
 
-The only shell file left under `assets/hooks/` is
-`assets/hooks/lib/workflow-state.sh`. Consumer repositories and this source
-checkout both use the package asset. It is an operator/workflow-state helper
-and is not a host-event route. The deleted
-`run-hook.sh`, per-event guards, hook shims, and root helper runtime are not
-read by host-event execution.
+`assets/hooks/` is deleted. The last shell file there,
+`workflow-state.sh`, was an operator library and not a host-event route; its
+remaining callers now run TypeScript (#696). The deleted `run-hook.sh`,
+per-event guards, hook shims, and root helper runtime are not read by
+host-event execution.
 
 ## P2 — Concrete trace
 

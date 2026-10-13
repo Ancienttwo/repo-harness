@@ -79,7 +79,6 @@ describe('verifier evidence lifecycle cutover', () => {
           REPO_HARNESS_BASH_BIN: '/bin/bash',
           REPO_HARNESS_GIT_BIN: '/usr/bin/git',
           REPO_HARNESS_BUN_BIN: process.execPath,
-          REPO_HARNESS_WORKFLOW_STATE_LIB: join(ROOT, 'assets/hooks/lib/workflow-state.sh'),
           REPO_HARNESS_GH_BIN: '/usr/bin/gh',
           REPO_HARNESS_ENV_SCRUB_PROBE: 'probe',
         },

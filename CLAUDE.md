@@ -65,6 +65,6 @@
 ## Claude Code
 - Own frontend implementation and interaction; Codex owns backend implementation and testing, and the parent coordinates scope and integration.
 - Use Claude Code's available tools within granted permissions; changes to tool grants, hooks or confirmation bypass require approval of the exact change.
-- User-level `~/.claude/settings.json` hooks invoke `repo-harness-hook`; its typed route registry selects one in-process handler. Repo-local hook adapters are retired. Operator helpers use the package path from `repo-harness hook-lib path`. The library lives at `assets/hooks/lib/`; this source repo keeps no copy under `.ai/hooks/`.
+- User-level `~/.claude/settings.json` hooks invoke `repo-harness-hook`; its typed route registry selects one in-process handler. Repo-local hook adapters are retired. Operator helpers run from the package through `repo-harness run <helper>`; no shell operator library exists.
 - Write comments, commits and PR text from the final diff; comments explain non-obvious reasons, and PRs describe final behavior and material rationale.
 - Keep this file short; load [development flow](docs/reference-configs/agentic-development-flow.md) and [external tooling](docs/reference-configs/external-tooling.md) only when needed.

@@ -53,13 +53,13 @@
       "verification_hint": "bun test tests/workflow-contract.test.ts tests/scaffold-parity.test.ts"
     },
     {
-      "path": "assets/hooks/CLAUDE.md",
+      "path": "src/cli/hook/CLAUDE.md",
       "priority": "high",
       "char_budget": 1000,
       "purpose": "capability-contract",
       "capability_id": "runtime-harness-hook-adapters",
-      "functional_block": "assets/hooks",
-      "matched_prefix": "assets/hooks",
+      "functional_block": "src/cli/hook",
+      "matched_prefix": "src/cli/hook",
       "architecture_domain": "runtime-harness",
       "architecture_capability": "hook-adapters",
       "target_agent": "claude",
@@ -68,13 +68,13 @@
       "verification_hint": "bun test tests/hook-runtime.test.ts tests/hook-contracts.test.ts tests/workflow-contract.test.ts"
     },
     {
-      "path": "assets/hooks/AGENTS.md",
+      "path": "src/cli/hook/AGENTS.md",
       "priority": "high",
       "char_budget": 1000,
       "purpose": "capability-contract",
       "capability_id": "runtime-harness-hook-adapters",
-      "functional_block": "assets/hooks",
-      "matched_prefix": "assets/hooks",
+      "functional_block": "src/cli/hook",
+      "matched_prefix": "src/cli/hook",
       "architecture_domain": "runtime-harness",
       "architecture_capability": "hook-adapters",
       "target_agent": "codex",

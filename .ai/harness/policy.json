@@ -141,7 +141,6 @@
       "sources": [
         ".ai/harness/policy.json",
         "package:assets/workflow-contract.v1.json",
-        "package:assets/hooks/",
         "package:scripts",
         "docs/reference-configs/"
       ],

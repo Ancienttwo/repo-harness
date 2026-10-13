@@ -543,7 +543,7 @@ export function planLegacyLeftovers(options: LegacyInventoryOptions): { items: L
     if (libraryEntry) {
       add({ location: 'project', surface: libraryEntry.isSymbolicLink() ? 'symlink' : libraryEntry.isDirectory() ? 'directory' : 'file',
         path: library, retiredBy: 'legacy-workflow-state-library', ownership: 'unowned', proof: null, action: 'report',
-        reason: 'Legacy workflow-state library. Change callers to the package path from repo-harness hook-lib path or use repo-harness run <helper>. Test callers, review local edits, and back up the copy before manual removal. Upgrade preserves it.' });
+        reason: 'Legacy workflow-state library. The package no longer ships an operator library. Change callers to repo-harness run <helper>. Test callers, review local edits, and back up the copy before manual removal. Upgrade preserves it.' });
     }
     const scanDocument = (path: string): void => {
       if (!isLegacyPathSafe(root, path, false) || !stat(path)?.isFile()) return;

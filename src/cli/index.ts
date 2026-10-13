@@ -22,7 +22,6 @@ import { askConfirm } from './tty-prompt';
 import { runInstall, runUninstall, type InstallTargetSpec } from './commands/install';
 import { writeAllSync } from './runtime/write-all-sync';
 import { runInit } from './commands/init';
-import { buildHookLibCommand } from './commands/hook';
 import { runHookCli } from './hook-entry';
 import { CLI_VERSION, formatStatus, runStatus } from './commands/status';
 import { formatDoctor, runDoctor } from './commands/doctor';
@@ -839,7 +838,6 @@ export function buildProgram(): Command {
   program.addCommand(buildDocsCommand());
   program.addCommand(buildMcpCommand());
   program.addCommand(buildChatgptCommand());
-  program.addCommand(buildHookLibCommand());
   program.addCommand(buildRunCommand());
   program.addCommand(buildStateCommand());
   program.addCommand(buildSprintCommand());

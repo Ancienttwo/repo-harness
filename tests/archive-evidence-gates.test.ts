@@ -59,8 +59,7 @@ test("native Completed archive validates real execution and acceptance before mu
     writeFileSync(cli, `#!/bin/bash\nprintf '%s\\n' "$*" >> "$0.calls"\nexec ${quotedCli} "$@"\n`);
     chmodSync(cli, 0o755);
     const args = ["--plan", "plans/plan-demo.md", "--outcome", "Completed"];
-    const env = { HOME: home, REPO_HARNESS_TARGET_REPO_ROOT: root, REPO_HARNESS_BUN_BIN: process.execPath,
-      REPO_HARNESS_WORKFLOW_STATE_LIB: join(ROOT, "assets/hooks/lib/workflow-state.sh"), REPO_HARNESS_CLI_BIN: cli };
+    const env = { HOME: home, REPO_HARNESS_TARGET_REPO_ROOT: root, REPO_HARNESS_BUN_BIN: process.execPath, REPO_HARNESS_CLI_BIN: cli };
     const missing = run(join(runtime, "archive-workflow.sh"), args, root, env);
     expect(missing.status, missing.stdout + missing.stderr).toBe(1);
     expect(missing.stderr).toContain("explicit native report");
@@ -110,7 +109,7 @@ test("empty Verification Plan refuses Completed admission before archive mutatio
     ].join("\n"));
     const before = Object.fromEntries([plan, contract, "tasks/reviews/demo.review.md", "tasks/todos.md"].map(path => [path, readFileSync(join(root, path), "utf8")]));
     const result = run(join(runtime, "archive-workflow.sh"), ["--plan", plan, "--outcome", "Completed", "--verification", verification], root,
-      { HOME: home, REPO_HARNESS_TARGET_REPO_ROOT: root, REPO_HARNESS_BUN_BIN: process.execPath, REPO_HARNESS_WORKFLOW_STATE_LIB: join(ROOT, "assets/hooks/lib/workflow-state.sh") });
+      { HOME: home, REPO_HARNESS_TARGET_REPO_ROOT: root, REPO_HARNESS_BUN_BIN: process.execPath });
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("AcceptanceReceipt gate failed");
     for (const [path, content] of Object.entries(before)) expect(readFileSync(join(root, path), "utf8")).toBe(content);
@@ -147,7 +146,6 @@ function run(script: string, args: string[], cwd: string, env: NodeJS.ProcessEnv
     encoding: "utf-8",
     env: fixtureEnv({
       REPO_HARNESS_BUN_BIN: process.execPath,
-      REPO_HARNESS_WORKFLOW_STATE_LIB: join(cwd, ".ai/hooks/lib/workflow-state.sh"),
       ...env,
     }),
   });
@@ -199,10 +197,6 @@ function installWorkflowArchiveFixture(cwd: string): void {
       "if (import.meta.main) process.exit(existsSync('.acceptance-pass') && cwdMatches ? 0 : 1);",
       "",
     ].join("\n"),
-  );
-  copyFileSync(
-    join(ROOT, "assets/hooks/lib/workflow-state.sh"),
-    join(cwd, ".ai/hooks/lib/workflow-state.sh"),
   );
   writeFileSync(
     join(cwd, "scripts/refresh-current-status.sh"),
@@ -451,10 +445,6 @@ describe("archive evidence gates", () => {
         chmodSync(join(primary, "scripts", helper), 0o755);
       }
       writeFileSync(join(primary, "scripts/acceptance-receipt.ts"), "process.exit(0);\n");
-      copyFileSync(
-        join(ROOT, "assets/hooks/lib/workflow-state.sh"),
-        join(primary, ".ai/hooks/lib/workflow-state.sh"),
-      );
       writeFileSync(join(primary, "scripts/verify-sprint.sh"), "#!/bin/bash\nexit 0\n");
       writeFileSync(
         join(primary, "scripts/refresh-current-status.sh"),

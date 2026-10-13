@@ -1,12 +1,9 @@
 import { describe, test, expect } from "bun:test";
 import {
-  mkdirSync,
   mkdtempSync,
-  readdirSync,
   readFileSync,
   realpathSync,
   rmSync,
-  symlinkSync,
   writeFileSync,
 } from "fs";
 import { tmpdir } from "os";
@@ -36,17 +33,7 @@ function runEvidenceRequirement(cwd: string, contractRelPath: string) {
   });
 }
 
-describe("workflow-state shared library", () => {
-  test("exports the shared workflow helper functions", () => {
-    const content = readFileSync(
-      join(ROOT, "assets/hooks/lib/workflow-state.sh"),
-      "utf-8"
-    );
-
-    expect(content).toContain("get_active_plan()");
-    expect(content).toContain("derive_contract_path()");
-  });
-
+describe("workflow evidence requirement and explicit verification", () => {
   test("explicit verification does not consume review prose or create acceptance receipts", () => {
     for (const path of ["scripts/verify-sprint.sh", "assets/templates/helpers/verify-sprint.sh"]) {
       const helper = readFileSync(join(ROOT, path), "utf-8");
@@ -56,13 +43,6 @@ describe("workflow-state shared library", () => {
       expect(helper).toContain('"$SCRIPT_DIR/merge-gate.ts" run --base "$base"');
       expect(helper).toContain('choose local execution or provider evidence consumption');
     }
-  });
-
-  test("retired review-rubric prose parsers are absent from workflow authority", () => {
-    const source = readFileSync(join(ROOT, "assets/hooks/lib/workflow-state.sh"), "utf-8");
-    expect(source).not.toContain("workflow_review_rubric_class()");
-    expect(source).not.toContain("workflow_review_freshness_status()");
-    expect(source).not.toContain("workflow_review_recommends_pass()");
   });
 
   test("evidence-requirement fails closed on a duplicate benchmark: key, a sibling-nested benchmark:, and a grandchild-nested benchmark:", () => {
@@ -172,37 +152,6 @@ describe("workflow-state shared library", () => {
     }
   }, 30_000);
 
-  test("workflow_contract_allows_path drops YAML inline comments from allowed_paths items", () => {
-    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "workflow-allows-path-comment-")));
-    try {
-      writeFileSync(
-        join(cwd, "demo.contract.md"),
-        [
-          "# Task Contract: demo",
-          "",
-          "```yaml",
-          "allowed_paths:",
-          "  - AGENTS.md  # generated marker block only",
-          '  - "docs/a #b.md" # quoted hash stays',
-          "  - tasks/ # directory prefix",
-          "```",
-          "",
-        ].join("\n")
-      );
-      const allows = (path: string) => spawnSync(
-        "bash",
-        ["-lc", `source "$WORKFLOW_STATE"; workflow_contract_allows_path "$PWD/demo.contract.md" "${path}"`],
-        { cwd, encoding: "utf-8", env: { ...fixtureEnv(), WORKFLOW_STATE: join(ROOT, "assets/hooks/lib/workflow-state.sh") } }
-      ).status;
-      expect(allows("AGENTS.md")).toBe(0);
-      expect(allows("docs/a #b.md")).toBe(0);
-      expect(allows("tasks/todo.md")).toBe(0);
-      expect(allows("src/outside.ts")).not.toBe(0);
-    } finally {
-      rmSync(cwd, { recursive: true, force: true });
-    }
-  }, 30_000);
-
   test("evidence-requirement fails closed when parser sentinels appear as yaml content", () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), "workflow-evidence-requirement-sentinel-")));
     try {
@@ -286,61 +235,4 @@ describe("workflow-state shared library", () => {
       rmSync(cwd, { recursive: true, force: true });
     }
   }, 30_000);
-});
-
-describe("run summary shape is one authoring contract", () => {
-  const SHAPE_FIELDS = [
-    "generated_at", "run_id", "reason",
-    "active_plan", "active_contract", "active_review", "active_notes",
-    "handoff_file", "policy_file", "context_map_file",
-  ] as const;
-
-  function writeRunSummary(withJq: boolean): Record<string, unknown> {
-    const cwd = mkdtempSync(join(tmpdir(), "run-summary-shape-"));
-    let bin: string | null = null;
-    try {
-      mkdirSync(join(cwd, ".ai/harness/runs"), { recursive: true });
-      writeFileSync(join(cwd, ".ai/harness/policy.json"), "{}\n");
-      const env = fixtureEnv();
-      env.HOOK_RUN_ID = "shape-test";
-      if (!withJq) {
-        // A PATH holding only the coreutils the fallback branch needs proves
-        // the branch actually runs, instead of silently taking the jq path.
-        bin = mkdtempSync(join(tmpdir(), "run-summary-bin-"));
-        for (const tool of ["date", "cat", "mkdir", "rm", "dirname", "basename", "sed", "grep", "awk", "head", "tail", "printf", "ls", "tr", "id", "uname", "mktemp", "stat", "sort", "find", "wc"]) {
-          const resolved = spawnSync("command", ["-v", tool], { shell: true, encoding: "utf-8" }).stdout.trim();
-          if (resolved) symlinkSync(resolved, join(bin, tool));
-        }
-        env.PATH = bin;
-        // Guard against a vacuous pass: if jq stayed reachable, both cases
-        // would take the jq branch and the fallback would go untested.
-        const probe = spawnSync("/bin/bash", ["-c", "command -v jq"], { env, encoding: "utf-8" });
-        expect(probe.stdout.trim()).toBe("");
-      }
-      // Absolute interpreter: the jq-less case replaces PATH entirely.
-      const result = spawnSync("/bin/bash", ["-c",
-        `source "${join(ROOT, "assets/hooks/lib/workflow-state.sh")}"; workflow_write_run_summary "shape-test-reason"`,
-      ], { cwd, env, encoding: "utf-8" });
-      expect(result.status, result.stderr).toBe(0);
-      const files = readdirSync(join(cwd, ".ai/harness/runs")).filter((name) => name.endsWith(".json"));
-      expect(files).toHaveLength(1);
-      return JSON.parse(readFileSync(join(cwd, ".ai/harness/runs", files[0]!), "utf-8")) as Record<string, unknown>;
-    } finally {
-      rmSync(cwd, { recursive: true, force: true });
-      if (bin) rmSync(bin, { recursive: true, force: true });
-    }
-  }
-
-  // `run-summary-retention.ts` identifies a deletable record by this exact
-  // shape. A branch that emits fewer fields makes that host's summaries
-  // permanently unreclaimable, so both branches must agree.
-  test("both the jq and jq-less branches emit the full record shape", () => {
-    for (const withJq of [true, false]) {
-      const record = writeRunSummary(withJq);
-      expect(Object.keys(record).sort()).toEqual([...SHAPE_FIELDS].sort());
-      for (const field of SHAPE_FIELDS) expect(typeof record[field]).toBe("string");
-      expect(record.run_id).toBe("shape-test");
-      expect(record.reason).toBe("shape-test-reason");
-    }
-  });
 });

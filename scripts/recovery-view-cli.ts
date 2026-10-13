@@ -6,25 +6,17 @@
 // with. scripts/sync-helper-sources.ts projects this adapter to
 // assets/templates/helpers/recovery-view-cli.ts.
 import { execFileSync } from "child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { mkdirSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import {
   extractResumePrompt,
   materializeRecoveryViews,
+  readActivePlanForRecovery,
+  recoveryStatus,
   renderGlobalHandoffSection,
   repoKeyFor,
   updateGlobalHandoffFile,
 } from "../src/effects/evidence/recovery-materializer";
-
-function resolveActivePlanMarker(repoRoot: string): string | null {
-  try {
-    const marker = readFileSync(join(repoRoot, ".ai/harness/active-plan"), "utf8").trim();
-    if (marker && existsSync(join(repoRoot, marker))) return marker;
-    return null;
-  } catch {
-    return null;
-  }
-}
 
 function writeFileDurable(path: string, content: string): void {
   mkdirSync(dirname(path), { recursive: true });
@@ -48,10 +40,11 @@ interface Options {
   printPrompt: boolean;
   withGlobalPacket: boolean;
   quiet: boolean;
+  status: boolean;
 }
 
 function parseArgs(argv: readonly string[]): Options {
-  const options: Options = { reason: "manual", printPrompt: false, withGlobalPacket: false, quiet: false };
+  const options: Options = { reason: "manual", printPrompt: false, withGlobalPacket: false, quiet: false, status: false };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === "--reason") {
@@ -66,6 +59,8 @@ function parseArgs(argv: readonly string[]): Options {
       options.withGlobalPacket = true;
     } else if (arg === "--quiet") {
       options.quiet = true;
+    } else if (arg === "--status") {
+      options.status = true;
     }
   }
   return options;
@@ -74,8 +69,18 @@ function parseArgs(argv: readonly string[]): Options {
 function main(): void {
   const options = parseArgs(process.argv.slice(2));
   const repoRoot = resolveRepoRoot(options.cwd);
+  const activePlan = readActivePlanForRecovery(repoRoot);
+  if (options.status) {
+    const status = recoveryStatus(repoRoot, activePlan);
+    console.log(`Active plan: ${status.plan || "(none)"}`);
+    console.log(`Active contract: ${status.contract || "(none)"}`);
+    console.log(`Review file: ${status.review || "(none)"}`);
+    console.log(`Handoff: ${status.handoff}`);
+    console.log(`Resume packet: ${status.resume}`);
+    return;
+  }
   const codexHome = process.env.CODEX_HOME || join(process.env.HOME || "", ".codex");
-  const views = materializeRecoveryViews(repoRoot, resolveActivePlanMarker(repoRoot), process.env, {
+  const views = materializeRecoveryViews(repoRoot, activePlan, process.env, {
     reason: options.reason,
     codexHome,
   });
@@ -108,6 +113,7 @@ function main(): void {
     console.log(globalFile);
   }
   if (!options.quiet) {
+    console.log(`Updated ${views.context.paths.handoff}`);
     console.log(`Updated ${views.context.paths.resume}`);
   }
 }

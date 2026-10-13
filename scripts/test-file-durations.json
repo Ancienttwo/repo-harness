@@ -339,7 +339,6 @@
     "tests/verify-sprint.test.ts": 792.17,
     "tests/workflow-contract.test.ts": 597.7,
     "tests/workflow-state-lib.test.ts": 2816.15,
-    "tests/workflow-state-lock.test.ts": 4390.74,
     "tests/worktree-merge-lib.test.ts": 1810.33,
     "tests/write-all-sync.test.ts": 40.11
   }

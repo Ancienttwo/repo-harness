@@ -593,8 +593,8 @@ repo-harness docs show harness-overview
 bun scripts/assemble-template.ts --plan C --name "MyProject"
 ```
 
-Operator library の変更は `assets/hooks/lib/` だけを編集します。投射コピーはありません。
-Handler の変更は `src/cli/hook/` を編集します。Reference docs は `assets/reference-configs/` 配下が canonical であり、
+Hook handler の変更は `src/cli/hook/` を編集します。Operator helper は `scripts/` にあり、
+`repo-harness run <helper>` で実行します。Reference docs は `assets/reference-configs/` 配下が canonical であり、
 `docs/reference-configs/` へ投射されます。`bun run check:reference-configs`
 がその投射を検証します。
 

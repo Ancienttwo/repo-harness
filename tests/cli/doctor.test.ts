@@ -791,7 +791,8 @@ describe('legacy workflow-state diagnostic', () => {
       withEnv({ PATH: '/usr/bin:/bin', REPO_HARNESS_CHECK_UPDATES: '0' }, () => {
         const check = runDoctor(path.dirname(legacy)).checks.find((check) => check.id === 'legacy-workflow-state');
         expect(check?.status).toBe('warn');
-        expect(check?.detail).toContain('repo-harness hook-lib path');
+        expect(check?.detail).toContain('repo-harness run <helper>');
+        expect(check?.detail).not.toContain('hook-lib');
         expect(check?.detail).toContain('back up');
         expect(check?.detail).toContain('edited copies');
         expect(fs.readFileSync(legacy, 'utf8')).toBe(content);

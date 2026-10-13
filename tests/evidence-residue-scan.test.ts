@@ -131,13 +131,8 @@ describe("residue scan: direct re-assertion of each named retired surface", () =
     // contract helper inventory; re-asserting it here only duplicated that loop.
   });
 
-  test("workflow-state.sh no longer bootstraps checks/latest.json with {} (EPC-05)", () => {
-    const text = readFileSync(join(REPO_ROOT, "assets/hooks/lib/workflow-state.sh"), "utf-8");
-    expect(text).not.toMatch(/printf "\{\}\\n" > "\$\(workflow_checks_file\)"/);
-  });
-
-  test("workflow_write_handoff is a thin invoker with no heredoc content assembly (EPC-07)", () => {
-    const text = readFileSync(join(REPO_ROOT, "assets/hooks/lib/workflow-state.sh"), "utf-8");
+  test("prepare-handoff.sh is a thin invoker with no heredoc content assembly (EPC-07)", () => {
+    const text = readFileSync(join(REPO_ROOT, "scripts/prepare-handoff.sh"), "utf-8");
     expect(text).not.toContain("<<EOF_HANDOFF");
     expect(text).not.toContain("<<EOF_RESUME");
     expect(text).not.toContain("generated-by: workflow_write_handoff v1");
@@ -156,16 +151,6 @@ describe("residue scan: direct re-assertion of each named retired surface", () =
     expect(text).not.toMatch(/<!--\s*repo:.*start\s*-->/);
     expect(text).not.toContain("PY_EOF");
     expect(text).toContain("recovery-view-cli.ts");
-  });
-
-  test("workflow_ensure_harness_surface no longer bootstraps handoff/resume placeholders (EPC-07)", () => {
-    const text = readFileSync(join(REPO_ROOT, "assets/hooks/lib/workflow-state.sh"), "utf-8");
-    const start = text.indexOf("workflow_ensure_harness_surface() {");
-    expect(start).toBeGreaterThan(-1);
-    const end = text.indexOf("\n}\n", start);
-    const body = text.slice(start, end);
-    expect(body).not.toContain("Harness Handoff");
-    expect(body).not.toContain("Codex Resume Packet");
   });
 
   test("session-context.ts reads the resume file itself, not a marker scan or the evidence ledger (EPC-08, #695)", () => {

@@ -261,7 +261,7 @@ function withPlainShipFixture(work:(fixture:{cwd:string;log:string;ship:(args:st
     expect(run('chmod',['+x',gh],cwd).status).toBe(0);
     const ship=(args:string[],extra:NodeJS.ProcessEnv={})=>run('bash',['scripts/ship-worktrees.sh',...args],cwd,{
       REPO_HARNESS_BASH_BIN:'/bin/bash',REPO_HARNESS_BUN_BIN:process.execPath,REPO_HARNESS_GIT_BIN:'/usr/bin/git',
-      REPO_HARNESS_GH_BIN:gh,REPO_HARNESS_WORKFLOW_STATE_LIB:join(ROOT,'assets/hooks/lib/workflow-state.sh'),GH_LOG:log,GH_STORE:store,...extra,
+      REPO_HARNESS_GH_BIN:gh,GH_LOG:log,GH_STORE:store,...extra,
     });
     work({cwd,log,ship});
   } finally {

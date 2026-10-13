@@ -36,37 +36,4 @@ describe("summarize-failures helper integration", () => {
       rmSync(cwd, { recursive: true, force: true });
     }
   }, 30_000);
-
-  test("summarize-failures should fall back to node when bun is unavailable", () => {
-    const cwd = tmpWorkspace("helper-summarize-failures-node");
-    try {
-      copyHelpers(cwd);
-      mkdirSync(join(cwd, ".ai/harness/failures"), { recursive: true });
-      writeFileSync(
-        join(cwd, ".ai/harness/failures/latest.jsonl"),
-        '{"ts":"2026-03-29T12:00:00+0800","guard":"PlanStatusGuard","action":"block","reason":"missing plan","fix":"create plan","failure_class":"missing_artifact","run_id":"run-b"}\n'
-      );
-
-      const nodePath = run("bash", ["-lc", "command -v node"], cwd).stdout.trim();
-      expect(nodePath.length).toBeGreaterThan(0);
-
-      const fakeBin = join(cwd, "fakebin");
-      mkdirSync(fakeBin, { recursive: true });
-      writeFileSync(
-        join(fakeBin, "node"),
-        [`#!/bin/bash`, `exec "${nodePath}" "$@"`, ""].join("\n")
-      );
-      expect(run("chmod", ["+x", "fakebin/node"], cwd).status).toBe(0);
-
-      const res = run("bash", ["scripts/summarize-failures.sh", "--run-id", "run-b"], cwd, {
-        PATH: `${fakeBin}:/usr/bin:/bin`,
-      });
-      expect(res.status).toBe(0);
-      expect(res.stdout).toContain("[FailureSummary] records=1 run_id=run-b");
-      expect(res.stdout).toContain("- missing_artifact: 1");
-      expect(res.stdout).toContain("- PlanStatusGuard: 1");
-    } finally {
-      rmSync(cwd, { recursive: true, force: true });
-    }
-  }, 30_000);
 });

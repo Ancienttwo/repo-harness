@@ -48,7 +48,6 @@ const pack = await Bun.file(path).json();
 const entry = Array.isArray(pack) ? pack[0] : pack;
 const files = new Set((entry.files ?? []).map((file) => file.path));
 const required = [
-  "assets/hooks/lib/workflow-state.sh",
   "src/cli/hook/handler-registry.ts",
   "src/cli/hook/route-registry.ts",
   "src/cli/hook/runtime.ts",
@@ -91,6 +90,7 @@ const retired = [
   "src/effects/fleet/task-message-request.ts",
   "src/core/adoption/workflow-contract-plan.ts",
   "assets/hooks/run-hook.sh",
+  "assets/hooks/lib/workflow-state.sh",
   "scripts/hook-shim.sh",
   "scripts/repo-harness.sh",
 ];

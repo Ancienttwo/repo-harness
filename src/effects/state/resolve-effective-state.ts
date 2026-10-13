@@ -140,15 +140,15 @@ function deriveContractPath(cwd: string, planPath: string, planText: string | nu
   );
 }
 
-function policyPath(policy: WorkflowPolicy, jqPath: string, fallback: string): string {
+function policyPath(policy: WorkflowPolicy, jqPath: string, fallback: string, root = '.ai/harness'): string {
   const value = policyValue(policy, jqPath);
   if (value === POLICY_FIELD_ABSENT) return fallback;
   if (typeof value !== 'string' || value.length === 0) {
     throw new Error(`invalid workflow policy path ${jqPath}`);
   }
-  const posixPolicyRoot = posix.resolve('/repo', '.ai/harness');
+  const posixPolicyRoot = posix.resolve('/repo', root);
   const posixCandidate = posix.resolve('/repo', value);
-  const win32PolicyRoot = win32.resolve('C:\\repo', '.ai/harness').toLowerCase();
+  const win32PolicyRoot = win32.resolve('C:\\repo', root).toLowerCase();
   const win32Candidate = win32.resolve('C:\\repo', value).toLowerCase();
   const containedByBothPathGrammars =
     posixCandidate.startsWith(`${posixPolicyRoot}${posix.sep}`) &&
@@ -156,12 +156,46 @@ function policyPath(policy: WorkflowPolicy, jqPath: string, fallback: string): s
   if (
     value.includes('\n') ||
     value.includes('\r') ||
-    !value.startsWith('.ai/harness/') ||
+    !value.startsWith(`${root}/`) ||
     !containedByBothPathGrammars
   ) {
     throw new Error(`unsafe workflow policy path ${jqPath}: ${value}`);
   }
   return value;
+}
+
+/** The edit guard writes failure records here and `summarize-failures` reads them. No policy override (#692). */
+export const FAILURE_LOG_FILE = '.ai/harness/failures/latest.jsonl';
+
+/** Repo-relative workflow paths that the policy may relocate. */
+export interface HarnessPaths {
+  readonly handoff: string;
+  readonly resume: string;
+  readonly runsDir: string;
+  readonly contextMap: string;
+  readonly todoFile: string;
+  readonly reviewsDir: string;
+  readonly notesDir: string;
+  /** Display text only; nothing reads or writes through it. */
+  readonly researchDir: string;
+}
+
+/**
+ * The one reader of the policy path fields. Each field stays inside its own
+ * root. A missing field takes the default; a malformed or escaping one throws.
+ */
+export function resolveHarnessPaths(cwd: string): HarnessPaths {
+  const policy = readWorkflowPolicy(cwd);
+  return {
+    handoff: policyPath(policy, '.harness.handoff_file', '.ai/harness/handoff/current.md'),
+    resume: policyPath(policy, '.handoff_resume.resume_packet_file', '.ai/harness/handoff/resume.md'),
+    runsDir: policyPath(policy, '.harness.runs_dir', '.ai/harness/runs'),
+    contextMap: policyPath(policy, '.context.map_file', '.ai/context/context-map.json', '.ai/context'),
+    todoFile: policyPath(policy, '.tasks.todo_file', 'tasks/todos.md', 'tasks'),
+    reviewsDir: policyPath(policy, '.tasks.reviews_dir', 'tasks/reviews', 'tasks'),
+    notesDir: policyPath(policy, '.tasks.notes_dir', 'tasks/notes', 'tasks'),
+    researchDir: policyString(policy, '.tasks.research_dir', 'docs/researches'),
+  };
 }
 
 function policyString(policy: WorkflowPolicy, jqPath: string, fallback: string): string {

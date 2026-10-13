@@ -221,9 +221,9 @@ Maintainer-facing detail on how the initializer and runtime defaults are wired.
 - `repo-harness init` writes the marker and `.ai/harness/policy.json`. Shell scaffold scripts do not write the marker.
 - Host events use the user-level managed adapter projection, the 11-tuple
   `route-registry.ts`, and exactly one typed in-process handler per tuple.
-  Operator helpers use `assets/hooks/lib/workflow-state.sh` from the installed
-  package. `repo-harness hook-lib path` prints its path. Init preserves legacy
-  repo copies. Doctor reports them with migration steps.
+  Operator helpers run from the installed package through
+  `repo-harness run <helper>`. Init preserves legacy repo copies of the retired
+  shell library. Doctor reports them with migration steps.
 - Generated and migrated repos keep discovery and complex/design planning in the parent agent: `geju` opens the pre-contract frame, then the parent completes P1/P2/P3 and freezes the accepted direction. Daily small/medium work uses Waza with Codex-first runtime copies in `~/.codex/skills`; durable knowledge stays in repo-authored research and lessons.
 - `repo-harness install` bootstraps the package-owned Codex/Claude runtime pieces for the default workflow: refreshes `repo-harness` skill aliases, installs global Codex/Claude hook adapters, persists the brain root in `~/.repo-harness/config.json`, and configures CodeGraph MCP for selected host agents. Mutable Waza and Mermaid providers are installed only after explicit selection. `repo-harness init` remains a compatibility alias for existing automation.
 - The recommended `reverse-skill-router` remains explicit-only through `--with-reverse-skill` because its upstream authorization assumption cannot replace independently verified scope; the pinned selected tree is integrity-checked before host projection.
@@ -256,7 +256,6 @@ Maintainer-facing map of which package file owns which contract:
 | `CLAUDE.md`, `AGENTS.md` | Root routing docs |
 | `assets/plan-map.json` | Plan catalog mapping |
 | `assets/initializer-question-pack.v4.json` | Question pack |
-| `assets/hooks/` | Canonical hook asset source |
 | `assets/reference-configs/` | Runtime reference docs, resolved through `repo-harness docs` |
 | `assets/workflow-contract.v1.json` | Workflow contract manifest |
 | `docs/reference-configs/*.md` | Source-repo projection of the runtime reference docs |

@@ -38,7 +38,6 @@ function run(command: string, args: string[], cwd: string, env: NodeJS.ProcessEn
     env: {
       ...isolated,
       REPO_HARNESS_BUN_BIN: process.execPath,
-      REPO_HARNESS_WORKFLOW_STATE_LIB: join(cwd, ".ai/hooks/lib/workflow-state.sh"),
       ...env,
     },
   });
@@ -105,7 +104,6 @@ function installFixture(container: string): { primary: string; linked: string } 
   ]) mkdirSync(join(primary, dir), { recursive: true });
 
   copyHelpers(primary, { linkDependencies: false });
-  copyFileSync(join(ROOT, "assets/hooks/lib/workflow-state.sh"), join(primary, ".ai/hooks/lib/workflow-state.sh"));
   writeFileSync(join(primary, "scripts/acceptance-receipt.ts"), "process.exit(0);\n");
   writeFileSync(
     join(primary, "scripts/merge-gate.ts"),

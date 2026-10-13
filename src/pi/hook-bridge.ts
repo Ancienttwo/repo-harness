@@ -34,7 +34,7 @@ export class PiHookBridge {
     const env = { ...(this.options.env ?? process.env) };
     for (const key of Object.keys(env)) {
       if (key.startsWith('HOOK_') || ['REPO_HARNESS_SOURCE_ROOT', 'REPO_HARNESS_HELPER_SOURCE_PATH',
-        'REPO_HARNESS_TARGET_REPO_ROOT', 'REPO_HARNESS_WORKFLOW_STATE_LIB'].includes(key)) delete env[key];
+        'REPO_HARNESS_TARGET_REPO_ROOT'].includes(key)) delete env[key];
     }
     // Identity travels only in the payload; HOOK_HOST selects the Pi JSON renderer.
     Object.assign(env, { HOOK_HOST: 'pi', REPO_HARNESS_CLI: join(this.packageRoot, 'src/cli/index.ts') });

@@ -23,10 +23,6 @@ describe("prepare-codex-handoff helper integration", () => {
       copyHelpers(cwd);
       mkdirSync(join(cwd, ".ai/hooks/lib"), { recursive: true });
       mkdirSync(join(cwd, "tasks"), { recursive: true });
-      copyFileSync(
-        join(ROOT, "assets/hooks/lib/workflow-state.sh"),
-        join(cwd, ".ai/hooks/lib/workflow-state.sh")
-      );
       writeFileSync(join(cwd, "AGENTS.md"), "# AGENTS\n");
       writeFileSync(
         join(cwd, "tasks/todos.md"),

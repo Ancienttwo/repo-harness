@@ -12,10 +12,10 @@ test("explicit verification never authors automatic architecture or approval pro
   expect(helper).toContain('"$BUN_BIN" run check:type');
   expect(helper).toContain('"$BUN_BIN" "$SCRIPT_DIR/merge-gate.ts" run --base "$base"');
 });
-test("contract scope exemption remains confined to the projection manifest", () => {
+test("closeout has no contract scope exemption because it has no scope check", () => {
   const helper = read("scripts/contract-worktree.sh");
-  expect(helper).toContain('[[ "$1" == "docs/architecture/.projection-manifest.json" ]]');
-  expect(helper).toContain("is_workflow_owned_projection_output");
+  expect(helper).not.toContain("is_workflow_owned_projection_output");
+  expect(helper).not.toContain("check_scope_against_contract");
 });
 test("closeout binds provider verification to the exact publication candidate", () => {
   const helper = read("scripts/contract-worktree.sh");

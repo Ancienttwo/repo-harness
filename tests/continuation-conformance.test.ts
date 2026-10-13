@@ -240,10 +240,6 @@ function installFixture(container: string): Fixture {
     join(ROOT, '.claude/templates/contract.template.md'),
     join(primary, '.claude/templates/contract.template.md'),
   );
-  copyFileSync(
-    join(ROOT, 'assets/hooks/lib/workflow-state.sh'),
-    join(primary, '.ai/hooks/lib/workflow-state.sh'),
-  );
 
   writeFileSync(
     join(primary, 'scripts/merge-gate.ts'),
@@ -463,7 +459,6 @@ function helper(cwd: string, script: string, args: readonly string[], env: NodeJ
     // copy of it, and an ambient `repo-harness` on PATH would be a different
     // build than the source under test.
     REPO_HARNESS_CLI_BIN: CLI_WRAPPER,
-    REPO_HARNESS_WORKFLOW_STATE_LIB: join(cwd, '.ai/hooks/lib/workflow-state.sh'),
     ...env,
   });
 }
@@ -485,7 +480,6 @@ function helperWithFault(
       REPO_HARNESS_HOOK_CLI: join(ROOT, 'src/cli/hook-entry.ts'),
       REPO_HARNESS_BUN_BIN: process.execPath,
       REPO_HARNESS_CLI_BIN: CLI_WRAPPER,
-      REPO_HARNESS_WORKFLOW_STATE_LIB: join(cwd, '.ai/hooks/lib/workflow-state.sh'),
       REPO_HARNESS_GIT_BIN: fixture.fakeGit,
       FAULT_PID_FILE: fixture.pidFile,
       FAULT_AFTER_PHASE: phase,

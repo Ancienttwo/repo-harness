@@ -74,28 +74,16 @@ a host file descriptor.
   Codex gets both on stderr.
 - Pi uses `--format json`. Its SessionStart sections reach `additional_context`.
 
-`assets/hooks/lib/workflow-state.sh` is the package operator library.
-Consumer repositories do not receive a copy. The library has no hook dispatch
-or route authority. Product changes to handler
-behavior belong in `src/cli/hook/` and its tests.
+No shell operator library exists. Product changes to handler behavior belong
+in `src/cli/hook/` and its tests. Run packaged helpers with
+`repo-harness run <helper>`. `prepare-handoff` runs only
+`recovery-view-cli.ts`. `summarize-failures` reads the same `FAILURE_LOG_FILE`
+that the edit guard writes.
 
-Use the package library in an operator shell:
-
-```bash
-workflow_state_lib="$(repo-harness hook-lib path)" || exit 1
-source "$workflow_state_lib"
-```
-
-Run packaged helpers with `repo-harness run <helper>`. The CLI supplies the
-package library. Direct package scripts resolve the asset beside `scripts/`.
-The path command fails if the package asset is missing or is not a regular file.
-It does not select a repo copy or `REPO_HARNESS_SOURCE_ROOT`.
-
-Init and upgrade preserve `.ai/hooks/lib/workflow-state.sh`, including edits.
-Old scripts that source this file still work. Doctor reports it as legacy.
-Change callers to the package path or `repo-harness run`. Test the callers.
-Back up the old file before manual removal. Review local changes first.
-This source repository has no copy. Its helpers read `assets/hooks/lib/`.
+Init and upgrade preserve an old `.ai/hooks/lib/workflow-state.sh`, including
+edits. Doctor reports it as legacy. Change its callers to
+`repo-harness run <helper>`. Test the callers. Back up the old file before
+manual removal. Review local changes first.
 
 The prompt handler reads only the payload `prompt` field. A prompt that starts
 with `/setup`, `/init`, `/plan`, `/execute`, `/run`, `/check`, `/verify` or
@@ -243,7 +231,6 @@ Agents author semantic snapshots and diagrams. Hooks do not spawn LLM agents or
 long-running commands. Deterministic execution belongs in explicit CLI commands
 such as `scripts/contract-run.ts`.
 
-`assets/hooks/` is the package asset source. No projection copy exists.
 Validate the typed route registry with `bun test` and
 `repo-harness init --repo . --dry-run`.
 
@@ -254,7 +241,7 @@ history:
 
 | File | Writer | Retention owner |
 | --- | --- | --- |
-| `${runId}.json` carrying the resolved projection paths | `workflow_write_run_summary` in `assets/hooks/lib/workflow-state.sh`, called by `prepare-handoff` | none automatic; Stop no longer writes or sweeps run summaries, and `evidence-gc` deletes this shape for one release |
+| `${runId}.json` carrying the resolved projection paths | none now; Stop and the shell `prepare-handoff` writer wrote it | `evidence-gc` deletes this shape for one release |
 | `${runId}-${contractSlug}.json` (`schema: repo-harness-run-trace.v1`) | `verify-sprint.sh` | none; a checks projection reads it back at acceptance finalization |
 | `verification-${executionId}.json` / `.log` | `verification-execution.ts` | none; immutable, bound by sha256 in the evidence ledger |
 | `hook-events.jsonl` | hook telemetry | `hook-event-log.ts`, on rotation: 8 MB segments, 256 MB or 32 archived segments |

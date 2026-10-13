@@ -86,7 +86,7 @@ describe("codex-handoff-resume helper integration", () => {
     }
   }, 30_000);
 
-  test("codex-handoff-resume should reject policy paths outside the repo", () => {
+  test("codex-handoff-resume fails closed on a policy path outside the repo", () => {
     const cwd = tmpWorkspace("helper-codex-resume-safe-path");
     const outsideName = `${cwd.split("/").pop()}-resume.md`;
     const outsidePath = join(cwd, "..", outsideName);
@@ -100,8 +100,9 @@ describe("codex-handoff-resume helper integration", () => {
 
       const res = run("bash", ["scripts/codex-handoff-resume.sh", "--cwd", cwd, "--reason", "safe-path"], cwd);
 
-      expect(res.status).toBe(0);
-      expect(existsSync(join(cwd, ".ai/harness/handoff/resume.md"))).toBe(true);
+      expect(res.status).not.toBe(0);
+      expect(res.stderr).toContain(`unsafe workflow policy path .handoff_resume.resume_packet_file: ../${outsideName}`);
+      expect(existsSync(join(cwd, ".ai/harness/handoff/resume.md"))).toBe(false);
       expect(existsSync(outsidePath)).toBe(false);
     } finally {
       rmSync(outsidePath, { force: true });
@@ -109,7 +110,7 @@ describe("codex-handoff-resume helper integration", () => {
     }
   }, 30_000);
 
-  test("codex-handoff-resume should reject policy paths outside the harness surface", () => {
+  test("codex-handoff-resume fails closed on a policy path outside the harness surface", () => {
     const cwd = tmpWorkspace("helper-codex-resume-harness-surface");
     try {
       copyHelpers(cwd);
@@ -122,8 +123,9 @@ describe("codex-handoff-resume helper integration", () => {
 
       const res = run("bash", ["scripts/codex-handoff-resume.sh", "--cwd", cwd, "--reason", "safe-surface"], cwd);
 
-      expect(res.status).toBe(0);
-      expect(existsSync(join(cwd, ".ai/harness/handoff/resume.md"))).toBe(true);
+      expect(res.status).not.toBe(0);
+      expect(res.stderr).toContain("unsafe workflow policy path .handoff_resume.resume_packet_file: .git/config");
+      expect(existsSync(join(cwd, ".ai/harness/handoff/resume.md"))).toBe(false);
       expect(existsSync(join(cwd, ".git/config"))).toBe(false);
     } finally {
       rmSync(cwd, { recursive: true, force: true });

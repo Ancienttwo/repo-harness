@@ -652,7 +652,7 @@ function addHookOperations(repoRoot: string, operations: AdoptionOperation[]): v
   operations.push(writeOperation(
     repoRoot,
     ".ai/hooks/README.md",
-    "# Workflow Helpers\n\nHost events use the user-level `repo-harness-hook` typed runtime. Operator helpers use the installed package. Run `repo-harness hook-lib path` to locate `workflow-state.sh`. Use `repo-harness run <helper>` to run helpers. Init preserves legacy files under `.ai/hooks/lib/`. Run `repo-harness doctor` for migration guidance.\n",
+    "# Workflow Helpers\n\nHost events use the user-level `repo-harness-hook` typed runtime. Operator helpers run from the installed package: use `repo-harness run <helper>`. Init preserves legacy files under `.ai/hooks/lib/`. Run `repo-harness doctor` for migration guidance.\n",
     "Document typed hook authority and operator-only helper boundary",
     { risk: "medium" },
   ));

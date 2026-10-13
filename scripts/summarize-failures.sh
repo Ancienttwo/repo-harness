@@ -2,13 +2,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-workflow_state_lib="${REPO_HARNESS_WORKFLOW_STATE_LIB:-$SCRIPT_DIR/../assets/hooks/lib/workflow-state.sh}"
-if [[ ! -f "$workflow_state_lib" ]]; then
-  echo "summarize-failures: workflow-state library is unavailable" >&2
-  exit 1
-fi
-# shellcheck source=/dev/null
-. "$workflow_state_lib"
+package_root="$SCRIPT_DIR/.."
+[[ "$(basename "$SCRIPT_DIR")" == "helpers" ]] && package_root="$SCRIPT_DIR/../../.."
 
 usage() {
   cat <<'USAGE_EOF'
@@ -16,29 +11,8 @@ Usage: scripts/summarize-failures.sh [--file <path>] [--run-id <id>]
 USAGE_EOF
 }
 
-resolve_js_runtime() {
-  if command -v bun >/dev/null 2>&1; then
-    printf 'bun'
-    return 0
-  fi
-
-  if [[ -x "${HOME}/.bun/bin/bun" ]]; then
-    printf '%s' "${HOME}/.bun/bin/bun"
-    return 0
-  fi
-
-  if command -v node >/dev/null 2>&1; then
-    printf 'node'
-    return 0
-  fi
-
-  return 1
-}
-
-log_file="$(workflow_failure_log_file)"
+log_file=""
 filter_run_id=""
-js_runtime=""
-js_code=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -64,22 +38,19 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ ! -f "$log_file" ]]; then
-  echo "[FailureSummary] No failure log found at $log_file"
-  exit 0
-fi
-
-js_runtime="$(resolve_js_runtime || true)"
-if [[ -z "$js_runtime" ]]; then
-  echo "[FailureSummary] Missing JavaScript runtime (expected bun or node)" >&2
-  exit 1
-fi
-
-js_code="$(cat <<'NODE_EOF'
+# The edit guard writes the failure log at FAILURE_LOG_FILE; this summary reads it.
+"${REPO_HARNESS_BUN_BIN:-bun}" -e '
 const fs = require("fs");
+const path = require("path");
+const { pathToFileURL } = require("url");
+const [packageRoot, explicitFile, filterRunId] = process.argv.slice(1);
+const { FAILURE_LOG_FILE } = await import(pathToFileURL(path.join(packageRoot, "src/effects/state/resolve-effective-state.ts")).href);
+const file = explicitFile || FAILURE_LOG_FILE;
 
-const file = process.env.JSONL_FILE;
-const filterRunId = process.env.FILTER_RUN_ID || "";
+if (!fs.existsSync(file)) {
+  console.log(`[FailureSummary] No failure log found at ${file}`);
+  process.exit(0);
+}
 
 const rows = fs
   .readFileSync(file, "utf-8")
@@ -119,7 +90,4 @@ console.log("Guards:");
 for (const [name, count] of sortEntries(guardCounts)) {
   console.log(`- ${name}: ${count}`);
 }
-NODE_EOF
-)"
-
-JSONL_FILE="$log_file" FILTER_RUN_ID="$filter_run_id" "$js_runtime" -e "$js_code"
+' "$package_root" "$log_file" "$filter_run_id"

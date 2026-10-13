@@ -6,6 +6,31 @@ All notable changes to this skill are documented here.
 
 ### Breaking
 
+- Downstream contract change: the shell operator library is gone. The package
+  no longer ships `assets/hooks/` or `workflow-state.sh`, and the
+  `repo-harness hook-lib path` command is removed. Helpers no longer source a
+  library, and nothing sets or reads `REPO_HARNESS_WORKFLOW_STATE_LIB`. Change
+  any script that sources `$(repo-harness hook-lib path)` to
+  `repo-harness run <helper>`. `repo-harness doctor` and `repo-harness upgrade`
+  still report an old `.ai/hooks/lib/workflow-state.sh` copy and keep its
+  bytes. (#696)
+- `prepare-handoff` runs only `recovery-view-cli.ts`, for both the write and
+  `--status`. It no longer appends `handoff_refresh` events to
+  `.ai/harness/events.jsonl` or writes run summaries under
+  `.ai/harness/runs/`; no code read them. A transient plan slug
+  (`think-plan-*`, `codex-plan-*`, `approved-plan-*`) now names the contract,
+  review and notes of the plan title, as Effective State does. The review and
+  notes paths honor `tasks.reviews_dir` and `tasks.notes_dir`. A marker that
+  another worktree owns names no active plan, as Stop does. (#696)
+- One reader, `resolveHarnessPaths`, resolves the policy paths for handoff,
+  resume, runs, context map, todo, reviews and notes. A policy path outside
+  its root now fails closed. Before, the recovery views silently used the
+  default. On Stop the failure is a non-blocking diagnostic. (#696)
+- `prepare-handoff` and `summarize-failures` need Bun. The node fallback of
+  `summarize-failures` is removed. It reads the same `FAILURE_LOG_FILE` that
+  the edit guard writes. (#696)
+- `contract-worktree.sh` loses its scope check, which had no caller since the
+  gate audit (#483) made contract scope record-only. (#696)
 - The edit guard fails closed. A crash in `PreToolUse.edit` now exits 2 on
   Claude and Codex and returns `decision: block` on Pi. Other routes keep
   exit 1 for a crash. (#691)

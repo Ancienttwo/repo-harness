@@ -11,7 +11,7 @@ Keep this file focused on the local contract for this primary functional block.
 - Treat `.ai/context/context-map.json` as the index of discoverable context files.
 - Do not keep pushing context files deeper by default; add lower-level files only for a separately owned functional block with its own commands and invariants.
 - Prefer repo-local workflow artifacts over tool-specific chat memory.
-- `assets/hooks/` owns only operator helper assets and their local context. Host-event runtime authority lives in `src/cli/hook/`. Operator helpers read `assets/hooks/lib/` directly; no projection copy exists.
+- `src/cli/hook/` owns host-event runtime authority: the typed route registry, the runtime and the handlers. Operator helpers run from the package through `repo-harness run <helper>`; no shell operator library exists.
 
 <!-- BEGIN CAPABILITY CONTEXT -->
 ## Capability Context
@@ -19,7 +19,7 @@ Keep this file focused on the local contract for this primary functional block.
 - Capability ID: `runtime-harness-hook-adapters`
 - Domain: `runtime-harness`
 - Name: `hook-adapters`
-- Primary prefix: `assets/hooks`
+- Primary prefix: `src/cli/hook`
 - Architecture module: `docs/architecture/modules/runtime-harness/hook-adapters.md`
 - Workstream: `tasks/workstreams/runtime-harness/hook-adapters`
 
@@ -29,7 +29,7 @@ Owns the runtime-harness-hook-adapters capability boundary declared in .archcont
 
 ## Source Map
 
-- Primary prefix: `assets/hooks` (entrypoint)
+- Primary prefix: `src/cli/hook` (entrypoint)
 - Architecture module: `docs/architecture/modules/runtime-harness/hook-adapters.md` (design-source)
 - Workstream: `tasks/workstreams/runtime-harness/hook-adapters` (durable-progress)
 

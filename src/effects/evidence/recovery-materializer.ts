@@ -27,7 +27,9 @@ import { createHash } from 'crypto';
 import { execFileSync } from 'child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { basename, join } from 'path';
-import { planSlugFromPath } from '../../core/state/artifact-parsers';
+import { artifactStemFromPlan, planSlugFromPath } from '../../core/state/artifact-parsers';
+import { resolveHarnessPaths, type HarnessPaths } from '../state/resolve-effective-state';
+import { createStateInputCollector, type StateInputCollector } from '../loop/state-input-collector';
 import {
   CheckpointResolutionError,
   resolveLastPublishedCheckpoint,
@@ -73,31 +75,6 @@ function formatDisplay(date: Date): string {
 
 function yymmdd(date: Date): string {
   return `${String(date.getFullYear()).slice(-2)}${pad2(date.getMonth() + 1)}${pad2(date.getDate())}`;
-}
-
-function policy(repoRoot: string): Record<string, unknown> {
-  try {
-    const value = JSON.parse(readFileSync(join(repoRoot, '.ai/harness/policy.json'), 'utf8'));
-    return value && typeof value === 'object' ? value as Record<string, unknown> : {};
-  } catch {
-    return {};
-  }
-}
-
-function nestedString(root: Record<string, unknown>, keys: readonly string[]): string {
-  let value: unknown = root;
-  for (const key of keys) {
-    if (!value || typeof value !== 'object') return '';
-    value = (value as Record<string, unknown>)[key];
-  }
-  return typeof value === 'string' ? value : '';
-}
-
-function safeHarnessPath(value: string, fallback: string): string {
-  if (!value || value.startsWith('/') || value.includes('\\') || value.includes('\n') || value.includes('\r')) return fallback;
-  if (value === '..' || value.startsWith('../') || value.includes('/../')) return fallback;
-  if (!value.startsWith('.ai/harness/')) return fallback;
-  return value;
 }
 
 function readJson(path: string): Record<string, unknown> | null {
@@ -149,28 +126,51 @@ export interface RecoveryArtifactPaths {
   readonly notes: string;
 }
 
-function planStemFromPath(planFile: string): string {
-  const base = basename(planFile);
-  const stem = base.replace(/^plan-/, '').replace(/\.md$/, '');
-  return /^\d{8}-\d{4}-.+/.test(stem) ? stem : (planSlugFromPath(planFile) ?? '');
-}
-
-/** `workflow_preferred_or_legacy_path` port: preferred (stamped-stem)
- * candidate wins if it exists; else the legacy (slug-only) candidate wins
- * if IT exists; else fall back to the preferred candidate as a best-guess
- * pointer (matches bash's `workflow_active_contract`/`_review`/`_notes` --
- * a recovery view may legitimately point at where an artifact SHOULD live
- * before it has been created). */
+/** The preferred (stamped-stem) candidate wins if it exists; else the legacy
+ * (slug-only) candidate wins if IT exists; else the preferred candidate is
+ * named anyway -- a recovery view may legitimately point at where an
+ * artifact SHOULD live before it has been created. */
 function preferredOrLegacyArtifactPath(repoRoot: string, preferred: string, legacy: string): string {
   if (existsSync(join(repoRoot, preferred))) return preferred;
   if (!existsSync(join(repoRoot, legacy))) return preferred;
   return legacy;
 }
 
-export function recoveryArtifacts(repoRoot: string, activePlan: string | null): RecoveryArtifactPaths {
+/** A recovery view names no plan when another worktree owns the marker. */
+export function activePlanForRecovery(
+  collector: Pick<StateInputCollector, 'getWorktreeOwnership' | 'getActivePlanMarker'>,
+): string | null {
+  const ownership = collector.getWorktreeOwnership();
+  return ownership.owner === null || ownership.ownedByCurrent ? collector.getActivePlanMarker() : null;
+}
+
+/** `activePlanForRecovery` outside a hook event, which has no collector. */
+export function readActivePlanForRecovery(repoRoot: string): string | null {
+  return activePlanForRecovery(createStateInputCollector({
+    repoRoot,
+    resolveEffectiveState: () => { throw new Error('recovery views do not resolve Effective State'); },
+  }));
+}
+
+export interface RecoveryStatus extends RecoveryArtifactPaths {
+  readonly handoff: string;
+  readonly resume: string;
+}
+
+/** The active artifacts and view paths, without rendering a view. */
+export function recoveryStatus(repoRoot: string, activePlan: string | null): RecoveryStatus {
+  const paths = resolveHarnessPaths(repoRoot);
+  return { ...recoveryArtifacts(repoRoot, activePlan, paths), handoff: paths.handoff, resume: paths.resume };
+}
+
+export function recoveryArtifacts(
+  repoRoot: string,
+  activePlan: string | null,
+  paths: Pick<HarnessPaths, 'reviewsDir' | 'notesDir'>,
+): RecoveryArtifactPaths {
   const plan = activePlan && existsSync(join(repoRoot, activePlan)) ? activePlan : '';
   if (!plan) return { plan: '', contract: '', review: '', notes: '' };
-  const stem = planStemFromPath(plan);
+  const stem = artifactStemFromPlan(plan, readFileSync(join(repoRoot, plan), 'utf8'));
   const slug = planSlugFromPath(plan);
   const derived = (directory: string, suffix: string): string => {
     if (!stem || !slug) return '';
@@ -179,13 +179,13 @@ export function recoveryArtifacts(repoRoot: string, activePlan: string | null): 
   return {
     plan,
     contract: declaredPath(repoRoot, plan, 'Task Contract') || declaredPath(repoRoot, plan, 'Sprint Contract') || derived('tasks/contracts', '.contract.md'),
-    review: declaredPath(repoRoot, plan, 'Task Review') || declaredPath(repoRoot, plan, 'Sprint Review') || derived('tasks/reviews', '.review.md'),
-    notes: declaredPath(repoRoot, plan, 'Implementation Notes') || declaredPath(repoRoot, plan, 'Notes File') || derived('tasks/notes', '.notes.md'),
+    review: declaredPath(repoRoot, plan, 'Task Review') || declaredPath(repoRoot, plan, 'Sprint Review') || derived(paths.reviewsDir, '.review.md'),
+    notes: declaredPath(repoRoot, plan, 'Implementation Notes') || declaredPath(repoRoot, plan, 'Notes File') || derived(paths.notesDir, '.notes.md'),
   };
 }
 
-function todoSourcePlan(repoRoot: string): string {
-  const value = metadataValue(join(repoRoot, 'tasks/todos.md'), 'Source Plan');
+function todoSourcePlan(repoRoot: string, todoFile: string): string {
+  const value = metadataValue(join(repoRoot, todoFile), 'Source Plan');
   return value === '(none)' ? '' : value;
 }
 
@@ -275,8 +275,7 @@ function changedFiles(repoRoot: string): { files: string; summary: string } {
     const files = [...new Set(`${tracked}\n${untrackedRaw}`.split('\n').map((line) => line.trim()).filter(Boolean))].sort();
     const visible = files.length > 80 ? [...files.slice(0, 80), `... (${files.length} total changed/untracked paths; inspect git status --short)`] : files;
 
-    // workflow_write_handoff's `diff_stat`/`untracked_count` port: a
-    // human-readable tracked-diff shortstat plus an explicit untracked
+    // A human-readable tracked-diff shortstat plus an explicit untracked
     // count, not a flat "N changed/untracked paths" total.
     let diffStat = '';
     try {
@@ -334,7 +333,6 @@ export interface RecoveryWorkflowContext {
   readonly paths: {
     readonly handoff: string;
     readonly resume: string;
-    readonly runsDir: string;
     readonly policyFile: string;
     readonly contextMap: string;
     readonly researchDir: string;
@@ -363,18 +361,11 @@ export function buildRecoveryContext(
 ): RecoveryWorkflowContext {
   const now = (options.now ?? (() => new Date()))();
   const reason = options.reason ?? 'session-stop';
-  const config = policy(repoRoot);
-  const handoff = safeHarnessPath(nestedString(config, ['harness', 'handoff_file']), '.ai/harness/handoff/current.md');
-  const resume = safeHarnessPath(nestedString(config, ['handoff_resume', 'resume_packet_file']), '.ai/harness/handoff/resume.md');
-  const runsDir = safeHarnessPath(nestedString(config, ['harness', 'runs_dir']), '.ai/harness/runs');
-  const policyFile = '.ai/harness/policy.json';
-  const contextMap = safeHarnessPath(nestedString(config, ['context', 'map_file']), '.ai/context/context-map.json');
-  const researchDir = nestedString(config, ['tasks', 'research_dir']) || 'docs/researches';
-  const todoFile = safeHarnessPath(nestedString(config, ['tasks', 'todo_file']), 'tasks/todos.md');
+  const harnessPaths = resolveHarnessPaths(repoRoot);
   const runId = options.runId ?? null;
-  const artifacts = recoveryArtifacts(repoRoot, activePlan);
+  const artifacts = recoveryArtifacts(repoRoot, activePlan, harnessPaths);
   const changed = changedFiles(repoRoot);
-  const sourcePlan = todoSourcePlan(repoRoot);
+  const sourcePlan = todoSourcePlan(repoRoot, harnessPaths.todoFile);
   const action = nextAction(repoRoot, artifacts);
   const nextTask = action.command ? `${action.message} Command: ${action.command}` : action.message;
   const goal = sourcePlan
@@ -401,7 +392,14 @@ export function buildRecoveryContext(
     goal,
     changed,
     supersedes: supersededPlan(repoRoot),
-    paths: { handoff, resume, runsDir, policyFile, contextMap, researchDir, todoFile },
+    paths: {
+      handoff: harnessPaths.handoff,
+      resume: harnessPaths.resume,
+      policyFile: '.ai/harness/policy.json',
+      contextMap: harnessPaths.contextMap,
+      researchDir: harnessPaths.researchDir,
+      todoFile: harnessPaths.todoFile,
+    },
     globalHandoffPath: latestGlobalHandoff(codexHome),
   };
 }

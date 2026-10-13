@@ -83,7 +83,9 @@ test('shell scaffold and shared shell init keep legacy bytes and stop library co
     expect(fresh.status, fresh.stderr).toBe(0);
     const library = join(repo, '.ai/hooks/lib/workflow-state.sh');
     expect(existsSync(library)).toBe(false);
-    expect(readFileSync(join(repo, '.ai/hooks/README.md'), 'utf8')).toContain('repo-harness hook-lib path');
+    const readme = readFileSync(join(repo, '.ai/hooks/README.md'), 'utf8');
+    expect(readme).toContain('repo-harness run <helper>');
+    expect(readme).not.toContain('hook-lib');
     const legacy = readUpgradeFixture('upgrade-v0.10-project', '.ai/hooks/lib/workflow-state.sh').toString('utf8') + '\n# Local changes\n';
     mkdirSync(join(repo, '.ai/hooks/lib'), { recursive: true });
     writeFileSync(library, legacy);
