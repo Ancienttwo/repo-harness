@@ -1910,7 +1910,7 @@ import { cleanupExactWorktree, removeExactWorktree, recordCreatedWorktree, withW
 
 const sweepManagedWorktrees: typeof productionSweep = (root, cwd, env, options) => productionSweep(root, cwd, env, { deadlineMs: 60_000, ...options });
 
-describe('exact cleanup and SessionStart worktree sweep', () => {
+describe('exact cleanup and contract-worktree start sweep', () => {
   function fixture() {
     const parent = realpathSync(mkdtempSync(join(tmpdir(), 'worktree-sweep-')));
     const root = join(parent, 'repo'); const managed = join(parent, 'managed');
@@ -1931,8 +1931,14 @@ describe('exact cleanup and SessionStart worktree sweep', () => {
     git('merge', '--ff-only', 'codex/demo'); git('update-ref', 'refs/remotes/origin/main', 'HEAD');
     const head = git('rev-parse', 'HEAD');
     const expected = { worktree: path, branch: 'codex/demo', head_sha: head, target_ref: 'refs/remotes/origin/main', target_oid: head, merge_commit_sha: head };
-    const env = { ...process.env, REPO_HARNESS_WORKTREE_ROOT: managed, REPO_HARNESS_TOOLING_ADVISORY: '0', HOME: join(parent, 'home') };
+    const env = { ...process.env, REPO_HARNESS_WORKTREE_ROOT: managed, HOME: join(parent, 'home') };
     return { parent, root, managed, path, git, expected, env, cleanup: () => rmSync(parent, { recursive: true, force: true }) };
+  }
+
+  /** `contract-worktree start` reads the topology through this runtime action. */
+  function startCheck(f: ReturnType<typeof fixture>) {
+    return spawnSync(process.execPath, [join(import.meta.dir, '../scripts/contract-worktree-runtime.ts'), 'check-start-path',
+      '--repo', f.root, '--worktree', join(f.managed, 'repo-wt-next'), '--branch', 'codex/next'], { cwd: f.root, encoding: 'utf8', env: f.env });
   }
 
   test('sweep removes a merged clean checkout and branch', () => {
@@ -1985,17 +1991,39 @@ describe('exact cleanup and SessionStart worktree sweep', () => {
     } finally { f.cleanup(); }
   });
 
-  test('W6 shipped bundle CLI SessionStart works with its production deadline', () => {
+  test('contract-worktree start sweeps a merged managed worktree before it reads the topology', () => {
+    const f = fixture(); try {
+      const result = startCheck(f);
+      expect(result.status, result.stderr).toBe(0); expect(result.stderr).toContain('[WorktreeSweep] removed=1');
+      expect(existsSync(f.path)).toBe(false); expect(f.git('branch', '--list', 'codex/demo')).toBe('');
+    } finally { f.cleanup(); }
+  }, 15000);
+
+  test('SessionStart leaves a pending trash directory to contract-worktree start', () => {
     const f = fixture(); try {
       mkdirSync(join(f.root, '.ai/harness'), { recursive: true });
       writeFileSync(join(f.root, '.ai/harness/workflow-contract.json'), '{}');
-      const bundle = join(f.parent, 'hook-entry.js');
-      const built = spawnSync(process.execPath, ['build', join(import.meta.dir, '../src/cli/hook-entry.ts'), '--target=bun', '--outfile', bundle, '--define', 'REPO_HARNESS_BUNDLED_CLI_VERSION="0.21.1"'], { encoding: 'utf8', env: f.env });
-      expect(built.status, built.stderr).toBe(0);
-      const result = spawnSync(process.execPath, [bundle, 'SessionStart', '--route', 'default'], { cwd: f.root, encoding: 'utf8', input: '{}', env: { ...f.env, HOOK_REPO_ROOT: f.root, HOOK_HOST: 'codex' } });
-      expect(result.status).toBe(0); expect(result.stdout + result.stderr).toContain('worktree');
+      let delayed = false;
+      const realNow = Date.now;
+      try {
+        sweepManagedWorktrees(f.root, f.root, f.env, { afterRemovalStep(step) {
+          if (step === 'trash-entry-deleted' && !delayed) { delayed = true; const expired = realNow() + 60_001; Date.now = () => expired; }
+        } });
+      } finally { Date.now = realNow; }
+      const directory = worktreeTrashNames(join(f.root, '.git'), f.managed)[0]!;
+      expect(existsSync(directory)).toBe(true);
+      const session = spawnSync(process.execPath, [join(import.meta.dir, '../src/cli/hook-entry.ts'), 'SessionStart', '--route', 'default'], {
+        cwd: f.root, encoding: 'utf8', input: '{}', env: { ...f.env, HOOK_REPO_ROOT: f.root, HOOK_HOST: 'codex' },
+      });
+      expect(session.status, session.stderr).toBe(0);
+      expect(session.stdout + session.stderr).not.toContain('[WorktreeSweep]');
+      expect(session.stdout + session.stderr).not.toContain('worktree sweep');
+      expect(existsSync(directory)).toBe(true);
+      const start = startCheck(f);
+      expect(start.status, start.stderr).toBe(0); expect(start.stderr).toContain('resumed=1');
+      expect(existsSync(directory)).toBe(false);
     } finally { f.cleanup(); }
-  }, 15000);
+  }, 30000);
 
   function missingBatch() {
     const f = fixture(); const merged = ['codex/demo'];
@@ -2228,33 +2256,6 @@ describe('exact cleanup and SessionStart worktree sweep', () => {
       expect(called).toBe(false); expect(existsSync(f.path)).toBe(true);
     } finally { f.cleanup(); }
   });
-
-  test('the shipped single-file SessionStart bundle uses its package merge library', () => {
-    const f = fixture(); try {
-      mkdirSync(join(f.root, '.ai/harness'), { recursive: true });
-      writeFileSync(join(f.root, '.ai/harness/workflow-contract.json'), '{}');
-      const packageRoot = join(f.parent, 'package'); mkdirSync(join(packageRoot, 'dist'), { recursive: true }); mkdirSync(join(packageRoot, 'scripts'));
-      writeFileSync(join(packageRoot, 'package.json'), JSON.stringify({ name: 'repo-harness', version: '0.21.1' }));
-      writeFileSync(join(packageRoot, 'scripts/worktree-merge-lib.sh'), readFileSync(join(import.meta.dir, '../scripts/worktree-merge-lib.sh')));
-      const bundle = join(packageRoot, 'dist/hook-entry.js');
-      const built = spawnSync(process.execPath, ['build', join(import.meta.dir, '../src/cli/hook-entry.ts'), '--target=bun', '--outfile', bundle, '--define', 'REPO_HARNESS_BUNDLED_CLI_VERSION="0.21.1"'], { encoding: 'utf8', env: f.env });
-      expect(built.status, built.stderr).toBe(0);
-      const result = spawnSync(process.execPath, ['-e', `const {runHook}=await import(${JSON.stringify(bundle)});process.exitCode=runHook({event:'SessionStart',routeId:'default',input:'{}',worktreeSweepDeadlineMs:60000}).exitCode;`], {
-        cwd: f.root, encoding: 'utf8', input: '{}', env: { ...f.env, HOOK_REPO_ROOT: f.root, HOOK_HOST: 'codex' },
-      });
-      expect(result.status).toBe(0); expect(result.stdout + result.stderr).toContain('removed=1');
-      expect(existsSync(f.path)).toBe(false); expect(f.git('branch', '--list', 'codex/demo')).toBe('');
-      f.git('worktree', 'add', '-q', '-b', 'codex/demo', f.path);
-      f.git('-C', f.path, 'commit', '--allow-empty', '-qm', 'recreated task');
-      f.git('merge', '--ff-only', 'codex/demo'); f.git('update-ref', 'refs/remotes/origin/main', 'HEAD');
-      rmSync(join(packageRoot, 'scripts/worktree-merge-lib.sh'));
-      const missing = spawnSync(process.execPath, ['-e', `const {runHook}=await import(${JSON.stringify(bundle)});process.exitCode=runHook({event:'SessionStart',routeId:'default',input:'{}',worktreeSweepDeadlineMs:60000}).exitCode;`], {
-        cwd: f.root, encoding: 'utf8', input: '{}', env: { ...f.env, HOOK_REPO_ROOT: f.root, HOOK_HOST: 'codex' },
-      });
-      expect(missing.status).toBe(0); expect(missing.stdout + missing.stderr).toContain('worktree merge library is unavailable');
-      expect(existsSync(f.path)).toBe(true); expect(f.git('branch', '--list', 'codex/demo')).toContain('codex/demo');
-    } finally { f.cleanup(); }
-  }, 15000);
 
   async function interruptSweep(f: ReturnType<typeof fixture>, step: string): Promise<string> {
     const worker = join(f.parent, 'w1-worker.ts'); const signal = join(f.parent, 'w1-signal.json');
@@ -2524,30 +2525,12 @@ exec /usr/bin/git "$@"
     } finally { f.cleanup(); }
   });
 
-  test('W5 production deadline expiry does not fail SessionStart', () => {
+  test('contract-worktree start reports a sweep failure and still succeeds', () => {
     const f = fixture(); try {
-      mkdirSync(join(f.root, '.ai/harness'), { recursive: true });
-      writeFileSync(join(f.root, '.ai/harness/workflow-contract.json'), '{}');
-      const binary = join(f.parent, 'slow-git');
-      // Delay only the first sweep query. Hook repository discovery still uses normal Git.
-      writeFileSync(binary, '#!/bin/sh\nsleep 3\nexec /usr/bin/git "$@"\n', { mode: 0o755 });
-      const result = spawnSync(process.execPath, [join(import.meta.dir, '../src/cli/hook-entry.ts'), 'SessionStart', '--route', 'default'], {
-        cwd: f.root, encoding: 'utf8', input: '{}', env: { ...f.env, REPO_HARNESS_GIT_BIN: binary, HOOK_REPO_ROOT: f.root, HOOK_HOST: 'codex' },
-      });
-      expect(result.status).toBe(0); expect(result.stdout + result.stderr).toContain('worktree sweep skipped:');
-      expect(result.stdout + result.stderr).toContain('ETIMEDOUT'); expect(existsSync(f.path)).toBe(true);
-    } finally { f.cleanup(); }
-  }, 15000);
-
-  test('real SessionStart reports sweep failure and still returns zero', () => {
-    const f = fixture(); try {
-      mkdirSync(join(f.root, '.ai/harness'), { recursive: true });
-      writeFileSync(join(f.root, '.ai/harness/workflow-contract.json'), '{}');
       f.git('update-ref', '-d', 'refs/remotes/origin/main');
-      const result = spawnSync(process.execPath, ['-e', `const {runHook}=await import(${JSON.stringify(join(import.meta.dir, '../src/cli/hook-entry.ts'))});process.exitCode=runHook({event:'SessionStart',routeId:'default',input:'{}',worktreeSweepDeadlineMs:60000}).exitCode;`], {
-        cwd: f.root, encoding: 'utf8', input: JSON.stringify({ cwd: f.root }), env: { ...f.env, HOOK_REPO_ROOT: f.root, HOOK_HOST: 'codex' },
-      });
-      expect(result.status).toBe(0); expect(result.stdout + result.stderr).toContain('worktree sweep skipped: local integration target is unavailable');
+      const result = startCheck(f);
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.stderr).toContain('worktree sweep skipped: local integration target is unavailable');
       expect(existsSync(f.path)).toBe(true);
     } finally { f.cleanup(); }
   }, 15000);

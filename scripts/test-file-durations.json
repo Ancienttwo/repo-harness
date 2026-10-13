@@ -181,7 +181,6 @@
     "tests/me2b-runtime-admission-canary.test.ts": 1145.95,
     "tests/merge-gate.test.ts": 2742.85,
     "tests/migration-script.test.ts": 92.04,
-    "tests/minimal-change-context.test.ts": 3.41,
     "tests/minimal-change-policy.test.ts": 2.87,
     "tests/minimal-change-signals.test.ts": 1204.45,
     "tests/mutation-guard.test.ts": 2465.51,
