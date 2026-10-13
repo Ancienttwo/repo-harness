@@ -207,15 +207,14 @@ export interface ReviewLaunchRequired {
   status: 'launch_required'; round: number; requested_harness: Harness; actual_harness: Harness; fallback_reason: string | null;
   cwd: string; argv: string[]; command: string;
 }
-type ReviewRoundResult = Exclude<Awaited<ReturnType<typeof reviewRound>>, ReviewLaunchRequired>;
+export interface ReviewRoundResult {
+  status: 'accepted' | 'rejected'; round: number; output: ReviewOutput; receipt: AcceptanceReceipt; projection: string;
+  requested_harness: Harness; actual_harness: Harness; fallback_reason: string | null;
+}
 /** Only an app-terminal launch can end a call before delivery, with the host command to run. */
 export function runReviewRound(options: ReviewOptions & { launch?: 'herdr' }, effects?: ReviewEffects): Promise<ReviewRoundResult>;
 export function runReviewRound(options: ReviewOptions, effects?: ReviewEffects): Promise<ReviewRoundResult | ReviewLaunchRequired>;
-export function runReviewRound(options: ReviewOptions, effects: ReviewEffects = {}) {
-  return reviewRound(options, effects);
-}
-
-async function reviewRound(options: ReviewOptions, effects: ReviewEffects) {
+export async function runReviewRound(options: ReviewOptions, effects: ReviewEffects = {}): Promise<ReviewRoundResult | ReviewLaunchRequired> {
   const terminal = options.launch === 'app-terminal';
   if (terminal ? options.endpoint || options.parentPane : !options.endpoint || !options.parentPane) throw new Error('review_launch_addressing_invalid');
   if (!terminal) validateHerdrEndpoint(options.endpoint!);
