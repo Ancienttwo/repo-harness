@@ -1,4 +1,4 @@
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.diagram.structurizr" sourceDigest="sha256:bec950f25fdfdcbfc6d2c0bad74bda674c7ef83a268f1d31d0a2f567ba90ba6c" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:899e18e733efd076f5f9946eb18e6aa2dc061c82244924b49dfe9cd8e5d0d0ba" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.diagram.structurizr" sourceDigest="sha256:8508dea9b68bf4bbf6cd482a736027a406e1ff1b5846cee772fb2d0ff071a4e7" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:4d88aff0d43c2f143071d376d6ceb07ed1bd5738237362b7f703d4282b51cf09" -->
 {
   "schemaVersion": "archcontext.structurizr-export/v1",
   "name": "ArchContext Architecture",
@@ -1690,12 +1690,6 @@
         "id": "relation.hook-adapters.host-installer.adoption",
         "sourceId": "component.hook-adapters.host-installer",
         "destinationId": "capability.public-surface.adoption",
-        "description": "calls"
-      },
-      {
-        "id": "relation.hook-adapters.host-installer.contract-assets",
-        "sourceId": "component.hook-adapters.host-installer",
-        "destinationId": "capability.workflow-engine.contract-assets",
         "description": "calls"
       },
       {
