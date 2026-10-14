@@ -75,10 +75,12 @@ selection 对 `affected` 模式算出两个标志。daily 模式两个标志都�
 - `*.sh`。macOS 的 `/bin/bash` 是 3.2；#608 用原生任务发现过 `scripts/contract-worktree.sh` 的 bash 3.2 bug。
 - 原生 OAR 测试文件本身，以及它们在 `tests/` 下 import 的 helper。测试文件列表从 workflow 步骤 `Run native OAR acceptance tests` 读取，不另存一份。
 - 两个 OAR host 的 bundle 输入。selection 用 `bun build --metafile` 构建 `package.json` 里 `build:oar-review-host` 和 `build:oar-coding-host` 的入口，读 metafile 的 `inputs`。今天每个 host 有 10 个输入，例如 `src/effects/terminal/task-session.ts`、`src/effects/terminal/herdr.ts`、`src/effects/review/review-isolation.ts`。
+- `.ai/harness/policy.json`。`install-pinned-herdr` action 从这个文件读 Herdr 版本。只改版本号的 PR 也要跑原生 lane。
 
 **`home_isolation=true`**，当任一改动路径属于：
 - CI 实现面。
 - 两个 HOME 隔离测试文件和它们的 import 闭包（只算 import 边）。测试文件列表从 workflow 步骤 `Run the isolation tests` 读取。今天这个闭包有 5 个文件。
+- `bunfig.toml` 配置的测试 preload，以及它的 import 闭包。`tests/preload-home-isolation.test.ts` 在子进程里动态加载 `tests/preload-home-isolation.ts`，只看 import 边会漏掉它。两个闭包都从 preload 出发。
 
 纯文档 diff 不碰任何触发面，所以两个标志都是 `false`。`documentation` 输出因此可以删掉，不再有两套跳过条件。
 
