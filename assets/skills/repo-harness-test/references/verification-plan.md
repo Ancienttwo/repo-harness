@@ -61,7 +61,8 @@ consumers. A mixed change runs the union of both selections.
 
 `scripts/ci-documentation-consumers.ts` scans the test sources for reads that
 resolve to a tracked repository document, using bounded lexical path flow.
-`scripts/select-ci-coverage.ts` runs the scanner during CI selection. A changed
+It also counts a test that starts a child process in, or against, the checkout
+root. `scripts/select-ci-coverage.ts` runs the scanner during CI selection. A changed
 documentation path selects exactly that list. There is no hand-kept copy.
 
 So a new test that reads a real document from the checkout (rather than from a

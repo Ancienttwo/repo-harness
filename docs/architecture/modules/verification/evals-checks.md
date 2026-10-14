@@ -110,7 +110,7 @@ sequenceDiagram
 ### 3.1 必须保持的不变量
 
 1. **PR 只跑 typecheck 和受影响测试，main 每天跑全量。** `ci.yml` 的 `affected` 模式运行 `bash scripts/check-ci.sh affected`（`.github/workflows/ci.yml:149`）。`schedule` 每天触发一次（`ci.yml:8`）。来源：PR #483、PR #625。文档路径只选 `scripts/ci-documentation-consumers.ts` 扫出的测试。全部路径都是文档时，PR 跳过跨平台 HOME isolation 和原生 OAR 任务。daily 仍然覆盖这两项。
-2. **覆盖选择不确定时取全量。** `selectCoverage` 是纯函数（`scripts/select-ci-coverage.ts:27`）。缺少端点、diff 不可用、checkout 不匹配和未知路径都保留全量覆盖（§4 "CI coverage selection"）。
+2. **覆盖选择不确定时失败。** `selectCoverage` 是纯函数（`scripts/select-ci-coverage.ts`）。缺少端点、diff 不可用和 checkout 不匹配时，selection 失败。没有消费者的未知路径也失败（`selectAffectedTests`）。selection 不用全量覆盖代替未知覆盖。
 3. **一个测试清单和一个调度。** `scripts/select-test-suite.ts` 拥有本地和 CI 的测试清单与调度（PR #504）。调度输入是实测时长 `scripts/test-file-durations.json`（`select-test-suite.ts:46`）。
 4. **每个测试文件都在隔离的 HOME 和 TMPDIR 里运行。** `bunfig.toml` 预加载 `tests/preload-home-isolation.ts`。HOME 或 TMPDIR 不在临时目录时，预加载拒绝运行（`preload-home-isolation.ts:37`）。来源：PR #518。
 5. **本地显式验证只做两件事。** `verify-sprint.sh` 先运行 typecheck，再运行调用方给出的测试文件。测试路径必须在 `tests/` 下，不能逃出仓库（`scripts/verify-sprint.sh:28`）。`--base` 交给 `merge-gate.ts` 消费可信 PR 检查，不重跑命令（`verify-sprint.sh:22`）。
@@ -298,6 +298,22 @@ retained independent hosted Governance/Test failure visibility from the
 and the two-week revisit trigger are recorded in `tasks/todos.md`. Local/release
 `check-ci.sh` gates and the isolated file runner remain unchanged. PR evidence
 is not reused as acceptance for a different merge subject.
+
+## 2026-10-14 Documentation-only PR coverage
+
+The text above describes the retired `docs`/`full`/`draft` modes. PR #483
+replaced them with `affected`. Documentation paths then joined the import and
+literal closure. The literal `'docs'` in `src/cli/index.ts` linked every
+document to the CLI hub, so one plan file selected about 334 of 374 test files.
+
+Now a documentation path selects only the list from
+`scripts/ci-documentation-consumers.ts`. The scanner also counts a test that
+starts a child process in, or against, the checkout root. Such a process can
+walk checkout documents; for example, `capability-resolver.ts export` rejects
+an orphan module document. When every changed path is documentation, selection
+writes `documentation=true`. The PR then skips the cross-platform HOME isolation
+and native OAR lane. Required / CI accepts only that skip. The daily run keeps
+the full suite and that lane.
 
 ## 2026-10-11 之前的 §3 原文（移入历史）
 
