@@ -4,6 +4,7 @@
 - For non-trivial work, follow the global Progressive Due Diligence rule (P1 map, P2 trace, P3 decision) before design decisions or code edits.
 - Keep root CLAUDE.md and AGENTS.md as standalone regular files; repeat shared rules in both and keep host-specific guidance separate.
 - Read the current request and repo-local agent context, work on a branch, make bounded commits, verify once, then report the PR outcome.
+- Finish the main task first. Fix a small problem found on the way directly. For a large problem, open a GitHub issue before you work on it.
 - Write output text (docs, PR descriptions, commit messages, reports) in ASD-STE100 Simplified Technical English: short sentences, one idea per sentence, active voice, approved-dictionary words; write Chinese output the same way, with short sentences and one idea per sentence.
 - Ordinary tasks use the PR description: goal, scope, changes, verification, risk and rollback. No mandatory plan/contract/review/notes chain; notes are only for non-obvious decisions.
 - Keep four hard boundaries: main publication, deletion, credentials/permissions, and release/production operations.
