@@ -118,7 +118,8 @@ export function selectPlatformCoverage(paths: readonly string[], inputs: Platfor
     || ['package.json', 'bun.lock', 'bunfig.toml', 'tsconfig.json', 'scripts/check-ci.sh'].includes(path)
     || path.startsWith('scripts/lib/') || /^scripts\/select-[^/]+\.ts$/.test(path));
   return {
-    native_oar: shared || paths.some(path => path.endsWith('.sh') || inputs.native.has(path)),
+    // The native job installs the Herdr version pinned in this policy file (install-pinned-herdr action).
+    native_oar: shared || paths.some(path => path.endsWith('.sh') || path === '.ai/harness/policy.json' || inputs.native.has(path)),
     home_isolation: shared || paths.some(path => inputs.home.has(path)),
   };
 }

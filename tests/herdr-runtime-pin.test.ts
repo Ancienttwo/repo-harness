@@ -61,12 +61,12 @@ describe("herdr runtime pin has one source of truth", () => {
     expect(step).toContain('"$bin/herdr" --version');
     expect(step).toContain('shasum -a 256 --check');
     expect(step).toContain('GITHUB_PATH');
-    const homeSteps = workflow.jobs['test-home-isolation']!.steps as Array<{ name?: string; uses?: string; if?: string }>;
-    const install = homeSteps.findIndex(step => step.uses === './.github/actions/install-pinned-herdr');
-    const native = homeSteps.findIndex(step => step.name === 'Run native OAR acceptance tests');
+    const nativeSteps = workflow.jobs['native-oar']!.steps as Array<{ name?: string; uses?: string; if?: string }>;
+    const install = nativeSteps.findIndex(step => step.uses === './.github/actions/install-pinned-herdr');
+    const native = nativeSteps.findIndex(step => step.name === 'Run native OAR acceptance tests');
     expect(install).toBeGreaterThan(-1);
     expect(install).toBeLessThan(native);
-    expect(homeSteps[install]!.if).toBe("matrix.os == 'macos-latest'");
+    expect(nativeSteps[install]!.if).toBeUndefined();
     // No hardcoded version, release tag, or checksum may survive in the step.
     expect(step).not.toMatch(/v?\d+\.\d+\.\d+/);
     expect(step).not.toMatch(/[0-9a-f]{64}/);

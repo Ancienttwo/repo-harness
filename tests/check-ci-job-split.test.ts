@@ -200,6 +200,7 @@ describe('single affected verification and daily fallback', () => {
     for (const path of ['src/host.ts', 'src/host-dependency.ts', 'scripts/contract-worktree.sh', 'tests/native.test.ts', 'tests/helpers/nested.ts']) {
       expect(selectPlatformCoverage([path], inputs)).toEqual({ native_oar: true, home_isolation: false });
     }
+    expect(selectPlatformCoverage(['.ai/harness/policy.json'], inputs)).toEqual({ native_oar: true, home_isolation: false });
     expect(selectPlatformCoverage(['src/nested.ts'], inputs)).toEqual({ native_oar: false, home_isolation: true });
     expect(selectPlatformCoverage(['tests/preload.ts'], inputs)).toEqual({ native_oar: true, home_isolation: true });
     expect(selectPlatformCoverage(['docs/guide.md', 'plans/plan.md', 'src/other.ts'], inputs)).toEqual({ native_oar: false, home_isolation: false });
