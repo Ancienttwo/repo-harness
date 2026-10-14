@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { basename, delimiter, join, resolve, sep } from "node:path";
 import { tmpdir } from "node:os";
-import { discoverTestFiles, integrationFiles, scheduleTestFiles, selectTestSuite, serialFiles } from '../scripts/select-test-suite';
+import { discoverTestFiles, integrationFiles, scheduleTestFiles, selectTestSuite, serialFiles, shardTestFiles } from '../scripts/select-test-suite';
 import recordedDurations from '../scripts/test-file-durations.json';
 
 const REPO_ROOT = resolve(import.meta.dir, "..");
@@ -151,6 +151,22 @@ describe("ci isolate-mode test loop", () => {
     expect(scheduleTestFiles(files, { [files[0]!]: 20, [files[1]!]: 90, [files[2]!]: 20 }))
       .toEqual(['tests/b.test.ts', 'tests/a.test.ts', 'tests/c.test.ts', 'tests/new.test.ts']);
     expect(() => scheduleTestFiles(files, { [files[0]!]: -1 })).toThrow('Invalid recorded duration');
+  });
+
+  test('shards split files disjointly and completely with balanced recorded durations', () => {
+    const durations = { 'tests/a.test.ts': 90, 'tests/b.test.ts': 60, 'tests/c.test.ts': 40, 'tests/d.test.ts': 30, 'tests/e.test.ts': 20 };
+    const files = [...Object.keys(durations), 'tests/new-1.test.ts', 'tests/new-2.test.ts', 'tests/new-3.test.ts'];
+    const shards = [0, 1, 2].map(index => shardTestFiles(files, durations, index, 3));
+    expect(shards.flat().sort()).toEqual([...files].sort());
+    expect(new Set(shards.flat()).size).toBe(files.length);
+    expect(shards).toEqual([0, 1, 2].map(index => shardTestFiles([...files].reverse(), durations, index, 3)));
+    const load = (shard: string[]) => shard.reduce((sum, file) => sum + (durations[file as keyof typeof durations] ?? 0), 0);
+    expect(shards.map(load)).toEqual([90, 80, 70]);
+    // Files with no record spread round-robin by path.
+    expect(shards.map(shard => shard.filter(file => file.includes('new-')).length)).toEqual([1, 1, 1]);
+    expect(shardTestFiles(files, durations, 0, 1)).toEqual([...files].sort());
+    expect(shardTestFiles(['tests/a.test.ts'], durations, 2, 3)).toEqual([]);
+    for (const [index, total] of [[3, 3], [-1, 3], [0, 0], [0.5, 2]]) expect(() => shardTestFiles(files, durations, index!, total!)).toThrow('Invalid shard');
   });
 
   test("runs every selected file and reports each failing file once", () => {

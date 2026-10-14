@@ -71,10 +71,13 @@ if [[ "$lane" == affected ]]; then
   if [[ -n "$base" ]]; then
     bun scripts/select-ci-coverage.ts --base "$base"
   fi
-  echo "[ci] typecheck"
-  bun run check:type
-  echo "[ci] affected tests"
-  BUN_TEST_FILES="$(bun -e 'const files = JSON.parse(await Bun.file(".ci-affected-tests.json").text()); if (!Array.isArray(files) || new Set(files).size !== files.length || files.some(f => typeof f !== "string" || !/^tests\/[\w/.-]+\.test\.tsx?$/.test(f) || f.split("/").includes(".."))) throw Error("Invalid affected tests"); console.log(files.join("\n"));')"
+  # CI_SHARD=<index>/<total> runs one duration-balanced part; shard 0 also owns typecheck.
+  BUN_TEST_FILES="$(bun -e 'const files = JSON.parse(await Bun.file(".ci-affected-tests.json").text()); if (!Array.isArray(files) || new Set(files).size !== files.length || files.some(f => typeof f !== "string" || !/^tests\/[\w/.-]+\.test\.tsx?$/.test(f) || f.split("/").includes(".."))) throw Error("Invalid affected tests"); const shard = process.env.CI_SHARD ?? ""; let selected = files; if (shard) { const match = /^(\d+)\/(\d+)$/.exec(shard); if (!match) throw Error("Invalid CI_SHARD"); const { shardTestFiles } = await import("./scripts/select-test-suite.ts"); const durations = JSON.parse(await Bun.file("scripts/test-file-durations.json").text()).files; selected = shardTestFiles(files, durations, Number(match[1]), Number(match[2])); } console.log(selected.join("\n"));')"
+  if [[ -z "${CI_SHARD:-}" || "${CI_SHARD%%/*}" == 0 ]]; then
+    echo "[ci] typecheck"
+    bun run check:type
+  fi
+  echo "[ci] affected tests${CI_SHARD:+ (shard $CI_SHARD)}"
   if [[ -n "$BUN_TEST_FILES" ]]; then
     BUN_TEST_ISOLATE_FILES=1
     BUN_TEST_TIMEOUT_MS=60000
@@ -84,7 +87,7 @@ if [[ "$lane" == affected ]]; then
     bun run build:oar-hosts
     run_bun_tests
   else
-    echo "[ci] No executable consumers changed; typecheck completed."
+    echo "[ci] No affected tests${CI_SHARD:+ in shard $CI_SHARD}."
   fi
   echo "[ci] OK"
   exit 0
