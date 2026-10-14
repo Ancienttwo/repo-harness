@@ -46,27 +46,29 @@ REPO_HARNESS_DIFF_BASE=origin/main REPO_HARNESS_DIFF_MODE=merge-base \
 `scripts/select-ci-coverage.ts#isDocumentationPath` is the whole documentation
 allowlist:
 
-- `README.md`
+- `README.md` and `DEBUG.md`
 - `docs/architecture/.projection-manifest.json`
 - anything under `tasks/`, `plans/`, or `.ai/harness/handoff/`
-- any `.md` under `docs/`, **except** anything under `docs/reference-configs/`
+- any `.md` under `docs/` or `examples/`, **except** anything under
+  `docs/reference-configs/`
 
-Every other path keeps full coverage, including `src/`, `tests/`, `scripts/`,
+Every other path is code coverage, including `src/`, `tests/`, `scripts/`,
 `assets/`, `.github/`, `.archcontext/`, `.ai/harness/policy.json`, and
-`docs/reference-configs/`. One unclassified path in the diff is enough to force
-`full`, so a mixed documentation-and-code change gets the full suite.
+`docs/reference-configs/`. Such a path selects its import and literal-path
+consumers. A mixed change runs the union of both selections.
 
 ## Documentation-consumer tests are a derived list
 
 `scripts/ci-documentation-consumers.ts` scans the test sources for reads that
 resolve to a tracked repository document, using bounded lexical path flow.
-`tests/ci-documentation-consumers.test.ts:45-48` then asserts that the
-`Check documentation consumers` step in `.github/workflows/ci.yml` selects
-exactly that discovered projection through `BUN_TEST_FILES`.
+It also counts a test that starts a child process in, or against, the checkout
+root. The check is lexical: it sees a `spawn`/`exec` call in the same test file
+whose whole argument resolves to the root. It does not see a helper in another
+file, a default parameter, an inherited working directory or a launcher with
+another name. The daily full suite covers those cases. `scripts/select-ci-coverage.ts` runs the scanner during CI selection. A changed
+documentation path selects exactly that list. There is no hand-kept copy.
 
 So a new test that reads a real document from the checkout (rather than from a
-temporary fixture it wrote itself) changes the projection, and the workflow's
-list has to be updated in the same change. Run
-`bun test tests/ci-documentation-consumers.test.ts --timeout 60000` to see the
-expected list; a case that reads only fixture-written files is excluded by
-design and needs no workflow entry.
+temporary fixture it wrote itself) joins the list automatically. Run
+`bun scripts/ci-documentation-consumers.ts --list` to see the current list. A
+case that reads only fixture-written files is excluded by design.

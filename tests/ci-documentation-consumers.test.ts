@@ -26,6 +26,9 @@ describe('documentation consumer discovery', () => {
       'shadow.test.ts': `const ROOT = join(import.meta.dir, '..'); readFileSync(join(ROOT, 'src/main.ts')); function fixture() { const ROOT = mkdtempSync('fixture'); readFileSync(join(ROOT, 'docs/guide.md')); }`,
       'outside.test.ts': `const ROOT = join(import.meta.dir, '../..'); readFileSync(join(ROOT, 'docs/guide.md'));`,
       'comment.test.ts': `// readFileSync('docs/guide.md');\nreadFileSync('src/main.ts');`,
+      'process-cwd.test.ts': `const ROOT = join(import.meta.dir, '..'); spawnSync('bun', ['scripts/check.ts', '--repo', '.'], { cwd: ROOT });`,
+      'process-arg.test.ts': `const ROOT = join(import.meta.dir, '..'); Bun.spawnSync(['bun', 'src/main.ts', ROOT]);`,
+      'process-fixture.test.ts': `const ROOT = join(import.meta.dir, '..'); const dir = mkdtempSync('fixture'); spawnSync('bun', [join(ROOT, 'src/main.ts')], { cwd: dir });`,
     };
     try {
       mkdirSync(join(root, 'docs')); writeFileSync(join(root, 'docs/existing.md'), '# Guide');
@@ -37,7 +40,7 @@ describe('documentation consumer discovery', () => {
       }
       expect(await discoverDocumentationConsumers(root, new Set(['docs/existing.md', 'tasks/todos.md']))).toEqual([
         'tests/checkout-write-read.test.ts', 'tests/cwd.test.ts', 'tests/dynamic.test.ts', 'tests/indirect.test.ts', 'tests/loop.test.ts',
-        'tests/named-guide.test.ts', 'tests/relative.test.ts', 'tests/two-step.test.ts', 'tests/wrapper.test.ts',
+        'tests/named-guide.test.ts', 'tests/process-arg.test.ts', 'tests/process-cwd.test.ts', 'tests/relative.test.ts', 'tests/two-step.test.ts', 'tests/wrapper.test.ts',
       ]);
     } finally { rmSync(root, { recursive: true, force: true }); }
   });
@@ -45,6 +48,9 @@ describe('documentation consumer discovery', () => {
   test('documentation consumers remain available to affected verification', async () => {
     const files = await discoverDocumentationConsumers(ROOT);
     expect(files).toContain('tests/cli/documentation-contracts.test.ts');
+    // Real consumers: the changelog reader and the export that rejects orphan architecture module documents.
+    expect(files).toContain('tests/evidence-residue-scan.test.ts');
+    expect(files).toContain('tests/capability-archcontext-export.test.ts');
     const workflow = Bun.YAML.parse(readFileSync(join(ROOT, '.github/workflows/ci.yml'), 'utf8')) as any;
     expect(workflow.jobs.verify.steps.some((step: any) => step.run === 'bash scripts/check-ci.sh affected')).toBe(true);
     expect(workflow.jobs.documentation).toBeUndefined();

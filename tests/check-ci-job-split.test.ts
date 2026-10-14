@@ -32,12 +32,15 @@ describe('single affected verification and daily fallback', () => {
       ['tests/cli/consumer.test.ts', "const CLI = join(ROOT, 'src/cli/index.ts'); spawnSync('bun', [CLI]);"],
       ['tests/unrelated.test.ts', "import { other } from '../src/other';"],
     ]);
-    expect(selectAffectedTests(['src/core/feature.ts'], sources)).toEqual(['tests/cli/consumer.test.ts', 'tests/unit/feature.test.ts']);
-    expect(selectAffectedTests(['tests/unrelated.test.ts'], sources)).toEqual(['tests/unrelated.test.ts']);
-    expect(selectAffectedTests(['docs/researches/observation.md'], sources)).toEqual([]);
-    expect(selectAffectedTests(['DEBUG.md', 'examples/agent-architecture.md'], sources)).toEqual([]);
-    expect(() => selectAffectedTests(['unknown/product.conf'], sources)).toThrow('coverage is unknown');
-    expect(selectAffectedTests(['src/core/deleted.ts'], new Map([...sources, ['src/core/deleted.ts', 'export const feature=1'], ['src/effects/feature.ts', "// old imported edge kept for this diff\nimport { feature } from '../core/deleted';"]]))).toEqual(['tests/cli/consumer.test.ts', 'tests/unit/feature.test.ts']);
+    expect(selectAffectedTests(['src/core/feature.ts'], sources, [])).toEqual(['tests/cli/consumer.test.ts', 'tests/unit/feature.test.ts']);
+    expect(selectAffectedTests(['tests/unrelated.test.ts'], sources, [])).toEqual(['tests/unrelated.test.ts']);
+    expect(selectAffectedTests(['docs/researches/observation.md'], sources, [])).toEqual([]);
+    expect(selectAffectedTests(['DEBUG.md', 'examples/agent-architecture.md'], sources, [])).toEqual([]);
+    expect(() => selectAffectedTests(['unknown/product.conf'], sources, [])).toThrow('coverage is unknown');
+    const hub = new Map([...sources, ['src/core/feature.ts', "export const targetFiles = ['plans', 'docs/guide.md']; export const feature = 1"]]);
+    expect(selectAffectedTests(['plans/plan.md', 'docs/guide.md'], hub, ['tests/docs.test.ts'])).toEqual(['tests/docs.test.ts']);
+    expect(selectAffectedTests(['docs/guide.md', 'src/core/feature.ts'], hub, ['tests/docs.test.ts'])).toEqual(['tests/cli/consumer.test.ts', 'tests/docs.test.ts', 'tests/unit/feature.test.ts']);
+    expect(selectAffectedTests(['src/core/deleted.ts'], new Map([...sources, ['src/core/deleted.ts', 'export const feature=1'], ['src/effects/feature.ts', "// old imported edge kept for this diff\nimport { feature } from '../core/deleted';"]]), [])).toEqual(['tests/cli/consumer.test.ts', 'tests/unit/feature.test.ts']);
   });
 
   test('private pstack files select their real isolated test owner without granting a prefix exemption', () => {
@@ -52,24 +55,24 @@ describe('single affected verification and daily fallback', () => {
     ].map(file => `${prefix}${file}`);
     const sources = new Map(files.map(file => [file, readFileSync(join(ROOT, file), 'utf8')]));
     sources.set(owner, readFileSync(join(ROOT, owner), 'utf8'));
-    expect(selectAffectedTests(files, sources)).toEqual([owner]);
-    for (const file of files) expect(selectAffectedTests([file], sources)).toEqual([owner]);
+    expect(selectAffectedTests(files, sources, [])).toEqual([owner]);
+    for (const file of files) expect(selectAffectedTests([file], sources, [])).toEqual([owner]);
     sources.delete(owner);
-    expect(() => selectAffectedTests([`${prefix}vendor/policy.ts`], sources)).toThrow('coverage is unknown');
+    expect(() => selectAffectedTests([`${prefix}vendor/policy.ts`], sources, [])).toThrow('coverage is unknown');
     sources.set(owner, readFileSync(join(ROOT, owner), 'utf8'));
     for (const path of ['experiments/private/unregistered/runner.ts', 'experiments/public/runner.ts', 'unknown/product.conf']) {
-      expect(() => selectAffectedTests([path], sources)).toThrow('coverage is unknown');
+      expect(() => selectAffectedTests([path], sources, [])).toThrow('coverage is unknown');
     }
   });
 
   test('canonical changelog uses the docs policy and keeps real consumer coverage', () => {
-    expect(selectAffectedTests(['docs/CHANGELOG.md'], new Map())).toEqual([]);
+    expect(selectAffectedTests(['docs/CHANGELOG.md'], new Map(), [])).toEqual([]);
     const sources = new Map([
       ['tests/release-notes.test.ts', "readFileSync('docs/CHANGELOG.md');"],
     ]);
-    expect(selectAffectedTests(['docs/CHANGELOG.md'], sources)).toEqual(['tests/release-notes.test.ts']);
+    expect(selectAffectedTests(['docs/CHANGELOG.md'], sources, ['tests/release-notes.test.ts'])).toEqual(['tests/release-notes.test.ts']);
     for (const path of ['CHANGELOG.md', 'RELEASE.md', 'release/CHANGELOG.md', 'unknown/product.conf']) {
-      expect(() => selectAffectedTests([path], new Map())).toThrow('coverage is unknown');
+      expect(() => selectAffectedTests([path], new Map(), [])).toThrow('coverage is unknown');
     }
   });
 
@@ -132,8 +135,11 @@ describe('single affected verification and daily fallback', () => {
       for (const verification of ['success', 'failure', 'cancelled', 'skipped']) {
         for (const mode of ['affected', 'daily', 'invalid', '']) {
           for (const isolation of ['success', 'failure', 'cancelled', 'skipped', '']) {
-            const result = spawnSync('/bin/bash', ['-c', command], { encoding: 'utf8', env: { ...process.env, SELECTION_RESULT: selection, COVERAGE_MODE: mode, VERIFY_RESULT: verification, HOME_ISOLATION_RESULT: isolation } });
-            expect(result.status === 0).toBe(selection === 'success' && verification === 'success' && mode === 'affected' && isolation === 'success');
+            for (const documentation of ['true', 'false', '']) {
+              const result = spawnSync('/bin/bash', ['-c', command], { encoding: 'utf8', env: { ...process.env, SELECTION_RESULT: selection, COVERAGE_MODE: mode, VERIFY_RESULT: verification, HOME_ISOLATION_RESULT: isolation, DOCUMENTATION_ONLY: documentation } });
+              expect(result.status === 0).toBe(selection === 'success' && verification === 'success' && mode === 'affected'
+                && (isolation === 'success' || (documentation === 'true' && isolation === 'skipped')));
+            }
           }
         }
       }
@@ -143,7 +149,9 @@ describe('single affected verification and daily fallback', () => {
   test('required HOME isolation runs native OAR acceptance only on the exact macOS candidate', () => {
     const job = workflow.jobs['test-home-isolation'];
     expect(job.needs).toBe('selection');
-    expect(job.if).toBe("needs.selection.outputs.mode == 'affected' || needs.selection.outputs.mode == 'daily'");
+    expect(job.if).toBe("needs.selection.outputs.mode == 'daily' || (needs.selection.outputs.mode == 'affected' && needs.selection.outputs.documentation != 'true')");
+    expect(workflow.jobs.selection.outputs.documentation).toBe('${{ steps.select.outputs.documentation }}');
+    expect(workflow.jobs.required.steps[0].env.DOCUMENTATION_ONLY).toBe('${{ needs.selection.outputs.documentation }}');
     expect(job['runs-on']).toBe('${{ matrix.os }}');
     expect(job.strategy.matrix.os).toEqual(['ubuntu-latest', 'macos-latest', 'windows-latest']);
     expect(job['continue-on-error']).toBeUndefined();
@@ -194,9 +202,31 @@ describe('single affected verification and daily fallback', () => {
       const result = spawnSync(process.execPath, [join(ROOT, 'scripts/select-ci-coverage.ts')], { cwd: repo, encoding: 'utf8', env: { ...process.env, GITHUB_EVENT_NAME: 'pull_request', GITHUB_EVENT_PATH: event, GITHUB_OUTPUT: output, GITHUB_SHA: head } });
       expect(result.status).toBe(0);
       expect(JSON.parse(readFileSync(join(repo, '.ci-affected-tests.json'), 'utf8'))).toEqual(['tests/feature.test.ts']);
-      expect(readFileSync(output, 'utf8')).toBe(`mode=affected\nsha=${head}\n`);
+      expect(readFileSync(output, 'utf8')).toBe(`mode=affected\nsha=${head}\ndocumentation=false\n`);
     } finally { rmSync(repo, { recursive: true, force: true }); }
   });
+
+  test('documentation-only PR selects scanned checkout consumers and reports documentation', () => {
+    const repo = mkdtempSync(join(tmpdir(), 'rh-ci-documentation-selection-'));
+    const git = (...args: string[]) => { const result = spawnSync('git', args, { cwd: repo, encoding: 'utf8' }); if (result.status !== 0) throw Error(result.stderr); return result.stdout.trim(); };
+    const write = (path: string, content: string) => { mkdirSync(resolve(repo, path, '..'), { recursive: true }); writeFileSync(join(repo, path), content); };
+    try {
+      git('init', '-q'); git('config', 'user.name', 'CI fixture'); git('config', 'user.email', 'ci@example.invalid'); git('config', 'commit.gpgsign', 'false');
+      write('tsconfig.json', JSON.stringify({ compilerOptions: { noEmit: true }, include: ['src/**/*.ts', 'tests/**/*.ts'] }));
+      write('docs/guide.md', '# Guide');
+      write('src/feature.ts', "export const targetDirectories = ['docs', 'plans'];");
+      write('tests/feature.test.ts', "import { targetDirectories } from '../src/feature';");
+      write('tests/guide.test.ts', "import { join } from 'node:path'; import { readFileSync } from 'node:fs'; const ROOT = join(import.meta.dir, '..'); readFileSync(join(ROOT, 'docs/guide.md'));");
+      git('add', '.'); git('commit', '-qm', 'base'); const base = git('rev-parse', 'HEAD');
+      write('docs/guide.md', '# Changed guide'); write('plans/plan.md', '# Plan'); git('add', '.'); git('commit', '-qm', 'candidate'); const head = git('rev-parse', 'HEAD');
+      const event = join(repo, '.git/event.json'); const output = join(repo, '.git/output');
+      writeFileSync(event, JSON.stringify({ pull_request: { base: { sha: base } } })); writeFileSync(output, '');
+      const result = spawnSync(process.execPath, [join(ROOT, 'scripts/select-ci-coverage.ts')], { cwd: repo, encoding: 'utf8', env: { ...process.env, GITHUB_EVENT_NAME: 'pull_request', GITHUB_EVENT_PATH: event, GITHUB_OUTPUT: output, GITHUB_SHA: head } });
+      expect(result.status, result.stderr).toBe(0);
+      expect(JSON.parse(readFileSync(join(repo, '.ci-affected-tests.json'), 'utf8'))).toEqual(['tests/guide.test.ts']);
+      expect(readFileSync(output, 'utf8')).toBe(`mode=affected\nsha=${head}\ndocumentation=true\n`);
+    } finally { rmSync(repo, { recursive: true, force: true }); }
+  }, 60_000);
 
   test('local base selects committed, staged, unstaged and untracked changes with removed import edges', () => {
     const repo = mkdtempSync(join(tmpdir(), 'rh-ci-local-selection-'));

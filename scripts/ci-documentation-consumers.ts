@@ -3,9 +3,10 @@ import { existsSync } from 'node:fs';
 import { dirname, isAbsolute, relative, resolve, join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { API } from 'typescript/unstable/async';
-import { isArrayLiteralExpression, isCallExpression, isForOfStatement, isFunctionDeclaration, isIdentifier, isImportDeclaration, isNewExpression, isPropertyAccessExpression, isStringLiteralLikeNode, isVariableDeclaration, SyntaxKind, type Node, type SourceFile } from 'typescript/unstable/ast';
+import { isArrayLiteralExpression, isCallExpression, isForOfStatement, isFunctionDeclaration, isIdentifier, isImportDeclaration, isNewExpression, isObjectLiteralExpression, isPropertyAccessExpression, isPropertyAssignment, isShorthandPropertyAssignment, isStringLiteralLikeNode, isVariableDeclaration, SyntaxKind, type Node, type SourceFile } from 'typescript/unstable/ast';
 import { isDocumentationPath } from './select-ci-coverage';
 
+const launchers = new Set(['spawn', 'spawnSync', 'execFile', 'execFileSync', 'execSync', 'exec']);
 const readers = new Set(['readFileSync', 'readFile', 'readdirSync', 'readdir', 'existsSync', 'statSync', 'lstatSync', 'copyFileSync', 'cpSync', 'file']);
 const nameOf = (node: Node): string => isIdentifier(node) ? node.text : isPropertyAccessExpression(node) ? node.name.text : '';
 function walk(node: Node, visit: (node: Node) => void) { visit(node); node.forEachChild(child => { walk(child, visit); }); }
@@ -90,6 +91,16 @@ export function sourceConsumesDocumentation(source: SourceFile, repoRoot: string
       if (family(path)) return true;
       if (isAbsolute(value) && (path === '*' || path === '') && literals) return true;
     }
+  }
+  // checkout-root-process: a child process that runs in, or targets, the checkout root
+  // can read any tracked document, for example a script that walks docs/architecture/.
+  for (const call of calls) {
+    if (!launchers.has(op(call.expression))) continue;
+    // Whole argument values only: join(ROOT, 'src/main.ts') names a file, not the root.
+    const rooted = (node: Node): boolean => isObjectLiteralExpression(node)
+      ? node.properties.some(property => isPropertyAssignment(property) ? rooted(property.initializer) : isShorthandPropertyAssignment(property) && rooted(property.name))
+      : values(node).some(value => isAbsolute(value) && relative(repoRoot, value) === '');
+    if (call.arguments.some(rooted)) return true;
   }
   // named-checkout-document-reference: fixture/generated reads can assert a named
   // tracked docs/ guide's contract. Fixture tasks/plans ledgers do not establish

@@ -52,8 +52,11 @@ export function selectCoverage(input: CoverageInput): CoverageSelection {
 
 /** Reverse source imports and literal runtime/file consumers, including old edges removed in this diff.
  * Directory and split-path literals deliberately widen coverage; unresolved changes fail closed.
+ *
+ * Documentation paths select only the checkout documentation consumers. Their literal
+ * paths also name target-repository files in product code, so import closure over-selects.
  */
-export function selectAffectedTests(paths: readonly string[], sources: ReadonlyMap<string, string>, previousSources: ReadonlyMap<string, string> = new Map()): string[] {
+export function selectAffectedTests(paths: readonly string[], sources: ReadonlyMap<string, string>, documentationConsumers: readonly string[], previousSources: ReadonlyMap<string, string> = new Map()): string[] {
   const files = [...sources.keys()];
   const reverse = new Map<string, Set<string>>();
   const add = (dependency: string, consumer: string) => {
@@ -95,14 +98,15 @@ export function selectAffectedTests(paths: readonly string[], sources: ReadonlyM
   const tests = new Set<string>();
   const uncovered: string[] = [];
   for (const path of paths) {
+    if (isDocumentationPath(path)) { for (const test of documentationConsumers) tests.add(test); continue; }
     const seen = new Set([path]); const queue = [path]; let covered = false;
     for (let i = 0; i < queue.length; i++) {
       const consumer = queue[i]!;
       if (/^tests\/.*\.test\.tsx?$/.test(consumer) && sources.has(consumer)) { tests.add(consumer); covered = true; }
       for (const next of reverse.get(consumer) ?? []) if (!seen.has(next)) { seen.add(next); queue.push(next); }
     }
-    // Research/archive prose has no executable behavior. Other unknown surfaces require a real consumer.
-    if (!covered && !isDocumentationPath(path) && !path.startsWith('docs/images/')) uncovered.push(path);
+    // Images have no executable behavior. Other unknown surfaces require a real consumer.
+    if (!covered && !path.startsWith('docs/images/')) uncovered.push(path);
   }
   if (uncovered.length) throw new Error(`Affected coverage is unknown for: ${uncovered.join(', ')}. Add the actual consumer regression; do not substitute a skipped/full-suite pass.`);
   return [...tests].sort();
@@ -142,10 +146,14 @@ if (import.meta.main) {
       const old = spawnSync('git', ['show', `${base}:${file}`], { encoding: 'utf8' });
       if (old.status === 0) previousSources.set(file, old.stdout);
     }
-    const tests = selectAffectedTests(selection.paths, sources, previousSources);
+    const documentationConsumers = selection.paths.some(isDocumentationPath)
+      ? await (await import('./ci-documentation-consumers')).discoverDocumentationConsumers(process.cwd()) : [];
+    const tests = selectAffectedTests(selection.paths, sources, documentationConsumers, previousSources);
     writeFileSync('.ci-affected-tests.json', JSON.stringify(tests));
     console.log(`Selected ${tests.length} affected tests for ${selection.paths.length} changed paths`);
   }
-  console.log(`mode=${selection.mode}\nreason=${selection.reason}\nhead=${headSha}\nbase=${base ?? headSha}`);
-  if (!local) appendFileSync(process.env.GITHUB_OUTPUT!, `mode=${selection.mode}\nsha=${headSha}\n`);
+  // Documentation-only candidates skip the cross-platform lane; the daily snapshot still runs it.
+  const documentation = selection.paths.length > 0 && selection.paths.every(isDocumentationPath);
+  console.log(`mode=${selection.mode}\nreason=${selection.reason}\nhead=${headSha}\nbase=${base ?? headSha}\ndocumentation=${documentation}`);
+  if (!local) appendFileSync(process.env.GITHUB_OUTPUT!, `mode=${selection.mode}\nsha=${headSha}\ndocumentation=${documentation}\n`);
 }

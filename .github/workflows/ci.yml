@@ -25,6 +25,7 @@ jobs:
     outputs:
       mode: ${{ steps.select.outputs.mode }}
       sha: ${{ steps.select.outputs.sha }}
+      documentation: ${{ steps.select.outputs.documentation }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -34,6 +35,8 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.3
+      # The documentation consumer scanner parses tests with the installed TypeScript API.
+      - run: bun install --frozen-lockfile
       - id: select
         run: bun scripts/select-ci-coverage.ts
       - uses: actions/upload-artifact@v4
@@ -47,7 +50,8 @@ jobs:
   test-home-isolation:
     name: Test HOME isolation (${{ matrix.os }})
     needs: selection
-    if: needs.selection.outputs.mode == 'affected' || needs.selection.outputs.mode == 'daily'
+    # A documentation-only candidate changes no runtime or test code.
+    if: needs.selection.outputs.mode == 'daily' || (needs.selection.outputs.mode == 'affected' && needs.selection.outputs.documentation != 'true')
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     strategy:
@@ -337,5 +341,7 @@ jobs:
           COVERAGE_MODE: ${{ needs.selection.outputs.mode }}
           VERIFY_RESULT: ${{ needs.verify.result }}
           HOME_ISOLATION_RESULT: ${{ needs.test-home-isolation.result }}
+          DOCUMENTATION_ONLY: ${{ needs.selection.outputs.documentation }}
         run: |
-          [ "$SELECTION_RESULT" = success ] && [ "$COVERAGE_MODE" = affected ] && [ "$VERIFY_RESULT" = success ] && [ "$HOME_ISOLATION_RESULT" = success ]
+          [ "$SELECTION_RESULT" = success ] && [ "$COVERAGE_MODE" = affected ] && [ "$VERIFY_RESULT" = success ] \
+            && { [ "$HOME_ISOLATION_RESULT" = success ] || { [ "$DOCUMENTATION_ONLY" = true ] && [ "$HOME_ISOLATION_RESULT" = skipped ]; }; }
