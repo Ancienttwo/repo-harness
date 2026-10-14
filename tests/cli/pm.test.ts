@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from 'bun:test';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, readdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, relative } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createHash } from 'node:crypto';
@@ -789,8 +789,9 @@ for (const change of ['enabled', 'profile', 'version', 'revision'] as const) {
   }
   test(`PM HTTP queued collect checks live ${change} after session lock`, async () => queuedHttpConfiguration('collect', change, 'session'));
 }
+test('PM HTTP queued collect fails closed on an unreadable live configuration', async () => queuedHttpConfiguration('collect', 'unreadable', 'task'));
 
-async function queuedHttpConfiguration(operation: 'dispatch' | 'collect', change: 'enabled' | 'profile' | 'version' | 'revision', lock: 'topology' | 'task' | 'session') {
+async function queuedHttpConfiguration(operation: 'dispatch' | 'collect', change: 'enabled' | 'profile' | 'version' | 'revision' | 'unreadable', lock: 'topology' | 'task' | 'session') {
   const f = fixture(true); mcpScope(f);
   const { request, dir } = requestFixture(f, { pid: process.pid, identity: 'unused-fixture-process-proof' });
   const result = { request_id: request.request_id, context_sha256: request.context_sha256, value: 'queued-http-fixture' };
@@ -798,6 +799,11 @@ async function queuedHttpConfiguration(operation: 'dispatch' | 'collect', change
   const configPath = join(f.home, 'mcp.local.json');
   const config = { version: 3, profile: 'pm', authorizationRevision: 7, pm: { enabled: true } };
   writeFileSync(configPath, JSON.stringify(config), { mode: 0o600 });
+  // The live server polls this file. Replace it atomically so a read never sees a truncated write.
+  const replaceConfig = (text: string) => {
+    const temporary = configPath + '.tmp';
+    writeFileSync(temporary, text, { mode: 0o600 }); renameSync(temporary, configPath);
+  };
   const store = new McpOAuthTokenStore(join(f.home, 'mcp.oauth-tokens.json'));
   const client = store.registerClient({ redirect_uris: ['http://localhost/fixture'], token_endpoint_auth_method: 'none' });
   store.setAccessToken('queued-http-token', { token: 'queued-http-token', clientId: client.client_id, authorizationId: 'queued-http-owner',
@@ -876,10 +882,10 @@ await startMcpHttp({repo:${JSON.stringify(f.repo)},profile:'pm',port:${port}});
     held.assertOwned();
     expect(existsSync(responsePath)).toBe(false);
     expect(existsSync(join(dir, 'collected-1.json'))).toBe(false);
-    const changed = change === 'enabled' ? { ...config, pm: { enabled: false } }
+    const changed: unknown = change === 'unreadable' ? '' : change === 'enabled' ? { ...config, pm: { enabled: false } }
       : change === 'profile' ? { ...config, profile: 'planner' }
       : change === 'version' ? { ...config, version: 2 } : { ...config, authorizationRevision: 8 };
-    writeFileSync(configPath, JSON.stringify(changed)); held.release();
+    replaceConfig(typeof changed === 'string' ? changed : JSON.stringify(changed)); held.release();
     const wire = queued.text().catch(() => '');
     const completionDeadline = Date.now() + 10_000;
     while (!existsSync(responsePath) && Date.now() < completionDeadline) await Bun.sleep(10);
@@ -888,11 +894,12 @@ await startMcpHttp({repo:${JSON.stringify(f.repo)},profile:'pm',port:${port}});
     const remote = await wire;
     if (remote) expect(JSON.parse(pmHttpPayload(remote).result.content[0].text)).toMatchObject({ ok: false });
     expect(response).toMatchObject({ ok: false, error: { code: 'pm_http_configuration_changed' } });
+    expect(proc.exitCode).toBeNull();
     expect(existsSync(join(dir, 'collected-1.json'))).toBe(false);
     expect(existsSync(join(dir, 'coding-host'))).toBe(false);
     expect(existsSync(join(f.execution, '.ai/harness/runs/pm-input'))).toBe(false);
     expect(readFileSync(request.result_ref, 'utf8')).toContain('queued-http-fixture');
-    writeFileSync(configPath, JSON.stringify(config));
+    replaceConfig(JSON.stringify(config));
     if (operation === 'collect') {
       const fresh = await initialize();
       const accepted = await post(fresh, { jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'pm_collect', arguments: args } });

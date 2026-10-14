@@ -714,7 +714,14 @@ export async function startMcpHttp(opts: McpHttpOptions): Promise<void> {
   };
   const authorizationTimer = authorizationScoped ? setInterval(() => {
     const currentRevision = repoHarnessAuthorizationRevision();
-    const liveConfig = loadMcpLocalConfig();
+    let liveConfig: ReturnType<typeof loadMcpLocalConfig>;
+    try {
+      liveConfig = loadMcpLocalConfig();
+    } catch {
+      // An unreadable configuration is no authority. Close in-flight work and keep the server alive.
+      closeStaleAuthorizationState();
+      return;
+    }
     if (currentRevision !== observedAuthorizationRevision) {
       observedAuthorizationRevision = currentRevision;
       closeStaleAuthorizationState();
@@ -868,7 +875,8 @@ export async function startMcpHttp(opts: McpHttpOptions): Promise<void> {
         // This verifier also runs inside the PM effect guard after every lock
         // wait. Closing a session cannot cancel an already queued operation.
         if (pm) {
-          const live = loadMcpLocalConfig();
+          let live: ReturnType<typeof loadMcpLocalConfig>;
+          try { live = loadMcpLocalConfig(); } catch { throw new PmError('pm_http_configuration_changed'); }
           if (live?.version !== 3 || live.profile !== 'pm' || live.pm?.enabled !== true
             || live.authorizationRevision !== repoHarnessAuthorizationRevision()
             || (live.auth?.mode ?? 'oauth') !== 'oauth') throw new PmError('pm_http_configuration_changed');
