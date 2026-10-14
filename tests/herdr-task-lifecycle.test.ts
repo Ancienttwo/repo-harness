@@ -1193,9 +1193,10 @@ try{await serveCodingHostRequests(host,spec,close,()=>closing!==undefined)}final
     const runtimeObservation=api.taskAgentStatus(repo,spec.task,spec.role).requests?.[0].runtime_observation;
     expect(runtimeObservation).toMatchObject({request_id:first.request_id,input_id:first.request_id,status:'idle',outcome:'completed',control:'accepted',failure:null});
     expect(runtimeObservation?.session_id).toBe(api.readSessionArtifact<{session_id:string}>(join(control,'ready.json')).session_id);
-    const captured=api.readSessionArtifact<{host:{pid:number;identity:string};records:Array<{kind:string;body:{kind?:string;inputId?:string}}> }>(join(dir,'oar-observation-1.json'));
+    const captured=api.readSessionArtifact<{host:{pid:number;identity:string};input_id:string;records?:unknown}>(join(dir,'oar-observation-1.json'));
     expect(captured.host).toEqual({pid:binding.provider.pid,identity:binding.provider.identity});
-    expect(captured.records.find(record=>record.kind==='request'&&record.body.kind==='prompt')?.body.inputId).toBe(first.request_id);
+    expect(captured.input_id).toBe(first.request_id);
+    expect(captured.records).toBeUndefined();
     await expect(coding.sendCodingTaskRequest(checkout,spec.task,spec.role,'context.md')).rejects.toThrow('ambiguous_round');
     await expect(coding.closeCodingTaskAgent(repo,spec.task,spec.role)).rejects.toThrow('pending_request');
     expect(existsSync(join(control,'close.request'))).toBe(false);

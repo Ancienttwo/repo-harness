@@ -30,13 +30,23 @@ Status remains available for read-only observation.
 
 Each worker request has a `runtime_observation` field. It is `null` when no OAR
 capture is available. Otherwise it reports the native session ID, canonical
-input ID, captured sequence, phase, control outcome and failure class. It is
-the last captured observation for that request. It is not a liveness guarantee.
-The hosts capture during the prompt and save the final observation when it ends.
-Status reads the saved records with OAR's reducer. It does not start a provider.
-The raw prompt, native payload and error prose stay in a private snapshot.
-Invalid data and request or host identity mismatches fail the query.
-An OAR completion does not change `result_saved` or authorize acceptance.
+input ID, sequence, phase, running start sequence, last native event time,
+control outcome and failure class. It is the last observation for that request.
+It is not a liveness guarantee. An absent event time stays `null`.
+
+Both hosts fold events once with OAR's reducer. They save a closed v2 snapshot
+by atomic rename. The encoded snapshot is limited to 16 KiB. Normal writes are
+at least one second apart. A trailing write saves the latest event. Prompt end
+flushes immediately. Quiet periods do not write a heartbeat or advance time.
+Status validates the saved fields. It does not replay a log or start a provider.
+Prompt text, reasoning, tool input and output, native payloads and error prose
+are not saved. Tool phase keeps only the SDK tool name, call ID and writing flag.
+
+Only the current input-scoped SDK result sets the request outcome. A prior
+Session outcome cannot set it. Invalid data, extra fields and request or host
+identity mismatches fail the query. The v1 raw-log shape is rejected. It has no
+compatibility read path. An OAR completion does not change `result_saved` or
+authorize acceptance. The snapshot limit does not bound OAR's retained log.
 
 No operation takes a shell command, executable, environment, permission setting,
 arbitrary output path or publication command from the model. Unknown fields fail.

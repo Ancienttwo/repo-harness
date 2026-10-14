@@ -5,6 +5,7 @@ import { basename, dirname, join, relative } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createHash } from 'node:crypto';
 import { createSessionKernel } from '@botiverse/oar/kernel';
+import { statusOf, turnEndAfter } from '@botiverse/oar/observe';
 import { OAR_OBSERVATION_PROTOCOL, oarObservationFile } from '../../src/effects/terminal/task-runtime-observation';
 import { PM_OPERATION_SCHEMAS, PmError, parsePmRequest, type PmRequest, type PmTaskScope } from '../../src/core/pm/protocol';
 import { buildPmCommand, runPmJson } from '../../src/cli/commands/pm';
@@ -158,9 +159,12 @@ test('PM status exposes bound OAR observations without treating runtime completi
   const prompt = kernel.request('toRuntime', { kind: 'prompt', inputId: request.request_id, input: 'private-prompt' });
   kernel.respond(prompt.id, { kind: 'accepted' });
   kernel.frame({ type: 'fixture/completed', native: { private: 'private-native' }, events: [{ kind: 'turn_ended', outcome: { kind: 'completed' } }] });
+  const folded = statusOf(kernel.records(), kernel.sessionId);
+  const outcome = turnEndAfter(kernel.records(), prompt.seq, kernel.sessionId, request.request_id);
   const snapshot = { protocol: OAR_OBSERVATION_PROTOCOL, request_id: request.request_id, round: 1,
     host: { pid: binding.provider.pid, identity: binding.provider.identity }, session_id: kernel.sessionId,
-    initial_seq: -1, initial_status: { kind: 'idle' }, records: kernel.records() };
+    input_id: request.request_id, seq: folded.seq, status: folded.value.kind, phase: null, since_seq: null,
+    last_event_at: kernel.records().at(-1)!.receivedAt, outcome: outcome!.kind, failure: null, control: 'accepted', rejection: null };
   const path = join(dir, oarObservationFile(1));
   writeSessionArtifact(path, snapshot);
   const status = await executePmRequest({ protocol: 1, operation: 'status', repo_id: f.scope.repo_id }, f.env) as any;
