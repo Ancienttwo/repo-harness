@@ -109,7 +109,7 @@ sequenceDiagram
 ## 3. P3：设计决策与不变量
 ### 3.1 必须保持的不变量
 
-1. **PR 只跑 typecheck 和受影响测试，main 每天跑全量。** `ci.yml` 的 `affected` 模式运行 `bash scripts/check-ci.sh affected`（`.github/workflows/ci.yml:154`）。`schedule` 每天触发一次（`ci.yml:8`）。来源：PR #483、PR #625。文档路径只选 `scripts/ci-documentation-consumers.ts` 扫出的测试。全部路径都是文档时，PR 跳过跨平台 HOME isolation 和原生 OAR 任务。daily 仍然覆盖这两项。
+1. **PR 只跑 typecheck 和受影响测试，main 每天跑全量。** `ci.yml` 的 `affected` 模式运行 `bash scripts/check-ci.sh affected`（`.github/workflows/ci.yml:154`）。`schedule` 每天触发一次（`ci.yml:8`）。来源：PR #483、PR #625。文档路径只选 `scripts/ci-documentation-consumers.ts` 扫出的测试。平台任务分别按 `home_isolation` 和 `native_oar` 触发。HOME 读取测试 import 与 bunfig preload；原生 OAR 读取 host bundle 输入、原生测试的完整本地 import 闭包、preload 和 shell 脚本。CI 实现变更触发两项。只有标志为 `false` 时 Required / CI 才接受对应 job 的 skip。daily 仍然覆盖这两项。
 2. **覆盖选择不确定时失败。** `selectCoverage` 是纯函数（`scripts/select-ci-coverage.ts`）。缺少端点、diff 不可用和 checkout 不匹配时，selection 失败。没有消费者的未知路径也失败（`selectAffectedTests`）。selection 不用全量覆盖代替未知覆盖。
 3. **一个测试清单和一个调度。** `scripts/select-test-suite.ts` 拥有本地和 CI 的测试清单与调度（PR #504）。调度输入是实测时长 `scripts/test-file-durations.json`（`select-test-suite.ts:61`）。PR 的 `verify` 是三个 matrix shard：`shardTestFiles` 按实测时长把受影响文件分成互不重叠的三份，shard 0 另跑 typecheck（`CI_SHARD`，`scripts/check-ci.sh`）。
 4. **每个测试文件都在隔离的 HOME 和 TMPDIR 里运行。** `bunfig.toml` 预加载 `tests/preload-home-isolation.ts`。HOME 或 TMPDIR 不在临时目录时，预加载拒绝运行（`preload-home-isolation.ts:37`）。来源：PR #518。
@@ -313,10 +313,24 @@ walk checkout documents; for example, `capability-resolver.ts export` rejects
 an orphan module document. The check is lexical. It sees a `spawn`/`exec` call
 in the same test file whose whole argument resolves to the root. It does not
 see a helper in another file, a default parameter, an inherited working
-directory or a launcher with another name. The daily full suite covers those. When every changed path is documentation, selection
-writes `documentation=true`. The PR then skips the cross-platform HOME isolation
-and native OAR lane. Required / CI accepts only that skip. The daily run keeps
-the full suite and that lane.
+directory or a launcher with another name. The daily full suite covers those. Platform selection now uses separate dependency sets for HOME isolation and
+native OAR. See the next section.
+
+## 2026-10-14 On-demand platform jobs
+
+The workflow separates `home-isolation` (three OSes) from `native-oar` (macOS).
+`scripts/select-ci-coverage.ts` reads the test lists from those workflow steps.
+HOME selection follows test imports and the preloads configured in bunfig.toml.
+Native selection follows the full local import closure of the native tests, configured preloads, all shell
+scripts, and the inputs in the two OAR host build metafiles. The build scripts
+in package.json own the host build arguments. CI implementation files trigger
+both jobs. Missing inventory or a failed build stops selection.
+
+Selection writes `home_isolation` and `native_oar`. Each platform job runs unless
+its affected-mode flag is `false`. Required / CI accepts `success`, or `skipped`
+with that job's flag set to `false`. Daily still runs both jobs. Platform bugs
+outside the trigger sets can be found only by the daily full run.
+
 
 ## 2026-10-11 之前的 §3 原文（移入历史）
 

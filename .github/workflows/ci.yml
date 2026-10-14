@@ -25,7 +25,8 @@ jobs:
     outputs:
       mode: ${{ steps.select.outputs.mode }}
       sha: ${{ steps.select.outputs.sha }}
-      documentation: ${{ steps.select.outputs.documentation }}
+      native_oar: ${{ steps.select.outputs.native_oar }}
+      home_isolation: ${{ steps.select.outputs.home_isolation }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -47,11 +48,10 @@ jobs:
           include-hidden-files: true
           if-no-files-found: error
 
-  test-home-isolation:
+  home-isolation:
     name: Test HOME isolation (${{ matrix.os }})
     needs: selection
-    # A documentation-only candidate changes no runtime or test code.
-    if: needs.selection.outputs.mode == 'daily' || (needs.selection.outputs.mode == 'affected' && needs.selection.outputs.documentation != 'true')
+    if: needs.selection.outputs.mode == 'daily' || (needs.selection.outputs.mode == 'affected' && needs.selection.outputs.home_isolation != 'false')
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     strategy:
@@ -76,11 +76,27 @@ jobs:
           source scripts/lib/ci-run-tests.sh
           run_bun_test_file tests/preload-home-isolation.test.ts
           run_bun_test_file tests/unit/trusted-gh-executable.test.ts
+
+  native-oar:
+    name: Native OAR acceptance (macOS)
+    needs: selection
+    if: needs.selection.outputs.mode == 'daily' || (needs.selection.outputs.mode == 'affected' && needs.selection.outputs.native_oar != 'false')
+    runs-on: macos-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.selection.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.3
       - name: Install pinned Herdr runtime
-        if: matrix.os == 'macos-latest'
         uses: ./.github/actions/install-pinned-herdr
       - name: Record native pipeline filesystem
-        if: matrix.os == 'macos-latest'
         shell: bash
         run: |
           set -euo pipefail
@@ -101,7 +117,6 @@ jobs:
           node -e 'const fs=require("node:fs");for(const path of ["/tmp",process.cwd()]) console.log(JSON.stringify({runtime:"node",path,type:fs.statfsSync(path).type,dev:fs.statSync(path).dev}))'
           bun -e 'const fs=require("node:fs");for(const path of ["/tmp",process.cwd()]) console.log(JSON.stringify({runtime:"bun",path,type:fs.statfsSync(path).type,dev:fs.statSync(path).dev}))'
       - name: Run native OAR acceptance tests
-        if: matrix.os == 'macos-latest'
         shell: bash
         env:
           EXPECTED_SHA: ${{ needs.selection.outputs.sha }}
@@ -339,7 +354,7 @@ jobs:
   required:
     name: Required / CI
     if: always() && github.event_name == 'pull_request'
-    needs: [selection, verify, test-home-isolation]
+    needs: [selection, verify, home-isolation, native-oar]
     runs-on: ubuntu-latest
     steps:
       - name: Consume the single candidate verification
@@ -347,8 +362,11 @@ jobs:
           SELECTION_RESULT: ${{ needs.selection.result }}
           COVERAGE_MODE: ${{ needs.selection.outputs.mode }}
           VERIFY_RESULT: ${{ needs.verify.result }}
-          HOME_ISOLATION_RESULT: ${{ needs.test-home-isolation.result }}
-          DOCUMENTATION_ONLY: ${{ needs.selection.outputs.documentation }}
+          HOME_ISOLATION_RESULT: ${{ needs.home-isolation.result }}
+          HOME_ISOLATION: ${{ needs.selection.outputs.home_isolation }}
+          NATIVE_OAR_RESULT: ${{ needs.native-oar.result }}
+          NATIVE_OAR: ${{ needs.selection.outputs.native_oar }}
         run: |
           [ "$SELECTION_RESULT" = success ] && [ "$COVERAGE_MODE" = affected ] && [ "$VERIFY_RESULT" = success ] \
-            && { [ "$HOME_ISOLATION_RESULT" = success ] || { [ "$DOCUMENTATION_ONLY" = true ] && [ "$HOME_ISOLATION_RESULT" = skipped ]; }; }
+            && { [ "$HOME_ISOLATION_RESULT" = success ] || { [ "$HOME_ISOLATION" = false ] && [ "$HOME_ISOLATION_RESULT" = skipped ]; }; } \
+            && { [ "$NATIVE_OAR_RESULT" = success ] || { [ "$NATIVE_OAR" = false ] && [ "$NATIVE_OAR_RESULT" = skipped ]; }; }

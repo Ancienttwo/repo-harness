@@ -73,7 +73,7 @@ selection 对 `affected` 模式算出两个标志。daily 模式两个标志都�
 **`native_oar=true`**，当任一改动路径属于：
 - CI 实现面。
 - `*.sh`。macOS 的 `/bin/bash` 是 3.2；#608 用原生任务发现过 `scripts/contract-worktree.sh` 的 bash 3.2 bug。
-- 原生 OAR 测试文件本身，以及它们在 `tests/` 下 import 的 helper。测试文件列表从 workflow 步骤 `Run native OAR acceptance tests` 读取，不另存一份。
+- 原生 OAR 测试文件本身，以及它们的本地 import 闭包，包括 `src/` 和 `scripts/` 模块。闭包规则和 HOME 一样。测试文件列表从 workflow 步骤 `Run native OAR acceptance tests` 读取，不另存一份。
 - 两个 OAR host 的 bundle 输入。selection 用 `bun build --metafile` 构建 `package.json` 里 `build:oar-review-host` 和 `build:oar-coding-host` 的入口，读 metafile 的 `inputs`。今天每个 host 有 10 个输入，例如 `src/effects/terminal/task-session.ts`、`src/effects/terminal/herdr.ts`、`src/effects/review/review-isolation.ts`。
 - `.ai/harness/policy.json`。`install-pinned-herdr` action 从这个文件读 Herdr 版本。只改版本号的 PR 也要跑原生 lane。
 
@@ -104,14 +104,14 @@ selection ──> verify (3 shards)                   ──┐
 
 | 任务 | 今天 | 第一阶段 |
 | --- | --- | --- |
-| macOS 原生 OAR | 117（100%） | 49（42%） |
+| macOS 原生 OAR | 117（100%） | 约 62%（只跟 `tests/` import 时是 47%） |
 | 三 OS HOME 隔离 | 117（100%） | 约 33（28%） |
 
 纯文档 PR 两项都是 0，和今天一样。不触发时，PR 墙钟时间由 `verify` 决定，约 4 分钟。
 
 ### 2.4 剩余风险
 
-这一阶段假设 macOS 特有的失败集中在 OAR host 代码、shell 脚本和 CI 实现里。如果某个平台问题出在别的 TS 模块里，Linux 上的 `verify` 仍会跑同一组原生测试的逻辑部分，但 darwin 特有的行为（`sandbox-exec`、APFS、Herdr 二进制）要等 daily 才跑到。daily 失败会开修复 issue；main 最多红一天。
+这一阶段假设 macOS 特有的失败集中在原生测试的 import 闭包、OAR host 代码、shell 脚本和 CI 实现里。原生闭包现在跟随 `src/` 和 `scripts/` import，所以原生测试直接或间接用到的模块都会触发原生 lane。剩下的缺口是不被原生测试 import 的模块：darwin 特有的行为（`sandbox-exec`、APFS、Herdr 二进制）在这些模块里要等 daily 才跑到。daily 失败会开修复 issue；main 最多红一天。
 
 ### 2.5 改动清单
 
