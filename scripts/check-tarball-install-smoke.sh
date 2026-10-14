@@ -58,7 +58,6 @@ const required = [
   "scripts/check-pi-package-smoke.ts",
   "SKILL.md",
   "assets/skill-commands/repo-harness-check/SKILL.md",
-  "src/cli/hook/prompt-handler.ts",
   "assets/templates/helpers/capability-resolver.ts",
   "assets/templates/helpers/capability-config.ts",
   "assets/templates/helpers/change-assessment.ts",
