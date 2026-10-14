@@ -310,7 +310,10 @@ Now a documentation path selects only the list from
 `scripts/ci-documentation-consumers.ts`. The scanner also counts a test that
 starts a child process in, or against, the checkout root. Such a process can
 walk checkout documents; for example, `capability-resolver.ts export` rejects
-an orphan module document. When every changed path is documentation, selection
+an orphan module document. The check is lexical. It sees a `spawn`/`exec` call
+in the same test file whose whole argument resolves to the root. It does not
+see a helper in another file, a default parameter, an inherited working
+directory or a launcher with another name. The daily full suite covers those. When every changed path is documentation, selection
 writes `documentation=true`. The PR then skips the cross-platform HOME isolation
 and native OAR lane. Required / CI accepts only that skip. The daily run keeps
 the full suite and that lane.
