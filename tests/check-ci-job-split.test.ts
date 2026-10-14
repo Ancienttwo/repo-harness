@@ -188,7 +188,8 @@ describe('single affected verification and daily fallback', () => {
       ['tests/native.test.ts', "import './helpers/native'; import '../src/other';"],
       ['tests/helpers/native.ts', "import './nested';"], ['tests/helpers/nested.ts', 'export {};'],
       ['tests/home.test.ts', "import '../src/home';"], ['src/home.ts', "import './nested';"],
-      ['src/nested.ts', 'export {};'], ['src/other.ts', "import './deep';"], ['src/deep.ts', 'export {};'],
+      ['src/nested.ts', 'export {};'], ['src/other.ts', "import './deep'; import schema from '../assets/schema.json';"], ['src/deep.ts', 'export {};'],
+      ['assets/schema.json', '{ "type": "object", "properties": {} }'],
       ['src/unrelated.ts', 'export {};'], ['tests/preload.ts', 'export {};'],
     ]);
     const native = platformImportClosure(['tests/native.test.ts', 'tests/preload.ts'], sources);
@@ -203,7 +204,7 @@ describe('single affected verification and daily fallback', () => {
     }
     expect(selectPlatformCoverage(['.ai/harness/policy.json'], inputs)).toEqual({ native_oar: true, home_isolation: false });
     // A src module imported only by a native test root, directly or transitively, triggers the native lane.
-    for (const path of ['src/other.ts', 'src/deep.ts']) {
+    for (const path of ['src/other.ts', 'src/deep.ts', 'assets/schema.json']) {
       expect(selectPlatformCoverage([path], inputs)).toEqual({ native_oar: true, home_isolation: false });
     }
     expect(selectPlatformCoverage(['src/nested.ts'], inputs)).toEqual({ native_oar: false, home_isolation: true });

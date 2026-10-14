@@ -132,6 +132,8 @@ export function platformImportClosure(roots: readonly string[], sources: Readonl
     const file = queue[index]!;
     const source = sources.get(file);
     if (source === undefined) throw new Error(`Platform coverage requires source: ${file}`);
+    // Data imports such as JSON schemas are trigger inputs with no imports of their own.
+    if (!/\.[cm]?[jt]sx?$/.test(file)) continue;
     const imports = new Bun.Transpiler({ loader: file.endsWith('x') ? 'tsx' : 'ts' }).scanImports(source.replace(/^#![^\n]*$/gm, ''));
     for (const entry of imports) {
       if (!entry.path.startsWith('.')) continue;
