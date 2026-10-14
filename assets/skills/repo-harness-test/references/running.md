@@ -64,12 +64,22 @@ run as "not covered here" rather than "passed".
 
 ## Which CI lane a push or PR gets
 
-`scripts/select-ci-coverage.ts#selectCoverage` picks one of three modes:
+`scripts/select-ci-coverage.ts#selectCoverage` picks the mode:
 
-- `draft`: the PR is marked draft; testing is deferred until it is ready.
-- `docs`: every changed path passes `isDocumentationPath` (lines 18-27).
-- `full`: everything else, including any unclassified path, an invalid or
-  unavailable diff, a checkout mismatch, and `workflow_dispatch`.
+- `affected`: a pull request. CI runs typecheck and the affected test files.
+- `report`: a push to `main`. CI records the result and runs no tests.
+- `daily`: the schedule or `workflow_dispatch` on `main`. CI runs the full
+  suite and the native matrices.
+
+An invalid or unavailable diff, or a checkout mismatch, fails selection.
+
+`selectAffectedTests` follows import and literal-path consumers for code paths.
+An unknown path without a consumer fails selection. A path that passes
+`isDocumentationPath` selects only the tests that
+`scripts/ci-documentation-consumers.ts` finds. When every changed path is
+documentation, the selection output `documentation=true` also skips the
+cross-platform HOME isolation and native OAR lane. The daily run still covers
+that lane.
 
 Replay the selector over recent history before claiming a lane split works:
 

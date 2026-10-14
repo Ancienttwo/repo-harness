@@ -109,7 +109,7 @@ sequenceDiagram
 ## 3. P3：设计决策与不变量
 ### 3.1 必须保持的不变量
 
-1. **PR 只跑 typecheck 和受影响测试，main 每天跑全量。** `ci.yml` 的 `affected` 模式运行 `bash scripts/check-ci.sh affected`（`.github/workflows/ci.yml:142`）。`schedule` 每天触发一次（`ci.yml:8`）。来源：PR #483、PR #625。
+1. **PR 只跑 typecheck 和受影响测试，main 每天跑全量。** `ci.yml` 的 `affected` 模式运行 `bash scripts/check-ci.sh affected`（`.github/workflows/ci.yml:149`）。`schedule` 每天触发一次（`ci.yml:8`）。来源：PR #483、PR #625。文档路径只选 `scripts/ci-documentation-consumers.ts` 扫出的测试。全部路径都是文档时，PR 跳过跨平台 HOME isolation 和原生 OAR 任务。daily 仍然覆盖这两项。
 2. **覆盖选择不确定时取全量。** `selectCoverage` 是纯函数（`scripts/select-ci-coverage.ts:27`）。缺少端点、diff 不可用、checkout 不匹配和未知路径都保留全量覆盖（§4 "CI coverage selection"）。
 3. **一个测试清单和一个调度。** `scripts/select-test-suite.ts` 拥有本地和 CI 的测试清单与调度（PR #504）。调度输入是实测时长 `scripts/test-file-durations.json`（`select-test-suite.ts:46`）。
 4. **每个测试文件都在隔离的 HOME 和 TMPDIR 里运行。** `bunfig.toml` 预加载 `tests/preload-home-isolation.ts`。HOME 或 TMPDIR 不在临时目录时，预加载拒绝运行（`preload-home-isolation.ts:37`）。来源：PR #518。
