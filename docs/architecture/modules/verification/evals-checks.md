@@ -109,9 +109,9 @@ sequenceDiagram
 ## 3. P3：设计决策与不变量
 ### 3.1 必须保持的不变量
 
-1. **PR 只跑 typecheck 和受影响测试，main 每天跑全量。** `ci.yml` 的 `affected` 模式运行 `bash scripts/check-ci.sh affected`（`.github/workflows/ci.yml:149`）。`schedule` 每天触发一次（`ci.yml:8`）。来源：PR #483、PR #625。文档路径只选 `scripts/ci-documentation-consumers.ts` 扫出的测试。全部路径都是文档时，PR 跳过跨平台 HOME isolation 和原生 OAR 任务。daily 仍然覆盖这两项。
+1. **PR 只跑 typecheck 和受影响测试，main 每天跑全量。** `ci.yml` 的 `affected` 模式运行 `bash scripts/check-ci.sh affected`（`.github/workflows/ci.yml:154`）。`schedule` 每天触发一次（`ci.yml:8`）。来源：PR #483、PR #625。文档路径只选 `scripts/ci-documentation-consumers.ts` 扫出的测试。全部路径都是文档时，PR 跳过跨平台 HOME isolation 和原生 OAR 任务。daily 仍然覆盖这两项。
 2. **覆盖选择不确定时失败。** `selectCoverage` 是纯函数（`scripts/select-ci-coverage.ts`）。缺少端点、diff 不可用和 checkout 不匹配时，selection 失败。没有消费者的未知路径也失败（`selectAffectedTests`）。selection 不用全量覆盖代替未知覆盖。
-3. **一个测试清单和一个调度。** `scripts/select-test-suite.ts` 拥有本地和 CI 的测试清单与调度（PR #504）。调度输入是实测时长 `scripts/test-file-durations.json`（`select-test-suite.ts:46`）。
+3. **一个测试清单和一个调度。** `scripts/select-test-suite.ts` 拥有本地和 CI 的测试清单与调度（PR #504）。调度输入是实测时长 `scripts/test-file-durations.json`（`select-test-suite.ts:61`）。PR 的 `verify` 是三个 matrix shard：`shardTestFiles` 按实测时长把受影响文件分成互不重叠的三份，shard 0 另跑 typecheck（`CI_SHARD`，`scripts/check-ci.sh`）。
 4. **每个测试文件都在隔离的 HOME 和 TMPDIR 里运行。** `bunfig.toml` 预加载 `tests/preload-home-isolation.ts`。HOME 或 TMPDIR 不在临时目录时，预加载拒绝运行（`preload-home-isolation.ts:37`）。来源：PR #518。
 5. **本地显式验证只做两件事。** `verify-sprint.sh` 先运行 typecheck，再运行调用方给出的测试文件。测试路径必须在 `tests/` 下，不能逃出仓库（`scripts/verify-sprint.sh:28`）。`--base` 交给 `merge-gate.ts` 消费可信 PR 检查，不重跑命令（`verify-sprint.sh:22`）。
 6. **contract preflight 只校验元数据。** `verify-contract.sh --contract <file> --preflight` 校验 Task Profile、Allowed Paths 和 Review File，不运行测试，不写 Status，不生成 receipt（`scripts/verify-contract.sh:6`）。其他参数交给 `verify-sprint.sh`。

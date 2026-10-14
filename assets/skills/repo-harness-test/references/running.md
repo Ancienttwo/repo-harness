@@ -67,6 +67,8 @@ run as "not covered here" rather than "passed".
 `scripts/select-ci-coverage.ts#selectCoverage` picks the mode:
 
 - `affected`: a pull request. CI runs typecheck and the affected test files.
+  Three `verify` shards split the files by recorded duration
+  (`CI_SHARD=<index>/<total>`). Shard 0 also runs typecheck.
 - `report`: a push to `main`. CI records the result and runs no tests.
 - `daily`: the schedule or `workflow_dispatch` on `main`. CI runs the full
   suite and the native matrices.

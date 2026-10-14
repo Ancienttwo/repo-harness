@@ -41,6 +41,21 @@ export function scheduleTestFiles(files: readonly string[], durations: Readonly<
   return [...files].sort((a, b) => (durations[b] ?? 0) - (durations[a] ?? 0) || a.localeCompare(b));
 }
 
+/** Splits files into disjoint shards with balanced recorded durations. Every shard computes the same split.
+ * Files with no record have no load to balance, so they spread round-robin by path.
+ */
+export function shardTestFiles(files: readonly string[], durations: Readonly<Record<string, number>>, index: number, total: number): string[] {
+  if (!Number.isInteger(total) || total < 1 || !Number.isInteger(index) || index < 0 || index >= total) throw Error('Invalid shard');
+  const shards = Array.from({ length: total }, () => ({ load: 0, files: [] as string[] }));
+  let unrecorded = 0;
+  for (const file of scheduleTestFiles(files, durations)) {
+    if (!Object.hasOwn(durations, file)) { shards[unrecorded++ % total]!.files.push(file); continue; }
+    const target = shards.reduce((best, shard) => shard.load < best.load ? shard : best);
+    target.files.push(file); target.load += durations[file]!;
+  }
+  return shards[index]!.files.sort();
+}
+
 if (import.meta.main) {
   const [suite = 'full', ...selected] = process.argv.slice(2);
   const durations = JSON.parse(readFileSync(new URL('./test-file-durations.json', import.meta.url), 'utf8')).files;

@@ -120,11 +120,16 @@ jobs:
           bun run test:files tests/generic-review.test.ts tests/acceptance-receipt.test.ts tests/cli/cross-review.test.ts tests/herdr-task-lifecycle.test.ts tests/cli/pm.test.ts --timeout 60000 --max-concurrency 1
 
   verify:
-    name: Typecheck and affected tests
+    name: Affected tests (shard ${{ matrix.shard }}/3)
     needs: selection
     if: needs.selection.outputs.mode == 'affected'
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    strategy:
+      # Each shard keeps its own failure evidence; Required / CI reads the matrix result.
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -147,6 +152,8 @@ jobs:
       - name: Install pinned Herdr runtime
         uses: ./.github/actions/install-pinned-herdr
       - run: bash scripts/check-ci.sh affected
+        env:
+          CI_SHARD: ${{ matrix.shard }}/3
 
   # Advisory only: this job is not in the Required / CI aggregate, and its
   # script exits 0 for every architecture result.
