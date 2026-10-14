@@ -148,9 +148,16 @@ export async function promptWithOarObservation(session: Session, request: Reques
   } finally {
     stop();
     if (timer !== undefined) clearTimeout(timer);
-    if (captureFailed) { await disposal; throw captureError; }
     // Flush the final state even when the last event fell inside the interval.
-    publish();
+    if (!captureFailed) { try { publish(); } catch (error) { fail(error); } }
+    if (captureFailed) {
+      try { await disposal; }
+      catch (disposeError) {
+        const reason = captureError instanceof Error ? captureError.message : String(captureError);
+        throw new AggregateError([captureError, disposeError], `${reason} (session disposal also failed)`);
+      }
+      throw captureError;
+    }
   }
 }
 

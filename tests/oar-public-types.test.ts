@@ -162,6 +162,13 @@ try{
  await assert.rejects(promptWithOarObservation(stopped,request,host,'capture-failure',{timeoutMs:10000},()=>{if(++refusedWrites>1)throw new Error('capture-write-refused')}),/capture-write-refused/);
  assert.equal(stopped.records().some(record=>record.kind==='request'&&record.body.kind==='dispose'),true);
 }finally{await stopped.dispose()}
+// Disposal failure must not replace the capture error; both stay visible.
+const inner=await scriptedRuntime({turn:async({signal})=>{await new Promise(resolve=>signal.addEventListener('abort',resolve,{once:true}))}}).session({kind:'available',via:'bundled'},{cwd:dir});
+const refusing=new Proxy(inner,{get(target,key){if(key==='dispose')return async()=>{await target.dispose();throw new Error('dispose-refused')};const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value}});
+let secondWrites=0;
+try{
+ await assert.rejects(promptWithOarObservation(refusing,request,host,'capture-failure',{timeoutMs:10000},()=>{if(++secondWrites>1)throw new Error('capture-write-refused')}),error=>error instanceof AggregateError&&error.errors[0].message==='capture-write-refused'&&error.errors[1].message==='dispose-refused');
+}finally{await inner.dispose().catch(()=>{})}
 console.log(JSON.stringify({passed:true}));
 `);
     const result = spawnSync('node', [driver], { cwd: root, encoding: 'utf8', timeout: 20_000 });

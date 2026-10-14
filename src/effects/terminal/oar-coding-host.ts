@@ -57,13 +57,13 @@ export async function runCodingHostRequest(host: OarCodingHost, spec: CodingHost
   const { binding } = assertTaskRequest(spec.primary_root, spec.request_directory, request);
   if (binding.execution_root !== spec.admission.execution_root || binding.host !== null || request.round > spec.max_requests) throw new Error('OAR_CODING_REQUEST_INVALID');
   const started = readSessionArtifact<{ request_id: string; provider: { pid: number; identity: string } }>(join(spec.request_directory, `started-${request.round}.json`));
+  // A stray host must fail before any marker; only the bound host may write attempt-N.
   if (started.request_id !== request.request_id || started.provider?.pid !== binding.provider.pid
-    || started.provider.identity !== binding.provider.identity) throw new Error('OAR_CODING_REQUEST_IDENTITY_MISMATCH');
+    || started.provider.identity !== binding.provider.identity || started.provider.pid !== process.pid) throw new Error('OAR_CODING_REQUEST_IDENTITY_MISMATCH');
   const content = readFileSync(request.context_ref, 'utf8');
   if (`sha256:${createHash('sha256').update(content).digest('hex')}` !== request.context_sha256) throw new Error('OAR_CODING_CONTEXT_MISMATCH');
   // Immutable before prompt. A host restart never delivers this input again.
   writeSessionArtifact(join(spec.control_directory, `attempt-${request.round}.json`), { request_id: request.request_id });
-  if (started.provider.pid !== process.pid) throw new Error('OAR_CODING_REQUEST_IDENTITY_MISMATCH');
   writeSessionArtifact(join(spec.control_directory, `ack-${request.round}.json`), { request_id: request.request_id });
   const result = await host.prompt(request, content, started.provider, snapshot => writeSessionArtifact(
     join(spec.request_directory, oarObservationFile(request.round)), snapshot, false));
