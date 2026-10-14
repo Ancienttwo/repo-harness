@@ -80,8 +80,8 @@ An unknown path without a consumer fails selection. A path that passes
 `isDocumentationPath` selects only the tests that
 `scripts/ci-documentation-consumers.ts` finds. Platform jobs have separate outputs: `home_isolation` and `native_oar`.
 The HOME matrix uses its workflow test imports and the configured test preloads.
-The macOS native OAR job uses its workflow tests and test helpers, configured
-preloads, shell scripts, and the OAR host bundle inputs. Selection builds the
+The macOS native OAR job uses the full local import closure of its workflow
+tests (tests, src and scripts), configured preloads, shell scripts, and the OAR host bundle inputs. Selection builds the
 hosts with the package scripts and reads their metafiles. CI implementation
 changes trigger both jobs. A job skips only when its output is `false`.
 Required / CI accepts a skip only with that exact output. Daily runs both jobs.

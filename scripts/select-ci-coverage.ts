@@ -124,8 +124,8 @@ export function selectPlatformCoverage(paths: readonly string[], inputs: Platfor
   };
 }
 
-/** Resolve only real local imports. Native helpers stay within tests; host code comes from the bundler. */
-export function platformImportClosure(roots: readonly string[], sources: ReadonlyMap<string, string>, testsOnly = false): Set<string> {
+/** Resolve only real local imports. A native or HOME root pulls in every repo-local module it imports. */
+export function platformImportClosure(roots: readonly string[], sources: ReadonlyMap<string, string>): Set<string> {
   const seen = new Set(roots);
   const queue = [...roots];
   for (let index = 0; index < queue.length; index++) {
@@ -138,7 +138,7 @@ export function platformImportClosure(roots: readonly string[], sources: Readonl
       const base = posix.normalize(posix.join(dirname(file), entry.path));
       const dependency = [base, `${base}.ts`, `${base}.tsx`, `${base}/index.ts`, `${base}/index.tsx`].find(path => sources.has(path));
       if (!dependency) throw new Error(`Unresolved platform import: ${file} -> ${entry.path}`);
-      if ((testsOnly && !dependency.startsWith('tests/')) || seen.has(dependency)) continue;
+      if (seen.has(dependency)) continue;
       seen.add(dependency); queue.push(dependency);
     }
   }
@@ -167,7 +167,7 @@ export function discoverPlatformInputs(sources: ReadonlyMap<string, string>, roo
   if (!Array.isArray(config?.test?.preload) || !config.test.preload.length
     || config.test.preload.some((path: unknown) => typeof path !== 'string' || !validPath(path.replace(/^\.\//, '')))) throw new Error('Platform coverage requires test preloads');
   const preloads: string[] = config.test.preload.map((path: string) => path.replace(/^\.\//, ''));
-  const native = platformImportClosure([...testsFor('native-oar', 'Run native OAR acceptance tests'), ...preloads], sources, true);
+  const native = platformImportClosure([...testsFor('native-oar', 'Run native OAR acceptance tests'), ...preloads], sources);
   const home = platformImportClosure([...testsFor('home-isolation', 'Run the isolation tests'), ...preloads], sources);
   const directory = mkdtempSync(join(tmpdir(), 'rh-ci-platform-'));
   try {

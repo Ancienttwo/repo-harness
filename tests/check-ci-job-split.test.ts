@@ -183,14 +183,15 @@ describe('single affected verification and daily fallback', () => {
     }
   });
 
-  test('platform triggers use bundle inputs, test imports and configured preloads', () => {
+  test('platform triggers use bundle inputs, full test import closures and configured preloads', () => {
     const sources = new Map([
       ['tests/native.test.ts', "import './helpers/native'; import '../src/other';"],
       ['tests/helpers/native.ts', "import './nested';"], ['tests/helpers/nested.ts', 'export {};'],
       ['tests/home.test.ts', "import '../src/home';"], ['src/home.ts', "import './nested';"],
-      ['src/nested.ts', 'export {};'], ['src/other.ts', 'export {};'], ['tests/preload.ts', 'export {};'],
+      ['src/nested.ts', 'export {};'], ['src/other.ts', "import './deep';"], ['src/deep.ts', 'export {};'],
+      ['src/unrelated.ts', 'export {};'], ['tests/preload.ts', 'export {};'],
     ]);
-    const native = platformImportClosure(['tests/native.test.ts', 'tests/preload.ts'], sources, true);
+    const native = platformImportClosure(['tests/native.test.ts', 'tests/preload.ts'], sources);
     for (const path of bundleInputPaths({ inputs: { 'src/host.ts': {}, './src/host-dependency.ts': {} } })) native.add(path);
     const home = platformImportClosure(['tests/home.test.ts', 'tests/preload.ts'], sources);
     const inputs = { native, home };
@@ -201,9 +202,13 @@ describe('single affected verification and daily fallback', () => {
       expect(selectPlatformCoverage([path], inputs)).toEqual({ native_oar: true, home_isolation: false });
     }
     expect(selectPlatformCoverage(['.ai/harness/policy.json'], inputs)).toEqual({ native_oar: true, home_isolation: false });
+    // A src module imported only by a native test root, directly or transitively, triggers the native lane.
+    for (const path of ['src/other.ts', 'src/deep.ts']) {
+      expect(selectPlatformCoverage([path], inputs)).toEqual({ native_oar: true, home_isolation: false });
+    }
     expect(selectPlatformCoverage(['src/nested.ts'], inputs)).toEqual({ native_oar: false, home_isolation: true });
     expect(selectPlatformCoverage(['tests/preload.ts'], inputs)).toEqual({ native_oar: true, home_isolation: true });
-    expect(selectPlatformCoverage(['docs/guide.md', 'plans/plan.md', 'src/other.ts'], inputs)).toEqual({ native_oar: false, home_isolation: false });
+    expect(selectPlatformCoverage(['docs/guide.md', 'plans/plan.md', 'src/unrelated.ts'], inputs)).toEqual({ native_oar: false, home_isolation: false });
     expect(() => bundleInputPaths({ inputs: {} })).toThrow('missing');
     expect(() => bundleInputPaths({ inputs: { '../outside.ts': {} } })).toThrow('Invalid');
     expect(() => platformImportClosure(['tests/missing.ts'], sources)).toThrow('requires source');
