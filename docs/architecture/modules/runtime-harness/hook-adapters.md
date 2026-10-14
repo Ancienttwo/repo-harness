@@ -1,9 +1,9 @@
 # runtime-harness/hook-adapters 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-hook-adapters" sourceDigest="sha256:2f33bc2a438bd9a13022af340a67c00d0f596c6228600ee22d9259bf03e1e961" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:53cade118abb3c5c7267232d854d78681c0608b5657313f2c74dafbee25a5230" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-hook-adapters" sourceDigest="sha256:8febbf77799198a0885f6aaf4836b11498a4540b639ee40e46ea96803f989d57" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:d4bf7fa0deb28c66c713f374c17e2436c0558be8d3ab0229e8a8305cb845466f" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.hook-adapters`(kind `capability`)
-> **Matched Prefixes**:`assets/hooks/**`、`src/cli/installer/**`、`src/cli/hook/**`、`src/cli/hook-entry.ts`、`src/pi/**`、`src/effects/loop/**`、`src/effects/hook-event-log.ts`、`src/effects/run-summary-retention.ts`、`src/cli/commands/install.ts`、`src/cli/commands/status.ts`、`src/cli/commands/security.ts`、`src/cli/commands/hook.ts`
-> **Local Contracts**:`assets/hooks/AGENTS.md`、`assets/hooks/CLAUDE.md`
+> **Matched Prefixes**:`src/cli/hook/**`、`src/cli/installer/**`、`src/cli/hook-entry.ts`、`src/pi/**`、`src/effects/loop/**`、`src/effects/hook-event-log.ts`、`src/effects/run-summary-retention.ts`、`src/cli/commands/install.ts`、`src/cli/commands/status.ts`、`src/cli/commands/security.ts`
+> **Local Contracts**:`src/cli/hook/AGENTS.md`、`src/cli/hook/CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
 Installs and runs typed Claude, Codex, and Pi host hook routes.
@@ -21,9 +21,9 @@ flowchart LR
   p1_component_hook_adapters_primary_1659ffb9["Hook Route Runtime"]:::component
   p1_component_hook_adapters_session_lifecycle_e389d412["Session Lifecycle Handlers"]:::component
   p1_component_hook_adapters_edit_guards_019fd22c -->|"Implement the typed handler contract and read hook input through the shared parsers"| p1_component_hook_adapters_primary_1659ffb9
-  p1_component_hook_adapters_host_installer_cd378e80 -->|"Project the route registry into managed adapter entries and invoke the runtime for hook-lib and Pi events"| p1_component_hook_adapters_primary_1659ffb9
+  p1_component_hook_adapters_host_installer_cd378e80 -->|"Project the route registry into managed adapter entries and invoke the runtime for Pi events"| p1_component_hook_adapters_primary_1659ffb9
   p1_capability_runtime_harness_hook_adapters_75a11743 -->|"Dispatch a host hook route to its typed handler"| p1_component_hook_adapters_primary_1659ffb9
-  p1_component_hook_adapters_primary_1659ffb9 -->|"Bind the edit guard#44; Bash observer and prompt routes to their typed handlers"| p1_component_hook_adapters_edit_guards_019fd22c
+  p1_component_hook_adapters_primary_1659ffb9 -->|"Bind the edit guard and the Pi Bash observer routes to their typed handlers"| p1_component_hook_adapters_edit_guards_019fd22c
   p1_component_hook_adapters_primary_1659ffb9 -->|"Bind SessionStart and Stop and subagent and inbox routes to their typed handlers"| p1_component_hook_adapters_session_lifecycle_e389d412
   p1_component_hook_adapters_session_lifecycle_e389d412 -->|"Publish the evidence checkpoint and render handoff and resume from it"| p1_capability_runtime_harness_evidence_ledger_2fe63ef5
   p1_component_hook_adapters_session_lifecycle_e389d412 -->|"Implement the typed handler contract and read state through the event-scoped collector"| p1_component_hook_adapters_primary_1659ffb9
@@ -33,7 +33,7 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:ad8809cb262638bf0c8a101f1962e85ba057eb89a3801d08e0a7c36a6ad06d70`).
+- Proof: `proven` (`sha256:ec792e9257364e22b74052c9fc7bc76fbbdd5a2f9098f6b21a65197ad9299591`).
 - Semantic nodes: `6`; declared relations: `7`.
 
 ### 1.2 模組職責表
@@ -53,7 +53,7 @@ flowchart LR
 ### 1.3 規模信號
 
 - 規模量級:`20–50` 個文件 / `5000–10000` 行
-- 匹配前綴:`assets/hooks/**`、`src/cli/installer/**`、`src/cli/hook/**`、`src/cli/hook-entry.ts`、`src/pi/**`、`src/effects/loop/**`、`src/effects/hook-event-log.ts`、`src/effects/run-summary-retention.ts`、`src/cli/commands/install.ts`、`src/cli/commands/status.ts`、`src/cli/commands/security.ts`、`src/cli/commands/hook.ts`
+- 匹配前綴:`src/cli/hook/**`、`src/cli/installer/**`、`src/cli/hook-entry.ts`、`src/pi/**`、`src/effects/loop/**`、`src/effects/hook-event-log.ts`、`src/effects/run-summary-retention.ts`、`src/cli/commands/install.ts`、`src/cli/commands/status.ts`、`src/cli/commands/security.ts`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
 ### 1.4 依賴邊界
@@ -81,15 +81,14 @@ flowchart LR
   - `calls` → `capability.workflow-engine.workflow-state` — Canonicalize edit paths, resolve the owners of edited paths and read the repair progress token
 - `component.hook-adapters.host-installer`:
   - `calls` → `capability.public-surface.adoption` — Share the managed hook command fingerprints with the adoption migration
-  - `calls` → `capability.workflow-engine.contract-assets` — Locate the packaged workflow-state helper for hook-lib path
   - `calls` → `capability.workflow-engine.execution-primitives` — Hold the runtime host transaction lock
   - `calls` → `capability.runtime-harness.global-runtime-reconciliation` — Report architecture projection readiness in status
-  - `calls` → `component.hook-adapters.primary` — Project the route registry into managed adapter entries and invoke the runtime for hook-lib and Pi events
+  - `calls` → `component.hook-adapters.primary` — Project the route registry into managed adapter entries and invoke the runtime for Pi events
   - `calls` → `component.action-commands.skill-surface-catalog` — Read skill names and profile ownership from the skill surface catalog
 - `component.hook-adapters.primary`:
   - `calls` → `capability.workflow-engine.execution-primitives` — Run the process supervisor and group launcher entries and classify lock contention
   - `calls` → `capability.workflow-engine.workflow-state` — Resolve effective state at most once per hook event
-  - `calls` → `component.hook-adapters.edit-guards` — Bind the edit guard, Bash observer and prompt routes to their typed handlers
+  - `calls` → `component.hook-adapters.edit-guards` — Bind the edit guard and the Pi Bash observer routes to their typed handlers
   - `calls` → `capability.runtime-harness.global-runtime-reconciliation` — Write host output through the shared blocking writer
   - `calls` → `component.hook-adapters.session-lifecycle` — Bind SessionStart and Stop and subagent and inbox routes to their typed handlers
 - `component.hook-adapters.session-lifecycle`:
@@ -104,14 +103,14 @@ flowchart LR
 
 | 組件 | 名稱 | 規模量級 | 宣告入口 |
 | --- | --- | --- | --- |
-| `component.hook-adapters.edit-guards` | Guard and Observer Handlers | `5–10` 個文件 / `500–1000` 行 | 未宣告 |
-| `component.hook-adapters.host-installer` | Host Adapter Installer | `20–50` 個文件 / `2000–5000` 行 | `entrypoint.hook-adapters.managed-entries` |
+| `component.hook-adapters.edit-guards` | Guard and Observer Handlers | `2–5` 個文件 / `500–1000` 行 | 未宣告 |
+| `component.hook-adapters.host-installer` | Host Adapter Installer | `10–20` 個文件 / `2000–5000` 行 | `entrypoint.hook-adapters.managed-entries` |
 | `component.hook-adapters.primary` | Hook Route Runtime | `10–20` 個文件 / `1000–2000` 行 | `entrypoint.hook-adapters.handler-bindings` |
-| `component.hook-adapters.session-lifecycle` | Session Lifecycle Handlers | `10–20` 個文件 / `1000–2000` 行 | `entrypoint.hook-adapters.stop` |
+| `component.hook-adapters.session-lifecycle` | Session Lifecycle Handlers | `5–10` 個文件 / `1000–2000` 行 | `entrypoint.hook-adapters.stop` |
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:ad8809cb262638bf0c8a101f1962e85ba057eb89a3801d08e0a7c36a6ad06d70`); selectors `5/5`.
+> **Proof**: `proven` (`sha256:ec792e9257364e22b74052c9fc7bc76fbbdd5a2f9098f6b21a65197ad9299591`); selectors `5/5`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
