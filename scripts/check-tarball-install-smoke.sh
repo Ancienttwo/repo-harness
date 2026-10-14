@@ -58,7 +58,6 @@ const required = [
   "scripts/check-pi-package-smoke.ts",
   "SKILL.md",
   "assets/skill-commands/repo-harness-check/SKILL.md",
-  "src/cli/hook/prompt-handler.ts",
   "assets/templates/helpers/capability-resolver.ts",
   "assets/templates/helpers/capability-config.ts",
   "assets/templates/helpers/change-assessment.ts",
@@ -501,7 +500,7 @@ fi
 (cd "$TARGET_REPO" && printf '{"prompt":"inspect repository state"}\n' | \
   HOOK_REPO_ROOT="$TARGET_REPO" \
   HOOK_HOST="claude" \
-  "$HOOK" UserPromptSubmit --route default >/dev/null)
+  "$HOOK" UserPromptSubmit --route inbox >/dev/null)
 
 STANDALONE_REPO="$TMP_DIR/standalone-capability-repo"
 mkdir -p "$STANDALONE_REPO/scripts" "$STANDALONE_REPO/.ai/context" "$STANDALONE_REPO/apps/web"
