@@ -7,6 +7,7 @@ import { taskRepository, type TaskRepository } from './task-worktree';
 import { canonicalize } from '../../core/evidence/canonical-json';
 import { acquireExclusiveDirectoryLock, ExclusiveLockContentionError } from '../locking/exclusive-directory-lock';
 import { herdrCommand, herdrMutation, herdrResult, spawnHerdr, validateHerdrEndpoint, type HerdrEndpoint } from './herdr';
+import { oarObservationFile, readOarObservation } from './task-runtime-observation';
 
 export type ObjectOwnership = { disposition: 'created'; intent_id: string } | { disposition: 'attached' };
 export interface ProcessProof { pid: number; identity: string }
@@ -946,7 +947,8 @@ export function taskAgentStatus(repoRoot: string, task: string, role: string) {
   const requests = [];
   for (let round = 1; round <= binding.max_requests && existsSync(join(dir, `request-${round}.json`)); round++) {
     const request = readSessionArtifact<TaskRequest>(join(dir, `request-${round}.json`));
-    requests.push({ round, request_id: request.request_id, result_saved: readTaskRequestResult(root, dir, request) !== null });
+    requests.push({ round, request_id: request.request_id, result_saved: readTaskRequestResult(root, dir, request) !== null,
+      runtime_observation: readOarObservation(join(dir, oarObservationFile(round)), request, binding.provider) });
   }
   return { status: error ? 'interrupted' : requests.some(item => !item.result_saved) ? 'pending' : 'idle', task, role, binding, requests, error };
 }

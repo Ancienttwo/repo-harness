@@ -1190,6 +1190,13 @@ try{await serveCodingHostRequests(host,spec,close,()=>closing!==undefined)}final
     await until(()=>existsSync(join(control,'observed-1.json')));
     expect(await api.collectTaskResult(checkout,spec.task,spec.role,1)).toBeNull();
     expect(api.taskAgentStatus(repo,spec.task,spec.role).status).toBe('pending');
+    const runtimeObservation=api.taskAgentStatus(repo,spec.task,spec.role).requests?.[0].runtime_observation;
+    expect(runtimeObservation).toMatchObject({request_id:first.request_id,input_id:first.request_id,status:'idle',outcome:'completed',control:'accepted',failure:null});
+    expect(runtimeObservation?.session_id).toBe(api.readSessionArtifact<{session_id:string}>(join(control,'ready.json')).session_id);
+    const captured=api.readSessionArtifact<{host:{pid:number;identity:string};input_id:string;records?:unknown}>(join(dir,'oar-observation-1.json'));
+    expect(captured.host).toEqual({pid:binding.provider.pid,identity:binding.provider.identity});
+    expect(captured.input_id).toBe(first.request_id);
+    expect(captured.records).toBeUndefined();
     await expect(coding.sendCodingTaskRequest(checkout,spec.task,spec.role,'context.md')).rejects.toThrow('ambiguous_round');
     await expect(coding.closeCodingTaskAgent(repo,spec.task,spec.role)).rejects.toThrow('pending_request');
     expect(existsSync(join(control,'close.request'))).toBe(false);
@@ -1205,7 +1212,7 @@ try{await serveCodingHostRequests(host,spec,close,()=>closing!==undefined)}final
     // Replaying a committed host attempt is refused before another OAR prompt.
     const replay=spawnSync(node,['--input-type=module','-e',`import {readFileSync} from 'node:fs';import {openScriptedCodingHost,runCodingHostRequest} from ${JSON.stringify(new URL('../dist/oar-coding-host.js', import.meta.url).href)};
 const spec=JSON.parse(readFileSync(process.argv[1],'utf8')),request=JSON.parse(readFileSync(process.argv[2],'utf8'));const host=await openScriptedCodingHost(spec.admission.execution_root,()=>{throw new Error('REPLAY_OCCURRED')},()=>{});try{await runCodingHostRequest(host,spec,request)}finally{await host.dispose()}`,specFile,join(dir,'request-2.json')],{encoding:'utf8',timeout:5000});
-    expect(replay.status).toBe(1); expect(replay.stderr).toContain('EEXIST'); expect(replay.stderr).not.toContain('REPLAY_OCCURRED');
+    expect(replay.status).toBe(1); expect(replay.stderr).toContain('OAR_CODING_REQUEST_IDENTITY_MISMATCH'); expect(replay.stderr).not.toContain('REPLAY_OCCURRED');
     writeFileSync(join(checkout,'context.md'),'pending coding context');
     await coding.sendCodingTaskRequest(checkout,spec.task,spec.role,'context.md');
     expect((await api.cancelTaskAgent(repo,spec.task,spec.role)).status).toBe('closed');

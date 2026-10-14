@@ -1,11 +1,11 @@
 import { codexRuntime, type AvailableInstallation, type Session } from '@botiverse/oar';
-import { promptAndWait } from '@botiverse/oar/observe';
 import { scriptedRuntime } from '@botiverse/oar/testing';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { assertTaskRequest, readSessionArtifact, writeSessionArtifact, taskSessionDirectory, type TaskRequest } from './task-session';
+import { assertTaskRequest, readSessionArtifact, writeSessionArtifact, taskSessionDirectory, type ProcessProof, type TaskRequest } from './task-session';
+import { promptWithOarObservation, oarObservationFile, type OarObservationSink } from './task-runtime-observation';
 import { taskRepository } from './task-worktree';
 import { assertCodingHostAdmission, prepareCodingLauncher, proveCodingIsolation, type CodingHostAdmission } from './coding-isolation';
 
@@ -34,9 +34,10 @@ export class OarCodingHost {
     this.unsubscribe = session.events(print, { cursor: { sessionId: session.id, afterSeq: -1 } });
   }
   get sessionId(): string { return this.session.id; }
-  prompt(request: TaskRequest, content: string) {
+  prompt(request: TaskRequest, content: string, host: ProcessProof, save: OarObservationSink) {
     if (this.closing) throw new Error('OAR_CODING_HOST_DISPOSED');
-    return promptAndWait(this.session, `TASK REQUEST: ${JSON.stringify(request)}\n\n${content}`, { timeoutMs: 1_800_000 });
+    return promptWithOarObservation(this.session, request, host,
+      `TASK REQUEST: ${JSON.stringify(request)}\n\n${content}`, { timeoutMs: 1_800_000 }, save);
   }
   dispose(): Promise<void> {
     return this.closing ??= (async () => {
@@ -56,14 +57,16 @@ export async function runCodingHostRequest(host: OarCodingHost, spec: CodingHost
   const { binding } = assertTaskRequest(spec.primary_root, spec.request_directory, request);
   if (binding.execution_root !== spec.admission.execution_root || binding.host !== null || request.round > spec.max_requests) throw new Error('OAR_CODING_REQUEST_INVALID');
   const started = readSessionArtifact<{ request_id: string; provider: { pid: number; identity: string } }>(join(spec.request_directory, `started-${request.round}.json`));
+  // A stray host must fail before any marker; only the bound host may write attempt-N.
   if (started.request_id !== request.request_id || started.provider?.pid !== binding.provider.pid
-    || started.provider.identity !== binding.provider.identity) throw new Error('OAR_CODING_REQUEST_IDENTITY_MISMATCH');
+    || started.provider.identity !== binding.provider.identity || started.provider.pid !== process.pid) throw new Error('OAR_CODING_REQUEST_IDENTITY_MISMATCH');
   const content = readFileSync(request.context_ref, 'utf8');
   if (`sha256:${createHash('sha256').update(content).digest('hex')}` !== request.context_sha256) throw new Error('OAR_CODING_CONTEXT_MISMATCH');
   // Immutable before prompt. A host restart never delivers this input again.
   writeSessionArtifact(join(spec.control_directory, `attempt-${request.round}.json`), { request_id: request.request_id });
   writeSessionArtifact(join(spec.control_directory, `ack-${request.round}.json`), { request_id: request.request_id });
-  const result = await host.prompt(request, content);
+  const result = await host.prompt(request, content, started.provider, snapshot => writeSessionArtifact(
+    join(spec.request_directory, oarObservationFile(request.round)), snapshot, false));
   writeSessionArtifact(join(spec.control_directory, `observed-${request.round}.json`), {
     request_id: request.request_id, kind: result.kind, outcome: result.kind === 'rejected' ? null : result.outcome.kind,
   });

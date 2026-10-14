@@ -431,9 +431,9 @@ test.skipIf(process.platform !== 'darwin')('OAR scripted host: Node Session budg
   const result = await runOarNodeFixture('oar-scripted-node', `
 let calls=0;const events=[];process.env.OAR_CODEX_SANDBOX='workspace-write';
 const host=await openScriptedReviewHost({cwd:output},v=>events.push(v),async({say})=>{assert.equal(process.env.OAR_CODEX_SANDBOX,undefined);calls++;say('RECOMMENDATION: fixture observation only — confidence: HIGH')},isolation);
-try{const id=host.sessionId;for(const input of ['one','two','three']){assert.equal((await host.prompt(input)).kind,'ended');assert.equal(host.sessionId,id)}
-assert.equal(calls,3);assert.ok(events.length>0);await assert.rejects(host.prompt('fourth'),/BUDGET_EXHAUSTED/);
-await host.dispose();await assert.rejects(host.prompt('after-dispose'),/HOST_DISPOSED/);
+try{const id=host.sessionId;for(const [index,input] of ['one','two','three'].entries()){assert.equal((await host.prompt(input,{request_id:'11111111-1111-4111-8111-'+String(index+1).padStart(12,'0'),round:index+1,host:{pid:process.pid,identity:'fixture-host'}},()=>{})).kind,'ended');assert.equal(host.sessionId,id)}
+assert.equal(calls,3);assert.ok(events.length>0);await assert.rejects(host.prompt('fourth',{request_id:'fourth',round:4,host:{pid:process.pid,identity:'fixture-host'}},()=>{}),/BUDGET_EXHAUSTED/);
+await host.dispose();await assert.rejects(host.prompt('after-dispose',{request_id:'after-dispose',round:4,host:{pid:process.pid,identity:'fixture-host'}},()=>{}),/HOST_DISPOSED/);
 assert.equal(reviewRuntime('claude').id,'claude');assert.equal(reviewRuntime('codex').id,'codex');assert.throws(()=>reviewRuntime('grok'),/UNSUPPORTED/);assert.throws(()=>assertOarHostNode('22.22.0'),/NODE_24_REQUIRED/);
 console.log(JSON.stringify({calls,passed:true}));}finally{await host.dispose()}`);
   expect(result.calls).toBe(3); expect(result.passed).toBe(true);
@@ -443,8 +443,8 @@ test.skipIf(process.platform !== 'darwin')('OAR file delivery: Node reviewer wri
   const result = await runOarNodeFixture('oar-file-node', String.raw`
 const spec={mode:'review',kind:'codex',installation:{kind:'available',via:'bundled'},options:{cwd:output},requestDirectory:output,output,controlDirectory:output,timeoutMs:1000,isolation};let calls=0;
 const host=await openScriptedReviewHost(spec.options,()=>{},async({input,say})=>{calls++;const request=JSON.parse(input.split('\n')[0].slice('TASK REQUEST: '.length));say('RECOMMENDATION: fixture file communication — confidence: HIGH');writeFileSync(request.result_ref,JSON.stringify({request_id:request.request_id,context_sha256:request.context_sha256,value:{fixture:true,verdict:'FAIL',summary:'[fixture opinion] revise'}}))},isolation);
-try{const id=host.sessionId;for(let round=1;round<=3;round++){const content='Domain-shaped fixture '+round;const request={protocol:2,task:'fixture',role:'deep-reasoner',round,request_id:'fixture-'+round,context_ref:join(output,'context-'+round+'.txt'),source_ref:'fixture',result_ref:join(output,'result-'+round+'.json'),context_sha256:'sha256:'+createHash('sha256').update(content).digest('hex'),result_contract:{required_fields:['request_id','context_sha256','value'],atomic_write:'temp_rename',submission:{command:'fixture',repo:output,task:'fixture',role:'deep-reasoner',round}}};writeFileSync(request.context_ref,content);const observed=await runHostFileRequest(host,spec,request);assert.equal(observed.kind,'ended');assert.equal(observed.actual_model,'fixture-oar');assert.equal(host.sessionId,id);assert.equal(JSON.parse(readFileSync(request.result_ref,'utf8')).value.summary,'[fixture opinion] revise')}
-assert.equal(calls,3);await assert.rejects(host.prompt('fourth'),/BUDGET_EXHAUSTED/);assert.equal(host.model('claude'),null);console.log(JSON.stringify({calls,passed:true,model:host.model('claude')}));}finally{await host.dispose()}`);
+try{const id=host.sessionId;for(let round=1;round<=3;round++){const content='Domain-shaped fixture '+round;const request={protocol:2,task:'fixture',role:'deep-reasoner',round,request_id:'11111111-1111-4111-8111-'+String(round).padStart(12,'0'),context_ref:join(output,'context-'+round+'.txt'),source_ref:'fixture',result_ref:join(output,'result-'+round+'.json'),context_sha256:'sha256:'+createHash('sha256').update(content).digest('hex'),result_contract:{required_fields:['request_id','context_sha256','value'],atomic_write:'temp_rename',submission:{command:'fixture',repo:output,task:'fixture',role:'deep-reasoner',round}}};writeFileSync(request.context_ref,content);writeFileSync(join(output,'started-'+round+'.json'),JSON.stringify({request_id:request.request_id,provider:{pid:process.pid,identity:'fixture-host'}}));const observed=await runHostFileRequest(host,spec,request);const capture=JSON.parse(readFileSync(join(output,'oar-observation-'+round+'.json'),'utf8'));assert.equal(capture.request_id,request.request_id);assert.equal(capture.session_id,id);assert.equal(capture.host.pid,process.pid);assert.equal(capture.input_id,request.request_id);assert.equal(Object.hasOwn(capture,'records'),false);assert.equal(observed.kind,'ended');assert.equal(observed.actual_model,'fixture-oar');assert.equal(host.sessionId,id);assert.equal(JSON.parse(readFileSync(request.result_ref,'utf8')).value.summary,'[fixture opinion] revise')}
+assert.equal(calls,3);await assert.rejects(host.prompt('fourth',{request_id:'fourth',round:4,host:{pid:process.pid,identity:'fixture-host'}},()=>{}),/BUDGET_EXHAUSTED/);assert.equal(host.model('claude'),null);console.log(JSON.stringify({calls,passed:true,model:host.model('claude')}));}finally{await host.dispose()}`);
   expect(result.calls).toBe(3); expect(result.model).toBeNull();
 });
 
@@ -455,14 +455,14 @@ const spec={mode:'review',kind:'codex',installation:{kind:'available',via:'bundl
 const host=await openScriptedReviewHost(spec.options,()=>{},async({signal})=>{calls++;writeFileSync(join(output,'turn-started'),'1');await new Promise(resolve=>signal.addEventListener('abort',resolve))},isolation);
 let closing;const close=()=>closing??=host.dispose();
 try{const content='pending turn';writeFileSync(join(output,'context-1.txt'),content);
-const request={protocol:2,task:'fixture',role:'deep-reasoner',round:1,request_id:'fixture-1',context_ref:join(output,'context-1.txt'),source_ref:'fixture',result_ref:join(output,'result-1.json'),context_sha256:'sha256:'+createHash('sha256').update(content).digest('hex'),result_contract:{required_fields:['request_id','context_sha256','value'],atomic_write:'temp_rename',submission:{command:'fixture',repo:output,task:'fixture',role:'deep-reasoner',round:1}}};
-writeFileSync(join(output,'request-1.json'),JSON.stringify(request));
+const request={protocol:2,task:'fixture',role:'deep-reasoner',round:1,request_id:'11111111-1111-4111-8111-111111111111',context_ref:join(output,'context-1.txt'),source_ref:'fixture',result_ref:join(output,'result-1.json'),context_sha256:'sha256:'+createHash('sha256').update(content).digest('hex'),result_contract:{required_fields:['request_id','context_sha256','value'],atomic_write:'temp_rename',submission:{command:'fixture',repo:output,task:'fixture',role:'deep-reasoner',round:1}}};
+writeFileSync(join(output,'request-1.json'),JSON.stringify(request));writeFileSync(join(output,'started-1.json'),JSON.stringify({request_id:request.request_id,provider:{pid:process.pid,identity:'fixture-host'}}));
 const served=serveHostFileRequests(host,spec,close,()=>closing!==undefined);
 while(!existsSync(join(output,'turn-started')))await new Promise(resolve=>setTimeout(resolve,10));
 writeFileSync(join(output,'close.request'),JSON.stringify({close:true}));
 await served;await close();
 assert.equal(JSON.parse(readFileSync(join(output,'observed-1.json'),'utf8')).outcome,'aborted');assert.equal(existsSync(request.result_ref),false);
-await assert.rejects(host.prompt('after-cancel'),/HOST_DISPOSED/);
+await assert.rejects(host.prompt('after-cancel',{request_id:'after-cancel',round:2,host:{pid:process.pid,identity:'fixture-host'}},()=>{}),/HOST_DISPOSED/);
 console.log(JSON.stringify({calls,passed:true,model:null}));}finally{await close()}`);
   expect(result.calls).toBe(1); expect(result.passed).toBe(true);
 });
@@ -577,8 +577,8 @@ const installation=await reviewRuntime('codex').installation();assert.equal(inst
 const spec={mode:'review',kind:'codex',installation,launcher,vendorExecutable:${JSON.stringify(fixture)},options:{cwd:output,model:'fixture-host-model',env:{FIXTURE_OWNER:owner}},requestDirectory:owner,output,controlDirectory:owner,timeoutMs:5000,isolation:${JSON.stringify({ paths, policyFile })}};
 const host=await openReviewHost(spec,()=>{});
 try{for(let round=1;round<=2;round++){
- const content='fixture packet';const request={protocol:2,round,request_id:'fixture-request-'+round,context_ref:join(output,'context-'+round+'.txt'),result_ref:join(output,'result-'+round+'.json'),context_sha256:'sha256:'+createHash('sha256').update(content).digest('hex')};
- writeFileSync(request.context_ref,content);const observation=await runHostFileRequest(host,spec,request);
+ const content='fixture packet';const request={protocol:2,round,request_id:'22222222-2222-4222-8222-'+String(round).padStart(12,'0'),context_ref:join(output,'context-'+round+'.txt'),result_ref:join(output,'result-'+round+'.json'),context_sha256:'sha256:'+createHash('sha256').update(content).digest('hex')};
+ writeFileSync(request.context_ref,content);writeFileSync(join(owner,'started-'+round+'.json'),JSON.stringify({request_id:request.request_id,provider:{pid:process.pid,identity:'fixture-host'}}));const observation=await runHostFileRequest(host,spec,request);
  assert.equal(observation.actual_model,'fixture-host-model');assert.equal(observation.outcome,round===1?'failed':'completed');
  assert.deepEqual(JSON.parse(readFileSync(join(owner,'observed-'+round+'.json'),'utf8')),observation);
  const result=JSON.parse(readFileSync(request.result_ref,'utf8')).value;assert.equal(result.denied.length,7);assert.ok(result.denied.every(x=>x.denied));assert.equal(result.signalDenied,true);assert.equal(result.socketDenied,true);

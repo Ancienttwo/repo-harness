@@ -4,6 +4,9 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSy
 import { basename, dirname, join, relative } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createHash } from 'node:crypto';
+import { createSessionKernel } from '@botiverse/oar/kernel';
+import { statusOf, turnEndAfter } from '@botiverse/oar/observe';
+import { OAR_OBSERVATION_PROTOCOL, oarObservationFile } from '../../src/effects/terminal/task-runtime-observation';
 import { PM_OPERATION_SCHEMAS, PmError, parsePmRequest, type PmRequest, type PmTaskScope } from '../../src/core/pm/protocol';
 import { buildPmCommand, runPmJson } from '../../src/cli/commands/pm';
 import { executePmRequest, withPmTaskAuthority } from '../../src/effects/pm/operations';
@@ -146,6 +149,31 @@ test('real canonical task status works without admission; acquisition, stale sco
     expect(existsSync(taskSessionDirectory(f.repo, taskId, 'deep-worker'))).toBe(false);
     expect(existsSync(join(f.execution, '.ai/harness/runs/pm-input'))).toBe(false);
   }
+});
+
+test('PM status exposes bound OAR observations without treating runtime completion as a TaskResult', async () => {
+  const f = fixture(true), { dir, request } = requestFixture(f);
+  const binding = JSON.parse(readFileSync(join(dir, 'binding.json'), 'utf8')) as TaskPaneBinding;
+  // SDK kernel records are consumer fixtures. They prove no live provider run.
+  const kernel = createSessionKernel('pm-observation-fixture');
+  const prompt = kernel.request('toRuntime', { kind: 'prompt', inputId: request.request_id, input: 'private-prompt' });
+  kernel.respond(prompt.id, { kind: 'accepted' });
+  kernel.frame({ type: 'fixture/completed', native: { private: 'private-native' }, events: [{ kind: 'turn_ended', outcome: { kind: 'completed' } }] });
+  const folded = statusOf(kernel.records(), kernel.sessionId);
+  const outcome = turnEndAfter(kernel.records(), prompt.seq, kernel.sessionId, request.request_id);
+  const snapshot = { protocol: OAR_OBSERVATION_PROTOCOL, request_id: request.request_id, round: 1,
+    host: { pid: binding.provider.pid, identity: binding.provider.identity }, session_id: kernel.sessionId,
+    input_id: request.request_id, seq: folded.seq, status: folded.value.kind, phase: null, since_seq: null,
+    last_event_at: kernel.records().at(-1)!.receivedAt, outcome: outcome!.kind, failure: null, control: 'accepted', rejection: null };
+  const path = join(dir, oarObservationFile(1));
+  writeSessionArtifact(path, snapshot);
+  const status = await executePmRequest({ protocol: 1, operation: 'status', repo_id: f.scope.repo_id }, f.env) as any;
+  expect(status.tasks[0].worker.requests[0]).toMatchObject({ result_saved: false,
+    runtime_observation: { request_id: request.request_id, input_id: request.request_id, status: 'idle', outcome: 'completed', control: 'accepted' } });
+  expect(JSON.stringify(status)).not.toContain('private-');
+  expect(existsSync(join(dir, 'collected-1.json'))).toBe(false);
+  writeSessionArtifact(path, { ...snapshot, host: { ...snapshot.host, identity: 'reused-pid' } }, false);
+  await expect(executePmRequest({ protocol: 1, operation: 'status', repo_id: f.scope.repo_id }, f.env)).rejects.toThrow('OAR_OBSERVATION_IDENTITY_MISMATCH');
 });
 
 test('collection needs registry write access and canonical identities, but no coding admission', async () => {
