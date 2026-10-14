@@ -885,8 +885,15 @@ await startMcpHttp({repo:${JSON.stringify(f.repo)},profile:'pm',port:${port}});
     const changed: unknown = change === 'unreadable' ? '' : change === 'enabled' ? { ...config, pm: { enabled: false } }
       : change === 'profile' ? { ...config, profile: 'planner' }
       : change === 'version' ? { ...config, version: 2 } : { ...config, authorizationRevision: 8 };
-    replaceConfig(typeof changed === 'string' ? changed : JSON.stringify(changed)); held.release();
     const wire = queued.text().catch(() => '');
+    replaceConfig(typeof changed === 'string' ? changed : JSON.stringify(changed));
+    if (change === 'unreadable') {
+      // Keep the lock held until the authorization timer has read the bad file. Closing stale
+      // authorization state ends this request's session stream, so the stream end is the signal.
+      const streamEnded = await Promise.race([wire.then(() => true), Bun.sleep(10_000).then(() => false)]);
+      expect(streamEnded, JSON.stringify({ phase: 'timer-observed-unreadable-config', childExitCode: proc.exitCode })).toBe(true);
+    }
+    held.release();
     const completionDeadline = Date.now() + 10_000;
     while (!existsSync(responsePath) && Date.now() < completionDeadline) await Bun.sleep(10);
     expect(existsSync(responsePath), JSON.stringify({ phase: 'completion', lock, lockWaitObserved: existsSync(waitingPath), childExitCode: proc.exitCode })).toBe(true);
