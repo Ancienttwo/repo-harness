@@ -523,32 +523,44 @@ writeFileSync(spec.role+'-'+mode+'.binding',JSON.stringify(binding));
     expect(await api.closeTaskAgent(fixture, spec.task, shellLeaderSpec.role)).toEqual({ status: 'closed', pids: [] });
     expect(live(shellLeaderPid)).toBe(false);
 
-    // #754: the provider exits after stopCreatedProcess proves it alive and
-    // before its guard re-proves the pane. A herdr shim makes that window exact:
-    // the first `pane get` after close-intent.json is the guard's first read.
-    const exitSpec = { ...spec, role: 'exit-in-guard' };
-    const exitPath = join(fixture, 'exit-in-guard.json'); writeFileSync(exitPath, JSON.stringify(exitSpec));
-    const exitOwner = owner('normal', exitPath); await exited(exitOwner.child);
-    if (exitOwner.child.exitCode !== 0) throw new Error(exitOwner.errors());
-    const exitBinding = api.readTaskAgent(fixture, spec.task, exitSpec.role).binding as HerdrTaskBinding;
-    const exitDir = api.taskSessionDirectory(fixture, spec.task, exitSpec.role);
-    const exitShim = join(fixture, 'exit-shim'); mkdirSync(exitShim);
-    const exitMark = join(fixture, 'exit-in-guard.mark');
-    const pid = String(exitBinding.provider.pid);
-    writeFileSync(join(exitShim, 'herdr'), `#!/bin/sh
-case "$*" in *" pane get "*) if [ -f ${quote(join(exitDir, 'close-intent.json'))} ] && [ ! -f ${quote(exitMark)} ]; then if kill -KILL ${pid}; then echo killed > ${quote(exitMark)}; else echo absent > ${quote(exitMark)}; fi; i=0; while kill -0 ${pid} 2>/dev/null && [ $i -lt 100 ]; do sleep 0.05; i=$((i+1)); done; fi ;; esac
-exec ${quote(herdr)} "$@"
+    // #754: the provider exits by itself during cleanup, after a liveness read
+    // proved it alive. A PATH shim kills it at one exact command after
+    // close-intent.json, waits until it is reaped, and then runs the real tool.
+    // Each window must end in the normal closed result.
+    const exitAt = async (role: string, tool: 'herdr' | 'ps', pattern: (pid: string) => string, real: string) => {
+      const exitSpec = { ...spec, role };
+      const exitPath = join(fixture, `${role}.json`); writeFileSync(exitPath, JSON.stringify(exitSpec));
+      const exitOwner = owner('normal', exitPath); await exited(exitOwner.child);
+      if (exitOwner.child.exitCode !== 0) throw new Error(exitOwner.errors());
+      const exitBinding = api.readTaskAgent(fixture, spec.task, role).binding as HerdrTaskBinding;
+      const exitDir = api.taskSessionDirectory(fixture, spec.task, role);
+      const exitShim = join(fixture, `${role}-shim`); mkdirSync(exitShim);
+      const exitMark = join(fixture, `${role}.mark`);
+      const pid = String(exitBinding.provider.pid);
+      writeFileSync(join(exitShim, tool), `#!/bin/sh
+case "$*" in ${pattern(pid)}) if [ -f ${quote(join(exitDir, 'close-intent.json'))} ] && [ ! -f ${quote(exitMark)} ]; then if kill -KILL ${pid}; then echo killed > ${quote(exitMark)}; else echo absent > ${quote(exitMark)}; fi; i=0; while kill -0 ${pid} 2>/dev/null && [ $i -lt 100 ]; do sleep 0.05; i=$((i+1)); done; fi ;; esac
+exec ${quote(real)} "$@"
 `);
-    chmodSync(join(exitShim, 'herdr'), 0o755);
-    const exitSavedPath = process.env.PATH;
-    try {
-      process.env.PATH = exitShim + ':' + exitSavedPath;
-      expect(await api.closeTaskAgent(fixture, spec.task, exitSpec.role)).toEqual({ status: 'closed', pids: [] });
-    } finally { process.env.PATH = exitSavedPath; }
-    // The provider was alive at the guard's first read, so it was alive at the earlier check.
-    expect(readFileSync(exitMark, 'utf8').trim()).toBe('killed');
-    expect(live(exitBinding.provider.pid)).toBe(false);
-    expect(call(['pane', 'list', '--workspace', root.workspace.workspace_id]).panes).toHaveLength(1);
+      chmodSync(join(exitShim, tool), 0o755);
+      const exitSavedPath = process.env.PATH;
+      try {
+        process.env.PATH = exitShim + ':' + exitSavedPath;
+        expect(await api.closeTaskAgent(fixture, spec.task, role)).toEqual({ status: 'closed', pids: [] });
+      } finally { process.env.PATH = exitSavedPath; }
+      // The kill succeeded, so the provider was alive at every earlier liveness read.
+      expect(readFileSync(exitMark, 'utf8').trim()).toBe('killed');
+      expect(live(exitBinding.provider.pid)).toBe(false);
+      expect(call(['pane', 'list', '--workspace', root.workspace.workspace_id]).panes).toHaveLength(1);
+    };
+    // The guard's first read (`pane get`) runs before its own liveness read:
+    // the guard must allow the exit (exited checks).
+    await exitAt('exit-in-guard', 'herdr', () => '*" pane get "*', herdr);
+    // `agent get` follows the guard's liveness read: assertTaskBinding must
+    // confirm the same process exited and move to the exited checks.
+    await exitAt('exit-in-live-check', 'herdr', () => '*" agent get "*', herdr);
+    // signalCreatedProcess alone reads the process group, after its liveness
+    // read: the failed group read must end as a confirmed exit.
+    await exitAt('exit-in-signal', 'ps', pid => `"-p ${pid} -o pgid="`, '/bin/ps');
 
     const splitSpec = { ...spec, role: 'split-gap' };
     const splitPath = join(fixture, 'split-gap.json'); writeFileSync(splitPath, JSON.stringify(splitSpec));
