@@ -1,6 +1,7 @@
-import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { dirname, posix } from 'node:path';
+import { dirname, join, posix } from 'node:path';
+import { tmpdir } from 'node:os';
 
 export type CoverageInput = {
   eventName: string; event: unknown; headSha: string; actualHead: string; diffRaw: string | null;
@@ -111,6 +112,74 @@ export function selectAffectedTests(paths: readonly string[], sources: ReadonlyM
   if (uncovered.length) throw new Error(`Affected coverage is unknown for: ${uncovered.join(', ')}. Add the actual consumer regression; do not substitute a skipped/full-suite pass.`);
   return [...tests].sort();
 }
+export type PlatformInputs = { native: ReadonlySet<string>; home: ReadonlySet<string> };
+export function selectPlatformCoverage(paths: readonly string[], inputs: PlatformInputs): { native_oar: boolean; home_isolation: boolean } {
+  const shared = paths.some(path => path.startsWith('.github/')
+    || ['package.json', 'bun.lock', 'bunfig.toml', 'tsconfig.json', 'scripts/check-ci.sh'].includes(path)
+    || path.startsWith('scripts/lib/') || /^scripts\/select-[^/]+\.ts$/.test(path));
+  return {
+    native_oar: shared || paths.some(path => path.endsWith('.sh') || inputs.native.has(path)),
+    home_isolation: shared || paths.some(path => inputs.home.has(path)),
+  };
+}
+
+/** Resolve only real local imports. Native helpers stay within tests; host code comes from the bundler. */
+export function platformImportClosure(roots: readonly string[], sources: ReadonlyMap<string, string>, testsOnly = false): Set<string> {
+  const seen = new Set(roots);
+  const queue = [...roots];
+  for (let index = 0; index < queue.length; index++) {
+    const file = queue[index]!;
+    const source = sources.get(file);
+    if (source === undefined) throw new Error(`Platform coverage requires source: ${file}`);
+    const imports = new Bun.Transpiler({ loader: file.endsWith('x') ? 'tsx' : 'ts' }).scanImports(source.replace(/^#![^\n]*$/gm, ''));
+    for (const entry of imports) {
+      if (!entry.path.startsWith('.')) continue;
+      const base = posix.normalize(posix.join(dirname(file), entry.path));
+      const dependency = [base, `${base}.ts`, `${base}.tsx`, `${base}/index.ts`, `${base}/index.tsx`].find(path => sources.has(path));
+      if (!dependency) throw new Error(`Unresolved platform import: ${file} -> ${entry.path}`);
+      if ((testsOnly && !dependency.startsWith('tests/')) || seen.has(dependency)) continue;
+      seen.add(dependency); queue.push(dependency);
+    }
+  }
+  return seen;
+}
+
+export function bundleInputPaths(metafile: unknown): string[] {
+  const inputs = (metafile as any)?.inputs;
+  if (!inputs || typeof inputs !== 'object' || Array.isArray(inputs) || !Object.keys(inputs).length) throw new Error('OAR bundle inputs are missing');
+  const paths = Object.keys(inputs).map(path => path.replace(/^\.\//, ''));
+  if (paths.some(path => !validPath(path) || path.startsWith('/') || /^[A-Za-z]:/.test(path))) throw new Error('Invalid OAR bundle input path');
+  return paths;
+}
+
+/** Workflow test commands and package build scripts own the native inventory. No second file list. */
+export function discoverPlatformInputs(sources: ReadonlyMap<string, string>, root = process.cwd()): PlatformInputs {
+  const workflow = Bun.YAML.parse(sources.get('.github/workflows/ci.yml') ?? '') as any;
+  const testsFor = (job: string, name: string): string[] => {
+    const steps = workflow?.jobs?.[job]?.steps?.filter((step: any) => step.name === name);
+    if (steps?.length !== 1 || typeof steps[0].run !== 'string') throw new Error(`Platform coverage requires ${job}: ${name}`);
+    const tests = [...new Set<string>(steps[0].run.match(/tests\/[\w/.-]+\.test\.tsx?/g) ?? [])];
+    if (!tests.length) throw new Error(`Platform tests are missing: ${name}`);
+    return tests;
+  };
+  const config = Bun.TOML.parse(sources.get('bunfig.toml') ?? '') as any;
+  if (!Array.isArray(config?.test?.preload) || !config.test.preload.length
+    || config.test.preload.some((path: unknown) => typeof path !== 'string' || !validPath(path.replace(/^\.\//, '')))) throw new Error('Platform coverage requires test preloads');
+  const preloads: string[] = config.test.preload.map((path: string) => path.replace(/^\.\//, ''));
+  const native = platformImportClosure([...testsFor('native-oar', 'Run native OAR acceptance tests'), ...preloads], sources, true);
+  const home = platformImportClosure([...testsFor('home-isolation', 'Run the isolation tests'), ...preloads], sources);
+  const directory = mkdtempSync(join(tmpdir(), 'rh-ci-platform-'));
+  try {
+    for (const name of ['build:oar-review-host', 'build:oar-coding-host']) {
+      const metafile = join(directory, `${name.replaceAll(':', '-')}.json`);
+      const build = spawnSync(process.execPath, ['run', name, `--metafile=${metafile}`, `--outfile=${join(directory, 'host.js')}`], { cwd: root, encoding: 'utf8' });
+      if (build.status !== 0) throw new Error(`Platform bundle failed: ${name}\n${build.stdout}\n${build.stderr}`);
+      for (const path of bundleInputPaths(JSON.parse(readFileSync(metafile, 'utf8')))) native.add(path);
+    }
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+  return { native, home };
+}
+
 function git(args: string[]): string {
   const result = spawnSync('git', args, { encoding: 'utf8' });
   if (result.status !== 0) throw new Error(result.stderr || `git ${args[0]} failed`);
@@ -131,6 +200,7 @@ if (import.meta.main) {
   const selection = selectCoverage({ eventName, event, headSha, actualHead, diffRaw });
   if (selection.mode === 'invalid') throw new Error(selection.reason);
   if (selection.mode === 'daily' && process.env.GITHUB_REF !== 'refs/heads/main') throw new Error('Daily validation requires the fixed main snapshot');
+  let platforms = { native_oar: selection.mode === 'daily', home_isolation: selection.mode === 'daily' };
   if (selection.mode === 'affected') {
     if (local) {
       const untracked = git(['ls-files', '--others', '--exclude-standard', '--exclude=.ci-affected-tests.json', '-z']).split('\0').filter(Boolean);
@@ -148,12 +218,11 @@ if (import.meta.main) {
     }
     const documentationConsumers = selection.paths.some(isDocumentationPath)
       ? await (await import('./ci-documentation-consumers')).discoverDocumentationConsumers(process.cwd()) : [];
+    platforms = selectPlatformCoverage(selection.paths, discoverPlatformInputs(sources));
     const tests = selectAffectedTests(selection.paths, sources, documentationConsumers, previousSources);
     writeFileSync('.ci-affected-tests.json', JSON.stringify(tests));
     console.log(`Selected ${tests.length} affected tests for ${selection.paths.length} changed paths`);
   }
-  // Documentation-only candidates skip the cross-platform lane; the daily snapshot still runs it.
-  const documentation = selection.paths.length > 0 && selection.paths.every(isDocumentationPath);
-  console.log(`mode=${selection.mode}\nreason=${selection.reason}\nhead=${headSha}\nbase=${base ?? headSha}\ndocumentation=${documentation}`);
-  if (!local) appendFileSync(process.env.GITHUB_OUTPUT!, `mode=${selection.mode}\nsha=${headSha}\ndocumentation=${documentation}\n`);
+  console.log(`mode=${selection.mode}\nreason=${selection.reason}\nhead=${headSha}\nbase=${base ?? headSha}\nnative_oar=${platforms.native_oar}\nhome_isolation=${platforms.home_isolation}`);
+  if (!local) appendFileSync(process.env.GITHUB_OUTPUT!, `mode=${selection.mode}\nsha=${headSha}\nnative_oar=${platforms.native_oar}\nhome_isolation=${platforms.home_isolation}\n`);
 }

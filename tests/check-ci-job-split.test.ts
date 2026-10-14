@@ -3,13 +3,36 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { selectAffectedTests, selectCoverage } from '../scripts/select-ci-coverage';
+import { bundleInputPaths, discoverPlatformInputs, platformImportClosure, selectAffectedTests, selectCoverage, selectPlatformCoverage } from '../scripts/select-ci-coverage';
 import { ARCHITECTURE_JOB, ARCHITECTURE_SUMMARY_PATH } from '../scripts/report-ci';
 
 const ROOT = resolve(import.meta.dir, '..');
 const workflow = Bun.YAML.parse(readFileSync(join(ROOT, '.github/workflows/ci.yml'), 'utf8')) as any;
 const sha = '1'.repeat(40);
 const input = { eventName: 'pull_request', event: { pull_request: { draft: true, base: { sha } } }, headSha: sha, actualHead: sha };
+
+function writePlatformFixture(write: (path: string, content: string) => void) {
+  write('.github/workflows/ci.yml', `jobs:
+  home-isolation:
+    steps:
+      - name: Run the isolation tests
+        run: run_bun_test_file tests/home.test.ts
+  native-oar:
+    steps:
+      - name: Run native OAR acceptance tests
+        run: bun run test:files tests/native.test.ts
+`);
+  write('bunfig.toml', '[test]\npreload = ["./tests/preload.ts"]\n');
+  write('tests/preload.ts', 'export {};');
+  write('tests/home.test.ts', 'export {};');
+  write('tests/native.test.ts', 'export {};');
+  write('src/host.ts', 'export {};');
+  write('package.json', JSON.stringify({ scripts: {
+    'build:oar-review-host': 'bun build src/host.ts --target=node --format=esm --packages=external',
+    'build:oar-coding-host': 'bun build src/host.ts --target=node --format=esm --packages=external',
+  } }));
+}
+
 const record = `:100644 100644 ${sha} ${sha} M\0src/feature.ts\0`;
 
 describe('single affected verification and daily fallback', () => {
@@ -80,7 +103,7 @@ describe('single affected verification and daily fallback', () => {
     const { jobs } = workflow;
     expect(workflow.on.schedule).toEqual([{ cron: '0 19 * * *' }]);
     expect(jobs.required.name).toBe('Required / CI');
-    expect(jobs.required.needs).toEqual(['selection', 'verify', 'test-home-isolation']);
+    expect(jobs.required.needs).toEqual(['selection', 'verify', 'home-isolation', 'native-oar']);
     expect(jobs.verify.if).toBe("needs.selection.outputs.mode == 'affected'");
     const affected = jobs.verify.steps.find((step: any) => step.run === 'bash scripts/check-ci.sh affected');
     const total = Number(/^\$\{\{ matrix\.shard \}\}\/(\d+)$/.exec(affected.env.CI_SHARD)![1]);
@@ -134,29 +157,75 @@ describe('single affected verification and daily fallback', () => {
 
   test('real aggregate shell rejects failure, cancellation, omission and invalid coverage', () => {
     const command = workflow.jobs.required.steps[0].run;
+    const run = (selection: string, verification: string, mode: string, home: string, native: string, homeFlag: string, nativeFlag: string) =>
+      spawnSync('/bin/bash', ['-c', command], { encoding: 'utf8', env: { ...process.env,
+        SELECTION_RESULT: selection, COVERAGE_MODE: mode, VERIFY_RESULT: verification,
+        HOME_ISOLATION_RESULT: home, NATIVE_OAR_RESULT: native, HOME_ISOLATION: homeFlag, NATIVE_OAR: nativeFlag,
+      } }).status;
     for (const selection of ['success', 'failure', 'cancelled', 'skipped']) {
       for (const verification of ['success', 'failure', 'cancelled', 'skipped']) {
         for (const mode of ['affected', 'daily', 'invalid', '']) {
-          for (const isolation of ['success', 'failure', 'cancelled', 'skipped', '']) {
-            for (const documentation of ['true', 'false', '']) {
-              const result = spawnSync('/bin/bash', ['-c', command], { encoding: 'utf8', env: { ...process.env, SELECTION_RESULT: selection, COVERAGE_MODE: mode, VERIFY_RESULT: verification, HOME_ISOLATION_RESULT: isolation, DOCUMENTATION_ONLY: documentation } });
-              expect(result.status === 0).toBe(selection === 'success' && verification === 'success' && mode === 'affected'
-                && (isolation === 'success' || (documentation === 'true' && isolation === 'skipped')));
-            }
+          expect(run(selection, verification, mode, 'success', 'success', 'true', 'true') === 0)
+            .toBe(selection === 'success' && verification === 'success' && mode === 'affected');
+        }
+      }
+    }
+    for (const home of ['success', 'failure', 'cancelled', 'skipped', '']) {
+      for (const native of ['success', 'failure', 'cancelled', 'skipped', '']) {
+        for (const homeFlag of ['true', 'false', '']) {
+          for (const nativeFlag of ['true', 'false', '']) {
+            expect(run('success', 'success', 'affected', home, native, homeFlag, nativeFlag) === 0).toBe(
+              (home === 'success' || (homeFlag === 'false' && home === 'skipped'))
+              && (native === 'success' || (nativeFlag === 'false' && native === 'skipped')));
           }
         }
       }
     }
   });
 
-  test('required HOME isolation runs native OAR acceptance only on the exact macOS candidate', () => {
-    const job = workflow.jobs['test-home-isolation'];
+  test('platform triggers use bundle inputs, test imports and configured preloads', () => {
+    const sources = new Map([
+      ['tests/native.test.ts', "import './helpers/native'; import '../src/other';"],
+      ['tests/helpers/native.ts', "import './nested';"], ['tests/helpers/nested.ts', 'export {};'],
+      ['tests/home.test.ts', "import '../src/home';"], ['src/home.ts', "import './nested';"],
+      ['src/nested.ts', 'export {};'], ['src/other.ts', 'export {};'], ['tests/preload.ts', 'export {};'],
+    ]);
+    const native = platformImportClosure(['tests/native.test.ts', 'tests/preload.ts'], sources, true);
+    for (const path of bundleInputPaths({ inputs: { 'src/host.ts': {}, './src/host-dependency.ts': {} } })) native.add(path);
+    const home = platformImportClosure(['tests/home.test.ts', 'tests/preload.ts'], sources);
+    const inputs = { native, home };
+    for (const path of ['.github/actions/install/action.yml', 'package.json', 'bun.lock', 'bunfig.toml', 'tsconfig.json', 'scripts/check-ci.sh', 'scripts/lib/test-home-isolation.mjs', 'scripts/select-ci-coverage.ts']) {
+      expect(selectPlatformCoverage([path], inputs)).toEqual({ native_oar: true, home_isolation: true });
+    }
+    for (const path of ['src/host.ts', 'src/host-dependency.ts', 'scripts/contract-worktree.sh', 'tests/native.test.ts', 'tests/helpers/nested.ts']) {
+      expect(selectPlatformCoverage([path], inputs)).toEqual({ native_oar: true, home_isolation: false });
+    }
+    expect(selectPlatformCoverage(['src/nested.ts'], inputs)).toEqual({ native_oar: false, home_isolation: true });
+    expect(selectPlatformCoverage(['tests/preload.ts'], inputs)).toEqual({ native_oar: true, home_isolation: true });
+    expect(selectPlatformCoverage(['docs/guide.md', 'plans/plan.md', 'src/other.ts'], inputs)).toEqual({ native_oar: false, home_isolation: false });
+    expect(() => bundleInputPaths({ inputs: {} })).toThrow('missing');
+    expect(() => bundleInputPaths({ inputs: { '../outside.ts': {} } })).toThrow('Invalid');
+    expect(() => platformImportClosure(['tests/missing.ts'], sources)).toThrow('requires source');
+    expect(() => platformImportClosure(['tests/broken.ts'], new Map([['tests/broken.ts', "import './missing';"]]))).toThrow('Unresolved');
+    expect(() => discoverPlatformInputs(new Map())).toThrow('Platform coverage requires');
+  });
+
+  test('separate platform jobs run on their trigger flags and keep exact candidate checks', () => {
+    const home = workflow.jobs['home-isolation'];
+    expect(home.if).toBe("needs.selection.outputs.mode == 'daily' || (needs.selection.outputs.mode == 'affected' && needs.selection.outputs.home_isolation != 'false')");
+    expect(home['runs-on']).toBe('${{ matrix.os }}');
+    expect(home.strategy.matrix.os).toEqual(['ubuntu-latest', 'macos-latest', 'windows-latest']);
+    expect(home.steps.some((step: any) => step.name === 'Run native OAR acceptance tests')).toBe(false);
+    expect(home.steps.some((step: any) => step.name === 'Run the isolation tests')).toBe(true);
+    const job = workflow.jobs['native-oar'];
     expect(job.needs).toBe('selection');
-    expect(job.if).toBe("needs.selection.outputs.mode == 'daily' || (needs.selection.outputs.mode == 'affected' && needs.selection.outputs.documentation != 'true')");
-    expect(workflow.jobs.selection.outputs.documentation).toBe('${{ steps.select.outputs.documentation }}');
-    expect(workflow.jobs.required.steps[0].env.DOCUMENTATION_ONLY).toBe('${{ needs.selection.outputs.documentation }}');
-    expect(job['runs-on']).toBe('${{ matrix.os }}');
-    expect(job.strategy.matrix.os).toEqual(['ubuntu-latest', 'macos-latest', 'windows-latest']);
+    expect(job.if).toBe("needs.selection.outputs.mode == 'daily' || (needs.selection.outputs.mode == 'affected' && needs.selection.outputs.native_oar != 'false')");
+    expect(workflow.jobs.selection.outputs.native_oar).toBe('${{ steps.select.outputs.native_oar }}');
+    expect(workflow.jobs.selection.outputs.home_isolation).toBe('${{ steps.select.outputs.home_isolation }}');
+    expect(workflow.jobs.selection.outputs.documentation).toBeUndefined();
+    expect(workflow.jobs.required.steps[0].env.NATIVE_OAR).toBe('${{ needs.selection.outputs.native_oar }}');
+    expect(workflow.jobs.required.steps[0].env.HOME_ISOLATION).toBe('${{ needs.selection.outputs.home_isolation }}');
+    expect(job['runs-on']).toBe('macos-latest');
     expect(job['continue-on-error']).toBeUndefined();
     expect(job.steps.every((step: any) => step['continue-on-error'] === undefined)).toBe(true);
     expect(job.steps.find((step: any) => step.uses === 'actions/checkout@v4').with).toEqual({
@@ -166,12 +235,12 @@ describe('single affected verification and daily fallback', () => {
     expect(job.steps.some((step: any) => step.uses === 'actions/download-artifact@v4')).toBe(false);
     const install = job.steps.filter((step: any) => step.name === 'Install pinned Herdr runtime');
     expect(install).toHaveLength(1);
-    expect(install[0].if).toBe("matrix.os == 'macos-latest'");
+    expect(install[0].if).toBeUndefined();
     expect(install[0].uses).toBe('./.github/actions/install-pinned-herdr');
     expect(job.steps.indexOf(install[0])).toBeLessThan(job.steps.findIndex((step: any) => step.name === 'Run native OAR acceptance tests'));
     const native = job.steps.filter((step: any) => step.name === 'Run native OAR acceptance tests');
     expect(native).toHaveLength(1);
-    expect(native[0].if).toBe("matrix.os == 'macos-latest'");
+    expect(native[0].if).toBeUndefined();
     expect(native[0].shell).toBe('bash');
     expect(native[0].env).toEqual({ EXPECTED_SHA: '${{ needs.selection.outputs.sha }}' });
     expect(native[0].run.trim().split('\n')).toEqual([
@@ -195,6 +264,7 @@ describe('single affected verification and daily fallback', () => {
     const git = (...args: string[]) => { const result = spawnSync('git', args, { cwd: repo, encoding: 'utf8' }); if (result.status !== 0) throw Error(result.stderr); return result.stdout.trim(); };
     const write = (path: string, content: string) => { mkdirSync(resolve(repo, path, '..'), { recursive: true }); writeFileSync(join(repo, path), content); };
     try {
+      writePlatformFixture(write);
       git('init', '-q'); git('config', 'user.name', 'CI fixture'); git('config', 'user.email', 'ci@example.invalid'); git('config', 'commit.gpgsign', 'false');
       write('src/feature.ts', 'export const feature=1;');
       write('tests/feature.test.ts', "import { feature } from '../src/feature';");
@@ -205,15 +275,16 @@ describe('single affected verification and daily fallback', () => {
       const result = spawnSync(process.execPath, [join(ROOT, 'scripts/select-ci-coverage.ts')], { cwd: repo, encoding: 'utf8', env: { ...process.env, GITHUB_EVENT_NAME: 'pull_request', GITHUB_EVENT_PATH: event, GITHUB_OUTPUT: output, GITHUB_SHA: head } });
       expect(result.status).toBe(0);
       expect(JSON.parse(readFileSync(join(repo, '.ci-affected-tests.json'), 'utf8'))).toEqual(['tests/feature.test.ts']);
-      expect(readFileSync(output, 'utf8')).toBe(`mode=affected\nsha=${head}\ndocumentation=false\n`);
+      expect(readFileSync(output, 'utf8')).toBe(`mode=affected\nsha=${head}\nnative_oar=false\nhome_isolation=false\n`);
     } finally { rmSync(repo, { recursive: true, force: true }); }
   });
 
-  test('documentation-only PR selects scanned checkout consumers and reports documentation', () => {
+  test('documentation-only PR selects scanned checkout consumers and reports both platform skips', () => {
     const repo = mkdtempSync(join(tmpdir(), 'rh-ci-documentation-selection-'));
     const git = (...args: string[]) => { const result = spawnSync('git', args, { cwd: repo, encoding: 'utf8' }); if (result.status !== 0) throw Error(result.stderr); return result.stdout.trim(); };
     const write = (path: string, content: string) => { mkdirSync(resolve(repo, path, '..'), { recursive: true }); writeFileSync(join(repo, path), content); };
     try {
+      writePlatformFixture(write);
       git('init', '-q'); git('config', 'user.name', 'CI fixture'); git('config', 'user.email', 'ci@example.invalid'); git('config', 'commit.gpgsign', 'false');
       write('tsconfig.json', JSON.stringify({ compilerOptions: { noEmit: true }, include: ['src/**/*.ts', 'tests/**/*.ts'] }));
       write('docs/guide.md', '# Guide');
@@ -227,7 +298,7 @@ describe('single affected verification and daily fallback', () => {
       const result = spawnSync(process.execPath, [join(ROOT, 'scripts/select-ci-coverage.ts')], { cwd: repo, encoding: 'utf8', env: { ...process.env, GITHUB_EVENT_NAME: 'pull_request', GITHUB_EVENT_PATH: event, GITHUB_OUTPUT: output, GITHUB_SHA: head } });
       expect(result.status, result.stderr).toBe(0);
       expect(JSON.parse(readFileSync(join(repo, '.ci-affected-tests.json'), 'utf8'))).toEqual(['tests/guide.test.ts']);
-      expect(readFileSync(output, 'utf8')).toBe(`mode=affected\nsha=${head}\ndocumentation=true\n`);
+      expect(readFileSync(output, 'utf8')).toBe(`mode=affected\nsha=${head}\nnative_oar=false\nhome_isolation=false\n`);
     } finally { rmSync(repo, { recursive: true, force: true }); }
   }, 60_000);
 
@@ -246,6 +317,7 @@ describe('single affected verification and daily fallback', () => {
     });
     const selected = () => JSON.parse(readFileSync(join(repo, '.ci-affected-tests.json'), 'utf8'));
     try {
+      writePlatformFixture(write);
       git('init', '-q'); git('config', 'user.name', 'CI fixture'); git('config', 'user.email', 'ci@example.invalid'); git('config', 'commit.gpgsign', 'false');
       for (const name of ['committed', 'staged', 'unstaged', 'deleted']) {
         write(`src/${name}.ts`, 'export const value=1;');

@@ -78,10 +78,14 @@ An invalid or unavailable diff, or a checkout mismatch, fails selection.
 `selectAffectedTests` follows import and literal-path consumers for code paths.
 An unknown path without a consumer fails selection. A path that passes
 `isDocumentationPath` selects only the tests that
-`scripts/ci-documentation-consumers.ts` finds. When every changed path is
-documentation, the selection output `documentation=true` also skips the
-cross-platform HOME isolation and native OAR lane. The daily run still covers
-that lane.
+`scripts/ci-documentation-consumers.ts` finds. Platform jobs have separate outputs: `home_isolation` and `native_oar`.
+The HOME matrix uses its workflow test imports and the configured test preloads.
+The macOS native OAR job uses its workflow tests and test helpers, configured
+preloads, shell scripts, and the OAR host bundle inputs. Selection builds the
+hosts with the package scripts and reads their metafiles. CI implementation
+changes trigger both jobs. A job skips only when its output is `false`.
+Required / CI accepts a skip only with that exact output. Daily runs both jobs.
+Documentation paths select scanned consumers and usually skip both platform jobs.
 
 Replay the selector over recent history before claiming a lane split works:
 
