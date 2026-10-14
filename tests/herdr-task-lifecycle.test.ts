@@ -1069,7 +1069,8 @@ let buffer=''; process.stdin.on('data',chunk=>{
     const spec = { task: 'observer-task', role: 'advisor', harness_kind: 'codex', endpoint, parent_pane: root.root_pane.pane_id, args: [], max_requests: 1 };
     const binding = await api.startTaskAgent(fixture, spec, {
       start: async (_endpoint, name, pane, kind) => {
-        execute(['pane', 'run', pane, `exec ${quote(join(fixture, 'codex'))} ${quote(peer)}`]);
+        // No exec: like production launches, the provider leads its own group beside the pane shell.
+        execute(['pane', 'run', pane, `${quote(join(fixture, 'codex'))} ${quote(peer)}`]);
         await until(() => existsSync(ready));
         execute(['pane', 'report-agent', pane, '--source', 'fixture', '--agent', kind, '--state', 'working', '--seq', '1']);
         execute(['agent', 'rename', pane, name]);
