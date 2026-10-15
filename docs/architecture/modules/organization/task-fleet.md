@@ -1,6 +1,6 @@
 # organization/task-fleet 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-organization-task-fleet" sourceDigest="sha256:e260e742bc2b7fc70342649a055817d2b3c21e00a148ed98a12bb5710111bf04" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:daab3348d33a3063b258a15e61b41ad0d01b5620970af9e0fa14c6682c36bdcf" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-organization-task-fleet" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:daab3348d33a3063b258a15e61b41ad0d01b5620970af9e0fa14c6682c36bdcf" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.organization.task-fleet`(kind `capability`)
 > **Matched Prefixes**:`src/core/fleet/**`、`src/effects/fleet/**`、`src/core/messages/document-handoff.ts`、`src/cli/commands/fleet.ts`

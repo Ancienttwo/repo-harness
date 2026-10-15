@@ -1,6 +1,6 @@
 # runtime-harness/delegated-runs 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-delegated-runs" sourceDigest="sha256:681830a9b1c4dd86a4cdadfbb8cbf8a8f884f73bb2d5682c8f4739de3b9d8e62" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:7dc34d2fb5dd6bb7f71b2bc7cc46fb7c5fe404cd33695f5c1d3e66e77f01e5bf" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-delegated-runs" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:7dc34d2fb5dd6bb7f71b2bc7cc46fb7c5fe404cd33695f5c1d3e66e77f01e5bf" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.delegated-runs`(kind `capability`)
 > **Matched Prefixes**:`src/core/engineers/delegation.ts`、`src/effects/engineers/delegated-run-store.ts`、`src/cli/commands/delegation.ts`、`scripts/me2b-runtime-admission-canary.ts`

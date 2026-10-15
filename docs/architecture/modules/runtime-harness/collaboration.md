@@ -1,6 +1,6 @@
 # runtime-harness/collaboration 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-collaboration" sourceDigest="sha256:017b2eb170cd023c17e3fb8e791e930a8b6737d2bf5039275d8b9eb2761ec837" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:1be590820b64a9f1622fc8cf9ce660ca08c47ba9f9275ff3e115d22bca2c9800" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-collaboration" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:1be590820b64a9f1622fc8cf9ce660ca08c47ba9f9275ff3e115d22bca2c9800" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.collaboration`(kind `capability`)
 > **Matched Prefixes**:`src/core/collaboration/**`、`src/effects/collaboration/**`、`src/cli/commands/collaboration.ts`、`scripts/c9-collaboration-dispatch-runner.ts`

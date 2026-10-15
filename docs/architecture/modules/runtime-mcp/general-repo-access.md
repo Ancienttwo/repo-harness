@@ -1,5 +1,5 @@
 # runtime-mcp/general-repo-access 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-mcp-general-repo-access" sourceDigest="sha256:fd944a350e677ffa0998c6750ee24393527ff4f7fae95c30a0c6275868d23c3d" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:156ea882482b5f26c97cb6a0260b06e5f047fdf9019dc4c381df7280e714df3d" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-mcp-general-repo-access" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:156ea882482b5f26c97cb6a0260b06e5f047fdf9019dc4c381df7280e714df3d" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-mcp.general-repo-access`(kind `capability`)
 > **Matched Prefixes**:`src/cli/mcp/general-repo-access.ts`、`src/cli/mcp/general-repo-access/**`、`tests/cli/mcp-reader-tools.test.ts`、`tests/cli/mcp-codegraph-contract.test.ts`、`tests/cli/mcp-policy.test.ts`、`tests/cli/mcp-tools.test.ts`、`assets/mcp/**`

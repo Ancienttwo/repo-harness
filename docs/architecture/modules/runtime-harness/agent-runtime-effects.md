@@ -1,6 +1,6 @@
 # runtime-harness/agent-runtime-effects 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-agent-runtime-effects" sourceDigest="sha256:bd7fc7428e478ea9955ca08bfca21a391d9fb0ecc236b1401badc15ac09b66b7" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:bdffb1352f91d6f0487130ede0cafc1a10d4482df8bb0ce61bbdfcaa059d5754" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-agent-runtime-effects" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:bdffb1352f91d6f0487130ede0cafc1a10d4482df8bb0ce61bbdfcaa059d5754" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.agent-runtime-effects`(kind `capability`)
 > **Matched Prefixes**:`src/core/engineers/agent-runtime-effect.ts`、`src/effects/engineers/agent-runtime-effect-store.ts`、`src/effects/engineers/agent-runtime-feature.ts`、`src/effects/engineers/agent-runtime-adapters/**`

@@ -1,6 +1,6 @@
 # runtime-harness/pipeline-ledger 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-pipeline-ledger" sourceDigest="sha256:d23b64d10b2b9253257ae1d01c71d7f376295936e18b738df5f45102fb2cbd68" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:7bc3e715707937749f1aafcd07c84641a7bba5fe173f8196afb74f8281f85286" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-pipeline-ledger" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:7bc3e715707937749f1aafcd07c84641a7bba5fe173f8196afb74f8281f85286" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.pipeline-ledger`(kind `capability`)
 > **Matched Prefixes**:`src/core/pipeline/**`、`src/effects/pipeline/**`、`src/cli/commands/pipeline.ts`、`assets/pipeline-record.v2.schema.json`

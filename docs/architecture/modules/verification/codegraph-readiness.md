@@ -1,5 +1,5 @@
 # verification/codegraph-readiness 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-codegraph-readiness" sourceDigest="sha256:1139b0a14d54cfd9b4927ded8c98f3f7f273e77068942bc1c42168fa47ca7d8c" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:cdcd9c5cf5e3e7075dfffaf0bdb36b24557214695247f84b84d95cfa2c48559e" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-codegraph-readiness" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:cdcd9c5cf5e3e7075dfffaf0bdb36b24557214695247f84b84d95cfa2c48559e" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.verification.codegraph-readiness`(kind `capability`)
 > **Matched Prefixes**:`scripts/ensure-codegraph.sh`、`src/cli/tools/codegraph.ts`、`src/cli/mcp/codegraph-adapter.ts`、`tests/cli/codegraph-resolver.test.ts`、`docs/architecture/modules/verification/codegraph-readiness.md`、`src/cli/commands/tools.ts`

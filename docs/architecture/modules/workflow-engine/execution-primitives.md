@@ -1,6 +1,6 @@
 # workflow-engine/execution-primitives 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-execution-primitives" sourceDigest="sha256:caa5815405bbba54c64f82924e90491ac1bd1403085bb7ca9ee851591b54f094" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:b327df14a05f1ff20653a62fb3f531f1d4ee98bff354f8fe1ad071df080c3f87" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-execution-primitives" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:b327df14a05f1ff20653a62fb3f531f1d4ee98bff354f8fe1ad071df080c3f87" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.workflow-engine.execution-primitives`(kind `capability`)
 > **Matched Prefixes**:`src/effects/process-runner.ts`、`src/effects/process-supervisor.ts`、`src/effects/process-group-launcher.ts`、`src/effects/expensive-run-lock.ts`、`src/effects/locking/**`、`src/effects/git/**`

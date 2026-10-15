@@ -1,6 +1,6 @@
 # runtime-harness/interface-change 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-interface-change" sourceDigest="sha256:d76c990e9247efdbeab7d52b0fcd17d1b65a7f23e6e6211f8feae45af8fdc19a" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:973e587f5c92ebd1b3105e505ccde7608b62528f783173490992fff1d72454ec" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-interface-change" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:973e587f5c92ebd1b3105e505ccde7608b62528f783173490992fff1d72454ec" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.interface-change`(kind `capability`)
 > **Matched Prefixes**:`src/core/engineers/interface-change.ts`、`src/effects/engineers/interface-change-store.ts`、`src/cli/commands/interface-change.ts`
