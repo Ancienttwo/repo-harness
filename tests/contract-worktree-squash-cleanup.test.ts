@@ -396,11 +396,13 @@ describe("sweep provider merge proof after a later conflicting target edit", () 
   });
 
   test("a merged provider PR proves the merge and the sweep removes the worktree and its evidence log", () => {
-    const f = squashFixture(mergedPr);
     const saved = { GH_REPO: process.env.GH_REPO, GH_HOST: process.env.GH_HOST };
+    process.env.GH_REPO = "caller/other-repo";
+    process.env.GH_HOST = "caller.example.test";
+    let f: ReturnType<typeof squashFixture> | undefined;
     try {
-      process.env.GH_REPO = "caller/other-repo";
-      process.env.GH_HOST = "caller.example.test";
+      // The fixture copies process.env into the env that it passes to the sweep.
+      f = squashFixture(mergedPr);
       const result = f.sweep();
       expect(result, String(result)).toContain(`${f.path}: removed`);
       expect(existsSync(f.path)).toBe(false);
@@ -413,7 +415,7 @@ describe("sweep provider merge proof after a later conflicting target edit", () 
         if (value === undefined) delete process.env[key];
         else process.env[key] = value;
       }
-      f.cleanup();
+      f?.cleanup();
     }
   });
 
