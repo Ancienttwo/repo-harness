@@ -1,5 +1,5 @@
 import { dirname, resolve, join } from 'node:path';
-import { isArrowFunction, isFunctionExpression, isTemplateExpression, isArrayLiteralExpression, isCallExpression, isForOfStatement, isFunctionDeclaration, isIdentifier, isImportDeclaration, isNewExpression, isPropertyAccessExpression, isStringLiteralLikeNode, isVariableDeclaration, SyntaxKind, type Node, type SourceFile } from 'typescript/unstable/ast';
+import { isConditionalExpression, isArrowFunction, isFunctionExpression, isTemplateExpression, isArrayLiteralExpression, isCallExpression, isForOfStatement, isFunctionDeclaration, isIdentifier, isImportDeclaration, isNewExpression, isPropertyAccessExpression, isStringLiteralLikeNode, isVariableDeclaration, SyntaxKind, type Node, type SourceFile } from 'typescript/unstable/ast';
 
 const nameOf = (node: Node): string => isIdentifier(node) ? node.text : isPropertyAccessExpression(node) ? node.name.text : '';
 export function walk(node: Node, visit: (node: Node) => void) { visit(node); node.forEachChild(child => { walk(child, visit); }); }
@@ -25,6 +25,11 @@ export function createPathEvaluator(source: SourceFile, repoRoot: string, file: 
     return current ?? source;
   };
   const ancestor = (outer: Node, inner: Node): boolean => { for (let node: Node | undefined = inner; node; node = node.parent) if (node === outer) return true; return false; };
+  const bindingFor = (node: Node) => {
+    if (!isIdentifier(node)) return undefined;
+    return declarations.filter(decl => isIdentifier(decl.name) && decl.name.text === node.text && ancestor(scope(decl), node))
+      .sort((a, b) => ancestor(scope(a), scope(b)) ? 1 : -1)[0];
+  };
   const values = (node: Node | undefined, depth = 0, seen = new Set<Node>()): string[] => {
     if (!node || depth > 18 || seen.has(node)) return ['*'];
     const next = new Set(seen).add(node);
@@ -34,8 +39,7 @@ export function createPathEvaluator(source: SourceFile, repoRoot: string, file: 
     if (node.getText() === 'import.meta.url') return [resolve(repoRoot, file)];
     if (isArrayLiteralExpression(node)) return node.elements.flatMap(recur);
     if (isIdentifier(node)) {
-      const bindings = declarations.filter(decl => isIdentifier(decl.name) && decl.name.text === node.text && ancestor(scope(decl), node));
-      const binding = bindings.sort((a, b) => ancestor(scope(a), scope(b)) ? 1 : -1)[0];
+      const binding = bindingFor(node);
       if (binding?.initializer) return recur(binding.initializer);
       if (binding) {
         let parent: Node | undefined = binding.parent;
@@ -45,7 +49,11 @@ export function createPathEvaluator(source: SourceFile, repoRoot: string, file: 
       for (const fn of functions) {
         const index = fn.parameters.findIndex(param => isIdentifier(param.name) && param.name.text === node.text);
         const functionName = isFunctionDeclaration(fn) ? fn.name?.text : isVariableDeclaration(fn.parent) && isIdentifier(fn.parent.name) ? fn.parent.name.text : undefined;
-        if (index >= 0 && ancestor(fn, node) && functionName) return calls.filter(call => nameOf(call.expression) === functionName).flatMap(call => recur(call.arguments[index]));
+        if (index >= 0 && ancestor(fn, node)) {
+          const fallback = fn.parameters[index]!.initializer;
+          const supplied = functionName ? calls.filter(call => nameOf(call.expression) === functionName).flatMap(call => recur(call.arguments[index])) : ['*'];
+          return [...new Set([...supplied, ...(fallback ? recur(fallback) : [])])];
+        }
       }
       return ['*'];
     }
@@ -68,6 +76,7 @@ export function createPathEvaluator(source: SourceFile, repoRoot: string, file: 
       if (/^(?:mkdtemp|tmpdir|createTemp|withTemp)/i.test(operation)) return ['*'];
       return args.flatMap(recur);
     }
+    if (isConditionalExpression(node)) return [...new Set([...recur(node.whenTrue), ...recur(node.whenFalse)])];
     if (isTemplateExpression(node)) {
       let paths = [node.head.text];
       for (const span of node.templateSpans) {
@@ -81,5 +90,11 @@ export function createPathEvaluator(source: SourceFile, repoRoot: string, file: 
     node.forEachChild(child => { children.push(child); });
     return children.length === 1 ? recur(children[0]) : ['*'];
   };
-  return { nodes, calls, declarations, op, values };
+  const memo = new Map<Node, string[]>();
+  const evaluate = (node: Node | undefined): string[] => {
+    if (!node) return ['*'];
+    if (!memo.has(node)) memo.set(node, values(node));
+    return memo.get(node)!;
+  };
+  return { nodes, calls, declarations, bindingFor, op, values: evaluate };
 }

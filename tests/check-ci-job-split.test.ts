@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { bundleInputPaths, discoverPlatformInputs, platformImportClosure, selectAffectedTests, selectCoverage, selectPlatformCoverage } from '../scripts/select-ci-coverage';
+import { auditDroppedTests } from '../scripts/ci-edge-audit';
 import { ARCHITECTURE_JOB, ARCHITECTURE_SUMMARY_PATH } from '../scripts/report-ci';
 
 const ROOT = resolve(import.meta.dir, '..');
@@ -62,6 +63,97 @@ describe('single affected verification and daily fallback', () => {
     ]);
     expect(await selectAffectedTests(['src/base.ts'], sources, [])).toEqual(['tests/execute.test.ts', 'tests/wrapper.test.ts']);
     expect(await selectAffectedTests(['src/copied/entry.ts'], sources, [])).toEqual(['tests/execute.test.ts', 'tests/read.test.ts', 'tests/wrapper.test.ts']);
+  });
+
+  test('directory construction is not a read but passing it to a helper keeps coverage', async () => {
+    const sources = new Map([
+      ['scripts/smoke.sh', 'echo ok'],
+      ['scripts/paths.ts', "const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url)); const ROOT = join(SCRIPT_DIR, '..'); export const name = basename(SCRIPT_DIR);"],
+      ['tests/paths.test.ts', "import '../scripts/paths';"],
+      ['tests/read.test.ts', "const DIR = join(import.meta.dir, '..', 'scripts'); consumeDirectory(DIR);"],
+      ['tests/options.test.ts', "const DIR = join(import.meta.dir, '..', 'scripts'); const options = { directory: DIR }; consumeDirectory({...options});"],
+    ]);
+    expect(await selectAffectedTests(['scripts/smoke.sh'], sources, [])).toEqual(['tests/options.test.ts', 'tests/read.test.ts']);
+  });
+
+  test('keeps the real setup fleet consumer and exported directory roots', async () => {
+    const sources = new Map([
+      ['agents/fleet/example.md', '# Role'],
+      ['src/cli/commands/setup-snapshot.ts', readFileSync(join(ROOT, 'src/cli/commands/setup-snapshot.ts'), 'utf8')],
+      ['tests/fleet.test.ts', "import { readFleetRoles } from '../src/cli/commands/setup-snapshot'; readFleetRoles();"],
+      ['src/root.ts', "const DIR = join(import.meta.dir, '../agents/fleet'); export { DIR };"],
+      ['tests/export.test.ts', "import { DIR } from '../src/root'; consume(DIR);"],
+      ['src/default.ts', "const DIR = join(import.meta.dir, '../agents/fleet'); function read(directory = DIR) { return readdirSync(directory); } export function run(value) { return read(value); }"],
+      ['tests/default.test.ts', "import '../src/default';"],
+    ]);
+    expect(await selectAffectedTests(['agents/fleet/example.md'], sources, [])).toEqual(['tests/default.test.ts', 'tests/export.test.ts', 'tests/fleet.test.ts']);
+  });
+
+  test('retains directories returned by the real canonical ChatGPT skill source', async () => {
+    const sources = new Map([
+      ['assets/skills/repo-harness-chatgpt/SKILL.md', '# Skill'],
+      ['src/cli/chatgpt-skill/source.ts', readFileSync(join(ROOT, 'src/cli/chatgpt-skill/source.ts'), 'utf8')],
+      ['tests/skill-root.test.ts', "import '../src/cli/chatgpt-skill/source';"],
+    ]);
+    expect(await selectAffectedTests(['assets/skills/repo-harness-chatgpt/SKILL.md'], sources, [])).toEqual(['tests/skill-root.test.ts']);
+  });
+
+  test('path transformations retain directories passed through returned or exported values', async () => {
+    const sources = new Map([
+      ['assets/file.json', '{}'],
+      ['src/url.ts', "const DIR = join(import.meta.dir, '../assets'); export const url = pathToFileURL(DIR);"],
+      ['src/normalized.ts', "const DIR = join(import.meta.dir, '../assets'); export const root = () => normalize(DIR);"],
+      ['src/relative.ts', "const DIR = join(import.meta.dir, '../assets'); export const root = relative(process.cwd(), DIR);"],
+      ['tests/url.test.ts', "import '../src/url';"],
+      ['tests/normalized.test.ts', "import '../src/normalized';"],
+      ['tests/relative.test.ts', "import '../src/relative';"],
+    ]);
+    expect(await selectAffectedTests(['assets/file.json'], sources, [])).toEqual(['tests/normalized.test.ts', 'tests/relative.test.ts', 'tests/url.test.ts']);
+  });
+
+  test('retains imports in executable templates and variable dynamic imports', async () => {
+    const sources = new Map([
+      ['src/feature.ts', 'export {}'],
+      ['assets/templates/helper.ts', "import '../../src/feature';"],
+      ['src/dynamic.ts', "const modulePath = './feature'; export const load = () => import(modulePath);"],
+      ['tests/template.test.ts', "import '../assets/templates/helper';"],
+      ['tests/dynamic.test.ts', "import '../src/dynamic';"],
+    ]);
+    expect(await selectAffectedTests(['src/feature.ts'], sources, [])).toEqual(['tests/dynamic.test.ts', 'tests/template.test.ts']);
+  });
+
+  test('removed-edge audit checks competing baseline paths instead of accepting one harmless witness', async () => {
+    const root = 'src/input.ts', test = 'tests/final.test.ts';
+    const baseline = new Map([
+      [root, new Set(['tests/comment.ts', 'tests/reader.ts'])],
+      ['tests/comment.ts', new Set([test])], ['tests/reader.ts', new Set([test])],
+    ]);
+    const reverse = new Map([...baseline].filter(([file]) => file !== root));
+    const sources = new Map([
+      [root, 'export {}'], ['tests/comment.ts', "// 'src/input.ts'"],
+      ['tests/reader.ts', "readFileSync('../src/input.ts');"], [test, "import './comment'; import './reader';"],
+    ]);
+    const audit = await auditDroppedTests([root], [test], baseline, { reverse, data: new Map() }, sources, new Map());
+    expect(audit.witnesses[0]!.reason).toBe('comment-not-code');
+    expect(audit.edges).toContainEqual({ dependency: root, consumer: 'tests/reader.ts', reason: 'unclassified' });
+    const kept = await auditDroppedTests([root], [test], baseline, { reverse, data: new Map([[root, new Set(['tests/comment.ts'])]]) }, sources, new Map());
+    expect(kept.witnesses[0]!.reason).toBe('unclassified');
+  });
+
+  test('edge evidence distinguishes compiler comments and string inspection from reads', async () => {
+    const root = 'scripts/tool.ts', test = 'tests/final.test.ts';
+    const consumers = new Map([
+      ['src/comment.ts', '/** `scripts/` describes a boundary. */\nexport {};'],
+      ['src/inspect.ts', "const root = import.meta.url; export const check = (path: string) => path.startsWith('scripts/') && path.length > 'scripts/'.length;"],
+      ['src/read.ts', "const root = import.meta.url; readFileSync('scripts/'); // real read"],
+      ['src/string.ts', 'const root = import.meta.url; const text = "// \'scripts/\'";'],
+    ]);
+    const baseline = new Map([[root, new Set(consumers.keys())], ...[...consumers.keys()].map(file => [file, new Set([test])] as const)]);
+    const audit = await auditDroppedTests([root], [test], baseline, { reverse: new Map(), data: new Map() }, consumers, new Map());
+    expect(audit.edges.find(edge => edge.consumer === 'src/comment.ts')?.reason).toBe('comment-not-code');
+    expect(audit.edges.find(edge => edge.consumer === 'src/inspect.ts')?.reason).toBe('string-length-only+string-predicate-argument');
+    expect(audit.edges.find(edge => edge.consumer === 'src/read.ts')?.reason).toBe('unclassified');
+    expect(audit.edges.find(edge => edge.consumer === 'src/string.ts')?.reason).toBe('unclassified');
   });
 
   test('deleted paths retain old imports and only entirely retired closures need no test', async () => {

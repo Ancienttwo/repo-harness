@@ -85,8 +85,7 @@ export async function analyzeAffectedTests(paths: readonly string[], sources: Re
   const pathReferences = await discoverPathReferences([...sources, ...previousSources]);
   for (const [file, source] of [...sources, ...previousSources]) {
     if (!/\.[cm]?[jt]sx?$/.test(file)) continue;
-    const imports = /^(src|scripts|tests)\//.test(file) && !file.split('/').some(part => part === 'fixtures' || part === '__fixtures__')
-      ? new Bun.Transpiler({ loader: file.endsWith('x') ? 'tsx' : 'ts', tsconfig: { compilerOptions: { jsx: 'react' } } }).scanImports(source.replace(/^#![^\n]*$/gm, '')).map(entry => entry.path) : [];
+    const imports = new Bun.Transpiler({ loader: file.endsWith('x') ? 'tsx' : 'ts', tsconfig: { compilerOptions: { jsx: 'react' } } }).scanImports(source.replace(/^#![^\n]*$/gm, '')).map(entry => entry.path);
     for (const raw of imports) {
       const relativePath = posix.normalize(posix.join(dirname(file), raw));
       for (const dependency of [relativePath, `${relativePath}.ts`, `${relativePath}.tsx`, `${relativePath}/index.ts`, `${relativePath}/index.tsx`]) {
@@ -98,6 +97,7 @@ export async function analyzeAffectedTests(paths: readonly string[], sources: Re
       const literal = wildcard >= 0 ? entry.path.slice(0, wildcard).replace(/\/$/, '') : entry.path;
       if (!literal) continue;
       for (const [dependency, directory] of references.get(literal) ?? []) {
+        if (directory && entry.operation === 'constructed') continue;
         add(directory && entry.operation !== 'execute' ? data : reverse, dependency, file);
       }
       const relativePath = posix.normalize(posix.join(dirname(file), literal));
@@ -124,7 +124,7 @@ export async function analyzeAffectedTests(paths: readonly string[], sources: Re
     if (dailyInputs.has(path)) { dailyOnly.push(path); continue; }
     uncovered.push(path);
   }
-  return { tests: manifests.length ? allTests : [...tests].sort(), uncovered, dailyOnly, retired, fullReasons: manifests };
+  return { graph: { reverse, data }, tests: manifests.length ? allTests : [...tests].sort(), uncovered, dailyOnly, retired, fullReasons: manifests };
 }
 
 /** Explicit daily commands are evidence of deferred execution, never a claimed PR pass. */

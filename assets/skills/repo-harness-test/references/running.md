@@ -75,7 +75,9 @@ An invalid or unavailable diff, or a checkout mismatch, fails selection.
 
 `selectAffectedTests` follows imports and AST path values for code paths.
 Exact file references propagate. Directory reads select direct consumers only.
-Directory execution propagates through imports. Product paths must be anchored
+Directory execution propagates through imports. A constructed directory can be
+omitted only when every use is a known path derivation or inspection. Returned,
+exported and opaque values keep conservative directory edges. Product paths must be anchored
 to the module checkout; `process.cwd()` in product code names the target repo.
 Old changed-file sources retain removed imports. A deleted closure needs evidence
 of a deleted test before it can be retired without a live test.
@@ -103,11 +105,15 @@ Fetch enough history first. The baseline must export a self-contained selector.
 Each row uses that commit's source tree and its parent's changed-file sources.
 Documentation consumers also come from that commit. Historical source is parsed,
 not executed. Rows report selected tests, unknown paths, deferred daily inputs,
-retired closures and tests removed from the baseline selection.
+retired closures and tests removed from the baseline selection. Each dropped
+test has a baseline path witness. The audit checks every old edge that crosses
+from current reachability toward a dropped test, including alternative paths.
+The baseline adapter must preserve the original selected test list.
 The summary records immutable revisions and the code-commit median.
 A completed replay is not acceptance: require median at most 200, no unknown
 paths, and a reviewed removed-edge reason for every dropped test. A
-`requires-review` classification blocks acceptance.
+`requires-review` classification or any unexplained boundary edge blocks acceptance.
+Policy classification is evidence for independent review, not a substitute for it.
 
 ## Where the suite time actually goes
 
