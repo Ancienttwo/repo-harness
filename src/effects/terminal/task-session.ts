@@ -151,11 +151,17 @@ export function processProofAlive(proof: ProcessProof): boolean {
 export function signalCreatedProcess(process: OwnedProcess, signal: NodeJS.Signals, group = false): void {
   assertCreated(process.ownership);
   if (!processProofAlive(process)) return;
-  if (group) {
-    const groupId = Number(execFileSync('ps', ['-p', String(process.pid), '-o', 'pgid='], { encoding: 'utf8' }).trim());
-    if (groupId !== process.pid) throw new Error('task_agent_unowned_process_group');
+  try {
+    if (group) {
+      const groupId = Number(execFileSync('ps', ['-p', String(process.pid), '-o', 'pgid='], { encoding: 'utf8' }).trim());
+      if (groupId !== process.pid) throw new Error('task_agent_unowned_process_group');
+    }
+    globalThis.process.kill(group ? -process.pid : process.pid, signal);
+  } catch (error) {
+    // The process can exit after the liveness proof above. Only a confirmed
+    // exit of the same process is success; a live or reused PID still refuses.
+    if (processProofAlive(process)) throw error;
   }
-  globalThis.process.kill(group ? -process.pid : process.pid, signal);
 }
 export function harnessCapabilities(kind: string, fixtureEvidence?: string): HarnessCapabilities {
   if (fixtureEvidence && kind !== 'fixture') throw new Error('task_agent_real_harness_unverified');
@@ -237,13 +243,26 @@ export function assertTaskBinding(binding: TaskPaneBinding, allowExitedProvider 
   if (pane?.pane_id !== binding.pane_id || pane.terminal_id !== binding.terminal_id
     || pane.workspace_id !== binding.workspace_id) throw new Error('task_agent_pane_identity_lost');
   assertProcessProof(binding.shell);
-  const providerAlive = processProofAlive(binding.provider);
+  let providerAlive = processProofAlive(binding.provider);
   if (!providerAlive && !allowExitedProvider) throw new Error('task_agent_provider_exited');
   if (providerAlive) {
-    const agent = info(binding.endpoint, ['agent', 'get', binding.agent_name]).agent;
-    if (agent?.pane_id !== binding.pane_id || agent.terminal_id !== binding.terminal_id || agent.name !== binding.agent_name
-      || agent.agent !== binding.harness_kind) throw new Error('task_agent_pane_identity_lost');
-  } else {
+    try {
+      const agent = info(binding.endpoint, ['agent', 'get', binding.agent_name]).agent;
+      if (agent?.pane_id !== binding.pane_id || agent.terminal_id !== binding.terminal_id || agent.name !== binding.agent_name
+        || agent.agent !== binding.harness_kind) throw new Error('task_agent_pane_identity_lost');
+      if (!binding.host) {
+        const foreground = info(binding.endpoint, ['pane', 'process-info', '--pane', binding.pane_id]).process_info?.foreground_processes;
+        if (!Array.isArray(foreground) || !foreground.some(item => item.pid === binding.provider.pid)) throw new Error('task_agent_provider_not_in_pane');
+      }
+    } catch (error) {
+      // A normal exit after the liveness read makes Herdr drop the agent and
+      // its foreground entry. Where exit is allowed, only a confirmed exit of
+      // the same process moves to the exited checks; anything else refuses.
+      if (!allowExitedProvider || processProofAlive(binding.provider)) throw error;
+      providerAlive = false;
+    }
+  }
+  if (!providerAlive) {
     // After provider exit Herdr may clear the agent identity. This is an
     // explicit cleanup phase, never evidence that another occupant is owned.
     if (pane.name && pane.name !== binding.agent_name) throw new Error('task_agent_pane_identity_lost');
@@ -251,10 +270,6 @@ export function assertTaskBinding(binding: TaskPaneBinding, allowExitedProvider 
     if (!Array.isArray(foreground) || foreground.some(item => item.pid !== binding.shell.pid)) throw new Error('task_agent_pane_identity_lost');
   }
   if (binding.host) assertProcessProof(binding.host);
-  else if (providerAlive) {
-    const foreground = info(binding.endpoint, ['pane', 'process-info', '--pane', binding.pane_id]).process_info?.foreground_processes;
-    if (!Array.isArray(foreground) || !foreground.some(item => item.pid === binding.provider.pid)) throw new Error('task_agent_provider_not_in_pane');
-  }
 }
 interface TaskWorkspaceBinding {
   protocol: 1;
@@ -414,11 +429,17 @@ function bindStartedAgent(intent: StartIntent, pane: CreatedPane): HerdrTaskBind
   if (agent?.pane_id !== pane.pane_id || agent.terminal_id !== pane.terminal_id || agent.agent !== intent.spec.harness_kind) {
     throw new Error('task_agent_start_identity_unknown');
   }
-  const foreground = info(intent.spec.endpoint, ['pane', 'process-info', '--pane', pane.pane_id]).process_info?.foreground_processes;
-  // Herdr supplies the process list. Ambiguous lists are refused, not guessed by name.
-  if (!Array.isArray(foreground) || foreground.length !== 1 || !Number.isSafeInteger(foreground[0].pid)) throw new Error('task_agent_provider_identity_unknown');
+  const processInfo = info(intent.spec.endpoint, ['pane', 'process-info', '--pane', pane.pane_id]).process_info;
+  const foreground = processInfo?.foreground_processes;
+  const leader = processInfo?.foreground_process_group_id;
+  // Herdr lists the whole foreground process group, so provider children can
+  // appear beside the provider. The provider leads that group and is never the
+  // pane shell; signalCreatedProcess relies on the same leader rule. Anything
+  // else is refused, not guessed by name or list position.
+  if (!Array.isArray(foreground) || !Number.isSafeInteger(leader) || leader < 1 || !Number.isSafeInteger(processInfo.shell_pid)
+    || leader === processInfo.shell_pid || foreground.filter(item => item?.pid === leader).length !== 1) throw new Error('task_agent_provider_identity_unknown');
   const ownership: ObjectOwnership = { disposition: 'created', intent_id: intent.intent_id };
-  const provider = { pid: foreground[0].pid, identity: processIdentity(foreground[0].pid) };
+  const provider = { pid: leader, identity: processIdentity(leader) };
   const proof = captureTaskPane(intent.spec.endpoint, pane.pane_id, intent.agent_name, provider, ownership);
   const binding: HerdrTaskBinding = { protocol: 2, repository_id: intent.repository.repository_id, execution_root: intent.repository.execution_root, runtime: 'herdr', task: intent.spec.task, role: intent.spec.role,
     harness_kind: intent.spec.harness_kind, endpoint: intent.spec.endpoint, capabilities: harnessCapabilities(intent.spec.harness_kind),
@@ -753,7 +774,10 @@ async function stopCreatedProcess(proof: OwnedProcess, guard: () => void): Promi
   assertCreated(proof.ownership);
   for (const signal of ['SIGTERM', 'SIGKILL'] as const) {
     if (!processProofAlive(proof)) return true;
-    guard(); // Re-prove pane/process identity immediately before escalation.
+    // Re-prove pane/process identity immediately before escalation. The guard
+    // must allow a provider exit after the check above; signalCreatedProcess
+    // makes the single alive decision before any signal.
+    guard();
     signalCreatedProcess(proof, signal, true);
     const deadline = Date.now() + 5000;
     while (processProofAlive(proof) && Date.now() < deadline) await Bun.sleep(50);
@@ -769,7 +793,7 @@ async function disposeCodingApplication(dir: string, binding: TaskPaneBinding): 
   const disposed = join(control, 'disposed.json');
   if (!existsSync(disposed)) {
     if (!processProofAlive(binding.provider)) return false;
-    assertTaskBinding(binding);
+    assertTaskBinding(binding, true); // An exit before the receipt fails closed in the wait below.
     if (!existsSync(join(control, 'close.request'))) writeSessionArtifact(join(control, 'close.request'), { task: binding.task, role: binding.role });
     try { await waitSessionArtifact(disposed, Date.now() + 10_000, () => assertProcessProof(binding.provider)); }
     catch { return false; }
@@ -819,8 +843,10 @@ async function closeUnboundTaskStart(dir: string, task: string, role: string, mo
     if (proof.provider.ownership.intent_id !== intent.intent_id || proof.pane_id !== pane.pane_id || proof.terminal_id !== pane.terminal_id) throw new Error('task_agent_start_identity_unknown');
     if (!await disposeCodingApplication(dir, proof)) return { status: 'cleanup_pending', pids: processProofAlive(proof.provider) ? [proof.provider.pid] : [], reason: 'oar_disposal_unproven' };
     const stopped = await stopCreatedProcess(proof.provider, () => {
-      if (startPanePresent(intent.spec.endpoint, pane)) assertTaskBinding(proof);
-      else assertProcessProof(proof.provider); // Reparenting doesn't change birth/executable identity.
+      if (startPanePresent(intent.spec.endpoint, pane)) assertTaskBinding(proof, true);
+      // Reparenting doesn't change birth/executable identity. A reused PID still
+      // throws; a confirmed exit is left to signalCreatedProcess.
+      else processProofAlive(proof.provider);
     });
     if (!stopped) return { status: 'cleanup_pending', pids: [proof.provider.pid] };
   }
@@ -876,7 +902,7 @@ async function cleanupTaskAgent(repoRoot: string, task: string, role: string, mo
       }
     }
     const closing = existsSync(join(dir, 'close-intent.json'));
-    if (closing && processProofAlive(binding.provider)) assertTaskBinding(binding);
+    if (closing && processProofAlive(binding.provider)) assertTaskBinding(binding, true);
     if (!closing) {
       assertTaskBinding(binding, true);
       writeSessionArtifact(join(dir, 'close-intent.json'), { task, role, provider: binding.provider, mode });
@@ -888,7 +914,7 @@ async function cleanupTaskAgent(repoRoot: string, task: string, role: string, mo
       return { status: 'closed', pids: [] };
     }
     if (!await disposeCodingApplication(dir, binding)) return { status: 'cleanup_pending', pids: processProofAlive(binding.provider) ? [binding.provider.pid] : [], reason: 'oar_disposal_unproven' };
-    if (!await stopCreatedProcess(binding.provider, () => assertTaskBinding(binding))) return { status: 'cleanup_pending', pids: [binding.provider.pid] };
+    if (!await stopCreatedProcess(binding.provider, () => assertTaskBinding(binding, true))) return { status: 'cleanup_pending', pids: [binding.provider.pid] };
     const deadline = Date.now() + 5000;
     while (Date.now() < deadline) {
       if (!processProofAlive(binding.provider)) {

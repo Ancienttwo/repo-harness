@@ -213,6 +213,8 @@ import {readFileSync,writeFileSync} from 'fs'; import {join} from 'path'; import
 import {writeSessionArtifact} from ${JSON.stringify(modulePath)};
 process.stdin.setRawMode(true); process.stdout.write('\\x1b[?2004h');
 if(process.argv[2].includes('stubborn'))process.on('SIGTERM',()=>writeFileSync(process.argv[2]+'.term','observed'));
+// A child in the leader's process group before ready: Herdr lists both at bind time.
+if(process.argv[2].includes('bind-group-child'))writeFileSync(process.argv[2]+'.child',String(spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'}).pid));
 writeFileSync(process.argv[2],JSON.stringify({pid:process.pid}));
 let buffer=''; process.stdin.on('data',chunk=>{
  buffer+=chunk.toString(); if (!/[\\r\\n]/.test(buffer)) return;
@@ -254,7 +256,8 @@ const binding=await startTaskAgent(process.argv[4] ?? process.cwd(),spec,{
  },
  start:async(endpoint,name,pane,kind,args)=>{
   appendFileSync('launches',spec.role+'\\n');
-  cli(['pane','run',pane,quote(${JSON.stringify(join(fixture, 'codex'))})+' '+quote(${JSON.stringify(peer)})+' '+quote(ready)]);
+  // exec-shell replaces the pane shell, so the foreground group leader is the shell PID.
+  cli(['pane','run',pane,(mode==='exec-shell'?'exec ':'')+quote(${JSON.stringify(join(fixture, 'codex'))})+' '+quote(${JSON.stringify(peer)})+' '+quote(ready)]);
   const end=Date.now()+5000;while(!existsSync(ready)){if(Date.now()>end)throw new Error('peer_deadline');await Bun.sleep(10);}
   cli(['pane','report-agent',pane,'--source','fixture','--agent',kind,'--state','working','--seq','1']);
   cli(['agent','rename',pane,name]);
@@ -490,6 +493,75 @@ writeFileSync(spec.role+'-'+mode+'.binding',JSON.stringify(binding));
     expect(live(leaderPid)).toBe(false);
     expect(live(childPid)).toBe(false);
 
+    // #754: Herdr lists every process in the foreground group. Bind selects
+    // the group leader, not the only listed process.
+    const bindGroupSpec = { ...spec, role: 'bind-group-child' };
+    const bindGroupPath = join(fixture, 'bind-group-child.json'); writeFileSync(bindGroupPath, JSON.stringify(bindGroupSpec));
+    const bindGroupOwner = owner('normal', bindGroupPath); await exited(bindGroupOwner.child);
+    if (bindGroupOwner.child.exitCode !== 0) throw new Error(bindGroupOwner.errors());
+    const bindGroupLeader = JSON.parse(readFileSync(join(fixture, 'bind-group-child.ready'), 'utf8')).pid;
+    const bindGroupChild = Number(readFileSync(join(fixture, 'bind-group-child.ready.child'), 'utf8'));
+    const bindGroupBinding = api.readTaskAgent(fixture, spec.task, bindGroupSpec.role).binding as HerdrTaskBinding;
+    expect(bindGroupBinding.provider.pid).toBe(bindGroupLeader);
+    const bindGroupInfo = call(['pane', 'process-info', '--pane', bindGroupBinding.pane_id]).process_info;
+    expect(bindGroupInfo.foreground_process_group_id).toBe(bindGroupLeader);
+    expect(bindGroupInfo.foreground_processes.map((item: any) => item.pid).sort()).toEqual([bindGroupLeader, bindGroupChild].sort());
+    expect(await api.cancelTaskAgent(fixture, spec.task, bindGroupSpec.role)).toEqual({ status: 'closed', pids: [] });
+    expect(live(bindGroupLeader)).toBe(false);
+    expect(live(bindGroupChild)).toBe(false);
+
+    // A single foreground process that leads the shell's own group is the pane
+    // shell, never a created provider. Bind fails closed; cleanup closes the pane.
+    const shellLeaderSpec = { ...spec, role: 'shell-leader' };
+    const shellLeaderPath = join(fixture, 'shell-leader.json'); writeFileSync(shellLeaderPath, JSON.stringify(shellLeaderSpec));
+    const shellLeaderOwner = owner('exec-shell', shellLeaderPath); await exited(shellLeaderOwner.child);
+    expect(shellLeaderOwner.child.exitCode).not.toBe(0);
+    expect(shellLeaderOwner.errors()).toContain('task_agent_provider_identity_unknown');
+    const shellLeaderDir = api.taskSessionDirectory(fixture, spec.task, shellLeaderSpec.role);
+    expect(existsSync(join(shellLeaderDir, 'provider-created.json'))).toBe(false);
+    const shellLeaderPid = JSON.parse(readFileSync(join(fixture, 'shell-leader.ready'), 'utf8')).pid;
+    expect(await api.closeTaskAgent(fixture, spec.task, shellLeaderSpec.role)).toEqual({ status: 'closed', pids: [] });
+    expect(live(shellLeaderPid)).toBe(false);
+
+    // #754: the provider exits by itself during cleanup, after a liveness read
+    // proved it alive. A PATH shim kills it at one exact command after
+    // close-intent.json, waits until it is reaped, and then runs the real tool.
+    // Each window must end in the normal closed result.
+    const exitAt = async (role: string, tool: 'herdr' | 'ps', pattern: (pid: string) => string, real: string) => {
+      const exitSpec = { ...spec, role };
+      const exitPath = join(fixture, `${role}.json`); writeFileSync(exitPath, JSON.stringify(exitSpec));
+      const exitOwner = owner('normal', exitPath); await exited(exitOwner.child);
+      if (exitOwner.child.exitCode !== 0) throw new Error(exitOwner.errors());
+      const exitBinding = api.readTaskAgent(fixture, spec.task, role).binding as HerdrTaskBinding;
+      const exitDir = api.taskSessionDirectory(fixture, spec.task, role);
+      const exitShim = join(fixture, `${role}-shim`); mkdirSync(exitShim);
+      const exitMark = join(fixture, `${role}.mark`);
+      const pid = String(exitBinding.provider.pid);
+      writeFileSync(join(exitShim, tool), `#!/bin/sh
+case "$*" in ${pattern(pid)}) if [ -f ${quote(join(exitDir, 'close-intent.json'))} ] && [ ! -f ${quote(exitMark)} ]; then if kill -KILL ${pid}; then echo killed > ${quote(exitMark)}; else echo absent > ${quote(exitMark)}; fi; i=0; while kill -0 ${pid} 2>/dev/null && [ $i -lt 100 ]; do sleep 0.05; i=$((i+1)); done; fi ;; esac
+exec ${quote(real)} "$@"
+`);
+      chmodSync(join(exitShim, tool), 0o755);
+      const exitSavedPath = process.env.PATH;
+      try {
+        process.env.PATH = exitShim + ':' + exitSavedPath;
+        expect(await api.closeTaskAgent(fixture, spec.task, role)).toEqual({ status: 'closed', pids: [] });
+      } finally { process.env.PATH = exitSavedPath; }
+      // The kill succeeded, so the provider was alive at every earlier liveness read.
+      expect(readFileSync(exitMark, 'utf8').trim()).toBe('killed');
+      expect(live(exitBinding.provider.pid)).toBe(false);
+      expect(call(['pane', 'list', '--workspace', root.workspace.workspace_id]).panes).toHaveLength(1);
+    };
+    // The guard's first read (`pane get`) runs before its own liveness read:
+    // the guard must allow the exit (exited checks).
+    await exitAt('exit-in-guard', 'herdr', () => '*" pane get "*', herdr);
+    // `agent get` follows the guard's liveness read: assertTaskBinding must
+    // confirm the same process exited and move to the exited checks.
+    await exitAt('exit-in-live-check', 'herdr', () => '*" agent get "*', herdr);
+    // signalCreatedProcess alone reads the process group, after its liveness
+    // read: the failed group read must end as a confirmed exit.
+    await exitAt('exit-in-signal', 'ps', pid => `"-p ${pid} -o pgid="`, '/bin/ps');
+
     const splitSpec = { ...spec, role: 'split-gap' };
     const splitPath = join(fixture, 'split-gap.json'); writeFileSync(splitPath, JSON.stringify(splitSpec));
     const splitOwner = owner('split-crash', splitPath); await exited(splitOwner.child);
@@ -544,8 +616,9 @@ writeFileSync(spec.role+'-'+mode+'.binding',JSON.stringify(binding));
       await exited(owner);
     }
     // A failed group cleanup must not leave the TERM/HUP-resistant child on the host.
-    const groupedChild = join(fixture, 'grouped.ready.child');
-    if (existsSync(groupedChild)) { try { process.kill(Number(readFileSync(groupedChild, 'utf8')), 'SIGKILL'); } catch { /* Already absent. */ } }
+    for (const childFile of ['grouped.ready.child', 'bind-group-child.ready.child'].map(name => join(fixture, name))) {
+      if (existsSync(childFile)) { try { process.kill(Number(readFileSync(childFile, 'utf8')), 'SIGKILL'); } catch { /* Already absent. */ } }
+    }
     rmSync(fixture, { recursive: true, force: true });
   }
 }, 60_000);
@@ -1008,7 +1081,8 @@ let buffer=''; process.stdin.on('data',chunk=>{
     const spec = { task: 'observer-task', role: 'advisor', harness_kind: 'codex', endpoint, parent_pane: root.root_pane.pane_id, args: [], max_requests: 1 };
     const binding = await api.startTaskAgent(fixture, spec, {
       start: async (_endpoint, name, pane, kind) => {
-        execute(['pane', 'run', pane, `exec ${quote(join(fixture, 'codex'))} ${quote(peer)}`]);
+        // No exec: like production launches, the provider leads its own group beside the pane shell.
+        execute(['pane', 'run', pane, `${quote(join(fixture, 'codex'))} ${quote(peer)}`]);
         await until(() => existsSync(ready));
         execute(['pane', 'report-agent', pane, '--source', 'fixture', '--agent', kind, '--state', 'working', '--seq', '1']);
         execute(['agent', 'rename', pane, name]);
