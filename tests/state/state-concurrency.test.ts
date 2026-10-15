@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, writeFileSync } from 'fs';
+import { tmpdir } from 'os';
 import { basename, join } from 'path';
 import { spawn, spawnSync } from 'child_process';
 import { commitFixture, resolveFixtureState, createEffectiveStateFixture, writeFixture, writeFixtureStateLock, PLAN } from './effective-state-fixture';
@@ -12,6 +13,7 @@ import {
 import { EFFECTIVE_STATE_CACHE, type StateCacheWriteEffects } from '../../src/effects/state/state-cache';
 import { withStateLock } from '../../src/effects/state/state-lock';
 import { sourceHash } from '../../src/effects/state/collect-state-inputs';
+import { acquireExclusiveDirectoryLock } from '../../src/effects/locking/exclusive-directory-lock';
 
 function releaseLockAfter(ownerPath: string, lockPath: string, delaySeconds: string): void {
   const child = spawn('sh', [
@@ -67,6 +69,31 @@ describe('Effective State lock and source-stability characterization', () => {
       fixture.cleanup();
     }
   }, 30_000);
+
+  test('an owner killed while it writes its record leaves no unreadable owner and no wedged lock', () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-owner-crash-')));
+    const relativeLockPath = 'locks/owner-crash.lock';
+    const lockPath = join(root, relativeLockPath);
+    try {
+      const child = spawnSync(process.execPath, [
+        join(ROOT, 'tests/fixtures/exclusive-lock-owner-crash-worker.ts'),
+        root,
+        relativeLockPath,
+      ], { cwd: ROOT, encoding: 'utf-8', timeout: 10_000 });
+      expect(child.signal, child.stderr).toBe('SIGKILL');
+      const owners = existsSync(lockPath) ? readdirSync(lockPath) : [];
+      expect(owners.length).toBeLessThanOrEqual(1);
+      for (const owner of owners) {
+        const bytes = readFileSync(join(lockPath, owner), 'utf-8');
+        expect(() => JSON.parse(bytes), `${owner} holds ${JSON.stringify(bytes)}`).not.toThrow();
+      }
+      const handle = acquireExclusiveDirectoryLock(root, relativeLockPath);
+      handle.release();
+      expect(existsSync(lockPath)).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }, 20_000);
 
   test('concurrent stale reclaimers preserve exclusive critical-section ownership', async () => {
     const fixture = createEffectiveStateFixture();
