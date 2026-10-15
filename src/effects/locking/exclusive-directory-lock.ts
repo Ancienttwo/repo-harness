@@ -15,7 +15,7 @@ import {
   writeFileSync,
 } from 'fs';
 import { randomUUID } from 'crypto';
-import { basename, isAbsolute, join, relative, resolve, sep } from 'path';
+import { isAbsolute, join, relative, resolve, sep } from 'path';
 
 const LOCK_STALE_MS = 30_000;
 const LOCK_WAIT_MS = 5_000;
@@ -423,7 +423,8 @@ function reclaimStaleLockDirectory(
 function stageOwnerRecord(location: LockLocation): StagedOwner {
   const token = `${process.pid}-${Date.now()}-${randomUUID()}`;
   const parent = location.ancestors[location.ancestors.length - 1]!.path;
-  const path = join(parent, `.${basename(location.lockPath)}.${token}.tmp`);
+  // The name does not embed the lock name, so a long lock name cannot overflow it.
+  const path = join(parent, `.lock-owner-${token}.tmp`);
   assertLockAncestors(location);
   const fd = openSync(
     path,
