@@ -1932,7 +1932,9 @@ describe('exact cleanup and contract-worktree start sweep', () => {
     const head = git('rev-parse', 'HEAD');
     const expected = { worktree: path, branch: 'codex/demo', head_sha: head, target_ref: 'refs/remotes/origin/main', target_oid: head, merge_commit_sha: head };
     const env = { ...process.env, REPO_HARNESS_WORKTREE_ROOT: managed, HOME: join(parent, 'home') };
-    return { parent, root, managed, path, git, expected, env, cleanup: () => rmSync(parent, { recursive: true, force: true }) };
+    // An unmerged branch reaches the provider proof. This stub keeps tests off the host gh and its account.
+    const failingGh = join(parent, 'gh-fail'); writeFileSync(failingGh, '#!/bin/bash\nexit 1\n'); chmodSync(failingGh, 0o755);
+    return { parent, root, managed, path, git, expected, env, failingGh, cleanup: () => rmSync(parent, { recursive: true, force: true }) };
   }
 
   /** `contract-worktree start` reads the topology through this runtime action. */
@@ -2217,7 +2219,7 @@ describe('exact cleanup and contract-worktree start sweep', () => {
         const key = require('crypto').createHash('sha256').update(JSON.stringify([join(f.root, '.git'), f.path])).digest('hex');
         mkdirSync(join(f.root, '.ai/harness/runs/task-workspaces', key), { recursive: true });
       }
-      const result = sweepManagedWorktrees(f.root, cwd, f.env);
+      const result = sweepManagedWorktrees(f.root, cwd, f.env, { ghBin: f.failingGh });
       const reasons: Record<string, string> = { dirty: 'dirty_worktree', unmerged: 'merge is unproven', locked: 'locked', leased: 'active Lease',
         'unknown-lease': 'unknown Lease', marker: 'marker reference', 'session-cwd': 'session cwd', 'nested-cwd': 'session cwd',
         runtime: 'runtime is open' };
@@ -2231,7 +2233,7 @@ describe('exact cleanup and contract-worktree start sweep', () => {
     const f = fixture(); try {
       if (unmerged) { writeFileSync(join(f.path, 'new'), 'keep'); execFileSync('git', ['add', '.'], { cwd: f.path }); execFileSync('git', ['commit', '-qm', 'unmerged'], { cwd: f.path }); }
       rmSync(f.path, { recursive: true });
-      const result = sweepManagedWorktrees(f.root, f.root, f.env);
+      const result = sweepManagedWorktrees(f.root, f.root, f.env, { ghBin: f.failingGh });
       expect(result).toContain('pruned=1'); expect(f.git('worktree', 'list', '--porcelain')).not.toContain(f.path);
       expect(f.git('branch', '--list', 'codex/demo').includes('codex/demo')).toBe(unmerged);
       if (unmerged) expect(result).toContain('unmerged branch kept');
