@@ -771,35 +771,6 @@ finish_contract_worktree() {
   run_cmd bash "$helper_dir/contract-worktree.sh" finish --target "$TARGET_BRANCH"
 }
 
-verify_merge_gate_before_ship() {
-  local base_ref="$1"
-  [[ -f "$helper_dir/merge-gate.ts" ]] || fail "merge-gate helper is missing: $helper_dir/merge-gate.ts"
-  is_trusted_executable "$BUN_BIN" || fail "merge gate requires the trusted Bun runtime injected by repo-harness run"
-  if [[ "$DRY_RUN" -eq 1 ]]; then
-    git rev-parse HEAD
-    return 0
-  fi
-  "$BUN_BIN" "$helper_dir/merge-gate.ts" verify --base "$base_ref" --format sha
-}
-
-seal_merge_gate_before_ship() {
-  local base_ref="$1"
-  [[ -f "$helper_dir/merge-gate.ts" ]] || fail "merge-gate helper is missing: $helper_dir/merge-gate.ts"
-  is_trusted_executable "$BUN_BIN" || fail "merge gate requires the trusted Bun runtime injected by repo-harness run"
-  if [[ "$DRY_RUN" -eq 1 ]]; then
-    git rev-parse HEAD
-    return 0
-  fi
-  "$BUN_BIN" "$helper_dir/merge-gate.ts" run --base "$base_ref" --format sha
-}
-
-merge_gate_required() {
-  local base_ref="$1" result
-  is_trusted_executable "$BUN_BIN" || fail "merge gate requires the trusted Bun runtime injected by repo-harness run"
-  result="$("$BUN_BIN" "$helper_dir/merge-gate.ts" fingerprint --base "$base_ref" --format required)" || fail "cannot read merge-gate requirement from $base_ref"
-  [[ "$result" == "true" ]]
-}
-
 refresh_target_base() {
   git remote get-url "$REMOTE_NAME" >/dev/null 2>&1 || fail "remote not found: $REMOTE_NAME"
   run_cmd git fetch --no-tags "$REMOTE_NAME" "+refs/heads/$TARGET_BRANCH:refs/remotes/$REMOTE_NAME/$TARGET_BRANCH"

@@ -1922,7 +1922,6 @@ cleanup_worktree() {
   local slug=""
   local target_branch
   local dry_run=0
-  local expected_worktree="" expected_head="" expected_target="" expected_merge=""
 
   target_branch="$(policy_get '.worktree_strategy.merge_back.target' 'main')"
 
@@ -1936,16 +1935,6 @@ cleanup_worktree() {
       --target)
         [[ -n "${2:-}" ]] || { echo "contract-worktree: --target requires a value" >&2; exit 2; }
         target_branch="$2"
-        shift 2
-        ;;
-      --expected-worktree|--expected-head|--expected-target|--expected-merge)
-        [[ -n "${2:-}" ]] || { echo "contract-worktree: $1 requires a value" >&2; exit 2; }
-        case "$1" in
-          --expected-worktree) expected_worktree="$2" ;;
-          --expected-head) expected_head="$2" ;;
-          --expected-target) expected_target="$2" ;;
-          --expected-merge) expected_merge="$2" ;;
-        esac
         shift 2
         ;;
       --dry-run)
@@ -1998,20 +1987,6 @@ cleanup_worktree() {
         exit 1
         ;;
     esac
-  fi
-
-  if [[ -n "$expected_worktree$expected_head$expected_target$expected_merge" ]]; then
-    [[ -n "$expected_worktree" && "$expected_head" =~ ^[a-f0-9]{40,64}$ && "$expected_target" =~ ^[a-f0-9]{40,64}$ && "$expected_merge" =~ ^[a-f0-9]{40,64}$ ]] || { echo "contract-worktree: incomplete exact cleanup identity" >&2; exit 1; }
-    [[ "$(git rev-parse "$target_branch^{commit}")" == "$expected_target" ]] || { echo "contract-worktree: cleanup target changed" >&2; exit 1; }
-    git merge-base --is-ancestor "$expected_merge" "$expected_target" || { echo "contract-worktree: actual merge is unreachable" >&2; exit 1; }
-    if [[ -n "$worktree_path" ]]; then
-      [[ "$worktree_path" == "$expected_worktree" && "$(git -C "$worktree_path" rev-parse HEAD)" == "$expected_head" ]] || { echo "contract-worktree: cleanup worktree identity changed" >&2; exit 1; }
-    elif [[ -e "$expected_worktree" || -L "$expected_worktree" ]]; then
-      echo "contract-worktree: unregistered execution directory remains" >&2; exit 1
-    fi
-    if git show-ref --verify --quiet "refs/heads/$branch_name"; then
-      [[ "$(git rev-parse "refs/heads/$branch_name")" == "$expected_head" ]] || { echo "contract-worktree: cleanup branch moved" >&2; exit 1; }
-    fi
   fi
 
   if [[ -n "$worktree_path" ]] && ! git show-ref --verify --quiet "refs/heads/$branch_name"; then
@@ -2094,16 +2069,11 @@ cleanup_worktree() {
   # Bind the observations before runtime shutdown to the existing exact authority.
   if git show-ref --verify --quiet "refs/heads/$branch_name"; then
     run_contract_runtime remove-exact --repo "$current_root" \
-      --worktree "${worktree_path:-${expected_worktree:-(absent)}}" \
-      --branch "$branch_name" --head "${expected_head:-$cleanup_head}" --target "$target_branch" \
-      --target-oid "${expected_target:-$cleanup_target}" --merge "${expected_merge:-$cleanup_target}"
+      --worktree "${worktree_path:-(absent)}" \
+      --branch "$branch_name" --head "$cleanup_head" --target "$target_branch" \
+      --target-oid "$cleanup_target" --merge "$cleanup_target"
     echo "[ContractWorktree] Removed worktree: ${worktree_path:-(absent)}"
     echo "[ContractWorktree] Deleted branch: $branch_name (update-ref, $merge_mode)"
-  fi
-
-  if [[ -n "$expected_worktree" ]]; then
-    jq -cn --arg worktree "$expected_worktree" --arg branch "$branch_name" --arg head "$expected_head" --arg target "$expected_target" --arg merge "$expected_merge" '{protocol:1,kind:"repo-harness-exact-local-cleanup",worktree:$worktree,branch:$branch,head_sha:$head,target_oid:$target,merge_commit_sha:$merge,worktree_removed:true,branch_deleted:true}'
-    return 0
   fi
 
   if [[ -e "$metadata_file" ]]; then

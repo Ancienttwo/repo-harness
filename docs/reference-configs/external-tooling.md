@@ -797,12 +797,14 @@ readback into a compatibility fallback.
 
 ### Local merge gate
 
-The local merge gate is provider-free. Semantic authority lives only in the
-host-owned AcceptanceReceipt created from the reviewer frozen in the task
-contract, or from a typed user waiver when that contract allows it.
-`merge-gate.ts` verifies the receipt and seals the exact base SHA, head SHA,
-full binary diff, receipt bytes, and installed helper bytes. It never owns
-provider credentials or starts a reviewer.
+The local merge gate calls GitHub through the trusted host `gh`. It reads the
+PR of the current branch and refuses the candidate unless the automatic merge
+checks pass. Semantic authority lives only in the host-owned AcceptanceReceipt
+created from the reviewer frozen in the task contract, or from a typed user
+waiver when that contract allows it. `merge-gate.ts` seals the exact base SHA,
+head SHA, full binary diff fingerprint, installed helper fingerprint, and PR
+number. The seal has no receipt field. It never owns provider credentials or
+starts a reviewer.
 
 The exact target base commit enables the local gate in
 `.ai/harness/policy.json#merge_gate`; the candidate cannot disable that base
