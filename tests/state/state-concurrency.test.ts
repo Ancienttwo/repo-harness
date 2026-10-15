@@ -13,7 +13,7 @@ import {
 import { EFFECTIVE_STATE_CACHE, type StateCacheWriteEffects } from '../../src/effects/state/state-cache';
 import { withStateLock } from '../../src/effects/state/state-lock';
 import { sourceHash } from '../../src/effects/state/collect-state-inputs';
-import { acquireExclusiveDirectoryLock } from '../../src/effects/locking/exclusive-directory-lock';
+import { acquireExclusiveDirectoryLock, ExclusiveLockContentionError } from '../../src/effects/locking/exclusive-directory-lock';
 
 function releaseLockAfter(ownerPath: string, lockPath: string, delaySeconds: string): void {
   const child = spawn('sh', [
@@ -94,6 +94,38 @@ describe('Effective State lock and source-stability characterization', () => {
       rmSync(root, { recursive: true, force: true });
     }
   }, 20_000);
+
+  test('a lock whose name is about 200 bytes long can be acquired and released', () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-long-lock-')));
+    const relativeLockPath = `locks/${'l'.repeat(195)}.lock`;
+    try {
+      const handle = acquireExclusiveDirectoryLock(root, relativeLockPath);
+      handle.release();
+      expect(existsSync(join(root, relativeLockPath))).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test('a contender that times out on a held lock leaves no staged owner record', () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-held-lock-')));
+    const relativeLockPath = 'locks/held.lock';
+    const holder = acquireExclusiveDirectoryLock(root, relativeLockPath);
+    try {
+      let failure: unknown;
+      try {
+        acquireExclusiveDirectoryLock(root, relativeLockPath, { waitTimeoutMs: 50 });
+      } catch (error) {
+        failure = error;
+      }
+      expect(failure).toBeInstanceOf(ExclusiveLockContentionError);
+      expect((failure as ExclusiveLockContentionError).kind).toBe('timeout');
+      expect(readdirSync(join(root, 'locks')).filter((entry) => /^\.lock-owner-.*\.tmp$/.test(entry))).toEqual([]);
+    } finally {
+      holder.release();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 
   test('concurrent stale reclaimers preserve exclusive critical-section ownership', async () => {
     const fixture = createEffectiveStateFixture();
