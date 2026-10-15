@@ -1,5 +1,5 @@
 # Refactor Program
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-refactor-program" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:13c281a005bf4975b21b976d76067f39b8d697c4b8a0b5c846b732de4143000d" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-refactor-program" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:57705e9603649e178ab097b59cf2b86d2b6066ff73975323ebe2f50396622489" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.refactor-program`(kind `capability`)
 > **Matched Prefixes**:`src/core/refactor/**`、`src/effects/refactor/**`、`src/cli/commands/refactor.ts`
@@ -64,7 +64,7 @@ flowchart LR
 
 | 組件 | 名稱 | 規模量級 | 宣告入口 |
 | --- | --- | --- | --- |
-| `component.refactor-program.archctx-provider` | Refactor ArchContext Provider Boundary | `1–2` 個文件 / `50–100` 行 | 未宣告 |
+| `component.refactor-program.archctx-provider` | Refactor ArchContext Provider Boundary | `1–2` 個文件 / `20–50` 行 | 未宣告 |
 
 ## 2. P2:端到端數據流
 
