@@ -15,9 +15,10 @@ rollback playbooks belong in the external runbook.
 Tests whose cost is a real package install or a real external program are gated
 behind `REPO_HARNESS_TEST_EXPENSIVE` and are therefore not part of the hosted
 `scripts/check-ci.sh functional` lane. The release gate is the lane that owns
-them: `bun run check:release` (and a bare local `bash scripts/check-ci.sh`) runs
+them: `bun run check:release` runs
 the `all` lane, which exports that variable before the suite, while
 `prepublishOnly` stays a fast pre-publish check that never runs tests.
+A bare `bash scripts/check-ci.sh` defaults to `affected`; it is not a release gate.
 
 ## Webapp Release Shape
 

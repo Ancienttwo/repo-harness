@@ -42,7 +42,9 @@
 - Self-review before committing: remove dead code, empty branches and debug leftovers, and split functions by responsibility instead of one large block.
 
 ## Testing
-- Run `bun run check:type` plus tests covering the changed behavior once after the implementation is stable.
+- Run `bun run check:type` for code changes and tests covering the changed behavior once after the implementation is stable. Development-time debugging can run focused checks before that final verification.
+- For a bug fix, prefer a focused failing regression before the fix. Run only the reproducer during RED. Record a reproduction gap when the environment cannot produce it; ordinary tasks do not require RED artifacts.
+- A diff's size, a new test file, a new agent or a rebase does not by itself require a full run.
 - Use `bun run test:files <affected tests> --timeout 60000 --max-concurrency 1`; extend existing coverage before creating a new test file.
 - Select tests by observable risk and owning runtime boundary, including error/recovery paths when affected.
 - Mechanical prose changes need link/scope validation, not new product tests; do not test incidental formatting.

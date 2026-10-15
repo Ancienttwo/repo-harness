@@ -7,21 +7,19 @@ This file records how to actually run and measure it here.
 ## Focused first
 
 ```bash
-bun test tests/skill-surface/catalog.test.ts
-bun test tests/skill-surface --timeout 60000
+bun run test:files tests/skill-surface/catalog.test.ts --timeout 60000 --max-concurrency 1
 ```
 
-`bun test` accepts files and directories. `package.json`'s `test` script is
-`bun test --timeout 60000`. Files may also use `setDefaultTimeout(ms)` or a
-per-test timeout argument (see `references/authoring.md`); `bunfig.toml` defines
-no timeout setting.
+Use the isolated launcher. Direct `bun test` can fail the HOME/cache startup guard.
+`test:files` accepts explicit file paths. Keep the timeout and concurrency visible.
+Files may also set a per-test timeout (see `references/authoring.md`).
 
 When timing a file locally, redirect instead of piping. A pipe swallows the
 exit status, and a long silent pipe is what makes a background runner look
 stalled:
 
 ```bash
-bun test --timeout 180000 tests/sprint-claim-concurrency.test.ts > /tmp/rh.log 2>&1
+bun run test:files tests/sprint-claim-concurrency.test.ts --timeout 180000 --max-concurrency 1 > /tmp/rh.log 2>&1
 echo "EXIT=$?"
 ```
 
@@ -75,7 +73,17 @@ run as "not covered here" rather than "passed".
 
 An invalid or unavailable diff, or a checkout mismatch, fails selection.
 
-`selectAffectedTests` follows import and literal-path consumers for code paths.
+`selectAffectedTests` follows imports and AST path values for code paths.
+Exact file references propagate. Directory reads select direct consumers only.
+Directory execution propagates through imports. A constructed directory can be
+omitted only when every use is a known path derivation or inspection. Returned,
+exported and opaque values keep conservative directory edges. Product paths must be anchored
+to the module checkout; `process.cwd()` in product code names the target repo.
+Old changed-file sources retain removed imports. A deleted closure needs evidence
+of a deleted test before it can be retired without a live test.
+Dependency manifests select every test. The configured test preloads, their imports and `scripts/lib/ci-run-tests.sh` also select every test. They do not hide other unknown paths.
+Daily script exceptions come from commands in `check-ci.sh`, not a skip list.
+They report deferred coverage; a PR consumer test does not prove daily execution.
 An unknown path without a consumer fails selection. A path that passes
 `isDocumentationPath` selects only the tests that
 `scripts/ci-documentation-consumers.ts` finds. Platform jobs have separate outputs: `home_isolation` and `native_oar`.
@@ -90,12 +98,22 @@ Documentation paths select scanned consumers and usually skip both platform jobs
 Replay the selector over recent history before claiming a lane split works:
 
 ```bash
-bun scripts/replay-ci-coverage.ts --since 2026-08-01
+bun scripts/replay-ci-coverage.ts --commits 120 --ref <main-sha> --baseline <old-selector-sha>
 ```
 
-It walks first-parent `origin/main` commits and prints, per commit, the mode,
-the reason, and the paths that forced `full`, then a summary line with
-`documentationHitRate`.
+Fetch enough history first. The baseline must export a self-contained selector.
+Each row uses that commit's source tree and its parent's changed-file sources.
+Documentation consumers also come from that commit. Historical source is parsed,
+not executed. Rows report selected tests, unknown paths, deferred daily inputs,
+retired closures and tests removed from the baseline selection. Each dropped
+test has a baseline path witness. The audit checks every old edge that crosses
+from current reachability toward a dropped test, including alternative paths.
+The baseline adapter must preserve the original selected test list.
+The summary records immutable revisions and the code-commit median.
+A completed replay is not acceptance: require median at most 200, no unknown
+paths, and a reviewed removed-edge reason for every dropped test. A
+`requires-review` classification or any unexplained boundary edge blocks acceptance.
+Policy classification is evidence for independent review, not a substitute for it.
 
 ## Where the suite time actually goes
 

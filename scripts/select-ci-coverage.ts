@@ -2,6 +2,7 @@ import { appendFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFil
 import { spawnSync } from 'node:child_process';
 import { dirname, join, posix } from 'node:path';
 import { tmpdir } from 'node:os';
+import { discoverPathReferences, sourceKey } from './ci-path-consumers';
 
 export type CoverageInput = {
   eventName: string; event: unknown; headSha: string; actualHead: string; diffRaw: string | null;
@@ -51,66 +52,103 @@ export function selectCoverage(input: CoverageInput): CoverageSelection {
   return result(eventName === 'push' ? 'report' : 'affected', 'complete-diff', paths);
 }
 
-/** Reverse source imports and literal runtime/file consumers, including old edges removed in this diff.
- * Directory and split-path literals deliberately widen coverage; unresolved changes fail closed.
- *
- * Documentation paths select only the checkout documentation consumers. Their literal
- * paths also name target-repository files in product code, so import closure over-selects.
- */
-export function selectAffectedTests(paths: readonly string[], sources: ReadonlyMap<string, string>, documentationConsumers: readonly string[], previousSources: ReadonlyMap<string, string> = new Map()): string[] {
+/** Imports and exact paths propagate; directory content edges apply to direct changes only. */
+export async function selectAffectedTests(paths: readonly string[], sources: ReadonlyMap<string, string>, documentationConsumers: readonly string[], previousSources: ReadonlyMap<string, string> = new Map()): Promise<string[]> {
+  const result = await analyzeAffectedTests(paths, sources, documentationConsumers, previousSources);
+  if (result.uncovered.length) throw new Error(`Affected coverage is unknown for: ${result.uncovered.join(', ')}. Add the actual consumer regression; do not substitute a skipped/full-suite pass.`);
+  return result.tests;
+}
+
+/** Every CI test job sources this runner. */
+const CI_TEST_RUNNER = 'scripts/lib/ci-run-tests.sh';
+
+/** The bunfig test preloads run in every test process. Empty when bunfig.toml is absent or names none. */
+export function configuredTestPreloads(sources: ReadonlyMap<string, string>): string[] {
+  const preload = (Bun.TOML.parse(sources.get('bunfig.toml') ?? '') as any)?.test?.preload;
+  if (preload === undefined) return [];
+  if (!Array.isArray(preload) || preload.some((path: unknown) => typeof path !== 'string' || !validPath(path.replace(/^\.\//, '')))) throw new Error('Platform coverage requires test preloads');
+  return preload.map((path: string) => path.replace(/^\.\//, ''));
+}
+
+export async function analyzeAffectedTests(paths: readonly string[], sources: ReadonlyMap<string, string>, documentationConsumers: readonly string[], previousSources: ReadonlyMap<string, string> = new Map()) {
   const files = [...sources.keys()];
+  const allTests = files.filter(file => /^tests\/.*\.test\.tsx?$/.test(file)).sort();
+  const globalInputs = platformImportClosure(configuredTestPreloads(sources), sources).add(CI_TEST_RUNNER);
+  const fullReasons = paths.filter(path => ['package.json', 'bun.lock', 'bunfig.toml', 'tsconfig.json'].includes(path) || globalInputs.has(path));
   const reverse = new Map<string, Set<string>>();
-  const add = (dependency: string, consumer: string) => {
+  const data = new Map<string, Set<string>>();
+  const add = (graph: Map<string, Set<string>>, dependency: string, consumer: string) => {
     if (dependency === consumer) return;
-    const entries = reverse.get(dependency) ?? new Set<string>(); entries.add(consumer); reverse.set(dependency, entries);
+    const entries = graph.get(dependency) ?? new Set<string>(); entries.add(consumer); graph.set(dependency, entries);
   };
   const candidates = new Set([...files, ...paths, ...previousSources.keys()]);
-  const references = new Map<string, Set<string>>();
-  const reference = (key: string, dependency: string) => {
-    const entries = references.get(key) ?? new Set<string>(); entries.add(dependency); references.set(key, entries);
+  const references = new Map<string, Map<string, boolean>>();
+  const reference = (key: string, dependency: string, directory: boolean) => {
+    const entries = references.get(key) ?? new Map<string, boolean>(); entries.set(dependency, directory); references.set(key, entries);
   };
   for (const dependency of candidates) {
-    reference(dependency, dependency);
+    reference(dependency, dependency, false);
     const parts = dependency.split('/');
     for (let i = 1; i < parts.length; i++) {
-      reference(parts.slice(0, i).join('/'), dependency);
-      if (parts.at(-1)!.includes('.')) reference(parts.slice(i).join('/'), dependency);
+      reference(parts.slice(0, i).join('/'), dependency, true);
+      if (parts.at(-1)!.includes('.')) reference(parts.slice(i).join('/'), dependency, false);
     }
   }
+  const pathReferences = await discoverPathReferences([...sources, ...previousSources]);
   for (const [file, source] of [...sources, ...previousSources]) {
     if (!/\.[cm]?[jt]sx?$/.test(file)) continue;
-    // Bun parses imports without executing code. Fixture/template data is not a compiler project.
-    const imports = /^(src|scripts|tests)\//.test(file) && !file.split('/').some(part => part === 'fixtures' || part === '__fixtures__')
-      ? new Bun.Transpiler({ loader: file.endsWith('x') ? 'tsx' : 'ts', tsconfig: { compilerOptions: { jsx: 'react' } } }).scanImports(source.replace(/^#![^\n]*$/gm, '')).map(entry => entry.path) : [];
-    // Literal file/directory consumers conservatively include comments and fixtures;
-    // this widens tests but cannot hide an import edge or fabricate an external check result.
-    const literals = [...source.matchAll(/['"`]([^'"`\r\n]+)['"`]/g)].map(match => match[1]!);
-    for (const raw of [...imports, ...literals]) {
-      const literal = raw.replaceAll('\\', '/');
-      if (!literal || literal.includes('\n') || literal.startsWith('node:')) continue;
-      const relativePath = posix.normalize(posix.join(dirname(file), literal));
-      const normalized = literal.replace(/^\.\//, '').replace(/\/$/, '');
-      for (const dependency of references.get(normalized) ?? []) add(dependency, file);
+    const imports = new Bun.Transpiler({ loader: file.endsWith('x') ? 'tsx' : 'ts', tsconfig: { compilerOptions: { jsx: 'react' } } }).scanImports(source.replace(/^#![^\n]*$/gm, '')).map(entry => entry.path);
+    for (const raw of imports) {
+      const relativePath = posix.normalize(posix.join(dirname(file), raw));
       for (const dependency of [relativePath, `${relativePath}.ts`, `${relativePath}.tsx`, `${relativePath}/index.ts`, `${relativePath}/index.tsx`]) {
-        if (candidates.has(dependency)) add(dependency, file);
+        if (candidates.has(dependency)) add(reverse, dependency, file);
+      }
+    }
+    for (const entry of pathReferences.get(sourceKey(file, source)) ?? []) {
+      const wildcard = entry.path.indexOf('*');
+      const literal = wildcard >= 0 ? entry.path.slice(0, wildcard).replace(/\/$/, '') : entry.path;
+      if (!literal) continue;
+      for (const [dependency, directory] of references.get(literal) ?? []) {
+        if (directory && entry.operation === 'constructed') continue;
+        add(directory && entry.operation !== 'execute' ? data : reverse, dependency, file);
+      }
+      const relativePath = posix.normalize(posix.join(dirname(file), literal));
+      for (const dependency of [relativePath, `${relativePath}.ts`, `${relativePath}.tsx`, `${relativePath}/index.ts`, `${relativePath}/index.tsx`]) {
+        if (candidates.has(dependency)) add(reverse, dependency, file);
       }
     }
   }
+  const dailyInputs = discoverDailyInputs(sources);
   const tests = new Set<string>();
-  const uncovered: string[] = [];
+  const uncovered: string[] = [], dailyOnly: string[] = [], retired: string[] = [];
   for (const path of paths) {
-    if (isDocumentationPath(path)) { for (const test of documentationConsumers) tests.add(test); continue; }
+    if (isDocumentationPath(path)) { for (const test of documentationConsumers) if (sources.has(test)) tests.add(test); continue; }
+    if (fullReasons.includes(path)) continue;
     const seen = new Set([path]); const queue = [path]; let covered = false;
+    for (const consumer of data.get(path) ?? []) if (!seen.has(consumer)) { seen.add(consumer); queue.push(consumer); }
     for (let i = 0; i < queue.length; i++) {
       const consumer = queue[i]!;
       if (/^tests\/.*\.test\.tsx?$/.test(consumer) && sources.has(consumer)) { tests.add(consumer); covered = true; }
       for (const next of reverse.get(consumer) ?? []) if (!seen.has(next)) { seen.add(next); queue.push(next); }
     }
-    // Images have no executable behavior. Other unknown surfaces require a real consumer.
-    if (!covered && !path.startsWith('docs/images/')) uncovered.push(path);
+    if (covered || path.startsWith('docs/images/')) continue;
+    if (previousSources.has(path) && !sources.has(path) && [...seen].some(file => /^tests\/.*\.test\.tsx?$/.test(file) && previousSources.has(file)) && [...seen].every(file => !sources.has(file))) { retired.push(path); continue; }
+    if (dailyInputs.has(path)) { dailyOnly.push(path); continue; }
+    uncovered.push(path);
   }
-  if (uncovered.length) throw new Error(`Affected coverage is unknown for: ${uncovered.join(', ')}. Add the actual consumer regression; do not substitute a skipped/full-suite pass.`);
-  return [...tests].sort();
+  return { graph: { reverse, data }, tests: fullReasons.length ? allTests : [...tests].sort(), uncovered, dailyOnly, retired, fullReasons };
+}
+
+/** Explicit daily commands are evidence of deferred execution, never a claimed PR pass. */
+export function discoverDailyInputs(sources: ReadonlyMap<string, string>): Set<string> {
+  const script = sources.get('scripts/check-ci.sh') ?? '';
+  const start = script.indexOf('if [[ "$lane" == all || "$lane" == functional ]]');
+  if (start < 0) return new Set();
+  const inputs = new Set<string>();
+  for (const match of script.slice(start).matchAll(/(?:bash|bun)\s+(scripts\/[\w/.-]+\.(?:sh|ts))/g)) {
+    if (sources.has(match[1]!)) inputs.add(match[1]!);
+  }
+  return inputs;
 }
 export type PlatformInputs = { native: ReadonlySet<string>; home: ReadonlySet<string> };
 export function selectPlatformCoverage(paths: readonly string[], inputs: PlatformInputs): { native_oar: boolean; home_isolation: boolean } {
@@ -165,10 +203,8 @@ export function discoverPlatformInputs(sources: ReadonlyMap<string, string>, roo
     if (!tests.length) throw new Error(`Platform tests are missing: ${name}`);
     return tests;
   };
-  const config = Bun.TOML.parse(sources.get('bunfig.toml') ?? '') as any;
-  if (!Array.isArray(config?.test?.preload) || !config.test.preload.length
-    || config.test.preload.some((path: unknown) => typeof path !== 'string' || !validPath(path.replace(/^\.\//, '')))) throw new Error('Platform coverage requires test preloads');
-  const preloads: string[] = config.test.preload.map((path: string) => path.replace(/^\.\//, ''));
+  const preloads = configuredTestPreloads(sources);
+  if (!preloads.length) throw new Error('Platform coverage requires test preloads');
   const native = platformImportClosure([...testsFor('native-oar', 'Run native OAR acceptance tests'), ...preloads], sources);
   const home = platformImportClosure([...testsFor('home-isolation', 'Run the isolation tests'), ...preloads], sources);
   const directory = mkdtempSync(join(tmpdir(), 'rh-ci-platform-'));
@@ -222,7 +258,10 @@ if (import.meta.main) {
     const documentationConsumers = selection.paths.some(isDocumentationPath)
       ? await (await import('./ci-documentation-consumers')).discoverDocumentationConsumers(process.cwd()) : [];
     platforms = selectPlatformCoverage(selection.paths, discoverPlatformInputs(sources));
-    const tests = selectAffectedTests(selection.paths, sources, documentationConsumers, previousSources);
+    const coverage = await analyzeAffectedTests(selection.paths, sources, documentationConsumers, previousSources);
+    if (coverage.uncovered.length) throw new Error(`Affected coverage is unknown for: ${coverage.uncovered.join(', ')}`);
+    for (const path of coverage.dailyOnly) console.log(`daily-only=${path}; not verified by this PR`);
+    const tests = coverage.tests;
     writeFileSync('.ci-affected-tests.json', JSON.stringify(tests));
     console.log(`Selected ${tests.length} affected tests for ${selection.paths.length} changed paths`);
   }

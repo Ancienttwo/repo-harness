@@ -45,6 +45,17 @@ describe('documentation consumer discovery', () => {
     } finally { rmSync(root, { recursive: true, force: true }); }
   });
 
+  test('historical discovery uses only that tree, including checkout existence', async () => {
+    const sources = new Map([
+      ['docs/old.md', '# Old'], ['src/old.ts', 'export {}'],
+      ['tests/root.test.ts', "const ROOT = resolve(import.meta.dir, '..'); readFileSync(join(mkdtempSync('fixture'), 'docs/old.md'));"],
+      ['tests/old.test.ts', "const CLI = join(import.meta.dir, '..', 'src/old.ts'); readFileSync(join(mkdtempSync('fixture'), 'docs/old.md'));"],
+    ]);
+    expect(await discoverDocumentationConsumers('/__nonexistent_history__', undefined, sources)).toEqual(['tests/old.test.ts', 'tests/root.test.ts']);
+    sources.delete('src/old.ts');
+    expect(await discoverDocumentationConsumers('/__nonexistent_history__', undefined, sources)).toEqual(['tests/root.test.ts']);
+  });
+
   test('documentation consumers remain available to affected verification', async () => {
     const files = await discoverDocumentationConsumers(ROOT);
     expect(files).toContain('tests/cli/documentation-contracts.test.ts');

@@ -4,6 +4,14 @@ Policy (when a case is admitted at all, and which layer owns it) lives in
 `docs/reference-configs/sprint-contracts.md#testing-policy-and-artifact-standards`.
 This file only records the mechanics that are specific to this repository.
 
+## Focused regression first
+
+For a bug fix, prefer a regression that fails on the old behavior.
+Run only that reproducer during RED. Then run checks for the changed boundary.
+Record an environment or reproduction gap when RED cannot run. Do not invent
+pre-fix output. Ordinary work does not require a separate RED artifact.
+A new test file does not by itself require a full run.
+
 ## One owner per subject
 
 Find the existing tests for the boundary before adding another file.
