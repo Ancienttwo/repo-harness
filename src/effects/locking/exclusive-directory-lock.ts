@@ -494,19 +494,22 @@ function publishOwner(
   let staged: StagedOwner | null = null;
   try {
     for (;;) {
-      if (staged === null) {
-        // A held lock needs no staged record; stage only when the lock looks free.
-        if (existsSync(location.lockPath)) {
-          awaitLockRelease(location, options, deadline);
-          continue;
-        }
-        staged = stageOwnerRecord(location);
+      // A held lock needs no staged record; stage only when the lock looks free.
+      if (existsSync(location.lockPath)) {
+        awaitLockRelease(location, options, deadline);
+        continue;
       }
+      staged = stageOwnerRecord(location);
       assertLockAncestors(location);
       try {
         mkdirSync(location.lockPath, { mode: 0o700 });
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+        // Drop the staged record while waiting, so a contender killed during
+        // the wait leaves no file behind.
+        closeSync(staged.fd);
+        unlinkStagedName(staged);
+        staged = null;
         awaitLockRelease(location, options, deadline);
         continue;
       }
