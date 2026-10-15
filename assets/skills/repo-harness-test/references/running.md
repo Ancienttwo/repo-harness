@@ -81,7 +81,7 @@ exported and opaque values keep conservative directory edges. Product paths must
 to the module checkout; `process.cwd()` in product code names the target repo.
 Old changed-file sources retain removed imports. A deleted closure needs evidence
 of a deleted test before it can be retired without a live test.
-Dependency manifests select every test. They do not hide other unknown paths.
+Dependency manifests select every test. The configured test preloads, their imports and `scripts/lib/ci-run-tests.sh` also select every test. They do not hide other unknown paths.
 Daily script exceptions come from commands in `check-ci.sh`, not a skip list.
 They report deferred coverage; a PR consumer test does not prove daily execution.
 An unknown path without a consumer fails selection. A path that passes

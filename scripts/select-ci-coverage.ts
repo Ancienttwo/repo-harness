@@ -59,10 +59,22 @@ export async function selectAffectedTests(paths: readonly string[], sources: Rea
   return result.tests;
 }
 
+/** Every CI test job sources this runner. */
+const CI_TEST_RUNNER = 'scripts/lib/ci-run-tests.sh';
+
+/** The bunfig test preloads run in every test process. Empty when bunfig.toml is absent or names none. */
+export function configuredTestPreloads(sources: ReadonlyMap<string, string>): string[] {
+  const preload = (Bun.TOML.parse(sources.get('bunfig.toml') ?? '') as any)?.test?.preload;
+  if (preload === undefined) return [];
+  if (!Array.isArray(preload) || preload.some((path: unknown) => typeof path !== 'string' || !validPath(path.replace(/^\.\//, '')))) throw new Error('Platform coverage requires test preloads');
+  return preload.map((path: string) => path.replace(/^\.\//, ''));
+}
+
 export async function analyzeAffectedTests(paths: readonly string[], sources: ReadonlyMap<string, string>, documentationConsumers: readonly string[], previousSources: ReadonlyMap<string, string> = new Map()) {
   const files = [...sources.keys()];
   const allTests = files.filter(file => /^tests\/.*\.test\.tsx?$/.test(file)).sort();
-  const manifests = paths.filter(path => ['package.json', 'bun.lock', 'bunfig.toml', 'tsconfig.json'].includes(path));
+  const globalInputs = platformImportClosure(configuredTestPreloads(sources), sources).add(CI_TEST_RUNNER);
+  const fullReasons = paths.filter(path => ['package.json', 'bun.lock', 'bunfig.toml', 'tsconfig.json'].includes(path) || globalInputs.has(path));
   const reverse = new Map<string, Set<string>>();
   const data = new Map<string, Set<string>>();
   const add = (graph: Map<string, Set<string>>, dependency: string, consumer: string) => {
@@ -111,7 +123,7 @@ export async function analyzeAffectedTests(paths: readonly string[], sources: Re
   const uncovered: string[] = [], dailyOnly: string[] = [], retired: string[] = [];
   for (const path of paths) {
     if (isDocumentationPath(path)) { for (const test of documentationConsumers) if (sources.has(test)) tests.add(test); continue; }
-    if (manifests.includes(path)) continue;
+    if (fullReasons.includes(path)) continue;
     const seen = new Set([path]); const queue = [path]; let covered = false;
     for (const consumer of data.get(path) ?? []) if (!seen.has(consumer)) { seen.add(consumer); queue.push(consumer); }
     for (let i = 0; i < queue.length; i++) {
@@ -124,7 +136,7 @@ export async function analyzeAffectedTests(paths: readonly string[], sources: Re
     if (dailyInputs.has(path)) { dailyOnly.push(path); continue; }
     uncovered.push(path);
   }
-  return { graph: { reverse, data }, tests: manifests.length ? allTests : [...tests].sort(), uncovered, dailyOnly, retired, fullReasons: manifests };
+  return { graph: { reverse, data }, tests: fullReasons.length ? allTests : [...tests].sort(), uncovered, dailyOnly, retired, fullReasons };
 }
 
 /** Explicit daily commands are evidence of deferred execution, never a claimed PR pass. */
@@ -191,10 +203,8 @@ export function discoverPlatformInputs(sources: ReadonlyMap<string, string>, roo
     if (!tests.length) throw new Error(`Platform tests are missing: ${name}`);
     return tests;
   };
-  const config = Bun.TOML.parse(sources.get('bunfig.toml') ?? '') as any;
-  if (!Array.isArray(config?.test?.preload) || !config.test.preload.length
-    || config.test.preload.some((path: unknown) => typeof path !== 'string' || !validPath(path.replace(/^\.\//, '')))) throw new Error('Platform coverage requires test preloads');
-  const preloads: string[] = config.test.preload.map((path: string) => path.replace(/^\.\//, ''));
+  const preloads = configuredTestPreloads(sources);
+  if (!preloads.length) throw new Error('Platform coverage requires test preloads');
   const native = platformImportClosure([...testsFor('native-oar', 'Run native OAR acceptance tests'), ...preloads], sources);
   const home = platformImportClosure([...testsFor('home-isolation', 'Run the isolation tests'), ...preloads], sources);
   const directory = mkdtempSync(join(tmpdir(), 'rh-ci-platform-'));

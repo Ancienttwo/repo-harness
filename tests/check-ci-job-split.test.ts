@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { bundleInputPaths, discoverPlatformInputs, platformImportClosure, selectAffectedTests, selectCoverage, selectPlatformCoverage } from '../scripts/select-ci-coverage';
+import { analyzeAffectedTests, bundleInputPaths, discoverPlatformInputs, platformImportClosure, selectAffectedTests, selectCoverage, selectPlatformCoverage } from '../scripts/select-ci-coverage';
 import { auditDroppedTests } from '../scripts/ci-edge-audit';
 import { ARCHITECTURE_JOB, ARCHITECTURE_SUMMARY_PATH } from '../scripts/report-ci';
 
@@ -172,6 +172,22 @@ describe('single affected verification and daily fallback', () => {
       expect(await selectAffectedTests([path], sources, [])).toEqual(['tests/a.test.ts', 'tests/b.test.ts']);
     }
     await expect(selectAffectedTests(['bun.lock', 'unknown/new.ts'], sources, [])).rejects.toThrow('coverage is unknown');
+  });
+
+  test('test preloads, their imports and the CI test runner select every test', async () => {
+    const sources = new Map([
+      ['bunfig.toml', '[test]\npreload = ["./tests/preload.ts"]'],
+      ['tests/preload.ts', "import '../scripts/lib/iso.mjs';"],
+      ['scripts/lib/iso.mjs', 'export {}'],
+      ['scripts/lib/ci-run-tests.sh', '#!/usr/bin/env bash'],
+      ['tests/a.test.ts', 'export {}'],
+      ['tests/b.test.ts', 'export {}'],
+    ]);
+    for (const path of ['tests/preload.ts', 'scripts/lib/iso.mjs', 'scripts/lib/ci-run-tests.sh']) {
+      expect(await selectAffectedTests([path], sources, [])).toEqual(['tests/a.test.ts', 'tests/b.test.ts']);
+      expect((await analyzeAffectedTests([path], sources, [])).fullReasons).toEqual([path]);
+    }
+    await expect(selectAffectedTests(['tests/preload.ts', 'unknown/new.ts'], sources, [])).rejects.toThrow('coverage is unknown');
   });
 
   test('exact complete diff is required, including draft candidates', () => {
