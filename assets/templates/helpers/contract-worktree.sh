@@ -58,6 +58,7 @@ Usage:
   repo-harness run contract-worktree start --plan <plan-file> [--path <worktree-path>] [--branch <branch-name>] [--fresh] [--json] [--herdr-endpoint <json-file>]
   repo-harness run contract-worktree finish [--merge|--no-merge] [--target <branch>] [--gate-base <ref>] [--message <commit-message>]
   repo-harness run contract-worktree cleanup --slug <slug> [--target <branch>] [--dry-run]
+  repo-harness run contract-worktree sweep
   repo-harness run contract-worktree status
   repo-harness run contract-worktree recover <inspect|abort|reconcile> [--key <transaction-key>]
 
@@ -2125,6 +2126,10 @@ case "$command_name" in
     ;;
   cleanup)
     cleanup_worktree "$@"
+    ;;
+  sweep)
+    [[ $# -eq 0 ]] || { echo "contract-worktree: sweep takes no arguments" >&2; usage; exit 2; }
+    run_contract_runtime sweep --repo "$REPO_ROOT"
     ;;
   recover)
     recover_worktree "$@"

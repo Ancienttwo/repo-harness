@@ -59,6 +59,9 @@ try {
         markActiveWorktree(canonical);
       });
     }
+  } else if (action === 'sweep') {
+    const { sweepManagedWorktrees } = await import(pathToFileURL(join(packageRoot, 'src/effects/state/coordination-worktree-topology.ts')).href) as typeof import('../src/effects/state/coordination-worktree-topology');
+    console.log(sweepManagedWorktrees(value('--repo'), process.cwd(), process.env, { deadlineMs: 30_000 }) ?? '[WorktreeSweep] no managed worktrees');
   } else if (action === 'add-worktree') {
     const { withWorktreeTopologyLock, recordCreatedWorktree } = await import(pathToFileURL(join(packageRoot, 'src/effects/state/coordination-worktree-topology.ts')).href) as typeof import('../src/effects/state/coordination-worktree-topology');
     withWorktreeTopologyLock(value('--repo'), () => {

@@ -47,17 +47,11 @@ if [[ -n "${REPO_HARNESS_HELPER_SOURCE_PATH:-}" && -f "$REPO_HARNESS_HELPER_SOUR
 fi
 helper_dir="$(cd "$(dirname "$helper_source")" && pwd)"
 
-worktree_merge_lib="$helper_dir/worktree-merge-lib.sh"
-[[ -f "$worktree_merge_lib" ]] || { echo "ship-worktrees: worktree merge library is unavailable: $worktree_merge_lib" >&2; exit 1; }
-# shellcheck source=worktree-merge-lib.sh
-. "$worktree_merge_lib"
-
 usage() {
   cat <<'USAGE_EOF'
 Usage:
   scripts/ship-worktrees.sh [--target <branch>] [--remote <name>] [--slug <slug>] [--ready] [--dry-run]
   scripts/ship-worktrees.sh --local-merge [--target <branch>] [--slug <slug>] [--dry-run]
-  scripts/ship-worktrees.sh --cleanup-merged [--target <branch>] [--slug <slug>] [--dry-run]
   scripts/ship-worktrees.sh --recover <inspect|abort|reconcile> [--key <transaction-key>]
 
 Default mode commits the authorized branch diff, scans it for private data,
@@ -738,27 +732,6 @@ dirty_paths_for_worktree() {
   } | sed '/^$/d' | sort -u
 }
 
-ensure_worktree_status_for_cleanup() {
-  local worktree="$1"
-
-  if git -C "$worktree" status --porcelain=v1 --untracked-files=all >/dev/null 2>&1; then
-    return 0
-  fi
-
-  if [[ "$DRY_RUN" -eq 1 ]]; then
-    echo "[Ship] would repair stale worktree gitdir before dirty check: $worktree"
-    return 1
-  fi
-
-  git worktree repair "$worktree" >/dev/null 2>&1 || true
-  if git -C "$worktree" status --porcelain=v1 --untracked-files=all >/dev/null 2>&1; then
-    echo "[Ship] Repaired stale worktree gitdir: $worktree" >&2
-    return 0
-  fi
-
-  fail "linked worktree status unavailable after repair attempt: $worktree"
-}
-
 is_scaffold_path() {
   local path="$1"
   case "$path" in
@@ -775,29 +748,6 @@ non_scaffold_dirty_paths() {
     [[ -n "$path" ]] || continue
     is_scaffold_path "$path" || printf '%s\n' "$path"
   done < <(dirty_paths_for_worktree "$worktree")
-}
-
-print_dirty_paths() {
-  local worktree="$1"
-  dirty_paths_for_worktree "$worktree" | sed 's/^/  - /' >&2
-}
-
-fail_dirty_merged_worktree() {
-  local branch="$1" path="$2" non_scaffold
-  echo "ship-worktrees: dirty merged linked worktree: $branch at $path" >&2
-  echo "ship-worktrees: branch ancestry only proves committed changes are in $TARGET_BRANCH; these worktree changes are still outside $TARGET_BRANCH." >&2
-  echo "ship-worktrees: pick/apply/commit useful changes before cleanup; do not use tgz, reset --hard, git clean, or stash as closeout." >&2
-  echo "ship-worktrees: dirty paths:" >&2
-  print_dirty_paths "$path"
-
-  echo "ship-worktrees: work is preserved; deletion requires the user decision." >&2
-  return 1
-}
-
-guard_dirty_merged_worktree() {
-  local branch="$1" path="$2"
-  [[ -z "$(git -C "$path" status --porcelain=v1 --untracked-files=all)" ]] && return 0
-  fail_dirty_merged_worktree "$branch" "$path"
 }
 
 active_plan_or_empty() {
@@ -1270,78 +1220,6 @@ ship_primary_local_merge() {
   fi
 }
 
-cleanup_merged() {
-  local branch path slug merge_mode item_status cleaned=0 blocked=0 skipped=0
-  ! is_linked_worktree || fail "--cleanup-merged must run from the target primary worktree"
-
-  while IFS=$'\t' read -r branch path; do
-    [[ -n "$branch" && -n "$path" ]] || continue
-    slug="${branch#${BRANCH_PREFIX}}"
-    if [[ -n "$SLUG_OVERRIDE" && "$slug" != "$SLUG_OVERRIDE" ]]; then
-      continue
-    fi
-    # Same authority as contract-worktree cleanup --slug. An ancestry-only
-    # filter here reported every squash-merged worktree as unmerged, which
-    # under this project's squash ship flow means every worktree (issue #196).
-    # Dirtiness is still a separate refusal below: merged-but-dirty must stay
-    # distinguishable from unmerged.
-    #
-    # Enumerate the accepting modes rather than negating `unmerged`. This
-    # branch reaches guard_dirty_merged_worktree below, which under
-    # --discard-scaffold-only performs an irreversible write (git checkout --
-    # on tracked scaffold, rm -f on untracked) BEFORE cleanup is delegated.
-    # A value this function does not recognize must therefore land on the
-    # refusing side, and negation would put it on the accepting side.
-    merge_mode="$(worktree_merge_mode "$branch" "$TARGET_BRANCH")"
-    if [[ "$merge_mode" == "ancestor" || "$merge_mode" == "absorbed" ]]; then
-      # Keep errexit active inside the item, including scaffold discard helpers.
-      # Calling this subshell in an if/|| condition would disable that protection.
-      set +e
-      (
-        set -e
-        ensure_worktree_status_for_cleanup "$path"
-        lock_path="$(git -C "$path" rev-parse --git-path locked)"
-        if [[ -e "$lock_path" ]]; then
-          fail "linked worktree is locked, refusing cleanup: $path"
-        fi
-        guard_dirty_merged_worktree "$branch" "$path"
-        if [[ "$DRY_RUN" -eq 1 ]]; then
-          # run_cmd deliberately skips execution in dry-run; the guard above
-          # is therefore the read-only safety check for this preview.
-          run_cmd bash "$helper_dir/contract-worktree.sh" cleanup --slug "$slug" --target "$TARGET_BRANCH" --dry-run
-        else
-          run_cmd bash "$helper_dir/contract-worktree.sh" cleanup --slug "$slug" --target "$TARGET_BRANCH"
-        fi
-      )
-      item_status=$?
-      set -e
-      if [[ "$item_status" -eq 0 ]]; then
-        cleaned=$((cleaned + 1))
-      else
-        blocked=$((blocked + 1))
-        echo "[Ship] Cleanup blocked: $branch at $path (exit $item_status)" >&2
-      fi
-    else
-      echo "[Ship] Skipped unmerged branch: $branch"
-      skipped=$((skipped + 1))
-    fi
-  done < <(list_contract_worktrees "$BRANCH_PREFIX")
-
-  if [[ "$DRY_RUN" -eq 1 ]]; then
-    echo "[Ship] Cleanup summary: would-clean=$cleaned blocked=$blocked skipped=$skipped"
-  else
-    echo "[Ship] Cleanup summary: cleaned=$cleaned blocked=$blocked skipped=$skipped"
-  fi
-  [[ "$blocked" -eq 0 ]] || return 1
-  if [[ "$cleaned" -eq 0 ]]; then
-    if [[ -n "$SLUG_OVERRIDE" ]]; then
-      echo "[Ship] No merged contract worktree to clean for slug: $SLUG_OVERRIDE"
-    else
-      echo "[Ship] No merged contract worktrees to clean."
-    fi
-  fi
-}
-
 # True once ship's external effect -- the branch push -- is observable, whether
 # or not the `pushed` phase was reached before the interrupt. `--recover abort`
 # refuses on true, `--recover reconcile` refuses on false, so the window between
@@ -1565,10 +1443,6 @@ while [[ $# -gt 0 ]]; do
       MODE="local-merge"
       shift
       ;;
-    --cleanup-merged)
-      MODE="cleanup-merged"
-      shift
-      ;;
     --recover)
       [[ -n "${2:-}" ]] || fail "--recover requires inspect, abort, or reconcile"
       MODE="recover"
@@ -1611,9 +1485,6 @@ case "$MODE" in
     else
       ship_primary_local_merge
     fi
-    ;;
-  cleanup-merged)
-    cleanup_merged
     ;;
   recover)
     recover_ship
