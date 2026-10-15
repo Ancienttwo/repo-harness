@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-// @generated-from src/core/capabilities/registry.ts sha256:0076225810b6506432835775bfbb0388db4a16e074f3705a5624c8a296123452
+// @generated-from src/core/capabilities/registry.ts sha256:d2bcf23665eba12f29f59d167b7e3d18c691011800d0d7d138e5296020cdf5da
 // Standalone typed Bun projection. Regenerate from scripts/capability-resolver.ts; do not edit by hand.
 export const CAPABILITY_REGISTRY_VERSION = 1 as const;
 
