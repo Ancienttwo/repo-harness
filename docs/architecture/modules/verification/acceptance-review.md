@@ -108,7 +108,7 @@ sequenceDiagram
 
 ### 3.1 必须保持的不变量
 
-1. **一个验收来源。** `acceptancePolicySource()` 只返回 `'generic-review'`（`scripts/acceptance-receipt.ts:451`）。旧的 Claude 专用 review 命令只保留一个隐藏 stub，它返回 `UPGRADE_REQUIRED` 并以 1 退出（`src/cli/index.ts:811`）。旧的 direct cross-review 运行路径已删除，没有 alias（PR #484）。
+1. **一个验收来源。** `acceptancePolicySource()` 只返回 `'generic-review'`（`scripts/acceptance-receipt.ts:451`）。旧的 direct cross-review 运行路径已删除，没有 alias（PR #484）。
 2. **每个工作包最多一个持久 reviewer。** review 命令在启动 session 前调用 `recordCircuitAttempt`，guard 是 `one-semantic-review-per-work-package`（`src/cli/commands/review.ts:27`）。预算用完时命令失败，不启动新的 reviewer。
 3. **reviewer 不能复用 owner pane。** 绑定的 pane 等于 owner pane 时，round 失败（`src/effects/review/generic-review.ts:261`）。
 4. **packet 先保存，reviewer 后启动。** `composeReviewPacket` 在任何 reviewer pane 启动前生成完整 packet（`src/core/review/review-packet.ts:16`）。packet 上限是 10 MiB UTF-8（`review-packet.ts:25`）。启动失败后 packet 保留。内容不变的重试复用原字节；内容改变的重试在再次启动前失败（PR #578）。
