@@ -1,14 +1,13 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'fs';
+import { chmodSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
-import { join, resolve } from 'path';
+import { join } from 'path';
 import { spawnSync } from 'child_process';
 import { buildReviewSubject } from '../../src/effects/review/diff-fingerprint';
 import { acceptancePolicySource, parseAcceptancePolicy } from '../../scripts/acceptance-receipt';
 
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
-const cli = resolve(import.meta.dir, '../../src/cli/index.ts');
 function fixture() {
   const root = mkdtempSync(join(tmpdir(), 'retired-cross-review-')); roots.push(root);
   const bin = join(root, 'bin'); mkdirSync(bin); const marker = join(root, 'provider-launched');
@@ -21,26 +20,6 @@ function git(root: string, args: string[]): string {
   const result = spawnSync('git', ['-C', root, ...args], { encoding: 'utf8' });
   if (result.status !== 0) throw new Error(result.stderr); return result.stdout.trim();
 }
-describe('retired direct advisory command', () => {
-  test.each(['codex', 'codex-plugin', 'claude'])('rejects provider %s before launch or admission, without fallback', provider => {
-    const f = fixture(); const result = spawnSync(process.execPath, [cli, 'cross-review', '--provider', provider, '--json'], { cwd: f.root, env: f.env, encoding: 'utf8' });
-    expect(result.status).not.toBe(0); expect(result.stderr).toContain("unknown command 'cross-review'");
-    expect(existsSync(f.marker)).toBe(false); expect(existsSync(join(f.root, '.ai/harness'))).toBe(false);
-    expect(result.stdout).not.toContain('skipped'); expect(result.stdout).not.toContain('PASS');
-  });
-  test('root help omits the retired command and merged Herdr review still loads', () => {
-    const f = fixture(); const root = spawnSync(process.execPath, [cli, '--help'], { cwd: f.root, env: f.env, encoding: 'utf8' });
-    expect(root.status).toBe(0); expect(root.stdout).not.toMatch(/^\s+cross-review(?:\s|$)/m);
-    const claude = spawnSync(process.execPath, [cli, 'review', '--help'], { cwd: f.root, env: f.env, encoding: 'utf8' });
-    expect(claude.status).toBe(0); expect(claude.stdout).toContain('round'); expect(claude.stdout).toContain('status');
-    expect(existsSync(f.marker)).toBe(false);
-  });
-  test('only the three obsolete implementation files are absent', () => {
-    const root = resolve(import.meta.dir, '../..');
-    for (const path of ['src/cli/commands/cross-review.ts', 'src/core/review/cross-review.ts', 'src/effects/review/cross-review-runner.ts']) expect(existsSync(join(root, path))).toBe(false);
-    for (const path of ['src/effects/review/diff-fingerprint.ts', 'src/cli/commands/review.ts', 'src/effects/review/generic-review.ts', 'src/effects/review/oar-review-host.ts', 'src/effects/terminal/task-session.ts', 'assets/skills/repo-harness-cross-review/references/generic-review.md']) expect(existsSync(join(root, path))).toBe(true);
-  });
-});
 describe('retained subject and receipt owners', () => {
   test('shared subject binds committed, staged, unstaged and untracked content', () => {
     const f = fixture(); git(f.root, ['init', '-q', '-b', 'main']); git(f.root, ['config', 'user.name', 'Fixture']); git(f.root, ['config', 'user.email', 'fixture@example.invalid']);

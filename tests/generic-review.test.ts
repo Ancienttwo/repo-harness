@@ -13,7 +13,7 @@ import type { JsonValue } from '../src/core/evidence/types';
 import { prepareChangeAssessment } from '../src/effects/review/change-assessment';
 import { executeVerificationContract } from '../src/effects/evidence/verification-execution';
 import { ensureSessionDirectory, nextSessionRound, readSessionArtifact, writeSessionArtifact } from '../src/effects/terminal/task-session';
-import { tmpWorkspace, tmpWorkspaceIn, run } from './helpers/repo-fixture';
+import { tmpWorkspace, tmpWorkspaceIn } from './helpers/repo-fixture';
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 
@@ -280,13 +280,6 @@ test('OAR SessionOptions reuse fleet and authorize only file communication, with
     expect(Object.keys(options).sort()).toEqual(['appendSystemPrompt','cwd','effort','model']);
   }
 });
-test('retired CLI rejects with upgrade-required rather than routing to generic review', () => {
-  const root = tmpWorkspace('generic-review-old-cli'); roots.push(root);
-  const result = run(process.execPath, [join(import.meta.dir, '../src/cli/index.ts'), 'claude-review', 'round', '--contract', 'x', '--json'], root);
-  expect(result.status).toBe(1); expect(result.stderr?.toString()).toContain('UPGRADE_REQUIRED');
-  expect(result.stderr?.toString()).toContain('use repo-harness review');
-});
-
 // Mandatory B first proof. Dummy Node processes only; no OAR/vendor Session.
 test.skipIf(process.platform !== 'darwin')('OAR isolation: Seatbelt denies paired host and descendant writes with output-only allowance', async () => {
   const { mkdirSync, writeFileSync, symlinkSync, realpathSync } = await import('node:fs');
@@ -402,10 +395,10 @@ test('OAR isolation: reject authority overlap and symlink output roots before ex
   expect(() => reviewIsolationPolicy(spec, 'win32')).toThrow('UNSUPPORTED_PLATFORM');
 });
 
-async function runOarNodeFixture(label: string, body: string, confined = true) {
+async function runOarNodeFixture(label: string, body: string, confined = true, during?: (output: string, pid: number) => Promise<void>) {
   const { mkdirSync, writeFileSync, realpathSync } = await import('node:fs');
   const { pathToFileURL } = await import('node:url');
-  const { spawnSync } = await import('node:child_process');
+  const { spawn, spawnSync } = await import('node:child_process');
   const { reviewIsolationPolicy, reviewHostTemporaryDirectory } = await import('../src/effects/review/review-isolation');
   const root = tmpWorkspace(label); roots.push(root);
   const subject = join(root, 'subject'), output = join(root, 'output'); mkdirSync(subject); mkdirSync(output);
@@ -421,7 +414,15 @@ import {openScriptedReviewHost,runHostFileRequest,serveHostFileRequests,reviewRu
 const output=${JSON.stringify(output)},isolation=${JSON.stringify({paths,policyFile})};
 ${body}`);
   const node = resolveNode24();
-  const result = confined ? spawnSync('/usr/bin/sandbox-exec', ['-f', policyFile, node, worker], { encoding: 'utf8', timeout: 15000, env: { ...process.env, TMPDIR: temporary } })
+  // `during` writes files from this process while the worker runs, so the worker must not block the event loop.
+  const result = during ? await new Promise<{ status: number | null; stdout: string; stderr: string }>((resolve, reject) => {
+    const child = spawn('/usr/bin/sandbox-exec', ['-f', policyFile, node, worker], { env: { ...process.env, TMPDIR: temporary } });
+    let stdout = '', stderr = '';
+    child.stdout.on('data', chunk => { stdout += chunk; }); child.stderr.on('data', chunk => { stderr += chunk; });
+    const timer = setTimeout(() => child.kill('SIGKILL'), 15000);
+    child.on('close', status => { clearTimeout(timer); resolve({ status, stdout, stderr }); });
+    during(output, child.pid!).catch(error => { child.kill('SIGKILL'); reject(error); });
+  }) : confined ? spawnSync('/usr/bin/sandbox-exec', ['-f', policyFile, node, worker], { encoding: 'utf8', timeout: 15000, env: { ...process.env, TMPDIR: temporary } })
     : spawnSync(node, [worker], { encoding: 'utf8', timeout: 15000 });
   expect(result.status, result.stderr).toBe(0);
   return JSON.parse(result.stdout) as { calls: number; passed: boolean; model: string | null };
@@ -464,6 +465,41 @@ await served;await close();
 assert.equal(JSON.parse(readFileSync(join(output,'observed-1.json'),'utf8')).outcome,'aborted');assert.equal(existsSync(request.result_ref),false);
 await assert.rejects(host.prompt('after-cancel',{request_id:'after-cancel',round:2,host:{pid:process.pid,identity:'fixture-host'}},()=>{}),/HOST_DISPOSED/);
 console.log(JSON.stringify({calls,passed:true,model:null}));}finally{await close()}`);
+  expect(result.calls).toBe(1); expect(result.passed).toBe(true);
+});
+
+test.skipIf(process.platform !== 'darwin')('OAR host: a request without started-N.json is partial; no read, no ack until it is published', async () => {
+  const result = await runOarNodeFixture('oar-partial-request', String.raw`
+const spec={mode:'review',kind:'codex',installation:{kind:'available',via:'bundled'},options:{cwd:output},requestDirectory:output,output,controlDirectory:output,timeoutMs:5000,isolation};let calls=0;
+const host=await openScriptedReviewHost(spec.options,()=>{},async({say})=>{calls++;say('RECOMMENDATION: fixture observation only — confidence: HIGH')},isolation);
+let closing,thrown;const close=()=>closing??=host.dispose();const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+try{
+const ack=join(output,'ack-1.json'),started=join(output,'started-1.json'),observed=join(output,'observed-1.json');
+const served=serveHostFileRequests(host,spec,close,()=>closing!==undefined).catch(error=>{thrown=error});
+writeFileSync(join(output,'serving'),'1');
+let partialChecks=0;
+for(const end=Date.now()+8000;!existsSync(observed)&&thrown===undefined&&Date.now()<end;await sleep(10)){
+  const acked=existsSync(ack);
+  if(!existsSync(started)){assert.equal(acked,false);if(existsSync(join(output,'request-1.json')))partialChecks++}
+}
+assert.equal(thrown,undefined);assert.ok(partialChecks>0);assert.equal(JSON.parse(readFileSync(observed,'utf8')).outcome,'completed');
+writeFileSync(join(output,'close.request'),JSON.stringify({close:true}));await served;assert.equal(thrown,undefined);
+console.log(JSON.stringify({calls,passed:true,model:null}));}finally{await close()}`, true, async (output, pid) => {
+    for (let waited = 0; !existsSync(join(output, 'serving')); waited += 10) {
+      if (waited > 10000) throw new Error('host fixture never started serving');
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    const content = 'half-published request';
+    const requestId = '11111111-1111-4111-8111-111111111111';
+    const request = { protocol: 2, task: 'fixture', role: 'deep-reasoner', round: 1, request_id: requestId, context_ref: join(output, 'context-1.txt'), source_ref: 'fixture',
+      result_ref: join(output, 'result-1.json'), context_sha256: `sha256:${createHash('sha256').update(content).digest('hex')}`,
+      result_contract: { required_fields: ['request_id', 'context_sha256', 'value'], atomic_write: 'temp_rename', submission: { command: 'fixture', repo: output, task: 'fixture', role: 'deep-reasoner', round: 1 } } };
+    // Same order as sendTaskRequest: request first, then context and started.
+    writeSessionArtifact(join(output, 'request-1.json'), request);
+    await new Promise(resolve => setTimeout(resolve, 200));
+    writeFileSync(request.context_ref, content);
+    writeSessionArtifact(join(output, 'started-1.json'), { request_id: requestId, provider: { pid, identity: 'fixture-host' } });
+  });
   expect(result.calls).toBe(1); expect(result.passed).toBe(true);
 });
 

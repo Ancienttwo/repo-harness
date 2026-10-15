@@ -1,6 +1,6 @@
 ---
 name: repo-harness-cross-review
-description: Independent acceptance review through the persistent fleet deep-reasoner task-agent in Herdr. Generic review owns scope, request-bound Result validation and typed Receipt; the old direct advisory runtime is retired.
+description: Independent acceptance review through the persistent fleet deep-reasoner task-agent in Herdr. Generic review owns scope, request-bound Result validation and typed Receipt.
 when_to_use: "cross review, second opinion, outside voice, codex review, independent review, 让 codex 审, 找外部意见, 二审"
 ---
 
@@ -15,7 +15,6 @@ ownership lives in `src/effects/review/generic-review.ts`, the OAR host and
 - Acceptance through persistent Herdr task-agent: `references/generic-review.md`.
 - Operator-attended acceptance in the Claude desktop app without Herdr:
   `references/generic-review.md`, section "App terminal launch".
-- Migration from the retired direct Codex advisory command: `references/codex-mode.md`.
 - Explicit harness selection belongs to `repo-harness review round --harness`.
 
 ## Boundaries
