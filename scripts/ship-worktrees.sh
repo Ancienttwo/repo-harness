@@ -723,33 +723,6 @@ list_contract_worktrees() {
   '
 }
 
-dirty_paths_for_worktree() {
-  local worktree="$1"
-  {
-    git -C "$worktree" diff --name-only
-    git -C "$worktree" diff --cached --name-only
-    git -C "$worktree" ls-files --others --exclude-standard
-  } | sed '/^$/d' | sort -u
-}
-
-is_scaffold_path() {
-  local path="$1"
-  case "$path" in
-    tasks/todos.md|plans/plan-*.md|tasks/contracts/*.contract.md|tasks/reviews/*.review.md|tasks/notes/*.notes.md|.ai/harness/active-plan|.ai/harness/active-worktree|.ai/harness/worktrees/*.json)
-      return 0
-      ;;
-  esac
-  return 1
-}
-
-non_scaffold_dirty_paths() {
-  local worktree="$1" path
-  while IFS= read -r path; do
-    [[ -n "$path" ]] || continue
-    is_scaffold_path "$path" || printf '%s\n' "$path"
-  done < <(dirty_paths_for_worktree "$worktree")
-}
-
 active_plan_or_empty() {
   local active_plan=""
   if [[ -f ".ai/harness/active-plan" ]]; then

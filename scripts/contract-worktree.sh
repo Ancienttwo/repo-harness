@@ -1998,10 +1998,9 @@ cleanup_worktree() {
   cleanup_target="$(git rev-parse "$target_branch^{commit}")"
   if git show-ref --verify --quiet "refs/heads/$branch_name"; then
     cleanup_head="$(git rev-parse "refs/heads/$branch_name")"
-    # Merge state comes from the shared authority in worktree-merge-lib.sh --
-    # scripts/ship-worktrees.sh consumes the same function, so the batch and
-    # single-slug entrypoints cannot drift apart again. The lib is
-    # fail-closed: anything it cannot prove merged comes back `unmerged`.
+    # Merge state comes from the shared authority in worktree-merge-lib.sh.
+    # The lib is fail-closed: anything it cannot prove merged comes back
+    # `unmerged`.
     merge_mode="$(worktree_merge_mode "$branch_name" "$target_branch")"
     case "$merge_mode" in
       ancestor)
