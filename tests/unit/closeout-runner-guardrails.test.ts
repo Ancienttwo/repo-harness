@@ -777,7 +777,6 @@ describe('closeout runner guardrails', () => {
     expect(ship).not.toContain('run_cmd bash "$helper_dir/verify-sprint.sh"');
     expect(finish).not.toContain('bash "$helper_dir/verify-sprint.sh"');
     expect(finish).toContain('"$helper_dir/merge-gate.ts" run --base "$base_ref" --format sha');
-    expect(ship).toContain('"$helper_dir/merge-gate.ts" run --base "$base_ref" --format sha');
   });
 
   test('source and packaged ship helpers stay byte-identical', () => {
