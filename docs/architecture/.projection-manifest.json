@@ -5,7 +5,7 @@
   "sourceDigest": "sha256:0c25851be6d049c822d5d853df1ff73c781a028c3459dd6560bc96c032081e2e",
   "provenance": {
     "schemaVersion": "archcontext.architecture-docs-projection-provenance/v3",
-    "sourceTreeDigest": "sha256:382a52ae0ae8dbb414b051481511b4224f13164aba452d68685359243f7aa4e2",
+    "sourceTreeDigest": "sha256:44989f5d78b20301de8695aca8e51283f3cd6685c5f5dc462b37fe07003f2a93",
     "modelDigest": "sha256:c87a3ae6ec9e033e9cad1429034ae062f916e18e9aa4d30ab060dd612b7d3375",
     "rendererVersion": "archcontext.docs-renderer/v5",
     "layoutVersion": "archcontext.docs-layout/v1",
@@ -13,9 +13,9 @@
       "codeGraphPackage": "@colbymchenry/codegraph",
       "codeGraphVersion": "1.6.1"
     },
-    "projectionInputDigest": "sha256:fbf716e004e177c4e338c5bea16128f11654be888368dbd90b15fe45b3106f99"
+    "projectionInputDigest": "sha256:d4ea84ae3dd7e757ade4398531d638834d6dffd4d2e48fc3390d20cc72f1e2c7"
   },
-  "projectionDigest": "sha256:727c52bae67769c79512fbb87ff0f03f1cf5d4a35ce6091a5ad7decf0b8002ca",
+  "projectionDigest": "sha256:814454aa939e8501a29882851239f34f7359cd7dc188357c6c4b3beaf109b467",
   "semanticBaseline": {
     "semanticState": {
       "schemaVersion": "archcontext.architecture-semantic-state/v1",
@@ -979,17 +979,17 @@
     },
     "digests": {
       "modelDigest": "sha256:c87a3ae6ec9e033e9cad1429034ae062f916e18e9aa4d30ab060dd612b7d3375",
-      "sourceTreeDigest": "sha256:382a52ae0ae8dbb414b051481511b4224f13164aba452d68685359243f7aa4e2",
+      "sourceTreeDigest": "sha256:44989f5d78b20301de8695aca8e51283f3cd6685c5f5dc462b37fe07003f2a93",
       "flowProofDigest": "sha256:36d2ba21ad5321fd97c00c24aaf0013c0997da13383d33052ac27a91a03bf58e",
-      "projectionDigest": "sha256:727c52bae67769c79512fbb87ff0f03f1cf5d4a35ce6091a5ad7decf0b8002ca"
+      "projectionDigest": "sha256:814454aa939e8501a29882851239f34f7359cd7dc188357c6c4b3beaf109b467"
     },
     "evidence": {
-      "sourceTreeDigest": "sha256:382a52ae0ae8dbb414b051481511b4224f13164aba452d68685359243f7aa4e2",
+      "sourceTreeDigest": "sha256:44989f5d78b20301de8695aca8e51283f3cd6685c5f5dc462b37fe07003f2a93",
       "selectorEvidenceDigest": "sha256:9f91f3201b42d7f244d8ce2427b1515580a6b8076857e153f4f4c2ac1695922c",
       "rendererVersion": "archcontext.docs-renderer/v5"
     }
   },
-  "receiptDigest": "sha256:d4a931d0db70cde96282069551741af730a46290beeb92b3f48109bbb1844488",
+  "receiptDigest": "sha256:76711831a7152ca7cd070edd57dda881524d6bc22001537e8ba5f0bcf8ebc738",
   "targetCount": 43,
   "fileCount": 43,
   "targets": [
@@ -1072,7 +1072,7 @@
       "format": "markdown",
       "sourceDigest": "sha256:d1e2b52e8bbdf46e7d467549aa004d7b3815d96f3a7ff5b31a241e57284f28f9",
       "outputDigest": "sha256:69a1420fd2d8f9eb8155c6cc2381f6b563f164933d8a80730df0c4aba76f4cce",
-      "sourceFootprintDigest": "sha256:ba992b0d21f9d5dde000437024e1cae32b6e0b7e9a80fff578a5d6a6d23e878f",
+      "sourceFootprintDigest": "sha256:9d87fc2cfe4e04cc3051c2cd84c99031bfaa48f44d4b61b3e0ce57cb43e4fab2",
       "scale": {
         "fileCountBucket": {
           "lower": 50,
@@ -1852,7 +1852,7 @@
       "format": "markdown",
       "sourceDigest": "sha256:27f09b3a3deb5f9a4fd96730f82d0d2b533fb6d63335da59076235fe8eaac5ec",
       "outputDigest": "sha256:08fbc80b50531fffc33a224016183363744f2a8d1c96702ad136702e3d441edf",
-      "sourceFootprintDigest": "sha256:e1a1c78e3c5ef44559fa996b2b986643237b27a1f495add2cdda7725075852bc",
+      "sourceFootprintDigest": "sha256:49f62ad3216b10b6095f7c941d575b269bd67740306b7de69c67dbedd44405c7",
       "scale": {
         "fileCountBucket": {
           "lower": 500,

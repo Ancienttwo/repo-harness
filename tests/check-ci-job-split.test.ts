@@ -408,7 +408,7 @@ describe('architecture lanes', () => {
     files: [{ path: 'docs/architecture/.projection-manifest.json' }], humanActions: [] });
 
   // Real check-ci.sh with stub CLI results. `bun -e` and the shell logic stay real.
-  function runLane(args: string[], fixture: { owed?: string; owedExit?: number; check?: string; codegraphExit?: number; summary?: boolean }) {
+  function runLane(args: string[], fixture: { owed?: string; owedExit?: number; check?: string; checkExit?: number; codegraphExit?: number; summary?: boolean }) {
     const root = mkdtempSync(join(tmpdir(), 'rh-ci-architecture-'));
     const bin = join(root, 'bin');
     try {
@@ -420,7 +420,7 @@ describe('architecture lanes', () => {
         '#!/bin/bash',
         'if [[ "$1" == install ]]; then exit 0; fi',
         `if [[ "$1" == src/cli/index.ts && "$2" == state ]]; then echo "$*" > ${JSON.stringify(join(root, 'owed-args'))}; cat ${JSON.stringify(join(root, 'owed.json'))}; if [[ ${fixture.owedExit ?? 0} -ne 0 ]]; then echo "Unknown base ref: missing" >&2; fi; exit ${fixture.owedExit ?? 0}; fi`,
-        `if [[ "$1" == src/cli/index.ts && "$2" == architecture-projection ]]; then touch ${JSON.stringify(join(root, 'checked'))}; cat ${JSON.stringify(join(root, 'check.json'))}; exit 1; fi`,
+        `if [[ "$1" == src/cli/index.ts && "$2" == architecture-projection ]]; then touch ${JSON.stringify(join(root, 'checked'))}; cat ${JSON.stringify(join(root, 'check.json'))}; exit ${fixture.checkExit ?? 1}; fi`,
         `exec ${JSON.stringify(process.execPath)} "$@"`,
       ].join('\n'), { mode: 0o755 });
       writeFileSync(join(bin, 'npm'), `#!/bin/bash\nexit ${fixture.codegraphExit ?? 0}\n`, { mode: 0o755 });
@@ -479,6 +479,21 @@ describe('architecture lanes', () => {
     expect(result.owedArgs).toBeNull();
     expect(result.summary).toEqual({ status: 'planned', staleNodes: ['capability.workflow-engine.workflow-state', 'capability.verification.evals-checks'],
       files: ['docs/architecture/.projection-manifest.json'], humanActions: [] });
+    expect(result.stdout).not.toContain('[ci] typecheck');
+  });
+
+  test('the daily lane passes after a manifest-only refresh and reports no remaining stale nodes', () => {
+    const result = runLane(['architecture'], {
+      check: JSON.stringify({ status: 'noop', freshness: { ok: true, staleNodes: [] }, files: [], humanActions: [] }),
+      checkExit: 0,
+      summary: true,
+    });
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.checked).toBe(true);
+    expect(result.owedArgs).toBeNull();
+    expect(result.summary).toEqual({ status: 'noop', staleNodes: [], files: [], humanActions: [] });
+    expect(warnings(result.stdout)).toEqual([]);
+    expect(result.stdout).toContain('[ci] OK');
     expect(result.stdout).not.toContain('[ci] typecheck');
   });
 });
