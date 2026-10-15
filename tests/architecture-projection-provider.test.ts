@@ -522,17 +522,20 @@ describe('package-local ArchContext projection provider', () => {
     for (const mode of ['apply', 'adopt']) expect(buildArchitectureProjectionCommand().commands.find((command) => command.name() === mode)!.options.map((option) => option.long)).toContain('--expected-worktree-digest');
   });
 
-  test('a newer renderer reports mismatch and blocks check, plan and apply before a run', () => {
+  test('a newer renderer reports mismatch and blocks check, plan and apply after the snapshot read and handshake, before any projection command', () => {
     const f = fixture();
     mkdirSync(join(f.repoRoot, 'docs/architecture'), { recursive: true });
     writeFileSync(join(f.repoRoot, 'docs/architecture/.projection-manifest.json'), JSON.stringify({ rendererVersion: 'archcontext.docs-renderer/v7' }));
     const calls: Array<{ binary: string; args: readonly string[] }> = [];
     const options = { consumerRoot: f.consumerRoot, policy, run: runner(calls, projectionEnvelope(expectedSnapshot)) };
     expect(inspectArchitectureProjectionReadiness(f.repoRoot, options).projectionProvider.state).toBe('mismatch');
+    expect(calls.map((call) => call.args)).toEqual([['capabilities', '--json']]);
+    calls.length = 0;
     for (const mode of ['check', 'plan', 'apply'] as const) {
-      expect(() => runArchitectureProjection({ ...request(), mode }, f.repoRoot, options)).toThrow('update repo-harness');
+      expect(() => runArchitectureProjection(architectureProjectionRequest(mode, f.repoRoot, options), f.repoRoot, options)).toThrow('update repo-harness');
     }
-    expect(calls.every((call) => call.args[0] === 'capabilities')).toBe(true);
+    expect(calls.map((call) => call.args)).toEqual(['check', 'plan', 'apply'].flatMap(() => [['projection', 'snapshot', '--json'], ['capabilities', '--json']]));
+    expect(calls.some((call) => call.args[0] === 'projection' && ['run', 'readback', 'recover'].includes(call.args[1]!))).toBe(false);
   });
 
   test('readiness reports missing policy and incompatible daemon as typed states', () => {

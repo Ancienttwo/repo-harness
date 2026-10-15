@@ -74,6 +74,28 @@ test('the text view lists the first items of a truncated evidence sample', () =>
   expect(text).not.toContain('src/a5.ts');
 });
 
+test('the text view lists the sampled edges of a residual cycle', () => {
+  const record = shippedRecord();
+  record.payload = {
+    ...record.payload, kind: 'residual-cycle', affectedNodeIds: ['module.a', 'module.b', 'module.c'], metrics: { memberCount: 3 },
+    evidence: {
+      kind: 'residual-cycle', memberNodeIds: ['module.a', 'module.b', 'module.c'], totalCount: 3, truncated: false,
+      edges: [
+        { fromPath: 'src/a.ts', fromLine: 2, toPath: 'src/b.ts', specifier: './b', fromNodeId: 'module.a', toNodeId: 'module.b' },
+        { fromPath: 'src/b.ts', fromLine: null, toPath: 'src/c.ts', specifier: './c', fromNodeId: 'module.b', toNodeId: 'module.c' },
+        { fromPath: 'src/c.ts', fromLine: 7, toPath: 'src/a.ts', specifier: './a', fromNodeId: 'module.c', toNodeId: 'module.a' },
+      ],
+    },
+  };
+  const [candidate] = refactorCandidates(discovery({ scan: { proposedRecommendations: [] }, open: [record] }));
+  expect(candidate).toMatchObject({ kind: 'residual-cycle', evidence: { kind: 'residual-cycle', totalCount: 3, truncated: false } });
+  const text = formatRefactorRecommendations({ schemaVersion: 'repo-harness.refactor-recommendations/v2', status: 'recommended', candidates: [candidate!] });
+  expect(text).toContain('evidence: residual-cycle, 3 total\n');
+  expect(text).toContain('- src/a.ts:2 -> src/b.ts');
+  expect(text).toContain('- src/b.ts:? -> src/c.ts');
+  expect(text).toContain('- src/c.ts:7 -> src/a.ts');
+});
+
 test('a recorded open suggestion that the scan suppresses is still listed, once, next to new scan candidates', () => {
   const f = fixture();
   const record = shippedRecord();
