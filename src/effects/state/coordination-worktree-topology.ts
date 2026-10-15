@@ -100,7 +100,7 @@ export interface ExactWorktreeCleanup {
 type MergeProof = { readonly provider: boolean; readonly merge_commit_sha: string };
 
 /** A local proof binds the target OID. The provider proof runs only for an own-commit branch that the local proof cannot prove. */
-function mergeProof(root: string, branch: string, head: string, targetRef: string, target: string, limits: Limits): MergeProof {
+function mergeProof(root: string, branch: string, head: string, targetRef: string, target: string, limits: Limits, providerCapMs = 10_000): MergeProof {
   const output = execFileSync('bash', [mergeLibraryPath(), '--target', target, head], {
     cwd: root, encoding: 'utf8', timeout: timeout(limits), stdio: ['ignore', 'pipe', 'pipe'],
     env: { ...process.env, REPO_HARNESS_GIT_BIN: gitBinary(limits) },
@@ -114,7 +114,7 @@ function mergeProof(root: string, branch: string, head: string, targetRef: strin
   const ghBin = limits.ghBin ?? resolveTrustedGhExecutable();
   const merge = base && ghBin ? observeProviderBranchMergeCommit({
     repoRoot: checkoutPath(entries(root, limits)[0]!.path), ghBin, gitBin: gitBinary(limits),
-    headSha: head, baseRef: base, targetOid: target, timeoutMs: Math.min(10_000, timeout(limits) ?? 10_000),
+    headSha: head, baseRef: base, targetOid: target, timeoutMs: Math.min(providerCapMs, timeout(limits) ?? providerCapMs),
   }) : null;
   if (!merge) throw new Error('cleanup merge is unproven');
   return { provider: true, merge_commit_sha: merge };
@@ -261,7 +261,8 @@ export function cleanupExactWorktree(root: string, expected: ExactWorktreeCleanu
     if (git(root, ['rev-parse', `${expected.target_ref}^{commit}`], limits) !== expected.target_oid) throw new Error('cleanup target moved');
     git(root, ['merge-base', '--is-ancestor', expected.merge_commit_sha, expected.target_oid], limits);
     if (git(root, ['rev-parse', `refs/heads/${expected.branch}`], limits) !== expected.head_sha) throw new Error('cleanup execution head moved');
-    const proof = mergeProof(root, expected.branch, expected.head_sha, expected.target_ref, expected.target_oid, limits);
+    // The topology lock is held here, and other lock users wait at most 5 s.
+    const proof = mergeProof(root, expected.branch, expected.head_sha, expected.target_ref, expected.target_oid, limits, 3_000);
     if (proof.provider && proof.merge_commit_sha !== expected.merge_commit_sha) throw new Error('cleanup merge commit changed');
     const topology = entries(root, limits);
     const binding = topology.find(entry => entry.branch === `refs/heads/${expected.branch}`);

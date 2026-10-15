@@ -295,11 +295,11 @@ export function observeProviderBranchMergeCommit(input: {
   readonly timeoutMs: number;
 }): string | null {
   if (!/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/u.test(input.headSha)) return null;
-  // The repository and host come from this clone's remotes, never from the caller.
+  const deadline = Date.now() + input.timeoutMs;
+  // The protected env is built fresh, so caller GH_REPO and GH_HOST never reach gh.
+  // The repository and host come from this clone's remotes.
   let env: NodeJS.ProcessEnv;
   try { env = { ...resolveProtectedGitRuntime().env }; } catch { return null; }
-  delete env.GH_REPO;
-  delete env.GH_HOST;
   const result = spawnSync(input.ghBin, ['api', `repos/{owner}/{repo}/commits/${input.headSha}/pulls`], {
     cwd: input.repoRoot, env, encoding: 'utf-8', timeout: input.timeoutMs, maxBuffer: 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -313,8 +313,10 @@ export function observeProviderBranchMergeCommit(input: {
     if (typeof mergedAt !== 'string' || !Number.isFinite(Date.parse(mergedAt))) continue;
     if (!base || typeof base !== 'object' || (base as Record<string, unknown>).ref !== input.baseRef) continue;
     if (typeof merge !== 'string' || !/^[a-f0-9]{40}$/u.test(merge)) continue;
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) return null;
     const ancestor = spawnSync(input.gitBin, ['merge-base', '--is-ancestor', merge, input.targetOid], {
-      cwd: input.repoRoot, timeout: input.timeoutMs, stdio: 'ignore',
+      cwd: input.repoRoot, timeout: remaining, stdio: 'ignore',
     });
     if (!ancestor.error && ancestor.status === 0) return merge;
   }
