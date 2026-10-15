@@ -13,7 +13,7 @@ import type { JsonValue } from '../src/core/evidence/types';
 import { prepareChangeAssessment } from '../src/effects/review/change-assessment';
 import { executeVerificationContract } from '../src/effects/evidence/verification-execution';
 import { ensureSessionDirectory, nextSessionRound, readSessionArtifact, writeSessionArtifact } from '../src/effects/terminal/task-session';
-import { tmpWorkspace, tmpWorkspaceIn, run } from './helpers/repo-fixture';
+import { tmpWorkspace, tmpWorkspaceIn } from './helpers/repo-fixture';
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 
@@ -280,13 +280,6 @@ test('OAR SessionOptions reuse fleet and authorize only file communication, with
     expect(Object.keys(options).sort()).toEqual(['appendSystemPrompt','cwd','effort','model']);
   }
 });
-test('retired CLI rejects with upgrade-required rather than routing to generic review', () => {
-  const root = tmpWorkspace('generic-review-old-cli'); roots.push(root);
-  const result = run(process.execPath, [join(import.meta.dir, '../src/cli/index.ts'), 'claude-review', 'round', '--contract', 'x', '--json'], root);
-  expect(result.status).toBe(1); expect(result.stderr?.toString()).toContain('UPGRADE_REQUIRED');
-  expect(result.stderr?.toString()).toContain('use repo-harness review');
-});
-
 // Mandatory B first proof. Dummy Node processes only; no OAR/vendor Session.
 test.skipIf(process.platform !== 'darwin')('OAR isolation: Seatbelt denies paired host and descendant writes with output-only allowance', async () => {
   const { mkdirSync, writeFileSync, symlinkSync, realpathSync } = await import('node:fs');

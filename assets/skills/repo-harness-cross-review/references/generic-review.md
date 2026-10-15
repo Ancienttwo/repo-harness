@@ -48,49 +48,9 @@ exit precede pane close; missing proof remains pending.
 The independent direct Codex advisory runtime is retired. New acceptance
 requests use this generic domain; the removed command is not an alias or fallback.
 
-Current zero-prompt native evidence: Claude 2.1.284 constructed and disposed
-under the boundary despite denied state/plugin/trust writes; no native state
-directory is granted. Codex 0.160.0 app-server exited while the probe-window OS
-log recorded denied root SQLite/WAL/SHM writes. Broad ~/.codex is not a pure
-state directory and is never opened; that runtime is currently unsupported.
-No real review/model capability is certified by a startup probe. All native
-state allowances must avoid protected authorities and keep settings, hooks,
-trust, instructions/definitions and credentials denied, including inside an
-otherwise writable tree. The fixed host refuses Session creation without the
-owner-admitted profile and live Seatbelt denial evidence.
-
-
-23:07 Codex admission is narrow: tmp subpath plus six state/log SQLite literals,
-with root/tmp/file symlink refusal and protected-authority overlap checks. The
-single zero-prompt recheck still exited: goals, memories/queue SQLite and
-installation_id writes were denied. Those paths remain closed; no retry or
-additional grant. Codex stays unsupported and Claude's prior init-only-model
-limitation is unchanged.
-
-
-23:29 adds only goals/memories/queue SQLite families and installation_id as ten
-literals. Aimpact accepts the unverified later-session goals/memories channel.
-The single zero-prompt recheck still fails thread/start: the OS denies
-thread-writer-locks/.coordination.lock. No additional grant or relaunch; Codex
-remains unsupported. Real turns/further paths remain unverified.
-
-
-23:56 adds only thread-writer-locks as a subpath. The single zero-prompt SDK
-constructor/dispose succeeded, but new model-cache, shell-snapshot, plugin and
-thread-history writes were denied; all remain closed and the probe stopped.
-This is startup/disposal evidence only, not real-turn readiness or Receipt
-certification. No plugin or broader root grant is implied.
-
-
-2026-10-03 00:27 replaces every real Codex state grant with owner-prepared
-output/.codex-home. Only auth is copied (exclusive/no-follow, 0700/0600), only
-access exp is checked against the run window, and CODEX_HOME is passed through
-OAR SessionOptions.env. No config/trust/instruction copy; auth/config writes
-remain denied. Owner deletes the copy on close/cancel/start failure/timeout;
-failed deletion is cleanup_pending. One zero-prompt startup and one authorized
-round18 production Codex review/Receipt write+verify passed in a disposable
-private session. This certifies that observed runtime/fixture path, not backend
-identity, future versions, network isolation, refresh safety or Claude Receipt.
+Codex runs with an owner-prepared `output/.codex-home` as `CODEX_HOME`, passed through OAR SessionOptions.env. No native state directory is granted.
+Only auth is copied (exclusive/no-follow, modes 0700/0600) and only its access `exp` is checked against the run window. Config, trust and instructions are not copied.
+The owner deletes the copy on close, cancel, start failure and timeout. A failed deletion is `cleanup_pending`.
 
 ## App terminal launch
 

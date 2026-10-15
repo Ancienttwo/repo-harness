@@ -495,17 +495,13 @@ describe("Bootstrap Script Contracts", () => {
   // diff, exact-base binding) moved to code
   // Shared subject capture and current generic review remain the runtime owners;
   // retired advisory code is not reimplemented as Skill Markdown.
-  test("repo-harness-cross-review routes to merged Herdr review and rejects the old direct runtime", () => {
+  test("repo-harness-cross-review routes to merged Herdr review", () => {
     const skill = read("assets/skills/repo-harness-cross-review/SKILL.md");
-    const migration = read("assets/skills/repo-harness-cross-review/references/codex-mode.md");
     const generic = read("assets/skills/repo-harness-cross-review/references/generic-review.md");
     expect(skill).toContain("references/generic-review.md");
     expect(skill).toContain("deep-reasoner");
-    expect(migration).toContain("command is retired");
-    expect(migration).toContain("not an\nalias");
     expect(generic).toContain("repo-harness review round");
     expect(generic).toContain("generic-review");
-    expect(migration).not.toContain("Exactly two attempts");
   });
 
   test("hook docs and scripts should use ToolUse event names", () => {

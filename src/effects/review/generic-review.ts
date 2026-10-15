@@ -226,11 +226,6 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
   try {
     if (existsSync(join(dir, 'closed.json'))) throw new Error('review_session_closed');
     if (existsSync(join(dir, 'close.request'))) throw new Error('review_session_closing; finish the same cancel or close');
-    const legacyDir = join(root, '.ai/harness/runs/claude-review', createHash('sha256').update(contract).digest('hex'));
-    const legacySessionOpen = existsSync(join(legacyDir, 'session.json')) && !existsSync(join(legacyDir, 'closed.json'));
-    const legacyServerPending = (existsSync(join(legacyDir, 'server.json')) || existsSync(join(legacyDir, 'server-start-intent.json')))
-      && !existsSync(join(legacyDir, 'server-closed.json'));
-    if (legacySessionOpen || legacyServerPending) throw new Error('review_legacy_drain_required; drain with the previous version before cutover');
     // Refuse an unusable terminal command before any session admission.
     if (terminal) { const host = hostExecutable(); assertTerminalHostCommand(reviewHostCommand(host.node, host.entry, join(dir, 'host.json'))); }
     const reviewerRepo = realpathSync(options.reviewerRepo);

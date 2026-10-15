@@ -917,16 +917,6 @@ test.skipIf(process.platform !== 'darwin')('generic review cancel that lands bet
 });
 
 
-test('generic review refuses legacy cleanup-pending markers without reading or translating old records', async () => {
-  const f = reviewFixture();
-  const key = createHash('sha256').update(f.options.contract).digest('hex');
-  const legacy = join(f.root, '.ai/harness/runs/claude-review', key);
-  mkdirSync(legacy, { recursive: true });
-  for (const file of ['session.json', 'closed.json', 'server.json']) writeFileSync(join(legacy, file), 'not legacy JSON; marker-only check');
-  await expect(runReviewRound(f.options, f.effects)).rejects.toThrow('review_legacy_drain_required');
-  expect(f.sent()).toBe(0); expect(f.calls).toEqual([]);
-});
-
 test.skipIf(process.platform !== 'darwin')('Codex credential copy cleanup follows owner close/cancel/start-failure/timeout and reports refusal', async () => {
   const { existsSync, unlinkSync } = await import('node:fs');
   const copied = (f: ReturnType<typeof reviewFixture>) => {
