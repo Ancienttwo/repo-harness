@@ -37,6 +37,7 @@ import {
   type PublicationReceiptV3,
 } from '../../core/publication/publication-receipt';
 import { candidate } from '../../../scripts/merge-gate';
+import { resolveProtectedGitRuntime } from '../../../scripts/acceptance-receipt';
 import { readLease, withTaskLock } from '../state/coordination-lease-store';
 import { resolveGitCommonDirectory } from '../git/common-directory';
 
@@ -276,6 +277,48 @@ export function observeProviderPullRequestIntegration(
     if (error instanceof PublicationReceiptError) throw error;
     throw incomplete('provider PR integration observation failed', error);
   }
+}
+
+/**
+ * Worktree cleanup proof for a squash merge that the local tree test can no
+ * longer see. Only a merged PR into `baseRef` whose full merge commit is in the
+ * local target history counts. Every failure returns null, so cleanup keeps
+ * the branch. The caller passes the trusted gh; no environment value selects it.
+ */
+export function observeProviderBranchMergeCommit(input: {
+  readonly repoRoot: string;
+  readonly ghBin: string;
+  readonly gitBin: string;
+  readonly headSha: string;
+  readonly baseRef: string;
+  readonly targetOid: string;
+  readonly timeoutMs: number;
+}): string | null {
+  if (!/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/u.test(input.headSha)) return null;
+  // The repository and host come from this clone's remotes, never from the caller.
+  let env: NodeJS.ProcessEnv;
+  try { env = { ...resolveProtectedGitRuntime().env }; } catch { return null; }
+  delete env.GH_REPO;
+  delete env.GH_HOST;
+  const result = spawnSync(input.ghBin, ['api', `repos/{owner}/{repo}/commits/${input.headSha}/pulls`], {
+    cwd: input.repoRoot, env, encoding: 'utf-8', timeout: input.timeoutMs, maxBuffer: 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  if (result.error || result.status !== 0) return null;
+  let pulls: unknown;
+  try { pulls = JSON.parse(result.stdout); } catch { return null; }
+  if (!Array.isArray(pulls)) return null;
+  for (const pull of pulls) {
+    if (!pull || typeof pull !== 'object' || Array.isArray(pull)) continue;
+    const { merged_at: mergedAt, base, merge_commit_sha: merge } = pull as Record<string, unknown>;
+    if (typeof mergedAt !== 'string' || !Number.isFinite(Date.parse(mergedAt))) continue;
+    if (!base || typeof base !== 'object' || (base as Record<string, unknown>).ref !== input.baseRef) continue;
+    if (typeof merge !== 'string' || !/^[a-f0-9]{40}$/u.test(merge)) continue;
+    const ancestor = spawnSync(input.gitBin, ['merge-base', '--is-ancestor', merge, input.targetOid], {
+      cwd: input.repoRoot, timeout: input.timeoutMs, stdio: 'ignore',
+    });
+    if (!ancestor.error && ancestor.status === 0) return merge;
+  }
+  return null;
 }
 
 function updateProviderBody(repoRoot: string, ghBin: string, number: number, body: string): void {
