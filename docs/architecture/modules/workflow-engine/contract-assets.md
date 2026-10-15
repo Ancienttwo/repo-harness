@@ -193,7 +193,7 @@ regressions verify these separate boundaries.
 | I4 | `context.capability_source` 选择唯一 capability 权威。本仓库是 `archcontext`，读 `.archcontext/model/nodes/*.yaml`；不双读，不回退 | `.ai/harness/policy.json:101-102`；`src/core/capabilities/registry.ts:514` |
 | I5 | archcontext 模式下，路径归属只由 `archctx resolve` 决定。注册表不检查 include 形状，也接受 `source.exclude`。歧义归属与 archctx 失败都 fail closed。registry 模式仍按最长前缀匹配，同长度歧义 fail closed | `registry.ts` 的 `capabilityPathResolutionFromArchcontextOwners`、`src/effects/capabilities/archcontext-owners.ts`、`registry.ts` 的 `matchCapabilityPath` |
 | I6 | 受保护 helper 的 source、helper、HOME、PATH 与解释器解析不受调用者影响 | `protectedChildEnv()`（`helper-runner.ts:73`）、`resolveHelperRuntime(env, !protectedHelper)`（`:367`） |
-| I7 | merge gate 的启用位来自目标 base commit，候选不能自我豁免 | `scripts/ship-worktrees.sh:868-871`（`merge-gate.ts fingerprint --base`） |
+| I7 | merge gate 对每个候选都必需。它没有启用位，所以候选不能自我豁免。推送前，`fingerprint` 按目标 base 扫描候选 diff | `scripts/merge-gate.ts` 的 `runMergeGateCli`（`:284`，`const required = true`）；`scripts/ship-worktrees.sh:1076`（`merge-gate.ts fingerprint --base`） |
 | I8 | 55 个 helper 中 52 个与 `scripts/` 逐字节一致；3 个例外由投影脚本声明：`capability-resolver.ts` 与 `recovery-view-cli.ts` 带 `@generated-from` 头，`acceptance-receipt.ts` 只改写一条 import 路径 | `bun run check:helpers`；`scripts/sync-helper-sources.ts:48`、`:88`、`:108-113` |
 | I9 | 本地 contract publication 每个 work package 只向 target 增加一个 commit，publication tree 必须与 seal 验证后的 lifecycle HEAD 一致 | `scripts/contract-worktree.sh` 的 `publication_prepared` journal phase |
 | I10 | finish abort 只在 runner 证明 target publication 未落地后，才把同一 fenced lease 从 `completing` 恢复为 `bound` | `contract-worktree.sh` 的 `closeout_finish_effect_landed`（`:1213-1233`）+ `sprint abort-completion` |
