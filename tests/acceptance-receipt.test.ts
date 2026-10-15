@@ -875,6 +875,17 @@ test.skipIf(process.platform !== 'darwin')('generic review unknown owner, explic
   expect((await closeReview(pending.root, pending.options.contract, true, pending.home, pending.effects)).status).toBe('closed');
 });
 
+test.skipIf(process.platform !== 'darwin')('generic review checks the reviewer binding at most once per second while a turn is pending', async () => {
+  const f = reviewFixture();
+  const { dir } = reviewLocation(f.root, f.options.contract);
+  let checks = 0;
+  const pending = pendingTurnEffects(f, async () => null);
+  await expect(runReviewRound({ ...f.options, timeoutMs: 1500 }, { ...pending,
+    assertBinding: () => { if (existsSync(join(dir, 'delivery-1.json'))) checks++; } })).rejects.toThrow('review_round_timeout');
+  // The loop sleeps 100 ms per pass, so a per-pass check would make about 15 calls.
+  expect(checks).toBeGreaterThanOrEqual(1); expect(checks).toBeLessThanOrEqual(3);
+});
+
 test.skipIf(process.platform !== 'darwin')('generic review cancel reaches an active round at the lock boundary and records no acceptance', async () => {
   const f = reviewFixture(); f.verdict('PASS');
   const { dir } = reviewLocation(f.root, f.options.contract);
