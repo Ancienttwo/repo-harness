@@ -387,9 +387,8 @@ describe('Windows protected-helper platform contract', () => {
     }
   });
 
-  test('ship reads merge-gate policy without requiring jq', () => {
+  test('ship does not require jq for the merge gate', () => {
     const ship = readFileSync(join(import.meta.dir, '..', '..', 'scripts', 'ship-worktrees.sh'), 'utf-8');
-    expect(ship).toContain('fingerprint --base "$base_ref" --format required');
     expect(ship).not.toContain('merge gate preflight requires jq');
   });
 });

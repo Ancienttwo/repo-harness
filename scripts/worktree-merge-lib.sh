@@ -1,9 +1,10 @@
 #!/bin/bash
 # Single authority for "is this contract worktree branch already in the target".
 #
-# Sourced by scripts/contract-worktree.sh (single-slug cleanup) and
-# scripts/ship-worktrees.sh (batch --cleanup-merged). Both entrypoints answered
-# this same question independently and disagreed: the batch path checked
+# Sourced by scripts/contract-worktree.sh (single-slug cleanup). Run by the
+# TypeScript worktree topology (the cleanup barrier and the sweep) and by the
+# MCP coding workspace cleanup (src/cli/mcp/coding-workspaces.ts). Two
+# entrypoints once answered this question independently and disagreed: a batch path checked
 # ancestry only, so every squash-merged worktree -- which is every worktree
 # under this project's house ship flow -- was reported unmerged and skipped,
 # and worktrees accumulated without bound (issue #196).
@@ -98,9 +99,8 @@ worktree_merge_lib_main() {
 
 # Executed-vs-sourced guard. When this file is sourced, BASH_SOURCE[0] is this
 # path while $0 stays the sourcing script, so nothing below runs and sourcing
-# remains side-effect free -- scripts/contract-worktree.sh and
-# scripts/ship-worktrees.sh source this file for the function alone and must
-# keep observing exactly that.
+# remains side-effect free -- scripts/contract-worktree.sh sources this file
+# for the function alone and must keep observing exactly that.
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
   worktree_merge_lib_main "$@"
 fi

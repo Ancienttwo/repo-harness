@@ -49,78 +49,6 @@ describe("ship-worktrees helper integration", () => {
     expect(run("git",["ls-remote","origin","refs/heads/feature/private"],fixture.cwd).stdout).toBe("");
   }));
 
-  test("ship-worktrees cleanup-merged should refuse dirty merged source worktree", () => {
-    const cwd = tmpWorkspace("helper-ship-cleanup-dirty-merged");
-    const worktreePath = `${cwd}-wt-demo`;
-    try {
-      copyHelpers(cwd);
-      initGitRepo(cwd);
-      mkdirSync(join(cwd, "src"), { recursive: true });
-      writeFileSync(join(cwd, "README.md"), "# demo\n");
-      commitAll(cwd, "init dirty merged cleanup");
-
-      expect(run("git", ["worktree", "add", worktreePath, "-b", "codex/demo"], cwd).status).toBe(0);
-      mkdirSync(join(worktreePath, "src"), { recursive: true });
-      writeFileSync(join(worktreePath, "src/demo.ts"), "export const demo = 1;\n");
-      commitAll(worktreePath, "add demo source");
-      expect(run("git", ["merge", "--ff-only", "codex/demo"], cwd).status).toBe(0);
-
-      writeFileSync(join(worktreePath, "src/demo.ts"), "export const demo = 2;\n");
-
-      const cleanup = run("bash", ["scripts/ship-worktrees.sh", "--cleanup-merged", "--target", "main"], cwd);
-      expect(cleanup.status).toBe(1);
-      expect(cleanup.stderr).toContain("dirty merged linked worktree");
-      expect(cleanup.stderr).toContain("pick/apply/commit");
-      expect(cleanup.stderr).toContain("tgz");
-      expect(cleanup.stderr).toContain("src/demo.ts");
-      expect(existsSync(worktreePath)).toBe(true);
-      expect(run("git", ["show-ref", "--verify", "--quiet", "refs/heads/codex/demo"], cwd).status).toBe(0);
-    } finally {
-      run("git", ["worktree", "remove", "--force", worktreePath], cwd);
-      rmSync(worktreePath, { recursive: true, force: true });
-      rmSync(cwd, { recursive: true, force: true });
-    }
-  }, 15000);
-
-  test("ship-worktrees cleanup-merged should honor slug filter and repair stale gitdir", () => {
-    const cwd = tmpWorkspace("helper-ship-cleanup-slug-repair");
-    const demoPath = `${cwd}-wt-demo`;
-    const keepPath = `${cwd}-wt-keep`;
-    try {
-      copyHelpers(cwd);
-      initGitRepo(cwd);
-      writeFileSync(join(cwd, "README.md"), "# demo\n");
-      commitAll(cwd, "init slug cleanup");
-
-      expect(run("git", ["worktree", "add", demoPath, "-b", "codex/demo"], cwd).status).toBe(0);
-      expect(run("git", ["worktree", "add", keepPath, "-b", "codex/keep"], cwd).status).toBe(0);
-      mkdirSync(join(cwd, ".ai/harness/worktrees"), { recursive: true });
-      writeFileSync(join(cwd, ".ai/harness/worktrees/demo.json"), '{"slug":"demo"}\n');
-      writeFileSync(join(cwd, ".ai/harness/worktrees/keep.json"), '{"slug":"keep"}\n');
-      writeFileSync(join(demoPath, ".git"), "gitdir: /tmp/moved-repo/.git/worktrees/wt-demo\n");
-
-      const cleanup = run(
-        "bash",
-        ["scripts/ship-worktrees.sh", "--cleanup-merged", "--slug", "demo", "--target", "main"],
-        cwd
-      );
-
-      expect(cleanup.status).toBe(0);
-      expect(cleanup.stderr).toContain("Repaired stale worktree gitdir");
-      expect(cleanup.stdout).toContain("Removed worktree");
-      expect(existsSync(demoPath)).toBe(false);
-      expect(existsSync(keepPath)).toBe(true);
-      expect(run("git", ["show-ref", "--verify", "--quiet", "refs/heads/codex/demo"], cwd).status).not.toBe(0);
-      expect(run("git", ["show-ref", "--verify", "--quiet", "refs/heads/codex/keep"], cwd).status).toBe(0);
-    } finally {
-      for (const path of [demoPath, keepPath]) {
-        run("git", ["worktree", "remove", "--force", path], cwd);
-        rmSync(path, { recursive: true, force: true });
-      }
-      rmSync(cwd, { recursive: true, force: true });
-    }
-  }, 15000);
-
   test("scaffold-only dirt is preserved despite the retired discard flag", () => {
     const cwd = tmpWorkspace("helper-ship-cleanup-scaffold-discard");
     const worktreePath = `${cwd}-wt-demo`;
@@ -148,7 +76,7 @@ describe("ship-worktrees helper integration", () => {
 
       const cleanup = run(
         "bash",
-        ["scripts/ship-worktrees.sh", "--cleanup-merged", "--discard-scaffold-only", "--target", "main"],
+        ["scripts/ship-worktrees.sh", "--discard-scaffold-only", "--target", "main"],
         cwd
       );
       expect(cleanup.status).not.toBe(0);
@@ -190,7 +118,7 @@ describe("ship-worktrees helper integration", () => {
 
       const cleanup = run(
         "bash",
-        ["scripts/ship-worktrees.sh", "--cleanup-merged", "--discard-scaffold-only", "--target", "main"],
+        ["scripts/ship-worktrees.sh", "--discard-scaffold-only", "--target", "main"],
         cwd
       );
       expect(cleanup.stderr).not.toContain("unbound variable");
@@ -204,38 +132,6 @@ describe("ship-worktrees helper integration", () => {
     }
   }, 15000);
 
-  test("dirty cleanup requires a user decision and preserves all files", () => {
-    const cwd = tmpWorkspace("helper-ship-cleanup-scaffold-no-flag");
-    const worktreePath = `${cwd}-wt-demo`;
-    try {
-      copyHelpers(cwd);
-      initGitRepo(cwd);
-      mkdirSync(join(cwd, "tasks"), { recursive: true });
-      writeFileSync(join(cwd, "README.md"), "# demo\n");
-      writeFileSync(join(cwd, "tasks/todos.md"), "# Deferred Goal Ledger\n");
-      commitAll(cwd, "init scaffold no flag cleanup");
-
-      expect(run("git", ["worktree", "add", worktreePath, "-b", "codex/demo"], cwd).status).toBe(0);
-      mkdirSync(join(worktreePath, "plans"), { recursive: true });
-      mkdirSync(join(worktreePath, "tasks/contracts"), { recursive: true });
-      writeFileSync(join(worktreePath, "tasks/todos.md"), "# Deferred Goal Ledger\n- generated scaffold\n");
-      writeFileSync(join(worktreePath, "plans/plan-20260304-1410-demo.md"), "# Plan: demo\n");
-      writeFileSync(join(worktreePath, "tasks/contracts/demo.contract.md"), "# Contract\n");
-
-      const cleanup = run("bash", ["scripts/ship-worktrees.sh", "--cleanup-merged", "--target", "main"], cwd);
-      expect(cleanup.status).toBe(1);
-      expect(cleanup.stderr).toContain("dirty merged linked worktree");
-      expect(cleanup.stderr).toContain("user decision");
-      expect(existsSync(join(worktreePath, "tasks/todos.md"))).toBe(true);
-      expect(readFileSync(join(worktreePath, "tasks/todos.md"), "utf8")).toContain("generated scaffold");
-      expect(existsSync(worktreePath)).toBe(true);
-      expect(run("git", ["show-ref", "--verify", "--quiet", "refs/heads/codex/demo"], cwd).status).toBe(0);
-    } finally {
-      run("git", ["worktree", "remove", "--force", worktreePath], cwd);
-      rmSync(worktreePath, { recursive: true, force: true });
-      rmSync(cwd, { recursive: true, force: true });
-    }
-  }, 15000);
 });
 
 function withPlainShipFixture(work:(fixture:{cwd:string;log:string;ship:(args:string[],extra?:NodeJS.ProcessEnv)=>ReturnType<typeof run>})=>void):void {

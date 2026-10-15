@@ -11,6 +11,8 @@ import { configuredGitBinary, resolveGitCommonDirectory } from '../git/common-di
 import { withExclusiveDirectoryLock, withExclusiveDirectoryLockAsync } from '../locking/exclusive-directory-lock';
 import { taskWorktreeRuntimeClosed } from '../terminal/task-session';
 import { parseWorktreeTopology } from '../git/worktree-topology';
+import { observeProviderBranchMergeCommit } from '../publication/publication-receipt';
+import { resolveTrustedGhExecutable } from '../runtime/protected-helper-platform';
 import { worktreeUid, assertOwnedTrashDirectory, discardWorktreeTrashApproval, deleteUnpublishedTrash, deleteWorktreeTrash, prepareWorktreeTrash, readWorktreeTrash, renameWorktreeToTrash, trashPayload, worktreeTrashNames, WorktreeTrashBudgetReached, type WorktreeRemovalOptions, type WorktreeTrashReceipt } from './worktree-trash';
 
 /** Locate the owning package in source and in the shipped hook bundle. */
@@ -33,7 +35,7 @@ function mergeLibraryPath(): string {
     directory = parent;
   }
 }
-type Limits = { deadline?: number; gitBin?: string; closeout?: boolean };
+type Limits = { deadline?: number; gitBin?: string; closeout?: boolean; ghBin?: string };
 function gitBinary(limits: Limits): string { return limits.gitBin ?? configuredGitBinary(); }
 function timeout(limits: Limits): number | undefined {
   if (limits.deadline === undefined) return undefined;
@@ -95,14 +97,27 @@ export interface ExactWorktreeCleanup {
   readonly merge_commit_sha: string;
 }
 
-function mergeMode(root: string, head: string, target: string, limits: Limits): string {
+type MergeProof = { readonly provider: boolean; readonly merge_commit_sha: string };
+
+/** A local proof binds the target OID. The provider proof runs only for an own-commit branch that the local proof cannot prove. */
+function mergeProof(root: string, branch: string, head: string, targetRef: string, target: string, limits: Limits, providerCapMs = 10_000): MergeProof {
   const output = execFileSync('bash', [mergeLibraryPath(), '--target', target, head], {
     cwd: root, encoding: 'utf8', timeout: timeout(limits), stdio: ['ignore', 'pipe', 'pipe'],
     env: { ...process.env, REPO_HARNESS_GIT_BIN: gitBinary(limits) },
   }).trim();
   const mode = output.split('\t')[1];
-  if (mode !== 'ancestor' && mode !== 'absorbed') throw new Error('cleanup merge is unproven');
-  return mode;
+  if (mode === 'ancestor' || mode === 'absorbed') return { provider: false, merge_commit_sha: target };
+  if (mode !== 'unmerged') throw new Error('cleanup merge is unproven');
+  // A fresh branch at the target head is also linked to the PR that made that head. It must never reach the provider.
+  assertBranchHasCommits(root, branch, limits);
+  const base = /^refs\/(?:heads\/|remotes\/[^/]+\/)(.+)$/.exec(git(root, ['rev-parse', '--symbolic-full-name', targetRef], limits))?.[1];
+  const ghBin = limits.ghBin ?? resolveTrustedGhExecutable();
+  const merge = base && ghBin ? observeProviderBranchMergeCommit({
+    repoRoot: checkoutPath(entries(root, limits)[0]!.path), ghBin, gitBin: gitBinary(limits),
+    headSha: head, baseRef: base, targetOid: target, timeoutMs: Math.min(providerCapMs, timeout(limits) ?? providerCapMs),
+  }) : null;
+  if (!merge) throw new Error('cleanup merge is unproven');
+  return { provider: true, merge_commit_sha: merge };
 }
 
 function assertNoOwner(root: string, worktree: string, branch: string, limits: Limits, allowSelfMarker = false): void {
@@ -246,7 +261,9 @@ export function cleanupExactWorktree(root: string, expected: ExactWorktreeCleanu
     if (git(root, ['rev-parse', `${expected.target_ref}^{commit}`], limits) !== expected.target_oid) throw new Error('cleanup target moved');
     git(root, ['merge-base', '--is-ancestor', expected.merge_commit_sha, expected.target_oid], limits);
     if (git(root, ['rev-parse', `refs/heads/${expected.branch}`], limits) !== expected.head_sha) throw new Error('cleanup execution head moved');
-    mergeMode(root, expected.head_sha, expected.target_oid, limits);
+    // The topology lock is held here, and other lock users wait at most 5 s.
+    const proof = mergeProof(root, expected.branch, expected.head_sha, expected.target_ref, expected.target_oid, limits, 3_000);
+    if (proof.provider && proof.merge_commit_sha !== expected.merge_commit_sha) throw new Error('cleanup merge commit changed');
     const topology = entries(root, limits);
     const binding = topology.find(entry => entry.branch === `refs/heads/${expected.branch}`);
     if (binding && checkoutPath(binding.path) !== path) throw new Error('cleanup worktree target moved');
@@ -258,10 +275,6 @@ export function cleanupExactWorktree(root: string, expected: ExactWorktreeCleanu
       assertWorktreeBinding(root, path, expected.branch, limits);
       if (git(path, ['rev-parse', 'HEAD'], limits) !== expected.head_sha) throw new Error('cleanup execution head moved');
       if (git(path, ['status', '--porcelain', '--untracked-files=all'], limits)) throw new Error('cleanup_blocked_dirty_worktree');
-      if (existsSync(join(path, '.ai/harness/evidence/events/log.jsonl'))
-        && lstatSync(join(path, '.ai/harness/evidence/events/log.jsonl')).size > 0) throw new Error('native verification evidence retention is unavailable');
-      const runs = join(path, '.ai/harness/runs');
-      if (existsSync(runs) && readdirSync(runs).some(name => /^verification-.*\.json$/.test(name))) throw new Error('native verification evidence retention is unavailable');
     }
     if (limits.closeout && path) {
       const marker = join(path, '.ai/harness/active-worktree');
@@ -401,12 +414,12 @@ function branchExists(context: SweepContext, branch: string): boolean {
   return git(context.main, ['for-each-ref', '--format=%(refname)', ref], context.limits).split('\n').includes(ref);
 }
 
-function assertBranchHasCommits(context: SweepContext, branch: string): void {
+function assertBranchHasCommits(root: string, branch: string, limits: Limits): void {
   const ref = `refs/heads/${branch}`;
   let history;
   try {
-    git(context.main, ['reflog', 'exists', ref], context.limits);
-    history = git(context.main, ['reflog', 'show', '--format=%gs', ref], context.limits);
+    git(root, ['reflog', 'exists', ref], limits);
+    history = git(root, ['reflog', 'show', '--format=%gs', ref], limits);
   } catch { throw new Error('branch reflog is unavailable'); }
   if (!history.split('\n').some(message => /^(?:commit(?: \(amend\)| \(merge\)| \(initial\))?|cherry-pick|revert|rebase(?: -i)? \(pick\))(?::|$)/.test(message))) throw new Error('branch has no commits of its own');
 }
@@ -431,7 +444,7 @@ function commitSweepRemoval(context: SweepContext, expected: ExactWorktreeCleanu
     // Refuse a whole-prune conflict before renaming any visible checkout.
     assertPruneScope(context, receipt);
     if (!receipt || !existsSync(trashPayload(receipt))) {
-      assertBranchHasCommits(context, expected.branch);
+      assertBranchHasCommits(context.main, expected.branch, context.limits);
       assertNoSubmodules(context, expected.worktree);
     }
     if (!receipt) {
@@ -499,10 +512,10 @@ function resumeSweepTrash(context: SweepContext, directory: string): 'resumed' |
  * destructive step takes the same topology lock as start. `callerCwd` and
  * everything below it are never removed.
  */
-export function sweepManagedWorktrees(root: string, callerCwd: string, env: NodeJS.ProcessEnv = process.env, options: WorktreeRemovalOptions = {}): string | null {
+export function sweepManagedWorktrees(root: string, callerCwd: string, env: NodeJS.ProcessEnv = process.env, options: WorktreeRemovalOptions & { readonly ghBin?: string } = {}): string | null {
   const started = Date.now();
   const budget = options.deadlineMs ?? 2_000;
-  const limits = { deadline: started + budget, gitBin: configuredGitBinary(env) };
+  const limits = { deadline: started + budget, gitBin: configuredGitBinary(env), ghBin: options.ghBin };
   // Old and new payloads share this half. Live selection keeps the rest.
   const trashDeadline = started + Math.floor(budget / 2);
   const notes: string[] = [];
@@ -560,18 +573,22 @@ export function sweepManagedWorktrees(root: string, callerCwd: string, env: Node
         if (!managed(intent.worktree) || protectsCwd(intent.worktree, cwd)) throw new Error('pruned intent is outside the managed scope');
         if (pathExists(intent.worktree) || pathExists(intent.git_directory)) throw new Error('pruned worktree path or registration reappeared');
         if (branchExists(context, intent.branch)) {
-          let merged = true;
-          try { mergeMode(main, intent.head, target, limits); } catch { merged = false; }
-          if (!merged) {
+          // Ownership precedes the merge proof, because that proof can query the provider.
+          assertNoOwner(main, intent.worktree, intent.branch, limits);
+          if (!taskWorktreeRuntimeClosed({ repository_id: common, primary_root: main, execution_root: intent.worktree })) throw new Error('runtime is open');
+          let merge: string;
+          try { merge = mergeProof(main, intent.branch, intent.head, targetRef, target, limits).merge_commit_sha; }
+          catch {
             notes.push(`${intent.worktree}: pruned; unmerged branch kept (${intent.branch})`);
             continue;
           }
-          cleanupExactWorktree(main, { worktree: '', branch: intent.branch, head_sha: intent.head, target_ref: targetRef, target_oid: target, merge_commit_sha: target }, () => {
+          const expected = { worktree: '', branch: intent.branch, head_sha: intent.head, target_ref: targetRef, target_oid: target, merge_commit_sha: merge };
+          cleanupExactWorktree(main, expected, () => {
             if (pathExists(intent.worktree) || pathExists(intent.git_directory)) throw new Error('pruned worktree path or registration reappeared');
             assertNoOwner(main, intent.worktree, intent.branch, limits);
-            assertBranchHasCommits(context, intent.branch);
+            assertBranchHasCommits(main, intent.branch, limits);
             if (!taskWorktreeRuntimeClosed({ repository_id: common, primary_root: main, execution_root: intent.worktree })) throw new Error('runtime is open');
-            deleteCheckedBranch(main, { worktree: '', branch: intent.branch, head_sha: intent.head, target_ref: targetRef, target_oid: target, merge_commit_sha: target }, limits);
+            deleteCheckedBranch(main, expected, limits);
           }, limits);
         }
         withWorktreeTopologyLock(main, () => {
@@ -599,7 +616,7 @@ export function sweepManagedWorktrees(root: string, callerCwd: string, env: Node
         if (!entry.branch?.startsWith('refs/heads/') || !entry.head) throw new Error('no local branch');
         const branch = entry.branch.slice('refs/heads/'.length);
         assertNoOwner(main, path, branch, limits);
-        assertBranchHasCommits(context, branch);
+        assertBranchHasCommits(main, branch, limits);
         if (!taskWorktreeRuntimeClosed({ repository_id: common, primary_root: main, execution_root: path })) throw new Error('runtime is open');
         if (!existsSync(path)) {
           if (ignoredTrash) throw new Error('missing entry retained while trash ownership is unknown');
@@ -607,7 +624,8 @@ export function sweepManagedWorktrees(root: string, callerCwd: string, env: Node
           notes.push(`${path}: pruned; branch cleanup deferred (${branch})`);
           continue;
         }
-        const receipt = commitSweepRemoval(context, { worktree: path, branch, head_sha: entry.head, target_ref: targetRef, target_oid: target, merge_commit_sha: target });
+        const merge = mergeProof(main, branch, entry.head, targetRef, target, limits).merge_commit_sha;
+        const receipt = commitSweepRemoval(context, { worktree: path, branch, head_sha: entry.head, target_ref: targetRef, target_oid: target, merge_commit_sha: merge });
         removed++;
         notes.push(`${path}: removed`);
         // No detached child: each unlink checks the shared trash deadline.

@@ -171,7 +171,7 @@ describe("repo-harness action command skills", () => {
     expect(ship).toContain("An explicit no-merge instruction wins");
     expect(ship).toContain("GitHub has no change request or unresolved review thread");
     expect(worker).toContain("gh pr create");
-    expect(worker).toContain("--cleanup-merged --dry-run");
+    expect(worker).toContain("repo-harness run contract-worktree sweep");
     expect(worker).toContain("Never use reset, clean or stash");
     expect(worker).toContain("Do not commit to or fast-forward main");
     expect(worker).toContain("reuse it");
