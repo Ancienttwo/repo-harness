@@ -137,9 +137,13 @@ function interruptedWriter(
     const fs = await import('node:fs');
     const operation = process.env.STAGING_OPERATION;
     const intercepted = operation === 'event' ? 'linkSync' : 'renameSync';
+    const original = fs[intercepted];
     mock.module('fs', () => ({
       ...fs,
       [intercepted]: (...args) => {
+        // The task lock also links its owner record. Stop only at the inbox's
+        // own publication, whose source is a staged inbox file.
+        if (!/[\\\\/]staging[\\\\/]/.test(String(args[0]))) return original(...args);
         fs.writeFileSync(process.env.STAGING_MARKER, JSON.stringify(args));
         const wait = new Int32Array(new SharedArrayBuffer(4));
         Atomics.wait(wait, 0, 0);
