@@ -13,7 +13,7 @@ import {
 import { EFFECTIVE_STATE_CACHE, type StateCacheWriteEffects } from '../../src/effects/state/state-cache';
 import { withStateLock } from '../../src/effects/state/state-lock';
 import { sourceHash } from '../../src/effects/state/collect-state-inputs';
-import { acquireExclusiveDirectoryLock, ExclusiveLockContentionError } from '../../src/effects/locking/exclusive-directory-lock';
+import { acquireExclusiveDirectoryLock } from '../../src/effects/locking/exclusive-directory-lock';
 
 function releaseLockAfter(ownerPath: string, lockPath: string, delaySeconds: string): void {
   const child = spawn('sh', [
@@ -107,25 +107,62 @@ describe('Effective State lock and source-stability characterization', () => {
     }
   });
 
-  test('a contender that times out on a held lock leaves no staged owner record', () => {
+  test('a contender waiting on a held lock holds no staged owner record during the wait', async () => {
     const root = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-held-lock-')));
     const relativeLockPath = 'locks/held.lock';
+    const parent = join(root, 'locks');
     const holder = acquireExclusiveDirectoryLock(root, relativeLockPath);
     try {
-      let failure: unknown;
-      try {
-        acquireExclusiveDirectoryLock(root, relativeLockPath, { waitTimeoutMs: 50 });
-      } catch (error) {
-        failure = error;
+      const contender = Bun.spawn([process.execPath, '-e', `
+        const lock = await import(process.env.LOCK_MODULE);
+        try {
+          lock.acquireExclusiveDirectoryLock(process.env.LOCK_ROOT, process.env.LOCK_RELATIVE, { waitTimeoutMs: 1500 });
+        } catch (error) {
+          if (error instanceof lock.ExclusiveLockContentionError) {
+            process.stdout.write(error.kind);
+            process.exit(error.kind === 'timeout' ? 0 : 5);
+          }
+          process.stderr.write(String(error && error.stack || error));
+          process.exit(6);
+        }
+        process.exit(4);
+      `], {
+        cwd: ROOT,
+        env: {
+          ...process.env,
+          LOCK_MODULE: join(ROOT, 'src/effects/locking/exclusive-directory-lock.ts'),
+          LOCK_ROOT: root,
+          LOCK_RELATIVE: relativeLockPath,
+        },
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+      let exited = false;
+      const outcome = Promise.all([
+        contender.exited,
+        new Response(contender.stdout).text(),
+        new Response(contender.stderr).text(),
+      ]).finally(() => { exited = true; });
+      // Any entry besides the lock is a staged record. This matches every
+      // staged-name format this lock has used.
+      const seen = new Set<string>();
+      const recordStaged = () => {
+        for (const entry of readdirSync(parent)) if (entry !== 'held.lock') seen.add(entry);
+      };
+      while (!exited) {
+        recordStaged();
+        await new Promise((resolvePromise) => setTimeout(resolvePromise, 10));
       }
-      expect(failure).toBeInstanceOf(ExclusiveLockContentionError);
-      expect((failure as ExclusiveLockContentionError).kind).toBe('timeout');
-      expect(readdirSync(join(root, 'locks')).filter((entry) => /^\.lock-owner-.*\.tmp$/.test(entry))).toEqual([]);
+      recordStaged();
+      const [exitCode, stdout, stderr] = await outcome;
+      expect(exitCode, stderr).toBe(0);
+      expect(stdout).toBe('timeout');
+      expect([...seen]).toEqual([]);
     } finally {
       holder.release();
       rmSync(root, { recursive: true, force: true });
     }
-  });
+  }, 10_000);
 
   test('concurrent stale reclaimers preserve exclusive critical-section ownership', async () => {
     const fixture = createEffectiveStateFixture();
