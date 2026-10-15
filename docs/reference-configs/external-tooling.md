@@ -252,9 +252,9 @@ For Bot and human notification setup, see [Herdr notify](herdr-notify.md).
 ### Test and Review Rules
 
 - Write a plan before cross-module changes, architecture changes, and dependency upgrades. Small changes do not need a plan.
-- Rebase before the final full test run.
+- When full coverage is required, run it once on the final integration candidate. Rebase alone does not require a local full run.
 - The merge gate is typecheck plus affected tests. Run `bash scripts/check-ci.sh affected --base origin/main` locally.
-- Run the full suite for dependency changes in `bun.lock` or `package.json`, large changes across modules, releases, and the daily run.
+- Run the full suite for dependency manifests, shared test/runtime foundations, releases, the daily run, or a named integration invariant that focused checks cannot cover. The number of files or changed lines is not a full-suite trigger.
 - Run `bun run test:full` once on the final rebased head when full coverage is required.
 - `test:core` excludes the slow integration files. `test:integration` runs those files. `test:full` runs their complete union.
 - Full runs use eight isolated file workers. Run files with shared ports or shared HOME writes in the serial tail.

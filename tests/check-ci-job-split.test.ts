@@ -36,6 +36,52 @@ function writePlatformFixture(write: (path: string, content: string) => void) {
 const record = `:100644 100644 ${sha} ${sha} M\0src/feature.ts\0`;
 
 describe('single affected verification and daily fallback', () => {
+  test('path values exclude words, comments and target-repository paths but keep anchored reads', async () => {
+    const sources = new Map([
+      ['assets/item.json', '{}'],
+      ['src/words.ts', "export const command = 'assets'; // 'assets/item.json'"],
+      ['src/target.ts', "export const target = join(process.cwd(), 'assets/item.json');"],
+      ['src/reader.ts', "const ROOT = join(import.meta.dir, '..'); readFileSync(join(ROOT, 'assets', name));"],
+      ['tests/words.test.ts', "import '../src/words';"],
+      ['tests/target.test.ts', "import '../src/target';"],
+      ['src/template.ts', "const ROOT = join(import.meta.dir, '..'); readFileSync(`${ROOT}/assets/item.json`);"],
+      ['tests/template.test.ts', "import '../src/template';"],
+      ['tests/reader.test.ts', "import '../src/reader';"],
+      ['tests/list.test.ts', "const ROOT = join(import.meta.dir, '..'); readdirSync(join(ROOT, 'assets'));"],
+    ]);
+    expect(await selectAffectedTests(['assets/item.json'], sources, [])).toEqual(['tests/list.test.ts', 'tests/reader.test.ts', 'tests/template.test.ts']);
+  });
+
+  test('directory content edges apply to direct changes while execution edges propagate', async () => {
+    const sources = new Map([
+      ['src/base.ts', 'export const value = 1'],
+      ['src/copied/entry.ts', "import '../base';"],
+      ['tests/wrapper.test.ts', "const launch = (paths: string[]) => spawnSync('bun', paths); launch(['src/copied']);"],
+      ['tests/read.test.ts', "readFileSync(join(ROOT, 'src/copied'));"],
+      ['tests/execute.test.ts', "import { spawnSync as launch } from 'node:child_process'; launch('bun', ['src/copied']);"],
+    ]);
+    expect(await selectAffectedTests(['src/base.ts'], sources, [])).toEqual(['tests/execute.test.ts', 'tests/wrapper.test.ts']);
+    expect(await selectAffectedTests(['src/copied/entry.ts'], sources, [])).toEqual(['tests/execute.test.ts', 'tests/read.test.ts', 'tests/wrapper.test.ts']);
+  });
+
+  test('deleted paths retain old imports and only entirely retired closures need no test', async () => {
+    await expect(selectAffectedTests(['src/standalone.ts'], new Map(), [], new Map([['src/standalone.ts', 'export {}']]))).rejects.toThrow('coverage is unknown');
+    const old = new Map([['src/gone.ts', 'export const value = 1'], ['tests/gone.test.ts', "import '../src/gone';"]]);
+    expect(await selectAffectedTests(['src/gone.ts', 'tests/gone.test.ts'], new Map(), [], old)).toEqual([]);
+    const sources = new Map([['src/live.ts', 'export {}'], ['tests/live.test.ts', "import '../src/live';"]]);
+    const previous = new Map([...old, ['src/live.ts', "import './gone';"]]);
+    expect(await selectAffectedTests(['src/gone.ts', 'src/live.ts'], sources, [], previous)).toEqual(['tests/live.test.ts']);
+    await expect(selectAffectedTests(['unknown/new.ts'], sources, [])).rejects.toThrow('coverage is unknown');
+  });
+
+  test('dependency manifests select every test without hiding another unknown path', async () => {
+    const sources = new Map([['tests/a.test.ts', 'export {}'], ['tests/b.test.ts', 'export {}']]);
+    for (const path of ['package.json', 'bun.lock', 'bunfig.toml', 'tsconfig.json']) {
+      expect(await selectAffectedTests([path], sources, [])).toEqual(['tests/a.test.ts', 'tests/b.test.ts']);
+    }
+    await expect(selectAffectedTests(['bun.lock', 'unknown/new.ts'], sources, [])).rejects.toThrow('coverage is unknown');
+  });
+
   test('exact complete diff is required, including draft candidates', () => {
     expect(selectCoverage({ ...input, diffRaw: record })).toEqual({ mode: 'affected', reason: 'complete-diff', paths: ['src/feature.ts'] });
     for (const diffRaw of [null, '', record.slice(0, -1), record + '\0', record.replace(' M\0', ' R100\0'), record.replace(sha, 'bad'), record.replace('src/feature.ts', 'src/../feature.ts')]) {
@@ -46,7 +92,7 @@ describe('single affected verification and daily fallback', () => {
     expect(selectCoverage({ ...input, eventName: 'push', event: { before: sha }, diffRaw: record }).mode).toBe('report');
   });
 
-  test('real dependency and runtime consumers expand transitively; unknown coverage fails instead of full-suite', () => {
+  test('real dependency and runtime consumers expand transitively; unknown coverage fails instead of full-suite', async () => {
     const sources = new Map([
       ['src/core/feature.ts', 'export const feature = 1'],
       ['src/effects/feature.ts', "import { feature } from '../core/feature'; export const result = feature"],
@@ -55,18 +101,18 @@ describe('single affected verification and daily fallback', () => {
       ['tests/cli/consumer.test.ts', "const CLI = join(ROOT, 'src/cli/index.ts'); spawnSync('bun', [CLI]);"],
       ['tests/unrelated.test.ts', "import { other } from '../src/other';"],
     ]);
-    expect(selectAffectedTests(['src/core/feature.ts'], sources, [])).toEqual(['tests/cli/consumer.test.ts', 'tests/unit/feature.test.ts']);
-    expect(selectAffectedTests(['tests/unrelated.test.ts'], sources, [])).toEqual(['tests/unrelated.test.ts']);
-    expect(selectAffectedTests(['docs/researches/observation.md'], sources, [])).toEqual([]);
-    expect(selectAffectedTests(['DEBUG.md', 'examples/agent-architecture.md'], sources, [])).toEqual([]);
-    expect(() => selectAffectedTests(['unknown/product.conf'], sources, [])).toThrow('coverage is unknown');
-    const hub = new Map([...sources, ['src/core/feature.ts', "export const targetFiles = ['plans', 'docs/guide.md']; export const feature = 1"]]);
-    expect(selectAffectedTests(['plans/plan.md', 'docs/guide.md'], hub, ['tests/docs.test.ts'])).toEqual(['tests/docs.test.ts']);
-    expect(selectAffectedTests(['docs/guide.md', 'src/core/feature.ts'], hub, ['tests/docs.test.ts'])).toEqual(['tests/cli/consumer.test.ts', 'tests/docs.test.ts', 'tests/unit/feature.test.ts']);
-    expect(selectAffectedTests(['src/core/deleted.ts'], new Map([...sources, ['src/core/deleted.ts', 'export const feature=1'], ['src/effects/feature.ts', "// old imported edge kept for this diff\nimport { feature } from '../core/deleted';"]]), [])).toEqual(['tests/cli/consumer.test.ts', 'tests/unit/feature.test.ts']);
+    expect(await selectAffectedTests(['src/core/feature.ts'], sources, [])).toEqual(['tests/cli/consumer.test.ts', 'tests/unit/feature.test.ts']);
+    expect(await selectAffectedTests(['tests/unrelated.test.ts'], sources, [])).toEqual(['tests/unrelated.test.ts']);
+    expect(await selectAffectedTests(['docs/researches/observation.md'], sources, [])).toEqual([]);
+    expect(await selectAffectedTests(['DEBUG.md', 'examples/agent-architecture.md'], sources, [])).toEqual([]);
+    await expect(selectAffectedTests(['unknown/product.conf'], sources, [])).rejects.toThrow('coverage is unknown');
+    const hub = new Map([...sources, ['tests/docs.test.ts', 'export {}'], ['src/core/feature.ts', "export const targetFiles = ['plans', 'docs/guide.md']; export const feature = 1"]]);
+    expect(await selectAffectedTests(['plans/plan.md', 'docs/guide.md'], hub, ['tests/docs.test.ts'])).toEqual(['tests/docs.test.ts']);
+    expect(await selectAffectedTests(['docs/guide.md', 'src/core/feature.ts'], hub, ['tests/docs.test.ts'])).toEqual(['tests/cli/consumer.test.ts', 'tests/docs.test.ts', 'tests/unit/feature.test.ts']);
+    expect(await selectAffectedTests(['src/core/deleted.ts'], new Map([...sources, ['src/core/deleted.ts', 'export const feature=1'], ['src/effects/feature.ts', "// old imported edge kept for this diff\nimport { feature } from '../core/deleted';"]]), [])).toEqual(['tests/cli/consumer.test.ts', 'tests/unit/feature.test.ts']);
   });
 
-  test('private pstack files select their real isolated test owner without granting a prefix exemption', () => {
+  test('private pstack files select their real isolated test owner without granting a prefix exemption', async () => {
     const owner = 'tests/pstack-offline-experiment.test.ts';
     const prefix = 'experiments/private/pstack-watch-pr/';
     const files = [
@@ -78,24 +124,24 @@ describe('single affected verification and daily fallback', () => {
     ].map(file => `${prefix}${file}`);
     const sources = new Map(files.map(file => [file, readFileSync(join(ROOT, file), 'utf8')]));
     sources.set(owner, readFileSync(join(ROOT, owner), 'utf8'));
-    expect(selectAffectedTests(files, sources, [])).toEqual([owner]);
-    for (const file of files) expect(selectAffectedTests([file], sources, [])).toEqual([owner]);
+    expect(await selectAffectedTests(files, sources, [])).toEqual([owner]);
+    for (const file of files) expect(await selectAffectedTests([file], sources, [])).toEqual([owner]);
     sources.delete(owner);
-    expect(() => selectAffectedTests([`${prefix}vendor/policy.ts`], sources, [])).toThrow('coverage is unknown');
+    await expect(selectAffectedTests([`${prefix}vendor/policy.ts`], sources, [])).rejects.toThrow('coverage is unknown');
     sources.set(owner, readFileSync(join(ROOT, owner), 'utf8'));
     for (const path of ['experiments/private/unregistered/runner.ts', 'experiments/public/runner.ts', 'unknown/product.conf']) {
-      expect(() => selectAffectedTests([path], sources, [])).toThrow('coverage is unknown');
+      await expect(selectAffectedTests([path], sources, [])).rejects.toThrow('coverage is unknown');
     }
   });
 
-  test('canonical changelog uses the docs policy and keeps real consumer coverage', () => {
-    expect(selectAffectedTests(['docs/CHANGELOG.md'], new Map(), [])).toEqual([]);
+  test('canonical changelog uses the docs policy and keeps real consumer coverage', async () => {
+    expect(await selectAffectedTests(['docs/CHANGELOG.md'], new Map(), [])).toEqual([]);
     const sources = new Map([
       ['tests/release-notes.test.ts', "readFileSync('docs/CHANGELOG.md');"],
     ]);
-    expect(selectAffectedTests(['docs/CHANGELOG.md'], sources, ['tests/release-notes.test.ts'])).toEqual(['tests/release-notes.test.ts']);
+    expect(await selectAffectedTests(['docs/CHANGELOG.md'], sources, ['tests/release-notes.test.ts'])).toEqual(['tests/release-notes.test.ts']);
     for (const path of ['CHANGELOG.md', 'RELEASE.md', 'release/CHANGELOG.md', 'unknown/product.conf']) {
-      expect(() => selectAffectedTests([path], new Map(), [])).toThrow('coverage is unknown');
+      await expect(selectAffectedTests([path], new Map(), [])).rejects.toThrow('coverage is unknown');
     }
   });
 
