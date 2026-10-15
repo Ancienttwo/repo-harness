@@ -347,7 +347,7 @@ describe('workflow circuit breakers', () => {
     expect(existsSync(lockPath)).toBe(true);
   }));
 
-  test('never reclaims stale or live shared-directory owners', () => withRepo((cwd) => {
+  test('reclaims a dead shared-directory owner and never reclaims a live owner', () => withRepo((cwd) => {
     const stateDir = join(cwd, '.ai/harness/state');
     const lockPath = join(stateDir, 'circuit-breaker.json.lock');
     mkdirSync(lockPath, { recursive: true });
@@ -358,8 +358,9 @@ describe('workflow circuit breakers', () => {
       created_at: Date.now() - 60_000,
       token: staleToken,
     })}\n`);
-    expect(() => recordCircuitAttempt(cwd, attempt())).toThrow(/timed out waiting for exclusive lock/);
-    expect(existsSync(staleOwner)).toBe(true);
+    expect(recordCircuitAttempt(cwd, attempt()).repeat_count).toBe(1);
+    expect(existsSync(staleOwner)).toBe(false);
+    expect(existsSync(lockPath)).toBe(false);
 
     rmSync(lockPath, { recursive: true, force: true });
     mkdirSync(lockPath, { recursive: true });
@@ -374,7 +375,7 @@ describe('workflow circuit breakers', () => {
     expect(existsSync(liveOwner)).toBe(true);
   }), 10_000);
 
-  test('wrapper forwards no-reclaim and validates bounded wait overrides', () => withRepo((cwd) => {
+  test('wrapper validates bounded wait overrides', () => withRepo((cwd) => {
     const lockPath = '.ai/harness/state/test-options.lock';
     const canonicalRoot = realpathSync(cwd);
     expect(withExclusiveDirectoryLock(canonicalRoot, lockPath, () => 'ok', { waitTimeoutMs: 1 })).toBe('ok');

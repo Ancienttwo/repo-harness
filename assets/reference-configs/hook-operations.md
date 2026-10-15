@@ -157,10 +157,12 @@ Edit guards:
 `RepairLimit` stops a repeated failing test run on Pi. It needs the payload
 exit status, which only Pi sends.
 
-Circuit-breaker updates lock the complete read-modify-write, wait at most two
-seconds, and fail closed. They never reclaim a stale-looking lock. After
-verifying that no hook process is active, an operator may remove
-`.ai/harness/state/circuit-breaker.json.lock` and retry.
+Circuit-breaker updates lock the complete read-modify-write and wait at most
+two seconds. An update reclaims the lock only when the owner record is complete
+and its pid is dead. A live owner, an unreadable owner, extra or unexpected
+entries, or an empty lock directory still fails closed after two seconds. Only
+in those cases, after verifying that no hook process is active, an operator may
+remove `.ai/harness/state/circuit-breaker.json.lock` and retry.
 
 The circuit breaker keeps two kinds: `repair` and `semantic-review`. A state
 file from an older runtime fails closed when it has protocol 1 or a retired

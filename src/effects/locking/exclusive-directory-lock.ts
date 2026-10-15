@@ -1,7 +1,9 @@
 import {
   closeSync,
   constants,
+  existsSync,
   fstatSync,
+  linkSync,
   lstatSync,
   mkdirSync,
   openSync,
@@ -59,6 +61,13 @@ interface LockHandle {
   readonly ownerPath: string;
   readonly directoryIdentity: FileIdentity;
   readonly ownerIdentity: FileIdentity;
+}
+
+interface StagedOwner {
+  readonly fd: number;
+  readonly token: string;
+  readonly path: string;
+  readonly identity: FileIdentity;
 }
 
 export interface ExclusiveDirectoryLockHandle {
@@ -406,6 +415,162 @@ function reclaimStaleLockDirectory(
   }
 }
 
+/**
+ * Write the complete owner record under a temporary name in the lock's parent
+ * before the lock exists. Publication then links it into the lock directory,
+ * so a process that dies at any point never leaves a partial owner record.
+ */
+function stageOwnerRecord(location: LockLocation): StagedOwner {
+  const token = `${process.pid}-${Date.now()}-${randomUUID()}`;
+  const parent = location.ancestors[location.ancestors.length - 1]!.path;
+  // The name does not embed the lock name, so a long lock name cannot overflow it.
+  const path = join(parent, `.lock-owner-${token}.tmp`);
+  assertLockAncestors(location);
+  const fd = openSync(
+    path,
+    constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
+    0o600,
+  );
+  try {
+    const identity = fileIdentity(fstatSync(fd));
+    writeFileSync(fd, `${JSON.stringify({ pid: process.pid, created_at: Date.now(), token })}\n`);
+    return { fd, token, path, identity };
+  } catch (error) {
+    closeSync(fd);
+    try {
+      unlinkSync(path);
+    } catch {
+      // The exclusive name was never published; a stray one blocks nothing.
+    }
+    throw error;
+  }
+}
+
+function unlinkStagedName(staged: StagedOwner): void {
+  try {
+    const current = lstatSync(staged.path);
+    if (current.isFile() && sameFileIdentity(fileIdentity(current), staged.identity)) unlinkSync(staged.path);
+  } catch {
+    // A missing or replaced staged name is not a lock entry and blocks nothing.
+  }
+}
+
+function awaitLockRelease(
+  location: LockLocation,
+  options: ExclusiveDirectoryLockOptions,
+  deadline: number,
+): void {
+  try {
+    assertLockAncestors(location);
+    if (!lstatSync(location.lockPath).isDirectory()) {
+      throw new Error(`unsafe lock path is not a real directory: ${location.lockPath}`);
+    }
+  } catch (pathError) {
+    if ((pathError as NodeJS.ErrnoException).code === 'ENOENT') return;
+    throw pathError;
+  }
+  if (options.reclaimStaleOwner !== false
+    && reclaimStaleLockDirectory(location, options.reclaimStaleEmptyDirectory === true, options.canReclaimStaleOwner)) {
+    options.onStaleReclaim?.(location.lockPath);
+    // The reclaim proved the owner dead and freed the lock. A slow reclaim
+    // must not end in a timeout: retry the normal single-owner election.
+    return;
+  }
+  if (Date.now() >= deadline) {
+    throw new ExclusiveLockContentionError(
+      `timed out waiting for exclusive lock ${location.lockPath}; `
+      + 'owner liveness or safe automatic recovery could not be proven',
+      location.lockPath,
+      'timeout',
+    );
+  }
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
+}
+
+function publishOwner(
+  location: LockLocation,
+  options: ExclusiveDirectoryLockOptions,
+  deadline: number,
+): LockHandle {
+  let staged: StagedOwner | null = null;
+  try {
+    for (;;) {
+      // A held lock needs no staged record; stage only when the lock looks free.
+      if (existsSync(location.lockPath)) {
+        awaitLockRelease(location, options, deadline);
+        continue;
+      }
+      staged = stageOwnerRecord(location);
+      assertLockAncestors(location);
+      try {
+        mkdirSync(location.lockPath, { mode: 0o700 });
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+        // Drop the staged record while waiting, so a contender killed during
+        // the wait leaves no file behind.
+        closeSync(staged.fd);
+        unlinkStagedName(staged);
+        staged = null;
+        awaitLockRelease(location, options, deadline);
+        continue;
+      }
+
+      const directoryStat = lstatSync(location.lockPath);
+      if (!directoryStat.isDirectory()) {
+        throw new Error(`unsafe lock path is not a real directory: ${location.lockPath}`);
+      }
+      const directoryIdentity = fileIdentity(directoryStat);
+      // Each publication attempt uses up its staged record; a retry stages a new token.
+      const publication: StagedOwner = staged;
+      staged = null;
+      const ownerName = ownerFileName(publication.token);
+      const ownerPath = join(location.lockPath, ownerName);
+      let published = false;
+      try {
+        assertLockAncestors(location);
+        // link is atomic and fails with EEXIST, so the owner name appears only
+        // with its complete record and keeps the staged file identity.
+        linkSync(publication.path, ownerPath);
+        published = true;
+        unlinkStagedName(publication);
+        if (ownsExclusiveToken(
+          location,
+          ownerPath,
+          ownerName,
+          directoryIdentity,
+          publication.identity,
+        )) {
+          return { fd: publication.fd, ownerName, ownerPath, directoryIdentity, ownerIdentity: publication.identity };
+        }
+      } catch (error) {
+        closeSync(publication.fd);
+        if (published) {
+          removeOwnedLock(location, ownerPath, directoryIdentity, publication.identity);
+        } else {
+          unlinkStagedName(publication);
+          removeUnpublishedLock(location, directoryIdentity);
+        }
+        throw error;
+      }
+      closeSync(publication.fd);
+      removeOwnedLock(location, ownerPath, directoryIdentity, publication.identity);
+      if (Date.now() >= deadline) {
+        throw new ExclusiveLockContentionError(
+          `lost exclusive lock ownership: ${location.lockPath}`,
+          location.lockPath,
+          'lost-ownership',
+        );
+      }
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
+    }
+  } finally {
+    if (staged !== null) {
+      closeSync(staged.fd);
+      unlinkStagedName(staged);
+    }
+  }
+}
+
 export function acquireExclusiveDirectoryLock(
   canonicalRoot: string,
   relativeLockPath: string,
@@ -413,93 +578,7 @@ export function acquireExclusiveDirectoryLock(
 ): ExclusiveDirectoryLockHandle {
   const waitTimeoutMs = resolveWaitTimeoutMs(options.waitTimeoutMs);
   const location = prepareLockLocation(canonicalRoot, relativeLockPath);
-  const deadline = Date.now() + waitTimeoutMs;
-  let handle: LockHandle | null = null;
-
-  while (handle === null) {
-    assertLockAncestors(location);
-    try {
-      mkdirSync(location.lockPath, { mode: 0o700 });
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-      try {
-        assertLockAncestors(location);
-        if (!lstatSync(location.lockPath).isDirectory()) {
-          throw new Error(`unsafe lock path is not a real directory: ${location.lockPath}`);
-        }
-      } catch (pathError) {
-        if ((pathError as NodeJS.ErrnoException).code === 'ENOENT') continue;
-        throw pathError;
-      }
-      if (options.reclaimStaleOwner !== false
-        && reclaimStaleLockDirectory(location, options.reclaimStaleEmptyDirectory === true, options.canReclaimStaleOwner)) {
-        options.onStaleReclaim?.(location.lockPath);
-        // The reclaim proved the owner dead and freed the lock. A slow reclaim
-        // must not end in a timeout: retry the normal single-owner election.
-        continue;
-      }
-      if (Date.now() >= deadline) {
-        throw new ExclusiveLockContentionError(
-          `timed out waiting for exclusive lock ${location.lockPath}; `
-          + 'owner liveness or safe automatic recovery could not be proven',
-          location.lockPath,
-          'timeout',
-        );
-      }
-      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
-      continue;
-    }
-
-    const directoryStat = lstatSync(location.lockPath);
-    if (!directoryStat.isDirectory()) {
-      throw new Error(`unsafe lock path is not a real directory: ${location.lockPath}`);
-    }
-    const directoryIdentity = fileIdentity(directoryStat);
-    assertLockAncestors(location);
-    const token = `${process.pid}-${Date.now()}-${randomUUID()}`;
-    const ownerName = ownerFileName(token);
-    const ownerPath = join(location.lockPath, ownerName);
-    let fd: number | null = null;
-    let ownerIdentity: FileIdentity | null = null;
-    try {
-      fd = openSync(
-        ownerPath,
-        constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
-        0o600,
-      );
-      ownerIdentity = fileIdentity(fstatSync(fd));
-      writeFileSync(fd, `${JSON.stringify({ pid: process.pid, created_at: Date.now(), token })}\n`);
-      if (!ownsExclusiveToken(
-        location,
-        ownerPath,
-        ownerName,
-        directoryIdentity,
-        ownerIdentity,
-      )) {
-        closeSync(fd);
-        fd = null;
-        removeOwnedLock(location, ownerPath, directoryIdentity, ownerIdentity);
-        if (Date.now() >= deadline) {
-          throw new ExclusiveLockContentionError(
-            `lost exclusive lock ownership: ${location.lockPath}`,
-            location.lockPath,
-            'lost-ownership',
-          );
-        }
-        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
-        continue;
-      }
-      handle = { fd, ownerName, ownerPath, directoryIdentity, ownerIdentity };
-    } catch (error) {
-      if (fd !== null) closeSync(fd);
-      if (ownerIdentity !== null) {
-        removeOwnedLock(location, ownerPath, directoryIdentity, ownerIdentity);
-      } else {
-        removeUnpublishedLock(location, directoryIdentity);
-      }
-      throw error;
-    }
-  }
+  const handle = publishOwner(location, options, Date.now() + waitTimeoutMs);
 
   let released = false;
   return {

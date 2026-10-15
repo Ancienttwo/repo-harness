@@ -236,7 +236,7 @@ export function recordCircuitAttempt(
       updated_at: now.toISOString(),
     });
     return nextRepeatCount;
-  }, { reclaimStaleOwner: false, waitTimeoutMs: LOCK_TIMEOUT_MS });
+  }, { waitTimeoutMs: LOCK_TIMEOUT_MS });
   const allowed = repeatCount <= limit;
   const strongBoundary = attempt.strongBoundary === true;
   return {

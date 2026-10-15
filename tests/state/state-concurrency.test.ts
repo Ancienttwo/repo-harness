@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, writeFileSync } from 'fs';
+import { tmpdir } from 'os';
 import { basename, join } from 'path';
 import { spawn, spawnSync } from 'child_process';
 import { commitFixture, resolveFixtureState, createEffectiveStateFixture, writeFixture, writeFixtureStateLock, PLAN } from './effective-state-fixture';
@@ -12,6 +13,7 @@ import {
 import { EFFECTIVE_STATE_CACHE, type StateCacheWriteEffects } from '../../src/effects/state/state-cache';
 import { withStateLock } from '../../src/effects/state/state-lock';
 import { sourceHash } from '../../src/effects/state/collect-state-inputs';
+import { acquireExclusiveDirectoryLock } from '../../src/effects/locking/exclusive-directory-lock';
 
 function releaseLockAfter(ownerPath: string, lockPath: string, delaySeconds: string): void {
   const child = spawn('sh', [
@@ -67,6 +69,100 @@ describe('Effective State lock and source-stability characterization', () => {
       fixture.cleanup();
     }
   }, 30_000);
+
+  test('an owner killed while it writes its record leaves no unreadable owner and no wedged lock', () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-owner-crash-')));
+    const relativeLockPath = 'locks/owner-crash.lock';
+    const lockPath = join(root, relativeLockPath);
+    try {
+      const child = spawnSync(process.execPath, [
+        join(ROOT, 'tests/fixtures/exclusive-lock-owner-crash-worker.ts'),
+        root,
+        relativeLockPath,
+      ], { cwd: ROOT, encoding: 'utf-8', timeout: 10_000 });
+      expect(child.signal, child.stderr).toBe('SIGKILL');
+      const owners = existsSync(lockPath) ? readdirSync(lockPath) : [];
+      expect(owners.length).toBeLessThanOrEqual(1);
+      for (const owner of owners) {
+        const bytes = readFileSync(join(lockPath, owner), 'utf-8');
+        expect(() => JSON.parse(bytes), `${owner} holds ${JSON.stringify(bytes)}`).not.toThrow();
+      }
+      const handle = acquireExclusiveDirectoryLock(root, relativeLockPath);
+      handle.release();
+      expect(existsSync(lockPath)).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }, 20_000);
+
+  test('a lock whose name is about 200 bytes long can be acquired and released', () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-long-lock-')));
+    const relativeLockPath = `locks/${'l'.repeat(195)}.lock`;
+    try {
+      const handle = acquireExclusiveDirectoryLock(root, relativeLockPath);
+      handle.release();
+      expect(existsSync(join(root, relativeLockPath))).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test('a contender waiting on a held lock holds no staged owner record during the wait', async () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-held-lock-')));
+    const relativeLockPath = 'locks/held.lock';
+    const parent = join(root, 'locks');
+    const holder = acquireExclusiveDirectoryLock(root, relativeLockPath);
+    try {
+      const contender = Bun.spawn([process.execPath, '-e', `
+        const lock = await import(process.env.LOCK_MODULE);
+        try {
+          lock.acquireExclusiveDirectoryLock(process.env.LOCK_ROOT, process.env.LOCK_RELATIVE, { waitTimeoutMs: 1500 });
+        } catch (error) {
+          if (error instanceof lock.ExclusiveLockContentionError) {
+            process.stdout.write(error.kind);
+            process.exit(error.kind === 'timeout' ? 0 : 5);
+          }
+          process.stderr.write(String(error && error.stack || error));
+          process.exit(6);
+        }
+        process.exit(4);
+      `], {
+        cwd: ROOT,
+        env: {
+          ...process.env,
+          LOCK_MODULE: join(ROOT, 'src/effects/locking/exclusive-directory-lock.ts'),
+          LOCK_ROOT: root,
+          LOCK_RELATIVE: relativeLockPath,
+        },
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+      let exited = false;
+      const outcome = Promise.all([
+        contender.exited,
+        new Response(contender.stdout).text(),
+        new Response(contender.stderr).text(),
+      ]).finally(() => { exited = true; });
+      // Any entry besides the lock is a staged record. This matches every
+      // staged-name format this lock has used.
+      const seen = new Set<string>();
+      const recordStaged = () => {
+        for (const entry of readdirSync(parent)) if (entry !== 'held.lock') seen.add(entry);
+      };
+      while (!exited) {
+        recordStaged();
+        await new Promise((resolvePromise) => setTimeout(resolvePromise, 10));
+      }
+      recordStaged();
+      const [exitCode, stdout, stderr] = await outcome;
+      expect(exitCode, stderr).toBe(0);
+      expect(stdout).toBe('timeout');
+      expect([...seen]).toEqual([]);
+    } finally {
+      holder.release();
+      rmSync(root, { recursive: true, force: true });
+    }
+  }, 10_000);
 
   test('concurrent stale reclaimers preserve exclusive critical-section ownership', async () => {
     const fixture = createEffectiveStateFixture();
