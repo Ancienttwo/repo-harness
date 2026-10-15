@@ -1,19 +1,24 @@
 import { describe, expect, setDefaultTimeout, test } from "bun:test";
+import { spawnSync } from "child_process";
 import {
   chmodSync,
   copyFileSync,
   existsSync,
   mkdirSync,
+  mkdtempSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync
 } from "fs";
+import { tmpdir } from "os";
 import { join } from "path";
 import { commitAll, initGitRepo, run, tmpWorkspace } from "./helpers/repo-fixture";
 import { executeVerificationContract } from "../src/effects/evidence/verification-execution";
 import { nativeVerificationPlan } from "./state/effective-state-fixture";
+import { sweepManagedWorktrees } from "../src/effects/state/coordination-worktree-topology";
 
 // Regression guard for the squash-merge absorption predicate in the cleanup
 // branch of `scripts/contract-worktree.sh`. See:
@@ -466,4 +471,111 @@ describe("contract-worktree cleanup squash-merge absorption", () => {
       rmSync(cwd, { recursive: true, force: true });
     }
   }, 15000);
+});
+
+// A squash merge stays locally provable only until the target changes the
+// same lines again. After that, only the provider PR can prove the merge.
+describe("sweep provider merge proof after a later conflicting target edit", () => {
+  function squashFixture(response: (squash: string) => unknown) {
+    const parent = realpathSync(mkdtempSync(join(tmpdir(), "worktree-provider-proof-")));
+    const root = join(parent, "repo");
+    const managed = join(parent, "managed");
+    const home = join(parent, "home");
+    for (const directory of [root, managed, home]) mkdirSync(directory);
+    const env = { ...process.env, REPO_HARNESS_WORKTREE_ROOT: managed, HOME: home };
+    const git = (cwd: string, ...args: string[]) => {
+      const result = spawnSync("git", args, { cwd, encoding: "utf8", env });
+      if (result.status !== 0) throw new Error(result.stderr);
+      return result.stdout.trim();
+    };
+    git(root, "init", "-q", "-b", "main");
+    git(root, "config", "user.name", "Test");
+    git(root, "config", "user.email", "test@example.test");
+    writeFileSync(join(root, ".gitignore"), ".ai/\n");
+    writeFileSync(join(root, "source"), "base\n");
+    git(root, "add", ".");
+    git(root, "commit", "-qm", "base");
+    const path = join(managed, "repo-wt-squash");
+    git(root, "worktree", "add", "-q", "-b", "fix/squash", path);
+    writeFileSync(join(path, "source"), "feature\n");
+    git(path, "commit", "-qam", "feature");
+    const head = git(root, "rev-parse", "refs/heads/fix/squash");
+    git(root, "merge", "--squash", "fix/squash");
+    git(root, "commit", "-qm", "squash fix/squash");
+    const squash = git(root, "rev-parse", "HEAD");
+    writeFileSync(join(root, "source"), "later\n");
+    git(root, "commit", "-qam", "later conflicting edit");
+    git(root, "update-ref", "refs/remotes/origin/main", "HEAD");
+    mkdirSync(join(path, ".ai/harness/evidence/events"), { recursive: true });
+    writeFileSync(join(path, ".ai/harness/evidence/events/log.jsonl"), "{}\n");
+    const log = join(parent, "gh.log");
+    const answer = join(parent, "gh.json");
+    writeFileSync(answer, JSON.stringify(response(squash)));
+    const gh = join(parent, "gh");
+    writeFileSync(gh, `#!/bin/bash\nprintf '%s|%s|%s\\n' "$PWD" "\${GH_REPO-unset}" "$*" >> '${log}'\ncat '${answer}'\n`);
+    chmodSync(gh, 0o755);
+    const calls = () => existsSync(log) ? readFileSync(log, "utf8").trim().split("\n") : [];
+    const sweep = () => sweepManagedWorktrees(root, root, env, { deadlineMs: 30_000, ghBin: gh });
+    return { root, managed, path, head, squash, git, calls, sweep, cleanup: () => rmSync(parent, { recursive: true, force: true }) };
+  }
+  const mergedPr = (squash: string) => [{ number: 7, state: "closed", merged_at: "2026-10-01T00:00:00Z", base: { ref: "main" }, merge_commit_sha: squash }];
+
+  test("the local proof alone reports the squash-merged branch as unproven", () => {
+    const f = squashFixture(() => []);
+    try {
+      const result = f.sweep();
+      expect(result).toContain(`${f.path}: kept; cleanup merge is unproven`);
+      expect(existsSync(f.path)).toBe(true);
+    } finally { f.cleanup(); }
+  });
+
+  test("a merged provider PR proves the merge and the sweep removes the worktree and its evidence log", () => {
+    const f = squashFixture(mergedPr);
+    try {
+      const result = f.sweep();
+      expect(result, String(result)).toContain(`${f.path}: removed`);
+      expect(existsSync(f.path)).toBe(false);
+      expect(f.git(f.root, "branch", "--list", "fix/squash")).toBe("");
+      expect(f.calls().length).toBeGreaterThan(0);
+      for (const call of f.calls()) expect(call).toBe(`${f.root}|unset|api repos/{owner}/{repo}/commits/${f.head}/pulls`);
+    } finally { f.cleanup(); }
+  });
+
+  test("an open provider PR keeps the worktree", () => {
+    const f = squashFixture(squash => [{ number: 7, state: "open", merged_at: null, base: { ref: "main" }, merge_commit_sha: squash }]);
+    try {
+      const result = f.sweep();
+      expect(result).toContain(`${f.path}: kept; cleanup merge is unproven`);
+      expect(existsSync(f.path)).toBe(true);
+      expect(f.git(f.root, "branch", "--list", "fix/squash")).toContain("fix/squash");
+    } finally { f.cleanup(); }
+  });
+
+  for (const [label, edit] of [
+    ["another base branch", (pr: Record<string, unknown>) => ({ ...pr, base: { ref: "release" } })],
+    ["a merge commit missing locally", (pr: Record<string, unknown>) => ({ ...pr, merge_commit_sha: "0".repeat(40) })],
+    ["an abbreviated merge commit", (pr: Record<string, unknown>) => ({ ...pr, merge_commit_sha: String(pr.merge_commit_sha).slice(0, 12) })],
+  ] as const) {
+    test(`a merged provider PR with ${label} keeps the worktree`, () => {
+      const f = squashFixture(squash => mergedPr(squash).map(edit));
+      try {
+        expect(f.sweep()).toContain(`${f.path}: kept; cleanup merge is unproven`);
+        expect(existsSync(f.path)).toBe(true);
+      } finally { f.cleanup(); }
+    });
+  }
+
+  test("a fresh branch at the target head is kept and never reaches the provider", () => {
+    const f = squashFixture(mergedPr);
+    try {
+      const fresh = join(f.managed, "repo-wt-fresh");
+      f.git(f.root, "worktree", "add", "-q", "-b", "fix/fresh", fresh, "refs/remotes/origin/main");
+      const freshHead = f.git(f.root, "rev-parse", "refs/heads/fix/fresh");
+      const result = f.sweep();
+      expect(result).toContain(`${fresh}: kept; branch has no commits of its own`);
+      expect(existsSync(fresh)).toBe(true);
+      expect(f.git(f.root, "branch", "--list", "fix/fresh")).toContain("fix/fresh");
+      expect(f.calls().some(call => call.includes(freshHead))).toBe(false);
+    } finally { f.cleanup(); }
+  });
 });
