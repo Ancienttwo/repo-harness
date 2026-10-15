@@ -14,6 +14,11 @@ function git(args: string[], input?: string): Buffer {
 }
 const text = (args: string[]) => git(args).toString().trim();
 
+/** Files whose content the selector parses: source modules, the CI script and the bunfig.toml test preloads. */
+export function replayNeedsSource(path: string): boolean {
+  return /\.[cm]?[jt]sx?$/.test(path) || path === 'scripts/check-ci.sh' || path === 'bunfig.toml';
+}
+
 /** Content-addressed reads keep the replay fast without substituting today's tree for history. */
 export function historicalSources(ref: string, cache = new Map<string, string>()): Map<string, string> {
   const records = git(['ls-tree', '-r', '-z', ref]).toString().split('\0').filter(Boolean).map(record => {
@@ -21,8 +26,7 @@ export function historicalSources(ref: string, cache = new Map<string, string>()
     const [, type, oid] = record.slice(0, tab).split(' ');
     return { path: record.slice(tab + 1), type, oid: oid! };
   });
-  const needsSource = (path: string) => /\.[cm]?[jt]sx?$/.test(path) || path === 'scripts/check-ci.sh';
-  const missing = [...new Set(records.filter(r => r.type === 'blob' && needsSource(r.path) && !cache.has(r.oid)).map(r => r.oid))];
+  const missing = [...new Set(records.filter(r => r.type === 'blob' && replayNeedsSource(r.path) && !cache.has(r.oid)).map(r => r.oid))];
   if (missing.length) {
     const output = git(['cat-file', '--batch'], missing.join('\n') + '\n');
     let offset = 0;
@@ -35,7 +39,7 @@ export function historicalSources(ref: string, cache = new Map<string, string>()
       offset = end + size + 2;
     }
   }
-  return new Map(records.filter(r => r.type === 'blob').map(r => [r.path, needsSource(r.path) ? cache.get(r.oid)! : '']));
+  return new Map(records.filter(r => r.type === 'blob').map(r => [r.path, replayNeedsSource(r.path) ? cache.get(r.oid)! : '']));
 }
 
 export async function replayCoverage(count: number, ref = 'origin/main', baseline?: string) {

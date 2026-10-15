@@ -5,6 +5,7 @@ import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { analyzeAffectedTests, bundleInputPaths, discoverPlatformInputs, platformImportClosure, selectAffectedTests, selectCoverage, selectPlatformCoverage } from '../scripts/select-ci-coverage';
 import { auditDroppedTests } from '../scripts/ci-edge-audit';
+import { replayNeedsSource } from '../scripts/replay-ci-coverage';
 import { ARCHITECTURE_JOB, ARCHITECTURE_SUMMARY_PATH } from '../scripts/report-ci';
 
 const ROOT = resolve(import.meta.dir, '..');
@@ -649,5 +650,14 @@ describe('architecture lanes', () => {
     expect(warnings(result.stdout)).toEqual([]);
     expect(result.stdout).toContain('[ci] OK');
     expect(result.stdout).not.toContain('[ci] typecheck');
+  });
+});
+
+describe('historical replay source loading', () => {
+  test('loads the files the selector parses, including the bunfig.toml preloads', () => {
+    expect(replayNeedsSource('bunfig.toml')).toBe(true);
+    expect(replayNeedsSource('scripts/check-ci.sh')).toBe(true);
+    expect(replayNeedsSource('src/x.ts')).toBe(true);
+    expect(replayNeedsSource('docs/guide.md')).toBe(false);
   });
 });
