@@ -1948,6 +1948,15 @@ describe('exact cleanup and contract-worktree start sweep', () => {
     } finally { f.cleanup(); }
   });
 
+  test('sweep removes a merged clean checkout that holds an ignored evidence log', () => {
+    const f = fixture(); try {
+      mkdirSync(join(f.path, '.ai/harness/evidence/events'), { recursive: true });
+      writeFileSync(join(f.path, '.ai/harness/evidence/events/log.jsonl'), '{}\n');
+      expect(sweepManagedWorktrees(f.root, f.root, f.env)).toContain('removed=1');
+      expect(existsSync(f.path)).toBe(false); expect(f.git('branch', '--list', 'codex/demo')).toBe('');
+    } finally { f.cleanup(); }
+  });
+
   test('W6 sweep retires the start identity only after exact removal succeeds', () => {
     const f = fixture(); try {
       withWorktreeTopologyLock(f.root, () => recordCreatedWorktree(f.root, f.path));
@@ -2186,7 +2195,7 @@ describe('exact cleanup and contract-worktree start sweep', () => {
     } finally { f.cleanup(); }
   });
 
-  test.each(['dirty', 'unmerged', 'locked', 'leased', 'unknown-lease', 'marker', 'session-cwd', 'nested-cwd', 'evidence', 'runtime'])('sweep keeps %s checkout and reports the path', condition => {
+  test.each(['dirty', 'unmerged', 'locked', 'leased', 'unknown-lease', 'marker', 'session-cwd', 'nested-cwd', 'runtime'])('sweep keeps %s checkout and reports the path', condition => {
     const f = fixture(); try {
       let cwd = f.root;
       if (condition === 'dirty') writeFileSync(join(f.path, 'untracked'), 'keep');
@@ -2204,7 +2213,6 @@ describe('exact cleanup and contract-worktree start sweep', () => {
       if (condition === 'marker') { mkdirSync(join(f.root, '.ai/harness'), { recursive: true }); writeFileSync(join(f.root, '.ai/harness/active-worktree'), f.path); }
       if (condition === 'session-cwd') cwd = f.path;
       if (condition === 'nested-cwd') { cwd = join(f.path, 'nested'); mkdirSync(cwd); }
-      if (condition === 'evidence') { mkdirSync(join(f.path, '.ai/harness/evidence/events'), { recursive: true }); writeFileSync(join(f.path, '.ai/harness/evidence/events/log.jsonl'), '{}\n'); }
       if (condition === 'runtime') {
         const key = require('crypto').createHash('sha256').update(JSON.stringify([join(f.root, '.git'), f.path])).digest('hex');
         mkdirSync(join(f.root, '.ai/harness/runs/task-workspaces', key), { recursive: true });
@@ -2212,7 +2220,7 @@ describe('exact cleanup and contract-worktree start sweep', () => {
       const result = sweepManagedWorktrees(f.root, cwd, f.env);
       const reasons: Record<string, string> = { dirty: 'dirty_worktree', unmerged: 'merge is unproven', locked: 'locked', leased: 'active Lease',
         'unknown-lease': 'unknown Lease', marker: 'marker reference', 'session-cwd': 'session cwd', 'nested-cwd': 'session cwd',
-        evidence: 'evidence retention', runtime: 'runtime is open' };
+        runtime: 'runtime is open' };
       expect(result).toContain(f.path); expect(result).toContain('kept;'); expect(result).toContain(reasons[condition]!); expect(existsSync(f.path)).toBe(true);
       expect(f.git('branch', '--list', 'codex/demo')).toContain('codex/demo');
       if (condition === 'leased') expect(() => removeExactWorktree(f.root, f.expected)).toThrow('active Lease');

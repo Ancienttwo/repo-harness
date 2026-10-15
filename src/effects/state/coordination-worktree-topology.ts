@@ -258,10 +258,6 @@ export function cleanupExactWorktree(root: string, expected: ExactWorktreeCleanu
       assertWorktreeBinding(root, path, expected.branch, limits);
       if (git(path, ['rev-parse', 'HEAD'], limits) !== expected.head_sha) throw new Error('cleanup execution head moved');
       if (git(path, ['status', '--porcelain', '--untracked-files=all'], limits)) throw new Error('cleanup_blocked_dirty_worktree');
-      if (existsSync(join(path, '.ai/harness/evidence/events/log.jsonl'))
-        && lstatSync(join(path, '.ai/harness/evidence/events/log.jsonl')).size > 0) throw new Error('native verification evidence retention is unavailable');
-      const runs = join(path, '.ai/harness/runs');
-      if (existsSync(runs) && readdirSync(runs).some(name => /^verification-.*\.json$/.test(name))) throw new Error('native verification evidence retention is unavailable');
     }
     if (limits.closeout && path) {
       const marker = join(path, '.ai/harness/active-worktree');

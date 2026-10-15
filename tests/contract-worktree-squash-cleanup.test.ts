@@ -73,7 +73,7 @@ function copyHelpers(cwd: string) {
 }
 
 describe("contract-worktree cleanup squash-merge absorption", () => {
-  test("cleanup preserves an ignored native ledger and executed run until retention exists", () => {
+  test("cleanup removes a merged clean worktree that holds an ignored native ledger and executed run", () => {
     const cwd = tmpWorkspace("cleanup-native-evidence");
     const worktreePath = `${cwd}-wt-native-evidence`;
     try {
@@ -101,16 +101,17 @@ describe("contract-worktree cleanup squash-merge absorption", () => {
       const metadataPath = join(cwd, ".ai/harness/worktrees/native-evidence.json");
       const metadata = '{"slug":"native-evidence"}\n';
       writeFileSync(metadataPath, metadata);
-      for (const dryRun of [true, false]) {
-        const result = run("bash", ["scripts/contract-worktree.sh", "cleanup", "--slug", "native-evidence", ...(dryRun ? ["--dry-run"] : [])], cwd);
-        expect(result.status, result.stdout + result.stderr).toBe(1);
-        expect(result.stderr).toContain("native verification evidence retention is unavailable");
-        expect(existsSync(worktreePath)).toBe(true);
-        expect(readFileSync(runPath, "utf8")).toBe(runBytes);
-        expect(readFileSync(ledgerPath, "utf8")).toBe(ledgerBytes);
-        expect(readFileSync(metadataPath, "utf8")).toBe(metadata);
-        expect(run("git", ["show-ref", "--verify", "--quiet", "refs/heads/codex/native-evidence"], cwd).status).toBe(0);
-      }
+      const dryRun = run("bash", ["scripts/contract-worktree.sh", "cleanup", "--slug", "native-evidence", "--dry-run"], cwd);
+      expect(dryRun.status, dryRun.stdout + dryRun.stderr).toBe(0);
+      expect(existsSync(worktreePath)).toBe(true);
+      expect(readFileSync(runPath, "utf8")).toBe(runBytes);
+      expect(readFileSync(ledgerPath, "utf8")).toBe(ledgerBytes);
+      expect(readFileSync(metadataPath, "utf8")).toBe(metadata);
+      const result = run("bash", ["scripts/contract-worktree.sh", "cleanup", "--slug", "native-evidence"], cwd);
+      expect(result.status, result.stdout + result.stderr).toBe(0);
+      expect(existsSync(worktreePath)).toBe(false);
+      expect(existsSync(metadataPath)).toBe(false);
+      expect(run("git", ["show-ref", "--verify", "--quiet", "refs/heads/codex/native-evidence"], cwd).status).not.toBe(0);
     } finally {
       rmSync(worktreePath, { recursive: true, force: true });
       rmSync(cwd, { recursive: true, force: true });
