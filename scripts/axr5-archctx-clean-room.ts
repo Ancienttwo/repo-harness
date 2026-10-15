@@ -5,9 +5,10 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, 
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { PROJECTION_REQUEST_SCHEMA_VERSION, type ProjectionRequestV1 } from 'archctx-contracts';
-import { archctxCapabilities, captureArchitectureProjectionSnapshot, runArchitectureProjection } from '../src/effects/architecture/archctx-provider';
+import { ARCHCTX_REQUIRED_VERSION } from '../src/core/architecture/projection';
+import { archctxCapabilities, readArchitectureProjectionSnapshot, runArchitectureProjection } from '../src/effects/architecture/archctx-provider';
 
-const VERSION = '0.7.2';
+const VERSION = ARCHCTX_REQUIRED_VERSION;
 const repoRoot = resolve(import.meta.dir, '..');
 const archContextRoot = resolve(flag('--arch-context-root') ?? join(repoRoot, '..', 'arch-context'));
 const revision = flag('--revision') ?? git(archContextRoot, ['rev-parse', 'HEAD']);
@@ -118,7 +119,10 @@ extensions:
   const packageLocalBinary = handshake.resolved.binaryPath === realpathSync(join(consumer, 'node_modules', 'archctx', 'bin', 'archctx.mjs'));
   const conflictingPathIgnored = packageLocalBinary && handshake.capabilities.package.version === VERSION && !realpathSync(handshake.resolved.binaryPath).startsWith(`${conflictDir}/`);
   if (!packageLocalBinary || !conflictingPathIgnored) throw new Error('package-local provider authority was not proven');
-  const expected = captureArchitectureProjectionSnapshot(fixtureRepo);
+  const expected = readArchitectureProjectionSnapshot(fixtureRepo, {
+    consumerRoot: consumer,
+    env: { ...offlineEnv, PATH: `${conflictDir}:${process.env.PATH ?? ''}` },
+  });
   daemonRoot = fixtureRepo;
   run(installedBinary, ['daemon', 'upgrade'], fixtureRepo, { ...offlineEnv, PATH: `${conflictDir}:${process.env.PATH ?? ''}` });
   const request: ProjectionRequestV1 = {

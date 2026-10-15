@@ -3,20 +3,20 @@
   "status": "verified",
   "source": {
     "repository": "Ancienttwo/arch-context",
-    "revision": "0c6bc11dba8ae875be0f25a0ea326cf1a39741ef",
+    "revision": "71c5e2a0d87f2a40af263586e3240821071b9f2e",
     "archiveMode": "git-archive",
     "dirtySourceUsed": false
   },
   "packages": {
     "contracts": {
       "name": "archctx-contracts",
-      "version": "0.7.2",
-      "file": "archctx-contracts-0.7.2.tgz"
+      "version": "0.8.0",
+      "file": "archctx-contracts-0.8.0.tgz"
     },
     "archctx": {
       "name": "archctx",
-      "version": "0.7.2",
-      "file": "archctx-0.7.2.tgz"
+      "version": "0.8.0",
+      "file": "archctx-0.8.0.tgz"
     }
   },
   "consumer": {
@@ -31,7 +31,7 @@
       "schemaVersion": "archcontext.capabilities/v1",
       "package": {
         "name": "archctx",
-        "version": "0.7.2"
+        "version": "0.8.0"
       },
       "protocols": {
         "projectionRequest": "archcontext.projection-request/v1",
@@ -39,13 +39,15 @@
         "architectureRefreshSignal": "archcontext.architecture-refresh-signal/v1"
       },
       "renderers": {
-        "architectureDocs": "archcontext.docs-renderer/v5",
+        "architectureDocs": "archcontext.docs-renderer/v6",
         "agentContext": "archcontext.agent-context-renderer/v1"
       },
       "features": [
         "architecture-change-capabilities-v1",
+        "architecture-debt-v1",
         "architecture-docs-renderer-v2",
         "architecture-refresh-signal-v1",
+        "capability-dependencies-declared-v1",
         "capability-dependencies-v1",
         "changeset-entity-operations-v1",
         "changeset-ownership-delta-v1",
@@ -53,17 +55,24 @@
         "docs-anchors-v1",
         "flow-selector-check-v1",
         "module-statistics-v1",
+        "native-context-export-v1",
         "projection-apply-readback-v1",
         "projection-apply-receipt-v1",
         "projection-apply-recovery-v1",
+        "projection-apply-replay-restore-v1",
         "projection-apply-replay-v1",
+        "projection-architecture-debt-v1",
+        "projection-capability-isolation-v1",
+        "projection-change-classification-v1",
         "projection-check-freshness-v1",
-        "projection-manifest-contract-v2",
+        "projection-freshness-v1",
+        "projection-manifest-contract-v3",
         "projection-observed-major-change-acceptance-v1",
         "projection-orphan-review-v1",
         "projection-preview-v1",
         "projection-prior-committed-applies-v1",
         "projection-protocol-v2",
+        "projection-snapshot-v1",
         "recommendation-scan-decision-v1",
         "recommendation-v3",
         "refactor-assessment-v1",
@@ -77,11 +86,11 @@
       "requestId": "repo-harness.axr5-clean-room",
       "status": "human-action-required",
       "worktreeDigestMatched": true,
-      "rendererVersion": "archcontext.docs-renderer/v5",
+      "rendererVersion": "archcontext.docs-renderer/v6",
       "layoutVersion": "archcontext.docs-layout/v1",
       "codeGraph": {
         "codeGraphPackage": "@colbymchenry/codegraph",
-        "codeGraphVersion": "1.6.1",
+        "codeGraphVersion": "1.6.2",
         "codeGraphStatus": "unavailable"
       }
     }

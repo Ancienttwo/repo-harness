@@ -241,7 +241,7 @@ function moduleNode(root: string): Record<string, unknown> & { source: Record<st
 }
 const anchorsReport = (findingPath = 'src/module/read.ts') => ({
   schemaVersion: 'archcontext.docs-anchors/v1', profile: 'repo-harness/v1', codeGraph: { availability: 'unavailable', reasonCode: 'index-missing' },
-  summary: { nodes: 2, documents: 1, citations: 3, findings: 2, unchecked: 0, byKind: { 'line-moved': 0, 'line-out-of-range': 1, 'missing-path': 1, 'missing-symbol': 0 } },
+  summary: { nodes: 2, documents: 1, citations: 3, findings: 2, unchecked: 0, byKind: { 'line-moved': 0, 'line-out-of-range': 1, 'missing-path': 1, 'missing-symbol': 0, 'unknown-selector': 0 } },
   nodes: [
     { nodeId: 'capability.other.module', citationCount: 1, findings: [{ kind: 'missing-path', origin: { kind: 'node-summary' }, citation: { text: 'gone/other.ts', path: 'gone/other.ts' } }], unchecked: [] },
     { nodeId: MODULE_ID, documentPath: MODULE_DOC, citationCount: 2,

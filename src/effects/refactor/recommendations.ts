@@ -16,7 +16,7 @@ export interface RefactorModuleEvidence {
   fanIn: number | null;
   fanOut: number | null;
   cycles: number | null;
-  /** Filled only when the model declares constraints; archctx 0.7.2 leaves instability and test files unmeasured. */
+  /** Filled only when the model declares constraints; archctx 0.8.0 leaves instability and test files unmeasured. */
   directionViolations: number | null;
   unresolvedImports: number;
 }

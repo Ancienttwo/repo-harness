@@ -2,6 +2,13 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 
+import {
+  ARCHITECTURE_DOCS_PROJECTION_MANIFEST_SCHEMA_VERSION,
+  ARCHITECTURE_DOCS_RENDERER_VERSION,
+  architectureDocsProjectionManifestIssues,
+  type ArchitectureDocsProjectionManifestV3,
+} from "archctx-contracts";
+import { devDependencies } from "../package.json";
 import { architectureModulePathFor } from '../src/core/capabilities/registry';
 
 const ROOT = join(import.meta.dir, "..");
@@ -70,23 +77,18 @@ describe("AXR7 repo-harness architecture consumer", () => {
   test("binds the projection to exact renderer, layout, CodeGraph, and source digests", () => {
     const manifestPath = join(ROOT, "docs", "architecture", ".projection-manifest.json");
     expect(existsSync(manifestPath)).toBe(true);
-    const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as {
-      profile?: string;
-      provenance?: {
-        rendererVersion?: string;
-        layoutVersion?: string;
-        sourceTreeDigest?: string;
-        projectionInputDigest?: string;
-        generatedFrom?: { codeGraphPackage?: string; codeGraphVersion?: string };
-      };
-    };
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as ArchitectureDocsProjectionManifestV3;
+    expect(architectureDocsProjectionManifestIssues(manifest)).toEqual([]);
+    expect(manifest.schemaVersion).toBe(ARCHITECTURE_DOCS_PROJECTION_MANIFEST_SCHEMA_VERSION);
     expect(manifest.profile).toBe("repo-harness/v1");
-    expect(manifest.provenance?.rendererVersion).toBe("archcontext.docs-renderer/v5");
-    expect(manifest.provenance?.layoutVersion).toBe("archcontext.docs-layout/v1");
-    // Provenance v3 keeps only the reproducible CodeGraph identity, not the local index state.
-    expect(manifest.provenance?.generatedFrom).toEqual({ codeGraphPackage: "@colbymchenry/codegraph", codeGraphVersion: "1.6.1" });
-    expect(manifest.provenance?.sourceTreeDigest).toMatch(/^sha256:[a-f0-9]{64}$/);
-    expect(manifest.provenance?.projectionInputDigest).toMatch(/^sha256:[a-f0-9]{64}$/);
+    expect(manifest.rendererVersion).toBe(ARCHITECTURE_DOCS_RENDERER_VERSION);
+    expect(manifest.layoutVersion).toBe("archcontext.docs-layout/v1");
+    // The manifest keeps only the reproducible CodeGraph identity, not the local index state.
+    expect(manifest.generatedFrom).toEqual({ codeGraphPackage: "@colbymchenry/codegraph", codeGraphVersion: devDependencies["@colbymchenry/codegraph"] });
+    expect(manifest.semanticBaseline.modelDigest).toMatch(/^sha256:[a-f0-9]{64}$/);
+    const stamps = Object.values(manifest.targets).flatMap((target) => Object.values(target.sourceStamps ?? {}));
+    expect(stamps.length).toBeGreaterThan(0);
+    for (const stamp of stamps) expect(stamp).toMatch(/^sha256:[a-f0-9]{64}$/);
   });
 
   test("authors no repository architecture policy or host projection preferences", () => {

@@ -6,6 +6,8 @@ import { join } from 'node:path';
 import {
   PROJECTION_REQUEST_SCHEMA_VERSION,
   errorEnvelope,
+  failureEnvelope,
+  knownFailure,
   projectionApplyReadbackRequestFromReceipt,
   createProjectionApplyIdentity,
   digestJson,
@@ -14,6 +16,7 @@ import {
   projectionResultReceiptDigest,
   type ArchitectureRefreshSignalV1,
   type Json,
+  type ProjectionExpectedSnapshotV1,
   type ProjectionRequestV1,
   type ProjectionResultV2,
 } from 'archctx-contracts';
@@ -24,7 +27,7 @@ import {
   architectureProjectionRequest,
   verifyArchctxDaemonRuntime,
   inspectArchitectureProjectionReadiness,
-  captureArchitectureProjectionSnapshot,
+  readArchitectureProjectionSnapshot,
   resolveCompatibleNodeRuntime,
   resolvePackageLocalArchctx,
   readArchitectureDocsAnchors,
@@ -35,59 +38,18 @@ import {
 } from '../src/effects/architecture/archctx-provider';
 import { trustedNodeCandidates } from '../src/effects/runtime/node-candidates';
 import { architectureProjectionExitCode, buildArchitectureProjectionCommand } from '../src/cli/commands/architecture-projection';
-import { applyArchitectureProjection, verifyArchitectureProjectionOutputs } from '../src/effects/architecture/projection-apply';
+import { applyArchitectureProjection } from '../src/effects/architecture/projection-apply';
 
 const roots: string[] = [];
 const digest = (value: string) => `sha256:${value.repeat(64).slice(0, 64)}` as const;
 const digestProjectionJson = (value: unknown) => digestJson(value as Json) as `sha256:${string}`;
 const policy: ArchitectureProjectionPolicy = { provider: 'archctx', applyMode: 'manual', requiredVersion: ARCHCTX_REQUIRED_VERSION, timeoutMs: 120_000 };
+// archctx owns the snapshot identity; the fake provider returns this literal.
+const expectedSnapshot: ProjectionExpectedSnapshotV1 = {
+  repositoryId: 'repo.0123456789abcdef', workspaceId: 'workspace.0123456789abcdef', headSha: 'a'.repeat(40), worktreeDigest: digest('1'),
+};
 
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
-
-/** Projection-owned agent-context targets stay out of the snapshot digest. */
-function excludesAgentContextTargets(repoRoot: string): boolean {
-  const before = captureArchitectureProjectionSnapshot(repoRoot);
-  for (const name of ['AGENTS.md', 'CLAUDE.md']) writeFileSync(join(repoRoot, name), `regenerated ${Date.now()}\n`);
-  return captureArchitectureProjectionSnapshot(repoRoot).worktreeDigest === before.worktreeDigest;
-}
-
-test('projection profile targets do not require ownership-registry metadata or prefix grammar', () => {
-  const { repoRoot } = fixture();
-  const path = join(repoRoot, '.archcontext/model/nodes/capability.test.core.yaml');
-  const node = Bun.YAML.parse(readFileSync(path, 'utf8')) as Record<string, any>;
-  delete node.responsibilities;
-  delete node.extensions.lspProfile;
-  delete node.extensions.verification;
-  node.source = { include: ['packages/**/src/**'], exclude: ['packages/**/test/**'] };
-  writeFileSync(path, Bun.YAML.stringify(node));
-  expect(excludesAgentContextTargets(repoRoot)).toBe(true);
-  expect(captureArchitectureProjectionSnapshot(repoRoot).headSha).toMatch(/^[a-f0-9]{40}$/);
-});
-
-test('projection target discovery includes inactive capabilities rendered by the producer', () => {
-  const { repoRoot } = fixture();
-  const path = join(repoRoot, '.archcontext/model/nodes/capability.test.core.yaml');
-  writeFileSync(path, readFileSync(path, 'utf8').replace('status: active', 'status: deprecated'));
-  expect(excludesAgentContextTargets(repoRoot)).toBe(true);
-});
-
-test('projection profile rejects invalid identity and unsafe or wrong contract targets', () => {
-  const { repoRoot } = fixture();
-  const path = join(repoRoot, '.archcontext/model/nodes/capability.test.core.yaml');
-  const original = readFileSync(path, 'utf8');
-  for (const invalid of ['../AGENTS.md', '/tmp/AGENTS.md', 'src/../AGENTS.md', 'src\\AGENTS.md', 'src/OTHER.md', 'src//AGENTS.md']) {
-    const node = Bun.YAML.parse(original) as Record<string, any>;
-    node.extensions.contractFiles.agents = invalid;
-    writeFileSync(path, Bun.YAML.stringify(node));
-    expect(() => captureArchitectureProjectionSnapshot(repoRoot)).toThrow();
-  }
-  writeFileSync(path, original.replace('id: capability.test.core', 'id: capability.core'));
-  expect(() => captureArchitectureProjectionSnapshot(repoRoot)).toThrow();
-  const node = Bun.YAML.parse(original) as Record<string, any>;
-  delete node.extensions.contractFiles;
-  writeFileSync(path, Bun.YAML.stringify(node));
-  expect(() => captureArchitectureProjectionSnapshot(repoRoot)).toThrow();
-});
 
 function fixture() {
   const root = mkdtempSync(join(tmpdir(), 'repo-harness-archctx-provider-'));
@@ -101,14 +63,14 @@ function fixture() {
   mkdirSync(join(repoRoot, '.ai', 'harness'), { recursive: true });
   mkdirSync(join(repoRoot, '.archcontext', 'model', 'nodes'), { recursive: true });
   mkdirSync(join(repoRoot, 'src', 'core'), { recursive: true });
-  writeFileSync(join(packageRoot, 'package.json'), `${JSON.stringify({ name: 'archctx', version: '0.7.2', engines: { node: '>=22.22 <26' }, bin: { archctx: './bin/archctx' } })}\n`);
+  writeFileSync(join(packageRoot, 'package.json'), `${JSON.stringify({ name: 'archctx', version: ARCHCTX_REQUIRED_VERSION, engines: { node: '>=22.22 <26' }, bin: { archctx: './bin/archctx' } })}\n`);
   const binary = join(packageRoot, 'bin', 'archctx');
   writeFileSync(binary, '#!/bin/sh\nexit 99\n');
   chmodSync(binary, 0o755);
   symlinkSync(join('..', 'archctx', 'bin', 'archctx'), join(binRoot, 'archctx'));
   writeFileSync(join(repoRoot, '.ai', 'harness', 'policy.json'), `${JSON.stringify({
     context: { capability_source: 'archcontext' },
-    architecture: { projection_provider: 'archctx', projection_apply: 'manual', projection_version: '0.7.2', projection_timeout_ms: 120000 },
+    architecture: { projection_provider: 'archctx', projection_apply: 'manual', projection_version: ARCHCTX_REQUIRED_VERSION, projection_timeout_ms: 120000 },
   })}\n`);
   writeFileSync(join(repoRoot, '.archcontext', 'model', 'nodes', 'capability.test.core.yaml'), `schemaVersion: archcontext.node/v2
 kind: capability
@@ -149,7 +111,7 @@ function vendorArchctx(root: string, version: string): string {
   return binary;
 }
 
-function capabilities(version = '0.7.2') {
+function capabilities(version = ARCHCTX_REQUIRED_VERSION) {
   return {
     schemaVersion: 'archcontext.capabilities/v1',
     package: { name: 'archctx', version },
@@ -158,13 +120,12 @@ function capabilities(version = '0.7.2') {
       projectionResult: 'archcontext.projection-result/v2',
       architectureRefreshSignal: 'archcontext.architecture-refresh-signal/v1',
     },
-    renderers: { architectureDocs: 'archcontext.docs-renderer/v5', agentContext: 'archcontext.agent-context-renderer/v1' },
-    features: ['architecture-docs-renderer-v2', 'architecture-refresh-signal-v1', 'projection-apply-receipt-v1', 'projection-prior-committed-applies-v1', 'projection-protocol-v2', 'projection-apply-readback-v1'],
+    renderers: { architectureDocs: 'archcontext.docs-renderer/v6', agentContext: 'archcontext.agent-context-renderer/v1' },
+    features: ['architecture-docs-renderer-v2', 'architecture-refresh-signal-v1', 'projection-apply-receipt-v1', 'projection-prior-committed-applies-v1', 'projection-protocol-v2', 'projection-apply-readback-v1', 'projection-snapshot-v1'],
   };
 }
 
-function request(repoRoot: string): ProjectionRequestV1 {
-  const expected = captureArchitectureProjectionSnapshot(repoRoot);
+function request(): ProjectionRequestV1 {
   return {
     schemaVersion: PROJECTION_REQUEST_SCHEMA_VERSION,
     requestId: 'request.axr5',
@@ -172,8 +133,19 @@ function request(repoRoot: string): ProjectionRequestV1 {
     mode: 'plan',
     targets: ['architecture-docs'],
     changedPaths: ['src/core/a.ts'],
-    expected,
+    expected: { ...expectedSnapshot },
   };
+}
+
+function snapshotEnvelope(expected: ProjectionExpectedSnapshotV1 = expectedSnapshot) {
+  return { schemaVersion: 'archcontext.envelope/v1', ok: true, requestId: 'projection.snapshot', data: { expected } };
+}
+
+/** Answers `projection snapshot` before the wrapped runner sees or records a call. */
+function withSnapshot(run: RunArchctxProcess, snapshot: () => ProjectionExpectedSnapshotV1 = () => expectedSnapshot): RunArchctxProcess {
+  return (binary, args, options) => args[0] === 'projection' && args[1] === 'snapshot'
+    ? { status: 0, signal: null, stdout: JSON.stringify(snapshotEnvelope(snapshot())), stderr: '' }
+    : run(binary, args, options);
 }
 
 function projectionEnvelope(expected: ProjectionRequestV1['expected']) {
@@ -185,9 +157,9 @@ function projectionEnvelope(expected: ProjectionRequestV1['expected']) {
     codeGraphDigest: digest('4'),
     indexedWorktreeDigest: digest('1'),
     projectionInputDigest: digest('5'),
-    rendererVersion: 'archcontext.docs-renderer/v5' as const,
+    rendererVersion: 'archcontext.docs-renderer/v6' as const,
     layoutVersion: 'archcontext.docs-layout/v1' as const,
-    generatedFrom: { codeGraphPackage: '@colbymchenry/codegraph' as const, codeGraphVersion: '1.6.1' as const, codeGraphStatus: 'ready' as const },
+    generatedFrom: { codeGraphPackage: '@colbymchenry/codegraph' as const, codeGraphVersion: '1.6.2' as const, codeGraphStatus: 'ready' as const },
   };
   const withoutReceipt = {
     schemaVersion: 'archcontext.projection-result/v2' as const,
@@ -213,9 +185,9 @@ function applyEnvelope(
     ...originalExpected,
     baseHeadSha: originalExpected.headSha,
     sourceTreeDigest: digest('2'), modelDigest: digest('3'), codeGraphDigest: digest('4'), indexedWorktreeDigest: digest('1'), projectionInputDigest: digest('5'),
-    rendererVersion: 'archcontext.docs-renderer/v5' as const,
+    rendererVersion: 'archcontext.docs-renderer/v6' as const,
     layoutVersion: 'archcontext.docs-layout/v1' as const,
-    generatedFrom: { codeGraphPackage: '@colbymchenry/codegraph' as const, codeGraphVersion: '1.6.1' as const, codeGraphStatus: 'ready' as const },
+    generatedFrom: { codeGraphPackage: '@colbymchenry/codegraph' as const, codeGraphVersion: '1.6.2' as const, codeGraphStatus: 'ready' as const },
   };
   const applyReceipt = {
     schemaVersion: 'archcontext.projection-apply-identity/v1' as const,
@@ -340,7 +312,7 @@ function writeAppliedOutputs(repoRoot: string): void {
 function runner(calls: Array<{ binary: string; args: readonly string[] }>, docs: ReturnType<typeof projectionEnvelope>): RunArchctxProcess {
   return (binary, args): ArchctxProcessResult => {
     calls.push({ binary, args });
-    return { status: 0, signal: null, stdout: JSON.stringify(args[0] === 'capabilities' ? capabilities() : args[0] === 'daemon' ? { schemaVersion: 'archcontext.envelope/v1', ok: true, requestId: 'daemon.status', data: { running: false } } : docs), stderr: '' };
+    return { status: 0, signal: null, stdout: JSON.stringify(args[0] === 'capabilities' ? capabilities() : args[0] === 'daemon' ? { schemaVersion: 'archcontext.envelope/v1', ok: true, requestId: 'daemon.status', data: { running: false } } : args[1] === 'snapshot' ? snapshotEnvelope() : docs), stderr: '' };
   };
 }
 
@@ -365,7 +337,7 @@ function projectionCli(f: ReturnType<typeof fixture>, envelope: unknown, request
   const script = join(f.root, 'cli-apply.ts');
   writeFileSync(script, `import { mock } from 'bun:test';
 const { applyArchitectureProjection: actualApply } = await import(${JSON.stringify(applyPath)});
-mock.module(${JSON.stringify(applyPath)}, () => ({ applyArchitectureProjection: (root, options) => actualApply(root, { ...options, consumerRoot: ${JSON.stringify(f.consumerRoot)}, policy: ${JSON.stringify(policy)}, run: (_bin, args) => ({status: 0, signal: null, stdout: JSON.stringify(args[0] === 'capabilities' ? ${JSON.stringify(capabilities())} : ${JSON.stringify(envelope)}), stderr: ''}) }) }));
+mock.module(${JSON.stringify(applyPath)}, () => ({ applyArchitectureProjection: (root, options) => actualApply(root, { ...options, consumerRoot: ${JSON.stringify(f.consumerRoot)}, policy: ${JSON.stringify(policy)}, run: (_bin, args) => ({status: 0, signal: null, stdout: JSON.stringify(args[0] === 'capabilities' ? ${JSON.stringify(capabilities())} : args[1] === 'snapshot' ? ${JSON.stringify(snapshotEnvelope())} : ${JSON.stringify(envelope)}), stderr: ''}) }) }));
 const { buildArchitectureProjectionCommand } = await import(${JSON.stringify(cliPath)});
 buildArchitectureProjectionCommand().parse(['apply', '--json', '--request-id', ${JSON.stringify(requestId)}], { from: 'user' });
 `);
@@ -383,7 +355,7 @@ describe('package-local ArchContext projection provider', () => {
       writeAppliedOutputs(f.repoRoot);
       return { status: 0, signal: null, stdout: JSON.stringify(committedApplyEnvelope(producerAcceptedRequest(wireRequest))), stderr: '' };
     };
-    const result = applyArchitectureProjection(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run });
+    const result = applyArchitectureProjection(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: withSnapshot(run) });
     expect(result.status).toBe('applied');
     expect(wireRequests).toHaveLength(1);
     expect(wireRequests[0]!.acceptObservedMajorChange).toBe(true);
@@ -395,17 +367,18 @@ describe('package-local ArchContext projection provider', () => {
   test('a new snapshot has a new id and the same snapshot retries with the same id', () => {
     const f = fixture();
     const committedRequests = new Set<string>();
-    const run: RunArchctxProcess = (_binary, args) => {
+    let current = expectedSnapshot;
+    const run: RunArchctxProcess = withSnapshot((_binary, args) => {
       if (args[0] === 'capabilities') return { status: 0, signal: null, stdout: JSON.stringify(capabilities()), stderr: '' };
       const wireRequest = JSON.parse(args[3]!) as ProjectionRequestV1;
       committedRequests.add(wireRequest.requestId);
       writeAppliedOutputs(f.repoRoot);
       return { status: 0, signal: null, stdout: JSON.stringify(committedApplyEnvelope(producerAcceptedRequest(wireRequest))), stderr: '' };
-    };
+    }, () => current);
     expect(applyArchitectureProjection(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run }).status).toBe('applied');
     expect(applyArchitectureProjection(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run }).status).toBe('applied');
     expect(committedRequests.size).toBe(1);
-    writeFileSync(join(f.repoRoot, 'model-change.txt'), 'second responsibility change\n');
+    current = { ...expectedSnapshot, worktreeDigest: digest('9') };
     expect(applyArchitectureProjection(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run }).status).toBe('applied');
     expect(committedRequests.size).toBe(2);
   });
@@ -413,15 +386,15 @@ describe('package-local ArchContext projection provider', () => {
   test('apply without a major change runs the provider once', () => {
     const f = fixture();
     const calls: Array<{ binary: string; args: readonly string[] }> = [];
-    const docs = projectionEnvelope(captureArchitectureProjectionSnapshot(f.repoRoot));
-    const run: RunArchctxProcess = (binary, args) => {
+    const docs = projectionEnvelope(expectedSnapshot);
+    const run: RunArchctxProcess = withSnapshot((binary, args) => {
       calls.push({ binary, args });
       if (args[0] === 'capabilities') return { status: 0, signal: null, stdout: JSON.stringify(capabilities()), stderr: '' };
       const wireRequest = JSON.parse(args[3]!) as ProjectionRequestV1;
       const { receiptDigest: _previous, ...body } = docs.data;
       const noop = { ...body, requestId: wireRequest.requestId, status: 'noop' as const, files: [] };
       return { status: 0, signal: null, stdout: JSON.stringify({ ...docs, data: { ...noop, receiptDigest: projectionResultReceiptDigest(noop) } }), stderr: '' };
-    };
+    });
     expect(applyArchitectureProjection(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run }).status).toBe('noop');
     expect(calls.filter((call) => call.args[0] === 'projection')).toHaveLength(1);
   });
@@ -432,7 +405,7 @@ describe('package-local ArchContext projection provider', () => {
     let readbacks = 0;
     let committed: ReturnType<typeof committedApplyEnvelope>;
     let readbackRequest: ProjectionRequestV1;
-    const run: RunArchctxProcess = (_binary, args) => {
+    const run: RunArchctxProcess = withSnapshot((_binary, args) => {
       if (args[0] === 'capabilities') return { status: 0, signal: null, stdout: JSON.stringify(capabilities()), stderr: '' };
       const wireRequest = JSON.parse(args[3]!) as ProjectionRequestV1;
       if (args[1] === 'readback') {
@@ -449,7 +422,7 @@ describe('package-local ArchContext projection provider', () => {
       return { status: 1, signal: null, stdout: JSON.stringify(errorEnvelope('projection.run', 'AC_PROJECTION_APPLY_COMMITTED',
         'this accepted change was already applied; send error.details.readbackRequest unchanged as the projection readback request', reasonCode,
         { requestId: accepted.requestId, lookupKey: committed.data.applyReceipt.lookupKey, applyId: committed.data.applyReceipt.applyId, readbackRequest: readbackRequest as unknown as Json })), stderr: '' };
-    };
+    });
     if (reasonCode === 'projection-accepted-change-committed') {
       const result = applyArchitectureProjection(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run });
       expect(result).toEqual(committed!.data);
@@ -468,7 +441,7 @@ describe('package-local ArchContext projection provider', () => {
     const run: RunArchctxProcess = (_binary, args) => ({ status: args[0] === 'capabilities' ? 0 : 1, signal: null,
       stdout: JSON.stringify(args[0] === 'capabilities' ? capabilities() : codeFactsUnavailableEnvelope, null, 2), stderr: 'short stderr' });
     let error: unknown;
-    try { runArchitectureProjection(request(f.repoRoot), f.repoRoot, { consumerRoot: f.consumerRoot, policy, run }); } catch (caught) { error = caught; }
+    try { runArchitectureProjection(request(), f.repoRoot, { consumerRoot: f.consumerRoot, policy, run }); } catch (caught) { error = caught; }
     expect(error).toBeInstanceOf(ArchctxClientError);
     expect(error).toMatchObject({ code: 'AC_CODE_FACTS_UNAVAILABLE', action: 'codegraph-init', reasonCode: 'index-missing', retryable: true });
     expect((error as Error).message).toContain('run `codegraph init` and retry');
@@ -481,9 +454,9 @@ describe('package-local ArchContext projection provider', () => {
       { stdout: '', stderr: 'AC_PRECONDITION_FAILED: committed projection receipt requires recovery' },
       { stdout: JSON.stringify(errorEnvelope('projection.run', 'AC_PROJECTION_APPLY_COMMITTED', 'committed', 'projection-accepted-change-committed', { readbackRequest: { oversized: 'x'.repeat(256 * 1024) } })), stderr: '' },
     ]) {
-      const run: RunArchctxProcess = (_binary, args) => args[0] === 'capabilities'
+      const run: RunArchctxProcess = withSnapshot((_binary, args) => args[0] === 'capabilities'
         ? { status: 0, signal: null, stdout: JSON.stringify(capabilities()), stderr: '' }
-        : { status: 1, signal: null, ...response };
+        : { status: 1, signal: null, ...response });
       expect(() => applyArchitectureProjection(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run, runReadback: () => { readbacks++; throw new Error('must not read back'); } })).toThrow();
     }
     expect(readbacks).toBe(0);
@@ -491,60 +464,27 @@ describe('package-local ArchContext projection provider', () => {
 
   test('a second capability edit cannot be rebound by a second apply request', () => {
     const f = fixture();
-    const firstNode = join(f.repoRoot, '.archcontext/model/nodes/capability.test.core.yaml');
-    const secondNode = join(f.repoRoot, '.archcontext/model/nodes/capability.test.second.yaml');
-    writeFileSync(secondNode, readFileSync(firstNode, 'utf8').replace('capability.test.core', 'capability.test.second').replace('src/core/**', 'src/second/**'));
-    writeFileSync(firstNode, readFileSync(firstNode, 'utf8').replace('Test projection identity.', 'Changed first responsibility.'));
-    const expected = captureArchitectureProjectionSnapshot(f.repoRoot);
     const wireRequests: ProjectionRequestV1[] = [];
-    const run: RunArchctxProcess = (_binary, args) => {
+    let current = expectedSnapshot;
+    const run: RunArchctxProcess = withSnapshot((_binary, args) => {
       if (args[0] === 'capabilities') return { status: 0, signal: null, stdout: JSON.stringify(capabilities()), stderr: '' };
       const wireRequest = JSON.parse(args[3]!) as ProjectionRequestV1;
       wireRequests.push(wireRequest);
-      writeFileSync(secondNode, readFileSync(secondNode, 'utf8').replace('Test projection identity.', 'Changed second responsibility.'));
-      expect(wireRequest.expected).toEqual(expected);
-      expect(wireRequest.expected.worktreeDigest).not.toBe(captureArchitectureProjectionSnapshot(f.repoRoot).worktreeDigest);
+      // A second capability edit lands after the snapshot read; archctx re-checks the request snapshot.
+      current = { ...expectedSnapshot, worktreeDigest: digest('9') };
+      expect(wireRequest.expected).toEqual(expectedSnapshot);
       return { status: 1, signal: null, stdout: JSON.stringify(errorEnvelope('projection.run', 'AC_PRECONDITION_FAILED', 'expected snapshot mismatch: worktreeDigest', 'expected-snapshot-mismatch')), stderr: '' };
-    };
+    }, () => current);
     expect(() => applyArchitectureProjection(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run })).toThrow('expected snapshot mismatch');
     expect(wireRequests).toHaveLength(1);
     expect(wireRequests[0]!.acceptedChange).toBeUndefined();
     expect(existsSync(join(f.repoRoot, 'docs/architecture/index.md'))).toBe(false);
   });
 
-  test('a replay after generated outputs were reverted exits 1 in the CLI', () => {
-    const f = fixture();
-    const accepted = producerAcceptedRequest({ ...request(f.repoRoot), mode: 'apply' });
-    const applied = committedApplyEnvelope(accepted);
-    writeAppliedOutputs(f.repoRoot);
-    const run: RunArchctxProcess = (_bin, args) => ({ status: 0, signal: null, stdout: JSON.stringify(args[0] === 'capabilities' ? capabilities() : applied), stderr: '' });
-    expect(applyArchitectureProjection(f.repoRoot, { consumerRoot: f.consumerRoot, policy, requestId: accepted.requestId, run }).status).toBe('applied');
-    writeFileSync(join(f.repoRoot, 'docs/architecture/index.md'), 'reverted output\n');
-    const result = projectionCli(f, { ...applied, data: { ...applied.data, replayed: true } });
-    expect(result.status).toBe(1);
-    expect(result.stderr).toContain('a replayed receipt did not write');
-    expect(result.stderr).toContain('new --request-id');
-    expect(result.stderr).toContain('cannot restore reverted outputs');
-    expect(result.stdout).toBe('');
-    expect(readFileSync(join(f.repoRoot, 'docs/architecture/index.md'), 'utf8')).toBe('reverted output\n');
-  });
-
-  test('a dangling output link is not a delete absence proof', () => {
-    const f = fixture();
-    mkdirSync(join(f.repoRoot, 'docs/architecture'), { recursive: true });
-    const path = join(f.repoRoot, 'docs/architecture/index.md');
-    symlinkSync('missing.md', path);
-    const result: ProjectionResultV2 = { ...projectionEnvelope(captureArchitectureProjectionSnapshot(f.repoRoot)).data, status: 'applied',
-      files: [{ path: 'docs/architecture/index.md', action: 'delete', preimageDigest: digest('8'), outputDigest: null }] };
-    expect(() => verifyArchitectureProjectionOutputs(result, f.repoRoot)).toThrow();
-    rmSync(path);
-    expect(() => verifyArchitectureProjectionOutputs(result, f.repoRoot)).not.toThrow();
-  });
-
   test('declined-unprovable-proof reaches the CLI with the flows check next step', () => {
     const f = fixture();
-    // Recorded from a real 0.7.2 single-request apply in a disposable repository.
-    const declined = JSON.parse(readFileSync(join(import.meta.dir, 'fixtures/architecture-projection/declined-unprovable-proof-0.7.2.json'), 'utf8')) as ProjectionResultV2;
+    // Recorded from a real archctx 0.8.0 single-request apply (acceptObservedMajorChange) in a disposable repository.
+    const declined = JSON.parse(readFileSync(join(import.meta.dir, 'fixtures/architecture-projection/declined-unprovable-proof-0.8.0.json'), 'utf8')) as ProjectionResultV2;
     expect(projectionResultInvariantIssues(declined)).toEqual([]);
     const result = projectionCli(f, { schemaVersion: 'archcontext.envelope/v1', ok: true, requestId: 'projection.run', data: declined }, declined.requestId);
     expect(result.status).toBe(1);
@@ -554,9 +494,9 @@ describe('package-local ArchContext projection provider', () => {
 
   test('a timeout reports outcome unknown and the same id without the request JSON', () => {
     const f = fixture();
-    const run: RunArchctxProcess = (_binary, args) => args[0] === 'capabilities'
+    const run: RunArchctxProcess = withSnapshot((_binary, args) => args[0] === 'capabilities'
       ? { status: 0, signal: null, stdout: JSON.stringify(capabilities()), stderr: '' }
-      : { status: 1, signal: 'SIGTERM', stdout: '', stderr: '', timedOut: true, error: 'process timed out: --request-json secret-payload' };
+      : { status: 1, signal: 'SIGTERM', stdout: '', stderr: '', timedOut: true, error: 'process timed out: --request-json secret-payload' });
     let message = '';
     try { applyArchitectureProjection(f.repoRoot, { consumerRoot: f.consumerRoot, policy, requestId: 'same.retry.id', run }); }
     catch (error) { message = (error as Error).message; }
@@ -567,34 +507,37 @@ describe('package-local ArchContext projection provider', () => {
     expect(message).not.toContain('secret-payload');
   });
 
-  test('reviewed worktree digest binds apply before any provider call', () => {
+  test('reviewed worktree digest binds apply before any projection run', () => {
     const f = fixture();
-    const planned = architectureProjectionRequest('plan', f.repoRoot);
-    const apply = architectureProjectionRequest('apply', f.repoRoot, { expectedWorktreeDigest: planned.expected.worktreeDigest });
+    const calls: string[][] = [];
+    let current = expectedSnapshot;
+    const options = { consumerRoot: f.consumerRoot, policy, run: withSnapshot((_binary, args) => { calls.push([...args]); throw new Error('must not run'); }, () => current) };
+    const planned = architectureProjectionRequest('plan', f.repoRoot, options);
+    expect(planned.expected).toEqual(expectedSnapshot);
+    const apply = architectureProjectionRequest('apply', f.repoRoot, { ...options, expectedWorktreeDigest: planned.expected.worktreeDigest });
     expect(apply.expected).toEqual(planned.expected);
-    writeFileSync(join(f.repoRoot, 'src/core/index.ts'), 'export const value = 2;\n');
-    let calls = 0;
-    expect(() => applyArchitectureProjection(f.repoRoot, { expectedWorktreeDigest: planned.expected.worktreeDigest, run: () => { calls++; throw new Error('must not run'); } })).toThrow('worktree differs from the reviewed plan');
-    expect(calls).toBe(0);
+    current = { ...expectedSnapshot, worktreeDigest: digest('9') };
+    expect(() => applyArchitectureProjection(f.repoRoot, { ...options, expectedWorktreeDigest: planned.expected.worktreeDigest })).toThrow('worktree differs from the reviewed plan');
+    expect(calls).toEqual([]);
     for (const mode of ['apply', 'adopt']) expect(buildArchitectureProjectionCommand().commands.find((command) => command.name() === mode)!.options.map((option) => option.long)).toContain('--expected-worktree-digest');
   });
 
   test('a newer renderer reports mismatch and blocks check, plan and apply before a run', () => {
     const f = fixture();
     mkdirSync(join(f.repoRoot, 'docs/architecture'), { recursive: true });
-    writeFileSync(join(f.repoRoot, 'docs/architecture/.projection-manifest.json'), JSON.stringify({ rendererVersion: 'archcontext.docs-renderer/v6' }));
+    writeFileSync(join(f.repoRoot, 'docs/architecture/.projection-manifest.json'), JSON.stringify({ rendererVersion: 'archcontext.docs-renderer/v7' }));
     const calls: Array<{ binary: string; args: readonly string[] }> = [];
-    const options = { consumerRoot: f.consumerRoot, policy, run: runner(calls, projectionEnvelope(captureArchitectureProjectionSnapshot(f.repoRoot))) };
+    const options = { consumerRoot: f.consumerRoot, policy, run: runner(calls, projectionEnvelope(expectedSnapshot)) };
     expect(inspectArchitectureProjectionReadiness(f.repoRoot, options).projectionProvider.state).toBe('mismatch');
     for (const mode of ['check', 'plan', 'apply'] as const) {
-      expect(() => runArchitectureProjection(architectureProjectionRequest(mode, f.repoRoot), f.repoRoot, options)).toThrow('update repo-harness');
+      expect(() => runArchitectureProjection({ ...request(), mode }, f.repoRoot, options)).toThrow('update repo-harness');
     }
     expect(calls.every((call) => call.args[0] === 'capabilities')).toBe(true);
   });
 
   test('readiness reports missing policy and incompatible daemon as typed states', () => {
     const f = fixture();
-    const options = { consumerRoot: f.consumerRoot, policy, run: runner([], projectionEnvelope(captureArchitectureProjectionSnapshot(f.repoRoot))) };
+    const options = { consumerRoot: f.consumerRoot, policy, run: runner([], projectionEnvelope(expectedSnapshot)) };
     rmSync(join(f.repoRoot, '.ai/harness/policy.json'));
     const missing = inspectArchitectureProjectionReadiness(f.repoRoot, options);
     expect(missing.modelAuthority.source).toBe('unadopted');
@@ -602,7 +545,7 @@ describe('package-local ArchContext projection provider', () => {
     expect(missing.projectionProvider.reason).toContain('run repo-harness init');
     writeFileSync(join(f.repoRoot, '.ai/harness/policy.json'), JSON.stringify({ context: { capability_source: 'archcontext' } }));
     const run: RunArchctxProcess = (_bin, args) => ({ status: 0, signal: null, stderr: '', stdout: JSON.stringify(args[0] === 'capabilities' ? capabilities() : {
-      schemaVersion: 'archcontext.envelope/v1', ok: true, requestId: 'daemon.status', data: { running: true, versionUnsupported: { reason: 'product-version-mismatch', expected: '0.7.2', received: '0.6.3', action: 'upgrade-archctx-runtime', command: 'archctx daemon upgrade' } },
+      schemaVersion: 'archcontext.envelope/v1', ok: true, requestId: 'daemon.status', data: { running: true, versionUnsupported: { reason: 'product-version-mismatch', expected: ARCHCTX_REQUIRED_VERSION, received: '0.6.3', action: 'upgrade-archctx-runtime', command: 'archctx daemon upgrade' } },
     }) });
     const mismatch = inspectArchitectureProjectionReadiness(f.repoRoot, { ...options, run });
     expect(mismatch.projectionProvider.state).toBe('mismatch');
@@ -612,7 +555,7 @@ describe('package-local ArchContext projection provider', () => {
 
   test('rejects a re-digested readback whose current output proof differs from the committed receipt', () => {
     const f = fixture();
-    const accepted = request(f.repoRoot);
+    const accepted = request();
     accepted.mode = 'apply';
     accepted.acceptedChange = {
       changeSetId: 'changeset.docs-projection-readback-proof', eventId: 'event.readback-proof',
@@ -717,7 +660,7 @@ describe('package-local ArchContext projection provider', () => {
     const calls: Array<readonly string[]> = [];
     const report = {
       schemaVersion: 'archcontext.docs-anchors/v1', profile: 'repo-harness/v1', codeGraph: { availability: 'ready' },
-      summary: { nodes: 1, documents: 1, citations: 1, findings: 1, unchecked: 0, byKind: { 'line-moved': 0, 'line-out-of-range': 0, 'missing-path': 0, 'missing-symbol': 1 } },
+      summary: { nodes: 1, documents: 1, citations: 1, findings: 1, unchecked: 0, byKind: { 'line-moved': 0, 'line-out-of-range': 0, 'missing-path': 0, 'missing-symbol': 1, 'unknown-selector': 0 } },
       nodes: [{ nodeId: 'capability.test.core', documentPath: 'docs/architecture/modules/test/core.md', citationCount: 1,
         findings: [{ kind: 'missing-symbol', origin: { kind: 'document', path: 'docs/architecture/modules/test/core.md', line: 3 }, citation: { text: 'index.ts#gone', path: 'index.ts', symbol: 'gone' } }], unchecked: [] }],
     };
@@ -725,10 +668,11 @@ describe('package-local ArchContext projection provider', () => {
       calls.push(args);
       return { status: 0, signal: null, stdout: JSON.stringify(args[0] === 'capabilities' ? capabilities() : { schemaVersion: 'archcontext.envelope/v1', ok: true, requestId: 'docs.anchors', data }), stderr: '' };
     };
-    const before = captureArchitectureProjectionSnapshot(f.repoRoot);
+    const worktreeState = () => execFileSync('git', ['status', '--porcelain', '--untracked-files=all'], { cwd: f.repoRoot, encoding: 'utf8' });
+    const before = worktreeState();
     expect(readArchitectureDocsAnchors(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: run(report) })).toEqual(report as never);
     expect(calls).toEqual([['capabilities', '--json'], ['docs', 'anchors', '--json']]);
-    expect(captureArchitectureProjectionSnapshot(f.repoRoot)).toEqual(before);
+    expect(worktreeState()).toBe(before);
     expect(() => readArchitectureDocsAnchors(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: run({ ...report, summary: { ...report.summary, findings: 0 } }) }))
       .toThrow('docs anchors report invalid');
     expect(() => readArchitectureDocsAnchors(f.repoRoot, { consumerRoot: f.consumerRoot, policy: { ...policy, provider: 'disabled', applyMode: 'disabled' }, run: run(report) }))
@@ -752,7 +696,7 @@ describe('package-local ArchContext projection provider', () => {
     const resolved = resolvePackageLocalArchctx(f.consumerRoot);
     expect(resolved.binaryPath).toBe(realpathSync(f.binary));
     writeFileSync(join(f.consumerRoot, 'node_modules', 'archctx', 'package.json'), '{"name":"archctx","version":"0.3.0"}\n');
-    expect(() => resolvePackageLocalArchctx(f.consumerRoot)).toThrow('expected archctx@0.7.2');
+    expect(() => resolvePackageLocalArchctx(f.consumerRoot)).toThrow(`expected archctx@${ARCHCTX_REQUIRED_VERSION}`);
   });
 
   test('resolves a hoisted package from an installed repo-harness package root', () => {
@@ -833,7 +777,7 @@ describe('package-local ArchContext projection provider', () => {
   test('disabled readiness performs zero subprocess calls', () => {
     const f = fixture();
     const calls: Array<{ binary: string; args: readonly string[] }> = [];
-    const readiness = inspectArchitectureProjectionReadiness(f.repoRoot, { consumerRoot: f.consumerRoot, policy: { ...policy, provider: 'disabled', applyMode: 'disabled' }, run: runner(calls, projectionEnvelope(captureArchitectureProjectionSnapshot(f.repoRoot))) });
+    const readiness = inspectArchitectureProjectionReadiness(f.repoRoot, { consumerRoot: f.consumerRoot, policy: { ...policy, provider: 'disabled', applyMode: 'disabled' }, run: runner(calls, projectionEnvelope(expectedSnapshot)) });
     expect(readiness.projectionProvider.state).toBe('disabled');
     expect(calls).toHaveLength(0);
   });
@@ -853,7 +797,7 @@ describe('package-local ArchContext projection provider', () => {
       policy,
       env: { PATH: fakeBin },
       trustedNodeCandidateSource: () => [],
-      run: runner(calls, projectionEnvelope(captureArchitectureProjectionSnapshot(f.repoRoot))),
+      run: runner(calls, projectionEnvelope(expectedSnapshot)),
     });
     expect(readiness.projectionProvider.state).toBe('ready');
     expect(readiness.codeFacts.state).toBe('unavailable');
@@ -1042,7 +986,7 @@ describe('package-local ArchContext projection provider', () => {
   test('handshakes capabilities then maps a validated projection result', () => {
     const f = fixture();
     const calls: Array<{ binary: string; args: readonly string[] }> = [];
-    const projectionRequest = request(f.repoRoot);
+    const projectionRequest = request();
     projectionRequest.acceptedChange = {
       changeSetId: 'changeset.add-capability',
       eventId: 'event.user-accepted',
@@ -1062,44 +1006,49 @@ describe('package-local ArchContext projection provider', () => {
     expect(receiptDigest).toBe(projectionResultReceiptDigest(payload));
   });
 
-  test('captures ArchContext fixed-point identity and excludes projection-owned outputs', () => {
+  test('reads the expected snapshot from archctx projection snapshot without a handshake', () => {
     const f = fixture();
-    const before = captureArchitectureProjectionSnapshot(f.repoRoot);
-    expect(before.repositoryId).toMatch(/^repo\.[a-f0-9]{16}$/);
-    expect(before.workspaceId).toMatch(/^workspace\.[a-f0-9]{16}$/);
-    writeFileSync(join(f.repoRoot, 'AGENTS.md'), 'changed generated output\n');
-    expect(captureArchitectureProjectionSnapshot(f.repoRoot)).toEqual(before);
-    writeFileSync(join(f.repoRoot, '.ai', 'harness', 'runtime-state.json'), '{"updated":true}\n');
-    expect(captureArchitectureProjectionSnapshot(f.repoRoot)).toEqual(before);
-    mkdirSync(join(f.repoRoot, '.claude'), { recursive: true });
-    writeFileSync(join(f.repoRoot, '.claude', 'settings.json'), '{}\n');
-    expect(captureArchitectureProjectionSnapshot(f.repoRoot).worktreeDigest).not.toBe(before.worktreeDigest);
-    rmSync(join(f.repoRoot, '.claude', 'settings.json'));
-    mkdirSync(join(f.repoRoot, 'nested'), { recursive: true });
-    writeFileSync(join(f.repoRoot, 'nested', 'AGENTS.md'), 'not a projection target\n');
-    expect(captureArchitectureProjectionSnapshot(f.repoRoot).worktreeDigest).not.toBe(before.worktreeDigest);
-    rmSync(join(f.repoRoot, 'nested'), { recursive: true, force: true });
-    mkdirSync(join(f.repoRoot, 'src', 'node_modules'), { recursive: true });
-    writeFileSync(join(f.repoRoot, 'src', 'node_modules', 'not-a-root-install.ts'), 'export const visible = true;\n');
-    expect(captureArchitectureProjectionSnapshot(f.repoRoot).worktreeDigest).not.toBe(before.worktreeDigest);
-    rmSync(join(f.repoRoot, 'src', 'node_modules'), { recursive: true, force: true });
-    writeFileSync(join(f.repoRoot, 'src', 'core', 'index.ts'), 'export const value = 2;\n');
-    expect(captureArchitectureProjectionSnapshot(f.repoRoot).worktreeDigest).not.toBe(before.worktreeDigest);
+    const calls: Array<{ binary: string; args: readonly string[] }> = [];
+    expect(readArchitectureProjectionSnapshot(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: runner(calls, projectionEnvelope(expectedSnapshot)) })).toEqual(expectedSnapshot);
+    expect(calls).toEqual([{ binary: realpathSync(f.binary), args: ['projection', 'snapshot', '--json'] }]);
   });
 
-  test.each(['.claude/.session-id', '.claude/.trace.jsonl'])('ignores retired agent runtime state at %s in the snapshot', (path) => {
+  test('a snapshot error envelope throws its typed code, action and reason', () => {
     const f = fixture();
-    const before = captureArchitectureProjectionSnapshot(f.repoRoot);
-    mkdirSync(join(f.repoRoot, '.claude'), { recursive: true });
-    writeFileSync(join(f.repoRoot, path), 'first session state\n');
-    expect(captureArchitectureProjectionSnapshot(f.repoRoot)).toEqual(before);
-    writeFileSync(join(f.repoRoot, path), 'rewritten session state with more bytes\n');
-    expect(captureArchitectureProjectionSnapshot(f.repoRoot)).toEqual(before);
+    const failure = failureEnvelope('projection.snapshot', knownFailure('AC_REPO_NOT_FOUND', 'git-worktree-required'));
+    const run: RunArchctxProcess = () => ({ status: 1, signal: null, stdout: JSON.stringify(failure), stderr: '' });
+    let error: unknown;
+    try { readArchitectureProjectionSnapshot(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run }); } catch (caught) { error = caught; }
+    expect(error).toBeInstanceOf(ArchctxClientError);
+    expect(error).toMatchObject({ code: 'AC_REPO_NOT_FOUND', action: failure.error.action, reasonCode: 'git-worktree-required' });
+  });
+
+  test('a malformed snapshot fails closed with a typed error', () => {
+    const f = fixture();
+    const { worktreeDigest: _digest, ...missingDigest } = expectedSnapshot;
+    const malformed: unknown[] = [
+      { ...snapshotEnvelope(), requestId: 'projection.run' },
+      { ...snapshotEnvelope(), data: {} },
+      { ...snapshotEnvelope(), data: { expected: expectedSnapshot, extra: true } },
+      snapshotEnvelope(missingDigest as ProjectionExpectedSnapshotV1),
+      snapshotEnvelope({ ...expectedSnapshot, extra: 'x' } as ProjectionExpectedSnapshotV1),
+      snapshotEnvelope({ ...expectedSnapshot, repositoryId: '' }),
+      snapshotEnvelope({ ...expectedSnapshot, headSha: 'a'.repeat(39) }),
+      snapshotEnvelope({ ...expectedSnapshot, headSha: 'A'.repeat(40) }),
+      snapshotEnvelope({ ...expectedSnapshot, worktreeDigest: 'a'.repeat(64) as ProjectionExpectedSnapshotV1['worktreeDigest'] }),
+    ];
+    for (const envelope of malformed) {
+      const run: RunArchctxProcess = () => ({ status: 0, signal: null, stdout: JSON.stringify(envelope), stderr: '' });
+      let error: unknown;
+      try { readArchitectureProjectionSnapshot(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run }); } catch (caught) { error = caught; }
+      expect(error).toBeInstanceOf(ArchctxClientError);
+      expect(error).toMatchObject({ code: 'RH_ARCHCTX_SNAPSHOT_INVALID', action: 'update-repo-harness', reasonCode: 'projection-snapshot-invalid' });
+    }
   });
 
   test('refuses apply and adopt while projection apply is disabled', () => {
     const f = fixture();
-    const projectionRequest = request(f.repoRoot);
+    const projectionRequest = request();
     for (const mode of ['apply', 'adopt'] as const) {
       projectionRequest.mode = mode;
       expect(() => runArchitectureProjection(projectionRequest, f.repoRoot, { consumerRoot: f.consumerRoot, policy: { ...policy, applyMode: 'disabled' }, run: runner([], projectionEnvelope(projectionRequest.expected)) })).toThrow('apply is disabled');
@@ -1112,7 +1061,7 @@ describe('package-local ArchContext projection provider', () => {
     expect(manifest.devDependencies?.['archctx-contracts']).toBeUndefined();
     expect(manifest.scripts?.['check:archctx-integration']).toBe('bun scripts/axr5-archctx-clean-room.ts');
     expect(readback.status).toBe('verified');
-    expect(readback.packages.contracts.version).toBe('0.7.2');
+    expect(readback.packages.contracts.version).toBe(ARCHCTX_REQUIRED_VERSION);
     expect(Object.keys(readback.packages.contracts).sort()).toEqual(['file', 'name', 'version']);
     expect(Object.keys(readback.packages.archctx).sort()).toEqual(['file', 'name', 'version']);
     expect(readback.consumer.authoritativeNodeSchema).toBe('archcontext.node/v2');
@@ -1122,7 +1071,7 @@ describe('package-local ArchContext projection provider', () => {
 
   test('rejects corrupt JSON and results outside the published contract', () => {
     const f = fixture();
-    const projectionRequest = request(f.repoRoot);
+    const projectionRequest = request();
     const validEnvelope = projectionEnvelope(projectionRequest.expected);
     expect(() => runArchitectureProjection(projectionRequest, f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: () => ({ status: 0, signal: null, stdout: '{', stderr: '' }) })).toThrow('corrupt JSON');
 
@@ -1152,7 +1101,7 @@ describe('package-local ArchContext projection provider', () => {
       reasonCodes: ['responsibility-changed'],
       affectedNodeIds: ['capability.test.core'],
     };
-    const initial = request(f.repoRoot);
+    const initial = request();
     initial.mode = 'apply';
     initial.requestId = 'request.apply.initial';
     initial.acceptedChange = acceptedChange;
@@ -1183,7 +1132,7 @@ describe('package-local ArchContext projection provider', () => {
     expect(first.refreshSignals).toEqual([]);
     expect(first.applyReceipt?.applyId).toBe(digest('a'));
 
-    const retry = { ...initial, requestId: 'request.apply.retry', expected: captureArchitectureProjectionSnapshot(f.repoRoot) };
+    const retry = { ...initial, requestId: 'request.apply.retry', expected: { ...expectedSnapshot, worktreeDigest: digest('9') } };
     const second = runArchitectureProjection(retry, f.repoRoot, { consumerRoot: f.consumerRoot, policy, run });
     expect(second.status).toBe('applied');
     expect(second.refreshSignals).toHaveLength(1);
@@ -1198,7 +1147,7 @@ describe('package-local ArchContext projection provider', () => {
 
   test('pre-write provider failure remains fail-closed', () => {
     const f = fixture();
-    const projectionRequest = request(f.repoRoot);
+    const projectionRequest = request();
     projectionRequest.mode = 'apply';
     projectionRequest.acceptedChange = { changeSetId: 'changeset.stale', eventId: 'event.stale', reasonCodes: ['responsibility-changed'], affectedNodeIds: ['capability.test.core'] };
     const run: RunArchctxProcess = (_binary, args) => args[0] === 'capabilities'
@@ -1256,7 +1205,7 @@ describe('ArchContext maintenance reminders', () => {
       }) };
     };
     let message = '';
-    try { runArchitectureProjection(request(f.repoRoot), f.repoRoot, { consumerRoot: f.consumerRoot, policy, run }); }
+    try { runArchitectureProjection(request(), f.repoRoot, { consumerRoot: f.consumerRoot, policy, run }); }
     catch (error) { message = (error as Error).message; }
     expect(message).toContain('daemon 0.2.3 requires replacement');
     expect(message).toContain('User authorization required');
@@ -1270,7 +1219,7 @@ describe('ArchContext maintenance reminders', () => {
       const run: RunArchctxProcess = (_binary, args) => ({ status: args[0] === 'capabilities' ? 0 : 1, signal: null,
         stdout: JSON.stringify(args[0] === 'capabilities' ? capabilities() : { schemaVersion, ok: false, error: { code: 'AC_RUNTIME_VERSION_UNSUPPORTED', action: 'unknown', message: 'not authority' } }),
         stderr: 'AC_RUNTIME_VERSION_UNSUPPORTED' });
-      expect(() => runArchitectureProjection(request(f.repoRoot), f.repoRoot, { consumerRoot: f.consumerRoot, policy, run }))
+      expect(() => runArchitectureProjection(request(), f.repoRoot, { consumerRoot: f.consumerRoot, policy, run }))
         .toThrow('invalid envelope');
     }
   });

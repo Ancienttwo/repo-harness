@@ -845,7 +845,7 @@ export function capabilityRegistryFromArchcontextNodes(
 /**
  * Maps `archctx resolve` owners onto capability nodes. ArchContext decides the
  * owner; this function only joins its capability id to node metadata.
- * `owningCapabilityId` decides first: archctx 0.7.2 reports `matched: false`
+ * `owningCapabilityId` decides first: archctx 0.8.0 reports `matched: false`
  * for every ambiguous result, also when all candidates share one owning
  * capability, so `matched` is not read. An ambiguous result without an owning
  * capability fails closed, and any other result without one is unmapped
