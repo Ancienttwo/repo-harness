@@ -788,6 +788,15 @@ function reviewFixture() {
     verdict: (next: 'PASS' | 'FAIL') => { verdict = next; prior = true; } };
 }
 
+/** Effects for a delivered request whose host has not observed a finished turn. */
+function pendingTurnEffects(f: ReturnType<typeof reviewFixture>, collect: ReviewEffects['collect']): ReviewEffects {
+  return { ...f.effects, collect, send: async (...args) => {
+    const request = await f.effects.send!(...args);
+    rmSync(join(reviewLocation(f.root, f.options.contract).dir, `observed-${request.round}.json`));
+    return request;
+  } };
+}
+
 test.skipIf(process.platform !== 'darwin')('generic orchestration collects domain Results, keeps one reviewer for three rounds and verifies close', async () => {
   const f = reviewFixture();
   expect(reviewLocation(f.root, f.options.contract).dir).toBe(reviewLocation(f.reviewerRepo, f.options.contract).dir);
@@ -850,12 +859,20 @@ test.skipIf(process.platform !== 'darwin')('generic review unknown owner, explic
   await expect(runReviewRound(f.options, { ...f.effects, owner: () => null })).rejects.toThrow('owner_unknown');
   expect(f.sent()).toBe(0);
   await expect(runReviewRound({ ...f.options, harness: 'claude' }, { ...f.effects, installation: async () => ({ kind: 'not_found' }) })).rejects.toThrow('executable_missing');
-  await expect(runReviewRound({ ...f.options, timeoutMs: 1 }, { ...f.effects, collect: async () => null })).rejects.toThrow('review_round_timeout');
+  // The fixture host has observed the turn, and no Result exists.
+  await expect(runReviewRound({ ...f.options, timeoutMs: 1 }, { ...f.effects, collect: async () => null })).rejects.toThrow('review_result_missing');
   const { dir } = reviewLocation(f.root, f.options.contract);
   expect(readSessionArtifact(join(dir, 'request-1.json'))).toBeDefined();
   await expect(runReviewRound(f.options, f.effects)).rejects.toThrow('ambiguous_round');
   expect(f.sent()).toBe(1);
   expect((await closeReview(f.root, f.options.contract, true, f.home, f.effects)).status).toBe('closed');
+  // No observed turn: the round waits and ends at the deadline.
+  const pending = reviewFixture();
+  await expect(runReviewRound({ ...pending.options, timeoutMs: 1 }, pendingTurnEffects(pending, async () => null))).rejects.toThrow('review_round_timeout');
+  expect(readSessionArtifact(join(reviewLocation(pending.root, pending.options.contract).dir, 'request-1.json'))).toBeDefined();
+  await expect(runReviewRound(pending.options, pending.effects)).rejects.toThrow('ambiguous_round');
+  expect(pending.sent()).toBe(1);
+  expect((await closeReview(pending.root, pending.options.contract, true, pending.home, pending.effects)).status).toBe('closed');
 });
 
 test.skipIf(process.platform !== 'darwin')('generic review cancel reaches an active round at the lock boundary and records no acceptance', async () => {
@@ -863,8 +880,10 @@ test.skipIf(process.platform !== 'darwin')('generic review cancel reaches an act
   const { dir } = reviewLocation(f.root, f.options.contract);
   let collecting!: () => void;
   const inCollectLoop = new Promise<void>(resolve => { collecting = resolve; });
-  // The delivered request stays pending: no Result arrives before cancel.
-  const round = runReviewRound({ ...f.options, timeoutMs: 20_000 }, { ...f.effects, collect: async () => { collecting(); return null; } })
+  // The delivered request stays pending: the host has not observed a turn and no Result arrives before cancel.
+  // The first binding check after delivery marks the collect loop.
+  const pending = pendingTurnEffects(f, async () => null);
+  const round = runReviewRound({ ...f.options, timeoutMs: 20_000 }, { ...pending, assertBinding: () => { if (existsSync(join(dir, 'delivery-1.json'))) collecting(); } })
     .then(() => { f.calls.push('round:accepted'); }, (error: unknown) => { f.calls.push(`round:${String(error)}`); });
   await Promise.race([inCollectLoop, round.then(() => { throw new Error(`round settled before collection: ${f.calls.join(', ')}`); })]);
   expect(existsSync(join(dir, 'delivery-1.json'))).toBe(true);
@@ -921,8 +940,11 @@ test.skipIf(process.platform !== 'darwin')('Codex credential copy cleanup follow
   const start=reviewFixture();
   await expect(runReviewRound({...start.options,harness:'codex'},{...start.effects,start:async()=>{throw new Error('fixture_start_failure')}})).rejects.toThrow('fixture_start_failure');
   expect(existsSync(copied(start))).toBe(false);
+  const missing=reviewFixture();
+  await expect(runReviewRound({...missing.options,harness:'codex',timeoutMs:1},{...missing.effects,collect:async()=>null})).rejects.toThrow('review_result_missing');
+  expect(existsSync(copied(missing))).toBe(false);
   const timed=reviewFixture();
-  await expect(runReviewRound({...timed.options,harness:'codex',timeoutMs:1},{...timed.effects,collect:async()=>null})).rejects.toThrow('review_round_timeout');
+  await expect(runReviewRound({...timed.options,harness:'codex',timeoutMs:1},pendingTurnEffects(timed,async()=>null))).rejects.toThrow('review_round_timeout');
   expect(existsSync(copied(timed))).toBe(false);
   const refused=reviewFixture();refused.verdict('PASS');await runReviewRound({...refused.options,harness:'codex'},refused.effects);
   unlinkSync(copied(refused));mkdirSync(copied(refused));

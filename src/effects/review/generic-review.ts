@@ -348,13 +348,21 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
     writeSessionArtifact(join(dir, `delivery-${round}.json`), { ...identity, context_sha256: contextDigest, task_request: request });
     const deadline = Date.now() + timeout;
     let collected;
+    let bindingCheckedAt = 0;
     for (;;) {
       // A cancel request wins over a pending Result; the final decision is the
       // re-check below, after the loop, before any acceptance is recorded.
       if (existsSync(join(dir, 'close.request'))) throw new Error('review_round_cancelled; no acceptance recorded');
-      collected = await client.collect(reviewerRepo, session.task, GENERIC_REVIEW_ROLE, request.round);
-      if (collected && existsSync(join(dir, `observed-${request.round}.json`))) break;
-      client.assertBinding(binding); lock.assertOwned();
+      // The host writes observed after the turn ends, and the reviewer writes
+      // the Result during the turn. A missing Result at this point is final.
+      if (existsSync(join(dir, `observed-${request.round}.json`))) {
+        collected = await client.collect(reviewerRepo, session.task, GENERIC_REVIEW_ROLE, request.round);
+        if (!collected) throw new Error('review_result_missing; inspect the same request; do not resend');
+        break;
+      }
+      // Binding identity costs several Herdr and ps calls; check it once per second.
+      if (Date.now() - bindingCheckedAt >= 1000) { client.assertBinding(binding); bindingCheckedAt = Date.now(); }
+      lock.assertOwned();
       if (Date.now() >= deadline) throw new Error('review_round_timeout; inspect the same request; do not resend');
       await Bun.sleep(100);
     }
