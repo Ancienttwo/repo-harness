@@ -110,7 +110,11 @@ export async function serveHostFileRequests(host: OarReviewHost, spec: ReviewHos
   try {
     for (let round = 1; !closing() && !existsSync(closeRequest);) {
       const path = join(spec.requestDirectory, `request-${round}.json`);
-      if (!existsSync(path)) { await new Promise(resolve => setTimeout(resolve, 25)); continue; }
+      // started is the existing publication fence: request and context are
+      // durable before task-session publishes it. A request alone is partial.
+      if (!existsSync(path) || !existsSync(join(spec.requestDirectory, `started-${round}.json`))) {
+        await new Promise(resolve => setTimeout(resolve, 25)); continue;
+      }
       if (round > 3) throw new Error('OAR_REVIEW_ROUND_BUDGET_EXHAUSTED');
       const observation = await runHostFileRequest(host, spec, readSessionArtifact<TaskRequest>(path));
       if (closing()) return;
