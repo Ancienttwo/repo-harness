@@ -400,11 +400,13 @@ describe("sweep provider merge proof after a later conflicting target edit", () 
     } finally { f.cleanup(); }
   });
 
-  for (const [label, edit] of [
-    ["another base branch", (pr: Record<string, unknown>) => ({ ...pr, base: { ref: "release" } })],
-    ["a merge commit missing locally", (pr: Record<string, unknown>) => ({ ...pr, merge_commit_sha: "0".repeat(40) })],
-    ["an abbreviated merge commit", (pr: Record<string, unknown>) => ({ ...pr, merge_commit_sha: String(pr.merge_commit_sha).slice(0, 12) })],
-  ] as const) {
+  type ProviderPull = ReturnType<typeof mergedPr>[number];
+  const edits: ReadonlyArray<readonly [string, (pr: ProviderPull) => ProviderPull]> = [
+    ["another base branch", pr => ({ ...pr, base: { ref: "release" } })],
+    ["a merge commit missing locally", pr => ({ ...pr, merge_commit_sha: "0".repeat(40) })],
+    ["an abbreviated merge commit", pr => ({ ...pr, merge_commit_sha: pr.merge_commit_sha.slice(0, 12) })],
+  ];
+  for (const [label, edit] of edits) {
     test(`a merged provider PR with ${label} keeps the worktree`, () => {
       const f = squashFixture(squash => mergedPr(squash).map(edit));
       try {
