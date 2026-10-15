@@ -1,6 +1,7 @@
 import {
   closeSync,
   constants,
+  existsSync,
   fstatSync,
   linkSync,
   lstatSync,
@@ -453,6 +454,38 @@ function unlinkStagedName(staged: StagedOwner): void {
   }
 }
 
+function awaitLockRelease(
+  location: LockLocation,
+  options: ExclusiveDirectoryLockOptions,
+  deadline: number,
+): void {
+  try {
+    assertLockAncestors(location);
+    if (!lstatSync(location.lockPath).isDirectory()) {
+      throw new Error(`unsafe lock path is not a real directory: ${location.lockPath}`);
+    }
+  } catch (pathError) {
+    if ((pathError as NodeJS.ErrnoException).code === 'ENOENT') return;
+    throw pathError;
+  }
+  if (options.reclaimStaleOwner !== false
+    && reclaimStaleLockDirectory(location, options.reclaimStaleEmptyDirectory === true, options.canReclaimStaleOwner)) {
+    options.onStaleReclaim?.(location.lockPath);
+    // The reclaim proved the owner dead and freed the lock. A slow reclaim
+    // must not end in a timeout: retry the normal single-owner election.
+    return;
+  }
+  if (Date.now() >= deadline) {
+    throw new ExclusiveLockContentionError(
+      `timed out waiting for exclusive lock ${location.lockPath}; `
+      + 'owner liveness or safe automatic recovery could not be proven',
+      location.lockPath,
+      'timeout',
+    );
+  }
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
+}
+
 function publishOwner(
   location: LockLocation,
   options: ExclusiveDirectoryLockOptions,
@@ -461,37 +494,20 @@ function publishOwner(
   let staged: StagedOwner | null = null;
   try {
     for (;;) {
-      if (staged === null) staged = stageOwnerRecord(location);
+      if (staged === null) {
+        // A held lock needs no staged record; stage only when the lock looks free.
+        if (existsSync(location.lockPath)) {
+          awaitLockRelease(location, options, deadline);
+          continue;
+        }
+        staged = stageOwnerRecord(location);
+      }
       assertLockAncestors(location);
       try {
         mkdirSync(location.lockPath, { mode: 0o700 });
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-        try {
-          assertLockAncestors(location);
-          if (!lstatSync(location.lockPath).isDirectory()) {
-            throw new Error(`unsafe lock path is not a real directory: ${location.lockPath}`);
-          }
-        } catch (pathError) {
-          if ((pathError as NodeJS.ErrnoException).code === 'ENOENT') continue;
-          throw pathError;
-        }
-        if (options.reclaimStaleOwner !== false
-          && reclaimStaleLockDirectory(location, options.reclaimStaleEmptyDirectory === true, options.canReclaimStaleOwner)) {
-          options.onStaleReclaim?.(location.lockPath);
-          // The reclaim proved the owner dead and freed the lock. A slow reclaim
-          // must not end in a timeout: retry the normal single-owner election.
-          continue;
-        }
-        if (Date.now() >= deadline) {
-          throw new ExclusiveLockContentionError(
-            `timed out waiting for exclusive lock ${location.lockPath}; `
-            + 'owner liveness or safe automatic recovery could not be proven',
-            location.lockPath,
-            'timeout',
-          );
-        }
-        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
+        awaitLockRelease(location, options, deadline);
         continue;
       }
 
