@@ -29,11 +29,12 @@ BUN_TEST_SUITE=full
 
 source "$ROOT/scripts/lib/ci-run-tests.sh"
 
-# Runs the read-only architecture check and writes its JSON result to $1. The
-# check writes no repository files. A private HOME enables the provider without
-# touching the caller's global configuration. CodeGraph supplies the code facts.
-run_architecture_check() {
-  local out="$1" arch_home status=0
+# Runs "$@" with a private HOME that enables the archctx provider without
+# touching the caller's global configuration. It first builds or syncs the
+# CodeGraph index at HEAD, which supplies the code facts. The architecture
+# commands write no repository files.
+with_architecture_home() {
+  local arch_home status=0
   arch_home="$(mktemp -d /tmp/rh-arch-home-XXXXXX)"
   mkdir -p "$arch_home/.repo-harness"
   printf '%s\n' '{"architecture":{"projection_provider":"archctx","projection_apply":"manual","projection_timeout_ms":600000}}' > "$arch_home/.repo-harness/config.json"
@@ -43,10 +44,15 @@ run_architecture_check() {
     HOME="$arch_home" npm exec --no -- codegraph init -y . </dev/null >/dev/null || status=$?
   fi
   if [[ "$status" -eq 0 ]]; then
-    HOME="$arch_home" bun src/cli/index.ts architecture-projection check --json > "$out" || status=$?
+    HOME="$arch_home" "$@" || status=$?
   fi
   rm -rf "$arch_home"
   return "$status"
+}
+
+# Runs the read-only architecture check and writes its JSON result to $1.
+run_architecture_check() {
+  with_architecture_home bun src/cli/index.ts architecture-projection check --json > "$1"
 }
 
 # Prints the summary that the daily repair issue carries: status, stale nodes,
@@ -93,29 +99,36 @@ if [[ "$lane" == affected ]]; then
   exit 0
 fi
 
-# PR advisory: warn when the PR owes architecture updates. Architecture
-# diagnostics never fail the PR, so every outcome here exits 0.
+# PR advisory: warn about architecture debt that is new since the PR base, and
+# about stale architecture documents. Architecture diagnostics never fail the
+# PR, so every outcome here exits 0.
 if [[ "$lane" == architecture-advisory ]]; then
-  echo "[ci] owed architecture capabilities"
-  owed_json="$(mktemp /tmp/rh-arch-owed-XXXXXX)"
-  owed_err="$(mktemp /tmp/rh-arch-owed-err-XXXXXX)"
-  owed_ids=""
-  owed_status=0
-  bun src/cli/index.ts state owed --json --base "$base" > "$owed_json" 2> "$owed_err" || owed_status=$?
-  if [[ "$owed_status" -eq 0 ]]; then
-    owed_ids="$(bun -e 'const r = JSON.parse(await Bun.file(process.argv[1]).text()); if (r.kind !== "repo-harness-owed-capabilities") throw new Error("not an owed-capabilities report"); console.error(`[ci] Owed status: ${r.status}`); if (r.status === "owed") console.log(r.capabilities.map(c => c.id).join(", "));' "$owed_json" 2>> "$owed_err")" || owed_status=$?
+  echo "[ci] architecture debt"
+  debt_json="$(mktemp /tmp/rh-arch-debt-XXXXXX)"
+  debt_err="$(mktemp /tmp/rh-arch-debt-err-XXXXXX)"
+  debt_records=""
+  debt_status=0
+  with_architecture_home bun src/cli/index.ts architecture-debt --json --base "$base" > "$debt_json" 2> "$debt_err" || debt_status=$?
+  if [[ "$debt_status" -eq 0 ]]; then
+    # One record per line: "log<TAB>text" or "warn<TAB>title<TAB>message".
+    # Only the debt items that are new at HEAD get annotations. A coverage gap
+    # is printed with its reason codes and is never reported as "no debt".
+    debt_records="$(bun -e 'const r = JSON.parse(await Bun.file(process.argv[1]).text()); if (r.kind !== "repo-harness-architecture-debt" || r.base === null || !Array.isArray(r.introduced) || !Array.isArray(r.resolvedIds)) throw new Error("not an architecture debt report with a base"); const field = (value) => String(value).replace(/\s+/g, " ").trim(); const out = []; const log = (text) => out.push(["log", field(text)].join("\t")); const warn = (title, message) => out.push(["warn", title, field(message)].join("\t")); const head = r.head.debt; log(`Architecture debt: head coverage ${head.coverage}. Introduced ${r.introduced.length}. Resolved ${r.resolvedIds.length}.`); for (const [name, coverage, codes] of [["Head", head.coverage, head.coverageReasonCodes], ["Base", r.base.coverage, r.base.coverageReasonCodes]]) if (coverage !== "complete") log(`${name} coverage is ${coverage}. Reason codes: ${codes.join(", ") || "none"}. Debt outside the covered checks is not measured.`); if (r.introduced.length === 0 && head.coverage === "complete" && r.base.coverage === "complete") log("No new architecture debt."); const cap = 20; for (const item of r.introduced.slice(0, cap)) { const subjects = item.capabilityIds.length > 0 ? item.capabilityIds : item.paths; warn("Architecture debt introduced", `${item.kind} (${item.reasonCode}) in ${subjects.join(", ") || "the repository"}. Action: ${item.action}`); } if (r.introduced.length > cap) warn("Architecture debt introduced", `${r.introduced.length - cap} more new debt items have no annotation. Run repo-harness architecture-debt --json --base ${r.base.ref} to list them.`); console.log(out.join("\n"));' "$debt_json" 2>> "$debt_err")" || debt_status=$?
   fi
   # A workflow command must start its own line, so end the output with a newline.
-  printf '%s\n' "$(cat "$owed_err")" >&2
-  if [[ "$owed_status" -ne 0 ]]; then
-    warn "Architecture owed check failed" "repo-harness state owed --json --base $base failed: $(tail -n 5 "$owed_err")"
+  printf '%s\n' "$(cat "$debt_err")" >&2
+  if [[ "$debt_status" -ne 0 ]]; then
+    warn "Architecture debt check failed" "repo-harness architecture-debt --json --base $base failed: $(tail -n 5 "$debt_err")"
+  else
+    while IFS=$'\t' read -r debt_record debt_title debt_message; do
+      if [[ "$debt_record" == warn ]]; then
+        warn "$debt_title" "$debt_message"
+      elif [[ "$debt_record" == log ]]; then
+        echo "[ci] $debt_title"
+      fi
+    done <<< "$debt_records"
   fi
-  rm -f "$owed_json" "$owed_err"
-  if [[ -z "$owed_ids" ]]; then
-    echo "[ci] No architecture check needed."
-    exit 0
-  fi
-  warn "Architecture update owed" "This PR changes paths owned by these capabilities after the last architecture manifest update: $owed_ids."
+  rm -f "$debt_json" "$debt_err"
 
   echo "[ci] architecture projection"
   arch_json="$(mktemp /tmp/rh-arch-check-XXXXXX)"
@@ -124,11 +137,11 @@ if [[ "$lane" == architecture-advisory ]]; then
   printf '%s\n' "$(cat "$arch_json")"
   rm -f "$arch_json"
   if [[ -z "$arch_line" ]]; then
-    warn "Architecture check failed" "repo-harness architecture-projection check --json returned no result. Read the job log. Owed capabilities: $owed_ids."
+    warn "Architecture check failed" "repo-harness architecture-projection check --json returned no result. Read the job log."
   elif [[ "${arch_line%%$'\t'*}" == noop ]]; then
     echo "[ci] Architecture documents are current."
   else
-    warn "Architecture documents stale" "Status: ${arch_line%%$'\t'*}. Stale nodes: ${arch_line#*$'\t'}. Owed capabilities: $owed_ids. In this PR run: repo-harness architecture-projection apply --json. Then commit docs/architecture/."
+    warn "Architecture documents stale" "Status: ${arch_line%%$'\t'*}. Stale nodes: ${arch_line#*$'\t'}. In this PR run: repo-harness architecture-projection apply --json. Then commit docs/architecture/."
   fi
   echo "[ci] OK"
   exit 0

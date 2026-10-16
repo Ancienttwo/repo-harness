@@ -244,7 +244,7 @@ describe("architecture owed section", () => {
       } as unknown as EffectiveState;
 
       const body = owedCapabilitiesSessionBody(repo, state);
-      expect(body?.source).toBe("repo-harness state owed --json");
+      expect(body?.source).toBe("repo-harness state resolve --json");
       expect(body!.content).toContain("[ArchitectureOwed]");
       expect(body!.content).toContain("core-owned (docs/architecture/modules/core/owned.md)");
       expect(body!.content.split("\n").length).toBeLessThanOrEqual(3);

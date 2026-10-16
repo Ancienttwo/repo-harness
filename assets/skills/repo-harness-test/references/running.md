@@ -48,9 +48,11 @@ The `architecture` lane runs `repo-harness architecture-projection check --json`
 and fails when the status is not `noop`. When `ARCHITECTURE_SUMMARY` names a
 file, the lane writes the JSON summary there. The daily report puts it in the
 repair issue. `architecture-advisory --base <ref>` is the PR lane. It runs
-`repo-harness state owed --json --base <ref>`. When a capability is owed, it runs
-the check and prints `::warning::` lines. It always exits 0, and its job is not
-part of `Required / CI`.
+`repo-harness architecture-debt --json --base <ref>` and prints one
+`::warning::` line for each debt item that is new since the base, at most 20.
+It prints coverage gaps in the log. Then it runs the check and warns when the
+documents are stale. It always exits 0, and its job is not part of
+`Required / CI`.
 
 Only the `all` and `release` lanes export `REPO_HARNESS_TEST_EXPENSIVE=1`,
 which is what unskips the real `npm pack`/install cases in

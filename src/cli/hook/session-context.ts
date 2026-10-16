@@ -18,7 +18,6 @@ import type { EffectiveState } from '../../core/state/types';
 import { owedCapabilities, renderOwedCapabilities } from '../../effects/state/owed-capabilities';
 
 const STATE_SOURCE = 'repo-harness state resolve --json';
-const OWED_SOURCE = 'repo-harness state owed --json';
 /** The resolver reads the pending capture record at this default path. */
 const PENDING_PLAN_SOURCE = '.ai/harness/planning/pending.json';
 
@@ -101,7 +100,7 @@ export function owedCapabilitiesSessionBody(repoRoot: string, state: EffectiveSt
   } catch {
     return null;
   }
-  return content ? { content, source: OWED_SOURCE } : null;
+  return content ? { content, source: STATE_SOURCE } : null;
 }
 
 /** A fresh pending plan capture with no active plan. Freshness is the resolver's own rule. */
