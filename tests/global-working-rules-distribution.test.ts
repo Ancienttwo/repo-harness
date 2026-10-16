@@ -7,7 +7,7 @@ import type { ReportingLanguagePreset } from "../src/cli/commands/init";
 
 const ROOT = join(import.meta.dir, "..");
 const ASSETS_TEMPLATE = join(ROOT, "assets/reference-configs/global-working-rules.md");
-const PROJECT_INIT_LIB = join(ROOT, "scripts/lib/project-init-lib.sh");
+const STANDARD_PLAN = join(ROOT, "src/core/adoption/standard-plan.ts");
 
 function countOccurrences(haystack: string, needle: string): number {
   let count = 0;
@@ -68,11 +68,16 @@ describe("global working rules distribution", () => {
     expect(rendered).not.toContain("Next cut");
   });
 
-  test("generated root context carries the same code optimization constraints", () => {
-    const source = readFileSync(PROJECT_INIT_LIB, "utf-8");
-    expect(source).toContain("Keep one source of truth for each datum");
-    expect(source).toContain("Do not add steady-state compatibility paths");
-    expect(source).toContain("serves at least two real consumers");
-    expect(source).toContain("do not create a monorepo without a second independently released or deployed consumer");
+  test("the global rules template and the generated root context carry the code optimization constraints", () => {
+    const rules = readFileSync(ASSETS_TEMPLATE, "utf-8");
+    expect(rules).toContain("Keep one source of truth for each datum");
+    expect(rules).toContain("serves at least two real consumers");
+    expect(rules).toContain(
+      "do not convert a single-package repository into a monorepo without a second independently released or deployed consumer",
+    );
+    expect(rules).toContain("Forbid steady-state compatibility behavior");
+
+    const rootContext = readFileSync(STANDARD_PLAN, "utf-8");
+    expect(rootContext).toContain("one source of truth, and no steady-state compatibility paths");
   });
 });
