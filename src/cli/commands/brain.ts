@@ -26,7 +26,11 @@ export interface BrainGroup {
 
 export interface BrainEntry {
   id?: string;
+  role?: string;
   repo_path?: string;
+  asset_path?: string;
+  max_repo_lines?: number;
+  sync_direction?: string;
   source_path?: string;
   brain_path?: string;
   sync?: { direction?: string; enabled?: boolean; source_path?: string; brain_path?: string };
@@ -109,6 +113,9 @@ export interface BrainPromoteResult {
 const VALID_SCOPES = new Set(['reference-configs', 'architecture', 'project-docs', 'knowledge', 'workstreams', 'all']);
 const VALID_CATEGORIES = new Set<BrainCategory>(['decisions', 'runbooks', 'patterns', 'references']);
 const DEFAULT_MANIFEST = '.ai/harness/brain-manifest.json';
+const POLICY_FILE = '.ai/harness/policy.json';
+const VALID_ROLES = new Set(['externalized', 'partial', 'repo-authored']);
+const SYNC_COMMAND = 'repo-harness brain sync';
 
 function normalizeSlashes(value: string): string {
   return value.replaceAll(path.sep, '/');
@@ -303,6 +310,139 @@ function syncConfig(entry: BrainEntry): { sourcePath?: string; brainPath?: strin
   };
 }
 
+function hasDuplicate(values: unknown[]): boolean {
+  return values.some((value, index) => Boolean(value) && values.indexOf(value) !== index);
+}
+
+function countLines(content: string): number {
+  return content.endsWith('\n') ? content.split('\n').length - 1 : content.split('\n').length;
+}
+
+function readPolicyExternalKnowledge(repoRoot: string, issues: BrainIssue[]): Record<string, unknown> {
+  const policyPath = path.resolve(repoRoot, POLICY_FILE);
+  if (!fs.existsSync(policyPath)) return {};
+  try {
+    const policy = JSON.parse(fs.readFileSync(policyPath, 'utf-8')) as {
+      information_lifecycle?: { external_knowledge?: Record<string, unknown> };
+    };
+    return policy?.information_lifecycle?.external_knowledge ?? {};
+  } catch {
+    issue(issues, 'error', `Cannot read harness policy: ${POLICY_FILE}`);
+    return {};
+  }
+}
+
+function validatePolicy(repoRoot: string, manifest: BrainManifest, manifestRel: string, issues: BrainIssue[]): void {
+  const policy = readPolicyExternalKnowledge(repoRoot, issues);
+  const manifestFile = policy.manifest_file;
+  const projectPath = policy.project_path;
+  const syncScript = policy.sync_script;
+  if (typeof manifestFile === 'string' && manifestFile !== manifestRel) {
+    issue(issues, 'error', `Policy external_knowledge.manifest_file points to ${manifestFile}, expected ${manifestRel}`);
+  }
+  if (typeof syncScript === 'string' && syncScript.startsWith('repo-harness ')) {
+    if (syncScript !== SYNC_COMMAND) {
+      issue(issues, 'error', `Policy external_knowledge.sync_script must be "${SYNC_COMMAND}" or a repo file: ${syncScript}`);
+    }
+  } else if (typeof syncScript === 'string' && syncScript && !fs.existsSync(path.resolve(repoRoot, syncScript))) {
+    issue(issues, 'error', `Policy external_knowledge.sync_script is missing: ${syncScript}`);
+  }
+  if (typeof projectPath === 'string' && manifest.default_brain_path && projectPath !== manifest.default_brain_path) {
+    issue(issues, 'error', `Policy project_path ${projectPath} does not match manifest default_brain_path ${manifest.default_brain_path}`);
+  }
+}
+
+// Whole-manifest validation. Runs before drift work so a pointer-only entry is checked too.
+function validateManifest(
+  repoRoot: string,
+  manifest: BrainManifest,
+  manifestPath: string,
+  root: string,
+  requireRoot: boolean,
+  issues: BrainIssue[],
+): void {
+  const manifestRel = normalizeSlashes(path.relative(repoRoot, manifestPath));
+  validatePolicy(repoRoot, manifest, manifestRel, issues);
+
+  if (!manifest.version) issue(issues, 'error', 'Brain manifest is missing version');
+  if (!manifest.project) issue(issues, 'error', 'Brain manifest is missing project');
+  if (!manifest.default_brain_path) issue(issues, 'error', 'Brain manifest is missing default_brain_path');
+  if (!Array.isArray(manifest.entries)) {
+    issue(issues, 'error', 'Brain manifest entries must be an array');
+    return;
+  }
+
+  const entries = manifest.entries;
+  if (hasDuplicate(entries.map((entry) => entry.id))) issue(issues, 'error', 'Brain manifest contains duplicate entry ids');
+  if (hasDuplicate(entries.map((entry) => entry.repo_path))) issue(issues, 'error', 'Brain manifest contains duplicate repo_path values');
+  if (hasDuplicate(entries.map((entry) => entry.brain_path))) issue(issues, 'error', 'Brain manifest contains duplicate brain_path values');
+
+  const defaultPrefix = stripWildcard(manifest.default_brain_path || '');
+  const vaultRoot = defaultPrefix.startsWith('brain/') ? path.join(root, defaultPrefix.slice('brain/'.length)) : root;
+  const checkVault = requireRoot || fs.existsSync(vaultRoot);
+  if (entries.length > 0 && !checkVault) {
+    issue(issues, 'warning', `vault root unavailable; skipped external file existence checks: ${vaultRoot}`);
+  }
+
+  for (const entry of entries) {
+    const id = entry.id || '(missing id)';
+    const { repo_path: repoPath, asset_path: assetPath, brain_path: brainPath } = entry;
+    const maxRepoLines = Number(entry.max_repo_lines || 0);
+    const syncs = syncConfig(entry) !== null;
+    const direction = entry.sync && typeof entry.sync === 'object' ? entry.sync.direction || '' : '';
+
+    if (!entry.id) issue(issues, 'error', 'Entry is missing id');
+    if (!entry.role) issue(issues, 'error', `Entry ${id} is missing role`);
+    else if (!VALID_ROLES.has(entry.role)) {
+      issue(issues, 'error', `Entry ${id} has unsupported role: ${entry.role} (expected: ${Array.from(VALID_ROLES).join(', ')})`);
+    }
+    if (!repoPath) issue(issues, 'error', `Entry ${id} is missing repo_path`);
+    if (!brainPath) issue(issues, 'error', `Entry ${id} is missing brain_path`);
+    if (entry.sync_direction !== undefined) {
+      issue(issues, 'error', `Entry ${id} uses unsupported sync_direction; use sync.direction`);
+    }
+    if (direction && direction !== 'repo-to-brain') {
+      issue(issues, 'error', `Entry ${id} has unsupported sync.direction: ${direction}`);
+    }
+    if (brainPath && defaultPrefix && !String(brainPath).startsWith(defaultPrefix)) {
+      issue(issues, 'error', `Entry ${id} brain_path is outside default_brain_path: ${brainPath}`);
+    }
+
+    const repoFile = repoPath ? safeRepoPath(repoRoot, repoPath, issues, `Entry ${id} repo_path`) : null;
+    const repoAbs = repoFile ? path.resolve(repoRoot, repoFile) : null;
+    const repoContent = repoAbs && fs.existsSync(repoAbs) ? fs.readFileSync(repoAbs, 'utf-8') : null;
+    if (repoFile && repoContent === null) {
+      issue(issues, 'error', `Entry ${id} repo_path is missing: ${repoPath}`);
+    } else if (repoContent !== null) {
+      if (!syncs && brainPath && !repoContent.includes(brainPath)) {
+        issue(issues, 'error', `Entry ${id} repo stub does not mention brain_path: ${repoPath}`);
+      }
+      if (maxRepoLines > 0) {
+        const lineCount = countLines(repoContent);
+        if (lineCount > maxRepoLines) {
+          issue(issues, 'error', `Entry ${id} repo stub has ${lineCount} lines, max ${maxRepoLines}: ${repoPath}`);
+        }
+      }
+    }
+
+    if (repoPath && assetPath) {
+      const assetFile = safeRepoPath(repoRoot, assetPath, issues, `Entry ${id} asset_path`);
+      const assetAbs = assetFile ? path.resolve(repoRoot, assetFile) : null;
+      if (assetAbs && !fs.existsSync(assetAbs)) {
+        issue(issues, 'error', `Entry ${id} asset_path is missing: ${assetPath}`);
+      } else if (assetAbs && repoContent !== null && repoContent !== fs.readFileSync(assetAbs, 'utf-8')) {
+        issue(issues, 'error', `Entry ${id} repo_path and asset_path differ: ${repoPath} != ${assetPath}`);
+      }
+    }
+
+    // A synced entry gets its brain-file existence and drift check from the item loop.
+    if (brainPath && checkVault && !syncs) {
+      const target = safeBrainPath(root, brainPath, id, issues);
+      if (target && !fs.existsSync(target)) issue(issues, 'error', `Entry ${id} brain file is missing: ${brainPath}`);
+    }
+  }
+}
+
 function collectItems(
   repoRoot: string,
   manifest: BrainManifest,
@@ -397,6 +537,7 @@ export function runBrain(mode: 'status' | 'check' | 'sync', opts: BrainCommandOp
   const root = brainRoot();
   const scope = assertScope(opts.scope);
   const issues: BrainIssue[] = [];
+  if (mode === 'check') validateManifest(repoRoot, manifest, manifestPath, root, opts.requireRoot === true, issues);
   const items = collectItems(
     repoRoot,
     manifest,
