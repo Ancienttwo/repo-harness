@@ -112,7 +112,6 @@ describe('mcp policy and paths', () => {
       const policy = getMcpPolicy('planner', { enableReader: true, allowedRoots: [tmp] });
       expect(policy.capabilities.workspaceReader).toBe(true);
       expect(policy.capabilities.workflowPlanner).toBe(true);
-      expect(policy.capabilities.agentRunner).toBe(false);
       expect(policy.writeGlobs).toContain('plans/prds/**');
       expect(policy.allowAbsoluteRead).toBe(false);
       expect(resolveMcpPath(tmp, '.env', policy, 'read')).toMatchObject({ ok: false });
@@ -151,30 +150,6 @@ describe('mcp policy and paths', () => {
     }
   });
 
-  test('orchestrator dev runner is opt-in and reads only the fixed goal handoff', () => {
-    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-orchestrator-'));
-    try {
-      mkdirSync(join(tmp, '.ai/harness/handoff'), { recursive: true });
-      mkdirSync(join(tmp, 'src'), { recursive: true });
-      writeFileSync(join(tmp, '.ai/harness/handoff/task-goal.md'), '# Task Goal\n');
-      writeFileSync(join(tmp, 'src/index.ts'), 'export const value = 1;\n');
-
-      const disabled = getMcpPolicy('orchestrator');
-      expect(disabled.execution.agentRunner).toBe(false);
-      expect(buildMcpToolDefinitions(disabled).some((tool) => tool.name === 'run_agent_goal')).toBe(false);
-      expect(resolveMcpPath(tmp, '.ai/harness/handoff/task-goal.md', disabled, 'read')).toMatchObject({ ok: false });
-
-      const enabled = getMcpPolicy('orchestrator', { devAgentRunner: true, allowedAgents: ['codex'], runnerTimeoutMs: 5000 });
-      expect(enabled.execution.agentRunner).toBe(true);
-      expect(enabled.execution.allowedAgents).toEqual(['codex']);
-      expect(buildMcpToolDefinitions(enabled).some((tool) => tool.name === 'run_agent_goal')).toBe(true);
-      expect(resolveMcpPath(tmp, '.ai/harness/handoff/task-goal.md', enabled, 'read')).toMatchObject({ ok: true });
-      expect(resolveMcpPath(tmp, 'src/index.ts', enabled, 'read')).toMatchObject({ ok: false });
-    } finally {
-      rmSync(tmp, { recursive: true, force: true });
-    }
-  });
-
   test('executor and orchestrator profiles keep reader and planner writes out of their regression surface', async () => {
     const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-profile-regression-'));
     try {
@@ -192,7 +167,6 @@ describe('mcp policy and paths', () => {
       expect(executor.capabilities).toMatchObject({
         workspaceReader: false,
         workflowExecutor: true,
-        agentRunner: false,
       });
       expect(executorTools).toContain('run_workflow_check');
       expect(executorTools).not.toContain('reader_status');
@@ -214,7 +188,6 @@ describe('mcp policy and paths', () => {
       expect(orchestrator.capabilities).toMatchObject({
         workspaceReader: false,
         workflowExecutor: false,
-        agentRunner: false,
       });
       expect(orchestratorTools).not.toContain('run_workflow_check');
       expect(orchestratorTools).not.toContain('reader_status');
@@ -226,12 +199,8 @@ describe('mcp policy and paths', () => {
       });
       expect(orchestratorWrite.error.code).toBe('POLICY_DENIED');
 
-      const orchestratorDev = getMcpPolicy('orchestrator', { devAgentRunner: true, allowedAgents: ['codex'], runnerTimeoutMs: 5000 });
-      const orchestratorDevTools = buildMcpToolDefinitions(orchestratorDev).map((tool) => tool.name);
-      expect(orchestratorDevTools).toContain('run_agent_goal');
-      expect(orchestratorDevTools).not.toContain('reader_status');
-      expect(resolveMcpPath(tmp, '.ai/harness/handoff/task-goal.md', orchestratorDev, 'read')).toMatchObject({ ok: true });
-      expect(resolveMcpPath(tmp, 'plans/prds/existing.prd.md', orchestratorDev, 'read')).toMatchObject({ ok: false });
+      expect(resolveMcpPath(tmp, '.ai/harness/handoff/task-goal.md', orchestrator, 'read')).toMatchObject({ ok: false });
+      expect(resolveMcpPath(tmp, 'plans/prds/existing.prd.md', orchestrator, 'read')).toMatchObject({ ok: false });
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
@@ -246,7 +215,7 @@ describe('mcp policy and paths', () => {
       workspaceReader: false,
       workspaceCoder: true,
     });
-    expect(coding.execution).toMatchObject({ codingShell: true, agentRunner: false, codexRunner: false });
+    expect(coding.execution).toMatchObject({ codingShell: true });
     expect(definitions).toHaveLength(29);
     expect(definitions.filter((tool) => codingNames.includes(tool.name)).map((tool) => tool.name)).toEqual(codingNames);
     expect(definitions.map((tool) => tool.name)).toContain('write_prd');

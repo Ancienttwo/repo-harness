@@ -375,7 +375,7 @@ test('PM MCP refuses unsafe operator files, extra configuration, and disabled HT
   expect(() => createPmMcpServer(f.env)).toThrow('pm_mcp_configuration_invalid');
   mcpScope(f); const alias = join(f.home, 'scope-alias'); writeFileSync(alias, readFileSync(path)); rmSync(path); symlinkSync(alias, path);
   expect(() => createPmMcpServer(f.env)).toThrow('pm_mcp_configuration_unsafe');
-  for (const override of [{ enableReader: true }, { enableDevRunner: true }, { allowedRoots: [f.repo] }, { enableChatgptBrowser: true }]) {
+  for (const override of [{ enableReader: true }, { allowedRoots: [f.repo] }, { enableChatgptBrowser: true }]) {
     expect(() => createRepoHarnessMcpServer({ profile: 'pm', ...override })).toThrow('does not permit');
   }
   const previousHome = process.env.REPO_HARNESS_HOME;
@@ -640,7 +640,7 @@ test('PM HTTP enforces profile and session owner on list, calls, streams and del
   try {
     let ready = false;
     for (let attempt = 0; attempt < 100; attempt++) {
-      try { const r = await fetch(base + '/health'); if (r.ok) { ready = true; expect(await r.json()).toMatchObject({ profile: 'pm', capabilities: { workspaceReader: false, workspaceCoder: false, workflowExecutor: false, agentRunner: false } }); break; } } catch {}
+      try { const r = await fetch(base + '/health'); if (r.ok) { ready = true; expect(await r.json()).toMatchObject({ profile: 'pm', capabilities: { workspaceReader: false, workspaceCoder: false, workflowExecutor: false } }); break; } } catch {}
       if (proc.exitCode !== null) throw new Error('PM fixture server exited: ' + await diagnostic);
       await Bun.sleep(50);
     }

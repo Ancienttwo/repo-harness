@@ -134,11 +134,6 @@ describe('mcp setup', () => {
       expect(config.auth.oauthFile.startsWith('.repo-harness/')).toBe(false);
       expect(config.auth.tokenFile.startsWith('.repo-harness/')).toBe(false);
       expect(config.chatgpt.serverName).toBe('repo-harness');
-      expect(config.devMode).toMatchObject({
-        agentRunner: false,
-        allowedAgents: ['codex'],
-        timeoutMs: 120000,
-      });
       expect(config.rollout).toBeUndefined();
       const token = JSON.parse(readFileSync(join(userHome, 'mcp.tokens.json'), 'utf-8')).bearerToken;
       expect(typeof token).toBe('string');
@@ -153,7 +148,6 @@ describe('mcp setup', () => {
       expect(doctor.mcp.storageDir).toBe(userHome);
       expect(doctor.mcp.configScope).toBeUndefined();
       expect(doctor.mcp.permissions.configurationScope).toBeUndefined();
-      expect(doctor.mcp.devMode.agentRunner).toBe(false);
       expect(doctor.chatgpt.serverName).toBe('repo-harness');
       expect(doctor.chatgpt.localEndpoint).toBe('http://127.0.0.1:8765/mcp');
       expect(doctor.chatgpt.invocationVerification).toMatchObject({
@@ -564,7 +558,7 @@ describe('mcp setup', () => {
       expect(config).toMatchObject({
         version: 3,
         profile: 'engineer',
-        capabilities: { workspaceReader: false, workspaceCoder: false, workflowExecutor: false, agentRunner: false },
+        capabilities: { workspaceReader: false, workspaceCoder: false, workflowExecutor: false },
         coding: { enabled: false },
         engineer: { enabled: true },
         authorizationRevision: 1,
@@ -572,8 +566,8 @@ describe('mcp setup', () => {
       const ctx = createMcpToolContext({ repo: repoRoot, profile: 'engineer', engineerAuthorizationId: '22222222-2222-4222-8222-222222222222' });
       expect(ctx.policy).toMatchObject({
         profile: 'engineer',
-        capabilities: { workspaceReader: false, workspaceCoder: false, workflowExecutor: false, agentRunner: false },
-        execution: { codingShell: false, agentRunner: false },
+        capabilities: { workspaceReader: false, workspaceCoder: false, workflowExecutor: false },
+        execution: { codingShell: false },
       });
       expect(ctx.codingWorkspaceManager).toBeUndefined();
       expect(ctx.engineerAuthorizationId).toBe('22222222-2222-4222-8222-222222222222');
@@ -773,11 +767,6 @@ describe('mcp setup', () => {
         auth: { mode: 'bearer', tokenFile: 'custom.tokens.json' },
         chatgpt: { endpoint: 'https://repo-harness-mcp.example.com/mcp' },
         profile: 'orchestrator',
-        devMode: {
-          agentRunner: true,
-          allowedAgents: ['codex', 'claude'],
-          timeoutMs: 300000,
-        },
       }, null, 2)}\n`);
 
       runMcpSetupChatgpt({ repo: repoRoot, serverName: 'team-review-mcp' });
@@ -789,11 +778,6 @@ describe('mcp setup', () => {
         endpoint: 'https://repo-harness-mcp.example.com/mcp',
       });
       expect(config.profile).toBe('orchestrator');
-      expect(config.devMode).toMatchObject({
-        agentRunner: true,
-        allowedAgents: ['codex', 'claude'],
-        timeoutMs: 300000,
-      });
     });
   });
 
@@ -807,11 +791,6 @@ describe('mcp setup', () => {
         auth: { mode: 'bearer', tokenFile: 'custom.tokens.json' },
         chatgpt: { endpoint: 'https://repo-harness-mcp.example.com/mcp' },
         profile: 'orchestrator',
-        devMode: {
-          agentRunner: true,
-          allowedAgents: ['codex', 'claude'],
-          timeoutMs: 300000,
-        },
       }, null, 2)}\n`);
 
       // The child must inherit the isolated storage root explicitly; storage is
@@ -930,9 +909,6 @@ describe('mcp setup', () => {
     expect(guide).toContain('../outside');
     expect(guide).toContain('SYMLINK_ESCAPE');
     expect(guide).toContain('deny globs');
-    expect(guide).toContain('## Dev Mode Agent Runner');
-    expect(guide).toContain('--enable-dev-runner');
-    expect(guide).toContain('run_agent_goal');
     expect(guide).toContain('https://example.test/mcp');
     expect(guide).toContain('cloudflared tunnel create repo-harness-mcp');
     expect(guide).toContain('quick tunnel');

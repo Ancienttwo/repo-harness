@@ -1,10 +1,8 @@
-import { randomUUID, createHash } from 'crypto';
+import { createHash } from 'crypto';
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, appendFileSync } from 'fs';
 import { homedir } from 'os';
-import { basename, dirname, isAbsolute, join, relative, resolve } from 'path';
+import { basename, dirname, isAbsolute, join, resolve } from 'path';
 import { isRegisteredRepoHarnessRoot, readRegisteredRepoHarnessRepos } from '../../effects/repo-registry';
-import { cancelTaskAgent, closeTaskAgent, readTaskAgentHistory, readTaskRequestResult, sendTaskRequest, startTaskAgent, taskSessionDirectory, type TaskAgentSpec } from '../../effects/terminal/task-session';
-import { herdrCommand, herdrResult } from '../../effects/terminal/herdr';
 import { runHelper } from '../../effects/runtime/helper-runner';
 import { listSessions, openSession, readSession, runBrowserConsult, runBrowserFollowup } from '../chatgpt-browser/engine';
 import type { BrowserProviderName, NativeBrowserChannel } from '../chatgpt-browser/types';
@@ -22,7 +20,7 @@ import { redactMcpText } from './redaction';
 import { buildStateToolDefinitions, callStateTool, isStateTool } from './state-tools';
 import { buildFleetToolDefinitions, callFleetTool, fleetToolArgumentError, isFleetTool } from './fleet-tools';
 import { buildEngineerToolDefinitions, callEngineerTool, isEngineerTool } from './engineer-tools';
-import type { McpAgentRunnerName, McpPolicy } from './types';
+import type { McpPolicy } from './types';
 import type { WorkspaceManager } from './workspaces';
 
 export interface McpToolContext {
@@ -470,112 +468,6 @@ function timestampPrefix(date = new Date()): string {
   const hh = String(date.getHours()).padStart(2, '0');
   const min = String(date.getMinutes()).padStart(2, '0');
   return `${yyyy}${mm}${dd}-${hh}${min}`;
-}
-
-function parseRunnerAgent(value: unknown): McpAgentRunnerName | null {
-  const normalized = String(value ?? '').trim().toLowerCase();
-  return normalized === 'codex' || normalized === 'claude' ? normalized : null;
-}
-
-function runnerGoalPath(args: Record<string, unknown>): string {
-  return String(args.goal_path ?? '.ai/harness/handoff/task-goal.md').trim();
-}
-
-function runnerTimeoutMs(ctx: McpToolContext, value: unknown): number {
-  const requested = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
-  if (!Number.isFinite(requested)) return ctx.policy.execution.runnerTimeoutMs;
-  return Math.min(Math.max(Math.trunc(requested), 5_000), ctx.policy.execution.runnerTimeoutMs);
-}
-
-async function runAgentGoal(ctx: McpToolContext, args: Record<string, unknown>): Promise<CallToolResult> {
-  if (!ctx.policy.execution.agentRunner || !ctx.policy.execution.codexRunner) {
-    audit(ctx, 'run_agent_goal', 'blocked', args, undefined, 'dev runner is disabled');
-    return errorResult('DEV_RUNNER_DISABLED', 'MCP dev runner is disabled. Start the orchestrator profile with an explicit dev-runner setting.');
-  }
-
-  const agent = parseRunnerAgent(args.agent);
-  if (!agent) {
-    audit(ctx, 'run_agent_goal', 'blocked', args, undefined, 'invalid agent');
-    return errorResult('INVALID_AGENT', 'agent must be codex or claude');
-  }
-  if (!ctx.policy.execution.allowedAgents.includes(agent)) {
-    audit(ctx, 'run_agent_goal', 'blocked', args, undefined, `agent is not allowed: ${agent}`);
-    return errorResult('AGENT_DENIED', `agent is not enabled for this MCP dev runner: ${agent}`);
-  }
-
-  const goalPath = runnerGoalPath(args);
-  if (goalPath === '.ai/harness/handoff/codex-goal.md') return errorResult('GOAL_RETIRED', 'Upgrade the goal artifact to .ai/harness/handoff/task-goal.md; the retired Codex goal is not executed.');
-  const decision = resolveMcpPath(ctx.repoRoot, goalPath, ctx.policy, 'read');
-  if (!decision.ok || !decision.absolutePath || !decision.relativePath) {
-    audit(ctx, 'run_agent_goal', 'blocked', args, goalPath, decision.reason);
-    return errorResult('POLICY_DENIED', decision.reason ?? 'goal path denied', { path: goalPath });
-  }
-
-  const fileStat = statSync(decision.absolutePath);
-  if (!fileStat.isFile()) return errorResult('NOT_A_FILE', `goal path is not a file: ${decision.relativePath}`);
-  if (fileStat.size > ctx.policy.maxFileBytes) return errorResult('FILE_TOO_LARGE', `goal exceeds ${ctx.policy.maxFileBytes} bytes`);
-
-  const rawGoal = readFileSync(decision.absolutePath, 'utf-8');
-  const redactedGoal = redactMcpText(rawGoal);
-  const prompt = [
-    'Execute this repo-harness dev-mode agent handoff from the local repository.',
-    'Respect the goal text exactly. Do not reveal secrets or credentials in your final output.',
-    '',
-    redactedGoal.text,
-  ].join('\n');
-  const runtime = args.herdr as Pick<TaskAgentSpec, 'endpoint' | 'parent_pane'> | undefined;
-  if (!runtime) {
-    audit(ctx, 'run_agent_goal', 'blocked', args, decision.relativePath, 'HERDR_ENDPOINT_REQUIRED');
-    return errorResult('HERDR_ENDPOINT_REQUIRED', 'Provide herdr: {endpoint, parent_pane}; an implicit focused session is not permitted.');
-  }
-  const timeoutMs = runnerTimeoutMs(ctx, args.timeout_ms), deadline = Date.now() + timeoutMs;
-  const task = `mcp-goal-${randomUUID()}`, role = 'worker';
-  const spec: TaskAgentSpec = { task, role, harness_kind: agent, endpoint: runtime.endpoint, parent_pane: runtime.parent_pane, args: [], max_requests: 1 };
-  const goalDir = join(ctx.repoRoot, '.ai/harness/runs/mcp-goals', task);
-  mkdirSync(goalDir, { recursive: true, mode: 0o700 });
-  const contextPath = join(goalDir, 'context.md');
-  const written = guardedWriteFile(contextPath, relative(ctx.repoRoot, contextPath), prompt, undefined);
-  if (!written.ok) return errorResult(written.code, written.message, written.details);
-  let started = false, finished = false, timedOut = false, stdout = '', failure = '';
-  let taskResult: ReturnType<typeof readTaskRequestResult> = null;
-  try {
-    const binding = await startTaskAgent(ctx.repoRoot, spec, { startTimeoutMs: Math.min(timeoutMs - 1000, 60000) });
-    started = true;
-    const get = () => herdrResult(herdrCommand(binding.endpoint, ['agent', 'get', binding.agent_name])).agent;
-    const request = await sendTaskRequest(ctx.repoRoot, task, role, contextPath.slice(ctx.repoRoot.length + 1));
-    const before = get();
-    let workingSequence: number | null = null;
-    const dir = taskSessionDirectory(ctx.repoRoot, task, role);
-    while (Date.now() < deadline) {
-      const state = get();
-      taskResult = readTaskRequestResult(ctx.repoRoot, dir, request);
-      // An idle heartbeat can arrive before this request is consumed. Only a
-      // post-delivery working -> idle transition ends observation; Result is
-      // still the sole request-bound completion authority.
-      if (state.agent_status === 'working' && state.state_change_seq > before.state_change_seq) workingSequence = state.state_change_seq;
-      if (taskResult
-        || (workingSequence !== null && ['idle', 'done'].includes(state.agent_status) && state.state_change_seq > workingSequence)) {
-        stdout = readTaskAgentHistory(ctx.repoRoot, task, role, 1000);
-        finished = true; break;
-      }
-      if (state.agent_status === 'blocked') throw new Error('HERDR_AGENT_BLOCKED');
-      await new Promise(resolve => setTimeout(resolve, 100));
-    }
-    if (!finished) { timedOut = true; stdout = readTaskAgentHistory(ctx.repoRoot, task, role, 1000); }
-  } catch (error) { failure = String(error); }
-  finally {
-    try {
-      // An ambiguous start may have created a pane even without a binding.
-      const cleanup = taskResult ? await closeTaskAgent(ctx.repoRoot, task, role) : await cancelTaskAgent(ctx.repoRoot, task, role);
-      if (cleanup.status !== 'closed') failure = 'HERDR_CLEANUP_PENDING';
-    } catch (error) { if (started || existsSync(join(taskSessionDirectory(ctx.repoRoot, task, role), 'intent.json'))) failure = `HERDR_CLEANUP_PENDING: ${String(error)}`; }
-  }
-  const redacted = redactMcpText(stdout);
-  stdout = new TextDecoder().decode(Buffer.from(redacted.text).subarray(0, 128 * 1024), { stream: true });
-  audit(ctx, 'run_agent_goal', finished && !failure ? 'ok' : 'failed', args, decision.relativePath, failure ? 'HERDR_GOAL_FAILED' : undefined);
-  return textResult({ agent, goalPath: decision.relativePath, task, role, status: failure ? 'failed' : taskResult ? 'completed' : finished ? 'observed_idle' : 'timeout', timedOut,
-    stdout, stderr: redactMcpText(failure).text, redactions: redactedGoal.redactions.concat(redacted.redactions) });
-
 }
 
 function prdArtifactPath(slug: string): string {
@@ -1051,21 +943,6 @@ export function buildMcpToolDefinitions(policy: McpPolicy, opts: { enableChatgpt
     required: ['sessionId'],
     additionalProperties: false,
   };
-  const agentRunnerSchema = {
-    type: 'object',
-    properties: {
-      agent: { type: 'string', enum: ['codex', 'claude'] },
-      goal_path: { type: 'string', default: '.ai/harness/handoff/task-goal.md' },
-      timeout_ms: { type: 'number' },
-      herdr: { type: 'object', properties: {
-        endpoint: {type:'object',properties:{session:{type:'string'},configPath:{type:'string'},home:{type:'string'}},required:['session'],additionalProperties:false},
-        parent_pane: {type:'string'},
-      }, required:['endpoint','parent_pane'],additionalProperties:false },
-    },
-    required: ['agent','herdr'],
-    additionalProperties: false,
-  };
-
   const tools: McpToolDefinition[] = [
     { name: 'harness_status', description: 'Return repo-harness adoption and workflow status. Pass repo_path after discover_harness_repos when targeting another adopted repo.', inputSchema: optionalRepoSchema, annotations: readOnly },
     { name: 'harness_doctor', description: 'Return compact MCP setup diagnostics.', inputSchema: optionalRepoSchema, annotations: readOnly },
@@ -1163,14 +1040,6 @@ export function buildMcpToolDefinitions(policy: McpPolicy, opts: { enableChatgpt
         annotations: { readOnlyHint: false, openWorldHint: true, destructiveHint: false },
       },
     );
-  }
-  if (policy.execution.agentRunner && policy.execution.codexRunner) {
-    tools.push({
-      name: 'run_agent_goal',
-      description: 'Dev mode only: run the goal in an explicitly addressed persistent Herdr agent; returned history is an untrusted collaboration claim.',
-      inputSchema: agentRunnerSchema,
-      annotations: write,
-    });
   }
   return tools;
 }
@@ -1534,8 +1403,6 @@ export async function callMcpTool(ctx: McpToolContext, name: string, args: Recor
           error: result.error,
         });
       }
-      case 'run_agent_goal':
-        return runAgentGoal(ctx, args);
       default:
         return errorResult('UNKNOWN_TOOL', `unknown MCP tool: ${name}`);
     }
