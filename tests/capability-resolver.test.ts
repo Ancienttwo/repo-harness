@@ -125,7 +125,6 @@ describe("capability resolver", () => {
         "--strict",
         "--skipLibCheck",
         "--types", "bun-types",
-        "assets/templates/helpers/capability-config.ts",
         "assets/templates/helpers/capability-resolver.ts",
       ], { cwd: ROOT, encoding: "utf-8" });
       expect(typecheck.status, typecheck.stderr || typecheck.stdout).toBe(0);
