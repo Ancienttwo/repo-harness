@@ -775,10 +775,14 @@ describe('managed-first hook order', () => {
           }
           const result = runInstall({ target: host, location: 'global' });
           expect(result.exitCode).toBe(0);
+          const after = JSON.parse(fs.readFileSync(file, 'utf8'));
+          // Every Codex created or updated write prints the /hooks review step; Claude prints none.
+          expect(result.lines.some(line => line.includes('enter /hooks'))).toBe(host === 'codex');
           if (withUsers) {
-            const after = JSON.parse(fs.readFileSync(file, 'utf8'));
             expect(after.hooks.SessionStart).toEqual([...buildManagedHooks(host).SessionStart, user]);
             expect(after.hooks.UserEvent).toEqual([{ hooks: [] }]);
+          } else {
+            expect(after.hooks.SessionStart).toEqual(buildManagedHooks(host).SessionStart);
           }
         });
       });
