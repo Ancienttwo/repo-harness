@@ -1,13 +1,18 @@
 import { describe, expect, test } from 'bun:test';
+import { spawnSync } from 'child_process';
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
+  mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   utimesSync,
   writeFileSync,
 } from 'fs';
+import { tmpdir } from 'os';
 import { basename, join } from 'path';
 import { revokeUserWaiverGrant } from '../scripts/acceptance-receipt';
 import { executeVerificationContract } from '../src/effects/evidence/verification-execution';
@@ -889,4 +894,44 @@ describe('effective state resolver', () => {
     });
   });
 
+});
+
+describe('effective state resolution cost (#770)', () => {
+  test('one resolution in an idle repository spawns at most 8 git processes', () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-git-count-')));
+    const cwd = join(root, 'repo');
+    const bin = join(root, 'bin');
+    const log = join(root, 'git.log');
+    const previousPath = process.env.PATH;
+    try {
+      mkdirSync(cwd);
+      mkdirSync(bin);
+      writeFileSync(join(cwd, 'README.md'), '# idle\n');
+      const gitEnv = { ...process.env, GIT_AUTHOR_DATE: '2020-01-01T00:00:00Z', GIT_COMMITTER_DATE: '2020-01-01T00:00:00Z' };
+      for (const args of [
+        ['init', '-b', 'main'],
+        ['config', 'user.email', 'fixture@example.com'],
+        ['config', 'user.name', 'Fixture'],
+        ['add', '.'],
+        ['commit', '-m', 'idle fixture'],
+      ]) {
+        const git = spawnSync('git', args, { cwd, encoding: 'utf-8', env: gitEnv });
+        if (git.status !== 0) throw new Error(git.stderr);
+      }
+      const realGit = spawnSync('sh', ['-c', 'command -v git'], { encoding: 'utf-8' }).stdout.trim();
+      expect(realGit).not.toBe('');
+      writeFileSync(join(bin, 'git'), `#!/bin/sh\nprintf '%s\\n' "$*" >> '${log}'\nexec '${realGit}' "$@"\n`);
+      chmodSync(join(bin, 'git'), 0o755);
+      process.env.PATH = `${bin}:${previousPath ?? ''}`;
+      const state = resolveEffectiveState(cwd, Date.now());
+      expect(state.phase).toBe('idle');
+      const calls = existsSync(log) ? readFileSync(log, 'utf-8').trimEnd().split('\n') : [];
+      expect(calls.length).toBeGreaterThan(0);
+      expect(calls.length).toBeLessThanOrEqual(8);
+    } finally {
+      if (previousPath === undefined) delete process.env.PATH;
+      else process.env.PATH = previousPath;
+      rmSync(root, { recursive: true, force: true });
+    }
+  }, 30_000);
 });
