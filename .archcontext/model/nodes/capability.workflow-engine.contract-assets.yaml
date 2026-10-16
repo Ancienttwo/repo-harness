@@ -79,12 +79,9 @@ source:
       symbols:
         - name: "main"
           sinks:
-            - id: sink.contract-assets.primary
-              path: "scripts/workflow-contract.ts"
-              symbol: "loadWorkflowContract"
-            - id: sink.contract-assets.helper-inventory
-              path: "scripts/workflow-contract.ts"
-              symbol: "getHelperScripts"
+            - id: sink.contract-assets.capability-projection
+              path: "scripts/sync-helper-sources.ts"
+              symbol: "buildCapabilityProjection"
             - id: sink.contract-assets.projection-write
               path: "src/core/source-projection.ts"
               symbol: "writeProjectionFileAtomic"

@@ -1054,12 +1054,6 @@
         "description": "calls"
       },
       {
-        "id": "relation.contract-assets.template-projection.primary",
-        "sourceId": "component.contract-assets.template-projection",
-        "destinationId": "component.contract-assets.primary",
-        "description": "reads"
-      },
-      {
         "id": "relation.contract-assets.template-projection.skill-surface-catalog",
         "sourceId": "component.contract-assets.template-projection",
         "destinationId": "component.action-commands.skill-surface-catalog",

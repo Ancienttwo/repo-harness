@@ -333,7 +333,7 @@ Project
 - Path ownership under `capability_source: archcontext` comes from `archctx resolve` (`src/effects/capabilities/archcontext-owners.ts`). Node includes and excludes can use any shape that ArchContext validation accepts.
 - Several capability pairs have declared relations in both directions (for example contract-assets and global-runtime-reconciliation). The module backlogs record each pair with its edge counts.
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.architecture.index" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:ba3ce64057b77746e09090d37d4c4943dc6602ff1ddfcd62b96c82af7fbde287" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.architecture.index" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:95f6d0a443f9db680b6b81472a3fb0be3c37c88380ecc5e4ef2cb68e34a554eb" -->
 # Architecture Index
 
 ## Entities
@@ -420,7 +420,6 @@ Project
 - component.contract-assets.template-projection -> capability.runtime-harness.global-runtime-reconciliation — calls
 - component.contract-assets.template-projection -> capability.runtime-harness.hook-adapters — calls
 - component.contract-assets.template-projection -> component.contract-assets.planning-helpers — calls
-- component.contract-assets.template-projection -> component.contract-assets.primary — reads
 - component.contract-assets.template-projection -> component.action-commands.skill-surface-catalog — calls
 - component.contract-assets.template-projection -> capability.runtime-harness.task-agent-host — calls
 - component.contract-assets.template-projection -> capability.workflow-engine.workflow-state — calls
