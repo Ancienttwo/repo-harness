@@ -9,6 +9,11 @@ PACKAGE_VERSION="$(bun -e 'const pkg = await Bun.file("package.json").json(); co
 PI_PEER_VERSION="$(bun -e 'const pkg = await Bun.file("package.json").json(); console.log(pkg.peerDependencies["@earendil-works/pi-coding-agent"])')"
 TMP_DIR="$(mktemp -d /tmp/rh-tarball-smoke.XXXXXX)"
 OPERATOR_PID=""
+# Every step runs with a temporary HOME and harness home. The smoke must not
+# register its temporary repositories in the real ~/.repo-harness registry.
+SMOKE_HOME="$TMP_DIR/home"
+mkdir -p "$SMOKE_HOME"
+export HOME="$SMOKE_HOME" REPO_HARNESS_HOME="$SMOKE_HOME/.repo-harness"
 
 cleanup() {
   local exit_code=$?
