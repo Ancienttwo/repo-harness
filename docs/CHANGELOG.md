@@ -9,6 +9,9 @@ reinstall the hook adapters, and review the Codex hooks with `/hooks`.
 
 ### Breaking
 
+- `repo-harness state owed` is removed. Use `repo-harness architecture-debt
+  --json` for architecture debt. The SessionStart owed section names
+  `repo-harness state resolve --json` as its source. (#735, #784)
 - Remove the collaboration commands, Engineer collaboration tools and pipeline
   observer. `/api/v1/pipelines` now returns 404. Herdr v2 runtime config files
   must remove `bindings_path` and `pipeline_snapshot`, even when both are null.
@@ -254,6 +257,12 @@ reinstall the hook adapters, and review the Codex hooks with `/hooks`.
 
 ### Added
 
+- `repo-harness architecture-debt --json [--base <ref>]` reports the
+  architecture debt that archctx 0.8.0 `complete` finds. With `--base`, it also
+  measures the base in a temporary checkout and reports the items that HEAD
+  adds and the ids that it resolves. The PR architecture lane uses it and
+  stays advisory. The projection manifest declares the renderer floor
+  `archcontext.docs-renderer/v6`. (#735, #784)
 - `repo-harness retention` moves closed artifacts older than 30 days to a
   gitignored local archive root. It is a dry run unless `--apply` is given,
   and it never deletes. Closed plans stay committed for the window, which
