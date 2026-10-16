@@ -7,6 +7,7 @@ import {
   buildEngineerOfferCandidate,
   buildEngineerOffersDocument,
   projectWorkGraph,
+  observeInitialRetryEligibility,
   schedulingCarrierPath,
   validateWorkGraph,
   validateWorkGraphTopology,
@@ -40,8 +41,6 @@ import {
 } from './dependency-authority';
 import { listLiveClaimActorReceiptsForEngineer } from './claim-actor-store';
 import { loadEngineerProfile, resolveCapabilityForEngineer } from './profile-store';
-import { observeRetryEligibility } from '../../core/engineers/automation-attempt';
-import { readTaskAutomationAttemptCurrent } from './automation-attempt-store';
 
 export interface ProjectedGraphRead {
   readonly repo: RepoHarnessRegisteredRepo;
@@ -73,7 +72,6 @@ export interface EngineerSchedulingDependencies {
   readonly repoIdentity: typeof resolveRepoIdentity;
   readonly dependencyAuthority: DependencyAuthorityResolver;
   readonly dependencyReaders: Partial<DependencyAuthorityReaders>;
-  readonly readAttemptCurrent: typeof readTaskAutomationAttemptCurrent;
   readonly now: () => Date;
 }
 
@@ -121,7 +119,6 @@ function dependencies(overrides: Partial<EngineerSchedulingDependencies> = {}): 
     repoIdentity: resolveRepoIdentity,
     dependencyAuthority: resolveDependencyObservation,
     dependencyReaders: {},
-    readAttemptCurrent: readTaskAutomationAttemptCurrent,
     now: () => new Date(),
     ...overrides,
   };
@@ -370,7 +367,10 @@ export function collectEngineerOffers(options: CollectEngineerOffersOptions): En
       concurrency = concurrencyObservation(repo.path, item, current.graph!, deps);
       concurrencyByGroup.set(group, concurrency);
     }
-    const retry = observeRetryEligibility({ policy: item.retry_policy, current: deps.readAttemptCurrent(repo.path, item.work_package_id, item.work_package_revision), work_package_revision: item.work_package_revision, observed_at: (options.now_ms === undefined ? deps.now() : new Date(options.now_ms)).toISOString() });
+    const retry = observeInitialRetryEligibility({
+      work_package_revision: item.work_package_revision,
+      observed_at: (options.now_ms === undefined ? deps.now() : new Date(options.now_ms)).toISOString(),
+    });
     return buildEngineerOfferCandidate({
       graph: current.graph!,
       work_package: item,
