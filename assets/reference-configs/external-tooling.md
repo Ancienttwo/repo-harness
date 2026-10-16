@@ -234,43 +234,6 @@ advisory for the environment check and fail-closed at skill runtime:
 `obsidian-memory` stops and reports rather than hand-writing its own Markdown
 dialect. This repo does not vendor either skill body.
 
-## Herdr Dispatch
-
-For Bot and human notification setup, see [Herdr notify](herdr-notify.md).
-
-- Default task worktrees use `/tmp/<repo>-wt-<slug>` on POSIX. Native Windows uses `os.tmpdir()` as the root. The stored default is `{{system_tmp}}/{{repo}}-wt-{{slug}}`. Runtime code resolves the temp token. Explicit stored templates stay unchanged. Commit or push work before a reboot or age-based tmp cleanup, such as `systemd-tmpfiles`. These cleaners can remove checkouts. Missing entries are pruned. The sweep saves missing registration identities before global prune. Later batches finish deferred branch cleanup. Unmerged branches remain.
-- Closeout removes a merged, clean checkout and its branch. It releases only that checkout's own canonical marker after merge proof under the topology lock. The sweep keeps dirty, locked, marked or leased worktrees. It keeps branch reflogs without a commit-creation message and missing or unreadable reflogs. Fast-forward, target-only automatic merges, reset and rebase-finish messages do not count. Dispatch must establish an unmerged commit or keep the worktree dirty, marked or leased. A merged, clean, unowned branch with its own commits can be swept.
-- `start` recovers only a real target directory registered by this clone on the expected branch, under the topology lock, with no lock or other owner. Recovery requires a current-user-owned checkout directory without group or other write access, a regular owned Git pointer, its matching admin backpointer, and the original directory identity saved by start. Git metadata can be group-writable but must not be other-writable. Start still creates a checkout when uid is unavailable; recovery then refuses. Exact removal retires the identity after Git readback. Missing identity or a replacement directory blocks recovery. Files, symlinks, unregistered paths and other branches are refused. Cleanup refuses a registered worktree whose branch is missing. MCP cleanup also refuses active markers. Sweep reports name processed paths. Deferred entries are reported as counts. `kept` excludes deferred entries. A command timeout sends SIGTERM to the direct child only. A grandchild can briefly extend the deadline. No detached cleanup process starts. Herdr notifications accept registered default task worktrees and paths inside them. Other temporary paths and `rh-herdr-` labels stay filtered.
-
-- GitHub operations (PRs, reviews, merges, labels, releases, comments) go only through the gh/git CLI or the GitHub API. Never use simulated browser clicks on github.com: the account can be banned.
-- Suggested model split: when both are available, Claude (deep tier) drafts the architecture and Codex executes against the agreed plan; with only one, that model does both (plan first, then execute).
-- Route all cross-model dispatch and review through herdr panes (OAR runs the worker, herdr owns panes and visibility); never start direct subprocesses or hand-written CLI calls.
-- Exception: in the Claude desktop app, operator-attended acceptance review can use `repo-harness review round --launch app-terminal`. The CLI prints the fixed OAR host command. Claude runs that exact command once in an app Terminal tab, then repeats the same round. The same OAR host, Seatbelt profile and Receipt apply. Do not hand-write a Codex CLI call.
-- When a PR changes both test assertions and implementation code, dispatch its read-only review to the other model via herdr when available; otherwise run a read-only self-review in a separate same-model pane.
-- Pane layout: put at most 3 panes side by side in one tab. Do not stack panes vertically. When the tab is full, open a new tab.
-
-### Test and Review Rules
-
-- Write a plan before cross-module changes, architecture changes, and dependency upgrades. Small changes do not need a plan.
-- When full coverage is required, run it once on the final integration candidate. Rebase alone does not require a local full run.
-- The merge gate is typecheck plus affected tests. Run `bash scripts/check-ci.sh affected --base origin/main` locally.
-- Run the full suite for dependency manifests, shared test/runtime foundations, releases, the daily run, or a named integration invariant that focused checks cannot cover. The number of files or changed lines is not a full-suite trigger.
-- Run `bun run test:full` once on the final rebased head when full coverage is required.
-- `test:core` excludes the slow integration files. `test:integration` runs those files. `test:full` runs their complete union.
-- Full runs use eight isolated file workers. Run files with shared ports or shared HOME writes in the serial tail.
-- Tests with port 0 and an isolated HOME can run in parallel.
-- For a baseline comparison, run only the test files that failed.
-- Run long tasks in the background.
-- Wait for the completion notice, or check at intervals of 5 to 10 minutes.
-- Do not report each check.
-- Use one cross-reviewer for each artifact.
-- Limit each artifact to two review rounds.
-- Ask the user to decide before a third review round.
-- Before commit, remove debug writes to `/tmp` and other debug instrumentation.
-- Get one cross-model read-only review when tests and implementation change together. The reviewer checks that assertions still test the required behavior.
-
-Known flaky test: `tests/herdr-task-lifecycle.test.ts`, "MCP goals use visible persistent Herdr peers, redact history and clean success and timeout panes", can fail with `task_agent_ambiguous_launch`. Record this failure as known flaky. Do not skip the test or weaken its assertions. Do not treat this signature as a new failure.
-
 ## Detect Safely
 
 Use `repo-harness run check-agent-tooling` for a read-only tooling report.

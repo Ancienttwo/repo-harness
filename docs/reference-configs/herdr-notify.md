@@ -1,4 +1,32 @@
-# Herdr notify setup
+# Herdr dispatch and notify
+
+## Herdr Dispatch
+
+- Suggested model split: when both are available, Claude (deep tier) drafts the architecture and Codex executes against the agreed plan; with only one, that model does both (plan first, then execute).
+- Route all cross-model dispatch and review through herdr panes (OAR runs the worker, herdr owns panes and visibility); never start direct subprocesses or hand-written CLI calls.
+- Exception: in the Claude desktop app, operator-attended acceptance review can use `repo-harness review round --launch app-terminal`. The CLI prints the fixed OAR host command. Claude runs that exact command once in an app Terminal tab, then repeats the same round. The same OAR host, Seatbelt profile and Receipt apply. Do not hand-write a Codex CLI call.
+- Send a read-only review to the other model through Herdr when it is available. Otherwise, run a read-only self-review in a separate same-model pane.
+- Pane layout: put at most 3 panes side by side in one tab. Do not stack panes vertically. When the tab is full, open a new tab.
+
+### Test and Review Rules
+
+- Write a plan before cross-module changes, architecture changes, and dependency upgrades. Small changes do not need a plan.
+- The merge gate is typecheck plus affected tests. Run `bash scripts/check-ci.sh affected --base origin/main` locally.
+- Run the full suite for dependency manifests, shared test/runtime foundations, releases, the daily run, or a named integration invariant that focused checks cannot cover.
+- When full coverage is required, run `bun run test:full` once on the final rebased head.
+- `test:core` excludes the slow integration files. `test:integration` runs those files. `test:full` runs their complete union.
+- Full runs use eight isolated file workers. Run files with shared ports or shared HOME writes in the serial tail.
+- Tests with port 0 and an isolated HOME can run in parallel.
+- For a baseline comparison, run only the test files that failed.
+- Run long tasks in the background.
+- Wait for the completion notice, or check at intervals of 5 to 10 minutes.
+- Do not report each check.
+- Use one cross-reviewer for each artifact.
+- Limit each artifact to two review rounds.
+- Ask the user to decide before a third review round.
+- Before commit, remove debug writes to `/tmp` and other debug instrumentation.
+
+## Notify setup
 
 Use this command to send Herdr agent events to a Bot and selected human channels.
 The Bot routine webhook is required. Human channels are optional.
