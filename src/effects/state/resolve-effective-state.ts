@@ -1094,8 +1094,9 @@ export function resolveEffectiveState(
       if (!(error instanceof StateVersionConfirmMismatchError)) throw error;
     }
     // One bounded outer retry of the whole stable-resolve + commit sequence:
-    // a fresh stability loop re-reads sources (now reflecting whatever
-    // mutated the first attempt's confirm window) and a fresh commit attempt
+    // a fresh stability loop re-reads authority sources (now reflecting whatever
+    // mutated the first attempt's confirm window) and reuses the review
+    // subject observed under this lock; a fresh commit attempt
     // re-checks its own window. A second mismatch here means sources kept
     // changing across the retry too, so this reuses the existing
     // stability-exhausted error rather than inventing new vocabulary.
