@@ -9,6 +9,13 @@ reinstall the hook adapters, and review the Codex hooks with `/hooks`.
 
 ### Breaking
 
+- The `repo-harness task-agent` CLI, the native Herdr TUI start path and the
+  `run_agent_goal` MCP tool are removed. The `--enable-dev-runner`,
+  `--dev-runner-agents` and `--dev-runner-timeout-ms` flags and the
+  `devMode`, `agentRunner`, `codexRunner`, `allowedAgents` and
+  `runnerTimeoutMs` policy fields are gone. Cross-model peers run in Herdr
+  panes through the herdr skill. The `orchestrator` MCP profile denies all
+  tools. (#771, #792)
 - `repo-harness state owed` is removed. Use `repo-harness architecture-debt
   --json` for architecture debt. The SessionStart owed section names
   `repo-harness state resolve --json` as its source. (#735, #784)
