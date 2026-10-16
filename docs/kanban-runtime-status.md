@@ -46,6 +46,12 @@ A capture generation is a UUID. A new generation clears previous observations. R
 
 Native settled, idle, error and cancelled states are program reports. They do not accept a task. Disconnect does not mean completion. OSC idle does not mean cancellation. Codex interrupted is a native turn result. Task acceptance and evidence remain under their existing authority.
 
+## Dev activity response v2
+
+`GET /api/v1/dev-activity` returns `repo-harness.dev-activity.v2`. Update the browser and server together. The decoder rejects v1 snapshots. Items no longer contain `ledger`, `agent` or `runtime_blocked`. Ledger source health and owner/runtime attention kinds are removed. Items require a branch. Git and GitHub facts define cards. GitHub merge readiness and open Human Decisions define attention. The five board columns remain; no current source supplies Planned items.
+
+Runtime source health remains separate from task identity. The native roster still reads the independent runtime overlay. It does not assign a terminal or session observation to a card.
+
 ## Optional Herdr source
 
 Herdr remains optional. Observations are unbound because the pipeline identity source is retired. Herdr mode has empty task badges and an empty `native_sources` array. Select it explicitly with this config shape:

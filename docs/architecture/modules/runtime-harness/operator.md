@@ -1,6 +1,6 @@
 # runtime-harness/operator 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-operator" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:9ba0b3b8ebe0ab853a2df3d7b835804a11e89e32ff6574e1094d6c011894a704" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-operator" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:6c155286b8c8594ae4171355ef258047de9cd56ce21d2e5ae4d2f8d7daffa39c" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.operator`(kind `capability`)
 > **Matched Prefixes**:`src/core/operator/**`、`src/effects/operator/**`、`src/operator-web/**`、`src/cli/commands/operator.ts`、`src/cli/commands/module.ts`、`src/core/architecture/module-view.ts`、`src/core/docs/**`、`src/core/setup/**`、`src/effects/setup/**`、`src/cli/commands/setup-snapshot.ts`、`src/cli/commands/setup-check-child.ts`、`src/core/dev-activity/**`、`src/effects/dev-activity/**`、`src/effects/terminal/herdr-observation.ts`、`assets/operator/**`、`vite.operator.config.ts`
@@ -22,7 +22,7 @@ flowchart LR
   p1_component_operator_primary_d8da79ba["Operator HTTP Reader"]:::component
   p1_component_operator_view_projections_ca31e3bc["Operator View Projections"]:::component
   p1_component_operator_web_console_452bb61f["Operator Web Console"]:::component
-  p1_component_operator_activity_feeds_00325b96 -->|"Reuse public agent-config text filtering and runtime badge freshness rules"| p1_component_operator_view_projections_ca31e3bc
+  p1_component_operator_activity_feeds_00325b96 -->|"Reuse public agent-config text filtering and runtime source freshness rules"| p1_component_operator_view_projections_ca31e3bc
   p1_component_operator_architecture_view_0bdc3e1c -->|"List modules and export review prompts through the shared ArchitectureModelReader"| p1_capability_runtime_harness_global_runtime_reconciliation_401730e8
   p1_component_operator_primary_d8da79ba -->|"Start the bounded background collectors once and serve only their cached#44; re-decoded snapshots"| p1_component_operator_activity_feeds_00325b96
   p1_component_operator_primary_d8da79ba -->|"Build the docs graph from committed repository content"| p1_component_operator_architecture_view_0bdc3e1c
@@ -39,7 +39,7 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:76ab1159c9721f3262b330bc1996d8d091b2d943c82f5e95395e6208e2723e32`).
+- Proof: `proven` (`sha256:6d3517e4dc9185388b8623e76a4a672f1af458b73df6d4fe93fb9fe9ef49fe68`).
 - Semantic nodes: `7`; declared relations: `11`.
 
 ### 1.2 模組職責表
@@ -77,7 +77,7 @@ flowchart LR
 - `component.operator.activity-feeds`:
   - `reads` → `capability.runtime-harness.hook-adapters` — Read the hook route registry and install profile components for the Hooks and Agents pages
   - `reads` → `capability.runtime-harness.verified-context` — Read open Human Decisions for the board attention queue
-  - `calls` → `component.operator.view-projections` — Reuse public agent-config text filtering and runtime badge freshness rules
+  - `calls` → `component.operator.view-projections` — Reuse public agent-config text filtering and runtime source freshness rules
 - `component.operator.architecture-view`:
   - `calls` → `capability.verification.acceptance-review` — Report module CLI failures with the typed module read error of the review prompt builder
   - `reads` → `capability.runtime-harness.global-runtime-reconciliation` — List modules and export review prompts through the shared ArchitectureModelReader
@@ -113,7 +113,7 @@ flowchart LR
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:76ab1159c9721f3262b330bc1996d8d091b2d943c82f5e95395e6208e2723e32`); selectors `7/7`.
+> **Proof**: `proven` (`sha256:6d3517e4dc9185388b8623e76a4a672f1af458b73df6d4fe93fb9fe9ef49fe68`); selectors `7/7`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%

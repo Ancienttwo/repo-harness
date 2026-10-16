@@ -15,6 +15,7 @@ import {
   MagnifyingGlassIcon,
   PencilSimpleIcon,
   TerminalWindowIcon,
+  WarningIcon,
   XCircleIcon,
 } from '@phosphor-icons/react';
 import { DEV_ACTIVITY_COLUMNS, type DevActivityAttention, type DevActivityColumn, type DevActivityItem, type DevActivitySnapshotV2 } from '../core/dev-activity/types';

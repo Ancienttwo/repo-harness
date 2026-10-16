@@ -30,7 +30,7 @@
 }
 
 /*
- * Repository, ledger and architecture views keep their semantic class names as
+ * Repository and architecture views keep their semantic class names as
  * stable hooks. This layer gives them the Kumo surface, type and colour tokens.
  */
 @layer components {
