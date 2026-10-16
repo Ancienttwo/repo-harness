@@ -327,7 +327,7 @@ describe('status command (Phase 1C)', () => {
     withTempHome(() => {
       const r = runStatus();
       expect(r.installedProfile).toEqual({ recorded: false });
-      expect(r.targets.find((target) => target.id === 'codex')?.expectedEntryCount).toBe(6);
+      expect(r.targets.find((target) => target.id === 'codex')?.expectedEntryCount).toBe(5);
       const text = formatStatus(r, false);
       expect(text).toContain('Installed profile:');
       expect(text).toContain('(not recorded)');
@@ -365,7 +365,7 @@ describe('status command (Phase 1C)', () => {
       expect(r.installedProfile.recorded).toBe('invalid');
       expect(r.installedProfile).toMatchObject({ kind: 'corrupt_current' });
       expect(r.installedProfile).not.toEqual({ recorded: false });
-      expect(r.targets.find((target) => target.id === 'codex')?.expectedEntryCount).toBe(6);
+      expect(r.targets.find((target) => target.id === 'codex')?.expectedEntryCount).toBe(5);
       const text = formatStatus(r, false);
       expect(text).toContain('(invalid)');
       expect(text).not.toContain('(not recorded)');
