@@ -495,13 +495,8 @@ describe("create-project-dirs runtime smoke", () => {
       expect(policy.delegation.preferred_runners).toBeUndefined();
       expect(policy.delegation.fallback_runner).toBeUndefined();
       expect(policy.delegation.brief_source).toBe("tasks/contracts/<stem>.contract.md");
-      expect(policy.delegation.runner_rule).toContain(
-        "Use task-agent in an explicitly addressed Herdr session",
-      );
-      expect(policy.delegation.runner_rule).toContain(
-        "fails closed without an alternate agent runner",
-      );
-      expect(policy.delegation.runner_rule).toContain("remain unverified");
+      expect(policy.delegation.rule).toBeUndefined();
+      expect(policy.delegation.runner_rule).toBeUndefined();
       expect(policy.documentation.reference_configs).toContain("global-working-rules.md");
       expect(policy.documentation.reference_configs).toContain("minimal-change-hooks.md");
       expect(policy.upgrade.strategy_version).toBe(1);

@@ -268,7 +268,7 @@ describe('install command (Phase 1B)', () => {
 
       runInstall({ target: 'codex', location: 'global', profile: 'full' as never });
       hooks = JSON.parse(fs.readFileSync(path.join(home, '.codex/hooks.json'), 'utf-8')).hooks;
-      expect(Object.values(hooks as Record<string, unknown[]>).flat()).toHaveLength(6);
+      expect(Object.values(hooks as Record<string, unknown[]>).flat()).toHaveLength(5);
       expect(hooks.SubagentStart).toHaveLength(1);
     });
   });
@@ -374,7 +374,7 @@ describe('install command (Phase 1B)', () => {
     }, 30_000);
   }
 
-  test('codex --location global creates ~/.codex/hooks.json with 6 matcher-grouped entries', () => {
+  test('codex --location global creates ~/.codex/hooks.json with 5 matcher-grouped entries', () => {
     withTempHome((home) => {
       const result = runInstall({ target: 'codex', location: 'global' });
       expect(result.exitCode).toBe(0);
@@ -386,17 +386,17 @@ describe('install command (Phase 1B)', () => {
       const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
       const entries = data.hooks;
       const total = Object.values(entries as Record<string, unknown[]>).flat().length;
-      expect(total).toBe(6);
+      expect(total).toBe(5);
 
       expect(entries.PostToolUse).toBeUndefined();
       // Codex has only the edit guard.
       expect((entries.PreToolUse as { matcher?: string }[]).map((e) => e.matcher)).toEqual([
         'Edit|Write',
       ]);
-      // UserPromptSubmit has inbox + delegation.
+      // UserPromptSubmit has only the inbox.
       expect(entries.SessionStart.length).toBe(1);
       expect(entries.Stop.length).toBe(1);
-      expect(entries.UserPromptSubmit.length).toBe(2);
+      expect(entries.UserPromptSubmit.length).toBe(1);
       expect(entries.SubagentStart.length).toBe(1);
       expect(entries.SubagentStop).toBeUndefined();
     });

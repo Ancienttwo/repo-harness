@@ -3,7 +3,6 @@ import { execFileSync } from 'child_process';
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import { runDelegationAdvisor } from '../src/cli/hook/delegation-advisor';
 import { runReturnChannel } from '../src/cli/hook/return-channel';
 import {
   appendLongCommandGuardrail,
@@ -18,11 +17,10 @@ import type { RouteHost, RouteId } from '../src/cli/hook/route-registry';
 import { resolveHookEffectiveState, runHook } from '../src/cli/hook/runtime';
 import { createStateInputCollector } from '../src/effects/loop/state-input-collector';
 
-type SubagentEvent = 'PreToolUse' | 'UserPromptSubmit' | 'SubagentStart';
+type SubagentEvent = 'PreToolUse' | 'SubagentStart';
 
 const SUBAGENT_ROUTE: Readonly<Record<SubagentEvent, RouteId>> = {
   PreToolUse: 'subagent',
-  UserPromptSubmit: 'delegation',
   SubagentStart: 'context',
 };
 
@@ -58,9 +56,7 @@ function invokeSubagent(opts: {
   const collector = collectorFor(opts.repoRoot, opts.event, env);
   const result: HookHandlerResult = opts.event === 'PreToolUse'
     ? runReturnChannel({ collector, payload: opts.payload })
-    : opts.event === 'UserPromptSubmit'
-      ? runDelegationAdvisor({ collector, payload: opts.payload })
-      : runSubagentContext({ collector, payload: opts.payload, identity, env, now: opts.now });
+    : runSubagentContext({ collector, payload: opts.payload, identity, env, now: opts.now });
   const rendered = HOST_RENDERERS[host]({
     event: opts.event,
     routeId: SUBAGENT_ROUTE[opts.event],
@@ -77,9 +73,6 @@ function invokeSubagent(opts: {
 const REPO_ROOT = join(import.meta.dir, '..');
 const BOUNDARY_MARKER = EXECUTION_BOUNDARY_MARKER;
 const BOUNDARY_SENTENCE = 'Execution boundary: implement exactly the parent brief Goal/Scope/Verify/Rollback.';
-const REPO_POLICY = JSON.parse(readFileSync(join(REPO_ROOT, '.ai/harness/policy.json'), 'utf8')) as {
-  readonly delegation: { readonly rule: string; readonly runner_rule: string };
-};
 
 /** A real git repository, so Effective State resolves exactly as it does under the runtime. */
 function tempRepo(): string {
@@ -100,7 +93,7 @@ function occurrences(haystack: string, needle: string): number {
 /**
  * Copy a real generated persona into the fixture repo so the composed stack is
  * assembled from the same bytes a live Codex child sees: persona
- * developer_instructions + delegation advisor context + SubagentStart context.
+ * developer_instructions + SubagentStart context.
  */
 function installGoldenPersona(repoRoot: string, agent: string): { instructions: string; model: string } {
   mkdirSync(join(repoRoot, '.codex/agents'), { recursive: true });
@@ -108,14 +101,6 @@ function installGoldenPersona(repoRoot: string, agent: string): { instructions: 
   writeFileSync(join(repoRoot, '.codex/agents', `${agent}.toml`), toml);
   const parsed = Bun.TOML.parse(toml) as Record<string, unknown>;
   return { instructions: String(parsed.developer_instructions), model: String(parsed.model) };
-}
-
-/** This repository's delegation policy text, plus any extra policy fields a case needs. */
-function seedDelegationPolicy(repoRoot: string, extra: Record<string, unknown> = {}): void {
-  mkdirSync(join(repoRoot, '.ai/harness'), { recursive: true });
-  writeFileSync(join(repoRoot, '.ai/harness/policy.json'), JSON.stringify({
-    delegation: { ...REPO_POLICY.delegation, ...extra },
-  }));
 }
 
 function seedActiveContract(repoRoot: string, contractHeaders = '> **Status**: Active\n', slug = '20260101-0000-composed'): string {
@@ -128,23 +113,14 @@ function seedActiveContract(repoRoot: string, contractHeaders = '> **Status**: A
   return `tasks/contracts/${slug}.contract.md`;
 }
 
-/** persona + advisor context + SubagentStart context, in spawn order. */
+/** persona + SubagentStart context, in spawn order. */
 function composedChildStack(
   repoRoot: string,
   agent: string,
   observedModel: string,
   env: NodeJS.ProcessEnv,
-): { composed: string; startContext: string; advisorContext: string; personaInstructions: string } {
+): { composed: string; startContext: string; personaInstructions: string } {
   const persona = installGoldenPersona(repoRoot, agent);
-  seedDelegationPolicy(repoRoot);
-  const advisor = invokeSubagent({
-    event: 'UserPromptSubmit',
-    repoRoot,
-    env,
-    payload: { session_id: `session-${agent}`, prompt: '/delegate run two bounded workstreams' },
-  });
-  expect(advisor.exitCode).toBe(0);
-  const advisorContext = additionalContext(advisor.stdout);
   const start = startSubagent(repoRoot, {
     session_id: `session-${agent}`,
     turn_id: `turn-${agent}`,
@@ -155,9 +131,8 @@ function composedChildStack(
   expect(start.exitCode).toBe(0);
   const startContext = additionalContext(start.stdout);
   return {
-    composed: [persona.instructions, advisorContext, startContext].join('\n\n'),
+    composed: [persona.instructions, startContext].join('\n\n'),
     startContext,
-    advisorContext,
     personaInstructions: persona.instructions,
   };
 }
@@ -296,92 +271,6 @@ describe('typed subagent hook handlers', () => {
         payload: { tool_name: 'SendUserMessage', tool_input: { message: 'main loop' } },
       });
       expect(mainLoop.stdout).toBe('');
-    } finally {
-      rmSync(repoRoot, { recursive: true, force: true });
-    }
-  });
-
-  test('the delegation advisor renders the policy.json delegation text word for word', () => {
-    const repoRoot = tempRepo();
-    try {
-      // Policy numeric fields are not read: the caps are one constant.
-      seedDelegationPolicy(repoRoot, { max_agents: 4, strict_max_agents: 6, max_depth: 2 });
-      const contract = seedActiveContract(repoRoot);
-      const env = codexEnv();
-      const output = invokeSubagent({
-        event: 'UserPromptSubmit',
-        repoRoot,
-        env,
-        payload: { session_id: 'session-1', prompt: '/delegate inspect in parallel' },
-      });
-      expect(output.exitCode).toBe(0);
-      const context = additionalContext(output.stdout);
-      expect(context).toContain('[repo-harness:delegation]');
-      expect(context).toContain(`Delegation rule: ${REPO_POLICY.delegation.rule}`);
-      expect(context).toContain(`Runner rule: ${REPO_POLICY.delegation.runner_rule}`);
-      expect(context).toContain('Spawn no more than 2 agents. Keep max spawn depth at 1.');
-      expect(context).toContain(`active task contract (${contract})`);
-      // Parent permission and routing only: the advisor is not an owner of the
-      // execution boundary, and children spawn with fork_turns="none" anyway.
-      expect(context).not.toContain(BOUNDARY_SENTENCE);
-      expect(context).not.toContain(BOUNDARY_MARKER);
-      // The advisor keeps no delegation state.
-      expect(existsSync(join(repoRoot, '.ai/harness/delegation'))).toBe(false);
-
-      for (const prompt of [
-        'Should we use subagents for this?',
-        'Explain /delegate; do not spawn anything.',
-        '/delegate? Explain the command without running it.',
-      ]) {
-        expect(invokeSubagent({ event: 'UserPromptSubmit', repoRoot, env, payload: { prompt } }).stdout).toBe('');
-      }
-      // Only the documented prompt field is read.
-      expect(invokeSubagent({
-        event: 'UserPromptSubmit',
-        repoRoot,
-        env,
-        payload: { user_prompt: '/delegate inspect in parallel' },
-      }).stdout).toBe('');
-    } finally {
-      rmSync(repoRoot, { recursive: true, force: true });
-    }
-  });
-
-  test('the delegation advisor raises the cap to three for a high-risk workflow profile', () => {
-    const repoRoot = tempRepo();
-    try {
-      seedDelegationPolicy(repoRoot);
-      seedActiveContract(repoRoot, '> **Status**: Active\n> **Workflow Profile**: high\n');
-      const output = invokeSubagent({
-        event: 'UserPromptSubmit',
-        repoRoot,
-        env: codexEnv(),
-        payload: { prompt: '/parallel two bounded workstreams' },
-      });
-      expect(output.exitCode).toBe(0);
-      expect(additionalContext(output.stdout)).toContain('Spawn no more than 3 agents. Keep max spawn depth at 1.');
-    } finally {
-      rmSync(repoRoot, { recursive: true, force: true });
-    }
-  });
-
-  test('the delegation advisor fails with a named error when the policy text is missing', () => {
-    const repoRoot = tempRepo();
-    try {
-      mkdirSync(join(repoRoot, '.ai/harness'), { recursive: true });
-      writeFileSync(join(repoRoot, '.ai/harness/policy.json'), JSON.stringify({
-        delegation: { runner_rule: REPO_POLICY.delegation.runner_rule },
-      }));
-      const output = invokeSubagent({
-        event: 'UserPromptSubmit',
-        repoRoot,
-        env: codexEnv(),
-        payload: { prompt: '/delegate inspect in parallel' },
-      });
-      expect(output.exitCode).toBe(1);
-      expect(output.additionalContext).toBeUndefined();
-      expect(output.reason).toBe('delegation-policy-invalid');
-      expect(output.diagnostics).toContain('delegation.rule');
     } finally {
       rmSync(repoRoot, { recursive: true, force: true });
     }
@@ -701,8 +590,8 @@ describe('typed subagent hook handlers', () => {
     }
   });
 
-  // The composed native-child stack is persona developer_instructions + delegation
-  // advisor context + SubagentStart context. Each row of the decision table is
+  // The composed native-child stack is persona developer_instructions +
+  // SubagentStart context. Each row of the decision table is
   // asserted against that whole stack, because "exactly once" is a property of the
   // composition, not of any single injection site.
   describe('composed native-child stack owns the execution boundary exactly once', () => {
@@ -717,7 +606,6 @@ describe('typed subagent hook handlers', () => {
         expect(occurrences(stack.composed, BOUNDARY_SENTENCE)).toBe(1);
         expect(occurrences(stack.startContext, BOUNDARY_MARKER)).toBe(1);
         expect(stack.personaInstructions).not.toContain(BOUNDARY_SENTENCE);
-        expect(stack.advisorContext).not.toContain(BOUNDARY_SENTENCE);
         expect(stack.startContext).toContain(`Read the active repo-harness contract before working: ${contract}.`);
         expect(stack.startContext).not.toContain('Read-only scope:');
       } finally {

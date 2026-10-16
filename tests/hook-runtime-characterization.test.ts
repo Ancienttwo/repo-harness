@@ -19,7 +19,6 @@ function fixtureInput(event: HookEvent, routeId: RouteId): FixtureRoute {
     case 'PreToolUse.subagent': return { host: 'claude', input: JSON.stringify({ tool_name: 'Agent', tool_input: { prompt: 'Inspect the repository and report findings.' } }) };
     case 'PostToolUse.bash': return { host: 'pi', input: JSON.stringify({ tool_input: { command: 'echo hello' }, tool_response: { stdout: 'hello\n', stderr: '', interrupted: false }, exit_code: 0 }) };
     case 'UserPromptSubmit.inbox': return { host: 'claude', input: JSON.stringify({ prompt: 'Check the task inbox.' }) };
-    case 'UserPromptSubmit.delegation': return { host: 'codex', input: JSON.stringify({ session_id: 'characterization-session', prompt: 'implement the next sequential task' }) };
     case 'SubagentStart.context': return { host: 'codex', input: JSON.stringify({ hook_event_name: 'SubagentStart', session_id: 'characterization-session' }) };
     case 'Stop.default': return { host: 'claude', input: JSON.stringify({ hook_event_name: 'Stop', stop_hook_active: false }) };
     default: throw new Error(`missing fixture for ${event}.${routeId}`);

@@ -2,7 +2,6 @@ import { buildSessionStartSections } from './session-context';
 import { runMutationGuard } from './mutation-guard';
 import { runStopHandler } from './stop-handler';
 import { runReturnChannel } from './return-channel';
-import { runDelegationAdvisor } from './delegation-advisor';
 import { runSubagentContext } from './subagent-context';
 import { runCommandObserved } from './command-observed';
 import { runTaskInboxHandler } from './task-inbox-handler';
@@ -45,13 +44,6 @@ const handlers: Readonly<Record<HookHandlerId, TypedHookHandler>> = Object.freez
   'return-channel': {
     id: 'return-channel',
     run: (context: HookHandlerContext) => runReturnChannel({
-      collector: context.collector,
-      payload: context.payload,
-    }),
-  },
-  'delegation-advisor': {
-    id: 'delegation-advisor',
-    run: (context: HookHandlerContext) => runDelegationAdvisor({
       collector: context.collector,
       payload: context.payload,
     }),

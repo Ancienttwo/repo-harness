@@ -33,7 +33,6 @@ export type RouteId =
   | 'edit'
   | 'subagent'
   | 'bash'
-  | 'delegation'
   | 'inbox'
   | 'context';
 
@@ -42,7 +41,6 @@ export type HookHandlerId =
   | 'session-context'
   | 'mutation-guard'
   | 'return-channel'
-  | 'delegation-advisor'
   | 'subagent-context'
   | 'command-observed'
   | 'task-inbox'
@@ -106,12 +104,6 @@ export const ROUTES: readonly Route[] = Object.freeze([
     // from becoming routing or authorization input.
     handler: 'task-inbox',
     hosts: ['claude', 'codex'] as const,
-  }),
-  Object.freeze({
-    event: 'UserPromptSubmit' as const,
-    routeId: 'delegation' as const,
-    hosts: Object.freeze(['codex'] as const),
-    handler: 'delegation-advisor',
   }),
   Object.freeze({
     event: 'SubagentStart' as const,

@@ -31,9 +31,9 @@ Measure `Stop.default` using
 `.ai/harness/runs/hook-events.jsonl` `elapsed_ms`. The terminal's Working
 time is the whole turn, not the duration of its currently displayed hook.
 
-This table is the one route inventory. It lists the 8 entries of `ROUTES` in
+This table is the one route inventory. It lists the 7 entries of `ROUTES` in
 `src/cli/hook/route-registry.ts`, in registry order. The Host column follows the
-`hosts` field of each route: Claude installs 5 routes, Codex installs 6, and
+`hosts` field of each route: Claude installs 5 routes, Codex installs 5, and
 Pi maps 4. Other documents link here. They do not copy this table.
 
 | Route | Matcher | Host | Typed handler | Responsibility |
@@ -42,8 +42,7 @@ Pi maps 4. Other documents link here. They do not copy this table.
 | `PreToolUse.edit` | `Edit\|Write` | Claude, Codex, Pi | `mutation-guard` | Block an edit outside the repository, under `_ref/` or `_ops/`, or without a parseable target path. |
 | `PreToolUse.subagent` | `Agent` | Claude | `return-channel` | Append the return-channel contract and the board slice to a Claude `Agent` prompt. |
 | `PostToolUse.bash` | `Bash` | Pi | `command-observed` | Count a known failing test run in the RepairLimit circuit when the payload has an exit status. The extension shows failure diagnostics. Successful publication advisories have no consumer. |
-| `UserPromptSubmit.inbox` | all prompts | Claude, Codex | `task-inbox` | Deliver task messages at the turn boundary, outside delegation advice. |
-| `UserPromptSubmit.delegation` | all prompts | Codex | `delegation-advisor` | Render the `policy.json` delegation rules for an explicit `/delegate` or `/parallel` prompt. |
+| `UserPromptSubmit.inbox` | all prompts | Claude, Codex | `task-inbox` | Deliver task messages at the turn boundary. |
 | `SubagentStart.context` | subagent start | Codex | `subagent-context` | Record the native role and model observation. Add the bounded child context and the board slice. |
 | `Stop.default` | session stop | Claude, Codex, Pi | `stop` | Publish the evidence checkpoint and render handoff and resume. Claude can get the owed-architecture line. |
 
@@ -87,13 +86,8 @@ edits. Doctor reports it as legacy. Change its callers to
 `repo-harness run <helper>`. Test the callers. Back up the old file before
 manual removal. Review local changes first.
 
-The delegation advisor runs only for a prompt that starts with `/delegate` or
-`/parallel`. It renders `delegation.rule` and `delegation.runner_rule` from
-`.ai/harness/policy.json` word for word. The caps are fixed in the handler: 2
-agents, 3 for a high-risk workflow profile, and spawn depth 1. Policy numeric
-fields are not read. Missing or empty policy text exits 1 with the reason
-`delegation-policy-invalid`. The advisor keeps no state.
-`.ai/harness/delegation/` holds only the native-role evidence.
+No hook answers `/delegate` or `/parallel`. `.ai/harness/delegation/` holds
+only the native-role evidence.
 
 `SessionStart` resolves Effective State once. The `[HarnessState]` section, or
 `[HarnessStateUnavailable]` when the resolution fails, comes first and always.

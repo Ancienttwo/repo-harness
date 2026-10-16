@@ -8,6 +8,11 @@ All notable changes to this skill are documented here.
 
 - Managed hook blocks now run before user blocks for each event. (#742)
   After the update, start interactive `codex`, enter `/hooks` and review the hooks. (#766)
+- Codex no longer installs `UserPromptSubmit.delegation`. No hook answers
+  `/delegate` or `/parallel`. The `delegation.rule` and
+  `delegation.runner_rule` policy keys are removed from the policy template
+  and from this repository policy. Codex installs 5 routes. The minimal
+  profile no longer lists `PostToolUse.bash`. (#766)
 - Hook install and uninstall now accept only `--location global`.
   `--location local` exits with code 2 before configuration reads or writes.
   The installer no longer writes project-level Claude adapters. (#698)

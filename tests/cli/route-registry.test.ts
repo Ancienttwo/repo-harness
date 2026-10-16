@@ -15,7 +15,7 @@ function matchers(event: HookEvent): (string | undefined)[] {
 describe('typed hook route registry', () => {
   test('routes are frozen, ordered, and carry no legacy script field', () => {
     expect(Object.isFrozen(ROUTES)).toBe(true);
-    expect(ROUTES).toHaveLength(8);
+    expect(ROUTES).toHaveLength(7);
     for (const route of ROUTES) {
       expect(Object.isFrozen(route)).toBe(true);
       expect('scripts' in route).toBe(false);
@@ -24,7 +24,13 @@ describe('typed hook route registry', () => {
   });
 
   test('host-scoped route views preserve the public adapter contract', () => {
-    expect(routesForHost('codex')).toHaveLength(6);
+    expect(routesForHost('codex').map((route) => `${route.event}.${route.routeId}`)).toEqual([
+      'SessionStart.default',
+      'PreToolUse.edit',
+      'UserPromptSubmit.inbox',
+      'SubagentStart.context',
+      'Stop.default',
+    ]);
     expect(routesForHost('pi').map(route => `${route.event}.${route.routeId}`)).toEqual(['SessionStart.default', 'PreToolUse.edit', 'PostToolUse.bash', 'Stop.default']);
     expect(routesForHost('claude').map((route) => `${route.event}.${route.routeId}`)).toEqual([
       'SessionStart.default',
@@ -33,8 +39,8 @@ describe('typed hook route registry', () => {
       'UserPromptSubmit.inbox',
       'Stop.default',
     ]);
-    expect(routeSupportsHost(getRoute('UserPromptSubmit', 'delegation')!, 'codex')).toBe(true);
-    expect(routeSupportsHost(getRoute('UserPromptSubmit', 'delegation')!, 'claude')).toBe(false);
+    expect(routeSupportsHost(getRoute('SubagentStart', 'context')!, 'codex')).toBe(true);
+    expect(routeSupportsHost(getRoute('SubagentStart', 'context')!, 'claude')).toBe(false);
   });
 
   test('matcher partitions remain disjoint', () => {
@@ -43,18 +49,16 @@ describe('typed hook route registry', () => {
   });
 
   test('every route has exactly one exhaustive typed handler binding', () => {
-    expect(new Set(ROUTES.map((route) => `${route.event}.${route.routeId}`)).size).toBe(8);
+    expect(new Set(ROUTES.map((route) => `${route.event}.${route.routeId}`)).size).toBe(7);
     for (const route of ROUTES) expect(getHandlerForRoute(route).id).toBe(route.handler);
   });
 
   test('each subagent route binds its own handler', () => {
     expect([
       getRoute('PreToolUse', 'subagent'),
-      getRoute('UserPromptSubmit', 'delegation'),
       getRoute('SubagentStart', 'context'),
     ].map((route) => route?.handler)).toEqual([
       'return-channel',
-      'delegation-advisor',
       'subagent-context',
     ]);
   });

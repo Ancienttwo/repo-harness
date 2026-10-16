@@ -73,18 +73,11 @@ describe("Hook contracts", () => {
     expect(returnChannel).toContain("updatedInput");
     // #691 finding 9: the handler returns a typed permission; the host renderer writes permissionDecision.
     expect(returnChannel).toContain("decision: 'allow'");
-    const advisor = read("src/cli/hook/delegation-advisor.ts");
-    expect(advisor).toContain("/(delegate|parallel)");
-    expect(advisor).toContain("permission only");
     expect(read("src/cli/hook/subagent-context.ts")).toContain("[repo-harness:subagent-context]");
   });
 
-  test("delegation requires an explicit slash command and has no standing authorization", () => {
-    const advisor = read("src/cli/hook/delegation-advisor.ts");
-    expect(advisor).toContain("activeContractPath");
-    expect(advisor).not.toContain("policyDelegation.mode");
-    expect(advisor).not.toContain("auto-mode");
-    expect(advisor).not.toContain("readGlobalDelegationMode");
+  test("no hook grants standing delegation authorization", () => {
+    expect(existsSync(join(ROOT, "src/cli/hook/delegation-advisor.ts"))).toBe(false);
     const sessionStart = read("src/cli/hook/session-context.ts");
     expect(sessionStart).not.toContain("Delegation Standing Authorization");
     expect(sessionStart).not.toContain("effectiveDelegationMode");

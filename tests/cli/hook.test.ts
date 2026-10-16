@@ -278,12 +278,11 @@ describe('typed hook runtime', () => {
         ['PreToolUse', 'subagent', JSON.stringify({ tool_name: 'Agent', tool_input: { prompt: 'inspect' } }), 'return-channel'],
         ['PostToolUse', 'bash', JSON.stringify({ tool_input: { command: 'echo hi' }, tool_response: { stdout: 'hi\n', stderr: '', interrupted: false }, exit_code: 0 }), 'command-observed'],
         ['UserPromptSubmit', 'inbox', JSON.stringify({ prompt: 'continue' }), 'task-inbox'],
-        ['UserPromptSubmit', 'delegation', JSON.stringify({ prompt: 'implement next task' }), 'delegation-advisor'],
         ['SubagentStart', 'context', JSON.stringify({ hook_event_name: 'SubagentStart' }), 'subagent-context'],
         ['Stop', 'default', JSON.stringify({ stop_hook_active: false }), 'stop'],
       ] as const;
       for (const [event, routeId, input, handler] of cases) {
-        const result = runHook({ event, routeId, cwd: root, input, env: env(root, event === 'PostToolUse' ? 'pi' : event === 'UserPromptSubmit' && routeId === 'delegation' || event === 'SubagentStart' ? 'codex' : 'claude') });
+        const result = runHook({ event, routeId, cwd: root, input, env: env(root, event === 'PostToolUse' ? 'pi' : event === 'SubagentStart' ? 'codex' : 'claude') });
         expect(result.handler).toBe(handler);
       }
     } finally { clean(root); }

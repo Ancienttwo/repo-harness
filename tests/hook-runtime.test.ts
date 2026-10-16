@@ -199,20 +199,6 @@ describe('hook runtime typed dispatch', () => {
     } finally { rmSync(root, { recursive: true, force: true }); }
   }, 30_000);
 
-  test('host output policy is centralized and does not leak successful Codex stdout', () => {
-    const root = fixture();
-    try {
-      const result = runHook({
-        event: 'UserPromptSubmit',
-        routeId: 'delegation',
-        cwd: root,
-        input: JSON.stringify({ prompt: 'implement the next task' }),
-        env: env(root, 'codex'),
-      });
-      expect(result.handler).toBe('delegation-advisor');
-    } finally { rmSync(root, { recursive: true, force: true }); }
-  }, 30_000);
-
   test('typed handlers do not consult a route filesystem and write one v2 record', () => {
     const root = fixture();
     try {
