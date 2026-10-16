@@ -732,7 +732,7 @@ describe('mcp tools', () => {
     });
   });
 
-  test('retired Codex goal tools and path return upgrade errors without aliases', async () => {
+  test('retired Codex goal tools return upgrade errors without aliases', async () => {
     await withRepo(async (repoRoot, ctx) => {
       for (const name of ['write_codex_goal', 'prepare_codex_goal_from_sprint']) {
         const result = await jsonTool(ctx, name, {});

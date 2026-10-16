@@ -25,7 +25,7 @@ source:
     - ".codex/agents/**"
     - "scripts/install-agent-fleet.sh"
   entrypoints:
-    - id: entrypoint.task-agent-host.command
+    - id: entrypoint.task-agent-host.session
       path: "src/effects/terminal/task-session.ts"
       symbols:
         - name: "startTaskApplicationHost"
@@ -33,12 +33,16 @@ source:
             - id: sink.task-agent-host.start
               path: "src/effects/terminal/task-session.ts"
               symbol: "startTaskAgent"
+        - name: "sendTaskRequest"
+          sinks:
             - id: sink.task-agent-host.send
               path: "src/effects/terminal/task-session.ts"
-              symbol: "sendTaskRequest"
+              symbol: "nextSessionRound"
+        - name: "collectTaskResult"
+          sinks:
             - id: sink.task-agent-host.collect
               path: "src/effects/terminal/task-session.ts"
-              symbol: "collectTaskResult"
+              symbol: "readTaskRequestResult"
 extensions:
   contractFiles:
     agents: "AGENTS.md"

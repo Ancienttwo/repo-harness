@@ -14,7 +14,7 @@ steps:
     to: session
     label: Start the task agent pane for one task and role and record its binding
     evidence:
-      entrypointId: entrypoint.task-agent-host.command
+      entrypointId: entrypoint.task-agent-host.session
       sourceSymbol: startTaskApplicationHost
       sinkId: sink.task-agent-host.start
   - id: send-request
@@ -22,8 +22,8 @@ steps:
     to: session
     label: Save the numbered request and its round marker before the prompt is delivered
     evidence:
-      entrypointId: entrypoint.task-agent-host.command
-      sourceSymbol: startTaskApplicationHost
+      entrypointId: entrypoint.task-agent-host.session
+      sourceSymbol: sendTaskRequest
       sinkId: sink.task-agent-host.send
 outcomes:
   - id: success
@@ -35,8 +35,8 @@ outcomes:
         to: session
         label: Validate and ingest only the request-bound TaskResult
         evidence:
-          entrypointId: entrypoint.task-agent-host.command
-          sourceSymbol: startTaskApplicationHost
+          entrypointId: entrypoint.task-agent-host.session
+          sourceSymbol: collectTaskResult
           sinkId: sink.task-agent-host.collect
     terminal:
       participant: host
@@ -50,8 +50,8 @@ outcomes:
         to: session
         label: Record the delivery as unknown and refuse a new round until the same request is inspected
         evidence:
-          entrypointId: entrypoint.task-agent-host.command
-          sourceSymbol: startTaskApplicationHost
+          entrypointId: entrypoint.task-agent-host.session
+          sourceSymbol: sendTaskRequest
           sinkId: sink.task-agent-host.send
     terminal:
       participant: host
