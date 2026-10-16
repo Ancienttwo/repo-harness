@@ -5,7 +5,7 @@
   "layoutVersion": "archcontext.docs-layout/v1",
   "generatedFrom": {"codeGraphPackage":"@colbymchenry/codegraph","codeGraphVersion":"1.6.2"},
   "semanticBaseline": {
-    "modelDigest": "sha256:c44326cd845d9f87ef08f7b95e0878c7ccd33738723ac9bb4de333c64134909b",
+    "modelDigest": "sha256:392a68e505cb1b681a557fc55e24b00934accc88f29b2542c56814c568c64e96",
     "capabilities": [
       {
         "capabilityId": "capability.organization.publication",
@@ -410,7 +410,7 @@
           "component.global-runtime-reconciliation.primary",
           "component.global-runtime-reconciliation.release-packaging"
         ],
-        "semanticFingerprint": "sha256:854ed1ed7a246236f2e7855722460010966226ac38d5c6725ab4c8b89200a21b",
+        "semanticFingerprint": "sha256:42752964af76d7066903c69daf0e6663d5924e5588a815c3bb6eda77e9921912",
         "flowProofFingerprint": "sha256:64ecd7812b3f73edadb06e9a77a90a1b389559a9a5be96cbb7b1fa129455d17f",
         "proofStatus": {
           "p1": "proven",
@@ -425,7 +425,7 @@
           "ownership": "sha256:42c3c7edd334f9a1f592f232d1b2509b82927e3136849e8ac4958401c26389dc",
           "placement": "sha256:5bfd8d126d97dd19e2b99b0d1f314fffe3105c58fec9100c87a2bc1523659679",
           "relations": "sha256:99ef460746e7dfc559b3093738aada39f92d0364d04c238a63b1487778c8bcec",
-          "responsibilities": "sha256:c67a449ff9f4450a670fc2fa4555a9a96994e9dae5b13dfe52e1b50b2e2d2323",
+          "responsibilities": "sha256:a531b9f9e80bb5a705cb13652e8db748c05c1473ced5f58803325158e5e506db",
           "riskBoundaries": "sha256:40350af8d742f89278c60ed008746e1695c945228ec73dba74823b87a508b684"
         },
         "selectorEvidenceDigest": "sha256:60fbbf81be203d7ea8ce17a8b8af3e79cd8fde7930f5743773176d965b82a4b0"
@@ -1023,7 +1023,7 @@
     "projection_target.entity.capability-verification-evals-checks":
       {"type":"entity-summary","scope":{"kind":"entity","id":"capability.verification.evals-checks","entityKind":"capability"},"path":"docs/architecture/modules/verification/evals-checks.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:08fbc80b50531fffc33a224016183363744f2a8d1c96702ad136702e3d441edf","sourceStamps":{"capability.verification.evals-checks":"sha256:6d2836beb1a21b783cf689f1aef69bacc3046edc97c85206602faea8c77995e1","component.evals-checks.ci-selection":"sha256:74f843be7d7d87941b103fedc3e072dbbb5237151fb09203232fd7cb9db8004f","component.evals-checks.evals-and-benchmarks":"sha256:a74abe06a0afd648c18e2a91a7bbf2c2a512797466a58de1e3420222f30ed18b","component.evals-checks.primary":"sha256:777f61e21288e970e630938013263f87193feb34b7e41c54627d0c77b389b6b9","component.evals-checks.test-suite":"sha256:13cf4c3e0b28e05a714e0e59eaaefef3e923479581bc75cd1ac0e1d66b3dfd1d","component.evals-checks.workflow-gates":"sha256:59d39e7ff88c575608df82d216247e0f485e10aecf81177740735ee03a727f46"},"scale":{"fileCountBucket":{"lower":500,"upper":1000},"lineCountBucket":{"lower":100000,"upper":200000}}},
     "projection_target.entity.capability-workflow-engine-contract-assets":
-      {"type":"entity-summary","scope":{"kind":"entity","id":"capability.workflow-engine.contract-assets","entityKind":"capability"},"path":"docs/architecture/modules/workflow-engine/contract-assets.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:1927fe5968fe5d677353846028c646882d6361864fe8eb0918db7672ff863a95","sourceStamps":{"capability.workflow-engine.contract-assets":"sha256:6b9a38ec37fd0415c51ee853822b84418759fe14782af44d590886747a352d8d","component.contract-assets.capability-registry":"sha256:7ee205504e10cad81bc6a029c8d930262fa2bd3eda2807c28a33df6cd28d2f8d","component.contract-assets.contract-worktree-lifecycle":"sha256:d870afb5a5fcb3f5c81d7cef5c908044faaf6d9200fffd795ac5cee61c8a14df","component.contract-assets.planning-helpers":"sha256:d07bf39f94702c88b0a6a29ea7e22cd0ac83018a47732ab7ecff90eb4d752fc5","component.contract-assets.primary":"sha256:56dcc4f2985f2c3963e9ab4c5bb2022d14c1425c31fb9bd712540058ed187e82","component.contract-assets.template-projection":"sha256:48346a79b99cc4e6223fba75c49021e618e32678186e36a8120302622212745e"},"scale":{"fileCountBucket":{"lower":500,"upper":1000},"lineCountBucket":{"lower":50000,"upper":100000}}},
+      {"type":"entity-summary","scope":{"kind":"entity","id":"capability.workflow-engine.contract-assets","entityKind":"capability"},"path":"docs/architecture/modules/workflow-engine/contract-assets.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:1927fe5968fe5d677353846028c646882d6361864fe8eb0918db7672ff863a95","sourceStamps":{"capability.workflow-engine.contract-assets":"sha256:fd3fcac0a8ed9fb4891d618a0244b91378bf6b166ea0e3eaf3b616ba48c91504","component.contract-assets.capability-registry":"sha256:f1c99fd6174aa6bf057cb21f83b8b1d3205c437855b5a3e802ee500c1150597e","component.contract-assets.contract-worktree-lifecycle":"sha256:d870afb5a5fcb3f5c81d7cef5c908044faaf6d9200fffd795ac5cee61c8a14df","component.contract-assets.planning-helpers":"sha256:d07bf39f94702c88b0a6a29ea7e22cd0ac83018a47732ab7ecff90eb4d752fc5","component.contract-assets.primary":"sha256:56dcc4f2985f2c3963e9ab4c5bb2022d14c1425c31fb9bd712540058ed187e82","component.contract-assets.template-projection":"sha256:48346a79b99cc4e6223fba75c49021e618e32678186e36a8120302622212745e"},"scale":{"fileCountBucket":{"lower":500,"upper":1000},"lineCountBucket":{"lower":50000,"upper":100000}}},
     "projection_target.entity.capability-workflow-engine-execution-primitives":
       {"type":"entity-summary","scope":{"kind":"entity","id":"capability.workflow-engine.execution-primitives","entityKind":"capability"},"path":"docs/architecture/modules/workflow-engine/execution-primitives.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:4fc89f9eaf485cfbdca29ef0d96e74e6054d3c2b5a99b27fddec6563b80ce54b","sourceStamps":{"capability.workflow-engine.execution-primitives":"sha256:3efbc069fc7375a00ab0b3d207c67e9de85b4b5945ba6af0812a8d6edf3a53e2","component.execution-primitives.primary":"sha256:3efbc069fc7375a00ab0b3d207c67e9de85b4b5945ba6af0812a8d6edf3a53e2"},"scale":{"fileCountBucket":{"lower":5,"upper":10},"lineCountBucket":{"lower":1000,"upper":2000}}},
     "projection_target.entity.capability-workflow-engine-inspection-migration":
