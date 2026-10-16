@@ -7,7 +7,6 @@ import type { OperatorFleetSnapshotV1 } from '../../core/operator/fleet-snapshot
 import type { NotifyStatusV1 } from '../../core/operator/notify-status';
 import { NOTIFY_PLUGIN_ID } from '../../core/operator/notify-status';
 import { unavailableRuntimeOverlay, type RuntimeOverlay } from '../../core/operator/runtime-status';
-import { unavailableBoard, type PipelineBoardV2 } from '../../core/pipeline/board';
 import type { OperatorAppProps } from '../App';
 import {
   repositorySnapshot,
@@ -46,23 +45,6 @@ function notify(now: number, healthy: boolean): NotifyStatusV1 {
   };
 }
 
-function pipeline(now: number): PipelineBoardV2 {
-  const generated = new Date(now - 60_000).toISOString();
-  return {
-    projection_version: 'repo-harness.pipeline-board.v2', status: 'ready', generated_at: generated, last_reconciled_at: generated, epoch: 3, commit_seq: 41,
-    source_observed_at: { 'max:git': generated }, coverage: { counted: 1, skipped: 0, errors: 0, registration_incomplete: 0 },
-    cards: [{
-      source_host: 'max', repository_id: `sha256:${'d'.repeat(64)}`, task: 'task-pipeline-observer', id: 'pl-0009', repo: 'repo-harness',
-      title: 'Observe pipeline phases on the board', phase: 'cross-review', admission: 'gate_qualified', state_version: 7,
-      record_updated_at: generated, phase_since: new Date(now - 7 * 3_600_000).toISOString(),
-      runs: [{ role: 'implementer', round: 1, status: 'ended', result_state: 'validated' }], blocked: null,
-      subject: { base_sha: '866abc31aaaa', head_sha: 'a0326d33bbbb', tree_digest: 'sha256:0123456789ab', environment: 'bun-1.3' },
-      approval: null, external_fact: null,
-      evidence: [{ kind: 'typecheck', source: 'verified', verdict: 'pass', current: true, count: 2 }], flags: [],
-    }],
-  };
-}
-
 const unavailable = (what: string) => () => Promise.reject(new Error(`fixture ${what} unavailable`));
 
 export function fixtureProps(name: string): OperatorAppProps {
@@ -73,7 +55,6 @@ export function fixtureProps(name: string): OperatorAppProps {
     fixture === 'busy' ? busyDevActivity(now) : fixture === 'empty' ? emptyDevActivity(now) : degradedDevActivity(now));
   const runtime: RuntimeOverlay = fixture === 'busy' ? busyRuntimeOverlay(now) : unavailableRuntimeOverlay();
   const snapshot = fleet(fixture === 'busy' ? stableSnapshot : fixture === 'empty' ? emptySnapshot : degradedSnapshot);
-  const board = fixture === 'degraded' ? unavailableBoard() : pipeline(now);
   const notifyStatus = notify(now, fixture !== 'degraded');
   // busy: a ready setup check; empty: the first run has not finished; degraded: a timed-out run over drifted data.
   const setup = decodeSetupSnapshot(fixture === 'busy' ? readySetup(now) : fixture === 'empty' ? loadingSetup() : degradedSetup(now));
@@ -91,8 +72,6 @@ export function fixtureProps(name: string): OperatorAppProps {
     readTaskHistory: unavailable('task history'),
     readNotifyStatus: () => Promise.resolve(notifyStatus),
     initialNotifyStatus: notifyStatus,
-    readPipelineBoard: () => Promise.resolve(board),
-    initialPipelineBoard: board,
     readSetup: () => Promise.resolve(setup),
     initialSetup: setup,
   };

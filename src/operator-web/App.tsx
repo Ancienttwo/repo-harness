@@ -19,7 +19,6 @@ import type { SetupSnapshotV1 } from '../core/setup/types';
 import type { DevActivitySnapshotV1 } from '../core/dev-activity/types';
 import type { NotifyStatusV1 } from '../core/operator/notify-status';
 import type { RuntimeOverlay } from '../core/operator/runtime-status';
-import type { PipelineBoardV2 } from '../core/pipeline/board';
 import { Board } from './Board';
 import {
   DEFAULT_BOARD_FILTERS,
@@ -43,7 +42,6 @@ import { useLocale, type OperatorLocale, type OperatorTranslate } from './i18n';
 import { ageWords } from './labels';
 import { CarrotMark } from './marks';
 import type { NotifyStatusReader } from './NotifyStatus';
-import type { PipelineBoardReader } from './PipelineBoard';
 import { RepositoriesPage } from './RepositoriesPage';
 import { fetchSetup, setupPageState, useSetup, type SetupReader, type SetupView } from './setup';
 import { AgentsPage, HooksPage, SkillsPage } from './SetupPages';
@@ -99,8 +97,6 @@ export interface OperatorAppProps {
   readonly readTaskActivity?: TaskActivityReader;
   readonly readNotifyStatus?: NotifyStatusReader;
   readonly initialNotifyStatus?: NotifyStatusV1;
-  readonly readPipelineBoard?: PipelineBoardReader;
-  readonly initialPipelineBoard?: PipelineBoardV2;
   /** The cached `repo-harness setup check` result behind the Agents, Skills and Hooks pages. */
   readonly readSetup?: SetupReader;
   readonly initialSetup?: SetupSnapshotV1;
@@ -362,8 +358,6 @@ export function OperatorApp({
   readTaskHistory,
   readNotifyStatus,
   initialNotifyStatus,
-  readPipelineBoard,
-  initialPipelineBoard,
   readSetup = fetchSetup,
   initialSetup,
 }: OperatorAppProps) {
@@ -588,7 +582,6 @@ export function OperatorApp({
           {systemMounted && <div hidden={workspace !== 'system'}>
             <SystemPage view={devActivity} now={now} refreshGeneration={refreshGeneration} active={workspace === 'system'}
               readNotifyStatus={readNotifyStatus} initialNotifyStatus={initialNotifyStatus}
-              readPipelineBoard={readPipelineBoard} initialPipelineBoard={initialPipelineBoard}
               readRuntimeStatus={readRuntimeStatus} initialRuntimeOverlay={initialRuntimeOverlay} t={t} />
           </div>}
         </main>

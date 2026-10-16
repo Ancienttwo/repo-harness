@@ -197,18 +197,6 @@ const notifyStatus: import('../../src/core/operator/notify-status').NotifyStatus
   last_delivery: { at: null, result: 'missing' },
   observed_at: '2026-09-22T00:00:00.000Z',
 };
-const board: import('../../src/core/pipeline/board').PipelineBoardV2 = {
-  projection_version: 'repo-harness.pipeline-board.v2',
-  status: 'ready',
-  generated_at: '2026-09-22T00:00:00.000Z',
-  last_reconciled_at: '2026-09-22T00:00:00.000Z',
-  epoch: 1,
-  commit_seq: 1,
-  source_observed_at: {},
-  coverage: { counted: 0, skipped: 0, errors: 0, registration_incomplete: 0 },
-  cards: [],
-};
-
 function observationClock() {
   const originalSet = globalThis.setTimeout, originalClear = globalThis.clearTimeout;
   const timers = new Map<number,{at:number;run:()=>void}>();
@@ -289,42 +277,40 @@ describe('bounded observation lifecycle',()=>{
 
   test('System-page readers pause while hidden and read once on return, including a deferred Refresh', async () => {
     const clock = observationClock();
-    const counts = { fleet: 0, notify: 0, pipeline: 0 };
+    const counts = { fleet: 0, notify: 0 };
     const tab = (name: string) => act(async () => document.querySelector<HTMLButtonElement>(`#view-tab-${name}`)!.click());
     const page = (name: string) => act(async () => document.querySelector<HTMLAnchorElement>(`.workspace-nav a[data-workspace="${name}"]`)!.click());
     try {
       await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" initialRepositorySnapshot={{ kind: 'ready', snapshot: repositorySnapshot }}
         fetchSnapshot={async () => { counts.fleet++; return stableSnapshot; }}
-        readNotifyStatus={async () => { counts.notify++; return notifyStatus; }}
-        readPipelineBoard={async () => { counts.pipeline++; return board; }} />);
-      // Notify and Pipeline belong to the System page; the repository page never reads them.
-      expect(counts).toEqual({ fleet: 0, notify: 0, pipeline: 0 });
+        readNotifyStatus={async () => { counts.notify++; return notifyStatus; }} />);
+      // Notify belongs to the System page; the repository page never reads it.
+      expect(counts).toEqual({ fleet: 0, notify: 0 });
       await tab('delivery');
       await clock.advance(600_000);
-      expect(counts).toEqual({ fleet: 20, notify: 0, pipeline: 0 });
+      expect(counts).toEqual({ fleet: 20, notify: 0 });
       await tab('organization');
-      expect(counts).toEqual({ fleet: 20, notify: 0, pipeline: 0 });
+      expect(counts).toEqual({ fleet: 20, notify: 0 });
       await clock.advance(30_000);
-      expect(counts).toEqual({ fleet: 21, notify: 0, pipeline: 0 });
+      expect(counts).toEqual({ fleet: 21, notify: 0 });
       await tab('planning');
       await act(async () => buttonWithText('Refresh').click());
-      expect(counts).toEqual({ fleet: 22, notify: 0, pipeline: 0 });
+      expect(counts).toEqual({ fleet: 22, notify: 0 });
       await tab('organization');
-      expect(counts).toEqual({ fleet: 22, notify: 0, pipeline: 0 });
+      expect(counts).toEqual({ fleet: 22, notify: 0 });
       await page('system');
-      expect(counts).toMatchObject({ notify: 1, pipeline: 1 });
+      expect(counts).toMatchObject({ notify: 1 });
       await page('board');
       await clock.advance(600_000);
-      expect(counts).toMatchObject({ notify: 1, pipeline: 1 });
+      expect(counts).toMatchObject({ notify: 1 });
       await act(async () => buttonWithText('Refresh').click());
-      expect(counts).toMatchObject({ notify: 1, pipeline: 1 });
+      expect(counts).toMatchObject({ notify: 1 });
       await page('system');
-      expect(counts).toMatchObject({ notify: 2, pipeline: 2 });
+      expect(counts).toMatchObject({ notify: 2 });
       // The System page keeps polling: one 30s tick adds exactly one read to each reader.
-      const before = { notify: counts.notify, pipeline: counts.pipeline };
+      const before = { notify: counts.notify };
       await clock.advance(30_000);
       expect(counts.notify).toBe(before.notify + 1);
-      expect(counts.pipeline).toBe(before.pipeline + 1);
     } finally {
       await act(async () => root?.unmount()); root = null; clock.restore();
     }
@@ -332,20 +318,19 @@ describe('bounded observation lifecycle',()=>{
 
   test('seeded System readers that start without a read still read at once on return', async () => {
     const clock = observationClock();
-    const counts = { notify: 0, pipeline: 0 };
+    const counts = { notify: 0 };
     const page = (name: string) => act(async () => document.querySelector<HTMLAnchorElement>(`.workspace-nav a[data-workspace="${name}"]`)!.click());
     window.location.hash = '#system';
     try {
       await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" initialRepositorySnapshot={{ kind: 'ready', snapshot: repositorySnapshot }}
         fetchSnapshot={async () => stableSnapshot}
-        initialNotifyStatus={notifyStatus} readNotifyStatus={async () => { counts.notify++; return notifyStatus; }}
-        initialPipelineBoard={board} readPipelineBoard={async () => { counts.pipeline++; return board; }} />);
-      expect(counts).toEqual({ notify: 0, pipeline: 0 });
+        initialNotifyStatus={notifyStatus} readNotifyStatus={async () => { counts.notify++; return notifyStatus; }} />);
+      expect(counts).toEqual({ notify: 0 });
       await page('board');
       await clock.advance(300_000);
-      expect(counts).toEqual({ notify: 0, pipeline: 0 });
+      expect(counts).toEqual({ notify: 0 });
       await page('system');
-      expect(counts).toEqual({ notify: 1, pipeline: 1 });
+      expect(counts).toEqual({ notify: 1 });
     } finally {
       await act(async () => root?.unmount()); root = null; clock.restore();
     }
@@ -1042,19 +1027,15 @@ describe('operator web interactions', () => {
     } finally { globalThis.fetch = originalFetch; }
   });
 
-  test('the page Refresh action also re-requests the Notify and Pipeline panels', async () => {
+  test('the page Refresh action also re-requests the Notify panel', async () => {
     let notify = 0;
-    let pipeline = 0;
     window.location.hash = '#system';
     await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" fetchSnapshot={async () => stableSnapshot}
-      readNotifyStatus={async () => { notify += 1; if (notify === 1) throw new Error('notify down'); return notifyStatus; }}
-      readPipelineBoard={async () => { pipeline += 1; return board; }} />);
+      readNotifyStatus={async () => { notify += 1; if (notify === 1) throw new Error('notify down'); return notifyStatus; }} />);
     expect(notify).toBe(1);
-    expect(pipeline).toBe(1);
     expect(document.querySelector('.notify-status')?.getAttribute('data-notify-state')).toBe('unavailable');
     await act(async () => buttonWithText('Refresh').click());
     expect(notify).toBe(2);
-    expect(pipeline).toBe(2);
     expect(document.querySelector('.notify-status')?.getAttribute('data-notify-state')).toBe('ready');
   });
 
@@ -1495,7 +1476,7 @@ test('automatic epoch change cancels associated evidence and late responses cann
   let diffSignal: AbortSignal | null = null, finishDiff!: (response: Response) => void;
   const next = { ...stableSnapshot, sequence: 1, service_epoch: '00000000-0000-4000-8000-000000000002' };
   globalThis.fetch = (async (input, init) => {
-    // The explicit refresh generation now reaches the Notify and Pipeline
+    // The explicit refresh generation now reaches the Notify
     // panels, so an epoch reset issues their requests too; only the diff
     // request is parked, and the rest fail fast.
     if (String(input).includes('/diff')) {

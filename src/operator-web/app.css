@@ -91,9 +91,9 @@
   .delivery-stage > p { @apply px-1 text-xs text-kumo-inactive; }
   .delivery-stage .worklist-row { @apply rounded-lg border border-kumo-hairline bg-kumo-base last:border-b; }
 
-  .planning-view, .organization-summary, .notify-status, .pipeline-board, .architecture-workspace { @apply flex min-w-0 flex-col gap-3; }
+  .planning-view, .organization-summary, .notify-status, .architecture-workspace { @apply flex min-w-0 flex-col gap-3; }
   .organization-summary { @apply rounded-xl border border-kumo-line bg-kumo-base p-4; }
-  .planning-view h2, .organization-summary h2, .automation-heading h2, .notify-status h2, .pipeline-board h2, .architecture-workspace h2 { @apply text-base font-semibold text-kumo-strong; }
+  .planning-view h2, .organization-summary h2, .automation-heading h2, .notify-status h2, .architecture-workspace h2 { @apply text-base font-semibold text-kumo-strong; }
   .organization-summary h3, .planning-view h3, .automation-source h3 { @apply text-sm font-semibold text-kumo-strong; }
   .organization-summary p, .organization-summary li, .planning-view p, .planning-view li { @apply text-sm; overflow-wrap: anywhere; }
   .organization-summary ul, .planning-tasks, .planning-blockers { @apply m-0 flex list-none flex-col gap-2 p-0; }
@@ -149,19 +149,14 @@
   .task-history { @apply flex flex-col gap-3 rounded-xl border border-kumo-line bg-kumo-base p-4; }
   .task-diff__patch { max-height: 28rem; }
 
-  .notify-status__heading p, .pipeline-board__heading p { @apply text-xs text-kumo-subtle; }
-  .pipeline-board__heading { @apply flex flex-wrap items-center justify-between gap-2; }
-  .pipeline-cards__heading { @apply flex items-center gap-2 text-sm font-semibold; }
-  .pipeline-cards, .pipeline-native-sources, .pipeline-native-observations, .pipeline-runs, .pipeline-evidence { @apply m-0 flex list-none flex-col gap-2 p-0; }
-  .pipeline-card, .pipeline-native-sources > li { @apply flex flex-col gap-2 rounded-lg border border-kumo-hairline p-3; }
-  .pipeline-card__head { @apply flex flex-wrap items-center justify-between gap-2; }
-  .pipeline-card__title { @apply text-sm text-kumo-strong; }
-  .pipeline-card__badges, .pipeline-runtime-badges, .pipeline-runtime-run { @apply flex flex-wrap items-center gap-1.5 text-xs; }
-  .pipeline-card__meta, .pipeline-runtime-summary { @apply flex flex-wrap items-center gap-3 text-xs text-kumo-subtle; }
-  .pipeline-card__blocked { @apply flex items-center gap-1.5 text-sm text-kumo-danger; }
-  .pipeline-native-runtime { @apply flex flex-col gap-2; }
-  .pipeline-native-runtime h3 { @apply text-sm font-semibold; }
-  .pipeline-native-runtime > p { @apply text-xs text-kumo-subtle; }
+  .notify-status__heading p { @apply text-xs text-kumo-subtle; }
+  .native-runtime-sources, .native-runtime-observations { @apply m-0 flex list-none flex-col gap-2 p-0; }
+  .native-runtime-sources > li { @apply flex flex-col gap-2 rounded-lg border border-kumo-hairline p-3; }
+  .runtime-run { @apply flex flex-wrap items-center gap-1.5 text-xs; }
+  .runtime-summary { @apply flex flex-wrap items-center gap-3 text-xs text-kumo-subtle; }
+  .native-runtime { @apply flex flex-col gap-2; }
+  .native-runtime h3 { @apply text-sm font-semibold; }
+  .native-runtime > p { @apply text-xs text-kumo-subtle; }
 
   .architecture-workspace__heading { @apply flex flex-wrap items-center gap-3; }
   .architecture-notice { @apply rounded-lg bg-kumo-danger-tint p-3 text-sm text-kumo-danger; }

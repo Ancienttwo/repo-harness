@@ -44,7 +44,7 @@ function props(activity: DevActivitySnapshotV1, overrides: Partial<OperatorAppPr
     initialLocale: 'en', initialSnapshot: stableSnapshot, fetchSnapshot: async () => stableSnapshot,
     initialDevActivity: activity, fetchDevActivity: async () => activity,
     initialRuntimeOverlay: unavailableRuntimeOverlay(), readRuntimeStatus: async () => unavailableRuntimeOverlay(),
-    readNotifyStatus: () => new Promise(() => {}), readPipelineBoard: () => new Promise(() => {}),
+    readNotifyStatus: () => new Promise(() => {}),
     ...overrides,
   };
 }

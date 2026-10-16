@@ -11,7 +11,7 @@ export function runtimeStateLabel(state: string, t: OperatorTranslate): string {
 }
 
 export function phaseLabel(phase: string, t: OperatorTranslate): string {
-  return enumLabel(`pipeline.phase.${phase}`, phase, t);
+  return enumLabel(`activity.phase.${phase}`, phase, t);
 }
 
 /** Runtime states as a dot. Colour always sits next to the state's own words. */

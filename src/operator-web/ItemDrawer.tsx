@@ -117,7 +117,7 @@ function ItemBody({ item, snapshot, now, t }: { readonly item: DevActivityItem; 
             <Fact label={t('drawer.phase')}>{phaseLabel(item.ledger.phase, t)}</Fact>
             <Fact label={t('drawer.phaseSince')}><Age at={item.ledger.phase_since} now={now} t={t} /></Fact>
             <Fact label={t('drawer.owner')}>{item.ledger.owner ?? t('drawer.unknown')}</Fact>
-            <Fact label={t('drawer.waitingOwner')}>{item.ledger.waiting_owner ? t('pipeline.yes') : t('pipeline.no')}</Fact>
+            <Fact label={t('drawer.waitingOwner')}>{item.ledger.waiting_owner ? t('field.yes') : t('field.no')}</Fact>
           </Facts>
           {item.column !== 'planned' && <p className="text-xs text-kumo-subtle">{t('drawer.phaseBeside')}</p>}
         </Section>
