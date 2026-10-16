@@ -118,7 +118,7 @@ sequenceDiagram
 | --- | --- |
 | 每个 task 与 role 一个常驻 pane agent | 多轮请求共享上下文。代价：身份证明与清理逻辑复杂，`task-session.ts` 有 925 行 |
 | 去掉推测性的宿主机制，只保留通信协议（`aad93a6e`） | 表面更小。新的宿主需求要从协议重新加入 |
-| 未知投递不重放 | 安全优先于活性。代价：操作员要用 `task-agent reconcile` 检查（#610） |
+| 未知投递不重放 | 安全优先于活性。代价：操作员要读 pane 内容，检查同一请求（#610，#771 删除 reconcile 命令） |
 | Notify 默认只发 blocked 事件，Slack、Discord 与 Telegram 可选（#500） | Bot webhook 是必需通道。完成事件要按通道单独打开 |
 | Claude 与 Codex 共用 persona 定义，Codex 有显式的模型映射（`src/effects/terminal/task-role-profiles.ts:1-2`、`AGENT_TARGET_OVERRIDES`） | 两个宿主行为一致。代价：模型变更时要更新映射表 |
 

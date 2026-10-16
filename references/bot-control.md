@@ -6,34 +6,26 @@ Kanban is a read-only view.
 
 ## Recover a lost response
 
-Use the same authoritative task ID and role. Read `task-agent status` to find
-the saved request ID. Do not send again because a response was lost.
-Get the expected candidate HEAD from the controlling task, not from a Bot's
-claim about which candidate passed. Run:
+Use the same authoritative task ID and role. Do not send again because a
+response was lost. A lost response can mean the input was delivered.
 
-```sh
-repo-harness task-agent reconcile --repo <repository> --task <task-id> \
-  --role <role> --request-id <saved-request-id> --expected-head <full-sha>
-```
+Use the herdr skill in the explicitly identified session. Read the peer pane
+with `herdr agent read <name> --source recent-unwrapped` to see whether the
+request arrived. If the peer shows no sign of it, ask the same peer again with
+`herdr agent prompt`. Do not start a new executor as a recovery step.
 
-The query launches no worker and writes no receipts. It reads at most 100
-request slots. It returns original evidence references and hashes. JSON
-hashes use sorted-key canonical JSON. The context hash covers raw bytes.
-`delivery: unknown` stays unknown even if the provider is alive.
-`result_status: available` means a result matches the saved request and context.
-It does not mean the result passed validation or received human approval.
-`provider` is a process observation. It is not completion evidence.
+Terminal output is observation. It is not a result, completion evidence or
+human approval. Keep candidate-bound validation and approval in their current
+owners. Get the expected candidate HEAD from the controlling task, not from a
+Bot's claim about which candidate passed.
 
-An expected HEAD mismatch fails closed. The current HEAD does not prove which
-SHA produced the result. `result_head_binding: unverified` makes this limit
-explicit. Keep candidate-bound validation and approval in their current owners.
-Protected host results return `host_authority`. Use their owning domain reader.
-A missing, conflicting or changing request fails closed. Inspect the same task.
-Do not create a new executor as a recovery step.
+Protected review and coding results stay with their domain readers
+(`repo-harness review status` and the PM collect path). A missing, conflicting
+or changing request fails closed. Inspect the same task.
 
 ## Integration limits
 
-This CLI trusts the local operator. Do not expose it as arbitrary remote shell.
+Herdr control trusts the local operator. Do not expose it as arbitrary remote shell.
 No new Bot account, grant, credential or action approval is created here.
 The existing MCP coding profile exposes shell and is not a Bot control profile.
 The orchestrator HTTP profile has no distinct Bot principal/action grants.
