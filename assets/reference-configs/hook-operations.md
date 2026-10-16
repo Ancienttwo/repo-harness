@@ -22,7 +22,6 @@ The runtime checks that a route is installed for the host before a handler
 runs. Handlers do not check the host.
 Codex must trust `~/.codex/hooks.json` in Settings before it executes the
 adapter. All managed entries use a 30-second deadline.
-Pi uses 10 seconds for ordinary calls and 30 seconds for Stop.
 Stop has no deferred work: it publishes the evidence
 checkpoint and renders the handoff and resume views. Stop does not run
 architecture projection and does not record architecture drift.
@@ -31,20 +30,19 @@ Measure `Stop.default` using
 `.ai/harness/runs/hook-events.jsonl` `elapsed_ms`. The terminal's Working
 time is the whole turn, not the duration of its currently displayed hook.
 
-This table is the one route inventory. It lists the 7 entries of `ROUTES` in
+This table is the one route inventory. It lists the 6 entries of `ROUTES` in
 `src/cli/hook/route-registry.ts`, in registry order. The Host column follows the
-`hosts` field of each route: Claude installs 5 routes, Codex installs 5, and
-Pi maps 4. Other documents link here. They do not copy this table.
+`hosts` field of each route: Claude installs 5 routes and Codex installs 5.
+Other documents link here. They do not copy this table.
 
 | Route | Matcher | Host | Typed handler | Responsibility |
 | --- | --- | --- | --- | --- |
-| `SessionStart.default` | all sessions | Claude, Codex, Pi | `session-context` | Emit the Effective State section first, then the owed-architecture, pending-plan, active-sprint and resume sections under one budget. |
-| `PreToolUse.edit` | `Edit\|Write` | Claude, Codex, Pi | `mutation-guard` | Block an edit outside the repository, under `_ref/` or `_ops/`, or without a parseable target path. |
+| `SessionStart.default` | all sessions | Claude, Codex | `session-context` | Emit the Effective State section first, then the owed-architecture, pending-plan, active-sprint and resume sections under one budget. |
+| `PreToolUse.edit` | `Edit\|Write` | Claude, Codex | `mutation-guard` | Block an edit outside the repository, under `_ref/` or `_ops/`, or without a parseable target path. |
 | `PreToolUse.subagent` | `Agent` | Claude | `return-channel` | Append the return-channel contract and the board slice to a Claude `Agent` prompt. |
-| `PostToolUse.bash` | `Bash` | Pi | `command-observed` | Count a known failing test run in the RepairLimit circuit when the payload has an exit status. The extension shows failure diagnostics. Successful publication advisories have no consumer. |
 | `UserPromptSubmit.inbox` | all prompts | Claude, Codex | `task-inbox` | Deliver task messages at the turn boundary. |
 | `SubagentStart.context` | subagent start | Codex | `subagent-context` | Record the native role and model observation. Add the bounded child context and the board slice. |
-| `Stop.default` | session stop | Claude, Codex, Pi | `stop` | Publish the evidence checkpoint and render handoff and resume. Claude can get the owed-architecture line. |
+| `Stop.default` | session stop | Claude, Codex | `stop` | Publish the evidence checkpoint and render handoff and resume. Claude can get the owed-architecture line. |
 
 After upgrading the package, reinstall the host adapters. Codex must trust the
 new command tuples once. Old adapters invoke removed routes and get exit 2.
@@ -54,8 +52,7 @@ returns exit 2 for a removed tuple or an unsupported host route.
 
 Publication-command architecture and `[PostBash]` advisories no longer reach
 the Agent. Claude and Codex still get owed context at SessionStart. Claude
-also gets it at Stop. Pi does not render successful tool-result
-`additional_context`. Failure diagnostics remain visible.
+also gets it at Stop. No route observes `PostToolUse`.
 
 ## Host Output
 
@@ -73,7 +70,6 @@ a host file descriptor.
   model. A successful Stop writes nothing to stderr.
 - A non-zero exit keeps its refusal channel. Claude reads stdout and stderr.
   Codex gets both on stderr.
-- Pi receives protocol-1 JSON. Its SessionStart sections reach `additional_context`.
 
 No shell operator library exists. Product changes to handler behavior belong
 in `src/cli/hook/` and its tests. Run packaged helpers with
@@ -148,9 +144,6 @@ Edit guards:
   path.
 - `EditScopeGuard`: an `Edit` or `Write` call has no `tool_input.file_path`.
 
-`RepairLimit` stops a repeated failing test run on Pi. It needs the payload
-exit status, which only Pi sends.
-
 Circuit-breaker updates lock the complete read-modify-write and wait at most
 two seconds. An update reclaims the lock only when the owner record is complete
 and its pid is dead. A live owner, an unreadable owner, extra or unexpected
@@ -158,10 +151,10 @@ entries, or an empty lock directory still fails closed after two seconds. Only
 in those cases, after verifying that no hook process is active, an operator may
 remove `.ai/harness/state/circuit-breaker.json.lock` and retry.
 
-The circuit breaker keeps two kinds: `repair` and `semantic-review`. A state
+The circuit breaker keeps one kind: `semantic-review`. A state
 file from an older runtime fails closed when it has protocol 1 or a retired
-kind (`guard`, `review`, `subagent`, `cross-model-consult` or
-`minimal-change`). The error names the one-shot cleanup. Run
+kind (`guard`, `review`, `subagent`, `cross-model-consult`, `minimal-change`
+or `repair`). The error names the one-shot cleanup. Run
 `repo-harness run evidence-gc --repo <path>`, or
 `bun scripts/evidence-gc.ts --repo <path>` in this source checkout.
 
@@ -186,9 +179,9 @@ subject changed after the last change to
 ownership authority, and Git gives the changed set: one `git log` and one
 `git status`. `SessionStart` uses the ownership answer of its own state
 resolution. `PreToolUse.edit` resolves the owners of the edited paths only. It
-takes no state lock and runs `git status` only for an owned path. `Stop`,
-`PostToolUse.bash` and `state owed` run one read-only ownership resolution of
-their own for the review subject. An uncommitted manifest change counts as the
+takes no state lock and runs `git status` only for an owned path. `Stop` and
+`state owed` run one read-only ownership resolution of their own for the
+review subject. An uncommitted manifest change counts as the
 newest change. A checkout without the manifest, or a repository without a
 capability registry, is `not_projected`. The owed report has at most
 three lines: the capability and its module document, new unowned source paths,
@@ -201,7 +194,7 @@ The Agent gets the report at these points:
 | Point | Hosts | When |
 | --- | --- | --- |
 | `PreToolUse.edit` | Claude, Codex | `[CapabilityOwner]` line on the first edit of an owned path after its last commit |
-| `SessionStart.default` | Claude, Codex, Pi | the branch already owes updates |
+| `SessionStart.default` | Claude, Codex | the branch already owes updates |
 | `Stop.default` | Claude only | once per branch and owed set; nothing when `stop_hook_active` is true |
 
 CI and operators use the same rule without hooks:

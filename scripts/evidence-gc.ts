@@ -103,8 +103,8 @@ function supersededCheckpoints(
 const CIRCUIT_STATE_PATH = ".ai/harness/state/circuit-breaker.json";
 /** The circuit breaker's own lock, so a hook write cannot interleave with this rewrite. */
 const CIRCUIT_LOCK_PATH = `${CIRCUIT_STATE_PATH}.lock`;
-const LIVE_CIRCUIT_KINDS: ReadonlySet<string> = new Set(["repair", "semantic-review"]);
-const RETIRED_CIRCUIT_KINDS: ReadonlySet<string> = new Set(["guard", "review", "subagent", "cross-model-consult", "minimal-change"]);
+const LIVE_CIRCUIT_KINDS: ReadonlySet<string> = new Set(["semantic-review"]);
+const RETIRED_CIRCUIT_KINDS: ReadonlySet<string> = new Set(["guard", "review", "subagent", "cross-model-consult", "minimal-change", "repair"]);
 
 interface CircuitCleanup {
   readonly action: "none" | "removed-retired-kinds" | "deleted-protocol-1";

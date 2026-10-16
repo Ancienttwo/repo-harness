@@ -14,14 +14,13 @@ import { join } from 'path';
 import { execFileSync, spawn, spawnSync } from 'child_process';
 import { circuitLimit, recordCircuitAttempt, type CircuitAttempt } from '../src/cli/hook/circuit-breaker';
 import { withExclusiveDirectoryLock } from '../src/effects/locking/exclusive-directory-lock';
-import { runCommandObserved } from '../src/cli/hook/command-observed';
 
 const HOOK_ENTRY = join(import.meta.dir, '../src/cli/hook-entry.ts');
 
 function attempt(overrides: Partial<CircuitAttempt> = {}): CircuitAttempt {
   return {
-    kind: 'repair', guard: 'scope', reason: 'outside allowed paths', pathOrAction: 'src/secret.ts',
-    progressToken: 'sha256:progress', fingerprint: 'sha256:repair', ...overrides,
+    kind: 'semantic-review', guard: 'scope', reason: 'outside allowed paths', pathOrAction: 'src/secret.ts',
+    progressToken: 'sha256:progress', fingerprint: 'sha256:render', ...overrides,
   };
 }
 
@@ -80,13 +79,12 @@ function readCircuitState(cwd: string): {
 }
 
 describe('workflow circuit breakers', () => {
-  test('same repair fingerprint blocks at most twice before structured trip', () => withRepo((cwd) => {
+  test('the same fingerprint is allowed once before a structured trip', () => withRepo((cwd) => {
     expect(recordCircuitAttempt(cwd, attempt()).allowed).toBe(true);
-    expect(recordCircuitAttempt(cwd, attempt()).allowed).toBe(true);
-    const third = recordCircuitAttempt(cwd, attempt());
-    expect(third).toMatchObject({ allowed: false, tripped: true, repeat_count: 3, limit: 2 });
-    expect(third.explicit_override_command).toBeNull();
-    expect(third.required_action).toStartWith('terminal:');
+    const second = recordCircuitAttempt(cwd, attempt());
+    expect(second).toMatchObject({ allowed: false, tripped: true, repeat_count: 2, limit: 1 });
+    expect(second.explicit_override_command).toBeNull();
+    expect(second.required_action).toStartWith('terminal:');
   }));
 
   test('real progress resets the stream while a different blocker starts a fresh streak', () => withRepo((cwd) => {
@@ -100,13 +98,13 @@ describe('workflow circuit breakers', () => {
     const second = recordCircuitAttempt(cwd, attempt());
     const third = recordCircuitAttempt(cwd, attempt());
     expect(first.repeat_count).toBe(1);
-    expect(second).toMatchObject({ allowed: true, repeat_count: 2 });
-    expect(third).toMatchObject({ allowed: false, tripped: true, repeat_count: 3 });
+    expect(second).toMatchObject({ allowed: false, tripped: true, repeat_count: 2 });
+    expect(third).toMatchObject({ allowed: false, tripped: true, repeat_count: 2 });
     const state = readCircuitState(cwd);
     expect(state.protocol).toBe(2);
-    expect(Object.keys(state.entries)).toEqual(['repair']);
-    expect(state.entries.repair.last_pattern).toBe('exact-repeat');
-    expect(state.entries.repair.recent_blockers).toHaveLength(2);
+    expect(Object.keys(state.entries)).toEqual(['semantic-review']);
+    expect(state.entries['semantic-review'].last_pattern).toBe('exact-repeat');
+    expect(state.entries['semantic-review'].recent_blockers).toHaveLength(2);
   }));
 
   test('render-only reason, path, and fingerprint churn cannot reset one blocker', () => withRepo((cwd) => {
@@ -114,12 +112,12 @@ describe('workflow circuit breakers', () => {
     const second = recordCircuitAttempt(cwd, attempt({ reason: 'reason B', pathOrAction: 'path B', fingerprint: 'render B' }));
     const third = recordCircuitAttempt(cwd, attempt({ reason: 'reason C', pathOrAction: 'path C', fingerprint: 'render C' }));
     expect(first.repeat_count).toBe(1);
-    expect(second).toMatchObject({ allowed: true, repeat_count: 2 });
-    expect(third).toMatchObject({ allowed: false, tripped: true, repeat_count: 3 });
+    expect(second).toMatchObject({ allowed: false, tripped: true, repeat_count: 2 });
+    expect(third).toMatchObject({ allowed: false, tripped: true, repeat_count: 2 });
     const state = readCircuitState(cwd);
-    expect(state.entries.repair.last_pattern).toBe('superficial-churn');
-    expect(state.entries.repair.recent_blockers).toHaveLength(2);
-    expect(state.entries.repair.recent_blockers[0]).toBe(state.entries.repair.recent_blockers[1]);
+    expect(state.entries['semantic-review'].last_pattern).toBe('superficial-churn');
+    expect(state.entries['semantic-review'].recent_blockers).toHaveLength(2);
+    expect(state.entries['semantic-review'].recent_blockers[0]).toBe(state.entries['semantic-review'].recent_blockers[1]);
   }));
 
   test('A-B-A trips immediately under one unchanged progress token', () => withRepo((cwd) => {
@@ -128,8 +126,8 @@ describe('workflow circuit breakers', () => {
     expect(recordCircuitAttempt(cwd, blockerA)).toMatchObject({ allowed: true, repeat_count: 1 });
     expect(recordCircuitAttempt(cwd, blockerB)).toMatchObject({ allowed: true, repeat_count: 1 });
     const oscillation = recordCircuitAttempt(cwd, blockerA);
-    expect(oscillation).toMatchObject({ allowed: false, tripped: true, repeat_count: 3, limit: 2 });
-    expect(readCircuitState(cwd).entries.repair.last_pattern).toBe('oscillation');
+    expect(oscillation).toMatchObject({ allowed: false, tripped: true, repeat_count: 2, limit: 1 });
+    expect(readCircuitState(cwd).entries['semantic-review'].last_pattern).toBe('oscillation');
   }));
 
   test('non-cycling blocker changes do not trip and do not inherit the old count', () => withRepo((cwd) => {
@@ -139,16 +137,16 @@ describe('workflow circuit breakers', () => {
     expect(recordCircuitAttempt(cwd, first).repeat_count).toBe(1);
     expect(recordCircuitAttempt(cwd, second).repeat_count).toBe(1);
     expect(recordCircuitAttempt(cwd, third)).toMatchObject({ allowed: true, repeat_count: 1 });
-    expect(readCircuitState(cwd).entries.repair.last_pattern).toBe('new-blocker');
+    expect(readCircuitState(cwd).entries['semantic-review'].last_pattern).toBe('new-blocker');
   }));
 
   test('A-A-B is a new blocker, not an A-B-A oscillation', () => withRepo((cwd) => {
     const blockerA = attempt({ guard: 'blocker-a' });
     const blockerB = attempt({ guard: 'blocker-b' });
     expect(recordCircuitAttempt(cwd, blockerA).repeat_count).toBe(1);
-    expect(recordCircuitAttempt(cwd, blockerA)).toMatchObject({ allowed: true, repeat_count: 2 });
+    expect(recordCircuitAttempt(cwd, blockerA)).toMatchObject({ allowed: false, repeat_count: 2 });
     expect(recordCircuitAttempt(cwd, blockerB)).toMatchObject({ allowed: true, repeat_count: 1 });
-    expect(readCircuitState(cwd).entries.repair.last_pattern).toBe('new-blocker');
+    expect(readCircuitState(cwd).entries['semantic-review'].last_pattern).toBe('new-blocker');
   }));
 
   test('a progress-token change prevents A-B-A classification and resets bounded history', () => withRepo((cwd) => {
@@ -159,8 +157,8 @@ describe('workflow circuit breakers', () => {
     const progressed = recordCircuitAttempt(cwd, { ...blockerA, progressToken: 'sha256:advanced' });
     expect(progressed).toMatchObject({ allowed: true, repeat_count: 1, progress_token: 'sha256:advanced' });
     const state = readCircuitState(cwd);
-    expect(state.entries.repair.last_pattern).toBe('real-progress-reset');
-    expect(state.entries.repair.recent_blockers).toHaveLength(1);
+    expect(state.entries['semantic-review'].last_pattern).toBe('real-progress-reset');
+    expect(state.entries['semantic-review'].recent_blockers).toHaveLength(1);
   }));
 
   test('projection-only churn never changes the progress token, so repeats keep accumulating on it', () => withRepo((cwd) => {
@@ -168,9 +166,8 @@ describe('workflow circuit breakers', () => {
     // rewrite produces, since projection churn never moves progress_token):
     // repeats accumulate against the same key instead of resetting.
     expect(recordCircuitAttempt(cwd, attempt({ progressToken: 'sha256:same' })).repeat_count).toBe(1);
-    expect(recordCircuitAttempt(cwd, attempt({ progressToken: 'sha256:same' })).repeat_count).toBe(2);
-    const third = recordCircuitAttempt(cwd, attempt({ progressToken: 'sha256:same' }));
-    expect(third).toMatchObject({ allowed: false, tripped: true, repeat_count: 3, limit: 2 });
+    const second = recordCircuitAttempt(cwd, attempt({ progressToken: 'sha256:same' }));
+    expect(second).toMatchObject({ allowed: false, tripped: true, repeat_count: 2, limit: 1 });
 
     // Real progress -- the token itself changes -- resets to a fresh key.
     expect(recordCircuitAttempt(cwd, attempt({ progressToken: 'sha256:advanced' })).repeat_count).toBe(1);
@@ -178,37 +175,26 @@ describe('workflow circuit breakers', () => {
 
   test('an empty or missing progress token fails closed: the key stays stable so repeats keep accumulating', () => withRepo((cwd) => {
     expect(recordCircuitAttempt(cwd, attempt({ progressToken: '' })).repeat_count).toBe(1);
-    expect(recordCircuitAttempt(cwd, attempt({ progressToken: '' })).repeat_count).toBe(2);
-    const third = recordCircuitAttempt(cwd, attempt({ progressToken: '' }));
-    expect(third).toMatchObject({ allowed: false, tripped: true, repeat_count: 3, limit: 2 });
+    const second = recordCircuitAttempt(cwd, attempt({ progressToken: '' }));
+    expect(second).toMatchObject({ allowed: false, tripped: true, repeat_count: 2, limit: 1 });
 
     // Omitting the field entirely (as a raw stdin-JSON caller might) must
     // collapse to the exact same stable key as an explicit empty string --
     // never a distinct, ever-changing key that would fail open -- so the
     // breaker stays tripped at the capped count instead of resetting to 1.
     const { progressToken: _omitted, ...omitted } = attempt();
-    const fourth = recordCircuitAttempt(cwd, omitted as CircuitAttempt);
-    expect(fourth).toMatchObject({ allowed: false, tripped: true, repeat_count: 3, limit: 2 });
+    const third = recordCircuitAttempt(cwd, omitted as CircuitAttempt);
+    expect(third).toMatchObject({ allowed: false, tripped: true, repeat_count: 2, limit: 1 });
   }));
 
-  test('caps match the repair and semantic-review contracts', () => {
-    expect(circuitLimit(attempt({ kind: 'repair' }))).toBe(2);
+  test('the cap matches the semantic-review contract', () => {
     expect(circuitLimit(attempt({ kind: 'semantic-review' }))).toBe(1);
   });
 
   test('a retired circuit kind is not accepted as an attempt', () => withRepo((cwd) => {
     expect(() => recordCircuitAttempt(cwd, attempt({ kind: 'guard' as CircuitAttempt['kind'] }))).toThrow(/invalid circuit kind: guard/);
+    expect(() => recordCircuitAttempt(cwd, attempt({ kind: 'repair' as CircuitAttempt['kind'] }))).toThrow(/invalid circuit kind: repair/);
     expect(existsSync(join(cwd, '.ai/harness/state/circuit-breaker.json'))).toBe(false);
-  }));
-
-  test('keeps independent runtime counters per circuit kind', () => withRepo((cwd) => {
-    expect(recordCircuitAttempt(cwd, attempt({ kind: 'semantic-review' })).allowed).toBe(true);
-    expect(recordCircuitAttempt(cwd, attempt({ kind: 'repair' })).allowed).toBe(true);
-    expect(recordCircuitAttempt(cwd, attempt({ kind: 'semantic-review' }))).toMatchObject({
-      allowed: false,
-      repeat_count: 2,
-      limit: 1,
-    });
   }));
 
   test('strong boundaries never expose an override command', () => withRepo((cwd) => {
@@ -271,12 +257,11 @@ describe('workflow circuit breakers', () => {
         repeat_count: number;
         limit: number;
       });
-      expect(decisions.filter((decision) => decision.allowed)).toHaveLength(2);
-      expect(decisions.filter((decision) => !decision.allowed)).toHaveLength(processCount - 2);
-      expect(decisions.every((decision) => decision.limit === 2)).toBe(true);
+      expect(decisions.filter((decision) => decision.allowed)).toHaveLength(1);
+      expect(decisions.filter((decision) => !decision.allowed)).toHaveLength(processCount - 1);
+      expect(decisions.every((decision) => decision.limit === 1)).toBe(true);
       expect(decisions.filter((decision) => decision.repeat_count === 1)).toHaveLength(1);
-      expect(decisions.filter((decision) => decision.repeat_count === 2)).toHaveLength(1);
-      expect(decisions.filter((decision) => decision.repeat_count === 3)).toHaveLength(processCount - 2);
+      expect(decisions.filter((decision) => decision.repeat_count === 2)).toHaveLength(processCount - 1);
       expect(existsSync(join(cwd, '.ai/harness/state/circuit-breaker.json.lock'))).toBe(false);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
@@ -295,7 +280,7 @@ describe('workflow circuit breakers', () => {
   }));
 
   test('a retired kind in protocol-2 state fails closed and names the one-shot cleanup', () => withRepo((cwd) => {
-    for (const kind of ['guard', 'review', 'subagent', 'cross-model-consult', 'minimal-change']) {
+    for (const kind of ['guard', 'review', 'subagent', 'cross-model-consult', 'minimal-change', 'repair']) {
       const retired = writeCircuitState(cwd, {
         protocol: 2,
         entries: {
@@ -317,7 +302,7 @@ describe('workflow circuit breakers', () => {
     mkdirSync(join(cwd, '.ai/harness/state'), { recursive: true });
     const malformed = `${JSON.stringify({
       protocol: 2,
-      entries: { repair: { count: 2 } },
+      entries: { 'semantic-review': { count: 2 } },
       updated_at: new Date().toISOString(),
     })}\n`;
     writeFileSync(statePath, malformed);
@@ -406,22 +391,4 @@ describe('workflow circuit breakers', () => {
     }
     expect(existsSync(join(cwd, '.ai/harness/state/circuit-breaker.json'))).toBe(false);
   }), 60_000);
-
-  test('the repair cap trips on the third known test failure with a read-only progress token', () => withOptInRepo((cwd) => {
-    for (let index = 1; index <= 3; index += 1) {
-      const result = runCommandObserved({
-        repoRoot: cwd,
-        payload: { tool_input: { command: 'bun test' }, tool_response: { stdout: 'FAIL test', stderr: '', interrupted: false }, exit_code: 1 },
-      });
-      expect(result.exitCode).toBe(index < 3 ? 0 : 2);
-      if (index === 3) expect(result.stderr).toContain('"limit":2');
-    }
-    const state = readCircuitState(cwd);
-    expect(Object.keys(state.entries)).toEqual(['repair']);
-    expect(state.entries.repair.progress_token).toMatch(/\S/);
-    expect(state.entries.repair.progress_token).not.toBe('unknown');
-    expect(existsSync(join(cwd, '.ai/harness/state/effective.json'))).toBe(false);
-  }), 60_000);
-
-
 });

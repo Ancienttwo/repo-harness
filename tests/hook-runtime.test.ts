@@ -4,7 +4,6 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { runHook } from '../src/cli/hook/runtime';
-import { HOOK_EVENT_TELEMETRY_PROTOCOL } from '../src/cli/hook/event-telemetry';
 import { buildTaskMessageEvent } from '../src/core/fleet/task-message';
 import { bindLeaseRecord, buildLeaseOwnerRecord, deriveTaskRevision } from '../src/core/state/coordination-identity';
 import { sendTaskMessage } from '../src/effects/fleet/task-inbox';
@@ -29,7 +28,7 @@ function fixture(): string {
   return root;
 }
 
-function env(root: string, host: 'claude' | 'codex' | 'pi' = 'claude'): NodeJS.ProcessEnv {
+function env(root: string, host: 'claude' | 'codex' = 'claude'): NodeJS.ProcessEnv {
   return { ...process.env, HOOK_REPO_ROOT: root, HOOK_HOST: host, REPO_HARNESS_WORKFLOW_PROFILE: 'routine' };
 }
 
@@ -41,7 +40,7 @@ function telemetry(root: string): Array<Record<string, unknown>> {
 const EDIT_PAYLOAD = JSON.stringify({ tool_name: 'Write', tool_input: { file_path: 'README.md', content: 'safe' } });
 
 /** Run PreToolUse.edit in a child whose mutation guard throws. */
-function crashGuard(root: string, host: 'claude' | 'codex' | 'pi'): {
+function crashGuard(root: string, host: 'claude' | 'codex'): {
   readonly result: Record<string, unknown>;
   readonly hostStdout: string;
   readonly hostStderr: string;
@@ -82,21 +81,7 @@ function crashGuard(root: string, host: 'claude' | 'codex' | 'pi'): {
 }
 
 describe('hook runtime typed dispatch', () => {
-  test('Pi JSON maps guard decisions and refuses host-specific routes', () => {
-    const root = fixture();
-    try {
-      const allowed = runHook({ event: 'PreToolUse', routeId: 'edit', cwd: root, env: env(root, 'pi'), input: EDIT_PAYLOAD });
-      expect(allowed.json).toMatchObject({ protocol: 1, host: 'pi', exit_code: 0, decision: 'allow', reason: 'ok' });
-      const refused = runHook({ event: 'PreToolUse', routeId: 'edit', cwd: root, env: env(root, 'pi'),
-        input: JSON.stringify({ tool_name: 'Write', tool_input: { file_path: '_ops/private', content: 'forbidden' } }) });
-      expect(refused.json).toMatchObject({ host: 'pi', exit_code: 2, decision: 'block' });
-      expect(refused.json?.diagnostics).toContain('OpsPrivateGuard');
-      expect(runHook({ event: 'PreToolUse', routeId: 'subagent', cwd: root, env: env(root, 'pi') }).json)
-        .toMatchObject({ decision: 'block', reason: 'unsupported-host-route', exit_code: 2 });
-    } finally { rmSync(root, { recursive: true, force: true }); }
-  });
-
-  test('an edit guard crash exits 2 on Claude and Codex and blocks on Pi', () => {
+  test('an edit guard crash exits 2 on Claude and Codex', () => {
     const root = fixture();
     try {
       for (const host of ['claude', 'codex'] as const) {
@@ -105,11 +90,6 @@ describe('hook runtime typed dispatch', () => {
         expect(crashed.hostStderr).toContain('repo-harness-hook: mutation-guard failed: injected guard crash');
         expect(crashed.hostStdout).toBe('');
       }
-      const pi = crashGuard(root, 'pi');
-      expect(pi.result).toMatchObject({ exitCode: 2, reason: 'handler-failed' });
-      expect(JSON.parse(pi.hostStdout.trim())).toMatchObject({
-        host: 'pi', exit_code: 2, decision: 'block', reason: 'handler-failed',
-      });
     } finally { rmSync(root, { recursive: true, force: true }); }
   }, 60_000);
 
@@ -150,10 +130,8 @@ describe('hook runtime typed dispatch', () => {
   test('a malformed payload is refused before any handler runs', () => {
     const root = fixture();
     try {
-      const result = runHook({ event: 'PreToolUse', routeId: 'edit', cwd: root, env: env(root, 'pi'), input: 'not json{' });
+      const result = runHook({ event: 'PreToolUse', routeId: 'edit', cwd: root, env: env(root), input: 'not json{' });
       expect(result).toMatchObject({ exitCode: 2, reason: 'invalid-payload' });
-      expect(result.json).toMatchObject({ decision: 'block', reason: 'invalid-payload' });
-      expect(result.json?.diagnostics).toContain('hook payload is not valid JSON');
     } finally { rmSync(root, { recursive: true, force: true }); }
   });
 
@@ -175,41 +153,17 @@ describe('hook runtime typed dispatch', () => {
   }, 30_000);
 
 
-  test('passes host payload once to the command observer and records its result', () => {
-    const root = fixture();
-    try {
-      const result = runHook({
-        event: 'PostToolUse',
-        routeId: 'bash',
-        cwd: root,
-        input: JSON.stringify({ tool_input: { command: 'echo hello' }, tool_response: { stdout: 'hello\n', stderr: '', interrupted: false }, exit_code: 0 }),
-        env: env(root, 'pi'),
-      });
-      expect(result).toMatchObject({ exitCode: 0, reason: 'ok', handler: 'command-observed' });
-      const [record] = telemetry(root);
-      expect(record).toMatchObject({
-        protocol: HOOK_EVENT_TELEMETRY_PROTOCOL,
-        host: 'pi',
-        event: 'PostToolUse',
-        route_id: 'bash',
-        exit_code: 0,
-        blocked: false,
-        reason: 'ok',
-      });
-    } finally { rmSync(root, { recursive: true, force: true }); }
-  }, 30_000);
-
   test('typed handlers do not consult a route filesystem and write one v2 record', () => {
     const root = fixture();
     try {
       const result = runHook({
-        event: 'PostToolUse',
-        routeId: 'bash',
+        event: 'PreToolUse',
+        routeId: 'edit',
         cwd: root,
-        input: JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'echo hi' }, exit_code: 0 }),
-        env: env(root, 'pi'),
+        input: EDIT_PAYLOAD,
+        env: env(root),
       });
-      expect(result.handler).toBe('command-observed');
+      expect(result.handler).toBe('mutation-guard');
       const [record] = telemetry(root);
       expect(Object.keys(record).sort()).toEqual([
         'blocked', 'completed_at', 'elapsed_ms', 'event', 'event_id', 'exit_code', 'fingerprint', 'host',
@@ -288,12 +242,6 @@ describe('host envelopes on the real hook entry (#678)', () => {
         const sessionContext = context(session.stdout, 'SessionStart');
         expect(sessionContext).toContain('[ArchitectureOwed]');
         expect(sessionContext).toContain('core-owned (docs/architecture/modules/core/owned.md)');
-
-        const push = host(root, hostName, 'PostToolUse', 'bash', {
-          tool_input: { command: 'git push origin feature' }, tool_response: { stdout: '', stderr: '' }, exit_code: 0,
-        });
-        expect(push.status).toBe(2);
-        expect(push.stderr).toContain('unsupported-host-route');
       }
     } finally { rmSync(root, { recursive: true, force: true }); }
   }, 120_000);
@@ -385,10 +333,6 @@ describe('host envelopes on the real hook entry (#678)', () => {
         const session = host(root, hostName, 'SessionStart', 'default', { session_id: `clear-${hostName}` });
         expect(session.status).toBe(0);
         expect(session.stdout).not.toContain('ArchitectureOwed');
-        const push = host(root, hostName, 'PostToolUse', 'bash', {
-          tool_input: { command: 'git commit -m done' }, tool_response: { stdout: '', stderr: '' }, exit_code: 0,
-        });
-        expect(push.stdout).toBe('');
       }
       expect(host(root, 'claude', 'Stop', 'default', { stop_hook_active: false }).stdout).toBe('');
     } finally { rmSync(root, { recursive: true, force: true }); }

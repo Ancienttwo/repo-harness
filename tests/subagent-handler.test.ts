@@ -46,7 +46,7 @@ function invokeSubagent(opts: {
 }) {
   const env = opts.env ?? { ...process.env, HOOK_HOST: 'claude' };
   const host = env.HOOK_HOST;
-  if (host !== 'claude' && host !== 'codex' && host !== 'pi') throw new Error(`invokeSubagent needs HOOK_HOST, got ${String(host)}`);
+  if (host !== 'claude' && host !== 'codex') throw new Error(`invokeSubagent needs HOOK_HOST, got ${String(host)}`);
   const identity: HookIdentity = {
     host: host satisfies RouteHost,
     sessionId: payloadIdentityField(opts.payload, 'session_id'),

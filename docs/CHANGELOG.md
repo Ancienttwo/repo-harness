@@ -13,6 +13,11 @@ All notable changes to this skill are documented here.
   `delegation.runner_rule` policy keys are removed from the policy template
   and from this repository policy. Codex installs 5 routes. The minimal
   profile no longer lists `PostToolUse.bash`. (#766)
+- Pi support is removed. The Pi extension (`src/pi/`), the
+  `PostToolUse.bash` route, `command-observed.ts` and the `repair` circuit
+  kind are gone. `HOOK_HOST` accepts only `claude` and `codex`. A circuit
+  state file with a `repair` entry fails closed. Run
+  `repo-harness run evidence-gc --repo <path>` once to remove it. (#766)
 - Hook install and uninstall now accept only `--location global`.
   `--location local` exits with code 2 before configuration reads or writes.
   The installer no longer writes project-level Claude adapters. (#698)

@@ -13,7 +13,7 @@ describe('hook identity comes from the payload only', () => {
   });
 
   test('a missing or blank id stays null and nothing is minted', () => {
-    expect(hookIdentity({}, 'pi')).toEqual({ host: 'pi', sessionId: null, runId: null, turnId: null });
+    expect(hookIdentity({}, 'codex')).toEqual({ host: 'codex', sessionId: null, runId: null, turnId: null });
     expect(hookIdentity({ session_id: ' ', run_id: 7, turn_id: null }, 'claude'))
       .toEqual({ host: 'claude', sessionId: null, runId: null, turnId: null });
   });

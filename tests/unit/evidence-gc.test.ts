@@ -68,11 +68,11 @@ describe('evidence-gc one-release cleanups', () => {
     const result = gc(root);
 
     expect(result.status, result.stderr).toBe(0);
-    expect(result.report.circuit_breaker).toEqual({ action: 'removed-retired-kinds', removed_kinds: ['guard', 'minimal-change'] });
+    expect(result.report.circuit_breaker).toEqual({ action: 'removed-retired-kinds', removed_kinds: ['guard', 'minimal-change', 'repair'] });
     const state = JSON.parse(readFileSync(join(root, STATE), 'utf8'));
     expect(state).toEqual({
       protocol: 2,
-      entries: { repair: entry('r'), 'semantic-review': entry('s') },
+      entries: { 'semantic-review': entry('s') },
       updated_at: '2026-10-01T00:00:00.000Z',
     });
     expect(readdirSync(join(root, '.ai/harness/state')).filter((name) => name.includes('.tmp-'))).toEqual([]);

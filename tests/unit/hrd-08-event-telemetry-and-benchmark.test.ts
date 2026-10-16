@@ -57,18 +57,6 @@ describe('HRD-08 event telemetry authority', () => {
     expect(record.elapsed_ms).toBeGreaterThanOrEqual(0);
   });
 
-  test('Pi hook events carry host pi', () => {
-    const repoRoot = tempDir('hrd08-event-pi-host-');
-    const record = createHookEventTelemetry({ repoRoot, event: 'PreToolUse', routeId: 'edit' }).finalize({
-      identity: identity({ host: 'pi', sessionId: 'pi-session' }),
-      exitCode: 0,
-      blocked: false,
-      reason: 'ok',
-    });
-    expect(record.host).toBe('pi');
-    expect(record.session_id).toBe('pi-session');
-  });
-
   test('semantic fingerprints detect repeated equivalent blocked events', () => {
     const repoRoot = tempDir('hrd08-event-fingerprint-');
     const run = (reason: string) => createHookEventTelemetry({ repoRoot, event: 'PreToolUse', routeId: 'edit' }).finalize({

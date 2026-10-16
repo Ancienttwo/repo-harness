@@ -96,7 +96,6 @@
     "tests/cli/verified-context.test.ts": 2205.67,
     "tests/cli/windows-protected-helper-runtime-smoke.test.ts": 0,
     "tests/codex-handoff-resume.test.ts": 1465.68,
-    "tests/command-observed.test.ts": 1260.74,
     "tests/continuation-attempt.test.ts": 46594.26,
     "tests/continuation-conformance.test.ts": 61671.47,
     "tests/continuation-envelope.test.ts": 23433.91,

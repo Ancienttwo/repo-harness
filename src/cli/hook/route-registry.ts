@@ -25,14 +25,13 @@ export type HookEvent =
   | 'SubagentStop'
   | 'Stop';
 
-export type RouteHost = 'claude' | 'codex' | 'pi';
+export type RouteHost = 'claude' | 'codex';
 
 /** Stable route id within an event. Public contract — never rename without coordinated adapter migration. */
 export type RouteId =
   | 'default'
   | 'edit'
   | 'subagent'
-  | 'bash'
   | 'inbox'
   | 'context';
 
@@ -42,7 +41,6 @@ export type HookHandlerId =
   | 'mutation-guard'
   | 'return-channel'
   | 'subagent-context'
-  | 'command-observed'
   | 'task-inbox'
   | 'stop';
 
@@ -88,13 +86,6 @@ export const ROUTES: readonly Route[] = Object.freeze([
     matcher: 'Agent',
     hosts: ['claude'] as const,
     handler: 'return-channel',
-  }),
-  Object.freeze({
-    event: 'PostToolUse' as const,
-    routeId: 'bash' as const,
-    matcher: 'Bash',
-    hosts: ['pi'] as const,
-    handler: 'command-observed',
   }),
   Object.freeze({
     event: 'UserPromptSubmit' as const,

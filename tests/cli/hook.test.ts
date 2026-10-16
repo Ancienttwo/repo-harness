@@ -24,7 +24,7 @@ function repo(optIn = true): string {
   return root;
 }
 
-function env(root: string, host: 'claude' | 'codex' | 'pi' = 'claude'): NodeJS.ProcessEnv {
+function env(root: string, host: 'claude' | 'codex' = 'claude'): NodeJS.ProcessEnv {
   return {
     ...process.env,
     HOOK_REPO_ROOT: root,
@@ -42,7 +42,7 @@ describe('typed hook runtime', () => {
     const root = mkdtempSync(join(tmpdir(), 'hrd09-not-git-'));
     try {
       // #691 finding 7: HOOK_REPO_ROOT is trusted as the root, so only a call
-      // without it (Pi, or a direct call) resolves the root from a non-git cwd.
+      // without it (a direct call) resolves the root from a non-git cwd.
       const { HOOK_REPO_ROOT: _managedRoot, ...unmanaged } = env(root);
       const result = runHook({ event: 'Stop', routeId: 'default', cwd: root, env: unmanaged });
       expect(result).toEqual({ exitCode: 0, reason: 'not-in-git-repo' });
@@ -96,11 +96,6 @@ describe('typed hook runtime', () => {
       const session = spawnSync(process.execPath, [HOOK_ENTRY, 'SessionStart', '--route', 'default'], { cwd: root, env: env(root), input: '', encoding: 'utf8' });
       expect(session.status).toBe(1);
       expect(session.stderr).toContain('This repository needs repo-harness >= 999.0.0;');
-
-      // The JSON form carries the message, so Pi can show it.
-      const json = runHook({ event: 'SessionStart', routeId: 'default', cwd: root, env: { ...env(root), HOOK_HOST: 'pi' } });
-      expect(json.json).toMatchObject({ reason: 'harness-upgrade-required', exit_code: 1, decision: 'block' });
-      expect(json.json?.diagnostics).toContain('This repository needs repo-harness >= 999.0.0;');
     } finally { clean(root); }
   }, 30_000);
 
@@ -177,15 +172,6 @@ describe('typed hook runtime', () => {
       expect(result.stderr.trim().split('\n')).toHaveLength(1);
       expect(result.stderr).toContain('unsupported-host-route');
       expect(result.stderr).toContain('repo-harness install --target codex --location global');
-      for (const host of ['claude', 'codex'] as const) {
-        const bash = spawnSync(process.execPath, [HOOK_ENTRY, 'PostToolUse', '--route', 'bash'], {
-          cwd: root, env: env(root, host), input: '{}', encoding: 'utf8',
-        });
-        expect(bash.status).toBe(2);
-        expect(bash.stdout).toBe('');
-        expect(bash.stderr).toContain('unsupported-host-route');
-        expect(bash.stderr).toContain(`repo-harness install --target ${host} --location global`);
-      }
       expect(existsSync(join(root, '.ai/harness/delegation'))).toBe(false);
     } finally { clean(root); }
   }, 30_000);
@@ -228,16 +214,15 @@ describe('typed hook runtime', () => {
   test('retired routes fail closed and name the adapter repair command', () => {
     const root = repo();
     try {
-      for (const host of ['claude', 'codex', 'pi'] as const) {
-        for (const [event, route] of [['PostToolUse', 'edit'], ['PostToolUse', 'always'],
-          ['UserPromptSubmit', 'default'], ['SubagentStop', 'quality']]) {
+      for (const host of ['claude', 'codex'] as const) {
+        for (const [event, route] of [['PostToolUse', 'edit'], ['PostToolUse', 'always'], ['PostToolUse', 'bash'],
+          ['UserPromptSubmit', 'default'], ['UserPromptSubmit', 'delegation'], ['SubagentStop', 'quality']]) {
           const result = spawnSync(process.execPath, [HOOK_ENTRY, event, '--route', route], {
             cwd: root, env: env(root, host), input: '{}', encoding: 'utf8',
           });
           expect(result.status).toBe(2);
-          const diagnostic = host === 'pi' ? JSON.parse(result.stdout).diagnostics : result.stderr;
-          expect(diagnostic).toContain('unknown route');
-          expect(diagnostic).toContain(host === 'pi' ? 'Reload the Pi extension' : `repo-harness install --target ${host} --location global`);
+          expect(result.stderr).toContain('unknown route');
+          expect(result.stderr).toContain(`repo-harness install --target ${host} --location global`);
         }
       }
       expect(existsSync(join(root, '.ai/harness/runs/hook-events.jsonl'))).toBe(false);
@@ -276,13 +261,12 @@ describe('typed hook runtime', () => {
         ['SessionStart', 'default', undefined, 'session-context'],
         ['PreToolUse', 'edit', JSON.stringify({ tool_input: { file_path: 'README.md' } }), 'mutation-guard'],
         ['PreToolUse', 'subagent', JSON.stringify({ tool_name: 'Agent', tool_input: { prompt: 'inspect' } }), 'return-channel'],
-        ['PostToolUse', 'bash', JSON.stringify({ tool_input: { command: 'echo hi' }, tool_response: { stdout: 'hi\n', stderr: '', interrupted: false }, exit_code: 0 }), 'command-observed'],
         ['UserPromptSubmit', 'inbox', JSON.stringify({ prompt: 'continue' }), 'task-inbox'],
         ['SubagentStart', 'context', JSON.stringify({ hook_event_name: 'SubagentStart' }), 'subagent-context'],
         ['Stop', 'default', JSON.stringify({ stop_hook_active: false }), 'stop'],
       ] as const;
       for (const [event, routeId, input, handler] of cases) {
-        const result = runHook({ event, routeId, cwd: root, input, env: env(root, event === 'PostToolUse' ? 'pi' : event === 'SubagentStart' ? 'codex' : 'claude') });
+        const result = runHook({ event, routeId, cwd: root, input, env: env(root, event === 'SubagentStart' ? 'codex' : 'claude') });
         expect(result.handler).toBe(handler);
       }
     } finally { clean(root); }
@@ -306,11 +290,11 @@ describe('typed hook runtime', () => {
   test('one handled event writes one telemetry record', () => {
     const root = repo();
     try {
-      const result = runHook({ event: 'PostToolUse', routeId: 'bash', cwd: root, input: JSON.stringify({ tool_input: { command: 'echo hi' }, tool_response: { stdout: 'hi\n', stderr: '', interrupted: false }, exit_code: 0 }), env: env(root, 'pi') });
-      expect(result.handler).toBe('command-observed');
+      const result = runHook({ event: 'PreToolUse', routeId: 'edit', cwd: root, input: JSON.stringify({ tool_input: { file_path: 'README.md' } }), env: env(root) });
+      expect(result.handler).toBe('mutation-guard');
       const lines = readFileSync(join(root, '.ai/harness/runs/hook-events.jsonl'), 'utf8').trim().split('\n');
       expect(lines).toHaveLength(1);
-      expect(JSON.parse(lines[0])).toMatchObject({ event: 'PostToolUse', route_id: 'bash', reason: 'ok' });
+      expect(JSON.parse(lines[0])).toMatchObject({ event: 'PreToolUse', route_id: 'edit', reason: 'ok' });
     } finally { clean(root); }
   }, 30_000);
 });
