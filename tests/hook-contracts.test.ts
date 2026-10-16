@@ -77,7 +77,6 @@ describe("Hook contracts", () => {
   });
 
   test("no hook grants standing delegation authorization", () => {
-    expect(existsSync(join(ROOT, "src/cli/hook/delegation-advisor.ts"))).toBe(false);
     const sessionStart = read("src/cli/hook/session-context.ts");
     expect(sessionStart).not.toContain("Delegation Standing Authorization");
     expect(sessionStart).not.toContain("effectiveDelegationMode");

@@ -218,8 +218,8 @@ _ci_run_bun_test_pool() {
 }
 
 # dist/ is ignored, so a stale local bundle silently runs old behavior. Build the
-# hook bundle only when a selected file spawns dist/hook-entry.js, directly or
-# through the Pi bridge; every other selection skips the build.
+# hook bundle only when a selected file spawns dist/hook-entry.js; every other
+# selection skips the build.
 _ci_build_hook_bundle_if_selected() {
   grep -qsE 'hook-entry\.js' -- "$@" || return 0
   (cd "$(dirname "${BASH_SOURCE[0]}")/../.." && bun run build:hook-bundle) || return $?
