@@ -12,7 +12,7 @@ afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: 
 function fixture() { const root = mkdtempSync(join(tmpdir(), 'hook-log-')); roots.push(root); return root; }
 const IDENTITY = { host: 'claude', sessionId: null, runId: null, turnId: null } as const;
 function emit(root: string) {
-  return createHookEventTelemetry({ repoRoot: root, event: 'PostToolUse', routeId: 'bash' })
+  return createHookEventTelemetry({ repoRoot: root, event: 'PreToolUse', routeId: 'edit' })
     .finalize({ identity: IDENTITY, exitCode: 0, blocked: false, reason: 'ok' });
 }
 function seedFull(root: string) {

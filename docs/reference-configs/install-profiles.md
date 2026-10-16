@@ -21,7 +21,7 @@ Skill only; it does not install Python or change PowerShell settings.
 
 Fresh global installs and adapter-only installs both default to `full`.
 `minimal` installs four routes on Claude and Codex. The full profile installs
-five on Claude and six on Codex. Pi maps four routes.
+five on Claude and five on Codex.
 Profile switching removes only package-owned surfaces. Unknown or modified
 canonical/facade directories fail closed before mutation; user-authored
 content is preserved. ChatGPT remains an explicit setup surface and is not
@@ -184,10 +184,10 @@ alias for the adapter-only install path.
 ## Codex Delegation Authority
 
 Adapter installation has no delegation-mode prompt or config write. Codex fleet
-delegation is explicit: `/delegate` or `/parallel` may inject a bounded dispatch
-contract, while authorization can also come directly from the current user turn,
-applicable `AGENTS.md`, or an explicitly invoked skill. Natural-language hook
-classification and SessionStart standing authorization are not authorities.
+delegation is explicit. Authorization comes from the current user turn,
+applicable `AGENTS.md`, or an explicitly invoked skill. No hook answers
+`/delegate` or `/parallel`. Hook prompt classification and SessionStart
+standing authorization are not authorities.
 
 At runtime, Codex uses native `spawn_agent` with the exact installed
 `agent_type` and `fork_turns="none"`. Missing or mismatched native role/model

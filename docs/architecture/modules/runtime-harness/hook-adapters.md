@@ -1,12 +1,12 @@
 # runtime-harness/hook-adapters 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-hook-adapters" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:d4bf7fa0deb28c66c713f374c17e2436c0558be8d3ab0229e8a8305cb845466f" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-hook-adapters" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:fe22767e6cb73fa095f6ad8302784ae4eac60e99f93f60ce6ac1d465d505a21a" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.hook-adapters`(kind `capability`)
-> **Matched Prefixes**:`src/cli/hook/**`、`src/cli/installer/**`、`src/cli/hook-entry.ts`、`src/pi/**`、`src/effects/loop/**`、`src/effects/hook-event-log.ts`、`src/effects/run-summary-retention.ts`、`src/cli/commands/install.ts`、`src/cli/commands/status.ts`、`src/cli/commands/security.ts`
+> **Matched Prefixes**:`src/cli/hook/**`、`src/cli/installer/**`、`src/cli/hook-entry.ts`、`src/effects/loop/**`、`src/effects/hook-event-log.ts`、`src/effects/run-summary-retention.ts`、`src/cli/commands/install.ts`、`src/cli/commands/status.ts`、`src/cli/commands/security.ts`
 > **Local Contracts**:`src/cli/hook/AGENTS.md`、`src/cli/hook/CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
-Installs and runs typed Claude, Codex, and Pi host hook routes.
+Installs and runs typed Claude and Codex host hook routes.
 
 ## 1. P1:能力架構地圖
 
@@ -16,14 +16,14 @@ Installs and runs typed Claude, Codex, and Pi host hook routes.
 flowchart LR
   p1_capability_runtime_harness_evidence_ledger_2fe63ef5["Evidence Ledger"]:::component
   p1_capability_runtime_harness_hook_adapters_75a11743["Hook Adapters"]:::component
-  p1_component_hook_adapters_edit_guards_019fd22c["Guard and Observer Handlers"]:::component
+  p1_component_hook_adapters_edit_guards_019fd22c["Edit Guard Handlers"]:::component
   p1_component_hook_adapters_host_installer_cd378e80["Host Adapter Installer"]:::component
   p1_component_hook_adapters_primary_1659ffb9["Hook Route Runtime"]:::component
   p1_component_hook_adapters_session_lifecycle_e389d412["Session Lifecycle Handlers"]:::component
   p1_component_hook_adapters_edit_guards_019fd22c -->|"Implement the typed handler contract and read hook input through the shared parsers"| p1_component_hook_adapters_primary_1659ffb9
-  p1_component_hook_adapters_host_installer_cd378e80 -->|"Project the route registry into managed adapter entries and invoke the runtime for Pi events"| p1_component_hook_adapters_primary_1659ffb9
+  p1_component_hook_adapters_host_installer_cd378e80 -->|"Project the route registry into managed adapter entries"| p1_component_hook_adapters_primary_1659ffb9
   p1_capability_runtime_harness_hook_adapters_75a11743 -->|"Dispatch a host hook route to its typed handler"| p1_component_hook_adapters_primary_1659ffb9
-  p1_component_hook_adapters_primary_1659ffb9 -->|"Bind the edit guard and the Pi Bash observer routes to their typed handlers"| p1_component_hook_adapters_edit_guards_019fd22c
+  p1_component_hook_adapters_primary_1659ffb9 -->|"Bind the PreToolUse.edit route to the mutation guard handler"| p1_component_hook_adapters_edit_guards_019fd22c
   p1_component_hook_adapters_primary_1659ffb9 -->|"Bind SessionStart and Stop and subagent and inbox routes to their typed handlers"| p1_component_hook_adapters_session_lifecycle_e389d412
   p1_component_hook_adapters_session_lifecycle_e389d412 -->|"Publish the evidence checkpoint and render handoff and resume from it"| p1_capability_runtime_harness_evidence_ledger_2fe63ef5
   p1_component_hook_adapters_session_lifecycle_e389d412 -->|"Implement the typed handler contract and read state through the event-scoped collector"| p1_component_hook_adapters_primary_1659ffb9
@@ -33,7 +33,7 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:ec792e9257364e22b74052c9fc7bc76fbbdd5a2f9098f6b21a65197ad9299591`).
+- Proof: `proven` (`sha256:d2d70abc712bda2caa9cd619d10ccdbcfc6ae3861faeec603f7dc4a27bf12a3e`).
 - Semantic nodes: `6`; declared relations: `7`.
 
 ### 1.2 模組職責表
@@ -53,7 +53,7 @@ flowchart LR
 ### 1.3 規模信號
 
 - 規模量級:`20–50` 個文件 / `5000–10000` 行
-- 匹配前綴:`src/cli/hook/**`、`src/cli/installer/**`、`src/cli/hook-entry.ts`、`src/pi/**`、`src/effects/loop/**`、`src/effects/hook-event-log.ts`、`src/effects/run-summary-retention.ts`、`src/cli/commands/install.ts`、`src/cli/commands/status.ts`、`src/cli/commands/security.ts`
+- 匹配前綴:`src/cli/hook/**`、`src/cli/installer/**`、`src/cli/hook-entry.ts`、`src/effects/loop/**`、`src/effects/hook-event-log.ts`、`src/effects/run-summary-retention.ts`、`src/cli/commands/install.ts`、`src/cli/commands/status.ts`、`src/cli/commands/security.ts`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
 ### 1.4 依賴邊界
@@ -78,17 +78,17 @@ flowchart LR
 - `component.hook-adapters.edit-guards`:
   - `calls` → `capability.workflow-engine.execution-primitives` — Lock the circuit breaker records
   - `depends-on` → `component.hook-adapters.primary` — Implement the typed handler contract and read hook input through the shared parsers
-  - `calls` → `capability.workflow-engine.workflow-state` — Canonicalize edit paths, resolve the owners of edited paths and read the repair progress token
+  - `calls` → `capability.workflow-engine.workflow-state` — Canonicalize edit paths and resolve the owners of edited paths
 - `component.hook-adapters.host-installer`:
   - `calls` → `capability.public-surface.adoption` — Share the managed hook command fingerprints with the adoption migration
   - `calls` → `capability.workflow-engine.execution-primitives` — Hold the runtime host transaction lock
   - `calls` → `capability.runtime-harness.global-runtime-reconciliation` — Report architecture projection readiness in status
-  - `calls` → `component.hook-adapters.primary` — Project the route registry into managed adapter entries and invoke the runtime for Pi events
+  - `calls` → `component.hook-adapters.primary` — Project the route registry into managed adapter entries
   - `calls` → `component.action-commands.skill-surface-catalog` — Read skill names and profile ownership from the skill surface catalog
 - `component.hook-adapters.primary`:
   - `calls` → `capability.workflow-engine.execution-primitives` — Run the process supervisor and group launcher entries and classify lock contention
   - `calls` → `capability.workflow-engine.workflow-state` — Resolve effective state at most once per hook event
-  - `calls` → `component.hook-adapters.edit-guards` — Bind the edit guard and the Pi Bash observer routes to their typed handlers
+  - `calls` → `component.hook-adapters.edit-guards` — Bind the PreToolUse.edit route to the mutation guard handler
   - `calls` → `capability.runtime-harness.global-runtime-reconciliation` — Write host output through the shared blocking writer
   - `calls` → `component.hook-adapters.session-lifecycle` — Bind SessionStart and Stop and subagent and inbox routes to their typed handlers
 - `component.hook-adapters.session-lifecycle`:
@@ -103,14 +103,14 @@ flowchart LR
 
 | 組件 | 名稱 | 規模量級 | 宣告入口 |
 | --- | --- | --- | --- |
-| `component.hook-adapters.edit-guards` | Guard and Observer Handlers | `2–5` 個文件 / `500–1000` 行 | 未宣告 |
+| `component.hook-adapters.edit-guards` | Edit Guard Handlers | `2–5` 個文件 / `200–500` 行 | 未宣告 |
 | `component.hook-adapters.host-installer` | Host Adapter Installer | `10–20` 個文件 / `2000–5000` 行 | `entrypoint.hook-adapters.managed-entries` |
 | `component.hook-adapters.primary` | Hook Route Runtime | `10–20` 個文件 / `1000–2000` 行 | `entrypoint.hook-adapters.handler-bindings` |
 | `component.hook-adapters.session-lifecycle` | Session Lifecycle Handlers | `5–10` 個文件 / `1000–2000` 行 | `entrypoint.hook-adapters.stop` |
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:ec792e9257364e22b74052c9fc7bc76fbbdd5a2f9098f6b21a65197ad9299591`); selectors `5/5`.
+> **Proof**: `proven` (`sha256:d2d70abc712bda2caa9cd619d10ccdbcfc6ae3861faeec603f7dc4a27bf12a3e`); selectors `5/5`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
@@ -134,7 +134,7 @@ sequenceDiagram
   autonumber
   participant p2_capability_4262990f as Hook Adapters
   participant p2_route_runtime_281dbb1e as Hook Route Runtime
-  participant p2_edit_guards_5119ddfa as Guard and Observer Handlers
+  participant p2_edit_guards_5119ddfa as Edit Guard Handlers
   p2_capability_4262990f->>p2_route_runtime_281dbb1e: Resolve the typed handler for the route
   alt The typed handler returns a structured result
   p2_route_runtime_281dbb1e->>p2_edit_guards_5119ddfa: Run the bound handler such as the PreToolUse.edit mutation guard
@@ -169,7 +169,7 @@ sequenceDiagram
 1. **一条公开 tuple → 一个 typed handler → 一个 host-output 边界。** `Route` 接口（`route-registry.ts:54`）根本没有 `scripts` 字段，结构上排除了第二 dispatcher。
 2. **adapter 命令是信封，不是逻辑。** 任何写进 `~/.claude/settings.json` / `~/.codex/hooks.json` 的分支判断都是回归 —— host 配置无法被测试、无法被原子替换。
 3. **ROUTES 顺序是稳定契约。** Codex 按 `(absolute-path, event-snake, i, j)` 哈希 adapter 条目，重排会重新弹出信任提示（`route-registry.ts:14-16`）。新增 route 只能追加。
-4. **handler 不碰 fd。** typed `HookHandlerResult` 是 handler 的唯一出口。`hook-protocol.ts` 的 `HOST_RENDERERS` 表是唯一入海口。Claude、Codex 与 Pi 的输出语义差异只能在这张表里表达。
+4. **handler 不碰 fd。** typed `HookHandlerResult` 是 handler 的唯一出口。`hook-protocol.ts` 的 `HOST_RENDERERS` 表是唯一入海口。Claude 与 Codex 的输出语义差异只能在这张表里表达。
 5. **opt-in marker 是硬门。** 没有 `.ai/harness/workflow-contract.json` 就静默退出 —— 装了 CLI 的用户在非 harness 仓库不应付出任何代价。
 6. **没有 shell operator library。** `assets/hooks/` 已删除。operator helper 经 `repo-harness run <helper>` 运行，policy 路径由 `resolveHarnessPaths` 一处解析，failure log 用 edit guard 写入的同一个 `FAILURE_LOG_FILE`（#696）。
 7. **遥测非安全权威，但消费者 fail-closed。** 字段缺失、畸形、重复或混协议时消费者必须停，不得补零。
@@ -180,7 +180,7 @@ sequenceDiagram
 | 决策 | 权衡 |
 | --- | --- |
 | 退役 routes 与 managed command 在同一 release 删除（#705） | Codex 只重新信任一次。旧 adapter 在 reinstall 前会收到 exit 2。 |
-| 三条 subagent route 各有一个 handler（`return-channel`、`delegation-advisor`、`subagent-context`） | `PreToolUse.subagent` 只处理 Claude `Agent`。runtime 统一检查 host。 |
+| 两条 subagent route 各有一个 handler（`return-channel`、`subagent-context`） | `PreToolUse.subagent` 只处理 Claude `Agent`。`SubagentStart.context` 只装进 Codex。runtime 统一检查 host。 |
 | `hook-entry.ts` 与完整 commander CLI 分离 | 热路径不冷加载非 hook 命令模块（文件头 `:5` 明写理由），代价是子命令分派在 entry 里手写成一串 `if` |
 | 删除 `workflow-state.sh`，helper 改调 TypeScript | 路径与 stem 只有一个 TypeScript 实现。代价：`prepare-handoff` 与 `summarize-failures` 现在需要 Bun，旧的 `hook-lib path` 下游调用方要改成 `repo-harness run <helper>` |
 | 空 lifecycle hooks 已移除 | Scaffold 和 template assembly 直接执行各自任务。它们不再调用空 runner。 |
@@ -191,23 +191,22 @@ sequenceDiagram
 
 | 组件 | footprint 摘要 | 文件 / 行 | 职责 |
 | --- | --- | --- | --- |
-| `component.hook-adapters.primary`（Hook Route Runtime） | `hook-entry.ts`、`hook/{runtime,route-registry,handler-registry,handler-contract,hook-input,hook-protocol,event-telemetry,session-context-budget}.ts`、`src/pi/hook-protocol.ts`、`src/effects/loop/**`、`hook-event-log.ts` | 12 / 1183（2026-10-13） | route 表、handler 绑定、opt-in 检查、payload 与 identity 解析、host 渲染表、遥测与日志轮转 |
-| `component.hook-adapters.edit-guards`（Guard and Observer Handlers） | `hook/{mutation-guard,circuit-breaker,command-observed}.ts` | 3 / 657（2026-10-13） | PreToolUse.edit 路径边界、Pi Bash 观测、circuit breaker |
-| `component.hook-adapters.session-lifecycle`（Session Lifecycle Handlers） | `hook/{session-context,stop-handler,return-channel,delegation-advisor,subagent-context,task-inbox-handler,board-slice-context,state-snapshot}.ts`、`run-summary-retention.ts` | 9 / 1456（2026-10-13） | SessionStart、Stop 恢复视图、subagent route、Task Inbox |
-| `component.hook-adapters.host-installer`（Host Adapter Installer） | `src/cli/installer/**`、`src/pi/{extension,hook-bridge}.ts`、`commands/{install,status,security}.ts` | 20 / 4702（2026-10-13） | managed entries、install profile、Pi bridge、status 与 security scan |
+| `component.hook-adapters.primary`（Hook Route Runtime） | `hook-entry.ts`、`hook/{runtime,route-registry,handler-registry,handler-contract,hook-input,hook-protocol,event-telemetry,session-context-budget}.ts`、`src/effects/loop/**`、`hook-event-log.ts` | 11 / 1037（2026-10-16） | route 表、handler 绑定、opt-in 检查、payload 与 identity 解析、host 渲染表、遥测与日志轮转 |
+| `component.hook-adapters.edit-guards`（Edit Guard Handlers） | `hook/{mutation-guard,circuit-breaker}.ts` | 2 / 489（2026-10-16） | PreToolUse.edit 路径边界、semantic-review circuit breaker |
+| `component.hook-adapters.session-lifecycle`（Session Lifecycle Handlers） | `hook/{session-context,stop-handler,return-channel,subagent-context,task-inbox-handler,board-slice-context,state-snapshot}.ts`、`run-summary-retention.ts` | 8 / 1373（2026-10-16） | SessionStart、Stop 恢复视图、subagent route、Task Inbox |
+| `component.hook-adapters.host-installer`（Host Adapter Installer） | `src/cli/installer/**`、`commands/{install,status,security}.ts` | 14 / 3670（2026-10-16） | managed entries、install profile、status 与 security scan |
 
-与归属提议 §5 的两处偏差，都有源码证据：
+与归属提议 §5 的一处偏差，有源码证据：
 
 - `session-context-budget.ts` 归 route-runtime。`runtime.ts` 的 `sessionOutput` 调用 `budgetSessionContext`（`runtime.ts:120`），`handler-contract.ts:3` 引用它的类型。SessionStart 预算是 host 输出整形的一部分（不变量 4）。按提议放进 session-lifecycle 会产生 runtime → handler 的反向边。
-- Pi 协议 1 线格式归 route-runtime。`HookJsonOutput` 与 `boundedHookDiagnostic` 在 `src/cli/hook/hook-protocol.ts`，由 `HOST_RENDERERS` 的 Pi 行产出。`src/pi/hook-protocol.ts` 只保留 Pi 侧的解析器 `parseHookJsonOutput`。放进 host-installer 会产生 runtime → installer 的反向边。
 
 组件之间的关系：
 
 | 关系 | 类型 | 证据 |
 | --- | --- | --- |
-| host-installer → route-runtime | calls | `buildManagedHooks` 调用 `routesForHost`（`managed-entries.ts:107`）；Pi bridge 经 `hook-entry.ts` 运行 route |
-| route-runtime → edit-guards | calls | `handlers` 绑定 `runMutationGuard`、`runCommandObserved` 与 `runPromptHandler`（`handler-registry.ts`）。`hook-entry.ts` 只分派 hook route、`state-snapshot` 与进程 supervisor |
-| route-runtime → session-lifecycle | calls | `handlers` 绑定 `runStopHandler`、SessionStart、四个 subagent handler 与 inbox handler（`handler-registry.ts`） |
+| host-installer → route-runtime | calls | `buildManagedHooks` 调用 `routesForHost`（`managed-entries.ts:107`） |
+| route-runtime → edit-guards | calls | `handlers` 绑定 `runMutationGuard`（`handler-registry.ts`）。`hook-entry.ts` 只分派 hook route、`state-snapshot` 与进程 supervisor |
+| route-runtime → session-lifecycle | calls | `handlers` 绑定 `runStopHandler`、SessionStart、两个 subagent handler 与 inbox handler（`handler-registry.ts`） |
 | edit-guards → route-runtime、session-lifecycle → route-runtime | depends-on | handler 实现 typed `HookHandlerResult` 契约。handler 从 `HookHandlerContext` 读取 `payload` 与 `identity`，并读取 event 级 `StateInputCollector`。handler 不读取 session、run 或 turn 的环境变量 |
 
 组件到其他 capability 的关系（生成区 §1.4 不显示组件级出向关系，所以列在这里）：
@@ -221,7 +220,7 @@ sequenceDiagram
 
 依赖方向说明：route-runtime 与两个 handler 组件之间有双向边。registry 组合 handler（calls），handler 实现 registry 的契约（depends-on）。这是插件式组合，不是层次倒置。如果以后要消除这个环，把 `handler-contract.ts` 与 `hook-input.ts` 移到一个叶子组件即可。目前没有证据说明这个环造成了问题。
 
-host-installer 有 20 个文件、4702 行（2026-10-13），标记为 expandable。可以按 host 拆成 installer、Pi bridge、asset projection 三块。现在不拆。
+host-installer 有 14 个文件、3670 行（2026-10-16），标记为 expandable。可以拆成 installer 与 asset projection 两块。现在不拆。
 
 ### 3.4 10x 规模下先垮的点
 
@@ -239,7 +238,7 @@ host-installer 有 20 个文件、4702 行（2026-10-13），标记为 expandabl
 按实测的可证伪顺序：
 
 1. **Stop 的延迟工作。** 旧采样里 Stop 是唯一贴到硬上限的 route：675 次 Stop 里 93 次超过 5s、77 次超过 10s，p99 24.4s。当时的主要成本是架构 cascade 和投影 drain。二者已删除（2026-10-10）。refactor recommendation observer 也已移出 Stop（2026-10-10），改由 Bot 按需读取证据。#695 又删除了 journal pass、run summary、状态解析、readiness 行与 140 s deadline。Stop 现在只发布 checkpoint 并渲染 handoff 与 resume。需要重新采样，再判断 Stop 是否仍是最先垮的点。
-2. **`PostToolUse.bash` 的单位成本 × 调用量。** p50 52ms 单看不贵，但它是第二高频 route（16,398 次），乘出来就是 26.7% 的总时间。它没有尾延迟问题（p99 244ms），垮的方式是稳态吞吐：命令密度上去后每次 Bash 调用都固定付这 50ms。#695 删除了 importer、输出捕获与 `post-bash-latest.json`，#705 又删除了 Claude/Codex 的这条 route。Pi 的单位成本需要重新采样。
+2. **`PostToolUse.bash` 的单位成本 × 调用量。** p50 52ms 单看不贵，但它是第二高频 route（16,398 次），乘出来就是 26.7% 的总时间。它没有尾延迟问题（p99 244ms），垮的方式是稳态吞吐：命令密度上去后每次 Bash 调用都固定付这 50ms。#695 删除了 importer、输出捕获与 `post-bash-latest.json`，#705 又删除了 Claude/Codex 的这条 route。#766 删除了 Pi 的这条 route 与 command observer。现在没有这项成本。
 3. **`PreToolUse.edit` 阻塞编辑热路径。** mutation-guard 是**同步前置**门，p50 253ms 直接计入用户可感知的编辑延迟，且 max 10.9s 说明它在状态解析退化时会长尾。#692 删除了状态解析、lease 检查、circuit breaker 与 advisory。现在只剩路径边界，以及 owned path 的一次 `git status`。需要重新采样。
 4. **SessionStart 上下文预算（#693 已修正）。** 旧实现把五个 provider 拼成一整块 section，超预算时一起消失。现在每个 provider 是独立 section，各有 id 与 source。`budgetSessionContext` 按 priority 排序，保留 mandatory section，放不下的 optional section 变成 `[ContextRef:<id>] <source>` 指针。延迟本身不是瓶颈（4.6%、p95 711ms）。
 5. **`resolveEffectiveState` 的锁竞争。** `runtime.ts` 的 `resolveHookEffectiveState` 是唯一的重试策略：三次有界重试（`EFFECTIVE_STATE_RESOLUTION_MAX_ATTEMPTS = 3`），只覆盖两种已知瞬时签名（stability 重读耗尽、独占锁超时）。并行 agent 数量上去后，重试耗尽会把 SessionStart 推进 `[HarnessStateUnavailable]` 分支 —— 这是正确的 fail-closed，但用户侧表现为上下文突然消失。
@@ -452,6 +451,12 @@ does not inspect legacy command shapes, so there is no dual-read path.
 - P2：route tuple 不变。`PostToolUse.edit` 与 `PostToolUse.always` 绑定 no-op `retired-observer`，直到 #698。`flow.hook-adapters.stop` 改为 Stop → `publishCheckpointFromLedger`。hook identity 只来自 payload，缺失时为 null。2026-08-12 那条记录里的 post-edit journal 与 `session-run-identity.json` 都已不存在。
 - P3：没有读者的工作不应该在热路径上付成本。hook 不再读 minimal_change policy。`minimal_change.mode` 只能是 `off` 或 `advice`。`enforce` 等其他值在 policy 校验时失败，state resolution 随之失败。旧的 circuit-breaker state 带退役 kind 时 fail closed，由 `evidence-gc` 一次性清理。
 
+### Hook wave 3：删除 Pi host、delegation route 与 command observer（2026-10-16，#766）
+
+- P1：Pi 不再是 hook、setup 或 skill host。Pi 扩展、Pi bridge、Pi 包投影与两个 Pi 包脚本已删除。Pi 只保留为 operator 的 runtime capture provider。Codex 的 `UserPromptSubmit.delegation` route 与 delegation advisor 已删除。`PostToolUse.bash` route 与 command observer 已删除。installer 不再保存 Codex hook 顺序确认状态。
+- P2：`ROUTES` 现在有 6 条 tuple。Claude 装 5 条，Codex 装 5 条。`HOST_RENDERERS` 只有 Claude 与 Codex 两行。circuit breaker 只保留 `semantic-review` kind，`repair` 归入退役 kind。
+- P3：删除没有 host 的路径，不保留兼容层。edit-guards 改名为 Edit Guard Handlers。release-packaging 不再读 skill catalog，所以它到 skill-surface-catalog 的关系已删除。
+
 ## 5. 验证面
 
 capabilities.json 的 `verification_hints`：
@@ -465,7 +470,7 @@ bash scripts/check-task-workflow.sh
 
 - `bun test tests/cli/route-registry.test.ts tests/cli/hook.test.ts`
 - `bun test tests/cli/route-registry.test.ts tests/subagent-handler.test.ts`
-- `bun test tests/command-observed.test.ts tests/mutation-guard.test.ts`
+- `bun test tests/mutation-guard.test.ts`
 - `bun test tests/stop-handler.test.ts tests/session-context.test.ts`
 - `bun test tests/hook-contracts.test.ts tests/hook-protocol.test.ts`
 - `bun run check:type`

@@ -28,10 +28,6 @@ export type WorkflowMarkerGateCode = "harness-upgrade-required" | "workflow-mark
  */
 export const WORKFLOW_MARKER_GATE_EVENTS: ReadonlySet<string> = new Set(["SessionStart", "UserPromptSubmit", "Stop", "SubagentStop"]);
 
-export function isWorkflowMarkerGateCode(reason: string): reason is WorkflowMarkerGateCode {
-  return reason === "harness-upgrade-required" || reason === "workflow-marker-invalid";
-}
-
 export interface WorkflowMarkerGate {
   readonly code: WorkflowMarkerGateCode;
   readonly message: string;

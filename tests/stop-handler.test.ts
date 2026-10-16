@@ -308,7 +308,7 @@ describe('Stop reports owed architecture updates on Claude only (#678)', () => {
     expect(runStopHandler({ collector: collector(cwd), identity: hookIdentity({ host: 'claude' }) }).stdout).toBe('');
   });
 
-  test('a Stop continued by a Stop hook, Codex and Pi add nothing', () => {
+  test('a Stop continued by a Stop hook and Codex add nothing', () => {
     const cwd = owedFixture();
     const continued = runStopHandler({
       collector: collector(cwd),
@@ -316,9 +316,7 @@ describe('Stop reports owed architecture updates on Claude only (#678)', () => {
       payload: { stop_hook_active: true },
     });
     expect(continued.stdout).toBe('');
-    for (const host of ['codex', 'pi'] as const) {
-      expect(runStopHandler({ collector: collector(cwd), identity: hookIdentity({ host }) }).stdout).toBe('');
-    }
+    expect(runStopHandler({ collector: collector(cwd), identity: hookIdentity({ host: 'codex' }) }).stdout).toBe('');
     // The once-per-set marker was never written, so Claude still gets the line.
     expect(runStopHandler({ collector: collector(cwd), identity: hookIdentity({ host: 'claude' }) }).stdout).toContain('[ArchitectureOwed]');
   });
@@ -335,7 +333,7 @@ describe('Stop reports owed architecture updates on Claude only (#678)', () => {
 
 describe('Stop observes workflow gaps without permission gates', () => {
   test('Stop is silent on every host and never resolves workflow state', () => {
-    for (const host of ['claude', 'codex', 'pi'] as const) {
+    for (const host of ['claude', 'codex'] as const) {
       const cwd = fixture();
       const result = runStopHandler({ collector: collector(cwd), identity: hookIdentity({ host }) });
       expect(result).toEqual({ exitCode: 0, stdout: '', stderr: '' });

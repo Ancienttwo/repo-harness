@@ -11,8 +11,7 @@
       "provider": null,
       "hosts": [
         "claude",
-        "codex",
-        "pi"
+        "codex"
       ],
       "profiles": [
         "minimal",
@@ -53,8 +52,7 @@
       "provider": null,
       "hosts": [
         "claude",
-        "codex",
-        "pi"
+        "codex"
       ],
       "profiles": [
         "minimal",
@@ -253,8 +251,7 @@
       "provider": "herdrdev/herdr",
       "hosts": [
         "claude",
-        "codex",
-        "pi"
+        "codex"
       ],
       "profiles": [],
       "discoverability": "external-marketplace",
@@ -471,8 +468,7 @@
     "hostSkillPlacementsByProfile": {
       "minimal": {
         "claude": [],
-        "codex": [],
-        "pi": []
+        "codex": []
       },
       "full": {
         "claude": [
@@ -480,8 +476,7 @@
         ],
         "codex": [
           "repo-harness-cross-review"
-        ],
-        "pi": []
+        ]
       }
     }
   },

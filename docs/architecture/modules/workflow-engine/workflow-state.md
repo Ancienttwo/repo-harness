@@ -1,6 +1,6 @@
 # workflow-engine/workflow-state 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-workflow-state" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:32b02a26001eb523416faf77f536738b1a9d3beee49004c588f16f203551856b" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-workflow-state" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:fb0197e08652967195116145ee3076a6b181e4d9427ea0f7083933b250df3510" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.workflow-engine.workflow-state`(kind `capability`)
 > **Matched Prefixes**:`src/core/state/**`、`src/effects/state/**`、`src/core/workflow/**`、`interfaces/**`、`src/core/worktree-location.mjs`、`src/core/worktree-location.d.mts`、`src/cli/commands/state.ts`、`src/cli/commands/sprint.ts`、`scripts/check-state-boundaries.ts`、`scripts/sprint-backlog.sh`
@@ -80,7 +80,7 @@ flowchart LR
 - `reads` ← `capability.runtime-harness.external-source-intake` — Look up the canonical task for an external source
 - `reads` ← `component.global-runtime-reconciliation.archctx-closure` — Parse Markdown headers of plans and contracts
 - `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the sprint and state commands
-- `calls` ← `component.hook-adapters.edit-guards` — Canonicalize edit paths, resolve the owners of edited paths and read the repair progress token
+- `calls` ← `component.hook-adapters.edit-guards` — Canonicalize edit paths and resolve the owners of edited paths
 - `calls` ← `component.hook-adapters.primary` — Resolve effective state at most once per hook event
 - `calls` ← `component.hook-adapters.session-lifecycle` — Collect state and board slices and claim tokens for session context
 - `reads` ← `component.integration-acceptance.primary` — Read the task lease for the integration envelope

@@ -7,7 +7,6 @@ import { unavailableSetupSnapshot } from '../../core/setup/decode';
 import type {
   SetupFleetRole,
   SetupHookEvent,
-  SetupHostFacts,
   SetupSkill,
   SetupSkillHostRow,
   SetupSnapshotV1,
@@ -17,20 +16,16 @@ const ok = (state: 'ok link' | 'ok copy' = 'ok link'): SetupSkillHostRow => ({ s
 const bad = (state: SetupSkillHostRow['state']): SetupSkillHostRow => ({ state, ok: false });
 
 const HOOKS: SetupHookEvent[] = [
-  { event: 'SessionStart', routes: [{ route_id: 'default', matcher: null, hosts: ['claude', 'codex', 'pi'] }] },
+  { event: 'SessionStart', routes: [{ route_id: 'default', matcher: null, hosts: ['claude', 'codex'] }] },
   { event: 'PreToolUse', routes: [
-    { route_id: 'edit', matcher: 'Edit|Write', hosts: ['claude', 'codex', 'pi'] },
+    { route_id: 'edit', matcher: 'Edit|Write', hosts: ['claude', 'codex'] },
     { route_id: 'subagent', matcher: 'Agent', hosts: ['claude'] },
-  ] },
-  { event: 'PostToolUse', routes: [
-    { route_id: 'bash', matcher: 'Bash', hosts: ['pi'] },
   ] },
   { event: 'UserPromptSubmit', routes: [
     { route_id: 'inbox', matcher: null, hosts: ['claude', 'codex'] },
-    { route_id: 'delegation', matcher: null, hosts: ['codex'] },
   ] },
   { event: 'SubagentStart', routes: [{ route_id: 'context', matcher: null, hosts: ['codex'] }] },
-  { event: 'Stop', routes: [{ route_id: 'default', matcher: null, hosts: ['claude', 'codex', 'pi'] }] },
+  { event: 'Stop', routes: [{ route_id: 'default', matcher: null, hosts: ['claude', 'codex'] }] },
 ];
 
 const SUMMARY: Readonly<Record<string, string>> = {
@@ -46,20 +41,20 @@ const SUMMARY: Readonly<Record<string, string>> = {
   hunt: 'Waza root-cause debugging skill.',
 };
 
-function skill(name: string, claude: SetupSkillHostRow | null, codex: SetupSkillHostRow | null, pi: SetupSkillHostRow | null = null): SetupSkill {
-  return { name, summary: SUMMARY[name] ?? null, hosts: { claude, codex, pi } };
+function skill(name: string, claude: SetupSkillHostRow | null, codex: SetupSkillHostRow | null): SetupSkill {
+  return { name, summary: SUMMARY[name] ?? null, hosts: { claude, codex } };
 }
 
 function readySkills(): SetupSkill[] {
   return [
-    skill('repo-harness', ok(), ok(), ok('ok copy')),
+    skill('repo-harness', ok(), ok()),
     skill('repo-harness-setup', ok(), ok()),
-    skill('repo-harness-check', ok(), ok(), ok('ok copy')),
+    skill('repo-harness-check', ok(), ok()),
     skill('repo-harness-test', ok(), ok()),
     skill('repo-harness-ship', ok(), ok()),
     skill('repo-harness-architecture', ok(), ok()),
     skill('obsidian-memory', ok(), ok()),
-    skill('herdr', ok('ok copy'), ok('ok copy'), ok('ok copy')),
+    skill('herdr', ok('ok copy'), ok('ok copy')),
     skill('think', ok('ok copy'), ok('ok copy')),
     skill('hunt', ok('ok copy'), ok('ok copy')),
   ];
@@ -75,7 +70,6 @@ const FLEET: readonly (Omit<SetupFleetRole, 'hosts'>)[] = [
   { name: 'root-cause-prover', model: 'opus', effort: 'xhigh', description: 'Bugfix diagnosis specialist on Opus at xhigh effort.' },
 ];
 
-const PI: SetupHostFacts = { host: 'pi', reported: false, adapter_check: null, detected: null, adapter: null, cli_version: null };
 
 export function readySetup(now: number): SetupSnapshotV1 {
   return {
@@ -99,12 +93,11 @@ export function readySetup(now: number): SetupSnapshotV1 {
       { host: 'claude', reported: true, adapter_check: 'ok', detected: true, cli_version: null,
         adapter: { configured: true, managed_entries: 5, expected_entries: 5, projection: 'consistent', mismatches: [] } },
       { host: 'codex', reported: true, adapter_check: 'ok', detected: true, cli_version: '0.162.0',
-        adapter: { configured: true, managed_entries: 6, expected_entries: 6, projection: 'consistent', mismatches: [] } },
-      PI,
+        adapter: { configured: true, managed_entries: 5, expected_entries: 5, projection: 'consistent', mismatches: [] } },
     ],
     skills: readySkills(),
     hooks: HOOKS,
-    fleet: FLEET.map(role => ({ ...role, hosts: { claude: 'installed', codex: 'installed', pi: null } })),
+    fleet: FLEET.map(role => ({ ...role, hosts: { claude: 'installed', codex: 'installed' } })),
   };
 }
 
@@ -113,7 +106,7 @@ export function degradedSetup(now: number): SetupSnapshotV1 {
   const skills = readySkills();
   const replace = (name: string, next: SetupSkill) => { skills[skills.findIndex(row => row.name === name)] = next; };
   replace('repo-harness-ship', skill('repo-harness-ship', ok(), bad('missing')));
-  replace('herdr', skill('herdr', bad('stale copy'), ok('ok copy'), ok('ok copy')));
+  replace('herdr', skill('herdr', bad('stale copy'), ok('ok copy')));
   replace('obsidian-memory', skill('obsidian-memory', bad('dangling link'), ok()));
   replace('think', skill('think', bad('ok copy'), ok('ok copy')));
   return {
@@ -128,7 +121,7 @@ export function degradedSetup(now: number): SetupSnapshotV1 {
       },
       {
         id: 'status.adapter.codex', status: 'warn', title: 'Codex global hook adapter',
-        detail: '5/6 managed entries at [private path]\nprojection drift: 3 mismatches',
+        detail: '4/5 managed entries at [private path]\nprojection drift: 3 mismatches',
         command: 'repo-harness install --host codex',
       },
       {
@@ -149,18 +142,17 @@ export function degradedSetup(now: number): SetupSnapshotV1 {
       { host: 'claude', reported: true, adapter_check: 'ok', detected: true, cli_version: null,
         adapter: { configured: true, managed_entries: 5, expected_entries: 5, projection: null, mismatches: [] } },
       { host: 'codex', reported: true, adapter_check: 'warn', detected: true, cli_version: '0.162.0',
-        adapter: { configured: true, managed_entries: 5, expected_entries: 6, projection: 'drift', mismatches: [
+        adapter: { configured: true, managed_entries: 4, expected_entries: 5, projection: 'drift', mismatches: [
           { kind: 'missing', event: 'SubagentStart', route_id: 'context', field: null },
           { kind: 'field-mismatch', event: 'Stop', route_id: 'default', field: 'timeout' },
           { kind: 'unexpected', event: 'PreToolUse', route_id: null, field: null },
         ] } },
-      PI,
     ],
     skills,
     hooks: HOOKS,
     fleet: FLEET.map(role => ({
       ...role,
-      hosts: { claude: 'installed', codex: role.name === 'gatekeeper' || role.name === 'harness-evaluator' ? 'missing' : 'installed', pi: null },
+      hosts: { claude: 'installed', codex: role.name === 'gatekeeper' || role.name === 'harness-evaluator' ? 'missing' : 'installed' },
     })),
   };
 }

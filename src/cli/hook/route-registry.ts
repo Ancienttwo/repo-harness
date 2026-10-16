@@ -25,15 +25,13 @@ export type HookEvent =
   | 'SubagentStop'
   | 'Stop';
 
-export type RouteHost = 'claude' | 'codex' | 'pi';
+export type RouteHost = 'claude' | 'codex';
 
 /** Stable route id within an event. Public contract — never rename without coordinated adapter migration. */
 export type RouteId =
   | 'default'
   | 'edit'
   | 'subagent'
-  | 'bash'
-  | 'delegation'
   | 'inbox'
   | 'context';
 
@@ -42,9 +40,7 @@ export type HookHandlerId =
   | 'session-context'
   | 'mutation-guard'
   | 'return-channel'
-  | 'delegation-advisor'
   | 'subagent-context'
-  | 'command-observed'
   | 'task-inbox'
   | 'stop';
 
@@ -92,13 +88,6 @@ export const ROUTES: readonly Route[] = Object.freeze([
     handler: 'return-channel',
   }),
   Object.freeze({
-    event: 'PostToolUse' as const,
-    routeId: 'bash' as const,
-    matcher: 'Bash',
-    hosts: ['pi'] as const,
-    handler: 'command-observed',
-  }),
-  Object.freeze({
     event: 'UserPromptSubmit' as const,
     routeId: 'inbox' as const,
     // Task messages are an independent turn-boundary route. Keeping this
@@ -106,12 +95,6 @@ export const ROUTES: readonly Route[] = Object.freeze([
     // from becoming routing or authorization input.
     handler: 'task-inbox',
     hosts: ['claude', 'codex'] as const,
-  }),
-  Object.freeze({
-    event: 'UserPromptSubmit' as const,
-    routeId: 'delegation' as const,
-    hosts: Object.freeze(['codex'] as const),
-    handler: 'delegation-advisor',
   }),
   Object.freeze({
     event: 'SubagentStart' as const,
