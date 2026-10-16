@@ -23,6 +23,11 @@ export interface InstallCommandOptions {
   target: InstallTargetSpec;
   location: Location;
   profile?: InstallProfile;
+}
+
+export interface UninstallCommandOptions {
+  target: InstallTargetSpec;
+  location: Location;
   dryRun?: boolean;
   recoverInterrupted?: boolean;
 }
@@ -69,7 +74,7 @@ export function runInstall(opts: InstallCommandOptions): InstallCommandResult {
   return { exitCode, lines };
 }
 
-export function runUninstall(opts: InstallCommandOptions): InstallCommandResult {
+export function runUninstall(opts: UninstallCommandOptions): InstallCommandResult {
   if (opts.location !== 'global') {
     return { exitCode: 2, lines: [`repo-harness uninstall: invalid --location "${opts.location}" (expected: global)`] };
   }

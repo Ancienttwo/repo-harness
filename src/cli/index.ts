@@ -536,6 +536,9 @@ export function buildProgram(): Command {
       ) {
         throw new Error('--migrate-profile-state cannot be combined with --state, --rollback, or --location');
       }
+      if (rawOpts.dryRun === true && rawOpts.location !== undefined) {
+        throw new Error('--dry-run cannot be combined with --location');
+      }
       if (rawOpts.state === true) {
         const state = readInstalledProfile();
         console.log(JSON.stringify(state ? installedProfileStatus(state) : null, null, 2));
