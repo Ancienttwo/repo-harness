@@ -47,7 +47,7 @@ test('the full and release lanes enable the expensive test gate and the hosted f
   expect(functional.stdout).toContain('TEST_LANE_GATE=unset');
   // The release lane runs only the gated files and the package smoke, not a second full suite.
   expect(release.status, release.stdout + release.stderr).toBe(0);
-  expect(release.stdout.match(/^TEST_LANE_GATE=.*$/gm)).toEqual(GATED_FILES.map(() => 'TEST_LANE_GATE=1'));
+  expect(Array.from(release.stdout.match(/^TEST_LANE_GATE=.*$/gm) ?? [])).toEqual(GATED_FILES.map(() => 'TEST_LANE_GATE=1'));
   for (const file of GATED_FILES) expect(release.stdout).toContain(`[ci] test ${file}`);
   expect(release.stdout).toContain('[ci] package/install smoke');
   expect(release.stdout).not.toContain('[ci] tests\n');
