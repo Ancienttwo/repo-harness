@@ -2,7 +2,10 @@
 
 All notable changes to this skill are documented here.
 
-## [Unreleased]
+## [0.23.0] - 2026-10-17
+
+This release has breaking changes. After the update, run `repo-harness update`,
+reinstall the hook adapters, and review the Codex hooks with `/hooks`.
 
 ### Breaking
 
@@ -180,6 +183,15 @@ All notable changes to this skill are documented here.
 
 ### Changed
 
+- `bun run check:release` runs only the test files that hold
+  `REPO_HARNESS_TEST_EXPENSIVE` cases and the tarball smoke. It no longer runs
+  typecheck, governance or the full suite, so a release needs green CI on the
+  release commit. The tarball smoke uses a temporary `HOME`. A failed CI job
+  reuses one open repair issue per job name. (#767)
+- The generated functional-block `AGENTS.md` and `CLAUDE.md` record only
+  ownership, entrypoints and local verification commands. The Herdr Dispatch
+  rule moved out of `external-tooling.md`. Boilerplate agent-context files
+  and unused reference documents are deleted. (#768)
 - SessionStart no longer injects the resume file or the active sprint.
   `[HarnessState]` points to both with `references.resume` and
   `references.sprint`. The commit confirm of a state resolution reuses the Git
@@ -223,6 +235,10 @@ All notable changes to this skill are documented here.
 
 ### Fixed
 
+- `sprint-backlog.sh`, `contract-worktree.sh` and `ship-worktrees.sh` run the
+  source CLI only when the root `package.json` names `repo-harness`. A
+  downstream repository with its own `src/cli/index.ts` now uses the global
+  CLI. (#767)
 - `minimal-change-hooks.md` no longer describes hooks that no code runs. It
   says that no hook reads the `minimal_change` policy and that only `off` and
   `advice` are valid modes. (#692, #696)
