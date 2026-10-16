@@ -428,11 +428,6 @@ const DELIBERATELY_EXCLUDED: readonly ExcludedModule[] = [
     evidence: 'review/repair loop despite the publication/ directory (D12); merge-readiness imports only publication-receipt and no publication or merge decision reads a feedback event',
   },
   {
-    module: 'src/core/release/runtime-evidence.ts',
-    fails: ['C-1'],
-    evidence: 'release/verification plane (D12); exports no *_KIND at all and has one consumer, src/effects/release/runtime-evidence.ts',
-  },
-  {
     module: 'src/core/evidence/verification-plan.ts',
     fails: ['C-1'],
     evidence: 'verification contract plane: AcceptanceReceipt validation reads the declared plan through verification-execution, but the plan owns no Task/Claim, Lease, Publication, Acceptance, or Delegation wire identity',
