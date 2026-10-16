@@ -23,14 +23,12 @@ import {
   OPERATOR_COLUMNS,
   snapshotViewKind,
   type OperatorApiErrorV1,
-  type OperatorCollaborationSnapshotV4,
-  type OperatorCollaborationSource,
+  type OperatorRepositorySnapshotV1,
   type OperatorFleetCardV1,
   type OperatorFleetErrorV1,
   type OperatorFleetRepositoryV1,
   type OperatorFleetSnapshotV1,
   type OperatorSnapshotViewState,
-  type OperatorWorkExchangeSnapshot,
 } from './types';
 import { Age, CopyButton, StatusDot, type DotTone } from './ui';
 import {
@@ -46,18 +44,18 @@ import {
 } from './worklist';
 
 /**
- * The board's collaboration read, as a state machine rather than a nullable
+ * The board's repository snapshot read, as a state machine rather than a nullable
  * snapshot.
  *
  * `idle` and an empty snapshot are different facts and are kept apart on
  * purpose: the first says nothing has been read for this repository yet, the
  * second says the store was read and holds nothing. Collapsing them is how a
- * collaboration store that could not be read starts looking quiet.
+ * repository observation source that could not be read starts looking quiet.
  */
-export type CollaborationViewState =
+export type RepositoryViewState =
   | { readonly kind: 'idle' }
   | { readonly kind: 'loading'; readonly repository_id: string }
-  | { readonly kind: 'ready'; readonly snapshot: OperatorCollaborationSnapshotV4 }
+  | { readonly kind: 'ready'; readonly snapshot: OperatorRepositorySnapshotV1 }
   | {
       readonly kind: 'failed';
       readonly repository_id: string;
@@ -707,225 +705,9 @@ function TaskDetail({ card, revisionChangedFrom, t }: {
   );
 }
 
-function sourceList(sources: readonly OperatorCollaborationSource[], t: OperatorTranslate): string {
-  return sources.map((source) => t(`collab.source.${source}` as OperatorMessageKey)).join(', ');
-}
-
-/**
- * The consistency banner. `degraded` and `changed_during_read` are stated with
- * the sources that produced them; a quiet panel is never an acceptable
- * rendering of either.
- */
-function CollaborationConsistency({ snapshot, t }: { readonly snapshot: OperatorWorkExchangeSnapshot; readonly t: OperatorTranslate }) {
-  if (snapshot.snapshot_consistency === 'degraded') {
-    return (
-      <div className="operator-notice operator-notice--danger" role="alert">
-        <Banner variant="error" icon={<WarningIcon />} title={t('collab.degradedTitle')} description={t('collab.degradedBody', { sources: sourceList(snapshot.degraded_sources, t) })} />
-      </div>
-    );
-  }
-  if (snapshot.snapshot_consistency === 'changed_during_read') {
-    return (
-      <div className="operator-notice operator-notice--warning" role="status" aria-live="polite">
-        <Banner variant="alert" icon={<WarningIcon />} title={t('collab.changedTitle')} description={t('collab.changedBody', { sources: sourceList(snapshot.changed_sources, t) })} />
-      </div>
-    );
-  }
-  return null;
-}
-
-function CollaborationLanes({ snapshot, t }: { readonly snapshot: OperatorWorkExchangeSnapshot; readonly t: OperatorTranslate }) {
-  return (
-    <section className="detail-block" aria-labelledby="collab-lanes-heading">
-      <h3 className="detail-eyebrow" id="collab-lanes-heading">{t('collab.lanes')}</h3>
-      {snapshot.threads.length === 0 ? <p className="detail-quiet">{t('collab.lanesEmpty')}</p> : (
-        <ul className="collab-list">
-          {snapshot.threads.map((thread) => (
-            <li className="collab-lane" key={thread.thread_key}>
-              <span className="collab-lane__head">
-                <strong className="collab-lane__key">{thread.thread_key}</strong>
-                <ToneBadge>{t('collab.laneHotspot', { score: thread.hotspot_score })}</ToneBadge>
-              </span>
-              <span className="collab-meta">
-                <span>{t('collab.laneSignals', { count: thread.signal_count })}</span>
-                <span>{t('collab.laneContributors', { count: thread.distinct_contributor_count })}</span>
-                <span>{t('collab.laneArtifacts', { count: thread.artifact_ref_count })}</span>
-                {thread.unadopted_handoff_count > 0 && <span>{t('collab.laneUnadopted', { count: thread.unadopted_handoff_count })}</span>}
-                {thread.adoption_count > 0 && <span>{t('collab.laneAdopted', { count: thread.adoption_count })}</span>}
-                {thread.cross_thread_reference_count > 0 && <span>{t('collab.laneCrossRefs', { count: thread.cross_thread_reference_count })}</span>}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
-  );
-}
-
-function CollaborationDiscoveries({ snapshot, t }: { readonly snapshot: OperatorWorkExchangeSnapshot; readonly t: OperatorTranslate }) {
-  return (
-    <section className="detail-block" aria-labelledby="collab-signals-heading">
-      <h3 className="detail-eyebrow" id="collab-signals-heading">{t('collab.discoveries')}</h3>
-      {snapshot.signals.length === 0 ? <p className="detail-quiet">{t('collab.discoveriesEmpty')}</p> : (
-        <ul className="collab-list">
-          {snapshot.signals.map((signal) => (
-            <li className={cn('collab-signal', signal.superseded && 'is-superseded')} key={signal.signal_id}>
-              <span className="collab-signal__title">{signal.title}</span>
-              <span className="collab-meta">
-                <span className="collab-lane__key">{signal.thread_key}</span>
-                <span className="mono-value">{signal.actor_lineage}</span>
-                {signal.artifact_ref_count > 0 && <span>{t('collab.signalArtifacts', { count: signal.artifact_ref_count })}</span>}
-                {signal.superseded && <span className="collab-flag">{t('collab.superseded')}</span>}
-              </span>
-              {signal.labels.length > 0 && (
-                <span className="collab-labels">{signal.labels.map((label) => <code className="cause-code" key={label}>{label}</code>)}</span>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
-  );
-}
-
-function CollaborationHandoffs({ snapshot, t }: { readonly snapshot: OperatorWorkExchangeSnapshot; readonly t: OperatorTranslate }) {
-  return (
-    <section className="detail-block" aria-labelledby="collab-handoffs-heading">
-      <h3 className="detail-eyebrow" id="collab-handoffs-heading">{t('collab.handoffs')}</h3>
-      {snapshot.handoffs.length === 0 ? <p className="detail-quiet">{t('collab.handoffsEmpty')}</p> : (
-        <ul className="collab-list">
-          {snapshot.handoffs.map((handoff) => (
-            <li className="collab-handoff" key={handoff.handoff_id}>
-              <span className="collab-handoff__head">
-                <strong>{handoff.goal}</strong>
-                <ToneBadge>{t('collab.handoffAdoptions', { count: handoff.adoption_count })}</ToneBadge>
-              </span>
-              <span className="collab-meta">
-                <span className="collab-lane__key">{handoff.thread_key}</span>
-                <span>{t('collab.handoffTrigger', { trigger: handoff.trigger })}</span>
-                <span>{t('collab.handoffNextActions', { count: handoff.next_action_count })}</span>
-                <span>{t('collab.handoffHypotheses', { count: handoff.open_hypothesis_count })}</span>
-              </span>
-              <span className={cn('collab-context', handoff.execution_context_kind === null && 'is-withheld')}>
-                {handoff.execution_context_kind === null ? t('collab.contextWithheld') : t(`collab.context.${handoff.execution_context_kind}` as OperatorMessageKey)}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-      {snapshot.unverified_execution_context_count > 0 && (
-        <div className="detail-callout detail-callout--warning">
-          <WarningIcon size={15} />
-          <div>
-            <strong>{t('collab.unverified', { count: snapshot.unverified_execution_context_count })}</strong>
-            <span>{t('collab.unverifiedBody')}</span>
-          </div>
-        </div>
-      )}
-    </section>
-  );
-}
-
-function CollaborationContributors({ snapshot, t }: { readonly snapshot: OperatorWorkExchangeSnapshot; readonly t: OperatorTranslate }) {
-  return (
-    <section className="detail-block" aria-labelledby="collab-contributors-heading">
-      <h3 className="detail-eyebrow" id="collab-contributors-heading">{t('collab.contributors')}</h3>
-      {snapshot.participants.length === 0 ? <p className="detail-quiet">{t('collab.contributorsEmpty')}</p> : (
-        <ul className="collab-list">
-          {snapshot.participants.map((participant) => (
-            <li className="collab-contributor" key={participant.actor_lineage}>
-              <span className="collab-contributor__head">
-                <span className="mono-value">{participant.actor_lineage}</span>
-                <ToneBadge>{t(`collab.actor.${participant.actor_kind}` as OperatorMessageKey)}</ToneBadge>
-              </span>
-              <span className="collab-meta">
-                {t('collab.contributorCounts', { signals: participant.signal_count, handoffs: participant.handoff_count, lanes: participant.thread_keys.length })}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
-  );
-}
-
-function CollaborationOpportunities({ snapshot, t }: { readonly snapshot: OperatorWorkExchangeSnapshot; readonly t: OperatorTranslate }) {
-  if (snapshot.opportunities.length === 0) return null;
-  return (
-    <section className="detail-block" aria-labelledby="collab-opportunities-heading">
-      <h3 className="detail-eyebrow" id="collab-opportunities-heading">{t('collab.opportunities')}</h3>
-      <ul className="collab-list">
-        {snapshot.opportunities.map((opportunity) => (
-          <li className="collab-opportunity" key={`${opportunity.thread_key}:${opportunity.reason}`}>
-            <span className="collab-lane__key">{opportunity.thread_key}</span>
-            <span>{t(`collab.reason.${opportunity.reason}` as OperatorMessageKey)}</span>
-            <code className="cause-code">{opportunity.reason}</code>
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
-}
-
-/**
- * The whole read-only collaboration surface. Every panel renders a field the
- * server already decided. Nothing here ranks, joins or infers.
- */
-export function CollaborationPane({ state, t }: { readonly state: CollaborationViewState; readonly t: OperatorTranslate }) {
-  const frame = (children: ReactNode, mode?: string) => (
-    <section className="detail-block collab-pane" aria-labelledby="collab-heading" data-collab-mode={mode}>
-      <h3 className="detail-eyebrow" id="collab-heading">{t('collab.title')}</h3>
-      {children}
-    </section>
-  );
-  if (state.kind === 'idle') return frame(<p className="detail-quiet">{t('collab.hint')}</p>);
-  if (state.kind === 'loading') {
-    return frame(
-      <div className="operator-notice operator-notice--loading" role="status" aria-live="polite">
-        <Banner variant="secondary" icon={<Loader size={14} />} title={t('collab.loading')} description={t('collab.scope', { repository: state.repository_id })} />
-      </div>,
-    );
-  }
-  if (state.kind === 'failed') {
-    return frame(
-      <div className="operator-notice operator-notice--danger" role="alert">
-        <Banner variant="error" icon={<WarningIcon />} title={t('collab.failedTitle')} description={<ApiErrorText error={state.error} t={t} />} />
-      </div>,
-    );
-  }
-  if (state.snapshot.exchange.status === 'unavailable') return frame(<p role="status">{t('org.sourceUnavailable')}</p>);
-  const snapshot = state.snapshot.exchange.snapshot;
-  return frame(<>
-    <div className="detail-chips">
-      <ToneBadge>{t('collab.scope', { repository: snapshot.repository_id })}</ToneBadge>
-      <ToneBadge>{t('collab.mode')} {t(`collab.mode.${snapshot.mode}` as OperatorMessageKey)}</ToneBadge>
-    </div>
-    <CollaborationConsistency snapshot={snapshot} t={t} />
-    {snapshot.mode === 'off' && (
-      <div className="detail-callout">
-        <FlagIcon size={15} />
-        <div><strong>{t('collab.modeOffTitle')}</strong><span>{t('collab.modeOffBody')}</span></div>
-      </div>
-    )}
-    <CollaborationLanes snapshot={snapshot} t={t} />
-    <CollaborationDiscoveries snapshot={snapshot} t={t} />
-    <CollaborationHandoffs snapshot={snapshot} t={t} />
-    <CollaborationContributors snapshot={snapshot} t={t} />
-    <CollaborationOpportunities snapshot={snapshot} t={t} />
-    <div className="detail-callout">
-      <FlagIcon size={15} />
-      <div><strong>{t('collab.offersTitle')}</strong><span>{t('collab.offersBody')}</span></div>
-    </div>
-    <dl className="detail-list">
-      <div><dt>{t('collab.sourceDigest')}</dt><dd className="mono-value">{snapshot.source_snapshot_sha256}</dd></div>
-    </dl>
-  </>, snapshot.mode);
-}
-
-function DetailPane({ snapshot, card, collaboration, revisionChangedFrom, evidenceGeneration, fleetStaleError, readTaskContext, readTaskActivity, onClose, onRefresh, t }: {
+function DetailPane({ snapshot, card, revisionChangedFrom, evidenceGeneration, fleetStaleError, readTaskContext, readTaskActivity, onClose, onRefresh, t }: {
   readonly snapshot: OperatorFleetSnapshotV1 | null;
   readonly card: OperatorFleetCardV1;
-  readonly collaboration: CollaborationViewState;
   readonly revisionChangedFrom: string | null;
   readonly evidenceGeneration: number;
   /** Set while the Fleet read that produced `card` is stale; the retained facts carry the mark. */
@@ -962,9 +744,6 @@ function DetailPane({ snapshot, card, collaboration, revisionChangedFrom, eviden
         <TaskDetail card={card} revisionChangedFrom={revisionChangedFrom} t={t} />
         <TaskEvidence repositoryId={card.repository_id} taskId={card.task_id} revision={card.task_revision} generation={evidenceGeneration} readContext={readTaskContext} readActivity={readTaskActivity} t={t} />
         {snapshot && <TaskDiff key={JSON.stringify([snapshot.service_epoch, card.repository_id, card.task_id, card.task_revision, card.claim_id, card.generation])} card={card} t={t} />}
-        {/* Below the task's own facts, never above them: collaboration is
-            context for a decision the worklist already surfaced. */}
-        <CollaborationPane state={collaboration} t={t} />
       </div>
     </DrawerFrame>
   );
@@ -1009,7 +788,7 @@ export interface RepositoryWorkspaceProps {
   readonly revisionChangedFrom: string | null;
   readonly view: ObservationView;
   readonly onView: (view: ObservationView) => void;
-  readonly collaboration: CollaborationViewState;
+  readonly repositorySnapshot: RepositoryViewState;
   readonly decisionAfter: string | null;
   readonly onDecisionPage: (after: string | null) => void;
   readonly refreshGeneration: number;
@@ -1026,7 +805,7 @@ export interface RepositoryWorkspaceProps {
 
 /** One repository's Fleet tasks and organization, with the task drawer. */
 export function RepositoryWorkspace(props: RepositoryWorkspaceProps) {
-  const { state, activeRepository, selection, selectedCard, view, collaboration, t } = props;
+  const { state, activeRepository, selection, selectedCard, view, repositorySnapshot, t } = props;
   const snapshot = snapshotForState(state);
   const visibleRepositories = useMemo(() => activeRepository ? [activeRepository] : [], [activeRepository]);
   const organizationActive = activeRepository === null || view === 'organization';
@@ -1046,8 +825,8 @@ export function RepositoryWorkspace(props: RepositoryWorkspaceProps) {
         generation={props.refreshGeneration} read={props.readTaskHistory} onClose={props.onCloseSelection} t={t} />}
       {activeRepository && <ObservationTabs view={view} onChange={props.onView} t={t} />}
       <div role="tabpanel" id="view-panel-organization" aria-labelledby="view-tab-organization" hidden={!organizationActive} className="flex flex-col gap-6">
-        {activeRepository && <DecisionSummary state={collaboration} repositoryId={activeRepository.repository_id} after={props.decisionAfter} onPage={props.onDecisionPage} t={t} />}
-        {activeRepository && <OrganizationSummary state={collaboration} repositoryId={activeRepository.repository_id} t={t} />}
+        {activeRepository && <DecisionSummary state={repositorySnapshot} repositoryId={activeRepository.repository_id} after={props.decisionAfter} onPage={props.onDecisionPage} t={t} />}
+        {activeRepository && <OrganizationSummary state={repositorySnapshot} repositoryId={activeRepository.repository_id} t={t} />}
         <SnapshotNotice state={state} onRetry={props.onRefresh} t={t} />
         {state.kind === 'loading' && state.previous === null ? <LoadingState t={t} />
           : state.kind === 'fatal' ? <FatalState error={state.error} onRetry={props.onRefresh} t={t} />
@@ -1058,7 +837,7 @@ export function RepositoryWorkspace(props: RepositoryWorkspaceProps) {
             ) : null}
       </div>
       <div role="tabpanel" id="view-panel-planning" aria-labelledby="view-tab-planning" hidden={view !== 'planning'}>
-        {view === 'planning' && activeRepository && <PlanningView state={collaboration} repositoryId={activeRepository.repository_id} cards={activeRepository.cards} onSelect={props.onSelect} t={t} />}
+        {view === 'planning' && activeRepository && <PlanningView state={repositorySnapshot} repositoryId={activeRepository.repository_id} cards={activeRepository.cards} onSelect={props.onSelect} t={t} />}
       </div>
       <div role="tabpanel" id="view-panel-delivery" aria-labelledby="view-tab-delivery" hidden={view !== 'delivery'}>
         {view === 'delivery' && activeRepository && <DeliveryView repository={activeRepository} selectedKey={selection?.key ?? null} onSelect={props.onSelect} t={t} />}
@@ -1071,7 +850,6 @@ export function RepositoryWorkspace(props: RepositoryWorkspaceProps) {
           <h3>{t('detail.repositoryHealth')}</h3>
           <RepositoryHealth snapshot={{ repositories: visibleRepositories }} t={t} />
         </section>
-        {!selectedCard && <CollaborationPane state={collaboration} t={t} />}
       </details>}
       {/* Without an observed snapshot there is no protocol to report; the
           constant this bundle compiled against is not one. */}
@@ -1081,7 +859,6 @@ export function RepositoryWorkspace(props: RepositoryWorkspaceProps) {
           key={activeRepository?.repository_id ?? 'none'}
           snapshot={snapshot}
           card={selectedCard}
-          collaboration={collaboration}
           revisionChangedFrom={props.revisionChangedFrom}
           evidenceGeneration={props.refreshGeneration}
           fleetStaleError={staleErrorForState(state)}

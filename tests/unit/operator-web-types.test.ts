@@ -1,18 +1,17 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
-  decodeOperatorCollaborationSnapshot,
-  decodeOperatorWorkExchangeSnapshot,
+  decodeOperatorRepositorySnapshot,
   decodeOperatorFleetSnapshot,
   decodeOperatorTaskMessageResponse,
   OPERATOR_API_ERROR_CODES,
-  OPERATOR_COLLABORATION_PAYLOAD_INVALID_ERROR,
+  OPERATOR_REPOSITORY_PAYLOAD_INVALID_ERROR,
   OPERATOR_REPOSITORY_ERROR_CODES,
-  OperatorCollaborationPayloadError,
+  OperatorRepositoryPayloadError,
   OperatorPayloadError,
   OperatorTaskMessageResponseError,
 } from '../../src/operator-web/types';
-import { collaborationObservationFixture, operatorFixtures } from '../../src/operator-web/fixture';
+import { repositoryObservationFixture, operatorFixtures } from '../../src/operator-web/fixture';
 import { planningObservationFixture, stableSnapshot } from '../../src/operator-web/fixture';
 import { decodeOperatorPlanningSnapshot } from '../../src/core/operator/planning-snapshot';
 import { isOperatorMessageKey, translate, type OperatorMessageKey } from '../../src/operator-web/i18n';
@@ -22,13 +21,13 @@ const taskRevision = 'b'.repeat(64);
 const claimId = '00000000-0000-4000-8000-000000000001';
 const snapshotDigest = `sha256:${'c'.repeat(64)}`;
 
-test('Planning transport binds canonical task observations and requires protocol4 source isolation',()=>{
-  const repository=stableSnapshot.repositories[0]!,snapshot=planningObservationFixture(collaborationSnapshot.repository_id,repository.cards);
-  const envelope={...collaborationSnapshot,planning:{status:'observed' as const,observed_at:snapshot.observation.observed_at,snapshot}};
-  expect(decodeOperatorCollaborationSnapshot(envelope).planning).toEqual(envelope.planning);
+test('Planning transport binds canonical task observations and requires independent source isolation',()=>{
+  const repository=stableSnapshot.repositories[0]!,snapshot=planningObservationFixture(repositorySnapshot.repository_id,repository.cards);
+  const envelope={...repositorySnapshot,planning:{status:'observed' as const,observed_at:snapshot.observation.observed_at,snapshot}};
+  expect(decodeOperatorRepositorySnapshot(envelope).planning).toEqual(envelope.planning);
   const {planning:_,...missing}=envelope;
-  expect(()=>decodeOperatorCollaborationSnapshot(missing)).toThrow();
-  expect(()=>decodeOperatorCollaborationSnapshot({...envelope,protocol:3})).toThrow();
+  expect(()=>decodeOperatorRepositorySnapshot(missing)).toThrow();
+  expect(()=>decodeOperatorRepositorySnapshot({...envelope,protocol:3})).toThrow();
   const canonical=snapshot.canonical!,task=snapshot.tasks[0]!;
   for(const bad of [
     {...snapshot,repository_id:'another-repo'},
@@ -40,9 +39,9 @@ test('Planning transport binds canonical task observations and requires protocol
     {...snapshot,tasks:[{...task,canonical:{...canonical,sprint_path:'../secret'}}]},
     {...snapshot,graph:{...snapshot.graph,observed_at:'2025-01-01T00:00:00Z'}},
     {...snapshot,graph:{status:'observed',observed_at:snapshot.observation.observed_at,snapshot:{lane:'unclassified',work_graph_revision:snapshotDigest,packages:[],sources:[]}}},
-  ])expect(()=>decodeOperatorPlanningSnapshot(bad,collaborationSnapshot.repository_id)).toThrow();
+  ])expect(()=>decodeOperatorPlanningSnapshot(bad,repositorySnapshot.repository_id)).toThrow();
   const unavailable={status:'unavailable' as const,observed_at:snapshot.observation.observed_at,code:'source_unavailable' as const};
-  expect(decodeOperatorCollaborationSnapshot({...envelope,planning:unavailable}).exchange.status).toBe('observed');
+  expect(decodeOperatorRepositorySnapshot({...envelope,planning:unavailable}).organization.status).toBe('unavailable');
 });
 
 function validFleetPayload(): Record<string, unknown> {
@@ -104,27 +103,6 @@ function fleetPayloadWithCard(changes: Record<string, unknown>): Record<string, 
   repository.cards = [{ ...cards[0], ...changes }];
   return payload;
 }
-
-function validExchangePayload(): import("../../src/core/operator/collaboration-snapshot").OperatorWorkExchangeSnapshot {
-  return {
-    protocol: 1,
-    kind: 'operator_work_exchange_snapshot',
-    repository_id: 'repo-1',
-    mode: 'off',
-    snapshot_consistency: 'stable',
-    degraded_sources: [],
-    changed_sources: [],
-    threads: [],
-    signals: [],
-    handoffs: [],
-    participants: [],
-    opportunities: [],
-    unverified_execution_context_count: 0,
-    source_snapshot_sha256: snapshotDigest,
-  };
-}
-
-function validCollaborationPayload() { return collaborationObservationFixture(validExchangePayload()); }
 
 describe('operator browser payload contracts', () => {
   test('requires the named-repository protocol without accepting old or missing display names', () => {
@@ -220,14 +198,6 @@ describe('operator browser payload contracts', () => {
     expect(decodeOperatorFleetSnapshot(degradedRepository).snapshot_consistency).toBe('degraded');
   });
 
-  test('accepts mode as a closed collaboration consistency source', () => {
-    expect(decodeOperatorWorkExchangeSnapshot({
-      ...validExchangePayload(),
-      snapshot_consistency: 'changed_during_read',
-      changed_sources: ['mode'],
-    }).changed_sources).toEqual(['mode']);
-  });
-
   test('strictly decodes and binds Task Message success acknowledgments', () => {
     const expected = {
       repository_id: 'repo-1',
@@ -271,23 +241,23 @@ describe('operator browser payload contracts', () => {
     expect(() => decodeOperatorTaskMessageResponse(response, expected, status)).toThrow(OperatorTaskMessageResponseError);
   });
 
-  test('uses a collaboration-specific validation contract while Fleet keeps its own contract', () => {
+  test('uses a repository-specific validation contract while Fleet keeps its own contract', () => {
     expect(() => decodeOperatorFleetSnapshot({ ...validFleetPayload(), protocol: 99 })).toThrow(OperatorPayloadError);
 
     let protocolError: unknown;
     try {
-      decodeOperatorCollaborationSnapshot({ ...validCollaborationPayload(), protocol: 99 });
+      decodeOperatorRepositorySnapshot({ ...repositoryObservationFixture(), protocol: 99 });
     } catch (error) {
       protocolError = error;
     }
-    expect(protocolError).toBeInstanceOf(OperatorCollaborationPayloadError);
-    expect(protocolError).toMatchObject(OPERATOR_COLLABORATION_PAYLOAD_INVALID_ERROR);
+    expect(protocolError).toBeInstanceOf(OperatorRepositoryPayloadError);
+    expect(protocolError).toMatchObject(OPERATOR_REPOSITORY_PAYLOAD_INVALID_ERROR);
     expect(protocolError).not.toBeInstanceOf(OperatorPayloadError);
 
-    expect(() => decodeOperatorCollaborationSnapshot({
-      ...validCollaborationPayload(),
-      threads: [{ thread_key: 'missing-required-fields' }],
-    })).toThrow(OperatorCollaborationPayloadError);
+    expect(() => decodeOperatorRepositorySnapshot({
+      ...repositoryObservationFixture(),
+      exchange: {},
+    })).toThrow(OperatorRepositoryPayloadError);
   });
 
   test('provides runtime-effect recovery copy in both operator locales', () => {
@@ -444,11 +414,11 @@ test('current context transport preserves expected revision, abort and uncached 
 });
 
 import { decodeOperatorDecisionInventory } from '../../src/core/operator/decision-inventory';
-import { decisionInventoryFixture, collaborationSnapshot } from '../../src/operator-web/fixture';
+import { decisionInventoryFixture, repositorySnapshot } from '../../src/operator-web/fixture';
 
 describe('formal Decision wire boundary', () => {
   test('preserves original questions and exact fences, and rejects malformed or cross-query observations', () => {
-    const page = decisionInventoryFixture(collaborationSnapshot.repository_id);
+    const page = decisionInventoryFixture(repositorySnapshot.repository_id);
     expect(decodeOperatorDecisionInventory(page, page.repository_id, null)).toEqual(page);
     expect(page.entries[0]!.task_fence.lease_generation).toBe(0);
     const entry = page.entries[0]!;
@@ -467,10 +437,10 @@ describe('formal Decision wire boundary', () => {
     for (const value of malformed) expect(() => decodeOperatorDecisionInventory(value, page.repository_id, null)).toThrow();
     const partial = { ...page, query: { after: 'b'.repeat(64), limit: 1 }, coverage: { ...page.coverage, complete: false, reason: 'output_limit', next_after: 'a'.repeat(64) } };
     expect(() => decodeOperatorDecisionInventory(partial, page.repository_id, partial.query.after)).toThrow();
-    const envelope = { ...collaborationSnapshot, decisions: { status: 'observed' as const, observed_at: '2026-09-22T00:00:00Z', snapshot: page } };
-    expect(decodeOperatorCollaborationSnapshot(envelope)).toEqual(envelope);
-    expect(() => decodeOperatorCollaborationSnapshot({ ...envelope, protocol: 2 })).toThrow();
-    expect(() => decodeOperatorCollaborationSnapshot({ ...envelope, decision_after: 'f'.repeat(64) })).toThrow();
+    const envelope = { ...repositorySnapshot, decisions: { status: 'observed' as const, observed_at: '2026-09-22T00:00:00Z', snapshot: page } };
+    expect(decodeOperatorRepositorySnapshot(envelope)).toEqual(envelope);
+    expect(() => decodeOperatorRepositorySnapshot({ ...envelope, protocol: 2 })).toThrow();
+    expect(() => decodeOperatorRepositorySnapshot({ ...envelope, decision_after: 'f'.repeat(64) })).toThrow();
   });
 });
 

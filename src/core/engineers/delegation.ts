@@ -231,11 +231,7 @@ export interface WorkerRunRefV1 {
   readonly run_ref_sha256: string;
 }
 
-/**
- * The `{ ref, sha256 }` evidence reference `WorkerResultV1` carries. Named so
- * that the collaboration plane's `ArtifactRefV1` can alias this exact type and
- * run this exact validator instead of growing a second equivalent shape.
- */
+/** The `{ ref, sha256 }` evidence reference carried by `WorkerResultV1`. */
 export interface WorkerEvidenceRefV1 {
   readonly ref: string;
   readonly sha256: string;
@@ -721,10 +717,8 @@ export function validateWorkerRunRef(value: unknown): WorkerRunRefV1 {
 export const canonicalWorkerRunRefBytes = (value: WorkerRunRefV1): string => canonical(value, validateWorkerRunRef);
 
 /**
- * The single validator for the `WorkerResultV1` evidence-ref shape. Exported so
- * the collaboration plane reuses it verbatim rather than re-deriving the same
- * `{ ref, sha256 }` contract; `maximum` lets a caller impose a tighter count
- * bound without changing the per-entry rules.
+ * Validate `WorkerResultV1` evidence references. The caller can set a tighter
+ * count limit without changing the per-entry rules.
  */
 export function validateWorkerEvidenceRefs(
   value: unknown,

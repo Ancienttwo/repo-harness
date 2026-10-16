@@ -6,13 +6,13 @@ import {
   type OperatorTranslate,
 } from './i18n';
 import {
-  decodeOperatorCollaborationSnapshot,
+  decodeOperatorRepositorySnapshot,
   decodeOperatorFleetSnapshot,
-  OPERATOR_COLLABORATION_PAYLOAD_INVALID_ERROR,
+  OPERATOR_REPOSITORY_PAYLOAD_INVALID_ERROR,
   OPERATOR_PAYLOAD_INVALID_ERROR,
   type OperatorApiErrorCode,
   type OperatorApiErrorV1,
-  type OperatorCollaborationSnapshotV4,
+  type OperatorRepositorySnapshotV1,
   type OperatorFleetSnapshotV1,
 } from './types';
 
@@ -30,8 +30,8 @@ export function clientApiError(code: OperatorApiErrorCode): OperatorApiErrorV1 {
 }
 
 const DEFAULT_API_ERROR: OperatorApiErrorV1 = clientApiError('operator_api_unavailable');
-export const COLLABORATION_UNAVAILABLE_ERROR: OperatorApiErrorV1 = clientApiError('collaboration_snapshot_unavailable');
-const COLLABORATION_REPOSITORY_MISMATCH_ERROR: OperatorApiErrorV1 = clientApiError('collaboration_repository_mismatch');
+export const REPOSITORY_UNAVAILABLE_ERROR: OperatorApiErrorV1 = clientApiError('repository_snapshot_unavailable');
+const REPOSITORY_MISMATCH_ERROR: OperatorApiErrorV1 = clientApiError('repository_mismatch');
 
 export interface LocalizedApiError {
   readonly message: string;
@@ -92,23 +92,23 @@ export async function fetchOperatorSnapshot(signal?: AbortSignal): Promise<Opera
   }
 }
 
-export function assertCollaborationRepository(
-  snapshot: OperatorCollaborationSnapshotV4,
+export function assertSnapshotRepository(
+  snapshot: OperatorRepositorySnapshotV1,
   repositoryId: string,
   decisionAfter: string | null = null,
-): OperatorCollaborationSnapshotV4 {
-  if (snapshot.repository_id !== repositoryId || snapshot.decision_after !== decisionAfter) throw COLLABORATION_REPOSITORY_MISMATCH_ERROR;
+): OperatorRepositorySnapshotV1 {
+  if (snapshot.repository_id !== repositoryId || snapshot.decision_after !== decisionAfter) throw REPOSITORY_MISMATCH_ERROR;
   return snapshot;
 }
 
-export async function fetchOperatorCollaborationSnapshot(
+export async function fetchOperatorRepositorySnapshot(
   repositoryId: string,
   signal?: AbortSignal,
   decisionAfter: string | null = null,
-): Promise<OperatorCollaborationSnapshotV4> {
-  if (decisionAfter !== null && !/^[0-9a-f]{64}$/u.test(decisionAfter)) throw OPERATOR_COLLABORATION_PAYLOAD_INVALID_ERROR;
+): Promise<OperatorRepositorySnapshotV1> {
+  if (decisionAfter !== null && !/^[0-9a-f]{64}$/u.test(decisionAfter)) throw OPERATOR_REPOSITORY_PAYLOAD_INVALID_ERROR;
   const query = decisionAfter === null ? '' : `?decision_after=${decisionAfter}`;
-  const response = await fetch(`/api/v1/collaboration/${encodeURIComponent(repositoryId)}/snapshot${query}`, {
+  const response = await fetch(`/api/v1/repositories/${encodeURIComponent(repositoryId)}/snapshot${query}`, {
     headers: { Accept: 'application/json' },
     cache: 'no-store',
     signal,
@@ -119,14 +119,14 @@ export async function fetchOperatorCollaborationSnapshot(
   } catch {
     body = null;
   }
-  if (!response.ok) throw asApiError(body, COLLABORATION_UNAVAILABLE_ERROR);
-  let snapshot: OperatorCollaborationSnapshotV4;
+  if (!response.ok) throw asApiError(body, REPOSITORY_UNAVAILABLE_ERROR);
+  let snapshot: OperatorRepositorySnapshotV1;
   try {
-    snapshot = decodeOperatorCollaborationSnapshot(body);
+    snapshot = decodeOperatorRepositorySnapshot(body);
   } catch {
-    // Fleet and collaboration payloads are separate authorities. Keep a
-    // malformed collaboration response from borrowing Fleet diagnostics.
-    throw OPERATOR_COLLABORATION_PAYLOAD_INVALID_ERROR;
+    // Fleet and repository payloads are separate authorities. Keep a
+    // malformed repository response from borrowing Fleet diagnostics.
+    throw OPERATOR_REPOSITORY_PAYLOAD_INVALID_ERROR;
   }
-  return assertCollaborationRepository(snapshot, repositoryId, decisionAfter);
+  return assertSnapshotRepository(snapshot, repositoryId, decisionAfter);
 }

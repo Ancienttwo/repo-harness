@@ -10,13 +10,11 @@ participants:
     nodeId: capability.runtime-harness.engineer-bindings
   - id: delegated-run-schema
     nodeId: component.delegated-runs.primary
-  - id: collaboration-fence
-    nodeId: capability.runtime-harness.collaboration
 steps:
   - id: revalidate-parent
     from: delegated-run-journal
     to: binding-authority
-    label: Revalidate current Task, Lease, WorkEnvelope, Engineer Binding and ClaimActorReceipt fences before admission
+    label: "Revalidate current Task, Lease, WorkEnvelope, Engineer Binding and ClaimActorReceipt fences before admission"
     evidence:
       entrypointId: entrypoint.delegated-runs.parent-authority
       sourceSymbol: validateDelegationParent
@@ -37,14 +35,6 @@ steps:
       entrypointId: entrypoint.delegated-runs.dispatch-command
       sourceSymbol: dispatchDelegatedRunCommand
       sinkId: sink.delegated-runs.dispatch-host-action
-  - id: fence-collaboration-context
-    from: delegated-run-journal
-    to: collaboration-fence
-    label: Refuse a run whose injected coordination context has no recorded run-context binding before any host action
-    evidence:
-      entrypointId: entrypoint.delegated-runs.dispatch-effect
-      sourceSymbol: dispatchDelegatedRun
-      sinkId: sink.delegated-runs.collaboration-dispatch-fence
 outcomes:
   - id: completed
     kind: success
@@ -63,7 +53,7 @@ outcomes:
       label: Return completed observation and untrusted result; no Task or Acceptance transition
   - id: reconcile
     kind: error
-    label: Lost acknowledgement, stale authority or protected-state drift fails closed without another host action
+    label: "Lost acknowledgement, stale authority or protected-state drift fails closed without another host action"
     steps:
       - id: persist-reconciliation
         from: delegated-run-journal

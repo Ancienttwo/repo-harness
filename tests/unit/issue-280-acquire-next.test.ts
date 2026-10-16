@@ -4,10 +4,9 @@ import { existsSync, statSync, utimesSync, mkdtempSync, mkdirSync, cpSync, symli
 import { tmpdir } from 'os';
 import { join } from 'path';
 
-import { buildEngineerOffersDocument, type EngineerOfferV1, type EngineerOffersV1 } from '../../src/core/engineers/scheduling';
+import { buildEngineerOffersDocument, observeInitialRetryEligibility, type EngineerOfferV1, type EngineerOffersV1 } from '../../src/core/engineers/scheduling';
 import type { EngineerPrincipalV1 } from '../../src/core/engineers/principal-claim';
 import { canonicalEngineerJson, engineerSha256 } from '../../src/core/engineers/profile-binding';
-import { observeRetryEligibility } from '../../src/core/engineers/automation-attempt';
 import { withExclusiveDirectoryLock } from '../../src/effects/locking/exclusive-directory-lock';
 import { coordinationRoot } from '../../src/effects/state/coordination-lease-store';
 import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
@@ -332,7 +331,7 @@ describe('S2 selected acquisition transaction', () => {
     let effects = 0;
     const canonicalOffer = (time: number) => {
       const { offer_revision: _old, ...base } = offer('first', 10);
-      const retry = observeRetryEligibility({ policy: base.retry_policy, current: null,
+      const retry = observeInitialRetryEligibility({
         work_package_revision: base.work_package_revision, observed_at: new Date(time).toISOString() });
       const basis = { ...base, primary_capability: 'capability.demo.worker', eligible_since: retry.eligible_since!, retry_revision: retry.authority_revision };
       return { ...basis, offer_revision: engineerSha256(canonicalEngineerJson(basis)) };

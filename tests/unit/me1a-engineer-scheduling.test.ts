@@ -118,7 +118,6 @@ function fixture(options: { carrier?: boolean; activeConcurrency?: boolean; acti
     return { classification: 'available', unknown_reason: null, record: null } as any;
   };
   const deps: Partial<EngineerSchedulingDependencies> = {
-    readAttemptCurrent: () => null,
     now: () => new Date('2026-09-04T00:00:00.000Z'),
     readRegistry: () => registry,
     readActiveSprintPath: () => SPRINT,
@@ -168,6 +167,14 @@ describe('ME-1A Engineer offer effects', () => {
     });
     expect(result.lane).toBe('engineering-v2');
     expect(result.offers.map((offer) => offer.work_package_id)).toEqual(['wp-b']);
+    expect(result.offers[0]).toMatchObject({
+      attempt_count: 0,
+      last_outcome: null,
+      next_eligible_at: null,
+      eligible_since: '2026-09-04T00:00:00.000Z',
+      blocker_owner: 'none',
+      starvation_attention: false,
+    });
     expect(result.exclusions.find((item) => item.work_package_id === 'wp-a')?.blockers)
       .toContain('fleet_offer_unavailable');
   });

@@ -39,7 +39,7 @@ function props(setup: SetupSnapshotV1 | null, overrides: Partial<OperatorAppProp
     initialLocale: 'en', initialSnapshot: stableSnapshot, fetchSnapshot: async () => stableSnapshot,
     initialDevActivity: activity, fetchDevActivity: async () => activity,
     initialRuntimeOverlay: unavailableRuntimeOverlay(), readRuntimeStatus: async () => unavailableRuntimeOverlay(),
-    readNotifyStatus: () => new Promise(() => {}), readPipelineBoard: () => new Promise(() => {}),
+    readNotifyStatus: () => new Promise(() => {}),
     ...(setup ? { initialSetup: setup, readSetup: async () => setup } : {}),
     ...overrides,
   };

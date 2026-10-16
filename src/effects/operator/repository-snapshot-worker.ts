@@ -1,33 +1,33 @@
 import { parentPort, workerData } from 'node:worker_threads';
 import { isDecisionCursor } from '../../core/operator/decision-inventory';
-import type { OperatorCollaborationSnapshotV4 } from '../../core/operator/collaboration-snapshot';
+import type { OperatorRepositorySnapshotV1 } from '../../core/operator/repository-snapshot';
 import {
-  OperatorCollaborationError,
-  readOperatorCollaborationSnapshot,
-  type OperatorCollaborationErrorCode,
-} from './collaboration';
+  OperatorRepositoryError,
+  readOperatorRepositorySnapshot,
+  type OperatorRepositoryErrorCode,
+} from './repository-snapshot';
 
-interface CollaborationWorkerRequest {
+interface RepositoryWorkerRequest {
   readonly env?: Readonly<Record<string, string>>;
   readonly repository_id: string;
   readonly decision_after: string | null;
 }
 
-type CollaborationWorkerResponse =
+type RepositoryWorkerResponse =
   | {
       readonly ok: true;
-      readonly snapshot: OperatorCollaborationSnapshotV4;
+      readonly snapshot: OperatorRepositorySnapshotV1;
     }
   | {
       readonly ok: false;
-      readonly code: OperatorCollaborationErrorCode;
+      readonly code: OperatorRepositoryErrorCode;
     };
 
-function unavailable(): CollaborationWorkerResponse {
-  return { ok: false, code: 'collaboration_snapshot_unavailable' };
+function unavailable(): RepositoryWorkerResponse {
+  return { ok: false, code: 'repository_snapshot_unavailable' };
 }
 
-function collect(request: CollaborationWorkerRequest): void {
+function collect(request: RepositoryWorkerRequest): void {
   if (
     typeof request !== 'object'
     || request === null
@@ -41,16 +41,16 @@ function collect(request: CollaborationWorkerRequest): void {
   try {
     parentPort!.postMessage({
       ok: true,
-      snapshot: readOperatorCollaborationSnapshot({
+      snapshot: readOperatorRepositorySnapshot({
         env: request.env,
         repository_id: request.repository_id,
         decision_after: request.decision_after,
       }),
-    } satisfies CollaborationWorkerResponse);
+    } satisfies RepositoryWorkerResponse);
   } catch (error) {
     parentPort!.postMessage(
-      error instanceof OperatorCollaborationError
-        ? ({ ok: false, code: error.code } satisfies CollaborationWorkerResponse)
+      error instanceof OperatorRepositoryError
+        ? ({ ok: false, code: error.code } satisfies RepositoryWorkerResponse)
         : unavailable(),
     );
   }

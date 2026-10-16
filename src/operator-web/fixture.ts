@@ -1,5 +1,4 @@
 import type {
-  OperatorWorkExchangeSnapshot,
   OperatorFleetCardV1,
   OperatorFleetColumn,
   OperatorFleetRepositoryV1,
@@ -324,191 +323,14 @@ export const operatorFixtures = {
   preparation: preparationSnapshot,
 } as const;
 
-/**
- * Collaboration fixtures use the real identity shapes, not short synthetic ones:
- * a `repo_<16hex>` id, 64-hex record ids, `sha256:`-prefixed digests, and the
- * C1 lineage strings that concatenate the actor kind with the identity it keeps
- * across rebindings. Designing the panels against readable stand-ins is what
- * hides how much of the row is an unreadable digest.
- */
-const COLLAB_REPOSITORY_ID = 'repo_a5b76eee64af71c3';
-
-function recordId(seed: string): string {
-  return seed.repeat(4);
-}
-
-function collabDigest(seed: string): string {
-  return `sha256:${seed.repeat(4)}`;
-}
-
-const ENGINEER_LINEAGE = 'module_engineerengineer:capability.runtime-harness.collaboration';
-const WORKER_LINEAGE = `delegated_worker${collabDigest('6b1f04d9c8a2e735')}`;
-
-export const exchangeSnapshot: OperatorWorkExchangeSnapshot = {
-  protocol: 1,
-  kind: 'operator_work_exchange_snapshot',
-  repository_id: COLLAB_REPOSITORY_ID,
-  mode: 'shadow',
-  snapshot_consistency: 'stable',
-  degraded_sources: [],
-  changed_sources: [],
-  threads: [
-    {
-      thread_key: 'capability.runtime-harness.collaboration',
-      signal_count: 5,
-      distinct_contributor_count: 2,
-      latest_signal_at: '2026-08-30T09:41:00.000Z',
-      artifact_ref_count: 6,
-      unadopted_handoff_count: 1,
-      adoption_count: 2,
-      cross_thread_reference_count: 3,
-      recency_rank: 4,
-      hotspot_score: 87,
-      thread_sha256: collabDigest('1a2b3c4d5e6f7081'),
-    },
-    {
-      thread_key: 'task.snapshot-consistency-propagation',
-      signal_count: 2,
-      distinct_contributor_count: 1,
-      latest_signal_at: '2026-08-30T06:12:00.000Z',
-      artifact_ref_count: 1,
-      unadopted_handoff_count: 0,
-      adoption_count: 0,
-      cross_thread_reference_count: 0,
-      recency_rank: 3,
-      hotspot_score: 44,
-      thread_sha256: collabDigest('90a1b2c3d4e5f607'),
-    },
-  ],
-  signals: [
-    {
-      signal_id: recordId('7d3e91b4c05a682f'),
-      signal_sha256: collabDigest('7d3e91b4c05a682f'),
-      thread_key: 'capability.runtime-harness.collaboration',
-      actor_lineage: ENGINEER_LINEAGE,
-      title: 'Double-read windows must overlap or stable is an overclaim',
-      labels: ['dead-end', 'protocol'],
-      artifact_ref_count: 3,
-      created_at: '2026-08-30T09:41:00.000Z',
-      superseded: false,
-    },
-    {
-      signal_id: recordId('2c8f60a1d97b34e5'),
-      signal_sha256: collabDigest('2c8f60a1d97b34e5'),
-      thread_key: 'capability.runtime-harness.collaboration',
-      actor_lineage: WORKER_LINEAGE,
-      title: 'Per-source back-to-back reads look stable and prove nothing',
-      labels: ['hypothesis'],
-      artifact_ref_count: 2,
-      created_at: '2026-08-30T08:03:00.000Z',
-      superseded: true,
-    },
-    {
-      signal_id: recordId('b45e270c8a1f9d36'),
-      signal_sha256: collabDigest('b45e270c8a1f9d36'),
-      thread_key: 'task.snapshot-consistency-propagation',
-      actor_lineage: ENGINEER_LINEAGE,
-      title: 'Degraded never renders as an empty lane list',
-      labels: [],
-      artifact_ref_count: 1,
-      created_at: '2026-08-30T06:12:00.000Z',
-      superseded: false,
-    },
-  ],
-  handoffs: [
-    {
-      handoff_id: recordId('e071c94a35d8b26f'),
-      handoff_sha256: collabDigest('e071c94a35d8b26f'),
-      thread_key: 'capability.runtime-harness.collaboration',
-      actor_lineage: ENGINEER_LINEAGE,
-      trigger: 'budget_exhausted',
-      goal: 'Prove cross-source stability for the exchange collection',
-      next_action_count: 3,
-      open_hypothesis_count: 2,
-      adoption_count: 2,
-      created_at: '2026-08-30T09:05:00.000Z',
-      execution_context_kind: 'bound_task',
-    },
-    {
-      handoff_id: recordId('4f8a13e6b7025c9d'),
-      handoff_sha256: collabDigest('4f8a13e6b7025c9d'),
-      thread_key: 'task.snapshot-consistency-propagation',
-      actor_lineage: WORKER_LINEAGE,
-      trigger: 'context_exhausted',
-      goal: 'Trace snapshot_consistency from the collector to the panel',
-      next_action_count: 1,
-      open_hypothesis_count: 0,
-      adoption_count: 0,
-      created_at: '2026-08-30T05:47:00.000Z',
-      // The withheld branch: C6 proved this one and the proof did not hold.
-      execution_context_kind: null,
-    },
-  ],
-  participants: [
-    {
-      actor_lineage: ENGINEER_LINEAGE,
-      actor_kind: 'module_engineer',
-      latest_actor_sha256: collabDigest('c3d20f9a61e4785b'),
-      signal_count: 2,
-      handoff_count: 1,
-      thread_keys: ['capability.runtime-harness.collaboration', 'task.snapshot-consistency-propagation'],
-      latest_activity_at: '2026-08-30T09:41:00.000Z',
-    },
-    {
-      actor_lineage: WORKER_LINEAGE,
-      actor_kind: 'delegated_worker',
-      latest_actor_sha256: collabDigest('8e5b07f2a91cd463'),
-      signal_count: 1,
-      handoff_count: 1,
-      thread_keys: ['capability.runtime-harness.collaboration'],
-      latest_activity_at: '2026-08-30T08:03:00.000Z',
-    },
-  ],
-  opportunities: [
-    {
-      thread_key: 'capability.runtime-harness.collaboration',
-      reason: 'unadopted_handoff',
-      source_refs: [recordId('4f8a13e6b7025c9d')],
-    },
-    {
-      thread_key: 'task.snapshot-consistency-propagation',
-      reason: 'low_contributor_coverage',
-      source_refs: [recordId('b45e270c8a1f9d36')],
-    },
-  ],
-  unverified_execution_context_count: 1,
-  source_snapshot_sha256: collabDigest('5f9c31e08b4a7d62'),
-};
-
-/** Two additive sources unreadable: the panel must say so, not show fewer lanes. */
-export const degradedExchangeSnapshot: OperatorWorkExchangeSnapshot = {
-  ...exchangeSnapshot,
-  snapshot_consistency: 'degraded',
-  degraded_sources: ['handoffs', 'adoptions'],
-  handoffs: [],
-};
-
-/** A writer landed between the two reads. */
-export const changedExchangeSnapshot: OperatorWorkExchangeSnapshot = {
-  ...exchangeSnapshot,
-  snapshot_consistency: 'changed_during_read',
-  changed_sources: ['signals'],
-};
-
-/** Collaboration switched off: readable, and nothing can be written to it. */
-export const offExchangeSnapshot: OperatorWorkExchangeSnapshot = {
-  ...exchangeSnapshot,
-  mode: 'off',
-};
-
-export function collaborationObservationFixture(exchange: OperatorWorkExchangeSnapshot): import('../core/operator/collaboration-snapshot').OperatorCollaborationSnapshotV4 {
-  return { protocol: 4, kind: 'operator_collaboration_snapshot', decision_after: null,
+/** Independent repository observations for browser fixtures. */
+export function repositoryObservationFixture(repositoryId = 'repo_a5b76eee64af71c3'): import('../core/operator/repository-snapshot').OperatorRepositorySnapshotV1 {
+  return { protocol: 1, kind: 'operator_repository_snapshot', repository_id: repositoryId, decision_after: null,
     planning: { status: 'unavailable', observed_at: '2026-09-22T00:00:00.000Z', code: 'source_unavailable' },
-    decisions: { status: 'unavailable', observed_at: '2026-09-22T00:00:00.000Z', code: 'source_unavailable' }, repository_id: exchange.repository_id,
-    exchange: { status: 'observed', observed_at: '2026-09-22T07:00:00.000Z', snapshot: exchange },
-    organization: { status: 'unavailable', observed_at: '2026-09-22T07:00:00.000Z', code: 'source_unavailable' } };
+    decisions: { status: 'unavailable', observed_at: '2026-09-22T00:00:00.000Z', code: 'source_unavailable' },
+    organization: { status: 'unavailable', observed_at: '2026-09-22T00:00:00.000Z', code: 'source_unavailable' } };
 }
-export const collaborationSnapshot = collaborationObservationFixture(exchangeSnapshot);
+export const repositorySnapshot = repositoryObservationFixture();
 
 export function planningObservationFixture(repositoryId: string, cards: readonly OperatorFleetCardV1[]): import('../core/operator/planning-snapshot').OperatorPlanningSnapshot {
   const tasks = cards.filter(card => card.task_state !== 'missing').map(card => ({
@@ -520,17 +342,6 @@ export function planningObservationFixture(repositoryId: string, cards: readonly
   return {protocol:1,kind:'operator_planning_snapshot',repository_id:repositoryId,canonical,tasks,observation,
     graph:{status:'observed',observed_at:observation.observed_at,snapshot:{lane:'unclassified',work_graph_revision:null,packages:[],sources:[]}}};
 }
-export const degradedCollaborationSnapshot = collaborationObservationFixture(degradedExchangeSnapshot);
-export const changedCollaborationSnapshot = collaborationObservationFixture(changedExchangeSnapshot);
-export const offCollaborationSnapshot = collaborationObservationFixture(offExchangeSnapshot);
-
-export const collaborationFixtures = {
-  stable: collaborationSnapshot,
-  degraded: degradedCollaborationSnapshot,
-  changedDuringRead: changedCollaborationSnapshot,
-  off: offCollaborationSnapshot,
-} as const;
-
 /** Stored-fact-shaped fixtures for the read-only detail preview and decoder tests. */
 export function taskContextFixture(request: import('../core/operator/task-context').OperatorTaskContextRequest): import('../core/operator/task-context').OperatorTaskContext {
   const task = Object.values(fixtureTasks).find(value => value.task_id === request.task_id) ?? fixtureTasks.working;
@@ -562,7 +373,7 @@ export function taskActivityFixture(request: import('../core/operator/task-activ
   return { ...request, protocol: 1, kind: 'operator_task_activity', observed_at: at, consistency: 'observed', entries, coverage: { scope: request.message_id === null ? 'task' : 'message', complete: true, reason: null, scanned: 2, bytes: 2048 }, next_cursor: null };
 }
 
-export function decisionInventoryFixture(repositoryId = 'repo-harness'): import('../core/operator/decision-inventory').OperatorDecisionInventory {
+export function decisionInventoryFixture(repositoryId = 'repo_a5b76eee64af71c3'): import('../core/operator/decision-inventory').OperatorDecisionInventory {
   const hash = `sha256:${'a'.repeat(64)}`;
   return { protocol: 1, kind: 'operator_decision_inventory', repository_id: repositoryId,
     query: { after: null, limit: 50 }, directory_revision: hash,

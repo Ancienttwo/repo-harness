@@ -6,6 +6,16 @@ All notable changes to this skill are documented here.
 
 ### Breaking
 
+- Remove the collaboration commands, Engineer collaboration tools and pipeline
+  observer. `/api/v1/pipelines` now returns 404. Herdr v2 runtime config files
+  must remove `bindings_path` and `pipeline_snapshot`, even when both are null.
+  Startup rejects either key and names both keys in the repair error. Native v2
+  config files keep their shape. Manifest-based task badge binding is removed.
+  Herdr observations remain unbound. See [runtime status](kanban-runtime-status.md). (#769, #785)
+- Advance the dev-activity response to `repo-harness.dev-activity.v2`. Remove
+  ledger facts, task-level agent bindings and ledger-derived attention. Old
+  snapshots fail closed. Update clients with the server. Git, GitHub, Human
+  Decision and runtime source-health observations remain. (#769, #785)
 - Managed hook blocks now run before user blocks for each event. (#742)
   After the update, start interactive `codex`, enter `/hooks` and review the hooks. (#766)
 - Codex no longer installs `UserPromptSubmit.delegation`. No hook answers

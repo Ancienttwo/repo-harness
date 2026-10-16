@@ -183,9 +183,6 @@
     ],
     "rule": "Ordinary editing has no plan/contract approval permit. Path and permission safety remain runtime invariants."
   },
-  "collaboration": {
-    "mode": "off"
-  },
   "agent_runtime": {
     "mode": "off",
     "adapters": {

@@ -3,13 +3,11 @@ import { Badge } from '@cloudflare/kumo';
 import { ShieldCheckIcon } from '@phosphor-icons/react';
 import type { NotifyStatusV1 } from '../core/operator/notify-status';
 import type { RuntimeOverlay } from '../core/operator/runtime-status';
-import type { PipelineBoardV2 } from '../core/pipeline/board';
 import { repositoryLabel, sourceHealth, type DevActivityView } from './dev-activity';
 import type { OperatorMessageKey, OperatorTranslate } from './i18n';
 import { NotifyStatusPanel, type NotifyStatusReader } from './NotifyStatus';
-import { PipelineBoardPanel, type PipelineBoardReader } from './PipelineBoard';
 import { SourceChips } from './RepositoriesPage';
-import type { RuntimeOverlayReader } from './RuntimeBadges';
+import { fetchRuntimeOverlay, useRuntimeOverlay, RuntimeSummary, type RuntimeOverlayReader } from './RuntimeBadges';
 import { ageWords } from './labels';
 import { SectionTitle } from './ui';
 
@@ -66,7 +64,7 @@ function Boundaries({ t }: { readonly t: OperatorTranslate }) {
   );
 }
 
-export function SystemPage({ view, now, refreshGeneration, active, readNotifyStatus, initialNotifyStatus, readPipelineBoard, initialPipelineBoard, readRuntimeStatus, initialRuntimeOverlay, t }: {
+export function SystemPage({ view, now, refreshGeneration, active, readNotifyStatus, initialNotifyStatus, readRuntimeStatus = fetchRuntimeOverlay, initialRuntimeOverlay, t }: {
   readonly view: DevActivityView;
   readonly now: number;
   readonly refreshGeneration: number;
@@ -74,12 +72,11 @@ export function SystemPage({ view, now, refreshGeneration, active, readNotifySta
   readonly active: boolean;
   readonly readNotifyStatus?: NotifyStatusReader;
   readonly initialNotifyStatus?: NotifyStatusV1;
-  readonly readPipelineBoard?: PipelineBoardReader;
-  readonly initialPipelineBoard?: PipelineBoardV2;
   readonly readRuntimeStatus?: RuntimeOverlayReader;
   readonly initialRuntimeOverlay?: RuntimeOverlay;
   readonly t: OperatorTranslate;
 }) {
+  const runtime = useRuntimeOverlay(readRuntimeStatus, initialRuntimeOverlay, active, refreshGeneration);
   return (
     <div className="flex flex-col gap-5">
       <h1 className="text-xl font-semibold text-kumo-strong">{t('nav.system')}</h1>
@@ -91,8 +88,7 @@ export function SystemPage({ view, now, refreshGeneration, active, readNotifySta
         <Boundaries t={t} />
       </div>
       <div className="rounded-xl border border-kumo-line bg-kumo-base p-4 sm:p-5">
-        <PipelineBoardPanel readBoard={readPipelineBoard} initialBoard={initialPipelineBoard} readRuntimeStatus={readRuntimeStatus} initialRuntimeOverlay={initialRuntimeOverlay}
-          refreshGeneration={refreshGeneration} active={active} t={t} />
+        <RuntimeSummary view={runtime} now={now} t={t} />
       </div>
     </div>
   );
