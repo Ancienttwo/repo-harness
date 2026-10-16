@@ -6,6 +6,7 @@ cd "$ROOT"
 
 PACKAGE_NAME="$(bun -e 'const pkg = await Bun.file("package.json").json(); console.log(pkg.name)')"
 PACKAGE_VERSION="$(bun -e 'const pkg = await Bun.file("package.json").json(); console.log(pkg.version)')"
+PI_PEER_VERSION="$(bun -e 'const pkg = await Bun.file("package.json").json(); console.log(pkg.peerDependencies["@earendil-works/pi-coding-agent"])')"
 TMP_DIR="$(mktemp -d /tmp/rh-tarball-smoke.XXXXXX)"
 OPERATOR_PID=""
 
@@ -123,7 +124,9 @@ git -C "$TARGET_REPO" init -q
 
 cd "$APP_DIR"
 bun init -y >/dev/null
-bun add "$TARBALL_PATH" >/dev/null
+# A Pi consumer installs Pi itself. Install the exact optional peer, or Pi resolves
+# only through the @botiverse/oar range and gets the newest registry release.
+bun add "$TARBALL_PATH" "@earendil-works/pi-coding-agent@$PI_PEER_VERSION" >/dev/null
 
 CLI="$APP_DIR/node_modules/.bin/repo-harness"
 HOOK="$APP_DIR/node_modules/.bin/repo-harness-hook"
