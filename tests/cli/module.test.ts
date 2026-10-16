@@ -139,7 +139,7 @@ test('a saved projection check sets generated_summary and a saved anchors report
   const list = run(root, ['list', '--json', '--projection-check', check]);
   expect(list.status).toBe(0); expect(JSON.parse(list.stdout).modules[0].state.generated_summary).toBe('stale');
   writeFileSync(anchors, JSON.stringify({ schemaVersion: 'archcontext.docs-anchors/v1', profile: 'repo-harness/v1', codeGraph: { availability: 'ready' },
-    summary: { nodes: 1, documents: 1, citations: 1, findings: 1, unchecked: 0, byKind: { 'line-moved': 0, 'line-out-of-range': 0, 'missing-path': 1, 'missing-symbol': 0 } },
+    summary: { nodes: 1, documents: 1, citations: 1, findings: 1, unchecked: 0, byKind: { 'line-moved': 0, 'line-out-of-range': 0, 'missing-path': 1, 'missing-symbol': 0, 'unknown-selector': 0 } },
     nodes: [{ nodeId: MODULE_ID, documentPath: MODULE_DOC, citationCount: 1, findings: [{ kind: 'missing-path', origin: { kind: 'document', path: MODULE_DOC, line: 2 }, citation: { text: 'src/module/gone.ts', path: 'src/module/gone.ts' } }], unchecked: [] }] }));
   const prompt = run(root, ['review-prompt', MODULE_ID, '--json', '--projection-check', check, '--anchors', anchors]);
   expect(prompt.status).toBe(0);

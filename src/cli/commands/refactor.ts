@@ -23,10 +23,13 @@ export function formatRefactorRecommendations(value: RefactorRecommendationResul
 function evidenceLines(evidence: RefactorRecommendation['evidence']): string[] {
   const items = (() => {
     switch (evidence.kind) {
-      case 'cycle': return evidence.edges.map((edge) => `${edge.fromPath}:${edge.fromLine ?? '?'} -> ${edge.toPath}`);
+      case 'cycle':
+      case 'residual-cycle': return evidence.edges.map((edge) => `${edge.fromPath}:${edge.fromLine ?? '?'} -> ${edge.toPath}`);
       case 'direction-violation': return evidence.violations.map((entry) => `${entry.constraintId}: ${entry.fromPath}:${entry.fromLine ?? '?'} -> ${entry.toPath}`);
       case 'evidence-gap': return evidence.unresolvedImports.map((entry) => `${entry.fromPath}:${entry.fromLine ?? '?'} imports ${entry.specifier}`);
-      default: return evidence.paths.map((entry) => entry.path);
+      case 'ownership-ambiguous':
+      case 'undeclared-footprint':
+      case 'unowned-paths': return evidence.paths.map((entry) => entry.path);
     }
   })();
   return [

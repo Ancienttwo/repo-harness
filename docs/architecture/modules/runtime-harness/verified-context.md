@@ -1,6 +1,6 @@
 # runtime-harness/verified-context 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-verified-context" sourceDigest="sha256:3e9f4343183b37072703652c7ef33e5f858ca24e91f77db2c0c6db5a23623eb2" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:560bed61b9ea109a2af402bc6785eda4ae05c5e1ef8fa8024bb35dbe46025cf6" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-verified-context" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:560bed61b9ea109a2af402bc6785eda4ae05c5e1ef8fa8024bb35dbe46025cf6" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.verified-context`(kind `capability`)
 > **Matched Prefixes**:`src/core/engineers/verified-context.ts`、`src/effects/engineers/verified-context-store.ts`、`src/cli/commands/verified-context.ts`

@@ -1,5 +1,5 @@
 import type { RecommendationV3 } from "archctx-contracts";
-import { ARCHCTX_REQUIRED_VERSION, assertArchctxVersion } from "../../core/architecture/projection";
+import { ARCHCTX_REQUIRED_VERSION } from "../../core/architecture/projection";
 import { canonicalize } from "../../core/evidence/canonical-json";
 import {
   refactorEnvelopeData,
@@ -10,14 +10,9 @@ import { runPackageLocalArchctxJson, type ArchctxProviderOptions } from "../arch
 
 export type RefactorDecision = "accept" | "defer" | "reject";
 
-const checkedRoots = new Set<string>();
-
+/** Package resolution refuses an installed archctx whose manifest is not the pinned version. */
 function invoke(repoRoot: string, args: readonly string[], options: ArchctxProviderOptions): unknown {
   try {
-    if (!checkedRoots.has(repoRoot)) {
-      assertArchctxVersion(runPackageLocalArchctxJson(repoRoot, ARCHCTX_REQUIRED_VERSION, ["capabilities", "--json"], options, 10_000).value, ARCHCTX_REQUIRED_VERSION);
-      checkedRoots.add(repoRoot);
-    }
     return runPackageLocalArchctxJson(repoRoot, ARCHCTX_REQUIRED_VERSION, args, options, 120_000, true).value;
   } catch (error) {
     if (error instanceof RefactorProviderError) throw error;

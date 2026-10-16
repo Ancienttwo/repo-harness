@@ -1,6 +1,6 @@
 # runtime-harness/engineer-bindings 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineer-bindings" sourceDigest="sha256:d57e9513864d4f741a973ab25af96658b46182efc74b3dadbf6b797b49e4f266" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:3a74599cb5fe1254e3e289b051c9ea07376a09c66b4a7087758ee0fc1d477e5e" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineer-bindings" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:3a74599cb5fe1254e3e289b051c9ea07376a09c66b4a7087758ee0fc1d477e5e" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.engineer-bindings`(kind `capability`)
 > **Matched Prefixes**:`agents/engineers/**`、`src/core/engineers/**`、`src/effects/engineers/**`、`src/cli/commands/engineer.ts`

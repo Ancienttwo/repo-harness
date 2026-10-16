@@ -1,5 +1,5 @@
 # runtime-harness/work-demand 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-work-demand" sourceDigest="sha256:1e7662f33f262a63bb3eda153dbc7a6ab1b926813a8eff27890a2112d7eb931d" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:9f1cd4979a5b90bcc53c6aa96a3166a0c107b9561bee391c1dd42d2b8bc2655d" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-work-demand" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:9f1cd4979a5b90bcc53c6aa96a3166a0c107b9561bee391c1dd42d2b8bc2655d" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.work-demand`(kind `capability`)
 > **Matched Prefixes**:`src/core/engineers/work-demand.ts`、`src/effects/engineers/work-demand-store.ts`、`src/effects/engineers/work-demand-materialization.ts`

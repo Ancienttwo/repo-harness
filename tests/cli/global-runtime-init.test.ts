@@ -8,8 +8,14 @@ import { createHash } from 'crypto';
 import { runGlobalRuntimeSetup, verifyInstalledManagedRuntime } from '../../src/cli/commands/global-runtime';
 import { resolveOptionalRuntimeDeps, runCli, runTransactionalRuntimeRefresh } from '../../src/cli/index';
 import { copyPackageRuntimeFixture, writeShellExecutableFixture } from '../helpers/repo-fixture';
+import { ARCHITECTURE_DOCS_RENDERER_VERSION } from 'archctx-contracts';
+import { dependencies, devDependencies } from '../../package.json';
 
 const ROOT = join(import.meta.dir, '..', '..');
+// The fake managed install follows the repository pins, so an upgrade needs no fixture edit.
+const ARCHCTX_PIN = dependencies.archctx;
+const ARCHCTX_CONTRACTS_PIN = dependencies['archctx-contracts'];
+const CODEGRAPH_PIN = devDependencies['@colbymchenry/codegraph'];
 const CLI = join(ROOT, 'src/cli/index.ts');
 const REVERSE_PROVIDER = 'zhaoxuya520/reverse-skill@539899ddc7608d63dc66e08e794d572e080f1a55';
 const REVERSE_FAKE_TREE_INTEGRITY = 'sha256:0089d4f8f81d3c4b8b055ac9a3674838cdb064ffae2f4c99d357977d3719baae';
@@ -176,18 +182,18 @@ function setupManagedRuntimeReadback(home: string, fakeBin: string, harnessVersi
   writeFileSync(join(harness, 'package.json'), JSON.stringify({
     name: 'repo-harness',
     version: harnessVersion,
-    dependencies: { archctx: '0.7.2', 'archctx-contracts': '0.7.2' },
+    dependencies: { archctx: ARCHCTX_PIN, 'archctx-contracts': ARCHCTX_CONTRACTS_PIN },
   }));
   writeFileSync(join(archctx, 'package.json'), JSON.stringify({
     name: 'archctx',
-    version: '0.7.2',
+    version: ARCHCTX_PIN,
     engines: { node: '>=22.22 <26' },
     bin: { archctx: './bin/archctx.mjs' },
-    dependencies: { '@colbymchenry/codegraph': '1.6.1' },
+    dependencies: { '@colbymchenry/codegraph': CODEGRAPH_PIN },
   }));
   writeExecutable(join(archctx, 'bin', 'archctx.mjs'), '#!/usr/bin/env node\n');
-  writeFileSync(join(globalModules, 'archctx-contracts', 'package.json'), JSON.stringify({ name: 'archctx-contracts', version: '0.7.2' }));
-  writeFileSync(join(globalModules, '@colbymchenry', 'codegraph', 'package.json'), JSON.stringify({ name: '@colbymchenry/codegraph', version: '1.6.1' }));
+  writeFileSync(join(globalModules, 'archctx-contracts', 'package.json'), JSON.stringify({ name: 'archctx-contracts', version: ARCHCTX_CONTRACTS_PIN }));
+  writeFileSync(join(globalModules, '@colbymchenry', 'codegraph', 'package.json'), JSON.stringify({ name: '@colbymchenry/codegraph', version: CODEGRAPH_PIN }));
   const systemNode = spawnSync('node', ['-p', 'process.execPath'], { encoding: 'utf-8' }).stdout.trim();
   writeExecutable(join(fakeBin, 'node'), [
     '#!/bin/bash',
@@ -195,13 +201,13 @@ function setupManagedRuntimeReadback(home: string, fakeBin: string, harnessVersi
     `if [[ "\${1:-}" == *"/archctx/bin/archctx.mjs" && "\${2:-}" == "daemon" ]]; then printf '%s\\n' '{"schemaVersion":"archcontext.envelope/v1","ok":true,"data":{"running":false}}'; exit 0; fi`,
     `if [[ "\${1:-}" == *"/archctx/bin/archctx.mjs" ]]; then printf '%s\\n' '${JSON.stringify({
       schemaVersion: 'archcontext.capabilities/v1',
-      package: { name: 'archctx', version: '0.7.2' },
+      package: { name: 'archctx', version: ARCHCTX_PIN },
       protocols: {
         projectionRequest: 'archcontext.projection-request/v1',
         projectionResult: 'archcontext.projection-result/v2',
         architectureRefreshSignal: 'archcontext.architecture-refresh-signal/v1',
       },
-      renderers: { architectureDocs: 'archcontext.docs-renderer/v5', agentContext: 'archcontext.agent-context-renderer/v1' },
+      renderers: { architectureDocs: ARCHITECTURE_DOCS_RENDERER_VERSION, agentContext: 'archcontext.agent-context-renderer/v1' },
       features: ['architecture-docs-renderer-v2', 'architecture-refresh-signal-v1', 'projection-apply-receipt-v1', 'projection-prior-committed-applies-v1', 'projection-protocol-v2'],
     })}'; exit 0; fi`,
     `exec "${systemNode}" "$@"`,
@@ -248,7 +254,7 @@ describe('registry-bound CLI update (#701)', () => {
       writeFileSync(join(root, 'registry.json'), options.registryOutput ?? '"0.22.1"');
       writeFileSync(join(root, 'installed.json'), JSON.stringify({
         name: 'repo-harness', version: installed,
-        dependencies: { archctx: '0.7.2', 'archctx-contracts': '0.7.2' },
+        dependencies: { archctx: ARCHCTX_PIN, 'archctx-contracts': ARCHCTX_CONTRACTS_PIN },
       }));
       // Model the package manager's side effect. Registry and installed versions
       // are independent inputs, so a zero exit can still leave an old CLI.
@@ -819,8 +825,8 @@ exit 0
       expect(result.steps.find((step) => step.step === 'verify managed runtime dependencies')).toMatchObject({ status: 'ok' });
       expect(readFileSync(bunxLog, 'utf-8')).toContain('skills add tw93/Waza -g -a codex -s think hunt check health -y');
       expect(readFileSync(bunxLog, 'utf-8')).toContain('skills add BfdCampos/dotfiles -g -a codex -s mermaid -y');
-      expect(readFileSync(bunLog, 'utf-8')).toContain('add -g @colbymchenry/codegraph@1.6.1');
-      expect(result.steps.find((step) => step.step === 'ensure CodeGraph CLI')?.detail).toBe('updated=1.6.1');
+      expect(readFileSync(bunLog, 'utf-8')).toContain(`add -g @colbymchenry/codegraph@${CODEGRAPH_PIN}`);
+      expect(result.steps.find((step) => step.step === 'ensure CodeGraph CLI')?.detail).toBe(`updated=${CODEGRAPH_PIN}`);
       expect(readFileSync(join(home, '.codex', 'rules', 'chinese.md'), 'utf-8')).toBe('# refreshed rule\n');
     } finally {
       rmSync(tmp, { recursive: true, force: true });
@@ -2344,7 +2350,7 @@ test('managed runtime readback reports stale shared daemon after a successful pa
     writeFileSync(join(source, 'package.json'), JSON.stringify({ name: 'repo-harness', version: '9.9.9' }));
     const nodePath = join(fakeBin, 'node.fixture-body');
     const original = readFileSync(nodePath, 'utf8');
-    writeFileSync(nodePath, original.replace('"data":{"running":false}', '"data":{"running":true,"versionUnsupported":{"reason":"product-version-mismatch","expected":"0.7.2","received":"0.2.3","action":"upgrade-archctx-runtime","command":"archctx daemon upgrade"}}'));
+    writeFileSync(nodePath, original.replace('"data":{"running":false}', `"data":{"running":true,"versionUnsupported":{"reason":"product-version-mismatch","expected":"${ARCHCTX_PIN}","received":"0.2.3","action":"upgrade-archctx-runtime","command":"archctx daemon upgrade"}}`));
     const result = verifyInstalledManagedRuntime({ sourceRoot: source, cwd: tmp, env: {
       ...sanitizedChildEnv(), HOME: home, BUN_INSTALL: join(home, '.bun'),
       PATH: `${fakeBin}:${process.env.PATH ?? ''}`, REPO_HARNESS_BUN_EXECUTABLE: process.execPath,
@@ -2378,7 +2384,7 @@ test('daemon maintenance preserves the verified candidate and hoisted dependenci
     const result = runTransactionalRuntimeRefresh(options, (transactionOptions) => {
       setupManagedRuntimeReadback(home, fakeBin, '9.9.9');
       const body = join(fakeBin, 'node.fixture-body');
-      writeFileSync(body, readFileSync(body, 'utf8').replace('"data":{"running":false}', '"data":{"running":true,"versionUnsupported":{"reason":"product-version-mismatch","expected":"0.7.2","received":"0.2.3","action":"upgrade-archctx-runtime","command":"archctx daemon upgrade"}}'));
+      writeFileSync(body, readFileSync(body, 'utf8').replace('"data":{"running":false}', `"data":{"running":true,"versionUnsupported":{"reason":"product-version-mismatch","expected":"${ARCHCTX_PIN}","received":"0.2.3","action":"upgrade-archctx-runtime","command":"archctx daemon upgrade"}}`));
       return runGlobalRuntimeSetup(transactionOptions);
     });
     expect(result.exitCode).toBe(0);

@@ -1,6 +1,6 @@
 # runtime-harness/integration-acceptance 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-integration-acceptance" sourceDigest="sha256:cec3bf7f6e1e360b955094d1ee9c68795036d3772bc1ec3e748bd8161150d046" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:98217ca34aee950a6e7efbd0cfcf40d8eb6b6edbcb185a3dbc82ae1a690f2278" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-integration-acceptance" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:98217ca34aee950a6e7efbd0cfcf40d8eb6b6edbcb185a3dbc82ae1a690f2278" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.integration-acceptance`(kind `capability`)
 > **Matched Prefixes**:`src/core/integration/product-acceptance.ts`、`src/effects/integration/product-acceptance.ts`、`src/cli/commands/integration.ts`

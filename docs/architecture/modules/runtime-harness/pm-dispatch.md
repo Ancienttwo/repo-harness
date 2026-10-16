@@ -1,6 +1,6 @@
 # runtime-harness/pm-dispatch 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-pm-dispatch" sourceDigest="sha256:b9d276eb309eb159e7112f4a3280e03412e4e473b0d9a5e2f40f79f66fb19f30" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:0855a39e9e5fa0d116a3042136cf9e0cb311fb8c082e109bca39303cea2f04a9" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-pm-dispatch" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:0855a39e9e5fa0d116a3042136cf9e0cb311fb8c082e109bca39303cea2f04a9" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.pm-dispatch`(kind `capability`)
 > **Matched Prefixes**:`src/core/pm/**`、`src/effects/pm/**`、`src/cli/commands/pm.ts`、`src/effects/terminal/coding-isolation.ts`、`src/effects/terminal/coding-session.ts`、`src/effects/terminal/oar-coding-host.ts`、`assets/hermes/**`、`references/pm-operations.md`

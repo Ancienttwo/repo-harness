@@ -688,7 +688,7 @@ diff -qr ~/.agents/skills/geju ~/.codex/skills/geju
 ### CodeGraph
 
 ```bash
-bun add -g @colbymchenry/codegraph@1.6.1 && codegraph sync . && codegraph status .
+bun add -g @colbymchenry/codegraph@1.6.2 && codegraph sync . && codegraph status .
 ```
 
 ## Agent Fleet
@@ -1301,7 +1301,7 @@ repo-harness refactor decide <recommendation-id> accept|defer|reject --reason "<
 and bounded `evidence` of its observation (`kind`, `totalCount`, `truncated`
 and the first items) and the statistics of every affected module (files, lines,
 fan-in, fan-out, cycles, direction violations, unresolved imports). Direction
-violations are filled only when the model declares constraints. archctx 0.7.2
+violations are filled only when the model declares constraints. archctx 0.8.0
 does not measure instability or test files, so they are not shown. A suggestion
 recorded by an earlier scan has `snapshot: "earlier"`, keeps its recorded
 metrics and evidence, and shows no module statistics.

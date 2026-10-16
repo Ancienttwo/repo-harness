@@ -1,6 +1,6 @@
 # runtime-harness/external-source-intake 架构文档
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-external-source-intake" sourceDigest="sha256:fca126288d0056af07dd1a778634b451faf20cd7ba1512f41034569fcd181693" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:84a16c823c8f742a2ab6c54325740a096b8b85a67660b2a2ddbad76a40f469b4" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-external-source-intake" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:84a16c823c8f742a2ab6c54325740a096b8b85a67660b2a2ddbad76a40f469b4" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.external-source-intake`(kind `capability`)
 > **Matched Prefixes**:`src/core/external-sources/**`、`src/effects/external-sources/**`、`src/cli/commands/external-source.ts`

@@ -1,13 +1,10 @@
 import { loadArchitectureProjectionPolicy, readGlobalArchitectureConfiguration } from './projection-config';
-import { spawnSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { userInfo } from 'node:os';
-import { isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { ARCHCONTEXT_NODE_RANGE, ERROR_CATALOG, PROJECTION_REQUEST_SCHEMA_VERSION, digestJson, type ArchContextError, type ArchctxCapabilitiesV1, type DocsAnchorsReportV1, type Json, type ProjectionApplyReadbackResultV1, type ProjectionMode, type ProjectionRequestV1, type ProjectionResultV2 } from 'archctx-contracts';
+import { isAbsolute, join, resolve, sep } from 'node:path';
+import { ARCHCONTEXT_NODE_RANGE, ERROR_CATALOG, PROJECTION_REQUEST_SCHEMA_VERSION, digestJson, type ArchContextError, type ArchctxCapabilitiesV1, type DocsAnchorsReportV1, type Json, type ProjectionApplyReadbackResultV1, type ProjectionExpectedSnapshotV1, type ProjectionMode, type ProjectionRequestV1, type ProjectionResultV2 } from 'archctx-contracts';
 import { trustedNodeCandidates } from '../runtime/node-candidates';
 import { runProcess } from '../process-runner';
-import { normalizeCapabilityPath } from '../../core/capabilities/registry';
 import { readText } from '../state/collect-state-inputs';
 import { loadArchcontextAuthority } from '../state/resolve-effective-state';
 import {
@@ -32,25 +29,6 @@ export interface ArchctxProviderOptions {
   deadlineMs?: number;
   nowMs?: () => number;
 }
-
-const PROJECTION_WORKTREE_IGNORE_ROOTS = new Set([
-  '.git',
-  '.codegraph',
-  'node_modules',
-  'coverage',
-  'artifacts',
-  '_ops',
-  '_ref',
-  '.DS_Store',
-]);
-const PROJECTION_WORKTREE_IGNORE_PATHS = new Set([
-  '.ai/harness',
-  '.archcontext/.local',
-  '.claude/.session-id',
-  '.claude/.trace.jsonl',
-  'docs/architecture',
-]);
-
 
 export interface ResolvedArchctxPackage {
   binaryPath: string;
@@ -383,8 +361,8 @@ export interface ArchitectureProjectionRequestOptions {
 }
 
 /** One immutable input identity for the whole call, including observed acceptance. */
-export function architectureProjectionRequest(mode: ProjectionMode, repoRoot: string, options: ArchitectureProjectionRequestOptions = {}): ProjectionRequestV1 {
-  const expected = captureArchitectureProjectionSnapshot(repoRoot);
+export function architectureProjectionRequest(mode: ProjectionMode, repoRoot: string, options: ArchitectureProjectionRequestOptions & ArchctxProviderOptions = {}): ProjectionRequestV1 {
+  const expected = readArchitectureProjectionSnapshot(repoRoot, options);
   if (options.expectedWorktreeDigest !== undefined && options.expectedWorktreeDigest !== expected.worktreeDigest) throw new ArchctxClientError({ code: 'RH_ARCHCTX_PLAN_MISMATCH', action: 'rebuild-plan', message: 'worktree differs from the reviewed plan; run architecture-projection plan --json' });
   const body: Omit<ProjectionRequestV1, 'requestId'> = {
     schemaVersion: PROJECTION_REQUEST_SCHEMA_VERSION,
@@ -394,6 +372,50 @@ export function architectureProjectionRequest(mode: ProjectionMode, repoRoot: st
     ...(mode === 'apply' || mode === 'adopt' ? { acceptObservedMajorChange: true as const } : {}),
   };
   return { ...body, requestId: options.requestId ?? `repo-harness.${mode}.${digestJson(body as unknown as Json).slice('sha256:'.length)}` };
+}
+
+const PROJECTION_SNAPSHOT_FIELDS = ['repositoryId', 'workspaceId', 'headSha', 'worktreeDigest'] as const;
+
+/**
+ * archctx owns the expected snapshot identity, including which files the
+ * worktree digest covers. repo-harness reads it and never recomputes it.
+ */
+export function readArchitectureProjectionSnapshot(repoRoot: string, options: ArchctxProviderOptions = {}): ProjectionExpectedSnapshotV1 {
+  const policy = options.policy ?? loadArchitectureProjectionPolicy(options.env);
+  if (policy.provider === 'disabled') throw new Error('architecture projection provider is disabled');
+  const { value } = runPackageLocalArchctxJson(repoRoot, policy.requiredVersion, ['projection', 'snapshot', '--json'], options, policy.timeoutMs);
+  return decodeProjectionExpectedSnapshot(value);
+}
+
+/** The client already proved the envelope and refused an error envelope with its typed fields. */
+function decodeProjectionExpectedSnapshot(value: unknown): ProjectionExpectedSnapshotV1 {
+  const issues: string[] = [];
+  const envelope: Record<string, unknown> = isRecord(value) ? value : {};
+  const data = isRecord(envelope.data) ? envelope.data : null;
+  const expected = data && isRecord(data.expected) ? data.expected : null;
+  if (envelope.requestId !== 'projection.snapshot') issues.push('requestId');
+  if (!data || Object.keys(data).length !== 1 || !expected) issues.push('data.expected');
+  else {
+    if (Object.keys(expected).length !== PROJECTION_SNAPSHOT_FIELDS.length) issues.push('data.expected.keys');
+    for (const field of PROJECTION_SNAPSHOT_FIELDS) {
+      if (typeof expected[field] !== 'string' || expected[field] === '') issues.push(`data.expected.${field}`);
+    }
+    if (typeof expected.headSha === 'string' && !/^[a-f0-9]{40}$/.test(expected.headSha)) issues.push('data.expected.headSha');
+    if (typeof expected.worktreeDigest === 'string' && !/^sha256:[a-f0-9]{64}$/.test(expected.worktreeDigest)) issues.push('data.expected.worktreeDigest');
+  }
+  if (issues.length > 0 || !expected) {
+    const fields = [...new Set(issues)];
+    throw new ArchctxClientError({
+      code: 'RH_ARCHCTX_SNAPSHOT_INVALID', action: 'update-repo-harness', reasonCode: 'projection-snapshot-invalid', details: { fields },
+      message: `archctx projection snapshot returned an invalid expected snapshot: ${fields.join(', ')}`,
+    });
+  }
+  return {
+    repositoryId: expected.repositoryId as string,
+    workspaceId: expected.workspaceId as string,
+    headSha: expected.headSha as string,
+    worktreeDigest: expected.worktreeDigest as ProjectionExpectedSnapshotV1['worktreeDigest'],
+  };
 }
 
 /** The worker guidance ships in the running package, so the path is valid for every host. */
@@ -440,88 +462,6 @@ function remainingTimeout(options: Pick<ArchctxProviderOptions, 'deadlineMs' | '
   const remaining = Math.floor(options.deadlineMs - (options.nowMs ?? Date.now)());
   if (remaining <= 0) throw new Error(`architecture projection timeout before ${phase}`);
   return Math.min(maximumMs, remaining);
-}
-
-/**
- * Reproduces the public ProjectionExpectedSnapshotV1 identity contract used by
- * ArchContext. Projection-owned outputs are excluded so apply can be checked
- * against the same fixed point before and after the ChangeSet write.
- */
-export function captureArchitectureProjectionSnapshot(repoRoot: string): ProjectionRequestV1['expected'] {
-  const root = realpathSync(resolve(repoRoot));
-  const head = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-  const headSha = head.status === 0 ? (head.stdout ?? '').trim() : '';
-  if (!/^[a-f0-9]{40}$/.test(headSha)) throw new Error('architecture projection requires a readable 40-character Git HEAD');
-  const ignoredPaths = new Set(PROJECTION_WORKTREE_IGNORE_PATHS);
-  for (const path of architectureAgentContextTargets(root)) ignoredPaths.add(path);
-  const files = listProjectionInputFiles(root, ignoredPaths).map((path) => {
-    const absolute = resolve(root, path);
-    return {
-      path,
-      size: statSync(absolute).size,
-      digest: createHash('sha256').update(readFileSync(absolute)).digest('hex'),
-    };
-  });
-  return {
-    repositoryId: `repo.${createHash('sha256').update(root).digest('hex').slice(0, 16)}`,
-    workspaceId: `workspace.${digestJson({ root }).replace(/^sha256:/, '').slice(0, 16)}`,
-    headSha,
-    worktreeDigest: digestJson(files as unknown as Json) as `sha256:${string}`,
-  };
-}
-
-function architectureAgentContextTargets(root: string): string[] {
-  const nodesDir = join(root, '.archcontext', 'model', 'nodes');
-  if (!existsSync(nodesDir)) throw new Error('architecture projection requires .archcontext/model/nodes');
-  const yaml = (globalThis as { Bun?: { YAML?: { parse(source: string): unknown } } }).Bun?.YAML;
-  if (!yaml?.parse) throw new Error('Bun.YAML is required to resolve architecture projection targets');
-  const files = readdirSync(nodesDir)
-    .filter((name) => name.endsWith('.yaml') || name.endsWith('.yml'))
-    .sort()
-    .map((name) => ({ path: `.archcontext/model/nodes/${name}`, value: yaml.parse(readFileSync(join(nodesDir, name), 'utf8')) }));
-  const targets = new Set<string>();
-  const ids = new Set<string>();
-  for (const { path, value: node } of files) {
-    if (!isRecord(node) || node.schemaVersion !== 'archcontext.node/v2' || typeof node.kind !== 'string') {
-      throw new Error(`architecture projection node is invalid: ${path}`);
-    }
-    if (node.kind !== 'capability') continue;
-    // repo-harness/v1 layout consumes identity and explicit output targets.
-    // Ownership metadata/prefix translation belongs only to the selected workflow
-    // registry. In particular, projection must preserve generic source globs and
-    // exclusions, and includes every capability rendered by the producer.
-    if (typeof node.id !== 'string' || !/^capability\.[a-z0-9]+(?:-[a-z0-9]+)*\.[a-z0-9]+(?:-[a-z0-9]+)*$/.test(node.id) || ids.has(node.id)) {
-      throw new Error(`architecture projection capability identity is invalid or duplicate: ${path}`);
-    }
-    ids.add(node.id);
-    const extensions = isRecord(node.extensions) ? node.extensions : null;
-    const contracts = extensions && isRecord(extensions.contractFiles) ? extensions.contractFiles : null;
-    for (const [key, basename] of [['agents', 'AGENTS.md'], ['claude', 'CLAUDE.md']] as const) {
-      const target = contracts?.[key];
-      if (typeof target !== 'string' || normalizeCapabilityPath(target) !== target || (target !== basename && !target.endsWith(`/${basename}`))) {
-        throw new Error(`architecture projection contract target is invalid: ${path}#extensions.contractFiles.${key}`);
-      }
-      targets.add(target);
-    }
-  }
-  return [...targets].sort();
-}
-
-function listProjectionInputFiles(root: string, ignored: Set<string>): string[] {
-  const files: string[] = [];
-  walk(root);
-  return files.sort();
-
-  function walk(directory: string): void {
-    for (const entry of readdirSync(directory, { withFileTypes: true })) {
-      const absolute = resolve(directory, entry.name);
-      const path = relative(root, absolute).split(sep).join('/');
-      const rootSegment = path.split('/')[0]!;
-      if (!path || PROJECTION_WORKTREE_IGNORE_ROOTS.has(rootSegment) || ignored.has(path) || [...ignored].some((pattern) => path.startsWith(`${pattern}/`))) continue;
-      if (entry.isDirectory()) walk(absolute);
-      else if (entry.isFile()) files.push(path);
-    }
-  }
 }
 
 function findInstalledArchctxPackageRoot(consumerRoot: string, requiredVersion: string): string {

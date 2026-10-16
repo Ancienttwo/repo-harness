@@ -1,6 +1,6 @@
 # verification/acceptance-review 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-acceptance-review" sourceDigest="sha256:e4667f738f3fb4c30a42df97f8e6b3f6765762764a6b5562695e4da2ca58a357" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:0ed9fa7d8b634fafe61790cdafd7d5031b91ffc9a853a74bd67ca6e24a316470" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-acceptance-review" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:0ed9fa7d8b634fafe61790cdafd7d5031b91ffc9a853a74bd67ca6e24a316470" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.verification.acceptance-review`(kind `capability`)
 > **Matched Prefixes**:`src/core/review/**`、`src/effects/review/**`、`src/cli/commands/review.ts`、`scripts/acceptance-receipt.ts`、`scripts/change-assessment.ts`

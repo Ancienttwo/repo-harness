@@ -1,6 +1,6 @@
 # organization/publication 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-organization-publication" sourceDigest="sha256:70b55e001651c945aab5a4b900f7bf44a656c9d96ac6458e5af38ffb8e8743d7" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:dc66c14ffa22645f96a177b00f5ab1a8e066023ab39f2ff193617bb516017254" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-organization-publication" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:dc66c14ffa22645f96a177b00f5ab1a8e066023ab39f2ff193617bb516017254" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.organization.publication`(kind `capability`)
 > **Matched Prefixes**:`src/core/publication/**`、`src/effects/publication/**`、`src/cli/commands/publication.ts`

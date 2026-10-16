@@ -1,6 +1,6 @@
 # runtime-mcp/chatgpt-browser 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-mcp-chatgpt-browser" sourceDigest="sha256:ef1adc792ef7bfc073edb02070ee1f8e74d505020c9ad6292e8fb908b3efd095" rendererVersion="archcontext.docs-renderer/v5" outputDigest="sha256:21aede1b7c199588dd7c90886afdc992f001738e9ea41ddd585ad74ceded73e1" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-mcp-chatgpt-browser" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:21aede1b7c199588dd7c90886afdc992f001738e9ea41ddd585ad74ceded73e1" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-mcp.chatgpt-browser`(kind `capability`)
 > **Matched Prefixes**:`src/cli/chatgpt-browser/**`、`src/cli/chatgpt-skill/**`、`src/cli/commands/chatgpt.ts`、`docs/repo-harness-chatgpt-browser-engine.md`
