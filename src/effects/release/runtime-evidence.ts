@@ -3,12 +3,7 @@ import { existsSync, readFileSync, realpathSync, statSync } from 'fs';
 import { basename, dirname, isAbsolute, relative, resolve } from 'path';
 import { spawnSync } from 'child_process';
 
-import {
-  buildRuntimeEvidenceReceipt,
-  runtimeEvidenceSha256,
-  type RuntimeEvidenceObservation,
-  type RuntimeEvidenceReceipt,
-} from '../../core/release/runtime-evidence';
+import type { RuntimeEvidenceObservation } from '../../core/release/runtime-evidence';
 import { runProcess } from '../process-runner';
 
 export type RegistryTarballReadback = {
@@ -24,10 +19,6 @@ function sha1File(path: string): string {
 
 function sha512Integrity(path: string): string {
   return `sha512-${createHash('sha512').update(readFileSync(path)).digest('base64')}`;
-}
-
-function sha256Bytes(value: Buffer): string {
-  return `sha256:${createHash('sha256').update(value).digest('hex')}`;
 }
 
 function parseRegistryReadback(path: string): RegistryTarballReadback {
@@ -69,8 +60,8 @@ function tarballMember(tarball: string, member: string): Buffer {
   return extracted.stdout;
 }
 
-function observation(invariant: RuntimeEvidenceObservation['invariant'], detail: string, basis: unknown): RuntimeEvidenceObservation {
-  return Object.freeze({ invariant, status: 'pass', detail, evidence_sha256: runtimeEvidenceSha256(basis) });
+function observation(invariant: RuntimeEvidenceObservation['invariant'], detail: string): RuntimeEvidenceObservation {
+  return Object.freeze({ invariant, status: 'pass', detail });
 }
 
 /**
@@ -82,22 +73,18 @@ export function trustedRuntimePath(): string {
   return `${dirname(process.execPath)}:/usr/bin:/bin`;
 }
 
-function installedVersion(command: string, expectedVersion: string, label: string): { readonly executable: string; readonly version: string } {
+function requireInstalledVersion(command: string, expectedVersion: string, label: string): void {
   const executable = requireRegularFile(command, label);
   const result = runProcess(executable, ['--version'], { inheritEnv: false, env: { PATH: trustedRuntimePath() }, timeoutMs: 15_000 });
   const version = result.stdout.trim().replace(/^v/u, '');
   if (!result.ok || version !== expectedVersion) {
     throw new Error(`${label} version readback failed: expected ${expectedVersion}, got ${version || result.stderr || result.error || 'no output'}`);
   }
-  return Object.freeze({ executable: basename(executable), version });
 }
 
 type InstalledPackageReadback = {
-  readonly package_json_sha256: string;
   readonly installed_cli: string;
   readonly installed_hook: string;
-  readonly cli_sha256: string;
-  readonly hook_sha256: string;
 };
 
 function canonicalPackageBin(packageRoot: string, binValue: unknown, key: 'repo-harness' | 'repo-harness-hook'): { readonly executable: string; readonly tarballMember: string } {
@@ -144,23 +131,14 @@ function installedPackageReadback(path: string, packageName: string, expectedVer
   const bins = record.bin as Record<string, unknown>;
   const cli = canonicalPackageBin(packageRoot, bins['repo-harness'], 'repo-harness');
   const hook = canonicalPackageBin(packageRoot, bins['repo-harness-hook'], 'repo-harness-hook');
-  const manifestBytes = readFileSync(manifest);
-  const cliBytes = readFileSync(cli.executable);
-  const hookBytes = readFileSync(hook.executable);
   for (const [label, actual, expected] of [
-    ['package.json', manifestBytes, tarballMember(tarball, 'package/package.json')],
-    ['repo-harness bin', cliBytes, tarballMember(tarball, cli.tarballMember)],
-    ['repo-harness-hook bin', hookBytes, tarballMember(tarball, hook.tarballMember)],
+    ['package.json', readFileSync(manifest), tarballMember(tarball, 'package/package.json')],
+    ['repo-harness bin', readFileSync(cli.executable), tarballMember(tarball, cli.tarballMember)],
+    ['repo-harness-hook bin', readFileSync(hook.executable), tarballMember(tarball, hook.tarballMember)],
   ] as const) {
     if (!actual.equals(expected)) throw new Error(`installed ${label} does not match published tarball member`);
   }
-  return Object.freeze({
-    package_json_sha256: sha256Bytes(manifestBytes),
-    installed_cli: cli.executable,
-    installed_hook: hook.executable,
-    cli_sha256: sha256Bytes(cliBytes),
-    hook_sha256: sha256Bytes(hookBytes),
-  });
+  return Object.freeze({ installed_cli: cli.executable, installed_hook: hook.executable });
 }
 
 function installedHookReadback(command: string, repo: string): RuntimeEvidenceObservation {
@@ -184,11 +162,7 @@ function installedHookReadback(command: string, repo: string): RuntimeEvidenceOb
   if (record.protocol !== 1 || record.kind !== 'repo-harness-state-snapshot') {
     throw new Error('installed hook returned an invalid StateSnapshot v1');
   }
-  return observation('installed_hook_readback', 'installed hook returned StateSnapshot v1', {
-    protocol: record.protocol,
-    kind: record.kind,
-    state_version: record.state_version,
-  });
+  return observation('installed_hook_readback', 'installed hook returned StateSnapshot v1');
 }
 
 export function collectRuntimeEvidence(args: {
@@ -200,30 +174,17 @@ export function collectRuntimeEvidence(args: {
   readonly installedCliPath: string;
   readonly installedHookPath: string;
   readonly hookRepo: string;
-}): RuntimeEvidenceReceipt {
+}): readonly RuntimeEvidenceObservation[] {
   const registry = parseRegistryReadback(args.registryReadbackPath);
   if (registry.version !== args.packageVersion) throw new Error(`registry version ${registry.version} does not match package ${args.packageVersion}`);
   const tarball = requireRegularFile(args.tarballPath, 'published tarball');
   const integrity = sha512Integrity(tarball);
   const shasum = sha1File(tarball);
   if (integrity !== registry.integrity || shasum !== registry.shasum) throw new Error('published tarball does not match registry integrity/shasum');
-  const tarballObservation = observation('published_tarball', `registry tarball ${registry.tarball} matches ${basename(tarball)}`, {
-    registry,
-    tarball: basename(tarball),
-    integrity,
-    shasum,
-  });
+  const tarballObservation = observation('published_tarball', `registry tarball ${registry.tarball} matches ${basename(tarball)}`);
   const installedPackage = installedPackageReadback(args.installedPackagePath, args.packageName, args.packageVersion, tarball);
-  const installedCli = installedVersion(requireInstalledBin(args.installedCliPath, installedPackage.installed_cli, 'installed CLI'), args.packageVersion, 'installed CLI');
-  const installObservation = observation('clean_install', `installed package and CLI report ${args.packageName}@${args.packageVersion}`, {
-    ...installedPackage,
-    installed_cli: installedCli,
-  });
+  requireInstalledVersion(requireInstalledBin(args.installedCliPath, installedPackage.installed_cli, 'installed CLI'), args.packageVersion, 'installed CLI');
+  const installObservation = observation('clean_install', `installed package and CLI report ${args.packageName}@${args.packageVersion}`);
   const hookObservation = installedHookReadback(requireInstalledBin(args.installedHookPath, installedPackage.installed_hook, 'installed hook'), args.hookRepo);
-  return buildRuntimeEvidenceReceipt({
-    package_name: args.packageName,
-    package_version: args.packageVersion,
-    tarball_sha512: integrity,
-    observations: [tarballObservation, installObservation, hookObservation],
-  });
+  return Object.freeze([tarballObservation, installObservation, hookObservation]);
 }

@@ -68,8 +68,7 @@ bun scripts/runtime-evidence-receipt.ts verify \
   --installed-package "$RUNTIME_APP/node_modules/$PACKAGE_NAME" \
   --installed-cli "$RUNTIME_APP/node_modules/.bin/repo-harness" \
   --installed-hook "$RUNTIME_APP/node_modules/.bin/repo-harness-hook" \
-  --hook-repo "$RUNTIME_REPO" \
-  --output ".ai/harness/checks/runtime-evidence-release.latest.json"
+  --hook-repo "$RUNTIME_REPO"
 
 git rev-parse -q --verify "refs/tags/v${PACKAGE_VERSION}" >/dev/null
 bun scripts/check-skill-version.ts --project . >/dev/null

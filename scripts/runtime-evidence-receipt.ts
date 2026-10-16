@@ -1,8 +1,7 @@
 #!/usr/bin/env bun
 
-import { dirname, isAbsolute, relative, resolve } from 'path';
+import { dirname, resolve } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
-import { mkdirSync, renameSync, writeFileSync } from 'fs';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = SCRIPT_DIR.endsWith('/assets/templates/helpers')
@@ -10,7 +9,7 @@ const PACKAGE_ROOT = SCRIPT_DIR.endsWith('/assets/templates/helpers')
   : resolve(SCRIPT_DIR, '..');
 
 function usage(): string {
-  return 'usage: runtime-evidence-receipt.ts verify --registry <json> --tarball <tgz> --installed-package <dir> --installed-cli <path> --installed-hook <path> --hook-repo <path> --output <repo-relative-json>';
+  return 'usage: runtime-evidence-receipt.ts verify --registry <json> --tarball <tgz> --installed-package <dir> --installed-cli <path> --installed-hook <path> --hook-repo <path>';
 }
 
 function parseArgs(argv: readonly string[]): Record<string, string> {
@@ -31,30 +30,16 @@ function repositoryRoot(cwd = process.cwd()): string {
   return resolve(new TextDecoder().decode(result.stdout).trim());
 }
 
-function safeOutput(root: string, path: string): string {
-  if (!path || isAbsolute(path) || path.includes('\\') || path.includes('\0')) throw new Error('output must be repository-relative');
-  const absolute = resolve(root, path);
-  const value = relative(root, absolute);
-  if (!value || value === '..' || value.startsWith('../') || isAbsolute(value)) throw new Error(`output escapes repository: ${path}`);
-  return absolute;
-}
-
-function atomicWrite(path: string, value: unknown): void {
-  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-  const temporary = `${path}.${process.pid}.tmp`;
-  writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
-  renameSync(temporary, path);
-}
-
 async function main(argv: readonly string[]): Promise<void> {
   const values = parseArgs(argv);
-  const required = ['registry', 'tarball', 'installed-package', 'installed-cli', 'installed-hook', 'hook-repo', 'output'] as const;
+  const required: readonly string[] = ['registry', 'tarball', 'installed-package', 'installed-cli', 'installed-hook', 'hook-repo'];
+  for (const key of Object.keys(values)) if (!required.includes(key)) throw new Error(`--${key} is not a verify option`);
   for (const key of required) if (!values[key]) throw new Error(`--${key} is required`);
   const root = repositoryRoot();
   const pkg = await Bun.file(resolve(root, 'package.json')).json() as { name?: unknown; version?: unknown };
   if (typeof pkg.name !== 'string' || typeof pkg.version !== 'string') throw new Error('package.json name/version are required');
   const effects = await import(pathToFileURL(resolve(PACKAGE_ROOT, 'src/effects/release/runtime-evidence.ts')).href) as typeof import('../src/effects/release/runtime-evidence');
-  const receipt = effects.collectRuntimeEvidence({
+  const observations = effects.collectRuntimeEvidence({
     packageName: pkg.name,
     packageVersion: pkg.version,
     registryReadbackPath: values.registry!,
@@ -64,9 +49,7 @@ async function main(argv: readonly string[]): Promise<void> {
     installedHookPath: values['installed-hook']!,
     hookRepo: values['hook-repo']!,
   });
-  const output = safeOutput(root, values.output!);
-  atomicWrite(output, receipt);
-  process.stdout.write(`runtime-evidence-receipt: valid ${receipt.receipt_sha256}\n`);
+  process.stdout.write(`runtime-evidence-receipt: valid ${observations.map((entry) => entry.invariant).join(', ')}\n`);
 }
 
 if (import.meta.main) {
