@@ -33,6 +33,7 @@ import {
   readArchitectureDocsAnchors,
   readArchitectureProjectionApply,
   runArchitectureProjection,
+  stopWorkspaceArchitectureDaemons,
   type ArchctxProcessResult,
   type RunArchctxProcess,
 } from '../src/effects/architecture/archctx-provider';
@@ -554,6 +555,57 @@ describe('package-local ArchContext projection provider', () => {
     expect(mismatch.projectionProvider.state).toBe('mismatch');
     expect(mismatch.daemonRuntime.state).toBe('mismatch');
     expect(mismatch.apply.enabled).toBe(false);
+  });
+
+  describe('closeout architecture daemon stop', () => {
+    const worktree = '/private/tmp/repo-harness-wt-closed';
+    const listing = (daemons: unknown[]) => ({ schemaVersion: 'archcontext.envelope/v1', ok: true, requestId: 'daemon.list', data: { stateRoot: '/state', daemons } });
+    const entry = (stateDir: string, root: string | undefined, connection = 'valid') => ({ storageRepositoryId: 'repo.0000000000000001', storageWorkspaceId: 'ws.0000000000000001', stateDir, connectionPath: `${stateDir}/archctxd.json`, connection, ...(root === undefined ? {} : { root, rootExists: false, pid: 1, pidAlive: true }) });
+    const daemons = [entry('/state/closed', worktree), entry('/state/other', '/private/tmp/repo-harness-wt-other'), entry('/state/orphan', undefined, 'invalid')];
+
+    test('stops only the daemon whose listed root is the removed checkout, by state directory', () => {
+      const f = fixture();
+      const calls: Array<{ args: readonly string[]; cwd: string }> = [];
+      const run: RunArchctxProcess = (_binary, args, options) => {
+        calls.push({ args, cwd: options.cwd });
+        return { status: 0, signal: null, stderr: '', stdout: JSON.stringify(args[1] === 'list' ? listing(daemons) : { schemaVersion: 'archcontext.envelope/v1', ok: true, requestId: 'daemon.stop', data: { stopping: true } }) };
+      };
+      expect(stopWorkspaceArchitectureDaemons(f.repoRoot, worktree, { consumerRoot: f.consumerRoot, policy, run })).toEqual({
+        schemaVersion: 'repo-harness.architecture-daemon-stop/v1', worktree, provider: 'archctx', stopped: ['/state/closed'], failures: [],
+      });
+      expect(calls).toEqual([
+        { args: ['daemon', 'list', '--json'], cwd: f.repoRoot },
+        { args: ['daemon', 'stop', '--state-dir', '/state/closed', '--json'], cwd: f.repoRoot },
+      ]);
+    });
+
+    test('a disabled provider reports disabled and never resolves or runs archctx', () => {
+      const run: RunArchctxProcess = () => { throw new Error('must not run'); };
+      expect(stopWorkspaceArchitectureDaemons('/missing-repo', worktree, { consumerRoot: '/missing-consumer', policy: { ...policy, provider: 'disabled', applyMode: 'disabled' }, run })).toEqual({
+        schemaVersion: 'repo-harness.architecture-daemon-stop/v1', worktree, provider: 'disabled', stopped: [], failures: [],
+      });
+    });
+
+    test('typed stop and listing failures are reported with their archctx fields', () => {
+      const f = fixture();
+      const unavailable = errorEnvelope('daemon.stop', 'AC_RUNTIME_UNAVAILABLE', 'No archctxd connection file found in /state/closed');
+      const stopFailed: RunArchctxProcess = (_binary, args) => args[1] === 'list'
+        ? { status: 0, signal: null, stderr: '', stdout: JSON.stringify(listing(daemons)) }
+        : { status: 1, signal: null, stderr: '', stdout: JSON.stringify(unavailable) };
+      expect(stopWorkspaceArchitectureDaemons(f.repoRoot, worktree, { consumerRoot: f.consumerRoot, policy, run: stopFailed }).failures).toEqual([
+        { stateDir: '/state/closed', code: 'AC_RUNTIME_UNAVAILABLE', action: 'start-or-reconnect-runtime', retryable: true, message: 'No archctxd connection file found in /state/closed' },
+      ]);
+      const listFailed: RunArchctxProcess = () => ({ status: 1, signal: null, stderr: '', stdout: JSON.stringify(errorEnvelope('daemon.list', 'AC_RUNTIME_UNAVAILABLE', 'state root unreadable')) });
+      const report = stopWorkspaceArchitectureDaemons(f.repoRoot, worktree, { consumerRoot: f.consumerRoot, policy, run: listFailed });
+      expect(report.stopped).toEqual([]);
+      expect(report.failures).toEqual([{ stateDir: null, code: 'AC_RUNTIME_UNAVAILABLE', action: 'start-or-reconnect-runtime', retryable: true, message: 'state root unreadable' }]);
+    });
+
+    test('an invalid stop envelope fails closed instead of counting as stopped', () => {
+      const f = fixture();
+      const run: RunArchctxProcess = (_binary, args) => ({ status: 0, signal: null, stderr: '', stdout: JSON.stringify(args[1] === 'list' ? listing(daemons) : { schemaVersion: 'archcontext.envelope/v1', ok: true, requestId: 'daemon.stop', data: {} }) });
+      expect(() => stopWorkspaceArchitectureDaemons(f.repoRoot, worktree, { consumerRoot: f.consumerRoot, policy, run })).toThrow('archctx daemon stop returned an invalid envelope');
+    });
   });
 
   test('rejects a re-digested readback whose current output proof differs from the committed receipt', () => {

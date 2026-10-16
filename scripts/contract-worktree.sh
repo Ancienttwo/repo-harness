@@ -2066,6 +2066,7 @@ cleanup_worktree() {
   fi
 
   # Bind the observations before runtime shutdown to the existing exact authority.
+  local removed_checkout=0
   if git show-ref --verify --quiet "refs/heads/$branch_name"; then
     run_contract_runtime remove-exact --repo "$current_root" \
       --worktree "${worktree_path:-(absent)}" \
@@ -2073,6 +2074,7 @@ cleanup_worktree() {
       --target-oid "$cleanup_target" --merge "$cleanup_target"
     echo "[ContractWorktree] Removed worktree: ${worktree_path:-(absent)}"
     echo "[ContractWorktree] Deleted branch: $branch_name (update-ref, $merge_mode)"
+    if [[ -n "$worktree_path" ]]; then removed_checkout=1; fi
   fi
 
   if [[ -e "$metadata_file" ]]; then
@@ -2080,6 +2082,15 @@ cleanup_worktree() {
     echo "[ContractWorktree] Removed metadata: $metadata_file"
   else
     echo "[ContractWorktree] Metadata already absent, skipping: $metadata_file"
+  fi
+
+  # Stop the removed checkout's architecture daemons last, outside the
+  # topology lock. A failure keeps the completed removal and fails closeout.
+  if [[ "$removed_checkout" -eq 1 ]]; then
+    if ! run_contract_runtime stop-architecture-daemons --repo "$current_root" --worktree "$worktree_path"; then
+      echo "contract-worktree: worktree removed, but its architecture daemon stop failed; the report above names each state directory" >&2
+      return 1
+    fi
   fi
 }
 

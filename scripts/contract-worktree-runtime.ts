@@ -108,5 +108,11 @@ try {
       branch: value('--branch'), head_sha: value('--head'), target_ref: value('--target'),
       target_oid: value('--target-oid'), merge_commit_sha: value('--merge'),
     }, { closeout: true });
+  } else if (action === 'stop-architecture-daemons') {
+    const { checkoutPath } = await import(pathToFileURL(join(packageRoot, 'src/effects/state/coordination-worktree-topology.ts')).href) as typeof import('../src/effects/state/coordination-worktree-topology');
+    const { stopWorkspaceArchitectureDaemons } = await import(pathToFileURL(join(packageRoot, 'src/effects/architecture/archctx-provider.ts')).href) as typeof import('../src/effects/architecture/archctx-provider');
+    const report = stopWorkspaceArchitectureDaemons(value('--repo'), checkoutPath(value('--worktree')));
+    console.log(JSON.stringify(report));
+    if (report.failures.length > 0) process.exitCode = 1;
   } else throw new Error('unknown worktree runtime action');
 } catch (error) { console.error(String(error)); process.exitCode = 1; }

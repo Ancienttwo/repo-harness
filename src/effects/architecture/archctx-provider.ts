@@ -286,6 +286,73 @@ export function verifyArchctxDaemonRuntime(repoRoot: string, options: ArchctxPro
   }
 }
 
+export interface ArchitectureDaemonStopFailure {
+  /** Null when the daemon listing failed before a state directory was known. */
+  stateDir: string | null;
+  code: string;
+  action: string;
+  reasonCode?: string;
+  retryable?: boolean;
+  message: string;
+}
+
+export interface ArchitectureDaemonStopReportV1 {
+  schemaVersion: 'repo-harness.architecture-daemon-stop/v1';
+  worktree: string;
+  provider: ArchitectureProjectionPolicy['provider'];
+  stopped: string[];
+  failures: ArchitectureDaemonStopFailure[];
+}
+
+function daemonStopFailure(stateDir: string | null, error: ArchctxClientError): ArchitectureDaemonStopFailure {
+  return {
+    stateDir, code: error.code, action: error.action, message: error.providerMessage,
+    ...(error.reasonCode === undefined ? {} : { reasonCode: error.reasonCode }),
+    ...(error.retryable === undefined ? {} : { retryable: error.retryable }),
+  };
+}
+
+/**
+ * Closeout stops the daemons that archctx lists for a removed checkout. The
+ * listed connection root is archctx's own canonical workspace root, so a
+ * daemon is selected only by exact root equality and stopped by its state
+ * directory. Typed archctx failures are reported; contract violations throw.
+ */
+export function stopWorkspaceArchitectureDaemons(repoRoot: string, canonicalWorktree: string, options: ArchctxProviderOptions = {}): ArchitectureDaemonStopReportV1 {
+  if (!isAbsolute(canonicalWorktree)) throw new Error('architecture daemon stop requires an absolute canonical worktree path');
+  const policy = options.policy ?? loadArchitectureProjectionPolicy(options.env);
+  const report: ArchitectureDaemonStopReportV1 = { schemaVersion: 'repo-harness.architecture-daemon-stop/v1', worktree: canonicalWorktree, provider: policy.provider, stopped: [], failures: [] };
+  if (policy.provider === 'disabled') return report;
+  const client = new ArchctxClient(repoRoot, policy.requiredVersion, options);
+  const maximumMs = Math.min(policy.timeoutMs, 10_000);
+  let listed: unknown;
+  try { listed = client.json(['daemon', 'list', '--json'], maximumMs); }
+  catch (error) {
+    if (!(error instanceof ArchctxClientError)) throw error;
+    report.failures.push(daemonStopFailure(null, error));
+    return report;
+  }
+  if (!isRecord(listed) || listed.schemaVersion !== 'archcontext.envelope/v1' || listed.ok !== true || !isRecord(listed.data) || !Array.isArray(listed.data.daemons)) {
+    throw new Error('archctx daemon list returned an invalid envelope');
+  }
+  for (const entry of listed.data.daemons) {
+    if (!isRecord(entry) || typeof entry.stateDir !== 'string' || typeof entry.connection !== 'string') throw new Error('archctx daemon list returned an invalid daemon entry');
+    if (entry.connection !== 'valid' || entry.root !== canonicalWorktree) continue;
+    let stopped: unknown;
+    try { stopped = client.json(['daemon', 'stop', '--state-dir', entry.stateDir, '--json'], maximumMs); }
+    catch (error) {
+      if (!(error instanceof ArchctxClientError)) throw error;
+      report.failures.push(daemonStopFailure(entry.stateDir, error));
+      continue;
+    }
+    if (!isRecord(stopped) || stopped.schemaVersion !== 'archcontext.envelope/v1' || stopped.ok !== true || !isRecord(stopped.data) || stopped.data.stopping !== true) {
+      throw new Error('archctx daemon stop returned an invalid envelope');
+    }
+    report.stopped.push(entry.stateDir);
+  }
+  return report;
+}
+
 export function inspectArchitectureProjectionReadiness(repoRoot: string, options: ArchctxProviderOptions = {}): ArchitectureProjectionReadinessV1 {
   const policy = options.policy ?? loadArchitectureProjectionPolicy(options.env);
   let source: ArchitectureProjectionReadinessV1['modelAuthority']['source'] = 'unadopted';

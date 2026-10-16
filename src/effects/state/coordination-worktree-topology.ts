@@ -66,7 +66,7 @@ export function withWorktreeTopologyLockAsync<T>(root: string, action: () => Pro
 }
 
 /** Canonicalize a missing checkout through its existing parent. Never follow its leaf. */
-function checkoutPath(path: string): string {
+export function checkoutPath(path: string): string {
   try {
     const entry = lstatSync(path);
     if (!entry.isDirectory() || entry.isSymbolicLink()) throw new Error('worktree path is not a real directory');
