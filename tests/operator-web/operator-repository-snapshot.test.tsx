@@ -237,7 +237,9 @@ describe('repository snapshot transport', () => {
 
 describe('repository snapshot failure recovery', () => {
   test('keeps task details usable after failure and retries all observation sources without losing selection', async () => {
-    const repository = stableSnapshot.repositories[0]!;
+    const snapshot = { ...stableSnapshot, repositories: stableSnapshot.repositories.map((repository, index) =>
+      index === 0 ? { ...repository, repository_id: 'repo_a5b76eee64af71c3' } : repository) };
+    const repository = snapshot.repositories[0]!;
     const planning = planningObservationFixture(repository.repository_id, repository.cards);
     const board = organizationBoardFixture(repository.repository_id);
     const organization = projectOperatorOrganizationSnapshot(board.overlay, board.attention);
@@ -247,8 +249,8 @@ describe('repository snapshot failure recovery', () => {
       organization: { status: 'observed', observed_at: organization.observed_at, snapshot: organization },
     };
     const asked: string[] = [];
-    await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en"
-      fetchSnapshot={async () => stableSnapshot}
+    await mount(<OperatorApp initialSnapshot={snapshot} initialLocale="en"
+      fetchSnapshot={async () => snapshot}
       readTaskContext={async request => taskContextFixture(request)}
       readTaskActivity={async request => taskActivityFixture(request)}
       fetchRepositorySnapshot={async repositoryId => {

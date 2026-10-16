@@ -90,7 +90,7 @@ test('real HTTP worker returns current context, stale refusal and method/query g
     const planningResponse=await fetch(`${server.url}/api/v1/repositories/${f.entry.id}/snapshot`);
     expect(planningResponse.status).toBe(200);
     const envelope=await planningResponse.json() as {protocol:number;planning:{status:string;snapshot:unknown}};
-    expect(envelope.protocol).toBe(4);expect(envelope.planning.status).toBe('observed');
+    expect(envelope.protocol).toBe(1);expect(envelope.planning.status).toBe('observed');
     expect(decodeOperatorPlanningSnapshot(envelope.planning.snapshot,f.entry.id).tasks[0]!.task.title).toBe(f.task);
     expect((await fetch(url+'?task_revision='+'b'.repeat(64))).status).toBe(409);
     expect((await fetch(url+'?path=/private')).status).toBe(400);expect((await fetch(url,{method:'POST',headers:{Origin:server.url}})).status).toBe(405);

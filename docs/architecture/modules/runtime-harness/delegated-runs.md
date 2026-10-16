@@ -1,6 +1,6 @@
 # runtime-harness/delegated-runs 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-delegated-runs" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:7dc34d2fb5dd6bb7f71b2bc7cc46fb7c5fe404cd33695f5c1d3e66e77f01e5bf" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-delegated-runs" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:e76300f1853d955ad999bde1e638c393cabc6d4743836e26ba9631a3daee8172" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.delegated-runs`(kind `capability`)
 > **Matched Prefixes**:`src/core/engineers/delegation.ts`、`src/effects/engineers/delegated-run-store.ts`、`src/cli/commands/delegation.ts`、`scripts/me2b-runtime-admission-canary.ts`
@@ -15,13 +15,9 @@ Admits one logical Role Profile against current Engineer authority and journals 
 
 ```mermaid
 flowchart LR
-  p1_capability_runtime_harness_collaboration_5265febf["Collaboration Substrate"]:::component
   p1_capability_runtime_harness_delegated_runs_e1654b07["Read-only Delegated Runs"]:::component
   p1_capability_runtime_harness_engineer_bindings_34c00f72["Engineer Bindings"]:::component
   p1_component_delegated_runs_primary_0e9104c9["Read-only Delegated Run Journal"]:::component
-  p1_capability_runtime_harness_collaboration_5265febf -->|"Enforce the parent Engineer's delegation policy as a pre-step to the unchanged read-only admission#44; and turn one run's persisted output into a contribution the delegation plane's own WorkerResult then references"| p1_capability_runtime_harness_delegated_runs_e1654b07
-  p1_capability_runtime_harness_collaboration_5265febf -->|"Derive the publishing actor from the authenticated principal and current Binding instead of accepting a declared identity"| p1_capability_runtime_harness_engineer_bindings_34c00f72
-  p1_capability_runtime_harness_delegated_runs_e1654b07 -->|"Run the collaboration dispatch fence inside the read-only dispatch effect itself#44; before any host action#44; refusing a run whose injected coordination context no binding accounts for"| p1_capability_runtime_harness_collaboration_5265febf
   p1_capability_runtime_harness_delegated_runs_e1654b07 -->|"Revalidate the exact current parent ClaimActorReceipt#44; WorkEnvelope and Engineer Binding before delegation admission"| p1_capability_runtime_harness_engineer_bindings_34c00f72
   p1_capability_runtime_harness_delegated_runs_e1654b07 -->|"Persist immutable capability#44; admission#44; launch#44; process and result evidence without creating runtime or task authority"| p1_component_delegated_runs_primary_0e9104c9
   classDef actor fill:#111827,color:#ffffff,stroke:#f9fafb,stroke-width:2px
@@ -30,15 +26,14 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:80e34a3959d732c46f66177961f65f9bff0895ab162b9ed1a29a771012873cdd`).
-- Semantic nodes: `4`; declared relations: `5`.
+- Proof: `proven` (`sha256:15bbb0de4b93a81d5b5aa9f39f638bb1827d180c009e9049a2a73095c8fed327`).
+- Semantic nodes: `3`; declared relations: `2`.
 
 ### 1.2 模組職責表
 
 | 宣告入口 | 錨點 | 職責 |
 | --- | --- | --- |
 | `entrypoint.delegated-runs.dispatch-command` | `src/cli/commands/delegation.ts#dispatchDelegatedRunCommand` | `sink.delegated-runs.dispatch-host-action` → `src/effects/engineers/delegated-run-store.ts#dispatchDelegatedRun` |
-| `entrypoint.delegated-runs.dispatch-effect` | `src/effects/engineers/delegated-run-store.ts#dispatchDelegatedRun` | `sink.delegated-runs.collaboration-dispatch-fence` → `src/effects/collaboration/context-delivery.ts#fenceCollaborationDispatch` |
 | `entrypoint.delegated-runs.parent-authority` | `src/effects/engineers/delegated-run-store.ts#validateDelegationParent` | `sink.delegated-runs.parent-authority` → `src/effects/engineers/claim-actor-store.ts#validateClaimActorReceiptLive` |
 | `entrypoint.delegated-runs.intent` | `src/effects/engineers/delegated-run-store.ts#persistIntent` | `sink.delegated-runs.intent-schema` → `src/core/engineers/delegation.ts#canonicalDelegatedRunIntentBytes` |
 | `entrypoint.delegated-runs.observation` | `src/effects/engineers/delegated-run-store.ts#appendObservation` | `sink.delegated-runs.observation` → `src/core/engineers/delegation.ts#buildDelegatedRunObservation` |
@@ -58,7 +53,6 @@ flowchart LR
 
 出向關係:
 
-- `calls` → `capability.runtime-harness.collaboration` — Run the collaboration dispatch fence inside the read-only dispatch effect itself, before any host action, refusing a run whose injected coordination context no binding accounts for
 - `calls` → `capability.runtime-harness.engineer-bindings` — Revalidate the exact current parent ClaimActorReceipt, WorkEnvelope and Engineer Binding before delegation admission
 - `writes` → `capability.runtime-harness.evidence-ledger` — Store delegated run payloads in the evidence blob store
 - `calls` → `capability.workflow-engine.execution-primitives` — Hold exclusive directory locks under the Git common directory and run child processes
@@ -67,7 +61,6 @@ flowchart LR
 
 入向關係:
 
-- `calls` ← `capability.runtime-harness.collaboration` — Enforce the parent Engineer's delegation policy as a pre-step to the unchanged read-only admission, and turn one run's persisted output into a contribution the delegation plane's own WorkerResult then references
 - `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the delegation command
 - `calls` ← `capability.runtime-harness.verified-context` — Revalidate existing immutable WorkerRunRef, process receipt, WorkerResult and evidence blobs as untrusted checkpoint inputs
 
@@ -84,7 +77,7 @@ flowchart LR
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:80e34a3959d732c46f66177961f65f9bff0895ab162b9ed1a29a771012873cdd`); selectors `6/6`.
+> **Proof**: `proven` (`sha256:15bbb0de4b93a81d5b5aa9f39f638bb1827d180c009e9049a2a73095c8fed327`); selectors `5/5`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
@@ -93,11 +86,9 @@ sequenceDiagram
   participant p2_delegated_run_journal_781391f9 as Read-only Delegated Runs
   participant p2_binding_authority_b56d10c4 as Engineer Bindings
   participant p2_delegated_run_schema_0652b33a as Read-only Delegated Run Journal
-  participant p2_collaboration_fence_e27409aa as Collaboration Substrate
   p2_delegated_run_journal_781391f9->>p2_binding_authority_b56d10c4: Revalidate current Task#44; Lease#44; WorkEnvelope#44; Engineer Binding and ClaimActorReceipt fences before admission
   p2_delegated_run_journal_781391f9->>p2_delegated_run_schema_0652b33a: Canonicalize and persist the immutable admitted run intent before any Host action
   p2_delegated_run_journal_781391f9->>p2_delegated_run_schema_0652b33a: Dispatch the admitted run through the journal that owns the one launch claim
-  p2_delegated_run_journal_781391f9->>p2_collaboration_fence_e27409aa: Refuse a run whose injected coordination context has no recorded run-context binding before any host action
   alt One immutable launch claim admits at most one read-only host action and returns only untrusted receipt-bound evidence
   p2_delegated_run_journal_781391f9->>p2_delegated_run_schema_0652b33a: Bind the completed observation and bounded/redacted immutable process evidence into WorkerResult without authority mutation
     Note over p2_delegated_run_journal_781391f9: Return completed observation and untrusted result#59; no Task or Acceptance transition

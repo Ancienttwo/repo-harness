@@ -1,6 +1,6 @@
 # runtime-harness/global-runtime-reconciliation 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-global-runtime-reconciliation" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:82db64cbfa902bb4de594d37591f308f28876214ac78a2089a22c1a140b84be3" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-global-runtime-reconciliation" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:0994418d80d21747c6e0813dc14cbc9139c5c33e2a2b24edac15a05d5268f38f" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.global-runtime-reconciliation`(kind `capability`)
 > **Matched Prefixes**:`package.json`、`bun.lock`、`src/cli/index.ts`、`src/cli/commands/global-runtime.ts`、`scripts/check-managed-runtime.ts`、`scripts/sync-codex-installed-copies.sh`、`src/effects/architecture/**`、`tests/cli/global-runtime-init.test.ts`、`tests/cli/global-runtime.test.ts`、`tests/architecture-projection-provider.test.ts`、`assets/reference-configs/external-tooling.md`、`docs/reference-configs/external-tooling.md`、`docs/reference-configs/install-profiles.md`、`src/cli/runtime/**`、`src/cli/tty-prompt.ts`、`src/cli/commands/validators.ts`、`src/cli/commands/doctor.ts`、`src/cli/commands/init-hook.ts`、`src/cli/commands/upgrade.ts`、`src/core/upgrade/**`、`src/effects/runtime/node-candidates.ts`、`src/effects/runtime/protected-helper-platform.ts`、`src/effects/skill-tree-integrity.ts`、`src/effects/configuration/**`、`src/core/architecture/projection.ts`、`src/cli/commands/architecture-projection.ts`、`src/cli/commands/architecture-configuration.ts`、`scripts/axr5-archctx-clean-room.ts`、`src/core/release/**`、`src/effects/release/**`、`scripts/check-npm-release.sh`、`scripts/check-release-published.sh`、`scripts/check-tarball-install-smoke.sh`、`scripts/check-pi-package-smoke.ts`、`scripts/sync-pi-package.ts`、`scripts/runtime-evidence-receipt.ts`、`install.sh`、`install.ps1`、`tsconfig.json`
@@ -88,7 +88,6 @@ flowchart LR
   - `calls` → `component.global-runtime-reconciliation.archctx-closure` — Register the architecture-projection command
   - `calls` → `capability.runtime-mcp.chatgpt-browser` — Register the chatgpt command
   - `calls` → `capability.verification.codegraph-readiness` — Probe CodeGraph readiness for doctor
-  - `calls` → `capability.runtime-harness.collaboration` — Register the collaboration command
   - `calls` → `capability.workflow-engine.contract-assets` — Register the init and capability-context commands
   - `calls` → `capability.runtime-harness.delegated-runs` — Register the delegation command
   - `calls` → `capability.runtime-harness.engineer-bindings` — Register the engineer command
@@ -98,7 +97,6 @@ flowchart LR
   - `calls` → `capability.runtime-harness.interface-change` — Register the interface-change command
   - `calls` → `capability.runtime-harness.mcp-sidecar` — Register the mcp command
   - `calls` → `capability.runtime-harness.operator` — Register the operator command
-  - `calls` → `capability.runtime-harness.pipeline-ledger` — Register the pipeline command
   - `calls` → `capability.runtime-harness.pm-dispatch` — Register the pm command
   - `calls` → `component.global-runtime-reconciliation.primary` — Register the update and upgrade commands and run the setup inside the candidate runtime
   - `calls` → `capability.organization.publication` — Register the publication command

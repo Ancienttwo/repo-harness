@@ -321,8 +321,8 @@ test('GET and HEAD use only the injected cache; no subprocess or canonical state
     expect((await fetch(`${server.url}/api/v1/runtime/status?host=fixture`)).status).toBe(400);
     expect((await fetch(`${server.url}/api/v1/runtime/status`, { method: 'POST' })).status).toBe(405);
     const pipeline = await fetch(`${server.url}/api/v1/pipelines`);
-    expect(pipeline.status).toBe(200);
-    expect(await pipeline.json()).toHaveProperty('projection_version', 'repo-harness.pipeline-board.v2');
+    expect(pipeline.status).toBe(404);
+    expect(await pipeline.json()).toMatchObject({ error: { code: 'not_found' } });
     for (const spy of spies) expect(spy).not.toHaveBeenCalled();
     expect(JSON.stringify(overlay)).toBe(before);
   } finally { for (const spy of spies) spy.mockRestore(); await server.close(); }

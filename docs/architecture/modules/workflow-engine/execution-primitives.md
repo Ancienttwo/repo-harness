@@ -1,6 +1,6 @@
 # workflow-engine/execution-primitives 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-execution-primitives" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:b327df14a05f1ff20653a62fb3f531f1d4ee98bff354f8fe1ad071df080c3f87" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-execution-primitives" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:4fc89f9eaf485cfbdca29ef0d96e74e6054d3c2b5a99b27fddec6563b80ce54b" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.workflow-engine.execution-primitives`(kind `capability`)
 > **Matched Prefixes**:`src/effects/process-runner.ts`、`src/effects/process-supervisor.ts`、`src/effects/process-group-launcher.ts`、`src/effects/expensive-run-lock.ts`、`src/effects/locking/**`、`src/effects/git/**`
@@ -57,7 +57,6 @@ flowchart LR
 - `calls` ← `component.acceptance-review.primary` — Hold an exclusive directory lock around one generic review run
 - `calls` ← `component.agent-runtime-effects.journal` — Hold exclusive directory locks under the Git common directory
 - `calls` ← `capability.runtime-harness.bound-task-freezes` — Resolve the Git common directory for freeze records
-- `calls` ← `capability.runtime-harness.collaboration` — Hold exclusive directory locks under the Git common directory
 - `calls` ← `component.contract-assets.contract-worktree-lifecycle` — Resolve the configured Git binary for worktree lifecycle commands
 - `calls` ← `component.contract-assets.planning-helpers` — Run each helper as a bounded child process
 - `calls` ← `component.contract-assets.template-projection` — Run init steps as bounded child processes

@@ -237,7 +237,7 @@ describe('ME-1B Engineering Overlay', () => {
     expect(boardAfter.overlay.snapshot_sha256).not.toBe(boardBefore.overlay.snapshot_sha256);
   }, 30_000);
 
-  test('the overlay adds no operator route and reaches operator code only through the read-only collaboration GET', () => {
+  test('the overlay adds no operator route and reaches operator code only through the read-only repository GET', () => {
     const sources = readdirSync(join(sourceRoot, 'src'), { recursive: true })
       .map((entry) => String(entry))
       .filter((entry) => entry.endsWith('.ts') || entry.endsWith('.tsx'))
@@ -248,12 +248,12 @@ describe('ME-1B Engineering Overlay', () => {
     }).map((entry) => relative('src', entry).split('\\').join('/')).sort();
 
     // The AKN Organization view projects the overlay through the existing
-    // collaboration snapshot; the overlay itself still owns no web surface.
+    // repository snapshot; the overlay itself still owns no web surface.
     expect(importers).toEqual([
       'cli/commands/engineer.ts',
       'core/operator/organization-snapshot.ts',
       'effects/engineers/engineering-overlay.ts',
-      'effects/operator/collaboration.ts',
+      'effects/operator/repository-snapshot.ts',
     ]);
     expect(importers.some((entry) => entry.startsWith('operator-web/'))).toBeFalse();
     const organizationImports = readFileSync(join(sourceRoot, 'src/core/operator/organization-snapshot.ts'), 'utf8')

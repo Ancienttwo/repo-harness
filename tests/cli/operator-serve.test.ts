@@ -481,6 +481,7 @@ describe('operator serve command and HTTP boundary', () => {
     const repoRoot = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-operator-repository-repo-')));
     expect(spawnSync('git', ['init', '-q', repoRoot]).status).toBe(0);
     const registry = registryHome([{ path: repoRoot, accessMode: 'read_write' }]);
+    // Block a remaining Git read. The retired collaboration policy is no longer read.
     const policyPath = join(repoRoot, 'git-read-gate');
     const bin = join(repoRoot, 'bin');
     mkdirSync(bin);

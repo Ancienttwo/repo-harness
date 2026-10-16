@@ -1,6 +1,6 @@
 # runtime-harness/evidence-ledger 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-evidence-ledger" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:745e42efdfa2d4e5e9380fd441f1c8011ca3329a1b422f6daa94174a72b97a4a" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-evidence-ledger" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:7081d0f456fe56819a71e2825f7f4a617dfd33e459ca51eee39bb099e4ee5402" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.evidence-ledger`(kind `capability`)
 > **Matched Prefixes**:`src/core/evidence/**`、`src/effects/evidence/**`、`scripts/evidence-gc.ts`、`scripts/recovery-view-cli.ts`、`scripts/prepare-handoff.sh`、`scripts/prepare-codex-handoff.sh`、`scripts/codex-handoff-resume.sh`
@@ -61,7 +61,6 @@ flowchart LR
 - `calls` ← `component.evals-checks.primary` — Validate and execute verification plans through the evidence verification modules
 - `calls` ← `component.global-runtime-reconciliation.archctx-closure` — Canonicalize architecture closure records
 - `calls` ← `component.hook-adapters.session-lifecycle` — Publish the evidence checkpoint and render handoff and resume from it
-- `calls` ← `capability.runtime-harness.pipeline-ledger` — Validate original verification execution provenance before admitting evidence
 - `calls` ← `capability.runtime-harness.pm-dispatch` — Hash coding session records with the evidence canonical JSON
 - `calls` ← `capability.organization.publication` — Append lifecycle journal records through the durable evidence append primitive
 - `calls` ← `component.refactor-program.archctx-provider` — Canonicalize refactor provider records
