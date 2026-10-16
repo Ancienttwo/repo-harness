@@ -2,7 +2,7 @@
 // plans/plan-20261010-0320-operator-console-kumo.md §3 for the authority table.
 // Values that have no authority are null; consumers must not infer them.
 
-export const DEV_ACTIVITY_PROJECTION = 'repo-harness.dev-activity.v1' as const;
+export const DEV_ACTIVITY_PROJECTION = 'repo-harness.dev-activity.v2' as const;
 export const DEV_ACTIVITY_SHIPPED_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
 export const DEV_ACTIVITY_COLUMNS = ['planned', 'building', 'verifying', 'ready_to_merge', 'shipped'] as const;
@@ -16,7 +16,7 @@ export type DevActivityColumn = typeof DEV_ACTIVITY_COLUMNS[number];
 export type DevActivityHiddenReason = 'closed_unmerged';
 
 /** `decisions` is the open Human request inventory (§3.4 source 3). */
-export type DevActivitySourceKind = 'git' | 'github' | 'ledger' | 'runtime' | 'decisions';
+export type DevActivitySourceKind = 'git' | 'github' | 'runtime' | 'decisions';
 export type DevActivitySourceStatus = 'ok' | 'unavailable' | 'stale' | 'not_configured';
 
 export interface DevActivitySourceHealth {
@@ -68,52 +68,28 @@ export interface DevActivityWorktree {
   behind: number | null;
 }
 
-export interface DevActivityLedgerFacts {
-  record_id: string;
-  phase: string;
-  phase_since: string;
-  /** From ledger `owner_bot`; null when absent. */
-  owner: string | null;
-  blocked: { reason: string; since: string } | null;
-  waiting_owner: boolean;
-}
-
-export interface DevActivityAgentFacts {
-  /** Who: ledger owner or a verified runtime binding. Never inferred. */
-  label: string;
-  source: 'ledger' | 'runtime';
-  /** Runtime overlay state label; null when no verified runtime binding. */
-  runtime_state: string | null;
-  runtime_freshness: 'fresh' | 'stale' | 'disconnected' | null;
-  changed_at: string | null;
-}
-
 export interface DevActivityItem {
-  /** Stable id: `<repository_id>:<branch>` or `<repository_id>:ledger:<record_id>`. */
+  /** Stable id: `<repository_id>:<branch>`. */
   id: string;
   repository_id: string;
-  branch: string | null;
+  branch: string;
   title: string;
   column: DevActivityColumn;
   hidden: DevActivityHiddenReason | null;
   /**
    * When the item entered its current column, from the authority for that
    * column: PR createdAt for open-PR columns (GitHub reports no ready or CLEAN
-   * transition time), mergedAt for shipped, ledger phase_since for planned,
+   * transition time), mergedAt for shipped,
    * null for a branch or worktree without a PR.
    */
   column_since: string | null;
   worktrees: DevActivityWorktree[];
   pull_request: DevActivityPullRequest | null;
-  ledger: DevActivityLedgerFacts | null;
-  agent: DevActivityAgentFacts | null;
-  /** Runtime-observed block, only when the observation is fresh. */
-  runtime_blocked: { reason: string; since: string } | null;
   /** Merged PR whose worktree still exists. */
   cleanup_pending: boolean;
 }
 
-export type DevActivityAttentionKind = 'ready_to_merge' | 'ledger_waiting_owner' | 'human_request' | 'runtime_blocked';
+export type DevActivityAttentionKind = 'ready_to_merge' | 'human_request';
 
 export interface DevActivityAttention {
   kind: DevActivityAttentionKind;
@@ -122,9 +98,8 @@ export interface DevActivityAttention {
   repository_id: string;
   summary: string;
   /**
-   * From the authority for the kind: PR createdAt (ready_to_merge), ledger
-   * phase_since (ledger_waiting_owner), runtime changed_at or observation time
-   * (runtime_blocked). Decision records carry no timestamp, so for
+   * From the authority for the kind: PR createdAt (ready_to_merge).
+   * Decision records carry no timestamp, so for
    * `human_request` this is when the collector first observed the open request.
    */
   waiting_since: string;
@@ -134,7 +109,7 @@ export interface DevActivityAttention {
   command: string | null;
 }
 
-export interface DevActivitySnapshotV1 {
+export interface DevActivitySnapshotV2 {
   projection_version: typeof DEV_ACTIVITY_PROJECTION;
   status: 'ready' | 'partial' | 'unavailable';
   collected_at: string | null;

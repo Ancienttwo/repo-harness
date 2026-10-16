@@ -9,7 +9,7 @@
 > **Source PRD**: `plans/prds/20260828-2321-collaboration-substrate.prd.md` (Child A)
 > **Architecture request**: `docs/architecture/requests/archive/2026/runtime-harness-collaboration.md` (Resolved)
 > **Durable ledger**: `tasks/workstreams/runtime-harness/collaboration/collaboration-substrate-program.md` (moved out of this document by C1)
-> **Machine guard**: `tests/unit/collaboration-authority-baseline.test.ts`
+> **Historical machine guard**: `tests/unit/collaboration-authority-baseline.test.ts`. Issue #769 retires this guard and the collaboration substrate.
 > **Usage**: This is the frozen record C1–C9 read from. Do not re-derive these decisions per row; supersede this document instead of silently editing it.
 
 C0 changes no runtime behavior. It fixes the boundary between the collaboration

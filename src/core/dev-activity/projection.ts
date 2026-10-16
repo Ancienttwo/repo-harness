@@ -1,26 +1,24 @@
-// Pure projection: collected Git, GitHub, ledger, runtime and Decision facts
-// -> DevActivitySnapshotV1. See plans/plan-20261010-0320-operator-console-kumo.md
+// Pure projection: collected Git, GitHub and Decision facts
+// -> DevActivitySnapshotV2. See plans/plan-20261010-0320-operator-console-kumo.md
 // §3.2 (identity), §3.3 (columns and authority table) and §3.4 (attention).
 // Every value comes from exactly one authority. A value without one is null.
 
-import { RUNTIME_STALE_AFTER_MS, type RuntimeBadge, type RuntimeOverlay } from '../operator/runtime-status';
+import { RUNTIME_STALE_AFTER_MS, type RuntimeOverlay } from '../operator/runtime-status';
 import { decodeDevActivitySnapshot, isPublicDevActivityText, publicDevActivityText } from './decode';
 import {
   DEV_ACTIVITY_COLUMNS,
   DEV_ACTIVITY_PROJECTION,
   DEV_ACTIVITY_SHIPPED_WINDOW_MS,
-  type DevActivityAgentFacts,
   type DevActivityAttention,
   type DevActivityCiState,
   type DevActivityColumn,
   type DevActivityHiddenReason,
   type DevActivityItem,
-  type DevActivityLedgerFacts,
   type DevActivityPrState,
   type DevActivityPullRequest,
   type DevActivityRepository,
   type DevActivityReviewState,
-  type DevActivitySnapshotV1,
+  type DevActivitySnapshotV2,
   type DevActivitySourceHealth,
   type DevActivityWorktree,
 } from './types';
@@ -34,28 +32,6 @@ export interface DevActivityRawPullRequest extends Omit<DevActivityPullRequest, 
   state: DevActivityPrState;
   head_branch: string;
   created_at: string;
-}
-
-export interface DevActivityRawLedgerRecord {
-  record_id: string;
-  /** Runtime join key: ledger source_host. */
-  source_host: string;
-  /** Runtime join key: sha256 digest of the ledger repository_id. */
-  runtime_repository_id: string;
-  task: string;
-  state_version: number;
-  branch: string | null;
-  title: string;
-  phase: string;
-  phase_since: string;
-  /** Ledger `blocked.return_to`, used only to place a branchless blocked record. */
-  blocked_return_to: string | null;
-  owner_bot: string;
-  blocked: { reason: string; since: string } | null;
-  waiting_owner: boolean;
-  updated_at: string;
-  /** Current projected runs; a runtime badge must name one of them. */
-  runs: { role: string; round: number }[];
 }
 
 export interface DevActivityRawHumanRequest {
@@ -72,7 +48,6 @@ export interface DevActivityRawRepository {
   sources: DevActivitySourceHealth[];
   worktrees: DevActivityRawWorktree[];
   pull_requests: DevActivityRawPullRequest[];
-  ledger: DevActivityRawLedgerRecord[];
   human_requests: DevActivityRawHumanRequest[];
 }
 
@@ -81,14 +56,7 @@ export interface DevActivityProjectionInput {
   now_ms: number;
   unreadable_registrations: number;
   repositories: DevActivityRawRepository[];
-  /** Null when no runtime source is configured. */
-  runtime: RuntimeOverlay | null;
 }
-
-/** The ledger's creation sentinel for "no owner". It is not an agent name. */
-const LEDGER_UNASSIGNED_OWNER = 'unassigned';
-const PLANNING_PHASES: readonly string[] = ['plan', 'plan-review'];
-const TERMINAL_PHASES: readonly string[] = ['merged', 'cleanup', 'abandoned'];
 
 const FAILED_CONCLUSIONS = new Set(['FAILURE', 'TIMED_OUT', 'CANCELLED', 'ACTION_REQUIRED', 'STARTUP_FAILURE', 'STALE']);
 const FAILED_STATES = new Set(['FAILURE', 'ERROR']);
@@ -168,57 +136,6 @@ function placeBranch(pr: DevActivityRawPullRequest | null): Placement {
   return { column: pr.merge_state === 'CLEAN' ? 'ready_to_merge' : 'verifying', hidden: null, since: pr.created_at };
 }
 
-/** Branchless ledger records. Terminal phases have no Git or GitHub fact to place them. */
-function placeLedgerOnly(record: DevActivityRawLedgerRecord): Placement | null {
-  if (TERMINAL_PHASES.includes(record.phase)) return null;
-  const effective = record.phase === 'blocked' ? record.blocked_return_to : record.phase;
-  if (effective !== null && PLANNING_PHASES.includes(effective)) return { column: 'planned', hidden: null, since: record.phase_since };
-  return { column: 'building', hidden: null, since: null };
-}
-
-function ledgerFacts(record: DevActivityRawLedgerRecord): DevActivityLedgerFacts {
-  return {
-    record_id: publicDevActivityText(record.record_id),
-    phase: record.phase,
-    phase_since: record.phase_since,
-    owner: record.owner_bot === LEDGER_UNASSIGNED_OWNER ? null : publicDevActivityText(record.owner_bot),
-    blocked: record.blocked ? { reason: publicDevActivityText(record.blocked.reason), since: record.blocked.since } : null,
-    waiting_owner: record.waiting_owner,
-  };
-}
-
-/** Exact verified binding only (same rule as the Pipeline card overlay). Ambiguity claims nothing. */
-function runtimeBadgeFor(record: DevActivityRawLedgerRecord, runtime: RuntimeOverlay | null): RuntimeBadge | null {
-  if (runtime === null || runtime.status !== 'ready') return null;
-  const matches = runtime.badges.filter(badge => badge.identity.source_host === record.source_host
-    && badge.identity.repository_id === record.runtime_repository_id
-    && badge.identity.task === record.task
-    && badge.identity.pipeline_state_version === record.state_version
-    && record.runs.some(run => run.role === badge.identity.role && run.round === badge.identity.round)
-    && !record.runs.some(run => run.role === badge.identity.role && run.round > badge.identity.round));
-  const unique = matches.filter(badge => matches.filter(other => other.identity.role === badge.identity.role
-    && other.identity.round === badge.identity.round).length === 1);
-  if (unique.length === 0) return null;
-  return [...unique].sort((left, right) => Number(right.state === 'blocked') - Number(left.state === 'blocked')
-    || left.identity.role.localeCompare(right.identity.role))[0]!;
-}
-
-function agentFacts(record: DevActivityRawLedgerRecord | null, badge: RuntimeBadge | null): DevActivityAgentFacts | null {
-  if (badge !== null) {
-    return { label: badge.identity.role, source: 'runtime', runtime_state: badge.state, runtime_freshness: badge.freshness, changed_at: badge.changed_at };
-  }
-  if (record !== null && record.owner_bot !== LEDGER_UNASSIGNED_OWNER) {
-    return { label: publicDevActivityText(record.owner_bot), source: 'ledger', runtime_state: null, runtime_freshness: null, changed_at: null };
-  }
-  return null;
-}
-
-function runtimeBlocked(badge: RuntimeBadge | null, runtime: RuntimeOverlay | null): DevActivityItem['runtime_blocked'] {
-  if (badge === null || badge.state !== 'blocked' || badge.freshness !== 'fresh') return null;
-  const since = badge.changed_at ?? runtime?.observed_at ?? null;
-  return since === null ? null : { reason: badge.reason, since };
-}
-
 function publicPullRequest(pr: DevActivityRawPullRequest): DevActivityPullRequest {
   return {
     number: pr.number, title: pr.title, url: pr.url, state: pr.state, is_draft: pr.is_draft,
@@ -234,23 +151,11 @@ function projectRepositoryItems(repo: DevActivityRawRepository, input: DevActivi
   const branches = new Set<string>();
   for (const worktree of repo.worktrees) if (isWorkBranch(worktree.branch)) branches.add(worktree.branch);
   for (const pr of pullRequests) if (isWorkBranch(pr.head_branch)) branches.add(pr.head_branch);
-  // A ledger branch joins an existing item, or names a branch neither Git nor
-  // GitHub listed. Terminal records cannot create a card on their own.
-  const ledgerByBranch = new Map<string, DevActivityRawLedgerRecord>();
-  for (const record of repo.ledger) {
-    if (!isWorkBranch(record.branch)) continue;
-    const current = ledgerByBranch.get(record.branch);
-    if (!current || time(record.updated_at) > time(current.updated_at)) ledgerByBranch.set(record.branch, record);
-  }
-  for (const [branch, record] of ledgerByBranch) if (!TERMINAL_PHASES.includes(record.phase)) branches.add(branch);
-
   const items: DevActivityItem[] = [];
   for (const branch of [...branches].sort()) {
     const worktrees = repo.worktrees.filter(worktree => worktree.branch === branch);
     const pr = selectPullRequest(pullRequests.filter(candidate => candidate.head_branch === branch));
-    const record = ledgerByBranch.get(branch) ?? null;
     const placement = placeBranch(pr);
-    const badge = record ? runtimeBadgeFor(record, input.runtime) : null;
     items.push({
       id: `${repo.repository_id}:${branch}`,
       repository_id: repo.repository_id,
@@ -261,31 +166,7 @@ function projectRepositoryItems(repo: DevActivityRawRepository, input: DevActivi
       column_since: placement.since,
       worktrees: worktrees.map(({ branch: _branch, ...worktree }) => worktree),
       pull_request: pr ? publicPullRequest(pr) : null,
-      ledger: record ? ledgerFacts(record) : null,
-      agent: agentFacts(record, badge),
-      runtime_blocked: runtimeBlocked(badge, input.runtime),
       cleanup_pending: pr?.state === 'merged' && worktrees.length > 0,
-    });
-  }
-  for (const record of repo.ledger) {
-    if (record.branch !== null) continue;
-    const placement = placeLedgerOnly(record);
-    if (placement === null) continue;
-    const badge = runtimeBadgeFor(record, input.runtime);
-    items.push({
-      id: `${repo.repository_id}:ledger:${publicDevActivityText(record.record_id)}`,
-      repository_id: repo.repository_id,
-      branch: null,
-      title: publicDevActivityText(record.title),
-      column: placement.column,
-      hidden: placement.hidden,
-      column_since: placement.since,
-      worktrees: [],
-      pull_request: null,
-      ledger: ledgerFacts(record),
-      agent: agentFacts(record, badge),
-      runtime_blocked: runtimeBlocked(badge, input.runtime),
-      cleanup_pending: false,
     });
   }
   return items;
@@ -299,13 +180,6 @@ function projectAttention(items: readonly DevActivityItem[], repositories: reado
     if (item.column === 'ready_to_merge' && item.hidden === null && item.column_since !== null) {
       attention.push({ kind: 'ready_to_merge', subject_id: item.id, repository_id: item.repository_id, summary: item.title,
         waiting_since: item.column_since, url: prUrl, command: null });
-    } else if (item.ledger?.waiting_owner) {
-      attention.push({ kind: 'ledger_waiting_owner', subject_id: item.id, repository_id: item.repository_id, summary: item.title,
-        waiting_since: item.ledger.phase_since, url: prUrl, command: null });
-    }
-    if (item.runtime_blocked !== null) {
-      attention.push({ kind: 'runtime_blocked', subject_id: item.id, repository_id: item.repository_id, summary: item.title,
-        waiting_since: item.runtime_blocked.since, url: prUrl, command: null });
     }
   }
   for (const repo of repositories) {
@@ -327,7 +201,7 @@ export function runtimeSourceHealth(runtime: RuntimeOverlay | null, nowMs: numbe
   return { kind: 'runtime', status: 'ok', reason: null, observed_at: runtime.observed_at };
 }
 
-export function projectDevActivity(input: DevActivityProjectionInput): DevActivitySnapshotV1 {
+export function projectDevActivity(input: DevActivityProjectionInput): DevActivitySnapshotV2 {
   const columnOrder = (column: DevActivityColumn) => DEV_ACTIVITY_COLUMNS.indexOf(column);
   const items = input.repositories.flatMap(repo => projectRepositoryItems(repo, input))
     .sort((left, right) => left.repository_id.localeCompare(right.repository_id)

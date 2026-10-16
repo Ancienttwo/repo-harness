@@ -321,8 +321,8 @@ test('GET and HEAD use only the injected cache; no subprocess or canonical state
     expect((await fetch(`${server.url}/api/v1/runtime/status?host=fixture`)).status).toBe(400);
     expect((await fetch(`${server.url}/api/v1/runtime/status`, { method: 'POST' })).status).toBe(405);
     const pipeline = await fetch(`${server.url}/api/v1/pipelines`);
-    expect(pipeline.status).toBe(200);
-    expect(await pipeline.json()).toHaveProperty('projection_version', 'repo-harness.pipeline-board.v2');
+    expect(pipeline.status).toBe(404);
+    expect(await pipeline.json()).toMatchObject({ error: { code: 'not_found' } });
     for (const spy of spies) expect(spy).not.toHaveBeenCalled();
     expect(JSON.stringify(overlay)).toBe(before);
   } finally { for (const spy of spies) spy.mockRestore(); await server.close(); }
@@ -464,7 +464,7 @@ describe('native runtime observation cache', () => {
     const source = { source_id: 'source-1', provider: 'codex', snapshot_path: '/tmp/explicit-native.json' };
     const config: NativeRuntimeConfig = { protocol: 'repo-harness.runtime-config.v2', kind: 'native', sources: [{ ...source, provider: 'codex' }] };
     expect(decodeRuntimeConfig(config)).toEqual(config);
-    const herdr: HerdrRuntimeConfig = { protocol: 'repo-harness.runtime-config.v2', kind: 'herdr', source_host: 'host', herdr_session: 'session', socket_path: '/tmp/explicit-herdr.sock', deadline_ms: 1000, bindings_path: null, pipeline_snapshot: null };
+    const herdr: HerdrRuntimeConfig = { protocol: 'repo-harness.runtime-config.v2', kind: 'herdr', source_host: 'host', herdr_session: 'session', socket_path: '/tmp/explicit-herdr.sock', deadline_ms: 1000 };
     expect(decodeRuntimeConfig(herdr)).toEqual(herdr);
     for (const invalid of [
       { ...config, protocol: 'repo-harness.runtime-config.v1' }, { ...herdr, protocol: 'repo-harness.herdr-runtime-config.v1' },
@@ -474,6 +474,20 @@ describe('native runtime observation cache', () => {
       { ...config, sources: [source, { ...source, source_id: 'source-2' }] },
       ...[{ snapshot_path: 'relative.json' }, { provider: 'unknown' }, { source_id: '/private/path' }, { token: 'secret' }].map(change => ({ ...config, sources: [{ ...source, ...change }] })),
     ]) expect(() => decodeRuntimeConfig(invalid)).toThrow();
+  });
+
+  test('retired Herdr binding keys give an explicit config repair error', () => {
+    const config = { protocol: 'repo-harness.runtime-config.v2', kind: 'herdr', source_host: 'host', herdr_session: 'session', socket_path: '/tmp/explicit-herdr.sock', deadline_ms: 1000 };
+    for (const fields of [
+      { bindings_path: null },
+      { pipeline_snapshot: null },
+      { bindings_path: null, pipeline_snapshot: null },
+      { bindings_path: '/tmp/bindings.json', pipeline_snapshot: '/tmp/snapshot.json' },
+    ]) {
+      expect(() => decodeRuntimeConfig({ ...config, ...fields })).toThrow(
+        'runtime_config_retired_fields: remove bindings_path and pipeline_snapshot; task bindings are no longer supported',
+      );
+    }
   });
 
   test('each source uses its own heartbeat; successful reads do not advance event or heartbeat time', async () => {

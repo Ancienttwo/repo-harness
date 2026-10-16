@@ -1,9 +1,9 @@
-import type { CollaborationViewState } from './RepositoryWorkspace';
+import type { RepositoryViewState } from './RepositoryWorkspace';
 import type { OperatorFleetCardV1 } from './types';
 import type { OperatorTranslate } from './i18n';
 
 export function PlanningView({ state, repositoryId, cards, onSelect, t }: {
-  readonly state: CollaborationViewState;
+  readonly state: RepositoryViewState;
   readonly repositoryId: string;
   readonly cards: readonly OperatorFleetCardV1[];
   readonly onSelect: (card: OperatorFleetCardV1) => void;

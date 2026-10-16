@@ -5,82 +5,67 @@ name: MCP Sidecar
 status: active
 summary: Provides the local MCP sidecar and its repository access policy boundary.
 responsibilities:
-  - Own MCP lifecycle, workspace registration, access policy, and local browser integration.
+  - "Own MCP lifecycle, workspace registration, access policy, and local browser integration."
   - Own the shared secret token patterns that MCP redaction and the operator architecture reads use.
   - Bind authorization-scoped MCP sessions to verified OAuth authorization IDs and expose the closed Engineer tool inventory without a coding runtime.
-  - Extend that same closed inventory with the bounded collaboration block rather than opening a second profile, and keep the live doctor's expected inventory built from the same composition the server serves.
 source:
   include:
-    - "src/cli/mcp/**"
-    - "src/cli/commands/mcp.ts"
-    - "src/cli/chatgpt-browser/file-policy.ts"
-    - "src/effects/repo-registry.ts"
-    - "docs/repo-harness-chatgpt-mcp-setup.md"
-    - "docs/reference-configs/chatgpt-coding-mcp.md"
-    - "docs/researches/20260711-devspace-chatgpt-local-control.md"
-    - "src/core/security/**"
+    - src/cli/mcp/**
+    - src/cli/commands/mcp.ts
+    - src/cli/chatgpt-browser/file-policy.ts
+    - src/effects/repo-registry.ts
+    - docs/repo-harness-chatgpt-mcp-setup.md
+    - docs/reference-configs/chatgpt-coding-mcp.md
+    - docs/researches/20260711-devspace-chatgpt-local-control.md
+    - src/core/security/**
   exclude:
-    - "src/cli/mcp/codegraph-adapter.ts"
-    - "src/cli/mcp/general-repo-access.ts"
-    - "src/cli/mcp/general-repo-access/**"
+    - src/cli/mcp/codegraph-adapter.ts
+    - src/cli/mcp/general-repo-access.ts
+    - src/cli/mcp/general-repo-access/**
   entrypoints:
     - id: entrypoint.mcp-sidecar.primary
-      path: "src/cli/mcp/server.ts"
+      path: src/cli/mcp/server.ts
       symbols:
-        - name: "createRepoHarnessMcpServer"
+        - name: createRepoHarnessMcpServer
           sinks:
             - id: sink.mcp-sidecar.primary
-              path: "src/cli/mcp/tools.ts"
-              symbol: "callMcpTool"
+              path: src/cli/mcp/tools.ts
+              symbol: callMcpTool
     - id: entrypoint.mcp-sidecar.engineer-tools
-      path: "src/cli/mcp/engineer-tools.ts"
+      path: src/cli/mcp/engineer-tools.ts
       symbols:
-        - name: "callEngineerTool"
+        - name: callEngineerTool
           sinks:
             - id: sink.mcp-sidecar.engineer-principal
-              path: "src/effects/engineers/principal.ts"
-              symbol: "resolveEngineerPrincipal"
+              path: src/effects/engineers/principal.ts
+              symbol: resolveEngineerPrincipal
             - id: sink.mcp-sidecar.engineer-offers
-              path: "src/effects/engineers/scheduling.ts"
-              symbol: "collectEngineerOffers"
-        - name: "messageSendAsEngineer"
+              path: src/effects/engineers/scheduling.ts
+              symbol: collectEngineerOffers
+        - name: messageSendAsEngineer
           sinks:
             - id: sink.mcp-sidecar.engineer-messages
-              path: "src/effects/engineers/module-inbox.ts"
-              symbol: "sendModuleMessage"
-        - name: "acquireAsEngineer"
+              path: src/effects/engineers/module-inbox.ts
+              symbol: sendModuleMessage
+        - name: acquireAsEngineer
           sinks:
             - id: sink.mcp-sidecar.engineer-acquire
-              path: "src/effects/engineers/scheduling-acquire-next.ts"
-              symbol: "acquireSelectedEngineerTask"
-        - name: "callEngineerTool"
+              path: src/effects/engineers/scheduling-acquire-next.ts
+              symbol: acquireSelectedEngineerTask
+        - name: callEngineerTool
           sinks:
             - id: sink.mcp-sidecar.agent-runtime-effect-status
-              path: "src/effects/engineers/agent-runtime-effect-store.ts"
-              symbol: "observeAgentRuntimeEffectStatus"
+              path: src/effects/engineers/agent-runtime-effect-store.ts
+              symbol: observeAgentRuntimeEffectStatus
             - id: sink.mcp-sidecar.interface-change
-              path: "src/effects/engineers/interface-change-store.ts"
-              symbol: "transitionInterfaceChangeRequest"
-    - id: entrypoint.mcp-sidecar.collaboration-tools
-      path: "src/cli/mcp/collaboration-tools.ts"
-      symbols:
-        - name: "callCollaborationTool"
-          sinks:
-            - id: sink.mcp-sidecar.collaboration-exchange
-              path: "src/effects/collaboration/agent-surface.ts"
-              symbol: "collaborationExchangeView"
-            - id: sink.mcp-sidecar.collaboration-signal-post
-              path: "src/effects/collaboration/agent-surface.ts"
-              symbol: "collaborationSignalPost"
-            - id: sink.mcp-sidecar.collaboration-handoff-adopt
-              path: "src/effects/collaboration/agent-surface.ts"
-              symbol: "collaborationHandoffAdopt"
+              path: src/effects/engineers/interface-change-store.ts
+              symbol: transitionInterfaceChangeRequest
 extensions:
   contractFiles:
-    agents: "AGENTS.md"
-    claude: "CLAUDE.md"
-  lspProfile: "typescript-lsp"
+    agents: AGENTS.md
+    claude: CLAUDE.md
+  lspProfile: typescript-lsp
   verification:
-    - "bun test tests/cli/mcp*.test.ts tests/cli/engineer.test.ts"
-    - "bun run check:type"
-    - "repo-harness mcp doctor --repo . --live"
+    - bun test tests/cli/mcp*.test.ts tests/cli/engineer.test.ts
+    - bun run check:type
+    - repo-harness mcp doctor --repo . --live

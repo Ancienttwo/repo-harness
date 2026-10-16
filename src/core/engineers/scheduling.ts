@@ -1,5 +1,4 @@
 import { canonicalEngineerJson, engineerSha256 } from './profile-binding';
-import { AUTOMATION_ATTEMPT_OUTCOMES, type RetryEligibilityObservationV1, type TaskAutomationAttemptOutcome } from './automation-attempt';
 
 export const WORK_GRAPH_PROTOCOL = 1 as const;
 export const WORK_GRAPH_KIND = 'repo-harness-work-graph' as const;
@@ -66,6 +65,50 @@ export interface WorkPackageRetryPolicyV1 {
   readonly backoff: { readonly kind: 'fixed' | 'exponential'; readonly initial_seconds: number; readonly maximum_seconds: number };
   readonly attention_after_seconds: number;
   readonly revision_reset: 'reset_on_work_package_revision';
+}
+
+// Offer documents keep these outcome and retry fields. Attempt persistence is retired.
+const ENGINEER_OFFER_OUTCOMES = Object.freeze([
+  'started', 'completed', 'not_reproducible', 'user_blocked', 'external_blocked',
+  'transient_failure', 'permanent_failure', 'lease_lost', 'cancelled', 'reconciliation_required',
+] as const);
+export type EngineerOfferOutcome = typeof ENGINEER_OFFER_OUTCOMES[number];
+export type RetryEligibilityState =
+  | 'eligible' | 'retry_backoff' | 'retry_exhausted' | 'retry_forbidden'
+  | 'reconciliation_required' | 'authority_unavailable';
+export interface RetryEligibilityObservationV1 {
+  readonly state: RetryEligibilityState;
+  readonly attempt_count: number;
+  readonly last_outcome: EngineerOfferOutcome | null;
+  readonly next_eligible_at: string | null;
+  readonly eligible_since: string | null;
+  readonly attention_owner: 'none' | 'user' | 'operator';
+  readonly starvation_attention: boolean;
+  readonly authority_revision: string;
+}
+
+/** Initial observation only. No attempt history or retry authority is stored. */
+export function observeInitialRetryEligibility(input: {
+  readonly work_package_revision: string;
+  readonly observed_at: string;
+}): RetryEligibilityObservationV1 {
+  const now = Date.parse(input.observed_at);
+  if (!Number.isFinite(now) || new Date(now).toISOString() !== input.observed_at) {
+    invalid('observed_at must be a canonical ISO timestamp');
+  }
+  return Object.freeze({
+    state: 'eligible',
+    attempt_count: 0,
+    last_outcome: null,
+    next_eligible_at: null,
+    eligible_since: input.observed_at,
+    attention_owner: 'none',
+    starvation_attention: false,
+    authority_revision: engineerSha256(canonicalEngineerJson({
+      work_package_revision: input.work_package_revision,
+      attempt: null,
+    })),
+  });
 }
 
 export interface WorkPackageDefinitionV1 {
@@ -153,7 +196,7 @@ export interface EngineerOfferExclusionV1 {
   readonly engineer_id: string;
   readonly blockers: readonly EngineerOfferBlockerCode[];
   readonly attempt_count: number;
-  readonly last_outcome: TaskAutomationAttemptOutcome | null;
+  readonly last_outcome: EngineerOfferOutcome | null;
   readonly next_eligible_at: string | null;
   readonly blocker_owner: 'none' | 'user' | 'operator';
 }
@@ -185,7 +228,7 @@ export interface EngineerOfferV1 {
   readonly retry_revision: string;
   readonly eligible_since: string;
   readonly attempt_count: number;
-  readonly last_outcome: TaskAutomationAttemptOutcome | null;
+  readonly last_outcome: EngineerOfferOutcome | null;
   readonly next_eligible_at: string | null;
   readonly blocker_owner: 'none' | 'user' | 'operator';
   readonly starvation_attention: boolean;
@@ -686,7 +729,7 @@ export function validateEngineerOffer(value: unknown): EngineerOfferV1 {
     invalid('Engineer offer protocol or closed state is invalid');
   }
   const blockerOwner: EngineerOfferV1['blocker_owner'] = input.blocker_owner === 'none' || input.blocker_owner === 'user' || input.blocker_owner === 'operator' ? input.blocker_owner : invalid('blocker_owner is invalid');
-  const lastOutcome = input.last_outcome === null || AUTOMATION_ATTEMPT_OUTCOMES.includes(input.last_outcome as TaskAutomationAttemptOutcome) ? input.last_outcome as TaskAutomationAttemptOutcome | null : invalid('last_outcome is invalid');
+  const lastOutcome = input.last_outcome === null || ENGINEER_OFFER_OUTCOMES.includes(input.last_outcome as EngineerOfferOutcome) ? input.last_outcome as EngineerOfferOutcome | null : invalid('last_outcome is invalid');
   const basis = {
     protocol: ENGINEER_OFFER_PROTOCOL,
     kind: ENGINEER_OFFER_KIND,
@@ -780,7 +823,7 @@ export function validateEngineerOffersDocument(value: unknown): EngineerOffersV1
       engineer_id: engineerId,
       blockers: Object.freeze(blockers),
       attempt_count: integer(item.attempt_count, 'exclusion.attempt_count', 0, 100),
-      last_outcome: item.last_outcome === null || AUTOMATION_ATTEMPT_OUTCOMES.includes(item.last_outcome as TaskAutomationAttemptOutcome) ? item.last_outcome as TaskAutomationAttemptOutcome | null : invalid('exclusion.last_outcome is invalid'),
+      last_outcome: item.last_outcome === null || ENGINEER_OFFER_OUTCOMES.includes(item.last_outcome as EngineerOfferOutcome) ? item.last_outcome as EngineerOfferOutcome | null : invalid('exclusion.last_outcome is invalid'),
       next_eligible_at: item.next_eligible_at === null ? null : string(item.next_eligible_at, 'exclusion.next_eligible_at', OPAQUE),
       blocker_owner: item.blocker_owner === 'none' || item.blocker_owner === 'user' || item.blocker_owner === 'operator' ? item.blocker_owner : invalid('exclusion.blocker_owner is invalid'),
     });

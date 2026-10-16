@@ -1,6 +1,6 @@
 # runtime-harness/task-agent-host 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-task-agent-host" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:ac185b540beb2fc028037e99257d5469fa57aa932baba7f5f3f87bd62c6a6918" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-task-agent-host" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:e0db1006760f91c4933a5a982907d3533629d3f351634162b5b6bebc698e1eef" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.task-agent-host`(kind `capability`)
 > **Matched Prefixes**:`src/effects/terminal/herdr.ts`、`src/effects/terminal/task-session.ts`、`src/effects/terminal/task-runtime-observation.ts`、`src/effects/terminal/task-worktree.ts`、`src/effects/terminal/task-request-readback.ts`、`src/effects/terminal/task-role-profiles.ts`、`src/cli/commands/task-agent.ts`、`src/cli/commands/herdr.ts`、`src/cli/commands/herdr-skill.ts`、`assets/herdr/**`、`agents/fleet/**`、`.codex/agents/**`、`scripts/install-agent-fleet.sh`
@@ -60,7 +60,6 @@ flowchart LR
 - `calls` ← `component.global-runtime-reconciliation.primary` — Configure the required Herdr skill during global runtime setup
 - `calls` ← `component.mcp-sidecar.coding-profile` — Clean up task worktrees for coding workspaces
 - `calls` ← `component.mcp-sidecar.primary` — Start task agents and send task requests through Herdr
-- `calls` ← `capability.runtime-harness.pipeline-ledger` — Validate persisted task requests and results with the original task-session readers
 - `calls` ← `capability.runtime-harness.pm-dispatch` — Start the fixed OAR coding host and deliver requests through the existing task session
 - `reads` ← `component.workflow-state.coordination-plane` — Confirm that the task runtime is closed before a worktree prune
 

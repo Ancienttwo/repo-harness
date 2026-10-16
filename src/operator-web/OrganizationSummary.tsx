@@ -1,7 +1,7 @@
-import type { CollaborationViewState } from './RepositoryWorkspace';
+import type { RepositoryViewState } from './RepositoryWorkspace';
 import type { OperatorTranslate } from './i18n';
 
-export function OrganizationSummary({ state, repositoryId, t }: { readonly state: CollaborationViewState; readonly repositoryId: string; readonly t: OperatorTranslate }) {
+export function OrganizationSummary({ state, repositoryId, t }: { readonly state: RepositoryViewState; readonly repositoryId: string; readonly t: OperatorTranslate }) {
   const source = state.kind === 'ready' && state.snapshot.repository_id === repositoryId ? state.snapshot.organization : null;
   const snapshot = source?.status === 'observed' ? source.snapshot : null;
   return <section className="organization-summary" aria-labelledby="organization-heading">
@@ -35,7 +35,7 @@ export function OrganizationSummary({ state, repositoryId, t }: { readonly state
 
 
 export function DecisionSummary({ state, repositoryId, after, onPage, t }: {
-  readonly state: CollaborationViewState;
+  readonly state: RepositoryViewState;
   readonly repositoryId: string;
   readonly after: string | null;
   readonly onPage: (after: string | null) => void;

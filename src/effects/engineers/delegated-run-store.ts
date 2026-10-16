@@ -75,12 +75,6 @@ import {
 } from '../../core/engineers/delegation';
 import { canonicalMessageBytes, canonicalMessageDigest, messageSha256 } from '../../core/messages/mechanics';
 import { type ClaimActorReceiptV1 } from '../../core/engineers/principal-claim';
-// The dispatch effect owns the collaboration fence, so this module imports the
-// collaboration plane that already imports this one's readers. The cycle is
-// resolvable because every edge in both directions is a function declaration
-// called at run time; neither module reads the other at evaluation time, and
-// nothing here may start doing so.
-import { fenceCollaborationDispatch } from '../collaboration/context-delivery';
 import { resolveGitCommonDirectory } from '../git/common-directory';
 import { withExclusiveDirectoryLock } from '../locking/exclusive-directory-lock';
 import { runProcess, type ProcessRunResult } from '../process-runner';
@@ -199,21 +193,7 @@ export interface CollectDelegatedRunInput {
   readonly repo_root: string;
   readonly dispatch_id: string;
   readonly untrusted_claims: readonly string[];
-  /**
-   * Host-derived references the caller wants this run's result to point at, in
-   * addition to the three process-evidence blobs assembled below.
-   *
-   * It is required rather than optional so every call site states whether this
-   * run produced anything beyond its own process evidence. The collaboration
-   * collector passes the contribution commit it just published, which is how
-   * `WorkerResultV1` references that commit without a protocol bump: `ref` is
-   * already a free printable string. Every other caller passes an empty list,
-   * and that is a statement, not a default.
-   *
-   * The direction of the dependency is why this is an input at all. The
-   * collaboration plane reads the delivery plane and never the reverse, so this
-   * module cannot import a collaboration record to derive the reference itself.
-   */
+  /** Explicit host-derived references, in addition to the process-evidence blobs. */
   readonly contribution_refs: readonly WorkerEvidenceRefV1[];
 }
 
@@ -883,29 +863,11 @@ function noActionReconciliation(repoRoot: string, current: DelegatedRunObservati
   });
 }
 
-/**
- * One persisted launch claim permits one and only one subprocess action.
- *
- * The collaboration fence runs here rather than in front of here. C6/C7 made it
- * a pre-step at the delegation CLI, which held only as long as every caller
- * remembered it: a controller that acquires work and dispatches it — agent task
- * automation, an MCP surface, a scheduler — reaches this function directly, and
- * a forgotten pre-step is not a refusal but a silent bypass. Enforcing it inside
- * the only exported dispatch means there is no unfenced entry to forget.
- *
- * It is the first statement under the dispatch lock, which is where the
- * pre-step could not be. The pre-step read the run and its binding outside the
- * lock and then re-read them here, so a binding could be replaced between the
- * two reads; the fence now decides on the same locked view the host action is
- * taken from. Everything below is unchanged: `fenceCollaborationDispatch()`
- * returns null for a run carrying neither a binding nor an untrusted marker,
- * which is every delegation-only run.
- */
+/** One persisted launch claim permits one subprocess action. */
 export function dispatchDelegatedRun(input: DispatchDelegatedRunInput): DelegatedRunStatus {
   const repoRoot = resolve(input.repo_root);
   const id = dispatchId(input.dispatch_id);
   return withDispatchLock(repoRoot, id, () => {
-    fenceCollaborationDispatch({ repo_root: repoRoot, dispatch_id: id });
     const beforeState = intentForDispatch(repoRoot, id);
     if (launchClaimFor(repoRoot, id, beforeState.intent.intent_sha256) !== null) {
       const current = noActionReconciliation(repoRoot, beforeState.current, input.observed_at);
