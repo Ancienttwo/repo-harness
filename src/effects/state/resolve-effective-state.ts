@@ -8,7 +8,7 @@ import { evaluateVerificationContract } from '../evidence/verification-execution
 import type { EffectiveStateInputs } from '../../core/state/project-effective-state';
 import { existsSync, realpathSync, statSync } from 'fs';
 import { isAbsolute, posix, win32 } from 'path';
-import { buildReviewSubject, isImplementationSurfacePath } from '../review/diff-fingerprint';
+import { buildReviewSubject, isImplementationSurfacePath, type ReviewSubject } from '../review/diff-fingerprint';
 import { resolveWorkflowProfile, type WorkflowProfile } from '../../core/workflow/profile';
 import {
   CAPABILITY_SOURCE_MODES,
@@ -666,8 +666,9 @@ function collectStateSnapshotFacts(
  * ignored, atomically replaced read model and never feeds authority back in.
  */
 function resolveEffectiveStateUnlocked(
-  cwd = process.cwd(),
-  nowMs = Date.now(),
+  cwd: string,
+  nowMs: number,
+  reviewSubject: ReviewSubject,
   options: { risk?: EffectiveStateRiskInput; authorityOnly?: boolean },
 ): EffectiveState {
   const currentWorktree = safeRealpath(cwd);
@@ -712,8 +713,9 @@ function resolveEffectiveStateUnlocked(
     contractText,
   ));
 
-  const targetBranch = policyReviewBase(policy);
-  const reviewSubject = buildReviewSubject(cwd, { targetRef: targetBranch });
+  // The subject was observed against the review base of an earlier policy
+  // read. A changed review base is an authority change during resolution.
+  if (reviewSubject.target_ref !== policyReviewBase(policy)) throw new StateResolutionUnstableError();
   const explicitTargetPaths = options.risk?.targetPaths ?? [];
   const canonicalEditTargetPaths = options.risk?.operationKind === 'edit'
     ? explicitTargetPaths.map((targetPath) => canonicalRepoRelativePath(cwd, targetPath))
@@ -1013,13 +1015,25 @@ function resolveEffectiveStateUnlocked(
   });
 }
 
+/**
+ * Observe the Git review subject once per resolution. The subject is an
+ * observation, not an authority: the stability and confirm passes compare
+ * authority hashes only, so they reuse this subject and do not rebuild it.
+ */
+function observeReviewSubject(cwd: string): ReviewSubject {
+  return buildReviewSubject(cwd, { targetRef: policyReviewBase(readWorkflowPolicy(cwd)) });
+}
+
 /** Evidence is excluded from authority comparisons. Keep partial states private. */
 function resolveAuthoritySourceHashes(
   cwd: string,
   nowMs: number,
+  reviewSubject: ReviewSubject,
   risk?: EffectiveStateRiskInput,
 ): Readonly<Record<string, string>> {
-  return authoritySourceHashes(resolveEffectiveStateUnlocked(cwd, nowMs, { risk, authorityOnly: true }).source_hashes);
+  return authoritySourceHashes(
+    resolveEffectiveStateUnlocked(cwd, nowMs, reviewSubject, { risk, authorityOnly: true }).source_hashes,
+  );
 }
 
 /**
@@ -1047,10 +1061,11 @@ export class StateResolutionUnstableError extends Error {
 function resolveAndCommitEffectiveState(
   cwd: string,
   nowMs: number,
+  reviewSubject: ReviewSubject,
   risk: EffectiveStateRiskInput | undefined,
   publicationEffects: EffectiveStatePublicationEffects | undefined,
 ): EffectiveState {
-  const confirmed = resolveStableEffectiveState(cwd, nowMs, risk);
+  const confirmed = resolveStableEffectiveState(cwd, nowMs, reviewSubject, risk);
   let finalized: EffectiveState | null = null;
   commitStateVersionAfter(cwd, confirmed.state_revision, (version) => {
     const candidate = { ...confirmed, state_version: version };
@@ -1058,7 +1073,7 @@ function resolveAndCommitEffectiveState(
     finalized = candidate;
     return publication;
   }, publicationEffects?.version, () => {
-    return JSON.stringify(resolveAuthoritySourceHashes(cwd, nowMs, risk))
+    return JSON.stringify(resolveAuthoritySourceHashes(cwd, nowMs, reviewSubject, risk))
       === JSON.stringify(authoritySourceHashes(confirmed.source_hashes));
   });
   if (finalized === null) throw new Error('effective-state publication did not produce a final state');
@@ -1072,8 +1087,9 @@ export function resolveEffectiveState(
   publicationEffects?: EffectiveStatePublicationEffects,
 ): EffectiveState {
   return withStateLock(cwd, () => {
+    const reviewSubject = observeReviewSubject(cwd);
     try {
-      return resolveAndCommitEffectiveState(cwd, nowMs, risk, publicationEffects);
+      return resolveAndCommitEffectiveState(cwd, nowMs, reviewSubject, risk, publicationEffects);
     } catch (error) {
       if (!(error instanceof StateVersionConfirmMismatchError)) throw error;
     }
@@ -1084,7 +1100,7 @@ export function resolveEffectiveState(
     // changing across the retry too, so this reuses the existing
     // stability-exhausted error rather than inventing new vocabulary.
     try {
-      return resolveAndCommitEffectiveState(cwd, nowMs, risk, publicationEffects);
+      return resolveAndCommitEffectiveState(cwd, nowMs, reviewSubject, risk, publicationEffects);
     } catch (error) {
       if (error instanceof StateVersionConfirmMismatchError) {
         throw new StateResolutionUnstableError();
@@ -1101,7 +1117,7 @@ export function resolveEffectiveStateReadOnly(
   observation?: ReadonlyObservationIO,
 ): EffectiveState {
   const collect = () => {
-    const confirmed = resolveStableEffectiveState(cwd, nowMs, risk);
+    const confirmed = resolveStableEffectiveState(cwd, nowMs, observeReviewSubject(cwd), risk);
     return { ...confirmed, state_version: currentStateVersion(cwd) };
   };
   return observation ? withReadonlyObservation(observation, collect) : collect();
@@ -1110,11 +1126,12 @@ export function resolveEffectiveStateReadOnly(
 function resolveStableEffectiveState(
   cwd: string,
   nowMs: number,
+  reviewSubject: ReviewSubject,
   risk?: EffectiveStateRiskInput,
 ): EffectiveState {
-  let authority = resolveAuthoritySourceHashes(cwd, nowMs, risk);
+  let authority = resolveAuthoritySourceHashes(cwd, nowMs, reviewSubject, risk);
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    const confirmed = resolveEffectiveStateUnlocked(cwd, nowMs, { risk });
+    const confirmed = resolveEffectiveStateUnlocked(cwd, nowMs, reviewSubject, { risk });
     if (JSON.stringify(authority)
       === JSON.stringify(authoritySourceHashes(confirmed.source_hashes))) {
       return confirmed;
