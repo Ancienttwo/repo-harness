@@ -55,7 +55,7 @@ interface TerminalStartIntent { protocol: 2; runtime: 'terminal'; repository: Ta
 interface CreatedPane { pane_id: string; terminal_id: string; intent_id: string }
 export interface TaskRequest {
   protocol: 2;
-  result_contract: { required_fields: string[]; atomic_write: 'temp_rename'; submission: { command: string; repo: string; task: string; role: string; round: number } };
+  result_contract: { required_fields: string[]; atomic_write: 'temp_rename' };
   task: string;
   role: string;
   round: number;
@@ -690,8 +690,7 @@ export async function sendTaskRequest(repoRoot: string, task: string, role: stri
     const request: TaskRequest = { protocol: 2, task, role, round, request_id: randomUUID(),
       context_ref: join(outbox, `context-${round}.txt`), source_ref: contextPath,
       context_sha256: digest, result_ref: join(outbox, `result-${round}.json`),
-      result_contract: { required_fields: ['request_id', 'context_sha256', 'value'], atomic_write: 'temp_rename',
-        submission: { command: 'repo-harness task-agent result', repo: binding.execution_root, task, role, round } } };
+      result_contract: { required_fields: ['request_id', 'context_sha256', 'value'], atomic_write: 'temp_rename' } };
     const requestPath = join(dir, `request-${round}.json`);
     guard?.();
     writeSessionArtifact(requestPath, request);

@@ -94,8 +94,7 @@ function requestFixture(f: ReturnType<typeof fixture>, fixtureProof?: { pid: num
   writeSessionArtifact(join(dir, 'binding.json'), binding);
   const request: TaskRequest = { protocol: 2, task: taskId, role: 'deep-worker', round: 1, request_id: 'request-fixture',
     context_ref: join(outbox, 'context-1.txt'), source_ref: join(f.execution, plan), context_sha256: 'sha256:' + 'b'.repeat(64), result_ref: join(outbox, 'result-1.json'),
-    result_contract: { required_fields: ['request_id', 'context_sha256', 'value'], atomic_write: 'temp_rename',
-      submission: { command: 'repo-harness task-agent result', repo: f.execution, task: taskId, role: 'deep-worker', round: 1 } } };
+    result_contract: { required_fields: ['request_id', 'context_sha256', 'value'], atomic_write: 'temp_rename' } };
   writeSessionArtifact(join(dir, 'request-1.json'), request);
   return { dir, request, binding };
 }
