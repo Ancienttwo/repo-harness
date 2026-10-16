@@ -182,8 +182,10 @@ All notable changes to this skill are documented here.
 
 - SessionStart no longer injects the resume file or the active sprint.
   `[HarnessState]` points to both with `references.resume` and
-  `references.sprint`. One state resolution builds the Git review subject once
-  and runs 7 `git` processes instead of 19. (#770)
+  `references.sprint`. The commit confirm of a state resolution reuses the Git
+  review subject of the confirmed pass, and the review subject skips Git diffs
+  that are empty by identity. One idle resolution runs 7 `git` processes
+  instead of 19. (#770)
 - Every hook handler returns a typed result. One host table renders it for
   Claude, Codex and Pi. Prompt advice now reaches Codex as
   `additionalContext`. (#691)
