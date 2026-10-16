@@ -163,7 +163,7 @@ sequenceDiagram
 5. **CLI 和 HTTP 输出一致。** `module review-prompt` 与 architecture 路由使用同一个 `ArchitectureModelReader`。`tests/cli/operator-serve.test.ts:1270` 比较 GET、HEAD 与 CLI 的 digest。来源：PR #590、plan-20261005-0405 不变量 I7。
 6. **UI 不触发动作。** 每个动作只显示链接或可复制的 Bot 命令。来源：PR #609、plan-20261005-0405 不变量 I9。命令通道保持 Bot → CLI → herdr。
 7. **不泄露 secret 和本机路径。** 本机文本经过 `publicAgentConfigText`（`src/core/operator/agent-config.ts:36`）或 `publicDevActivityText` 过滤。architecture 读取在返回前检查 `containsSecret`（`src/effects/operator/architecture.ts:38`）。
-8. **Agent 身份只有两个来源。** 一个是 ledger 的 `owner_bot`（`src/core/dev-activity/projection.ts:220`），另一个是已验证的 runtime binding。分支前缀和 PR 作者不能作为身份来源。来源：PR #609。
+8. **开发活动不推断 Agent 任务身份。** 它只投影 Git、GitHub、Decision 事实和 runtime 源健康。没有 task binding 时，不输出任务级 Agent 状态。
 9. **fixture 不进生产包。** `?fixture=` 只在 `import.meta.env.DEV` 下加载（`src/operator-web/main.tsx:15`）。PR #609 用 grep 检查了 `dist/operator-ui`，fixture 字符串命中数为 0。
 
 ### 3.2 关键权衡

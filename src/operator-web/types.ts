@@ -61,7 +61,7 @@ export const OPERATOR_API_ERROR_CODES = [
   'operator_api_unavailable',
   'operator_payload_invalid',
   'operator_repository_payload_invalid',
-  'repository_repository_mismatch',
+  'repository_mismatch',
   'task_message_response_invalid',
   'task_message_unavailable',
   // GET /api/v1/fleet/snapshot

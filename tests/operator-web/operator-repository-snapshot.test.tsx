@@ -201,7 +201,7 @@ describe('formal Human Decision observation UI', () => {
       await expect(fetchOperatorRepositorySnapshot('repo-harness', undefined, cursor)).resolves.toEqual(payload);
       expect(urls).toEqual(['/api/v1/repositories/repo-harness/snapshot?decision_after=' + cursor]);
       payload = decisionEnvelope('repo-harness');
-      await expect(fetchOperatorRepositorySnapshot('repo-harness', undefined, cursor)).rejects.toMatchObject({ code: 'repository_repository_mismatch' });
+      await expect(fetchOperatorRepositorySnapshot('repo-harness', undefined, cursor)).rejects.toMatchObject({ code: 'repository_mismatch' });
     } finally { globalThis.fetch = originalFetch; }
   });
 });
@@ -221,7 +221,7 @@ describe('repository snapshot transport', () => {
     try {
       expect(await fetchOperatorRepositorySnapshot(repositorySnapshot.repository_id, controller.signal)).toEqual(payload);
       payload = repositoryObservationFixture('other-repository');
-      await expect(fetchOperatorRepositorySnapshot(repositorySnapshot.repository_id, controller.signal)).rejects.toMatchObject({ code: 'repository_repository_mismatch' });
+      await expect(fetchOperatorRepositorySnapshot(repositorySnapshot.repository_id, controller.signal)).rejects.toMatchObject({ code: 'repository_mismatch' });
     } finally { globalThis.fetch = original; }
   });
 

@@ -126,7 +126,7 @@ describe('operator structural write boundary', () => {
         thrown = error;
       }
       expect(thrown).toBeInstanceOf(OperatorRepositoryError);
-      expect((thrown as OperatorRepositoryError).code).toBe('repository_repository_mismatch');
+      expect((thrown as OperatorRepositoryError).code).toBe('repository_mismatch');
     }
   });
 });

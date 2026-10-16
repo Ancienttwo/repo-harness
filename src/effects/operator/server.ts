@@ -371,7 +371,7 @@ interface PublicFailure {
  * message names a repository id and its cause carries a store path and a
  * provider diagnostic; the transport keeps the typed code and drops both.
  */
-const COLLABORATION_FAILURES: Readonly<Record<OperatorRepositoryErrorCode, PublicFailure>> = Object.freeze({
+const REPOSITORY_FAILURES: Readonly<Record<OperatorRepositoryErrorCode, PublicFailure>> = Object.freeze({
   registry_unavailable: {
     status: 503,
     message: 'The fleet registry cannot be read.',
@@ -387,7 +387,7 @@ const COLLABORATION_FAILURES: Readonly<Record<OperatorRepositoryErrorCode, Publi
     message: 'The repository store cannot be read.',
     next_action: OPERATOR_REPOSITORY_ACTION,
   },
-  repository_repository_mismatch: {
+  repository_mismatch: {
     status: 500,
     message: 'The repository snapshot does not belong to the requested repository.',
     next_action: OPERATOR_REPOSITORY_ACTION,
@@ -419,7 +419,7 @@ function publicRepositoryError(error: unknown): {
     };
   }
   if (error instanceof OperatorRepositoryError) {
-    const failure = COLLABORATION_FAILURES[error.code];
+    const failure = REPOSITORY_FAILURES[error.code];
     if (failure) {
       return { status: failure.status, body: errorBody(error.code, failure.message, failure.next_action) };
     }
@@ -486,7 +486,7 @@ function repositoryWorkerResponse(value: unknown): OperatorRepositoryWorkerRespo
     && (value.code === 'registry_unavailable'
       || value.code === 'repository_not_found'
       || value.code === 'repository_snapshot_unavailable'
-      || value.code === 'repository_repository_mismatch')
+      || value.code === 'repository_mismatch')
   ) {
     return { ok: false, code: value.code };
   }

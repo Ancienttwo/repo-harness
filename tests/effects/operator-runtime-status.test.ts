@@ -476,6 +476,20 @@ describe('native runtime observation cache', () => {
     ]) expect(() => decodeRuntimeConfig(invalid)).toThrow();
   });
 
+  test('retired Herdr binding keys give an explicit config repair error', () => {
+    const config = { protocol: 'repo-harness.runtime-config.v2', kind: 'herdr', source_host: 'host', herdr_session: 'session', socket_path: '/tmp/explicit-herdr.sock', deadline_ms: 1000 };
+    for (const fields of [
+      { bindings_path: null },
+      { pipeline_snapshot: null },
+      { bindings_path: null, pipeline_snapshot: null },
+      { bindings_path: '/tmp/bindings.json', pipeline_snapshot: '/tmp/snapshot.json' },
+    ]) {
+      expect(() => decodeRuntimeConfig({ ...config, ...fields })).toThrow(
+        'runtime_config_retired_fields: remove bindings_path and pipeline_snapshot; task bindings are no longer supported',
+      );
+    }
+  });
+
   test('each source uses its own heartbeat; successful reads do not advance event or heartbeat time', async () => {
     const root = mkdtempSync(join(tmpdir(), 'rh-native-age-')), first = nativeFile(root), second = nativeFile(root, 'source-2', 'pi');
     let clock = Date.parse(at) + 600_000;

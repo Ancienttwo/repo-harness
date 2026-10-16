@@ -26,6 +26,9 @@ export function decodeRuntimeConfig(value: unknown): RuntimeConfig {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('runtime_config_invalid');
   const v = value as RuntimeConfig;
   if (v.protocol !== 'repo-harness.runtime-config.v2') throw new Error('runtime_config_invalid');
+  if (v.kind === 'herdr' && ('bindings_path' in v || 'pipeline_snapshot' in v)) {
+    throw new Error('runtime_config_retired_fields: remove bindings_path and pipeline_snapshot; task bindings are no longer supported');
+  }
   if (v.kind === 'native') {
     if (Object.keys(v).sort().join() !== 'kind,protocol,sources' || !Array.isArray(v.sources) || !v.sources.length || v.sources.length > NATIVE_RUNTIME_SOURCE_LIMIT) throw new Error('runtime_config_invalid');
     const ids = new Set<string>(), paths = new Set<string>();

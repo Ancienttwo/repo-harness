@@ -751,7 +751,7 @@ describe('operator serve command and HTTP boundary', () => {
       collect_fleet_board: async () => snapshot(),
       read_repository_snapshot: async () => {
         throw new OperatorRepositoryError(
-          'repository_repository_mismatch',
+          'repository_mismatch',
           'repository snapshot for /private/tmp/other-repo answered repo-other',
         );
       },
@@ -760,7 +760,7 @@ describe('operator serve command and HTTP boundary', () => {
       const response = await fetch(`${server.url}/api/v1/repositories/repo-write/snapshot`);
       expect(response.status).toBe(500);
       const body = await response.json() as { error: { code: string; message: string; next_action: string } };
-      expect(body.error.code).toBe('repository_repository_mismatch');
+      expect(body.error.code).toBe('repository_mismatch');
       expect(body.error.message).toBe('The repository snapshot does not belong to the requested repository.');
       expect(body.error.next_action.length).toBeGreaterThan(0);
       expect(JSON.stringify(body)).not.toContain('/private/tmp/other-repo');
@@ -1149,6 +1149,7 @@ describe('repository source collection', () => {
       const broken = readOperatorRepositorySnapshot({ env: registry.env, repository_id: registry.ids[0]! });
       expect(broken.decisions.status).toBe('unavailable');
       expect(broken.organization.status).toBe('observed');
+      expect(JSON.stringify(broken)).not.toContain(repoRoot);
       expect(tree(repoRoot)).toEqual(brokenBefore);
     } finally {
       rmSync(repoRoot, { recursive: true, force: true });
@@ -1189,7 +1190,7 @@ test('Decision cursors are bounded, bind responses and partition single-flight w
     resolvers[2]!(unavailableRepository('repo-a'));
     const refused = await mismatch;
     expect(refused.status).toBe(500);
-    expect(await refused.json()).toMatchObject({ error: { code: 'repository_repository_mismatch' } });
+    expect(await refused.json()).toMatchObject({ error: { code: 'repository_mismatch' } });
   } finally { await server.close(); rmSync(root, { recursive: true, force: true }); }
 });
 

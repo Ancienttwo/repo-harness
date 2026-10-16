@@ -31,7 +31,7 @@ export function clientApiError(code: OperatorApiErrorCode): OperatorApiErrorV1 {
 
 const DEFAULT_API_ERROR: OperatorApiErrorV1 = clientApiError('operator_api_unavailable');
 export const REPOSITORY_UNAVAILABLE_ERROR: OperatorApiErrorV1 = clientApiError('repository_snapshot_unavailable');
-const REPOSITORY_REPOSITORY_MISMATCH_ERROR: OperatorApiErrorV1 = clientApiError('repository_repository_mismatch');
+const REPOSITORY_MISMATCH_ERROR: OperatorApiErrorV1 = clientApiError('repository_mismatch');
 
 export interface LocalizedApiError {
   readonly message: string;
@@ -97,7 +97,7 @@ export function assertSnapshotRepository(
   repositoryId: string,
   decisionAfter: string | null = null,
 ): OperatorRepositorySnapshotV1 {
-  if (snapshot.repository_id !== repositoryId || snapshot.decision_after !== decisionAfter) throw REPOSITORY_REPOSITORY_MISMATCH_ERROR;
+  if (snapshot.repository_id !== repositoryId || snapshot.decision_after !== decisionAfter) throw REPOSITORY_MISMATCH_ERROR;
   return snapshot;
 }
 

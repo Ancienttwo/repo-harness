@@ -193,21 +193,7 @@ export interface CollectDelegatedRunInput {
   readonly repo_root: string;
   readonly dispatch_id: string;
   readonly untrusted_claims: readonly string[];
-  /**
-   * Host-derived references the caller wants this run's result to point at, in
-   * addition to the three process-evidence blobs assembled below.
-   *
-   * It is required rather than optional so every call site states whether this
-   * run produced anything beyond its own process evidence. The collaboration
-   * collector passes the contribution commit it just published, which is how
-   * `WorkerResultV1` references that commit without a protocol bump: `ref` is
-   * already a free printable string. Every other caller passes an empty list,
-   * and that is a statement, not a default.
-   *
-   * The direction of the dependency is why this is an input at all. The
-   * collaboration plane reads the delivery plane and never the reverse, so this
-   * module cannot import a collaboration record to derive the reference itself.
-   */
+  /** Explicit host-derived references, in addition to the process-evidence blobs. */
   readonly contribution_refs: readonly WorkerEvidenceRefV1[];
 }
 

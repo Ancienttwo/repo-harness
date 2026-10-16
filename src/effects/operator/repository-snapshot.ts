@@ -30,7 +30,7 @@ export type OperatorRepositoryErrorCode =
   | 'registry_unavailable'
   | 'repository_not_found'
   | 'repository_snapshot_unavailable'
-  | 'repository_repository_mismatch';
+  | 'repository_mismatch';
 
 export class OperatorRepositoryError extends Error {
   constructor(
@@ -69,13 +69,13 @@ export function assertOperatorRepositorySnapshotIdentity(
     || snapshot.protocol !== OPERATOR_REPOSITORY_PROTOCOL
     || snapshot.kind !== OPERATOR_REPOSITORY_SNAPSHOT_KIND) {
     throw new OperatorRepositoryError(
-      'repository_repository_mismatch',
+      'repository_mismatch',
       `repository snapshot for repository ${repositoryId} is not an operator repository snapshot`,
     );
   }
   if (snapshot.repository_id !== repositoryId || snapshot.decision_after !== decisionAfter) {
     throw new OperatorRepositoryError(
-      'repository_repository_mismatch',
+      'repository_mismatch',
       `repository snapshot answered repository ${snapshot.repository_id} for requested repository ${repositoryId}`,
     );
   }
@@ -92,7 +92,7 @@ export function assertOperatorRepositorySnapshotIdentity(
     if (snapshot.decisions.status === 'observed') decodeOperatorDecisionInventory(snapshot.decisions.snapshot, repositoryId, decisionAfter);
     if (snapshot.organization.status === 'observed') decodeOperatorOrganizationSnapshot(snapshot.organization.snapshot, repositoryId);
   } catch (error) {
-    throw new OperatorRepositoryError('repository_repository_mismatch', 'invalid scoped repository source', error);
+    throw new OperatorRepositoryError('repository_mismatch', 'invalid scoped repository source', error);
   }
 
 }
@@ -115,12 +115,12 @@ export function readOperatorRepositorySnapshot(
   input: ReadOperatorRepositorySnapshotInput,
 ): OperatorRepositorySnapshotV1 {
   const decisionAfter = input.decision_after ?? null;
-  if (!isDecisionCursor(decisionAfter)) throw new OperatorRepositoryError('repository_repository_mismatch', 'invalid Decision query');
+  if (!isDecisionCursor(decisionAfter)) throw new OperatorRepositoryError('repository_mismatch', 'invalid Decision query');
   const repoRoot = registeredRepositoryRoot(input);
   const observe = <T>(reader: () => T): import('../../core/operator/repository-snapshot').RepositorySourceObservation<T> => {
     try { return { status: 'observed', snapshot: reader(), observed_at: new Date().toISOString() }; }
     catch (error) {
-      if (error instanceof OperatorRepositoryError && error.code === 'repository_repository_mismatch') throw error;
+      if (error instanceof OperatorRepositoryError && error.code === 'repository_mismatch') throw error;
       return { status: 'unavailable', code: 'source_unavailable', observed_at: new Date().toISOString() };
     }
   };
@@ -128,7 +128,7 @@ export function readOperatorRepositorySnapshot(
     const board = collectEngineeringBoard({ repo_root: repoRoot, env: input.env });
     const overlay = validateEngineeringOverlaySnapshot(board.overlay);
     const attention = validateOrganizationAttentionSnapshot(board.organization_attention);
-    if (overlay.repository_id !== input.repository_id) throw new OperatorRepositoryError('repository_repository_mismatch', 'organization repository differs from request');
+    if (overlay.repository_id !== input.repository_id) throw new OperatorRepositoryError('repository_mismatch', 'organization repository differs from request');
     return projectOperatorOrganizationSnapshot(overlay, attention);
   });
   const decisions = observe(() => projectOperatorDecisionInventory(input.repository_id, readOpenDecisionInventory(repoRoot, { after: decisionAfter })));
