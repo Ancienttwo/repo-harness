@@ -41,15 +41,15 @@ function writeInstalledProfileFixture(profile: InstallProfile): void {
 }
 
 describe('status command (Phase 1C)', () => {
-  test('reports CLI version + 8 routes with correct per-event breakdown', () => {
+  test('reports CLI version + 6 routes with correct per-event breakdown', () => {
     withTempHome(() => {
       const r = runStatus();
       expect(r.cli.version).toBeTruthy();
-      expect(r.routes.total).toBe(8);
+      expect(r.routes.total).toBe(6);
       expect(r.routes.byEvent.PreToolUse).toBe(2);
-      expect(r.routes.byEvent.PostToolUse).toBe(1);
+      expect(r.routes.byEvent.PostToolUse).toBeUndefined();
       expect(r.routes.byEvent.SessionStart).toBe(1);
-      expect(r.routes.byEvent.UserPromptSubmit).toBe(2);
+      expect(r.routes.byEvent.UserPromptSubmit).toBe(1);
       expect(r.routes.byEvent.SubagentStart).toBe(1);
       expect(r.routes.byEvent.SubagentStop).toBeUndefined();
       expect(r.routes.byEvent.Stop).toBe(1);
@@ -74,7 +74,7 @@ describe('status command (Phase 1C)', () => {
       const codex = r.targets.find((t) => t.id === 'codex')!;
       expect(codex.alreadyConfigured).toBe(true);
       expect(codex.managedEntryCount).toBe(codex.expectedEntryCount);
-      expect(codex.managedEntryCount).toBe(6);
+      expect(codex.managedEntryCount).toBe(5);
       const claude = r.targets.find((t) => t.id === 'claude')!;
       expect(claude.managedEntryCount).toBe(claude.expectedEntryCount);
       expect(claude.managedEntryCount).toBe(5);
@@ -187,7 +187,7 @@ describe('status command (Phase 1C)', () => {
   test('uses the recorded install profile for expected managed entry count', () => {
     const cases: ReadonlyArray<readonly [InstallProfile, number]> = [
       ['minimal', 4],
-      ['full', 6],
+      ['full', 5],
     ];
 
     for (const [profile, expectedCount] of cases) {
@@ -319,7 +319,7 @@ describe('status command (Phase 1C)', () => {
       expect(() => JSON.parse(json)).not.toThrow();
       const parsed = JSON.parse(json);
       expect(parsed.cli).toBeDefined();
-      expect(parsed.routes.total).toBe(8);
+      expect(parsed.routes.total).toBe(6);
     });
   });
 
