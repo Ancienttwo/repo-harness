@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import {
-  constants, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync,
-  rmSync, statSync, symlinkSync, unlinkSync, writeFileSync,
+  chmodSync, constants, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync,
+  renameSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync,
 } from 'fs';
 import { tmpdir } from 'os';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'path';
@@ -630,17 +630,9 @@ export function prepareBenchmarkRuntimeArtifact(sourceRoot: string, runRoot: str
       filter: (candidate) => basename(candidate) !== 'node_modules',
     });
   }
-  // Bun resolves a tarball's declared dependencies before it can use the
-  // archive's node_modules. The benchmark artifact is intentionally self
-  // contained, so remove install-time dependency resolution metadata from the
-  // staged copy while leaving sourceRoot's package.json untouched.
-  const stagedManifest = JSON.parse(readFileSync(sourcePackageManifestPath, 'utf-8')) as Record<string, unknown>;
-  delete stagedManifest.dependencies;
-  delete stagedManifest.optionalDependencies;
-  delete stagedManifest.peerDependencies;
-  delete stagedManifest.devDependencies;
-  delete stagedManifest.bundledDependencies;
-  writeFileSync(sourcePackageManifestPath, `${JSON.stringify(stagedManifest, null, 2)}\n`);
+  // The staged package.json stays byte-identical to the packed one. The
+  // artifact is self-contained (the dependency closure sits in its node_modules)
+  // and installBenchmarkRuntimeArtifact installs it without a package manager.
   const artifactName = basename(sourceArtifactPath);
   const artifactPath = resolve(packageRoot, artifactName);
   // This local runtime bundle favors preparation latency over distribution size.
@@ -661,6 +653,54 @@ export function assertBenchmarkRuntimeArtifactUnchanged(artifact: BenchmarkRunti
   if (!existsSync(artifact.path) || hashFile(artifact.path) !== artifact.sha256) {
     throw new Error(`benchmark runtime artifact changed: ${artifact.path}`);
   }
+}
+
+export function installBenchmarkRuntimeArtifact(artifact: BenchmarkRuntimeArtifact, hostRoot: string): string {
+  const bunInstall = isolatedHarnessEnvironment(hostRoot).BUN_INSTALL ?? join(hostRoot, '.bun');
+  assertBenchmarkRuntimeArtifactUnchanged(artifact);
+  const packageDir = join(bunInstall, 'install/global/node_modules/repo-harness');
+  if (existsSync(packageDir)) throw new Error(`installed benchmark package already exists: ${packageDir}`);
+  const unpackRoot = join(bunInstall, 'install/global/node_modules');
+  mkdirSync(unpackRoot, { recursive: true });
+  const stage = mkdtempSync(join(unpackRoot, '.unpack-'));
+  try {
+    run('tar', ['-xzf', artifact.path, '-C', stage], hostRoot);
+    renameSync(join(stage, 'package'), packageDir);
+  } finally {
+    rmSync(stage, { recursive: true, force: true });
+  }
+  const manifest = JSON.parse(readFileSync(join(packageDir, 'package.json'), 'utf-8')) as { bin?: unknown };
+  const bin = typeof manifest.bin === 'object' && manifest.bin !== null
+    ? manifest.bin as Record<string, unknown> : {};
+  const binDir = join(bunInstall, 'bin');
+  mkdirSync(binDir, { recursive: true });
+  for (const [name, target] of Object.entries(bin)) {
+    if (typeof target !== 'string') throw new Error(`benchmark package bin entry is not a path: ${name}`);
+    const targetPath = resolve(packageDir, target);
+    const targetRelative = relative(packageDir, targetPath);
+    if (targetRelative === '' || isAbsolute(targetRelative)
+      || targetRelative === '..' || targetRelative.startsWith(`..${sep}`)) {
+      throw new Error(`benchmark package bin escaped package: ${name} -> ${target}`);
+    }
+    if (!existsSync(targetPath) || !statSync(targetPath).isFile()) {
+      throw new Error(`benchmark package bin target missing: ${targetPath}`);
+    }
+    chmodSync(targetPath, 0o755);
+    const link = join(binDir, name);
+    try {
+      lstatSync(link);
+      throw new Error(`benchmark bin link already exists: ${link}`);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
+    symlinkSync(targetPath, link);
+  }
+  const installedCli = join(binDir, 'repo-harness');
+  assertPathOutsideRoot(installedCli, ROOT, 'installed benchmark CLI');
+  if (!existsSync(installedCli)) throw new Error(`installed benchmark CLI missing: ${installedCli}`);
+  assertPathOutsideRoot(realpathSync(installedCli), ROOT, 'installed benchmark CLI target');
+  assertBenchmarkRuntimeArtifactUnchanged(artifact);
+  return installedCli;
 }
 
 function workspaceEvidenceHash(workspace: string, baselineRevision?: string): string {
@@ -824,14 +864,7 @@ function projectHarnessBase(
   if (profile === 'no-harness') return;
   if (!runtimeArtifact) throw new Error(`benchmark runtime artifact missing for profile: ${profile}`);
   const env = isolatedHarnessEnvironment(hostRoot);
-  assertBenchmarkRuntimeArtifactUnchanged(runtimeArtifact);
-  run(process.execPath, ['add', '-g', runtimeArtifact.path], workspace, env);
-  assertBenchmarkRuntimeArtifactUnchanged(runtimeArtifact);
-  const installedCli = join(env.BUN_INSTALL ?? join(hostRoot, '.bun'), 'bin', 'repo-harness');
-  assertPathOutsideRoot(installedCli, ROOT, 'installed benchmark CLI');
-  if (!existsSync(installedCli)) throw new Error(`installed benchmark CLI missing: ${installedCli}`);
-  assertPathOutsideRoot(realpathSync(installedCli), ROOT, 'installed benchmark CLI target');
-  assertBenchmarkRuntimeArtifactUnchanged(runtimeArtifact);
+  const installedCli = installBenchmarkRuntimeArtifact(runtimeArtifact, hostRoot);
   run(installedCli, ['init', '--repo', workspace, '--no-codegraph', '--mode', 'standard'], workspace, env);
   const installProfile = profile === 'adaptive-lite' ? 'minimal' : 'full';
   assertBenchmarkRuntimeArtifactUnchanged(runtimeArtifact);

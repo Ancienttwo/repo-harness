@@ -2,10 +2,23 @@
 
 All notable changes to this skill are documented here.
 
-## [Unreleased]
+## [0.23.0] - 2026-10-17
+
+This release has breaking changes. After the update, run `repo-harness update`,
+reinstall the hook adapters, and review the Codex hooks with `/hooks`.
 
 ### Breaking
 
+- The `repo-harness task-agent` CLI, the native Herdr TUI start path and the
+  `run_agent_goal` MCP tool are removed. The `--enable-dev-runner`,
+  `--dev-runner-agents` and `--dev-runner-timeout-ms` flags and the
+  `devMode`, `agentRunner`, `codexRunner`, `allowedAgents` and
+  `runnerTimeoutMs` policy fields are gone. Cross-model peers run in Herdr
+  panes through the herdr skill. The `orchestrator` MCP profile denies all
+  tools. (#771, #792)
+- `repo-harness state owed` is removed. Use `repo-harness architecture-debt
+  --json` for architecture debt. The SessionStart owed section names
+  `repo-harness state resolve --json` as its source. (#735, #784)
 - Remove the collaboration commands, Engineer collaboration tools and pipeline
   observer. `/api/v1/pipelines` now returns 404. Herdr v2 runtime config files
   must remove `bindings_path` and `pipeline_snapshot`, even when both are null.
@@ -180,6 +193,15 @@ All notable changes to this skill are documented here.
 
 ### Changed
 
+- `bun run check:release` runs only the test files that hold
+  `REPO_HARNESS_TEST_EXPENSIVE` cases and the tarball smoke. It no longer runs
+  typecheck, governance or the full suite, so a release needs green CI on the
+  release commit. The tarball smoke uses a temporary `HOME`. A failed CI job
+  reuses one open repair issue per job name. (#767)
+- The generated functional-block `AGENTS.md` and `CLAUDE.md` record only
+  ownership, entrypoints and local verification commands. The Herdr Dispatch
+  rule moved out of `external-tooling.md`. Boilerplate agent-context files
+  and unused reference documents are deleted. (#768)
 - SessionStart no longer injects the resume file or the active sprint.
   `[HarnessState]` points to both with `references.resume` and
   `references.sprint`. The commit confirm of a state resolution reuses the Git
@@ -223,6 +245,10 @@ All notable changes to this skill are documented here.
 
 ### Fixed
 
+- `sprint-backlog.sh`, `contract-worktree.sh` and `ship-worktrees.sh` run the
+  source CLI only when the root `package.json` names `repo-harness`. A
+  downstream repository with its own `src/cli/index.ts` now uses the global
+  CLI. (#767)
 - `minimal-change-hooks.md` no longer describes hooks that no code runs. It
   says that no hook reads the `minimal_change` policy and that only `off` and
   `advice` are valid modes. (#692, #696)
@@ -238,6 +264,12 @@ All notable changes to this skill are documented here.
 
 ### Added
 
+- `repo-harness architecture-debt --json [--base <ref>]` reports the
+  architecture debt that archctx 0.8.0 `complete` finds. With `--base`, it also
+  measures the base in a temporary checkout and reports the items that HEAD
+  adds and the ids that it resolves. The PR architecture lane uses it and
+  stays advisory. The projection manifest declares the renderer floor
+  `archcontext.docs-renderer/v6`. (#735, #784)
 - `repo-harness retention` moves closed artifacts older than 30 days to a
   gitignored local archive root. It is a dry run unless `--apply` is given,
   and it never deletes. Closed plans stay committed for the window, which
