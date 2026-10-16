@@ -54,14 +54,14 @@ It prints coverage gaps in the log. Then it runs the check and warns when the
 documents are stale. It always exits 0, and its job is not part of
 `Required / CI`.
 
-Only the `all` and `release` lanes export `REPO_HARNESS_TEST_EXPENSIVE=1`,
-which is what unskips the real `npm pack`/install cases in
-`tests/harness-benchmark-matrix.test.ts`. Generic review domain fixtures are
-zero-model, with existing task-agent lifecycle coverage. A green hosted `functional` run has
-deliberately not exercised them. Before a release, run `bun run check:release`.
-It runs the `release` lane: these expensive cases and the package/install smoke,
-not a second full suite. Read the `[gate] ... unset` lines in any other
-run as "not covered here" rather than "passed".
+Only the `all`, `functional` (daily CI) and `release` lanes export
+`REPO_HARNESS_TEST_EXPENSIVE=1`, which is what unskips the real `npm pack`/install
+cases in `tests/harness-benchmark-matrix.test.ts`. Generic review domain fixtures are
+zero-model, with existing task-agent lifecycle coverage. A PR run (`affected`)
+does not exercise the expensive cases. The daily CI run does. Before a release, run
+`bun run check:release`. It runs the `release` lane: these expensive cases and the
+package/install smoke, not a second full suite. Read the `[gate] ... unset` lines
+in any other run as "not covered here" rather than "passed".
 
 ## Which CI lane a push or PR gets
 

@@ -2,6 +2,12 @@
 
 All notable changes to this skill are documented here.
 
+## [Unreleased]
+
+### Changed
+
+- The daily CI job now runs the expensive real pack/install benchmark cases in `tests/harness-benchmark-matrix.test.ts`.
+
 ## [0.23.0] - 2026-10-17
 
 This release has breaking changes. After the update, run `repo-harness update`,
