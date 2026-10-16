@@ -1,24 +1,9 @@
+import type { OperatorRepositorySnapshotV1 } from '../core/operator/repository-snapshot';
+export type { OperatorRepositorySnapshotV1 } from '../core/operator/repository-snapshot';
 import { isOperatorServiceEpoch } from '../core/operator/observation-identity';
 import { decodeOperatorPlanningSnapshot } from '../core/operator/planning-snapshot';
 import { decodeOperatorDecisionInventory, isDecisionCursor } from '../core/operator/decision-inventory';
 import { decodeOperatorOrganizationSnapshot } from '../core/operator/organization-snapshot';
-import type { OperatorWorkExchangeSnapshot } from '../core/operator/collaboration-snapshot';
-export type { OperatorWorkExchangeSnapshot } from '../core/operator/collaboration-snapshot';
-/** Browser projections import their transport types from the core authority. */
-export type {
-  OperatorCollaborationActorKind,
-  OperatorCollaborationConsistency,
-  OperatorCollaborationExecutionContextKind,
-  OperatorCollaborationHandoffV1,
-  OperatorCollaborationMode,
-  OperatorCollaborationOpportunityReason,
-  OperatorCollaborationOpportunityV1,
-  OperatorCollaborationParticipantV1,
-  OperatorCollaborationSignalV1,
-  OperatorCollaborationSnapshotV4,
-  OperatorCollaborationSource,
-  OperatorCollaborationThreadV1,
-} from '../core/operator/collaboration-snapshot';
 export type {
   OperatorFleetCardV1,
   OperatorFleetColumn,
@@ -31,15 +16,6 @@ export type {
   OperatorFleetSnapshotV1,
 } from '../core/operator/fleet-snapshot';
 
-import type {
-  OperatorCollaborationHandoffV1,
-  OperatorCollaborationOpportunityV1,
-  OperatorCollaborationParticipantV1,
-  OperatorCollaborationSignalV1,
-  OperatorCollaborationSnapshotV4,
-  OperatorCollaborationSource,
-  OperatorCollaborationThreadV1,
-} from '../core/operator/collaboration-snapshot';
 import type {
   OperatorFleetCardV1,
   OperatorFleetColumn,
@@ -58,11 +34,11 @@ import type {
 export const OPERATOR_FLEET_PAYLOAD_PROTOCOL: OperatorFleetSnapshotV1['protocol'] = 7;
 
 /**
- * The collaboration protocol the browser transport accepts, restated for the
+ * The repository protocol the browser transport accepts, restated for the
  * same reason and typed against the core literal, so a bump that forgets the
  * browser fails typecheck.
  */
-export const OPERATOR_COLLABORATION_PAYLOAD_PROTOCOL: OperatorCollaborationSnapshotV4['protocol'] = 4;
+export const OPERATOR_REPOSITORY_PAYLOAD_PROTOCOL: OperatorRepositorySnapshotV1['protocol'] = 1;
 
 export interface OperatorApiErrorV1 {
   readonly code: string;
@@ -84,8 +60,8 @@ export const OPERATOR_API_ERROR_CODES = [
   // Raised in the browser.
   'operator_api_unavailable',
   'operator_payload_invalid',
-  'operator_collaboration_payload_invalid',
-  'collaboration_repository_mismatch',
+  'operator_repository_payload_invalid',
+  'repository_repository_mismatch',
   'task_message_response_invalid',
   'task_message_unavailable',
   // GET /api/v1/fleet/snapshot
@@ -95,10 +71,10 @@ export const OPERATOR_API_ERROR_CODES = [
   'fleet_registry_invalid',
   'fleet_board_argument_invalid',
   'fleet_watch_aborted_before_first_snapshot',
-  // GET /api/v1/collaboration/{repository}/snapshot
-  'collaboration_snapshot_unavailable',
-  'collaboration_snapshot_busy',
-  'collaboration_snapshot_timeout',
+  // GET /api/v1/repositories/{repository}/snapshot
+  'repository_snapshot_unavailable',
+  'repository_snapshot_busy',
+  'repository_snapshot_timeout',
   // POST /api/v1/fleet/tasks/{repository}/{task}/messages
   'task_message_timeout',
   'task_message_invalid',
@@ -172,12 +148,12 @@ export const OPERATOR_PAYLOAD_INVALID_ERROR: OperatorApiErrorV1 = Object.freeze(
   next_action: 'Run `repo-harness fleet board --json` for diagnostics, then retry.',
 });
 
-/** Collaboration decoding has its own typed failure so the panel can preserve
+/** Repository decoding has its own typed failure so the panel can preserve
  * the operation that failed without exposing response contents. */
-export const OPERATOR_COLLABORATION_PAYLOAD_INVALID_ERROR: OperatorApiErrorV1 = Object.freeze({
-  code: 'operator_collaboration_payload_invalid',
-  message: 'Collaboration snapshot response is invalid',
-  next_action: 'Check the repository collaboration store, then refresh the board.',
+export const OPERATOR_REPOSITORY_PAYLOAD_INVALID_ERROR: OperatorApiErrorV1 = Object.freeze({
+  code: 'operator_repository_payload_invalid',
+  message: 'Repository snapshot response is invalid',
+  next_action: 'Check the repository repository observation sources, then refresh the board.',
 });
 
 /** Thrown only after the complete browser transport contract fails decoding. */
@@ -191,14 +167,14 @@ export class OperatorPayloadError extends Error {
   }
 }
 
-/** Thrown only after the complete collaboration transport contract fails. */
-export class OperatorCollaborationPayloadError extends Error {
-  readonly code = OPERATOR_COLLABORATION_PAYLOAD_INVALID_ERROR.code;
-  readonly next_action = OPERATOR_COLLABORATION_PAYLOAD_INVALID_ERROR.next_action;
+/** Thrown only after the complete repository transport contract fails. */
+export class OperatorRepositoryPayloadError extends Error {
+  readonly code = OPERATOR_REPOSITORY_PAYLOAD_INVALID_ERROR.code;
+  readonly next_action = OPERATOR_REPOSITORY_PAYLOAD_INVALID_ERROR.next_action;
 
   constructor() {
-    super(OPERATOR_COLLABORATION_PAYLOAD_INVALID_ERROR.message);
-    this.name = 'OperatorCollaborationPayloadError';
+    super(OPERATOR_REPOSITORY_PAYLOAD_INVALID_ERROR.message);
+    this.name = 'OperatorRepositoryPayloadError';
   }
 }
 
@@ -323,25 +299,6 @@ const GIT_OID_PATTERN = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/u;
 // pull `crypto` into the browser bundle.
 const TASK_DIGEST_PATTERN = /^[0-9a-f]{64}$/u;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
-const COLLABORATION_RECORD_ID_PATTERN = /^[0-9a-f]{64}$/u;
-const COLLABORATION_MODES = ['off', 'shadow', 'active'] as const;
-const COLLABORATION_SOURCES = ['mode', 'signals', 'handoffs', 'adoptions', 'execution_offers'] as const;
-const COLLABORATION_ACTOR_KINDS = ['module_engineer', 'delegated_worker'] as const;
-const COLLABORATION_EXECUTION_CONTEXT_KINDS = [
-  'delegated_worker',
-  'bound_task',
-  'publication',
-  'none',
-] as const;
-const COLLABORATION_OPPORTUNITY_REASONS = [
-  'unadopted_handoff',
-  'low_contributor_coverage',
-  'cross_thread_reference',
-  'recent_activity',
-  'artifact_rich_thread',
-  'exploration_slot',
-] as const;
-
 function requireRecord(value: unknown): UnknownRecord {
   if (!isRecord(value)) throw new OperatorPayloadError();
   return value;
@@ -607,12 +564,6 @@ function decodeRepository(value: unknown): OperatorFleetRepositoryV1 {
   });
 }
 
-function requireCollaborationRecordId(value: unknown): string {
-  const id = requireString(value);
-  if (!COLLABORATION_RECORD_ID_PATTERN.test(id)) throw new OperatorPayloadError();
-  return id;
-}
-
 /** Same UTC timestamp wire grammar as the notification authority; no Node imports in this bundle. */
 function requireNotificationInstant(value: unknown): string {
   const instant = requireInstant(value);
@@ -626,134 +577,15 @@ function requireInstant(value: unknown): string {
   return instant;
 }
 
-function decodeCollaborationThread(value: unknown): OperatorCollaborationThreadV1 {
-  const thread = requireRecord(value);
-  return Object.freeze({
-    thread_key: requireString(thread.thread_key),
-    signal_count: requireNonNegativeInteger(thread.signal_count),
-    distinct_contributor_count: requireNonNegativeInteger(thread.distinct_contributor_count),
-    latest_signal_at: requireInstant(thread.latest_signal_at),
-    artifact_ref_count: requireNonNegativeInteger(thread.artifact_ref_count),
-    unadopted_handoff_count: requireNonNegativeInteger(thread.unadopted_handoff_count),
-    adoption_count: requireNonNegativeInteger(thread.adoption_count),
-    cross_thread_reference_count: requireNonNegativeInteger(thread.cross_thread_reference_count),
-    recency_rank: requireNonNegativeInteger(thread.recency_rank),
-    hotspot_score: requireNonNegativeInteger(thread.hotspot_score),
-    thread_sha256: requireSha256(thread.thread_sha256),
-  });
-}
-
-function decodeCollaborationSignal(value: unknown): OperatorCollaborationSignalV1 {
-  const signal = requireRecord(value);
-  return Object.freeze({
-    signal_id: requireCollaborationRecordId(signal.signal_id),
-    signal_sha256: requireSha256(signal.signal_sha256),
-    thread_key: requireString(signal.thread_key),
-    actor_lineage: requireString(signal.actor_lineage),
-    title: requireString(signal.title),
-    labels: Object.freeze(requireArray(signal.labels).map(requireString)),
-    artifact_ref_count: requireNonNegativeInteger(signal.artifact_ref_count),
-    created_at: requireInstant(signal.created_at),
-    superseded: requireBoolean(signal.superseded),
-  });
-}
-
-function decodeCollaborationHandoff(value: unknown): OperatorCollaborationHandoffV1 {
-  const handoff = requireRecord(value);
-  return Object.freeze({
-    handoff_id: requireCollaborationRecordId(handoff.handoff_id),
-    handoff_sha256: requireSha256(handoff.handoff_sha256),
-    thread_key: requireString(handoff.thread_key),
-    actor_lineage: requireString(handoff.actor_lineage),
-    trigger: requireString(handoff.trigger),
-    goal: requireString(handoff.goal),
-    next_action_count: requireNonNegativeInteger(handoff.next_action_count),
-    open_hypothesis_count: requireNonNegativeInteger(handoff.open_hypothesis_count),
-    adoption_count: requireNonNegativeInteger(handoff.adoption_count),
-    created_at: requireInstant(handoff.created_at),
-    // Null is the withheld `bound_task` context, so it is decoded rather than
-    // defaulted: an absent key would silently become the same value as a proof
-    // that did not hold.
-    execution_context_kind: handoff.execution_context_kind === null
-      ? null
-      : requireOneOf(handoff.execution_context_kind, COLLABORATION_EXECUTION_CONTEXT_KINDS),
-  });
-}
-
-function decodeCollaborationParticipant(value: unknown): OperatorCollaborationParticipantV1 {
-  const participant = requireRecord(value);
-  return Object.freeze({
-    actor_lineage: requireString(participant.actor_lineage),
-    actor_kind: requireOneOf(participant.actor_kind, COLLABORATION_ACTOR_KINDS),
-    latest_actor_sha256: requireSha256(participant.latest_actor_sha256),
-    signal_count: requireNonNegativeInteger(participant.signal_count),
-    handoff_count: requireNonNegativeInteger(participant.handoff_count),
-    thread_keys: Object.freeze(requireArray(participant.thread_keys).map(requireString)),
-    latest_activity_at: requireInstant(participant.latest_activity_at),
-  });
-}
-
-function decodeCollaborationOpportunity(value: unknown): OperatorCollaborationOpportunityV1 {
-  const opportunity = requireRecord(value);
-  return Object.freeze({
-    thread_key: requireString(opportunity.thread_key),
-    reason: requireOneOf(opportunity.reason, COLLABORATION_OPPORTUNITY_REASONS),
-    source_refs: Object.freeze(requireArray(opportunity.source_refs).map(requireString)),
-  });
-}
-
-function decodeCollaborationSources(value: unknown): readonly OperatorCollaborationSource[] {
-  return Object.freeze(requireArray(value).map((source) => requireOneOf(source, COLLABORATION_SOURCES)));
-}
-
-/**
- * Decode the complete collaboration payload before any panel receives it.
- *
- * A payload that does not decode raises `OperatorCollaborationPayloadError` and
- * the panel shows a stated failure. It never falls back to a partial document: a lane list
- * that silently dropped the entries it could not read would be the healthy-empty
- * reading the collaboration program exists to refuse.
- */
-export function decodeOperatorWorkExchangeSnapshot(value: unknown): OperatorWorkExchangeSnapshot {
-  try {
-    const snapshot = requireRecord(value);
-    if (
-      snapshot.protocol !== 1
-      || snapshot.kind !== 'operator_work_exchange_snapshot'
-    ) {
-      throw new OperatorPayloadError();
-    }
-    return Object.freeze({
-      protocol: 1,
-      kind: 'operator_work_exchange_snapshot',
-      repository_id: requireString(snapshot.repository_id),
-      mode: requireOneOf(snapshot.mode, COLLABORATION_MODES),
-      snapshot_consistency: requireOneOf(snapshot.snapshot_consistency, SNAPSHOT_CONSISTENCIES),
-      degraded_sources: decodeCollaborationSources(snapshot.degraded_sources),
-      changed_sources: decodeCollaborationSources(snapshot.changed_sources),
-      threads: Object.freeze(requireArray(snapshot.threads).map(decodeCollaborationThread)),
-      signals: Object.freeze(requireArray(snapshot.signals).map(decodeCollaborationSignal)),
-      handoffs: Object.freeze(requireArray(snapshot.handoffs).map(decodeCollaborationHandoff)),
-      participants: Object.freeze(requireArray(snapshot.participants).map(decodeCollaborationParticipant)),
-      opportunities: Object.freeze(requireArray(snapshot.opportunities).map(decodeCollaborationOpportunity)),
-      unverified_execution_context_count: requireNonNegativeInteger(snapshot.unverified_execution_context_count),
-      source_snapshot_sha256: requireSha256(snapshot.source_snapshot_sha256),
-    });
-  } catch (error) {
-    if (error instanceof OperatorPayloadError) throw new OperatorCollaborationPayloadError();
-    throw error;
-  }
-}
-
-export function decodeOperatorCollaborationSnapshot(value: unknown): OperatorCollaborationSnapshotV4 {
+export function decodeOperatorRepositorySnapshot(value: unknown): OperatorRepositorySnapshotV1 {
   try {
     const v = requireRecord(value);
-    requireExactKeys(v, ['protocol', 'kind', 'repository_id', 'decision_after', 'decisions', 'exchange', 'organization', 'planning']);
-    if (v.protocol !== OPERATOR_COLLABORATION_PAYLOAD_PROTOCOL || v.kind !== 'operator_collaboration_snapshot') throw new OperatorPayloadError();
+    requireExactKeys(v, ['protocol', 'kind', 'repository_id', 'decision_after', 'decisions', 'organization', 'planning']);
+    if (v.protocol !== OPERATOR_REPOSITORY_PAYLOAD_PROTOCOL || v.kind !== 'operator_repository_snapshot') throw new OperatorPayloadError();
     const repositoryId = requireString(v.repository_id);
     if (!isDecisionCursor(v.decision_after)) throw new OperatorPayloadError();
     const decisionAfter = v.decision_after;
-    const source = <T,>(value: unknown, decode: (snapshot: unknown) => T): import('../core/operator/collaboration-snapshot').OperatorCollaborationSourceObservation<T> => {
+    const source = <T,>(value: unknown, decode: (snapshot: unknown) => T): import('../core/operator/repository-snapshot').RepositorySourceObservation<T> => {
       const s = requireRecord(value);
       const observed_at = requireInstant(s.observed_at);
       if (s.status === 'unavailable') {
@@ -766,18 +598,13 @@ export function decodeOperatorCollaborationSnapshot(value: unknown): OperatorCol
       return { status: 'observed', observed_at, snapshot: decode(s.snapshot) };
     };
     return {
-      protocol: OPERATOR_COLLABORATION_PAYLOAD_PROTOCOL, kind: 'operator_collaboration_snapshot', repository_id: repositoryId,
-      exchange: source(v.exchange, raw => {
-        const exchange = decodeOperatorWorkExchangeSnapshot(raw);
-        if (exchange.repository_id !== repositoryId) throw new OperatorPayloadError();
-        return exchange;
-      }),
+      protocol: OPERATOR_REPOSITORY_PAYLOAD_PROTOCOL, kind: 'operator_repository_snapshot', repository_id: repositoryId,
       organization: source(v.organization, raw => decodeOperatorOrganizationSnapshot(raw, repositoryId)),
       planning: source(v.planning, raw => decodeOperatorPlanningSnapshot(raw, repositoryId)),
       decision_after: decisionAfter,
       decisions: source(v.decisions, raw => decodeOperatorDecisionInventory(raw, repositoryId, decisionAfter)),
     };
-  } catch { throw new OperatorCollaborationPayloadError(); }
+  } catch { throw new OperatorRepositoryPayloadError(); }
 }
 
 /** Decode the complete browser payload before any component receives it. */

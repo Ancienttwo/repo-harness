@@ -132,13 +132,6 @@
   .repository-row__main span, .repository-row__error { @apply text-xs text-kumo-subtle; }
   .repository-row__state { @apply inline-flex items-center gap-1.5 text-xs; }
 
-  .collab-list { @apply m-0 flex list-none flex-col gap-2 p-0; }
-  .collab-list > li { @apply flex flex-col gap-1 rounded-lg border border-kumo-hairline p-3 text-sm; }
-  .collab-lane__head, .collab-handoff__head, .collab-contributor__head { @apply flex flex-wrap items-center gap-2; }
-  .collab-meta, .collab-labels { @apply flex flex-wrap gap-x-3 gap-y-1 text-xs text-kumo-subtle; }
-  .collab-lane__key { @apply font-mono text-xs; }
-  .collab-signal.is-superseded { @apply opacity-60; }
-  .collab-context { @apply text-xs text-kumo-subtle; }
 
   .task-evidence { @apply flex flex-col gap-4; }
   .task-evidence h3, .task-history h2, .task-diff h3 { @apply text-xs font-semibold tracking-wide text-kumo-subtle uppercase; }

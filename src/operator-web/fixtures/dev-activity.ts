@@ -4,7 +4,7 @@ import { DEV_ACTIVITY_PROJECTION, type DevActivityAttention, type DevActivityIte
 import type { NativeRuntimeSourceSummary, RuntimeOverlay } from '../../core/operator/runtime-status';
 import { unavailableRuntimeOverlay } from '../../core/operator/runtime-status';
 
-/** The repo-harness registration shares its id with the collaboration fixture. */
+/** The repo-harness registration shares its id with the repository snapshot fixture. */
 export const HARNESS_ID = 'repo_a5b76eee64af71c3';
 const SITE_ID = 'repo_1f2e3d4c5b6a7980';
 const DOCS_ID = 'repo_0a1b2c3d4e5f6071';

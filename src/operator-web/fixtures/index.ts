@@ -10,7 +10,7 @@ import { unavailableRuntimeOverlay, type RuntimeOverlay } from '../../core/opera
 import { unavailableBoard, type PipelineBoardV2 } from '../../core/pipeline/board';
 import type { OperatorAppProps } from '../App';
 import {
-  collaborationSnapshot,
+  repositorySnapshot,
   degradedSnapshot,
   emptySnapshot,
   stableSnapshot,
@@ -84,8 +84,8 @@ export function fixtureProps(name: string): OperatorAppProps {
     initialRuntimeOverlay: runtime,
     fetchSnapshot: () => Promise.resolve(snapshot),
     initialSnapshot: snapshot,
-    fetchCollaboration: (repositoryId: string) => repositoryId === HARNESS_ID && fixture === 'busy'
-      ? Promise.resolve(collaborationSnapshot) : Promise.reject(new Error('fixture collaboration unavailable')),
+    fetchRepositorySnapshot: (repositoryId: string) => repositoryId === HARNESS_ID && fixture === 'busy'
+      ? Promise.resolve(repositorySnapshot) : Promise.reject(new Error('fixture repository snapshot unavailable')),
     readTaskContext: request => Promise.resolve(taskContextFixture(request)),
     readTaskActivity: request => Promise.resolve(taskActivityFixture(request)),
     readTaskHistory: unavailable('task history'),

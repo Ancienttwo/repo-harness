@@ -34,9 +34,9 @@ import {
 } from './dev-activity';
 import {
   asApiError,
-  assertCollaborationRepository,
-  COLLABORATION_UNAVAILABLE_ERROR,
-  fetchOperatorCollaborationSnapshot,
+  assertSnapshotRepository,
+  REPOSITORY_UNAVAILABLE_ERROR,
+  fetchOperatorRepositorySnapshot,
   fetchOperatorSnapshot,
 } from './fleet-api';
 import { useLocale, type OperatorLocale, type OperatorTranslate } from './i18n';
@@ -52,7 +52,7 @@ import {
   RepositoryWorkspace,
   snapshotForState,
   staleErrorForState,
-  type CollaborationViewState,
+  type RepositoryViewState,
   type ObservationView,
 } from './RepositoryWorkspace';
 import { fetchRuntimeOverlay, useRuntimeOverlay, type RuntimeOverlayReader } from './RuntimeBadges';
@@ -63,10 +63,10 @@ import type { TaskHistoryReader } from './TaskHistory';
 import { parseTaskLocation, taskLocationSearch, type TaskLocation } from './task-location';
 import { useTheme, type ThemePreference } from './theme';
 import {
-  decodeOperatorCollaborationSnapshot,
+  decodeOperatorRepositorySnapshot,
   OPERATOR_PAYLOAD_INVALID_ERROR,
   projectSnapshotViewState,
-  type OperatorCollaborationSnapshotV4,
+  type OperatorRepositorySnapshotV1,
   type OperatorFleetCardV1,
   type OperatorFleetSnapshotV1,
   type OperatorSnapshotViewState,
@@ -82,10 +82,10 @@ export interface OperatorAppProps {
   /** A deterministic initial response; production uses the same-origin API. */
   readonly initialSnapshot?: OperatorFleetSnapshotV1;
   readonly fetchSnapshot?: (signal?: AbortSignal) => Promise<OperatorFleetSnapshotV1>;
-  /** The read-only collaboration read, injectable on the same terms. */
-  readonly fetchCollaboration?: (repositoryId: string, signal: AbortSignal, decisionAfter: string | null) => Promise<OperatorCollaborationSnapshotV4>;
-  /** A deterministic collaboration state for fixtures and server renders. */
-  readonly initialCollaboration?: CollaborationViewState;
+  /** The read-only repository snapshot read, injectable on the same terms. */
+  readonly fetchRepositorySnapshot?: (repositoryId: string, signal: AbortSignal, decisionAfter: string | null) => Promise<OperatorRepositorySnapshotV1>;
+  /** A deterministic repository snapshot state for fixtures and server renders. */
+  readonly initialRepositorySnapshot?: RepositoryViewState;
   /** Tests pin the locale; the browser resolves it from storage or navigator. */
   readonly initialLocale?: OperatorLocale;
   /** Server renders have no URL; they name the page to render. The browser reads the fragment. */
@@ -349,8 +349,8 @@ export function OperatorApp({
   initialState,
   initialSnapshot,
   fetchSnapshot = fetchOperatorSnapshot,
-  fetchCollaboration = fetchOperatorCollaborationSnapshot,
-  initialCollaboration,
+  fetchRepositorySnapshot = fetchOperatorRepositorySnapshot,
+  initialRepositorySnapshot,
   initialLocale,
   initialPlace,
   fetchDevActivity: readDevActivity = fetchDevActivity,
@@ -375,7 +375,7 @@ export function OperatorApp({
   const [place, setPlace] = useState<WorkspaceLocation>(() => initialPlace ?? routeFor(typeof window === 'undefined' ? '' : window.location.hash, location));
   const searchRef = useRef(typeof window === 'undefined' ? '' : window.location.search);
   const [selection, setSelection] = useState<Selection | null>(location.selection);
-  const [collaboration, setCollaboration] = useState<CollaborationViewState>(initialCollaboration ?? { kind: 'idle' });
+  const [repositorySnapshot, setRepositorySnapshot] = useState<RepositoryViewState>(initialRepositorySnapshot ?? { kind: 'idle' });
   const [decisionPage, setDecisionPage] = useState<{ repositoryId: string; after: string | null } | null>(null);
   const [refreshGeneration, setRefreshGeneration] = useState(0);
   const [filters, setFilters] = useState<BoardFilters>(() => ({ ...DEFAULT_BOARD_FILTERS, repositoryId: readStorage(OPERATOR_BOARD_REPOSITORY_STORAGE_KEY) }));
@@ -418,7 +418,7 @@ export function OperatorApp({
       if (window.location.search === searchRef.current) return;
       searchRef.current = window.location.search;
       setLocation(next); setRepositoryId(next.repositoryId); setSelection(next.selection);
-      setCollaboration({ kind: 'idle' }); setDecisionPage(null);
+      setRepositorySnapshot({ kind: 'idle' }); setDecisionPage(null);
     };
     window.addEventListener('popstate', restore);
     window.addEventListener('hashchange', restore);
@@ -437,12 +437,12 @@ export function OperatorApp({
     setPlace(next);
   }, []);
   const switchRepository = (id: string) => {
-    if (id !== activeRepository?.repository_id) { setCollaboration({ kind: 'idle' }); setDecisionPage(null); }
+    if (id !== activeRepository?.repository_id) { setRepositorySnapshot({ kind: 'idle' }); setDecisionPage(null); }
     setRepositoryId(id);
     navigate(id, null);
   };
   const openRepository = (id: string) => {
-    if (id !== activeRepository?.repository_id) { setCollaboration({ kind: 'idle' }); setDecisionPage(null); }
+    if (id !== activeRepository?.repository_id) { setRepositorySnapshot({ kind: 'idle' }); setDecisionPage(null); }
     setRepositoryId(id);
     const next: WorkspaceLocation = { workspace: 'repository', module: null, item: null };
     navigate(id, null, workspaceHash(next));
@@ -461,7 +461,7 @@ export function OperatorApp({
       if (signal.aborted) return false;
       if (previous?.service_epoch === nextSnapshot.service_epoch && nextSnapshot.sequence < previous.sequence) throw OPERATOR_PAYLOAD_INVALID_ERROR;
       if (previous && previous.service_epoch !== nextSnapshot.service_epoch) {
-        setCollaboration({ kind: 'idle' });
+        setRepositorySnapshot({ kind: 'idle' });
         setRefreshGeneration(current => current + 1);
       }
       const nextState = projectSnapshotViewState(nextSnapshot);
@@ -483,7 +483,7 @@ export function OperatorApp({
     // Explicit refresh supersedes every scoped observation and returns the
     // Decision inventory to page one. Automatic reads preserve the current page.
     setDecisionPage(null);
-    setCollaboration({ kind: 'idle' });
+    setRepositorySnapshot({ kind: 'idle' });
     setRefreshGeneration(current => current + 1);
     requestFleet();
   };
@@ -503,31 +503,31 @@ export function OperatorApp({
       : current);
   }, [selection, selectedCard]);
   const revisionChangedFrom = selectedCard && selection && selectedCard.task_revision !== selection.revision ? selection.revision : null;
-  const collaborationRepositoryId = activeRepository?.repository_id ?? null;
-  const decisionAfter = decisionPage?.repositoryId === collaborationRepositoryId ? decisionPage.after : null;
+  const snapshotRepositoryId = activeRepository?.repository_id ?? null;
+  const decisionAfter = decisionPage?.repositoryId === snapshotRepositoryId ? decisionPage.after : null;
   const changeDecisionPage = (after: string | null) => {
-    if (!collaborationRepositoryId) return;
-    setCollaboration({ kind: 'idle' });
-    setDecisionPage({ repositoryId: collaborationRepositoryId, after });
+    if (!snapshotRepositoryId) return;
+    setRepositorySnapshot({ kind: 'idle' });
+    setDecisionPage({ repositoryId: snapshotRepositoryId, after });
   };
 
   // One observation belongs to the selected repository; task selection shares it.
-  const readCollaboration = useCallback(async (signal: AbortSignal): Promise<boolean> => {
-    if (collaborationRepositoryId === null) return false;
-    setCollaboration({ kind: 'loading', repository_id: collaborationRepositoryId });
+  const readRepositorySnapshot = useCallback(async (signal: AbortSignal): Promise<boolean> => {
+    if (snapshotRepositoryId === null) return false;
+    setRepositorySnapshot({ kind: 'loading', repository_id: snapshotRepositoryId });
     try {
-      const next = await fetchCollaboration(collaborationRepositoryId, signal, decisionAfter);
+      const next = await fetchRepositorySnapshot(snapshotRepositoryId, signal, decisionAfter);
       if (signal.aborted) return false;
-      setCollaboration({ kind: 'ready', snapshot: assertCollaborationRepository(decodeOperatorCollaborationSnapshot(next), collaborationRepositoryId, decisionAfter) });
+      setRepositorySnapshot({ kind: 'ready', snapshot: assertSnapshotRepository(decodeOperatorRepositorySnapshot(next), snapshotRepositoryId, decisionAfter) });
       return true;
     } catch (error) {
       if (signal.aborted) return false;
-      setCollaboration({ kind: 'failed', repository_id: collaborationRepositoryId, error: asApiError(error, COLLABORATION_UNAVAILABLE_ERROR) });
+      setRepositorySnapshot({ kind: 'failed', repository_id: snapshotRepositoryId, error: asApiError(error, REPOSITORY_UNAVAILABLE_ERROR) });
       return false;
     }
-  }, [collaborationRepositoryId, decisionAfter, fetchCollaboration]);
-  useObservationRefresh(readCollaboration, JSON.stringify([collaborationRepositoryId, decisionAfter, refreshGeneration]), {
-    enabled: !initialCollaboration && collaborationRepositoryId !== null && workspace === 'repository',
+  }, [snapshotRepositoryId, decisionAfter, fetchRepositorySnapshot]);
+  useObservationRefresh(readRepositorySnapshot, JSON.stringify([snapshotRepositoryId, decisionAfter, refreshGeneration]), {
+    enabled: !initialRepositorySnapshot && snapshotRepositoryId !== null && workspace === 'repository',
   });
   const selectCard = (card: OperatorFleetCardV1) => navigate(card.repository_id, { key: taskKey(card), taskId: card.task_id, revision: card.task_revision, historical: false });
   const setBoardRepository = (id: string | null) => {
@@ -569,7 +569,7 @@ export function OperatorApp({
           {workspace === 'repository' && <RepositoryWorkspace
             state={state} activeRepository={activeRepository} activeRepositoryId={activeRepositoryId} onRepository={switchRepository}
             location={location} selection={selection} selectedCard={selectedCard} revisionChangedFrom={revisionChangedFrom}
-            view={view} onView={setView} collaboration={collaboration} decisionAfter={decisionAfter} onDecisionPage={changeDecisionPage}
+            view={view} onView={setView} repositorySnapshot={repositorySnapshot} decisionAfter={decisionAfter} onDecisionPage={changeDecisionPage}
             refreshGeneration={refreshGeneration} onRefresh={refresh} onSelect={selectCard} onCloseSelection={closeSelection}
             readTaskContext={readTaskContext} readTaskActivity={readTaskActivity} readTaskHistory={readTaskHistory}
             onBack={() => openPlace({ workspace: 'repositories', module: null, item: null })} now={now} t={t} />}
