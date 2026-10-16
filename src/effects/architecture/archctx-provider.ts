@@ -2,7 +2,7 @@ import { loadArchitectureProjectionPolicy, readGlobalArchitectureConfiguration }
 import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { userInfo } from 'node:os';
 import { isAbsolute, join, resolve, sep } from 'node:path';
-import { ARCHCONTEXT_NODE_RANGE, ERROR_CATALOG, PROJECTION_REQUEST_SCHEMA_VERSION, digestJson, type ArchContextError, type ArchctxCapabilitiesV1, type DocsAnchorsReportV1, type Json, type ProjectionApplyReadbackResultV1, type ProjectionExpectedSnapshotV1, type ProjectionMode, type ProjectionRequestV1, type ProjectionResultV2 } from 'archctx-contracts';
+import { ARCHCONTEXT_NODE_RANGE, ERROR_CATALOG, PROJECTION_REQUEST_SCHEMA_VERSION, digestJson, type ArchContextError, type ArchctxCapabilitiesV1, type ArchitectureDebtReportV1, type DocsAnchorsReportV1, type Json, type ProjectionApplyReadbackResultV1, type ProjectionExpectedSnapshotV1, type ProjectionMode, type ProjectionRequestV1, type ProjectionResultV2 } from 'archctx-contracts';
 import { trustedNodeCandidates } from '../runtime/node-candidates';
 import { runProcess } from '../process-runner';
 import { readText } from '../state/collect-state-inputs';
@@ -12,6 +12,7 @@ import {
   assertArchctxVersion,
   assertProjectionApplyReadbackResult,
   assertProjectionResult,
+  decodeArchitectureDebtReport,
   decodeDocsAnchorsReport,
   type ArchitectureProjectionPolicy,
   type ArchitectureProjectionReadinessV1,
@@ -62,6 +63,11 @@ function architectureModelReady(repoRoot: string): boolean {
   if (!existsSync(join(repoRoot, '.archcontext', 'manifest.yaml')) || !existsSync(join(repoRoot, '.archcontext', 'product.yaml'))) return false;
   const authority = loadArchcontextAuthority(repoRoot, (path) => readText(repoRoot, path));
   return authority.status === 'valid' && authority.registry.capabilities.length > 0;
+}
+
+/** One rule for code facts: the checkout has a CodeGraph index directory. */
+function codeGraphIndexPresent(repoRoot: string): boolean {
+  return existsSync(join(repoRoot, '.codegraph'));
 }
 
 function capabilityAuthorityReady(repoRoot: string): boolean {
@@ -361,7 +367,7 @@ export function inspectArchitectureProjectionReadiness(repoRoot: string, options
   let source: ArchitectureProjectionReadinessV1['modelAuthority']['source'] = 'unadopted';
   let daemonState: ArchitectureProjectionReadinessV1['daemonRuntime']['state'] = 'not-evaluated';
   const codeFacts: ArchitectureProjectionReadinessV1['codeFacts'] = {
-    requirement: 'required', state: policy.provider === 'disabled' || existsSync(join(repoRoot, '.codegraph')) ? 'not-evaluated' : 'unavailable',
+    requirement: 'required', state: policy.provider === 'disabled' || codeGraphIndexPresent(repoRoot) ? 'not-evaluated' : 'unavailable',
   };
   const base = () => ({
     schemaVersion: 'repo-harness.architecture-projection-readiness/v1' as const,
@@ -514,6 +520,78 @@ export function readArchitectureDocsAnchors(repoRoot: string, options: ArchctxPr
   return decodeDocsAnchorsReport(client.data(['docs', 'anchors', '--json'], policy.timeoutMs));
 }
 
+/**
+ * Runs `archctx complete` for one commit and returns the architecture debt in
+ * its review result. archctx omits the debt when it cannot measure it, so a
+ * missing or invalid report fails closed. The checkout needs a CodeGraph index.
+ * Package resolution already refuses an archctx that is not the pinned version.
+ */
+export function completeArchitectureDebt(repoRoot: string, headSha: string, options: ArchctxProviderOptions = {}): ArchitectureDebtReportV1 {
+  const policy = options.policy ?? loadArchitectureProjectionPolicy(options.env);
+  if (policy.provider === 'disabled') throw new Error('architecture projection provider is disabled');
+  if (!codeGraphIndexPresent(repoRoot)) {
+    throw new ArchctxClientError({ code: 'RH_CODEGRAPH_INDEX_MISSING', action: 'build-codegraph-index', reasonCode: 'codegraph-index-missing', message: `the checkout ${repoRoot} has no CodeGraph index; run the package-local codegraph init -y . in it` });
+  }
+  const client = new ArchctxClient(repoRoot, policy.requiredVersion, options);
+  return decodeCompleteArchitectureDebt(client.data(['complete', '--head-sha', headSha, '--json'], policy.timeoutMs), headSha);
+}
+
+/** The client already refused an error envelope; this binds the review to the commit and decodes its debt. */
+function decodeCompleteArchitectureDebt(data: unknown, headSha: string): ArchitectureDebtReportV1 {
+  const review = isRecord(data) ? data : {};
+  const snapshot = isRecord(review.snapshot) ? review.snapshot : {};
+  if (review.schemaVersion !== 'archcontext.review/v1' || snapshot.headSha !== headSha) {
+    throw new ArchctxClientError({ code: 'RH_ARCHCTX_DEBT_INVALID', action: 'update-repo-harness', reasonCode: 'review-result-mismatch', details: { headSha }, message: `archctx complete did not return a review result for ${headSha}` });
+  }
+  if (review.debt === undefined) {
+    const actionsRequired = Array.isArray(review.actionsRequired) ? review.actionsRequired.filter((entry): entry is string => typeof entry === 'string') : [];
+    throw new ArchctxClientError({
+      code: 'RH_ARCHCTX_DEBT_MISSING', action: 'follow-review-actions', reasonCode: 'architecture-debt-missing',
+      details: { headSha, result: typeof review.result === 'string' ? review.result : null, actionsRequired },
+      message: `archctx complete measured no architecture debt for ${headSha}; required actions: ${actionsRequired.join(', ') || 'none'}`,
+    });
+  }
+  try { return decodeArchitectureDebtReport(review.debt); }
+  catch (error) {
+    throw new ArchctxClientError({ code: 'RH_ARCHCTX_DEBT_INVALID', action: 'update-repo-harness', reasonCode: 'architecture-debt-invalid', details: { headSha }, message: error instanceof Error ? error.message : String(error) });
+  }
+}
+
+/**
+ * Builds the CodeGraph index of a checkout with the CodeGraph package that the
+ * package-local archctx declares. It never uses a global binary or a download.
+ */
+export function indexPackageLocalCodeGraph(checkoutRoot: string, options: ArchctxProviderOptions = {}): void {
+  const policy = options.policy ?? loadArchitectureProjectionPolicy(options.env);
+  if (policy.provider === 'disabled') throw new Error('architecture projection provider is disabled');
+  const binaryPath = resolvePackageLocalCodeGraph(resolvePackageLocalArchctx(options.consumerRoot ?? findConsumerRoot(), policy.requiredVersion));
+  const env = { ...(options.env ?? process.env), CODEGRAPH_NO_DOWNLOAD: '1', CODEGRAPH_TELEMETRY: '0' };
+  const args = ['init', '-y', '.'];
+  const result = options.run
+    ? options.run(binaryPath, args, { cwd: checkoutRoot, timeoutMs: policy.timeoutMs, env })
+    : DEFAULT_RUNNER(resolveCompatibleNodeRuntime(env, options.trustedNodeCandidateSource), [binaryPath, ...args], { cwd: checkoutRoot, timeoutMs: policy.timeoutMs, env });
+  if (result.timedOut || result.signal || result.error || result.status !== 0) {
+    const outcome = result.timedOut ? 'timed out' : result.signal ? `signal ${result.signal}` : result.error ? 'process failed' : `exit ${result.status}`;
+    throw new ArchctxClientError({ code: 'RH_CODEGRAPH_INDEX_FAILED', action: 'inspect-codegraph-index', reasonCode: 'codegraph-init-failed', details: { checkout: checkoutRoot }, message: `codegraph init in ${checkoutRoot} ${outcome}: ${result.stderr.trim().slice(-2000)}` });
+  }
+}
+
+function resolvePackageLocalCodeGraph(archctx: ResolvedArchctxPackage): string {
+  const name = '@colbymchenry/codegraph';
+  const declared = (JSON.parse(readFileSync(join(archctx.packageRoot, 'package.json'), 'utf8')) as { dependencies?: Record<string, unknown> }).dependencies?.[name];
+  if (typeof declared !== 'string') throw new Error(`package-local archctx@${archctx.version} does not declare ${name}`);
+  const packageRoot = findPackageRoot(archctx.packageRoot, name);
+  if (!packageRoot) throw new ArchctxClientError({ code: 'RH_ARCHCTX_PACKAGE_MISSING', action: 'update-repo-harness', message: `package-local ${name}@${declared} is missing from the archctx dependency tree rooted at ${archctx.packageRoot}` });
+  const manifest = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8')) as { name?: unknown; version?: unknown; bin?: unknown };
+  if (manifest.name !== name || manifest.version !== declared) throw new ArchctxClientError({ code: 'RH_ARCHCTX_PACKAGE_MISMATCH', action: 'update-repo-harness', message: `package-local CodeGraph mismatch: archctx declares ${name}@${declared}, got ${String(manifest.name)}@${String(manifest.version)}` });
+  const bin = isRecord(manifest.bin) && typeof manifest.bin.codegraph === 'string' ? manifest.bin.codegraph : null;
+  if (!bin) throw new Error(`package-local ${name}@${declared} does not declare bin.codegraph`);
+  const realPackage = realpathSync(packageRoot);
+  const realBinary = realpathSync(resolve(packageRoot, bin));
+  if (!realBinary.startsWith(`${realPackage}${sep}`)) throw new Error('package-local CodeGraph binary escapes its package root');
+  return realBinary;
+}
+
 function runProjectionCommand(command: 'run' | 'readback', request: ProjectionRequestV1, repoRoot: string, options: ArchctxProviderOptions): unknown {
   const policy = options.policy ?? loadArchitectureProjectionPolicy(options.env);
   if ((request.mode === 'apply' || request.mode === 'adopt') && policy.applyMode === 'disabled') throw new Error('architecture projection apply is disabled');
@@ -535,15 +613,15 @@ function remainingTimeout(options: Pick<ArchctxProviderOptions, 'deadlineMs' | '
 }
 
 function findInstalledArchctxPackageRoot(consumerRoot: string, requiredVersion: string): string {
-  const packageRoot = findArchctxPackageRoot(consumerRoot);
+  const packageRoot = findPackageRoot(consumerRoot, 'archctx');
   if (!packageRoot) throw new ArchctxClientError({ code: 'RH_ARCHCTX_PACKAGE_MISSING', action: 'update-repo-harness', message: `package-local archctx@${requiredVersion} is missing from the consumer dependency tree rooted at ${resolve(consumerRoot)}` });
   return packageRoot;
 }
 
-function findArchctxPackageRoot(startRoot: string): string | null {
+function findPackageRoot(startRoot: string, name: string): string | null {
   let current = realpathSync(resolve(startRoot));
   while (true) {
-    const candidate = join(current, 'node_modules', 'archctx');
+    const candidate = join(current, 'node_modules', name);
     if (existsSync(join(candidate, 'package.json'))) return candidate;
     const parent = resolve(current, '..');
     if (parent === current) return null;

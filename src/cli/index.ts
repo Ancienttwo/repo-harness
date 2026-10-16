@@ -46,6 +46,7 @@ import { buildFleetCommand } from './commands/fleet';
 import { buildRefactorCommand } from './commands/refactor';
 import { buildOperatorCommand } from './commands/operator';
 import { buildEngineerCommand } from './commands/engineer';
+import { buildArchitectureDebtCommand } from './commands/architecture-debt';
 import { buildArchitectureProjectionCommand } from './commands/architecture-projection';
 import { buildIntegrationCommand } from './commands/integration';
 import { buildDelegationCommand } from './commands/delegation';
@@ -134,6 +135,7 @@ export const SUBCOMMANDS = [
   'fleet',
   'engineer',
   'architecture-projection',
+  'architecture-debt',
   'integration',
   'delegation',
   'verified-context',
@@ -848,6 +850,7 @@ export function buildProgram(): Command {
   program.addCommand(buildRefactorCommand());
   program.addCommand(buildEngineerCommand());
   program.addCommand(buildArchitectureProjectionCommand());
+  program.addCommand(buildArchitectureDebtCommand());
   program.addCommand(buildIntegrationCommand());
   program.addCommand(buildDelegationCommand());
   program.addCommand(buildCollaborationCommand());
