@@ -78,8 +78,8 @@ describe("workflow contract manifest", () => {
     expect(contract.helpers.scripts).toContain("prepare-codex-handoff.sh");
     expect(contract.helpers.scripts).toContain("codex-handoff-resume.sh");
     expect(contract.helpers.scripts).toContain("select-agent-context-blocks.sh");
-    expect(contract.helpers.scripts).toContain("check-brain-manifest.sh");
-    expect(contract.helpers.scripts).toContain("sync-brain-docs.sh");
+    expect(contract.helpers.scripts).not.toContain("check-brain-manifest.sh");
+    expect(contract.helpers.scripts).not.toContain("sync-brain-docs.sh");
     expect(contract.helpers.scripts).toContain("check-deploy-sql-order.sh");
     expect(contract.helpers.scripts).not.toContain("check-architecture-sync.sh");
     expect(contract.helpers.scripts).toContain("install-agent-fleet.sh");

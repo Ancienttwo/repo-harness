@@ -1536,7 +1536,7 @@ pi_write_harness_policy() {
       "default_brain_path": "brain/<project>/*",
       "project_path": "brain/<project>/*",
       "manifest_file": ".ai/harness/brain-manifest.json",
-      "sync_script": "repo-harness run sync-brain-docs",
+      "sync_script": "repo-harness brain sync",
       "rule": "external knowledge stores long-lived explanations, runbooks, and patterns only; repo-local contracts, hooks, scripts, checks, and evidence remain authoritative",
       "sync_rule": "external sync and drift checks are operator-invoked only; hooks and workflow verification never read, write, or gate on external vault state"
     }
@@ -2248,11 +2248,11 @@ pi_ensure_task_sync() {
   "name": "$project_name",
   "private": true,
   "scripts": {
-    "check:brain-manifest": "repo-harness run check-brain-manifest",
+    "check:brain": "repo-harness brain check",
     "check:context-files": "repo-harness run check-context-files",
     "check:deploy-sql": "repo-harness run check-deploy-sql-order",
     "check:task-sync": "repo-harness run check-task-sync",
-    "sync:brain-docs": "repo-harness run sync-brain-docs --all"
+    "sync:brain": "repo-harness brain sync"
   }
 }
 EOF_PACKAGE
@@ -2271,7 +2271,10 @@ const file = process.argv[1];
 const pkg = JSON.parse(fs.readFileSync(file, "utf8"));
 pkg.private ??= true;
 pkg.scripts ??= {};
-pkg.scripts["check:brain-manifest"] = "repo-harness run check-brain-manifest";
+pkg.scripts["check:brain"] = "repo-harness brain check";
+if (pkg.scripts["check:brain-manifest"] === "repo-harness run check-brain-manifest") {
+  delete pkg.scripts["check:brain-manifest"];
+}
 pkg.scripts["check:context-files"] = "repo-harness run check-context-files";
 pkg.scripts["check:deploy-sql"] = "repo-harness run check-deploy-sql-order";
 pkg.scripts["check:task-sync"] = "repo-harness run check-task-sync";
@@ -2281,7 +2284,10 @@ if (pkg.scripts["check:task-workflow"] === "repo-harness run check-task-workflow
 if (pkg.scripts["check:architecture-sync"] === "repo-harness run check-architecture-sync") {
   delete pkg.scripts["check:architecture-sync"];
 }
-pkg.scripts["sync:brain-docs"] = "repo-harness run sync-brain-docs --all";
+pkg.scripts["sync:brain"] = "repo-harness brain sync";
+if (pkg.scripts["sync:brain-docs"] === "repo-harness run sync-brain-docs --all") {
+  delete pkg.scripts["sync:brain-docs"];
+}
 fs.writeFileSync(file, JSON.stringify(pkg, null, 2) + "\n");
 ' "$package_file"
 }

@@ -187,7 +187,30 @@ function safeBrainPath(root: string, logicalPath: string, id: string, issues: Br
     issue(issues, 'error', `Entry ${id} brain_path escapes brain root: ${value}`);
     return null;
   }
+  if (symlinkEscapesRoot(resolvedRoot, local)) {
+    issue(issues, 'error', `Entry ${id} brain file symlink escapes brain root: ${value}`);
+    return null;
+  }
   return local;
+}
+
+// A write follows symlinks, so the nearest existing path must resolve inside the root.
+function symlinkEscapesRoot(root: string, target: string): boolean {
+  if (!fs.existsSync(root)) return false;
+  const rootReal = fs.realpathSync(root);
+  let probe = target;
+  while (!fs.lstatSync(probe, { throwIfNoEntry: false })) {
+    const parent = path.dirname(probe);
+    if (parent === probe) return false;
+    probe = parent;
+  }
+  let real: string;
+  try {
+    real = fs.realpathSync(probe);
+  } catch {
+    return true;
+  }
+  return real !== rootReal && !real.startsWith(`${rootReal}${path.sep}`);
 }
 
 function logicalBrainPath(project: string, subdir: string, fileName: string): string {

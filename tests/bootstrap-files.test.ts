@@ -144,13 +144,13 @@ describe("Bootstrap Script Contracts", () => {
     expect(cliEntry).toContain("buildDocsCommand");
     expect(cliEntry).not.toMatch(/\\.version\\(['\"][0-9]+\\.[0-9]+\\.[0-9]+['\"]\\)/);
     expect(pkg.scripts["check:ci"]).toBe("bash scripts/check-ci.sh");
-    expect(pkg.scripts["check:brain-manifest"]).toBe("repo-harness run check-brain-manifest");
+    expect(pkg.scripts["check:brain"]).toBe("repo-harness brain check");
     expect(pkg.scripts["check:task-sync"]).toBe("repo-harness run check-task-sync");
     expect(pkg.scripts["check:deploy-sql"]).toBe("repo-harness run check-deploy-sql-order");
     expect(pkg.scripts["check:architecture-sync"]).toBeUndefined();
     expect(pkg.scripts["check:task-workflow"]).toBe("repo-harness run check-task-workflow");
     expect(pkg.scripts["check:context-files"]).toBe("repo-harness run check-context-files");
-    expect(pkg.scripts["sync:brain-docs"]).toBe("repo-harness run sync-brain-docs --all");
+    expect(pkg.scripts["sync:brain"]).toBe("repo-harness brain sync");
   });
 
   test("ci gate verifies the candidate without creating routine handoff artifacts", () => {
@@ -215,8 +215,8 @@ describe("Bootstrap Script Contracts", () => {
     expect(contract.helpers.scripts).toContain("summarize-failures.sh");
     expect(sharedLib).toContain("check:context-files");
     expect(sharedLib).toContain("check:deploy-sql");
-    expect(sharedLib).toContain("check:brain-manifest");
-    expect(sharedLib).toContain("sync:brain-docs");
+    expect(sharedLib).toContain('"check:brain": "repo-harness brain check"');
+    expect(sharedLib).toContain('"sync:brain": "repo-harness brain sync"');
     expect(sharedLib).toContain("spawn_decision");
     expect(sharedLib).toContain("fallback_runner");
     expect(sharedLib).toContain("if spawning is not worthwhile");
@@ -249,8 +249,8 @@ describe("Bootstrap Script Contracts", () => {
     expect(contract.helpers.scripts).toContain("codex-handoff-resume.sh");
     expect(contract.helpers.scripts).toContain("check-agent-tooling.sh");
     expect(contract.helpers.scripts).not.toContain("check-architecture-sync.sh");
-    expect(contract.helpers.scripts).toContain("check-brain-manifest.sh");
-    expect(contract.helpers.scripts).toContain("sync-brain-docs.sh");
+    expect(contract.helpers.scripts).not.toContain("check-brain-manifest.sh");
+    expect(contract.helpers.scripts).not.toContain("sync-brain-docs.sh");
     expect(contract.helpers.scripts).toContain("check-deploy-sql-order.sh");
     expect(contract.helpers.scripts).toContain("check-context-files.sh");
     expect(contract.helpers.scripts).toContain("select-agent-context-blocks.sh");

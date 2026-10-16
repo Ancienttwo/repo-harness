@@ -158,7 +158,7 @@
       "default_brain_path": "brain/<project>/*",
       "project_path": "brain/repo-harness/*",
       "manifest_file": ".ai/harness/brain-manifest.json",
-      "sync_script": "repo-harness run sync-brain-docs",
+      "sync_script": "repo-harness brain sync",
       "rule": "external knowledge stores long-lived explanations, runbooks, and patterns only; repo-local contracts, hooks, scripts, checks, and evidence remain authoritative",
       "sync_rule": "external sync and drift checks are operator-invoked only; hooks and workflow verification never read, write, or gate on external vault state"
     }

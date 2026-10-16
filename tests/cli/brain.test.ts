@@ -11,16 +11,20 @@ import {
 import { tmpdir } from "os";
 import { join } from "path";
 
-import { copyHelpers } from "./helpers/helper-script-fixture";
-import { run, tmpWorkspace } from "./helpers/repo-fixture";
+import { run, tmpWorkspace } from "../helpers/repo-fixture";
 
 setDefaultTimeout(30000);
 
-describe("sync-brain-docs helper integration", () => {
-  test("sync-brain-docs mirrors opted-in repo docs and checks drift", () => {
-    const cwd = tmpWorkspace("helper-sync-brain-docs");
+const CLI = join(import.meta.dir, "..", "..", "src", "cli", "index.ts");
+
+function brain(cwd: string, args: string[], brainRoot: string) {
+  return run("bun", [CLI, "brain", ...args, "--repo", cwd], cwd, { REPO_HARNESS_BRAIN_ROOT: brainRoot });
+}
+
+describe("repo-harness brain", () => {
+  test("brain sync mirrors opted-in repo docs and brain check reports drift", () => {
+    const cwd = tmpWorkspace("brain-sync");
     try {
-      copyHelpers(cwd);
       const brainRoot = join(cwd, "brain");
       mkdirSync(join(cwd, "docs"), { recursive: true });
       mkdirSync(join(cwd, ".ai/harness"), { recursive: true });
@@ -50,25 +54,23 @@ describe("sync-brain-docs helper integration", () => {
         ) + "\n"
       );
 
-      const syncRes = run("bash", ["scripts/sync-brain-docs.sh", "--all"], cwd, {
-        REPO_HARNESS_BRAIN_ROOT: brainRoot,
-      });
+      const syncRes = brain(cwd, ["sync"], brainRoot);
       expect(syncRes.status).toBe(0);
-      expect(syncRes.stdout).toContain("[BrainSync] synced docs/valuable.md");
+      expect(syncRes.stdout).toContain("Synced: 1");
 
       const brainFile = join(brainRoot, "demo/references/valuable.md");
       expect(readFileSync(brainFile, "utf-8")).toContain("Stable project knowledge.");
 
-      const checkRes = run("bash", ["scripts/sync-brain-docs.sh", "--check"], cwd, {
-        REPO_HARNESS_BRAIN_ROOT: brainRoot,
-      });
+      const checkRes = brain(cwd, ["check"], brainRoot);
       expect(checkRes.status).toBe(0);
-      expect(checkRes.stdout).toContain("[BrainSync] OK");
+      expect(checkRes.stdout).toContain("Skipped/up-to-date: 1");
 
       writeFileSync(join(cwd, "docs/valuable.md"), "# Valuable Doc\n\nUpdated knowledge.\n");
-      const changedRes = run("bash", ["scripts/sync-brain-docs.sh", "--changed", "docs/valuable.md"], cwd, {
-        REPO_HARNESS_BRAIN_ROOT: brainRoot,
-      });
+      const driftRes = brain(cwd, ["check"], brainRoot);
+      expect(driftRes.status).toBe(1);
+      expect(driftRes.stdout).toContain("Brain file differs for valuable");
+
+      const changedRes = brain(cwd, ["sync", "--changed", "docs/valuable.md"], brainRoot);
       expect(changedRes.status).toBe(0);
       expect(readFileSync(brainFile, "utf-8")).toContain("Updated knowledge.");
     } finally {
@@ -76,11 +78,10 @@ describe("sync-brain-docs helper integration", () => {
     }
   }, 30_000);
 
-  test("sync-brain-docs should reject repo and brain symlink escapes", () => {
-    const cwd = tmpWorkspace("helper-sync-brain-docs-symlink");
-    const outside = realpathSync(mkdtempSync(join(tmpdir(), "helper-sync-brain-docs-outside-")));
+  test("brain sync rejects repo and brain symlink escapes", () => {
+    const cwd = tmpWorkspace("brain-sync-symlink");
+    const outside = realpathSync(mkdtempSync(join(tmpdir(), "brain-sync-outside-")));
     try {
-      copyHelpers(cwd);
       const brainRoot = join(cwd, "brain");
       mkdirSync(join(cwd, "docs"), { recursive: true });
       mkdirSync(join(cwd, ".ai/harness"), { recursive: true });
@@ -111,26 +112,39 @@ describe("sync-brain-docs helper integration", () => {
         ) + "\n"
       );
 
-      const sourceRes = run("bash", ["scripts/sync-brain-docs.sh", "--all"], cwd, {
-        REPO_HARNESS_BRAIN_ROOT: brainRoot,
-      });
+      const sourceRes = brain(cwd, ["sync"], brainRoot);
       expect(sourceRes.status).toBe(1);
-      expect(sourceRes.stdout).toContain("source file symlink escapes repo");
+      expect(sourceRes.stdout).toContain("Entry valuable source_path resolves outside repo");
 
       rmSync(join(cwd, "docs/valuable.md"));
       writeFileSync(join(cwd, "docs/valuable.md"), "# Valuable\n");
       writeFileSync(join(outside, "target.md"), "# Old outside target\n");
       symlinkSync(join(outside, "target.md"), join(brainRoot, "demo/references/valuable.md"));
 
-      const targetRes = run("bash", ["scripts/sync-brain-docs.sh", "--all"], cwd, {
-        REPO_HARNESS_BRAIN_ROOT: brainRoot,
-      });
+      const targetRes = brain(cwd, ["sync"], brainRoot);
       expect(targetRes.status).toBe(1);
       expect(targetRes.stdout).toContain("brain file symlink escapes brain root");
       expect(readFileSync(join(outside, "target.md"), "utf-8")).toContain("Old outside target");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
       rmSync(outside, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test("repo-harness run fails on the retired brain helper ids", () => {
+    const cwd = tmpWorkspace("brain-retired-helper");
+    try {
+      for (const [helper, replacement] of [
+        ["check-brain-manifest", "repo-harness brain check"],
+        ["sync-brain-docs", "repo-harness brain sync"],
+      ]) {
+        const res = run("bun", [CLI, "run", helper], cwd);
+        expect(res.status).toBe(2);
+        expect(res.stderr).toContain(`helper "${helper}" is retired`);
+        expect(res.stderr).toContain(replacement);
+      }
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
     }
   }, 30_000);
 });

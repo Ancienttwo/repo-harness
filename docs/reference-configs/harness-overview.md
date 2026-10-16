@@ -64,7 +64,7 @@ The roles and the state flow below apply to contract-level work only.
 - Existing repos adopted before this file became ignored still have it committed; run `git rm --cached tasks/current.md` once to untrack it. The file stays on disk and the next refresh regenerates it.
 - Use `docs/reference-configs/agentic-development-flow.md` for skill routing and `docs/reference-configs/external-tooling.md` for install/update commands.
 - Use `docs/reference-configs/global-working-rules.md` as the user-level Claude/Codex rule template; keep repo-local workflow contracts in repo files.
-- Externalized reference docs may be indexed by `.ai/harness/brain-manifest.json`. Validation and export through `repo-harness run check-brain-manifest` / `sync-brain-docs` are explicit operator actions and never part of hook or workflow correctness.
+- Externalized reference docs may be indexed by `.ai/harness/brain-manifest.json`. Drift checks and export through `repo-harness brain check` / `repo-harness brain sync` are explicit operator actions and never part of hook or workflow correctness.
 - When a task opts into contract-level execution, run it in an isolated `codex/<task-slug>` worktree. Merge back only after the contract is fulfilled, `tasks/reviews/<plan-stem>.review.md` recommends pass, and the target worktree is clean. Ordinary tasks merge through the PR flow.
 - Adoption retires legacy hook/runtime assets only inside the canonical
   `FsTransaction`: declared paths require an exact SHA-256 match, while

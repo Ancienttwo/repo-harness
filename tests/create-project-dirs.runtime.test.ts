@@ -223,8 +223,8 @@ describe("create-project-dirs runtime smoke", () => {
       expect(workflowContract.documentation.referenceConfigs.resolverCommand).toBe("repo-harness docs path <doc-id>");
       expect(workflowContract.documentation.referenceConfigs.stubMarker).toBe(REFERENCE_STUB_MARKER);
       expect(workflowContract.helpers.scripts).toContain("check-agent-tooling.sh");
-      expect(workflowContract.helpers.scripts).toContain("check-brain-manifest.sh");
-      expect(workflowContract.helpers.scripts).toContain("sync-brain-docs.sh");
+      expect(workflowContract.helpers.scripts).not.toContain("check-brain-manifest.sh");
+      expect(workflowContract.helpers.scripts).not.toContain("sync-brain-docs.sh");
       expect(workflowContract.helpers.scripts).toContain("check-deploy-sql-order.sh");
       expect(workflowContract.helpers.scripts).not.toContain("check-architecture-sync.sh");
       expect(workflowContract.helpers.scripts).toContain("check-task-workflow.sh");
@@ -387,7 +387,7 @@ describe("create-project-dirs runtime smoke", () => {
       expect(policy.information_lifecycle.external_knowledge.manifest_file).toBe(".ai/harness/brain-manifest.json");
       expect(policy.information_lifecycle.external_knowledge.drift_check).toBeUndefined();
       expect(policy.information_lifecycle.external_knowledge.hook_trigger).toBeUndefined();
-      expect(policy.information_lifecycle.external_knowledge.sync_script).toBe("repo-harness run sync-brain-docs");
+      expect(policy.information_lifecycle.external_knowledge.sync_script).toBe("repo-harness brain sync");
       expect(policy.agentic_development.routing).toEqual({
         product_discovery: "parent-agent:geju",
         complex_engineering_plan: "parent-agent:geju",
@@ -496,7 +496,10 @@ describe("create-project-dirs runtime smoke", () => {
       expect(pkg.scripts["check:architecture-sync"]).toBeUndefined();
       expect(pkg.scripts["check:task-sync"]).toBe("repo-harness run check-task-sync");
       expect(pkg.scripts["check:task-workflow"]).toBeUndefined();
-      expect(pkg.scripts["sync:brain-docs"]).toBe("repo-harness run sync-brain-docs --all");
+      expect(pkg.scripts["check:brain"]).toBe("repo-harness brain check");
+      expect(pkg.scripts["sync:brain"]).toBe("repo-harness brain sync");
+      expect(pkg.scripts["check:brain-manifest"]).toBeUndefined();
+      expect(pkg.scripts["sync:brain-docs"]).toBeUndefined();
       expect(existsSync(join(cwd, "scripts/contract-worktree.sh"))).toBe(false);
       expect(existsSync(join(cwd, "scripts/ship-worktrees.sh"))).toBe(false);
     } finally {
