@@ -633,8 +633,10 @@ That checkout is the only editable source of truth; local Claude/Codex skill
 paths are symlink-backed runtime entrypoints rebuilt by
 `scripts/sync-codex-installed-copies.sh`.
 
-`bun run check:ci` is the single CI-equivalent gate; `bun run check:release` only
-adds the npm unpublished-version preflight before delegating to it.
+`bun run check:ci` is the single CI-equivalent gate. `bun run check:release` adds
+the npm unpublished-version preflight, then runs the `release` lane: the
+expensive-gated tests and the tarball install smoke. It is not a second full
+suite and not the CI gate; a release depends on green CI for the release SHA.
 Runtime routing regressions stay in affected tests. The old routing eval gate is retired.
 
 ```bash

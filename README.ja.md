@@ -580,9 +580,11 @@ cd ~/Projects/repo-harness && bun src/cli/index.ts update
 Claude/Codex skill path は `scripts/sync-codex-installed-copies.sh` によって
 再構築される、symlink に裏打ちされた runtime entrypoint です。
 
-`bun run check:ci` が唯一の CI-equivalent gate であり、
-`bun run check:release` はそこへ委譲する前に npm の unpublished-version
-preflight を追加するだけです。
+`bun run check:ci` が唯一の CI-equivalent gate です。
+`bun run check:release` は npm の unpublished-version preflight の後に
+`release` lane を実行します。この lane は高コスト gate 付きのテストと
+tarball install smoke だけを実行します。2 回目の full suite でも CI gate
+でもありません。release はその release SHA の CI が green であることを前提にします。
 Runtime routing の回帰テストは保持します。旧 routing eval gate は廃止しました。
 
 ```bash
