@@ -10,11 +10,9 @@
 
 The executable source of truth is still repo-local:
 
-- Active execution: `plans/plan-*.md` `## Task Breakdown` plus `tasks/contracts/`
+- Ordinary tasks: the PR description holds the goal, scope, changes, verification, risk and rollback. No plan/contract/review/notes chain is mandatory.
+- Optional contract-level work: `plans/plan-*.md` `## Task Breakdown`, `tasks/contracts/` and `tasks/reviews/`
 - Deferred goals: `tasks/todos.md`
-- Plans: `plans/`
-- Contracts: `tasks/contracts/`
-- Reviews: `tasks/reviews/`
 - Hook ownership and parity: `docs/reference-configs/hook-operations.md`
 
 Use the external pattern for broader feature, bug, and response-shaping guidance.
