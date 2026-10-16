@@ -1,6 +1,6 @@
 # Host Invariants
 
-The host chooses when to wake, which native agents to dispatch, and how to schedule them. repo-harness supplies the upstream admission and closeout contract: authorized scope, isolated ownership, durable workflow authority, and acceptance of the exact subject. Scheduling belongs to the host; repo-harness ships no scheduler as part of this contract. Follow [Long-Run Continuation](long-run-continuation.md) for the tick and recovery protocol (`docs/reference-configs/long-run-continuation.md:5`).
+The host chooses when to wake, which native agents to dispatch, and how to schedule them. repo-harness supplies the upstream admission and closeout contract: authorized scope, isolated ownership, durable workflow authority, and acceptance of the exact subject. Scheduling belongs to the host; repo-harness ships no scheduler as part of this contract. Follow [Long-Run Continuation](https://github.com/Ancienttwo/repo-harness/blob/main/docs/reference-configs/long-run-continuation.md) for the tick and recovery protocol. The package does not ship that file, so this link points to the source repository.
 
 These requirements apply to Claude Code and Codex. The MCP write-safety section also covers Pi as an MCP client. The tables distinguish what a host must do from what the current repository actually enforces. A host must not infer enforcement from a policy field, an injected sentence, a tool annotation, or a successful exit code.
 

@@ -1,6 +1,6 @@
 # runtime-harness/global-runtime-reconciliation 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-global-runtime-reconciliation" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:4af2d3527f77c1586003869d1042c6e9a54f32ce3c3630fe6678b5d6cc29a188" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-global-runtime-reconciliation" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:9b91a70acf16f5550b4c842fc59d50eddaec933c620269a573820c9602764e41" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.global-runtime-reconciliation`(kind `capability`)
 > **Matched Prefixes**:`package.json`、`bun.lock`、`src/cli/index.ts`、`src/cli/commands/global-runtime.ts`、`scripts/check-managed-runtime.ts`、`scripts/sync-codex-installed-copies.sh`、`src/effects/architecture/**`、`tests/cli/global-runtime-init.test.ts`、`tests/cli/global-runtime.test.ts`、`tests/architecture-projection-provider.test.ts`、`assets/reference-configs/external-tooling.md`、`docs/reference-configs/external-tooling.md`、`docs/reference-configs/install-profiles.md`、`src/cli/runtime/**`、`src/cli/tty-prompt.ts`、`src/cli/commands/validators.ts`、`src/cli/commands/doctor.ts`、`src/cli/commands/init-hook.ts`、`src/cli/commands/upgrade.ts`、`src/core/upgrade/**`、`src/effects/runtime/node-candidates.ts`、`src/effects/runtime/protected-helper-platform.ts`、`src/effects/skill-tree-integrity.ts`、`src/effects/configuration/**`、`src/core/architecture/projection.ts`、`src/cli/commands/architecture-projection.ts`、`src/cli/commands/architecture-configuration.ts`、`scripts/axr5-archctx-clean-room.ts`、`src/core/release/**`、`src/effects/release/**`、`scripts/check-npm-release.sh`、`scripts/check-release-published.sh`、`scripts/check-tarball-install-smoke.sh`、`scripts/runtime-evidence-receipt.ts`、`install.sh`、`install.ps1`、`tsconfig.json`
@@ -128,7 +128,7 @@ flowchart LR
 | `component.global-runtime-reconciliation.archctx-closure` | ArchContext Closure | `10–20` 個文件 / `1000–2000` 行 | 未宣告 |
 | `component.global-runtime-reconciliation.cli-root` | CLI Root and Diagnostics | `5–10` 個文件 / `2000–5000` 行 | `entrypoint.global-runtime-reconciliation.cli-root` |
 | `component.global-runtime-reconciliation.primary` | Global Runtime Reconciler | `10–20` 個文件 / `2000–5000` 行 | 未宣告 |
-| `component.global-runtime-reconciliation.release-packaging` | Release Packaging | `5–10` 個文件 / `2000–5000` 行 | 未宣告 |
+| `component.global-runtime-reconciliation.release-packaging` | Release Packaging | `5–10` 個文件 / `1000–2000` 行 | 未宣告 |
 
 ## 2. P2:端到端數據流
 

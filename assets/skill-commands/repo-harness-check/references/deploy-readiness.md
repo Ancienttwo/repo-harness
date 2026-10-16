@@ -1,7 +1,5 @@
 # Check Reference: Deploy Readiness
 
-Source facade: `assets/skill-commands/repo-harness-deploy`.
-
 Use for a focused deployment and operations configuration check for the
 repo-local harness.
 

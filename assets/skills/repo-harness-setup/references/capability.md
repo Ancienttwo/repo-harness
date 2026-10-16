@@ -1,7 +1,5 @@
 # Setup Mode: Capability Configuration
 
-Source facade: `assets/skill-commands/repo-harness-capability`.
-
 Use when the repo already has the harness and the user wants to add selected
 capability boundaries without refreshing the full harness. Run the shared
 preflight in `../SKILL.md` first (selected capability prefixes are the

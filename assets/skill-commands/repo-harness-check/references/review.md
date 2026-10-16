@@ -1,7 +1,5 @@
 # Review a plan
 
-Source facade: `assets/skill-commands/repo-harness-review`.
-
 Read the supplied plan and source evidence. Check goal, scope, ownership,
 data flow, error paths, verification and rollback. Review product, design or
 DevEx only when those dimensions affect the task.

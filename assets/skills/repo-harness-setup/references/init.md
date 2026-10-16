@@ -1,7 +1,5 @@
 # Setup Mode: Init
 
-Source facade: `assets/skill-commands/repo-harness-init`.
-
 Use for an existing repository that needs the repo-local agentic workflow
 installed or refreshed. Run the shared preflight in `../SKILL.md` first.
 

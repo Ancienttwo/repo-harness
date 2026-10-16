@@ -1,7 +1,5 @@
 # Product Mode: PRD
 
-Source facade: `assets/skill-commands/repo-harness-prd`.
-
 Use to generate an upper-layer PRD under `plans/prds/`. The PRD is product
 intent and implementation guidance; it is not a Sprint backlog and does not
 start task execution. Run the shared preflight in `../SKILL.md` first, then

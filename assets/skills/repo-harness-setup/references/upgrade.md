@@ -1,7 +1,5 @@
 # Setup Mode: Upgrade
 
-Source facade: `assets/skill-commands/repo-harness-upgrade`.
-
 Use when a repo already has a current harness surface but needs the latest
 contract, helpers, templates, or policy. Run the shared preflight in
 `../SKILL.md` first.

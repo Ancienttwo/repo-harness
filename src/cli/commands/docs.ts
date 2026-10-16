@@ -13,7 +13,6 @@ export interface RuntimeDocEntry {
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const SOURCE_ROOT = resolve(SCRIPT_DIR, '..', '..', '..');
 const DOCS_ROOT = join(SOURCE_ROOT, 'assets', 'reference-configs');
-const NON_RUNTIME_DOC_FILES = new Set(['AGENTS.md', 'CLAUDE.md']);
 
 function normalizeDocId(value: string): string {
   return value.endsWith('.md') ? value.slice(0, -3) : value;
@@ -34,7 +33,6 @@ export function listRuntimeDocs(docsRoot = DOCS_ROOT): RuntimeDocEntry[] {
   if (!existsSync(docsRoot)) return [];
   return readdirSync(docsRoot)
     .filter((fileName) => fileName.endsWith('.md'))
-    .filter((fileName) => !NON_RUNTIME_DOC_FILES.has(fileName))
     .sort()
     .map((fileName) => {
       const id = normalizeDocId(fileName);
