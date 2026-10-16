@@ -147,9 +147,9 @@ if [[ "$lane" == architecture-advisory ]]; then
   exit 0
 fi
 
-# Local full runs and the release gate own the expensive real-install cases;
-# the hosted functional lane deliberately leaves them gated out.
-if [[ "$lane" == all || "$lane" == release ]]; then
+# Local full runs, the daily functional lane and the release gate run the
+# expensive real-install cases. The PR lanes leave them gated out.
+if [[ "$lane" == all || "$lane" == release || "$lane" == functional ]]; then
   export REPO_HARNESS_TEST_EXPENSIVE=1
 fi
 
