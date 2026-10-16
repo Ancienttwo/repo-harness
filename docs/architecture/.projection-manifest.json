@@ -1,6 +1,7 @@
 {
   "schemaVersion": "archcontext.architecture-docs-projection-manifest/v3",
   "rendererVersion": "archcontext.docs-renderer/v6",
+  "minimumRendererVersion": "archcontext.docs-renderer/v6",
   "profile": "repo-harness/v1",
   "layoutVersion": "archcontext.docs-layout/v1",
   "generatedFrom": {"codeGraphPackage":"@colbymchenry/codegraph","codeGraphVersion":"1.6.2"},

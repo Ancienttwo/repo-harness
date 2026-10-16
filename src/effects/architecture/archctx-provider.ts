@@ -386,7 +386,6 @@ export function inspectArchitectureProjectionReadiness(repoRoot: string, options
     if (source === 'unadopted') throw new ArchctxClientError({ code: 'RH_ARCHCTX_POLICY_MISSING', action: 'adopt-repository', message: 'repository policy is missing; run repo-harness init' });
     const nodePath = resolveCompatibleNodeRuntime(options.env ?? process.env, options.trustedNodeCandidateSource);
     const handshake = archctxCapabilities(repoRoot, options);
-    assertRendererFloor(repoRoot, handshake.capabilities);
     try { verifyArchctxDaemonRuntime(repoRoot, options); daemonState = 'compatible'; }
     catch (error) { daemonState = error instanceof ArchctxClientError && error.code === 'AC_RUNTIME_VERSION_UNSUPPORTED' ? 'mismatch' : 'error'; throw error; }
     const modelReady = architectureModelReady(repoRoot);
@@ -400,32 +399,13 @@ export function inspectArchitectureProjectionReadiness(repoRoot: string, options
     const reason = error instanceof Error ? error.message : String(error);
     const state: ArchitectureProjectionReadinessV1['projectionProvider']['state'] = error instanceof ArchctxClientError
       ? ['RH_ARCHCTX_PACKAGE_MISSING', 'RH_ARCHCTX_POLICY_MISSING'].includes(error.code) ? 'missing'
-        : ['RH_ARCHCTX_PACKAGE_MISMATCH', 'RH_ARCHCTX_RENDERER_MISMATCH', 'AC_RUNTIME_VERSION_UNSUPPORTED'].includes(error.code) ? 'mismatch' : 'error'
+        : ['RH_ARCHCTX_PACKAGE_MISMATCH', 'AC_RUNTIME_VERSION_UNSUPPORTED'].includes(error.code) ? 'mismatch' : 'error'
       : 'error';
     return {
       ...base(),
       projectionProvider: { provider: policy.provider, state, binaryPath: null, nodePath: null, command: null, version: null, reason },
       next: error instanceof ArchctxClientError ? error.action === 'update-repo-harness' ? 'update repo-harness' : error.action : 'repair the reported provider error',
     };
-  }
-}
-
-/** A package must not rewrite documents made by a newer renderer. */
-function assertRendererFloor(repoRoot: string, capabilities: ArchctxCapabilitiesV1): void {
-  const path = join(repoRoot, 'docs/architecture/.projection-manifest.json');
-  if (!existsSync(path)) return;
-  const manifest: unknown = parseJson(readFileSync(path, 'utf8'), 'committed projection manifest');
-  const committed = isRecord(manifest) ? manifest.rendererVersion : undefined;
-  const provider = capabilities.renderers.architectureDocs;
-  const revision = (value: unknown): number | null => {
-    if (typeof value !== 'string' || !/^archcontext\.docs-renderer\/v[1-9]\d*$/.test(value)) return null;
-    const number = Number(value.slice(value.lastIndexOf('/v') + 2));
-    return Number.isSafeInteger(number) ? number : null;
-  };
-  const committedRevision = revision(committed);
-  const providerRevision = revision(provider);
-  if (committedRevision === null || providerRevision === null || committedRevision > providerRevision) {
-    throw new ArchctxClientError({ code: 'RH_ARCHCTX_RENDERER_MISMATCH', action: 'update-repo-harness', message: `committed renderer ${String(committed)} cannot be served by ${provider}; update repo-harness` });
   }
 }
 
@@ -595,8 +575,7 @@ function resolvePackageLocalCodeGraph(archctx: ResolvedArchctxPackage): string {
 function runProjectionCommand(command: 'run' | 'readback', request: ProjectionRequestV1, repoRoot: string, options: ArchctxProviderOptions): unknown {
   const policy = options.policy ?? loadArchitectureProjectionPolicy(options.env);
   if ((request.mode === 'apply' || request.mode === 'adopt') && policy.applyMode === 'disabled') throw new Error('architecture projection apply is disabled');
-  const handshake = archctxCapabilities(repoRoot, { ...options, policy });
-  assertRendererFloor(repoRoot, handshake.capabilities);
+  archctxCapabilities(repoRoot, { ...options, policy });
   const client = new ArchctxClient(repoRoot, policy.requiredVersion, options);
   try { return client.data(['projection', command, '--request-json', JSON.stringify(request)], policy.timeoutMs); }
   catch (error) {
