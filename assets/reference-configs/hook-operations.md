@@ -37,7 +37,7 @@ Other documents link here. They do not copy this table.
 
 | Route | Matcher | Host | Typed handler | Responsibility |
 | --- | --- | --- | --- | --- |
-| `SessionStart.default` | all sessions | Claude, Codex | `session-context` | Emit the Effective State section first, then the owed-architecture, pending-plan, active-sprint and resume sections under one budget. |
+| `SessionStart.default` | all sessions | Claude, Codex | `session-context` | Emit the Effective State section first, then the owed-architecture and pending-plan sections under one budget. |
 | `PreToolUse.edit` | `Edit\|Write` | Claude, Codex | `mutation-guard` | Block an edit outside the repository, under `_ref/` or `_ops/`, or without a parseable target path. |
 | `PreToolUse.subagent` | `Agent` | Claude | `return-channel` | Append the return-channel contract and the board slice to a Claude `Agent` prompt. |
 | `UserPromptSubmit.inbox` | all prompts | Claude, Codex | `task-inbox` | Deliver task messages at the turn boundary. |
@@ -87,10 +87,11 @@ only the native-role evidence.
 
 `SessionStart` resolves Effective State once. The `[HarnessState]` section, or
 `[HarnessStateUnavailable]` when the resolution fails, comes first and always.
-Optional sections follow in priority order: `architecture-owed`,
-`pending-plan-capture`, `active-sprint` and `resume`. Each section names its
-source. The resume file itself decides whether a `resume` section exists. A
-provider that throws becomes one `[SessionContextProviderFailed] <id>` line.
+Optional sections follow in priority order: `architecture-owed` and
+`pending-plan-capture`. Each section names its source. SessionStart does not
+inject the resume or the active Sprint. `references.resume` and
+`references.sprint` in `[HarnessState]` point to their files. A provider that
+throws becomes one `[SessionContextProviderFailed] <id>` line.
 One budget of 1,500 estimated tokens applies to the whole payload. Mandatory
 sections stay. An optional section that does not fit becomes
 `[ContextRef:<id>] <source>`.
