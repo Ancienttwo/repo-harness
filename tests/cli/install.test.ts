@@ -359,6 +359,21 @@ describe('install command (Phase 1B)', () => {
     }
   }
 
+  for (const target of ['codex', 'claude', 'both']) {
+    test(`CLI install --target ${target} --location global --dry-run refuses before any host write`, () => {
+      withTempHome((home) => {
+        const result = spawnSync(process.execPath, [CLI, 'install', '--target', target, '--location', 'global', '--dry-run'], {
+          cwd: ROOT,
+          env: { ...process.env, HOME: home, BUN_RUNTIME_TRANSPILER_CACHE_PATH: '0' },
+          encoding: 'utf-8',
+        });
+        expect(result.status, result.stderr).toBe(1);
+        expect(result.stderr).toContain('--dry-run cannot be combined with --location');
+        expect(fs.readdirSync(home)).toEqual([]);
+      });
+    }, 30_000);
+  }
+
   test('codex --location global creates ~/.codex/hooks.json with 6 matcher-grouped entries', () => {
     withTempHome((home) => {
       const result = runInstall({ target: 'codex', location: 'global' });
