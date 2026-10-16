@@ -10,6 +10,7 @@ responsibilities:
   - Seal a work package and publish one commit per work package to the target.
   - Run the local merge gate with the enable bit read from the target base commit.
   - Run contract briefs and archive finished workflow artifacts.
+  - Stop the architecture daemons of a checkout before closeout removes it.
 source:
   include:
     - scripts/contract-*
