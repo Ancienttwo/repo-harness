@@ -6,14 +6,12 @@ import { configuredGitBinary } from '../git/common-directory';
 import { taskRepository, type TaskRepository } from './task-worktree';
 import { canonicalize } from '../../core/evidence/canonical-json';
 import { acquireExclusiveDirectoryLock, ExclusiveLockContentionError } from '../locking/exclusive-directory-lock';
-import { herdrCommand, herdrMutation, herdrResult, spawnHerdr, validateHerdrEndpoint, type HerdrEndpoint } from './herdr';
+import { herdrCommand, herdrMutation, herdrResult, validateHerdrEndpoint, type HerdrEndpoint } from './herdr';
 import { oarObservationFile, readOarObservation } from './task-runtime-observation';
 
 export type ObjectOwnership = { disposition: 'created'; intent_id: string } | { disposition: 'attached' };
 export interface ProcessProof { pid: number; identity: string }
 export interface OwnedProcess extends ProcessProof { ownership: ObjectOwnership }
-export interface TaskCapability { status: 'verified' | 'unverified' | 'unsupported'; evidence_ref: string | null }
-export interface HarnessCapabilities { read_only: TaskCapability; resume: TaskCapability }
 interface TaskBindingCommon {
   protocol: 2;
   repository_id: string;
@@ -23,8 +21,6 @@ interface TaskBindingCommon {
   harness_kind: string;
   ownership: ObjectOwnership;
   provider: OwnedProcess;
-  host: ProcessProof | null;
-  capabilities: HarnessCapabilities;
   max_requests: number;
 }
 export interface HerdrTaskBinding extends TaskBindingCommon {
@@ -163,13 +159,6 @@ export function signalCreatedProcess(process: OwnedProcess, signal: NodeJS.Signa
     if (processProofAlive(process)) throw error;
   }
 }
-export function harnessCapabilities(kind: string, fixtureEvidence?: string): HarnessCapabilities {
-  if (fixtureEvidence && kind !== 'fixture') throw new Error('task_agent_real_harness_unverified');
-  const capability: TaskCapability = fixtureEvidence
-    ? { status: 'verified', evidence_ref: fixtureEvidence }
-    : { status: 'unverified', evidence_ref: null };
-  return { read_only: { ...capability }, resume: { ...capability } };
-}
 export async function waitSessionArtifact(path: string, deadline: number, check: () => void): Promise<void> {
   let nextCheck = 0;
   while (!existsSync(path)) {
@@ -207,7 +196,7 @@ function info(endpoint: HerdrEndpoint, args: string[]): Record<string, any> {
 }
 function mutate(endpoint: HerdrEndpoint, args: string[]): void { herdrMutation(herdrCommand(endpoint, args)); }
 export function captureTaskPane(endpoint: HerdrEndpoint, pane: string, name: string, provider: ProcessProof,
-  ownership: ObjectOwnership, host: ProcessProof | null = null): Pick<HerdrTaskBinding, 'pane_id' | 'terminal_id' | 'workspace_id' | 'shell' | 'agent_name' | 'provider' | 'host' | 'ownership'> {
+  ownership: ObjectOwnership): Pick<HerdrTaskBinding, 'pane_id' | 'terminal_id' | 'workspace_id' | 'shell' | 'agent_name' | 'provider' | 'ownership'> {
   const view = info(endpoint, ['pane', 'get', pane]).pane;
   const agent = info(endpoint, ['agent', 'get', name]).agent;
   if (view?.pane_id !== pane || typeof view.terminal_id !== 'string' || agent?.pane_id !== pane
@@ -216,13 +205,7 @@ export function captureTaskPane(endpoint: HerdrEndpoint, pane: string, name: str
   const shell = { pid: shellPid, identity: processIdentity(shellPid) };
   if (typeof view.workspace_id !== 'string') throw new Error('task_agent_pane_identity_lost');
   assertProcessProof(provider);
-  if (host) {
-    assertProcessProof(host);
-    const shell = info(endpoint, ['pane', 'process-info', '--pane', pane]).process_info?.shell_pid;
-    const parent = Number(execFileSync('ps', ['-p', String(provider.pid), '-o', 'ppid='], { encoding: 'utf8' }).trim());
-    if (shell !== host.pid || parent !== host.pid) throw new Error('task_agent_host_provider_mismatch');
-  }
-  return { pane_id: pane, terminal_id: view.terminal_id, workspace_id: view.workspace_id, shell, agent_name: name, provider: { ...provider, ownership }, host, ownership };
+  return { pane_id: pane, terminal_id: view.terminal_id, workspace_id: view.workspace_id, shell, agent_name: name, provider: { ...provider, ownership }, ownership };
 }
 function assertTerminalProcess(provider: ProcessProof, command: readonly string[]): void {
   assertProcessProof(provider);
@@ -250,10 +233,8 @@ export function assertTaskBinding(binding: TaskPaneBinding, allowExitedProvider 
       const agent = info(binding.endpoint, ['agent', 'get', binding.agent_name]).agent;
       if (agent?.pane_id !== binding.pane_id || agent.terminal_id !== binding.terminal_id || agent.name !== binding.agent_name
         || agent.agent !== binding.harness_kind) throw new Error('task_agent_pane_identity_lost');
-      if (!binding.host) {
-        const foreground = info(binding.endpoint, ['pane', 'process-info', '--pane', binding.pane_id]).process_info?.foreground_processes;
-        if (!Array.isArray(foreground) || !foreground.some(item => item.pid === binding.provider.pid)) throw new Error('task_agent_provider_not_in_pane');
-      }
+      const foreground = info(binding.endpoint, ['pane', 'process-info', '--pane', binding.pane_id]).process_info?.foreground_processes;
+      if (!Array.isArray(foreground) || !foreground.some(item => item.pid === binding.provider.pid)) throw new Error('task_agent_provider_not_in_pane');
     } catch (error) {
       // A normal exit after the liveness read makes Herdr drop the agent and
       // its foreground entry. Where exit is allowed, only a confirmed exit of
@@ -269,7 +250,6 @@ export function assertTaskBinding(binding: TaskPaneBinding, allowExitedProvider 
     const foreground = info(binding.endpoint, ['pane', 'process-info', '--pane', binding.pane_id]).process_info?.foreground_processes;
     if (!Array.isArray(foreground) || foreground.some(item => item.pid !== binding.shell.pid)) throw new Error('task_agent_pane_identity_lost');
   }
-  if (binding.host) assertProcessProof(binding.host);
 }
 interface TaskWorkspaceBinding {
   protocol: 1;
@@ -442,7 +422,7 @@ function bindStartedAgent(intent: StartIntent, pane: CreatedPane): HerdrTaskBind
   const provider = { pid: leader, identity: processIdentity(leader) };
   const proof = captureTaskPane(intent.spec.endpoint, pane.pane_id, intent.agent_name, provider, ownership);
   const binding: HerdrTaskBinding = { protocol: 2, repository_id: intent.repository.repository_id, execution_root: intent.repository.execution_root, runtime: 'herdr', task: intent.spec.task, role: intent.spec.role,
-    harness_kind: intent.spec.harness_kind, endpoint: intent.spec.endpoint, capabilities: harnessCapabilities(intent.spec.harness_kind),
+    harness_kind: intent.spec.harness_kind, endpoint: intent.spec.endpoint,
     max_requests: intent.spec.max_requests, ...proof };
   assertTaskBinding(binding);
   return binding;
@@ -470,23 +450,20 @@ function sameSessionData(left: unknown, right: unknown): boolean {
   // Compare the JSON wire values, using the existing canonical key order.
   return canonicalize(JSON.parse(JSON.stringify(left))) === canonicalize(JSON.parse(JSON.stringify(right)));
 }
-export const TASK_AGENT_START_TIMEOUT_MS = 60_000;
+/** A contending starter waits this long for the lock holder, which can wait up to 50 s for its host to be ready. */
+const TASK_START_LOCK_WAIT_MS = 70_000;
 export interface TaskStartEffects {
-  /** Internal fixture/adapter seam, never exposed as CLI input or shell command. */
-  start?: (endpoint: HerdrEndpoint, name: string, pane: string, kind: string, args: string[]) => Promise<void>;
+  /** Launches the host in the new pane and names the agent. It is an internal seam, never CLI input. */
+  start: (endpoint: HerdrEndpoint, name: string, pane: string, kind: string, args: string[]) => Promise<void>;
   boundary?: (phase: 'intent' | 'split' | 'pane' | 'launched') => Promise<void>;
   contended?: () => void;
-  /** Internal bounded readiness probe; public callers use the 60s default. */
-  startTimeoutMs?: number;
   /** Trusted caller fence checked after lock waits and before side effects. */
   guard?: () => void;
 }
-export async function startTaskAgent(repoRoot: string, spec: TaskAgentSpec, effects: TaskStartEffects = {}): Promise<HerdrTaskBinding> {
+export async function startTaskAgent(repoRoot: string, spec: TaskAgentSpec, effects: TaskStartEffects): Promise<HerdrTaskBinding> {
   effects.guard?.();
   spec = structuredClone(spec);
   validateSpec(spec);
-  const startTimeoutMs = effects.startTimeoutMs ?? TASK_AGENT_START_TIMEOUT_MS;
-  if (!Number.isSafeInteger(startTimeoutMs) || startTimeoutMs <= 3000 || startTimeoutMs > 300_000) throw new Error('task_agent_start_timeout_invalid');
   const repository = taskRepository(repoRoot); const root = repository.primary_root; const dir = taskSessionDirectory(root, spec.task, spec.role);
   ensureSessionDirectory(root, dir);
   return locked(root, dir, async () => {
@@ -521,9 +498,7 @@ export async function startTaskAgent(repoRoot: string, spec: TaskAgentSpec, effe
     effects.guard?.();
     writeSessionArtifact(join(dir, 'launch-intent.json'), { intent_id: intent.intent_id });
     try {
-      if (effects.start) await effects.start(spec.endpoint, intent.agent_name, pane.pane_id, spec.harness_kind, spec.args);
-      else herdrMutation(herdrCommand(spec.endpoint, ['agent', 'start', intent.agent_name, '--kind', spec.harness_kind,
-        '--pane', pane.pane_id, '--timeout', String(startTimeoutMs), '--', ...spec.args], 'herdr', spawnHerdr, startTimeoutMs + 5000));
+      await effects.start(spec.endpoint, intent.agent_name, pane.pane_id, spec.harness_kind, spec.args);
       effects.guard?.();
     } catch (error) {
       writeSessionArtifact(join(dir, 'launch-unknown.json'), { intent_id: intent.intent_id, error: String(error) });
@@ -536,7 +511,7 @@ export async function startTaskAgent(repoRoot: string, spec: TaskAgentSpec, effe
     assertTaskBinding(binding);
     writeSessionArtifact(join(dir, 'binding.json'), binding);
     return binding;
-  }, effects.contended, startTimeoutMs + 10_000).catch(error => {
+  }, effects.contended, TASK_START_LOCK_WAIT_MS).catch(error => {
     if (error instanceof ExclusiveLockContentionError) throw new Error('task_agent_start_in_progress');
     throw error;
   });
@@ -545,7 +520,6 @@ export async function startTaskAgent(repoRoot: string, spec: TaskAgentSpec, effe
 /** Internal fixed application-host seam; never exposed as CLI/MCP command input.
  * The execution owner is the foreground host. Native children are OAR-owned,
  * and must be disposed before the existing task-agent pane cleanup is invoked.
- * This does not change binding.host's protected-domain-result semantics.
  */
 function assertApplicationHostCommand(command: readonly string[]): void {
   if (command.length !== 4 || !isAbsolute(command[0]!) || command[1] !== '--disable-sigusr1'
@@ -608,7 +582,7 @@ export async function bindTerminalApplicationHost(repoRoot: string, spec: Termin
     assertTerminalProcess(provider, command);
     const binding: TerminalTaskBinding = { protocol: 2, repository_id: repository.repository_id, execution_root: repository.execution_root,
       runtime: 'terminal', task: spec.task, role: spec.role, harness_kind: spec.harness_kind, command: [...command],
-      ownership, provider: { ...provider, ownership }, host: null, capabilities: harnessCapabilities(spec.harness_kind), max_requests: spec.max_requests };
+      ownership, provider: { ...provider, ownership }, max_requests: spec.max_requests };
     writeSessionArtifact(join(dir, 'provider-created.json'), binding);
     writeSessionArtifact(join(dir, 'binding.json'), binding);
     return binding;
@@ -622,10 +596,6 @@ export function readTaskAgent(repoRoot: string, task: string, role: string): { d
   if (binding.task !== task || binding.role !== role || binding.protocol !== 2 || binding.repository_id !== repository.repository_id
     || !['herdr', 'terminal'].includes(binding.runtime)) throw new Error('task_agent_binding_invalid');
   if (!Number.isSafeInteger(binding.max_requests) || binding.max_requests < 1 || binding.max_requests > 100) throw new Error('task_agent_binding_invalid');
-  for (const capability of Object.values(binding.capabilities)) {
-    if (!['verified', 'unverified', 'unsupported'].includes(capability.status)
-      || (capability.status === 'verified' && (binding.harness_kind !== 'fixture' || !capability.evidence_ref))) throw new Error('task_agent_capability_invalid');
-  }
   if (binding.runtime === 'terminal') {
     assertCreated(binding.ownership);
     const intent = readSessionArtifact<TerminalStartIntent>(join(dir, 'intent.json'));
@@ -667,8 +637,7 @@ function validateTaskResult(request: TaskRequest, value: unknown): TaskResult {
   return result;
 }
 export function readTaskRequestResult(root: string, dir: string, request: TaskRequest): TaskResult | null {
-  const { binding } = assertTaskRequest(root, dir, request);
-  if (binding.host) return null; // Host results belong to their domain consumer, never provider outbox.
+  assertTaskRequest(root, dir, request);
   if (!existsSync(request.result_ref)) return null;
   let value: unknown;
   try { value = readSessionArtifact(request.result_ref); }
@@ -697,34 +666,10 @@ export async function collectTaskResult(repoRoot: string, task: string, role: st
     return result;
   });
 }
-/** Provider submission writes only its execution checkout, never primary state. */
-export async function submitTaskResult(repoRoot: string, task: string, role: string, round: number, value: unknown): Promise<TaskResult> {
-  const repository = taskRepository(repoRoot);
-  const { dir, binding } = readTaskAgent(repoRoot, task, role);
-  if (binding.host) throw new Error('task_agent_host_authority');
-  if (repository.execution_root !== binding.execution_root) throw new Error('task_agent_result_submission_checkout_mismatch');
-  if (!Number.isSafeInteger(round) || round < 1) throw new Error('task_agent_round_invalid');
-  const request = readSessionArtifact<TaskRequest>(join(dir, `request-${round}.json`));
-  const { outbox } = assertTaskRequest(repoRoot, dir, request);
-  const result = validateTaskResult(request, value);
-  return locked(binding.execution_root, outbox, async () => {
-    if (existsSync(join(dir, 'closed.json'))) throw new Error('task_agent_session_closed');
-    const previous = readTaskRequestResult(repoRoot, dir, request);
-    if (previous) {
-      if (!sameSessionData(previous, result)) throw new Error('task_agent_result_conflict');
-      return previous;
-    }
-    // A partial result is pending; publish completed bytes atomically.
-    writeSessionArtifact(request.result_ref, result, false);
-    return result;
-  });
-}
-export async function sendTaskRequest(repoRoot: string, task: string, role: string, contextRef: string, contextPolicy: 'repeatable' | 'changed_only' = 'repeatable', applicationDelivery?: (request: TaskRequest) => Promise<void>,
+export async function sendTaskRequest(repoRoot: string, task: string, role: string, contextRef: string, contextPolicy: 'repeatable' | 'changed_only', applicationDelivery: (request: TaskRequest) => Promise<void>,
   /** Internal fixture barrier. It is never accepted from CLI or PM input. */
   publicationBoundary?: (request: TaskRequest) => Promise<void>, guard?: () => void): Promise<TaskRequest> {
   const repository = taskRepository(repoRoot); const root = repository.primary_root; const { dir, binding } = readTaskAgent(root, task, role);
-  if (binding.host) throw new Error('task_agent_host_domain_delivery_required');
-  if (binding.runtime === 'terminal' && !applicationDelivery) throw new Error('task_agent_application_delivery_required');
   return locked(root, dir, async () => {
     guard?.();
     if (!['repeatable', 'changed_only'].includes(contextPolicy)) throw new Error('task_agent_context_policy_invalid');
@@ -757,8 +702,7 @@ export async function sendTaskRequest(repoRoot: string, task: string, role: stri
     // Once this marker exists, a crash/nonzero/timeout can mean input was sent.
     // Inspect the same request/result files. Never replay it or allocate a fresh one.
     try {
-      if (applicationDelivery) await applicationDelivery(request);
-      else if (binding.runtime === 'herdr') mutate(binding.endpoint, ['agent', 'prompt', binding.agent_name, `Read task request ${requestPath}; write its result only to ${request.result_ref}.`]);
+      await applicationDelivery(request);
     } catch (error) {
       writeSessionArtifact(join(dir, `delivery-${round}.json`), { request_id: request.request_id, state: 'unknown', error: String(error) });
       throw new Error('task_agent_delivery_unknown; inspect the same request/result before further action');
@@ -789,7 +733,7 @@ async function disposeCodingApplication(dir: string, binding: TaskPaneBinding): 
   const control = join(dir, 'coding-host');
   if (!existsSync(join(control, 'spec.json'))) return true;
   const ready = readSessionArtifact<{ pid: number; session_id: string }>(join(control, 'ready.json'));
-  if (binding.host !== null || ready.pid !== binding.provider.pid || !ready.session_id) throw new Error('task_agent_application_host_identity_lost');
+  if (ready.pid !== binding.provider.pid || !ready.session_id) throw new Error('task_agent_application_host_identity_lost');
   const disposed = join(control, 'disposed.json');
   if (!existsSync(disposed)) {
     if (!processProofAlive(binding.provider)) return false;
@@ -943,16 +887,6 @@ export function cancelTaskAgent(repoRoot: string, task: string, role: string): P
   return cleanupTaskAgent(repoRoot, task, role, 'cancel');
 }
 
-/** History is observation only, never a task ACK or acceptance receipt. */
-export function readTaskAgentHistory(repoRoot: string, task: string, role: string, lines = 200): string {
-  if (!Number.isSafeInteger(lines) || lines < 1 || lines > 1000) throw new Error('task_agent_history_lines_invalid');
-  const { binding } = readTaskAgent(repoRoot, task, role);
-  assertTaskBinding(binding);
-  if (binding.runtime !== 'herdr') throw new Error('task_agent_history_unavailable; the operator terminal owns the output');
-  const result = herdrCommand(binding.endpoint, ['agent', 'read', binding.agent_name, '--source', 'recent-unwrapped', '--lines', String(lines), '--format', 'text']);
-  if (result.error || result.status !== 0 || result.signal) throw new Error('task_agent_history_unavailable');
-  return result.stdout.toString('utf8');
-}
 export function taskAgentStatus(repoRoot: string, task: string, role: string) {
   const repository = taskRepository(repoRoot); const root = repository.primary_root; const dir = taskSessionDirectory(root, task, role);
   try { assertSessionDirectory(root, dir); } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { status: 'absent', task, role }; throw error; }

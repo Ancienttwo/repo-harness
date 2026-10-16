@@ -86,7 +86,6 @@
     "tests/cli/state-command.test.ts": 2.23,
     "tests/cli/state-snapshot.test.ts": 500.87,
     "tests/cli/status.test.ts": 2516.12,
-    "tests/cli/task-agent.test.ts": 2680.49,
     "tests/cli/tools.test.ts": 8859.21,
     "tests/cli/uninstall.test.ts": 283.09,
     "tests/cli/verified-context.test.ts": 2205.67,

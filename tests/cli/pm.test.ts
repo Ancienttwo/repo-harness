@@ -90,7 +90,7 @@ function requestFixture(f: ReturnType<typeof fixture>, fixtureProof?: { pid: num
     runtime: 'herdr', task: taskId, role: 'deep-worker', harness_kind: 'fixture', endpoint: { session: 'unused' },
     pane_id: 'pane-fixture', terminal_id: 'terminal-fixture', workspace_id: 'workspace-fixture', shell: proof,
     agent_name: 'fixture', ownership: { disposition: 'attached' }, provider: { ...proof, ownership: { disposition: 'attached' } },
-    host: null, capabilities: { read_only: { status: 'unverified', evidence_ref: null }, resume: { status: 'unverified', evidence_ref: null } }, max_requests: 3 };
+    max_requests: 3 };
   writeSessionArtifact(join(dir, 'binding.json'), binding);
   const request: TaskRequest = { protocol: 2, task: taskId, role: 'deep-worker', round: 1, request_id: 'request-fixture',
     context_ref: join(outbox, 'context-1.txt'), source_ref: join(f.execution, plan), context_sha256: 'sha256:' + 'b'.repeat(64), result_ref: join(outbox, 'result-1.json'),
