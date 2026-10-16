@@ -9,10 +9,14 @@ Kanban is a read-only view.
 Use the same authoritative task ID and role. Do not send again because a
 response was lost. A lost response can mean the input was delivered.
 
-Use the herdr skill in the explicitly identified session. Read the peer pane
-with `herdr agent read <name> --source recent-unwrapped` to see whether the
-request arrived. If the peer shows no sign of it, ask the same peer again with
-`herdr agent prompt`. Do not start a new executor as a recovery step.
+Treat delivery as unknown. Use the herdr skill in the explicitly identified
+session. Read the peer pane with `herdr agent read <name> --source
+recent-unwrapped` to inspect its state. Empty scrollback does not prove that
+delivery failed: the peer can accept the prompt and not show it yet. Never send
+the same request again because the pane shows nothing. A resend can repeat
+edits or side effects. Ask the same peer a status question that does not replay
+the request, or hand the decision to the operator. Do not start a new executor
+as a recovery step.
 
 Terminal output is observation. It is not a result, completion evidence or
 human approval. Keep candidate-bound validation and approval in their current

@@ -30,7 +30,7 @@ Only an agent inside a Herdr pane may run those control commands.
 5. **handoff** — read `references/handoff.md` only when work must resume later.
 
 For a lost worker response or Bot control integration, read
-`references/bot-control.md`. Inspect the peer pane before any retry.
+`references/bot-control.md`. Inspect the peer pane. Do not resend the request.
 
 Keep main publication, deletion, credentials/permissions and release/production
 within their separate authorization boundaries. Ordinary work needs scoped
