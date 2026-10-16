@@ -192,7 +192,7 @@ task offer。Bot 决定调度什么。repo-harness 提供工具和证据。见
 | | |
 | --- | --- |
 | **会话状态落在文件里** | Plan、contract、check 和 handoff 都留在仓库里，新会话从 artifact 而不是聊天线程恢复 |
-| **Typed hook runtime** | 12 条公开 route（Claude 9 条，Codex 12 条，Pi 6 条），每条都绑定唯一一个 typed in-process handler，在 edit boundary 上做 fail-closed guard |
+| **Typed hook runtime** | 6 条公开 route（Claude 5 条，Codex 5 条），每条都绑定唯一一个 typed in-process handler，在 edit boundary 上做 fail-closed guard |
 | **Plan → Contract → Review** | 从 approved plan 到 projected contract、隔离 worktree、结构化证据，再到可审查 closeout 的完整生命周期 |
 | **Bot 调度的 program** | 带 engineer task offer 和可续期 lease 的 collaboration program；Bot 负责调度，repo-harness 提供工具和证据 |
 | **渐进式 context loading** | 约 12KB 的稳定 root context，加上只为实际改动文件加载的约 1KB capability contract |
@@ -376,8 +376,8 @@ repo-harness review close --contract tasks/contracts/<task>.contract.md
 
 ## Hooks
 
-安装好的 adapter 绑定 12 条公开的 hook route：Claude 装 9 条，Codex 装 12 条，
-Pi 装 6 条。Route tuple `event + routeId + matcher` 是稳定的 contract；每个
+安装好的 adapter 绑定 6 条公开的 hook route：Claude 装 5 条，Codex 装 5 条。
+Route tuple `event + routeId + matcher` 是稳定的 contract；每个
 tuple 绑定唯一一个 typed in-process handler。带 Host 列的 route 表在
 [`docs/reference-configs/hook-operations.md`](docs/reference-configs/hook-operations.md#hook-authority-map)。
 
@@ -394,27 +394,6 @@ event。Edit guard 有 `RepoScopeGuard`（路径在仓库之外）、`ExternalRe
 （`_ref/`）、`OpsPrivateGuard`（`_ops/`），以及 `ApplyPatchScopeGuard` 和
 `EditScopeGuard`（没有可解析的目标路径）。完整 playbook 见
 [`docs/reference-configs/hook-operations.md`](docs/reference-configs/hook-operations.md)。
-
-### Pi 1.2.0 package
-
-Pi 使用官方 package loader。先构建候选包，再安装：
-
-```bash
-pi install /absolute/path/to/repo-harness
-```
-
-包提供 `repo-harness` router 和 `repo-harness-check` 技能。
-安装后在现有会话中执行 `/reload`。仓库必须有
-`.ai/harness/workflow-contract.json`，才会启用 hooks。
-需要 Pi `1.2.0`、Bun `>=1.4.0` 和 SDK 安装中的路径解析函数。
-其他版本或缺少该函数的发行包会标为 unavailable。
-
-extension 检查原生 edit/write，包括 codemode 的嵌套调用。
-检查拒绝、bridge 故障或无效输出会阻止编辑。
-上下文或观察失败后，后续编辑也会阻止。修复故障后执行 `/reload`。
-
-Shell 写入、`!`/`!!`、extension 直接写入和第三方 MCP 写入需要各自的控制。
-Pi package 不安装 scheduler，也不启用 OAR Pi review worker。
 
 ## 本地人工控制台
 

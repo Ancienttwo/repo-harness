@@ -217,7 +217,7 @@ Layer 2 は Layer 1 を置き換えるものではありません。program の�
 | | |
 | --- | --- |
 | **File-backed sessions** | Plan、contract、check、handoff がリポジトリに残るので、新しいセッションはチャットスレッドではなく artifacts から再開します |
-| **Typed hook runtime** | 12 本の公開 route（Claude 9 本、Codex 12 本、Pi 6 本）があり、それぞれが exactly one の typed in-process handler に bind され、edit boundary で fail-closed な guard がかかります |
+| **Typed hook runtime** | 6 本の公開 route（Claude 5 本、Codex 5 本）があり、それぞれが exactly one の typed in-process handler に bind され、edit boundary で fail-closed な guard がかかります |
 | **Plan → Contract → Review** | approved plan から投射された contract、隔離された worktree、構造化された evidence、review 可能な closeout までの 1 本の lifecycle |
 | **Bot-scheduled programs** | engineer task offer と更新可能な lease を持つ collaboration program。Bot がスケジュールし、repo-harness が tools と evidence を提供します |
 | **Progressive context loading** | 安定した約 12KB の root context に、実際に触れるファイルにだけ読み込まれる約 1KB の capability contract が加わります |
@@ -416,8 +416,8 @@ Herdr のない Claude デスクトップアプリでは `--launch app-terminal`
 
 ## Hooks
 
-インストールされた adapter は 12 本の公開 hook route を bind します。Claude は 9 本、
-Codex は 12 本、Pi は 6 本をインストールします。`event + routeId + matcher` の
+インストールされた adapter は 6 本の公開 hook route を bind します。Claude は 5 本、
+Codex は 5 本をインストールします。`event + routeId + matcher` の
 route tuple が安定した契約であり、各 tuple は exactly one の typed in-process
 handler に bind されます。Host 列つきの route 表は
 [`docs/reference-configs/hook-operations.md`](docs/reference-configs/hook-operations.md#hook-authority-map) にあります。
