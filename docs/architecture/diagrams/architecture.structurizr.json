@@ -1026,6 +1026,12 @@
         "description": "calls"
       },
       {
+        "id": "relation.contract-assets.contract-worktree-lifecycle.archctx-closure",
+        "sourceId": "component.contract-assets.contract-worktree-lifecycle",
+        "destinationId": "component.global-runtime-reconciliation.archctx-closure",
+        "description": "calls"
+      },
+      {
         "id": "relation.contract-assets.contract-worktree-lifecycle.execution-primitives",
         "sourceId": "component.contract-assets.contract-worktree-lifecycle",
         "destinationId": "capability.workflow-engine.execution-primitives",
