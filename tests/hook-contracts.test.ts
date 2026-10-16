@@ -9,15 +9,6 @@ function read(relPath: string): string {
 }
 
 describe("Hook contracts", () => {
-  test("typed hook input parser exists and the shell operator library is gone", () => {
-    expect(existsSync(join(ROOT, "src/cli/hook/hook-input.ts"))).toBe(true);
-    expect(existsSync(join(ROOT, "assets/hooks/lib/workflow-state.sh"))).toBe(false);
-    expect(existsSync(join(ROOT, "assets/hooks/hook-input.sh"))).toBe(false);
-    expect(existsSync(join(ROOT, "assets/hooks/lib/session-state.sh"))).toBe(false);
-    expect(existsSync(join(ROOT, "assets/hooks/lib/memory-state.sh"))).toBe(false);
-    expect(existsSync(join(ROOT, "assets/hooks/lib/skill-factory.sh"))).toBe(false);
-  });
-
   test("route registry binds every public tuple to exactly one typed handler", () => {
     const routes = read("src/cli/hook/route-registry.ts");
     const registry = read("src/cli/hook/handler-registry.ts");
@@ -73,18 +64,10 @@ describe("Hook contracts", () => {
     expect(returnChannel).toContain("updatedInput");
     // #691 finding 9: the handler returns a typed permission; the host renderer writes permissionDecision.
     expect(returnChannel).toContain("decision: 'allow'");
-    const advisor = read("src/cli/hook/delegation-advisor.ts");
-    expect(advisor).toContain("/(delegate|parallel)");
-    expect(advisor).toContain("permission only");
     expect(read("src/cli/hook/subagent-context.ts")).toContain("[repo-harness:subagent-context]");
   });
 
-  test("delegation requires an explicit slash command and has no standing authorization", () => {
-    const advisor = read("src/cli/hook/delegation-advisor.ts");
-    expect(advisor).toContain("activeContractPath");
-    expect(advisor).not.toContain("policyDelegation.mode");
-    expect(advisor).not.toContain("auto-mode");
-    expect(advisor).not.toContain("readGlobalDelegationMode");
+  test("no hook grants standing delegation authorization", () => {
     const sessionStart = read("src/cli/hook/session-context.ts");
     expect(sessionStart).not.toContain("Delegation Standing Authorization");
     expect(sessionStart).not.toContain("effectiveDelegationMode");
@@ -121,17 +104,5 @@ describe("Hook contracts", () => {
     expect(script).not.toContain('run_optional_helper "check-brain-manifest.sh"');
     expect(script).not.toContain('run_optional_helper "sync-brain-docs.sh"');
     expect(script).not.toContain("Brain doc sync check failed");
-  });
-
-  test("retired post-edit hooks stay deleted", () => {
-    expect(existsSync(join(ROOT, "src/cli/hook/mutation-observed.ts"))).toBe(false);
-    expect(existsSync(join(ROOT, "assets/hooks/first-principles-guard.sh"))).toBe(false);
-    expect(existsSync(join(ROOT, "assets/hooks/anti-simplification.sh"))).toBe(false);
-  });
-
-  test("the trace observer and its shell predecessors are retired", () => {
-    expect(existsSync(join(ROOT, "src/cli/hook/trace-observer.ts"))).toBe(false);
-    expect(existsSync(join(ROOT, "assets/hooks/trace-event.sh"))).toBe(false);
-    expect(existsSync(join(ROOT, "assets/hooks/context-pressure-hook.sh"))).toBe(false);
   });
 });

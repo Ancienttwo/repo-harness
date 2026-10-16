@@ -221,7 +221,7 @@ escrito un humano.
 | | |
 | --- | --- |
 | **Sesiones respaldadas por archivos** | Plans, contracts, checks y handoffs viven en el repositorio, de modo que una sesión nueva retoma desde artefactos en vez de un hilo de chat |
-| **Typed hook runtime** | 12 routes públicas (Claude 9, Codex 12, Pi 6), cada una atada a exactamente un typed handler in-process, con guards fail-closed en el límite de edición |
+| **Typed hook runtime** | 6 routes públicas (Claude 5, Codex 5), cada una atada a exactamente un typed handler in-process, con guards fail-closed en el límite de edición |
 | **Plan → Contract → Review** | Un solo ciclo de vida desde el plan aprobado hasta el contract proyectado, el worktree aislado, la evidencia estructurada y un closeout revisable |
 | **Programas planificados por el Bot** | Programas de collaboration con task offers de engineer y leases renovables; el Bot planifica, repo-harness aporta herramientas y evidencia |
 | **Carga de contexto progresiva** | Un root context estable de ~12KB más capability contracts de ~1KB que solo se cargan para los archivos que realmente se están tocando |
@@ -420,8 +420,8 @@ Un task-agent fleet `deep-reasoner` persiste en un linked checkout dedicado y la
 
 ## Hooks
 
-El adapter instalado ata 12 hook routes públicas: Claude instala 9, Codex instala 12
-y Pi instala 6. El route tuple `event + routeId + matcher` es el contract estable;
+El adapter instalado ata 6 hook routes públicas: Claude instala 5 y Codex instala
+5. El route tuple `event + routeId + matcher` es el contract estable;
 cada tuple ata exactamente un typed handler in-process. La tabla de routes, con una
 columna Host, está en
 [`docs/reference-configs/hook-operations.md`](docs/reference-configs/hook-operations.md#hook-authority-map).
@@ -583,9 +583,11 @@ Ese checkout es la única fuente de verdad editable; las rutas locales de
 skill de Claude/Codex son runtime entrypoints respaldados por symlinks,
 reconstruidos por `scripts/sync-codex-installed-copies.sh`.
 
-`bun run check:ci` es el único gate equivalente a CI; `bun run check:release`
-solo añade el preflight de unpublished-version de npm antes de delegar a ese
-mismo gate.
+`bun run check:ci` es el único gate equivalente a CI. `bun run check:release`
+añade el preflight de unpublished-version de npm y después ejecuta el lane
+`release`: los tests protegidos por el gate de coste y el smoke de instalación
+del tarball. No es una segunda suite completa ni el gate de CI; un release
+depende de un CI en verde para el SHA del release.
 Las pruebas afectadas cubren el routing del runtime. El antiguo gate de routing eval está retirado.
 
 ```bash

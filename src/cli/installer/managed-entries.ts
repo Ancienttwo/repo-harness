@@ -92,7 +92,6 @@ function routeInProfile(route: Route, profile: InstallProfile): boolean {
     'SessionStart.default',
     'UserPromptSubmit.inbox',
     'PreToolUse.edit',
-    'PostToolUse.bash',
     'Stop.default',
   ]);
   return minimal.has(key);

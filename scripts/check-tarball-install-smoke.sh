@@ -6,9 +6,13 @@ cd "$ROOT"
 
 PACKAGE_NAME="$(bun -e 'const pkg = await Bun.file("package.json").json(); console.log(pkg.name)')"
 PACKAGE_VERSION="$(bun -e 'const pkg = await Bun.file("package.json").json(); console.log(pkg.version)')"
-PI_PEER_VERSION="$(bun -e 'const pkg = await Bun.file("package.json").json(); console.log(pkg.peerDependencies["@earendil-works/pi-coding-agent"])')"
 TMP_DIR="$(mktemp -d /tmp/rh-tarball-smoke.XXXXXX)"
 OPERATOR_PID=""
+# Every step runs with a temporary HOME and harness home. The smoke must not
+# register its temporary repositories in the real ~/.repo-harness registry.
+SMOKE_HOME="$TMP_DIR/home"
+mkdir -p "$SMOKE_HOME"
+export HOME="$SMOKE_HOME" REPO_HARNESS_HOME="$SMOKE_HOME/.repo-harness"
 
 cleanup() {
   local exit_code=$?
@@ -52,11 +56,6 @@ const required = [
   "src/cli/hook/handler-registry.ts",
   "src/cli/hook/route-registry.ts",
   "src/cli/hook/runtime.ts",
-  "src/pi/extension.ts",
-  "src/pi/hook-bridge.ts",
-  "src/pi/hook-protocol.ts",
-  "scripts/sync-pi-package.ts",
-  "scripts/check-pi-package-smoke.ts",
   "SKILL.md",
   "assets/skill-commands/repo-harness-check/SKILL.md",
   "assets/templates/helpers/capability-resolver.ts",
@@ -124,18 +123,10 @@ git -C "$TARGET_REPO" init -q
 
 cd "$APP_DIR"
 bun init -y >/dev/null
-# A Pi consumer installs Pi itself. Install the exact optional peer, or Pi resolves
-# only through the @botiverse/oar range and gets the newest registry release.
-bun add "$TARBALL_PATH" "@earendil-works/pi-coding-agent@$PI_PEER_VERSION" >/dev/null
+bun add "$TARBALL_PATH" >/dev/null
 
 CLI="$APP_DIR/node_modules/.bin/repo-harness"
 HOOK="$APP_DIR/node_modules/.bin/repo-harness-hook"
-PI_SMOKE_HOME="$TMP_DIR/pi-home"
-PI_SMOKE_REPO="$TMP_DIR/pi-repo"
-mkdir -p "$PI_SMOKE_HOME" "$PI_SMOKE_REPO"
-git -C "$PI_SMOKE_REPO" init -q
-env HOME="$PI_SMOKE_HOME" PI_CODING_AGENT_DIR="$PI_SMOKE_HOME/.pi/agent" \
-  node "$ROOT/scripts/check-pi-package-smoke.ts" "$APP_DIR" "$PI_SMOKE_REPO"
 # This smoke verifies the installed package runtime even when the operator shell
 # is configured to route development CLIs to another source checkout.
 unset REPO_HARNESS_SOURCE_ROOT

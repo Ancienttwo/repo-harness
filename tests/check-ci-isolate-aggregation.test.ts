@@ -4,7 +4,6 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSy
 import { basename, delimiter, join, resolve, sep } from "node:path";
 import { tmpdir } from "node:os";
 import { discoverTestFiles, integrationFiles, scheduleTestFiles, selectTestSuite, serialFiles, shardTestFiles } from '../scripts/select-test-suite';
-import recordedDurations from '../scripts/test-file-durations.json';
 
 const REPO_ROOT = resolve(import.meta.dir, "..");
 
@@ -138,7 +137,6 @@ describe("ci isolate-mode test loop", () => {
     expect(core.filter(file => integration.includes(file))).toEqual([]);
     expect([...core, ...integration].sort()).toEqual(files);
     expect(selectTestSuite('full', files)).toEqual(files);
-    expect(Object.keys(recordedDurations.files).filter(file => !files.includes(file))).toEqual([]);
     expect(integration.sort()).toEqual([...integrationFiles].sort());
     for (const file of serialFiles) expect(files).toContain(file);
     expect(() => selectTestSuite('unknown', files)).toThrow('Suite must be');

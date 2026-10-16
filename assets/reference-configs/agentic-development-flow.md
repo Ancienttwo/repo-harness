@@ -22,7 +22,7 @@
 - Keep the report proportional to the work. Routine confirmations, short updates and tool logs do not require a full report. This SOP adds no approval gate or separate status store. Use existing task, PR and verification sources.
 
 ## Lessons Retro
-`tasks/lessons.md` is the one lessons ledger. It has the role of a root `LESSONS.md`. Do not add a second lessons file. Generated root `CLAUDE.md` and `AGENTS.md` tell each session to read it. Add that line by hand to an existing root file.
+`tasks/lessons.md` is the one lessons ledger. It has the role of a root `LESSONS.md`. Do not add a second lessons file. The retro and maintenance triage read the ledger. Sessions do not read it at start, and root files do not tell them to. A lesson reaches a session through its enforcer or through a rule promoted into the root files.
 
 - The ledger keeps one watermark line before the first entry: `reviewed-through: <full commit SHA>`. If the line is missing, the first retro reviews the last 24 hours and adds it.
 - Each night, review the default-branch history after the watermark: `git log --first-parent <watermark>..origin/main`. Skip commits that change only `tasks/lessons.md`.
@@ -31,15 +31,26 @@
 
 ```markdown
 - Date: <YYYY-MM-DD>
+- Name: <2-5 word rule name>
 - Mistake pattern: <stable theme key>
 - Prevention rule: <rule>
+- Enforced by: <path to check, test or guard> | judgment
 - Why: <what failed and what it cost>
 - Triggered by correction: <commit SHA, PR or issue>
 - Seen: <N>×
 ```
 
-- For a repeat, copy the `Mistake pattern` text exactly. Maintenance triage groups entries by that text. `Seen` counts the entries with that text, this entry included. Do not edit `Seen` on older entries.
-- At `Seen: 3×`, the lesson occurred on three different days. Promote its prevention rule into root `AGENTS.md` and root `CLAUDE.md` in the same PR. Add `- Promoted: <PR>` to that entry.
+- For a repeat, copy the `Name` and `Mistake pattern` text exactly. Maintenance triage groups entries by `Mistake pattern`. `Seen` counts the entries with that text, this entry included. Do not edit `Seen` on older entries.
+- `Enforced by` names the file that fails when the mistake comes back. For an architecture or type fix, name the file that makes the mistake impossible. `judgment` means that no file catches the mistake.
+- From `Seen: 2×`, fix the mistake class in the PR that adds the entry. Use the highest level that works:
+  1. Architecture or data structure: one owner for each state, one way to do each task, and no old path that an agent can copy.
+  2. Types that cannot express the mistake.
+  3. A check whose error names the fix: the file, type or function to use.
+  4. A test.
+  If no level works, write `Enforced by: judgment`.
+- A new check or test must fail on the real commit that had the mistake and pass after the fix. Put both results in the PR.
+- At `Seen: 3×` with `Enforced by: judgment`, promote the prevention rule into root `AGENTS.md` and root `CLAUDE.md` in the same PR. Add `- Promoted: <PR>` to that entry. A rule with a structural enforcer does not go into the root files.
+- When the mistake can no longer occur, delete its text rule from the agent instruction files. Keep its ledger entries.
 - Each retro advances the watermark to the last reviewed commit, also when it finds no lesson. If an earlier retro PR is still open, update that PR. Do not open a second retro PR.
 - Every change to `tasks/lessons.md` goes through a PR and merges only after GO. GO is an explicit go-ahead from the repository owner (Aimpact for repo-harness) for one reviewed head SHA. Task-level publication authorization does not replace it. Merge with `gh pr merge <pr> --squash --match-head-commit <reviewed-sha>`. Lessons are not task notes. Ordinary tasks still write notes only for non-obvious decisions. A correction in a task can add an entry; that entry follows the same PR and GO rule.
 

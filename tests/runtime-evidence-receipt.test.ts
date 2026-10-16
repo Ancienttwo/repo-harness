@@ -1,11 +1,10 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { chmodSync, cpSync, mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'fs';
+import { chmodSync, cpSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { dirname, join } from 'path';
 import { createHash } from 'crypto';
 import { spawnSync } from 'child_process';
 
-import { validateRuntimeEvidenceReceipt } from '../src/core/release/runtime-evidence';
 import { collectRuntimeEvidence, trustedRuntimePath } from '../src/effects/release/runtime-evidence';
 import { runProcess } from '../src/effects/process-runner';
 
@@ -47,7 +46,7 @@ function fixture(): { root: string; registry: string; tarball: string; installed
   return { root, registry, tarball, installedPackage, cli, hook, hookRepo };
 }
 
-describe('RuntimeEvidenceReceipt v1', () => {
+describe('release runtime evidence', () => {
   test('uses the trusted Bun runtime directory for real env-shebang readback', () => {
     const value = fixture();
     const priorMinimalPath = runProcess(value.cli, ['--version'], {
@@ -60,19 +59,17 @@ describe('RuntimeEvidenceReceipt v1', () => {
     expect(collectRuntimeEvidence({
       packageName: 'repo-harness', packageVersion: '1.2.3', registryReadbackPath: value.registry, tarballPath: value.tarball, installedPackagePath: value.installedPackage,
       installedCliPath: value.cli, installedHookPath: value.hook, hookRepo: value.hookRepo,
-    }).observations).toHaveLength(3);
+    })).toHaveLength(3);
   });
 
-  test('binds published tarball, clean install, and installed hook readback without merge authority', () => {
+  test('passes published tarball, clean install, and installed hook readback without merge authority', () => {
     const value = fixture();
-    const receipt = collectRuntimeEvidence({
+    const observations = collectRuntimeEvidence({
       packageName: 'repo-harness', packageVersion: '1.2.3', registryReadbackPath: value.registry, tarballPath: value.tarball, installedPackagePath: value.installedPackage,
       installedCliPath: value.cli, installedHookPath: value.hook, hookRepo: value.hookRepo,
     });
-    expect(receipt.kind).toBe('repo-harness-runtime-evidence-receipt');
-    expect(receipt.observations.map((entry) => entry.invariant)).toEqual(['published_tarball', 'clean_install', 'installed_hook_readback']);
-    expect('subject_sha256' in receipt).toBe(false);
-    expect(validateRuntimeEvidenceReceipt(JSON.parse(JSON.stringify(receipt))).receipt_sha256).toBe(receipt.receipt_sha256);
+    expect(observations.map((entry) => entry.invariant)).toEqual(['published_tarball', 'clean_install', 'installed_hook_readback']);
+    expect(observations.every((entry) => entry.status === 'pass' && !('subject_sha256' in entry))).toBe(true);
   });
 
   test('rejects external CLI or hook stand-ins even when their output matches', () => {
@@ -113,20 +110,25 @@ describe('RuntimeEvidenceReceipt v1', () => {
     })).toThrow('does not match registry');
   });
 
-  test('CLI writes the separate receipt only after all three runtime invariants pass', () => {
+  test('CLI verifies all three runtime invariants, writes no receipt and rejects the retired output flag', () => {
     const value = fixture();
     expect(spawnSync('git', ['init', '-q'], { cwd: value.root, encoding: 'utf-8' }).status).toBe(0);
-    const output = '.ai/harness/checks/runtime-evidence.fixture.json';
-    const result = spawnSync('bun', [join(SOURCE_ROOT, 'scripts', 'runtime-evidence-receipt.ts'), 'verify',
+    const verify = (...extra: string[]) => spawnSync('bun', [join(SOURCE_ROOT, 'scripts', 'runtime-evidence-receipt.ts'), 'verify',
       '--registry', value.registry,
       '--tarball', value.tarball,
       '--installed-package', value.installedPackage,
       '--installed-cli', value.cli,
       '--installed-hook', value.hook,
       '--hook-repo', value.hookRepo,
-      '--output', output,
+      ...extra,
     ], { cwd: value.root, encoding: 'utf-8' });
+    const result = verify();
     expect(result.status, result.stderr).toBe(0);
-    expect(validateRuntimeEvidenceReceipt(JSON.parse(readFileSync(join(value.root, output), 'utf-8'))).package_version).toBe('1.2.3');
+    expect(result.stdout).toBe('runtime-evidence-receipt: valid published_tarball, clean_install, installed_hook_readback\n');
+    expect(existsSync(join(value.root, '.ai'))).toBe(false);
+    const retired = verify('--output', '.ai/harness/checks/runtime-evidence.fixture.json');
+    expect(retired.status).toBe(2);
+    expect(retired.stderr).toContain('--output is not a verify option');
+    expect(existsSync(join(value.root, '.ai'))).toBe(false);
   });
 });

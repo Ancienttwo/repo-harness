@@ -244,7 +244,7 @@ same plan, contract, and review artifacts a human would have written.
 | | |
 | --- | --- |
 | **File-backed sessions** | Plans, contracts, checks, and handoffs live in the repo, so a new session resumes from artifacts instead of a chat thread |
-| **Typed hook runtime** | 12 public routes (Claude 9, Codex 12, Pi 6), each bound to exactly one typed in-process handler, with fail-closed guards at the edit boundary |
+| **Typed hook runtime** | 6 public routes (Claude 5, Codex 5), each bound to exactly one typed in-process handler, with fail-closed guards at the edit boundary |
 | **Plan → Contract → Review** | One lifecycle from approved plan to projected contract, isolated worktree, structured evidence, and a reviewable closeout |
 | **Bot-scheduled programs** | Engineer task offers with renewable leases; the Bot schedules, repo-harness supplies tools and evidence |
 | **Progressive context loading** | A ~12KB stable root context plus ~1KB capability contracts loaded only for the files actually being touched |
@@ -419,8 +419,8 @@ A dedicated linked checkout hosts one fleet `deep-reasoner` task-agent in the ad
 
 ## Hooks
 
-The installed adapter binds 12 public hook routes: Claude installs 9, Codex
-installs 12, and Pi installs 6. The route tuple `event + routeId + matcher` is
+The installed adapter binds 6 public hook routes: Claude installs 5 and Codex
+installs 5. The route tuple `event + routeId + matcher` is
 the stable contract; each tuple binds exactly one typed in-process handler. The
 route table, with a Host column, is in
 [`docs/reference-configs/hook-operations.md`](docs/reference-configs/hook-operations.md#hook-authority-map).
@@ -441,29 +441,6 @@ repository), `ExternalReferenceGuard` (`_ref/`), `OpsPrivateGuard` (`_ops/`),
 and `ApplyPatchScopeGuard` and `EditScopeGuard` (no parseable target path).
 Full playbook:
 [`docs/reference-configs/hook-operations.md`](docs/reference-configs/hook-operations.md).
-
-### Pi 1.2.0 package
-
-Pi uses the official package loader. Install a built candidate with:
-
-```bash
-pi install /absolute/path/to/repo-harness
-```
-
-The package provides the `repo-harness` router and `repo-harness-check` skill.
-Use `/reload` in an open session after installation. The repository must have
-`.ai/harness/workflow-contract.json` to enable hooks. Pi 1.2.0 and Bun >= 1.4
-must be available. This first adapter uses the installed Pi SDK path resolver.
-Other Pi versions or distributions without that resolver are unavailable.
-
-The extension checks native `edit` and `write` before execution. This includes
-calls from codemode. It sends budgeted session context and records the end of
-each settled run. If a hook fails, it blocks edits. Resolve the reported cause,
-then use `/reload`.
-
-This check covers the native edit/write tool path. Shell writes, `!`/`!!`,
-direct extension writes and third-party MCP writes need their own controls.
-The Pi package does not install a scheduler or enable an OAR Pi review worker.
 
 ## Local Human Control Board
 
@@ -608,8 +585,10 @@ That checkout is the only editable source of truth; local Claude/Codex skill
 paths are symlink-backed runtime entrypoints rebuilt by
 `scripts/sync-codex-installed-copies.sh`.
 
-`bun run check:ci` is the single CI-equivalent gate; `bun run check:release` only
-adds the npm unpublished-version preflight before delegating to it.
+`bun run check:ci` is the single CI-equivalent gate. `bun run check:release` adds
+the npm unpublished-version preflight, then runs the `release` lane: the
+expensive-gated tests and the tarball install smoke. It is not a second full
+suite and not the CI gate; a release depends on green CI for the release SHA.
 Runtime routing regressions stay in affected tests. The old routing eval gate is retired.
 
 ```bash

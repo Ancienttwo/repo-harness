@@ -517,18 +517,31 @@ export function buildReviewSubject(
   if (!statusRes.ok) ctx.degraded = true;
   const statusParsed = parseStatusZ(splitNul(statusRes.buf, ctx));
 
-  const branchRes = gitRunBuffer(repoRoot, ['diff', '--name-status', '--find-renames', '-z', `${targetRev}...HEAD`]);
+  // The merge base of a commit with itself is that commit, so an equal HEAD
+  // and target need no merge-base call.
+  const mergeBaseRes = headRev === targetRev
+    ? { ok: true, text: headRev }
+    : gitRun(repoRoot, ['merge-base', 'HEAD', targetRev]);
+  const mergeBase = mergeBaseRes.text.trim();
+  if (!mergeBaseRes.ok || !mergeBase) ctx.degraded = true;
+
+  // `<target>...HEAD` diffs the merge base against HEAD. When the merge base
+  // is HEAD, that is a diff of a commit with itself, which is empty.
+  const branchRes = mergeBaseRes.ok && mergeBase === headRev
+    ? { ok: true, buf: Buffer.alloc(0) }
+    : gitRunBuffer(repoRoot, ['diff', '--name-status', '--find-renames', '-z', `${targetRev}...HEAD`]);
   if (!branchRes.ok) ctx.degraded = true;
   const branchPaths = parseNameStatusZ(splitNul(branchRes.buf, ctx));
 
   const allPaths = uniqueSorted([...branchPaths, ...statusParsed.all]);
   const excludedPaths = allPaths.filter(isOperationalReviewPath);
   const implementationPaths = allPaths.filter((path) => !isOperationalReviewPath(path));
-  const mergeBaseRes = gitRun(repoRoot, ['merge-base', 'HEAD', targetRev]);
-  if (!mergeBaseRes.ok || !mergeBaseRes.text.trim()) ctx.degraded = true;
-  const targetChangedRes = mergeBaseRes.ok
-    ? gitRunBuffer(repoRoot, ['diff', '--name-status', '--find-renames', '-z', `${mergeBaseRes.text.trim()}..${targetRev}`])
-    : { ok: false, buf: Buffer.alloc(0) };
+  // `<merge base>..<target>` is empty when the merge base is the target.
+  const targetChangedRes = !mergeBaseRes.ok
+    ? { ok: false, buf: Buffer.alloc(0) }
+    : mergeBase === targetRev
+      ? { ok: true, buf: Buffer.alloc(0) }
+      : gitRunBuffer(repoRoot, ['diff', '--name-status', '--find-renames', '-z', `${mergeBase}..${targetRev}`]);
   if (!targetChangedRes.ok) ctx.degraded = true;
   const targetChangedPaths = parseNameStatusZ(splitNul(targetChangedRes.buf, ctx));
   const implementationSet = new Set(implementationPaths);

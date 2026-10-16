@@ -2,9 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync, readdirSync, statSync } from "fs";
 import { join, relative, sep } from "path";
 
-// SSD-06 (C8): live-reference scan for the 19 retired Skill package names,
-// extending tests/retired-planning-provider.test.ts's precedent pattern
-// (scan a fixed surface list, fail on any hit) with a per-name/per-file
+// SSD-06 (C8): live-reference scan for the 19 retired Skill package names.
+// It scans a fixed surface list and fails on any hit, with a per-name/per-file
 // allowlist for the legitimate contexts the plan itself names: migration
 // metadata (the manifest's own retiredPackages array), changelog/history,
 // archived artifacts, the R1 provenance-enum vocabulary (acceptance-receipt

@@ -2,9 +2,7 @@ import { buildSessionStartSections } from './session-context';
 import { runMutationGuard } from './mutation-guard';
 import { runStopHandler } from './stop-handler';
 import { runReturnChannel } from './return-channel';
-import { runDelegationAdvisor } from './delegation-advisor';
 import { runSubagentContext } from './subagent-context';
-import { runCommandObserved } from './command-observed';
 import { runTaskInboxHandler } from './task-inbox-handler';
 import type { HookHandlerId, Route } from './route-registry';
 import type { HookHandlerContext, HookHandlerResult, TypedHookHandler } from './handler-contract';
@@ -49,13 +47,6 @@ const handlers: Readonly<Record<HookHandlerId, TypedHookHandler>> = Object.freez
       payload: context.payload,
     }),
   },
-  'delegation-advisor': {
-    id: 'delegation-advisor',
-    run: (context: HookHandlerContext) => runDelegationAdvisor({
-      collector: context.collector,
-      payload: context.payload,
-    }),
-  },
   'subagent-context': {
     id: 'subagent-context',
     run: (context: HookHandlerContext) => runSubagentContext({
@@ -65,13 +56,6 @@ const handlers: Readonly<Record<HookHandlerId, TypedHookHandler>> = Object.freez
       env: context.env,
       now: () => context.now,
     }),
-  },
-  'command-observed': {
-    id: 'command-observed',
-    run: (context: HookHandlerContext) => textResult(runCommandObserved({
-      repoRoot: context.repoRoot,
-      payload: context.payload,
-    })),
   },
   'task-inbox': {
     id: 'task-inbox',

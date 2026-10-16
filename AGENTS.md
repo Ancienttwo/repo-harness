@@ -47,7 +47,7 @@
 - A diff's size, a new test file, a new agent or a rebase does not by itself require a full run.
 - Use `bun run test:files <affected tests> --timeout 60000 --max-concurrency 1`; extend existing coverage before creating a new test file.
 - Select tests by observable risk and owning runtime boundary, including error/recovery paths when affected.
-- Mechanical prose changes need link/scope validation, not new product tests; do not test incidental formatting.
+- Mechanical prose changes need link/scope validation, not new product tests; do not test incidental formatting or that deleted files stay deleted.
 - Reviewers consume the recorded command, result, revision and environment; they do not rerun passing checks to claim ownership.
 - Changed inputs or a new uncovered failure justify affected delta checks; an old pass is only historical evidence for its old subject.
 - Run the full suite daily; a failure opens an automatic repair task and appears in the daily report.

@@ -52,12 +52,13 @@ repair issue. `architecture-advisory --base <ref>` is the PR lane. It runs
 the check and prints `::warning::` lines. It always exits 0, and its job is not
 part of `Required / CI`.
 
-Only the `all` lane exports `REPO_HARNESS_TEST_EXPENSIVE=1`, which is
-what unskips the real `npm pack`/install cases in
+Only the `all` and `release` lanes export `REPO_HARNESS_TEST_EXPENSIVE=1`,
+which is what unskips the real `npm pack`/install cases in
 `tests/harness-benchmark-matrix.test.ts`. Generic review domain fixtures are
 zero-model, with existing task-agent lifecycle coverage. A green hosted `functional` run has
-deliberately not exercised them; run `bash scripts/check-ci.sh all`
-before a release, and read the `[gate] ... unset` lines in any other
+deliberately not exercised them. Before a release, run `bun run check:release`.
+It runs the `release` lane: these expensive cases and the package/install smoke,
+not a second full suite. Read the `[gate] ... unset` lines in any other
 run as "not covered here" rather than "passed".
 
 ## Which CI lane a push or PR gets
@@ -93,6 +94,9 @@ tests (tests, src and scripts), configured preloads, shell scripts, and the OAR 
 hosts with the package scripts and reads their metafiles. CI implementation
 changes trigger both jobs. A job skips only when its output is `false`.
 Required / CI accepts a skip only with that exact output. Daily runs both jobs.
+On a PR, the native job runs only the cases that `darwinTest`
+(`tests/helpers/darwin-test.ts`) names with the `darwin: ` prefix. The daily run
+runs all its cases.
 Documentation paths select scanned consumers and usually skip both platform jobs.
 
 Replay the selector over recent history before claiming a lane split works:

@@ -219,7 +219,7 @@ humain aurait écrits.
 | | |
 | --- | --- |
 | **Sessions file-backed** | Les plans, contracts, checks et handoffs vivent dans le dépôt, si bien qu'une nouvelle session reprend à partir des artifacts plutôt que d'un chat thread |
-| **Runtime de hooks typés** | 12 routes publiques (Claude 9, Codex 12, Pi 6), chacune liée à exactement un typed handler in-process, avec des guards fail-closed à la frontière d'édition |
+| **Runtime de hooks typés** | 6 routes publiques (Claude 5, Codex 5), chacune liée à exactement un typed handler in-process, avec des guards fail-closed à la frontière d'édition |
 | **Plan → Contract → Review** | Un seul lifecycle, du plan approuvé au contract projeté, en passant par le worktree isolé et l'evidence structurée, jusqu'à un closeout prêt pour la review |
 | **Programmes ordonnancés par le Bot** | Programmes de collaboration avec des task offers d'engineer et des leases renouvelables ; le Bot ordonnance, repo-harness fournit les outils et les preuves |
 | **Chargement de contexte progressif** | Un root context stable d'environ 12 Ko, plus des capability contracts d'environ 1 Ko chargés uniquement pour les fichiers réellement touchés |
@@ -419,8 +419,8 @@ Un task-agent fleet `deep-reasoner` persiste dans un linked checkout dédié et 
 
 ## Hooks
 
-L'adapter installé lie 12 routes de hook publiques : Claude en installe 9, Codex en
-installe 12 et Pi en installe 6. Le tuple de route `event + routeId + matcher` est
+L'adapter installé lie 6 routes de hook publiques : Claude en installe 5 et Codex en
+installe 5. Le tuple de route `event + routeId + matcher` est
 le contrat stable ; chaque tuple lie exactement un typed handler in-process. La table
 des routes, avec une colonne Host, est dans
 [`docs/reference-configs/hook-operations.md`](docs/reference-configs/hook-operations.md#hook-authority-map).
@@ -581,8 +581,11 @@ Ce checkout est l'unique source of truth éditable ; les chemins de skill
 Claude/Codex locaux sont des runtime entrypoints adossés à des symlinks,
 reconstruits par `scripts/sync-codex-installed-copies.sh`.
 
-`bun run check:ci` est le gate unique équivalent CI ; `bun run check:release`
-ajoute seulement le preflight npm unpublished-version avant de lui déléguer.
+`bun run check:ci` est le gate unique équivalent CI. `bun run check:release`
+ajoute le preflight npm unpublished-version, puis exécute le lane `release` :
+les tests protégés par le gate de coût et le smoke d'installation du tarball.
+Ce n'est ni une deuxième suite complète ni le gate CI ; une release dépend d'un
+CI vert pour le SHA de la release.
 Les tests concernés vérifient le routing du runtime. Le gate de routing eval est retiré.
 
 ```bash

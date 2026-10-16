@@ -5,9 +5,8 @@
 > **Adapters**: `src/cli/installer/managed-entries.ts`
 
 This document describes the current host-event boundary. The user-level Codex
-and Claude adapters are transport configuration. Pi uses the official package
-extension in `src/pi/extension.ts` and a bounded Bun JSON bridge. The route registry and
-typed handler registry are the execution authority; a Markdown card, shell
+and Claude adapters are transport configuration. Claude and Codex are the only
+hook hosts. The route registry and typed handler registry are the execution authority; a Markdown card, shell
 wrapper, or generated projection is not a second runtime authority.
 
 ## P1 — Architecture map
@@ -19,12 +18,12 @@ The boundary has four layers:
 2. The installed command resolves the repository, checks the opt-in marker
    `.ai/harness/workflow-contract.json`, and invokes the hook-only CLI entry
    point. Opted-in repositories require this bin on PATH.
-3. `ROUTES` contains the 8 public `(event, routeId, matcher)` tuples. Every
+3. `ROUTES` contains the 6 public `(event, routeId, matcher)` tuples. Every
    tuple has exactly one `handler`; there is no `scripts` field and no Bash
    host-event dispatcher.
 4. `handler-registry.ts` runs one typed in-process handler. The handler
    returns a typed result. The `HOST_RENDERERS` table in `hook-protocol.ts`
-   renders it for Claude, Codex or Pi. `runtime.ts` writes one event-level
+   renders it for Claude or Codex. `runtime.ts` writes one event-level
    telemetry record.
 
 `assets/hooks/` is deleted. The last shell file there,
@@ -60,15 +59,13 @@ environment and the event-scoped `StateInputCollector`. The collector resolves
 Effective State at most once per event. Handlers return a typed result with an
 exit code, an optional permission, optional model context and diagnostics.
 They do not write to host file descriptors. The host table renders the result:
-Claude and Codex get `hookSpecificOutput` on exit 0 and diagnostics on stderr;
-Pi gets one protocol 1 JSON object.
+Claude and Codex get `hookSpecificOutput` on exit 0 and diagnostics on stderr.
 
 A thrown handler exits 1, except the edit guard. The edit guard route is
-fail-closed: a throw exits 2 on Claude and Codex and gives `decision: block`
-on Pi. A missing `HOOK_HOST`, an unknown route and a route that is not
+fail-closed: a throw exits 2 on Claude and Codex. A missing `HOOK_HOST`, an unknown route and a route that is not
 installed for the host also stop before a handler runs.
 
-The public route inventory has 12 `(event, routeId, matcher)` tuples. The
+The public route inventory has 6 `(event, routeId, matcher)` tuples. The
 Host column of the route table in
 [`hook-operations.md`](../reference-configs/hook-operations.md#hook-authority-map)
 lists the matcher, host and typed handler of each tuple.
@@ -93,48 +90,6 @@ its measured cost basis.
 The event result is fail-closed for unknown routes and missing handler
 bindings. A non-git or non-opt-in repository exits quietly without creating a
 runtime event record.
-
-## Pi package boundary
-
-Pi owns the agent loop and tool execution. `src/pi/extension.ts` maps supported
-native events to the shared typed handlers. It invokes the current package's
-`dist/hook-entry.js` through `src/pi/hook-bridge.ts`. The bridge uses protocol 1
-JSON output and a ten-second deadline for ordinary checks. Stop uses 30
-seconds. It limits stdin to 16 MiB and diagnostics
-to 8 KiB. It cancels its own child processes on shutdown or session replacement.
-
-The adapter uses Pi 1.2.0's installed `resolveToCwd` implementation. It resolves
-paths against the session directory before guard dispatch. This
-keeps `@`, `~`, file URLs and subdirectory calls bound to the native tool target.
-Pi does not export this resolver from its public SDK. The version is exact;
-a missing resolver or another version leaves opt-in edits blocked.
-
-Session context uses the one SessionStart budget. The adapter sends each
-SessionStart snapshot once. Pi invokes no UserPromptSubmit route.
-Each model run has a fresh run ID. Tool call IDs bind the original payload to its result. Nested calls keep
-the parent tool call ID. Stop runs once at `agent_settled`, after retries and
-queued input have settled. The bridge never retries an external operation.
-
-The extension checks native edit/write calls in opt-in repositories. Hook
-refusal, timeout, process failure or invalid output prevents execution. A failed
-session context or observation blocks later edits until `/reload` succeeds.
-Shell writes, direct extension writes and third-party MCP writes are outside
-this tool gate. Bash uses Pi's `structuredContent.exit_code` field and sends
-it as the payload `exit_code`. A result without a safe integer stays unknown,
-and the observer records nothing for it. The observer writes no verification
-evidence. Bash observation diagnostics also reach the model through
-tool-result content. The native output, structured
-content and error flag stay intact.
-
-The bridge records tool results with the original call binding. A native edit
-or write can report an error after its file write completes. Execution cancellation
-does not cancel this observation. The adapter preserves the error result and never
-repeats the tool operation.
-
-The skill catalog owns the Pi skill list. `scripts/sync-pi-package.ts` projects
-its minimal router and facade entries into `package.json`. Prepack checks this
-projection. The Claude/Codex installer rejects a Pi target and leaves Pi package
-installation to the host.
 
 ## Telemetry contract
 
@@ -203,7 +158,7 @@ unmatched bytes and custom sibling hooks remain untouched.
 
 - `bun test tests/cli/route-registry.test.ts tests/cli/hook.test.ts`
 - `bun test tests/cli/route-registry.test.ts tests/subagent-handler.test.ts`
-- `bun test tests/command-observed.test.ts tests/stop-handler.test.ts`
+- `bun test tests/mutation-guard.test.ts tests/stop-handler.test.ts`
 - `bun run check:type`
 - `bun src/cli/index.ts architecture-projection check --json`
 
