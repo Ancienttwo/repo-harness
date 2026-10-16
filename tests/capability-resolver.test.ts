@@ -4,7 +4,7 @@ import { run, tmpWorkspace as scriptTmpWorkspace } from "./helpers/repo-fixture"
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "child_process";
 import { createHash } from "crypto";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 
@@ -115,8 +115,14 @@ describe("capability resolver", () => {
         encoding: "utf-8",
       });
       expect(projectionCheck.status, projectionCheck.stderr).toBe(0);
+      // scripts/capability-config.ts ships next to the standalone resolver, so check the shipped pair.
+      const pair = join(cwd, "pair");
+      mkdirSync(pair, { recursive: true });
+      writeFileSync(join(pair, "capability-resolver.ts"), readFileSync(join(ROOT, "assets/templates/helpers/capability-resolver.ts")));
+      writeFileSync(join(pair, "capability-config.ts"), readFileSync(join(ROOT, "scripts/capability-config.ts")));
+      symlinkSync(join(ROOT, "node_modules"), join(pair, "node_modules"));
       const typecheck = spawnSync("node", [
-        "node_modules/typescript/bin/tsc",
+        join(ROOT, "node_modules/typescript/bin/tsc"),
         "--ignoreConfig",
         "--noEmit",
         "--module", "Preserve",
@@ -125,8 +131,9 @@ describe("capability resolver", () => {
         "--strict",
         "--skipLibCheck",
         "--types", "bun-types",
-        "assets/templates/helpers/capability-resolver.ts",
-      ], { cwd: ROOT, encoding: "utf-8" });
+        "capability-resolver.ts",
+        "capability-config.ts",
+      ], { cwd: pair, encoding: "utf-8" });
       expect(typecheck.status, typecheck.stderr || typecheck.stdout).toBe(0);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
