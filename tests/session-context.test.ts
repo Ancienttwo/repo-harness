@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { execFileSync, spawnSync } from "child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { dirname, join } from "path";
 import {
@@ -78,17 +78,25 @@ function sessionStartContext(f: Fixture, host: "claude" | "codex" = "claude"): s
   return envelope.hookSpecificOutput.additionalContext;
 }
 
+/** The `references` object of the `[HarnessState]` line. */
+function stateReferences(context: string): Record<string, string | null> {
+  const line = context.split("\n")[0]!;
+  expect(line).toStartWith("[HarnessState] ");
+  return (JSON.parse(line.slice("[HarnessState] ".length)) as { references: Record<string, string | null> }).references;
+}
+
 describe("SessionStart host envelope", () => {
-  test("a repository with only a resume puts the resume after the state section", () => {
+  test("a resume file adds no resume text; the state section points to it", () => {
     const f = fixture("session-resume-only");
     try {
       f.write(RESUME, "# Codex Resume Packet\n\nContinue the widget work.\n");
       for (const host of ["claude", "codex"] as const) {
         const context = sessionStartContext(f, host);
-        expect(context).toStartWith("[HarnessState] ");
-        expect(context).toContain(`# Resume (\`${RESUME}\`, `);
-        expect(context).toContain("Continue the widget work.");
-        expect(context.indexOf("[HarnessState] ")).toBeLessThan(context.indexOf("# Resume"));
+        expect(context.split("\n")).toHaveLength(1);
+        expect(stateReferences(context).resume).toBe(RESUME);
+        expect(context).not.toContain("# Resume");
+        expect(context).not.toContain("Recovery context only");
+        expect(context).not.toContain("Continue the widget work.");
       }
     } finally { f.cleanup(); }
   }, 30_000);
@@ -105,34 +113,35 @@ describe("SessionStart host envelope", () => {
     } finally { f.cleanup(); }
   }, 30_000);
 
-  test("a large resume becomes a pointer to its path while the active sprint stays", () => {
+  test("an active sprint and a large resume add no section beyond the state pointers", () => {
     const f = fixture("session-large-resume");
     try {
       writeActiveSprint(f);
       const body = Array.from({ length: 400 }, (_, index) => `- resume line ${index} with recovery detail`).join("\n");
       f.write(RESUME, `# Codex Resume Packet\n\n${body}\n`);
       const context = sessionStartContext(f);
-      expect(context).toStartWith("[HarnessState] ");
-      expect(context).toContain(`[ContextRef:resume] ${RESUME}`);
+      expect(context.split("\n")).toHaveLength(1);
+      const references = stateReferences(context);
+      expect(references.resume).toBe(RESUME);
+      expect(references.sprint).toBe(SPRINT);
+      expect(context).not.toContain("[ContextRef:resume]");
       expect(context).not.toContain("resume line 0 with recovery detail");
-      expect(context).toContain("# Active Sprint");
-      expect(context).toContain(`- Sprint: \`${SPRINT}\``);
-      expect(context).toContain("start-task --task 'task-b'");
+      expect(context).not.toContain("# Active Sprint");
+      expect(context).not.toContain("plan -> contract -> worktree");
     } finally { f.cleanup(); }
   }, 30_000);
 
-  test("a provider that throws becomes one failure line beside the state section and its siblings", () => {
+  test("a provider that throws becomes one failure line after the state section", () => {
     const f = fixture("session-provider-throws");
     try {
-      writeActiveSprint(f);
-      f.write(RESUME, "# Codex Resume Packet\n\nContinue the widget work.\n");
-      // The sprint provider reads the attempt ledger; a directory there makes it throw.
-      mkdirSync(join(f.root, ".ai/harness/runs/continuation/attempts.jsonl"), { recursive: true });
+      // The pending-plan provider refuses a capture record that escapes the repository.
+      writeFileSync(join(f.home, "pending.json"), "{}\n");
+      mkdirSync(join(f.root, ".ai/harness/planning"), { recursive: true });
+      symlinkSync(join(f.home, "pending.json"), join(f.root, ".ai/harness/planning/pending.json"));
       const context = sessionStartContext(f);
-      expect(context).toStartWith("[HarnessState] ");
-      expect(context.split("\n")).toContain("[SessionContextProviderFailed] active-sprint");
-      expect(context).not.toContain("# Active Sprint");
-      expect(context).toContain("Continue the widget work.");
+      const lines = context.split("\n");
+      expect(lines[0]).toStartWith("[HarnessState] ");
+      expect(lines).toEqual([lines[0], "[SessionContextProviderFailed] pending-plan-capture"]);
     } finally { f.cleanup(); }
   }, 30_000);
 
@@ -211,7 +220,7 @@ describe("buildSessionStartSections", () => {
   });
 
   test("the provider ids are stable and name no retired script", () => {
-    expect(SESSION_CONTEXT_PROVIDERS.map(({ id }) => id)).toEqual(["architecture-owed", "pending-plan-capture", "active-sprint", "resume"]);
+    expect(SESSION_CONTEXT_PROVIDERS.map(({ id }) => id)).toEqual(["architecture-owed", "pending-plan-capture"]);
   });
 });
 
