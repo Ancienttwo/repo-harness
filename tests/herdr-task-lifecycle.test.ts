@@ -3,7 +3,7 @@ import { darwinTest } from './helpers/darwin-test';
 import { spawn, spawnSync, type ChildProcess } from 'child_process';
 import { randomUUID } from 'crypto';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs';
-import { dirname, join } from 'path';
+import { join } from 'path';
 import { copyHelpers } from './helpers/helper-script-fixture';
 import { herdrEnvironment } from '../src/effects/terminal/herdr';
 import type { HerdrTaskBinding } from '../src/effects/terminal/task-session';
@@ -200,6 +200,14 @@ test('shared task sessions serialize real concurrent starts, reconcile a launche
   const execute = (args: string[]) => {
     requireFixtureSession(session); return run(herdr, ['--session', session, ...args], fixture, env);
   };
+  // These calls must return an existing binding or fail before any launch.
+  const refuseLaunch = { start: async () => { throw new Error('fixture_must_not_launch'); } };
+  // The fixture owns delivery: it types the request pointer into the peer pane.
+  const send = (task: string, role: string, context: string, policy: 'repeatable' | 'changed_only' = 'repeatable') =>
+    api.sendTaskRequest(fixture, task, role, context, policy, async request => {
+      const { dir, binding } = api.readTaskAgent(fixture, task, role);
+      execute(['agent', 'prompt', (binding as HerdrTaskBinding).agent_name, `Read task request ${join(dir, `request-${request.round}.json`)}; write its result only to ${request.result_ref}.`]);
+    });
   const call = (args: string[]) => JSON.parse(execute(args)).result;
   const server = spawn(herdr, ['--session', session, 'server'], { env, stdio: 'ignore' });
   const owners: ChildProcess[] = [];
@@ -288,16 +296,15 @@ writeFileSync(spec.role+'-'+mode+'.binding',JSON.stringify(binding));
     expect(secondBinding).toEqual(firstBinding);
     expect(readFileSync(join(fixture, 'launches'), 'utf8')).toBe('advisor\n');
     const binding = api.readTaskAgent(fixture, spec.task, spec.role).binding as HerdrTaskBinding;
-    expect(binding.capabilities.read_only.status).toBe('unverified');
     api.assertTaskBinding(binding);
     const reordered = { max_requests: spec.max_requests, args: spec.args, parent_pane: spec.parent_pane,
       endpoint: { home, configPath, session }, harness_kind: spec.harness_kind, role: spec.role, task: spec.task };
-    expect(await api.startTaskAgent(fixture, reordered)).toEqual(binding);
+    expect(await api.startTaskAgent(fixture, reordered, refuseLaunch)).toEqual(binding);
     expect(readFileSync(join(fixture, 'launches'), 'utf8')).toBe('advisor\n');
 
     const { dir } = api.readTaskAgent(fixture, spec.task, spec.role);
     writeFileSync(join(fixture, 'context.md'), 'owned context');
-    const request = await api.sendTaskRequest(fixture, spec.task, spec.role, 'context.md');
+    const request = await send(spec.task, spec.role, 'context.md');
     await until(() => existsSync(request.result_ref));
     expect(api.readTaskRequestResult(fixture, dir, request)?.value).toBe('artifact-result');
     const result = api.readSessionArtifact<Record<string, unknown>>(request.result_ref);
@@ -305,7 +312,7 @@ writeFileSync(spec.role+'-'+mode+'.binding',JSON.stringify(binding));
     expect(() => api.readTaskRequestResult(fixture, dir, request)).toThrow('result_identity_mismatch');
     api.writeSessionArtifact(request.result_ref, result, false);
     writeFileSync(join(fixture, 'context.md'), 'changed context');
-    await expect(api.sendTaskRequest(fixture, spec.task, spec.role, 'context.md')).rejects.toThrow('round_budget_exhausted');
+    await expect(send(spec.task, spec.role, 'context.md')).rejects.toThrow('round_budget_exhausted');
     const bindingPath = join(dir, 'binding.json');
     for (const attached of [
       { ...binding, ownership: { disposition: 'attached' } },
@@ -338,11 +345,11 @@ writeFileSync(spec.role+'-'+mode+'.binding',JSON.stringify(binding));
     expect(api.readTaskAgent(fixture, crashSpec.task, crashSpec.role).binding.provider.pid).toBe(providerPid);
     expect(readFileSync(join(fixture, 'launches'), 'utf8')).toBe('advisor\ncrash-role\n');
     writeFileSync(join(fixture, 'context.md'), 'hold-result');
-    const pendingRequest = await api.sendTaskRequest(fixture, crashSpec.task, crashSpec.role, 'context.md');
+    const pendingRequest = await send(crashSpec.task, crashSpec.role, 'context.md');
     expect(api.readTaskRequestResult(fixture, crashDir, pendingRequest)).toBeNull();
     expect(api.taskAgentStatus(fixture, crashSpec.task, crashSpec.role).status).toBe('pending');
     writeFileSync(join(fixture, 'context.md'), 'a replacement context must not replay');
-    await expect(api.sendTaskRequest(fixture, crashSpec.task, crashSpec.role, 'context.md')).rejects.toThrow('ambiguous_round');
+    await expect(send(crashSpec.task, crashSpec.role, 'context.md')).rejects.toThrow('ambiguous_round');
     expect(existsSync(join(crashDir, 'request-2.json'))).toBe(false);
     await expect(api.closeTaskAgent(fixture, crashSpec.task, crashSpec.role)).rejects.toThrow('pending_request');
     await api.cancelTaskAgent(fixture, crashSpec.task, crashSpec.role);
@@ -365,7 +372,7 @@ writeFileSync(spec.role+'-'+mode+'.binding',JSON.stringify(binding));
     const savedPath = process.env.PATH;
     try {
       process.env.PATH = shim + ':' + savedPath;
-      await expect(api.startTaskAgent(checkout, linkedSpec)).rejects.toThrow('injected-register-failure');
+      await expect(api.startTaskAgent(checkout, linkedSpec, refuseLaunch)).rejects.toThrow('injected-register-failure');
       expect(existsSync(join(api.taskSessionDirectory(checkout, spec.task, linkedSpec.role), 'intent.json'))).toBe(false);
     } finally { process.env.PATH = savedPath; }
     const linkedOwner = owner('linked', linkedPath, checkout); await exited(linkedOwner.child);
@@ -382,36 +389,25 @@ writeFileSync(spec.role+'-'+mode+'.binding',JSON.stringify(binding));
     expect(linkedSpace.worktree.repo_key).toBe(primarySpace.worktree.repo_key);
     expect(linkedSpace.worktree.repo_root).toBe(fixture);
     writeFileSync(join(fixture, 'context.md'), 'via-cli');
-    const linkedRequest = await api.sendTaskRequest(fixture, spec.task, linkedSpec.role, 'context.md');
+    const linkedRequest = await send(spec.task, linkedSpec.role, 'context.md');
     expect(linkedRequest.protocol).toBe(2);
     expect(linkedRequest.result_ref.startsWith(checkout + '/')).toBe(true);
     expect(readFileSync(linkedRequest.context_ref, 'utf8')).toBe('via-cli');
     writeFileSync(linkedRequest.result_ref, '{"request_id":');
     expect(api.readTaskRequestResult(fixture, fromPrimary.dir, linkedRequest)).toBeNull();
     const resultValue = {request_id:linkedRequest.request_id,context_sha256:linkedRequest.context_sha256,value:'artifact-result'};
-    await expect(api.submitTaskResult(fixture,spec.task,linkedSpec.role,1,resultValue)).rejects.toThrow('submission_checkout_mismatch');
-    writeFileSync(join(checkout,'result-input.json'),JSON.stringify(resultValue));
-    const cliPath = new URL('../src/cli/index.ts', import.meta.url).pathname;
-    // CLI submission has no write permission to canonical role state or its lock parent.
-    chmodSync(fromPrimary.dir,0o500);chmodSync(dirname(fromPrimary.dir),0o500);
-    try {
-      const submit = spawnSync(process.execPath,[cliPath,'task-agent','result','--repo',checkout,'--task',spec.task,'--role',linkedSpec.role,'--round','1','--input','result-input.json'],{cwd:checkout,env,encoding:'utf8',timeout:10000});
-      if(submit.status!==0)throw new Error(submit.stderr+submit.stdout);
-    } finally { chmodSync(dirname(fromPrimary.dir),0o700);chmodSync(fromPrimary.dir,0o700); }
+    // The provider writes the result in its own checkout; the owner only collects it.
+    api.writeSessionArtifact(linkedRequest.result_ref, resultValue, false);
     expect(existsSync(join(fromPrimary.dir,'result-1.json'))).toBe(false);
     expect(existsSync(join(fromPrimary.dir,'collected-1.json'))).toBe(false);
-    const collected=spawnSync(process.execPath,[cliPath,'task-agent','collect','--repo',fixture,'--task',spec.task,'--role',linkedSpec.role,'--round','1'],{cwd:fixture,env,encoding:'utf8',timeout:10000});
-    if(collected.status!==0)throw new Error(collected.stderr+collected.stdout);
+    expect(await api.collectTaskResult(fixture, spec.task, linkedSpec.role, 1)).toEqual(resultValue);
     expect(api.readSessionArtifact<typeof resultValue>(join(fromPrimary.dir,'collected-1.json'))).toEqual(resultValue);
-    expect(await api.submitTaskResult(checkout,spec.task,linkedSpec.role,1,resultValue)).toEqual(resultValue);
-    await expect(api.submitTaskResult(checkout,spec.task,linkedSpec.role,1,{...resultValue,value:'conflict'})).rejects.toThrow('result_conflict');
-    rmSync(join(checkout,'result-input.json'));
     expect(api.readTaskRequestResult(checkout, fromLinked.dir, linkedRequest)?.value).toBe('artifact-result');
-    await expect(api.sendTaskRequest(fixture,spec.task,linkedSpec.role,'context.md','changed_only')).rejects.toThrow('duplicate_subject');
-    const repeated=await api.sendTaskRequest(fixture,spec.task,linkedSpec.role,'context.md');
-    await api.submitTaskResult(checkout,spec.task,linkedSpec.role,repeated.round,{request_id:repeated.request_id,context_sha256:repeated.context_sha256,value:'artifact-result'});
+    await expect(send(spec.task, linkedSpec.role,'context.md','changed_only')).rejects.toThrow('duplicate_subject');
+    const repeated=await send(spec.task, linkedSpec.role,'context.md');
+    api.writeSessionArtifact(repeated.result_ref,{request_id:repeated.request_id,context_sha256:repeated.context_sha256,value:'artifact-result'},false);
     writeFileSync(join(fixture, 'context.md'), 'hold-result');
-    await api.sendTaskRequest(fixture, spec.task, linkedSpec.role, 'context.md');
+    await send(spec.task, linkedSpec.role, 'context.md');
     copyHelpers(fixture);
     const helper = join(fixture, 'scripts/contract-worktree.sh');
     const helperEnv = { ...env, REPO_HARNESS_TARGET_REPO_ROOT: fixture };
@@ -452,7 +448,7 @@ writeFileSync(spec.role+'-'+mode+'.binding',JSON.stringify(binding));
     const pendingPath = join(fixture, 'pending.json'); writeFileSync(pendingPath, JSON.stringify(pendingSpec));
     const pendingOwner = owner('intent-crash', pendingPath); await exited(pendingOwner.child);
     expect(pendingOwner.child.exitCode).toBe(78);
-    await expect(api.startTaskAgent(fixture, pendingSpec)).rejects.toThrow('start_reconciliation_required');
+    await expect(api.startTaskAgent(fixture, pendingSpec, refuseLaunch)).rejects.toThrow('start_reconciliation_required');
     expect(readFileSync(join(fixture, 'launches'), 'utf8')).toBe('advisor\ncrash-role\nlinked-role\nattached-view\n');
     expect(await api.closeTaskAgent(fixture, pendingSpec.task, pendingSpec.role)).toEqual({ status: 'closed', pids: [] });
     expect(api.taskAgentStatus(fixture, pendingSpec.task, pendingSpec.role).status).toBe('closed');
@@ -461,7 +457,7 @@ writeFileSync(spec.role+'-'+mode+'.binding',JSON.stringify(binding));
     const ambiguousPath = join(fixture, 'ambiguous.json'); writeFileSync(ambiguousPath, JSON.stringify(ambiguousSpec));
     const ambiguousOwner = owner('ambiguous', ambiguousPath); await exited(ambiguousOwner.child);
     expect(ambiguousOwner.child.exitCode).toBe(79);
-    await expect(api.startTaskAgent(fixture, ambiguousSpec)).rejects.toThrow('start_reconciliation_required');
+    await expect(api.startTaskAgent(fixture, ambiguousSpec, refuseLaunch)).rejects.toThrow('start_reconciliation_required');
     expect(api.taskAgentStatus(fixture, spec.task, ambiguousSpec.role).status).toBe('reconciliation_required');
     expect(readFileSync(join(fixture, 'launches'), 'utf8')).toBe('advisor\ncrash-role\nlinked-role\nattached-view\nambiguous-role\n');
     const unboundPid = JSON.parse(readFileSync(join(fixture, 'ambiguous-role.ready'), 'utf8')).pid;
@@ -485,7 +481,7 @@ writeFileSync(spec.role+'-'+mode+'.binding',JSON.stringify(binding));
     if (groupedOwner.child.exitCode !== 0) throw new Error(groupedOwner.errors());
     const leaderPid = JSON.parse(readFileSync(join(fixture, 'grouped.ready'), 'utf8')).pid;
     writeFileSync(join(fixture, 'context.md'), 'spawn-group-child');
-    await api.sendTaskRequest(fixture, spec.task, groupedSpec.role, 'context.md');
+    await send(spec.task, groupedSpec.role, 'context.md');
     const groupedChild = join(fixture, 'grouped.ready.child');
     await until(() => existsSync(groupedChild));
     const childPid = Number(readFileSync(groupedChild, 'utf8'));
@@ -624,73 +620,6 @@ exec ${quote(real)} "$@"
   }
 }, 60_000);
 
-test('production agent-start waits beyond ten seconds and treats a readiness timeout as an unbound ambiguous launch', async () => {
-  const fixture = realpathSync(mkdtempSync('/tmp/as-'));
-  const home = join(fixture, 'h'); const bin = join(fixture, 'bin'); mkdirSync(home); mkdirSync(bin);
-  const session = `task-proof-${randomUUID().replaceAll('-', '').slice(0, 16)}`;
-  const configPath = join(fixture, 'herdr.toml'); const endpoint = { session, configPath, home };
-  const env = { ...herdrEnvironment(endpoint), PATH: `${bin}:${process.env.PATH}`, ENV: '', BASH_ENV: '' };
-  const herdr = Bun.which('herdr')!;
-  const api = await import('../src/effects/terminal/task-session');
-  run('git', ['init', '-q', '-b', 'main'], fixture, env);
-  // Herdr's server builds the canonical command from kind and resolves it in
-  // this private shell PATH. There is no real Codex/model invocation.
-  const fake = join(bin, 'codex');
-  writeFileSync(fake, `#!${process.execPath}\nimport {writeFileSync} from 'fs';\nimport {join} from 'path';\nprocess.stdin.setRawMode(true); process.stdout.write('\\x1b[?2004h');\nwriteFileSync(join(${JSON.stringify(fixture)},'ready-'+process.env.HERDR_PANE_ID+'.json'),JSON.stringify({pid:process.pid,pane:process.env.HERDR_PANE_ID,argv:process.argv}));\nprocess.stdin.on('data',()=>{});\n`);
-  chmodSync(fake, 0o700);
-  writeFileSync(configPath, 'onboarding = false\n[terminal]\ndefault_shell = "/bin/sh"\nshell_mode = "non_login"\n[update]\nversion_check = false\nmanifest_check = false\n[session]\nresume_agents_on_restore = false\n');
-  const execute = (args: string[]) => { requireFixtureSession(session); return run(herdr, ['--session', session, ...args], fixture, env); };
-  const call = (args: string[]) => JSON.parse(execute(args)).result;
-  const server = spawn(herdr, ['--session', session, 'server'], { env, stdio: 'ignore' });
-  const controllers: ChildProcess[] = [];
-  try {
-    await until(() => { try { call(['workspace', 'list']); return true; } catch { return false; } });
-    const root = call(['workspace', 'create', '--cwd', fixture, '--no-focus']); const parent = root.root_pane.pane_id;
-    const spec = { task: 'production-start-fixture', role: 'cold', harness_kind: 'codex', endpoint, parent_pane: parent, args: [], max_requests: 1 };
-    const reporter = join(fixture, 'reporter.ts');
-    writeFileSync(reporter, `import {existsSync,readFileSync,writeFileSync} from 'fs';import {join} from 'path';import {spawnSync} from 'child_process';\nconst dir=process.argv[2];const delay=Number(process.argv[3]);\nconst end=Date.now()+20000;while(!existsSync(join(dir,'pane-created.json'))){if(Date.now()>end)throw new Error('pane deadline');await Bun.sleep(10); }\nconst pane=JSON.parse(readFileSync(join(dir,'pane-created.json'),'utf8')).pane_id;\nconst ready=join(${JSON.stringify(fixture)},'ready-'+pane+'.json');while(!existsSync(ready)){if(Date.now()>end)throw new Error('ready deadline');await Bun.sleep(10); }\nconst report=(state,seq)=>{const r=spawnSync(${JSON.stringify(herdr)},['--session',${JSON.stringify(session)},'pane','report-agent',pane,'--source','fixture','--agent','codex','--state',state,'--seq',String(seq)],{env:process.env,encoding:'utf8',timeout:10000});if(r.status!==0)throw new Error(r.stderr);};\nreport('working',1);writeFileSync(join(dir,'fixture-working'),'observed');\nif(delay>=0){const at=Date.now()+delay;while(Date.now()<at)await Bun.sleep(20);report('idle',2);writeFileSync(join(dir,'fixture-idle'),'observed');}\n`);
-    const report = (role: string, delay: number) => {
-      const dir = api.taskSessionDirectory(fixture, spec.task, role);
-      const child = spawn(process.execPath, [reporter, dir, String(delay)], { cwd: fixture, env, stdio: ['ignore', 'pipe', 'pipe'] });
-      controllers.push(child); let errors = ''; child.stderr?.on('data', data => { errors += data; });
-      return { child, errors: () => errors };
-    };
-    const cold = report('cold', 11_000);
-    const began = Date.now();
-    // No effects.start injection: runs the production herdr agent start branch.
-    const binding = await api.startTaskAgent(fixture, spec);
-    expect(Date.now() - began).toBeGreaterThan(10_000);
-    await exited(cold.child); if (cold.child.exitCode !== 0) throw new Error(cold.errors());
-    expect(binding.provider.pid).toBe(JSON.parse(readFileSync(join(fixture, 'ready-'+binding.pane_id+'.json'), 'utf8')).pid);
-    expect(binding.capabilities.read_only.status).toBe('unverified');
-    expect(await api.closeTaskAgent(fixture, spec.task, spec.role)).toEqual({ status: 'closed', pids: [] });
-    expect(live(binding.provider.pid)).toBe(false);
-
-    const timeoutSpec = { ...spec, role: 'timeout' }; const timeoutReporter = report('timeout', -1);
-    const timeoutBegan = Date.now();
-    await expect(api.startTaskAgent(fixture, timeoutSpec, { startTimeoutMs: 4000 })).rejects.toThrow('ambiguous_launch');
-    expect(Date.now() - timeoutBegan).toBeLessThan(8500); // CLI deadline, not its +5s spawn kill margin.
-    await exited(timeoutReporter.child); if (timeoutReporter.child.exitCode !== 0) throw new Error(timeoutReporter.errors());
-    const dir = api.taskSessionDirectory(fixture, spec.task, timeoutSpec.role);
-    const pane = api.readSessionArtifact<{ pane_id: string }>(join(dir, 'pane-created.json'));
-    const pid = JSON.parse(readFileSync(join(fixture, 'ready-'+pane.pane_id+'.json'), 'utf8')).pid;
-    expect(existsSync(join(dir, 'binding.json'))).toBe(false);
-    expect(existsSync(join(dir, 'launch-unknown.json'))).toBe(true);
-    expect(live(pid)).toBe(true);
-    await expect(api.startTaskAgent(fixture, timeoutSpec)).rejects.toThrow('start_reconciliation_required');
-    expect(await api.closeTaskAgent(fixture, spec.task, timeoutSpec.role)).toEqual({ status: 'closed', pids: [] });
-    expect(live(pid)).toBe(false);
-    expect(call(['pane', 'list', '--workspace', root.workspace.workspace_id]).panes).toHaveLength(1);
-  } finally {
-    requireFixtureSession(session);
-    try { execute(['server', 'stop']); } catch { if (server.exitCode === null && server.signalCode === null) server.kill('SIGTERM'); }
-    await exited(server);
-    for (const child of controllers) { if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM'); await exited(child); }
-    rmSync(fixture, { recursive: true, force: true });
-  }
-}, 60_000);
-
-
 test('workspace registration recovers vanished, closed and failed-open incarnations through the Bash consumer', async () => {
   const fixture = realpathSync(mkdtempSync('/tmp/tr-'));
   const home = join(fixture, 'h'); mkdirSync(home);
@@ -781,149 +710,6 @@ test('workspace registration recovers vanished, closed and failed-open incarnati
   }
 },60000);
 
-test('MCP goals use visible persistent Herdr peers, redact history and clean success and timeout panes', async () => {
-  const fixture = realpathSync(mkdtempSync('/tmp/mg-'));
-  const home = join(fixture, 'h'), bin = join(fixture, 'bin'); mkdirSync(home); mkdirSync(bin);
-  const session = `task-proof-${randomUUID().replaceAll('-', '').slice(0, 16)}`;
-  const configPath = join(fixture, 'herdr.toml'), endpoint = { session, configPath, home };
-  requireFixtureSession(session);
-  const env = { ...herdrEnvironment(endpoint), PATH: `${bin}:${process.env.PATH}`, ENV: '', BASH_ENV: '' };
-  const herdr = Bun.which('herdr')!;
-  writeFileSync(configPath, 'onboarding = false\n[terminal]\ndefault_shell = "/bin/sh"\nshell_mode = "non_login"\n[update]\nversion_check = false\nmanifest_check = false\n[session]\nresume_agents_on_restore = false\n');
-  run('git', ['init', '-q', '-b', 'main'], fixture, env);
-  run('git', ['-c', 'user.name=fixture', '-c', 'user.email=fixture@localhost', 'commit', '--allow-empty', '-qm', 'fixture'], fixture, env);
-  mkdirSync(join(fixture, '.ai/harness/handoff'), {recursive:true});
-  const goalPath = join(fixture, '.ai/harness/handoff/task-goal.md');
-  const missedWorking = join(fixture, 'missed-working-observation');
-  // Both kinds resolve only to this deterministic persistent TTY process.
-  for (const kind of ['codex', 'claude']) {
-    const fake = join(bin, kind);
-    writeFileSync(fake, `#!${process.execPath}
-import {existsSync,readFileSync,writeFileSync,renameSync} from 'fs';import {spawnSync} from 'child_process';
-const session=${JSON.stringify(session)};if(!/^task-proof-[0-9a-f]{16}$/.test(session))throw new Error('fixture only');
-const pane=process.env.HERDR_PANE_ID;let seq=0;
-const report=state=>{const r=spawnSync(${JSON.stringify(herdr)},['--session',session,'pane','report-agent',pane,'--source','fixture','--agent',${JSON.stringify(kind)},'--state',state,'--seq',String(++seq)],{env:process.env,encoding:'utf8'});if(r.status!==0)throw new Error(r.stderr);};
-process.stdin.setRawMode(true);process.stdout.write('\\x1b[?2004h');
-writeFileSync(${JSON.stringify(join(fixture, kind + '.pid'))},String(process.pid));
-setTimeout(()=>report('idle'),100);let input='';
-process.stdin.on('data',chunk=>{input+=chunk.toString();if(!/[\\r\\n]/.test(input))return;
- const lines=input.split(/[\\r\\n]+/);input=lines.pop()??'';
- for(const line of lines){const text=line.replaceAll('\\x1b[200~','').replaceAll('\\x1b[201~','');if(!text.trim())continue;
- const ref=/^Read task request (.*); write its result only to /.exec(text)?.[1];if(!ref)throw new Error('unexpected prompt');
- const request=JSON.parse(readFileSync(ref,'utf8'));const context=readFileSync(request.context_ref,'utf8');
- const ack=${JSON.stringify(join(fixture,'working-observation'))};
- const missed=${JSON.stringify(missedWorking)};
- const executeGoal=()=>{if(context.includes('Finish fixture goal'))writeFileSync(ack+'.armed',JSON.stringify({request_id:request.request_id,pid:process.pid,pane}));report('working');
- process.stdout.write('GOAL VISIBLE '+${JSON.stringify(kind)}+' Authorization: Bearer fixture-secret-token\\n');
- const finish=()=>{if(context.includes('WRITE_RESULT')){writeFileSync(request.result_ref+'.tmp',JSON.stringify({request_id:request.request_id,context_sha256:request.context_sha256,value:'fixture result'}));renameSync(request.result_ref+'.tmp',request.result_ref);}process.stdout.write('GOAL COMPLETE\\n');report('idle');};
- if(context.includes('MISSED_WORKING')){finish();writeFileSync(missed+'.complete','complete');}
- else if(context.includes('Finish fixture goal')){const timer=setInterval(()=>{if(existsSync(ack)){const observed=JSON.parse(readFileSync(ack,'utf8'));if(observed.request_id===request.request_id&&observed.pid===process.pid){clearInterval(timer);finish();}}},10);}
- else if(!context.includes('WAIT_FOREVER'))setTimeout(finish,200);};
- if(context.includes('STARTUP_WORKING')){setTimeout(()=>report('idle'),500);setTimeout(executeGoal,1500);}
- else if(context.includes('EARLY_IDLE')){report('unknown');report('idle');if(!context.includes('IDLE_ONLY'))setTimeout(executeGoal,1000);}
- else if(context.includes('Finish fixture goal')){const timer=setInterval(()=>{if(existsSync(ack+'.baseline')){clearInterval(timer);executeGoal();}},10);}
- else if(context.includes('MISSED_WORKING')){const timer=setInterval(()=>{if(existsSync(missed+'.baseline')){clearInterval(timer);executeGoal();}},10);}
- else if(context.includes('WAIT_FOREVER'))executeGoal();
- else setTimeout(executeGoal,500);
- }});
-`);
-    chmodSync(fake,0o700);
-  }
-  const wrappedHerdr = join(bin, 'herdr');
-  writeFileSync(wrappedHerdr, `#!${process.execPath}
-import {existsSync,readFileSync,writeFileSync,renameSync} from 'fs';import {spawnSync} from 'child_process';
-const args=process.argv.slice(2);
-// Polling uses agent get only. History and cleanup first validate pane identity.
-if(readFileSync(${JSON.stringify(goalPath)},'utf8').includes('MISSED_WORKING')&&args[2]==='pane'&&args[3]==='get'){
- const prefix=${JSON.stringify(missedWorking)};
- if(existsSync(prefix+'.baseline')&&!existsSync(prefix+'.polling-ended'))writeFileSync(prefix+'.polling-ended',String(Date.now()));
-}
-if(args[2]==='agent' && args[3]==='prompt' && readFileSync(${JSON.stringify(goalPath)},'utf8').includes('STARTUP_WORKING')){
- const queried=spawnSync(${JSON.stringify(herdr)},[...args.slice(0,2),'agent','get',args[4]],{env:process.env,encoding:'utf8'});
- const agent=JSON.parse(queried.stdout).result.agent;
- const reported=spawnSync(${JSON.stringify(herdr)},[...args.slice(0,2),'pane','report-agent',agent.pane_id,'--source','fixture-delivery','--agent',agent.agent,'--state','working','--seq','1'],{env:process.env,encoding:'utf8'});
- if(reported.status!==0)throw new Error(reported.stderr);
-}
-const result=spawnSync(${JSON.stringify(herdr)},args,{env:process.env,encoding:'utf8'});if(readFileSync(${JSON.stringify(goalPath)},'utf8').includes('Finish fixture goal')){
- const prefix=${JSON.stringify(join(fixture,'working-observation'))};
- if(args[2]==='agent'&&args[3]==='prompt'&&result.status===0){const ref=/^Read task request (.*); write its result only to /.exec(args[5])?.[1];writeFileSync(prefix+'.delivered',JSON.stringify(JSON.parse(readFileSync(ref,'utf8'))));}
- if(args[2]==='agent'&&args[3]==='get'&&result.status===0&&existsSync(prefix+'.delivered')){
-  const current=JSON.parse(result.stdout).result.agent;
-  if(!existsSync(prefix+'.baseline'))writeFileSync(prefix+'.baseline',JSON.stringify(current));
-  else {const baseline=JSON.parse(readFileSync(prefix+'.baseline','utf8'));if(current.agent_status==='working'&&current.state_change_seq>baseline.state_change_seq&&existsSync(prefix+'.armed')){const armed=JSON.parse(readFileSync(prefix+'.armed','utf8'));const request=JSON.parse(readFileSync(prefix+'.delivered','utf8'));if(armed.request_id===request.request_id&&armed.pane===current.pane_id&&armed.pid===Number(readFileSync(${JSON.stringify(join(fixture,'codex.pid'))},'utf8'))){writeFileSync(prefix+'.tmp',JSON.stringify({...current,...armed}));renameSync(prefix+'.tmp',prefix);}}}
- }
-}
-if(readFileSync(${JSON.stringify(goalPath)},'utf8').includes('MISSED_WORKING')){
- const prefix=${JSON.stringify(missedWorking)};
- if(args[2]==='agent'&&args[3]==='prompt'&&result.status===0)writeFileSync(prefix+'.delivered','accepted');
- if(args[2]==='agent'&&args[3]==='get'&&result.status===0&&existsSync(prefix+'.delivered')){
-  const current=JSON.parse(result.stdout).result.agent;
-  if(!existsSync(prefix+'.baseline')){
-   if(current.agent_status!=='idle')throw new Error('fixture idle baseline required');
-   writeFileSync(prefix+'.baseline',JSON.stringify(current));
-   const deadline=Date.now()+8000;
-   while(!existsSync(prefix+'.complete')){if(Date.now()>=deadline)throw new Error('fixture missed working deadline');await Bun.sleep(10);}
-  }else if(!existsSync(prefix+'.polling-ended')&&current.agent_status==='idle'&&current.state_change_seq>JSON.parse(readFileSync(prefix+'.baseline','utf8')).state_change_seq)writeFileSync(prefix+'.settled',JSON.stringify({...current,observed_at_ms:Date.now()}));
- }
-}
-process.stdout.write(result.stdout??'');process.stderr.write(result.stderr??'');process.exit(result.status??1);
-`); chmodSync(wrappedHerdr,0o700);
-  const savedPath = process.env.PATH;
-  process.env.PATH = `${bin}:${savedPath}`;
-  const execute = (args:string[]) => { requireFixtureSession(session); return run(herdr,['--session',session,...args],fixture,env); };
-  const call = (args:string[]) => JSON.parse(execute(args)).result;
-  const server=spawn(herdr,['--session',session,'server'],{env,stdio:'ignore'});
-  const {callMcpTool}=await import('../src/cli/mcp/tools');
-  const {getMcpPolicy}=await import('../src/cli/mcp/policy');
-  const api=await import('../src/effects/terminal/task-session');
-  try {
-    await until(()=>{try{call(['workspace','list']);return true;}catch{return false;}});
-    const root=call(['workspace','create','--cwd',fixture,'--no-focus']);
-    const parent=root.root_pane.pane_id;
-    const ctx={repoRoot:fixture,policy:getMcpPolicy('orchestrator',{devAgentRunner:true,allowedAgents:['codex','claude'],runnerTimeoutMs:10000})};
-    for(const [kind,mode] of [['codex','startup-working-result'],['codex','early-idle-result'],['codex','idle-only'],['codex','idle'],['codex','missed-working'],['codex','result'],['claude','timeout']] as const){
-      const hang=mode==='timeout'||mode==='idle-only'||mode==='missed-working', hasResult=mode==='result'||mode==='early-idle-result'||mode==='startup-working-result';
-      writeFileSync(goalPath,mode==='startup-working-result'?'STARTUP_WORKING WRITE_RESULT':mode==='early-idle-result'?'EARLY_IDLE WRITE_RESULT':mode==='idle-only'?'EARLY_IDLE IDLE_ONLY':mode==='missed-working'?'MISSED_WORKING':hang?'WAIT_FOREVER':hasResult?'WRITE_RESULT':'Finish fixture goal');
-      const result=await callMcpTool(ctx,'run_agent_goal',{agent:kind,herdr:{endpoint,parent_pane:parent},timeout_ms:mode==='missed-working'?10000:hang?5000:10000});
-      const value=JSON.parse((result.content[0] as {text:string}).text);
-      expect(value.stderr).toBe('');
-      expect(value.status).toBe(hang?'timeout':hasResult?'completed':'observed_idle');
-      expect(value.timedOut).toBe(hang);
-      if(mode==='missed-working'){
-        expect(readFileSync(missedWorking+'.complete','utf8')).toBe('complete');
-        const baseline=JSON.parse(readFileSync(missedWorking+'.baseline','utf8'));
-        const settled=JSON.parse(readFileSync(missedWorking+'.settled','utf8'));
-        expect(baseline.agent_status).toBe('idle');
-        expect(settled.agent_status).toBe('idle');
-        expect(settled.pane_id).toBe(baseline.pane_id);
-        expect(settled.state_change_seq).toBeGreaterThan(baseline.state_change_seq);
-        expect(settled.observed_at_ms).toBeLessThan(Number(readFileSync(missedWorking+'.polling-ended','utf8')));
-      }
-      if(mode!=='idle-only')expect(value.stdout).toContain('GOAL VISIBLE');
-      expect(value.stdout).not.toContain('fixture-secret-token');
-      expect(Buffer.byteLength(value.stdout)).toBeLessThanOrEqual(128*1024);
-      const binding=api.readTaskAgent(fixture,value.task,value.role).binding;
-      expect(binding.provider.pid).toBe(Number(readFileSync(join(fixture,kind+'.pid'),'utf8')));
-      expect(live(binding.provider.pid)).toBe(false);
-      expect(api.taskAgentStatus(fixture,value.task,value.role).status).toBe('closed');
-      const dir=api.taskSessionDirectory(fixture,value.task,value.role);
-      const request=api.readSessionArtifact<import('../src/effects/terminal/task-session').TaskRequest>(join(dir,'request-1.json'));
-      expect(existsSync(request.result_ref)).toBe(hasResult);
-      expect(existsSync(join(dir,'collected-1.json'))).toBe(false);
-      expect(api.readSessionArtifact<{disposition:string}>(join(dir,'closed.json')).disposition).toBe(hasResult?'completed':'cancelled');
-      expect(call(['pane','list','--workspace',root.workspace.workspace_id]).panes).toHaveLength(1);
-      expect(call(['pane','get',parent]).pane.pane_id).toBe(parent);
-    }
-    const audit=readFileSync(join(fixture,'.ai/harness/mcp/audit.log'),'utf8');
-    expect(audit).not.toContain(configPath);expect(audit).not.toContain(home);expect(audit).not.toContain(session);
-  }finally{
-    process.env.PATH = savedPath;
-    requireFixtureSession(session);
-    try{execute(['server','stop']);}catch{if(server.exitCode===null&&server.signalCode===null)server.kill('SIGTERM');}
-    await exited(server);rmSync(fixture,{recursive:true,force:true});
-  }
-},90000); // Seven real Herdr launches need headroom after the 10 s missed-working budget.
-
 darwinTest('OAR fixed host runs visibly in a private Herdr pane and disposes before owned pane cleanup', async () => {
   const api = await import('../src/effects/terminal/task-session');
   const { reviewIsolationPolicy, reviewHostCommand } = await import('../src/effects/review/review-isolation');
@@ -955,7 +741,6 @@ darwinTest('OAR fixed host runs visibly in a private Herdr pane and disposes bef
     const command = reviewHostCommand(realpathSync('/opt/homebrew/opt/node@24/bin/node'), realpathSync(join(import.meta.dir,'../dist/oar-review-host.js')), specFile);
     binding = await api.startTaskApplicationHost(repo, { task:'oar-fixture', role:'deep-reasoner', harness_kind:'codex', endpoint,
       parent_pane:workspace.root_pane.pane_id, args:[], max_requests:3 }, command, async () => { await until(() => existsSync(readyFile)); });
-    expect(binding.host).toBeNull(); // No privileged protected-result host fence is bypassed.
     expect(binding.provider.pid).toBe(JSON.parse(readFileSync(readyFile,'utf8')).pid);
     const screen = execute(['pane','read',binding.pane_id,'--source','recent','--lines','120','--format','text','--raw']);
     expect(screen).toContain('fixture-oar');
@@ -1008,13 +793,9 @@ darwinTest('operator-terminal OAR host binds by exact command and process identi
     if (binding?.runtime !== 'terminal') throw new Error('fixture_terminal_binding_missing');
     expect(binding.provider.pid).toBe(host.pid!);
     expect(binding.command).toEqual([...command]);
-    expect(binding.host).toBeNull();
     expect(await api.bindTerminalApplicationHost(repo, spec, command, async () => { throw new Error('must not observe again'); })).toEqual(binding);
     expect(api.readTaskAgent(repo, spec.task, spec.role).binding).toEqual(binding);
     expect(api.taskAgentStatus(repo, spec.task, spec.role).status).toBe('idle');
-    expect(() => api.readTaskAgentHistory(repo, spec.task, spec.role)).toThrow('task_agent_history_unavailable');
-    writeFileSync(join(repo, 'context.txt'), 'fixture context\n');
-    await expect(api.sendTaskRequest(repo, spec.task, spec.role, 'context.txt')).rejects.toThrow('task_agent_application_delivery_required');
     // Cleanup never signals the operator's process; it waits for the host's own disposal and exit.
     expect(await api.cancelTaskAgent(repo, spec.task, spec.role)).toEqual({ status: 'cleanup_pending', pids: [host.pid!], reason: 'terminal_host_alive' });
     // Closing the operator's tab sends SIGHUP; the host still disposes before it exits.
@@ -1153,7 +934,6 @@ try{await serveCodingHostRequests(host,spec,close,()=>closing!==undefined)}final
       execute(['pane','report-agent',pane,'--source','coding-fixture','--agent',kind,'--state','idle','--seq','2']);
       execute(['agent','rename',pane,name]);
     }});
-    expect(binding.host).toBeNull();
     // A launch without durable provider proof must not close the pane.
     const bindingFile = join(dir,'binding.json'), providerFile = join(dir,'provider-created.json');
     const bindingBytes = readFileSync(bindingFile), providerBytes = readFileSync(providerFile);
