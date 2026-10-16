@@ -4,17 +4,14 @@ kind: component
 name: "Host Adapter Installer"
 status: active
 parent: capability.runtime-harness.hook-adapters
-summary: "Projects the route registry into user-level Claude and Codex adapter entries and runs the Pi extension bridge."
+summary: "Projects the route registry into user-level Claude and Codex adapter entries."
 responsibilities:
   - Build and compare managed hook entries for each host from the route registry.
   - Apply and roll back install profiles under the runtime host lock.
-  - Map Pi native events to the shared typed handlers through the bounded Bun JSON bridge.
   - Report host install status and scan local hook and task configurations for injection surfaces without mutation.
 source:
   include:
     - "src/cli/installer/**"
-    - "src/pi/extension.ts"
-    - "src/pi/hook-bridge.ts"
     - "src/cli/commands/install.ts"
     - "src/cli/commands/status.ts"
     - "src/cli/commands/security.ts"

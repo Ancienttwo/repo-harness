@@ -1576,9 +1576,7 @@ pi_write_harness_policy() {
   },
   "delegation": {
     "mode": "explicit",
-    "brief_source": "tasks/contracts/<stem>.contract.md",
-    "runner_rule": "the active task contract is the authoritative execution brief. Use task-agent in an explicitly addressed Herdr session and parent pane for persistent collaborators. Reuse the task binding across owner turns; history and idle are observation, not Result or acceptance. Missing Herdr fails closed without an alternate agent runner. Real harness permission and model capabilities remain unverified until evidenced.",
-    "rule": "UserPromptSubmit.delegation injects bounded delegation context only for the typed /delegate or /parallel command. Natural-language inference and SessionStart standing authorization are not delegation authorities."
+    "brief_source": "tasks/contracts/<stem>.contract.md"
   },
   "sidecar_research": {
     "default": true,
@@ -1902,7 +1900,6 @@ Generality: These are general working rules. Do not tailor behavior to any speci
 - Write a plan before cross-module changes, architecture changes, and dependency upgrades. Small changes do not need a plan.
 - Treat `docs/spec.md` as stable product truth, `tasks/current.md` as a derived status snapshot, and `tasks/todos.md` as the deferred-goal ledger.
 - Treat `docs/researches/`, `tasks/lessons.md`, `tasks/notes/`, `.ai/harness/policy.json`, and `.ai/harness/handoff/current.md` as durable workflow context.
-- Read `tasks/lessons.md` at session start and apply its active lessons. Current repo state and evidence override a lesson.
 - Use `.ai/context/context-map.json` and `.ai/context/capabilities.json` to discover functional-block contracts before adding local agent files.
 - Do not infer local `CLAUDE.md` or `AGENTS.md` files from broad physical layouts such as `apps/*`, `packages/*`, or `services/*`.
 - Put capability-specific ownership, entrypoints, and verification commands in explicitly selected functional-block contracts.
@@ -1991,17 +1988,7 @@ pi_install_directory_context_files() {
   directory_agents_content=$(cat <<'EOF_DIRECTORY_AGENTS'
 # Functional Block Agent Context
 
-Keep this file focused on the local contract for this primary functional block.
-
-## Local Context Contract
-
-- Describe only the ownership, boundaries, stable entrypoints, and local verification commands for this functional block.
-- Keep sibling `CLAUDE.md` and `AGENTS.md` files aligned. Claude Code consumes `CLAUDE.md`; Codex consumes `AGENTS.md`.
-- Record the local LSP/tooling profile here when it differs from the repo default.
-- Route deep implementation detail into nearby docs instead of inflating root agent context files.
-- Treat `.ai/context/context-map.json` as the index of discoverable context files.
-- Do not keep pushing context files deeper by default; add lower-level files only for a separately owned functional block with its own commands and invariants.
-- Prefer repo-local workflow artifacts over tool-specific chat memory.
+Record only ownership, entrypoints and local verification commands.
 EOF_DIRECTORY_AGENTS
 )
 

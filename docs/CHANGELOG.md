@@ -16,20 +16,22 @@ All notable changes to this skill are documented here.
   ledger facts, task-level agent bindings and ledger-derived attention. Old
   snapshots fail closed. Update clients with the server. Git, GitHub, Human
   Decision and runtime source-health observations remain. (#769, #785)
-
-- Managed hook blocks now run before user blocks for each event. User hooks,
-  their metadata and their relative order stay intact. Install and update
-  record the one-time order migration in `~/.repo-harness/hook-install-state.json`.
-  Existing Codex order migrations need one trust re-approval: start interactive
-  `codex`, enter `/hooks`, review the hooks marked for review, and trust only
-  those you recognise. User hooks can also need review after their positions
-  change. Then run `repo-harness install --acknowledge-codex-hook-trust`.
-  Doctor reports pending re-approval until that operator acknowledgement.
-  The command records acknowledgement; it does not grant or prove native
-  trust. Stable install/update reruns keep the record and emit no repeat
-  migration notice. Fresh installs emit no re-approval notice. Interrupted
-  migrations must finish installation before acknowledgement. The native
-  review step follows [Codex hook trust](https://learn.chatgpt.com/docs/hooks#review-and-trust-hooks). (#698)
+- Managed hook blocks now run before user blocks for each event. (#742)
+  After the update, start interactive `codex`, enter `/hooks` and review the hooks. (#766)
+- Codex no longer installs `UserPromptSubmit.delegation`. No hook answers
+  `/delegate` or `/parallel`. The `delegation.rule` and
+  `delegation.runner_rule` policy keys are removed from the policy template
+  and from this repository policy. Codex installs 5 routes. The minimal
+  profile no longer lists `PostToolUse.bash`. (#766)
+- Pi support is removed. The Pi extension (`src/pi/`), the
+  `PostToolUse.bash` route, `command-observed.ts` and the `repair` circuit
+  kind are gone. `HOOK_HOST` accepts only `claude` and `codex`. A circuit
+  state file with a `repair` entry fails closed. Run
+  `repo-harness run evidence-gc --repo <path>` once to remove it. (#766)
+- The package no longer declares a Pi package (`package.json` `pi`) or the
+  optional `@earendil-works/pi-coding-agent` peer. `check:pi-package`,
+  `sync:pi-package`, `scripts/sync-pi-package.ts` and
+  `scripts/check-pi-package-smoke.ts` are gone. (#766)
 - Hook install and uninstall now accept only `--location global`.
   `--location local` exits with code 2 before configuration reads or writes.
   The installer no longer writes project-level Claude adapters. (#698)
@@ -42,20 +44,17 @@ All notable changes to this skill are documented here.
   still report an old `.ai/hooks/lib/workflow-state.sh` copy and keep its
   bytes. The same release removes `PostToolUse.edit`, `PostToolUse.always`,
   `UserPromptSubmit.default` and `SubagentStop.quality`, with their handlers.
-  `PostToolUse.bash` stays on Pi only. `PreToolUse.subagent` stays on Claude
-  only, with the verified `Agent` matcher. Claude installs 5 routes, Codex 6,
-  and Pi maps 4. `repo-harness hook` and the managed full-CLI fallback are
+  `PreToolUse.subagent` stays on Claude only, with the verified `Agent`
+  matcher. Claude installs 5 routes. `repo-harness hook` and the managed full-CLI fallback are
   removed. Managed commands skip non-opt-in repositories and require
   `repo-harness-hook` on PATH for opted-in repositories. All managed entries
-  use 30 seconds, including Stop. Pi keeps its 10-second bound for ordinary
-  calls and its 30-second Stop bound. Update the package and
+  use 30 seconds, including Stop. Update the package and
   reinstall hooks once; trust the new Codex tuples once. Old adapters get
   exit 2 for removed or unsupported host routes until reinstall. Doctor reports projection
   mismatch and a missing hook bin. Keep the package and adapters on the same
   release (#680). Publication-command architecture and `[PostBash]` advisories
   are no longer delivered. Claude and Codex still get owed context at
-  SessionStart; Claude also gets it at Stop. Pi does not render successful
-  tool-result `additional_context`. (#696, #705)
+  SessionStart; Claude also gets it at Stop. (#696, #705)
 - `prepare-handoff` runs only `recovery-view-cli.ts`, for both the write and
   `--status`. It no longer appends `handoff_refresh` events to
   `.ai/harness/events.jsonl` or writes run summaries under
@@ -181,6 +180,12 @@ All notable changes to this skill are documented here.
 
 ### Changed
 
+- SessionStart no longer injects the resume file or the active sprint.
+  `[HarnessState]` points to both with `references.resume` and
+  `references.sprint`. The commit confirm of a state resolution reuses the Git
+  review subject of the confirmed pass, and the review subject skips Git diffs
+  that are empty by identity. One idle resolution runs 7 `git` processes
+  instead of 19. (#770)
 - Every hook handler returns a typed result. One host table renders it for
   Claude, Codex and Pi. Prompt advice now reaches Codex as
   `additionalContext`. (#691)

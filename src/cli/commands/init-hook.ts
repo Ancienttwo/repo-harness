@@ -21,6 +21,7 @@ import {
 } from './status';
 import type { InstallTargetSpec } from './install';
 import { planLegacyLeftovers } from '../../core/upgrade/legacy-inventory';
+import { stripRepoHarnessManagedHooks } from '../../core/adoption/managed-hook-config';
 import { planAdoption } from '../../core/adoption/plan';
 import { isRepoHarnessSourceCheckout } from '../../core/adoption/source-checkout';
 
@@ -683,6 +684,24 @@ function toolingChecks(
   return checks;
 }
 
+/**
+ * A project host config is a retired adapter only when it still holds a
+ * repo-harness command. A config that cannot be read is not proven clean.
+ */
+function legacyAdapterDetail(filePath: string): { readonly legacy: boolean; readonly text: string } {
+  if (!existsSync(filePath)) return { legacy: false, text: `not present: ${filePath}` };
+  let removed: number;
+  try {
+    const data = JSON.parse(readFileSync(filePath, 'utf8')) as { hooks?: unknown };
+    removed = stripRepoHarnessManagedHooks(data.hooks).removed.length;
+  } catch (error) {
+    return { legacy: true, text: `cannot inspect ${filePath}: ${(error as Error).message}` };
+  }
+  return removed > 0
+    ? { legacy: true, text: `legacy adapter config at ${filePath} holds ${removed} repo-harness hook command(s)` }
+    : { legacy: false, text: `no repo-harness hook command in ${filePath}` };
+}
+
 function legacyChecks(cwd: string, target: InitHookTarget, checkUpdates: boolean, actions: ActionLedger): InitHookCheck[] {
   const files = [
     { id: 'legacy.project-claude-settings', filePath: join(cwd, '.claude', 'settings.json') },
@@ -692,15 +711,15 @@ function legacyChecks(cwd: string, target: InitHookTarget, checkUpdates: boolean
   const present: string[] = [];
   const presentChecks: string[] = [];
   for (const entry of files) {
-    const exists = existsSync(entry.filePath);
+    const detail = legacyAdapterDetail(entry.filePath);
     checks.push({
       id: entry.id,
       title: 'Retired repo-local host adapter config',
-      status: exists ? 'needs_agent' : 'ok',
+      status: detail.legacy ? 'needs_agent' : 'ok',
       source: 'legacy',
-      detail: exists ? `legacy adapter config exists at ${entry.filePath}` : `not present: ${entry.filePath}`,
+      detail: detail.text,
     });
-    if (exists) {
+    if (detail.legacy) {
       present.push(entry.filePath);
       presentChecks.push(entry.id);
     }

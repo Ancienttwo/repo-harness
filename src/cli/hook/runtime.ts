@@ -18,12 +18,12 @@ import { ExclusiveLockContentionError } from '../../effects/locking/exclusive-di
 import type { EffectiveState } from '../../core/state/types';
 import type { HookHandlerResult } from './handler-contract';
 import { HookPayloadError, hookIdentity, parseHookPayload, type HookIdentity } from './hook-input';
-import { boundedHookDiagnostic, HOST_RENDERERS, type HookJsonOutput, type HookOutcome } from './hook-protocol';
+import { boundedHookDiagnostic, HOST_RENDERERS, type HookOutcome } from './hook-protocol';
 import { inspectWorkflowMarker, WORKFLOW_MARKER_GATE_EVENTS } from '../../core/adoption/minimum-harness-version';
 
 export const HOOK_COMMAND_NAME = 'repo-harness-hook';
 const OPT_IN_MARKER = '.ai/harness/workflow-contract.json';
-const HOOK_HOSTS: readonly RouteHost[] = ['claude', 'codex', 'pi'];
+const HOOK_HOSTS: readonly RouteHost[] = ['claude', 'codex'];
 
 export interface RunHookOptions {
   readonly event: HookEvent;
@@ -38,7 +38,6 @@ export interface RunHookResult {
   readonly reason: string;
   readonly repoRoot?: string;
   readonly handler?: HookHandlerId;
-  readonly json?: HookJsonOutput;
 }
 
 export function resolveRepoRoot(cwd: string): string | null {
@@ -55,8 +54,8 @@ export function resolveRepoRoot(cwd: string): string | null {
 
 /**
  * The managed command already ran `git rev-parse --show-toplevel` in the hook
- * cwd and exported the result, so a managed call spawns no second git. Pi
- * strips `HOOK_REPO_ROOT` and resolves from its cwd.
+ * cwd and exported the result, so a managed call spawns no second git. A
+ * direct call without `HOOK_REPO_ROOT` resolves from its cwd.
  */
 export function resolveHookRepoRoot(cwd: string, env: NodeJS.ProcessEnv): string | null {
   const explicit = env.HOOK_REPO_ROOT?.trim();
@@ -140,23 +139,22 @@ export function runHook(opts: RunHookOptions): RunHookResult {
     return { exitCode: route?.failClosed ? 2 : 1, reason: 'unknown-host' };
   }
   const render = HOST_RENDERERS[host];
-  const emit = (outcome: HookOutcome): HookJsonOutput | undefined => {
+  const emit = (outcome: HookOutcome): void => {
     const output = render(outcome);
     writeText(2, output.stderr);
     writeText(1, output.stdout);
-    return output.json;
   };
   const early = (exitCode: number, reason: string, repoRoot: string | null, diagnostics = ''): RunHookResult => {
-    const json = emit({
+    emit({
       event: opts.event, routeId: opts.routeId, repoRoot, exitCode, reason, additionalContext: null, diagnostics,
     });
-    return { exitCode, reason, ...(repoRoot ? { repoRoot } : {}), ...(json ? { json } : {}) };
+    return { exitCode, reason, ...(repoRoot ? { repoRoot } : {}) };
   };
 
   const repoRoot = resolveHookRepoRoot(cwd, env);
   if (!repoRoot) return early(0, 'not-in-git-repo', null);
   if (!isOptIn(repoRoot)) return early(0, 'non-opt-in', repoRoot);
-  const repair = host === 'pi' ? 'Reload the Pi extension.' : `Run repo-harness install --target ${host} --location global.`;
+  const repair = `Run repo-harness install --target ${host} --location global.`;
   if (!route) {
     return early(2, 'unknown-route', repoRoot, `${HOOK_COMMAND_NAME}: unknown route ${opts.event}.${opts.routeId}. ${repair}\n`);
   }
@@ -200,7 +198,7 @@ export function runHook(opts: RunHookOptions): RunHookResult {
     ? budgetSessionContext(result.sessionContexts) || null
     : result.additionalContext ?? null;
   const exitCode = result.exitCode;
-  const json = emit({
+  emit({
     event: opts.event,
     routeId: opts.routeId,
     repoRoot,
@@ -216,5 +214,5 @@ export function runHook(opts: RunHookOptions): RunHookResult {
     blocked: exitCode === 2 || result.permission?.decision === 'deny',
     reason,
   });
-  return { exitCode, reason, repoRoot, handler: handler.id, ...(json ? { json } : {}) };
+  return { exitCode, reason, repoRoot, handler: handler.id };
 }

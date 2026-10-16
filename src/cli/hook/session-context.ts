@@ -2,18 +2,17 @@
  * SessionStart context. The handler resolves Effective State once. The state
  * section, or `[HarnessStateUnavailable]`, comes first and always. Every other
  * provider is an independent nullable section with a stable id and the source
- * that holds its full content. Providers read the resolved state; they do not
- * parse the plan, the sprint marker or the policy again. A provider that
- * throws becomes one `[SessionContextProviderFailed] <id>` line and does not
- * remove the state section or a sibling.
+ * that holds its full content. The resume and the active sprint get no
+ * section: `references` in the state section points to their files.
+ * Providers read the resolved state; they do not parse the plan, the sprint
+ * marker or the policy again. A provider that throws becomes one
+ * `[SessionContextProviderFailed] <id>` line and does not remove the state
+ * section or a sibling.
  */
 
 import type { SessionContextSection } from './session-context-budget';
-import { readText } from '../../effects/state/collect-state-inputs';
 import type { EffectiveStateResolution } from '../../effects/loop/state-input-collector';
 import { buildStateSnapshotFromEffectiveState } from '../../effects/state/resolve-effective-state';
-import { readAttemptLedger } from '../../effects/state/attempt-ledger-store';
-import { projectContinuationEnvelope } from '../../core/state/project-continuation-envelope';
 import type { EffectiveState } from '../../core/state/types';
 import { owedCapabilities, renderOwedCapabilities } from '../../effects/state/owed-capabilities';
 
@@ -121,50 +120,9 @@ function pendingPlanCaptureBody({ repoRoot, state, nowMs }: SessionContextProvid
   };
 }
 
-/** The next sprint task, from the continuation projection over the resolved state. */
-function activeSprintBody({ repoRoot, state }: SessionContextProviderInput): SessionContextBody | null {
-  const sprintPath = state.active_sprint.path;
-  if (!sprintPath || state.active_sprint.freshness !== 'fresh') return null;
-  const envelope = projectContinuationEnvelope({
-    state,
-    sprintText: readText(repoRoot, sprintPath),
-    attemptLedger: readAttemptLedger(repoRoot),
-  });
-  if (envelope.route !== 'advance_sprint' || !envelope.command) return null;
-  return {
-    content: [
-      '# Active Sprint',
-      '',
-      `- Sprint: \`${sprintPath}\``,
-      `- Next step: \`${envelope.command}\``,
-      '- Rule: a Sprint is a long-task container. Use `$think` to expand the next sprint task into a detailed `plans/plan-*.md`, then run the existing plan -> contract -> worktree flow. `tasks/todos.md` stays the deferred-goal ledger.',
-    ].join('\n'),
-    source: sprintPath,
-  };
-}
-
-/** The resume file itself decides whether a resume exists. */
-function resumeBody({ repoRoot, state }: SessionContextProviderInput): SessionContextBody | null {
-  const resumePath = state.resume.path;
-  const text = readText(repoRoot, resumePath)?.trim();
-  if (!resumePath || !text) return null;
-  return {
-    content: [
-      `# Resume (\`${resumePath}\`, ${state.resume.freshness})`,
-      '',
-      'Recovery context only. Read the files and attachments that the current user message names first.',
-      '',
-      text,
-    ].join('\n'),
-    source: resumePath,
-  };
-}
-
 export const SESSION_CONTEXT_PROVIDERS: readonly SessionContextProvider[] = Object.freeze([
   { id: 'architecture-owed', priority: 2, render: ({ repoRoot, state }) => owedCapabilitiesSessionBody(repoRoot, state) },
   { id: 'pending-plan-capture', priority: 3, render: pendingPlanCaptureBody },
-  { id: 'active-sprint', priority: 4, render: activeSprintBody },
-  { id: 'resume', priority: 5, render: resumeBody },
 ]);
 
 /** All SessionStart sections, state first. The runtime budgets them once. */

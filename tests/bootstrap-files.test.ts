@@ -88,8 +88,6 @@ describe("Bootstrap Script Contracts", () => {
 
     const evaluator = read("agents/fleet/harness-evaluator.md");
     expect(evaluator).toContain("EVAL: PASS");
-    expect(evaluator).toContain("evals/bdd2/**");
-    expect(evaluator).toContain("scripts/run-bdd2-evals.ts");
     expect(evaluator).toContain("fail closed");
     expect(evaluator).toContain("disposable clone/worktree");
     expect(evaluator).toContain("--run-adoption-profile");
@@ -204,7 +202,7 @@ describe("Bootstrap Script Contracts", () => {
 
     expect(content).toContain("create_contract_directories");
     expect(content).toContain("cat > tasks/todos.md");
-    expect(content).toContain("cat > tasks/lessons.md");
+    expect(content).toContain('"adoptionTemplates.files.lessonsLog.lines" > tasks/lessons.md');
     expect(content).toContain("cat > docs/researches/README.md");
     expect(content).not.toContain("docs/TODO.md");
     expect(sharedLib).toContain("pi_install_helpers requires contract helper inventory");
@@ -354,7 +352,7 @@ describe("Bootstrap Script Contracts", () => {
 
     expect(content).toContain("create_contract_directories");
     expect(content).toContain("cat > tasks/todos.md");
-    expect(content).toContain("cat > tasks/lessons.md");
+    expect(content).toContain('"adoptionTemplates.files.lessonsLog.lines" > tasks/lessons.md');
     expect(content).toContain("docs/researches/README.md");
     expect(content).not.toContain("docs/TODO.md");
     expect(content).toContain("pi_install_helpers");

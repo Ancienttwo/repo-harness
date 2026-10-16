@@ -1,16 +1,14 @@
 schemaVersion: archcontext.node/v2
 id: component.hook-adapters.edit-guards
 kind: component
-name: "Guard and Observer Handlers"
+name: "Edit Guard Handlers"
 status: active
 parent: capability.runtime-harness.hook-adapters
-summary: "Typed handlers that guard edit paths and observe Pi shell commands."
+summary: "The typed handler that guards edit paths, and the circuit breaker store."
 responsibilities:
   - Decide PreToolUse.edit with the mutation guard from the repository, _ref, _ops and target path boundaries.
-  - Observe Pi Bash results, count known test failures in the repair circuit and report owed architecture updates after publication commands.
-  - Keep the repair circuit breaker.
+  - Keep the semantic review circuit breaker that the review command records attempts in.
 source:
   include:
     - "src/cli/hook/mutation-*.ts"
     - "src/cli/hook/circuit-breaker.ts"
-    - "src/cli/hook/command-observed.ts"

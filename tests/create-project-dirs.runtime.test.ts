@@ -4,6 +4,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { spawnSync } from "child_process";
 import { defaultPolicy } from "../src/core/adoption/standard-plan";
+import { adoptionTemplateFile } from "../src/core/adoption/manifest-templates";
 import { parseExternalSourcesPolicy } from "../src/effects/external-sources/policy";
 import { ARCHCTX_REQUIRED_VERSION, readArchitectureProjectionPolicy } from "../src/core/architecture/projection";
 
@@ -46,6 +47,7 @@ describe("create-project-dirs runtime smoke", () => {
       expect(deployReadme).toContain("direct children of `deploy/sql/`");
       expect(existsSync(join(cwd, "tasks/contracts"))).toBe(true);
       expect(existsSync(join(cwd, "tasks/notes"))).toBe(true);
+      expect(readFileSync(join(cwd, "tasks/lessons.md"), "utf-8")).toBe(adoptionTemplateFile(cwd, "lessonsLog").content);
       expect(existsSync(join(cwd, ".claude/templates/contract.template.md"))).toBe(true);
       expect(existsSync(join(cwd, ".claude/templates/spec.template.md"))).toBe(true);
       expect(existsSync(join(cwd, ".claude/templates/review.template.md"))).toBe(true);
@@ -495,13 +497,8 @@ describe("create-project-dirs runtime smoke", () => {
       expect(policy.delegation.preferred_runners).toBeUndefined();
       expect(policy.delegation.fallback_runner).toBeUndefined();
       expect(policy.delegation.brief_source).toBe("tasks/contracts/<stem>.contract.md");
-      expect(policy.delegation.runner_rule).toContain(
-        "Use task-agent in an explicitly addressed Herdr session",
-      );
-      expect(policy.delegation.runner_rule).toContain(
-        "fails closed without an alternate agent runner",
-      );
-      expect(policy.delegation.runner_rule).toContain("remain unverified");
+      expect(policy.delegation.rule).toBeUndefined();
+      expect(policy.delegation.runner_rule).toBeUndefined();
       expect(policy.documentation.reference_configs).toContain("global-working-rules.md");
       expect(policy.documentation.reference_configs).toContain("minimal-change-hooks.md");
       expect(policy.upgrade.strategy_version).toBe(1);

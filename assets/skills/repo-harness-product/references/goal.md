@@ -1,7 +1,5 @@
 # Product Mode: Goal
 
-Source facade: `assets/skill-commands/repo-harness-goal`.
-
 Use when the user wants to start a bounded native `/goal` session in Codex or
 Claude from repo-harness planning artifacts. This mode prepares the goal
 prompt and acceptance contract; the host-native `/goal` feature owns

@@ -194,6 +194,25 @@ describe("workflow contract manifest", () => {
     }
   });
 
+  test("lessons ledger template lists the Lessons Retro record fields", () => {
+    const raw = JSON.parse(readFileSync(join(ROOT, "assets/workflow-contract.v1.json"), "utf-8")) as {
+      adoptionTemplates: { files: { lessonsLog: { lines: string[] } } };
+    };
+    const sop = readFileSync(join(ROOT, "assets/reference-configs/agentic-development-flow.md"), "utf-8");
+    const recordBlock = sop.slice(sop.indexOf("## Lessons Retro")).match(/```markdown\n([\s\S]*?)\n```/)?.[1] ?? "";
+    const fieldsOf = (lines: readonly string[]) => lines.flatMap((line) => line.match(/^- ([A-Z][A-Za-z ]*):/)?.[1] ?? []);
+    const recordFields = fieldsOf(recordBlock.split("\n"));
+
+    // maintenance-triage reads the first four fields; the retro ladder needs Name and Enforced by.
+    for (const field of ["Date", "Mistake pattern", "Prevention rule", "Triggered by correction", "Name", "Enforced by"]) {
+      expect(recordFields).toContain(field);
+    }
+    expect(
+      fieldsOf(raw.adoptionTemplates.files.lessonsLog.lines),
+      "adoptionTemplates.files.lessonsLog in assets/workflow-contract.v1.json must list the record fields of assets/reference-configs/agentic-development-flow.md#lessons-retro in the same order; change both together",
+    ).toEqual(recordFields);
+  });
+
   test("source root resolver accepts only the explicit source-checkout authority", () => {
     const tmp = mkdtempSync(join(tmpdir(), "workflow-contract-source-root-"));
     const sourceRoot = join(tmp, "source-root");

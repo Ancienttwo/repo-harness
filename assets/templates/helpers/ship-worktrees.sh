@@ -873,11 +873,20 @@ publication_cli() {
   publication_command_cli receipt "$@"
 }
 
+# Path existence is not identity: a downstream application can have its own
+# src/cli/index.ts. Only the repo-harness package runs its source CLI. A failed
+# package.json read selects no source CLI.
+repo_harness_source_checkout() {
+  [[ -n "$BUN_BIN" ]] && is_trusted_executable "$BUN_BIN" || return 1
+  [[ -f "src/cli/index.ts" && -f "package.json" ]] || return 1
+  [[ "$("$BUN_BIN" -e 'const pkg = JSON.parse(require("fs").readFileSync("package.json", "utf8")); process.stdout.write(typeof pkg?.name === "string" ? pkg.name : "")' 2>/dev/null)" == repo-harness ]]
+}
+
 publication_command_cli() {
   if [[ -n "${REPO_HARNESS_CLI_BIN:-}" ]]; then
     is_trusted_executable "$REPO_HARNESS_CLI_BIN" || return 1
     "$REPO_HARNESS_CLI_BIN" publication "$@"
-  elif [[ -n "$BUN_BIN" ]] && is_trusted_executable "$BUN_BIN" && [[ -f "src/cli/index.ts" ]]; then
+  elif repo_harness_source_checkout; then
     "$BUN_BIN" "src/cli/index.ts" publication "$@"
   elif command -v repo-harness >/dev/null 2>&1; then
     repo-harness publication "$@"

@@ -18,7 +18,6 @@ source:
     - "README.fr.md"
     - "README.ja.md"
     - "README.zh-CN.md"
-    - "references/arch/**"
     - "src/cli/commands/docs.ts"
   entrypoints:
     - id: entrypoint.root-router.primary

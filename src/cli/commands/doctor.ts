@@ -19,7 +19,6 @@ import { fileURLToPath } from 'url';
 import { ALL_TARGETS } from '../installer/targets/registry';
 import { checkCodegraph, type CodegraphCheckResult } from '../tools/codegraph';
 import { CLI_VERSION, expectedManagedProfile, formatManagedHookProjectionMismatch, inspectManagedProjection, readInstalledProfileForStatus } from './status';
-import { CODEX_HOOK_TRUST_ACK, CODEX_HOOK_TRUST_STEP, codexOrderMigration } from '../installer/hook-install-state';
 import { runSecurityScan, type SecurityScanReport } from './security';
 import { isOptIn, resolveRepoRoot } from '../hook/runtime';
 import { ROUTES } from '../hook/route-registry';
@@ -281,26 +280,6 @@ function checkTargetInstall(target: (typeof ALL_TARGETS)[number]): DoctorCheckRe
     };
   }
   return { id, describe, status: 'ok', detail: `installed at ${det.configPath}` };
-}
-
-export function checkCodexHookOrderTrust(): DoctorCheckResult {
-  const id = 'codex-hook-order-trust';
-  const describe = 'Codex hook order migration acknowledgement';
-  try {
-    const migration = codexOrderMigration();
-    if (!migration) return { id, describe, status: 'na', detail: 'no applicable Codex hook order migration' };
-    if (!migration.completed_at) return {
-      id, describe, status: 'warn',
-      detail: `hook order migration install is incomplete; run repo-harness install --target codex --location global --profile ${migration.profile}`,
-    };
-    if (!migration.codex_trust_acknowledged_at) return {
-      id, describe, status: 'warn',
-      detail: `pending Codex trust re-approval for ${migration.events.join(', ')}. ${CODEX_HOOK_TRUST_STEP} Then run ${CODEX_HOOK_TRUST_ACK}. Acknowledgement is operator input, not native trust proof.`,
-    };
-    return { id, describe, status: 'ok', detail: `order migration acknowledged by operator at ${migration.codex_trust_acknowledged_at}; Codex owns hook trust` };
-  } catch (error) {
-    return { id, describe, status: 'fail', detail: (error as Error).message };
-  }
 }
 
 function checkCodexTrustState(): DoctorCheckResult {
@@ -686,7 +665,6 @@ export function runDoctor(cwd: string = process.cwd(), target: DoctorTarget = 'b
     }
   }
   checks.push(checkCodexTrustState());
-  checks.push(checkCodexHookOrderTrust());
   checks.push(checkCodegraphReadiness(codegraphProbe));
   checks.push(checkCodegraphMcpHost(codegraphProbe, 'codex'));
   checks.push(checkCodegraphMcpHost(codegraphProbe, 'claude'));

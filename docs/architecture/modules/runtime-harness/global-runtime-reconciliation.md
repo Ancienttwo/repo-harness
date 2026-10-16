@@ -1,9 +1,9 @@
 # runtime-harness/global-runtime-reconciliation 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-global-runtime-reconciliation" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:0994418d80d21747c6e0813dc14cbc9139c5c33e2a2b24edac15a05d5268f38f" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-global-runtime-reconciliation" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:9b91a70acf16f5550b4c842fc59d50eddaec933c620269a573820c9602764e41" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.global-runtime-reconciliation`(kind `capability`)
-> **Matched Prefixes**:`package.json`、`bun.lock`、`src/cli/index.ts`、`src/cli/commands/global-runtime.ts`、`scripts/check-managed-runtime.ts`、`scripts/sync-codex-installed-copies.sh`、`src/effects/architecture/**`、`tests/cli/global-runtime-init.test.ts`、`tests/cli/global-runtime.test.ts`、`tests/architecture-projection-provider.test.ts`、`assets/reference-configs/external-tooling.md`、`docs/reference-configs/external-tooling.md`、`docs/reference-configs/install-profiles.md`、`src/cli/runtime/**`、`src/cli/tty-prompt.ts`、`src/cli/commands/validators.ts`、`src/cli/commands/doctor.ts`、`src/cli/commands/init-hook.ts`、`src/cli/commands/upgrade.ts`、`src/core/upgrade/**`、`src/effects/runtime/node-candidates.ts`、`src/effects/runtime/protected-helper-platform.ts`、`src/effects/skill-tree-integrity.ts`、`src/effects/configuration/**`、`src/core/architecture/projection.ts`、`src/cli/commands/architecture-projection.ts`、`src/cli/commands/architecture-configuration.ts`、`scripts/axr5-archctx-clean-room.ts`、`src/core/release/**`、`src/effects/release/**`、`scripts/check-npm-release.sh`、`scripts/check-release-published.sh`、`scripts/check-tarball-install-smoke.sh`、`scripts/check-pi-package-smoke.ts`、`scripts/sync-pi-package.ts`、`scripts/runtime-evidence-receipt.ts`、`install.sh`、`install.ps1`、`tsconfig.json`
+> **Matched Prefixes**:`package.json`、`bun.lock`、`src/cli/index.ts`、`src/cli/commands/global-runtime.ts`、`scripts/check-managed-runtime.ts`、`scripts/sync-codex-installed-copies.sh`、`src/effects/architecture/**`、`tests/cli/global-runtime-init.test.ts`、`tests/cli/global-runtime.test.ts`、`tests/architecture-projection-provider.test.ts`、`assets/reference-configs/external-tooling.md`、`docs/reference-configs/external-tooling.md`、`docs/reference-configs/install-profiles.md`、`src/cli/runtime/**`、`src/cli/tty-prompt.ts`、`src/cli/commands/validators.ts`、`src/cli/commands/doctor.ts`、`src/cli/commands/init-hook.ts`、`src/cli/commands/upgrade.ts`、`src/core/upgrade/**`、`src/effects/runtime/node-candidates.ts`、`src/effects/runtime/protected-helper-platform.ts`、`src/effects/skill-tree-integrity.ts`、`src/effects/configuration/**`、`src/core/architecture/projection.ts`、`src/cli/commands/architecture-projection.ts`、`src/cli/commands/architecture-configuration.ts`、`scripts/axr5-archctx-clean-room.ts`、`src/core/release/**`、`src/effects/release/**`、`scripts/check-npm-release.sh`、`scripts/check-release-published.sh`、`scripts/check-tarball-install-smoke.sh`、`scripts/runtime-evidence-receipt.ts`、`install.sh`、`install.ps1`、`tsconfig.json`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
@@ -55,7 +55,7 @@ flowchart LR
 ### 1.3 規模信號
 
 - 規模量級:`20–50` 個文件 / `10k–20k` 行
-- 匹配前綴:`package.json`、`bun.lock`、`src/cli/index.ts`、`src/cli/commands/global-runtime.ts`、`scripts/check-managed-runtime.ts`、`scripts/sync-codex-installed-copies.sh`、`src/effects/architecture/**`、`tests/cli/global-runtime-init.test.ts`、`tests/cli/global-runtime.test.ts`、`tests/architecture-projection-provider.test.ts`、`assets/reference-configs/external-tooling.md`、`docs/reference-configs/external-tooling.md`、`docs/reference-configs/install-profiles.md`、`src/cli/runtime/**`、`src/cli/tty-prompt.ts`、`src/cli/commands/validators.ts`、`src/cli/commands/doctor.ts`、`src/cli/commands/init-hook.ts`、`src/cli/commands/upgrade.ts`、`src/core/upgrade/**`、`src/effects/runtime/node-candidates.ts`、`src/effects/runtime/protected-helper-platform.ts`、`src/effects/skill-tree-integrity.ts`、`src/effects/configuration/**`、`src/core/architecture/projection.ts`、`src/cli/commands/architecture-projection.ts`、`src/cli/commands/architecture-configuration.ts`、`scripts/axr5-archctx-clean-room.ts`、`src/core/release/**`、`src/effects/release/**`、`scripts/check-npm-release.sh`、`scripts/check-release-published.sh`、`scripts/check-tarball-install-smoke.sh`、`scripts/check-pi-package-smoke.ts`、`scripts/sync-pi-package.ts`、`scripts/runtime-evidence-receipt.ts`、`install.sh`、`install.ps1`、`tsconfig.json`
+- 匹配前綴:`package.json`、`bun.lock`、`src/cli/index.ts`、`src/cli/commands/global-runtime.ts`、`scripts/check-managed-runtime.ts`、`scripts/sync-codex-installed-copies.sh`、`src/effects/architecture/**`、`tests/cli/global-runtime-init.test.ts`、`tests/cli/global-runtime.test.ts`、`tests/architecture-projection-provider.test.ts`、`assets/reference-configs/external-tooling.md`、`docs/reference-configs/external-tooling.md`、`docs/reference-configs/install-profiles.md`、`src/cli/runtime/**`、`src/cli/tty-prompt.ts`、`src/cli/commands/validators.ts`、`src/cli/commands/doctor.ts`、`src/cli/commands/init-hook.ts`、`src/cli/commands/upgrade.ts`、`src/core/upgrade/**`、`src/effects/runtime/node-candidates.ts`、`src/effects/runtime/protected-helper-platform.ts`、`src/effects/skill-tree-integrity.ts`、`src/effects/configuration/**`、`src/core/architecture/projection.ts`、`src/cli/commands/architecture-projection.ts`、`src/cli/commands/architecture-configuration.ts`、`scripts/axr5-archctx-clean-room.ts`、`src/core/release/**`、`src/effects/release/**`、`scripts/check-npm-release.sh`、`scripts/check-release-published.sh`、`scripts/check-tarball-install-smoke.sh`、`scripts/runtime-evidence-receipt.ts`、`install.sh`、`install.ps1`、`tsconfig.json`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
 ### 1.4 依賴邊界
@@ -120,7 +120,6 @@ flowchart LR
 - `component.global-runtime-reconciliation.release-packaging`:
   - `calls` → `component.global-runtime-reconciliation.cli-root` — Smoke the packed tarball CLI and hook binaries in a clean app
   - `calls` → `capability.workflow-engine.execution-primitives` — Run installed binaries to read back runtime evidence
-  - `calls` → `component.action-commands.skill-surface-catalog` — Parse the skill surface catalog for release packaging
 
 ### 1.5 組件結構
 
@@ -129,7 +128,7 @@ flowchart LR
 | `component.global-runtime-reconciliation.archctx-closure` | ArchContext Closure | `10–20` 個文件 / `1000–2000` 行 | 未宣告 |
 | `component.global-runtime-reconciliation.cli-root` | CLI Root and Diagnostics | `5–10` 個文件 / `2000–5000` 行 | `entrypoint.global-runtime-reconciliation.cli-root` |
 | `component.global-runtime-reconciliation.primary` | Global Runtime Reconciler | `10–20` 個文件 / `2000–5000` 行 | 未宣告 |
-| `component.global-runtime-reconciliation.release-packaging` | Release Packaging | `10–20` 個文件 / `2000–5000` 行 | 未宣告 |
+| `component.global-runtime-reconciliation.release-packaging` | Release Packaging | `5–10` 個文件 / `1000–2000` 行 | 未宣告 |
 
 ## 2. P2:端到端數據流
 
@@ -190,7 +189,7 @@ sequenceDiagram
 | `component.global-runtime-reconciliation.primary`（Global Runtime Reconciler） | `commands/global-runtime.ts`、`src/cli/runtime/**`、`protected-helper-platform.ts`、`skill-tree-integrity.ts`、`commands/upgrade.ts`、`src/core/upgrade/**`、`check-managed-runtime.ts`、`sync-codex-installed-copies.sh`、`install.sh`、`install.ps1` | 11 / 4516 | 有序 setup、依赖回读、候选交接、遗留表面清理 |
 | `component.global-runtime-reconciliation.cli-root`（CLI Root and Diagnostics） | `src/cli/index.ts`、`tty-prompt.ts`、`commands/{validators,doctor,init-hook}.ts` | 5 / 2540 | 命令树、update 事务、选项校验、只读诊断 |
 | `component.global-runtime-reconciliation.archctx-closure`（ArchContext Closure） | `src/effects/architecture/**`、`core/architecture/projection.ts`、`commands/architecture-{projection,configuration}.ts`、`src/effects/configuration/**`、`node-candidates.ts`、`axr5-archctx-clean-room.ts` | 10 / 1434 | 包内 archctx、Node 选择、投影 apply、模型读取、全局配置 |
-| `component.global-runtime-reconciliation.release-packaging`（Release Packaging） | `package.json`、`bun.lock`、`tsconfig.json`、`src/{core,effects}/release/**`、6 个发布脚本 | 11 / 2323 | 发布门禁、tarball 冒烟、Pi 包投影、runtime 证据回执 |
+| `component.global-runtime-reconciliation.release-packaging`（Release Packaging） | `package.json`、`bun.lock`、`tsconfig.json`、`src/{core,effects}/release/**`、4 个发布脚本 | 9 / 2137（2026-10-16） | 发布门禁、tarball 冒烟、runtime 证据回执 |
 
 与归属提议 §5 的两处偏差：
 
@@ -204,7 +203,7 @@ sequenceDiagram
 | cli-root → primary | `runCandidateRuntimeReconciliation` 调用 `runGlobalRuntimeSetup`（`index.ts:308`）；注册 update 与 upgrade |
 | cli-root → archctx-closure | `buildProgram` 调用 `buildArchitectureProjectionCommand`（`index.ts:862`） |
 | primary → archctx-closure | `runGlobalRuntimeSetup` 调用 `ensureGlobalArchitectureProjection`（`global-runtime.ts:1502`）；`inspectManagedDaemonRuntime` 调用 `verifyArchctxDaemonRuntime`（`:534`） |
-| release-packaging → cli-root | tarball 冒烟安装后运行 `repo-harness` 和 `repo-harness-hook`（`check-tarball-install-smoke.sh:131-132`；shell，无 CodeGraph 边） |
+| release-packaging → cli-root | tarball 冒烟安装后运行 `repo-harness` 和 `repo-harness-hook`（`check-tarball-install-smoke.sh:123-124`；shell，无 CodeGraph 边） |
 
 组件到其他 capability 的关系（生成区 §1.4 不显示组件级出向关系）：
 

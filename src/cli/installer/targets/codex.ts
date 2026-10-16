@@ -16,7 +16,6 @@ import { assertConfigurationPath, readConfigurationFragment, replaceConfiguratio
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { CODEX_HOOK_TRUST_STEP, completeHookOrderMigration, prepareHookOrderMigration } from '../hook-install-state';
 import type {
   AgentTarget,
   DetectionResult,
@@ -37,6 +36,9 @@ import {
   stripManagedEntries,
   type HooksByEvent,
 } from '../managed-entries';
+
+/** Codex asks for a trust review once per new (command, key) tuple. */
+const CODEX_HOOK_TRUST_STEP = 'Start interactive codex, enter /hooks, and review the hooks marked for review. Trust only the hooks you recognise.';
 
 interface HooksFile {
   hooks?: HooksByEvent;
@@ -71,7 +73,6 @@ function ensureRequestUserInputToml(): WriteResult['files'][number] {
 class CodexTarget implements AgentTarget {
   readonly id = 'codex' as const;
   readonly displayName = 'Codex CLI';
-  readonly docsUrl = 'https://github.com/openai/codex';
 
   supportsLocation(loc: Location): boolean {
     return loc === 'global';
@@ -114,20 +115,19 @@ class CodexTarget implements AgentTarget {
     const merged = mergeHooks(cleaned, managed);
     const next: HooksFile = { ...data, hooks: merged };
     const nextContent = formatJson(next);
-    const migration = prepareHookOrderMigration('codex', data.hooks, opts.profile);
     const tomlResult = ensureRequestUserInputToml();
 
     const created = !fs.existsSync(filePath);
     if (!created) {
       const current = fs.readFileSync(filePath, 'utf-8');
       if (current === nextContent) {
-        return { files: [{ path: filePath, action: 'unchanged' }, tomlResult], notes: completeHookOrderMigration('codex', migration) };
+        return { files: [{ path: filePath, action: 'unchanged' }, tomlResult] };
       }
     }
     atomicWriteFileSync(filePath, nextContent);
     return {
       files: [{ path: filePath, action: created ? 'created' : 'updated' }, tomlResult],
-      notes: migration ? completeHookOrderMigration('codex', migration) : [CODEX_HOOK_TRUST_STEP],
+      notes: [CODEX_HOOK_TRUST_STEP],
     };
   }
 
@@ -149,10 +149,6 @@ class CodexTarget implements AgentTarget {
       files: [{ path: filePath, action: 'removed' }],
       notes: ['~/.codex/config.toml [hooks.state] entries are not GC-ed by Codex; remove manually if desired.'],
     };
-  }
-
-  describePaths(loc: Location): string[] {
-    return loc === 'global' ? [globalConfigPath(), globalTomlConfigPath()] : [];
   }
 }
 

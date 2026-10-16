@@ -3,12 +3,12 @@ import { mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from
 import { dirname, join } from 'path';
 import { withExclusiveDirectoryLock } from '../../effects/locking/exclusive-directory-lock';
 
-const CIRCUIT_KINDS = ['repair', 'semantic-review'] as const;
+const CIRCUIT_KINDS = ['semantic-review'] as const;
 
 // Kinds an older runtime wrote. A state file that still holds one fails
 // closed until the operator runs the one-shot cleanup.
 const RETIRED_CIRCUIT_KINDS: ReadonlySet<string> = new Set([
-  'guard', 'review', 'subagent', 'cross-model-consult', 'minimal-change',
+  'guard', 'review', 'subagent', 'cross-model-consult', 'minimal-change', 'repair',
 ]);
 
 export type CircuitKind = typeof CIRCUIT_KINDS[number];
@@ -66,7 +66,6 @@ const LOCK_TIMEOUT_MS = 2_000;
 
 export function circuitLimit(attempt: CircuitAttempt): number {
   switch (attempt.kind) {
-    case 'repair': return 2;
     case 'semantic-review': return 1;
   }
 }

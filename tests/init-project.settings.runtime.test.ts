@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "os";
 import { join } from "path";
 import { spawnSync } from "child_process";
+import { adoptionTemplateFile } from "../src/core/adoption/manifest-templates";
 
 const ROOT = join(import.meta.dir, "..");
 
@@ -46,6 +47,7 @@ describe("init-project settings runtime", () => {
       expect(existsSync(join(cwd, ".ai/hooks/lib/session-state.sh"))).toBe(false);
       expect(existsSync(join(cwd, ".ai/hooks/run-hook.sh"))).toBe(false);
       expect(existsSync(join(cwd, ".ai/hooks/session-start-context.sh"))).toBe(false);
+      expect(readFileSync(join(cwd, "tasks/lessons.md"), "utf-8")).toBe(adoptionTemplateFile(cwd, "lessonsLog").content);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

@@ -30,12 +30,6 @@
         "typescript": "^7.0.2",
         "vite": "^8.3.1",
       },
-      "peerDependencies": {
-        "@earendil-works/pi-coding-agent": "1.2.0",
-      },
-      "optionalPeers": [
-        "@earendil-works/pi-coding-agent",
-      ],
     },
   },
   "packages": {

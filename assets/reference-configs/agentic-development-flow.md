@@ -22,7 +22,7 @@
 - Keep the report proportional to the work. Routine confirmations, short updates and tool logs do not require a full report. This SOP adds no approval gate or separate status store. Use existing task, PR and verification sources.
 
 ## Lessons Retro
-`tasks/lessons.md` is the one lessons ledger. It has the role of a root `LESSONS.md`. Do not add a second lessons file. Generated root `CLAUDE.md` and `AGENTS.md` tell each session to read it. Add that line by hand to an existing root file.
+`tasks/lessons.md` is the one lessons ledger. It has the role of a root `LESSONS.md`. Do not add a second lessons file. The retro and maintenance triage read the ledger. Sessions do not read it at start, and root files do not tell them to. A lesson reaches a session through its enforcer or through a rule promoted into the root files.
 
 - The ledger keeps one watermark line before the first entry: `reviewed-through: <full commit SHA>`. If the line is missing, the first retro reviews the last 24 hours and adds it.
 - Each night, review the default-branch history after the watermark: `git log --first-parent <watermark>..origin/main`. Skip commits that change only `tasks/lessons.md`.
@@ -31,15 +31,26 @@
 
 ```markdown
 - Date: <YYYY-MM-DD>
+- Name: <2-5 word rule name>
 - Mistake pattern: <stable theme key>
 - Prevention rule: <rule>
+- Enforced by: <path to check, test or guard> | judgment
 - Why: <what failed and what it cost>
 - Triggered by correction: <commit SHA, PR or issue>
 - Seen: <N>×
 ```
 
-- For a repeat, copy the `Mistake pattern` text exactly. Maintenance triage groups entries by that text. `Seen` counts the entries with that text, this entry included. Do not edit `Seen` on older entries.
-- At `Seen: 3×`, the lesson occurred on three different days. Promote its prevention rule into root `AGENTS.md` and root `CLAUDE.md` in the same PR. Add `- Promoted: <PR>` to that entry.
+- For a repeat, copy the `Name` and `Mistake pattern` text exactly. Maintenance triage groups entries by `Mistake pattern`. `Seen` counts the entries with that text, this entry included. Do not edit `Seen` on older entries.
+- `Enforced by` names the file that fails when the mistake comes back. For an architecture or type fix, name the file that makes the mistake impossible. `judgment` means that no file catches the mistake.
+- From `Seen: 2×`, fix the mistake class in the PR that adds the entry. Use the highest level that works:
+  1. Architecture or data structure: one owner for each state, one way to do each task, and no old path that an agent can copy.
+  2. Types that cannot express the mistake.
+  3. A check whose error names the fix: the file, type or function to use.
+  4. A test.
+  If no level works, write `Enforced by: judgment`.
+- A new check or test must fail on the real commit that had the mistake and pass after the fix. Put both results in the PR.
+- At `Seen: 3×` with `Enforced by: judgment`, promote the prevention rule into root `AGENTS.md` and root `CLAUDE.md` in the same PR. Add `- Promoted: <PR>` to that entry. A rule with a structural enforcer does not go into the root files.
+- When the mistake can no longer occur, delete its text rule from the agent instruction files. Keep its ledger entries.
 - Each retro advances the watermark to the last reviewed commit, also when it finds no lesson. If an earlier retro PR is still open, update that PR. Do not open a second retro PR.
 - Every change to `tasks/lessons.md` goes through a PR and merges only after GO. GO is an explicit go-ahead from the repository owner (Aimpact for repo-harness) for one reviewed head SHA. Task-level publication authorization does not replace it. Merge with `gh pr merge <pr> --squash --match-head-commit <reviewed-sha>`. Lessons are not task notes. Ordinary tasks still write notes only for non-obvious decisions. A correction in a task can add an entry; that entry follows the same PR and GO rule.
 
@@ -76,6 +87,6 @@ A coding session that spawns sub-agents is their parent. Investigate first, then
 The bot measures progress by side effects only: commits, pushes, evidence events and PR or check changes. It does not resume a worker to check liveness. A worker past its timebox with no new side effect is stalled; stop it or ask the user.
 Retry by failure mode. Reduce scope after a limit or out-of-memory stop. Move a tool error to another model. A network drop or an unknown failure gets one retry only for a read-only or idempotent call. For a call that can change remote state, check the original request and the provider receipt first; do not retry an unknown effect. After two failures of one task, stop and ask the user.
 Clear PR blockers in this order: conflicts, review threads, then CI. Classify a CI failure before a retry. A suspected flake gets one fresh build; an identical second failure is not a flake.
-Stop and ask the user when a command reports `reconciliation_required`, `task_agent_delivery_unknown`, `launch-unknown`, `cleanup_pending`, `liveness_unproven` or `publication_recovery_required`; when a result reports `side_effects=unknown`; when a lease directory is empty or malformed; before a third review round; when a review thread concerns security, authentication, data or migrations; or when a written rule conflicts with observed state.
+Stop and ask the user when a command or result names `unknown`, `ambiguous`, `pending`, `unproven`, `identity_lost`, `reconciliation_required` or `recovery_required`, or says `inspect the same`, `inspect same`, `never replay`, `do not resend` or `do not launch again`; when a lease directory is empty or malformed; before a third review round; when a review thread concerns security, authentication, data or migrations; or when a written rule conflicts with observed state.
 
 Architecture docs remain references. Update them only when responsibilities or boundaries change; no per-edit drift queue, workstream sync or automatic agent-context block. Ordinary work has no plan/contract/review/notes or promote/archive prerequisite. Notes are optional for non-obvious decisions; PRDs are for real new products.

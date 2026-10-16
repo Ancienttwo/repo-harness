@@ -142,16 +142,13 @@ const R1_PROVENANCE_ENUM_FILES = [
 // residual is recorded the same way.
 const OUT_OF_SCOPE_RESIDUALS: Record<string, string> = {};
 
-// Reference-provenance convention: every canonical package's reference file
-// opens with "Source facade: `assets/skill-commands/repo-harness-X`" (or,
-// for repo-harness-chatgpt's reconciled references, "Reconciles the
-// `repo-harness-X` facade/rules ..."), documenting which retired facade the
-// content was extracted from. This is exactly the plan's "allowed migration
-// metadata" category, expressed per-package instead of centrally.
+// Reference-provenance convention: repo-harness-chatgpt's reconciled
+// references open with "Reconciles the `repo-harness-X` facade/rules ...",
+// which names the retired facades the content came from. This is the plan's
+// "allowed migration metadata" category, expressed per-package instead of
+// centrally. The other packages carry no provenance line, so the scan covers
+// their references in full.
 const REFERENCE_PROVENANCE_DIR_PREFIXES = [
-  "assets/skills/repo-harness-setup/references",
-  "assets/skill-commands/repo-harness-check/references",
-  "assets/skills/repo-harness-product/references",
   "assets/skills/repo-harness-chatgpt/references",
 ];
 
@@ -268,7 +265,7 @@ describe("retired Skill package names: live-reference scan", () => {
     }
   });
 
-  test("the reference-provenance directories actually exist and carry the Source-facade/Reconciles convention", () => {
+  test("the reference-provenance directories actually exist and carry the Reconciles convention", () => {
     let sawAtLeastOneProvenanceLine = false;
     for (const prefix of REFERENCE_PROVENANCE_DIR_PREFIXES) {
       const dir = join(ROOT, prefix);
@@ -276,7 +273,7 @@ describe("retired Skill package names: live-reference scan", () => {
       expect(filesInDir.length).toBeGreaterThan(0);
       for (const f of filesInDir) {
         const content = readFileSync(f, "utf-8");
-        if (/^(Source facade:|Reconciles the )/mu.test(content)) sawAtLeastOneProvenanceLine = true;
+        if (/^Reconciles the /mu.test(content)) sawAtLeastOneProvenanceLine = true;
       }
     }
     expect(sawAtLeastOneProvenanceLine).toBe(true);

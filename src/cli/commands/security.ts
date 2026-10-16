@@ -274,7 +274,7 @@ function scanHookConfig(
       ruleId: 'legacy-project-hook-adapter',
       severity: 'warn',
       summary: `${hostLabel} project-level hook config still contains ${commands.length} hook command(s)`,
-      recommendation: 'Prefer user-level repo-harness adapters and keep repo-local hooks under .ai/hooks.',
+      recommendation: 'Install user-level repo-harness adapters with repo-harness install --location global. Repo-local hook adapters are retired.',
     });
   }
 
