@@ -128,7 +128,7 @@ const installedProfile = readInstalledProfile();
 
 // Provider-native source tuples project deterministically to Codex-native labels.
 // Validation remains fail-closed; reasoning effort is carried through unchanged.
-const { MANAGED_AGENTS, WRITABLE_AGENTS, EFFORT_LEVELS, MODEL_EFFORT_MAP, AGENT_TARGET_OVERRIDES,
+const { MANAGED_AGENTS, WRITABLE_AGENTS, EFFORT_LEVELS, AGENT_TARGET_OVERRIDES,
   parseRoleNameScalar, parseFrontmatter, validateFrontmatter } = require(
   path.join(SOURCE_DIR, "../../src/effects/terminal/task-role-profiles.ts"),
 );
@@ -284,7 +284,7 @@ for (const agent of MANAGED_AGENTS) {
     results.push({ host: "codex", file: `${agent}.toml`, status: "invalid-target" });
     continue;
   }
-  const mapped = { ...validation.mapped, ...target };
+  const mapped = { sourceDescription: validation.sourceDescription, ...target };
   prepared.push({ agent, source: source.text, parsed, mapped });
 }
 

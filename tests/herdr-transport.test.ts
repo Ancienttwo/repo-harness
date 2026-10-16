@@ -5,6 +5,7 @@ import { join } from 'path';
 import { randomUUID } from 'crypto';
 import { herdrCommand, herdrEnvironment, herdrResult, validateHerdrEndpoint } from '../src/effects/terminal/herdr';
 import { buildAgentRuntimeEffectIntent, buildAgentRuntimeHostAction } from '../src/core/engineers/agent-runtime-effect';
+import { startTaskAgent } from '../src/effects/terminal/task-session';
 import { executeHerdrCliAgentAction } from '../src/effects/engineers/agent-runtime-adapters/herdr-cli-agent';
 
 const quote = (s: string) => "'" + s.replaceAll("'", "'\\''") + "'";
@@ -62,3 +63,18 @@ test('real herdr submits busy and multiline input, rejects blocked or exited pee
     rmSync(root, { recursive: true, force: true });
   }
 }, 30_000);
+
+test('both socket endpoints are validated before directory or intent creation', async () => {
+  const root = mkdtempSync('/tmp/ep-');
+  try {
+    const home = '/tmp/' + 'x'.repeat(120);
+    expect(() => validateHerdrEndpoint({ session: 'owned', home })).toThrow('endpoint_path_too_long');
+    await expect(startTaskAgent(root, { task: 'task', role: 'advisor', harness_kind: 'codex', endpoint: { session: 'owned', home }, parent_pane: 'unused', args: [], max_requests: 1 }, { start: async () => { throw new Error('endpoint_test_must_not_launch'); } })).rejects.toThrow('endpoint_path_too_long');
+    expect(existsSync(join(root, '.ai'))).toBe(false);
+    // This API socket fits; its longer client socket does not. No server is started.
+    const session = 's';
+    const capacity = process.platform === 'darwin' ? 103 : 107;
+    const shortBase = '/tmp/' + 'x'.repeat(capacity - '/tmp/'.length - '/.config/herdr/sessions/s/herdr.sock'.length);
+    expect(() => validateHerdrEndpoint({ session, home: shortBase })).toThrow('endpoint_path_too_long');
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});

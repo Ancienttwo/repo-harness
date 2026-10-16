@@ -1215,7 +1215,7 @@ describe('mcp http transport', () => {
       const health = await fetch(`http://127.0.0.1:${port}/health`, { headers: { origin: 'https://chatgpt.com' } });
       expect(await health.json()).toMatchObject({
         profile: 'engineer',
-        capabilities: { workspaceReader: false, workspaceCoder: false, workflowExecutor: false, agentRunner: false },
+        capabilities: { workspaceReader: false, workspaceCoder: false, workflowExecutor: false },
       });
       const metadata = await fetch(`http://127.0.0.1:${port}/.well-known/oauth-protected-resource/mcp`);
       const metadataJson = await metadata.json() as { scopes_supported: string[] };

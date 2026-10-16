@@ -28,9 +28,6 @@ export interface McpServeOptions {
   enableReader?: boolean;
   allowRoot?: string[];
   enableChatgptBrowser?: boolean;
-  enableDevRunner?: boolean;
-  devRunnerAgents?: string;
-  devRunnerTimeoutMs?: string;
 }
 
 interface McpSetupChatgptOptions {
@@ -73,13 +70,6 @@ function parsePort(value: string): number {
     throw new Error(`invalid --port "${value}"`);
   }
   return port;
-}
-
-function parsePositiveIntegerOption(name: string, value: string | undefined): number | undefined {
-  if (value === undefined) return undefined;
-  const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed <= 0) throw new Error(`invalid --${name} "${value}"`);
-  return parsed;
 }
 
 function collectOption(value: string, previous: string[] = []): string[] {
@@ -144,12 +134,8 @@ export function buildMcpCommand(): Command {
     .option('--enable-reader', 'Force read-only workspace tools in this same MCP connector; registered adopted repos are included automatically')
     .option('--allow-root <path>', 'Additional non-repo local root for workspace reader/discovery tools; may be repeated', collectOption, [])
     .option('--enable-chatgpt-browser', 'Expose tools that operate the user logged-in ChatGPT Web browser session')
-    .option('--enable-dev-runner', 'Enable local dev-mode agent runner tools for the orchestrator profile')
-    .option('--dev-runner-agents <agents>', 'Comma-separated dev runner agents: codex,claude')
-    .option('--dev-runner-timeout-ms <ms>', 'Dev runner timeout in milliseconds')
     .action(async (rawOpts: McpServeOptions) => {
       await runMcpAction(async () => {
-        const devRunnerTimeoutMs = parsePositiveIntegerOption('dev-runner-timeout-ms', rawOpts.devRunnerTimeoutMs);
         if (rawOpts.transport === 'stdio') {
           await startMcpStdio({
             repo: rawOpts.repo,
@@ -157,9 +143,6 @@ export function buildMcpCommand(): Command {
             enableReader: rawOpts.enableReader === true,
             allowedRoots: rawOpts.allowRoot,
             enableChatgptBrowser: rawOpts.enableChatgptBrowser === true,
-            enableDevRunner: rawOpts.enableDevRunner,
-            devRunnerAgents: rawOpts.devRunnerAgents,
-            devRunnerTimeoutMs,
           });
           return;
         }
@@ -173,9 +156,6 @@ export function buildMcpCommand(): Command {
             port: parsePort(rawOpts.port),
             auth: rawOpts.auth,
             enableChatgptBrowser: rawOpts.enableChatgptBrowser === true,
-            enableDevRunner: rawOpts.enableDevRunner,
-            devRunnerAgents: rawOpts.devRunnerAgents,
-            devRunnerTimeoutMs,
           });
           return;
         }

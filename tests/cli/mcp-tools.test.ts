@@ -1,5 +1,4 @@
 import { describe, expect, test } from 'bun:test';
-import { writeShellExecutableFixture } from '../helpers/repo-fixture';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -733,49 +732,12 @@ describe('mcp tools', () => {
     });
   });
 
-  test('retired Codex goal tools and path return upgrade errors without aliases', async () => {
+  test('retired Codex goal tools return upgrade errors without aliases', async () => {
     await withRepo(async (repoRoot, ctx) => {
       for (const name of ['write_codex_goal', 'prepare_codex_goal_from_sprint']) {
         const result = await jsonTool(ctx, name, {});
         expect(result.error.code).toBe('TOOL_RETIRED');
       }
-      const enabled = {repoRoot, policy:getMcpPolicy('orchestrator',{devAgentRunner:true,allowedAgents:['codex']})};
-      const result = await jsonTool(enabled,'run_agent_goal',{agent:'codex',goal_path:'.ai/harness/handoff/codex-goal.md'});
-      expect(result.error.code).toBe('GOAL_RETIRED');
-      expect(existsSync(join(repoRoot,'.ai/harness/handoff/task-goal.md'))).toBe(false);
     });
-  });
-
-  test('requires an explicit Herdr endpoint without falling back to a direct harness', async () => {
-    const repoRoot = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-runner-'));
-    const binRoot = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-runner-bin-'));
-    const originalPath = process.env.PATH;
-    try {
-      mkdirSync(join(repoRoot, '.ai/harness/handoff'), { recursive: true });
-      writeFileSync(join(repoRoot, '.ai/harness/policy.json'), '{}\n');
-      writeFileSync(join(repoRoot, '.ai/harness/handoff/task-goal.md'), '# Task Goal\n\n## Required workflow\n\nRun fake codex.\n');
-      const fakeCodex = join(binRoot, 'codex');
-      writeShellExecutableFixture(fakeCodex, `#!/bin/bash\ntouch '${join(binRoot, 'invoked')}'\necho "fake-codex:$1:$2:$3"\n`);
-      process.env.PATH = `${binRoot}:${originalPath ?? ''}`;
-
-      const disabledCtx = { repoRoot, policy: getMcpPolicy('orchestrator') };
-      const disabled = await jsonTool(disabledCtx, 'run_agent_goal', { agent: 'codex' });
-      expect(disabled.error.code).toBe('DEV_RUNNER_DISABLED');
-
-      const enabledCtx = {
-        repoRoot,
-        policy: getMcpPolicy('orchestrator', { devAgentRunner: true, allowedAgents: ['codex'], runnerTimeoutMs: 5000 }),
-      };
-      const result = await jsonTool(enabledCtx, 'run_agent_goal', { agent: 'codex', timeout_ms: 5000 });
-      expect(result.error.code).toBe('HERDR_ENDPOINT_REQUIRED');
-      expect(existsSync(join(binRoot, 'invoked'))).toBe(false);
-
-      const denied = await jsonTool(enabledCtx, 'run_agent_goal', { agent: 'claude' });
-      expect(denied.error.code).toBe('AGENT_DENIED');
-    } finally {
-      process.env.PATH = originalPath;
-      rmSync(repoRoot, { recursive: true, force: true });
-      rmSync(binRoot, { recursive: true, force: true });
-    }
   });
 });

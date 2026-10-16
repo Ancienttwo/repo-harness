@@ -30,4 +30,4 @@ ChatGPT is never implied by either install profile.
 - Orchestrate is explicit opt-in advisory planning/review; GPT Pro never owns
   task, lease, writes, shell, or acceptance authority.
 - A missing or unreadable canonical reference fails the calling command closed; it never synthesizes replacement prose.
-- Do not enable remote CDP or an orchestrator dev runner unless the user explicitly asks and the boundary is documented.
+- Do not enable remote CDP unless the user explicitly asks and the boundary is documented.

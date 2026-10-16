@@ -2,29 +2,16 @@
 // declared writability and the user's configured model/effort projections.
 export const MANAGED_AGENTS = ['explorer', 'deep-reasoner', 'fast-worker', 'deep-worker', 'gatekeeper', 'root-cause-prover', 'harness-evaluator'];
 export const WRITABLE_AGENTS: ReadonlySet<string> = new Set(['fast-worker', 'deep-worker', 'root-cause-prover', 'harness-evaluator']);
-export interface ModelTarget { model: string; effort: string; sourceDescription: string; targetDescription: string }
-export interface ParsedRole { name: string | undefined; description: string | undefined; model: string | undefined; effort: string | undefined; hasTools: boolean; body: string }
-export type RoleValidation = {ok: true; mapped: ModelTarget} | {ok: false; kind?: string; reason: string};
+export interface ParsedRole { name: string | undefined; description: string | undefined; model: string | undefined; effort: string | undefined; body: string }
+export type RoleValidation = {ok: true; sourceDescription: string} | {ok: false; kind?: string; reason: string};
 export const EFFORT_LEVELS = ["low", "medium", "high", "xhigh", "max"];
 
-function buildFamilyEffortMap(sourceLabel: string, targetModel: string, targetLabel: string) {
-  const map: Record<string, ModelTarget> = {};
-  for (const effort of EFFORT_LEVELS) {
-    map[effort] = {
-      model: targetModel,
-      effort,
-      sourceDescription: `${sourceLabel} at ${effort} effort`,
-      targetDescription: `${targetLabel} at ${effort} reasoning`,
-    };
-  }
-  return map;
-}
-
-export const MODEL_EFFORT_MAP: Record<string, Record<string, ModelTarget>> = {
-  opus: buildFamilyEffortMap("Opus", "gpt-6-astra", "GPT-6 Astra"),
-  sonnet: buildFamilyEffortMap("Sonnet", "gpt-6-luna", "GPT-6 Luna"),
-  haiku: buildFamilyEffortMap("Haiku", "gpt-6-luna", "GPT-6 Luna"),
-  fable: buildFamilyEffortMap("Fable", "gpt-6.1-sol", "GPT-6.1 Sol"),
+// The model label a persona description must carry for each source model family.
+export const MODEL_FAMILY_LABELS: Record<string, string> = {
+  opus: "Opus",
+  sonnet: "Sonnet",
+  haiku: "Haiku",
+  fable: "Fable",
 };
 
 // Per-agent Codex target overrides — the only model/effort remaps in the fleet.
@@ -81,7 +68,6 @@ export function parseFrontmatter(raw: string): ParsedRole | null {
     description: fields.description,
     model: fields.model,
     effort: fields.effort,
-    hasTools: Object.hasOwn(fields, "tools"),
     body: bodyLines.join("\n"),
   };
 }
@@ -103,13 +89,13 @@ export function validateFrontmatter(parsed: ParsedRole | null, expectedAgent: st
   if (!parsed.description || !parsed.model || !parsed.effort) {
     return { ok: false, reason: "missing required frontmatter field (name/description/model/effort)" };
   }
-  const modelMap = MODEL_EFFORT_MAP[parsed.model];
-  const mapped = modelMap ? modelMap[parsed.effort] : undefined;
-  if (!mapped) {
+  const familyLabel = Object.hasOwn(MODEL_FAMILY_LABELS, parsed.model) ? MODEL_FAMILY_LABELS[parsed.model] : undefined;
+  if (!familyLabel || !EFFORT_LEVELS.includes(parsed.effort)) {
     return { ok: false, reason: `unmapped model/effort combination: ${parsed.model}/${parsed.effort}` };
   }
-  if (!parsed.description.includes(mapped.sourceDescription)) {
-    return { ok: false, reason: `description missing expected model label: ${mapped.sourceDescription}` };
+  const sourceDescription = `${familyLabel} at ${parsed.effort} effort`;
+  if (!parsed.description.includes(sourceDescription)) {
+    return { ok: false, reason: `description missing expected model label: ${sourceDescription}` };
   }
-  return { ok: true, mapped };
+  return { ok: true, sourceDescription };
 }

@@ -25,7 +25,6 @@ export interface McpLocalConfig {
     workspaceReader?: boolean;
     workflowPlanner?: boolean;
     workflowExecutor?: boolean;
-    agentRunner?: boolean;
     workspaceCoder?: boolean;
     /** @deprecated v2 uses workspaceReader; accepted only for older local configs. */
     reader?: boolean;
@@ -48,11 +47,6 @@ export interface McpLocalConfig {
   };
   pm?: {
     enabled?: boolean;
-  };
-  devMode?: {
-    agentRunner?: boolean;
-    allowedAgents?: string[];
-    timeoutMs?: number;
   };
 }
 

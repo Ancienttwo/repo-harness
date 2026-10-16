@@ -743,7 +743,7 @@ export async function startMcpHttp(opts: McpHttpOptions): Promise<void> {
   // still re-checked per request by the middleware above, and session counters
   // are read from the store on each response.
   const healthContext = pm ? { policy: { profile: 'pm', allowedRoots: [], capabilities: {
-    workspaceReader: false, workflowPlanner: false, workflowExecutor: false, agentRunner: false, workspaceCoder: false,
+    workspaceReader: false, workflowPlanner: false, workflowExecutor: false, workspaceCoder: false,
   } } } : createMcpToolContext({ ...opts, repo: repoRoot, codingRuntime: null });
   const healthSchemaHash = createHash('sha256')
     .update(JSON.stringify(pmBinding ? pmBinding.tools() : buildMcpToolDefinitions((healthContext as ReturnType<typeof createMcpToolContext>).policy, { enableChatgptBrowser: opts.enableChatgptBrowser === true })))

@@ -267,26 +267,16 @@ The one-time large-repo reader benchmark is retired. Its historical results
 remain in `docs/researches/20260623-general-repo-reader-performance-baseline.md`.
 Use the affected MCP reader tests for current behavior checks.
 
-## Server Profiles and Dev Runner
+## Server Profiles
 
 `repo-harness mcp serve --profile <profile>` selects the tool surface. The
 default `planner` profile is read-and-plan only: ChatGPT reads workflow and repo
 state, writes PRD/Sprint/Goal handoff artifacts, and holds no source-code write
 access, arbitrary shell execution, or agent runner. Codex remains the executor.
 
-Dev Mode can opt into local agent execution through MCP. This is off by default.
-When the operator enables the `orchestrator` profile with the dev runner
-setting, ChatGPT can call `run_agent_goal`, which reads only
-`.ai/harness/handoff/task-goal.md` and runs that fixed handoff through an
-explicitly addressed persistent Herdr agent using `herdr: {endpoint, parent_pane}`. Missing addressing fails closed; completion closes a real Result, and observation-only or timeout requests use explicit cancel:
-
-```bash
-repo-harness mcp serve --repo . --transport http --profile orchestrator --enable-dev-runner --dev-runner-agents codex
-```
-
-This setting is for local Developer Mode only. It is timeout-bounded, audited,
-and not arbitrary shell. The direct-coding `coding` profile is a separate opt-in
-surface documented in [`chatgpt-coding-mcp.md`](chatgpt-coding-mcp.md).
+MCP does not start agents. The task owner directs an explicitly addressed
+agent through the herdr skill. The direct-coding `coding` profile is a separate
+opt-in surface documented in [`chatgpt-coding-mcp.md`](chatgpt-coding-mcp.md).
 
 ## Known Limits
 

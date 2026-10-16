@@ -769,7 +769,7 @@ function reviewFixture() {
       domain = JSON.parse(packet.match(/^DOMAIN IDENTITY: (.*)$/m)![1]!);
       request = { protocol: 2, task, role, round: sent, request_id: `fixture-request-${sent}`, context_sha256: authorityFingerprint(packet),
         context_ref: ref, source_ref: ref, result_ref: join(repo, `.ai/harness/runs/task-agent-outbox/${importedTaskDir(repo, task, role).split('/').pop()}/result-${sent}.json`),
-        result_contract: { required_fields: ['request_id','context_sha256','value'], atomic_write: 'temp_rename', submission: { command: 'unused-fixture', repo, task, role, round: sent } } };
+        result_contract: { required_fields: ['request_id','context_sha256','value'], atomic_write: 'temp_rename' } };
       writeFileSync(join(reviewLocation(fixture.root, 'tasks/contracts/demo.contract.md').dir, `observed-${sent}.json`), JSON.stringify({ fixture: true }));
       return request;
     },

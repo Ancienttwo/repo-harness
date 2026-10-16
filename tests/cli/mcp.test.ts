@@ -33,7 +33,6 @@ describe('mcp command', () => {
     expect(serve.stdout).toContain('--enable-reader');
     expect(serve.stdout).toContain('--allow-root <path>');
     expect(serve.stdout).toContain('oauth|bearer|url-token');
-    expect(serve.stdout).toContain('--enable-dev-runner');
 
     const doctor = runMcp(['doctor', '--help']);
     expect(doctor.status).toBe(0);

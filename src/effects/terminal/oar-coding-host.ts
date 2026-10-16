@@ -55,7 +55,7 @@ export async function openScriptedCodingHost(cwd: string, turn: Parameters<typeo
 }
 export async function runCodingHostRequest(host: OarCodingHost, spec: CodingHostSpec, request: TaskRequest): Promise<boolean> {
   const { binding } = assertTaskRequest(spec.primary_root, spec.request_directory, request);
-  if (binding.execution_root !== spec.admission.execution_root || binding.host !== null || request.round > spec.max_requests) throw new Error('OAR_CODING_REQUEST_INVALID');
+  if (binding.execution_root !== spec.admission.execution_root || request.round > spec.max_requests) throw new Error('OAR_CODING_REQUEST_INVALID');
   const started = readSessionArtifact<{ request_id: string; provider: { pid: number; identity: string } }>(join(spec.request_directory, `started-${request.round}.json`));
   // A stray host must fail before any marker; only the bound host may write attempt-N.
   if (started.request_id !== request.request_id || started.provider?.pid !== binding.provider.pid

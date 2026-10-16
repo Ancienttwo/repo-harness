@@ -1,4 +1,4 @@
-import type { McpAgentRunnerName, McpPolicy, McpProfileName } from './types';
+import type { McpPolicy, McpProfileName } from './types';
 
 const COMMON_DENY_GLOBS = [
   '.env',
@@ -91,15 +91,10 @@ export const PLANNER_WRITE_GLOBS = [
 ];
 
 export interface McpPolicyOptions {
-  devAgentRunner?: boolean;
-  allowedAgents?: McpAgentRunnerName[];
-  runnerTimeoutMs?: number;
   enableReader?: boolean;
   allowedRoots?: string[];
   discoveryRoots?: string[];
 }
-
-const DEFAULT_RUNNER_TIMEOUT_MS = 120_000;
 
 function withWorkspacePrefixGlobs(globs: string[]): string[] {
   return Array.from(new Set([
@@ -111,11 +106,7 @@ function withWorkspacePrefixGlobs(globs: string[]): string[] {
 function executionPolicy(overrides: Partial<McpPolicy['execution']> = {}): McpPolicy['execution'] {
   return {
     fixedWorkflowCheck: false,
-    codexRunner: false,
-    agentRunner: false,
     codingShell: false,
-    allowedAgents: [],
-    runnerTimeoutMs: DEFAULT_RUNNER_TIMEOUT_MS,
     ...overrides,
   };
 }
@@ -125,7 +116,6 @@ function capabilities(overrides: Partial<McpPolicy['capabilities']> = {}): McpPo
     workspaceReader: false,
     workflowPlanner: false,
     workflowExecutor: false,
-    agentRunner: false,
     workspaceCoder: false,
     ...overrides,
   };
@@ -170,22 +160,16 @@ export function getMcpPolicy(profile: McpProfileName, opts: McpPolicyOptions = {
   }
 
   if (profile === 'orchestrator') {
-    const devRunner = opts.devAgentRunner === true;
     return {
       profile,
       allowedRoots: opts.allowedRoots,
       discoveryRoots: opts.discoveryRoots,
-      capabilities: capabilities({ agentRunner: devRunner }),
-      readGlobs: devRunner ? withWorkspacePrefixGlobs(['.ai/harness/handoff/task-goal.md']) : [],
+      capabilities: capabilities(),
+      readGlobs: [],
       writeGlobs: [],
-      denyGlobs: devRunner ? COMMON_DENY_GLOBS : ['**'],
-      maxFileBytes: devRunner ? 512 * 1024 : 0,
-      execution: executionPolicy({
-        codexRunner: devRunner,
-        agentRunner: devRunner,
-        allowedAgents: devRunner ? (opts.allowedAgents?.length ? opts.allowedAgents : ['codex']) : [],
-        runnerTimeoutMs: opts.runnerTimeoutMs ?? DEFAULT_RUNNER_TIMEOUT_MS,
-      }),
+      denyGlobs: ['**'],
+      maxFileBytes: 0,
+      execution: executionPolicy(),
     };
   }
 
