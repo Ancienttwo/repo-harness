@@ -8,6 +8,12 @@ All notable changes to this skill are documented here.
 
 - The daily CI job now runs the expensive real pack/install benchmark cases in `tests/harness-benchmark-matrix.test.ts`.
 
+### Fixed
+
+- The `release` lane builds `dist/` before the benchmark cases. The benchmark
+  artifact packs with `--ignore-scripts`, so a checkout without `dist/` failed
+  at the `repo-harness-hook` bin.
+
 ## [0.23.0] - 2026-10-17
 
 This release has breaking changes. After the update, run `repo-harness update`,

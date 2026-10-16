@@ -154,8 +154,11 @@ if [[ "$lane" == all || "$lane" == release || "$lane" == functional ]]; then
 fi
 
 # Release gate: CI owns the full suite, so this lane runs only the expensive
-# cases that no hosted lane runs and the package/install smoke.
+# cases and the package/install smoke. The benchmark artifact packs with
+# --ignore-scripts, so build the dist files here as the functional lane does.
 if [[ "$lane" == release ]]; then
+  bun run build:hook-bundle
+  bun run build:oar-hosts
   echo "[ci] expensive release tests"
   run_bun_test_file tests/harness-benchmark-matrix.test.ts
   echo "[ci] package/install smoke (one shared tarball)"
