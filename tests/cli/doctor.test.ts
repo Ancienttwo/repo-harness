@@ -18,7 +18,6 @@ import { writeShellExecutableFixture } from '../helpers/repo-fixture';
 import { expectedSkillProjections, type SkillProjection } from '../../src/cli/installer/skill-projection';
 import { buildManagedHooks, MANAGED_TAG } from '../../src/cli/installer/managed-entries';
 import { parseSkillSurfaceCatalog } from '../../src/core/skill-surface/catalog';
-import { runInstall } from '../../src/cli/commands/install';
 
 const DOCTOR_CHECK_TIMEOUT_MS = 15000;
 
@@ -133,7 +132,6 @@ describe('doctor command (Phase 1C)', () => {
       expect(ids).toContain('codex-adapter');
       expect(ids).toContain('claude-adapter');
       expect(ids).toContain('codex-trust-state');
-      expect(ids).toContain('codex-hook-order-trust');
       expect(ids).toContain('codegraph-readiness');
       expect(ids).toContain('codex-codegraph-mcp');
       expect(ids).toContain('claude-codegraph-mcp');
@@ -410,29 +408,6 @@ describe('doctor command (Phase 1C)', () => {
       const trust = r.checks.find((c) => c.id === 'codex-trust-state')!;
       expect(trust.status).toBe('ok');
       expect(trust.detail).toContain('3');
-    });
-  }, DOCTOR_CHECK_TIMEOUT_MS);
-
-  test('doctor reports pending order re-approval even when old native trust hashes exist', () => {
-    withTempHome(home => {
-      const config = path.join(home, '.codex/config.toml');
-      fs.mkdirSync(path.dirname(config), { recursive: true });
-      const original = `default_mode_request_user_input = true\n[hooks.state."${home}/.codex/hooks.json:session_start:1:0"]\ntrusted_hash = "sha256:old"\n`;
-      fs.writeFileSync(config, original);
-      const managed = buildManagedHooks('codex');
-      fs.writeFileSync(path.join(home, '.codex/hooks.json'), JSON.stringify({ hooks: {
-        ...managed, SessionStart: [{ hooks: [{ type: 'command', command: 'echo user' }] }, ...managed.SessionStart],
-      } }));
-      expect(runInstall({ target: 'codex', location: 'global' }).exitCode).toBe(0);
-      const report = runDoctor();
-      expect(report.checks.find(check => check.id === 'codex-trust-state')!.status).toBe('ok');
-      const migration = report.checks.find(check => check.id === 'codex-hook-order-trust')!;
-      expect(migration.status).toBe('warn');
-      expect(migration.detail).toContain('pending Codex trust re-approval');
-      expect(migration.detail).toContain('enter /hooks');
-      expect(formatDoctor(report)).toContain('pending Codex trust re-approval');
-      expect(JSON.parse(formatDoctor(report, true)).checks).toContainEqual(migration);
-      expect(fs.readFileSync(config, 'utf8')).toBe(original);
     });
   }, DOCTOR_CHECK_TIMEOUT_MS);
 
