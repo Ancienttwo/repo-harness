@@ -546,8 +546,10 @@ cd ~/Projects/repo-harness && bun src/cli/index.ts update
 symlink-backed 的 runtime entrypoint，由 `scripts/sync-codex-installed-copies.sh`
 重建。
 
-`bun run check:ci` 是唯一的 CI-equivalent gate；`bun run check:release` 只是在委托
-给它之前，多加一步 npm unpublished-version preflight。
+`bun run check:ci` 是唯一的 CI-equivalent gate。`bun run check:release` 先做 npm
+unpublished-version preflight，再运行 `release` lane：高成本 gate 保护的测试和
+tarball 安装 smoke。它不是第二次 full suite，也不是 CI gate；发布依赖该发布 SHA
+的 CI 为绿。
 Runtime routing 回归保留在受影响测试中。旧 routing eval gate 已退休。
 
 ```bash

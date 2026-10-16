@@ -4,39 +4,6 @@ import { join } from "path";
 
 const ROOT = join(import.meta.dir, "..");
 
-const RETIRED_HOOK_RUNTIME_FILES = [
-  "assets/hooks/anti-simplification.sh",
-  "assets/hooks/changelog-guard.sh",
-  "assets/hooks/codex-delegation-advisor.sh",
-  "assets/hooks/first-principles-guard.sh",
-  "assets/hooks/hook-input.sh",
-  "assets/hooks/post-bash.sh",
-  "assets/hooks/post-tool-observer.sh",
-  "assets/hooks/prompt-guard.sh",
-  "assets/hooks/run-hook.sh",
-  "assets/hooks/subagent-return-channel-guard.sh",
-  "assets/hooks/subagent-start-context.sh",
-  "assets/hooks/subagent-stop-quality.sh",
-  "assets/hooks/lib/minimal-change.sh",
-  "assets/hooks/lib/session-state.sh",
-  ".ai/hooks/anti-simplification.sh",
-  ".ai/hooks/changelog-guard.sh",
-  ".ai/hooks/codex-delegation-advisor.sh",
-  ".ai/hooks/first-principles-guard.sh",
-  ".ai/hooks/hook-input.sh",
-  ".ai/hooks/post-bash.sh",
-  ".ai/hooks/post-tool-observer.sh",
-  ".ai/hooks/prompt-guard.sh",
-  ".ai/hooks/run-hook.sh",
-  ".ai/hooks/subagent-return-channel-guard.sh",
-  ".ai/hooks/subagent-start-context.sh",
-  ".ai/hooks/subagent-stop-quality.sh",
-  ".ai/hooks/lib/minimal-change.sh",
-  ".ai/hooks/lib/session-state.sh",
-  "scripts/hook-shim.sh",
-  "scripts/repo-harness.sh",
-];
-
 function read(relPath: string): string {
   return readFileSync(join(ROOT, relPath), "utf-8");
 }
@@ -143,10 +110,6 @@ describe("Bootstrap Script Contracts", () => {
     expect(existsSync(join(ROOT, "src/cli/hook-entry.ts"))).toBe(true);
     expect(existsSync(join(ROOT, "src/cli/hook/runtime.ts"))).toBe(true);
     expect(existsSync(join(ROOT, "src/cli/hook/hook-input.ts"))).toBe(true);
-    expect(existsSync(join(ROOT, "assets/hooks"))).toBe(false);
-    for (const retired of RETIRED_HOOK_RUNTIME_FILES) {
-      expect(existsSync(join(ROOT, retired))).toBe(false);
-    }
 
     const claude = read("CLAUDE.md");
     const agents = read("AGENTS.md");

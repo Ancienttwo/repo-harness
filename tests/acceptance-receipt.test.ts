@@ -2,6 +2,7 @@ import { runReviewRound, closeReview, reviewLocation, type ReviewEffects } from 
 import { readSessionArtifact, writeSessionArtifact, taskSessionDirectory as importedTaskDir, type TaskRequest, type HerdrTaskBinding } from '../src/effects/terminal/task-session';
 import { recordFixtureAcceptance, fixtureReviewResult } from './helpers/repo-fixture';
 import { afterEach, describe, expect, test } from 'bun:test';
+import { darwinTest } from './helpers/darwin-test';
 import { existsSync, mkdtempSync, mkdirSync, realpathSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join, relative, resolve } from 'path';
@@ -797,7 +798,7 @@ function pendingTurnEffects(f: ReturnType<typeof reviewFixture>, collect: Review
   } };
 }
 
-test.skipIf(process.platform !== 'darwin')('generic orchestration collects domain Results, keeps one reviewer for three rounds and verifies close', async () => {
+darwinTest('generic orchestration collects domain Results, keeps one reviewer for three rounds and verifies close', async () => {
   const f = reviewFixture();
   expect(reviewLocation(f.root, f.options.contract).dir).toBe(reviewLocation(f.reviewerRepo, f.options.contract).dir);
   const trackedReview = readFileSync(join(f.root, 'tasks/reviews/demo.review.md'), 'utf8');
@@ -833,7 +834,7 @@ test.skipIf(process.platform !== 'darwin')('generic orchestration collects domai
   expect(f.calls).toContain('close');
 });
 
-test.skipIf(process.platform !== 'darwin')('generic review allows explicit same-harness and only preflight-missing fallback; pending launch never replays', async () => {
+darwinTest('generic review allows explicit same-harness and only preflight-missing fallback; pending launch never replays', async () => {
   const f = reviewFixture(); f.verdict('PASS');
   const result = await runReviewRound({ ...f.options, harness: 'codex' }, f.effects);
   expect(result.actual_harness).toBe('codex'); expect(result.fallback_reason).toBeNull();
@@ -854,7 +855,7 @@ test.skipIf(process.platform !== 'darwin')('generic review allows explicit same-
   expect((await closeReview(failed.root, failed.options.contract, true, failed.home, effects)).status).toBe('closed');
 });
 
-test.skipIf(process.platform !== 'darwin')('generic review unknown owner, explicit missing provider and timeout fail closed without history acceptance', async () => {
+darwinTest('generic review unknown owner, explicit missing provider and timeout fail closed without history acceptance', async () => {
   const f = reviewFixture();
   await expect(runReviewRound(f.options, { ...f.effects, owner: () => null })).rejects.toThrow('owner_unknown');
   expect(f.sent()).toBe(0);
@@ -875,7 +876,7 @@ test.skipIf(process.platform !== 'darwin')('generic review unknown owner, explic
   expect((await closeReview(pending.root, pending.options.contract, true, pending.home, pending.effects)).status).toBe('closed');
 });
 
-test.skipIf(process.platform !== 'darwin')('generic review checks the reviewer binding at most once per second while a turn is pending', async () => {
+darwinTest('generic review checks the reviewer binding at most once per second while a turn is pending', async () => {
   const f = reviewFixture();
   const { dir } = reviewLocation(f.root, f.options.contract);
   let checks = 0;
@@ -886,7 +887,7 @@ test.skipIf(process.platform !== 'darwin')('generic review checks the reviewer b
   expect(checks).toBeGreaterThanOrEqual(1); expect(checks).toBeLessThanOrEqual(3);
 });
 
-test.skipIf(process.platform !== 'darwin')('generic review cancel reaches an active round at the lock boundary and records no acceptance', async () => {
+darwinTest('generic review cancel reaches an active round at the lock boundary and records no acceptance', async () => {
   const f = reviewFixture(); f.verdict('PASS');
   const { dir } = reviewLocation(f.root, f.options.contract);
   let collecting!: () => void;
@@ -910,7 +911,7 @@ test.skipIf(process.platform !== 'darwin')('generic review cancel reaches an act
   expect(readSessionArtifact<{ cancelled: boolean }>(join(dir, 'closed.json')).cancelled).toBe(true);
 });
 
-test.skipIf(process.platform !== 'darwin')('generic review cancel that lands between the final check and the acceptance keeps the receipt and reports it', async () => {
+darwinTest('generic review cancel that lands between the final check and the acceptance keeps the receipt and reports it', async () => {
   const f = reviewFixture(); f.verdict('PASS');
   const { dir } = reviewLocation(f.root, f.options.contract);
   // The request is written by the model effect, which runs after the round's
@@ -928,7 +929,7 @@ test.skipIf(process.platform !== 'darwin')('generic review cancel that lands bet
 });
 
 
-test.skipIf(process.platform !== 'darwin')('Codex credential copy cleanup follows owner close/cancel/start-failure/timeout and reports refusal', async () => {
+darwinTest('Codex credential copy cleanup follows owner close/cancel/start-failure/timeout and reports refusal', async () => {
   const { existsSync, unlinkSync } = await import('node:fs');
   const copied = (f: ReturnType<typeof reviewFixture>) => {
     const session = readSessionArtifact<{task:string}>(join(reviewLocation(f.root,f.options.contract).dir,'session.json'));
@@ -953,7 +954,7 @@ test.skipIf(process.platform !== 'darwin')('Codex credential copy cleanup follow
 });
 
 // Regression: reviewer-authored completion/model evidence must never mint a Receipt.
-test.skipIf(process.platform !== 'darwin')('generic review rejects forged outbox observation before genuine host completion', async () => {
+darwinTest('generic review rejects forged outbox observation before genuine host completion', async () => {
   const f = reviewFixture(); f.verdict('PASS');
   const { model: _model, ...effects } = f.effects;
   const send = effects.send!;
@@ -970,7 +971,7 @@ test.skipIf(process.platform !== 'darwin')('generic review rejects forged outbox
   expect(existsSync(acceptanceReceiptPath(f.root, f.home))).toBe(false);
 });
 
-test.skipIf(process.platform !== 'darwin')('generic review uses owner host completion and ignores forged outbox model', async () => {
+darwinTest('generic review uses owner host completion and ignores forged outbox model', async () => {
   const f = reviewFixture(); f.verdict('PASS');
   const { model: _model, ...effects } = f.effects;
   const send = effects.send!;
@@ -987,7 +988,7 @@ test.skipIf(process.platform !== 'darwin')('generic review uses owner host compl
   expect((await verifyAcceptance({ root: f.root, authorityHome: f.home })).actual_model).toBe('fixture-host-model');
 });
 
-test.skipIf(process.platform !== 'darwin')('generic review refuses failed owner turn even with forged completed observation', async () => {
+darwinTest('generic review refuses failed owner turn even with forged completed observation', async () => {
   const f = reviewFixture(); f.verdict('PASS');
   const { model: _model, ...effects } = f.effects;
   const send = effects.send!;

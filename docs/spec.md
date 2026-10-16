@@ -173,8 +173,7 @@ effect only after a fresh `verify-sprint --prepare-acceptance` rebinds it into
 canonical evidence; a stale prepared packet cannot finalize. `pattern_novelty`
 is driven only by abstraction-shaped additions relative to the policy base.
 Release runtime
-readback is recorded separately as `RuntimeEvidenceReceipt`, never as a task
-AcceptanceReceipt field.
+readback is a separate release check, never a task AcceptanceReceipt field.
 
 ## Acceptance Scenarios
 
