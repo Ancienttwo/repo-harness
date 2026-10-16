@@ -49,7 +49,6 @@ import { buildEngineerCommand } from './commands/engineer';
 import { buildArchitectureProjectionCommand } from './commands/architecture-projection';
 import { buildIntegrationCommand } from './commands/integration';
 import { buildDelegationCommand } from './commands/delegation';
-import { buildCollaborationCommand } from './commands/collaboration';
 import { buildVerifiedContextCommand } from './commands/verified-context';
 import { buildInterfaceChangeCommand } from './commands/interface-change';
 import { buildExternalSourceCommand } from './commands/external-source';
@@ -850,7 +849,6 @@ export function buildProgram(): Command {
   program.addCommand(buildArchitectureProjectionCommand());
   program.addCommand(buildIntegrationCommand());
   program.addCommand(buildDelegationCommand());
-  program.addCommand(buildCollaborationCommand());
   program.addCommand(buildStrategyCommand());
   program.addCommand(buildVerifiedContextCommand());
   program.addCommand(buildInterfaceChangeCommand());

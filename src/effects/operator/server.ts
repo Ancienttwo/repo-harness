@@ -25,17 +25,17 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { dirname, extname, isAbsolute, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import type { OperatorCollaborationSnapshotV4 } from '../../core/operator/collaboration-snapshot';
+import type { OperatorRepositorySnapshotV1 } from '../../core/operator/repository-snapshot';
 import {
   projectOperatorFleetSnapshot,
   type OperatorFleetSnapshotV1,
 } from '../../core/operator/fleet-snapshot';
 import {
-  OperatorCollaborationError,
-  assertOperatorCollaborationSnapshotIdentity,
-  type OperatorCollaborationErrorCode,
-  type ReadOperatorCollaborationSnapshotInput,
-} from './collaboration';
+  OperatorRepositoryError,
+  assertOperatorRepositorySnapshotIdentity,
+  type OperatorRepositoryErrorCode,
+  type ReadOperatorRepositorySnapshotInput,
+} from './repository-snapshot';
 import {
   FleetBoardError,
   type FleetBoardFatalErrorCode,
@@ -56,7 +56,7 @@ const OPERATOR_DIAGNOSTIC_ACTION = 'Run `repo-harness fleet board --json` for di
 const OPERATOR_ASSET_ACTION = 'Build the operator UI with `bun run build:operator-web` and retry.';
 const OPERATOR_REOBSERVE_ACTION = 'Refresh the board to re-observe the task, then retry.';
 const OPERATOR_ADOPT_ACTION = 'Adopt the repository with `repo-harness adopt`, then refresh the board.';
-const OPERATOR_COLLABORATION_ACTION = 'Check the repository collaboration store, then refresh the board.';
+const OPERATOR_REPOSITORY_ACTION = 'Check the repository repository store, then refresh the board.';
 
 /**
  * The dispatcher's own matchers, exported so the inventory below and the test
@@ -76,7 +76,7 @@ export const OPERATOR_TASK_DIFF_ROUTE = /^\/api\/v1\/fleet\/tasks\/([A-Za-z0-9][
  * repository snapshot route uses: the registry is the authority on which ids
  * exist, and duplicating its shape here would be a second opinion about it.
  */
-export const OPERATOR_COLLABORATION_SNAPSHOT_ROUTE = /^\/api\/v1\/collaboration\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/snapshot$/u;
+export const OPERATOR_REPOSITORY_SNAPSHOT_ROUTE = /^\/api\/v1\/repositories\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/snapshot$/u;
 export const OPERATOR_RUNTIME_STATUS_PATH = '/api/v1/runtime/status' as const;
 export const OPERATOR_PIPELINES_PATH = '/api/v1/pipelines' as const;
 export const OPERATOR_NOTIFY_STATUS_PATH = '/api/v1/notify/status' as const;
@@ -103,9 +103,9 @@ export const OPERATOR_ROUTES: readonly OperatorRouteV1[] = Object.freeze([
   Object.freeze({ id: 'health', method: 'GET', pattern: OPERATOR_HEALTH_PATH, write: false }),
   Object.freeze({ id: 'fleet_snapshot', method: 'GET', pattern: OPERATOR_FLEET_SNAPSHOT_PATH, write: false }),
   Object.freeze({
-    id: 'collaboration_snapshot',
+    id: 'repository_snapshot',
     method: 'GET',
-    pattern: OPERATOR_COLLABORATION_SNAPSHOT_ROUTE.source,
+    pattern: OPERATOR_REPOSITORY_SNAPSHOT_ROUTE.source,
     write: false,
   }),
   Object.freeze({ id: 'task_context', method: 'GET', pattern: OPERATOR_TASK_CONTEXT_ROUTE.source, write: false }),
@@ -124,8 +124,8 @@ export const OPERATOR_ROUTES: readonly OperatorRouteV1[] = Object.freeze([
 
 export type OperatorServerHost = '127.0.0.1' | '::1';
 
-/** The route supplies cancellation to every asynchronous collaboration reader. */
-export type OperatorCollaborationSnapshotReaderInput = ReadOperatorCollaborationSnapshotInput & {
+/** The route supplies cancellation to every asynchronous repository reader. */
+export type OperatorRepositorySnapshotReaderInput = ReadOperatorRepositorySnapshotInput & {
   readonly signal: AbortSignal;
 };
 
@@ -157,9 +157,9 @@ export interface OperatorServerOptions {
   readonly collect_fleet_board?: (
     options?: FleetBoardCollectorOptions,
   ) => Promise<FleetBoardSnapshotV1>;
-  readonly read_collaboration_snapshot?: (
-    input: OperatorCollaborationSnapshotReaderInput,
-  ) => Promise<OperatorCollaborationSnapshotV4>;
+  readonly read_repository_snapshot?: (
+    input: OperatorRepositorySnapshotReaderInput,
+  ) => Promise<OperatorRepositorySnapshotV1>;
 }
 
 export interface OperatorServerHandle {
@@ -372,11 +372,11 @@ interface PublicFailure {
 }
 
 /**
- * Every collaboration read failure as a fixed public sentence. The effect's own
+ * Every repository read failure as a fixed public sentence. The effect's own
  * message names a repository id and its cause carries a store path and a
  * provider diagnostic; the transport keeps the typed code and drops both.
  */
-const COLLABORATION_FAILURES: Readonly<Record<OperatorCollaborationErrorCode, PublicFailure>> = Object.freeze({
+const COLLABORATION_FAILURES: Readonly<Record<OperatorRepositoryErrorCode, PublicFailure>> = Object.freeze({
   registry_unavailable: {
     status: 503,
     message: 'The fleet registry cannot be read.',
@@ -387,43 +387,43 @@ const COLLABORATION_FAILURES: Readonly<Record<OperatorCollaborationErrorCode, Pu
     message: 'The repository is not in the fleet registry.',
     next_action: OPERATOR_ADOPT_ACTION,
   },
-  collaboration_snapshot_unavailable: {
+  repository_snapshot_unavailable: {
     status: 503,
-    message: 'The collaboration store cannot be read.',
-    next_action: OPERATOR_COLLABORATION_ACTION,
+    message: 'The repository store cannot be read.',
+    next_action: OPERATOR_REPOSITORY_ACTION,
   },
-  collaboration_repository_mismatch: {
+  repository_repository_mismatch: {
     status: 500,
-    message: 'The collaboration snapshot does not belong to the requested repository.',
-    next_action: OPERATOR_COLLABORATION_ACTION,
+    message: 'The repository snapshot does not belong to the requested repository.',
+    next_action: OPERATOR_REPOSITORY_ACTION,
   },
 });
 
-function publicCollaborationError(error: unknown): {
+function publicRepositoryError(error: unknown): {
   readonly status: number;
   readonly body: OperatorErrorResponseV1;
 } {
-  if (error instanceof OperatorCollaborationBusyError) {
+  if (error instanceof OperatorRepositoryBusyError) {
     return {
       status: 503,
       body: errorBody(
-        'collaboration_snapshot_busy',
-        'The collaboration snapshot service is busy.',
-        'Wait for the current collaboration refresh to finish, then retry.',
+        'repository_snapshot_busy',
+        'The repository snapshot service is busy.',
+        'Wait for the current repository refresh to finish, then retry.',
       ),
     };
   }
-  if (error instanceof OperatorCollaborationTimeoutError) {
+  if (error instanceof OperatorRepositoryTimeoutError) {
     return {
       status: 503,
       body: errorBody(
-        'collaboration_snapshot_timeout',
-        'The collaboration snapshot timed out.',
-        'Refresh the collaboration panel and retry.',
+        'repository_snapshot_timeout',
+        'The repository snapshot timed out.',
+        'Refresh the repository panel and retry.',
       ),
     };
   }
-  if (error instanceof OperatorCollaborationError) {
+  if (error instanceof OperatorRepositoryError) {
     const failure = COLLABORATION_FAILURES[error.code];
     if (failure) {
       return { status: failure.status, body: errorBody(error.code, failure.message, failure.next_action) };
@@ -432,66 +432,66 @@ function publicCollaborationError(error: unknown): {
   return {
     status: 503,
     body: errorBody(
-      'collaboration_snapshot_unavailable',
-      'The collaboration store cannot be read.',
-      OPERATOR_COLLABORATION_ACTION,
+      'repository_snapshot_unavailable',
+      'The repository store cannot be read.',
+      OPERATOR_REPOSITORY_ACTION,
     ),
   };
 }
 
-class OperatorCollaborationTimeoutError extends Error {
-  readonly code = 'collaboration_snapshot_timeout' as const;
+class OperatorRepositoryTimeoutError extends Error {
+  readonly code = 'repository_snapshot_timeout' as const;
 
   constructor() {
-    super('collaboration snapshot deadline exceeded');
-    this.name = 'OperatorCollaborationTimeoutError';
+    super('repository snapshot deadline exceeded');
+    this.name = 'OperatorRepositoryTimeoutError';
   }
 }
 
-class OperatorCollaborationBusyError extends Error {
-  readonly code = 'collaboration_snapshot_busy' as const;
+class OperatorRepositoryBusyError extends Error {
+  readonly code = 'repository_snapshot_busy' as const;
 
   constructor() {
-    super('collaboration snapshot queue is full');
-    this.name = 'OperatorCollaborationBusyError';
+    super('repository snapshot queue is full');
+    this.name = 'OperatorRepositoryBusyError';
   }
 }
 
-const OPERATOR_COLLABORATION_REQUEST_ABORTED = Symbol('operator-collaboration-request-aborted');
+const OPERATOR_REPOSITORY_REQUEST_ABORTED = Symbol('operator-repository-request-aborted');
 
-type OperatorCollaborationWorkerResponse =
+type OperatorRepositoryWorkerResponse =
   | {
       readonly ok: true;
-      readonly snapshot: OperatorCollaborationSnapshotV4;
+      readonly snapshot: OperatorRepositorySnapshotV1;
     }
   | {
       readonly ok: false;
-      readonly code: OperatorCollaborationErrorCode;
+      readonly code: OperatorRepositoryErrorCode;
     };
 
 // Observation children are read-only. Git must not fetch promised objects,
 // take optional locks or prompt. Apply these last so caller values cannot reopen them.
 const OPERATOR_READ_ONLY_GIT_ENVIRONMENT = { GIT_NO_LAZY_FETCH: '1', GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0' } as const;
 
-function collaborationWorkerEnvironment(env: NodeJS.ProcessEnv | undefined): Record<string, string> | undefined {
+function repositoryWorkerEnvironment(env: NodeJS.ProcessEnv | undefined): Record<string, string> | undefined {
   if (env === undefined) return undefined;
   return Object.fromEntries(
     Object.entries(env).filter((entry): entry is [string, string] => entry[1] !== undefined),
   );
 }
 
-function collaborationWorkerResponse(value: unknown): OperatorCollaborationWorkerResponse | null {
+function repositoryWorkerResponse(value: unknown): OperatorRepositoryWorkerResponse | null {
   if (typeof value !== 'object' || value === null || !('ok' in value)) return null;
   if (value.ok === true && 'snapshot' in value && typeof value.snapshot === 'object' && value.snapshot !== null) {
-    return { ok: true, snapshot: value.snapshot as OperatorCollaborationSnapshotV4 };
+    return { ok: true, snapshot: value.snapshot as OperatorRepositorySnapshotV1 };
   }
   if (
     value.ok === false
     && 'code' in value
     && (value.code === 'registry_unavailable'
       || value.code === 'repository_not_found'
-      || value.code === 'collaboration_snapshot_unavailable'
-      || value.code === 'collaboration_repository_mismatch')
+      || value.code === 'repository_snapshot_unavailable'
+      || value.code === 'repository_repository_mismatch')
   ) {
     return { ok: false, code: value.code };
   }
@@ -499,17 +499,17 @@ function collaborationWorkerResponse(value: unknown): OperatorCollaborationWorke
 }
 
 /**
- * The collaboration collector is synchronous and can block in filesystem or
+ * The repository collector is synchronous and can block in filesystem or
  * provider reads. Run the production reader outside the HTTP event loop so the
  * route deadline can terminate the work rather than merely race a blocked turn.
  */
-function readDefaultCollaborationSnapshot(
-  input: OperatorCollaborationSnapshotReaderInput,
-): Promise<OperatorCollaborationSnapshotV4> {
+function readDefaultRepositorySnapshot(
+  input: OperatorRepositorySnapshotReaderInput,
+): Promise<OperatorRepositorySnapshotV1> {
   return new Promise((resolveRead, rejectRead) => {
-    const worker = new ObservationWorker(new URL('./collaboration-worker.ts', import.meta.url), {
+    const worker = new ObservationWorker(new URL('./repository-snapshot-worker.ts', import.meta.url), {
       workerData: {
-        env: collaborationWorkerEnvironment(input.env),
+        env: repositoryWorkerEnvironment(input.env),
         repository_id: input.repository_id,
         decision_after: input.decision_after ?? null,
       },
@@ -517,12 +517,12 @@ function readDefaultCollaborationSnapshot(
     });
     let settled = false;
     let result:
-      | { readonly ok: true; readonly snapshot: OperatorCollaborationSnapshotV4 }
+      | { readonly ok: true; readonly snapshot: OperatorRepositorySnapshotV1 }
       | { readonly ok: false; readonly error: unknown }
       | undefined;
     const finish = (
       outcome:
-        | { readonly ok: true; readonly snapshot: OperatorCollaborationSnapshotV4 }
+        | { readonly ok: true; readonly snapshot: OperatorRepositorySnapshotV1 }
         | { readonly ok: false; readonly error: unknown },
     ): void => {
       if (settled) return;
@@ -533,26 +533,26 @@ function readDefaultCollaborationSnapshot(
       // continues owning capacity until the worker's exit event.
       void worker.terminate().catch(() => {});
     };
-    const onAbort = (): void => finish({ ok: false, error: OPERATOR_COLLABORATION_REQUEST_ABORTED });
+    const onAbort = (): void => finish({ ok: false, error: OPERATOR_REPOSITORY_REQUEST_ABORTED });
     input.signal.addEventListener('abort', onAbort, { once: true });
     worker.once('exit', () => {
       input.signal.removeEventListener('abort', onAbort);
       if (result?.ok) resolveRead(result.snapshot);
-      else rejectRead(result?.error ?? new OperatorCollaborationError('collaboration_snapshot_unavailable', 'collaboration worker exited without a response'));
+      else rejectRead(result?.error ?? new OperatorRepositoryError('repository_snapshot_unavailable', 'repository worker exited without a response'));
     });
     worker.once('message', (value: unknown) => {
-      const response = collaborationWorkerResponse(value);
+      const response = repositoryWorkerResponse(value);
       if (response === null) {
         finish({
           ok: false,
-          error: new OperatorCollaborationError(
-            'collaboration_snapshot_unavailable',
-            'collaboration worker returned an invalid response',
+          error: new OperatorRepositoryError(
+            'repository_snapshot_unavailable',
+            'repository worker returned an invalid response',
           ),
         });
       } else if (response.ok) {
         try {
-          assertOperatorCollaborationSnapshotIdentity(response.snapshot, input.repository_id, input.decision_after ?? null);
+          assertOperatorRepositorySnapshotIdentity(response.snapshot, input.repository_id, input.decision_after ?? null);
         } catch (error) {
           finish({ ok: false, error });
           return;
@@ -561,16 +561,16 @@ function readDefaultCollaborationSnapshot(
       } else {
         finish({
           ok: false,
-          error: new OperatorCollaborationError(response.code, `collaboration worker failed with ${response.code}`),
+          error: new OperatorRepositoryError(response.code, `repository worker failed with ${response.code}`),
         });
       }
     });
     worker.once('error', (error) => {
       finish({
         ok: false,
-        error: new OperatorCollaborationError(
-          'collaboration_snapshot_unavailable',
-          'collaboration worker failed',
+        error: new OperatorRepositoryError(
+          'repository_snapshot_unavailable',
+          'repository worker failed',
           error,
         ),
       });
@@ -709,7 +709,7 @@ function readDefaultFleetSnapshot(
     start: { type:'start', protocol:2,
       scope: {kind:'fleet'},
       sequence:input.sequence, max_concurrency:input.max_concurrency, timeout_ms:input.timeout_ms,
-      ...(process.platform === 'win32' ? {} : {env:collaborationWorkerEnvironment(input.env)}),
+      ...(process.platform === 'win32' ? {} : {env:repositoryWorkerEnvironment(input.env)}),
     },
     response: value => {
       const response = fleetCollectorResponse(value);
@@ -742,7 +742,7 @@ function readSupervisedOperatorProcess<T>(input: {
 }): Promise<T> {
   if (input.signal.aborted) return Promise.reject(new OperatorFleetTimeoutError());
   return new Promise((resolveRead, rejectRead) => {
-    const workerEnvironment = { ...process.env, ...collaborationWorkerEnvironment(input.env), ...OPERATOR_READ_ONLY_GIT_ENVIRONMENT };
+    const workerEnvironment = { ...process.env, ...repositoryWorkerEnvironment(input.env), ...OPERATOR_READ_ONLY_GIT_ENVIRONMENT };
     const collector = process.platform === 'win32'
       ? null
       : spawn(process.execPath, [input.process_path], {
@@ -1056,24 +1056,24 @@ export async function startOperatorServer(
   const timeoutMs = assertCollectionOption(options.timeout_ms, 'timeout_ms', 1_000, 30_000);
   const staticRoot = safePathRoot(options.static_root ?? DEFAULT_STATIC_ROOT);
   const collect = options.collect_fleet_board;
-  const readCollaboration = options.read_collaboration_snapshot ?? readDefaultCollaborationSnapshot;
+  const readRepository = options.read_repository_snapshot ?? readDefaultRepositorySnapshot;
   let nextSnapshotSequence = 1;
-  const activeCollaborationRequestCancellers = new Set<() => void>();
-  const collaborationObservations = new Map<string, CollaborationObservation>();
-  const collaborationQueue: CollaborationObservation[] = [];
-  const collaborationQueueCapacity = maxConcurrency * 2;
-  const collaborationCompletions = new Set<Promise<void>>();
+  const activeRepositoryRequestCancellers = new Set<() => void>();
+  const repositoryObservations = new Map<string, RepositoryObservation>();
+  const repositoryQueue: RepositoryObservation[] = [];
+  const repositoryQueueCapacity = maxConcurrency * 2;
+  const repositoryCompletions = new Set<Promise<void>>();
   const activeTaskReadCancellers = new Set<() => void>();
   const activeTaskReadCompletions = new Set<Promise<void>>();
-  let activeCollaborationWorkers = 0;
+  let activeRepositoryWorkers = 0;
 
-  interface CollaborationObservation {
+  interface RepositoryObservation {
     readonly repositoryId: string;
     readonly decisionAfter: string | null;
     readonly key: string;
     readonly controller: AbortController;
-    readonly promise: Promise<OperatorCollaborationSnapshotV4>;
-    readonly resolve: (snapshot: OperatorCollaborationSnapshotV4) => void;
+    readonly promise: Promise<OperatorRepositorySnapshotV1>;
+    readonly resolve: (snapshot: OperatorRepositorySnapshotV1) => void;
     readonly reject: (error: unknown) => void;
     timer: ReturnType<typeof setTimeout> | null;
     subscribers: number;
@@ -1081,81 +1081,81 @@ export async function startOperatorServer(
     settled: boolean;
   }
 
-  const drainCollaborationQueue = (): void => {
+  const drainRepositoryQueue = (): void => {
     if (closed) return;
-    while (activeCollaborationWorkers < maxConcurrency && collaborationQueue.length > 0) {
-      const next = collaborationQueue.shift()!;
+    while (activeRepositoryWorkers < maxConcurrency && repositoryQueue.length > 0) {
+      const next = repositoryQueue.shift()!;
       if (next.settled || next.subscribers === 0) continue;
-      startCollaborationObservation(next);
+      startRepositoryObservation(next);
     }
   };
 
-  const settleCollaborationObservation = (
-    observation: CollaborationObservation,
+  const settleRepositoryObservation = (
+    observation: RepositoryObservation,
     outcome:
-      | { readonly ok: true; readonly snapshot: OperatorCollaborationSnapshotV4 }
+      | { readonly ok: true; readonly snapshot: OperatorRepositorySnapshotV1 }
       | { readonly ok: false; readonly error: unknown },
   ): void => {
     if (observation.settled) return;
     observation.settled = true;
     if (observation.timer !== null) clearTimeout(observation.timer);
     if (!observation.started) {
-      const queuedAt = collaborationQueue.indexOf(observation);
-      if (queuedAt >= 0) collaborationQueue.splice(queuedAt, 1);
-      if (collaborationObservations.get(observation.key) === observation) collaborationObservations.delete(observation.key);
+      const queuedAt = repositoryQueue.indexOf(observation);
+      if (queuedAt >= 0) repositoryQueue.splice(queuedAt, 1);
+      if (repositoryObservations.get(observation.key) === observation) repositoryObservations.delete(observation.key);
     }
     if (outcome.ok) observation.resolve(outcome.snapshot);
     else observation.reject(outcome.error);
   };
 
-  const cancelCollaborationObservation = (observation: CollaborationObservation, error: unknown): void => {
+  const cancelRepositoryObservation = (observation: RepositoryObservation, error: unknown): void => {
     if (observation.settled) return;
     observation.controller.abort();
-    settleCollaborationObservation(observation, { ok: false, error });
+    settleRepositoryObservation(observation, { ok: false, error });
   };
 
-  const startCollaborationObservation = (observation: CollaborationObservation): void => {
+  const startRepositoryObservation = (observation: RepositoryObservation): void => {
     if (closed || observation.settled || observation.subscribers === 0) return;
     observation.started = true;
-    activeCollaborationWorkers += 1;
+    activeRepositoryWorkers += 1;
     const completion = Promise.resolve().then(() => {
-      if (observation.controller.signal.aborted) throw OPERATOR_COLLABORATION_REQUEST_ABORTED;
-      return readCollaboration({
+      if (observation.controller.signal.aborted) throw OPERATOR_REPOSITORY_REQUEST_ABORTED;
+      return readRepository({
       env: options.env,
       repository_id: observation.repositoryId,
       decision_after: observation.decisionAfter,
       signal: observation.controller.signal,
       });
     }).then(
-      (snapshot) => settleCollaborationObservation(observation, { ok: true, snapshot }),
-      (error) => settleCollaborationObservation(observation, { ok: false, error }),
+      (snapshot) => settleRepositoryObservation(observation, { ok: true, snapshot }),
+      (error) => settleRepositoryObservation(observation, { ok: false, error }),
     ).finally(() => {
-      activeCollaborationWorkers -= 1;
-      if (collaborationObservations.get(observation.key) === observation) collaborationObservations.delete(observation.key);
-      collaborationCompletions.delete(completion);
-      drainCollaborationQueue();
+      activeRepositoryWorkers -= 1;
+      if (repositoryObservations.get(observation.key) === observation) repositoryObservations.delete(observation.key);
+      repositoryCompletions.delete(completion);
+      drainRepositoryQueue();
     });
-    collaborationCompletions.add(completion);
+    repositoryCompletions.add(completion);
   };
 
-  const acquireCollaborationObservation = (repositoryId: string, decisionAfter: string | null): CollaborationObservation => {
-    if (closed) throw OPERATOR_COLLABORATION_REQUEST_ABORTED;
+  const acquireRepositoryObservation = (repositoryId: string, decisionAfter: string | null): RepositoryObservation => {
+    if (closed) throw OPERATOR_REPOSITORY_REQUEST_ABORTED;
     const key = JSON.stringify([repositoryId, decisionAfter]);
-    const existing = collaborationObservations.get(key);
+    const existing = repositoryObservations.get(key);
     if (existing !== undefined) {
-      if (existing.settled) throw new OperatorCollaborationBusyError();
+      if (existing.settled) throw new OperatorRepositoryBusyError();
       existing.subscribers += 1;
       return existing;
     }
-    if (activeCollaborationWorkers >= maxConcurrency && collaborationQueue.length >= collaborationQueueCapacity) {
-      throw new OperatorCollaborationBusyError();
+    if (activeRepositoryWorkers >= maxConcurrency && repositoryQueue.length >= repositoryQueueCapacity) {
+      throw new OperatorRepositoryBusyError();
     }
-    let resolveObservation!: (snapshot: OperatorCollaborationSnapshotV4) => void;
+    let resolveObservation!: (snapshot: OperatorRepositorySnapshotV1) => void;
     let rejectObservation!: (error: unknown) => void;
-    const observation: CollaborationObservation = {
+    const observation: RepositoryObservation = {
       repositoryId, decisionAfter, key,
       controller: new AbortController(),
-      promise: new Promise<OperatorCollaborationSnapshotV4>((resolveObservationPromise, rejectObservationPromise) => {
+      promise: new Promise<OperatorRepositorySnapshotV1>((resolveObservationPromise, rejectObservationPromise) => {
         resolveObservation = resolveObservationPromise;
         rejectObservation = rejectObservationPromise;
       }),
@@ -1167,19 +1167,19 @@ export async function startOperatorServer(
       settled: false,
     };
     observation.timer = setTimeout(() => {
-      cancelCollaborationObservation(observation, new OperatorCollaborationTimeoutError());
+      cancelRepositoryObservation(observation, new OperatorRepositoryTimeoutError());
     }, timeoutMs);
-    collaborationObservations.set(key, observation);
-    if (activeCollaborationWorkers < maxConcurrency) startCollaborationObservation(observation);
-    else collaborationQueue.push(observation);
+    repositoryObservations.set(key, observation);
+    if (activeRepositoryWorkers < maxConcurrency) startRepositoryObservation(observation);
+    else repositoryQueue.push(observation);
     return observation;
   };
 
-  const releaseCollaborationObservation = (observation: CollaborationObservation): void => {
+  const releaseRepositoryObservation = (observation: RepositoryObservation): void => {
     if (observation.subscribers === 0) return;
     observation.subscribers -= 1;
     if (observation.subscribers === 0 && !observation.settled) {
-      cancelCollaborationObservation(observation, OPERATOR_COLLABORATION_REQUEST_ABORTED);
+      cancelRepositoryObservation(observation, OPERATOR_REPOSITORY_REQUEST_ABORTED);
     }
   };
 
@@ -1310,18 +1310,18 @@ export async function startOperatorServer(
     }
   };
 
-  const handleCollaborationSnapshot = async (
+  const handleRepositorySnapshot = async (
     request: IncomingMessage,
     response: ServerResponse,
     repositoryId: string,
     decisionAfter: string | null,
     headOnly = false,
   ): Promise<void> => {
-    let observation: CollaborationObservation;
+    let observation: RepositoryObservation;
     try {
-      observation = acquireCollaborationObservation(repositoryId, decisionAfter);
+      observation = acquireRepositoryObservation(repositoryId, decisionAfter);
     } catch (error) {
-      const failure = publicCollaborationError(error);
+      const failure = publicRepositoryError(error);
       sendRefusal(request, response, failure.status, failure.body, headOnly);
       return;
     }
@@ -1336,7 +1336,7 @@ export async function startOperatorServer(
     const release = (): void => {
       if (released) return;
       released = true;
-      releaseCollaborationObservation(observation);
+      releaseRepositoryObservation(observation);
     };
     const cancel = (reason: 'client_disconnect' | 'server_shutdown'): void => {
       if (finished) return;
@@ -1344,34 +1344,34 @@ export async function startOperatorServer(
       else serverClosing = true;
       release();
       if (reason === 'server_shutdown' && !response.destroyed) {
-        const failure = publicCollaborationError(OPERATOR_COLLABORATION_REQUEST_ABORTED);
+        const failure = publicRepositoryError(OPERATOR_REPOSITORY_REQUEST_ABORTED);
         sendJson(response, failure.status, failure.body, headOnly);
       }
-      rejectCancellation?.(OPERATOR_COLLABORATION_REQUEST_ABORTED);
+      rejectCancellation?.(OPERATOR_REPOSITORY_REQUEST_ABORTED);
     };
     const onClientDisconnect = () => cancel('client_disconnect');
     const cancelForServerClose = () => cancel('server_shutdown');
     request.once('aborted', onClientDisconnect);
     response.once('close', onClientDisconnect);
-    activeCollaborationRequestCancellers.add(cancelForServerClose);
+    activeRepositoryRequestCancellers.add(cancelForServerClose);
     try {
-      const collaboration = await Promise.race([
+      const repository = await Promise.race([
         observation.promise,
         cancellation,
       ]);
       if (clientDisconnected || serverClosing || response.destroyed) return;
       finished = true;
-      assertOperatorCollaborationSnapshotIdentity(collaboration, repositoryId, decisionAfter);
-      sendJson(response, 200, collaboration, headOnly);
+      assertOperatorRepositorySnapshotIdentity(repository, repositoryId, decisionAfter);
+      sendJson(response, 200, repository, headOnly);
     } catch (error) {
       if (clientDisconnected || serverClosing || response.destroyed) return;
       finished = true;
-      const failure = publicCollaborationError(error);
+      const failure = publicRepositoryError(error);
       sendRefusal(request, response, failure.status, failure.body, headOnly);
     } finally {
       finished = true;
       release();
-      activeCollaborationRequestCancellers.delete(cancelForServerClose);
+      activeRepositoryRequestCancellers.delete(cancelForServerClose);
       request.removeListener('aborted', onClientDisconnect);
       response.removeListener('close', onClientDisconnect);
     }
@@ -1423,7 +1423,7 @@ export async function startOperatorServer(
         process_path:fileURLToPath(new URL('./task-read-process.ts',import.meta.url)),
         env:options.env,
         signal:controller.signal,
-        start:{type:'start',protocol:1,kind,request:input,env:collaborationWorkerEnvironment(options.env)},
+        start:{type:'start',protocol:1,kind,request:input,env:repositoryWorkerEnvironment(options.env)},
         response:value=>{
           if (!value || typeof value !== 'object') return null;
           const record=value as Record<string,unknown>;
@@ -1632,14 +1632,14 @@ export async function startOperatorServer(
       return;
     }
 
-    const collaborationRoute = OPERATOR_COLLABORATION_SNAPSHOT_ROUTE.exec(pathname);
-    if (collaborationRoute !== null) {
+    const repositoryRoute = OPERATOR_REPOSITORY_SNAPSHOT_ROUTE.exec(pathname);
+    if (repositoryRoute !== null) {
       const decisionAfter = url.searchParams.get('decision_after');
       if ([...url.searchParams.keys()].some(key => key !== 'decision_after') || url.searchParams.getAll('decision_after').length > 1 || !isDecisionCursor(decisionAfter)) {
         sendRefusal(request, response, 400, errorBody('invalid_request', 'The Decision inventory cursor is invalid.'), headOnly);
         return;
       }
-      await handleCollaborationSnapshot(request, response, collaborationRoute[1]!, decisionAfter, headOnly);
+      await handleRepositorySnapshot(request, response, repositoryRoute[1]!, decisionAfter, headOnly);
       return;
     }
 
@@ -1739,11 +1739,11 @@ export async function startOperatorServer(
       // Close admission and cancel every owner before waiting for any one of
       // them: a retiring Fleet read must not leave other queues launching work.
       for (const observation of [...fleetObservations.values()]) cancelFleetObservation(observation);
-      for (const observation of [...collaborationObservations.values()]) cancelCollaborationObservation(observation, OPERATOR_COLLABORATION_REQUEST_ABORTED);
+      for (const observation of [...repositoryObservations.values()]) cancelRepositoryObservation(observation, OPERATOR_REPOSITORY_REQUEST_ABORTED);
       for (const cancel of activeTaskReadCancellers) cancel();
-      for (const cancel of activeCollaborationRequestCancellers) cancel();
+      for (const cancel of activeRepositoryRequestCancellers) cancel();
       await Promise.allSettled([
-        ...fleetCompletions, ...collaborationCompletions,
+        ...fleetCompletions, ...repositoryCompletions,
         ...activeTaskReadCompletions,
       ]);
       if (!server.listening) return;

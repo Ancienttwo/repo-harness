@@ -5,9 +5,9 @@ import { join } from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { createConnection } from 'node:net';
 import { projectFleetBoardSnapshot } from '../../src/core/fleet/board';
-import type { OperatorCollaborationSnapshotV4 } from '../../src/core/operator/collaboration-snapshot';
+import type { OperatorRepositorySnapshotV1 } from '../../src/core/operator/repository-snapshot';
 import { repoHarnessRegisteredReposPath, repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
-import { OperatorCollaborationError, readOperatorCollaborationSnapshot } from '../../src/effects/operator/collaboration';
+import { OperatorRepositoryError, readOperatorRepositorySnapshot } from '../../src/effects/operator/repository-snapshot';
 import { MODULE_ID, MODULE_DOC, MODULE_NODE, moduleRepository, fixtureWrite, fixtureCommit, fixtureGit } from '../helpers/module-repository';
 import { createHash } from 'node:crypto';
 import { chmodSync, watch, lstatSync } from 'node:fs';
@@ -31,11 +31,10 @@ import {
   parseOperatorServeOptions,
 } from '../../src/cli/commands/operator';
 
-function unavailableCollaboration(repositoryId: string): OperatorCollaborationSnapshotV4 {
-  return { protocol: 4, kind: 'operator_collaboration_snapshot', decision_after: null,
+function unavailableRepository(repositoryId: string): OperatorRepositorySnapshotV1 {
+  return { protocol: 1, kind: 'operator_repository_snapshot', decision_after: null,
     planning: { status: 'unavailable', observed_at: '2026-09-22T00:00:00.000Z', code: 'source_unavailable' },
     decisions: { status: 'unavailable', observed_at: '2026-09-22T00:00:00.000Z', code: 'source_unavailable' }, repository_id: repositoryId,
-    exchange: { status: 'unavailable', observed_at: '2026-09-22T00:00:00.000Z', code: 'source_unavailable' },
     organization: { status: 'unavailable', observed_at: '2026-09-22T00:00:00.000Z', code: 'source_unavailable' } };
 }
 
@@ -237,7 +236,7 @@ describe('operator serve command and HTTP boundary', () => {
     const server = await startOperatorServer({
       port: 0,
       collect_fleet_board: async () => { reads++; return snapshot(); },
-      read_collaboration_snapshot: async input => { reads++; return unavailableCollaboration(input.repository_id); },
+      read_repository_snapshot: async input => { reads++; return unavailableRepository(input.repository_id); },
       read_task_context: async () => { reads++; throw new Error('unexpected read'); },
       read_task_activity: async () => { reads++; throw new Error('unexpected read'); },
       read_task_diff: async () => { reads++; throw new Error('unexpected read'); },
@@ -245,7 +244,7 @@ describe('operator serve command and HTTP boundary', () => {
     });
     try {
       const paths = ['/', '/healthz', '/api/v1/fleet/snapshot', '/api/v1/dev-activity', '/api/v1/setup',
-        '/api/v1/collaboration/repo-a/snapshot', ...['context', 'activity', 'diff', 'messages'].map(route => `/api/v1/fleet/tasks/repo-a/${TASK_ID}/${route}`)];
+        '/api/v1/repositories/repo-a/snapshot', ...['context', 'activity', 'diff', 'messages'].map(route => `/api/v1/fleet/tasks/repo-a/${TASK_ID}/${route}`)];
       for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) {
         for (const path of paths) {
           for (const headers of [new Headers(), new Headers({ Origin: server.url })]) {
@@ -347,10 +346,10 @@ describe('operator serve command and HTTP boundary', () => {
     }
   });
 
-  test('bounds collaboration reads and permits a healthy retry after timeout', async () => {
-    const staticRoot = mkdtempSync(join(tmpdir(), 'repo-harness-operator-collaboration-timeout-'));
+  test('bounds repository reads and permits a healthy retry after timeout', async () => {
+    const staticRoot = mkdtempSync(join(tmpdir(), 'repo-harness-operator-repository-timeout-'));
     writeFileSync(join(staticRoot, 'index.html'), '<!doctype html><main>operator</main>');
-    let collaborationCalls = 0;
+    let repositoryCalls = 0;
     let abortObserved = false;
     let healthy = false;
     const server = await startOperatorServer({
@@ -358,9 +357,9 @@ describe('operator serve command and HTTP boundary', () => {
       static_root: staticRoot,
       timeout_ms: 1_000,
       collect_fleet_board: async (options) => snapshot(options?.sequence ?? 1),
-      read_collaboration_snapshot: async ({ signal }) => {
-        collaborationCalls += 1;
-        if (healthy) return unavailableCollaboration('repo-write');
+      read_repository_snapshot: async ({ signal }) => {
+        repositoryCalls += 1;
+        if (healthy) return unavailableRepository('repo-write');
         return new Promise<never>((_resolve, reject) => {
           signal.addEventListener('abort', () => { abortObserved = true; reject(new Error('cancelled')); }, { once: true });
         });
@@ -368,53 +367,53 @@ describe('operator serve command and HTTP boundary', () => {
     });
     try {
       const startedAt = Date.now();
-      const timedOut = await fetch(`${server.url}/api/v1/collaboration/repo-write/snapshot`);
+      const timedOut = await fetch(`${server.url}/api/v1/repositories/repo-write/snapshot`);
       expect(Date.now() - startedAt).toBeLessThan(2_500);
       expect(timedOut.status).toBe(503);
       expect(await timedOut.json()).toMatchObject({
         error: {
-          code: 'collaboration_snapshot_timeout',
-          message: 'The collaboration snapshot timed out.',
+          code: 'repository_snapshot_timeout',
+          message: 'The repository snapshot timed out.',
         },
       });
-      expect(collaborationCalls).toBe(1);
+      expect(repositoryCalls).toBe(1);
       expect(abortObserved).toBe(true);
 
       healthy = true;
-      const retry = await fetch(`${server.url}/api/v1/collaboration/repo-write/snapshot`);
+      const retry = await fetch(`${server.url}/api/v1/repositories/repo-write/snapshot`);
       expect(retry.status).toBe(200);
-      expect(await retry.json()).toEqual(unavailableCollaboration('repo-write'));
-      expect(collaborationCalls).toBe(2);
+      expect(await retry.json()).toEqual(unavailableRepository('repo-write'));
+      expect(repositoryCalls).toBe(2);
     } finally {
       await server.close();
       rmSync(staticRoot, { recursive: true, force: true });
     }
   });
 
-  test('coalesces same-repository collaboration reads and retains work for a remaining subscriber', async () => {
-    const staticRoot = mkdtempSync(join(tmpdir(), 'repo-harness-operator-collaboration-coalesce-'));
+  test('coalesces same-repository repository reads and retains work for a remaining subscriber', async () => {
+    const staticRoot = mkdtempSync(join(tmpdir(), 'repo-harness-operator-repository-coalesce-'));
     writeFileSync(join(staticRoot, 'index.html'), '<!doctype html><main>operator</main>');
     let calls = 0;
     let aborts = 0;
     let healthy = false;
-    let resolveFirst!: (snapshot: OperatorCollaborationSnapshotV4) => void;
+    let resolveFirst!: (snapshot: OperatorRepositorySnapshotV1) => void;
     const server = await startOperatorServer({
       port: 0,
       static_root: staticRoot,
       max_concurrency: 1,
       collect_fleet_board: async () => snapshot(),
-      read_collaboration_snapshot: ({ signal }) => {
+      read_repository_snapshot: ({ signal }) => {
         calls += 1;
-        if (healthy) return Promise.resolve(unavailableCollaboration('repo-write'));
+        if (healthy) return Promise.resolve(unavailableRepository('repo-write'));
         signal.addEventListener('abort', () => { aborts += 1; }, { once: true });
-        return new Promise((resolve) => { resolveFirst = resolve as (snapshot: OperatorCollaborationSnapshotV4) => void; });
+        return new Promise((resolve) => { resolveFirst = resolve as (snapshot: OperatorRepositorySnapshotV1) => void; });
       },
     });
     const firstController = new AbortController();
-    const url = `${server.url}/api/v1/collaboration/repo-write/snapshot`;
+    const url = `${server.url}/api/v1/repositories/repo-write/snapshot`;
     const first = fetch(url, { signal: firstController.signal }).catch(() => null);
     try {
-      await waitFor(() => calls === 1, 'first collaboration reader did not start');
+      await waitFor(() => calls === 1, 'first repository reader did not start');
       const second = fetch(url);
       await Bun.sleep(30);
       expect(calls).toBe(1);
@@ -424,7 +423,7 @@ describe('operator serve command and HTTP boundary', () => {
       await Bun.sleep(30);
       expect(aborts).toBe(0);
 
-      resolveFirst(unavailableCollaboration('repo-write'));
+      resolveFirst(unavailableRepository('repo-write'));
       expect((await second).status).toBe(200);
       healthy = true;
       expect((await fetch(url)).status).toBe(200);
@@ -435,40 +434,40 @@ describe('operator serve command and HTTP boundary', () => {
     }
   });
 
-  test('bounds cross-repository collaboration workers and rejects queue overflow', async () => {
-    const staticRoot = mkdtempSync(join(tmpdir(), 'repo-harness-operator-collaboration-queue-'));
+  test('bounds cross-repository repository workers and rejects queue overflow', async () => {
+    const staticRoot = mkdtempSync(join(tmpdir(), 'repo-harness-operator-repository-queue-'));
     writeFileSync(join(staticRoot, 'index.html'), '<!doctype html><main>operator</main>');
     const started: string[] = [];
-    const resolvers = new Map<string, (snapshot: OperatorCollaborationSnapshotV4) => void>();
+    const resolvers = new Map<string, (snapshot: OperatorRepositorySnapshotV1) => void>();
     const server = await startOperatorServer({
       port: 0,
       static_root: staticRoot,
       max_concurrency: 1,
       collect_fleet_board: async () => snapshot(),
-      read_collaboration_snapshot: ({ repository_id }) => new Promise((resolve) => {
+      read_repository_snapshot: ({ repository_id }) => new Promise((resolve) => {
         started.push(repository_id);
-        resolvers.set(repository_id, resolve as (snapshot: OperatorCollaborationSnapshotV4) => void);
+        resolvers.set(repository_id, resolve as (snapshot: OperatorRepositorySnapshotV1) => void);
       }),
     });
-    const url = (repositoryId: string) => `${server.url}/api/v1/collaboration/${repositoryId}/snapshot`;
+    const url = (repositoryId: string) => `${server.url}/api/v1/repositories/${repositoryId}/snapshot`;
     try {
       const first = fetch(url('repo-a'));
-      await waitFor(() => started.length === 1, 'first collaboration reader did not start');
+      await waitFor(() => started.length === 1, 'first repository reader did not start');
       const second = fetch(url('repo-b'));
       const third = fetch(url('repo-c'));
       const overloaded = await fetch(url('repo-d'));
       expect(overloaded.status).toBe(503);
-      expect(await overloaded.json()).toMatchObject({ error: { code: 'collaboration_snapshot_busy' } });
+      expect(await overloaded.json()).toMatchObject({ error: { code: 'repository_snapshot_busy' } });
       expect(started).toEqual(['repo-a']);
 
-      resolvers.get('repo-a')!(unavailableCollaboration('repo-a'));
+      resolvers.get('repo-a')!(unavailableRepository('repo-a'));
       expect((await first).status).toBe(200);
-      await waitFor(() => started.length === 2, 'queued collaboration reader did not start');
+      await waitFor(() => started.length === 2, 'queued repository reader did not start');
       expect(started).toEqual(['repo-a', 'repo-b']);
-      resolvers.get('repo-b')!(unavailableCollaboration('repo-b'));
+      resolvers.get('repo-b')!(unavailableRepository('repo-b'));
       expect((await second).status).toBe(200);
-      await waitFor(() => started.length === 3, 'second queued collaboration reader did not start');
-      resolvers.get('repo-c')!(unavailableCollaboration('repo-c'));
+      await waitFor(() => started.length === 3, 'second queued repository reader did not start');
+      resolvers.get('repo-c')!(unavailableRepository('repo-c'));
       expect((await third).status).toBe(200);
     } finally {
       await server.close();
@@ -476,10 +475,10 @@ describe('operator serve command and HTTP boundary', () => {
     }
   });
 
-  test('isolates the default Collaboration reader and holds capacity until the blocked Worker exits', async () => {
+  test('isolates the default Repository reader and holds capacity until the blocked Worker exits', async () => {
     if (process.platform === 'win32') return;
-    const staticRoot = mkdtempSync(join(tmpdir(), 'repo-harness-operator-collaboration-worker-'));
-    const repoRoot = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-operator-collaboration-repo-')));
+    const staticRoot = mkdtempSync(join(tmpdir(), 'repo-harness-operator-repository-worker-'));
+    const repoRoot = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-operator-repository-repo-')));
     expect(spawnSync('git', ['init', '-q', repoRoot]).status).toBe(0);
     const registry = registryHome([{ path: repoRoot, accessMode: 'read_write' }]);
     const policyPath = join(repoRoot, '.ai/harness/policy.json');
@@ -500,14 +499,14 @@ describe('operator serve command and HTTP boundary', () => {
     });
     try {
       const startedAt = Date.now();
-      const url = `${server.url}/api/v1/collaboration/${registry.ids[0]!}/snapshot`;
+      const url = `${server.url}/api/v1/repositories/${registry.ids[0]!}/snapshot`;
       const timedOut = await fetch(url);
       expect(Date.now() - startedAt).toBeLessThan(2_500);
       expect(timedOut.status).toBe(503);
-      expect(await timedOut.json()).toMatchObject({ error: { code: 'collaboration_snapshot_timeout' } });
+      expect(await timedOut.json()).toMatchObject({ error: { code: 'repository_snapshot_timeout' } });
       const busy = await fetch(url);
       expect(busy.status).toBe(503);
-      expect(await busy.json()).toMatchObject({ error: { code: 'collaboration_snapshot_busy' } });
+      expect(await busy.json()).toMatchObject({ error: { code: 'repository_snapshot_busy' } });
       let queuedFinished = false;
       const cursor = 'a'.repeat(64);
       const queued = fetch(url + '?decision_after=' + cursor).then(response => { queuedFinished = true; return response; });
@@ -515,13 +514,13 @@ describe('operator serve command and HTTP boundary', () => {
       expect(queuedFinished).toBe(false);
 
       rmSync(policyPath);
-      writeFileSync(policyPath, `${JSON.stringify({ collaboration: { mode: 'off' } })}\n`);
+      writeFileSync(policyPath, `${JSON.stringify({})}\n`);
       fifoWriter.kill('SIGTERM');
       expect((await queued).status).toBe(200);
       const retry = await fetch(url);
       expect(retry.status).toBe(200);
       expect(await retry.json()).toMatchObject({
-        kind: 'operator_collaboration_snapshot',
+        kind: 'operator_repository_snapshot',
         repository_id: registry.ids[0],
       });
     } finally {
@@ -736,26 +735,26 @@ describe('operator serve command and HTTP boundary', () => {
     }
   });
 
-  test('turns a collaboration repository identity mismatch into a typed refusal', async () => {
-    const staticRoot = mkdtempSync(join(tmpdir(), 'repo-harness-operator-collaboration-echo-'));
+  test('turns a repository repository identity mismatch into a typed refusal', async () => {
+    const staticRoot = mkdtempSync(join(tmpdir(), 'repo-harness-operator-repository-echo-'));
     writeFileSync(join(staticRoot, 'index.html'), '<!doctype html><main>operator</main>');
     const server = await startOperatorServer({
       port: 0,
       static_root: staticRoot,
       collect_fleet_board: async () => snapshot(),
-      read_collaboration_snapshot: async () => {
-        throw new OperatorCollaborationError(
-          'collaboration_repository_mismatch',
-          'collaboration snapshot for /private/tmp/other-repo answered repo-other',
+      read_repository_snapshot: async () => {
+        throw new OperatorRepositoryError(
+          'repository_repository_mismatch',
+          'repository snapshot for /private/tmp/other-repo answered repo-other',
         );
       },
     });
     try {
-      const response = await fetch(`${server.url}/api/v1/collaboration/repo-write/snapshot`);
+      const response = await fetch(`${server.url}/api/v1/repositories/repo-write/snapshot`);
       expect(response.status).toBe(500);
       const body = await response.json() as { error: { code: string; message: string; next_action: string } };
-      expect(body.error.code).toBe('collaboration_repository_mismatch');
-      expect(body.error.message).toBe('The collaboration snapshot does not belong to the requested repository.');
+      expect(body.error.code).toBe('repository_repository_mismatch');
+      expect(body.error.message).toBe('The repository snapshot does not belong to the requested repository.');
       expect(body.error.next_action.length).toBeGreaterThan(0);
       expect(JSON.stringify(body)).not.toContain('/private/tmp/other-repo');
       expect(JSON.stringify(body)).not.toContain('repo-other');
@@ -774,7 +773,7 @@ describe('operator serve command and HTTP boundary', () => {
       collect_fleet_board: async () => snapshot(),
     });
     try {
-      for (const variant of ['/API/v1/fleet/snapshot', '/Api/v1/collaboration/repo-write/snapshot', '/API']) {
+      for (const variant of ['/API/v1/fleet/snapshot', '/Api/v1/repository/repo-write/snapshot', '/API']) {
         const response = await fetch(`${server.url}${variant}`, { headers: { Accept: 'text/html' } });
         expect(response.status).toBe(404);
         expect(response.headers.get('content-type')).toBe('application/json; charset=utf-8');
@@ -848,8 +847,8 @@ describe('reader retirement', () => {
     target_ref: 'main', branch: 'codex/task', base_sha: 'a'.repeat(40), head_sha: 'b'.repeat(40),
     observed_at: '2026-09-22T00:00:00.000Z', patch: '', untracked_paths: [],
   };
-  for (const kind of ['collaboration', 'diff'] as const) {
-    const path = kind === 'diff' ? diffPath : '/api/v1/collaboration/repo-a/snapshot';
+  for (const kind of ['repository', 'diff'] as const) {
+    const path = kind === 'diff' ? diffPath : '/api/v1/repositories/repo-a/snapshot';
     for (const ending of ['timeout', 'disconnect'] as const) {
       test(`${kind} ${ending} holds its slot until retirement and refuses a premature same-source retry`, async () => {
         let calls = 0, firstSignal: AbortSignal | undefined, retire!: () => void;
@@ -858,7 +857,7 @@ describe('reader retirement', () => {
           firstSignal = signal; return new Promise<void>(resolve => { retire = resolve; });
         };
         const server = await startOperatorServer({ port: 0, max_concurrency: 1, timeout_ms: 1000,
-          read_collaboration_snapshot: async input => { await hold(input.signal); return unavailableCollaboration(input.repository_id); },
+          read_repository_snapshot: async input => { await hold(input.signal); return unavailableRepository(input.repository_id); },
           read_task_diff: async input => { await hold(input.signal); return diff; },
         });
         const abort = new AbortController();
@@ -871,7 +870,7 @@ describe('reader retirement', () => {
           await waitFor(() => firstSignal?.aborted === true, 'reader cancellation not observed');
           const busy = await fetch(server.url + path);
           expect(busy.status).toBe(503);
-          expect(await busy.json()).toMatchObject(kind === 'diff' ? { code: 'busy' } : { error: { code: 'collaboration_snapshot_busy' } });
+          expect(await busy.json()).toMatchObject(kind === 'diff' ? { code: 'busy' } : { error: { code: 'repository_snapshot_busy' } });
           expect(calls).toBe(1);
           if (kind === 'diff') {
             for (const route of ['activity', 'context?task_revision=' + TASK_REVISION]) {
@@ -882,7 +881,7 @@ describe('reader retirement', () => {
           retire(); await Bun.sleep(0);
           const fresh = await fetch(server.url + path);
           expect(fresh.status).toBe(200);
-          expect(await fresh.json()).toEqual(kind === 'diff' ? diff : unavailableCollaboration('repo-a'));
+          expect(await fresh.json()).toEqual(kind === 'diff' ? diff : unavailableRepository('repo-a'));
           expect(calls).toBe(2);
         } finally { retire?.(); abort.abort(); await first; await server.close(); }
       });
@@ -892,7 +891,7 @@ describe('reader retirement', () => {
       let signal: AbortSignal | undefined, retire!: () => void;
       const hold = (value: AbortSignal) => { signal = value; return new Promise<void>(resolve => { retire = resolve; }); };
       const server = await startOperatorServer({ port: 0,
-        read_collaboration_snapshot: async input => { await hold(input.signal); return unavailableCollaboration(input.repository_id); },
+        read_repository_snapshot: async input => { await hold(input.signal); return unavailableRepository(input.repository_id); },
         read_task_diff: async input => { await hold(input.signal); return diff; },
       });
       const request = fetch(server.url + path).catch(() => null);
@@ -911,20 +910,20 @@ describe('reader retirement', () => {
     });
   }
 
-  test('closing cancels queued Collaboration observations before waiting for the active reader', async () => {
+  test('closing cancels queued Repository observations before waiting for the active reader', async () => {
     const starts: string[] = []; let retire!: () => void;
     const server = await startOperatorServer({ port: 0, max_concurrency: 1,
-      read_collaboration_snapshot: async input => {
+      read_repository_snapshot: async input => {
         starts.push(input.repository_id);
         if (starts.length === 1) await new Promise<void>(resolve => { retire = resolve; });
-        return unavailableCollaboration(input.repository_id);
+        return unavailableRepository(input.repository_id);
       },
     });
-    const first = fetch(server.url + '/api/v1/collaboration/repo-a/snapshot').catch(() => null);
+    const first = fetch(server.url + '/api/v1/repositories/repo-a/snapshot').catch(() => null);
     let queued: Promise<Response | null> | undefined;
     try {
       await waitFor(() => starts.length === 1, 'reader not started');
-      queued = fetch(server.url + '/api/v1/collaboration/repo-b/snapshot').catch(() => null);
+      queued = fetch(server.url + '/api/v1/repositories/repo-b/snapshot').catch(() => null);
       await Bun.sleep(30);
       const closing = server.close(); await Bun.sleep(30);
       expect(starts).toEqual(['repo-a']);
@@ -1117,8 +1116,8 @@ test('fleet snapshots use a new service epoch after server restart', async () =>
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-describe('collaboration protocol4 source collection', () => {
-  test('reads real registered stores without writes and retains organization when WorkExchange is corrupt', () => {
+describe('repository source collection', () => {
+  test('reads registered stores without writes and keeps organization when Decisions are corrupt', () => {
     const repoRoot = realpathSync(mkdtempSync(join(tmpdir(), 'operator-source-read-')));
     expect(spawnSync('git', ['init', '-q', repoRoot]).status).toBe(0);
     const registry = registryHome([{ path: repoRoot, accessMode: 'read_only' }]);
@@ -1129,30 +1128,20 @@ describe('collaboration protocol4 source collection', () => {
       return entry.isDirectory() ? tree(path) : [`${path}:${readFileSync(path).toString('base64')}`];
     }).sort();
     try {
-      writeFileSync(policy, JSON.stringify({ collaboration: { mode: 'off' } }));
+      writeFileSync(policy, JSON.stringify({}));
       const before = tree(repoRoot);
-      const observed = readOperatorCollaborationSnapshot({ env: registry.env, repository_id: registry.ids[0]! });
-      expect(observed.protocol).toBe(4);
-      expect(observed.exchange.status).toBe('observed');
+      const observed = readOperatorRepositorySnapshot({ env: registry.env, repository_id: registry.ids[0]! });
+      expect(observed.protocol).toBe(1);
       expect(observed.organization.status).toBe('observed');
       expect(observed.decisions).toMatchObject({ status: 'observed', snapshot: { entries: [], coverage: { complete: true } } });
       expect(tree(repoRoot)).toEqual(before);
-      writeFileSync(policy, '{invalid-json');
-      const corruptBefore = tree(repoRoot);
-      const partial = readOperatorCollaborationSnapshot({ env: registry.env, repository_id: registry.ids[0]! });
-      expect(partial.exchange.status).toBe('unavailable');
-      expect(partial.organization.status).toBe('observed');
-      expect(tree(repoRoot)).toEqual(corruptBefore);
-      expect(JSON.stringify(partial)).not.toContain(repoRoot);
-      writeFileSync(policy, JSON.stringify({ collaboration: { mode: 'off' } }));
       const decisionsRoot = join(repoRoot, '.git/repo-harness/verified-context/v1/decisions');
       mkdirSync(decisionsRoot, { recursive: true });
       writeFileSync(join(decisionsRoot, 'invalid-entry'), 'corrupt');
       const brokenBefore = tree(repoRoot);
-      const broken = readOperatorCollaborationSnapshot({ env: registry.env, repository_id: registry.ids[0]! });
+      const broken = readOperatorRepositorySnapshot({ env: registry.env, repository_id: registry.ids[0]! });
       expect(broken.decisions.status).toBe('unavailable');
       expect(broken.organization.status).toBe('observed');
-      expect(broken.exchange.status).toBe('observed');
       expect(tree(repoRoot)).toEqual(brokenBefore);
     } finally {
       rmSync(repoRoot, { recursive: true, force: true });
@@ -1164,11 +1153,11 @@ describe('collaboration protocol4 source collection', () => {
 test('Decision cursors are bounded, bind responses and partition single-flight within the shared worker budget', async () => {
   const root = mkdtempSync(join(tmpdir(), 'operator-decision-query-'));
   const calls: Array<string | null> = [];
-  const resolvers: Array<(value: OperatorCollaborationSnapshotV4) => void> = [];
+  const resolvers: Array<(value: OperatorRepositorySnapshotV1) => void> = [];
   const server = await startOperatorServer({ port: 0, static_root: root, max_concurrency: 1,
-    read_collaboration_snapshot: input => { calls.push(input.decision_after ?? null); return new Promise(resolve => resolvers.push(resolve)); },
+    read_repository_snapshot: input => { calls.push(input.decision_after ?? null); return new Promise(resolve => resolvers.push(resolve)); },
   });
-  const url = server.url + '/api/v1/collaboration/repo-a/snapshot';
+  const url = server.url + '/api/v1/repositories/repo-a/snapshot';
   const cursor = 'a'.repeat(64);
   try {
     for (const query of ['?decision_after=', '?decision_after=../secret', '?path=private', `?decision_after=${cursor}&decision_after=${cursor}`]) {
@@ -1181,19 +1170,19 @@ test('Decision cursors are bounded, bind responses and partition single-flight w
     const samePage = fetch(url + '?decision_after=' + cursor);
     await Bun.sleep(30);
     expect(calls).toEqual([null]);
-    resolvers[0]!(unavailableCollaboration('repo-a'));
+    resolvers[0]!(unavailableRepository('repo-a'));
     expect((await first).status).toBe(200);
     await waitFor(() => calls.length === 2, 'next Decision page not started');
     expect(calls).toEqual([null, cursor]);
-    resolvers[1]!({ ...unavailableCollaboration('repo-a'), decision_after: cursor });
+    resolvers[1]!({ ...unavailableRepository('repo-a'), decision_after: cursor });
     expect((await second).status).toBe(200); expect((await samePage).status).toBe(200);
     expect(calls.length).toBe(2);
     const mismatch = fetch(url + '?decision_after=' + cursor);
     await waitFor(() => calls.length === 3, 'mismatch probe not started');
-    resolvers[2]!(unavailableCollaboration('repo-a'));
+    resolvers[2]!(unavailableRepository('repo-a'));
     const refused = await mismatch;
     expect(refused.status).toBe(500);
-    expect(await refused.json()).toMatchObject({ error: { code: 'collaboration_repository_mismatch' } });
+    expect(await refused.json()).toMatchObject({ error: { code: 'repository_repository_mismatch' } });
   } finally { await server.close(); rmSync(root, { recursive: true, force: true }); }
 });
 

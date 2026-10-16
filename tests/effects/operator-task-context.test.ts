@@ -11,7 +11,7 @@ import { startOperatorServer } from '../../src/effects/operator/server';
 import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
 import { leaseOwnerPath } from '../../src/effects/state/coordination-lease-store';
 import * as boardModule from '../../src/effects/state/resolve-board';
-import { readOperatorPlanningSnapshot } from '../../src/effects/operator/collaboration';
+import { readOperatorPlanningSnapshot } from '../../src/effects/operator/repository-snapshot';
 import { decodeOperatorPlanningSnapshot } from '../../src/core/operator/planning-snapshot';
 const roots:string[]=[];
 afterEach(()=>{ for(const root of roots.splice(0)) rmSync(root,{recursive:true,force:true}); });
@@ -87,7 +87,7 @@ test('real HTTP worker returns current context, stale refusal and method/query g
   try {
     const url=`${server.url}/api/v1/fleet/tasks/${f.input.repository_id}/${f.input.task_id}/context`;
     const response=await fetch(url);expect(response.status).toBe(200);expect(decodeOperatorTaskContext(await response.json(),f.input).task.title).toBe(f.task);
-    const planningResponse=await fetch(`${server.url}/api/v1/collaboration/${f.entry.id}/snapshot`);
+    const planningResponse=await fetch(`${server.url}/api/v1/repositories/${f.entry.id}/snapshot`);
     expect(planningResponse.status).toBe(200);
     const envelope=await planningResponse.json() as {protocol:number;planning:{status:string;snapshot:unknown}};
     expect(envelope.protocol).toBe(4);expect(envelope.planning.status).toBe('observed');
