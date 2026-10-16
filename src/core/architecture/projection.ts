@@ -1,9 +1,11 @@
 import {
   ARCHCTX_CAPABILITIES_SCHEMA_VERSION,
+  architectureDebtReportIssues,
   docsAnchorsReportIssues,
   projectionApplyReadbackResultInvariantIssues,
   projectionResultInvariantIssues,
   validateJsonSchema,
+  type ArchitectureDebtReportV1,
   type DocsAnchorsReportV1,
   type Json,
   type ProjectionApplyReadbackResultV1,
@@ -13,6 +15,7 @@ import {
 import projectionResultSchema from 'archctx-contracts/schemas/runtime/projection-result.schema.json';
 import projectionReadbackSchema from 'archctx-contracts/schemas/runtime/projection-apply-readback.schema.json';
 import docsAnchorsSchema from 'archctx-contracts/schemas/runtime/docs-anchors.schema.json';
+import architectureDebtSchema from 'archctx-contracts/schemas/runtime/architecture-debt.schema.json';
 import type { GeneratedSummaryFreshness } from './module-view';
 import { dependencies } from '../../../package.json';
 
@@ -36,7 +39,7 @@ export interface ArchitectureProjectionReadinessV1 {
    * archctx only through it, never through a PATH copy. It is null unless the
    * package and Node runtime resolve.
    */
-  projectionProvider: { provider: ProjectionProvider; state: 'disabled' | 'missing' | 'mismatch' | 'error' | 'ready'; binaryPath: string | null; nodePath: string | null; command: [string, string] | null; version: string | null; reason: string };
+  projectionProvider: { provider: ProjectionProvider; state: 'disabled' | 'missing' | 'mismatch' | 'error' | 'ready'; binaryPath: string | null; nodePath: string | null; command: [string, string] | null; version: string | null; reason: string; reasonCode?: string };
   codeFacts: { requirement: 'required'; state: 'not-evaluated' | 'ready' | 'unavailable' };
   daemonRuntime: { state: 'not-evaluated' | 'compatible' | 'mismatch' | 'error' };
   apply: { mode: ProjectionApplyMode; enabled: boolean };
@@ -112,6 +115,17 @@ export function decodeDocsAnchorsReport(value: unknown): DocsAnchorsReportV1 {
   const report = decode(docsAnchorsSchema, value, 'docs anchors report') as unknown as DocsAnchorsReportV1;
   const issues = docsAnchorsReportIssues(report);
   if (issues.length > 0) throw new Error(`docs anchors report invalid: ${issues.join('; ')}`);
+  return report;
+}
+
+/**
+ * ArchContext owns the architecture debt report contract; this applies its
+ * schema and invariants. The digest binds the whole report, so any change fails.
+ */
+export function decodeArchitectureDebtReport(value: unknown): ArchitectureDebtReportV1 {
+  const report = decode(architectureDebtSchema, value, 'architecture debt report') as unknown as ArchitectureDebtReportV1;
+  const issues = architectureDebtReportIssues(report);
+  if (issues.length > 0) throw new Error(`architecture debt report invalid: ${issues.join('; ')}`);
   return report;
 }
 

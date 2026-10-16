@@ -1042,22 +1042,22 @@ same branch. `check` and `plan` show the effect without writes. The projected
 A capability is owed when one of its owned implementation paths in the review
 subject changed after the last change to
 `docs/architecture/.projection-manifest.json`. Hooks that already resolve
-state reuse its ownership answer; `PostToolUse.bash` and `state owed` run one
-ownership resolution of their own. The rule then runs at most two Git
-commands. It writes no
+state reuse its ownership answer; `PostToolUse.bash` runs one ownership
+resolution of its own. The rule then runs at most two Git commands. It writes no
 queue and no drift cursor. Hooks report it to the Agent as evidence, never as a
 gate. The report names the capability, its module document, new unowned source
 paths and the next step: `repo-harness architecture-projection check --json`,
 then the worker flow of the `repo-harness-architecture` skill.
-`repo-harness state owed --json [--base <ref>]` prints the same rule for the
-review subject against `<ref>` (default: the policy review base). It needs no
-hook, so CI can call it for a pull request diff.
 
-CI uses the rule in two jobs. The PR job `PR architecture freshness (advisory)`
-runs `state owed` against the PR base. When a capability is owed, it runs
-`architecture-projection check --json` and prints warnings with the owed
-capability ids, the stale node ids and the apply command. It never fails the
-PR and is not part of `Required / CI`. The daily job `Daily architecture
+CI checks architecture in two jobs. The PR job `PR architecture freshness
+(advisory)` runs `repo-harness architecture-debt --json --base <PR base>`. It
+prints one warning for each ArchContext debt item whose id is new at the PR
+head, at most 20. Each warning names the item kind, its capability ids or paths
+and its action. One more warning gives the count of the other new items. When
+the head or base coverage is not `complete`, the job log shows the coverage
+reason codes. A coverage gap is not a report of no debt. The job then runs
+`architecture-projection check --json` and warns with the stale node ids and
+the apply command. It never fails the PR and is not part of `Required / CI`. The daily job `Daily architecture
 freshness` fails when the check status is not `noop`. Its repair issue names
 architecture freshness and contains the JSON summary and the matching action
 row from the `repo-harness-check` architecture evidence reference.

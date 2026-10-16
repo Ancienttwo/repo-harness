@@ -11,6 +11,8 @@ responsibilities:
   - Read and migrate the global architecture configuration section.
   - Read the committed architecture model for module views and review prompts.
   - Stop the archctx daemons that archctx lists for a checkout root, by state directory.
+  - Report architecture debt from archctx complete at HEAD and at a base checkout, and list the debt items that are new at HEAD.
+  - Build the CodeGraph index of a checkout with the CodeGraph package that archctx declares.
 source:
   include:
     - "src/effects/architecture/**"
