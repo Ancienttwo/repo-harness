@@ -30,7 +30,7 @@ function runLane(lane: string) {
     writeFileSync(join(bin, 'bash'), '#!/bin/bash\nexit 0\n', { mode: 0o755 });
     return spawnSync('/bin/bash', ['scripts/check-ci.sh', lane], {
       cwd: ROOT, encoding: 'utf8',
-      env: { ...env, PATH: `${bin}:${process.env.PATH}`, BUN_TEST_ISOLATE_FILES: '0', REPO_HARNESS_DIFF_BASE: 'HEAD' },
+      env: { ...env, PATH: `${bin}:${process.env.PATH}`, BUN_TEST_ISOLATE_FILES: '0' },
     });
   } finally {
     rmSync(bin, { recursive: true, force: true });

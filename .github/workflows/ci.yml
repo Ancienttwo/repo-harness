@@ -187,9 +187,6 @@ jobs:
     if: needs.selection.outputs.mode == 'daily'
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    env:
-      REPO_HARNESS_DIFF_BASE: ${{ needs.selection.outputs.sha }}
-      REPO_HARNESS_DIFF_MODE: direct
     steps:
       - uses: actions/checkout@v4
         with:

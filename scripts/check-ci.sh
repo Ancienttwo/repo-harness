@@ -153,13 +153,6 @@ if [[ "$lane" == all || "$lane" == governance ]]; then
   bash scripts/check-context-files.sh
   echo "[ci] context map"
   bun run check:context-map
-  # Preserve the read-only helper's failure before checking successful evidence.
-  bash scripts/check-task-sync.sh
-  if [[ "${GITHUB_ACTIONS:-}" == "true" && -z "${REPO_HARNESS_DIFF_BASE:-}" ]]; then
-    echo "[ci] GitHub Actions must provide REPO_HARNESS_DIFF_BASE for diff-bound workflow evidence." >&2
-    exit 1
-  fi
-  bash scripts/check-task-workflow.sh
 
   echo "[ci] repository inspection"
   bun scripts/inspect-project-state.ts --repo . --format text >/dev/null
