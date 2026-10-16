@@ -169,8 +169,9 @@ export async function reportCI(repo: string, runId: number, api: GitHubAPI, arch
         if (!positive(job.id) || typeof job.check_run_url !== 'string') throw new Error('Failed job has no check identity');
         const check = record(await api(new URL(job.check_run_url).pathname), 'Failed check');
         if (!positive(check.id)) throw new Error('Failed check identity unavailable');
-        await repair(`check-${check.id}`, `${safeText(job.name)}: ${safeText(job.conclusion)}. Check: ${check.html_url ?? job.check_run_url}`,
-          false, job.name === ARCHITECTURE_JOB ? architectureCause() : undefined);
+        // The job name is the repair key: a later attempt or daily run reuses the open issue.
+        await repair(`job:${safeText(job.name)}`, `${safeText(job.name)}: ${safeText(job.conclusion)}. Check: ${check.html_url ?? job.check_run_url}`,
+          true, job.name === ARCHITECTURE_JOB ? architectureCause() : undefined);
       }
     } catch (error) { report.errors.push(`Failure observation incomplete: ${message(error)}`); await repair(`run-${run.id}`, 'Failed run/check observation was incomplete.'); }
   }
