@@ -668,7 +668,7 @@ function collectStateSnapshotFacts(
 function resolveEffectiveStateUnlocked(
   cwd: string,
   nowMs: number,
-  reviewSubject: ReviewSubject,
+  reviewSubjectFor: ReviewSubjectSlot,
   options: { risk?: EffectiveStateRiskInput; authorityOnly?: boolean },
 ): EffectiveState {
   const currentWorktree = safeRealpath(cwd);
@@ -713,9 +713,7 @@ function resolveEffectiveStateUnlocked(
     contractText,
   ));
 
-  // The subject was observed against the review base of an earlier policy
-  // read. A changed review base is an authority change during resolution.
-  if (reviewSubject.target_ref !== policyReviewBase(policy)) throw new StateResolutionUnstableError();
+  const reviewSubject = reviewSubjectFor(policyReviewBase(policy));
   const explicitTargetPaths = options.risk?.targetPaths ?? [];
   const canonicalEditTargetPaths = options.risk?.operationKind === 'edit'
     ? explicitTargetPaths.map((targetPath) => canonicalRepoRelativePath(cwd, targetPath))
@@ -1016,23 +1014,31 @@ function resolveEffectiveStateUnlocked(
 }
 
 /**
- * Observe the Git review subject once per resolution. The subject is an
- * observation, not an authority: the stability and confirm passes compare
- * authority hashes only, so they reuse this subject and do not rebuild it.
+ * Builds the Git review subject for one stability pass. A pass asks for the
+ * subject with the review base of its own policy read. The slot builds it on
+ * the first call, reuses it while the review base stays the same, and builds
+ * it again when the review base changes. Each stability pass takes a new slot,
+ * so each pass observes Git itself. Nothing is cached across resolutions.
  */
-function observeReviewSubject(cwd: string): ReviewSubject {
-  return buildReviewSubject(cwd, { targetRef: policyReviewBase(readWorkflowPolicy(cwd)) });
+type ReviewSubjectSlot = (targetRef: string) => ReviewSubject;
+
+function reviewSubjectSlot(cwd: string): ReviewSubjectSlot {
+  let subject: ReviewSubject | null = null;
+  return (targetRef) => {
+    if (subject === null || subject.target_ref !== targetRef) subject = buildReviewSubject(cwd, { targetRef });
+    return subject;
+  };
 }
 
 /** Evidence is excluded from authority comparisons. Keep partial states private. */
 function resolveAuthoritySourceHashes(
   cwd: string,
   nowMs: number,
-  reviewSubject: ReviewSubject,
+  reviewSubjectFor: ReviewSubjectSlot,
   risk?: EffectiveStateRiskInput,
 ): Readonly<Record<string, string>> {
   return authoritySourceHashes(
-    resolveEffectiveStateUnlocked(cwd, nowMs, reviewSubject, { risk, authorityOnly: true }).source_hashes,
+    resolveEffectiveStateUnlocked(cwd, nowMs, reviewSubjectFor, { risk, authorityOnly: true }).source_hashes,
   );
 }
 
@@ -1056,16 +1062,18 @@ export class StateResolutionUnstableError extends Error {
  * `confirmed.source_hashes`; a mismatch means a source mutated after the
  * stability loop returned but before allocation, so it throws
  * `StateVersionConfirmMismatchError` with no owner write and no cache
- * publish -- `resolveEffectiveState` below decides whether to retry.
+ * publish -- `resolveEffectiveState` below decides whether to retry. The
+ * confirm callback reuses the review subject slot of the confirmed pass,
+ * because it compares authority hashes for the commit window only. The slot
+ * still builds the subject again if the policy review base changed.
  */
 function resolveAndCommitEffectiveState(
   cwd: string,
   nowMs: number,
-  reviewSubject: ReviewSubject,
   risk: EffectiveStateRiskInput | undefined,
   publicationEffects: EffectiveStatePublicationEffects | undefined,
 ): EffectiveState {
-  const confirmed = resolveStableEffectiveState(cwd, nowMs, reviewSubject, risk);
+  const { state: confirmed, reviewSubjectFor } = resolveStableEffectiveState(cwd, nowMs, risk);
   let finalized: EffectiveState | null = null;
   commitStateVersionAfter(cwd, confirmed.state_revision, (version) => {
     const candidate = { ...confirmed, state_version: version };
@@ -1073,7 +1081,7 @@ function resolveAndCommitEffectiveState(
     finalized = candidate;
     return publication;
   }, publicationEffects?.version, () => {
-    return JSON.stringify(resolveAuthoritySourceHashes(cwd, nowMs, reviewSubject, risk))
+    return JSON.stringify(resolveAuthoritySourceHashes(cwd, nowMs, reviewSubjectFor, risk))
       === JSON.stringify(authoritySourceHashes(confirmed.source_hashes));
   });
   if (finalized === null) throw new Error('effective-state publication did not produce a final state');
@@ -1087,21 +1095,20 @@ export function resolveEffectiveState(
   publicationEffects?: EffectiveStatePublicationEffects,
 ): EffectiveState {
   return withStateLock(cwd, () => {
-    const reviewSubject = observeReviewSubject(cwd);
     try {
-      return resolveAndCommitEffectiveState(cwd, nowMs, reviewSubject, risk, publicationEffects);
+      return resolveAndCommitEffectiveState(cwd, nowMs, risk, publicationEffects);
     } catch (error) {
       if (!(error instanceof StateVersionConfirmMismatchError)) throw error;
     }
     // One bounded outer retry of the whole stable-resolve + commit sequence:
-    // a fresh stability loop re-reads authority sources (now reflecting whatever
-    // mutated the first attempt's confirm window) and reuses the review
-    // subject observed under this lock; a fresh commit attempt
-    // re-checks its own window. A second mismatch here means sources kept
-    // changing across the retry too, so this reuses the existing
-    // stability-exhausted error rather than inventing new vocabulary.
+    // a fresh stability loop re-reads sources and each of its passes observes
+    // the review subject again (now reflecting whatever mutated the first
+    // attempt's confirm window), and a fresh commit attempt re-checks its own
+    // window. A second mismatch here means sources kept changing across the
+    // retry too, so this reuses the existing stability-exhausted error rather
+    // than inventing new vocabulary.
     try {
-      return resolveAndCommitEffectiveState(cwd, nowMs, reviewSubject, risk, publicationEffects);
+      return resolveAndCommitEffectiveState(cwd, nowMs, risk, publicationEffects);
     } catch (error) {
       if (error instanceof StateVersionConfirmMismatchError) {
         throw new StateResolutionUnstableError();
@@ -1118,24 +1125,30 @@ export function resolveEffectiveStateReadOnly(
   observation?: ReadonlyObservationIO,
 ): EffectiveState {
   const collect = () => {
-    const confirmed = resolveStableEffectiveState(cwd, nowMs, observeReviewSubject(cwd), risk);
+    const { state: confirmed } = resolveStableEffectiveState(cwd, nowMs, risk);
     return { ...confirmed, state_version: currentStateVersion(cwd) };
   };
   return observation ? withReadonlyObservation(observation, collect) : collect();
 }
 
+/**
+ * One stable attempt. Each stability pass (the authority pass and each
+ * confirmed pass) takes a new review subject slot and observes Git once. The
+ * published state therefore uses a subject from the same pass as its other
+ * reads. The slot of the confirmed pass is returned for the confirm callback.
+ */
 function resolveStableEffectiveState(
   cwd: string,
   nowMs: number,
-  reviewSubject: ReviewSubject,
   risk?: EffectiveStateRiskInput,
-): EffectiveState {
-  let authority = resolveAuthoritySourceHashes(cwd, nowMs, reviewSubject, risk);
+): { state: EffectiveState; reviewSubjectFor: ReviewSubjectSlot } {
+  let authority = resolveAuthoritySourceHashes(cwd, nowMs, reviewSubjectSlot(cwd), risk);
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    const confirmed = resolveEffectiveStateUnlocked(cwd, nowMs, reviewSubject, { risk });
+    const reviewSubjectFor = reviewSubjectSlot(cwd);
+    const confirmed = resolveEffectiveStateUnlocked(cwd, nowMs, reviewSubjectFor, { risk });
     if (JSON.stringify(authority)
       === JSON.stringify(authoritySourceHashes(confirmed.source_hashes))) {
-      return confirmed;
+      return { state: confirmed, reviewSubjectFor };
     }
     authority = authoritySourceHashes(confirmed.source_hashes);
   }
