@@ -158,6 +158,38 @@ function writeActiveSprintFixture(cwd: string, sprintRelPath: string) {
 }
 
 describe("sprint-backlog helper", () => {
+  // Path existence is not identity: a downstream application can have its own
+  // src/cli/index.ts. Only the repo-harness package itself runs its source CLI.
+  for (const packageName of ["downstream-app", "repo-harness"]) {
+    test(`start-task with package ${packageName} picks ${packageName === "repo-harness" ? "the source CLI" : "the CLI on PATH"}`, () => {
+      const cwd = tmpWorkspace("sprint-backlog-cli-identity");
+      const bin = realpathSync(mkdtempSync(join(tmpdir(), "sprint-backlog-path-cli-")));
+      try {
+        copySprintHelpers(cwd, ["sprint-backlog.sh"]);
+        writeActiveSprintFixture(cwd, "plans/sprints/20260610-0000-fixture-sprint.sprint.md");
+        const sourceLog = join(cwd, "source-cli.log");
+        const pathLog = join(bin, "path-cli.log");
+        mkdirSync(join(cwd, "src/cli"), { recursive: true });
+        writeFileSync(join(cwd, "package.json"), JSON.stringify({ name: packageName, private: true }));
+        writeFileSync(join(cwd, "src/cli/index.ts"), `require("fs").appendFileSync(${JSON.stringify(sourceLog)}, process.argv.slice(2).join(" ") + "\\n"); process.exit(7);\n`);
+        writeFileSync(join(bin, "repo-harness"), `#!/bin/bash\nprintf '%s\\n' "$*" >> ${JSON.stringify(pathLog)}\nexit 7\n`);
+        chmodSync(join(bin, "repo-harness"), 0o755);
+        commitFixture(cwd);
+        const start = run("bash", ["scripts/sprint-backlog.sh", "start-task", "--task", "task-a"], cwd, {
+          REPO_HARNESS_CLI_BIN: "",
+          PATH: `${bin}:${process.env.PATH}`,
+        });
+        expect(start.status).not.toBe(0);
+        const [chosen, other] = packageName === "repo-harness" ? [sourceLog, pathLog] : [pathLog, sourceLog];
+        expect(readFileSync(chosen, "utf-8")).toStartWith("sprint identify --task task-a");
+        expect(existsSync(other)).toBe(false);
+      } finally {
+        rmSync(cwd, { recursive: true, force: true });
+        rmSync(bin, { recursive: true, force: true });
+      }
+    });
+  }
+
   for (const command of ["status", "next"]) {
     for (const pending of [true, false]) {
       test(`${command} consumes a long backlog with ${pending ? "pending" : "completed"} rows`, () => {
