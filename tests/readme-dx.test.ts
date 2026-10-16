@@ -40,39 +40,23 @@ function isAllowedRuntimeReference(file: string, line: string): boolean {
 }
 
 describe("README DX contract", () => {
-  test("localized READMEs track the current English release surface", () => {
+  test("localized READMEs are short landing pages that defer to README.md", () => {
     const languageSwitcher =
       "[English](README.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja.md) | [Français](README.fr.md) | [Español](README.es.md)";
 
     for (const file of LOCALIZED_READMES) {
       const localized = read(file);
 
-      // SSD-06: the GPT Pro hero image reference is dropped from every
-      // README (the image file itself stays on disk, undeleted, per the
-      // plan's explicit "update or drop the image reference" choice); the
-      // diagram depicted the retired repo-harness-gptpro-branded flow.
-      expect(localized).toContain(PACKAGE_VERSION);
-      expect(localized).toContain(`repo-harness@${PACKAGE_VERSION}`);
-      expect(localized).toContain(`repo-harness@${PACKAGE_VERSION}+template@${PACKAGE_VERSION}`);
-      expect(localized).toContain("repo-harness update");
-      expect(localized).toContain("repo-harness init");
-      expect(localized).toContain("repo-harness docs list");
-      // #696 step 1 moved the route table to hook-operations.md; every README links to it.
-      expect(localized).toContain("docs/reference-configs/hook-operations.md");
-      expect(localized).not.toContain("| Route |");
-      // SSD-xx: "Generated vs Self-Hosted Hook Projection", "Package Manager
-      // Defaults", "Runtime Profiles", and the benchmark:skills eval command
-      // example all moved into docs/reference-configs (harness-overview.md,
-      // evals-checks.md) per the approved README slim-down; they are no
-      // longer README content to pin. Pin the install commands and the
-      // five-language switcher instead, since every locale must keep them.
+      expect(localized.trimEnd().split("\n").length, file).toBeLessThanOrEqual(60);
       expect(localized).toContain(languageSwitcher);
       expect(localized).toContain(
         "curl -fsSL https://raw.githubusercontent.com/Ancienttwo/repo-harness/main/install.sh | sh",
       );
       expect(localized).toContain("bunx repo-harness@latest install");
-      expect(localized).not.toContain("0.5.0");
-      expect(localized).not.toContain("0.2.1");
+      expect(localized).toContain("repo-harness init --dry-run");
+      expect(localized).toContain("](README.md)");
+      // The landing page carries no release version, so a release edits README.md only.
+      expect(localized).not.toContain(PACKAGE_VERSION);
       expect(localized.toLowerCase()).not.toContain("gstack");
     }
   });
