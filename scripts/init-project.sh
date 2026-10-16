@@ -268,19 +268,8 @@ EOF
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
 EOF
 
-    cat > tasks/lessons.md << EOF
-# Lessons Learned (Self-Improvement Loop)
-
-> Capture correction-derived prevention rules here.
-> Promote repeated patterns into durable project rules during spa day.
-
-## Template
-- Date:
-- Triggered by correction:
-- Mistake pattern:
-- Prevention rule:
-- Where to apply next time:
-EOF
+    # Adoption writes the same contract template, so every new ledger uses one record format.
+    pi_workflow_contract_query_lines "$ASSETS_WORKFLOW_CONTRACT" "adoptionTemplates.files.lessonsLog.lines" > tasks/lessons.md
 
     pi_install_templates "$PWD" "$ASSETS_TEMPLATES_DIR" "apply"
 

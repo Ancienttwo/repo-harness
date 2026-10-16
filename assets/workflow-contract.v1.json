@@ -385,12 +385,20 @@
         "lines": [
           "# Lessons",
           "",
-          "Correction-derived rules that should influence future repo work.",
+          "This file is the lessons ledger. For its format and rules, run `repo-harness docs show agentic-development-flow` and read the Lessons Retro section.",
           "",
-          "## Active Lessons",
+          "## Template",
           "",
-          "- (none yet)",
-          ""
+          "- Date:",
+          "- Name:",
+          "- Mistake pattern:",
+          "- Prevention rule:",
+          "- Enforced by:",
+          "- Why:",
+          "- Triggered by correction:",
+          "- Seen:",
+          "",
+          "## Entries"
         ]
       }
     }
