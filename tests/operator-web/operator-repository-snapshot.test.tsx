@@ -9,7 +9,7 @@ import { Window } from 'happy-dom';
 
 import { OperatorApp } from '../../src/operator-web/App';
 import { fetchOperatorRepositorySnapshot } from '../../src/operator-web/fleet-api';
-import { repositorySnapshot, repositoryObservationFixture, fixtureTasks, stableSnapshot } from '../../src/operator-web/fixture';
+import { repositorySnapshot, repositoryObservationFixture, fixtureTasks, planningObservationFixture, taskContextFixture, taskActivityFixture, stableSnapshot } from '../../src/operator-web/fixture';
 import { translate } from '../../src/operator-web/i18n';
 import {
   decodeOperatorRepositorySnapshot,
@@ -80,11 +80,11 @@ afterEach(async () => {
   window.close();
 });
 
-function organizationBoardFixture() {
+function organizationBoardFixture(repositoryId = 'repo_a5b76eee64af71c3') {
   const hash = `sha256:${'a'.repeat(64)}`;
   const engineerId = 'engineer:capability.runtime-harness.collaboration';
   const overlay = buildEngineeringOverlaySnapshot({
-    repository_id: 'repo_a5b76eee64af71c3', registry_revision: hash, observed_at: '2026-09-22T07:00:00.000Z', snapshot_consistency: 'stable',
+    repository_id: repositoryId, registry_revision: hash, observed_at: '2026-09-22T07:00:00.000Z', snapshot_consistency: 'stable',
     components: (['profiles', 'bindings', 'claims', 'messages', 'runtime_effects'] as const).map(component => ({ component, support: 'available', observation_before: hash, observation_after: hash })),
     engineers: [{ engineer_id: engineerId, capability_id: 'capability.runtime-harness.collaboration', engineer_contract_revision: hash,
       binding: { support: 'available', state: 'active', revision: hash, value: { binding_id: '11111111-1111-4111-8111-111111111111', binding_generation: 2, engineer_contract_revision: hash, provider: 'codex', provider_thread_id: 'private-thread', host_id: 'private-host', observation: 'unknown' } },
@@ -231,5 +231,52 @@ describe('repository snapshot transport', () => {
     try {
       await expect(fetchOperatorRepositorySnapshot(repositorySnapshot.repository_id)).rejects.toMatchObject({ code: 'operator_repository_payload_invalid' });
     } finally { globalThis.fetch = original; }
+  });
+});
+
+
+describe('repository snapshot failure recovery', () => {
+  test('keeps task details usable after failure and retries all observation sources without losing selection', async () => {
+    const repository = stableSnapshot.repositories[0]!;
+    const planning = planningObservationFixture(repository.repository_id, repository.cards);
+    const board = organizationBoardFixture(repository.repository_id);
+    const organization = projectOperatorOrganizationSnapshot(board.overlay, board.attention);
+    const recovered: OperatorRepositorySnapshotV1 = {
+      ...decisionEnvelope(repository.repository_id),
+      planning: { status: 'observed', observed_at: planning.observation.observed_at, snapshot: planning },
+      organization: { status: 'observed', observed_at: organization.observed_at, snapshot: organization },
+    };
+    const asked: string[] = [];
+    await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en"
+      fetchSnapshot={async () => stableSnapshot}
+      readTaskContext={async request => taskContextFixture(request)}
+      readTaskActivity={async request => taskActivityFixture(request)}
+      fetchRepositorySnapshot={async repositoryId => {
+        asked.push(repositoryId);
+        if (asked.length === 1) throw { code: 'repository_snapshot_unavailable', message: 'Repository sources are unavailable.', next_action: 'Refresh.' };
+        return recovered;
+      }} />);
+    await act(async () => buttonWithText(fixtureTasks.blocked.task_label).click());
+    const detail = () => document.querySelector('.detail-pane')!;
+    expect(asked).toEqual([repository.repository_id]);
+    expect(document.querySelector('.organization-summary')?.textContent).toContain(translate('en', 'org.sourceUnavailable'));
+    expect(document.querySelector('.decision-summary')?.textContent).not.toContain('First original question');
+    expect(detail().textContent).toContain('The base branch moved after verification');
+    expect(detail().querySelector('[data-slot="composer"]')).toBeNull();
+    const selectedSearch = window.location.search;
+    const tab = (name: string) => act(async () => document.querySelector<HTMLButtonElement>(`#view-tab-${name}`)!.click());
+    await tab('planning');
+    expect(document.querySelector('.planning-view')?.textContent).toContain(translate('en', 'planning.unavailable'));
+    await tab('organization');
+    await act(async () => buttonWithText('Refresh').click());
+    expect(asked).toEqual([repository.repository_id, repository.repository_id]);
+    expect(window.location.search).toBe(selectedSearch);
+    expect(detail().querySelector('#detail-pane-title')?.textContent).toBe(fixtureTasks.blocked.task_label);
+    expect(document.querySelector('.organization-summary')?.textContent).toContain(organization.engineers[0]!.engineer_id);
+    expect(document.querySelector('.decision-summary')?.textContent).toContain('First original question');
+    await tab('planning');
+    expect(document.querySelector(`[data-planning-task="${fixtureTasks.blocked.task_id}"]`)).not.toBeNull();
+    expect(window.location.search).toBe(selectedSearch);
+    expect(detail().querySelector('#detail-pane-title')?.textContent).toBe(fixtureTasks.blocked.task_label);
   });
 });
