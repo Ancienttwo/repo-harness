@@ -7,7 +7,7 @@
 
 export const SKILL_SURFACE_CATALOG_VERSION = 2 as const;
 
-export const SKILL_SURFACE_HOSTS = ["claude", "codex", "pi"] as const;
+export const SKILL_SURFACE_HOSTS = ["claude", "codex"] as const;
 export type SkillSurfaceHost = (typeof SKILL_SURFACE_HOSTS)[number];
 
 export const SKILL_SURFACE_PROFILES = ["minimal", "full"] as const;
@@ -76,7 +76,6 @@ export interface SkillSurfacePackage {
 export interface SkillSurfaceHostPlacements {
   readonly claude: readonly string[];
   readonly codex: readonly string[];
-  readonly pi: readonly string[];
 }
 
 export interface SkillSurfaceExpectedProjections {
@@ -228,7 +227,7 @@ function computeHostSkillPlacements(
   packages: readonly SkillSurfacePackage[],
   profile: SkillSurfaceProfile | undefined,
 ): SkillSurfaceHostPlacements {
-  const placements: Record<SkillSurfaceHost, string[]> = { claude: [], codex: [], pi: [] };
+  const placements: Record<SkillSurfaceHost, string[]> = { claude: [], codex: [] };
   for (const pkg of packages) {
     if (pkg.kind !== "provider-skill") continue;
     if (profile !== undefined && !pkg.profiles.includes(profile)) continue;
@@ -458,20 +457,18 @@ function validateExpectedProjections(
     if (
       !isRecord(hostPlacement) ||
       !isStringArray(hostPlacement.claude) ||
-      !isStringArray(hostPlacement.codex) ||
-      !isStringArray(hostPlacement.pi)
+      !isStringArray(hostPlacement.codex)
     ) {
       diagnostics.push(diagnostic(
         "EXPECTED_PROJECTIONS_REQUIRED",
         `expectedProjections.hostSkillPlacementsByProfile.${profile}`,
-        `expectedProjections.hostSkillPlacementsByProfile.${profile} must have claude, codex and pi string arrays`,
+        `expectedProjections.hostSkillPlacementsByProfile.${profile} must have claude and codex string arrays`,
       ));
       shapeOk = false;
     } else {
       hostSkillPlacementsByProfile[profile] = {
         claude: hostPlacement.claude as string[],
         codex: hostPlacement.codex as string[],
-        pi: hostPlacement.pi as string[],
       };
     }
   }
