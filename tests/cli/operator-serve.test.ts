@@ -496,7 +496,9 @@ describe('operator serve command and HTTP boundary', () => {
       port: 0,
       static_root: staticRoot,
       max_concurrency: 1,
-      timeout_ms: 1_000,
+      // Real Worker and Git startup share this deadline under the eight-file CI load.
+      // Injected-reader tests above retain their one-second deadlines.
+      timeout_ms: 5_000,
       env: registry.env,
       collect_fleet_board: async (options) => snapshot(options?.sequence ?? 1),
     });
@@ -507,7 +509,7 @@ describe('operator serve command and HTTP boundary', () => {
       const startedAt = Date.now();
       const url = `${server.url}/api/v1/repositories/${registry.ids[0]!}/snapshot`;
       const timedOut = await fetch(url);
-      expect(Date.now() - startedAt).toBeLessThan(2_500);
+      expect(Date.now() - startedAt).toBeLessThan(6_500);
       expect(timedOut.status).toBe(503);
       expect(await timedOut.json()).toMatchObject({ error: { code: 'repository_snapshot_timeout' } });
       const busy = await fetch(url);
