@@ -1,26 +1,25 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
-  OPERATOR_COLLABORATION_PROTOCOL,
-  OPERATOR_COLLABORATION_SNAPSHOT_KIND,
-  type OperatorCollaborationSnapshotV4,
-} from '../../src/core/operator/collaboration-snapshot';
+  OPERATOR_REPOSITORY_PROTOCOL,
+  OPERATOR_REPOSITORY_SNAPSHOT_KIND,
+  type OperatorRepositorySnapshotV1,
+} from '../../src/core/operator/repository-snapshot';
 import {
-  OperatorCollaborationError,
-  assertOperatorCollaborationSnapshotIdentity,
-} from '../../src/effects/operator/collaboration';
+  OperatorRepositoryError,
+  assertOperatorRepositorySnapshotIdentity,
+} from '../../src/effects/operator/repository-snapshot';
 import {
   OPERATOR_API_PATH_PREFIX,
   OPERATOR_ARCHITECTURE_MODULES_ROUTE,
   OPERATOR_ARCHITECTURE_MODULE_ROUTE,
   OPERATOR_ARCHITECTURE_REVIEW_PROMPT_ROUTE,
-  OPERATOR_COLLABORATION_SNAPSHOT_ROUTE,
+  OPERATOR_REPOSITORY_SNAPSHOT_ROUTE,
   OPERATOR_DEV_ACTIVITY_PATH,
   OPERATOR_SETUP_PATH,
   OPERATOR_FLEET_SNAPSHOT_PATH,
   OPERATOR_HEALTH_PATH,
   OPERATOR_NOTIFY_STATUS_PATH,
-  OPERATOR_PIPELINES_PATH,
   OPERATOR_RUNTIME_STATUS_PATH,
   OPERATOR_ROUTES,
   OPERATOR_STATIC_ASSET_PATTERN,
@@ -39,19 +38,18 @@ function writeRouteIds(routes: readonly OperatorRouteV1[]): readonly string[] {
   return routes.filter((route) => route.write || !['GET', 'HEAD'].includes(route.method)).map((route) => route.id);
 }
 
-function collaborationSnapshot(
-  overrides: Partial<OperatorCollaborationSnapshotV4> = {},
-): OperatorCollaborationSnapshotV4 {
+function repositorySnapshot(
+  overrides: Partial<OperatorRepositorySnapshotV1> = {},
+): OperatorRepositorySnapshotV1 {
   return {
-    protocol: OPERATOR_COLLABORATION_PROTOCOL,
-    kind: OPERATOR_COLLABORATION_SNAPSHOT_KIND,
+    protocol: OPERATOR_REPOSITORY_PROTOCOL,
+    kind: OPERATOR_REPOSITORY_SNAPSHOT_KIND,
     repository_id: 'repo-a', decision_after: null,
     planning: { status: 'unavailable', observed_at: '2026-09-22T00:00:00.000Z', code: 'source_unavailable' },
     decisions: { status: 'unavailable', observed_at: '2026-09-22T00:00:00.000Z', code: 'source_unavailable' },
-    exchange: { status: 'unavailable', observed_at: '2026-09-22T00:00:00.000Z', code: 'source_unavailable' },
     organization: { status: 'unavailable', observed_at: '2026-09-22T00:00:00.000Z', code: 'source_unavailable' },
     ...overrides,
-  } as OperatorCollaborationSnapshotV4;
+  } as OperatorRepositorySnapshotV1;
 }
 
 describe('operator structural write boundary', () => {
@@ -79,12 +77,11 @@ describe('operator structural write boundary', () => {
     expect([...patterns.keys()]).toEqual([
       'health',
       'fleet_snapshot',
-      'collaboration_snapshot',
+      'repository_snapshot',
       'task_context',
       'task_activity',
       'task_diff',
       'runtime_status',
-      'pipelines',
       'notify_status',
       'dev_activity',
       'setup',
@@ -95,12 +92,11 @@ describe('operator structural write boundary', () => {
     ]);
     expect(patterns.get('health')).toBe(OPERATOR_HEALTH_PATH);
     expect(patterns.get('fleet_snapshot')).toBe(OPERATOR_FLEET_SNAPSHOT_PATH);
-    expect(patterns.get('collaboration_snapshot')).toBe(OPERATOR_COLLABORATION_SNAPSHOT_ROUTE.source);
+    expect(patterns.get('repository_snapshot')).toBe(OPERATOR_REPOSITORY_SNAPSHOT_ROUTE.source);
     expect(patterns.get('task_context')).toBe(OPERATOR_TASK_CONTEXT_ROUTE.source);
     expect(patterns.get('task_activity')).toBe(OPERATOR_TASK_ACTIVITY_ROUTE.source);
     expect(patterns.get('task_diff')).toBe(OPERATOR_TASK_DIFF_ROUTE.source);
     expect(patterns.get('runtime_status')).toBe(OPERATOR_RUNTIME_STATUS_PATH);
-    expect(patterns.get('pipelines')).toBe(OPERATOR_PIPELINES_PATH);
     expect(patterns.get('notify_status')).toBe(OPERATOR_NOTIFY_STATUS_PATH);
     expect(patterns.get('dev_activity')).toBe(OPERATOR_DEV_ACTIVITY_PATH);
     expect(OPERATOR_ROUTES.find(route => route.id === 'dev_activity')).toEqual({ id: 'dev_activity', method: 'GET', pattern: '/api/v1/dev-activity', write: false });
@@ -114,23 +110,23 @@ describe('operator structural write boundary', () => {
     expect(OPERATOR_FLEET_SNAPSHOT_PATH.startsWith(OPERATOR_API_PATH_PREFIX)).toBe(true);
   });
 
-  test('refuses a collaboration snapshot that does not echo the requested identity', () => {
-    expect(() => assertOperatorCollaborationSnapshotIdentity(collaborationSnapshot(), 'repo-a')).not.toThrow();
+  test('refuses a repository snapshot that does not echo the requested identity', () => {
+    expect(() => assertOperatorRepositorySnapshotIdentity(repositorySnapshot(), 'repo-a')).not.toThrow();
 
     for (const [snapshot, requested] of [
-      [collaborationSnapshot({ repository_id: 'repo-b' }), 'repo-a'],
-      [collaborationSnapshot({ protocol: 99 as never }), 'repo-a'],
-      [collaborationSnapshot({ kind: 'operator_fleet_snapshot' as never }), 'repo-a'],
-      [{} as OperatorCollaborationSnapshotV4, 'repo-a'],
+      [repositorySnapshot({ repository_id: 'repo-b' }), 'repo-a'],
+      [repositorySnapshot({ protocol: 99 as never }), 'repo-a'],
+      [repositorySnapshot({ kind: 'operator_fleet_snapshot' as never }), 'repo-a'],
+      [{} as OperatorRepositorySnapshotV1, 'repo-a'],
     ] as const) {
       let thrown: unknown;
       try {
-        assertOperatorCollaborationSnapshotIdentity(snapshot, requested);
+        assertOperatorRepositorySnapshotIdentity(snapshot, requested);
       } catch (error) {
         thrown = error;
       }
-      expect(thrown).toBeInstanceOf(OperatorCollaborationError);
-      expect((thrown as OperatorCollaborationError).code).toBe('collaboration_repository_mismatch');
+      expect(thrown).toBeInstanceOf(OperatorRepositoryError);
+      expect((thrown as OperatorRepositoryError).code).toBe('repository_mismatch');
     }
   });
 });

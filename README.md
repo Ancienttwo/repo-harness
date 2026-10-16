@@ -224,8 +224,7 @@ and everything in [Task Workflow](#task-workflow) belongs here. Nothing below is
 required to use it.
 
 **Layer 2 — Bot-scheduled programs.** Long-running work that outlives a
-session: a collaboration plane where several Module Engineers exchange signals
-and handoffs, and engineer task offers held through renewable leases. The Bot
+session: engineer task offers held through renewable leases. The Bot
 decides what to schedule. repo-harness supplies the tools and the evidence. See
 [Authorized Programs](#authorized-programs).
 
@@ -247,7 +246,7 @@ same plan, contract, and review artifacts a human would have written.
 | **File-backed sessions** | Plans, contracts, checks, and handoffs live in the repo, so a new session resumes from artifacts instead of a chat thread |
 | **Typed hook runtime** | 12 public routes (Claude 9, Codex 12, Pi 6), each bound to exactly one typed in-process handler, with fail-closed guards at the edit boundary |
 | **Plan → Contract → Review** | One lifecycle from approved plan to projected contract, isolated worktree, structured evidence, and a reviewable closeout |
-| **Bot-scheduled programs** | Collaboration programs with engineer task offers and renewable leases; the Bot schedules, repo-harness supplies tools and evidence |
+| **Bot-scheduled programs** | Engineer task offers with renewable leases; the Bot schedules, repo-harness supplies tools and evidence |
 | **Progressive context loading** | A ~12KB stable root context plus ~1KB capability contracts loaded only for the files actually being touched |
 | **CodeGraph integration** | Structural queries (callers, callees, definitions) answered from a pre-built index instead of repeated grep-and-read passes |
 | **MCP planner sidecar** | ChatGPT reads real repo state and writes PRD/Sprint/Goal artifacts; Codex executes them, with no default source-code write access |
@@ -393,30 +392,6 @@ ArchContext measures structural problems such as cycles and direction
 violations. repo-harness shows each suggestion with its metrics, bounded evidence
 and module statistics, and records the user decision. It never executes a refactor; an
 accepted suggestion goes through the normal plan and pull request workflow.
-
-### Collaboration plane
-
-```bash
-repo-harness collaboration exchange              # one Work Exchange snapshot
-repo-harness collaboration threads               # lanes, hotspot scores, opportunities
-repo-harness collaboration post                  # append one CoordinationSignalV1
-repo-harness collaboration handoff publish|list|adopt
-repo-harness collaboration packet build|read
-```
-
-Several Module Engineers read one Work Exchange and publish bounded coordination
-records. Handoff adoption is deliberately non-exclusive: it grants no Task,
-Claim, or Lease.
-
-The substrate keeps one Module Engineer and one writer. Bounded read-only Workers exchange untrusted signals and explicit handoffs. The source-checkout C9 canary is retired. Its historical result did not support multiple reader seats. Shared collaboration runtime tests remain active. Persistent same-capability `EngineerSeatV2`, an independent Review marketplace, and unattended Merge remain inactive.
-See [`20260830-c9-real-multi-agent-canary.md`](https://github.com/Ancienttwo/repo-harness/blob/archive/docs-researches-20261004/docs/researches/20260830-c9-real-multi-agent-canary.md).
-
-### Pipeline observer
-
-`repo-harness pipeline` records pipeline facts and publishes an immutable board.
-It does not change dispatch, delivery, merge or cleanup.
-The organization tab reads `/api/v1/pipelines` with GET or HEAD only.
-See [pipeline observer operations](docs/reference-configs/pipeline-observer.md).
 
 ### External source intake
 

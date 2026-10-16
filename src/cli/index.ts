@@ -1,6 +1,5 @@
 #!/usr/bin/env bun
 import { buildStrategyCommand } from './commands/strategy';
-import { buildPipelineCommand } from './commands/pipeline';
 import { buildModuleCommand } from './commands/module';
 import { withRuntimeHostTransactionLock } from './installer/runtime-host-lock';
 import { captureConfigurationRestores } from './installer/configuration-ownership';
@@ -49,7 +48,6 @@ import { buildEngineerCommand } from './commands/engineer';
 import { buildArchitectureProjectionCommand } from './commands/architecture-projection';
 import { buildIntegrationCommand } from './commands/integration';
 import { buildDelegationCommand } from './commands/delegation';
-import { buildCollaborationCommand } from './commands/collaboration';
 import { buildVerifiedContextCommand } from './commands/verified-context';
 import { buildInterfaceChangeCommand } from './commands/interface-change';
 import { buildExternalSourceCommand } from './commands/external-source';
@@ -801,7 +799,6 @@ export function buildProgram(): Command {
   program.addCommand(buildReviewCommand());
   program.addCommand(buildTaskAgentCommand());
   program.addCommand(buildPmCommand());
-  program.addCommand(buildPipelineCommand());
   program.addCommand(buildModuleCommand());
   program.addCommand(buildSetupCommand());
   program.addCommand(buildUpgradeCommand());
@@ -850,7 +847,6 @@ export function buildProgram(): Command {
   program.addCommand(buildArchitectureProjectionCommand());
   program.addCommand(buildIntegrationCommand());
   program.addCommand(buildDelegationCommand());
-  program.addCommand(buildCollaborationCommand());
   program.addCommand(buildStrategyCommand());
   program.addCommand(buildVerifiedContextCommand());
   program.addCommand(buildInterfaceChangeCommand());

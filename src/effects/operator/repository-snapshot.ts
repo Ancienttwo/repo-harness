@@ -15,37 +15,35 @@ import { decodeOperatorOrganizationSnapshot, projectOperatorOrganizationSnapshot
 import { validateEngineeringOverlaySnapshot, validateOrganizationAttentionSnapshot } from '../../core/engineers/engineering-overlay';
 import { collectEngineeringBoard } from '../engineers/engineering-overlay';
 import {
-  OPERATOR_COLLABORATION_PROTOCOL,
-  OPERATOR_COLLABORATION_SNAPSHOT_KIND,
-  projectOperatorWorkExchangeSnapshot,
-  type OperatorCollaborationSnapshotV4,
-} from '../../core/operator/collaboration-snapshot';
-import { collectCollaborativeWorkExchange } from '../collaboration/work-exchange';
+  OPERATOR_REPOSITORY_PROTOCOL,
+  OPERATOR_REPOSITORY_SNAPSHOT_KIND,
+  type OperatorRepositorySnapshotV1,
+} from '../../core/operator/repository-snapshot';
 import { readRepoHarnessRegistryStrictSnapshot } from '../repo-registry';
 
-/** Resolve only registered repository IDs. WorkExchange and Organization are
+/** Resolve only registered repository IDs. Planning, Decision and Organization are
  * independent stored observations; one unavailable source cannot become an
  * empty result or hide the other. Registry/identity failures refuse the whole
  * response. No reader acquires, binds, delivers, acknowledges or runs a provider.
  */
-export type OperatorCollaborationErrorCode =
+export type OperatorRepositoryErrorCode =
   | 'registry_unavailable'
   | 'repository_not_found'
-  | 'collaboration_snapshot_unavailable'
-  | 'collaboration_repository_mismatch';
+  | 'repository_snapshot_unavailable'
+  | 'repository_mismatch';
 
-export class OperatorCollaborationError extends Error {
+export class OperatorRepositoryError extends Error {
   constructor(
-    readonly code: OperatorCollaborationErrorCode,
+    readonly code: OperatorRepositoryErrorCode,
     message: string,
     readonly cause?: unknown,
   ) {
     super(message);
-    this.name = 'OperatorCollaborationError';
+    this.name = 'OperatorRepositoryError';
   }
 }
 
-export interface ReadOperatorCollaborationSnapshotInput {
+export interface ReadOperatorRepositorySnapshotInput {
   readonly env?: NodeJS.ProcessEnv;
   readonly repository_id: string;
   readonly decision_after?: string | null;
@@ -61,30 +59,30 @@ export interface ReadOperatorCollaborationSnapshotInput {
  * on the far side of the process boundary, where an unrelated or replayed
  * message could otherwise be accepted as this repository's answer.
  */
-export function assertOperatorCollaborationSnapshotIdentity(
-  snapshot: OperatorCollaborationSnapshotV4,
+export function assertOperatorRepositorySnapshotIdentity(
+  snapshot: OperatorRepositorySnapshotV1,
   repositoryId: string,
   decisionAfter: string | null = null,
 ): void {
   if (snapshot === null
     || typeof snapshot !== 'object'
-    || snapshot.protocol !== OPERATOR_COLLABORATION_PROTOCOL
-    || snapshot.kind !== OPERATOR_COLLABORATION_SNAPSHOT_KIND) {
-    throw new OperatorCollaborationError(
-      'collaboration_repository_mismatch',
-      `collaboration snapshot for repository ${repositoryId} is not an operator collaboration snapshot`,
+    || snapshot.protocol !== OPERATOR_REPOSITORY_PROTOCOL
+    || snapshot.kind !== OPERATOR_REPOSITORY_SNAPSHOT_KIND) {
+    throw new OperatorRepositoryError(
+      'repository_mismatch',
+      `repository snapshot for repository ${repositoryId} is not an operator repository snapshot`,
     );
   }
   if (snapshot.repository_id !== repositoryId || snapshot.decision_after !== decisionAfter) {
-    throw new OperatorCollaborationError(
-      'collaboration_repository_mismatch',
-      `collaboration snapshot answered repository ${snapshot.repository_id} for requested repository ${repositoryId}`,
+    throw new OperatorRepositoryError(
+      'repository_mismatch',
+      `repository snapshot answered repository ${snapshot.repository_id} for requested repository ${repositoryId}`,
     );
   }
   try {
-    if (Object.keys(snapshot).sort().join(',') !== 'decision_after,decisions,exchange,kind,organization,planning,protocol,repository_id') throw new Error('shape');
+    if (Object.keys(snapshot).sort().join(',') !== 'decision_after,decisions,kind,organization,planning,protocol,repository_id') throw new Error('shape');
     if (!isDecisionCursor(snapshot.decision_after)) throw new Error('cursor');
-    for (const source of [snapshot.exchange, snapshot.organization, snapshot.decisions, snapshot.planning]) {
+    for (const source of [snapshot.organization, snapshot.decisions, snapshot.planning]) {
       if (!source || !Number.isFinite(Date.parse(source.observed_at))) throw new Error('source');
       if (source.status === 'unavailable') {
         if (source.code !== 'source_unavailable' || Object.keys(source).sort().join(',') !== 'code,observed_at,status') throw new Error('failure');
@@ -93,66 +91,59 @@ export function assertOperatorCollaborationSnapshotIdentity(
     if (snapshot.planning.status === 'observed') decodeOperatorPlanningSnapshot(snapshot.planning.snapshot, repositoryId);
     if (snapshot.decisions.status === 'observed') decodeOperatorDecisionInventory(snapshot.decisions.snapshot, repositoryId, decisionAfter);
     if (snapshot.organization.status === 'observed') decodeOperatorOrganizationSnapshot(snapshot.organization.snapshot, repositoryId);
-    if (snapshot.exchange.status === 'observed' && (snapshot.exchange.snapshot.protocol !== 1 || snapshot.exchange.snapshot.kind !== 'operator_work_exchange_snapshot')) throw new Error('exchange');
   } catch (error) {
-    throw new OperatorCollaborationError('collaboration_repository_mismatch', 'invalid scoped collaboration source', error);
+    throw new OperatorRepositoryError('repository_mismatch', 'invalid scoped repository source', error);
   }
 
 }
 
-function registeredRepositoryRoot(input: ReadOperatorCollaborationSnapshotInput): string {
+function registeredRepositoryRoot(input: ReadOperatorRepositorySnapshotInput): string {
   let repos: ReturnType<typeof readRepoHarnessRegistryStrictSnapshot>['repos'];
   try {
     repos = readRepoHarnessRegistryStrictSnapshot({ env: input.env, adoptedOnly: false }).repos;
   } catch (error) {
-    throw new OperatorCollaborationError('registry_unavailable', 'cannot read the fleet registry authority', error);
+    throw new OperatorRepositoryError('registry_unavailable', 'cannot read the fleet registry authority', error);
   }
   const repository = repos.find((candidate) => candidate.id === input.repository_id);
   if (repository === undefined) {
-    throw new OperatorCollaborationError('repository_not_found', `repository ${input.repository_id} is not registered`);
+    throw new OperatorRepositoryError('repository_not_found', `repository ${input.repository_id} is not registered`);
   }
   return repository.path;
 }
 
-export function readOperatorCollaborationSnapshot(
-  input: ReadOperatorCollaborationSnapshotInput,
-): OperatorCollaborationSnapshotV4 {
+export function readOperatorRepositorySnapshot(
+  input: ReadOperatorRepositorySnapshotInput,
+): OperatorRepositorySnapshotV1 {
   const decisionAfter = input.decision_after ?? null;
-  if (!isDecisionCursor(decisionAfter)) throw new OperatorCollaborationError('collaboration_repository_mismatch', 'invalid Decision query');
+  if (!isDecisionCursor(decisionAfter)) throw new OperatorRepositoryError('repository_mismatch', 'invalid Decision query');
   const repoRoot = registeredRepositoryRoot(input);
-  const observe = <T>(reader: () => T): import('../../core/operator/collaboration-snapshot').OperatorCollaborationSourceObservation<T> => {
+  const observe = <T>(reader: () => T): import('../../core/operator/repository-snapshot').RepositorySourceObservation<T> => {
     try { return { status: 'observed', snapshot: reader(), observed_at: new Date().toISOString() }; }
     catch (error) {
-      if (error instanceof OperatorCollaborationError && error.code === 'collaboration_repository_mismatch') throw error;
+      if (error instanceof OperatorRepositoryError && error.code === 'repository_mismatch') throw error;
       return { status: 'unavailable', code: 'source_unavailable', observed_at: new Date().toISOString() };
     }
   };
-  const exchange = observe(() => {
-    const collection = collectCollaborativeWorkExchange({ repo_root: repoRoot, read_execution_offers: () => [] });
-    const snapshot = projectOperatorWorkExchangeSnapshot({ snapshot: collection.snapshot, mode: collection.mode, degraded_sources: collection.degraded_sources, changed_sources: collection.changed_sources });
-    if (snapshot.repository_id !== input.repository_id) throw new OperatorCollaborationError('collaboration_repository_mismatch', 'exchange repository differs from request');
-    return snapshot;
-  });
   const organization = observe(() => {
     const board = collectEngineeringBoard({ repo_root: repoRoot, env: input.env });
     const overlay = validateEngineeringOverlaySnapshot(board.overlay);
     const attention = validateOrganizationAttentionSnapshot(board.organization_attention);
-    if (overlay.repository_id !== input.repository_id) throw new OperatorCollaborationError('collaboration_repository_mismatch', 'organization repository differs from request');
+    if (overlay.repository_id !== input.repository_id) throw new OperatorRepositoryError('repository_mismatch', 'organization repository differs from request');
     return projectOperatorOrganizationSnapshot(overlay, attention);
   });
   const decisions = observe(() => projectOperatorDecisionInventory(input.repository_id, readOpenDecisionInventory(repoRoot, { after: decisionAfter })));
   const planning = observe(() => readOperatorPlanningSnapshot(input));
-  const projected: OperatorCollaborationSnapshotV4 = {
-    protocol: OPERATOR_COLLABORATION_PROTOCOL, kind: OPERATOR_COLLABORATION_SNAPSHOT_KIND,
-    repository_id: input.repository_id, decision_after: decisionAfter, decisions, exchange, organization, planning,
+  const projected: OperatorRepositorySnapshotV1 = {
+    protocol: OPERATOR_REPOSITORY_PROTOCOL, kind: OPERATOR_REPOSITORY_SNAPSHOT_KIND,
+    repository_id: input.repository_id, decision_after: decisionAfter, decisions, organization, planning,
   };
-  assertOperatorCollaborationSnapshotIdentity(projected, input.repository_id, decisionAfter);
+  assertOperatorRepositorySnapshotIdentity(projected, input.repository_id, decisionAfter);
   return projected;
 }
 
 /** Complete Planning observations use the same Board and TaskOffer authority
  * as task details. Graph failure is independent from readable requirements. */
-export function readOperatorPlanningSnapshot(input: ReadOperatorCollaborationSnapshotInput): OperatorPlanningSnapshot {
+export function readOperatorPlanningSnapshot(input: ReadOperatorRepositorySnapshotInput): OperatorPlanningSnapshot {
   const observedAt = new Date().toISOString();
   const now = Date.now();
   const read = () => {

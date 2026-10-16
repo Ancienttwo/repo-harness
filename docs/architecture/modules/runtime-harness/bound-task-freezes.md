@@ -1,6 +1,6 @@
 # runtime-harness/bound-task-freezes 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-bound-task-freezes" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:9109098aa671cd2af508afd0d40a62c669f07d962570fa28c69ffa3588ae95d5" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-bound-task-freezes" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:1fd6d694acc1e7e49df68858bb8f5f23c3e9632dbaadaff25742cf19c58ff0dd" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.bound-task-freezes`(kind `capability`)
 > **Matched Prefixes**:`src/core/engineers/task-freeze.ts`、`src/effects/engineers/task-freeze-store.ts`、`src/effects/engineers/bound-task-rotation.ts`
@@ -62,7 +62,7 @@ flowchart LR
 
 入向關係:
 
-- `calls` ← `capability.runtime-harness.collaboration` — Prove a handoff's bound_task execution context against the persisted TaskFreeze receipt it names, on publish and again on every read, so a caller-supplied Claim and Lease generation is never projected as a fact
+- 無。
 
 組件出向關係:
 

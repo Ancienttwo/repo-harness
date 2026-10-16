@@ -2,7 +2,6 @@ import { Command } from 'commander';
 import { lstatSync, readFileSync, realpathSync } from 'fs';
 import { isAbsolute, relative, resolve } from 'path';
 
-import { CollaborationError } from '../../core/collaboration/common';
 import { DelegationError, buildDelegationEnvelope, buildDelegationExecutionPacket } from '../../core/engineers/delegation';
 import {
   DelegatedRunStoreError,
@@ -36,7 +35,6 @@ function output(value: unknown, format: Format, label: string, digest?: string):
 
 function outputError(error: unknown): void {
   const code = error instanceof DelegationError || error instanceof DelegatedRunStoreError
-    || error instanceof CollaborationError
     ? error.code
     : 'delegation_invalid';
   const message = error instanceof Error ? error.message : String(error);
@@ -129,8 +127,6 @@ function parseDispatch(path: string): DispatchDelegatedRunInput {
 function parseCollect(path: string): CollectDelegatedRunInput {
   const raw = object(repoRelativeJson(path), 'collect input');
   exact(raw, ['dispatch_id', 'untrusted_claims'], 'collect input');
-  // No contribution reference on this path: wiring the CLI to the collaboration
-  // plane is C7's row, so today a CLI-collected run has produced none.
   return { repo_root: realpathSync(process.cwd()), dispatch_id: raw.dispatch_id as string, untrusted_claims: raw.untrusted_claims as readonly string[], contribution_refs: [] };
 }
 
@@ -143,16 +139,7 @@ function parseCapability(path: string): ReadOnlyCapabilityRequest {
   };
 }
 
-/**
- * The dispatch verb, as a named handler.
- *
- * It carries no collaboration pre-step. `dispatchDelegatedRun()` runs the fence
- * itself, so a refusal reaches this command as the same typed
- * `CollaborationRunContextBindingRefused` it always did, and this adapter has no
- * second opinion about which runs need one. It stays a module-level function
- * rather than an inline `.action()` closure so the edge into the host action is
- * a direct statement a reader and the architecture flow proof can follow.
- */
+/** Dispatch through the locked launch-claim path. */
 function dispatchDelegatedRunCommand(options: { input: string; format: Format }): void {
   try {
     const value = dispatchDelegatedRun(parseDispatch(options.input));

@@ -10,10 +10,6 @@ export function runtimeStateLabel(state: string, t: OperatorTranslate): string {
   return state === 'settled' ? t('runtimeNative.settled') : enumLabel(`runtimeObservation.state.${state}`, state, t);
 }
 
-export function phaseLabel(phase: string, t: OperatorTranslate): string {
-  return enumLabel(`pipeline.phase.${phase}`, phase, t);
-}
-
 /** Runtime states as a dot. Colour always sits next to the state's own words. */
 export function runtimeTone(state: string | null): DotTone {
   if (state === 'working') return 'active';
@@ -26,9 +22,4 @@ export function runtimeTone(state: string | null): DotTone {
 export function ageWords(at: string, now: number, t: OperatorTranslate): string {
   const age = relativeAge(at, now);
   return age ? t(age.key, { count: age.count }) : t('status.observedUnknown');
-}
-
-/** Runtime block reasons are a closed vocabulary; ledger reasons are the record's own words. */
-export function blockReasonLabel(block: { readonly source: 'ledger' | 'runtime'; readonly reason: string }, t: OperatorTranslate): string {
-  return block.source === 'runtime' ? enumLabel(`runtimeObservation.reason.${block.reason}`, block.reason, t) : block.reason;
 }

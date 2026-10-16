@@ -9,11 +9,12 @@ import {
   buildEngineerOfferCandidate,
   buildEngineerOffersDocument,
   projectWorkGraph,
+  observeInitialRetryEligibility,
   validateWorkGraph,
   type EngineerOfferV1,
+  type RetryEligibilityObservationV1,
 } from '../../src/core/engineers/scheduling';
 import type { EngineerPrincipalV1 } from '../../src/core/engineers/principal-claim';
-import { observeRetryEligibility, projectAttemptCurrent } from '../../src/core/engineers/automation-attempt';
 import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
 import { ExclusiveLockContentionError } from '../../src/effects/locking/exclusive-directory-lock';
 import {
@@ -46,7 +47,7 @@ function principal(): EngineerPrincipalV1 {
   };
 }
 
-function offerCandidate(observedAt?: string, retry?: ReturnType<typeof observeRetryEligibility>, snapshotConsistency = 'stable') {
+function offerCandidate(observedAt?: string, retry?: RetryEligibilityObservationV1, snapshotConsistency = 'stable') {
   const graph = projectWorkGraph(validateWorkGraph({
     protocol: 1,
     kind: 'repo-harness-work-graph',
@@ -81,9 +82,7 @@ function offerCandidate(observedAt?: string, retry?: ReturnType<typeof observeRe
     concurrency_revision: `sha256:${'c'.repeat(64)}`,
     retry: retry ?? (observedAt === undefined
       ? { state: 'eligible', attempt_count: 0, last_outcome: null, next_eligible_at: null, eligible_since: '2026-09-04T00:00:00.000Z', attention_owner: 'none', starvation_attention: false, authority_revision: `sha256:${'9'.repeat(64)}` } as const
-      : observeRetryEligibility({
-        policy: graph.work_packages[0]!.retry_policy,
-        current: null,
+      : observeInitialRetryEligibility({
         work_package_revision: graph.work_packages[0]!.work_package_revision,
         observed_at: observedAt,
       })),
@@ -147,15 +146,18 @@ afterEach(() => {
 });
 
 describe('ME-1A scheduled Engineer acquire', () => {
-  test('starvation attention changes offer evidence, not eligibility or scheduled admission', () => {
+  test('starvation attention metadata changes offer evidence, not eligibility or scheduled admission', () => {
     const first = offer();
-    const current = projectAttemptCurrent({ repository_id: REPO, work_package_id: first.work_package_id,
-      work_package_revision: first.work_package_revision, policy: first.retry_policy, attempts: [],
-      first_eligible_at: '2026-09-04T00:00:00.000Z' });
-    const observed = ['2026-09-04T00:59:59.999Z', '2026-09-04T01:00:00.000Z'].map(at =>
-      observeRetryEligibility({ policy: first.retry_policy, current, work_package_revision: first.work_package_revision, observed_at: at }));
-    expect(observed.map(retry => [retry.state, retry.starvation_attention, retry.attention_owner]))
-      .toEqual([['eligible', false, 'none'], ['eligible', true, 'operator']]);
+    // The offer contract accepts attention metadata independently of admission.
+    // The retired attempt store no longer supplies a starvation timer.
+    const baseline = observeInitialRetryEligibility({
+      work_package_revision: first.work_package_revision,
+      observed_at: '2026-09-04T00:00:00.000Z',
+    });
+    const observed: RetryEligibilityObservationV1[] = [
+      baseline,
+      { ...baseline, starvation_attention: true, attention_owner: 'operator' },
+    ];
     let acquisitions = 0;
     const offers = observed.map(retry => {
       const candidate = offerCandidate(undefined, retry);
@@ -189,7 +191,7 @@ describe('ME-1A scheduled Engineer acquire', () => {
     const t1 = '2026-09-30T10:00:00.000Z';
     const t2 = '2026-09-30T10:00:00.001Z';
     let observedAt = t1;
-    // The clock is controlled; retry projection and offer digest are production code.
+    // The clock is controlled; initial observation and offer digest use production code.
     const collectOffers = () => document(offer(observedAt));
     const first = collectOffers().offers[0]!;
     const selected = assertion(first);
