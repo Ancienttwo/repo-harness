@@ -298,8 +298,7 @@ PI_EVALUATION_PROFILE_DEFAULT="browser-qa"
 PI_HANDOFF_PROFILE_DEFAULT="artifact-aware"
 PI_DOCUMENTATION_PROFILE_DEFAULT="minimal-agentic"
 PI_DEFAULT_LSP_PROFILE="typescript-lsp"
-PI_MINIMAL_REFERENCE_CONFIGS="harness-overview.md agentic-development-flow.md external-tooling.md sprint-contracts.md heartbeat-triage.md handoff-protocol.md document-generation.md global-working-rules.md minimal-change-hooks.md"
-PI_FULL_REFERENCE_CONFIGS="agentic-development-flow.md ai-workflows.md changelog-versioning.md coding-standards.md development-protocol.md document-generation.md evaluator-rubric.md external-tooling.md git-strategy.md global-working-rules.md heartbeat-triage.md handoff-protocol.md harness-overview.md hook-operations.md minimal-change-hooks.md release-deploy.md spa-day-protocol.md sprint-contracts.md workflow-orchestration.md"
+PI_MINIMAL_REFERENCE_CONFIGS="harness-overview.md agentic-development-flow.md design-options.md ux-feature-guard.md external-tooling.md sprint-contracts.md heartbeat-triage.md handoff-protocol.md document-generation.md global-working-rules.md minimal-change-hooks.md"
 PI_REFERENCE_CONFIG_STUB_MARKER="<!-- repo-harness: reference-config-stub v1 -->"
 
 pi_write_file_if_apply() {
@@ -1094,12 +1093,7 @@ EOF_REFERENCE_STUB
 }
 
 pi_policy_reference_config_names() {
-  if pi_should_generate_full_docs; then
-    printf '%s\n' $PI_FULL_REFERENCE_CONFIGS
-    return 0
-  fi
-
-  printf '%s\n' $PI_MINIMAL_REFERENCE_CONFIGS
+  pi_reference_config_names "${BASH_SOURCE[0]%/*}/../../assets/reference-configs"
 }
 
 pi_json_string_array_from_lines() {
@@ -1879,94 +1873,6 @@ ${discoverable_entries}
 EOF_CONTEXT
 }
 
-pi_root_context_content() {
-  cat <<'EOF_ROOT_CONTEXT'
-# Repo Agent Context
-
-This is the root routing contract for Claude Code and Codex. Keep it short:
-load this first, then follow the repo-owned artifacts it names.
-
-## General Working Rules
-
-Rule 0: You may spend as much time as needed thinking. Do not send optional commentary progress messages. Use tools only when they are required. For tasks that do not require tools, complete the reasoning first, then answer in final.
-
-Reasoning: Prefer first principles over pattern matching. Before solving, first identify the observable and controllable conditions. For quantitative logic problems, before the final answer, you must prove the strategy is sufficient in the worst case. Numeric answers must have their arithmetic rechecked.
-
-Generality: These are general working rules. Do not tailor behavior to any specific evaluation or expected answer.
-
-## Root Workflow Contract
-
-- Keep sibling `CLAUDE.md` and `AGENTS.md` files aligned. Claude Code consumes `CLAUDE.md`; Codex consumes `AGENTS.md`.
-- Write a plan before cross-module changes, architecture changes, and dependency upgrades. Small changes do not need a plan.
-- Treat `docs/spec.md` as stable product truth, `tasks/current.md` as a derived status snapshot, and `tasks/todos.md` as the deferred-goal ledger.
-- Treat `docs/researches/`, `tasks/lessons.md`, `tasks/notes/`, `.ai/harness/policy.json`, and `.ai/harness/handoff/current.md` as durable workflow context.
-- Use `.ai/context/context-map.json` and `.ai/context/capabilities.json` to discover functional-block contracts before adding local agent files.
-- Do not infer local `CLAUDE.md` or `AGENTS.md` files from broad physical layouts such as `apps/*`, `packages/*`, or `services/*`.
-- Put capability-specific ownership, entrypoints, and verification commands in explicitly selected functional-block contracts.
-- Keep root context concise; route deep implementation detail into plans, task notes, research, workstreams, or architecture docs.
-- Treat `_ref/` as ignored external reference material and `_ops/` as ignored local operations state.
-
-## Agent Context Scaffolding
-
-- Before creating or changing agent context files, inspect existing high-context files, repo manifests, CI workflows, Makefiles, generated outputs, generators, and high-risk directories.
-- Treat scanners as leads, not authority. Verify commands, ownership, and generated-file boundaries against actual repo files before writing instructions.
-- Choose the smallest instruction stack that changes behavior: root context for repo-wide routing, scoped context only where local rules differ, and no nested file for ordinary implementation directories.
-- Preserve existing high-context files unless the user explicitly approved a rewrite; add pointers or scoped complements instead of normalizing names.
-- Pair every prohibition with the concrete alternative: source of truth, helper, generator, command, or verification surface.
-
-## Decision Protocol
-
-- For non-trivial engineering work, complete P1/P2/P3 before design decisions or code edits: P1 map the real system boundary, P2 trace one concrete data/control path, and P3 state the design rationale and invariant being preserved.
-- Keep one source of truth for each datum. Make other representations deterministic projections with drift checks, and remove the old authoring path in the same approved work-package when authority changes.
-- Do not add steady-state compatibility paths such as dual reads or writes, aliases, shape translators, shadow parsers, or semantic fallbacks. A one-shot migration must be operator-invoked, fail closed, covered by tests, and remove the old path in the same work-package.
-- Add an abstraction only when it removes observed duplicate authority or complexity, serves at least two real consumers, or protects a cross-module invariant. Prefer an existing monorepo workspace for a genuinely shared package; do not create a monorepo without a second independently released or deployed consumer.
-- For planning requests, produce one decision-complete recommendation with scope, non-scope, tradeoffs, tests, rollback/failure handling, and the most fragile assumption; do not implement until the user approves.
-- If the user says `implement this plan`, first check for obvious repo drift, then execute the approved plan without re-litigating the direction.
-- For bug hunts, trace the failing path and name the root cause before changing code.
-- For bundles of requests, classify items before accepting scope; do not treat every item as automatic implementation work.
-- Do not add fallback, compatibility, or "best effort" product code that re-derives an authority's semantics (LLM/provider/external/user-input) with local rules, regexes, or shadow parsers; fail closed with a clear error. Runtime runner degradation may select another runner only on the same task contract, must remain observable, and cannot change product semantics.
-
-## Execution And Verification
-
-- Prefer platform or standard-library features, then existing dependencies and repo patterns, before adding dependencies, files, or abstractions.
-- Preserve user-authored files; do not overwrite existing `CLAUDE.md` or `AGENTS.md` except when explicitly applying an approved scaffold.
-- Do not run the full suite for every small change. Select checks from the complete diff, repo commands, active contract, and CI; report the selected scope, reason, exact commands, and results.
-- For docs-only or ledger-closeout changes with no executable impact, check diff hygiene, affected links/paths, and task-sync/workflow consistency when workflow artifacts changed. No full suite or typecheck is required solely for closeout.
-- For isolated code changes, run the regression and affected suites, plus relevant type/lint/build checks. For generator or template changes, generate a fixture and check the affected mirrors.
-- High-risk, cross-module, or release changes require the full repo verification set; this includes shared contracts, auth, publication, migrations, and hooks/runtime. Use full verification when the impact boundary is uncertain, and never weaken explicit contract or CI criteria.
-- Run `repo-harness run check-task-sync` when workflow artifacts change. A passed suite need not be repeated for a subsequent docs/ledger-only closeout against unchanged executable source.
-- Report what changed, why it was the smallest coherent change, verification evidence, and any concrete residual risk.
-EOF_ROOT_CONTEXT
-}
-
-pi_install_root_context_files() {
-  local target_dir="$1"
-  local mode="${2:-apply}"
-
-  if [[ "$mode" != "apply" ]]; then
-    echo "[dry-run] install root CLAUDE.md/AGENTS.md files in $target_dir"
-    return 0
-  fi
-
-  if [[ -f "$target_dir/AGENTS.md" && ! -f "$target_dir/CLAUDE.md" ]]; then
-    cp "$target_dir/AGENTS.md" "$target_dir/CLAUDE.md"
-    return 0
-  fi
-
-  if [[ -f "$target_dir/CLAUDE.md" && ! -f "$target_dir/AGENTS.md" ]]; then
-    cp "$target_dir/CLAUDE.md" "$target_dir/AGENTS.md"
-    return 0
-  fi
-
-  if [[ ! -f "$target_dir/CLAUDE.md" ]]; then
-    pi_root_context_content > "$target_dir/CLAUDE.md"
-  fi
-
-  if [[ ! -f "$target_dir/AGENTS.md" ]]; then
-    pi_root_context_content > "$target_dir/AGENTS.md"
-  fi
-}
-
 pi_install_directory_context_files() {
   local target_dir="$1"
   local mode="${2:-apply}"
@@ -2122,7 +2028,6 @@ ARCHITECTURE_INDEX_EOF
   pi_write_harness_policy "$target_dir" "$mode"
   pi_write_brain_manifest "$target_dir" "$mode"
   pi_write_context_map "$target_dir" "$mode"
-  pi_install_root_context_files "$target_dir" "$mode"
   pi_install_directory_context_files "$target_dir" "$mode"
 }
 

@@ -536,7 +536,6 @@ bun run check:ci                    # the whole gate
 bun run check:context-map           # .ai/context drift against ArchContext nodes
 repo-harness docs list              # runtime reference docs, resolved from the package
 repo-harness docs show harness-overview
-bun scripts/assemble-template.ts --plan C --name "MyProject"
 ```
 
 Hook handler 的变更改 `src/cli/hook/`。Operator helper 在 `scripts/` 下，

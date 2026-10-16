@@ -1,7 +1,6 @@
 import { describe, test, expect } from "bun:test";
 import { readFileSync } from "fs";
 import { join } from "path";
-import { assembleTemplate, loadSkillVersion } from "../scripts/assemble-template";
 import { checkConsistency } from "../scripts/check-skill-version";
 
 const REPO_ROOT = join(import.meta.dir, "..");
@@ -81,39 +80,5 @@ describe("Skill Version Manifest Structure", () => {
     expect(sv.generatedProjectStamp).toBeDefined();
     expect(sv.generatedProjectStamp.format).toBeDefined();
     expect(sv.generatedProjectStamp.location).toBe(".claude/.skill-version");
-  });
-});
-
-describe("Footer Partial Uses Template Variables", () => {
-  test("07-footer.partial.md uses {{TEMPLATE_VERSION}} not hardcoded version", () => {
-    const footer = readFileSync(
-      join(REPO_ROOT, "assets", "partials", "07-footer.partial.md"),
-      "utf-8"
-    );
-    expect(footer).toContain("{{TEMPLATE_VERSION}}");
-    expect(footer).toContain("{{SKILL_VERSION}}");
-    expect(footer).not.toMatch(/Template Version: \d+\.\d+\.\d+/);
-  });
-});
-
-describe("Assembled Output Contains Version Info", () => {
-  const output = assembleTemplate({
-    planType: "C",
-    variables: { PROJECT_NAME: "VersionTest" },
-  });
-
-  test("output contains SKILL_VERSION value", () => {
-    const sv = loadSkillVersion();
-    expect(output).toContain(`repo-harness@${sv.version}`);
-  });
-
-  test("output contains TEMPLATE_VERSION value", () => {
-    const sv = loadSkillVersion();
-    expect(output).toContain(`Template Version: ${sv.templateVersion}`);
-  });
-
-  test("output does not contain raw SKILL_VERSION placeholder", () => {
-    expect(output).not.toContain("{{SKILL_VERSION}}");
-    expect(output).not.toContain("{{TEMPLATE_VERSION}}");
   });
 });

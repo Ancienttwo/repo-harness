@@ -236,16 +236,13 @@ rather than inferring those values from turns, tool names, or timestamps.
 
 Maintainer-facing detail on how the initializer and runtime defaults are wired.
 
-- Question flow uses **12 grouped decision points** with harness defaults inferred first.
 - Plan menu is tiered: **Core Plans (A-F)** first, **Custom Presets (G-K)** only when needed.
 - Skill routing is inspection-first: `scripts/inspect-project-state.ts`, `src/core/adoption/standard-plan.ts`, `assets/workflow-contract.v1.json`.
-- Runtime mode is configurable with template vars: `{{RUNTIME_MODE}}`, `{{RUNTIME_PROFILE}}`, `{{RECOVERY_PROFILE}}`, `{{STATE_PROFILE}}`.
-- Question-pack source of truth: `assets/initializer-question-pack.v4.json`.
 - Generated repos support an optional contract-level flow: `docs/spec.md -> plans/ -> tasks/contracts/ -> tasks/reviews/ -> .ai/context/context-map.json -> .ai/harness/*`. Ordinary tasks use the PR description and need no plan, contract or review file.
 - Generated and self-hosted repos use `.ai/harness/workflow-contract.json` as the opt-in marker.
 - The marker can declare `minimum_harness_version`, a release version such as `0.22.1`. A hook that runs an older repo-harness then reports an upgrade instruction (`repo-harness update`) on SessionStart, UserPromptSubmit, Stop and SubagentStop. It exits 1, which does not block, and does not resolve state for these events. PreToolUse and PostToolUse skip this check, so every edit guard still runs. `repo-harness doctor` and `repo-harness update --check` report the same instruction. Declare it when a release changes the model shape that older readers cannot parse. Adoption keeps the declared value.
 - The package asset `assets/workflow-contract.v1.json` defines the workflow contract.
-- `repo-harness init` writes the marker and `.ai/harness/policy.json`. Shell scaffold scripts do not write the marker.
+- `repo-harness init` writes the marker, `.ai/harness/policy.json` and the root `CLAUDE.md` and `AGENTS.md`. `src/core/adoption/standard-plan.ts` is the only writer of the root context files. Shell scaffold scripts do not write the marker or the root context files.
 - Host events use the user-level managed adapter projection, the 11-tuple
   `route-registry.ts`, and exactly one typed in-process handler per tuple.
   Operator helpers run from the installed package through
@@ -262,17 +259,6 @@ Maintainer-facing detail on how the initializer and runtime defaults are wired.
 - General default priority: `bun > pnpm > npm`.
 - **Plan G/H** (Python-centric) default to **`uv`** as the primary package manager.
 
-### Runtime Profiles
-
-The initializer offers exactly three runtime profiles:
-
-- `Plan-only (recommended)` (default)
-- `Plan + Permissionless`
-- `Standard (ask before each action)`
-
-They are configured in `assets/initializer-question-pack.v4.json` and consumed by
-`scripts/initializer-question-pack.ts`.
-
 ### Package Authority Files
 
 Maintainer-facing map of which package file owns which contract:
@@ -282,12 +268,9 @@ Maintainer-facing map of which package file owns which contract:
 | `SKILL.md` | Root Skill spec |
 | `CLAUDE.md`, `AGENTS.md` | Root routing docs |
 | `assets/plan-map.json` | Plan catalog mapping |
-| `assets/initializer-question-pack.v4.json` | Question pack |
 | `assets/reference-configs/` | Runtime reference docs, resolved through `repo-harness docs` |
 | `assets/workflow-contract.v1.json` | Workflow contract manifest |
 | `docs/reference-configs/*.md` | Source-repo projection of the runtime reference docs |
-| `scripts/assemble-template.ts` | Explicit template assembly |
-| `scripts/initializer-question-pack.ts` | Question inference helper |
 | `scripts/inspect-project-state.ts` | State inspector |
 | `src/core/adoption/standard-plan.ts` | Canonical adoption planner |
 | `scripts/check-agent-tooling.sh` | External tooling detector |

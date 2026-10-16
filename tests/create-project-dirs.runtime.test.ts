@@ -83,23 +83,9 @@ describe("create-project-dirs runtime smoke", () => {
       expect(existsSync(join(cwd, "plans/sprints"))).toBe(true);
       expect(existsSync(join(cwd, "tasks/reviews"))).toBe(true);
       expect(existsSync(join(cwd, "tasks/workstreams/.gitkeep"))).toBe(true);
-      expect(existsSync(join(cwd, "CLAUDE.md"))).toBe(true);
-      expect(existsSync(join(cwd, "AGENTS.md"))).toBe(true);
-      expect(readFileSync(join(cwd, "CLAUDE.md"), "utf-8")).toBe(
-        readFileSync(join(cwd, "AGENTS.md"), "utf-8")
-      );
-      expect(readFileSync(join(cwd, "AGENTS.md"), "utf-8")).toContain("Repo Agent Context");
-      expect(readFileSync(join(cwd, "AGENTS.md"), "utf-8")).toContain("Rule 0: You may spend as much time as needed thinking.");
-      expect(readFileSync(join(cwd, "AGENTS.md"), "utf-8")).toContain("tasks/todos.md");
-      expect(readFileSync(join(cwd, "AGENTS.md"), "utf-8")).toContain(".ai/context/context-map.json");
-      expect(readFileSync(join(cwd, "AGENTS.md"), "utf-8")).toContain("## Agent Context Scaffolding");
-      expect(readFileSync(join(cwd, "AGENTS.md"), "utf-8")).toContain("Treat scanners as leads, not authority");
-      expect(readFileSync(join(cwd, "AGENTS.md"), "utf-8")).toContain("Choose the smallest instruction stack that changes behavior");
-      expect(readFileSync(join(cwd, "AGENTS.md"), "utf-8")).toContain("## Decision Protocol");
-      expect(readFileSync(join(cwd, "AGENTS.md"), "utf-8")).toContain("complete P1/P2/P3 before design decisions or code edits");
-      expect(readFileSync(join(cwd, "AGENTS.md"), "utf-8")).toContain("do not implement until the user approves");
-      expect(readFileSync(join(cwd, "AGENTS.md"), "utf-8")).toContain("If the user says `implement this plan`");
-      expect(readFileSync(join(cwd, "AGENTS.md"), "utf-8")).toContain("re-derives an authority's semantics");
+      // repo-harness init (standard-plan.ts) is the only writer of root CLAUDE.md and AGENTS.md.
+      expect(existsSync(join(cwd, "CLAUDE.md"))).toBe(false);
+      expect(existsSync(join(cwd, "AGENTS.md"))).toBe(false);
       const gitignore = readFileSync(join(cwd, ".gitignore"), "utf-8");
       expect(gitignore).toContain("tasks/.current.md.tmp.*");
       expect(gitignore).toContain("tasks/current.md");
@@ -636,8 +622,8 @@ describe("create-project-dirs runtime smoke", () => {
       );
 
       expect(res.status).toBe(0);
-      expect(existsSync(join(cwd, "CLAUDE.md"))).toBe(true);
-      expect(existsSync(join(cwd, "AGENTS.md"))).toBe(true);
+      expect(existsSync(join(cwd, "CLAUDE.md"))).toBe(false);
+      expect(existsSync(join(cwd, "AGENTS.md"))).toBe(false);
       expect(existsSync(join(cwd, "_ref/external-tool/CLAUDE.md"))).toBe(false);
       const capabilities = JSON.parse(readFileSync(join(cwd, ".ai/context/capabilities.json"), "utf-8"));
       expect(capabilities.capabilities).toEqual([]);
@@ -669,17 +655,8 @@ describe("create-project-dirs runtime smoke", () => {
       );
 
       expect(res.status).toBe(0);
-      expect(existsSync(join(cwd, "CLAUDE.md"))).toBe(true);
-      expect(existsSync(join(cwd, "AGENTS.md"))).toBe(true);
-      expect(readFileSync(join(cwd, "CLAUDE.md"), "utf-8")).toBe(
-        readFileSync(join(cwd, "AGENTS.md"), "utf-8")
-      );
-      expect(readFileSync(join(cwd, "AGENTS.md"), "utf-8")).toContain("Repo Agent Context");
-      expect(readFileSync(join(cwd, "AGENTS.md"), "utf-8")).toContain("Rule 0: You may spend as much time as needed thinking.");
-      expect(readFileSync(join(cwd, "AGENTS.md"), "utf-8")).toContain("## Agent Context Scaffolding");
-      expect(readFileSync(join(cwd, "AGENTS.md"), "utf-8")).toContain("Choose the smallest instruction stack that changes behavior");
-      expect(readFileSync(join(cwd, "AGENTS.md"), "utf-8")).toContain("## Decision Protocol");
-      expect(readFileSync(join(cwd, "AGENTS.md"), "utf-8")).toContain("do not implement until the user approves");
+      expect(existsSync(join(cwd, "CLAUDE.md"))).toBe(false);
+      expect(existsSync(join(cwd, "AGENTS.md"))).toBe(false);
       expect(existsSync(join(cwd, "apps/web/CLAUDE.md"))).toBe(false);
       expect(existsSync(join(cwd, "apps/web/AGENTS.md"))).toBe(false);
       expect(existsSync(join(cwd, "packages/ui/CLAUDE.md"))).toBe(false);
@@ -775,8 +752,8 @@ describe("create-project-dirs runtime smoke", () => {
       expect(existsSync(join(cwd, "apps"))).toBe(false);
       expect(existsSync(join(cwd, "packages"))).toBe(false);
       expect(existsSync(join(cwd, "services"))).toBe(false);
-      expect(existsSync(join(cwd, "CLAUDE.md"))).toBe(true);
-      expect(existsSync(join(cwd, "AGENTS.md"))).toBe(true);
+      expect(existsSync(join(cwd, "CLAUDE.md"))).toBe(false);
+      expect(existsSync(join(cwd, "AGENTS.md"))).toBe(false);
       expect(existsSync(join(cwd, ".ai/context/context-map.json"))).toBe(true);
       expect(existsSync(join(cwd, ".ai/harness/policy.json"))).toBe(true);
       expect(existsSync(join(cwd, ".ai/harness/context-budget/latest.json"))).toBe(false);

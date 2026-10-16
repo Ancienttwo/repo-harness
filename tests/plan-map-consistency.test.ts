@@ -1,18 +1,29 @@
 import { describe, test, expect } from "bun:test";
 import { readFileSync } from "fs";
 import { join } from "path";
-import {
-  getAiNativeTemplateVariables,
-  getWebappRenderingTemplateVariables,
-  getPlanTier,
-  isCorePlan,
-  loadPlanMap,
-} from "../scripts/assemble-template";
 
 const ROOT = join(import.meta.dir, "..");
 
 function read(relPath: string): string {
   return readFileSync(join(ROOT, relPath), "utf-8");
+}
+
+interface PlanEntry {
+  name: string;
+  stack: string;
+  defaultLsp?: string;
+  aiNativeOverlayDefaults?: { defaultProfile?: string; recommendedProfiles?: string[] };
+  webappRenderingDefaults?: { defaultModel?: string; recommendedModels?: string[] };
+  defaultTemplateVariables?: Record<string, string>;
+}
+
+interface PlanMap {
+  plans: Record<string, PlanEntry>;
+  planTiers?: { core?: string[]; presets?: string[]; custom?: string[] };
+}
+
+function loadPlanMap(): PlanMap {
+  return JSON.parse(read("assets/plan-map.json")) as PlanMap;
 }
 
 describe("Plan map consistency", () => {
@@ -49,58 +60,12 @@ describe("Plan map consistency", () => {
     expect(planMap.plans.E.defaultTemplateVariables?.TECH_STACK_TABLE).toContain("Workers for SSR React webapps");
   });
 
-  test("AI-native template variables only activate when explicitly selected", () => {
-    const defaultOverlay = getAiNativeTemplateVariables("C", {
-      PROJECT_STRUCTURE: "base structure",
-    });
-    expect(defaultOverlay.enabled).toBe(false);
-    expect(defaultOverlay.variables.AI_NATIVE_TECH_STACK_SECTION).toBe("");
-
-    const runtimeConsoleOverlay = getAiNativeTemplateVariables("C", {
-      PROJECT_STRUCTURE: "base structure",
-      AI_NATIVE_PROFILE: "runtime-console",
-    });
-    expect(runtimeConsoleOverlay.enabled).toBe(true);
-    expect(runtimeConsoleOverlay.variables.PROJECT_STRUCTURE).toContain(
-      "AI-native Runtime Console Overlay"
-    );
-    expect(runtimeConsoleOverlay.variables.AI_NATIVE_TECH_STACK_TABLE).toContain("AG-UI");
-    expect(runtimeConsoleOverlay.variables.AI_NATIVE_TECH_STACK_SECTION).toContain(
-      "assistant-ui"
-    );
-  });
-
-  test("webapp rendering variables follow plan defaults and explicit overrides", () => {
-    const startWorkers = getWebappRenderingTemplateVariables("C", {
-      PROJECT_STRUCTURE: "base structure",
-    });
-    expect(startWorkers.enabled).toBe(true);
-    expect(startWorkers.modelId).toBe("start-workers");
-    expect(startWorkers.variables.PROJECT_STRUCTURE).toContain("TanStack Start + Cloudflare Workers Webapp Structure");
-    expect(startWorkers.variables.WEBAPP_RENDERING_TECH_STACK_TABLE).toContain("wrangler deploy");
-
-    const clientOnly = getWebappRenderingTemplateVariables("B", {
-      PROJECT_STRUCTURE: "base structure",
-    });
-    expect(clientOnly.enabled).toBe(true);
-    expect(clientOnly.modelId).toBe("client-only");
-    expect(clientOnly.variables.WEBAPP_RENDERING_TECH_STACK_SECTION).not.toContain("ssr: false");
-  });
-
   test("plan tiers should enforce core A-F and preset/custom G-K model", () => {
     const planMap = loadPlanMap();
 
     expect(planMap.planTiers?.core).toEqual(["A", "B", "C", "D", "E", "F"]);
     expect(planMap.planTiers?.presets).toEqual(["G", "H", "I", "J"]);
     expect(planMap.planTiers?.custom).toEqual(["K"]);
-
-    expect(getPlanTier("A", planMap)).toBe("core");
-    expect(getPlanTier("F", planMap)).toBe("core");
-    expect(getPlanTier("G", planMap)).toBe("preset");
-    expect(getPlanTier("J", planMap)).toBe("preset");
-    expect(getPlanTier("K", planMap)).toBe("custom");
-    expect(isCorePlan("C", planMap)).toBe(true);
-    expect(isCorePlan("H", planMap)).toBe(false);
   });
 
   test("docs should not reference deprecated plan labels", () => {
