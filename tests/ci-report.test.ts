@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ARCHITECTURE_EVIDENCE, ARCHITECTURE_JOB, CIReportError, architectureActionRow, parseArchitectureSummary, reportCI, renderReport, watchDailyCI, type GitHubAPI } from '../scripts/report-ci';
 
-function fixture(run: (f: { api: GitHubAPI; git: (...args: string[]) => string; before: string; after: string; prCommits: number; root: string; issues: any[]; calls: { path: string; method: string }[]; setConclusion: (value: string) => void; setRun: (id: number, attempt: number) => void; denyIssues: () => void }) => Promise<void>, candidateCommits = 1) {
+function fixture(run: (f: { api: GitHubAPI; git: (...args: string[]) => string; before: string; after: string; prCommits: number; root: string; issues: any[]; comments: { issue: number; body: string }[]; calls: { path: string; method: string }[]; setConclusion: (value: string) => void; setRun: (id: number, attempt: number) => void; denyIssues: () => void }) => Promise<void>, candidateCommits = 1) {
   const root = mkdtempSync(join(tmpdir(), 'ci-report-fixture-'));
   const git = (...args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
   return (async () => {
@@ -18,7 +18,7 @@ function fixture(run: (f: { api: GitHubAPI; git: (...args: string[]) => string; 
       }
       const prCommits = Number(git('rev-list', '--count', `${before}..candidate`));
       git('checkout', '-q', 'main'); git('merge', '--squash', 'candidate'); git('commit', '-qm', 'squashed PR'); const after = git('rev-parse', 'HEAD');
-      const now = new Date().toISOString(); const issues: any[] = []; const calls: { path: string; method: string }[] = []; let conclusion = 'success'; let denied = false; let runId = 12; let runAttempt = 1;
+      const now = new Date().toISOString(); const issues: any[] = []; const comments: { issue: number; body: string }[] = []; const calls: { path: string; method: string }[] = []; let conclusion = 'success'; let denied = false; let runId = 12; let runAttempt = 1;
       const api: GitHubAPI = async (path, method = 'GET', raw) => {
         calls.push({ path, method });
         const body = raw as any;
@@ -26,6 +26,9 @@ function fixture(run: (f: { api: GitHubAPI; git: (...args: string[]) => string; 
           event: 'schedule', status: 'completed', conclusion, run_attempt: runAttempt, html_url: `https://github.com/test/repo/actions/runs/${runId}`, created_at: now };
         if (/\/attempts\/\d+\/jobs$/.test(new URL(path, 'https://api.github.com').pathname)) return { jobs: [{ id: 44, name: 'Daily test', conclusion, check_run_url: 'https://api.github.com/repos/test/repo/check-runs/55' }] };
         if (path.endsWith('/check-runs/55')) return { id: 55, html_url: 'https://github.com/test/repo/runs/55' };
+        const commentPath = /\/issues\/(\d+)\/comments(?:\?|$)/.exec(path);
+        if (commentPath && method === 'GET') return comments.filter(comment => comment.issue === Number(commentPath[1]));
+        if (commentPath && method === 'POST') { const comment = { issue: Number(commentPath[1]), body: body.body }; comments.push(comment); return comment; }
         if (path.includes('/issues?')) return issues;
         if (path.endsWith('/issues') && method === 'POST') {
           if (denied) throw new CIReportError(403, 'HTTP 403');
@@ -42,7 +45,7 @@ function fixture(run: (f: { api: GitHubAPI; git: (...args: string[]) => string; 
         }
         throw Error(`Unexpected API operation ${method} ${path}`);
       };
-      await run({ api, git, root, before, after, prCommits, issues, calls, setConclusion: value => { conclusion = value; }, setRun: (id, attempt) => { runId = id; runAttempt = attempt; }, denyIssues: () => { denied = true; } });
+      await run({ api, git, root, before, after, prCommits, issues, comments, calls, setConclusion: value => { conclusion = value; }, setRun: (id, attempt) => { runId = id; runAttempt = attempt; }, denyIssues: () => { denied = true; } });
     } finally { rmSync(root, { recursive: true, force: true }); }
   })();
 }
@@ -81,14 +84,23 @@ test.each(['failure', 'cancelled', 'timed_out'])('completed %s run keys one read
   expect(first.unresolved_repairs?.map(issue => issue.issue_number)).toEqual([1]);
   const second = await reportCI('test/repo', 12, f.api);
   expect(second.repairs[0]?.delivery).toBe('reused'); expect(f.issues).toHaveLength(1);
+  // The issue body already holds this attempt's evidence, so a repeated report adds nothing.
+  expect(f.comments).toEqual([]);
   f.setRun(12, 2);
   const attempt = await reportCI('test/repo', 12, f.api);
   expect(attempt.repairs).toEqual([{ key: 'ci-repair:job:Daily test', issue_url: 'https://github.com/test/repo/issues/1', delivery: 'reused' }]);
+  // A reused issue records the current failure once per run attempt.
+  expect(f.comments).toHaveLength(1);
+  expect(f.comments[0]).toMatchObject({ issue: 1 }); expect(f.comments[0]!.body).toContain('Attempt: 2');
+  await reportCI('test/repo', 12, f.api);
+  expect(f.comments).toHaveLength(1);
   writeFileSync(join(f.root, 'later.txt'), 'later main\n'); f.git('add', '.'); f.git('commit', '-qm', 'later main');
   f.setRun(13, 1);
   const daily = await reportCI('test/repo', 13, f.api);
   expect(daily.repairs).toEqual([{ key: 'ci-repair:job:Daily test', issue_url: 'https://github.com/test/repo/issues/1', delivery: 'reused' }]);
   expect(f.issues).toHaveLength(1);
+  expect(f.comments).toHaveLength(2);
+  expect(f.comments[1]!.body).toContain('https://github.com/test/repo/actions/runs/13'); expect(f.comments[1]!.body).toContain(f.git('rev-parse', 'main'));
   f.issues[0].state = 'closed';
   const reopened = await reportCI('test/repo', 13, f.api);
   expect(reopened.repairs).toEqual([{ key: 'ci-repair:job:Daily test', issue_url: 'https://github.com/test/repo/issues/2', delivery: 'created' }]);
