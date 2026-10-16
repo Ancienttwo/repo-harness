@@ -1,10 +1,5 @@
 # Setup Mode: Migrate
 
-Source facade: `assets/skill-commands/repo-harness-migrate`. This reference
-is written directly from that facade's protocol; it deliberately does not
-reuse text from the packaged `references/migration-guide.md` document (the
-plan requires a fresh rewrite, not an import of that older guide).
-
 Use when inspection finds legacy workflow docs or stale harness artifacts.
 Run the shared preflight in `../SKILL.md` first.
 

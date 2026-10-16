@@ -4,7 +4,7 @@ Keep this file focused on the local contract for this primary functional block.
 
 ## Local Context Contract
 
-- `src/cli/hook/` owns host-event runtime authority: the typed route registry, the runtime and the handlers. Operator helpers run from the package through `repo-harness run <helper>`; no shell operator library exists.
+- `src/cli/hook/` owns host-event runtime authority: the typed route registry, the runtime and the handlers. Operator helpers run from the package through `repo-harness run <helper>`.
 
 <!-- BEGIN CAPABILITY CONTEXT -->
 ## Capability Context

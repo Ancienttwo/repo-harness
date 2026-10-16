@@ -1,7 +1,5 @@
 # Product Mode: Sprint
 
-Source facade: `assets/skill-commands/repo-harness-sprint`.
-
 Use to plan a program-level Sprint from an upper-layer PRD or source spec and
 execute its tasks through the existing task-contract flow. Sub-routes:
 `plan`, `from-prd`, `run`, `status`. Run the shared preflight in

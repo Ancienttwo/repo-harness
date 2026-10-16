@@ -1,7 +1,5 @@
 # Setup Mode: Repair
 
-Source facade: `assets/skill-commands/repo-harness-repair`.
-
 Use when the repo has a harness but a specific workflow surface is broken.
 Run the shared preflight in `../SKILL.md` first.
 

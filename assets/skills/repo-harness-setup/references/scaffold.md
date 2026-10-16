@@ -1,7 +1,5 @@
 # Setup Mode: Scaffold
 
-Source facade: `assets/skill-commands/repo-harness-scaffold`.
-
 Use when the user asks to create a new project, app, or module skeleton.
 Run the shared preflight in `../SKILL.md` first.
 

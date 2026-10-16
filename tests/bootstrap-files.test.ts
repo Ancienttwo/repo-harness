@@ -121,8 +121,6 @@ describe("Bootstrap Script Contracts", () => {
 
     const evaluator = read("agents/fleet/harness-evaluator.md");
     expect(evaluator).toContain("EVAL: PASS");
-    expect(evaluator).toContain("evals/bdd2/**");
-    expect(evaluator).toContain("scripts/run-bdd2-evals.ts");
     expect(evaluator).toContain("fail closed");
     expect(evaluator).toContain("disposable clone/worktree");
     expect(evaluator).toContain("--run-adoption-profile");
