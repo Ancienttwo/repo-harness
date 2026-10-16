@@ -3,7 +3,6 @@ import { execFileSync } from 'child_process';
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { dirname, join } from 'path';
-import { owedStateCommand } from '../src/cli/commands/state';
 import {
   owedCapabilities,
   renderOwedCapabilities,
@@ -131,72 +130,5 @@ describe('owed-capability rule', () => {
     write(cwd, 'src/owned/a.ts', 'export const a = 2;\n');
     expect(owedFor(cwd)).toMatchObject({ status: 'not_projected', capabilities: [] });
     expect(renderOwedCapabilities(owedFor(cwd))).toBeNull();
-  });
-
-  test('state owed --json applies the same rule to a base ref and never blocks', () => {
-    const cwd = ownedRepo();
-    write(cwd, 'src/owned/a.ts', 'export const a = 2;\n');
-    commit(cwd, 'change owned code');
-    const outcome = owedStateCommand({ base: 'main' }, {
-      repoRoot: cwd,
-      resolveOwnership: resolveCapabilityOwnership,
-      owed: owedCapabilities,
-    });
-    expect(outcome.exitCode).toBe(0);
-    expect(JSON.parse(outcome.stdout)).toEqual({
-      protocol: 1,
-      kind: 'repo-harness-owed-capabilities',
-      base: 'main',
-      status: 'owed',
-      review_base: git(cwd, ['rev-parse', 'main']),
-      manifest_change: null,
-      capabilities: [{ id: 'core-owned', module_document: 'docs/architecture/modules/core/owned.md', paths: ['src/owned/a.ts'] }],
-      new_unowned_paths: [],
-      next: [
-        'repo-harness architecture-projection check --json',
-        'assets/skill-commands/repo-harness-architecture/references/worker.md',
-      ],
-    });
-
-    const unknownBase = owedStateCommand({ base: 'no-such-ref' }, {
-      repoRoot: cwd,
-      resolveOwnership: resolveCapabilityOwnership,
-      owed: owedCapabilities,
-    });
-    expect(unknownBase.exitCode).toBe(1);
-    expect(unknownBase.stderr).toContain('review subject is unavailable');
-
-    write(cwd, '.ai/context/capabilities.json', '{not json');
-    const malformed = owedStateCommand({ base: 'main' }, {
-      repoRoot: cwd,
-      resolveOwnership: resolveCapabilityOwnership,
-      owed: owedCapabilities,
-    });
-    expect(malformed.exitCode).toBe(1);
-    expect(malformed.stderr).toContain('capability_registry:invalid');
-  });
-
-  test('state owed --json reports not_projected for a repository without a capability registry', () => {
-    const cwd = ownedRepo();
-    rmSync(join(cwd, '.ai/context/capabilities.json'));
-    write(cwd, '.ai/harness/policy.json', '{}\n');
-    commit(cwd, 'drop the capability registry');
-    const outcome = owedStateCommand({}, {
-      repoRoot: cwd,
-      resolveOwnership: resolveCapabilityOwnership,
-      owed: owedCapabilities,
-    });
-    expect(outcome.exitCode).toBe(0);
-    expect(JSON.parse(outcome.stdout)).toEqual({
-      protocol: 1,
-      kind: 'repo-harness-owed-capabilities',
-      base: null,
-      status: 'not_projected',
-      review_base: null,
-      manifest_change: null,
-      capabilities: [],
-      new_unowned_paths: [],
-      next: [],
-    });
   });
 });

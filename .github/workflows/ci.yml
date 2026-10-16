@@ -176,7 +176,7 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.3
-      - name: Warn about owed architecture documents
+      - name: Warn about architecture debt
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: bash scripts/check-ci.sh architecture-advisory --base "$BASE_SHA"

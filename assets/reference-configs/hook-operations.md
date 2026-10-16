@@ -180,8 +180,8 @@ subject changed after the last change to
 ownership authority, and Git gives the changed set: one `git log` and one
 `git status`. `SessionStart` uses the ownership answer of its own state
 resolution. `PreToolUse.edit` resolves the owners of the edited paths only. It
-takes no state lock and runs `git status` only for an owned path. `Stop` and
-`state owed` run one read-only ownership resolution of their own for the
+takes no state lock and runs `git status` only for an owned path. `Stop` runs
+one read-only ownership resolution of its own for the
 review subject. An uncommitted manifest change counts as the
 newest change. A checkout without the manifest, or a repository without a
 capability registry, is `not_projected`. The owed report has at most
@@ -198,18 +198,17 @@ The Agent gets the report at these points:
 | `SessionStart.default` | Claude, Codex | the branch already owes updates |
 | `Stop.default` | Claude only | once per branch and owed set; nothing when `stop_hook_active` is true |
 
-CI and operators use the same rule without hooks:
+The owed rule is a hook signal only. CI and operators use the ArchContext
+debt report for a pull request:
 
 ```bash
-repo-harness state owed --json                     # policy review base
-repo-harness state owed --json --base origin/main  # pull request base
+repo-harness architecture-debt --json --base origin/main
 ```
 
-The command writes nothing. A document exits 0, owed or not. `status` is
-`owed`, `clear` or `not_projected`. A repository without a capability
-registry gets a `not_projected` document. An unknown base, a malformed
-registry or unavailable ownership (for example, archctx cannot run) exits 1
-with the reason on stderr.
+The command measures the debt at HEAD and at the base, and reports the items
+whose ids are new at HEAD. It measures the base in a temporary checkout and
+removes that checkout. Measured debt exits 0. An unresolvable base exits 1
+with the reason on stderr. A failure of archctx does the same.
 
 Agents author semantic snapshots and diagrams. Hooks do not spawn LLM agents or
 long-running commands. Deterministic execution belongs in explicit CLI commands

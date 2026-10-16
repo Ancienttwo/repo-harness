@@ -557,7 +557,7 @@ describe('single affected verification and daily fallback', () => {
     expect(advisory.if).toBe("needs.selection.outputs.mode == 'affected'");
     expect(advisory.permissions).toBeUndefined();
     expect(jobs.required.needs).not.toContain('architecture-advisory');
-    const warn = advisory.steps.find((step: any) => step.name === 'Warn about owed architecture documents');
+    const warn = advisory.steps.find((step: any) => step.name === 'Warn about architecture debt');
     expect(warn.env).toEqual({ BASE_SHA: '${{ github.event.pull_request.base.sha }}' });
     expect(warn.run).toBe('bash scripts/check-ci.sh architecture-advisory --base "$BASE_SHA"');
     expect(advisory.steps.find((step: any) => step.uses === 'actions/checkout@v4').with['fetch-depth']).toBe(0);
@@ -565,25 +565,31 @@ describe('single affected verification and daily fallback', () => {
 });
 
 describe('architecture lanes', () => {
-  const owed = (status: string) => JSON.stringify({ protocol: 1, kind: 'repo-harness-owed-capabilities', base: 'base', status,
-    capabilities: status === 'owed' ? [{ id: 'workflow-engine-workflow-state', module_document: 'docs/architecture/modules/workflow-engine/workflow-state.md', paths: ['src/core/state/types.ts'] }] : [],
-    new_unowned_paths: [], next: [] });
+  const debtItem = (n: number, capabilityIds: string[] = [`capability.module-${n}`]) => ({
+    id: `debt.${String(n).padStart(4, '0')}`, kind: 'flow-proof-failed', nodeIds: capabilityIds, capabilityIds, paths: [`src/module-${n}.ts`],
+    reasonCode: 'no-direct-call', action: 'archctx flows check --json', details: {} });
+  const debt = (introduced: unknown[], coverage: { head?: string; headCodes?: string[]; base?: string; baseCodes?: string[] } = {}) => JSON.stringify({
+    kind: 'repo-harness-architecture-debt',
+    head: { sha: 'a'.repeat(40), debt: { coverage: coverage.head ?? 'complete', coverageReasonCodes: coverage.headCodes ?? [], items: introduced } },
+    base: { ref: 'abc123', sha: 'b'.repeat(40), debtDigest: 'sha256:base', coverage: coverage.base ?? 'complete', coverageReasonCodes: coverage.baseCodes ?? [] },
+    introduced, resolvedIds: ['debt.gone'] });
   const planned = JSON.stringify({ status: 'planned', freshness: { staleNodes: [{ nodeId: 'capability.workflow-engine.workflow-state' }, { nodeId: 'capability.verification.evals-checks' }] },
     files: [{ path: 'docs/architecture/.projection-manifest.json' }], humanActions: [] });
+  const noop = JSON.stringify({ status: 'noop', freshness: { ok: true, staleNodes: [] }, files: [], humanActions: [] });
 
   // Real check-ci.sh with stub CLI results. `bun -e` and the shell logic stay real.
-  function runLane(args: string[], fixture: { owed?: string; owedExit?: number; check?: string; checkExit?: number; codegraphExit?: number; summary?: boolean }) {
+  function runLane(args: string[], fixture: { debt?: string; debtExit?: number; check?: string; checkExit?: number; codegraphExit?: number; summary?: boolean }) {
     const root = mkdtempSync(join(tmpdir(), 'rh-ci-architecture-'));
     const bin = join(root, 'bin');
     try {
       mkdirSync(join(root, 'repo/scripts/lib'), { recursive: true }); mkdirSync(bin);
       for (const path of ['scripts/check-ci.sh', 'scripts/lib/ci-run-tests.sh']) writeFileSync(join(root, 'repo', path), readFileSync(join(ROOT, path)));
-      writeFileSync(join(root, 'owed.json'), fixture.owed ?? '');
+      writeFileSync(join(root, 'debt.json'), fixture.debt ?? '');
       writeFileSync(join(root, 'check.json'), fixture.check ?? '');
       writeFileSync(join(bin, 'bun'), [
         '#!/bin/bash',
         'if [[ "$1" == install ]]; then exit 0; fi',
-        `if [[ "$1" == src/cli/index.ts && "$2" == state ]]; then echo "$*" > ${JSON.stringify(join(root, 'owed-args'))}; cat ${JSON.stringify(join(root, 'owed.json'))}; if [[ ${fixture.owedExit ?? 0} -ne 0 ]]; then echo "Unknown base ref: missing" >&2; fi; exit ${fixture.owedExit ?? 0}; fi`,
+        `if [[ "$1" == src/cli/index.ts && "$2" == architecture-debt ]]; then echo "$*" > ${JSON.stringify(join(root, 'debt-args'))}; cat ${JSON.stringify(join(root, 'debt.json'))}; if [[ ${fixture.debtExit ?? 0} -ne 0 ]]; then echo "$5 does not resolve to a commit" >&2; fi; exit ${fixture.debtExit ?? 0}; fi`,
         `if [[ "$1" == src/cli/index.ts && "$2" == architecture-projection ]]; then touch ${JSON.stringify(join(root, 'checked'))}; cat ${JSON.stringify(join(root, 'check.json'))}; exit ${fixture.checkExit ?? 1}; fi`,
         `exec ${JSON.stringify(process.execPath)} "$@"`,
       ].join('\n'), { mode: 0o755 });
@@ -596,51 +602,81 @@ describe('architecture lanes', () => {
       return {
         status: result.status, stdout: result.stdout, stderr: result.stderr,
         checked: existsSync(join(root, 'checked')),
-        owedArgs: existsSync(join(root, 'owed-args')) ? readFileSync(join(root, 'owed-args'), 'utf8').trim() : null,
+        debtArgs: existsSync(join(root, 'debt-args')) ? readFileSync(join(root, 'debt-args'), 'utf8').trim() : null,
         summary: existsSync(summaryPath) ? JSON.parse(readFileSync(summaryPath, 'utf8')) : null,
       };
     } finally { rmSync(root, { recursive: true, force: true }); }
   }
   const warnings = (stdout: string) => stdout.split('\n').filter(line => line.startsWith('::warning '));
 
-  test('an owed PR capability warns with its id, the stale nodes and the apply command, and exits 0', () => {
-    const result = runLane(['architecture-advisory', '--base', 'abc123'], { owed: owed('owed'), check: planned });
+  test('new PR debt warns once per item with its subjects and action, then the stale documents warn, and the lane exits 0', () => {
+    const result = runLane(['architecture-advisory', '--base', 'abc123'], { debt: debt([debtItem(1), debtItem(2, [])]), check: planned });
     expect(result.status, result.stderr).toBe(0);
-    expect(result.owedArgs).toBe('src/cli/index.ts state owed --json --base abc123');
+    expect(result.debtArgs).toBe('src/cli/index.ts architecture-debt --json --base abc123');
     expect(result.checked).toBe(true);
+    expect(result.stdout).toContain('[ci] Architecture debt: head coverage complete. Introduced 2. Resolved 1.');
     expect(warnings(result.stdout)).toEqual([
-      '::warning title=Architecture update owed::This PR changes paths owned by these capabilities after the last architecture manifest update: workflow-engine-workflow-state.',
-      '::warning title=Architecture documents stale::Status: planned. Stale nodes: capability.workflow-engine.workflow-state, capability.verification.evals-checks. Owed capabilities: workflow-engine-workflow-state. In this PR run: repo-harness architecture-projection apply --json. Then commit docs/architecture/.',
+      '::warning title=Architecture debt introduced::flow-proof-failed (no-direct-call) in capability.module-1. Action: archctx flows check --json',
+      '::warning title=Architecture debt introduced::flow-proof-failed (no-direct-call) in src/module-2.ts. Action: archctx flows check --json',
+      '::warning title=Architecture documents stale::Status: planned. Stale nodes: capability.workflow-engine.workflow-state, capability.verification.evals-checks. In this PR run: repo-harness architecture-projection apply --json. Then commit docs/architecture/.',
     ]);
   });
 
-  test('a clear PR runs no architecture check and prints no warning', () => {
-    const result = runLane(['architecture-advisory', '--base', 'abc123'], { owed: owed('clear') });
+  test('a PR without new debt and with current documents prints no warning', () => {
+    const result = runLane(['architecture-advisory', '--base', 'abc123'], { debt: debt([]), check: noop, checkExit: 0 });
     expect(result.status, result.stderr).toBe(0);
-    expect(result.checked).toBe(false);
+    expect(result.checked).toBe(true);
     expect(warnings(result.stdout)).toEqual([]);
-    expect(result.stdout).toContain('[ci] No architecture check needed.');
+    expect(result.stdout).toContain('[ci] No new architecture debt.');
+    expect(result.stdout).toContain('[ci] Architecture documents are current.');
   });
 
-  test('owed-rule and check failures become warnings, not PR failures', () => {
-    const failed = runLane(['architecture-advisory', '--base', 'missing'], { owedExit: 1 });
-    expect(failed.status, failed.stderr).toBe(0);
-    expect(failed.checked).toBe(false);
-    expect(warnings(failed.stdout)).toHaveLength(1);
-    expect(warnings(failed.stdout)[0]).toStartWith('::warning title=Architecture owed check failed::repo-harness state owed --json --base missing failed: ');
-    expect(warnings(failed.stdout)[0]).toContain('Unknown base ref: missing');
+  test('debt annotations stop at 20 and one more warning counts the rest', () => {
+    const result = runLane(['architecture-advisory', '--base', 'abc123'], { debt: debt(Array.from({ length: 23 }, (_, n) => debtItem(n))), check: noop, checkExit: 0 });
+    expect(result.status, result.stderr).toBe(0);
+    const debtWarnings = warnings(result.stdout).filter(line => line.startsWith('::warning title=Architecture debt introduced::'));
+    expect(debtWarnings).toHaveLength(21);
+    expect(debtWarnings[19]).toContain('capability.module-19.');
+    expect(debtWarnings[20]).toBe('::warning title=Architecture debt introduced::3 more new debt items have no annotation. Run repo-harness architecture-debt --json --base abc123 to list them.');
+  });
 
-    const noFacts = runLane(['architecture-advisory', '--base', 'abc123'], { owed: owed('owed'), codegraphExit: 1 });
+  test('a coverage gap prints its reason codes and never claims that the PR has no debt', () => {
+    const result = runLane(['architecture-advisory', '--base', 'abc123'], {
+      debt: debt([], { head: 'partial', headCodes: ['practices:not-enabled', 'practices:not-evaluated'], base: 'unknown', baseCodes: ['flows:not-evaluated'] }),
+      check: noop, checkExit: 0,
+    });
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain('[ci] Head coverage is partial. Reason codes: practices:not-enabled, practices:not-evaluated. Debt outside the covered checks is not measured.');
+    expect(result.stdout).toContain('[ci] Base coverage is unknown. Reason codes: flows:not-evaluated. Debt outside the covered checks is not measured.');
+    expect(result.stdout).not.toContain('No new architecture debt');
+    expect(warnings(result.stdout)).toEqual([]);
+  });
+
+  test('debt and check failures become warnings, not PR failures', () => {
+    const failed = runLane(['architecture-advisory', '--base', 'missing'], { debtExit: 1 });
+    expect(failed.status, failed.stderr).toBe(0);
+    expect(failed.checked).toBe(true);
+    expect(warnings(failed.stdout)[0]).toStartWith('::warning title=Architecture debt check failed::repo-harness architecture-debt --json --base missing failed: ');
+    expect(warnings(failed.stdout)[0]).toContain('missing does not resolve to a commit');
+    expect(warnings(failed.stdout)[1]).toStartWith('::warning title=Architecture check failed::');
+
+    const malformed = runLane(['architecture-advisory', '--base', 'abc123'], { debt: JSON.stringify({ kind: 'repo-harness-architecture-debt', base: null }), check: noop, checkExit: 0 });
+    expect(malformed.status, malformed.stderr).toBe(0);
+    expect(warnings(malformed.stdout)).toHaveLength(1);
+    expect(warnings(malformed.stdout)[0]).toContain('not an architecture debt report with a base');
+
+    const noFacts = runLane(['architecture-advisory', '--base', 'abc123'], { debt: debt([debtItem(1)]), codegraphExit: 1 });
     expect(noFacts.status, noFacts.stderr).toBe(0);
+    expect(noFacts.debtArgs).toBeNull();
     expect(noFacts.checked).toBe(false);
-    expect(warnings(noFacts.stdout)[1]).toStartWith('::warning title=Architecture check failed::');
+    expect(warnings(noFacts.stdout).map(line => line.split('::')[1])).toEqual(['warning title=Architecture debt check failed', 'warning title=Architecture check failed']);
   });
 
   test('the daily lane fails on stale documents and writes the summary for the report', () => {
     const result = runLane(['architecture'], { check: planned, summary: true });
     expect(result.status).toBe(1);
     expect(result.checked).toBe(true);
-    expect(result.owedArgs).toBeNull();
+    expect(result.debtArgs).toBeNull();
     expect(result.summary).toEqual({ status: 'planned', staleNodes: ['capability.workflow-engine.workflow-state', 'capability.verification.evals-checks'],
       files: ['docs/architecture/.projection-manifest.json'], humanActions: [] });
     expect(result.stdout).not.toContain('[ci] typecheck');
@@ -654,7 +690,7 @@ describe('architecture lanes', () => {
     });
     expect(result.status, result.stderr).toBe(0);
     expect(result.checked).toBe(true);
-    expect(result.owedArgs).toBeNull();
+    expect(result.debtArgs).toBeNull();
     expect(result.summary).toEqual({ status: 'noop', staleNodes: [], files: [], humanActions: [] });
     expect(warnings(result.stdout)).toEqual([]);
     expect(result.stdout).toContain('[ci] OK');

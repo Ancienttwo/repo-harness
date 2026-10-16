@@ -1,0 +1,161 @@
+{
+  "schemaVersion": "archcontext.envelope/v1",
+  "ok": true,
+  "requestId": "complete",
+  "data": {
+    "schemaVersion": "archcontext.review/v1",
+    "reviewId": "review_5e8d6286d2e2",
+    "taskSessionId": "task_cli",
+    "snapshot": {
+      "headSha": "fbde2cdbb5b0e6ce3efb3e5a5a84dbd18119b931",
+      "worktreeDigest": "sha256:1d5a5f0aa1ebb8c4fd762c6b4ecca299ffc38405486ad11e551ca43124e2ded6",
+      "modelDigest": "sha256:f02b25d544a96dd6aaaf31d16e5019cffcdc2244bdc847247796f8b1acf038db",
+      "codeFactsDigest": "sha256:002b32c1805a466de7f18bdbb0aae55cefdf7dd7313236dbdc220c0f8ccdc7ed"
+    },
+    "posture": "normal",
+    "result": "fail_action_required",
+    "summary": {
+      "errors": 2,
+      "warnings": 0,
+      "notices": 0
+    },
+    "findings": [
+      {
+        "id": "debt.4e00069420f3aa9a4c235a6dca10aee579805560295d52caac61c43d191437b4",
+        "type": "architecture-debt",
+        "severity": "error",
+        "message": "flow-proof-failed: no-direct-call; subjects: src/module/core.ts, src/module/read.ts, capability.test.module, capability.test.module"
+      },
+      {
+        "id": "debt.d48aea93060bf8b9270b10c56327b9fda8cf22969460c97cb95e31910dcf8b7d",
+        "type": "architecture-debt",
+        "severity": "error",
+        "message": "unowned-path: source-owner-missing; subjects: src/orphan/loose.ts"
+      }
+    ],
+    "practiceViolations": [],
+    "waiversApplied": [],
+    "debt": {
+      "schemaVersion": "archcontext.architecture-debt/v1",
+      "scope": {
+        "kind": "repository",
+        "changedPaths": [],
+        "capabilityIds": [
+          "capability.test.module"
+        ]
+      },
+      "coverage": "partial",
+      "coverageReasonCodes": [
+        "practices:not-enabled",
+        "practices:not-evaluated"
+      ],
+      "checks": [
+        {
+          "check": "ownership",
+          "coverage": "complete",
+          "reasonCodes": []
+        },
+        {
+          "check": "anchors",
+          "coverage": "complete",
+          "reasonCodes": []
+        },
+        {
+          "check": "dependencies",
+          "coverage": "complete",
+          "reasonCodes": []
+        },
+        {
+          "check": "flows",
+          "coverage": "complete",
+          "reasonCodes": []
+        },
+        {
+          "check": "practices",
+          "coverage": "unknown",
+          "reasonCodes": [
+            "not-enabled",
+            "not-evaluated"
+          ]
+        }
+      ],
+      "items": [
+        {
+          "id": "debt.4e00069420f3aa9a4c235a6dca10aee579805560295d52caac61c43d191437b4",
+          "kind": "flow-proof-failed",
+          "nodeIds": [
+            "capability.test.module"
+          ],
+          "capabilityIds": [
+            "capability.test.module"
+          ],
+          "paths": [
+            "src/module/core.ts",
+            "src/module/read.ts"
+          ],
+          "reasonCode": "no-direct-call",
+          "action": "archctx flows check --json",
+          "details": {
+            "modelField": "source.entrypoints.symbols.sinks",
+            "entrypointId": "entrypoint.module.read",
+            "sinkId": "sink.module.core",
+            "sourceSymbol": "read",
+            "sinkSymbol": "project"
+          }
+        },
+        {
+          "id": "debt.d48aea93060bf8b9270b10c56327b9fda8cf22969460c97cb95e31910dcf8b7d",
+          "kind": "unowned-path",
+          "nodeIds": [],
+          "capabilityIds": [],
+          "paths": [
+            "src/orphan/loose.ts"
+          ],
+          "reasonCode": "source-owner-missing",
+          "action": "archctx plan --id changeset.<id> --operations-file <ownership-operations.json>",
+          "details": {
+            "modelField": "source.include/source.exclude/parent",
+            "ownershipRule": "parent-chain"
+          }
+        }
+      ],
+      "actionsRequired": [
+        "archctx flows check --json",
+        "archctx plan --id changeset.<id> --operations-file <ownership-operations.json>"
+      ],
+      "digest": "sha256:9fc4e1b28a7f7f345cd38fd611edbb96791746bfc1041fc482e5ef31c466adbe"
+    },
+    "actionsRequired": [
+      "archctx flows check --json",
+      "archctx plan --id changeset.<id> --operations-file <ownership-operations.json>"
+    ],
+    "cleanup": {
+      "required": 0,
+      "completed": 0
+    },
+    "extensions": {
+      "digest": "sha256:9828403329e1f3f6aacce383a7d066d5ea53c3c5812da54df505b9e7d00479e8",
+      "dependencyConstraintGate": {
+        "schemaVersion": "archcontext.dependency-constraint-evaluation/v1",
+        "status": "not-applicable",
+        "coverage": "unknown",
+        "reasonCodes": [],
+        "constraintIds": [],
+        "importEdgeCount": 0,
+        "unresolvedImports": [],
+        "violations": []
+      },
+      "reviewPolicy": {
+        "failOn": [
+          "incomplete-intervention",
+          "invalid-schema",
+          "prohibited-dependency",
+          "stale-context",
+          "unjustified-compatibility"
+        ],
+        "source": "default",
+        "downgradedFindingIds": []
+      }
+    }
+  }
+}

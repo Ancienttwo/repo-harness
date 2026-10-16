@@ -523,20 +523,20 @@ describe('package-local ArchContext projection provider', () => {
     for (const mode of ['apply', 'adopt']) expect(buildArchitectureProjectionCommand().commands.find((command) => command.name() === mode)!.options.map((option) => option.long)).toContain('--expected-worktree-digest');
   });
 
-  test('a newer renderer reports mismatch and blocks check, plan and apply after the snapshot read and handshake, before any projection command', () => {
+  test('a projection run manifest-incompatible envelope throws its typed code and reason', () => {
     const f = fixture();
-    mkdirSync(join(f.repoRoot, 'docs/architecture'), { recursive: true });
-    writeFileSync(join(f.repoRoot, 'docs/architecture/.projection-manifest.json'), JSON.stringify({ rendererVersion: 'archcontext.docs-renderer/v7' }));
+    const failure = failureEnvelope('projection.run', knownFailure('AC_PRECONDITION_FAILED', 'projection-manifest-incompatible'));
     const calls: Array<{ binary: string; args: readonly string[] }> = [];
-    const options = { consumerRoot: f.consumerRoot, policy, run: runner(calls, projectionEnvelope(expectedSnapshot)) };
-    expect(inspectArchitectureProjectionReadiness(f.repoRoot, options).projectionProvider.state).toBe('mismatch');
-    expect(calls.map((call) => call.args)).toEqual([['capabilities', '--json']]);
-    calls.length = 0;
-    for (const mode of ['check', 'plan', 'apply'] as const) {
-      expect(() => runArchitectureProjection(architectureProjectionRequest(mode, f.repoRoot, options), f.repoRoot, options)).toThrow('update repo-harness');
-    }
-    expect(calls.map((call) => call.args)).toEqual(['check', 'plan', 'apply'].flatMap(() => [['projection', 'snapshot', '--json'], ['capabilities', '--json']]));
-    expect(calls.some((call) => call.args[0] === 'projection' && ['run', 'readback', 'recover'].includes(call.args[1]!))).toBe(false);
+    const run: RunArchctxProcess = (binary, args) => {
+      calls.push({ binary, args });
+      return args[0] === 'capabilities' ? { status: 0, signal: null, stdout: JSON.stringify(capabilities()), stderr: '' } : args[1] === 'snapshot' ? { status: 0, signal: null, stdout: JSON.stringify(snapshotEnvelope()), stderr: '' } : { status: 1, signal: null, stdout: JSON.stringify(failure), stderr: '' };
+    };
+    const options = { consumerRoot: f.consumerRoot, policy, run };
+    let error: unknown;
+    try { runArchitectureProjection(architectureProjectionRequest('check', f.repoRoot, options), f.repoRoot, options); } catch (caught) { error = caught; }
+    expect(error).toBeInstanceOf(ArchctxClientError);
+    expect(error).toMatchObject({ code: 'AC_PRECONDITION_FAILED', action: failure.error.action, reasonCode: 'projection-manifest-incompatible' });
+    expect(calls.some((call) => call.args[0] === 'projection' && call.args[1] === 'run')).toBe(true);
   });
 
   test('readiness reports missing policy and incompatible daemon as typed states', () => {
@@ -555,6 +555,55 @@ describe('package-local ArchContext projection provider', () => {
     expect(mismatch.projectionProvider.state).toBe('mismatch');
     expect(mismatch.daemonRuntime.state).toBe('mismatch');
     expect(mismatch.apply.enabled).toBe(false);
+  });
+
+  describe('committed projection manifest compatibility', () => {
+    const withManifest = (f: ReturnType<typeof fixture>, contents: string) => {
+      mkdirSync(join(f.repoRoot, 'docs', 'architecture'), { recursive: true });
+      writeFileSync(join(f.repoRoot, 'docs', 'architecture', '.projection-manifest.json'), contents);
+    };
+    const manifest = (floor: string) => JSON.stringify({
+      schemaVersion: 'archcontext.architecture-docs-projection-manifest/v3',
+      rendererVersion: 'archcontext.docs-renderer/v6',
+      minimumRendererVersion: floor,
+      profile: 'repo-harness/v1',
+    });
+    const readiness = (f: ReturnType<typeof fixture>) => {
+      // A fixed fake Node runtime keeps the result independent of the Node on the test machine.
+      const fakeBin = join(f.root, 'bin');
+      mkdirSync(fakeBin, { recursive: true });
+      const node = join(fakeBin, 'node');
+      writeFileSync(node, '#!/bin/sh\necho v24.1.0\n');
+      chmodSync(node, 0o755);
+      return inspectArchitectureProjectionReadiness(f.repoRoot, {
+        consumerRoot: f.consumerRoot, policy, env: { PATH: fakeBin }, trustedNodeCandidateSource: () => [], run: runner([], projectionEnvelope(expectedSnapshot)),
+      });
+    };
+
+    test('a renderer floor newer than the installed archctx is not ready and keeps apply disabled', () => {
+      const f = fixture();
+      withManifest(f, manifest('archcontext.docs-renderer/v7'));
+      const result = readiness(f);
+      expect(result.projectionProvider.state).toBe('mismatch');
+      expect(result.projectionProvider.reasonCode).toBe('projection-manifest-incompatible');
+      expect(result.projectionProvider.reason).toContain('minimumRendererVersion is unsupported by this engine');
+      expect(result.apply.enabled).toBe(false);
+    });
+
+    test('a floor the installed archctx meets stays ready', () => {
+      const f = fixture();
+      withManifest(f, manifest('archcontext.docs-renderer/v6'));
+      expect(readiness(f).projectionProvider.state).toBe('ready');
+    });
+
+    test('a malformed committed manifest fails closed', () => {
+      const f = fixture();
+      withManifest(f, '{not json');
+      const result = readiness(f);
+      expect(result.projectionProvider.state).toBe('error');
+      expect(result.projectionProvider.reason).toContain('is not valid JSON');
+      expect(result.apply.enabled).toBe(false);
+    });
   });
 
   describe('closeout architecture daemon stop', () => {
