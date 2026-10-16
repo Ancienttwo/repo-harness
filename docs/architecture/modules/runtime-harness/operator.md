@@ -1,6 +1,6 @@
 # runtime-harness/operator 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-operator" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:bd375c0ec673384c643823a63460f4911b1e162492f1b8494bfa8e994e69701a" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-operator" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:6c155286b8c8594ae4171355ef258047de9cd56ce21d2e5ae4d2f8d7daffa39c" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.operator`(kind `capability`)
 > **Matched Prefixes**:`src/core/operator/**`、`src/effects/operator/**`、`src/operator-web/**`、`src/cli/commands/operator.ts`、`src/cli/commands/module.ts`、`src/core/architecture/module-view.ts`、`src/core/docs/**`、`src/core/setup/**`、`src/effects/setup/**`、`src/cli/commands/setup-snapshot.ts`、`src/cli/commands/setup-check-child.ts`、`src/core/dev-activity/**`、`src/effects/dev-activity/**`、`src/effects/terminal/herdr-observation.ts`、`assets/operator/**`、`vite.operator.config.ts`
@@ -22,7 +22,7 @@ flowchart LR
   p1_component_operator_primary_d8da79ba["Operator HTTP Reader"]:::component
   p1_component_operator_view_projections_ca31e3bc["Operator View Projections"]:::component
   p1_component_operator_web_console_452bb61f["Operator Web Console"]:::component
-  p1_component_operator_activity_feeds_00325b96 -->|"Reuse public agent-config text filtering and runtime badge freshness rules"| p1_component_operator_view_projections_ca31e3bc
+  p1_component_operator_activity_feeds_00325b96 -->|"Reuse public agent-config text filtering and runtime source freshness rules"| p1_component_operator_view_projections_ca31e3bc
   p1_component_operator_architecture_view_0bdc3e1c -->|"List modules and export review prompts through the shared ArchitectureModelReader"| p1_capability_runtime_harness_global_runtime_reconciliation_401730e8
   p1_component_operator_primary_d8da79ba -->|"Start the bounded background collectors once and serve only their cached#44; re-decoded snapshots"| p1_component_operator_activity_feeds_00325b96
   p1_component_operator_primary_d8da79ba -->|"Build the docs graph from committed repository content"| p1_component_operator_architecture_view_0bdc3e1c
@@ -39,7 +39,7 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:76ab1159c9721f3262b330bc1996d8d091b2d943c82f5e95395e6208e2723e32`).
+- Proof: `proven` (`sha256:6d3517e4dc9185388b8623e76a4a672f1af458b73df6d4fe93fb9fe9ef49fe68`).
 - Semantic nodes: `7`; declared relations: `11`.
 
 ### 1.2 模組職責表
@@ -58,7 +58,7 @@ flowchart LR
 
 ### 1.3 規模信號
 
-- 規模量級:`100–200` 個文件 / `10k–20k` 行
+- 規模量級:`50–100` 個文件 / `10k–20k` 行
 - 匹配前綴:`src/core/operator/**`、`src/effects/operator/**`、`src/operator-web/**`、`src/cli/commands/operator.ts`、`src/cli/commands/module.ts`、`src/core/architecture/module-view.ts`、`src/core/docs/**`、`src/core/setup/**`、`src/effects/setup/**`、`src/cli/commands/setup-snapshot.ts`、`src/cli/commands/setup-check-child.ts`、`src/core/dev-activity/**`、`src/effects/dev-activity/**`、`src/effects/terminal/herdr-observation.ts`、`assets/operator/**`、`vite.operator.config.ts`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
@@ -76,9 +76,8 @@ flowchart LR
 
 - `component.operator.activity-feeds`:
   - `reads` → `capability.runtime-harness.hook-adapters` — Read the hook route registry and install profile components for the Hooks and Agents pages
-  - `reads` → `capability.runtime-harness.pipeline-ledger` — Read pipeline records into the activity snapshot
   - `reads` → `capability.runtime-harness.verified-context` — Read open Human Decisions for the board attention queue
-  - `calls` → `component.operator.view-projections` — Reuse public agent-config text filtering and runtime badge freshness rules
+  - `calls` → `component.operator.view-projections` — Reuse public agent-config text filtering and runtime source freshness rules
 - `component.operator.architecture-view`:
   - `calls` → `capability.verification.acceptance-review` — Report module CLI failures with the typed module read error of the review prompt builder
   - `reads` → `capability.runtime-harness.global-runtime-reconciliation` — List modules and export review prompts through the shared ArchitectureModelReader
@@ -86,24 +85,20 @@ flowchart LR
   - `calls` → `capability.verification.acceptance-review` — Raise and map the typed module read errors that the module review prompt builder declares
   - `calls` → `component.operator.activity-feeds` — Start the bounded background collectors once and serve only their cached, re-decoded snapshots
   - `calls` → `component.operator.architecture-view` — Build the docs graph from committed repository content
-  - `calls` → `capability.runtime-harness.collaboration` — Collect the collaborative Work Exchange for one registered repository
   - `reads` → `capability.runtime-harness.engineer-scheduling` — Read the tracked work graph projection for the Planning view
   - `reads` → `capability.runtime-harness.engineering-overlay` — Collect the engineering board for the Organization view
   - `reads` → `capability.runtime-harness.global-runtime-reconciliation` — Read the committed architecture model through the shared ArchitectureModelReader
   - `reads` → `capability.runtime-harness.mcp-sidecar` — Resolve a registered repository root from the strict repo-harness registry snapshot
   - `reads` → `capability.runtime-harness.verified-context` — Read the open Human Decision inventory
   - `calls` → `component.operator.view-projections` — Parse closed route requests and project or re-decode each observation before it leaves the server
-  - `reads` → `capability.runtime-harness.pipeline-ledger` — Open pipeline ledger snapshots and decode the pipeline board
   - `reads` → `capability.organization.task-fleet` — Collect fleet offers and the fleet board for the console
 - `component.operator.view-projections`:
   - `depends-on` → `capability.verification.acceptance-review` — Decode the module review prompt shape that the review prompt builder declares
   - `depends-on` → `component.operator.architecture-view` — Decode the module index and module detail shapes that the architecture view declares
-  - `depends-on` → `capability.runtime-harness.collaboration` — Project Work Exchange, handoff and context packet records with the collaboration validators
   - `reads` → `capability.organization.task-fleet` — Render fleet board errors and task message shapes
 - `component.operator.web-console`:
   - `calls` → `component.operator.activity-feeds` — Decode the development activity and setup snapshots with the decoders the server uses
   - `calls` → `component.operator.primary` — Fetch public JSON observations through GET and HEAD routes only
-  - `reads` → `capability.runtime-harness.pipeline-ledger` — Decode the pipeline board in the browser
   - `calls` → `component.operator.view-projections` — Decode each observation body with the shared strict core decoder before render
 
 ### 1.5 組件結構
@@ -113,12 +108,12 @@ flowchart LR
 | `component.operator.activity-feeds` | Setup and Activity Feeds | `10–20` 個文件 / `1000–2000` 行 | 未宣告 |
 | `component.operator.architecture-view` | Architecture View | `2–5` 個文件 / `200–500` 行 | 未宣告 |
 | `component.operator.primary` | Operator HTTP Reader | `20–50` 個文件 / `2000–5000` 行 | `entrypoint.operator.http-server` |
-| `component.operator.view-projections` | Operator View Projections | `10–20` 個文件 / `2000–5000` 行 | 未宣告 |
-| `component.operator.web-console` | Operator Web Console | `20–50` 個文件 / `10k–20k` 行 | `entrypoint.operator.web-dev-activity` |
+| `component.operator.view-projections` | Operator View Projections | `10–20` 個文件 / `1000–2000` 行 | 未宣告 |
+| `component.operator.web-console` | Operator Web Console | `20–50` 個文件 / `5000–10000` 行 | `entrypoint.operator.web-dev-activity` |
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:76ab1159c9721f3262b330bc1996d8d091b2d943c82f5e95395e6208e2723e32`); selectors `7/7`.
+> **Proof**: `proven` (`sha256:6d3517e4dc9185388b8623e76a4a672f1af458b73df6d4fe93fb9fe9ef49fe68`); selectors `7/7`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
@@ -168,7 +163,7 @@ sequenceDiagram
 5. **CLI 和 HTTP 输出一致。** `module review-prompt` 与 architecture 路由使用同一个 `ArchitectureModelReader`。`tests/cli/operator-serve.test.ts:1270` 比较 GET、HEAD 与 CLI 的 digest。来源：PR #590、plan-20261005-0405 不变量 I7。
 6. **UI 不触发动作。** 每个动作只显示链接或可复制的 Bot 命令。来源：PR #609、plan-20261005-0405 不变量 I9。命令通道保持 Bot → CLI → herdr。
 7. **不泄露 secret 和本机路径。** 本机文本经过 `publicAgentConfigText`（`src/core/operator/agent-config.ts:36`）或 `publicDevActivityText` 过滤。architecture 读取在返回前检查 `containsSecret`（`src/effects/operator/architecture.ts:38`）。
-8. **Agent 身份只有两个来源。** 一个是 ledger 的 `owner_bot`（`src/core/dev-activity/projection.ts:220`），另一个是已验证的 runtime binding。分支前缀和 PR 作者不能作为身份来源。来源：PR #609。
+8. **开发活动不推断 Agent 任务身份。** 它只投影 Git、GitHub、Decision 事实和 runtime 源健康。没有 task binding 时，不输出任务级 Agent 状态。
 9. **fixture 不进生产包。** `?fixture=` 只在 `import.meta.env.DEV` 下加载（`src/operator-web/main.tsx:15`）。PR #609 用 grep 检查了 `dist/operator-ui`，fixture 字符串命中数为 0。
 
 ### 3.2 关键权衡
@@ -200,9 +195,17 @@ sequenceDiagram
 
 - `createDocsGraphReader`（`src/effects/operator/docs-graph.ts:35`）在 `src/` 中没有调用方，只有 `tests/docs/` 使用它。PR #579 明确没有加路由。PR #609 删除了 Docs 占位页。这个 reader 是保留给后续 Docs 工作区，还是应该退役？没有记录。
 - `src/cli/commands/module.ts` 归入本 capability 的置信度是 MEDIUM（归属提议 §5）。它和 architecture 路由共用 builder，但它是独立的 CLI 入口。它是否应该归入架构工具类 capability？没有记录。
-- web-console 直接 import `src/core/pipeline/board.ts`。`src/operator-web/fixture.ts` import `src/core/publication/merge-readiness.ts`。这两个文件目前没有归属。它们的 owner 由其他分组决定。
+- `src/operator-web/fixture.ts` import `src/core/publication/merge-readiness.ts`。该文件的归属由 publication 范围决定。
 
 ## 4. 歷史決策記錄(append-only)
+
+### Retire unused observations (2026-10-16, issue #769)
+
+- Remove Work Exchange and the pipeline observer.
+- Keep Planning, Organization and Decision under the repository snapshot route.
+- Keep strict identity checks, bounded workers and source failure isolation.
+- Keep native runtime capture and unbound Herdr observations.
+
 
 ### 只读边界（2026-09-05 → 2026-10-04）
 
@@ -238,6 +241,6 @@ sequenceDiagram
 
 ## Optimization Backlog
 
-- `src/effects/operator/server.ts` 有 1766 行。路由分发、collaboration 队列、Fleet 队列和任务读取监督都在同一个闭包里（`startOperatorServer`，`server.ts:1050`）。scan 报告 `component.operator.primary` 有 10 个跨模块循环。拆分顺序需要先有 profiling 或改动频率证据，目前没有。
+- `startOperatorServer` 仍集中处理路由、repository observation 队列、Fleet 队列和任务读取监督。拆分需要改动频率或性能证据。
 - docs graph reader 没有生产调用方（见 §3.4）。如果 Docs 工作区不在计划中，可以退役它和 `src/core/docs/**`。
 - 在 arch-context#296 之后，把 `src/core/review/module-review-prompt.ts` 放回 architecture-view 组件（归属提议 §5 的原方案）。那时 operator 到 acceptance-review 的 3 条关系可以删除。

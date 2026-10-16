@@ -5,74 +5,65 @@ name: Read-only Delegated Runs
 status: active
 summary: Admits one logical Role Profile against current Engineer authority and journals at most one Codex CLI read-only host action as untrusted evidence.
 responsibilities:
-  - Freeze the exact tracked logical Role Profile, Codex executable, model, argv, one-turn packet and protected path scope without claiming Provider-native agent identity.
-  - Derive a non-authoritative runtime capability receipt from one real Seatbelt mutation canary, bounded/redacted immutable process evidence and byte-identical protected snapshots.
-  - Revalidate current ClaimActorReceipt, WorkEnvelope and Engineer Binding fences before persisting an admitted delegation.
+  - "Freeze the exact tracked logical Role Profile, Codex executable, model, argv, one-turn packet and protected path scope without claiming Provider-native agent identity."
+  - "Derive a non-authoritative runtime capability receipt from one real Seatbelt mutation canary, bounded/redacted immutable process evidence and byte-identical protected snapshots."
+  - "Revalidate current ClaimActorReceipt, WorkEnvelope and Engineer Binding fences before persisting an admitted delegation."
   - Persist immutable intent and launch claim before invoking at most one Codex CLI host action.
-  - Reconcile any lost acknowledgement or pre-observation crash without retry, resume, Provider substitution or inferred success.
-  - Collect only receipt-bound WorkerResult evidence while leaving Task, Lease, Publication and Acceptance authorities unchanged.
-  - Exclude writable delegation, scheduler, daemon, model/tool loop, history, compaction, Provider fallback and generic Worker Host behavior.
-  - Run the collaboration plane's dispatch fence inside the one exported dispatch, under the dispatch lock and before any host action, so no caller can reach the Codex CLI with injected coordination context that no binding accounts for, and a run carrying neither a binding nor a marker dispatches exactly as before.
+  - "Reconcile any lost acknowledgement or pre-observation crash without retry, resume, Provider substitution or inferred success."
+  - "Collect only receipt-bound WorkerResult evidence while leaving Task, Lease, Publication and Acceptance authorities unchanged."
+  - "Exclude writable delegation, scheduler, daemon, model/tool loop, history, compaction, Provider fallback and generic Worker Host behavior."
 source:
   include:
-    - "src/core/engineers/delegation.ts"
-    - "src/effects/engineers/delegated-run-store.ts"
-    - "src/cli/commands/delegation.ts"
-    - "scripts/me2b-runtime-admission-canary.ts"
+    - src/core/engineers/delegation.ts
+    - src/effects/engineers/delegated-run-store.ts
+    - src/cli/commands/delegation.ts
+    - scripts/me2b-runtime-admission-canary.ts
   entrypoints:
     - id: entrypoint.delegated-runs.dispatch-command
-      path: "src/cli/commands/delegation.ts"
+      path: src/cli/commands/delegation.ts
       symbols:
-        - name: "dispatchDelegatedRunCommand"
+        - name: dispatchDelegatedRunCommand
           sinks:
             - id: sink.delegated-runs.dispatch-host-action
-              path: "src/effects/engineers/delegated-run-store.ts"
-              symbol: "dispatchDelegatedRun"
-    - id: entrypoint.delegated-runs.dispatch-effect
-      path: "src/effects/engineers/delegated-run-store.ts"
-      symbols:
-        - name: "dispatchDelegatedRun"
-          sinks:
-            - id: sink.delegated-runs.collaboration-dispatch-fence
-              path: "src/effects/collaboration/context-delivery.ts"
-              symbol: "fenceCollaborationDispatch"
+              path: src/effects/engineers/delegated-run-store.ts
+              symbol: dispatchDelegatedRun
     - id: entrypoint.delegated-runs.parent-authority
-      path: "src/effects/engineers/delegated-run-store.ts"
+      path: src/effects/engineers/delegated-run-store.ts
       symbols:
-        - name: "validateDelegationParent"
+        - name: validateDelegationParent
           sinks:
             - id: sink.delegated-runs.parent-authority
-              path: "src/effects/engineers/claim-actor-store.ts"
-              symbol: "validateClaimActorReceiptLive"
+              path: src/effects/engineers/claim-actor-store.ts
+              symbol: validateClaimActorReceiptLive
     - id: entrypoint.delegated-runs.intent
-      path: "src/effects/engineers/delegated-run-store.ts"
+      path: src/effects/engineers/delegated-run-store.ts
       symbols:
-        - name: "persistIntent"
+        - name: persistIntent
           sinks:
             - id: sink.delegated-runs.intent-schema
-              path: "src/core/engineers/delegation.ts"
-              symbol: "canonicalDelegatedRunIntentBytes"
+              path: src/core/engineers/delegation.ts
+              symbol: canonicalDelegatedRunIntentBytes
     - id: entrypoint.delegated-runs.observation
-      path: "src/effects/engineers/delegated-run-store.ts"
+      path: src/effects/engineers/delegated-run-store.ts
       symbols:
-        - name: "appendObservation"
+        - name: appendObservation
           sinks:
             - id: sink.delegated-runs.observation
-              path: "src/core/engineers/delegation.ts"
-              symbol: "buildDelegatedRunObservation"
+              path: src/core/engineers/delegation.ts
+              symbol: buildDelegatedRunObservation
     - id: entrypoint.delegated-runs.result
-      path: "src/effects/engineers/delegated-run-store.ts"
+      path: src/effects/engineers/delegated-run-store.ts
       symbols:
-        - name: "persistResult"
+        - name: persistResult
           sinks:
             - id: sink.delegated-runs.worker-result
-              path: "src/core/engineers/delegation.ts"
-              symbol: "canonicalWorkerResultBytes"
+              path: src/core/engineers/delegation.ts
+              symbol: canonicalWorkerResultBytes
 extensions:
   contractFiles:
-    agents: "AGENTS.md"
-    claude: "CLAUDE.md"
-  lspProfile: "typescript-lsp"
+    agents: AGENTS.md
+    claude: CLAUDE.md
+  lspProfile: typescript-lsp
   verification:
-    - "bun test tests/unit/me2a-me3b-readonly-delegation.test.ts tests/cli/delegation.test.ts --timeout 60000"
-    - "bun run check:type"
+    - bun test tests/unit/me2a-me3b-readonly-delegation.test.ts tests/cli/delegation.test.ts --timeout 60000
+    - bun run check:type

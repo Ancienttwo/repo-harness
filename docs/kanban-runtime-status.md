@@ -1,6 +1,6 @@
 # Kanban runtime observations
 
-The Organization / Attention board reads a separate runtime overlay. Observations never advance pipeline phase, admit work, release leases, accept results or change evidence. The Pipeline Board V2 schema is unchanged. The overlay uses `repo-harness.runtime-overlay.v4`. Its `badges` array contains task observations. Its `pane_observations` array contains separate Herdr terminal reports. Its `native_sources` array contains independent native session or terminal observations. Native observations have no task binding.
+The operator console reads a separate runtime overlay. Observations never admit work, release leases, accept results or change evidence. The overlay uses `repo-harness.runtime-overlay.v4`. The configured service has no task identity source, so its `badges` array is empty. Its `pane_observations` array contains separate Herdr terminal reports. Its `native_sources` array contains independent native session or terminal observations. Native observations have no task binding.
 
 Without configuration, `/api/v1/runtime/status` reports unavailable. Native mode needs no Herdr process, socket or fork. The operator owner supplies an absolute config path with `repo-harness operator serve --runtime-status-config /authorized/runtime-config.json`.
 
@@ -44,11 +44,17 @@ The reader accepts only bounded regular files. It uses no-follow open and file i
 
 A capture generation is a UUID. A new generation clears previous observations. Retired generations cannot return. Within a generation, lower sequences and different content at the same sequence fail closed. Rejected states stay hidden until a higher sequence or a new generation. The observer bounds retired-generation history. If that bound is exhausted, it fails closed. File replacement alone does not reset these fences.
 
-Native settled, idle, error and cancelled states are program reports. They do not accept a task. Disconnect does not mean completion. OSC idle does not mean cancellation. Codex interrupted is a native turn result. Pipeline phase, task acceptance and evidence remain under their existing authority.
+Native settled, idle, error and cancelled states are program reports. They do not accept a task. Disconnect does not mean completion. OSC idle does not mean cancellation. Codex interrupted is a native turn result. Task acceptance and evidence remain under their existing authority.
+
+## Dev activity response v2
+
+`GET /api/v1/dev-activity` returns `repo-harness.dev-activity.v2`. Update the browser and server together. The decoder rejects v1 snapshots. Items no longer contain `ledger`, `agent` or `runtime_blocked`. Ledger source health and owner/runtime attention kinds are removed. Items require a branch. Git and GitHub facts define cards. GitHub merge readiness and open Human Decisions define attention. The five board columns remain; no current source supplies Planned items.
+
+Runtime source health remains separate from task identity. The native roster still reads the independent runtime overlay. It does not assign a terminal or session observation to a card.
 
 ## Optional Herdr source
 
-Herdr remains optional. Its dispatch and binding controls do not change. Herdr mode has an empty `native_sources` array. Select it explicitly with this config shape:
+Herdr remains optional. Observations are unbound because the pipeline identity source is retired. Herdr mode has empty task badges and an empty `native_sources` array. Select it explicitly with this config shape:
 
 ```json
 {
@@ -57,9 +63,7 @@ Herdr remains optional. Its dispatch and binding controls do not change. Herdr m
   "source_host": "authorized-host",
   "herdr_session": "authorized-session",
   "socket_path": "/authorized/herdr.sock",
-  "deadline_ms": 1000,
-  "bindings_path": null,
-  "pipeline_snapshot": null
+  "deadline_ms": 1000
 }
 ```
 
@@ -69,9 +73,11 @@ The base socket codec follows [immutable Herdr source](https://github.com/herdrd
 
 The codec requires reported version 0.9.3 and protocol 22. These fields do not attest the remote binary commit. Only `ping`, `session.snapshot` and `events.subscribe` are sent. Global lifecycle subscriptions precede exact pane status subscriptions and a second snapshot. Titles, cwd, terminal text, arbitrary event payloads and raw agent session paths are excluded from the public projection. The agent-session object is represented by a digest.
 
-With both binding paths null, observations remain unclaimed. To attach badges, a dispatch owner must supply both an existing immutable pipeline snapshot pointer and a bounded regular-file manifest with exact shape `{ "protocol": "repo-harness.runtime-bindings.v2", "bindings": [...] }`. Each binding must provide `source_host`, repository digest `repository_id`, `task`, `role`, `round`, `pipeline_state_version`, `request_id`, `context_sha256`, `runtime_session`, `attempt`, `generation`, `source_epoch`, `herdr_session`, `terminal_id`, `pane_id` and `agent_session`. `runtime_session` is the SHA-256 digest (with `sha256:` prefix) of the exact existing terminal binding artifact bytes. `generation` is the existing owned dispatch intent ID. `agent_session` is the digest produced by `herdrAgentSessionKey` from the official typed session object. `source_epoch` is a nonnegative integer in the file; the observer replaces it with its own lifecycle epoch after verification.
+### Breaking change: remove retired binding keys
 
-The manifest is a read-only identity link, not another task ledger. The reader verifies outbox enrollment, current record state version, current role/round/request/context, attempt, owned terminal/provider intent proofs and context bytes against existing dispatch artifacts. It uses the board's existing restore-aware run projection from the same immutable snapshot. This includes recovered enrollment logs. Only the latest round for a role can claim a badge. The actual pane session and terminal IDs must match the binding. Ambiguous, missing, changed or unverifiable bindings remain unclaimed. The UI additionally checks the card state version and latest role round, so a retained older round cannot display runtime activity as current. No association comes from titles or cwd. No automatic binding-file writer or live host setup is included; a caller must provide those complete verified references.
+Herdr v2 config files must remove `bindings_path` and `pipeline_snapshot`. This includes files that set both keys to `null`. The service rejects either key with `runtime_config_retired_fields` and an error that names both keys. Edit the config file before starting `operator serve --runtime-status-config <file>` again. Native v2 config files keep their current shape.
+
+Task badge binding through a manifest is removed. The service no longer opens a pipeline snapshot or verifies dispatch bindings. Observations remain unclaimed. No task association comes from titles, cwd or other local guesses.
 
 Herdr `idle`, `working`, `blocked`, `unknown` and readable `done` remain supported agent observations. Agent `done` displays “Idle · not seen”. It does not mean accepted completion. Its blocking reason is unknown.
 
@@ -79,10 +85,10 @@ The typed root receiver must advertise `ping.result.capabilities.program_status_
 
 The adapter reads `PaneInfo.program_status`. Its envelope has `source: "osc7501"`, `revision`, `source_epoch`, `updated_at_ms` and `record`. The record has state `idle`, `working`, `blocked`, `done` or `error`. Only `blocked` can have a permission, question or auth kind. Root `done` maps to `settled`. It is a report that the program stopped working. It is not task acceptance. Root `idle` does not mean cancellation. Root OSC has no aborted state. A null record means clear. Clear removes the visible report and keeps its revision fence. Reports use `pane.updated` invalidation. OSC has no heartbeat.
 
-Each public terminal report has `scope: "pane"`, `source: "osc7501"`, `pane`, nullable `binding`, `source_epoch`, `revision`, `state`, `reason`, `changed_at` and `freshness`. The pane has source host, Herdr session, terminal ID, pane ID and an agent-session digest. The digest can be null when Herdr has no session reference. The optional binding is a verified current card-to-pane route. It is not the producer identity. A root report cannot prove which task, round or attempt produced it. A UI must label it “关联终端报告”. It must not put it in the task badge or use it as task evidence.
+Each public terminal report has `scope: "pane"`, `source: "osc7501"`, `pane`, nullable `binding`, `source_epoch`, `revision`, `state`, `reason`, `changed_at` and `freshness`. The pane has source host, Herdr session, terminal ID, pane ID and an agent-session digest. The digest can be null when Herdr has no session reference. The configured service supplies a null binding. The terminal report is not a task producer identity. A root report cannot prove which task, round or attempt produced it. A UI must label it “关联终端报告”. It must not put it in the task badge or use it as task evidence.
 
-The source checks bindings before and after each snapshot. Missing or ambiguous routes produce a null binding and an unclaimed count. The first report can be shown as the last terminal report. No baseline or later revision is treated as task identity proof. The report's source epoch identifies the Herdr terminal process generation. The overlay's source epoch identifies the observation connection lifecycle. Lower epochs and revisions cannot restore an older report. A same-revision conflict stays hidden until a newer report. Snapshot success controls freshness. It does not change the report's progress time.
+The socket adapter checks the empty task binding set before and after each snapshot. Reports have a null binding and remain unclaimed. The first report can be shown as the last terminal report. No baseline or later revision is treated as task identity proof. The report's source epoch identifies the Herdr terminal process generation. The overlay's source epoch identifies the observation connection lifecycle. Lower epochs and revisions cannot restore an older report. A same-revision conflict stays hidden until a newer report. Snapshot success controls freshness. It does not change the report's progress time.
 
 The separate full-identity program-v1 contract remains available for a source that can prove that identity. Only its explicit aborted state means cancellation. Its cancellation fence survives clear for the same attempt. The root adapter never constructs this contract from a pane report. Titles, message text, paths, app names and progress values do not enter the public projection. The Herdr adapter does not parse terminal output for status. The explicit native capture path reads only documented structured frames.
 
-Backend tests cover a real Unix socket and HTTP cache path with controlled structured frames. They also cover SQLite dispatch readback. These frames are synthetic receiver output. A separate check feeds the real Pi 1.1.0 startup report, received and serialized by the native Herdr receiver, through this decoder. That check observes idle and removes app data. It is not a full live PaneInfo socket check. These checks do not prove that an installed Herdr daemon emits the new fields. The Herdr adapter does not install a daemon, start a provider or write a binding manifest.
+Backend tests cover a real Unix socket and HTTP cache path with controlled structured frames. These frames are synthetic receiver output. A separate check feeds the real Pi 1.1.0 startup report, received and serialized by the native Herdr receiver, through this decoder. That check observes idle and removes app data. It is not a full live PaneInfo socket check. These checks do not prove that an installed Herdr daemon emits the new fields. The Herdr adapter does not install a daemon, start a provider or write a binding manifest.

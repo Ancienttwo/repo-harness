@@ -10,7 +10,7 @@ import { spawn } from 'node:child_process';
 import { lstatSync, realpathSync } from 'node:fs';
 import { basename, isAbsolute, join, resolve, sep } from 'node:path';
 
-import { DEV_ACTIVITY_SHIPPED_WINDOW_MS, type DevActivitySnapshotV1, type DevActivitySourceHealth } from '../../core/dev-activity/types';
+import { DEV_ACTIVITY_SHIPPED_WINDOW_MS, type DevActivitySnapshotV2, type DevActivitySourceHealth } from '../../core/dev-activity/types';
 import { unavailableDevActivitySnapshot } from '../../core/dev-activity/decode';
 import {
   projectDevActivity,
@@ -18,21 +18,15 @@ import {
   runtimeSourceHealth,
   summarizeCiRollup,
   type DevActivityRawHumanRequest,
-  type DevActivityRawLedgerRecord,
   type DevActivityRawPullRequest,
   type DevActivityRawRepository,
   type DevActivityRawWorktree,
 } from '../../core/dev-activity/projection';
 import type { RuntimeOverlay } from '../../core/operator/runtime-status';
-import { decodeRecord, digest, type PipelineRecord } from '../../core/pipeline/types';
-import { projectedRuns, type LogObservation } from '../../core/pipeline/projection';
-import { openSnapshot, snapshotPointerPath, storePath } from '../pipeline/store';
 import { parseWorktreeTopology } from '../git/worktree-topology';
 import { readOpenDecisionInventory, VERIFIED_CONTEXT_STORE_RELATIVE_ROOT } from '../engineers/verified-context-store';
 import {
-  canonicalRepoPath,
   readRepoHarnessRegistryStrictSnapshot,
-  repoHarnessRepoIdFor,
   type RepoHarnessRegisteredRepo,
 } from '../repo-registry';
 
@@ -252,60 +246,6 @@ export function parseGhPullRequests(stdout: string, withCi: boolean): DevActivit
   });
 }
 
-interface LedgerRead { health: Omit<DevActivitySourceHealth, 'kind'>; byRepository: Map<string, DevActivityRawLedgerRecord[]> }
-
-/** Read the published immutable ledger generation once per cycle. Records map to a Fleet repository only through `repo.root`. */
-function readLedger(env: NodeJS.ProcessEnv, observedAt: string): LedgerRead {
-  const byRepository = new Map<string, DevActivityRawLedgerRecord[]>();
-  const pointer = snapshotPointerPath(storePath(env));
-  try {
-    lstatSync(pointer);
-  } catch {
-    return { health: { status: 'not_configured', reason: 'ledger_not_configured', observed_at: observedAt }, byRepository };
-  }
-  let opened: ReturnType<typeof openSnapshot>;
-  try {
-    opened = openSnapshot(pointer);
-  } catch {
-    return { health: { status: 'unavailable', reason: 'ledger_unavailable', observed_at: observedAt }, byRepository };
-  }
-  try {
-    const records = (opened.db.query('SELECT record FROM pipelines ORDER BY source_host,repository_id,task').all() as { record: string }[])
-      .map(row => decodeRecord(JSON.parse(row.record)));
-    const logs = opened.db.query('SELECT * FROM observations ORDER BY seq').all()
-      .map((row: any) => ({ ...row, payload: JSON.parse(row.payload) })) as LogObservation[];
-    for (const ledger of records) {
-      const repositoryId = ledgerRepositoryId(ledger);
-      if (repositoryId === null) continue;
-      const rows = byRepository.get(repositoryId) ?? [];
-      rows.push(rawLedgerRecord(ledger, logs));
-      byRepository.set(repositoryId, rows);
-    }
-    return { health: { status: 'ok', reason: null, observed_at: observedAt }, byRepository };
-  } catch {
-    return { health: { status: 'unavailable', reason: 'ledger_unavailable', observed_at: observedAt }, byRepository: new Map() };
-  } finally {
-    opened.db.close();
-  }
-}
-
-function ledgerRepositoryId(ledger: PipelineRecord): string | null {
-  const root = ledger.repo.root;
-  return root !== null && isAbsolute(root) ? repoHarnessRepoIdFor(canonicalRepoPath(root)) : null;
-}
-
-function rawLedgerRecord(ledger: PipelineRecord, logs: LogObservation[]): DevActivityRawLedgerRecord {
-  return {
-    record_id: ledger.id, source_host: ledger.source_host, runtime_repository_id: digest(ledger.repository_id),
-    task: ledger.task.value, state_version: ledger.state_version, branch: ledger.resources.branch, title: ledger.task.title,
-    phase: ledger.phase, phase_since: ledger.phase_since, blocked_return_to: ledger.blocked?.return_to ?? null,
-    owner_bot: ledger.owner_bot, blocked: ledger.blocked ? { reason: ledger.blocked.reason, since: ledger.blocked.since } : null,
-    waiting_owner: ledger.phase === 'merge-ask' || ledger.flags_attested.includes('waiting_owner'),
-    updated_at: ledger.updated_at,
-    runs: projectedRuns(ledger, structuredClone(logs)).map(run => ({ role: run.role, round: run.round })),
-  };
-}
-
 async function collectGit(repo: RepoHarnessRegisteredRepo, defaultBranch: string | null, ctx: CollectionContext):
 Promise<{ health: DevActivitySourceHealth; worktrees: DevActivityRawWorktree[] }> {
   const run = (argv: readonly string[], cwd: string) => ctx.run('git', argv, { cwd, env: ctx.env, timeout_ms: ctx.timeout_ms, signal: ctx.signal });
@@ -397,7 +337,7 @@ Promise<{ health: DevActivitySourceHealth; requests: DevActivityRawHumanRequest[
   }
 }
 
-async function collectRepository(repo: RepoHarnessRegisteredRepo, ledger: LedgerRead, runtime: DevActivitySourceHealth,
+async function collectRepository(repo: RepoHarnessRegisteredRepo, runtime: DevActivitySourceHealth,
   ctx: CollectionContext): Promise<DevActivityRawRepository> {
   const github = await collectGitHub(repo, ctx);
   const defaultBranch = github.health.status === 'ok' ? github.default_branch : await gitDefaultBranch(repo, ctx);
@@ -408,17 +348,16 @@ async function collectRepository(repo: RepoHarnessRegisteredRepo, ledger: Ledger
     display_name: basename(repo.path),
     github: github.github,
     default_branch: defaultBranch,
-    sources: [git.health, github.health, { kind: 'ledger', ...ledger.health }, runtime, decisions.health],
+    sources: [git.health, github.health, runtime, decisions.health],
     worktrees: git.worktrees,
     pull_requests: github.pull_requests,
-    ledger: ledger.byRepository.get(repo.id) ?? [],
     human_requests: decisions.requests,
   };
 }
 
 /** One full collection cycle. Registry failure yields an unavailable snapshot. */
 export async function collectDevActivity(options: DevActivityCollectorOptions & { readonly signal?: AbortSignal; readonly first_seen?: Map<string, string> } = {}):
-Promise<DevActivitySnapshotV1> {
+Promise<DevActivitySnapshotV2> {
   const now = options.now ?? Date.now;
   const env = options.env ?? process.env;
   const ctx: CollectionContext = {
@@ -436,17 +375,14 @@ Promise<DevActivitySnapshotV1> {
     return { ...unavailableDevActivitySnapshot(), collected_at: new Date(now()).toISOString() };
   }
   const readable = repos.filter(readableAuthority);
-  const startedAt = new Date(now()).toISOString();
-  const ledger = readLedger(env, startedAt);
-  let runtimeOverlay: RuntimeOverlay | null = null;
   let runtime: DevActivitySourceHealth;
   if (!options.read_runtime) runtime = runtimeSourceHealth(null, now());
   else {
-    try { runtimeOverlay = options.read_runtime(); runtime = runtimeSourceHealth(runtimeOverlay, now()); }
-    catch { runtimeOverlay = null; runtime = { kind: 'runtime', status: 'unavailable', reason: 'runtime_unavailable', observed_at: null }; }
+    try { runtime = runtimeSourceHealth(options.read_runtime(), now()); }
+    catch { runtime = { kind: 'runtime', status: 'unavailable', reason: 'runtime_unavailable', observed_at: null }; }
   }
   const repositories = await boundedMap(readable, options.max_concurrency ?? DEV_ACTIVITY_REPOSITORY_CONCURRENCY,
-    repo => collectRepository(repo, ledger, runtime, ctx));
+    repo => collectRepository(repo, runtime, ctx));
   // Only a complete, successful inventory proves a request closed; a failed or
   // partial read keeps that repository's wait clocks.
   for (const repo of repositories) {
@@ -461,13 +397,12 @@ Promise<DevActivitySnapshotV1> {
     now_ms: now(),
     unreadable_registrations: repos.length - readable.length,
     repositories,
-    runtime: runtime.status === 'not_configured' ? null : runtimeOverlay,
   });
 }
 
 export interface DevActivityCollectorHandle {
   /** Cache read only; never starts work. */
-  readonly read: () => DevActivitySnapshotV1;
+  readonly read: () => DevActivitySnapshotV2;
   /** Resolves when the cycle in flight, if any, has settled. */
   readonly settled: () => Promise<void>;
   readonly close: () => Promise<void>;
@@ -477,7 +412,7 @@ export interface DevActivityCollectorHandle {
 export function startDevActivityCollector(options: DevActivityCollectorOptions = {}): DevActivityCollectorHandle {
   const controller = new AbortController();
   const firstSeen = new Map<string, string>();
-  let cache: DevActivitySnapshotV1 = unavailableDevActivitySnapshot();
+  let cache: DevActivitySnapshotV2 = unavailableDevActivitySnapshot();
   let closed = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let inflight: Promise<void> | null = null;

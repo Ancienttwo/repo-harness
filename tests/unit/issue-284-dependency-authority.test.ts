@@ -575,7 +575,6 @@ function schedulingDependencies(subject: Fixture, state: WorkPackageDependencySt
       }],
     }) as never,
     listLiveClaims: () => [],
-    readAttemptCurrent: () => null,
     now: () => new Date('2026-09-04T00:00:00.000Z'),
     dependencyReaders: { resolveAuthorityHome: () => subject.root },
   };

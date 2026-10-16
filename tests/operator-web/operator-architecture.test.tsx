@@ -7,7 +7,7 @@ import { buildModuleReviewPrompt, type ModuleReviewPromptV1 } from '../../src/co
 import { OperatorApp } from '../../src/operator-web/App';
 import { ArchitectureWorkspace, reviewPromptCommand } from '../../src/operator-web/ArchitectureWorkspace';
 import { ModuleGraph } from '../../src/operator-web/ModuleGraph';
-import { collaborationSnapshot, stableSnapshot } from '../../src/operator-web/fixture';
+import { repositorySnapshot, stableSnapshot } from '../../src/operator-web/fixture';
 import { translate } from '../../src/operator-web/i18n';
 
 const t = (key: Parameters<typeof translate>[1], values?: Parameters<typeof translate>[2]) => translate('en', key, values);
@@ -309,8 +309,8 @@ describe('one-hop module graph', () => {
 describe('workspace navigation', () => {
   const repositoryId = stableSnapshot.repositories[0]!.repository_id;
   function app(): ReactElement {
-    return <OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" initialCollaboration={{ kind: 'ready', snapshot: collaborationSnapshot }}
-      readNotifyStatus={() => new Promise(() => {})} readPipelineBoard={() => new Promise(() => {})} />;
+    return <OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" initialRepositorySnapshot={{ kind: 'ready', snapshot: repositorySnapshot }}
+      readNotifyStatus={() => new Promise(() => {})} />;
   }
   const link = (workspace: string) => document.querySelector<HTMLAnchorElement>(`.workspace-nav a[data-workspace="${workspace}"]`)!;
 

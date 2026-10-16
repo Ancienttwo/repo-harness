@@ -5,7 +5,7 @@ import type {
   DevActivityColumn,
   DevActivityItem,
   DevActivityRepository,
-  DevActivitySnapshotV1,
+  DevActivitySnapshotV2,
   DevActivitySourceStatus,
 } from '../core/dev-activity/types';
 import { useObservationRefresh } from './useObservationRefresh';
@@ -15,9 +15,9 @@ import { useObservationRefresh } from './useObservationRefresh';
  * attention row and authority join; this module only reads, filters and
  * orders what the snapshot already decided.
  */
-export type DevActivityReader = (signal: AbortSignal) => Promise<DevActivitySnapshotV1>;
+export type DevActivityReader = (signal: AbortSignal) => Promise<DevActivitySnapshotV2>;
 
-export async function fetchDevActivity(signal: AbortSignal): Promise<DevActivitySnapshotV1> {
+export async function fetchDevActivity(signal: AbortSignal): Promise<DevActivitySnapshotV2> {
   const response = await fetch('/api/v1/dev-activity', { signal, cache: 'no-store', headers: { Accept: 'application/json' } });
   if (!response.ok) throw new Error('dev_activity_unavailable');
   return decodeDevActivitySnapshot(await response.json());
@@ -27,9 +27,9 @@ export async function fetchDevActivity(signal: AbortSignal): Promise<DevActivity
 export type DevActivityView =
   | { readonly kind: 'loading' }
   | { readonly kind: 'unreachable' }
-  | { readonly kind: 'ready'; readonly snapshot: DevActivitySnapshotV1; readonly refreshFailed: boolean };
+  | { readonly kind: 'ready'; readonly snapshot: DevActivitySnapshotV2; readonly refreshFailed: boolean };
 
-export function useDevActivity(read: DevActivityReader, initial: DevActivitySnapshotV1 | undefined, generation: number): DevActivityView {
+export function useDevActivity(read: DevActivityReader, initial: DevActivitySnapshotV2 | undefined, generation: number): DevActivityView {
   const [view, setView] = useState<DevActivityView>(() => initial ? { kind: 'ready', snapshot: initial, refreshFailed: false } : { kind: 'loading' });
   const observe = useCallback(async (signal: AbortSignal): Promise<boolean> => {
     try {
@@ -47,7 +47,7 @@ export function useDevActivity(read: DevActivityReader, initial: DevActivitySnap
   return view;
 }
 
-export function snapshotOf(view: DevActivityView): DevActivitySnapshotV1 | null {
+export function snapshotOf(view: DevActivityView): DevActivitySnapshotV2 | null {
   return view.kind === 'ready' ? view.snapshot : null;
 }
 
@@ -61,7 +61,7 @@ export interface BoardFilters {
 
 export const DEFAULT_BOARD_FILTERS: BoardFilters = { repositoryId: null, query: '', onlyNeedsYou: false, showClosed: false };
 
-export function repositoryById(snapshot: DevActivitySnapshotV1, id: string): DevActivityRepository | null {
+export function repositoryById(snapshot: DevActivitySnapshotV2, id: string): DevActivityRepository | null {
   return snapshot.repositories.find(repository => repository.repository_id === id) ?? null;
 }
 
@@ -77,34 +77,24 @@ export function repositoryLabel(repositories: readonly DevActivityRepository[], 
   return `${repository.display_name} · ${repository.github ?? repository.repository_id}`;
 }
 
-export function attentionSubjects(snapshot: DevActivitySnapshotV1): ReadonlySet<string> {
+export function attentionSubjects(snapshot: DevActivitySnapshotV2): ReadonlySet<string> {
   return new Set(snapshot.attention.map(row => row.subject_id));
 }
 
-export function attentionItem(snapshot: DevActivitySnapshotV1, row: DevActivityAttention): DevActivityItem | null {
+export function attentionItem(snapshot: DevActivitySnapshotV2, row: DevActivityAttention): DevActivityItem | null {
   if (row.kind === 'human_request') return null;
   return snapshot.items.find(item => item.id === row.subject_id) ?? null;
-}
-
-export interface ItemBlock { readonly source: 'ledger' | 'runtime'; readonly reason: string; readonly since: string }
-
-/** Both authorities are listed when both report a block; neither overrides the other. */
-export function itemBlocks(item: DevActivityItem): readonly ItemBlock[] {
-  const blocks: ItemBlock[] = [];
-  if (item.ledger?.blocked) blocks.push({ source: 'ledger', ...item.ledger.blocked });
-  if (item.runtime_blocked) blocks.push({ source: 'runtime', ...item.runtime_blocked });
-  return blocks;
 }
 
 function matchesQuery(item: DevActivityItem, repositories: readonly DevActivityRepository[], query: string): boolean {
   const needle = query.trim().toLowerCase();
   if (needle === '') return true;
-  const haystack = [item.title, item.branch ?? '', repositoryLabel(repositories, item.repository_id),
-    item.pull_request ? `#${item.pull_request.number}` : '', item.agent?.label ?? '', item.ledger?.phase ?? ''];
+  const haystack = [item.title, item.branch, repositoryLabel(repositories, item.repository_id),
+    item.pull_request ? `#${item.pull_request.number}` : ''];
   return haystack.some(value => value.toLowerCase().includes(needle));
 }
 
-export function filterItems(snapshot: DevActivitySnapshotV1, filters: BoardFilters): readonly DevActivityItem[] {
+export function filterItems(snapshot: DevActivitySnapshotV2, filters: BoardFilters): readonly DevActivityItem[] {
   const subjects = attentionSubjects(snapshot);
   return snapshot.items.filter(item =>
     (filters.repositoryId === null || item.repository_id === filters.repositoryId)
@@ -120,7 +110,7 @@ function time(value: string | null | undefined, missing: number): number {
 }
 
 /**
- * Within a column a blocked item comes first, then the longest wait. Shipped
+ * Within a column the longest wait comes first. Shipped
  * work reads newest first. Ties keep the id order so rows do not jump.
  */
 export function orderColumn(column: DevActivityColumn, items: readonly DevActivityItem[]): readonly DevActivityItem[] {
@@ -129,8 +119,6 @@ export function orderColumn(column: DevActivityColumn, items: readonly DevActivi
       const l = time(left.pull_request?.merged_at, Number.NEGATIVE_INFINITY), r = time(right.pull_request?.merged_at, Number.NEGATIVE_INFINITY);
       if (l !== r) return r > l ? 1 : -1;
     } else {
-      const blocked = Number(itemBlocks(right).length > 0) - Number(itemBlocks(left).length > 0);
-      if (blocked !== 0) return blocked;
       const l = time(left.column_since, Number.POSITIVE_INFINITY), r = time(right.column_since, Number.POSITIVE_INFINITY);
       if (l !== r) return l < r ? -1 : 1;
     }

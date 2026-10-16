@@ -1,5 +1,5 @@
 import { decodeOperatorTaskContext, isOperatorTaskCanonical, type OperatorTaskContext } from './task-context';
-import type { OperatorCollaborationSourceObservation } from './collaboration-snapshot';
+import type { RepositorySourceObservation } from './repository-snapshot';
 import type { ProjectedWorkPackageV1, WorkPackageDependencyObservationV1 } from '../engineers/scheduling';
 
 export const PLANNING_MAX_TASKS = 200;
@@ -22,7 +22,7 @@ export interface OperatorPlanningSnapshot {
   readonly repository_id: string;
   readonly canonical: OperatorTaskContext['canonical'] | null;
   readonly tasks: readonly OperatorTaskContext[];
-  readonly graph: OperatorCollaborationSourceObservation<OperatorPlanningGraph>;
+  readonly graph: RepositorySourceObservation<OperatorPlanningGraph>;
   readonly observation: { readonly observed_at: string; readonly authorization_revision: number; readonly board_revision: string | null };
 }
 
