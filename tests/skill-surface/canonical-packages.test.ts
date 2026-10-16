@@ -162,10 +162,7 @@ describe("canonical packages: every reference file is reachable from its SKILL.m
 
 describe("canonical packages: no imported stale/retired guidance", () => {
   // Concrete patterns SSD-03 was explicitly told not to import, plus this
-  // repo's own existing retired-term vocabulary
-  // (tests/retired-planning-provider.test.ts's RETIRED_TERMS), checked again
-  // here defensively because assets/ is one of that test's own scanned
-  // surfaces and any hit here would fail it too.
+  // repo's own retired-term vocabulary.
   const STALE_PATTERNS = [
     // Old pre-rename command prefix (e.g. "agentic-dev-init"). The trailing
     // hyphen distinguishes it from the legitimate current doc name
