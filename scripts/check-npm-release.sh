@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Mode: default = full release gate (includes scripts/check-ci.sh).
+# Mode: default = full release gate (adds the check-ci.sh release lane).
 # `--prepublish` = fast checks only, backing package.json's prepublishOnly hook.
-# The full suite stays a mandatory explicit release-checklist step (check:release) and CI.
-# One script owns both paths so the gate logic never forks.
+# CI owns the full suite. The release lane runs the package/install smoke and
+# the expensive cases that no hosted lane runs. One script owns both paths so
+# the gate logic never forks.
 MODE="full"
 if [[ "${1:-}" == "--prepublish" ]]; then
   MODE="prepublish"
@@ -35,10 +36,10 @@ if ! grep -Eq 'E404|404 Not Found|No match found|not in this registry' "$LOOKUP_
 fi
 
 if [[ "$MODE" == "prepublish" ]]; then
-  echo "[release] OK: prepublish fast gate passed (full suite runs via check:release and CI)."
+  echo "[release] OK: prepublish fast gate passed (check:release runs the release lane; CI owns the full suite)."
   exit 0
 fi
 
-bash scripts/check-ci.sh all
+bash scripts/check-ci.sh release
 
 echo "[release] OK: npm package gate passed."

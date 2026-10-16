@@ -14,8 +14,8 @@ if [[ "$#" -eq 2 && "$1" == --base && -n "$2" && "$2" != -* ]]; then
 fi
 # Only the affected lane takes an optional base. The PR architecture advisory needs one.
 if [[ "$#" -gt 0 || ( -n "$base" && "$lane" != affected && "$lane" != architecture-advisory ) || ( -z "$base" && "$lane" == architecture-advisory ) ]] \
-  || [[ "$lane" != all && "$lane" != governance && "$lane" != functional && "$lane" != affected && "$lane" != architecture && "$lane" != architecture-advisory ]]; then
-  echo "Usage: scripts/check-ci.sh [affected|all|governance|functional|architecture] [--base <git-ref>]" >&2
+  || [[ "$lane" != all && "$lane" != governance && "$lane" != functional && "$lane" != affected && "$lane" != architecture && "$lane" != architecture-advisory && "$lane" != release ]]; then
+  echo "Usage: scripts/check-ci.sh [affected|all|governance|functional|architecture|release] [--base <git-ref>]" >&2
   echo "       scripts/check-ci.sh architecture-advisory --base <git-ref>" >&2
   exit 2
 fi
@@ -134,6 +134,23 @@ if [[ "$lane" == architecture-advisory ]]; then
   exit 0
 fi
 
+# Local full runs and the release gate own the expensive real-install cases;
+# the hosted functional lane deliberately leaves them gated out.
+if [[ "$lane" == all || "$lane" == release ]]; then
+  export REPO_HARNESS_TEST_EXPENSIVE=1
+fi
+
+# Release gate: CI owns the full suite, so this lane runs only the expensive
+# cases that no hosted lane runs and the package/install smoke.
+if [[ "$lane" == release ]]; then
+  echo "[ci] expensive release tests"
+  run_bun_test_file tests/harness-benchmark-matrix.test.ts
+  echo "[ci] package/install smoke (one shared tarball)"
+  bash scripts/check-tarball-install-smoke.sh
+  echo "[ci] OK"
+  exit 0
+fi
+
 if [[ "$lane" == all || "$lane" == governance ]]; then
   echo "[ci] typecheck"
   bun run check:type
@@ -183,12 +200,6 @@ if [[ "$lane" == all || "$lane" == architecture ]]; then
 fi
 
 if [[ "$lane" == all || "$lane" == functional ]]; then
-  if [[ "$lane" == all ]]; then
-    # Local and release callers own the expensive real-install and real-herdr
-    # cases; the hosted functional lane deliberately leaves them gated out.
-    export REPO_HARNESS_TEST_EXPENSIVE=1
-  fi
-
   echo "[ci] tests"
   bun run build:hook-bundle
   bun run build:oar-hosts
