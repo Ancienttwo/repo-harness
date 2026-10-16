@@ -21,9 +21,4 @@ describe("contract-worktree projection publication ownership", () => {
     expect(helper).not.toContain("workflow_contract_allows_path");
     expect(helper).not.toContain('[[ "$1" == "docs/architecture/"* ]]');
   });
-
-  test("the packaged helper stays byte-identical to the repo-local script", () => {
-    expect(readFileSync(join(ROOT, "assets/templates/helpers/contract-worktree.sh"), "utf8"))
-      .toBe(readFileSync(SCRIPT, "utf8"));
-  });
 });

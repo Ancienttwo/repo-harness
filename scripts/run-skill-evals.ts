@@ -318,7 +318,7 @@ export function assertDisposableEvaluationBoundary(params: {
       ["summary path", params.summaryPath],
     ],
   });
-  for (const required of ["evals/evals.json", "evals/benchmark.config.json", "assets/templates/helpers"]) {
+  for (const required of ["evals/evals.json", "evals/benchmark.config.json", "scripts"]) {
     if (!existsSync(join(repoRoot, required))) {
       throw new Error(`Disposable evaluation repo is incomplete: missing ${required}`);
     }

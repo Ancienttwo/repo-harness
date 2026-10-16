@@ -176,7 +176,6 @@ describe('verifier evidence lifecycle cutover', () => {
   test('sprint and active contract surfaces contain no live matrix command', () => {
     for (const path of [
       'scripts/verify-sprint.sh',
-      'assets/templates/helpers/verify-sprint.sh',
       'tasks/archive/contract-20260722-0350-20260712-2327-harness-kernel-reduction.md',
     ]) {
       const source = readFileSync(join(ROOT, path), 'utf-8');

@@ -59,11 +59,9 @@ const required = [
   "SKILL.md",
   "assets/skill-commands/repo-harness-check/SKILL.md",
   "assets/templates/helpers/capability-resolver.ts",
-  "assets/templates/helpers/capability-config.ts",
-  "assets/templates/helpers/change-assessment.ts",
-  "assets/templates/helpers/runtime-evidence-receipt.ts",
-  "assets/templates/helpers/verification-plan.ts",
-  "assets/templates/helpers/migrate-verification-plan.ts",
+  "scripts/capability-config.ts",
+  "scripts/change-assessment.ts",
+  "scripts/runtime-evidence-receipt.ts",
   "interfaces/effective-state-v1.ts",
   "interfaces/types.ts",
   "scripts/verification-plan.ts",
@@ -500,7 +498,7 @@ STANDALONE_REPO="$TMP_DIR/standalone-capability-repo"
 mkdir -p "$STANDALONE_REPO/scripts" "$STANDALONE_REPO/.ai/context" "$STANDALONE_REPO/apps/web"
 cp "$APP_DIR/node_modules/repo-harness/assets/templates/helpers/capability-resolver.ts" \
   "$STANDALONE_REPO/scripts/capability-resolver.ts"
-cp "$APP_DIR/node_modules/repo-harness/assets/templates/helpers/capability-config.ts" \
+cp "$APP_DIR/node_modules/repo-harness/scripts/capability-config.ts" \
   "$STANDALONE_REPO/scripts/capability-config.ts"
 cat >"$STANDALONE_REPO/.ai/context/capabilities.json" <<'REGISTRY_EOF'
 {

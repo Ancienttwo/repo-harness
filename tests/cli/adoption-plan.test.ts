@@ -557,7 +557,7 @@ describe("canonical adoption plan", () => {
     try {
       mkdirSync(join(repo, "scripts"), { recursive: true });
       const helper = "scripts/check-task-workflow.sh";
-      writeFileSync(join(repo, helper), readFileSync(join(ROOT, "assets", "templates", "helpers", "check-task-workflow.sh"), "utf-8"));
+      writeFileSync(join(repo, helper), readFileSync(join(ROOT, "scripts", "check-task-workflow.sh"), "utf-8"));
       expect(spawnSync("git", ["init", "-q"], { cwd: repo }).status).toBe(0);
       expect(spawnSync("git", ["add", helper], { cwd: repo }).status).toBe(0);
       const apply = applyAdoptionPlan(planAdoption({ repoRoot: repo, mode: "standard", apply: true }));
@@ -576,7 +576,7 @@ describe("canonical adoption plan", () => {
     try {
       mkdirSync(join(repo, "scripts"), { recursive: true });
       const helper = "scripts/check-task-workflow.sh";
-      const canonical = readFileSync(join(ROOT, "assets", "templates", "helpers", "check-task-workflow.sh"), "utf-8");
+      const canonical = readFileSync(join(ROOT, "scripts", "check-task-workflow.sh"), "utf-8");
       expect(spawnSync("git", ["init", "-q"], { cwd: repo }).status).toBe(0);
       writeFileSync(join(repo, helper), "#!/bin/sh\necho staged custom helper\n");
       expect(spawnSync("git", ["add", helper], { cwd: repo }).status).toBe(0);
@@ -604,7 +604,7 @@ describe("canonical adoption plan", () => {
     try {
       mkdirSync(join(repo, "scripts"), { recursive: true });
       const helper = "scripts/check-task-workflow.sh";
-      writeFileSync(join(repo, helper), readFileSync(join(ROOT, "assets", "templates", "helpers", "check-task-workflow.sh"), "utf-8"));
+      writeFileSync(join(repo, helper), readFileSync(join(ROOT, "scripts", "check-task-workflow.sh"), "utf-8"));
       expect(spawnSync("git", ["init", "-q"], { cwd: repo }).status).toBe(0);
       expect(spawnSync("git", ["add", helper], { cwd: repo }).status).toBe(0);
       const git = (...args: string[]) => spawnSync("git", args, { cwd: repo, encoding: "utf-8" }).stdout;
@@ -629,7 +629,7 @@ describe("canonical adoption plan", () => {
     function helperRepo(): { repo: string; git: (...args: string[]) => ReturnType<typeof spawnSync> } {
       const repo = tempRepo();
       mkdirSync(join(repo, "scripts"), { recursive: true });
-      writeFileSync(join(repo, helper), readFileSync(join(ROOT, "assets", "templates", "helpers", "check-task-workflow.sh"), "utf-8"));
+      writeFileSync(join(repo, helper), readFileSync(join(ROOT, "scripts", "check-task-workflow.sh"), "utf-8"));
       const git = (...args: string[]) => spawnSync("git", args, { cwd: repo, encoding: "utf-8" });
       expect(git("init", "-q").status).toBe(0);
       return { repo, git };

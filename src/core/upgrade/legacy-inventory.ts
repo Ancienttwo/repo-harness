@@ -164,13 +164,13 @@ function actionsOf(): readonly RetirementAction[] {
         const name = path.slice('scripts/'.length);
         if (!contract.helpers.scripts.includes(name)) continue;
         if (!/^[a-z0-9][a-z0-9._-]*$/.test(name)) throw new Error(`unsafe declared helper name: ${name}`);
-        const source = join(packageRoot, 'assets', 'templates', 'helpers', name);
+        const source = join(packageRoot, 'scripts', name);
         if (!isLegacyPathSafe(packageRoot, source, false) || !stat(source)?.isFile()) {
-          throw new Error(`declared helper projection is missing or unsafe: ${name}`);
+          throw new Error(`declared helper source is missing or unsafe: ${name}`);
         }
         const digest = hash(readFileSync(source));
         if (fingerprints[path] !== undefined && fingerprints[path] !== digest) {
-          throw new Error(`declared helper fingerprint differs from its package projection: ${path}`);
+          throw new Error(`declared helper fingerprint differs from its package source: ${path}`);
         }
         fingerprints[path] = digest;
       }

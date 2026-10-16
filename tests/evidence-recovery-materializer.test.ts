@@ -245,7 +245,7 @@ describe("recovery-view-cli.ts: end-to-end", () => {
       expect(run("git", ["add", "-A"], cwd).status).toBe(0);
       expect(run("git", ["commit", "-q", "-m", "init"], cwd).status).toBe(0);
 
-      const first = run("bun", [join(REPO_ROOT, "assets/templates/helpers/recovery-view-cli.ts"), "--cwd", cwd, "--reason", "first-run"], cwd);
+      const first = run("bun", [join(REPO_ROOT, "scripts/recovery-view-cli.ts"), "--cwd", cwd, "--reason", "first-run"], cwd);
       expect(first.status).toBe(0);
       const handoffPath = join(cwd, ".ai/harness/handoff/current.md");
       const resumePath = join(cwd, ".ai/harness/handoff/resume.md");
@@ -319,11 +319,8 @@ describe("recovery-view-cli.ts: end-to-end", () => {
 describe("no-independent-authoring: the retired writers carry zero content assembly", () => {
   const CANDIDATE_FILES = [
     "scripts/prepare-handoff.sh",
-    "assets/templates/helpers/prepare-handoff.sh",
     "scripts/codex-handoff-resume.sh",
-    "assets/templates/helpers/codex-handoff-resume.sh",
     "scripts/prepare-codex-handoff.sh",
-    "assets/templates/helpers/prepare-codex-handoff.sh",
   ];
 
   test("the retired heredoc content-assembly markers no longer appear in any thinned writer", () => {
@@ -347,8 +344,8 @@ describe("no-independent-authoring: the retired writers carry zero content assem
     }
   });
 
-  test("the recovery CLI and its helper projection render nothing of their own", () => {
-    for (const relPath of ["scripts/recovery-view-cli.ts", "assets/templates/helpers/recovery-view-cli.ts"]) {
+  test("the recovery CLI renders nothing of its own", () => {
+    for (const relPath of ["scripts/recovery-view-cli.ts"]) {
       const text = readFileSync(join(REPO_ROOT, relPath), "utf-8");
       expect(text).toContain("src/effects/evidence/recovery-materializer\";");
       expect(text).not.toContain("# Harness Handoff");

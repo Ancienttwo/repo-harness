@@ -30,7 +30,6 @@ describe("workflow contract manifest", () => {
       selectorKinds: ["path", "relation", "symbol"],
       errorCodes: ["refactor_closure_residue", "refactor_closure_incomplete", "refactor_closure_missing"],
       authority: "scripts/cutover-closure.ts",
-      projection: "assets/templates/helpers/cutover-closure.ts",
       evidenceKind: "cutover_closure",
     });
     expect(contract.helpers.scripts).toContain("cutover-closure.ts");
@@ -49,7 +48,7 @@ describe("workflow contract manifest", () => {
       const content=readFileSync(join(ROOT,path),"utf8");
       expect(content.split(sentence).length-1).toBe(1);
     }
-    for(const path of ["scripts/install-agent-fleet.sh","assets/templates/helpers/install-agent-fleet.sh"]) {
+    for(const path of ["scripts/install-agent-fleet.sh"]) {
       const content=readFileSync(join(ROOT,path),"utf8");
       expect(content).not.toContain(envelope);expect(content).not.toContain(parentBrief);
     }

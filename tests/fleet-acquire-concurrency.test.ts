@@ -8,6 +8,7 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import { spawn, spawnSync } from 'child_process';
 import {
   chmodSync,
+  copyFileSync,
   cpSync,
   existsSync,
   mkdtempSync,
@@ -35,6 +36,7 @@ import { resolveRepoIdentity } from '../src/effects/state/coordination-canonical
 import { readLease, type LeaseRead } from '../src/effects/state/coordination-lease-store';
 import type { SprintCommandDependencies } from '../src/effects/state/coordination-sprint';
 import { fixtureTaskId } from './helpers/sprint-fixture';
+import { listHelperFiles } from '../src/effects/runtime/helper-runner';
 
 const ROOT = join(import.meta.dir, '..');
 const CLI = join(ROOT, 'src/cli/index.ts');
@@ -174,7 +176,8 @@ function createFleetRaceFixture(): FleetRaceFixture {
   mkdirSync(join(repo, 'plans/sprints'), { recursive: true });
   mkdirSync(join(repo, 'tasks/contracts'), { recursive: true });
   mkdirSync(home, { recursive: true });
-  cpSync(join(ROOT, 'assets/templates/helpers'), join(repo, 'scripts'), { recursive: true });
+  mkdirSync(join(repo, 'scripts'), { recursive: true });
+  for (const file of listHelperFiles({ REPO_HARNESS_SOURCE_ROOT: ROOT })) copyFileSync(join(ROOT, 'scripts', file), join(repo, 'scripts', file));
   cpSync(join(ROOT, '.claude/templates/contract.template.md'), join(repo, '.claude/templates/contract.template.md'));
   chmodSync(join(repo, 'scripts/contract-worktree.sh'), 0o755);
   chmodSync(join(repo, 'scripts/plan-to-todo.sh'), 0o755);

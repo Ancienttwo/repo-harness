@@ -38,7 +38,7 @@ function runVerifier(script: string, command: string, inspect: (root: string, re
   }
 }
 
-for (const script of ['scripts/verification-plan.ts', 'assets/templates/helpers/verification-plan.ts']) {
+for (const script of ['scripts/verification-plan.ts']) {
   describe(script, () => {
     test('failure retains stdout with the immutable execution reference', () => {
       runVerifier(script, `echo ${MARKER}; exit 3`, (root, report) => {

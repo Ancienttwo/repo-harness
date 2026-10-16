@@ -19,8 +19,8 @@ Add a `--json` flag to `scripts/check-task-sync.sh` that, when passed, prints a 
 
 ## Scope
 
-- In scope: the `--json` flag and JSON emission in `scripts/check-task-sync.sh`; its byte-identical mirror `assets/templates/helpers/check-task-sync.sh`; one `tests/helper-scripts.test.ts` case asserting the JSON shape.
-- Out of scope: changing text-mode wording or exit codes; adding `--json` to any other `check-*.sh` script; touching the mirror-parity test added in Phase 3 slice A2.
+- In scope: the `--json` flag and JSON emission in `scripts/check-task-sync.sh`; one `tests/helper-scripts.test.ts` case asserting the JSON shape.
+- Out of scope: changing text-mode wording or exit codes; adding `--json` to any other `check-*.sh` script.
 
 ## Stop Conditions
 
@@ -44,7 +44,6 @@ Add a `--json` flag to `scripts/check-task-sync.sh` that, when passed, prints a 
 ```yaml
 allowed_paths:
   - scripts/check-task-sync.sh
-  - assets/templates/helpers/check-task-sync.sh
   - tests/helper-scripts.test.ts
 ```
 
@@ -115,17 +114,6 @@ exit_criteria:
       "inputs": { "env": [] }
     },
     {
-      "id": "check-task-sync-helper-projection",
-      "kind": "command",
-      "command": "diff -q scripts/check-task-sync.sh assets/templates/helpers/check-task-sync.sh",
-      "cwd": ".",
-      "phase": "preflight",
-      "cost": "normal",
-      "evidence_policy": "current_exact",
-      "necessity": "The installed helper projection must match its source authority.",
-      "inputs": { "env": [] }
-    },
-    {
       "id": "check-task-sync-json-contract",
       "kind": "command",
       "command": "bash scripts/check-task-sync.sh --json | grep -q '\"status\"'",
@@ -153,4 +141,4 @@ exit_criteria:
 
 ---
 
-> **What good looks like**: every section above carries this task's actual specifics instead of template prose — `## Why` names a real downstream consumer and the failure mode of skipping the work, `allowed_paths` lists exactly the three files the worker will touch (not a whole directory), non-executable exit criteria retain `files_contain`, and the canonical `Verification Plan` declares the package test and typed commands that already exist in this repo today. The JSON runtime check fails until the described `--json` mode ships, while the projection `diff -q` guards the mirror obligation throughout. That is what `repo-harness run contract-run preflight` checks for, and what a worker should be able to paste as evidence before reporting done.
+> **What good looks like**: every section above carries this task's actual specifics instead of template prose — `## Why` names a real downstream consumer and the failure mode of skipping the work, `allowed_paths` lists exactly the two files the worker will touch (not a whole directory), non-executable exit criteria retain `files_contain`, and the canonical `Verification Plan` declares the package test and typed commands that already exist in this repo today. The JSON runtime check fails until the described `--json` mode ships. That is what `repo-harness run contract-run preflight` checks for, and what a worker should be able to paste as evidence before reporting done.

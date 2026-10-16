@@ -342,11 +342,7 @@ describe("run-skill-evals execution", () => {
     mkdirSync(disposableHome, { recursive: true });
     mkdirSync(ambientHome, { recursive: true });
     mkdirSync(join(disposableRepo, "evals", "fixtures"), { recursive: true });
-    mkdirSync(join(disposableRepo, "assets", "templates"), { recursive: true });
     cpSync(join(ROOT, "evals", "fixtures", "fix-agents"), join(disposableRepo, "evals", "fixtures", "fix-agents"), {
-      recursive: true,
-    });
-    cpSync(join(ROOT, "assets", "templates", "helpers"), join(disposableRepo, "assets", "templates", "helpers"), {
       recursive: true,
     });
     // The grading process consumes the explicit package execution owner, not
@@ -500,7 +496,7 @@ describe("run-skill-evals execution", () => {
     const home = join(boundary, "home");
     const outside = join(boundary, "outside");
     mkdirSync(join(repo, "evals"), { recursive: true });
-    mkdirSync(join(repo, "assets", "templates", "helpers"), { recursive: true });
+    mkdirSync(join(repo, "scripts"), { recursive: true });
     mkdirSync(home, { recursive: true });
     mkdirSync(outside, { recursive: true });
     writeFileSync(join(repo, "package.json"), "{}\n", "utf-8");

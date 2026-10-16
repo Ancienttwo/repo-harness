@@ -3,10 +3,10 @@ id: capability.workflow-engine.contract-assets
 kind: capability
 name: Contract Assets
 status: active
-summary: Owns the package workflow contract, repo opt-in marker, templates, capability nodes, and helper projections.
+summary: Owns the package workflow contract, repo opt-in marker, templates, capability nodes, and the standalone resolver projection.
 responsibilities:
   - Own the package workflow contract body and the repo opt-in marker.
-  - Own policy seeders, capability authority, and generated helper parity.
+  - Own policy seeders, capability authority, and the standalone resolver projection.
   - Own the contract worktree lifecycle and the planning helpers that the contract lists.
 source:
   include:

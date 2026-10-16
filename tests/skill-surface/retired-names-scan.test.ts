@@ -103,9 +103,7 @@ const FILE_ALLOWLIST: Record<string, string> = {
 // scripts/plan-to-todo.sh, scripts/capture-plan.sh,
 // scripts/lib/project-init-lib.sh enum usages" -- permanent provenance-enum
 // vocabulary (generic-review is the current Receipt source; retired provider sources are rejected;
-// repo-harness-sprint/repo-harness-plan as plan-capture --source). Each has
-// a byte-synced assets/templates/helpers/ mirror (package.json's
-// sync:helpers/check:helpers), exempted for the same reason. Contract seeds,
+// repo-harness-sprint/repo-harness-plan as plan-capture --source). Contract seeds,
 // evidence materialization, and the sprint-contract reference also carry the
 // same frozen source vocabulary rather than a runnable Skill reference.
 const R1_PROVENANCE_ENUM_FILES = [
@@ -118,13 +116,6 @@ const R1_PROVENANCE_ENUM_FILES = [
   "scripts/capture-plan.sh",
   "scripts/lib/project-init-lib.sh",
   "assets/templates/contract.template.md",
-  "assets/templates/helpers/acceptance-receipt.ts",
-  "assets/templates/helpers/classify-historical-plans.ts",
-  "assets/templates/helpers/ensure-task-workflow.sh",
-  "assets/templates/helpers/harness-trace-grade.sh",
-  "assets/templates/helpers/sprint-backlog.sh",
-  "assets/templates/helpers/plan-to-todo.sh",
-  "assets/templates/helpers/capture-plan.sh",
   "assets/reference-configs/sprint-contracts.md",
   "docs/reference-configs/sprint-contracts.md",
 ];

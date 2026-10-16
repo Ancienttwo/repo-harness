@@ -108,7 +108,6 @@
       "refactor_closure_missing"
     ],
     "authority": "scripts/cutover-closure.ts",
-    "projection": "assets/templates/helpers/cutover-closure.ts",
     "evidenceKind": "cutover_closure"
   },
   "helpers": {

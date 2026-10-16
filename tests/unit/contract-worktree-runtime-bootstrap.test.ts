@@ -15,7 +15,6 @@ import { spawnSync } from "child_process";
 const ROOT = join(import.meta.dir, "..", "..");
 const COPIES = [
   "scripts/contract-worktree.sh",
-  "assets/templates/helpers/contract-worktree.sh",
 ] as const;
 
 function sourceOf(relative: string): string {
@@ -51,7 +50,7 @@ function tempDirs(): { worktree: string; repoRoot: string; cleanup: () => void }
 }
 
 describe("contract-worktree runtime bootstrap: wiring", () => {
-  test("both paired copies define the bootstrap and call it from start", () => {
+  test("the helper defines the bootstrap and calls it from start", () => {
     for (const relative of COPIES) {
       const body = sourceOf(relative);
       expect(body).toContain("bootstrap_worktree_runtime() {");
@@ -64,11 +63,6 @@ describe("contract-worktree runtime bootstrap: wiring", () => {
       expect(call).toBeGreaterThan(start);
       expect(copy).toBeGreaterThan(call);
     }
-  });
-
-  test("the paired copies stay byte-identical", () => {
-    const [script, helper] = COPIES.map((relative) => readFileSync(join(ROOT, relative)));
-    expect(script!.equals(helper!)).toBe(true);
   });
 
   test("failure messages name the downstream symptom, not just the failed command", () => {

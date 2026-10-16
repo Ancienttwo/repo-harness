@@ -24,7 +24,7 @@ import { readCanonicalSprint } from '../src/effects/state/coordination-canonical
 import { fixtureTaskId } from './helpers/sprint-fixture';
 
 const ROOT = join(import.meta.dir, "..");
-const HELPER_DIR = join(ROOT, "assets/templates/helpers");
+const HELPER_DIR = join(ROOT, "scripts");
 const CLI = join(ROOT, "src/cli/index.ts");
 
 // sprint-backlog.sh now reaches the shared coordination plane under the git

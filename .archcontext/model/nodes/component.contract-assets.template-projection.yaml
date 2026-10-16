@@ -4,9 +4,9 @@ kind: component
 name: Template Projection
 status: active
 parent: capability.workflow-engine.contract-assets
-summary: Projects helper copies, reference configs and template assets byte for byte and drives repository init.
+summary: Projects the standalone capability resolver, reference configs and template assets and drives repository init.
 responsibilities:
-  - Write helper and reference config copies atomically with the source bytes and mode and report drift in check mode.
+  - Write the standalone capability resolver and reference config copies atomically with the source bytes and mode and report drift in check mode.
   - Run repository init through adoption, install profile and architecture preference steps.
 source:
   include:

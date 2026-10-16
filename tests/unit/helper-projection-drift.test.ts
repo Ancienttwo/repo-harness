@@ -28,18 +28,13 @@ describe('single executable helper authority', () => {
   test('check rejects byte and mode drift; write repairs only the disposable projection', () => {
     const root = mkdtempSync(join(tmpdir(), 'helper-projection-'));
     try {
-      for (const dir of ['scripts', 'src/core', 'assets/templates/helpers', 'assets/herdr/webhook-notify']) mkdirSync(join(root, dir), { recursive: true });
-      for (const path of ['scripts/sync-helper-sources.ts', 'scripts/workflow-contract.ts', 'src/core/source-projection.ts', 'src/core/worktree-location.mjs']) {
+      for (const dir of ['scripts', 'src/core/capabilities', 'assets/templates/helpers', 'assets/herdr/webhook-notify']) mkdirSync(join(root, dir), { recursive: true });
+      for (const path of ['scripts/sync-helper-sources.ts', 'scripts/capability-resolver.ts', 'src/core/source-projection.ts', 'src/core/worktree-location.mjs', 'src/core/capabilities/registry.ts']) {
         copyFileSync(join(ROOT, path), join(root, path));
       }
       copyFileSync(join(ROOT, 'src/core/worktree-location.mjs'), join(root, 'assets/herdr/webhook-notify/worktree-location.mjs'));
-      const contract = JSON.parse(readFileSync(join(ROOT, 'assets/workflow-contract.v1.json'), 'utf8'));
-      contract.helpers.scripts = ['fixture.sh'];
-      writeFileSync(join(root, 'assets/workflow-contract.v1.json'), JSON.stringify(contract));
-      const source = join(root, 'scripts/fixture.sh');
-      const target = join(root, 'assets/templates/helpers/fixture.sh');
-      writeFileSync(source, '#!/bin/bash\necho canonical\n', { mode: 0o755 });
-      writeFileSync(target, '#!/bin/bash\necho stale\n', { mode: 0o755 });
+      const target = join(root, 'assets/templates/helpers/capability-resolver.ts');
+      writeFileSync(target, '#!/usr/bin/env bun\n// stale\n', { mode: 0o755 });
       const invoke = (mode: string) => spawnSync(process.execPath, [join(root, 'scripts/sync-helper-sources.ts'), mode], {
         cwd: root, encoding: 'utf8', timeout: 10_000,
       });
@@ -55,6 +50,10 @@ describe('single executable helper authority', () => {
       expect(modeDrift.stderr).toContain('mode drift');
       expect(invoke('--write').status).toBe(0);
       expect(invoke('--check').status).toBe(0);
+      writeFileSync(join(root, 'assets/templates/helpers/fixture.sh'), '#!/bin/bash\n', { mode: 0o755 });
+      const unclassified = invoke('--check');
+      expect(unclassified.status).toBe(1);
+      expect(unclassified.stderr).toContain('unclassified package helper: assets/templates/helpers/fixture.sh');
     } finally { rmSync(root, { recursive: true, force: true }); }
   });
 

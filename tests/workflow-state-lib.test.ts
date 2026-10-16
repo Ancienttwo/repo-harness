@@ -35,7 +35,7 @@ function runEvidenceRequirement(cwd: string, contractRelPath: string) {
 
 describe("workflow evidence requirement and explicit verification", () => {
   test("explicit verification does not consume review prose or create acceptance receipts", () => {
-    for (const path of ["scripts/verify-sprint.sh", "assets/templates/helpers/verify-sprint.sh"]) {
+    for (const path of ["scripts/verify-sprint.sh"]) {
       const helper = readFileSync(join(ROOT, path), "utf-8");
       expect(helper).not.toContain('acceptance-receipt.ts');
       expect(helper).not.toContain('workflow_current_review_subject_value');
