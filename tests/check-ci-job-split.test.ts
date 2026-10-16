@@ -404,7 +404,7 @@ describe('single affected verification and daily fallback', () => {
     expect(native).toHaveLength(1);
     expect(native[0].if).toBeUndefined();
     expect(native[0].shell).toBe('bash');
-    expect(native[0].env).toEqual({ EXPECTED_SHA: '${{ needs.selection.outputs.sha }}' });
+    expect(native[0].env).toEqual({ EXPECTED_SHA: '${{ needs.selection.outputs.sha }}', MODE: '${{ needs.selection.outputs.mode }}' });
     expect(native[0].run.trim().split('\n')).toEqual([
       'set -euo pipefail',
       'test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"',
@@ -417,7 +417,16 @@ describe('single affected verification and daily fallback', () => {
       'bun run build:oar-hosts',
       'test -s dist/oar-review-host.js',
       'test -s dist/oar-coding-host.js',
-      'bun run test:files tests/generic-review.test.ts tests/acceptance-receipt.test.ts tests/cli/cross-review.test.ts tests/herdr-task-lifecycle.test.ts tests/cli/pm.test.ts --timeout 60000 --max-concurrency 1',
+      'case "$MODE" in',
+      "  affected) set -- -t 'darwin: ' ;;",
+      '  daily) set -- ;;',
+      '  *) echo "Unknown coverage mode: $MODE" >&2; exit 1 ;;',
+      'esac',
+      'bun run test:files tests/generic-review.test.ts tests/acceptance-receipt.test.ts tests/herdr-task-lifecycle.test.ts tests/cli/pm.test.ts "$@" --timeout 60000 --max-concurrency 1',
+    ]);
+    // A PR runs only the darwin cases; the daily run keeps every native case. The filesystem probe step is gone.
+    expect(job.steps.map((step: any) => step.name ?? step.uses)).toEqual([
+      'actions/checkout@v4', 'actions/setup-node@v4', 'oven-sh/setup-bun@v2', 'Install pinned Herdr runtime', 'Run native OAR acceptance tests',
     ]);
   });
 

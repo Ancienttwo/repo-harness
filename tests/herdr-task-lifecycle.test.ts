@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test';
+import { darwinTest } from './helpers/darwin-test';
 import { spawn, spawnSync, type ChildProcess } from 'child_process';
 import { randomUUID } from 'crypto';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs';
@@ -923,7 +924,7 @@ process.stdout.write(result.stdout??'');process.stderr.write(result.stderr??'');
   }
 },90000); // Seven real Herdr launches need headroom after the 10 s missed-working budget.
 
-test.skipIf(process.platform !== 'darwin')('OAR fixed host runs visibly in a private Herdr pane and disposes before owned pane cleanup', async () => {
+darwinTest('OAR fixed host runs visibly in a private Herdr pane and disposes before owned pane cleanup', async () => {
   const api = await import('../src/effects/terminal/task-session');
   const { reviewIsolationPolicy, reviewHostCommand } = await import('../src/effects/review/review-isolation');
   const fixture = realpathSync(mkdtempSync('/tmp/oh-'));
@@ -975,7 +976,7 @@ test.skipIf(process.platform !== 'darwin')('OAR fixed host runs visibly in a pri
   }
 }, 60000);
 
-test.skipIf(process.platform !== 'darwin')('operator-terminal OAR host binds by exact command and process identity without Herdr', async () => {
+darwinTest('operator-terminal OAR host binds by exact command and process identity without Herdr', async () => {
   const api = await import('../src/effects/terminal/task-session');
   const { reviewIsolationPolicy, reviewHostCommand } = await import('../src/effects/review/review-isolation');
   const fixture = realpathSync(mkdtempSync('/tmp/ot-'));
@@ -1126,7 +1127,7 @@ let buffer=''; process.stdin.on('data',chunk=>{
   }
 }, 60_000);
 
-test.skipIf(process.platform !== 'darwin')('coding admission fails closed and real OS policy denies primary, metadata and escaped writes', async () => {
+darwinTest('coding admission fails closed and real OS policy denies primary, metadata and escaped writes', async () => {
   const isolation = await import('../src/effects/terminal/coding-isolation');
   const { startCodingTaskAgent } = await import('../src/effects/terminal/coding-session');
   const fixture = realpathSync(mkdtempSync('/tmp/cb-'));
@@ -1188,7 +1189,7 @@ const fs=require('node:fs');try{fs.linkSync(process.argv[1],process.argv[2]);fs.
   } finally { rmSync(fixture, { recursive: true, force: true }); }
 });
 
-test.skipIf(process.platform !== 'darwin')('OAR scripted coding session keeps task result authority and disposes before real Herdr cleanup', async () => {
+darwinTest('OAR scripted coding session keeps task result authority and disposes before real Herdr cleanup', async () => {
   const api = await import('../src/effects/terminal/task-session');
   const coding = await import('../src/effects/terminal/coding-session');
   const fixture = realpathSync(mkdtempSync('/tmp/cs-'));
@@ -1302,7 +1303,7 @@ const spec=JSON.parse(readFileSync(process.argv[1],'utf8')),request=JSON.parse(r
   }
 }, 60000);
 
-test.skipIf(process.platform !== 'darwin')('OAR coding host waits for request publication and can close or cancel inside that window', async () => {
+darwinTest('OAR coding host waits for request publication and can close or cancel inside that window', async () => {
   const api = await import('../src/effects/terminal/task-session');
   const fixture = realpathSync(mkdtempSync('/tmp/cp-'));
   const home = join(fixture,'h'), repo = join(fixture,'p'), checkout = join(fixture,'w');

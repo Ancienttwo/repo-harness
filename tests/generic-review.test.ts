@@ -1,4 +1,5 @@
 import { afterEach, expect, test } from 'bun:test';
+import { darwinTest } from './helpers/darwin-test';
 import { existsSync, lstatSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'fs';
 import { execFileSync, spawnSync } from 'child_process';
 import { createHash } from 'crypto';
@@ -166,7 +167,7 @@ test('packet survives launch failure; same input retries and changed subject fai
   expect(existsSync(acceptanceReceiptPath(f.root, f.home))).toBe(false);
 }, 60_000);
 
-test.skipIf(process.platform !== 'darwin')('app-terminal round returns the exact host command, sends nothing and never asks for a relaunch', async () => {
+darwinTest('app-terminal round returns the exact host command, sends nothing and never asks for a relaunch', async () => {
   const f = packetRoundFixture();
   await expect(runReviewRound({ ...f.options, launch: 'app-terminal' }, f.effects)).rejects.toThrow('review_launch_addressing_invalid');
   const { endpoint: _endpoint, parentPane: _parentPane, ...base } = f.options;
@@ -203,7 +204,7 @@ test.skipIf(process.platform !== 'darwin')('app-terminal round returns the exact
   expect(existsSync(acceptanceReceiptPath(f.root, f.home))).toBe(false);
 }, 60_000);
 
-test.skipIf(process.platform !== 'darwin')('app-terminal cancel before any claim leaves a tombstone, so a late launch opens no Session', async () => {
+darwinTest('app-terminal cancel before any claim leaves a tombstone, so a late launch opens no Session', async () => {
   const f = packetRoundFixture();
   const { endpoint: _endpoint, parentPane: _parentPane, ...base } = f.options;
   const launch = await runReviewRound({ ...base, launch: 'app-terminal' }, f.effects);
@@ -281,7 +282,7 @@ test('OAR SessionOptions reuse fleet and authorize only file communication, with
   }
 });
 // Mandatory B first proof. Dummy Node processes only; no OAR/vendor Session.
-test.skipIf(process.platform !== 'darwin')('OAR isolation: Seatbelt denies paired host and descendant writes with output-only allowance', async () => {
+darwinTest('OAR isolation: Seatbelt denies paired host and descendant writes with output-only allowance', async () => {
   const { mkdirSync, writeFileSync, symlinkSync, realpathSync } = await import('node:fs');
   const { spawnSync } = await import('node:child_process');
   const { reviewIsolationPolicy, reviewHostTemporaryDirectory, prepareCodexHome } = await import('../src/effects/review/review-isolation');
@@ -349,7 +350,7 @@ else console.log(JSON.stringify({results,operations}));
   expect(readFileSync(join(output, 'child.txt'), 'utf8')).toBe('ALLOWED');
 });
 
-test.skipIf(process.platform !== 'darwin')('OAR isolation: system DNS works while a reachable local Unix socket stays denied', async () => {
+darwinTest('OAR isolation: system DNS works while a reachable local Unix socket stays denied', async () => {
   const { createServer } = await import('node:net');
   const { mkdirSync } = await import('node:fs');
   const { spawnSync } = await import('node:child_process');
@@ -428,7 +429,7 @@ ${body}`);
   return JSON.parse(result.stdout) as { calls: number; passed: boolean; model: string | null };
 }
 
-test.skipIf(process.platform !== 'darwin')('OAR scripted host: Node Session budget, default sandbox knob and disposal under admission', async () => {
+darwinTest('OAR scripted host: Node Session budget, default sandbox knob and disposal under admission', async () => {
   const result = await runOarNodeFixture('oar-scripted-node', `
 let calls=0;const events=[];process.env.OAR_CODEX_SANDBOX='workspace-write';
 const host=await openScriptedReviewHost({cwd:output},v=>events.push(v),async({say})=>{assert.equal(process.env.OAR_CODEX_SANDBOX,undefined);calls++;say('RECOMMENDATION: fixture observation only — confidence: HIGH')},isolation);
@@ -440,7 +441,7 @@ console.log(JSON.stringify({calls,passed:true}));}finally{await host.dispose()}`
   expect(result.calls).toBe(3); expect(result.passed).toBe(true);
 });
 
-test.skipIf(process.platform !== 'darwin')('OAR file delivery: Node reviewer writes Results, recommendation text is observation', async () => {
+darwinTest('OAR file delivery: Node reviewer writes Results, recommendation text is observation', async () => {
   const result = await runOarNodeFixture('oar-file-node', String.raw`
 const spec={mode:'review',kind:'codex',installation:{kind:'available',via:'bundled'},options:{cwd:output},requestDirectory:output,output,controlDirectory:output,timeoutMs:1000,isolation};let calls=0;
 const host=await openScriptedReviewHost(spec.options,()=>{},async({input,say})=>{calls++;const request=JSON.parse(input.split('\n')[0].slice('TASK REQUEST: '.length));say('RECOMMENDATION: fixture file communication — confidence: HIGH');writeFileSync(request.result_ref,JSON.stringify({request_id:request.request_id,context_sha256:request.context_sha256,value:{fixture:true,verdict:'FAIL',summary:'[fixture opinion] revise'}}))},isolation);
@@ -449,7 +450,7 @@ assert.equal(calls,3);await assert.rejects(host.prompt('fourth',{request_id:'fou
   expect(result.calls).toBe(3); expect(result.model).toBeNull();
 });
 
-test.skipIf(process.platform !== 'darwin')('OAR host: a close request during a pending turn aborts that turn and disposes the Session', async () => {
+darwinTest('OAR host: a close request during a pending turn aborts that turn and disposes the Session', async () => {
   const result = await runOarNodeFixture('oar-cancel-pending', String.raw`
 const spec={mode:'review',kind:'codex',installation:{kind:'available',via:'bundled'},options:{cwd:output},requestDirectory:output,output,controlDirectory:output,timeoutMs:10000,isolation};let calls=0;
 // The turn never ends by itself; only Session disposal can settle it.
@@ -468,7 +469,7 @@ console.log(JSON.stringify({calls,passed:true,model:null}));}finally{await close
   expect(result.calls).toBe(1); expect(result.passed).toBe(true);
 });
 
-test.skipIf(process.platform !== 'darwin')('OAR host: a request without started-N.json is partial; no read, no ack until it is published', async () => {
+darwinTest('OAR host: a request without started-N.json is partial; no read, no ack until it is published', async () => {
   const result = await runOarNodeFixture('oar-partial-request', String.raw`
 const spec={mode:'review',kind:'codex',installation:{kind:'available',via:'bundled'},options:{cwd:output},requestDirectory:output,output,controlDirectory:output,timeoutMs:5000,isolation};let calls=0;
 const host=await openScriptedReviewHost(spec.options,()=>{},async({say})=>{calls++;say('RECOMMENDATION: fixture observation only — confidence: HIGH')},isolation);
@@ -503,13 +504,13 @@ console.log(JSON.stringify({calls,passed:true,model:null}));}finally{await close
   expect(result.calls).toBe(1); expect(result.passed).toBe(true);
 });
 
-test.skipIf(process.platform !== 'darwin')('OAR Session refuses unconfined or changed owner profiles before opening', async () => {
+darwinTest('OAR Session refuses unconfined or changed owner profiles before opening', async () => {
   const result = await runOarNodeFixture('oar-unconfined', `
 let calls=0;await assert.rejects(openScriptedReviewHost({cwd:output},()=>{},async()=>{calls++},isolation),/SEATBELT_REQUIRED/);assert.equal(calls,0);writeFileSync(isolation.policyFile,'(version 1)(allow default)');await assert.rejects(openScriptedReviewHost({cwd:output},()=>{},async()=>{calls++},isolation),/PROFILE_NOT_ADMITTED/);assert.equal(calls,0);console.log(JSON.stringify({calls,passed:true}))`, false);
   expect(result.calls).toBe(0); expect(result.passed).toBe(true);
 });
 
-test.skipIf(process.platform !== 'darwin')('OAR installation is probed by the fixed Node host, never the Bun controller', async () => {
+darwinTest('OAR installation is probed by the fixed Node host, never the Bun controller', async () => {
   const { mkdirSync, writeFileSync, realpathSync, chmodSync } = await import('node:fs');
   const { probeReviewInstallation } = await import('../src/effects/review/generic-review');
   const root = tmpWorkspace('oar-node-installation'); roots.push(root);
@@ -561,7 +562,7 @@ test('Codex isolated home: exp-only preflight, exclusive no-follow copy, modes a
   expect(removeCopiedAuth(output).status).toBe('cleanup_pending');
 });
 
-test.skipIf(process.platform !== 'darwin')('OAR native child cannot forge owner control evidence or signal/connect to the trusted host', async () => {
+darwinTest('OAR native child cannot forge owner control evidence or signal/connect to the trusted host', async () => {
   const { mkdirSync, writeFileSync, realpathSync, chmodSync, existsSync } = await import('node:fs');
   const { spawnSync } = await import('node:child_process');
   const { pathToFileURL } = await import('node:url');
