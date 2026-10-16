@@ -1408,10 +1408,10 @@ resolve_sprint_cli() {
       return 1
     fi
     SPRINT_CLI_CMD=("$REPO_HARNESS_CLI_BIN")
-  elif command -v repo-harness >/dev/null 2>&1; then
-    SPRINT_CLI_CMD=(repo-harness)
   elif [[ -f "src/cli/index.ts" ]] && command -v bun >/dev/null 2>&1; then
     SPRINT_CLI_CMD=(bun "src/cli/index.ts")
+  elif command -v repo-harness >/dev/null 2>&1; then
+    SPRINT_CLI_CMD=(repo-harness)
   else
     echo "contract-worktree: the repo-harness CLI is unavailable; the sprint lease cannot be verified" >&2
     return 1
