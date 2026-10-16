@@ -18,6 +18,10 @@ All notable changes to this skill are documented here.
   kind are gone. `HOOK_HOST` accepts only `claude` and `codex`. A circuit
   state file with a `repair` entry fails closed. Run
   `repo-harness run evidence-gc --repo <path>` once to remove it. (#766)
+- The package no longer declares a Pi package (`package.json` `pi`) or the
+  optional `@earendil-works/pi-coding-agent` peer. `check:pi-package`,
+  `sync:pi-package`, `scripts/sync-pi-package.ts` and
+  `scripts/check-pi-package-smoke.ts` are gone. (#766)
 - Hook install and uninstall now accept only `--location global`.
   `--location local` exits with code 2 before configuration reads or writes.
   The installer no longer writes project-level Claude adapters. (#698)
