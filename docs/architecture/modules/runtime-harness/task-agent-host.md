@@ -102,33 +102,37 @@ sequenceDiagram
 
 ### 3.1 必须保持的不变量
 
-1. **Herdr 是唯一宿主。** 命令描述是 "Persistent task participants hosted only by Herdr"（`src/cli/commands/task-agent.ts:8`）。提交 `d8c082b1` 用 Herdr 替换了 tmux。
-2. **文件工件拥有轮次预算。** 单调轮次预算存在文件中，从不新建进程或会话（`src/effects/terminal/task-session.ts:162`）。
-3. **未知投递从不重放。** 轮次标记写入之后，崩溃、非零退出或超时都可能意味着输入已发送。系统只检查同一个 request 与 result，从不重放，也不分配新的 request（`task-session.ts:650-651`）。投递异常写入 `state: unknown`（`:652-657`）。
-4. **传输 ACK 是持久事实。** 之后的权威拒绝会停止后续工作，但不把已接受的投递改成 unknown（`task-session.ts:659-660`，#619）。
-5. **Owner 验证结果。** Owner 在写入主状态之前验证传输结果（`:572`）。Provider 只写它的执行 checkout（`:594`）。OAR 输出只是观察（`src/effects/terminal/oar-coding-host.ts:29`）。
-6. **History 只是观察。** 它不是 task ACK，也不是 acceptance receipt（`task-session.ts:826`）。
-7. **Reconcile 只读。** 它不发送、不启动、不收集、不接受。输出声明 `acceptance_authorized: false`（#610，`task-agent.ts:53`）。
-8. **关闭工作区不删 Git checkout。** 不执行 `worktree remove`（`task-session.ts:917`）。Git 的发布、脏状态与合并检查归调用方（`:858`）。
-9. **清理等待 OAR 的 disposal。** 所有清理路径等待 OAR owner 完成 disposal（`:677`）。会话清扫不关闭打开的 runtime，也不联系 Herdr（`:246`）。
-10. **进程身份证明从不放松。** 退出状态在身份确认之后读取（`:116-132`）。有歧义的进程列表被拒绝，不按名称猜测（`:392`）。
-11. **安装只替换自己拥有的副本。** Herdr skill 安装拒绝用户修改过的副本、无 owner 的副本与 symlink，失败时恢复旧副本（#582）。Notify 插件配置用 mode 600 原子替换，拒绝 symlink（#500）。
+本能力只保留内部 OAR session 路径：启动（`startTaskApplicationHost`、`bindTerminalApplicationHost`）、发送（`sendTaskRequest`）、收集（`collectTaskResult`）、关闭与取消（`closeTaskAgent`、`cancelTaskAgent`）。没有 `task-agent` 命令，也没有 provider 提交或 history API。跨模型 peer 在 Herdr pane 中通过 herdr skill 运行，不经过本路径。
+
+1. **Task pane 由 Herdr 或 operator 终端托管。** `src/effects/terminal/task-session.ts` 的 binding 有 `herdr` 与 `terminal` 两种 runtime。宿主命令只接受 `oar-review-host.js` 与 `oar-coding-host.js` 两个 bundle（`assertApplicationHostCommand`）。Cleanup 从不向 `terminal` runtime 的进程发信号。
+2. **文件工件拥有轮次预算。** 单调轮次预算存在 session 目录的文件中，从不新建进程或会话（`src/effects/terminal/task-session.ts#nextSessionRound`）。
+3. **未知投递从不重放。** `started-N.json` 写入之后，崩溃、非零退出或超时都可能意味着输入已发送。`sendTaskRequest` 把这类异常写成 `delivery-N.json` 的 `state: unknown`，之后不重放，也不分配新的 request。下一轮会因 `task_agent_ambiguous_round` 被拒绝，直到同一个 request 有已保存的 result。
+4. **传输 ACK 是持久事实。** 成功的传输写入 `state: accepted`。之后的权威拒绝会停止后续工作，但不把已接受的投递改成 unknown（#619）。
+5. **Owner 验证结果。** `collectTaskResult` 在 session 内写入 `collected-N.json` 之前，先验证 request 绑定的 result（`readTaskRequestResult`）：字段只能是 `request_id`、`context_sha256`、`value`，且 id 与 hash 必须匹配。同一轮已收集的 result 与新读到的内容不一致时，抛出 `task_agent_result_conflict`。Provider 只写自己执行 checkout 下的 outbox（`assertTaskRequest`）。
+6. **OAR 观察不是 ACK。** `readOarObservation` 的输出只用于状态展示（`taskAgentStatus`）。它不是 task ACK，也不是 acceptance receipt。
+7. **已有的启动 intent 只做对账。** `reconcile(dir, intent)` 在 intent 已存在时只读取 `pane-created.json`、`launch-intent.json` 与 `provider-created.json`，并校验身份。它从不重复 split 或 launch。工件缺失时写入 `reconciliation.json` 并以 `task_agent_start_reconciliation_required` 失败。
+8. **关闭工作区不删 Git checkout。** `cleanupTaskWorktree` 只关闭 Herdr workspace，不执行 `worktree remove`。Git 的发布、脏状态与合并检查归调用方。
+9. **清理等待 OAR 的 disposal。** `cleanupTaskAgent` 对 coding host 先写 `close.request`，并等待 `disposed.json` 回执（`disposeCodingApplication`）。没有回执时返回 `cleanup_pending`，不继续终止进程。`close` 在仍有未收集 result 的 request 时拒绝，`cancel` 才能跳过这个检查。会话清扫（`taskWorktreeRuntimeClosed`）不关闭打开的 runtime，也不联系 Herdr。
+10. **进程身份证明从不放松。** 退出状态在身份确认之后读取（`processProofAlive`）。有歧义的 foreground 进程列表被拒绝，不按名称或位置猜测（`bindStartedAgent`）。
+11. **Lock 与 intent 先于副作用。** 启动、发送与清理都在 `locked` 目录锁内运行。启动与清理先写 intent 工件（`intent.json`、`close-intent.json`），再产生副作用，所以崩溃后可以对账。
+12. **安装只替换自己拥有的副本。** Herdr skill 安装拒绝用户修改过的副本、无 owner 的副本与 symlink，失败时恢复旧副本（#582）。Notify 插件配置用 mode 600 原子替换，拒绝 symlink（#500）。
 
 ### 3.2 关键权衡
 
 | 决策 | 权衡 |
 | --- | --- |
-| 每个 task 与 role 一个常驻 pane agent | 多轮请求共享上下文。代价：身份证明与清理逻辑复杂，`task-session.ts` 有 925 行 |
+| 每个 task 与 role 一个常驻 pane agent | 多轮请求共享上下文。代价：身份证明与清理逻辑复杂，`task-session.ts` 是本能力最大的文件 |
 | 去掉推测性的宿主机制，只保留通信协议（`aad93a6e`） | 表面更小。新的宿主需求要从协议重新加入 |
-| 未知投递不重放 | 安全优先于活性。代价：操作员要读 pane 内容，检查同一请求（#610，#771 删除 reconcile 命令） |
+| 未知投递不重放 | 安全优先于活性。代价：投递未知后不能自动恢复，操作员要在 Herdr pane 中检查同一请求（#610） |
+| 删除 `task-agent` 命令、provider 提交、history 读取与 request 回读（#771） | 只剩一条内部 OAR 路径，没有第二套 result 权威。代价：跨模型 peer 的结果不再进入 task session，由 herdr skill 路径和各自的 reader 处理 |
 | Notify 默认只发 blocked 事件，Slack、Discord 与 Telegram 可选（#500） | Bot webhook 是必需通道。完成事件要按通道单独打开 |
 | Claude 与 Codex 共用 persona 定义，Codex 有显式的模型映射（`src/effects/terminal/task-role-profiles.ts:1-2`、`AGENT_TARGET_OVERRIDES`） | 两个宿主行为一致。代价：模型变更时要更新映射表 |
 
 ### 3.3 组件
 
-| 组件 | 文件 / 行 | 职责 |
+| 组件 | 规模 | 职责 |
 | --- | --- | --- |
-| `component.task-agent-host.primary` | 26 / 2,397 | Herdr 传输、task session、task worktree、request 回读、role profile、命令与安装的 persona 和插件资产 |
+| `component.task-agent-host.primary` | 20–50 个文件 / 2000–5000 行 | Herdr 传输、OAR task session（启动、发送、收集、关闭）、task worktree、role profile、herdr 命令与安装的 persona 和插件资产 |
 
 `src/effects/terminal/` 是共享目录。本能力只列出 5 个文件。pm-dispatch 拥有 `coding-*` 与 `oar-coding-host.ts`。`herdr-observation.ts` 计划归 operator。
 
@@ -136,7 +140,7 @@ sequenceDiagram
 
 - `.codex/agents/**` 与 `agents/fleet/**` 内容平行。`scripts/install-agent-fleet.sh:111` 只写 `~/.codex/agents`。仓库内 `.codex/agents/**` 由谁生成、是否有漂移检查，当前没有证据。
 - `agents/openai.yaml` 是 repo-harness skill 的显示接口，不是 fleet persona。这次变更没有把它放进本能力。它的 owner 待定。
-- #608 的后续项 F3 指向一个已不存在的行号（`task-session.ts:1056-1057`，OAR 启动失败后没有 disposal 证明）。当前状态未验证。
+- #608 的后续项 F3 指向一个已不存在的行号（原为 `task-session.ts` 第 1056-1057 行，OAR 启动失败后没有 disposal 证明）。当前状态未验证。
 
 ## 4. 歷史決策記錄(append-only)
 
@@ -149,5 +153,5 @@ sequenceDiagram
 ## Optimization Backlog
 
 - **After arch-context#296：决定 `src/effects/terminal/` 的目录归属。** 现在目录中的新文件会成为 unowned。
-- **`task-session.ts` 925 行。** 候选拆分：身份证明、request 轮次、清理。可展开，现在不拆。
+- **`task-session.ts` 过大。** 候选拆分：身份证明、request 轮次、清理。可展开，现在不拆。
 - **入向调用者分散。** `scripts/contract-worktree-runtime.ts`、`src/effects/review/generic-review.ts`、`src/cli/mcp/tools.ts` 与 agent-runtime-effects 的 `herdr-cli-agent.ts` 直接调用 task-session 或 herdr。
