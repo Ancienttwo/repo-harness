@@ -1400,6 +1400,15 @@ sprint_lease_target_ref=""
 SPRINT_CLI_RESOLVED=0
 SPRINT_CLI_CMD=()
 
+# Path existence is not identity: a downstream repository can own its own
+# src/cli/index.ts. Only the repo-harness package runs its source CLI. A failed
+# package.json read selects no source CLI.
+repo_harness_source_checkout() {
+  [[ -f "src/cli/index.ts" && -f "package.json" ]] || return 1
+  command -v bun >/dev/null 2>&1 || return 1
+  [[ "$(bun -e 'const pkg = JSON.parse(require("fs").readFileSync("package.json", "utf8")); process.stdout.write(typeof pkg?.name === "string" ? pkg.name : "")' 2>/dev/null)" == repo-harness ]]
+}
+
 resolve_sprint_cli() {
   [[ "$SPRINT_CLI_RESOLVED" -eq 0 ]] || return 0
   if [[ -n "${REPO_HARNESS_CLI_BIN:-}" ]]; then
@@ -1408,10 +1417,10 @@ resolve_sprint_cli() {
       return 1
     fi
     SPRINT_CLI_CMD=("$REPO_HARNESS_CLI_BIN")
+  elif repo_harness_source_checkout; then
+    SPRINT_CLI_CMD=(bun "src/cli/index.ts")
   elif command -v repo-harness >/dev/null 2>&1; then
     SPRINT_CLI_CMD=(repo-harness)
-  elif [[ -f "src/cli/index.ts" ]] && command -v bun >/dev/null 2>&1; then
-    SPRINT_CLI_CMD=(bun "src/cli/index.ts")
   else
     echo "contract-worktree: the repo-harness CLI is unavailable; the sprint lease cannot be verified" >&2
     return 1

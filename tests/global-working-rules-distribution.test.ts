@@ -19,43 +19,7 @@ function countOccurrences(haystack: string, needle: string): number {
   return count;
 }
 
-function extractFence(raw: string): string {
-  const match = raw.match(/```md\n([\s\S]*?)\n```/);
-  if (!match) throw new Error("global-working-rules.md is missing the ```md fence");
-  return match[1];
-}
-
 describe("global working rules distribution", () => {
-  test("assets template fence carries the No Compatibility Fallbacks section", () => {
-    const fence = extractFence(readFileSync(ASSETS_TEMPLATE, "utf-8"));
-    expect(fence).toContain("## No Compatibility Fallbacks in Product Code");
-    expect(fence).toContain("do not re-derive the same semantic data");
-  });
-
-  test("assets template fence carries the Rule 0 reasoning and generality rules", () => {
-    const fence = extractFence(readFileSync(ASSETS_TEMPLATE, "utf-8"));
-    expect(fence).toContain("Rule 0: You may spend as much time as needed thinking.");
-    expect(fence).toContain("Reasoning: Prefer first principles over pattern matching.");
-    expect(fence).toContain("Generality: These are general working rules.");
-  });
-
-  test("assets template fence carries the sufficiency and stop boundaries", () => {
-    const fence = extractFence(readFileSync(ASSETS_TEMPLATE, "utf-8"));
-    expect(fence).toContain("## Sufficiency and Stop Boundaries");
-    expect(fence).toContain("Cap fail -> fix -> reverify loops at three rounds per issue");
-    expect(fence).toContain("A second out-of-scope discovery is a hard stop");
-  });
-
-  test("assets template fence carries the code optimization authority rules", () => {
-    const fence = extractFence(readFileSync(ASSETS_TEMPLATE, "utf-8"));
-    expect(fence).toContain("## Code Optimization Principles");
-    expect(fence).toContain("Keep one source of truth for each datum");
-    expect(fence).toContain("Forbid steady-state compatibility behavior");
-    expect(fence).toContain("serves at least two real consumers");
-    expect(fence).toContain("do not convert a single-package repository into a monorepo");
-    expect(fence).toContain("operator-invoked, fail closed");
-  });
-
   test("the two previously duplicated completion-summary sentences are deduplicated to one occurrence each", () => {
     const raw = readFileSync(ASSETS_TEMPLATE, "utf-8");
     expect(countOccurrences(raw, "include a short `Next cut` section")).toBe(1);

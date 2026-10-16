@@ -4,20 +4,19 @@
 import {
   DEV_ACTIVITY_COLUMNS,
   DEV_ACTIVITY_PROJECTION,
-  type DevActivitySnapshotV1,
+  type DevActivitySnapshotV2,
 } from './types';
 
-const SOURCE_KINDS = ['git', 'github', 'ledger', 'runtime', 'decisions'];
+const SOURCE_KINDS = ['git', 'github', 'runtime', 'decisions'];
 const SOURCE_STATUSES = ['ok', 'unavailable', 'stale', 'not_configured'];
 const HIDDEN_REASONS = ['closed_unmerged'];
 const CI_STATES = ['success', 'failure', 'pending', 'none'];
 const REVIEW_STATES = ['approved', 'changes_requested', 'review_required', 'none'];
 const PR_STATES = ['open', 'merged', 'closed'];
-const ATTENTION_KINDS = ['ready_to_merge', 'ledger_waiting_owner', 'human_request', 'runtime_blocked'];
-const RUNTIME_FRESHNESS = ['fresh', 'stale', 'disconnected'];
+const ATTENTION_KINDS = ['ready_to_merge', 'human_request'];
 const SNAPSHOT_STATUSES = ['ready', 'partial', 'unavailable'];
 
-export function unavailableDevActivitySnapshot(): DevActivitySnapshotV1 {
+export function unavailableDevActivitySnapshot(): DevActivitySnapshotV2 {
   return {
     projection_version: DEV_ACTIVITY_PROJECTION, status: 'unavailable', collected_at: null,
     repositories: [], unreadable_registrations: 0, items: [], attention: [],
@@ -42,7 +41,7 @@ export function isPublicDevActivityText(value: string): boolean {
   return !PRIVATE_PATH.test(value);
 }
 
-export function decodeDevActivitySnapshot(value: unknown): DevActivitySnapshotV1 {
+export function decodeDevActivitySnapshot(value: unknown): DevActivitySnapshotV2 {
   const fail = (what: string): never => { throw new Error(`dev activity projection invalid: ${what}`); };
   const obj = (v: unknown, keys: readonly string[], what: string): Record<string, unknown> => {
     if (!v || typeof v !== 'object' || Array.isArray(v)) return fail(what);
@@ -107,7 +106,7 @@ export function decodeDevActivitySnapshot(value: unknown): DevActivitySnapshotV1
   const itemHasPullRequest = new Map<string, boolean>();
   for (const raw of array(v.items, 'items')) {
     const i = obj(raw, ['id', 'repository_id', 'branch', 'title', 'column', 'hidden', 'column_since', 'worktrees',
-      'pull_request', 'ledger', 'agent', 'runtime_blocked', 'cleanup_pending'], 'item');
+      'pull_request', 'cleanup_pending'], 'item');
     const repo = repositoryId(i.repository_id);
     if (!repositoryIds.has(repo)) fail('item repository');
     const id = nonEmpty(i.id, 'item id');
@@ -115,7 +114,7 @@ export function decodeDevActivitySnapshot(value: unknown): DevActivitySnapshotV1
     itemIds.add(id);
     const hasPullRequest = i.pull_request !== null;
     itemHasPullRequest.set(id, hasPullRequest);
-    nullable(i.branch, x => nonEmpty(x, 'branch'));
+    nonEmpty(i.branch, 'branch');
     if (hasPullRequest) verbatimNonEmpty(i.title, 'title');
     else nonEmpty(i.title, 'title');
     oneOf(i.column, DEV_ACTIVITY_COLUMNS, 'column');
@@ -149,34 +148,6 @@ export function decodeDevActivitySnapshot(value: unknown): DevActivitySnapshotV1
       if ((p.state === 'merged') !== (p.merged_at !== null)) fail('merged_at');
       return p;
     });
-    nullable(i.ledger, x => {
-      const l = obj(x, ['record_id', 'phase', 'phase_since', 'owner', 'blocked', 'waiting_owner'], 'ledger');
-      nonEmpty(l.record_id, 'record_id');
-      nonEmpty(l.phase, 'phase');
-      time(l.phase_since, 'phase_since');
-      nullable(l.owner, y => nonEmpty(y, 'owner'));
-      nullable(l.blocked, y => {
-        const b = obj(y, ['reason', 'since'], 'ledger blocked');
-        text(b.reason, 'blocked reason');
-        return time(b.since, 'blocked since');
-      });
-      return bool(l.waiting_owner, 'waiting_owner');
-    });
-    nullable(i.agent, x => {
-      const a = obj(x, ['label', 'source', 'runtime_state', 'runtime_freshness', 'changed_at'], 'agent');
-      nonEmpty(a.label, 'agent label');
-      oneOf(a.source, ['ledger', 'runtime'], 'agent source');
-      nullable(a.runtime_state, y => nonEmpty(y, 'runtime_state'));
-      nullable(a.runtime_freshness, y => oneOf(y, RUNTIME_FRESHNESS, 'runtime_freshness'));
-      nullable(a.changed_at, y => time(y, 'agent changed_at'));
-      if ((a.source === 'runtime') !== (a.runtime_state !== null && a.runtime_freshness !== null)) fail('agent runtime facts');
-      return a;
-    });
-    nullable(i.runtime_blocked, x => {
-      const b = obj(x, ['reason', 'since'], 'runtime_blocked');
-      nonEmpty(b.reason, 'runtime_blocked reason');
-      return time(b.since, 'runtime_blocked since');
-    });
     bool(i.cleanup_pending, 'cleanup_pending');
   }
 
@@ -200,5 +171,5 @@ export function decodeDevActivitySnapshot(value: unknown): DevActivitySnapshotV1
   if (status === 'unavailable' && ((v.repositories as unknown[]).length || (v.items as unknown[]).length || (v.attention as unknown[]).length)) {
     fail('unavailable snapshot carries data');
   }
-  return v as unknown as DevActivitySnapshotV1;
+  return v as unknown as DevActivitySnapshotV2;
 }

@@ -1,4 +1,5 @@
 import { afterEach, expect, test } from 'bun:test';
+import { darwinTest } from '../helpers/darwin-test';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, readdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, relative } from 'node:path';
@@ -260,7 +261,7 @@ test('async lock wait timeout does not release the other owner and a thrown call
   expect(existsSync(join(common, path))).toBe(false);
 });
 
-test.skipIf(process.platform !== 'darwin')('same-task follow-up recovers an unknown canonical request after restart without another delivery', async () => {
+darwinTest('same-task follow-up recovers an unknown canonical request after restart without another delivery', async () => {
   const f = fixture(true); const { dir, binding, request } = requestFixture(f);
   binding.harness_kind = 'codex'; writeSessionArtifact(join(dir, 'binding.json'), binding, false);
   const admission = { version: 1, runtime: 'codex', execution_root: f.execution, node: realpathSync(process.execPath), executable: '/bin/sh',
@@ -915,7 +916,7 @@ await startMcpHttp({repo:${JSON.stringify(f.repo)},profile:'pm',port:${port}});
   } finally { held?.release(); proc.kill('SIGTERM'); await proc.exited; await diagnostic; }
 }
 
-test.skipIf(process.platform !== 'darwin')('PM capabilities do not expose host probe exception details', async () => {
+darwinTest('PM capabilities do not expose host probe exception details', async () => {
   const f = fixture(true), parent = join(f.home, 'private-secret-like-sentinel'), sentinel = join(parent, 'runtime');
   writeFileSync(parent, 'not a directory');
   writeFileSync(join(f.home, 'pm-host.json'), JSON.stringify({ protocol: 1, endpoint: { session: 'fixture' }, parent_pane: 'fixture', max_requests: 1,

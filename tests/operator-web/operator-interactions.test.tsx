@@ -9,7 +9,7 @@ import { copyOperatorIdentifier } from '../../src/operator-web/clipboard';
 import { asApiError, fetchOperatorSnapshot } from '../../src/operator-web/fleet-api';
 import { defaultCollapsedGroups, groupWorklist, primaryCause, taskDisplayLabel, taskKey } from '../../src/operator-web/worklist';
 import {
-  collaborationSnapshot,
+  repositorySnapshot,
   degradedSnapshot,
   fixtureTasks,
   leaseStateSnapshot,
@@ -34,7 +34,7 @@ import {
 
 describe('three observation views',()=>{
   test('defaults to Organization, supports roving keyboard tabs and preserves delivery placement counts',async()=>{
-    await mount(<OperatorApp initialSnapshot={preparationSnapshot} initialLocale="en" initialCollaboration={{kind:'ready',snapshot:collaborationSnapshot}} />);
+    await mount(<OperatorApp initialSnapshot={preparationSnapshot} initialLocale="en" initialRepositorySnapshot={{kind:'ready',snapshot:repositorySnapshot}} />);
     const tabs = () => Array.from(document.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
     expect(tabs()).toHaveLength(3);expect(tabs()[2]!.getAttribute('aria-selected')).toBe('true');
     await act(async()=>tabs()[2]!.dispatchEvent(new KeyboardEvent('keydown',{key:'Home',bubbles:true})));
@@ -53,8 +53,8 @@ describe('three observation views',()=>{
   test('Planning opens the exact Task revision and view changes preserve details without extra reads',async()=>{
     const repository=stableSnapshot.repositories[0]!,planning=planningObservationFixture(repository.repository_id,repository.cards);
     let reads=0,contextReads=0,activityReads=0;
-    const payload={...collaborationSnapshot,repository_id:repository.repository_id,exchange:{status:'unavailable' as const,observed_at:'2026-09-22T00:00:00Z',code:'source_unavailable' as const},planning:{status:'observed' as const,observed_at:planning.observation.observed_at,snapshot:planning}};
-    await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" fetchCollaboration={async()=>{reads++;return payload;}}
+    const payload={...repositorySnapshot,repository_id:repository.repository_id,planning:{status:'observed' as const,observed_at:planning.observation.observed_at,snapshot:planning}};
+    await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" fetchRepositorySnapshot={async()=>{reads++;return payload;}}
       readTaskContext={async()=>{contextReads++;throw Error('fixture unavailable');}}
       readTaskActivity={async()=>{activityReads++;throw Error('fixture unavailable');}} />);
     const tab=(name:string)=>document.querySelector<HTMLButtonElement>(`#view-tab-${name}`)!;
@@ -74,7 +74,7 @@ describe('three observation views',()=>{
   test('Planning source with the same Task id but a different revision cannot open details',async()=>{
     const repository=stableSnapshot.repositories[0]!,planning=planningObservationFixture(repository.repository_id,repository.cards);
     const stale={...planning,tasks:planning.tasks.map(task=>({...task,task_revision:'f'.repeat(64)}))};
-    await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="zh" initialCollaboration={{kind:'ready',snapshot:{...collaborationSnapshot,repository_id:repository.repository_id,exchange:{status:'unavailable' as const,observed_at:'2026-09-22T00:00:00Z',code:'source_unavailable' as const},planning:{status:'observed',observed_at:planning.observation.observed_at,snapshot:stale}}}} />);
+    await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="zh" initialRepositorySnapshot={{kind:'ready',snapshot:{...repositorySnapshot,repository_id:repository.repository_id,planning:{status:'observed',observed_at:planning.observation.observed_at,snapshot:stale}}}} />);
     await act(async()=>document.querySelector<HTMLButtonElement>('#view-tab-planning')!.click());
     const buttons=Array.from(document.querySelectorAll<HTMLButtonElement>('.planning-tasks > li > button'));
     expect(buttons.length).toBeGreaterThan(0);expect(buttons.every(button=>button.disabled)).toBe(true);
@@ -197,18 +197,6 @@ const notifyStatus: import('../../src/core/operator/notify-status').NotifyStatus
   last_delivery: { at: null, result: 'missing' },
   observed_at: '2026-09-22T00:00:00.000Z',
 };
-const board: import('../../src/core/pipeline/board').PipelineBoardV2 = {
-  projection_version: 'repo-harness.pipeline-board.v2',
-  status: 'ready',
-  generated_at: '2026-09-22T00:00:00.000Z',
-  last_reconciled_at: '2026-09-22T00:00:00.000Z',
-  epoch: 1,
-  commit_seq: 1,
-  source_observed_at: {},
-  coverage: { counted: 0, skipped: 0, errors: 0, registration_incomplete: 0 },
-  cards: [],
-};
-
 function observationClock() {
   const originalSet = globalThis.setTimeout, originalClear = globalThis.clearTimeout;
   const timers = new Map<number,{at:number;run:()=>void}>();
@@ -253,11 +241,10 @@ describe('bounded observation lifecycle',()=>{
     try {
       await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en"
         fetchSnapshot={async () => { counts.fleet++; return stableSnapshot; }}
-        fetchCollaboration={async (id, _signal, after) => {
+        fetchRepositorySnapshot={async (id, _signal, after) => {
           decisions.push(after);
           const page = decisionInventoryFixture(id);
-          return { ...collaborationSnapshot, repository_id: id, decision_after: after,
-            exchange: { status: 'unavailable', observed_at: '2026-09-22T00:00:00Z', code: 'source_unavailable' },
+          return { ...repositorySnapshot, repository_id: id, decision_after: after,
             decisions: { status: 'observed', observed_at: '2026-09-22T00:00:00Z', snapshot: {
               ...page, query: { after, limit: 1 },
               coverage: { ...page.coverage, complete: after !== null, reason: after === null ? 'output_limit' : 'complete', next_after: after === null ? 'a'.repeat(64) : null },
@@ -290,42 +277,40 @@ describe('bounded observation lifecycle',()=>{
 
   test('System-page readers pause while hidden and read once on return, including a deferred Refresh', async () => {
     const clock = observationClock();
-    const counts = { fleet: 0, notify: 0, pipeline: 0 };
+    const counts = { fleet: 0, notify: 0 };
     const tab = (name: string) => act(async () => document.querySelector<HTMLButtonElement>(`#view-tab-${name}`)!.click());
     const page = (name: string) => act(async () => document.querySelector<HTMLAnchorElement>(`.workspace-nav a[data-workspace="${name}"]`)!.click());
     try {
-      await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" initialCollaboration={{ kind: 'ready', snapshot: collaborationSnapshot }}
+      await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" initialRepositorySnapshot={{ kind: 'ready', snapshot: repositorySnapshot }}
         fetchSnapshot={async () => { counts.fleet++; return stableSnapshot; }}
-        readNotifyStatus={async () => { counts.notify++; return notifyStatus; }}
-        readPipelineBoard={async () => { counts.pipeline++; return board; }} />);
-      // Notify and Pipeline belong to the System page; the repository page never reads them.
-      expect(counts).toEqual({ fleet: 0, notify: 0, pipeline: 0 });
+        readNotifyStatus={async () => { counts.notify++; return notifyStatus; }} />);
+      // Notify belongs to the System page; the repository page never reads it.
+      expect(counts).toEqual({ fleet: 0, notify: 0 });
       await tab('delivery');
       await clock.advance(600_000);
-      expect(counts).toEqual({ fleet: 20, notify: 0, pipeline: 0 });
+      expect(counts).toEqual({ fleet: 20, notify: 0 });
       await tab('organization');
-      expect(counts).toEqual({ fleet: 20, notify: 0, pipeline: 0 });
+      expect(counts).toEqual({ fleet: 20, notify: 0 });
       await clock.advance(30_000);
-      expect(counts).toEqual({ fleet: 21, notify: 0, pipeline: 0 });
+      expect(counts).toEqual({ fleet: 21, notify: 0 });
       await tab('planning');
       await act(async () => buttonWithText('Refresh').click());
-      expect(counts).toEqual({ fleet: 22, notify: 0, pipeline: 0 });
+      expect(counts).toEqual({ fleet: 22, notify: 0 });
       await tab('organization');
-      expect(counts).toEqual({ fleet: 22, notify: 0, pipeline: 0 });
+      expect(counts).toEqual({ fleet: 22, notify: 0 });
       await page('system');
-      expect(counts).toMatchObject({ notify: 1, pipeline: 1 });
+      expect(counts).toMatchObject({ notify: 1 });
       await page('board');
       await clock.advance(600_000);
-      expect(counts).toMatchObject({ notify: 1, pipeline: 1 });
+      expect(counts).toMatchObject({ notify: 1 });
       await act(async () => buttonWithText('Refresh').click());
-      expect(counts).toMatchObject({ notify: 1, pipeline: 1 });
+      expect(counts).toMatchObject({ notify: 1 });
       await page('system');
-      expect(counts).toMatchObject({ notify: 2, pipeline: 2 });
+      expect(counts).toMatchObject({ notify: 2 });
       // The System page keeps polling: one 30s tick adds exactly one read to each reader.
-      const before = { notify: counts.notify, pipeline: counts.pipeline };
+      const before = { notify: counts.notify };
       await clock.advance(30_000);
       expect(counts.notify).toBe(before.notify + 1);
-      expect(counts.pipeline).toBe(before.pipeline + 1);
     } finally {
       await act(async () => root?.unmount()); root = null; clock.restore();
     }
@@ -333,20 +318,19 @@ describe('bounded observation lifecycle',()=>{
 
   test('seeded System readers that start without a read still read at once on return', async () => {
     const clock = observationClock();
-    const counts = { notify: 0, pipeline: 0 };
+    const counts = { notify: 0 };
     const page = (name: string) => act(async () => document.querySelector<HTMLAnchorElement>(`.workspace-nav a[data-workspace="${name}"]`)!.click());
     window.location.hash = '#system';
     try {
-      await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" initialCollaboration={{ kind: 'ready', snapshot: collaborationSnapshot }}
+      await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" initialRepositorySnapshot={{ kind: 'ready', snapshot: repositorySnapshot }}
         fetchSnapshot={async () => stableSnapshot}
-        initialNotifyStatus={notifyStatus} readNotifyStatus={async () => { counts.notify++; return notifyStatus; }}
-        initialPipelineBoard={board} readPipelineBoard={async () => { counts.pipeline++; return board; }} />);
-      expect(counts).toEqual({ notify: 0, pipeline: 0 });
+        initialNotifyStatus={notifyStatus} readNotifyStatus={async () => { counts.notify++; return notifyStatus; }} />);
+      expect(counts).toEqual({ notify: 0 });
       await page('board');
       await clock.advance(300_000);
-      expect(counts).toEqual({ notify: 0, pipeline: 0 });
+      expect(counts).toEqual({ notify: 0 });
       await page('system');
-      expect(counts).toEqual({ notify: 1, pipeline: 1 });
+      expect(counts).toEqual({ notify: 1 });
     } finally {
       await act(async () => root?.unmount()); root = null; clock.restore();
     }
@@ -523,7 +507,7 @@ describe('operator web interactions', () => {
     window.localStorage.setItem(draftKey, 'existing draft stays untouched');
     try {
       await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale={locale}
-        fetchSnapshot={async () => stableSnapshot} initialCollaboration={{kind:'ready',snapshot:collaborationSnapshot}} />);
+        fetchSnapshot={async () => stableSnapshot} initialRepositorySnapshot={{kind:'ready',snapshot:repositorySnapshot}} />);
       for (const view of ['planning', 'delivery', 'organization']) {
         await act(async () => document.querySelector<HTMLButtonElement>(`#view-tab-${view}`)!.click());
         expect(document.querySelector('[data-write-action], textarea, .composer')).toBeNull();
@@ -1043,19 +1027,15 @@ describe('operator web interactions', () => {
     } finally { globalThis.fetch = originalFetch; }
   });
 
-  test('the page Refresh action also re-requests the Notify and Pipeline panels', async () => {
+  test('the page Refresh action also re-requests the Notify panel', async () => {
     let notify = 0;
-    let pipeline = 0;
     window.location.hash = '#system';
     await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" fetchSnapshot={async () => stableSnapshot}
-      readNotifyStatus={async () => { notify += 1; if (notify === 1) throw new Error('notify down'); return notifyStatus; }}
-      readPipelineBoard={async () => { pipeline += 1; return board; }} />);
+      readNotifyStatus={async () => { notify += 1; if (notify === 1) throw new Error('notify down'); return notifyStatus; }} />);
     expect(notify).toBe(1);
-    expect(pipeline).toBe(1);
     expect(document.querySelector('.notify-status')?.getAttribute('data-notify-state')).toBe('unavailable');
     await act(async () => buttonWithText('Refresh').click());
     expect(notify).toBe(2);
-    expect(pipeline).toBe(2);
     expect(document.querySelector('.notify-status')?.getAttribute('data-notify-state')).toBe('ready');
   });
 
@@ -1478,7 +1458,7 @@ test('OperatorApp selects, refreshes and cancels exact task evidence without a m
 
  test('Fleet rejects a same-epoch sequence regression but accepts a new service epoch', async () => {
   let next = { ...stableSnapshot, sequence: 1 };
-  await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" fetchSnapshot={async () => next} initialCollaboration={{kind:'ready',snapshot:collaborationSnapshot}} />);
+  await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" fetchSnapshot={async () => next} initialRepositorySnapshot={{kind:'ready',snapshot:repositorySnapshot}} />);
   await act(async () => buttonWithText('Refresh').click());
   expect(document.querySelector('[data-fact="sequence"]')?.textContent).toContain(String(stableSnapshot.sequence));
   expect(document.querySelector('[data-state]')?.getAttribute('data-state')).toBe('stale');
@@ -1491,12 +1471,12 @@ test('OperatorApp selects, refreshes and cancels exact task evidence without a m
 test('automatic epoch change cancels associated evidence and late responses cannot restore the old service view', async () => {
   const { taskContextFixture, taskActivityFixture } = await import('../../src/operator-web/fixture');
   const clock = observationClock(), originalFetch = globalThis.fetch;
-  const collaborationReads: Array<{signal: AbortSignal; finish: (value: typeof collaborationSnapshot) => void}> = [];
+  const repositoryReads: Array<{signal: AbortSignal; finish: (value: typeof repositorySnapshot) => void}> = [];
   const contexts: Array<{signal: AbortSignal; finish: (value: ReturnType<typeof taskContextFixture>) => void; request: Parameters<typeof taskContextFixture>[0]}> = [];
   let diffSignal: AbortSignal | null = null, finishDiff!: (response: Response) => void;
   const next = { ...stableSnapshot, sequence: 1, service_epoch: '00000000-0000-4000-8000-000000000002' };
   globalThis.fetch = (async (input, init) => {
-    // The explicit refresh generation now reaches the Notify and Pipeline
+    // The explicit refresh generation now reaches the Notify
     // panels, so an epoch reset issues their requests too; only the diff
     // request is parked, and the rest fail fast.
     if (String(input).includes('/diff')) {
@@ -1507,21 +1487,21 @@ test('automatic epoch change cancels associated evidence and late responses cann
   }) as typeof fetch;
   try {
     await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" fetchSnapshot={async () => next}
-      fetchCollaboration={(_id, signal) => new Promise(resolve => collaborationReads.push({ signal: signal!, finish: resolve }))}
+      fetchRepositorySnapshot={(_id, signal) => new Promise(resolve => repositoryReads.push({ signal: signal!, finish: resolve }))}
       readTaskContext={(request, signal) => new Promise(resolve => contexts.push({request, signal, finish: resolve}))}
       readTaskActivity={async request => taskActivityFixture(request)} />);
     await act(async () => buttonWithText(fixtureTasks.blocked.task_label).click());
     await act(async () => document.querySelector<HTMLButtonElement>('.task-diff button')!.click());
-    expect(collaborationReads).toHaveLength(1); expect(contexts).toHaveLength(1);
+    expect(repositoryReads).toHaveLength(1); expect(contexts).toHaveLength(1);
     const previousDiff = document.querySelector('.task-diff');
     await clock.advance(30_000);
-    expect(collaborationReads[0]!.signal.aborted).toBe(true);
+    expect(repositoryReads[0]!.signal.aborted).toBe(true);
     expect(contexts[0]!.signal.aborted).toBe(true);
     expect(diffSignal!.aborted).toBe(true);
     expect(document.querySelector('.task-diff')).not.toBe(previousDiff);
-    expect(collaborationReads).toHaveLength(2); expect(contexts).toHaveLength(2);
+    expect(repositoryReads).toHaveLength(2); expect(contexts).toHaveLength(2);
     await act(async () => {
-      collaborationReads[0]!.finish(collaborationSnapshot);
+      repositoryReads[0]!.finish(repositorySnapshot);
       contexts[0]!.finish(taskContextFixture(contexts[0]!.request));
       finishDiff(Response.json({ code:'stale' }, {status:409}));
     });
@@ -1548,7 +1528,7 @@ test('an old exact Task URL shows committed history without constructing current
   const id='f'.repeat(64),repo=stableSnapshot.repositories[0]!.repository_id;
   const history = await historyValue(repo, id);
   window.history.replaceState(null,'',`?repository=${repo}&task=${id}`);
-  await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" initialCollaboration={{kind:'ready',snapshot:collaborationSnapshot}}
+  await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" initialRepositorySnapshot={{kind:'ready',snapshot:repositorySnapshot}}
     readTaskHistory={async()=>history} />);
   expect(document.querySelector('.task-history')?.textContent).toContain('Archived task ffff');
   expect(document.querySelector('.task-history')?.textContent).toContain('b'.repeat(40));
@@ -1561,7 +1541,7 @@ test('an old exact Task URL shows committed history without constructing current
 test('current Task links open current detail and selecting cards writes only navigation identifiers',async()=>{
   const card=stableSnapshot.repositories[0]!.cards.find(c=>c.task_id===fixtureTasks.blocked.task_id)!;
   window.history.replaceState(null,'',`?repository=${card.repository_id}&task=${card.task_id}`);
-  await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" initialCollaboration={{kind:'ready',snapshot:collaborationSnapshot}} />);
+  await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" initialRepositorySnapshot={{kind:'ready',snapshot:repositorySnapshot}} />);
   expect(paneText()).toContain(fixtureTasks.blocked.task_label);expect(document.querySelector('.task-history')).toBeNull();
   await act(async()=>document.querySelector<HTMLButtonElement>('.detail-pane__actions button[aria-label]')!.click());
   await act(async()=>buttonWithText(fixtureTasks.blocked.task_label).click());
@@ -1573,7 +1553,7 @@ test('history navigation rejects late responses and preserves a removed reposito
   const pending:Array<{request:import('../../src/core/operator/task-history').OperatorTaskHistoryRequest;signal:AbortSignal;finish:(value:Awaited<ReturnType<typeof historyValue>>)=>void}>=[];
   const repo=stableSnapshot.repositories[0]!.repository_id;
   window.history.replaceState(null,'',`?repository=${repo}&task=${'e'.repeat(64)}&view=history`);
-  await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" initialCollaboration={{kind:'ready',snapshot:collaborationSnapshot}}
+  await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" initialRepositorySnapshot={{kind:'ready',snapshot:repositorySnapshot}}
     readTaskHistory={(request,signal)=>new Promise(resolve=>pending.push({request,signal,finish:resolve}))} />);
   await act(async()=>{window.history.pushState(null,'',`?repository=removed-repo&task=${'f'.repeat(64)}&view=history`);window.dispatchEvent(new window.PopStateEvent('popstate'));});
   expect(pending[0]!.signal.aborted).toBe(true);expect(pending[1]!.request.repository_id).toBe('removed-repo');
@@ -1587,7 +1567,7 @@ test('history navigation rejects late responses and preserves a removed reposito
 
 test('malformed Task URLs expose refusal without requesting history',async()=>{
   let calls=0;window.history.replaceState(null,'',`?repository=repo-harness&task=${'a'.repeat(64)}&ref=HEAD`);
-  await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" initialCollaboration={{kind:'ready',snapshot:collaborationSnapshot}}
+  await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" initialRepositorySnapshot={{kind:'ready',snapshot:repositorySnapshot}}
     readTaskHistory={async()=>{calls++;throw new Error('unexpected');}} />);
   expect(document.body.textContent).toContain('Invalid Task link');expect(calls).toBe(0);expect(document.querySelector('.composer')).toBeNull();
 });
@@ -1595,7 +1575,7 @@ test('malformed Task URLs expose refusal without requesting history',async()=>{
 test('a disappearing selected Task keeps its original identity while history is unavailable',async()=>{
   const {emptySnapshot}=await import('../../src/operator-web/fixture');
   const calls:import('../../src/core/operator/task-history').OperatorTaskHistoryRequest[]=[];
-  await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" initialCollaboration={{kind:'ready',snapshot:collaborationSnapshot}}
+  await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" initialRepositorySnapshot={{kind:'ready',snapshot:repositorySnapshot}}
     fetchSnapshot={async()=>({...emptySnapshot,service_epoch:stableSnapshot.service_epoch,sequence:stableSnapshot.sequence+1})}
     readTaskHistory={async request=>{calls.push(request);throw new Error('history_unavailable');}} />);
   await act(async()=>buttonWithText(fixtureTasks.blocked.task_label).click());
@@ -1610,7 +1590,7 @@ test('a disappearing selected Task keeps its original identity while history is 
 test('an explicit historical revision remains a historical read even when the Task is currently visible',async()=>{
   const card=stableSnapshot.repositories[0]!.cards[0]!,value=await historyValue(card.repository_id,card.task_id);let calls=0;
   window.history.replaceState(null,'',`?repository=${card.repository_id}&task=${card.task_id}&view=history&task_revision=${value.task_revision}`);
-  await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" initialCollaboration={{kind:'ready',snapshot:collaborationSnapshot}}
+  await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" initialRepositorySnapshot={{kind:'ready',snapshot:repositorySnapshot}}
     readTaskHistory={async request=>{calls++;expect(request.expected_task_revision).toBe(value.task_revision);return value;}} />);
   expect(calls).toBe(1);expect(document.querySelector('.task-history')?.textContent).toContain(value.task.title);expect(document.querySelector('.detail-pane')).toBeNull();
 });
@@ -1623,7 +1603,7 @@ test('refresh removes stale acceptance readiness without creating Done or a merg
   const stale={...current,placement,merge_readiness:readiness,blocker_codes:readiness.blockers.map(b=>b.code),attention_owner:'user' as const};
   const next={...stableSnapshot,sequence:stableSnapshot.sequence+1,counts:{...stableSnapshot.counts,ready_to_merge:stableSnapshot.counts.ready_to_merge-1,in_review:stableSnapshot.counts.in_review+1},repositories:stableSnapshot.repositories.map(r=>({...r,cards:r.cards.map(c=>c.task_id===current.task_id?stale:c)}))};
 
-  await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" fetchSnapshot={async()=>next} initialCollaboration={{kind:'ready',snapshot:collaborationSnapshot}} />);
+  await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" fetchSnapshot={async()=>next} initialRepositorySnapshot={{kind:'ready',snapshot:repositorySnapshot}} />);
   expect(document.querySelector('.worklist-group--ready_to_merge .worklist-group__count')?.textContent).toBe('1');
   await act(async()=>buttonWithText('Refresh').click());
   expect(document.querySelector('.worklist-group--ready_to_merge .worklist-group__count')?.textContent).toBe('0');
