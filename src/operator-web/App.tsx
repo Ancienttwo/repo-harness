@@ -16,7 +16,7 @@ import {
   WrenchIcon,
 } from '@phosphor-icons/react';
 import type { SetupSnapshotV1 } from '../core/setup/types';
-import type { DevActivitySnapshotV1 } from '../core/dev-activity/types';
+import type { DevActivitySnapshotV2 } from '../core/dev-activity/types';
 import type { NotifyStatusV1 } from '../core/operator/notify-status';
 import type { RuntimeOverlay } from '../core/operator/runtime-status';
 import { Board } from './Board';
@@ -89,7 +89,7 @@ export interface OperatorAppProps {
   /** Server renders have no URL; they name the page to render. The browser reads the fragment. */
   readonly initialPlace?: WorkspaceLocation;
   readonly fetchDevActivity?: DevActivityReader;
-  readonly initialDevActivity?: DevActivitySnapshotV1;
+  readonly initialDevActivity?: DevActivitySnapshotV2;
   readonly readRuntimeStatus?: RuntimeOverlayReader;
   readonly initialRuntimeOverlay?: RuntimeOverlay;
   readonly readTaskHistory?: TaskHistoryReader;

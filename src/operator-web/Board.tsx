@@ -11,27 +11,24 @@ import {
   GitBranchIcon,
   GitMergeIcon,
   GitPullRequestIcon,
-  HandIcon,
   HourglassIcon,
   MagnifyingGlassIcon,
   PencilSimpleIcon,
   TerminalWindowIcon,
-  WarningIcon,
   XCircleIcon,
 } from '@phosphor-icons/react';
-import { DEV_ACTIVITY_COLUMNS, type DevActivityAttention, type DevActivityColumn, type DevActivityItem, type DevActivitySnapshotV1 } from '../core/dev-activity/types';
+import { DEV_ACTIVITY_COLUMNS, type DevActivityAttention, type DevActivityColumn, type DevActivityItem, type DevActivitySnapshotV2 } from '../core/dev-activity/types';
 import { nativeRuntimeFreshness, type NativeRuntimeSourceSummary } from '../core/operator/runtime-status';
 import {
   attentionItem,
   filterItems,
-  itemBlocks,
   orderColumn,
   repositoryLabel,
   type BoardFilters,
   type DevActivityView,
 } from './dev-activity';
 import type { OperatorMessageKey, OperatorTranslate } from './i18n';
-import { ageWords, blockReasonLabel, phaseLabel, runtimeStateLabel, runtimeTone } from './labels';
+import { ageWords, runtimeStateLabel, runtimeTone } from './labels';
 import { ItemDrawer } from './ItemDrawer';
 import type { RuntimeView } from './RuntimeBadges';
 import { Age, CommandLine, ExternalLink, SectionTitle, StatusDot } from './ui';
@@ -41,13 +38,11 @@ const RUNTIME_CONFIG_COMMAND = 'repo-harness operator serve --runtime-status-con
 
 const ATTENTION_ICON: Readonly<Record<DevActivityAttention['kind'], ReactNode>> = {
   ready_to_merge: <GitMergeIcon size={16} />,
-  ledger_waiting_owner: <HandIcon size={16} />,
   human_request: <ChatCircleDotsIcon size={16} />,
-  runtime_blocked: <WarningIcon size={16} />,
 };
 
 function AttentionRow({ row, snapshot, now, onOpen, t }: {
-  readonly row: DevActivityAttention; readonly snapshot: DevActivitySnapshotV1; readonly now: number;
+  readonly row: DevActivityAttention; readonly snapshot: DevActivitySnapshotV2; readonly now: number;
   readonly onOpen: (id: string) => void; readonly t: OperatorTranslate;
 }) {
   const item = attentionItem(snapshot, row);
@@ -78,7 +73,7 @@ function AttentionRow({ row, snapshot, now, onOpen, t }: {
 
 /** §3.4: one queue, oldest first. Its length is the page count and the tab title. */
 function AttentionQueue({ snapshot, now, onOpen, t }: {
-  readonly snapshot: DevActivitySnapshotV1; readonly now: number; readonly onOpen: (id: string) => void; readonly t: OperatorTranslate;
+  readonly snapshot: DevActivitySnapshotV2; readonly now: number; readonly onOpen: (id: string) => void; readonly t: OperatorTranslate;
 }) {
   const [expanded, setExpanded] = useState(false);
   const rows = snapshot.attention;
@@ -184,28 +179,6 @@ function ItemSignals({ item, t }: { readonly item: DevActivityItem; readonly t: 
   return <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-kumo-default">{signals}</p>;
 }
 
-function AgentLine({ item, now, t }: { readonly item: DevActivityItem; readonly now: number; readonly t: OperatorTranslate }) {
-  const blocks = itemBlocks(item);
-  if (blocks.length > 0) {
-    const block = blocks[0]!;
-    return (
-      <p className="flex min-w-0 items-center gap-1.5 text-xs font-medium text-kumo-danger" data-blocked>
-        <WarningIcon size={13} aria-hidden="true" className="shrink-0" />
-        <span className="truncate">{t('card.blocked', { reason: blockReasonLabel(block, t), age: ageWords(block.since, now, t) })}</span>
-      </p>
-    );
-  }
-  // No agent is the common case without runtime status; the roster already says so once.
-  if (!item.agent) return null;
-  return (
-    <p className="flex min-w-0 items-center gap-1.5 text-xs text-kumo-default">
-      <StatusDot tone={runtimeTone(item.agent.runtime_state)} pulse={item.agent.runtime_state === 'working'} />
-      <span className="truncate font-medium">{item.agent.label}</span>
-      {item.agent.runtime_state && <span className="shrink-0 text-kumo-subtle">· {runtimeStateLabel(item.agent.runtime_state, t)}</span>}
-    </p>
-  );
-}
-
 /** Each column's own clock: merge time when shipped, PR creation for open PRs. */
 function ColumnAge({ item, now, t }: { readonly item: DevActivityItem; readonly now: number; readonly t: OperatorTranslate }) {
   const pr = item.pull_request;
@@ -215,20 +188,17 @@ function ColumnAge({ item, now, t }: { readonly item: DevActivityItem; readonly 
   return <span className="inline-flex items-center gap-1"><HourglassIcon size={11} aria-hidden="true" />{t(key, { age: ageWords(item.column_since, now, t) })}</span>;
 }
 
-/** Four lines at most: what, where it stands, who, and the signals that exist. */
+/** Show the title, repository, column clock and available Git/GitHub facts. */
 function ItemCard({ item, snapshot, now, selected, onOpen, t }: {
-  readonly item: DevActivityItem; readonly snapshot: DevActivitySnapshotV1; readonly now: number;
+  readonly item: DevActivityItem; readonly snapshot: DevActivitySnapshotV2; readonly now: number;
   readonly selected: boolean; readonly onOpen: (id: string) => void; readonly t: OperatorTranslate;
 }) {
-  const blocked = itemBlocks(item).length > 0;
   return (
     <article
-      className={cn('board-card group relative flex cursor-pointer flex-col gap-1.5 rounded-lg border bg-kumo-base px-3 py-2.5 transition-colors hover:border-kumo-line hover:bg-kumo-elevated',
-        blocked ? 'border-kumo-hairline border-l-4 border-l-kumo-danger' : 'border-kumo-hairline',
+      className={cn('board-card group relative flex cursor-pointer flex-col gap-1.5 rounded-lg border border-kumo-hairline bg-kumo-base px-3 py-2.5 transition-colors hover:border-kumo-line hover:bg-kumo-elevated',
         selected && 'ring-2 ring-kumo-brand')}
       data-item-id={item.id}
       data-column={item.column}
-      data-blocked={blocked || undefined}
       onClick={() => onOpen(item.id)}
     >
       <button type="button" data-card-open className="min-w-0 cursor-pointer text-left text-sm font-medium leading-snug text-kumo-strong focus-visible:underline focus-visible:outline-none" onClick={event => { event.stopPropagation(); onOpen(item.id); }}>
@@ -236,11 +206,9 @@ function ItemCard({ item, snapshot, now, selected, onOpen, t }: {
       </button>
       <p className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-kumo-subtle">
         <span className="min-w-0 max-w-full truncate">{repositoryLabel(snapshot.repositories, item.repository_id)}</span>
-        {item.ledger && <span className="rounded border border-kumo-line px-1.5 text-[11px] leading-4 text-kumo-default" data-phase={item.ledger.phase}>{phaseLabel(item.ledger.phase, t)}</span>}
         <ColumnAge item={item} now={now} t={t} />
-        {!item.ledger && !item.column_since && !item.pull_request?.merged_at && item.branch && item.branch !== item.title && <span className="inline-flex min-w-0 items-center gap-1"><GitBranchIcon size={11} aria-hidden="true" /><span className="truncate font-mono">{item.branch}</span></span>}
+        {!item.column_since && !item.pull_request?.merged_at && item.branch && item.branch !== item.title && <span className="inline-flex min-w-0 items-center gap-1"><GitBranchIcon size={11} aria-hidden="true" /><span className="truncate font-mono">{item.branch}</span></span>}
       </p>
-      <AgentLine item={item} now={now} t={t} />
       <ItemSignals item={item} t={t} />
     </article>
   );
@@ -285,7 +253,7 @@ function BoardToolbar({ filters, onFilters, searchRef, t }: {
 const COLUMN_PREVIEW: Readonly<Record<DevActivityColumn, number>> = { planned: 12, building: 12, verifying: 12, ready_to_merge: 12, shipped: 6 };
 
 function BoardColumns({ columns, snapshot, now, selectedId, mobileColumn, onMobileColumn, onOpen, t }: {
-  readonly columns: ReadonlyMap<DevActivityColumn, readonly DevActivityItem[]>; readonly snapshot: DevActivitySnapshotV1; readonly now: number;
+  readonly columns: ReadonlyMap<DevActivityColumn, readonly DevActivityItem[]>; readonly snapshot: DevActivitySnapshotV2; readonly now: number;
   readonly selectedId: string | null; readonly mobileColumn: DevActivityColumn; readonly onMobileColumn: (column: DevActivityColumn) => void;
   readonly onOpen: (id: string) => void; readonly t: OperatorTranslate;
 }) {

@@ -10,7 +10,7 @@ import { spawn } from 'node:child_process';
 import { lstatSync, realpathSync } from 'node:fs';
 import { basename, isAbsolute, join, resolve, sep } from 'node:path';
 
-import { DEV_ACTIVITY_SHIPPED_WINDOW_MS, type DevActivitySnapshotV1, type DevActivitySourceHealth } from '../../core/dev-activity/types';
+import { DEV_ACTIVITY_SHIPPED_WINDOW_MS, type DevActivitySnapshotV2, type DevActivitySourceHealth } from '../../core/dev-activity/types';
 import { unavailableDevActivitySnapshot } from '../../core/dev-activity/decode';
 import {
   projectDevActivity,
@@ -351,14 +351,13 @@ async function collectRepository(repo: RepoHarnessRegisteredRepo, runtime: DevAc
     sources: [git.health, github.health, runtime, decisions.health],
     worktrees: git.worktrees,
     pull_requests: github.pull_requests,
-    ledger: [],
     human_requests: decisions.requests,
   };
 }
 
 /** One full collection cycle. Registry failure yields an unavailable snapshot. */
 export async function collectDevActivity(options: DevActivityCollectorOptions & { readonly signal?: AbortSignal; readonly first_seen?: Map<string, string> } = {}):
-Promise<DevActivitySnapshotV1> {
+Promise<DevActivitySnapshotV2> {
   const now = options.now ?? Date.now;
   const env = options.env ?? process.env;
   const ctx: CollectionContext = {
@@ -376,12 +375,11 @@ Promise<DevActivitySnapshotV1> {
     return { ...unavailableDevActivitySnapshot(), collected_at: new Date(now()).toISOString() };
   }
   const readable = repos.filter(readableAuthority);
-  let runtimeOverlay: RuntimeOverlay | null = null;
   let runtime: DevActivitySourceHealth;
   if (!options.read_runtime) runtime = runtimeSourceHealth(null, now());
   else {
-    try { runtimeOverlay = options.read_runtime(); runtime = runtimeSourceHealth(runtimeOverlay, now()); }
-    catch { runtimeOverlay = null; runtime = { kind: 'runtime', status: 'unavailable', reason: 'runtime_unavailable', observed_at: null }; }
+    try { runtime = runtimeSourceHealth(options.read_runtime(), now()); }
+    catch { runtime = { kind: 'runtime', status: 'unavailable', reason: 'runtime_unavailable', observed_at: null }; }
   }
   const repositories = await boundedMap(readable, options.max_concurrency ?? DEV_ACTIVITY_REPOSITORY_CONCURRENCY,
     repo => collectRepository(repo, runtime, ctx));
@@ -399,13 +397,12 @@ Promise<DevActivitySnapshotV1> {
     now_ms: now(),
     unreadable_registrations: repos.length - readable.length,
     repositories,
-    runtime: runtime.status === 'not_configured' ? null : runtimeOverlay,
   });
 }
 
 export interface DevActivityCollectorHandle {
   /** Cache read only; never starts work. */
-  readonly read: () => DevActivitySnapshotV1;
+  readonly read: () => DevActivitySnapshotV2;
   /** Resolves when the cycle in flight, if any, has settled. */
   readonly settled: () => Promise<void>;
   readonly close: () => Promise<void>;
@@ -415,7 +412,7 @@ export interface DevActivityCollectorHandle {
 export function startDevActivityCollector(options: DevActivityCollectorOptions = {}): DevActivityCollectorHandle {
   const controller = new AbortController();
   const firstSeen = new Map<string, string>();
-  let cache: DevActivitySnapshotV1 = unavailableDevActivitySnapshot();
+  let cache: DevActivitySnapshotV2 = unavailableDevActivitySnapshot();
   let closed = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let inflight: Promise<void> | null = null;

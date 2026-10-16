@@ -1,6 +1,6 @@
 // Development-only board fixtures. Loaded by `?fixture=<name>` under the Vite
 // dev server and never emitted into the production bundle.
-import { DEV_ACTIVITY_PROJECTION, type DevActivityAttention, type DevActivityItem, type DevActivityPullRequest, type DevActivityRepository, type DevActivitySnapshotV1, type DevActivitySourceHealth, type DevActivityWorktree } from '../../core/dev-activity/types';
+import { DEV_ACTIVITY_PROJECTION, type DevActivityAttention, type DevActivityItem, type DevActivityPullRequest, type DevActivityRepository, type DevActivitySnapshotV2, type DevActivitySourceHealth, type DevActivityWorktree } from '../../core/dev-activity/types';
 import type { NativeRuntimeSourceSummary, RuntimeOverlay } from '../../core/operator/runtime-status';
 import { unavailableRuntimeOverlay } from '../../core/operator/runtime-status';
 
@@ -27,7 +27,7 @@ function source(kind: DevActivitySourceHealth['kind'], status: DevActivitySource
 
 function healthy(now: number, overrides: Partial<Record<DevActivitySourceHealth['kind'], DevActivitySourceHealth>> = {}): DevActivitySourceHealth[] {
   const seen = at(now, 40_000);
-  const base: DevActivitySourceHealth[] = [source('git', 'ok', seen), source('github', 'ok', seen), source('ledger', 'ok', seen), source('runtime', 'ok', seen), source('decisions', 'ok', seen)];
+  const base: DevActivitySourceHealth[] = [source('git', 'ok', seen), source('github', 'ok', seen), source('runtime', 'ok', seen), source('decisions', 'ok', seen)];
   return base.map(row => overrides[row.kind] ?? row);
 }
 
@@ -45,8 +45,8 @@ function pull(now: number, slug: string, number: number, title: string, override
 
 function item(repositoryId: string, key: string, overrides: Partial<DevActivityItem> & Pick<DevActivityItem, 'title' | 'column'>): DevActivityItem {
   return {
-    id: `${repositoryId}:${key}`, repository_id: repositoryId, branch: key.startsWith('ledger:') ? null : key, hidden: null, column_since: null,
-    worktrees: [], pull_request: null, ledger: null, agent: null, runtime_blocked: null, cleanup_pending: false,
+    id: `${repositoryId}:${key}`, repository_id: repositoryId, branch: key, hidden: null, column_since: null,
+    worktrees: [], pull_request: null, cleanup_pending: false,
     ...overrides,
   };
 }
@@ -60,39 +60,26 @@ function merged(now: number, repositoryId: string, slug: string, number: number,
   });
 }
 
-/** Every column populated, three attention rows, one blocked, one cleanup pending, one ledger-joined card. */
-export function busyDevActivity(now: number): DevActivitySnapshotV1 {
+/** Git/GitHub work, two attention rows and one pending cleanup. Planned stays empty. */
+export function busyDevActivity(now: number): DevActivitySnapshotV2 {
   const harness = 'Ancienttwo/repo-harness', site = 'acme/operator-site';
   const repositories: DevActivityRepository[] = [
     { repository_id: HARNESS_ID, display_name: 'repo-harness', github: harness, default_branch: 'main', sources: healthy(now) },
     { repository_id: SITE_ID, display_name: 'operator-site', github: site, default_branch: 'main',
-      sources: healthy(now, { ledger: source('ledger', 'not_configured', null, 'ledger_not_configured') }) },
+      sources: healthy(now) },
     { repository_id: DOCS_ID, display_name: 'field-notes', github: null, default_branch: 'main',
-      sources: healthy(now, { github: source('github', 'not_configured', null, 'no_github_remote'), ledger: source('ledger', 'not_configured', null, 'ledger_not_configured') }) },
+      sources: healthy(now, { github: source('github', 'not_configured', null, 'no_github_remote') }) },
   ];
-  const blockedSince = at(now, 26 * MINUTE);
   const items: DevActivityItem[] = [
-    item(HARNESS_ID, 'ledger:pl-0012', {
-      title: 'Fold the shipped column to recent work', column: 'planned', column_since: at(now, 5 * HOUR),
-      ledger: { record_id: 'pl-0012', phase: 'plan', phase_since: at(now, 5 * HOUR), owner: null, blocked: null, waiting_owner: false },
-    }),
-    item(SITE_ID, 'ledger:pl-0003', {
-      title: 'Plan the pricing page refresh', column: 'planned', column_since: at(now, 2 * DAY),
-      ledger: { record_id: 'pl-0003', phase: 'plan-review', phase_since: at(now, 2 * DAY), owner: 'codex', blocked: null, waiting_owner: false },
-      agent: { label: 'codex', source: 'ledger', runtime_state: null, runtime_freshness: null, changed_at: null },
-    }),
     item(HARNESS_ID, 'feat/kanban-human-redesign', {
       title: 'Rebuild the operator console for humans', column: 'building', column_since: at(now, 3 * HOUR),
       worktrees: [worktree('repo-harness-wt-kanban-redesign', 'a1', { dirty: true, ahead: 3 })],
       pull_request: pull(now, harness, 608, 'Rebuild the operator console for humans', { is_draft: true, ci: 'pending', review: 'none' }),
-      agent: { label: 'Claude · frontend worker', source: 'runtime', runtime_state: 'working', runtime_freshness: 'fresh', changed_at: at(now, 2 * MINUTE) },
     }),
     item(HARNESS_ID, 'feat/runtime-capture-pi', {
       title: 'Capture Pi runtime status natively', column: 'building', column_since: at(now, 9 * HOUR),
       worktrees: [worktree('repo-harness-wt-pi-capture', 'b2', { ahead: 5, behind: 2 })],
       pull_request: pull(now, harness, 604, 'Capture Pi runtime status natively', { is_draft: true, ci: 'success', review: 'none' }),
-      agent: { label: 'Codex · implementer', source: 'runtime', runtime_state: 'blocked', runtime_freshness: 'fresh', changed_at: blockedSince },
-      runtime_blocked: { reason: 'permission', since: blockedSince },
     }),
     item(SITE_ID, 'fix/csp-header', {
       title: 'fix/csp-header', column: 'building', worktrees: [worktree('operator-site-csp', 'd4', { dirty: true, ahead: null, behind: null })],
@@ -105,8 +92,6 @@ export function busyDevActivity(now: number): DevActivitySnapshotV1 {
       title: 'Observe pipeline phases on the board', column: 'verifying', column_since: at(now, 20 * HOUR),
       worktrees: [worktree('repo-harness-wt-pipeline', 'e5', { ahead: 1 })],
       pull_request: pull(now, harness, 603, 'Observe pipeline phases on the board', { ci: 'success', review: 'review_required' }),
-      ledger: { record_id: 'pl-0009', phase: 'cross-review', phase_since: at(now, 7 * HOUR), owner: 'codex', blocked: null, waiting_owner: false },
-      agent: { label: 'codex', source: 'ledger', runtime_state: null, runtime_freshness: null, changed_at: null },
     }),
     item(SITE_ID, 'feat/billing-copy', {
       title: 'Rewrite billing copy', column: 'verifying', column_since: at(now, 2 * DAY + 3 * HOUR),
@@ -131,14 +116,12 @@ export function busyDevActivity(now: number): DevActivitySnapshotV1 {
       waiting_since: at(now, 4 * HOUR), url: null, command: 'repo-harness verified-context read --kind decision --id dec-7f3a' },
     { kind: 'ready_to_merge', subject_id: `${HARNESS_ID}:chore/oar-0-45`, repository_id: HARNESS_ID, summary: 'Upgrade OAR to 0.45.1',
       waiting_since: at(now, 50 * MINUTE), url: `https://github.com/${harness}/pull/602`, command: null },
-    { kind: 'runtime_blocked', subject_id: `${HARNESS_ID}:feat/runtime-capture-pi`, repository_id: HARNESS_ID, summary: 'Capture Pi runtime status natively',
-      waiting_since: blockedSince, url: `https://github.com/${harness}/pull/604`, command: null },
   ];
   return { projection_version: DEV_ACTIVITY_PROJECTION, status: 'ready', collected_at: at(now, 40_000), repositories, unreadable_registrations: 0, items, attention };
 }
 
 /** Repositories registered, nothing in flight. */
-export function emptyDevActivity(now: number): DevActivitySnapshotV1 {
+export function emptyDevActivity(now: number): DevActivitySnapshotV2 {
   return {
     projection_version: DEV_ACTIVITY_PROJECTION, status: 'ready', collected_at: at(now, 30_000),
     repositories: [{ repository_id: HARNESS_ID, display_name: 'repo-harness', github: 'Ancienttwo/repo-harness', default_branch: 'main',
@@ -147,11 +130,11 @@ export function emptyDevActivity(now: number): DevActivitySnapshotV1 {
   };
 }
 
-/** GitHub and the ledger unreadable, runtime not configured, thousands of stale registrations. */
-export function degradedDevActivity(now: number): DevActivitySnapshotV1 {
+/** GitHub unreadable, runtime not configured, thousands of stale registrations. */
+export function degradedDevActivity(now: number): DevActivitySnapshotV2 {
   const sources = (seen: string) => [
     source('git', 'ok', seen), source('github', 'unavailable', at(now, 3 * HOUR), 'gh_auth_failed'),
-    source('ledger', 'unavailable', null, 'ledger_unreadable'), source('runtime', 'not_configured', null, 'runtime_not_configured'),
+    source('runtime', 'not_configured', null, 'runtime_not_configured'),
     source('decisions', 'stale', at(now, 2 * HOUR), 'decisions_stale'),
   ];
   const seen = at(now, 5 * MINUTE);

@@ -125,9 +125,10 @@ describe('dev activity collector on real repositories', () => {
       expect(betaRepo).toMatchObject({ github: null, default_branch: 'main' });
 
       const featA = snapshot.items.find(item => item.repository_id === alphaRepo.repository_id && item.branch === 'feat/a')!;
-      expect(featA).toMatchObject({ column: 'ready_to_merge', title: 'Add widgets', agent: null,
+      expect(featA).toMatchObject({ column: 'ready_to_merge', title: 'Add widgets',
         worktrees: [{ directory: 'alpha-feat-a', dirty: true, ahead: null, behind: null }],
         pull_request: { number: 7, ci: 'success', review: 'approved', merge_state: 'CLEAN' } });
+      for (const retired of ['ledger', 'agent', 'runtime_blocked']) expect(featA).not.toHaveProperty(retired);
       const featB = snapshot.items.find(item => item.repository_id === betaRepo.repository_id)!;
       expect(featB).toMatchObject({ branch: 'feat/b', column: 'building', pull_request: null });
       expect(snapshot.items.some(item => item.branch === 'main')).toBe(false);

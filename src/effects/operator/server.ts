@@ -1,7 +1,7 @@
 import { startRuntimeService } from './runtime-service';
 import { startDevActivityCollector } from '../dev-activity/collector';
 import { decodeDevActivitySnapshot, unavailableDevActivitySnapshot } from '../../core/dev-activity/decode';
-import type { DevActivitySnapshotV1 } from '../../core/dev-activity/types';
+import type { DevActivitySnapshotV2 } from '../../core/dev-activity/types';
 import { startSetupCollector } from '../setup/collector';
 import { decodeSetupSnapshot, unavailableSetupSnapshot } from '../../core/setup/decode';
 import type { SetupSnapshotV1 } from '../../core/setup/types';
@@ -135,7 +135,7 @@ export interface OperatorServerOptions {
   readonly read_task_diff?: (input: OperatorTaskDiffRequest & { readonly signal: AbortSignal }) => Promise<OperatorTaskDiff>;
   readonly read_notify_status?: (input: NotifyStatusReadInput) => Promise<NotifyStatusV1>;
   /** Dev Activity cache reader. GET serves only this cache; it never collects. */
-  readonly read_dev_activity?: () => DevActivitySnapshotV1;
+  readonly read_dev_activity?: () => DevActivitySnapshotV2;
   /** Start the in-process Dev Activity collector (operator serve). Ignored when a cache reader is injected. */
   readonly dev_activity_collector?: boolean;
   /** Setup snapshot cache reader. GET serves only this cache; it never runs setup check. */
@@ -1527,7 +1527,7 @@ export async function startOperatorServer(
         sendRefusal(request, response, 400, errorBody('invalid_request', 'Dev activity accepts no query selectors.'), headOnly);
         return;
       }
-      let snapshot: DevActivitySnapshotV1;
+      let snapshot: DevActivitySnapshotV2;
       try {
         snapshot = decodeDevActivitySnapshot((options.read_dev_activity ?? devActivity?.read ?? unavailableDevActivitySnapshot)());
       } catch {

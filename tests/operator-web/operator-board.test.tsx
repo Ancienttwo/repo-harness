@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { Window } from 'happy-dom';
 
 import { decodeDevActivitySnapshot } from '../../src/core/dev-activity/decode';
-import type { DevActivitySnapshotV1 } from '../../src/core/dev-activity/types';
+import type { DevActivitySnapshotV2 } from '../../src/core/dev-activity/types';
 import { unavailableRuntimeOverlay } from '../../src/core/operator/runtime-status';
 import { documentTitle, OperatorApp, type OperatorAppProps } from '../../src/operator-web/App';
 import { filterItems, DEFAULT_BOARD_FILTERS, orderColumn } from '../../src/operator-web/dev-activity';
@@ -37,9 +37,9 @@ function installDom(url = 'http://127.0.0.1:4318/'): void {
 }
 
 const NOW = Date.now();
-const busy = (): DevActivitySnapshotV1 => decodeDevActivitySnapshot(busyDevActivity(NOW));
+const busy = (): DevActivitySnapshotV2 => decodeDevActivitySnapshot(busyDevActivity(NOW));
 
-function props(activity: DevActivitySnapshotV1, overrides: Partial<OperatorAppProps> = {}): OperatorAppProps {
+function props(activity: DevActivitySnapshotV2, overrides: Partial<OperatorAppProps> = {}): OperatorAppProps {
   return {
     initialLocale: 'en', initialSnapshot: stableSnapshot, fetchSnapshot: async () => stableSnapshot,
     initialDevActivity: activity, fetchDevActivity: async () => activity,
@@ -86,7 +86,8 @@ describe('board data rules', () => {
     const times = shipped.map(item => Date.parse(item.pull_request!.merged_at!));
     expect(times).toEqual([...times].sort((left, right) => right - left));
     const building = orderColumn('building', filterItems(snapshot, DEFAULT_BOARD_FILTERS).filter(item => item.column === 'building'));
-    expect(building[0]!.runtime_blocked).not.toBeNull();
+    expect(building[0]!.id).toBe(`${HARNESS_ID}:feat/runtime-capture-pi`);
+    expect(building.at(-1)!.column_since).toBeNull();
   });
 
   test('the tab title carries the needs-you count and nothing when it is zero', () => {
@@ -101,7 +102,7 @@ describe('board page', () => {
     const snapshot = busy();
     await mount(<OperatorApp {...props(snapshot)} />);
     const count = snapshot.attention.length;
-    expect(count).toBe(3);
+    expect(count).toBe(2);
     expect(document.querySelector('.needs-you')?.getAttribute('data-attention-count')).toBe(String(count));
     expect(document.querySelectorAll('[data-attention-kind]')).toHaveLength(count);
     expect(document.querySelector('[data-needs-you]')?.getAttribute('data-needs-you')).toBe(String(count));
@@ -143,11 +144,12 @@ describe('board page', () => {
     expect(card(`${HARNESS_ID}:chore/oar-0-45`).querySelector('[data-ci="success"]')).not.toBeNull();
   });
 
-  test('marks a blocked card with its reason and folds Shipped to recent work', async () => {
+  test('keeps all five columns, leaves Planned empty and folds Shipped to recent work', async () => {
     await mount(<OperatorApp {...props(busy())} />);
-    const blocked = card(`${HARNESS_ID}:feat/runtime-capture-pi`);
-    expect(blocked.hasAttribute('data-blocked')).toBe(true);
-    expect(blocked.querySelector('[data-blocked]')?.textContent).toContain('Blocked: Permission needed');
+    expect(document.querySelectorAll('[data-board-column]')).toHaveLength(5);
+    const planned = document.querySelector('[data-board-column="planned"]')!;
+    expect(planned.querySelectorAll('[data-item-id]')).toHaveLength(0);
+    expect(planned.textContent).toContain('Nothing here');
     const shipped = document.querySelector('[data-board-column="shipped"]')!;
     expect(shipped.querySelector('[data-column-count]')?.textContent).toBe('8');
     expect(shipped.querySelectorAll('[data-item-id]')).toHaveLength(6);
@@ -164,8 +166,9 @@ describe('board page', () => {
     expect(window.location.hash).toBe(`#board/${encodeURIComponent(id)}`);
     const dialog = document.querySelector('[role="dialog"]')!;
     expect(dialog.querySelector('#item-drawer-title')?.textContent).toBe('Observe pipeline phases on the board');
-    // Evidence & gates appears only because this item is joined to a ledger record.
-    expect(dialog.textContent).toContain('Evidence & gates');
+    expect(dialog.textContent).not.toContain('Evidence & gates');
+    expect(dialog.textContent).toContain('Checks');
+    expect(dialog.textContent).toContain('Review');
     expect(dialog.querySelector('details')?.hasAttribute('open')).toBe(false);
     await key('j');
     expect(window.location.hash).not.toBe(`#board/${encodeURIComponent(id)}`);
@@ -176,17 +179,21 @@ describe('board page', () => {
     expect(window.location.hash).toBe('#board');
   });
 
-  test('the drawer states a block once, in plain words, with the agent on one line', async () => {
+  test('shows native runtime blocks in the roster without assigning a card or drawer', async () => {
     const id = `${HARNESS_ID}:feat/runtime-capture-pi`;
     installDom(`http://127.0.0.1:4318/#board/${encodeURIComponent(id)}`);
-    await mount(<OperatorApp {...props(busy())} />);
-    const now = document.querySelector('[role="dialog"] section')!;
-    expect(now.querySelectorAll('[data-blocked]')).toHaveLength(1);
-    expect(now.querySelector('[data-blocked]')?.textContent).toBe('Blocked · Permission needed · 26m');
-    // The runtime_blocked attention row would repeat the block line.
-    expect(now.querySelector('[data-attention-kind="runtime_blocked"]')).toBeNull();
-    expect(now.querySelector('[data-agent-source="runtime"]')?.textContent).toContain('Codex · implementer · Blocked · seen 26m ago');
-    for (const jargon of ['Reported by', 'Observation', 'agent status', 'Current observation']) expect(now.textContent).not.toContain(jargon);
+    const runtime = busyRuntimeOverlay(NOW);
+    await mount(<OperatorApp {...props(busy(), { initialRuntimeOverlay: runtime, readRuntimeStatus: async () => runtime })} />);
+    const roster = document.querySelector('[data-roster-source="codex-implementer"]')!;
+    expect(roster.textContent).toContain('Blocked');
+    expect(roster.textContent).toContain('Permission needed');
+    expect(roster.textContent).toContain('not linked to a task');
+    expect(card(id).querySelector('[data-blocked]')).toBeNull();
+    const dialog = document.querySelector('[role="dialog"]')!;
+    expect(dialog.querySelector('[data-blocked], [data-agent-source]')).toBeNull();
+    expect(dialog.querySelector('#drawer-now')).toBeNull();
+    expect(dialog.textContent).toContain('Capture Pi runtime status natively');
+    expect(dialog.textContent).toContain('Pull request');
   });
 
   test('a long command wraps in full and Copy copies all of it', async () => {
@@ -283,6 +290,6 @@ describe('theme', () => {
     delete (globalThis as { window?: unknown }).window;
     const markup = renderToStaticMarkup(<OperatorApp {...props(busy())} initialPlace={{ workspace: 'board', module: null, item: null }} />);
     expect(markup).toContain('data-workspace="board"');
-    expect(markup).toContain('data-attention-count="3"');
+    expect(markup).toContain('data-attention-count="2"');
   });
 });

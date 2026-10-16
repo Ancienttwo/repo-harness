@@ -16,7 +16,7 @@ import * as childProcess from 'node:child_process';
 import * as fs from 'node:fs';
 import { readArchitecture } from '../../src/effects/operator/architecture';
 import { unavailableDevActivitySnapshot } from '../../src/core/dev-activity/decode';
-import type { DevActivitySnapshotV1 } from '../../src/core/dev-activity/types';
+import type { DevActivitySnapshotV2 } from '../../src/core/dev-activity/types';
 import { unavailableSetupSnapshot } from '../../src/core/setup/decode';
 import { projectSetupSnapshot } from '../../src/core/setup/projection';
 import type { SetupSnapshotV1 } from '../../src/core/setup/types';
@@ -266,9 +266,9 @@ describe('operator serve command and HTTP boundary', () => {
 
   test('serves only the Dev Activity cache on GET and starts the collector only on request', async () => {
     let reads = 0;
-    const ready: DevActivitySnapshotV1 = { ...unavailableDevActivitySnapshot(), status: 'ready', collected_at: '2026-10-10T00:00:00.000Z', unreadable_registrations: 3 };
+    const ready: DevActivitySnapshotV2 = { ...unavailableDevActivitySnapshot(), status: 'ready', collected_at: '2026-10-10T00:00:00.000Z', unreadable_registrations: 3 };
     let current: unknown = ready;
-    const server = await startOperatorServer({ port: 0, collect_fleet_board: async () => snapshot(), read_dev_activity: () => { reads++; return current as DevActivitySnapshotV1; } });
+    const server = await startOperatorServer({ port: 0, collect_fleet_board: async () => snapshot(), read_dev_activity: () => { reads++; return current as DevActivitySnapshotV2; } });
     try {
       const response = await fetch(`${server.url}/api/v1/dev-activity`);
       expect(response.status).toBe(200);
@@ -288,9 +288,9 @@ describe('operator serve command and HTTP boundary', () => {
     const collecting = await startOperatorServer({ port: 0, dev_activity_collector: true, collect_fleet_board: async () => snapshot(),
       env: { ...process.env, REPO_HARNESS_HOME: home, REPO_HARNESS_PIPELINES_DB: join(home, 'none.db') } });
     try {
-      let body: DevActivitySnapshotV1 = unavailableDevActivitySnapshot();
+      let body: DevActivitySnapshotV2 = unavailableDevActivitySnapshot();
       for (let attempt = 0; attempt < 100 && body.status === 'unavailable'; attempt++) {
-        body = await (await fetch(`${collecting.url}/api/v1/dev-activity`)).json() as DevActivitySnapshotV1;
+        body = await (await fetch(`${collecting.url}/api/v1/dev-activity`)).json() as DevActivitySnapshotV2;
         if (body.status === 'unavailable') await Bun.sleep(20);
       }
       expect(body).toMatchObject({ status: 'ready', repositories: [], items: [], attention: [], unreadable_registrations: 0 });

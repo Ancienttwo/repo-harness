@@ -2,7 +2,7 @@
 // injected so the dev server needs no running operator service. Fixtures go
 // through the same decoder the browser applies to served snapshots.
 import { decodeDevActivitySnapshot } from '../../core/dev-activity/decode';
-import type { DevActivitySnapshotV1 } from '../../core/dev-activity/types';
+import type { DevActivitySnapshotV2 } from '../../core/dev-activity/types';
 import type { OperatorFleetSnapshotV1 } from '../../core/operator/fleet-snapshot';
 import type { NotifyStatusV1 } from '../../core/operator/notify-status';
 import { NOTIFY_PLUGIN_ID } from '../../core/operator/notify-status';
@@ -51,7 +51,7 @@ export function fixtureProps(name: string): OperatorAppProps {
   if (!(FIXTURE_NAMES as readonly string[]).includes(name)) throw new Error(`unknown operator fixture "${name}"; use one of ${FIXTURE_NAMES.join(', ')}`);
   const now = Date.now();
   const fixture = name as FixtureName;
-  const activity: DevActivitySnapshotV1 = decodeDevActivitySnapshot(
+  const activity: DevActivitySnapshotV2 = decodeDevActivitySnapshot(
     fixture === 'busy' ? busyDevActivity(now) : fixture === 'empty' ? emptyDevActivity(now) : degradedDevActivity(now));
   const runtime: RuntimeOverlay = fixture === 'busy' ? busyRuntimeOverlay(now) : unavailableRuntimeOverlay();
   const snapshot = fleet(fixture === 'busy' ? stableSnapshot : fixture === 'empty' ? emptySnapshot : degradedSnapshot);
