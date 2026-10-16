@@ -91,10 +91,39 @@
 
 ## Rollback evidence
 
-- The release squash merge SHA and its parent are recorded after the merge.
-  Roll back with `git revert --no-edit <release squash SHA>`.
+- Release squash merge (#790): `0d447d3be54fb99edc74ae4c6da1fcaef12a3c6e`.
+  Parent: `01b5e357c458cfbe5b0287180e1411c63a525133` (#792). Reviewed head:
+  `0889fd76`. `git revert --no-edit 0d447d3b`.
 - A Git revert does not undo an npm publication.
 
 ## Publication status
 
-- Status: not published yet.
+- Status: npm and GitHub publication verified on 2026-10-17.
+- Source release commit: `0d447d3be54fb99edc74ae4c6da1fcaef12a3c6e`. Its
+  tree (`76b64f0e`) equals the tree of the gated head `0889fd76`.
+- Annotated tag `v0.23.0`: object `6027d410ff91e9dea2eb339ac14fa72ee9541510`,
+  pointing to the source release commit.
+- Tarball: `npm pack` in a clean detached checkout of `v0.23.0`. 753
+  entries. SHA256
+  `cd76c720d9784948e0085cc84b48431f9e7078cd257d6925b6dd300701891d26`.
+- GitHub Release: https://github.com/Ancienttwo/repo-harness/releases/tag/v0.23.0.
+  The downloaded asset SHA256 equals the tarball above.
+- npm: the first publish attempt failed with `E404` on the PUT, because the
+  npm client on this machine was not logged in (`npm whoami`: 401). The
+  owner logged in with `npm login --auth-type=web`, then published the same
+  tarball with `script -q /dev/null npm publish <tarball> --auth-type=web`
+  after browser authentication. Registry shasum
+  `a703af3203eb1802b09965a176b19815b4bd14e8` and integrity equal the local
+  tarball. The `latest` dist-tag is 0.23.0.
+  `bun run check:release-published 0.23.0` (temporary HOME) returned OK.
+- Local runtime: `repo-harness update --version 0.23.0` on the 0.22.1 CLI
+  exited 1 with `unsupported TOML spelling for
+  default_mode_request_user_input; preserving configuration`. The key is in
+  the `[features]` table of `~/.codex/config.toml`, not in the root table.
+  The 0.22.1 check did not separate the two. `bun add -g
+  repo-harness@0.23.0 --no-cache` then installed 0.23.0, and
+  `repo-harness update` on 0.23.0 code returned 0. Claude and Codex each
+  have 5 managed routes. `repo-harness install --state`: 0.23.0, profile
+  `full`, drift `consistent`. `repo-harness doctor`: 14 ok, 1 warn, 0 fail.
+  The warn is two user-owned Herdr SessionStart hooks, which stay. The
+  owner must still review the Codex hooks with `/hooks`.
