@@ -59,7 +59,6 @@ export interface InstallOptions {
 export interface AgentTarget {
   readonly id: TargetId;
   readonly displayName: string;
-  readonly docsUrl?: string;
   /**
    * Hook adapters support only the user-level global location.
    */
@@ -67,6 +66,4 @@ export interface AgentTarget {
   detect(loc: Location): DetectionResult;
   install(loc: Location, opts: InstallOptions): WriteResult;
   uninstall(loc: Location, opts?: { dryRun?: boolean }): WriteResult;
-  /** Filesystem paths this target would write to at this location. */
-  describePaths(loc: Location): string[];
 }

@@ -73,7 +73,6 @@ function ensureRequestUserInputToml(): WriteResult['files'][number] {
 class CodexTarget implements AgentTarget {
   readonly id = 'codex' as const;
   readonly displayName = 'Codex CLI';
-  readonly docsUrl = 'https://github.com/openai/codex';
 
   supportsLocation(loc: Location): boolean {
     return loc === 'global';
@@ -150,10 +149,6 @@ class CodexTarget implements AgentTarget {
       files: [{ path: filePath, action: 'removed' }],
       notes: ['~/.codex/config.toml [hooks.state] entries are not GC-ed by Codex; remove manually if desired.'],
     };
-  }
-
-  describePaths(loc: Location): string[] {
-    return loc === 'global' ? [globalConfigPath(), globalTomlConfigPath()] : [];
   }
 }
 

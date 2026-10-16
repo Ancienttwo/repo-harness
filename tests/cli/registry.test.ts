@@ -54,16 +54,6 @@ describe('installer target registry', () => {
     expect(claudeTarget.supportsLocation('global')).toBe(true);
     expect(claudeTarget.supportsLocation('local' as Location)).toBe(false);
   });
-
-  test('describePaths returns global host slots and refuses local Claude paths', () => {
-    // Phase 1A scaffolds returned literal ~/ paths; Phase 1B resolves to
-    // absolute via $HOME / os.homedir(), so we assert the endpoint shape
-    // rather than the literal prefix.
-    expect(codexTarget.describePaths('global')[0]).toMatch(/\/\.codex\/hooks\.json$/);
-    expect(codexTarget.describePaths('local' as Location)).toEqual([]);
-    expect(claudeTarget.describePaths('global')[0]).toMatch(/\/\.claude\/settings\.json$/);
-    expect(() => claudeTarget.describePaths('local' as Location)).toThrow('--location global');
-  });
 });
 
 describe('repo registration persistence', () => {

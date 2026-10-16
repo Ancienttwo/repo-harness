@@ -53,7 +53,6 @@ function userConfigPath(loc: Location): string {
 class ClaudeTarget implements AgentTarget {
   readonly id = 'claude' as const;
   readonly displayName = 'Claude Code';
-  readonly docsUrl = 'https://code.claude.com';
 
   supportsLocation(loc: Location): boolean {
     return loc === 'global';
@@ -119,10 +118,6 @@ class ClaudeTarget implements AgentTarget {
     const next: SettingsFile = { ...data, hooks: cleaned };
     if (!opts.dryRun) atomicWriteFileSync(filePath, formatJson(next));
     return { files: [{ path: filePath, action: 'removed' }] };
-  }
-
-  describePaths(loc: Location): string[] {
-    return [userConfigPath(loc)];
   }
 }
 
