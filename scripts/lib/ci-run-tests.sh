@@ -221,7 +221,7 @@ _ci_run_bun_test_pool() {
 # hook bundle only when a selected file spawns dist/hook-entry.js, directly or
 # through the Pi bridge; every other selection skips the build.
 _ci_build_hook_bundle_if_selected() {
-  grep -qsE 'hook-entry\.js|pi-session-fixture|pi/(extension|hook-bridge)' -- "$@" || return 0
+  grep -qsE 'hook-entry\.js' -- "$@" || return 0
   (cd "$(dirname "${BASH_SOURCE[0]}")/../.." && bun run build:hook-bundle) || return $?
 }
 
