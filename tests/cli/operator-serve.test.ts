@@ -481,8 +481,13 @@ describe('operator serve command and HTTP boundary', () => {
     const repoRoot = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-operator-repository-repo-')));
     expect(spawnSync('git', ['init', '-q', repoRoot]).status).toBe(0);
     const registry = registryHome([{ path: repoRoot, accessMode: 'read_write' }]);
-    const policyPath = join(repoRoot, '.ai/harness/policy.json');
-    mkdirSync(join(repoRoot, '.ai/harness'), { recursive: true });
+    const policyPath = join(repoRoot, 'git-read-gate');
+    const bin = join(repoRoot, 'bin');
+    mkdirSync(bin);
+    const realGit = Bun.which('git')!;
+    writeFileSync(join(bin, 'git'), `#!/bin/sh\ncat < '${policyPath}' > /dev/null\nexec '${realGit}' "$@"\n`, { mode: 0o755 });
+    const originalPath = process.env.PATH;
+    process.env.PATH = `${bin}:${originalPath}`;
     writeFileSync(join(staticRoot, 'index.html'), '<!doctype html><main>operator</main>');
     const fifo = spawnSync('mkfifo', [policyPath], { encoding: 'utf8' });
     expect(fifo.status).toBe(0);
@@ -524,6 +529,7 @@ describe('operator serve command and HTTP boundary', () => {
         repository_id: registry.ids[0],
       });
     } finally {
+      process.env.PATH = originalPath;
       fifoWriter.kill('SIGTERM');
       await server.close();
       rmSync(staticRoot, { recursive: true, force: true });

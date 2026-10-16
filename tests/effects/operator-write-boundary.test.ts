@@ -20,7 +20,6 @@ import {
   OPERATOR_FLEET_SNAPSHOT_PATH,
   OPERATOR_HEALTH_PATH,
   OPERATOR_NOTIFY_STATUS_PATH,
-  OPERATOR_PIPELINES_PATH,
   OPERATOR_RUNTIME_STATUS_PATH,
   OPERATOR_ROUTES,
   OPERATOR_STATIC_ASSET_PATTERN,
@@ -83,7 +82,6 @@ describe('operator structural write boundary', () => {
       'task_activity',
       'task_diff',
       'runtime_status',
-      'pipelines',
       'notify_status',
       'dev_activity',
       'setup',
@@ -99,7 +97,6 @@ describe('operator structural write boundary', () => {
     expect(patterns.get('task_activity')).toBe(OPERATOR_TASK_ACTIVITY_ROUTE.source);
     expect(patterns.get('task_diff')).toBe(OPERATOR_TASK_DIFF_ROUTE.source);
     expect(patterns.get('runtime_status')).toBe(OPERATOR_RUNTIME_STATUS_PATH);
-    expect(patterns.get('pipelines')).toBe(OPERATOR_PIPELINES_PATH);
     expect(patterns.get('notify_status')).toBe(OPERATOR_NOTIFY_STATUS_PATH);
     expect(patterns.get('dev_activity')).toBe(OPERATOR_DEV_ACTIVITY_PATH);
     expect(OPERATOR_ROUTES.find(route => route.id === 'dev_activity')).toEqual({ id: 'dev_activity', method: 'GET', pattern: '/api/v1/dev-activity', write: false });

@@ -1,6 +1,5 @@
 #!/usr/bin/env bun
 import { buildStrategyCommand } from './commands/strategy';
-import { buildPipelineCommand } from './commands/pipeline';
 import { buildModuleCommand } from './commands/module';
 import { withRuntimeHostTransactionLock } from './installer/runtime-host-lock';
 import { captureConfigurationRestores } from './installer/configuration-ownership';
@@ -800,7 +799,6 @@ export function buildProgram(): Command {
   program.addCommand(buildReviewCommand());
   program.addCommand(buildTaskAgentCommand());
   program.addCommand(buildPmCommand());
-  program.addCommand(buildPipelineCommand());
   program.addCommand(buildModuleCommand());
   program.addCommand(buildSetupCommand());
   program.addCommand(buildUpgradeCommand());

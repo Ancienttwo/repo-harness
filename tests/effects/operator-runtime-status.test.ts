@@ -464,7 +464,7 @@ describe('native runtime observation cache', () => {
     const source = { source_id: 'source-1', provider: 'codex', snapshot_path: '/tmp/explicit-native.json' };
     const config: NativeRuntimeConfig = { protocol: 'repo-harness.runtime-config.v2', kind: 'native', sources: [{ ...source, provider: 'codex' }] };
     expect(decodeRuntimeConfig(config)).toEqual(config);
-    const herdr: HerdrRuntimeConfig = { protocol: 'repo-harness.runtime-config.v2', kind: 'herdr', source_host: 'host', herdr_session: 'session', socket_path: '/tmp/explicit-herdr.sock', deadline_ms: 1000, bindings_path: null, pipeline_snapshot: null };
+    const herdr: HerdrRuntimeConfig = { protocol: 'repo-harness.runtime-config.v2', kind: 'herdr', source_host: 'host', herdr_session: 'session', socket_path: '/tmp/explicit-herdr.sock', deadline_ms: 1000 };
     expect(decodeRuntimeConfig(herdr)).toEqual(herdr);
     for (const invalid of [
       { ...config, protocol: 'repo-harness.runtime-config.v1' }, { ...herdr, protocol: 'repo-harness.herdr-runtime-config.v1' },

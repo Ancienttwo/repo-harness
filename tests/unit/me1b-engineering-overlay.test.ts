@@ -16,7 +16,7 @@ import {
 } from '../../src/effects/engineers/engineering-overlay';
 import { readProjectedWorkGraphAt } from '../../src/effects/engineers/scheduling';
 import { collectFleetBoard } from '../../src/effects/fleet/board';
-import { OPERATOR_COLLABORATION_SNAPSHOT_ROUTE, OPERATOR_ROUTES } from '../../src/effects/operator/server';
+import { OPERATOR_REPOSITORY_SNAPSHOT_ROUTE, OPERATOR_ROUTES } from '../../src/effects/operator/server';
 import { listEngineerProfiles, loadEngineerProfile } from '../../src/effects/engineers/profile-store';
 import { repoHarnessRepoIdFor, type RepoHarnessRegisteredRepo } from '../../src/effects/repo-registry';
 import { fixtureTaskId } from '../helpers/sprint-fixture';
@@ -262,8 +262,8 @@ describe('ME-1B Engineering Overlay', () => {
     expect(organizationImports.every((line) => line.startsWith('import type '))).toBeTrue();
 
     expect(OPERATOR_ROUTES.filter((route) => /engineer|overlay|organization/iu.test(`${route.id} ${route.pattern}`))).toEqual([]);
-    expect(OPERATOR_ROUTES.filter((route) => route.id === 'collaboration_snapshot'))
-      .toEqual([{ id: 'collaboration_snapshot', method: 'GET', pattern: OPERATOR_COLLABORATION_SNAPSHOT_ROUTE.source, write: false }]);
+    expect(OPERATOR_ROUTES.filter((route) => route.id === 'repository_snapshot'))
+      .toEqual([{ id: 'repository_snapshot', method: 'GET', pattern: OPERATOR_REPOSITORY_SNAPSHOT_ROUTE.source, write: false }]);
   });
 
   test('keeps unreadable distinct from healthy empty and rejects illegal binding combinations', () => {

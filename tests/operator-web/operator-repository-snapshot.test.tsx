@@ -227,7 +227,7 @@ describe('repository snapshot transport', () => {
 
   test('uses the repository validation error for malformed responses', async () => {
     const original = globalThis.fetch;
-    globalThis.fetch = (async () => Response.json({ ...repositorySnapshot, protocol: 4 })) as typeof fetch;
+    globalThis.fetch = (async () => Response.json({ ...repositorySnapshot, protocol: 4 })) as unknown as typeof fetch;
     try {
       await expect(fetchOperatorRepositorySnapshot(repositorySnapshot.repository_id)).rejects.toMatchObject({ code: 'operator_repository_payload_invalid' });
     } finally { globalThis.fetch = original; }

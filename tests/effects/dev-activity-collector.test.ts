@@ -16,9 +16,6 @@ import {
 } from '../../src/effects/dev-activity/collector';
 import { decodeDevActivitySnapshot } from '../../src/core/dev-activity/decode';
 import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
-import { preparePipelineSQLite } from '../helpers/pipeline-sqlite-fixture';
-import { PipelineStore } from '../../src/effects/pipeline/store';
-import { newPipeline } from '../../src/effects/pipeline/ledger';
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -84,7 +81,6 @@ function fixture(names: readonly string[], missing = 1): Fixture {
     ...process.env,
     REPO_HARNESS_HOME: home,
     PATH: `${bin}:${process.env.PATH}`,
-    REPO_HARNESS_PIPELINES_DB: join(root, 'ledger', 'pipelines.db'),
   };
   return { root, env, argvLog, repos };
 }
@@ -123,8 +119,7 @@ describe('dev activity collector on real repositories', () => {
       const betaRepo = snapshot.repositories.find(repo => repo.display_name === 'beta')!;
       expect(alphaRepo).toMatchObject({ github: 'acme/widgets', default_branch: 'main' });
       expect(alphaRepo.sources.map(source => [source.kind, source.status, source.reason])).toEqual([
-        ['git', 'ok', null], ['github', 'ok', null], ['ledger', 'not_configured', 'ledger_not_configured'],
-        ['runtime', 'not_configured', 'runtime_not_configured'], ['decisions', 'ok', null],
+        ['git', 'ok', null], ['github', 'ok', null], ['runtime', 'not_configured', 'runtime_not_configured'], ['decisions', 'ok', null],
       ]);
       expect(betaRepo.sources.find(source => source.kind === 'github')).toMatchObject({ status: 'unavailable', reason: 'gh_failed' });
       expect(betaRepo).toMatchObject({ github: null, default_branch: 'main' });
@@ -274,28 +269,6 @@ process.exit(0);
       expect(snapshot.repositories[0]!.default_branch).toBeNull();
       expect(() => readFileSync(f.argvLog, 'utf8')).toThrow();
       expect(snapshot.status).toBe('ready');
-    } finally {
-      rmSync(f.root, { recursive: true, force: true });
-    }
-  });
-
-  test('joins ledger records to the registry repository through repo.root', async () => {
-    preparePipelineSQLite();
-    const f = fixture(['ledgered'], 0);
-    try {
-      const env = { ...f.env, REPO_HARNESS_PIPELINES_AUTHORITY_HOST: hostname() };
-      mkdirSync(join(f.root, 'ledger'));
-      const store = new PipelineStore({ env });
-      try {
-        newPipeline(store, { source_host: hostname(), repository_id: 'acme-widgets', root: f.repos.ledgered!, title: 'Plan widgets' });
-        newPipeline(store, { source_host: hostname(), repository_id: 'acme-widgets', root: f.repos.ledgered!, title: 'Merge widgets', backfill: true, phase: 'merge-ask', note: 'fixture' });
-        newPipeline(store, { source_host: hostname(), repository_id: 'elsewhere', title: 'No root' });
-      } finally { store.close(); }
-      const snapshot = await collectDevActivity({ env });
-      expect(snapshot.repositories[0]!.sources.find(source => source.kind === 'ledger')).toMatchObject({ status: 'ok' });
-      const titles = snapshot.items.map(item => [item.title, item.column, item.ledger?.phase]);
-      expect(titles.sort()).toEqual([['Merge widgets', 'building', 'merge-ask'], ['Plan widgets', 'planned', 'plan']]);
-      expect(snapshot.attention.map(entry => entry.kind)).toEqual(['ledger_waiting_owner']);
     } finally {
       rmSync(f.root, { recursive: true, force: true });
     }

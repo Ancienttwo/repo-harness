@@ -116,7 +116,7 @@ export function readOperatorRepositorySnapshot(
 ): OperatorRepositorySnapshotV1 {
   const decisionAfter = input.decision_after ?? null;
   if (!isDecisionCursor(decisionAfter)) throw new OperatorRepositoryError('repository_repository_mismatch', 'invalid Decision query');
-  registeredRepositoryRoot(input);
+  const repoRoot = registeredRepositoryRoot(input);
   const observe = <T>(reader: () => T): import('../../core/operator/repository-snapshot').RepositorySourceObservation<T> => {
     try { return { status: 'observed', snapshot: reader(), observed_at: new Date().toISOString() }; }
     catch (error) {
