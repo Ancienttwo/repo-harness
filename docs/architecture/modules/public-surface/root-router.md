@@ -1,8 +1,8 @@
 # public-surface/root-router 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-root-router" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:8385cd9a6bb73192978d62bea97ff2f5a239b4eb3840b30bcceb8c9194e7fdde" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-root-router" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:76817d98bb3f0e2aeb40d0449fc99dedf20c65db823ffbcfba4926f209bfaa98" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.public-surface.root-router`(kind `capability`)
-> **Matched Prefixes**:`SKILL.md`、`references/pm-boundary.md`、`README.md`、`AGENTS.md`、`CLAUDE.md`、`docs/spec.md`、`README.es.md`、`README.fr.md`、`README.ja.md`、`README.zh-CN.md`、`references/arch/**`、`src/cli/commands/docs.ts`
+> **Matched Prefixes**:`SKILL.md`、`references/pm-boundary.md`、`README.md`、`AGENTS.md`、`CLAUDE.md`、`docs/spec.md`、`README.es.md`、`README.fr.md`、`README.ja.md`、`README.zh-CN.md`、`src/cli/commands/docs.ts`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
@@ -38,8 +38,8 @@ flowchart LR
 
 ### 1.3 規模信號
 
-- 規模量級:`10–20` 個文件 / `5000–10000` 行
-- 匹配前綴:`SKILL.md`、`references/pm-boundary.md`、`README.md`、`AGENTS.md`、`CLAUDE.md`、`docs/spec.md`、`README.es.md`、`README.fr.md`、`README.ja.md`、`README.zh-CN.md`、`references/arch/**`、`src/cli/commands/docs.ts`
+- 規模量級:`10–20` 個文件 / `2000–5000` 行
+- 匹配前綴:`SKILL.md`、`references/pm-boundary.md`、`README.md`、`AGENTS.md`、`CLAUDE.md`、`docs/spec.md`、`README.es.md`、`README.fr.md`、`README.ja.md`、`README.zh-CN.md`、`src/cli/commands/docs.ts`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
 ### 1.4 依賴邊界
@@ -125,7 +125,7 @@ sequenceDiagram
 
 - include 增加原本没有归属的路径：四个 README 译本、`references/arch/**` 和 `src/cli/commands/docs.ts`。没有删除任何条目。
 - `src/cli/commands/docs.ts` 列出并读取 `assets/reference-configs/*.md`（`docs.ts:15`）。归属提议说它解析 `references/*.md`，这与源码不符。它的数据归 contract-assets。命令归本 capability，是因为 `repo-harness docs` 是面向用户的文档入口。这个选择的置信度是 MEDIUM。
-- `references/arch/**`（7 个技术栈推荐文档，来自 2026-03-19 的初始提交）在仓库里没有任何引用者。它应该保留为 router 的参考材料，还是退役？没有记录。
+- `references/arch/**`（7 个技术栈推荐文档，来自 2026-03-19 的初始提交）在仓库里没有任何引用者。已决定：退役。#768 删除这些文件，并从 include 删除这一条。
 - `SKILL.md` 指向 `references/bot-control.md`、`references/dot-pm-control.md` 和 `references/handoff.md`。这些文件和 `references/` 下其他松散文档目前没有归属。`references/pm-boundary.md` 归本 capability，`references/pm-operations.md` 归 pm-dispatch。
 
 ## 4. 历史决策记录（append-only）
@@ -229,9 +229,13 @@ commands available without making them default model context.
 - include 增加 `README.es.md`、`README.fr.md`、`README.ja.md`、`README.zh-CN.md`、`references/arch/**` 和 `src/cli/commands/docs.ts`。
 - §3.1 第 4 条按 PR #486 和 `tests/bootstrap-files.test.ts:160-162` 改写：两个 host 契约只要求共享规则相同，不再要求整个文件逐字节相同。
 
+### 2026-10-16 references/arch 退役
+
+- #768 删除 `references/arch/**`，并从 include 删除这一条。这关闭了 §3.5 的开放问题。
+- #768 也删除 `references/best-practices.md`、`references/evaluation-playbook.md` 和 `references/hooks-guide.md`。没有归属的松散文档从 10 个减少到 7 个。
+
 ## Optimization Backlog
 
 - Keep the root router body at or below 2KB and default installed discovery at five actions or fewer.
 - If another public command is added, update `assets/skill-commands/manifest.json`, README, and `tests/action-command-skills.test.ts` in the same slice.
-- `references/*.md` 中 10 个没有归属的松散文档等待 arch-context#296 或 `source.exclude` 支持。目录 glob `references/**` 会让 `references/pm-operations.md`（pm-dispatch）变成重复归属。按用户决定，不用显式文件列表绕过。
-- 决定 `references/arch/**` 保留还是退役（见 §3.5）。
+- `references/*.md` 中 7 个没有归属的松散文档等待 arch-context#296 或 `source.exclude` 支持。目录 glob `references/**` 会让 `references/pm-operations.md`（pm-dispatch）变成重复归属。按用户决定，不用显式文件列表绕过。
