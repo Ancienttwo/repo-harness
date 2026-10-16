@@ -36,17 +36,26 @@ async function githubPages(api: GitHubAPI, path: string, field?: string): Promis
   }
   throw new Error(`Provider pagination limit reached: ${path}`);
 }
-async function ensureRepairIssue(api: GitHubAPI, root: string, key: string, title: string, body: string, requireOpen = false): Promise<{ issue_url: string; delivery: 'created' | 'reused' }> {
+async function ensureRepairIssue(api: GitHubAPI, root: string, key: string, title: string, body: string, requireOpen = false, evidenceMarker?: string): Promise<{ issue_url: string; delivery: 'created' | 'reused' }> {
   const marker = `<!-- ${key} -->`;
+  const evidence = evidenceMarker ? `${evidenceMarker}\n\n${body}` : body;
+  // A reused issue records each new failure once, so it never shows only the first SHA and run.
+  const recordEvidence = async (issue: Record<string, unknown>): Promise<void> => {
+    if (!evidenceMarker || (typeof issue.body === 'string' && issue.body.includes(evidenceMarker))) return;
+    const comments = await githubPages(api, `${root}/issues/${issue.number}/comments`);
+    if (comments.some(comment => typeof comment.body === 'string' && comment.body.includes(evidenceMarker))) return;
+    record(await api(`${root}/issues/${issue.number}/comments`, 'POST', { body: evidence }), 'Repair evidence comment');
+  };
   const isClaim = (issue: Record<string, unknown>): boolean => !issue.pull_request && (!requireOpen || issue.state === 'open')
     && typeof issue.body === 'string' && issue.body.includes(marker) && positive(issue.number);
   const issues = await githubPages(api, `${root}/issues?state=all`);
   const existing = issues.find(issue => isClaim(issue));
   if (existing) {
     if (typeof existing.html_url !== 'string') throw new Error('Existing repair issue has no provider URL');
+    await recordEvidence(existing);
     return { issue_url: existing.html_url, delivery: 'reused' };
   }
-  const created = record(await api(`${root}/issues`, 'POST', { title, body: `${marker}\n\n${body}` }), 'Created repair issue');
+  const created = record(await api(`${root}/issues`, 'POST', { title, body: `${marker}\n\n${evidence}` }), 'Created repair issue');
   const createdNumber = created.number;
   const createdUrl = created.html_url;
   if (!positive(createdNumber) || typeof createdUrl !== 'string') throw new Error('Repair issue was not confirmed by provider');
@@ -59,6 +68,7 @@ async function ensureRepairIssue(api: GitHubAPI, root: string, key: string, titl
   if (!winner) return { issue_url: createdUrl, delivery: 'created' };
   record(await api(`${root}/issues/${createdNumber}`, 'PATCH', { state: 'closed' }), 'Duplicate repair issue close');
   if (typeof winner.html_url !== 'string') throw new Error('Existing repair issue has no provider URL');
+  await recordEvidence(winner);
   return { issue_url: winner.html_url, delivery: 'reused' };
 }
 
@@ -131,7 +141,8 @@ export async function reportCI(repo: string, runId: number, api: GitHubAPI, arch
     try {
       const task = await ensureRepairIssue(api, root, key,
         `[CI repair] ${safeText(cause?.subject ?? identity)} @ ${headSha.slice(0, 12)}`,
-        `Fixed main SHA: \`${run.head_sha}\`\nRun: ${run.html_url}\nAttempt: ${run.run_attempt}\nCheck: ${identity}\n\n${safeText(detail)}\n\n${action} Credentials/permissions and production operations require user approval.`, requireOpen);
+        `Fixed main SHA: \`${run.head_sha}\`\nRun: ${run.html_url}\nAttempt: ${run.run_attempt}\nCheck: ${identity}\n\n${safeText(detail)}\n\n${action} Credentials/permissions and production operations require user approval.`, requireOpen,
+        `<!-- ci-repair-evidence:${run.id}:${run.run_attempt} -->`);
       report.repairs.push({ key, ...task });
     } catch (error) {
       // The artifact is the pending delivery record. An HTTP refusal never becomes a fake dispatch success.

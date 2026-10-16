@@ -336,6 +336,7 @@ test('concurrent reports for one merged PR elect one open shared repair issue', 
   const now = new Date().toISOString();
   const after = 'b'.repeat(40);
   const issues: any[] = [];
+  const comments: { issue: number; body: string }[] = [];
   let lists = 0;
   let releaseSecond = () => {};
   const bothListed = new Promise<void>(resolve => { releaseSecond = resolve; });
@@ -353,6 +354,9 @@ test('concurrent reports for one merged PR elect one open shared repair issue', 
       return issues;
     }
     if (path.startsWith('/repos/test/repo/issues?state=open')) return issues.filter(issue => issue.state === 'open');
+    const commentPath = /\/issues\/(\d+)\/comments(?:\?|$)/.exec(path);
+    if (commentPath && method === 'GET') return comments.filter(comment => comment.issue === Number(commentPath[1]));
+    if (commentPath && method === 'POST') { const comment = { issue: Number(commentPath[1]), body: body.body }; comments.push(comment); return comment; }
     if (path === '/repos/test/repo/issues' && method === 'POST') {
       const issue = { ...body, state: 'open', number: issues.length + 1, html_url: `https://github.com/test/repo/issues/${issues.length + 1}` };
       issues.push(issue);
@@ -380,6 +384,8 @@ test('concurrent reports for one merged PR elect one open shared repair issue', 
   expect(open).toHaveLength(1);
   expect(open[0]!.html_url).toBe(winner.issue_url);
   expect(issues.find(issue => issue.state === 'closed')!.number).toBeGreaterThan(open[0]!.number);
+  // The losing report's run evidence lands on the winning issue, not only on its closed duplicate.
+  expect(comments.map(comment => comment.issue)).toEqual([open[0]!.number]);
   const next = await reportCI('test/repo', 14, api);
   expect(next.repairs[0]).toMatchObject({ key: 'ci-repair:merge-pr-7', delivery: 'reused', issue_url: winner.issue_url });
   expect(issues).toHaveLength(2);
