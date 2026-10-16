@@ -30,7 +30,6 @@ export interface BrainEntry {
   source_path?: string;
   brain_path?: string;
   sync?: { direction?: string; enabled?: boolean; source_path?: string; brain_path?: string };
-  sync_direction?: string;
   sync_enabled?: boolean;
 }
 
@@ -272,7 +271,7 @@ function isExcluded(relPath: string, exclusions: string[] = []): boolean {
 
 function syncConfig(entry: BrainEntry): { sourcePath?: string; brainPath?: string } | null {
   const sync = entry.sync && typeof entry.sync === 'object' ? entry.sync : {};
-  const direction = sync.direction || entry.sync_direction || '';
+  const direction = sync.direction || '';
   if (direction !== 'repo-to-brain') return null;
   if (sync.enabled === false || entry.sync_enabled === false) return null;
   return {

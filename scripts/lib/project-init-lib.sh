@@ -886,7 +886,7 @@ pi_print_external_tooling_report() {
   fi
 
   local detector_args=(--host both)
-  local check_tooling_updates="${REPO_HARNESS_CHECK_TOOLING_UPDATES:-${AGENTIC_DEV_CHECK_TOOLING_UPDATES:-0}}"
+  local check_tooling_updates="${REPO_HARNESS_CHECK_TOOLING_UPDATES:-0}"
   if [[ "$check_tooling_updates" == "1" ]]; then
     detector_args+=(--check-updates)
   fi
