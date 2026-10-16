@@ -122,7 +122,7 @@ function hostFacts(host: SetupHost, input: SetupProjectionInput, checks: Readonl
 function skills(input: SetupProjectionInput): SetupSkill[] {
   const byName = new Map<string, { -readonly [H in SetupHost]: SetupSkill['hosts'][H] }>();
   for (const row of input.skill_rows ?? []) {
-    const hosts = byName.get(row.name) ?? { claude: null, codex: null, pi: null };
+    const hosts = byName.get(row.name) ?? { claude: null, codex: null };
     hosts[row.host] = { state: row.state, ok: row.ok };
     byName.set(row.name, hosts);
   }
@@ -176,7 +176,7 @@ function fleet(input: SetupProjectionInput): SetupFleetRole[] {
       description: packageText(role.description),
       model: packageText(role.model),
       effort: packageText(role.effort),
-      hosts: { claude: state('claude'), codex: state('codex'), pi: state('pi') },
+      hosts: { claude: state('claude'), codex: state('codex') },
     });
   }
   return roles;

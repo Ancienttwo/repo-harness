@@ -71,18 +71,17 @@ describe('setup snapshot projection', () => {
       ] },
     });
     expect(snapshot.hosts[0]).toMatchObject({ host: 'claude', adapter_check: 'ok', cli_version: null });
-    expect(snapshot.hosts[2]).toEqual({ host: 'pi', reported: false, adapter_check: null, detected: null, adapter: null, cli_version: null });
     expect(snapshot.skills).toEqual([
-      { name: 'repo-harness', summary: 'Root router Skill.', hosts: { claude: { state: 'ok link', ok: true }, codex: { state: 'ok copy', ok: false }, pi: null } },
-      { name: 'think', summary: 'Plans authoring work; authoritative for authorization reviews.', hosts: { claude: { state: 'stale copy', ok: false }, codex: { state: 'missing', ok: false }, pi: null } },
+      { name: 'repo-harness', summary: 'Root router Skill.', hosts: { claude: { state: 'ok link', ok: true }, codex: { state: 'ok copy', ok: false } } },
+      { name: 'think', summary: 'Plans authoring work; authoritative for authorization reviews.', hosts: { claude: { state: 'stale copy', ok: false }, codex: { state: 'missing', ok: false } } },
     ]);
     expect(snapshot.hooks.flatMap(event => event.routes.map(route => `${event.event}.${route.route_id}`)))
       .toEqual(ROUTES.map(route => `${route.event}.${route.routeId}`));
     expect(snapshot.hooks.find(event => event.event === 'SubagentStop')).toBeUndefined();
-    expect(snapshot.hooks.find(event => event.event === 'Stop')?.routes[0]?.hosts).toEqual(['claude', 'codex', 'pi']);
+    expect(snapshot.hooks.find(event => event.event === 'Stop')?.routes[0]?.hosts).toEqual(['claude', 'codex']);
     expect(snapshot.fleet).toEqual([
-      { name: 'explorer', description: 'Read-only explorer.', model: 'sonnet', effort: 'medium', hosts: { claude: 'installed', codex: 'installed', pi: null } },
-      { name: 'gatekeeper', description: null, model: 'opus', effort: null, hosts: { claude: 'missing', codex: 'installed', pi: null } },
+      { name: 'explorer', description: 'Read-only explorer.', model: 'sonnet', effort: 'medium', hosts: { claude: 'installed', codex: 'installed' } },
+      { name: 'gatekeeper', description: null, model: 'opus', effort: null, hosts: { claude: 'missing', codex: 'installed' } },
     ]);
   });
 
@@ -137,9 +136,9 @@ describe('setup snapshot decoder', () => {
     rejects(s => { s.extra = true; });
     rejects(s => { s.hosts[0].adapter.mismatches[0] = { kind: 'missing', event: 'Stop', route_id: null, field: null, expected: 'x' }; });
     rejects(s => { s.hosts.reverse(); });
-    rejects(s => { s.hosts[2].detected = false; });
+    rejects(s => { s.hosts[0].reported = false; });
     rejects(s => { s.skills[1].hosts.codex = { state: 'missing', ok: true }; });
-    rejects(s => { s.skills[0].hosts = { claude: null, codex: null, pi: null }; });
+    rejects(s => { s.skills[0].hosts = { claude: null, codex: null }; });
     rejects(s => { s.skills[0].hosts.claude.state = 'ok link -> /x'; });
     rejects(s => { s.status = 'stale'; });
     rejects(s => { s.reason = 'collection_pending'; s.status = 'stale'; });

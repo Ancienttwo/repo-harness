@@ -186,7 +186,7 @@ setInterval(() => {}, 1000);
       if (!outcome.ok) throw new Error(`setup child failed: ${outcome.reason}`);
       const text = JSON.stringify(outcome.snapshot);
       expect(outcome.snapshot.status).toBe('ready');
-      expect(outcome.snapshot.hosts.map(host => [host.host, host.reported])).toEqual([['claude', true], ['codex', true], ['pi', false]]);
+      expect(outcome.snapshot.hosts.map(host => [host.host, host.reported])).toEqual([['claude', true], ['codex', true]]);
       expect(outcome.snapshot.fleet).toHaveLength(7);
       expect(outcome.snapshot.hooks.flatMap(event => event.routes)).toHaveLength(ROUTES.length);
       expect(outcome.snapshot.skills.length).toBeGreaterThan(0);

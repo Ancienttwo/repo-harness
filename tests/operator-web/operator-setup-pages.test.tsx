@@ -167,25 +167,10 @@ describe('Agents page', () => {
     const checks = all('[data-check]');
     expect(checks.map(row => row.getAttribute('data-check'))).toEqual(['doctor.security-config', 'runtime.skills_cli']);
     expect(checks[0]!.querySelector('[data-command]')?.textContent).toContain('repo-harness security scan --json');
-    expect(all('[data-host-row]').map(row => row.getAttribute('data-host-row'))).toEqual(['claude', 'codex', 'pi']);
+    expect(all('[data-host-row]').map(row => row.getAttribute('data-host-row'))).toEqual(['claude', 'codex']);
     expect(text('[data-host-row="claude"] [data-host-sentence]')).toBe('Connected · 5/5 managed hooks');
     expect(text('[data-host-row="codex"]')).toContain('v0.162.0');
     expect(all('[data-fleet-role]')).toHaveLength(7);
-    expect(text('[data-fleet-role="gatekeeper"] [data-host-cell="pi"]')).toContain('not reported');
-  });
-
-  test('the Pi row says setup check does not report it, never that Pi is not installed', async () => {
-    for (const locale of ['en', 'zh'] as const satisfies readonly OperatorLocale[]) {
-      await mount('#agents', props(readySetup(NOW), { initialLocale: locale }));
-      const pi = document.querySelector('[data-host-row="pi"]')!;
-      expect(pi.getAttribute('data-host-reported')).toBe('false');
-      expect(pi.querySelector('[data-host-sentence]')!.textContent).toBe(locale === 'en'
-        ? 'Setup check does not report Pi install status' : 'setup check 未报告 Pi 安装状态');
-      expect(pi.textContent).not.toMatch(/not installed|未安装|missing|缺失/iu);
-      expect(pi.querySelector('[data-dot]')!.getAttribute('data-dot')).toBe('neutral');
-      await act(async () => root?.unmount());
-      root = null; document.body.innerHTML = '';
-    }
   });
 
   test('a stale read keeps its data, shows its age and reason, and lists failures first', async () => {
@@ -200,7 +185,7 @@ describe('Agents page', () => {
     await act(async () => more.click());
     expect(all('[data-check]').map(row => row.getAttribute('data-check-status'))).toEqual(['fail', 'fail', 'needs_agent', 'warn', 'warn']);
     expect(more.textContent).toBe('Show fewer');
-    expect(text('[data-host-row="codex"] [data-host-sentence]')).toBe('Connected · 5/6 managed hooks · 3 projection mismatches');
+    expect(text('[data-host-row="codex"] [data-host-sentence]')).toBe('Connected · 4/5 managed hooks · 3 projection mismatches');
     expect(text('[data-host-row="codex"] [data-host-mismatch-summary]')).toContain('SubagentStart · context · missing');
     expect(text('[data-host-row="codex"] [data-command]')).toContain('repo-harness install --host codex');
     expect(text('[data-host-row="claude"] [data-host-sentence]')).toBe('Connected · 5/5 managed hooks · projection not compared');
@@ -227,7 +212,6 @@ describe('Skills page', () => {
     expect(state('repo-harness-ship', 'codex')).toBe('missing');
     expect(state('herdr', 'claude')).toBe('stale copy');
     expect(state('think', 'claude')).toBe('drift');
-    expect(state('repo-harness-ship', 'pi')).toBe('not_expected');
     expect(state('repo-harness', 'claude')).toBe('ok link');
     expect(text('[data-skills-abnormal]')).toBe('4 need attention');
     expect(text('[data-skill="repo-harness-ship"]')).toContain('Validates finished worktrees');
@@ -255,17 +239,15 @@ describe('Skills page', () => {
 describe('Hooks page', () => {
   test('routes group by event with per-host support, and mismatches list under their host', async () => {
     await mount('#hooks', props(degradedSetup(NOW)));
-    expect(all('[data-hook-event]').map(row => row.getAttribute('data-hook-event'))).toEqual(['SessionStart', 'PreToolUse', 'PostToolUse', 'UserPromptSubmit', 'SubagentStart', 'Stop']);
+    expect(all('[data-hook-event]').map(row => row.getAttribute('data-hook-event'))).toEqual(['SessionStart', 'PreToolUse', 'UserPromptSubmit', 'SubagentStart', 'Stop']);
     const subagent = document.querySelector('[data-hook-event="PreToolUse"] [data-route="subagent"]')!;
     expect(subagent.querySelector('[data-host-cell="codex"] [data-route-host]')!.getAttribute('data-route-host')).toBe('unsupported');
-    expect(subagent.querySelector('[data-host-cell="pi"] [data-route-host]')!.getAttribute('data-route-host')).toBe('unsupported');
     expect(subagent.textContent).toContain('Agent');
     expect(text('[data-hook-event="SessionStart"] [data-route="default"]')).toContain('every tool');
     expect(all('[data-managed-host="codex"] [data-mismatch]').map(row => row.textContent)).toEqual([
       'SubagentStart · context · missing', 'Stop · default · timeout differs', 'PreToolUse · entry without a route id · unexpected entry',
     ]);
     expect(all('[data-managed-host="claude"] [data-mismatch]')).toHaveLength(0);
-    expect(text('[data-managed-host="pi"]')).toContain('Setup check does not report Pi install status');
   });
 });
 

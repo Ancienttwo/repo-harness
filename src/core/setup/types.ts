@@ -8,9 +8,9 @@
 export const SETUP_PROJECTION = 'repo-harness.setup.v1' as const;
 
 /** Same members and order as `RouteHost` (src/cli/hook/route-registry.ts). */
-export const SETUP_HOSTS = ['claude', 'codex', 'pi'] as const;
+export const SETUP_HOSTS = ['claude', 'codex'] as const;
 export type SetupHost = typeof SETUP_HOSTS[number];
-/** One value per host, always all three keys. */
+/** One value per host, always both keys. */
 export type SetupPerHost<T> = { readonly [H in SetupHost]: T };
 
 export const SETUP_SNAPSHOT_STATUSES = ['ready', 'stale', 'unavailable'] as const;
@@ -74,7 +74,7 @@ export interface SetupAdapterFacts {
 
 export interface SetupHostFacts {
   host: SetupHost;
-  /** False when setup check has no install check for this host (Pi today). Then every other field is null. */
+  /** False when setup check has no install check for this host. Then every other field is null. */
   reported: boolean;
   /** Status of the `status.adapter.<host>` check. */
   adapter_check: SetupCheckStatus | null;
@@ -145,7 +145,7 @@ export interface SetupSnapshotV1 {
   setup_status: SetupOverallStatus | null;
   summary: SetupSummary | null;
   checks: SetupCheck[];
-  /** Always claude, codex, pi in that order when data is present. */
+  /** Always claude, codex in that order when data is present. */
   hosts: SetupHostFacts[];
   /** Skills that setup check judged on at least one host, in setup check order. */
   skills: SetupSkill[];
