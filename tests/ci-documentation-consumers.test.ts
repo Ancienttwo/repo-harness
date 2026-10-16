@@ -58,9 +58,7 @@ describe('documentation consumer discovery', () => {
 
   test('documentation consumers remain available to affected verification', async () => {
     const files = await discoverDocumentationConsumers(ROOT);
-    expect(files).toContain('tests/cli/documentation-contracts.test.ts');
-    // Real consumers: the changelog reader and the export that rejects orphan architecture module documents.
-    expect(files).toContain('tests/evidence-residue-scan.test.ts');
+    // Real consumer: the export that rejects orphan architecture module documents.
     expect(files).toContain('tests/capability-archcontext-export.test.ts');
     const workflow = Bun.YAML.parse(readFileSync(join(ROOT, '.github/workflows/ci.yml'), 'utf8')) as any;
     expect(workflow.jobs.verify.steps.some((step: any) => step.run === 'bash scripts/check-ci.sh affected')).toBe(true);

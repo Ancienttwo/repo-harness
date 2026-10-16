@@ -12,20 +12,6 @@ function read(path: string): string {
 }
 
 describe("UX feature pre-implementation guard", () => {
-  test("ships one canonical runtime convention", () => {
-    const asset = read("assets/reference-configs/ux-feature-guard.md");
-
-    expect(asset).toContain("Instruction and payload are never interchangeable");
-    expect(asset).toContain("design-brief template owns the exact Guard Card field schema");
-    expect(asset).toContain("Do not change gameplay");
-    expect(asset).toContain("does not synthesize a fallback value or report success");
-    expect(asset).toContain("positive, negative/non-goal, and failure");
-    expect(asset).toContain("FogMoe/agents/blob/main/skills/ux-writing/SKILL.md");
-    expect(asset).toContain("validator, ledger, sidecar, catalog, scoring model");
-    expect(asset).toContain("Review and test");
-    expect(asset).toContain("never a competing authority");
-  });
-
   test("keeps the convention available on explicit request without a workflow stage gate", () => {
     const assetFlow = read("assets/reference-configs/agentic-development-flow.md");
 

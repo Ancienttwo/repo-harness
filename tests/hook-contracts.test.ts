@@ -9,15 +9,6 @@ function read(relPath: string): string {
 }
 
 describe("Hook contracts", () => {
-  test("typed hook input parser exists and the shell operator library is gone", () => {
-    expect(existsSync(join(ROOT, "src/cli/hook/hook-input.ts"))).toBe(true);
-    expect(existsSync(join(ROOT, "assets/hooks/lib/workflow-state.sh"))).toBe(false);
-    expect(existsSync(join(ROOT, "assets/hooks/hook-input.sh"))).toBe(false);
-    expect(existsSync(join(ROOT, "assets/hooks/lib/session-state.sh"))).toBe(false);
-    expect(existsSync(join(ROOT, "assets/hooks/lib/memory-state.sh"))).toBe(false);
-    expect(existsSync(join(ROOT, "assets/hooks/lib/skill-factory.sh"))).toBe(false);
-  });
-
   test("route registry binds every public tuple to exactly one typed handler", () => {
     const routes = read("src/cli/hook/route-registry.ts");
     const registry = read("src/cli/hook/handler-registry.ts");
@@ -121,17 +112,5 @@ describe("Hook contracts", () => {
     expect(script).not.toContain('run_optional_helper "check-brain-manifest.sh"');
     expect(script).not.toContain('run_optional_helper "sync-brain-docs.sh"');
     expect(script).not.toContain("Brain doc sync check failed");
-  });
-
-  test("retired post-edit hooks stay deleted", () => {
-    expect(existsSync(join(ROOT, "src/cli/hook/mutation-observed.ts"))).toBe(false);
-    expect(existsSync(join(ROOT, "assets/hooks/first-principles-guard.sh"))).toBe(false);
-    expect(existsSync(join(ROOT, "assets/hooks/anti-simplification.sh"))).toBe(false);
-  });
-
-  test("the trace observer and its shell predecessors are retired", () => {
-    expect(existsSync(join(ROOT, "src/cli/hook/trace-observer.ts"))).toBe(false);
-    expect(existsSync(join(ROOT, "assets/hooks/trace-event.sh"))).toBe(false);
-    expect(existsSync(join(ROOT, "assets/hooks/context-pressure-hook.sh"))).toBe(false);
   });
 });

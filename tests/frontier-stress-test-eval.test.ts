@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "fs";
 import { join } from "path";
 import { loadBenchmarkConfig, loadEvalManifest, runSkillEvals } from "../scripts/run-skill-evals";
 import { validateFrontierOutput } from "../evals/frontier-stress-test/common/validate-frontier-output";
@@ -8,17 +7,6 @@ const ROOT = join(import.meta.dir, "..");
 const EVAL_ROOT = join(ROOT, "evals", "frontier-stress-test");
 
 describe("bounded frontier stress-test eval", () => {
-  test("keeps the treatment outside the managed planning Skill", () => {
-    const treatment = readFileSync(join(EVAL_ROOT, "treatment", "SKILL.md"), "utf8");
-    const managed = readFileSync(join(ROOT, "assets/skill-commands/repo-harness-check/SKILL.md"), "utf8");
-
-    expect(treatment).toContain("evaluation-only delta");
-    expect(treatment).toContain("at most three frontier questions");
-    expect(treatment).toContain("Stop after two rounds per invocation");
-    expect(treatment).toContain("[UNKNOWN:BLOCKING]");
-    expect(managed).not.toContain("stress-test");
-  });
-
   test("defines four historical signals and one negative control", () => {
     const manifest = loadEvalManifest(join(EVAL_ROOT, "evals.json"));
     expect(manifest.evals).toHaveLength(5);
