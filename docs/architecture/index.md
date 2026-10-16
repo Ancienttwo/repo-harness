@@ -111,7 +111,7 @@ flowchart LR
   classDef store fill:#14532d,stroke:#bbf7d0,color:#ffffff
 
   Bot["Bot"]:::ext
-  Host["Claude / Codex / Pi host"]:::ext
+  Host["Claude / Codex host"]:::ext
   Client["ChatGPT or other MCP client"]:::ext
   Human["Human in a browser"]:::ext
   Herdr["Herdr panes"]:::ext
@@ -338,7 +338,7 @@ Project
 - Path ownership under `capability_source: archcontext` comes from `archctx resolve` (`src/effects/capabilities/archcontext-owners.ts`). Node includes and excludes can use any shape that ArchContext validation accepts.
 - Several capability pairs have declared relations in both directions (for example contract-assets and global-runtime-reconciliation). The module backlogs record each pair with its edge counts.
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.architecture.index" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:43b9d4fbd8b35a9c156bc876cb086ed8f1d2deff06acf94ca68275023b925353" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.architecture.index" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:349762b179d714441ba747e15076accd59ecb11c05ac34061851aa80d69f03f9" -->
 # Architecture Index
 
 ## Entities
@@ -524,7 +524,6 @@ Project
 - component.global-runtime-reconciliation.primary -> capability.runtime-harness.task-agent-host — calls
 - component.global-runtime-reconciliation.release-packaging -> component.global-runtime-reconciliation.cli-root — calls
 - component.global-runtime-reconciliation.release-packaging -> capability.workflow-engine.execution-primitives — calls
-- component.global-runtime-reconciliation.release-packaging -> component.action-commands.skill-surface-catalog — calls
 - component.hook-adapters.edit-guards -> capability.workflow-engine.execution-primitives — calls
 - component.hook-adapters.edit-guards -> component.hook-adapters.primary — depends-on
 - component.hook-adapters.edit-guards -> capability.workflow-engine.workflow-state — calls

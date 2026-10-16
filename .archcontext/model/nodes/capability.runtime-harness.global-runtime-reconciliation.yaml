@@ -47,8 +47,6 @@ source:
     - "scripts/check-npm-release.sh"
     - "scripts/check-release-published.sh"
     - "scripts/check-tarball-install-smoke.sh"
-    - "scripts/check-pi-package-smoke.ts"
-    - "scripts/sync-pi-package.ts"
     - "scripts/runtime-evidence-receipt.ts"
     - "install.sh"
     - "install.ps1"

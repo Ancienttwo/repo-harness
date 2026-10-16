@@ -565,7 +565,7 @@
       },
       {
         "id": "component.hook-adapters.edit-guards",
-        "name": "Guard and Observer Handlers",
+        "name": "Edit Guard Handlers",
         "type": "Component",
         "tags": [
           "component"
@@ -1665,12 +1665,6 @@
         "id": "relation.global-runtime-reconciliation.release-packaging.execution-primitives",
         "sourceId": "component.global-runtime-reconciliation.release-packaging",
         "destinationId": "capability.workflow-engine.execution-primitives",
-        "description": "calls"
-      },
-      {
-        "id": "relation.global-runtime-reconciliation.release-packaging.skill-surface-catalog",
-        "sourceId": "component.global-runtime-reconciliation.release-packaging",
-        "destinationId": "component.action-commands.skill-surface-catalog",
         "description": "calls"
       },
       {

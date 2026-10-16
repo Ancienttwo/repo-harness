@@ -70,7 +70,7 @@ flowchart LR
   component_global_runtime_reconciliation_cli_root["CLI Root and Diagnostics"]
   component_global_runtime_reconciliation_primary["Global Runtime Reconciler"]
   component_global_runtime_reconciliation_release_packaging["Release Packaging"]
-  component_hook_adapters_edit_guards["Guard and Observer Handlers"]
+  component_hook_adapters_edit_guards["Edit Guard Handlers"]
   component_hook_adapters_host_installer["Host Adapter Installer"]
   component_hook_adapters_primary["Hook Route Runtime"]
   component_hook_adapters_session_lifecycle["Session Lifecycle Handlers"]
@@ -243,7 +243,6 @@ flowchart LR
   component_global_runtime_reconciliation_primary -->|"calls"| capability_runtime_harness_task_agent_host
   component_global_runtime_reconciliation_release_packaging -->|"calls"| component_global_runtime_reconciliation_cli_root
   component_global_runtime_reconciliation_release_packaging -->|"calls"| capability_workflow_engine_execution_primitives
-  component_global_runtime_reconciliation_release_packaging -->|"calls"| component_action_commands_skill_surface_catalog
   component_hook_adapters_edit_guards -->|"calls"| capability_workflow_engine_execution_primitives
   component_hook_adapters_edit_guards -->|"depends-on"| component_hook_adapters_primary
   component_hook_adapters_edit_guards -->|"calls"| capability_workflow_engine_workflow_state
