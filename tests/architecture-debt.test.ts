@@ -208,7 +208,7 @@ describe('architecture-debt command', () => {
     expect(architectureDebtSummary(output)).toContain('introduced 1, resolved 1');
   });
 
-  test('a failed base run still stops, removes and prunes the base checkout', () => {
+  test('a failed base run still stops and removes the base checkout', () => {
     const f = fixture();
     const provider = fakeProvider(f, { head: recordedDebt, base: failed(errorEnvelope('complete', 'AC_UNCLASSIFIED_FAILURE', 'base failed')) });
     expect(() => architectureDebtReport(f.repoRoot, f.baseSha, { consumerRoot: f.consumerRoot, policy, run: provider.run })).toThrow('AC_UNCLASSIFIED_FAILURE');
@@ -227,6 +227,19 @@ describe('architecture-debt command', () => {
     expect((caught as ArchctxClientError).message).toContain('archctx daemon stop /state/base: AC_RUNTIME_UNAVAILABLE');
     expect(existsSync(dirname(provider.baseCheckout()!))).toBe(false);
     expect(worktrees(f.repoRoot)).toEqual([f.repoRoot]);
+  });
+
+  test('cleanup removes only its own checkout and never prunes other registrations', () => {
+    const f = fixture();
+    const stale = join(dirname(f.repoRoot), 'stale-worktree');
+    git(f.repoRoot, ['worktree', 'add', '--detach', stale, 'HEAD']);
+    rmSync(stale, { recursive: true, force: true });
+    const provider = fakeProvider(f, { head: recordedDebt, base: recordedDebt });
+    architectureDebtReport(f.repoRoot, 'HEAD~1', { consumerRoot: f.consumerRoot, policy, run: provider.run });
+    expect(existsSync(dirname(provider.baseCheckout()!))).toBe(false);
+    const listed = worktrees(f.repoRoot);
+    expect(listed).toContain(stale);
+    expect(listed).not.toContain(provider.baseCheckout()!);
   });
 
   test('an unresolvable base fails before archctx runs', () => {

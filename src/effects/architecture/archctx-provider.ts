@@ -2,7 +2,7 @@ import { loadArchitectureProjectionPolicy, readGlobalArchitectureConfiguration }
 import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { userInfo } from 'node:os';
 import { isAbsolute, join, resolve, sep } from 'node:path';
-import { ARCHCONTEXT_NODE_RANGE, ERROR_CATALOG, PROJECTION_REQUEST_SCHEMA_VERSION, digestJson, type ArchContextError, type ArchctxCapabilitiesV1, type ArchitectureDebtReportV1, type DocsAnchorsReportV1, type Json, type ProjectionApplyReadbackResultV1, type ProjectionExpectedSnapshotV1, type ProjectionMode, type ProjectionRequestV1, type ProjectionResultV2 } from 'archctx-contracts';
+import { ARCHCONTEXT_NODE_RANGE, ERROR_CATALOG, architectureDocsProjectionCompatibilityIssues, PROJECTION_REQUEST_SCHEMA_VERSION, digestJson, type ArchContextError, type ArchctxCapabilitiesV1, type ArchitectureDebtReportV1, type DocsAnchorsReportV1, type Json, type ProjectionApplyReadbackResultV1, type ProjectionExpectedSnapshotV1, type ProjectionMode, type ProjectionRequestV1, type ProjectionResultV2 } from 'archctx-contracts';
 import { trustedNodeCandidates } from '../runtime/node-candidates';
 import { runProcess } from '../process-runner';
 import { readText } from '../state/collect-state-inputs';
@@ -362,6 +362,31 @@ export function stopWorkspaceArchitectureDaemons(repoRoot: string, canonicalWork
   return report;
 }
 
+const PROJECTION_MANIFEST_INCOMPATIBLE = 'projection-manifest-incompatible';
+const COMMITTED_PROJECTION_MANIFEST = 'docs/architecture/.projection-manifest.json';
+
+/**
+ * archctx owns the manifest compatibility rule. The committed manifest must pass
+ * it for the installed engine, or readiness fails closed and apply stays off.
+ */
+function assertCommittedProjectionManifestCompatible(repoRoot: string, capabilities: ArchctxCapabilitiesV1): void {
+  const path = join(repoRoot, COMMITTED_PROJECTION_MANIFEST);
+  if (!existsSync(path)) return;
+  let manifest: unknown;
+  try { manifest = JSON.parse(readFileSync(path, 'utf8')); }
+  catch (error) {
+    throw new ArchctxClientError({ code: 'RH_ARCHCTX_PROJECTION_MANIFEST_INVALID', action: 'inspect-projection-manifest', message: `${COMMITTED_PROJECTION_MANIFEST} is not valid JSON: ${error instanceof Error ? error.message : String(error)}` });
+  }
+  if (!isRecord(manifest)) throw new ArchctxClientError({ code: 'RH_ARCHCTX_PROJECTION_MANIFEST_INVALID', action: 'inspect-projection-manifest', message: `${COMMITTED_PROJECTION_MANIFEST} is not a JSON object` });
+  const issues = architectureDocsProjectionCompatibilityIssues(manifest, {
+    rendererVersion: capabilities.renderers.architectureDocs,
+    protocolVersion: capabilities.protocols.projectionRequest,
+  });
+  if (issues.length > 0) {
+    throw new ArchctxClientError({ code: 'AC_PRECONDITION_FAILED', action: 'update-repo-harness', reasonCode: PROJECTION_MANIFEST_INCOMPATIBLE, details: { issues }, message: `${COMMITTED_PROJECTION_MANIFEST} is incompatible with the installed archctx: ${issues.join('; ')}` });
+  }
+}
+
 export function inspectArchitectureProjectionReadiness(repoRoot: string, options: ArchctxProviderOptions = {}): ArchitectureProjectionReadinessV1 {
   const policy = options.policy ?? loadArchitectureProjectionPolicy(options.env);
   let source: ArchitectureProjectionReadinessV1['modelAuthority']['source'] = 'unadopted';
@@ -386,6 +411,7 @@ export function inspectArchitectureProjectionReadiness(repoRoot: string, options
     if (source === 'unadopted') throw new ArchctxClientError({ code: 'RH_ARCHCTX_POLICY_MISSING', action: 'adopt-repository', message: 'repository policy is missing; run repo-harness init' });
     const nodePath = resolveCompatibleNodeRuntime(options.env ?? process.env, options.trustedNodeCandidateSource);
     const handshake = archctxCapabilities(repoRoot, options);
+    assertCommittedProjectionManifestCompatible(repoRoot, handshake.capabilities);
     try { verifyArchctxDaemonRuntime(repoRoot, options); daemonState = 'compatible'; }
     catch (error) { daemonState = error instanceof ArchctxClientError && error.code === 'AC_RUNTIME_VERSION_UNSUPPORTED' ? 'mismatch' : 'error'; throw error; }
     const modelReady = architectureModelReady(repoRoot);
@@ -399,11 +425,11 @@ export function inspectArchitectureProjectionReadiness(repoRoot: string, options
     const reason = error instanceof Error ? error.message : String(error);
     const state: ArchitectureProjectionReadinessV1['projectionProvider']['state'] = error instanceof ArchctxClientError
       ? ['RH_ARCHCTX_PACKAGE_MISSING', 'RH_ARCHCTX_POLICY_MISSING'].includes(error.code) ? 'missing'
-        : ['RH_ARCHCTX_PACKAGE_MISMATCH', 'AC_RUNTIME_VERSION_UNSUPPORTED'].includes(error.code) ? 'mismatch' : 'error'
+        : ['RH_ARCHCTX_PACKAGE_MISMATCH', 'AC_RUNTIME_VERSION_UNSUPPORTED'].includes(error.code) || error.reasonCode === PROJECTION_MANIFEST_INCOMPATIBLE ? 'mismatch' : 'error'
       : 'error';
     return {
       ...base(),
-      projectionProvider: { provider: policy.provider, state, binaryPath: null, nodePath: null, command: null, version: null, reason },
+      projectionProvider: { provider: policy.provider, state, binaryPath: null, nodePath: null, command: null, version: null, reason, ...(error instanceof ArchctxClientError && error.reasonCode !== undefined ? { reasonCode: error.reasonCode } : {}) },
       next: error instanceof ArchctxClientError ? error.action === 'update-repo-harness' ? 'update repo-harness' : error.action : 'repair the reported provider error',
     };
   }

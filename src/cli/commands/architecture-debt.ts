@@ -93,7 +93,7 @@ function resolveCommit(repoRoot: string, ref: string): string {
 
 /**
  * The base checkout is always closed: its archctx daemons stop, the worktree is
- * removed and pruned, and its temporary parent directory is removed. A cleanup
+ * removed, and its temporary parent directory is removed. A cleanup
  * failure is an error, also when the base run failed first.
  */
 function withBaseCheckout<T>(repoRoot: string, sha: string, options: ArchctxProviderOptions, work: (checkout: string) => T): T {
@@ -131,8 +131,6 @@ function closeBaseCheckout(repoRoot: string, parent: string, checkout: string, o
     const removed = spawnSync('git', ['-C', repoRoot, 'worktree', 'remove', '--force', checkout], { encoding: 'utf8' });
     if (removed.status !== 0) issues.push(`git worktree remove: ${removed.stderr.trim()}`);
   }
-  const pruned = spawnSync('git', ['-C', repoRoot, 'worktree', 'prune'], { encoding: 'utf8' });
-  if (pruned.status !== 0) issues.push(`git worktree prune: ${pruned.stderr.trim()}`);
   try { rmdirSync(parent); }
   catch (error) { issues.push(`remove ${parent}: ${error instanceof Error ? error.message : String(error)}`); }
   return issues;

@@ -557,6 +557,55 @@ describe('package-local ArchContext projection provider', () => {
     expect(mismatch.apply.enabled).toBe(false);
   });
 
+  describe('committed projection manifest compatibility', () => {
+    const withManifest = (f: ReturnType<typeof fixture>, contents: string) => {
+      mkdirSync(join(f.repoRoot, 'docs', 'architecture'), { recursive: true });
+      writeFileSync(join(f.repoRoot, 'docs', 'architecture', '.projection-manifest.json'), contents);
+    };
+    const manifest = (floor: string) => JSON.stringify({
+      schemaVersion: 'archcontext.architecture-docs-projection-manifest/v3',
+      rendererVersion: 'archcontext.docs-renderer/v6',
+      minimumRendererVersion: floor,
+      profile: 'repo-harness/v1',
+    });
+    const readiness = (f: ReturnType<typeof fixture>) => {
+      // A fixed fake Node runtime keeps the result independent of the Node on the test machine.
+      const fakeBin = join(f.root, 'bin');
+      mkdirSync(fakeBin, { recursive: true });
+      const node = join(fakeBin, 'node');
+      writeFileSync(node, '#!/bin/sh\necho v24.1.0\n');
+      chmodSync(node, 0o755);
+      return inspectArchitectureProjectionReadiness(f.repoRoot, {
+        consumerRoot: f.consumerRoot, policy, env: { PATH: fakeBin }, trustedNodeCandidateSource: () => [], run: runner([], projectionEnvelope(expectedSnapshot)),
+      });
+    };
+
+    test('a renderer floor newer than the installed archctx is not ready and keeps apply disabled', () => {
+      const f = fixture();
+      withManifest(f, manifest('archcontext.docs-renderer/v7'));
+      const result = readiness(f);
+      expect(result.projectionProvider.state).toBe('mismatch');
+      expect(result.projectionProvider.reasonCode).toBe('projection-manifest-incompatible');
+      expect(result.projectionProvider.reason).toContain('minimumRendererVersion is unsupported by this engine');
+      expect(result.apply.enabled).toBe(false);
+    });
+
+    test('a floor the installed archctx meets stays ready', () => {
+      const f = fixture();
+      withManifest(f, manifest('archcontext.docs-renderer/v6'));
+      expect(readiness(f).projectionProvider.state).toBe('ready');
+    });
+
+    test('a malformed committed manifest fails closed', () => {
+      const f = fixture();
+      withManifest(f, '{not json');
+      const result = readiness(f);
+      expect(result.projectionProvider.state).toBe('error');
+      expect(result.projectionProvider.reason).toContain('is not valid JSON');
+      expect(result.apply.enabled).toBe(false);
+    });
+  });
+
   describe('closeout architecture daemon stop', () => {
     const worktree = '/private/tmp/repo-harness-wt-closed';
     const listing = (daemons: unknown[]) => ({ schemaVersion: 'archcontext.envelope/v1', ok: true, requestId: 'daemon.list', data: { stateRoot: '/state', daemons } });

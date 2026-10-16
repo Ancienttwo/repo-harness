@@ -39,7 +39,7 @@ export interface ArchitectureProjectionReadinessV1 {
    * archctx only through it, never through a PATH copy. It is null unless the
    * package and Node runtime resolve.
    */
-  projectionProvider: { provider: ProjectionProvider; state: 'disabled' | 'missing' | 'mismatch' | 'error' | 'ready'; binaryPath: string | null; nodePath: string | null; command: [string, string] | null; version: string | null; reason: string };
+  projectionProvider: { provider: ProjectionProvider; state: 'disabled' | 'missing' | 'mismatch' | 'error' | 'ready'; binaryPath: string | null; nodePath: string | null; command: [string, string] | null; version: string | null; reason: string; reasonCode?: string };
   codeFacts: { requirement: 'required'; state: 'not-evaluated' | 'ready' | 'unavailable' };
   daemonRuntime: { state: 'not-evaluated' | 'compatible' | 'mismatch' | 'error' };
   apply: { mode: ProjectionApplyMode; enabled: boolean };

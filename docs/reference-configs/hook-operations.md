@@ -219,8 +219,8 @@ repo-harness architecture-debt --json --base origin/main
 
 The command measures the debt at HEAD and at the base, and reports the items
 whose ids are new at HEAD. It measures the base in a temporary checkout and
-removes that checkout. Measured debt exits 0. An unresolvable base or an
-archctx failure exits 1 with the reason on stderr.
+removes that checkout. Measured debt exits 0. An unresolvable base exits 1
+with the reason on stderr. A failure of archctx does the same.
 
 Agents author semantic snapshots and diagrams. Hooks do not spawn LLM agents or
 long-running commands. Deterministic execution belongs in explicit CLI commands
