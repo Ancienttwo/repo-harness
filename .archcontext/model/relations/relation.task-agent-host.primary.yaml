@@ -3,4 +3,4 @@ id: relation.task-agent-host.primary
 kind: calls
 source: capability.runtime-harness.task-agent-host
 target: component.task-agent-host.primary
-intent: "Start send collect and read back persistent Herdr task agents"
+intent: "Start send and collect persistent Herdr task agents"
