@@ -26,7 +26,6 @@ import { formatDoctor, runDoctor } from './commands/doctor';
 import { buildInitHookCommand, buildSetupCommand, formatInitHook, runInitHook } from './commands/init-hook';
 import { formatMigratePlan, runMigrate } from './commands/migrate';
 import { buildReviewCommand } from './commands/review';
-import { buildTaskAgentCommand } from './commands/task-agent';
 import { buildPmCommand } from './commands/pm';
 import { buildUpgradeCommand } from './commands/upgrade';
 import { buildToolsCommand } from './commands/tools';
@@ -792,7 +791,6 @@ export function buildProgram(): Command {
 
   program.addCommand(buildInitHookCommand());
   program.addCommand(buildReviewCommand());
-  program.addCommand(buildTaskAgentCommand());
   program.addCommand(buildPmCommand());
   program.addCommand(buildModuleCommand());
   program.addCommand(buildSetupCommand());

@@ -61,10 +61,9 @@ const BROWSER_READ_POLICY: McpPolicy = {
     workspaceReader: false,
     workflowPlanner: false,
     workflowExecutor: false,
-    agentRunner: false,
     workspaceCoder: false,
   },
-  execution: { fixedWorkflowCheck: false, codexRunner: false, agentRunner: false, codingShell: false, allowedAgents: [], runnerTimeoutMs: 0 },
+  execution: { fixedWorkflowCheck: false, codingShell: false },
 };
 
 const BROWSER_CLI_OUTPUT_POLICY: McpPolicy = {
@@ -77,10 +76,9 @@ const BROWSER_CLI_OUTPUT_POLICY: McpPolicy = {
     workspaceReader: false,
     workflowPlanner: false,
     workflowExecutor: false,
-    agentRunner: false,
     workspaceCoder: false,
   },
-  execution: { fixedWorkflowCheck: false, codexRunner: false, agentRunner: false, codingShell: false, allowedAgents: [], runnerTimeoutMs: 0 },
+  execution: { fixedWorkflowCheck: false, codingShell: false },
 };
 
 const BROWSER_MCP_OUTPUT_POLICY: McpPolicy = {
@@ -99,10 +97,9 @@ const BROWSER_MCP_OUTPUT_POLICY: McpPolicy = {
     workspaceReader: false,
     workflowPlanner: false,
     workflowExecutor: false,
-    agentRunner: false,
     workspaceCoder: false,
   },
-  execution: { fixedWorkflowCheck: false, codexRunner: false, agentRunner: false, codingShell: false, allowedAgents: [], runnerTimeoutMs: 0 },
+  execution: { fixedWorkflowCheck: false, codingShell: false },
 };
 
 function isProbablyBinary(bytes: Buffer): boolean {

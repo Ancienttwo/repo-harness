@@ -676,7 +676,7 @@ export function renderRecoveryResume(
     '',
     'Execution rules:',
     '- Treat filesystem artifacts as the source of truth.',
-    '- For delegated research, use persistent task-agent collaborators in an explicitly addressed Herdr session/parent pane and reuse their task bindings. Otherwise perform a bounded read-only main-thread trace; missing Herdr never selects native children or direct harness exec. Keep history as observation and clean only identity-proven created resources at task completion.',
+    '- For delegated research, use the herdr skill to direct an agent in an explicitly addressed Herdr pane. Otherwise perform a bounded read-only main-thread trace; missing Herdr never selects native children or direct harness exec. Keep history as observation and close only the panes you created at task completion.',
     `- Keep deep research conclusions in \`${context.paths.researchDir}/\`, not only in chat.`,
     '- Do not run `/compact` as the primary recovery path.',
     '- Preserve the current dirty worktree and do not touch unrelated untracked files.',

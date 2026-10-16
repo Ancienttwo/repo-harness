@@ -14,7 +14,7 @@ import { startOperatorServer } from '../../src/effects/operator/server';
 import { parseOperatorServeOptions } from '../../src/cli/commands/operator';
 import type { RuntimeIdentity } from '../../src/core/operator/runtime-status';
 import { taskRepository } from '../../src/effects/terminal/task-worktree';
-import { taskSessionDirectory, harnessCapabilities } from '../../src/effects/terminal/task-session';
+import { taskSessionDirectory } from '../../src/effects/terminal/task-session';
 
 const hash = (value: string | Buffer) => 'sha256:' + createHash('sha256').update(value).digest('hex');
 const agentSession = { source: 'herdr:pi', agent: 'pi', kind: 'path', value: '/private/fixture-session.jsonl' };

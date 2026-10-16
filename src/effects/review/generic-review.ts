@@ -406,7 +406,7 @@ function acceptedRounds(dir: string): number[] {
 }
 
 /** Covers the round's 60 s host acknowledgement wait before it sees the
- * cancel. Round-1 admission and task-agent start can hold the lock longer
+ * cancel. Round-1 admission and host start can hold the lock longer
  * than this bound; a timed-out cancel must be run again. */
 const REVIEW_CANCEL_LOCK_WAIT_MS = 90_000;
 export async function closeReview(repoRoot: string, contract: string, cancel = false, authorityHome = userInfo().homedir,

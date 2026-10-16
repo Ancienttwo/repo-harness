@@ -90,12 +90,11 @@ function requestFixture(f: ReturnType<typeof fixture>, fixtureProof?: { pid: num
     runtime: 'herdr', task: taskId, role: 'deep-worker', harness_kind: 'fixture', endpoint: { session: 'unused' },
     pane_id: 'pane-fixture', terminal_id: 'terminal-fixture', workspace_id: 'workspace-fixture', shell: proof,
     agent_name: 'fixture', ownership: { disposition: 'attached' }, provider: { ...proof, ownership: { disposition: 'attached' } },
-    host: null, capabilities: { read_only: { status: 'unverified', evidence_ref: null }, resume: { status: 'unverified', evidence_ref: null } }, max_requests: 3 };
+    max_requests: 3 };
   writeSessionArtifact(join(dir, 'binding.json'), binding);
   const request: TaskRequest = { protocol: 2, task: taskId, role: 'deep-worker', round: 1, request_id: 'request-fixture',
     context_ref: join(outbox, 'context-1.txt'), source_ref: join(f.execution, plan), context_sha256: 'sha256:' + 'b'.repeat(64), result_ref: join(outbox, 'result-1.json'),
-    result_contract: { required_fields: ['request_id', 'context_sha256', 'value'], atomic_write: 'temp_rename',
-      submission: { command: 'repo-harness task-agent result', repo: f.execution, task: taskId, role: 'deep-worker', round: 1 } } };
+    result_contract: { required_fields: ['request_id', 'context_sha256', 'value'], atomic_write: 'temp_rename' } };
   writeSessionArtifact(join(dir, 'request-1.json'), request);
   return { dir, request, binding };
 }
@@ -375,7 +374,7 @@ test('PM MCP refuses unsafe operator files, extra configuration, and disabled HT
   expect(() => createPmMcpServer(f.env)).toThrow('pm_mcp_configuration_invalid');
   mcpScope(f); const alias = join(f.home, 'scope-alias'); writeFileSync(alias, readFileSync(path)); rmSync(path); symlinkSync(alias, path);
   expect(() => createPmMcpServer(f.env)).toThrow('pm_mcp_configuration_unsafe');
-  for (const override of [{ enableReader: true }, { enableDevRunner: true }, { allowedRoots: [f.repo] }, { enableChatgptBrowser: true }]) {
+  for (const override of [{ enableReader: true }, { allowedRoots: [f.repo] }, { enableChatgptBrowser: true }]) {
     expect(() => createRepoHarnessMcpServer({ profile: 'pm', ...override })).toThrow('does not permit');
   }
   const previousHome = process.env.REPO_HARNESS_HOME;
@@ -640,7 +639,7 @@ test('PM HTTP enforces profile and session owner on list, calls, streams and del
   try {
     let ready = false;
     for (let attempt = 0; attempt < 100; attempt++) {
-      try { const r = await fetch(base + '/health'); if (r.ok) { ready = true; expect(await r.json()).toMatchObject({ profile: 'pm', capabilities: { workspaceReader: false, workspaceCoder: false, workflowExecutor: false, agentRunner: false } }); break; } } catch {}
+      try { const r = await fetch(base + '/health'); if (r.ok) { ready = true; expect(await r.json()).toMatchObject({ profile: 'pm', capabilities: { workspaceReader: false, workspaceCoder: false, workflowExecutor: false } }); break; } } catch {}
       if (proc.exitCode !== null) throw new Error('PM fixture server exited: ' + await diagnostic);
       await Bun.sleep(50);
     }

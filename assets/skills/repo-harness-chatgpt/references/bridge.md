@@ -105,8 +105,6 @@ MCP prepares `.ai/harness/handoff/task-goal.md`; the task owner directs its expl
 
 Coding exception: the user may explicitly run user-scoped setup with `--profile coding --grant-read-write <repo>`. That profile retains the 24 workflow/status tools and adds exactly five direct coding tools: `open_workspace`, `read`, `apply_patch`, `exec_command`, and `write_stdin`, for 29 tools total. It is revision-bound to explicit repo grants, defaults to managed worktrees, and runs Bash with local-user authority. It must remain off by default; shell is not a filesystem sandbox. It still hard-denies secret paths, `.git/**`, `.env*`, `_ops/**`, writable `_ref/**`, traversal, and symlink escapes.
 
-Exception: if the user explicitly enables the local `orchestrator` dev runner setting, MCP may expose `run_agent_goal`. That tool must stay local-only, timeout-bounded, audited, limited to the fixed `.ai/harness/handoff/task-goal.md`, and limited to user-allowed agents such as `codex` or `claude`. It is not arbitrary shell and must not be exposed through an untrusted tunnel.
-
 ## Setup Commands
 
 Use these commands from the adopted repo root:
@@ -136,12 +134,6 @@ Run stdio for local Codex MCP config:
 
 ```bash
 repo-harness mcp serve --repo . --transport stdio --profile executor
-```
-
-Run local dev-mode orchestration only after the user has opted in:
-
-```bash
-repo-harness mcp serve --repo . --transport http --host 127.0.0.1 --port 8765 --profile orchestrator --enable-dev-runner --dev-runner-agents codex
 ```
 
 ## Execution Checklist

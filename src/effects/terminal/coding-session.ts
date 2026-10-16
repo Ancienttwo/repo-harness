@@ -29,7 +29,7 @@ export function assertCodingTaskAgent(repoRoot: string, task: string, role: stri
   const current = readTaskAgent(repoRoot, task, role), spec = readCodingSpec(current.dir);
   assertCodingHostAdmission(current.binding.execution_root, spec.admission);
   const ready = readSessionArtifact<{pid: number; session_id: string}>(join(spec.control_directory, 'ready.json'));
-  if (current.binding.host !== null || current.binding.harness_kind !== 'codex' || current.binding.execution_root !== spec.admission.execution_root
+  if (current.binding.harness_kind !== 'codex' || current.binding.execution_root !== spec.admission.execution_root
     || spec.task !== task || spec.role !== role || spec.max_requests !== current.binding.max_requests
     || spec.primary_root !== taskRepository(current.binding.execution_root).primary_root
     || ready.pid !== current.binding.provider.pid || !ready.session_id
@@ -69,14 +69,14 @@ export async function startCodingTaskAgent(repoRoot: string, spec: TaskAgentSpec
   }, guard);
   guard?.();
   const ready = readSessionArtifact<{ pid: number }>(join(control, 'ready.json'));
-  if (binding.host !== null || binding.provider.pid !== ready.pid) throw new Error('OAR_CODING_HOST_IDENTITY_LOST');
+  if (binding.provider.pid !== ready.pid) throw new Error('OAR_CODING_HOST_IDENTITY_LOST');
   return binding;
 }
 export async function sendCodingTaskRequest(repoRoot: string, task: string, role: string, contextRef: string, contextPolicy: 'repeatable' | 'changed_only' = 'repeatable', guard?: () => void) {
   guard?.();
   const { dir, binding } = assertCodingTaskAgent(repoRoot, task, role), spec = readCodingSpec(dir);
   assertCodingHostAdmission(binding.execution_root, spec.admission);
-  if (binding.host !== null || binding.execution_root !== spec.admission.execution_root) throw new Error('OAR_CODING_HOST_IDENTITY_LOST');
+  if (binding.execution_root !== spec.admission.execution_root) throw new Error('OAR_CODING_HOST_IDENTITY_LOST');
   return sendTaskRequest(repoRoot, task, role, contextRef, contextPolicy, async request => {
     const ack = join(spec.control_directory, `ack-${request.round}.json`);
     await waitSessionArtifact(ack, Date.now() + 10_000, () => {

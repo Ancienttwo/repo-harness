@@ -17,7 +17,7 @@ import { buildMcpServerInstructions } from './instructions';
 import { getMcpPolicy, parseMcpProfile, sensitiveAllowedRootReason } from './policy';
 import { isRepoHarnessAdopted, resolveMcpRepoRoot } from './repo';
 import { buildMcpToolDefinitions, callMcpTool, type McpToolContext } from './tools';
-import type { McpAgentRunnerName, McpPolicy } from './types';
+import type { McpPolicy } from './types';
 import { repoHarnessPackageVersion } from './version';
 import { buildMcpProcessEnvironment, McpProcessSessionManager } from './process-sessions';
 import { WorkspaceManager } from './workspaces';
@@ -28,9 +28,6 @@ export interface McpServerOptions {
   enableReader?: boolean;
   allowedRoots?: string[];
   enableChatgptBrowser?: boolean;
-  enableDevRunner?: boolean;
-  devRunnerAgents?: string;
-  devRunnerTimeoutMs?: number;
   codingRuntime?: McpCodingRuntime | null;
   engineerAuthorizationId?: string;
   verifyEngineerAuthorization?: (token: string, authorizationId: string) => void;
@@ -61,29 +58,6 @@ export async function shutdownMcpCodingRuntime(runtime: McpCodingRuntime): Promi
 
 export async function shutdownAllMcpCodingRuntimes(): Promise<void> {
   await Promise.all(Array.from(activeCodingRuntimes, (runtime) => shutdownMcpCodingRuntime(runtime)));
-}
-
-function parseBooleanSetting(value: string | undefined): boolean | undefined {
-  if (value === undefined) return undefined;
-  const normalized = value.trim().toLowerCase();
-  if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
-  if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
-  return undefined;
-}
-
-function parseAgentList(value: unknown): McpAgentRunnerName[] {
-  const raw = Array.isArray(value) ? value : typeof value === 'string' ? value.split(',') : [];
-  return Array.from(new Set(raw
-    .map((entry) => String(entry).trim().toLowerCase())
-    .filter((entry): entry is McpAgentRunnerName => entry === 'codex' || entry === 'claude')));
-}
-
-function parseTimeoutMs(value: unknown): number | undefined {
-  const parsed = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
-  if (!Number.isFinite(parsed)) return undefined;
-  const integer = Math.trunc(parsed);
-  if (integer < 5_000 || integer > 900_000) return undefined;
-  return integer;
 }
 
 function normalizeAllowedRoots(rawRoots: string[], opts: { skipDenied?: boolean } = {}): string[] {
@@ -200,15 +174,6 @@ export function createMcpToolContext(opts: McpServerOptions): McpToolContext {
       throw new Error(`${profile} MCP authorization revision is stale; rerun ${profile} setup`);
     }
   }
-  const envDevRunner = parseBooleanSetting(process.env.REPO_HARNESS_MCP_DEV_RUNNER);
-  const configuredDevRunner = envDevRunner ?? config?.devMode?.agentRunner === true;
-  const devAgentRunner = opts.enableDevRunner === true || configuredDevRunner;
-  const allowedAgents = parseAgentList(
-    opts.devRunnerAgents ?? process.env.REPO_HARNESS_MCP_DEV_RUNNER_AGENTS ?? config?.devMode?.allowedAgents,
-  );
-  const runnerTimeoutMs = parseTimeoutMs(
-    opts.devRunnerTimeoutMs ?? process.env.REPO_HARNESS_MCP_DEV_RUNNER_TIMEOUT_MS ?? config?.devMode?.timeoutMs,
-  );
   const configuredAllowedRoots = Array.from(new Set([
     ...(opts.allowedRoots ?? []),
     ...(config?.permissions?.allowedRoots ?? []),
@@ -243,9 +208,6 @@ export function createMcpToolContext(opts: McpServerOptions): McpToolContext {
     ...normalizeAllowedRoots(registeredRepoRoots, { skipDenied: true }),
   ]);
   const policy = getMcpPolicy(profile, {
-    devAgentRunner,
-    allowedAgents,
-    runnerTimeoutMs,
     enableReader: readerEnabled,
     allowedRoots: policyAllowedRoots,
     discoveryRoots,
@@ -268,9 +230,9 @@ export function createMcpToolContext(opts: McpServerOptions): McpToolContext {
 
 export function createRepoHarnessMcpServer(opts: McpServerOptions): Server {
   if (opts.profile === 'pm') {
-    if (opts.enableReader || opts.enableChatgptBrowser || opts.enableDevRunner || opts.allowedRoots?.length
-      || opts.devRunnerAgents || opts.devRunnerTimeoutMs || opts.codingRuntime || opts.engineerAuthorizationId) {
-      throw new Error('PM MCP does not permit workspace, browser, runner, or authorization overrides');
+    if (opts.enableReader || opts.enableChatgptBrowser || opts.allowedRoots?.length
+      || opts.codingRuntime || opts.engineerAuthorizationId) {
+      throw new Error('PM MCP does not permit workspace, browser, or authorization overrides');
     }
     return createPmMcpServer(undefined, { binding: opts.pmBinding, authorization: opts.pmAuthorization });
   }

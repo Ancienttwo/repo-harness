@@ -4,12 +4,11 @@ kind: component
 name: Herdr Task Session Host
 status: active
 parent: capability.runtime-harness.task-agent-host
-summary: Owns the Herdr transport, task sessions, task worktrees, request readback, role profiles, the task-agent and Herdr commands and the installed persona and plugin assets.
+summary: Owns the Herdr transport, task sessions, task worktrees, role profiles, the Herdr commands and the installed persona and plugin assets.
 source:
   include:
     - "src/effects/terminal/herdr.ts"
     - "src/effects/terminal/task-*.ts"
-    - "src/cli/commands/task-agent.ts"
     - "src/cli/commands/herdr.ts"
     - "src/cli/commands/herdr-skill.ts"
     - "assets/herdr/**"

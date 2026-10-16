@@ -34,6 +34,7 @@ import {
   type SkillSurfaceCatalog,
 } from '../../core/skill-surface/catalog';
 import { PROFILE_COMPONENTS, type InstallComponent } from '../../core/skill-surface/profile-components';
+import { MANAGED_AGENTS } from '../../effects/terminal/task-role-profiles';
 
 const SKILL_SURFACE_MANIFEST_PATH = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -69,7 +70,7 @@ function loadSkillSurfaceCatalog(): SkillSurfaceCatalog {
 }
 
 export const INSTALL_PROFILES = ['minimal', 'full'] as const;
-const AGENT_FLEET_AGENTS = ['explorer', 'deep-reasoner', 'fast-worker', 'deep-worker', 'gatekeeper', 'root-cause-prover', 'harness-evaluator'] as const;
+const AGENT_FLEET_FILE = new RegExp(`/(?:\\.codex|\\.claude)/agents/(?:${MANAGED_AGENTS.join('|')})\\.(?:toml|md)$`);
 export type InstallProfile = (typeof INSTALL_PROFILES)[number];
 export const LEGACY_INSTALL_PROFILES = ['minimal', 'standard', 'product-planning', 'strict'] as const;
 export type LegacyInstallProfile = (typeof LEGACY_INSTALL_PROFILES)[number];
@@ -583,7 +584,7 @@ export function managedInstallSurfaceIsCurrent(surface: ManagedInstallSurface): 
 /** Generated agent fleet targets written by scripts/install-agent-fleet.sh. */
 export function agentFleetTargetPaths(env: NodeJS.ProcessEnv = process.env): readonly string[] {
   const home = env.HOME ?? homedir();
-  return AGENT_FLEET_AGENTS.flatMap((agent) => [
+  return MANAGED_AGENTS.flatMap((agent) => [
     join(home, '.codex', 'agents', `${agent}.toml`),
     join(home, '.claude', 'agents', `${agent}.md`),
   ]);
@@ -863,7 +864,7 @@ function componentsForTransactionPath(path: string): readonly InstallComponent[]
       ? ['cross-model-acceptance']
       : ['planning-integrations'];
   }
-  if (/\/(?:\.codex|\.claude)\/agents\/(?:explorer|deep-reasoner|fast-worker|deep-worker|gatekeeper|root-cause-prover|harness-evaluator)\.(?:toml|md)$/.test(normalized)) {
+  if (AGENT_FLEET_FILE.test(normalized)) {
     return name.startsWith('gatekeeper.') ? ['agent-fleet', 'verifier'] : ['agent-fleet'];
   }
   if (/\/(?:\.agents|\.codex|\.claude)\/rules\/(?:anti-patterns|chinese|durable-context|english)\.md$/.test(normalized)) {
@@ -1193,7 +1194,7 @@ function completeHostSkillSetEvidence(home: string, names: readonly string[]): s
 }
 
 function completeAgentFleetEvidence(home: string): string[] {
-  const agents = AGENT_FLEET_AGENTS;
+  const agents = MANAGED_AGENTS;
   for (const [root, extension] of [[join(home, '.codex', 'agents'), '.toml'], [join(home, '.claude', 'agents'), '.md']] as const) {
     const paths = agents.map((agent) => join(root, `${agent}${extension}`));
     if (paths.every(existsSync)) return paths;

@@ -410,43 +410,6 @@ reindex dead-letter operations, see:
 deploy/runbooks/general-repo-mcp-codegraph.md
 \`\`\`
 
-## Dev Mode Agent Runner
-
-The default planner Connector does not run Codex or Claude. If you intentionally want ChatGPT to trigger a local agent from MCP, use the \`orchestrator\` profile and enable the dev runner setting yourself.
-
-Local config setting:
-
-\`\`\`json
-{
-  "devMode": {
-    "agentRunner": true,
-    "allowedAgents": ["codex"],
-    "timeoutMs": 120000
-  }
-}
-\`\`\`
-
-Equivalent one-shot launch:
-
-\`\`\`bash
-repo-harness mcp serve --repo . --transport http --host 127.0.0.1 --port 8765 --profile orchestrator --enable-dev-runner --dev-runner-agents codex
-\`\`\`
-
-Environment override:
-
-\`\`\`bash
-REPO_HARNESS_MCP_DEV_RUNNER=1 REPO_HARNESS_MCP_DEV_RUNNER_AGENTS=codex,claude repo-harness mcp serve --repo . --transport http --profile orchestrator
-\`\`\`
-
-When enabled, the server exposes \`run_agent_goal\`. The tool reads only \`.ai/harness/handoff/task-goal.md\` and runs that fixed handoff in a persistent Herdr agent (explicit addressing is required):
-
-\`\`\`text
-run_agent_goal { agent, herdr: { endpoint: {session}, parent_pane } }
-start -> send -> read history -> close (Result received) / cancel (no Result: timeout, observed_idle, failure)
-\`\`\`
-
-Keep this behind local Developer Mode and per-call confirmations. Do not expose an orchestrator tunnel to untrusted users.
-
 ## Agent Handoff Contract
 
 The agent-facing Skill is installed at:
@@ -626,8 +589,7 @@ Use repo-harness-chatgpt-bridge. Execute the latest ChatGPT-generated task goal 
 - Legacy workspace reader mode keeps deny globs for \`.env\`, private keys, SSH keys, credentials, secrets, \`.git\`, and dependency/build output. The general repo API uses \`.ignore\` as the content filter and relies on repo registration plus path guards.
 - Planner profile cannot write application source files, package manifests, lockfiles, CI config, secrets, or files outside the repo root.
 - Coding profile is fail-closed without explicit \`read_write\` grants. Its shell has local-user authority; allowed roots constrain workspace selection, not shell access.
-- MCP does not expose a default Codex runner. It prepares \`.ai/harness/handoff/task-goal.md\`; the task owner directs its explicitly addressed Herdr agent unless the user explicitly enables the local orchestrator dev runner.
-- The orchestrator dev runner is local-only, opt-in, timeout-bounded, audited, and limited to the fixed task goal handoff. It is not arbitrary shell.
+- MCP does not run Codex or Claude. It prepares \`.ai/harness/handoff/task-goal.md\`; the task owner directs its explicitly addressed Herdr agent through the herdr skill.
 - Keep \`_ref/\` read-only when used as a comparison source.
 - Do not put tunnel tokens, OAuth tokens, passphrases, or ChatGPT/Codex credentials in git.
 
@@ -744,7 +706,6 @@ function setupChatgptLocked(opts: {
       workspaceReader: readerEnabled,
       workflowPlanner: profile === 'planner' || profile === 'coding',
       workflowExecutor: profile === 'executor',
-      agentRunner: profile === 'orchestrator' && existingConfig?.devMode?.agentRunner === true,
       workspaceCoder: profile === 'coding',
     },
     permissions: {
@@ -763,11 +724,6 @@ function setupChatgptLocked(opts: {
     engineer: {
       ...existingConfig?.engineer,
       enabled: profile === 'engineer',
-    },
-    devMode: existingConfig?.devMode ?? {
-      agentRunner: false,
-      allowedAgents: ['codex'],
-      timeoutMs: 120000,
     },
   };
   const registryEntries = [
@@ -1118,15 +1074,9 @@ export function runMcpDoctor(opts: { repo?: string; json?: boolean }): McpSetupR
         workspaceReader: localConfig?.capabilities?.workspaceReader === true || localConfig?.capabilities?.reader === true,
         workflowPlanner: localConfig?.capabilities?.workflowPlanner !== false,
         workflowExecutor: localConfig?.capabilities?.workflowExecutor === true,
-        agentRunner: localConfig?.capabilities?.agentRunner === true,
         workspaceCoder: localConfig?.capabilities?.workspaceCoder === true,
       },
       authorizationRevision: repoHarnessAuthorizationRevision(),
-      devMode: {
-        agentRunner: localConfig?.devMode?.agentRunner === true,
-        allowedAgents: localConfig?.devMode?.allowedAgents ?? ['codex'],
-        timeoutMs: localConfig?.devMode?.timeoutMs ?? 120000,
-      },
     },
     codex: {
       cliAvailable: codexCommand !== null,
@@ -1181,7 +1131,6 @@ export function runMcpDoctor(opts: { repo?: string; json?: boolean }): McpSetupR
       '[repo-harness mcp] ChatGPT tool invocation: manual verification required (doctor checks local MCP health, not per-chat/model dispatch)',
       `[repo-harness mcp] ChatGPT guide: ${report.mcp.guide ? 'present' : 'missing'}`,
       `[repo-harness mcp] ChatGPT auth: ${report.mcp.authConfigured ? `${authMode} present` : 'missing'}`,
-      `[repo-harness mcp] Dev runner: ${report.mcp.devMode.agentRunner ? `enabled (${report.mcp.devMode.allowedAgents.join(',')})` : 'disabled'}`,
       `[repo-harness mcp] Codex config: ${report.codex.configured ? 'present' : 'missing'}`,
       `[repo-harness mcp] Codex CLI: ${report.codex.cliAvailable ? 'present' : 'missing'}`,
       `[repo-harness mcp] Next ChatGPT setup: ${report.chatgpt.setup}`,

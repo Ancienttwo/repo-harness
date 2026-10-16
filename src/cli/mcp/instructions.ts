@@ -21,7 +21,6 @@ export function buildMcpServerInstructions(opts: { readerEnabled?: boolean; codi
       ? 'Use direct coding tools only inside the returned workspace_id; preserve repo instructions and never request secret paths or credentials.'
       : 'Do not edit application source through this server. Codex is the executor.',
     'Do not run Codex remotely through planner or executor MCP profiles; prepare .ai/harness/handoff/task-goal.md for the local Codex host instead.',
-    'A local dev-mode runner may exist only when the orchestrator profile is explicitly enabled by user setting.',
     'Before writing a plan, inspect docs/spec.md, tasks/current.md, latest handoff, and existing plans.',
   ].join(' ');
 }
