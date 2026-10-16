@@ -1,13 +1,13 @@
 # runtime-harness/task-agent-host 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-task-agent-host" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:e0db1006760f91c4933a5a982907d3533629d3f351634162b5b6bebc698e1eef" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-task-agent-host" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:8bc67fbeeae8295abf87cec4df7633a2b2daff78ba507f69bbcd99d3d88dad00" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.task-agent-host`(kind `capability`)
-> **Matched Prefixes**:`src/effects/terminal/herdr.ts`、`src/effects/terminal/task-session.ts`、`src/effects/terminal/task-runtime-observation.ts`、`src/effects/terminal/task-worktree.ts`、`src/effects/terminal/task-request-readback.ts`、`src/effects/terminal/task-role-profiles.ts`、`src/cli/commands/task-agent.ts`、`src/cli/commands/herdr.ts`、`src/cli/commands/herdr-skill.ts`、`assets/herdr/**`、`agents/fleet/**`、`.codex/agents/**`、`scripts/install-agent-fleet.sh`
+> **Matched Prefixes**:`src/effects/terminal/herdr.ts`、`src/effects/terminal/task-session.ts`、`src/effects/terminal/task-runtime-observation.ts`、`src/effects/terminal/task-worktree.ts`、`src/effects/terminal/task-role-profiles.ts`、`src/cli/commands/herdr.ts`、`src/cli/commands/herdr-skill.ts`、`assets/herdr/**`、`agents/fleet/**`、`.codex/agents/**`、`scripts/install-agent-fleet.sh`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
-Hosts persistent task-agent participants in Herdr panes with role profiles, task worktrees, request send, request-bound result collection, saved-request readback and OAR runtime observation, and installs the Herdr notify plugin and the agent fleet personas.
+Hosts persistent task-agent participants in Herdr panes with role profiles, task worktrees, request send, request-bound result collection and OAR runtime observation, and installs the Herdr notify plugin and the agent fleet personas.
 
 ## 1. P1:能力架構地圖
 
@@ -17,21 +17,23 @@ Hosts persistent task-agent participants in Herdr panes with role profiles, task
 flowchart LR
   p1_capability_runtime_harness_task_agent_host_d81dadb6["Task Agent Host"]:::component
   p1_component_task_agent_host_primary_d8453f09["Herdr Task Session Host"]:::component
-  p1_capability_runtime_harness_task_agent_host_d81dadb6 -->|"Start send collect and read back persistent Herdr task agents"| p1_component_task_agent_host_primary_d8453f09
+  p1_capability_runtime_harness_task_agent_host_d81dadb6 -->|"Start send and collect persistent Herdr task agents"| p1_component_task_agent_host_primary_d8453f09
   classDef actor fill:#111827,color:#ffffff,stroke:#f9fafb,stroke-width:2px
   classDef component fill:#075985,color:#ffffff,stroke:#bae6fd,stroke-width:2px
   classDef datastore fill:#3f6212,color:#ffffff,stroke:#d9f99d,stroke-width:2px
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:0fba3df1bdc55a9ddacbecf00bd851215031cce59eac05307bd5bffe4f3216b8`).
+- Proof: `proven` (`sha256:f740737d70b0b6659e790b9b781e5e2295b01eedb5743d6b1f50c35d7e18f357`).
 - Semantic nodes: `2`; declared relations: `1`.
 
 ### 1.2 模組職責表
 
 | 宣告入口 | 錨點 | 職責 |
 | --- | --- | --- |
-| `entrypoint.task-agent-host.command` | `src/cli/commands/task-agent.ts#buildTaskAgentCommand` | `sink.task-agent-host.start` → `src/effects/terminal/task-session.ts#startTaskAgent`、`sink.task-agent-host.send` → `src/effects/terminal/task-session.ts#sendTaskRequest`、`sink.task-agent-host.collect` → `src/effects/terminal/task-session.ts#collectTaskResult`、`sink.task-agent-host.reconcile` → `src/effects/terminal/task-request-readback.ts#reconcileTaskRequest` |
+| `entrypoint.task-agent-host.session` | `src/effects/terminal/task-session.ts#startTaskApplicationHost` | `sink.task-agent-host.start` → `src/effects/terminal/task-session.ts#startTaskAgent` |
+| `entrypoint.task-agent-host.session` | `src/effects/terminal/task-session.ts#sendTaskRequest` | `sink.task-agent-host.send` → `src/effects/terminal/task-session.ts#nextSessionRound` |
+| `entrypoint.task-agent-host.session` | `src/effects/terminal/task-session.ts#collectTaskResult` | `sink.task-agent-host.collect` → `src/effects/terminal/task-session.ts#readTaskRequestResult` |
 
 組件入口:
 
@@ -40,7 +42,7 @@ flowchart LR
 ### 1.3 規模信號
 
 - 規模量級:`20–50` 個文件 / `2000–5000` 行
-- 匹配前綴:`src/effects/terminal/herdr.ts`、`src/effects/terminal/task-session.ts`、`src/effects/terminal/task-runtime-observation.ts`、`src/effects/terminal/task-worktree.ts`、`src/effects/terminal/task-request-readback.ts`、`src/effects/terminal/task-role-profiles.ts`、`src/cli/commands/task-agent.ts`、`src/cli/commands/herdr.ts`、`src/cli/commands/herdr-skill.ts`、`assets/herdr/**`、`agents/fleet/**`、`.codex/agents/**`、`scripts/install-agent-fleet.sh`
+- 匹配前綴:`src/effects/terminal/herdr.ts`、`src/effects/terminal/task-session.ts`、`src/effects/terminal/task-runtime-observation.ts`、`src/effects/terminal/task-worktree.ts`、`src/effects/terminal/task-role-profiles.ts`、`src/cli/commands/herdr.ts`、`src/cli/commands/herdr-skill.ts`、`assets/herdr/**`、`agents/fleet/**`、`.codex/agents/**`、`scripts/install-agent-fleet.sh`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
 ### 1.4 依賴邊界
@@ -48,7 +50,7 @@ flowchart LR
 出向關係:
 
 - `calls` → `capability.runtime-harness.evidence-ledger` — Hash request context and result bytes with the evidence canonical JSON
-- `calls` → `component.task-agent-host.primary` — Start send collect and read back persistent Herdr task agents
+- `calls` → `component.task-agent-host.primary` — Start send and collect persistent Herdr task agents
 
 入向關係:
 
@@ -56,7 +58,7 @@ flowchart LR
 - `calls` ← `capability.runtime-harness.agent-runtime-effects` — Run Herdr commands for task agent runtime effects
 - `calls` ← `component.contract-assets.contract-worktree-lifecycle` — Register and clean up task worktrees and read session artifacts
 - `calls` ← `component.contract-assets.template-projection` — Install the required Herdr skill during init
-- `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the herdr and task-agent commands
+- `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the herdr commands
 - `calls` ← `component.global-runtime-reconciliation.primary` — Configure the required Herdr skill during global runtime setup
 - `calls` ← `component.mcp-sidecar.coding-profile` — Clean up task worktrees for coding workspaces
 - `calls` ← `component.mcp-sidecar.primary` — Start task agents and send task requests through Herdr
@@ -76,7 +78,7 @@ flowchart LR
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:0fba3df1bdc55a9ddacbecf00bd851215031cce59eac05307bd5bffe4f3216b8`); selectors `4/4`.
+> **Proof**: `proven` (`sha256:f740737d70b0b6659e790b9b781e5e2295b01eedb5743d6b1f50c35d7e18f357`); selectors `3/3`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
@@ -90,7 +92,7 @@ sequenceDiagram
   p2_host_e62c1c09->>p2_session_d4cd9053: Validate and ingest only the request-bound TaskResult
     Note over p2_host_e62c1c09: Return the collected result without acceptance authority
   else The send response is lost or delivery is unknown
-  p2_host_e62c1c09->>p2_session_d4cd9053: Read the saved request by stable id and report its delivery state
+  p2_host_e62c1c09->>p2_session_d4cd9053: Record the delivery as unknown and refuse a new round until the same request is inspected
     Note over p2_host_e62c1c09: Keep delivery unknown and never resend launch or accept
   end
 ```
