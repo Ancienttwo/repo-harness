@@ -128,6 +128,34 @@ describe('init-hook command', () => {
       expect(readFileSync(target, 'utf8')).toBe(original);
     });
   });
+  test('flags a project host config only when it holds a repo-harness command', () => {
+    withTempHome((home, repo) => {
+      const run = () => runInitHook({ cwd: repo, env: { ...process.env, HOME: home },
+        statusReport: baseStatusReport(), doctorReport: baseDoctorReport(), toolingReport: baseToolingReport() });
+      const claude = join(repo, '.claude/settings.json');
+      const codex = join(repo, '.codex/hooks.json');
+      mkdirSync(join(repo, '.claude'), { recursive: true });
+      mkdirSync(join(repo, '.codex'), { recursive: true });
+      writeFileSync(claude, JSON.stringify({ permissions: { allow: ['Bash(git status:*)'] } }));
+      writeFileSync(codex, JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: 'command', command: 'echo user' }] }] } }));
+      let report = run();
+      expect(report.checks.find((entry) => entry.id === 'legacy.project-claude-settings')?.status).toBe('ok');
+      expect(report.checks.find((entry) => entry.id === 'legacy.project-codex-hooks')?.status).toBe('ok');
+      expect(report.agent_actions.find((entry) => entry.id === 'legacy.project-adapters.review')).toBeUndefined();
+
+      writeFileSync(codex, JSON.stringify({ hooks: { Stop: [{ hooks: [
+        { type: 'command', command: 'echo user' },
+        { type: 'command', command: 'repo-harness hook Stop --route default' },
+      ] }] } }));
+      writeFileSync(claude, '{ broken');
+      report = run();
+      expect(report.checks.find((entry) => entry.id === 'legacy.project-codex-hooks')?.status).toBe('needs_agent');
+      expect(report.checks.find((entry) => entry.id === 'legacy.project-claude-settings')?.detail).toContain('cannot inspect');
+      expect(report.agent_actions.find((entry) => entry.id === 'legacy.project-adapters.review')?.targets).toEqual([claude, codex]);
+      expect(readFileSync(claude, 'utf8')).toBe('{ broken');
+    });
+  });
+
   test('reports missing Global Working Rules as Agent action without creating files', () => {
     withTempHome((home, repo) => {
       const report = runInitHook({
