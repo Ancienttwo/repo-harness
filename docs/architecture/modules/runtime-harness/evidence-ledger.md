@@ -155,7 +155,7 @@ sequenceDiagram
 
 ## Optimization Backlog
 
-- **After arch-context#296：拆出 verification-plan。** 把 `src/core/evidence/verification-plan.ts` 与 `src/effects/evidence/verification-execution.ts` 移给 evals-checks（ownership proposal §4.6）。之后 pipeline-ledger 的出处验证关系改指 evals-checks。
+- **After arch-context#296：拆出 verification-plan。** 把 `src/core/evidence/verification-plan.ts` 与 `src/effects/evidence/verification-execution.ts` 移给 evals-checks（ownership proposal §4.6）。pipeline-ledger 已由 #769 退役。
 - **与 workflow-state 的双向依赖（重构证据）。** `event-log.ts` 通过 `src/effects/state/readonly-observation.ts` 读文件。State 代码也导入 evidence。集成按边数决定方向：workflow-state → evidence-ledger 28 条边，evidence-ledger → workflow-state 21 条边。模型只声明 workflow-state → evidence-ledger。本方向是回边，不声明。
 - **共享的 path-safety 原语。** `src/effects/path-safety.ts` 属于 adoption，本能力有 6 个导入。候选：移到 execution-primitives。
 - **到 hook-adapters 的回边。** `scripts/evidence-gc.ts:22`、`:190` 动态导入 `src/effects/run-summary-retention.ts`。这是一个版本的一次性清理，下一个版本删除。hook-adapters 的 session-lifecycle 调用本 capability。模型不声明本方向。

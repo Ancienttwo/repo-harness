@@ -236,7 +236,7 @@ sequenceDiagram
 
 | 组件 | footprint | 文件 / 行 | 职责 |
 | --- | --- | --- | --- |
-| `component.mcp-sidecar.primary`（Server and Tool Dispatch） | `server.ts`、`tools.ts`、`state-tools.ts`、`engineer-tools.ts`、`collaboration-tools.ts`、`fleet-tools.ts`、`pm-server.ts`、`instructions.ts`、`version.ts` | 9 / 3905 | 按 profile 建工具清单，把调用分派到各工具块，挂载 PM binding |
+| `component.mcp-sidecar.primary`（Server and Tool Dispatch） | `server.ts`、`tools.ts`、`state-tools.ts`、`engineer-tools.ts`、`fleet-tools.ts`、`pm-server.ts`、`instructions.ts`、`version.ts` | 8 个文件 | 按 profile 建工具清单，把调用分派到各工具块，挂载 PM binding |
 | `component.mcp-sidecar.transport-auth` | `transports/**`、`oauth.ts`、`session-store.ts` | 4 / 1648 | stdio 与 HTTP transport、OAuth、session 准入与回收 |
 | `component.mcp-sidecar.repo-policy-registry` | `auth.ts`、`types.ts`、`policy.ts`、`paths.ts`、`repo.ts`、`redaction.ts`、`guarded-write.ts`、`workspaces.ts`、`audit.ts`、`src/effects/repo-registry.ts`、`src/core/security/**` | 11 / 2151 | 用户级配置与凭证、路径策略、脱敏、审计、注册仓库授权 |
 | `component.mcp-sidecar.coding-profile` | `coding-tools.ts`、`coding-workspaces.ts`、`process-sessions.ts` | 3 / 2143 | 受管 worktree、文件编辑、受限 shell 进程 |
@@ -303,6 +303,6 @@ sequenceDiagram
 
 - 在 arch-context#296 和 include 收窄之后：把 `src/cli/mcp/reader-tools.ts` 和 `src/cli/mcp/general-repo-access*` 移给 general-repo-access，把 `src/cli/mcp/codegraph-adapter.ts` 移给 codegraph-readiness，把 `src/cli/chatgpt-browser/file-policy.ts` 移给 chatgpt-browser，把 `docs/reference-configs/chatgpt-coding-mcp.md` 交给 contract-assets（归属提议 §2）。
 - 重构证据：`src/cli/chatgpt-browser/file-policy.ts` 只被 chatgpt-browser 的三个文件调用，但它 import 本 capability 的 `paths.ts` 和 `types.ts`。文件移走后，chatgpt-browser → mcp-sidecar 会变成一条反向边。路径包含检查可以抽成共享 helper。没有声明为 intended relation。
-- primary 组件可展开：`tools.ts` 1558 行。它可以按工具块（state、Engineer、collaboration、Fleet、coding、reader、browser）继续拆。
+- primary 组件可展开：`tools.ts` 1558 行。它可以按工具块（state、Engineer、Fleet、coding、reader、browser）继续拆。
 - 集成步骤添加了到新 capability 的关系：primary → task-fleet、publication、task-agent-host、work-demand、workflow-state（`reads`）与 execution-primitives；coding-profile → workflow-state、execution-primitives 与 task-agent-host；repo-policy-registry 与 host-setup → execution-primitives。没有声明 transport-auth → pm-dispatch：`src/cli/mcp/transports/http.ts:36` 只导入 `PmError` 类。
 - **repo registry 造成 capability 级的环。** task-fleet、pm-dispatch 与 work-demand 导入 `src/effects/repo-registry.ts`。集成把 `relation.task-fleet.repo-registry` 与 `relation.pm-dispatch.repo-registry` 的目标改为 `component.mcp-sidecar.repo-policy-registry`。节点级因此没有环。capability 级仍然双向。候选：把 repo registry 移出 mcp-sidecar。

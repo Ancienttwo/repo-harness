@@ -107,8 +107,8 @@ sequenceDiagram
 2. **准入先持久化证据，再判定。** `admitReadOnlyDelegation` 先写 profile、capability、packet 和 envelope，再比较 parent、Binding、Role Profile、capability 和 packet 的每一个 fence（`delegated-run-store.ts:728-758`）。不匹配产生 terminal `rejected` 收据。rejected 收据从不创建 intent 或 Host 动作。
 3. **一个 launch claim 最多换一次 Host 动作。** dispatch 发现已有 launch claim，或状态不是 `intent_persisted`，就只追加 `reconciliation_required` 观测，不重试，也不换 runtime（`delegated-run-store.ts:876-885`、`:910-917`）。
 4. **WorkerResult 是不可信证据。** 结果只在 `completed` 且前后快照相同时收集。每个 run 只能有一个结果，第二个不同结果显式冲突（`delegated-run-store.ts:983-1010`）。结果不改变 Task、Lease、Publication 或 Acceptance。
-5. **协作 fence 在 dispatch 效果内部执行。** `fenceCollaborationDispatch` 是 dispatch 锁内的第一条语句（`delegated-run-store.ts:887-908`）。源码注释写明理由：调用点前置步骤会被忘记，非 CLI 控制器可以直接到达 `dispatchDelegatedRun()`。
-6. **交付平面到协作平面只有这一条边。** `tests/unit/collaboration-authority-baseline.test.ts:680-726` 扫描 `src/core` 和 `src/effects` 下的交付平面目录。它把例外固定为一个文件、一个导入符号、一次引用。新增任何其他依赖都会让该扫描失败。CLI `src/cli/commands/delegation.ts:5` 只导入 `CollaborationError`，用于映射错误，不在扫描范围内。
+5. **Dispatch 仍持有锁。** launch claim 限制每个 dispatch 只启动一次 host action。#769 删除了已退役的 collaboration fence。
+6. **交付平面不再读取 collaboration。** 当前 Claim、Lease、WorkEnvelope 和 Engineer Binding 校验仍由 delegation admission 持有。
 
 ### 3.2 关键权衡
 
@@ -116,7 +116,7 @@ sequenceDiagram
 | --- | --- |
 | 只接受一次性 Codex CLI `:read-only` 载体，拒绝 native 子代理 | 换来可观测的只读证明；代价是绑定一个 Host 版本，Host 升级后要重新冻结 capability（PRD Feasibility Boundary） |
 | 写入型 Worker（ME-2B）保持关闭 | 2026-08-26 的 canary 没有观测到动态 Parent 撤销和效果时主体（`tasks/todos.md:37`，commit `af1734f3`）。代价是 Module Engineer 只能用只读委派；重开条件写在 todos 中 |
-| 协作 fence 放进 dispatch 效果，形成 delegated-runs 与 collaboration 的双向边 | 消除未设防的 dispatch 入口（PR #289，issue #278）；代价是交付平面依赖协作平面一个符号，由 authority baseline 测试精确约束 |
+| 删除 collaboration dispatch fence（#769） | collaboration 已退役。保留 dispatch 锁、launch claim、sandbox receipt 和 parent authority 校验。 |
 | 丢失确认后只做 reconcile | 不会产生第二次 Host 动作；代价是需要人工或后续工具处理 `reconciliation_required` |
 
 ### 3.3 10x 规模下先坏的点

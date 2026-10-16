@@ -216,9 +216,9 @@ sequenceDiagram
 | primary | `verification.codegraph-readiness` | `configureCodegraph`（`global-runtime.ts:1432`） |
 | archctx-closure | `hook-adapters` | `writePrivateConfiguration`（`architecture-configuration.ts:15`） |
 | archctx-closure | `mcp-sidecar` | `model-reader.ts` 引用 `effects/repo-registry.ts` |
-| cli-root | 14 个已有 capability | `buildProgram` 注册各命令（`index.ts:804-869`）：hook-adapters、adoption、contract-assets、codegraph-readiness、pm-dispatch、mcp-sidecar、refactor-program、operator、engineer-bindings、delegated-runs、collaboration、verified-context、interface-change、external-source-intake |
+| cli-root | 13 个已有 capability | `buildProgram` 注册各命令（`index.ts:804-869`）：hook-adapters、adoption、contract-assets、codegraph-readiness、pm-dispatch、mcp-sidecar、refactor-program、operator、engineer-bindings、delegated-runs、verified-context、interface-change、external-source-intake |
 
-CLI 根的扇出是真实的组合根结构，所以如实建模。`index.ts` 另外注册约 15 个命令文件（state、sprint、fleet、publication、pipeline、task-agent、herdr、review、chatgpt、strategy、integration、docs、brain、run、migrate、tools）。集成步骤补上了这些命令的关系：workflow-state（state、sprint）、task-fleet、publication、pipeline-ledger、task-agent-host（task-agent、herdr）、acceptance-review（review）、chatgpt-browser、strategy-reflection、integration-acceptance 与 root-router（docs）。brain 与 run 归 contract-assets，migrate 归 adoption，tools 归 codegraph-readiness。
+CLI 根的扇出是真实的组合根结构，所以如实建模。`index.ts` 另外注册约 14 个命令文件（state、sprint、fleet、publication、task-agent、herdr、review、chatgpt、strategy、integration、docs、brain、run、migrate、tools）。集成步骤补上了这些命令的关系：workflow-state（state、sprint）、task-fleet、publication、task-agent-host（task-agent、herdr）、acceptance-review（review）、chatgpt-browser、strategy-reflection、integration-acceptance 与 root-router（docs）。brain 与 run 归 contract-assets，migrate 归 adoption，tools 归 codegraph-readiness。
 
 反向边（未声明为关系，记入 Backlog）：
 
