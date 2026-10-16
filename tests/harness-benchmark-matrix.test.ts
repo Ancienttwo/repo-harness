@@ -19,6 +19,7 @@ import {
   codexBenchmarkCommand,
   createRunOverlay,
   hashTree,
+  installBenchmarkRuntimeArtifact,
   isolatedHarnessEnvironment,
   isAuthoritativeCompletedRecord,
   isCompleteBenchmarkMatrix,
@@ -356,15 +357,7 @@ describe('No Harness / Lite / Strict benchmark authority', () => {
           npm_config_registry: 'http://127.0.0.1:9',
           BUN_CONFIG_REGISTRY: 'http://127.0.0.1:9',
         };
-        const install = Bun.spawnSync([process.execPath, 'add', '-g', artifact.path], {
-          cwd: ROOT,
-          env,
-          stdout: 'pipe',
-          stderr: 'pipe',
-        });
-        expect(install.exitCode).toBe(0);
-
-        const installedCli = join(env.BUN_INSTALL ?? join(home, '.bun'), 'bin', 'repo-harness');
+        const installedCli = installBenchmarkRuntimeArtifact(artifact, home);
         expect(existsSync(installedCli)).toBe(true);
         const installedTargetOutsideRoot = relative(ROOT, realpathSync(installedCli));
         expect(installedTargetOutsideRoot === '..' || installedTargetOutsideRoot.startsWith('../')).toBe(true);
@@ -397,10 +390,7 @@ describe('No Harness / Lite / Strict benchmark authority', () => {
     const block = source.slice(start, end);
     const noHarness = block.indexOf("if (profile === 'no-harness') return;");
     const artifactInstall = block.indexOf(
-      "run(process.execPath, ['add', '-g', runtimeArtifact.path], workspace, env);",
-    );
-    const installedCli = block.indexOf(
-      "const installedCli = join(env.BUN_INSTALL ?? join(hostRoot, '.bun'), 'bin', 'repo-harness');",
+      'const installedCli = installBenchmarkRuntimeArtifact(runtimeArtifact, hostRoot);',
     );
     const installProfile = block.indexOf(
       "const installProfile = profile === 'adaptive-lite' ? 'minimal' : 'full';",
@@ -408,9 +398,9 @@ describe('No Harness / Lite / Strict benchmark authority', () => {
 
     expect(noHarness).toBeGreaterThanOrEqual(0);
     expect(artifactInstall).toBeGreaterThan(noHarness);
-    expect(installedCli).toBeGreaterThan(artifactInstall);
-    expect(installProfile).toBeGreaterThan(installedCli);
-    expect(block).toContain("assertPathOutsideRoot(installedCli, ROOT, 'installed benchmark CLI')");
+    expect(installProfile).toBeGreaterThan(artifactInstall);
+    expect(source).toContain("assertPathOutsideRoot(installedCli, ROOT, 'installed benchmark CLI')");
+    expect(block).not.toContain("'add', '-g'");
     expect(block).toContain("run(installedCli, ['init'");
     expect(block).toContain("'install', '--profile', installProfile");
     expect(block).toContain("'--no-cli'");
