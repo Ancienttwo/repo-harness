@@ -528,6 +528,11 @@ describe("contract-worktree finish cleans up the merged worktree", () => {
       // has to name where to go.
       expect(finish.stdout).toContain(`cd ${primary}`);
 
+      // finish runs cleanup from the linked checkout's own helpers. The daemon
+      // stop must run before that checkout is removed. The fixture HOME has no
+      // global architecture configuration, so the provider is disabled.
+      expect(finish.stdout).toContain(JSON.stringify({ schemaVersion: "repo-harness.architecture-daemon-stop/v1", worktree: linked, provider: "disabled", stopped: [], failures: [] }));
+
       // Cleanup runs strictly after the transaction commits: it must not be
       // able to unwind the publication it just proved was absorbed.
       expect(run("git", ["log", "-1", "--format=%s", "main"], primary).stdout.trim()).toBe(

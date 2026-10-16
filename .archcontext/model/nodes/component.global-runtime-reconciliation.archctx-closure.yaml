@@ -10,6 +10,7 @@ responsibilities:
   - Apply and check the architecture projection and accept a projected major change inside apply.
   - Read and migrate the global architecture configuration section.
   - Read the committed architecture model for module views and review prompts.
+  - Stop the archctx daemons that archctx lists for a checkout root, by state directory.
 source:
   include:
     - "src/effects/architecture/**"

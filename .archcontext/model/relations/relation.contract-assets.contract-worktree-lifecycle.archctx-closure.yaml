@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.contract-assets.contract-worktree-lifecycle.archctx-closure
+kind: calls
+source: component.contract-assets.contract-worktree-lifecycle
+target: component.global-runtime-reconciliation.archctx-closure
+intent: "Stop the architecture daemons of a checkout before closeout removes it"

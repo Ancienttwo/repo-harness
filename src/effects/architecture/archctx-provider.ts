@@ -312,11 +312,14 @@ function daemonStopFailure(stateDir: string | null, error: ArchctxClientError): 
   };
 }
 
+/** Closeout calls archctx outside the topology lock; each call still stays short. */
+const ARCHCTX_DAEMON_STOP_BUDGET_MS = 3_000;
+
 /**
- * Closeout stops the daemons that archctx lists for a removed checkout. The
- * listed connection root is archctx's own canonical workspace root, so a
- * daemon is selected only by exact root equality and stopped by its state
- * directory. Typed archctx failures are reported; contract violations throw.
+ * Closeout stops the daemons that archctx lists for a checkout it is about to
+ * remove. The listed connection root is archctx's own canonical workspace
+ * root, so a daemon is selected only by exact root equality and stopped by its
+ * state directory. Typed archctx failures are reported; contract violations throw.
  */
 export function stopWorkspaceArchitectureDaemons(repoRoot: string, canonicalWorktree: string, options: ArchctxProviderOptions = {}): ArchitectureDaemonStopReportV1 {
   if (!isAbsolute(canonicalWorktree)) throw new Error('architecture daemon stop requires an absolute canonical worktree path');
@@ -324,7 +327,7 @@ export function stopWorkspaceArchitectureDaemons(repoRoot: string, canonicalWork
   const report: ArchitectureDaemonStopReportV1 = { schemaVersion: 'repo-harness.architecture-daemon-stop/v1', worktree: canonicalWorktree, provider: policy.provider, stopped: [], failures: [] };
   if (policy.provider === 'disabled') return report;
   const client = new ArchctxClient(repoRoot, policy.requiredVersion, options);
-  const maximumMs = Math.min(policy.timeoutMs, 10_000);
+  const maximumMs = Math.min(policy.timeoutMs, ARCHCTX_DAEMON_STOP_BUDGET_MS);
   let listed: unknown;
   try { listed = client.json(['daemon', 'list', '--json'], maximumMs); }
   catch (error) {

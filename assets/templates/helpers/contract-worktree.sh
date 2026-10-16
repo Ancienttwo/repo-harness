@@ -2066,15 +2066,24 @@ cleanup_worktree() {
   fi
 
   # Bind the observations before runtime shutdown to the existing exact authority.
-  local removed_checkout=0
+  local daemon_stop_failed=0
   if git show-ref --verify --quiet "refs/heads/$branch_name"; then
+    if [[ -n "$worktree_path" ]]; then
+      # Stop this checkout's architecture daemons while it still exists and
+      # stays registered: start cannot put another checkout at this path, and
+      # the helpers that finish runs from this checkout are still present.
+      # archctx runs outside the topology lock. A failure is reported and
+      # never blocks or reorders the removal.
+      if ! run_contract_runtime stop-architecture-daemons --repo "$current_root" --worktree "$worktree_path"; then
+        daemon_stop_failed=1
+      fi
+    fi
     run_contract_runtime remove-exact --repo "$current_root" \
       --worktree "${worktree_path:-(absent)}" \
       --branch "$branch_name" --head "$cleanup_head" --target "$target_branch" \
       --target-oid "$cleanup_target" --merge "$cleanup_target"
     echo "[ContractWorktree] Removed worktree: ${worktree_path:-(absent)}"
     echo "[ContractWorktree] Deleted branch: $branch_name (update-ref, $merge_mode)"
-    if [[ -n "$worktree_path" ]]; then removed_checkout=1; fi
   fi
 
   if [[ -e "$metadata_file" ]]; then
@@ -2084,13 +2093,9 @@ cleanup_worktree() {
     echo "[ContractWorktree] Metadata already absent, skipping: $metadata_file"
   fi
 
-  # Stop the removed checkout's architecture daemons last, outside the
-  # topology lock. A failure keeps the completed removal and fails closeout.
-  if [[ "$removed_checkout" -eq 1 ]]; then
-    if ! run_contract_runtime stop-architecture-daemons --repo "$current_root" --worktree "$worktree_path"; then
-      echo "contract-worktree: worktree removed, but its architecture daemon stop failed; the report above names each state directory" >&2
-      return 1
-    fi
+  if [[ "$daemon_stop_failed" -eq 1 ]]; then
+    echo "contract-worktree: worktree removed, but its architecture daemon stop failed; the report above names each state directory" >&2
+    return 1
   fi
 }
 

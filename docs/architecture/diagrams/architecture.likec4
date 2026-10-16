@@ -145,6 +145,7 @@ model {
   capability_runtime_harness_collaboration -> capability_workflow_engine_execution_primitives "calls"
   capability_runtime_harness_collaboration -> component_collaboration_primary "calls"
   component_contract_assets_contract_worktree_lifecycle -> capability_verification_acceptance_review "calls"
+  component_contract_assets_contract_worktree_lifecycle -> component_global_runtime_reconciliation_archctx_closure "calls"
   component_contract_assets_contract_worktree_lifecycle -> capability_workflow_engine_execution_primitives "calls"
   component_contract_assets_contract_worktree_lifecycle -> capability_runtime_harness_task_agent_host "calls"
   component_contract_assets_contract_worktree_lifecycle -> capability_workflow_engine_workflow_state "calls"
