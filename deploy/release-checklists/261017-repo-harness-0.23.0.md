@@ -2,20 +2,21 @@
 
 ## Scope and authority
 
-- Base: `c9ad06b0` (#784 squash merge) on `main`. Parent: `26f1806d`
-  (#786). #784 merged while the release PR was open. The release branch
-  merged it with no rebase.
+- Base: `01b5e357` (#792 squash merge) on `main`. Parent: `c9ad06b0`
+  (#784). #784 and #792 merged while the release PR was open. The release
+  branch merged each one with no rebase.
 - The release contains every main commit after `v0.22.1`
   (`dc0efeb20da7`): #686, #700, #672, #702, #706, #707, #712, #710, #713,
   #708, #714, #717, #720, #719, #716, #715, #721, #685, #722, #723, #724,
   #727, #725, #726, #729, #728, #730, #732, #731, #733, #740, #742, #746,
   #747, #748, #752, #753, #741, #750, #751, #755, #756, #758, #760, #774,
   #775, #776, #777, #778, #780, #781, #785, #783, #787, #782, #788, #789,
-  #786 and #784.
+  #786, #784 and #792.
 - 0.23.0 is a minor release. It has breaking changes: the collaboration
   commands and pipeline observer are removed (#785), Pi support and the
   Codex `/delegate` route are removed (#766), and managed hook blocks run
   before user blocks (#742). `repo-harness state owed` is removed (#784).
+  The `task-agent` CLI and the `run_agent_goal` MCP tool are removed (#792).
   See `docs/CHANGELOG.md`.
 - The release branch adds these commits:
   - `chore(release): set the versions to 0.23.0 and write the changelog`.
@@ -30,11 +31,11 @@
     The runner and the test use the same function. The owner approved this
     design on 2026-10-17.
   - `docs(architecture): refresh the projection manifest for 0.23.0`.
-  - A merge of `origin/main` (#784). The only conflict was the generated
-    projection manifest. The merge took main's copy, and the projection was
-    applied again.
+  - Two merges of `origin/main` (#784, then #792). Each time the only
+    conflict was the generated projection manifest. The merge took main's
+    copy, and the projection was applied again.
   - `chore(release): add #784 to the 0.23.0 changelog and refresh the
-    manifest`.
+    manifest` and the same commit for #792.
 - On 2026-10-16 the owner approved the release with these actions: release
   PR and merge, tag and GitHub Release, npm publish, local update and
   adapter reinstall. The owner asked to wait for #786, #788 and #789. On
@@ -55,13 +56,17 @@
   without mutating source authority" fails at the installed CLI
   `--version` (exit 1, `Export named 'dependencies' not found`).
 - At `222236a8` (before the merge of #784), the same gates below passed.
-- At `6673b770` (after the merge of #784):
+- At `6673b770` (after the merge of #784), the same gates passed with 93
+  focused tests.
+- At `1601dfab` (after the merge of #792):
   - `bun run check:type`, `bun run check:helpers`,
     `bun run check:reference-configs`: exit 0.
   - `bun run test:files tests/skill-version.test.ts
     tests/installed-copy-sync.test.ts tests/readme-dx.test.ts
     tests/architecture-debt.test.ts tests/check-ci-job-split.test.ts
-    --timeout 60000 --max-concurrency 1`: 93 pass, 0 fail.
+    tests/herdr-task-lifecycle.test.ts tests/cli/mcp-tools.test.ts
+    tests/cli/mcp-policy.test.ts --timeout 60000 --max-concurrency 1`: 134
+    pass, 0 fail.
   - `bash scripts/check-npm-release.sh --prepublish`: exit 0.
   - `bun run check:release`: exit 0. `tests/harness-benchmark-matrix.test.ts`
     with `REPO_HARNESS_TEST_EXPENSIVE=1`: 31 pass, 0 fail. The tarball smoke:
@@ -71,7 +76,7 @@
   - The SHA-1 of the real `~/.repo-harness/registered-repos.json` was the
     same before and after the gate runs.
 - `check:release` does not run the full suite. CI on `26f1806d` passed.
-  #784 passed its own PR CI. The release PR CI must pass on its final head before the merge.
+  #784 and #792 passed their own PR CI. The release PR CI must pass on its final head before the merge.
 - The release work did not change, relax or remove an assertion or timeout
   to pass a gate. The benchmark fix changes two tests in
   `tests/harness-benchmark-matrix.test.ts`, both caused by the new install
