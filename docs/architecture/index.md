@@ -333,7 +333,7 @@ Project
 - Path ownership under `capability_source: archcontext` comes from `archctx resolve` (`src/effects/capabilities/archcontext-owners.ts`). Node includes and excludes can use any shape that ArchContext validation accepts.
 - Several capability pairs have declared relations in both directions (for example contract-assets and global-runtime-reconciliation). The module backlogs record each pair with its edge counts.
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.architecture.index" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:349762b179d714441ba747e15076accd59ecb11c05ac34061851aa80d69f03f9" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.architecture.index" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:ba3ce64057b77746e09090d37d4c4943dc6602ff1ddfcd62b96c82af7fbde287" -->
 # Architecture Index
 
 ## Entities
