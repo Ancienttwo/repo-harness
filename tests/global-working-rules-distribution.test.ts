@@ -3,7 +3,11 @@ import { mkdtempSync, readFileSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { writeGlobalContextFiles } from "../src/cli/commands/init";
-import type { ReportingLanguagePreset } from "../src/cli/commands/init";
+import {
+  SHIPPED_GLOBAL_RULES_H1,
+  SHIPPED_GLOBAL_RULES_SECTIONS,
+  type ReportingLanguagePreset,
+} from "../src/cli/installer/global-context";
 
 const ROOT = join(import.meta.dir, "..");
 const ASSETS_TEMPLATE = join(ROOT, "assets/reference-configs/global-working-rules.md");
@@ -72,6 +76,25 @@ describe("global working rules distribution", () => {
     expect(countOccurrences(rendered, "include a short `下一刀` section")).toBe(1);
     expect(rendered).toContain("Use `下一刀: <direction>. Reason: <open loop>. Entry: <path/command/verification surface>.`");
     expect(rendered).not.toContain("Next cut");
+  });
+
+  // Sync replaces legacy copies only by exact shipped title. A template
+  // section missing from the list would be kept as user content forever.
+  test("the shipped section title list covers every heading of the managed template", () => {
+    const raw = readFileSync(ASSETS_TEMPLATE, "utf-8");
+    const template = raw.match(/```md\n([\s\S]*?)\n```/)?.[1] ?? "";
+    const h1 = [...template.matchAll(/^# (.+?)\s*$/gm)].map((match) => match[1]);
+    const h2 = [...template.matchAll(/^## (.+?)\s*$/gm)].map((match) => match[1]);
+    expect(h1).toEqual([SHIPPED_GLOBAL_RULES_H1]);
+    expect(h2.length).toBeGreaterThan(0);
+    for (const title of h2) expect(SHIPPED_GLOBAL_RULES_SECTIONS).toContain(title);
+  });
+
+  test("the rendered block records its reporting-language inputs", () => {
+    const rendered = renderedManagedBlock("zh-CN", "Use Chinese to report to user.");
+    expect(rendered).toContain(
+      '<!-- repo-harness reporting-language: {"preset":"zh-CN","instruction":"Use Chinese to report to user."} -->',
+    );
   });
 
   test("the global rules template and the generated root context carry the code optimization constraints", () => {

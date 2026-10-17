@@ -30,6 +30,15 @@ import {
 import { dirname, join, resolve } from "path";
 import { fileURLToPath } from "url";
 import { syncWazaSharedRules } from "../installer/waza-rules";
+import {
+  GLOBAL_RULES_UNBALANCED,
+  formatGlobalContextWrite,
+  globalContextPath,
+  languageInstruction,
+  mergeManagedBlock,
+  renderGlobalRulesBlock,
+  type ReportingLanguagePreset,
+} from "../installer/global-context";
 import { runInstall, type InstallTargetSpec } from "./install";
 import { configureRequiredHerdrSkill } from "./herdr-skill";
 import { runBrain } from "./brain";
@@ -66,15 +75,8 @@ import type { DocumentationLanguage } from "../../core/adoption/standard-plan";
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(SCRIPT_DIR, "..", "..", "..");
-const GLOBAL_RULES_BEGIN = "<!-- BEGIN: repo-harness global-working-rules -->";
-const GLOBAL_RULES_END = "<!-- END: repo-harness global-working-rules -->";
-const GLOBAL_RULES_SELF_NOTE =
-  "<!-- repo-harness manages this block; edits inside are overwritten on sync. Keep personal rules outside the markers. -->";
-const COMPLETION_SUMMARY_LABEL_EN = "Next cut";
-const COMPLETION_SUMMARY_LABEL_ZH = "下一刀";
 
 export type InitBrainMode = "manifest-only" | "skip";
-export type ReportingLanguagePreset = "follow" | "zh-CN" | "en" | "custom";
 
 export interface GlobalContextOptions {
   reportLanguageInstruction: string;
@@ -285,13 +287,6 @@ const DEFAULT_INIT_RUNTIME_DEPENDENCIES: InitRuntimeDependencies = { authorityHo
 
 export { validateRepoAdoptionTarget } from "../repo-adoption/target";
 
-function languageInstruction(preset: ReportingLanguagePreset, custom?: string): string {
-  if (preset === "zh-CN") return "Use Chinese to report to user.";
-  if (preset === "en") return "Use English to report to user.";
-  if (preset === "custom") return custom?.trim() || "Use the user's language for reports; keep technical terms in English.";
-  return "Use the user's language for reports; keep technical terms in English.";
-}
-
 /**
  * The single init question drives two projections: the host-level reporting
  * sentence and the repo-level human-facing document language. A custom
@@ -302,84 +297,6 @@ function documentationLanguageForPreset(preset: ReportingLanguagePreset): Docume
   if (preset === "follow") return "follow-user";
   if (preset === "zh-CN") return "zh-CN";
   return "en";
-}
-
-function readGlobalRulesTemplate(sourceRoot: string): string {
-  const file = join(sourceRoot, "assets", "reference-configs", "global-working-rules.md");
-  const raw = readFileSync(file, "utf-8");
-  const match = raw.match(/```md\n([\s\S]*?)\n```/);
-  return match?.[1] ?? raw;
-}
-
-/**
- * The completion-summary label is the one phrase in the managed block that a
- * Chinese-reporting user reads as a literal section title, so it is rendered in
- * the reporting language while the rest of the template stays English.
- */
-function renderCompletionSummaryLabel(template: string, preset: ReportingLanguagePreset): string {
-  if (preset !== "zh-CN") return template;
-  return template.replaceAll(COMPLETION_SUMMARY_LABEL_EN, COMPLETION_SUMMARY_LABEL_ZH);
-}
-
-function renderGlobalRules(
-  sourceRoot: string,
-  instruction: string,
-  preset: ReportingLanguagePreset,
-): string {
-  const template = readGlobalRulesTemplate(sourceRoot);
-  const rendered = renderCompletionSummaryLabel(template, preset).replace(
-    /^- Use the user's language for reports; keep technical terms in English\.$/m,
-    `- ${instruction}`,
-  );
-  return `${GLOBAL_RULES_BEGIN}\n${GLOBAL_RULES_SELF_NOTE}\n${rendered.trim()}\n${GLOBAL_RULES_END}\n`;
-}
-
-type ManagedBlockStatus = "written" | "blocked-unbalanced" | "skipped-legacy";
-
-interface MergedManagedBlock {
-  content: string;
-  status: ManagedBlockStatus;
-}
-
-function countOccurrences(haystack: string, needle: string): number {
-  let count = 0;
-  let index = haystack.indexOf(needle);
-  while (index !== -1) {
-    count += 1;
-    index = haystack.indexOf(needle, index + needle.length);
-  }
-  return count;
-}
-
-function mergeManagedBlock(current: string, block: string): MergedManagedBlock {
-  const beginCount = countOccurrences(current, GLOBAL_RULES_BEGIN);
-  const endCount = countOccurrences(current, GLOBAL_RULES_END);
-
-  if (beginCount > 0 || endCount > 0) {
-    const start = current.indexOf(GLOBAL_RULES_BEGIN);
-    const end = current.indexOf(GLOBAL_RULES_END);
-    const balanced = beginCount === 1 && endCount === 1 && start >= 0 && end >= start;
-    if (!balanced) {
-      return { content: current, status: "blocked-unbalanced" };
-    }
-    const afterEnd = end + GLOBAL_RULES_END.length;
-    const merged = `${current.slice(0, start)}${block.trimEnd()}${current.slice(afterEnd).replace(/^\n?/, "\n")}`;
-    return { content: merged, status: "written" };
-  }
-
-  if (
-    /^# Global Working Rules\s*$/m.test(current) ||
-    (
-      current.includes("## Progressive Due Diligence") &&
-      current.includes("### P1: Architecture Map") &&
-      current.includes("### P2: Concrete Trace") &&
-      current.includes("### P3: Design Decision")
-    )
-  ) {
-    return { content: current, status: "skipped-legacy" };
-  }
-  const trimmed = current.trimEnd();
-  return { content: `${trimmed}${trimmed ? "\n\n" : ""}${block}`, status: "written" };
 }
 
 export function writeGlobalContextFiles(
@@ -393,36 +310,28 @@ export function writeGlobalContextFiles(
     return { step: "global working rules", status: "failed", detail: "HOME is required to resolve host context files" };
   }
 
-  const block = renderGlobalRules(
-    sourceRoot,
-    opts.reportLanguageInstruction,
-    opts.reportLanguagePreset,
-  );
+  const block = renderGlobalRulesBlock(sourceRoot, {
+    preset: opts.reportLanguagePreset,
+    instruction: opts.reportLanguageInstruction,
+  });
   const targets: string[] = [];
-  if (target === "codex" || target === "both") targets.push(join(home, ".codex", "AGENTS.md"));
-  if (target === "claude" || target === "both") targets.push(join(home, ".claude", "CLAUDE.md"));
+  if (target === "codex" || target === "both") targets.push(globalContextPath(home, "codex"));
+  if (target === "claude" || target === "both") targets.push(globalContextPath(home, "claude"));
 
   const changes: string[] = [];
   let blocked = false;
   for (const filePath of targets) {
     mkdirSync(dirname(filePath), { recursive: true });
-    const current = existsSync(filePath) ? readFileSync(filePath, "utf-8") : "";
+    const existed = existsSync(filePath);
+    const current = existed ? readFileSync(filePath, "utf-8") : "";
     const merged = mergeManagedBlock(current, block);
     if (merged.status === "blocked-unbalanced") {
       blocked = true;
-      changes.push(`blocked:${filePath} (unbalanced repo-harness markers; repair manually, then re-run)`);
+      changes.push(`blocked:${filePath} (${GLOBAL_RULES_UNBALANCED})`);
       continue;
     }
-    if (merged.status === "skipped-legacy") {
-      changes.push(`skipped-legacy:${filePath} (unmanaged Global Working Rules present; add the repo-harness markers to enable managed sync)`);
-      continue;
-    }
-    if (merged.content === current) {
-      changes.push(`unchanged:${filePath}`);
-      continue;
-    }
-    writeFileSync(filePath, merged.content, "utf-8");
-    changes.push(`${current ? "updated" : "created"}:${filePath}`);
+    if (merged.content !== current) writeFileSync(filePath, merged.content, "utf-8");
+    changes.push(formatGlobalContextWrite(filePath, existed ? current : null, merged));
   }
 
   return { step: "global working rules", status: blocked ? "failed" : "ok", detail: changes.join(", ") };

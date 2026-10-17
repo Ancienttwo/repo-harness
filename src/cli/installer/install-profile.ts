@@ -1,6 +1,7 @@
 import wazaRules from "../../core/skill-surface/waza-shared-rules.json";
 import { bunGlobalPackageRoot, expectedSkillProjections, skillLinkMatches } from './skill-projection';
 import { configurationReceiptPath } from './configuration-ownership';
+import { globalContextPath } from './global-context';
 import { createHash, randomUUID } from 'crypto';
 import {
   cpSync,
@@ -730,6 +731,9 @@ export function installProfileHostMutationPaths(env: NodeJS.ProcessEnv = process
     join(home, '.codex', 'config.toml'),
     join(home, '.claude', 'settings.json'),
     join(home, '.claude.json'),
+    // Install and update rewrite the managed Global Working Rules block here.
+    globalContextPath(home, 'codex'),
+    globalContextPath(home, 'claude'),
     join(home, '.repo-harness', 'config.json'),
     installProfileStatePath(env),
     configurationReceiptPath(env),

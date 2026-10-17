@@ -14,9 +14,15 @@ import type { StatusReport } from '../../src/cli/commands/status';
 import { planAdoption } from '../../src/core/adoption/plan';
 import { applyAdoptionPlan } from '../../src/effects/fs-transaction';
 import { readUpgradeFixture } from '../helpers/upgrade-fixtures';
+import { renderGlobalRulesBlock } from '../../src/cli/installer/global-context';
 
 const ROOT = join(import.meta.dir, '..', '..');
 const CLI = join(ROOT, 'src/cli/index.ts');
+
+/** A managed block that matches the current template, so the rules check is ok. */
+function currentRulesBlock(): string {
+  return renderGlobalRulesBlock(ROOT, { preset: 'en', instruction: 'Use English to report to user.' });
+}
 
 function withTempHome(fn: (home: string, repo: string) => void): void {
   const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-init-hook-'));
@@ -191,10 +197,53 @@ describe('init-hook command', () => {
       });
 
       const globalRules = report.checks.find((entry) => entry.id === 'global-rules.codex');
-      expect(globalRules?.status).toBe('ok');
+      expect(globalRules?.status).toBe('warn');
+      expect(globalRules?.detail).toContain('repo-harness update --report-language <follow|zh-CN|en>');
       expect(report.agent_actions.find((entry) => entry.id === 'global-rules.insert')).toBeUndefined();
       expect(readFileSync(filePath, 'utf-8')).toContain('Existing user rule.');
     });
+  });
+
+  test('compares the managed block with the current template and reports each state', () => {
+    const block = currentRulesBlock();
+    const unrecorded = block.replace(/^<!-- repo-harness reporting-language: .*\n/m, '');
+    const cases: Array<{ name: string; content: string; status: 'ok' | 'warn' | 'fail'; detail: string }> = [
+      { name: 'current', content: `user notes\n\n${block}`, status: 'ok', detail: 'matches the current template' },
+      { name: 'stale', content: block.replace('Rule 0:', 'Old rule 0:'), status: 'warn', detail: 'stale' },
+      {
+        name: 'legacy span beside a recorded block',
+        content: `${block}\n## Reporting\n\n- Old copy.\n`,
+        status: 'warn',
+        detail: 'legacy repo-harness sections outside the markers',
+      },
+      { name: 'unrecorded', content: unrecorded, status: 'warn', detail: '--report-language <follow|zh-CN|en>' },
+      {
+        name: 'invalid header',
+        content: block.replace('"preset":"en"', '"preset":"zh-CN"'),
+        status: 'warn',
+        detail: 'no recorded reporting language',
+      },
+      { name: 'unbalanced', content: `${block}${block}`, status: 'fail', detail: 'unbalanced repo-harness markers' },
+    ];
+    for (const entry of cases) {
+      withTempHome((home, repo) => {
+        mkdirSync(join(home, '.codex'), { recursive: true });
+        writeFileSync(join(home, '.codex', 'AGENTS.md'), entry.content);
+        const report = runInitHook({
+          cwd: repo,
+          target: 'codex',
+          env: { ...process.env, HOME: home },
+          statusReport: baseStatusReport(),
+          doctorReport: baseDoctorReport(),
+          toolingReport: baseToolingReport(),
+        });
+        const check = report.checks.find((item) => item.id === 'global-rules.codex');
+        expect({ name: entry.name, status: check?.status }).toEqual({ name: entry.name, status: entry.status });
+        expect(check?.detail).toContain(entry.detail);
+        expect(report.agent_actions.find((item) => item.id === 'global-rules.insert')).toBeUndefined();
+        expect(readFileSync(join(home, '.codex', 'AGENTS.md'), 'utf-8')).toBe(entry.content);
+      });
+    }
   });
 
   test('reports an unreadable Global Working Rules file instead of crashing', () => {
@@ -221,7 +270,7 @@ describe('init-hook command', () => {
   test('turns adapter count drift into an install action', () => {
     withTempHome((home, repo) => {
       mkdirSync(join(home, '.codex'), { recursive: true });
-      writeFileSync(join(home, '.codex', 'AGENTS.md'), '# Global Working Rules\n');
+      writeFileSync(join(home, '.codex', 'AGENTS.md'), currentRulesBlock());
 
       const report = runInitHook({
         cwd: repo,
@@ -242,7 +291,7 @@ describe('init-hook command', () => {
   test('accepts a complete profile-relative adapter count', () => {
     withTempHome((home, repo) => {
       mkdirSync(join(home, '.codex'), { recursive: true });
-      writeFileSync(join(home, '.codex', 'AGENTS.md'), '# Global Working Rules\n');
+      writeFileSync(join(home, '.codex', 'AGENTS.md'), currentRulesBlock());
 
       const report = runInitHook({
         cwd: repo,
@@ -267,7 +316,7 @@ describe('init-hook command', () => {
   test('turns same-count exact projection drift into an install action', () => {
     withTempHome((home, repo) => {
       mkdirSync(join(home, '.codex'), { recursive: true });
-      writeFileSync(join(home, '.codex', 'AGENTS.md'), '# Global Working Rules\n');
+      writeFileSync(join(home, '.codex', 'AGENTS.md'), currentRulesBlock());
 
       const report = runInitHook({
         cwd: repo,
@@ -303,7 +352,7 @@ describe('init-hook command', () => {
   test('invalid installed profile state requires migration even when adapter count is complete', () => {
     withTempHome((home, repo) => {
       mkdirSync(join(home, '.codex'), { recursive: true });
-      writeFileSync(join(home, '.codex', 'AGENTS.md'), '# Global Working Rules\n');
+      writeFileSync(join(home, '.codex', 'AGENTS.md'), currentRulesBlock());
       const statusReport = baseStatusReport();
       statusReport.installedProfile = {
         recorded: 'invalid',
@@ -336,7 +385,7 @@ describe('init-hook command', () => {
   test('corrupt installed profile state requires manual repair without an inapplicable command', () => {
     withTempHome((home, repo) => {
       mkdirSync(join(home, '.codex'), { recursive: true });
-      writeFileSync(join(home, '.codex', 'AGENTS.md'), '# Global Working Rules\n');
+      writeFileSync(join(home, '.codex', 'AGENTS.md'), currentRulesBlock());
       const statusReport = baseStatusReport();
       statusReport.installedProfile = {
         recorded: 'invalid',
@@ -366,7 +415,7 @@ describe('init-hook command', () => {
   test('turns stale CLI advisory into an Agent update action', () => {
     withTempHome((home, repo) => {
       mkdirSync(join(home, '.codex'), { recursive: true });
-      writeFileSync(join(home, '.codex', 'AGENTS.md'), '# Global Working Rules\n');
+      writeFileSync(join(home, '.codex', 'AGENTS.md'), currentRulesBlock());
 
       const report = runInitHook({
         cwd: repo,
@@ -395,8 +444,8 @@ describe('init-hook command', () => {
     withTempHome((home, repo) => {
       mkdirSync(join(home, '.codex'), { recursive: true });
       mkdirSync(join(home, '.claude'), { recursive: true });
-      writeFileSync(join(home, '.codex', 'AGENTS.md'), '# Global Working Rules\n');
-      writeFileSync(join(home, '.claude', 'CLAUDE.md'), '# Global Working Rules\n');
+      writeFileSync(join(home, '.codex', 'AGENTS.md'), currentRulesBlock());
+      writeFileSync(join(home, '.claude', 'CLAUDE.md'), currentRulesBlock());
       const doctorReport = baseDoctorReport([
         {
           id: 'codex-cli-version',
@@ -433,7 +482,7 @@ describe('init-hook command', () => {
   test('the update check fails when this runtime cannot serve the repository model', () => {
     withTempHome((home, repo) => {
       mkdirSync(join(home, '.codex'), { recursive: true });
-      writeFileSync(join(home, '.codex', 'AGENTS.md'), '# Global Working Rules\n');
+      writeFileSync(join(home, '.codex', 'AGENTS.md'), currentRulesBlock());
       spawnSync('git', ['init', '-q'], { cwd: repo });
       mkdirSync(join(repo, '.ai', 'harness'), { recursive: true });
       writeFileSync(join(repo, '.ai', 'harness', 'workflow-contract.json'), `${JSON.stringify({ minimum_harness_version: '999.0.0' })}\n`);
@@ -460,7 +509,7 @@ describe('init-hook command', () => {
   test('keeps repo adoption refresh check disabled unless update checks are requested', () => {
     withTempHome((home, repo) => {
       mkdirSync(join(home, '.codex'), { recursive: true });
-      writeFileSync(join(home, '.codex', 'AGENTS.md'), '# Global Working Rules\n');
+      writeFileSync(join(home, '.codex', 'AGENTS.md'), currentRulesBlock());
 
       const report = runInitHook({
         cwd: repo,
@@ -482,7 +531,7 @@ describe('init-hook command', () => {
     withTempHome((home, repo) => {
       mkdirSync(join(home, '.codex'), { recursive: true });
       mkdirSync(join(repo, '.ai', 'harness'), { recursive: true });
-      writeFileSync(join(home, '.codex', 'AGENTS.md'), '# Global Working Rules\n');
+      writeFileSync(join(home, '.codex', 'AGENTS.md'), currentRulesBlock());
       writeFileSync(join(repo, '.ai', 'harness', 'workflow-contract.json'), '{}\n');
 
       const report = runInitHook({
@@ -508,7 +557,7 @@ describe('init-hook command', () => {
   test('reports adopted repo refresh as ok when the adoption dry-run is a no-op', () => {
     withTempHome((home, repo) => {
       mkdirSync(join(home, '.codex'), { recursive: true });
-      writeFileSync(join(home, '.codex', 'AGENTS.md'), '# Global Working Rules\n');
+      writeFileSync(join(home, '.codex', 'AGENTS.md'), currentRulesBlock());
       const apply = applyAdoptionPlan(planAdoption({ repoRoot: repo, mode: 'standard', apply: false }));
       expect(apply.ok).toBe(true);
 
@@ -532,7 +581,7 @@ describe('init-hook command', () => {
   test('does not recommend downstream init refresh for the repo-harness source checkout', () => {
     withTempHome((home) => {
       mkdirSync(join(home, '.codex'), { recursive: true });
-      writeFileSync(join(home, '.codex', 'AGENTS.md'), '# Global Working Rules\n');
+      writeFileSync(join(home, '.codex', 'AGENTS.md'), currentRulesBlock());
 
       const report = runInitHook({
         cwd: ROOT,
@@ -555,7 +604,7 @@ describe('init-hook command', () => {
   test('does not ask Agents to refresh adoption for non-adopted repos', () => {
     withTempHome((home, repo) => {
       mkdirSync(join(home, '.codex'), { recursive: true });
-      writeFileSync(join(home, '.codex', 'AGENTS.md'), '# Global Working Rules\n');
+      writeFileSync(join(home, '.codex', 'AGENTS.md'), currentRulesBlock());
 
       const report = runInitHook({
         cwd: repo,
@@ -577,7 +626,7 @@ describe('init-hook command', () => {
   test('turns missing and outdated tooling into Agent actions', () => {
     withTempHome((home, repo) => {
       mkdirSync(join(home, '.codex'), { recursive: true });
-      writeFileSync(join(home, '.codex', 'AGENTS.md'), '# Global Working Rules\n');
+      writeFileSync(join(home, '.codex', 'AGENTS.md'), currentRulesBlock());
 
       const report = runInitHook({
         cwd: repo,
@@ -614,7 +663,7 @@ describe('init-hook command', () => {
   test('keeps optional tooling gaps out of setup dependency actions', () => {
     withTempHome((home, repo) => {
       mkdirSync(join(home, '.codex'), { recursive: true });
-      writeFileSync(join(home, '.codex', 'AGENTS.md'), '# Global Working Rules\n');
+      writeFileSync(join(home, '.codex', 'AGENTS.md'), currentRulesBlock());
 
       const report = runInitHook({
         cwd: repo,
@@ -647,7 +696,7 @@ describe('init-hook command', () => {
   test('reports runtime capabilities as separate setup checks', () => {
     withTempHome((home, repo) => {
       mkdirSync(join(home, '.codex'), { recursive: true });
-      writeFileSync(join(home, '.codex', 'AGENTS.md'), '# Global Working Rules\n');
+      writeFileSync(join(home, '.codex', 'AGENTS.md'), currentRulesBlock());
 
       const report = runInitHook({
         cwd: repo,
@@ -697,7 +746,7 @@ describe('init-hook command', () => {
   test('formatInitHook --json returns parseable JSON', () => {
     withTempHome((home, repo) => {
       mkdirSync(join(home, '.codex'), { recursive: true });
-      writeFileSync(join(home, '.codex', 'AGENTS.md'), '# Global Working Rules\n');
+      writeFileSync(join(home, '.codex', 'AGENTS.md'), currentRulesBlock());
       const report = runInitHook({
         cwd: repo,
         target: 'codex',

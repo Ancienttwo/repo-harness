@@ -14,6 +14,8 @@ import { recordInstallOwnership } from '../helpers/install-ownership';
 import wazaRules from '../../src/core/skill-surface/waza-shared-rules.json';
 import { applyInstallProfile, managedInstallSurfaceIsCurrent, readInstalledProfile, recordRefreshedInstallOwnership } from '../../src/cli/installer/install-profile';
 import { buildManagedHooks } from '../../src/cli/installer/managed-entries';
+import { inspectGlobalContext, renderGlobalRulesBlock } from '../../src/cli/installer/global-context';
+import { encodeCandidateRequest, parseCandidateRequest } from '../../src/cli/runtime/candidate-reconciliation';
 
 const ROOT = join(import.meta.dir, '..', '..');
 // The fake managed install follows the repository pins, so an upgrade needs no fixture edit.
@@ -2814,4 +2816,147 @@ describe('Codex Waza projection', () => {
       } finally { rmSync(tmp, { recursive: true, force: true }); }
     });
   }
+});
+
+describe('Global Working Rules refresh during install and update', () => {
+  const userBefore = '## Model Routing\n\nUse the orchestrator model.\n\n';
+  const userBetween = '## Herdr 跨 harness 协作\n\n- Talk to the peer pane.\n\n';
+  const userAfter = '## Disk hygiene on the Mac mini\n\n- Keep the disk clean.\n';
+  const mixedLegacy = [
+    userBefore,
+    '# Global Working Rules\n\nRule 0: old wording.\n\n',
+    '## Sufficiency and Stop Boundaries\n\n- Old stop rule.\n\n',
+    userBetween,
+    '## Progressive Due Diligence\n\n### P1: Architecture Map\n\n- Old map rule.\n\n',
+    userAfter,
+  ].join('');
+
+  function withRulesRuntime(body: (fixture: {
+    path: string;
+    run: (reportLanguage?: 'follow' | 'zh-CN' | 'en', updateMode?: boolean) => ReturnType<typeof runGlobalRuntimeSetup>;
+  }) => void): void {
+    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-global-rules-refresh-'));
+    const home = join(tmp, 'home');
+    const repo = join(tmp, 'repo');
+    const source = join(tmp, 'source');
+    const fakeBin = join(tmp, 'bin');
+    try {
+      for (const dir of [home, repo, source, fakeBin, join(home, '.codex')]) mkdirSync(dir, { recursive: true });
+      setupFakeSource(source);
+      mkdirSync(join(source, 'assets', 'reference-configs'), { recursive: true });
+      copyFileSync(
+        join(ROOT, 'assets', 'reference-configs', 'global-working-rules.md'),
+        join(source, 'assets', 'reference-configs', 'global-working-rules.md'),
+      );
+      writeExecutable(join(fakeBin, 'bun'), '#!/bin/bash\nif [[ "${1:-}" == "--version" ]]; then echo 1.4.0; fi\nexit 0\n');
+      writeExecutable(join(fakeBin, 'herdr'), '#!/bin/sh\nif [ "${1:-}" = --skill ]; then printf "%s\\n" "---" "name: herdr" "---" "Check HERDR_ENV before control."; else printf "herdr 0.9.3\\n"; fi\n');
+      const env = {
+        ...sanitizedChildEnv(),
+        HOME: home,
+        BUN_INSTALL: join(home, '.bun'),
+        PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
+        REPO_HARNESS_BUN_EXECUTABLE: join(fakeBin, 'bun'),
+      };
+      body({
+        path: join(home, '.codex', 'AGENTS.md'),
+        run: (reportLanguage, updateMode = true) => runGlobalRuntimeSetup({
+          sourceRoot: source,
+          cwd: repo,
+          target: 'codex',
+          profile: 'minimal',
+          updateMode,
+          installCli: false,
+          syncSkill: false,
+          hostAdapters: false,
+          externalSkills: false,
+          codegraph: false,
+          reportLanguage,
+          env,
+        }),
+      });
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  }
+
+  const rulesStep = (result: ReturnType<typeof runGlobalRuntimeSetup>) =>
+    result.steps.find((step) => step.step === 'refresh global working rules');
+
+  test('legacy rules without a language fail in preflight before any host write', () => withRulesRuntime(({ path, run }) => {
+    writeFileSync(path, mixedLegacy);
+    const result = run();
+    expect(result.exitCode).toBe(1);
+    expect(result.steps.map((step) => step.step)).toEqual(['ensure Bun runtime', 'refresh global working rules']);
+    expect(rulesStep(result)?.status).toBe('failed');
+    expect(rulesStep(result)?.detail).toContain('pass --report-language follow|zh-CN|en');
+    expect(readFileSync(path, 'utf-8')).toBe(mixedLegacy);
+  }), 30_000);
+
+  test('a flag migrates the legacy span, keeps every user section, and a second update is a no-op', () => withRulesRuntime(({ path, run }) => {
+    writeFileSync(path, mixedLegacy);
+    const migrated = run('zh-CN');
+    expect(migrated.exitCode).toBe(0);
+    expect(rulesStep(migrated)).toMatchObject({
+      status: 'ok',
+      detail: `migrated-legacy:${path} (replaced: Global Working Rules, Sufficiency and Stop Boundaries, Progressive Due Diligence; kept user sections: Model Routing, Herdr 跨 harness 协作, Disk hygiene on the Mac mini)`,
+    });
+    const block = renderGlobalRulesBlock(ROOT, { preset: 'zh-CN', instruction: 'Use Chinese to report to user.' });
+    const expected = `${userBefore}${block}\n${userBetween}${userAfter}`;
+    const content = readFileSync(path, 'utf-8');
+    expect(content).toBe(expected);
+    for (const removed of ['Rule 0: old wording.', 'Old stop rule.', '### P1: Architecture Map', 'Old map rule.']) {
+      expect(content).not.toContain(removed);
+    }
+
+    const again = run();
+    expect(again.exitCode).toBe(0);
+    expect(rulesStep(again)).toMatchObject({ status: 'ok', detail: `unchanged:${path}` });
+    expect(readFileSync(path, 'utf-8')).toBe(expected);
+
+    // A recorded header refreshes a stale block without a flag; the header wins over a flag.
+    writeFileSync(path, expected.replace('Rule 0:', 'Old rule 0:'));
+    const refreshed = run('en');
+    expect(rulesStep(refreshed)).toMatchObject({ status: 'ok', detail: `updated:${path}` });
+    expect(readFileSync(path, 'utf-8')).toBe(expected);
+  }), 60_000);
+
+  test('an unrecorded block needs a flag, and install also runs the refresh', () => withRulesRuntime(({ path, run }) => {
+    const unrecorded = `${userBefore}${renderGlobalRulesBlock(ROOT, { preset: 'en', instruction: 'Use English to report to user.' })
+      .replace(/^<!-- repo-harness reporting-language: .*\n/m, '')}`;
+    writeFileSync(path, unrecorded);
+    const blocked = run(undefined, false);
+    expect(blocked.exitCode).toBe(1);
+    expect(rulesStep(blocked)?.detail).toContain('managed block has no recorded reporting language');
+    expect(readFileSync(path, 'utf-8')).toBe(unrecorded);
+
+    const recorded = run('en', false);
+    expect(recorded.exitCode).toBe(0);
+    expect(rulesStep(recorded)).toMatchObject({ status: 'ok', detail: `updated:${path}` });
+    expect(readFileSync(path, 'utf-8'))
+      .toBe(`${userBefore}${renderGlobalRulesBlock(ROOT, { preset: 'en', instruction: 'Use English to report to user.' })}`);
+  }), 60_000);
+
+  test('a file without rules is skipped without a flag and never created', () => withRulesRuntime(({ path, run }) => {
+    const skipped = run();
+    expect(skipped.exitCode).toBe(0);
+    expect(rulesStep(skipped)?.status).toBe('skipped');
+    expect(rulesStep(skipped)?.detail).toContain('not opted in; pass --report-language to install the rules');
+    expect(existsSync(path)).toBe(false);
+
+    const created = run('follow');
+    expect(rulesStep(created)).toMatchObject({ status: 'ok', detail: `created:${path}` });
+    expect(inspectGlobalContext(readFileSync(path, 'utf-8'), ROOT).state).toBe('managed-current');
+  }), 60_000);
+
+  test('the candidate request carries only a valid report language', () => {
+    const request = {
+      protocol: 1, transaction_id: 't', transaction_backup_root: '/tmp/b', parent_token: 'p', cwd: '/tmp',
+      candidate: { root: '/tmp/c', version: '9.9.9', package_digest: 'sha256:00' },
+      target: 'codex', profile: 'minimal', sync_skill: false, host_adapters: false, external_skills: false,
+      reverse_skill: false, obsidian_skills: false, codegraph: false,
+    } as const;
+    expect(parseCandidateRequest(encodeCandidateRequest({ ...request, report_language: 'zh-CN' })).report_language).toBe('zh-CN');
+    expect(parseCandidateRequest(encodeCandidateRequest(request)).report_language).toBeUndefined();
+    expect(() => parseCandidateRequest(encodeCandidateRequest({ ...request, report_language: 'custom' as 'en' }))).toThrow('invalid shape');
+  });
 });

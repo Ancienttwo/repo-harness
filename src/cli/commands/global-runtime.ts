@@ -6,6 +6,7 @@ import { delimiter, dirname, join, relative, resolve, sep } from "path";
 import { fileURLToPath } from "url";
 import { ARCHCONTEXT_NODE_RANGE, productVersionManifest } from "archctx-contracts";
 import { syncWazaSharedRules } from "../installer/waza-rules";
+import { applyGlobalContextRefresh, preflightGlobalContextRefresh, type ReportLanguageFlag } from "../installer/global-context";
 import { configureBrainRoot, defaultBrainRootChoice, expandHomePath } from "./brain-root";
 import {
   syncCrossReviewSkills,
@@ -68,6 +69,8 @@ export interface GlobalRuntimeOptions {
   brainRoot?: string;
   profile?: InstallProfile;
   updateMode?: boolean;
+  /** Render inputs for a Global Working Rules block that records none. A recorded header wins. */
+  reportLanguage?: ReportLanguageFlag;
   /** Internal-only capability proving that the caller owns the outer transaction. */
   candidateHandoff?: CandidateHandoffContext;
 }
@@ -777,6 +780,7 @@ function reconcileWithInstalledCandidate(
     obsidian_skills: opts.obsidianSkills === true,
     codegraph: opts.codegraph ?? true,
     brain_root: opts.brainRoot,
+    report_language: opts.reportLanguage,
   };
   const child = runProcess(
     bunExecutable,
@@ -860,6 +864,7 @@ function leftoverCheckWarning(reason: string): string {
 }
 
 const AGENT_FLEET_STEP = 'install agent fleet';
+export const GLOBAL_RULES_REFRESH_STEP = 'refresh global working rules';
 
 function installAgentFleet(sourceRoot: string, bunExecutable: string, env: NodeJS.ProcessEnv): GlobalRuntimeStep {
   const script = join(sourceRoot, 'scripts', 'install-agent-fleet.sh');
@@ -1439,6 +1444,15 @@ export function runGlobalRuntimeSetup(
     return finalizeRuntimeResult(steps);
   }
 
+  // Read-only preflight before any host write. A file that cannot be synced
+  // stops the run here, before the CLI, hooks or fleet change. The process
+  // that reaches the host-write section below applies this plan.
+  const globalRules = preflightGlobalContextRefresh(sourceRoot, homeDir(env), hostIds(target), opts.reportLanguage);
+  if (globalRules.status === 'failed') {
+    steps.push({ step: GLOBAL_RULES_REFRESH_STEP, status: 'failed', detail: globalRules.detail });
+    return finalizeRuntimeResult(steps);
+  }
+
   const protectedHelperPlatform = configureProtectedHelperPlatform(cwd, bunExecutable, env);
   steps.push(protectedHelperPlatform);
   if (protectedHelperPlatform.status === 'failed') return finalizeRuntimeResult(steps);
@@ -1487,6 +1501,9 @@ export function runGlobalRuntimeSetup(
   if (profile === 'full') steps.push(installAgentFleet(sourceRoot, bunExecutable, env));
   else steps.push({ step: AGENT_FLEET_STEP, status: 'skipped', detail: 'disabled by install profile' });
   if (updateMode && agentFleetVerified({ steps })) steps.push(recordAgentFleetOwnership(profile, env));
+
+  steps.push({ step: GLOBAL_RULES_REFRESH_STEP, ...applyGlobalContextRefresh(globalRules) });
+  if (steps.at(-1)?.status === "failed") return finalizeRuntimeResult(steps);
 
   const refreshExternalSkills = opts.externalSkills === true;
   if (refreshExternalSkills) {
