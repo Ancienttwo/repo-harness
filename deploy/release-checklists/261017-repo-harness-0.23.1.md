@@ -38,7 +38,31 @@
 
 ## Acceptance status
 
-GATE_RESULTS
+- RED: at the first release base (`d02a082f`), `bun run check:release` with a
+  temporary HOME exits 1. The tarball smoke selects the Engineer OAuth E2E
+  test by name, and #820 removed that test. The smoke now selects the coding
+  OAuth E2E test.
+- At `06963d2f` (after the merge of #823):
+  - `bun run check:type`, `bun run check:helpers`,
+    `bun run check:reference-configs`: exit 0.
+  - `bun run test:files tests/installed-copy-sync.test.ts
+    tests/readme-dx.test.ts tests/skill-version.test.ts
+    tests/effective-state.test.ts tests/hook-runtime.test.ts --timeout 60000
+    --max-concurrency 1`: 99 pass, 0 fail.
+  - `bash scripts/check-npm-release.sh --prepublish`: exit 0.
+  - `bun run check:release`: exit 0. `tests/harness-benchmark-matrix.test.ts`:
+    31 pass, 0 fail. The tarball smoke:
+    `repo-harness-0.23.1.tgz` installs, serves the packaged Operator, and the
+    packaged CLI bins start.
+  - `repo-harness architecture-projection check --json` (source CLI): `noop`,
+    freshness ok, no human actions.
+  - The SHA-256 of the real `~/.repo-harness/registered-repos.json` was the
+    same before and after the gate runs.
+- `check:release` does not run the full suite. Each merged PR passed its own
+  CI. The release PR CI must pass on its final head before the merge.
+- The release work did not change, relax or remove an assertion or timeout
+  to pass a gate. The smoke fix changes only the test name pattern in
+  `scripts/check-tarball-install-smoke.sh`.
 
 ## Rollback evidence
 
