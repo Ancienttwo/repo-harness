@@ -25,11 +25,8 @@
  * writes directly -- it is NOT an `EvidenceEvent` payload and never goes
  * through `event-writer.ts`'s `buildEvidenceEvent` construction path, so it
  * never passes through D6's redaction pass. This is safe because a
- * checkpoint's only content is already-redacted event fields (event_id,
- * event_type, trust_class, subject_hash, worktree_id, created_at -- see
- * `src/core/evidence/checkpoint.ts`'s `CheckpointCoveredEvent`) plus hashes
- * and repo-relative paths this store itself constructs; no raw payload
- * value or secret-bearing field is ever copied into a checkpoint.
+ * checkpoint contains event metadata and decision payloads that the event
+ * writer already redacted. Blob payloads pass an integrity check before use.
  */
 import { createHash, randomBytes } from "crypto";
 import {
@@ -53,7 +50,8 @@ import {
 import { dirname, join } from "path";
 import { resolveInsideRepo } from "../path-safety";
 import { readAcceptedEvents } from "./event-log";
-import { resolveLogPath } from "./paths";
+import { resolveBlobsDir, resolveLogPath } from "./paths";
+import type { EvidenceEventRecord } from "../../core/evidence/types";
 import { readCheckpointSnapshot } from "./checkpoint-snapshot";
 import { acquireExclusiveDirectoryLock } from "../locking/exclusive-directory-lock";
 import { canonicalize } from "../../core/evidence/canonical-json";
@@ -63,6 +61,8 @@ import {
   renderCheckpointMarkdown,
   CHECKPOINT_ID_PREFIX,
   CHECKPOINT_SCHEMA_NAME,
+  CHECKPOINT_DECISION_LIMIT,
+  isDecisionPayload,
   type CheckpointProjection,
 } from "../../core/evidence/checkpoint";
 
@@ -244,6 +244,13 @@ function isSchemaCompleteCheckpoint(value: unknown): value is CheckpointProjecti
   if (typeof value.covered_event_count !== "number") return false;
   if (!Array.isArray(value.covered_events)) return false;
   if (!Array.isArray(value.latest_by_event_type)) return false;
+  if (value.decisions !== undefined) {
+    if (!Array.isArray(value.decisions) || value.decisions.length > CHECKPOINT_DECISION_LIMIT) return false;
+    if (!value.decisions.every(row => isRecord(row) && isDecisionPayload(row)
+      && typeof row.event_id === "string" && /^evt-[0-9A-HJKMNP-TV-Z]{26}$/.test(row.event_id)
+      && typeof row.created_at === "string" && Number.isFinite(Date.parse(row.created_at))
+      && Array.isArray(row.supersedes) && row.supersedes.every(id => typeof id === "string" && /^evt-[0-9A-HJKMNP-TV-Z]{26}$/.test(id)))) return false;
+  }
   const provenance = value.provenance;
   if (!isRecord(provenance)) return false;
   const requiredProvenanceFields = [
@@ -313,6 +320,7 @@ function validateStagedCheckpoint(
     covered_event_count: parsed.covered_event_count,
     covered_events: parsed.covered_events,
     latest_by_event_type: parsed.latest_by_event_type,
+    decisions: parsed.decisions,
   });
   const recomputedContentHash = `sha256:${recomputedHashHex}`;
   if (parsed.provenance.content_hash !== recomputedContentHash) {
@@ -458,6 +466,21 @@ export type PublishCheckpointFromLedgerResult =
  * builds the pure projection and publishes it through the same
  * stage/validate/rename/marker transaction as `publishCheckpoint`.
  */
+/** Resolve the same redacted payload for the CLI and the checkpoint. */
+export function readDecisionPayload(repoRoot: string, event: EvidenceEventRecord): unknown {
+  if (event.payload !== undefined) return event.payload;
+  const digest = event.blob_sha256;
+  if (!digest || !/^[0-9a-f]{64}$/.test(digest) || event.content_type !== "application/json") {
+    throw new Error(`invalid decision blob reference: ${event.event_id}`);
+  }
+  const bytes = readFileSync(join(resolveBlobsDir(repoRoot), digest));
+  if (createHash("sha256").update(bytes).digest("hex") !== digest
+    || event.payload_hash !== `sha256:${digest}` || event.blob_bytes !== bytes.length) {
+    throw new Error(`decision blob integrity check failed: ${event.event_id}`);
+  }
+  return JSON.parse(bytes.toString("utf8"));
+}
+
 export function publishCheckpointFromLedger(
   repoRoot: string,
   now?: () => Date,
@@ -466,7 +489,9 @@ export function publishCheckpointFromLedger(
   return withCheckpointLock(repoRoot, assertOwned => {
     const { genesis, accepted } = readAcceptedEvents(repoRoot);
     if (!genesis) return { status: "skipped", reason: "no-ledger" };
-    const projection = buildCheckpointProjection({ worktreeId: genesis.worktree_id, now }, accepted);
+    const projection = buildCheckpointProjection({
+      worktreeId: genesis.worktree_id, now, decisionPayloadOf: event => readDecisionPayload(repoRoot, event),
+    }, accepted);
     return publishCheckpointLocked({
       repoRoot,
       checkpointId: projection.checkpoint_id,

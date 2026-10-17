@@ -27,6 +27,7 @@ import { createHash } from 'crypto';
 import { execFileSync } from 'child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { basename, join } from 'path';
+import { escapeDecisionMarkdown, type CheckpointDecision } from '../../core/evidence/checkpoint';
 import { artifactStemFromPlan, planSlugFromPath } from '../../core/state/artifact-parsers';
 import { resolveHarnessPaths, type HarnessPaths } from '../state/resolve-effective-state';
 import { createStateInputCollector, type StateInputCollector } from '../loop/state-input-collector';
@@ -425,6 +426,7 @@ export type RecoveryEvidence =
       readonly coveredEventCount: number;
       readonly sourceEventIds: readonly string[];
       readonly latestByEventType: readonly RecoveryEvidenceLatestByType[];
+      readonly decisions?: readonly CheckpointDecision[];
     }
   | {
       readonly available: false;
@@ -454,6 +456,7 @@ export function resolveRecoveryEvidence(repoRoot: string): RecoveryEvidence {
       generatedAt: projection.provenance.generated_at,
       coveredEventCount: projection.covered_event_count,
       sourceEventIds: projection.provenance.source_event_ids,
+      decisions: projection.decisions ?? [],
       latestByEventType: projection.latest_by_event_type.map((entry) => ({
         event_type: entry.event_type,
         event_id: entry.event_id,
@@ -558,6 +561,21 @@ function renderProvenanceSection(provenance: RecoveryProvenance): string[] {
 // evidence + contract path already resolved by the caller).
 // ---------------------------------------------------------------------------
 
+function decisionLines(evidence: RecoveryEvidence): string[] {
+  if (!evidence.available || !evidence.decisions?.length) return ['- (none recorded)'];
+  return evidence.decisions.map(row => {
+    const cells = [
+      `${row.created_at} [${escapeDecisionMarkdown(row.phase)}] ${escapeDecisionMarkdown(row.decision)}`,
+      `Why: ${escapeDecisionMarkdown(row.why)}`,
+      `Evidence: ${row.evidence.map(escapeDecisionMarkdown).join('; ')}`,
+      `Result: ${escapeDecisionMarkdown(row.result)}`,
+      `Event: ${row.event_id}`,
+      ...(row.supersedes.length ? [`Supersedes: ${row.supersedes.join(', ')}`] : []),
+    ];
+    return `- ${cells.join('; ')}`;
+  });
+}
+
 export function renderRecoveryHandoff(
   context: RecoveryWorkflowContext,
   evidence: RecoveryEvidence,
@@ -575,7 +593,7 @@ export function renderRecoveryHandoff(
     '',
     '## Decisions',
     '',
-    '- Use filesystem artifacts as source of truth; treat SQLite/thread state as a rebuildable read model only.',
+    ...decisionLines(evidence),
     '',
     '## Files Touched',
     '',

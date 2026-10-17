@@ -165,7 +165,8 @@
       "workstream-sync.sh",
       "prepare-codex-handoff.sh",
       "codex-handoff-resume.sh",
-      "recovery-view-cli.ts"
+      "recovery-view-cli.ts",
+      "decision-trail.ts"
     ],
     "descriptions": {
       "new-spec": "Create docs/spec.md from the product spec template",
@@ -220,6 +221,7 @@
       "prepare-codex-handoff": "Refresh the handoff snapshot, resume packet, and global Codex handoff pointer",
       "codex-handoff-resume": "Rebuild the repo's resume packet, optionally printing the resume prompt",
       "recovery-view-cli": "Materialize the handoff/resume recovery views (and optionally the Codex-global packet) from the last-published checkpoint plus live workflow context",
+      "decision-trail": "Record decisions in the evidence ledger and render their TSV or Markdown view",
       "contract-worktree-runtime": "Bind Git-owned task worktrees to Herdr and close recorded runtime before checkout cleanup"
     },
     "dir": "package:scripts",
