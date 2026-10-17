@@ -69,10 +69,6 @@ function storePaths(cwd: string, engineerId: string): StorePaths {
   };
 }
 
-export function engineerBindingStoreRoot(cwd: string): string {
-  return resolve(resolveGitCommonDirectory(cwd), ENGINEER_STORE_RELATIVE_ROOT);
-}
-
 function readRegularFile(path: string, subject: string): string | null {
   let stat;
   try {

@@ -19,7 +19,7 @@ import {
   canonicalEngineerBindingCurrentBytes,
   engineerSha256,
 } from '../../src/core/engineers/profile-binding';
-import { engineerBindingStoreRoot, readEngineerBindingStatus } from '../../src/effects/engineers/binding-store';
+import { readEngineerBindingStatus } from '../../src/effects/engineers/binding-store';
 
 const engineerId = 'engineer:capability.verification.evals-checks';
 const revision = engineerSha256('contract-v1');
@@ -79,13 +79,13 @@ describe('retained Engineer binding reads', () => {
     expect(status.genesis).toBe(true);
     expect(status.binding).toBeNull();
     expect(status.current.binding_generation).toBe(0);
-    expect(existsSync(engineerBindingStoreRoot(root))).toBe(false);
+    expect(existsSync(join(root, '.git/repo-harness/engineers/v1'))).toBe(false);
   });
 
   test('a missing current event stays corrupt and is not repaired', () => {
     const root = repository();
     const current = seedEngineerBinding(root, baseInput());
-    const store = engineerBindingStoreRoot(root);
+    const store = join(root, '.git/repo-harness/engineers/v1');
     const key = readdirSync(store)[0]!;
     const event = join(store, key, 'events', `${current.current_transition_id!.slice(7)}.json`);
     const before = readFileSync(join(store, key, 'current.json'), 'utf8');
@@ -102,14 +102,13 @@ describe('retained Engineer binding reads', () => {
     git(root, ['worktree', 'add', '-q', '-b', 'linked-test', linked]);
     const current = seedEngineerBinding(root, baseInput());
     const fromLinked = readEngineerBindingStatus(linked, engineerId, revision).current;
-    expect(engineerBindingStoreRoot(linked)).toBe(engineerBindingStoreRoot(root));
     expect(canonicalEngineerBindingCurrentBytes(fromLinked)).toBe(canonicalEngineerBindingCurrentBytes(current));
   });
 
   test('symlinked binding authority fails closed', () => {
     const root = repository();
     seedEngineerBinding(root, baseInput());
-    const store = engineerBindingStoreRoot(root);
+    const store = join(root, '.git/repo-harness/engineers/v1');
     const engineerDir = readdirSync(store).find((entry) => entry !== 'locks')!;
     const currentPath = join(store, engineerDir, 'current.json');
     unlinkSync(currentPath);

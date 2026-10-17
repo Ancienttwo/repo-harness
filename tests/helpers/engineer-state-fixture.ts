@@ -26,7 +26,6 @@ import {
   type ClaimActorReceiptV1,
   type EngineerPrincipalMappingV1,
 } from '../../src/core/engineers/principal-claim';
-import { engineerBindingStoreRoot } from '../../src/effects/engineers/binding-store';
 import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
 
 export interface SeedEngineerBindingInput {
@@ -66,7 +65,7 @@ export function seedEngineerBinding(root: string, input: SeedEngineerBindingInpu
   });
   const current = buildEngineerBindingCurrent(event);
   const key = createHash('sha256').update(input.engineer_id).digest('hex');
-  const dir = join(engineerBindingStoreRoot(root), key);
+  const dir = join(resolveGitCommonDirectory(root), 'repo-harness/engineers/v1', key);
   mkdirSync(join(dir, 'events'), { recursive: true });
   writeFileSync(join(dir, 'events', `${event.transition_id.slice(7)}.json`), canonicalEngineerBindingEventBytes(event));
   writeFileSync(join(dir, 'current.json'), canonicalEngineerBindingCurrentBytes(current));
