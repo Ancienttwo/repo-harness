@@ -112,8 +112,8 @@ export function renderDecisionTable(decisions: readonly CheckpointDecision[], fo
     };
     return [header, ...cells].map(row => row.map(safeCell).join("\t")).join("\n") + "\n";
   }
-  return [header, header.map(() => "---"), ...cells]
-    .map(row => `| ${row.map(escapeDecisionMarkdown).join(" | ")} |`).join("\n") + "\n";
+  return [header, header.map(() => "---"), ...cells.map(row => row.map(escapeDecisionMarkdown))]
+    .map(row => `| ${row.join(" | ")} |`).join("\n") + "\n";
 }
 
 /**
@@ -263,8 +263,7 @@ export function checkpointBodyHashHex(body: CheckpointBody): string {
 /**
  * Pure projection builder. `accepted` must already be the D5-folded accepted
  * set (see `src/effects/evidence/event-log.ts#readAcceptedEvents`) -- this
- * function performs no further fold/filter beyond deriving the covered-event
- * and per-event-type summaries.
+ * function derives event summaries and the latest 20 decision rows.
  */
 export function buildCheckpointProjection(
   input: BuildCheckpointInput,

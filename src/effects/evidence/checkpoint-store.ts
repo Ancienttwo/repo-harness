@@ -458,14 +458,6 @@ export type PublishCheckpointFromLedgerResult =
   | { readonly status: "skipped"; readonly reason: "no-ledger" }
   | PublishCheckpointResult;
 
-/**
- * Convenience wrapper real producers (Stop wiring) call: reads the
- * per-worktree accepted event set (EPC-01, read-only), skips quietly when
- * the worktree has no ledger yet (cannot-bind discipline -- a fresh
- * worktree with no genesis record has nothing to checkpoint), otherwise
- * builds the pure projection and publishes it through the same
- * stage/validate/rename/marker transaction as `publishCheckpoint`.
- */
 /** Resolve the same redacted payload for the CLI and the checkpoint. */
 export function readDecisionPayload(repoRoot: string, event: EvidenceEventRecord): unknown {
   if (event.payload !== undefined) return event.payload;
@@ -481,6 +473,7 @@ export function readDecisionPayload(repoRoot: string, event: EvidenceEventRecord
   return JSON.parse(bytes.toString("utf8"));
 }
 
+/** Publish the accepted set through the validated checkpoint transaction. */
 export function publishCheckpointFromLedger(
   repoRoot: string,
   now?: () => Date,
