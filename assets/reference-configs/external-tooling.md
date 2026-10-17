@@ -971,8 +971,8 @@ directory is never consulted. Under `archcontext` the JSON registry is not
 writable, so `repo-harness run capability-config add` refuses and points at the
 node files.
 
-Capability metadata comes from one package-local `archctx export native
---worktree` call for each command. `capability-resolver`, `capability-context`
+Capability metadata comes from one `export native --worktree` call to the
+package-local archctx for each command. `capability-resolver`, `capability-context`
 and `doctor` read the model only through this export. Hooks and Effective State
 never call the export. They take capability identity from the node id:
 `capability.<domain>.<name>` gives `<domain>-<name>` and its module document.
