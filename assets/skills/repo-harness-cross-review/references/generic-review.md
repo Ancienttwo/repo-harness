@@ -18,8 +18,10 @@ selection never falls back; only a missing opposite executable before start
 allows a reported fallback to a separate owner-harness reviewer. No launch or
 request is replayed after an ambiguous outcome.
 
-At most three changed-subject repair rounds retain the same task-agent. Prior
-findings require stable IDs and open/resolved status. The reviewer may write
+At most three changed-subject repair rounds retain the same task-agent. The
+reviewer reads the current diff only; a defect outside the diff is a non-blocking
+note. From the second round, only hunks changed since the previous Result are in
+scope. Prior findings require stable IDs and open/resolved status. The reviewer may write
 only each exact Result file; terminal history/sentinel/idle are observation.
 The owner immutably collects the file, validates domain identity and findings,
 consumes OAR Session model observation and calls the existing generic-review

@@ -47,6 +47,7 @@
 - Mistake pattern: <stable theme key>
 - Prevention rule: <rule>
 - Enforced by: <path to check, test or guard> | judgment
+- Missed by: self-verify | ci | independent-review | human | none
 - Why: <what failed and what it cost>
 - Triggered by correction: <commit SHA, PR or issue>
 - Seen: <N>×
@@ -54,6 +55,7 @@
 
 - For a repeat, copy the `Name` and `Mistake pattern` text exactly. Maintenance triage groups entries by `Mistake pattern`. `Seen` counts the entries with that text, this entry included. Do not edit `Seen` on older entries.
 - `Enforced by` names the file that fails when the mistake comes back. For an architecture or type fix, name the file that makes the mistake impossible. `judgment` means that no file catches the mistake.
+- `Missed by` names the check layer that should have caught the mistake before merge. Two entries with `Missed by: independent-review` on the same [Review by risk](#review-by-risk) signal move that signal up one tier in the PR that adds the second entry.
 - From `Seen: 2×`, fix the mistake class in the PR that adds the entry. Use the highest level that works:
   1. Architecture or data structure: one owner for each state, one way to do each task, and no old path that an agent can copy.
   2. Types that cannot express the mistake.
@@ -92,6 +94,21 @@ visibility. A new Bot host adapts to that path; it does not add a new coding
 runtime or task authority.
 
 The bot selects scope, worker and verification by risk. Use independent gatekeeper/cross-model review for large changes, security/permissions or model uncertainty; do not rerun a passing check or require multiple re-gates.
+
+### Review by risk
+The diff sets the tier. The author does not: a human change and a model change with the same diff get the same tier. One hit on a higher signal sets the higher tier.
+
+| Tier | Signals | Independent review | Human reading |
+| --- | --- | --- | --- |
+| Low | Only `docs/`, `tests/`, README, CHANGELOG, comments or translations change. | None. CI and the author's recorded evidence are the gate. | None. |
+| Medium | Any other change. | One fresh-context review: `/code-review` or the gatekeeper, not both. | The findings and their disposition, not the diff. |
+| High | Credentials, permissions or sandbox grants; hooks and the mutation guard; deletion paths; release, publish, update or install scripts; `deploy/sql/`; code that writes to GitHub; a change across more than one capability boundary in `.archcontext/model/`; or a diff that changes test assertions and implementation together. | The gatekeeper and one cross-model review, one round each. | Yes. Write the most likely failure first, then read the diff against it. |
+
+Rules for every tier:
+- The reviewer reads the current diff only. A defect in code the diff did not touch is a non-blocking note; open an issue for it, do not add a finding.
+- From the second round, the reviewer reads only the hunks that changed after the previous round. The three-round limit stays.
+- When an independent review ran, the PR description lists each finding with its disposition: fixed, or closed with the reason.
+- A low tier adds no review. A new test file or a rebase does not raise the tier.
 A worker gets Goal, Scope, Verify, Rollback and a timebox, then loads concrete techniques on demand. Do not put routing catalogs or every technology guide in its brief.
 
 A coding session that spawns sub-agents is their parent. Investigate first, then split work by write ownership. Give each parallel writer its own worktree from a clean source. Implementation sub-agents edit only their scope. They do not run build, typecheck or tests. They commit early in their own worktree and return early. In a shared checkout they do not commit; the parent commits. An evidence role whose task is a named check, such as a root-cause reproduction or an evaluation profile, still runs that check and does not commit. The brief's Verify section names the checks that the parent runs after integration. The parent owns task management, conflict resolution, build, typecheck, tests and integration. After integration, the parent removes each sub-agent worktree and branch whose commits are in the task branch and whose checkout is clean. It also removes the intermediate build output and temporary files that the work created. Other deletion still needs the user.

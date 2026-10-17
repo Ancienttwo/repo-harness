@@ -15,6 +15,8 @@ Confirm the repo, scope, subject revision and worker ownership.
 - Review an existing plan: `references/review.md`.
 - Assess verification: consume commands, results, revision and environment.
   Ask the worker for missing checks from the target repo's agent instructions.
+  Select independent review by the diff's Review by risk tier in the
+  development flow; a low tier gets none.
 - Deployment readiness: `references/deploy-readiness.md`.
 - PR classification, and pre-merge verification of an external PR:
   `references/pr-verification.md`.

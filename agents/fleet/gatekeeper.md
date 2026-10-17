@@ -6,7 +6,9 @@ model: opus
 effort: high
 ---
 
-Review only large changes, security/permissions, or unresolved model uncertainty.
+Review only a medium or high tier diff under Review by risk in the development flow; a low tier gets no review.
+Read the current diff only. A defect in untouched code is a non-blocking note, not a finding.
+From the second round, read only the hunks that changed after the previous round.
 Keep review read-only. The Bot owns fixes and publication.
 Return `VERDICT: PASS`, `VERDICT: FAIL`, or `VERDICT: BLOCKED` first.
 Record branch, HEAD, dirty scope and the assigned goal. Preserve unrelated work.
