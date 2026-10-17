@@ -2,17 +2,89 @@
 
 All notable changes to this skill are documented here.
 
-## [Unreleased]
+## [0.23.1] - 2026-10-17
+
+This release has breaking changes. It retires the in-repo task plane: the
+GitHub issue and pull request are the only task, claim, status and dependency
+authority. After the update, run `repo-harness update`. Remove the `engineer`
+and `pm` profiles from any `mcp.local.json`.
+
+### Breaking
+
+- Remove the PM and task-acquisition surface: the `pm`, `engineer` and
+  `delegation` CLI commands, `fleet offers` and `fleet acquire`,
+  `sprint graph|migrate-schema|identify|claim|bind|write-claim-token|steal`,
+  `mcp pm-preflight`, `run new-sprint`, `run contract-run` and
+  `sprint-backlog init|start-task`. Remove the `fleet_offers`, `fleet_acquire`
+  and `engineer_*` MCP tools and the `engineer` and `pm` MCP profiles. A server
+  whose `mcp.local.json` names one of these profiles fails at startup.
+  `assets/hermes` is removed. PM and Bot dispatch are not rebuilt. (#773, #820)
+- Remove the stateless Engineer stores: work demand, interface change, task
+  freeze, module messages and inbox, and verified context, with the
+  `interface-change` and `verified-context` commands, `engineer message` and
+  seven MCP tools. The operator console and Dev Activity no longer show the
+  verified-context Decision source. Profiles drop `cross_capability_change`;
+  existing Bindings with the old contract revision become stale, and a
+  downstream Profile that still has the field fails validation. (#773, #807)
+- Effective State JSON drops `contract`, `task_profile`, `allowed_paths`,
+  `review`, `external_acceptance`, `verification`, `checks`, `readiness`,
+  `active_sprint` and `evidence_revision`. The continuation routes
+  `advance_sprint` and `complete` are removed. The policy and the init
+  templates drop `contracts_dir` and the `sprints.rule` text. `actions.steal`
+  leaves the board and hook-slice JSON. `UserPromptSubmit.inbox` prints
+  nothing. (#770, #820)
+- Architecture model readers read only through `archctx export native`. The
+  local YAML reader, the markdown section parsers and the node-kind enum are
+  removed. The standalone capability-resolver helper refuses commands under
+  `capability_source: archcontext`. `validate --format json` exits 2 for a model
+  that archctx accepts and repo-harness rejects. (#739, #797, #800, #801)
+
+### Added
+
+- `repo-harness catch-up` prints one read-only brief of every registered
+  repository and what needs you. (#813, #817)
+- `repo-harness run decision-trail record` appends a decision to the evidence
+  ledger. The checkpoint and the handoff show the latest decisions. (#812, #819)
+- Docs: the catch-up reply contract, the parked-gate rule, the issue pipeline
+  stage contract and review depth by diff risk tier. (#811, #815, #816, #821)
+- Sub-agent spawns on Claude and Codex receive the repo-local standing-orders
+  register `.ai/harness/standing-orders.md`, capped at 1500 bytes. The
+  delegation brief lists its full field set. (#814, #818)
 
 ### Changed
 
-- The daily CI job now runs the expensive real pack/install benchmark cases in `tests/harness-benchmark-matrix.test.ts`.
+- `repo-harness init` is the only writer of downstream root context. The
+  partials assembler and the shell brain scripts are removed;
+  `repo-harness brain` is the only brain export. (#772, #791)
+- The PR affected-test selection keeps every consumer that it cannot prove
+  absent. Every removed consumer edge is classified with a source citation.
+  The median selection rises from 230 to 241 test files. (#761, #805)
+- The edit guard skips ownership resolution for changed paths, and hooks reuse
+  the porcelain parser. (#766, #795, #796)
+- The managed global rules limit a Herdr tab to 3 side-by-side panes. (#799)
+- The `[ArchitectureOwed]` notice now also shows a person one sentence at
+  SessionStart and on the first Stop for a branch. Codex output is unchanged.
+  (#802, #808)
+- The daily CI job now runs the expensive real pack/install benchmark cases in `tests/harness-benchmark-matrix.test.ts`. (#794)
+- `archctx` and `archctx-contracts` are now 0.8.1. The pre-edit hook and
+  `state resolve` now report `capability_registry:invalid` for a node that
+  breaks the node schema, and for an `archcontext` capability source without
+  `.archcontext/manifest.yaml`. archctx task commands refuse a CodeGraph index
+  that another version built; rebuild the index once. (#823)
 
 ### Fixed
 
 - The `release` lane builds `dist/` before the benchmark cases. The benchmark
   artifact packs with `--ignore-scripts`, so a checkout without `dist/` failed
   at the `repo-harness-hook` bin.
+- The bundled hook entry no longer crashes at start after the task-plane
+  deletions changed the Bun bundle initialization order. (#820)
+- Shipped guidance no longer shows a bare `archctx` command. (#806)
+- `repo-harness architecture-debt` reads `archctx doctor` code facts first.
+  When CodeGraph facts are not ready it fails with
+  `RH_ARCHCTX_CODE_FACTS_NOT_READY` and names the fix command. (#804, #809)
+- The tarball smoke runs the retained coding OAuth E2E test against the
+  installed package. The removed engineer OAuth E2E made `check:release` fail.
 
 ## [0.23.0] - 2026-10-17
 
