@@ -991,11 +991,11 @@ is `null` when ownership was not computed. A read-only observation does not
 start archctx. It reports `capability_ownership:unavailable`. The standalone helper copy
 in `assets/templates/helpers/` has no package-local archctx. Under `archcontext`
 it refuses every command with `capability_source "archcontext" needs the
-packaged resolver; run repo-harness run capability-resolver`. With the archctx
-0.8.0 pin, a node that parses but breaks the node schema does not block a hook
-or `state resolve`; the export readers fail closed on it.
-Ancienttwo/arch-context#371 makes `resolve` reject that node too. It is merged
-but not yet released.
+packaged resolver; run repo-harness run capability-resolver`. From archctx
+0.8.1, `resolve` rejects a node that parses but breaks the node schema with
+`AC_SCHEMA_INVALID`, as the export readers do. The pre-edit hook and
+`state resolve` then report the `capability_registry:invalid` blocker. A model
+ChangeSet can repair that node.
 
 Architecture projection execution is user-level configuration in
 `~/.repo-harness/config.json#architecture`. `repo-harness install` and
@@ -1273,7 +1273,7 @@ repo-harness refactor decide <recommendation-id> accept|defer|reject --reason "<
 and bounded `evidence` of its observation (`kind`, `totalCount`, `truncated`
 and the first items) and the statistics of every affected module (files, lines,
 fan-in, fan-out, cycles, direction violations, unresolved imports). Direction
-violations are filled only when the model declares constraints. archctx 0.8.0
+violations are filled only when the model declares constraints. archctx 0.8.1
 does not measure instability or test files, so they are not shown. A suggestion
 recorded by an earlier scan has `snapshot: "earlier"`, keeps its recorded
 metrics and evidence, and shows no module statistics.
