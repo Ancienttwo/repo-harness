@@ -114,38 +114,52 @@ function deny(repoRoot: string, denial: Denial, runId: string | null): MutationG
 /**
  * The owner line appears on the first edit of an owned path after its last
  * commit: Git, not a session cursor, says whether the path already changed.
- * Only an owned path pays for the Git check. Architecture diagnostics never
- * block, so an ownership or Git failure only drops the line.
+ * The Git check runs only when an ownership authority exists, and ownership
+ * resolves only for clean paths, so an edit of a changed path skips
+ * `archctx resolve`. Architecture diagnostics never block, so an ownership
+ * or Git failure only drops the line.
  */
 function capabilityOwnerLines(repoRoot: string, paths: readonly string[]): string {
   const repoPaths = [...new Set(paths.filter(isRepoScopedPath))];
   if (repoPaths.length === 0) return '';
   let owners: ReadonlyMap<string, CapabilityPathOwner>;
   try {
-    owners = capabilityOwnersForPaths(repoRoot, repoPaths);
+    owners = capabilityOwnersForPaths(repoRoot, repoPaths, (surfaces) => pathsWithNoUncommittedChange(repoRoot, surfaces));
   } catch {
     return '';
   }
   let lines = '';
   for (const filePath of repoPaths) {
     const owner = owners.get(filePath);
-    if (owner && hasNoUncommittedChange(repoRoot, filePath)) {
-      lines += `[CapabilityOwner] ${filePath} belongs to ${owner.id} (${owner.module_document}).\n`;
-    }
+    if (owner) lines += `[CapabilityOwner] ${filePath} belongs to ${owner.id} (${owner.module_document}).\n`;
   }
   return lines;
 }
 
-function hasNoUncommittedChange(repoRoot: string, filePath: string): boolean {
+/** One `git status` for the batch; a Git failure treats every path as changed. */
+function pathsWithNoUncommittedChange(repoRoot: string, paths: readonly string[]): readonly string[] {
+  if (paths.length === 0) return paths;
+  let status: string;
   try {
-    return execFileSync('git', ['-C', repoRoot, '--literal-pathspecs', 'status', '--porcelain', '-z', '--untracked-files=all', '--', filePath], {
+    status = execFileSync('git', ['-C', repoRoot, '--literal-pathspecs', 'status', '--porcelain', '-z', '--untracked-files=all', '--', ...paths], {
       encoding: 'utf-8',
       stdio: ['ignore', 'pipe', 'ignore'],
       timeout: 5_000,
-    }) === '';
+    });
   } catch {
-    return false;
+    return [];
   }
+  // Each record is `XY path`. A rename or copy record adds its source path as
+  // the next NUL field; that source has changed too.
+  const changed: string[] = [];
+  const fields = status.split('\0');
+  for (let index = 0; index < fields.length; index += 1) {
+    const record = fields[index]!;
+    if (record.length < 4) continue;
+    changed.push(record.slice(3));
+    if (/[RC]/.test(record.slice(0, 2)) && index + 1 < fields.length) changed.push(fields[++index]!);
+  }
+  return paths.filter((path) => !changed.some((entry) => entry === path || entry.startsWith(`${path}/`)));
 }
 
 // ---------------------------------------------------------------------------
