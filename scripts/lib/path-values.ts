@@ -60,7 +60,7 @@ export function createPathEvaluator(source: SourceFile, repoRoot: string, file: 
     if (isCallExpression(node) || isNewExpression(node)) {
       const args = node.arguments ?? [];
       const operation = op(node.expression);
-      if (operation === 'cwd' && node.expression.getText() === 'process.cwd') return [cwdRoot];
+      if (operation === 'cwd' && node.expression.getText() === 'process.cwd') return file.startsWith('tests/') ? [cwdRoot] : ['*'];
       if (operation === 'dirname') return recur(args[0]).map(value => value === '*' ? '*' : dirname(value));
       if (operation === 'fileURLToPath') return recur(args[0]);
       if (operation === 'URL') return recur(args[0]).flatMap(value => recur(args[1]).map(base => resolve(dirname(base), value)));
@@ -117,7 +117,7 @@ export function createPathEvaluator(source: SourceFile, repoRoot: string, file: 
     if (isTemplateExpression(node)) return node.templateSpans.every(span => recur(span.expression));
     if (isBinaryExpression(node) && node.operatorToken.kind === SyntaxKind.PlusToken) return recur(node.left) && recur(node.right);
     if (isCallExpression(node) || isNewExpression(node)) {
-      if (node.expression.getText() === 'process.cwd') return !calls.some(call => call.expression.getText() === 'process.chdir');
+      if (node.expression.getText() === 'process.cwd') return file.startsWith('tests/') && !calls.some(call => call.expression.getText() === 'process.chdir');
       return ['join', 'resolve', 'dirname', 'fileURLToPath', 'URL'].includes(op(node.expression)) && (node.arguments ?? []).every(recur);
     }
     const children: Node[] = [];

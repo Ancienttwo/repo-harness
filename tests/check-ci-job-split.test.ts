@@ -97,6 +97,50 @@ describe('single affected verification and daily fallback', () => {
     expect(await selectAffectedTests(['SKILL.md'], sources, [])).toEqual(['tests/direct.test.ts', 'tests/installed-copy-sync.test.ts']);
   });
 
+  test('round 2: launcher data arguments keep aliases under a known cwd', async () => {
+    const sources = new Map([
+      ['assets/templates/a.md', '# A'], ['assets/templates/b.md', '# B'],
+      ['scripts/render.ts', "readFileSync(asset(process.argv[2]));"],
+      ['tests/other.test.ts', "readFileSync(join(import.meta.dir, '../assets/templates/a.md'));"],
+      ['tests/render.test.ts', "spawnSync('bun', ['scripts/render.ts', 'templates/a.md'], { cwd: join(import.meta.dir, '..') });"],
+      ['tests/negative.test.ts', "spawnSync('bun', ['scripts/render.ts', 'templates/b.md'], { cwd: join(import.meta.dir, '..') });"],
+    ]);
+    expect(await selectAffectedTests(['assets/templates/a.md'], sources, [])).toEqual(['tests/other.test.ts', 'tests/render.test.ts']);
+    expect(await selectAffectedTests(['assets/templates/b.md'], sources, [])).toEqual(['tests/negative.test.ts']);
+    const audit = await auditDroppedTests(['assets/templates/a.md'], ['tests/render.test.ts'],
+      new Map([['assets/templates/a.md', new Set(['tests/render.test.ts'])]]),
+      { reverse: new Map(), data: new Map() }, sources, new Map());
+    expect(audit.edges[0]?.reason).toBe('unclassified');
+  });
+
+  test('round 2: a script cwd stays unresolved when a test supplies another cwd', async () => {
+    const sources = new Map([
+      ['scripts/tasks/config.json', '{}'],
+      ['scripts/tasks/run.ts', "const ROOT = process.cwd(); readFileSync(join(ROOT, 'config.json'));"],
+      ['tests/other.test.ts', "readFileSync(join(import.meta.dir, '../scripts/tasks/config.json'));"],
+      ['tests/cwd.test.ts', "spawnSync('bun', ['run.ts'], { cwd: join(import.meta.dir, '../scripts/tasks') });"],
+      ['tests/negative.test.ts', "spawnSync('bun', ['other.ts'], { cwd: join(import.meta.dir, '../scripts/elsewhere') });"],
+    ]);
+    expect(await selectAffectedTests(['scripts/tasks/config.json'], sources, [])).toEqual(['tests/cwd.test.ts', 'tests/other.test.ts']);
+    const result = await analyzeAffectedTests(['scripts/tasks/config.json'], sources, []);
+    expect(result.graph.reverse.get('scripts/tasks/config.json')?.has('scripts/tasks/run.ts')).toBe(true);
+  });
+
+  test('round 2: directory audit cites the matching reference and does not hide an execution edge', async () => {
+    const root = 'src/base.ts', dependency = 'src/entry.ts', consumer = 'tests/final.test.ts';
+    const baseline = new Map([[root, new Set([dependency])], [dependency, new Set([consumer])]]);
+    const current = { reverse: new Map([[root, new Set([dependency])]]), data: new Map([[dependency, new Set([consumer])]]) };
+    const source = "const ROOT = join(import.meta.dir, '..');\nreaddirSync(join(ROOT, 'src'));";
+    const audit = await auditDroppedTests([root], [consumer], baseline, current, new Map([[consumer, source]]), new Map());
+    expect(audit.edges[0]?.reason).toBe('directory-data-not-transitive');
+    expect(audit.edges[0]?.evidence?.[0]?.line).toBe(2);
+    expect(audit.edges[0]?.evidence?.[0]?.text).toContain("join(ROOT, 'src')");
+    const ambiguous = await auditDroppedTests([root], [consumer], baseline, current,
+      new Map([[consumer, source + "\nspawnSync('bun', ['entry.ts']);"]]), new Map());
+    expect(ambiguous.edges[0]?.reason).toBe('unclassified');
+    expect(ambiguous.witnesses[0]?.reason).toBe('unclassified');
+  });
+
   test('path values exclude words, comments and target-repository paths but keep anchored reads', async () => {
     const sources = new Map([
       ['assets/item.json', '{}'],

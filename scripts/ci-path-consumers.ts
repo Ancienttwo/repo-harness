@@ -2,9 +2,9 @@ import { resolve, dirname } from 'node:path';
 import { createHash } from 'node:crypto';
 import { API } from 'typescript/unstable/async';
 import { createVirtualFileSystem } from 'typescript/unstable/fs';
-import { isBinaryExpression, isCallExpression, isObjectLiteralExpression, isPropertyAssignment, isShorthandPropertyAssignment, isPropertyAccessExpression, isIdentifier, isVariableDeclaration, isNewExpression, isStringLiteralLikeNode, SyntaxKind, type Node } from 'typescript/unstable/ast';
+import { isArrayLiteralExpression, isBinaryExpression, isCallExpression, isObjectLiteralExpression, isPropertyAssignment, isShorthandPropertyAssignment, isPropertyAccessExpression, isIdentifier, isVariableDeclaration, isNewExpression, isStringLiteralLikeNode, SyntaxKind, type Node } from 'typescript/unstable/ast';
 import { getLeadingCommentRanges, getTrailingCommentRanges } from 'typescript/unstable/ast/scanner';
-import { createPathEvaluator } from './lib/path-values';
+import { createPathEvaluator, walk } from './lib/path-values';
 
 export type PathReference = { path: string; operation: 'data' | 'execute' | 'literal' | 'constructed'; rooted: boolean; start: number; end: number };
 export type SourceEvidence = { start: number; end: number; reason: string; paths?: string[] };
@@ -148,12 +148,27 @@ export async function discoverPathReferences(entries: readonly (readonly [string
             const knownCwd = certain(cwdNode) && cwd.length > 0 && cwd.every(value => value.startsWith('/') && !value.includes('*'));
             const command = property(options, 'cmd');
             const argumentsToResolve = [...args.filter(arg => arg !== options), ...(command ? [command] : [])];
-            for (const arg of argumentsToResolve) {
+            const commandArray = command ?? (args[0] && isArrayLiteralExpression(args[0]) ? args[0] : undefined);
+            const array = commandArray && isArrayLiteralExpression(commandArray) ? commandArray.elements : undefined;
+            const executable = array?.[0] ?? args[0];
+            const argv = array ? [...array].slice(1) : args[1] && isArrayLiteralExpression(args[1]) ? [...args[1].elements] : [];
+            const interpreter = executable?.getText() === 'process.execPath'
+              || (certain(executable) && values(executable).every(value => /(?:^|\/)(?:bun|node|deno|tsx|ts-node|bash|sh|zsh|python(?:3)?)$/.test(value)));
+            const runSubcommand = certain(executable) && values(executable).every(value => /(?:^|\/)(?:bun|deno)$/.test(value))
+              && values(argv[0]).length === 1 && values(argv[0])[0] === 'run';
+            const script = runSubcommand ? argv[1] : argv[0];
+            const target = interpreter ? script : executable;
+            const explicitTarget = !!target && certain(target) && values(target).every(value =>
+              !value.startsWith('-') && (value.includes('/') || (interpreter && /\.[\w]+$/.test(value))));
+            for (const arg of argumentsToResolve.flatMap(arg => isArrayLiteralExpression(arg) ? [...arg.elements] : [arg])) {
               launcherArguments.add(arg);
-              const paths = values(arg).flatMap(value => value.startsWith('/') || !knownCwd ? [value] : cwd.map(directory => resolve(directory, value)));
-              for (const path of paths) add(path, 'execute', arg, certain(arg) && (knownCwd || values(arg).every(value => value.startsWith('/'))));
-              evidence.push({ start: arg.getStart(), end: arg.getEnd(), reason: 'resolved-launcher',
-                paths: paths.map(path => !certain(arg) && path.startsWith(root + '/') ? '*/' + path.slice(root.length + 1) : path) });
+              // A script may resolve its data arguments through another root.
+              // Shell command strings and opaque argv arrays also keep aliases.
+              const rootedTarget = !['exec', 'execSync'].includes(operation) && knownCwd && explicitTarget && arg === target;
+              const paths = values(arg).flatMap(value => !rootedTarget || value.startsWith('/') ? [value] : cwd.map(directory => resolve(directory, value)));
+              for (const path of paths) add(path, 'execute', arg, rootedTarget);
+              if (rootedTarget) evidence.push({ start: arg.getStart(), end: arg.getEnd(), reason: 'resolved-launcher', paths });
+              else walk(arg, child => { if (isStringLiteralLikeNode(child)) add(child.text, 'execute', child, false); });
             }
           }
         }

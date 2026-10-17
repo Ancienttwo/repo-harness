@@ -42,6 +42,7 @@ export async function auditDroppedTests(
     }
   }
   const references = await discoverPathReferences([...sources, ...previous]);
+  const rootSet = new Set(roots);
   const reasons = new Map<string, string>();
   const citations = new Map<string, EdgeEvidence[]>();
   const explain = (dependency: string, consumer: string): string => {
@@ -72,12 +73,20 @@ export async function auditDroppedTests(
           const value = path.replace('/__repo_harness_ci__/', '').replace(/\/$/, '');
           return dependency.startsWith(value + '/');
         }));
+        // Bind this policy to the literal that made the old edge. Another
+        // directory read in the same source cannot excuse a removed file edge.
+        const directory = !rootSet.has(dependency) && current.data.get(dependency)?.has(consumer)
+          ? refs.find(ref => ref.operation !== 'execute' && ref.operation !== 'constructed'
+            && ref.start <= match.index && ref.end >= match.index + match[0].length
+            && ref.path.replace(/\/$/, '') === raw.replace(/^\.\//, '').replace(/\/$/, '')
+            && dependency.startsWith(ref.path.replace(/\/$/, '') + '/')) : undefined;
         const classification = inert?.reason ?? (resolved ? 'path-fragment-resolves-elsewhere' : undefined)
           ?? (construction ? 'directory-construction-only' : undefined)
+          ?? (directory ? 'directory-data-not-transitive' : undefined)
           ?? (!/[\/\\]/.test(raw) && !/^[\w.-]+\.[\w]+$/.test(raw) ? 'bare-fragment-not-path' : undefined)
           ?? (consumer.startsWith('src/') && !/import\.meta\.(?:dir|url)|__dirname/.test(source) ? 'product-path-without-module-anchor' : 'unclassified');
         candidates.push(classification);
-        const span = inert ?? resolved ?? construction;
+        const span = inert ?? resolved ?? construction ?? directory;
         cite(span?.start ?? match.index, span?.end ?? match.index + match[0].length, classification);
       }
     }
@@ -105,29 +114,13 @@ export async function auditDroppedTests(
   for (let i = 0; i < backward.length; i++) for (const dependency of forward.get(backward[i]!) ?? []) {
     if (!ancestors.has(dependency)) { ancestors.add(dependency); backward.push(dependency); }
   }
-  const rootSet = new Set(roots), edges: RemovedEdge[] = [];
+  const edges: RemovedEdge[] = [];
   for (const [dependency, consumers] of baseline) {
     if (!reachable.has(dependency)) continue;
     for (const consumer of consumers) {
       if (!ancestors.has(consumer) || reachable.has(consumer)) continue;
-      if (current.data.get(dependency)?.has(consumer)) {
-        if (!rootSet.has(dependency)) {
-          const evidence: EdgeEvidence[] = [];
-          for (const source of [sources.get(consumer), previous.get(consumer)]) {
-            if (source === undefined) continue;
-            for (const ref of references.get(sourceKey(consumer, source)) ?? []) {
-              const prefix = ref.path.split('*')[0]!.replace(/\/$/, '');
-              if (ref.operation === 'execute' || ref.operation === 'constructed' || !prefix || !dependency.startsWith(prefix + '/')) continue;
-              evidence.push({ source: sourceKey(consumer, source), line: source.slice(0, ref.start).split('\n').length,
-                text: source.slice(ref.start, ref.end), reason: 'directory-data-not-transitive' });
-            }
-          }
-          edges.push({ dependency, consumer, reason: 'directory-data-not-transitive', evidence });
-        }
-      } else {
-        const reason = explain(dependency, consumer);
-        edges.push({ dependency, consumer, reason, ...(reason !== 'unclassified' ? { evidence: citations.get(dependency + '\0' + consumer) } : {}) });
-      }
+      const reason = explain(dependency, consumer);
+      edges.push({ dependency, consumer, reason, ...(reason !== 'unclassified' ? { evidence: citations.get(dependency + '\0' + consumer) } : {}) });
     }
   }
   const witnesses = dropped.map(test => {
@@ -138,10 +131,6 @@ export async function auditDroppedTests(
     for (let i = 0; i + 1 < path.length; i++) {
       const dependency = path[i]!, consumer = path[i + 1]!;
       if (!reachable.has(dependency) || reachable.has(consumer)) continue;
-      if (current.data.get(dependency)?.has(consumer)) {
-        if (i === 0) continue;
-        return { test, path, removedEdge: i, reason: 'directory-data-not-transitive' };
-      }
       return { test, path, removedEdge: i, reason: explain(dependency, consumer) };
     }
     return { test, path, removedEdge: -1, reason: 'unclassified' };
