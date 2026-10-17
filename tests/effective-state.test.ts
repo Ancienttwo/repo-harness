@@ -517,8 +517,14 @@ describe('effective state resolver', () => {
       });
     }, 30_000);
 
-    function seedArchcontextCapability(cwd: string, source = ['  include:', '    - src/**', '  exclude:', '    - src/generated/**']): void {
+    // archctx 0.8.1 resolve needs a complete native model, so the manifest comes with the policy.
+    function writeArchcontextAuthority(cwd: string): void {
       write(cwd, '.ai/harness/policy.json', JSON.stringify({ context: { capability_source: 'archcontext' } }));
+      write(cwd, '.archcontext/manifest.yaml', 'schemaVersion: archcontext.manifest/v1\nmodel:\n  layout: split\n  root: .archcontext/model\n');
+    }
+
+    function seedArchcontextCapability(cwd: string, source = ['  include:', '    - src/**', '  exclude:', '    - src/generated/**']): void {
+      writeArchcontextAuthority(cwd);
       write(cwd, '.archcontext/model/nodes/capability.fixture.feature.yaml', [
         'schemaVersion: archcontext.node/v2',
         'id: capability.fixture.feature',
@@ -737,7 +743,7 @@ describe('effective state resolver', () => {
 
       test('a duplicate-key archcontext node names its model diagnostic and the repair command', () => {
         withRepo((cwd) => {
-          write(cwd, '.ai/harness/policy.json', JSON.stringify({ context: { capability_source: 'archcontext' } }));
+          writeArchcontextAuthority(cwd);
           write(cwd, '.archcontext/model/nodes/capability.fixture.feature.yaml', archcontextNode('capability.fixture.feature', 'src/**', ['summary: First summary', 'summary: Duplicate summary']));
           commitFixture(cwd, 'seed node with duplicate key');
           expectCause(cwd, 'src/feature.ts', {
@@ -773,7 +779,7 @@ describe('effective state resolver', () => {
 
       test('an ambiguous owner without an owning capability names the candidates and the match command', () => {
         withRepo((cwd) => {
-          write(cwd, '.ai/harness/policy.json', JSON.stringify({ context: { capability_source: 'archcontext' } }));
+          writeArchcontextAuthority(cwd);
           write(cwd, '.archcontext/model/nodes/capability.shared.left.yaml', archcontextNode('capability.shared.left', 'src/**'));
           write(cwd, '.archcontext/model/nodes/capability.shared.right.yaml', archcontextNode('capability.shared.right', 'src/**'));
           commitFixture(cwd, 'seed two capabilities with one include');
