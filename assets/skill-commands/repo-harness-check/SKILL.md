@@ -18,6 +18,7 @@ Confirm the repo, scope, subject revision and worker ownership.
 - Deployment readiness: `references/deploy-readiness.md`.
 - PR classification, and pre-merge verification of an external PR:
   `references/pr-verification.md`.
+- Review-comment triage for PR follow-up: `references/review-comment-triage.md`.
 - Architecture or refactor evidence for a scheduling decision:
   `references/architecture-evidence.md`. repo-harness supplies the evidence;
   the Bot decides what to schedule.
