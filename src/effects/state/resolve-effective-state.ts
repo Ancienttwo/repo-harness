@@ -694,7 +694,9 @@ function resolveEffectiveStateUnlocked(
   // from the implementation-surface path set (capabilityIdsForPaths' contract
   // is stated in terms of "implementation paths").
   let owedSubject: ReviewSubject | null = null;
-  if (!options.risk?.capabilityIds) {
+  // Owed ownership is advisory and does not feed state_revision or source_hashes.
+  // Bounded observers keep review/risk reads and do not request owed Git history.
+  if (!options.risk?.capabilityIds && !currentReadonlyObservation()) {
     try { owedSubject = owedOwnershipSubject(cwd, reviewSubject); }
     catch { /* Architecture diagnostics do not block risk resolution. */ }
   }
