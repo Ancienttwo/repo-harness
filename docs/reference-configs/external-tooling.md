@@ -777,7 +777,7 @@ the protected ship/gate helpers. The official runner pins Bash, Git, and Bun;
 where a fixed trusted host `gh` is present it pins that executable too, and it
 replaces caller `PATH` with the minimal host runtime path. The host state directories, AcceptanceReceipt, and
 seal must be owned by the OS account and not group/world writable. After
-`contract-worktree finish` creates the candidate commit, the installed helper
+`ship-worktrees` creates the candidate commit, and the installed helper
 binds the seal to repository root, target base ref/SHA, candidate head SHA,
 binary diff fingerprint, AcceptanceReceipt fingerprint, and installed helper
 fingerprint. `contract-worktree` and

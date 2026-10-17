@@ -719,8 +719,7 @@ pi_install_templates() {
     printf '%s\n' "$PI_TEMPLATE_IMPLEMENTATION_NOTES" > "$output_dir/implementation-notes.template.md"
   fi
 
-  # Sprint template ships when available; sprint-backlog.sh also carries an
-  # inline fallback, so older asset dirs degrade gracefully.
+  # Keep historical Sprint documents readable in downstream repositories.
   if [[ -f "$templates_dir/sprint.template.md" ]]; then
     cp "$templates_dir/sprint.template.md" "$output_dir/sprint.template.md"
   fi

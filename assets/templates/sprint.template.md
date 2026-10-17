@@ -70,7 +70,7 @@ task.
 
 ## Execution Log
 
-Keep this section last; `repo-harness run sprint-backlog complete-task` appends rows here.
+Use this section for historical execution notes. The GitHub issue and PR own task status.
 
 | When | Task | Plan | Result |
 |------|------|------|--------|
