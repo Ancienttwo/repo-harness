@@ -174,14 +174,15 @@ export function readCommittedNativeContext(cwd: string): { commit: string; conte
 
 function modelReadFailure(error: unknown): ModuleReadError {
   const code = error instanceof ArchctxClientError ? error.code : null;
+  const path = error instanceof ArchctxClientError && typeof error.details?.path === 'string' ? error.details.path : undefined;
   switch (code) {
-    case 'AC_MODEL_ADOPTION_REQUIRED': return new ModuleReadError('model_missing');
-    case 'AC_SCHEMA_INVALID': return new ModuleReadError('model_invalid');
-    case 'AC_PATH_DENIED': return new ModuleReadError('path_escape');
+    case 'AC_MODEL_ADOPTION_REQUIRED': return new ModuleReadError('model_missing', path);
+    case 'AC_SCHEMA_INVALID': return new ModuleReadError('model_invalid', path);
+    case 'AC_PATH_DENIED': return new ModuleReadError('path_escape', path);
     case 'AC_PRECONDITION_FAILED':
-    case 'AC_REPO_NOT_FOUND': return new ModuleReadError('git_read_failed');
-    case 'RH_ARCHCTX_TIMEOUT': return new ModuleReadError('timeout');
-    default: return new ModuleReadError('unavailable');
+    case 'AC_REPO_NOT_FOUND': return new ModuleReadError('git_read_failed', path);
+    case 'RH_ARCHCTX_TIMEOUT': return new ModuleReadError('timeout', path);
+    default: return new ModuleReadError('unavailable', path);
   }
 }
 

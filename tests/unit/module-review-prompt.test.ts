@@ -44,6 +44,11 @@ describe('committed module review prompt', () => {
       throw new ArchctxClientError({ code, action: 'check-and-retry-same-request', message: 'Injected transport failure.' });
     } }).list()).toThrow(expected);
   });
+  test('preserves a file path reported by the native export', () => {
+    const root = repo();
+    fixtureWrite(root, MODULE_FLOW, 'id: [broken'); fixtureCommit(root);
+    expect(() => new ArchitectureModelReader(root).list()).toThrow(`model_invalid: ${MODULE_FLOW}`);
+  });
   test('maps an untyped transport error to unavailable', () => {
     expect(() => new ArchitectureModelReader(repo(), { run: () => { throw new Error('output exceeded maxBuffer'); } })).toThrow('unavailable');
   });
