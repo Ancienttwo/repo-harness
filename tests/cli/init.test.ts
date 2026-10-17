@@ -436,6 +436,45 @@ describe("init command", () => {
     }
   });
 
+  for (const failure of ['host edit', 'missing staging rule'] as const) {
+    test(`runInit keeps all host rules unchanged on ${failure}`, () => {
+      const tmp = join(tmpdir(), `repo-harness-init-rule-guard-${failure}-${Date.now()}`);
+      const source = join(tmp, 'source');
+      const repo = join(tmp, 'repo');
+      const home = join(tmp, 'home');
+      const fakeBin = join(tmp, 'bin');
+      const rules = ['anti-patterns.md', 'chinese.md', 'durable-context.md', 'english.md'];
+      try {
+        mkdirSync(source, { recursive: true });
+        mkdirSync(repo, { recursive: true });
+        mkdirSync(fakeBin, { recursive: true });
+        setupFakeSource(source);
+        mkdirSync(join(home, '.agents', 'rules'), { recursive: true });
+        for (const rule of rules) writeFileSync(join(home, '.agents', 'rules', rule), `# ${rule}\n`);
+        mkdirSync(join(home, '.codex', 'rules'), { recursive: true });
+        const edited = join(home, '.codex', 'rules', 'english.md');
+        writeFileSync(edited, '# local host rule\n');
+        if (failure === 'missing staging rule') rmSync(join(home, '.agents', 'rules', 'chinese.md'));
+        writeFakeSkillsCli(fakeBin);
+        const claude = writeReadyOfficialCodexPluginCli(fakeBin, home);
+        makeExecutable(join(fakeBin, 'bunx'), '#!/bin/bash\nexit 0\n');
+        const result = runInit({
+          repo, sourceRoot: source, syncSkill: false, hostAdapters: false, verify: false, codegraph: false,
+          env: { ...process.env, HOME: home, PATH: `${fakeBin}:${process.env.PATH ?? ''}`, REPO_HARNESS_CLAUDE_EXECUTABLE: claude },
+        });
+        expect(result.exitCode).toBe(1);
+        expect(result.steps.find(({ step }) => step === 'external skills Waza shared rules')).toMatchObject({
+          status: 'failed', detail: expect.stringContaining(failure === 'host edit' ? 'refusing to overwrite unowned rule' : 'missing chinese.md'),
+        });
+        expect(readFileSync(edited, 'utf-8')).toBe('# local host rule\n');
+        expect(existsSync(join(home, '.claude', 'rules', 'anti-patterns.md'))).toBe(false);
+        expect(existsSync(join(home, '.codex', 'rules', 'anti-patterns.md'))).toBe(false);
+      } finally {
+        rmSync(tmp, { recursive: true, force: true });
+      }
+    });
+  }
+
   test("dry-run does not mutate host runtime or apply the target harness", () => {
     const tmp = join(tmpdir(), `repo-harness-init-dry-run-${Date.now()}`);
     const source = join(tmp, "source");

@@ -1,3 +1,4 @@
+import wazaRules from "../../core/skill-surface/waza-shared-rules.json";
 import { bunGlobalPackageRoot, expectedSkillProjections, skillLinkMatches } from './skill-projection';
 import { configurationReceiptPath } from './configuration-ownership';
 import { createHash, randomUUID } from 'crypto';
@@ -673,10 +674,11 @@ export function recordVerifiedAgentFleetOwnership(
   writeState({ ...current, ownership_manifest: ownershipManifest }, env);
 }
 
-/** Refresh only receipts for surfaces already held by the install authority. */
+/** Refresh held receipts. Callers must prove ownership of each newly claimed path. */
 export function recordRefreshedInstallOwnership(
   paths: readonly string[],
   env: NodeJS.ProcessEnv = process.env,
+  newlyOwnedPaths: readonly string[] = [],
 ): void {
   const current = readInstalledProfile(env);
   if (current === null) return;
@@ -689,6 +691,14 @@ export function recordRefreshedInstallOwnership(
     if (!refreshed || refreshed.type !== surface.type) throw new Error(`cannot refresh install ownership: ${surface.path}`);
     return { ...surface, content_hash: refreshed.content_hash, symlink_target: refreshed.symlink_target };
   });
+  for (const path of new Set(newlyOwnedPaths)) {
+    if (!selected.has(path)) throw new Error(`new install ownership path is outside this refresh: ${path}`);
+    if (ownershipManifest.some((surface) => surface.path === path)) continue;
+    const components = componentsForTransactionPath(path).filter((component) => current.components.includes(component));
+    const created = captureOwnedPath(path, components, { allowEmptyComponents: true });
+    if (!created) throw new Error(`cannot record new install ownership: ${path}`);
+    ownershipManifest.push(created);
+  }
   if (JSON.stringify(ownershipManifest) === JSON.stringify(current.ownership_manifest)) return;
   writeState({ ...current, package_version: installedPackageVersion(), ownership_manifest: ownershipManifest }, env);
 }
@@ -731,7 +741,7 @@ export function installProfileHostMutationPaths(env: NodeJS.ProcessEnv = process
   for (const skill of externalSkills) {
     paths.push(join(home, '.agents', 'skills', skill));
   }
-  for (const rule of ['anti-patterns.md', 'chinese.md', 'durable-context.md', 'english.md']) {
+  for (const rule of wazaRules.files) {
     paths.push(
       join(home, '.agents', 'rules', rule),
       join(home, '.codex', 'rules', rule),
@@ -867,7 +877,7 @@ function componentsForTransactionPath(path: string): readonly InstallComponent[]
   if (AGENT_FLEET_FILE.test(normalized)) {
     return name.startsWith('gatekeeper.') ? ['agent-fleet', 'verifier'] : ['agent-fleet'];
   }
-  if (/\/(?:\.agents|\.codex|\.claude)\/rules\/(?:anti-patterns|chinese|durable-context|english)\.md$/.test(normalized)) {
+  if (wazaRules.files.includes(name) && /\/(?:\.agents|\.codex|\.claude)\/rules\/[^/]+$/.test(normalized)) {
     return ['planning-integrations'];
   }
   if (normalized.endsWith('/bin/codegraph')) return ['codegraph-conditional'];
