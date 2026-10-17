@@ -290,4 +290,67 @@ describe('mutation boundaries', () => {
       expect(existsSync(join(cwd, '.ai/harness/state/effective.json'))).toBe(false);
     } finally { rmSync(cwd, { recursive: true, force: true }); rmSync(bin, { recursive: true, force: true }); }
   }, 30_000);
+
+  test('archcontext mode resolves ownership only for the clean paths of a batch', () => {
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'mutation-owner-archctx-')));
+    try {
+      initRepo(cwd);
+      writeFileSync(join(cwd, '.ai/harness/policy.json'), `${JSON.stringify({ version: 1, context: { capability_source: 'archcontext' } })}\n`);
+      mkdirSync(join(cwd, '.archcontext/model/nodes'), { recursive: true });
+      writeFileSync(join(cwd, '.archcontext/model/nodes/capability.core.owned.yaml'), [
+        'schemaVersion: archcontext.node/v2', 'id: capability.core.owned', 'kind: capability', 'name: owned', 'status: active',
+        'summary: Owned core code', 'responsibilities:', '  - Own the core code', 'source:', '  include:', '    - src/owned/**',
+        'extensions:', '  contractFiles:', '    agents: AGENTS.md', '    claude: CLAUDE.md', '  lspProfile: typescript-lsp', '  verification: []', '',
+      ].join('\n'));
+      mkdirSync(join(cwd, 'src/owned'), { recursive: true });
+      writeFileSync(join(cwd, 'src/owned/a.ts'), 'export const a = 1;\n');
+      writeFileSync(join(cwd, 'src/owned/b.ts'), 'export const b = 1;\n');
+      git(cwd, ['add', '.']);
+      git(cwd, ['commit', '-m', 'owned code']);
+      writeFileSync(join(cwd, 'src/owned/a.ts'), 'export const a = 2;\n');
+
+      // Each hook call is one process, so each payload runs in its own child.
+      // The stand-in for `archctx resolve` records each batch and owns every path it gets.
+      const worker = `
+        import { mock } from 'bun:test';
+        const calls = [];
+        const real = await import(process.env.OWNERS_MODULE);
+        mock.module(process.env.OWNERS_MODULE, () => ({
+          ...real,
+          resolveArchcontextCapabilityPaths(_root, owners, paths) {
+            calls.push([...paths]);
+            const capability = owners.get('capability.core.owned');
+            return { status: 'valid', capabilityIds: [capability.id], matches: paths.map((filePath) => ({ capability, prefix: capability.id, filePath })), unmappedPaths: [], diagnostics: [] };
+          },
+        }));
+        const { runMutationGuard } = await import(process.env.GUARD_MODULE);
+        const identity = { host: 'codex', sessionId: null, runId: null, turnId: null };
+        const { stdout } = runMutationGuard({ repoRoot: process.env.FIXTURE_ROOT, payload: JSON.parse(process.env.FIXTURE_PAYLOAD), identity });
+        process.stdout.write(JSON.stringify({ calls, stdout }));
+      `;
+      const guard = (payload: Record<string, unknown>) => {
+        const child = spawnSync(process.execPath, ['-e', worker], {
+          cwd,
+          encoding: 'utf8',
+          env: {
+            ...process.env,
+            FIXTURE_ROOT: cwd,
+            FIXTURE_PAYLOAD: JSON.stringify(payload),
+            GUARD_MODULE: join(import.meta.dir, '../src/cli/hook/mutation-guard.ts'),
+            OWNERS_MODULE: join(import.meta.dir, '../src/effects/capabilities/archcontext-owners.ts'),
+          },
+        });
+        expect(child.status, child.stderr).toBe(0);
+        return JSON.parse(child.stdout) as { calls: string[][]; stdout: string };
+      };
+      const ownerLine = /^\[CapabilityOwner\] src\/owned\/b\.ts belongs to \S+ \(.+\)\.\n$/;
+
+      expect(guard({ tool_input: { file_path: 'src/owned/a.ts' } })).toEqual({ calls: [], stdout: '' });
+      const clean = guard({ tool_input: { file_path: 'src/owned/b.ts' } });
+      expect(clean.calls).toEqual([['src/owned/b.ts']]);
+      expect(clean.stdout).toMatch(ownerLine);
+      const command = '*** Begin Patch\n*** Update File: src/owned/a.ts\n@@\n-x\n+y\n*** Update File: src/owned/b.ts\n@@\n-x\n+y\n*** End Patch';
+      expect(guard({ tool_input: { command } })).toEqual(clean);
+    } finally { rmSync(cwd, { recursive: true, force: true }); }
+  }, 30_000);
 });

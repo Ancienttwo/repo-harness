@@ -323,7 +323,7 @@ export function buildDiffFingerprint(input: DiffFingerprintInput, ctx: Fingerpri
 // Parse `git status --porcelain=v1 -z`. Each entry is `XY <path>`; rename/copy
 // entries are followed by a separate NUL token carrying the source path, which
 // must be consumed so it is not mis-read as the next status entry.
-function parseStatusZ(tokens: readonly string[]): { all: string[]; untracked: string[] } {
+export function parseStatusZ(tokens: readonly string[]): { all: string[]; untracked: string[] } {
   const all: string[] = [];
   const untracked: string[] = [];
   for (let index = 0; index < tokens.length; index += 1) {
