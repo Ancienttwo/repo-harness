@@ -60,7 +60,7 @@ function merged(now: number, repositoryId: string, slug: string, number: number,
   });
 }
 
-/** Git/GitHub work, two attention rows and one pending cleanup. Planned stays empty. */
+/** Git/GitHub work, one attention row and one pending cleanup. Planned stays empty. */
 export function busyDevActivity(now: number): DevActivitySnapshotV2 {
   const harness = 'Ancienttwo/repo-harness', site = 'acme/operator-site';
   const repositories: DevActivityRepository[] = [
