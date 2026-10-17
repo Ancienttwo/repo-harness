@@ -132,6 +132,23 @@ describe("decision-trail CLI", () => {
     });
   });
 
+  test("record fails closed on a ledger pinned to another epoch", () => {
+    withTempRepo("decision-epoch", repoRoot => {
+      init(repoRoot);
+      const dir = join(repoRoot, ".ai/harness/evidence/events");
+      mkdirSync(dir, { recursive: true });
+      const genesis = {
+        kind: "evidence_genesis", schema_version: 1, worktree_id: "worktree-other",
+        ledger_epoch_start_sha: "0".repeat(40), created_at: new Date(0).toISOString(),
+      };
+      writeFileSync(join(dir, "log.jsonl"), `${JSON.stringify(genesis)}\n`);
+      const result = cli(repoRoot, RECORD);
+      expect(result.status).toBe(2);
+      expect(result.stderr).toContain("genesis epoch mismatch");
+      expect(readFileSync(join(dir, "log.jsonl"), "utf8").trimEnd().split("\n")).toHaveLength(1);
+    });
+  });
+
   test("empty render creates no ledger and invalid arguments fail without a success row", () => {
     withTempRepo("decision-arguments", repoRoot => {
       init(repoRoot);

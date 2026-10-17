@@ -56,9 +56,11 @@ function normalizePayload(input: RecordDecisionInput): DecisionPayload {
   return payload;
 }
 
+/** Always go through the epoch check, so a ledger pinned to another epoch fails closed. */
 function ensureGenesis(repoRoot: string) {
-  return readGenesisRecord(repoRoot) ?? appendGenesisRecord(repoRoot, LEDGER_EPOCH_START_SHA, {
-    worktreeId: `worktree-${sha256(realpathSync(repoRoot)).slice(7)}`,
+  const existing = readGenesisRecord(repoRoot);
+  return appendGenesisRecord(repoRoot, LEDGER_EPOCH_START_SHA, {
+    worktreeId: existing?.worktree_id ?? `worktree-${sha256(realpathSync(repoRoot)).slice(7)}`,
   });
 }
 
