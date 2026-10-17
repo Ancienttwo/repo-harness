@@ -361,10 +361,6 @@ export function validateEngineerBinding(value: unknown): EngineerBindingV1 {
   });
 }
 
-export function canonicalEngineerBindingBytes(binding: EngineerBindingV1): string {
-  return canonicalEngineerJson(validateEngineerBinding(binding));
-}
-
 function currentPayloadBasis(current: Omit<EngineerBindingCurrentV1, 'current_transition_id' | 'current_event_digest' | 'current_digest'>): object {
   return {
     protocol: current.protocol,

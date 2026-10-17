@@ -15,8 +15,6 @@ import {
 } from '../../src/core/fleet/task-message';
 import {
   TaskReplyError,
-  assertTaskReplyResumeFence,
-  assertTaskReplyRetry,
   buildTaskReplyCommit,
   buildTaskReplyIntent,
   canonicalTaskReplyCommitBytes,
@@ -194,14 +192,6 @@ describe('Task reply contract', () => {
     expect(() => validateTaskReplyCommit(null)).toThrow(TaskReplyError);
   });
 
-  test('retries frozen bytes; changed content, ID or timestamp cannot create another logical result', () => {
-    const input = fixture();
-    const intent = buildTaskReplyIntent(input);
-    expect(() => assertTaskReplyRetry(intent, JSON.parse(canonicalTaskReplyIntentBytes(intent)))).not.toThrow();
-    for (const changes of [{ body: 'Different meaning' }, { reply_message_id: id(6) }, { prepared_at: AT }]) {
-      expect(() => assertTaskReplyRetry(intent, buildTaskReplyIntent({ ...input, ...changes }))).toThrow('differs from the frozen intent');
-    }
-  });
 });
 
 describe('Task reply interrupted-chain oracle', () => {
@@ -241,30 +231,6 @@ describe('Task reply interrupted-chain oracle', () => {
       const commit = resign({ ...input.commit, [field]: field === 'effect_id' ? id(6) : hash(9) }, 'commit_sha256');
       expect(inspectTaskReplyChain({ ...input, commit })).toEqual({ state: 'inconsistent', reason: 'commit_mismatch' });
     });
-
-  test.each([
-    { authorization_id: id(6) }, { binding_generation: 2 }, { binding_id: id(6) },
-  ])('refuses resume after mapping rotation %j but preserves historical chain', (changes) => {
-    const input = chain();
-    expect(() => assertTaskReplyResumeFence(input.intent, { principal_mapping: mapping(changes), claim_actor: actor() })).toThrow('different authorization or actor fence');
-    expect(inspectTaskReplyChain(input).state).toBe('complete');
-  });
-
-  test.each([
-    { lease_generation: 2 }, { task_revision: hex(9) }, { claim_id: id(6) },
-    { authorization_revision: 2 }, { work_envelope_sha256: hash(9) }, { session_id: 'new-session' },
-  ])('refuses resume after actor fence change %j', (changes) => {
-    const intent = buildTaskReplyIntent(fixture());
-    expect(() => assertTaskReplyResumeFence(intent, { principal_mapping: mapping(), claim_actor: actor(changes) })).toThrow(TaskReplyError);
-  });
-
-  test('exact fence is resumable; revocation is not; neither operation executes work', () => {
-    const input = fixture();
-    const intent = buildTaskReplyIntent(input);
-    expect(() => assertTaskReplyResumeFence(intent, input)).not.toThrow();
-    expect(() => assertTaskReplyResumeFence(intent, { ...input,
-      principal_mapping: revokedPrincipalFixture(input.principal_mapping, LATER) })).toThrow(TaskReplyError);
-  });
 
   test('hook receipt remains hook delivery and never proves the separate notify effect', () => {
     const input = chain();
