@@ -2,21 +2,20 @@
 
 # repo-harness
 
-### 面向 Claude 与 Codex 的 file-backed workflow，也是构建在它之上的各类 program 的授权 runtime
+### 为 Claude 与 Codex 提供共享上下文、hooks 和 review 证据
 
 [![npm version](https://img.shields.io/npm/v/repo-harness.svg)](https://www.npmjs.com/package/repo-harness)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 [English](README.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja.md) | [Français](README.fr.md) | [Español](README.es.md)
 
-**把完整的 PRD 或 Sprint 交给 agent；之后你的循环只剩 review 和 `next`，或者启动 `/goal` 然后 AFK。**
+**把 GitHub issue 和验收条件交给 agent。把变更和验证结果记录在 PR 中。**
 
 </div>
 
-`repo-harness` 提供一套 CLI 加 skill/runtime hooks，把 context、plan、handoff、
-checks 和 review evidence 写回项目文件，让下一个 agent 会话从文件而不是聊天
-记忆里继续。它用 tasks-first agent contract 接入已有仓库，让 Claude 和 Codex
-保持一致。
+`repo-harness` 提供 CLI、skills 和 hooks，用于上下文、review 证据和 handoff。
+GitHub issue 和 PR 管理任务身份、范围和状态。
+仓库文件帮助 Claude 与 Codex 跨会话继续工作。
 
 ## 安装
 

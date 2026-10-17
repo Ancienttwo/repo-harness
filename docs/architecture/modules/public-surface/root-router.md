@@ -126,7 +126,7 @@ sequenceDiagram
 - include 增加原本没有归属的路径：四个 README 译本、`references/arch/**` 和 `src/cli/commands/docs.ts`。没有删除任何条目。
 - `src/cli/commands/docs.ts` 列出并读取 `assets/reference-configs/*.md`（`docs.ts:15`）。归属提议说它解析 `references/*.md`，这与源码不符。它的数据归 contract-assets。命令归本 capability，是因为 `repo-harness docs` 是面向用户的文档入口。这个选择的置信度是 MEDIUM。
 - `references/arch/**`（7 个技术栈推荐文档，来自 2026-03-19 的初始提交）在仓库里没有任何引用者。已决定：退役。#768 删除这些文件，并从 include 删除这一条。
-- `SKILL.md` 指向 `references/bot-control.md`、`references/dot-pm-control.md` 和 `references/handoff.md`。这些文件和 `references/` 下其他松散文档目前没有归属。`references/pm-boundary.md` 归本 capability，`references/pm-operations.md` 归 pm-dispatch。
+- `SKILL.md` links `references/bot-control.md`, `references/pm-boundary.md` and `references/handoff.md`. The coordinator boundary belongs to this capability. The other loose references have no model owner. Dot PM control and PM operations references are retired.
 
 ## 4. 历史决策记录（append-only）
 
@@ -238,4 +238,3 @@ commands available without making them default model context.
 
 - Keep the root router body at or below 2KB and default installed discovery at five actions or fewer.
 - If another public command is added, update `assets/skill-commands/manifest.json`, README, and `tests/action-command-skills.test.ts` in the same slice.
-- `references/*.md` 中 7 个没有归属的松散文档等待 arch-context#296 或 `source.exclude` 支持。目录 glob `references/**` 会让 `references/pm-operations.md`（pm-dispatch）变成重复归属。按用户决定，不用显式文件列表绕过。

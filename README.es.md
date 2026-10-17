@@ -2,22 +2,20 @@
 
 # repo-harness
 
-### Un flujo de trabajo basado en archivos para Claude y Codex, y un runtime autorizado para los programas construidos sobre él
+### Contexto compartido, hooks y evidencia de revisión para Claude y Codex
 
 [![npm version](https://img.shields.io/npm/v/repo-harness.svg)](https://www.npmjs.com/package/repo-harness)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 [English](README.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja.md) | [Français](README.fr.md) | [Español](README.es.md)
 
-**Dale al agente un PRD o Sprint completo; después, tu bucle es solo revisar y `next`, o inicia `/goal` y ponte AFK.**
+**Dale al agente una issue de GitHub y criterios de aceptación. Registra los cambios y su verificación en la PR.**
 
 </div>
 
-`repo-harness` distribuye un CLI junto con hooks de skill/runtime que escriben
-contexto, planes, handoffs, checks y evidencia de review de vuelta en el
-proyecto, de modo que la siguiente sesión de agente continúa desde archivos en
-lugar del historial de chat. Adopta un repositorio existente con un contract
-de agente tasks-first que mantiene alineados a Claude y Codex.
+`repo-harness` ofrece un CLI, skills y hooks para el contexto, la revisión y
+los handoffs. La issue y la PR de GitHub definen el trabajo, su alcance y su
+estado. Los archivos del repositorio permiten continuar entre sesiones.
 
 ## Instalación
 

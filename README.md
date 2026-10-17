@@ -2,7 +2,7 @@
 
 # repo-harness
 
-### A file-backed workflow for Claude and Codex, and an authorized runtime for the programs built on top of it
+### Shared context, hooks and review evidence for Claude and Codex
 
 <img src="docs/images/repo-harness-hook-carrot.png" alt="repo-harness hooks leading Codex and Claude forward with repo-local workflow state" width="900">
 
@@ -12,28 +12,23 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja.md) | [Français](README.fr.md) | [Español](README.es.md)
 
-**Give the agent a complete PRD or Sprint; after that, your loop is just review and `next`, or start `/goal` and go AFK.**
+**Give the agent a GitHub issue and acceptance checks. Keep changes and verification evidence in its PR.**
 
 </div>
 
-`repo-harness` ships a CLI plus skill/runtime hooks that write context, plans,
-handoffs, checks, and review evidence back into the project, so the next agent
-session continues from files instead of chat memory. It adopts an existing repo
-with a tasks-first agent contract that keeps Claude and Codex aligned.
-
-On top of that contract the Bot schedules **long-running programs**: task offers
-and leases let a Sprint advance across sessions. repo-harness supplies the tools
-and the evidence; the Bot decides what runs next.
+`repo-harness` ships a CLI, skills and hooks for context, review evidence and
+handoffs. The GitHub issue and PR own task identity, scope and status. Repository
+files let Claude and Codex resume work across sessions.
 
 ## Contents
 
 - [Get Started](#get-started)
 - [Why repo-harness](#why-repo-harness)
-- [Two Layers](#two-layers)
+- [Task Authority](#task-authority)
 - [Key Features](#key-features)
 - [How It Works](#how-it-works)
 - [Task Workflow](#task-workflow)
-- [Authorized Programs](#authorized-programs)
+- [Work Across Sessions](#work-across-sessions)
 - [Hooks](#hooks)
 - [Local Human Control Board](#local-human-control-board)
 - [MCP Connector](#mcp-connector)
@@ -196,48 +191,35 @@ release line have no supported historical proof and remain report-only.
   queries and on progressive context loading: a stable ~12KB root context plus
   capability blocks loaded only when the files you touch need them. Agents read a
   ~1KB capability contract instead of rediscovering structure.
-- **Review-ready evidence.** Every task leaves a contract, structured check
-  evidence, and a review card behind. The human decision surface is one screen —
-  verdict, intended vs actual files, commands passed, residual risk, rollback —
-  rather than a reconstruction of what the agent claims it did.
-- **Scheduled work stays accountable.** A task cannot be held past its lease and
-  cannot claim acceptance without a receipt. The Bot schedules from recorded
-  evidence, not from trust.
+- **Review evidence.** The PR records the changed files, checks, residual risk
+  and rollback. Review uses the observed result for the same revision.
+- **Work across sessions.** A handoff records the issue, branch, current result
+  and next action. The next agent reads the current issue before it continues.
 
 In an adopted repo, the surface area is intentionally small:
 
 | Surface | Purpose |
 | --- | --- |
 | `docs/spec.md` and `docs/reference-configs/` | Shared standards and stable product intent that every agent session can read. |
-| `plans/`, `plans/prds/`, and `plans/sprints/` | Decision-complete work packages before implementation starts. |
-| `tasks/contracts/`, `tasks/reviews/`, and `.ai/harness/checks/` | Scope, verification, and review evidence for proving the work is done. |
+| `plans/`, `plans/prds/`, and `plans/sprints/` | Optional planning context and historical work records. |
+| `tasks/contracts/`, `tasks/reviews/`, and `.ai/harness/checks/` | Existing closeout and recovery records retained during the lifecycle removal. |
 | `.ai/harness/handoff/` and `tasks/current.md` | Session journal and resumable status, derived from workflow artifacts instead of chat memory. |
 
-## Two Layers
+## Task Authority
 
-The product reads as two layers that share one set of files.
+The GitHub issue defines the work. The PR records the implementation and its
+verification. Plans and handoffs support that work without creating another
+task queue.
 
-**Layer 1 — the session contract.** One human, one agent session, one task at a
-time. Plans, contracts, checks, reviews, and handoffs are the durable authority;
-hooks keep the session inside them. This is the whole product for a solo repo,
-and everything in [Task Workflow](#task-workflow) belongs here. Nothing below is
-required to use it.
-
-**Layer 2 — Bot-scheduled programs.** Long-running work that outlives a
-session: engineer task offers held through renewable leases. The Bot
-decides what to schedule. repo-harness supplies the tools and the evidence. See
-[Authorized Programs](#authorized-programs).
-
-| | Layer 1 | Layer 2 |
+| Surface | Responsibility | Entry point |
 | --- | --- | --- |
-| Unit of work | One task contract | One scheduled engineer task |
-| Who drives it | A human in a session | The Bot, through the repo-harness CLI and Herdr |
-| Authority | Plan, contract, review, checks | The above, plus engineer binding and lease |
-| Entry point | `repo-harness init` | `repo-harness engineer acquire-next` |
-| Stop condition | Task closeout | Task closeout or lease lost |
+| Issue and PR | Scope, ownership, dependencies, status and review evidence | The assigned GitHub issue |
+| Session support | Repository context, hooks and handoffs | `repo-harness init` |
+| Existing observations | Read retained task and runtime records | `repo-harness fleet board --json` |
 
-Layer 2 does not replace layer 1: a program's every step still projects into the
-same plan, contract, and review artifacts a human would have written.
+New work uses a bounded issue brief and the current repository rules. Historical
+Sprint, binding and Lease records remain readable for operator and closeout
+callers while the contract lifecycle is removed.
 
 ## Key Features
 
@@ -245,8 +227,8 @@ same plan, contract, and review artifacts a human would have written.
 | --- | --- |
 | **File-backed sessions** | Plans, contracts, checks, and handoffs live in the repo, so a new session resumes from artifacts instead of a chat thread |
 | **Typed hook runtime** | 6 public routes (Claude 5, Codex 5), each bound to exactly one typed in-process handler, with fail-closed guards at the edit boundary |
-| **Plan → Contract → Review** | One lifecycle from approved plan to projected contract, isolated worktree, structured evidence, and a reviewable closeout |
-| **Bot-scheduled programs** | Engineer task offers with renewable leases; the Bot schedules, repo-harness supplies tools and evidence |
+| **Issue → PR → Review** | One task authority with bounded changes, recorded verification and review evidence |
+| **Session handoff** | Record the issue, branch, evidence and next action so another agent can continue |
 | **Progressive context loading** | A ~12KB stable root context plus ~1KB capability contracts loaded only for the files actually being touched |
 | **CodeGraph integration** | Structural queries (callers, callees, definitions) answered from a pre-built index instead of repeated grep-and-read passes |
 | **MCP planner sidecar** | ChatGPT reads real repo state and writes PRD/Sprint/Goal artifacts; Codex executes them, with no default source-code write access |
@@ -268,11 +250,9 @@ route registry binds the public event tuple to exactly one packaged typed
 handler. `.ai/hooks/` holds operator-helper projection only; it is never a
 host-event dispatcher.
 
-The core invariant is that durable truth lives in the repo, not a chat thread.
-Hooks are accelerators and guardrails; authority remains the file-backed plan,
-contract, review, checks, and handoff artifacts. Prompt-layer plan/spec/contract
-gates are advisory routing; hard enforcement lives at the edit boundary. Handler
-internals, the minimal-change surface, and policy modes:
+The issue and PR own task authority. Repository files provide durable context
+and evidence. Hooks load context and enforce the retained edit boundaries.
+Handler details and policy modes:
 [`hook-operations.md`](docs/reference-configs/hook-operations.md) and
 [`minimal-change-hooks.md`](docs/reference-configs/minimal-change-hooks.md).
 
@@ -310,30 +290,26 @@ resumed Goal session never reinterprets the original chat. See
 [`agentic-development-flow.md`](docs/reference-configs/agentic-development-flow.md)
 and [`workflow-orchestration.md`](docs/reference-configs/workflow-orchestration.md).
 
-## Authorized Programs
+## Work Across Sessions
 
-A program is work that outlives a session. The Bot schedules it through the
-repo-harness CLI and Herdr. repo-harness keeps no scheduler, budget ledger or
-controller of its own.
+Keep the issue, branch, verification result and next action in the handoff.
+Re-read the issue and PR before continuing. Use the approved OAR and Herdr host
+paths for an assigned agent. repo-harness has no PM or Engineer scheduling API.
 
-- **Lease.** Held work carries a renewable lease with a renewal interval, a
-  maximum TTL, and a closed set of evidence sources. An unproven liveness state
-  requires attention instead of reclaiming silently.
-
-### Engineer scheduling
+### Existing task observations
 
 ```bash
-repo-harness engineer principal enroll        # map an OAuth authorization to a Binding
-repo-harness engineer acquire-next --authorization-id <id> --idempotency-key <key>
-repo-harness engineer board                   # read-only organization attention
+repo-harness fleet board --json
 ```
 
-`acquire-next` selects and claims the first canonical offer for an enrolled
-principal. Dependency edges resolve from receipt authorities, not inference, and
-Sprint task IDs are immutable identities under backlog schema v2 — run
-`repo-harness sprint migrate-schema` once on an older backlog.
+The board reads retained task, Lease, publication, inbox and runtime evidence.
+It does not claim work or create an Engineer binding. Existing completion and
+cleanup helpers remain for existing contract lifecycle callers.
 
-Campaign execution moved to the existing Bot skills on 2026-10-04. Use [repo-harness](SKILL.md) to dispatch and collect work through Herdr/OAR. Use [repo-harness-product](assets/skills/repo-harness-product/SKILL.md) for planning and [repo-harness-check](assets/skill-commands/repo-harness-check/SKILL.md) for scope and verification. repo-harness has no campaign runtime.
+Use [repo-harness](SKILL.md) for scope and worker ownership,
+[repo-harness-product](assets/skills/repo-harness-product/SKILL.md) for requested
+planning, and [repo-harness-check](assets/skill-commands/repo-harness-check/SKILL.md)
+for scope and recorded verification.
 
 ### Refactor recommendations
 
