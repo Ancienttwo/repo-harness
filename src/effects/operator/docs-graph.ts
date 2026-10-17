@@ -28,6 +28,7 @@ const MAX_TOTAL_BYTES = 32 * 1024 * 1024;
 const MAX_METADATA_BYTES = 16 * 1024 * 1024;
 const MAX_FILES = 5000;
 const MODEL_NODE_ROOT = '.archcontext/model/nodes/';
+const CAPABILITY_PATH = /^\.archcontext\/model\/nodes\/capability\.[a-zA-Z0-9._-]+\.ya?ml$/u;
 const fail = (code: DocsGraphReadFailure): never => { throw new DocsGraphReadError(code); };
 const regular = (entry: TreeEntry): boolean => entry.mode === '100644' || entry.mode === '100755';
 const oid = (value: string): boolean => /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u.test(value);
@@ -85,7 +86,8 @@ export function createDocsGraphReader() {
         if (docsDocumentKind(path) || path.startsWith(MODEL_NODE_ROOT)) entries.push({ mode: match[1]!, oid: match[3]!, path });
       }
       entries.sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
-      if (entries.length > MAX_FILES) return fail('too_large');
+      // The docs file limit excludes non-capability model entries.
+      if (entries.filter(entry => docsDocumentKind(entry.path) || CAPABILITY_PATH.test(entry.path)).length > MAX_FILES) return fail('too_large');
       const cacheKey = JSON.stringify([root, commit]);
       let history = historyCache.get(cacheKey);
       if (!history) {

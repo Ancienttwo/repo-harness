@@ -392,12 +392,14 @@ describe('issue 677 architecture readers', () => {
     expect(() => reader.reviewPrompt(next)).toThrow('capability_uncommitted');
     expect(() => reader.reviewPrompt('capability.test.absent')).toThrow('capability_not_found');
     expect(reader.reviewPrompt(MODULE_ID).worktree_dirty_paths).toEqual(['.archcontext/model/nodes/capability.test.next.yaml']);
+    const broken = '.archcontext/model/nodes/capability.test.broken.yaml';
+    fixtureWrite(root, broken, 'id: [broken');
+    expect(() => reader.reviewPrompt(next)).toThrow('capability_not_found');
+    rmSync(join(root, broken));
     fixtureCommit(root);
     const committed = new ArchitectureModelReader(root);
     expect(committed.list().modules.map(module => module.id)).toEqual([MODULE_ID, next]);
     expect(committed.reviewPrompt(next).capability_id).toBe(next);
-    fixtureWrite(root, '.archcontext/model/nodes/capability.test.broken.yaml', 'id: [broken');
-    expect(() => committed.reviewPrompt('capability.test.absent')).toThrow('capability_not_found');
   });
 
   test('the review diff keeps the changed paths that archctx resolve assigns to the module', () => {

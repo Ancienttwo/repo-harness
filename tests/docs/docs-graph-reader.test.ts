@@ -144,6 +144,15 @@ describe('Immutable Docs graph reader', () => {
     const result = read({ repositoryRoot: f.root, now: NOW });
     expect(result.nodes.find(node => node.kind === 'capability')).toMatchObject({ id: 'capability.runtime-harness.docs', source: { path, blob_oid: f.git('rev-parse', `HEAD:${path}`), last_commit: { commit: result.commit } } });
     expect(result.issues).toEqual([]);
+    // These nodes cross the file limit but are not document or capability files.
+    for (let index = 0; index < 5000; index++) {
+      f.put(`.archcontext/model/nodes/component.docs.part${index}.yaml`, JSON.stringify({
+        schemaVersion: 'archcontext.node/v2', id: `component.docs.part${index}`, kind: 'component',
+        name: `Part ${index}`, status: 'active', summary: 'Read documents.', parent: 'capability.runtime-harness.docs',
+      }));
+    }
+    f.commit('2026-10-05T10:30:00Z');
+    expect(read({ repositoryRoot: f.root, now: NOW }).nodes.map(node => node.id).sort()).toEqual(result.nodes.map(node => node.id).sort());
     f.put('.archcontext/model/nodes/capability.runtime-harness.copy.yaml', value); f.commit('2026-10-05T11:00:00Z');
     expect(errorCode(() => read({ repositoryRoot: f.root, now: NOW }))).toBe('invalid_capability');
     f.put(path, 'id: [broken'); f.commit('2026-10-05T12:00:00Z');
@@ -154,11 +163,25 @@ describe('Immutable Docs graph reader', () => {
     ['AC_SCHEMA_INVALID', 'invalid_capability'], ['RH_ARCHCTX_TIMEOUT', 'timeout'], ['AC_PATH_DENIED', 'unavailable'],
   ])('maps native export error %s to %s', (code, expected) => {
     const f = fixture();
-    f.put('.archcontext/model/nodes/component.docs.yaml', '{}'); f.commit('2026-10-05T10:00:00Z');
-    spyOn(provider, 'readArchitectureNativeContext').mockImplementation(() => {
+    f.put('.archcontext/model/nodes/component.docs.yaml', '{}');
+    const commit = f.commit('2026-10-05T10:00:00Z');
+    const nativeRead = spyOn(provider, 'readArchitectureNativeContext').mockImplementation(() => {
       throw new provider.ArchctxClientError({ code, action: 'check-and-retry-same-request', message: 'Injected transport failure.' });
     });
-    expect(errorCode(() => createDocsGraphReader()({ repositoryRoot: f.root, now: NOW }))).toBe(expected);
+    const priorGitDir = process.env.GIT_DIR;
+    process.env.GIT_DIR = join(f.root, 'wrong-git-dir');
+    try {
+      expect(errorCode(() => createDocsGraphReader()({ repositoryRoot: f.root, now: NOW }))).toBe(expected);
+      expect(nativeRead).toHaveBeenCalledTimes(1);
+      const [, source, options] = nativeRead.mock.calls[0]!;
+      expect(source).toEqual({ kind: 'ref', commit });
+      expect(options?.env).not.toHaveProperty('GIT_DIR');
+      expect(options?.env).toMatchObject({ GIT_OPTIONAL_LOCKS: '0' });
+      expect(Number.isFinite(options?.deadlineMs)).toBe(true);
+    } finally {
+      if (priorGitDir === undefined) delete process.env.GIT_DIR;
+      else process.env.GIT_DIR = priorGitDir;
+    }
   });
 
   test('fails closed on HEAD movement and does not cache complete graph freshness', () => {
