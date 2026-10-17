@@ -3,10 +3,9 @@ import { readFileSync, rmSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { ArchctxClientError } from '../../src/effects/architecture/archctx-provider';
 import { ArchitectureModelReader } from '../../src/effects/architecture/model-reader';
-import { MODEL_NODE_KINDS, generatedSummaryState, moduleGraph, section3FromMarkdown, type ModelNode } from '../../src/core/architecture/module-view';
+import { generatedSummaryState, moduleGraph, type ModelNode } from '../../src/core/architecture/module-view';
 import { decodeDocsAnchorsReport, decodeProjectionCheckFreshness } from '../../src/core/architecture/projection';
 import { decodeArchitectureModuleDetail, decodeArchitectureReviewPrompt } from '../../src/core/operator/architecture';
-import nodeSchema from 'archctx-contracts/schemas/repo/architecture-node.schema.json';
 import { projectionResultReceiptDigest } from 'archctx-contracts';
 import { sha256 } from '../../src/core/review/module-review-prompt';
 import type { JsonValue } from '../../src/core/evidence/types';
@@ -253,8 +252,7 @@ test('graph containment has no inferred calls and folds each side after eight ne
   const ids = new Set(graph.nodes.map(node => node.id)); expect(graph.edges.every(edge => ids.has(edge.source) && ids.has(edge.target))).toBe(true);
 });
 
-test('section parser and narrowed secret rules preserve absent values', () => {
-  expect(section3FromMarkdown('## 3. Decisions\n\n## 4. History\nData')).toBeNull();
+test('narrowed secret rules preserve absent values', () => {
   expect(containsSecret('tokens: null\nTOKEN: none\nAPI_KEY: ""')).toBe(false);
   expect(containsSecret('API_KEY=sample-secret')).toBe(true);
   expect(containsSecret('123456789:'+'a'.repeat(35))).toBe(true);
@@ -280,10 +278,6 @@ const anchorsReport = (findingPath = 'src/module/read.ts') => ({
 });
 
 describe('issue 677 architecture readers', () => {
-  test('node kinds follow the published archcontext.node/v2 enum', () => {
-    expect(nodeSchema.properties.kind.enum).toEqual([...MODEL_NODE_KINDS]);
-  });
-
   test('generated_summary comes from a projection check for HEAD and stays unknown without one', () => {
     const root = repo(), reader = new ArchitectureModelReader(root);
     expect(reader.list().modules[0].state.generated_summary).toBe('unknown');

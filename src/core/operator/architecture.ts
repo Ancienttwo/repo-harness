@@ -8,9 +8,9 @@ export const OPERATOR_ARCHITECTURE_MODULE_ROUTE = /^\/api\/v1\/repositories\/([A
 export const OPERATOR_ARCHITECTURE_REVIEW_PROMPT_ROUTE = /^\/api\/v1\/repositories\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/architecture\/modules\/(capability\.[a-z0-9-]+(?:\.[a-z0-9-]+)+)\/review-prompt$/u;
 
 export const ARCHITECTURE_FAILURES = ['repository_not_found', 'capability_not_found', 'commit_not_found', 'invalid_request', 'unavailable', 'timeout',
-  'model_invalid', 'model_missing', 'path_escape', 'secret_detected', 'worktree_changed_during_read', 'shard_out_of_range', 'budget_too_small', 'context_budget_invalid', 'diff_refs_required', 'dirty_path_invalid', 'git_path_encoding_invalid', 'git_read_failed',
-  'model_duplicate_id', 'model_flow_target_invalid', 'model_parent_invalid', 'model_relation_target_invalid', 'model_validation_unavailable', 'path_invalid',
-  'revision_invalid', 'source_include_invalid', 'source_missing', 'tree_path_invalid', 'yaml_invalid',
+  'model_invalid', 'model_missing', 'path_escape', 'secret_detected', 'worktree_changed_during_read', 'shard_out_of_range', 'budget_too_small', 'diff_refs_required', 'dirty_path_invalid', 'git_path_encoding_invalid', 'git_read_failed',
+  'model_relation_target_invalid', 'path_invalid',
+  'revision_invalid', 'source_missing', 'tree_path_invalid',
   'capability_uncommitted', 'diff_owner_resolution_failed'] as const;
 
 type Check = (value: unknown) => boolean;

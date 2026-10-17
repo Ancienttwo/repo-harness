@@ -1,12 +1,9 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, lstatSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
-import { isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { validateJsonSchema, type DocsAnchorsReportV1, type Json, type NativeContextExportV1 } from 'archctx-contracts';
-import nodeSchema from 'archctx-contracts/schemas/repo/architecture-node.schema.json';
-import relationSchema from 'archctx-contracts/schemas/repo/architecture-relation.schema.json';
-import flowSchema from 'archctx-contracts/schemas/repo/architecture-flow.schema.json';
-import { capabilityRegistryFromNativeContext, architectureModulePathFor, archcontextIncludeAnchor, archcontextNodeId, type ArchcontextCapabilityOwners, type ArchcontextNodeFile } from '../../core/capabilities/registry';
-import { backlogFromMarkdown, generatedSummaryState, moduleDetail, section3FromMarkdown, type GeneratedSummaryFreshness, type ModelNode, type ModelRelation, type ModelFlow, type ModuleIndexV1, type ModuleDetailV1, type LinkedModuleDoc } from '../../core/architecture/module-view';
+import { existsSync, lstatSync, readFileSync, realpathSync } from 'node:fs';
+import { isAbsolute, relative, resolve, sep } from 'node:path';
+import type { DocsAnchorsReportV1, NativeContextExportV1 } from 'archctx-contracts';
+import { capabilityRegistryFromNativeContext, archcontextNodeId, type ArchcontextCapabilityOwners } from '../../core/capabilities/registry';
+import { generatedSummaryState, moduleDetail, type GeneratedSummaryFreshness, type ModelNode, type ModelRelation, type ModelFlow, type ModuleIndexV1, type ModuleDetailV1, type LinkedModuleDoc } from '../../core/architecture/module-view';
 import { buildModuleReviewPrompt, moduleStaleCitations, ModuleReadError, sha256, type ModuleReviewPromptV1, type PromptSource } from '../../core/review/module-review-prompt';
 import { canonicalize } from '../../core/evidence/canonical-json';
 import { markdownHeader } from '../../core/state/artifact-parsers';
@@ -17,12 +14,10 @@ import { version as PACKAGE_VERSION } from '../../../package.json';
 
 const MODEL_ROOT = '.archcontext/model';
 const MANIFEST = '.archcontext/manifest.yaml';
-const MODULE_DOC = /^docs\/architecture\/modules\/[^/]+\/[^/]+\.md$/;
 const DOC_INDEX = [['plans', 'plan'], ['tasks/contracts', 'contract']] as const;
 const REGULAR_FILE = new Set(['100644', '100755']);
 const SNAPSHOT_CACHE_SIZE = 4;
-type ModelFile<T> = { path: string; bytes: Buffer; value: T };
-type NativeModelFile<T> = { path: string; value: T };
+type ModelFile<T> = { path: string; value: T };
 type SnapshotEntry = { mode: string; type: 'blob' | 'tree' | 'commit'; oid: string };
 
 function runGit(cwd: string, args: string[], input?: Buffer): Buffer {
@@ -42,7 +37,6 @@ function runGit(cwd: string, args: string[], input?: Buffer): Buffer {
 class CommitSnapshot {
   private readonly entries = new Map<string, SnapshotEntry>();
   private readonly blobs = new Map<string, Buffer>();
-  private nodes: ArchcontextNodeFile[] | null = null;
 
   constructor(readonly root: string, readonly commit: string) {
     // -z prints raw path bytes, so no C-quote decoding is needed.
@@ -76,11 +70,6 @@ class CommitSnapshot {
     }
     return undefined;
   }
-  /** Direct child names of a tree, in tree order. */
-  children(dir: string): string[] {
-    const prefix = `${dir}/`;
-    return [...this.entries.keys()].filter(path => path.startsWith(prefix) && !path.includes('/', prefix.length)).map(path => path.slice(prefix.length));
-  }
   /** Paths that hold regular files, for an index that skips other entry kinds. */
   regularFiles(filter: (path: string) => boolean): string[] {
     return [...this.entries].filter(([path, entry]) => entry.type === 'blob' && REGULAR_FILE.has(entry.mode) && filter(path)).map(([path]) => path);
@@ -113,14 +102,6 @@ class CommitSnapshot {
     if (!bytes) throw new ModuleReadError('git_read_failed', path);
     return bytes;
   }
-  /** Parsed node files under `.archcontext/model/nodes`, in name order. */
-  nodeFiles(): ArchcontextNodeFile[] {
-    if (this.nodes) return this.nodes;
-    const paths = modelPaths(this, 'nodes');
-    this.load(paths);
-    this.nodes = paths.map(path => ({ path, value: parseYaml(this, path) }));
-    return this.nodes;
-  }
 }
 
 const snapshots = new Map<string, CommitSnapshot>();
@@ -143,28 +124,6 @@ function resolveRevision(root: string, rev: string): string {
 function repositoryRoot(cwd: string): string {
   return realpathSync(runGit(cwd, ['rev-parse', '--show-toplevel']).toString('utf8').trim());
 }
-function modelPaths(snapshot: CommitSnapshot, kind: string): string[] {
-  const dir = `${MODEL_ROOT}/${kind}`;
-  const entry = snapshot.entry(dir);
-  if (!entry || entry.type !== 'tree') throw new ModuleReadError('model_missing', dir);
-  return snapshot.children(dir).filter(name => /\.ya?ml$/.test(name)).sort((a, b) => a.localeCompare(b, 'en')).map(name => `${dir}/${name}`);
-}
-function parseYaml(snapshot: CommitSnapshot, path: string): unknown {
-  try { return Bun.YAML.parse(snapshot.bytes(path).toString('utf8')); }
-  catch (error) { if (error instanceof ModuleReadError) throw error; throw new ModuleReadError('yaml_invalid', path); }
-}
-
-/**
- * Node files of the HEAD snapshot. This is the same snapshot that
- * ArchitectureModelReader reads, so Engineer contract revisions and module
- * views agree on one commit.
- */
-export function readCommittedArchcontextNodes(cwd: string): { commit: string; nodes: readonly ArchcontextNodeFile[] } {
-  const root = repositoryRoot(cwd);
-  const commit = resolveRevision(root, 'HEAD');
-  return { commit, nodes: commitSnapshot(root, commit).nodeFiles() };
-}
-
 /** The decoded HEAD model shared by module and Engineer readers. */
 export function readCommittedNativeContext(cwd: string): { commit: string; context: NativeContextExportV1 } {
   const root = repositoryRoot(cwd);
@@ -207,12 +166,11 @@ export class ArchitectureModelReader {
   private readonly snapshot: CommitSnapshot;
   private readonly owners: ArchcontextCapabilityOwners;
   private readonly context: NativeContextExportV1;
-  private readonly nodes: NativeModelFile<ModelNode>[];
-  private readonly relations: NativeModelFile<ModelRelation>[];
-  private readonly flows: NativeModelFile<ModelFlow>[];
+  private readonly nodes: ModelFile<ModelNode>[];
+  private readonly relations: ModelFile<ModelRelation>[];
+  private readonly flows: ModelFile<ModelFlow>[];
   private readonly docs: { path: string; kind: 'contract' | 'plan'; bytes: Buffer; capability: string | null; status: string | null }[];
   private readonly budget: number;
-  private readonly invalidFlows: { path: string; capability: string | null }[] = [];
 
   constructor(cwd: string, options: ArchctxProviderOptions = {}) {
     this.root = repositoryRoot(cwd);
@@ -224,9 +182,7 @@ export class ArchitectureModelReader {
       .sort((a, b) => a.localeCompare(b, 'en')).map(path => ({ path, kind })));
     this.snapshot.load(docIndex.map(doc => doc.path));
     this.safePath(MANIFEST);
-    const budget = this.context.contextBudgetBytes;
-    if (typeof budget !== 'number' || !Number.isSafeInteger(budget) || budget <= 0) throw new ModuleReadError('context_budget_invalid', MANIFEST);
-    this.budget = budget;
+    this.budget = this.context.contextBudgetBytes;
     const { model } = this.context;
     // The native decoder validates every record against the published model schemas.
     this.nodes = model.nodes.map(value => ({ path: model.sourcePaths.nodes[value.id as string], value: value as unknown as ModelNode }));
@@ -238,24 +194,8 @@ export class ArchitectureModelReader {
     for (const profile of this.context.capabilityProfiles) {
       for (const anchor of profile.includeAnchors) { this.safePath(anchor); this.snapshot.entry(anchor); }
     }
-    const ids = new Set<string>();
-    for (const file of [...this.nodes, ...this.relations, ...this.flows]) {
-      if (ids.has(file.value.id)) throw new ModuleReadError('model_duplicate_id', file.path);
-      ids.add(file.value.id);
-    }
-    const nodeIds = new Set(this.nodes.map(file => file.value.id));
-    for (const file of this.invalidFlows) if (file.capability && !nodeIds.has(file.capability)) file.capability = null;
-    for (const file of this.relations) {
-      if (!nodeIds.has(file.value.source) || !nodeIds.has(file.value.target)) throw new ModuleReadError('model_relation_target_invalid', file.path);
-    }
-    for (const file of this.flows) {
-      if (!nodeIds.has(file.value.capabilityId) || (file.value.applicability === 'required' && file.value.participants.some(participant => !nodeIds.has(participant.nodeId)))) throw new ModuleReadError('model_flow_target_invalid', file.path);
-    }
     for (const file of this.nodes) {
       const node = file.value;
-      if (node.parent && !nodeIds.has(node.parent)) throw new ModuleReadError('model_parent_invalid', file.path);
-      // Include shapes belong to ArchContext validation; only literal anchors become paths here.
-      for (const anchor of this.anchors(node)) { this.safePath(anchor); this.snapshot.entry(anchor); }
       for (const entry of node.source?.entrypoints ?? []) {
         this.safePath(entry.path); this.snapshot.entry(entry.path);
         for (const symbol of entry.symbols) for (const sink of symbol.sinks) {
@@ -291,30 +231,6 @@ export class ArchitectureModelReader {
       if (scoped === '..' || scoped.startsWith(`..${sep}`) || isAbsolute(scoped)) throw new ModuleReadError('path_escape', path);
     }
     return resolve(this.root, path);
-  }
-
-  private read(path: string): Buffer | null {
-    this.safePath(path);
-    const entry = this.snapshot.entry(path);
-    if (!entry) return null;
-    return this.snapshot.bytes(path);
-  }
-  private modelFiles<T>(paths: string[], schema: Parameters<typeof validateJsonSchema>[0], reportInvalid = false): ModelFile<T>[] {
-    return paths.flatMap(path => {
-      this.safePath(path);
-      const bytes = this.snapshot.bytes(path), value = parseYaml(this.snapshot, path);
-      let valid;
-      try { valid = validateJsonSchema(schema, value as Json).valid; }
-      catch { throw new ModuleReadError('model_validation_unavailable', path); }
-      if (!valid) {
-        if (!reportInvalid) throw new ModuleReadError('model_invalid', path);
-        const capability = value !== null && typeof value === 'object' && 'capabilityId' in value && typeof value.capabilityId === 'string' ? value.capabilityId : null;
-        this.invalidFlows.push({ path, capability });
-        return [];
-      }
-      // T is the local projection type for this schema. Rejected bytes never reach this cast.
-      return [{ path, bytes, value: value as T }];
-    });
   }
 
   private capability(id: string): ModelNode {
@@ -366,8 +282,6 @@ export class ArchitectureModelReader {
 
   detail(id: string, options: ModuleReadOptions = {}): ModuleDetailV1 {
     const node = this.capability(id);
-    const invalid = this.invalidFlows.find(file => file.capability === null || file.capability === id);
-    if (invalid) throw new ModuleReadError('model_invalid', invalid.path);
     const section3 = this.section(this.docPath(id), 'section3');
     const linked: LinkedModuleDoc[] = this.linkedDocs(id).map(({ path, kind, status }) => ({ path, kind, status }));
     const flows: ModelFlow[] = this.flows.map(({ value }) => {
@@ -386,10 +300,9 @@ export class ArchitectureModelReader {
     return { schema_version: 'repo-harness.architecture-modules.v1', commit: this.commit,
       modules: this.nodes.filter(file => file.value.kind === 'capability').map(({ value }) => {
         const section3 = this.section(this.docPath(value.id), 'section3');
-        const invalid = this.invalidFlows.some(file => file.capability === null || file.capability === value.id);
         return { id: value.id, domain: value.id.split('.')[1], name: value.name, status: value.status,
           components: this.nodes.filter(file => file.value.parent === value.id).length,
-          state: { model_valid: invalid ? 'invalid' as const : 'valid' as const, generated_summary: generatedSummaryState(freshness, value.id), section3: section3 ? 'present' as const : 'pending' as const } };
+          state: { model_valid: 'valid' as const, generated_summary: generatedSummaryState(freshness, value.id), section3: section3 ? 'present' as const : 'pending' as const } };
       }) };
   }
 

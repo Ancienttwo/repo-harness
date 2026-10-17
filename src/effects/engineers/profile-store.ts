@@ -2,12 +2,10 @@ import { execFileSync } from 'child_process';
 import { lstatSync, readFileSync, readdirSync, realpathSync } from 'fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'path';
 import { readCommittedNativeContext } from '../architecture/model-reader';
-import { validateJsonSchema, type Json, type NativeContextExportV1 } from 'archctx-contracts';
-import architectureNodeSchema from 'archctx-contracts/schemas/repo/architecture-node.schema.json';
+import type { NativeContextExportV1 } from 'archctx-contracts';
 
 import {
   capabilityRegistryFromNativeContext,
-  type ArchcontextNodeFile,
   type Capability,
   type CapabilityRegistry,
 } from '../../core/capabilities/registry';
@@ -133,10 +131,6 @@ function resolveCapabilityFromAuthority(authority: EngineerCapabilityAuthority, 
   if (!capability) invalid(`capability is not active or does not exist: ${capabilityId}`);
   const matchingNodes = authority.nodes.filter(node => node.id === capabilityId && node.kind === 'capability' && node.status === 'active');
   if (matchingNodes.length !== 1) invalid(`expected exactly one canonical ArchContext node for ${capabilityId}`);
-  const validation = validateJsonSchema(architectureNodeSchema, matchingNodes[0] as Json);
-  if (!validation.valid) {
-    invalid(`canonical ArchContext node is invalid: ${validation.issues.map((issue) => `${issue.path} ${issue.message}`).join('; ')}`);
-  }
   const canonical = canonicalEngineerJson(matchingNodes[0]);
   return Object.freeze({ capability: Object.freeze({ ...capability }), capability_revision: engineerSha256(canonical) });
 }

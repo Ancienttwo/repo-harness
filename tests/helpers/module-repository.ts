@@ -40,8 +40,6 @@ export function moduleRepository(options: { section3?: string; budget?: number; 
   fixtureWrite(root, '.archcontext/model/nodes/component.module.core.yaml', fixtureYaml({ schemaVersion: 'archcontext.node/v2', id: 'component.module.core', kind: 'component', name: 'Module Core', status: 'active', summary: 'Project facts.', parent: capabilityId }));
   fixtureWrite(root, '.archcontext/model/relations/relation.module.core.yaml', fixtureYaml({ schemaVersion: 'archcontext.relation/v1', id: 'relation.module.core', kind: 'calls', source: capabilityId, target: 'component.module.core', intent: 'Project the module.' }));
   mkdirSync(join(root, '.archcontext/model/flows'), { recursive: true });
-  // Git does not store empty directories. Keep a non-YAML file for the no-flow case.
-  fixtureWrite(root, '.archcontext/model/flows/.keep', '');
   if (options.flow !== false) {
     const step = { id: 'read', from: 'module', to: 'core', label: 'Read facts', evidence: { entrypointId: 'entrypoint.module.read', sourceSymbol: 'read', sinkId: 'sink.module.core' } };
     fixtureWrite(root, MODULE_FLOW, fixtureYaml({ schemaVersion: 'archcontext.flow/v1', id: options.flowId ?? 'flow.module.primary', capabilityId, name: 'Read module facts', applicability: 'required',
