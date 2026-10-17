@@ -27,7 +27,7 @@ source:
     - id: entrypoint.integration-acceptance.envelope
       path: "src/effects/integration/product-acceptance.ts"
       symbols:
-        - name: "createIntegrationEnvelope"
+        - name: "observeSelectedPublication"
           sinks:
             - id: sink.integration-acceptance.lease
               path: "src/effects/state/coordination-lease-store.ts"
@@ -35,6 +35,8 @@ source:
             - id: sink.integration-acceptance.publication
               path: "src/effects/publication/publication-receipt.ts"
               symbol: "readPublicationReceiptCache"
+        - name: "buildCurrentEnvelope"
+          sinks:
             - id: sink.integration-acceptance.envelope-schema
               path: "src/core/integration/product-acceptance.ts"
               symbol: "buildIntegrationEnvelope"

@@ -32,7 +32,7 @@ source:
     - id: entrypoint.external-source-intake.list
       path: "src/effects/external-sources/refresh.ts"
       symbols:
-        - name: "listExternalSourceProjection"
+        - name: "projection"
           sinks:
             - id: sink.external-source-intake.read-only-projection
               path: "src/core/external-sources/projection.ts"
@@ -48,8 +48,8 @@ source:
         - name: "listExternalSourceBindings"
           sinks:
             - id: sink.external-source-intake.binding-projection
-              path: "src/core/external-sources/binding.ts"
-              symbol: "ExternalSourceBindingProjectionV1"
+              path: "src/core/external-sources/projection.ts"
+              symbol: "buildExternalSourceProjection"
 extensions:
   contractFiles:
     agents: "AGENTS.md"
