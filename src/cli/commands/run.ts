@@ -62,7 +62,6 @@ export const RUN_HELP_GROUPS = [
       'check-deploy-sql-order',
       'check-agent-tooling',
       'check-context-files',
-      'check-brain-manifest',
       'check-skill-version',
       'check-task-workflow',
       'maintenance-triage',
@@ -80,14 +79,20 @@ export const RUN_HELP_GROUPS = [
     ],
   },
   {
-    label: 'Host & knowledge sync',
-    helpers: ['install-agent-fleet', 'sync-brain-docs'],
+    label: 'Host',
+    helpers: ['install-agent-fleet'],
   },
   {
     label: 'Factor lab',
     helpers: ['factor-lab-new', 'factor-lab-promote', 'factor-lab-reject', 'factor-lab-check'],
   },
 ] as const;
+
+// Retired helper ids fail with their replacement command. They never run it.
+const RETIRED_HELPERS: ReadonlyMap<string, string> = new Map([
+  ['check-brain-manifest', 'repo-harness brain check'],
+  ['sync-brain-docs', 'repo-harness brain sync'],
+]);
 
 function groupedHelperLines(helpers: ReturnType<typeof listHelpers>): string[] {
   const byId = new Map(helpers.map((helper) => [helper.id, helper]));
@@ -136,6 +141,11 @@ export function buildRunCommand(): Command {
     .argument('<helper>', 'Helper id, for example check-task-workflow')
     .argument('[args...]', 'Arguments passed to the helper')
     .action((helper: string, args: string[]) => {
+      const replacement = RETIRED_HELPERS.get(helper);
+      if (replacement) {
+        console.error(`repo-harness run: helper "${helper}" is retired. Use \`${replacement}\`. Run \`repo-harness init\` to rewrite generated package scripts.`);
+        process.exit(2);
+      }
       const result = runHelper({ helper, args });
       if (result.stderr && result.reason !== 'ok') {
         console.error(result.stderr);

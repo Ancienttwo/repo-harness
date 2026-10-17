@@ -43,11 +43,13 @@
     },
     {
       "id": "release-deploy",
-      "role": "externalized",
+      "role": "repo-authored",
       "repo_path": "docs/reference-configs/release-deploy.md",
       "asset_path": "assets/reference-configs/release-deploy.md",
       "brain_path": "brain/repo-harness/runbooks/runbook-agentic-release-deploy.md",
-      "max_repo_lines": 40
+      "sync": {
+        "direction": "repo-to-brain"
+      }
     },
     {
       "id": "spa-day-protocol",
@@ -83,11 +85,13 @@
     },
     {
       "id": "hook-operations",
-      "role": "partial",
+      "role": "repo-authored",
       "repo_path": "docs/reference-configs/hook-operations.md",
       "asset_path": "assets/reference-configs/hook-operations.md",
       "brain_path": "brain/repo-harness/runbooks/runbook-repo-harness-hook-troubleshooting.md",
-      "max_repo_lines": 100
+      "sync": {
+        "direction": "repo-to-brain"
+      }
     },
     {
       "id": "agentic-development-flow",

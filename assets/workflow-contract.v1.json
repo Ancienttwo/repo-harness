@@ -108,7 +108,6 @@
       "refactor_closure_missing"
     ],
     "authority": "scripts/cutover-closure.ts",
-    "projection": "assets/templates/helpers/cutover-closure.ts",
     "evidenceKind": "cutover_closure"
   },
   "helpers": {
@@ -151,8 +150,6 @@
       "check-agent-tooling.sh",
       "install-agent-fleet.sh",
       "check-context-files.sh",
-      "check-brain-manifest.sh",
-      "sync-brain-docs.sh",
       "check-skill-version.ts",
       "select-agent-context-blocks.sh",
       "ensure-task-workflow.sh",
@@ -207,8 +204,6 @@
       "check-agent-tooling": "Check the installed agent fleet copy is current with the packaged source",
       "install-agent-fleet": "Install or sync the packaged agent fleet into the target host",
       "check-context-files": "Scan AGENTS.md and CLAUDE.md files for risky embedded instructions",
-      "check-brain-manifest": "Validate the external knowledge manifest and referenced vault files",
-      "sync-brain-docs": "Sync opted-in repo docs to the local brain file vault",
       "check-skill-version": "Check repo-harness version consistency and project migration status",
       "select-agent-context-blocks": "List capability-prefix directories to load as agent context blocks",
       "ensure-task-workflow": "Ensure task workflow scaffolding and templates exist, optionally start a plan",

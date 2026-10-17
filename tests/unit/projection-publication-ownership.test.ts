@@ -24,7 +24,3 @@ test("closeout binds provider verification to the exact publication candidate", 
   expect(helper).toContain("target branch moved after merge-gate review");
   expect(helper).not.toContain("acknowledge_architecture_projection_publication");
 });
-test("source and packaged helpers remain byte-identical", () => {
-  expect(read("assets/templates/helpers/verify-sprint.sh")).toBe(read("scripts/verify-sprint.sh"));
-  expect(read("assets/templates/helpers/contract-worktree.sh")).toBe(read("scripts/contract-worktree.sh"));
-});

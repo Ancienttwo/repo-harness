@@ -82,13 +82,10 @@ function fixture(name: string, checks: unknown[]): { root: string; counter: stri
   git(root, "config", "user.name", "Verification Adapter Test");
   git(root, "config", "user.email", "verification-adapter@example.com");
   mkdirSync(join(root, "scripts"), { recursive: true });
-  mkdirSync(join(root, "assets", "templates", "helpers"), { recursive: true });
   mkdirSync(join(root, ".ai", "hooks", "lib"), { recursive: true });
   mkdirSync(join(root, "tasks", "contracts"), { recursive: true });
   symlinkSync(join(ROOT, "src"), join(root, "src"), "dir");
-  for (const destination of [join(root, "scripts"), join(root, "assets", "templates", "helpers")]) {
-    cpSync(join(ROOT, "scripts", "verification-plan.ts"), join(destination, "verification-plan.ts"));
-  }
+  cpSync(join(ROOT, "scripts", "verification-plan.ts"), join(root, "scripts", "verification-plan.ts"));
   const counter = join(root, "counter.log");
   const contractPath = "tasks/contracts/adapter.contract.md";
   writeFileSync(join(root, ".gitignore"), ".ai/harness/evidence/\n.ai/harness/runs/\n.ai/harness/checks/\ncounter.log\n");
@@ -111,13 +108,13 @@ function counterLines(path: string): number {
 }
 
 describe("verification lifecycle explicit adapters", () => {
-  test("source and projected direct verifiers share one execution fact and report immutable execution run refs", () => {
+  test("repeated direct verifiers share one execution fact and report immutable execution run refs", () => {
     const expensive = check("full", "printf full\\n >> \"$COUNTER_PATH\"", "verification", "expensive", ["COUNTER_PATH"]);
     const { root, counter, contract: contractPath } = fixture("verification-adapter-reuse", [expensive]);
 
     const source = verify(root, "scripts/verification-plan.ts", contractPath, ".ai/harness/checks/source.json", counter);
     expect(source.status, `${source.stdout}\n${source.stderr}`).toBe(0);
-    const projected = verify(root, "assets/templates/helpers/verification-plan.ts", contractPath, ".ai/harness/checks/projected.json", counter);
+    const projected = verify(root, "scripts/verification-plan.ts", contractPath, ".ai/harness/checks/projected.json", counter);
     expect(projected.status, `${projected.stdout}\n${projected.stderr}`).toBe(0);
     expect(counterLines(counter)).toBe(1);
 
@@ -140,7 +137,7 @@ describe("verification lifecycle explicit adapters", () => {
 
     const original = readFileSync(join(root, contractPath), "utf-8");
     writeFileSync(join(root, contractPath), original.replace("fixture", "changed prose"));
-    const prose = verify(root, "assets/templates/helpers/verification-plan.ts", contractPath, ".ai/harness/checks/prose.json", counter);
+    const prose = verify(root, "scripts/verification-plan.ts", contractPath, ".ai/harness/checks/prose.json", counter);
     expect(prose.status).toBe(1);
     expect(JSON.parse(readFileSync(join(root, ".ai/harness/checks/prose.json"), "utf-8")).status).toBe("needs_verification_plan");
     expect(counterLines(counter)).toBe(1);
@@ -151,7 +148,7 @@ describe("verification lifecycle explicit adapters", () => {
     writeFileSync(join(root, "main-only.txt"), "advance main\n");
     commit(root, "advance main");
     git(root, "checkout", "codex/demo");
-    const main = verify(root, "assets/templates/helpers/verification-plan.ts", contractPath, ".ai/harness/checks/main.json", counter);
+    const main = verify(root, "scripts/verification-plan.ts", contractPath, ".ai/harness/checks/main.json", counter);
     expect(main.status, main.stderr).toBe(0);
     expect(counterLines(counter)).toBe(1);
   }, 30_000);

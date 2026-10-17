@@ -3,8 +3,7 @@
 // Codex-global packet) from the last-published checkpoint plus live workflow
 // context. This file is only the command-line adapter: every view comes from
 // src/effects/evidence/recovery-materializer.ts, the same module Stop renders
-// with. scripts/sync-helper-sources.ts projects this adapter to
-// assets/templates/helpers/recovery-view-cli.ts.
+// with.
 import { execFileSync } from "child_process";
 import { mkdirSync, writeFileSync } from "fs";
 import { dirname, join } from "path";

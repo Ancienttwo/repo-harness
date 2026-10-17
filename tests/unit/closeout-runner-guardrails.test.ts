@@ -779,12 +779,6 @@ describe('closeout runner guardrails', () => {
     expect(finish).toContain('"$helper_dir/merge-gate.ts" run --base "$base_ref" --format sha');
   });
 
-  test('source and packaged ship helpers stay byte-identical', () => {
-    const source = readFileSync(join(ROOT, 'scripts/ship-worktrees.sh'));
-    const packaged = readFileSync(join(ROOT, 'assets/templates/helpers/ship-worktrees.sh'));
-    expect(packaged.equals(source)).toBe(true);
-  });
-
   test('ship forwards empty and non-empty child arguments under the system Bash', () => {
     const ship = readFileSync(join(ROOT, 'scripts/ship-worktrees.sh'), 'utf-8');
     expect(ship.match(/\$\{child_args\[@\]\+"\$\{child_args\[@\]\}"\}/g) ?? []).toHaveLength(2);

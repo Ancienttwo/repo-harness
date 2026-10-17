@@ -215,7 +215,7 @@ function validateWorkflowContract(value: unknown, contractPath: string): Workflo
       const actual = requireStringArray(cutover[field], `cutoverClosure.${field}`, contractPath);
       if (JSON.stringify(actual) !== JSON.stringify(expected)) throw new Error(`invalid workflow contract at ${contractPath}: cutoverClosure.${field} does not match protocol 1`);
     }
-    if (requireString(cutover.authority, "cutoverClosure.authority", contractPath) !== "scripts/cutover-closure.ts" || requireString(cutover.projection, "cutoverClosure.projection", contractPath) !== "assets/templates/helpers/cutover-closure.ts" || requireString(cutover.evidenceKind, "cutoverClosure.evidenceKind", contractPath) !== "cutover_closure") throw new Error(`invalid workflow contract at ${contractPath}: cutoverClosure authority or evidence binding drifted`);
+    if (requireString(cutover.authority, "cutoverClosure.authority", contractPath) !== "scripts/cutover-closure.ts" || requireString(cutover.evidenceKind, "cutoverClosure.evidenceKind", contractPath) !== "cutover_closure") throw new Error(`invalid workflow contract at ${contractPath}: cutoverClosure authority or evidence binding drifted`);
   }
 
   const helpers = requireRecord(contract.helpers, "helpers", contractPath);

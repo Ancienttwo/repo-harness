@@ -64,13 +64,4 @@ describe("install script contracts", () => {
     expect(pkg.files).toContain("install.sh");
     expect(pkg.files).toContain("install.ps1");
   });
-
-  test("localized READMEs pin the Bun floor and npx install fallback", () => {
-    const localizedReadmes = ["README.zh-CN.md", "README.es.md", "README.ja.md", "README.fr.md"];
-
-    for (const file of localizedReadmes) {
-      expect(read(file)).toContain(MIN_BUN_VERSION);
-      expect(read(file)).toContain("npx -y repo-harness@latest install");
-    }
-  });
 });

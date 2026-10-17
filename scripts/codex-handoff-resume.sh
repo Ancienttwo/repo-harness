@@ -3,9 +3,8 @@ set -euo pipefail
 
 # Thin invoker (EPC-07 recovery-view cutover): zero independent content
 # assembly. All handoff/resume rendering and checkpoint evidence resolution
-# live in src/effects/evidence/recovery-materializer.ts. Its CLI,
-# scripts/recovery-view-cli.ts, is generated into
-# assets/templates/helpers/recovery-view-cli.ts. This script's public
+# live in src/effects/evidence/recovery-materializer.ts. Its CLI is
+# scripts/recovery-view-cli.ts. This script's public
 # name and flags are preserved -- hosts that call
 # `repo-harness run codex-handoff-resume` or invoke this file directly are
 # unaffected.

@@ -7,12 +7,10 @@ import {
   collectProjectionFiles,
   digestProjectionFiles,
   normalizedProjectionMode,
-  readProjectionFile,
   sameProjectionBytes,
   writeProjectionFileAtomic,
   type ProjectionFileRecord,
 } from "../src/core/source-projection";
-import { getHelperScripts, loadWorkflowContract } from "./workflow-contract";
 
 type Mode = "check" | "write";
 
@@ -20,7 +18,6 @@ const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(SCRIPT_DIR, "..");
 const CANONICAL_ROOT = join(REPO_ROOT, "scripts");
 const TARGET_ROOT = join(REPO_ROOT, "assets", "templates", "helpers");
-const CONTRACT_PATH = join(REPO_ROOT, "assets", "workflow-contract.v1.json");
 const CAPABILITY_HELPER = "capability-resolver.ts";
 const CAPABILITY_CORE = join(REPO_ROOT, "src", "core", "capabilities", "registry.ts");
 
@@ -85,57 +82,19 @@ function buildCapabilityProjection(): ProjectionFileRecord {
   };
 }
 
-/**
- * The package runs helpers from scripts/, where `../src` resolves. The
- * assets/templates/helpers projection sits three levels below the package root,
- * so its one import of a canonical src module is rebased there.
- */
-function buildPackageImportProjection(name: string, importPath: string): ProjectionFileRecord {
-  const file = readProjectionFile(CANONICAL_ROOT, name);
-  const source = file.bytes.toString("utf8");
-  if (source.split(importPath).length !== 2) throw new Error(`${name} must import its canonical src module exactly once`);
-  const rebased = importPath.replace(/(["'])\.\.\/src\//, "$1../../../src/");
-  return { ...file, bytes: Buffer.from(source.replace(importPath, rebased)) };
-}
-
 function main(): void {
   const mode = parseMode(process.argv.slice(2));
   const locationSource = readFileSync(join(REPO_ROOT, 'src/core/worktree-location.mjs'));
   const locationTarget = join(REPO_ROOT, 'assets/herdr/webhook-notify/worktree-location.mjs');
   if (mode === 'write') writeProjectionFileAtomic(REPO_ROOT, locationTarget, locationSource, 0o644);
   else if (!existsSync(locationTarget) || !sameProjectionBytes(readFileSync(locationTarget), locationSource)) throw new Error('Herdr worktree location projection drift');
-  const contract = loadWorkflowContract(CONTRACT_PATH);
-  const inventory = getHelperScripts(contract);
-  const inventorySet = new Set(inventory);
+  const sourceFiles = [buildCapabilityProjection()];
   const errors: string[] = [];
-
-  const sourceFiles = inventory.map((name) => {
-    const sourcePath = join(CANONICAL_ROOT, name);
-    if (!existsSync(sourcePath)) {
-      errors.push(`contract helper source is missing: scripts/${name}`);
-      return null;
-    }
-    return name === CAPABILITY_HELPER
-      ? buildCapabilityProjection()
-      : name === "recovery-view-cli.ts"
-        ? buildPackageImportProjection(name, 'from "../src/effects/evidence/recovery-materializer";')
-        : name === "acceptance-receipt.ts"
-          ? buildPackageImportProjection(name, "from '../src/effects/state/readonly-observation';")
-          : readProjectionFile(CANONICAL_ROOT, name);
-  }).filter((file) => file !== null);
 
   const targetFiles = existsSync(TARGET_ROOT) ? collectProjectionFiles(TARGET_ROOT) : [];
   for (const targetFile of targetFiles) {
-    if (!inventorySet.has(targetFile.relPath)) {
+    if (targetFile.relPath !== CAPABILITY_HELPER) {
       errors.push(`unclassified package helper: assets/templates/helpers/${targetFile.relPath}`);
-    }
-  }
-
-  for (const name of inventory) {
-    if (!existsSync(join(TARGET_ROOT, name))) {
-      if (mode === "check") {
-        errors.push(`missing projected helper: assets/templates/helpers/${name}`);
-      }
     }
   }
 
@@ -188,7 +147,7 @@ function main(): void {
 
   if (mode === "check" && drift.length > 0) {
     for (const item of drift) process.stderr.write(`[helpers] ${item}\n`);
-    process.stderr.write("[helpers] Edit scripts/<helper>, then run bun run sync:helpers.\n");
+    process.stderr.write("[helpers] Edit scripts/capability-resolver.ts or src/core/capabilities/registry.ts, then run bun run sync:helpers.\n");
     process.exit(1);
   }
 
@@ -200,13 +159,13 @@ function main(): void {
   const digest = digestProjectionFiles(sourceFiles);
   if (mode === "write") {
     process.stdout.write(
-      `[helpers] projected ${sourceFiles.length} helpers from scripts to assets/templates/helpers (${digest})\n`,
+      `[helpers] projected the standalone capability resolver to assets/templates/helpers (${digest})\n`,
     );
     return;
   }
 
   process.stdout.write(
-    `[helpers] projection OK: ${sourceFiles.length} helpers (${digest})\n`,
+    `[helpers] projection OK: standalone capability resolver (${digest})\n`,
   );
 }
 

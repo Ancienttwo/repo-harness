@@ -1240,9 +1240,9 @@ state. Operators can run these commands when they intentionally want to inspect
 or export registered entries:
 
 ```bash
-repo-harness run check-brain-manifest
-repo-harness run sync-brain-docs --all
-repo-harness run sync-brain-docs --check
+repo-harness brain status
+repo-harness brain check
+repo-harness brain sync
 ```
 
 ## Refactor recommendations

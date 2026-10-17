@@ -137,6 +137,37 @@ describe("canonical adoption plan", () => {
     }
   });
 
+  test("standard apply renames the generated brain package scripts and keeps customized ones", () => {
+    const generated = tempRepo();
+    const customized = tempRepo();
+    try {
+      writeFileSync(join(generated, "package.json"), JSON.stringify({ name: "fixture", scripts: {
+        "check:brain-manifest": "repo-harness run check-brain-manifest",
+        "sync:brain-docs": "repo-harness run sync-brain-docs --all",
+      } }, null, 2));
+      expect(applyAdoptionPlan(planAdoption({ repoRoot: generated, mode: "standard", apply: true })).ok).toBe(true);
+      const generatedScripts = JSON.parse(readFileSync(join(generated, "package.json"), "utf-8")).scripts;
+      expect(generatedScripts["check:brain-manifest"]).toBeUndefined();
+      expect(generatedScripts["sync:brain-docs"]).toBeUndefined();
+      expect(generatedScripts["check:brain"]).toBe("repo-harness brain check");
+      expect(generatedScripts["sync:brain"]).toBe("repo-harness brain sync");
+
+      writeFileSync(join(customized, "package.json"), JSON.stringify({ name: "fixture", scripts: {
+        "check:brain-manifest": "repo-harness run check-brain-manifest",
+        "sync:brain-docs": "bun run custom-sync-brain.ts",
+      } }, null, 2));
+      expect(applyAdoptionPlan(planAdoption({ repoRoot: customized, mode: "standard", apply: true })).ok).toBe(true);
+      const customizedScripts = JSON.parse(readFileSync(join(customized, "package.json"), "utf-8")).scripts;
+      expect(customizedScripts["check:brain-manifest"]).toBeUndefined();
+      expect(customizedScripts["sync:brain-docs"]).toBe("bun run custom-sync-brain.ts");
+      expect(customizedScripts["check:brain"]).toBe("repo-harness brain check");
+      expect(customizedScripts["sync:brain"]).toBe("repo-harness brain sync");
+    } finally {
+      cleanup(generated);
+      cleanup(customized);
+    }
+  });
+
   test("one transaction retires exact legacy runtime and managed adapters, preserves mismatches, and rolls back", () => {
     const repo = tempRepo();
     try {
@@ -557,7 +588,7 @@ describe("canonical adoption plan", () => {
     try {
       mkdirSync(join(repo, "scripts"), { recursive: true });
       const helper = "scripts/check-task-workflow.sh";
-      writeFileSync(join(repo, helper), readFileSync(join(ROOT, "assets", "templates", "helpers", "check-task-workflow.sh"), "utf-8"));
+      writeFileSync(join(repo, helper), readFileSync(join(ROOT, "scripts", "check-task-workflow.sh"), "utf-8"));
       expect(spawnSync("git", ["init", "-q"], { cwd: repo }).status).toBe(0);
       expect(spawnSync("git", ["add", helper], { cwd: repo }).status).toBe(0);
       const apply = applyAdoptionPlan(planAdoption({ repoRoot: repo, mode: "standard", apply: true }));
@@ -576,7 +607,7 @@ describe("canonical adoption plan", () => {
     try {
       mkdirSync(join(repo, "scripts"), { recursive: true });
       const helper = "scripts/check-task-workflow.sh";
-      const canonical = readFileSync(join(ROOT, "assets", "templates", "helpers", "check-task-workflow.sh"), "utf-8");
+      const canonical = readFileSync(join(ROOT, "scripts", "check-task-workflow.sh"), "utf-8");
       expect(spawnSync("git", ["init", "-q"], { cwd: repo }).status).toBe(0);
       writeFileSync(join(repo, helper), "#!/bin/sh\necho staged custom helper\n");
       expect(spawnSync("git", ["add", helper], { cwd: repo }).status).toBe(0);
@@ -604,7 +635,7 @@ describe("canonical adoption plan", () => {
     try {
       mkdirSync(join(repo, "scripts"), { recursive: true });
       const helper = "scripts/check-task-workflow.sh";
-      writeFileSync(join(repo, helper), readFileSync(join(ROOT, "assets", "templates", "helpers", "check-task-workflow.sh"), "utf-8"));
+      writeFileSync(join(repo, helper), readFileSync(join(ROOT, "scripts", "check-task-workflow.sh"), "utf-8"));
       expect(spawnSync("git", ["init", "-q"], { cwd: repo }).status).toBe(0);
       expect(spawnSync("git", ["add", helper], { cwd: repo }).status).toBe(0);
       const git = (...args: string[]) => spawnSync("git", args, { cwd: repo, encoding: "utf-8" }).stdout;
@@ -629,7 +660,7 @@ describe("canonical adoption plan", () => {
     function helperRepo(): { repo: string; git: (...args: string[]) => ReturnType<typeof spawnSync> } {
       const repo = tempRepo();
       mkdirSync(join(repo, "scripts"), { recursive: true });
-      writeFileSync(join(repo, helper), readFileSync(join(ROOT, "assets", "templates", "helpers", "check-task-workflow.sh"), "utf-8"));
+      writeFileSync(join(repo, helper), readFileSync(join(ROOT, "scripts", "check-task-workflow.sh"), "utf-8"));
       const git = (...args: string[]) => spawnSync("git", args, { cwd: repo, encoding: "utf-8" });
       expect(git("init", "-q").status).toBe(0);
       return { repo, git };

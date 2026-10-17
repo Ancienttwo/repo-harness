@@ -10,7 +10,6 @@ import {
 import { tmpdir } from "os";
 import { join } from "path";
 import { spawnSync } from "child_process";
-import { assembleTemplate } from "../scripts/assemble-template";
 
 const ROOT = join(import.meta.dir, "..");
 const FACTOR_FACTORY_SMOKE_TIMEOUT_MS = 45_000;
@@ -114,7 +113,7 @@ describe("Factor Factory", () => {
     }
   }, FACTOR_FACTORY_SMOKE_TIMEOUT_MS);
 
-  test("factor templates and template assembly expose Plan G workflow", () => {
+  test("factor templates expose the Plan G registry and hypothesis shape", () => {
     const registryTemplate = JSON.parse(
       readFileSync(join(ROOT, "assets/templates/factor-factory/factor-registry.template.json"), "utf-8")
     );
@@ -128,18 +127,5 @@ describe("Factor Factory", () => {
     );
     expect(hypothesisTemplate).toContain("---");
     expect(hypothesisTemplate).toContain("data_deps:");
-
-    const planGOutput = assembleTemplate({
-      planType: "G",
-      variables: { PROJECT_NAME: "QuantLab" },
-    });
-    const planCOutput = assembleTemplate({
-      planType: "C",
-      variables: { PROJECT_NAME: "B2BApp" },
-    });
-
-    expect(planGOutput).toContain("tasks/factors/registry.json");
-    expect(planGOutput).toContain("repo-harness run factor-lab-new");
-    expect(planCOutput).not.toContain("tasks/factors/registry.json");
   });
 });

@@ -558,7 +558,7 @@ describe("install-agent-fleet", () => {
       // the environment; a nested bun test child then inherits it verbatim. The
       // installer must reject this decoy (its basename does not match the
       // runtime script's own $0) and keep resolving package_root from $0.
-      const decoyHelperSourcePath = join(ROOT, "assets/templates/helpers/verify-sprint.sh");
+      const decoyHelperSourcePath = join(ROOT, "scripts/verify-sprint.sh");
       expect(existsSync(decoyHelperSourcePath)).toBe(true);
 
       const res = runInstaller(home, partialSourceDir, [], {

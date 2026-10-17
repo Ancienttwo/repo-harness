@@ -96,11 +96,11 @@ describe("Hook contracts", () => {
   });
 
   test("workstream sync helper keeps the workstreams directory", () => {
-    expect(read("assets/templates/helpers/workstream-sync.sh")).toContain("tasks/workstreams");
+    expect(read("scripts/workstream-sync.sh")).toContain("tasks/workstreams");
   });
 
   test("workflow verification should not gate on external brain vault state", () => {
-    const script = read("assets/templates/helpers/check-task-workflow.sh");
+    const script = read("scripts/check-task-workflow.sh");
     expect(script).not.toContain('run_optional_helper "check-brain-manifest.sh"');
     expect(script).not.toContain('run_optional_helper "sync-brain-docs.sh"');
     expect(script).not.toContain("Brain doc sync check failed");

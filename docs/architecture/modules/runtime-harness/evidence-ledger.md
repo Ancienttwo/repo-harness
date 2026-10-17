@@ -151,7 +151,7 @@ sequenceDiagram
 
 - P1：`src/effects/evidence/post-bash-importer.ts` 已删除（#695）。它写的 `observed` 事件不满足任何门禁。`verification-execution.ts` 也过滤掉这类事件。Claude 与 Codex 的 Bash payload 没有退出码，所以这些事件都记成退出码 0。
 - P2：本能力的 append 入口改为 `entrypoint.evidence-ledger.attested-import`（`importAttestedEvidence`）。`flow.evidence-ledger.append-and-recover` 的第一步改为 attested import。旧 ledger 里已有的 `post_bash.command_observed` 事件留在原处，fold 照常处理。
-- P3：Stop 先发布 checkpoint，再渲染 handoff 与 resume。视图不再有 "## Commands Run" 段。`scripts/recovery-view-cli.ts` 只是命令行适配器，每个视图都来自 `recovery-materializer.ts`。手写的第二个渲染器已删除。`scripts/sync-helper-sources.ts` 把适配器投影到 `assets/templates/helpers/recovery-view-cli.ts`。
+- P3：Stop 先发布 checkpoint，再渲染 handoff 与 resume。视图不再有 "## Commands Run" 段。`scripts/recovery-view-cli.ts` 只是命令行适配器，每个视图都来自 `recovery-materializer.ts`。手写的第二个渲染器已删除。
 
 ## Optimization Backlog
 

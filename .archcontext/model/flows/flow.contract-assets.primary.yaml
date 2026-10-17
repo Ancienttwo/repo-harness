@@ -1,51 +1,41 @@
 schemaVersion: archcontext.flow/v1
 id: flow.contract-assets.primary
 capabilityId: capability.workflow-engine.contract-assets
-name: "Project helper copies from the workflow contract"
+name: "Project the standalone capability resolver"
 applicability: required
 participants:
   - id: capability
     nodeId: capability.workflow-engine.contract-assets
   - id: projection
     nodeId: component.contract-assets.template-projection
-  - id: contract
-    nodeId: component.contract-assets.primary
 steps:
-  - id: load-contract
-    from: projection
-    to: contract
-    label: "Load the package workflow contract"
+  - id: build-resolver
+    from: capability
+    to: projection
+    label: "Build the standalone resolver from scripts/capability-resolver.ts and the registry core"
     evidence:
       entrypointId: entrypoint.contract-assets.primary
       sourceSymbol: "main"
-      sinkId: sink.contract-assets.primary
-  - id: list-helpers
-    from: projection
-    to: contract
-    label: "Read helpers.scripts as the only helper id list"
-    evidence:
-      entrypointId: entrypoint.contract-assets.primary
-      sourceSymbol: "main"
-      sinkId: sink.contract-assets.helper-inventory
+      sinkId: sink.contract-assets.capability-projection
 outcomes:
   - id: success
     kind: success
-    label: "Every helper copy matches its source"
+    label: "The resolver copy matches its source"
     steps:
       - id: write-copies
         from: capability
         to: projection
-        label: "Write byte and mode identical helper copies atomically"
+        label: "Write a byte and mode identical resolver copy atomically"
         evidence:
           entrypointId: entrypoint.contract-assets.primary
           sourceSymbol: "main"
           sinkId: sink.contract-assets.projection-write
     terminal:
       participant: projection
-      label: "Helper copies equal the contract inventory"
+      label: "The resolver copy equals its source"
   - id: error
     kind: error
-    label: "A helper copy drifts or the inventory is unsafe"
+    label: "The resolver copy drifts or an unclassified helper file exists"
     steps:
       - id: report-drift
         from: capability

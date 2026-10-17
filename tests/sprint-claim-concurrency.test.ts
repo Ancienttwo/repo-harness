@@ -28,7 +28,6 @@
  * | detached HEAD or branch rename | "detached HEAD and branch rename do not disturb ownership" |
  * | upgrade with legacy per-worktree markers present | "cutover refuses while legacy markers, contract worktrees, or closeouts are live" |
  * | empty lock directory wedge (carry-over) | "an empty lock directory wedges the lock clone-wide" |
- * | `scripts/` vs `assets/templates/helpers/` | "the helper mirrors stay byte-identical" |
  *
  * The purely derivational rows -- row reorder and deletion, slug collisions,
  * cross-sprint isolation, separator forging, and revision granularity under an
@@ -72,7 +71,7 @@ import { fixtureTaskId } from './helpers/sprint-fixture';
 
 const ROOT = join(import.meta.dir, '..');
 const CLI = join(ROOT, 'src/cli/index.ts');
-const HELPER_DIR = join(ROOT, 'assets/templates/helpers');
+const HELPER_DIR = join(ROOT, 'scripts');
 const SPRINT_PATH = 'plans/sprints/20260818-0000-race.sprint.md';
 const ROW_ONE = 'race the claim';
 const ROW_TWO = 'second row';
@@ -1413,11 +1412,3 @@ describe('board projection over real linked worktrees', () => {
   }, 600_000);
 });
 
-describe('helper mirrors', () => {
-  test('the helper mirrors stay byte-identical', () => {
-    for (const name of ['sprint-backlog.sh', 'contract-worktree.sh', 'verify-contract.sh']) {
-      expect(readFileSync(join(ROOT, 'scripts', name), 'utf-8'))
-        .toBe(readFileSync(join(HELPER_DIR, name), 'utf-8'));
-    }
-  });
-});

@@ -116,7 +116,7 @@ sequenceDiagram
 6. **receipt 只在稳定状态下记录。** 在 `recordAcceptance` 前，round 再次检查 `close.request`，并比较两个 worktree 的指纹。worktree 改变时 round 失败（`generic-review.ts:288`、`generic-review.ts:289`）。cancel 与 accept 的线性化点写在 `generic-review.ts:284` 的注释里。
 7. **隔离失败不能降级。** reviewer 在 macOS Seatbelt launcher 里运行（`src/effects/review/review-isolation.ts:160`）。隔离不可用时结果是 `unsupported`，不能退回到无隔离运行（PR #476 回滚说明）。
 8. **只有可验证模型的 harness 能生成 receipt。** Claude reviewer 或没有观测到实际模型时，round 以 `review_actual_model_unverified` 失败（`generic-review.ts:85`）。
-9. **脚本是源，模板是投影。** `assets/templates/helpers/acceptance-receipt.ts` 与 `scripts/acceptance-receipt.ts` 只差 import 路径。`scripts/sync-helper-sources.ts` 检查投影漂移。
+9. **脚本是源。** `scripts/acceptance-receipt.ts` 是唯一副本。`assets/templates/helpers/` 只投影 `capability-resolver.ts`。
 
 ### 3.2 关键权衡
 

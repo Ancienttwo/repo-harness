@@ -18,7 +18,6 @@ import {
 } from "../../src/effects/evidence/verification-execution";
 
 const CLI = join(import.meta.dir, "..", "..", "scripts", "verification-plan.ts");
-const PROJECTED_CLI = join(import.meta.dir, "..", "..", "assets", "templates", "helpers", "verification-plan.ts");
 const LONG_CHECK_ID = "verification-execution-lifecycle-full-suite-check";
 
 function git(repoRoot: string, ...args: string[]): string {
@@ -366,13 +365,6 @@ describe("verification execution lifecycle", () => {
       expect(evaluate.status).toBe(1);
       expect(JSON.parse(evaluate.stdout).status).toBe("missing");
       expect(() => readFileSync(counterPath, "utf8")).toThrow();
-
-      const projected = spawnSync("bun", [PROJECTED_CLI, "evaluate", "--repo", repoRoot, "--contract", contractPath], {
-        encoding: "utf8",
-        env: { ...process.env, COUNTER_PATH: counterPath },
-      });
-      expect(projected.status).toBe(1);
-      expect(JSON.parse(projected.stdout).results[0].cache_key).toBe(JSON.parse(evaluate.stdout).results[0].cache_key);
     });
   }, 30_000);
 

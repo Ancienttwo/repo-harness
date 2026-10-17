@@ -61,8 +61,6 @@ describe("create-project-dirs scaffold parity", () => {
         "./.claude/templates/spec.template.md",
         "./.claude/templates/sprint.template.md",
         "./.gitignore",
-        "./AGENTS.md",
-        "./CLAUDE.md",
         "./deploy/README.md",
         "./deploy/env/.gitkeep",
         "./deploy/release-checklists/.gitkeep",
@@ -77,6 +75,7 @@ describe("create-project-dirs scaffold parity", () => {
         "./docs/architecture/modules/.gitkeep",
         "./docs/architecture/snapshots/.gitkeep",
         "./docs/reference-configs/agentic-development-flow.md",
+        "./docs/reference-configs/design-options.md",
         "./docs/reference-configs/document-generation.md",
         "./docs/reference-configs/external-tooling.md",
         "./docs/reference-configs/global-working-rules.md",
@@ -85,6 +84,7 @@ describe("create-project-dirs scaffold parity", () => {
         "./docs/reference-configs/heartbeat-triage.md",
         "./docs/reference-configs/minimal-change-hooks.md",
         "./docs/reference-configs/sprint-contracts.md",
+        "./docs/reference-configs/ux-feature-guard.md",
         "./docs/researches/README.md",
         "./docs/spec.md",
         "./interfaces/types.ts",
@@ -112,23 +112,7 @@ describe("create-project-dirs scaffold parity", () => {
       expect(gitignore).not.toContain("_ops/secrets/");
       expect(gitignore).not.toContain("!_ops/env/.env.example");
 
-      const agents = readFileSync(join(cwd, "AGENTS.md"), "utf-8");
-      expect(agents).toContain("Repo Agent Context");
-      expect(agents).toContain("Rule 0: You may spend as much time as needed thinking.");
-      expect(agents).toContain("## Agent Context Scaffolding");
-      expect(agents).toContain("Treat scanners as leads, not authority");
-      expect(agents).toContain("Choose the smallest instruction stack that changes behavior");
-      expect(agents).toContain("## Decision Protocol");
-      expect(agents).toContain("Do not run the full suite for every small change");
-      expect(agents).toContain("docs-only or ledger-closeout");
-      expect(agents).toContain("High-risk, cross-module, or release changes");
-      expect(agents).toContain("complete P1/P2/P3 before design decisions or code edits");
-      expect(agents).toContain("do not implement until the user approves");
-      expect(agents).toContain("Write a plan before cross-module changes, architecture changes, and dependency upgrades. Small changes do not need a plan.");
-      expect(agents).not.toContain("check-task-workflow.sh --strict");
       expect(JSON.parse(readFileSync(join(cwd, "package.json"), "utf-8")).scripts["check:task-workflow"]).toBeUndefined();
-      expect(agents).toContain("re-derives an authority's semantics");
-      expect(agents).toBe(readFileSync(join(cwd, "CLAUDE.md"), "utf-8"));
 
       const template = readFileSync(join(cwd, ".claude/templates/plan.template.md"), "utf-8");
       expect(template).toBe(readFileSync(join(ROOT, "assets/templates/plan.template.md"), "utf-8"));
@@ -182,7 +166,6 @@ describe("create-project-dirs scaffold parity", () => {
       expect(startWorkers).toContain("ssr: false");
       expect(startWorkers).toContain("wrangler.jsonc");
       expect(startWorkers).toContain("wrangler deploy");
-      expect(agents).not.toContain("AI-native Runtime Console Overlay");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

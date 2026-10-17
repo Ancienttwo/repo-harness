@@ -6,7 +6,6 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
-  readdirSync,
   readFileSync,
   realpathSync,
   rmSync,
@@ -19,6 +18,7 @@ import { commitAll, initGitRepo, run, tmpWorkspace } from "./helpers/repo-fixtur
 import { executeVerificationContract } from "../src/effects/evidence/verification-execution";
 import { nativeVerificationPlan } from "./state/effective-state-fixture";
 import { sweepManagedWorktrees } from "../src/effects/state/coordination-worktree-topology";
+import { listHelperFiles } from "../src/effects/runtime/helper-runner";
 
 // Regression guard for the squash-merge absorption predicate in the cleanup
 // branch of `scripts/contract-worktree.sh`. See:
@@ -29,7 +29,7 @@ import { sweepManagedWorktrees } from "../src/effects/state/coordination-worktre
 // the managed worktree sweep against real Git history.
 
 const ROOT = join(import.meta.dir, "..");
-const HELPER_DIR = join(ROOT, "assets/templates/helpers");
+const HELPER_DIR = join(ROOT, "scripts");
 
 setDefaultTimeout(30000);
 
@@ -51,7 +51,7 @@ function copyHelpers(cwd: string) {
   symlinkSync(join(ROOT, "src/effects"), join(cwd, "src/effects"), "dir");
   symlinkSync(join(ROOT, "src/core"), join(cwd, "src/core"), "dir");
 
-  for (const file of readdirSync(HELPER_DIR).filter((name) => name.endsWith(".sh") || name.endsWith(".ts"))) {
+  for (const file of listHelperFiles({ REPO_HARNESS_SOURCE_ROOT: ROOT })) {
     copyFileSync(join(HELPER_DIR, file), join(scriptsDir, file));
     copyFileSync(join(HELPER_DIR, file), join(harnessScriptsDir, file));
   }

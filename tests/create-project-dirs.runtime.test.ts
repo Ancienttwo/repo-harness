@@ -83,23 +83,9 @@ describe("create-project-dirs runtime smoke", () => {
       expect(existsSync(join(cwd, "plans/sprints"))).toBe(true);
       expect(existsSync(join(cwd, "tasks/reviews"))).toBe(true);
       expect(existsSync(join(cwd, "tasks/workstreams/.gitkeep"))).toBe(true);
-      expect(existsSync(join(cwd, "CLAUDE.md"))).toBe(true);
-      expect(existsSync(join(cwd, "AGENTS.md"))).toBe(true);
-      expect(readFileSync(join(cwd, "CLAUDE.md"), "utf-8")).toBe(
-        readFileSync(join(cwd, "AGENTS.md"), "utf-8")
-      );
-      expect(readFileSync(join(cwd, "AGENTS.md"), "utf-8")).toContain("Repo Agent Context");
-      expect(readFileSync(join(cwd, "AGENTS.md"), "utf-8")).toContain("Rule 0: You may spend as much time as needed thinking.");
-      expect(readFileSync(join(cwd, "AGENTS.md"), "utf-8")).toContain("tasks/todos.md");
-      expect(readFileSync(join(cwd, "AGENTS.md"), "utf-8")).toContain(".ai/context/context-map.json");
-      expect(readFileSync(join(cwd, "AGENTS.md"), "utf-8")).toContain("## Agent Context Scaffolding");
-      expect(readFileSync(join(cwd, "AGENTS.md"), "utf-8")).toContain("Treat scanners as leads, not authority");
-      expect(readFileSync(join(cwd, "AGENTS.md"), "utf-8")).toContain("Choose the smallest instruction stack that changes behavior");
-      expect(readFileSync(join(cwd, "AGENTS.md"), "utf-8")).toContain("## Decision Protocol");
-      expect(readFileSync(join(cwd, "AGENTS.md"), "utf-8")).toContain("complete P1/P2/P3 before design decisions or code edits");
-      expect(readFileSync(join(cwd, "AGENTS.md"), "utf-8")).toContain("do not implement until the user approves");
-      expect(readFileSync(join(cwd, "AGENTS.md"), "utf-8")).toContain("If the user says `implement this plan`");
-      expect(readFileSync(join(cwd, "AGENTS.md"), "utf-8")).toContain("re-derives an authority's semantics");
+      // repo-harness init (standard-plan.ts) is the only writer of root CLAUDE.md and AGENTS.md.
+      expect(existsSync(join(cwd, "CLAUDE.md"))).toBe(false);
+      expect(existsSync(join(cwd, "AGENTS.md"))).toBe(false);
       const gitignore = readFileSync(join(cwd, ".gitignore"), "utf-8");
       expect(gitignore).toContain("tasks/.current.md.tmp.*");
       expect(gitignore).toContain("tasks/current.md");
@@ -237,8 +223,8 @@ describe("create-project-dirs runtime smoke", () => {
       expect(workflowContract.documentation.referenceConfigs.resolverCommand).toBe("repo-harness docs path <doc-id>");
       expect(workflowContract.documentation.referenceConfigs.stubMarker).toBe(REFERENCE_STUB_MARKER);
       expect(workflowContract.helpers.scripts).toContain("check-agent-tooling.sh");
-      expect(workflowContract.helpers.scripts).toContain("check-brain-manifest.sh");
-      expect(workflowContract.helpers.scripts).toContain("sync-brain-docs.sh");
+      expect(workflowContract.helpers.scripts).not.toContain("check-brain-manifest.sh");
+      expect(workflowContract.helpers.scripts).not.toContain("sync-brain-docs.sh");
       expect(workflowContract.helpers.scripts).toContain("check-deploy-sql-order.sh");
       expect(workflowContract.helpers.scripts).not.toContain("check-architecture-sync.sh");
       expect(workflowContract.helpers.scripts).toContain("check-task-workflow.sh");
@@ -401,7 +387,7 @@ describe("create-project-dirs runtime smoke", () => {
       expect(policy.information_lifecycle.external_knowledge.manifest_file).toBe(".ai/harness/brain-manifest.json");
       expect(policy.information_lifecycle.external_knowledge.drift_check).toBeUndefined();
       expect(policy.information_lifecycle.external_knowledge.hook_trigger).toBeUndefined();
-      expect(policy.information_lifecycle.external_knowledge.sync_script).toBe("repo-harness run sync-brain-docs");
+      expect(policy.information_lifecycle.external_knowledge.sync_script).toBe("repo-harness brain sync");
       expect(policy.agentic_development.routing).toEqual({
         product_discovery: "parent-agent:geju",
         complex_engineering_plan: "parent-agent:geju",
@@ -510,7 +496,10 @@ describe("create-project-dirs runtime smoke", () => {
       expect(pkg.scripts["check:architecture-sync"]).toBeUndefined();
       expect(pkg.scripts["check:task-sync"]).toBe("repo-harness run check-task-sync");
       expect(pkg.scripts["check:task-workflow"]).toBeUndefined();
-      expect(pkg.scripts["sync:brain-docs"]).toBe("repo-harness run sync-brain-docs --all");
+      expect(pkg.scripts["check:brain"]).toBe("repo-harness brain check");
+      expect(pkg.scripts["sync:brain"]).toBe("repo-harness brain sync");
+      expect(pkg.scripts["check:brain-manifest"]).toBeUndefined();
+      expect(pkg.scripts["sync:brain-docs"]).toBeUndefined();
       expect(existsSync(join(cwd, "scripts/contract-worktree.sh"))).toBe(false);
       expect(existsSync(join(cwd, "scripts/ship-worktrees.sh"))).toBe(false);
     } finally {
@@ -636,8 +625,8 @@ describe("create-project-dirs runtime smoke", () => {
       );
 
       expect(res.status).toBe(0);
-      expect(existsSync(join(cwd, "CLAUDE.md"))).toBe(true);
-      expect(existsSync(join(cwd, "AGENTS.md"))).toBe(true);
+      expect(existsSync(join(cwd, "CLAUDE.md"))).toBe(false);
+      expect(existsSync(join(cwd, "AGENTS.md"))).toBe(false);
       expect(existsSync(join(cwd, "_ref/external-tool/CLAUDE.md"))).toBe(false);
       const capabilities = JSON.parse(readFileSync(join(cwd, ".ai/context/capabilities.json"), "utf-8"));
       expect(capabilities.capabilities).toEqual([]);
@@ -669,17 +658,8 @@ describe("create-project-dirs runtime smoke", () => {
       );
 
       expect(res.status).toBe(0);
-      expect(existsSync(join(cwd, "CLAUDE.md"))).toBe(true);
-      expect(existsSync(join(cwd, "AGENTS.md"))).toBe(true);
-      expect(readFileSync(join(cwd, "CLAUDE.md"), "utf-8")).toBe(
-        readFileSync(join(cwd, "AGENTS.md"), "utf-8")
-      );
-      expect(readFileSync(join(cwd, "AGENTS.md"), "utf-8")).toContain("Repo Agent Context");
-      expect(readFileSync(join(cwd, "AGENTS.md"), "utf-8")).toContain("Rule 0: You may spend as much time as needed thinking.");
-      expect(readFileSync(join(cwd, "AGENTS.md"), "utf-8")).toContain("## Agent Context Scaffolding");
-      expect(readFileSync(join(cwd, "AGENTS.md"), "utf-8")).toContain("Choose the smallest instruction stack that changes behavior");
-      expect(readFileSync(join(cwd, "AGENTS.md"), "utf-8")).toContain("## Decision Protocol");
-      expect(readFileSync(join(cwd, "AGENTS.md"), "utf-8")).toContain("do not implement until the user approves");
+      expect(existsSync(join(cwd, "CLAUDE.md"))).toBe(false);
+      expect(existsSync(join(cwd, "AGENTS.md"))).toBe(false);
       expect(existsSync(join(cwd, "apps/web/CLAUDE.md"))).toBe(false);
       expect(existsSync(join(cwd, "apps/web/AGENTS.md"))).toBe(false);
       expect(existsSync(join(cwd, "packages/ui/CLAUDE.md"))).toBe(false);
@@ -775,8 +755,8 @@ describe("create-project-dirs runtime smoke", () => {
       expect(existsSync(join(cwd, "apps"))).toBe(false);
       expect(existsSync(join(cwd, "packages"))).toBe(false);
       expect(existsSync(join(cwd, "services"))).toBe(false);
-      expect(existsSync(join(cwd, "CLAUDE.md"))).toBe(true);
-      expect(existsSync(join(cwd, "AGENTS.md"))).toBe(true);
+      expect(existsSync(join(cwd, "CLAUDE.md"))).toBe(false);
+      expect(existsSync(join(cwd, "AGENTS.md"))).toBe(false);
       expect(existsSync(join(cwd, ".ai/context/context-map.json"))).toBe(true);
       expect(existsSync(join(cwd, ".ai/harness/policy.json"))).toBe(true);
       expect(existsSync(join(cwd, ".ai/harness/context-budget/latest.json"))).toBe(false);

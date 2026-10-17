@@ -5,9 +5,8 @@ import { spawn, spawnSync } from "child_process";
 import { fileURLToPath } from "url";
 import { createHash } from "crypto";
 
-// Sibling of the existing bounded process runner (scripts/run-bounded-verifier-command.ts,
-// mirrored to assets/templates/helpers/run-bounded-verifier-command.ts): both live next to
-// whichever copy of this file is executing, canonical or projected.
+// Sibling of the existing bounded process runner (scripts/run-bounded-verifier-command.ts):
+// both live in the package scripts/ directory.
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 
 type Mode = "dry-run" | "run" | "preflight";

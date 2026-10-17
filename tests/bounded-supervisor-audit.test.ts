@@ -4,7 +4,7 @@ import { constants, closeSync, openSync, existsSync, mkdtempSync, readFileSync, 
 import { tmpdir } from 'os';
 import { join } from 'path';
 
-const runners = ['scripts', 'assets/templates/helpers'];
+const runners = ['scripts'];
 for (const runner of runners) {
   for (const target of ['stdout', 'stderr']) for (const expired of [false, true]) {
     test(`${runner}: rejects ${target} FIFO with expired=${expired} without spawning`, () => {
