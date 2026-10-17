@@ -1,6 +1,6 @@
 # runtime-harness/evidence-ledger 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-evidence-ledger" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:a9ee1c328e554fae25ebb0232469753cea0f68a4cf0b42926f182d77cf493e7c" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-evidence-ledger" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:0a3c32c7bb58bf4d6f0acb2823c766534134014e231edc4670c9e1465a3cd610" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.evidence-ledger`(kind `capability`)
 > **Matched Prefixes**:`src/core/evidence/**`、`src/effects/evidence/**`、`scripts/evidence-gc.ts`、`scripts/recovery-view-cli.ts`、`scripts/decision-trail.ts`、`scripts/prepare-handoff.sh`、`scripts/prepare-codex-handoff.sh`、`scripts/codex-handoff-resume.sh`
@@ -59,7 +59,6 @@ flowchart LR
 - `calls` ← `component.evals-checks.primary` — Validate and execute verification plans through the evidence verification modules
 - `calls` ← `component.global-runtime-reconciliation.archctx-closure` — Canonicalize architecture closure records
 - `calls` ← `component.hook-adapters.session-lifecycle` — Publish the evidence checkpoint and render handoff and resume from it
-- `calls` ← `capability.organization.publication` — Append lifecycle journal records through the durable evidence append primitive
 - `calls` ← `component.refactor-program.archctx-provider` — Canonicalize refactor provider records
 - `calls` ← `capability.runtime-harness.task-agent-host` — Hash request context and result bytes with the evidence canonical JSON
 - `calls` ← `capability.organization.task-fleet` — Reuse canonical JSON and durable atomic append for task message records
@@ -141,7 +140,7 @@ sequenceDiagram
 ### 从无 owner 到独立能力 (2026-10-11)
 
 - P1：`src/core/evidence/**` 与 `src/effects/evidence/**` 此前没有 capability owner。
-- P2：协议来自 EPC 计划的冻结决策 D1-D9（`plans/archive/20260722-0001-evidence-projection-convergence.sprint.md`）。
+- P2：协议来自 EPC 计划的冻结决策 D1-D9（[historical record](https://github.com/Ancienttwo/repo-harness/blob/f3f2862df/plans/archive/20260722-0001-evidence-projection-convergence.sprint.md)）。
 - P3：Ownership proposal 把两个 verification-plan 文件分给 evals-checks。Registry 不支持 `source.exclude`。这次变更把两个目录整体交给本能力，拆分推迟到 arch-context#296 之后。
 
 ### PostBash importer 退役 (2026-10-13)

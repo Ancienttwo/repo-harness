@@ -5,7 +5,7 @@
     "elements": [
       {
         "id": "capability.organization.publication",
-        "name": "PR Publication",
+        "name": "Publication Observations",
         "type": "Software System",
         "tags": [
           "capability"
@@ -301,7 +301,7 @@
       },
       {
         "id": "component.contract-assets.contract-worktree-lifecycle",
-        "name": "Contract Worktree Lifecycle",
+        "name": "Worktree Safety and Branch Delivery",
         "type": "Component",
         "tags": [
           "component"
@@ -589,7 +589,7 @@
       },
       {
         "id": "component.publication.primary",
-        "name": "Publication Receipt Lifecycle and Readiness",
+        "name": "Publication Record and Readiness Readers",
         "type": "Component",
         "tags": [
           "component"
@@ -661,7 +661,7 @@
       },
       {
         "id": "component.workflow-state.coordination-plane",
-        "name": "Shared Coordination Plane",
+        "name": "Historical Coordination and Worktree Safety",
         "type": "Component",
         "tags": [
           "component"
@@ -1791,12 +1791,6 @@
         "id": "relation.publication.contract-assets",
         "sourceId": "capability.organization.publication",
         "destinationId": "capability.workflow-engine.contract-assets",
-        "description": "calls"
-      },
-      {
-        "id": "relation.publication.evidence-ledger",
-        "sourceId": "capability.organization.publication",
-        "destinationId": "capability.runtime-harness.evidence-ledger",
         "description": "calls"
       },
       {

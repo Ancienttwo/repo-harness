@@ -1,5 +1,5 @@
 # workflow-engine/contract-assets 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-contract-assets" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:fa56d8ee77b827f2d2a607d0787b0bd399fc65d64184c742a57c815bc0891df5" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-contract-assets" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:f99853bcd5dad3aa39664975aa4e4eb0e7348f0991d2ee9bbb9632bf2620eb31" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.workflow-engine.contract-assets`(kind `capability`)
 > **Matched Prefixes**:`assets/workflow-contract.v1.json`、`.ai/harness/workflow-contract.json`、`.ai/harness/policy.json`、`.ai/context/**`、`.archcontext/model/nodes/**`、`scripts/capability-resolver.ts`、`scripts/capability-config.ts`、`scripts/contract-worktree.sh`、`scripts/archive-workflow.sh`、`scripts/merge-gate.ts`、`scripts/ship-worktrees.sh`、`src/cli/commands/init.ts`、`src/cli/commands/capability-context.ts`、`src/effects/runtime/helper-runner.ts`、`assets/templates/**`、`assets/reference-configs/**`、`docs/reference-configs/**`、`assets/AGENTS.md`、`assets/CLAUDE.md`、`.ai/harness/brain-manifest.json`、`.archcontext/**`、`src/core/capabilities/**`、`src/core/source-projection.ts`、`src/cli/commands/run.ts`、`src/cli/commands/brain.ts`、`src/cli/commands/brain-root.ts`、`assets/project-structures/**`、`assets/plan-map.json`、`assets/versions.json`、`.claude/templates/**`、`scripts/workflow-contract.ts`、`scripts/check-context-map.ts`、`scripts/check-context-files.sh`、`scripts/select-agent-context-blocks.sh`、`scripts/workstream-sync.sh`、`scripts/sync-helper-sources.ts`、`scripts/sync-reference-configs.ts`、`scripts/contract-worktree-runtime.ts`、`scripts/worktree-merge-lib.sh`、`scripts/cutover-closure.ts`、`scripts/new-spec.sh`、`scripts/new-plan.sh`、`scripts/capture-plan.sh`、`scripts/plan-to-todo.sh`、`scripts/switch-plan.sh`、`scripts/classify-historical-plans.ts`、`scripts/ensure-task-workflow.sh`、`scripts/refresh-current-status.sh`、`scripts/summarize-failures.sh`、`scripts/maintenance-triage.sh`、`scripts/heartbeat-triage.sh`、`scripts/check-deploy-sql-order.sh`、`scripts/factor-lab-new.sh`、`scripts/factor-lab-promote.sh`、`scripts/factor-lab-reject.sh`、`scripts/factor-lab-check.sh`
@@ -17,7 +17,7 @@ flowchart LR
   p1_capability_workflow_engine_contract_assets_c7ab122d["Contract Assets"]:::component
   p1_capability_workflow_engine_execution_primitives_b3033934["Execution Primitives"]:::component
   p1_component_contract_assets_capability_registry_87c3dd18["Capability Registry"]:::component
-  p1_component_contract_assets_contract_worktree_lifecycle_5cb413df["Contract Worktree Lifecycle"]:::component
+  p1_component_contract_assets_contract_worktree_lifecycle_5cb413df["Worktree Safety and Branch Delivery"]:::component
   p1_component_contract_assets_planning_helpers_7600c3e5["Planning Helpers"]:::component
   p1_component_contract_assets_primary_21097608["Workflow Contract And Policy"]:::component
   p1_component_contract_assets_template_projection_e6aa176d["Template Projection"]:::component
@@ -35,7 +35,7 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:a9dc81a9d269e3d44b39eff2c24c45da15d1517e83a9112444c6b50aff436868`).
+- Proof: `proven` (`sha256:513af9a4307af0dcd02165217f768cf2c1f8833aa383a674e7bb1c88c0078a18`).
 - Semantic nodes: `7`; declared relations: `8`.
 
 ### 1.2 模組職責表
@@ -71,7 +71,7 @@ flowchart LR
 - `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the init and capability-context commands
 - `calls` ← `component.global-runtime-reconciliation.primary` — Sync the cross-review skills through the init command
 - `reads` ← `component.inspection-migration.primary` — Read directory and legacy path inventory from the package workflow contract
-- `calls` ← `capability.organization.publication` — Recompute the candidate diff with the packaged merge gate and worktree merge helper
+- `calls` ← `capability.organization.publication` — Read integration proof through the packaged worktree merge helper
 - `calls` ← `component.workflow-state.primary` — Match changed paths to capability ids through the pure capability registry
 
 組件出向關係:
@@ -105,14 +105,14 @@ flowchart LR
 | 組件 | 名稱 | 規模量級 | 宣告入口 |
 | --- | --- | --- | --- |
 | `component.contract-assets.capability-registry` | Capability Registry | `200–500` 個文件 / `5000–10000` 行 | 未宣告 |
-| `component.contract-assets.contract-worktree-lifecycle` | Contract Worktree Lifecycle | `5–10` 個文件 / `5000–10000` 行 | 未宣告 |
+| `component.contract-assets.contract-worktree-lifecycle` | Worktree Safety and Branch Delivery | `5–10` 個文件 / `2000–5000` 行 | 未宣告 |
 | `component.contract-assets.planning-helpers` | Planning Helpers | `20–50` 個文件 / `2000–5000` 行 | 未宣告 |
 | `component.contract-assets.primary` | Workflow Contract And Policy | `10–20` 個文件 / `2000–5000` 行 | 未宣告 |
 | `component.contract-assets.template-projection` | Template Projection | `50–100` 個文件 / `10k–20k` 行 | 未宣告 |
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:a9dc81a9d269e3d44b39eff2c24c45da15d1517e83a9112444c6b50aff436868`); selectors `5/5`.
+> **Proof**: `proven` (`sha256:513af9a4307af0dcd02165217f768cf2c1f8833aa383a674e7bb1c88c0078a18`); selectors `5/5`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
@@ -192,7 +192,6 @@ regressions verify these separate boundaries.
 | I7 | merge gate 对每个候选都必需。它没有启用位，所以候选不能自我豁免。推送前，`fingerprint` 按目标 base 扫描候选 diff | `scripts/merge-gate.ts` 的 `runMergeGateCli`（`:284`，`const required = true`）；`scripts/ship-worktrees.sh:1076`（`merge-gate.ts fingerprint --base`） |
 | I8 | 55 个 helper 中 52 个与 `scripts/` 逐字节一致；3 个例外由投影脚本声明：`capability-resolver.ts` 与 `recovery-view-cli.ts` 带 `@generated-from` 头，`acceptance-receipt.ts` 只改写一条 import 路径 | `bun run check:helpers`；`scripts/sync-helper-sources.ts:48`、`:88`、`:108-113` |
 | I9 | 本地 contract publication 每个 work package 只向 target 增加一个 commit，publication tree 必须与 seal 验证后的 lifecycle HEAD 一致 | `scripts/contract-worktree.sh` 的 `publication_prepared` journal phase |
-| I10 | finish abort 只在 runner 证明 target publication 未落地后，才把同一 fenced lease 从 `completing` 恢复为 `bound` | `contract-worktree.sh` 的 `closeout_finish_effect_landed`（`:1213-1233`）+ `sprint abort-completion` |
 
 本 capability 还依赖两条外部不变量。它们不归这里执行：adoption 事务不会静默覆盖用户内容（public-surface.adoption）；install profile 的唯一 authored 权威是 `profile`（hook-adapters 与 global-runtime-reconciliation）。
 
@@ -200,7 +199,7 @@ regressions verify these separate boundaries.
 
 - **契约是 JSON 而非可执行配置。** 代价是表达力弱。收益是 byte parity 可判定、diff 可读、任何语言都能校验。
 - **超时按类别硬编码而非策略可配。** 普通 helper 120 s，closeout helper 900 s，verifier helper 3,660 s（`helper-runner.ts:20-23`）。策略文件因此不能变成无限挂起的入口。
-- **闸门在 commit 之后跑。** pre-commit 的 HEAD 无法标识 merge candidate，所以先落 commit 再封印。FAIL 或 BLOCKED 靠恢复 pre-finish commit 与实时工作流工件回滚。
+- **Branch shipping freezes the candidate commit.** A failure before push can restore the local journal snapshot. After push, recovery preserves the external effect. Contract finish and local merge are removed.
 - **`merge-gate` 不调用 provider。** 它是确定性封印，不是语义评审。语义验收由独立的 AcceptanceReceipt 承担。闸门因此可离线、可重放。
 - **证据边界不等于 public commit 边界。** source branch 保留 checkpoint 与 lifecycle commits。local merge 用 frozen target base 加 verified lifecycle tree 合成一个 publication commit。代价是 source topology 不进入 target ancestry。
 - **lease 与 closeout journal 没有跨存储原子事务。** abort 先幂等恢复 lease，再把 journal 标为 `aborted`。两步之间崩溃时，`recover abort` 重放同一个 fenced transition。
@@ -608,3 +607,14 @@ bun test tests/workflow-contract.test.ts tests/scaffold-parity.test.ts
 bun scripts/capability-resolver.ts validate --format text
 bun run check:helpers
 ```
+
+## 2026-10-18: Slice C worktree and archive boundary
+
+Worktree start, cleanup, sweep and status remain. The protected branch ship
+journal remains. Contract finish/recover, Sprint completion and local merge
+commands are removed. Historical sections above describe earlier behavior.
+
+Closed task records now use the same retention window as closed plans. Tracked,
+unchanged records can leave Git after the window. Modified, kept or recent
+records remain in place. The acceptance reader requires the exact live contract
+and does not search archives or re-accept an archived contract.

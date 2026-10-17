@@ -1,13 +1,13 @@
 # workflow-engine/workflow-state 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-workflow-state" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:959bd662c2108373442f0385dfd7023688e73c4a70c14d51e297b2b203444022" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-workflow-state" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:4596d1264135a66d27d2865505733c06673cb8056645b77f01efa85a3a972954" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.workflow-engine.workflow-state`(kind `capability`)
-> **Matched Prefixes**:`src/core/state/**`、`src/effects/state/**`、`src/core/workflow/**`、`interfaces/**`、`src/core/worktree-location.mjs`、`src/core/worktree-location.d.mts`、`src/cli/commands/state.ts`、`src/cli/commands/sprint.ts`、`scripts/check-state-boundaries.ts`、`scripts/sprint-backlog.sh`
+> **Matched Prefixes**:`src/core/state/**`、`src/effects/state/**`、`src/core/workflow/**`、`interfaces/**`、`src/core/worktree-location.mjs`、`src/core/worktree-location.d.mts`、`src/cli/commands/state.ts`、`scripts/check-state-boundaries.ts`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
-Resolves the one deterministic Effective State projection and owns the shared coordination plane and the continuation ledger.
+Resolves deterministic Effective State and owns historical coordination reads, worktree safety and the continuation ledger.
 
 ## 1. P1:能力架構地圖
 
@@ -18,11 +18,11 @@ flowchart LR
   p1_capability_workflow_engine_execution_primitives_b3033934["Execution Primitives"]:::component
   p1_capability_workflow_engine_workflow_state_c0df5f05["Workflow State"]:::component
   p1_component_workflow_state_continuation_ledger_379dbd7c["Continuation Ledger"]:::component
-  p1_component_workflow_state_coordination_plane_01b22a1b["Shared Coordination Plane"]:::component
+  p1_component_workflow_state_coordination_plane_01b22a1b["Historical Coordination and Worktree Safety"]:::component
   p1_component_workflow_state_primary_d0fb4045["Effective State Resolver"]:::component
   p1_component_workflow_state_continuation_ledger_379dbd7c -->|"Serialize attempt ledger appends under a directory lock"| p1_capability_workflow_engine_execution_primitives_b3033934
   p1_component_workflow_state_continuation_ledger_379dbd7c -->|"Project the continuation envelope from read-only Effective State"| p1_component_workflow_state_primary_d0fb4045
-  p1_capability_workflow_engine_workflow_state_c0df5f05 -->|"Serve the Sprint ownership verbs and the read-only board"| p1_component_workflow_state_coordination_plane_01b22a1b
+  p1_capability_workflow_engine_workflow_state_c0df5f05 -->|"Serve historical coordination and board reads with worktree safety"| p1_component_workflow_state_coordination_plane_01b22a1b
   p1_component_workflow_state_coordination_plane_01b22a1b -->|"Append claim attempt receipts and read owner ledgers as progress evidence"| p1_component_workflow_state_continuation_ledger_379dbd7c
   p1_component_workflow_state_coordination_plane_01b22a1b -->|"Take task and backlog locks and read the worktree topology"| p1_capability_workflow_engine_execution_primitives_b3033934
   p1_component_workflow_state_coordination_plane_01b22a1b -->|"Read artifacts and owner Effective State through the shared resolver"| p1_component_workflow_state_primary_d0fb4045
@@ -34,7 +34,7 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:5277aa25769a0dccd118d6c166edcd2f71a12f3894551ca01bc718c2b8768ab9`).
+- Proof: `proven` (`sha256:7c51e9708cceecc9e3d62e794e7fb7253afb23228d2cb13252acfb0180cc0b76`).
 - Semantic nodes: `5`; declared relations: `8`.
 
 ### 1.2 模組職責表
@@ -57,15 +57,15 @@ flowchart LR
 
 ### 1.3 規模信號
 
-- 規模量級:`20–50` 個文件 / `10k–20k` 行
-- 匹配前綴:`src/core/state/**`、`src/effects/state/**`、`src/core/workflow/**`、`interfaces/**`、`src/core/worktree-location.mjs`、`src/core/worktree-location.d.mts`、`src/cli/commands/state.ts`、`src/cli/commands/sprint.ts`、`scripts/check-state-boundaries.ts`、`scripts/sprint-backlog.sh`
+- 規模量級:`20–50` 個文件 / `5000–10000` 行
+- 匹配前綴:`src/core/state/**`、`src/effects/state/**`、`src/core/workflow/**`、`interfaces/**`、`src/core/worktree-location.mjs`、`src/core/worktree-location.d.mts`、`src/cli/commands/state.ts`、`scripts/check-state-boundaries.ts`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
 ### 1.4 依賴邊界
 
 出向關係:
 
-- `calls` → `component.workflow-state.coordination-plane` — Serve the Sprint ownership verbs and the read-only board
+- `calls` → `component.workflow-state.coordination-plane` — Serve historical coordination and board reads with worktree safety
 - `calls` → `component.workflow-state.primary` — Resolve Effective State under the state lock
 
 入向關係:
@@ -85,7 +85,7 @@ flowchart LR
 - `reads` ← `component.integration-acceptance.primary` — Read the task lease for the integration envelope
 - `calls` ← `component.mcp-sidecar.coding-profile` — Clean up exact worktrees under the system worktree root
 - `reads` ← `component.mcp-sidecar.primary` — Resolve effective state for the state MCP tools
-- `calls` ← `component.publication.primary` — Move the publication lease through review and takeover states under the task lock
+- `calls` ← `component.publication.primary` — Read historical leases and the board to validate publication observations
 - `calls` ← `component.publication.provider-feedback` — Read canonical tasks and leases to evaluate provider feedback progress
 - `reads` ← `component.strategy-reflection.primary` — Resolve effective state read-only for strategy context
 - `reads` ← `component.task-fleet.primary` — Read canonical Sprint tasks and leases to build offers and the board
@@ -113,19 +113,19 @@ flowchart LR
 | 組件 | 名稱 | 規模量級 | 宣告入口 |
 | --- | --- | --- | --- |
 | `component.workflow-state.continuation-ledger` | Continuation Ledger | `5–10` 個文件 / `200–500` 行 | 未宣告 |
-| `component.workflow-state.coordination-plane` | Shared Coordination Plane | `20–50` 個文件 / `5000–10000` 行 | 未宣告 |
+| `component.workflow-state.coordination-plane` | Historical Coordination and Worktree Safety | `20–50` 個文件 / `2000–5000` 行 | 未宣告 |
 | `component.workflow-state.primary` | Effective State Resolver | `10–20` 個文件 / `2000–5000` 行 | 未宣告 |
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:5277aa25769a0dccd118d6c166edcd2f71a12f3894551ca01bc718c2b8768ab9`); selectors `10/10`.
+> **Proof**: `proven` (`sha256:7c51e9708cceecc9e3d62e794e7fb7253afb23228d2cb13252acfb0180cc0b76`); selectors `10/10`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
 sequenceDiagram
   autonumber
   participant p2_capability_4262990f as Workflow State
-  participant p2_plane_fe9f6ceb as Shared Coordination Plane
+  participant p2_plane_fe9f6ceb as Historical Coordination and Worktree Safety
   participant p2_primitives_8dae000d as Execution Primitives
   participant p2_resolver_55db5581 as Effective State Resolver
   participant p2_ledger_bccca523 as Continuation Ledger
@@ -177,8 +177,8 @@ sequenceDiagram
 4. **解析在仓库状态锁内串行。** `resolveEffectiveState` 先取 `.ai/harness/state/effective.lock`（`src/effects/state/state-lock.ts:3-7`）。源在稳定性循环之后又变化时，整轮只重试一次，第二次仍不一致就抛 `StateResolutionUnstableError`（`src/effects/state/resolve-effective-state.ts:893-920`）。
 5. **只读路径不写任何东西。** `resolveEffectiveStateReadOnly` 走同一个稳定性循环，但不分配版本，也不发布缓存（`resolve-effective-state.ts:922-933`）。board 与 continuation envelope 都只用这条路径。
 6. **身份是读出来的。** `task_id` 是 Sprint 行 `ID` 单元格的原文，必须匹配 `TASK_DIGEST_PATTERN`（`src/core/state/coordination-identity.ts:77`）。只有 `task_revision` 是推导值。
-7. **每一次所有权变更都在该任务的锁内完成读-比较-写。** 锁位于 `<git-common-dir>/repo-harness/coordination/v1/`（`src/effects/state/coordination-lease-store.ts:53`、`:126-160`）。fencing 由 `claim_id` 与 `generation` 共同完成。
-8. **board 不取锁，也不是授权依据。** `resolveBoard` 按 collect → project → collect 运行；两次输入 revision 不同就丢弃整轮再跑一次，仍不同就标记 `changed_during_read`（`src/effects/state/resolve-board.ts:1-28`）。`claim`、`steal`、`release` 与 `begin-completion` 必须在自己的任务锁内重新读权威。
+7. **任务锁保护保留的写入。** manual inbox 和 feedback 在任务锁中校验历史 owner。lease transition 和 cleanup writer 已删除。
+8. **board 不取锁，也不授予执行权限。** 双采样暴露 torn read。GitHub issue 和 PR 保存当前任务 authority。
 9. **attempt ledger 不进入 Effective State。** 收据不是 `EffectiveState`、`state_revision` 的输入。断路器只在路由表给出可执行路由后运行（`src/core/state/project-continuation-envelope.ts` 文件头）。
 10. **停滞判定没有计数器。** 当前 unit 的尾部连续两条 `completed` 收据且 before/after token 等于当前 token，即判定 `no_progress`（`src/core/state/no-progress.ts:6`、`:20-35`）。无法解析的行 fail closed，不跳过（`src/core/state/attempt-ledger.ts:29-31`）。
 
@@ -199,7 +199,7 @@ sequenceDiagram
 | 组件 | 文件 / 行 | 职责 | 主要出向关系 |
 | --- | ---: | --- | --- |
 | `component.workflow-state.primary`（Effective State Resolver） | 17 / 4,434 | 工件解析、风险 profile、稳定读取、缓存与版本发布、`state` CLI、`interfaces/**`、边界门禁 | execution-primitives（状态锁与版本锁）、contract-assets（能力注册表） |
-| `component.workflow-state.coordination-plane`（Shared Coordination Plane） | 28 / 8,924 | Sprint 身份、四态 lease、claim token、cutover、worktree 拓扑记录、board 与 slice 投影、`sprint` CLI | primary（工件读取与 owner 只读解析）、continuation-ledger（attempt 收据）、execution-primitives（任务锁、backlog 锁、worktree 拓扑） |
+| `component.workflow-state.coordination-plane`（Shared Coordination Plane） | 28 / 8,924 | 历史 Sprint 身份、lease 和 claim token 读取、cutover、worktree 安全、board 与 slice 投影 | primary（工件读取与 owner 只读解析）、continuation-ledger（attempt 收据）、execution-primitives（任务锁、worktree 拓扑） |
 | `component.workflow-state.continuation-ledger`（Continuation Ledger） | 5 / 540 | continuation 路由表、attempt ledger、no-progress 断路器 | primary（只读 Effective State）、execution-primitives（ledger 追加锁） |
 
 coordination-plane 用文件名通配符声明 footprint（例如 `src/effects/state/coordination-*.ts`）。新的 `coordination-*` 文件自动归入该组件。其他新文件只归入 capability，直到有人把它加入某个组件。
@@ -226,12 +226,17 @@ coordination-plane 用文件名通配符声明 footprint（例如 `src/effects/s
 - **primary → coordination-plane 回边。** `src/core/state/types.ts:12` 导入 `coordination-identity.ts`，`:316` 内联导入 `lease-liveness.ts`。board DTO 类型因此住在 Effective State 的类型文件里。`src/cli/commands/state.ts:13-21` 还承载 `state board`。候选做法：把 board 类型移到协调面，或把 `state board` 适配器移到协调面。
 - **primary → continuation-ledger 回边。** `src/cli/commands/state.ts:15`、`:22` 承载 `state attempt` 与 `state next`。处理方式同上。
 - **continuation-ledger → coordination-plane 回边。** `src/core/state/project-continuation-envelope.ts:45` 导入 `sprint-backlog-rows.ts`。该文件是 Sprint backlog 的纯解析器。候选做法：把它和 `artifact-parsers.ts` 放在一起。
-- **coordination-plane → engineer-scheduling 回边。** `src/cli/commands/sprint.ts:4`、`:12` 与 `src/effects/state/sprint-schema-migration.ts:26` 导入 engineers scheduling。
-- **coordination-plane → mcp-sidecar 回边。** `src/cli/commands/sprint.ts:8` 导入 `src/effects/repo-registry.ts`。
 - **coordination-plane → task-agent-host。** `src/effects/state/coordination-worktree-topology.ts:12` 导入 `src/effects/terminal/task-session.ts`，在 prune 前确认 task runtime 已关闭。集成时没有发现 task-agent-host → workflow-state 的边。模型因此声明 coordination-plane → task-agent-host（`reads`）。
-- **持久写原语在 evidence 目录。** 协调面与 ledger 的 7 个文件导入 `src/effects/evidence/atomic-append.ts`（例如 `coordination-lease-store.ts:48`）。它是通用持久写原语。候选做法：移到 execution-primitives。
+- **持久写原语在 evidence 目录。** 保留的 worktree 支持代码仍使用 `src/effects/evidence/atomic-append.ts`（例如 `src/effects/state/coordination-cutover.ts`）。lease store 已改为读取历史记录。它是通用持久写原语。候选做法：移到 execution-primitives。
 - **`readonly-observation.ts` 被下层导入。** `src/effects/git/common-directory.ts:1` 与 `readonly-virtual-tree.ts:4` 导入它，evidence 与 `scripts/acceptance-receipt.ts:3` 也导入它。候选做法：移到 execution-primitives。
 - **`diff-fingerprint.ts` 的归属（after arch-context#296）。** `effective-state-authority.md` 把 Git review-subject 观察记为 Effective State 的实现边界，`resolve-effective-state.ts:11` 导入它。现在它归 acceptance-review。exclude 可用后，再决定是否把这一个文件移回本 capability。
 - **primary 的跨 capability 依赖。** `resolve-effective-state.ts:6-7` 导入 `scripts/acceptance-receipt.ts` 与 `src/effects/evidence/verification-execution.ts`。集成按边数决定方向。acceptance-review → workflow-state 有 38 条边（主要是 `readonly-observation.ts`），反向只有 7 条。模型声明 acceptance-review → workflow-state。primary → acceptance-review 是回边，不声明。`verification-execution.ts` 归 evidence-ledger，所以没有 workflow-state → evals-checks 的边。模型声明 primary → evidence-ledger。
 - **coordination-plane footprint 用文件名 glob。** 它包含 `src/core/state/sprint-*.ts`、`src/core/state/project-board*.ts`、`src/effects/state/coordination-*.ts` 与 `src/core/worktree-*`。新增同名模式的文件自动进入组件。`src/core/state/coordination-identity.ts` 是这个模式下唯一的文件，所以仍是精确路径。
 - **到 evidence-ledger 的方向（集成决定）。** 本 capability → evidence-ledger 有 28 条边（主要是 `atomic-append.ts`）。evidence-ledger → 本 capability 有 21 条边（`readonly-observation.ts` 与 `artifact-parsers.ts`）。模型声明 coordination-plane、continuation-ledger 与 primary → evidence-ledger。反向记在 evidence-ledger 的 Backlog。
+
+## 2026-10-18: Slice C snapshot boundary
+
+State snapshot no longer reads a task contract. Its contract presence and path
+fields are removed. Recovery policy no longer contains `reviews_dir` or
+`notes_dir`. Historical operator reads and worktree safety remain separate
+from current GitHub task authority.

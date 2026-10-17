@@ -10,7 +10,7 @@ responsibilities:
   - Store content-addressed write-once blobs and redact secrets by construction before persistence.
   - Publish validated checkpoints atomically and resolve them only through the last-published marker.
   - Import attested receipts only through the closed trust mapping.
-  - Render handoff and resume views from the validated checkpoint projection and live workflow context.
+  - Render handoff and resume views from validated checkpoints and live context without review or notes directory lookups.
   - Execute contract verification plans and record execution facts until the verification-plan split after arch-context#296.
 source:
   include:

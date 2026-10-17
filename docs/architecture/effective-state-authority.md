@@ -7,7 +7,7 @@
 
 ## Decision
 
-Repository Markdown and repository-local workflow artifacts are the human-editable authority. Effective State is the single deterministic projection of that authority. Its JSON cache and `tasks/current.md` are replaceable read models and must never feed authority back into resolution.
+The GitHub issue and PR own current task identity, claim, status and dependency. Repository Markdown supplies planning context. Effective State projects the retained local plan, worktree and capability facts. Its JSON cache and `tasks/current.md` are replaceable read models and must never feed authority back into resolution.
 
 The dependency direction for the convergence sprint is:
 
@@ -28,15 +28,15 @@ Adapters render, trigger, or guard. They do not own workflow policy, artifact se
 
 ## Frozen Invariants
 
-1. Markdown and repository artifacts remain the authority and remain human-editable.
+1. GitHub owns task authority. Local planning context remains human-editable.
 2. `.ai/harness/state/effective.json` is an ignored, atomically replaceable read model; deletion or corruption cannot change authority output.
-3. `tasks/current.md` is an observed orientation snapshot, never authority. Its bytes may change its own source hash/freshness, `state_revision`/`state_version`, `stale_sources`, and the labeled MCP preview, but never `authority_revision`, task selection, or authoritative plan/contract state.
+3. `tasks/current.md` is an observed orientation snapshot, never authority. Its bytes may change its own source hash/freshness, `state_revision`/`state_version`, `stale_sources`, and the labeled MCP preview, but never `authority_revision`, task selection, or authoritative plan state.
 4. The public envelope remains `protocol: 1` and `kind: "repo-harness-effective-state"`.
 5. `state_revision` is content-derived from the ordered source-hash projection; `state_version` is durable and monotonic for a changed revision and stable for an unchanged revision.
 6. Linked worktrees use one Git common-dir version owner rather than independent worktree-local counters. ESA-01 found that the baseline violated this invariant because `git rev-parse --git-path repo-harness/effective-state-version.json` resolved worktree-local paths; ESA-03 corrected it and added concurrent linked-worktree characterization.
 7. Workflow profile resolution is deterministic and fail closed when required risk signals are unavailable, invalid, or below the computed risk floor.
 8. Workflow-only edits do not inflate implementation scope, while strict-category tokens still raise the safety floor.
-9. Plan/contract relationship conflicts and foreign worktree ownership block rather than selecting an inferred authority.
+9. Foreign worktree ownership blocks rather than selecting an inferred owner.
 10. CLI exit semantics remain: `0` for resolved/unblocked, `1` for resolved/blocked or the existing operational failure contract, and `2` for usage or unknown-field errors. Blocked `--field` output remains suppressed.
 
 ## Implemented Boundary
@@ -176,3 +176,9 @@ calibration numbers are not release evidence.
   new host-native dependency. Active hostile ancestor rename after the final
   identity check would require `openat`/dirfd primitives outside the portable
   Bun/Node boundary; static and intermediate symlink redirection is rejected.
+
+## 2026-10-18: State snapshot and recovery policy
+
+The state snapshot has no task contract presence or path fields. Its collector
+does not open the task contract. Recovery views no longer derive review or notes
+paths from policy. Existing checkpoint evidence remains a historical read.

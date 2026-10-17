@@ -1,14 +1,14 @@
 schemaVersion: archcontext.node/v2
 id: component.publication.primary
 kind: component
-name: Publication Receipt Lifecycle and Readiness
+name: Publication Record and Readiness Readers
 status: active
 parent: capability.organization.publication
-summary: Owns the publication command surface, the immutable receipt and its marker, the lease-pointer review lifecycle and read-time merge readiness.
+summary: Reads historical receipts and integration records, observes provider merge proof and derives PR readiness.
 responsibilities:
-  - Prepare, ensure and rebuild PublicationReceipt protocol 3 without reading a host merge seal.
-  - Run reviewing, reopen, takeover, abandon and reconcile transitions under the task lock.
-  - Classify integration with the packaged worktree merge helper and project readiness with typed blockers.
+  - Validate and read historical PublicationReceipt protocol 3 records without creating receipts or editing PR markers.
+  - Read historical integration observations for dependency inspection without changing lease ownership.
+  - Read provider merge proof for worktree cleanup and project readiness with typed blockers.
 source:
   include:
     - "src/core/publication/**"

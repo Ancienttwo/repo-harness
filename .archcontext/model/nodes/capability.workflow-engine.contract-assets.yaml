@@ -8,7 +8,7 @@
   "responsibilities": [
     "Own the package workflow contract body and the repo opt-in marker.",
     "Own policy seeders, capability authority, and the standalone resolver projection.",
-    "Own the contract worktree lifecycle and the planning helpers that the contract lists."
+    "Own isolated worktree start and cleanup, branch-only PR shipping, explicit workflow archival and the planning helpers listed by the package contract."
   ],
   "source": {
     "include": [

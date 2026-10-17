@@ -3,4 +3,4 @@ id: relation.publication.contract-assets
 kind: calls
 source: capability.organization.publication
 target: capability.workflow-engine.contract-assets
-intent: "Recompute the candidate diff with the packaged merge gate and worktree merge helper"
+intent: "Read integration proof through the packaged worktree merge helper"

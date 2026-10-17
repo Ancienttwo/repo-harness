@@ -9,7 +9,7 @@ specification {
 }
 
 model {
-  capability_organization_publication = capability "PR Publication"
+  capability_organization_publication = capability "Publication Observations"
   capability_organization_task_fleet = capability "Task Fleet"
   capability_public_surface_action_commands = capability "Action Commands"
   capability_public_surface_adoption = capability "Adoption"
@@ -46,7 +46,7 @@ model {
   component_chatgpt_browser_primary = component "Browser Consult Engine"
   component_codegraph_readiness_primary = component "CodeGraph Readiness Check"
   component_contract_assets_capability_registry = component "Capability Registry"
-  component_contract_assets_contract_worktree_lifecycle = component "Contract Worktree Lifecycle"
+  component_contract_assets_contract_worktree_lifecycle = component "Worktree Safety and Branch Delivery"
   component_contract_assets_planning_helpers = component "Planning Helpers"
   component_contract_assets_primary = component "Workflow Contract And Policy"
   component_contract_assets_template_projection = component "Template Projection"
@@ -82,7 +82,7 @@ model {
   component_operator_primary = component "Operator HTTP Reader"
   component_operator_view_projections = component "Operator View Projections"
   component_operator_web_console = component "Operator Web Console"
-  component_publication_primary = component "Publication Receipt Lifecycle and Readiness"
+  component_publication_primary = component "Publication Record and Readiness Readers"
   component_publication_provider_feedback = component "Provider Feedback"
   component_refactor_program_archctx_provider = component "Refactor ArchContext Provider Boundary"
   component_root_router_primary = component "Root Adoption Router"
@@ -91,7 +91,7 @@ model {
   component_task_fleet_primary = component "Fleet Task Observations and Board"
   component_task_fleet_task_inbox = component "Task Inbox"
   component_workflow_state_continuation_ledger = component "Continuation Ledger"
-  component_workflow_state_coordination_plane = component "Shared Coordination Plane"
+  component_workflow_state_coordination_plane = component "Historical Coordination and Worktree Safety"
   component_workflow_state_primary = component "Effective State Resolver"
   capability_verification_acceptance_review -> capability_runtime_harness_hook_adapters "calls"
   capability_verification_acceptance_review -> component_acceptance_review_primary "calls"
@@ -279,7 +279,6 @@ model {
   component_operator_web_console -> component_operator_primary "calls"
   component_operator_web_console -> component_operator_view_projections "calls"
   capability_organization_publication -> capability_workflow_engine_contract_assets "calls"
-  capability_organization_publication -> capability_runtime_harness_evidence_ledger "calls"
   capability_organization_publication -> component_publication_primary "calls"
   component_publication_primary -> capability_workflow_engine_execution_primitives "calls"
   component_publication_primary -> capability_workflow_engine_workflow_state "calls"

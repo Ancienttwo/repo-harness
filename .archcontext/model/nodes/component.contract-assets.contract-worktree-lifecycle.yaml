@@ -1,16 +1,15 @@
 schemaVersion: archcontext.node/v2
 id: component.contract-assets.contract-worktree-lifecycle
 kind: component
-name: Contract Worktree Lifecycle
+name: Worktree Safety and Branch Delivery
 status: active
 parent: capability.workflow-engine.contract-assets
-summary: Starts, finishes, publishes and archives contract work packages in task worktrees behind the local merge gate.
+summary: Starts isolated worktrees, ships branch-only PRs and removes only proven merged, clean and unowned worktrees.
 responsibilities:
-  - Create and recover task worktrees and sweep merged managed worktrees at start under the worktree topology lock.
-  - Seal a work package and publish one commit per work package to the target.
-  - Run the local merge gate with the enable bit read from the target base commit.
-  - Run contract briefs and archive finished workflow artifacts.
-  - Stop the architecture daemons of a checkout before closeout removes it.
+  - Start isolated worktrees and sweep merged managed worktrees under the worktree topology lock.
+  - Ship a frozen branch candidate to a PR with a durable journal, provider readback and explicit branch recovery.
+  - Keep the protected merge gate and explicit workflow archive helper. Do not run contract finish or local merge commands.
+  - Stop checkout architecture daemons and recorded runtime before guarded cleanup.
 source:
   include:
     - scripts/contract-*

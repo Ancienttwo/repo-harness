@@ -1,6 +1,6 @@
 # runtime-harness/integration-acceptance 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-integration-acceptance" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:98217ca34aee950a6e7efbd0cfcf40d8eb6b6edbcb185a3dbc82ae1a690f2278" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-integration-acceptance" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:2a50faccbb3a73b0f8f6791dad853e8e5cef2dd12fd3e8b5d4414bf6bdc69924" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.integration-acceptance`(kind `capability`)
 > **Matched Prefixes**:`src/core/integration/product-acceptance.ts`、`src/effects/integration/product-acceptance.ts`、`src/cli/commands/integration.ts`
@@ -15,7 +15,7 @@ Binds Approved requirement bytes, current module publications, one existing Git 
 
 ```mermaid
 flowchart LR
-  p1_capability_organization_publication_44355620["PR Publication"]:::component
+  p1_capability_organization_publication_44355620["Publication Observations"]:::component
   p1_capability_runtime_harness_integration_acceptance_8c7dd2d3["Integration Product Acceptance"]:::component
   p1_component_integration_acceptance_primary_d3db0bd8["Integration Acceptance Evidence Plane"]:::component
   p1_capability_runtime_harness_integration_acceptance_8c7dd2d3 -->|"Validate and persist immutable exact-subject integration evidence before returning a non-authoritative projection"| p1_component_integration_acceptance_primary_d3db0bd8
@@ -26,7 +26,7 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:71a91f44f5cc2e16b65f31bc4a6c13e95a280db04db51b835ee8b0736bff35e1`).
+- Proof: `proven` (`sha256:9ee7fa818c784bd5c01967900090c8501607225210bfe304ba53dd704cc48ee0`).
 - Semantic nodes: `3`; declared relations: `2`.
 
 ### 1.2 模組職責表
@@ -80,7 +80,7 @@ flowchart LR
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:71a91f44f5cc2e16b65f31bc4a6c13e95a280db04db51b835ee8b0736bff35e1`); selectors `5/5`.
+> **Proof**: `proven` (`sha256:9ee7fa818c784bd5c01967900090c8501607225210bfe304ba53dd704cc48ee0`); selectors `5/5`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
@@ -88,7 +88,7 @@ sequenceDiagram
   autonumber
   participant p2_integration_plane_da058c3e as Integration Product Acceptance
   participant p2_evidence_schema_dd5fece0 as Integration Acceptance Evidence Plane
-  participant p2_publication_1c89e8c8 as PR Publication
+  participant p2_publication_1c89e8c8 as Publication Observations
   p2_integration_plane_da058c3e->>p2_evidence_schema_dd5fece0: Digest one Approved PRD and source spec into an immutable IntegrationContract
   p2_integration_plane_da058c3e->>p2_publication_1c89e8c8: Read the cached immutable PublicationReceipt behind each current reviewing pointer
   p2_integration_plane_da058c3e->>p2_evidence_schema_dd5fece0: Join exact current reviewing publications into one existing Git head and tree
@@ -107,7 +107,7 @@ sequenceDiagram
 
 ### 3.1 必须保持的不变量
 
-1. **组合候选是一个已存在的 Git commit 与 tree。** Envelope 证明 base 与每个选中的 publication head 都是该候选的祖先。本能力从不构造或排序合并（`tasks/archive/notes-20260826-0246-me4c-integration-product-acceptance.md`，PRD `plans/prds/20260824-1653-integration-product-acceptance.prd.md:21`）。
+1. **组合候选是一个已存在的 Git commit 与 tree。** Envelope 证明 base 与每个选中的 publication head 都是该候选的祖先。本能力从不构造或排序合并（[historical record](https://github.com/Ancienttwo/repo-harness/blob/f3f2862df/tasks/archive/notes-20260826-0246-me4c-integration-product-acceptance.md)，PRD `plans/prds/20260824-1653-integration-product-acceptance.prd.md:21`）。
 2. **`AcceptanceReceipt` 是唯一的产品裁决。** `ProductAcceptanceProjectionV1` 只验证并引用现有的 protocol-2 receipt。它不能签发、豁免、合并或改变验收状态（notes，PRD `:21`）。
 3. **每个可变读取都绑定确切的字节与摘要。** 范围包括 Approved PRD 与 spec、仓库身份、当前 publication 指针、reviewing lease 观察、缓存的不可变 PublicationReceipt、Git refs 与 tree、matrix 证据与 target revision（notes）。
 4. **只冻结当前 reviewing 的 publication。** 它们的不可变 receipt 必须包含在同一个确切的 commit 与 tree 中（capability responsibilities）。
