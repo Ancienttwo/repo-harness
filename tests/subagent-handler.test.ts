@@ -5,6 +5,12 @@ import { join } from 'path';
 import { tmpdir } from 'os';
 import { runReturnChannel } from '../src/cli/hook/return-channel';
 import {
+  appendStandingOrders,
+  resolveStandingOrdersBlock,
+  STANDING_ORDERS_MARKER,
+  STANDING_ORDERS_MAX_BYTES,
+} from '../src/cli/hook/standing-orders-context';
+import {
   appendLongCommandGuardrail,
   EXECUTION_BOUNDARY_MARKER,
   LONG_COMMAND_GUARDRAIL_MARKER,
@@ -224,6 +230,133 @@ async function spawnDirectSubagentStart(
   ]);
   return { exitCode, result: JSON.parse(stdout) as Record<string, unknown>, stderr };
 }
+
+describe('standing-orders register', () => {
+  function writeOrders(root: string, content: string): void {
+    mkdirSync(join(root, '.ai/harness'), { recursive: true });
+    writeFileSync(join(root, '.ai/harness/standing-orders.md'), content);
+  }
+
+  test('preserves valid text, spaces, CRLF and a final newline verbatim', () => {
+    const root = tempDir();
+    try {
+      const content = Array.from({ length: 12 }, (_, index) => `${index + 1}. Keep constraint ${index + 1}.  `).join('\r\n') + '\r\n';
+      writeOrders(root, content);
+      expect(resolveStandingOrdersBlock(root)).toBe(`${STANDING_ORDERS_MARKER}\n${content}`);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test.each([
+    '', ' \r\n', '# Standing orders\n1. Keep scope.', '0. Keep scope.',
+    '2. Keep scope.', '01. Keep scope.', '1. ', '1.\tKeep scope.',
+    '1. Keep scope.\n3. Run checks.', '1. Keep scope.\n1. Run checks.',
+    '1. Keep scope.\n\n2. Run checks.', '1. Keep scope.\n2. Run checks.\n1. Stop.',
+    '1. Keep scope.\n\n',
+    `1. ${'x'.repeat(2000)}\n3. Invalid beyond the cap.`,
+  ])('omits empty or invalid input', (content) => {
+    const root = tempDir();
+    try {
+      writeOrders(root, content);
+      expect(resolveStandingOrdersBlock(root)).toBeNull();
+      expect(appendStandingOrders(root, 'child context')).toBe('child context');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test('missing files and read errors add no block', () => {
+    const root = tempDir();
+    try {
+      expect(resolveStandingOrdersBlock(root)).toBeNull();
+      mkdirSync(join(root, '.ai/harness/standing-orders.md'), { recursive: true });
+      expect(resolveStandingOrdersBlock(root)).toBeNull();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test('caps the whole block, including its marker and truncation line', () => {
+    const root = tempDir();
+    try {
+      const content = `1. ${'x'.repeat(1500 - Buffer.byteLength(`${STANDING_ORDERS_MARKER}\n1. `))}`;
+      writeOrders(root, content);
+      expect(resolveStandingOrdersBlock(root)).toBe(`${STANDING_ORDERS_MARKER}\n${content}`);
+      writeOrders(root, content + 'x');
+      const block = resolveStandingOrdersBlock(root)!;
+      const suffix = '\n... (truncated; read .ai/harness/standing-orders.md)';
+      expect(Buffer.byteLength(block)).toBe(1500);
+      expect(STANDING_ORDERS_MAX_BYTES).toBe(1500);
+      expect(block.endsWith(suffix)).toBe(true);
+      expect(`${STANDING_ORDERS_MARKER}\n${content}x`.startsWith(block.slice(0, -suffix.length))).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test.each(['界', '🧭'])('truncates %s only at a complete UTF-8 character', (character) => {
+    const root = tempDir();
+    try {
+      const suffix = '\n... (truncated; read .ai/harness/standing-orders.md)';
+      for (let offset = 0; offset < Buffer.byteLength(character); offset += 1) {
+        const content = `1. ${'x'.repeat(offset)}${character.repeat(800)}`;
+        writeOrders(root, content);
+        const block = resolveStandingOrdersBlock(root)!;
+        expect(Buffer.byteLength(block)).toBeLessThanOrEqual(1500);
+        expect(block.endsWith(suffix)).toBe(true);
+        expect(block).not.toContain('\uFFFD');
+        expect(`${STANDING_ORDERS_MARKER}\n${content}`.startsWith(block.slice(0, -suffix.length))).toBe(true);
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test('appends once and preserves a marker already in the target context', () => {
+    const root = tempDir();
+    try {
+      writeOrders(root, '1. Keep scope.');
+      const first = appendStandingOrders(root, 'child context');
+      expect(first).toBe(`child context\n\n${STANDING_ORDERS_MARKER}\n1. Keep scope.`);
+      expect(appendStandingOrders(root, first)).toBe(first);
+      const inherited = `parent context\n${STANDING_ORDERS_MARKER}\n1. Keep inherited scope.`;
+      expect(appendStandingOrders(root, inherited)).toBe(inherited);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test.each([null, '', '2. Invalid first number.', '1. Keep scope.\n2. Run checks.\n'])('both host envelopes handle register %j without sprint state', (content) => {
+    const root = tempRepo();
+    try {
+      if (content !== null) writeOrders(root, content);
+      const claude = invokeSubagent({
+        event: 'PreToolUse', repoRoot: root,
+        payload: { tool_name: 'Agent', tool_input: { prompt: 'Inspect.', description: 'Scoped task' } },
+      });
+      const codex = startSubagent(root, { agent_type: 'default', model: 'gpt-x', agent_id: 'orders-child', turn_id: 'orders-turn' });
+      const updated = jsonResult(claude.stdout).hookSpecificOutput as Record<string, unknown>;
+      const prompt = String((updated.updatedInput as Record<string, unknown>).prompt);
+      const context = additionalContext(codex.stdout);
+      expect(claude.exitCode).toBe(0);
+      expect(codex.exitCode).toBe(0);
+      expect(claude.stderr).toBe('');
+      expect(codex.stderr).toBe('');
+      expect((updated.updatedInput as Record<string, unknown>).description).toBe('Scoped task');
+      for (const text of [prompt, context]) {
+        expect(occurrences(text, STANDING_ORDERS_MARKER)).toBe(content?.startsWith('1.') ? 1 : 0);
+        if (content?.startsWith('1.')) expect(text).toContain(`${STANDING_ORDERS_MARKER}\n${content}`);
+      }
+      expect(invokeSubagent({
+        event: 'PreToolUse', repoRoot: root,
+        payload: { tool_name: 'Agent', tool_input: { prompt } },
+      }).stdout).toBe('');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
 
 describe('typed subagent hook handlers', () => {
   test('the return channel stamps Agent prompts once and ignores SendUserMessage', () => {

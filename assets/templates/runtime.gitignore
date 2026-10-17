@@ -55,6 +55,7 @@ tasks/current.md
 .ai/harness/failures/latest.jsonl
 .ai/harness/handoff/current.md
 .ai/harness/handoff/resume.md
+.ai/harness/standing-orders.md
 .ai/harness/capability-context/
 .ai/harness/journal/
 .ai/harness/architecture-projection/
