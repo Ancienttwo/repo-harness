@@ -13,7 +13,7 @@ No shell operator library exists. Operator helpers run from the package through
 
 ## Capabilities
 
-The domain has 15 capabilities. They are grouped by theme.
+The domain has 13 capabilities. They are grouped by theme.
 
 ### Host integration
 
@@ -24,7 +24,6 @@ The domain has 15 capabilities. They are grouped by theme.
 ### Task agents and dispatch
 
 - `runtime-harness-task-agent-host` -> `docs/architecture/modules/runtime-harness/task-agent-host.md`: hosts persistent task agents in Herdr panes with role profiles, task worktrees and request-bound results.
-- `runtime-harness-pm-dispatch` -> `docs/architecture/modules/runtime-harness/pm-dispatch.md`: gives shared task-level PM operations and a fixed coding host without task or result authority.
 - `runtime-harness-agent-runtime-effects` -> `docs/architecture/modules/runtime-harness/agent-runtime-effects.md`: records at-most-once Agent Runtime effects for the Herdr CLI Agent adapter.
 
 ### Evidence and observation
@@ -38,7 +37,6 @@ The domain has 15 capabilities. They are grouped by theme.
 - `runtime-harness-engineer-bindings` -> `docs/architecture/modules/runtime-harness/engineer-bindings.md`: defines Module Engineer contracts, Binding authority and Claim actor provenance.
 - `runtime-harness-engineer-scheduling` -> `docs/architecture/modules/runtime-harness/engineer-scheduling.md`: projects Work Package graphs into revision-fenced Engineer offers.
 - `runtime-harness-engineering-overlay` -> `docs/architecture/modules/runtime-harness/engineering-overlay.md`: projects Engineer observations into read-only views.
-- `runtime-harness-delegated-runs` -> `docs/architecture/modules/runtime-harness/delegated-runs.md`: admits one Role Profile and journals one read-only Codex CLI host action as untrusted evidence.
 
 ### Work intake and product acceptance
 

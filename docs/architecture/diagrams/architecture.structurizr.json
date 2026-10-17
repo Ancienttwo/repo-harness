@@ -60,14 +60,6 @@
         ]
       },
       {
-        "id": "capability.runtime-harness.delegated-runs",
-        "name": "Read-only Delegated Runs",
-        "type": "Software System",
-        "tags": [
-          "capability"
-        ]
-      },
-      {
         "id": "capability.runtime-harness.engineer-bindings",
         "name": "Engineer Bindings",
         "type": "Software System",
@@ -142,14 +134,6 @@
       {
         "id": "capability.runtime-harness.operator",
         "name": "Operator Board",
-        "type": "Software System",
-        "tags": [
-          "capability"
-        ]
-      },
-      {
-        "id": "capability.runtime-harness.pm-dispatch",
-        "name": "PM Dispatch Boundary",
         "type": "Software System",
         "tags": [
           "capability"
@@ -348,14 +332,6 @@
         ]
       },
       {
-        "id": "component.delegated-runs.primary",
-        "name": "Read-only Delegated Run Journal",
-        "type": "Component",
-        "tags": [
-          "component"
-        ]
-      },
-      {
         "id": "component.engineer-bindings.primary",
         "name": "Shared Engineer Binding Store",
         "type": "Component",
@@ -365,7 +341,7 @@
       },
       {
         "id": "component.engineer-scheduling.primary",
-        "name": "Engineer Offer Projector",
+        "name": "Work Package Graph Reader",
         "type": "Component",
         "tags": [
           "component"
@@ -612,14 +588,6 @@
         ]
       },
       {
-        "id": "component.pm-dispatch.primary",
-        "name": "PM Task Operation Surface",
-        "type": "Component",
-        "tags": [
-          "component"
-        ]
-      },
-      {
         "id": "component.publication.primary",
         "name": "Publication Receipt Lifecycle and Readiness",
         "type": "Component",
@@ -669,7 +637,7 @@
       },
       {
         "id": "component.task-fleet.primary",
-        "name": "Fleet Offers Acquisition and Board",
+        "name": "Fleet Task Observations and Board",
         "type": "Component",
         "tags": [
           "component"
@@ -956,36 +924,6 @@
         "description": "calls"
       },
       {
-        "id": "relation.delegated-runs.engineer-bindings",
-        "sourceId": "capability.runtime-harness.delegated-runs",
-        "destinationId": "capability.runtime-harness.engineer-bindings",
-        "description": "calls"
-      },
-      {
-        "id": "relation.delegated-runs.evidence-ledger",
-        "sourceId": "capability.runtime-harness.delegated-runs",
-        "destinationId": "capability.runtime-harness.evidence-ledger",
-        "description": "writes"
-      },
-      {
-        "id": "relation.delegated-runs.execution-primitives",
-        "sourceId": "capability.runtime-harness.delegated-runs",
-        "destinationId": "capability.workflow-engine.execution-primitives",
-        "description": "calls"
-      },
-      {
-        "id": "relation.delegated-runs.primary",
-        "sourceId": "capability.runtime-harness.delegated-runs",
-        "destinationId": "component.delegated-runs.primary",
-        "description": "calls"
-      },
-      {
-        "id": "relation.delegated-runs.task-fleet",
-        "sourceId": "capability.runtime-harness.delegated-runs",
-        "destinationId": "capability.organization.task-fleet",
-        "description": "depends-on"
-      },
-      {
         "id": "relation.engineer-bindings.execution-primitives",
         "sourceId": "capability.runtime-harness.engineer-bindings",
         "destinationId": "capability.workflow-engine.execution-primitives",
@@ -1038,12 +976,6 @@
         "sourceId": "capability.runtime-harness.engineer-scheduling",
         "destinationId": "capability.organization.publication",
         "description": "reads"
-      },
-      {
-        "id": "relation.engineer-scheduling.task-fleet",
-        "sourceId": "capability.runtime-harness.engineer-scheduling",
-        "destinationId": "capability.organization.task-fleet",
-        "description": "calls"
       },
       {
         "id": "relation.engineer-scheduling.workflow-state",
@@ -1256,12 +1188,6 @@
         "description": "calls"
       },
       {
-        "id": "relation.global-runtime-reconciliation.cli-root.delegated-runs",
-        "sourceId": "component.global-runtime-reconciliation.cli-root",
-        "destinationId": "capability.runtime-harness.delegated-runs",
-        "description": "calls"
-      },
-      {
         "id": "relation.global-runtime-reconciliation.cli-root.engineer-bindings",
         "sourceId": "component.global-runtime-reconciliation.cli-root",
         "destinationId": "capability.runtime-harness.engineer-bindings",
@@ -1295,12 +1221,6 @@
         "id": "relation.global-runtime-reconciliation.cli-root.operator",
         "sourceId": "component.global-runtime-reconciliation.cli-root",
         "destinationId": "capability.runtime-harness.operator",
-        "description": "calls"
-      },
-      {
-        "id": "relation.global-runtime-reconciliation.cli-root.pm-dispatch",
-        "sourceId": "component.global-runtime-reconciliation.cli-root",
-        "destinationId": "capability.runtime-harness.pm-dispatch",
         "description": "calls"
       },
       {
@@ -1622,18 +1542,6 @@
         "description": "calls"
       },
       {
-        "id": "relation.mcp-sidecar.engineer-principal",
-        "sourceId": "capability.runtime-harness.mcp-sidecar",
-        "destinationId": "capability.runtime-harness.engineer-bindings",
-        "description": "calls"
-      },
-      {
-        "id": "relation.mcp-sidecar.engineer-scheduling",
-        "sourceId": "capability.runtime-harness.mcp-sidecar",
-        "destinationId": "capability.runtime-harness.engineer-scheduling",
-        "description": "calls"
-      },
-      {
         "id": "relation.mcp-sidecar.host-setup.chatgpt-browser",
         "sourceId": "component.mcp-sidecar.host-setup",
         "destinationId": "capability.runtime-mcp.chatgpt-browser",
@@ -1709,12 +1617,6 @@
         "id": "relation.mcp-sidecar.primary.general-repo-access",
         "sourceId": "component.mcp-sidecar.primary",
         "destinationId": "capability.runtime-mcp.general-repo-access",
-        "description": "calls"
-      },
-      {
-        "id": "relation.mcp-sidecar.primary.pm-dispatch",
-        "sourceId": "component.mcp-sidecar.primary",
-        "destinationId": "capability.runtime-harness.pm-dispatch",
         "description": "calls"
       },
       {
@@ -1886,48 +1788,6 @@
         "description": "calls"
       },
       {
-        "id": "relation.pm-dispatch.evidence-ledger",
-        "sourceId": "capability.runtime-harness.pm-dispatch",
-        "destinationId": "capability.runtime-harness.evidence-ledger",
-        "description": "calls"
-      },
-      {
-        "id": "relation.pm-dispatch.primary",
-        "sourceId": "capability.runtime-harness.pm-dispatch",
-        "destinationId": "component.pm-dispatch.primary",
-        "description": "calls"
-      },
-      {
-        "id": "relation.pm-dispatch.primary.execution-primitives",
-        "sourceId": "component.pm-dispatch.primary",
-        "destinationId": "capability.workflow-engine.execution-primitives",
-        "description": "calls"
-      },
-      {
-        "id": "relation.pm-dispatch.primary.workflow-state",
-        "sourceId": "component.pm-dispatch.primary",
-        "destinationId": "capability.workflow-engine.workflow-state",
-        "description": "calls"
-      },
-      {
-        "id": "relation.pm-dispatch.repo-registry",
-        "sourceId": "capability.runtime-harness.pm-dispatch",
-        "destinationId": "component.mcp-sidecar.repo-policy-registry",
-        "description": "reads"
-      },
-      {
-        "id": "relation.pm-dispatch.task-agent-host",
-        "sourceId": "capability.runtime-harness.pm-dispatch",
-        "destinationId": "capability.runtime-harness.task-agent-host",
-        "description": "calls"
-      },
-      {
-        "id": "relation.pm-dispatch.task-fleet",
-        "sourceId": "capability.runtime-harness.pm-dispatch",
-        "destinationId": "capability.organization.task-fleet",
-        "description": "reads"
-      },
-      {
         "id": "relation.publication.contract-assets",
         "sourceId": "capability.organization.publication",
         "destinationId": "capability.workflow-engine.contract-assets",
@@ -2048,12 +1908,6 @@
         "description": "calls"
       },
       {
-        "id": "relation.task-fleet.contract-assets",
-        "sourceId": "capability.organization.task-fleet",
-        "destinationId": "capability.workflow-engine.contract-assets",
-        "description": "calls"
-      },
-      {
         "id": "relation.task-fleet.engineer-bindings",
         "sourceId": "capability.organization.task-fleet",
         "destinationId": "capability.runtime-harness.engineer-bindings",
@@ -2069,12 +1923,6 @@
         "id": "relation.task-fleet.primary",
         "sourceId": "capability.organization.task-fleet",
         "destinationId": "component.task-fleet.primary",
-        "description": "calls"
-      },
-      {
-        "id": "relation.task-fleet.primary.execution-primitives",
-        "sourceId": "component.task-fleet.primary",
-        "destinationId": "capability.workflow-engine.execution-primitives",
         "description": "calls"
       },
       {
@@ -2204,7 +2052,6 @@
         "capability.public-surface.root-router",
         "capability.public-surface.strategy-reflection",
         "capability.runtime-harness.agent-runtime-effects",
-        "capability.runtime-harness.delegated-runs",
         "capability.runtime-harness.engineer-bindings",
         "capability.runtime-harness.engineer-scheduling",
         "capability.runtime-harness.engineering-overlay",
@@ -2215,7 +2062,6 @@
         "capability.runtime-harness.integration-acceptance",
         "capability.runtime-harness.mcp-sidecar",
         "capability.runtime-harness.operator",
-        "capability.runtime-harness.pm-dispatch",
         "capability.runtime-harness.refactor-program",
         "capability.runtime-harness.task-agent-host",
         "capability.runtime-mcp.chatgpt-browser",
@@ -2240,7 +2086,6 @@
         "component.contract-assets.planning-helpers",
         "component.contract-assets.primary",
         "component.contract-assets.template-projection",
-        "component.delegated-runs.primary",
         "component.engineer-bindings.primary",
         "component.engineer-scheduling.primary",
         "component.engineering-overlay.primary",
@@ -2273,7 +2118,6 @@
         "component.operator.primary",
         "component.operator.view-projections",
         "component.operator.web-console",
-        "component.pm-dispatch.primary",
         "component.publication.primary",
         "component.publication.provider-feedback",
         "component.refactor-program.archctx-provider",

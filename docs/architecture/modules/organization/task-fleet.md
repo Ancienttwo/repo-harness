@@ -1,13 +1,13 @@
 # organization/task-fleet 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-organization-task-fleet" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:5e1357bd29df44f27539392cd33d776dd5038da86b9ce159809e0a49c657b246" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-organization-task-fleet" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:b6ba496ad7171a876afc1abde72ce14f4e324aaaf86812deeb2628b75c7236af" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.organization.task-fleet`(kind `capability`)
 > **Matched Prefixes**:`src/core/fleet/**`、`src/effects/fleet/**`、`src/core/messages/document-handoff.ts`、`src/cli/commands/fleet.ts`、`src/core/messages/mechanics.ts`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
-Projects task offers across registered repositories, acquires one execution-ready task into a bound work envelope, delivers task-addressed messages through the Task Inbox and projects the read-only fleet board.
+Reads task offers and fleet boards for the operator and retains task message storage.
 
 ## 1. P1:能力架構地圖
 
@@ -16,9 +16,9 @@ Projects task offers across registered repositories, acquires one execution-read
 ```mermaid
 flowchart LR
   p1_capability_organization_task_fleet_134b5125["Task Fleet"]:::component
-  p1_component_task_fleet_primary_77e10674["Fleet Offers Acquisition and Board"]:::component
+  p1_component_task_fleet_primary_77e10674["Fleet Task Observations and Board"]:::component
   p1_component_task_fleet_task_inbox_b42db72f["Task Inbox"]:::component
-  p1_capability_organization_task_fleet_134b5125 -->|"Project read-time offers and acquire one execution-ready task through the owning stores"| p1_component_task_fleet_primary_77e10674
+  p1_capability_organization_task_fleet_134b5125 -->|"Project per-repository task observations and fleet board cards from the owning readers"| p1_component_task_fleet_primary_77e10674
   p1_component_task_fleet_primary_77e10674 -->|"Send deliver and summarize task-addressed messages without lease mutation"| p1_component_task_fleet_task_inbox_b42db72f
   classDef actor fill:#111827,color:#ffffff,stroke:#f9fafb,stroke-width:2px
   classDef component fill:#075985,color:#ffffff,stroke:#bae6fd,stroke-width:2px
@@ -26,14 +26,14 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:f6c44c3226d5ce7be50547661f44aeeefac250b3642463e88b54014a10eab28c`).
+- Proof: `proven` (`sha256:f863911bf3f499f6b4db3f8534f3d678bda9f314bdab66fb55f3040f6ab2ad3f`).
 - Semantic nodes: `3`; declared relations: `2`.
 
 ### 1.2 模組職責表
 
 | 宣告入口 | 錨點 | 職責 |
 | --- | --- | --- |
-| `entrypoint.task-fleet.command` | `src/cli/commands/fleet.ts#buildFleetCommand` | `sink.task-fleet.offers` → `src/effects/fleet/acquire.ts#collectFleetOffers`、`sink.task-fleet.acquire` → `src/effects/fleet/acquire.ts#acquireFleetTask`、`sink.task-fleet.send-message` → `src/effects/fleet/task-inbox.ts#sendTaskMessage`、`sink.task-fleet.deliver-message` → `src/effects/fleet/task-inbox.ts#deliverTaskInbox` |
+| `entrypoint.task-fleet.command` | `src/cli/commands/fleet.ts#buildFleetCommand` | `sink.task-fleet.send-message` → `src/effects/fleet/task-inbox.ts#sendTaskMessage`、`sink.task-fleet.deliver-message` → `src/effects/fleet/task-inbox.ts#deliverTaskInbox` |
 
 組件入口:
 
@@ -41,7 +41,7 @@ flowchart LR
 
 ### 1.3 規模信號
 
-- 規模量級:`10–20` 個文件 / `5000–10000` 行
+- 規模量級:`10–20` 個文件 / `2000–5000` 行
 - 匹配前綴:`src/core/fleet/**`、`src/effects/fleet/**`、`src/core/messages/document-handoff.ts`、`src/cli/commands/fleet.ts`、`src/core/messages/mechanics.ts`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
@@ -50,29 +50,24 @@ flowchart LR
 出向關係:
 
 - `calls` → `capability.runtime-harness.agent-runtime-effects` — Read task agent runtime effects as board observations only
-- `calls` → `capability.workflow-engine.contract-assets` — Run packaged contract worktree helpers to provision and bind an acquired task
 - `calls` → `capability.runtime-harness.engineer-bindings` — Validate principal claims and claim actor receipts before a steer reply is recorded
 - `calls` → `capability.runtime-harness.evidence-ledger` — Reuse canonical JSON and durable atomic append for task message records
-- `calls` → `component.task-fleet.primary` — Project read-time offers and acquire one execution-ready task through the owning stores
+- `calls` → `component.task-fleet.primary` — Project per-repository task observations and fleet board cards from the owning readers
 - `calls` → `capability.organization.publication` — Read publication receipts readiness and provider feedback for fleet commands and board cards
 - `reads` → `component.mcp-sidecar.repo-policy-registry` — Read the strict repository registry snapshot for offer and board authorization
 
 入向關係:
 
 - `calls` ← `capability.runtime-harness.agent-runtime-effects` — Read the exact Task message and delivery receipt before action admission and success.
-- `depends-on` ← `capability.runtime-harness.delegated-runs` — Type the delegated run against the fleet work envelope
-- `calls` ← `capability.runtime-harness.engineer-scheduling` — Collect fleet offers for the scheduling acquire path
 - `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the fleet command
 - `calls` ← `component.hook-adapters.session-lifecycle` — Render task inbox messages as untrusted session context
 - `calls` ← `component.mcp-sidecar.primary` — Acquire fleet tasks and handle task steers from the MCP tools
-- `reads` ← `component.operator.primary` — Collect fleet offers and the fleet board for the console
+- `reads` ← `component.operator.primary` — Read retained per-repository task observations and the fleet board for the console
 - `reads` ← `component.operator.view-projections` — Render fleet board errors and task message shapes
-- `reads` ← `capability.runtime-harness.pm-dispatch` — Read repository task offers for PM status without acquiring work
 
 組件出向關係:
 
 - `component.task-fleet.primary`:
-  - `calls` → `capability.workflow-engine.execution-primitives` — Read the worktree topology during fleet acquire
   - `calls` → `component.task-fleet.task-inbox` — Send deliver and summarize task-addressed messages without lease mutation
   - `reads` → `capability.workflow-engine.workflow-state` — Read canonical Sprint tasks and leases to build offers and the board
 - `component.task-fleet.task-inbox`:
@@ -83,34 +78,18 @@ flowchart LR
 
 | 組件 | 名稱 | 規模量級 | 宣告入口 |
 | --- | --- | --- | --- |
-| `component.task-fleet.primary` | Fleet Offers Acquisition and Board | `5–10` 個文件 / `2000–5000` 行 | 未宣告 |
+| `component.task-fleet.primary` | Fleet Task Observations and Board | `5–10` 個文件 / `2000–5000` 行 | 未宣告 |
 | `component.task-fleet.task-inbox` | Task Inbox | `5–10` 個文件 / `2000–5000` 行 | 未宣告 |
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:f6c44c3226d5ce7be50547661f44aeeefac250b3642463e88b54014a10eab28c`); selectors `4/4`.
+> **Proof**: `proven` (`sha256:f863911bf3f499f6b4db3f8534f3d678bda9f314bdab66fb55f3040f6ab2ad3f`); selectors `2/2`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
 sequenceDiagram
   autonumber
-  participant p2_fleet_2902e9a2 as Task Fleet
-  participant p2_offers_275d97a6 as Fleet Offers Acquisition and Board
-  p2_fleet_2902e9a2->>p2_offers_275d97a6: Join registry authorization canonical rows lease availability and plan proof into immutable offers
-  alt One execution-ready offer is claimed provisioned and bound
-  p2_fleet_2902e9a2->>p2_offers_275d97a6: Re-read the owning stores then claim provision bind and issue the work envelope
-    Note over p2_fleet_2902e9a2: Return one bound WorkEnvelope for the acquiring agent
-  else No offer is execution-ready or an owning store moved after the snapshot
-  p2_fleet_2902e9a2->>p2_offers_275d97a6: Refuse a stale or ineligible offer at the acquisition seam
-    Note over p2_fleet_2902e9a2: Return a typed refusal and claim nothing
-  end
-```
-
-```mermaid
-%%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
-sequenceDiagram
-  autonumber
-  participant p2_command_015216f4 as Fleet Offers Acquisition and Board
+  participant p2_command_015216f4 as Fleet Task Observations and Board
   participant p2_inbox_44cb8de0 as Task Inbox
   p2_command_015216f4->>p2_inbox_44cb8de0: Write one immutable TaskMessageEvent for a task or exact claim scope
   alt The current recipient receives the message once
