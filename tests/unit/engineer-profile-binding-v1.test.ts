@@ -56,6 +56,7 @@ function profileRepository(): string {
   mkdirSync(join(root, '.archcontext/model'), { recursive: true });
   mkdirSync(join(root, 'agents'), { recursive: true });
   cpSync(join(process.cwd(), '.archcontext/model/nodes'), join(root, '.archcontext/model/nodes'), { recursive: true });
+  cpSync(join(process.cwd(), '.archcontext/manifest.yaml'), join(root, '.archcontext/manifest.yaml'));
   cpSync(join(process.cwd(), 'agents/engineers'), join(root, 'agents/engineers'), { recursive: true });
   execFileSync('git', ['add', '.archcontext'], { cwd: root });
   // Capability revisions read the committed HEAD nodes; Profiles and SOPs stay untracked here.

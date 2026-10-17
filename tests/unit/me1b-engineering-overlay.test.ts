@@ -74,6 +74,7 @@ function fixture(): string {
   mkdirSync(join(root, 'plans/policies'), { recursive: true });
   mkdirSync(join(root, 'plans/rollback'), { recursive: true });
   cpSync(join(sourceRoot, '.archcontext/model/nodes'), join(root, '.archcontext/model/nodes'), { recursive: true });
+  cpSync(join(sourceRoot, '.archcontext/manifest.yaml'), join(root, '.archcontext/manifest.yaml'));
   cpSync(join(sourceRoot, 'agents/engineers'), join(root, 'agents/engineers'), { recursive: true });
   writeFileSync(join(root, 'tasks/current.md'), 'task authority\n');
   writeFileSync(join(root, '.ai/harness/policy.json'), '{"worktree_strategy":{"merge_back":{"target":"main"}}}\n');

@@ -44,6 +44,7 @@ function fixture(parentBody = 'Inspect existing work before answering.', deep = 
   git(root, 'init', '-q', '-b', 'main'); git(root, 'config', 'user.email', 'test@example.invalid'); git(root, 'config', 'user.name', 'Test');
   for (const dir of ['plans/sprints', 'tasks/contracts', '.ai/harness/sprint', '.archcontext/model', 'agents']) mkdirSync(join(root, dir), { recursive: true });
   cpSync(join(PROJECT, '.archcontext/model/nodes'), join(root, '.archcontext/model/nodes'), { recursive: true });
+  cpSync(join(PROJECT, '.archcontext/manifest.yaml'), join(root, '.archcontext/manifest.yaml'));
   cpSync(join(PROJECT, 'agents/engineers'), join(root, 'agents/engineers'), { recursive: true });
   writeFileSync(join(root, '.gitignore'), 'test-home/\n');
   writeFileSync(join(root, '.ai/harness/policy.json'), '{"worktree_strategy":{"merge_back":{"target":"main"}}}\n');

@@ -58,6 +58,7 @@ function fixture(): Fixture {
   mkdirSync(join(root, '.ai/harness/checks'), { recursive: true });
   mkdirSync(join(root, '.ai/harness/handoff'), { recursive: true });
   cpSync(join(process.cwd(), '.archcontext/model/nodes'), join(root, '.archcontext/model/nodes'), { recursive: true });
+  cpSync(join(process.cwd(), '.archcontext/manifest.yaml'), join(root, '.archcontext/manifest.yaml'));
   cpSync(join(process.cwd(), 'agents/engineers'), join(root, 'agents/engineers'), { recursive: true });
   writeFileSync(join(root, '.gitignore'), '.ai/harness/checks/\n.ai/harness/evidence/\n.ai/harness/runs/\n');
   writeFileSync(join(root, 'README.md'), 'fixture\n');

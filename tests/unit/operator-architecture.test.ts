@@ -106,3 +106,11 @@ test('URL credential detection keeps normal query names and empty values safe', 
   }
   expect(containsSecret('tokens: null')).toBe(false);
 });
+
+
+test('accepts new model node kinds and reserves group for aggregate nodes', () => {
+  const detail = reader.detail(id);
+  const withKind = (kind: unknown) => ({ ...detail, graph: { ...detail.graph, nodes: detail.graph.nodes.map(node => node.id === id ? { ...node, kind } : node) } });
+  expect(decodeArchitectureModuleDetail(withKind('future-node-kind')).graph.nodes.find(node => node.id === id)?.kind).toBe('future-node-kind');
+  for (const kind of ['', 'group', null, 7]) expect(() => decodeArchitectureModuleDetail(withKind(kind))).toThrow('architecture_module_detail_invalid');
+});

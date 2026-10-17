@@ -254,6 +254,12 @@ export function runPackageLocalArchctxJson(
 const nativeContextRefs = new Map<string, NativeContextExportV1>();
 const NATIVE_CONTEXT_REF_LIMIT = 4;
 
+function freezeNativeContext(value: unknown): void {
+  if (value === null || typeof value !== 'object') return;
+  for (const child of Object.values(value)) freezeNativeContext(child);
+  Object.freeze(value);
+}
+
 /** Worktree reads stay fresh. Immutable commit reads share a four-entry LRU. */
 export function readArchitectureNativeContext(
   repoRoot: string,
@@ -276,6 +282,7 @@ export function readArchitectureNativeContext(
   const { value } = runPackageLocalArchctxJson(repoRoot, ARCHCTX_REQUIRED_VERSION, args, options, 30_000);
   const context = decodeNativeContextExport((value as { data: unknown }).data, source);
   if (key !== null) {
+    freezeNativeContext(context);
     nativeContextRefs.set(key, context);
     if (nativeContextRefs.size > NATIVE_CONTEXT_REF_LIMIT) nativeContextRefs.delete(nativeContextRefs.keys().next().value!);
   }

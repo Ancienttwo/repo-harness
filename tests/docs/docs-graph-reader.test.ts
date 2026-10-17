@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import * as provider from '../../src/effects/architecture/archctx-provider';
 import { createDocsGraphReader, DocsGraphReadError } from '../../src/effects/operator/docs-graph';
 
 const roots: string[] = [];
@@ -133,17 +134,31 @@ describe('Immutable Docs graph reader', () => {
   test('indexes explicit model capability ids and rejects malformed or duplicate capability sources', () => {
     const f = fixture();
     const path = '.archcontext/model/nodes/capability.runtime-harness.docs.yaml';
-    const value = 'schemaVersion: archcontext.node/v2\nkind: capability\nid: capability.runtime-harness.docs\n';
+    const value = JSON.stringify({ schemaVersion: 'archcontext.node/v2', kind: 'capability', id: 'capability.runtime-harness.docs',
+      name: 'Docs', status: 'active', summary: 'Read committed documents.',
+      extensions: { contractFiles: { agents: 'AGENTS.md', claude: 'CLAUDE.md' }, lspProfile: 'typescript-lsp', verification: [] } });
+    f.put('.archcontext/manifest.yaml', JSON.stringify({ schemaVersion: 'archcontext.manifest/v1', model: { layout: 'split', root: '.archcontext/model' }, runtime: { contextBudgetBytes: 12288 } }));
     f.put(path, value); f.put(plan, '# Plan\n> **Capability ID**: capability.runtime-harness.docs\n');
     f.commit('2026-10-05T10:00:00Z');
     const read = createDocsGraphReader();
     const result = read({ repositoryRoot: f.root, now: NOW });
-    expect(result.nodes.find(node => node.kind === 'capability')).toMatchObject({ id: 'capability.runtime-harness.docs', source: { path } });
+    expect(result.nodes.find(node => node.kind === 'capability')).toMatchObject({ id: 'capability.runtime-harness.docs', source: { path, blob_oid: f.git('rev-parse', `HEAD:${path}`), last_commit: { commit: result.commit } } });
     expect(result.issues).toEqual([]);
     f.put('.archcontext/model/nodes/capability.runtime-harness.copy.yaml', value); f.commit('2026-10-05T11:00:00Z');
     expect(errorCode(() => read({ repositoryRoot: f.root, now: NOW }))).toBe('invalid_capability');
     f.put(path, 'id: [broken'); f.commit('2026-10-05T12:00:00Z');
     expect(errorCode(() => read({ repositoryRoot: f.root, now: NOW }))).toBe('invalid_capability');
+  });
+
+  test.each([
+    ['AC_SCHEMA_INVALID', 'invalid_capability'], ['RH_ARCHCTX_TIMEOUT', 'timeout'], ['AC_PATH_DENIED', 'unavailable'],
+  ])('maps native export error %s to %s', (code, expected) => {
+    const f = fixture();
+    f.put('.archcontext/model/nodes/component.docs.yaml', '{}'); f.commit('2026-10-05T10:00:00Z');
+    spyOn(provider, 'readArchitectureNativeContext').mockImplementation(() => {
+      throw new provider.ArchctxClientError({ code, action: 'check-and-retry-same-request', message: 'Injected transport failure.' });
+    });
+    expect(errorCode(() => createDocsGraphReader()({ repositoryRoot: f.root, now: NOW }))).toBe(expected);
   });
 
   test('fails closed on HEAD movement and does not cache complete graph freshness', () => {

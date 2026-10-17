@@ -31,7 +31,7 @@ export function moduleRepository(options: { section3?: string; budget?: number; 
   // The fixture snapshots every Git file. Setup must not leave detached maintenance writers.
   fixtureGit(root, ['config', 'maintenance.auto', 'false']);
   fixtureGit(root, ['config', 'gc.auto', '0']);
-  fixtureWrite(root, '.archcontext/manifest.yaml', fixtureYaml({ runtime: { contextBudgetBytes: options.budget ?? 12288 } }));
+  fixtureWrite(root, '.archcontext/manifest.yaml', fixtureYaml({ schemaVersion: 'archcontext.manifest/v1', model: { layout: 'split', root: '.archcontext/model' }, runtime: { contextBudgetBytes: options.budget ?? 12288 } }));
   const node = { schemaVersion: 'archcontext.node/v2', id: capabilityId, kind: 'capability', name: 'Test Module', status: 'active', summary: 'Read a committed module.',
     responsibilities: ['Keep committed content separate from worktree observations.'],
     source: { include: [options.include ?? 'src/module/**'], entrypoints: [{ id: 'entrypoint.module.read', path: 'src/module/read.ts', symbols: [{ name: 'read', sinks: [{ id: 'sink.module.core', path: 'src/module/core.ts', symbol: 'project' }] }] }] },

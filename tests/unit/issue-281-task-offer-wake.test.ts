@@ -133,6 +133,7 @@ function fixture(
   mkdirSync(join(repoRoot, 'agents'), { recursive: true });
   mkdirSync(join(repoRoot, '.ai/harness'), { recursive: true });
   cpSync(join(sourceRoot, '.archcontext/model/nodes'), join(repoRoot, '.archcontext/model/nodes'), { recursive: true });
+  cpSync(join(sourceRoot, '.archcontext/manifest.yaml'), join(repoRoot, '.archcontext/manifest.yaml'));
   cpSync(join(sourceRoot, 'agents/engineers'), join(repoRoot, 'agents/engineers'), { recursive: true });
   writeFileSync(join(repoRoot, '.ai/harness/policy.json'), `${JSON.stringify({
     agent_runtime: { mode: 'active', adapters: { 'herdr-cli-agent': { enabled: true } } },

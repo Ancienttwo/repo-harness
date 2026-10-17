@@ -3,7 +3,7 @@ import { ModuleReadError } from '../review/module-review-prompt';
 
 /** The `kind` enum of archcontext.node/v2. A test checks it against the published schema. */
 export const MODEL_NODE_KINDS = ['capability', 'module', 'component', 'interface', 'event', 'datastore', 'external-system', 'deployment'] as const;
-export type ModelNodeKind = typeof MODEL_NODE_KINDS[number];
+export type ModelNodeKind = string;
 
 export interface ModuleState {
   model_valid: 'valid' | 'invalid' | 'unknown';
@@ -30,6 +30,8 @@ export type ModelFlow = { id: string; capabilityId: string; name: string } & (
 type GraphRole = 'center' | 'child' | 'caller' | 'callee';
 export type GraphNode = { id: string; kind: ModelNodeKind; name: string; role: GraphRole }
   | { id: string; kind: 'group'; role: 'caller' | 'callee'; count: number; members: { id: string; name: string }[] };
+export type GroupGraphNode = Extract<GraphNode, { kind: 'group' }>;
+export function isGroupNode(node: GraphNode): node is GroupGraphNode { return node.kind === 'group'; }
 /** ArchContext reads every relation from source to target. */
 export interface ModuleGraph {
   center: string;

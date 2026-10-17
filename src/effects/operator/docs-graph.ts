@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { realpathSync } from 'node:fs';
 import { devNull } from 'node:os';
 import { performance } from 'node:perf_hooks';
+import { ArchctxClientError, readArchitectureNativeContext } from '../architecture/archctx-provider';
 import {
   buildDocsGraph, DOCS_GRAPH_MAX_NODES, docsDocumentKind, docsStaleThresholds, docsTimestamp, isArchivedDoc, isDocsCapabilityId,
   type DocsCapability, type DocsCommit, type DocsDocument, type DocsGraphScope, type DocsGraphV1, type DocsStaleThresholds,
@@ -26,7 +27,7 @@ const MAX_BLOB_BYTES = 512 * 1024;
 const MAX_TOTAL_BYTES = 32 * 1024 * 1024;
 const MAX_METADATA_BYTES = 16 * 1024 * 1024;
 const MAX_FILES = 5000;
-const CAPABILITY_PATH = /^\.archcontext\/model\/nodes\/capability\.[a-zA-Z0-9._-]+\.ya?ml$/u;
+const MODEL_NODE_ROOT = '.archcontext/model/nodes/';
 const fail = (code: DocsGraphReadFailure): never => { throw new DocsGraphReadError(code); };
 const regular = (entry: TreeEntry): boolean => entry.mode === '100644' || entry.mode === '100755';
 const oid = (value: string): boolean => /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u.test(value);
@@ -81,7 +82,7 @@ export function createDocsGraphReader() {
         const match = /^(\d{6}) (blob|commit) ([0-9a-f]{40}|[0-9a-f]{64})\t([\s\S]+)$/u.exec(record);
         if (!match) return fail('unavailable');
         const path = match[4]!;
-        if (docsDocumentKind(path) || CAPABILITY_PATH.test(path)) entries.push({ mode: match[1]!, oid: match[3]!, path });
+        if (docsDocumentKind(path) || path.startsWith(MODEL_NODE_ROOT)) entries.push({ mode: match[1]!, oid: match[3]!, path });
       }
       entries.sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
       if (entries.length > MAX_FILES) return fail('too_large');
@@ -103,7 +104,7 @@ export function createDocsGraphReader() {
           } else {
             // Git puts one LF between a commit header and its first pathname.
             const path = token.startsWith('\n') ? token.slice(1) : token;
-            if (current && (docsDocumentKind(path) || CAPABILITY_PATH.test(path)) && !parsed.has(path)) parsed.set(path, current);
+            if (current && (docsDocumentKind(path) || path.startsWith(MODEL_NODE_ROOT)) && !parsed.has(path)) parsed.set(path, current);
           }
         }
         history = parsed;
@@ -111,24 +112,36 @@ export function createDocsGraphReader() {
         historyCache.set(cacheKey, history);
       }
       const documents: DocsDocument[] = [], capabilities: DocsCapability[] = [];
+      const nodeEntries = entries.filter(entry => entry.path.startsWith(MODEL_NODE_ROOT));
+      if (nodeEntries.length > 0) {
+        if (performance.now() - started >= deadline) return fail('timeout');
+        let context;
+        try {
+          context = readArchitectureNativeContext(root, { kind: 'ref', commit }, {
+            env, deadlineMs: started + deadline, nowMs: () => performance.now(),
+          });
+        } catch (error) {
+          return fail(error instanceof ArchctxClientError
+            ? error.code === 'AC_SCHEMA_INVALID' ? 'invalid_capability' : error.code === 'RH_ARCHCTX_TIMEOUT' ? 'timeout' : 'unavailable'
+            : 'unavailable');
+        }
+        const byPath = new Map(nodeEntries.map(entry => [entry.path, entry]));
+        for (const profile of context.capabilityProfiles) {
+          const path = context.model.sourcePaths.nodes[profile.nodeId];
+          const entry = byPath.get(path);
+          if (!entry || !regular(entry) || !isDocsCapabilityId(profile.nodeId)) return fail('invalid_capability');
+          const lastCommit = history.get(path);
+          capabilities.push({ id: profile.nodeId, path, blob_oid: entry.oid, last_commit: lastCommit ? { ...lastCommit } : null });
+        }
+      }
       for (const entry of entries) {
+        if (entry.path.startsWith(MODEL_NODE_ROOT)) continue;
         const lastCommit = history.get(entry.path);
         const source = { path: entry.path, blob_oid: entry.oid, last_commit: lastCommit ? { ...lastCommit } : null };
-        if (CAPABILITY_PATH.test(entry.path)) {
-          if (!regular(entry)) return fail('invalid_capability');
-          let value: unknown;
-          try { value = Bun.YAML.parse(git(['cat-file', 'blob', entry.oid], MAX_BLOB_BYTES)); }
-          catch (error) { if (error instanceof DocsGraphReadError) throw error; return fail('invalid_capability'); }
-          if (!value || typeof value !== 'object' || Array.isArray(value)) return fail('invalid_capability');
-          const node = value as Record<string, unknown>;
-          if (node.schemaVersion !== 'archcontext.node/v2' || node.kind !== 'capability' || typeof node.id !== 'string' || !isDocsCapabilityId(node.id)) return fail('invalid_capability');
-          capabilities.push({ ...source, id: node.id });
-        } else {
-          // Hidden archives still contribute existence and counts. Their bodies are not loaded.
-          const hidden = input.scope !== 'all' && isArchivedDoc(entry.path);
-          documents.push({ ...source, content: regular(entry) ? hidden ? '' : git(['cat-file', 'blob', entry.oid], MAX_BLOB_BYTES) : null,
-            ...regular(entry) ? {} : { error: 'unsupported_file_mode' as const } });
-        }
+        // Hidden archives still contribute existence and counts. Their bodies are not loaded.
+        const hidden = input.scope !== 'all' && isArchivedDoc(entry.path);
+        documents.push({ ...source, content: regular(entry) ? hidden ? '' : git(['cat-file', 'blob', entry.oid], MAX_BLOB_BYTES) : null,
+          ...regular(entry) ? {} : { error: 'unsupported_file_mode' as const } });
       }
       if (new Set(capabilities.map(capability => capability.id)).size !== capabilities.length) return fail('invalid_capability');
       const graph = buildDocsGraph({ ...input, commit, now, documents, capabilities });

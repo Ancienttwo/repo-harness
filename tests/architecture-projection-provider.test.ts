@@ -419,6 +419,9 @@ describe('native architecture context', () => {
     const alias = join(f.root, 'repo-alias');
     symlinkSync(f.repoRoot, alias, 'junction');
     expect(readArchitectureNativeContext(alias, source, options)).toBe(first);
+    const frozenTree = (value: unknown): boolean => value === null || typeof value !== 'object'
+      || Object.isFrozen(value) && Object.values(value).every(frozenTree);
+    expect(frozenTree(readArchitectureNativeContext(alias, source, options))).toBe(true);
     expect(calls).toEqual([{ args: ['export', 'native', '--ref', commit, '--profile', 'repo-harness/v1', '--json'], timeoutMs: 30_000 }]);
     const other = fixture();
     expect(readArchitectureNativeContext(other.repoRoot, source, options)).not.toBe(first);

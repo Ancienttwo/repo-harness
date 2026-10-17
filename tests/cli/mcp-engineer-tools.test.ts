@@ -36,6 +36,7 @@ function fixture(): { repoRoot: string; home: string } {
   mkdirSync(join(repoRoot, 'agents'), { recursive: true });
   mkdirSync(join(repoRoot, '.ai/harness'), { recursive: true });
   cpSync(join(sourceRoot, '.archcontext/model/nodes'), join(repoRoot, '.archcontext/model/nodes'), { recursive: true });
+  cpSync(join(sourceRoot, '.archcontext/manifest.yaml'), join(repoRoot, '.archcontext/manifest.yaml'));
   cpSync(join(sourceRoot, 'agents/engineers'), join(repoRoot, 'agents/engineers'), { recursive: true });
   writeFileSync(join(repoRoot, '.ai/harness/policy.json'), `${JSON.stringify({ agent_runtime: { mode: 'active', adapters: { 'herdr-cli-agent': { enabled: true } } } })}\n`);
   writeFileSync(join(repoRoot, 'README.md'), 'fixture\n');
@@ -64,6 +65,7 @@ function schedulingFixture(): { repoRoot: string; home: string; repositoryId: st
   mkdirSync(join(repoRoot, 'plans/policies'), { recursive: true });
   mkdirSync(join(repoRoot, 'plans/rollback'), { recursive: true });
   cpSync(join(sourceRoot, '.archcontext/model/nodes'), join(repoRoot, '.archcontext/model/nodes'), { recursive: true });
+  cpSync(join(sourceRoot, '.archcontext/manifest.yaml'), join(repoRoot, '.archcontext/manifest.yaml'));
   cpSync(join(sourceRoot, 'agents/engineers'), join(repoRoot, 'agents/engineers'), { recursive: true });
   const policyBytes = '{"policy":1}\n';
   const rollbackA = '{"rollback":"wp-a"}\n';

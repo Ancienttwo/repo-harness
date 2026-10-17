@@ -30,6 +30,7 @@ function fixture(): string {
   mkdirSync(join(root, 'agents'), { recursive: true });
   mkdirSync(join(root, '.ai/harness'), { recursive: true });
   cpSync(join(sourceRoot, '.archcontext/model/nodes'), join(root, '.archcontext/model/nodes'), { recursive: true });
+  cpSync(join(sourceRoot, '.archcontext/manifest.yaml'), join(root, '.archcontext/manifest.yaml'));
   cpSync(join(sourceRoot, 'agents/engineers'), join(root, 'agents/engineers'), { recursive: true });
   writeFileSync(join(root, '.ai/harness/policy.json'), JSON.stringify({
     agent_runtime: { mode: 'active', adapters: { 'herdr-cli-agent': { enabled: true } } },
@@ -70,6 +71,7 @@ function graphFixture(tasks: readonly GraphFixtureTask[] = DEFAULT_GRAPH_TASKS):
   mkdirSync(join(root, 'plans/rollback'), { recursive: true });
   mkdirSync(join(root, 'tasks'), { recursive: true });
   cpSync(join(sourceRoot, '.archcontext/model/nodes'), join(root, '.archcontext/model/nodes'), { recursive: true });
+  cpSync(join(sourceRoot, '.archcontext/manifest.yaml'), join(root, '.archcontext/manifest.yaml'));
   cpSync(join(sourceRoot, 'agents/engineers'), join(root, 'agents/engineers'), { recursive: true });
   const policy = '{"policy":1}\n';
   const rollback = (workPackageId: string) => `{"rollback":"${workPackageId}"}\n`;

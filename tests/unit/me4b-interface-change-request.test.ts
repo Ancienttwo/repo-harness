@@ -64,6 +64,7 @@ function fixture(): string {
   mkdirSync(join(root, 'plans/policies'), { recursive: true });
   mkdirSync(join(root, 'plans/rollback'), { recursive: true });
   cpSync(join(sourceRoot, '.archcontext/model/nodes'), join(root, '.archcontext/model/nodes'), { recursive: true });
+  cpSync(join(sourceRoot, '.archcontext/manifest.yaml'), join(root, '.archcontext/manifest.yaml'));
   cpSync(join(sourceRoot, 'agents/engineers'), join(root, 'agents/engineers'), { recursive: true });
   writeFileSync(join(root, SPRINT), SPRINT_TEXT);
   writeFileSync(join(root, 'plans/policies/interface-owner.json'), POLICY_BYTES);

@@ -33,6 +33,7 @@ function fixture(): { repoRoot: string; home: string } {
   mkdirSync(join(repoRoot, 'agents'), { recursive: true });
   mkdirSync(join(repoRoot, 'plans/sprints'), { recursive: true });
   cpSync(join(sourceRoot, '.archcontext/model/nodes'), join(repoRoot, '.archcontext/model/nodes'), { recursive: true });
+  cpSync(join(sourceRoot, '.archcontext/manifest.yaml'), join(repoRoot, '.archcontext/manifest.yaml'));
   cpSync(join(sourceRoot, 'agents/engineers'), join(repoRoot, 'agents/engineers'), { recursive: true });
   writeFileSync(join(repoRoot, 'plans/sprints/interface.sprint.md'), `# Sprint: interface
 > **Backlog Schema**: 2

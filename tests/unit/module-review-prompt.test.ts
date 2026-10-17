@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { readFileSync, rmSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
+import { ArchctxClientError } from '../../src/effects/architecture/archctx-provider';
 import { ArchitectureModelReader } from '../../src/effects/architecture/model-reader';
 import { MODEL_NODE_KINDS, generatedSummaryState, moduleGraph, section3FromMarkdown, type ModelNode } from '../../src/core/architecture/module-view';
 import { decodeDocsAnchorsReport, decodeProjectionCheckFreshness } from '../../src/core/architecture/projection';
@@ -32,6 +33,30 @@ describe('committed module review prompt', () => {
     // JSON round trip gives the canonicalizer its JSON-value input contract.
     expect(digest).toBe(sha256(canonicalize(JSON.parse(JSON.stringify(metadata)) as JsonValue)));
     expect(shard.bytes).toBe(Buffer.byteLength(prompt));
+  });
+  test.each([
+    ['AC_MODEL_ADOPTION_REQUIRED', 'model_missing'], ['AC_SCHEMA_INVALID', 'model_invalid'],
+    ['AC_PATH_DENIED', 'path_escape'], ['AC_PRECONDITION_FAILED', 'git_read_failed'],
+    ['AC_REPO_NOT_FOUND', 'git_read_failed'], ['RH_ARCHCTX_TIMEOUT', 'timeout'], ['AC_RUNTIME_UNAVAILABLE', 'unavailable'],
+  ])('maps export failure %s to %s', (code, expected) => {
+    const root = repo();
+    expect(() => new ArchitectureModelReader(root, { run: () => {
+      throw new ArchctxClientError({ code, action: 'check-and-retry-same-request', message: 'Injected transport failure.' });
+    } }).list()).toThrow(expected);
+  });
+  test('maps an untyped transport error to unavailable', () => {
+    expect(() => new ArchitectureModelReader(repo(), { run: () => { throw new Error('output exceeded maxBuffer'); } })).toThrow('unavailable');
+  });
+  test('binds source hashes and sizes to the committed export inputs', () => {
+    const root = repo(), reader = new ArchitectureModelReader(root), packet = reader.reviewPrompt(MODULE_ID);
+    const model = packet.sources.filter(source => source.path.startsWith('.archcontext/model/'));
+    for (const source of packet.sources.filter(source => source.path.startsWith('.archcontext/') || source.path === MODULE_DOC)) {
+      const bytes = readFileSync(join(root, source.path));
+      expect(source).toMatchObject({ bytes: bytes.length, sha256: sha256(bytes) });
+    }
+    expect(packet.model_sha256).toBe(sha256(canonicalize(model.map(({ path, sha256 }) => ({ path, sha256 })))));
+    expect(packet.doc_sha256).toBe(sha256(readFileSync(join(root, MODULE_DOC))));
+    expect(reader.detail(MODULE_ID).state.model_valid).toBe('valid');
   });
   test('fails on a missing capability; missing module doc and empty section 3 are pending', () => {
     const root = repo({ section3: '' });
@@ -172,12 +197,12 @@ describe('committed module review prompt', () => {
     const packet = reader.reviewPrompt(MODULE_ID, { base: 'HEAD', head: 'HEAD' });
     expect(packet.mode).toBe('diff'); expect(packet.base).toBe(reader.commit); expect(packet.head).toBe(reader.commit);
   });
-  test('shows invalid schema status and refuses to publish rejected flows', () => {
+  test('rejects the whole model when one flow is invalid', () => {
     const root = repo();
     const flow = Bun.YAML.parse(readFileSync(join(root, MODULE_FLOW), 'utf8')) as { id: string };
     flow.id = 'flow.Module.primary'; fixtureWrite(root, MODULE_FLOW, Bun.YAML.stringify(flow)); fixtureCommit(root);
-    expect(new ArchitectureModelReader(root).list().modules[0].state.model_valid).toBe('invalid');
-    expect(() => new ArchitectureModelReader(root).reviewPrompt(MODULE_ID)).toThrow(`model_invalid: ${MODULE_FLOW}`);
+    expect(() => new ArchitectureModelReader(root).list()).toThrow('model_invalid');
+    expect(() => new ArchitectureModelReader(root).reviewPrompt(MODULE_ID)).toThrow('model_invalid');
   });
   test('accepts first-segment hyphens from the published 0.6.2 flow schema', () => {
     const capabilityId = 'capability.test-suite.module';
@@ -204,7 +229,7 @@ describe('committed module review prompt', () => {
   test('refreshes HEAD and manifest budget in each new reader', () => {
     const root = repo(), before = new ArchitectureModelReader(root).reviewPrompt(MODULE_ID);
     fixtureWrite(root, MODULE_DOC, '## 3. Decisions\nNew committed decision.\n');
-    fixtureWrite(root, '.archcontext/manifest.yaml', 'runtime:\n  contextBudgetBytes: 3000\n'); fixtureCommit(root);
+    fixtureWrite(root, '.archcontext/manifest.yaml', fixtureYaml({ ...JSON.parse(readFileSync(join(root, '.archcontext/manifest.yaml'), 'utf8')), runtime: { contextBudgetBytes: 3000 } })); fixtureCommit(root);
     const after = new ArchitectureModelReader(root).reviewPrompt(MODULE_ID);
     expect(after.commit).not.toBe(before.commit); expect(after.budget.input_cap_bytes).toBe(3000); expect(after.prompt).toContain('New committed decision.');
   });
@@ -366,6 +391,8 @@ describe('issue 677 architecture readers', () => {
     const committed = new ArchitectureModelReader(root);
     expect(committed.list().modules.map(module => module.id)).toEqual([MODULE_ID, next]);
     expect(committed.reviewPrompt(next).capability_id).toBe(next);
+    fixtureWrite(root, '.archcontext/model/nodes/capability.test.broken.yaml', 'id: [broken');
+    expect(() => committed.reviewPrompt('capability.test.absent')).toThrow('capability_not_found');
   });
 
   test('the review diff keeps the changed paths that archctx resolve assigns to the module', () => {
