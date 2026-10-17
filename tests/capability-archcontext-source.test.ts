@@ -488,12 +488,12 @@ describe("capability source: source-layer failures S1-S6", () => {
       writeFile(nested, `${NODES_DIR}/legacy/notes.txt`, "not a node\n");
       const nestedRes = runResolver(nested, ["validate", "--format", "text"]);
       expect(nestedRes.status).toBe(2);
-      expect(nestedRes.stderr).toContain("AC_SCHEMA_INVALID");
+      expect(nestedRes.stderr).toContain("AC_PATH_DENIED");
 
       writeFile(foreign, `${NODES_DIR}/notes.txt`, "not a node\n");
       const foreignRes = runResolver(foreign, ["validate", "--format", "text"]);
       expect(foreignRes.status).toBe(2);
-      expect(foreignRes.stderr).toContain("AC_SCHEMA_INVALID");
+      expect(foreignRes.stderr).toContain("AC_PATH_DENIED");
     } finally {
       rmSync(nested, { recursive: true, force: true });
       rmSync(foreign, { recursive: true, force: true });

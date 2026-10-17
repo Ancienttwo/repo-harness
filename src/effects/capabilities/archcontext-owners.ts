@@ -36,7 +36,7 @@ export function readArchcontextCapabilityAuthority(
     if (!(error instanceof ArchctxClientError)) throw error;
     return {
       status: 'invalid', registry: null, owners: null,
-      diagnostics: [{ code: 'ARCHCONTEXT_MODEL_REJECTED', path: '.archcontext/model/nodes', message: `${error.code}: ${error.message}` }],
+      diagnostics: [{ code: 'ARCHCONTEXT_MODEL_REJECTED', path: '.archcontext/model/nodes', message: error.message }],
     };
   }
 }
