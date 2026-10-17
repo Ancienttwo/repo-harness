@@ -368,8 +368,6 @@ describe("create-project-dirs runtime smoke", () => {
       expect(policy.external_tooling.fable_agents).toBeUndefined();
       expect(policy.minimal_change).toEqual({ mode: "advice" });
       expect(policy.information_lifecycle.evidence.cache_globs).toEqual([".ai/harness/checks/*.latest.json", ".ai/harness/checks/*.latest.md"]);
-      expect(policy.tasks.notes_dir).toBe("tasks/notes");
-      expect(policy.tasks.reviews_dir).toBe("tasks/reviews");
       expect(policy.tasks.contracts_dir).toBeUndefined();
       expect(policy.sprints.rule).toBeUndefined();
       expect(policy.tasks.workstreams_dir).toBe("tasks/workstreams");

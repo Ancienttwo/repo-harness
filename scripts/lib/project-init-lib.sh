@@ -1448,9 +1448,7 @@ pi_write_harness_policy() {
     "current_status_file": "tasks/current.md",
     "lessons_file": "tasks/lessons.md",
     "research_dir": "docs/researches",
-    "workstreams_dir": "tasks/workstreams",
-    "reviews_dir": "tasks/reviews",
-    "notes_dir": "tasks/notes"
+    "workstreams_dir": "tasks/workstreams"
   },
   "prds": {
     "dir": "plans/prds",
