@@ -29,9 +29,7 @@
     "CLAUDE.md",
     "SKILL.md",
     "README.md",
-    "references/pm-boundary.md",
-    "references/pm-operations.md",
-    "references/dot-pm-control.md"
+    "references/pm-boundary.md"
   ],
   "bin": {
     "repo-harness": "src/cli/index.ts",

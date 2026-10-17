@@ -222,27 +222,6 @@ export function canonicalTaskReplyCommitBytes(value: TaskReplyCommitV1): string 
   return canonicalEngineerJson(validateTaskReplyCommit(value));
 }
 
-/** Checks a retry of a persisted intent; it never allocates a replacement identity. */
-export function assertTaskReplyRetry(stored: TaskReplyIntentV1, retry: TaskReplyIntentV1): void {
-  if (canonicalTaskReplyIntentBytes(stored) !== canonicalTaskReplyIntentBytes(retry)) {
-    throw new TaskReplyError('task_reply_conflict', 'reply retry differs from the frozen intent');
-  }
-}
-
-/** The effect owner must read these sources under its live authority locks. This is not authentication. */
-export function assertTaskReplyResumeFence(intent: TaskReplyIntentV1, current: {
-  readonly principal_mapping: EngineerPrincipalMappingV1;
-  readonly claim_actor: ClaimActorReceiptV1;
-}): void {
-  const frozen = validateTaskReplyIntent(intent);
-  const mapping = source(() => validateEngineerPrincipalMapping(current.principal_mapping));
-  const actor = source(() => validateClaimActorReceipt(current.claim_actor));
-  if (mapping.state !== 'active' || mapping.mapping_digest !== frozen.principal_mapping.mapping_digest
-    || actor.receipt_sha256 !== frozen.claim_actor.receipt_sha256) {
-    throw new TaskReplyError('task_reply_fence_changed', 'cannot resume reply under a different authorization or actor fence');
-  }
-}
-
 export type TaskReplyChainObservation =
   | { readonly state: 'absent' | 'intent_only' | 'event_uncommitted' | 'orphan_event' | 'complete' }
   | { readonly state: 'inconsistent'; readonly reason: 'commit_missing_records' | 'source_mismatch' | 'event_mismatch' | 'commit_mismatch' };

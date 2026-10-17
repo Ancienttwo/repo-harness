@@ -1,31 +1,44 @@
-schemaVersion: archcontext.node/v2
-id: component.hook-adapters.session-lifecycle
-kind: component
-name: "Session Lifecycle Handlers"
-status: active
-parent: capability.runtime-harness.hook-adapters
-summary: "Typed handlers for SessionStart context, the Stop recovery views, subagent routes and the Task Inbox."
-responsibilities:
-  - Build the SessionStart sections from Effective State and the session providers.
-  - Publish the evidence checkpoint and render handoff and resume at Stop, with the Claude owed-architecture line.
-  - Record native subagent starts and stamp the return-channel contract onto Claude Agent spawn prompts.
-  - Deliver Task Inbox messages and the board slice as untrusted context.
-source:
-  include:
-    - "src/cli/hook/session-context.ts"
-    - "src/cli/hook/stop-handler.ts"
-    - "src/cli/hook/return-channel.ts"
-    - "src/cli/hook/subagent-context.ts"
-    - "src/cli/hook/task-inbox-handler.ts"
-    - "src/cli/hook/board-slice-context.ts"
-    - "src/cli/hook/state-snapshot.ts"
-    - "src/effects/run-summary-retention.ts"
-  entrypoints:
-    - id: entrypoint.hook-adapters.stop
-      path: "src/cli/hook/stop-handler.ts"
-      symbols:
-        - name: "runStopHandler"
-          sinks:
-            - id: sink.hook-adapters.evidence-checkpoint
-              path: "src/effects/evidence/checkpoint-store.ts"
-              symbol: "publishCheckpointFromLedger"
+{
+  "schemaVersion": "archcontext.node/v2",
+  "id": "component.hook-adapters.session-lifecycle",
+  "kind": "component",
+  "name": "Session Lifecycle Handlers",
+  "status": "active",
+  "parent": "capability.runtime-harness.hook-adapters",
+  "summary": "Typed handlers for SessionStart context, Stop recovery views and subagent routes.",
+  "responsibilities": [
+    "Build the SessionStart sections from Effective State and the session providers.",
+    "Publish the evidence checkpoint and render handoff and resume at Stop, with the Claude owed-architecture line.",
+    "Record native subagent starts and stamp the return-channel contract onto Claude Agent spawn prompts.",
+    "Keep the UserPromptSubmit inbox adapter tuple as a no-op."
+  ],
+  "source": {
+    "include": [
+      "src/cli/hook/session-context.ts",
+      "src/cli/hook/stop-handler.ts",
+      "src/cli/hook/return-channel.ts",
+      "src/cli/hook/subagent-context.ts",
+      "src/cli/hook/board-slice-context.ts",
+      "src/cli/hook/state-snapshot.ts",
+      "src/effects/run-summary-retention.ts"
+    ],
+    "entrypoints": [
+      {
+        "id": "entrypoint.hook-adapters.stop",
+        "path": "src/cli/hook/stop-handler.ts",
+        "symbols": [
+          {
+            "name": "runStopHandler",
+            "sinks": [
+              {
+                "id": "sink.hook-adapters.evidence-checkpoint",
+                "path": "src/effects/evidence/checkpoint-store.ts",
+                "symbol": "publishCheckpointFromLedger"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

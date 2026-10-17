@@ -30,7 +30,6 @@ import {
 import { sensitiveAllowedRootReason } from './policy';
 import { parseMcpProfile } from './policy';
 import { buildCodingToolDefinitions } from './coding-tools';
-import { buildEngineerToolDefinitions } from './engineer-tools';
 import { isRepoHarnessAdopted, resolveMcpRepoRoot } from './repo';
 import { repoHarnessPackageVersion } from './version';
 import { readCanonicalChatgptReference } from '../chatgpt-skill/source';
@@ -639,10 +638,10 @@ function setupChatgptLocked(opts: {
   const existingConfig = loadMcpLocalConfig();
   const requestedProfile = parseMcpProfile(opts.profile ?? existingConfig?.profile ?? 'planner');
   const grantReadWrite = Array.from(new Set((opts.grantReadWrite ?? []).map((entry) => resolve(entry)).filter(Boolean)));
-  const authorizationScoped = requestedProfile === 'coding' || requestedProfile === 'engineer';
+  const authorizationScoped = requestedProfile === 'coding';
   const existingAuthorizationEnabled = requestedProfile === 'coding'
     ? existingConfig?.coding?.enabled === true
-    : requestedProfile === 'engineer' ? existingConfig?.engineer?.enabled === true : false;
+    : false;
   if (authorizationScoped && !existingAuthorizationEnabled && grantReadWrite.length === 0) {
     throw new Error(`${requestedProfile} profile setup requires at least one explicit --grant-read-write <repo>`);
   }
@@ -687,8 +686,8 @@ function setupChatgptLocked(opts: {
   };
   const profile = requestedProfile;
   const existingAuthorizationProfile = existingConfig?.coding?.enabled === true
-    ? 'coding' : existingConfig?.engineer?.enabled === true ? 'engineer' : null;
-  const nextAuthorizationProfile = profile === 'coding' || profile === 'engineer' ? profile : null;
+    ? 'coding' : null;
+  const nextAuthorizationProfile = profile === 'coding' ? profile : null;
   const profileAuthorizationChanged = existingAuthorizationProfile !== nextAuthorizationProfile;
   const { reader: _legacyReader, ...existingCapabilities } = existingConfig?.capabilities ?? {};
   const config = {
@@ -720,10 +719,6 @@ function setupChatgptLocked(opts: {
       ...existingConfig?.coding,
       enabled: profile === 'coding',
       environmentAllowlist: existingConfig?.coding?.environmentAllowlist ?? [],
-    },
-    engineer: {
-      ...existingConfig?.engineer,
-      enabled: profile === 'engineer',
     },
   };
   const registryEntries = [
@@ -802,7 +797,7 @@ export function runMcpMigrateScope(opts: { repo?: string }): McpMigrateScopeResu
   }
 
   const legacyConfig = readMcpLocalConfigFile(legacy.config);
-  if (legacyConfig?.profile === 'coding' || legacyConfig?.profile === 'engineer') {
+  if (legacyConfig?.profile === 'coding') {
     throw new Error(`refusing to migrate ${legacy.config}: the ${legacyConfig.profile} profile was never valid in repo scope; run repo-harness mcp setup chatgpt --profile ${legacyConfig.profile} with an explicit --grant-read-write instead`);
   }
 
@@ -1182,12 +1177,11 @@ export async function runMcpLiveDoctor(opts: { repo?: string; json?: boolean }):
   const publicEndpoint = config?.chatgpt?.endpoint;
   const publicOrigin = publicEndpoint ? new URL(publicEndpoint).origin : undefined;
   const coding = config?.profile === 'coding';
-  const engineer = config?.profile === 'engineer';
-  const authorizationScoped = coding || engineer;
-  const requiredScope = coding ? 'repo-harness.coding' : engineer ? 'repo-harness.engineer' : null;
+  const authorizationScoped = coding;
+  const requiredScope = coding ? 'repo-harness.coding' : null;
   const readWriteRepos = readRegisteredRepoHarnessRepos({ adoptedOnly: true }).filter((repo) => repo.accessMode === 'read_write');
   const layers: LiveLayer[] = [];
-  const authorizationEnabled = coding ? config?.coding?.enabled === true : engineer ? config?.engineer?.enabled === true : true;
+  const authorizationEnabled = coding ? config?.coding?.enabled === true : true;
   const configReady = config?.version === 3
     && config?.auth?.mode === 'oauth'
     && Boolean(publicEndpoint)
@@ -1349,15 +1343,14 @@ export async function runMcpLiveDoctor(opts: { repo?: string; json?: boolean }):
       toolNames = tools.map((tool) => tool.name ?? '').filter(Boolean);
       const expectedSpecialTools = coding
         ? buildCodingToolDefinitions()
-        : engineer ? buildEngineerToolDefinitions() : null;
+        : null;
       const required = expectedSpecialTools ? expectedSpecialTools.map((tool) => tool.name) : REQUIRED_CODEX_TOOLS;
       const missing = required.filter((name) => !toolNames.includes(name));
       const specialSchemaMatches = expectedSpecialTools === null || JSON.stringify(tools
         .filter((tool) => required.includes(tool.name ?? ''))
         .map((tool) => ({ name: tool.name, inputSchema: (tool as Record<string, unknown>).inputSchema, annotations: (tool as Record<string, unknown>).annotations }))) === JSON.stringify(expectedSpecialTools
         .map((tool) => ({ name: tool.name, inputSchema: tool.inputSchema, annotations: tool.annotations })));
-      const exactInventoryMatches = !engineer || JSON.stringify(toolNames) === JSON.stringify(required);
-      mcpReady = toolsResponse.ok && missing.length === 0 && specialSchemaMatches && exactInventoryMatches;
+      mcpReady = toolsResponse.ok && missing.length === 0 && specialSchemaMatches;
       layers.push({
         name: 'mcp_ready',
         ok: mcpReady,

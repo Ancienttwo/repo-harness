@@ -2,7 +2,11 @@ import { describe, expect, test } from 'bun:test';
 import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { InvalidGrantError, InvalidScopeError, InvalidTokenError } from '@modelcontextprotocol/sdk/server/auth/errors.js';
+import {
+  InvalidGrantError,
+  InvalidScopeError,
+  InvalidTokenError,
+} from '@modelcontextprotocol/sdk/server/auth/errors.js';
 import { createMcpOAuthProvider, McpOAuthTokenStore } from '../../src/cli/mcp/oauth';
 
 function redirectRecorder() {
@@ -181,128 +185,53 @@ describe('mcp oauth provider', () => {
     }
   });
 
-  for (const profile of ['coding', 'engineer'] as const) {
-    test(`${profile} code exchange keeps consent revision when authority changes after validation`, async () => {
-      const root = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-oauth-revision-race-'));
-      try {
-        const revisionPath = join(root, 'revision');
-        writeFileSync(revisionPath, '7');
-        let exchanging = false;
-        let advanced = false;
-        const store = new McpOAuthTokenStore(join(root, 'tokens.json'));
-        const provider = createMcpOAuthProvider(store, {
-          profile,
-          authorizationRevision: () => {
-            const revision = Number(readFileSync(revisionPath, 'utf8'));
-            // A registry writer can commit after the comparison read returns.
-            if (exchanging && !advanced) {
-              advanced = true;
-              writeFileSync(revisionPath, '8');
-            }
-            return revision;
-          },
-        });
-        const client = store.registerClient({
-          redirect_uris: ['http://localhost/callback'],
-          token_endpoint_auth_method: 'none',
-          grant_types: ['authorization_code', 'refresh_token'],
-          response_types: ['code'],
-        });
-        const authorize = async () => {
-          const redirect = redirectRecorder();
-          await provider.authorize(client, {
-            scopes: ['repo-harness', `repo-harness.${profile}`, 'offline_access'],
-            redirectUri: client.redirect_uris[0]!,
-            codeChallenge: 'revision-race',
-          }, redirect.response as never);
-          return new URL(redirect.state.url).searchParams.get('code')!;
-        };
-        const code = await authorize();
-        exchanging = true;
-        const tokens = await provider.exchangeAuthorizationCode(client, code, 'verifier', client.redirect_uris[0]);
-        expect(advanced).toBe(true);
-        expect(readFileSync(revisionPath, 'utf8')).toBe('8');
-        expect(store.getAccessToken(tokens.access_token)?.authorizationRevision).toBe(7);
-        await expect(provider.verifyAccessToken(tokens.access_token)).rejects.toBeInstanceOf(InvalidTokenError);
-        await expect(provider.exchangeRefreshToken(client, tokens.refresh_token!)).rejects.toBeInstanceOf(InvalidGrantError);
-        await expect(provider.exchangeAuthorizationCode(client, code, 'verifier', client.redirect_uris[0])).rejects.toBeInstanceOf(InvalidGrantError);
-        const freshCode = await authorize();
-        const fresh = await provider.exchangeAuthorizationCode(client, freshCode, 'verifier', client.redirect_uris[0]);
-        expect(await provider.verifyAccessToken(fresh.access_token)).toMatchObject({ authorizationRevision: 8, profile });
-      } finally {
-        rmSync(root, { recursive: true, force: true });
-      }
-    });
-  }
-
-  test('engineer tokens require their distinct scope and preserve one server-minted subject across refresh only', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-oauth-engineer-'));
+  test('coding code exchange keeps consent revision when authority changes after validation', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-oauth-revision-race-'));
     try {
-      let now = 30_000;
-      let authorizationRevision = 11;
-      const revoked: string[] = [];
+      const revisionPath = join(root, 'revision');
+      writeFileSync(revisionPath, '7');
+      let exchanging = false;
+      let advanced = false;
       const store = new McpOAuthTokenStore(join(root, 'tokens.json'));
-      const engineer = createMcpOAuthProvider(store, {
-        nowSeconds: () => now,
-        profile: 'engineer',
-        authorizationRevision: () => authorizationRevision,
-        accessTokenTtlSeconds: 60 * 60,
-        refreshTokenTtlSeconds: 30 * 24 * 60 * 60,
-        onAuthorizationRevoked: (authorizationId) => { revoked.push(authorizationId); },
+      const provider = createMcpOAuthProvider(store, {
+        profile: 'coding',
+        authorizationRevision: () => {
+          const revision = Number(readFileSync(revisionPath, 'utf8'));
+          // A registry writer can commit after the comparison read returns.
+          if (exchanging && !advanced) {
+            advanced = true;
+            writeFileSync(revisionPath, '8');
+          }
+          return revision;
+        },
       });
       const client = store.registerClient({
-        redirect_uris: ['https://chatgpt.com/connector/callback'],
+        redirect_uris: ['http://localhost/callback'],
         token_endpoint_auth_method: 'none',
         grant_types: ['authorization_code', 'refresh_token'],
         response_types: ['code'],
       });
-      const missing = redirectRecorder();
-      await expect(engineer.authorize(client, {
-        scopes: ['repo-harness', 'repo-harness.coding', 'offline_access'],
-        redirectUri: client.redirect_uris[0]!,
-        codeChallenge: 'missing-engineer-scope',
-      }, missing.response as never)).rejects.toBeInstanceOf(InvalidScopeError);
-
-      const authorize = async (challenge: string) => {
+      const authorize = async () => {
         const redirect = redirectRecorder();
-        await engineer.authorize(client, {
-          scopes: ['repo-harness', 'repo-harness.engineer', 'offline_access'],
+        await provider.authorize(client, {
+          scopes: ['repo-harness', 'repo-harness.coding', 'offline_access'],
           redirectUri: client.redirect_uris[0]!,
-          codeChallenge: challenge,
+          codeChallenge: 'revision-race',
         }, redirect.response as never);
-        const code = new URL(redirect.state.url).searchParams.get('code') ?? '';
-        return engineer.exchangeAuthorizationCode(client, code, 'verifier', client.redirect_uris[0]);
+        return new URL(redirect.state.url).searchParams.get('code')!;
       };
-
-      const first = await authorize('engineer-1');
-      expect(first).toMatchObject({ expires_in: 3600, scope: 'repo-harness repo-harness.engineer offline_access' });
-      const firstInfo = await engineer.verifyAccessToken(first.access_token) as { authorizationId?: string };
-      expect(firstInfo).toMatchObject({ profile: 'engineer', authorizationRevision: 11 });
-      const firstAuthorization = firstInfo.authorizationId!;
-      expect(engineer.verifyAccessTokenCurrent(first.access_token)).toMatchObject(firstInfo);
-      expect(store.listAuthorizations('engineer')).toEqual([
-        expect.objectContaining({ authorizationId: firstAuthorization, profile: 'engineer' }),
-      ]);
-
-      now += 3601;
-      const refreshed = await engineer.exchangeRefreshToken(client, first.refresh_token ?? '');
-      expect(await engineer.verifyAccessToken(refreshed.access_token)).toMatchObject({ authorizationId: firstAuthorization });
-      const second = await authorize('engineer-2');
-      const secondInfo = await engineer.verifyAccessToken(second.access_token) as { authorizationId?: string };
-      const secondAuthorization = secondInfo.authorizationId!;
-      expect(secondAuthorization).not.toBe(firstAuthorization);
-
-      const coding = createMcpOAuthProvider(store, { nowSeconds: () => now, profile: 'coding', authorizationRevision: () => authorizationRevision });
-      await expect(coding.verifyAccessToken(refreshed.access_token)).rejects.toBeInstanceOf(InvalidTokenError);
-      await engineer.revokeToken?.(client, { token: second.refresh_token ?? '' });
-      expect(revoked).toEqual([secondAuthorization]);
-      expect(() => engineer.verifyAccessTokenCurrent(second.access_token)).toThrow(InvalidTokenError);
-      expect(engineer.verifyAccessTokenCurrent(refreshed.access_token)).toMatchObject({ authorizationId: firstAuthorization });
-
-      authorizationRevision = 12;
-      expect(() => engineer.verifyAccessTokenCurrent(refreshed.access_token)).toThrow(InvalidTokenError);
-      await expect(engineer.verifyAccessToken(refreshed.access_token)).rejects.toBeInstanceOf(InvalidTokenError);
-      expect(revoked).toEqual([secondAuthorization, firstAuthorization]);
+      const code = await authorize();
+      exchanging = true;
+      const tokens = await provider.exchangeAuthorizationCode(client, code, 'verifier', client.redirect_uris[0]);
+      expect(advanced).toBe(true);
+      expect(readFileSync(revisionPath, 'utf8')).toBe('8');
+      expect(store.getAccessToken(tokens.access_token)?.authorizationRevision).toBe(7);
+      await expect(provider.verifyAccessToken(tokens.access_token)).rejects.toBeInstanceOf(InvalidTokenError);
+      await expect(provider.exchangeRefreshToken(client, tokens.refresh_token!)).rejects.toBeInstanceOf(InvalidGrantError);
+      await expect(provider.exchangeAuthorizationCode(client, code, 'verifier', client.redirect_uris[0])).rejects.toBeInstanceOf(InvalidGrantError);
+      const freshCode = await authorize();
+      const fresh = await provider.exchangeAuthorizationCode(client, freshCode, 'verifier', client.redirect_uris[0]);
+      expect(await provider.verifyAccessToken(fresh.access_token)).toMatchObject({ authorizationRevision: 8, profile: 'coding' });
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -363,54 +292,6 @@ describe('mcp oauth provider', () => {
       await expect(coding.verifyAccessToken(tokens.access_token)).resolves.toMatchObject({
         profile: 'coding',
         authorizationRevision: 8,
-      });
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
-  });
-
-  test('engineer pending codes cross the same revision fence', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-oauth-pending-eng-'));
-    try {
-      let now = 50_000;
-      let revision = 11;
-      const store = new McpOAuthTokenStore(join(root, 'tokens.json'), { nowSeconds: () => now });
-      const engineer = createMcpOAuthProvider(store, {
-        nowSeconds: () => now,
-        profile: 'engineer',
-        authorizationRevision: () => revision,
-      });
-      const client = store.registerClient({
-        redirect_uris: ['https://chatgpt.com/connector/callback'],
-        token_endpoint_auth_method: 'none',
-        grant_types: ['authorization_code', 'refresh_token'],
-        response_types: ['code'],
-      });
-      const redirectUri = client.redirect_uris[0]!;
-      const pending = redirectRecorder();
-      await engineer.authorize(client, {
-        scopes: ['repo-harness', 'repo-harness.engineer', 'offline_access'],
-        redirectUri,
-        codeChallenge: 'pending-engineer',
-      }, pending.response as never);
-      const pendingCode = new URL(pending.state.url).searchParams.get('code') ?? '';
-
-      revision = 12;
-      await expect(engineer.exchangeAuthorizationCode(client, pendingCode, 'verifier', redirectUri))
-        .rejects.toBeInstanceOf(InvalidGrantError);
-      expect(store.listAuthorizations('engineer')).toEqual([]);
-
-      const fresh = redirectRecorder();
-      await engineer.authorize(client, {
-        scopes: ['repo-harness', 'repo-harness.engineer', 'offline_access'],
-        redirectUri,
-        codeChallenge: 'fresh-engineer',
-      }, fresh.response as never);
-      const freshCode = new URL(fresh.state.url).searchParams.get('code') ?? '';
-      const tokens = await engineer.exchangeAuthorizationCode(client, freshCode, 'verifier', redirectUri);
-      await expect(engineer.verifyAccessToken(tokens.access_token)).resolves.toMatchObject({
-        profile: 'engineer',
-        authorizationRevision: 12,
       });
     } finally {
       rmSync(root, { recursive: true, force: true });

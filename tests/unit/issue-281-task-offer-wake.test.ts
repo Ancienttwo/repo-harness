@@ -1,3 +1,4 @@
+import { seedEngineerBinding } from '../helpers/engineer-state-fixture';
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'child_process';
 import { cpSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'fs';
@@ -33,12 +34,13 @@ import {
   type EngineerOffersV1,
   type WorkPackageDependencyObservationV1,
 } from '../../src/core/engineers/scheduling';
-import type { EngineerPrincipalV1 } from '../../src/core/engineers/principal-claim';
-import { HERDR_CLI_AGENT_OPERATIONS, executeHerdrCliAgentAction } from '../../src/effects/engineers/agent-runtime-adapters/herdr-cli-agent';
-import { bindEngineer, readEngineerBindingStatus } from '../../src/effects/engineers/binding-store';
+import {
+  HERDR_CLI_AGENT_OPERATIONS,
+  executeHerdrCliAgentAction,
+} from '../../src/effects/engineers/agent-runtime-adapters/herdr-cli-agent';
+import { readEngineerBindingStatus } from '../../src/effects/engineers/binding-store';
 import { collectEngineeringBoard } from '../../src/effects/engineers/engineering-overlay';
 import { loadEngineerProfile } from '../../src/effects/engineers/profile-store';
-import { acquireScheduledEngineerTask } from '../../src/effects/engineers/scheduling-acquire';
 import {
   AgentRuntimeEffectStoreError,
   listAgentRuntimeEffects,
@@ -52,10 +54,7 @@ import {
   startAgentRuntimeEffect,
   subscribeToOfferWakes,
 } from '../../src/effects/engineers/agent-runtime-effect-store';
-import {
-  bumpRepoHarnessAuthorizationRevision,
-  repoHarnessRepoIdFor,
-} from '../../src/effects/repo-registry';
+import { bumpRepoHarnessAuthorizationRevision, repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
 import { canonicalAgentRuntimeCapabilityBytes } from '../../src/core/engineers/agent-runtime-effect';
 import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
 
@@ -89,7 +88,7 @@ function bind(repoRoot: string, adapter: AgentRuntimeAdapterKind, bindingId: str
   const profile = loadEngineerProfile(repoRoot, engineerId);
   const status = readEngineerBindingStatus(repoRoot, engineerId, profile.engineer_contract_revision);
   const previous = status.current;
-  return bindEngineer(repoRoot, {
+  return seedEngineerBinding(repoRoot, {
     engineer_id: engineerId,
     idempotency_key: `bind-${bindingId}`,
     provider: adapter,
@@ -269,22 +268,6 @@ function record(
     },
     env: fx.env,
   });
-}
-
-function principal(fx: Fixture): EngineerPrincipalV1 {
-  return {
-    protocol: 1,
-    kind: 'repo-harness-engineer-principal',
-    repository_id: fx.repositoryId,
-    engineer_id: engineerId,
-    binding_id: fx.bindingId,
-    binding_generation: fx.bindingGeneration,
-    engineer_contract_revision: digest,
-    carrier: 'mcp_oauth',
-    auth_subject: '22222222-2222-4222-8222-222222222222',
-    provider: 'unknown',
-    provider_thread_id: null,
-  };
 }
 
 afterEach(() => {
@@ -722,7 +705,6 @@ describe('issue #281 adapters invoke exactly one bounded controller step', () =>
     return startAgentRuntimeEffect({ repo_root: fx.repoRoot, effect_id: wake.status!.intent.effect_id, started_at: '2026-09-03T10:04:10.000Z', env: fx.env }).action!;
   }
 
-
   test('the herdr adapter sends exactly one bounded wake control reference and never a command', () => {
     const fx = fixture('herdr-cli-agent');
     const action = wakeAction(fx);
@@ -741,91 +723,6 @@ describe('issue #281 adapters invoke exactly one bounded controller step', () =>
     const action = wakeAction(fx);
     const foreign = { ...action, operation: 'stop_agent' } as unknown as typeof action;
     expect(() => executeHerdrCliAgentAction(foreign as never, () => ({ session: 'rh-test', agentName: 'bound-agent' }), () => { throw new Error('must not run'); })).toThrow();
-  });
-});
-
-describe('issue #281 end-to-end idle to wake to re-read', () => {
-  test('a woken controller re-reads offers and acquires through the ordinary scheduling seam', () => {
-    const fx = fixture();
-    record(fx, emptyOffers(fx), '2026-09-03T10:03:00.000Z');
-    const document = offers(fx);
-    const wake = record(fx, document, '2026-09-03T10:04:00.000Z');
-    const start = startAgentRuntimeEffect({ repo_root: fx.repoRoot, effect_id: wake.status!.intent.effect_id, started_at: '2026-09-03T10:04:10.000Z', env: fx.env });
-    executeHerdrCliAgentAction(start.action!, () => ({session:'rh-test',agentName:'bound-agent'}), () => ({pid:1,status:0,signal:null,stdout:Buffer.from(JSON.stringify({id:'fixture',result:{type:'agent_prompted',agent:{name:'bound-agent'}}})),stderr:Buffer.alloc(0),output:[]}));
-
-    let acquisitions = 0;
-    const current = document.offers[0]!;
-    const result = acquireScheduledEngineerTask({
-      repo_root: fx.repoRoot,
-      principal: principal(fx),
-      assertion: {
-        offer_revision: current.offer_revision, work_package_id: current.work_package_id,
-        work_package_revision: current.work_package_revision, work_graph_revision: current.work_graph_revision,
-        task_id: current.task_id, task_revision: current.task_revision, dependency_revision: current.dependency_revision,
-        concurrency_revision: current.concurrency_revision, binding_id: current.binding_id,
-        binding_generation: current.binding_generation, engineer_contract_revision: current.engineer_contract_revision,
-        fleet_offer_revision: current.fleet_offer_revision, authorization_revision: current.authorization_revision,
-      },
-      env: fx.env,
-      dependencies: {
-        collectOffers: () => document,
-        acquire: () => { acquisitions += 1; return { ok: false, error: 'fleet_offer_stale', message: 'fixture stops before the Fleet mutation' } as never; },
-      },
-    });
-    expect(acquisitions).toBe(1);
-    expect(result.ok).toBe(false);
-
-    recordAgentRuntimeControllerStep({
-      repo_root: fx.repoRoot, effect_id: wake.status!.intent.effect_id, control_ref: start.action!.control_ref,
-      observed_snapshot_revision: document.snapshot_revision, observed_at: '2026-09-03T10:05:00.000Z',
-    });
-    const observed = observeAgentRuntimeEffect({
-      repo_root: fx.repoRoot, effect_id: wake.status!.intent.effect_id,
-      adapter: { adapter_kind: 'herdr-cli-agent', outcome: 'accepted', process_exit_code: null, process_signal: null },
-      observed_at: '2026-09-03T10:06:00.000Z', receipt_wait_exhausted: false,
-    });
-    expect(observed.current.state).toBe('observed_success');
-  });
-
-  test('a wake whose snapshot went empty is a no-op acknowledgement and never a claim', () => {
-    const fx = fixture();
-    record(fx, emptyOffers(fx), '2026-09-03T10:03:00.000Z');
-    const document = offers(fx);
-    const wake = record(fx, document, '2026-09-03T10:04:00.000Z');
-    const start = startAgentRuntimeEffect({ repo_root: fx.repoRoot, effect_id: wake.status!.intent.effect_id, started_at: '2026-09-03T10:04:10.000Z', env: fx.env });
-    const stale = emptyOffers(fx);
-
-    let acquisitions = 0;
-    const current = document.offers[0]!;
-    const result = acquireScheduledEngineerTask({
-      repo_root: fx.repoRoot,
-      principal: principal(fx),
-      assertion: {
-        offer_revision: current.offer_revision, work_package_id: current.work_package_id,
-        work_package_revision: current.work_package_revision, work_graph_revision: current.work_graph_revision,
-        task_id: current.task_id, task_revision: current.task_revision, dependency_revision: current.dependency_revision,
-        concurrency_revision: current.concurrency_revision, binding_id: current.binding_id,
-        binding_generation: current.binding_generation, engineer_contract_revision: current.engineer_contract_revision,
-        fleet_offer_revision: current.fleet_offer_revision, authorization_revision: current.authorization_revision,
-      },
-      env: fx.env,
-      dependencies: {
-        collectOffers: () => stale,
-        acquire: () => { acquisitions += 1; return { ok: true } as never; },
-      },
-    });
-    expect(acquisitions).toBe(0);
-    expect(result).toMatchObject({ ok: false, error: 'engineer_offer_stale' });
-
-    recordAgentRuntimeControllerStep({
-      repo_root: fx.repoRoot, effect_id: wake.status!.intent.effect_id, control_ref: start.action!.control_ref,
-      observed_snapshot_revision: stale.snapshot_revision, observed_at: '2026-09-03T10:05:00.000Z',
-    });
-    expect(observeAgentRuntimeEffect({
-      repo_root: fx.repoRoot, effect_id: wake.status!.intent.effect_id,
-      adapter: { adapter_kind: 'herdr-cli-agent', outcome: 'accepted', process_exit_code: null, process_signal: null },
-      observed_at: '2026-09-03T10:06:00.000Z', receipt_wait_exhausted: false,
-    }).current.state).toBe('observed_success');
   });
 });
 

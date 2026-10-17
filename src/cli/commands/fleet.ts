@@ -11,8 +11,6 @@ import {
   resolveFleetReadiness,
 } from '../../effects/publication/merge-readiness';
 import {
-  acquireFleetTask,
-  collectFleetOffers,
   FleetOffersError,
 } from '../../effects/fleet/acquire';
 import {
@@ -341,20 +339,6 @@ function integerOption(
     throw new Error(`--${name} must be an integer ${bound}`);
   }
   return parsed;
-}
-
-function outputAcquireValidation(error: unknown): void {
-  const message = error instanceof Error ? error.message : String(error);
-  process.stderr.write(`${JSON.stringify({ ok: false, error: 'invalid_argument', message })}\n`);
-  process.exitCode = 2;
-}
-
-function outputAcquireResult(result: ReturnType<typeof acquireFleetTask>): void {
-  process.stdout.write(`${JSON.stringify(result)}\n`);
-  // Losing the bounded task election is an expected empty result. All other
-  // typed failures remain non-zero so shell callers can distinguish a race
-  // from stale authorization or partial acquisition.
-  process.exitCode = result.ok || result.error === 'no_eligible_task' ? 0 : 1;
 }
 
 export function buildFleetCommand(): Command {
@@ -715,76 +699,6 @@ export function buildFleetCommand(): Command {
           recorded_at: recordedAt,
         });
         process.stdout.write(`${JSON.stringify({ ok: true, receipt })}\n`);
-      } catch (error) {
-        outputError(error);
-      }
-    });
-
-  fleet
-    .command('offers')
-    .description('Aggregate deterministic task offers across registered repositories')
-    .requiredOption('--json', 'Output the FleetOffersV1 document as JSON')
-    .option('--repo-id <repoId>', 'Restrict the read to one registered repository id')
-    .action((options: { readonly repoId?: string }) => {
-      try {
-        const result = collectFleetOffers({
-          env: process.env,
-          repo_id: options.repoId,
-        });
-        process.stdout.write(`${JSON.stringify(result)}\n`);
-      } catch (error) {
-        outputError(error);
-      }
-    });
-  fleet
-    .command('acquire')
-    .description('Acquire one execution-ready task and return its WorkEnvelopeV1')
-    .requiredOption('--json', 'Output the FleetAcquireResult as JSON')
-    .requiredOption('--authorization-revision <revision>', 'Authorization revision observed from fleet offers')
-    .option('--repo-id <repoId>', 'Restrict acquisition to one registered repository id')
-    .option('--task-id <taskId>', 'Assert one coordination task id from the offer document')
-    .option('--offer-revision <revision>', 'Assert the exact offer revision previously observed')
-    .option('--session-id <sessionId>', 'Session identifier recorded on the claim')
-    .option('--max-attempts <attempts>', 'Bounded claim-race retries (1-16)', '3')
-    .action((options: {
-      readonly authorizationRevision: string;
-      readonly repoId?: string;
-      readonly taskId?: string;
-      readonly offerRevision?: string;
-      readonly sessionId?: string;
-      readonly maxAttempts?: string;
-    }) => {
-      let authorizationRevision: number | undefined;
-      let maxAttempts: number | undefined;
-      let repoId: string | undefined;
-      let taskId: string | undefined;
-      let offerRevision: string | undefined;
-      let sessionId: string | undefined;
-      try {
-        authorizationRevision = integerOption(options.authorizationRevision, 'authorization-revision', 0);
-        maxAttempts = integerOption(options.maxAttempts, 'max-attempts', 1, 16);
-        repoId = optionalStringOption(options.repoId, 'repo-id');
-        taskId = optionalStringOption(options.taskId, 'task-id');
-        offerRevision = optionalStringOption(options.offerRevision, 'offer-revision');
-        sessionId = optionalStringOption(options.sessionId, 'session-id');
-      } catch (error) {
-        outputAcquireValidation(error);
-        return;
-      }
-
-      try {
-        outputAcquireResult(acquireFleetTask({
-          env: process.env,
-          repo_id: repoId,
-          session_id: sessionId,
-          max_attempts: maxAttempts,
-          assertion: {
-            ...(repoId === undefined ? {} : { repo_id: repoId }),
-            ...(taskId === undefined ? {} : { task_id: taskId }),
-            ...(offerRevision === undefined ? {} : { offer_revision: offerRevision }),
-            authorization_revision: authorizationRevision!,
-          },
-        }));
       } catch (error) {
         outputError(error);
       }

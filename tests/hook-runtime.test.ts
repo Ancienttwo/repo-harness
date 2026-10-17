@@ -1,14 +1,24 @@
+import { boundLeaseFixture } from './helpers/sprint-fixture';
 import { describe, expect, test } from 'bun:test';
 import { execFileSync, spawnSync } from 'child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { resolveCompatibleNodeRuntime } from '../src/effects/architecture/archctx-provider';
 import { runHook } from '../src/cli/hook/runtime';
 import { buildTaskMessageEvent } from '../src/core/fleet/task-message';
-import { bindLeaseRecord, buildLeaseOwnerRecord, deriveTaskRevision } from '../src/core/state/coordination-identity';
+import { buildLeaseOwnerRecord, deriveTaskRevision } from '../src/core/state/coordination-identity';
 import { sendTaskMessage } from '../src/effects/fleet/task-inbox';
-import { writeClaimTokenForBoundLease } from '../src/effects/state/coordination-claim-token';
+import { writeClaimTokenFixture } from './helpers/sprint-fixture';
 import { createLeaseDirectory, writeLeaseOwnerDurably } from '../src/effects/state/coordination-lease-store';
 import { fixtureTaskId } from './helpers/sprint-fixture';
 
@@ -152,7 +162,6 @@ describe('hook runtime typed dispatch', () => {
       expect(sessionStart?.run_id).toBe('run-claude-1');
     } finally { rmSync(root, { recursive: true, force: true }); }
   }, 30_000);
-
 
   test('typed handlers do not consult a route filesystem and write one v2 record', () => {
     const root = fixture();
@@ -334,7 +343,7 @@ process.exit(child.status ?? 1);
     } finally { rmSync(root, { recursive: true, force: true }); }
   }, 60_000);
 
-  test('Codex UserPromptSubmit.inbox writes its envelope unchanged', () => {
+  test('Codex UserPromptSubmit.inbox stays installed and delivers no retired task messages', () => {
     const root = owedFixture();
     try {
       const sprintPath = 'plans/sprints/inbox.sprint.md';
@@ -354,11 +363,10 @@ process.exit(child.status ?? 1);
       // The lease names the canonical worktree path, as the hook runtime resolves it.
       const worktree = realpathSync(root);
       const claimed = buildLeaseOwnerRecord({ claimId, taskId, taskRevision, sprintPath, targetRef: 'HEAD', generation: 1, sessionId: 'inbox-session', sourceWorktree: worktree });
-      const bound = bindLeaseRecord(claimed, { claimId, executionWorktree: worktree, branch: 'feature', unitRef });
-      if (!bound.ok) throw new Error(bound.error);
+      const bound = boundLeaseFixture(claimed, { executionWorktree: worktree, branch: 'feature', unitRef });
       createLeaseDirectory(root, taskId);
-      writeLeaseOwnerDurably(root, taskId, bound.record);
-      writeClaimTokenForBoundLease(root, { task_id: taskId, claim_id: claimId, worktree, sprint: sprintPath, task: taskCell, unit_ref: unitRef });
+      writeLeaseOwnerDurably(root, taskId, bound);
+      writeClaimTokenFixture({ task_id: taskId, claim_id: claimId, worktree, sprint: sprintPath, task: taskCell, unit_ref: unitRef });
       writeFileSync(join(root, '.ai/harness/active-plan'), `${unitRef}\n`);
       sendTaskMessage({
         repo_root: root,
@@ -372,11 +380,8 @@ process.exit(child.status ?? 1);
 
       const inbox = host(root, 'codex', 'UserPromptSubmit', 'inbox', { prompt: 'continue' });
       expect(inbox.status).toBe(0);
-      const inboxContext = context(inbox.stdout, 'UserPromptSubmit');
-      // The handler's own envelope: the bounded untrusted block, not a second wrapper.
-      expect(inboxContext.startsWith('[TaskInboxUntrustedPeerMessages]')).toBe(true);
-      expect(inboxContext).toContain('peer body for the owner');
-      expect(inboxContext).not.toContain('hookSpecificOutput');
+      expect(inbox.stdout).toBe('');
+      expect(inbox.stderr).toBe('');
     } finally { rmSync(root, { recursive: true, force: true }); }
   }, 60_000);
 

@@ -14,8 +14,6 @@ import {
 } from 'fs';
 import { tmpdir } from 'os';
 import { basename, join } from 'path';
-import { revokeUserWaiverGrant } from '../scripts/acceptance-receipt';
-import { executeVerificationContract } from '../src/effects/evidence/verification-execution';
 import {
   buildStateSnapshot,
   resolveEffectiveState,
@@ -29,95 +27,30 @@ import {
   commitFixture,
   createEffectiveStateFixture,
   effectiveStateCliRiskArgs,
-  makeFreshEvidence,
-  nativeVerificationPlan,
   resolveFixtureState,
   runStateCli,
   withRepo,
   writeFixture as write,
 } from './state/effective-state-fixture';
 
-describe('native effective-state evidence', () => {
-  test('reads executed facts and refuses a revoked user waiver', () => {
+describe('effective state ignores the retired task chain', () => {
+  test('contract, review, sprint and check records cannot change task authority', () => {
     withRepo(cwd => {
-      makeFreshEvidence(cwd, Date.now());
-      const fresh = resolveFixtureState(cwd);
-      expect(fresh.checks.path).toBeNull();
-      expect(fresh.checks.status).toBe('passed');
-      expect(fresh.checks.freshness).toBe('fresh');
-      expect(fresh.checks.result_refs?.[0]?.run_file).toStartWith('.ai/harness/runs/');
-      expect(fresh.external_acceptance.freshness).toBe('fresh');
-      expect(fresh.external_acceptance.status).toBe('user_waiver');
-      revokeUserWaiverGrant({ root: cwd, authorityHome: process.env.HOME! });
-      const revoked = resolveFixtureState(cwd);
-      expect(revoked.checks.freshness).toBe('fresh');
-      expect(revoked.external_acceptance.freshness).toBe('stale');
-      expect(revoked.evidence_revision).not.toBe(fresh.evidence_revision);
-      expect(revoked.authority_revision).toBe(fresh.authority_revision);
-    });
-  });
-
-  test('missing, empty, and malformed plans remain non-passing observations', () => {
-    withRepo(cwd => {
-      const original = readFileSync(join(cwd, CONTRACT), 'utf8');
-      const missing = resolveFixtureState(cwd);
-      expect(missing.checks.status).toBe('missing');
-      expect(missing.checks.reason).toBe('missing_plan');
-      expect(missing.checks.freshness).toBe('missing');
-      write(cwd, CONTRACT, original + '\n## Verification Plan\n\n```json\n{"protocol":1,"checks":[]}\n```\n');
-      const empty = resolveFixtureState(cwd);
-      expect(empty.checks.status).toBe('missing');
-      expect(empty.checks.reason).toBe('empty_plan');
-      expect(empty.checks.freshness).toBe('missing');
-      write(cwd, CONTRACT, original + '\n## Verification Plan\n\n```json\n{"protocol":1,"checks":"bad"}\n```\n');
-      const malformed = resolveFixtureState(cwd);
-      expect(malformed.checks.freshness).toBe('unavailable');
-      expect(malformed.checks.status).toBeNull();
-      expect(malformed.checks.reason).toContain('VerificationPlanValidationError');
-      expect(existsSync(join(cwd, '.ai/harness/evidence/events/log.jsonl'))).toBe(false);
+      const before = resolveFixtureState(cwd);
+      write(cwd, CONTRACT, '> **Plan**: plans/other.md\n> **Workflow Profile**: high\n> **Review File**: ../outside.md\n');
+      write(cwd, '.ai/harness/sprint/active-sprint', '../outside.md\n');
+      write(cwd, '.ai/harness/checks/latest.json', '{"status":"failed"}');
+      const after = resolveFixtureState(cwd);
+      expect(after.authority_revision).toBe(before.authority_revision);
+      expect(after.workflow_profile).toBe(before.workflow_profile);
+      expect(after.blockers).toEqual(before.blockers);
+      for (const field of ['contract', 'review', 'external_acceptance', 'verification', 'checks', 'readiness', 'active_sprint', 'allowed_paths', 'task_profile', 'evidence_revision']) {
+        expect(Object.hasOwn(after, field)).toBe(false);
+      }
+      expect(after.source_hashes[CONTRACT]).toBeUndefined();
+      expect(after.source_hashes['.ai/harness/sprint/active-sprint']).toBeUndefined();
       expect(existsSync(join(cwd, '.ai/harness/runs'))).toBe(false);
-      expect(existsSync(join(cwd, '.ai/harness/checks/latest.json'))).toBe(false);
-    });
-  });
-
-  test('tree churn, plan relation, and direct assessment changes cannot preserve fresh evidence', () => {
-    withRepo(cwd => {
-      makeFreshEvidence(cwd, Date.now());
-      const original = readFileSync(join(cwd, CONTRACT), 'utf8');
-      const fresh = resolveFixtureState(cwd);
-      write(cwd, 'feature.txt', 'unverified\n');
-      const churned = resolveFixtureState(cwd);
-      expect(churned.checks.freshness).toBe('missing');
-      expect(churned.external_acceptance.freshness).not.toBe('fresh');
-      expect(churned.evidence_revision).not.toBe(fresh.evidence_revision);
-      write(cwd, 'feature.txt', 'fixture\n');
-      write(cwd, CONTRACT, original.replace(`> **Plan**: ${PLAN}`, '> **Plan**: plans/plan-other.md'));
-      const mismatch = resolveFixtureState(cwd);
-      expect(mismatch.blockers).toContain('conflict:contract_plan_relationship');
-      expect(mismatch.checks.freshness).toBe('stale');
-      write(cwd, CONTRACT, original);
-      const assessmentPath = '.ai/harness/checks/change-assessment.latest.json';
-      const assessment = JSON.parse(readFileSync(join(cwd, assessmentPath), 'utf8'));
-      assessment.selection_packet.target_revision = '0'.repeat(40);
-      write(cwd, assessmentPath, JSON.stringify(assessment));
-      const stale = resolveFixtureState(cwd);
-      expect(stale.checks.freshness).toBe('stale');
-      expect(stale.external_acceptance.freshness).not.toBe('fresh');
-    });
-  });
-
-  test('a genuine current failed run remains a negative fact', () => {
-    withRepo(cwd => {
-      write(cwd, 'feature.txt', 'wrong\n');
-      write(cwd, CONTRACT, readFileSync(join(cwd, CONTRACT), 'utf8') + nativeVerificationPlan());
-      const result = executeVerificationContract({ repoRoot: cwd, contractPath: CONTRACT });
-      expect(result.passed).toBe(false);
-      expect(result.status).toBe('failed');
-      const state = resolveFixtureState(cwd);
-      expect(state.checks.status).toBe('failed');
-      expect(state.checks.freshness).toBe('fresh');
-      expect(state.blockers).toContain('checks_failed');
-      expect(state.external_acceptance.freshness).not.toBe('fresh');
+      expect(projectEffectiveStateSessionSection(after).content).not.toContain('missing_contract');
     });
   });
 });
@@ -130,26 +63,6 @@ describe('effective state resolver', () => {
         setup(cwd: string, outsidePath: string, outsideRelative: string) {
           writeFileSync(outsidePath, '# Outside plan\n> **Status**: Executing\n- [ ] leak\n');
           write(cwd, '.ai/harness/active-plan', `${outsideRelative}\n`);
-        },
-        run(cwd: string) { resolveFixtureState(cwd); },
-      },
-      {
-        name: 'contract review header with Win32 traversal',
-        setup(cwd: string, outsidePath: string) {
-          writeFileSync(outsidePath, '# Outside review\n> **Recommendation**: pass\n');
-          const contract = readFileSync(join(cwd, CONTRACT), 'utf-8');
-          write(cwd, CONTRACT, contract.replace(
-            /^> \*\*Review File\*\*: .*$/m,
-            `> **Review File**: \`..\\${basename(outsidePath)}\``,
-          ));
-        },
-        run(cwd: string) { resolveFixtureState(cwd); },
-      },
-      {
-        name: 'active-sprint marker',
-        setup(cwd: string, outsidePath: string, outsideRelative: string) {
-          writeFileSync(outsidePath, '# Outside sprint\n');
-          write(cwd, '.ai/harness/sprint/active-sprint', `${outsideRelative}\n`);
         },
         run(cwd: string) { resolveFixtureState(cwd); },
       },
@@ -238,7 +151,6 @@ describe('effective state resolver', () => {
   test('fails closed when no actual changed or target paths are authoritative', () => {
     withRepo((cwd) => {
       const state = resolveEffectiveState(cwd);
-      expect(state.allowed_paths).toEqual(['src/', 'tests/effective-state.test.ts']);
       expect(state.workflow_profile).toBeNull();
       expect(state.risk_floor).toBe('high');
       expect(state.profile_reasons).toContain('risk-floor:high:signals-unavailable');
@@ -268,9 +180,6 @@ describe('effective state resolver', () => {
   test('high-risk work needs no contract stage approval', () => {
     withRepo((cwd) => {
       rmSync(join(cwd, CONTRACT));
-      // Strict's separate_contract requirement is unconditionally required
-      // (ArtifactRequirementPolicy), so this state keeps blocking under the
-      // profile-aware missing_contract decision.
       const state = resolveFixtureState(cwd, Date.now(), {
         targetPaths: ['src/feature.ts'],
         operationKind: 'feature',
@@ -279,17 +188,12 @@ describe('effective state resolver', () => {
       expect(state.workflow_profile).toBe('high');
       expect(state.phase).toBe('executing');
       expect(state.blockers).not.toContain('missing_contract');
-      expect(state.readiness?.ok && state.readiness.allowedToEdit.decision).toBe('allow');
     });
   }, 30_000);
 
   test('allows approved or executing work under Standard when its contract is missing', () => {
     withRepo((cwd) => {
       rmSync(join(cwd, CONTRACT));
-      // Default fixture risk input (targetPaths + operationKind: 'feature',
-      // no explicit override) naturally resolves to Standard. Standard's
-      // separate_contract requirement defaults to not_required, so the
-      // profile-aware decision no longer pushes missing_contract.
       const state = resolveFixtureState(cwd);
       expect(state.workflow_profile).toBe('routine');
       expect(state.blockers).not.toContain('missing_contract');
@@ -300,9 +204,6 @@ describe('effective state resolver', () => {
   test('allows approved or executing work under Lite when its contract is missing', () => {
     withRepo((cwd) => {
       rmSync(join(cwd, CONTRACT));
-      // Lite's edit matrix cell carries no separate_contract entry at all
-      // (ArtifactRequirementPolicy) -- the absent-entry path, distinct from
-      // Standard's explicit not_required entry.
       const state = resolveFixtureState(cwd, Date.now(), {
         targetPaths: ['src/feature.ts'],
         operationKind: 'edit',
@@ -316,11 +217,6 @@ describe('effective state resolver', () => {
   test('rejects a below-floor profile without inventing a missing-contract blocker', () => {
     withRepo((cwd) => {
       rmSync(join(cwd, CONTRACT));
-      // Requesting Lite while real signals (operationKind: 'feature') compute
-      // a Standard risk floor is rejected outright (PROFILE_BELOW_RISK_FLOOR,
-      // riskResolution.ok === false) rather than silently downgraded. The
-      // profile-aware missing_contract decision must fail closed on any
-      // unresolved profile, not just the "signals unavailable" case.
       const state = resolveFixtureState(cwd, Date.now(), {
         targetPaths: ['src/security/policy.ts'],
         operationKind: 'feature',
@@ -351,7 +247,6 @@ describe('effective state resolver', () => {
       expect(second.state_version).toBe(first.state_version + 1);
       expect(second.authority_revision).toBe(first.authority_revision);
       expect(second.subject_revision).toBe(first.subject_revision);
-      expect(second.evidence_revision).toBe(first.evidence_revision);
       expect(second.progress_token).toBe(first.progress_token);
     });
   }, 30_000);

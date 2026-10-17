@@ -1,9 +1,20 @@
+import { boundLeaseFixture } from '../helpers/sprint-fixture';
 import { executeVerificationContract } from '../../src/effects/evidence/verification-execution';
 import { prepareChangeAssessment } from '../../src/effects/review/change-assessment';
-import { recordFixtureAcceptance, fixtureReviewResult } from '../helpers/repo-fixture';
+import { recordFixtureAcceptance } from '../helpers/repo-fixture';
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'child_process';
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'fs';
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'fs';
 import { tmpdir } from 'os';
 import { dirname, join } from 'path';
 
@@ -29,7 +40,6 @@ import {
 } from '../../src/core/publication/publication-receipt';
 import {
   beginLeaseCompletionRecord,
-  bindLeaseRecord,
   buildLeaseOwnerRecord,
   enterReviewingLeaseRecord,
   projectCanonicalTasks,
@@ -51,20 +61,9 @@ import {
 } from '../../src/effects/integration/product-acceptance';
 import { readPublicationIntegrationObservations } from '../../src/effects/publication/publication-lifecycle';
 import { writePublicationReceiptCache } from '../../src/effects/publication/publication-receipt';
-import {
-  createLeaseDirectory,
-  writeLeaseOwnerDurably,
-} from '../../src/effects/state/coordination-lease-store';
-import {
-  collectEngineerOffers,
-  type EngineerSchedulingDependencies,
-} from '../../src/effects/engineers/scheduling';
-import { acquireScheduledEngineerTask } from '../../src/effects/engineers/scheduling-acquire';
-import type { EngineerPrincipalV1 } from '../../src/core/engineers/principal-claim';
+import { createLeaseDirectory, writeLeaseOwnerDurably } from '../../src/effects/state/coordination-lease-store';
 import type { RepoHarnessRegisteredRepo, RepoHarnessRegistrySnapshot } from '../../src/effects/repo-registry';
-import { assessChange, buildReviewSelectionPacket } from '../../src/core/review/change-assessment';
 import { FIXTURE_SCHEMA_HEADER, fixtureBacklogTable, fixtureTaskId } from '../helpers/sprint-fixture';
-import { buildReviewSubject } from '../../src/effects/review/diff-fingerprint';
 import {
   ACCEPTANCE_VALIDATOR_RULE_IDS,
   CONSUMED_RECEIPT_KEYS,
@@ -75,7 +74,6 @@ import {
   recordAcceptance,
   recordUserWaiverAcceptance,
   recordUserWaiverGrant,
-  userWaiverGrantPath,
   validateAcceptanceReceiptAgainstPolicy,
   writeAcceptanceVerificationObservation,
   type AcceptanceReceipt,
@@ -378,10 +376,6 @@ function waiverGrant(subject: Fixture, overrides: Partial<UserWaiverGrant> = {})
   };
 }
 
-function writeWaiverGrant(subject: Fixture, grant: UserWaiverGrant): void {
-  writeFileSync(userWaiverGrantPath(subject.root, subject.root, true), `${JSON.stringify(grant, null, 2)}\n`);
-}
-
 function waivedReceipt(subject: Fixture, grant: UserWaiverGrant, overrides: Partial<AcceptanceReceipt> = {}): AcceptanceReceipt {
   return acceptanceReceipt(subject, {
     disposition: 'user_waiver',
@@ -460,14 +454,12 @@ function reviewingPublication(subject: Fixture, head: string, base: string, numb
     sessionId: `session-${number}`,
     sourceWorktree: subject.root,
   });
-  const bound = bindLeaseRecord(owner, {
-    claimId: owner.claim_id,
+  const bound = boundLeaseFixture(owner, {
     executionWorktree: subject.root,
     branch: 'main',
     unitRef: `plans/plan-${number}.md`,
   });
-  if (!bound.ok) throw new Error(bound.error);
-  const completing = beginLeaseCompletionRecord(bound.record, {
+  const completing = beginLeaseCompletionRecord(bound, {
     claimId: owner.claim_id,
     executionWorktree: subject.root,
     finishTransactionKey: null,
@@ -519,75 +511,6 @@ function persistObservation(
 const ENGINEER = `engineer:${CAPABILITY}`;
 const CONTRACT_REVISION = `sha256:${'a'.repeat(64)}`;
 const BINDING = '11111111-1111-4111-8111-111111111111';
-
-function principal(): EngineerPrincipalV1 {
-  return {
-    protocol: 1,
-    kind: 'repo-harness-engineer-principal',
-    repository_id: REPO_ID,
-    engineer_id: ENGINEER,
-    binding_id: BINDING,
-    binding_generation: 1,
-    engineer_contract_revision: CONTRACT_REVISION,
-    carrier: 'mcp_oauth',
-    auth_subject: '22222222-2222-4222-8222-222222222222',
-    provider: 'unknown',
-    provider_thread_id: null,
-  };
-}
-
-function schedulingDependencies(subject: Fixture, state: WorkPackageDependencyState): Partial<EngineerSchedulingDependencies> {
-  const carrier = `${JSON.stringify(workGraphJson(state), null, 2)}\n`;
-  const identity = realpathSync(resolveGitCommonDirectory(subject.root));
-  const taskB = subject.graph.work_packages.find((item) => item.work_package_id === 'wp-b')!;
-  return {
-    readRegistry: () => subject.registry,
-    readActiveSprintPath: () => SPRINT,
-    readCanonicalTargetRef: () => 'main',
-    readCanonicalSprint: () => ({ ok: true, commit: subject.commit, text: SPRINT_TEXT }),
-    readFileAtCommit: (repoRoot, commit, path) => (
-      path.endsWith('.work-graph.v1.json') ? carrier : gitShow(repoRoot, commit, path)
-    ),
-    repoIdentity: () => identity,
-    resolveCapability: () => ({ capability: {} as never, capability_revision: CONTRACT_REVISION }) as never,
-    loadProfile: () => ({
-      profile: { engineer_id: ENGINEER, capability_id: CAPABILITY, max_active_claims: 2 },
-      engineer_contract_revision: CONTRACT_REVISION,
-    }) as never,
-    readBinding: () => ({
-      current: { state: 'active', current_binding_id: BINDING, binding_generation: 1 },
-      binding: {}, event: {}, genesis: false,
-    }) as never,
-    collectFleetOffers: () => ({
-      protocol: 1,
-      kind: 'repo-harness-fleet-offers',
-      authorization_revision: 3,
-      snapshot_consistency: 'stable',
-      offer_revision: `sha256:${'b'.repeat(64)}`,
-      offers: [{
-        repo_id: REPO_ID,
-        task_id: taskB.task_id,
-        task_revision: taskB.task_revision,
-        execution_readiness: 'execution_ready',
-        snapshot_consistency: 'stable',
-        offer_revision: `sha256:${'c'.repeat(64)}`,
-        authorization_revision: 3,
-      }],
-    }) as never,
-    listLiveClaims: () => [],
-    now: () => new Date('2026-09-04T00:00:00.000Z'),
-    dependencyReaders: { resolveAuthorityHome: () => subject.root },
-  };
-}
-
-function offers(subject: Fixture, state: WorkPackageDependencyState) {
-  return collectEngineerOffers({
-    repo_root: subject.root,
-    principal: principal(),
-    registry_snapshot: subject.registry,
-    dependencies: schedulingDependencies(subject, state),
-  });
-}
 
 const RECORD_CONTRACT_REF = 'tasks/contracts/demo.contract.md';
 const RECORD_GOAL_REF = 'plans/plan-demo.md';
@@ -1240,77 +1163,6 @@ describe('issue #284 closed dependency authority', () => {
     expect(resolved.status).toBe('authority_unavailable');
     expect(resolved.authority_revision).toBeNull();
     expect(resolved.evidence_refs).toEqual([]);
-  });
-
-  test('board exclusions separate dependency_not_ready from dependency_authority_unavailable', () => {
-    const subject = fixture();
-    const unavailable = offers(subject, 'module_accepted');
-    expect(unavailable.offers).toEqual([]);
-    expect(unavailable.exclusions.find((item) => item.work_package_id === 'wp-b')?.blockers)
-      .toEqual(['dependency_authority_unavailable']);
-
-    // A verdict recorded against another canonical target ref is a readable
-    // negative, not an unreadable authority.
-    recordAcceptanceObservation(subject, acceptanceReceipt(subject, { target_ref: 'release' }));
-    const notReady = offers(subject, 'module_accepted');
-    expect(notReady.offers).toEqual([]);
-    expect(notReady.exclusions.find((item) => item.work_package_id === 'wp-b')?.blockers)
-      .toEqual(['dependency_not_ready']);
-
-    recordAcceptanceObservation(subject);
-    const ready = offers(subject, 'module_accepted');
-    expect(ready.offers.map((offer) => offer.work_package_id)).toEqual(['wp-b']);
-    expect(ready.offers[0]!.dependency_revision).toMatch(/^sha256:[0-9a-f]{64}$/u);
-  });
-
-  test('acquire revalidates the asserted offer after the dependency authority moves', () => {
-    const subject = fixture();
-    recordAcceptanceObservation(subject);
-    const deps = schedulingDependencies(subject, 'module_accepted');
-    const document = offers(subject, 'module_accepted');
-    const offer = document.offers[0]!;
-    const assertion = {
-      offer_revision: offer.offer_revision,
-      work_package_id: offer.work_package_id,
-      work_package_revision: offer.work_package_revision,
-      work_graph_revision: offer.work_graph_revision,
-      task_id: offer.task_id,
-      task_revision: offer.task_revision,
-      dependency_revision: offer.dependency_revision,
-      concurrency_revision: offer.concurrency_revision,
-      binding_id: offer.binding_id,
-      binding_generation: offer.binding_generation,
-      engineer_contract_revision: offer.engineer_contract_revision,
-      fleet_offer_revision: offer.fleet_offer_revision,
-      authorization_revision: offer.authorization_revision,
-    };
-    const acquireDependencies = {
-      collectOffers: (options: Parameters<typeof collectEngineerOffers>[0]) => collectEngineerOffers({
-        ...options,
-        registry_snapshot: subject.registry,
-        dependencies: deps,
-      }),
-      acquire: () => ({ ok: true, envelope: {} as never, receipt: {} as never }) as never,
-      withConcurrencyLock: <T>(_root: string, _key: string, run: () => T): T => run(),
-    };
-    const acquired = acquireScheduledEngineerTask({
-      repo_root: subject.root,
-      principal: principal(),
-      assertion,
-      dependencies: acquireDependencies,
-    });
-    expect(acquired.ok).toBe(true);
-
-    recordAcceptanceObservation(subject, acceptanceReceipt(subject, { summary: 'accepted wp-a again' }));
-    const stale = acquireScheduledEngineerTask({
-      repo_root: subject.root,
-      principal: principal(),
-      assertion,
-      dependencies: acquireDependencies,
-    });
-    expect(stale.ok).toBe(false);
-    if (stale.ok) throw new Error('expected a stale offer');
-    expect(stale.error).toBe('engineer_offer_stale');
   });
 
   test('the resolver refuses a target that is not the exact Work Package its edge names', () => {

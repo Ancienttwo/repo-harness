@@ -1,13 +1,20 @@
+import { boundLeaseFixture } from '../helpers/sprint-fixture';
+import { leaseOwnerPath } from '../helpers/sprint-fixture';
 import { afterEach, beforeEach, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { buildLeaseOwnerRecord, bindLeaseRecord, deriveTaskRevision, serializeLeaseOwnerRecord, type LeaseOwnerRecord } from '../../src/core/state/coordination-identity';
+import {
+  buildLeaseOwnerRecord,
+  deriveTaskRevision,
+  serializeLeaseOwnerRecord,
+  type LeaseOwnerRecord,
+} from '../../src/core/state/coordination-identity';
 import { decodeOperatorTaskDiff, TASK_DIFF_MAX_BYTES } from '../../src/core/operator/task-diff';
 import { readOperatorTaskDiff } from '../../src/effects/operator/task-diff';
 import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
-import { leaseDirectory, leaseOwnerPath } from '../../src/effects/state/coordination-lease-store';
+import { leaseDirectory } from '../../src/effects/state/coordination-lease-store';
 import { fixtureTaskId } from '../helpers/sprint-fixture';
 
 const cleanup: string[] = [];
@@ -51,11 +58,10 @@ function fixture() {
   writeFileSync(join(home, 'registered-repos.json'), JSON.stringify({ version: 1, authorizationRevision: 1, repos: [{ id: repositoryId, path: root, accessMode: 'read_only', source: 'adopt', registeredAt: now, lastSeenAt: now }] }));
   const claim = '123e4567-e89b-42d3-a456-426614174001';
   const owner = buildLeaseOwnerRecord({ claimId: claim, taskId, taskRevision, sprintPath: sprint, targetRef: 'main', generation: 1, sessionId: 'test', sourceWorktree: root });
-  const bound = bindLeaseRecord(owner, { claimId: claim, executionWorktree: worktree, branch: 'codex/diff', unitRef: 'plans/plan-diff.md' });
-  if (!bound.ok) throw new Error(bound.error);
-  seedLease(root, taskId, bound.record);
+  const bound = boundLeaseFixture(owner, { executionWorktree: worktree, branch: 'codex/diff', unitRef: 'plans/plan-diff.md' });
+  seedLease(root, taskId, bound);
   const input = { repository_id: repositoryId, task_id: taskId, task_revision: taskRevision, claim_id: claim, generation: 1, env: { REPO_HARNESS_HOME: home } };
-  return { root, worktree, home, base, input, owner: bound.record };
+  return { root, worktree, home, base, input, owner: bound };
 }
 
 test('read-only registry: explicit target/head, committed and dirty tracked changes, separate untracked paths', () => {
@@ -136,7 +142,6 @@ test('decoder refuses malformed and oversized payloads instead of displaying par
   ]) expect(() => decodeOperatorTaskDiff({ ...value, ...change }, f.input)).toThrow();
 });
 
-
 test('GET diff refuses configured clean/process commands and never executes fsmonitor', () => {
   const f = fixture();
   const marker = join(f.worktree, 'filter-ran');
@@ -163,7 +168,6 @@ test('a different prunable worktree does not hide a valid task binding', () => {
   expect(git(f.root, 'worktree', 'list', '--porcelain')).toContain('prunable');
   expect(readOperatorTaskDiff(f.input).base_sha).toBe(f.base);
 });
-
 
 test('assume-unchanged tracked entries cannot produce an empty observation', () => {
   const f = fixture();
@@ -205,7 +209,6 @@ test('missing promisor blobs fail without fetching or writing objects', () => {
   expect(existsSync(join(f.worktree, 'fetch-ran'))).toBe(false);
   expect(existsSync(object)).toBe(false);
 });
-
 
 test('production worker refuses missing canonical sprint objects without fetching', async () => {
   const f = fixture();

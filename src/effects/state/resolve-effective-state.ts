@@ -1,15 +1,8 @@
-import { assertObservationPath, currentReadonlyObservation, withReadonlyObservation, type ReadonlyObservationIO, observationReadFileSync as readFileSync, observationReaddirSync as readdirSync, observationExecFileSync as execFileSync } from './readonly-observation';
-import {
-  acceptanceReceiptPath,
-  inspectAcceptanceCurrentBinding,
-  inspectAcceptanceEvidence,
-} from '../../../scripts/acceptance-receipt';
-import { evaluateVerificationContract } from '../evidence/verification-execution';
-import type { EffectiveStateInputs } from '../../core/state/project-effective-state';
-import { existsSync, realpathSync, statSync } from 'fs';
-import { isAbsolute, posix, win32 } from 'path';
+import { assertObservationPath, currentReadonlyObservation, withReadonlyObservation, type ReadonlyObservationIO, observationReadFileSync as readFileSync, observationReaddirSync as readdirSync } from './readonly-observation';
+import { statSync } from 'fs';
+import { posix, win32 } from 'path';
 import { buildReviewSubject, isImplementationSurfacePath, type ReviewSubject } from '../review/diff-fingerprint';
-import { resolveWorkflowProfile, type WorkflowProfile } from '../../core/workflow/profile';
+import { resolveWorkflowProfile } from '../../core/workflow/profile';
 import {
   CAPABILITY_SOURCE_MODES,
   isCapabilityPathOutsideRepo,
@@ -33,8 +26,6 @@ import type {
 import {
   artifactStemFromPlan,
   evidenceContractComplete,
-  markdownHeader,
-  planContractRelationshipConflicts,
   planSlugFromPath,
   planStatusFromText,
 } from '../../core/state/artifact-parsers';
@@ -55,7 +46,6 @@ import {
 } from './state-cache';
 import { withStateLock } from './state-lock';
 import {
-  canonicalRepoRelativePath,
   collectStateInputs,
   contentRevision,
   fileExists,
@@ -334,7 +324,6 @@ function pendingState(cwd: string, nowMs: number, policy: WorkflowPolicy): 'none
   return 'stale';
 }
 
-const ACTIVE_SPRINT_MARKER = '.ai/harness/sprint/active-sprint';
 const HANDOFF_PATH = '.ai/harness/handoff/current.md';
 const RESUME_PATH = '.ai/harness/handoff/resume.md';
 const CURRENT_SNAPSHOT_PATH = 'tasks/current.md';
@@ -346,13 +335,12 @@ const CURRENT_SNAPSHOT_PATH = 'tasks/current.md';
  * .ai/harness/runs/hook-guard-stability/). These sources are still read
  * once per unlocked resolution and reported in `source_hashes` exactly as
  * before; only their participation in the stability-abort DECISION changes.
- * Workflow-authority surfaces (active-plan/active-worktree/active-sprint
- * markers, the plan, contract, review, policy, capability registry, and the
+ * Workflow-authority surfaces (active-plan/active-worktree
+ * markers, the plan, policy, capability registry, and the
  * derived authority_revision) keep the full stability contract unchanged.
  */
 const NON_AUTHORITY_SOURCE_HASH_KEYS: ReadonlySet<string> = new Set([
   'review_subject',
-  'evidence_revision',
   CURRENT_SNAPSHOT_PATH,
   HANDOFF_PATH,
   RESUME_PATH,
@@ -601,17 +589,6 @@ function policyReviewBase(policy: WorkflowPolicy): string {
   );
 }
 
-function deriveReviewPath(
-  planPath: string,
-  planText: string | null,
-  contractText: string | null,
-): string | null {
-  const explicit = contractText ? markdownHeader(contractText, 'Review File') : null;
-  if (explicit) return explicit;
-  const stem = artifactStemFromPlan(planPath, planText);
-  return stem ? `tasks/reviews/${stem}.review.md` : null;
-}
-
 function collectStateSnapshotFacts(
   state: EffectiveState,
   cwd: string,
@@ -620,11 +597,13 @@ function collectStateSnapshotFacts(
   const policy = readWorkflowPolicy(cwd);
   const planPath = state.authoritative_plan?.path ?? null;
   const planText = readText(cwd, planPath);
+  const contractPath = planPath ? deriveContractPath(cwd, planPath, planText) : null;
   return {
+    contractPresent: Boolean(readText(cwd, contractPath)),
     spec: fileExists(cwd, 'docs/spec.md') ? 'present' : 'missing',
     pending: pendingState(cwd, nowMs, policy),
     activePlanMarker: readTrimmed(cwd, ACTIVE_PLAN_MARKER),
-    contractPath: planPath ? deriveContractPath(cwd, planPath, planText) : null,
+    contractPath,
     evidence: planPath
       ? evidenceContractComplete(planText) ? 'complete' : 'incomplete'
       : 'unchecked',
@@ -640,7 +619,7 @@ function resolveEffectiveStateUnlocked(
   cwd: string,
   nowMs: number,
   reviewSubjectFor: ReviewSubjectSlot,
-  options: { risk?: EffectiveStateRiskInput; authorityOnly?: boolean },
+  options: { risk?: EffectiveStateRiskInput },
 ): EffectiveState {
   const currentWorktree = safeRealpath(cwd);
   // Only these named facts are shared, and only within this unlocked read-only
@@ -675,22 +654,8 @@ function resolveEffectiveStateUnlocked(
 
   const planText = readText(cwd, planPath);
   const planStatus = planPath ? planStatusFromText(planText) : 'none';
-  const contractPath = planPath ? deriveContractPath(cwd, planPath, planText) : null;
-  const contractText = readText(cwd, contractPath);
-  conflictingSources.push(...planContractRelationshipConflicts(
-    planPath,
-    contractPath,
-    planText,
-    contractText,
-  ));
-
   const reviewSubject = reviewSubjectFor(policyReviewBase(policy));
   const explicitTargetPaths = options.risk?.targetPaths ?? [];
-  const canonicalEditTargetPaths = options.risk?.operationKind === 'edit'
-    ? explicitTargetPaths.map((targetPath) => canonicalRepoRelativePath(cwd, targetPath))
-    : [];
-  const editTargetPaths = canonicalEditTargetPaths.filter((targetPath): targetPath is string => targetPath !== null);
-  const unsafeEditTargetPathCount = canonicalEditTargetPaths.length - editTargetPaths.length;
   const implementationDiffPaths = reviewSubject.status === 'ok' ? reviewSubject.paths : [];
   const rawTargetPaths = Array.from(new Set([...explicitTargetPaths, ...implementationDiffPaths])).sort();
   const hasRawTargetPaths = rawTargetPaths.length > 0;
@@ -734,7 +699,6 @@ function resolveEffectiveStateUnlocked(
     hasRawTargetPaths ? (observedCapabilityIds?.length ?? 0) : undefined
   );
 
-  const contractOverride = contractText ? markdownHeader(contractText, 'Workflow Profile') : null;
   const riskResolution = resolveWorkflowProfile({
     targetPaths: observedTargetPaths,
     // C2 filters workflow-surface paths (docs/*, *.md, ...) out of
@@ -749,24 +713,10 @@ function resolveEffectiveStateUnlocked(
     operationKind: options.risk?.operationKind ?? (
       observedTargetPaths && observedTargetPaths.length > 0 ? 'edit' : planPath ? undefined : 'inspect'
     ),
-    explicitOverride: options.risk?.explicitOverride ?? (contractOverride as WorkflowProfile | null) ?? undefined,
+    explicitOverride: options.risk?.explicitOverride,
   });
 
   const worktreeOwnerIsCurrent = Boolean(owner && safeRealpath(owner) === currentWorktree);
-  const strictProfile = riskResolution.ok && riskResolution.profile === 'high';
-  // Ownership alone also matches the primary checkout. Resolve Git isolation
-  // here and bind it to the authority revision consumed by the edit guard.
-  let isolatedContractWorktree = false;
-  if (strictProfile && worktreeOwnerIsCurrent) {
-    const directories = execFileSync('git', [
-      'rev-parse', '--path-format=absolute', '--git-dir', '--git-common-dir',
-    ], { cwd, encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5_000 }).trimEnd().split('\n');
-    if (directories.length !== 2 || directories.some((path) => !isAbsolute(path))) {
-      throw new Error('Git worktree directories are unavailable or malformed');
-    }
-    isolatedContractWorktree = realpathSync(directories[0]!) !== realpathSync(directories[1]!);
-  }
-
   // Capability registry reasons are appended to profile_reasons alongside
   // resolveWorkflowProfile's own reasons rather than folded into the resolver
   // itself -- the risk-floor ranking formula is untouched; only the reason
@@ -794,109 +744,22 @@ function resolveEffectiveStateUnlocked(
     capabilityReasons.push(`capability:out-of-repo:${outOfRepoPathCount}`);
   }
 
-  const reviewPath = planPath ? deriveReviewPath(planPath, planText, contractText) : null;
-  const reviewText = readText(cwd, reviewPath);
   const reviewSubjectSha256 = reviewSubject.status === 'ok' ? reviewSubject.review_subject_sha256 : null;
-  // One execution evaluation per unlocked collection. The owner returns
-  // missing/empty plans before tree capture. This path never runs commands.
-  let verification: EffectiveStateInputs['verification'] = {
-    freshness: 'missing', status: null, reason: 'missing_contract', resultRefs: [],
-  };
-  let acceptance: EffectiveStateInputs['acceptance'] = {
-    path: null, freshness: planPath && contractText ? 'missing' : 'not_applicable', disposition: null,
-  };
-  let executionFingerprint = sha256('missing:execution');
-  let assessmentFingerprint = sha256('missing:assessment');
-  let acceptanceFingerprint = sha256('missing:acceptance');
-  const authorityHome = process.env.HOME;
-  if (!options.authorityOnly && contractPath && contractText) {
-    try {
-      const outcome = evaluateVerificationContract({ repoRoot: cwd, contractPath });
-      executionFingerprint = sha256(JSON.stringify(outcome));
-      if (outcome.kind === 'verification_unavailable') {
-        verification = { freshness: 'missing', status: outcome.status, reason: outcome.reason, resultRefs: [] };
-      } else {
-        const relationValid = markdownHeader(contractText, 'Plan') === planPath
-          && !conflictingSources.includes('plan_contract_relationship')
-          && !conflictingSources.includes('contract_plan_relationship');
-        verification = {
-          freshness: relationValid && reviewSubject.status === 'ok'
-            ? outcome.status === 'missing' ? 'missing' : 'fresh'
-            : 'stale',
-          status: outcome.status,
-          reason: null,
-          resultRefs: outcome.results.map(({ execution_id, run_file }) => ({ execution_id, run_file })),
-        };
-        if (outcome.passed && relationValid && reviewSubject.status === 'ok') {
-          try {
-            const evidence = inspectAcceptanceEvidence({
-              root: cwd, contract: contractPath, contractContent: contractText,
-              report: outcome, subject: reviewSubject, current: true,
-            });
-            assessmentFingerprint = evidence.fingerprint;
-            try {
-              if (!authorityHome) throw new Error('Acceptance authority HOME is unavailable');
-              const receipt = inspectAcceptanceCurrentBinding({
-                root: cwd, authorityHome,
-                contract: contractPath, subject: reviewSubject, evidence,
-              });
-              acceptance = {
-                path: acceptanceReceiptPath(cwd, authorityHome),
-                freshness: 'fresh', disposition: receipt.disposition,
-              };
-              acceptanceFingerprint = sha256(JSON.stringify(receipt));
-            } catch (error) {
-              const path = authorityHome ? acceptanceReceiptPath(cwd, authorityHome) : null;
-              acceptance = { path, freshness: path ? existsSync(path) ? 'stale' : 'missing' : 'unavailable', disposition: null };
-              acceptanceFingerprint = sha256(String(error));
-            }
-          } catch (error) {
-            verification = { ...verification, freshness: 'stale', reason: String(error) };
-            assessmentFingerprint = sha256(String(error));
-          }
-        }
-      }
-    } catch (error) {
-      verification = { freshness: 'unavailable', status: null, reason: String(error), resultRefs: [] };
-      executionFingerprint = sha256(String(error));
-    }
-  }
-  const sprintPath = readTrimmed(cwd, ACTIVE_SPRINT_MARKER);
   const taskId = planPath ? artifactStemFromPlan(planPath, planText) : null;
 
-  // Four typed revisions (LOOP-03/LOOP-08 audit), each computed once here
-  // from source hashes this resolver already collected. The review-subject
-  // fingerprint moves OUT of authority into its own subject bucket; policy,
-  // capability registry, active-sprint marker+file, and task identity move
-  // IN. state_revision/state_version below keep their untouched all-source
-  // formula byte-for-byte (LSC-05 owns allocation) -- authority_revision is
-  // still one of their ingredients, it is just computed differently now.
+  // Keep authority, observed Git subject and display projections separate.
   const authorityRevision = contentRevision({
     active_plan: sourceHash(cwd, ACTIVE_PLAN_MARKER),
     active_worktree: sourceHash(cwd, ACTIVE_WORKTREE_MARKER),
     plan: planPath ? sourceHash(cwd, planPath) : sha256('missing:plan'),
-    contract: contractPath ? sourceHash(cwd, contractPath) : sha256('missing:contract'),
     policy: captured ? hashSource(POLICY_PATH) : sourceHash(cwd, POLICY_PATH),
     capability_registry: capabilityAuthorityHash(cwd, capabilitySource, captured ? hashSource : undefined),
-    active_sprint_marker: sourceHash(cwd, ACTIVE_SPRINT_MARKER),
-    active_sprint_file: sprintPath ? sourceHash(cwd, sprintPath) : sha256('missing:active-sprint-file'),
     task_identity: sha256(taskId ?? 'missing:task-id'),
-    ...(strictProfile ? { isolated_contract_worktree: sha256(String(isolatedContractWorktree)) } : {}),
   });
   const subjectRevision = contentRevision({
     review_subject: reviewSubjectSha256 ?? sha256('unavailable:review-subject'),
     target_rev: reviewSubject.status === 'ok' ? sha256(reviewSubject.target_rev) : sha256('unavailable:target-rev'),
   });
-  const evidenceRevision = contentRevision({
-    execution: executionFingerprint,
-    assessment: assessmentFingerprint,
-    acceptance: acceptanceFingerprint,
-    review: reviewText !== null ? sha256(reviewText) : sha256('missing:review'),
-    // Bound to the subject: evidence recomputed against a new subject is
-    // distinguishable from stale evidence even if checks/review bytes match.
-    subject_revision: subjectRevision,
-  });
-
   const handoffText = readText(cwd, HANDOFF_PATH);
   const resumeText = readText(cwd, RESUME_PATH);
   const currentText = readText(cwd, CURRENT_SNAPSHOT_PATH);
@@ -912,10 +775,6 @@ function resolveEffectiveStateUnlocked(
     POLICY_PATH,
     ...capabilityAuthoritySourcePaths(cwd, capabilitySource),
     ...(planPath ? [planPath] : []),
-    ...(contractPath ? [contractPath] : []),
-    ...(reviewPath ? [reviewPath] : []),
-    ACTIVE_SPRINT_MARKER,
-    ...(sprintPath ? [sprintPath] : []),
     HANDOFF_PATH,
     RESUME_PATH,
     CURRENT_SNAPSHOT_PATH,
@@ -924,7 +783,6 @@ function resolveEffectiveStateUnlocked(
     ...Object.fromEntries(sourcePaths.filter(path => captured?.has(path)).map(path => [path, hashSource(path)])),
     ...(reviewSubjectSha256 ? { review_subject: reviewSubjectSha256 } : {}),
     authority_revision: authorityRevision,
-    evidence_revision: evidenceRevision,
   });
   const sourceHashes = collected.sourceHashes;
   const stateRevision = collected.stateRevision;
@@ -934,12 +792,8 @@ function resolveEffectiveStateUnlocked(
     planPath,
     planStatus,
     planText,
-    contractPath,
-    contractText,
-    editTargetPaths,
-    unsafeEditTargetPathCount,
     riskResolution,
-    contractOverride,
+    requestedWorkflowProfile: options.risk?.explicitOverride ?? null,
     capabilityReasons,
     capabilityBlocker,
     capabilityOwnership: capabilityOwnershipFrom(
@@ -949,25 +803,10 @@ function resolveEffectiveStateUnlocked(
     ),
     staleSources,
     conflictingSources,
-    reviewPath,
-    reviewText,
-    reviewSubject: {
-      available: reviewSubject.status === 'ok',
-      reviewSubjectSha256: reviewSubject.status === 'ok'
-        ? reviewSubject.review_subject_sha256
-        : null,
-      targetRevision: reviewSubject.status === 'ok' ? reviewSubject.target_rev : null,
-      targetOverlapCount: reviewSubject.status === 'ok' ? reviewSubject.target_overlap_count : 0,
-    },
-    verification,
-    acceptance,
-    sprintPath,
-    sprintExists: Boolean(sprintPath && fileExists(cwd, sprintPath)),
     activeWorktreePath: ACTIVE_WORKTREE_MARKER,
     currentWorktree,
     worktreeOwner: owner,
     worktreeOwnerIsCurrent,
-    isolatedContractWorktree,
     handoffPath: HANDOFF_PATH,
     handoffText,
     resumePath: RESUME_PATH,
@@ -976,7 +815,6 @@ function resolveEffectiveStateUnlocked(
     currentSnapshotText: currentText,
     authorityRevision,
     subjectRevision,
-    evidenceRevision,
     projectionRevision,
     stateVersion: 0,
     stateRevision,
@@ -1009,7 +847,7 @@ function resolveAuthoritySourceHashes(
   risk?: EffectiveStateRiskInput,
 ): Readonly<Record<string, string>> {
   return authoritySourceHashes(
-    resolveEffectiveStateUnlocked(cwd, nowMs, reviewSubjectFor, { risk, authorityOnly: true }).source_hashes,
+    resolveEffectiveStateUnlocked(cwd, nowMs, reviewSubjectFor, { risk }).source_hashes,
   );
 }
 

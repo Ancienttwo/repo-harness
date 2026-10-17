@@ -1,8 +1,25 @@
-import { productionMergeReadinessCollector, resolvePublicationReadiness } from '../../src/effects/publication/merge-readiness';
-import { publicationSha256, replacePublicationMarker, stablePublicationJson } from '../../src/core/publication/publication-receipt';
+import { boundLeaseFixture } from '../helpers/sprint-fixture';
+import {
+  productionMergeReadinessCollector,
+  resolvePublicationReadiness,
+} from '../../src/effects/publication/merge-readiness';
+import {
+  publicationSha256,
+  replacePublicationMarker,
+  stablePublicationJson,
+} from '../../src/core/publication/publication-receipt';
 import { describe, expect, test } from 'bun:test';
 import { execFileSync } from 'child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, realpathSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'fs';
 import { tmpdir } from 'os';
 import { dirname, join } from 'path';
 
@@ -19,13 +36,25 @@ import {
   verifyPublicationShipJournalComplete,
 } from '../../src/effects/publication/publication-lifecycle';
 import { PublicationLifecycleError } from '../../src/core/publication/publication-lifecycle';
-import { preparePublicationReceipt, ensurePublicationReceipt, readPublicationReceiptCache } from '../../src/effects/publication/publication-receipt';
-import { abortLeaseCompletionRecord, beginLeaseCompletionRecord, bindLeaseRecord, buildLeaseOwnerRecord, deriveTaskRevision, stealLeaseRecord } from '../../src/core/state/coordination-identity';
-import { createLeaseDirectory, readLease, writeLeaseOwnerDurably } from '../../src/effects/state/coordination-lease-store';
-import { resolveRepoIdentity } from '../../src/effects/state/coordination-canonical-source';
+import {
+  preparePublicationReceipt,
+  ensurePublicationReceipt,
+  readPublicationReceiptCache,
+} from '../../src/effects/publication/publication-receipt';
+import {
+  abortLeaseCompletionRecord,
+  beginLeaseCompletionRecord,
+  buildLeaseOwnerRecord,
+  deriveTaskRevision,
+} from '../../src/core/state/coordination-identity';
+import {
+  createLeaseDirectory,
+  readLease,
+  writeLeaseOwnerDurably,
+} from '../../src/effects/state/coordination-lease-store';
 import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
 import { fixtureTaskId } from '../helpers/sprint-fixture';
-import { writeClaimTokenForBoundLease } from '../../src/effects/state/coordination-claim-token';
+import { writeClaimTokenFixture } from '../helpers/sprint-fixture';
 
 const CLAIM = 'claim-lifecycle';
 const SPRINT_PATH = 'plans/sprints/demo.sprint.md';
@@ -68,7 +97,6 @@ function installFixture(): Fixture {
   ].join('\n'));
   writeFileSync(join(root, 'README.md'), 'base\n');
   git(root, 'add', '.'); git(root, 'commit', '-m', 'base');
-  const repoIdentity = resolveRepoIdentity(root);
   const taskId = fixtureTaskId(TASK_CELL);
   const revision = deriveTaskRevision({ taskCell: TASK_CELL, taskId, modeCell: 'contract', acceptanceCell: 'lifecycle tests' });
   git(root, 'switch', '-c', 'codex/lifecycle');
@@ -80,13 +108,12 @@ function installFixture(): Fixture {
     claimId: CLAIM, taskId, taskRevision: revision, sprintPath: SPRINT_PATH, targetRef: 'main', generation: 1,
     sessionId: 'session-one', sourceWorktree: root,
   });
-  const bound = bindLeaseRecord(record, { claimId: CLAIM, executionWorktree: root, branch: 'codex/lifecycle', unitRef: 'plans/plan-lifecycle.md' });
-  if (!bound.ok) throw new Error(bound.error);
-  const completing = beginLeaseCompletionRecord(bound.record, { claimId: CLAIM, executionWorktree: root, finishTransactionKey: 'finish/lifecycle' });
+  const bound = boundLeaseFixture(record, { executionWorktree: root, branch: 'codex/lifecycle', unitRef: 'plans/plan-lifecycle.md' });
+  const completing = beginLeaseCompletionRecord(bound, { claimId: CLAIM, executionWorktree: root, finishTransactionKey: 'finish/lifecycle' });
   if (!completing.ok) throw new Error(completing.error);
   if (!createLeaseDirectory(root, taskId)) throw new Error('lease election failed');
-  writeLeaseOwnerDurably(root, taskId, bound.record);
-  writeClaimTokenForBoundLease(root,{task_id:taskId,claim_id:CLAIM,worktree:root,sprint:SPRINT_PATH,task:TASK_CELL,unit_ref:'plans/plan-lifecycle.md'});
+  writeLeaseOwnerDurably(root, taskId, bound);
+  writeClaimTokenFixture({task_id:taskId,claim_id:CLAIM,worktree:root,sprint:SPRINT_PATH,task:TASK_CELL,unit_ref:'plans/plan-lifecycle.md'});
   writeLeaseOwnerDurably(root, taskId, completing.record);
   const body = join(root, 'pr-body.md'); writeFileSync(body, 'PR body\n');
   const gh = join(root, 'fake-gh.sh');
@@ -208,7 +235,6 @@ describe('task-locked publication lifecycle', () => {
     const reopened = reopenPublication({ ...enterInput, expected_generation: 1, publication_id: receipt.publication_id, expected_head_sha: receipt.head_sha });
     expect(reopened).toMatchObject({ record_schema: 2, state: 'bound', current_publication: null, claim_id: CLAIM });
   }));
-
 
   test('refuses old receipt digests in the journal and lease without rewriting history', () => withFixture((fixture) => {
     const receipt = createReceiptAndJournal(fixture);
@@ -412,11 +438,14 @@ test('two real claims at the same head/base produce distinct journals and stale 
   const first=readShipClaimIdentity({repo_root:fixture.root,task_id:fixture.taskId,claim_id:CLAIM,branch:'codex/lifecycle',target_ref:'main'});
   const owned=readLease(fixture.root,fixture.taskId).record!;
   const closed=abortLeaseCompletionRecord(owned,{claimId:CLAIM,executionWorktree:fixture.root});if(!closed.ok)throw Error(closed.error);
-  const stolen=stealLeaseRecord(closed.record,{expectedClaimId:CLAIM,newClaimId:'claim-lifecycle-second',reason:'fixture handover',sessionId:'session-two',sourceWorktree:fixture.root});if(!stolen.ok)throw Error(stolen.error);
-  const rebound=bindLeaseRecord(stolen.record,{claimId:'claim-lifecycle-second',executionWorktree:fixture.root,branch:'codex/lifecycle',unitRef:'plans/plan-lifecycle.md'});if(!rebound.ok)throw Error(rebound.error);
-  writeLeaseOwnerDurably(fixture.root,fixture.taskId,rebound.record);
-  writeClaimTokenForBoundLease(fixture.root,{task_id:fixture.taskId,claim_id:rebound.record.claim_id,worktree:fixture.root,sprint:SPRINT_PATH,task:TASK_CELL,unit_ref:'plans/plan-lifecycle.md'});
-  const second=readShipClaimIdentity({repo_root:fixture.root,task_id:fixture.taskId,claim_id:rebound.record.claim_id,branch:'codex/lifecycle',target_ref:'main'});
+  const replacement=buildLeaseOwnerRecord({claimId:'claim-lifecycle-second',taskId:closed.record.task_id,
+    taskRevision:closed.record.task_revision,sprintPath:closed.record.sprint_path,targetRef:closed.record.target_ref,
+    generation:closed.record.generation+1,sessionId:'session-two',sourceWorktree:fixture.root,
+    stolenFrom:{claim_id:closed.record.claim_id,reason:'fixture handover'}});
+  const rebound=boundLeaseFixture(replacement,{executionWorktree:fixture.root,branch:'codex/lifecycle',unitRef:'plans/plan-lifecycle.md'});
+  writeLeaseOwnerDurably(fixture.root,fixture.taskId,rebound);
+  writeClaimTokenFixture({task_id:fixture.taskId,claim_id:rebound.claim_id,worktree:fixture.root,sprint:SPRINT_PATH,task:TASK_CELL,unit_ref:'plans/plan-lifecycle.md'});
+  const second=readShipClaimIdentity({repo_root:fixture.root,task_id:fixture.taskId,claim_id:rebound.claim_id,branch:'codex/lifecycle',target_ref:'main'});
   const transactionRoot=join(resolveGitCommonDirectory(fixture.root),'repo-harness/transactions');
   const meta=(identity:typeof first)=>({repo:transactionRoot,worktree:fixture.root,branch:'codex/lifecycle',remote:'origin',publication_mode:'lease',claim_id:identity.claim_id,claim_task_id:identity.task_id,claim_generation:String(identity.generation),claim_task_revision:identity.task_revision,original_head:fixture.head,target_branch:'main',base_sha:git(fixture.root,'rev-parse','main')});
   const key1=deriveShipJournalKey(fixture.root,meta(first)),key2=deriveShipJournalKey(fixture.root,meta(second));

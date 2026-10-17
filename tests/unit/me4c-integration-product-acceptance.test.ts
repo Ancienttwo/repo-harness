@@ -1,6 +1,17 @@
+import { boundLeaseFixture } from '../helpers/sprint-fixture';
+import { leaseOwnerPath } from '../helpers/sprint-fixture';
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'child_process';
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs';
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
@@ -18,7 +29,6 @@ import {
 } from '../../src/core/publication/publication-receipt';
 import {
   beginLeaseCompletionRecord,
-  bindLeaseRecord,
   buildLeaseOwnerRecord,
   enterReviewingLeaseRecord,
 } from '../../src/core/state/coordination-identity';
@@ -34,8 +44,15 @@ import {
   readProductAcceptanceProjection,
 } from '../../src/effects/integration/product-acceptance';
 import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
-import { readPublicationReceiptCache, writePublicationReceiptCache } from '../../src/effects/publication/publication-receipt';
-import { createLeaseDirectory, leaseOwnerPath, readLease, writeLeaseOwnerDurably } from '../../src/effects/state/coordination-lease-store';
+import {
+  readPublicationReceiptCache,
+  writePublicationReceiptCache,
+} from '../../src/effects/publication/publication-receipt';
+import {
+  createLeaseDirectory,
+  readLease,
+  writeLeaseOwnerDurably,
+} from '../../src/effects/state/coordination-lease-store';
 import type { AcceptanceReceipt } from '../../scripts/acceptance-receipt';
 
 const TASK_A = '1'.repeat(64);
@@ -101,14 +118,12 @@ function reviewingPublication(root: string, taskId: string, revision: string, he
     sessionId: `session-${number}`,
     sourceWorktree: root,
   });
-  const bound = bindLeaseRecord(owner, {
-    claimId: owner.claim_id,
+  const bound = boundLeaseFixture(owner, {
     executionWorktree: root,
     branch: 'main',
     unitRef: `plans/plan-${number}.md`,
   });
-  if (!bound.ok) throw new Error(bound.error);
-  const completing = beginLeaseCompletionRecord(bound.record, {
+  const completing = beginLeaseCompletionRecord(bound, {
     claimId: owner.claim_id,
     executionWorktree: root,
     finishTransactionKey: null,

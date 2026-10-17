@@ -261,7 +261,7 @@ describe('typed hook runtime', () => {
         ['SessionStart', 'default', undefined, 'session-context'],
         ['PreToolUse', 'edit', JSON.stringify({ tool_input: { file_path: 'README.md' } }), 'mutation-guard'],
         ['PreToolUse', 'subagent', JSON.stringify({ tool_name: 'Agent', tool_input: { prompt: 'inspect' } }), 'return-channel'],
-        ['UserPromptSubmit', 'inbox', JSON.stringify({ prompt: 'continue' }), 'task-inbox'],
+        ['UserPromptSubmit', 'inbox', JSON.stringify({ prompt: 'continue' }), 'noop'],
         ['SubagentStart', 'context', JSON.stringify({ hook_event_name: 'SubagentStart' }), 'subagent-context'],
         ['Stop', 'default', JSON.stringify({ stop_hook_active: false }), 'stop'],
       ] as const;

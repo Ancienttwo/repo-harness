@@ -35,39 +35,29 @@ function withRegistryHome<T>(run: (repoRoot: string) => T): T {
 }
 
 describe('fleet/publication MCP mirrors', () => {
-  test('exposes the five effect mirrors and preserves the empty offers contract', () => withRegistryHome((repoRoot) => {
+  test('exposes the three publication mirrors', () => withRegistryHome((repoRoot) => {
     const policy = getMcpPolicy('planner', { allowedRoots: [repoRoot] });
     const names = buildFleetToolDefinitions().map((tool) => tool.name);
     expect(names).toEqual([
-      'fleet_offers',
-      'fleet_acquire',
       'publication_readiness',
       'publication_reopen',
       'publication_takeover',
     ]);
     expect(buildMcpToolDefinitions(policy).map((tool) => tool.name)).toEqual(expect.arrayContaining(names));
 
-    const result = parseResult(callFleetTool({ repoRoot, policy }, 'fleet_offers'));
-    expect(result).toMatchObject({
-      protocol: 1,
-      kind: 'repo-harness-fleet-offers',
-      authorization_revision: 0,
-      snapshot_consistency: 'stable',
-      offers: [],
-    });
   }));
 
   test('planner/read-only profiles cannot invoke fleet or publication mutations', async () => withRegistryHome(async (repoRoot) => {
     const policy = getMcpPolicy('planner', { allowedRoots: [repoRoot] });
-    for (const name of ['fleet_acquire', 'publication_reopen', 'publication_takeover'] as const) {
+    for (const name of ['publication_reopen', 'publication_takeover'] as const) {
       const result = parseResult(await callMcpTool({ repoRoot, policy }, name));
       expect(result.error).toMatchObject({ code: 'POLICY_DENIED' });
     }
   }));
 
-  test('rejects undeclared fleet parameters at dispatch time', async () => withRegistryHome(async (repoRoot) => {
+  test('rejects undeclared publication parameters at dispatch time', async () => withRegistryHome(async (repoRoot) => {
     const policy = getMcpPolicy('planner', { allowedRoots: [repoRoot] });
-    const result = parseResult(await callMcpTool({ repoRoot, policy }, 'fleet_offers', {
+    const result = parseResult(await callMcpTool({ repoRoot, policy }, 'publication_readiness', {
       unexpected: true,
     }));
     expect(result.error).toMatchObject({ code: 'INVALID_ARGUMENT' });
@@ -79,14 +69,14 @@ describe('fleet/publication MCP mirrors', () => {
     const repoId = readRepoHarnessRegistrySnapshot({ adoptedOnly: true }).repos[0]?.id;
     expect(repoId).toBeDefined();
     const readOnlyPolicy = getMcpPolicy('coding', { allowedRoots: [repoRoot] });
-    const readOnly = parseResult(callFleetTool({ repoRoot, policy: readOnlyPolicy }, 'fleet_acquire', {
+    const readOnly = parseResult(callFleetTool({ repoRoot, policy: readOnlyPolicy }, 'publication_reopen', {
       repo_id: repoId,
       authorization_revision: registration.authorizationRevision,
     }));
     expect(readOnly.error).toMatchObject({ code: 'WRITE_DISABLED' });
 
     const writable = setRepoHarnessAccessMode(repoRoot, 'read_write');
-    const stale = parseResult(callFleetTool({ repoRoot, policy: readOnlyPolicy }, 'fleet_acquire', {
+    const stale = parseResult(callFleetTool({ repoRoot, policy: readOnlyPolicy }, 'publication_reopen', {
       repo_id: repoId,
       authorization_revision: registration.authorizationRevision,
     }));

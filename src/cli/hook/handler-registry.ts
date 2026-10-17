@@ -3,7 +3,6 @@ import { runMutationGuard } from './mutation-guard';
 import { runStopHandler } from './stop-handler';
 import { runReturnChannel } from './return-channel';
 import { runSubagentContext } from './subagent-context';
-import { runTaskInboxHandler } from './task-inbox-handler';
 import type { HookHandlerId, Route } from './route-registry';
 import type { HookHandlerContext, HookHandlerResult, TypedHookHandler } from './handler-contract';
 import type { SessionContextSection } from './session-context-budget';
@@ -57,13 +56,7 @@ const handlers: Readonly<Record<HookHandlerId, TypedHookHandler>> = Object.freez
       now: () => context.now,
     }),
   },
-  'task-inbox': {
-    id: 'task-inbox',
-    run: (context: HookHandlerContext) => runTaskInboxHandler({
-      collector: context.collector,
-      now: () => context.now,
-    }),
-  },
+  noop: { id: 'noop', run: () => ({ exitCode: 0 }) },
   stop: {
     id: 'stop',
     run: (context: HookHandlerContext) => textResult(runStopHandler({

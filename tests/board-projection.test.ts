@@ -6,7 +6,7 @@
  * a shape raises, and which existing commands a card may offer. The effects --
  * torn snapshots, real leases, real worktrees -- are falsified in
  * `tests/board-snapshot-consistency.test.ts` and
- * `tests/sprint-claim-concurrency.test.ts`; a mock there would prove nothing,
+ * `tests/coordination-lease-store.test.ts`; a mock there would prove nothing,
  * and a filesystem here would prove nothing either.
  *
  * The column assertions are written as invariants over the whole constructible
@@ -42,7 +42,6 @@ import type {
 } from '../src/core/state/types';
 import { fixtureTaskId } from './helpers/sprint-fixture';
 
-const REPO_IDENTITY = '/tmp/board-projection-fixture/.git';
 const SPRINT_PATH = 'plans/sprints/board.sprint.md';
 const TASK_CELL = 'project the board';
 const CANONICAL_REF = 'main';
@@ -463,22 +462,17 @@ describe('diagnostics', () => {
 });
 
 describe('actions', () => {
-  test('release and steal are offered exactly where the verbs accept them', () => {
+  test('release remains available for reserving and bound leases', () => {
     for (const lease of ['reserving', 'bound'] as const) {
       const card = cardFor('pending', lease, 'not_observed');
       expect(card.actions.release).toBe('repo-harness sprint release --claim-id claim-1');
-      expect(card.actions.steal).toBe(
-        "repo-harness sprint steal --expected-claim-id claim-1 --reason '<reason>' --session-id '<session-id>'",
-      );
+
     }
   });
 
-  test('a completing lease offers neither steal nor release', () => {
+  test('a completing lease offers no release action', () => {
     const card = cardFor('pending', 'completing', 'active');
-    // `stealLeaseRecord` refuses `completing` outright and `releaseLeaseRecord`
-    // accepts only reserving/bound; printing either would be inventing an
-    // action the verb would reject.
-    expect(card.actions.steal).toBeNull();
+    // Completion must keep its ownership until publication is resolved.
     expect(card.actions.release).toBeNull();
   });
 
@@ -504,7 +498,7 @@ describe('actions', () => {
     expect(card.column).toBe('doing');
     expect(card.claim?.current_publication).toEqual(reviewing.current_publication);
     expect(card.actions).toEqual({
-      release: null, steal: null, reconcile: null,
+      release: null, reconcile: null,
       publication_reconcile: `repo-harness publication reconcile --task-id ${TASK_ID} --expected-claim-id claim-1 --expected-generation 1 --publication-id ${reviewing.current_publication.publication_id} --expected-head-sha ${reviewing.current_publication.head_sha} --remote '<remote>'`,
       publication_recover: null,
       publication_reopen: `repo-harness publication reopen --task-id ${TASK_ID} --claim-id claim-1 --expected-generation 1 --publication-id ${reviewing.current_publication.publication_id} --expected-head-sha ${reviewing.current_publication.head_sha}`,
@@ -516,7 +510,7 @@ describe('actions', () => {
   test('a card with no lease offers nothing', () => {
     const card = cardFor('pending', 'available', 'not_observed');
     expect(card.actions).toEqual({
-      release: null, steal: null, reconcile: null,
+      release: null, reconcile: null,
       publication_reconcile: null, publication_recover: null,
       publication_reopen: null, publication_takeover: null, publication_abandon: null,
     });

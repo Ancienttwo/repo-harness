@@ -2,7 +2,10 @@
 
 Use to generate an upper-layer PRD under `plans/prds/`. The PRD is product
 intent and implementation guidance; it is not a Sprint backlog and does not
-start task execution. Run the shared preflight in `../SKILL.md` first, then
+start task execution. The GitHub issue and PR own task identity, claim, status
+and dependencies. When an existing issue is named, read its current state,
+assignees, all comments and linked PRs before preparing the PRD. Preserve its
+active claim and scope. Run the shared preflight in `../SKILL.md` first, then
 also read the PRD template from `.prds.template_file` when present,
 otherwise `.claude/templates/prd.template.md`. Activate `$geju` before
 drafting so the PRD starts from a high-altitude direction judgment. Prefer
@@ -25,7 +28,7 @@ Codex.
 11. Apply five canonical-term disciplines while drafting and reviewing the draft: challenge user or PRD terms against `docs/spec.md` `## Canonical Terms` and flag conflicts (for example, "spec defines X as A, this usage means B — which is correct?"); sharpen fuzzy or overloaded words into one canonical term before writing the section that depends on them; stress-test concept boundaries with concrete edge scenarios; cross-reference claimed behavior against existing code and cite the paths; record each newly resolved term inline into `docs/spec.md` `## Canonical Terms` as a one-line glossary entry, never implementation detail.
 12. Inline response should include only the AI Quick-Read Card, the PRD file path, whether Claude or Codex fallback drafted the PRD, and the one-sentence `$geju` thesis; do not paste the full document.
 13. Run `repo-harness run check-task-workflow` for read-only diagnostics. Inspect the PRD and fix reported defects. This command does not grant workflow permission.
-14. When the PRD carries a `## Frontend Perspective` section or the downstream work is expected to execute under the `frontend` task profile, first read `repo-harness docs show ux-feature-guard` and produce `docs/design/DESIGN-<slug>.md` from `.claude/templates/design-brief.template.md`. Read `.ai/harness/policy.json#documentation.language` before writing the brief's prose: section headings, field keys, and technical terms stay English, and body prose follows that language, where `follow-user` means the language the user is currently writing in. Fill the template's UX Feature Guard completely, including stable IDs for its positive, negative/non-goal, and authority-failure scenarios; do not restate or replace that field schema in the PRD. Then get explicit human confirmation against every Confirmation Checklist item before suggesting Sprint or contract execution — this gate carries the same weight as plan approval. imagegen-type skills (for example `imagegen-frontend-web`, `design-taste-frontend`) are optional preview enhancers for the brief, never a substitute for the checklist. When available, `design-proposal` is the recommended optional orchestration for this pipeline (peer research -> draft boundary -> STIMULUS preview -> human choice -> taste refinement); it composes the same optional enhancer skills and never replaces this mode or the design brief's own authority.
+14. When the PRD carries a `## Frontend Perspective` section or the downstream work is expected to execute under the `frontend` task profile, first read `repo-harness docs show ux-feature-guard` and produce `docs/design/DESIGN-<slug>.md` from `.claude/templates/design-brief.template.md`. Read `.ai/harness/policy.json#documentation.language` before writing the brief's prose: section headings, field keys, and technical terms stay English, and body prose follows that language, where `follow-user` means the language the user is currently writing in. Fill the template's UX Feature Guard completely, including stable IDs for its positive, negative/non-goal, and authority-failure scenarios; do not restate or replace that field schema in the PRD. Then get explicit human confirmation against every Confirmation Checklist item before suggesting execution of the implementation issue — this gate carries the same weight as plan approval. imagegen-type skills (for example `imagegen-frontend-web`, `design-taste-frontend`) are optional preview enhancers for the brief, never a substitute for the checklist. When available, `design-proposal` is the recommended optional orchestration for this pipeline (peer research -> draft boundary -> STIMULUS preview -> human choice -> taste refinement); it composes the same optional enhancer skills and never replaces this mode or the design brief's own authority.
 
 ## Failure Modes
 
@@ -35,7 +38,7 @@ Codex.
 - If `$interview` is unavailable, still perform the same compact minimum-effective-interview pass in the current agent through the runtime's structured question tool (Claude `AskUserQuestion`, Codex `request_user_input`) or plain-text numbered questions, and report the missing skill as a fallback condition.
 - If `claude -p --model opus` fails or hangs, retry at most once with a smaller prompt; then fall back to Codex and report the fallback reason.
 - If Claude returns prose, implementation steps, or an incomplete PRD instead of PRD Markdown, repair the draft locally or rerun once before falling back.
-- `check-task-workflow` reports diagnostics and exits 0. The retired `--strict` flag is rejected with exit 2. Run without that flag. Inspect the output and the PRD content before suggesting Sprint generation. Exit 0 does not prove that the PRD is complete.
+- `check-task-workflow` reports diagnostics and exits 0. The retired `--strict` flag is rejected with exit 2. Run without that flag. Inspect the output and the PRD content before suggesting an ordered GitHub issue backlog. Exit 0 does not prove that the PRD is complete.
 - If a matching PRD filename already exists, preserve it and create a new timestamped file.
 
 ## Boundaries
@@ -43,7 +46,7 @@ Codex.
 - Does not edit `docs/spec.md` beyond appending resolved terms to `## Canonical Terms`; does not otherwise reinterpret repo product truth.
 - Does not write outside `plans/prds/` except for verification artifacts produced by existing workflow checks or appending resolved terms to `docs/spec.md` `## Canonical Terms` per step 11.
 - Does not skip the `$geju` direction pass; the PRD must carry a clear target model before section writing starts.
-- Does not treat the `$geju` framing captured here as delegation authority: once this PRD's direction is delegated through a task contract, freeze the thesis/high-level direction into that contract's `## Why` and the falsifier/first proof point into `## Falsifier`; live geju is pre-contract exploration only, and once frozen the contract governs, not the live pass.
+- Does not treat the `$geju` framing as delegation authority. Before implementation, copy the approved direction into the GitHub issue brief, including its reason, first proof point and falsifier. The issue and PR govern task scope and status. Further exploration cannot expand the approved work.
 - Does not make Codex the primary PRD author when Claude CLI is available and usable.
 - Never fabricates facts for `Adjacent Patterns`; use adjacent workflow patterns or mark claims `[UNVERIFIED]`.
 - Approval gating for this mode: see `../SKILL.md` Boundaries (the PRD is never self-approved).

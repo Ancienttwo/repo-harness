@@ -8,7 +8,7 @@ import { createFileExclusiveDurably, syncDirectoryDurably } from '../evidence/at
 import { readPrunedWorktreeIntents, writePrunedWorktreeIntents, prunedIntentKey, type PrunedWorktreeIntent } from './pruned-worktree-intents';
 import { listLeaseReads } from './coordination-lease-store';
 import { configuredGitBinary, resolveGitCommonDirectory } from '../git/common-directory';
-import { withExclusiveDirectoryLock, withExclusiveDirectoryLockAsync } from '../locking/exclusive-directory-lock';
+import { withExclusiveDirectoryLock } from '../locking/exclusive-directory-lock';
 import { taskWorktreeRuntimeClosed } from '../terminal/task-session';
 import { parseWorktreeTopology } from '../git/worktree-topology';
 import { observeProviderBranchMergeCommit } from '../publication/publication-receipt';
@@ -57,13 +57,6 @@ export function withWorktreeTopologyLock<T>(root: string, action: () => T, limit
     { waitTimeoutMs: limits.deadline ? Math.max(1, Math.min(50, timeout(limits)!)) : undefined });
 }
 
-export function withWorktreeTopologyLockAsync<T>(root: string, action: () => Promise<T>): Promise<T> {
-  const common = resolveGitCommonDirectory(root);
-  return withExclusiveDirectoryLockAsync(common, 'repo-harness/coordination/locks/worktree-topology.lock', async () => {
-    cleanIdentityTemporaryFiles(common, Date.now(), {});
-    return await action();
-  });
-}
 
 /** Canonicalize a missing checkout through its existing parent. Never follow its leaf. */
 export function checkoutPath(path: string): string {

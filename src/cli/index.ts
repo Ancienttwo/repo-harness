@@ -26,7 +26,6 @@ import { formatDoctor, runDoctor } from './commands/doctor';
 import { buildInitHookCommand, buildSetupCommand, formatInitHook, runInitHook } from './commands/init-hook';
 import { formatMigratePlan, runMigrate } from './commands/migrate';
 import { buildReviewCommand } from './commands/review';
-import { buildPmCommand } from './commands/pm';
 import { buildUpgradeCommand } from './commands/upgrade';
 import { buildToolsCommand } from './commands/tools';
 import { buildHerdrCommand } from './commands/herdr';
@@ -43,11 +42,9 @@ import { buildFleetCommand } from './commands/fleet';
 import { buildRefactorCommand } from './commands/refactor';
 import { buildOperatorCommand } from './commands/operator';
 import { buildCatchUpCommand } from './commands/catch-up';
-import { buildEngineerCommand } from './commands/engineer';
 import { buildArchitectureDebtCommand } from './commands/architecture-debt';
 import { buildArchitectureProjectionCommand } from './commands/architecture-projection';
 import { buildIntegrationCommand } from './commands/integration';
-import { buildDelegationCommand } from './commands/delegation';
 import { buildExternalSourceCommand } from './commands/external-source';
 import { buildRetentionCommand } from './commands/retention';
 import { formatSecurityScan, runSecurityScan } from './commands/security';
@@ -128,11 +125,9 @@ export const SUBCOMMANDS = [
   'state',
   'publication',
   'fleet',
-  'engineer',
   'architecture-projection',
   'architecture-debt',
   'integration',
-  'delegation',
   'external-source',
   'refactor',
 ] as const;
@@ -788,7 +783,6 @@ export function buildProgram(): Command {
 
   program.addCommand(buildInitHookCommand());
   program.addCommand(buildReviewCommand());
-  program.addCommand(buildPmCommand());
   program.addCommand(buildModuleCommand());
   program.addCommand(buildSetupCommand());
   program.addCommand(buildUpgradeCommand());
@@ -834,11 +828,9 @@ export function buildProgram(): Command {
   program.addCommand(buildOperatorCommand());
   program.addCommand(buildCatchUpCommand());
   program.addCommand(buildRefactorCommand());
-  program.addCommand(buildEngineerCommand());
   program.addCommand(buildArchitectureProjectionCommand());
   program.addCommand(buildArchitectureDebtCommand());
   program.addCommand(buildIntegrationCommand());
-  program.addCommand(buildDelegationCommand());
   program.addCommand(buildStrategyCommand());
   program.addCommand(buildExternalSourceCommand());
   program.addCommand(buildRetentionCommand());

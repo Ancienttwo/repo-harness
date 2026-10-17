@@ -149,31 +149,31 @@ describe('continuation envelope routes', () => {
       },
     },
     {
-      name: 'advance_sprint when no plan is active and a backlog row is pending',
+      name: 'idle when only a retired pending sprint is active',
       setup: (cwd: string) => {
         dropActivePlan(cwd);
         useSprint(cwd, PENDING_SPRINT);
         commitFixture(cwd, 'pending sprint');
       },
       expected: {
-        route: 'advance_sprint',
-        unit_ref: SPRINT,
-        command: "repo-harness run sprint-backlog start-task --task 'second work package' --execute",
-        reason: 'sprint_backlog:pending',
+        route: 'idle',
+        unit_ref: null,
+        command: null,
+        reason: 'no_active_plan',
       },
     },
     {
-      name: 'complete when the active sprint has no pending row left',
+      name: 'idle when only a retired completed sprint is active',
       setup: (cwd: string) => {
         dropActivePlan(cwd);
         useSprint(cwd, FINISHED_SPRINT);
         commitFixture(cwd, 'finished sprint');
       },
       expected: {
-        route: 'complete',
-        unit_ref: SPRINT,
+        route: 'idle',
+        unit_ref: null,
         command: null,
-        reason: 'sprint_backlog:complete',
+        reason: 'no_active_plan',
       },
     },
     {
@@ -186,7 +186,7 @@ describe('continuation envelope routes', () => {
         route: 'idle',
         unit_ref: null,
         command: null,
-        reason: 'no_active_plan_or_sprint',
+        reason: 'no_active_plan',
       },
     },
   ] as const;
@@ -212,11 +212,20 @@ describe('continuation envelope routes', () => {
     }, 30_000);
   }
 
+  test('a missing active plan halts with no unit reference', () => {
+    withRepo(cwd => {
+      write(cwd, '.ai/harness/active-plan', 'plans/missing.md\n');
+      const envelope = envelopeFrom(cwd);
+      expect(envelope.route).toBe('halt');
+      expect(envelope.reason).toBe('stale:active_plan_marker');
+      expect(envelope.unit_ref).toBeNull();
+      expect(envelope.command).toBeNull();
+    });
+  });
+
   test('every route stays inside the frozen route vocabulary with one unit or one halt', () => {
     const routes = new Set(cases.map((scenario) => scenario.expected.route));
     expect([...routes].sort()).toEqual([
-      'advance_sprint',
-      'complete',
       'continue_active_plan',
       'halt',
       'idle',
@@ -224,143 +233,10 @@ describe('continuation envelope routes', () => {
     ]);
     for (const scenario of cases) {
       const actionable = scenario.expected.command !== null;
-      expect(actionable).toBe(['continue_active_plan', 'advance_sprint', 'verify_or_finish']
+      expect(actionable).toBe(['continue_active_plan', 'verify_or_finish']
         .includes(scenario.expected.route));
     }
   });
-});
-
-describe('continuation envelope halts on unusable sprint authority', () => {
-  const cases = [
-    {
-      name: 'sprint marker pointing at a missing file',
-      setup: (cwd: string) => write(cwd, SPRINT_MARKER, 'plans/sprints/missing.sprint.md\n'),
-      reason: 'active_sprint:stale',
-      unit_ref: 'plans/sprints/missing.sprint.md',
-    },
-    {
-      name: 'sprint that is not approved for execution',
-      setup: (cwd: string) => useSprint(cwd, sprintFile('Draft', [
-        `| 1 | ${fixtureTaskId('first work package')} | [ ] | first work package | contract | pending | (pending) |`,
-      ])),
-      reason: 'sprint_status:Draft',
-      unit_ref: SPRINT,
-    },
-    {
-      name: 'approved sprint with an empty backlog',
-      setup: (cwd: string) => useSprint(cwd, sprintFile('Approved', [])),
-      reason: 'sprint_backlog:empty',
-      unit_ref: SPRINT,
-    },
-    {
-      name: 'backlog row carrying an unrecognized status cell',
-      setup: (cwd: string) => useSprint(cwd, sprintFile('Approved', [
-        '| 1 | [~] | first work package | contract | in flight | (pending) |',
-      ])),
-      reason: 'sprint_backlog:unknown_row_status',
-      unit_ref: SPRINT,
-    },
-  ] as const;
-
-  for (const scenario of cases) {
-    test(scenario.name, () => {
-      withRepo((cwd) => {
-        dropActivePlan(cwd);
-        scenario.setup(cwd);
-        commitFixture(cwd, 'sprint anomaly');
-        const envelope = envelopeFrom(cwd);
-        expect(envelope.route).toBe('halt');
-        expect(envelope.reason).toBe(scenario.reason);
-        expect(envelope.unit_ref).toBe(scenario.unit_ref);
-        expect(envelope.command).toBeNull();
-      });
-    }, 30_000);
-  }
-
-  test('halts when the active-plan marker points at a deleted plan', () => {
-    withRepo((cwd) => {
-      rmSync(join(cwd, PLAN));
-      commitFixture(cwd, 'delete plan behind the marker');
-      const envelope = envelopeFrom(cwd);
-      expect(envelope.route).toBe('halt');
-      expect(envelope.reason).toBe('stale:active_plan_marker');
-      expect(envelope.command).toBeNull();
-    });
-  }, 30_000);
-});
-
-/**
- * The `advance_sprint` command names a free-text Task cell, so its single-quote
- * escaping is the only thing standing between an ordinary backlog row and an
- * injected argument. Proving that by inspection re-implements the shell; this
- * pin hands the published command string to a real `bash`, which tokenizes it
- * itself, and reads back the argv a real `sprint-backlog` invocation would see.
- */
-describe('advance_sprint command survives an adversarial Task cell through real bash', () => {
-  const COMMAND_PREFIX = 'repo-harness run sprint-backlog ';
-  // Every shape that makes single-quote escaping non-trivial. Markdown table
-  // cells cannot carry `|` or a newline, so those are out of the grammar's
-  // reach rather than omitted; leading/trailing whitespace is trimmed by the
-  // row scan, so whitespace cases keep it internal.
-  const CORPUS = [
-    'plain control sample',
-    "embedded ' single quote",
-    "already escaped '\\'' sequence",
-    'spaces\tand\ttabs mixed',
-    'substitution $(rm -rf /tmp/x)',
-    'backticks `rm -rf /tmp/x`',
-    'double "quoted" span',
-    'back\\slash and \\\\ pair',
-    'semicolon ; then more',
-    'and && operator',
-    '--leading-dash-looks-like-a-flag',
-    "$(echo pwned) '; touch /tmp/pwned; '",
-  ] as const;
-
-  function argvEchoScript(): { path: string; cleanup: () => void } {
-    const dir = mkdtempSync(join(tmpdir(), 'repo-harness-argv-echo-'));
-    const path = join(dir, 'argv-echo.sh');
-    writeFileSync(path, "#!/bin/bash\nprintf '%s\\0' \"$@\"\n");
-    chmodSync(path, 0o755);
-    return { path, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
-  }
-
-  function bashArgv(command: string, scriptPath: string): string[] {
-    expect(command.startsWith(COMMAND_PREFIX)).toBe(true);
-    const rewritten = `'${scriptPath}' ${command.slice(COMMAND_PREFIX.length)}`;
-    const { REPO_HARNESS_NODE_BIN: _node, ...env } = process.env;
-    const result = spawnSync('bash', ['-c', rewritten], { env, encoding: 'buffer' });
-    expect(String(result.stderr)).toBe('');
-    expect(result.status).toBe(0);
-    const parts = String(result.stdout).split('\0');
-    expect(parts.pop()).toBe('');
-    return parts;
-  }
-
-  test('bash recovers the Task cell byte-identically with no injected token', () => {
-    const echo = argvEchoScript();
-    try {
-      withRepo((cwd) => {
-        dropActivePlan(cwd);
-        for (const task of CORPUS) {
-          useSprint(cwd, sprintFile('Approved', [
-            `| 1 | ${fixtureTaskId(`${task}`)} | [ ] | ${task} | contract | pending | (pending) |`,
-          ]));
-          commitFixture(cwd, 'adversarial backlog row');
-          const envelope = envelopeFrom(cwd);
-          expect(envelope.route).toBe('advance_sprint');
-          expect(bashArgv(envelope.command!, echo.path)).toEqual([
-            'start-task',
-            '--task',
-            task,
-            '--execute',
-          ]);
-        }
-      });
-    } finally {
-      echo.cleanup();
-    }
-  }, 120_000);
 });
 
 describe('continuation envelope determinism and read-only contract', () => {

@@ -47,24 +47,12 @@ Authoritative surfaces:
 - Runtime harness: the `repo-harness-hook` binary (`package.json` `bin`), the typed route registry `src/cli/hook/route-registry.ts`, user-level host adapters, and ignored `.ai/harness/*` runtime state. No shell operator library exists.
 - MCP sidecar: `src/cli/mcp/`, `src/cli/commands/mcp.ts`, user-owned ignored config and registry under `~/.repo-harness/`, and the [MCP sidecar architecture](modules/runtime-harness/mcp-sidecar.md).
 - Verification: `tests/`, `evals/`, `scripts/check-task-workflow.sh`, `scripts/check-task-sync.sh`, `scripts/check-agent-tooling.sh`, `scripts/ensure-codegraph.sh`.
-- Effective State and workflow policy: `src/core/state/` (pure Effective State
-  projection, ESA PR #79), `src/effects/state/` (source resolution and
-  publication), and `src/core/workflow/`. `profile.ts` owns the deterministic
-  risk profile (`routine` or `high`). `artifact-requirement-policy.ts` owns the
-  `routine`/`high` x edit/stop/ship artifact-requirement matrix. The Loop
-  Semantics Convergence sprint is archived at
-  `plans/archive/20260716-0101-loop-semantics-convergence.sprint.md`. Its state
-  goldens live in `tests/state/cli-state-golden.test.ts`.
-- Loop semantics parity contract (LSC-08): the readiness authority
-  (`src/core/workflow/operation-readiness.ts`, `evaluateReadiness`, carried as
-  `EffectiveStateV1.readiness`) and its Skill guidance
-  (`EffectiveStateV1.guidance`) are projected, never recomputed. The adapter
-  surfaces are the CLI (`repo-harness state resolve --json`), MCP
-  (`summarize_repo_harness_state`), the Stop hook route
-  (`src/cli/hook/stop-handler.ts` reads `readiness.readyToShip` and reports a
-  warning without a stop gate) and the Skill guidance text
-  (`CEREMONY_GUIDANCE` in `src/core/state/project-effective-state.ts`). The
-  parity gate is `tests/state/adapter-parity.test.ts`.
+- Effective State: `src/core/state/` projects plan, worktree, capability ownership,
+  risk and recovery pointers. `src/effects/state/` reads sources and publishes
+  the state cache. `src/core/workflow/profile.ts` owns the risk profile.
+  State carries no contract, review, acceptance, checks, readiness or sprint
+  projection. The CLI, SessionStart and MCP read the same projection.
+  `tests/state/adapter-parity.test.ts` checks these readers.
 - Shared coordination plane: lease identity and the four-state machine
   (`src/core/state/coordination-identity.ts`,
   `src/effects/state/coordination-lease-store.ts`, `src/cli/commands/sprint.ts`)
@@ -127,7 +115,6 @@ flowchart LR
   Closure["archctx closure<br/>global-runtime-reconciliation"]:::cap
   Fleet["task-fleet"]:::cap
   Pub["publication"]:::cap
-  PM["pm-dispatch"]:::cap
   TAH["task-agent-host"]:::cap
   Review["acceptance-review"]:::cap
   WS["workflow-state"]:::store
@@ -151,12 +138,10 @@ flowchart LR
   Hooks --> Fleet
 
   Client -.-> MCP
-  MCP --> PM
   MCP --> Fleet
   MCP --> Pub
   MCP --> Repo
   MCP --> WS
-  PM --> TAH
 
   Human -.-> Console
   Console --> OpServer
@@ -182,8 +167,7 @@ flowchart LR
 | Host -> hook-adapters | External. User-level host hooks call the `repo-harness-hook` binary (`package.json` `bin`, [Global Hook Runtime](global-hook-runtime.md)). |
 | hook-adapters -> workflow-state, evidence-ledger, task-fleet | `relation.hook-adapters.primary.workflow-state`, `relation.hook-adapters.session-lifecycle.evidence-ledger`, `relation.hook-adapters.session-lifecycle.task-fleet`. |
 | MCP client -> mcp-sidecar | External. `README.md` "MCP Connector". |
-| mcp-sidecar -> pm-dispatch, task-fleet, publication, general-repo-access, workflow-state | `relation.mcp-sidecar.primary.pm-dispatch`, `.task-fleet`, `.publication`, `.general-repo-access`, `.workflow-state`. |
-| pm-dispatch -> task-agent-host | `relation.pm-dispatch.task-agent-host`: start the fixed OAR coding host and deliver requests through the task session. |
+| mcp-sidecar -> task-fleet, publication, general-repo-access, workflow-state | `relation.mcp-sidecar.primary.task-fleet`, `.publication`, `.general-repo-access`, `.workflow-state`. |
 | Human -> operator web console | External. `README.md` "Local Human Control Board" (`repo-harness operator serve`). |
 | operator web console -> HTTP reader | `relation.operator.web-console.http-reader`: GET and HEAD routes only. |
 | operator HTTP reader -> task-fleet, archctx closure | `relation.operator.primary.task-fleet`, `relation.operator.http-reader.model-reader`. |
@@ -211,7 +195,7 @@ Each datum has one authority. Every other representation is a projection.
 | Harness evidence | `.ai/harness/evidence/events/log.jsonl` and `.ai/harness/evidence/blobs` | evidence-ledger | Handoff and resume recovery views. |
 | Engineer contracts and bindings | Tracked `agents/engineers/**`; bindings in `<git-common-dir>/repo-harness/engineers/v1` | engineer-bindings | Engineer offers and the engineering overlay. |
 | Task agent sessions | Herdr panes; records under `.ai/harness/runs/task-agents` and task worktrees under `.ai/harness/runs/task-workspaces` | task-agent-host | Pipeline ledger and acceptance review read the session records. |
-| Repository registry | `~/.repo-harness/registered-repos.json` | mcp-sidecar | Fleet offers, PM dispatch and operator read it. |
+| Repository registry | `~/.repo-harness/registered-repos.json` | mcp-sidecar | Fleet offers and the operator read it. |
 | Global configuration | `~/.repo-harness/config.json` | global-runtime-reconciliation | Projection policy (`src/effects/architecture/projection-config.ts`). |
 | Merge | The provider and the user | none | repo-harness never merges. |
 
@@ -231,7 +215,6 @@ Each datum has one authority. Every other representation is a projection.
 | runtime-harness | Global Runtime Reconciliation | [global-runtime-reconciliation](modules/runtime-harness/global-runtime-reconciliation.md) |
 | runtime-harness | MCP Sidecar | [mcp-sidecar](modules/runtime-harness/mcp-sidecar.md) |
 | runtime-harness | Task Agent Host | [task-agent-host](modules/runtime-harness/task-agent-host.md) |
-| runtime-harness | PM Dispatch Boundary | [pm-dispatch](modules/runtime-harness/pm-dispatch.md) |
 | runtime-harness | Agent Runtime Effects | [agent-runtime-effects](modules/runtime-harness/agent-runtime-effects.md) |
 | runtime-harness | Evidence Ledger | [evidence-ledger](modules/runtime-harness/evidence-ledger.md) |
 | runtime-harness | Operator Board | [operator](modules/runtime-harness/operator.md) |
@@ -239,7 +222,6 @@ Each datum has one authority. Every other representation is a projection.
 | runtime-harness | Engineer Bindings | [engineer-bindings](modules/runtime-harness/engineer-bindings.md) |
 | runtime-harness | Engineer Scheduling | [engineer-scheduling](modules/runtime-harness/engineer-scheduling.md) |
 | runtime-harness | Engineering Overlay | [engineering-overlay](modules/runtime-harness/engineering-overlay.md) |
-| runtime-harness | Read-only Delegated Runs | [delegated-runs](modules/runtime-harness/delegated-runs.md) |
 | runtime-harness | External Source Intake | [external-source-intake](modules/runtime-harness/external-source-intake.md) |
 | runtime-harness | Integration Product Acceptance | [integration-acceptance](modules/runtime-harness/integration-acceptance.md) |
 | organization | Task Fleet | [task-fleet](modules/organization/task-fleet.md) |
@@ -328,7 +310,7 @@ Project
 - Path ownership under `capability_source: archcontext` comes from `archctx resolve` (`src/effects/capabilities/archcontext-owners.ts`). Node includes and excludes can use any shape that ArchContext validation accepts.
 - Several capability pairs have declared relations in both directions (for example contract-assets and global-runtime-reconciliation). The module backlogs record each pair with its edge counts.
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.architecture.index" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:22177eef7baa17f378bddb8786dc5c219e5b74c8aa667f8194ec7c9365d138bb" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.architecture.index" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:71fa3f220643d779a1f4ec3f554e2f4c366ba8098c125817656e012e80e54ca9" -->
 # Architecture Index
 
 ## Entities
@@ -340,7 +322,6 @@ Project
 - [Root Router](modules/public-surface/root-router.md) — capability / active
 - [Strategy Reflection](modules/public-surface/strategy-reflection.md) — capability / active
 - [Agent Runtime Effects](modules/runtime-harness/agent-runtime-effects.md) — capability / active
-- [Read-only Delegated Runs](modules/runtime-harness/delegated-runs.md) — capability / active
 - [Engineer Bindings](modules/runtime-harness/engineer-bindings.md) — capability / active
 - [Engineer Scheduling](modules/runtime-harness/engineer-scheduling.md) — capability / active
 - [Engineering Overlay](modules/runtime-harness/engineering-overlay.md) — capability / active
@@ -351,7 +332,6 @@ Project
 - [Integration Product Acceptance](modules/runtime-harness/integration-acceptance.md) — capability / active
 - [MCP Sidecar](modules/runtime-harness/mcp-sidecar.md) — capability / active
 - [Operator Board](modules/runtime-harness/operator.md) — capability / active
-- [PM Dispatch Boundary](modules/runtime-harness/pm-dispatch.md) — capability / active
 - [Refactor Recommendations](modules/runtime-harness/refactor-program.md) — capability / active
 - [Task Agent Host](modules/runtime-harness/task-agent-host.md) — capability / active
 - [ChatGPT Browser Consult](modules/runtime-mcp/chatgpt-browser.md) — capability / active
@@ -407,11 +387,6 @@ Project
 - component.contract-assets.template-projection -> component.action-commands.skill-surface-catalog — calls
 - component.contract-assets.template-projection -> capability.runtime-harness.task-agent-host — calls
 - component.contract-assets.template-projection -> capability.workflow-engine.workflow-state — calls
-- capability.runtime-harness.delegated-runs -> capability.runtime-harness.engineer-bindings — calls
-- capability.runtime-harness.delegated-runs -> capability.runtime-harness.evidence-ledger — writes
-- capability.runtime-harness.delegated-runs -> capability.workflow-engine.execution-primitives — calls
-- capability.runtime-harness.delegated-runs -> component.delegated-runs.primary — calls
-- capability.runtime-harness.delegated-runs -> capability.organization.task-fleet — depends-on
 - capability.runtime-harness.engineer-bindings -> capability.workflow-engine.execution-primitives — calls
 - capability.runtime-harness.engineer-bindings -> component.engineer-bindings.primary — calls
 - capability.runtime-harness.engineer-bindings -> capability.workflow-engine.workflow-state — calls
@@ -421,7 +396,6 @@ Project
 - capability.runtime-harness.engineer-scheduling -> capability.runtime-harness.integration-acceptance — reads
 - capability.runtime-harness.engineer-scheduling -> component.engineer-scheduling.primary — calls
 - capability.runtime-harness.engineer-scheduling -> capability.organization.publication — reads
-- capability.runtime-harness.engineer-scheduling -> capability.organization.task-fleet — calls
 - capability.runtime-harness.engineer-scheduling -> capability.workflow-engine.workflow-state — reads
 - capability.runtime-harness.engineering-overlay -> capability.runtime-harness.agent-runtime-effects — calls
 - capability.runtime-harness.engineering-overlay -> capability.runtime-harness.engineer-bindings — calls
@@ -457,14 +431,12 @@ Project
 - component.global-runtime-reconciliation.cli-root -> capability.runtime-mcp.chatgpt-browser — calls
 - component.global-runtime-reconciliation.cli-root -> capability.verification.codegraph-readiness — calls
 - component.global-runtime-reconciliation.cli-root -> capability.workflow-engine.contract-assets — calls
-- component.global-runtime-reconciliation.cli-root -> capability.runtime-harness.delegated-runs — calls
 - component.global-runtime-reconciliation.cli-root -> capability.runtime-harness.engineer-bindings — calls
 - component.global-runtime-reconciliation.cli-root -> capability.runtime-harness.external-source-intake — calls
 - component.global-runtime-reconciliation.cli-root -> capability.runtime-harness.hook-adapters — calls
 - component.global-runtime-reconciliation.cli-root -> capability.runtime-harness.integration-acceptance — calls
 - component.global-runtime-reconciliation.cli-root -> capability.runtime-harness.mcp-sidecar — calls
 - component.global-runtime-reconciliation.cli-root -> capability.runtime-harness.operator — calls
-- component.global-runtime-reconciliation.cli-root -> capability.runtime-harness.pm-dispatch — calls
 - component.global-runtime-reconciliation.cli-root -> component.global-runtime-reconciliation.primary — calls
 - component.global-runtime-reconciliation.cli-root -> capability.organization.publication — calls
 - component.global-runtime-reconciliation.cli-root -> capability.runtime-harness.refactor-program — calls
@@ -518,8 +490,6 @@ Project
 - component.mcp-sidecar.coding-profile -> component.mcp-sidecar.repo-policy-registry — calls
 - component.mcp-sidecar.coding-profile -> capability.runtime-harness.task-agent-host — calls
 - component.mcp-sidecar.coding-profile -> capability.workflow-engine.workflow-state — calls
-- capability.runtime-harness.mcp-sidecar -> capability.runtime-harness.engineer-bindings — calls
-- capability.runtime-harness.mcp-sidecar -> capability.runtime-harness.engineer-scheduling — calls
 - component.mcp-sidecar.host-setup -> capability.runtime-mcp.chatgpt-browser — calls
 - component.mcp-sidecar.host-setup -> component.mcp-sidecar.coding-profile — calls
 - component.mcp-sidecar.host-setup -> capability.workflow-engine.execution-primitives — calls
@@ -533,7 +503,6 @@ Project
 - component.mcp-sidecar.primary -> component.mcp-sidecar.coding-profile — calls
 - component.mcp-sidecar.primary -> capability.workflow-engine.execution-primitives — calls
 - component.mcp-sidecar.primary -> capability.runtime-mcp.general-repo-access — calls
-- component.mcp-sidecar.primary -> capability.runtime-harness.pm-dispatch — calls
 - component.mcp-sidecar.primary -> capability.organization.publication — calls
 - component.mcp-sidecar.primary -> component.mcp-sidecar.repo-policy-registry — calls
 - component.mcp-sidecar.primary -> capability.runtime-harness.task-agent-host — calls
@@ -562,13 +531,6 @@ Project
 - component.operator.web-console -> component.operator.activity-feeds — calls
 - component.operator.web-console -> component.operator.primary — calls
 - component.operator.web-console -> component.operator.view-projections — calls
-- capability.runtime-harness.pm-dispatch -> capability.runtime-harness.evidence-ledger — calls
-- capability.runtime-harness.pm-dispatch -> component.pm-dispatch.primary — calls
-- component.pm-dispatch.primary -> capability.workflow-engine.execution-primitives — calls
-- component.pm-dispatch.primary -> capability.workflow-engine.workflow-state — calls
-- capability.runtime-harness.pm-dispatch -> component.mcp-sidecar.repo-policy-registry — reads
-- capability.runtime-harness.pm-dispatch -> capability.runtime-harness.task-agent-host — calls
-- capability.runtime-harness.pm-dispatch -> capability.organization.task-fleet — reads
 - capability.organization.publication -> capability.workflow-engine.contract-assets — calls
 - capability.organization.publication -> capability.runtime-harness.evidence-ledger — calls
 - capability.organization.publication -> component.publication.primary — calls
@@ -589,11 +551,9 @@ Project
 - capability.runtime-harness.task-agent-host -> component.task-agent-host.primary — calls
 - component.task-agent-host.primary -> capability.workflow-engine.execution-primitives — calls
 - capability.organization.task-fleet -> capability.runtime-harness.agent-runtime-effects — calls
-- capability.organization.task-fleet -> capability.workflow-engine.contract-assets — calls
 - capability.organization.task-fleet -> capability.runtime-harness.engineer-bindings — calls
 - capability.organization.task-fleet -> capability.runtime-harness.evidence-ledger — calls
 - capability.organization.task-fleet -> component.task-fleet.primary — calls
-- component.task-fleet.primary -> capability.workflow-engine.execution-primitives — calls
 - component.task-fleet.primary -> component.task-fleet.task-inbox — calls
 - component.task-fleet.primary -> capability.workflow-engine.workflow-state — reads
 - capability.organization.task-fleet -> capability.organization.publication — calls

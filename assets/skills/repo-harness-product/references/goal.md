@@ -1,50 +1,75 @@
 # Product Mode: Goal
 
-Use when the user wants to start a bounded native `/goal` session in Codex or
-Claude from repo-harness planning artifacts. This mode prepares the goal
-prompt and acceptance contract; the host-native `/goal` feature owns
-continuation. Run the shared preflight in `../SKILL.md` first, then also
-read repo-local `AGENTS.md` or `CLAUDE.md` and the relevant `tasks/current.md`
-projection when present.
+Use when the user requests a bounded native `/goal` session in Codex or Claude.
+This mode prepares the prompt. The host owns continuation. The GitHub issue and
+PR own task identity, claim, status and dependencies. Read `../SKILL.md` and the
+repo-local `AGENTS.md` or `CLAUDE.md` first.
 
 ## Protocol
 
-1. Require detailed source context before starting `/goal`: a PRD under `plans/prds/*.prd.md`, a Sprint backlog under `plans/sprints/*.sprint.md`, or a pasted/attached document with equivalent problem, users, scope, non-goals, acceptance scenarios, backlog order, and verification criteria.
-2. If the user did not attach or name a detailed PRD/Sprint document, stop and prompt them to attach one. The prompt must ask for the PRD/Sprint artifact, target repo/path, desired goal outcome, hard non-goals, and verification surface.
-3. Read the PRD/Sprint enough to extract a single goal statement, bounded scope, non-goals, authoritative files, ordered tasks, acceptance checks, rollback or stop condition, and any explicit owner or dependency constraints.
-4. Produce a host-ready `/goal` prompt that tells Codex or Claude to use the attached PRD/Sprint as source of truth, preserve repo-harness workflow gates, run one bounded goal, report checkpoints, and stop on verified completion or blocker evidence.
-5. When a Sprint row is the source, include the sprint file path, row id or task label, acceptance line, and whether the work should proceed through `$think`, `repo-harness run capture-plan`, and the contract worktree flow before implementation.
-6. When a PRD is the source but no Sprint exists, route to the Sprint mode's `from-prd` sub-route unless the requested goal is explicitly limited to PRD review, Sprint generation, or planning.
-7. Verify the prepared goal contract against repo state before handing it to `/goal`: named files exist, acceptance checks are concrete, and the stop condition is testable.
-8. For Codex goals, include explicit bounded delegation authorization: spawn no more than 3 subagents, max depth 1, only when the goal contains at least two independent workstreams, and never give overlapping write ownership.
+1. Read the current GitHub issue before using a planning artifact to prepare
+   execution. Read its state, assignees, all comments and linked PRs through
+   gh or the GitHub API. Paginate comments. Check active claims and handoff notes.
+2. Follow the repository's issue-claim rules. Reuse the task owner's active
+   claim. Take over another owner's work only after an explicit handoff or
+   user instruction. A planning document cannot release a claim.
+3. Require a detailed issue brief with the goal, scope, non-goals, acceptance
+   checks, dependencies and a stop or rollback condition. Read linked PRDs under
+   `plans/prds/*.prd.md`, historical Sprint files under `plans/sprints/*.sprint.md`
+   and other supplied documents as planning references. They do not own task
+   identity, execution permission or completion status.
+4. Map any requested work from a historical Sprint to the current GitHub issue.
+   Use the issue URL and its accepted scope in the goal prompt. If an issue does
+   not exist, prepare issue drafts through the backlog mode within the user's
+   write scope. Do not start implementation from the historical row.
+5. Build one bounded goal from the issue brief. Verify named repository paths,
+   concrete acceptance checks and the stop condition. Record the linked PR when
+   one exists. Do not mint task IDs, contracts, offers or leases.
+6. Re-read the issue and claim state before execution and on resume. Follow the
+   repository's claim, verification and publication rules. The prepared prompt
+   does not grant approval, a new claim or broader scope.
+7. Carry only delegation authority already granted by the user or repository
+   rules. For independent workstreams, limit Codex delegation to 3 subagents,
+   depth 1 and separate write ownership. Sequential work needs no subagent.
 
 ## Goal Prompt Shape
 
-Use this shape for the generated host-native `/goal` prompt:
-
 ```text
 /goal
-Goal: <one bounded outcome>
-Source of truth: <attached PRD/Sprint path or pasted artifact name>
-Scope: <included files/modules/tasks>
+Goal: <one bounded outcome from the issue>
+Issue: <GitHub issue URL>
+PR: <linked PR URL, or none yet>
+Claim: <current owner or explicit handoff, with its comment URL>
+Authority: the current GitHub issue and PR
+Planning references: <optional PRD, historical Sprint or source document>
+Scope: <included files and modules>
 Non-goals: <explicit exclusions>
-Execution route: <Sprint mode, PRD mode, or contract worktree path>
-Acceptance checks: <commands or machine-checkable assertions>
-Stop condition: <verified completion or blocker evidence>
-Delegation: this goal explicitly authorizes bounded Codex subagents when at least two independent workstreams exist; max 3 agents, max depth 1, no overlapping write ownership; do not spawn for trivial or strictly sequential work
-Reporting: use the user's language unless repo-local instructions require otherwise; include changed files, tradeoffs, checks, and next bottleneck only if verified
+Preflight: re-read the issue, all claim comments and linked PRs before execution and on resume; follow the repository's issue-claim rules
+Acceptance checks: <commands or observable outcomes from the issue brief>
+Stop condition: <verified completion or evidence of a blocker or ownership conflict>
+Delegation: use only existing authorization; max 3 Codex subagents, depth 1, independent workstreams and separate write ownership
+Reporting: use the user's language unless repo-local instructions require otherwise; record the revision, changed files, checks and remaining blockers in the issue or PR
 ```
 
 ## Failure Modes
 
-- If no detailed PRD/Sprint artifact is attached or named, stop and request it instead of inventing product intent from chat history.
-- If the PRD and Sprint contradict each other, report the conflict and route to the Sprint or PRD mode for repair before starting `/goal`.
-- If acceptance checks are subjective or missing, stop and ask for or derive machine-checkable acceptance from the PRD/Sprint before continuing.
-- If an active contract worktree or active plan already owns the same scope, report that state and route through the existing artifact instead of starting a parallel goal.
+- If the issue is missing or cannot be read, stop before execution. Request the
+  issue or prepare a planning draft within the user's scope. Do not infer claim
+  state from local files or chat history.
+- If another owner has an active claim, coordinate with that owner. Do not start
+  duplicate work without an explicit handoff or user instruction.
+- If the issue and planning references disagree, report the conflict. Preserve
+  the current issue scope until the owner resolves it.
+- If the brief lacks scope or objective acceptance checks, prepare the missing
+  details for review before starting the Goal session.
+- If the issue is closed or the linked PR already delivered the requested work,
+  report that result instead of opening a second execution path.
 
 ## Boundaries
 
-- Does not create, approve, or execute a Goal session without detailed PRD/Sprint context.
-- Does not replace the PRD or Sprint modes; it only consumes their artifacts.
-- Preserve host-native `/goal` ownership: repo-harness prepares the prompt and contract, while Codex or Claude owns continuation mechanics.
-- Approval gating for this mode: see `../SKILL.md` Boundaries (never bypasses `$think`, capture-plan, contracts, or `/check`).
+- Prepare an execution Goal only for a current issue with a valid claim and
+  sufficient requirements. Product planning alone does not start execution.
+- Preserve host-native `/goal` ownership. Codex or Claude owns continuation;
+  repo-harness prepares context and verification requirements.
+- Preserve existing user approval. Follow `../SKILL.md` and the repository's
+  current execution rules. The prompt cannot approve or publish its own work.

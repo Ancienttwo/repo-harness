@@ -408,12 +408,12 @@ describe('no-progress circuit breaker', () => {
 });
 
 describe('circuit breaker scope', () => {
-  test('a stalled ledger on the same unit never rewrites a complete route', () => {
+  test('a stalled retired sprint ledger never rewrites an idle route', () => {
     withLedgerRepo((cwd) => {
       finishedSprint(cwd);
       const complete = envelopeFrom(cwd);
-      expect(complete.route).toBe('complete');
-      expect(complete.unit_ref).toBe(SPRINT);
+      expect(complete.route).toBe('idle');
+      expect(complete.unit_ref).toBeNull();
 
       recordStalled(cwd, complete.progress_token, SPRINT);
       recordStalled(cwd, complete.progress_token, SPRINT);

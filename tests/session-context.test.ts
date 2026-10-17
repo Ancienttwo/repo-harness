@@ -113,7 +113,7 @@ describe("SessionStart host envelope", () => {
     } finally { f.cleanup(); }
   }, 30_000);
 
-  test("an active sprint and a large resume add no section beyond the state pointers", () => {
+  test("a retired sprint is absent and a large resume has only a pointer", () => {
     const f = fixture("session-large-resume");
     try {
       writeActiveSprint(f);
@@ -123,7 +123,7 @@ describe("SessionStart host envelope", () => {
       expect(context.split("\n")).toHaveLength(1);
       const references = stateReferences(context);
       expect(references.resume).toBe(RESUME);
-      expect(references.sprint).toBe(SPRINT);
+      expect(Object.hasOwn(references, "sprint")).toBe(false);
       expect(context).not.toContain("[ContextRef:resume]");
       expect(context).not.toContain("resume line 0 with recovery detail");
       expect(context).not.toContain("# Active Sprint");
@@ -179,12 +179,8 @@ describe("buildSessionStartSections", () => {
     next_action: null,
     guidance: null,
     blockers: [],
-    allowed_paths: [],
-    checks: { path: null, freshness: "missing", status: null },
     authoritative_plan: null,
-    contract: null,
     capability_ownership: null,
-    active_sprint: { path: null, freshness: "not_applicable" },
     handoff: { path: ".ai/harness/handoff/current.md", freshness: "missing" },
     resume: { path: RESUME, freshness: "missing" },
   } as unknown as EffectiveState;

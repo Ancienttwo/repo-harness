@@ -179,10 +179,10 @@ describe('Effective State authority read faults', () => {
   test('an authoritative path read error fails closed before cache publication', () => {
     const fixture = createEffectiveStateFixture();
     try {
-      const contractPath = join(fixture.cwd, CONTRACT);
-      rmSync(contractPath);
-      mkdirSync(contractPath);
-      expect(() => resolveFixtureState(fixture.cwd)).toThrow();
+      const planPath = join(fixture.cwd, PLAN);
+      rmSync(planPath);
+      mkdirSync(planPath);
+      expect(() => resolveFixtureState(fixture.cwd)).toThrow('EISDIR');
       expect(existsSync(join(fixture.cwd, EFFECTIVE_STATE_CACHE))).toBe(false);
     } finally {
       fixture.cleanup();

@@ -11,8 +11,6 @@ import { createHash } from 'crypto';
 
 export const TASK_OFFER_PROTOCOL = 1 as const;
 export const TASK_OFFER_KIND = 'repo-harness-task-offer' as const;
-export const FLEET_OFFERS_PROTOCOL = 1 as const;
-export const FLEET_OFFERS_KIND = 'repo-harness-fleet-offers' as const;
 
 export type TaskOfferExecutionReadiness =
   | 'execution_ready'
@@ -102,32 +100,6 @@ export interface TaskOfferV1 {
     readonly oid: string;
   } | null;
   readonly plan: TaskOfferPlanProofV1 | null;
-}
-
-export interface FleetOffersV1 {
-  readonly protocol: typeof FLEET_OFFERS_PROTOCOL;
-  readonly kind: typeof FLEET_OFFERS_KIND;
-  readonly authorization_revision: number;
-  readonly snapshot_consistency: TaskOfferSnapshotConsistency;
-  readonly offer_revision: string;
-  readonly offers: readonly TaskOfferV1[];
-}
-
-/**
- * Deterministic v1 acquisition selection: the document is already ordered by
- * registry repository and canonical row, so the first eligible offer is the
- * only selection rule.  This helper remains pure; a caller must still
- * revalidate the returned offer before taking any mutation step.
- */
-export function selectExecutionReadyOffer(
-  document: FleetOffersV1,
-  repoId?: string,
-): TaskOfferV1 | null {
-  return document.offers.find((offer) => (
-    offer.execution_readiness === 'execution_ready'
-    && offer.snapshot_consistency === 'stable'
-    && (repoId === undefined || offer.repo_id === repoId)
-  )) ?? null;
 }
 
 const BLOCKER_ATTENTION: Readonly<Record<TaskOfferBlockerCode, TaskOfferAttentionOwner>> = {

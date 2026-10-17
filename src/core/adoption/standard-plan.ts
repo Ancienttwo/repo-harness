@@ -306,7 +306,6 @@ export function defaultPolicy(documentationProfile: string, documentationLanguag
       lessons_file: "tasks/lessons.md",
       research_dir: "docs/researches",
       workstreams_dir: "tasks/workstreams",
-      contracts_dir: "tasks/contracts",
       reviews_dir: "tasks/reviews",
       notes_dir: "tasks/notes",
     },

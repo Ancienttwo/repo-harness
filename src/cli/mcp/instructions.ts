@@ -1,12 +1,4 @@
-export function buildMcpServerInstructions(opts: { readerEnabled?: boolean; codingEnabled?: boolean; engineerEnabled?: boolean } = {}): string {
-  if (opts.engineerEnabled === true) {
-    return [
-      'repo-harness is serving the restricted Engineer profile for one verified OAuth authorization.',
-      'Use engineer_status to confirm the server-derived principal, engineer_prepare to persist a trusted offers observation, then engineer_acquire with observation_ref, a stable idempotency_key and every returned fence of one offer in that observation.',
-      'Tool payload identity fields are optimistic fences and never select the authenticated Engineer principal.',
-      'This profile has no shell, generic file read/write, Binding mutation, generic Fleet mutation, Publication, Acceptance, browser, or agent-runner authority.',
-    ].join(' ');
-  }
+export function buildMcpServerInstructions(opts: { readerEnabled?: boolean; codingEnabled?: boolean } = {}): string {
   return [
     'repo-harness exposes one MCP connector whose capabilities are selected by local configuration.',
     'Use workflow tools to read product intent, plans, contracts, checks, reviews, and handoff.',

@@ -1877,7 +1877,7 @@ finish_worktree() {
   fi
 }
 
-# Plans captured via sprint-backlog start-task carry
+# Historical plans can carry
 # "> **Source Ref**: sprint:<file>#<task>". After the workflow archives,
 # flip that backlog row so tracked program state cannot silently lag the
 # completed contract.

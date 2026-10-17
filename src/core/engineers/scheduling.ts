@@ -87,30 +87,6 @@ export interface RetryEligibilityObservationV1 {
   readonly authority_revision: string;
 }
 
-/** Initial observation only. No attempt history or retry authority is stored. */
-export function observeInitialRetryEligibility(input: {
-  readonly work_package_revision: string;
-  readonly observed_at: string;
-}): RetryEligibilityObservationV1 {
-  const now = Date.parse(input.observed_at);
-  if (!Number.isFinite(now) || new Date(now).toISOString() !== input.observed_at) {
-    invalid('observed_at must be a canonical ISO timestamp');
-  }
-  return Object.freeze({
-    state: 'eligible',
-    attempt_count: 0,
-    last_outcome: null,
-    next_eligible_at: null,
-    eligible_since: input.observed_at,
-    attention_owner: 'none',
-    starvation_attention: false,
-    authority_revision: engineerSha256(canonicalEngineerJson({
-      work_package_revision: input.work_package_revision,
-      attempt: null,
-    })),
-  });
-}
-
 export interface WorkPackageDefinitionV1 {
   readonly work_package_id: string;
   /**

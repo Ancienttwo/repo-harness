@@ -206,7 +206,7 @@ describe('mcp policy and paths', () => {
     }
   });
 
-  test('coding exposes workflow, fleet/publication, and direct coding tools exactly once', () => {
+  test('coding exposes workflow, publication, and direct coding tools exactly once', () => {
     const coding = getMcpPolicy('coding');
     const definitions = buildMcpToolDefinitions(coding);
     const codingNames = ['open_workspace', 'read', 'apply_patch', 'exec_command', 'write_stdin'];
@@ -216,13 +216,11 @@ describe('mcp policy and paths', () => {
       workspaceCoder: true,
     });
     expect(coding.execution).toMatchObject({ codingShell: true });
-    expect(definitions).toHaveLength(29);
+    expect(definitions).toHaveLength(27);
     expect(definitions.filter((tool) => codingNames.includes(tool.name)).map((tool) => tool.name)).toEqual(codingNames);
     expect(definitions.map((tool) => tool.name)).toContain('write_prd');
     expect(definitions.map((tool) => tool.name)).toContain('prepare_task_goal_from_sprint');
     expect(definitions.map((tool) => tool.name)).toEqual(expect.arrayContaining([
-      'fleet_offers',
-      'fleet_acquire',
       'publication_readiness',
       'publication_reopen',
       'publication_takeover',

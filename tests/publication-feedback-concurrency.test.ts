@@ -1,13 +1,12 @@
+import { boundLeaseFixture } from './helpers/sprint-fixture';
+import { leaseOwnerPath } from './helpers/sprint-fixture';
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
-import {
-  buildPublicationReceipt,
-  publicationReceiptDigest,
-} from '../src/core/publication/publication-receipt';
+import { buildPublicationReceipt, publicationReceiptDigest } from '../src/core/publication/publication-receipt';
 import {
   buildFeedbackDeliveryReceipt,
   buildFeedbackEvent,
@@ -17,7 +16,6 @@ import {
 } from '../src/core/publication/feedback';
 import {
   beginLeaseCompletionRecord,
-  bindLeaseRecord,
   buildLeaseOwnerRecord,
   deriveTaskRevision,
   enterReviewingLeaseRecord,
@@ -39,8 +37,7 @@ import {
   writeRepairDispatchProof,
 } from '../src/effects/publication/feedback-store';
 import { writePublicationReceiptCache } from '../src/effects/publication/publication-receipt';
-import { resolveRepoIdentity } from '../src/effects/state/coordination-canonical-source';
-import { createLeaseDirectory, leaseOwnerPath, writeLeaseOwnerDurably } from '../src/effects/state/coordination-lease-store';
+import { createLeaseDirectory, writeLeaseOwnerDurably } from '../src/effects/state/coordination-lease-store';
 import { resolveGitCommonDirectory } from '../src/effects/git/common-directory';
 import { fixtureTaskId } from './helpers/sprint-fixture';
 
@@ -81,7 +78,6 @@ function fixture(): Fixture {
   ].join('\n'));
   writeFileSync(join(root, 'README.md'), 'base\n');
   git(root, 'add', '.'); git(root, 'commit', '-m', 'base');
-  const repoId = resolveRepoIdentity(root);
   const taskId = fixtureTaskId(TASK);
   const taskRevision = deriveTaskRevision({ taskCell: TASK, taskId, modeCell: 'contract', acceptanceCell: 'provider feedback passes' });
   git(root, 'switch', '-c', 'codex/feedback');
@@ -101,9 +97,8 @@ function fixture(): Fixture {
     claimId: CLAIM, taskId, taskRevision, sprintPath: SPRINT, targetRef: 'main', generation: 1,
     sessionId: 'feedback-session', sourceWorktree: root,
   });
-  const bound = bindLeaseRecord(owner, { claimId: CLAIM, executionWorktree: root, branch: 'codex/feedback', unitRef: 'plans/plan-feedback.md' });
-  if (!bound.ok) throw new Error(bound.error);
-  const completing = beginLeaseCompletionRecord(bound.record, { claimId: CLAIM, executionWorktree: root, finishTransactionKey: null });
+  const bound = boundLeaseFixture(owner, { executionWorktree: root, branch: 'codex/feedback', unitRef: 'plans/plan-feedback.md' });
+  const completing = beginLeaseCompletionRecord(bound, { claimId: CLAIM, executionWorktree: root, finishTransactionKey: null });
   if (!completing.ok) throw new Error(completing.error);
   const reviewing = enterReviewingLeaseRecord(completing.record, {
     claimId: CLAIM,

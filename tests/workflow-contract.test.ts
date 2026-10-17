@@ -44,7 +44,7 @@ describe("workflow contract manifest", () => {
   test("each real delegated runner owns one boundary for its own brief protocol", () => {
     const envelope="Execution boundary: implement exactly the Goal, In scope items, Allowed Paths, and Exit Criteria in this brief.";
     const parentBrief="Execution boundary: implement exactly the parent brief Goal/Scope/Verify/Rollback.";
-    for(const [path,sentence] of [["scripts/contract-run.ts",envelope],["src/cli/mcp/tools.ts",envelope],["src/cli/hook/subagent-context.ts",parentBrief]]) {
+    for(const [path,sentence] of [["src/cli/mcp/tools.ts",envelope],["src/cli/hook/subagent-context.ts",parentBrief]]) {
       const content=readFileSync(join(ROOT,path),"utf8");
       expect(content.split(sentence).length-1).toBe(1);
     }
@@ -60,7 +60,6 @@ describe("workflow contract manifest", () => {
     expect(contract.helpers.runtimeSource).toBe("package");
     expect(Object.hasOwn(contract.helpers, "compatibilityDirectory")).toBe(false);
     expect(contract.helpers.scripts).toContain("contract-worktree.sh");
-    expect(contract.helpers.scripts).toContain("contract-run.ts");
     expect(contract.helpers.scripts).toContain("ship-worktrees.sh");
     expect(contract.helpers.scripts).toContain("heartbeat-triage.sh");
     expect(contract.helpers.scripts).toContain("capture-plan.sh");

@@ -240,7 +240,7 @@ host-installer 有 14 个文件、3670 行（2026-10-16），标记为 expandabl
 1. **Stop 的延迟工作。** 旧采样里 Stop 是唯一贴到硬上限的 route：675 次 Stop 里 93 次超过 5s、77 次超过 10s，p99 24.4s。当时的主要成本是架构 cascade 和投影 drain。二者已删除（2026-10-10）。refactor recommendation observer 也已移出 Stop（2026-10-10），改由 Bot 按需读取证据。#695 又删除了 journal pass、run summary、状态解析、readiness 行与 140 s deadline。Stop 现在只发布 checkpoint 并渲染 handoff 与 resume。需要重新采样，再判断 Stop 是否仍是最先垮的点。
 2. **`PostToolUse.bash` 的单位成本 × 调用量。** p50 52ms 单看不贵，但它是第二高频 route（16,398 次），乘出来就是 26.7% 的总时间。它没有尾延迟问题（p99 244ms），垮的方式是稳态吞吐：命令密度上去后每次 Bash 调用都固定付这 50ms。#695 删除了 importer、输出捕获与 `post-bash-latest.json`，#705 又删除了 Claude/Codex 的这条 route。#766 删除了 Pi 的这条 route 与 command observer。现在没有这项成本。
 3. **`PreToolUse.edit` 阻塞编辑热路径。** mutation-guard 是**同步前置**门，p50 253ms 直接计入用户可感知的编辑延迟，且 max 10.9s 说明它在状态解析退化时会长尾。#692 删除了状态解析、lease 检查、circuit breaker 与 advisory。现在只剩路径边界，以及 owned path 的一次 `git status`。需要重新采样。
-4. **SessionStart 上下文预算（#693 已修正）。** 旧实现把五个 provider 拼成一整块 section，超预算时一起消失。现在每个 provider 是独立 section，各有 id 与 source。`budgetSessionContext` 按 priority 排序，保留 mandatory section，放不下的 optional section 变成 `[ContextRef:<id>] <source>` 指针。#770 删除了 resume 与 active-sprint 两个 provider。`[HarnessState]` 用 `references.resume` 与 `references.sprint` 指向这两个文件。延迟本身不是瓶颈（4.6%、p95 711ms）。
+4. **SessionStart 上下文预算（#693 已修正）。** 旧实现把五个 provider 拼成一整块 section，超预算时一起消失。现在每个 provider 是独立 section，各有 id 与 source。`budgetSessionContext` 按 priority 排序，保留 mandatory section，放不下的 optional section 变成 `[ContextRef:<id>] <source>` 指针。#770 删除了 resume 与 active-sprint 两个 provider。`[HarnessState]` 只保留 `references.resume` 指针。它不再输出 sprint 指针。延迟本身不是瓶颈（4.6%、p95 711ms）。
 5. **`resolveEffectiveState` 的锁竞争。** `runtime.ts` 的 `resolveHookEffectiveState` 是唯一的重试策略：三次有界重试（`EFFECTIVE_STATE_RESOLUTION_MAX_ATTEMPTS = 3`），只覆盖两种已知瞬时签名（stability 重读耗尽、独占锁超时）。并行 agent 数量上去后，重试耗尽会把 SessionStart 推进 `[HarnessStateUnavailable]` 分支 —— 这是正确的 fail-closed，但用户侧表现为上下文突然消失。
 6. **`install-profile.ts` 1,441 行的单点（2026-10-11 实测，旧版记录为 1,167 行）。** profile 组件矩阵继续增长时，这里是最先需要拆分的文件。不在 dispatch 热路径上。
 
@@ -307,22 +307,11 @@ push in `prompt-handler.ts` and never enters routing or blocking decisions.
 The noun sets expand only with a real missed-case fixture first
 (`tests/cli/prompt-intents.test.ts` pins the positive/negative matrix).
 
-### Contract-scoped failed-check repair (2026-08-05)
+### Edit safety and state context
 
-- P1: `checks_failed` is verification evidence about the current candidate;
-  the active contract remains the sole edit-scope authority and Effective
-  State remains the profile/blocker authority.
-- P2: the resolver canonicalizes the full PreEdit target batch, rejects parent
-  traversal and symlink escape, and projects contract authorization into
-  Effective State's shared operation readiness. `mutation-guard` consumes the
-  resolved `allowedToEdit`, contract path, and `allowed_paths` snapshot without
-  rereading workflow authority. The contract-scope guard still rejects every
-  sibling outside `allowed_paths`.
-- P3: only `allowedToEdit` can exempt the sole `checks_failed` blocker after
-  canonical contract authorization. `allowedToStop` and `readyToShip` remain
-  hard-blocked, and an unsafe target or any additional blocker fails closed.
-  This breaks the review-evidence repair cycle without creating contradictory
-  CLI/MCP/hook readiness contracts.
+The mutation guard checks paths and permissions without resolving Effective
+State. Task contracts and check results grant no edit permission. SessionStart
+and child context read state for context. The state has no readiness decision.
 
 ### HRD-09 typed-authority consolidation (原 P3 段落，逐字保留)
 

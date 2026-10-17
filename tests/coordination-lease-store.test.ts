@@ -1,3 +1,5 @@
+import { boundLeaseFixture } from './helpers/sprint-fixture';
+import { leaseOwnerPath } from './helpers/sprint-fixture';
 /**
  * Coordination plane primitives over a real git repository: lease election,
  * durable owner writes, per-task locking, and the `unknown` classification.
@@ -24,28 +26,22 @@ import {
 } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { randomUUID } from 'crypto';
 import {
-  bindLeaseRecord,
   buildLeaseOwnerRecord,
   deriveTaskRevision,
   parseLeaseOwnerRecord,
   projectCanonicalTasks,
   serializeLeaseOwnerRecord,
-  stealLeaseRecord,
   type LeaseOwnerRecordV1,
   type LeaseOwnerRecordV2,
 } from '../src/core/state/coordination-identity';
 import {
   abortCompletionSprintCommand,
   beginCompletionSprintCommand,
-  bindSprintCommand,
-  claimSprintCommand,
   completeRowSprintCommand,
   processSprintDependencies,
   reconcileSprintCommand,
   releaseSprintCommand,
-  stealSprintCommand,
   type SprintCommandDependencies,
 } from '../src/effects/state/coordination-sprint';
 import {
@@ -56,10 +52,8 @@ import {
   createLeaseDirectory,
   findLeaseByClaimId,
   leaseDirectory,
-  leaseOwnerPath,
   readLease,
   removeLease,
-  removeOwnLeaseAfterFailedClaim,
   taskLockRelativePath,
   withBacklogLock,
   withTaskLock,
@@ -107,7 +101,6 @@ test.skipIf(process.platform === 'win32')('POSIX directory flush failure leaves 
 });
 
 const REPO_ROOT = join(import.meta.dir, '..');
-const REPO_IDENTITY = '/tmp/lease-store-fixture/.git';
 const SPRINT_PATH = 'plans/sprints/lease-store.sprint.md';
 
 function taskIdFor(taskCell: string): string {
@@ -333,41 +326,6 @@ describe('unknown classification: never silently deleted', () => {
     symlinkSync(join(repo, 'README.md'), leaseOwnerPath(repo, symlinked));
     expect(() => removeLease(repo, symlinked, 'claim-1')).toThrow('refusing to remove lease');
     expect(existsSync(join(repo, 'README.md'))).toBe(true);
-  });
-});
-
-describe('claim rollback removes only the lease it created', () => {
-  test('rolls back its own reserving lease', () => {
-    const repo = createRepo();
-    const record = claim(repo, 'roll back mine', 'claim-1');
-    removeOwnLeaseAfterFailedClaim(repo, record.task_id, 'claim-1');
-    expect(readLease(repo, record.task_id).classification).toBe('available');
-  });
-
-  test('rolls back the empty directory of its own crash window', () => {
-    const repo = createRepo();
-    const taskId = taskIdFor('roll back empty');
-    createLeaseDirectory(repo, taskId);
-    removeOwnLeaseAfterFailedClaim(repo, taskId, 'claim-1');
-    expect(existsSync(leaseDirectory(repo, taskId))).toBe(false);
-  });
-
-  test("refuses to roll back another claim's lease", () => {
-    const repo = createRepo();
-    const record = claim(repo, 'not mine', 'claim-other');
-    expect(() => removeOwnLeaseAfterFailedClaim(repo, record.task_id, 'claim-1'))
-      .toThrow('refusing to remove lease');
-    expect(readLease(repo, record.task_id).record?.claim_id).toBe('claim-other');
-  });
-
-  test('refuses to roll back a lease it cannot classify', () => {
-    const repo = createRepo();
-    const taskId = taskIdFor('unclassifiable rollback');
-    createLeaseDirectory(repo, taskId);
-    writeFileSync(leaseOwnerPath(repo, taskId), 'not a record');
-    expect(() => removeOwnLeaseAfterFailedClaim(repo, taskId, 'claim-1'))
-      .toThrow('refusing to roll back lease');
-    expect(existsSync(leaseOwnerPath(repo, taskId))).toBe(true);
   });
 });
 
@@ -651,28 +609,18 @@ describe('claim verbs', () => {
     run(repo, ['commit', '--quiet', '-m', 'sprint']);
   }
 
-  /**
-   * Every `resumed` receipt `bind` appends through the fixture port, in call
-   * order. The fixture binds to `/tmp/wt`, which is not a repository, so the
-   * live append is replaced by a recorder here; the append's own IO is proved
-   * over real linked worktrees in `tests/sprint-claim-concurrency.test.ts`.
-   */
-  const RESUMED_RECEIPTS: Array<{ worktree: string; unitRef: string }> = [];
+  function deps(repo: string): SprintCommandDependencies {
+    return processSprintDependencies(repo);
+  }
 
-  function deps(
-    repo: string,
-    claimIds: readonly string[] = ['claim-1'],
-    appendResumedReceipt: (worktree: string, unitRef: string) => void = (worktree, unitRef) => {
-      RESUMED_RECEIPTS.push({ worktree, unitRef });
-    },
-  ): SprintCommandDependencies {
-    const queue = [...claimIds];
-    const live = processSprintDependencies(repo);
-    return {
-      ...live,
-      newClaimId: () => queue.shift() ?? randomUUID(),
-      coordination: { ...live.coordination, appendResumedReceipt, assertWorktreeBinding: () => {} },
-    };
+  function seedClaim(repo: string, claimId = 'claim-1') {
+    const task = canonicalTask(repo, 'wire the claim verbs');
+    const record = buildLeaseOwnerRecord({ claimId, taskId: task.task_id,
+      taskRevision: task.task_revision, sprintPath: SPRINT, targetRef: 'main',
+      generation: 1, sessionId: 'session-1', sourceWorktree: repo });
+    createLeaseDirectory(repo, task.task_id);
+    writeLeaseOwnerDurably(repo, task.task_id, record);
+    return record;
   }
 
   function canonicalTask(repo: string, taskCell: string) {
@@ -685,174 +633,11 @@ describe('claim verbs', () => {
     return found;
   }
 
-  function claimOptions(repo: string, taskCell: string) {
-    const task = canonicalTask(repo, taskCell);
-    return {
-      taskId: task.task_id,
-      expectedTaskRevision: task.task_revision,
-      targetRef: 'main',
-      sprintPath: SPRINT,
-      sessionId: 'session-1',
-    };
-  }
-
   function repoWithSprint(rows: readonly string[] = [ROW_A, ROW_B]): string {
     const repo = createRepo();
     commitSprint(repo, rows);
     return repo;
   }
-
-  test('claim publishes a reserving lease and refuses a second claimant', () => {
-    const repo = repoWithSprint();
-    const first = claimSprintCommand(claimOptions(repo, 'wire the claim verbs'), deps(repo));
-    expect(first.exitCode).toBe(0);
-    const record = JSON.parse(first.stdout) as LeaseOwnerRecordV1;
-    expect(record.state).toBe('reserving');
-    expect(record.claim_id).toBe('claim-1');
-    expect(record.sprint_path).toBe(SPRINT);
-    expect(record.execution_worktree).toBeNull();
-    expect(record.stolen_from).toBeNull();
-    expect(readLease(repo, record.task_id).classification).toBe('reserving');
-
-    const second = claimSprintCommand(claimOptions(repo, 'wire the claim verbs'), deps(repo, ['claim-2']));
-    expect(second.exitCode).toBe(1);
-    expect(second.stderr).toContain('is not available');
-    expect(readLease(repo, record.task_id).record?.claim_id).toBe('claim-1');
-  });
-
-  test('a sibling row completing does not block a claim', () => {
-    const repo = repoWithSprint();
-    const options = claimOptions(repo, 'wire the claim verbs');
-    commitSprint(repo, [
-      `| 1 | ${fixtureTaskId('build the lease store')} | [x] | build the lease store | contract | store tests pass | \`plans/archive/a.md\` |`,
-      ROW_B,
-    ]);
-    const outcome = claimSprintCommand(options, deps(repo));
-    expect(outcome.exitCode).toBe(0);
-  });
-
-  test('claim refuses a stale expected revision and a non-pending row', () => {
-    const repo = repoWithSprint();
-    const drifted = claimSprintCommand(
-      { ...claimOptions(repo, 'wire the claim verbs'), expectedTaskRevision: 'a'.repeat(64) },
-      deps(repo),
-    );
-    expect(drifted.exitCode).toBe(1);
-    expect(drifted.stderr).toContain('drifted');
-
-    const options = claimOptions(repo, 'wire the claim verbs');
-    commitSprint(repo, [ROW_A, `| 2 | ${fixtureTaskId('wire the claim verbs')} | [x] | wire the claim verbs | contract | claim tests pass | (pending) |`]);
-    const done = claimSprintCommand(options, deps(repo));
-    expect(done.exitCode).toBe(1);
-    expect(done.stderr).toContain('is not pending');
-    expect(readLease(repo, options.taskId).classification).toBe('available');
-  });
-
-  test('claim reads the canonical ref, not the caller working tree', () => {
-    const repo = repoWithSprint();
-    const options = claimOptions(repo, 'wire the claim verbs');
-    // A stale local copy that still shows the row pending must not rescue a
-    // claim whose canonical row has already been completed.
-    commitSprint(repo, [ROW_A, `| 2 | ${fixtureTaskId('wire the claim verbs')} | [x] | wire the claim verbs | contract | claim tests pass | (pending) |`]);
-    writeFileSync(join(repo, SPRINT), sprintText([ROW_A, ROW_B]));
-    expect(claimSprintCommand(options, deps(repo)).exitCode).toBe(1);
-  });
-
-  test('claim rolls back only its own lease when canonical moves mid-claim', () => {
-    const repo = repoWithSprint();
-    const options = claimOptions(repo, 'wire the claim verbs');
-    const live = processSprintDependencies(repo);
-    let reads = 0;
-    const racing: SprintCommandDependencies = {
-      ...live,
-      newClaimId: () => 'claim-racing',
-      coordination: {
-        ...live.coordination,
-        readCanonicalSprint: (source) => {
-          reads += 1;
-          // The second read is the post-write re-read: complete the row between
-          // the durable write and that check.
-          if (reads === 2) {
-            commitSprint(repo, [
-              ROW_A,
-              `| 2 | ${fixtureTaskId('wire the claim verbs')} | [x] | wire the claim verbs | contract | claim tests pass | (pending) |`,
-            ]);
-          }
-          return live.coordination.readCanonicalSprint(source);
-        },
-      },
-    };
-    const other = claimSprintCommand(claimOptions(repo, 'build the lease store'), deps(repo, ['claim-neighbour']));
-    expect(other.exitCode).toBe(0);
-
-    const outcome = claimSprintCommand(options, racing);
-    expect(outcome.exitCode).toBe(1);
-    expect(outcome.stderr).toContain('canonical authority changed during claim');
-    expect(readLease(repo, options.taskId).classification).toBe('available');
-    // The neighbouring lease this call did not create is untouched.
-    expect(readLease(repo, canonicalTask(repo, 'build the lease store').task_id).record?.claim_id)
-      .toBe('claim-neighbour');
-  });
-
-  test('bind fills the execution binding, and only from reserving', () => {
-    const repo = repoWithSprint();
-    expect(claimSprintCommand(claimOptions(repo, 'wire the claim verbs'), deps(repo)).exitCode).toBe(0);
-
-    const bound = bindSprintCommand(
-      { claimId: 'claim-1', worktree: '/tmp/wt', branch: 'codex/example', unitRef: 'plans/plan-x.md' },
-      deps(repo),
-    );
-    expect(bound.exitCode).toBe(0);
-    const record = JSON.parse(bound.stdout) as LeaseOwnerRecordV1;
-    expect(record.state).toBe('bound');
-    expect(record.execution_worktree).toBe('/tmp/wt');
-    expect(record.branch).toBe('codex/example');
-    expect(record.unit_ref).toBe('plans/plan-x.md');
-
-    const rebind = bindSprintCommand(
-      { claimId: 'claim-1', worktree: '/tmp/other', branch: 'codex/other', unitRef: 'plans/plan-y.md' },
-      deps(repo),
-    );
-    expect(rebind.exitCode).toBe(1);
-    expect(rebind.stderr).toContain('cannot bind a lease in state bound');
-  });
-
-  test('bind appends a resumed receipt for the execution worktree and unit', () => {
-    const repo = repoWithSprint();
-    expect(claimSprintCommand(claimOptions(repo, 'wire the claim verbs'), deps(repo)).exitCode).toBe(0);
-    RESUMED_RECEIPTS.length = 0;
-
-    expect(bindSprintCommand(
-      { claimId: 'claim-1', worktree: '/tmp/wt', branch: 'codex/example', unitRef: 'plans/plan-x.md' },
-      deps(repo),
-    ).exitCode).toBe(0);
-
-    // The receipt names the worktree whose ledger the board will read for this
-    // lease, and the unit `evaluateAttemptStall` filters that ledger by.
-    expect(RESUMED_RECEIPTS).toEqual([{ worktree: '/tmp/wt', unitRef: 'plans/plan-x.md' }]);
-  });
-
-  test('a resumed receipt that cannot be appended fails the bind closed', () => {
-    const repo = repoWithSprint();
-    expect(claimSprintCommand(claimOptions(repo, 'wire the claim verbs'), deps(repo)).exitCode).toBe(0);
-    const taskId = canonicalTask(repo, 'wire the claim verbs').task_id;
-
-    const outcome = bindSprintCommand(
-      { claimId: 'claim-1', worktree: '/tmp/wt', branch: 'codex/example', unitRef: 'plans/plan-x.md' },
-      deps(repo, ['claim-1'], () => {
-        throw new Error('ledger is not writable');
-      }),
-    );
-
-    // Receipt before owner write: the append failed, so nothing was written.
-    // A lease left `bound` while still carrying the previous claim's stall
-    // count is exactly the shape this ordering exists to prevent.
-    expect(outcome.exitCode).toBe(1);
-    expect(outcome.stderr).toContain('ledger is not writable');
-    const lease = readLease(repo, taskId);
-    expect(lease.classification).toBe('reserving');
-    expect(lease.record?.execution_worktree).toBeNull();
-  });
 
   test('readLease publishes the owner record bytes verbatim, or null', () => {
     const repo = repoWithSprint();
@@ -861,7 +646,7 @@ describe('claim verbs', () => {
     // No lease directory at all: nothing was read, so there are no bytes.
     expect(readLease(repo, taskId).raw).toBeNull();
 
-    expect(claimSprintCommand(claimOptions(repo, 'wire the claim verbs'), deps(repo)).exitCode).toBe(0);
+    seedClaim(repo);
     const live = readLease(repo, taskId);
     expect(live.raw).toBe(readFileSync(leaseOwnerPath(repo, taskId), 'utf-8'));
     // Bytes, not a re-serialization of the parse: the digest that consumes
@@ -876,13 +661,11 @@ describe('claim verbs', () => {
     expect(malformed.raw).toBe('{ not json');
   });
 
-  test('an unknown fencing token cannot bind, release, or steal', () => {
+  test('an unknown fencing token cannot release a lease', () => {
     const repo = repoWithSprint();
-    expect(claimSprintCommand(claimOptions(repo, 'wire the claim verbs'), deps(repo)).exitCode).toBe(0);
+    seedClaim(repo);
     for (const outcome of [
-      bindSprintCommand({ claimId: 'claim-ghost', worktree: '/tmp/wt', branch: 'b', unitRef: 'r' }, deps(repo)),
       releaseSprintCommand({ claimId: 'claim-ghost' }, deps(repo)),
-      stealSprintCommand({ expectedClaimId: 'claim-ghost', reason: 'stalled', sessionId: 's' }, deps(repo)),
     ]) {
       expect(outcome.exitCode).toBe(1);
       expect(outcome.stderr).toContain('no lease holds claim id claim-ghost');
@@ -893,7 +676,7 @@ describe('claim verbs', () => {
 
   test('release publishes released, then removes the lease', () => {
     const repo = repoWithSprint();
-    expect(claimSprintCommand(claimOptions(repo, 'wire the claim verbs'), deps(repo)).exitCode).toBe(0);
+    seedClaim(repo);
     const taskId = canonicalTask(repo, 'wire the claim verbs').task_id;
 
     const released = releaseSprintCommand({ claimId: 'claim-1' }, deps(repo));
@@ -902,27 +685,6 @@ describe('claim verbs', () => {
       .toBe('released');
     expect(readLease(repo, taskId).classification).toBe('available');
     expect(releaseSprintCommand({ claimId: 'claim-1' }, deps(repo)).exitCode).toBe(1);
-  });
-
-  test('steal transfers ownership with provenance and retires the old token', () => {
-    const repo = repoWithSprint();
-    expect(claimSprintCommand(claimOptions(repo, 'wire the claim verbs'), deps(repo)).exitCode).toBe(0);
-
-    const stolen = stealSprintCommand(
-      { expectedClaimId: 'claim-1', reason: 'no progress for 2h', sessionId: 'session-2' },
-      deps(repo, ['claim-2']),
-    );
-    expect(stolen.exitCode).toBe(0);
-    const record = JSON.parse(stolen.stdout) as LeaseOwnerRecordV1;
-    expect(record.claim_id).toBe('claim-2');
-    expect(record.state).toBe('reserving');
-    expect(record.stolen_from).toEqual({ claim_id: 'claim-1', reason: 'no progress for 2h' });
-    expect(record.claimed_by.session_id).toBe('session-2');
-
-    // The stolen-from agent can no longer release or bind the new owner's lease.
-    const staleRelease = releaseSprintCommand({ claimId: 'claim-1' }, deps(repo));
-    expect(staleRelease.exitCode).toBe(1);
-    expect(readLease(repo, record.task_id).record?.claim_id).toBe('claim-2');
   });
 
   test('reconcile reports without mutating, and clears only a released residue', () => {
@@ -934,7 +696,7 @@ describe('claim verbs', () => {
     ) as { classification: string; action: string };
     expect(absent).toMatchObject({ classification: 'available', action: 'none' });
 
-    expect(claimSprintCommand(claimOptions(repo, 'wire the claim verbs'), deps(repo)).exitCode).toBe(0);
+    seedClaim(repo);
     const live = JSON.parse(reconcileSprintCommand({ taskId, targetRef: 'main' }, deps(repo)).stdout) as { action: string };
     expect(live.action).toBe('none');
     expect(readLease(repo, taskId).classification).toBe('reserving');
@@ -965,7 +727,7 @@ describe('claim verbs', () => {
     // file beside a valid owner record. Release must still make the task
     // available, and never leave an ownerless directory that no verb can clear.
     const repo = repoWithSprint();
-    expect(claimSprintCommand(claimOptions(repo, 'wire the claim verbs'), deps(repo)).exitCode).toBe(0);
+    seedClaim(repo);
     const taskId = canonicalTask(repo, 'wire the claim verbs').task_id;
     writeFileSync(join(leaseDirectory(repo, taskId), `.${LEASE_OWNER_FILE_NAME}.tmp-99999-1`), '{"partial"');
 
@@ -974,13 +736,13 @@ describe('claim verbs', () => {
     expect(released.exitCode).toBe(0);
     expect(readLease(repo, taskId).classification).toBe('available');
     expect(readdirSync(join(coordinationRoot(repo), 'retired-leases'))).toEqual([]);
-    expect(claimSprintCommand(claimOptions(repo, 'wire the claim verbs'), deps(repo, ['claim-2'])).exitCode).toBe(0);
+    seedClaim(repo, 'claim-2');
   });
 
   test('a release killed after the owner record left the lease directory leaves the task claimable', () => {
     if (process.platform === 'win32') return;
     const repo = repoWithSprint();
-    expect(claimSprintCommand(claimOptions(repo, 'wire the claim verbs'), deps(repo)).exitCode).toBe(0);
+    seedClaim(repo);
     const taskId = canonicalTask(repo, 'wire the claim verbs').task_id;
 
     // A real process, killed with SIGKILL at the first directory removal for
@@ -1007,17 +769,13 @@ describe('claim verbs', () => {
       reconcileSprintCommand({ taskId, targetRef: 'main' }, deps(repo)).stdout,
     ) as { classification: string; action: string };
     expect(reconciled.classification).toBe('available');
-    expect(claimSprintCommand(claimOptions(repo, 'wire the claim verbs'), deps(repo, ['claim-2'])).exitCode).toBe(0);
+    seedClaim(repo, 'claim-2');
   }, 60_000);
 
   test('reconcile refuses reviewing leases instead of bypassing publication reconciliation', () => {
     const repo = repoWithSprint();
     const taskId = canonicalTask(repo, 'wire the claim verbs').task_id;
-    expect(claimSprintCommand(claimOptions(repo, 'wire the claim verbs'), deps(repo)).exitCode).toBe(0);
-    expect(bindSprintCommand(
-      { claimId: 'claim-1', worktree: '/tmp/wt', branch: 'codex/example', unitRef: 'plans/plan-x.md' },
-      deps(repo),
-    ).exitCode).toBe(0);
+    claimAndBind(repo);
     const reviewing: LeaseOwnerRecordV2 = {
       ...readLease(repo, taskId).record!,
       record_schema: 2,
@@ -1039,24 +797,16 @@ describe('claim verbs', () => {
 
   test('malformed and missing options are usage errors, not refusals', () => {
     const repo = repoWithSprint();
-    const base = claimOptions(repo, 'wire the claim verbs');
-    expect(claimSprintCommand({ ...base, taskId: 'nope' }, deps(repo)).exitCode).toBe(2);
-    expect(claimSprintCommand({ ...base, expectedTaskRevision: 'nope' }, deps(repo)).exitCode).toBe(2);
-    expect(claimSprintCommand({ ...base, targetRef: undefined }, deps(repo)).exitCode).toBe(2);
-    expect(claimSprintCommand({ ...base, sessionId: undefined }, deps(repo)).exitCode).toBe(2);
     expect(reconcileSprintCommand({ taskId: 'nope' }, deps(repo)).exitCode).toBe(2);
-    expect(bindSprintCommand({ claimId: 'claim-1' }, deps(repo)).exitCode).toBe(2);
   });
 
   /** Claim row B and bind it to `/tmp/wt`, the shape every finish gate needs. */
   function claimAndBind(repo: string, claimId = 'claim-1'): string {
-    expect(claimSprintCommand(claimOptions(repo, 'wire the claim verbs'), deps(repo, [claimId])).exitCode)
-      .toBe(0);
-    expect(bindSprintCommand(
-      { claimId, worktree: '/tmp/wt', branch: 'codex/example', unitRef: 'plans/plan-x.md' },
-      deps(repo),
-    ).exitCode).toBe(0);
-    return canonicalTask(repo, 'wire the claim verbs').task_id;
+    const record = seedClaim(repo, claimId);
+    const bound = boundLeaseFixture(record, { executionWorktree: '/tmp/wt',
+      branch: 'codex/example', unitRef: 'plans/plan-x.md' });
+    writeLeaseOwnerDurably(repo, record.task_id, bound);
+    return record.task_id;
   }
 
   test('begin-completion refuses a target ref the claim was not taken against', () => {
@@ -1214,7 +964,7 @@ describe('claim verbs', () => {
     expect(JSON.parse(absent.stdout)).toMatchObject({ classification: 'available', action: 'none' });
   });
 
-  test('a completing lease refuses both release and steal', () => {
+  test('a completing lease refuses release', () => {
     const repo = repoWithSprint();
     const taskId = claimAndBind(repo);
     expect(beginCompletionSprintCommand(
@@ -1229,55 +979,13 @@ describe('claim verbs', () => {
     expect(released.exitCode).toBe(1);
     expect(released.stderr).toContain('cannot release a lease in state completing');
 
-    const stolen = stealSprintCommand(
-      { expectedClaimId: 'claim-1', reason: 'stalled', sessionId: 'session-2' },
-      deps(repo, ['claim-2']),
-    );
-    expect(stolen.exitCode).toBe(1);
-    expect(stolen.stderr).toContain('cannot steal a lease in state completing');
-
-    // Neither refusal touched the record.
+    // The refusal did not touch the record.
     const still = readLease(repo, taskId);
     expect(still.classification).toBe('completing');
     expect(still.record?.claim_id).toBe('claim-1');
     expect(still.record?.generation).toBe(1);
   });
 
-  test('claim records the canonical ref and generation 1; a steal increments it', () => {
-    const repo = repoWithSprint();
-    const first = claimSprintCommand(claimOptions(repo, 'wire the claim verbs'), deps(repo));
-    expect(first.exitCode).toBe(0);
-    const claimed = JSON.parse(first.stdout) as LeaseOwnerRecordV1;
-    expect(claimed.target_ref).toBe('main');
-    expect(claimed.generation).toBe(1);
-    expect(claimed.finish_transaction_key).toBeNull();
-
-    const stolen = stealSprintCommand(
-      { expectedClaimId: 'claim-1', reason: 'no progress', sessionId: 'session-2' },
-      deps(repo, ['claim-2']),
-    );
-    expect(stolen.exitCode).toBe(0);
-    const thief = JSON.parse(stolen.stdout) as LeaseOwnerRecordV1;
-    expect(thief.generation).toBe(2);
-    expect(thief.target_ref).toBe('main');
-    expect(readLease(repo, claimed.task_id).record?.generation).toBe(2);
-  });
-
-  test('an unresolvable ref or absent sprint path fails closed', () => {
-    const repo = repoWithSprint();
-    const base = claimOptions(repo, 'wire the claim verbs');
-    const badRef = claimSprintCommand({ ...base, targetRef: 'no-such-ref' }, deps(repo));
-    expect(badRef.exitCode).toBe(1);
-    expect(badRef.stderr).toContain('does not resolve to a commit');
-
-    const badPath = claimSprintCommand({ ...base, sprintPath: 'plans/sprints/absent.md' }, deps(repo));
-    expect(badPath.exitCode).toBe(1);
-    expect(badPath.stderr).toContain('is absent at');
-
-    const traversal = claimSprintCommand({ ...base, sprintPath: '../escape.md' }, deps(repo));
-    expect(traversal.exitCode).toBe(1);
-    expect(traversal.stderr).toContain('unsafe canonical sprint path');
-  });
 });
 
 /**
@@ -1463,7 +1171,7 @@ describe('complete-row is one locked transaction', () => {
 
   /** A claimed, bound row with the token this tree would hold. */
   function claimRow(repo: string, claimId: string): void {
-    const record = bindLeaseRecord(
+    const record = boundLeaseFixture(
       buildLeaseOwnerRecord({
         claimId,
         taskId: RACE_ID,
@@ -1474,11 +1182,10 @@ describe('complete-row is one locked transaction', () => {
         sessionId: 'race-session',
         sourceWorktree: repo,
       }),
-      { claimId, executionWorktree: repo, branch: 'codex/race', unitRef: 'plans/plan-race.md' },
+      { executionWorktree: repo, branch: 'codex/race', unitRef: 'plans/plan-race.md' },
     );
-    if (!record.ok) throw new Error(record.error);
     createLeaseDirectory(repo, RACE_ID);
-    writeLeaseOwnerDurably(repo, RACE_ID, record.record);
+    writeLeaseOwnerDurably(repo, RACE_ID, record);
     mkdirSync(join(repo, CLAIM_TOKEN_DIR), { recursive: true });
     writeFileSync(
       join(repo, CLAIM_TOKEN_DIR, `${RACE_ID}.claim`),
@@ -1582,20 +1289,18 @@ describe('complete-row is one locked transaction', () => {
     } finally { child.kill(); }
   }, 60_000);
 
-  test('a steal that lands mid-completion wins, and the row is not marked done', () => {
+  test('an owner replacement during completion fences the row update', () => {
     const repo = raceRepo();
     claimRow(repo, 'claim-original');
     const outcome = raceAgainst(repo, (root) => {
       const current = readLease(root, RACE_ID).record!;
-      const stolen = stealLeaseRecord(current, {
-        expectedClaimId: current.claim_id,
-        newClaimId: 'claim-thief',
-        sessionId: 'thief',
-        sourceWorktree: root,
-        reason: 'takeover under contention',
+      const replacement = buildLeaseOwnerRecord({
+        claimId: 'claim-thief', taskId: current.task_id, taskRevision: current.task_revision,
+        sprintPath: current.sprint_path, targetRef: current.target_ref, generation: current.generation + 1,
+        sessionId: 'thief', sourceWorktree: root,
+        stolenFrom: { claim_id: current.claim_id, reason: 'fixture ownership change' },
       });
-      if (!stolen.ok) throw new Error(stolen.error);
-      writeLeaseOwnerDurably(root, RACE_ID, stolen.record);
+      writeLeaseOwnerDurably(root, RACE_ID, replacement);
     });
 
     expect(outcome.exitCode).toBe(1);
@@ -1906,7 +1611,13 @@ test('a lease this completion could not release is refused before any write', ()
 
 import { dirname } from 'path';
 import { assertOwnedTrashDirectory, worktreeTrashNames } from '../src/effects/state/worktree-trash';
-import { cleanupExactWorktree, removeExactWorktree, recordCreatedWorktree, withWorktreeTopologyLock, sweepManagedWorktrees as productionSweep } from '../src/effects/state/coordination-worktree-topology';
+import {
+  cleanupExactWorktree,
+  removeExactWorktree,
+  recordCreatedWorktree,
+  withWorktreeTopologyLock,
+  sweepManagedWorktrees as productionSweep,
+} from '../src/effects/state/coordination-worktree-topology';
 
 const sweepManagedWorktrees: typeof productionSweep = (root, cwd, env, options) => productionSweep(root, cwd, env, { deadlineMs: 60_000, ...options });
 
@@ -2207,9 +1918,8 @@ describe('exact cleanup and contract-worktree start sweep', () => {
         const record = recordFor('sweep', 'sweep-claim');
         createLeaseDirectory(f.root, record.task_id);
         if (condition === 'leased') {
-          const transition = bindLeaseRecord(record, { claimId: record.claim_id, executionWorktree: f.path, branch: 'codex/demo', unitRef: 'fixture' });
-          if (!transition.ok) throw new Error(transition.error);
-          writeLeaseOwnerDurably(f.root, record.task_id, transition.record);
+          const transition = boundLeaseFixture(record, { executionWorktree: f.path, branch: 'codex/demo', unitRef: 'fixture' });
+          writeLeaseOwnerDurably(f.root, record.task_id, transition);
         }
       }
       if (condition === 'marker') { mkdirSync(join(f.root, '.ai/harness'), { recursive: true }); writeFileSync(join(f.root, '.ai/harness/active-worktree'), f.path); }

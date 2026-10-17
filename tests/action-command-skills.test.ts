@@ -324,28 +324,53 @@ describe("repo-harness action command skills", () => {
     expect(prd).toContain("repo-harness run check-task-workflow");
   });
 
-  test("product's Sprint mode consumes PRDs without re-deciding product intent", () => {
+  test("product backlog planning preserves issue authority and source intent", () => {
     const sprint = readReference("repo-harness-product", "sprint.md");
 
-    expect(sprint).toContain("from-prd");
-    expect(sprint).toContain("> **Source PRD**");
-    expect(sprint).toContain("must be machine-checkable");
-    expect(sprint).toContain("For `contract` rows, invoke `$think`");
-    expect(sprint).toContain("For `inline` rows, do not create a new `plans/plan-*.md` or task contract");
+    expect(sprint).toContain("The GitHub issue and PR");
+    expect(sprint).toContain("Link each issue to its source requirement");
+    expect(sprint).toContain("Keep product intent fixed when deriving work from an approved PRD");
+    expect(sprint).toContain("Use test commands or observable");
+    expect(sprint).toContain("Do not mint task IDs, contracts, offers or leases");
+    expect(sprint).toContain("This route plans work. It does not dispatch a worker or start a task");
   });
 
-  test("product's Goal mode requires detailed PRD or Sprint context before native goal continuation", () => {
+  test("product Goal mode binds native continuation to the current issue and claim", () => {
     const goal = readReference("repo-harness-product", "goal.md");
 
     expect(goal).toContain("/goal");
     expect(goal).toContain("Codex or Claude");
     expect(goal).toContain("plans/prds/*.prd.md");
     expect(goal).toContain("plans/sprints/*.sprint.md");
-    expect(goal).toContain("If no detailed PRD/Sprint artifact is attached or named");
-    expect(goal).toContain("Does not create, approve, or execute a Goal session without detailed PRD/Sprint context");
+    expect(goal).toContain("Read the current GitHub issue");
+    expect(goal).toContain("assignees, all comments");
+    expect(goal).toContain("linked PRs");
+    expect(goal).toContain("Issue: <GitHub issue URL>");
+    expect(goal).toContain("Claim: <current owner or explicit handoff");
+    expect(goal).toContain("Re-read the issue and claim state before execution and on resume");
+    expect(goal).toContain("If the issue is missing or cannot be read, stop before execution");
+    expect(goal).toContain("If another owner has an active claim, coordinate with that owner");
+    expect(goal).toContain("planning references");
+    expect(goal).toContain("Do not mint task IDs, contracts, offers or leases");
+    expect(goal).not.toMatch(/capture-plan|contract worktree|from-prd|row id/);
     expect(goal).toContain("Preserve host-native `/goal` ownership");
     expect(goal).toContain("use the user's language unless repo-local instructions require otherwise");
     expect(goal).not.toContain("concise Chinese status");
+  });
+
+  test("product routes preserve one task authority across planning and Goal preparation", () => {
+    const router = readSkillPackage("repo-harness-product");
+    expect(router).toContain("The GitHub issue and PR own task identity, claim, status and dependencies");
+    expect(router).toContain("Deferred work stays in GitHub issues");
+    expect(router).not.toContain("tasks/todos.md");
+
+    for (const mode of ["prd", "sprint", "goal"]) {
+      const reference = readReference("repo-harness-product", `${mode}.md`);
+      expect(reference).toContain("GitHub issue");
+      expect(reference).not.toMatch(/capture-plan|contract worktree|through a task contract|the contract governs/);
+    }
+    expect(readReference("repo-harness-product", "prd.md"))
+      .toContain("copy the approved direction into the GitHub issue brief");
   });
 
   test("chatgpt's setup mode separates browser/session from MCP connector setup", () => {

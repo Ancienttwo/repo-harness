@@ -1,84 +1,141 @@
-schemaVersion: archcontext.node/v2
-id: capability.runtime-harness.agent-runtime-effects
-kind: capability
-name: Agent Runtime Effects
-status: active
-summary: Owns the provider-neutral, at-most-once Agent Runtime Effect V2 boundary for the closed Herdr CLI Agent adapter, covering inbox notification and durable task-offer wake.
-responsibilities:
-  - Validate closed runtime capability, effect intent, Host action, observation and current schemas.
-  - Bind every effect to one exact subject -- a persisted Task message, or one EngineerOffersV1 snapshot revision -- plus one current recipient fence and one current Engineer Binding endpoint.
-  - Arm at most one durable wake per Engineer Binding on the exact empty-to-eligible offer transition, superseding an unstarted wake inside a bounded coalescing window and never opening a second concurrent wake.
-  - Refuse a wake Host action before it runs when the Binding, capability observation or authorization revision moved, and never place Work Package selection, claim authority or a claim token in a wake.
-  - Persist intent and effect_started before admitting at most one closed Host adapter action.
-  - Admit only the herdr-cli-agent adapter; Herdr receives a bounded inbox-control reference and never a message body or generic command.
-  - Treat only an exact persisted inbox receipt as positive delivery evidence for notification and only an exact controller-step receipt bound to the effect control reference for a wake; a process exit code alone is never proof and ambiguous Host outcomes become reconciliation_required without retry or fallback.
-  - Expose due wakes through an effect-level subscription seam a non-interactive controller consumes without the CLI, and permit scheduled polling only under an explicit controller policy flag.
-  - Project delivery and reachability as read-model facts while leaving Task, Lease, Collaboration, Publication and Acceptance authorities unchanged.
-  - Refuse new capability records and effect intents while a Provider Thread V1 store exists without the exact migration receipt; no steady-state alias or dual reader exists.
-  - Exclude automatic endpoint creation, Agent process ownership, transcript semantics, provider/model routing and implicit or remote terminal routing.
-source:
-  include:
-    - src/core/engineers/agent-runtime-effect.ts
-    - src/effects/engineers/agent-runtime-effect-store.ts
-    - src/effects/engineers/agent-runtime-feature.ts
-    - src/effects/engineers/agent-runtime-adapters/**
-  entrypoints:
-    - id: entrypoint.agent-runtime-effects.prepare
-      path: src/effects/engineers/agent-runtime-effect-store.ts
-      symbols:
-        - name: currentBinding
-          sinks:
-            - id: sink.agent-runtime-effects.current-binding
-              path: src/effects/engineers/binding-store.ts
-              symbol: readEngineerBindingStatus
-        - name: taskEndpointAndReference
-          sinks:
-            - id: sink.agent-runtime-effects.persisted-task-message
-              path: src/effects/fleet/task-inbox.ts
-              symbol: readTaskMessageDelivery
-    - id: entrypoint.agent-runtime-effects.wake
-      path: src/effects/engineers/agent-runtime-effect-store.ts
-      symbols:
-        - name: recordEngineerOfferSnapshot
-          sinks:
-            - id: sink.agent-runtime-effects.offer-wake-decision
-              path: src/core/engineers/agent-runtime-effect.ts
-              symbol: decideAgentRuntimeOfferWake
-        - name: recordAgentRuntimeControllerStep
-          sinks:
-            - id: sink.agent-runtime-effects.controller-step-receipt
-              path: src/core/engineers/agent-runtime-effect.ts
-              symbol: buildAgentRuntimeControllerStepReceipt
-    - id: entrypoint.agent-runtime-effects.start
-      path: src/effects/engineers/agent-runtime-effect-store.ts
-      symbols:
-        - name: startAgentRuntimeEffect
-          sinks:
-            - id: sink.agent-runtime-effects.started-observation
-              path: src/core/engineers/agent-runtime-effect.ts
-              symbol: buildAgentRuntimeEffectObservation
-    - id: entrypoint.agent-runtime-effects.observe
-      path: src/effects/engineers/agent-runtime-effect-store.ts
-      symbols:
-        - name: observeAgentRuntimeEffect
-          sinks:
-            - id: sink.agent-runtime-effects.reconciliation-observation
-              path: src/core/engineers/agent-runtime-effect.ts
-              symbol: buildAgentRuntimeEffectObservation
-        - name: receiptEvidence
-          sinks:
-            - id: sink.agent-runtime-effects.receipt-evidence
-              path: src/effects/fleet/task-inbox.ts
-              symbol: readTaskMessageDelivery
-notes:
-  - Runtime adapters receive only a bounded control reference; message content remains in the authoritative Task Inbox and offer content remains in the authoritative offers document.
-  - A wake is a hint, never a TaskOffer, Lease or WorkEnvelope; the awakened controller re-reads current offers and acquires only through the ordinary scheduling seam.
-  - Provider Thread V1 has no steady-state reader or command alias; its migration command was removed and only the migration-receipt guard remains.
-extensions:
-  contractFiles:
-    agents: src/core/engineers/AGENTS.md
-    claude: src/core/engineers/CLAUDE.md
-  lspProfile: typescript-lsp
-  verification:
-    - bun run test:files tests/unit/r1-provider-neutral-agent-runtime.test.ts tests/unit/r1-agent-runtime-adapters.test.ts tests/unit/issue-281-task-offer-wake.test.ts tests/cli/engineer.test.ts tests/cli/mcp-engineer-tools.test.ts --timeout 60000
-    - bun run check:type
+{
+  "schemaVersion": "archcontext.node/v2",
+  "id": "capability.runtime-harness.agent-runtime-effects",
+  "kind": "capability",
+  "name": "Agent Runtime Effects",
+  "status": "active",
+  "summary": "Owns the provider-neutral, at-most-once Agent Runtime Effect V2 boundary for the closed Herdr CLI Agent adapter, covering inbox notification and durable task-offer wake.",
+  "responsibilities": [
+    "Validate closed runtime capability, effect intent, Host action, observation and current schemas.",
+    "Bind every effect to one exact subject -- a persisted Task message, or one EngineerOffersV1 snapshot revision -- plus one current recipient fence and one current Engineer Binding endpoint.",
+    "Arm at most one durable wake per Engineer Binding on the exact empty-to-eligible offer transition, superseding an unstarted wake inside a bounded coalescing window and never opening a second concurrent wake.",
+    "Refuse a wake Host action before it runs when the Binding, capability observation or authorization revision moved, and never place Work Package selection, claim authority or a claim token in a wake.",
+    "Persist intent and effect_started before admitting at most one closed Host adapter action.",
+    "Admit only the herdr-cli-agent adapter; Herdr receives a bounded inbox-control reference and never a message body or generic command.",
+    "Treat only an exact persisted inbox receipt as positive delivery evidence for notification and only an exact controller-step receipt bound to the effect control reference for a wake; a process exit code alone is never proof and ambiguous Host outcomes become reconciliation_required without retry or fallback.",
+    "Expose due wakes through an effect-level subscription seam a non-interactive controller consumes without the CLI, and permit scheduled polling only under an explicit controller policy flag.",
+    "Project delivery and reachability as read-model facts while leaving Task, Lease, Collaboration, Publication and Acceptance authorities unchanged.",
+    "Refuse new capability records and effect intents while a Provider Thread V1 store exists without the exact migration receipt; no steady-state alias or dual reader exists.",
+    "Exclude automatic endpoint creation, Agent process ownership, transcript semantics, provider/model routing and implicit or remote terminal routing."
+  ],
+  "source": {
+    "include": [
+      "src/core/engineers/agent-runtime-effect.ts",
+      "src/effects/engineers/agent-runtime-effect-store.ts",
+      "src/effects/engineers/agent-runtime-feature.ts",
+      "src/effects/engineers/agent-runtime-adapters/**"
+    ],
+    "entrypoints": [
+      {
+        "id": "entrypoint.agent-runtime-effects.prepare",
+        "path": "src/effects/engineers/agent-runtime-effect-store.ts",
+        "symbols": [
+          {
+            "name": "currentBinding",
+            "sinks": [
+              {
+                "id": "sink.agent-runtime-effects.current-binding",
+                "path": "src/effects/engineers/binding-store.ts",
+                "symbol": "readEngineerBindingStatus"
+              }
+            ]
+          },
+          {
+            "name": "taskEndpointAndReference",
+            "sinks": [
+              {
+                "id": "sink.agent-runtime-effects.persisted-task-message",
+                "path": "src/effects/fleet/task-inbox.ts",
+                "symbol": "readTaskMessageDelivery"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "entrypoint.agent-runtime-effects.wake",
+        "path": "src/effects/engineers/agent-runtime-effect-store.ts",
+        "symbols": [
+          {
+            "name": "recordEngineerOfferSnapshot",
+            "sinks": [
+              {
+                "id": "sink.agent-runtime-effects.offer-wake-decision",
+                "path": "src/core/engineers/agent-runtime-effect.ts",
+                "symbol": "decideAgentRuntimeOfferWake"
+              }
+            ]
+          },
+          {
+            "name": "recordAgentRuntimeControllerStep",
+            "sinks": [
+              {
+                "id": "sink.agent-runtime-effects.controller-step-receipt",
+                "path": "src/core/engineers/agent-runtime-effect.ts",
+                "symbol": "buildAgentRuntimeControllerStepReceipt"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "entrypoint.agent-runtime-effects.start",
+        "path": "src/effects/engineers/agent-runtime-effect-store.ts",
+        "symbols": [
+          {
+            "name": "startAgentRuntimeEffect",
+            "sinks": [
+              {
+                "id": "sink.agent-runtime-effects.started-observation",
+                "path": "src/core/engineers/agent-runtime-effect.ts",
+                "symbol": "buildAgentRuntimeEffectObservation"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "entrypoint.agent-runtime-effects.observe",
+        "path": "src/effects/engineers/agent-runtime-effect-store.ts",
+        "symbols": [
+          {
+            "name": "observeAgentRuntimeEffect",
+            "sinks": [
+              {
+                "id": "sink.agent-runtime-effects.reconciliation-observation",
+                "path": "src/core/engineers/agent-runtime-effect.ts",
+                "symbol": "buildAgentRuntimeEffectObservation"
+              }
+            ]
+          },
+          {
+            "name": "receiptEvidence",
+            "sinks": [
+              {
+                "id": "sink.agent-runtime-effects.receipt-evidence",
+                "path": "src/effects/fleet/task-inbox.ts",
+                "symbol": "readTaskMessageDelivery"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "notes": [
+    "Runtime adapters receive only a bounded control reference. Existing message and offer evidence stays in its owning store.",
+    "A wake is a hint. It does not grant TaskOffer, Lease or WorkEnvelope authority. The scheduling acquisition seam is retired.",
+    "Provider Thread V1 has no steady-state reader or command alias; its migration command was removed and only the migration-receipt guard remains."
+  ],
+  "extensions": {
+    "contractFiles": {
+      "agents": "src/core/engineers/AGENTS.md",
+      "claude": "src/core/engineers/CLAUDE.md"
+    },
+    "lspProfile": "typescript-lsp",
+    "verification": [
+      "bun run test:files tests/unit/r1-provider-neutral-agent-runtime.test.ts tests/unit/r1-agent-runtime-adapters.test.ts tests/unit/issue-281-task-offer-wake.test.ts --timeout 60000",
+      "bun run check:type"
+    ]
+  }
+}

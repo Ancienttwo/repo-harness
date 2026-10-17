@@ -3,7 +3,6 @@ import type {
   WorkflowProfile,
   WorkflowProfileSignals,
 } from '../workflow/profile';
-import type { EvaluateReadinessResult } from '../workflow/operation-readiness';
 import type {
   LeaseState,
   LeaseStolenFrom,
@@ -79,31 +78,21 @@ export interface EffectiveStateV1 {
   readonly state_version: number;
   readonly state_revision: string;
   /**
-   * Four typed revisions partition the former single authority+subject+
-   * evidence+projection mix (LOOP-03/LOOP-08 audit). `state_revision` above
-   * stays the untouched all-source union (LSC-05 owns allocation); these are
-   * additive and each computed once per bucket (LSC-04).
+   * Revisions separate authority, the observed Git subject and display
+   * projections. `state_revision` is the hash of all current inputs.
    */
   readonly authority_revision: string;
   readonly subject_revision: string;
-  readonly evidence_revision: string;
   readonly projection_revision: string;
   /**
    * Pure content hash over exactly {subject_revision, completed-task markers
-   * derived from the plan text, evidence_revision, the hard blocker set,
-   * allowed_paths}. No projection, time, or PID input feeds it.
+   * derived from the plan text, the hard blocker set}. No projection, time, or PID input feeds it.
    */
   readonly progress_token: string;
   readonly authoritative_plan: {
     readonly path: string;
     readonly status: SnapshotPlanState;
   } | null;
-  readonly contract: {
-    readonly path: string;
-    readonly status: string | null;
-    readonly plan: string | null;
-  } | null;
-  readonly task_profile: string | null;
   readonly workflow_profile: WorkflowProfile | null;
   readonly requested_workflow_profile: string | null;
   readonly risk_floor: WorkflowProfile;
@@ -114,27 +103,12 @@ export interface EffectiveStateV1 {
    * registry, an ownership blocker, or capability ids the caller declared.
    */
   readonly capability_ownership: CapabilityOwnership | null;
-  readonly allowed_paths: readonly string[];
   readonly next_action: string | null;
   readonly guidance: string | null;
   readonly blockers: readonly string[];
   readonly stale_sources: readonly string[];
   readonly conflicting_sources: readonly string[];
   readonly source_hashes: Readonly<Record<string, string>>;
-  readonly review: EffectiveStateSource & {
-    readonly recommendation: string | null;
-    readonly recorded_subject_sha256: string | null;
-    readonly recorded_target_revision: string | null;
-  };
-  readonly external_acceptance: EffectiveStateSource & {
-    readonly status: string | null;
-  };
-  readonly checks: EffectiveStateSource & {
-    readonly status: string | null;
-    readonly reason?: string | null;
-    readonly result_refs?: readonly { readonly execution_id: string | null; readonly run_file: string | null }[];
-  };
-  readonly active_sprint: EffectiveStateSource;
   readonly worktree: EffectiveStateSource & {
     readonly current: string;
     readonly owner: string | null;
@@ -142,31 +116,19 @@ export interface EffectiveStateV1 {
   readonly handoff: EffectiveStateSource;
   readonly resume: EffectiveStateSource;
   readonly current_snapshot: EffectiveStateSource;
-  /**
-   * LSC-07: additive shared-readiness projection. `evaluateReadiness`
-   * (operation `'stop'`, scoping its `nextAction` to the Stop gate) computed
-   * purely from inputs this projector already has -- per-operation
-   * `resolve()` decisions, contract presence, worktree ownership,
-   * review/external/checks freshness, and `blockers`. Null only when
-   * `workflow_profile` itself is unavailable (`riskResolution` not ok);
-   * every other existing field keeps byte-identical semantics.
-   */
-  readonly readiness: EvaluateReadinessResult | null;
 }
 
 export type EffectiveState = EffectiveStateV1;
 
 /**
- * The six continuation routes. There is deliberately no `ask`/`wait` member:
+ * The continuation routes. There is deliberately no `ask`/`wait` member:
  * blocked and needs-user states collapse into `halt`, whose `reason` carries
- * the existing blocker/plan-status/sprint-status vocabulary.
+ * the blocker or plan status.
  */
 export type ContinuationRoute =
   | 'continue_active_plan'
-  | 'advance_sprint'
   | 'verify_or_finish'
   | 'halt'
-  | 'complete'
   | 'idle';
 
 /**
@@ -312,7 +274,6 @@ export interface BoardDiagnosticsV1 extends BoardOwnershipDiagnosticsV1 {
 /** Existing command strings, never re-implemented logic. Null means not offered. */
 export interface BoardActionsV1 {
   readonly release: string | null;
-  readonly steal: string | null;
   readonly reconcile: string | null;
   readonly publication_reconcile: string | null;
   readonly publication_recover: string | null;

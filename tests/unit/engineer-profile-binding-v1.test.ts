@@ -1,3 +1,4 @@
+import { seedEngineerBinding } from '../helpers/engineer-state-fixture';
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'child_process';
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
@@ -26,7 +27,6 @@ import {
   type ModuleEngineerProfileV1,
 } from '../../src/core/engineers/profile-binding';
 import { listEngineerProfiles } from '../../src/effects/engineers/profile-store';
-import { bindEngineer } from '../../src/effects/engineers/binding-store';
 
 const profile: ModuleEngineerProfileV1 = {
   protocol: ENGINEER_PROFILE_PROTOCOL,
@@ -119,7 +119,7 @@ describe('ModuleEngineerProfileV1', () => {
     const root = profileRepository();
     execFileSync('git', ['add', 'agents/engineers'], { cwd: root });
     const baseline = listEngineerProfiles(root).find((item) => item.profile.engineer_id === profile.engineer_id)!;
-    const current = bindEngineer(root, {
+    seedEngineerBinding(root, {
       engineer_id: profile.engineer_id,
       idempotency_key: 'capability-revision-baseline',
       provider: 'codex',
@@ -146,18 +146,6 @@ describe('ModuleEngineerProfileV1', () => {
     const capabilityChanged = listEngineerProfiles(root).find((item) => item.profile.engineer_id === profile.engineer_id)!;
     expect(capabilityChanged.capability_revision).not.toBe(baseline.capability_revision);
     expect(capabilityChanged.engineer_contract_revision).not.toBe(baseline.engineer_contract_revision);
-    expect(() => bindEngineer(root, {
-      engineer_id: profile.engineer_id,
-      idempotency_key: 'capability-revision-stale',
-      provider: 'codex',
-      provider_thread_id: 'thread-new-contract',
-      host_id: 'local',
-      engineer_contract_revision: capabilityChanged.engineer_contract_revision,
-      expected_current_digest: current.current_digest,
-      expected_binding_generation: current.binding_generation,
-      expected_binding_id: current.current_binding_id,
-      expected_engineer_contract_revision: capabilityChanged.engineer_contract_revision,
-    })).toThrow('expected binding current does not match authoritative current.json');
 
     const sopPath = join(root, profile.sop_ref);
     writeFileSync(sopPath, Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), readFileSync(sopPath)]));

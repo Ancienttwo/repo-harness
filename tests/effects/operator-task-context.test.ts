@@ -1,3 +1,4 @@
+import { leaseOwnerPath } from '../helpers/sprint-fixture';
 import { afterEach, expect, spyOn, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -9,7 +10,7 @@ import { buildLeaseOwnerRecord, deriveTaskRevision, serializeLeaseOwnerRecord } 
 import { readOperatorTaskContext } from '../../src/effects/operator/task-context';
 import { startOperatorServer } from '../../src/effects/operator/server';
 import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
-import { leaseOwnerPath } from '../../src/effects/state/coordination-lease-store';
+
 import * as boardModule from '../../src/effects/state/resolve-board';
 import { readOperatorPlanningSnapshot } from '../../src/effects/operator/repository-snapshot';
 import { decodeOperatorPlanningSnapshot } from '../../src/core/operator/planning-snapshot';

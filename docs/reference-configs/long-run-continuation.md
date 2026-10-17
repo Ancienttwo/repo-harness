@@ -18,22 +18,20 @@ One tick, in order:
 
 Rules that make the tick safe to repeat:
 
-- `state next` is read-only and deterministic. Identical repo bytes and identical receipt ledger bytes yield byte-identical JSON; it never creates a plan, contract, or worktree, and never advances the sprint. Row selection stays with `sprint-backlog`; the envelope only names the command to run. The closing envelope is sampled before its turn receipt exists; only the post-receipt envelope can observe that receipt and trip the breaker.
+- `state next` is read-only and deterministic. Identical repo bytes and identical receipt ledger bytes yield byte-identical JSON; it never creates a plan, contract, or worktree, and never advances the sprint. The closing envelope is sampled before its turn receipt exists; only the post-receipt envelope can observe that receipt and trip the breaker.
 - One tick executes one unit or one halt — never two units, never a unit plus a "while I am here" extra.
-- The tick's working directory is the unit's own worktree. `advance_sprint` on a contract row starts a linked `codex/<slug>` worktree and moves the active-plan marker into it; every following tick for that unit runs there. `.ai/harness/active-worktree` is per-tree runtime state, so running `state next` in the primary tree describes the primary tree, not the in-flight contract.
+- The tick's working directory is the unit's own worktree. `.ai/harness/active-worktree` is per-tree runtime state, so running `state next` in the primary tree describes the primary tree, not the in-flight contract.
 
 ## Per-Route Host Action
 
 | Route | Meaning | Host action |
 |---|---|---|
 | `continue_active_plan` | The active plan has an open task; `reason` carries `next_action:<step>` | Run the envelope's `command` (`repo-harness state resolve --json`) for the full brief, then dispatch bounded execution on that next task |
-| `advance_sprint` | No active plan, and the Approved sprint still has a pending row | Run the envelope's `command` verbatim. `start-task` requires `--task` and never selects a row itself, so the envelope names the first pending row: `repo-harness run sprint-backlog start-task --task '<row task>' --execute` |
 | `verify_or_finish` | The active plan's tasks are all checked off | Run the completion gate — `repo-harness run verification-plan execute --repo . --contract <contract> --report-file .ai/harness/runs/<run-id>.report.json`, then `repo-harness run change-assessment prepare --contract <contract>`, then semantic review, then `repo-harness run acceptance-receipt record`, then `repo-harness run verify-sprint` — and only then `repo-harness run contract-worktree finish`. The envelope's `command` field names only the gate's final verification step (`repo-harness run verify-sprint`); the full gate sequence and the `finish` step are protocol knowledge from this document, not envelope-supplied |
-| `halt` | A blocker, an unapproved plan/sprint, unusable sprint authority, a stall, or an unreadable ledger; `command` is `null` | Surface `reason` to the operator and stop. Never retry a halt without a state change — the same bytes produce the same halt |
-| `complete` | Every backlog row of the active sprint is done | Stop the loop |
-| `idle` | No active plan and no active sprint | Stop the loop |
+| `halt` | A blocker, an unapproved or missing plan, a stall, or an unreadable ledger; `command` is `null` | Surface `reason` to the operator and stop. Never retry a halt without a state change — the same bytes produce the same halt |
+| `idle` | No active plan | Stop the loop |
 
-`halt` carries the existing vocabulary rather than inventing one: `blockers:<list>`, `plan_status:<status>`, `sprint_status:<status>`, `sprint_backlog:empty`, `sprint_backlog:unknown_row_status`, `active_sprint:stale`, `stale:active_plan_marker`, `no_progress`, `attempt_ledger_unreadable`. There is no `ask` or `wait` route: a needs-user state is a halt whose reason points at the blocker, the contract's Stop Conditions, or the handoff.
+`halt` carries the existing vocabulary rather than inventing one: `blockers:<list>`, `plan_status:<status>`, `stale:active_plan_marker`, `no_progress`, `attempt_ledger_unreadable`. There is no `ask` or `wait` route: a needs-user state is a halt whose reason points at the blocker, the contract's Stop Conditions, or the handoff.
 
 ## Attempt Receipts
 
@@ -72,7 +70,7 @@ A closeout ownership conflict is a helper-level refusal, not an envelope halt re
 |---|---|
 | `no_progress` | Investigate why the unit stopped moving. Then either make real progress (a token change clears the breaker by itself), or, if the turns were legitimately non-material, record `repo-harness state attempt --unit-ref <unit> --outcome resumed` to override explicitly |
 | `attempt_ledger_unreadable` | Inspect `.ai/harness/runs/continuation/attempts.jsonl`, then truncate it. The ledger is liveness evidence, not authority: resetting it loses nothing durable and the loop resumes from the same envelope |
-| `blockers:*`, `plan_status:*`, `sprint_status:*`, `sprint_backlog:*`, `active_sprint:stale`, `stale:active_plan_marker` | Fix the named authority artifact. These are the existing Effective State and sprint vocabularies; the envelope does not add remedies of its own |
+| `blockers:*`, `plan_status:*`, `stale:active_plan_marker` | Fix the named authority artifact. These are the existing Effective State vocabulary; the envelope does not add remedies of its own |
 
 ## The Receipt-Invisibility Invariant
 

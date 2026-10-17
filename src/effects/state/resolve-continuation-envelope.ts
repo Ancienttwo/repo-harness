@@ -1,7 +1,6 @@
 import { projectContinuationEnvelope } from '../../core/state/project-continuation-envelope';
 import type { ContinuationEnvelopeV1 } from '../../core/state/types';
 import { readAttemptLedger } from './attempt-ledger-store';
-import { readText } from './collect-state-inputs';
 import { resolveEffectiveStateReadOnly } from './resolve-effective-state';
 
 /**
@@ -12,9 +11,6 @@ import { resolveEffectiveStateReadOnly } from './resolve-effective-state';
  * publishes no cache, so this command mutates nothing. The risk input matches
  * the existing whole-repo inspection convention (`buildStateSnapshot`, the Stop
  * hook's `resolveStopEffectiveState`): no target paths, `operation: 'inspect'`.
- *
- * The active sprint file is read here and nowhere else; `readText` keeps the
- * marker's path confined to the repository exactly as the resolver does.
  *
  * The attempt ledger is read the same way -- read-only, absent-tolerant, and
  * outside every state input bundle -- so it feeds the circuit breaker without
@@ -28,12 +24,8 @@ export function resolveContinuationEnvelope(
     targetPaths: [],
     operationKind: 'inspect',
   });
-  const sprintPath = state.active_sprint.path;
   return projectContinuationEnvelope({
     state,
-    sprintText: sprintPath && state.active_sprint.freshness === 'fresh'
-      ? readText(cwd, sprintPath)
-      : null,
     attemptLedger: readAttemptLedger(cwd),
   });
 }

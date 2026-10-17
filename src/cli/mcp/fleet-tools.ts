@@ -11,19 +11,8 @@ import { randomUUID } from 'crypto';
 import { realpathSync } from 'fs';
 import { resolve } from 'path';
 
-import {
-  acquireFleetTask,
-  collectFleetOffers,
-  FleetOffersError,
-} from '../../effects/fleet/acquire';
-import {
-  MergeReadinessError,
-  resolvePublicationReadiness,
-} from '../../effects/publication/merge-readiness';
-import {
-  reopenPublication,
-  takeoverPublication,
-} from '../../effects/publication/publication-lifecycle';
+import { MergeReadinessError, resolvePublicationReadiness } from '../../effects/publication/merge-readiness';
+import { reopenPublication, takeoverPublication } from '../../effects/publication/publication-lifecycle';
 import { PublicationLifecycleError } from '../../core/publication/publication-lifecycle';
 import {
   readRepoHarnessRegistrySnapshot,
@@ -35,8 +24,6 @@ import { redactMcpText } from './redaction';
 import type { McpPolicy } from './types';
 
 export const FLEET_MCP_TOOL_NAMES = [
-  'fleet_offers',
-  'fleet_acquire',
   'publication_readiness',
   'publication_reopen',
   'publication_takeover',
@@ -45,8 +32,6 @@ export const FLEET_MCP_TOOL_NAMES = [
 export type FleetMcpToolName = typeof FLEET_MCP_TOOL_NAMES[number];
 
 const FLEET_MCP_PARAMETER_NAMES: Readonly<Record<FleetMcpToolName, readonly string[]>> = Object.freeze({
-  fleet_offers: ['repo_id', 'repo_path'],
-  fleet_acquire: ['repo_id', 'repo_path', 'task_id', 'offer_revision', 'session_id', 'max_attempts', 'authorization_revision'],
   publication_readiness: ['repo_id', 'repo_path', 'publication_id', 'pr_number'],
   publication_reopen: ['repo_id', 'repo_path', 'task_id', 'claim_id', 'expected_generation', 'publication_id', 'expected_head_sha', 'authorization_revision'],
   publication_takeover: ['repo_id', 'repo_path', 'task_id', 'expected_claim_id', 'expected_generation', 'publication_id', 'expected_head_sha', 'reason', 'session_id', 'authorization_revision'],
@@ -73,7 +58,7 @@ export interface FleetMcpToolResult {
 interface FleetTarget {
   readonly repoRoot: string;
   readonly registeredRepo?: RepoHarnessRegisteredRepo;
-  /** Only an explicit repo_id/repo_path narrows fleet offers to one repo. */
+  /** An explicit repo_id/repo_path selects the publication repository. */
   readonly repoId?: string;
   readonly registry: RepoHarnessRegistrySnapshot;
 }
@@ -296,7 +281,7 @@ function assertMutationAuthorization(
   }
   const expectedRevision = nonNegativeInteger(args, 'authorization_revision');
   if (expectedRevision !== target.registry.authorizationRevision) {
-    throw new FleetMcpError('AUTHORIZATION_STALE', 'authorization_revision is stale; re-read fleet_offers or the repo capabilities and retry', {
+    throw new FleetMcpError('AUTHORIZATION_STALE', 'authorization_revision is stale; re-read the repo capabilities and retry', {
       expected_revision: expectedRevision,
     });
   }
@@ -311,16 +296,6 @@ function publicationEnvironment(): {
     gh_bin: process.env.REPO_HARNESS_GH_BIN,
     git_bin: process.env.REPO_HARNESS_GIT_BIN,
   };
-}
-
-function callFleetOffers(ctx: FleetMcpToolContext, args: Record<string, unknown>): FleetMcpToolResult {
-  const target = targetFromArgs(ctx, args);
-  const result = collectFleetOffers({
-    env: process.env,
-    repo_id: target.repoId,
-  });
-  audit(ctx, 'fleet_offers', 'ok', args);
-  return textResult(result);
 }
 
 function callPublicationReadiness(ctx: FleetMcpToolContext, args: Record<string, unknown>): FleetMcpToolResult {
@@ -375,35 +350,8 @@ function callPublicationTakeover(ctx: FleetMcpToolContext, args: Record<string, 
   return textResult({ ok: true, lease: record });
 }
 
-/** The MCP adapter passes assertions through to the canonical acquire effect. */
-function callFleetAcquire(ctx: FleetMcpToolContext, args: Record<string, unknown>): FleetMcpToolResult {
-  const target = targetFromArgs(ctx, args);
-  assertMutationAuthorization(ctx, target, args);
-  const repoId = target.registeredRepo?.id;
-  const taskId = optionalString(args, 'task_id');
-  const offerRevision = optionalString(args, 'offer_revision');
-  const authorizationRevision = nonNegativeInteger(args, 'authorization_revision');
-  const sessionId = optionalString(args, 'session_id');
-  const maxAttempts = args.max_attempts === undefined ? undefined : positiveInteger(args, 'max_attempts');
-  const result = acquireFleetTask({
-    env: process.env,
-    repo_id: repoId,
-    session_id: sessionId,
-    max_attempts: maxAttempts,
-    assertion: {
-      repo_id: repoId,
-      ...(taskId === undefined ? {} : { task_id: taskId }),
-      ...(offerRevision === undefined ? {} : { offer_revision: offerRevision }),
-      authorization_revision: authorizationRevision,
-    },
-  });
-  audit(ctx, 'fleet_acquire', result.ok ? 'ok' : 'failed', args, result.ok ? undefined : result.message);
-  return textResult(result);
-}
-
 function errorFromUnknown(error: unknown): FleetMcpToolResult {
   if (error instanceof FleetMcpError) return errorResult(error.code, error.message, error.details);
-  if (error instanceof FleetOffersError) return errorResult(error.code, error.message, { repo_id: error.repo_id });
   if (error instanceof MergeReadinessError) return errorResult(error.code, error.message);
   if (error instanceof PublicationLifecycleError) return errorResult(error.code, error.message, error.details);
   if (error instanceof Error) return errorResult('TOOL_FAILED', error.message);
@@ -423,24 +371,6 @@ function isBlocked(error: unknown): boolean {
 }
 
 export function buildFleetToolDefinitions(): FleetMcpToolDefinition[] {
-  const offersSchema = {
-    type: 'object',
-    properties: { ...optionalRepoProperties },
-    additionalProperties: false,
-  };
-  const acquireSchema = {
-    type: 'object',
-    properties: {
-      ...optionalRepoProperties,
-      task_id: { type: 'string' },
-      offer_revision: { type: 'string' },
-      session_id: { type: 'string' },
-      max_attempts: { type: 'number', minimum: 1, maximum: 16 },
-      ...authorizationProperty,
-    },
-    required: ['authorization_revision'],
-    additionalProperties: false,
-  };
   const readinessSchema = {
     type: 'object',
     properties: {
@@ -482,18 +412,6 @@ export function buildFleetToolDefinitions(): FleetMcpToolDefinition[] {
   };
   return [
     {
-      name: 'fleet_offers',
-      description: 'Return the deterministic FleetOffersV1 projection from the registry and canonical task boards.',
-      inputSchema: offersSchema,
-      annotations: READ_ONLY_ANNOTATIONS,
-    },
-    {
-      name: 'fleet_acquire',
-      description: 'Acquire one execution-ready task through the fleet acquisition effect and return WorkEnvelopeV1.',
-      inputSchema: acquireSchema,
-      annotations: MUTATION_ANNOTATIONS,
-    },
-    {
       name: 'publication_readiness',
       description: 'Return one fenced MergeReadinessV1 verdict using the publication readiness effect.',
       inputSchema: readinessSchema,
@@ -527,8 +445,6 @@ export function callFleetTool(
     const argumentError = fleetToolArgumentError(name, args);
     if (argumentError !== undefined) throw new FleetMcpError('INVALID_ARGUMENT', argumentError);
     switch (name) {
-      case 'fleet_offers': return callFleetOffers(ctx, args);
-      case 'fleet_acquire': return callFleetAcquire(ctx, args);
       case 'publication_readiness': return callPublicationReadiness(ctx, args);
       case 'publication_reopen': return callPublicationReopen(ctx, args);
       case 'publication_takeover': return callPublicationTakeover(ctx, args);

@@ -1,6 +1,6 @@
 # workflow-engine/execution-primitives 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-execution-primitives" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:5c3c82078d475efda143af60c9880a10e2758c784fa14d2c083809e83bcdb52f" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-execution-primitives" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:6a176f7c3c396b8ab08cd180d3fd785a48047e783860a33bf332ca47134c6493" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.workflow-engine.execution-primitives`(kind `capability`)
 > **Matched Prefixes**:`src/effects/process-runner.ts`、`src/effects/process-supervisor.ts`、`src/effects/process-group-launcher.ts`、`src/effects/expensive-run-lock.ts`、`src/effects/locking/**`、`src/effects/git/**`
@@ -59,7 +59,6 @@ flowchart LR
 - `calls` ← `component.contract-assets.contract-worktree-lifecycle` — Resolve the configured Git binary for worktree lifecycle commands
 - `calls` ← `component.contract-assets.planning-helpers` — Run each helper as a bounded child process
 - `calls` ← `component.contract-assets.template-projection` — Run init steps as bounded child processes
-- `calls` ← `capability.runtime-harness.delegated-runs` — Hold exclusive directory locks under the Git common directory and run child processes
 - `calls` ← `capability.runtime-harness.engineer-bindings` — Hold exclusive directory locks under the Git common directory
 - `calls` ← `capability.runtime-harness.engineer-scheduling` — Hold exclusive directory locks under the Git common directory
 - `calls` ← `component.evals-checks.evals-and-benchmarks` — Take the expensive-run lock before a costly benchmark profile runs
@@ -77,11 +76,9 @@ flowchart LR
 - `calls` ← `component.mcp-sidecar.host-setup` — Hold the MCP setup ownership lock
 - `calls` ← `component.mcp-sidecar.primary` — Read the worktree topology for the PM server scope
 - `calls` ← `component.mcp-sidecar.repo-policy-registry` — Run Git for repository roots and lock guarded writes
-- `calls` ← `component.pm-dispatch.primary` — Read the worktree topology before dispatch
 - `calls` ← `component.publication.primary` — Read the worktree topology and the Git common directory
 - `calls` ← `component.publication.provider-feedback` — Resolve the Git common directory for feedback records
 - `calls` ← `component.task-agent-host.primary` — Run Git through the process runner and hold task session locks
-- `calls` ← `component.task-fleet.primary` — Read the worktree topology during fleet acquire
 - `calls` ← `component.task-fleet.task-inbox` — Hold exclusive directory locks under the Git common directory for the task inbox
 - `calls` ← `component.workflow-state.continuation-ledger` — Serialize attempt ledger appends under a directory lock
 - `calls` ← `component.workflow-state.coordination-plane` — Take task and backlog locks and read the worktree topology

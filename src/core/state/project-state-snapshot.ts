@@ -4,6 +4,7 @@ export interface StateSnapshotCompatibilityFacts {
   readonly spec: 'present' | 'missing';
   readonly pending: 'none' | 'fresh' | 'stale';
   readonly activePlanMarker: string | null;
+  readonly contractPresent: boolean;
   readonly contractPath: string | null;
   readonly evidence: 'unchecked' | 'complete' | 'incomplete';
 }
@@ -32,7 +33,7 @@ export function projectStateSnapshot(
       plan,
       pending: facts.pending,
       worktree: markerProblem === 'foreign_worktree' ? 'foreign_marker' : 'current',
-      contract: state.contract ? 'present' : 'missing',
+      contract: facts.contractPresent ? 'present' : 'missing',
       contract_path: planPath && facts.contractPath ? 'present' : 'missing',
       evidence: planPath ? facts.evidence : 'unchecked',
     },

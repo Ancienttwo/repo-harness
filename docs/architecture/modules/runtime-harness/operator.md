@@ -1,6 +1,6 @@
 # runtime-harness/operator 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-operator" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:75633291eed568716796e859255019989725bdb6a2cc850eaa8aad431eebd4fc" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-operator" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:64be6c939e8d6015377e8fb77dfcceb2a4691e7bb86154c4a84a107d3987319f" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.operator`(kind `capability`)
 > **Matched Prefixes**:`src/core/operator/**`、`src/effects/operator/**`、`src/operator-web/**`、`src/cli/commands/operator.ts`、`src/cli/commands/catch-up.ts`、`src/cli/commands/module.ts`、`src/core/architecture/module-view.ts`、`src/core/docs/**`、`src/core/setup/**`、`src/effects/setup/**`、`src/cli/commands/setup-snapshot.ts`、`src/cli/commands/setup-check-child.ts`、`src/core/dev-activity/**`、`src/effects/dev-activity/**`、`src/effects/terminal/herdr-observation.ts`、`assets/operator/**`、`vite.operator.config.ts`
@@ -89,7 +89,7 @@ flowchart LR
   - `reads` → `capability.runtime-harness.global-runtime-reconciliation` — Read the committed architecture model through the shared ArchitectureModelReader
   - `reads` → `capability.runtime-harness.mcp-sidecar` — Resolve a registered repository root from the strict repo-harness registry snapshot
   - `calls` → `component.operator.view-projections` — Parse closed route requests and project or re-decode each observation before it leaves the server
-  - `reads` → `capability.organization.task-fleet` — Collect fleet offers and the fleet board for the console
+  - `reads` → `capability.organization.task-fleet` — Read retained per-repository task observations and the fleet board for the console
 - `component.operator.view-projections`:
   - `depends-on` → `capability.verification.acceptance-review` — Decode the module review prompt shape that the review prompt builder declares
   - `depends-on` → `component.operator.architecture-view` — Decode the module index and module detail shapes that the architecture view declares

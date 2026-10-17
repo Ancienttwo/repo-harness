@@ -1,3 +1,5 @@
+import type { LeaseOwnerRecord } from '../../src/core/state/coordination-identity';
+import { leaseDirectory, LEASE_OWNER_FILE_NAME } from '../../src/effects/state/coordination-lease-store';
 /**
  * Fixture helpers for backlog schema 2 sprints.
  *
@@ -12,6 +14,8 @@
  * product code may do it.
  */
 import { createHash } from 'crypto';
+import { mkdirSync, writeFileSync } from 'fs';
+import { join } from 'path';
 
 const FIXTURE_ID_DOMAIN = 'repo-harness-fixture-task-id';
 
@@ -46,4 +50,28 @@ export function fixtureBacklogTable(rows: readonly FixtureRow[]): string[] {
     '|---|----|--------|------|------|------------|------|',
     ...rows.map(fixtureRow),
   ];
+}
+
+/** Seed a historical token for completion and publication tests. */
+export function writeClaimTokenFixture(input: {
+  readonly worktree: string; readonly task_id: string; readonly claim_id: string;
+  readonly sprint: string; readonly task: string; readonly unit_ref: string;
+}): void {
+  const dir = join(input.worktree, '.ai/harness/sprint/claims');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, `${input.task_id}.claim`),
+    `claim_id=${input.claim_id}\ntask_id=${input.task_id}\nsprint=${input.sprint}\ntask=${input.task}\nunit_ref=${input.unit_ref}\n`);
+}
+
+/** Address the owner record in a real lease fixture. */
+export function leaseOwnerPath(cwd: string, taskId: string): string {
+  return join(leaseDirectory(cwd, taskId), LEASE_OWNER_FILE_NAME);
+}
+
+/** A historical bound row for tests of completion, publication and observation. */
+export function boundLeaseFixture(record: LeaseOwnerRecord, input: {
+  executionWorktree: string; branch: string; unitRef: string;
+}): LeaseOwnerRecord {
+  return { ...record, state: 'bound', execution_worktree: input.executionWorktree,
+    branch: input.branch, unit_ref: input.unitRef };
 }

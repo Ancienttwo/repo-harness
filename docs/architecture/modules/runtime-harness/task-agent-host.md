@@ -1,9 +1,9 @@
 # runtime-harness/task-agent-host 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-task-agent-host" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:8bc67fbeeae8295abf87cec4df7633a2b2daff78ba507f69bbcd99d3d88dad00" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-task-agent-host" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:ef75757b289fbd1152c224b249d60ebf5c6743bf56be76369d91f24f80f55486" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.task-agent-host`(kind `capability`)
-> **Matched Prefixes**:`src/effects/terminal/herdr.ts`、`src/effects/terminal/task-session.ts`、`src/effects/terminal/task-runtime-observation.ts`、`src/effects/terminal/task-worktree.ts`、`src/effects/terminal/task-role-profiles.ts`、`src/cli/commands/herdr.ts`、`src/cli/commands/herdr-skill.ts`、`assets/herdr/**`、`agents/fleet/**`、`.codex/agents/**`、`scripts/install-agent-fleet.sh`
+> **Matched Prefixes**:`src/effects/terminal/herdr.ts`、`src/effects/terminal/task-session.ts`、`src/effects/terminal/task-runtime-observation.ts`、`src/effects/terminal/task-worktree.ts`、`src/effects/terminal/task-role-profiles.ts`、`src/cli/commands/herdr.ts`、`src/cli/commands/herdr-skill.ts`、`assets/herdr/**`、`agents/fleet/**`、`.codex/agents/**`、`scripts/install-agent-fleet.sh`、`src/effects/terminal/coding-isolation.ts`、`src/effects/terminal/coding-session.ts`、`src/effects/terminal/oar-coding-host.ts`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
@@ -34,6 +34,7 @@ flowchart LR
 | `entrypoint.task-agent-host.session` | `src/effects/terminal/task-session.ts#startTaskApplicationHost` | `sink.task-agent-host.start` → `src/effects/terminal/task-session.ts#startTaskAgent` |
 | `entrypoint.task-agent-host.session` | `src/effects/terminal/task-session.ts#sendTaskRequest` | `sink.task-agent-host.send` → `src/effects/terminal/task-session.ts#nextSessionRound` |
 | `entrypoint.task-agent-host.session` | `src/effects/terminal/task-session.ts#collectTaskResult` | `sink.task-agent-host.collect` → `src/effects/terminal/task-session.ts#readTaskRequestResult` |
+| `entrypoint.task-agent-host.coding` | `src/effects/terminal/coding-session.ts#startCodingTaskAgent` | `sink.task-agent-host.coding` → `src/effects/terminal/task-session.ts#startTaskApplicationHost` |
 
 組件入口:
 
@@ -42,7 +43,7 @@ flowchart LR
 ### 1.3 規模信號
 
 - 規模量級:`20–50` 個文件 / `2000–5000` 行
-- 匹配前綴:`src/effects/terminal/herdr.ts`、`src/effects/terminal/task-session.ts`、`src/effects/terminal/task-runtime-observation.ts`、`src/effects/terminal/task-worktree.ts`、`src/effects/terminal/task-role-profiles.ts`、`src/cli/commands/herdr.ts`、`src/cli/commands/herdr-skill.ts`、`assets/herdr/**`、`agents/fleet/**`、`.codex/agents/**`、`scripts/install-agent-fleet.sh`
+- 匹配前綴:`src/effects/terminal/herdr.ts`、`src/effects/terminal/task-session.ts`、`src/effects/terminal/task-runtime-observation.ts`、`src/effects/terminal/task-worktree.ts`、`src/effects/terminal/task-role-profiles.ts`、`src/cli/commands/herdr.ts`、`src/cli/commands/herdr-skill.ts`、`assets/herdr/**`、`agents/fleet/**`、`.codex/agents/**`、`scripts/install-agent-fleet.sh`、`src/effects/terminal/coding-isolation.ts`、`src/effects/terminal/coding-session.ts`、`src/effects/terminal/oar-coding-host.ts`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
 ### 1.4 依賴邊界
@@ -62,7 +63,6 @@ flowchart LR
 - `calls` ← `component.global-runtime-reconciliation.primary` — Configure the required Herdr skill during global runtime setup
 - `calls` ← `component.mcp-sidecar.coding-profile` — Clean up task worktrees for coding workspaces
 - `calls` ← `component.mcp-sidecar.primary` — Start task agents and send task requests through Herdr
-- `calls` ← `capability.runtime-harness.pm-dispatch` — Start the fixed OAR coding host and deliver requests through the existing task session
 - `reads` ← `component.workflow-state.coordination-plane` — Confirm that the task runtime is closed before a worktree prune
 
 組件出向關係:
@@ -134,7 +134,7 @@ sequenceDiagram
 | --- | --- | --- |
 | `component.task-agent-host.primary` | 20–50 个文件 / 2000–5000 行 | Herdr 传输、OAR task session（启动、发送、收集、关闭）、task worktree、role profile、herdr 命令与安装的 persona 和插件资产 |
 
-`src/effects/terminal/` 是共享目录。本能力只列出 5 个文件。pm-dispatch 拥有 `coding-*` 与 `oar-coding-host.ts`。`herdr-observation.ts` 计划归 operator。
+`src/effects/terminal/` 是共享目录。本能力拥有 task session、`coding-isolation.ts`、`coding-session.ts` 和 `oar-coding-host.ts`。PM dispatch 已删除。
 
 ### 3.4 未决问题
 

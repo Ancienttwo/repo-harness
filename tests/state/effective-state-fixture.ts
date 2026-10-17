@@ -338,7 +338,7 @@ export const EFFECTIVE_STATE_SCENARIOS: readonly EffectiveStateScenario[] = [
   },
   {
     name: 'profile-below-strict-floor',
-    risk: { targetPaths: ['src/security/auth.ts'], operationKind: 'security' },
+    risk: { targetPaths: ['src/security/auth.ts'], operationKind: 'security', explicitOverride: 'routine' },
   },
   {
     name: 'deleted-cache-reconstruction',

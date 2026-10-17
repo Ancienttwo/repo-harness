@@ -1,3 +1,4 @@
+import { boundLeaseFixture } from '../helpers/sprint-fixture';
 import { candidate } from '../../scripts/merge-gate';
 import { deriveShipJournalKey } from '../../src/effects/publication/publication-lifecycle';
 import { describe, expect, test } from 'bun:test';
@@ -12,10 +13,14 @@ import {
   publicationSha256,
   replacePublicationMarker,
 } from '../../src/core/publication/publication-receipt';
-import { buildFeedbackDeliveryReceipt, buildFeedbackEvent, buildRepairDispatchProof, deriveReactionToken } from '../../src/core/publication/feedback';
+import {
+  buildFeedbackDeliveryReceipt,
+  buildFeedbackEvent,
+  buildRepairDispatchProof,
+  deriveReactionToken,
+} from '../../src/core/publication/feedback';
 import {
   beginLeaseCompletionRecord,
-  bindLeaseRecord,
   buildLeaseOwnerRecord,
   deriveTaskRevision,
   enterReviewingLeaseRecord,
@@ -40,9 +45,11 @@ import {
   writeFeedbackEvent,
   writeRepairDispatchProof,
 } from '../../src/effects/publication/feedback-store';
-import { publicationJournalEvidence, writePublicationReceiptCache } from '../../src/effects/publication/publication-receipt';
+import {
+  publicationJournalEvidence,
+  writePublicationReceiptCache,
+} from '../../src/effects/publication/publication-receipt';
 import { reopenPublication, takeoverPublication } from '../../src/effects/publication/publication-lifecycle';
-import { resolveRepoIdentity } from '../../src/effects/state/coordination-canonical-source';
 import {
   createLeaseDirectory,
   readLease,
@@ -280,9 +287,8 @@ function installRepairFixture(): RepairFixture {
     claimId: receipt.claim_id, taskId, taskRevision: revision, sprintPath: REPAIR_SPRINT, targetRef: 'main', generation: 1,
     sessionId: 'feedback-repair-session', sourceWorktree: root,
   });
-  const bound = bindLeaseRecord(owner, { claimId: receipt.claim_id, executionWorktree: root, branch: receipt.branch, unitRef: 'plans/plan-feedback-repair.md' });
-  if (!bound.ok) throw new Error(bound.error);
-  const completing = beginLeaseCompletionRecord(bound.record, { claimId: receipt.claim_id, executionWorktree: root, finishTransactionKey: 'finish-feedback-repair' });
+  const bound = boundLeaseFixture(owner, { executionWorktree: root, branch: receipt.branch, unitRef: 'plans/plan-feedback-repair.md' });
+  const completing = beginLeaseCompletionRecord(bound, { claimId: receipt.claim_id, executionWorktree: root, finishTransactionKey: 'finish-feedback-repair' });
   if (!completing.ok) throw new Error(completing.error);
   const reviewing = enterReviewingLeaseRecord(completing.record, {
     claimId: receipt.claim_id,

@@ -28,15 +28,7 @@
  * and `unknown` is never silently deleted -- `removeLease` refuses to touch it.
  */
 import { randomUUID } from 'crypto';
-import {
-  lstatSync,
-  mkdirSync,
-  readFileSync,
-  readdirSync,
-  renameSync,
-  rmdirSync,
-  unlinkSync,
-} from 'fs';
+import { lstatSync, mkdirSync, readFileSync, readdirSync, renameSync, rmdirSync, unlinkSync } from 'fs';
 import { dirname, join } from 'path';
 import {
   TASK_DIGEST_PATTERN,
@@ -47,7 +39,7 @@ import {
 } from '../../core/state/coordination-identity';
 import { syncDirectoryDurably, writeFileDurably } from '../evidence/atomic-append';
 import { configuredGitBinary, resolveGitCommonDirectory } from '../git/common-directory';
-import { withExclusiveDirectoryLock, withExclusiveDirectoryLockAsync } from '../locking/exclusive-directory-lock';
+import { withExclusiveDirectoryLock } from '../locking/exclusive-directory-lock';
 
 /** Relative to the git common directory. */
 export const COORDINATION_ROOT_RELATIVE_PATH = 'repo-harness/coordination/v1';
@@ -112,10 +104,6 @@ export function leaseDirectory(cwd: string, taskId: string): string {
   return join(coordinationRoot(cwd), 'leases', taskId);
 }
 
-export function leaseOwnerPath(cwd: string, taskId: string): string {
-  return join(leaseDirectory(cwd, taskId), LEASE_OWNER_FILE_NAME);
-}
-
 /**
  * Serialize every ownership mutation for one task. Each verb -- claim, bind,
  * release, steal, reconcile -- runs its read, compare, and write inside this
@@ -126,10 +114,6 @@ export function leaseOwnerPath(cwd: string, taskId: string): string {
 export function withTaskLock<T>(cwd: string, taskId: string, run: () => T): T {
   const commonDir = resolveGitCommonDirectory(cwd);
   return withExclusiveDirectoryLock(commonDir, taskLockRelativePath(taskId), run);
-}
-
-export function withTaskLockAsync<T>(cwd: string, taskId: string, run: () => Promise<T>): Promise<T> {
-  return withExclusiveDirectoryLockAsync(resolveGitCommonDirectory(cwd), taskLockRelativePath(taskId), run);
 }
 
 /** How a reclaimed backlog lock is reported; overridable for tests. */
@@ -145,7 +129,7 @@ const defaultBacklogLockReclaimReporter: BacklogLockReclaimReporter = (lockPath)
  * worktrees.
  *
  * `sprint-backlog.sh`'s `acquire_backlog_lock` still takes this same directory
- * for `start-task`, and publishes the same owner file this primitive writes, so
+ * for retained completion, and publishes the same owner file this primitive writes, so
  * a live shell holder is protected by PID liveness and a killed one is
  * reclaimed through `reclaimStaleOwner`, which is on by default. Both sides
  * also reclaim a stale *empty* directory -- a creator that stopped between
@@ -382,36 +366,4 @@ export function removeLease(cwd: string, taskId: string, expectedClaimId: string
     }
   }
   if (readdirSync(retired).length === 0) rmdirSync(retired);
-}
-
-/**
- * Roll back the lease directory this call created after its own re-read of
- * canonical authority failed. Deliberately narrower than `removeLease`: it
- * accepts the `owner_record_missing` crash-window shape too, because a claim
- * that fails between `mkdir` and the durable write must still be able to undo
- * exactly the directory it just created -- and only while holding the task
- * lock, with the directory still empty.
- */
-export function removeOwnLeaseAfterFailedClaim(
-  cwd: string,
-  taskId: string,
-  claimId: string,
-): void {
-  const read = readLease(cwd, taskId);
-  if (read.record !== null) {
-    removeLease(cwd, taskId, claimId);
-    return;
-  }
-  if (read.unknown_reason !== 'owner_record_missing') {
-    throw new Error(
-      `refusing to roll back lease ${taskId}: classified ${read.classification}`
-      + `${read.unknown_reason ? ` (${read.unknown_reason})` : ''}`,
-    );
-  }
-  const directory = leaseDirectory(cwd, taskId);
-  if (readdirSync(directory).length !== 0) {
-    throw new Error(`refusing to roll back non-empty lease directory ${taskId}`);
-  }
-  rmdirSync(directory);
-  syncDirectoryDurably(dirname(directory));
 }

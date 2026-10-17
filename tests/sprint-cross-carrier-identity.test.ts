@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { execFileSync, spawnSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -10,8 +10,6 @@ import {
 import { leaseDirectory } from '../src/effects/state/coordination-lease-store';
 import { fixtureTaskId } from './helpers/sprint-fixture';
 
-const ROOT = join(import.meta.dir, '..');
-const CLI = join(ROOT, 'src/cli/index.ts');
 const SPRINT_DIR = 'workflow/sprints';
 const PRIMARY = `${SPRINT_DIR}/primary.sprint.md`;
 const SIBLING = `${SPRINT_DIR}/sibling.sprint.md`;
@@ -55,9 +53,6 @@ function commit(cwd: string, message: string): void {
   git(cwd, ['commit', '--quiet', '-m', message]);
 }
 
-function runSprint(cwd: string, args: readonly string[]) {
-  return spawnSync(process.execPath, [CLI, 'sprint', ...args], { cwd, encoding: 'utf8' });
-}
 
 afterEach(() => {
   while (fixtures.length > 0) rmSync(fixtures.pop()!, { recursive: true, force: true });
@@ -127,7 +122,7 @@ describe('cross-carrier task identity', () => {
     }
   });
 
-  test('refuses read and claim before a shared lease can be elected, while distinct and archived carriers remain valid', () => {
+  test('refuses duplicate live identities while distinct and archived carriers remain valid', () => {
     const root = mkdtempSync(join(tmpdir(), 'sprint-cross-carrier-'));
     fixtures.push(root);
     git(root, ['init', '--quiet', '--initial-branch=main']);
@@ -147,18 +142,6 @@ describe('cross-carrier task identity', () => {
       expect(rejectedRead.error).toContain(PRIMARY);
       expect(rejectedRead.error).toContain(SIBLING);
     }
-
-    const rejectedClaim = runSprint(root, [
-      'claim',
-      '--task-id', TASK_ID,
-      '--expected-task-revision', 'a'.repeat(64),
-      '--target-ref', 'main',
-      '--sprint-path', PRIMARY,
-      '--session-id', 'cross-carrier-fixture',
-    ]);
-    expect(rejectedClaim.status).toBe(1);
-    expect(rejectedClaim.stderr).toContain(TASK_ID);
-    expect(existsSync(leaseDirectory(root, TASK_ID))).toBe(false);
 
     writeFileSync(join(root, SIBLING), sprint('Executing', fixtureTaskId('sibling task'), 'sibling task'));
     commit(root, 'distinct live task id');

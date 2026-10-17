@@ -11,10 +11,7 @@ const PLAN = 'plans/plan-20260715-1200-fixture.md';
 const CONTRACT = 'tasks/contracts/20260715-1200-fixture.contract.md';
 const AUTHORITY = 'sha256:authority';
 const SUBJECT_REVISION = 'sha256:subject';
-const EVIDENCE_REVISION = 'sha256:evidence';
 const PROJECTION_REVISION = 'sha256:projection';
-const SUBJECT = `sha256:${'a'.repeat(64)}`;
-const TARGET = 'b'.repeat(40);
 const INVALID_REGISTRY = capabilityOwnershipBlocker(
   { code: 'INVALID_JSON', path: '$', message: 'invalid JSON: Unexpected token' },
   'registry',
@@ -31,21 +28,6 @@ function input(overrides: Partial<EffectiveStateInputs> = {}): EffectiveStateInp
     planPath: PLAN,
     planStatus: 'executing',
     planText: '# Plan\n\n- [ ] run parity tests\n',
-    contractPath: CONTRACT,
-    contractText: [
-      '# Contract',
-      '> **Status**: Active',
-      `> **Plan**: ${PLAN}`,
-      '> **Task Profile**: code-change',
-      '> **Workflow Profile**: routine',
-      '## Allowed Paths',
-      '```yaml',
-      'allowed_paths:',
-      '  - src/',
-      '```',
-    ].join('\n'),
-    editTargetPaths: [],
-    unsafeEditTargetPathCount: 0,
     riskResolution: {
       ok: true,
       profile: 'routine',
@@ -60,29 +42,16 @@ function input(overrides: Partial<EffectiveStateInputs> = {}): EffectiveStateInp
         crossCapability: false,
       },
     },
-    contractOverride: 'standard',
+    requestedWorkflowProfile: 'routine',
     capabilityReasons: [],
     capabilityBlocker: null,
     capabilityOwnership: null,
     staleSources: [],
     conflictingSources: [],
-    reviewPath: null,
-    reviewText: null,
-    reviewSubject: {
-      available: false,
-      reviewSubjectSha256: null,
-      targetRevision: null,
-      targetOverlapCount: 0,
-    },
-    verification: { freshness: 'missing', status: null, reason: null, resultRefs: [] },
-    acceptance: { path: null, freshness: 'missing', disposition: null },
-    sprintPath: null,
-    sprintExists: false,
     activeWorktreePath: '.ai/harness/active-worktree',
     currentWorktree: '/repo',
     worktreeOwner: '/repo',
     worktreeOwnerIsCurrent: true,
-    isolatedContractWorktree: false,
     handoffPath: '.ai/harness/handoff/current.md',
     handoffText: null,
     resumePath: '.ai/harness/handoff/resume.md',
@@ -91,7 +60,6 @@ function input(overrides: Partial<EffectiveStateInputs> = {}): EffectiveStateInp
     currentSnapshotText: null,
     authorityRevision: AUTHORITY,
     subjectRevision: SUBJECT_REVISION,
-    evidenceRevision: EVIDENCE_REVISION,
     projectionRevision: PROJECTION_REVISION,
     stateVersion: 7,
     stateRevision: 'sha256:state',
@@ -110,61 +78,25 @@ describe('pure Effective State projection', () => {
     expect(before.stale_sources).not.toContain('current_snapshot');
     expect(after.stale_sources).toContain('current_snapshot');
     expect(after.blockers).toEqual(before.blockers);
-    expect(after.readiness).toEqual(before.readiness);
+
     expect(after.progress_token).toBe(before.progress_token);
     expect(after.phase).toBe(before.phase);
-    expect(before.readiness?.ok && before.readiness.allowedToEdit.decision).toBe('allow');
+
     const invalidAuthority = projectEffectiveState(input({ currentSnapshotText: snapshot, nowMs: NOW, capabilityBlocker: INVALID_REGISTRY }));
     expect(invalidAuthority.blockers).toContain('capability_registry:invalid');
-    expect(invalidAuthority.readiness?.ok && invalidAuthority.readiness.allowedToEdit.decision).toBe('allow');
+
   });
 
-  test('approved work can be edited before tasks finish, but cannot ship', () => {
-    for (const planStatus of ['approved', 'executing'] as const) {
-      const state = projectEffectiveState(input({ planStatus }));
-      expect(state.readiness?.ok && state.readiness.allowedToEdit.decision).toBe('allow');
-      expect(state.readiness?.ok && state.readiness.readyToShip.decision).toBe('block');
-      if (state.readiness?.ok) {
-        expect(state.readiness.requirements.ship.some(r => r.key === 'complete_approved_work_package')).toBe(false);
-      }
-    }
-  });
-
-  test('missing plan content or approval does not block authorized editing', () => {
-    for (const overrides of [{ planStatus: 'draft' as const }, { planText: null }, { planText: '' }]) {
-      const state = projectEffectiveState(input(overrides));
-      expect(state.readiness?.ok && state.readiness.allowedToEdit.decision).toBe('allow');
-    }
-  });
-
-  test('ship consumes evidence without requiring task-checkbox completion', () => {
-    const evidence = {
-      reviewSubject: { available: true, reviewSubjectSha256: SUBJECT, targetRevision: TARGET, targetOverlapCount: 0 },
-      verification: { freshness: 'fresh' as const, status: 'passed', reason: null, resultRefs: [] },
-    };
-    for (const [planText, expected] of [['# Plan\n- [ ] implement\n', 'allow'], ['# Plan\n- [x] implement\n', 'allow']] as const) {
-      const state = projectEffectiveState(input({ ...evidence, planText }));
-      expect(state.readiness?.ok && state.readiness.allowedToEdit.decision).toBe('allow');
-      expect(state.readiness?.ok && state.readiness.readyToShip.decision).toBe(expected);
-    }
-  });
-
-  test('projects phase, profile, contract, and first open task without I/O', () => {
+  test('projects phase, profile, and first open task without I/O', () => {
     const state = projectEffectiveState(input());
     expect(state.phase).toBe('executing');
     expect(state.next_action).toBe('run parity tests');
     expect(state.workflow_profile).toBe('routine');
     expect(state.guidance).toContain('verify typecheck and affected tests once');
-    expect(state.contract).toEqual({ path: CONTRACT, status: 'Active', plan: PLAN });
-    expect(state.allowed_paths).toEqual(['src/']);
+
   });
 
-  test('projects fresh review/check/handoff/resume/current branches and handoff next action', () => {
-    const reviewText = [
-      '> **Recommendation**: pass',
-      `> **Reviewed Subject SHA256**: ${SUBJECT}`,
-      `> **Reviewed Target Revision**: ${TARGET}`,
-    ].join('\n');
+  test('projects fresh handoff/resume/current branches and handoff next action', () => {
     const handoff = [
       '> **Task ID**: 20260715-1200-fixture',
       `> **Source State Revision**: ${AUTHORITY}`,
@@ -172,18 +104,6 @@ describe('pure Effective State projection', () => {
     ].join('\n');
     const state = projectEffectiveState(input({
       planText: '# Plan\n',
-      reviewPath: 'tasks/reviews/fixture.review.md',
-      reviewText,
-      reviewSubject: {
-        available: true,
-        reviewSubjectSha256: SUBJECT,
-        targetRevision: TARGET,
-        targetOverlapCount: 1,
-      },
-      verification: { freshness: 'fresh', status: 'passed', reason: null, resultRefs: [] },
-      acceptance: { path: '/authority/acceptance.latest.json', freshness: 'fresh', disposition: 'external_pass' },
-      sprintPath: 'plans/sprints/fixture.sprint.md',
-      sprintExists: true,
       handoffText: handoff,
       resumeText: [
         '> **Task ID**: 20260715-1200-fixture',
@@ -193,19 +113,15 @@ describe('pure Effective State projection', () => {
       currentSnapshotText: `> **Updated At**: 2026-07-15T11:30:00Z\n- Active Plan: ${PLAN}\n`,
     }));
     expect(state.next_action).toBe('resume adapter parity');
-    expect(state.review.freshness).toBe('fresh');
-    expect(state.external_acceptance.freshness).toBe('fresh');
-    expect(state.checks.freshness).toBe('fresh');
-    expect(state.active_sprint.freshness).toBe('fresh');
+
     expect(state.handoff.freshness).toBe('fresh');
     expect(state.resume.freshness).toBe('fresh');
     expect(state.current_snapshot.freshness).toBe('fresh');
     expect(state.stale_sources).toEqual([]);
   });
 
-  test('projects conflicts, failed checks, invalid risk, and invalid registry as blockers', () => {
+  test('projects conflicts, invalid risk, and invalid registry as blockers', () => {
     const state = projectEffectiveState(input({
-      contractText: null,
       riskResolution: {
         ok: false,
         code: 'INVALID_RISK_INPUT',
@@ -261,32 +177,6 @@ describe('pure Effective State projection', () => {
     expect(state.next_action).toBe('resolve blockers');
   });
 
-  test('projects checks_failed only from a fresh subject-bound failed check', () => {
-    const state = projectEffectiveState(input({
-      reviewSubject: {
-        available: true,
-        reviewSubjectSha256: SUBJECT,
-        targetRevision: TARGET,
-        targetOverlapCount: 0,
-      },
-      verification: { freshness: 'fresh', status: 'failed', reason: null, resultRefs: [] },
-    }));
-    expect(state.checks.freshness).toBe('fresh');
-    expect(state.blockers).toContain('checks_failed');
-
-    const mismatched = projectEffectiveState(input({
-      reviewSubject: {
-        available: true,
-        reviewSubjectSha256: SUBJECT,
-        targetRevision: TARGET,
-        targetOverlapCount: 0,
-      },
-      verification: { freshness: 'stale', status: 'passed', reason: 'subject_mismatch', resultRefs: [] },
-    }));
-    expect(mismatched.checks.freshness).toBe('stale');
-    expect(mismatched.stale_sources).toContain('checks');
-  });
-
   test('binds resume independently to task id, authority revision, and handoff hash', () => {
     const taskId = '20260715-1200-fixture';
     const resume = (candidateTaskId: string, revision: string, handoffHash: string) => [
@@ -312,15 +202,12 @@ describe('pure Effective State projection', () => {
       planPath: null,
       planStatus: 'none',
       planText: null,
-      contractPath: null,
-      contractText: null,
       worktreeOwner: null,
       worktreeOwnerIsCurrent: false,
     })).phase).toBe('idle');
     for (const status of ['draft', 'annotating', 'approved', 'executing', 'unknown'] as const) {
       const state = projectEffectiveState(input({
         planStatus: status,
-        contractText: status === 'approved' || status === 'executing' ? input().contractText : null,
       }));
       expect(state.phase).toBe(status);
     }
@@ -328,49 +215,25 @@ describe('pure Effective State projection', () => {
   });
 
   test('covers missing, unavailable, stale, and not-applicable freshness branches', () => {
-    const missing = projectEffectiveState(input({ reviewPath: 'tasks/reviews/missing.review.md' }));
-    expect(missing.review.freshness).toBe('missing');
-    expect(missing.external_acceptance.freshness).toBe('missing');
-    expect(missing.checks.freshness).toBe('missing');
-    expect(missing.active_sprint.freshness).toBe('not_applicable');
+    const missing = projectEffectiveState(input());
+
     expect(missing.handoff.freshness).toBe('missing');
     expect(missing.resume.freshness).toBe('missing');
     expect(missing.current_snapshot.freshness).toBe('missing');
 
-    const unavailable = projectEffectiveState(input({
-      reviewPath: 'tasks/reviews/unavailable.review.md',
-      reviewText: [
-        '> **Recommendation**: pass',
-        `> **Reviewed Subject SHA256**: ${SUBJECT}`,
-        `> **Reviewed Target Revision**: ${TARGET}`,
-      ].join('\n'),
-    }));
-    expect(unavailable.review.freshness).toBe('unavailable');
-    expect(unavailable.external_acceptance.freshness).toBe('missing');
-
     const stale = projectEffectiveState(input({
-      reviewPath: 'tasks/reviews/stale.review.md',
-      reviewText: '> **Reviewed Subject SHA256**: pending\n',
-      verification: { freshness: 'stale', status: null, reason: 'invalid_evidence', resultRefs: [] },
-      sprintPath: 'plans/sprints/missing.sprint.md',
-      sprintExists: false,
       worktreeOwner: '/other',
       worktreeOwnerIsCurrent: false,
       handoffText: '> **Task ID**: other\n',
       resumeText: '> **Task ID**: other\n',
       currentSnapshotText: '> **Updated At**: 2000-01-01T00:00:00Z\n',
     }));
-    expect(stale.review.freshness).toBe('stale');
-    expect(stale.checks.freshness).toBe('stale');
-    expect(stale.active_sprint.freshness).toBe('stale');
+
     expect(stale.worktree.freshness).toBe('stale');
     expect(stale.handoff.freshness).toBe('stale');
     expect(stale.resume.freshness).toBe('stale');
     expect(stale.current_snapshot.freshness).toBe('stale');
 
-    const notApplicable = projectEffectiveState(input({ reviewPath: null, reviewText: null }));
-    expect(notApplicable.review.freshness).toBe('not_applicable');
-    expect(notApplicable.external_acceptance.freshness).toBe('missing');
     expect(projectEffectiveState(input({ worktreeOwner: null })).worktree.freshness).toBe('missing');
   });
 
@@ -380,7 +243,7 @@ describe('pure Effective State projection', () => {
       if (!base.ok) throw new Error('fixture risk resolution must be valid');
       const state = projectEffectiveState(input({
         riskResolution: { ...base, profile, riskFloor: profile },
-        contractOverride: profile,
+        requestedWorkflowProfile: profile,
       }));
       expect(state.workflow_profile).toBe(profile);
       expect(state.guidance).toContain(profile === 'routine'
@@ -390,16 +253,16 @@ describe('pure Effective State projection', () => {
     }
   });
 
-  test('exposes the four additive revisions verbatim and derives progress_token as a pure content hash', () => {
+  test('exposes the three revisions verbatim and derives progress_token as a pure content hash', () => {
     const state = projectEffectiveState(input());
     expect(state.authority_revision).toBe(AUTHORITY);
     expect(state.subject_revision).toBe(SUBJECT_REVISION);
-    expect(state.evidence_revision).toBe(EVIDENCE_REVISION);
+
     expect(state.projection_revision).toBe(PROJECTION_REVISION);
     expect(state.progress_token).toMatch(/^sha256:[0-9a-f]{64}$/);
   });
 
-  test('progress_token depends only on subject/evidence revisions, completed tasks, blockers, and allowed_paths -- never projection text, time, or state version', () => {
+  test('progress_token depends only on subject revision, completed tasks and blockers -- never projection text, time, or state version', () => {
     const base = projectEffectiveState(input());
 
     // Projection-only churn (handoff/resume/current-snapshot text, plus the
@@ -424,7 +287,6 @@ describe('pure Effective State projection', () => {
 
     // A new hard blocker is real (regressive) progress: the token moves.
     const blocked = projectEffectiveState(input({
-      contractText: null,
       riskResolution: {
         ok: false,
         code: 'INVALID_RISK_INPUT',
@@ -436,10 +298,8 @@ describe('pure Effective State projection', () => {
     }));
     expect(blocked.progress_token).not.toBe(base.progress_token);
 
-    // The subject or evidence bucket advancing is also real progress.
+    // A changed subject is progress.
     expect(projectEffectiveState(input({ subjectRevision: 'sha256:moved-subject' })).progress_token)
-      .not.toBe(base.progress_token);
-    expect(projectEffectiveState(input({ evidenceRevision: 'sha256:moved-evidence' })).progress_token)
       .not.toBe(base.progress_token);
   });
 
@@ -453,10 +313,9 @@ describe('pure Effective State projection', () => {
       'state_version',
       'state_revision',
     ]);
-    expect(keys.slice(6, 11)).toEqual([
+    expect(keys.slice(6, 10)).toEqual([
       'authority_revision',
       'subject_revision',
-      'evidence_revision',
       'projection_revision',
       'progress_token',
     ]);
@@ -471,6 +330,7 @@ describe('state-snapshot compatibility projection', () => {
       pending: 'none',
       activePlanMarker: PLAN,
       contractPath: CONTRACT,
+      contractPresent: true,
       evidence: 'complete',
     } as const;
     const activeCases = [
@@ -492,8 +352,6 @@ describe('state-snapshot compatibility projection', () => {
       planPath: null,
       planStatus: 'none',
       planText: null,
-      contractPath: null,
-      contractText: null,
       staleSources: ['active_plan_marker'],
     })), facts);
     expect(stale.states.plan).toBe('stale_marker');

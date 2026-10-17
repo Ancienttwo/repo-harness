@@ -1,11 +1,16 @@
+import { boundLeaseFixture } from '../helpers/sprint-fixture';
 import { describe, expect, test } from 'bun:test';
 import { execFileSync } from 'child_process';
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
-import { TASK_MESSAGE_HOOK_MAX_BYTES, buildTaskMessageEvent, renderTaskMessageUntrustedContext } from '../../src/core/fleet/task-message';
-import { bindLeaseRecord, buildLeaseOwnerRecord, deriveTaskRevision } from '../../src/core/state/coordination-identity';
+import {
+  TASK_MESSAGE_HOOK_MAX_BYTES,
+  buildTaskMessageEvent,
+  renderTaskMessageUntrustedContext,
+} from '../../src/core/fleet/task-message';
+import { buildLeaseOwnerRecord, deriveTaskRevision } from '../../src/core/state/coordination-identity';
 import {
   TaskInboxError,
   acknowledgeTaskInbox,
@@ -13,10 +18,13 @@ import {
   listTaskInbox,
   sendTaskMessage,
   summarizeTaskInboxForFleet,
-  supersedeTaskInbox,
+  readTaskMessageDelivery,
 } from '../../src/effects/fleet/task-inbox';
-import { readLease, createLeaseDirectory, writeLeaseOwnerDurably } from '../../src/effects/state/coordination-lease-store';
-import { resolveRepoIdentity } from '../../src/effects/state/coordination-canonical-source';
+import {
+  readLease,
+  createLeaseDirectory,
+  writeLeaseOwnerDurably,
+} from '../../src/effects/state/coordination-lease-store';
 import { fixtureTaskId } from '../helpers/sprint-fixture';
 
 const SPRINT_PATH = 'plans/sprints/inbox.sprint.md';
@@ -66,15 +74,13 @@ function bind(fixture: Fixture, claim_id: string, generation: number): void {
     sessionId: `session-${generation}`,
     sourceWorktree: fixture.root,
   });
-  const bound = bindLeaseRecord(claimed, {
-    claimId: claim_id,
+  const bound = boundLeaseFixture(claimed, {
     executionWorktree: realpathSync(fixture.root),
     branch: `codex/inbox-${generation}`,
     unitRef: 'plans/plan-inbox.md',
   });
-  if (!bound.ok) throw new Error(bound.error);
   if (generation === 1 && !createLeaseDirectory(fixture.root, fixture.task_id)) throw new Error('lease election failed');
-  writeLeaseOwnerDurably(fixture.root, fixture.task_id, bound.record);
+  writeLeaseOwnerDurably(fixture.root, fixture.task_id, bound);
 }
 
 function message(
@@ -199,11 +205,9 @@ describe('Task Inbox V1 common-directory effects', () => {
     expect(delivered.superseded_count).toBe(1);
     expect(delivered.deliveries.map((entry) => entry.event.message_id)).toEqual([task.message_id]);
     expect(JSON.stringify(delivered)).not.toContain(claim.body);
-    expect(supersedeTaskInbox({
-      repo_root: value.root, task_id: value.task_id, canonical_source: value.source, message_id: claim.message_id,
-      recipient: c1, successor: { kind: 'claim', claim_id: CLAIM_TWO, generation: 2 },
-      successor_execution_worktree: realpathSync(value.root), delivery_channel: 'hook_session',
-    }).delivery_state).toBe('superseded');
+    expect(readTaskMessageDelivery({
+      repo_root: value.root, task_id: value.task_id, message_id: claim.message_id, recipient: c1,
+    }).receipt?.delivery_state).toBe('superseded');
     // The task message now holds a delivered receipt for C1 and for C2.
     expect(unreadFor(CLAIM_TWO, 2)).toEqual(unread(1));
     expect(unreadFor(CLAIM_ONE, 1)).toEqual(unread(1));

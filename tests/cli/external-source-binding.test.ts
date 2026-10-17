@@ -76,9 +76,11 @@ describe('external-source binding CLI contract', () => {
       const bindings = spawnSync('bun', ['src/cli/index.ts', 'external-source', 'bindings', '--repo', repoId, '--format', 'json'], { cwd: ROOT, env, encoding: 'utf8' });
       expect(bindings.status, bindings.stderr).toBe(0);
       expect(JSON.parse(bindings.stdout).bindings[0].attention).toBe('none');
-      const offers = spawnSync('bun', ['src/cli/index.ts', 'fleet', 'offers', '--repo-id', repoId, '--json'], { cwd: ROOT, env, encoding: 'utf8' });
-      expect(offers.status, offers.stderr).toBe(0);
-      expect(JSON.parse(offers.stdout).offers[0].execution_readiness).toBe('execution_ready');
+      const board = spawnSync('bun', ['src/cli/index.ts', 'fleet', 'board', '--json'], { cwd: ROOT, env, encoding: 'utf8' });
+      expect(board.status, board.stderr).toBe(0);
+      const repository = JSON.parse(board.stdout).repositories.find((entry: { repository_id: string }) => entry.repository_id === repoId);
+      expect(repository.cards[0].task_id).toBe(taskId);
+      expect(repository.cards[0].execution_readiness).toBe('execution_ready');
     } finally { rmSync(fixture, { recursive: true, force: true }); }
   });
 });

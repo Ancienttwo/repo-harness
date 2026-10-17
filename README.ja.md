@@ -2,21 +2,20 @@
 
 # repo-harness
 
-### Claude と Codex のためのファイルに基づく workflow、そしてその上に構築される program のための authorized runtime
+### Claude と Codex のための共有コンテキスト、hooks、レビュー証跡
 
 [![npm version](https://img.shields.io/npm/v/repo-harness.svg)](https://www.npmjs.com/package/repo-harness)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 [English](README.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja.md) | [Français](README.fr.md) | [Español](README.es.md)
 
-**Agent に完全な PRD または Sprint を渡せば、その後のループはただ review して `next` を実行するだけ、もしくは `/goal` を起動して AFK するだけです。**
+**GitHub issue と受け入れ条件を agent に渡します。変更内容と検証結果を PR に記録します。**
 
 </div>
 
-`repo-harness` は、context、plans、handoffs、checks、review evidence をプロジェクトへ
-書き戻す CLI と skill/runtime hooks を提供し、次の agent session が chat memory では
-なくファイルから続きに入れるようにします。既存のリポジトリに、Claude と Codex を
-揃える tasks-first な agent contract を導入します。
+`repo-harness` は、コンテキスト、レビュー証跡、handoff のための CLI、skills、
+hooks を提供します。GitHub issue と PR がタスクの内容、範囲、状態を管理します。
+リポジトリ内のファイルを使い、次のセッションで作業を再開できます。
 
 ## インストール
 

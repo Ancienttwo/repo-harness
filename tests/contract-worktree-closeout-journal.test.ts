@@ -1,7 +1,12 @@
-import { buildLeaseOwnerRecord,bindLeaseRecord,deriveTaskRevision } from '../src/core/state/coordination-identity';
-import { createLeaseDirectory,readLease,writeLeaseOwnerDurably } from '../src/effects/state/coordination-lease-store';
+import { boundLeaseFixture } from './helpers/sprint-fixture';
+import { buildLeaseOwnerRecord, deriveTaskRevision } from '../src/core/state/coordination-identity';
+import {
+  createLeaseDirectory,
+  readLease,
+  writeLeaseOwnerDurably,
+} from '../src/effects/state/coordination-lease-store';
 import { decodePublicationMarker } from '../src/core/publication/publication-receipt';
-import { writeClaimTokenForBoundLease } from '../src/effects/state/coordination-claim-token';
+import { writeClaimTokenFixture } from './helpers/sprint-fixture';
 import { resolveRepoIdentity } from '../src/effects/state/coordination-canonical-source';
 import { fixtureTaskId } from './helpers/sprint-fixture';
 import { describe, expect, test, setDefaultTimeout } from "bun:test";
@@ -904,10 +909,10 @@ describe("ship-worktrees closeout journal", () => {
       resolveRepoIdentity(fixture.linked);
       const taskId=fixtureTaskId('demo');
       const lease=buildLeaseOwnerRecord({claimId:'fixture-claim',taskId,taskRevision:deriveTaskRevision({taskId,taskCell:'demo',modeCell:'contract',acceptanceCell:'done'}),sprintPath:SPRINT,targetRef:'main',generation:1,sessionId:'fixture-session',sourceWorktree:fixture.linked});
-      const bound=bindLeaseRecord(lease,{claimId:lease.claim_id,executionWorktree:fixture.linked,branch:'codex/demo',unitRef:PLAN});if(!bound.ok)throw Error(bound.error);
+      const bound=boundLeaseFixture(lease,{executionWorktree:fixture.linked,branch:'codex/demo',unitRef:PLAN});
       if(!createLeaseDirectory(fixture.linked,taskId))throw Error('fixture lease exists');
-      writeLeaseOwnerDurably(fixture.linked,taskId,bound.record);
-      writeClaimTokenForBoundLease(fixture.linked,{task_id:taskId,claim_id:lease.claim_id,worktree:fixture.linked,sprint:SPRINT,task:'demo',unit_ref:PLAN});
+      writeLeaseOwnerDurably(fixture.linked,taskId,bound);
+      writeClaimTokenFixture({task_id:taskId,claim_id:lease.claim_id,worktree:fixture.linked,sprint:SPRINT,task:'demo',unit_ref:PLAN});
     }
     writeExecutable(
       join(container, "fixture-publication-cli.sh"),

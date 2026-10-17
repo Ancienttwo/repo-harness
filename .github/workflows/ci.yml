@@ -118,7 +118,7 @@ jobs:
             daily) set -- ;;
             *) echo "Unknown coverage mode: $MODE" >&2; exit 1 ;;
           esac
-          bun run test:files tests/generic-review.test.ts tests/acceptance-receipt.test.ts tests/herdr-task-lifecycle.test.ts tests/cli/pm.test.ts "$@" --timeout 60000 --max-concurrency 1
+          bun run test:files tests/generic-review.test.ts tests/acceptance-receipt.test.ts tests/herdr-task-lifecycle.test.ts "$@" --timeout 60000 --max-concurrency 1
 
   verify:
     name: Affected tests (shard ${{ matrix.shard }}/3)
@@ -303,7 +303,7 @@ jobs:
           tests/cli/mcp-stdio.test.ts tests/effects/fleet-collector-process.test.ts \
           tests/effects/operator-task-diff.test.ts tests/effects/operator-task-context.test.ts \
           tests/effects/operator-task-activity.test.ts tests/effects/task-inbox.test.ts \
-          tests/effects/task-reply.test.ts tests/effects/task-inbox-layout-migration.test.ts \
+          tests/effects/task-inbox-layout-migration.test.ts \
           tests/cli/windows-protected-helper-runtime-smoke.test.ts tests/evidence-checkpoint.test.ts \
           tests/unit/windows-protected-helper-platform-contract.test.ts
       - name: Run smoke with each installed internal Git first on PATH

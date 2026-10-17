@@ -42,12 +42,6 @@ export interface McpLocalConfig {
     environmentAllowlist?: string[];
     worktreeRoot?: string;
   };
-  engineer?: {
-    enabled?: boolean;
-  };
-  pm?: {
-    enabled?: boolean;
-  };
 }
 
 export type McpHttpAuthMode = 'oauth' | 'bearer' | 'url-token';

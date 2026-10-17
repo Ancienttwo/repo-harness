@@ -1,11 +1,6 @@
-import {
-  canonicalEngineerJson,
-  engineerSha256,
-  type EngineerBindingV1,
-} from './profile-binding';
+import { canonicalEngineerJson, engineerSha256 } from './profile-binding';
 
 export const ENGINEER_PRINCIPAL_PROTOCOL = 1 as const;
-export const ENGINEER_PRINCIPAL_KIND = 'repo-harness-engineer-principal' as const;
 export const ENGINEER_PRINCIPAL_MAPPING_KIND = 'repo-harness-engineer-principal-mapping' as const;
 export const CLAIM_ACTOR_RECEIPT_KIND = 'repo-harness-claim-actor-receipt' as const;
 
@@ -16,7 +11,6 @@ const REPOSITORY_ID = /^repo_[0-9a-f]{16}$/;
 const ENGINEER_ID = /^engineer:capability\.[a-z0-9][a-z0-9-]*\.[a-z0-9][a-z0-9-]*$/;
 const OPAQUE = /^[^\u0000-\u001f\u007f]{1,512}$/;
 
-export type EngineerObservedProvider = 'codex' | 'claude' | 'worker_host' | 'unknown' | 'herdr-cli-agent';
 export type EngineerPrincipalMappingState = 'active' | 'revoked';
 
 export interface EngineerPrincipalMappingV1 {
@@ -32,20 +26,6 @@ export interface EngineerPrincipalMappingV1 {
   readonly created_at: string;
   readonly revoked_at: string | null;
   readonly mapping_digest: string;
-}
-
-export interface EngineerPrincipalV1 {
-  readonly protocol: typeof ENGINEER_PRINCIPAL_PROTOCOL;
-  readonly kind: typeof ENGINEER_PRINCIPAL_KIND;
-  readonly repository_id: string;
-  readonly engineer_id: string;
-  readonly binding_id: string;
-  readonly binding_generation: number;
-  readonly engineer_contract_revision: string;
-  readonly carrier: 'mcp_oauth';
-  readonly auth_subject: string;
-  readonly provider: EngineerObservedProvider;
-  readonly provider_thread_id: string | null;
 }
 
 export interface ClaimActorReceiptV1 {
@@ -68,18 +48,6 @@ export interface ClaimActorReceiptV1 {
   readonly session_id: string | null;
   readonly bound_at: string;
   readonly receipt_sha256: string;
-}
-
-export interface ClaimActorEnvelope {
-  readonly repo_id: string;
-  readonly task_id: string;
-  readonly task_revision: string;
-  readonly claim_id: string;
-  readonly generation: number;
-  readonly worktree_path: string;
-  readonly branch: string;
-  readonly unit_ref: string;
-  readonly authorization_revision: number;
 }
 
 export type EngineerPrincipalErrorCode =
@@ -139,36 +107,6 @@ function mappingBasis(value: Omit<EngineerPrincipalMappingV1, 'mapping_digest'>)
   return value;
 }
 
-export function buildEngineerPrincipalMapping(input: {
-  repository_id: string;
-  authorization_id: string;
-  binding: EngineerBindingV1;
-  created_at: string;
-}): EngineerPrincipalMappingV1 {
-  const basis = {
-    protocol: ENGINEER_PRINCIPAL_PROTOCOL,
-    kind: ENGINEER_PRINCIPAL_MAPPING_KIND,
-    repository_id: input.repository_id,
-    authorization_id: input.authorization_id,
-    engineer_id: input.binding.engineer_id,
-    binding_id: input.binding.binding_id,
-    binding_generation: input.binding.binding_generation,
-    engineer_contract_revision: input.binding.engineer_contract_revision,
-    state: 'active' as const,
-    created_at: input.created_at,
-    revoked_at: null,
-  };
-  return validateEngineerPrincipalMapping({ ...basis, mapping_digest: engineerSha256(canonicalEngineerJson(mappingBasis(basis))) });
-}
-
-export function revokeEngineerPrincipalMapping(mapping: EngineerPrincipalMappingV1, revokedAt: string): EngineerPrincipalMappingV1 {
-  const current = validateEngineerPrincipalMapping(mapping);
-  if (current.state === 'revoked') return current;
-  const basis = { ...current, state: 'revoked' as const, revoked_at: revokedAt, mapping_digest: undefined };
-  const { mapping_digest: _ignored, ...withoutDigest } = basis;
-  return validateEngineerPrincipalMapping({ ...withoutDigest, mapping_digest: engineerSha256(canonicalEngineerJson(withoutDigest)) });
-}
-
 export function validateEngineerPrincipalMapping(value: unknown): EngineerPrincipalMappingV1 {
   const code: EngineerPrincipalErrorCode = 'engineer_principal_invalid';
   const input = record(value, 'principal mapping', code);
@@ -190,68 +128,8 @@ export function validateEngineerPrincipalMapping(value: unknown): EngineerPrinci
   return Object.freeze({ ...basis, mapping_digest: digest });
 }
 
-export function canonicalEngineerPrincipalMappingBytes(value: EngineerPrincipalMappingV1): string {
-  return canonicalEngineerJson(validateEngineerPrincipalMapping(value));
-}
-
-export function validateEngineerPrincipal(value: unknown): EngineerPrincipalV1 {
-  const code: EngineerPrincipalErrorCode = 'engineer_principal_invalid';
-  const input = record(value, 'engineer principal', code);
-  exact(input, ['protocol', 'kind', 'repository_id', 'engineer_id', 'binding_id', 'binding_generation', 'engineer_contract_revision', 'carrier', 'auth_subject', 'provider', 'provider_thread_id'], 'engineer principal', code);
-  if (input.protocol !== 1 || input.kind !== ENGINEER_PRINCIPAL_KIND || input.carrier !== 'mcp_oauth') throw new EngineerPrincipalError(code, 'engineer principal protocol, kind, or carrier is invalid');
-  if (!['codex', 'claude', 'worker_host', 'unknown', 'herdr-cli-agent'].includes(String(input.provider))) throw new EngineerPrincipalError(code, 'provider is invalid');
-  return Object.freeze({
-    protocol: 1,
-    kind: ENGINEER_PRINCIPAL_KIND,
-    repository_id: string(input.repository_id, 'repository_id', REPOSITORY_ID, code),
-    engineer_id: string(input.engineer_id, 'engineer_id', ENGINEER_ID, code),
-    binding_id: string(input.binding_id, 'binding_id', UUID, code),
-    binding_generation: integer(input.binding_generation, 'binding_generation', 1, code),
-    engineer_contract_revision: string(input.engineer_contract_revision, 'engineer_contract_revision', DIGEST, code),
-    carrier: 'mcp_oauth',
-    auth_subject: string(input.auth_subject, 'auth_subject', UUID, code),
-    provider: input.provider as EngineerObservedProvider,
-    provider_thread_id: nullableOpaque(input.provider_thread_id, 'provider_thread_id', code),
-  });
-}
-
-export function workEnvelopeSha256(envelope: unknown): string {
-  return engineerSha256(canonicalEngineerJson(envelope));
-}
-
 function receiptBasis(value: Omit<ClaimActorReceiptV1, 'receipt_sha256'>): object {
   return value;
-}
-
-export function buildClaimActorReceipt<TEnvelope extends ClaimActorEnvelope>(input: {
-  envelope: TEnvelope;
-  principal: EngineerPrincipalV1;
-  session_id: string | null;
-  bound_at: string;
-}): ClaimActorReceiptV1 {
-  const principal = validateEngineerPrincipal(input.principal);
-  if (principal.repository_id !== input.envelope.repo_id) throw new EngineerPrincipalError('engineer_principal_mismatch', 'principal repository does not match WorkEnvelope');
-  const basis = {
-    protocol: ENGINEER_PRINCIPAL_PROTOCOL,
-    kind: CLAIM_ACTOR_RECEIPT_KIND,
-    task_id: input.envelope.task_id,
-    task_revision: input.envelope.task_revision,
-    claim_id: input.envelope.claim_id,
-    lease_generation: input.envelope.generation,
-    engineer_id: principal.engineer_id,
-    binding_id: principal.binding_id,
-    binding_generation: principal.binding_generation,
-    repository_id: input.envelope.repo_id,
-    authorization_revision: input.envelope.authorization_revision,
-    work_envelope_sha256: workEnvelopeSha256(input.envelope),
-    worktree_path: input.envelope.worktree_path,
-    branch: input.envelope.branch,
-    unit_ref: input.envelope.unit_ref,
-    engineer_contract_revision: principal.engineer_contract_revision,
-    session_id: input.session_id,
-    bound_at: input.bound_at,
-  };
-  return validateClaimActorReceipt({ ...basis, receipt_sha256: engineerSha256(canonicalEngineerJson(receiptBasis(basis))) });
 }
 
 export function validateClaimActorReceipt(value: unknown): ClaimActorReceiptV1 {

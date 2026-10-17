@@ -1,39 +1,4 @@
-/**
- * The falsification harness for the shared lease protocol, over REAL linked
- * worktrees of a real clone and, where the hazard is a race, over real
- * concurrent processes.
- *
- * Every hazard in this file is a filesystem-ordering hazard: `mkdir` atomicity,
- * the window between a lease election and its durable owner write, the window
- * between a git publication and a lease release. A mocked filesystem would
- * prove nothing about any of them, so nothing here is mocked -- the git common
- * directory, the locks, the leases, and the worktrees are all real.
- *
- * Row-by-row map to the work package's falsification table:
- *
- * | table row | test |
- * | --- | --- |
- * | two linked worktrees claim one task concurrently | "exactly one of two concurrent claims wins" |
- * | `release` and `steal` run concurrently | "release racing steal is serialized" |
- * | `complete` and `steal` run concurrently | "completion racing steal is serialized" |
- * | stolen-from agent calls release | "a stolen-from token cannot release" |
- * | stolen-from agent calls finish | "a stolen-from token is rejected on claim id" / "on worktree binding" |
- * | claim succeeds, then worktree creation fails | "only the same claim id rolls back a reservation" / "start-task rolls its own reservation back" |
- * | crash after lease mkdir, before the owner write | "a lease directory with no owner record is unknown clone-wide" |
- * | malformed, empty, or symlinked owner record | "a malformed or symlinked owner record is unknown, and no verb repairs it" |
- * | a `reserving` record whose session is gone | "a reserving lease whose session is gone is never auto-reclaimed" |
- * | task A completes, changing the sprint file | "an inline sibling completing in the primary tree does not drift a live claim" |
- * | finish publishes, then crashes before release | "a publication that crashed before release is reconcilable" |
- * | worktree formally removed | "a removed worktree orphans its lease without losing it" |
- * | detached HEAD or branch rename | "detached HEAD and branch rename do not disturb ownership" |
- * | upgrade with legacy per-worktree markers present | "cutover refuses while legacy markers, contract worktrees, or closeouts are live" |
- * | empty lock directory wedge (carry-over) | "an empty lock directory wedges the lock clone-wide" |
- *
- * The purely derivational rows -- row reorder and deletion, slug collisions,
- * cross-sprint isolation, separator forging, and revision granularity under an
- * unrelated row's edit -- are falsified against the derivation itself in
- * `tests/coordination-identity.test.ts`, where no filesystem is involved.
- */
+/** Retained completion, reconciliation, locks and board reads over real linked worktrees. */
 import { afterAll, describe, expect, test } from 'bun:test';
 import { spawn, spawnSync } from 'child_process';
 import {
@@ -55,7 +20,6 @@ import { join } from 'path';
 import {
   COORDINATION_BACKLOG_LOCK_RELATIVE_PATH,
   leaseDirectory,
-  leaseOwnerPath,
   readLease,
   taskLockRelativePath,
   withBacklogLock,
@@ -67,7 +31,10 @@ import {
   inspectCutoverQuiescence,
   recordCutoverInstalled,
 } from '../src/effects/state/coordination-cutover';
-import { fixtureTaskId } from './helpers/sprint-fixture';
+import { fixtureTaskId, leaseOwnerPath, writeClaimTokenFixture } from './helpers/sprint-fixture';
+import { randomUUID } from 'crypto';
+import { buildLeaseOwnerRecord, projectCanonicalTasks } from '../src/core/state/coordination-identity';
+import { createLeaseDirectory, writeLeaseOwnerDurably } from '../src/effects/state/coordination-lease-store';
 
 const ROOT = join(import.meta.dir, '..');
 const CLI = join(ROOT, 'src/cli/index.ts');
@@ -126,30 +93,6 @@ function sprint(cwd: string, args: readonly string[]): Run {
   return { status: result.status, stdout: result.stdout, stderr: result.stderr };
 }
 
-/** Real concurrency: two OS processes, started before either can finish. */
-function sprintAsync(cwd: string, args: readonly string[]): Promise<Run> {
-  return new Promise((resolve) => {
-    const child = spawn(process.execPath, [CLI, 'sprint', ...args], { cwd, env: sandboxEnv() });
-    let stdout = '';
-    let stderr = '';
-    child.stdout.on('data', (chunk) => { stdout += String(chunk); });
-    child.stderr.on('data', (chunk) => { stderr += String(chunk); });
-    child.on('close', (status) => resolve({ status, stdout, stderr }));
-  });
-}
-
-/**
- * The three shapes a mutation takes when it lost a race, all fail-closed: the
- * pre-lock lookup found no lease for the token, the re-read inside the lock
- * found a different owner, or the re-read found the lease already gone. The
- * second and third are the TOCTOU the per-task lock exists to catch.
- */
-const LOST_THE_RACE = /no lease holds claim id|claim id mismatch|expected claim id|is available/;
-
-function thiefClaimId(steal: Run): string {
-  return (JSON.parse(steal.stdout) as OwnerRecord).claim_id;
-}
-
 function sprintJson<T>(run: Run): T {
   if (run.status !== 0) throw new Error(`sprint verb failed (${run.status}): ${run.stderr}`);
   return JSON.parse(run.stdout) as T;
@@ -187,7 +130,6 @@ interface BoardCard {
   };
   readonly actions: {
     readonly release: string | null;
-    readonly steal: string | null;
     readonly reconcile: string | null;
   };
 }
@@ -288,21 +230,13 @@ interface Identity {
 }
 
 function identify(cwd: string, taskRef: string): Identity {
-  return sprintJson<Identity>(
-    sprint(cwd, ['identify', '--task', taskRef, '--target-ref', 'main', '--sprint-path', SPRINT_PATH]),
-  );
+  const task = projectCanonicalTasks({ repoIdentity: resolveGitCommonDirectory(cwd),
+    sprintPath: SPRINT_PATH, sprintText: git(cwd, ['show', `main:${SPRINT_PATH}`]) })
+    .find(task => task.row.task === taskRef);
+  if (!task) throw new Error(`fixture task not found: ${taskRef}`);
+  return { task_id: task.task_id, task_revision: task.task_revision };
 }
 
-function claimArgs(identity: Identity, sessionId: string): string[] {
-  return [
-    'claim',
-    '--task-id', identity.task_id,
-    '--expected-task-revision', identity.task_revision,
-    '--target-ref', 'main',
-    '--sprint-path', SPRINT_PATH,
-    '--session-id', sessionId,
-  ];
-}
 
 interface OwnerRecord {
   readonly claim_id: string;
@@ -317,176 +251,37 @@ interface OwnerRecord {
   readonly stolen_from: { readonly claim_id: string; readonly reason: string } | null;
 }
 
-/** Claim row one from `cwd` and bind it to `worktree`. */
-function claimAndBind(fixture: Fixture, cwd: string, worktree: string, branch: string): OwnerRecord {
-  const identity = identify(cwd, ROW_ONE);
-  const claimed = sprintJson<OwnerRecord>(sprint(cwd, claimArgs(identity, 'session-owner')));
-  const bound = sprintJson<OwnerRecord>(sprint(cwd, [
-    'bind',
-    '--claim-id', claimed.claim_id,
-    '--worktree', worktree,
-    '--branch', branch,
-    '--unit-ref', 'plans/plan-row-one.md',
-  ]));
-  expect(bound.state).toBe('bound');
-  expect(fixture.primary.length).toBeGreaterThan(0);
-  return bound;
+/** Write a historical lease so the test exercises only the retained reader or gate. */
+function seedRow(cwd: string, taskRef: string, worktree: string | null,
+  branch: string | null, sessionId: string, generation = 1,
+  stolenFrom: { claim_id: string; reason: string } | null = null) {
+  const identity = identify(cwd, taskRef);
+  const claimId = randomUUID();
+  const reserved = buildLeaseOwnerRecord({ claimId, taskId: identity.task_id,
+    taskRevision: identity.task_revision, sprintPath: SPRINT_PATH, targetRef: 'main',
+    generation, sessionId, sourceWorktree: cwd, stolenFrom });
+  const unitRef = `inline:${SPRINT_PATH}#${taskRef}`;
+  const record = worktree ? { ...reserved, state: 'bound' as const,
+    execution_worktree: worktree, branch, unit_ref: unitRef } : reserved;
+  createLeaseDirectory(cwd, identity.task_id);
+  writeLeaseOwnerDurably(cwd, identity.task_id, record);
+  if (worktree) writeClaimTokenFixture({ worktree, task_id: identity.task_id,
+    claim_id: claimId, sprint: SPRINT_PATH, task: taskRef, unit_ref: unitRef });
+  return record;
+}
+
+function seedBoundRow(fixture: Fixture, cwd: string, worktree: string, branch: string): OwnerRecord {
+  return seedRow(cwd, ROW_ONE, worktree, branch, 'session-owner');
 }
 
 afterAll(() => {
   for (const path of FIXTURES) rmSync(path, { recursive: true, force: true });
 });
 
-describe('concurrent claims over real linked worktrees', () => {
-  test('exactly one of two concurrent claims wins', async () => {
-    const fixture = createFixture('sprint-claim-race');
-    const identity = identify(fixture.primary, ROW_ONE);
-
-    const [a, b] = await Promise.all([
-      sprintAsync(fixture.worktreeA, claimArgs(identity, 'session-a')),
-      sprintAsync(fixture.worktreeB, claimArgs(identity, 'session-b')),
-    ]);
-
-    const winners = [a, b].filter((run) => run.status === 0);
-    const losers = [a, b].filter((run) => run.status !== 0);
-    expect(winners).toHaveLength(1);
-    expect(losers).toHaveLength(1);
-    // The loser is refused, never crashed: exit 1 is a fail-closed refusal.
-    expect(losers[0].status).toBe(1);
-    expect(losers[0].stderr).toMatch(/is not available|lost the lease election/);
-
-    const record = JSON.parse(winners[0].stdout) as OwnerRecord;
-    const lease = readLease(fixture.primary, identity.task_id);
-    expect(lease.classification).toBe('reserving');
-    expect(lease.record?.claim_id).toBe(record.claim_id);
-    // Both worktrees address one lease directory, which is the whole point.
-    expect(leaseDirectory(fixture.worktreeA, identity.task_id))
-      .toBe(leaseDirectory(fixture.worktreeB, identity.task_id));
-  }, 60_000);
-
-  test('release racing steal is serialized: never both, never neither', async () => {
-    const fixture = createFixture('sprint-release-steal');
-    const identity = identify(fixture.primary, ROW_ONE);
-    const owner = sprintJson<OwnerRecord>(sprint(fixture.worktreeA, claimArgs(identity, 'session-a')));
-
-    const [release, steal] = await Promise.all([
-      sprintAsync(fixture.worktreeA, ['release', '--claim-id', owner.claim_id]),
-      sprintAsync(fixture.worktreeB, [
-        'steal', '--expected-claim-id', owner.claim_id, '--reason', 'no progress', '--session-id', 'session-b',
-      ]),
-    ]);
-
-    const succeeded = [release, steal].filter((run) => run.status === 0);
-    expect(succeeded).toHaveLength(1);
-
-    const lease = readLease(fixture.primary, identity.task_id);
-    if (release.status === 0) {
-      // Release won: the lease is gone and the steal found nothing to take.
-      expect(lease.classification).toBe('available');
-      expect(steal.stderr).toMatch(LOST_THE_RACE);
-    } else {
-      // Steal won: a new token owns it, with provenance, and the stale read
-      // never deleted the new owner's lease. The refusal arrives either from
-      // the pre-lock lookup ("no lease holds claim id") or from the re-read
-      // inside the lock ("claim id mismatch") -- the second is the TOCTOU the
-      // per-task lock exists to catch, so both are correct outcomes.
-      expect(lease.record).not.toBeNull();
-      expect(lease.record!.claim_id).not.toBe(owner.claim_id);
-      expect(lease.record!.stolen_from).toEqual({ claim_id: owner.claim_id, reason: 'no progress' });
-      expect(release.stderr).toMatch(LOST_THE_RACE);
-    }
-  }, 60_000);
-
-  test('completion racing steal is serialized, and the loser cannot publish', async () => {
-    const fixture = createFixture('sprint-complete-steal');
-    const owner = claimAndBind(fixture, fixture.worktreeA, fixture.worktreeA, 'codex/row-a');
-    const identity = identify(fixture.primary, ROW_ONE);
-
-    const [completion, steal] = await Promise.all([
-      sprintAsync(fixture.worktreeA, [
-        'begin-completion', '--claim-id', owner.claim_id, '--worktree', fixture.worktreeA, '--target-ref', 'main',
-      ]),
-      sprintAsync(fixture.worktreeB, [
-        'steal', '--expected-claim-id', owner.claim_id, '--reason', 'reassigned', '--session-id', 'session-b',
-      ]),
-    ]);
-
-    // Serialized by the per-task lock, so the lease ends up with exactly one
-    // owner whichever order the two landed in, and never both.
-    const lease = readLease(fixture.primary, identity.task_id);
-    expect(lease.record).not.toBeNull();
-    expect([completion, steal].filter((run) => run.status === 0)).toHaveLength(1);
-
-    if (steal.status !== 0) {
-      // The completion gate won. The steal is not merely late here -- it is
-      // refused by the state machine: once the publication window is open, a
-      // steal that succeeded would erase the marker that says the publication
-      // may already have landed, and the new owner would see a pending-looking
-      // row whose work is in fact published.
-      expect(completion.status).toBe(0);
-      expect(lease.record!.state).toBe('completing');
-      expect(lease.record!.claim_id).toBe(owner.claim_id);
-      expect(lease.record!.generation).toBe(1);
-      expect(steal.stderr).toContain('cannot steal a lease in state completing');
-      // Nor does a later, uncontended steal get it: the refusal is a state
-      // rule, not a race outcome.
-      const later = sprint(fixture.worktreeB, [
-        'steal', '--expected-claim-id', owner.claim_id, '--reason', 'reassigned', '--session-id', 'session-b',
-      ]);
-      expect(later.status).toBe(1);
-      expect(later.stderr).toContain('cannot steal a lease in state completing');
-      expect(readLease(fixture.primary, identity.task_id).record!.claim_id).toBe(owner.claim_id);
-      return;
-    }
-
-    // The steal won, which means it landed while the lease was still `bound`.
-    // The displaced token cannot pass the gate again -- and contract finish
-    // runs that gate immediately before it builds the publication tree, so a
-    // stolen-from agent cannot publish.
-    expect(lease.record!.claim_id).toBe(thiefClaimId(steal));
-    expect(lease.record!.stolen_from).toEqual({ claim_id: owner.claim_id, reason: 'reassigned' });
-    // Fencing history, not just a fresh token: the second owner is generation 2.
-    expect(lease.record!.generation).toBe(2);
-    const retry = sprint(fixture.worktreeA, [
-      'begin-completion', '--claim-id', owner.claim_id, '--worktree', fixture.worktreeA, '--target-ref', 'main',
-    ]);
-    expect(retry.status).toBe(1);
-    expect(retry.stderr).toContain(`no lease holds claim id ${owner.claim_id}`);
-  }, 60_000);
-});
-
-describe('a stolen-from agent cannot act on the new owner"s lease', () => {
-  test('a stolen-from token cannot release', () => {
-    const fixture = createFixture('sprint-stolen-release');
-    const identity = identify(fixture.primary, ROW_ONE);
-    const owner = sprintJson<OwnerRecord>(sprint(fixture.worktreeA, claimArgs(identity, 'session-a')));
-    const thief = sprintJson<OwnerRecord>(sprint(fixture.worktreeB, [
-      'steal', '--expected-claim-id', owner.claim_id, '--reason', 'stalled', '--session-id', 'session-b',
-    ]));
-
-    const stale = sprint(fixture.worktreeA, ['release', '--claim-id', owner.claim_id]);
-    expect(stale.status).toBe(1);
-    expect(stale.stderr).toContain(`no lease holds claim id ${owner.claim_id}`);
-    expect(readLease(fixture.primary, identity.task_id).record?.claim_id).toBe(thief.claim_id);
-  }, 60_000);
-
-  test('a stolen-from token is rejected at the finish gate on claim id', () => {
-    const fixture = createFixture('sprint-stolen-finish');
-    const owner = claimAndBind(fixture, fixture.worktreeA, fixture.worktreeA, 'codex/row-a');
-    sprintJson<OwnerRecord>(sprint(fixture.worktreeB, [
-      'steal', '--expected-claim-id', owner.claim_id, '--reason', 'stalled', '--session-id', 'session-b',
-    ]));
-
-    const gate = sprint(fixture.worktreeA, [
-      'begin-completion', '--claim-id', owner.claim_id, '--worktree', fixture.worktreeA, '--target-ref', 'main',
-    ]);
-    expect(gate.status).toBe(1);
-    expect(gate.stderr).toContain(`no lease holds claim id ${owner.claim_id}`);
-  }, 60_000);
-
+describe('retained sprint closeout and read safety over real worktrees', () => {
   test('the finish gate rejects on worktree binding independently of the token', () => {
     const fixture = createFixture('sprint-binding-gate');
-    const owner = claimAndBind(fixture, fixture.worktreeA, fixture.worktreeA, 'codex/row-a');
+    const owner = seedBoundRow(fixture, fixture.worktreeA, fixture.worktreeA, 'codex/row-a');
 
     // Same live fencing token, wrong worktree: the binding check alone refuses.
     const wrongTree = sprint(fixture.worktreeB, [
@@ -537,7 +332,7 @@ describe('a stolen-from agent cannot act on the new owner"s lease', () => {
     // journal key, publication lands, and reconcile -- narrowed to this
     // claim -- clears the lease that release cannot touch.
     const fixture = createFixture('sprint-post-publication-cleanup');
-    const owner = claimAndBind(fixture, fixture.worktreeA, fixture.worktreeA, 'codex/row-a');
+    const owner = seedBoundRow(fixture, fixture.worktreeA, fixture.worktreeA, 'codex/row-a');
     const identity = identify(fixture.primary, ROW_ONE);
 
     const gated = sprintJson<OwnerRecord>(sprint(fixture.worktreeA, [
@@ -580,66 +375,6 @@ describe('a stolen-from agent cannot act on the new owner"s lease', () => {
     expect(cleared.action).toBe('cleared_completed_lease');
     expect(readLease(fixture.primary, identity.task_id).classification).toBe('available');
   }, 60_000);
-});
-
-describe('reservations, crash windows, and reconcile', () => {
-  test('only the same claim id rolls back a reservation', () => {
-    const fixture = createFixture('sprint-rollback');
-    const identity = identify(fixture.primary, ROW_ONE);
-    const owner = sprintJson<OwnerRecord>(sprint(fixture.worktreeA, claimArgs(identity, 'session-a')));
-
-    const foreign = sprint(fixture.worktreeB, ['release', '--claim-id', 'not-the-owner']);
-    expect(foreign.status).toBe(1);
-    expect(readLease(fixture.primary, identity.task_id).classification).toBe('reserving');
-
-    const own = sprint(fixture.worktreeA, ['release', '--claim-id', owner.claim_id]);
-    expect(own.status).toBe(0);
-    expect(readLease(fixture.primary, identity.task_id).classification).toBe('available');
-  }, 60_000);
-
-  test('start-task rolls its own reservation back when execution input is absent', () => {
-    // The real shell path claims the row, then refuses missing execution
-    // input. Its own reservation must not survive failed admission.
-    const fixture = createFixture('sprint-start-rollback', false);
-    mkdirSync(join(fixture.primary, 'scripts'), { recursive: true });
-    writeFileSync(
-      join(fixture.primary, 'scripts/sprint-backlog.sh'),
-      readFileSync(join(HELPER_DIR, 'sprint-backlog.sh'), 'utf-8'),
-    );
-    chmodSync(join(fixture.primary, 'scripts/sprint-backlog.sh'), 0o755);
-
-    const identity = identify(fixture.primary, ROW_ONE);
-    const start = spawnSync('bash', ['scripts/sprint-backlog.sh', 'start-task', '--task', ROW_ONE], {
-      cwd: fixture.primary,
-      encoding: 'utf-8',
-      env: sandboxEnv(),
-    });
-    expect(start.status).toBe(1);
-    expect(start.stderr).toContain('supply an existing execution plan');
-    expect(start.stdout).toContain('Claimed backlog task');
-    expect(readLease(fixture.primary, identity.task_id).classification).toBe('available');
-  }, 60_000);
-
-  test('start-task refuses to claim without an explicit task: there is no claim-next', () => {
-    const fixture = createFixture('sprint-no-claim-next', false);
-    mkdirSync(join(fixture.primary, 'scripts'), { recursive: true });
-    writeFileSync(
-      join(fixture.primary, 'scripts/sprint-backlog.sh'),
-      readFileSync(join(HELPER_DIR, 'sprint-backlog.sh'), 'utf-8'),
-    );
-    const start = spawnSync('bash', ['scripts/sprint-backlog.sh', 'start-task'], {
-      cwd: fixture.primary,
-      encoding: 'utf-8',
-      env: sandboxEnv(),
-    });
-    expect(start.status).toBe(2);
-    expect(start.stderr).toContain('there is no automatic claim-next');
-    // Nothing was claimed, so no lease exists for either row.
-    for (const row of [ROW_ONE, ROW_TWO]) {
-      expect(readLease(fixture.primary, identify(fixture.primary, row).task_id).classification)
-        .toBe('available');
-    }
-  }, 60_000);
 
   test('a lease directory with no owner record is unknown clone-wide and is never cleared', () => {
     // The crash window inside `claim` itself: the atomic `mkdir` election
@@ -654,13 +389,6 @@ describe('reservations, crash windows, and reconcile', () => {
     expect(seenFromB.classification).toBe('unknown');
     expect(seenFromB.unknown_reason).toBe('owner_record_missing');
 
-    // A sibling cannot claim over it, and the refusal names the verb that
-    // resolves it rather than resolving it silently.
-    const blocked = sprint(fixture.worktreeB, claimArgs(identity, 'session-b'));
-    expect(blocked.status).toBe(1);
-    expect(blocked.stderr).toContain('owner_record_missing');
-    expect(blocked.stderr).toContain('run sprint reconcile');
-
     // Reconcile reports and stops: an empty lease directory cannot distinguish
     // a crashed claim from a live one paused between `mkdir` and the write.
     const reconcile = sprintJson<{ action: string; classification: string; unknown_reason: string }>(
@@ -673,22 +401,19 @@ describe('reservations, crash windows, and reconcile', () => {
 
     // Only the operator clearing it restores claimability; nothing self-heals.
     rmSync(leaseDirectory(fixture.primary, identity.task_id), { recursive: true, force: true });
-    expect(sprint(fixture.worktreeB, claimArgs(identity, 'session-b')).status).toBe(0);
+    expect(readLease(fixture.worktreeB, identity.task_id).classification).toBe('available');
   }, 60_000);
 
   test('a malformed or symlinked owner record is unknown, and no verb repairs it', () => {
     const fixture = createFixture('sprint-unknown-owner');
     const identity = identify(fixture.primary, ROW_ONE);
-    const owner = sprintJson<OwnerRecord>(sprint(fixture.worktreeA, claimArgs(identity, 'session-a')));
+    const owner = seedRow(fixture.worktreeA, ROW_ONE, null, null, 'session-a');
     const ownerPath = leaseOwnerPath(fixture.primary, identity.task_id);
     const intact = readFileSync(ownerPath, 'utf-8');
 
     // 1. A record truncated mid-write is unknown, not partly trusted.
     writeFileSync(ownerPath, intact.slice(0, Math.floor(intact.length / 2)));
     expect(readLease(fixture.worktreeB, identity.task_id).unknown_reason).toBe('owner_record_malformed');
-    const claimOverMalformed = sprint(fixture.worktreeB, claimArgs(identity, 'session-b'));
-    expect(claimOverMalformed.status).toBe(1);
-    expect(claimOverMalformed.stderr).toContain('owner_record_malformed');
     // The live token cannot act on it either: the lookup that finds a lease by
     // fencing token skips what it cannot classify rather than guessing.
     const staleRelease = sprint(fixture.worktreeA, ['release', '--claim-id', owner.claim_id]);
@@ -730,25 +455,23 @@ describe('reservations, crash windows, and reconcile', () => {
     const fixture = createFixture('sprint-dead-session');
     const identity = identify(fixture.primary, ROW_ONE);
     // A session id that names no live process anywhere.
-    sprintJson<OwnerRecord>(sprint(fixture.worktreeA, claimArgs(identity, 'session-that-is-gone')));
+    seedRow(fixture.worktreeA, ROW_ONE, null, null, 'session-that-is-gone');
 
     const reconcile = sprintJson<{ action: string; classification: string }>(
       sprint(fixture.primary, ['reconcile', '--task-id', identity.task_id, '--target-ref', 'main']),
     );
     // A reservation has no worktree whose absence could prove death, so it is
-    // reported and left alone; only an explicit steal moves it.
+    // reported and left alone; it has no automatic expiry.
     expect(reconcile.action).toBe('none');
     expect(reconcile.classification).toBe('reserving');
     expect(readLease(fixture.primary, identity.task_id).classification).toBe('reserving');
 
-    const second = sprint(fixture.worktreeB, claimArgs(identity, 'session-b'));
-    expect(second.status).toBe(1);
-    expect(second.stderr).toContain('is not available');
+    expect(readLease(fixture.worktreeB, identity.task_id).classification).toBe('reserving');
   }, 60_000);
 
   test('a publication that crashed before release is reconcilable, not corrupt', () => {
     const fixture = createFixture('sprint-crash-after-publish');
-    const owner = claimAndBind(fixture, fixture.worktreeA, fixture.worktreeA, 'codex/row-a');
+    const owner = seedBoundRow(fixture, fixture.worktreeA, fixture.worktreeA, 'codex/row-a');
     const identity = identify(fixture.primary, ROW_ONE);
     expect(sprint(fixture.worktreeA, [
       'begin-completion', '--claim-id', owner.claim_id, '--worktree', fixture.worktreeA, '--target-ref', 'main',
@@ -782,7 +505,7 @@ describe('reservations, crash windows, and reconcile', () => {
 
   test('a removed worktree orphans its lease without losing it', () => {
     const fixture = createFixture('sprint-worktree-removed');
-    const owner = claimAndBind(fixture, fixture.primary, fixture.worktreeB, 'codex/row-b');
+    const owner = seedBoundRow(fixture, fixture.primary, fixture.worktreeB, 'codex/row-b');
     const identity = identify(fixture.primary, ROW_ONE);
 
     git(fixture.primary, ['worktree', 'remove', '--force', fixture.worktreeB]);
@@ -804,7 +527,7 @@ describe('reservations, crash windows, and reconcile', () => {
 
   test('detached HEAD and branch rename do not disturb ownership', () => {
     const fixture = createFixture('sprint-detached-head');
-    const owner = claimAndBind(fixture, fixture.worktreeA, fixture.worktreeA, 'codex/row-a');
+    const owner = seedBoundRow(fixture, fixture.worktreeA, fixture.worktreeA, 'codex/row-a');
     const identity = identify(fixture.primary, ROW_ONE);
 
     git(fixture.worktreeA, ['checkout', '--quiet', '--detach']);
@@ -826,13 +549,11 @@ describe('reservations, crash windows, and reconcile', () => {
       'begin-completion', '--claim-id', owner.claim_id, '--worktree', fixture.worktreeA, '--target-ref', 'main',
     ]).status).toBe(0);
   }, 60_000);
-});
 
-describe('completion transaction boundaries', () => {
   test('an inline sibling completing in the primary tree does not drift a live claim', () => {
     // The revision-granularity falsifier, end to end over a real clone: row one
     // is claimed and bound from a linked worktree while row two runs the real
-    // inline completion in the primary tree -- claim, bind, token, then the row
+    // inline completion in the primary tree -- seeded lease and token, then the row
     // rewrite and the lease release inside one backlog-lock critical section.
     // A whole-sprint or whole-ref revision would invalidate row one here, which
     // is exactly what makes parallel execution impossible.
@@ -844,7 +565,7 @@ describe('completion transaction boundaries', () => {
     }
 
     // Inline admission needs no planning marker or projection.
-    const rowOne = claimAndBind(fixture, fixture.worktreeA, fixture.worktreeA, 'codex/row-a');
+    const rowOne = seedBoundRow(fixture, fixture.worktreeA, fixture.worktreeA, 'codex/row-a');
     const before = identify(fixture.primary, ROW_ONE);
 
     const shell = (args: readonly string[]) => spawnSync('bash', [...args], {
@@ -853,10 +574,7 @@ describe('completion transaction boundaries', () => {
       env: sandboxEnv(),
     });
 
-    const start = shell(['scripts/sprint-backlog.sh', 'start-task', '--task', ROW_TWO]);
-    expect(start.status, `${start.stdout}\n${start.stderr}`).toBe(0);
-    expect(start.stdout).toContain(`Claimed backlog task '${ROW_TWO}'`);
-    expect(start.stdout).toContain('bound the current worktree without planning artifacts');
+    seedRow(fixture.primary, ROW_TWO, fixture.primary, 'main', 'inline-owner');
 
     const complete = shell(['scripts/sprint-backlog.sh', 'complete-task', '--task', ROW_TWO]);
     expect(complete.status, `${complete.stdout}\n${complete.stderr}`).toBe(0);
@@ -886,9 +604,7 @@ describe('completion transaction boundaries', () => {
       .toBe('available');
     expect(readdirSync(join(fixture.primary, '.ai/harness/sprint/claims'))).toHaveLength(0);
   }, 120_000);
-});
 
-describe('quiescent fail-closed cutover', () => {
   test('cutover refuses while legacy markers, contract worktrees, or closeouts are live', () => {
     const fixture = createFixture('sprint-cutover');
     expect(inspectCutoverQuiescence(fixture.primary).quiescent).toBe(true);
@@ -926,41 +642,6 @@ describe('quiescent fail-closed cutover', () => {
     expect(inspectCutoverQuiescence(fixture.primary).quiescent).toBe(true);
   }, 60_000);
 
-  test('claim and steal refuse while retired markers survive an uninstalled plane', () => {
-    // `init` is not the only route to the plane. A claim taken directly on a
-    // clone that never crossed over would run v1 beside legacy per-worktree
-    // markers it cannot see, which is the duplicate claim the cutover exists
-    // to prevent -- so the ownership verbs carry the same fail-closed gate.
-    const fixture = createFixture('sprint-claim-legacy-gate');
-    const rowOne = identify(fixture.primary, ROW_ONE);
-    const owner = sprintJson<OwnerRecord>(sprint(fixture.worktreeA, claimArgs(rowOne, 'session-a')));
-
-    mkdirSync(join(fixture.worktreeB, '.ai/harness/sprint/in-flight'), { recursive: true });
-    writeFileSync(join(fixture.worktreeB, '.ai/harness/sprint/in-flight/second-row'), 'capturing');
-
-    const rowTwo = identify(fixture.primary, ROW_TWO);
-    const blockedClaim = sprint(fixture.worktreeB, claimArgs(rowTwo, 'session-b'));
-    expect(blockedClaim.status).toBe(1);
-    expect(blockedClaim.stderr).toContain('has not crossed over to the v1 coordination plane');
-    expect(blockedClaim.stderr).toContain('in-flight');
-    expect(blockedClaim.stderr).toContain('repo-harness init');
-    // Fail closed leaves the legacy marker and elects no lease.
-    expect(readLease(fixture.primary, rowTwo.task_id).classification).toBe('available');
-    expect(existsSync(join(fixture.worktreeB, '.ai/harness/sprint/in-flight/second-row'))).toBe(true);
-
-    const blockedSteal = sprint(fixture.worktreeB, [
-      'steal', '--expected-claim-id', owner.claim_id, '--reason', 'stalled', '--session-id', 'session-b',
-    ]);
-    expect(blockedSteal.status).toBe(1);
-    expect(blockedSteal.stderr).toContain('has not crossed over to the v1 coordination plane');
-    expect(readLease(fixture.primary, rowOne.task_id).record?.claim_id).toBe(owner.claim_id);
-
-    // The crossing is one-shot: once the protocol marker is recorded, the gate
-    // is inert even while the operator's own legacy files are still on disk.
-    recordCutoverInstalled(cutoverMarkerPath(fixture.primary)!);
-    expect(sprint(fixture.worktreeB, claimArgs(rowTwo, 'session-b')).status).toBe(0);
-  }, 60_000);
-
   test('a missing git binary is a typed error, never a skipped gate', () => {
     // Separate process, because PATH is process-global and this suite runs
     // beside others. `process.execPath` keeps bun reachable without PATH.
@@ -982,7 +663,7 @@ describe('quiescent fail-closed cutover', () => {
         join(ROOT, 'src/effects/state/coordination-cutover.ts'),
         fixture.primary,
       ],
-      { encoding: 'utf-8', env: { PATH: emptyPath, HOME: emptyPath } },
+      { encoding: 'utf-8', env: { PATH: emptyPath, HOME: emptyPath, TMPDIR: '/tmp' } },
     );
 
     expect(probe.stdout.trim().split('\n')).toEqual([
@@ -1008,9 +689,7 @@ describe('quiescent fail-closed cutover', () => {
     // Fail closed means the legacy marker survives for the operator to resolve.
     expect(existsSync(join(fixture.worktreeA, '.ai/harness/sprint/in-flight/race-the-claim'))).toBe(true);
   }, 120_000);
-});
 
-describe('lock wedges and their blast radius', () => {
   test('an empty lock directory wedges the lock clone-wide', () => {
     const fixture = createFixture('sprint-lock-wedge');
     const commonDir = resolveGitCommonDirectory(fixture.primary);
@@ -1057,185 +736,10 @@ describe('lock wedges and their blast radius', () => {
     expect(withBacklogLock(fixture.primary, () => 'recovered')).toBe('recovered');
   }, 120_000);
 
-  test('the relocated shell backlog lock is the same clone-wide directory', () => {
-    const fixture = createFixture('sprint-shell-lock');
-    mkdirSync(join(fixture.primary, 'scripts'), { recursive: true });
-    writeFileSync(
-      join(fixture.primary, 'scripts/sprint-backlog.sh'),
-      readFileSync(join(HELPER_DIR, 'sprint-backlog.sh'), 'utf-8'),
-    );
-    const commonDir = resolveGitCommonDirectory(fixture.primary);
-    const backlogLock = join(commonDir, COORDINATION_BACKLOG_LOCK_RELATIVE_PATH);
-    mkdirSync(backlogLock, { recursive: true });
-    spawnSync('bash', ['-c', `touch -t 202001010000 '${backlogLock}'`], { encoding: 'utf-8' });
-
-    // The shell primitive keeps its mtime-based stale reclaim, so it recovers
-    // the same empty directory the TS primitive fails closed on. The two
-    // asymmetric reclaim rules meet on one directory now; that asymmetry is the
-    // reason the wedge above is worth a named row.
-    const complete = spawnSync(
-      'bash',
-      ['scripts/sprint-backlog.sh', 'complete-task', '--task', ROW_TWO],
-      {
-        cwd: fixture.primary,
-        encoding: 'utf-8',
-        env: sandboxEnv({
-          REPO_HARNESS_BACKLOG_LOCK_ATTEMPTS: '5',
-          REPO_HARNESS_BACKLOG_LOCK_SLEEP_SECONDS: '0.02',
-        }),
-      },
-    );
-    expect(complete.stderr).toContain('reclaiming stale backlog lock');
-    expect(complete.stderr).toContain(backlogLock);
-    expect(complete.status).toBe(0);
-    expect(existsSync(backlogLock)).toBe(false);
-  }, 60_000);
-
-  /**
-   * A real `start-task` shell that holds the backlog lock until the test opens
-   * a FIFO. The CLI wrapper blocks `sprint identify`, the first CLI call inside
-   * the critical section, and then runs the real CLI. The shell runs in its own
-   * process group, so the test can stop the shell and the wrapper together.
-   */
-  async function holdBacklogLockInShell(fixture: Fixture) {
-    mkdirSync(join(fixture.primary, 'scripts'), { recursive: true });
-    writeFileSync(
-      join(fixture.primary, 'scripts/sprint-backlog.sh'),
-      readFileSync(join(HELPER_DIR, 'sprint-backlog.sh'), 'utf-8'),
-    );
-    const control = realpathSync(mkdtempSync(join(tmpdir(), 'sprint-shell-holder-')));
-    FIXTURES.add(control);
-    const gate = join(control, 'gate.fifo');
-    const held = join(control, 'held');
-    expect(spawnSync('mkfifo', [gate]).status).toBe(0);
-    const wrapper = join(control, 'repo-harness');
-    writeFileSync(wrapper, [
-      '#!/bin/bash',
-      'if [[ "$1" == sprint && "$2" == identify ]]; then',
-      `  : > '${held}'`,
-      `  read -r _ < '${gate}'`,
-      'fi',
-      `exec ${process.execPath} ${CLI} "$@"`,
-      '',
-    ].join('\n'));
-    chmodSync(wrapper, 0o755);
-
-    const shell = spawn('bash', ['scripts/sprint-backlog.sh', 'start-task', '--task', ROW_ONE], {
-      cwd: fixture.primary,
-      env: sandboxEnv({ REPO_HARNESS_CLI_BIN: wrapper }),
-      detached: true,
-    });
-    let stdout = '';
-    let stderr = '';
-    shell.stdout.on('data', (chunk) => { stdout += String(chunk); });
-    shell.stderr.on('data', (chunk) => { stderr += String(chunk); });
-    const exited = new Promise<Run>((resolve) => {
-      shell.on('close', (status) => resolve({ status, stdout, stderr }));
-    });
-    const deadline = Date.now() + 30_000;
-    while (!existsSync(held)) {
-      if (Date.now() > deadline) throw new Error(`the shell holder never reached its critical section: ${stderr}`);
-      await Bun.sleep(10);
-    }
-    return {
-      pid: shell.pid!,
-      exited,
-      resume: () => writeFileSync(gate, 'go\n'),
-      kill: () => process.kill(-shell.pid!, 'SIGKILL'),
-    };
-  }
-
-  test('a live shell start-task holder keeps the backlog lock after its directory ages', async () => {
-    const fixture = createFixture('sprint-shell-holder', false);
-    const backlogLock = join(resolveGitCommonDirectory(fixture.primary), COORDINATION_BACKLOG_LOCK_RELATIVE_PATH);
-    const holder = await holdBacklogLockInShell(fixture);
-    let finished = false;
-    try {
-      // Age only the lock directory, past the TS (30 s) and shell (1 min)
-      // thresholds. Age alone must not take the lock from a live holder.
-      expect(spawnSync('touch', ['-t', '202001010000', backlogLock]).status).toBe(0);
-
-      expect(() => withBacklogLock(fixture.primary, () => 'entered', () => {
-        throw new Error('reclaimed the backlog lock from a live shell holder');
-      })).toThrow(/timed out waiting/);
-      const contender = spawnSync('bash', ['scripts/sprint-backlog.sh', 'start-task', '--task', ROW_TWO], {
-        cwd: fixture.primary,
-        encoding: 'utf-8',
-        env: sandboxEnv({
-          REPO_HARNESS_BACKLOG_LOCK_ATTEMPTS: '5',
-          REPO_HARNESS_BACKLOG_LOCK_SLEEP_SECONDS: '0.02',
-        }),
-      });
-      expect(contender.stderr).not.toContain('reclaiming stale backlog lock');
-      expect(contender.stderr).toContain('timed out acquiring backlog lock');
-      expect(contender.status).toBe(1);
-      // The holder names itself with its own live PID, in the format both
-      // reclaim paths read.
-      const owners = readdirSync(backlogLock);
-      expect(owners).toHaveLength(1);
-      expect(owners[0]!.startsWith(`${holder.pid}-`)).toBe(true);
-
-      holder.resume();
-      const result = await holder.exited;
-      finished = true;
-      expect(result.stdout).toContain(`Claimed backlog task '${ROW_ONE}'`);
-      expect(existsSync(backlogLock)).toBe(false);
-    } finally {
-      if (!finished) holder.kill();
-    }
-  }, 120_000);
-
-  test('a killed shell holder is reclaimed by PID at once, not after the age threshold', async () => {
-    const fixture = createFixture('sprint-shell-holder-killed', false);
-    const backlogLock = join(resolveGitCommonDirectory(fixture.primary), COORDINATION_BACKLOG_LOCK_RELATIVE_PATH);
-    const holder = await holdBacklogLockInShell(fixture);
-    holder.kill();
-    await holder.exited;
-    expect(existsSync(backlogLock)).toBe(true);
-
-    const reclaimed: string[] = [];
-    expect(withBacklogLock(fixture.primary, () => 'recovered', (path) => reclaimed.push(path))).toBe('recovered');
-    expect(reclaimed).toEqual([backlogLock]);
-    expect(existsSync(backlogLock)).toBe(false);
-  }, 120_000);
-});
-
-/**
- * The board over the same real clone the ownership verbs run against. Nothing
- * here is mocked: real linked worktrees, real leases on the shared plane, real
- * `git worktree list`, and the real attempt ledgers in the owner worktrees.
- *
- * Three falsification rows are owned by this block (plan verdict H):
- * lease-changes-during-read, unreadable-ledger-never-transfers-ownership, and
- * new-generation-resets-stall. The first two are asserted structurally through
- * the collector seam in `tests/board-snapshot-consistency.test.ts`, because a
- * real filesystem cannot schedule a tear deterministically; what this block
- * adds is that the same shapes are actually reachable over real state.
- */
-describe('board projection over real linked worktrees', () => {
-  /** Claim one row from `cwd` and bind it to `worktree`. */
-  function claimRow(
-    cwd: string,
-    taskRef: string,
-    worktree: string,
-    branch: string,
-    sessionId: string,
-  ): OwnerRecord {
-    const identity = identify(cwd, taskRef);
-    const claimed = sprintJson<OwnerRecord>(sprint(cwd, claimArgs(identity, sessionId)));
-    return sprintJson<OwnerRecord>(sprint(cwd, [
-      'bind',
-      '--claim-id', claimed.claim_id,
-      '--worktree', worktree,
-      '--branch', branch,
-      '--unit-ref', `plans/plan-${branch.replace(/[^a-z]/g, '-')}.md`,
-    ]));
-  }
-
   test('two bound worktrees are two doing cards with distinct ownership', () => {
     const fixture = createFixture('board-two-owners');
-    const first = claimRow(fixture.worktreeA, ROW_ONE, fixture.worktreeA, 'codex/row-a', 'session-a');
-    const second = claimRow(fixture.worktreeB, ROW_TWO, fixture.worktreeB, 'codex/row-b', 'session-b');
+    const first = seedRow(fixture.worktreeA, ROW_ONE, fixture.worktreeA, 'codex/row-a', 'session-a');
+    const second = seedRow(fixture.worktreeB, ROW_TWO, fixture.worktreeB, 'codex/row-b', 'session-b');
 
     // No `--sprint`: the active sprint marker is the only fallback, and it is
     // the same answer every other verb resolves "which sprint" to.
@@ -1265,21 +769,17 @@ describe('board projection over real linked worktrees', () => {
     expect(board(fixture.worktreeB, ['--sprint', SPRINT_PATH])).toEqual(document);
   }, 180_000);
 
-  test('a steal shows up as a second generation with provenance', () => {
+  test('a historical second generation keeps its provenance in the board', () => {
     const fixture = createFixture('board-steal');
-    const owner = claimRow(fixture.worktreeA, ROW_ONE, fixture.worktreeA, 'codex/row-a', 'session-a');
-    const thief = sprintJson<OwnerRecord>(sprint(fixture.worktreeB, [
-      'steal',
-      '--expected-claim-id', owner.claim_id,
-      '--reason', 'no progress for 2h',
-      '--session-id', 'session-b',
-    ]));
+    const owner = seedRow(fixture.worktreeA, ROW_ONE, fixture.worktreeA, 'codex/row-a', 'session-a');
+    const thief = seedRow(fixture.worktreeB, ROW_ONE, null, null, 'session-b', 2,
+      { claim_id: owner.claim_id, reason: 'no progress for 2h' });
 
     const card = cardOf(board(fixture.primary, ['--sprint', SPRINT_PATH]), ROW_ONE);
     expect(card.claim?.claim_id).toBe(thief.claim_id);
     expect(card.claim?.generation).toBe(2);
     expect(card.claim?.stolen_from).toEqual({ claim_id: owner.claim_id, reason: 'no progress for 2h' });
-    // A steal mints a fresh reservation: the new owner has no worktree yet.
+    // The historical reservation has no execution worktree.
     expect(card.lease_state).toBe('reserving');
     expect(card.claim?.worktree).toBeNull();
     expect(card.column).toBe('doing');
@@ -1287,7 +787,7 @@ describe('board projection over real linked worktrees', () => {
 
   test('a removed worktree is a blocked, reclaimable orphan', () => {
     const fixture = createFixture('board-orphan');
-    const owner = claimRow(fixture.worktreeA, ROW_ONE, fixture.worktreeA, 'codex/row-a', 'session-a');
+    const owner = seedRow(fixture.worktreeA, ROW_ONE, fixture.worktreeA, 'codex/row-a', 'session-a');
     git(fixture.primary, ['worktree', 'remove', '--force', fixture.worktreeA]);
 
     const card = cardOf(board(fixture.primary, ['--sprint', SPRINT_PATH]), ROW_ONE);
@@ -1304,7 +804,7 @@ describe('board projection over real linked worktrees', () => {
 
   test('a completed row is done with cleanup, not doing', () => {
     const fixture = createFixture('board-done-residue');
-    const owner = claimRow(fixture.worktreeA, ROW_ONE, fixture.worktreeA, 'codex/row-a', 'session-a');
+    const owner = seedRow(fixture.worktreeA, ROW_ONE, fixture.worktreeA, 'codex/row-a', 'session-a');
     // The publication back-fills the canonical row; the lease outlives it when
     // the finish crashes between the two.
     writeFileSync(join(fixture.primary, SPRINT_PATH), sprintFile([
@@ -1321,79 +821,10 @@ describe('board projection over real linked worktrees', () => {
     expect(card.actions.reconcile).toContain('--target-ref main');
   }, 180_000);
 
-  test('a new generation resets the previous claim stall count', () => {
-    const fixture = createFixture('board-stall-reset');
-    const unitRef = 'plans/plan-codex-row-a.md';
-    const owner = claimRow(fixture.worktreeA, ROW_ONE, fixture.worktreeA, 'codex/row-a', 'session-a');
-    expect(owner.unit_ref).toBe(unitRef);
-
-    // The stall proof, recorded exactly as the loop host records it: two
-    // consecutive turns that moved the owner worktree's progress token nowhere.
-    const envelope = JSON.parse(
-      state(fixture.worktreeA, ['next', '--json']).stdout,
-    ) as { progress_token: string };
-    expect(envelope.progress_token).toMatch(/^sha256:/);
-    for (let turn = 0; turn < 2; turn += 1) {
-      const recorded = state(fixture.worktreeA, [
-        'attempt', '--json',
-        '--unit-ref', unitRef,
-        '--outcome', 'completed',
-        '--before-progress-token', envelope.progress_token,
-        '--after-progress-token', envelope.progress_token,
-      ]);
-      expect(recorded.status).toBe(0);
-    }
-    expect(cardOf(board(fixture.primary, ['--sprint', SPRINT_PATH]), ROW_ONE).progress_state)
-      .toBe('stalled');
-
-    const thief = sprintJson<OwnerRecord>(sprint(fixture.worktreeB, [
-      'steal',
-      '--expected-claim-id', owner.claim_id,
-      '--reason', 'stalled',
-      '--session-id', 'session-b',
-    ]));
-    const rebound = sprintJson<OwnerRecord>(sprint(fixture.worktreeB, [
-      'bind',
-      '--claim-id', thief.claim_id,
-      '--worktree', fixture.worktreeA,
-      '--branch', 'codex/row-a',
-      '--unit-ref', unitRef,
-    ]));
-    expect(rebound.generation).toBe(2);
-
-    // Same worktree, same unit, same ledger, same trailing no-progress
-    // receipts -- and the new owner is not stalled, because `bind` appended a
-    // `resumed` receipt that stops the backward walk before it reaches them.
-    const card = cardOf(board(fixture.primary, ['--sprint', SPRINT_PATH]), ROW_ONE);
-    expect(card.claim?.generation).toBe(2);
-    expect(card.progress_state).toBe('active');
-    expect(card.column).toBe('doing');
-
-    const ledger = readFileSync(
-      join(fixture.worktreeA, '.ai/harness/runs/continuation/attempts.jsonl'),
-      'utf-8',
-    ).trim().split('\n').map((line) => JSON.parse(line) as { outcome: string });
-    // Appended, never rewritten: the ledger stays append-only evidence.
-    expect(ledger.map((receipt) => receipt.outcome))
-      .toEqual(['resumed', 'completed', 'completed', 'resumed']);
-  }, 240_000);
-
-  /**
-   * The premise this whole work package rests on: lock-free A/B input-revision
-   * comparison converges to `stable` under real load. Nothing before this
-   * measured it, because no parallel load existed to measure.
-   *
-   * The assertion is the mechanism -- every run must produce a well-formed
-   * document with a consistency value from the vocabulary. The ratio is
-   * logged, not asserted at a threshold, because a flaky-by-construction
-   * threshold in CI would be a worse signal than the number itself. Below ~80%
-   * the plan's pre-authorized fallback applies (drop `evidence` from the
-   * composite digest, mark the progress overlay possibly-stale).
-   */
   test('twenty consecutive board reads under active worktrees', () => {
     const fixture = createFixture('board-stability-probe');
-    claimRow(fixture.worktreeA, ROW_ONE, fixture.worktreeA, 'codex/row-a', 'session-a');
-    claimRow(fixture.worktreeB, ROW_TWO, fixture.worktreeB, 'codex/row-b', 'session-b');
+    seedRow(fixture.worktreeA, ROW_ONE, fixture.worktreeA, 'codex/row-a', 'session-a');
+    seedRow(fixture.worktreeB, ROW_TWO, fixture.worktreeB, 'codex/row-b', 'session-b');
 
     const RUNS = 20;
     let stable = 0;
@@ -1410,5 +841,5 @@ describe('board projection over real linked worktrees', () => {
     );
     expect(stable).toBeGreaterThanOrEqual(0);
   }, 600_000);
-});
 
+});

@@ -85,4 +85,10 @@ export async function runProcessGroupLauncherCli(argv: readonly string[]): Promi
   }
 }
 
-if (import.meta.main) process.exitCode = await runProcessGroupLauncherCli(process.argv.slice(2));
+// Keep imported module initialization synchronous. Bun must not create an async
+// import fan-in for this direct-execution guard when it bundles the hook entry.
+if (import.meta.main) {
+  void runProcessGroupLauncherCli(process.argv.slice(2)).then((exitCode) => {
+    process.exitCode = exitCode;
+  });
+}
