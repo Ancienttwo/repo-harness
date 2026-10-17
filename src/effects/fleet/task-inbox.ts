@@ -55,13 +55,8 @@ import {
 import type {
   ClaimActorReceiptV1,
 } from '../../core/engineers/principal-claim';
-import {
-  lookupCanonicalTask,
-  PENDING_ROW_STATUS,
-  type CanonicalTask,
-} from '../../core/state/coordination-identity';
+import { lookupCanonicalTask, type CanonicalTask } from '../../core/state/coordination-identity';
 import { resolveGitCommonDirectory } from '../git/common-directory';
-import { readActiveSprintPath, readCanonicalTargetRef } from '../state/collect-board-inputs';
 import {
   readCanonicalSprint,
   resolveRepoIdentity,
@@ -99,21 +94,6 @@ export interface SendTaskMessageInput {
   readonly event: TaskMessageEventV1;
 }
 
-export interface SendTaskBoardMessageInput extends SendTaskMessageInput {
-  /**
-   * Runs the final publication inside the caller's registry authorization
-   * lock, after re-proving that authority.
-   *
-   * The task lock stays outside it, so this send never holds the
-   * machine-global registry lock while it waits up to the task-lock budget or
-   * across canonical Git reads. Checking authorization and then publishing
-   * outside that lock would leave a window where a revocation commits between
-   * the check and the write, so the check and the write are one critical
-   * section of the same lock a revocation must take.
-   */
-  readonly with_registry_authority: <T>(publish: () => T) => T;
-}
-
 export interface TaskInboxListInput {
   readonly repo_root: string;
   readonly task_id: string;
@@ -137,14 +117,6 @@ export interface DeliverTaskInboxInput extends TaskInboxListInput {
 export interface AcknowledgeTaskInboxInput extends TaskInboxListInput {
   readonly message_id: string;
   readonly acknowledged_at: string;
-}
-
-export interface SupersedeTaskInboxInput extends TaskInboxListInput {
-  readonly message_id: string;
-  /** A current owner that proves the frozen claim was replaced. */
-  readonly successor: Extract<TaskMessageRecipient, { readonly kind: 'claim' }>;
-  readonly successor_execution_worktree: string;
-  readonly delivery_channel: TaskMessageDeliveryChannel;
 }
 
 export interface TaskInboxEventEntry {
@@ -209,18 +181,6 @@ function fail(code: TaskInboxErrorCode, message: string, cause?: unknown): never
   throw new TaskInboxError(code, message, cause);
 }
 
-/**
- * A rejection raised by a caller-supplied authority check. This module owns the
- * Task Inbox error vocabulary, not the caller's, so its reason crosses the lock
- * boundary unchanged instead of being flattened into `task_message_unreadable`.
- */
-class TaskInboxAuthorityRejection extends Error {
-  constructor(readonly reason: unknown) {
-    super('the task inbox caller rejected its own authority before publication');
-    this.name = 'TaskInboxAuthorityRejection';
-  }
-}
-
 function withInboxTaskLock<T>(repoRoot: string, taskId: string, action: () => T): T {
   try {
     return withTaskLock(repoRoot, taskId, () => {
@@ -231,7 +191,6 @@ function withInboxTaskLock<T>(repoRoot: string, taskId: string, action: () => T)
       return result;
     });
   } catch (error) {
-    if (error instanceof TaskInboxAuthorityRejection) throw error.reason;
     throw asInboxError(error, 'task_message_unreadable', `cannot operate task inbox under the task lock for ${taskId}`);
   }
 }
@@ -482,26 +441,6 @@ function canonicalTask(
   return task.task;
 }
 
-/**
- * The request's source is intentionally captured before the task lock so the
- * operator can receive a typed stale-snapshot response. The active marker and
- * policy target are re-read here, under that lock, to make this comparison the
- * source-authority linearization point for publication.
- */
-function assertCanonicalSourceIsActive(repoRoot: string, source: TaskInboxCanonicalSource): void {
-  let sprintPath: string | null;
-  let targetRef: string;
-  try {
-    sprintPath = readActiveSprintPath(repoRoot);
-    targetRef = readCanonicalTargetRef(repoRoot);
-  } catch (error) {
-    throw asInboxError(error, 'task_message_unreadable', 'cannot re-read active task board authority');
-  }
-  if (sprintPath !== source.sprintPath || targetRef !== source.targetRef) {
-    fail('canonical_source_stale', 'the active task board authority changed since the message was opened');
-  }
-}
-
 function assertLeaseCanonicalSource(lease: LeaseRead, source: TaskInboxCanonicalSource, taskId: string, expectedRevision: string): NonNullable<LeaseRead['record']> {
   if (lease.record === null) fail('task_unowned', `task ${taskId} has no owner`);
   if (lease.record.task_revision !== expectedRevision) fail('task_revision_mismatch', `lease revision does not match task inbox event for ${taskId}`);
@@ -586,7 +525,7 @@ function ensureInboxDirectories(repoRoot: string, taskId: string, messageId?: st
   }
 }
 
-function writeImmutableEvent(repoRoot: string, event: TaskMessageEventV1, beforePublish?: () => void): TaskInboxSendResult {
+function writeImmutableEvent(repoRoot: string, event: TaskMessageEventV1): TaskInboxSendResult {
   ensureInboxDirectories(repoRoot, event.task_id);
   const target = taskInboxEventPath(repoRoot, event.task_id, event.message_id);
   const canonical = canonicalTaskMessageEventBytes(event);
@@ -615,7 +554,6 @@ function writeImmutableEvent(repoRoot: string, event: TaskMessageEventV1, before
   }
   try {
     inspectTaskInboxLayout(resolveGitCommonDirectory(repoRoot));
-    beforePublish?.();
     try {
       linkSync(temporary, target);
       fsyncDirectory(directory);
@@ -663,7 +601,7 @@ function sameEventRetry(existing: TaskMessageEventV1, candidate: TaskMessageEven
   return canonicalTaskMessageEventBytes(existing) === canonicalTaskMessageEventBytes(rebased);
 }
 
-function writeReceipt(repoRoot: string, taskId: string, receipt: TaskMessageDeliveryReceiptV1, beforePublish?: () => void): TaskMessageDeliveryReceiptV1 {
+function writeReceipt(repoRoot: string, taskId: string, receipt: TaskMessageDeliveryReceiptV1): TaskMessageDeliveryReceiptV1 {
   const recipient = recipientFromReceipt(receipt);
   ensureInboxDirectories(repoRoot, taskId, receipt.message_id);
   const target = taskInboxDeliveryPath(repoRoot, taskId, receipt.message_id, recipient);
@@ -687,7 +625,6 @@ function writeReceipt(repoRoot: string, taskId: string, receipt: TaskMessageDeli
       throw asInboxError(error, 'task_message_unreadable', `cannot stage task message delivery receipt: ${target}`);
     }
     inspectTaskInboxLayout(resolveGitCommonDirectory(repoRoot));
-    beforePublish?.();
     try {
       renameSync(temporary, target);
       fsyncDirectory(directory);
@@ -827,40 +764,16 @@ export function summarizeTaskInboxForFleet(input: TaskInboxFleetSummaryInput): T
   return result;
 }
 
-function sendTaskMessageWithAuthority(
-  input: SendTaskMessageInput,
-  requireActiveTaskBoardAuthority: boolean,
-  withRegistryAuthority: (<T>(publish: () => T) => T) | null,
-): TaskInboxSendResult {
+/** Persist a producer-authorized event after canonical task and claim checks. */
+export function sendTaskMessage(input: SendTaskMessageInput): TaskInboxSendResult {
   let event: TaskMessageEventV1;
   try {
     event = validateTaskMessageEvent(input.event);
   } catch (error) {
     throw asInboxError(error, 'task_message_invalid', 'task message event is invalid');
   }
-  const publish = (): TaskInboxSendResult => {
-    if (withRegistryAuthority === null) return writeImmutableEvent(input.repo_root, event);
-    let authorized = false;
-    try {
-      return withRegistryAuthority(() => {
-        authorized = true;
-        return writeImmutableEvent(input.repo_root, event);
-      });
-    } catch (error) {
-      // Only the caller's own authority rejection crosses this module's error
-      // vocabulary unchanged; a failure of the write itself is ours.
-      if (authorized) throw error;
-      throw new TaskInboxAuthorityRejection(error);
-    }
-  };
   return withInboxTaskLock(input.repo_root, event.task_id, () => {
-    if (requireActiveTaskBoardAuthority) {
-      assertCanonicalSourceIsActive(input.repo_root, input.canonical_source);
-    }
-    const task = canonicalTask(input.repo_root, input.canonical_source, event.task_id, event.task_revision);
-    if (requireActiveTaskBoardAuthority && task.row.status !== PENDING_ROW_STATUS) {
-      fail('task_not_pending', `task ${event.task_id} no longer accepts messages because its status is ${task.row.status}`);
-    }
+    canonicalTask(input.repo_root, input.canonical_source, event.task_id, event.task_revision);
     if (event.scope === 'claim') {
       const record = assertLeaseCanonicalSource(readLease(input.repo_root, event.task_id), input.canonical_source, event.task_id, event.task_revision);
       if (record.state !== 'bound') fail('recipient_unavailable', `task ${event.task_id} owner is ${record.state}, not bound`);
@@ -868,25 +781,8 @@ function sendTaskMessageWithAuthority(
         fail('claim_mismatch', `task ${event.task_id} claim scope does not match current owner`);
       }
     }
-    return publish();
+    return writeImmutableEvent(input.repo_root, event);
   });
-}
-
-/**
- * Persist a producer-authorized immutable event after canonical task
- * resolution. Claim-scoped sends additionally freeze the current bound
- * claim/generation under lock.
- */
-export function sendTaskMessage(input: SendTaskMessageInput): TaskInboxSendResult {
-  return sendTaskMessageWithAuthority(input, false, null);
-}
-
-/**
- * Task Board's only write. Its captured source and pending-row authority are
- * both revalidated under the task lock immediately before publication.
- */
-export function sendTaskBoardMessage(input: SendTaskBoardMessageInput): TaskInboxSendResult {
-  return sendTaskMessageWithAuthority(input, true, input.with_registry_authority);
 }
 
 /** Read-only projection for a canonical recipient. It never marks delivery. */
@@ -1041,34 +937,6 @@ export function acknowledgeTaskInbox(input: AcknowledgeTaskInboxInput): TaskMess
 
 /** CLI-facing spelling retained at the effect boundary. */
 export const ackTaskInbox = acknowledgeTaskInbox;
-
-/** Explicit successor-fenced supersession for a stale claim-scoped event. */
-export function supersedeTaskInbox(input: SupersedeTaskInboxInput): TaskMessageDeliveryReceiptV1 {
-  assertTaskId(input.task_id);
-  assertMessageId(input.message_id);
-  return withInboxTaskLock(input.repo_root, input.task_id, () => {
-    const current = assertCurrentOwner(
-      input.repo_root,
-      input.canonical_source,
-      input.task_id,
-      input.successor,
-      input.successor_execution_worktree,
-    );
-    const event = readEventAt(taskInboxEventPath(input.repo_root, input.task_id, input.message_id));
-    assertEventCanonical(event, input.task_id, current.task_revision);
-    if (event.scope !== 'claim') fail('claim_mismatch', 'only claim-scoped messages can be superseded');
-    if (event.target_claim_id === current.claim_id && event.target_generation === current.generation) {
-      fail('claim_mismatch', 'current owner cannot supersede its own claim-scoped message');
-    }
-    const frozenRecipient: TaskMessageRecipient = { kind: 'claim', claim_id: event.target_claim_id!, generation: event.target_generation! };
-    const receipt = receiptFor(input.repo_root, input.task_id, event, frozenRecipient, input.delivery_channel);
-    const superseded = transitionTaskMessageDeliveryReceipt(receipt, { state: 'superseded' });
-    if (canonicalTaskMessageDeliveryReceiptBytes(receipt) !== canonicalTaskMessageDeliveryReceiptBytes(superseded)) {
-      writeReceipt(input.repo_root, input.task_id, superseded);
-    }
-    return superseded;
-  });
-}
 
 export class TaskReplyStoreError extends Error {
   readonly code = 'task_reply_inconsistent';
