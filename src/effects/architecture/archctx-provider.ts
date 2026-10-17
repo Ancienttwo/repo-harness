@@ -57,7 +57,14 @@ const DEFAULT_RUNNER: RunArchctxProcess = (binary, args, options) => {
   return { status: overflow ? 1 : result.status, signal: result.signal, timedOut: result.timedOut, stdout: result.stdout, stderr: result.stderr, ...((overflow ? 'archctx output exceeded maxBuffer' : result.error) ? { error: overflow ? 'archctx output exceeded maxBuffer' : result.error } : {}) };
 };
 
-/** A complete native model with an active capability is ready for projection. */
+// Only these export failures say the model itself is absent or invalid.
+const MODEL_NOT_READY_CODES: ReadonlySet<string> = new Set(['AC_MODEL_ADOPTION_REQUIRED', 'AC_SCHEMA_INVALID']);
+
+/**
+ * A complete native model with an active capability is ready for projection.
+ * Any other export failure (timeout, package, contract drift) is not a model
+ * fault, so it reaches the readiness error state with its own reason.
+ */
 function architectureModelReady(repoRoot: string, options: ArchctxProviderOptions): boolean {
   if (!existsSync(join(repoRoot, '.archcontext', 'manifest.yaml')) || !existsSync(join(repoRoot, '.archcontext', 'product.yaml'))) return false;
   try {
@@ -65,7 +72,7 @@ function architectureModelReady(repoRoot: string, options: ArchctxProviderOption
     const authority = capabilityRegistryFromNativeContext(context, { repoRoot });
     return authority.status === 'valid' && authority.registry.capabilities.length > 0;
   } catch (error) {
-    if (error instanceof ArchctxClientError) return false;
+    if (error instanceof ArchctxClientError && MODEL_NOT_READY_CODES.has(error.code)) return false;
     throw error;
   }
 }

@@ -468,13 +468,16 @@ describe('native architecture context', () => {
     expect(calls).toBe(2);
   });
 
-  test.each(['typed', 'unexpected'])('readiness handles a %s export failure', (kind) => {
+  test.each(['typed', 'precondition', 'unexpected'])('readiness handles a %s export failure', (kind) => {
     const f = fixture();
     copyFileSync(join(import.meta.dir, '..', '.archcontext', 'manifest.yaml'), join(f.repoRoot, '.archcontext', 'manifest.yaml'));
     writeFileSync(join(f.repoRoot, '.archcontext', 'product.yaml'), 'name: fixture\n');
     const run: RunArchctxProcess = () => {
       if (kind === 'unexpected') throw new Error('export process failed');
-      return { status: 1, signal: null, stdout: JSON.stringify(failureEnvelope('export.native', knownFailure('AC_SCHEMA_INVALID', 'native-context-model-invalid'))), stderr: '' };
+      const failure = kind === 'typed'
+        ? knownFailure('AC_SCHEMA_INVALID', 'native-context-model-invalid')
+        : knownFailure('AC_PRECONDITION_FAILED', 'native-context-input-missing');
+      return { status: 1, signal: null, stdout: JSON.stringify(failureEnvelope('export.native', failure)), stderr: '' };
     };
     const readiness = inspectArchitectureProjectionReadiness(f.repoRoot, { consumerRoot: f.consumerRoot, policy: { ...policy, provider: 'disabled', applyMode: 'disabled' }, run });
     expect(readiness.apply.enabled).toBe(false);
@@ -482,8 +485,10 @@ describe('native architecture context', () => {
       expect(readiness.projectionProvider.state).toBe('disabled');
       expect(readiness.next).toContain('Adopt ArchContext in a repository');
     } else {
+      // A failure that is not a model fault keeps its own reason instead of the adoption step.
       expect(readiness.projectionProvider.state).toBe('error');
-      expect(readiness.projectionProvider.reason).toContain('export process failed');
+      expect(readiness.projectionProvider.reason).toContain(kind === 'unexpected' ? 'export process failed' : 'AC_PRECONDITION_FAILED');
+      expect(readiness.next).not.toContain('Adopt ArchContext in a repository');
     }
   });
 });
@@ -1062,8 +1067,13 @@ describe('package-local ArchContext projection provider', () => {
     const inspect = () => inspectArchitectureProjectionReadiness(f.repoRoot, { policy: { ...policy, provider: 'disabled', applyMode: 'disabled' } });
     // A valid manifest and capability export leave no adoption step.
     expect(inspect().next).toBeNull();
-    // Empty nodes directory.
+    // An uncommitted node deletion is a worktree precondition fault, not an unadopted model.
     rmSync(join(nodes, 'capability.test.core.yaml'));
+    expect(inspect()).toMatchObject({ projectionProvider: { state: 'error' } });
+    expect(inspect().projectionProvider.reason).toContain('AC_PRECONDITION_FAILED');
+    // Empty nodes directory after the deletion is committed.
+    execFileSync('git', ['add', '-A'], { cwd: f.repoRoot });
+    execFileSync('git', ['commit', '-q', '-m', 'remove nodes'], { cwd: f.repoRoot });
     expect(inspect().next).toContain('Adopt ArchContext in a repository');
     // Only the sample node that `archctx init` writes; it has no responsibilities.
     writeFileSync(join(nodes, 'capability.architecture.context.yaml'), [
@@ -1097,6 +1107,29 @@ describe('package-local ArchContext projection provider', () => {
     expect(readiness.projectionProvider.state).toBe('error');
     expect(readiness.projectionProvider.reason).toContain('requires Node >=22.22 <26');
     expect(readiness.projectionProvider.reason).toContain('trusted candidates ((none))');
+  });
+
+  test('a disabled provider still reports a missing Node runtime when it reads the model', () => {
+    const f = fixture();
+    copyFileSync(join(import.meta.dir, '..', '.archcontext', 'manifest.yaml'), join(f.repoRoot, '.archcontext', 'manifest.yaml'));
+    writeFileSync(join(f.repoRoot, '.archcontext', 'product.yaml'), 'name: fixture\n');
+    const fakeBin = join(f.root, 'bin');
+    mkdirSync(fakeBin, { recursive: true });
+    const node = join(fakeBin, 'node');
+    writeFileSync(node, '#!/bin/sh\necho v22.21.0\n');
+    chmodSync(node, 0o755);
+    const pathOnlyEnv: NodeJS.ProcessEnv = { ...process.env, PATH: fakeBin };
+    delete pathOnlyEnv.REPO_HARNESS_NODE_BIN;
+    const readiness = inspectArchitectureProjectionReadiness(f.repoRoot, {
+      consumerRoot: f.consumerRoot,
+      policy: { ...policy, provider: 'disabled', applyMode: 'disabled' },
+      env: pathOnlyEnv,
+      trustedNodeCandidateSource: () => [],
+    });
+    // Model reads need archctx even when projection is disabled; the runtime fault is not hidden as "not adopted".
+    expect(readiness.projectionProvider).toMatchObject({ provider: 'disabled', state: 'error' });
+    expect(readiness.projectionProvider.reason).toContain('requires Node >=22.22 <26');
+    expect(readiness.apply.enabled).toBe(false);
   });
 
   test('enumerates fixed system paths then sorted nvm versions in the shared trusted-candidate scan', () => {

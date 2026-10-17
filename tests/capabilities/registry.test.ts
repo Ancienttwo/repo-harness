@@ -23,6 +23,7 @@ import {
   type CapabilityRegistry,
 } from "../../src/core/capabilities/registry";
 import { readArchitectureNativeContext } from "../../src/effects/architecture/archctx-provider";
+import { loadArchcontextAuthority } from "../../src/effects/state/resolve-effective-state";
 
 // Recorded with package-local archctx 0.7.2: `archctx resolve --paths-from
 // ownership-0.7.2-paths.txt --json` over the nodes in ownership-0.7.2-model/.
@@ -392,13 +393,20 @@ describe("capabilityRegistryFromNativeContext", () => {
   };
   const map = (profiles: readonly NativeCapabilityProfileInput[]) => capabilityRegistryFromNativeContext({ capabilityProfiles: profiles }, { repoRoot });
 
-  test("maps all 35 real repo capabilities without identity drift", () => {
+  test("maps every real repo capability without identity drift and matches the local reader", () => {
     const context = readArchitectureNativeContext(repoRoot, { kind: "worktree" });
     const resolution = capabilityRegistryFromNativeContext(context, { repoRoot });
     expect(resolution.status).toBe("valid");
     expect(resolution.diagnostics).toEqual([]);
     if (resolution.status !== "valid") throw new Error("expected a valid native registry");
-    expect(resolution.registry.capabilities).toHaveLength(35);
+    // Parity with the local reader that S3 deletes. archctx sorts include anchors, so prefixes compare as sets.
+    const local = loadArchcontextAuthority(repoRoot, (path) => readFileSync(join(repoRoot, path), "utf8"));
+    if (local.status !== "valid") throw new Error("expected a valid local registry");
+    expect(resolution.registry.capabilities.length).toBeGreaterThan(0);
+    expect([...resolution.owners.keys()].sort()).toEqual([...local.owners.keys()].sort());
+    const sortedPrefixes = (capability: { readonly prefixes: readonly string[] }) => ({ ...capability, prefixes: [...capability.prefixes].sort() });
+    for (const [nodeId, capability] of resolution.owners) expect(sortedPrefixes(capability)).toEqual(sortedPrefixes(local.owners.get(nodeId)!));
+    expect(resolution.registry.capabilities.map((capability) => capability.id).sort()).toEqual(local.registry.capabilities.map((capability) => capability.id).sort());
     for (const native of context.capabilityProfiles) {
       expect(capabilityIdentityFromNodeId(native.nodeId)).toEqual({
         id: `${native.domain}-${native.name}`, domain: native.domain, name: native.name,
