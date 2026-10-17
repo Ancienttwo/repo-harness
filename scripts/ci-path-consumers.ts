@@ -118,6 +118,11 @@ export async function discoverPathReferences(entries: readonly (readonly [string
         }
         return false;
       };
+      const rootedFragment = (node: Node): boolean => {
+        const parent = node.parent;
+        return !!parent && pathDerivation(node) && certain(parent)
+          && values(parent).every(path => path.startsWith('/'));
+      };
       for (const node of nodes) {
         const concatenation = isBinaryExpression(node) && node.operatorToken.kind === SyntaxKind.PlusToken;
         if (concatenation || ((isCallExpression(node) || isNewExpression(node)) && pathOperations.has(op(node.expression)))) {
@@ -152,7 +157,7 @@ export async function discoverPathReferences(entries: readonly (readonly [string
             }
           }
         }
-        if (!product && isStringLiteralLikeNode(node) && !intermediate(node) && !enclosedByLauncher(node)
+        if (!product && isStringLiteralLikeNode(node) && !rootedFragment(node) && !enclosedByLauncher(node)
           && (/[\/\\]/.test(node.text) || /^[\w.-]+\.[\w]+$/.test(node.text))) add(node.text, 'literal', node);
       }
       cache.set(key, [...found.values()]);

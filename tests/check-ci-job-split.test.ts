@@ -88,6 +88,15 @@ describe('single affected verification and daily fallback', () => {
     expect(await selectAffectedTests(['scripts/tool.ts'], sources, [])).toEqual(['tests/wrapper.test.ts']);
   });
 
+  test('unresolved data roots keep the real installed-copy projection consumer', async () => {
+    const sources = new Map([
+      ['SKILL.md', '# Skill'],
+      ['tests/direct.test.ts', "readFileSync(join(import.meta.dir, '../SKILL.md'));"],
+      ['tests/installed-copy-sync.test.ts', readFileSync(join(ROOT, 'tests/installed-copy-sync.test.ts'), 'utf8')],
+    ]);
+    expect(await selectAffectedTests(['SKILL.md'], sources, [])).toEqual(['tests/direct.test.ts', 'tests/installed-copy-sync.test.ts']);
+  });
+
   test('path values exclude words, comments and target-repository paths but keep anchored reads', async () => {
     const sources = new Map([
       ['assets/item.json', '{}'],
