@@ -29,7 +29,8 @@ export const ARCHCONTEXT_IDENTITY_OWNERS: ArchcontextOwnerLookup<CapabilityIdent
 export function formatArchcontextCapabilityError(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
   if (!(error instanceof ArchctxClientError) || !Array.isArray(error.details?.issues)) return message;
-  const issues = error.details.issues.filter(isRecord);
+  const nativeIssues: readonly unknown[] = error.details.issues;
+  const issues = nativeIssues.filter(isRecord);
   const details = issues.slice(0, 5).map((issue) => [issue.entityId, issue.field, issue.invariant]
     .filter((field) => typeof field === 'string').join(' ').replace(/\s+/g, ' ').trim()).filter(Boolean);
   if (issues.length > 5) details.push(`+${issues.length - 5} more`);

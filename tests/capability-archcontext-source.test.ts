@@ -682,12 +682,12 @@ describe("capability source: native authority", () => {
       expect(authority.status).toBe("invalid");
       expect(authority.diagnostics.map((item) => item.code)).toEqual(["ARCHCONTEXT_MODEL_REJECTED"]);
       expect(authority.diagnostics[0].message).toContain("AC_SCHEMA_INVALID");
-      expect(authority.diagnostics[0].message).toContain("capability.apps-web.web summary");
+      expect(authority.diagnostics[0].message).toContain("capability.apps-web.web $.summary required");
       const result = runResolver(cwd, ["validate", "--format", "json"]);
       expect(result.status).toBe(2);
       expect(result.stdout).toBe("");
       expect(result.stderr).toContain("AC_SCHEMA_INVALID");
-      expect(result.stderr).toContain("capability.apps-web.web summary");
+      expect(result.stderr).toContain("capability.apps-web.web $.summary required");
     } finally { rmSync(cwd, { recursive: true, force: true }); }
   });
 

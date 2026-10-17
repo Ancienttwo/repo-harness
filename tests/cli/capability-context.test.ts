@@ -327,7 +327,7 @@ describe('capability-context command', () => {
       const node = JSON.parse(fs.readFileSync(nodePath, 'utf-8'));
       delete node.summary;
       fs.writeFileSync(nodePath, JSON.stringify(node));
-      expect(() => runCapabilityContextStatus(cwd)).toThrow('capability.apps.web summary');
+      expect(() => runCapabilityContextStatus(cwd)).toThrow('capability.apps.web $.summary required');
     } finally { fs.rmSync(cwd, { recursive: true, force: true }); }
   });
 
