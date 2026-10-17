@@ -111,6 +111,8 @@ export interface EngineerTransitionRequest {
 export type EngineerProfileBindingErrorCode =
   | 'engineer_profile_invalid'
   | 'engineer_binding_invalid'
+  | 'bound_task_active'
+  | 'bound_task_lease_unavailable'
   | 'binding_state_corrupt'
   | 'binding_stale'
   | 'idempotency_conflict'

@@ -12,7 +12,7 @@ export function assertNoLiveClaimForBindingRotation(cwd: string, engineerId: str
   for (const lease of listLeaseReads(cwd)) {
     if (lease.classification === 'unknown') {
       throw new EngineerProfileBindingError(
-        'binding_state_corrupt',
+        'bound_task_lease_unavailable',
         `cannot prove binding rotation safe while Lease ${lease.task_id} is unknown (${lease.unknown_reason})`,
       );
     }
@@ -24,7 +24,7 @@ export function assertNoLiveClaimForBindingRotation(cwd: string, engineerId: str
   }
   if (claimIds.size === 0) return;
   throw new EngineerProfileBindingError(
-    'engineer_binding_invalid',
+    'bound_task_active',
     `engineer ${engineerId} owns ${claimIds.size} live Claim(s); release it explicitly before binding rotation`,
   );
 }

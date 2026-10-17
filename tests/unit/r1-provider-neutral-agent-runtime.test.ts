@@ -106,8 +106,21 @@ describe('R1 provider-neutral Agent Runtime', () => {
   });
 
   test('Binding rotation after prepare prevents every Host action', () => {
-    const repoRoot = fixture(); const prepared = prepare(repoRoot); releaseEngineerTaskMessage(repoRoot, prepared.intent.message_ref.task_id); bind(repoRoot, 'herdr-cli-agent', bindingTwo);
-    expect(() => startAgentRuntimeEffect({ repo_root: repoRoot, effect_id: prepared.intent.effect_id, started_at: '2026-08-30T10:05:00.000Z' })).toThrow(AgentRuntimeEffectStoreError);
+    const repoRoot = fixture();
+    const prepared = prepare(repoRoot);
+    releaseEngineerTaskMessage(repoRoot, prepared.intent.message_ref.task_id);
+    bind(repoRoot, 'herdr-cli-agent', bindingTwo);
+    let refusal: unknown;
+    try {
+      startAgentRuntimeEffect({ repo_root: repoRoot, effect_id: prepared.intent.effect_id, started_at: '2026-08-30T10:05:00.000Z' });
+    } catch (error) {
+      refusal = error;
+    }
+    expect(refusal).toBeInstanceOf(AgentRuntimeEffectStoreError);
+    expect(refusal).toMatchObject({
+      code: 'agent_runtime_effect_binding_stale',
+      message: 'effect endpoint fence does not match the exact current Binding',
+    });
     expect(readAgentRuntimeEffectStatus(repoRoot, prepared.intent.effect_id).current.state).toBe('intent_persisted');
   });
 

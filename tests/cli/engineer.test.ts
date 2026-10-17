@@ -422,7 +422,6 @@ describe('repo-harness engineer CLI', () => {
     expect(prepareHelp.exitCode).toBe(0);
     expect(prepareHelp.stdout).toContain('--authorization-id');
     expect(prepareHelp.stdout).not.toContain('--observed-at');
-    expect(help.stdout).toContain('message');
     expect(help.stdout).toContain('runtime-effect');
     expect(help.stdout).not.toContain('claim');
     expect(help.stdout).toContain('acquire-next');

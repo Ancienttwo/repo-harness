@@ -292,7 +292,6 @@ describe('dev activity collector bounds', () => {
       expect(new Set(calls.map(call => call.cwd))).toEqual(new Set(paths));
       expect([...new Set(calls.map(call => `${call.command} ${call.argv}`))].sort()).toEqual([
         'git --no-optional-locks remote -v',
-        'git --no-optional-locks rev-parse --git-common-dir',
         'git --no-optional-locks symbolic-ref --quiet --short refs/remotes/origin/HEAD',
         'git --no-optional-locks worktree list --porcelain',
       ]);

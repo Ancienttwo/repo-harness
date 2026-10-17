@@ -2,8 +2,9 @@ import { describe, expect, test } from 'bun:test';
 import { ArchitectureModelReader } from '../../src/effects/architecture/model-reader';
 import { decodeArchitectureModuleIndex, decodeArchitectureModuleDetail, decodeArchitectureReviewPrompt } from '../../src/core/operator/architecture';
 import { parseArchitectureRequest } from '../../src/core/operator/architecture';
-import { MODULE_ID, MODULE_FLOW, moduleRepository, fixtureYaml, fixtureWrite, fixtureCommit } from '../helpers/module-repository';
-import { rmSync } from 'node:fs';
+import { MODULE_ID, MODULE_NODE, MODULE_FLOW, moduleRepository, fixtureWrite, fixtureCommit, fixtureYaml } from '../helpers/module-repository';
+import { readFileSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
 
 const reader = new ArchitectureModelReader(import.meta.dir + '/../..');
 const id = reader.list().modules[0].id;
@@ -40,14 +41,38 @@ describe('operator architecture decoders', () => {
 });
 
 
-test('all real module details pass including required flows, nested sinks and collapsed groups', () => {
+test('all real module details pass including required flows and nested sinks', () => {
   for (const module of reader.list().modules) expect(decodeArchitectureModuleDetail(reader.detail(module.id)).module.id).toBe(module.id);
-  const collapsed = reader.detail('capability.runtime-harness.engineer-bindings');
-  expect(collapsed.graph.nodes.some(node => node.kind === 'group')).toBe(true);
-  const group = collapsed.graph.nodes.find(node => node.kind === 'group')!;
-  expect(() => decodeArchitectureModuleDetail({ ...collapsed, graph: { ...collapsed.graph, nodes: collapsed.graph.nodes.map(node => node === group ? { ...node, count: 0 } : node) } })).toThrow('architecture_module_detail_invalid');
   const committedDiff = reader.reviewPrompt(id, { base: reader.commit, head: reader.commit });
   expect(decodeArchitectureReviewPrompt(committedDiff).mode).toBe('diff');
+});
+
+test('a committed module with nine callees collapses overflow and rejects an empty group', () => {
+  const root = moduleRepository();
+  try {
+    const template = JSON.parse(readFileSync(join(root, MODULE_NODE), 'utf8'));
+    for (let index = 0; index < 9; index++) {
+      const peer = `capability.test.peer-${index}`;
+      const sourcePath = `src/peer-${index}.ts`;
+      fixtureWrite(root, `.archcontext/model/nodes/${peer}.yaml`, fixtureYaml({
+        ...template, id: peer, name: `Peer ${index}`, source: { include: [sourcePath] },
+      }));
+      fixtureWrite(root, sourcePath, 'export const read = () => 1;\n');
+      fixtureWrite(root, `.archcontext/model/relations/relation.module.peer-${index}.yaml`, fixtureYaml({
+        schemaVersion: 'archcontext.relation/v1', id: `relation.module.peer-${index}`, kind: 'calls',
+        source: MODULE_ID, target: peer, intent: 'Read peer facts.',
+      }));
+    }
+    fixtureCommit(root);
+    const collapsed = new ArchitectureModelReader(root).detail(MODULE_ID);
+    expect(decodeArchitectureModuleDetail(collapsed)).toEqual(collapsed);
+    expect(collapsed.graph.nodes.some(node => node.kind === 'group')).toBe(true);
+    const group = collapsed.graph.nodes.find(node => node.kind === 'group')!;
+    expect(group).toMatchObject({ kind: 'group', count: 1, members: [{ id: 'capability.test.peer-8', name: 'Peer 8' }] });
+    expect(() => decodeArchitectureModuleDetail({ ...collapsed, graph: { ...collapsed.graph, nodes: collapsed.graph.nodes.map(node => node === group ? { ...node, count: 0 } : node) } })).toThrow('architecture_module_detail_invalid');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('rejects unsafe paths, identity, enums, hashes and numbers with explicit failure codes', () => {

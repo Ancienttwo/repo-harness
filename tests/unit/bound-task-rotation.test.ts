@@ -5,6 +5,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 
 import { buildClaimActorReceipt, validateEngineerPrincipal } from '../../src/core/engineers/principal-claim';
+import { EngineerProfileBindingError } from '../../src/core/engineers/profile-binding';
 import { buildLeaseOwnerRecord, bindLeaseRecord } from '../../src/core/state/coordination-identity';
 import { bindEngineer, readEngineerBindingStatus, retireEngineer } from '../../src/effects/engineers/binding-store';
 import { publishClaimActorReceipt } from '../../src/effects/engineers/claim-actor-store';
@@ -136,14 +137,48 @@ describe('bound task rotation guard', () => {
   test('active Claim blocks retirement without changing the Binding', () => {
     const subject = fixture();
     const before = readEngineerBindingStatus(subject.root, ENGINEER, subject.revision).current;
-    expect(() => retireEngineer(subject.root, {
-      engineer_id: ENGINEER,
-      idempotency_key: 'retire',
-      expected_current_digest: subject.active_digest,
-      expected_binding_generation: 1,
-      expected_binding_id: BINDING,
-      expected_engineer_contract_revision: subject.revision,
-    })).toThrow('release it explicitly');
+    let refusal: unknown;
+    try {
+      retireEngineer(subject.root, {
+        engineer_id: ENGINEER,
+        idempotency_key: 'retire',
+        expected_current_digest: subject.active_digest,
+        expected_binding_generation: 1,
+        expected_binding_id: BINDING,
+        expected_engineer_contract_revision: subject.revision,
+      });
+    } catch (error) {
+      refusal = error;
+    }
+    expect(refusal).toBeInstanceOf(EngineerProfileBindingError);
+    expect(refusal).toMatchObject({ code: 'bound_task_active' });
+    expect((refusal as Error).message).toContain('release it explicitly');
+    expect(readEngineerBindingStatus(subject.root, ENGINEER, subject.revision).current).toEqual(before);
+  });
+
+  test('an unknown Lease blocks retirement without changing the Binding', () => {
+    const subject = fixture();
+    const before = readEngineerBindingStatus(subject.root, ENGINEER, subject.revision).current;
+    const unknownTask = 'c'.repeat(64);
+    expect(createLeaseDirectory(subject.root, unknownTask)).toBe(true);
+    let refusal: unknown;
+    try {
+      retireEngineer(subject.root, {
+        engineer_id: ENGINEER,
+        idempotency_key: 'retire-unknown-lease',
+        expected_current_digest: subject.active_digest,
+        expected_binding_generation: 1,
+        expected_binding_id: BINDING,
+        expected_engineer_contract_revision: subject.revision,
+      });
+    } catch (error) {
+      refusal = error;
+    }
+    expect(refusal).toBeInstanceOf(EngineerProfileBindingError);
+    expect(refusal).toMatchObject({
+      code: 'bound_task_lease_unavailable',
+      message: `cannot prove binding rotation safe while Lease ${unknownTask} is unknown (owner_record_missing)`,
+    });
     expect(readEngineerBindingStatus(subject.root, ENGINEER, subject.revision).current).toEqual(before);
   });
 });

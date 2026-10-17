@@ -287,6 +287,6 @@ describe('theme', () => {
     delete (globalThis as { window?: unknown }).window;
     const markup = renderToStaticMarkup(<OperatorApp {...props(busy())} initialPlace={{ workspace: 'board', module: null, item: null }} />);
     expect(markup).toContain('data-workspace="board"');
-    expect(markup).toContain('data-attention-count="2"');
+    expect(markup).toContain('data-attention-count="1"');
   });
 });

@@ -1127,7 +1127,7 @@ test('fleet snapshots use a new service epoch after server restart', async () =>
 });
 
 describe('repository source collection', () => {
-  test('reads registered stores without writes', () => {
+  test('a corrupt Planning source does not hide Organization data, write files or leak paths', () => {
     const repoRoot = realpathSync(mkdtempSync(join(tmpdir(), 'operator-source-read-')));
     expect(spawnSync('git', ['init', '-q', repoRoot]).status).toBe(0);
     const registry = registryHome([{ path: repoRoot, accessMode: 'read_only' }]);
@@ -1143,8 +1143,17 @@ describe('repository source collection', () => {
       const observed = readOperatorRepositorySnapshot({ env: registry.env, repository_id: registry.ids[0]! });
       expect(observed.protocol).toBe(1);
       expect(observed.organization.status).toBe('observed');
+      expect(observed.planning.status).toBe('observed');
       expect(JSON.stringify(observed)).not.toContain(repoRoot);
       expect(tree(repoRoot)).toEqual(before);
+      mkdirSync(join(repoRoot, '.ai/harness/sprint'), { recursive: true });
+      writeFileSync(join(repoRoot, '.ai/harness/sprint/active-sprint'), '../invalid.sprint.md\n');
+      const corruptBefore = tree(repoRoot);
+      const corrupt = readOperatorRepositorySnapshot({ env: registry.env, repository_id: registry.ids[0]! });
+      expect(corrupt.planning).toMatchObject({ status: 'unavailable', code: 'source_unavailable' });
+      expect(corrupt.organization.status).toBe('observed');
+      expect(JSON.stringify(corrupt)).not.toContain(repoRoot);
+      expect(tree(repoRoot)).toEqual(corruptBefore);
     } finally {
       rmSync(repoRoot, { recursive: true, force: true });
       rmSync(registry.home, { recursive: true, force: true });
