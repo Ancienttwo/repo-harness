@@ -260,7 +260,7 @@ function codeFactsFixCommand(state: DoctorCodeFacts['state']): string {
   return state === 'index-missing' ? `codegraph ${CODEGRAPH_INIT_ARGS.join(' ')}` : 'codegraph index .';
 }
 
-/** Decode the code facts contract from archctx@0.8.0 doctor for both CLI callers. */
+/** Decode the code facts contract from archctx@0.8.1 doctor for both CLI callers. */
 function readArchitectureCodeFacts(client: ArchctxClient, maximumMs: number): DoctorCodeFacts {
   const value = client.json(['doctor', '--json'], maximumMs);
   const facts = isRecord(value) && isRecord(value.data) ? value.data.codeFacts : null;

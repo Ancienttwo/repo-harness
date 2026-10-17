@@ -264,6 +264,8 @@ describe('host envelopes on the real hook entry (#678)', () => {
     try {
       writeFileSync(join(root, '.ai/harness/policy.json'), JSON.stringify({ context: { capability_source: 'archcontext' } }));
       mkdirSync(join(root, '.archcontext/model/nodes'), { recursive: true });
+      // archctx 0.8.1 resolve needs a complete native model.
+      writeFileSync(join(root, '.archcontext/manifest.yaml'), 'schemaVersion: archcontext.manifest/v1\nmodel:\n  layout: split\n  root: .archcontext/model\n');
       writeFileSync(join(root, '.archcontext/model/nodes/capability.core.owned.yaml'), JSON.stringify({
         schemaVersion: 'archcontext.node/v2', id: 'capability.core.owned', kind: 'capability',
         name: 'Owned', status: 'active', summary: 'Own the test source.', responsibilities: ['Own the source.'],
