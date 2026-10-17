@@ -1,6 +1,6 @@
 # runtime-harness/agent-runtime-effects 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-agent-runtime-effects" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:bdffb1352f91d6f0487130ede0cafc1a10d4482df8bb0ce61bbdfcaa059d5754" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-agent-runtime-effects" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:fc2b8f82ae248ad88f77e4cc6e1dac0924971ae30b0190075f8f34dd1b4c135a" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.agent-runtime-effects`(kind `capability`)
 > **Matched Prefixes**:`src/core/engineers/agent-runtime-effect.ts`、`src/effects/engineers/agent-runtime-effect-store.ts`、`src/effects/engineers/agent-runtime-feature.ts`、`src/effects/engineers/agent-runtime-adapters/**`
@@ -15,35 +15,35 @@ Owns the provider-neutral, at-most-once Agent Runtime Effect V2 boundary for the
 
 ```mermaid
 flowchart LR
+  p1_capability_organization_task_fleet_134b5125["Task Fleet"]:::component
   p1_capability_runtime_harness_agent_runtime_effects_f1bcf433["Agent Runtime Effects"]:::component
   p1_capability_runtime_harness_engineer_bindings_34c00f72["Engineer Bindings"]:::component
-  p1_capability_runtime_harness_engineer_messages_f10d1d17["Engineer Messages"]:::component
   p1_component_agent_runtime_effects_journal_f6727f8f["Agent Runtime Effect Journal"]:::component
   p1_capability_runtime_harness_agent_runtime_effects_f1bcf433 -->|"Revalidate the exact current Engineer Binding endpoint before preparing or admitting one Host adapter action"| p1_capability_runtime_harness_engineer_bindings_34c00f72
-  p1_capability_runtime_harness_agent_runtime_effects_f1bcf433 -->|"Consume one exact persisted message and record effect success only from its authoritative receipt"| p1_capability_runtime_harness_engineer_messages_f10d1d17
   p1_capability_runtime_harness_agent_runtime_effects_f1bcf433 -->|"Persist immutable effect intents and observations before one closed Host action or a reconcile-only state can be returned"| p1_component_agent_runtime_effects_journal_f6727f8f
-  p1_capability_runtime_harness_engineer_messages_f10d1d17 -->|"Revalidate the exact target Engineer and current Binding before assignment delivery#44; transport and acknowledgement"| p1_capability_runtime_harness_engineer_bindings_34c00f72
+  p1_capability_runtime_harness_agent_runtime_effects_f1bcf433 -->|"Read the exact Task message and delivery receipt before action admission and success."| p1_capability_organization_task_fleet_134b5125
+  p1_capability_organization_task_fleet_134b5125 -->|"Read task agent runtime effects as board observations only"| p1_capability_runtime_harness_agent_runtime_effects_f1bcf433
+  p1_capability_organization_task_fleet_134b5125 -->|"Validate principal claims and claim actor receipts before a steer reply is recorded"| p1_capability_runtime_harness_engineer_bindings_34c00f72
   classDef actor fill:#111827,color:#ffffff,stroke:#f9fafb,stroke-width:2px
   classDef component fill:#075985,color:#ffffff,stroke:#bae6fd,stroke-width:2px
   classDef datastore fill:#3f6212,color:#ffffff,stroke:#d9f99d,stroke-width:2px
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:337b082aac3d671c755402862a32ec18a9367399c2fe99964daaff827929eadc`).
-- Semantic nodes: `4`; declared relations: `4`.
+- Proof: `proven` (`sha256:2b0aa88e52161c4772eb704caa71f70b74709b5d2452facff72266a868455922`).
+- Semantic nodes: `4`; declared relations: `5`.
 
 ### 1.2 模組職責表
 
 | 宣告入口 | 錨點 | 職責 |
 | --- | --- | --- |
 | `entrypoint.agent-runtime-effects.prepare` | `src/effects/engineers/agent-runtime-effect-store.ts#currentBinding` | `sink.agent-runtime-effects.current-binding` → `src/effects/engineers/binding-store.ts#readEngineerBindingStatus` |
-| `entrypoint.agent-runtime-effects.prepare` | `src/effects/engineers/agent-runtime-effect-store.ts#moduleReference` | `sink.agent-runtime-effects.persisted-message` → `src/effects/engineers/module-inbox.ts#readModuleMessageDelivery` |
 | `entrypoint.agent-runtime-effects.prepare` | `src/effects/engineers/agent-runtime-effect-store.ts#taskEndpointAndReference` | `sink.agent-runtime-effects.persisted-task-message` → `src/effects/fleet/task-inbox.ts#readTaskMessageDelivery` |
 | `entrypoint.agent-runtime-effects.wake` | `src/effects/engineers/agent-runtime-effect-store.ts#recordEngineerOfferSnapshot` | `sink.agent-runtime-effects.offer-wake-decision` → `src/core/engineers/agent-runtime-effect.ts#decideAgentRuntimeOfferWake` |
 | `entrypoint.agent-runtime-effects.wake` | `src/effects/engineers/agent-runtime-effect-store.ts#recordAgentRuntimeControllerStep` | `sink.agent-runtime-effects.controller-step-receipt` → `src/core/engineers/agent-runtime-effect.ts#buildAgentRuntimeControllerStepReceipt` |
 | `entrypoint.agent-runtime-effects.start` | `src/effects/engineers/agent-runtime-effect-store.ts#startAgentRuntimeEffect` | `sink.agent-runtime-effects.started-observation` → `src/core/engineers/agent-runtime-effect.ts#buildAgentRuntimeEffectObservation` |
 | `entrypoint.agent-runtime-effects.observe` | `src/effects/engineers/agent-runtime-effect-store.ts#observeAgentRuntimeEffect` | `sink.agent-runtime-effects.reconciliation-observation` → `src/core/engineers/agent-runtime-effect.ts#buildAgentRuntimeEffectObservation` |
-| `entrypoint.agent-runtime-effects.observe` | `src/effects/engineers/agent-runtime-effect-store.ts#receiptEvidence` | `sink.agent-runtime-effects.receipt-evidence` → `src/effects/engineers/module-inbox.ts#readModuleMessageDelivery` |
+| `entrypoint.agent-runtime-effects.observe` | `src/effects/engineers/agent-runtime-effect-store.ts#receiptEvidence` | `sink.agent-runtime-effects.receipt-evidence` → `src/effects/fleet/task-inbox.ts#readTaskMessageDelivery` |
 
 組件入口:
 
@@ -60,11 +60,11 @@ flowchart LR
 出向關係:
 
 - `calls` → `capability.runtime-harness.engineer-bindings` — Revalidate the exact current Engineer Binding endpoint before preparing or admitting one Host adapter action
-- `calls` → `capability.runtime-harness.engineer-messages` — Consume one exact persisted message and record effect success only from its authoritative receipt
 - `calls` → `capability.runtime-harness.engineer-scheduling` — Validate the whole offers document with the scheduling validator before a wake is armed
 - `calls` → `component.agent-runtime-effects.journal` — Persist immutable effect intents and observations before one closed Host action or a reconcile-only state can be returned
 - `calls` → `capability.runtime-harness.mcp-sidecar` — Read the strict repo registry and the authorization revision for the wake fence
 - `calls` → `capability.runtime-harness.task-agent-host` — Run Herdr commands for task agent runtime effects
+- `calls` → `capability.organization.task-fleet` — Read the exact Task message and delivery receipt before action admission and success.
 
 入向關係:
 
@@ -86,7 +86,7 @@ flowchart LR
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:337b082aac3d671c755402862a32ec18a9367399c2fe99964daaff827929eadc`); selectors `4/4`.
+> **Proof**: `proven` (`sha256:2b0aa88e52161c4772eb704caa71f70b74709b5d2452facff72266a868455922`); selectors `4/4`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
@@ -94,9 +94,9 @@ sequenceDiagram
   autonumber
   participant p2_effect_journal_1eea3f14 as Agent Runtime Effects
   participant p2_binding_authority_b56d10c4 as Engineer Bindings
-  participant p2_message_authority_43d726e6 as Engineer Messages
+  participant p2_message_authority_43d726e6 as Task Fleet
   participant p2_effect_schema_e2bdceda as Agent Runtime Effect Journal
-  p2_effect_journal_1eea3f14->>p2_message_authority_43d726e6: Read the exact persisted Module or Task message and its current delivery fact before action admission
+  p2_effect_journal_1eea3f14->>p2_message_authority_43d726e6: Read the exact persisted Task message and its current delivery fact before action admission
   p2_effect_journal_1eea3f14->>p2_binding_authority_b56d10c4: Revalidate Binding generation#44; Host#44; endpoint and contract revision
   alt One immutable intent admits at most one Host action and exact receipt evidence closes the observation chain
   p2_effect_journal_1eea3f14->>p2_message_authority_43d726e6: Consume the exact authoritative delivery receipt before recording effect success

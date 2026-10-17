@@ -1,6 +1,6 @@
 # runtime-harness/operator 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-operator" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:6c155286b8c8594ae4171355ef258047de9cd56ce21d2e5ae4d2f8d7daffa39c" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-operator" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:e67c5ab7cd2068f64f29b9be176aa0770e24bbe26c2f7494fdbdcb9a1646cf7f" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.operator`(kind `capability`)
 > **Matched Prefixes**:`src/core/operator/**`、`src/effects/operator/**`、`src/operator-web/**`、`src/cli/commands/operator.ts`、`src/cli/commands/module.ts`、`src/core/architecture/module-view.ts`、`src/core/docs/**`、`src/core/setup/**`、`src/effects/setup/**`、`src/cli/commands/setup-snapshot.ts`、`src/cli/commands/setup-check-child.ts`、`src/core/dev-activity/**`、`src/effects/dev-activity/**`、`src/effects/terminal/herdr-observation.ts`、`assets/operator/**`、`vite.operator.config.ts`
@@ -76,7 +76,6 @@ flowchart LR
 
 - `component.operator.activity-feeds`:
   - `reads` → `capability.runtime-harness.hook-adapters` — Read the hook route registry and install profile components for the Hooks and Agents pages
-  - `reads` → `capability.runtime-harness.verified-context` — Read open Human Decisions for the board attention queue
   - `calls` → `component.operator.view-projections` — Reuse public agent-config text filtering and runtime source freshness rules
 - `component.operator.architecture-view`:
   - `calls` → `capability.verification.acceptance-review` — Report module CLI failures with the typed module read error of the review prompt builder
@@ -89,7 +88,6 @@ flowchart LR
   - `reads` → `capability.runtime-harness.engineering-overlay` — Collect the engineering board for the Organization view
   - `reads` → `capability.runtime-harness.global-runtime-reconciliation` — Read the committed architecture model through the shared ArchitectureModelReader
   - `reads` → `capability.runtime-harness.mcp-sidecar` — Resolve a registered repository root from the strict repo-harness registry snapshot
-  - `reads` → `capability.runtime-harness.verified-context` — Read the open Human Decision inventory
   - `calls` → `component.operator.view-projections` — Parse closed route requests and project or re-decode each observation before it leaves the server
   - `reads` → `capability.organization.task-fleet` — Collect fleet offers and the fleet board for the console
 - `component.operator.view-projections`:

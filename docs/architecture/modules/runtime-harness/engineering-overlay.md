@@ -1,13 +1,13 @@
 # runtime-harness/engineering-overlay 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineering-overlay" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:9a30c54ae626aafe67573776771d7d9c4b3c563f86a1315c16cc56bd3d977cb2" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineering-overlay" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:3ab41acc31ab71ba719c1ed9fa42203efea6f254f1a4bdd44c0b071834c2afc0" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.engineering-overlay`(kind `capability`)
 > **Matched Prefixes**:`src/core/engineers/engineering-overlay.ts`、`src/effects/engineers/engineering-overlay.ts`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
-Projects Profile, Binding, Claim, message and Agent Runtime observations into exact read-only Engineer and organization-attention views without changing Fleet lifecycle authority.
+Projects Profile, Binding, Claim and Agent Runtime observations into exact read-only Engineer and organization-attention views without changing Fleet lifecycle authority.
 
 ## 1. P1:能力架構地圖
 
@@ -31,7 +31,7 @@ flowchart LR
 
 | 宣告入口 | 錨點 | 職責 |
 | --- | --- | --- |
-| `entrypoint.engineering-overlay.collect` | `src/effects/engineers/engineering-overlay.ts#collectEngineeringBoard` | `sink.engineering-overlay.binding` → `src/effects/engineers/binding-store.ts#readEngineerBindingStatus`、`sink.engineering-overlay.claim` → `src/effects/engineers/claim-actor-store.ts#listLiveClaimActorReceiptsForEngineer`、`sink.engineering-overlay.messages` → `src/effects/engineers/module-inbox.ts#observeModuleInboxSummary`、`sink.engineering-overlay.runtime-effects` → `src/effects/engineers/agent-runtime-effect-store.ts#observeAgentRuntimeEffects`、`sink.engineering-overlay.schema` → `src/core/engineers/engineering-overlay.ts#buildEngineeringOverlaySnapshot` |
+| `entrypoint.engineering-overlay.collect` | `src/effects/engineers/engineering-overlay.ts#collectEngineeringBoard` | `sink.engineering-overlay.binding` → `src/effects/engineers/binding-store.ts#readEngineerBindingStatus`、`sink.engineering-overlay.claim` → `src/effects/engineers/claim-actor-store.ts#listLiveClaimActorReceiptsForEngineer`、`sink.engineering-overlay.runtime-effects` → `src/effects/engineers/agent-runtime-effect-store.ts#observeAgentRuntimeEffects`、`sink.engineering-overlay.schema` → `src/core/engineers/engineering-overlay.ts#buildEngineeringOverlaySnapshot` |
 | `entrypoint.engineering-overlay.attention` | `src/core/engineers/engineering-overlay.ts#projectOrganizationAttention` | `sink.engineering-overlay.attention-schema` → `src/core/engineers/engineering-overlay.ts#validateOrganizationAttentionSnapshot` |
 | `entrypoint.engineering-overlay.overlay-schema` | `src/core/engineers/engineering-overlay.ts#buildEngineeringOverlaySnapshot` | `sink.engineering-overlay.overlay-validation` → `src/core/engineers/engineering-overlay.ts#validateEngineeringOverlaySnapshot` |
 
@@ -51,7 +51,6 @@ flowchart LR
 
 - `calls` → `capability.runtime-harness.agent-runtime-effects` — Observe exact current runtime-effect and reconciliation states without executing or repairing an effect
 - `calls` → `capability.runtime-harness.engineer-bindings` — Observe exact current Profile, Binding and live ClaimActor revisions without mutating their stores
-- `calls` → `capability.runtime-harness.engineer-messages` — Observe pending and failed delivery facts from the existing ME-1C event and receipt authority
 - `calls` → `component.engineering-overlay.primary` — Validate and content-address the read-only Engineer and organization-attention projections
 
 入向關係:
@@ -97,7 +96,7 @@ sequenceDiagram
 1. **只读。** 本能力不保存 status 或当前 owner，不推导 Fleet 列，不提供 mutation 入口（`plans/prds/20260824-1653-engineering-overlay-control-board.prd.md` Hard constraint）。它只读取 Profile、Binding、live Claim 和 runtime effect 四个组件。
 2. **每个组件读两次，混合代际的快照不能标为 stable。** `collectEngineeringBoard` 做两次读取，逐组件比较修订号。任一组件不可读，结果为 `degraded`；任一组件两次不同，结果为 `changed_during_read`；否则为 `stable`（`src/effects/engineers/engineering-overlay.ts:245-284`）。
 3. **Profile 权威丢失时返回空的 degraded 投影。** 任一次读取丢失 Profile 权威，两次读取都收敛到同一个空花名册（`engineering-overlay.ts:272-280`、`:189-191`）。一个存活的读取不能补回花名册。
-4. **组织 attention 是封闭集合。** 原因只有五种，每种对应一个固定 owner：`binding_missing`、`binding_stale`、`engineer_contract_revision_changed`、`message_delivery_failed`、`runtime_reconciliation_required`（`src/core/engineers/engineering-overlay.ts:376-394`、`:415-417`）。
+4. **组织 attention 是封闭集合。** 原因只有四种，每种对应一个固定 owner：`binding_missing`、`binding_stale`、`engineer_contract_revision_changed`、`runtime_reconciliation_required`（`src/core/engineers/engineering-overlay.ts` 的 `projectOrganizationAttention` 和 `validateOrganizationAttentionSnapshot`）。
 5. **三个视图语义独立。** `sprint graph`、`fleet board` 和 `engineer board` 可以并排显示，但不能合并成一个状态字段（PRD Product Direction）。
 6. **当前工作树必须是精确注册的仓库。** 否则返回 `engineering_overlay_repository_unregistered`（`engineering-overlay.ts:253-258`）。
 

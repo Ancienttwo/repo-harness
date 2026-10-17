@@ -1,6 +1,6 @@
 # runtime-harness/engineer-bindings 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineer-bindings" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:918e63c10f9285f719be6b8cf50b14636de7931347930d4c3ab598328533e62d" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineer-bindings" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:c8da8286ae545f632c88b02e931447b0539af3566b12cf33cc33790057ce8c2b" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.engineer-bindings`(kind `capability`)
 > **Matched Prefixes**:`agents/engineers/**`、`src/core/engineers/**`、`src/effects/engineers/**`、`src/cli/commands/engineer.ts`
@@ -44,7 +44,7 @@ flowchart LR
 
 - 規模量級:`10–20` 個文件 / `2000–5000` 行
 - 匹配前綴:`agents/engineers/**`、`src/core/engineers/**`、`src/effects/engineers/**`、`src/cli/commands/engineer.ts`
-- 排除前綴:`src/core/engineers/agent-runtime-effect.ts`、`src/effects/engineers/agent-runtime-adapters/**`、`src/effects/engineers/agent-runtime-effect-store.ts`、`src/effects/engineers/agent-runtime-feature.ts`、`src/core/engineers/task-freeze.ts`、`src/effects/engineers/bound-task-rotation.ts`、`src/effects/engineers/task-freeze-store.ts`、`src/core/engineers/delegation.ts`、`src/effects/engineers/delegated-run-store.ts`、`src/core/engineers/engineering-overlay.ts`、`src/core/engineers/interface-change.ts`、`src/core/engineers/module-message.ts`、`src/core/engineers/scheduling.ts`、`src/core/engineers/verified-context.ts`、`src/core/engineers/work-demand.ts`、`src/effects/engineers/dependency-authority.ts`、`src/effects/engineers/engineering-overlay.ts`、`src/effects/engineers/interface-change-store.ts`、`src/effects/engineers/module-inbox.ts`、`src/effects/engineers/scheduling-acquire-next.ts`、`src/effects/engineers/scheduling-acquire.ts`、`src/effects/engineers/scheduling.ts`、`src/effects/engineers/verified-context-store.ts`、`src/effects/engineers/work-demand-materialization.ts`、`src/effects/engineers/work-demand-store.ts`
+- 排除前綴:`src/core/engineers/agent-runtime-effect.ts`、`src/effects/engineers/agent-runtime-adapters/**`、`src/effects/engineers/agent-runtime-effect-store.ts`、`src/effects/engineers/agent-runtime-feature.ts`、`src/core/engineers/delegation.ts`、`src/effects/engineers/delegated-run-store.ts`、`src/core/engineers/engineering-overlay.ts`、`src/core/engineers/scheduling.ts`、`src/effects/engineers/dependency-authority.ts`、`src/effects/engineers/engineering-overlay.ts`、`src/effects/engineers/scheduling-acquire-next.ts`、`src/effects/engineers/scheduling-acquire.ts`、`src/effects/engineers/scheduling.ts`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
 ### 1.4 依賴邊界
@@ -58,17 +58,12 @@ flowchart LR
 入向關係:
 
 - `calls` ← `capability.runtime-harness.agent-runtime-effects` — Revalidate the exact current Engineer Binding endpoint before preparing or admitting one Host adapter action
-- `calls` ← `capability.runtime-harness.bound-task-freezes` — Revalidate the current Binding and exact live ClaimActorReceipt before inspection or rotation refusal
 - `calls` ← `capability.runtime-harness.delegated-runs` — Revalidate the exact current parent ClaimActorReceipt, WorkEnvelope and Engineer Binding before delegation admission
-- `calls` ← `capability.runtime-harness.engineer-messages` — Revalidate the exact target Engineer and current Binding before assignment delivery, transport and acknowledgement
 - `calls` ← `capability.runtime-harness.engineer-scheduling` — Revalidate the exact current Engineer contract and delegate the elected offer to the existing Engineer acquire authority
 - `calls` ← `capability.runtime-harness.engineering-overlay` — Observe exact current Profile, Binding and live ClaimActor revisions without mutating their stores
 - `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the engineer command
-- `calls` ← `capability.runtime-harness.interface-change` — Revalidate the exact current Binding for every Engineer-owned transition
 - `calls` ← `capability.runtime-harness.mcp-sidecar` — Resolve a verified OAuth authorization to the current Engineer Binding before acquiring a Fleet Claim
 - `calls` ← `capability.organization.task-fleet` — Validate principal claims and claim actor receipts before a steer reply is recorded
-- `calls` ← `capability.runtime-harness.verified-context` — Revalidate Engineer decision actors against the exact current active Binding fence
-- `calls` ← `capability.runtime-harness.work-demand` — Revalidate the exact current requester Binding for Engineer-owned transitions
 
 組件出向關係:
 

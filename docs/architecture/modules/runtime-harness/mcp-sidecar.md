@@ -1,5 +1,5 @@
 # runtime-harness/mcp-sidecar 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-mcp-sidecar" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:fb07e5f4620b90d5dead0165cb7f958e9759a6ea4455af0417d33f1d0127d9da" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-mcp-sidecar" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:42f6d6e333851b8a3492eab952f226a5cea8c960501c1f211119795adf8eef3f" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.mcp-sidecar`(kind `capability`)
 > **Matched Prefixes**:`src/cli/mcp/**`、`src/cli/commands/mcp.ts`、`src/cli/chatgpt-browser/file-policy.ts`、`src/effects/repo-registry.ts`、`docs/repo-harness-chatgpt-mcp-setup.md`、`docs/reference-configs/chatgpt-coding-mcp.md`、`docs/researches/20260711-devspace-chatgpt-local-control.md`、`src/core/security/**`
@@ -14,7 +14,6 @@ Provides the local MCP sidecar and its repository access policy boundary.
 
 ```mermaid
 flowchart LR
-  p1_capability_runtime_harness_engineer_messages_f10d1d17["Engineer Messages"]:::component
   p1_capability_runtime_harness_engineer_scheduling_022bd8e0["Engineer Scheduling"]:::component
   p1_capability_runtime_harness_mcp_sidecar_4e12aaf3["MCP Sidecar"]:::component
   p1_component_mcp_sidecar_coding_profile_c04b21a1["Coding Profile Runtime"]:::component
@@ -23,7 +22,6 @@ flowchart LR
   p1_component_mcp_sidecar_repo_policy_registry_40f1ea26["Config Policy and Repository Registry"]:::component
   p1_component_mcp_sidecar_transport_auth_2511e63e["Transport and Authorization"]:::component
   p1_component_mcp_sidecar_coding_profile_c04b21a1 -->|"Contain workspace paths against registered roots then redact and audit coding results"| p1_component_mcp_sidecar_repo_policy_registry_40f1ea26
-  p1_capability_runtime_harness_mcp_sidecar_4e12aaf3 -->|"Expose authenticated Engineer message send#44; list and acknowledgement without granting generic Fleet or Provider authority"| p1_capability_runtime_harness_engineer_messages_f10d1d17
   p1_capability_runtime_harness_mcp_sidecar_4e12aaf3 -->|"Project and acquire exact revision-fenced Engineer offers for a verified OAuth principal"| p1_capability_runtime_harness_engineer_scheduling_022bd8e0
   p1_component_mcp_sidecar_host_setup_a05a1958 -->|"List and clean up managed coding workspaces"| p1_component_mcp_sidecar_coding_profile_c04b21a1
   p1_component_mcp_sidecar_host_setup_a05a1958 -->|"Build the expected tool inventory for the live doctor and run prepare-goal through the tool dispatcher"| p1_component_mcp_sidecar_primary_8f9b418c
@@ -40,8 +38,8 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:50577a08a65896807e215f8afaf84e683c4977f6e730ec19827f717b2a943657`).
-- Semantic nodes: `8`; declared relations: `12`.
+- Proof: `proven` (`sha256:ffafadadf888a5df6905740fab3b773651fcbdd7c635f2b0e125915b8a3f3b3f`).
+- Semantic nodes: `7`; declared relations: `11`.
 
 ### 1.2 模組職責表
 
@@ -49,9 +47,8 @@ flowchart LR
 | --- | --- | --- |
 | `entrypoint.mcp-sidecar.primary` | `src/cli/mcp/server.ts#createRepoHarnessMcpServer` | `sink.mcp-sidecar.primary` → `src/cli/mcp/tools.ts#callMcpTool` |
 | `entrypoint.mcp-sidecar.engineer-tools` | `src/cli/mcp/engineer-tools.ts#callEngineerTool` | `sink.mcp-sidecar.engineer-principal` → `src/effects/engineers/principal.ts#resolveEngineerPrincipal`、`sink.mcp-sidecar.engineer-offers` → `src/effects/engineers/scheduling.ts#collectEngineerOffers` |
-| `entrypoint.mcp-sidecar.engineer-tools` | `src/cli/mcp/engineer-tools.ts#messageSendAsEngineer` | `sink.mcp-sidecar.engineer-messages` → `src/effects/engineers/module-inbox.ts#sendModuleMessage` |
 | `entrypoint.mcp-sidecar.engineer-tools` | `src/cli/mcp/engineer-tools.ts#acquireAsEngineer` | `sink.mcp-sidecar.engineer-acquire` → `src/effects/engineers/scheduling-acquire-next.ts#acquireSelectedEngineerTask` |
-| `entrypoint.mcp-sidecar.engineer-tools` | `src/cli/mcp/engineer-tools.ts#callEngineerTool` | `sink.mcp-sidecar.agent-runtime-effect-status` → `src/effects/engineers/agent-runtime-effect-store.ts#observeAgentRuntimeEffectStatus`、`sink.mcp-sidecar.interface-change` → `src/effects/engineers/interface-change-store.ts#transitionInterfaceChangeRequest` |
+| `entrypoint.mcp-sidecar.engineer-tools` | `src/cli/mcp/engineer-tools.ts#callEngineerTool` | `sink.mcp-sidecar.agent-runtime-effect-status` → `src/effects/engineers/agent-runtime-effect-store.ts#observeAgentRuntimeEffectStatus` |
 
 組件入口:
 
@@ -74,10 +71,8 @@ flowchart LR
 出向關係:
 
 - `calls` → `capability.runtime-harness.agent-runtime-effects` — Expose read-only runtime capability and current-effect projections to the authenticated Engineer without Host mutation authority
-- `calls` → `capability.runtime-harness.engineer-messages` — Expose authenticated Engineer message send, list and acknowledgement without granting generic Fleet or Provider authority
 - `calls` → `capability.runtime-harness.engineer-bindings` — Resolve a verified OAuth authorization to the current Engineer Binding before acquiring a Fleet Claim
 - `calls` → `capability.runtime-harness.engineer-scheduling` — Project and acquire exact revision-fenced Engineer offers for a verified OAuth principal
-- `calls` → `capability.runtime-harness.interface-change` — Expose only authenticated Engineer propose, submit, cancel, materialize and implemented mutations through the server-derived OAuth principal
 - `calls` → `component.mcp-sidecar.primary` — Dispatch an MCP tool call
 
 入向關係:
@@ -116,7 +111,6 @@ flowchart LR
   - `calls` → `component.mcp-sidecar.repo-policy-registry` — Resolve repositories and paths under the profile policy then redact and audit each result
   - `calls` → `capability.runtime-harness.task-agent-host` — Start task agents and send task requests through Herdr
   - `calls` → `capability.organization.task-fleet` — Acquire fleet tasks and handle task steers from the MCP tools
-  - `calls` → `capability.runtime-harness.work-demand` — Propose and transition work demands from the engineer MCP tools
   - `reads` → `capability.workflow-engine.workflow-state` — Resolve effective state for the state MCP tools
 - `component.mcp-sidecar.repo-policy-registry`:
   - `calls` → `capability.workflow-engine.execution-primitives` — Run Git for repository roots and lock guarded writes
@@ -136,7 +130,7 @@ flowchart LR
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:50577a08a65896807e215f8afaf84e683c4977f6e730ec19827f717b2a943657`); selectors `8/8`.
+> **Proof**: `proven` (`sha256:ffafadadf888a5df6905740fab3b773651fcbdd7c635f2b0e125915b8a3f3b3f`); selectors `7/7`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
@@ -151,22 +145,6 @@ sequenceDiagram
   else Authorization#44; graph#44; dependency#44; concurrency#44; Binding#44; offer#44; receipt#44; or compensation validation fails
   p2_engineer_mcp_97bc42c0->>p2_scheduling_authority_0fce7315: Return typed refusal and never release a foreign Claim
     Note over p2_engineer_mcp_97bc42c0: Return typed fail-closed error
-  end
-```
-
-```mermaid
-%%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
-sequenceDiagram
-  autonumber
-  participant p2_engineer_mcp_97bc42c0 as MCP Sidecar
-  participant p2_message_authority_43d726e6 as Engineer Messages
-  p2_engineer_mcp_97bc42c0->>p2_message_authority_43d726e6: Derive sender or recipient from the verified Engineer principal and revalidate message fences
-  alt Return canonical message or acknowledgement state
-  p2_engineer_mcp_97bc42c0->>p2_message_authority_43d726e6: Return the persisted event and receipt projection
-    Note over p2_engineer_mcp_97bc42c0: Return authenticated message result
-  else Principal#44; Binding#44; resource or transition validation fails closed
-  p2_engineer_mcp_97bc42c0->>p2_message_authority_43d726e6: Return a typed refusal without acknowledging or mutating another authority
-    Note over p2_engineer_mcp_97bc42c0: Return typed refusal
   end
 ```
 

@@ -1,6 +1,6 @@
 # runtime-harness/delegated-runs 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-delegated-runs" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:e76300f1853d955ad999bde1e638c393cabc6d4743836e26ba9631a3daee8172" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-delegated-runs" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:ab0ff6b61dcd8745cdfa9f10c9d8146a3a3b3b745a695f7bbf4fe3333e95030f" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.delegated-runs`(kind `capability`)
 > **Matched Prefixes**:`src/core/engineers/delegation.ts`、`src/effects/engineers/delegated-run-store.ts`、`src/cli/commands/delegation.ts`、`scripts/me2b-runtime-admission-canary.ts`
@@ -62,7 +62,6 @@ flowchart LR
 入向關係:
 
 - `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the delegation command
-- `calls` ← `capability.runtime-harness.verified-context` — Revalidate existing immutable WorkerRunRef, process receipt, WorkerResult and evidence blobs as untrusted checkpoint inputs
 
 組件出向關係:
 
