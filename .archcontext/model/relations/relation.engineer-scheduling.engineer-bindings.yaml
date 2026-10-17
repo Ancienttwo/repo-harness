@@ -1,6 +1,8 @@
-schemaVersion: archcontext.relation/v1
-id: relation.engineer-scheduling.engineer-bindings
-kind: calls
-source: capability.runtime-harness.engineer-scheduling
-target: capability.runtime-harness.engineer-bindings
-intent: Revalidate the exact current Engineer contract and delegate the elected offer to the existing Engineer acquire authority
+{
+  "schemaVersion": "archcontext.relation/v1",
+  "id": "relation.engineer-scheduling.engineer-bindings",
+  "kind": "calls",
+  "source": "capability.runtime-harness.engineer-scheduling",
+  "target": "capability.runtime-harness.engineer-bindings",
+  "intent": "Read the exact current Engineer contract and binding for offer observations"
+}

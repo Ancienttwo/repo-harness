@@ -12,6 +12,8 @@
  * product code may do it.
  */
 import { createHash } from 'crypto';
+import { mkdirSync, writeFileSync } from 'fs';
+import { join } from 'path';
 
 const FIXTURE_ID_DOMAIN = 'repo-harness-fixture-task-id';
 
@@ -46,4 +48,15 @@ export function fixtureBacklogTable(rows: readonly FixtureRow[]): string[] {
     '|---|----|--------|------|------|------------|------|',
     ...rows.map(fixtureRow),
   ];
+}
+
+/** Seed a historical token for completion and publication tests. */
+export function writeClaimTokenFixture(input: {
+  readonly worktree: string; readonly task_id: string; readonly claim_id: string;
+  readonly sprint: string; readonly task: string; readonly unit_ref: string;
+}): void {
+  const dir = join(input.worktree, '.ai/harness/sprint/claims');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, `${input.task_id}.claim`),
+    `claim_id=${input.claim_id}\ntask_id=${input.task_id}\nsprint=${input.sprint}\ntask=${input.task}\nunit_ref=${input.unit_ref}\n`);
 }

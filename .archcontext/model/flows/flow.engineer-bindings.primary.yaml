@@ -1,58 +1,30 @@
-schemaVersion: archcontext.flow/v1
-id: flow.engineer-bindings.primary
-capabilityId: capability.runtime-harness.engineer-bindings
-name: Bind an Engineer and resolve its authenticated principal against the current Binding
-applicability: required
-participants:
-  - id: engineer-authority
-    nodeId: capability.runtime-harness.engineer-bindings
-  - id: binding-store
-    nodeId: component.engineer-bindings.primary
-steps:
-  - id: publish-binding
-    from: engineer-authority
-    to: binding-store
-    label: Publish one operator-authorized binding transition with the event durable before current
-    evidence:
-      entrypointId: entrypoint.engineer-bindings.operator-cli
-      sourceSymbol: buildEngineerCommand
-      sinkId: sink.engineer-bindings.shared-store
-  - id: resolve-current-binding
-    from: engineer-authority
-    to: binding-store
-    label: Join the authorization mapping to the exact current Binding
-    evidence:
-      entrypointId: entrypoint.engineer-bindings.principal-resolution
-      sourceSymbol: resolveEngineerPrincipal
-      sinkId: sink.engineer-bindings.current-binding
-outcomes:
-  - id: success
-    kind: success
-    label: The principal matches every exact fence and its Claim gets a ClaimActorReceipt
-    steps:
-      - id: build-claim-actor-receipt
-        from: engineer-authority
-        to: binding-store
-        label: Bind the authenticated principal to the canonical WorkEnvelope and live Lease of the new Claim
-        evidence:
-          entrypointId: entrypoint.engineer-bindings.acquire
-          sourceSymbol: acquireEngineerTaskLocked
-          sinkId: sink.engineer-bindings.claim-actor-build
-    terminal:
-      participant: engineer-authority
-      label: Return the WorkEnvelope and the immutable ClaimActorReceipt
-  - id: error
-    kind: error
-    label: Mapping, Profile, Binding, or exact fence validation fails
-    steps:
-      - id: return-refusal
-        from: engineer-authority
-        to: binding-store
-        label: Propagate typed fail-closed refusal before any Claim
-        evidence:
-          entrypointId: entrypoint.engineer-bindings.principal-resolution
-          sourceSymbol: resolveEngineerPrincipal
-          sinkId: sink.engineer-bindings.current-binding
-    terminal:
-      participant: engineer-authority
-      label: Return typed error without acquiring a Claim
+{
+  "schemaVersion": "archcontext.flow/v1",
+  "id": "flow.engineer-bindings.primary",
+  "capabilityId": "capability.runtime-harness.engineer-bindings",
+  "name": "Read the retained Engineer binding",
+  "applicability": "required",
+  "participants": [
+    {
+      "id": "engineer",
+      "nodeId": "capability.runtime-harness.engineer-bindings"
+    },
+    {
+      "id": "store",
+      "nodeId": "component.engineer-bindings.primary"
+    }
+  ],
+  "steps": [
+    {
+      "id": "read",
+      "from": "engineer",
+      "to": "store",
+      "label": "Read the current binding for an operator observation",
+      "evidence": {
+        "entrypointId": "entrypoint.engineer-bindings.read",
+        "sourceSymbol": "readEngineerBindingStatus",
+        "sinkId": "sink.engineer-bindings.read"
+      }
+    }
+  ]
+}

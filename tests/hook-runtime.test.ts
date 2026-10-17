@@ -8,7 +8,7 @@ import { runHook } from '../src/cli/hook/runtime';
 import { buildTaskMessageEvent } from '../src/core/fleet/task-message';
 import { bindLeaseRecord, buildLeaseOwnerRecord, deriveTaskRevision } from '../src/core/state/coordination-identity';
 import { sendTaskMessage } from '../src/effects/fleet/task-inbox';
-import { writeClaimTokenForBoundLease } from '../src/effects/state/coordination-claim-token';
+import { writeClaimTokenFixture } from './helpers/sprint-fixture';
 import { createLeaseDirectory, writeLeaseOwnerDurably } from '../src/effects/state/coordination-lease-store';
 import { fixtureTaskId } from './helpers/sprint-fixture';
 
@@ -358,7 +358,7 @@ process.exit(child.status ?? 1);
       if (!bound.ok) throw new Error(bound.error);
       createLeaseDirectory(root, taskId);
       writeLeaseOwnerDurably(root, taskId, bound.record);
-      writeClaimTokenForBoundLease(root, { task_id: taskId, claim_id: claimId, worktree, sprint: sprintPath, task: taskCell, unit_ref: unitRef });
+      writeClaimTokenFixture({ task_id: taskId, claim_id: claimId, worktree, sprint: sprintPath, task: taskCell, unit_ref: unitRef });
       writeFileSync(join(root, '.ai/harness/active-plan'), `${unitRef}\n`);
       sendTaskMessage({
         repo_root: root,

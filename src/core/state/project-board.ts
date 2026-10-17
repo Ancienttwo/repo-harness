@@ -32,10 +32,8 @@
  * carries `lease_cleanup_required` plus an executable `actions.reconcile`
  * instead of dragging the card back into `blocked`.
  *
- * Row 2 puts a residual `released` in `blocked` because it genuinely blocks:
- * `claimSprintCommand` refuses anything whose classification is not
- * `available`, so a `released` record whose directory removal never completed
- * is an unclaimable row, not a free one.
+ * Row 2 keeps a residual `released` lease in `blocked` until cleanup clears
+ * its owner record and directory.
  *
  * `progress_state === 'unreadable'` is deliberately absent from the blocking
  * set. Evidence failure must never transfer or withhold ownership, so an
@@ -316,10 +314,7 @@ export function deriveActions(
     release: givable
       ? `repo-harness sprint release --claim-id ${record.claim_id}`
       : null,
-    steal: givable
-      ? `repo-harness sprint steal --expected-claim-id ${record.claim_id}`
-        + " --reason '<reason>' --session-id '<session-id>'"
-      : null,
+    steal: null,
     reconcile: reconcilable
       ? `repo-harness sprint reconcile --task-id ${task.task_id} --target-ref ${canonicalRef}`
       : null,

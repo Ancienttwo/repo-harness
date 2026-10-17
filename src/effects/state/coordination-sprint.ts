@@ -1,4 +1,3 @@
-import { assertWorktreeBinding, withWorktreeTopologyLock } from './coordination-worktree-topology';
 /**
  * Effect-owned coordination verbs for the shared lease protocol.
  *
@@ -18,25 +17,19 @@ import { assertWorktreeBinding, withWorktreeTopologyLock } from './coordination-
  * Exit codes follow `state.ts`: 2 is a malformed invocation, 1 is an
  * operational failure or a fail-closed refusal, 0 is a completed verb.
  */
-import { randomUUID } from 'crypto';
-import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, rmdirSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, rmdirSync, writeFileSync } from 'fs';
 import { join } from 'path';
-import { buildAttemptReceipt } from '../../core/state/attempt-ledger';
 import type { CommandOutcome } from '../../core/state/command-outcome';
 import {
   COMPLETED_ROW_STATUS_PATTERN,
-  FIRST_LEASE_GENERATION,
   PENDING_ROW_STATUS,
   RELEASABLE_LEASE_STATES,
   TASK_DIGEST_PATTERN,
   abortLeaseCompletionRecord,
   beginLeaseCompletionRecord,
-  bindLeaseRecord,
-  buildLeaseOwnerRecord,
   lookupCanonicalTask,
   releaseLeaseRecord,
   resolveCanonicalTaskRef,
-  stealLeaseRecord,
   type CanonicalTask,
   type LeaseOwnerRecord,
   type LeaseTransition,
@@ -48,7 +41,6 @@ import {
   type CanonicalSprintRead,
   type CanonicalSprintSource,
 } from './coordination-canonical-source';
-import { appendAttemptReceipt } from './attempt-ledger-store';
 import {
   SPRINT_BACKLOG_SCHEMA_V1,
   SprintSchemaError,
@@ -61,10 +53,7 @@ import { createWriteJournal, type JournalFileSystem } from './write-journal';
 import {
   readClaimTokenForTask,
   removeClaimTokenForTask,
-  writeClaimTokenForBoundLease,
   type ClaimTokenRead,
-  type ClaimTokenV1,
-  type ClaimTokenWriteInput,
 } from './coordination-claim-token';
 import { readText, repoPath } from './collect-state-inputs';
 import {
@@ -77,7 +66,6 @@ import {
   findLeaseByClaimId,
   readLease,
   removeLease,
-  removeOwnLeaseAfterFailedClaim,
   withBacklogLock,
   withTaskLock,
   writeLeaseOwnerDurably,
@@ -96,9 +84,6 @@ export interface CoordinationPort {
   readonly withTaskLock: <T>(taskId: string, run: () => T) => T;
   /** The shared backlog lock, taken before any task lock. */
   readonly withBacklogLock: <T>(run: () => T) => T;
-  /** Acquired before the Task lock for a worktree ownership mutation. */
-  readonly withWorktreeTopologyLock: <T>(run: () => T) => T;
-  readonly assertWorktreeBinding: (worktree: string, branch: string) => void;
   /** True when this clone has a lease plane at all; false is "nothing owns anything here". */
   readonly leasesRootExists: () => boolean;
   /** The token this tree holds for one task id, addressed by identity. */
@@ -115,22 +100,13 @@ export interface CoordinationPort {
   readonly createLeaseDirectory: (taskId: string) => boolean;
   readonly writeLeaseOwner: (taskId: string, record: LeaseOwnerRecord) => void;
   readonly removeLease: (taskId: string, claimId: string) => void;
-  readonly rollbackOwnLease: (taskId: string, claimId: string) => void;
   readonly findLeaseByClaimId: (claimId: string) => LeaseClaimLookup;
-  readonly writeClaimToken: (input: ClaimTokenWriteInput) => ClaimTokenV1;
-  /**
-   * Append one `resumed` attempt receipt to the execution worktree's own
-   * ignored runtime ledger. Throws on failure; `bind` fails closed on it.
-   */
-  readonly appendResumedReceipt: (worktree: string, unitRef: string) => void;
 }
 
 export interface SprintCommandDependencies {
   /** Stable identity of the clone; part of every `task_id` preimage. */
   readonly repoIdentity: string;
   /** The worktree the verb was invoked from; recorded, never trusted as authority. */
-  readonly sourceWorktree: string;
-  readonly newClaimId: () => string;
   readonly coordination: CoordinationPort;
 }
 
@@ -159,14 +135,6 @@ function requireOption(value: string | undefined, flag: string): string | Comman
 /** Narrows the `<value> | CommandOutcome` shape the option and lease helpers return. */
 function isOutcome(value: unknown): value is CommandOutcome {
   return typeof value === 'object' && value !== null && 'exitCode' in value && 'stdout' in value;
-}
-
-export interface ClaimCommandOptions {
-  readonly taskId?: string;
-  readonly expectedTaskRevision?: string;
-  readonly targetRef?: string;
-  readonly sprintPath?: string;
-  readonly sessionId?: string;
 }
 
 /**
@@ -213,144 +181,6 @@ function verifyCanonicalPreconditions(
   return { ok: true, task };
 }
 
-export interface IdentifyCommandOptions {
-  readonly task?: string;
-  readonly targetRef?: string;
-  readonly sprintPath?: string;
-}
-
-/**
- * Derive one row's `task_id` and `task_revision` from the canonical sprint.
- *
- * `sprint-backlog.sh` resolves rows by index or Task cell and cannot hash them:
- * re-deriving either digest in awk would be a second implementation of the
- * identity contract, which is precisely the shadow derivation the repo rules
- * forbid. This verb is the shell's only route to those two values, and it reads
- * the same canonical ref every other verb validates against, so the shell can
- * never hand `claim` a revision it observed in a stale local copy.
- */
-export function identifySprintCommand(
-  options: IdentifyCommandOptions,
-  deps: SprintCommandDependencies,
-): CommandOutcome {
-  const task = requireOption(options.task, '--task');
-  if (isOutcome(task)) return task;
-  const targetRef = requireOption(options.targetRef, '--target-ref');
-  if (isOutcome(targetRef)) return targetRef;
-  const sprintPath = requireOption(options.sprintPath, '--sprint-path');
-  if (isOutcome(sprintPath)) return sprintPath;
-
-  try {
-    const canonical = deps.coordination.readCanonicalSprint({ targetRef, sprintPath });
-    if (!canonical.ok) return refuse(canonical.error);
-    const lookup = resolveCanonicalTaskRef(
-      { repoIdentity: deps.repoIdentity, sprintPath, sprintText: canonical.text },
-      task,
-    );
-    if (!lookup.ok) return refuse(lookup.error);
-    return ok({
-      task_id: lookup.task.task_id,
-      task_revision: lookup.task.task_revision,
-      sprint_path: sprintPath,
-      target_ref: targetRef,
-      commit: canonical.commit,
-      index: lookup.task.row.index,
-      status: lookup.task.row.status,
-      task: lookup.task.row.task,
-      mode: lookup.task.row.mode,
-    });
-  } catch (error) {
-    return operationalFailure(error);
-  }
-}
-
-/**
- * Compare-and-swap claim. Ordered exactly as the work package specifies:
- * resolve the sprint from the explicit canonical ref (never the caller's local
- * active-sprint marker, which in a worktree cut from an older commit is a
- * stale copy), verify pending, verify the expected revision, take the per-task
- * lock, elect the lease with one atomic `mkdir`, publish the owner record
- * durably, re-read canonical, and on any change roll back only the lease this
- * call created and fail closed.
- */
-export function claimSprintCommand(
-  options: ClaimCommandOptions,
-  deps: SprintCommandDependencies,
-): CommandOutcome {
-  const taskId = requireOption(options.taskId, '--task-id');
-  if (isOutcome(taskId)) return taskId;
-  if (!TASK_DIGEST_PATTERN.test(taskId)) return usage(`malformed --task-id: ${taskId}`);
-
-  const expectedTaskRevision = requireOption(
-    options.expectedTaskRevision,
-    '--expected-task-revision',
-  );
-  if (isOutcome(expectedTaskRevision)) return expectedTaskRevision;
-  if (!TASK_DIGEST_PATTERN.test(expectedTaskRevision)) {
-    return usage(`malformed --expected-task-revision: ${expectedTaskRevision}`);
-  }
-
-  const targetRef = requireOption(options.targetRef, '--target-ref');
-  if (isOutcome(targetRef)) return targetRef;
-  const sprintPath = requireOption(options.sprintPath, '--sprint-path');
-  if (isOutcome(sprintPath)) return sprintPath;
-  const sessionId = requireOption(options.sessionId, '--session-id');
-  if (isOutcome(sessionId)) return sessionId;
-
-  const source: CanonicalSprintSource = { targetRef, sprintPath };
-  try {
-    // Before anything is elected: a claim taken on a clone that never crossed
-    // over would run the v1 plane beside legacy markers it cannot see.
-    const cutover = deps.coordination.legacyCutoverRefusal();
-    if (cutover !== null) return refuse(cutover);
-
-    const before = verifyCanonicalPreconditions(deps, source, taskId, expectedTaskRevision);
-    if (!before.ok) return refuse(before.error);
-
-    return deps.coordination.withTaskLock(taskId, () => {
-      const existing = deps.coordination.readLease(taskId);
-      if (existing.classification !== 'available') {
-        return refuse(
-          `task ${taskId} is not available: lease is ${existing.classification}`
-          + `${existing.unknown_reason ? ` (${existing.unknown_reason}; run sprint reconcile)` : ''}`,
-        );
-      }
-      if (!deps.coordination.createLeaseDirectory(taskId)) {
-        return refuse(`lost the lease election for task ${taskId}`);
-      }
-
-      const claimId = deps.newClaimId();
-      const record = buildLeaseOwnerRecord({
-        claimId,
-        taskId,
-        taskRevision: before.task.task_revision,
-        sprintPath,
-        // Captured, not re-derived later: every verb that re-reads canonical
-        // must prove it read the same authority this claim was validated on.
-        targetRef,
-        generation: FIRST_LEASE_GENERATION,
-        sessionId,
-        sourceWorktree: deps.sourceWorktree,
-      });
-      try {
-        deps.coordination.writeLeaseOwner(taskId, record);
-      } catch (error) {
-        deps.coordination.rollbackOwnLease(taskId, claimId);
-        throw error;
-      }
-
-      const after = verifyCanonicalPreconditions(deps, source, taskId, expectedTaskRevision);
-      if (!after.ok) {
-        deps.coordination.rollbackOwnLease(taskId, claimId);
-        return refuse(`canonical authority changed during claim; lease rolled back: ${after.error}`);
-      }
-      return ok(record);
-    });
-  } catch (error) {
-    return operationalFailure(error);
-  }
-}
-
 /** Locate the lease a fencing token owns, then run `mutate` under its lock. */
 function withOwnedLease(
   deps: SprintCommandDependencies,
@@ -376,117 +206,6 @@ function lockedRecord(
     );
   }
   return read.record;
-}
-
-export interface BindCommandOptions {
-  readonly claimId?: string;
-  readonly worktree?: string;
-  readonly branch?: string;
-  readonly unitRef?: string;
-}
-
-export interface WriteClaimTokenCommandOptions {
-  readonly taskId?: string;
-  readonly claimId?: string;
-  readonly worktree?: string;
-  readonly sprintPath?: string;
-  readonly task?: string;
-  readonly unitRef?: string;
-}
-
-/**
- * Publish a worktree-local capability only after the lease is already bound.
- * This deliberately follows `bind` rather than participating in it: the
- * token is a projection for shell/hooks, never lease authority, and failure
- * leaves the bound lease intact for explicit compensation by its caller.
- */
-export function writeClaimTokenSprintCommand(
-  options: WriteClaimTokenCommandOptions,
-  deps: SprintCommandDependencies,
-): CommandOutcome {
-  const taskId = requireOption(options.taskId, '--task-id');
-  if (isOutcome(taskId)) return taskId;
-  const claimId = requireOption(options.claimId, '--claim-id');
-  if (isOutcome(claimId)) return claimId;
-  const worktree = requireOption(options.worktree, '--worktree');
-  if (isOutcome(worktree)) return worktree;
-  const sprintPath = requireOption(options.sprintPath, '--sprint-path');
-  if (isOutcome(sprintPath)) return sprintPath;
-  const task = requireOption(options.task, '--task');
-  if (isOutcome(task)) return task;
-  const unitRef = requireOption(options.unitRef, '--unit-ref');
-  if (isOutcome(unitRef)) return unitRef;
-
-  try {
-    return ok(deps.coordination.writeClaimToken({
-      task_id: taskId,
-      claim_id: claimId,
-      worktree,
-      sprint: sprintPath,
-      task,
-      unit_ref: unitRef,
-    }));
-  } catch (error) {
-    return operationalFailure(error);
-  }
-}
-
-/**
- * `reserving -> bound`. Claiming precedes worktree creation, so the first
- * record cannot name an execution worktree that does not exist yet; this verb
- * fills it once `contract-worktree start` has succeeded.
- *
- * The `resumed` receipt is appended BEFORE the bound record is written, and
- * the order is not incidental. `evaluateAttemptStall` walks a unit's receipts
- * backwards and stops at anything that is not a no-progress `completed`, so a
- * `resumed` receipt is what stops a new generation from inheriting the
- * previous claim's stall count -- without it, the first board read after a
- * steal-then-rebind reports a `stalled` that never happened to this owner.
- *
- * Appending after the owner write would leave the window this exists to close:
- * a lease already `bound` while still carrying the old claim's stall count. So
- * an append failure fails the bind closed -- the lease stays `reserving` and
- * the caller's existing `rollback_claim` path applies. The opposite residue,
- * an orphan `resumed` receipt from a bind that then failed, is harmless: a
- * receipt is evidence, never authority, and the worst it can do is clear one
- * stall count.
- *
- * It is not conditioned on `generation`: a first bind's ledger has no receipts
- * for the unit to clear, so the receipt is a no-op there, and branching on
- * generation would add a second rule for the same invariant.
- */
-export function bindSprintCommand(
-  options: BindCommandOptions,
-  deps: SprintCommandDependencies,
-): CommandOutcome {
-  const claimId = requireOption(options.claimId, '--claim-id');
-  if (isOutcome(claimId)) return claimId;
-  const worktree = requireOption(options.worktree, '--worktree');
-  if (isOutcome(worktree)) return worktree;
-  const branch = requireOption(options.branch, '--branch');
-  if (isOutcome(branch)) return branch;
-  const unitRef = requireOption(options.unitRef, '--unit-ref');
-  if (isOutcome(unitRef)) return unitRef;
-
-  try {
-    return deps.coordination.withWorktreeTopologyLock(() => withOwnedLease(deps, claimId, (taskId) => {
-      deps.coordination.assertWorktreeBinding(worktree, branch);
-      const current = lockedRecord(deps, taskId);
-      if (isOutcome(current)) return current;
-      const transition = bindLeaseRecord(current, {
-        claimId,
-        executionWorktree: worktree,
-        branch,
-        unitRef,
-      });
-      if (!transition.ok) return refuse(transition.error);
-      deps.coordination.appendResumedReceipt(worktree, unitRef);
-      deps.coordination.writeLeaseOwner(taskId, transition.record);
-      return ok(transition.record);
-    }));
-  } catch (error) {
-    return operationalFailure(error);
-  }
 }
 
 export interface BeginCompletionCommandOptions {
@@ -920,8 +639,7 @@ function completionLeaseGate(
   if (token.outcome === 'none') {
     return refuse(
       `backlog task '${input.taskCell}' is claimed by ${record.claim_id} and this worktree holds no claim token for it; `
-      + `complete it from the owning worktree, or take the claim over with 'repo-harness sprint steal `
-      + `--expected-claim-id ${record.claim_id} --reason <reason> --session-id <id>'`,
+      + `complete it from the owning worktree; inspect ownership with 'repo-harness state board --json'`,
     );
   }
   if (token.token.claim_id !== record.claim_id) {
@@ -949,9 +667,7 @@ function completionLeaseGate(
     return refuse(
       `backlog task '${input.taskCell}' drifted since it was claimed: canonical revision is `
       + `${canonicalTask.task.task_revision}, the claim observed ${record.task_revision}; release the stale claim `
-      + `with 'repo-harness sprint release --claim-id ${record.claim_id}' and re-claim the row at the current `
-      + `revision, or take it over explicitly with 'repo-harness sprint steal --expected-claim-id `
-      + `${record.claim_id} --reason <reason> --session-id <id>'`,
+      + `with 'repo-harness sprint release --claim-id ${record.claim_id}'; track further work in the GitHub issue`,
     );
   }
   return record;
@@ -999,53 +715,6 @@ export function releaseSprintCommand(
   }
 }
 
-export interface StealCommandOptions {
-  readonly expectedClaimId?: string;
-  readonly reason?: string;
-  readonly sessionId?: string;
-}
-
-/**
- * Preemption with provenance, and the reason `start-task --force` is retired:
- * `--force` was unconditional and left no record of who took what from whom.
- * The new record names the claim it displaced and the stated reason, and the
- * displaced token can no longer release, bind, or publish.
- */
-export function stealSprintCommand(
-  options: StealCommandOptions,
-  deps: SprintCommandDependencies,
-): CommandOutcome {
-  const expectedClaimId = requireOption(options.expectedClaimId, '--expected-claim-id');
-  if (isOutcome(expectedClaimId)) return expectedClaimId;
-  const reason = requireOption(options.reason, '--reason');
-  if (isOutcome(reason)) return reason;
-  const sessionId = requireOption(options.sessionId, '--session-id');
-  if (isOutcome(sessionId)) return sessionId;
-
-  try {
-    // Same gate as `claim`: a steal is the other way a token is minted, so it
-    // may not run on a clone that never crossed over either.
-    const cutover = deps.coordination.legacyCutoverRefusal();
-    if (cutover !== null) return refuse(cutover);
-
-    return withOwnedLease(deps, expectedClaimId, (taskId) => {
-      const current = lockedRecord(deps, taskId);
-      if (isOutcome(current)) return current;
-      const transition = stealLeaseRecord(current, {
-        expectedClaimId,
-        reason,
-        newClaimId: deps.newClaimId(),
-        sessionId,
-        sourceWorktree: deps.sourceWorktree,
-      });
-      if (!transition.ok) return refuse(transition.error);
-      deps.coordination.writeLeaseOwner(taskId, transition.record);
-      return ok(transition.record);
-    });
-  } catch (error) {
-    return operationalFailure(error);
-  }
-}
 
 export interface ReconcileCommandOptions {
   readonly taskId?: string;
@@ -1205,15 +874,11 @@ export function reconcileSprintCommand(
 export function processSprintDependencies(cwd: string): SprintCommandDependencies {
   return {
     repoIdentity: resolveRepoIdentity(cwd),
-    sourceWorktree: realpathSync(cwd),
-    newClaimId: () => randomUUID(),
     coordination: {
       legacyCutoverRefusal: () => legacyCutoverRefusal(cwd),
       readCanonicalSprint: (source) => readCanonicalSprint(cwd, source),
       withTaskLock: (taskId, run) => withTaskLock(cwd, taskId, run),
       withBacklogLock: (run) => withBacklogLock(cwd, run),
-      withWorktreeTopologyLock: (run) => withWorktreeTopologyLock(cwd, run),
-      assertWorktreeBinding: (worktree, branch) => assertWorktreeBinding(cwd, worktree, branch),
       leasesRootExists: () => existsSync(join(coordinationRoot(cwd), 'leases')),
       readClaimToken: (taskId) => readClaimTokenForTask(cwd, taskId),
       removeClaimToken: (taskId) => removeClaimTokenForTask(cwd, taskId),
@@ -1239,23 +904,8 @@ export function processSprintDependencies(cwd: string): SprintCommandDependencie
       createLeaseDirectory: (taskId) => createLeaseDirectory(cwd, taskId),
       writeLeaseOwner: (taskId, record) => writeLeaseOwnerDurably(cwd, taskId, record),
       removeLease: (taskId, claimId) => removeLease(cwd, taskId, claimId),
-      rollbackOwnLease: (taskId, claimId) => removeOwnLeaseAfterFailedClaim(cwd, taskId, claimId),
       findLeaseByClaimId: (claimId) => findLeaseByClaimId(cwd, claimId),
-      writeClaimToken: (input) => writeClaimTokenForBoundLease(cwd, input),
-      appendResumedReceipt: (worktree, unitRef) => {
-        // The ledger is the execution worktree's own ignored runtime evidence,
-        // which is the only ledger `evaluateAttemptStall` is ever pointed at
-        // for this lease. The receipt reuses `buildAttemptReceipt` rather than
-        // hand-building a line, so there stays exactly one definition of a
-        // well-formed receipt.
-        const built = buildAttemptReceipt({
-          unitRef,
-          outcome: 'resumed',
-          recordedAt: new Date().toISOString(),
-        });
-        if (!built.ok) throw new Error(built.error);
-        appendAttemptReceipt(worktree, built.receipt);
-      },
+
     },
   };
 }

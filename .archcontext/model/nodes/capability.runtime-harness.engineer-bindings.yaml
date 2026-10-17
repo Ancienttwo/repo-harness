@@ -1,74 +1,60 @@
-schemaVersion: archcontext.node/v2
-id: capability.runtime-harness.engineer-bindings
-kind: capability
-name: Engineer Bindings
-status: active
-summary: Defines tracked Module Engineer contracts, current Binding authority, authenticated principal mapping, and immutable Claim actor provenance.
-responsibilities:
-  - Validate capability-backed Engineer Profile and SOP contracts without copying capability authority.
-  - Publish immutable Engineer binding events and one current projection below the Git common directory.
-  - Expose local Human-operator binding commands and bounded read-only bootstrap projections.
-  - Map server-minted Engineer OAuth authorizations to exact current Bindings in user-level state without storing bearer tokens.
-  - Revalidate the current Binding before Engineer mutation and publish immutable ClaimActor receipts beside the shared coordination authority.
-  - Refuse Binding rotation while a live Claim exists or Lease state is unknown.
-source:
-  include:
-    - agents/engineers/**
-    - src/core/engineers/**
-    - src/effects/engineers/**
-    - src/cli/commands/engineer.ts
-  exclude:
-    - src/core/engineers/agent-runtime-effect.ts
-    - src/effects/engineers/agent-runtime-adapters/**
-    - src/effects/engineers/agent-runtime-effect-store.ts
-    - src/effects/engineers/agent-runtime-feature.ts
-    - src/core/engineers/delegation.ts
-    - src/effects/engineers/delegated-run-store.ts
-    - src/core/engineers/engineering-overlay.ts
-    - src/core/engineers/scheduling.ts
-    - src/effects/engineers/dependency-authority.ts
-    - src/effects/engineers/engineering-overlay.ts
-    - src/effects/engineers/scheduling-acquire-next.ts
-    - src/effects/engineers/scheduling-acquire.ts
-    - src/effects/engineers/scheduling.ts
-  entrypoints:
-    - id: entrypoint.engineer-bindings.operator-cli
-      path: src/cli/commands/engineer.ts
-      symbols:
-        - name: buildEngineerCommand
-          sinks:
-            - id: sink.engineer-bindings.shared-store
-              path: src/effects/engineers/binding-store.ts
-              symbol: bindEngineer
-    - id: entrypoint.engineer-bindings.principal-resolution
-      path: src/effects/engineers/principal.ts
-      symbols:
-        - name: resolveEngineerPrincipal
-          sinks:
-            - id: sink.engineer-bindings.current-binding
-              path: src/effects/engineers/binding-store.ts
-              symbol: readEngineerBindingStatus
-    - id: entrypoint.engineer-bindings.acquire
-      path: src/effects/engineers/acquire.ts
-      symbols:
-        - name: acquireEngineerTask
-          sinks:
-            - id: sink.engineer-bindings.fleet-acquire
-              path: src/effects/fleet/acquire.ts
-              symbol: acquireFleetTask
-            - id: sink.engineer-bindings.claim-actor-receipt
-              path: src/effects/engineers/claim-actor-store.ts
-              symbol: publishClaimActorReceipt
-        - name: acquireEngineerTaskLocked
-          sinks:
-            - id: sink.engineer-bindings.claim-actor-build
-              path: src/core/engineers/principal-claim.ts
-              symbol: buildClaimActorReceipt
-extensions:
-  contractFiles:
-    agents: AGENTS.md
-    claude: CLAUDE.md
-  lspProfile: typescript-lsp
-  verification:
-    - bun test tests/unit/engineer-profile-binding-v1.test.ts tests/unit/engineer-binding-store.test.ts tests/unit/bound-task-rotation.test.ts tests/unit/me0b-engineer-principal-claim-actor.test.ts tests/unit/me0b-principal-store.test.ts tests/unit/me0b-engineer-acquire.test.ts tests/cli/engineer.test.ts tests/cli/mcp-engineer-tools.test.ts --timeout 60000
-    - bun run check:type
+{
+  "schemaVersion": "archcontext.node/v2",
+  "id": "capability.runtime-harness.engineer-bindings",
+  "kind": "capability",
+  "name": "Engineer Bindings",
+  "status": "active",
+  "summary": "Retains Engineer contract, binding and claim actor records for operator observations and runtime reads.",
+  "responsibilities": [
+    "Validate capability-backed Engineer Profile and SOP contracts without copying capability authority.",
+    "Publish immutable Engineer binding events and one current projection below the Git common directory.",
+    "Refuse Binding rotation while a live Claim exists or Lease state is unknown."
+  ],
+  "source": {
+    "include": [
+      "agents/engineers/**",
+      "src/core/engineers/**",
+      "src/effects/engineers/**"
+    ],
+    "exclude": [
+      "src/core/engineers/agent-runtime-effect.ts",
+      "src/effects/engineers/agent-runtime-adapters/**",
+      "src/effects/engineers/agent-runtime-effect-store.ts",
+      "src/effects/engineers/agent-runtime-feature.ts",
+      "src/core/engineers/engineering-overlay.ts",
+      "src/core/engineers/scheduling.ts",
+      "src/effects/engineers/dependency-authority.ts",
+      "src/effects/engineers/engineering-overlay.ts",
+      "src/effects/engineers/scheduling.ts"
+    ],
+    "entrypoints": [
+      {
+        "id": "entrypoint.engineer-bindings.read",
+        "path": "src/effects/engineers/binding-store.ts",
+        "symbols": [
+          {
+            "name": "readEngineerBindingStatus",
+            "sinks": [
+              {
+                "id": "sink.engineer-bindings.read",
+                "path": "src/effects/engineers/binding-store.ts",
+                "symbol": "readCurrent"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "extensions": {
+    "contractFiles": {
+      "agents": "AGENTS.md",
+      "claude": "CLAUDE.md"
+    },
+    "lspProfile": "typescript-lsp",
+    "verification": [
+      "bun test tests/unit/engineer-profile-binding-v1.test.ts tests/unit/engineer-binding-store.test.ts tests/unit/bound-task-rotation.test.ts tests/unit/me0b-engineer-principal-claim-actor.test.ts --timeout 60000",
+      "bun run check:type"
+    ]
+  }
+}

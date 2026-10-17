@@ -6,7 +6,7 @@
  * a shape raises, and which existing commands a card may offer. The effects --
  * torn snapshots, real leases, real worktrees -- are falsified in
  * `tests/board-snapshot-consistency.test.ts` and
- * `tests/sprint-claim-concurrency.test.ts`; a mock there would prove nothing,
+ * `tests/coordination-lease-store.test.ts`; a mock there would prove nothing,
  * and a filesystem here would prove nothing either.
  *
  * The column assertions are written as invariants over the whole constructible
@@ -463,13 +463,11 @@ describe('diagnostics', () => {
 });
 
 describe('actions', () => {
-  test('release and steal are offered exactly where the verbs accept them', () => {
+  test('release remains available and retired steal is absent', () => {
     for (const lease of ['reserving', 'bound'] as const) {
       const card = cardFor('pending', lease, 'not_observed');
       expect(card.actions.release).toBe('repo-harness sprint release --claim-id claim-1');
-      expect(card.actions.steal).toBe(
-        "repo-harness sprint steal --expected-claim-id claim-1 --reason '<reason>' --session-id '<session-id>'",
-      );
+      expect(card.actions.steal).toBeNull();
     }
   });
 

@@ -114,7 +114,6 @@
     "runtimeDirectory": "package:scripts",
     "scripts": [
       "new-spec.sh",
-      "new-sprint.sh",
       "new-plan.sh",
       "capture-plan.sh",
       "plan-to-todo.sh",
@@ -169,7 +168,6 @@
     ],
     "descriptions": {
       "new-spec": "Create docs/spec.md from the product spec template",
-      "new-sprint": "Create a program-level sprint backlog under plans/sprints/",
       "new-plan": "Create a new execution plan file under plans/",
       "capture-plan": "Capture a finished planning note as a plan artifact or checklist rows",
       "plan-to-todo": "Activate an approved plan and start its contract worktree when enabled",
@@ -193,7 +191,7 @@
       "summarize-failures": "Summarize recorded workflow failure log entries",
       "verify-sprint": "Verify the active sprint contract's exit criteria and allowed paths",
       "harness-trace-grade": "Grade a harness run trace against pass/fail criteria",
-      "sprint-backlog": "Initialize, inspect, and advance a program-level sprint backlog",
+      "sprint-backlog": "Read a retained sprint or complete its row for contract closeout",
       "factor-lab-new": "Create a new factor candidate workspace and register it",
       "factor-lab-promote": "Promote a factor candidate into the committed registry",
       "factor-lab-reject": "Reject a factor candidate and record the reason",

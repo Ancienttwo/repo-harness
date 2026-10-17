@@ -113,23 +113,6 @@ export interface FleetOffersV1 {
   readonly offers: readonly TaskOfferV1[];
 }
 
-/**
- * Deterministic v1 acquisition selection: the document is already ordered by
- * registry repository and canonical row, so the first eligible offer is the
- * only selection rule.  This helper remains pure; a caller must still
- * revalidate the returned offer before taking any mutation step.
- */
-export function selectExecutionReadyOffer(
-  document: FleetOffersV1,
-  repoId?: string,
-): TaskOfferV1 | null {
-  return document.offers.find((offer) => (
-    offer.execution_readiness === 'execution_ready'
-    && offer.snapshot_consistency === 'stable'
-    && (repoId === undefined || offer.repo_id === repoId)
-  )) ?? null;
-}
-
 const BLOCKER_ATTENTION: Readonly<Record<TaskOfferBlockerCode, TaskOfferAttentionOwner>> = {
   repo_read_only: 'user',
   repo_unavailable: 'external',

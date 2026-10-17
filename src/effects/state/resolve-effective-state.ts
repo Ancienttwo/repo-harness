@@ -1,6 +1,6 @@
 import { assertObservationPath, currentReadonlyObservation, withReadonlyObservation, type ReadonlyObservationIO, observationReadFileSync as readFileSync, observationReaddirSync as readdirSync } from './readonly-observation';
 import { statSync } from 'fs';
-import { isAbsolute, posix, win32 } from 'path';
+import { posix, win32 } from 'path';
 import { buildReviewSubject, isImplementationSurfacePath, type ReviewSubject } from '../review/diff-fingerprint';
 import { resolveWorkflowProfile } from '../../core/workflow/profile';
 import {

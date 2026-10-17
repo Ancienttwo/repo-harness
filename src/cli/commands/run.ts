@@ -9,7 +9,6 @@ export const RUN_HELP_GROUPS = [
     label: 'Planning & execution',
     helpers: [
       'new-spec',
-      'new-sprint',
       'new-plan',
       'capture-plan',
       'plan-to-todo',

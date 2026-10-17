@@ -25,7 +25,7 @@ import { createLeaseDirectory, readLease, writeLeaseOwnerDurably } from '../../s
 import { resolveRepoIdentity } from '../../src/effects/state/coordination-canonical-source';
 import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
 import { fixtureTaskId } from '../helpers/sprint-fixture';
-import { writeClaimTokenForBoundLease } from '../../src/effects/state/coordination-claim-token';
+import { writeClaimTokenFixture } from '../helpers/sprint-fixture';
 
 const CLAIM = 'claim-lifecycle';
 const SPRINT_PATH = 'plans/sprints/demo.sprint.md';
@@ -86,7 +86,7 @@ function installFixture(): Fixture {
   if (!completing.ok) throw new Error(completing.error);
   if (!createLeaseDirectory(root, taskId)) throw new Error('lease election failed');
   writeLeaseOwnerDurably(root, taskId, bound.record);
-  writeClaimTokenForBoundLease(root,{task_id:taskId,claim_id:CLAIM,worktree:root,sprint:SPRINT_PATH,task:TASK_CELL,unit_ref:'plans/plan-lifecycle.md'});
+  writeClaimTokenFixture({task_id:taskId,claim_id:CLAIM,worktree:root,sprint:SPRINT_PATH,task:TASK_CELL,unit_ref:'plans/plan-lifecycle.md'});
   writeLeaseOwnerDurably(root, taskId, completing.record);
   const body = join(root, 'pr-body.md'); writeFileSync(body, 'PR body\n');
   const gh = join(root, 'fake-gh.sh');
@@ -415,7 +415,7 @@ test('two real claims at the same head/base produce distinct journals and stale 
   const stolen=stealLeaseRecord(closed.record,{expectedClaimId:CLAIM,newClaimId:'claim-lifecycle-second',reason:'fixture handover',sessionId:'session-two',sourceWorktree:fixture.root});if(!stolen.ok)throw Error(stolen.error);
   const rebound=bindLeaseRecord(stolen.record,{claimId:'claim-lifecycle-second',executionWorktree:fixture.root,branch:'codex/lifecycle',unitRef:'plans/plan-lifecycle.md'});if(!rebound.ok)throw Error(rebound.error);
   writeLeaseOwnerDurably(fixture.root,fixture.taskId,rebound.record);
-  writeClaimTokenForBoundLease(fixture.root,{task_id:fixture.taskId,claim_id:rebound.record.claim_id,worktree:fixture.root,sprint:SPRINT_PATH,task:TASK_CELL,unit_ref:'plans/plan-lifecycle.md'});
+  writeClaimTokenFixture({task_id:fixture.taskId,claim_id:rebound.record.claim_id,worktree:fixture.root,sprint:SPRINT_PATH,task:TASK_CELL,unit_ref:'plans/plan-lifecycle.md'});
   const second=readShipClaimIdentity({repo_root:fixture.root,task_id:fixture.taskId,claim_id:rebound.record.claim_id,branch:'codex/lifecycle',target_ref:'main'});
   const transactionRoot=join(resolveGitCommonDirectory(fixture.root),'repo-harness/transactions');
   const meta=(identity:typeof first)=>({repo:transactionRoot,worktree:fixture.root,branch:'codex/lifecycle',remote:'origin',publication_mode:'lease',claim_id:identity.claim_id,claim_task_id:identity.task_id,claim_generation:String(identity.generation),claim_task_revision:identity.task_revision,original_head:fixture.head,target_branch:'main',base_sha:git(fixture.root,'rev-parse','main')});
