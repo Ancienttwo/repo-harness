@@ -12,7 +12,7 @@ import { ARCHITECTURE_DOCS_RENDERER_VERSION } from 'archctx-contracts';
 import { dependencies, devDependencies } from '../../package.json';
 import { recordInstallOwnership } from '../helpers/install-ownership';
 import wazaRules from '../../assets/waza-shared-rules.json';
-import { applyInstallProfile, managedInstallSurfaceIsCurrent, readInstalledProfile } from '../../src/cli/installer/install-profile';
+import { applyInstallProfile, managedInstallSurfaceIsCurrent, readInstalledProfile, recordRefreshedInstallOwnership } from '../../src/cli/installer/install-profile';
 import { buildManagedHooks } from '../../src/cli/installer/managed-entries';
 
 const ROOT = join(import.meta.dir, '..', '..');
@@ -800,8 +800,9 @@ exit 0
         writeFileSync(join(home, '.agents', 'rules', rule), '# stale rule\n');
         writeFileSync(join(home, '.codex', 'rules', rule), '# stale rule\n');
       }
-      recordInstallOwnership(['anti-patterns.md', 'chinese.md', 'durable-context.md', 'english.md']
-        .map((rule) => join(home, '.agents', 'rules', rule)), { HOME: home });
+      const stagingRules = wazaRules.files.map((rule) => join(home, '.agents', 'rules', rule));
+      recordInstallOwnership([], { HOME: home });
+      recordRefreshedInstallOwnership(stagingRules, { HOME: home }, stagingRules);
       writeFakeCodegraph(fakeBin, codegraphLog);
       writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.4.0; fi\nexit 0\n`);
       writeFakeSkillsCli(fakeBin);
@@ -2441,7 +2442,8 @@ describe('Waza shared rule refresh', () => {
         mkdirSync(join(home, '.agents', 'skills', skill), { recursive: true });
         writeFileSync(join(home, '.agents', 'skills', skill, 'SKILL.md'), `# ${skill}\n`);
       }
-      recordInstallOwnership(paths, { HOME: home });
+      recordInstallOwnership([], { HOME: home });
+      recordRefreshedInstallOwnership(paths, { HOME: home }, paths);
       writeExecutable(join(fakeBin, 'bun'), '#!/bin/bash\nif [[ "$1" == "--version" ]]; then echo 1.4.0; fi\n');
       // Skills CLI does not write shared rules.
       writeExecutable(join(fakeBin, 'bunx'), '#!/bin/bash\nexit 0\n');
@@ -2557,7 +2559,7 @@ if [[ -n "$output" ]]; then cat "$source" > "$output"; else cat "$source"; fi
         if (failure === 'fetch') writeFileSync(join(upstream, 'fail-english.md'), 'fail');
         if (failure === 'empty') writeFileSync(join(upstream, 'english.md'), '');
         if (failure === 'staging edit') writeFileSync(join(home, '.agents', 'rules', 'english.md'), '# local staging edit\n');
-        if (failure === 'unowned staging') rmSync(join(home, '.repo-harness', 'install-state.json'));
+        if (failure === 'unowned staging') recordInstallOwnership([], { HOME: home });
         if (failure === 'host edit') writeFileSync(join(home, '.codex', 'rules', 'english.md'), '# local host edit\n');
         const before = paths.map((path) => readFileSync(path, 'utf-8'));
         const result = run();
