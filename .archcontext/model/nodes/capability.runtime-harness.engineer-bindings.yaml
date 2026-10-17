@@ -7,8 +7,8 @@
   "summary": "Retains Engineer contract, binding and claim actor records for operator observations and runtime reads.",
   "responsibilities": [
     "Validate capability-backed Engineer Profile and SOP contracts without copying capability authority.",
-    "Publish immutable Engineer binding events and one current projection below the Git common directory.",
-    "Refuse Binding rotation while a live Claim exists or Lease state is unknown."
+    "Read existing Engineer binding events and current records below the Git common directory without repair writes.",
+    "Read historical Claim Actor receipts and check their exact current Lease owner for operator observations."
   ],
   "source": {
     "include": [
@@ -53,7 +53,7 @@
     },
     "lspProfile": "typescript-lsp",
     "verification": [
-      "bun test tests/unit/engineer-profile-binding-v1.test.ts tests/unit/engineer-binding-store.test.ts tests/unit/bound-task-rotation.test.ts tests/unit/me0b-engineer-principal-claim-actor.test.ts --timeout 60000",
+      "bun test tests/unit/engineer-profile-binding-v1.test.ts tests/unit/engineer-binding-store.test.ts tests/unit/me0b-engineer-principal-claim-actor.test.ts --timeout 60000",
       "bun run check:type"
     ]
   }

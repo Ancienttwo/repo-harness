@@ -4,5 +4,5 @@
   "kind": "calls",
   "source": "capability.runtime-harness.engineer-scheduling",
   "target": "capability.runtime-harness.engineer-bindings",
-  "intent": "Read the exact current Engineer contract and binding for offer observations"
+  "intent": "Resolve declared graph capabilities through the Engineer profile authority reader"
 }

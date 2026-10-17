@@ -105,32 +105,13 @@ sequenceDiagram
 ```
 <!-- END ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineer-scheduling" -->
 
-## 3. P3:設計決策與不變量
+## 3. P3: Retained graph and dependency reads
 
-### 3.1 必须保持的不变量
-
-1. **Canonical Sprint 行是唯一的 Task 身份权威。** 同一 commit 的 `.work-graph.v1.json` 兄弟文件拥有调度元数据和派生的 Work Package revision。它不改变 `task_id` 或 `task_revision`。
-2. **Work Graph 的 lane 是封闭的。** 没有 carrier 表示 `unclassified`。`generic-v1` 必须显式声明且没有 Work Package。`engineering-v2` 必须完整覆盖 Sprint 行且没有未知语义键（`src/core/engineers/scheduling.ts:408-414`）。
-3. **Offer 不授予权威。** Offer 绑定 graph、Work Package、Task、Profile、Binding、Fleet offer、依赖、并发和授权观测。任一观测变化，offer 就过期。
-4. **仓库并发由一个 Git common dir 锁选举。** `acquireScheduledEngineerTask` 在锁外和锁内各调用一次 `selectCurrentOffer`，两次都必须匹配调用方的断言，然后同步调用既有的 Engineer/Fleet acquire（`src/effects/engineers/scheduling-acquire.ts:123-150`）。ME-1A 不创建第二个 Claim、Lease、assignment 或回滚权威。
-5. **依赖状态只从拥有该结论的权威解析。** `src/effects/engineers/dependency-authority.ts` 是唯一的只读解析器。权威是 canonical Sprint 行、exact-subject AcceptanceReceipt、Lease publication 指针加不可变 PublicationReceipt 和 integration 观测、以及 ME-4C product acceptance 投影。可读的否定结果是 `unsatisfied`。缺失、不可读、未授权或不支持的权威是 `authority_unavailable`（`dependency-authority.ts:15`、`:71`）。调度从不从 prose、路径、分支名或 Git 拓扑重建结论。
-6. **需要 acceptance 结论的依赖边自带封闭的 `acceptance_authority` 引用。** 该引用绑定 revision，并在读取权威之前对同一 canonical commit 证明。过期的声明是 `authority_unavailable`，不是通过（`scheduling.ts:46`、`:299-308`）。
-7. **`authority_revision` 是规范化证据投影的摘要。** 移动的收据、目标 revision 或注册表授权都会改变依赖 revision，并使断言它的 offer 过期。跨仓库依赖只通过当前已采纳的读写注册表快照解析，不从 Work Graph 文本取仓库路径。
-8. **`acquire-next` 只消费 offer 文档的既有顺序。** 它在内部构造精确断言，再走普通的 scheduled acquire。Git common dir 中的收据把主体、封闭过滤器、尝试上限和结果绑定到一个 idempotency key。崩溃后遗留的 pending 收据要求 reconcile，不冒险再次 claim（`src/effects/engineers/scheduling-acquire-next.ts:76`、`:117`）。
-9. **Work Graph 的 `retry_policy` 是唯一的重试策略权威。** Work Package revision 和 offer revision 都绑定它。尝试日志（`src/core/engineers/automation-attempt.ts`）只记录执行证据，从不改写 Task 状态或优先级。只有策略列出的失败类别，在确定的退避期限之后，才能重新进入普通的 offer 和 Lease 路径。
-10. **Lease 活性是证据，不是抢占权威。** 自动回收在同一 Lease 锁内重读 owner、续约、Binding、runtime 和 publication 证据，并在既有的递增代际抢占之前消费一个精确的 `reclaimable` 收据（`src/core/state/lease-liveness.ts:10`）。不可读或缺失的证据投影为 `liveness_unproven`，交给 operator。这条规则属于 workflow-state，本能力只消费它。
-
-### 3.2 关键权衡
-
-| 决策 | 权衡 |
-| --- | --- |
-| 依赖解析器是一个封闭的只读适配器集合 | 不会出现第二个 acceptance 或 publication 结论；代价是本能力读取 publication、integration-acceptance 和 `scripts/acceptance-receipt.ts`，依赖面宽 |
-| 选择 offer 时在锁外先过滤，锁内再确认 | 锁持有时间短；代价是每次 acquire 收集两次 offer |
-| 删除 CLI 内的控制器（PR #617，Bot 负责调度） | repo-harness 不再写尝试记录（`recordTaskAutomationAttemptStart` 在 `src/` 和 `scripts/` 中没有调用方）。offer 在 Bot 记录尝试之前读不到重试历史 |
-
-### 3.3 10x 规模下先坏的点
-
-- 全量的注册表、Profile 和收据扫描，以及锁持有时间，会先出问题。P0 有意让这些成本保持线性并可观测。在测量证明需要之前，不引入索引、守护进程、缓存或数据库。
+- The graph reader reads the Sprint and its graph carrier from the same canonical commit. It preserves the task ID and task revision.
+- A missing carrier gives an unclassified result. The reader validates the complete carrier schema, referenced authorities and declared capabilities.
+- `dependency-authority.ts` reads the owning Sprint, acceptance, publication and integration evidence. A readable negative result is unsatisfied. Missing, unreadable or unauthorized evidence stays unavailable.
+- Dependency evidence remains bound to its declared revision. Cross-repository reads use the current authorized registry snapshot.
+- The operator consumes these observations. Offer collection, scheduling acquire and acquire-next are retired.
 
 ## 4. 歷史決策記錄(append-only)
 
@@ -139,11 +120,3 @@ sequenceDiagram
 - 2026-09-06：尝试结果改为封闭集合，并执行重试准入（commit `dbce6cc2`）。
 - PR #617：repo-harness 只提供工具和证据，调度由 Bot 负责。CLI 内的尝试写入方被删除。
 - 2026-10-11：模型新增 capability → `component.engineer-scheduling.primary` 和 engineer-scheduling → integration-acceptance（`reads`）两条 relation。P2 flow 增加依赖权威读取和 offer 重新校验两步，失败分支改为过期 offer 拒绝。
-
-## Optimization Backlog
-
-- after arch-context#296：`scheduling.ts`、`dependency-authority.ts`、`scheduling.ts`（effects）、`scheduling-acquire.ts` 和 `scheduling-acquire-next.ts` 同时被 engineer-bindings 的 `src/{core,effects}/engineers/**` 认领。目标单一所有者是本能力（`ownership-proposal` §2）。
-- 反向边证据：`src/cli/commands/sprint.ts` 调用本能力的 `readProjectedWorkGraphAt` 和 `resolveRegisteredRepoForWorktree`，`src/effects/state/sprint-schema-migration.ts` 调用 `schedulingCarrierPath`。本能力又依赖 `src/core/state/coordination-identity.ts`。集成按边数声明 engineer-scheduling → workflow-state（9 条边对 8 条）。sprint 方向是回边，作为重构输入，不声明。
-- `resolveRegisteredRepoForWorktree` 被 engineering-overlay、agent-runtime-effects 和 `sprint.ts` 调用。它的职责是解析仓库注册表，与调度无关。建议移到 `src/effects/repo-registry.ts` 的所有者。
-- 声明的 selector `entrypoint.engineer-scheduling.offers#collectEngineerOffers` 的两个 sink 和 `entrypoint.engineer-scheduling.acquire-next` 的两个 sink 在 CodeGraph 中没有直接 `calls` 边（经由注入的依赖调用）。P2 flow 改用有直接边的 `selectCurrentOffer` 和 `defaultDependencyAuthorityReaders`。
-- 依赖解析器读取 `src/effects/publication/**` 和 `scripts/acceptance-receipt.ts`。集成步骤声明了 engineer-scheduling → publication（`reads`）、→ acceptance-review、→ task-fleet 与 → execution-primitives。

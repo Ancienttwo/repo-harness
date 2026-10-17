@@ -1,7 +1,9 @@
-schemaVersion: archcontext.node/v2
-id: component.engineer-scheduling.primary
-kind: component
-name: Engineer Offer Projector
-status: active
-parent: capability.runtime-harness.engineer-scheduling
-summary: Validates one explicit Work Package graph and derives deterministic offer and exclusion revisions from exact scheduling authorities.
+{
+  "schemaVersion": "archcontext.node/v2",
+  "id": "component.engineer-scheduling.primary",
+  "kind": "component",
+  "name": "Work Package Graph Reader",
+  "status": "active",
+  "parent": "capability.runtime-harness.engineer-scheduling",
+  "summary": "Validates one tracked Work Package graph against its canonical task rows and capability authority."
+}

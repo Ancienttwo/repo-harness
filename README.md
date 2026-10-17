@@ -278,71 +278,27 @@ internals, the minimal-change surface, and policy modes:
 
 ## Task Workflow
 
-The diagram assumes the harness is installed. It shows the normal lifecycle from
-a program sprint backlog down to one contract task: select the task, project it
-into execution files, check out the contract worktree when policy requires it,
-implement under hooks, verify, review, and close out.
+The GitHub issue and PR carry task identity, claims, status and dependencies.
+Optional plans explain the work. The retained contract closeout helpers serve
+old records until that lifecycle is retired.
 
 ```mermaid
 flowchart TD
-  Program["Program goal or release theme"] --> Sprint{"Sprint layer needed?"}
-  Sprint -->|yes| PRD["Upper-layer PRD<br/>plans/prds/*.prd.md"]
-  PRD --> SprintDoc["Sprint backlog<br/>plans/sprints/*.sprint.md"]
-  SprintDoc --> NextTask["Select next sprint task<br/>sprint-backlog.sh next"]
-  Sprint -->|no| UserTask["User task or planning prompt"]
-  Heartbeat["Heartbeat triage<br/>scripts/heartbeat-triage.sh<br/>.ai/harness/triage/"] --> UserTask
-  NextTask --> UserTask
-
-  UserTask --> Discovery["Due diligence<br/>P1 map, P2 trace, P3 decision"]
-  Discovery --> LoopEvidence["Loop evidence when routing changes<br/>state-snapshot --json<br/>affected routing tests"]
-  LoopEvidence --> PlanDraft["Draft plan<br/>plans/plan-*.md"]
-  PlanDraft --> PlanReview{"Plan ready for execution?"}
-  PlanReview -->|no| Refine["Refine plan, scope, evidence contract"]
-  Refine --> PlanDraft
-  PlanReview -->|yes| Approve["Approved plan<br/>Status: Approved"]
-
-  Approve --> Project["Project plan into execution<br/>capture-plan.sh --execute<br/>or plan-to-todo.sh --plan"]
-  Project --> Active["Active markers<br/>.ai/harness/active-plan<br/>.ai/harness/active-worktree"]
-  Project --> SprintActive["Sprint projection<br/>active-sprint marker<br/>tasks/current.md"]
-  Project --> Contract["Sprint contract<br/>tasks/contracts/YYYYMMDD-HHMM-task-slug.contract.md"]
-  Project --> ReviewFile["Review file<br/>tasks/reviews/YYYYMMDD-HHMM-task-slug.review.md"]
-  Project --> Notes["Task notes<br/>tasks/notes/YYYYMMDD-HHMM-task-slug.notes.md"]
-
-  Contract --> Delegation["Delegation contract<br/>budget / permission_scope / roles"]
-  Delegation --> Delegate{"Use contract-run delegation?"}
-  Delegate -->|yes| ContractRun["Worker/verifier child run<br/>scripts/contract-run.ts"]
-  Delegate -->|no| WorktreePolicy{"Contract worktree required?"}
-  WorktreePolicy -->|yes| Checkout["Checkout isolated worktree<br/>contract-worktree.sh start --plan<br/>branch codex/task-slug"]
-  WorktreePolicy -->|no| CurrentTree["Use current worktree<br/>small or explicitly allowed slice"]
-  Checkout --> Implement
-  CurrentTree --> Implement
-  ContractRun --> Changes
-
-  Implement["Edit and run commands"] --> PreHooks["Pre-edit guards<br/>RepoScopeGuard, ExternalReferenceGuard, OpsPrivateGuard"]
-  PreHooks -->|blocked| ScopeFix["Fix the target path"]
-  ScopeFix --> Implement
-  PreHooks -->|allowed| Changes["Code, docs, tests, or config changes"]
-  Changes --> PostHooks["Bash observer and Stop hook<br/>repair circuit, owed architecture, handoff"]
-  PostHooks --> ArchUpdate["Explicit architecture update<br/>archctx ChangeSet when responsibilities change<br/>architecture-projection apply"]
-  ArchUpdate --> Verify["Run verification<br/>tests plus repo workflow checks"]
-
-  Verify --> Checks["Structured evidence<br/>.ai/harness/evidence/events/log.jsonl<br/>.ai/harness/runs/*.json"]
-  Checks --> CheckReview["Evaluator review<br/>Waza /check -> review file"]
-  CheckReview --> External["External acceptance advice<br/>or explicit manual override"]
-  External --> DoneGate{"Contract, checks, review, and acceptance pass?"}
-  DoneGate -->|no| Repair["Repair failing evidence or implementation"]
-  Repair --> Implement
-  DoneGate -->|yes| SprintComplete{"Sprint task active?"}
-  SprintComplete -->|yes| MarkSprint["Mark backlog item complete<br/>sprint-backlog.sh complete-task"]
-  SprintComplete -->|no| Closeout["Closeout<br/>scripts/contract-worktree.sh finish"]
-  MarkSprint --> Closeout
-
-  Closeout --> Commit["Commit contract branch"]
-  Commit --> Merge["Fast-forward target branch"]
-  Merge --> Archive["Archive plan/todo and refresh handoff"]
-  Archive --> Cleanup["Cleanup merged worktree<br/>contract-worktree.sh cleanup"]
-  Cleanup --> Done["Reviewable completed task"]
+  Goal["User goal"] --> Issue["GitHub issue<br/>scope and dependencies"]
+  Issue --> Claim["Read current claims and linked PRs"]
+  Claim --> Trace["P1 map, P2 trace, P3 decision"]
+  Trace --> Work["Bounded work on a branch or worktree"]
+  Work --> Guard["Path and permission checks"]
+  Guard --> Change["Code, docs and tests"]
+  Change --> Verify["Typecheck and affected tests"]
+  Verify -->|failure| Work
+  Verify -->|pass| Review["Review recorded evidence when risk requires it"]
+  Review --> PR["PR description and CI evidence"]
+  PR --> Publish["Requested publication within the authorized scope"]
+  Context["SessionStart state pointers"] --> Work
+  Work --> Handoff["Stop checkpoint for recovery"]
 ```
+
 
 For long-running product loops, keep discovery and engineering-plan judgment with
 the parent agent before Codex loops on execution: `geju` opens the pre-contract

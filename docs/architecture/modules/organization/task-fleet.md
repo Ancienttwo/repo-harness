@@ -123,43 +123,16 @@ sequenceDiagram
 ```
 <!-- END ARCHCONTEXT:generated target="projection_target.entity.capability-organization-task-fleet" -->
 
-## 3. P3:設計決策與不變量
+## 3. P3: Retained fleet observations
 
-### 3.1 必须保持的不变量
-
-1. **Offer 只是读时投影。** Offer 不持有 task 权威，也不持有 lease 权威（`src/core/fleet/task-offer.ts:4`）。Canonical Sprint 行持有任务。Lease store 持有可用性。Registry 持有仓库授权。
-2. **Acquire 在副作用之前重读权威。** `src/effects/fleet/acquire.ts:5-9` 把只读投影与 claim → provision → bind → token/envelope 分成两半。调用方不能把一个 offer 直接变成权威。
-3. **只领取 `execution_ready` 的 offer。** 行必须是 pending。Lease 必须可用。快照必须稳定。仓库必须是 `read_write`。必须有与该行匹配的已批准计划（PRD `plans/prds/20260822-0405-fleet-acquire-publication-readiness.prd.md:56`）。需要规划的行不进入 acquire。
-4. **Task message 只是通信事实。** 它不承载任何权威。`TaskMessageEventV1` 不可变。每个接收者的状态在单独的 delivery receipt 中。删除消息只会丢失历史，不会丢失 task、lease、publication 或 merge 权威（PRD `:39`、`:53`）。
-5. **Claim 作用域的消息绑定确切的 claim 与 generation。** Takeover 之后该消息变为 `superseded`。Task 作用域的消息可以交给后继者（PRD `:53`）。
-6. **消息正文是不可信的同伴数据。** Hook 只在带分隔符的 untrusted-context 块中注入正文（`src/core/fleet/task-message.ts:17-21`）。调用方提供的字段不能提升信任级别（PRD `:54`）。
-7. **发送、投递、确认和 supersede 不改 lease。** 它们不证明会话存活，也不唤醒 runtime（PRD `:51`、`:53`，验收场景 5）。
-8. **Fleet board 是独立的只读模型。** 它不改写 `BoardColumn`（`src/core/fleet/board.ts:8`）。它不持久化任何列或 `ready` 标志。它读 inbox 摘要时不加锁、不写文件，使用 A/B 观察（`tasks/archive/notes-20260823-1443-fleet-board-projection.md`）。
-9. **Inbox 存储路径是投影。** Canonical 接收者键不变（`src/core/fleet/task-inbox-layout.ts:8`）。布局迁移离线执行，并按字节核对（`src/effects/fleet/task-inbox-layout-migration.ts:1`）。
-
-### 3.2 关键权衡
-
-| 决策 | 权衡 |
-| --- | --- |
-| 不新增权威类别，offer 与 board 都是读时投影 | 每次读取都要重新连接 registry、Sprint、lease 与计划证据。收益是没有第二份会漂移的状态（PRD `:39`） |
-| Task Inbox 写入 git common dir 中的文件，不注入会话 | 消息只在真实的回合边界送达，延迟取决于下一次 hook。收益是会话替换与 takeover 之后寻址仍然正确（PRD Problem 5、`:53`） |
-| Board 不为消息推断优先级 | Inbox V1 没有优先级数据。Board 只给出未读数与当前 claim 寻址（notes `fleet-board-projection`） |
-| Board 不直接调用 `gh` | Readiness 已拥有 provider 身份与 blocker 投影。Board 复用它，所以 task-fleet 依赖 publication |
-| 按需轮询，没有 daemon | 新鲜度取决于调用频率。PRD 把 daemon 推迟到有测量证据之后（PRD `:61`，Non-goals） |
-| `fleet` 与 `publication` 是两个命令组和两个能力 | PRD 允许合并或拆分（`:68`）。用户决定把二者放进 `organization` 域。`fleet.ts` 也提供 feedback 子命令，所以 task-fleet 调用 publication |
-
-### 3.3 组件
-
-| 组件 | 文件 / 行 | 职责 |
-| --- | --- | --- |
-| `component.task-fleet.primary` | 5 / 3,189 | `fleet` 命令、offer、acquire 接缝、fleet board |
-| `component.task-fleet.task-inbox` | 7 / 2,879 | 消息事件、delivery receipt、steer reply、document handoff、布局迁移 |
-
-行数来自本 worktree 的 `git ls-files | xargs cat | wc -l`。
-
-### 3.4 未决问题
-
-- `src/core/messages/document-handoff.ts` 放在 task-fleet。它只依赖 engineer-messages 的 `mechanics.ts`，与 Task Inbox 共用正文上限（`document-handoff.ts:3`）。Ownership proposal 把这个判断标为 MEDIUM。engineer-messages 也是合理的 owner。需要 owner 确认。
+- `collectRepoTaskOffers` joins each repository's canonical board, registry and plan proof. Its result is read-only. It does not grant a claim or create a worktree.
+- `fleet board` and the operator retain the task, publication, inbox and runtime observations. They do not persist board columns or readiness flags.
+- Task messages remain immutable communication records. Per-recipient delivery receipts do not change Lease or publication authority.
+- Claim-scoped messages name an exact claim and generation. The retained manual inbox path checks that recipient before delivery or acknowledgement.
+- Message bodies remain untrusted data. The UserPromptSubmit inbox adapter is a no-op and prints no message context.
+- Historical reply inspection validates the stored intent, event and commit chain without granting current authorization.
+- Inbox layout migration retains canonical recipient keys and checks record bytes. The operator reader performs no migration.
+- Global fleet offers and acquire, Engineer steer APIs and WorkEnvelope issuance are retired. Publication feedback and per-repository board reads remain for slice C.
 
 ## 4. 歷史決策記錄(append-only)
 
@@ -172,7 +145,6 @@ sequenceDiagram
 ## Optimization Backlog
 
 - **双向依赖（重构证据）。** `src/effects/fleet/board.ts` 读取 agent-runtime-effects 的 runtime 投影。`src/effects/engineers/agent-runtime-effect-store.ts` 又反向导入 `src/core/fleet/board.ts`、`src/core/fleet/task-message.ts` 与 `src/effects/fleet/task-inbox.ts`。模型只声明 task-fleet → agent-runtime-effects。反向边记录在此，不作为意图关系。
-- **`WorkEnvelopeV1` 类型位于 effects 层。** engineer-bindings、engineer-scheduling 与 delegated-runs 从 `src/effects/fleet/acquire.ts` 导入它（另有 `collectFleetOffers` 与 `validateFleetCommunicationEnvelope`）。候选重构：把 envelope 类型与校验移到 `src/core/fleet/`。
-- **`src/cli/commands/fleet.ts` 有 933 行。** 它组合 offer、board、inbox 与 feedback 子命令。若继续增长，可以把 inbox 子命令移到 task-inbox 组件。
+- Fleet board 和 operator 保留 `collectRepoTaskOffers` 的只读结果。全局 offers/acquire 入口和 WorkEnvelope 已删除。
 - **agent-runtime-effects 的方向（集成）。** 反向有 7 条边，`relation.task-fleet.agent-runtime-effects` 一侧有 4 条。集成保留已声明的方向。是否翻转方向是开放问题。
 - **`relation.task-fleet.repo-registry` 的目标（集成）。** 目标从 mcp-sidecar capability 改为 `component.mcp-sidecar.repo-policy-registry`。导入只指向 `src/effects/repo-registry.ts`。mcp-sidecar primary → task-fleet 因此不形成节点级的环。

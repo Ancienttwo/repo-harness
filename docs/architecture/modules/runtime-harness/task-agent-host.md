@@ -134,7 +134,7 @@ sequenceDiagram
 | --- | --- | --- |
 | `component.task-agent-host.primary` | 20–50 个文件 / 2000–5000 行 | Herdr 传输、OAR task session（启动、发送、收集、关闭）、task worktree、role profile、herdr 命令与安装的 persona 和插件资产 |
 
-`src/effects/terminal/` 是共享目录。本能力只列出 5 个文件。pm-dispatch 拥有 `coding-*` 与 `oar-coding-host.ts`。`herdr-observation.ts` 计划归 operator。
+`src/effects/terminal/` 是共享目录。本能力拥有 task session、`coding-isolation.ts`、`coding-session.ts` 和 `oar-coding-host.ts`。PM dispatch 已删除。
 
 ### 3.4 未决问题
 

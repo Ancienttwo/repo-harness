@@ -190,9 +190,9 @@ sequenceDiagram
 
 1. **单一存储权威。** MCP 配置与凭证只存在 `mcpStorageDir()` 下（`src/cli/mcp/auth.ts:66`）。PR #167 把 repo 级配置迁到用户级。迁移轮换凭证，不搬运凭证。原因写在 `src/cli/mcp/setup.ts:820-830` 的注释里：repo 级 bearer token 和 passphrase 曾在 Git 工作树内，可能留在备份或历史中。迁移删除 repo 级 OAuth token store。用户因此必须重新授权一次。
 2. **授权真相在注册表。** `read_write` 授权和 `authorizationRevision` 存在 `registered-repos.json`。写入先写临时文件，再 rename（`src/effects/repo-registry.ts:206-210`）。写入持有一把带 owner 记录的互斥锁，死锁持有者可以回收（`repo-registry.ts:28`、`:237`）。MCP 配置里的 `authorizationRevision` 只是副本。授权型 profile 的 HTTP 中间件在每个请求上比较两者，不相等就拒绝（`src/cli/mcp/transports/http.ts:746-760`）。
-3. **每个 profile 默认关闭，各自闭合。** coding profile 需要 v3 配置、`coding.enabled: true`、至少一个 `read_write` 注册仓库和 OAuth。Engineer profile 需要独立的 `repo-harness.engineer` scope 和固定工具清单。只有 coding profile 建立 shell runtime（`src/cli/mcp/server.ts:174`）。
+3. **每个 profile 默认关闭，各自闭合。** coding profile 需要 v3 配置、`coding.enabled: true`、至少一个 `read_write` 注册仓库和 OAuth。Engineer 和 PM profile 已退役。旧配置中的这两个 profile 会在启动时被拒绝。只有 coding profile 建立 shell runtime（`src/cli/mcp/server.ts:174`）。
 4. **HTTP session 绑定启动时的 profile。** 新 session 初始化时重读配置。profile 与启动时不同，服务返回 503 `PROFILE_CHANGED`，并且不占用 session 名额（`transports/http.ts:484-499`，PR #210）。服务不做热升级，也不静默降级。
-5. **HTTP session 绑定一个已验证的 authorization ID。** 另一个 authorization 复用该 session 会失败（见 §4 的 2026-08-25 条目）。payload 里的 Engineer、Binding 和 thread 字段只做 fence 或观测。它们不选择 principal。
+5. **HTTP session 绑定一个已验证的 authorization ID。** 另一个 authorization 复用该 session 会失败（见 §4 的 2026-08-25 条目）。coding session 的权限来自已验证的 authorization ID。请求不能选择另一个授权身份。
 6. **worktree 优先。** `open_workspace` 默认新建独立 worktree，`checkout` 模式必须显式指定（`src/cli/mcp/coding-tools.ts:242-247`）。远端代理的失败只影响一个可丢弃的分支。
 7. **仓库授权选择工作区，不提供 shell 沙箱。** 授权页文案写明：shell 命令能访问本地 OS 用户能访问的一切（`transports/http.ts:222`）。文档和 UI 不得声称 allowed roots 限制了 shell。
 8. **MCP 只投影状态，不解释状态。** `summarize_repo_harness_state`（`src/cli/mcp/state-tools.ts:9`）使用与 CLI、Stop hook 相同的解析器。`current` 预览字段标注为非权威。
@@ -214,7 +214,7 @@ sequenceDiagram
 
 | 组件 | footprint | 文件 / 行 | 职责 |
 | --- | --- | --- | --- |
-| `component.mcp-sidecar.primary`（Server and Tool Dispatch） | `server.ts`、`tools.ts`、`state-tools.ts`、`engineer-tools.ts`、`fleet-tools.ts`、`pm-server.ts`、`instructions.ts`、`version.ts` | 8 个文件 | 按 profile 建工具清单，把调用分派到各工具块，挂载 PM binding |
+| `component.mcp-sidecar.primary`（Server and Tool Dispatch） | `server.ts`、`tools.ts`、`state-tools.ts`、`fleet-tools.ts`、`instructions.ts`、`version.ts` | 6 个文件 | 按保留的 profile 建工具清单，把调用分派到各工具块 |
 | `component.mcp-sidecar.transport-auth` | `transports/**`、`oauth.ts`、`session-store.ts` | 4 / 1648 | stdio 与 HTTP transport、OAuth、session 准入与回收 |
 | `component.mcp-sidecar.repo-policy-registry` | `auth.ts`、`types.ts`、`policy.ts`、`paths.ts`、`repo.ts`、`redaction.ts`、`guarded-write.ts`、`workspaces.ts`、`audit.ts`、`src/effects/repo-registry.ts`、`src/core/security/**` | 11 / 2151 | 用户级配置与凭证、路径策略、脱敏、审计、注册仓库授权 |
 | `component.mcp-sidecar.coding-profile` | `coding-tools.ts`、`coding-workspaces.ts`、`process-sessions.ts` | 3 / 2143 | 受管 worktree、文件编辑、受限 shell 进程 |
@@ -224,7 +224,7 @@ sequenceDiagram
 
 与归属提议 §5 的三处差异，原因都来自 import 扫描：
 
-- `auth.ts` 放进 repo-policy-registry。它是配置与凭证存储。`server.ts`、`tools.ts`、`pm-server.ts`、`setup.ts`、`uninstall.ts` 和两个 transport 都读它。放进 transport-auth 会形成 primary 与 transport-auth 的环。
+- `auth.ts` 放进 repo-policy-registry。它是配置与凭证存储。`server.ts`、`tools.ts`、`setup.ts`、`uninstall.ts` 和两个 transport 都读它。放进 transport-auth 会形成 primary 与 transport-auth 的环。
 - `types.ts` 和 `audit.ts` 放进 repo-policy-registry。`types.ts` 只定义 `McpPolicy`、`McpPathDecision`、`McpAuditEntry` 等策略类型。`audit.ts` 只被工具处理器调用，transport 不调用它。
 - `src/cli/commands/mcp.ts` 放进 host-setup。这个命令启动 transport。放进 primary 会形成 primary → transport-auth → primary 的环。
 
@@ -235,7 +235,6 @@ sequenceDiagram
 - primary → chatgpt-browser：`tools.ts` 在 `--enable-chatgpt-browser` 时暴露 5 个 browser 工具（`tools.ts:1128-1159`）。
 - primary → general-repo-access：`tools.ts` 分派 reader 与 writer 工具。
 - primary → codegraph-readiness、coding-profile → codegraph-readiness：构造并刷新 CodeGraph 适配器。
-- primary → pm-dispatch：`pm-server.ts` 使用 PM host 协议。
 - host-setup → hook-adapters：复用 installer 的配置归属回执和 runtime host 锁。
 - host-setup → chatgpt-browser：`mcp install-skill` 读取打包的 bridge 参考（`setup.ts:69-80`）。
 

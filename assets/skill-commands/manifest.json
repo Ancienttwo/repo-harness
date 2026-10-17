@@ -608,7 +608,7 @@
     {
       "name": "repo-harness-sprint",
       "replacement": "repo-harness-product",
-      "note": "Consolidated into repo-harness-product's Sprint reference.",
+      "note": "Retired Sprint execution facade. Use repo-harness-product to order GitHub issue work.",
       "cleanup": [
         {
           "actionId": "retired-skill-facades",

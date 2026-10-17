@@ -1,50 +1,32 @@
-# Product Mode: Sprint
+# Product mode: ordered backlog
 
-Use to plan a program-level Sprint from an upper-layer PRD or source spec and
-execute its tasks through the existing task-contract flow. Sub-routes:
-`plan`, `from-prd`, `run`, `status`. Run the shared preflight in
-`../SKILL.md` first, then also read `repo-harness run sprint-backlog status`
-when present.
+Use this route to order work from a PRD or source spec. The GitHub issue and PR
+own task identity, claim, status and dependencies. A planning document is a
+reference. It does not authorize execution.
 
-## Protocol
+## Plan or derive from a PRD
 
-1. Route `plan` (default when no sprint is active):
-   - Discuss the product direction with the user from two named perspectives before writing anything: product (problem, users, success criteria, acceptance scenarios, non-goals) and architecture (capabilities touched, dependency order, risks, slice granularity).
-   - Run `repo-harness run sprint-backlog init --slug <slug> --title <title>`, then fill `## PRD`, `## Architecture Notes`, and the ordered `## Backlog` table from the upper-layer PRD or source spec; every row needs a concrete machine-checkable acceptance line and a mode (`contract` or `inline`).
-   - The backlog is schema 2 (`> **Backlog Schema**: 2`): the row shape is `| # | ID | Status | Task | Mode | Acceptance | Plan |` and the `ID` cell is the persisted immutable task identity. `sprint-backlog init` mints the first row's id; mint each additional row's id with `od -An -tx1 -N32 /dev/urandom | tr -d ' \n'`. Never edit, copy, or regenerate an existing `ID` — editing the Task text is a rename that keeps identity, which is the whole point of the column.
-   - Present the draft sprint to the user. Only after explicit approval set `> **Status**: Approved`; Inspect the PRD, acceptance lines, and backlog rows for complete data.
-2. Route `from-prd` when the user gives `plans/prds/*.prd.md`:
-   - Read the PRD `Problem`, `Users`, `Success Criteria`, `Acceptance Scenarios`, and `Non-goals`; summarize them into the Sprint `## PRD` section and set `> **Source PRD**:` to the PRD path.
-   - Derive backlog rows from `Module Behaviors (P0)` and acceptance scenario groups. Preserve dependency order and make every acceptance line traceable to a PRD acceptance scenario.
-   - Keep discussion focused on ordering, slice granularity, and mode selection; do not re-decide the product intent unless the PRD has blocking contradictions.
-   - Use `contract` rows for one plan -> contract -> worktree cycle. Split larger work at stable integration boundaries.
-   - Acceptance lines must be machine-checkable, such as a test command, file existence assertion, grep pattern, or numeric assertion. Avoid subjective wording such as "works well".
-   - Default mode is `contract`; use `inline` only for small isolated documentation, configuration, or single-file changes.
-3. Route `run` (incremental, one backlog task per invocation):
-   - Run `repo-harness run sprint-backlog next` to resolve the next pending row; when it exits 3, report the backlog as complete and recommend setting the sprint Status to Done after review.
-   - Treat the row as a long-task waypoint, not a detailed implementation plan.
-   - For `contract` rows, invoke `$think` to prepare the execution plan and contract before claiming the row. Optional planning capture uses `repo-harness run capture-plan --slug <slug> --title <title> --body-file <file>`. It writes `plans/<slug>.md` only. It does not approve a plan or create execution artifacts. Set `Source Ref: sprint:<sprint-file>#<task>` and `Task Contract` in the plan. Put that plan path in the canonical backlog Plan cell. Commit the plan, contract, and backlog before `start-task`.
-   - For `inline` rows, do not create a new `plans/plan-*.md` or task contract. Keep the work in the sprint backlog or the current active plan's `## Task Breakdown`, then complete the row when the acceptance line is verified.
-   - `repo-harness run sprint-backlog start-task --task <index|task>` claims the named pending row on the shared coordination plane before execution. `--task` is required: the backlog carries no dependency or parallel-safety column, so there is no automatic claim-next and the caller names the row. Contract rows require an existing canonical plan and contract. Add `--execute` to open their worktree. Without it, the claim stays reserving. Inline rows bind the current worktree without planning artifacts.
-   - Execute contract slices as usual (implement, `/check`, external acceptance, `repo-harness run contract-worktree finish`); finish back-fills the backlog row warn-only.
-4. Route `status`: report `repo-harness run sprint-backlog status` plus the Active Sprint section of `tasks/current.md`; mutate nothing.
-5. After each completed task, re-read the sprint file before starting the next one; user edits to the backlog override stale session memory.
+1. Read the problem, users, success criteria, acceptance scenarios and non-goals.
+2. Identify the affected capabilities and the dependency order.
+3. Divide the work into bounded issues. Give each issue a goal, scope,
+   acceptance check, dependency and rollback step.
+4. Link each issue to its source requirement. Use existing issue numbers.
+   Do not mint task IDs, contracts, offers or leases.
+5. Save the requested plan or issue drafts. Create or update GitHub issues only
+   within the user's requested write scope. Use gh or the GitHub API.
 
-## Delegation Brief
+Keep product intent fixed when deriving work from an approved PRD. Report a
+contradiction before changing that intent. Use test commands or observable
+outcomes as acceptance checks.
 
-Each `contract` row's `tasks/contracts/<stem>.contract.md` is the authoritative delegation brief once `$think` expands it and hands off implementation, not the sprint backlog row text. Fill in `## Why`, `## Goal`, `## Scope`, `## Stop Conditions`, `allowed_paths`, and `exit_criteria` before dispatching a file-coupled worker, and verify completeness with `repo-harness run contract-run preflight --contract <contract-file>`.
+## Status
 
-## Failure Modes
-
-- If no sprint file exists and the user asked for `run` or `status`, report that no sprint is active and route to `plan`.
-- If the backlog table is malformed, fix the sprint file before starting a task. Use `check-task-workflow.sh` for read-only diagnostics.
-- If `start-task` fails, inspect the reported cause and claim state before retrying. The command rolls back failed plan or contract validation.
-- If a task contract is already executing in this worktree, finish or archive it first; never stack a second backlog task on top of it.
+Read the current issue and PR state. Report completed work, open dependencies
+and verification evidence. Historical sprint files remain readable Markdown.
+They are not a task queue or a claim source.
 
 ## Boundaries
 
-- Contract rows flow through the existing plan -> contract -> worktree -> verify gates; inline rows stay in sprint/active-plan checklist scope.
-- Never bypasses `/check`, external acceptance, or `verify-sprint.sh` to mark a backlog row complete.
-- Goal mode (`run --goal`, autonomous continuation) is not part of this mode yet; treat requests for it as future work and say so.
-- Do not run two backlog tasks in parallel: concurrent contract rows merge-conflict on the sprint file's Updated and Execution Log lines; the backlog is an ordered queue.
-- Approval gating for this mode: see `../SKILL.md` Boundaries (Status: Approved always needs explicit user approval).
+This route plans work. It does not dispatch a worker or start a task.
+Execution uses the issue brief and the repository's current working rules.
+Preserve user approval. Follow the boundaries in `../SKILL.md`.

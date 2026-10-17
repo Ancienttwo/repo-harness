@@ -212,7 +212,7 @@ with the reason on stderr. A failure of archctx does the same.
 
 Agents author semantic snapshots and diagrams. Hooks do not spawn LLM agents or
 long-running commands. Deterministic execution belongs in explicit CLI commands
-such as `scripts/contract-run.ts`.
+such as `repo-harness review round`.
 
 Validate the typed route registry with `bun test` and
 `repo-harness init --repo . --dry-run`.

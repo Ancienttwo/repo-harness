@@ -19,7 +19,7 @@ exit status, and a long silent pipe is what makes a background runner look
 stalled:
 
 ```bash
-bun run test:files tests/sprint-claim-concurrency.test.ts --timeout 180000 --max-concurrency 1 > /tmp/rh.log 2>&1
+bun run test:files tests/coordination-lease-store.test.ts --timeout 60000 --max-concurrency 1 > /tmp/rh.log 2>&1
 echo "EXIT=$?"
 ```
 

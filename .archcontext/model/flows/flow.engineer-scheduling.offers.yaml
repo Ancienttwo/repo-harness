@@ -2,7 +2,7 @@
   "schemaVersion": "archcontext.flow/v1",
   "id": "flow.engineer-scheduling.offers",
   "capabilityId": "capability.runtime-harness.engineer-scheduling",
-  "name": "Read dependencies for Engineer offer observations",
+  "name": "Read dependency evidence for operator observations",
   "applicability": "required",
   "participants": [
     {

@@ -324,14 +324,15 @@ describe("repo-harness action command skills", () => {
     expect(prd).toContain("repo-harness run check-task-workflow");
   });
 
-  test("product's Sprint mode consumes PRDs without re-deciding product intent", () => {
+  test("product backlog planning preserves issue authority and source intent", () => {
     const sprint = readReference("repo-harness-product", "sprint.md");
 
-    expect(sprint).toContain("from-prd");
-    expect(sprint).toContain("> **Source PRD**");
-    expect(sprint).toContain("must be machine-checkable");
-    expect(sprint).toContain("For `contract` rows, invoke `$think`");
-    expect(sprint).toContain("For `inline` rows, do not create a new `plans/plan-*.md` or task contract");
+    expect(sprint).toContain("The GitHub issue and PR");
+    expect(sprint).toContain("Link each issue to its source requirement");
+    expect(sprint).toContain("Keep product intent fixed when deriving work from an approved PRD");
+    expect(sprint).toContain("Use test commands or observable");
+    expect(sprint).toContain("Do not mint task IDs, contracts, offers or leases");
+    expect(sprint).toContain("This route plans work. It does not dispatch a worker or start a task");
   });
 
   test("product's Goal mode requires detailed PRD or Sprint context before native goal continuation", () => {

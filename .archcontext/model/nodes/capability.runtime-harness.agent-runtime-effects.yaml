@@ -123,8 +123,8 @@
     ]
   },
   "notes": [
-    "Runtime adapters receive only a bounded control reference; message content remains in the authoritative Task Inbox and offer content remains in the authoritative offers document.",
-    "A wake is a hint, never a TaskOffer, Lease or WorkEnvelope; the awakened controller re-reads current offers and acquires only through the ordinary scheduling seam.",
+    "Runtime adapters receive only a bounded control reference. Existing message and offer evidence stays in its owning store.",
+    "A wake is a hint. It does not grant TaskOffer, Lease or WorkEnvelope authority. The scheduling acquisition seam is retired.",
     "Provider Thread V1 has no steady-state reader or command alias; its migration command was removed and only the migration-receipt guard remains."
   ],
   "extensions": {

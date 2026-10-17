@@ -4,12 +4,11 @@
   "kind": "capability",
   "name": "Engineer Scheduling",
   "status": "active",
-  "summary": "Projects retained Work Package graphs and Engineer offers for operator reads.",
+  "summary": "Projects retained Work Package graphs and dependency observations for operator reads.",
   "responsibilities": [
     "Validate closed generic-v1 and engineering-v2 Work Package graph carriers without changing canonical Sprint task identity.",
-    "Join same-commit graph data to exact Engineer Profile, current Binding, Fleet offer, dependency, Claim, and concurrency observations.",
-    "Resolve every declared Work Package dependency state from its one existing receipt authority, read-only and revision-bound.",
-    "Emit deterministic EngineerOfferV1 projections or typed fail-closed exclusions."
+    "Join same-commit graph data to canonical task rows and resolve each declared capability.",
+    "Resolve each declared Work Package dependency state from its existing receipt authority, read-only and revision-bound."
   ],
   "source": {
     "include": [
@@ -19,21 +18,16 @@
     ],
     "entrypoints": [
       {
-        "id": "entrypoint.engineer-scheduling.offers",
+        "id": "entrypoint.engineer-scheduling.graph",
         "path": "src/effects/engineers/scheduling.ts",
         "symbols": [
           {
-            "name": "collectEngineerOffers",
+            "name": "readTrackedWorkGraphProjectionAt",
             "sinks": [
               {
-                "id": "sink.engineer-scheduling.current-binding",
-                "path": "src/effects/engineers/binding-store.ts",
-                "symbol": "readEngineerBindingStatus"
-              },
-              {
-                "id": "sink.engineer-scheduling.dependency-authority",
-                "path": "src/effects/engineers/dependency-authority.ts",
-                "symbol": "resolveDependencyObservation"
+                "id": "sink.engineer-scheduling.graph",
+                "path": "src/core/engineers/scheduling.ts",
+                "symbol": "projectWorkGraph"
               }
             ]
           }
@@ -64,7 +58,7 @@
     },
     "lspProfile": "typescript-lsp",
     "verification": [
-      "bun test tests/unit/issue-284-dependency-authority.test.ts tests/unit/me1a-engineer-scheduling-schema.test.ts tests/unit/me1a-engineer-scheduling.test.ts tests/cli/mcp-http.test.ts --timeout 60000",
+      "bun test tests/unit/issue-284-dependency-authority.test.ts tests/unit/me1a-engineer-scheduling-schema.test.ts tests/cli/mcp-http.test.ts --timeout 60000",
       "bun run check:type"
     ]
   }

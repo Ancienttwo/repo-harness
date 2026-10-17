@@ -8,7 +8,7 @@
   "responsibilities": [
     "Own MCP lifecycle, workspace registration, access policy, and local browser integration.",
     "Own the shared secret token patterns that MCP redaction and the operator architecture reads use.",
-    "Bind authorization-scoped MCP sessions to verified OAuth authorization IDs and expose the closed Engineer tool inventory without a coding runtime."
+    "Bind coding MCP sessions to verified OAuth authorization IDs and current repository policy."
   ],
   "source": {
     "include": [

@@ -5,12 +5,12 @@
   "name": "Session Lifecycle Handlers",
   "status": "active",
   "parent": "capability.runtime-harness.hook-adapters",
-  "summary": "Typed handlers for SessionStart context, the Stop recovery views, subagent routes and the Task Inbox.",
+  "summary": "Typed handlers for SessionStart context, Stop recovery views and subagent routes.",
   "responsibilities": [
     "Build the SessionStart sections from Effective State and the session providers.",
     "Publish the evidence checkpoint and render handoff and resume at Stop, with the Claude owed-architecture line.",
     "Record native subagent starts and stamp the return-channel contract onto Claude Agent spawn prompts.",
-    "Deliver Task Inbox messages and the board slice as untrusted context."
+    "Keep the UserPromptSubmit inbox adapter tuple as a no-op."
   ],
   "source": {
     "include": [

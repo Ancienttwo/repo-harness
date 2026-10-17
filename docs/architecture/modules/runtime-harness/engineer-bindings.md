@@ -98,33 +98,15 @@ sequenceDiagram
 ```
 <!-- END ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineer-bindings" -->
 
-## 3. P3:設計決策與不變量
+## 3. P3: Retained read invariants
 
-### 3.1 必须保持的不变量
-
-1. **Profile 和 SOP 是 Git index 跟踪的行为契约。** 文件系统中存在不构成权威。`.archcontext/model/nodes/*.yaml` 仍是 capability 路径、入口、接口和检查的唯一权威。contract revision 哈希完整的、通过 schema 校验的所选节点。Profile 只保存 `capability_id` 引用。
-2. **`<git-common-dir>/repo-harness/engineers/v1/` 是唯一的 Binding 权威。** linked worktree 共享它。`current.json` 决定当前状态。event 只提供不可变审计，以及同一 idempotency key 的定向恢复。
-3. **只有本地 Human operator CLI 能写 Binding。** bootstrap capsule 是只读上下文。它不携带 Principal、凭据、Claim、Lease、Publication、Acceptance 或任务变更权威（ME-0A）。
-4. **event 先于 current 持久化。** 每次变更在每个 Engineer 一个的独占锁内执行：校验 current 和 CAS fence；用 `O_EXCL|O_NOFOLLOW` 创建不可变 event（`src/effects/engineers/binding-store.ts:323`）；fsync event 和 events 目录；用 temp+fsync+rename 发布 current；最后 fsync Engineer 目录。任何模糊状态或 symlink 都 fail closed。
-5. **同一请求的重试复用首次 event 冻结的值。** binding ID、时间戳和目标 contract revision 都来自首次 event。operation fingerprint 不含服务端派生的目标 revision，所以 Profile 演进不会阻断已持久化 event 的崩溃恢复。Provider、thread 或 host 等请求字段变化仍返回 `idempotency_conflict`（`binding-store.ts:367`、`:466`）。
-6. **`replace` 在 `created_at` 退休上一个 Binding。** 旧 event 中的 binding 保留事件时的状态，不是第二个 current 权威。generation 0 的 genesis 不落盘。有 event 而没有 current 时，status 视为损坏；只有该精确转换的重试可以补完 genesis 崩溃窗口。
-7. **陈旧空锁的恢复只对 Engineer 调用方开启。** 超过 30 秒后，重新校验祖先目录、目录 inode 和空目录，再用 `rmdir` 作为 fence。暂停的原创建者恢复后，仍要通过唯一 token 所有权检查。其他共享锁调用方保持默认的 fail-closed 语义。
-8. **OAuth `authorizationId` 只选择主体映射候选。** 每个 Engineer 命令都重新读取当前 Binding，并核对仓库、Engineer ID、binding ID、generation 和 contract revision。映射不能延长已撤销或已替换 Binding 的生命周期（ME-0B）。
-9. **Lease 回答"谁拥有执行"，ClaimActorReceipt 回答"哪个已认证主体触发了 Claim"。** 收据必须与完整规范化 WorkEnvelope 摘要，以及 live Lease 的 claim ID、generation、task revision、worktree、branch 和 unit 一致。
-10. **Engineer acquire 复用 canonical Fleet acquire。** 收据发布失败时，只释放刚返回且仍为 live 的那个 Claim。Claim 已被替换或释放失败都 fail closed，并保留已创建的 worktree 供恢复（`src/effects/engineers/acquire.ts:163-178`）。
-11. **Binding rotation 不转移 Lease。** live Claim 返回 `bound_task_active`。rotation scan 读到未知 Lease 时返回 `bound_task_lease_unavailable`。两者都阻止退休或替换 Binding（`src/effects/engineers/bound-task-rotation.ts`）。
-
-### 3.2 关键权衡
-
-| 决策 | 权衡 |
-| --- | --- |
-| 每个 Engineer 一个目录，Profile 和节点全量扫描 | 简单、可审计、不需要第二个索引权威；一次 list 只读一次 Git index、只解析一次 ArchContext 注册表。代价是 10x 时先遇到扫描和目录数量的成本 |
-| 用户级主体映射使用单锁和线性扫描 | 没有数据库或缓存权威；代价是 10x 时先出现授权查找和锁竞争 |
-| Engineer acquire 不复制 Fleet acquire，只在其外包一层收据 | 没有第二个 Claim 权威；代价是本能力依赖 Fleet 和 Sprint 的释放命令（`acquire.ts:19`、`:71`） |
-
-### 3.3 10x 规模下先坏的点
-
-- Profile 和节点扫描以及目录数量先受压。锁和 CAS 的正确性不受规模影响。主体映射的线性查找和单锁竞争紧随其后。在测得真实竞争之前，不引入数据库、缓存权威、后台修复或批量协议。
+- Profile and SOP files must be tracked. The capability model owns the referenced capability contract.
+- Linked worktrees read the same binding store below the Git common directory.
+- `readEngineerBindingStatus` validates the current record and its immutable event. It never repairs a missing or corrupt record.
+- An absent store returns a generation-zero observation without writing files. An event without its current record remains corrupt.
+- `readClaimActorReceipt` validates canonical historical bytes. Live receipt listing checks the exact claim ID, generation and task revision. An unknown Lease stays unavailable.
+- The operator shows existing bindings only. It cannot create, replace or retire a binding.
+- Engineer CLI, OAuth principal registration, acquisition and binding writers are retired. The runtime endpoint and operator readers remain.
 
 ## 4. 歷史決策記錄(append-only)
 
@@ -143,15 +125,3 @@ sequenceDiagram
 ### 2026-10-11 P2 flow 改为三个不同步骤
 
 - P2 flow 原来三个步骤都是同一个 selector。现在分别是：operator CLI 发布 Binding，主体解析读取当前 Binding，`acquireEngineerTaskLocked` 构建 ClaimActorReceipt。
-
-## Optimization Backlog
-
-- 本能力使用 `src/core/engineers/**` 和 `src/effects/engineers/**`。`source.exclude` 排除以下独立能力。`bound-task-rotation.ts` 由本能力拥有。
-  - agent-runtime-effects：`agent-runtime-effect.ts`、`agent-runtime-effect-store.ts`、`agent-runtime-feature.ts`、`agent-runtime-adapters/**`。
-  - delegated-runs：`delegation.ts`、`delegated-run-store.ts`。
-  - engineering-overlay：两个 `engineering-overlay.ts`。
-  - engineer-scheduling：`scheduling.ts`（core 和 effects）、`dependency-authority.ts`、`scheduling-acquire.ts`、`scheduling-acquire-next.ts`。
-- `src/cli/commands/engineer.ts` 是 engineer 命令族的组合根。它调用 engineer-scheduling、engineering-overlay 和 agent-runtime-effects。这些能力也依赖本能力。
-- `binding-store.ts` 调用本能力的 `bound-task-rotation.ts`。`src/core/engineers/automation-attempt.ts` 仍导入 engineer-scheduling 的类型。
-- 本能力调用 `src/effects/fleet/acquire.ts`（`acquireFleetTask`、`resumeReclaimedFleetWork`）和 `src/effects/state/coordination-sprint.ts`。集成步骤声明了 engineer-bindings → workflow-state 与 → execution-primitives。没有声明 engineer-bindings → task-fleet：`relation.task-fleet.engineer-bindings` 已经声明反向，且反向边更多（14 条对 5 条）。本方向是回边。
-- 声明的 selector `entrypoint.engineer-bindings.acquire#acquireEngineerTask` 的两个 sink 在 CodeGraph 中没有直接 `calls` 边（经由注入的依赖调用）。P2 flow 改用 `acquireEngineerTaskLocked → buildClaimActorReceipt`。
