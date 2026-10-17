@@ -77,10 +77,7 @@ function architectureModelReady(repoRoot: string, options: ArchctxProviderOption
   }
 }
 
-/** One rule for code facts: the checkout has a CodeGraph index directory. */
-function codeGraphIndexPresent(repoRoot: string): boolean {
-  return existsSync(join(repoRoot, '.codegraph'));
-}
+const CODEGRAPH_INIT_ARGS = ['init', '-y', '.'] as const;
 
 function capabilityAuthorityReady(repoRoot: string): boolean {
   return existsSync(join(repoRoot, '.archcontext', 'model', 'nodes'));
@@ -249,6 +246,38 @@ export function runPackageLocalArchctxJson(
 ): { resolved: ResolvedArchctxPackage; value: unknown } {
   const client = new ArchctxClient(repoRoot, requiredVersion, options);
   return { resolved: client.resolved, value: client.json(args, maximumMs, allowErrorEnvelope) };
+}
+
+type DoctorCodeFacts = {
+  state: 'ready' | 'not-ready' | 'index-missing' | 'unavailable';
+  issues: Array<{ code: string; message: string }>;
+  reasonCode?: string;
+  message?: string;
+};
+
+function codeFactsFixCommand(state: DoctorCodeFacts['state']): string {
+  if (state === 'unavailable') return 'repo-harness update';
+  return state === 'index-missing' ? `codegraph ${CODEGRAPH_INIT_ARGS.join(' ')}` : 'codegraph index .';
+}
+
+/** Decode the code facts contract from archctx@0.8.0 doctor for both CLI callers. */
+function readArchitectureCodeFacts(client: ArchctxClient, maximumMs: number): DoctorCodeFacts {
+  const value = client.json(['doctor', '--json'], maximumMs);
+  const facts = isRecord(value) && isRecord(value.data) ? value.data.codeFacts : null;
+  const invalid = () => new ArchctxClientError({ code: 'RH_ARCHCTX_DOCTOR_INVALID', action: 'update-repo-harness', reasonCode: 'doctor-code-facts-invalid', message: 'archctx doctor returned invalid code facts' });
+  if (!isRecord(value) || value.requestId !== 'doctor' || !isRecord(facts) || facts.schemaVersion !== 'archcontext.repository-code-facts/v1' || typeof facts.requiredVersion !== 'string' || facts.requiredVersion === '') throw invalid();
+  if (facts.state === 'unavailable') {
+    if (typeof facts.reasonCode !== 'string' || facts.reasonCode === '' || typeof facts.message !== 'string') throw invalid();
+    return { state: facts.state, issues: [], reasonCode: facts.reasonCode, message: facts.message };
+  }
+  if (facts.state !== 'ready' && facts.state !== 'not-ready' && facts.state !== 'index-missing') throw invalid();
+  if (facts.indexPresent !== (facts.state !== 'index-missing') || typeof facts.codeGraphVersion !== 'string' || !Array.isArray(facts.issues)) throw invalid();
+  const issues = facts.issues.map((issue: unknown) => {
+    if (!isRecord(issue) || typeof issue.code !== 'string' || issue.code === '' || typeof issue.message !== 'string') throw invalid();
+    return { code: issue.code, message: issue.message };
+  });
+  if ((facts.state === 'ready' && issues.length !== 0) || (facts.state === 'not-ready' && issues.length === 0)) throw invalid();
+  return { state: facts.state, issues };
 }
 
 const nativeContextRefs = new Map<string, NativeContextExportV1>();
@@ -420,9 +449,7 @@ export function inspectArchitectureProjectionReadiness(repoRoot: string, options
   const policy = options.policy ?? loadArchitectureProjectionPolicy(options.env);
   let source: ArchitectureProjectionReadinessV1['modelAuthority']['source'] = 'unadopted';
   let daemonState: ArchitectureProjectionReadinessV1['daemonRuntime']['state'] = 'not-evaluated';
-  const codeFacts: ArchitectureProjectionReadinessV1['codeFacts'] = {
-    requirement: 'required', state: policy.provider === 'disabled' || codeGraphIndexPresent(repoRoot) ? 'not-evaluated' : 'unavailable',
-  };
+  let codeFacts: ArchitectureProjectionReadinessV1['codeFacts'] = { requirement: 'required', state: 'not-evaluated' };
   const base = () => ({
     schemaVersion: 'repo-harness.architecture-projection-readiness/v1' as const,
     modelAuthority: { source, ready: source !== 'unadopted' && capabilityAuthorityReady(repoRoot) },
@@ -443,12 +470,14 @@ export function inspectArchitectureProjectionReadiness(repoRoot: string, options
     assertCommittedProjectionManifestCompatible(repoRoot, handshake.capabilities);
     try { verifyArchctxDaemonRuntime(repoRoot, options); daemonState = 'compatible'; }
     catch (error) { daemonState = error instanceof ArchctxClientError && error.code === 'AC_RUNTIME_VERSION_UNSUPPORTED' ? 'mismatch' : 'error'; throw error; }
+    const facts = readArchitectureCodeFacts(new ArchctxClient(repoRoot, policy.requiredVersion, options), policy.timeoutMs);
+    codeFacts = { requirement: 'required', ...facts };
     const modelReady = architectureModelReady(repoRoot, options);
     return {
       ...base(),
       projectionProvider: { provider: 'archctx', state: 'ready', binaryPath: handshake.resolved.binaryPath, nodePath, command: [nodePath, handshake.resolved.binaryPath], version: handshake.resolved.version, reason: 'exact package-local handshake and daemon runtime check passed; code facts are reported separately' },
-      apply: { mode: policy.applyMode, enabled: policy.applyMode !== 'disabled' && modelReady && codeFacts.state !== 'unavailable' },
-      next: source !== 'archcontext' || !modelReady ? architectureAdoptionStep() : codeFacts.state === 'unavailable' ? 'codegraph init' : null,
+      apply: { mode: policy.applyMode, enabled: policy.applyMode !== 'disabled' && modelReady && codeFacts.state === 'ready' },
+      next: facts.state !== 'ready' ? codeFactsFixCommand(facts.state) : source !== 'archcontext' || !modelReady ? architectureAdoptionStep() : null,
     };
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
@@ -564,10 +593,18 @@ export function readArchitectureDocsAnchors(repoRoot: string, options: ArchctxPr
 export function completeArchitectureDebt(repoRoot: string, headSha: string, options: ArchctxProviderOptions = {}): ArchitectureDebtReportV1 {
   const policy = options.policy ?? loadArchitectureProjectionPolicy(options.env);
   if (policy.provider === 'disabled') throw new Error('architecture projection provider is disabled');
-  if (!codeGraphIndexPresent(repoRoot)) {
-    throw new ArchctxClientError({ code: 'RH_CODEGRAPH_INDEX_MISSING', action: 'build-codegraph-index', reasonCode: 'codegraph-index-missing', message: `the checkout ${repoRoot} has no CodeGraph index; run the package-local codegraph init -y . in it` });
-  }
   const client = new ArchctxClient(repoRoot, policy.requiredVersion, options);
+  const facts = readArchitectureCodeFacts(client, policy.timeoutMs);
+  if (facts.state !== 'ready') {
+    const reasons = facts.issues.map((issue) => issue.code);
+    if (facts.reasonCode) reasons.push(facts.reasonCode);
+    const command = codeFactsFixCommand(facts.state);
+    throw new ArchctxClientError({
+      code: 'RH_ARCHCTX_CODE_FACTS_NOT_READY', action: facts.state === 'unavailable' ? 'update-repo-harness' : 'build-codegraph-index', reasonCode: 'code-facts-not-ready',
+      details: { ...facts, command },
+      message: `code facts for ${repoRoot} are ${facts.state} (${reasons.join(', ') || facts.state})${facts.message ? `: ${facts.message}` : ''}; run ${command} in this repository${facts.state === 'unavailable' ? '' : ' with the package-local CodeGraph'}`,
+    });
+  }
   return decodeCompleteArchitectureDebt(client.data(['complete', '--head-sha', headSha, '--json'], policy.timeoutMs), headSha);
 }
 
@@ -601,7 +638,7 @@ export function indexPackageLocalCodeGraph(checkoutRoot: string, options: Archct
   if (policy.provider === 'disabled') throw new Error('architecture projection provider is disabled');
   const binaryPath = resolvePackageLocalCodeGraph(resolvePackageLocalArchctx(options.consumerRoot ?? findConsumerRoot(), policy.requiredVersion));
   const env = { ...(options.env ?? process.env), CODEGRAPH_NO_DOWNLOAD: '1', CODEGRAPH_TELEMETRY: '0' };
-  const args = ['init', '-y', '.'];
+  const args = CODEGRAPH_INIT_ARGS;
   const result = options.run
     ? options.run(binaryPath, args, { cwd: checkoutRoot, timeoutMs: policy.timeoutMs, env })
     : DEFAULT_RUNNER(resolveCompatibleNodeRuntime(env, options.trustedNodeCandidateSource), [binaryPath, ...args], { cwd: checkoutRoot, timeoutMs: policy.timeoutMs, env });

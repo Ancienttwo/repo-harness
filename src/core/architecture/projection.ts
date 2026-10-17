@@ -93,7 +93,7 @@ export interface ArchitectureProjectionReadinessV1 {
    * package and Node runtime resolve.
    */
   projectionProvider: { provider: ProjectionProvider; state: 'disabled' | 'missing' | 'mismatch' | 'error' | 'ready'; binaryPath: string | null; nodePath: string | null; command: [string, string] | null; version: string | null; reason: string; reasonCode?: string };
-  codeFacts: { requirement: 'required'; state: 'not-evaluated' | 'ready' | 'unavailable' };
+  codeFacts: { requirement: 'required'; state: 'not-evaluated' | 'ready' | 'not-ready' | 'index-missing' | 'unavailable'; issues?: Array<{ code: string; message: string }>; reasonCode?: string; message?: string };
   daemonRuntime: { state: 'not-evaluated' | 'compatible' | 'mismatch' | 'error' };
   apply: { mode: ProjectionApplyMode; enabled: boolean };
   /** The next operator step for adoption, code facts or provider repair; null when none is needed. */
