@@ -92,6 +92,22 @@ This option installs Skills only. It does not install or require the
 `brainRoot` remains optional, and hooks, CI, workflow checks, and releases do
 not read or write a vault.
 
+`install` and `update` refresh the managed Global Working Rules block in
+`~/.codex/AGENTS.md` and `~/.claude/CLAUDE.md`. The block records its
+reporting language, so later runs need no input. Repo-harness rules are
+replaced: the managed block and any unmarked `# Global Working Rules` copy with
+the sections that repo-harness shipped. All other sections are user rules and
+stay unchanged. A file without a recorded language needs the language once:
+
+```bash
+repo-harness update --report-language zh-CN   # or follow, en
+```
+
+Without it, the run stops before any host write. A file without rules is
+written only when the flag is given. The files are part of the install
+transaction backup. `repo-harness update --check` reports `ok` only when the
+block matches the current template.
+
 Installed profile state is protocol 2. Protocol-1 state is never reinterpreted
 in normal reads because its `minimal` name meant the retired 5-hook projection.
 Normal `install`, `update`, `--state`, and status paths fail closed with an
