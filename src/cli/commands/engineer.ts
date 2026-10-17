@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import { realpathSync } from 'fs';
+import { readFileSync, realpathSync } from 'fs';
 
 import { EngineerProfileBindingError } from '../../core/engineers/profile-binding';
 import { EngineeringOverlayError } from '../../core/engineers/engineering-overlay';

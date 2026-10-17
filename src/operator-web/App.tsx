@@ -411,7 +411,7 @@ export function OperatorApp({
       if (window.location.search === searchRef.current) return;
       searchRef.current = window.location.search;
       setLocation(next); setRepositoryId(next.repositoryId); setSelection(next.selection);
-      setRepositorySnapshot({ kind: 'idle' }); setDecisionPage(null);
+      setRepositorySnapshot({ kind: 'idle' });
     };
     window.addEventListener('popstate', restore);
     window.addEventListener('hashchange', restore);
@@ -430,12 +430,12 @@ export function OperatorApp({
     setPlace(next);
   }, []);
   const switchRepository = (id: string) => {
-    if (id !== activeRepository?.repository_id) { setRepositorySnapshot({ kind: 'idle' }); setDecisionPage(null); }
+    if (id !== activeRepository?.repository_id) { setRepositorySnapshot({ kind: 'idle' }); }
     setRepositoryId(id);
     navigate(id, null);
   };
   const openRepository = (id: string) => {
-    if (id !== activeRepository?.repository_id) { setRepositorySnapshot({ kind: 'idle' }); setDecisionPage(null); }
+    if (id !== activeRepository?.repository_id) { setRepositorySnapshot({ kind: 'idle' }); }
     setRepositoryId(id);
     const next: WorkspaceLocation = { workspace: 'repository', module: null, item: null };
     navigate(id, null, workspaceHash(next));
@@ -473,9 +473,7 @@ export function OperatorApp({
   // Fleet feeds the repository and architecture pages only; the Board reads development activity.
   const requestFleet = useObservationRefresh(readFleet, 'fleet', { immediate: !initialState && !initialSnapshot, enabled: fleetActive });
   const refresh = () => {
-    // Explicit refresh supersedes every scoped observation and returns the
-    // Decision inventory to page one. Automatic reads preserve the current page.
-    setDecisionPage(null);
+    // Explicit refresh supersedes every scoped observation.
     setRepositorySnapshot({ kind: 'idle' });
     setRefreshGeneration(current => current + 1);
     requestFleet();

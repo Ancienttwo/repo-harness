@@ -11,7 +11,7 @@ import {
   OperatorPayloadError,
   OperatorTaskMessageResponseError,
 } from '../../src/operator-web/types';
-import { repositoryObservationFixture, operatorFixtures } from '../../src/operator-web/fixture';
+import { repositoryObservationFixture, repositorySnapshot, operatorFixtures } from '../../src/operator-web/fixture';
 import { planningObservationFixture, stableSnapshot } from '../../src/operator-web/fixture';
 import { decodeOperatorPlanningSnapshot } from '../../src/core/operator/planning-snapshot';
 import { isOperatorMessageKey, translate, type OperatorMessageKey } from '../../src/operator-web/i18n';
