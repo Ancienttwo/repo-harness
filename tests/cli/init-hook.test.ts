@@ -220,7 +220,10 @@ describe('init-hook command', () => {
       });
       const check = report.checks.find((entry) => entry.id === 'global-rules.codex');
       expect(check?.status).toBe('warn');
-      expect(check?.detail).toContain('is a symlink or not a regular file; replace it with a regular file to enable managed sync');
+      const link = join(home, '.codex', 'AGENTS.md');
+      expect(check?.detail).toBe(
+        `${link} is a symlink or not a regular file (refusing symlink configuration path: ${link}); replace it with a regular file to enable managed sync`,
+      );
     });
   });
 

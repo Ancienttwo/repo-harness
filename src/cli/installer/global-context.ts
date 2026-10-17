@@ -369,8 +369,10 @@ export function globalContextPathRefusal(path: string, home: string): string | n
   try {
     assertConfigurationPath(path, { HOME: home });
     return null;
-  } catch {
-    return `${path} is a symlink or not a regular file; replace it with a regular file to enable managed sync`;
+  } catch (error) {
+    // The guard names the refused component: the file, a linked parent such
+    // as ~/.codex, or a path outside HOME.
+    return `${path} is a symlink or not a regular file (${(error as Error).message}); replace it with a regular file to enable managed sync`;
   }
 }
 
@@ -438,7 +440,7 @@ export function planGlobalContextFile(
     case 'missing-file':
       return flag
         ? write(withFlag())
-        : plan('skipped', `skipped-not-opted-in:${path} (not opted in; pass --report-language to install the rules)`);
+        : plan('skipped', `skipped-not-opted-in:${path} (not opted in; ${GLOBAL_RULES_FLAG_HINT} to install the rules)`);
   }
 }
 

@@ -2914,7 +2914,7 @@ describe('Global Working Rules refresh during install and update', () => {
     expect(result.exitCode).toBe(0);
     expect(rulesStep(result)).toMatchObject({
       status: 'skipped',
-      detail: `skipped-unsafe:${path} (${path} is a symlink or not a regular file; replace it with a regular file to enable managed sync)`,
+      detail: `skipped-unsafe:${path} (${path} is a symlink or not a regular file (refusing symlink configuration path: ${path}); replace it with a regular file to enable managed sync)`,
     });
     expect(readFileSync(target, 'utf-8')).toBe(mixedLegacy);
   }), 30_000);
@@ -2978,10 +2978,10 @@ describe('Global Working Rules refresh during install and update', () => {
     const unrecorded = `${userBefore}${renderGlobalRulesBlock(ROOT, { preset: 'en', instruction: 'Use English to report to user.' })
       .replace(/^<!-- repo-harness reporting-language: .*\n/m, '')}`;
     writeFileSync(path, unrecorded);
-    const blocked = run(undefined, false);
-    expect(blocked.exitCode).toBe(0);
-    expect(rulesStep(blocked)?.status).toBe('skipped');
-    expect(rulesStep(blocked)?.detail).toContain('managed block has no recorded reporting language');
+    const unsynced = run(undefined, false);
+    expect(unsynced.exitCode).toBe(0);
+    expect(rulesStep(unsynced)?.status).toBe('skipped');
+    expect(rulesStep(unsynced)?.detail).toContain('managed block has no recorded reporting language');
     expect(readFileSync(path, 'utf-8')).toBe(unrecorded);
 
     const recorded = run('en', false);
@@ -2995,7 +2995,7 @@ describe('Global Working Rules refresh during install and update', () => {
     const skipped = run();
     expect(skipped.exitCode).toBe(0);
     expect(rulesStep(skipped)?.status).toBe('skipped');
-    expect(rulesStep(skipped)?.detail).toContain('not opted in; pass --report-language to install the rules');
+    expect(rulesStep(skipped)?.detail).toContain('not opted in; run `repo-harness update --report-language follow|zh-CN|en` to install the rules');
     expect(existsSync(path)).toBe(false);
 
     const created = run('follow');
