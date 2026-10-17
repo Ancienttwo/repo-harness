@@ -2,7 +2,7 @@
  * Local retention for closed harness artifacts (#697).
  *
  * Closed plans stay committed for the retention window and then leave Git.
- * Task records, check logs and run records are local-only and accumulate on
+ * Closed task records also leave Git after the window. Check logs and run records accumulate on
  * disk. This module moves all of them into a gitignored local archive root once
  * they are older than the window. It never deletes anything: the operator
  * cleans the archive root.
@@ -11,7 +11,7 @@
  * writer that closes a plan and its task records, and it writes them as new
  * files under `plans/archive/` and `tasks/archive/`, so membership there is the
  * closed signal. For an untracked file the file time is the close time. For a
- * tracked plan it is the last commit time, because a checkout resets file
+ * tracked artifact it is the last commit time, because a checkout resets file
  * times. A check log under
  * `.ai/harness/checks/` is finished once nothing has written to it for the
  * window. Open work lives elsewhere and is never scanned.
@@ -27,8 +27,8 @@
  * `contract-run-*` output directories that finished (`manifest.json` is the
  * last write of a run).
  *
- * Closed plans are the only class that leaves Git. The move removes a tracked
- * plan from the working tree. The command does not stage or commit; the
+ * Closed plans and task records leave Git. The move removes a tracked
+ * artifact from the working tree. The command does not stage or commit; the
  * operator commits the removal. A plan with uncommitted changes is skipped, so
  * the move never hides work that Git does not hold. In every other class an
  * entry with any tracked file is skipped, because those classes are local-only
@@ -68,7 +68,7 @@ function isClosedRecord(name: string, entry: Stats): boolean {
 
 const CLASSES: readonly RetentionClass[] = [
   { id: 'closed-plans', dir: 'plans/archive', accepts: isClosedRecord, leavesGit: true },
-  { id: 'closed-task-records', dir: 'tasks/archive', accepts: isClosedRecord },
+  { id: 'closed-task-records', dir: 'tasks/archive', accepts: isClosedRecord, leavesGit: true },
   { id: 'check-logs', dir: '.ai/harness/checks', accepts: (name, entry) => entry.isFile() && name.endsWith('.log') },
   // The writers hard-code this directory, so `harness.runs_dir` does not apply.
   { id: 'run-records', dir: '.ai/harness/runs', accepts: isRunRecord },
