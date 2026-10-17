@@ -1,12 +1,13 @@
 import { describe, expect, test } from "bun:test";
-import { readdirSync, readFileSync } from "fs";
+import { copyFileSync, cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "fs";
 import { join } from "path";
+import { tmpdir } from "os";
+import { execFileSync } from "child_process";
+import { readArchcontextCapabilityAuthority } from "../../src/effects/capabilities/archcontext-owners";
 import {
-  archcontextIncludeAnchor,
   archcontextNodeId,
   architectureModulePathFor,
   capabilityPathResolutionFromArchcontextOwners,
-  capabilityRegistryFromArchcontextNodes,
   capabilityRegistryFromNativeContext,
   capabilityIdentityFromNodeId,
   type NativeCapabilityProfileInput,
@@ -23,21 +24,24 @@ import {
   type CapabilityRegistry,
 } from "../../src/core/capabilities/registry";
 import { readArchitectureNativeContext } from "../../src/effects/architecture/archctx-provider";
-import { loadArchcontextAuthority } from "../../src/effects/state/resolve-effective-state";
 
 // Recorded with package-local archctx 0.7.2: `archctx resolve --paths-from
 // ownership-0.7.2-paths.txt --json` over the nodes in ownership-0.7.2-model/.
 const RECORDED = join(import.meta.dir, "../fixtures/archctx-resolve");
 
 function recordedOwners(): ArchcontextCapabilityOwners {
-  const dir = join(RECORDED, "ownership-0.7.2-model/nodes");
-  const files = readdirSync(dir).sort().map((name) => ({
-    path: `.archcontext/model/nodes/${name}`,
-    value: Bun.YAML.parse(readFileSync(join(dir, name), "utf-8")),
-  }));
-  const resolution = capabilityRegistryFromArchcontextNodes(files);
-  if (resolution.status !== "valid") throw new Error(`recorded model is invalid: ${JSON.stringify(resolution.diagnostics)}`);
-  return resolution.owners;
+  const cwd = mkdtempSync(join(tmpdir(), "capability-recorded-native-"));
+  try {
+    mkdirSync(join(cwd, ".archcontext/model"), { recursive: true });
+    cpSync(join(RECORDED, "ownership-0.7.2-model/nodes"), join(cwd, ".archcontext/model/nodes"), { recursive: true });
+    copyFileSync(join(import.meta.dir, "../../.archcontext/manifest.yaml"), join(cwd, ".archcontext/manifest.yaml"));
+    execFileSync("git", ["init", "-q"], { cwd });
+    execFileSync("git", ["add", "."], { cwd });
+    execFileSync("git", ["-c", "user.name=Fixture", "-c", "user.email=fixture@example.com", "commit", "-q", "-m", "model"], { cwd });
+    const resolution = readArchcontextCapabilityAuthority(cwd);
+    if (resolution.status !== "valid") throw new Error(`recorded model is invalid: ${JSON.stringify(resolution.diagnostics)}`);
+    return resolution.owners;
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
 }
 
 // The same field reduction as readOwners in src/effects/capabilities/archcontext-owners.ts.
@@ -212,158 +216,6 @@ describe("canonical capability registry", () => {
   });
 });
 
-describe("archcontextIncludeAnchor", () => {
-  test("keeps the literal leading path of every include shape", () => {
-    expect(archcontextIncludeAnchor("apps/web/**")).toBe("apps/web");
-    expect(archcontextIncludeAnchor("AGENTS.md")).toBe("AGENTS.md");
-    expect(archcontextIncludeAnchor("src/effects/path-safety.ts")).toBe("src/effects/path-safety.ts");
-    expect(archcontextIncludeAnchor("src/core/state/coordination-*.ts")).toBe("src/core/state");
-    expect(archcontextIncludeAnchor("src/core/state/file?.ts")).toBe("src/core/state");
-    expect(archcontextIncludeAnchor("apps/web/")).toBe("apps/web");
-  });
-
-  test("cuts only at * and ?, the ArchContext glob characters", () => {
-    // ArchContext treats [ ] { } and ! as literal path characters.
-    expect(archcontextIncludeAnchor("src/app/[locale]/**")).toBe("src/app/[locale]");
-    expect(archcontextIncludeAnchor("src/{core,effects}/engineers/**")).toBe("src/{core,effects}/engineers");
-    expect(archcontextIncludeAnchor("!apps/web/**")).toBe("!apps/web");
-    expect(archcontextIncludeAnchor("{a,b}/**")).toBe("{a,b}");
-  });
-
-  test("has no anchor when the first segment is a glob", () => {
-    for (const include of ["", "**", "/**", "**/*.ts", "*.md", "?x/**"]) {
-      expect(archcontextIncludeAnchor(include), include).toBeNull();
-    }
-  });
-});
-
-describe("capabilityRegistryFromArchcontextNodes", () => {
-  const node = (id: string, include: string[], exclude?: string[]) => ({
-    schemaVersion: "archcontext.node/v2",
-    id,
-    kind: "capability",
-    name: id.split(".").at(-1),
-    status: "active",
-    summary: "fixture",
-    responsibilities: ["fixture responsibility"],
-    source: exclude ? { include, exclude } : { include },
-    extensions: {
-      contractFiles: { agents: "apps/web/AGENTS.md", claude: "apps/web/CLAUDE.md" },
-      lspProfile: "typescript-lsp",
-      verification: ["bun test apps/web"],
-    },
-  });
-
-  test("derives id, architecture module, and workstream dir from the node id", () => {
-    const resolution = capabilityRegistryFromArchcontextNodes([
-      { path: "nodes/web.yaml", value: node("capability.apps-web.web", ["apps/web/**"]) },
-    ]);
-    if (resolution.status !== "valid") throw new Error(`expected valid registry: ${JSON.stringify(resolution.diagnostics)}`);
-    expect(resolution.registry.capabilities).toEqual([
-      {
-        id: "apps-web-web",
-        domain: "apps-web",
-        name: "web",
-        prefixes: ["apps/web"],
-        contract_files: { agents: "apps/web/AGENTS.md", claude: "apps/web/CLAUDE.md" },
-        architecture_module: architectureModulePathFor("apps-web", "web"),
-        workstream_dir: workstreamDirFor("apps-web", "web"),
-        lsp_profile: "typescript-lsp",
-        verification_hints: ["bun test apps/web"],
-      },
-    ]);
-    expect(architectureModulePathFor("apps-web", "web")).toBe("docs/architecture/modules/apps-web/web.md");
-    expect(workstreamDirFor("apps-web", "web")).toBe("tasks/workstreams/apps-web/web");
-  });
-
-  test("sorts derived capabilities by id regardless of node order", () => {
-    const nodes = [
-      { path: "nodes/z.yaml", value: node("capability.public-surface.root-router", ["AGENTS.md"]) },
-      { path: "nodes/a.yaml", value: node("capability.apps-web.web", ["apps/web/**"]) },
-    ];
-    const resolution = capabilityRegistryFromArchcontextNodes(nodes);
-    if (resolution.status !== "valid") throw new Error("expected valid registry");
-    expect(resolution.registry.capabilities.map((capability) => capability.id)).toEqual([
-      "apps-web-web",
-      "public-surface-root-router",
-    ]);
-  });
-
-  test("routes derived registries through the canonical registry validation", () => {
-    const collision = capabilityRegistryFromArchcontextNodes([
-      { path: "nodes/a.yaml", value: node("capability.apps-web.web", ["apps/web/**"]) },
-      { path: "nodes/b.yaml", value: node("capability.apps-web.web", ["apps/web/**"]) },
-    ]);
-    expect(collision.status).toBe("invalid");
-    expect(collision.diagnostics.map((item) => item.code).sort()).toEqual(["DUPLICATE_ID"]);
-
-    const traversal = capabilityRegistryFromArchcontextNodes([
-      { path: "nodes/a.yaml", value: node("capability.apps-web.web", ["../outside/**"]) },
-    ]);
-    expect(traversal.status).toBe("invalid");
-    expect(traversal.diagnostics.map((item) => item.code)).toEqual(["INVALID_PATH"]);
-
-    // An anchorless include is valid, so path safety cannot rely on the anchor.
-    const absolute = capabilityRegistryFromArchcontextNodes([
-      { path: "nodes/a.yaml", value: node("capability.apps-web.web", ["/tmp/outside/**"]) },
-    ]);
-    expect(absolute.diagnostics.map((item) => [item.code, item.path])).toEqual([["INVALID_PATH", "nodes/a.yaml#source.include[0]"]]);
-    const escapingExclude = capabilityRegistryFromArchcontextNodes([
-      { path: "nodes/a.yaml", value: node("capability.apps-web.web", ["apps/web/**"], ["../outside/**"]) },
-    ]);
-    expect(escapingExclude.diagnostics.map((item) => [item.code, item.path])).toEqual([["INVALID_PATH", "nodes/a.yaml#source.exclude[0]"]]);
-  });
-
-  test("accepts glob includes and excludes, and lets capabilities share an anchor", () => {
-    const resolution = capabilityRegistryFromArchcontextNodes([
-      { path: "nodes/a.yaml", value: node("capability.workflow-engine.state", ["src/core/state/**"], ["src/core/state/coordination-*.ts"]) },
-      { path: "nodes/b.yaml", value: node("capability.workflow-engine.coordination", ["src/core/state/coordination-*.ts", "src/core/state/coordination-*.ts"]) },
-    ]);
-    if (resolution.status !== "valid") throw new Error(`expected valid registry: ${JSON.stringify(resolution.diagnostics)}`);
-    expect(resolution.registry.capabilities.map((capability) => [capability.id, capability.prefixes])).toEqual([
-      ["workflow-engine-coordination", ["src/core/state"]],
-      ["workflow-engine-state", ["src/core/state"]],
-    ]);
-  });
-
-  test("accepts an anchorless capability: it has no prefixes and keeps its node id", () => {
-    const resolution = capabilityRegistryFromArchcontextNodes([
-      { path: "nodes/a.yaml", value: node("capability.probe.anchorless", ["**/*.probe"]) },
-    ]);
-    if (resolution.status !== "valid") throw new Error(`expected valid registry: ${JSON.stringify(resolution.diagnostics)}`);
-    expect(resolution.registry.capabilities.map((capability) => [capability.id, capability.prefixes])).toEqual([
-      ["probe-anchorless", []],
-    ]);
-    expect(archcontextNodeId(resolution.registry.capabilities[0]!)).toBe("capability.probe.anchorless");
-    expect([...resolution.owners.keys()]).toEqual(["capability.probe.anchorless"]);
-  });
-
-  test("keeps every capability node as an owner but lists only active ones", () => {
-    const withStatus = (id: string, status: string, include: string[]) => ({ ...node(id, include), status });
-    const resolution = capabilityRegistryFromArchcontextNodes([
-      { path: "nodes/a.yaml", value: withStatus("capability.future.planned", "planned", ["planned/**"]) },
-      { path: "nodes/b.yaml", value: withStatus("capability.old.legacy", "deprecated", ["legacy/**"]) },
-      { path: "nodes/c.yaml", value: node("capability.apps-web.web", ["apps/web/**"]) },
-    ]);
-    if (resolution.status !== "valid") throw new Error(`expected valid registry: ${JSON.stringify(resolution.diagnostics)}`);
-    expect(resolution.registry.capabilities.map((capability) => capability.id)).toEqual(["apps-web-web"]);
-    expect([...resolution.owners.keys()].sort()).toEqual([
-      "capability.apps-web.web",
-      "capability.future.planned",
-      "capability.old.legacy",
-    ]);
-    expect(resolution.owners.get("capability.future.planned")?.architecture_module)
-      .toBe("docs/architecture/modules/future/planned.md");
-  });
-
-  test("validates non-active capability nodes like active ones", () => {
-    const planned = { ...node("capability.future.planned", ["planned/**"]), status: "planned", summary: "" };
-    const resolution = capabilityRegistryFromArchcontextNodes([{ path: "nodes/a.yaml", value: planned }]);
-    expect(resolution.status).toBe("invalid");
-    expect(resolution.diagnostics.map((item) => item.code)).toEqual(["ARCHCONTEXT_NODE_SUMMARY_INVALID"]);
-  });
-});
-
 describe("capabilityIdentityFromNodeId", () => {
   test.each([
     ["capability.engine.state", "engine", "state"],
@@ -393,20 +245,13 @@ describe("capabilityRegistryFromNativeContext", () => {
   };
   const map = (profiles: readonly NativeCapabilityProfileInput[]) => capabilityRegistryFromNativeContext({ capabilityProfiles: profiles }, { repoRoot });
 
-  test("maps every real repo capability without identity drift and matches the local reader", () => {
+  test("maps every real repo capability without identity drift", () => {
     const context = readArchitectureNativeContext(repoRoot, { kind: "worktree" });
     const resolution = capabilityRegistryFromNativeContext(context, { repoRoot });
     expect(resolution.status).toBe("valid");
     expect(resolution.diagnostics).toEqual([]);
     if (resolution.status !== "valid") throw new Error("expected a valid native registry");
-    // Parity with the local reader that S3 deletes. archctx sorts include anchors, so prefixes compare as sets.
-    const local = loadArchcontextAuthority(repoRoot, (path) => readFileSync(join(repoRoot, path), "utf8"));
-    if (local.status !== "valid") throw new Error("expected a valid local registry");
     expect(resolution.registry.capabilities.length).toBeGreaterThan(0);
-    expect([...resolution.owners.keys()].sort()).toEqual([...local.owners.keys()].sort());
-    const sortedPrefixes = (capability: { readonly prefixes: readonly string[] }) => ({ ...capability, prefixes: [...capability.prefixes].sort() });
-    for (const [nodeId, capability] of resolution.owners) expect(sortedPrefixes(capability)).toEqual(sortedPrefixes(local.owners.get(nodeId)!));
-    expect(resolution.registry.capabilities.map((capability) => capability.id).sort()).toEqual(local.registry.capabilities.map((capability) => capability.id).sort());
     for (const native of context.capabilityProfiles) {
       expect(capabilityIdentityFromNodeId(native.nodeId)).toEqual({
         id: `${native.domain}-${native.name}`, domain: native.domain, name: native.name,

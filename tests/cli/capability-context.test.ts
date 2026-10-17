@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { spawnSync } from 'child_process';
+import { execFileSync, spawnSync } from 'child_process';
 import {
   runCapabilityContextStatus,
   runCapabilityContextSync,
@@ -11,6 +11,13 @@ import type { Capability } from '../../src/core/capabilities/registry';
 
 function tmpWorkspace(prefix: string): string {
   return fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), `${prefix}-`)));
+}
+
+function commitArchcontextFixture(cwd: string): void {
+  fs.copyFileSync(path.join(import.meta.dir, '../../.archcontext/manifest.yaml'), path.join(cwd, '.archcontext/manifest.yaml'));
+  execFileSync('git', ['init', '-q'], { cwd });
+  execFileSync('git', ['add', '.'], { cwd });
+  execFileSync('git', ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.com', 'commit', '-q', '-m', 'model'], { cwd });
 }
 
 function writeRegistry(cwd: string, capabilities: Capability[]): void {
@@ -209,6 +216,8 @@ describe('capability-context command', () => {
       fs.writeFileSync(path.join(cwd, 'AGENTS.md'), rootContext);
       fs.writeFileSync(path.join(cwd, 'CLAUDE.md'), rootContext);
 
+      commitArchcontextFixture(cwd);
+
       // The target is the declared contract files, not an anchor: the root files stay unchanged.
       runCapabilityContextSync({ repo: cwd, capabilityId: 'probe-anchorless', apply: true });
       expect(fs.readFileSync(path.join(cwd, 'AGENTS.md'), 'utf-8')).toBe(rootContext);
@@ -220,7 +229,7 @@ describe('capability-context command', () => {
       fs.writeFileSync(nodePath, fs.readFileSync(nodePath, 'utf-8').replace(/  contractFiles:\n    agents: probes\/AGENTS\.md\n    claude: probes\/CLAUDE\.md\n/, ''));
       fs.rmSync(path.join(cwd, 'probes'), { recursive: true, force: true });
       expect(() => runCapabilityContextSync({ repo: cwd, capabilityId: 'probe-anchorless', apply: true }))
-        .toThrow('extensions.contractFiles.agents and extensions.contractFiles.claude are required');
+        .toThrow('AC_SCHEMA_INVALID');
       expect(fs.readFileSync(path.join(cwd, 'AGENTS.md'), 'utf-8')).toBe(rootContext);
       expect(fs.readFileSync(path.join(cwd, 'CLAUDE.md'), 'utf-8')).toBe(rootContext);
       expect(fs.existsSync(path.join(cwd, 'probes'))).toBe(false);
@@ -291,7 +300,7 @@ describe('capability-context command', () => {
     }
   }, 30_000);
 
-  test('archcontext sync refuses a contract file that another capability declares in the other slot', () => {
+  test('archctx rejects a contract file declared in the wrong slot before sync writes', () => {
     const cwd = archcontextWorkspace('capability-context-cross-slot', [
       { id: 'capability.apps.web', include: 'apps/web/**', contractFiles: { agents: 'apps/web/AGENTS.md', claude: 'apps/web/CLAUDE.md' } },
       { id: 'capability.apps.docs', include: 'apps/docs/**', contractFiles: { agents: 'apps/docs/AGENTS.md', claude: 'apps/web/AGENTS.md' } },
@@ -300,13 +309,26 @@ describe('capability-context command', () => {
       const shared = '# Web contract\n';
       fs.writeFileSync(path.join(cwd, 'apps/web/AGENTS.md'), shared);
       for (const capabilityId of ['apps-web', 'apps-docs']) {
-        expect(() => runCapabilityContextSync({ repo: cwd, capabilityId, apply: true })).toThrow('declares shared contract files');
+        expect(() => runCapabilityContextSync({ repo: cwd, capabilityId, apply: true })).toThrow('AC_SCHEMA_INVALID');
       }
       expect(fs.readFileSync(path.join(cwd, 'apps/web/AGENTS.md'), 'utf-8')).toBe(shared);
       for (const file of ['apps/web/CLAUDE.md', 'apps/docs/AGENTS.md']) expect(fs.existsSync(path.join(cwd, file))).toBe(false);
     } finally {
       fs.rmSync(cwd, { recursive: true, force: true });
     }
+  });
+
+  test('native schema failures keep the node id and field in capability-context errors', () => {
+    const cwd = archcontextWorkspace('capability-context-invalid-summary', [
+      { id: 'capability.apps.web', include: 'apps/web/**', contractFiles: { agents: 'apps/web/AGENTS.md', claude: 'apps/web/CLAUDE.md' } },
+    ]);
+    try {
+      const nodePath = path.join(cwd, '.archcontext/model/nodes/capability.apps.web.yaml');
+      const node = JSON.parse(fs.readFileSync(nodePath, 'utf-8'));
+      delete node.summary;
+      fs.writeFileSync(nodePath, JSON.stringify(node));
+      expect(() => runCapabilityContextStatus(cwd)).toThrow('capability.apps.web $.summary required');
+    } finally { fs.rmSync(cwd, { recursive: true, force: true }); }
   });
 
   test('CLI prints the message of a capability source error before it exits 2', () => {
@@ -319,7 +341,7 @@ describe('capability-context command', () => {
         { cwd, encoding: 'utf-8' },
       );
       expect(res.status).toBe(2);
-      expect(res.stderr).toContain('.archcontext/model/nodes/broken.yaml');
+      expect(res.stderr).toContain('AC_SCHEMA_INVALID');
     } finally {
       fs.rmSync(cwd, { recursive: true, force: true });
     }
@@ -342,5 +364,6 @@ function archcontextWorkspace(
       extensions: { contractFiles: node.contractFiles, lspProfile: 'typescript-lsp', verification: ['bun test'] },
     }, null, 2)}\n`);
   }
+  commitArchcontextFixture(cwd);
   return cwd;
 }

@@ -3,26 +3,25 @@ import { errorEnvelope } from "archctx-contracts";
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { dirname, join } from "path";
-import { spawnSync } from "child_process";
+import { execFileSync, spawnSync } from "child_process";
 import {
-  CapabilitySourceError,
-  bunYamlParser,
-} from "../scripts/capability-resolver";
-import {
-  capabilityRegistryFromArchcontextNodes,
+  capabilityRegistryFromNativeContext,
   type ArchcontextCapabilityOwners,
   type Capability,
-  type CapabilityRegistryDiagnosticCode,
 } from "../src/core/capabilities/registry";
 
-import { resolveArchcontextCapabilityPaths } from "../src/effects/capabilities/archcontext-owners";
+import { formatArchcontextCapabilityError, readArchcontextCapabilityAuthority, resolveArchcontextCapabilityPaths } from "../src/effects/capabilities/archcontext-owners";
+import { ArchctxClientError, readArchitectureNativeContext } from "../src/effects/architecture/archctx-provider";
 import { withReadonlyObservation } from "../src/effects/state/readonly-observation";
 
 const ROOT = join(import.meta.dir, "..");
 const NODES_DIR = ".archcontext/model/nodes";
 
 function tmpWorkspace(prefix: string): string {
-  return mkdtempSync(join(tmpdir(), `${prefix}-`));
+  const cwd = mkdtempSync(join(tmpdir(), `${prefix}-`));
+  execFileSync("git", ["init", "-q"], { cwd });
+  execFileSync("git", ["-c", "user.name=Fixture", "-c", "user.email=fixture@example.com", "commit", "-q", "--allow-empty", "-m", "fixture"], { cwd });
+  return cwd;
 }
 
 function writeFile(cwd: string, relPath: string, content: string): void {
@@ -209,6 +208,9 @@ function archcontextWorkspace(
   seedTree(cwd);
   writePolicy(cwd, "archcontext");
   for (const node of nodes) writeFile(cwd, `${NODES_DIR}/${node.file}`, yaml(node.lines));
+  writeFile(cwd, ".archcontext/manifest.yaml", readFileSync(join(ROOT, ".archcontext/manifest.yaml"), "utf-8"));
+  execFileSync("git", ["add", "."], { cwd });
+  execFileSync("git", ["-c", "user.name=Fixture", "-c", "user.email=fixture@example.com", "commit", "-q", "-m", "model"], { cwd });
   return cwd;
 }
 
@@ -258,26 +260,16 @@ describe("capability source: archcontext file-source parity", () => {
     }
   }, 60_000);
 
-  test("the standalone projected helper reads archcontext nodes identically and refuses to match", () => {
-    const sourceCwd = archcontextWorkspace("capability-source-standalone-source");
+  test("the standalone projected helper refuses every archcontext command", () => {
     const projectedCwd = archcontextWorkspace("capability-source-standalone-projected");
     try {
-      // Path ownership needs the package-local archctx, which a standalone copy does not have.
-      const refused = runStandaloneResolver(projectedCwd, ["match", "--path", "AGENTS.md", "--format", "json"]);
-      expect(refused.status).toBe(2);
-      expect(refused.stdout).toBe("");
-      expect(refused.stderr).toContain("run repo-harness run capability-resolver");
-      for (const command of PARITY_COMMANDS.filter((entry) => entry[0] !== "match")) {
-        const fromSource = runResolver(sourceCwd, [...command]);
-        const fromProjection = runStandaloneResolver(projectedCwd, [...command]);
-        expect(fromSource.status, fromSource.stderr).toBe(0);
-        expect(fromProjection.status, fromProjection.stderr).toBe(0);
-        expect(fromProjection.stdout, `projection parity for: ${command.join(" ")}`)
-          .toBe(fromSource.stdout);
-        expect(fromProjection.stderr).toBe(fromSource.stderr);
+      for (const command of PARITY_COMMANDS) {
+        const refused = runStandaloneResolver(projectedCwd, [...command]);
+        expect(refused.status, command.join(" ")).toBe(2);
+        expect(refused.stdout).toBe("");
+        expect(refused.stderr).toContain('capability_source "archcontext" needs the packaged resolver; run repo-harness run capability-resolver');
       }
     } finally {
-      rmSync(sourceCwd, { recursive: true, force: true });
       rmSync(projectedCwd, { recursive: true, force: true });
     }
   }, 60_000);
@@ -371,14 +363,13 @@ describe("capability source: archctx resolve envelope checks", () => {
   test("joins the recorded archctx 0.7.2 batch, exit 2 included, through the owner model", () => {
     const fixtures = join(ROOT, "tests/fixtures/archctx-resolve");
     const nodesDir = join(fixtures, "ownership-0.7.2-model/nodes");
-    const model = capabilityRegistryFromArchcontextNodes(readdirSync(nodesDir).sort().map((name) => ({
-      path: `${NODES_DIR}/${name}`,
-      value: Bun.YAML.parse(readFileSync(join(nodesDir, name), "utf-8")),
+    const cwd = archcontextWorkspace("capability-source-recorded", readdirSync(nodesDir).sort().map((name) => ({
+      file: name, lines: readFileSync(join(nodesDir, name), "utf-8").trimEnd().split("\n"),
     })));
-    if (model.status !== "valid") throw new Error(JSON.stringify(model.diagnostics));
     const paths = readFileSync(join(fixtures, "ownership-0.7.2-paths.txt"), "utf-8").trim().split("\n");
-    const cwd = tmpWorkspace("capability-source-recorded");
     try {
+      const model = readArchcontextCapabilityAuthority(cwd);
+      if (model.status !== "valid") throw new Error(JSON.stringify(model.diagnostics));
       const resolution = resolveArchcontextCapabilityPaths(cwd, model.owners, paths, {
         run: () => ({ status: 2, signal: null, stdout: readFileSync(join(fixtures, "ownership-0.7.2.json"), "utf-8"), stderr: "" }),
       });
@@ -424,7 +415,7 @@ describe("capability source: no fallback in either direction", () => {
       const res = runResolver(cwd, ["list", "--format", "json"]);
       expect(res.status).toBe(2);
       expect(res.stdout).toBe("");
-      expect(res.stderr).toContain(`missing archcontext model directory: ${NODES_DIR}`);
+      expect(res.stderr).toContain("AC_MODEL_ADOPTION_REQUIRED");
       expect(res.stderr).not.toContain("apps-web-account");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
@@ -445,7 +436,7 @@ describe("capability source: no fallback in either direction", () => {
   }, 30_000);
 });
 
-describe("capability source: source-layer failures S1-S6", () => {
+describe("capability source: source-layer failures S1-S5", () => {
   test("S1 rejects an unknown capability_source value", () => {
     const cwd = archcontextWorkspace("capability-source-s1");
     try {
@@ -478,7 +469,7 @@ describe("capability source: source-layer failures S1-S6", () => {
       writePolicy(cwd, "archcontext");
       const res = runResolver(cwd, ["validate", "--format", "text"]);
       expect(res.status).toBe(2);
-      expect(res.stderr).toContain(`missing archcontext model directory: ${NODES_DIR}`);
+      expect(res.stderr).toContain("AC_MODEL_ADOPTION_REQUIRED");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -488,15 +479,15 @@ describe("capability source: source-layer failures S1-S6", () => {
     const nested = archcontextWorkspace("capability-source-s4-nested");
     const foreign = archcontextWorkspace("capability-source-s4-foreign");
     try {
-      mkdirSync(join(nested, NODES_DIR, "legacy"), { recursive: true });
+      writeFile(nested, `${NODES_DIR}/legacy/notes.txt`, "not a node\n");
       const nestedRes = runResolver(nested, ["validate", "--format", "text"]);
       expect(nestedRes.status).toBe(2);
-      expect(nestedRes.stderr).toContain(`unexpected entry in archcontext model directory: ${NODES_DIR}/legacy`);
+      expect(nestedRes.stderr).toContain("AC_PATH_DENIED");
 
       writeFile(foreign, `${NODES_DIR}/notes.txt`, "not a node\n");
       const foreignRes = runResolver(foreign, ["validate", "--format", "text"]);
       expect(foreignRes.status).toBe(2);
-      expect(foreignRes.stderr).toContain(`unexpected entry in archcontext model directory: ${NODES_DIR}/notes.txt`);
+      expect(foreignRes.stderr).toContain("AC_PATH_DENIED");
     } finally {
       rmSync(nested, { recursive: true, force: true });
       rmSync(foreign, { recursive: true, force: true });
@@ -509,33 +500,17 @@ describe("capability source: source-layer failures S1-S6", () => {
       writeFile(cwd, `${NODES_DIR}/broken.yaml`, "id: [unterminated\n");
       const res = runResolver(cwd, ["validate", "--format", "text"]);
       expect(res.status).toBe(2);
-      expect(res.stderr).toContain(`invalid archcontext node YAML: ${NODES_DIR}/broken.yaml`);
+      expect(res.stderr).toContain("AC_SCHEMA_INVALID");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
   }, 30_000);
 
-  test("S6 fails closed with upgrade guidance when Bun.YAML is unavailable", () => {
-    for (const host of [{}, { Bun: {} }, { Bun: { YAML: {} } }, { Bun: { YAML: { parse: "nope" } } }]) {
-      expect(() => bunYamlParser(host)).toThrow(/Bun\.YAML is unavailable/);
-      try {
-        bunYamlParser(host);
-        throw new Error("expected bunYamlParser to fail closed");
-      } catch (error) {
-        expect(error).toBeInstanceOf(CapabilitySourceError);
-        expect((error as CapabilitySourceError).exitCode).toBe(2);
-        expect((error as Error).message).toContain("Bun >= 1.3");
-      }
-    }
 
-    const parse = bunYamlParser(globalThis);
-    expect(typeof parse).toBe("function");
-    expect(parse("id: capability.a.b\n")).toEqual({ id: "capability.a.b" });
-  });
 });
 
 // ---------------------------------------------------------------------------
-// Node-layer matrix N1-N16.
+// Native authority fixtures.
 // ---------------------------------------------------------------------------
 
 const VALID_NODE_LINES = TWIN_NODES[0].lines;
@@ -548,137 +523,98 @@ function replaceLine(lines: readonly string[], from: string, to: readonly string
   return lines.flatMap((line) => (line === from ? [...to] : [line]));
 }
 
-const NODE_CASES: ReadonlyArray<{
-  readonly label: string;
-  readonly code: CapabilityRegistryDiagnosticCode;
-  readonly lines: readonly string[];
-  readonly fragment: string;
-}> = [
-  {
-    label: "N1 node is not a mapping",
-    code: "ARCHCONTEXT_NODE_NOT_OBJECT",
-    lines: ["- capability.apps-web.web"],
-    fragment: "archcontext node must be a YAML mapping",
-  },
-  {
-    label: "N2 unsupported schemaVersion",
-    code: "ARCHCONTEXT_SCHEMA_VERSION_UNSUPPORTED",
-    lines: replaceLine(VALID_NODE_LINES, "schemaVersion: archcontext.node/v2", ["schemaVersion: archcontext.node/v1"]),
-    fragment: "schemaVersion must be archcontext.node/v2",
-  },
-  {
-    label: "N3 id is not capability.<domain>.<name>",
-    code: "ARCHCONTEXT_NODE_ID_INVALID",
-    lines: replaceLine(VALID_NODE_LINES, "id: capability.apps-web.web", ["id: repo::capability.apps-web.web"]),
-    fragment: "id must be capability.<domain>.<name> without a namespace prefix",
-  },
-  {
-    label: "N4 kind is missing",
-    code: "ARCHCONTEXT_NODE_KIND_INVALID",
-    lines: withoutLines(VALID_NODE_LINES, ["kind: capability"]),
-    fragment: "kind is required",
-  },
-  {
-    label: "N5 status is missing",
-    code: "ARCHCONTEXT_NODE_STATUS_INVALID",
-    lines: withoutLines(VALID_NODE_LINES, ["status: active"]),
-    fragment: "status is required",
-  },
-  {
-    label: "N6 source.include is empty",
-    code: "ARCHCONTEXT_INCLUDE_REQUIRED",
-    lines: replaceLine(VALID_NODE_LINES, "  include:", ["  include: []"]).filter(
-      (line) => line !== "    - apps/web/**",
-    ),
-    fragment: "source.include must contain at least one entry",
-  },
-  {
-    label: "N10 extensions is missing",
-    code: "ARCHCONTEXT_EXTENSIONS_REQUIRED",
-    lines: [
-      ...VALID_NODE_LINES.slice(0, VALID_NODE_LINES.indexOf("extensions:")),
-    ],
-    fragment: "extensions is required",
-  },
-  {
-    label: "N11 extensions.lspProfile is missing",
-    code: "ARCHCONTEXT_LSP_PROFILE_REQUIRED",
-    lines: withoutLines(VALID_NODE_LINES, ["  lspProfile: typescript-lsp"]),
-    fragment: "extensions.lspProfile is required",
-  },
-  {
-    label: "N12 extensions.verification is not an array of strings",
-    code: "ARCHCONTEXT_VERIFICATION_REQUIRED",
-    lines: replaceLine(VALID_NODE_LINES, "  verification:", ["  verification: bun test apps/web"]).filter(
-      (line) => line !== "    - bun test apps/web",
-    ),
-    fragment: "extensions.verification must be an array of strings",
-  },
-  {
-    label: "N13 extensions.contractFiles is missing",
-    code: "ARCHCONTEXT_CONTRACT_FILES_REQUIRED",
-    lines: withoutLines(VALID_NODE_LINES, [
-      "  contractFiles:",
-      "    agents: apps/web/AGENTS.md",
-      "    claude: apps/web/CLAUDE.md",
-    ]),
-    fragment: "extensions.contractFiles.agents and extensions.contractFiles.claude are required",
-  },
-  {
-    label: "N14 node name is missing",
-    code: "ARCHCONTEXT_NODE_NAME_INVALID",
-    lines: withoutLines(VALID_NODE_LINES, ["name: web"]),
-    fragment: "name is required by archcontext.node/v2",
-  },
-  {
-    label: "N15 node summary is missing",
-    code: "ARCHCONTEXT_NODE_SUMMARY_INVALID",
-    lines: withoutLines(VALID_NODE_LINES, ["summary: Web application shell"]),
-    fragment: "summary is required by archcontext.node/v2",
-  },
-  {
-    label: "N16 node responsibilities are empty",
-    code: "ARCHCONTEXT_NODE_RESPONSIBILITIES_INVALID",
-    lines: replaceLine(VALID_NODE_LINES, "responsibilities:", ["responsibilities: []"]).filter(
-      (line) => line !== "  - Own the web shell",
-    ),
-    fragment: "responsibilities must contain at least one non-empty string",
-  },
-];
+describe("capability source: native diagnostics", () => {
+  test("shows at most five native issues and counts the omitted issues", () => {
+    const error = new ArchctxClientError({
+      code: "AC_SCHEMA_INVALID", message: "native-context-model-invalid", action: "repair-native-input",
+      details: { issues: Array.from({ length: 7 }, (_, index) => ({ entityId: `capability.fixture.item${index}`, field: "summary", invariant: "required" })) },
+    });
+    const message = formatArchcontextCapabilityError(error);
+    expect(message).toStartWith(error.message);
+    expect(message).toContain("capability.fixture.item0 summary required");
+    expect(message).toContain("capability.fixture.item4 summary required");
+    expect(message.match(/capability\.fixture\.item/g)).toHaveLength(5);
+    expect(message).not.toContain("capability.fixture.item5");
+    expect(message).not.toContain("capability.fixture.item6");
+    expect(message).toEndWith("+2 more");
+  });
 
-describe("capability source: node-layer matrix N1-N16 (N7-N9 retired)", () => {
-  for (const nodeCase of NODE_CASES) {
-    test(`${nodeCase.label} fails closed`, () => {
-      const parsed = Bun.YAML.parse(yaml(nodeCase.lines));
-      const resolution = capabilityRegistryFromArchcontextNodes([{ path: `${NODES_DIR}/case.yaml`, value: parsed }]);
-      expect(resolution.status).toBe("invalid");
-      expect(resolution.diagnostics.map((item) => item.code)).toEqual([nodeCase.code]);
-      expect(resolution.diagnostics[0].message).toContain(nodeCase.fragment);
+  test("preserves messages without native issues and does not add an omission marker for five issues", () => {
+    expect(formatArchcontextCapabilityError(new Error("process failed"))).toBe("process failed");
+    const error = new ArchctxClientError({ code: "AC_SCHEMA_INVALID", message: "model invalid", action: "repair-native-input" });
+    expect(formatArchcontextCapabilityError(error)).toBe(error.message);
+    const five = new ArchctxClientError({
+      code: "AC_SCHEMA_INVALID", message: "model invalid", action: "repair-native-input",
+      details: { issues: Array.from({ length: 5 }, (_, index) => ({ entityId: `capability.fixture.item${index}`, field: "summary", invariant: "required" })) },
+    });
+    expect(formatArchcontextCapabilityError(five)).toEndWith("capability.fixture.item4 summary required");
+    expect(formatArchcontextCapabilityError(five)).not.toContain("more");
+  });
+});
 
-      const cwd = archcontextWorkspace("capability-source-node-case", [
-        { file: "case.yaml", lines: nodeCase.lines },
-      ]);
-      try {
-        const res = runResolver(cwd, ["validate", "--format", "text"]);
-        expect(res.status).toBe(1);
-        expect(res.stdout).toBe("");
-        expect(res.stderr).toContain(`malformed capability registry: ${NODES_DIR}`);
-        expect(res.stderr).toContain(nodeCase.fragment);
-      } finally {
-        rmSync(cwd, { recursive: true, force: true });
-      }
-    }, 30_000);
-  }
+describe("capability source: native authority", () => {
+  test("an archctx-invalid node fails closed", () => {
+    const cwd = archcontextWorkspace("capability-source-native-invalid", [{
+      file: "invalid.yaml", lines: withoutLines(VALID_NODE_LINES, ["summary: Web application shell"]),
+    }]);
+    try {
+      const authority = readArchcontextCapabilityAuthority(cwd);
+      expect(authority.status).toBe("invalid");
+      expect(authority.diagnostics.map((item) => item.code)).toEqual(["ARCHCONTEXT_MODEL_REJECTED"]);
+      expect(authority.diagnostics[0].message).toContain("AC_SCHEMA_INVALID");
+      expect(authority.diagnostics[0].message).toContain("capability.apps-web.web $.summary required");
+      const result = runResolver(cwd, ["validate", "--format", "json"]);
+      expect(result.status).toBe(2);
+      expect(result.stdout).toBe("");
+      expect(result.stderr).toContain("AC_SCHEMA_INVALID");
+      expect(result.stderr).toContain("capability.apps-web.web $.summary required");
+    } finally { rmSync(cwd, { recursive: true, force: true }); }
+  });
 
+  test("a drifted native identity fails closed", () => {
+    const cwd = archcontextWorkspace("capability-source-native-drift");
+    try {
+      const context = readArchitectureNativeContext(cwd, { kind: "worktree" });
+      const authority = capabilityRegistryFromNativeContext({ ...context, capabilityProfiles: context.capabilityProfiles.map((profile) => ({ ...profile, modulePath: "docs/architecture/modules/drift/wrong.md" })) }, { repoRoot: cwd });
+      expect(authority.status).toBe("invalid");
+      expect(authority.diagnostics.map((item) => item.code)).toEqual(TWIN_NODES.map(() => "ARCHCONTEXT_NODE_ID_INVALID"));
+    } finally { rmSync(cwd, { recursive: true, force: true }); }
+  });
+
+  test("validate JSON reports a repo-harness profile rejection on stderr with exit 2", () => {
+    const cwd = archcontextWorkspace("capability-source-native-incomplete", [{
+      file: "incomplete.yaml", lines: withoutLines(VALID_NODE_LINES, ["  lspProfile: typescript-lsp"]),
+    }]);
+    try {
+      const context = readArchitectureNativeContext(cwd, { kind: "worktree" });
+      expect(context.capabilityProfiles[0].lspProfile).toBeNull();
+      const result = runResolver(cwd, ["validate", "--format", "json"]);
+      expect(result.status).toBe(2);
+      expect(result.stdout).toBe("");
+      expect(result.stderr).toContain("capability.apps-web.web: lspProfile is required");
+    } finally { rmSync(cwd, { recursive: true, force: true }); }
+  });
+
+  test("a valid native model lists its capabilities", () => {
+    const cwd = archcontextWorkspace("capability-source-native-valid");
+    try {
+      const result = runResolver(cwd, ["list", "--format", "json"]);
+      expect(result.status, result.stderr).toBe(0);
+      expect(JSON.parse(result.stdout)).toEqual(TWIN_CAPABILITIES);
+    } finally { rmSync(cwd, { recursive: true, force: true }); }
+  });
+});
+
+describe("capability source: native status and ownership", () => {
   test("non-capability kinds are skipped and non-active capabilities are not listed", () => {
     const cwd = archcontextWorkspace("capability-source-skipped", [
       TWIN_NODES[0],
       {
         file: "module.yaml",
         lines: replaceLine(
-          replaceLine(VALID_NODE_LINES, "kind: capability", ["kind: module"]),
+          replaceLine(VALID_NODE_LINES, "kind: capability", ["kind: component"]),
           "id: capability.apps-web.web",
-          ["id: module.apps-web.legacy"],
+          ["id: component.apps-web.legacy"],
         ),
       },
       {

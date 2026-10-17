@@ -971,8 +971,12 @@ directory is never consulted. Under `archcontext` the JSON registry is not
 writable, so `repo-harness run capability-config add` refuses and points at the
 node files.
 
-Capability metadata comes from the node files, which Bun's native YAML parser
-reads directly. Path ownership under `archcontext` comes only from the
+Capability metadata comes from one package-local `archctx export native
+--worktree` call for each command. `capability-resolver`, `capability-context`
+and `doctor` read the model only through this export. Hooks and Effective State
+never call the export. They take capability identity from the node id:
+`capability.<domain>.<name>` gives `<domain>-<name>` and its module document.
+Path ownership under `archcontext` comes only from the
 package-local archctx `resolve --paths-from` command. One process resolves one batch of
 paths. It reads no daemon state and no CodeGraph index. The pre-edit hook,
 Effective State, `capability-resolver match` and `capability-context` all use
@@ -985,10 +989,13 @@ same ownership answer in `capability_ownership`: `capability_ids`, each
 capability's `module_document` and owned paths, and `unowned_paths`. The field
 is `null` when ownership was not computed. A read-only observation does not
 start archctx. It reports `capability_ownership:unavailable`. The standalone helper copy
-in `assets/templates/helpers/` has no package-local archctx, so its `match`
-fails closed under `archcontext`. Bun older than 1.3 has no `Bun.YAML`; that
-fails closed with upgrade guidance and only when `capability_source` is
-`archcontext`.
+in `assets/templates/helpers/` has no package-local archctx. Under `archcontext`
+it refuses every command with `capability_source "archcontext" needs the
+packaged resolver; run repo-harness run capability-resolver`. With the archctx
+0.8.0 pin, a node that parses but breaks the node schema does not block a hook
+or `state resolve`; the export readers fail closed on it.
+Ancienttwo/arch-context#371 makes `resolve` reject that node too. It is merged
+but not yet released.
 
 Architecture projection execution is user-level configuration in
 `~/.repo-harness/config.json#architecture`. `repo-harness install` and
@@ -1133,8 +1140,9 @@ for display and directory discovery only.
 | `**/*.md` | none |
 
 A capability without an anchor is valid. Lists show it by its node id. Two
-capabilities can share an anchor. Include order is preserved as anchor order,
-without duplicates. In archcontext mode, `capability-resolver match` reports the
+capabilities can share an anchor. archctx returns the anchors in sorted order,
+without duplicates. So the first anchor (the primary prefix) can differ from the
+first include. In archcontext mode, `capability-resolver match` reports the
 owner's stable node id as `matched_prefix` and as `functional_block`, because
 ArchContext does not report which include matched.
 
@@ -1152,20 +1160,20 @@ contents.
 | Capability field | Node source | Rule |
 |---|---|---|
 | `domain` / `name` | `id` segments 2 and 3 | `id` must be exactly `capability.<domain>.<name>`, with no `namespace::` prefix |
-| display `name` | `name` | required non-empty node/v2 field; validated but not translated into registry identity |
-| `summary` | `summary` | required non-empty node/v2 field; validated but not translated into registry semantics |
-| `responsibilities` | `responsibilities` | required non-empty string array; validated but not translated into registry semantics |
+| display `name` | `name` | required non-empty node/v2 field; archctx validates it; not translated into registry identity |
+| `summary` | `summary` | required non-empty node/v2 field; archctx validates it; not translated into registry semantics |
+| `responsibilities` | `responsibilities` | required non-empty string array; archctx validates it; not translated into registry semantics |
 | `id` | derived | `<domain>-<name>` |
 | `architecture_module` | derived | `docs/architecture/modules/<domain>/<name>.md` |
 | `workstream_dir` | derived | `tasks/workstreams/<domain>/<name>` |
-| `prefixes` | `source.include` | include anchors above; never used for ownership |
+| `prefixes` | `capabilityProfiles[].includeAnchors` | the archctx anchors of `source.include`, in sorted order; never used for ownership |
 | `contract_files` | `extensions.contractFiles.agents` / `.claude` | declared, never derived: root-facing capabilities deliberately do not follow their prefix |
 | `lsp_profile` | `extensions.lspProfile` | required |
 | `verification_hints` | `extensions.verification` | required array; explicit `[]` is allowed |
 
 Nodes whose `kind` is not `capability`, or whose `status` is not `active`, are
-skipped and claim no prefixes. Required node/v2 descriptive fields are validated
-even when they are not translated. Optional fields this bridge does not consume —
+skipped and claim no prefixes. archctx validates every node against the node/v2
+schema in the export, also the fields that are not translated. Optional fields this bridge does not consume —
 `source.entrypoints`, `ownership`, `interfaces`,
 `criticality`, `riskDomains`, `notes`, `parent` — are ignored rather than
 translated into local semantics.
@@ -1178,15 +1186,16 @@ Source-selection failures exit `2`:
 |---|---|
 | unknown `capability_source` value | error naming the policy key and legal values |
 | unreadable `.ai/harness/policy.json` | error naming the policy file |
-| missing `.archcontext/model/nodes` under `archcontext` | error; never falls back to the JSON registry |
-| subdirectory or non-`.yaml`/`.yml` entry in the model directory | error naming the entry |
-| unparseable node YAML | error naming the node file |
-| `Bun.YAML` unavailable | error with the Bun upgrade path |
+| missing `.archcontext/model/nodes` under `archcontext` | `AC_MODEL_ADOPTION_REQUIRED`; never falls back to the JSON registry |
+| subdirectory or non-`.yaml`/`.yml` entry in the model directory | `AC_PATH_DENIED` |
+| unparseable node YAML | `AC_SCHEMA_INVALID` |
 
-Node-shape failures surface as `ARCHCONTEXT_*` registry diagnostics and make
-`capability-resolver validate` exit `1` with no stdout; missing/empty node/v2
-`name`, `summary`, or `responsibilities` is a structural error and never yields a
-partial registry. Derived registries then go through the same
+A model that archctx rejects also exits `2`. The message keeps the archctx code
+and adds at most five `<entityId> <field> <invariant>` issues, then `+<n> more`.
+A model that archctx accepts but repo-harness rejects (an identity that does not
+match the node id, a null `lspProfile` or a null `verification`) also exits `2`,
+with the message on stderr and no stdout. No case yields a partial registry.
+Derived registries then go through the same
 validation as the JSON registry, so duplicate ids and invalid paths keep their
 existing diagnostic codes. Shared anchors are not duplicates.
 

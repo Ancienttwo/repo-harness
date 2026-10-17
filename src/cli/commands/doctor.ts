@@ -23,7 +23,8 @@ import { runSecurityScan, type SecurityScanReport } from './security';
 import { isOptIn, resolveRepoRoot } from '../hook/runtime';
 import { ROUTES } from '../hook/route-registry';
 import { inspectWorkflowMarker } from '../../core/adoption/minimum-harness-version';
-import { capabilitySourceMode, loadArchcontextAuthority, loadRegistryAuthority, readWorkflowPolicy } from '../../effects/state/resolve-effective-state';
+import { readArchcontextCapabilityAuthority } from '../../effects/capabilities/archcontext-owners';
+import { capabilitySourceMode, loadRegistryAuthority, readWorkflowPolicy } from '../../effects/state/resolve-effective-state';
 import { readText } from '../../effects/state/collect-state-inputs';
 
 const TRUST_STATE_LINE = /^\[hooks\.state\."[^"]+\/\.codex\/hooks\.json:/;
@@ -597,7 +598,7 @@ export function checkSkillProjection(target: DoctorTarget = 'both', env: NodeJS.
 
 /**
  * Loads the repository capability authority with this installed runtime,
- * through the loaders that the hooks use. A model that this runtime cannot
+ * through the selected authority. A model that this runtime cannot
  * parse fails here and not only in every hook. Node files that exist are not
  * proof that they load.
  */
@@ -618,7 +619,7 @@ function checkCapabilityRegistry(cwd: string): DoctorCheckResult {
     const mode = capabilitySourceMode(policy);
     const readSource = (relPath: string) => readText(repoRoot, relPath);
     const resolution = mode === 'archcontext'
-      ? loadArchcontextAuthority(repoRoot, readSource)
+      ? readArchcontextCapabilityAuthority(repoRoot)
       : loadRegistryAuthority(repoRoot, policy, readSource);
     if (resolution.status === 'absent') return { id, describe, status: 'na', detail: 'no capability registry is declared' };
     if (resolution.status === 'invalid') {

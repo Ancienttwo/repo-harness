@@ -1,15 +1,24 @@
 import { describe, expect, setDefaultTimeout, test } from "bun:test";
 import {
+  copyFileSync,
   mkdirSync,
   rmSync,
   writeFileSync
 } from "fs";
 import { join } from "path";
+import { execFileSync } from "child_process";
 
 import { copyHelpers } from "./helpers/helper-script-fixture";
 import { run, tmpWorkspace } from "./helpers/repo-fixture";
 
 setDefaultTimeout(30000);
+
+function commitModel(cwd: string): void {
+  copyFileSync(join(import.meta.dir, '../.archcontext/manifest.yaml'), join(cwd, '.archcontext/manifest.yaml'));
+  execFileSync('git', ['init', '-q'], { cwd });
+  execFileSync('git', ['add', '.archcontext', '.ai/harness/policy.json'], { cwd });
+  execFileSync('git', ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.com', 'commit', '-q', '-m', 'model'], { cwd });
+}
 
 describe("select-agent-context-blocks helper integration", () => {
   test("select-agent-context-blocks should ignore external reference and local runtime dirs", () => {
@@ -46,11 +55,12 @@ describe("select-agent-context-blocks helper integration", () => {
       writeFileSync(join(cwd, ".ai", "context", "capabilities.json"), JSON.stringify({ version: 1, capabilities: [{ prefixes: ["legacy-dir"] }] }));
       writeFileSync(join(cwd, ".archcontext", "model", "nodes", "broken.yaml"), "schemaVersion: [\n");
 
+      commitModel(cwd);
       const res = run("bash", ["scripts/select-agent-context-blocks.sh"], cwd);
 
       expect(res.status).not.toBe(0);
       expect(res.stdout).toBe("");
-      expect(res.stderr).toContain("invalid archcontext node YAML: .archcontext/model/nodes/broken.yaml");
+      expect(res.stderr).toContain("AC_SCHEMA_INVALID");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -104,6 +114,7 @@ describe("select-agent-context-blocks helper integration", () => {
         "",
       ].join("\n"));
 
+      commitModel(cwd);
       const res = run("bash", ["scripts/select-agent-context-blocks.sh"], cwd);
 
       expect(res.status, res.stderr).toBe(0);
