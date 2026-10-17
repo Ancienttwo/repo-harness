@@ -44,11 +44,7 @@ function fixtureState(overrides: Partial<EffectiveState> = {}): EffectiveState {
     next_action: 'continue',
     guidance: null,
     blockers: [],
-    allowed_paths: ['src/fixture.ts'],
-    checks: { path: null, freshness: 'fresh', status: 'passed', reason: null, result_refs: [] },
     authoritative_plan: { path: 'plans/plan-fixture.md', status: 'executing' },
-    contract: { path: 'tasks/contracts/fixture.contract.md', status: 'Active', plan: 'plans/plan-fixture.md' },
-    active_sprint: { path: null, freshness: 'missing' },
     handoff: { path: '.ai/harness/handoff/current.md', freshness: 'fresh' },
     resume: { path: '.ai/harness/handoff/resume.md', freshness: 'fresh' },
     ...overrides,
@@ -324,7 +320,6 @@ describe('SessionStart Effective State authority', () => {
     const nonActionable = fixtureState({
       task_id: null,
       blockers: [],
-      active_sprint: { path: null, freshness: 'missing' },
     });
     const blocked = fixtureState({ task_id: null, blockers: ['contract:missing'] });
     const resolveSession = (state: EffectiveState) =>

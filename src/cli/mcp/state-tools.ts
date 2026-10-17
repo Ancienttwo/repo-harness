@@ -27,18 +27,10 @@ export interface CompactEffectiveState {
   readonly risk_floor: EffectiveStateV1['risk_floor'];
   readonly profile_reasons: EffectiveStateV1['profile_reasons'];
   readonly authoritative_plan: EffectiveStateV1['authoritative_plan'];
-  readonly contract: EffectiveStateV1['contract'];
   readonly blockers: EffectiveStateV1['blockers'];
   readonly stale_sources: EffectiveStateV1['stale_sources'];
   readonly conflicting_sources: EffectiveStateV1['conflicting_sources'];
   readonly next_action: EffectiveStateV1['next_action'];
-  /**
-   * LSC-08: additive parity fields, copied verbatim from the resolved
-   * state. MCP never recomputes readiness or Skill guidance -- it projects
-   * the same authority CLI and the Stop hook already consume (see the
-   * four-adapter parity assertions in `tests/state/adapter-parity.test.ts`).
-   */
-  readonly readiness: EffectiveStateV1['readiness'];
   readonly guidance: EffectiveStateV1['guidance'];
 }
 
@@ -122,12 +114,10 @@ export function projectCompactEffectiveState(state: EffectiveStateV1): CompactEf
     risk_floor: state.risk_floor,
     profile_reasons: state.profile_reasons,
     authoritative_plan: state.authoritative_plan,
-    contract: state.contract,
     blockers: state.blockers,
     stale_sources: state.stale_sources,
     conflicting_sources: state.conflicting_sources,
     next_action: state.next_action,
-    readiness: state.readiness,
     guidance: state.guidance,
   };
 }

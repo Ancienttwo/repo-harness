@@ -7,7 +7,6 @@ import type {
   EffectiveStateRiskInput,
   StateSnapshot,
 } from '../../src/core/state/types';
-import type { OperationReadinessResult } from '../../src/core/workflow/operation-readiness';
 import { getMcpPolicy } from '../../src/cli/mcp/policy';
 import { buildStateToolDefinitions, callStateTool } from '../../src/cli/mcp/state-tools';
 import { callMcpTool, type McpToolContext } from '../../src/cli/mcp/tools';
@@ -18,14 +17,12 @@ import {
 import { stateVersionOwnerPath } from '../../src/effects/state/git-state-version-store';
 import {
   CLI,
-  CONTRACT,
   EFFECTIVE_STATE_SCENARIOS,
   HOOK_ENTRY,
   PLAN,
   ROOT,
   createEffectiveStateFixture,
   effectiveStateCliRiskArgs,
-  replaceContractProfile,
   runStateCli,
   writeFixture,
 } from './effective-state-fixture';
@@ -51,16 +48,11 @@ const MCP_COMPACT_FIELDS = [
   'risk_floor',
   'profile_reasons',
   'authoritative_plan',
-  'contract',
   'blockers',
   'stale_sources',
   'conflicting_sources',
   'next_action',
-  // LSC-08: additive parity fields -- MCP's compact projection now carries
-  // the LSC-06/07 readiness authority and its Skill guidance verbatim, so
-  // this same per-scenario loop (mcp vs. the zero-risk `inspect` authority
-  // below) proves adapter parity for both without a separate assertion.
-  'readiness',
+
   'guidance',
 ] as const satisfies readonly (keyof EffectiveState)[];
 
@@ -76,10 +68,8 @@ const AUTHORITY_FIELDS = [
   // risk-bearing "requested" resolve and the zero-risk "inspect" resolve.
   'authority_revision',
   'subject_revision',
-  'evidence_revision',
   'projection_revision',
   'authoritative_plan',
-  'contract',
   'stale_sources',
   'conflicting_sources',
 ] as const satisfies readonly (keyof EffectiveState)[];
@@ -144,16 +134,7 @@ describe('Effective State adapter authority parity and policy boundaries', () =>
           targetPaths: [],
           operationKind: 'inspect',
         });
-        // High risk includes isolation in the revision; inspect omits that signal.
-        const sharedAuthority = scenario.risk?.explicitOverride === 'high'
-          ? AUTHORITY_FIELDS.filter((field) => !['authority_revision', 'state_revision', 'state_version'].includes(field))
-          : AUTHORITY_FIELDS;
-        expect(fields(requested, sharedAuthority)).toEqual(fields(inspect, sharedAuthority));
-        if (scenario.risk?.explicitOverride === 'high') {
-          expect(requested.authority_revision).not.toBe(inspect.authority_revision);
-          expect(requested.state_revision).not.toBe(inspect.state_revision);
-          expect(inspect.state_version).toBeGreaterThan(requested.state_version);
-        }
+        expect(fields(requested, AUTHORITY_FIELDS)).toEqual(fields(inspect, AUTHORITY_FIELDS));
 
         const hook = runPublicHook(fixture.cwd);
         expect(hook).toEqual(buildStateSnapshot(fixture.cwd, nowMs));
@@ -258,7 +239,7 @@ describe('Effective State adapter authority parity and policy boundaries', () =>
       const afterRaw = await callMcpTool(ctx, 'summarize_repo_harness_state');
       const after = JSON.parse(afterRaw.content[0].text) as Record<string, any>;
       expect(after.authoritative_plan.path).toBe(PLAN);
-      expect(after.contract.path).toBe(CONTRACT);
+      expect(Object.hasOwn(after, 'contract')).toBe(false);
       expect(after.current).toContain('SHOULD_NOT_APPEAR_IN_MCP_STATE');
       expect(after.current_preview.authority).toBe('non-authoritative-projection');
       expect(after.status.profile_authority).toBe('mcp-policy');
@@ -268,74 +249,4 @@ describe('Effective State adapter authority parity and policy boundaries', () =>
     }
   });
 
-  // This fixture forces allowedToStop=allow and readyToShip=block
-  // from the SAME evaluation -- Strict's stop-only requirement
-  // (durable_recovery_state) is satisfied by any on-disk handoff/resume
-  // checkpoint, while its ship-only requirements (fresh_review,
-  // external_acceptance, fresh_checks) stay unmet because the base fixture's
-  // review is stale and no checks/external-acceptance evidence exists. Every
-  // adapter below is compared to the ONE resolved-state/readiness authority,
-  // never to each other in a chain.
-  test('allowed-to-stop with readyToShip=false is reported identically by CLI, MCP, and the Stop hook', async () => {
-    const fixture = createEffectiveStateFixture();
-    try {
-      replaceContractProfile(fixture.cwd, 'high');
-      writeFixture(fixture.cwd, '.ai/harness/handoff/current.md', [
-        '# Handoff',
-        '> **Task ID**: adapter-parity-probe',
-        '- Exact Next Step: resolve outstanding ship evidence',
-        '',
-      ].join('\n'));
-      writeFixture(fixture.cwd, '.ai/harness/handoff/resume.md', [
-        '# Resume',
-        '> **Task ID**: adapter-parity-probe',
-        '',
-      ].join('\n'));
-      writeFixture(fixture.cwd, '.ai/harness/workflow-contract.json', '{}\n');
-      const nowMs = Date.now();
-      const risk: EffectiveStateRiskInput = { explicitOverride: 'high' };
-
-      const authority = resolveEffectiveState(fixture.cwd, nowMs, risk);
-      expect(authority.workflow_profile).toBe('high');
-      expect(authority.blockers).toEqual([]);
-      expect(authority.readiness?.ok).toBe(true);
-      const readiness = authority.readiness as OperationReadinessResult;
-      expect(readiness.allowedToStop).toEqual({ decision: 'allow' });
-      expect(readiness.readyToShip.decision).toBe('block');
-
-      // CLI full JSON.
-      const cliFull = runStateCli(fixture.cwd, ['state', 'resolve', '--json', ...effectiveStateCliRiskArgs(risk)]);
-      expect(cliFull.status).toBe(0);
-      const cliState = JSON.parse(cliFull.stdout) as EffectiveState;
-      expect(cliState.readiness).toEqual(authority.readiness);
-      expect(cliState.guidance).toBe(authority.guidance);
-
-      // CLI --field readiness: a distinct output projection in state.ts,
-      // not merely a re-read of the same --json body.
-      const cliField = runStateCli(fixture.cwd, [
-        'state', 'resolve', '--json', '--field', 'readiness', ...effectiveStateCliRiskArgs(risk),
-      ]);
-      expect(cliField.status).toBe(0);
-      expect(JSON.parse(cliField.stdout)).toEqual(authority.readiness);
-
-      // MCP compact state.
-      const mcp = await runPublicMcp(fixture.cwd);
-      expect(mcp.readiness).toEqual(authority.readiness);
-      expect(mcp.guidance).toBe(authority.guidance);
-
-      // #695: Stop no longer consumes readiness. A blocked ship decision
-      // neither blocks Stop nor prints a readiness line.
-      const hook = spawnSync(process.execPath, [HOOK_ENTRY, 'Stop', '--route', 'default'], {
-        cwd: fixture.cwd,
-        input: JSON.stringify({ stop_hook_active: false, last_assistant_message: '' }),
-        encoding: 'utf-8',
-        env: { ...process.env, HOOK_HOST: 'claude', REPO_HARNESS_WORKFLOW_PROFILE: 'high' },
-      });
-      expect(hook.status).toBe(0);
-      expect(hook.stdout).not.toContain('"decision":"block"');
-      expect(hook.stderr).not.toContain('[ReadinessGate]');
-    } finally {
-      fixture.cleanup();
-    }
-  });
 });

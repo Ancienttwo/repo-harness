@@ -77,23 +77,14 @@ function assertExactHashContract(state: EffectiveState, cwd: string): void {
     plan: state.authoritative_plan
       ? sourceHash(cwd, state.authoritative_plan.path)
       : sha256('missing:plan'),
-    contract: state.authoritative_plan ? sourceHash(cwd, CONTRACT) : sha256('missing:contract'),
     policy: sourceHash(cwd, '.ai/harness/policy.json'),
     capability_registry: sourceHash(cwd, '.ai/context/capabilities.json'),
-    active_sprint_marker: sourceHash(cwd, '.ai/harness/sprint/active-sprint'),
-    active_sprint_file: state.active_sprint.path
-      ? sourceHash(cwd, state.active_sprint.path)
-      : sha256('missing:active-sprint-file'),
     task_identity: sha256(state.task_id ?? 'missing:task-id'),
-    // These characterization fixtures are primary checkouts, so matching
-    // ownership cannot satisfy strict isolation.
-    ...(state.workflow_profile === 'high' ? { isolated_contract_worktree: sha256('false') } : {}),
   });
   expect(state.source_hashes.authority_revision).toBe(expectedAuthorityRevision);
   expect(state.authority_revision).toBe(expectedAuthorityRevision);
   // Execution, assessment, and acceptance facts are an effect observation.
   // They have no shared source file. Their digest still binds the state.
-  expect(state.source_hashes.evidence_revision).toBe(state.evidence_revision);
   expect(state.state_revision).toBe(contentRevision(state.source_hashes));
 }
 

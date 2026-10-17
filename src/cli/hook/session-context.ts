@@ -2,8 +2,8 @@
  * SessionStart context. The handler resolves Effective State once. The state
  * section, or `[HarnessStateUnavailable]`, comes first and always. Every other
  * provider is an independent nullable section with a stable id and the source
- * that holds its full content. The resume and the active sprint get no
- * section: `references` in the state section points to their files.
+ * that holds its full content. The resume has one
+ * pointer in `references`.
  * Providers read the resolved state; they do not parse the plan, the sprint
  * marker or the policy again. A provider that throws becomes one
  * `[SessionContextProviderFailed] <id>` line and does not remove the state
@@ -30,12 +30,8 @@ export function projectEffectiveStateSessionSection(state: EffectiveState): Sess
     next_action: state.next_action,
     guidance: state.guidance,
     blockers: state.blockers,
-    allowed_paths: state.allowed_paths,
-    checks: state.checks,
     references: {
       plan: state.authoritative_plan?.path ?? null,
-      contract: state.contract?.path ?? null,
-      sprint: state.active_sprint.path,
       handoff: state.handoff.path,
       resume: state.resume.path,
     },

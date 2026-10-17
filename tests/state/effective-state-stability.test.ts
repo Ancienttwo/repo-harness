@@ -132,7 +132,7 @@ function waitForBarrier(path: string): void {
 }
 
 describe('Effective State stability contract: authority-only partition (hook-guard-stability)', () => {
-  test('authority comparisons do not repeat evidence capture or hide changed evidence', () => {
+  test('state resolution does not capture retired verification evidence', () => {
     const fixture = createEffectiveStateFixture();
     const previousTrace = process.env.GIT_TRACE2_EVENT;
     try {
@@ -147,23 +147,17 @@ describe('Effective State stability contract: authority-only partition (hook-gua
 
       writeFileSync(trace, '');
       const fresh = resolveEffectiveState(fixture.cwd, nowMs, risk);
-      expect(fresh.checks.status).toBe('passed');
-      expect(fresh.checks.freshness).toBe('fresh');
       // Each exact capture checks two complete virtual trees. The comparison
       // and commit confirmation consume only authority hashes.
-      expect(captureCount()).toBe(2);
+      expect(captureCount()).toBe(0);
 
       writeFileSync(trace, '');
       const readonly = resolveEffectiveStateReadOnly(fixture.cwd, nowMs, risk);
-      expect(readonly.checks).toEqual(fresh.checks);
-      expect(readonly.evidence_revision).toBe(fresh.evidence_revision);
-      expect(captureCount()).toBe(2);
+      expect(captureCount()).toBe(0);
 
       const report = JSON.parse(readFileSync(join(fixture.cwd, '.ai/harness/runs/state-fixture-report.json'), 'utf8'));
       rmSync(join(fixture.cwd, report.results[0].run_file));
       const changed = resolveEffectiveState(fixture.cwd, nowMs, risk);
-      expect(changed.checks.status).toBe('missing');
-      expect(changed.evidence_revision).not.toBe(fresh.evidence_revision);
       expect(changed.authority_revision).toBe(fresh.authority_revision);
     } finally {
       if (previousTrace === undefined) delete process.env.GIT_TRACE2_EVENT;
@@ -218,16 +212,9 @@ describe('Effective State stability contract: authority-only partition (hook-gua
     }
   }, 15_000);
 
-  test('a genuine plan-contract conflict remains diagnosed while ordinary edits continue', () => {
+  test('a retired plan-contract conflict does not block state or ordinary edits', () => {
     const fixture = createEffectiveStateFixture();
     try {
-      // artifact-parsers' planContractRelationshipConflicts shape: the
-      // contract's own `Plan` header disagrees with the actually-active
-      // plan path, so resolveEffectiveState pushes
-      // 'contract_plan_relationship' into conflictingSources, which
-      // projectEffectiveState turns into the hard blocker
-      // 'conflict:contract_plan_relationship'. State keeps the exact blocker;
-      // the edit guard reads no workflow state and allows the edit.
       const current = readFileSync(join(fixture.cwd, CONTRACT), 'utf-8');
       writeFixture(fixture.cwd, CONTRACT, current.replace(
         /^> \*\*Plan\*\*: .*$/m,
@@ -238,7 +225,7 @@ describe('Effective State stability contract: authority-only partition (hook-gua
         targetPaths: ['src/feature.ts'],
         operationKind: 'edit',
       });
-      expect(directResolution.blockers).toContain('conflict:contract_plan_relationship');
+      expect(directResolution.blockers).toEqual([]);
 
       const result = runMutationGuard({
         repoRoot: fixture.cwd,

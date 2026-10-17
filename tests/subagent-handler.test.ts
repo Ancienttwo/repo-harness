@@ -595,7 +595,7 @@ describe('typed subagent hook handlers', () => {
   // asserted against that whole stack, because "exactly once" is a property of the
   // composition, not of any single injection site.
   describe('composed native-child stack owns the execution boundary exactly once', () => {
-    test('active contract + workspace-write child: the boundary appears once, with the contract path', () => {
+    test('active contract + workspace-write child: the boundary appears once, without contract instructions', () => {
       const repoRoot = tempRepo();
       const home = tempDir();
       try {
@@ -606,7 +606,7 @@ describe('typed subagent hook handlers', () => {
         expect(occurrences(stack.composed, BOUNDARY_SENTENCE)).toBe(1);
         expect(occurrences(stack.startContext, BOUNDARY_MARKER)).toBe(1);
         expect(stack.personaInstructions).not.toContain(BOUNDARY_SENTENCE);
-        expect(stack.startContext).toContain(`Read the active repo-harness contract before working: ${contract}.`);
+        expect(stack.startContext).not.toContain('Read the active repo-harness contract');
         expect(stack.startContext).not.toContain('Read-only scope:');
       } finally {
         rmSync(repoRoot, { recursive: true, force: true });
@@ -624,7 +624,7 @@ describe('typed subagent hook handlers', () => {
         expect(occurrences(stack.composed, BOUNDARY_MARKER)).toBe(0);
         expect(occurrences(stack.composed, BOUNDARY_SENTENCE)).toBe(0);
         expect(stack.startContext).toContain('Read-only scope:');
-        expect(stack.startContext).toContain(`Read the active repo-harness contract before working: ${contract}.`);
+        expect(stack.startContext).not.toContain('Read the active repo-harness contract');
       } finally {
         rmSync(repoRoot, { recursive: true, force: true });
         rmSync(home, { recursive: true, force: true });

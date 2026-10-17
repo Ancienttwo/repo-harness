@@ -1,7 +1,7 @@
 /**
  * SubagentStart.context: record the official native role/model observation
  * and give the child its bounded context. The runtime decides which hosts run
- * this route; the handler reads the active contract from Effective State.
+ * this route. The handler reports Effective State failures.
  */
 
 import { createHash, randomBytes } from 'crypto';
@@ -19,7 +19,6 @@ import {
   writeFileSync,
 } from 'fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'path';
-import type { EffectiveState } from '../../core/state/types';
 import type { EffectiveStateResolution, StateInputCollector } from '../../effects/loop/state-input-collector';
 import { withExclusiveDirectoryLock } from '../../effects/locking/exclusive-directory-lock';
 import { resolveBoardSliceBlock } from './board-slice-context';
@@ -65,7 +64,7 @@ export const EXECUTION_BOUNDARY_MARKER = '[repo-harness:execution-boundary/v1]';
  * path. Personas and the delegation advisor deliberately carry none: a child
  * that reads the same authority two or three times reads it as boilerplate.
  * `SubagentStart` is the only injection site that sees the real child start,
- * its scanned `sandbox_mode`, and active contract state at once, so it is the
+ * its scanned `sandbox_mode`, and the current role at once, so it is the
  * only site that can render the clause exactly when it applies. The marker
  * makes composed-stack occurrence counting deterministic.
  */
@@ -76,16 +75,9 @@ const EXECUTION_BOUNDARY_BLOCK = [
   'Report useful out-of-scope findings to the parent. If the Goal requires a missing decision or broader Scope, identify it before proceeding.',
 ].join('\n');
 const READ_ONLY_SCOPE_NOTE = 'Read-only scope: inspect, verify, and report against the parent brief. Do not implement, edit files, or run write commands; hand any required change back to the parent.';
-const ACTIVE_CONTRACT_STATUSES: ReadonlySet<string> = new Set(['active', 'ready', 'executing']);
 const NATIVE_ROLE_ROUTING_STATE_FILE = 'native-role-routing.json';
 const NATIVE_ROLE_ROUTING_LOCK_RELATIVE = `${DELEGATION_EVIDENCE_RELATIVE}/native-role-routing.lock`;
 const MAX_NATIVE_ROLE_OBSERVATIONS = 32;
-
-/** The active task contract path from Effective State, or null. */
-export function activeContractPath(state: EffectiveState): string | null {
-  const contract = state.contract;
-  return contract && ACTIVE_CONTRACT_STATUSES.has((contract.status ?? '').toLowerCase()) ? contract.path : null;
-}
 
 /** Operator text for an Effective State failure; the advisory still renders without a contract. */
 export function effectiveStateDiagnostic(
@@ -429,7 +421,6 @@ export function runSubagentContext(input: SubagentContextInput): HookHandlerResu
   const repoRoot = input.collector.getRepoRoot();
   const now = input.now?.() ?? new Date();
   const resolution = input.collector.getEffectiveState();
-  const activeContract = resolution.ok ? activeContractPath(resolution.state) : null;
 
   const observedRouting = nativeRoleRoutingEvidence(repoRoot, input.payload, input.identity, input.env, now);
   let routing: NativeRoleRouting;
@@ -459,7 +450,6 @@ export function runSubagentContext(input: SubagentContextInput): HookHandlerResu
       ? 'Custom-agent model routing is verified for this child; reasoning-effort routing remains unverified because SubagentStart does not expose it.'
       : 'Do not claim custom-agent model or reasoning-effort routing. Return this routing status to the parent. Continue only within the host-granted role and permissions.',
     '',
-    ...(activeContract ? [`Read the active repo-harness contract before working: ${activeContract}.`] : []),
     'Stay within the assigned role and permission scope.',
     'Do not broaden the task.',
     'Explorer and reviewer roles are read-only unless the parent prompt explicitly assigns a writable worker scope.',

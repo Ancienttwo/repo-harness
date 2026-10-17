@@ -26,7 +26,6 @@ import { describe, expect, test } from 'bun:test';
 import { spawnSync } from 'child_process';
 import { readFileSync, readdirSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
-import { backlogRowStatuses } from '../src/core/state/project-continuation-envelope';
 import { backlogRows, type BacklogRow } from '../src/core/state/sprint-backlog-rows';
 
 const SCRIPT = join(import.meta.dir, '../scripts/sprint-backlog.sh');
@@ -87,7 +86,7 @@ describe('sprint backlog row grammar: bash authority vs TS projection', () => {
       expect(bash.length).toBeGreaterThan(0);
 
       // The status-only consumer stays bound to the same authority.
-      expect(backlogRowStatuses(text)).toEqual(bash.map((row) => row.split('\t')[1] ?? ''));
+      expect(backlogRows(text).map(row => row.status)).toEqual(bash.map((row) => row.split('\t')[1] ?? ''));
     }, 30_000);
   }
 

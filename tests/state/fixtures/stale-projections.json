@@ -17,25 +17,17 @@
     "state_revision": "sha256:<dynamic:state_revision>",
     "authority_revision": "sha256:<dynamic:authority_revision>",
     "subject_revision": "sha256:611ad84ed54754aa0afeb9d13ce4e9a0fdc5bc65321ee5707b54863c6d7dc890",
-    "evidence_revision": "sha256:<dynamic:evidence_revision>",
     "projection_revision": "sha256:<dynamic:projection_revision>",
     "progress_token": "sha256:<dynamic:progress_token>",
     "authoritative_plan": {
       "path": "plans/plan-20260712-2327-effective-fixture.md",
       "status": "executing"
     },
-    "contract": {
-      "path": "tasks/contracts/20260712-2327-effective-fixture.contract.md",
-      "status": "Active",
-      "plan": "plans/plan-20260712-2327-effective-fixture.md"
-    },
-    "task_profile": "code-change",
     "workflow_profile": "routine",
-    "requested_workflow_profile": "routine",
+    "requested_workflow_profile": null,
     "risk_floor": "routine",
     "profile_reasons": [
       "risk-floor:routine:local-change",
-      "explicit-override:equal:routine",
       "capability:registry:absent"
     ],
     "profile_signals": {
@@ -47,18 +39,12 @@
       "crossCapability": false
     },
     "capability_ownership": null,
-    "allowed_paths": [
-      "src/",
-      "tests/effective-state.test.ts"
-    ],
     "next_action": "implement resolver",
     "guidance": "Implement the authorized scope; verify typecheck and affected tests once; record goal/change/verification/risk/rollback in the PR. This is a state snapshot, not a session-wide restriction; re-resolve for the proposed edit and current diff when scope changes. Current edit-time requirements supersede earlier snapshot guidance.",
     "blockers": [],
     "stale_sources": [
-      "active_sprint",
       "current_snapshot",
-      "handoff",
-      "review"
+      "handoff"
     ],
     "conflicting_sources": [],
     "source_hashes": {
@@ -68,38 +54,10 @@
       ".ai/harness/handoff/current.md": "sha256:<dynamic:.ai/harness/handoff/current.md>",
       ".ai/harness/handoff/resume.md": "sha256:<dynamic:.ai/harness/handoff/resume.md>",
       ".ai/harness/policy.json": "sha256:001e056f4ac35ace2e89e20bef71f492ac9a0ac7373cacaeaf1e0fa36ea130b8",
-      ".ai/harness/sprint/active-sprint": "sha256:008921c16af6193798bc0db57b5b72f6ff3c36bf3c125306fc19586a1d8d92f2",
       "plans/plan-20260712-2327-effective-fixture.md": "sha256:b2320675859fb4584b5602730cf3c21388f92b26d360c6fefff820b331395d50",
-      "plans/sprints/missing.sprint.md": "sha256:001e7a60b45bf60478d88925f68251535a112062b1a2c5581498bd0759c02eae",
-      "tasks/contracts/20260712-2327-effective-fixture.contract.md": "sha256:de393bedcbc7440719eacbf5a7c660f7e6eb49b59d6b76a1ac67d32d762f6215",
       "tasks/current.md": "sha256:e16cda27c0a53e5a4f839011c5e47480be01ab0bee30e75576a62bc2732e9d30",
-      "tasks/reviews/20260712-2327-effective-fixture.review.md": "sha256:f41ca543703e6ccb56ee06570274a16eb33ae10d06ff0f52f5d05f492512ed7e",
       "review_subject": "sha256:8d1ea67b10188cb888564a019394712072bc46c65903acacf936b803358466c4",
-      "authority_revision": "sha256:<dynamic:authority_revision>",
-      "evidence_revision": "sha256:<dynamic:evidence_revision>"
-    },
-    "review": {
-      "path": "tasks/reviews/20260712-2327-effective-fixture.review.md",
-      "freshness": "stale",
-      "recommendation": "fail",
-      "recorded_subject_sha256": "pending",
-      "recorded_target_revision": null
-    },
-    "external_acceptance": {
-      "path": null,
-      "freshness": "missing",
-      "status": null
-    },
-    "checks": {
-      "path": null,
-      "freshness": "missing",
-      "status": "missing",
-      "reason": "missing_plan",
-      "result_refs": []
-    },
-    "active_sprint": {
-      "path": "plans/sprints/missing.sprint.md",
-      "freshness": "stale"
+      "authority_revision": "sha256:<dynamic:authority_revision>"
     },
     "worktree": {
       "path": ".ai/harness/active-worktree",
@@ -118,44 +76,6 @@
     "current_snapshot": {
       "path": "tasks/current.md",
       "freshness": "stale"
-    },
-    "readiness": {
-      "ok": true,
-      "allowedToEdit": {
-        "decision": "allow"
-      },
-      "allowedToStop": {
-        "decision": "allow"
-      },
-      "readyToShip": {
-        "decision": "block",
-        "reasons": [
-          "required_evidence_missing"
-        ]
-      },
-      "requirements": {
-        "edit": [
-          {
-            "key": "safe_path",
-            "status": "required",
-            "satisfied": true
-          }
-        ],
-        "stop": [],
-        "ship": [
-          {
-            "key": "subject_bound_targeted_evidence",
-            "status": "required",
-            "satisfied": false
-          },
-          {
-            "key": "candidate_revision_precondition",
-            "status": "required",
-            "satisfied": true
-          }
-        ]
-      },
-      "nextAction": null
     }
   },
   "hook": {
