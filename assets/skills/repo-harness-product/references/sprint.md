@@ -6,7 +6,9 @@ reference. It does not authorize execution.
 
 ## Plan or derive from a PRD
 
-1. Read the problem, users, success criteria, acceptance scenarios and non-goals.
+1. For existing GitHub issues, read their current state, assignees, all comments
+   and linked PRs before ordering work. Respect active claims and handoff notes.
+   Read the problem, users, success criteria, acceptance scenarios and non-goals.
 2. Identify the affected capabilities and the dependency order.
 3. Divide the work into bounded issues. Give each issue a goal, scope,
    acceptance check, dependency and rollback step.
