@@ -44,11 +44,12 @@ function fetchRules(env: NodeJS.ProcessEnv): Map<string, string> {
 
 /** One preflight covers staging and all hosts before the first rule write. */
 export function syncWazaSharedRules(
-  home: string,
+  home: string | null,
   hosts: readonly ('claude' | 'codex')[],
   env: NodeJS.ProcessEnv,
   refresh = false,
 ): RulesResult {
+  if (!home) return { status: 'failed', detail: 'HOME is required' };
   const sourceDir = join(home, '.agents', 'rules');
   if (!refresh && !existsSync(sourceDir)) {
     return { status: 'skipped', detail: `staging rules not found: ${sourceDir}` };

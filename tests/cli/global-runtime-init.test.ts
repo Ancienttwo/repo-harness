@@ -12,7 +12,8 @@ import { ARCHITECTURE_DOCS_RENDERER_VERSION } from 'archctx-contracts';
 import { dependencies, devDependencies } from '../../package.json';
 import { recordInstallOwnership } from '../helpers/install-ownership';
 import wazaRules from '../../assets/waza-shared-rules.json';
-import { managedInstallSurfaceIsCurrent, readInstalledProfile } from '../../src/cli/installer/install-profile';
+import { applyInstallProfile, managedInstallSurfaceIsCurrent, readInstalledProfile } from '../../src/cli/installer/install-profile';
+import { buildManagedHooks } from '../../src/cli/installer/managed-entries';
 
 const ROOT = join(import.meta.dir, '..', '..');
 // The fake managed install follows the repository pins, so an upgrade needs no fixture edit.
@@ -2465,7 +2466,7 @@ esac
 if [[ -f "$WAZA_FIXTURE_UPSTREAM/fail-\${url##*/}" ]]; then echo 'fixture HTTP 503' >&2; exit 22; fi
 if [[ -n "$output" ]]; then cat "$source" > "$output"; else cat "$source"; fi
 `);
-      const env = { ...sanitizedChildEnv(), HOME: home, WAZA_FIXTURE_UPSTREAM: upstream,
+      const env = { ...sanitizedChildEnv(), HOME: home, BUN_INSTALL: join(home, '.bun'), WAZA_FIXTURE_UPSTREAM: upstream,
         PATH: `${fakeBin}:${process.env.PATH ?? ''}`, REPO_HARNESS_BUN_EXECUTABLE: join(fakeBin, 'bun') };
       body({ home, upstream, fakeBin, env, paths, run: (refresh = true) => runGlobalRuntimeSetup({
         sourceRoot: ROOT, cwd: tmp, env, target: 'both', profile: 'minimal',
@@ -2523,6 +2524,30 @@ if [[ -n "$output" ]]; then cat "$source" > "$output"; else cat "$source"; fi
         status: 'failed', detail: expect.stringContaining('an installed profile is required'),
       });
       expect(paths.some((path) => existsSync(path))).toBe(false);
+    });
+  });
+
+  test('minimal profile reconciliation keeps ownership of explicitly requested new rules', () => {
+    withRules(({ home, upstream, env, paths, run }) => {
+      for (const path of paths) rmSync(path);
+      recordInstallOwnership([], env);
+      mkdirSync(join(home, '.codex', 'skills'), { recursive: true });
+      symlinkSync(ROOT, join(home, '.codex', 'skills', 'repo-harness'), 'dir');
+      writeFileSync(join(home, '.codex', 'hooks.json'), JSON.stringify({ hooks: buildManagedHooks('codex', 'minimal') }));
+      mkdirSync(join(home, '.bun', 'bin'), { recursive: true });
+      symlinkSync(CLI, join(home, '.bun', 'bin', 'repo-harness'));
+      applyInstallProfile('minimal', env);
+      expect(run().exitCode).toBe(0);
+      applyInstallProfile('minimal', env);
+      expect(readInstalledProfile(env)!.ownership_manifest.filter(({ path }) => paths.includes(path))).toHaveLength(paths.length);
+      writeFileSync(join(upstream, 'english.md'), '# next English\n');
+      expect(run().exitCode).toBe(0);
+      applyInstallProfile('minimal', env);
+      expect(readFileSync(join(home, '.agents', 'rules', 'english.md'), 'utf-8')).toBe('# next English\n');
+      expect(readFileSync(join(home, '.codex', 'rules', 'english.md'), 'utf-8')).toBe('# next English\n');
+      for (const receipt of readInstalledProfile(env)!.ownership_manifest.filter(({ path }) => paths.includes(path))) {
+        expect(managedInstallSurfaceIsCurrent(receipt)).toBe(true);
+      }
     });
   });
 

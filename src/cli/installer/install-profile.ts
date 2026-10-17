@@ -694,7 +694,8 @@ export function recordRefreshedInstallOwnership(
   for (const path of new Set(createdPaths)) {
     if (!selected.has(path)) throw new Error(`new install ownership path was not written: ${path}`);
     if (ownershipManifest.some((surface) => surface.path === path)) continue;
-    const created = captureOwnedPath(path, componentsForTransactionPath(path));
+    const components = componentsForTransactionPath(path).filter((component) => current.components.includes(component));
+    const created = captureOwnedPath(path, components, { allowEmptyComponents: true });
     if (!created) throw new Error(`cannot record new install ownership: ${path}`);
     ownershipManifest.push(created);
   }
