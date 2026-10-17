@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "archcontext.relation/v1",
+  "id": "relation.evals-checks.imports.mcp-sidecar",
+  "kind": "depends-on",
+  "source": "capability.verification.evals-checks",
+  "target": "capability.runtime-harness.mcp-sidecar",
+  "intent": "Test MCP Sidecar behavior through its source modules."
+}

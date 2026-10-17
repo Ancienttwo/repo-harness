@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "archcontext.relation/v1",
+  "id": "relation.evals-checks.imports.operator",
+  "kind": "depends-on",
+  "source": "capability.verification.evals-checks",
+  "target": "capability.runtime-harness.operator",
+  "intent": "Test Operator Board behavior through its source modules."
+}
