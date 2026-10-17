@@ -31,7 +31,7 @@ export function moduleRepository(options: { section3?: string; budget?: number; 
   // The fixture snapshots every Git file. Setup must not leave detached maintenance writers.
   fixtureGit(root, ['config', 'maintenance.auto', 'false']);
   fixtureGit(root, ['config', 'gc.auto', '0']);
-  fixtureWrite(root, '.archcontext/manifest.yaml', fixtureYaml({ runtime: { contextBudgetBytes: options.budget ?? 12288 } }));
+  fixtureWrite(root, '.archcontext/manifest.yaml', fixtureYaml({ schemaVersion: 'archcontext.manifest/v1', model: { layout: 'split', root: '.archcontext/model' }, runtime: { contextBudgetBytes: options.budget ?? 12288 } }));
   const node = { schemaVersion: 'archcontext.node/v2', id: capabilityId, kind: 'capability', name: 'Test Module', status: 'active', summary: 'Read a committed module.',
     responsibilities: ['Keep committed content separate from worktree observations.'],
     source: { include: [options.include ?? 'src/module/**'], entrypoints: [{ id: 'entrypoint.module.read', path: 'src/module/read.ts', symbols: [{ name: 'read', sinks: [{ id: 'sink.module.core', path: 'src/module/core.ts', symbol: 'project' }] }] }] },
@@ -40,8 +40,6 @@ export function moduleRepository(options: { section3?: string; budget?: number; 
   fixtureWrite(root, '.archcontext/model/nodes/component.module.core.yaml', fixtureYaml({ schemaVersion: 'archcontext.node/v2', id: 'component.module.core', kind: 'component', name: 'Module Core', status: 'active', summary: 'Project facts.', parent: capabilityId }));
   fixtureWrite(root, '.archcontext/model/relations/relation.module.core.yaml', fixtureYaml({ schemaVersion: 'archcontext.relation/v1', id: 'relation.module.core', kind: 'calls', source: capabilityId, target: 'component.module.core', intent: 'Project the module.' }));
   mkdirSync(join(root, '.archcontext/model/flows'), { recursive: true });
-  // Git does not store empty directories. Keep a non-YAML file for the no-flow case.
-  fixtureWrite(root, '.archcontext/model/flows/.keep', '');
   if (options.flow !== false) {
     const step = { id: 'read', from: 'module', to: 'core', label: 'Read facts', evidence: { entrypointId: 'entrypoint.module.read', sourceSymbol: 'read', sinkId: 'sink.module.core' } };
     fixtureWrite(root, MODULE_FLOW, fixtureYaml({ schemaVersion: 'archcontext.flow/v1', id: options.flowId ?? 'flow.module.primary', capabilityId, name: 'Read module facts', applicability: 'required',
@@ -72,4 +70,14 @@ export function projectionCheckResult(commit: string, staleNodeIds: string[],
     freshness: { ok: reasonCodes.length === 0, reasonCodes, staleNodes: staleNodeIds.map(nodeId => ({ nodeId, stampedDigest: digest('6'), currentDigest: digest('7') })) },
   };
   return { ...body, receiptDigest: projectionResultReceiptDigest(body) };
+}
+
+/** The native export uses its own read-only Git boundary. */
+export function isNativeExportGitRead(args: readonly string[]): boolean {
+  if (args.slice(0, 4).join(' ') !== '--no-pager --no-replace-objects -c core.fsmonitor=false') return false;
+  const tail = args.slice(4);
+  if (tail[0] === 'rev-parse') return tail.length === 2 && tail[1] === '--show-toplevel'
+    || tail.length === 4 && tail[1] === '--verify' && tail[2] === '--end-of-options' && /^(?:[0-9a-f]{40}|[0-9a-f]{64})\^\{(?:commit|tree)\}$/.test(tail[3]);
+  if (tail[0] === 'ls-tree') return tail.length === 5 && tail.slice(1, 4).join(' ') === '-r -z -t' && /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(tail[4]);
+  return tail.length === 2 && tail[0] === 'cat-file' && ['--batch', '--batch-check'].includes(tail[1]);
 }

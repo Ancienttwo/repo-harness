@@ -1,13 +1,11 @@
 import { execFileSync } from 'child_process';
 import { lstatSync, readFileSync, readdirSync, realpathSync } from 'fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'path';
-import { readCommittedArchcontextNodes } from '../architecture/model-reader';
-import { validateJsonSchema, type Json } from 'archctx-contracts';
-import architectureNodeSchema from 'archctx-contracts/schemas/repo/architecture-node.schema.json';
+import { readCommittedNativeContext } from '../architecture/model-reader';
+import type { NativeContextExportV1 } from 'archctx-contracts';
 
 import {
-  capabilityRegistryFromArchcontextNodes,
-  type ArchcontextNodeFile,
+  capabilityRegistryFromNativeContext,
   type Capability,
   type CapabilityRegistry,
 } from '../../core/capabilities/registry';
@@ -99,22 +97,23 @@ function resolveTrackedFile(repoRoot: string, repoPath: string, trackedPaths: Re
  * The capability revision binds the committed HEAD node, the same snapshot the
  * architecture reader shows. An uncommitted node edit changes no revision.
  */
-function readArchcontextNodes(repoRoot: string): readonly ArchcontextNodeFile[] {
+function readNativeContext(repoRoot: string): NativeContextExportV1 {
   try {
-    return readCommittedArchcontextNodes(repoRoot).nodes;
+    return readCommittedNativeContext(repoRoot).context;
   } catch (error) {
     return invalid(`cannot read committed ${ARCHCONTEXT_NODE_ROOT} at HEAD: ${error instanceof Error ? error.message : String(error)}`, error);
   }
 }
 
 interface EngineerCapabilityAuthority {
-  readonly nodes: readonly ArchcontextNodeFile[];
+  readonly nodes: NativeContextExportV1['model']['nodes'];
   readonly registry: CapabilityRegistry;
 }
 
 function loadCapabilityAuthority(repoRoot: string): EngineerCapabilityAuthority {
-  const nodes = readArchcontextNodes(repoRoot);
-  const resolution = capabilityRegistryFromArchcontextNodes(nodes, { repoRoot });
+  const context = readNativeContext(repoRoot);
+  const nodes = context.model.nodes;
+  const resolution = capabilityRegistryFromNativeContext(context, { repoRoot });
   if (resolution.status !== 'valid') {
     invalid(`ArchContext capability registry is invalid: ${resolution.diagnostics.map((item) => item.message).join('; ')}`);
   }
@@ -130,20 +129,9 @@ function resolveCapabilityFromAuthority(authority: EngineerCapabilityAuthority, 
   const registryId = `${match[1]}-${match[2]}`;
   const capability = authority.registry.capabilities.find((candidate) => candidate.id === registryId);
   if (!capability) invalid(`capability is not active or does not exist: ${capabilityId}`);
-  const matchingNodes = authority.nodes.filter(({ value }) => Boolean(
-    value
-    && typeof value === 'object'
-    && !Array.isArray(value)
-    && (value as Record<string, unknown>).id === capabilityId
-    && (value as Record<string, unknown>).kind === 'capability'
-    && (value as Record<string, unknown>).status === 'active',
-  ));
+  const matchingNodes = authority.nodes.filter(node => node.id === capabilityId && node.kind === 'capability' && node.status === 'active');
   if (matchingNodes.length !== 1) invalid(`expected exactly one canonical ArchContext node for ${capabilityId}`);
-  const validation = validateJsonSchema(architectureNodeSchema, matchingNodes[0].value as Json);
-  if (!validation.valid) {
-    invalid(`canonical ArchContext node is invalid: ${validation.issues.map((issue) => `${issue.path} ${issue.message}`).join('; ')}`);
-  }
-  const canonical = canonicalEngineerJson(matchingNodes[0].value);
+  const canonical = canonicalEngineerJson(matchingNodes[0]);
   return Object.freeze({ capability: Object.freeze({ ...capability }), capability_revision: engineerSha256(canonical) });
 }
 

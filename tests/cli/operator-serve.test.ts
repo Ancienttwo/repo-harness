@@ -8,7 +8,7 @@ import { projectFleetBoardSnapshot } from '../../src/core/fleet/board';
 import type { OperatorRepositorySnapshotV1 } from '../../src/core/operator/repository-snapshot';
 import { repoHarnessRegisteredReposPath, repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
 import { OperatorRepositoryError, readOperatorRepositorySnapshot } from '../../src/effects/operator/repository-snapshot';
-import { MODULE_ID, MODULE_DOC, MODULE_NODE, moduleRepository, fixtureWrite, fixtureCommit, fixtureGit } from '../helpers/module-repository';
+import { MODULE_ID, MODULE_DOC, MODULE_NODE, moduleRepository, fixtureYaml, fixtureWrite, fixtureCommit, fixtureGit, isNativeExportGitRead } from '../helpers/module-repository';
 import { createHash } from 'node:crypto';
 import { chmodSync, watch, lstatSync } from 'node:fs';
 import { spyOn } from 'bun:test';
@@ -1233,12 +1233,21 @@ function architectureGit(scratch: string, slow = false) {
   return { log, env: { PATH: scratch + ':' + process.env.PATH } };
 }
 function architectureArgv(log: string) {
-  return existsSync(log) ? readFileSync(log, 'utf8').trim().split('\n').map(line => JSON.parse(line) as { args: string[]; out?: string; gitEnv?: string[] }) : [];
+  return existsSync(log) ? readFileSync(log, 'utf8').trim().split('\n').map(line => JSON.parse(line) as { args: string[]; out?: string; gitEnv?: Array<string | null> }) : [];
 }
 function assertArchitectureArgv(records: ReturnType<typeof architectureArgv>): void {
   expect(records.length).toBeGreaterThan(0);
   const resolved = new Set<string>();
   for (const { args, out, gitEnv } of records) {
+    if (args[0] === '--no-pager') {
+      expect(isNativeExportGitRead(args)).toBe(true);
+      if (out === undefined) expect(gitEnv).toEqual([null, '1']);
+      if (out && args[4] === 'rev-parse' && args[5] === '--verify') {
+        expect(out.trim()).toMatch(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/); resolved.add(out.trim());
+      }
+      if (args[4] === 'ls-tree') expect(resolved.has(args[8])).toBe(true);
+      continue;
+    }
     if (out === undefined) expect(gitEnv).toEqual(['1', '1']);
     expect(args.slice(0, 5)).toEqual(['--no-optional-locks', '-c', 'core.fsmonitor=false', '-c', 'diff.submodule=short']);
     const tail = args.slice(5);
@@ -1384,7 +1393,7 @@ test('architecture public outputs hide secrets and path escape never reads an ou
   const secrets = ['sk-' + 'a'.repeat(32), 'https://hooks.slack.com/services/TFAKE/BFAKE/secret', 'https://user:pass@host.invalid/db', 'https://host.invalid/endpoint?token=fake', '/Users/fake/private-file'];
   const root = realpathSync(moduleRepository({ section3: secrets.join('\n') })), registry = registryHome([{ path: root, accessMode: 'read_only' }]);
   const node = Bun.YAML.parse(readFileSync(join(root, MODULE_NODE), 'utf8')) as Record<string, unknown>;
-  node.name = secrets[0]; node.summary = secrets.join(' '); fixtureWrite(root, MODULE_NODE, Bun.YAML.stringify(node)); fixtureCommit(root);
+  node.name = secrets[0]; node.summary = secrets.join(' '); fixtureWrite(root, MODULE_NODE, fixtureYaml(node)); fixtureCommit(root);
   const server = await startOperatorServer({ port: 0, env: { ...process.env, ...registry.env } });
   const path = `/api/v1/repositories/${registry.ids[0]}/architecture/modules`;
   try {

@@ -62,7 +62,8 @@ function fixture(adapter: 'herdr-cli-agent' = 'herdr-cli-agent'): string {
   const repoRoot = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-r1-runtime-'))); roots.push(repoRoot);
   execFileSync('git', ['init', '-q'], { cwd: repoRoot }); execFileSync('git', ['config', 'user.email', 'tests@example.invalid'], { cwd: repoRoot }); execFileSync('git', ['config', 'user.name', 'Tests'], { cwd: repoRoot });
   mkdirSync(join(repoRoot, '.archcontext/model'), { recursive: true }); mkdirSync(join(repoRoot, 'agents'), { recursive: true }); mkdirSync(join(repoRoot, '.ai/harness'), { recursive: true });
-  cpSync(join(sourceRoot, '.archcontext/model/nodes'), join(repoRoot, '.archcontext/model/nodes'), { recursive: true }); cpSync(join(sourceRoot, 'agents/engineers'), join(repoRoot, 'agents/engineers'), { recursive: true });
+  cpSync(join(sourceRoot, '.archcontext/model/nodes'), join(repoRoot, '.archcontext/model/nodes'), { recursive: true });
+  cpSync(join(sourceRoot, '.archcontext/manifest.yaml'), join(repoRoot, '.archcontext/manifest.yaml')); cpSync(join(sourceRoot, 'agents/engineers'), join(repoRoot, 'agents/engineers'), { recursive: true });
   writeFileSync(join(repoRoot, '.ai/harness/policy.json'), `${JSON.stringify({ agent_runtime: { mode: 'active', adapters: { 'herdr-cli-agent': { enabled: true } } } })}\n`);
   execFileSync('git', ['add', '.'], { cwd: repoRoot }); execFileSync('git', ['commit', '-qm', 'fixture'], { cwd: repoRoot });
   bind(repoRoot, adapter, bindingOne); return repoRoot;

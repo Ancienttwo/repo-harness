@@ -543,6 +543,7 @@ INSTALLED_ROOT="$APP_DIR/node_modules/$PACKAGE_NAME"
 mkdir -p "$INSTALLED_ROOT/tests/cli" "$INSTALLED_ROOT/.archcontext/model"
 cp "$ROOT/tests/cli/mcp-http.test.ts" "$INSTALLED_ROOT/tests/cli/mcp-http.test.ts"
 cp -R "$ROOT/.archcontext/model/nodes" "$INSTALLED_ROOT/.archcontext/model/nodes"
+cp "$ROOT/.archcontext/manifest.yaml" "$INSTALLED_ROOT/.archcontext/manifest.yaml"
 source "$ROOT/scripts/lib/ci-run-tests.sh"
 (cd "$INSTALLED_ROOT" && BUN_TEST_ISOLATE_FILES=0 run_bun_tests tests/cli/mcp-http.test.ts --test-name-pattern 'engineer OAuth E2E')
 

@@ -1,4 +1,4 @@
-import { MODEL_NODE_KINDS, type ModuleIndexV1, type ModuleDetailV1 } from '../architecture/module-view';
+import { isGroupNode, type ModuleIndexV1, type ModuleDetailV1 } from '../architecture/module-view';
 import type { ModuleReviewPromptV1 } from '../review/module-review-prompt';
 
 export const ARCHITECTURE_CAPABILITY_ID = /^capability\.[a-z0-9-]+(\.[a-z0-9-]+)+$/;
@@ -8,9 +8,9 @@ export const OPERATOR_ARCHITECTURE_MODULE_ROUTE = /^\/api\/v1\/repositories\/([A
 export const OPERATOR_ARCHITECTURE_REVIEW_PROMPT_ROUTE = /^\/api\/v1\/repositories\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/architecture\/modules\/(capability\.[a-z0-9-]+(?:\.[a-z0-9-]+)+)\/review-prompt$/u;
 
 export const ARCHITECTURE_FAILURES = ['repository_not_found', 'capability_not_found', 'commit_not_found', 'invalid_request', 'unavailable', 'timeout',
-  'model_invalid', 'model_missing', 'path_escape', 'secret_detected', 'worktree_changed_during_read', 'shard_out_of_range', 'budget_too_small', 'context_budget_invalid', 'diff_refs_required', 'dirty_path_invalid', 'git_path_encoding_invalid', 'git_read_failed',
-  'model_duplicate_id', 'model_flow_target_invalid', 'model_parent_invalid', 'model_relation_target_invalid', 'model_validation_unavailable', 'path_invalid',
-  'revision_invalid', 'source_include_invalid', 'source_missing', 'tree_path_invalid', 'yaml_invalid',
+  'model_invalid', 'model_missing', 'path_escape', 'secret_detected', 'worktree_changed_during_read', 'shard_out_of_range', 'budget_too_small', 'diff_refs_required', 'dirty_path_invalid', 'git_path_encoding_invalid', 'git_read_failed',
+  'model_relation_target_invalid', 'path_invalid',
+  'revision_invalid', 'source_missing', 'tree_path_invalid',
   'capability_uncommitted', 'diff_owner_resolution_failed'] as const;
 
 type Check = (value: unknown) => boolean;
@@ -41,7 +41,7 @@ const flow: Check = value => object({ id: text, capabilityId: capability, name: 
   || object({ id: text, capabilityId: capability, name: text, applicability: one('required'),
     participants: list(object({ id: text, nodeId: text })), steps: list(step),
     outcomes: list(object({ id: text, kind: one('success', 'error'), label: text, steps: list(step), terminal: object({ participant: text, label: text }) })) })(value);
-const nodeKind = one(...MODEL_NODE_KINDS);
+const nodeKind: Check = value => typeof value === 'string' && value.length > 0 && value !== 'group';
 const footprint = object({ include: list(text), exclude: list(text) });
 const graphNode: Check = value => object({ id: text, kind: nodeKind, name: text, role: one('center', 'child', 'caller', 'callee') })(value)
   || object({ id: text, kind: one('group'), role: one('caller', 'callee'), count: positive, members: list(object({ id: text, name: text })) })(value);
@@ -70,7 +70,7 @@ export function decodeArchitectureModuleDetail(value: unknown): ModuleDetailV1 {
   const ids = new Set(result.graph.nodes.map(node => node.id));
   if (result.graph.center !== result.module.id || !ids.has(result.graph.center)
     || ids.size !== result.graph.nodes.length || result.graph.edges.some(edge => !ids.has(edge.source) || !ids.has(edge.target))
-    || result.graph.nodes.some(node => node.kind === 'group' && node.count !== node.members.length)) throw new Error('architecture_module_detail_invalid');
+    || result.graph.nodes.some(node => isGroupNode(node) && node.count !== node.members.length)) throw new Error('architecture_module_detail_invalid');
   return result;
 }
 export function decodeArchitectureReviewPrompt(value: unknown): ModuleReviewPromptV1 {

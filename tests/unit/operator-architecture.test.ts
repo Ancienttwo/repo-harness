@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { ArchitectureModelReader } from '../../src/effects/architecture/model-reader';
 import { decodeArchitectureModuleIndex, decodeArchitectureModuleDetail, decodeArchitectureReviewPrompt } from '../../src/core/operator/architecture';
 import { parseArchitectureRequest } from '../../src/core/operator/architecture';
-import { MODULE_ID, MODULE_FLOW, moduleRepository, fixtureWrite, fixtureCommit } from '../helpers/module-repository';
+import { MODULE_ID, MODULE_FLOW, moduleRepository, fixtureYaml, fixtureWrite, fixtureCommit } from '../helpers/module-repository';
 import { rmSync } from 'node:fs';
 
 const reader = new ArchitectureModelReader(import.meta.dir + '/../..');
@@ -83,7 +83,7 @@ test('decodes both flow branches, linked documents and dirty content from commit
     const step = (required.flows[0] as Extract<typeof required.flows[number], { applicability: 'required' }>).steps[0] as Record<string, unknown>;
     expect(() => decodeArchitectureModuleDetail({ ...required, flows: [{ ...required.flows[0], steps: [{ ...step, evidence: { private: 'leak' } }] }] })).toThrow('architecture_module_detail_invalid');
     const flow = { schemaVersion: 'archcontext.flow/v1', id: 'flow.module.primary', capabilityId: MODULE_ID, name: 'No external interaction', applicability: 'not-applicable', rationale: 'This module has no external calls.' };
-    fixtureWrite(root, MODULE_FLOW, Bun.YAML.stringify(flow)); fixtureCommit(root);
+    fixtureWrite(root, MODULE_FLOW, fixtureYaml(flow)); fixtureCommit(root);
     source = new ArchitectureModelReader(root);
     const excluded = source.detail(MODULE_ID);
     expect(decodeArchitectureModuleDetail(excluded).flows[0].applicability).toBe('not-applicable');
@@ -105,4 +105,12 @@ test('URL credential detection keeps normal query names and empty values safe', 
     expect(containsSecret('https://example.invalid/?' + query)).toBe(false);
   }
   expect(containsSecret('tokens: null')).toBe(false);
+});
+
+
+test('accepts new model node kinds and reserves group for aggregate nodes', () => {
+  const detail = reader.detail(id);
+  const withKind = (kind: unknown) => ({ ...detail, graph: { ...detail.graph, nodes: detail.graph.nodes.map(node => node.id === id ? { ...node, kind } : node) } });
+  expect(decodeArchitectureModuleDetail(withKind('future-node-kind')).graph.nodes.find(node => node.id === id)?.kind).toBe('future-node-kind');
+  for (const kind of ['', 'group', null, 7]) expect(() => decodeArchitectureModuleDetail(withKind(kind))).toThrow('architecture_module_detail_invalid');
 });

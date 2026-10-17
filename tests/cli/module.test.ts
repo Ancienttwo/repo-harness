@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { sha256 } from '../../src/core/review/module-review-prompt';
-import { MODULE_DOC, MODULE_ID, fixtureCommit, fixtureGit, fixtureWrite, moduleRepository, projectionCheckResult } from '../helpers/module-repository';
+import { MODULE_DOC, MODULE_ID, fixtureCommit, fixtureGit, fixtureWrite, isNativeExportGitRead, moduleRepository, projectionCheckResult } from '../helpers/module-repository';
 
 const cli = new URL('../../src/cli/index.ts', import.meta.url).pathname;
 const roots: string[] = [];
@@ -93,6 +93,7 @@ test('real git argv stay within the read whitelist and concurrent content change
   const calls = readFileSync(log, 'utf8').trim().split('\n').map(line => JSON.parse(line) as string[]);
   expect(calls.length).toBeGreaterThan(0);
   for (const call of calls) {
+    if (call[0] === '--no-pager') { expect(isNativeExportGitRead(call)).toBe(true); continue; }
     expect(call.slice(0, 5)).toEqual(['--no-optional-locks', '-c', 'core.fsmonitor=false', '-c', 'diff.submodule=short']);
     const args = [call[0], ...call.slice(5)];
     switch (args[1]) {
@@ -110,7 +111,7 @@ test('real git argv stay within the read whitelist and concurrent content change
   }
 });
 
-test('one reader construction lists the tree once and reads every blob in one batch', () => {
+test('one CommitSnapshot lists its tree once and batches the document index beside the native export', () => {
   const root = repo();
   const scratch = join(root, '.test-git'); mkdirSync(scratch);
   const realGit = spawnSync('which', ['git'], { encoding: 'utf8' }).stdout.trim();
@@ -119,7 +120,14 @@ test('one reader construction lists the tree once and reads every blob in one ba
   const log = join(scratch, 'argv.log');
   const result = run(root, ['list', '--json'], { ...process.env, PATH: `${scratch}:${process.env.PATH}`, ARGV_LOG: log });
   expect(result.status).toBe(0);
-  const calls = readFileSync(log, 'utf8').trim().split('\n').map(line => line.split(' ').slice(5).join(' '));
+  const readCalls = () => {
+    const all = readFileSync(log, 'utf8').trim().split('\n').map(line => line.split(' '));
+    const native = all.filter(args => args[0] === '--no-pager');
+    expect(native.length).toBeGreaterThan(0);
+    for (const args of native) expect(isNativeExportGitRead(args)).toBe(true);
+    return all.filter(args => args[0] !== '--no-pager').map(args => args.slice(5).join(' '));
+  };
+  const calls = readCalls();
   // rev-parse --show-toplevel, rev-parse HEAD, one ls-tree and one cat-file --batch.
   expect(calls).toHaveLength(4);
   expect(calls.filter(call => call.startsWith('ls-tree '))).toHaveLength(1);
@@ -129,7 +137,7 @@ test('one reader construction lists the tree once and reads every blob in one ba
   fixtureWrite(root, '.archcontext/model/nodes/capability.test.module.yaml', 'not: [valid\n');
   const dirty = run(root, ['list', '--json'], { ...process.env, PATH: `${scratch}:${process.env.PATH}`, ARGV_LOG: log });
   expect(dirty.status).toBe(0); expect(JSON.parse(dirty.stdout).modules[0].id).toBe(MODULE_ID);
-  expect(readFileSync(log, 'utf8').trim().split('\n')).toHaveLength(4);
+  expect(readCalls()).toHaveLength(4);
 });
 
 test('a saved projection check sets generated_summary and a saved anchors report adds stale citations', () => {

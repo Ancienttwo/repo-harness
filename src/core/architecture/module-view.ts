@@ -1,9 +1,7 @@
 import type { Json } from 'archctx-contracts';
 import { ModuleReadError } from '../review/module-review-prompt';
 
-/** The `kind` enum of archcontext.node/v2. A test checks it against the published schema. */
-export const MODEL_NODE_KINDS = ['capability', 'module', 'component', 'interface', 'event', 'datastore', 'external-system', 'deployment'] as const;
-export type ModelNodeKind = typeof MODEL_NODE_KINDS[number];
+export type ModelNodeKind = string;
 
 export interface ModuleState {
   model_valid: 'valid' | 'invalid' | 'unknown';
@@ -30,6 +28,8 @@ export type ModelFlow = { id: string; capabilityId: string; name: string } & (
 type GraphRole = 'center' | 'child' | 'caller' | 'callee';
 export type GraphNode = { id: string; kind: ModelNodeKind; name: string; role: GraphRole }
   | { id: string; kind: 'group'; role: 'caller' | 'callee'; count: number; members: { id: string; name: string }[] };
+export type GroupGraphNode = Extract<GraphNode, { kind: 'group' }>;
+export function isGroupNode(node: GraphNode): node is GroupGraphNode { return node.kind === 'group'; }
 /** ArchContext reads every relation from source to target. */
 export interface ModuleGraph {
   center: string;
@@ -75,18 +75,6 @@ export function generatedSummaryState(freshness: GeneratedSummaryFreshness | nul
   if (freshness.staleNodeIds.has(id)) return 'stale';
   return freshness.complete ? 'fresh' : 'unknown';
 }
-
-function markdownSection(text: string | null, heading: RegExp): string | null {
-  if (text === null) return null;
-  const lines = text.split(/\r?\n/);
-  const start = lines.findIndex(line => heading.test(line));
-  if (start < 0) return null;
-  const end = lines.findIndex((line, index) => index > start && /^## /.test(line));
-  const body = lines.slice(start + 1, end < 0 ? undefined : end).join('\n').trim();
-  return body || null;
-}
-export function section3FromMarkdown(text: string | null): string | null { return markdownSection(text, /^## 3\./); }
-export function backlogFromMarkdown(text: string | null): string | null { return markdownSection(text, /^## Optimization Backlog\s*$/); }
 
 function footprint(node: ModelNode): SourceFootprint {
   return { include: node.source?.include ?? [], exclude: node.source?.exclude ?? [] };

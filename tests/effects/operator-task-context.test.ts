@@ -163,6 +163,7 @@ function graphFixture() {
   const hash = (s:string) => `sha256:${createHash('sha256').update(s).digest('hex')}`;
   put(join(f.root, f.sprint), f.sprintText.replace('| [ ] |', '| [x] |') + `| 2 | ${secondId} | [ ] | Dependent task | contract | verified dependency | |\n`);
   put(join(f.root, 'src/context.ts'), 'export {};\n');
+  put(join(f.root, '.archcontext/manifest.yaml'), JSON.stringify({schemaVersion:'archcontext.manifest/v1',model:{layout:'split',root:'.archcontext/model'},runtime:{contextBudgetBytes:12288}}));
   put(join(f.root, '.archcontext/model/nodes/context.yaml'), JSON.stringify({schemaVersion:'archcontext.node/v2',id:capability,kind:'capability',name:'Context',status:'active',summary:'Planning fixture',responsibilities:['Own context'],source:{include:['src/**']},extensions:{contractFiles:{agents:'AGENTS.md',claude:'CLAUDE.md'},lspProfile:'typescript-lsp',verification:[]}}));
   put(join(f.root, '.ai/harness/policy.json'), '{}');
   put(join(f.root, 'plans/policy-module.json'), policy);

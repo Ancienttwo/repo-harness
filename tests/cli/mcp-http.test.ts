@@ -1345,6 +1345,7 @@ describe('mcp http transport', () => {
       mkdirSync(join(repoRoot, '.archcontext/model'), { recursive: true });
       mkdirSync(join(repoRoot, 'agents'), { recursive: true });
       cpSync(join(process.cwd(), '.archcontext/model/nodes'), join(repoRoot, '.archcontext/model/nodes'), { recursive: true });
+  cpSync(join(process.cwd(), '.archcontext/manifest.yaml'), join(repoRoot, '.archcontext/manifest.yaml'));
       cpSync(join(process.cwd(), 'agents/engineers'), join(repoRoot, 'agents/engineers'), { recursive: true });
       runGit('add', 'agents', '.archcontext');
       runGit('commit', '-m', 'Engineer profile fixture');

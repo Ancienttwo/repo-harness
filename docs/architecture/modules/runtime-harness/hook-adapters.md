@@ -187,7 +187,7 @@ sequenceDiagram
 
 ### 3.3 组件拆分（2026-10-11）
 
-数据来源：`archctx refactor scan --json`（archctx 0.7.0）。footprint 写在各 component 节点的 `source.include` 里。组件 footprint 只能用精确文件或 `dir/**`：`src/effects/architecture/model-reader.ts:85-89` 对每个节点的 include 都做前缀翻译，中间带 `*` 的 glob 会让 model reader 报 `source_include_invalid`。
+数据来源：`archctx refactor scan --json`（archctx 0.7.0）。footprint 写在各 component 节点的 `source.include` 里。archctx 校验 footprint。model reader 从 `archctx export native` 读模型，不再自己翻译 component 的 include（#739）。
 
 | 组件 | footprint 摘要 | 文件 / 行 | 职责 |
 | --- | --- | --- | --- |

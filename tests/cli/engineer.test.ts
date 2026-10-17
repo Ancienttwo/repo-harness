@@ -30,6 +30,7 @@ function fixture(): string {
   mkdirSync(join(root, 'agents'), { recursive: true });
   mkdirSync(join(root, '.ai/harness'), { recursive: true });
   cpSync(join(sourceRoot, '.archcontext/model/nodes'), join(root, '.archcontext/model/nodes'), { recursive: true });
+  cpSync(join(sourceRoot, '.archcontext/manifest.yaml'), join(root, '.archcontext/manifest.yaml'));
   cpSync(join(sourceRoot, 'agents/engineers'), join(root, 'agents/engineers'), { recursive: true });
   writeFileSync(join(root, '.ai/harness/policy.json'), JSON.stringify({
     agent_runtime: { mode: 'active', adapters: { 'herdr-cli-agent': { enabled: true } } },
@@ -70,6 +71,7 @@ function graphFixture(tasks: readonly GraphFixtureTask[] = DEFAULT_GRAPH_TASKS):
   mkdirSync(join(root, 'plans/rollback'), { recursive: true });
   mkdirSync(join(root, 'tasks'), { recursive: true });
   cpSync(join(sourceRoot, '.archcontext/model/nodes'), join(root, '.archcontext/model/nodes'), { recursive: true });
+  cpSync(join(sourceRoot, '.archcontext/manifest.yaml'), join(root, '.archcontext/manifest.yaml'));
   cpSync(join(sourceRoot, 'agents/engineers'), join(root, 'agents/engineers'), { recursive: true });
   const policy = '{"policy":1}\n';
   const rollback = (workPackageId: string) => `{"rollback":"${workPackageId}"}\n`;
@@ -502,13 +504,13 @@ describe('repo-harness engineer CLI', () => {
     expect(prepared.exitCode, prepared.stderr).toBe(0);
     const observation = JSON.parse(prepared.stdout);
     expect(observation.offers.offers).toHaveLength(1);
-    const offer = observation.offers.offers[0];
-    const assertion = Object.fromEntries([
+    const assertionOf = (offer: Record<string, unknown>) => Object.fromEntries([
       'offer_revision', 'work_package_id', 'work_package_revision', 'work_graph_revision',
       'task_id', 'task_revision', 'dependency_revision', 'concurrency_revision',
       'binding_id', 'binding_generation', 'engineer_contract_revision',
       'fleet_offer_revision', 'authorization_revision',
     ].map(key => [key, offer[key]]));
+    let assertion = assertionOf(observation.offers.offers[0]);
     const assertionFile = join(root, 'selected-assertion.json');
     writeFileSync(assertionFile, JSON.stringify(assertion));
     const args = [
@@ -557,6 +559,14 @@ describe('repo-harness engineer CLI', () => {
       expect(invalidInput.exitCode).toBe(1);
       expect(JSON.parse(invalidInput.stderr)).toMatchObject({ ok: false, error: 'invalid_argument' });
     }
+    // The refusal checks above can outlast the 30 s observation window on a slow
+    // runner. The steps below need an admissible observation, so take a new one.
+    const fresh = run(root, ['engineer', 'prepare', '--authorization-id', authorizationId, '--json']);
+    expect(fresh.exitCode, fresh.stderr).toBe(0);
+    const freshObservation = JSON.parse(fresh.stdout);
+    expect(freshObservation.offers.offers).toHaveLength(1);
+    args[args.indexOf('--observation-ref') + 1] = freshObservation.observation_ref;
+    assertion = assertionOf(freshObservation.offers.offers[0]);
     writeFileSync(assertionFile, JSON.stringify({ ...assertion, work_package_id: 'wp-absent' }));
     const nonmatchingArgs = [...args];
     nonmatchingArgs[nonmatchingArgs.indexOf('--idempotency-key') + 1] = 'nonmatching-key';
