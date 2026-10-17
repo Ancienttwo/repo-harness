@@ -334,7 +334,7 @@ process.exit(child.status ?? 1);
     } finally { rmSync(root, { recursive: true, force: true }); }
   }, 60_000);
 
-  test('Codex UserPromptSubmit.inbox writes its envelope unchanged', () => {
+  test('Codex UserPromptSubmit.inbox stays installed and delivers no retired task messages', () => {
     const root = owedFixture();
     try {
       const sprintPath = 'plans/sprints/inbox.sprint.md';
@@ -372,11 +372,8 @@ process.exit(child.status ?? 1);
 
       const inbox = host(root, 'codex', 'UserPromptSubmit', 'inbox', { prompt: 'continue' });
       expect(inbox.status).toBe(0);
-      const inboxContext = context(inbox.stdout, 'UserPromptSubmit');
-      // The handler's own envelope: the bounded untrusted block, not a second wrapper.
-      expect(inboxContext.startsWith('[TaskInboxUntrustedPeerMessages]')).toBe(true);
-      expect(inboxContext).toContain('peer body for the owner');
-      expect(inboxContext).not.toContain('hookSpecificOutput');
+      expect(inbox.stdout).toBe('');
+      expect(inbox.stderr).toBe('');
     } finally { rmSync(root, { recursive: true, force: true }); }
   }, 60_000);
 

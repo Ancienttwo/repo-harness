@@ -19,7 +19,6 @@ import { currentGitBranch, isRepoHarnessAdopted, resolveMcpRepoRoot } from './re
 import { redactMcpText } from './redaction';
 import { buildStateToolDefinitions, callStateTool, isStateTool } from './state-tools';
 import { buildFleetToolDefinitions, callFleetTool, fleetToolArgumentError, isFleetTool } from './fleet-tools';
-import { buildEngineerToolDefinitions, callEngineerTool, isEngineerTool } from './engineer-tools';
 import type { McpPolicy } from './types';
 import type { WorkspaceManager } from './workspaces';
 
@@ -32,8 +31,6 @@ export interface McpToolContext {
   processManager?: McpProcessSessionManager;
   sessionOwnerId?: string;
   codeGraphAdapter?: GeneralRepoCodeGraphAdapter;
-  engineerAuthorizationId?: string;
-  engineerVerifyAuthorization?: () => void;
 }
 
 function codingContext(ctx: McpToolContext): CodingToolContext {
@@ -590,7 +587,7 @@ function writeMarkdownArtifact(
 }
 
 // Canonical anti-extras clause injected into every runner-reachable surface (this
-// task-goal path, the contract-run.ts worker prompt, the Codex delegation advisor hook,
+// task-goal path, the native child context,
 // and subagent start context). Keep the first sentence byte-identical across all
 // sources; a parity test asserts they never drift apart.
 const EXECUTION_BOUNDARY = [
@@ -815,9 +812,6 @@ function parseNativeBrowserChannel(value: unknown): NativeBrowserChannel | undef
 }
 
 export function buildMcpToolDefinitions(policy: McpPolicy, opts: { enableChatgptBrowser?: boolean } = {}): McpToolDefinition[] {
-  if (policy.profile === 'engineer') {
-    return buildEngineerToolDefinitions();
-  }
   const readOnly = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
   const write = { readOnlyHint: false, openWorldHint: false, destructiveHint: false };
   const optionalRepoSchema = {
@@ -1048,10 +1042,6 @@ export async function callMcpTool(ctx: McpToolContext, name: string, args: Recor
   try {
     if (name === 'prepare_codex_goal_from_sprint' || name === 'write_codex_goal') {
       return errorResult('TOOL_RETIRED', `Upgrade to ${name === 'write_codex_goal' ? 'write_task_goal' : 'prepare_task_goal_from_sprint'}; the retired tool has no alias.`);
-    }
-    if (ctx.policy.profile === 'engineer') {
-      if (!isEngineerTool(name)) return errorResult('TOOL_NOT_AVAILABLE', `tool is not available in the engineer profile: ${name}`);
-      return callEngineerTool({ repoRoot: ctx.repoRoot, authorizationId: ctx.engineerAuthorizationId, verifyAuthorization: ctx.engineerVerifyAuthorization }, name, args);
     }
     if (isCodingTool(name) && ctx.policy.capabilities.workspaceCoder) {
       return callCodingTool(codingContext(ctx), name, args);

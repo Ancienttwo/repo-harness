@@ -1,4 +1,4 @@
-export type McpProfileName = 'planner' | 'executor' | 'orchestrator' | 'coding' | 'engineer';
+export type McpProfileName = 'planner' | 'executor' | 'orchestrator' | 'coding';
 export type McpPathIntent = 'read' | 'write';
 
 export interface McpPolicy {

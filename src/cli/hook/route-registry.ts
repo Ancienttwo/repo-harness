@@ -41,7 +41,7 @@ export type HookHandlerId =
   | 'mutation-guard'
   | 'return-channel'
   | 'subagent-context'
-  | 'task-inbox'
+  | 'noop'
   | 'stop';
 
 export interface Route {
@@ -90,10 +90,8 @@ export const ROUTES: readonly Route[] = Object.freeze([
   Object.freeze({
     event: 'UserPromptSubmit' as const,
     routeId: 'inbox' as const,
-    // Task messages are an independent turn-boundary route. Keeping this
-    // separate from prompt classification prevents untrusted peer content
-    // from becoming routing or authorization input.
-    handler: 'task-inbox',
+    // Keep the installed adapter tuple until the #737 host migration.
+    handler: 'noop',
     hosts: ['claude', 'codex'] as const,
   }),
   Object.freeze({

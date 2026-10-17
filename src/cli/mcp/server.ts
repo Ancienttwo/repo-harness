@@ -1,4 +1,3 @@
-import { createPmMcpServer, type createPmMcpBinding, type PmMcpAuthorization } from './pm-server';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { randomUUID } from 'crypto';
@@ -29,10 +28,6 @@ export interface McpServerOptions {
   allowedRoots?: string[];
   enableChatgptBrowser?: boolean;
   codingRuntime?: McpCodingRuntime | null;
-  engineerAuthorizationId?: string;
-  verifyEngineerAuthorization?: (token: string, authorizationId: string) => void;
-  pmBinding?: ReturnType<typeof createPmMcpBinding>;
-  pmAuthorization?: PmMcpAuthorization;
 }
 
 export interface McpCodingRuntime {
@@ -161,9 +156,9 @@ export function createMcpToolContext(opts: McpServerOptions): McpToolContext {
   const config = loadMcpLocalConfig();
   const requestedProfile = opts.profile ?? config?.profile ?? 'planner';
   const profile = parseMcpProfile(requestedProfile === 'reader' ? 'planner' : requestedProfile);
-  const authorizationScoped = profile === 'coding' || profile === 'engineer';
+  const authorizationScoped = profile === 'coding';
   if (authorizationScoped) {
-    const enabled = profile === 'coding' ? config?.coding?.enabled === true : config?.engineer?.enabled === true;
+    const enabled = config?.coding?.enabled === true;
     if (config?.version !== 3 || config.profile !== profile || !enabled) {
       throw new Error(`${profile} MCP is disabled; run setup with profile ${profile} and an explicit read-write grant`);
     }
@@ -217,7 +212,6 @@ export function createMcpToolContext(opts: McpServerOptions): McpToolContext {
     policy,
     workspaceManager: readerEnabled ? new WorkspaceManager({ allowedRoots: policyAllowedRoots, policy }) : undefined,
     enableChatgptBrowser: opts.enableChatgptBrowser === true,
-    engineerAuthorizationId: profile === 'engineer' ? opts.engineerAuthorizationId : undefined,
   };
   if (profile === 'coding') {
     if (opts.codingRuntime !== null) {
@@ -229,13 +223,6 @@ export function createMcpToolContext(opts: McpServerOptions): McpToolContext {
 }
 
 export function createRepoHarnessMcpServer(opts: McpServerOptions): Server {
-  if (opts.profile === 'pm') {
-    if (opts.enableReader || opts.enableChatgptBrowser || opts.allowedRoots?.length
-      || opts.codingRuntime || opts.engineerAuthorizationId) {
-      throw new Error('PM MCP does not permit workspace, browser, or authorization overrides');
-    }
-    return createPmMcpServer(undefined, { binding: opts.pmBinding, authorization: opts.pmAuthorization });
-  }
   const ctx = createMcpToolContext(opts);
   const codingRuntime = codingRuntimeForContext.get(ctx);
   const ownsCodingRuntime = codingRuntime !== undefined && opts.codingRuntime === undefined;
@@ -247,7 +234,6 @@ export function createRepoHarnessMcpServer(opts: McpServerOptions): Server {
       instructions: buildMcpServerInstructions({
         readerEnabled: ctx.policy.capabilities.workspaceReader,
         codingEnabled: ctx.policy.capabilities.workspaceCoder,
-        engineerEnabled: ctx.policy.profile === 'engineer',
       }),
     },
   );
@@ -256,17 +242,10 @@ export function createRepoHarnessMcpServer(opts: McpServerOptions): Server {
     tools: buildMcpToolDefinitions(ctx.policy, { enableChatgptBrowser: ctx.enableChatgptBrowser === true }),
   }));
 
-  server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
+  server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const name = request.params.name;
     const args = (request.params.arguments ?? {}) as Record<string, unknown>;
-    const requestContext = ctx.policy.profile === 'engineer' ? {
-      ...ctx,
-      engineerVerifyAuthorization: opts.verifyEngineerAuthorization ? () => {
-        if (!extra.authInfo?.token || !ctx.engineerAuthorizationId) throw new Error('current Engineer request authentication is unavailable');
-        opts.verifyEngineerAuthorization!(extra.authInfo.token, ctx.engineerAuthorizationId);
-      } : undefined,
-    } : ctx;
-    return callMcpTool(requestContext, name, args) as any;
+    return callMcpTool(ctx, name, args) as any;
   });
 
   server.onclose = () => {

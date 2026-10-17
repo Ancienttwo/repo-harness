@@ -59,7 +59,6 @@ import {
   collectEngineerOffers,
   type EngineerSchedulingDependencies,
 } from '../../src/effects/engineers/scheduling';
-import { acquireScheduledEngineerTask } from '../../src/effects/engineers/scheduling-acquire';
 import type { EngineerPrincipalV1 } from '../../src/core/engineers/principal-claim';
 import type { RepoHarnessRegisteredRepo, RepoHarnessRegistrySnapshot } from '../../src/effects/repo-registry';
 import { assessChange, buildReviewSelectionPacket } from '../../src/core/review/change-assessment';
@@ -1263,55 +1262,6 @@ describe('issue #284 closed dependency authority', () => {
     expect(ready.offers[0]!.dependency_revision).toMatch(/^sha256:[0-9a-f]{64}$/u);
   });
 
-  test('acquire revalidates the asserted offer after the dependency authority moves', () => {
-    const subject = fixture();
-    recordAcceptanceObservation(subject);
-    const deps = schedulingDependencies(subject, 'module_accepted');
-    const document = offers(subject, 'module_accepted');
-    const offer = document.offers[0]!;
-    const assertion = {
-      offer_revision: offer.offer_revision,
-      work_package_id: offer.work_package_id,
-      work_package_revision: offer.work_package_revision,
-      work_graph_revision: offer.work_graph_revision,
-      task_id: offer.task_id,
-      task_revision: offer.task_revision,
-      dependency_revision: offer.dependency_revision,
-      concurrency_revision: offer.concurrency_revision,
-      binding_id: offer.binding_id,
-      binding_generation: offer.binding_generation,
-      engineer_contract_revision: offer.engineer_contract_revision,
-      fleet_offer_revision: offer.fleet_offer_revision,
-      authorization_revision: offer.authorization_revision,
-    };
-    const acquireDependencies = {
-      collectOffers: (options: Parameters<typeof collectEngineerOffers>[0]) => collectEngineerOffers({
-        ...options,
-        registry_snapshot: subject.registry,
-        dependencies: deps,
-      }),
-      acquire: () => ({ ok: true, envelope: {} as never, receipt: {} as never }) as never,
-      withConcurrencyLock: <T>(_root: string, _key: string, run: () => T): T => run(),
-    };
-    const acquired = acquireScheduledEngineerTask({
-      repo_root: subject.root,
-      principal: principal(),
-      assertion,
-      dependencies: acquireDependencies,
-    });
-    expect(acquired.ok).toBe(true);
-
-    recordAcceptanceObservation(subject, acceptanceReceipt(subject, { summary: 'accepted wp-a again' }));
-    const stale = acquireScheduledEngineerTask({
-      repo_root: subject.root,
-      principal: principal(),
-      assertion,
-      dependencies: acquireDependencies,
-    });
-    expect(stale.ok).toBe(false);
-    if (stale.ok) throw new Error('expected a stale offer');
-    expect(stale.error).toBe('engineer_offer_stale');
-  });
 
   test('the resolver refuses a target that is not the exact Work Package its edge names', () => {
     const subject = fixture();

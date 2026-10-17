@@ -13,7 +13,6 @@ export const RUN_HELP_GROUPS = [
       'new-plan',
       'capture-plan',
       'plan-to-todo',
-      'contract-run',
       'cutover-closure',
       'contract-worktree',
       'contract-worktree-runtime',

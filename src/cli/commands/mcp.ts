@@ -1,7 +1,6 @@
 import { runMcpUninstall, type McpUninstallOptions } from '../mcp/uninstall';
 import { Command } from 'commander';
 import { isAbsolute, relative } from 'path';
-import { inspectPmMcpConnection } from '../mcp/pm-server';
 import { createMcpToolContext } from '../mcp/server';
 import { startMcpHttp } from '../mcp/transports/http';
 import { startMcpStdio } from '../mcp/transports/stdio';
@@ -129,7 +128,7 @@ export function buildMcpCommand(): Command {
     .option('--transport <transport>', 'Transport: stdio|http', 'stdio')
     .option('--host <host>', 'HTTP bind host', '127.0.0.1')
     .option('--port <port>', 'HTTP bind port', '8765')
-    .option('--profile <profile>', 'MCP profile: planner|executor|orchestrator|coding|engineer|pm', 'planner')
+    .option('--profile <profile>', 'MCP profile: planner|executor|orchestrator|coding', 'planner')
     .option('--auth <mode>', 'HTTP auth mode: oauth|bearer|url-token', 'oauth')
     .option('--enable-reader', 'Force read-only workspace tools in this same MCP connector; registered adopted repos are included automatically')
     .option('--allow-root <path>', 'Additional non-repo local root for workspace reader/discovery tools; may be repeated', collectOption, [])
@@ -161,16 +160,6 @@ export function buildMcpCommand(): Command {
         }
         throw new Error(`serve: invalid --transport "${rawOpts.transport}" (expected: stdio, http)`);
       });
-    });
-
-  mcp
-    .command('pm-preflight')
-    .description('Read PM configuration and scope without connecting or creating authorization')
-    .option('--json', 'Output JSON')
-    .action((opts: { json?: boolean }) => {
-      const result = inspectPmMcpConnection();
-      console.log(opts.json ? JSON.stringify(result, null, 2)
-        : `[repo-harness mcp] PM configuration: ${result.blockers.length ? result.blockers.join(', ') : 'valid'}; runtime, connector and event wake: unverified`);
     });
 
   mcp
@@ -271,7 +260,7 @@ export function buildMcpCommand(): Command {
     .option('--port <port>', 'Local MCP HTTP bind port')
     .option('--endpoint <url>', 'Stable public HTTPS /mcp endpoint to store in ignored local config')
     .option('--server-name <name>', 'ChatGPT Connector/MCP server name to record in ignored local config')
-    .option('--profile <profile>', 'MCP profile to configure: planner|executor|orchestrator|coding|engineer')
+    .option('--profile <profile>', 'MCP profile to configure: planner|executor|orchestrator|coding')
     .option('--grant-read-write <path>', 'Explicitly grant one adopted repo read_write access for coding; may be repeated', collectOption, [])
     .option('--enable-reader', 'Enable read-only workspace tools in the same ChatGPT MCP Connector; registered adopted repos are included automatically')
     .option('--allow-root <path>', 'Additional non-repo local root for workspace reader/discovery tools; may be repeated', collectOption, [])
