@@ -60,9 +60,9 @@ export function syncWazaSharedRules(
     const missing = wazaRules.files.filter((rule) => next.get(rule) === undefined);
     if (missing.length > 0) return { status: 'failed', detail: `missing ${missing.join(', ')}` };
 
+    const state = readInstalledProfile(env);
     const adoptedPaths: string[] = [];
     if (refresh) {
-      const state = readInstalledProfile(env);
       for (const rule of wazaRules.files) {
         const current = previous.get(rule);
         if (current === undefined && state === null) {
@@ -81,7 +81,15 @@ export function syncWazaSharedRules(
             if (state === null) {
               return { status: 'failed', detail: 'an installed profile is required to own Waza rules; run repo-harness install first' };
             }
-            adoptedPaths.push(source);
+            adoptedPaths.push(source, ...existingHosts);
+            // Preserve proof of the old projection before shared staging advances.
+            // Unselected host files stay unchanged; only their receipts are recorded.
+            for (const host of ['claude', 'codex'] as const) {
+              if (hosts.includes(host)) continue;
+              const destination = join(home, `.${host}`, 'rules', rule);
+              if (lstatSync(destination, { throwIfNoEntry: false })?.isFile()
+                && readFileSync(destination).equals(stagedBytes)) adoptedPaths.push(destination);
+            }
             continue;
           }
         }
@@ -98,7 +106,10 @@ export function syncWazaSharedRules(
         const current = readRule(destination);
         const value = next.get(rule)!;
         if (current !== undefined && current !== value && current !== previous.get(rule)) {
-          return { status: 'failed', detail: `refusing to overwrite unowned rule ${destination}` };
+          const receipt = state?.ownership_manifest.find((surface) => surface.path === destination);
+          if (!receipt || !managedInstallSurfaceIsCurrent(receipt)) {
+            return { status: 'failed', detail: `refusing to overwrite unowned rule ${destination}` };
+          }
         }
         if (current !== value) writes.set(destination, value);
         if (current === undefined) createdPaths.push(destination);

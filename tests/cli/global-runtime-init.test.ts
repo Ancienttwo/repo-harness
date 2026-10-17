@@ -2553,6 +2553,63 @@ if [[ -n "$output" ]]; then cat "$source" > "$output"; else cat "$source"; fi
     });
   });
 
+  for (const ownership of ['managed', 'legacy'] as const) {
+    for (const nextTarget of ['claude', 'both'] as const) {
+      test(`targeted Waza refresh supports ${ownership} copies from codex to ${nextTarget} and back to both`, () => {
+        withRules(({ home, upstream, env, paths, run }) => {
+          if (ownership === 'legacy') recordInstallOwnership([], env);
+          const claudePaths = wazaRules.files.map((rule) => join(home, '.claude', 'rules', rule));
+          const unchangedHost = (hostPaths: string[]) => hostPaths.map((path) => {
+            const stat = lstatSync(path);
+            return { content: readFileSync(path), ino: stat.ino, mtimeMs: stat.mtimeMs };
+          });
+          const claudeBefore = unchangedHost(claudePaths);
+          expect(run(true, 'codex').exitCode).toBe(0);
+          expect(unchangedHost(claudePaths)).toEqual(claudeBefore);
+          for (const path of paths) {
+            const receipt = readInstalledProfile(env)!.ownership_manifest.find((surface) => surface.path === path);
+            expect(receipt).toBeDefined();
+            expect(managedInstallSurfaceIsCurrent(receipt!)).toBe(true);
+          }
+          for (const rule of wazaRules.files) writeFileSync(join(upstream, rule), `# second ${rule}\n`);
+          const codexPaths = wazaRules.files.map((rule) => join(home, '.codex', 'rules', rule));
+          const codexBefore = unchangedHost(codexPaths);
+          const second = run(true, nextTarget);
+          expect(second.exitCode, second.stdout).toBe(0);
+          if (nextTarget === 'claude') expect(unchangedHost(codexPaths)).toEqual(codexBefore);
+          for (const rule of wazaRules.files) writeFileSync(join(upstream, rule), `# third ${rule}\n`);
+          expect(run(true, 'both').exitCode).toBe(0);
+          for (const path of paths) expect(readFileSync(path, 'utf-8')).toBe(`# third ${path.split('/').at(-1)}\n`);
+          for (const receipt of readInstalledProfile(env)!.ownership_manifest) expect(managedInstallSurfaceIsCurrent(receipt)).toBe(true);
+        });
+      });
+    }
+
+    test(`targeted Waza refresh preserves an edited ${ownership} host that has no current ownership proof`, () => {
+      withRules(({ home, upstream, env, paths, run }) => {
+        if (ownership === 'legacy') recordInstallOwnership([], env);
+        const edited = join(home, '.claude', 'rules', 'english.md');
+        writeFileSync(edited, '# local Claude rule\n');
+        expect(run(true, 'codex').exitCode).toBe(0);
+        expect(readFileSync(edited, 'utf-8')).toBe('# local Claude rule\n');
+        const receipt = readInstalledProfile(env)!.ownership_manifest.find(({ path }) => path === edited);
+        if (ownership === 'legacy') expect(receipt).toBeUndefined();
+        else expect(managedInstallSurfaceIsCurrent(receipt!)).toBe(false);
+        for (const rule of wazaRules.files) writeFileSync(join(upstream, rule), `# next ${rule}\n`);
+        const before = paths.map((path) => readFileSync(path));
+        const statePath = join(home, '.repo-harness', 'install-state.json');
+        const beforeState = readFileSync(statePath);
+        const result = run(true, 'claude');
+        expect(result.exitCode).toBe(1);
+        expect(result.steps.find(({ step }) => step === 'sync Waza shared rules')).toMatchObject({
+          status: 'failed', detail: expect.stringContaining(`refusing to overwrite unowned rule ${edited}`),
+        });
+        expect(paths.map((path) => readFileSync(path))).toEqual(before);
+        expect(readFileSync(statePath)).toEqual(beforeState);
+      });
+    });
+  }
+
   for (const upstreamState of ['stale', 'current'] as const) {
     test(`adopts ${upstreamState} legacy staging with matching host copies and records ownership`, () => {
       withRules(({ home, upstream, env, paths, run }) => {
@@ -2563,8 +2620,7 @@ if [[ -n "$output" ]]; then cat "$source" > "$output"; else cat "$source"; fi
           }
         }
         expect(run().exitCode).toBe(0);
-        const stagingPaths = wazaRules.files.map((rule) => join(home, '.agents', 'rules', rule));
-        expect(readInstalledProfile(env)!.ownership_manifest.map(({ path }) => path).sort()).toEqual([...stagingPaths].sort());
+        expect(readInstalledProfile(env)!.ownership_manifest.map(({ path }) => path).sort()).toEqual([...paths].sort());
         for (const receipt of readInstalledProfile(env)!.ownership_manifest) expect(managedInstallSurfaceIsCurrent(receipt)).toBe(true);
         for (const path of paths) expect(readFileSync(path, 'utf-8')).toBe(readFileSync(join(upstream, path.split('/').at(-1)!), 'utf-8'));
         writeFileSync(join(upstream, 'english.md'), '# next legacy English\n');
@@ -2615,14 +2671,15 @@ if [[ -n "$output" ]]; then cat "$source" > "$output"; else cat "$source"; fi
     });
   });
 
-  test('legacy staging ownership only uses selected hosts', () => {
-    withRules(({ home, env, run }) => {
+  test('legacy staging adoption uses selected evidence and preserves unmatched unselected rules', () => {
+    withRules(({ home, env, paths, run }) => {
       recordInstallOwnership([], env);
       const unselected = join(home, '.claude', 'rules', 'english.md');
       writeFileSync(unselected, '# unselected local host edit\n');
       expect(run(true, 'codex').exitCode).toBe(0);
       expect(readFileSync(unselected, 'utf-8')).toBe('# unselected local host edit\n');
-      expect(readInstalledProfile(env)!.ownership_manifest).toHaveLength(wazaRules.files.length);
+      expect(readInstalledProfile(env)!.ownership_manifest.map(({ path }) => path).sort())
+        .toEqual(paths.filter((path) => path !== unselected).sort());
     });
   });
 
