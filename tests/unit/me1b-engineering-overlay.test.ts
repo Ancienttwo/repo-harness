@@ -243,7 +243,6 @@ describe('ME-1B Engineering Overlay', () => {
     // The AKN Organization view projects the overlay through the existing
     // repository snapshot; the overlay itself still owns no web surface.
     expect(importers).toEqual([
-      'cli/commands/engineer.ts',
       'core/operator/organization-snapshot.ts',
       'effects/engineers/engineering-overlay.ts',
       'effects/operator/repository-snapshot.ts',

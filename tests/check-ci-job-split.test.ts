@@ -625,7 +625,7 @@ describe('single affected verification and daily fallback', () => {
       '  daily) set -- ;;',
       '  *) echo "Unknown coverage mode: $MODE" >&2; exit 1 ;;',
       'esac',
-      'bun run test:files tests/generic-review.test.ts tests/acceptance-receipt.test.ts tests/herdr-task-lifecycle.test.ts tests/cli/pm.test.ts "$@" --timeout 60000 --max-concurrency 1',
+      'bun run test:files tests/generic-review.test.ts tests/acceptance-receipt.test.ts tests/herdr-task-lifecycle.test.ts "$@" --timeout 60000 --max-concurrency 1',
     ]);
     // A PR runs only the darwin cases; the daily run keeps every native case. The filesystem probe step is gone.
     expect(job.steps.map((step: any) => step.name ?? step.uses)).toEqual([

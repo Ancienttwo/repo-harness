@@ -368,7 +368,7 @@ describe('optional strategy and progressive memory', () => {
     const repaired = readAcceptedEvents(root); expect(repaired.quarantinedPath).not.toBeNull();
     expect(readFileSync(join(root, path), 'utf8')).toBe('');
   });
-  test('production active verification observes a corrupt tail without repair or Git writes', () => {
+  test('retired verification records do not control strategy state or permit writes', () => {
     const { root } = fixture(); activateVerification(root);
     const beforeClean = snapshot(root);
     const clean = collectStrategyContext(root, { nowMs, load: ['lesson'] });
@@ -377,8 +377,8 @@ describe('optional strategy and progressive memory', () => {
     expect(snapshot(root)).toEqual(beforeClean);
     const path = '.ai/harness/evidence/events/log.jsonl'; write(root, path, '{broken\n');
     const before = snapshot(root); const packet = collectStrategyContext(root, { nowMs, load: ['lesson'] });
-    expect(packet.stateRevision).toBe('unavailable');
-    expect(validateProposal(proposal(packet), packet).status).toBe('blocked');
+    expect(packet.stateRevision).toBe(clean.stateRevision);
+    expect(validateProposal(proposal(packet), packet).status).toBe('reviewable');
     expect(snapshot(root)).toEqual(before);
   });
   test('read-only virtual tree matches the default identity and writes no objects', () => {
@@ -408,7 +408,7 @@ describe('optional strategy and progressive memory', () => {
       expect(snapshot(root)).toEqual(before);
     }
   });
-  test('sparse checkout fails closed instead of treating absent tracked files as deleted', () => {
+  test('verification tree capture rejects sparse checkout while strategy state remains available', () => {
     const { root } = fixture(); write(root, 'outside/file.txt', 'Outside cone');
     git(root, 'add', '.'); git(root, 'commit', '-m', 'Sparse fixture');
     git(root, 'sparse-checkout', 'init', '--cone'); git(root, 'sparse-checkout', 'set', 'docs');
@@ -416,7 +416,7 @@ describe('optional strategy and progressive memory', () => {
     const before = snapshot(root);
     expect(() => withReadonlyObservation(new StrategyReader(root).observationIO(), () => captureGitVirtualTreeSnapshot(root))).toThrow('Sparse checkout');
     activateVerification(root);
-    expect(collectStrategyContext(root, { nowMs, load: ['lesson'] }).stateRevision).toBe('unavailable');
+    expect(collectStrategyContext(root, { nowMs, load: ['lesson'] }).stateRevision).not.toBe('unavailable');
     // The setup changes worktree files; the direct rejected capture does not.
     expect(snapshot(root)['.git/index']).toBe(before['.git/index']);
   });

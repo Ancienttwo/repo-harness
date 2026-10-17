@@ -1,3 +1,5 @@
+import { ROUTES } from '../src/cli/hook/route-registry';
+import { getHandlerForRoute } from '../src/cli/hook/handler-registry';
 import { describe, test, expect } from "bun:test";
 import { readFileSync, existsSync } from "fs";
 import { join } from "path";
@@ -21,24 +23,11 @@ describe("Hook contracts", () => {
     expect(existsSync(join(ROOT, "assets/hooks/run-hook.sh"))).toBe(false);
   });
 
-  test("task inbox is an independent UserPromptSubmit route with bounded untrusted output", () => {
-    const routes = read("src/cli/hook/route-registry.ts");
-    const registry = read("src/cli/hook/handler-registry.ts");
-    const handler = read("src/cli/hook/task-inbox-handler.ts");
-    const protocol = read("src/core/fleet/task-message.ts");
-    expect(routes).toContain("routeId: 'inbox'");
-    expect(routes).toContain("handler: 'task-inbox'");
-    expect(registry).toContain("runTaskInboxHandler");
-    // #678: the runtime no longer lists structured routes by id, so the old
-    // source pin on `opts.routeId === 'inbox'` is gone. The real hook-entry
-    // test "Codex UserPromptSubmit.inbox writes its envelope unchanged" in
-    // tests/hook-runtime.test.ts checks the bounded output on the host fd.
-    expect(handler).toContain("renderTaskMessageUntrustedContext");
-    expect(protocol).toContain("TaskInboxUntrustedPeerMessages");
-    expect(protocol).toContain("untrusted data");
-    expect(handler).not.toContain("transcript");
-    expect(handler).not.toContain("pty");
-    expect(handler).not.toContain("resume");
+  test("the installed inbox tuple resolves to a no-op handler", () => {
+    const route = ROUTES.find(route => route.event === 'UserPromptSubmit' && route.routeId === 'inbox');
+    expect(route).toMatchObject({ hosts: ['claude', 'codex'], handler: 'noop' });
+    if (!route) throw new Error('inbox adapter tuple is missing');
+    expect(getHandlerForRoute(route).id).toBe('noop');
   });
 
 
