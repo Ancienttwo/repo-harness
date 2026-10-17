@@ -2498,6 +2498,34 @@ if [[ -n "$output" ]]; then cat "$source" > "$output"; else cat "$source"; fi
     });
   });
 
+  test('records newly staged rules so a later upstream revision can refresh them', () => {
+    withRules(({ home, upstream, env, paths, run }) => {
+      for (const path of paths) rmSync(path);
+      recordInstallOwnership([], env);
+      expect(run().exitCode).toBe(0);
+      expect(readInstalledProfile(env)!.ownership_manifest.map(({ path }) => path).sort()).toEqual([...paths].sort());
+      for (const receipt of readInstalledProfile(env)!.ownership_manifest) expect(managedInstallSurfaceIsCurrent(receipt)).toBe(true);
+      writeFileSync(join(upstream, 'english.md'), '# next English\n');
+      expect(run().exitCode).toBe(0);
+      for (const receipt of readInstalledProfile(env)!.ownership_manifest) expect(managedInstallSurfaceIsCurrent(receipt)).toBe(true);
+      expect(readFileSync(join(home, '.agents', 'rules', 'english.md'), 'utf-8')).toBe('# next English\n');
+      expect(readFileSync(join(home, '.codex', 'rules', 'english.md'), 'utf-8')).toBe('# next English\n');
+    });
+  });
+
+  test('requires an installed profile before it creates new staging rules', () => {
+    withRules(({ home, paths, run }) => {
+      for (const path of paths) rmSync(path);
+      rmSync(join(home, '.repo-harness', 'install-state.json'));
+      const result = run();
+      expect(result.exitCode).toBe(1);
+      expect(result.steps.find(({ step }) => step === 'sync Waza shared rules')).toMatchObject({
+        status: 'failed', detail: expect.stringContaining('an installed profile is required'),
+      });
+      expect(paths.some((path) => existsSync(path))).toBe(false);
+    });
+  });
+
   for (const failure of ['fetch', 'empty', 'staging edit', 'unowned staging', 'host edit'] as const) {
     test(`${failure} fails before any staging or host rule changes`, () => {
       withRules(({ home, upstream, paths, run }) => {

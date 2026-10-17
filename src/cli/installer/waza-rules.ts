@@ -63,6 +63,9 @@ export function syncWazaSharedRules(
       const state = readInstalledProfile(env);
       for (const rule of wazaRules.files) {
         const current = previous.get(rule);
+        if (current === undefined && state === null) {
+          return { status: 'failed', detail: 'an installed profile is required to own new Waza rules; run repo-harness install first' };
+        }
         if (current === undefined || current === next.get(rule)) continue;
         const source = join(sourceDir, rule);
         const receipt = state?.ownership_manifest.find((surface) => surface.path === source);
@@ -73,6 +76,7 @@ export function syncWazaSharedRules(
     }
 
     const writes = new Map<string, string>();
+    const createdPaths: string[] = [];
     for (const host of hosts) {
       const destDir = join(home, `.${host}`, 'rules');
       for (const rule of wazaRules.files) {
@@ -83,6 +87,7 @@ export function syncWazaSharedRules(
           return { status: 'failed', detail: `refusing to overwrite unowned rule ${destination}` };
         }
         if (current !== value) writes.set(destination, value);
+        if (current === undefined) createdPaths.push(destination);
       }
     }
     const refreshedPaths: string[] = [];
@@ -93,13 +98,14 @@ export function syncWazaSharedRules(
           const source = join(sourceDir, rule);
           atomicWriteFileSync(source, value);
           refreshedPaths.push(source);
+          if (previous.get(rule) === undefined) createdPaths.push(source);
         }
       }
     }
     for (const [destination, value] of writes) atomicWriteFileSync(destination, value);
     // The candidate update path has no install transaction when it records its profile.
     // Keep existing receipts current so the next refresh can prove ownership again.
-    if (refresh) recordRefreshedInstallOwnership([...refreshedPaths, ...writes.keys()], env);
+    if (refresh) recordRefreshedInstallOwnership([...refreshedPaths, ...writes.keys()], env, createdPaths);
     return { status: 'ok', detail: `${refresh ? 'refreshed staging; ' : ''}synced ${hosts.length * wazaRules.files.length} files` };
   } catch (error) {
     return { status: 'failed', detail: (error as Error).message };
