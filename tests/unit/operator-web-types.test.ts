@@ -11,7 +11,7 @@ import {
   OperatorPayloadError,
   OperatorTaskMessageResponseError,
 } from '../../src/operator-web/types';
-import { repositoryObservationFixture, operatorFixtures } from '../../src/operator-web/fixture';
+import { repositoryObservationFixture, repositorySnapshot, operatorFixtures } from '../../src/operator-web/fixture';
 import { planningObservationFixture, stableSnapshot } from '../../src/operator-web/fixture';
 import { decodeOperatorPlanningSnapshot } from '../../src/core/operator/planning-snapshot';
 import { isOperatorMessageKey, translate, type OperatorMessageKey } from '../../src/operator-web/i18n';
@@ -411,37 +411,6 @@ test('current context transport preserves expected revision, abort and uncached 
     globalThis.fetch=(async()=>Response.json({code:'stale'},{status:409})) as unknown as typeof fetch;
     await expect(fetchTaskContext(request,controller.signal)).rejects.toThrow('stale');
   } finally {globalThis.fetch=original;}
-});
-
-import { decodeOperatorDecisionInventory } from '../../src/core/operator/decision-inventory';
-import { decisionInventoryFixture, repositorySnapshot } from '../../src/operator-web/fixture';
-
-describe('formal Decision wire boundary', () => {
-  test('preserves original questions and exact fences, and rejects malformed or cross-query observations', () => {
-    const page = decisionInventoryFixture(repositorySnapshot.repository_id);
-    expect(decodeOperatorDecisionInventory(page, page.repository_id, null)).toEqual(page);
-    expect(page.entries[0]!.task_fence.lease_generation).toBe(0);
-    const entry = page.entries[0]!;
-    const malformed: unknown[] = [
-      { ...page, repository_id: 'other' }, { ...page, protocol: 2 },
-      { ...page, query: { ...page.query, after: 'b'.repeat(64) } },
-      { ...page, entries: [entry, entry] },
-      { ...page, entries: [{ ...entry, question: 'x'.repeat(16 * 1024 + 1) }] },
-      { ...page, entries: [{ ...entry, question: '\u0000' }] },
-      { ...page, entries: [{ ...entry, binding_fence: { ...entry.binding_fence, host_id: 'private' } }] },
-      { ...page, entries: [{ ...entry, task_fence: { ...entry.task_fence, task_revision: entry.request_sha256 } }] },
-      { ...page, coverage: { ...page.coverage, complete: false } },
-      { ...page, coverage: { ...page.coverage, bytes_read: 8 * 1024 * 1024 + 1 } },
-      { ...page, coverage: { ...page.coverage, reason: 'output_limit', complete: false, next_after: 'a'.repeat(64) } },
-    ];
-    for (const value of malformed) expect(() => decodeOperatorDecisionInventory(value, page.repository_id, null)).toThrow();
-    const partial = { ...page, query: { after: 'b'.repeat(64), limit: 1 }, coverage: { ...page.coverage, complete: false, reason: 'output_limit', next_after: 'a'.repeat(64) } };
-    expect(() => decodeOperatorDecisionInventory(partial, page.repository_id, partial.query.after)).toThrow();
-    const envelope = { ...repositorySnapshot, decisions: { status: 'observed' as const, observed_at: '2026-09-22T00:00:00Z', snapshot: page } };
-    expect(decodeOperatorRepositorySnapshot(envelope)).toEqual(envelope);
-    expect(() => decodeOperatorRepositorySnapshot({ ...envelope, protocol: 2 })).toThrow();
-    expect(() => decodeOperatorRepositorySnapshot({ ...envelope, decision_after: 'f'.repeat(64) })).toThrow();
-  });
 });
 
 test('Fleet protocol7 requires a valid service epoch and rejects protocol6', () => {

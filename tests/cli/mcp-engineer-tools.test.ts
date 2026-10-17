@@ -18,6 +18,7 @@ import {
   recordAgentRuntimeCapability,
 } from '../../src/effects/engineers/agent-runtime-effect-store';
 import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
+import { seedEngineerTaskMessage, releaseEngineerTaskMessage } from '../helpers/engineer-runtime-fixture';
 import { fixtureTaskId } from '../helpers/sprint-fixture';
 
 const roots: string[] = [];
@@ -164,15 +165,8 @@ describe('restricted Engineer MCP tools', () => {
       'engineer_prepare',
       'engineer_acquire',
       'engineer_acquire_next',
-      'engineer_messages',
-      'engineer_message_send',
-      'engineer_message_ack',
       'engineer_runtime_effect_capability',
       'engineer_runtime_effect_status',
-      'engineer_interface_change_propose',
-      'engineer_interface_change_transition',
-      'engineer_work_demand_propose',
-      'engineer_work_demand_transition',
     ]);
     expect(names.some((name) =>
       /(?:^|_)(shell|read|write|fleet|publication|acceptance|binding|browser|agent)(?:_|$)/u.test(name))).toBe(false);
@@ -209,26 +203,6 @@ describe('restricted Engineer MCP tools', () => {
     expect(status.isError).toBeUndefined();
     expect(status.structuredContent).toMatchObject({ ok: true, principal: { auth_subject: authorizationId, binding_id: current.current_binding_id } });
 
-    const sent = await callMcpTool(context, 'engineer_message_send', {
-      message_id: '55555555-5555-4555-8555-555555555555',
-      capability_id: 'capability.verification.evals-checks',
-      target_engineer_id: engineerId,
-      scope: 'assignment',
-      target_binding_id: binding.binding_id,
-      target_binding_generation: binding.binding_generation,
-      target_engineer_contract_revision: binding.engineer_contract_revision,
-      message_type: 'status_update',
-      subject_ref: null,
-      resource_refs: [],
-      body: 'MCP-derived sender identity.',
-      created_at: '2026-08-25T00:30:00.000Z',
-    });
-    expect(sent).toMatchObject({
-      structuredContent: {
-        event: { sender: { kind: 'engineer', principal_ref: engineerId, binding_generation: 1 } },
-        receipt: { delivery_state: 'pending' },
-      },
-    });
     const capability = recordAgentRuntimeCapability(repoRoot, {
       adapter_kind: 'herdr-cli-agent',
       host_id: 'local',
@@ -236,16 +210,11 @@ describe('restricted Engineer MCP tools', () => {
       evidence_refs: [{ ref: 'canary', sha256: `sha256:${'a'.repeat(64)}` }],
       observed_at: '2026-08-25T00:31:00.000Z',
     });
-    const sentEvent = (sent.structuredContent as { event: { message_id: string } }).event;
+    const target = seedEngineerTaskMessage(repoRoot, engineerId, '55555555-5555-4555-8555-555555555555');
     const effect = prepareAgentRuntimeEffect({
       repo_root: repoRoot,
-      message_kind: 'module_message',
-      engineer_id: engineerId,
-      message_id: sentEvent.message_id,
+      ...target,
       idempotency_key: 'mcp-read-only-effect',
-      expected_binding_id: binding.binding_id,
-      expected_binding_generation: binding.binding_generation,
-      expected_engineer_contract_revision: binding.engineer_contract_revision,
       expected_capability_sha256: capability.capability_sha256,
       created_at: '2026-08-25T00:32:00.000Z',
     });
@@ -257,19 +226,6 @@ describe('restricted Engineer MCP tools', () => {
     expect(effectView).toMatchObject({
       structuredContent: { intent: { effect_id: effect.intent.effect_id }, current: { state: 'intent_persisted' } },
     });
-    const messages = await callMcpTool(context, 'engineer_messages', {});
-    expect(messages).toMatchObject({
-      structuredContent: {
-        entries: [{ event: { message_id: '55555555-5555-4555-8555-555555555555' }, receipt: { delivery_state: 'delivered' } }],
-      },
-    });
-    const acknowledged = await callMcpTool(context, 'engineer_message_ack', {
-      message_id: '55555555-5555-4555-8555-555555555555',
-    });
-    expect(acknowledged).toMatchObject({
-      structuredContent: { receipt: { delivery_state: 'acknowledged', acknowledged_by_binding_generation: 1 } },
-    });
-
     const mismatchedFence = await callMcpTool(context, 'engineer_status', { binding_generation: current.binding_generation + 1 });
     expect(mismatchedFence).toMatchObject({ isError: true, structuredContent: { error: { code: 'engineer_principal_mismatch' } } });
 
@@ -277,25 +233,6 @@ describe('restricted Engineer MCP tools', () => {
     expect(other).toMatchObject({ isError: true, structuredContent: { error: { code: 'engineer_principal_unmapped' } } });
     const generic = await callMcpTool(context, 'fleet_acquire', {});
     expect(generic).toMatchObject({ structuredContent: { error: { code: 'TOOL_NOT_AVAILABLE' } } });
-
-    const invalidMessageType = await callMcpTool(context, 'engineer_message_send', {
-      message_id: '66666666-6666-4666-8666-666666666666',
-      capability_id: 'capability.verification.evals-checks',
-      target_engineer_id: engineerId,
-      scope: 'assignment',
-      target_binding_id: binding.binding_id,
-      target_binding_generation: binding.binding_generation,
-      target_engineer_contract_revision: binding.engineer_contract_revision,
-      message_type: 'not_a_module_message_type',
-      subject_ref: null,
-      resource_refs: [],
-      body: 'Schema rejection must stay typed across CLI and MCP.',
-      created_at: '2026-08-25T00:40:00.000Z',
-    });
-    expect(invalidMessageType).toMatchObject({
-      isError: true,
-      structuredContent: { error: { code: 'module_message_invalid' } },
-    });
 
     // The selected route has no retry budget. Sending the retired field fails
     // as an unknown parameter before any fence is read.
@@ -317,6 +254,7 @@ describe('restricted Engineer MCP tools', () => {
     const revoked = await callMcpTool(context, 'engineer_status', {});
     expect(revoked).toMatchObject({ isError: true, structuredContent: { error: { code: 'engineer_principal_revoked' } } });
 
+    releaseEngineerTaskMessage(repoRoot, target.task_id);
     retireEngineer(repoRoot, {
       engineer_id: engineerId,
       idempotency_key: 'retire-1',
@@ -369,29 +307,11 @@ describe('restricted Engineer MCP tools', () => {
       evidence_refs: [{ ref: 'canary', sha256: `sha256:${'a'.repeat(64)}` }],
       observed_at: '2026-08-25T00:31:00.000Z',
     });
-    const sent = await callMcpTool(context, 'engineer_message_send', {
-      message_id: '77777777-7777-4777-8777-777777777777',
-      capability_id: 'capability.verification.evals-checks',
-      target_engineer_id: engineerId,
-      scope: 'assignment',
-      target_binding_id: binding.binding_id,
-      target_binding_generation: binding.binding_generation,
-      target_engineer_contract_revision: binding.engineer_contract_revision,
-      message_type: 'status_update',
-      subject_ref: null,
-      resource_refs: [],
-      body: 'Effect owner for the read-only probe.',
-      created_at: '2026-08-25T00:30:00.000Z',
-    });
+    const target = seedEngineerTaskMessage(repoRoot, engineerId, '77777777-7777-4777-8777-777777777777');
     const effect = prepareAgentRuntimeEffect({
       repo_root: repoRoot,
-      message_kind: 'module_message',
-      engineer_id: engineerId,
-      message_id: (sent.structuredContent as { event: { message_id: string } }).event.message_id,
+      ...target,
       idempotency_key: 'mcp-read-only-probe',
-      expected_binding_id: binding.binding_id,
-      expected_binding_generation: binding.binding_generation,
-      expected_engineer_contract_revision: binding.engineer_contract_revision,
       expected_capability_sha256: capability.capability_sha256,
       created_at: '2026-08-25T00:32:00.000Z',
     });

@@ -15,8 +15,7 @@ export type DevActivityColumn = typeof DEV_ACTIVITY_COLUMNS[number];
  */
 export type DevActivityHiddenReason = 'closed_unmerged';
 
-/** `decisions` is the open Human request inventory (§3.4 source 3). */
-export type DevActivitySourceKind = 'git' | 'github' | 'runtime' | 'decisions';
+export type DevActivitySourceKind = 'git' | 'github' | 'runtime';
 export type DevActivitySourceStatus = 'ok' | 'unavailable' | 'stale' | 'not_configured';
 
 export interface DevActivitySourceHealth {
@@ -89,18 +88,16 @@ export interface DevActivityItem {
   cleanup_pending: boolean;
 }
 
-export type DevActivityAttentionKind = 'ready_to_merge' | 'human_request';
+export type DevActivityAttentionKind = 'ready_to_merge';
 
 export interface DevActivityAttention {
   kind: DevActivityAttentionKind;
-  /** Item id, or the human request id for `human_request`. */
+  /** Item id. */
   subject_id: string;
   repository_id: string;
   summary: string;
   /**
    * From the authority for the kind: PR createdAt (ready_to_merge).
-   * Decision records carry no timestamp, so for
-   * `human_request` this is when the collector first observed the open request.
    */
   waiting_since: string;
   /** Link out (e.g. the PR) or null. */

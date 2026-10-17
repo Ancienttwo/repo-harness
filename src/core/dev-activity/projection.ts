@@ -1,4 +1,4 @@
-// Pure projection: collected Git, GitHub and Decision facts
+// Pure projection: collected Git and GitHub facts
 // -> DevActivitySnapshotV2. See plans/plan-20261010-0320-operator-console-kumo.md
 // §3.2 (identity), §3.3 (columns and authority table) and §3.4 (attention).
 // Every value comes from exactly one authority. A value without one is null.
@@ -34,12 +34,6 @@ export interface DevActivityRawPullRequest extends Omit<DevActivityPullRequest, 
   created_at: string;
 }
 
-export interface DevActivityRawHumanRequest {
-  decision_id: string;
-  question: string;
-  first_observed_at: string;
-}
-
 export interface DevActivityRawRepository {
   repository_id: string;
   display_name: string;
@@ -48,7 +42,6 @@ export interface DevActivityRawRepository {
   sources: DevActivitySourceHealth[];
   worktrees: DevActivityRawWorktree[];
   pull_requests: DevActivityRawPullRequest[];
-  human_requests: DevActivityRawHumanRequest[];
 }
 
 export interface DevActivityProjectionInput {
@@ -173,20 +166,13 @@ function projectRepositoryItems(repo: DevActivityRawRepository, input: DevActivi
 }
 
 /** §3.4: the single "needs you" definition. One merge ask per item. */
-function projectAttention(items: readonly DevActivityItem[], repositories: readonly DevActivityRawRepository[]): DevActivityAttention[] {
+function projectAttention(items: readonly DevActivityItem[]): DevActivityAttention[] {
   const attention: DevActivityAttention[] = [];
   for (const item of items) {
     const prUrl = item.pull_request?.url ?? null;
     if (item.column === 'ready_to_merge' && item.hidden === null && item.column_since !== null) {
       attention.push({ kind: 'ready_to_merge', subject_id: item.id, repository_id: item.repository_id, summary: item.title,
         waiting_since: item.column_since, url: prUrl, command: null });
-    }
-  }
-  for (const repo of repositories) {
-    for (const request of repo.human_requests) {
-      attention.push({ kind: 'human_request', subject_id: request.decision_id, repository_id: repo.repository_id,
-        summary: publicDevActivityText(request.question), waiting_since: request.first_observed_at, url: null,
-        command: `repo-harness verified-context read --kind decision --id ${request.decision_id}` });
     }
   }
   return attention.sort((left, right) => time(left.waiting_since) - time(right.waiting_since)
@@ -218,6 +204,6 @@ export function projectDevActivity(input: DevActivityProjectionInput): DevActivi
     repositories,
     unreadable_registrations: input.unreadable_registrations,
     items,
-    attention: projectAttention(items, input.repositories),
+    attention: projectAttention(items),
   });
 }

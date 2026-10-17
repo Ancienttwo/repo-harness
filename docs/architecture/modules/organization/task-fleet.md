@@ -1,9 +1,9 @@
 # organization/task-fleet 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-organization-task-fleet" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:daab3348d33a3063b258a15e61b41ad0d01b5620970af9e0fa14c6682c36bdcf" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-organization-task-fleet" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:5e1357bd29df44f27539392cd33d776dd5038da86b9ce159809e0a49c657b246" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.organization.task-fleet`(kind `capability`)
-> **Matched Prefixes**:`src/core/fleet/**`、`src/effects/fleet/**`、`src/core/messages/document-handoff.ts`、`src/cli/commands/fleet.ts`
+> **Matched Prefixes**:`src/core/fleet/**`、`src/effects/fleet/**`、`src/core/messages/document-handoff.ts`、`src/cli/commands/fleet.ts`、`src/core/messages/mechanics.ts`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
@@ -42,7 +42,7 @@ flowchart LR
 ### 1.3 規模信號
 
 - 規模量級:`10–20` 個文件 / `5000–10000` 行
-- 匹配前綴:`src/core/fleet/**`、`src/effects/fleet/**`、`src/core/messages/document-handoff.ts`、`src/cli/commands/fleet.ts`
+- 匹配前綴:`src/core/fleet/**`、`src/effects/fleet/**`、`src/core/messages/document-handoff.ts`、`src/cli/commands/fleet.ts`、`src/core/messages/mechanics.ts`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
 ### 1.4 依賴邊界
@@ -52,7 +52,6 @@ flowchart LR
 - `calls` → `capability.runtime-harness.agent-runtime-effects` — Read task agent runtime effects as board observations only
 - `calls` → `capability.workflow-engine.contract-assets` — Run packaged contract worktree helpers to provision and bind an acquired task
 - `calls` → `capability.runtime-harness.engineer-bindings` — Validate principal claims and claim actor receipts before a steer reply is recorded
-- `calls` → `capability.runtime-harness.engineer-messages` — Reuse bounded canonical message mechanics for task messages and document handoff
 - `calls` → `capability.runtime-harness.evidence-ledger` — Reuse canonical JSON and durable atomic append for task message records
 - `calls` → `component.task-fleet.primary` — Project read-time offers and acquire one execution-ready task through the owning stores
 - `calls` → `capability.organization.publication` — Read publication receipts readiness and provider feedback for fleet commands and board cards
@@ -60,6 +59,7 @@ flowchart LR
 
 入向關係:
 
+- `calls` ← `capability.runtime-harness.agent-runtime-effects` — Read the exact Task message and delivery receipt before action admission and success.
 - `depends-on` ← `capability.runtime-harness.delegated-runs` — Type the delegated run against the fleet work envelope
 - `calls` ← `capability.runtime-harness.engineer-scheduling` — Collect fleet offers for the scheduling acquire path
 - `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the fleet command
@@ -172,7 +172,7 @@ sequenceDiagram
 ## Optimization Backlog
 
 - **双向依赖（重构证据）。** `src/effects/fleet/board.ts` 读取 agent-runtime-effects 的 runtime 投影。`src/effects/engineers/agent-runtime-effect-store.ts` 又反向导入 `src/core/fleet/board.ts`、`src/core/fleet/task-message.ts` 与 `src/effects/fleet/task-inbox.ts`。模型只声明 task-fleet → agent-runtime-effects。反向边记录在此，不作为意图关系。
-- **`WorkEnvelopeV1` 类型位于 effects 层。** engineer-bindings、engineer-scheduling、bound-task-freezes 与 delegated-runs 从 `src/effects/fleet/acquire.ts` 导入它（另有 `collectFleetOffers` 与 `validateFleetCommunicationEnvelope`）。候选重构：把 envelope 类型与校验移到 `src/core/fleet/`。
+- **`WorkEnvelopeV1` 类型位于 effects 层。** engineer-bindings、engineer-scheduling 与 delegated-runs 从 `src/effects/fleet/acquire.ts` 导入它（另有 `collectFleetOffers` 与 `validateFleetCommunicationEnvelope`）。候选重构：把 envelope 类型与校验移到 `src/core/fleet/`。
 - **`src/cli/commands/fleet.ts` 有 933 行。** 它组合 offer、board、inbox 与 feedback 子命令。若继续增长，可以把 inbox 子命令移到 task-inbox 组件。
 - **agent-runtime-effects 的方向（集成）。** 反向有 7 条边，`relation.task-fleet.agent-runtime-effects` 一侧有 4 条。集成保留已声明的方向。是否翻转方向是开放问题。
 - **`relation.task-fleet.repo-registry` 的目标（集成）。** 目标从 mcp-sidecar capability 改为 `component.mcp-sidecar.repo-policy-registry`。导入只指向 `src/effects/repo-registry.ts`。mcp-sidecar primary → task-fleet 因此不形成节点级的环。

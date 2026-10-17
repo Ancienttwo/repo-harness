@@ -325,9 +325,8 @@ export const operatorFixtures = {
 
 /** Independent repository observations for browser fixtures. */
 export function repositoryObservationFixture(repositoryId = 'repo_a5b76eee64af71c3'): import('../core/operator/repository-snapshot').OperatorRepositorySnapshotV1 {
-  return { protocol: 1, kind: 'operator_repository_snapshot', repository_id: repositoryId, decision_after: null,
+  return { protocol: 1, kind: 'operator_repository_snapshot', repository_id: repositoryId,
     planning: { status: 'unavailable', observed_at: '2026-09-22T00:00:00.000Z', code: 'source_unavailable' },
-    decisions: { status: 'unavailable', observed_at: '2026-09-22T00:00:00.000Z', code: 'source_unavailable' },
     organization: { status: 'unavailable', observed_at: '2026-09-22T00:00:00.000Z', code: 'source_unavailable' } };
 }
 export const repositorySnapshot = repositoryObservationFixture();
@@ -371,15 +370,4 @@ export function taskActivityFixture(request: import('../core/operator/task-activ
   const response: import('../core/operator/task-activity').ActivityEntry = { event: { ...parent.event, message_id: replyId, sender_kind: 'agent', sender_id: sha, sender_trust: 'lease_owner', audience: 'user', body: 'The boundary is preserved; inspect the candidate evidence.', in_reply_to: parentId }, receipts: [], replies: [reply], provenance: 'recorded_claim_actor' };
   const entries = [parent, response].filter(value => request.message_id !== null ? value.event.message_id === request.message_id : request.after === null || value.event.message_id > request.after);
   return { ...request, protocol: 1, kind: 'operator_task_activity', observed_at: at, consistency: 'observed', entries, coverage: { scope: request.message_id === null ? 'task' : 'message', complete: true, reason: null, scanned: 2, bytes: 2048 }, next_cursor: null };
-}
-
-export function decisionInventoryFixture(repositoryId = 'repo_a5b76eee64af71c3'): import('../core/operator/decision-inventory').OperatorDecisionInventory {
-  const hash = `sha256:${'a'.repeat(64)}`;
-  return { protocol: 1, kind: 'operator_decision_inventory', repository_id: repositoryId,
-    query: { after: null, limit: 50 }, directory_revision: hash,
-    entries: [{ decision_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', question: 'Approve the recorded migration scope?',
-      task_fence: { task_id: 'a'.repeat(64), task_revision: 'b'.repeat(64), claim_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', lease_generation: 0 },
-      binding_fence: { engineer_id: 'engineer:capability.runtime-harness.collaboration', binding_id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', binding_generation: 1, engineer_contract_revision: hash },
-      previous_assertion_sha256: null, request_sha256: hash, current_digest: hash, current_event_sha256: hash }],
-    coverage: { complete: true, reason: 'complete', scanned: 1, bytes_read: 4096, next_after: null } };
 }

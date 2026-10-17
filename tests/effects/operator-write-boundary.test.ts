@@ -44,9 +44,8 @@ function repositorySnapshot(
   return {
     protocol: OPERATOR_REPOSITORY_PROTOCOL,
     kind: OPERATOR_REPOSITORY_SNAPSHOT_KIND,
-    repository_id: 'repo-a', decision_after: null,
+    repository_id: 'repo-a',
     planning: { status: 'unavailable', observed_at: '2026-09-22T00:00:00.000Z', code: 'source_unavailable' },
-    decisions: { status: 'unavailable', observed_at: '2026-09-22T00:00:00.000Z', code: 'source_unavailable' },
     organization: { status: 'unavailable', observed_at: '2026-09-22T00:00:00.000Z', code: 'source_unavailable' },
     ...overrides,
   } as OperatorRepositorySnapshotV1;

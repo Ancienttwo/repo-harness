@@ -53,7 +53,7 @@ function unsupported(value: unknown): Engineer['memory'] {
   return { support: 'unsupported', value: null };
 }
 function engineer(value: unknown): OperatorOrganizationEngineer {
-  const v = record(value, ['engineer_id', 'capability_id', 'engineer_contract_revision', 'binding', 'active_claim', 'delegations', 'messages', 'runtime_effects', 'memory']);
+  const v = record(value, ['engineer_id', 'capability_id', 'engineer_contract_revision', 'binding', 'active_claim', 'delegations', 'runtime_effects', 'memory']);
   const b = record(v.binding, ['support', 'state', 'value', 'revision']);
   const bindingSupport = one(b.support, ['available', 'unreadable']);
   const bindingState = b.state === null ? null : one(b.state, ['unbound', 'active', 'retired']);
@@ -75,10 +75,6 @@ function engineer(value: unknown): OperatorOrganizationEngineer {
   }
   const claimRevision = nullableDigest(c.revision);
   if (claimSupport === 'unreadable' ? claimValue !== null || claimRevision !== null : claimRevision === null) invalid();
-  const m = record(v.messages, ['support', 'pending', 'delivery_failed', 'revision']);
-  const messageSupport = one(m.support, ['available', 'unreadable']);
-  if (messageSupport === 'unreadable' && (m.pending !== null || m.delivery_failed !== null || m.revision !== null)) invalid();
-  const messages = messageSupport === 'unreadable' ? { support: messageSupport, pending: null, delivery_failed: null, revision: null } : { support: messageSupport, pending: count(m.pending), delivery_failed: count(m.delivery_failed), revision: digest(m.revision) };
   const r = record(v.runtime_effects, ['support', 'active', 'reconciliation_required', 'failed', 'wake', 'revision']);
   const runtimeSupport = one(r.support, ['available', 'unreadable']);
   let runtime: Engineer['runtime_effects'];
@@ -89,7 +85,7 @@ function engineer(value: unknown): OperatorOrganizationEngineer {
     const w = record(r.wake, ['pending', 'delivered', 'failed', 'reconciliation_required']);
     runtime = { support: 'available', active: count(r.active), reconciliation_required: count(r.reconciliation_required), failed: count(r.failed), wake: { pending: count(w.pending), delivered: count(w.delivered), failed: count(w.failed), reconciliation_required: count(w.reconciliation_required) }, revision: digest(r.revision) };
   }
-  return { engineer_id: engineerId(v.engineer_id), capability_id: text(v.capability_id, /^capability\.[a-z0-9][a-z0-9-]*\.[a-z0-9][a-z0-9-]*$/u), engineer_contract_revision: digest(v.engineer_contract_revision), binding: { support: bindingSupport, state: bindingState, value: bindingValue, revision: bindingRevision }, active_claim: { support: claimSupport, value: claimValue, revision: claimRevision }, delegations: unsupported(v.delegations), memory: unsupported(v.memory), messages, runtime_effects: runtime };
+  return { engineer_id: engineerId(v.engineer_id), capability_id: text(v.capability_id, /^capability\.[a-z0-9][a-z0-9-]*\.[a-z0-9][a-z0-9-]*$/u), engineer_contract_revision: digest(v.engineer_contract_revision), binding: { support: bindingSupport, state: bindingState, value: bindingValue, revision: bindingRevision }, active_claim: { support: claimSupport, value: claimValue, revision: claimRevision }, delegations: unsupported(v.delegations), memory: unsupported(v.memory), runtime_effects: runtime };
 }
 
 /** Browser-safe shape validation; source digests identify records, not browser authorization. */
@@ -100,27 +96,27 @@ export function decodeOperatorOrganizationSnapshot(value: unknown, repositoryId:
   text(v.repository_id, /^repo_[0-9a-f]{16}$/u);
   const engineers = array(v.engineers, OPERATOR_ORGANIZATION_LIMIT).map(engineer);
   if (new Set(engineers.map(item => item.engineer_id)).size !== engineers.length) invalid();
-  const componentNames = ['profiles', 'bindings', 'claims', 'messages', 'runtime_effects'] as const;
-  const components = array(v.components, 5).map(item => {
+  const componentNames = ['profiles', 'bindings', 'claims', 'runtime_effects'] as const;
+  const components = array(v.components, componentNames.length).map(item => {
     const c = record(item, ['component', 'support', 'observation_before', 'observation_after']);
     const support = one(c.support, ['available', 'unreadable']);
     const before = nullableDigest(c.observation_before), after = nullableDigest(c.observation_after);
     if (support === 'available' ? before === null || after === null : before !== null || after !== null) invalid();
     return { component: one(c.component, componentNames), support, observation_before: before, observation_after: after };
   });
-  if (new Set(components.map(c => c.component)).size !== 5) invalid();
+  if (new Set(components.map(c => c.component)).size !== componentNames.length) invalid();
   const consistency = one(v.snapshot_consistency, ['stable', 'changed_during_read', 'degraded']);
   const expectedConsistency = components.some(c => c.support === 'unreadable') ? 'degraded' : components.some(c => c.observation_before !== c.observation_after) ? 'changed_during_read' : 'stable';
   if (consistency !== expectedConsistency) invalid();
   if (components.find(c => c.component === 'profiles')!.support === 'unreadable' && (engineers.length !== 0 || components.some(c => c.support !== 'unreadable'))) invalid();
   const a = record(v.attention, ['protocol', 'kind', 'repository_id', 'overlay_snapshot_sha256', 'observed_at', 'attention', 'snapshot_consistency', 'snapshot_sha256']);
   if (a.protocol !== 1 || a.kind !== 'repo-harness-organization-attention-snapshot' || a.repository_id !== repositoryId || a.overlay_snapshot_sha256 !== v.source_snapshot_sha256 || a.observed_at !== v.observed_at || a.snapshot_consistency !== consistency) invalid();
-  const reasons = ['binding_missing', 'binding_stale', 'engineer_contract_revision_changed', 'message_delivery_failed', 'runtime_reconciliation_required'] as const;
+  const reasons = ['binding_missing', 'binding_stale', 'engineer_contract_revision_changed', 'runtime_reconciliation_required'] as const;
   const attention = array(a.attention, OPERATOR_ORGANIZATION_LIMIT * reasons.length).map(item => {
     const row = record(item, ['engineer_id', 'reason', 'owner', 'source_revision']);
     const id = engineerId(row.engineer_id);
     if (!engineers.some(e => e.engineer_id === id)) invalid();
-    return { engineer_id: id, reason: one(row.reason, reasons), owner: one(row.owner, ['maintainer', 'module_engineer', 'runtime_operator']), source_revision: digest(row.source_revision) };
+    return { engineer_id: id, reason: one(row.reason, reasons), owner: one(row.owner, ['maintainer', 'runtime_operator']), source_revision: digest(row.source_revision) };
   });
   if (new Set(attention.map(row => `${row.engineer_id}:${row.reason}`)).size !== attention.length) invalid();
   return { repository_id: repositoryId, registry_revision: digest(v.registry_revision), observed_at: instant(v.observed_at), source_snapshot_sha256: digest(v.source_snapshot_sha256), snapshot_consistency: consistency, components, engineers, attention: { protocol: 1, kind: 'repo-harness-organization-attention-snapshot', repository_id: repositoryId, overlay_snapshot_sha256: digest(a.overlay_snapshot_sha256), observed_at: instant(a.observed_at), snapshot_consistency: consistency, snapshot_sha256: digest(a.snapshot_sha256), attention } };
@@ -133,7 +129,7 @@ export function projectOperatorOrganizationSnapshot(overlay: EngineeringOverlayS
     engineer_id: e.engineer_id, capability_id: e.capability_id, engineer_contract_revision: e.engineer_contract_revision,
     binding: { support: e.binding.support, state: e.binding.state, revision: e.binding.revision, value: e.binding.value && { binding_id: e.binding.value.binding_id, binding_generation: e.binding.value.binding_generation, engineer_contract_revision: e.binding.value.engineer_contract_revision, provider: e.binding.value.provider, observation: e.binding.value.observation } },
     active_claim: { support: e.active_claim.support, revision: e.active_claim.revision, value: e.active_claim.value && { task_id: e.active_claim.value.task_id, task_revision: e.active_claim.value.task_revision, claim_id: e.active_claim.value.claim_id, lease_generation: e.active_claim.value.lease_generation, work_envelope_sha256: e.active_claim.value.work_envelope_sha256, receipt_sha256: e.active_claim.value.receipt_sha256 } },
-    delegations: e.delegations, messages: e.messages, runtime_effects: e.runtime_effects, memory: e.memory,
+    delegations: e.delegations, runtime_effects: e.runtime_effects, memory: e.memory,
   }));
   return decodeOperatorOrganizationSnapshot({ repository_id: overlay.repository_id, registry_revision: overlay.registry_revision, observed_at: overlay.observed_at, source_snapshot_sha256: overlay.snapshot_sha256, snapshot_consistency: overlay.snapshot_consistency, components: overlay.components, engineers, attention }, overlay.repository_id);
 }

@@ -151,7 +151,6 @@ function deps(root: string, overrides: Partial<EngineeringOverlayDependencies> =
     listProfiles: listEngineerProfiles,
     readBinding: readEngineerBindingStatus,
     listClaims: () => Object.freeze([]),
-    readMessages: () => Object.freeze({ pending: 0, delivery_failed: 0, revision: `sha256:${'3'.repeat(64)}` }),
     listRuntimeEffects: () => Object.freeze([]),
     ...overrides,
   };
@@ -162,16 +161,14 @@ afterEach(() => {
 });
 
 describe('ME-1B Engineering Overlay', () => {
-  test('projects stable binding/message attention without mutating tracked task authority', () => {
+  test('projects stable bindings without mutating tracked task authority', () => {
     const root = fixture();
     bind(root, bindingOne);
     const before = execFileSync('git', ['status', '--porcelain=v1'], { cwd: root, encoding: 'utf8' });
     const board = collectEngineeringBoard({
       repo_root: root,
       observed_at: '2026-08-25T15:02:00.000Z',
-      dependencies: deps(root, {
-        readMessages: (_root, id) => Object.freeze({ pending: id === engineerId ? 1 : 0, delivery_failed: id === engineerId ? 1 : 0, revision: `sha256:${id === engineerId ? '4'.repeat(64) : '5'.repeat(64)}` }),
-      }),
+      dependencies: deps(root),
     });
     expect(board.overlay.registry_revision).toBe(`sha256:${'2'.repeat(64)}`);
     expect(board.overlay.snapshot_consistency).toBe('stable');
@@ -179,13 +176,8 @@ describe('ME-1B Engineering Overlay', () => {
       binding: { support: 'available', state: 'active', value: { observation: 'unknown' } },
       active_claim: { support: 'available', value: null },
       delegations: { support: 'unsupported', value: null },
-      messages: { support: 'available', pending: 1, delivery_failed: 1 },
       memory: { support: 'unsupported', value: null },
     });
-    expect(board.organization_attention.attention).toContainEqual(expect.objectContaining({
-      engineer_id: engineerId,
-      reason: 'message_delivery_failed',
-    }));
     expect(execFileSync('git', ['status', '--porcelain=v1'], { cwd: root, encoding: 'utf8' })).toBe(before);
   });
 
@@ -272,10 +264,10 @@ describe('ME-1B Engineering Overlay', () => {
     const board = collectEngineeringBoard({
       repo_root: root,
       observed_at: '2026-08-25T15:02:00.000Z',
-      dependencies: deps(root, { readMessages: () => { throw new Error('unreadable'); } }),
+      dependencies: deps(root, { listRuntimeEffects: () => { throw new Error('unreadable'); } }),
     });
     expect(board.overlay.snapshot_consistency).toBe('degraded');
-    expect(board.overlay.engineers.every((item) => item.messages.support === 'unreadable')).toBeTrue();
+    expect(board.overlay.engineers.every((item) => item.runtime_effects.support === 'unreadable')).toBeTrue();
     const active = board.overlay.engineers.find((item) => item.binding.state === 'unbound')!;
     expect(() => validateEngineeringOverlaySnapshot({
       ...board.overlay,

@@ -369,8 +369,6 @@ controller of its own.
 ```bash
 repo-harness engineer principal enroll        # map an OAuth authorization to a Binding
 repo-harness engineer acquire-next --authorization-id <id> --idempotency-key <key>
-repo-harness engineer work-demand propose|transition|materialize|status
-repo-harness engineer message send|receive|ack
 repo-harness engineer board                   # read-only organization attention
 ```
 
@@ -461,7 +459,7 @@ Read committed architecture facts or export a module review prompt:
 
 ```bash
 repo-harness module list --json
-repo-harness module review-prompt capability.runtime-harness.verified-context --json
+repo-harness module review-prompt capability.runtime-harness.engineer-bindings --json
 ```
 
 The prompt uses HEAD content. It reports uncommitted paths and their content

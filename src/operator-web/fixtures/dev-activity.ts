@@ -27,7 +27,7 @@ function source(kind: DevActivitySourceHealth['kind'], status: DevActivitySource
 
 function healthy(now: number, overrides: Partial<Record<DevActivitySourceHealth['kind'], DevActivitySourceHealth>> = {}): DevActivitySourceHealth[] {
   const seen = at(now, 40_000);
-  const base: DevActivitySourceHealth[] = [source('git', 'ok', seen), source('github', 'ok', seen), source('runtime', 'ok', seen), source('decisions', 'ok', seen)];
+  const base: DevActivitySourceHealth[] = [source('git', 'ok', seen), source('github', 'ok', seen), source('runtime', 'ok', seen)];
   return base.map(row => overrides[row.kind] ?? row);
 }
 
@@ -60,7 +60,7 @@ function merged(now: number, repositoryId: string, slug: string, number: number,
   });
 }
 
-/** Git/GitHub work, two attention rows and one pending cleanup. Planned stays empty. */
+/** Git/GitHub work, one attention row and one pending cleanup. Planned stays empty. */
 export function busyDevActivity(now: number): DevActivitySnapshotV2 {
   const harness = 'Ancienttwo/repo-harness', site = 'acme/operator-site';
   const repositories: DevActivityRepository[] = [
@@ -112,8 +112,6 @@ export function busyDevActivity(now: number): DevActivitySnapshotV2 {
     merged(now, HARNESS_ID, harness, 597, 'fix/notify-retry', 'Retry notify delivery once', 6 * DAY),
   ];
   const attention: DevActivityAttention[] = [
-    { kind: 'human_request', subject_id: 'dec-7f3a', repository_id: HARNESS_ID, summary: 'Ship the Kumo console behind a flag or replace the old UI outright?',
-      waiting_since: at(now, 4 * HOUR), url: null, command: 'repo-harness verified-context read --kind decision --id dec-7f3a' },
     { kind: 'ready_to_merge', subject_id: `${HARNESS_ID}:chore/oar-0-45`, repository_id: HARNESS_ID, summary: 'Upgrade OAR to 0.45.1',
       waiting_since: at(now, 50 * MINUTE), url: `https://github.com/${harness}/pull/602`, command: null },
   ];
@@ -135,7 +133,6 @@ export function degradedDevActivity(now: number): DevActivitySnapshotV2 {
   const sources = (seen: string) => [
     source('git', 'ok', seen), source('github', 'unavailable', at(now, 3 * HOUR), 'gh_auth_failed'),
     source('runtime', 'not_configured', null, 'runtime_not_configured'),
-    source('decisions', 'stale', at(now, 2 * HOUR), 'decisions_stale'),
   ];
   const seen = at(now, 5 * MINUTE);
   return {

@@ -209,7 +209,7 @@ describe('ME-0B engineer acquire composition', () => {
       expected_binding_generation: active.binding_generation,
       expected_binding_id: active.current_binding_id!,
       expected_engineer_contract_revision: actor.engineer_contract_revision,
-    })).toThrow('inspect/freeze the bound task');
+    })).toThrow('release it explicitly');
   });
 
   test('holds the Binding lock and rejects a stale principal before Fleet mutation', () => {

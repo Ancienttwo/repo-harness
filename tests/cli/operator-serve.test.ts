@@ -32,9 +32,8 @@ import {
 } from '../../src/cli/commands/operator';
 
 function unavailableRepository(repositoryId: string): OperatorRepositorySnapshotV1 {
-  return { protocol: 1, kind: 'operator_repository_snapshot', decision_after: null,
+  return { protocol: 1, kind: 'operator_repository_snapshot', repository_id: repositoryId,
     planning: { status: 'unavailable', observed_at: '2026-09-22T00:00:00.000Z', code: 'source_unavailable' },
-    decisions: { status: 'unavailable', observed_at: '2026-09-22T00:00:00.000Z', code: 'source_unavailable' }, repository_id: repositoryId,
     organization: { status: 'unavailable', observed_at: '2026-09-22T00:00:00.000Z', code: 'source_unavailable' } };
 }
 
@@ -480,7 +479,9 @@ describe('operator serve command and HTTP boundary', () => {
     const staticRoot = mkdtempSync(join(tmpdir(), 'repo-harness-operator-repository-worker-'));
     const repoRoot = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-operator-repository-repo-')));
     expect(spawnSync('git', ['init', '-q', repoRoot]).status).toBe(0);
-    const registry = registryHome([{ path: repoRoot, accessMode: 'read_write' }]);
+    const secondRoot = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-operator-repository-second-')));
+    expect(spawnSync('git', ['init', '-q', secondRoot]).status).toBe(0);
+    const registry = registryHome([{ path: repoRoot, accessMode: 'read_write' }, { path: secondRoot, accessMode: 'read_write' }]);
     // Block a remaining Git read. The retired collaboration policy is no longer read.
     const policyPath = join(repoRoot, 'git-read-gate');
     const bin = join(repoRoot, 'bin');
@@ -516,8 +517,7 @@ describe('operator serve command and HTTP boundary', () => {
       expect(busy.status).toBe(503);
       expect(await busy.json()).toMatchObject({ error: { code: 'repository_snapshot_busy' } });
       let queuedFinished = false;
-      const cursor = 'a'.repeat(64);
-      const queued = fetch(url + '?decision_after=' + cursor).then(response => { queuedFinished = true; return response; });
+      const queued = fetch(`${server.url}/api/v1/repositories/${registry.ids[1]!}/snapshot`).then(response => { queuedFinished = true; return response; });
       await Bun.sleep(30);
       expect(queuedFinished).toBe(false);
 
@@ -537,6 +537,7 @@ describe('operator serve command and HTTP boundary', () => {
       await server.close();
       rmSync(staticRoot, { recursive: true, force: true });
       rmSync(repoRoot, { recursive: true, force: true });
+      rmSync(secondRoot, { recursive: true, force: true });
       rmSync(registry.home, { recursive: true, force: true });
     }
   });
@@ -1126,7 +1127,7 @@ test('fleet snapshots use a new service epoch after server restart', async () =>
 });
 
 describe('repository source collection', () => {
-  test('reads registered stores without writes and keeps organization when Decisions are corrupt', () => {
+  test('a corrupt Planning source does not hide Organization data, write files or leak paths', () => {
     const repoRoot = realpathSync(mkdtempSync(join(tmpdir(), 'operator-source-read-')));
     expect(spawnSync('git', ['init', '-q', repoRoot]).status).toBe(0);
     const registry = registryHome([{ path: repoRoot, accessMode: 'read_only' }]);
@@ -1142,17 +1143,17 @@ describe('repository source collection', () => {
       const observed = readOperatorRepositorySnapshot({ env: registry.env, repository_id: registry.ids[0]! });
       expect(observed.protocol).toBe(1);
       expect(observed.organization.status).toBe('observed');
-      expect(observed.decisions).toMatchObject({ status: 'observed', snapshot: { entries: [], coverage: { complete: true } } });
+      expect(observed.planning.status).toBe('observed');
+      expect(JSON.stringify(observed)).not.toContain(repoRoot);
       expect(tree(repoRoot)).toEqual(before);
-      const decisionsRoot = join(repoRoot, '.git/repo-harness/verified-context/v1/decisions');
-      mkdirSync(decisionsRoot, { recursive: true });
-      writeFileSync(join(decisionsRoot, 'invalid-entry'), 'corrupt');
-      const brokenBefore = tree(repoRoot);
-      const broken = readOperatorRepositorySnapshot({ env: registry.env, repository_id: registry.ids[0]! });
-      expect(broken.decisions.status).toBe('unavailable');
-      expect(broken.organization.status).toBe('observed');
-      expect(JSON.stringify(broken)).not.toContain(repoRoot);
-      expect(tree(repoRoot)).toEqual(brokenBefore);
+      mkdirSync(join(repoRoot, '.ai/harness/sprint'), { recursive: true });
+      writeFileSync(join(repoRoot, '.ai/harness/sprint/active-sprint'), '../invalid.sprint.md\n');
+      const corruptBefore = tree(repoRoot);
+      const corrupt = readOperatorRepositorySnapshot({ env: registry.env, repository_id: registry.ids[0]! });
+      expect(corrupt.planning).toMatchObject({ status: 'unavailable', code: 'source_unavailable' });
+      expect(corrupt.organization.status).toBe('observed');
+      expect(JSON.stringify(corrupt)).not.toContain(repoRoot);
+      expect(tree(repoRoot)).toEqual(corruptBefore);
     } finally {
       rmSync(repoRoot, { recursive: true, force: true });
       rmSync(registry.home, { recursive: true, force: true });
@@ -1160,34 +1161,34 @@ describe('repository source collection', () => {
   });
 });
 
-test('Decision cursors are bounded, bind responses and partition single-flight within the shared worker budget', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'operator-decision-query-'));
-  const calls: Array<string | null> = [];
+test('repository identities bind responses and partition single-flight within the shared worker budget', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'operator-repository-query-'));
+  const calls: string[] = [];
   const resolvers: Array<(value: OperatorRepositorySnapshotV1) => void> = [];
   const server = await startOperatorServer({ port: 0, static_root: root, max_concurrency: 1,
-    read_repository_snapshot: input => { calls.push(input.decision_after ?? null); return new Promise(resolve => resolvers.push(resolve)); },
+    read_repository_snapshot: input => { calls.push(input.repository_id); return new Promise(resolve => resolvers.push(resolve)); },
   });
   const url = server.url + '/api/v1/repositories/repo-a/snapshot';
-  const cursor = 'a'.repeat(64);
+  const secondUrl = server.url + '/api/v1/repositories/repo-b/snapshot';
   try {
-    for (const query of ['?decision_after=', '?decision_after=../secret', '?path=private', `?decision_after=${cursor}&decision_after=${cursor}`]) {
+    for (const query of ['?cursor=', '?cursor=../secret', '?path=private', '?cursor=a&cursor=a']) {
       expect((await fetch(url + query)).status).toBe(400);
     }
     expect(calls).toEqual([]);
     const first = fetch(url);
-    await waitFor(() => calls.length === 1, 'first Decision page not started');
-    const second = fetch(url + '?decision_after=' + cursor);
-    const samePage = fetch(url + '?decision_after=' + cursor);
+    await waitFor(() => calls.length === 1, 'first repository not started');
+    const second = fetch(secondUrl);
+    const samePage = fetch(secondUrl);
     await Bun.sleep(30);
-    expect(calls).toEqual([null]);
+    expect(calls).toEqual(['repo-a']);
     resolvers[0]!(unavailableRepository('repo-a'));
     expect((await first).status).toBe(200);
-    await waitFor(() => calls.length === 2, 'next Decision page not started');
-    expect(calls).toEqual([null, cursor]);
-    resolvers[1]!({ ...unavailableRepository('repo-a'), decision_after: cursor });
+    await waitFor(() => calls.length === 2, 'next repository not started');
+    expect(calls).toEqual(['repo-a', 'repo-b']);
+    resolvers[1]!(unavailableRepository('repo-b'));
     expect((await second).status).toBe(200); expect((await samePage).status).toBe(200);
     expect(calls.length).toBe(2);
-    const mismatch = fetch(url + '?decision_after=' + cursor);
+    const mismatch = fetch(secondUrl);
     await waitFor(() => calls.length === 3, 'mismatch probe not started');
     resolvers[2]!(unavailableRepository('repo-a'));
     const refused = await mismatch;

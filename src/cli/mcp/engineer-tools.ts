@@ -4,29 +4,9 @@ import { TaskReplyError } from '../../core/fleet/task-reply';
 import { EngineerPrincipalError } from '../../core/engineers/principal-claim';
 import { EngineerSchedulingError } from '../../core/engineers/scheduling';
 import {
-  InterfaceChangeError,
-  buildInterfaceChangeRequest,
-  type InterfaceChangeTransition,
-} from '../../core/engineers/interface-change';
-import { WorkDemandError, buildWorkDemand, type WorkDemandTransition } from '../../core/engineers/work-demand';
-import {
-  ModuleMessageError,
-  buildModuleMessageEvent,
-  type ModuleMessageResourceRefV1,
-  type ModuleMessageScope,
-  type ModuleMessageSubjectRefV1,
-  type ModuleMessageType,
-} from '../../core/engineers/module-message';
-import {
   AgentRuntimeEffectError,
   type AgentRuntimeAdapterKind,
 } from '../../core/engineers/agent-runtime-effect';
-import {
-  ModuleInboxError,
-  acknowledgeModuleMessage,
-  receiveModuleInbox,
-  sendModuleMessage,
-} from '../../effects/engineers/module-inbox';
 import { readEngineerBindingStatus } from '../../effects/engineers/binding-store';
 import { loadEngineerProfile } from '../../effects/engineers/profile-store';
 import {
@@ -45,12 +25,6 @@ import {
   EngineerAcquisitionLedgerError,
   EngineerObservationError,
 } from '../../effects/engineers/scheduling-acquire-next';
-import {
-  InterfaceChangeStoreError,
-  readInterfaceChangeStatus,
-  transitionInterfaceChangeRequest,
-} from '../../effects/engineers/interface-change-store';
-import { WorkDemandStoreError, readWorkDemandStatus, transitionWorkDemand } from '../../effects/engineers/work-demand-store';
 import { hashMcpInput, tryWriteMcpAuditEntry } from './audit';
 import { redactMcpText } from './redaction';
 
@@ -64,15 +38,8 @@ export const ENGINEER_MCP_TOOL_NAMES = [
   'engineer_prepare',
   'engineer_acquire',
   'engineer_acquire_next',
-  'engineer_messages',
-  'engineer_message_send',
-  'engineer_message_ack',
   'engineer_runtime_effect_capability',
   'engineer_runtime_effect_status',
-  'engineer_interface_change_propose',
-  'engineer_interface_change_transition',
-  'engineer_work_demand_propose',
-  'engineer_work_demand_transition',
 ] as const;
 export type EngineerMcpToolName = typeof ENGINEER_MCP_TOOL_NAMES[number];
 
@@ -107,52 +74,12 @@ const PARAMETER_NAMES: Readonly<Record<EngineerMcpToolName, readonly string[]>> 
     'repo_id', 'engineer_id', 'binding_id', 'binding_generation', 'engineer_contract_revision',
     'idempotency_key', 'capability_id', 'minimum_priority', 'max_selection_attempts',
   ],
-  engineer_messages: ['repo_id', 'engineer_id', 'binding_id', 'binding_generation', 'engineer_contract_revision'],
-  engineer_message_send: [
-    'repo_id',
-    'engineer_id',
-    'binding_id',
-    'binding_generation',
-    'engineer_contract_revision',
-    'message_id',
-    'capability_id',
-    'target_engineer_id',
-    'scope',
-    'target_binding_id',
-    'target_binding_generation',
-    'target_engineer_contract_revision',
-    'message_type',
-    'subject_ref',
-    'resource_refs',
-    'body',
-    'created_at',
-  ],
-  engineer_message_ack: [
-    'repo_id',
-    'engineer_id',
-    'binding_id',
-    'binding_generation',
-    'engineer_contract_revision',
-    'message_id',
-  ],
   engineer_runtime_effect_capability: [
     'repo_id', 'engineer_id', 'binding_id', 'binding_generation', 'engineer_contract_revision',
   ],
   engineer_runtime_effect_status: [
     'repo_id', 'engineer_id', 'binding_id', 'binding_generation', 'engineer_contract_revision', 'effect_id',
   ],
-  engineer_interface_change_propose: [
-    'repo_id', 'engineer_id', 'binding_id', 'binding_generation', 'engineer_contract_revision',
-    'request_id', 'source_capability_id', 'target_capability_id', 'target_engineer_id',
-    'interface_ref', 'proposed_change', 'compatibility_impact', 'idempotency_key',
-  ],
-  engineer_interface_change_transition: [
-    'repo_id', 'engineer_id', 'binding_id', 'binding_generation', 'engineer_contract_revision',
-    'request_id', 'transition', 'idempotency_key', 'expected_current_digest',
-    'materialization_commit', 'evidence_sha256',
-  ],
-  engineer_work_demand_propose: ['repo_id','engineer_id','binding_id','binding_generation','engineer_contract_revision','demand_id','idempotency_key','source_capability_id','target_capability_id','target_engineer_id','problem','desired_outcome','contract_escape_reason','resource_refs','requested_urgency','dependency_hints','created_at'],
-  engineer_work_demand_transition: ['repo_id','engineer_id','binding_id','binding_generation','engineer_contract_revision','demand_id','transition','idempotency_key','expected_current_digest'],
 });
 
 export interface EngineerMcpToolContext {
@@ -281,59 +208,6 @@ export function buildEngineerToolDefinitions(): EngineerMcpToolDefinition[] {
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     },
     {
-      name: 'engineer_messages',
-      description: 'Consume durable Module Engineer messages for this exact current Binding and persist delivery before returning.',
-      inputSchema: {
-        type: 'object',
-        properties: principalFenceProperties,
-        additionalProperties: false,
-      },
-      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-    },
-    {
-      name: 'engineer_message_send',
-      description: 'Persist one closed Module or assignment message before any optional transport.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          ...principalFenceProperties,
-          message_id: { type: 'string', format: 'uuid' },
-          capability_id: { type: 'string', pattern: '^capability\\.[a-z0-9][a-z0-9-]*\\.[a-z0-9][a-z0-9-]*$' },
-          target_engineer_id: { type: 'string' },
-          scope: { type: 'string', enum: ['module', 'assignment'] },
-          target_binding_id: { type: ['string', 'null'], format: 'uuid' },
-          target_binding_generation: { type: ['number', 'null'], minimum: 1 },
-          target_engineer_contract_revision: { type: ['string', 'null'], pattern: '^sha256:[0-9a-f]{64}$' },
-          message_type: {
-            type: 'string',
-            enum: ['work_request', 'status_update', 'blocker', 'decision_request', 'review_request', 'handoff', 'integration_ready', 'incident', 'subject_notification'],
-          },
-          subject_ref: { type: ['object', 'null'] },
-          resource_refs: { type: 'array', maxItems: 8 },
-          body: { type: 'string', maxLength: 8192 },
-          created_at: { type: 'string' },
-        },
-        required: [
-          'message_id', 'capability_id', 'target_engineer_id', 'scope', 'target_binding_id',
-          'target_binding_generation', 'target_engineer_contract_revision', 'message_type',
-          'subject_ref', 'resource_refs', 'body', 'created_at',
-        ],
-        additionalProperties: false,
-      },
-      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-    },
-    {
-      name: 'engineer_message_ack',
-      description: 'Acknowledge one delivered message only after every typed resource matches its declared digest.',
-      inputSchema: {
-        type: 'object',
-        properties: { ...principalFenceProperties, message_id: { type: 'string', format: 'uuid' } },
-        required: ['message_id'],
-        additionalProperties: false,
-      },
-      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-    },
-    {
       name: 'engineer_runtime_effect_capability',
       description: 'Read the operator-observed Agent Runtime capability for this exact current Engineer Binding.',
       inputSchema: {
@@ -355,56 +229,6 @@ export function buildEngineerToolDefinitions(): EngineerMcpToolDefinition[] {
         additionalProperties: false,
       },
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-    },
-    {
-      name: 'engineer_interface_change_propose',
-      description: 'Persist one source-Engineer-fenced ME-4B request without mutating planning, code, Task, Lease, Publication or Acceptance.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          ...principalFenceProperties,
-          request_id: { type: 'string', format: 'uuid' },
-          source_capability_id: { type: 'string', pattern: '^capability\\.[a-z0-9][a-z0-9-]*\\.[a-z0-9][a-z0-9-]*$' },
-          target_capability_id: { type: 'string', pattern: '^capability\\.[a-z0-9][a-z0-9-]*\\.[a-z0-9][a-z0-9-]*$' },
-          target_engineer_id: { type: 'string' },
-          interface_ref: { type: 'string', maxLength: 2048 },
-          proposed_change: { type: 'string', maxLength: 16384 },
-          compatibility_impact: { type: 'string', maxLength: 16384 },
-          idempotency_key: { type: 'string', maxLength: 512 },
-        },
-        required: ['request_id', 'source_capability_id', 'target_capability_id', 'target_engineer_id', 'interface_ref', 'proposed_change', 'compatibility_impact', 'idempotency_key'],
-        additionalProperties: false,
-      },
-      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-    },
-    {
-      name: 'engineer_interface_change_transition',
-      description: 'Apply one authenticated ME-4B Engineer transition: submit, cancel, materialize or implemented.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          ...principalFenceProperties,
-          request_id: { type: 'string', format: 'uuid' },
-          transition: { type: 'string', enum: ['submit', 'cancel', 'materialize', 'implemented'] },
-          idempotency_key: { type: 'string', maxLength: 512 },
-          expected_current_digest: { type: 'string', pattern: '^sha256:[0-9a-f]{64}$' },
-          materialization_commit: { type: ['string', 'null'], pattern: '^[0-9a-f]{40,64}$' },
-          evidence_sha256: { type: ['string', 'null'], pattern: '^sha256:[0-9a-f]{64}$' },
-        },
-        required: ['request_id', 'transition', 'idempotency_key', 'expected_current_digest', 'materialization_commit', 'evidence_sha256'],
-        additionalProperties: false,
-      },
-      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-    },
-    {
-      name: 'engineer_work_demand_propose', description: 'Persist one exact Binding-fenced Agent WorkDemand; it creates no Task, Claim, Lease or offer.',
-      inputSchema: { type:'object', properties:{...principalFenceProperties,demand_id:{type:'string',format:'uuid'},idempotency_key:{type:'string',maxLength:512},source_capability_id:{type:'string'},target_capability_id:{type:'string'},target_engineer_id:{type:['string','null']},problem:{type:'string',maxLength:16384},desired_outcome:{type:'string',maxLength:16384},contract_escape_reason:{type:'string',maxLength:16384},resource_refs:{type:'array'},requested_urgency:{type:'string',enum:['low','normal','high','urgent']},dependency_hints:{type:'array',items:{type:'string'}},created_at:{type:'string'}},required:['demand_id','idempotency_key','source_capability_id','target_capability_id','target_engineer_id','problem','desired_outcome','contract_escape_reason','resource_refs','requested_urgency','dependency_hints','created_at'],additionalProperties:false},
-      annotations:{readOnlyHint:false,destructiveHint:false,idempotentHint:true,openWorldHint:false},
-    },
-    {
-      name:'engineer_work_demand_transition',description:'Submit or cancel an existing WorkDemand as its exact current requester Engineer.',
-      inputSchema:{type:'object',properties:{...principalFenceProperties,demand_id:{type:'string',format:'uuid'},transition:{type:'string',enum:['submit','cancel']},idempotency_key:{type:'string',maxLength:512},expected_current_digest:{type:'string',pattern:'^sha256:[0-9a-f]{64}$'}},required:['demand_id','transition','idempotency_key','expected_current_digest'],additionalProperties:false},
-      annotations:{readOnlyHint:false,destructiveHint:false,idempotentHint:true,openWorldHint:false},
     },
   ];
 }
@@ -478,51 +302,6 @@ function requiredInteger(args: Record<string, unknown>, name: string, minimum: n
   return value;
 }
 
-function requiredNullableString(args: Record<string, unknown>, name: string): string | null {
-  if (!(name in args)) throw new EngineerMcpError('INVALID_ARGUMENT', `${name} is required`);
-  if (args[name] === null) return null;
-  return requiredString(args, name);
-}
-
-function requiredNullableInteger(args: Record<string, unknown>, name: string): number | null {
-  if (!(name in args)) throw new EngineerMcpError('INVALID_ARGUMENT', `${name} is required`);
-  if (args[name] === null) return null;
-  return requiredInteger(args, name, 1);
-}
-
-function messageSendAsEngineer(
-  ctx: EngineerMcpToolContext,
-  args: Record<string, unknown>,
-  principal: ReturnType<typeof resolvePrincipal>,
-): EngineerMcpToolResult {
-  if (!Array.isArray(args.resource_refs)) throw new EngineerMcpError('INVALID_ARGUMENT', 'resource_refs must be an array');
-  if (args.subject_ref !== null && (typeof args.subject_ref !== 'object' || Array.isArray(args.subject_ref))) {
-    throw new EngineerMcpError('INVALID_ARGUMENT', 'subject_ref must be an object or null');
-  }
-  const event = buildModuleMessageEvent({
-    message_id: requiredString(args, 'message_id'),
-    capability_id: requiredString(args, 'capability_id'),
-    target_engineer_id: requiredString(args, 'target_engineer_id'),
-    scope: requiredString(args, 'scope') as ModuleMessageScope,
-    target_binding_id: requiredNullableString(args, 'target_binding_id'),
-    target_binding_generation: requiredNullableInteger(args, 'target_binding_generation'),
-    target_engineer_contract_revision: requiredNullableString(args, 'target_engineer_contract_revision'),
-    message_type: requiredString(args, 'message_type') as ModuleMessageType,
-    subject_ref: args.subject_ref as ModuleMessageSubjectRefV1 | null,
-    resource_refs: args.resource_refs as readonly ModuleMessageResourceRefV1[],
-    sender: {
-      kind: 'engineer',
-      principal_ref: principal.engineer_id,
-      binding_generation: principal.binding_generation,
-    },
-    body: requiredString(args, 'body'),
-    created_at: requiredString(args, 'created_at'),
-  });
-  const result = sendModuleMessage({ repo_root: ctx.repoRoot, event });
-  audit(ctx, 'engineer_message_send', 'ok', args);
-  return textResult(result);
-}
-
 function resolvePrincipal(ctx: EngineerMcpToolContext, args: Record<string, unknown>) {
   if (!ctx.authorizationId) throw new EngineerMcpError('ENGINEER_AUTHORIZATION_MISSING', 'verified Engineer authorization identity is missing');
   const fences: EngineerPrincipalFences = {
@@ -594,82 +373,6 @@ function acquireNextAsEngineer(
   return result.ok ? textResult(result) : errorResult(result.error, result.message);
 }
 
-function interfaceActor(principal: ReturnType<typeof resolvePrincipal>) {
-  return Object.freeze({
-    kind: 'engineer' as const,
-    principal: Object.freeze({
-      engineer_id: principal.engineer_id,
-      binding_id: principal.binding_id,
-      binding_generation: principal.binding_generation,
-      engineer_contract_revision: principal.engineer_contract_revision,
-    }),
-  });
-}
-
-function proposeInterfaceChangeAsEngineer(
-  ctx: EngineerMcpToolContext,
-  args: Record<string, unknown>,
-  principal: ReturnType<typeof resolvePrincipal>,
-): EngineerMcpToolResult {
-  const request = buildInterfaceChangeRequest({
-    repository_id: principal.repository_id,
-    request_id: requiredString(args, 'request_id'),
-    source_capability_id: requiredString(args, 'source_capability_id'),
-    target_capability_id: requiredString(args, 'target_capability_id'),
-    requester_fence: interfaceActor(principal).principal,
-    target_engineer_id: requiredString(args, 'target_engineer_id'),
-    interface_ref: requiredString(args, 'interface_ref'),
-    proposed_change: requiredString(args, 'proposed_change'),
-    compatibility_impact: requiredString(args, 'compatibility_impact'),
-  });
-  const result = transitionInterfaceChangeRequest({
-    repo_root: ctx.repoRoot,
-    request,
-    idempotency_key: requiredString(args, 'idempotency_key'),
-    transition: 'propose',
-    expected_current_digest: null,
-    actor: interfaceActor(principal),
-    planning_projection: null,
-    materialization_commit: null,
-    evidence_sha256: null,
-  });
-  audit(ctx, 'engineer_interface_change_propose', 'ok', args);
-  return textResult(result);
-}
-
-function transitionInterfaceChangeAsEngineer(
-  ctx: EngineerMcpToolContext,
-  args: Record<string, unknown>,
-  principal: ReturnType<typeof resolvePrincipal>,
-): EngineerMcpToolResult {
-  const transition = requiredString(args, 'transition') as InterfaceChangeTransition;
-  if (!['submit', 'cancel', 'materialize', 'implemented'].includes(transition)) {
-    throw new EngineerMcpError('INVALID_ARGUMENT', 'Engineer interface transition must be submit, cancel, materialize or implemented');
-  }
-  const status = readInterfaceChangeStatus(ctx.repoRoot, requiredString(args, 'request_id'));
-  const result = transitionInterfaceChangeRequest({
-    repo_root: ctx.repoRoot,
-    request: status.request,
-    idempotency_key: requiredString(args, 'idempotency_key'),
-    transition,
-    expected_current_digest: requiredString(args, 'expected_current_digest'),
-    actor: interfaceActor(principal),
-    planning_projection: null,
-    materialization_commit: requiredNullableString(args, 'materialization_commit'),
-    evidence_sha256: requiredNullableString(args, 'evidence_sha256'),
-  });
-  audit(ctx, 'engineer_interface_change_transition', 'ok', args);
-  return textResult(result);
-}
-
-function demandActor(principal:ReturnType<typeof resolvePrincipal>){return {kind:'engineer' as const,principal:{engineer_id:principal.engineer_id,binding_id:principal.binding_id,binding_generation:principal.binding_generation,engineer_contract_revision:principal.engineer_contract_revision}};}
-function proposeWorkDemandAsEngineer(ctx:EngineerMcpToolContext,args:Record<string,unknown>,principal:ReturnType<typeof resolvePrincipal>):EngineerMcpToolResult{
-  if(!Array.isArray(args.resource_refs)||!Array.isArray(args.dependency_hints))throw new EngineerMcpError('INVALID_ARGUMENT','resource_refs and dependency_hints must be arrays');
-  const demand=buildWorkDemand({repository_id:principal.repository_id,demand_id:requiredString(args,'demand_id'),idempotency_key:requiredString(args,'idempotency_key'),source_engineer:demandActor(principal).principal,source_capability_id:requiredString(args,'source_capability_id'),target_capability_id:requiredString(args,'target_capability_id'),target_engineer_id:requiredNullableString(args,'target_engineer_id'),problem:requiredString(args,'problem'),desired_outcome:requiredString(args,'desired_outcome'),contract_escape_reason:requiredString(args,'contract_escape_reason'),resource_refs:args.resource_refs as never,requested_urgency:requiredString(args,'requested_urgency') as never,dependency_hints:args.dependency_hints as string[],created_at:requiredString(args,'created_at')});
-  const result=transitionWorkDemand({repo_root:ctx.repoRoot,demand,idempotency_key:requiredString(args,'idempotency_key'),transition:'propose',expected_current_digest:null,actor:demandActor(principal),acceptance:null,materialization_receipt:null});audit(ctx,'engineer_work_demand_propose','ok',args);return textResult(result);
-}
-function transitionWorkDemandAsEngineer(ctx:EngineerMcpToolContext,args:Record<string,unknown>,principal:ReturnType<typeof resolvePrincipal>):EngineerMcpToolResult{const transition=requiredString(args,'transition') as WorkDemandTransition;if(transition!=='submit'&&transition!=='cancel')throw new EngineerMcpError('INVALID_ARGUMENT','Engineer WorkDemand transition must be submit or cancel');const status=readWorkDemandStatus(ctx.repoRoot,requiredString(args,'demand_id'));const result=transitionWorkDemand({repo_root:ctx.repoRoot,demand:status.demand,idempotency_key:requiredString(args,'idempotency_key'),transition,expected_current_digest:requiredString(args,'expected_current_digest'),actor:demandActor(principal),acceptance:null,materialization_receipt:null});audit(ctx,'engineer_work_demand_transition','ok',args);return textResult(result);}
-
 function currentBindingForPrincipal(
   ctx: EngineerMcpToolContext,
   principal: ReturnType<typeof resolvePrincipal>,
@@ -729,20 +432,6 @@ export function callEngineerTool(
     }
     if (name === 'engineer_acquire') return acquireAsEngineer(ctx, args, principal);
     if (name === 'engineer_acquire_next') return acquireNextAsEngineer(ctx, args, principal);
-    if (name === 'engineer_messages') {
-      const result = receiveModuleInbox({ repo_root: ctx.repoRoot, principal });
-      audit(ctx, name, 'ok', args);
-      return textResult(result);
-    }
-    if (name === 'engineer_message_ack') {
-      const result = acknowledgeModuleMessage({
-        repo_root: ctx.repoRoot,
-        principal,
-        message_id: requiredString(args, 'message_id'),
-      });
-      audit(ctx, name, 'ok', args);
-      return textResult(result);
-    }
     if (name === 'engineer_runtime_effect_capability') {
       const binding = currentBindingForPrincipal(ctx, principal);
       if (binding.provider !== 'herdr-cli-agent') {
@@ -766,20 +455,13 @@ export function callEngineerTool(
       audit(ctx, name, 'ok', args);
       return textResult(result);
     }
-    if (name === 'engineer_interface_change_propose') return proposeInterfaceChangeAsEngineer(ctx, args, principal);
-    if (name === 'engineer_interface_change_transition') return transitionInterfaceChangeAsEngineer(ctx, args, principal);
-    if (name === 'engineer_work_demand_propose') return proposeWorkDemandAsEngineer(ctx,args,principal);
-    if (name === 'engineer_work_demand_transition') return transitionWorkDemandAsEngineer(ctx,args,principal);
-    return messageSendAsEngineer(ctx, args, principal);
+    throw new EngineerMcpError('INVALID_ARGUMENT', 'Unknown Engineer tool');
   } catch (error) {
     const code = error instanceof EngineerAcquisitionInputError ? 'INVALID_ARGUMENT'
       : error instanceof EngineerAcquisitionLedgerError || error instanceof EngineerObservationError || error instanceof EngineerPrincipalError || error instanceof EngineerMcpError
-      || error instanceof EngineerSchedulingError || error instanceof ModuleMessageError
+      || error instanceof EngineerSchedulingError
       || error instanceof TaskInboxError || error instanceof TaskReplyError || error instanceof TaskReplyStoreError
-      || error instanceof ModuleInboxError
       || error instanceof AgentRuntimeEffectError || error instanceof AgentRuntimeEffectStoreError
-      || error instanceof InterfaceChangeError || error instanceof InterfaceChangeStoreError
-      || error instanceof WorkDemandError || error instanceof WorkDemandStoreError
       ? error.code
       : 'ENGINEER_TOOL_FAILED';
     const message = error instanceof Error ? error.message : String(error);

@@ -32,7 +32,6 @@ import type {
   WorkPackageDependencyState,
   WorkPackageDependencyV1,
 } from '../../core/engineers/scheduling';
-import type { VerifiedEvidenceRefV1 } from '../../core/engineers/verified-context';
 import type {
   IntegrationContractV1,
   IntegrationEnvelopeV1,
@@ -73,7 +72,7 @@ export type DependencyAuthorityStatus = 'satisfied' | 'unsatisfied' | 'authority
 export interface DependencyAuthorityResolutionV1 {
   readonly status: DependencyAuthorityStatus;
   readonly authority_revision: string | null;
-  readonly evidence_refs: readonly VerifiedEvidenceRefV1[];
+  readonly evidence_refs: readonly { readonly ref: string; readonly sha256: string }[];
 }
 
 /**
@@ -150,11 +149,11 @@ function readers(overrides: Partial<DependencyAuthorityReaders> = {}): Dependenc
   return { ...defaultDependencyAuthorityReaders(), ...overrides };
 }
 
-function evidence(ref: string, sha256: string): VerifiedEvidenceRefV1 {
+function evidence(ref: string, sha256: string): DependencyAuthorityResolutionV1['evidence_refs'][number] {
   return Object.freeze({ ref, sha256 });
 }
 
-function sortedEvidence(refs: readonly VerifiedEvidenceRefV1[]): readonly VerifiedEvidenceRefV1[] {
+function sortedEvidence(refs: readonly DependencyAuthorityResolutionV1['evidence_refs'][number][]): readonly DependencyAuthorityResolutionV1['evidence_refs'][number][] {
   return Object.freeze([...refs].sort((left, right) => (
     `${left.ref}\n${left.sha256}`.localeCompare(`${right.ref}\n${right.sha256}`)
   )));
@@ -162,12 +161,12 @@ function sortedEvidence(refs: readonly VerifiedEvidenceRefV1[]): readonly Verifi
 
 interface AdapterVerdict {
   readonly status: DependencyAuthorityStatus;
-  readonly evidence_refs: readonly VerifiedEvidenceRefV1[];
+  readonly evidence_refs: readonly DependencyAuthorityResolutionV1['evidence_refs'][number][];
 }
 
 const UNAVAILABLE: AdapterVerdict = Object.freeze({ status: 'authority_unavailable', evidence_refs: Object.freeze([]) });
 
-function verdict(status: 'satisfied' | 'unsatisfied', refs: readonly VerifiedEvidenceRefV1[]): AdapterVerdict {
+function verdict(status: 'satisfied' | 'unsatisfied', refs: readonly DependencyAuthorityResolutionV1['evidence_refs'][number][]): AdapterVerdict {
   return Object.freeze({ status, evidence_refs: sortedEvidence(refs) });
 }
 

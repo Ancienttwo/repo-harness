@@ -44,7 +44,6 @@ export interface ModuleEngineerProfileV1 {
   };
   readonly max_active_claims: number;
   readonly escalation_policy: {
-    readonly cross_capability_change: 'interface_request';
     readonly acceptance: 'independent_plane';
   };
 }
@@ -112,6 +111,8 @@ export interface EngineerTransitionRequest {
 export type EngineerProfileBindingErrorCode =
   | 'engineer_profile_invalid'
   | 'engineer_binding_invalid'
+  | 'bound_task_active'
+  | 'bound_task_lease_unavailable'
   | 'binding_state_corrupt'
   | 'binding_stale'
   | 'idempotency_conflict'
@@ -266,9 +267,8 @@ export function validateModuleEngineerProfile(value: unknown): ModuleEngineerPro
   assertInteger(value.max_active_claims, 'max_active_claims', 1, invalidProfile);
 
   if (!isRecord(value.escalation_policy)) invalidProfile('escalation_policy must be an object');
-  assertExactKeys(value.escalation_policy, ['cross_capability_change', 'acceptance'], 'escalation_policy', invalidProfile);
-  if (value.escalation_policy.cross_capability_change !== 'interface_request'
-    || value.escalation_policy.acceptance !== 'independent_plane') {
+  assertExactKeys(value.escalation_policy, ['acceptance'], 'escalation_policy', invalidProfile);
+  if (value.escalation_policy.acceptance !== 'independent_plane') {
     invalidProfile('escalation_policy is invalid');
   }
 
@@ -286,7 +286,6 @@ export function validateModuleEngineerProfile(value: unknown): ModuleEngineerPro
     }),
     max_active_claims: value.max_active_claims,
     escalation_policy: Object.freeze({
-      cross_capability_change: 'interface_request',
       acceptance: 'independent_plane',
     }),
   });

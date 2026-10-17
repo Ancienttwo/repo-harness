@@ -47,8 +47,6 @@ import { buildArchitectureDebtCommand } from './commands/architecture-debt';
 import { buildArchitectureProjectionCommand } from './commands/architecture-projection';
 import { buildIntegrationCommand } from './commands/integration';
 import { buildDelegationCommand } from './commands/delegation';
-import { buildVerifiedContextCommand } from './commands/verified-context';
-import { buildInterfaceChangeCommand } from './commands/interface-change';
 import { buildExternalSourceCommand } from './commands/external-source';
 import { buildRetentionCommand } from './commands/retention';
 import { formatSecurityScan, runSecurityScan } from './commands/security';
@@ -134,8 +132,6 @@ export const SUBCOMMANDS = [
   'architecture-debt',
   'integration',
   'delegation',
-  'verified-context',
-  'interface-change',
   'external-source',
   'refactor',
 ] as const;
@@ -842,8 +838,6 @@ export function buildProgram(): Command {
   program.addCommand(buildIntegrationCommand());
   program.addCommand(buildDelegationCommand());
   program.addCommand(buildStrategyCommand());
-  program.addCommand(buildVerifiedContextCommand());
-  program.addCommand(buildInterfaceChangeCommand());
   program.addCommand(buildExternalSourceCommand());
   program.addCommand(buildRetentionCommand());
   program

@@ -11,7 +11,7 @@ const message = '22222222-2222-4222-8222-222222222222';
 function action(adapter: 'herdr-cli-agent') {
   return buildAgentRuntimeHostAction(buildAgentRuntimeEffectIntent({
     idempotency_key: `adapter-${adapter}`,
-    message_ref: { kind: 'module_message', message_id: message, message_event_digest: digest, engineer_id: engineer, binding_id: binding, binding_generation: 1, engineer_contract_revision: digest, delivery_attempt: 1 },
+    message_ref: { kind: 'task_message', message_id: message, message_event_digest: digest, task_id: 'a'.repeat(64), task_revision: 'b'.repeat(64), claim_id: '11111111-1111-4111-8111-111111111111', lease_generation: 1, delivery_attempt: 1 },
     endpoint_fence: { engineer_id: engineer, binding_id: binding, binding_generation: 1, engineer_contract_revision: digest, adapter_kind: adapter, host_id: 'local', endpoint_id: 'opaque-endpoint' },
     operation: 'notify_inbox' as const, capability_sha256: digest, created_at: '2026-08-30T10:00:00.000Z',
   }));

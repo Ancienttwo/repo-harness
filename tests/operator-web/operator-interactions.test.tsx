@@ -229,11 +229,11 @@ function RefreshProbe({read,identity='source'}:{read:(signal:AbortSignal)=>Promi
 }
 
 describe('bounded observation lifecycle',()=>{
-  test('automatic and visible refresh preserve Decision and activity queries without a composer', async () => {
-    const { taskContextFixture, taskActivityFixture, decisionInventoryFixture } = await import('../../src/operator-web/fixture');
+  test('automatic and visible refresh preserve repository and activity queries without a composer', async () => {
+    const { taskContextFixture, taskActivityFixture } = await import('../../src/operator-web/fixture');
     const clock = observationClock();
     const counts = { fleet: 0, context: 0 };
-    const decisions: (string | null)[] = [];
+    const repositories: string[] = [];
     const activities: import('../../src/core/operator/task-activity').OperatorTaskActivityRequest[] = [];
     let visibility = 'visible';
     Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => visibility });
@@ -241,19 +241,13 @@ describe('bounded observation lifecycle',()=>{
     try {
       await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en"
         fetchSnapshot={async () => { counts.fleet++; return stableSnapshot; }}
-        fetchRepositorySnapshot={async (id, _signal, after) => {
-          decisions.push(after);
-          const page = decisionInventoryFixture(id);
-          return { ...repositorySnapshot, repository_id: id, decision_after: after,
-            decisions: { status: 'observed', observed_at: '2026-09-22T00:00:00Z', snapshot: {
-              ...page, query: { after, limit: 1 },
-              coverage: { ...page.coverage, complete: after !== null, reason: after === null ? 'output_limit' : 'complete', next_after: after === null ? 'a'.repeat(64) : null },
-            } } };
+        fetchRepositorySnapshot={async id => {
+          repositories.push(id);
+          return { ...repositorySnapshot, repository_id: id };
         }}
         readTaskContext={async request => { counts.context++; return taskContextFixture(request); }}
         readTaskActivity={async request => { activities.push(request); return taskActivityFixture(request); }}
         />);
-      await act(async () => buttonWithText('Next Decision page').click());
       await act(async () => buttonWithText(fixtureTasks.blocked.task_label).click());
       await act(async () => buttonWithText('Read reply message').click());
       const query = activities.at(-1)!;
@@ -261,14 +255,14 @@ describe('bounded observation lifecycle',()=>{
       expect(counts).toEqual({ fleet: 0, context: 1 });
       await clock.advance(30_000);
       expect(counts).toEqual({ fleet: 1, context: 2 });
-      expect(decisions).toEqual([null, 'a'.repeat(64), 'a'.repeat(64)]);
+      expect(repositories).toEqual([stableSnapshot.repositories[0]!.repository_id, stableSnapshot.repositories[0]!.repository_id]);
       expect(activities).toHaveLength(3); expect(activities.at(-1)).toEqual(query);
       await setVisibility('hidden'); await clock.advance(120_000);
       expect(counts).toEqual({ fleet: 1, context: 2 });
-      expect(decisions).toHaveLength(3); expect(activities).toHaveLength(3);
+      expect(repositories).toHaveLength(2); expect(activities).toHaveLength(3);
       await setVisibility('visible');
       expect(counts).toEqual({ fleet: 2, context: 3 });
-      expect(decisions).toHaveLength(4); expect(decisions.at(-1)).toBe('a'.repeat(64));
+      expect(repositories).toHaveLength(3); expect(repositories.at(-1)).toBe(stableSnapshot.repositories[0]!.repository_id);
       expect(activities).toHaveLength(4); expect(activities.at(-1)).toEqual(query);
     } finally {
       await act(async () => root?.unmount()); root = null; clock.restore();

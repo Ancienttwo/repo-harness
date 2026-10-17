@@ -13,7 +13,7 @@ No shell operator library exists. Operator helpers run from the package through
 
 ## Capabilities
 
-The domain has 22 capabilities. They are grouped by theme.
+The domain has 15 capabilities. They are grouped by theme.
 
 ### Host integration
 
@@ -30,26 +30,19 @@ The domain has 22 capabilities. They are grouped by theme.
 ### Evidence and observation
 
 - `runtime-harness-evidence-ledger` -> `docs/architecture/modules/runtime-harness/evidence-ledger.md`: appends the per-worktree evidence log, stores blobs and checkpoints and builds recovery views.
-- `runtime-harness-pipeline-ledger` -> `docs/architecture/modules/runtime-harness/pipeline-ledger.md`: records pipeline facts per task in one SQLite observer ledger.
 - `runtime-harness-operator` -> `docs/architecture/modules/runtime-harness/operator.md`: serves local read-only HTTP views of registered repositories.
 - `runtime-harness-refactor-program` -> `docs/architecture/modules/runtime-harness/refactor-program.md`: shows measured refactor suggestions and records the user decision.
 
 ### Module Engineer organization
 
 - `runtime-harness-engineer-bindings` -> `docs/architecture/modules/runtime-harness/engineer-bindings.md`: defines Module Engineer contracts, Binding authority and Claim actor provenance.
-- `runtime-harness-engineer-messages` -> `docs/architecture/modules/runtime-harness/engineer-messages.md`: persists Module Engineer messages and binding-fenced delivery state.
 - `runtime-harness-engineer-scheduling` -> `docs/architecture/modules/runtime-harness/engineer-scheduling.md`: projects Work Package graphs into revision-fenced Engineer offers.
 - `runtime-harness-engineering-overlay` -> `docs/architecture/modules/runtime-harness/engineering-overlay.md`: projects Engineer observations into read-only views.
-- `runtime-harness-bound-task-freezes` -> `docs/architecture/modules/runtime-harness/bound-task-freezes.md`: freezes live Claim, Binding, WorkEnvelope and Git observations and refuses unsafe Session rotation.
 - `runtime-harness-delegated-runs` -> `docs/architecture/modules/runtime-harness/delegated-runs.md`: admits one Role Profile and journals one read-only Codex CLI host action as untrusted evidence.
-- `runtime-harness-collaboration` -> `docs/architecture/modules/runtime-harness/collaboration.md`: publishes append-only coordination signals and handoffs and reads them back as one Work Exchange snapshot.
 
 ### Work intake and product acceptance
 
-- `runtime-harness-work-demand` -> `docs/architecture/modules/runtime-harness/work-demand.md`: stores Agent-originated work requests and materializes accepted ones into Sprint and Work Graph.
-- `runtime-harness-interface-change` -> `docs/architecture/modules/runtime-harness/interface-change.md`: records revision-fenced cross-capability interface decisions.
 - `runtime-harness-external-source-intake` -> `docs/architecture/modules/runtime-harness/external-source-intake.md`: keeps immutable external Issue evidence and its binding to one canonical task.
-- `runtime-harness-verified-context` -> `docs/architecture/modules/runtime-harness/verified-context.md`: projects Contract constraints, verification checkpoints and Human decisions into one context packet.
 - `runtime-harness-integration-acceptance` -> `docs/architecture/modules/runtime-harness/integration-acceptance.md`: binds requirements, publications, one Git candidate and the AcceptanceReceipt into product-acceptance projections.
 
 ## Stable Rules

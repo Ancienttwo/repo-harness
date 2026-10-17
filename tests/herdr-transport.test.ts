@@ -39,7 +39,7 @@ test('real herdr submits busy and multiline input, rejects blocked or exited pee
     const digest = `sha256:${'a'.repeat(64)}`;
     const action = buildAgentRuntimeHostAction(buildAgentRuntimeEffectIntent({
       idempotency_key: 'live-herdr-input', operation: 'notify_inbox', capability_sha256: digest, created_at: '2026-09-09T00:00:00.000Z',
-      message_ref: { kind: 'module_message', message_id: randomUUID(), message_event_digest: digest, engineer_id: 'engineer:capability.verification.evals-checks', binding_id: '11111111-1111-4111-8111-111111111111', binding_generation: 1, engineer_contract_revision: digest, delivery_attempt: 1 },
+      message_ref: { kind: 'task_message', message_id: randomUUID(), message_event_digest: digest, task_id: 'a'.repeat(64), task_revision: 'b'.repeat(64), claim_id: '11111111-1111-4111-8111-111111111111', lease_generation: 1, delivery_attempt: 1 },
       endpoint_fence: { engineer_id: 'engineer:capability.verification.evals-checks', binding_id: '11111111-1111-4111-8111-111111111111', binding_generation: 1, engineer_contract_revision: digest, adapter_kind: 'herdr-cli-agent', host_id: 'local', endpoint_id: 'fixture' },
     }));
     expect(executeHerdrCliAgentAction(action, () => endpoint).outcome).toBe('accepted');

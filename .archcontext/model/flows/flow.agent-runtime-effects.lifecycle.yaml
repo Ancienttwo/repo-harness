@@ -9,18 +9,18 @@ participants:
   - id: binding-authority
     nodeId: capability.runtime-harness.engineer-bindings
   - id: message-authority
-    nodeId: capability.runtime-harness.engineer-messages
+    nodeId: capability.organization.task-fleet
   - id: effect-schema
     nodeId: component.agent-runtime-effects.journal
 steps:
   - id: resolve-persisted-input
     from: effect-journal
     to: message-authority
-    label: Read the exact persisted Module or Task message and its current delivery fact before action admission
+    label: Read the exact persisted Task message and its current delivery fact before action admission
     evidence:
       entrypointId: entrypoint.agent-runtime-effects.prepare
-      sourceSymbol: moduleReference
-      sinkId: sink.agent-runtime-effects.persisted-message
+      sourceSymbol: taskEndpointAndReference
+      sinkId: sink.agent-runtime-effects.persisted-task-message
   - id: revalidate-binding
     from: effect-journal
     to: binding-authority

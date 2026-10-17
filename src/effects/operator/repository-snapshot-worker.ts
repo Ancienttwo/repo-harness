@@ -1,5 +1,4 @@
 import { parentPort, workerData } from 'node:worker_threads';
-import { isDecisionCursor } from '../../core/operator/decision-inventory';
 import type { OperatorRepositorySnapshotV1 } from '../../core/operator/repository-snapshot';
 import {
   OperatorRepositoryError,
@@ -10,7 +9,6 @@ import {
 interface RepositoryWorkerRequest {
   readonly env?: Readonly<Record<string, string>>;
   readonly repository_id: string;
-  readonly decision_after: string | null;
 }
 
 type RepositoryWorkerResponse =
@@ -33,7 +31,6 @@ function collect(request: RepositoryWorkerRequest): void {
     || request === null
     || typeof request.repository_id !== 'string'
     || request.repository_id.length === 0
-    || !isDecisionCursor(request.decision_after)
   ) {
     parentPort!.postMessage(unavailable());
     return;
@@ -44,7 +41,6 @@ function collect(request: RepositoryWorkerRequest): void {
       snapshot: readOperatorRepositorySnapshot({
         env: request.env,
         repository_id: request.repository_id,
-        decision_after: request.decision_after,
       }),
     } satisfies RepositoryWorkerResponse);
   } catch (error) {
