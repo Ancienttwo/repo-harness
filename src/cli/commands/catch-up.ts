@@ -23,7 +23,7 @@ export function buildCatchUpCommand(): Command {
         selected = new Set(options.repo.map(path => {
           const root = canonicalRepoPath(path);
           const repo = registry.repos.find(entry => entry.path === root);
-          if (!repo) throw new InvalidArgumentError('--repo must name a registered repository root');
+          if (!repo) throw new Error('--repo must name a registered repository root');
           return repo.id;
         }));
       }
