@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "archcontext.relation/v1",
+  "id": "relation.codegraph-readiness.imports.execution-primitives",
+  "kind": "depends-on",
+  "source": "capability.verification.codegraph-readiness",
+  "target": "capability.workflow-engine.execution-primitives",
+  "intent": "Run bounded CodeGraph processes."
+}

@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "archcontext.relation/v1",
+  "id": "relation.hook-adapters.imports.task-agent-host",
+  "kind": "depends-on",
+  "source": "capability.runtime-harness.hook-adapters",
+  "target": "capability.runtime-harness.task-agent-host",
+  "intent": "Resolve task role profiles during host installation."
+}

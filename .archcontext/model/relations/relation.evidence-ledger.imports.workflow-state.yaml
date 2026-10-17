@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "archcontext.relation/v1",
+  "id": "relation.evidence-ledger.imports.workflow-state",
+  "kind": "depends-on",
+  "source": "capability.runtime-harness.evidence-ledger",
+  "target": "capability.workflow-engine.workflow-state",
+  "intent": "Read state artifacts and read-only observations for evidence."
+}

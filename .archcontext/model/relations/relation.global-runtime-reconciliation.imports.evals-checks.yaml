@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "archcontext.relation/v1",
+  "id": "relation.global-runtime-reconciliation.imports.evals-checks",
+  "kind": "depends-on",
+  "source": "capability.runtime-harness.global-runtime-reconciliation",
+  "target": "capability.verification.evals-checks",
+  "intent": "Use shared test fixtures for global runtime checks."
+}

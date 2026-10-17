@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "archcontext.relation/v1",
+  "id": "relation.mcp-sidecar.imports.contract-assets",
+  "kind": "depends-on",
+  "source": "capability.runtime-harness.mcp-sidecar",
+  "target": "capability.workflow-engine.contract-assets",
+  "intent": "Run declared helpers from MCP tools."
+}

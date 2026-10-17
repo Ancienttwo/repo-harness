@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "archcontext.relation/v1",
+  "id": "relation.acceptance-review.imports.mcp-sidecar",
+  "kind": "depends-on",
+  "source": "capability.verification.acceptance-review",
+  "target": "capability.runtime-harness.mcp-sidecar",
+  "intent": "Apply secret patterns to module review context."
+}

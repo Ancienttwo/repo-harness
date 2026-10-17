@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "archcontext.relation/v1",
+  "id": "relation.operator.imports.action-commands",
+  "kind": "depends-on",
+  "source": "capability.runtime-harness.operator",
+  "target": "capability.public-surface.action-commands",
+  "intent": "Read the skill catalog for the setup snapshot."
+}

@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "archcontext.relation/v1",
+  "id": "relation.adoption.imports.mcp-sidecar",
+  "kind": "depends-on",
+  "source": "capability.public-surface.adoption",
+  "target": "capability.runtime-harness.mcp-sidecar",
+  "intent": "Read registered repository identity for adoption planning."
+}

@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "archcontext.relation/v1",
+  "id": "relation.action-commands.imports.evals-checks",
+  "kind": "depends-on",
+  "source": "capability.public-surface.action-commands",
+  "target": "capability.verification.evals-checks",
+  "intent": "Run the skill evaluation engine for routing checks."
+}
