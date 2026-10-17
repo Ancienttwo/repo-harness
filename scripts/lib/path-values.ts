@@ -1,4 +1,4 @@
-import { dirname, resolve, join } from 'node:path';
+import { dirname, isAbsolute, resolve, join } from 'node:path';
 import { isBinaryExpression, isConditionalExpression, isArrowFunction, isFunctionExpression, isTemplateExpression, isArrayLiteralExpression, isCallExpression, isForOfStatement, isFunctionDeclaration, isIdentifier, isImportDeclaration, isNewExpression, isPropertyAccessExpression, isStringLiteralLikeNode, isVariableDeclaration, NodeFlags, SyntaxKind, type Node, type SourceFile } from 'typescript/unstable/ast';
 
 const nameOf = (node: Node): string => isIdentifier(node) ? node.text : isPropertyAccessExpression(node) ? node.name.text : '';
@@ -30,6 +30,13 @@ export function createPathEvaluator(source: SourceFile, repoRoot: string, file: 
     return declarations.filter(decl => isIdentifier(decl.name) && decl.name.text === node.text && ancestor(scope(decl), node))
       .sort((a, b) => ancestor(scope(a), scope(b)) ? 1 : -1)[0];
   };
+  const cwdCertain = file.startsWith('tests/') && !calls.some(call => call.expression.getText() === 'process.chdir');
+  // An unknown working directory can have any parent. Keep the known suffix
+  // without manufacturing an absolute path in the analyzer's own process.
+  const unresolvedPath = (parts: string[]): string => {
+    const suffix = join(...parts).replace(/^(?:\.\.\/|\.\/|\*\/)+/, '');
+    return ['.', '..', '*'].includes(suffix) ? '*' : suffix;
+  };
   const values = (node: Node | undefined, depth = 0, seen = new Set<Node>()): string[] => {
     if (!node || depth > 18 || seen.has(node)) return ['*'];
     const next = new Set(seen).add(node);
@@ -60,17 +67,27 @@ export function createPathEvaluator(source: SourceFile, repoRoot: string, file: 
     if (isCallExpression(node) || isNewExpression(node)) {
       const args = node.arguments ?? [];
       const operation = op(node.expression);
-      if (operation === 'cwd' && node.expression.getText() === 'process.cwd') return file.startsWith('tests/') ? [cwdRoot] : ['*'];
+      if (operation === 'cwd' && node.expression.getText() === 'process.cwd') {
+        if (!file.startsWith('tests/')) return ['*'];
+        return cwdCertain ? [cwdRoot] : [cwdRoot, '*'];
+      }
       if (operation === 'dirname') return recur(args[0]).map(value => value === '*' ? '*' : dirname(value));
       if (operation === 'fileURLToPath') return recur(args[0]);
-      if (operation === 'URL') return recur(args[0]).flatMap(value => recur(args[1]).map(base => resolve(dirname(base), value)));
+      if (operation === 'URL') return recur(args[0]).flatMap(value => recur(args[1]).map(base =>
+        isAbsolute(base) ? resolve(dirname(base), value) : unresolvedPath([value])));
       if (operation === 'join' || operation === 'resolve') {
         let combinations: string[][] = [[]];
         for (const arg of args) {
           combinations = combinations.flatMap(parts => [...new Set(recur(arg))].map(value => [...parts, value]));
           if (combinations.length > 4096) throw new Error(`Path expansion exceeds bounded analysis in ${file}: ${node.getText().slice(0, 160)}`);
         }
-        return combinations.map(parts => operation === 'resolve' ? resolve(repoRoot, ...parts) : join(...parts));
+        return combinations.flatMap(parts => {
+          if (operation === 'join') return [join(...parts)];
+          if (cwdCertain || parts.some(isAbsolute)) return [resolve(cwdRoot, ...parts)];
+          // The checkout is one possible CWD. Keep its existing consumer edges,
+          // plus an unresolved suffix, without claiming either root is certain.
+          return [...new Set([resolve(repoRoot, ...parts), unresolvedPath(parts)])];
+        });
       }
       // Unknown wrappers can forward an argument or return a different path.
       // Filesystem temporaries do not inherit a caller's path argument.
@@ -117,8 +134,12 @@ export function createPathEvaluator(source: SourceFile, repoRoot: string, file: 
     if (isTemplateExpression(node)) return node.templateSpans.every(span => recur(span.expression));
     if (isBinaryExpression(node) && node.operatorToken.kind === SyntaxKind.PlusToken) return recur(node.left) && recur(node.right);
     if (isCallExpression(node) || isNewExpression(node)) {
-      if (node.expression.getText() === 'process.cwd') return file.startsWith('tests/') && !calls.some(call => call.expression.getText() === 'process.chdir');
-      return ['join', 'resolve', 'dirname', 'fileURLToPath', 'URL'].includes(op(node.expression)) && (node.arguments ?? []).every(recur);
+      if (node.expression.getText() === 'process.cwd') return cwdCertain;
+      const operation = op(node.expression), args = node.arguments ?? [];
+      if (!args.every(recur)) return false;
+      if (operation === 'resolve') return cwdCertain || args.some(arg => evaluate(arg).length > 0 && evaluate(arg).every(isAbsolute));
+      if (operation === 'URL') return !!args[1] && evaluate(args[1]).every(isAbsolute);
+      return ['join', 'dirname', 'fileURLToPath'].includes(operation);
     }
     const children: Node[] = [];
     node.forEachChild(child => { children.push(child); });

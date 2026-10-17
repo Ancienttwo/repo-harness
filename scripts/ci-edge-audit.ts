@@ -80,11 +80,13 @@ export async function auditDroppedTests(
             && ref.start <= match.index && ref.end >= match.index + match[0].length
             && ref.path.replace(/\/$/, '') === raw.replace(/^\.\//, '').replace(/\/$/, '')
             && dependency.startsWith(ref.path.replace(/\/$/, '') + '/')) : undefined;
+        const active = refs.some(ref => ref.operation !== 'constructed'
+          && resolvedMatch(dependency, consumer, ref.rooted ? '/__repo_harness_ci__/' + ref.path : ref.path));
         const classification = inert?.reason ?? (resolved ? 'path-fragment-resolves-elsewhere' : undefined)
           ?? (construction ? 'directory-construction-only' : undefined)
           ?? (directory ? 'directory-data-not-transitive' : undefined)
           ?? (!/[\/\\]/.test(raw) && !/^[\w.-]+\.[\w]+$/.test(raw) ? 'bare-fragment-not-path' : undefined)
-          ?? (consumer.startsWith('src/') && !/import\.meta\.(?:dir|url)|__dirname/.test(source) ? 'product-path-without-module-anchor' : 'unclassified');
+          ?? (consumer.startsWith('src/') && !active && !/import\.meta\.(?:dir|url)|__dirname/.test(source) ? 'product-path-without-module-anchor' : 'unclassified');
         candidates.push(classification);
         const span = inert ?? resolved ?? construction ?? directory;
         cite(span?.start ?? match.index, span?.end ?? match.index + match[0].length, classification);

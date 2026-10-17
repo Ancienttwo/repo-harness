@@ -61,13 +61,14 @@ export async function discoverPathReferences(entries: readonly (readonly [string
       }
       sourceEvidence.set(key, evidence);
       const found = new Map<string, PathReference>();
-      const add = (value: string, operation: PathReference['operation'], node: Node, proven = certain(node)) => {
+      const add = (value: string, operation: PathReference['operation'], node: Node, proven = certain(node), filesystemRead = false) => {
         value = value.replaceAll('\\', '/');
         const rooted = proven && value.startsWith(root + '/') && !value.startsWith(root + '/*');
-        if (product && !value.startsWith(root + '/')) return;
+        if (product && !filesystemRead && !value.startsWith(root + '/')) return;
         if (value.startsWith(root + '/')) value = value.slice(root.length + 1);
         else if (value.startsWith('/')) return;
         value = value.replace(/^(?:\.\/|\*\/)+/, '').replace(/\/$/, '');
+        if (filesystemRead) value = value.replace(/^(?:\.\.\/)+/, '');
         if (!value || value === '*' || value === '.' || value.startsWith('../') || value.includes('\n')) return;
         const reference = { path: value, operation, rooted, start: node.getStart(), end: node.getEnd() };
         found.set(operation + ':' + rooted + ':' + value, reference);
@@ -139,7 +140,7 @@ export async function discoverPathReferences(entries: readonly (readonly [string
               for (const path of [target, `${target}.ts`, `${target}.tsx`, `${target}/index.ts`, `${target}/index.tsx`]) add(path, 'execute', node, certain(node.arguments?.[0]));
             }
           }
-          if (readers.has(operation)) for (const value of values(node.arguments?.[0])) add(value, 'data', node, certain(node.arguments?.[0]));
+          if (readers.has(operation)) for (const value of values(node.arguments?.[0])) add(value, 'data', node, certain(node.arguments?.[0]), true);
           if (launchers.has(operation)) {
             const args = [...(node.arguments ?? [])];
             const options = args.find(arg => object(arg));

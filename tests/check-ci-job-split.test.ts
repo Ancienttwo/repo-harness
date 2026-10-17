@@ -141,6 +141,63 @@ describe('single affected verification and daily fallback', () => {
     expect(ambiguous.witnesses[0]?.reason).toBe('unclassified');
   });
 
+  test('round 3: implicit resolve keeps consumers after process.chdir', async () => {
+    const sources = new Map([
+      ['scripts/tool.ts', 'export {};'], ['fixtures/scripts/tool.ts', 'export {};'],
+      ['tests/chdir.test.ts', "process.chdir('fixtures'); readFileSync(resolve('scripts/tool.ts'));"],
+      ['tests/namespace.test.ts', "process.chdir('fixtures'); readFileSync(path.resolve('scripts', 'tool.ts'));"],
+      ['tests/cwd.test.ts', "process.chdir('fixtures'); readFileSync(join(process.cwd(), 'scripts/tool.ts'));"],
+      ['tests/default.test.ts', "readFileSync(resolve('scripts/tool.ts'));"],
+      ['tests/absolute.test.ts', "process.chdir('fixtures'); readFileSync(resolve(import.meta.dir, '../scripts/tool.ts'));"],
+      ['tests/other.test.ts', "readFileSync(join(import.meta.dir, '../fixtures/scripts/tool.ts'));"],
+    ]);
+    expect(await selectAffectedTests(['fixtures/scripts/tool.ts'], sources, [])).toEqual([
+      'tests/chdir.test.ts', 'tests/cwd.test.ts', 'tests/namespace.test.ts', 'tests/other.test.ts',
+    ]);
+    expect(await selectAffectedTests(['scripts/tool.ts'], sources, [])).toEqual([
+      'tests/absolute.test.ts', 'tests/chdir.test.ts', 'tests/cwd.test.ts', 'tests/default.test.ts', 'tests/namespace.test.ts',
+    ]);
+  });
+
+  test('round 3: product reads keep unresolved implicit roots without treating layouts as reads', async () => {
+    const sources = new Map([
+      ['fixtures/scripts/tool.ts', 'export {};'],
+      ['src/resolver.ts', "export const read = () => readFileSync(path.resolve('scripts/tool.ts'));"],
+      ['src/relative.ts', "export const read = () => readFileSync('scripts/tool.ts');"],
+      ['src/opaque.ts', "import { consume } from './consume'; export const read = () => consume(resolve('scripts/tool.ts'));"],
+      ['src/consume.ts', "export const consume = (path: string) => readFileSync(path);"],
+      ['src/url.ts', "export const read = () => readFileSync(new URL('scripts/tool.ts', base()));"],
+      ['src/layout.ts', "export const output = join(process.cwd(), 'scripts/tool.ts');"],
+      ['tests/resolver.test.ts', "import '../src/resolver';"],
+      ['tests/relative.test.ts', "import '../src/relative';"],
+      ['tests/opaque.test.ts', "import '../src/opaque';"],
+      ['tests/url.test.ts', "import '../src/url';"],
+      ['tests/layout.test.ts', "import '../src/layout';"],
+      ['tests/other.test.ts', "readFileSync(join(import.meta.dir, '../fixtures/scripts/tool.ts'));"],
+    ]);
+    expect(await selectAffectedTests(['fixtures/scripts/tool.ts'], sources, [])).toEqual([
+      'tests/opaque.test.ts', 'tests/other.test.ts', 'tests/relative.test.ts', 'tests/resolver.test.ts', 'tests/url.test.ts',
+    ]);
+    const audit = await auditDroppedTests(['fixtures/scripts/tool.ts'], ['tests/relative.test.ts'], new Map([
+      ['fixtures/scripts/tool.ts', new Set(['src/relative.ts'])],
+      ['src/relative.ts', new Set(['tests/relative.test.ts'])],
+    ]), { reverse: new Map(), data: new Map() }, sources, new Map());
+    expect(audit.edges[0]?.reason).toBe('unclassified');
+  });
+
+  test('round 3: absolute resolve inputs retain their root in product code', async () => {
+    const sources = new Map([
+      ['scripts/tool.ts', 'export {};'], ['fixtures/scripts/tool.ts', 'export {};'],
+      ['src/absolute.ts', "export const read = () => readFileSync(resolve('ignored', import.meta.dir, '../scripts/tool.ts'));"],
+      ['src/external.ts', "export const read = () => readFileSync(resolve('/outside', 'scripts/tool.ts'));"],
+      ['tests/absolute.test.ts', "import '../src/absolute';"],
+      ['tests/external.test.ts', "import '../src/external';"],
+      ['tests/fixture.test.ts', "readFileSync(join(import.meta.dir, '../fixtures/scripts/tool.ts'));"],
+    ]);
+    expect(await selectAffectedTests(['scripts/tool.ts'], sources, [])).toEqual(['tests/absolute.test.ts']);
+    expect(await selectAffectedTests(['fixtures/scripts/tool.ts'], sources, [])).toEqual(['tests/fixture.test.ts']);
+  });
+
   test('path values exclude words, comments and target-repository paths but keep anchored reads', async () => {
     const sources = new Map([
       ['assets/item.json', '{}'],

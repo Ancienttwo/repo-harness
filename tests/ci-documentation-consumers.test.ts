@@ -7,6 +7,17 @@ import { discoverDocumentationConsumers } from '../scripts/ci-documentation-cons
 const ROOT = join(import.meta.dir, '..');
 
 describe('documentation consumer discovery', () => {
+  test('keeps possible checkout reads when chdir makes cwd uncertain', async () => {
+    const sources = new Map([
+      ['docs/guide.md', '# Guide'],
+      ['tests/cwd.test.ts', "process.chdir('.'); readFileSync(join(process.cwd(), 'docs/guide.md'));"],
+      ['tests/resolve.test.ts', "process.chdir('fixtures'); readFileSync(resolve('../docs/guide.md'));"],
+    ]);
+    expect(await discoverDocumentationConsumers('/__cwd_history__', undefined, sources)).toEqual([
+      'tests/cwd.test.ts', 'tests/resolve.test.ts',
+    ]);
+  });
+
   test('follows checkout path aliases, relative reads, loops, wrappers and helper imports while excluding fixtures', async () => {
     const root = mkdtempSync(join(tmpdir(), 'ci-documentation-discovery-'));
     const fixtures: Record<string, string> = {
