@@ -143,7 +143,8 @@ function readCapabilityContext(repo: string): {
   if (authority.status !== 'valid') throw new CapabilitySourceError(authority.diagnostics.map((item) => item.message).join('; '));
   const summaries = new Map<string, string>();
   for (const node of context.model.nodes) {
-    const identity = node.kind === 'capability' ? capabilityIdentityFromNodeId(node.id) : null;
+    if (node.kind !== 'capability' || typeof node.id !== 'string' || typeof node.summary !== 'string') continue;
+    const identity = capabilityIdentityFromNodeId(node.id);
     if (identity) summaries.set(identity.id, node.summary);
   }
   return { registry: authority.registry, owners: authority.owners, summaries };

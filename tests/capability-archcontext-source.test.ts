@@ -485,7 +485,7 @@ describe("capability source: source-layer failures S1-S6", () => {
     const nested = archcontextWorkspace("capability-source-s4-nested");
     const foreign = archcontextWorkspace("capability-source-s4-foreign");
     try {
-      mkdirSync(join(nested, NODES_DIR, "legacy"), { recursive: true });
+      writeFile(nested, `${NODES_DIR}/legacy/notes.txt`, "not a node\n");
       const nestedRes = runResolver(nested, ["validate", "--format", "text"]);
       expect(nestedRes.status).toBe(2);
       expect(nestedRes.stderr).toContain("AC_SCHEMA_INVALID");
