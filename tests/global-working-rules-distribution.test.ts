@@ -61,6 +61,12 @@ describe("global working rules distribution", () => {
     expect(rendered).not.toContain("下一刀");
   });
 
+  test("the managed block carries the Herdr side-by-side pane layout rule", () => {
+    const rendered = renderedManagedBlock("en", "Use English to report to user.");
+    expect(rendered).toContain("put at most 3 panes side by side in one tab");
+    expect(rendered).toContain("never split down");
+  });
+
   test("the zh-CN rendering substitutes the completion-summary label once per mention", () => {
     const rendered = renderedManagedBlock("zh-CN", "Use Chinese to report to user.");
     expect(countOccurrences(rendered, "include a short `下一刀` section")).toBe(1);
