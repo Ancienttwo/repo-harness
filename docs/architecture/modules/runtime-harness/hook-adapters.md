@@ -307,22 +307,11 @@ push in `prompt-handler.ts` and never enters routing or blocking decisions.
 The noun sets expand only with a real missed-case fixture first
 (`tests/cli/prompt-intents.test.ts` pins the positive/negative matrix).
 
-### Contract-scoped failed-check repair (2026-08-05)
+### Edit safety and state context
 
-- P1: `checks_failed` is verification evidence about the current candidate;
-  the active contract remains the sole edit-scope authority and Effective
-  State remains the profile/blocker authority.
-- P2: the resolver canonicalizes the full PreEdit target batch, rejects parent
-  traversal and symlink escape, and projects contract authorization into
-  Effective State's shared operation readiness. `mutation-guard` consumes the
-  resolved `allowedToEdit`, contract path, and `allowed_paths` snapshot without
-  rereading workflow authority. The contract-scope guard still rejects every
-  sibling outside `allowed_paths`.
-- P3: only `allowedToEdit` can exempt the sole `checks_failed` blocker after
-  canonical contract authorization. `allowedToStop` and `readyToShip` remain
-  hard-blocked, and an unsafe target or any additional blocker fails closed.
-  This breaks the review-evidence repair cycle without creating contradictory
-  CLI/MCP/hook readiness contracts.
+The mutation guard checks paths and permissions without resolving Effective
+State. Task contracts and check results grant no edit permission. SessionStart
+and child context read state for context. The state has no readiness decision.
 
 ### HRD-09 typed-authority consolidation (原 P3 段落，逐字保留)
 

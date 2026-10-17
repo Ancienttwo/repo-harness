@@ -306,6 +306,8 @@ export function defaultPolicy(documentationProfile: string, documentationLanguag
       lessons_file: "tasks/lessons.md",
       research_dir: "docs/researches",
       workstreams_dir: "tasks/workstreams",
+      reviews_dir: "tasks/reviews",
+      notes_dir: "tasks/notes",
     },
     context: {
       map_file: ".ai/context/context-map.json",

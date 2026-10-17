@@ -87,16 +87,12 @@ describe('pure Effective State projection', () => {
 
   });
 
-
-
-
   test('projects phase, profile, and first open task without I/O', () => {
     const state = projectEffectiveState(input());
     expect(state.phase).toBe('executing');
     expect(state.next_action).toBe('run parity tests');
     expect(state.workflow_profile).toBe('routine');
     expect(state.guidance).toContain('verify typecheck and affected tests once');
-
 
   });
 
@@ -117,9 +113,6 @@ describe('pure Effective State projection', () => {
       currentSnapshotText: `> **Updated At**: 2026-07-15T11:30:00Z\n- Active Plan: ${PLAN}\n`,
     }));
     expect(state.next_action).toBe('resume adapter parity');
-
-
-
 
     expect(state.handoff.freshness).toBe('fresh');
     expect(state.resume.freshness).toBe('fresh');
@@ -184,7 +177,6 @@ describe('pure Effective State projection', () => {
     expect(state.next_action).toBe('resolve blockers');
   });
 
-
   test('binds resume independently to task id, authority revision, and handoff hash', () => {
     const taskId = '20260715-1200-fixture';
     const resume = (candidateTaskId: string, revision: string, handoffHash: string) => [
@@ -225,15 +217,9 @@ describe('pure Effective State projection', () => {
   test('covers missing, unavailable, stale, and not-applicable freshness branches', () => {
     const missing = projectEffectiveState(input());
 
-
-
-
     expect(missing.handoff.freshness).toBe('missing');
     expect(missing.resume.freshness).toBe('missing');
     expect(missing.current_snapshot.freshness).toBe('missing');
-
-
-
 
     const stale = projectEffectiveState(input({
       worktreeOwner: '/other',
@@ -243,14 +229,10 @@ describe('pure Effective State projection', () => {
       currentSnapshotText: '> **Updated At**: 2000-01-01T00:00:00Z\n',
     }));
 
-
-
     expect(stale.worktree.freshness).toBe('stale');
     expect(stale.handoff.freshness).toBe('stale');
     expect(stale.resume.freshness).toBe('stale');
     expect(stale.current_snapshot.freshness).toBe('stale');
-
-
 
     expect(projectEffectiveState(input({ worktreeOwner: null })).worktree.freshness).toBe('missing');
   });

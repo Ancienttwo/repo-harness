@@ -212,6 +212,17 @@ describe('continuation envelope routes', () => {
     }, 30_000);
   }
 
+  test('a missing active plan halts with no unit reference', () => {
+    withRepo(cwd => {
+      write(cwd, '.ai/harness/active-plan', 'plans/missing.md\n');
+      const envelope = envelopeFrom(cwd);
+      expect(envelope.route).toBe('halt');
+      expect(envelope.reason).toBe('stale:active_plan_marker');
+      expect(envelope.unit_ref).toBeNull();
+      expect(envelope.command).toBeNull();
+    });
+  });
+
   test('every route stays inside the frozen route vocabulary with one unit or one halt', () => {
     const routes = new Set(cases.map((scenario) => scenario.expected.route));
     expect([...routes].sort()).toEqual([

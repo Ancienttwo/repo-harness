@@ -23,7 +23,7 @@ export interface ContinuationEnvelopeInputs {
   readonly attemptLedger: AttemptLedgerRead;
 }
 
-/** The route table above, before the circuit breaker's post-pass. */
+/** Resolve the plan route before applying the no-progress circuit breaker. */
 function projectRoutedEnvelope(
   input: ContinuationEnvelopeInputs,
 ): ContinuationEnvelopeV1 {

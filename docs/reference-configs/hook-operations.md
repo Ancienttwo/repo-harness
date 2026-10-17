@@ -89,8 +89,8 @@ only the native-role evidence.
 `[HarnessStateUnavailable]` when the resolution fails, comes first and always.
 Optional sections follow in priority order: `architecture-owed` and
 `pending-plan-capture`. Each section names its source. SessionStart does not
-inject the resume or the active Sprint. `references.resume` and
-`references.sprint` in `[HarnessState]` point to their files. A provider that
+inject the resume body. `references.resume` points to its file. Effective
+State carries no sprint pointer or task contract evidence. A provider that
 throws becomes one `[SessionContextProviderFailed] <id>` line.
 One budget of 1,500 estimated tokens applies to the whole payload. Mandatory
 sections stay. An optional section that does not fit becomes

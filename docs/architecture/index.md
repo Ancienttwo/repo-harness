@@ -47,24 +47,12 @@ Authoritative surfaces:
 - Runtime harness: the `repo-harness-hook` binary (`package.json` `bin`), the typed route registry `src/cli/hook/route-registry.ts`, user-level host adapters, and ignored `.ai/harness/*` runtime state. No shell operator library exists.
 - MCP sidecar: `src/cli/mcp/`, `src/cli/commands/mcp.ts`, user-owned ignored config and registry under `~/.repo-harness/`, and the [MCP sidecar architecture](modules/runtime-harness/mcp-sidecar.md).
 - Verification: `tests/`, `evals/`, `scripts/check-task-workflow.sh`, `scripts/check-task-sync.sh`, `scripts/check-agent-tooling.sh`, `scripts/ensure-codegraph.sh`.
-- Effective State and workflow policy: `src/core/state/` (pure Effective State
-  projection, ESA PR #79), `src/effects/state/` (source resolution and
-  publication), and `src/core/workflow/`. `profile.ts` owns the deterministic
-  risk profile (`routine` or `high`). `artifact-requirement-policy.ts` owns the
-  `routine`/`high` x edit/stop/ship artifact-requirement matrix. The Loop
-  Semantics Convergence sprint is archived at
-  `plans/archive/20260716-0101-loop-semantics-convergence.sprint.md`. Its state
-  goldens live in `tests/state/cli-state-golden.test.ts`.
-- Loop semantics parity contract (LSC-08): the readiness authority
-  (`src/core/workflow/operation-readiness.ts`, `evaluateReadiness`, carried as
-  `EffectiveStateV1.readiness`) and its Skill guidance
-  (`EffectiveStateV1.guidance`) are projected, never recomputed. The adapter
-  surfaces are the CLI (`repo-harness state resolve --json`), MCP
-  (`summarize_repo_harness_state`), the Stop hook route
-  (`src/cli/hook/stop-handler.ts` reads `readiness.readyToShip` and reports a
-  warning without a stop gate) and the Skill guidance text
-  (`CEREMONY_GUIDANCE` in `src/core/state/project-effective-state.ts`). The
-  parity gate is `tests/state/adapter-parity.test.ts`.
+- Effective State: `src/core/state/` projects plan, worktree, capability ownership,
+  risk and recovery pointers. `src/effects/state/` reads sources and publishes
+  the state cache. `src/core/workflow/profile.ts` owns the risk profile.
+  State carries no contract, review, acceptance, checks, readiness or sprint
+  projection. The CLI, SessionStart and MCP read the same projection.
+  `tests/state/adapter-parity.test.ts` checks these readers.
 - Shared coordination plane: lease identity and the four-state machine
   (`src/core/state/coordination-identity.ts`,
   `src/effects/state/coordination-lease-store.ts`, `src/cli/commands/sprint.ts`)
