@@ -69,6 +69,20 @@ function owedFor(cwd: string) {
 }
 
 describe('owed-capability rule', () => {
+  test('clean main owes a committed owned path after the manifest checkpoint', () => {
+    const cwd = ownedRepo();
+    git(cwd, ['checkout', '-q', 'main']);
+    const checkpoint = git(cwd, ['rev-parse', 'HEAD']);
+    write(cwd, 'src/owned/a.ts', 'export const a = 2;\n');
+    commit(cwd, 'change owned code on main');
+
+    expect(owedFor(cwd)).toMatchObject({
+      status: 'owed',
+      manifest_change: checkpoint,
+      capabilities: [{ id: 'core-owned', paths: ['src/owned/a.ts'] }],
+    });
+  });
+
   test('an edit of an owned file makes its capability owed and renders the line', () => {
     const cwd = ownedRepo();
     write(cwd, 'src/owned/a.ts', 'export const a = 2;\n');
