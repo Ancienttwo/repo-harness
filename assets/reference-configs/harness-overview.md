@@ -26,8 +26,10 @@ with the project.
 Use `repo-harness catch-up` for a read-only text brief across registered repositories.
 It uses the existing dev-activity collector and snapshot, with no new state.
 Repeat `--repo <path>` to show selected registered roots after collection.
+Collection and JSON `status` still cover all registered roots.
 Use `--max-items N` to cap text items per repository; the default is 10.
-Attention stays complete. Source failures appear under each repository.
+Attention stays complete. A non-ok Git or GitHub source replaces item lines with its status.
+This also applies to repositories without a GitHub remote.
 Use `--json` for the full selected snapshot on one line; the text cap does not apply.
 This pattern is adapted from pstack (cursor/plugins, MIT, Lauren Tan).
 
