@@ -1,4 +1,4 @@
-import wazaRules from "../../../assets/waza-shared-rules.json";
+import wazaRules from "../../core/skill-surface/waza-shared-rules.json";
 import { bunGlobalPackageRoot, expectedSkillProjections, skillLinkMatches } from './skill-projection';
 import { configurationReceiptPath } from './configuration-ownership';
 import { createHash, randomUUID } from 'crypto';

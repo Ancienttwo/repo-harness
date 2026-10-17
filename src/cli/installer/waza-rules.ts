@@ -1,7 +1,7 @@
 import { existsSync, lstatSync, mkdtempSync, readFileSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import wazaRules from '../../../assets/waza-shared-rules.json';
+import wazaRules from '../../core/skill-surface/waza-shared-rules.json';
 import { runProcess } from '../../effects/process-runner';
 import { managedInstallSurfaceIsCurrent, readInstalledProfile, recordRefreshedInstallOwnership } from './install-profile';
 import { atomicWriteFileSync } from './shared';

@@ -11,7 +11,7 @@ import { copyPackageRuntimeFixture, writeShellExecutableFixture } from '../helpe
 import { ARCHITECTURE_DOCS_RENDERER_VERSION } from 'archctx-contracts';
 import { dependencies, devDependencies } from '../../package.json';
 import { recordInstallOwnership } from '../helpers/install-ownership';
-import wazaRules from '../../assets/waza-shared-rules.json';
+import wazaRules from '../../src/core/skill-surface/waza-shared-rules.json';
 import { applyInstallProfile, managedInstallSurfaceIsCurrent, readInstalledProfile, recordRefreshedInstallOwnership } from '../../src/cli/installer/install-profile';
 import { buildManagedHooks } from '../../src/cli/installer/managed-entries';
 
