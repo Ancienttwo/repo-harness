@@ -25,6 +25,17 @@ export const ARCHCONTEXT_IDENTITY_OWNERS: ArchcontextOwnerLookup<CapabilityIdent
   get: (nodeId) => capabilityIdentityFromNodeId(nodeId) ?? undefined,
 };
 
+/** Keep native model diagnostics useful without printing the whole issue list. */
+export function formatArchcontextCapabilityError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  if (!(error instanceof ArchctxClientError) || !Array.isArray(error.details?.issues)) return message;
+  const issues = error.details.issues.filter(isRecord);
+  const details = issues.slice(0, 5).map((issue) => [issue.entityId, issue.field, issue.invariant]
+    .filter((field) => typeof field === 'string').join(' ').replace(/\s+/g, ' ').trim()).filter(Boolean);
+  if (issues.length > 5) details.push(`+${issues.length - 5} more`);
+  return details.length > 0 ? `${message}; ${details.join('; ')}` : message;
+}
+
 /** Cold readers get the complete model from one worktree export. */
 export function readArchcontextCapabilityAuthority(
   repoRoot: string,
@@ -36,7 +47,7 @@ export function readArchcontextCapabilityAuthority(
     if (!(error instanceof ArchctxClientError)) throw error;
     return {
       status: 'invalid', registry: null, owners: null,
-      diagnostics: [{ code: 'ARCHCONTEXT_MODEL_REJECTED', path: '.archcontext/model/nodes', message: error.message }],
+      diagnostics: [{ code: 'ARCHCONTEXT_MODEL_REJECTED', path: '.archcontext/model/nodes', message: formatArchcontextCapabilityError(error) }],
     };
   }
 }

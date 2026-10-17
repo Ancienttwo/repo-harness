@@ -269,6 +269,7 @@ describe('doctor command (Phase 1C)', () => {
       const invalid = registryCheck();
       expect(invalid.status).toBe('fail');
       expect(invalid.detail).toContain('archcontext authority does not load: AC_SCHEMA_INVALID');
+      expect(invalid.detail).toContain('capability.a.b status');
       expect(invalid.detail).toContain('Next: run repo-harness run capability-resolver validate');
 
       // A declared newer minimum names the upgrade, not the parse error.

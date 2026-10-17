@@ -244,15 +244,16 @@ function capabilityAuthorityPath(mode: CapabilitySourceMode): string {
 // the JSON registry never falls back to archcontext nodes.
 function loadRegistry(repo: string, mode: CapabilitySourceMode): CapabilityRegistryResolution | ArchcontextCapabilityResolution {
   if (mode === "archcontext") {
+    const native = archcontextModule();
     try {
-      const resolution = archcontextModule().readArchcontextCapabilityAuthority(repo);
+      const resolution = native.readArchcontextCapabilityAuthority(repo);
       if (resolution.status === "invalid") {
         throw new CapabilitySourceError(resolution.diagnostics.map((item) => item.message).join("; "));
       }
       return resolution;
     } catch (error) {
       if (error instanceof CapabilitySourceError) throw error;
-      throw new CapabilitySourceError((error as Error).message);
+      throw new CapabilitySourceError(native.formatArchcontextCapabilityError(error));
     }
   }
   const registryPath = resolve(repo, DEFAULT_REGISTRY);
@@ -407,6 +408,7 @@ const ARCHCONTEXT_OWNERS_MODULE = "../src/effects/capabilities/archcontext-owner
 
 function archcontextModule(): {
   readArchcontextCapabilityAuthority(repo: string): ArchcontextCapabilityResolution;
+  formatArchcontextCapabilityError(error: unknown): string;
   resolveArchcontextCapabilityPaths: ArchcontextPathResolver;
 } {
   try {

@@ -840,7 +840,7 @@ describe('effective state resolver', () => {
         });
       }, 60_000);
 
-      test('a duplicate-key archcontext node names its model diagnostic and the validate command', () => {
+      test('a duplicate-key archcontext node names its model diagnostic and the repair command', () => {
         withRepo((cwd) => {
           write(cwd, '.ai/harness/policy.json', JSON.stringify({ context: { capability_source: 'archcontext' } }));
           write(cwd, '.archcontext/model/nodes/capability.fixture.feature.yaml', archcontextNode('capability.fixture.feature', 'src/**', ['summary: First summary', 'summary: Duplicate summary']));
@@ -850,7 +850,7 @@ describe('effective state resolver', () => {
             reason: 'capability:registry:invalid',
             code: 'ARCHCONTEXT_MODEL_REJECTED',
             message: 'archctx resolve rejected the model',
-            fix: 'repo-harness run capability-resolver validate',
+            fix: 'edit .archcontext/model/nodes, then run repo-harness run capability-resolver match --path <path>',
           });
         });
       }, 60_000);

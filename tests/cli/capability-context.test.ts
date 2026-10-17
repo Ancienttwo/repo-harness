@@ -318,6 +318,19 @@ describe('capability-context command', () => {
     }
   });
 
+  test('native schema failures keep the node id and field in capability-context errors', () => {
+    const cwd = archcontextWorkspace('capability-context-invalid-summary', [
+      { id: 'capability.apps.web', include: 'apps/web/**', contractFiles: { agents: 'apps/web/AGENTS.md', claude: 'apps/web/CLAUDE.md' } },
+    ]);
+    try {
+      const nodePath = path.join(cwd, '.archcontext/model/nodes/capability.apps.web.yaml');
+      const node = JSON.parse(fs.readFileSync(nodePath, 'utf-8'));
+      delete node.summary;
+      fs.writeFileSync(nodePath, JSON.stringify(node));
+      expect(() => runCapabilityContextStatus(cwd)).toThrow('capability.apps.web summary');
+    } finally { fs.rmSync(cwd, { recursive: true, force: true }); }
+  });
+
   test('CLI prints the message of a capability source error before it exits 2', () => {
     const cwd = archcontextWorkspace('capability-context-broken-node', []);
     try {

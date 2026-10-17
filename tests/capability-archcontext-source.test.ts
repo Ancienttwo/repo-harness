@@ -16,8 +16,8 @@ import {
   type CapabilityRegistryDiagnosticCode,
 } from "../src/core/capabilities/registry";
 
-import { readArchcontextCapabilityAuthority, resolveArchcontextCapabilityPaths } from "../src/effects/capabilities/archcontext-owners";
-import { readArchitectureNativeContext } from "../src/effects/architecture/archctx-provider";
+import { formatArchcontextCapabilityError, readArchcontextCapabilityAuthority, resolveArchcontextCapabilityPaths } from "../src/effects/capabilities/archcontext-owners";
+import { ArchctxClientError, readArchitectureNativeContext } from "../src/effects/architecture/archctx-provider";
 import { withReadonlyObservation } from "../src/effects/state/readonly-observation";
 
 const ROOT = join(import.meta.dir, "..");
@@ -643,6 +643,35 @@ const NODE_CASES: ReadonlyArray<{
   },
 ];
 
+describe("capability source: native diagnostics", () => {
+  test("shows at most five native issues and counts the omitted issues", () => {
+    const error = new ArchctxClientError({
+      code: "AC_SCHEMA_INVALID", message: "native-context-model-invalid", action: "repair-native-input",
+      details: { issues: Array.from({ length: 7 }, (_, index) => ({ entityId: `capability.fixture.item${index}`, field: "summary", invariant: "required" })) },
+    });
+    const message = formatArchcontextCapabilityError(error);
+    expect(message).toStartWith(error.message);
+    expect(message).toContain("capability.fixture.item0 summary required");
+    expect(message).toContain("capability.fixture.item4 summary required");
+    expect(message.match(/capability\.fixture\.item/g)).toHaveLength(5);
+    expect(message).not.toContain("capability.fixture.item5");
+    expect(message).not.toContain("capability.fixture.item6");
+    expect(message).toEndWith("+2 more");
+  });
+
+  test("preserves messages without native issues and does not add an omission marker for five issues", () => {
+    expect(formatArchcontextCapabilityError(new Error("process failed"))).toBe("process failed");
+    const error = new ArchctxClientError({ code: "AC_SCHEMA_INVALID", message: "model invalid", action: "repair-native-input" });
+    expect(formatArchcontextCapabilityError(error)).toBe(error.message);
+    const five = new ArchctxClientError({
+      code: "AC_SCHEMA_INVALID", message: "model invalid", action: "repair-native-input",
+      details: { issues: Array.from({ length: 5 }, (_, index) => ({ entityId: `capability.fixture.item${index}`, field: "summary", invariant: "required" })) },
+    });
+    expect(formatArchcontextCapabilityError(five)).toEndWith("capability.fixture.item4 summary required");
+    expect(formatArchcontextCapabilityError(five)).not.toContain("more");
+  });
+});
+
 describe("capability source: native authority", () => {
   test("an archctx-invalid node fails closed", () => {
     const cwd = archcontextWorkspace("capability-source-native-invalid", [{
@@ -653,10 +682,12 @@ describe("capability source: native authority", () => {
       expect(authority.status).toBe("invalid");
       expect(authority.diagnostics.map((item) => item.code)).toEqual(["ARCHCONTEXT_MODEL_REJECTED"]);
       expect(authority.diagnostics[0].message).toContain("AC_SCHEMA_INVALID");
+      expect(authority.diagnostics[0].message).toContain("capability.apps-web.web summary");
       const result = runResolver(cwd, ["validate", "--format", "json"]);
       expect(result.status).toBe(2);
       expect(result.stdout).toBe("");
       expect(result.stderr).toContain("AC_SCHEMA_INVALID");
+      expect(result.stderr).toContain("capability.apps-web.web summary");
     } finally { rmSync(cwd, { recursive: true, force: true }); }
   });
 
@@ -667,6 +698,20 @@ describe("capability source: native authority", () => {
       const authority = capabilityRegistryFromNativeContext({ ...context, capabilityProfiles: context.capabilityProfiles.map((profile) => ({ ...profile, modulePath: "docs/architecture/modules/drift/wrong.md" })) }, { repoRoot: cwd });
       expect(authority.status).toBe("invalid");
       expect(authority.diagnostics.map((item) => item.code)).toEqual(TWIN_NODES.map(() => "ARCHCONTEXT_NODE_ID_INVALID"));
+    } finally { rmSync(cwd, { recursive: true, force: true }); }
+  });
+
+  test("validate JSON reports a repo-harness profile rejection on stderr with exit 2", () => {
+    const cwd = archcontextWorkspace("capability-source-native-incomplete", [{
+      file: "incomplete.yaml", lines: withoutLines(VALID_NODE_LINES, ["  lspProfile: typescript-lsp"]),
+    }]);
+    try {
+      const context = readArchitectureNativeContext(cwd, { kind: "worktree" });
+      expect(context.capabilityProfiles[0].lspProfile).toBeNull();
+      const result = runResolver(cwd, ["validate", "--format", "json"]);
+      expect(result.status).toBe(2);
+      expect(result.stdout).toBe("");
+      expect(result.stderr).toContain("capability.apps-web.web: lspProfile is required");
     } finally { rmSync(cwd, { recursive: true, force: true }); }
   });
 

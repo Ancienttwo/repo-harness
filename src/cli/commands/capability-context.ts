@@ -11,7 +11,7 @@ import {
   type CapabilityRegistry,
   type ContractFiles,
 } from '../../../scripts/capability-resolver';
-import { resolveArchcontextCapabilityPaths } from '../../effects/capabilities/archcontext-owners';
+import { formatArchcontextCapabilityError, resolveArchcontextCapabilityPaths } from '../../effects/capabilities/archcontext-owners';
 import { readArchitectureNativeContext } from '../../effects/architecture/archctx-provider';
 import { capabilityIdentityFromNodeId, capabilityRegistryFromNativeContext, type ArchcontextCapabilityOwners } from '../../core/capabilities/registry';
 
@@ -151,7 +151,7 @@ function readCapabilityContext(repo: string): {
     return { registry: authority.registry, owners: authority.owners, summaries };
   } catch (error) {
     if (error instanceof CapabilitySourceError) throw error;
-    throw new CapabilitySourceError((error as Error).message);
+    throw new CapabilitySourceError(formatArchcontextCapabilityError(error));
   }
 }
 
