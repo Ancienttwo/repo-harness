@@ -15,6 +15,7 @@ source:
     - src/effects/operator/**
     - src/operator-web/**
     - src/cli/commands/operator.ts
+    - src/cli/commands/catch-up.ts
     - src/cli/commands/module.ts
     - src/core/architecture/module-view.ts
     - src/core/docs/**
