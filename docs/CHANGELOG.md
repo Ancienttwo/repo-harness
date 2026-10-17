@@ -45,8 +45,11 @@ and `pm` profiles from any `mcp.local.json`.
   repository and what needs you. (#813, #817)
 - `repo-harness run decision-trail record` appends a decision to the evidence
   ledger. The checkpoint and the handoff show the latest decisions. (#812, #819)
-- Docs: the catch-up reply contract, the parked-gate rule and the issue pipeline
-  stage contract. (#811, #815, #816)
+- Docs: the catch-up reply contract, the parked-gate rule, the issue pipeline
+  stage contract and review depth by diff risk tier. (#811, #815, #816, #821)
+- Sub-agent spawns on Claude and Codex receive the repo-local standing-orders
+  register `.ai/harness/standing-orders.md`, capped at 1500 bytes. The
+  delegation brief lists its full field set. (#814, #818)
 
 ### Changed
 
@@ -59,6 +62,9 @@ and `pm` profiles from any `mcp.local.json`.
 - The edit guard skips ownership resolution for changed paths, and hooks reuse
   the porcelain parser. (#766, #795, #796)
 - The managed global rules limit a Herdr tab to 3 side-by-side panes. (#799)
+- The `[ArchitectureOwed]` notice now also shows a person one sentence at
+  SessionStart and on the first Stop for a branch. Codex output is unchanged.
+  (#802, #808)
 - The daily CI job now runs the expensive real pack/install benchmark cases in `tests/harness-benchmark-matrix.test.ts`. (#794)
 
 ### Fixed
@@ -69,6 +75,11 @@ and `pm` profiles from any `mcp.local.json`.
 - The bundled hook entry no longer crashes at start after the task-plane
   deletions changed the Bun bundle initialization order. (#820)
 - Shipped guidance no longer shows a bare `archctx` command. (#806)
+- `repo-harness architecture-debt` reads `archctx doctor` code facts first.
+  When CodeGraph facts are not ready it fails with
+  `RH_ARCHCTX_CODE_FACTS_NOT_READY` and names the fix command. (#804, #809)
+- The tarball smoke runs the retained coding OAuth E2E test against the
+  installed package. The removed engineer OAuth E2E made `check:release` fail.
 
 ## [0.23.0] - 2026-10-17
 
