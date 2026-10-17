@@ -1,5 +1,5 @@
 import { useId, useState, type KeyboardEvent } from 'react';
-import type { GraphNode, ModuleGraph as ModuleGraphV1 } from '../core/architecture/module-view';
+import { isGroupNode, type GraphNode, type ModuleGraph as ModuleGraphV1 } from '../core/architecture/module-view';
 import type { OperatorTranslate } from './i18n';
 import { CAPABILITY_ID } from './workspace-location';
 
@@ -62,7 +62,7 @@ function path(points: readonly Point[]): string {
 }
 
 function nodeName(node: GraphNode, t: OperatorTranslate): string {
-  return node.kind === 'group' ? t('architecture.graph.more', { count: node.count }) : node.name;
+  return isGroupNode(node) ? t('architecture.graph.more', { count: node.count }) : node.name;
 }
 
 /**
@@ -80,7 +80,7 @@ export function ModuleGraph({ graph, onSelect, t }: {
   const { boxes, height } = layout(graph);
   const names = new Map(graph.nodes.map(node => [node.id, nodeName(node, t)]));
   const toggle = (group: string) => setExpanded(current => current.includes(group) ? current.filter(item => item !== group) : [...current, group]);
-  const groups = graph.nodes.filter(node => node.kind === 'group' && expanded.includes(node.id));
+  const groups = graph.nodes.filter(isGroupNode).filter(node => expanded.includes(node.id));
   return (
     <figure className="module-graph" aria-labelledby={`${id}-caption`}>
       <figcaption id={`${id}-caption`} className="module-graph__caption">
@@ -96,7 +96,7 @@ export function ModuleGraph({ graph, onSelect, t }: {
           const box = boxes.get(node.id);
           if (!box) return null;
           const label = nodeName(node, t);
-          if (node.kind === 'group') {
+          if (isGroupNode(node)) {
             const open = expanded.includes(node.id);
             return (
               <g key={node.id} className="module-graph__node module-graph__node--group" data-node-role={node.role} role="button" tabIndex={0}
@@ -136,7 +136,7 @@ export function ModuleGraph({ graph, onSelect, t }: {
           );
         })}
       </svg>
-      {groups.map(group => group.kind === 'group' && (
+      {groups.map(group => (
         <section key={group.id} className="module-graph__group" aria-label={t(`architecture.graph.group.${group.role}`, { count: group.count })}>
           <h4>{t(`architecture.graph.group.${group.role}`, { count: group.count })}</h4>
           <ul>
