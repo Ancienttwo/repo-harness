@@ -207,7 +207,7 @@ Each datum has one authority. Every other representation is a projection.
 | Task execution (lease) | `<git-common-dir>/repo-harness/coordination/v1/`; claim tokens under `.ai/harness/sprint/claims` | workflow-state | State board and fleet board (read-only, no persisted column). |
 | Task messages | `<git-common-dir>/repo-harness/task-inbox/v2` | task-fleet | Session context renders them as untrusted data. They hold no authority. |
 | Publication | Immutable receipts in `<git-common-dir>/repo-harness/publications/v1`; the `current_publication` pointer in the lease record | publication | Merge readiness is derived at read time and never stored. |
-| Acceptance | `~/.repo-harness/gates/<repo-id>/acceptance.latest.json` | acceptance-review | Effective State, bound-task-freezes and integration acceptance read it. |
+| Acceptance | `~/.repo-harness/gates/<repo-id>/acceptance.latest.json` | acceptance-review | Effective State and integration acceptance read it. |
 | Harness evidence | `.ai/harness/evidence/events/log.jsonl` and `.ai/harness/evidence/blobs` | evidence-ledger | Handoff and resume recovery views. |
 | Engineer contracts and bindings | Tracked `agents/engineers/**`; bindings in `<git-common-dir>/repo-harness/engineers/v1` | engineer-bindings | Engineer offers and the engineering overlay. |
 | Task agent sessions | Herdr panes; records under `.ai/harness/runs/task-agents` and task worktrees under `.ai/harness/runs/task-workspaces` | task-agent-host | Pipeline ledger and acceptance review read the session records. |
