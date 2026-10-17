@@ -344,7 +344,7 @@ describe('Engineer binding shared store', () => {
             expected_binding_id: active.current_binding_id!,
             expected_engineer_contract_revision: revision,
           });
-      expect(retry).toThrow('inspect/freeze the bound task');
+      expect(retry).toThrow('release it explicitly');
       expect(readEngineerBindingStatus(root, engineerId, revision).current.current_binding_id).toBe(active.current_binding_id);
     }
   });
