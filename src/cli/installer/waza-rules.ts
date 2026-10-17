@@ -71,7 +71,8 @@ export function syncWazaSharedRules(
         const source = join(sourceDir, rule);
         const receipt = state?.ownership_manifest.find((surface) => surface.path === source);
         if (!receipt || !managedInstallSurfaceIsCurrent(receipt)) {
-          return { status: 'failed', detail: `refusing to refresh unowned or drifted staging rule ${source}; preserve or move this file before retrying` };
+          const hostCopies = hosts.map((host) => join(home, `.${host}`, 'rules', rule)).join(', ');
+          return { status: 'failed', detail: `refusing to refresh unowned or drifted staging rule ${source}; move this staging file and any existing host copies (${hostCopies}) to a backup directory before retrying` };
         }
       }
     }
