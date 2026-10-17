@@ -17,6 +17,7 @@ import {
   canonicalRepoRelativePath,
   isForeignDriveAbsolutePath,
 } from '../../effects/state/collect-state-inputs';
+import { parseStatusZ, splitNul } from '../../effects/review/diff-fingerprint';
 import { capabilityOwnersForPaths, FAILURE_LOG_FILE, type CapabilityPathOwner } from '../../effects/state/resolve-effective-state';
 import { payloadString, type HookIdentity, type HookPayload } from './hook-input';
 
@@ -139,25 +140,14 @@ function capabilityOwnerLines(repoRoot: string, paths: readonly string[]): strin
 /** One `git status` for the batch; a Git failure treats every path as changed. */
 function pathsWithNoUncommittedChange(repoRoot: string, paths: readonly string[]): readonly string[] {
   if (paths.length === 0) return paths;
-  let status: string;
+  let changed: readonly string[];
   try {
-    status = execFileSync('git', ['-C', repoRoot, '--literal-pathspecs', 'status', '--porcelain', '-z', '--untracked-files=all', '--', ...paths], {
-      encoding: 'utf-8',
+    changed = parseStatusZ(splitNul(execFileSync('git', ['-C', repoRoot, '--literal-pathspecs', 'status', '--porcelain', '-z', '--untracked-files=all', '--', ...paths], {
       stdio: ['ignore', 'pipe', 'ignore'],
       timeout: 5_000,
-    });
+    }))).all;
   } catch {
     return [];
-  }
-  // Each record is `XY path`. A rename or copy record adds its source path as
-  // the next NUL field; that source has changed too.
-  const changed: string[] = [];
-  const fields = status.split('\0');
-  for (let index = 0; index < fields.length; index += 1) {
-    const record = fields[index]!;
-    if (record.length < 4) continue;
-    changed.push(record.slice(3));
-    if (/[RC]/.test(record.slice(0, 2)) && index + 1 < fields.length) changed.push(fields[++index]!);
   }
   return paths.filter((path) => !changed.some((entry) => entry === path || entry.startsWith(`${path}/`)));
 }

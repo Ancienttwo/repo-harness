@@ -524,7 +524,11 @@ function capabilityIdsForPaths(
   } else {
     const authority = loadArchcontextAuthority(cwd, readSource);
     if (authority.status === 'invalid') return invalidAuthority(authority.diagnostics);
-    resolution = resolveArchcontextPaths(cwd, authority.owners, select(inRepoPaths), readSource);
+    const selected = select(inRepoPaths);
+    // No path to resolve means no `archctx resolve` and no owner.
+    resolution = selected.length === 0
+      ? { status: 'valid', capabilityIds: [], matches: [], unmappedPaths: [], diagnostics: [] }
+      : resolveArchcontextPaths(cwd, authority.owners, selected, readSource);
   }
   if (resolution.status !== 'valid') {
     return {
