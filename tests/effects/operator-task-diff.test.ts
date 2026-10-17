@@ -1,3 +1,4 @@
+import { leaseOwnerPath } from '../helpers/sprint-fixture';
 import { afterEach, beforeEach, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
@@ -7,7 +8,7 @@ import { buildLeaseOwnerRecord, bindLeaseRecord, deriveTaskRevision, serializeLe
 import { decodeOperatorTaskDiff, TASK_DIFF_MAX_BYTES } from '../../src/core/operator/task-diff';
 import { readOperatorTaskDiff } from '../../src/effects/operator/task-diff';
 import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
-import { leaseDirectory, leaseOwnerPath } from '../../src/effects/state/coordination-lease-store';
+import { leaseDirectory } from '../../src/effects/state/coordination-lease-store';
 import { fixtureTaskId } from '../helpers/sprint-fixture';
 
 const cleanup: string[] = [];

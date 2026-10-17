@@ -176,29 +176,6 @@ next_pending_row() {
   backlog_rows "$file" | awk -F '\t' '!found && $2 == "[ ]" { print; found = 1 }'
 }
 
-backlog_schema() {
-  local file="$1"
-  awk '
-    /^## Backlog[[:space:]]*$/ { exit }
-    /^>[[:space:]]*\*\*Backlog Schema\*\*:/ {
-      declared = $0
-      sub(/^>[[:space:]]*\*\*Backlog Schema\*\*:[[:space:]]*/, "", declared)
-      gsub(/[[:space:]]+$/, "", declared)
-      declarations++
-      if (declarations > 1) {
-        printf "sprint-backlog: backlog schema is declared %d times; exactly one declaration is allowed\n", declarations > "/dev/stderr"
-        bad = 1
-        exit 1
-      }
-      if (declared == "2") { found = 2; next }
-      printf "sprint-backlog: unsupported backlog schema: %s\n", declared > "/dev/stderr"
-      bad = 1
-      exit 1
-    }
-    END { if (!bad) print (found == 2) ? 2 : 1 }
-  ' "$file"
-}
-
 cmd_next() {
   local sprint_file row
   sprint_file="$(require_active_sprint)"

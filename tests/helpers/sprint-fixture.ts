@@ -1,3 +1,4 @@
+import { leaseDirectory, LEASE_OWNER_FILE_NAME } from '../../src/effects/state/coordination-lease-store';
 /**
  * Fixture helpers for backlog schema 2 sprints.
  *
@@ -59,4 +60,9 @@ export function writeClaimTokenFixture(input: {
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, `${input.task_id}.claim`),
     `claim_id=${input.claim_id}\ntask_id=${input.task_id}\nsprint=${input.sprint}\ntask=${input.task}\nunit_ref=${input.unit_ref}\n`);
+}
+
+/** Address the owner record in a real lease fixture. */
+export function leaseOwnerPath(cwd: string, taskId: string): string {
+  return join(leaseDirectory(cwd, taskId), LEASE_OWNER_FILE_NAME);
 }

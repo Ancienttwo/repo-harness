@@ -1,3 +1,4 @@
+import { leaseOwnerPath } from '../helpers/sprint-fixture';
 import { describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { execFileSync } from 'child_process';
@@ -11,7 +12,7 @@ import {
   collectEngineerOffers,
   type EngineerSchedulingDependencies,
 } from '../../src/effects/engineers/scheduling';
-import { createLeaseDirectory, leaseOwnerPath, readLease } from '../../src/effects/state/coordination-lease-store';
+import { createLeaseDirectory, readLease } from '../../src/effects/state/coordination-lease-store';
 import { fixtureTaskId } from '../helpers/sprint-fixture';
 
 const REPO = 'repo_0123456789abcdef';

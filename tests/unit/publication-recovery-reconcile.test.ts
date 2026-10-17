@@ -1,3 +1,4 @@
+import { leaseOwnerPath } from '../helpers/sprint-fixture';
 import { describe, expect, test } from 'bun:test';
 import { execFileSync, spawnSync } from 'child_process';
 import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
@@ -25,7 +26,7 @@ import {
 import { readPublicationIntegrationObservations, reconcilePublication } from '../../src/effects/publication/publication-lifecycle';
 import { observeProviderPullRequestIntegration, providerIntegrationFromJson, writePublicationReceiptCache } from '../../src/effects/publication/publication-receipt';
 import { resolveRepoIdentity } from '../../src/effects/state/coordination-canonical-source';
-import { createLeaseDirectory, leaseOwnerPath, readLease, writeLeaseOwnerDurably } from '../../src/effects/state/coordination-lease-store';
+import { createLeaseDirectory, readLease, writeLeaseOwnerDurably } from '../../src/effects/state/coordination-lease-store';
 import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
 import { publicationPointerFromReceipt } from '../../src/core/publication/publication-lifecycle';
 import { fixtureTaskId } from '../helpers/sprint-fixture';

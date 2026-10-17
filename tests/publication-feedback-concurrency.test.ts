@@ -1,3 +1,4 @@
+import { leaseOwnerPath } from './helpers/sprint-fixture';
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
@@ -40,7 +41,7 @@ import {
 } from '../src/effects/publication/feedback-store';
 import { writePublicationReceiptCache } from '../src/effects/publication/publication-receipt';
 import { resolveRepoIdentity } from '../src/effects/state/coordination-canonical-source';
-import { createLeaseDirectory, leaseOwnerPath, writeLeaseOwnerDurably } from '../src/effects/state/coordination-lease-store';
+import { createLeaseDirectory, writeLeaseOwnerDurably } from '../src/effects/state/coordination-lease-store';
 import { resolveGitCommonDirectory } from '../src/effects/git/common-directory';
 import { fixtureTaskId } from './helpers/sprint-fixture';
 

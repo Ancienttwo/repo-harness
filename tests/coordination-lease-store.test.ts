@@ -1,3 +1,4 @@
+import { leaseOwnerPath } from './helpers/sprint-fixture';
 /**
  * Coordination plane primitives over a real git repository: lease election,
  * durable owner writes, per-task locking, and the `unknown` classification.
@@ -45,22 +46,7 @@ import {
   releaseSprintCommand,
   type SprintCommandDependencies,
 } from '../src/effects/state/coordination-sprint';
-import {
-  COORDINATION_BACKLOG_LOCK_RELATIVE_PATH,
-  COORDINATION_ROOT_RELATIVE_PATH,
-  LEASE_OWNER_FILE_NAME,
-  coordinationRoot,
-  createLeaseDirectory,
-  findLeaseByClaimId,
-  leaseDirectory,
-  leaseOwnerPath,
-  readLease,
-  removeLease,
-  taskLockRelativePath,
-  withBacklogLock,
-  withTaskLock,
-  writeLeaseOwnerDurably,
-} from '../src/effects/state/coordination-lease-store';
+import { COORDINATION_BACKLOG_LOCK_RELATIVE_PATH, COORDINATION_ROOT_RELATIVE_PATH, LEASE_OWNER_FILE_NAME, coordinationRoot, createLeaseDirectory, findLeaseByClaimId, leaseDirectory, readLease, removeLease, taskLockRelativePath, withBacklogLock, withTaskLock, writeLeaseOwnerDurably } from '../src/effects/state/coordination-lease-store';
 import { resolveGitCommonDirectory } from '../src/effects/git/common-directory';
 import { withExclusiveDirectoryLock } from '../src/effects/locking/exclusive-directory-lock';
 import { deriveLegacyTaskId } from '../src/core/state/sprint-schema-v1';

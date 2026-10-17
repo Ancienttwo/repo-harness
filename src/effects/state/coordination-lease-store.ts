@@ -112,10 +112,6 @@ export function leaseDirectory(cwd: string, taskId: string): string {
   return join(coordinationRoot(cwd), 'leases', taskId);
 }
 
-export function leaseOwnerPath(cwd: string, taskId: string): string {
-  return join(leaseDirectory(cwd, taskId), LEASE_OWNER_FILE_NAME);
-}
-
 /**
  * Serialize every ownership mutation for one task. Each verb -- claim, bind,
  * release, steal, reconcile -- runs its read, compare, and write inside this

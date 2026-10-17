@@ -30,7 +30,6 @@ import {
   lookupCanonicalTask,
   releaseLeaseRecord,
   resolveCanonicalTaskRef,
-  type CanonicalTask,
   type LeaseOwnerRecord,
   type LeaseTransition,
   type PersistedLeaseState,
@@ -135,50 +134,6 @@ function requireOption(value: string | undefined, flag: string): string | Comman
 /** Narrows the `<value> | CommandOutcome` shape the option and lease helpers return. */
 function isOutcome(value: unknown): value is CommandOutcome {
   return typeof value === 'object' && value !== null && 'exitCode' in value && 'stdout' in value;
-}
-
-/**
- * Resolve one canonical task and check the two preconditions a claim depends
- * on: the row is still pending, and its revision still matches what the caller
- * observed. Both are re-checked after the lease is published -- and nothing
- * else is, deliberately. A sibling row completing rewrites the sprint file
- * without touching either predicate, which is precisely the property the
- * contract's falsifier pins down; comparing whole-file or whole-ref state here
- * would invalidate every concurrent claim on every unrelated completion.
- */
-function verifyCanonicalPreconditions(
-  deps: SprintCommandDependencies,
-  source: CanonicalSprintSource,
-  taskId: string,
-  expectedTaskRevision: string,
-): { readonly ok: true; readonly task: CanonicalTask } | { readonly ok: false; readonly error: string } {
-  const canonical = deps.coordination.readCanonicalSprint(source);
-  if (!canonical.ok) return { ok: false, error: canonical.error };
-
-  const lookup = lookupCanonicalTask(
-    {
-      repoIdentity: deps.repoIdentity,
-      sprintPath: source.sprintPath,
-      sprintText: canonical.text,
-    },
-    taskId,
-  );
-  if (!lookup.ok) return { ok: false, error: lookup.error };
-
-  const task = lookup.task;
-  if (task.row.status !== PENDING_ROW_STATUS) {
-    return {
-      ok: false,
-      error: `task ${taskId} is not pending on ${source.targetRef}: status is ${task.row.status || '(empty)'}`,
-    };
-  }
-  if (task.task_revision !== expectedTaskRevision) {
-    return {
-      ok: false,
-      error: `task ${taskId} drifted: canonical revision is ${task.task_revision}, not ${expectedTaskRevision}`,
-    };
-  }
-  return { ok: true, task };
 }
 
 /** Locate the lease a fencing token owns, then run `mutate` under its lock. */
