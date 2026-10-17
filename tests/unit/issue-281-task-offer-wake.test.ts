@@ -1,3 +1,4 @@
+import { canonicalEngineerJson, engineerSha256 } from '../../src/core/engineers/profile-binding';
 import { seedEngineerBinding } from '../helpers/engineer-state-fixture';
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'child_process';
@@ -25,8 +26,6 @@ import {
   type AgentRuntimeOfferWakeHostActionV2,
 } from '../../src/core/engineers/agent-runtime-effect';
 import {
-  canonicalEngineerJson,
-  engineerSha256,
   validateEngineerOffersDocument,
   type EngineerOfferV1,
   type EngineerOfferExclusionV1,
