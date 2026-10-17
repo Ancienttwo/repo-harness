@@ -6,7 +6,6 @@
 - Read the current request and repo-local agent context, work on a branch, make bounded commits, verify once, then report the PR outcome.
 - Read `tasks/lessons.md` at session start and apply its active lessons. Current repo state and evidence override a lesson.
 - Finish the main task first. Fix a small problem found on the way directly. For a large problem, open a GitHub issue before you work on it.
-- Write output text (docs, PR descriptions, commit messages, reports) in ASD-STE100 Simplified Technical English: short sentences, one idea per sentence, active voice, approved-dictionary words; write Chinese output the same way, with short sentences and one idea per sentence.
 - Ordinary tasks use the PR description: goal, scope, changes, verification, risk and rollback. No mandatory plan/contract/review/notes chain; notes are only for non-obvious decisions.
 - Keep four hard boundaries: main publication, deletion, credentials/permissions, and release/production operations.
 - Only when the current task explicitly authorizes main publication may a model squash-merge after automated checks pass and GitHub has no outstanding change requests or unresolved review threads; an explicit no-merge instruction always wins. Push/tag still require task authorization; credentials/permissions, other deletion and release/production retain their separate approval boundaries. Record authorized publication, the provider-confirmed merge SHA and parent SHA, `git revert <squash-commit>`, and the daily report. Do not create rollback tags.
@@ -64,6 +63,15 @@
 - Never include secrets, tokens or real environment files in handoff text.
 - On resume, verify the live checkout and source artifacts before reusing a result; `tasks/current.md` is an optional local read model.
 - Preserve dirty work and other workers' edits; hand back an ownership conflict instead of discarding their changes.
+
+## Writing
+- Write output text (docs, PR descriptions, commit messages, reports, research notes) in ASD-STE100 Simplified Technical English: short sentences, one idea per sentence, active voice, approved-dictionary words. Write Chinese output the same way.
+- Prefer high information density: evidence first, mechanisms and business effect explained, complex reasoning allowed, no explanatory repetition. Lead with the main finding, key number or key mechanism. State known facts and supported conclusions directly, without lead-ins such as "note that", "this shows to some extent" or "it must be stressed". Put the evidence grade in the wording, not in a separate caveat.
+- Give time, subject, action, size and source in one sentence. Keep only the qualifiers that change the fact, the statistics or the inference. Keep text that explains a cause or mechanism, separates confounded causes, or builds a new classification.
+- Delete: comments on your own process or work; a second explanation of a fact that already states its source, scope and meaning; "do not read this as" warnings; repeated disclaimers; step-by-step tutorials and hypothetical teaching examples; prose that repeats a comparison table; repeated summaries and claims about the importance of the result.
+- A conclusion must add a cause, mechanism, constraint, testable prediction or business effect. A restatement of earlier facts is not a conclusion.
+- Prefer real companies, products, contracts, prices and user behavior as examples. Use a table for multi-object or multi-metric comparison. Split sections by question; drop introductions, transitions and summaries that exist only for completeness.
+- Paragraph deletion test: if removing a paragraph leaves the reader's understanding of facts, numbers, mechanism, cause, conditions and conclusion unchanged, remove it. Check first the paragraphs that start with "this shows", "note that", "therefore", "however" or "it must be stressed".
 
 ## Codex
 - Own backend implementation and testing; Claude owns frontend implementation and interaction, and the parent coordinates scope and integration.
