@@ -57,7 +57,7 @@ For an explicitly reviewed one-shot batch, select exact Issue numbers instead of
 }
 ```
 
-Exact-batch refresh resolves only those Issue endpoints and fails the whole attempt if any selected Issue is missing, malformed, a pull request, or exceeds a limit. GitHub assignees, labels, and open/closed state are evidence only: they do not prove whether local work has already been dispatched. Dispatch deduplication belongs to an authenticated binding against canonical repo-harness task identity.
+Exact-batch refresh resolves only those Issue endpoints and fails the whole attempt if any selected Issue is missing, malformed, a pull request, or exceeds a limit. GitHub assignees, labels, and open/closed state are evidence only: they do not prove whether local work has already been dispatched. Dispatch deduplication belongs to an authenticated binding against canonical repo-harness task identity. The triage, reproduce and fix stage contract for observed issues is in [issue pipeline](issue-pipeline.md).
 
 `repo-harness external-source refresh --repo <registered-repo-id>` invokes the locally authenticated `gh` client once and records immutable observations plus an attempt receipt under the repository Git common directory. `list` performs no provider call. These records are inert evidence: they do not create or change TaskOffer, priority, Claim, Lease, WorkEnvelope, collaboration, or Agent Runtime state.
 

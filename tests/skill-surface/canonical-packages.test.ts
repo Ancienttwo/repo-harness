@@ -64,7 +64,7 @@ const CANONICAL_PACKAGES: ReadonlyArray<{
   {
     dir: "repo-harness-check",
     frontmatterName: "repo-harness-check",
-    references: ["create.md", "review.md", "deploy-readiness.md", "architecture-evidence.md", "pr-verification.md"],
+    references: ["create.md", "review.md", "deploy-readiness.md", "architecture-evidence.md", "pr-verification.md", "review-comment-triage.md"],
   },
 ];
 

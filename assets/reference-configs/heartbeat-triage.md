@@ -54,3 +54,5 @@ runner as an on-demand diagnostic command.
   plan or task ledger.
 - Triage entries do not authorize work. Execution authority stays with the
   current task under root `AGENTS.md`.
+- The stage contract for turning a provider issue into a draft PR is in
+  [issue pipeline](issue-pipeline.md).
