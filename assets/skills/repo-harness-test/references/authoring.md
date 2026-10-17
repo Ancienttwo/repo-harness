@@ -75,10 +75,10 @@ observed by a parent also need their actual process boundary.
 
 Existing opt-in cases use explicit environment gates for external dependencies.
 
-`REPO_HARNESS_TEST_EXPENSIVE` is the release-lane gate for real `npm pack`,
+`REPO_HARNESS_TEST_EXPENSIVE` is the gate for real `npm pack`,
 real install, and real `herdr` cases. `scripts/check-ci.sh` is its single
-naming authority -- the `all` and `release` lanes export it, `functional` and
-`governance` deliberately do not, and `tests/expensive-test-gate.test.ts` reads the exported
+naming authority -- the `all`, `functional` (daily CI) and `release` lanes export it,
+`affected` and `governance` deliberately do not, and `tests/expensive-test-gate.test.ts` reads the exported
 name back out of that script so a rename cannot strand a gated file. Declared
 in `tests/harness-benchmark-matrix.test.ts`; generic review domain/lifecycle fixtures
 in `tests/generic-review.test.ts` and `tests/acceptance-receipt.test.ts` are zero-model. Release contract in

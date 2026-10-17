@@ -147,15 +147,18 @@ if [[ "$lane" == architecture-advisory ]]; then
   exit 0
 fi
 
-# Local full runs and the release gate own the expensive real-install cases;
-# the hosted functional lane deliberately leaves them gated out.
-if [[ "$lane" == all || "$lane" == release ]]; then
+# Local full runs, the daily functional lane and the release gate run the
+# expensive real-install cases. The PR lanes leave them gated out.
+if [[ "$lane" == all || "$lane" == release || "$lane" == functional ]]; then
   export REPO_HARNESS_TEST_EXPENSIVE=1
 fi
 
 # Release gate: CI owns the full suite, so this lane runs only the expensive
-# cases that no hosted lane runs and the package/install smoke.
+# cases and the package/install smoke. The benchmark artifact packs with
+# --ignore-scripts, so build the dist files here as the functional lane does.
 if [[ "$lane" == release ]]; then
+  bun run build:hook-bundle
+  bun run build:oar-hosts
   echo "[ci] expensive release tests"
   run_bun_test_file tests/harness-benchmark-matrix.test.ts
   echo "[ci] package/install smoke (one shared tarball)"

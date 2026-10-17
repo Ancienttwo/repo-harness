@@ -13,10 +13,10 @@ state under ignored `_ops/`. Detailed release patterns, Cloudflare examples, and
 rollback playbooks belong in the external runbook.
 
 Tests whose cost is a real package install or a real external program are gated
-behind `REPO_HARNESS_TEST_EXPENSIVE` and are therefore not part of the hosted
-`scripts/check-ci.sh functional` lane. The `release` lane owns them:
-`bun run check:release` runs it after the npm unpublished-version preflight.
-The `release` lane exports that variable, then runs the expensive-gated files
+behind `REPO_HARNESS_TEST_EXPENSIVE`. The PR lanes do not run them. The daily
+`scripts/check-ci.sh functional` lane and the `release` lane export that
+variable and run them. `bun run check:release` runs the `release` lane after
+the npm unpublished-version preflight. That lane runs the expensive-gated files
 and the tarball install smoke. It is not a second full suite and not the CI
 gate; a release depends on green CI for the release SHA. `prepublishOnly`
 stays a fast pre-publish check that never runs tests.

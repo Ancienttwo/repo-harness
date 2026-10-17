@@ -37,14 +37,14 @@ function runLane(lane: string) {
   }
 }
 
-test('the full and release lanes enable the expensive test gate and the hosted functional lane does not', () => {
+test('the full, release and daily functional lanes enable the expensive test gate', () => {
   const all = runLane('all');
   const release = runLane('release');
   const functional = runLane('functional');
   expect(all.status).toBe(0);
   expect(all.stdout).toContain('TEST_LANE_GATE=1');
   expect(functional.status).toBe(0);
-  expect(functional.stdout).toContain('TEST_LANE_GATE=unset');
+  expect(functional.stdout).toContain('TEST_LANE_GATE=1');
   // The release lane runs only the gated files and the package smoke, not a second full suite.
   expect(release.status, release.stdout + release.stderr).toBe(0);
   expect(Array.from(release.stdout.match(/^TEST_LANE_GATE=.*$/gm) ?? [])).toEqual(GATED_FILES.map(() => 'TEST_LANE_GATE=1'));
