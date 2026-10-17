@@ -42,6 +42,7 @@ import { buildPublicationCommand } from './commands/publication';
 import { buildFleetCommand } from './commands/fleet';
 import { buildRefactorCommand } from './commands/refactor';
 import { buildOperatorCommand } from './commands/operator';
+import { buildCatchUpCommand } from './commands/catch-up';
 import { buildEngineerCommand } from './commands/engineer';
 import { buildArchitectureDebtCommand } from './commands/architecture-debt';
 import { buildArchitectureProjectionCommand } from './commands/architecture-projection';
@@ -831,6 +832,7 @@ export function buildProgram(): Command {
   program.addCommand(buildPublicationCommand());
   program.addCommand(buildFleetCommand());
   program.addCommand(buildOperatorCommand());
+  program.addCommand(buildCatchUpCommand());
   program.addCommand(buildRefactorCommand());
   program.addCommand(buildEngineerCommand());
   program.addCommand(buildArchitectureProjectionCommand());
