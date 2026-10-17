@@ -33,6 +33,11 @@ function withItems(items: ArchitectureDebtItemV1[]): ArchitectureDebtReportV1 {
 const ok = (value: unknown): ArchctxProcessResult => ({ status: 0, signal: null, stdout: JSON.stringify(value), stderr: '' });
 const failed = (value: unknown): ArchctxProcessResult => ({ status: 1, signal: null, stdout: JSON.stringify(value), stderr: '' });
 const completeEnvelope = (headSha: string, debt: unknown) => ({ ...clone(recorded), data: { ...clone(recorded.data), snapshot: { ...recorded.data.snapshot, headSha }, debt } });
+// The code facts shape comes from package-local archctx@0.8.0 doctor in a disposable repository.
+const doctorEnvelope = (state = 'ready', issues: Array<{ code: string; message: string }> = []) => ({
+  schemaVersion: 'archcontext.envelope/v1', ok: true, requestId: 'doctor',
+  data: { codeFacts: { schemaVersion: 'archcontext.repository-code-facts/v1', state, indexPresent: state !== 'index-missing', requiredVersion: '1.6.2', codeGraphVersion: '1.6.2', issues } },
+});
 
 function git(cwd: string, args: string[]): string {
   return execFileSync('git', args, { cwd, encoding: 'utf8', env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' } }).trim();
@@ -81,6 +86,7 @@ function fakeProvider(f: ReturnType<typeof fixture>, debt: { head: ArchitectureD
       mkdirSync(join(options.cwd, '.codegraph'));
       return { status: 0, signal: null, stdout: '', stderr: '' };
     }
+    if (args[0] === 'doctor') return ok(doctorEnvelope());
     if (args[0] === 'complete') {
       const sha = args[args.indexOf('--head-sha') + 1]!;
       if (options.cwd === f.repoRoot) return ok(completeEnvelope(sha, debt.head));
@@ -125,17 +131,56 @@ describe('architecture debt report decoder', () => {
 });
 
 describe('completeArchitectureDebt', () => {
-  test('decodes the debt of a recorded complete envelope with one archctx call', () => {
+  test('doctor not-ready stops debt with a typed fix before complete or base indexing', () => {
     const f = fixture();
     const calls: Array<readonly string[]> = [];
-    const run: RunArchctxProcess = (_binary, args) => { calls.push(args); return ok(recorded); };
+    const issues = [{ code: 'version-mismatch', message: 'CodeGraph repository status version mismatch' }, { code: 'pending-source-changes', message: 'CodeGraph repository index has pending source changes' }];
+    const provider = fakeProvider(f, { head: recordedDebt, base: recordedDebt });
+    const run: RunArchctxProcess = (binary, args, options) => {
+      calls.push(args);
+      return args[0] === 'doctor' ? ok(doctorEnvelope('not-ready', issues)) : provider.run(binary, args, options);
+    };
+    let caught: unknown;
+    try { architectureDebtReport(f.repoRoot, 'HEAD~1', { consumerRoot: f.consumerRoot, policy, run }); } catch (error) { caught = error; }
+    expect(caught).toBeInstanceOf(ArchctxClientError);
+    expect(caught).toMatchObject({ code: 'RH_ARCHCTX_CODE_FACTS_NOT_READY', reasonCode: 'code-facts-not-ready', details: { state: 'not-ready', issues } });
+    expect((caught as Error).message).toContain('version-mismatch, pending-source-changes');
+    expect((caught as Error).message).toContain('codegraph index .');
+    expect((caught as Error).message).toContain(f.repoRoot);
+    expect(calls).toEqual([['doctor', '--json']]);
+    expect(worktrees(f.repoRoot)).toEqual([f.repoRoot]);
+  });
+
+  test('doctor unknown or malformed code facts fail closed before complete', () => {
+    const f = fixture();
+    const valid = doctorEnvelope();
+    const variants = [
+      { ...valid, requestId: 'other' },
+      { ...valid, data: {} },
+      doctorEnvelope('unknown'),
+      { ...valid, data: { codeFacts: { ...valid.data.codeFacts, schemaVersion: 'archcontext.repository-code-facts/v2' } } },
+      { ...valid, data: { codeFacts: { ...valid.data.codeFacts, issues: [{ code: 1 }] } } },
+      { ...valid, data: { codeFacts: { ...valid.data.codeFacts, issues: undefined } } },
+    ];
+    for (const envelope of variants) {
+      const calls: Array<readonly string[]> = [];
+      const run: RunArchctxProcess = (_binary, args) => { calls.push(args); return ok(envelope); };
+      expect(() => completeArchitectureDebt(f.repoRoot, f.headSha, { consumerRoot: f.consumerRoot, policy, run })).toThrow('RH_ARCHCTX_DOCTOR_INVALID');
+      expect(calls).toEqual([['doctor', '--json']]);
+    }
+  });
+
+  test('a ready doctor keeps the recorded complete report unchanged', () => {
+    const f = fixture();
+    const calls: Array<readonly string[]> = [];
+    const run: RunArchctxProcess = (_binary, args) => { calls.push(args); return ok(args[0] === 'doctor' ? doctorEnvelope() : recorded); };
     expect(completeArchitectureDebt(f.repoRoot, recorded.data.snapshot.headSha, { consumerRoot: f.consumerRoot, policy, run })).toEqual(recordedDebt);
-    expect(calls).toEqual([['complete', '--head-sha', recorded.data.snapshot.headSha, '--json']]);
+    expect(calls).toEqual([['doctor', '--json'], ['complete', '--head-sha', recorded.data.snapshot.headSha, '--json']]);
   });
 
   test('an error envelope stays a typed ArchctxClientError', () => {
     const f = fixture();
-    const run: RunArchctxProcess = () => failed(errorEnvelope('complete', 'AC_UNCLASSIFIED_FAILURE', 'code facts unavailable', 'code-facts-unavailable'));
+    const run: RunArchctxProcess = (_binary, args) => args[0] === 'doctor' ? ok(doctorEnvelope()) : failed(errorEnvelope('complete', 'AC_UNCLASSIFIED_FAILURE', 'code facts unavailable', 'code-facts-unavailable'));
     let caught: unknown;
     try { completeArchitectureDebt(f.repoRoot, f.headSha, { consumerRoot: f.consumerRoot, policy, run }); } catch (error) { caught = error; }
     expect(caught).toBeInstanceOf(ArchctxClientError);
@@ -146,7 +191,7 @@ describe('completeArchitectureDebt', () => {
   test('malformed, missing or unbound debt fails closed', () => {
     const f = fixture();
     const attempt = (envelope: unknown, sha = f.headSha): ArchctxClientError => {
-      const run: RunArchctxProcess = () => ok(envelope);
+      const run: RunArchctxProcess = (_binary, args) => ok(args[0] === 'doctor' ? doctorEnvelope() : envelope);
       try { completeArchitectureDebt(f.repoRoot, sha, { consumerRoot: f.consumerRoot, policy, run }); } catch (error) { return error as ArchctxClientError; }
       throw new Error('expected a failure');
     };
@@ -159,7 +204,7 @@ describe('completeArchitectureDebt', () => {
     expect([otherCommit.code, otherCommit.reasonCode]).toEqual(['RH_ARCHCTX_DEBT_INVALID', 'review-result-mismatch']);
   });
 
-  test('a wrong pinned version, a missing CodeGraph index or a disabled provider fails before any process call', () => {
+  test('a wrong pinned version or a disabled provider fails before any process call', () => {
     const f = fixture();
     const calls: Array<readonly string[]> = [];
     const run: RunArchctxProcess = (_binary, args) => { calls.push(args); return ok(recorded); };
@@ -168,11 +213,28 @@ describe('completeArchitectureDebt', () => {
     writeFileSync(manifest, JSON.stringify({ ...JSON.parse(pinned), version: '0.0.1' }));
     expect(() => completeArchitectureDebt(f.repoRoot, f.headSha, { consumerRoot: f.consumerRoot, policy, run })).toThrow(`expected archctx@${ARCHCTX_REQUIRED_VERSION}, got archctx@0.0.1`);
     writeFileSync(manifest, pinned);
-    rmSync(join(f.repoRoot, '.codegraph'), { recursive: true });
-    expect(() => completeArchitectureDebt(f.repoRoot, f.headSha, { consumerRoot: f.consumerRoot, policy, run })).toThrow('RH_CODEGRAPH_INDEX_MISSING');
     expect(() => completeArchitectureDebt(f.repoRoot, f.headSha, { consumerRoot: f.consumerRoot, policy: { ...policy, provider: 'disabled', applyMode: 'disabled' }, run }))
       .toThrow('architecture projection provider is disabled');
     expect(calls).toEqual([]);
+  });
+
+  test('doctor index-missing and unavailable use the same typed error without complete', () => {
+    const f = fixture();
+    const unavailable = { ...doctorEnvelope(), data: { codeFacts: { schemaVersion: 'archcontext.repository-code-facts/v1', state: 'unavailable', requiredVersion: '1.6.2', reasonCode: 'codegraph-unavailable', message: 'CodeGraph binary is unavailable' } } };
+    for (const envelope of [doctorEnvelope('index-missing'), unavailable]) {
+      const calls: Array<readonly string[]> = [];
+      const run: RunArchctxProcess = (_binary, args) => { calls.push(args); return ok(envelope); };
+      let caught: unknown;
+      try { completeArchitectureDebt(f.repoRoot, f.headSha, { consumerRoot: f.consumerRoot, policy, run }); } catch (error) { caught = error; }
+      expect(caught).toMatchObject({ code: 'RH_ARCHCTX_CODE_FACTS_NOT_READY', details: { state: envelope.data.codeFacts.state } });
+      expect((caught as Error).message).toContain(envelope.data.codeFacts.state === 'index-missing' ? 'codegraph init -y .' : 'repo-harness update');
+      expect((caught as Error).message).toContain(envelope.data.codeFacts.state === 'unavailable' ? 'codegraph-unavailable' : 'index-missing');
+      if (envelope.data.codeFacts.state === 'unavailable') {
+        expect((caught as ArchctxClientError).action).toBe('update-repo-harness');
+        expect((caught as Error).message).toContain('CodeGraph binary is unavailable');
+      }
+      expect(calls).toEqual([['doctor', '--json']]);
+    }
   });
 });
 
@@ -185,7 +247,7 @@ describe('architecture-debt command', () => {
     const provider = fakeProvider(f, { head: recordedDebt, base: recordedDebt });
     const output = architectureDebtReport(f.repoRoot, undefined, { consumerRoot: f.consumerRoot, policy, run: provider.run });
     expect(output).toEqual({ kind: 'repo-harness-architecture-debt', head: { sha: f.headSha, debt: recordedDebt }, base: null, introduced: null, resolvedIds: null });
-    expect(provider.calls.map(({ tool, args, cwd }) => [tool, args[0], cwd])).toEqual([['archctx', 'complete', f.repoRoot]]);
+    expect(provider.calls.map(({ tool, args, cwd }) => [tool, args[0], cwd])).toEqual([['archctx', 'doctor', f.repoRoot], ['archctx', 'complete', f.repoRoot]]);
     expect(architectureDebtSummary(output)).toContain('2 items, coverage partial');
   });
 
@@ -199,7 +261,7 @@ describe('architecture-debt command', () => {
     expect(output.resolvedIds).toEqual([goneItem.id]);
     const checkout = provider.baseCheckout()!;
     expect(provider.calls.filter((call) => call.cwd === checkout).map(({ tool, args }) => [tool, ...args])).toEqual([
-      ['codegraph', 'init', '-y', '.'], ['archctx', 'complete', '--head-sha', f.baseSha, '--json'],
+      ['codegraph', 'init', '-y', '.'], ['archctx', 'doctor', '--json'], ['archctx', 'complete', '--head-sha', f.baseSha, '--json'],
     ]);
     // The R5 closeout helper stops only the daemon of the base checkout, by state directory.
     expect(provider.calls.filter((call) => call.args[0] === 'daemon').map(({ args }) => args)).toEqual([['daemon', 'list', '--json'], ['daemon', 'stop', '--state-dir', '/state/base', '--json']]);

@@ -144,6 +144,11 @@ function snapshotEnvelope(expected: ProjectionExpectedSnapshotV1 = expectedSnaps
   return { schemaVersion: 'archcontext.envelope/v1', ok: true, requestId: 'projection.snapshot', data: { expected } };
 }
 
+const doctorEnvelope = (state = 'index-missing', issues: Array<{ code: string; message: string }> = []) => ({
+  schemaVersion: 'archcontext.envelope/v1', ok: true, requestId: 'doctor',
+  data: { codeFacts: { schemaVersion: 'archcontext.repository-code-facts/v1', state, indexPresent: state !== 'index-missing', requiredVersion: '1.6.2', codeGraphVersion: '1.6.2', issues } },
+});
+
 /** Answers `projection snapshot` before the wrapped runner sees or records a call. */
 function withSnapshot(run: RunArchctxProcess, snapshot: () => ProjectionExpectedSnapshotV1 = () => expectedSnapshot): RunArchctxProcess {
   return (binary, args, options) => args[0] === 'projection' && args[1] === 'snapshot'
@@ -315,7 +320,7 @@ function writeAppliedOutputs(repoRoot: string): void {
 function runner(calls: Array<{ binary: string; args: readonly string[] }>, docs: ReturnType<typeof projectionEnvelope>): RunArchctxProcess {
   return (binary, args): ArchctxProcessResult => {
     calls.push({ binary, args });
-    return { status: 0, signal: null, stdout: JSON.stringify(args[0] === 'capabilities' ? capabilities() : args[0] === 'daemon' ? { schemaVersion: 'archcontext.envelope/v1', ok: true, requestId: 'daemon.status', data: { running: false } } : args[1] === 'snapshot' ? snapshotEnvelope() : docs), stderr: '' };
+    return { status: 0, signal: null, stdout: JSON.stringify(args[0] === 'capabilities' ? capabilities() : args[0] === 'doctor' ? doctorEnvelope() : args[0] === 'daemon' ? { schemaVersion: 'archcontext.envelope/v1', ok: true, requestId: 'daemon.status', data: { running: false } } : args[1] === 'snapshot' ? snapshotEnvelope() : docs), stderr: '' };
   };
 }
 
@@ -469,6 +474,25 @@ describe('native architecture context', () => {
     const recovered = readArchitectureNativeContext(f.repoRoot, source, options);
     expect(readArchitectureNativeContext(f.repoRoot, source, options)).toBe(recovered);
     expect(calls).toBe(2);
+  });
+
+  test('doctor controls apply readiness even with a complete model', () => {
+    const f = fixture();
+    copyFileSync(join(import.meta.dir, '..', '.archcontext', 'manifest.yaml'), join(f.repoRoot, '.archcontext', 'manifest.yaml'));
+    writeFileSync(join(f.repoRoot, '.archcontext', 'product.yaml'), 'name: fixture\n');
+    for (const state of ['ready', 'not-ready'] as const) {
+      const baseRun = runner([], projectionEnvelope(expectedSnapshot));
+      const run: RunArchctxProcess = (binary, args, options) => {
+        if (args[0] === 'export') return envelope(context({ kind: 'worktree' }));
+        if (args[0] === 'doctor') return { status: 0, signal: null, stderr: '', stdout: JSON.stringify(doctorEnvelope(state, state === 'ready' ? [] : [{ code: 'version-mismatch', message: 'CodeGraph repository status version mismatch' }])) };
+        return baseRun(binary, args, options);
+      };
+      const readiness = inspectArchitectureProjectionReadiness(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run });
+      expect(readiness.projectionProvider.state).toBe('ready');
+      expect(readiness.codeFacts.state).toBe(state);
+      expect(readiness.apply.enabled).toBe(state === 'ready');
+      expect(readiness.next).toBe(state === 'ready' ? null : 'codegraph index .');
+    }
   });
 
   test.each(['typed', 'precondition', 'unexpected'])('readiness handles a %s export failure', (kind) => {
@@ -706,6 +730,59 @@ describe('package-local ArchContext projection provider', () => {
     expect(mismatch.projectionProvider.state).toBe('mismatch');
     expect(mismatch.daemonRuntime.state).toBe('mismatch');
     expect(mismatch.apply.enabled).toBe(false);
+  });
+
+  test('readiness maps doctor not-ready and issues to code facts and the fix', () => {
+    const f = fixture();
+    mkdirSync(join(f.repoRoot, '.codegraph'));
+    const calls: Array<{ binary: string; args: readonly string[] }> = [];
+    const baseRun = runner(calls, projectionEnvelope(expectedSnapshot));
+    const issues = [{ code: 'version-mismatch', message: 'CodeGraph repository status version mismatch' }];
+    const run: RunArchctxProcess = (binary, args, options) => {
+      if (args[0] !== 'doctor') return baseRun(binary, args, options);
+      calls.push({ binary, args });
+      return { status: 0, signal: null, stdout: JSON.stringify(doctorEnvelope('not-ready', issues)), stderr: '' };
+    };
+    const readiness = inspectArchitectureProjectionReadiness(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run });
+    expect(readiness.projectionProvider.state).toBe('ready');
+    expect(readiness.codeFacts).toEqual({ requirement: 'required', state: 'not-ready', issues });
+    expect(readiness.apply.enabled).toBe(false);
+    expect(readiness.next).toBe('codegraph index .');
+    expect(calls.map(({ args }) => args[0])).toEqual(['capabilities', 'daemon', 'doctor']);
+  });
+
+  test('readiness keeps doctor failures closed and preserves unavailable diagnostics', () => {
+    const f = fixture();
+    const baseRun = runner([], projectionEnvelope(expectedSnapshot));
+    let doctor = doctorEnvelope('unknown') as unknown;
+    const run: RunArchctxProcess = (binary, args, options) => args[0] === 'doctor'
+      ? { status: 0, signal: null, stderr: '', stdout: JSON.stringify(doctor) }
+      : baseRun(binary, args, options);
+    const options = { consumerRoot: f.consumerRoot, policy, run };
+    const invalid = inspectArchitectureProjectionReadiness(f.repoRoot, options);
+    expect(invalid.projectionProvider.state).toBe('error');
+    expect(invalid.projectionProvider.reason).toContain('RH_ARCHCTX_DOCTOR_INVALID');
+    expect(invalid.apply.enabled).toBe(false);
+    const facts = { schemaVersion: 'archcontext.repository-code-facts/v1', state: 'unavailable' as const, requiredVersion: '1.6.2', reasonCode: 'codegraph-unavailable', message: 'CodeGraph binary is unavailable' };
+    doctor = { ...doctorEnvelope(), data: { codeFacts: facts } };
+    const unavailable = inspectArchitectureProjectionReadiness(f.repoRoot, options);
+    expect(unavailable.codeFacts).toEqual({ requirement: 'required', state: facts.state, issues: [], reasonCode: facts.reasonCode, message: facts.message });
+    expect(unavailable.apply.enabled).toBe(false);
+    expect(unavailable.next).toBe('repo-harness update');
+  });
+
+  test('a ready doctor keeps the adoption step for an incomplete model', () => {
+    const f = fixture();
+    const baseRun = runner([], projectionEnvelope(expectedSnapshot));
+    const run: RunArchctxProcess = (binary, args, options) => args[0] === 'doctor'
+      ? { status: 0, signal: null, stderr: '', stdout: JSON.stringify(doctorEnvelope('ready')) }
+      : baseRun(binary, args, options);
+    const readiness = inspectArchitectureProjectionReadiness(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run });
+    expect(readiness.codeFacts.state).toBe('ready');
+    expect(readiness.apply.enabled).toBe(false);
+    const reference = /in (\/.+worker\.md)\.$/.exec(readiness.next!)?.[1];
+    expect(realpathSync(reference!)).toBe(realpathSync(join(import.meta.dir, '..', 'assets', 'skill-commands', 'repo-harness-architecture', 'references', 'worker.md')));
+    expect(readFileSync(reference!, 'utf8')).toContain('## Adopt ArchContext in a repository');
   });
 
   describe('committed projection manifest compatibility', () => {
@@ -1001,7 +1078,7 @@ describe('package-local ArchContext projection provider', () => {
     ], { cwd: f.repoRoot, env: { ...process.env, HOME: home }, encoding: 'utf8', timeout: 10_000 });
     const readiness = JSON.parse(output);
     expect(readiness.projectionProvider.state).toBe('ready');
-    expect(readiness.codeFacts.state).toBe('unavailable');
+    expect(readiness.codeFacts.state).toBe('index-missing');
     expect(readiness.projectionProvider.version).toBe(ARCHCTX_REQUIRED_VERSION);
     expect(readiness.projectionProvider.binaryPath).toBe(resolvePackageLocalArchctx(join(import.meta.dir, '..')).binaryPath);
     expect(JSON.parse(readFileSync(join(f.repoRoot, 'node_modules', 'archctx', 'package.json'), 'utf8')).version).toBe('0.0.1');
@@ -1010,10 +1087,8 @@ describe('package-local ArchContext projection provider', () => {
     expect(readiness.projectionProvider.command).toEqual([readiness.projectionProvider.nodePath, readiness.projectionProvider.binaryPath]);
     const handshake = JSON.parse(execFileSync(node, [archctx, 'capabilities', '--json'], { cwd: f.repoRoot, encoding: 'utf8', timeout: 10_000 }));
     expect(handshake.package.version).toBe(ARCHCTX_REQUIRED_VERSION);
-    // The fixture has nodes but no manifest or product file, so the model is not ready.
-    const reference = /in (\/.+worker\.md)\.$/.exec(readiness.next)?.[1];
-    expect(realpathSync(reference!)).toBe(realpathSync(join(import.meta.dir, '..', 'assets', 'skill-commands', 'repo-harness-architecture', 'references', 'worker.md')));
-    expect(readFileSync(reference!, 'utf8')).toContain('## Adopt ArchContext in a repository');
+    // Code facts must be ready before the model adoption step becomes the next action.
+    expect(readiness.next).toBe('codegraph init -y .');
   });
 
   test('fails closed when the provider reports another package version', () => {
@@ -1055,11 +1130,11 @@ describe('package-local ArchContext projection provider', () => {
       run: runner(calls, projectionEnvelope(expectedSnapshot)),
     });
     expect(readiness.projectionProvider.state).toBe('ready');
-    expect(readiness.codeFacts.state).toBe('unavailable');
+    expect(readiness.codeFacts.state).toBe('index-missing');
     expect(readiness.projectionProvider.command).toEqual([realpathSync(node), resolvePackageLocalArchctx(f.consumerRoot).binaryPath]);
     expect(readiness.modelAuthority.ready).toBe(true);
     expect(readiness.apply.enabled).toBe(false);
-    expect(readiness.next).toContain('Adopt ArchContext in a repository');
+    expect(readiness.next).toBe('codegraph init -y .');
   });
 
   test('keeps the adoption step until the capability loader accepts the model', () => {
