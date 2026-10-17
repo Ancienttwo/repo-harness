@@ -469,49 +469,6 @@ describe("ship-worktrees closeout journal", () => {
 
 
 
-  // Replace the publication CLI fixture with the real CLI, and the provider with
-  // a fake GitHub whose PR facts come from the bare remote. The merge seal store
-  // under the isolated HOME stays empty: only `merge-gate run` writes a seal.
-  function installRealPublication(container: string, fixture: ShipFixture): { readonly home: string; readonly body: string } {
-    writeExecutable(
-      join(container, "fixture-publication-cli.sh"),
-      `#!/bin/bash\nexec ${JSON.stringify(process.execPath)} ${JSON.stringify(join(ROOT, "src/cli/index.ts"))} "$@"\n`,
-    );
-    const body = join(container, "pr-body.md");
-    writeExecutable(
-      fixture.ghBin,
-      [
-        "#!/bin/bash",
-        "set -euo pipefail",
-        'printf \'%s\\n\' "$*" >> "$GH_LOG"',
-        "pr_json() {",
-        `  jq -cn --arg head "$(git -C ${JSON.stringify(fixture.remote)} rev-parse refs/heads/codex/demo)" --arg base "$(git -C ${JSON.stringify(fixture.remote)} rev-parse refs/heads/main)" \\`,
-        `    --rawfile body ${JSON.stringify(body)} '{number:1,url:"https://example.invalid/pr/1",headRefOid:$head,headRefName:"codex/demo",baseRefName:"main",baseRefOid:$base,body:$body,createdAt:"2026-08-22T04:05:55Z"}'`,
-        "}",
-        'case "${1:-} ${2:-}" in',
-        `  "repo view") printf '{"id":"R_fixture"}\\n' ;;`,
-        '  "pr list")',
-        `    if [[ ! -f ${JSON.stringify(body)} ]]; then [[ " $* " == *" --jq "* ]] && printf '\\n' || printf '[]\\n'`,
-        `    elif [[ " $* " == *" --jq "* ]]; then printf 'https://example.invalid/pr/1\\n'`,
-        "    else printf '[%s]\\n' \"$(pr_json)\"; fi ;;",
-        '  "pr create")',
-        '    while [[ $# -gt 0 ]]; do [[ "$1" != "--body" ]] || printf \'%s\' "$2" > ' + JSON.stringify(body) + '; shift; done',
-        '    if [[ "${FAULT_ON_PR_CREATE:-0}" == "1" && -f "${FAULT_PID_FILE:-/nonexistent}" ]]; then kill -9 "$(cat "$FAULT_PID_FILE")" 2>/dev/null || true; exit 137; fi',
-        "    printf 'https://example.invalid/pr/1\\n' ;;",
-        '  "pr edit") printf \'%s\' "$5" > ' + JSON.stringify(body) + " ;;",
-        "  \"pr view\") pr_json ;;",
-        '  *) echo "unexpected gh invocation: $*" >&2; exit 2 ;;',
-        "esac",
-        "",
-      ].join("\n"),
-    );
-    const home = join(container, "home");
-    mkdirSync(home);
-    return { home, body };
-  }
-
-
-
   test("SIGKILL right after the prepared phase rolls back with nothing pushed", () => {
     withTempRepo("closeout-journal-ship-prepared", (container) => {
       const fixture = installShipFixture(container);

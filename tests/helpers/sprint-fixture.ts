@@ -1,3 +1,4 @@
+import { serializeLeaseOwnerRecord } from '../../src/core/state/coordination-identity';
 import type { LeaseOwnerRecord, CurrentPublicationPointerV1 } from '../../src/core/state/coordination-identity';
 import { leaseDirectory, LEASE_OWNER_FILE_NAME } from '../../src/effects/state/coordination-lease-store';
 /**
@@ -84,7 +85,7 @@ export function seedLeaseDirectory(cwd: string, taskId: string): boolean {
   return true;
 }
 export function writeHistoricalLease(cwd: string, taskId: string, record: LeaseOwnerRecord): void {
-  writeFileSync(leaseOwnerPath(cwd, taskId), `${JSON.stringify(record)}\n`);
+  writeFileSync(leaseOwnerPath(cwd, taskId), serializeLeaseOwnerRecord(record));
 }
 type HistoricalLeaseResult = { ok: true; record: LeaseOwnerRecord } | { ok: false; error: string };
 export function completingLeaseFixture(record: LeaseOwnerRecord, input: {

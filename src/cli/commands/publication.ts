@@ -1,5 +1,8 @@
 import { Command } from 'commander';
-import { MergeReadinessError, resolvePublicationReadiness } from '../../effects/publication/merge-readiness';
+import {
+  MergeReadinessError,
+  resolvePublicationReadiness,
+} from '../../effects/publication/merge-readiness';
 
 /** Historical publication readiness is a read-only operator view. */
 export function buildPublicationCommand(): Command {
