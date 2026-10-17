@@ -1,7 +1,17 @@
+import { boundLeaseFixture } from '../helpers/sprint-fixture';
 import { candidate } from '../../scripts/merge-gate';
 import { describe, expect, test } from 'bun:test';
 import { execFileSync } from 'child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  unlinkSync,
+  writeFileSync,
+} from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
@@ -28,7 +38,7 @@ import {
   rebuildPublicationReceipt,
   writePublicationReceiptCache,
 } from '../../src/effects/publication/publication-receipt';
-import { bindLeaseRecord, beginLeaseCompletionRecord, buildLeaseOwnerRecord } from '../../src/core/state/coordination-identity';
+import { beginLeaseCompletionRecord, buildLeaseOwnerRecord } from '../../src/core/state/coordination-identity';
 import { createLeaseDirectory, writeLeaseOwnerDurably } from '../../src/effects/state/coordination-lease-store';
 import { readLease } from '../../src/effects/state/coordination-lease-store';
 import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
@@ -76,14 +86,12 @@ function installFixture(): Fixture {
     sessionId: 'session-fixture',
     sourceWorktree: root,
   });
-  const bound = bindLeaseRecord(record, {
-    claimId: CLAIM_ID,
+  const bound = boundLeaseFixture(record, {
     executionWorktree: root,
     branch: 'codex/publication',
     unitRef: 'plans/plan-demo.md',
   });
-  if (!bound.ok) throw new Error(bound.error);
-  const completing = beginLeaseCompletionRecord(bound.record, {
+  const completing = beginLeaseCompletionRecord(bound, {
     claimId: CLAIM_ID,
     executionWorktree: root,
     finishTransactionKey: null,
@@ -350,7 +358,6 @@ describe('PublicationReceiptV3', () => {
       }
     });
   });
-
 
   test('refuses retired V1 cache and marker bytes without migration or overwrite', () => {
     withFixture((fixture) => {

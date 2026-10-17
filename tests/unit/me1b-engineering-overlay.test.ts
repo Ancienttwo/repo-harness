@@ -1,6 +1,16 @@
+import { seedEngineerBinding } from '../helpers/engineer-state-fixture';
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'child_process';
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'fs';
+import {
+  cpSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'fs';
 import { tmpdir } from 'os';
 import { join, relative } from 'path';
 
@@ -9,7 +19,7 @@ import {
   validateOrganizationAttentionSnapshot,
 } from '../../src/core/engineers/engineering-overlay';
 import { engineerSha256 } from '../../src/core/engineers/profile-binding';
-import { bindEngineer, readEngineerBindingStatus } from '../../src/effects/engineers/binding-store';
+import { readEngineerBindingStatus } from '../../src/effects/engineers/binding-store';
 import {
   collectEngineeringBoard,
   type EngineeringOverlayDependencies,
@@ -121,7 +131,7 @@ function fixture(): string {
 
 function bind(root: string, bindingId: string, previous?: ReturnType<typeof readEngineerBindingStatus>['current']) {
   const profile = loadEngineerProfile(root, engineerId);
-  return bindEngineer(root, {
+  return seedEngineerBinding(root, {
     engineer_id: engineerId,
     idempotency_key: `bind-${bindingId}`,
     provider: 'codex',

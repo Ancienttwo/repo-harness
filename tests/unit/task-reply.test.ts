@@ -1,17 +1,29 @@
+import { revokedPrincipalFixture } from '../helpers/engineer-state-fixture';
 import { describe, expect, test } from 'bun:test';
 import { canonicalEngineerJson, engineerSha256 } from '../../src/core/engineers/profile-binding';
 import {
-  revokeEngineerPrincipalMapping, validateClaimActorReceipt, validateEngineerPrincipalMapping,
-  type ClaimActorReceiptV1, type EngineerPrincipalMappingV1,
+  validateClaimActorReceipt,
+  validateEngineerPrincipalMapping,
+  type ClaimActorReceiptV1,
+  type EngineerPrincipalMappingV1,
 } from '../../src/core/engineers/principal-claim';
 import {
-  buildTaskMessageEvent, buildTaskMessageDeliveryReceipt, transitionTaskMessageDeliveryReceipt,
+  buildTaskMessageEvent,
+  buildTaskMessageDeliveryReceipt,
+  transitionTaskMessageDeliveryReceipt,
   type TaskMessageEventInput,
 } from '../../src/core/fleet/task-message';
 import {
-  TaskReplyError, assertTaskReplyResumeFence, assertTaskReplyRetry,
-  buildTaskReplyCommit, buildTaskReplyIntent, canonicalTaskReplyCommitBytes, canonicalTaskReplyIntentBytes,
-  inspectTaskReplyChain, validateTaskReplyCommit, validateTaskReplyIntent,
+  TaskReplyError,
+  assertTaskReplyResumeFence,
+  assertTaskReplyRetry,
+  buildTaskReplyCommit,
+  buildTaskReplyIntent,
+  canonicalTaskReplyCommitBytes,
+  canonicalTaskReplyIntentBytes,
+  inspectTaskReplyChain,
+  validateTaskReplyCommit,
+  validateTaskReplyIntent,
 } from '../../src/core/fleet/task-reply';
 
 const id = (n: number) => `${n}23e4567-e89b-42d3-a456-426614174000`;
@@ -155,7 +167,7 @@ describe('Task reply contract', () => {
 
   test('rejects revoked mappings and malformed underlying records', () => {
     const input = fixture();
-    expect(() => buildTaskReplyIntent({ ...input, principal_mapping: revokeEngineerPrincipalMapping(input.principal_mapping, LATER) })).toThrow(TaskReplyError);
+    expect(() => buildTaskReplyIntent({ ...input, principal_mapping: revokedPrincipalFixture(input.principal_mapping, LATER) })).toThrow(TaskReplyError);
     expect(() => buildTaskReplyIntent({ ...input, claim_actor: { ...input.claim_actor, receipt_sha256: hash(9) } })).toThrow(TaskReplyError);
     expect(() => buildTaskReplyIntent({ ...input, acknowledgement: null as never })).toThrow(TaskReplyError);
   });
@@ -251,7 +263,7 @@ describe('Task reply interrupted-chain oracle', () => {
     const intent = buildTaskReplyIntent(input);
     expect(() => assertTaskReplyResumeFence(intent, input)).not.toThrow();
     expect(() => assertTaskReplyResumeFence(intent, { ...input,
-      principal_mapping: revokeEngineerPrincipalMapping(input.principal_mapping, LATER) })).toThrow(TaskReplyError);
+      principal_mapping: revokedPrincipalFixture(input.principal_mapping, LATER) })).toThrow(TaskReplyError);
   });
 
   test('hook receipt remains hook delivery and never proves the separate notify effect', () => {

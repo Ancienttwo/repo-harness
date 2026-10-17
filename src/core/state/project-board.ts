@@ -42,11 +42,7 @@
  */
 import { createHash } from 'crypto';
 import { evaluateAttemptStall, type AttemptLedgerRead } from './attempt-ledger';
-import {
-  COMPLETED_ROW_STATUS_PATTERN,
-  PENDING_ROW_STATUS,
-  type LeaseOwnerRecord,
-} from './coordination-identity';
+import { COMPLETED_ROW_STATUS_PATTERN, PENDING_ROW_STATUS, type LeaseOwnerRecord } from './coordination-identity';
 import type { CanonicalTaskRow } from './coordination-identity';
 import type {
   BoardActionsV1,
@@ -277,17 +273,7 @@ export function deriveColumn(
   return 'todo';
 }
 
-/**
- * Existing command strings only. `steal` and `release` are offered exactly
- * where the verbs would accept them, so a `completing` lease offers neither --
- * `stealLeaseRecord` refuses `completing` outright and `releaseLeaseRecord`
- * accepts only `reserving`/`bound`. Printing a command the verb would refuse
- * would be inventing an action, not projecting one.
- *
- * `steal` carries `<reason>` / `<session-id>` placeholders because both are
- * the caller's own statement; there is no value here that could stand in for
- * them without forging provenance.
- */
+/** Release and reconciliation actions keep the completion/publication fences. */
 export function deriveActions(
   task: BoardOwnershipInput,
   lease: BoardLeaseState,
@@ -314,7 +300,6 @@ export function deriveActions(
     release: givable
       ? `repo-harness sprint release --claim-id ${record.claim_id}`
       : null,
-    steal: null,
     reconcile: reconcilable
       ? `repo-harness sprint reconcile --task-id ${task.task_id} --target-ref ${canonicalRef}`
       : null,

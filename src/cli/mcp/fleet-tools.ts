@@ -11,14 +11,8 @@ import { randomUUID } from 'crypto';
 import { realpathSync } from 'fs';
 import { resolve } from 'path';
 
-import {
-  MergeReadinessError,
-  resolvePublicationReadiness,
-} from '../../effects/publication/merge-readiness';
-import {
-  reopenPublication,
-  takeoverPublication,
-} from '../../effects/publication/publication-lifecycle';
+import { MergeReadinessError, resolvePublicationReadiness } from '../../effects/publication/merge-readiness';
+import { reopenPublication, takeoverPublication } from '../../effects/publication/publication-lifecycle';
 import { PublicationLifecycleError } from '../../core/publication/publication-lifecycle';
 import {
   readRepoHarnessRegistrySnapshot,
@@ -64,7 +58,7 @@ export interface FleetMcpToolResult {
 interface FleetTarget {
   readonly repoRoot: string;
   readonly registeredRepo?: RepoHarnessRegisteredRepo;
-  /** Only an explicit repo_id/repo_path narrows fleet offers to one repo. */
+  /** An explicit repo_id/repo_path selects the publication repository. */
   readonly repoId?: string;
   readonly registry: RepoHarnessRegistrySnapshot;
 }

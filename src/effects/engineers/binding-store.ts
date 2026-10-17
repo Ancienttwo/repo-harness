@@ -1,48 +1,20 @@
-import { syncDirectoryDurably } from '../evidence/atomic-append';
-import { createHash, randomUUID } from 'crypto';
-import {
-  closeSync,
-  constants,
-  fsyncSync,
-  lstatSync,
-  mkdirSync,
-  openSync,
-  readFileSync,
-  readdirSync,
-  renameSync,
-  unlinkSync,
-  writeFileSync,
-} from 'fs';
-import { dirname, join, relative, resolve, sep } from 'path';
+import { createHash } from 'crypto';
+import { lstatSync, readFileSync, readdirSync } from 'fs';
+import { join, resolve } from 'path';
 
 import {
-  ENGINEER_BINDING_CURRENT_KIND,
-  ENGINEER_BINDING_KIND,
-  ENGINEER_PROFILE_PROTOCOL,
   EngineerProfileBindingError,
   buildEngineerBindingCurrent,
-  buildEngineerBindingEvent,
   buildEngineerGenesisCurrent,
-  canonicalEngineerBindingBytes,
   canonicalEngineerBindingCurrentBytes,
   canonicalEngineerBindingEventBytes,
-  deriveEngineerTransitionId,
-  engineerCurrentPayloadSha256,
-  engineerOperationFingerprint,
   validateEngineerBindingCurrent,
   validateEngineerBindingEvent,
   type EngineerBindingCurrentV1,
   type EngineerBindingEventV1,
-  type EngineerBindingTransition,
   type EngineerBindingV1,
-  type EngineerTransitionRequest,
 } from '../../core/engineers/profile-binding';
 import { resolveGitCommonDirectory } from '../git/common-directory';
-import {
-  ExclusiveLockContentionError,
-  withExclusiveDirectoryLock,
-} from '../locking/exclusive-directory-lock';
-import { assertNoLiveClaimForBindingRotation } from './bound-task-rotation';
 
 const ENGINEER_STORE_RELATIVE_ROOT = 'repo-harness/engineers/v1';
 
@@ -53,38 +25,6 @@ export interface EngineerBindingStatus {
   readonly genesis: boolean;
 }
 
-export interface BindEngineerInput {
-  readonly engineer_id: string;
-  readonly idempotency_key: string;
-  readonly provider: string;
-  readonly provider_thread_id: string;
-  readonly host_id: string;
-  readonly engineer_contract_revision: string;
-  readonly expected_current_digest: string | null;
-  readonly expected_binding_generation: number;
-  readonly expected_binding_id: string | null;
-  readonly expected_engineer_contract_revision: string;
-  readonly now?: () => string;
-  readonly binding_id?: () => string;
-  readonly crash_hook?: EngineerBindingCrashHook;
-  readonly lock_wait_timeout_ms?: number;
-}
-
-export interface RetireEngineerInput {
-  readonly engineer_id: string;
-  readonly idempotency_key: string;
-  readonly expected_current_digest: string;
-  readonly expected_binding_generation: number;
-  readonly expected_binding_id: string;
-  readonly expected_engineer_contract_revision: string;
-  readonly now?: () => string;
-  readonly crash_hook?: EngineerBindingCrashHook;
-  readonly lock_wait_timeout_ms?: number;
-}
-
-export type EngineerBindingCrashBoundary = 'before_event' | 'after_event_fsync' | 'after_current_fsync';
-export type EngineerBindingCrashHook = (boundary: EngineerBindingCrashBoundary) => void;
-
 interface StorePaths {
   readonly common: string;
   readonly root: string;
@@ -92,7 +32,6 @@ interface StorePaths {
   readonly engineer: string;
   readonly events: string;
   readonly current: string;
-  readonly lockRelative: string;
 }
 
 interface CurrentRead {
@@ -115,29 +54,6 @@ function pathKey(engineerId: string): string {
   return createHash('sha256').update(Buffer.from(engineerId, 'utf8')).digest('hex');
 }
 
-function ensureSafeDirectory(root: string, target: string): void {
-  const scoped = relative(root, target);
-  if (!scoped || scoped === '..' || scoped.startsWith(`..${sep}`)) fail('unsafe_engineer_path', `store path escapes root: ${target}`);
-  let current = root;
-  for (const component of scoped.split(sep)) {
-    current = join(current, component);
-    try {
-      const stat = lstatSync(current);
-      if (!stat.isDirectory() || stat.isSymbolicLink()) fail('unsafe_engineer_path', `unsafe store directory: ${current}`);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-      try {
-        mkdirSync(current, { mode: 0o700 });
-      } catch (mkdirError) {
-        if ((mkdirError as NodeJS.ErrnoException).code !== 'EEXIST') throw mkdirError;
-      }
-      const stat = lstatSync(current);
-      if (!stat.isDirectory() || stat.isSymbolicLink()) fail('unsafe_engineer_path', `unsafe store directory: ${current}`);
-      syncDirectoryDurably(dirname(current));
-    }
-  }
-}
-
 function storePaths(cwd: string, engineerId: string): StorePaths {
   const common = resolveGitCommonDirectory(cwd);
   const root = resolve(common, ENGINEER_STORE_RELATIVE_ROOT);
@@ -150,7 +66,6 @@ function storePaths(cwd: string, engineerId: string): StorePaths {
     engineer,
     events: join(engineer, 'events'),
     current: join(engineer, 'current.json'),
-    lockRelative: `${ENGINEER_STORE_RELATIVE_ROOT}/locks/${engineerKey}.lock`,
   };
 }
 
@@ -273,302 +188,4 @@ export function readEngineerBindingStatus(
     throw error;
   }
   return readCurrent(paths, engineerId, engineerContractRevision).status;
-}
-
-function requestForBind(input: BindEngineerInput, transition: EngineerBindingTransition): EngineerTransitionRequest {
-  return {
-    engineer_id: input.engineer_id,
-    idempotency_key: input.idempotency_key,
-    transition,
-    expected_current_digest: input.expected_current_digest,
-    expected_binding_generation: input.expected_binding_generation,
-    expected_binding_id: input.expected_binding_id,
-    expected_engineer_contract_revision: input.expected_engineer_contract_revision,
-    engineer_contract_revision: input.engineer_contract_revision,
-    provider: input.provider,
-    provider_thread_id: input.provider_thread_id,
-    host_id: input.host_id,
-  };
-}
-
-function requestForRetire(input: RetireEngineerInput): EngineerTransitionRequest {
-  return {
-    engineer_id: input.engineer_id,
-    idempotency_key: input.idempotency_key,
-    transition: 'retire',
-    expected_current_digest: input.expected_current_digest,
-    expected_binding_generation: input.expected_binding_generation,
-    expected_binding_id: input.expected_binding_id,
-    expected_engineer_contract_revision: input.expected_engineer_contract_revision,
-    engineer_contract_revision: input.expected_engineer_contract_revision,
-    provider: null,
-    provider_thread_id: null,
-    host_id: null,
-  };
-}
-
-function assertExpected(current: EngineerBindingCurrentV1, request: EngineerTransitionRequest, genesis: boolean): void {
-  const actualDigest = genesis ? null : current.current_digest;
-  if (request.expected_current_digest !== actualDigest
-    || request.expected_binding_generation !== current.binding_generation
-    || request.expected_binding_id !== current.current_binding_id
-    || request.expected_engineer_contract_revision !== current.engineer_contract_revision) {
-    fail('binding_stale', 'expected binding current does not match authoritative current.json');
-  }
-}
-
-function writeExclusiveDurably(path: string, bytes: string): void {
-  let fd: number | null = null;
-  try {
-    fd = openSync(path, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
-    writeFileSync(fd, bytes, 'utf8');
-    fsyncSync(fd);
-  } finally {
-    if (fd !== null) closeSync(fd);
-  }
-}
-
-function writeCurrentDurably(paths: StorePaths, current: EngineerBindingCurrentV1, expectedRaw: string | null): void {
-  const observed = readRegularFile(paths.current, 'current.json');
-  if (observed !== expectedRaw) fail('binding_stale', 'current.json changed before publication');
-  const temp = join(paths.engineer, `.current.tmp-${process.pid}-${randomUUID()}`);
-  try {
-    writeExclusiveDurably(temp, canonicalEngineerBindingCurrentBytes(current));
-    const target = readRegularFile(paths.current, 'current.json');
-    if (target !== expectedRaw) fail('binding_stale', 'current.json changed during publication');
-    renameSync(temp, paths.current);
-    syncDirectoryDurably(paths.engineer);
-  } catch (error) {
-    try {
-      unlinkSync(temp);
-    } catch {
-      // The original error is authoritative.
-    }
-    throw error;
-  }
-}
-
-function eventPath(paths: StorePaths, transitionId: string): string {
-  return join(paths.events, `${transitionId.slice('sha256:'.length)}.json`);
-}
-
-function readEventForTransition(paths: StorePaths, transitionId: string): { readonly raw: string; readonly event: EngineerBindingEventV1 } | null {
-  const raw = readRegularFile(eventPath(paths, transitionId), 'binding event');
-  return raw === null ? null : { raw, event: parseEvent(raw, 'binding event') };
-}
-
-function currentForExistingEvent(
-  cwd: string,
-  paths: StorePaths,
-  event: EngineerBindingEventV1,
-  request: EngineerTransitionRequest,
-): EngineerBindingCurrentV1 {
-  if (event.operation_fingerprint !== engineerOperationFingerprint(request)) {
-    fail('idempotency_conflict', 'idempotency key is already bound to a different transition request');
-  }
-  if (event.transition !== request.transition
-    || event.expected_current_digest !== request.expected_current_digest
-    || event.expected_binding_generation !== request.expected_binding_generation
-    || event.previous_binding_id !== request.expected_binding_id) {
-    fail('binding_state_corrupt', 'transition event does not encode its operation fingerprint request');
-  }
-  if (request.transition !== 'retire'
-    && (event.next_binding?.provider !== request.provider
-      || event.next_binding?.provider_thread_id !== request.provider_thread_id
-      || event.next_binding?.host_id !== request.host_id)) {
-    fail('binding_state_corrupt', 'transition event provider fields do not match its operation request');
-  }
-  const persisted = readPersistedCurrent(paths, request.engineer_id);
-  if (persisted?.status.current.current_transition_id === event.transition_id) return persisted.status.current;
-
-  let before: CurrentRead;
-  if (persisted) {
-    before = persisted;
-  } else {
-    const entries = eventEntries(paths);
-    if (request.expected_binding_generation !== 0
-      || request.expected_current_digest !== null
-      || entries.length !== 1
-      || entries[0] !== `${event.transition_id.slice('sha256:'.length)}.json`) {
-      fail('binding_state_corrupt', 'only the exact genesis transition may resume an events-without-current state');
-    }
-    before = {
-      raw: null,
-      status: Object.freeze({
-        current: buildEngineerGenesisCurrent(request.engineer_id, request.expected_engineer_contract_revision),
-        binding: null,
-        event: null,
-        genesis: true,
-      }),
-    };
-  }
-  assertExpected(before.status.current, request, before.status.genesis);
-  if ((request.transition === 'replace' || request.transition === 'retire')
-    && before.status.current.current_binding_id !== null) {
-    assertNoLiveClaimForBindingRotation(cwd, request.engineer_id, before.status.current.current_binding_id);
-  }
-  if (request.transition === 'retire' && before.status.binding !== null) {
-    const nextBinding = event.next_binding;
-    if (nextBinding === null) fail('binding_state_corrupt', 'retire event does not preserve the active binding fields');
-    const activeBinding = before.status.binding;
-    try {
-      const expectedRetired = { ...activeBinding, state: 'retired' as const, retired_at: nextBinding.retired_at };
-      if (canonicalEngineerBindingBytes(nextBinding) !== canonicalEngineerBindingBytes(expectedRetired)) {
-        fail('binding_state_corrupt', 'retire event does not preserve the active binding fields');
-      }
-    } catch (error) {
-      if (error instanceof EngineerProfileBindingError && error.code === 'binding_state_corrupt') throw error;
-      fail('binding_state_corrupt', 'retire event does not preserve the active binding fields', error);
-    }
-  }
-  const next = buildEngineerBindingCurrent(event);
-  writeCurrentDurably(paths, next, before.raw);
-  return next;
-}
-
-function publishNewEvent(
-  paths: StorePaths,
-  before: CurrentRead,
-  request: EngineerTransitionRequest,
-  nextBinding: EngineerBindingV1,
-  createdAt: string,
-  crashHook?: EngineerBindingCrashHook,
-): EngineerBindingCurrentV1 {
-  const currentBasis = {
-    protocol: ENGINEER_PROFILE_PROTOCOL,
-    kind: ENGINEER_BINDING_CURRENT_KIND,
-    engineer_id: request.engineer_id,
-    binding_generation: nextBinding.binding_generation,
-    state: nextBinding.state,
-    current_binding_id: nextBinding.binding_id,
-    engineer_contract_revision: nextBinding.engineer_contract_revision,
-  } as const;
-  const event = buildEngineerBindingEvent({
-    transition_id: deriveEngineerTransitionId(request.engineer_id, request.idempotency_key),
-    idempotency_key: request.idempotency_key,
-    operation_fingerprint: engineerOperationFingerprint(request),
-    engineer_id: request.engineer_id,
-    transition: request.transition,
-    expected_current_digest: request.expected_current_digest,
-    expected_binding_generation: request.expected_binding_generation,
-    previous_binding_id: before.status.current.current_binding_id,
-    next_binding: nextBinding,
-    next_current_payload_sha256: engineerCurrentPayloadSha256(currentBasis),
-    created_at: createdAt,
-  });
-  crashHook?.('before_event');
-  try {
-    writeExclusiveDurably(eventPath(paths, event.transition_id), canonicalEngineerBindingEventBytes(event));
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-    const existing = readEventForTransition(paths, event.transition_id);
-    if (!existing || existing.raw !== canonicalEngineerBindingEventBytes(event)) {
-      fail('idempotency_conflict', 'transition event already exists with different bytes', error);
-    }
-  }
-  syncDirectoryDurably(paths.events);
-  crashHook?.('after_event_fsync');
-  const current = buildEngineerBindingCurrent(event);
-  writeCurrentDurably(paths, current, before.raw);
-  crashHook?.('after_current_fsync');
-  return current;
-}
-
-function withEngineerLock<T>(
-  paths: StorePaths,
-  waitTimeoutMs: number | undefined,
-  run: () => T,
-): T {
-  ensureSafeDirectory(paths.common, paths.root);
-  ensureSafeDirectory(paths.root, join(paths.root, 'locks'));
-  try {
-    return withExclusiveDirectoryLock(paths.common, paths.lockRelative, run, {
-      reclaimStaleEmptyDirectory: true,
-      waitTimeoutMs,
-    });
-  } catch (error) {
-    if (error instanceof ExclusiveLockContentionError) {
-      return fail('binding_lock_timeout', error.message, error);
-    }
-    throw error;
-  }
-}
-
-/** Serialize operations whose correctness depends on one Engineer Binding. */
-export function withEngineerBindingLock<T>(
-  cwd: string,
-  engineerId: string,
-  run: () => T,
-  waitTimeoutMs?: number,
-): T {
-  return withEngineerLock(storePaths(cwd, engineerId), waitTimeoutMs, run);
-}
-
-export function bindEngineer(cwd: string, input: BindEngineerInput): EngineerBindingCurrentV1 {
-  const paths = storePaths(cwd, input.engineer_id);
-  return withEngineerBindingLock(cwd, input.engineer_id, () => {
-    ensureSafeDirectory(paths.root, paths.engineer);
-    ensureSafeDirectory(paths.engineer, paths.events);
-    const transitionId = deriveEngineerTransitionId(input.engineer_id, input.idempotency_key);
-    const existing = readEventForTransition(paths, transitionId);
-    if (existing) {
-      if (existing.event.transition === 'retire') fail('idempotency_conflict', 'idempotency key belongs to a retire request');
-      return currentForExistingEvent(cwd, paths, existing.event, requestForBind(input, existing.event.transition));
-    }
-
-    const before = readCurrent(paths, input.engineer_id, input.engineer_contract_revision);
-    const transition: EngineerBindingTransition = before.status.genesis
-      ? 'initialize'
-      : before.status.current.state === 'active' ? 'replace' : 'bind';
-    const request = requestForBind(input, transition);
-    assertExpected(before.status.current, request, before.status.genesis);
-    if (transition === 'replace' && before.status.current.current_binding_id !== null) {
-      assertNoLiveClaimForBindingRotation(cwd, input.engineer_id, before.status.current.current_binding_id);
-    }
-    const now = (input.now ?? (() => new Date().toISOString()))();
-    const nextBinding: EngineerBindingV1 = Object.freeze({
-      protocol: ENGINEER_PROFILE_PROTOCOL,
-      kind: ENGINEER_BINDING_KIND,
-      binding_id: (input.binding_id ?? randomUUID)(),
-      engineer_id: input.engineer_id,
-      binding_generation: before.status.current.binding_generation + 1,
-      provider: input.provider,
-      provider_thread_id: input.provider_thread_id,
-      host_id: input.host_id,
-      engineer_contract_revision: input.engineer_contract_revision,
-      state: 'active',
-      previous_binding_id: before.status.current.current_binding_id,
-      bound_at: now,
-      retired_at: null,
-    });
-    return publishNewEvent(paths, before, request, nextBinding, now, input.crash_hook);
-  }, input.lock_wait_timeout_ms);
-}
-
-export function retireEngineer(cwd: string, input: RetireEngineerInput): EngineerBindingCurrentV1 {
-  const paths = storePaths(cwd, input.engineer_id);
-  return withEngineerBindingLock(cwd, input.engineer_id, () => {
-    ensureSafeDirectory(paths.root, paths.engineer);
-    ensureSafeDirectory(paths.engineer, paths.events);
-    const transitionId = deriveEngineerTransitionId(input.engineer_id, input.idempotency_key);
-    const existing = readEventForTransition(paths, transitionId);
-    const request = requestForRetire(input);
-    if (existing) {
-      if (existing.event.transition !== 'retire') fail('idempotency_conflict', 'idempotency key belongs to a bind request');
-      return currentForExistingEvent(cwd, paths, existing.event, request);
-    }
-    const before = readCurrent(paths, input.engineer_id, input.expected_engineer_contract_revision);
-    assertExpected(before.status.current, request, before.status.genesis);
-    if (before.status.current.state !== 'active' || before.status.binding === null) {
-      fail('binding_stale', 'only an active binding can be retired');
-    }
-    assertNoLiveClaimForBindingRotation(cwd, input.engineer_id, before.status.binding.binding_id);
-    const now = (input.now ?? (() => new Date().toISOString()))();
-    const nextBinding: EngineerBindingV1 = Object.freeze({
-      ...before.status.binding,
-      state: 'retired',
-      retired_at: now,
-    });
-    return publishNewEvent(paths, before, request, nextBinding, now, input.crash_hook);
-  }, input.lock_wait_timeout_ms);
 }

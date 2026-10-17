@@ -24,7 +24,6 @@ export type ClaimTokenRead =
   | { readonly outcome: 'ambiguous'; readonly matches: readonly string[] }
   | { readonly outcome: 'found'; readonly token: ClaimTokenV1 };
 
-
 /**
  * `claim_token_field()`: `sed -n "s/^<name>=//p" | head -1`. First line with
  * the prefix wins; the value is the rest of that line verbatim, so a value
@@ -109,8 +108,7 @@ export function removeClaimTokenForTask(cwd: string, taskId: string): void {
  *
  * Throws only on a genuine IO failure the caller must decide about (a
  * permission error, an unreadable directory entry); a missing claims
- * directory is `none`, because a repository that never ran `start-task` is
- * not a failure.
+ * directory is `none`: it has no recorded claim token.
  */
 export function findClaimTokenByUnitRef(cwd: string, unitRef: string): ClaimTokenRead {
   if (!unitRef) return { outcome: 'none' };

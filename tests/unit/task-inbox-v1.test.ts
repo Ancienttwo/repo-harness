@@ -1,11 +1,16 @@
+import { boundLeaseFixture } from '../helpers/sprint-fixture';
 import { describe, expect, test } from 'bun:test';
 import { execFileSync } from 'child_process';
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
-import { TASK_MESSAGE_HOOK_MAX_BYTES, buildTaskMessageEvent, renderTaskMessageUntrustedContext } from '../../src/core/fleet/task-message';
-import { bindLeaseRecord, buildLeaseOwnerRecord, deriveTaskRevision } from '../../src/core/state/coordination-identity';
+import {
+  TASK_MESSAGE_HOOK_MAX_BYTES,
+  buildTaskMessageEvent,
+  renderTaskMessageUntrustedContext,
+} from '../../src/core/fleet/task-message';
+import { buildLeaseOwnerRecord, deriveTaskRevision } from '../../src/core/state/coordination-identity';
 import {
   TaskInboxError,
   acknowledgeTaskInbox,
@@ -15,8 +20,11 @@ import {
   summarizeTaskInboxForFleet,
   supersedeTaskInbox,
 } from '../../src/effects/fleet/task-inbox';
-import { readLease, createLeaseDirectory, writeLeaseOwnerDurably } from '../../src/effects/state/coordination-lease-store';
-import { resolveRepoIdentity } from '../../src/effects/state/coordination-canonical-source';
+import {
+  readLease,
+  createLeaseDirectory,
+  writeLeaseOwnerDurably,
+} from '../../src/effects/state/coordination-lease-store';
 import { fixtureTaskId } from '../helpers/sprint-fixture';
 
 const SPRINT_PATH = 'plans/sprints/inbox.sprint.md';
@@ -66,15 +74,13 @@ function bind(fixture: Fixture, claim_id: string, generation: number): void {
     sessionId: `session-${generation}`,
     sourceWorktree: fixture.root,
   });
-  const bound = bindLeaseRecord(claimed, {
-    claimId: claim_id,
+  const bound = boundLeaseFixture(claimed, {
     executionWorktree: realpathSync(fixture.root),
     branch: `codex/inbox-${generation}`,
     unitRef: 'plans/plan-inbox.md',
   });
-  if (!bound.ok) throw new Error(bound.error);
   if (generation === 1 && !createLeaseDirectory(fixture.root, fixture.task_id)) throw new Error('lease election failed');
-  writeLeaseOwnerDurably(fixture.root, fixture.task_id, bound.record);
+  writeLeaseOwnerDurably(fixture.root, fixture.task_id, bound);
 }
 
 function message(

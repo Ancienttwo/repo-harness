@@ -274,7 +274,6 @@ export interface BoardDiagnosticsV1 extends BoardOwnershipDiagnosticsV1 {
 /** Existing command strings, never re-implemented logic. Null means not offered. */
 export interface BoardActionsV1 {
   readonly release: string | null;
-  readonly steal: string | null;
   readonly reconcile: string | null;
   readonly publication_reconcile: string | null;
   readonly publication_recover: string | null;

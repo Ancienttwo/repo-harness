@@ -1,15 +1,23 @@
 /** Read-only task offers used by the operator board and engineer snapshots. */
 import {
-  FLEET_OFFERS_KIND, FLEET_OFFERS_PROTOCOL, type FleetOffersV1,
-  classifyTaskOffer, freezeTaskOffer, TASK_OFFER_KIND, TASK_OFFER_PROTOCOL, taskOfferRevision,
-  type ClassifyTaskOfferInput, type TaskOfferBlockerV1, type TaskOfferPlanProofV1,
-  type TaskOfferSnapshotConsistency, type TaskOfferV1,
+  classifyTaskOffer,
+  freezeTaskOffer,
+  TASK_OFFER_KIND,
+  TASK_OFFER_PROTOCOL,
+  taskOfferRevision,
+  type ClassifyTaskOfferInput,
+  type TaskOfferBlockerV1,
+  type TaskOfferPlanProofV1,
+  type TaskOfferSnapshotConsistency,
+  type TaskOfferV1,
 } from '../../core/fleet/task-offer';
 import type { BoardDocumentV1 } from '../../core/state/types';
-import { readRepoHarnessRegistrySnapshot, type RepoHarnessRegisteredRepo, type RepoHarnessRegistrySnapshot } from '../repo-registry';
+import { type RepoHarnessRegisteredRepo, type RepoHarnessRegistrySnapshot } from '../repo-registry';
 import { readActiveSprintPath, readCanonicalTargetRef } from '../state/collect-board-inputs';
 import {
-  readCanonicalTaskPlanProof, type CanonicalTaskPlanProof, type CanonicalTaskPlanProofResult,
+  readCanonicalTaskPlanProof,
+  type CanonicalTaskPlanProof,
+  type CanonicalTaskPlanProofResult,
 } from '../state/coordination-canonical-source';
 import { resolveBoard } from '../state/resolve-board';
 
@@ -30,12 +38,10 @@ export class FleetOffersError extends Error {
   }
 }
 
-export interface FleetOffersOptions {
+interface TaskOfferReadOptions {
   readonly env?: NodeJS.ProcessEnv;
-  readonly repo_id?: string;
+  readonly task_id?: string;
   readonly now_ms?: number;
-  /** Injectable for deterministic effect tests; production reads one file. */
-  readonly registry_snapshot?: RepoHarnessRegistrySnapshot;
   /** Injectable board projection; it must remain a read-only resolver. */
   readonly board_reader?: typeof resolveBoard;
   /** Injectable exact plan proof; it must not infer from filename or Plan cell. */
@@ -146,7 +152,7 @@ function buildTaskOffer(
 export function collectRepoTaskOffers(
   repo: RepoHarnessRegisteredRepo,
   registry: RepoHarnessRegistrySnapshot,
-  options: Pick<FleetOffersOptions, 'env' | 'now_ms' | 'board_reader' | 'plan_reader'> & { readonly task_id?: string } = {},
+  options: TaskOfferReadOptions = {},
 ): RepoTaskOffers | null {
   const sprintPath = readActiveSprintPath(repo.path);
   if (sprintPath === null) return null;
@@ -179,50 +185,5 @@ export function collectRepoTaskOffers(
     sprint_path: board.sprint_path,
     offers: Object.freeze(offers),
     snapshot_consistency: board.snapshot_consistency,
-  });
-}
-
-function offerSort(left: TaskOfferV1, right: TaskOfferV1): number {
-  const repo = left.repo_id.localeCompare(right.repo_id);
-  if (repo !== 0) return repo;
-  if (left.sprint_path !== right.sprint_path) return left.sprint_path.localeCompare(right.sprint_path);
-  if (left.row_order !== right.row_order) return left.row_order - right.row_order;
-  return left.task_id.localeCompare(right.task_id);
-}
-
-/** Collect all registered, adopted repositories into one deterministic view. */
-export function collectFleetOffers(options: FleetOffersOptions = {}): FleetOffersV1 {
-  const registry = options.registry_snapshot ?? readRepoHarnessRegistrySnapshot({
-    env: options.env,
-    adoptedOnly: true,
-  });
-  const repos = registry.repos
-    .filter((repo) => options.repo_id === undefined || repo.id === options.repo_id)
-    .sort((left, right) => left.id.localeCompare(right.id) || left.path.localeCompare(right.path));
-  const byRepo = repos.flatMap((repo) => {
-    try {
-      const result = collectRepoTaskOffers(repo, registry, options);
-      return result === null ? [] : [...result.offers];
-    } catch (error) {
-      if (error instanceof FleetOffersError) throw error;
-      throw new FleetOffersError('repo_unavailable', repo, error);
-    }
-  });
-  const offers = byRepo.sort(offerSort);
-  const snapshotConsistency: TaskOfferSnapshotConsistency = offers.some(
-    (offer) => offer.snapshot_consistency === 'changed_during_read',
-  ) ? 'changed_during_read' : 'stable';
-  const offerRevision = taskOfferRevision([
-    registry.authorizationRevision,
-    snapshotConsistency,
-    ...offers.flatMap((offer) => [offer.repo_id, offer.task_id, offer.offer_revision]),
-  ]);
-  return Object.freeze({
-    protocol: FLEET_OFFERS_PROTOCOL,
-    kind: FLEET_OFFERS_KIND,
-    authorization_revision: registry.authorizationRevision,
-    snapshot_consistency: snapshotConsistency,
-    offer_revision: offerRevision,
-    offers: Object.freeze(offers),
   });
 }

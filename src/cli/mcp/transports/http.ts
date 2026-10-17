@@ -734,7 +734,6 @@ export async function startMcpHttp(opts: McpHttpOptions): Promise<void> {
       if (
         liveConfig?.profile !== profile
         || !enabled
-
         || liveConfig.authorizationRevision !== repoHarnessAuthorizationRevision()
         || !hasGrant
       ) {

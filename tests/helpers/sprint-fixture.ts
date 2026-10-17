@@ -1,3 +1,4 @@
+import type { LeaseOwnerRecord } from '../../src/core/state/coordination-identity';
 import { leaseDirectory, LEASE_OWNER_FILE_NAME } from '../../src/effects/state/coordination-lease-store';
 /**
  * Fixture helpers for backlog schema 2 sprints.
@@ -65,4 +66,12 @@ export function writeClaimTokenFixture(input: {
 /** Address the owner record in a real lease fixture. */
 export function leaseOwnerPath(cwd: string, taskId: string): string {
   return join(leaseDirectory(cwd, taskId), LEASE_OWNER_FILE_NAME);
+}
+
+/** A historical bound row for tests of completion, publication and observation. */
+export function boundLeaseFixture(record: LeaseOwnerRecord, input: {
+  executionWorktree: string; branch: string; unitRef: string;
+}): LeaseOwnerRecord {
+  return { ...record, state: 'bound', execution_worktree: input.executionWorktree,
+    branch: input.branch, unit_ref: input.unitRef };
 }

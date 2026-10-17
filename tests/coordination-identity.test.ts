@@ -1,3 +1,4 @@
+import { boundLeaseFixture } from './helpers/sprint-fixture';
 /**
  * Identity and revision determinism for the shared lease protocol.
  *
@@ -13,7 +14,6 @@ import {
   TASK_DIGEST_PATTERN,
   abortLeaseCompletionRecord,
   beginLeaseCompletionRecord,
-  bindLeaseRecord,
   buildLeaseOwnerRecord,
   abandonPublicationLeaseRecord,
   deriveTaskRevision,
@@ -23,7 +23,6 @@ import {
   releaseLeaseRecord,
   reopenPublicationLeaseRecord,
   serializeLeaseOwnerRecord,
-  stealLeaseRecord,
   takeoverPublicationLeaseRecord,
   enterReviewingLeaseRecord,
   type LeaseOwnerRecordV1,
@@ -333,16 +332,13 @@ describe('owner record schema', () => {
   });
 
   test('begin-completion records the closeout journal key it was handed', () => {
-    const bound = bindLeaseRecord(owner(), {
-      claimId: 'claim-1',
+    const bound = boundLeaseFixture(owner(), {
       executionWorktree: '/tmp/wt',
       branch: 'codex/row',
       unitRef: 'plans/plan-row.md',
     });
-    expect(bound.ok).toBe(true);
-    if (!bound.ok) return;
 
-    const keyed = beginLeaseCompletionRecord(bound.record, {
+    const keyed = beginLeaseCompletionRecord(bound, {
       claimId: 'claim-1',
       executionWorktree: '/tmp/wt',
       finishTransactionKey: 'finish/abc123',
@@ -354,7 +350,7 @@ describe('owner record schema', () => {
     }
 
     // No journal, no key: the field is never filled with a plausible stand-in.
-    const unkeyed = beginLeaseCompletionRecord(bound.record, {
+    const unkeyed = beginLeaseCompletionRecord(bound, {
       claimId: 'claim-1',
       executionWorktree: '/tmp/wt',
       finishTransactionKey: null,
@@ -364,15 +360,12 @@ describe('owner record schema', () => {
   });
 
   test('abort-completion restores only the same fenced worktree and is idempotent', () => {
-    const bound = bindLeaseRecord(owner(), {
-      claimId: 'claim-1',
+    const bound = boundLeaseFixture(owner(), {
       executionWorktree: '/tmp/wt',
       branch: 'codex/row',
       unitRef: 'plans/plan-row.md',
     });
-    expect(bound.ok).toBe(true);
-    if (!bound.ok) return;
-    const completing = beginLeaseCompletionRecord(bound.record, {
+    const completing = beginLeaseCompletionRecord(bound, {
       claimId: 'claim-1',
       executionWorktree: '/tmp/wt',
       finishTransactionKey: 'finish/abc123',
@@ -413,32 +406,6 @@ describe('owner record schema', () => {
     }).ok).toBe(false);
   });
 
-  test('a steal increments the generation and keeps the claimed ref', () => {
-    const first = owner();
-    const stolen = stealLeaseRecord(first, {
-      expectedClaimId: 'claim-1',
-      reason: 'no progress',
-      newClaimId: 'claim-2',
-      sessionId: 'session-2',
-      sourceWorktree: '/tmp/other',
-    });
-    expect(stolen.ok).toBe(true);
-    if (!stolen.ok) return;
-    expect(stolen.record.generation).toBe(2);
-    expect(stolen.record.target_ref).toBe(first.target_ref);
-    expect(stolen.record.finish_transaction_key).toBeNull();
-    expect(stolen.record.stolen_from).toEqual({ claim_id: 'claim-1', reason: 'no progress' });
-
-    const again = stealLeaseRecord(stolen.record, {
-      expectedClaimId: 'claim-2',
-      reason: 'reassigned',
-      newClaimId: 'claim-3',
-      sessionId: 'session-3',
-      sourceWorktree: '/tmp/third',
-    });
-    expect(again.ok).toBe(true);
-    if (again.ok) expect(again.record.generation).toBe(3);
-  });
 });
 
 describe('lease state guards', () => {
@@ -460,30 +427,6 @@ describe('lease state guards', () => {
     };
   }
 
-  test('a completing lease refuses every steal, however the token is presented', () => {
-    const stolen = stealLeaseRecord(inState('completing'), {
-      expectedClaimId: 'claim-1',
-      reason: 'stalled',
-      newClaimId: 'claim-2',
-      sessionId: 'session-2',
-      sourceWorktree: '/tmp/other',
-    });
-    expect(stolen.ok).toBe(false);
-    if (!stolen.ok) expect(stolen.error).toContain('cannot steal a lease in state completing');
-
-    // The states a steal is for are unaffected.
-    for (const state of ['reserving', 'bound'] as const) {
-      const allowed = stealLeaseRecord(inState(state), {
-        expectedClaimId: 'claim-1',
-        reason: 'stalled',
-        newClaimId: 'claim-2',
-        sessionId: 'session-2',
-        sourceWorktree: '/tmp/other',
-      });
-      expect(allowed.ok).toBe(true);
-    }
-  });
-
   test('release accepts only reserving and bound', () => {
     for (const state of ['reserving', 'bound'] as const) {
       const released = releaseLeaseRecord(inState(state), 'claim-1');
@@ -499,21 +442,10 @@ describe('lease state guards', () => {
     }
   });
 
-  test('the fencing token is compared before the state, on every transition', () => {
-    for (const transition of [
-      () => releaseLeaseRecord(inState('completing'), 'claim-other'),
-      () => stealLeaseRecord(inState('completing'), {
-        expectedClaimId: 'claim-other',
-        reason: 'stalled',
-        newClaimId: 'claim-2',
-        sessionId: 'session-2',
-        sourceWorktree: '/tmp/other',
-      }),
-    ]) {
-      const outcome = transition();
-      expect(outcome.ok).toBe(false);
-      if (!outcome.ok) expect(outcome.error).not.toContain('state completing');
-    }
+  test('release checks the fencing token before the state', () => {
+    const outcome = releaseLeaseRecord(inState('completing'), 'claim-other');
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) expect(outcome.error).toContain('claim id mismatch');
   });
 });
 
@@ -532,11 +464,10 @@ describe('lease owner record schema 2 publication lifecycle', () => {
       sprintPath: SPRINT_PATH, targetRef: 'main', generation: 1,
       sessionId: 'session-1', sourceWorktree: '/tmp/source',
     });
-    const bound = bindLeaseRecord(reserved, {
-      claimId: 'claim-1', executionWorktree: '/tmp/review-wt', branch: 'codex/review', unitRef: 'plans/review.md',
+    const bound = boundLeaseFixture(reserved, {
+      executionWorktree: '/tmp/review-wt', branch: 'codex/review', unitRef: 'plans/review.md',
     });
-    if (!bound.ok) throw new Error(bound.error);
-    const complete = beginLeaseCompletionRecord(bound.record, {
+    const complete = beginLeaseCompletionRecord(bound, {
       claimId: 'claim-1', executionWorktree: '/tmp/review-wt', finishTransactionKey: 'finish/fixture-key',
     });
     if (!complete.ok) throw new Error(complete.error);
@@ -571,11 +502,6 @@ describe('lease owner record schema 2 publication lifecycle', () => {
   test('reviewing refuses ordinary steal and only lifecycle transitions clear its pointer', () => {
     const entered = enterReviewingLeaseRecord(completing(), { claimId: 'claim-1', publication: pointer });
     if (!entered.ok) throw new Error(entered.error);
-    const stolen = stealLeaseRecord(entered.record, {
-      expectedClaimId: 'claim-1', reason: 'repair', newClaimId: 'claim-2', sessionId: 'session-2', sourceWorktree: '/tmp/two',
-    });
-    expect(stolen.ok).toBe(false);
-    if (!stolen.ok) expect(stolen.error).toContain('publication takeover');
 
     const reopened = reopenPublicationLeaseRecord(entered.record, {
       claimId: 'claim-1', expectedGeneration: 1, expectedPublicationId: pointer.publication_id, expectedHeadSha: pointer.head_sha,

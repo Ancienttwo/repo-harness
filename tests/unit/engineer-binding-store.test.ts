@@ -1,31 +1,25 @@
+import { seedEngineerBinding, type SeedEngineerBindingInput } from '../helpers/engineer-state-fixture';
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'child_process';
-import { createHash } from 'crypto';
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, unlinkSync, utimesSync, writeFileSync } from 'fs';
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  symlinkSync,
+  unlinkSync,
+  writeFileSync,
+} from 'fs';
 import { tmpdir } from 'os';
-import { dirname, join, resolve } from 'path';
+import { join } from 'path';
 
 import {
-  ENGINEER_BINDING_CURRENT_KIND,
-  ENGINEER_PROFILE_PROTOCOL,
   EngineerProfileBindingError,
-  buildEngineerBindingEvent,
   canonicalEngineerBindingCurrentBytes,
-  canonicalEngineerBindingEventBytes,
-  deriveEngineerTransitionId,
-  engineerCurrentPayloadSha256,
-  engineerOperationFingerprint,
   engineerSha256,
 } from '../../src/core/engineers/profile-binding';
-import { buildLeaseOwnerRecord, bindLeaseRecord } from '../../src/core/state/coordination-identity';
-import {
-  bindEngineer,
-  engineerBindingStoreRoot,
-  readEngineerBindingStatus,
-  retireEngineer,
-  type BindEngineerInput,
-} from '../../src/effects/engineers/binding-store';
-import { createLeaseDirectory, writeLeaseOwnerDurably } from '../../src/effects/state/coordination-lease-store';
+import { engineerBindingStoreRoot, readEngineerBindingStatus } from '../../src/effects/engineers/binding-store';
 
 const engineerId = 'engineer:capability.verification.evals-checks';
 const revision = engineerSha256('contract-v1');
@@ -47,7 +41,7 @@ function repository(): string {
   return root;
 }
 
-function baseInput(overrides: Partial<BindEngineerInput> = {}): BindEngineerInput {
+function baseInput(overrides: Partial<SeedEngineerBindingInput> = {}): SeedEngineerBindingInput {
   return {
     engineer_id: engineerId,
     idempotency_key: 'bind-1',
@@ -74,279 +68,31 @@ function errorCode(run: () => unknown): string {
   }
 }
 
-function storeEvents(root: string): string[] {
-  const store = engineerBindingStoreRoot(root);
-  const engineerDirs = readdirSync(store).filter((entry) => entry !== 'locks');
-  return readdirSync(join(store, engineerDirs[0], 'events')).filter((entry) => entry.endsWith('.json'));
-}
-
-function treeDigest(path: string): string {
-  const files: string[] = [];
-  const walk = (dir: string): void => {
-    for (const entry of readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
-      const target = join(dir, entry.name);
-      if (entry.isDirectory()) walk(target);
-      else files.push(`${target.slice(path.length)}\0${readFileSync(target, 'hex')}`);
-    }
-  };
-  walk(path);
-  return createHash('sha256').update(files.join('\n')).digest('hex');
-}
-
-function publishBindingLease(root: string, bindingId: string): void {
-  const taskId = 'a'.repeat(64);
-  const claimed = buildLeaseOwnerRecord({
-    claimId: '33333333-3333-4333-8333-333333333333',
-    taskId,
-    taskRevision: 'b'.repeat(64),
-    sprintPath: 'plans/sprints/canary.sprint.md',
-    targetRef: 'main',
-    generation: 1,
-    sessionId: `engineer:${bindingId}`,
-    sourceWorktree: root,
-  });
-  const bound = bindLeaseRecord(claimed, {
-    claimId: claimed.claim_id,
-    executionWorktree: root,
-    branch: 'main',
-    unitRef: 'plans/plan-canary.md',
-  });
-  if (!bound.ok) throw new Error(bound.error);
-  if (!createLeaseDirectory(root, taskId)) throw new Error('lease election failed');
-  writeLeaseOwnerDurably(root, taskId, bound.record);
-}
-
 afterEach(() => {
   while (tempRoots.length > 0) rmSync(tempRoots.pop()!, { recursive: true, force: true });
 });
 
-describe('Engineer binding shared store', () => {
-  test('publishes one immutable transition and resumes byte-identically', () => {
+describe('retained Engineer binding reads', () => {
+  test('an absent store returns genesis without creating files', () => {
     const root = repository();
-    const genesis = readEngineerBindingStatus(root, engineerId, revision);
-    expect(genesis.genesis).toBe(true);
-    expect(genesis.current.binding_generation).toBe(0);
-
-    const first = bindEngineer(root, baseInput());
-    const retry = bindEngineer(root, baseInput({
-      now: () => '2030-01-01T00:00:00.000Z',
-      binding_id: () => '22222222-2222-4222-8222-222222222222',
-    }));
-    expect(canonicalEngineerBindingCurrentBytes(retry)).toBe(canonicalEngineerBindingCurrentBytes(first));
-    expect(storeEvents(root)).toHaveLength(1);
-    expect(errorCode(() => bindEngineer(root, baseInput({ provider_thread_id: 'changed' })))).toBe('idempotency_conflict');
-  });
-
-  test('has one deterministic result at every approved crash boundary', () => {
-    for (const boundary of ['before_event', 'after_event_fsync', 'after_current_fsync'] as const) {
-      const root = repository();
-      expect(() => bindEngineer(root, baseInput({
-        idempotency_key: `crash-${boundary}`,
-        crash_hook: (seen) => {
-          if (seen === boundary) throw new Error(`crash:${boundary}`);
-        },
-      }))).toThrow(`crash:${boundary}`);
-      if (boundary === 'after_event_fsync') {
-        expect(errorCode(() => readEngineerBindingStatus(root, engineerId, revision))).toBe('binding_state_corrupt');
-      }
-      if (boundary === 'before_event') {
-        expect(readEngineerBindingStatus(root, engineerId, revision).genesis).toBe(true);
-      }
-      const recovered = bindEngineer(root, baseInput({ idempotency_key: `crash-${boundary}` }));
-      expect(recovered.binding_generation).toBe(1);
-      expect(storeEvents(root)).toHaveLength(1);
-    }
-  });
-
-  test('resumes a frozen event when only the server-derived Profile revision changed', () => {
-    const root = repository();
-    expect(() => bindEngineer(root, baseInput({
-      idempotency_key: 'crash-derived-revision',
-      crash_hook: (boundary) => {
-        if (boundary === 'after_event_fsync') throw new Error('crash:after_event_fsync');
-      },
-    }))).toThrow('crash:after_event_fsync');
-
-    const revisionV2 = engineerSha256('contract-v2');
-    const recovered = bindEngineer(root, baseInput({
-      idempotency_key: 'crash-derived-revision',
-      engineer_contract_revision: revisionV2,
-    }));
-    expect(recovered.engineer_contract_revision).toBe(revision);
-    expect(storeEvents(root)).toHaveLength(1);
-    expect(errorCode(() => bindEngineer(root, baseInput({
-      idempotency_key: 'crash-derived-revision',
-      engineer_contract_revision: revisionV2,
-      provider_thread_id: 'different-client-input',
-    })))).toBe('idempotency_conflict');
-  });
-
-  test('retire and rebind preserve binding lineage and never touch Lease bytes', () => {
-    const root = repository();
-    const common = resolve(root, git(root, ['rev-parse', '--git-common-dir']));
-    const leaseRoot = join(common, 'repo-harness/coordination/v1/leases/sentinel');
-    mkdirSync(leaseRoot, { recursive: true });
-    writeFileSync(join(leaseRoot, 'owner.json'), '{"sentinel":true}');
-    const beforeLease = treeDigest(join(common, 'repo-harness/coordination'));
-
-    const active = bindEngineer(root, baseInput());
-    const retired = retireEngineer(root, {
-      engineer_id: engineerId,
-      idempotency_key: 'retire-1',
-      expected_current_digest: active.current_digest,
-      expected_binding_generation: 1,
-      expected_binding_id: active.current_binding_id!,
-      expected_engineer_contract_revision: revision,
-      now: () => '2026-08-24T13:00:00.000Z',
-    });
-    expect(retired.state).toBe('retired');
-    expect(retired.binding_generation).toBe(1);
-    const rebound = bindEngineer(root, baseInput({
-      idempotency_key: 'bind-2',
-      expected_current_digest: retired.current_digest,
-      expected_binding_generation: 1,
-      expected_binding_id: retired.current_binding_id,
-      binding_id: () => '22222222-2222-4222-8222-222222222222',
-    }));
-    expect(rebound.binding_generation).toBe(2);
-    expect(rebound.current_binding_id).not.toBe(active.current_binding_id);
-    expect(treeDigest(join(common, 'repo-harness/coordination'))).toBe(beforeLease);
-  });
-
-  test('a retire event whose binding window precedes the active bound_at reports binding_state_corrupt', () => {
-    const root = repository();
-    const active = bindEngineer(root, baseInput());
-    const store = engineerBindingStoreRoot(root);
-    const engineerDir = readdirSync(store).find((entry) => entry !== 'locks')!;
-    const events = join(store, engineerDir, 'events');
-    const activeEvent = JSON.parse(readFileSync(
-      join(events, `${active.current_transition_id!.slice('sha256:'.length)}.json`),
-      'utf8',
-    )) as { next_binding: Record<string, unknown> };
-
-    // Each half is internally valid; only the cross-event pairing is corrupt, so the
-    // projection the store builds to compare them is what fails validation.
-    const forgedBinding = {
-      ...activeEvent.next_binding,
-      state: 'retired',
-      bound_at: '2026-08-24T10:00:00.000Z',
-      retired_at: '2026-08-24T11:00:00.000Z',
-    };
-    const request = {
-      engineer_id: engineerId,
-      idempotency_key: 'retire-corrupt-window',
-      transition: 'retire' as const,
-      expected_current_digest: active.current_digest,
-      expected_binding_generation: 1,
-      expected_binding_id: active.current_binding_id,
-      expected_engineer_contract_revision: revision,
-      engineer_contract_revision: revision,
-      provider: null,
-      provider_thread_id: null,
-      host_id: null,
-    };
-    const transitionId = deriveEngineerTransitionId(engineerId, request.idempotency_key);
-    const forgedEvent = buildEngineerBindingEvent({
-      transition_id: transitionId,
-      idempotency_key: request.idempotency_key,
-      operation_fingerprint: engineerOperationFingerprint(request),
-      engineer_id: engineerId,
-      transition: 'retire',
-      expected_current_digest: request.expected_current_digest,
-      expected_binding_generation: request.expected_binding_generation,
-      previous_binding_id: active.current_binding_id,
-      next_binding: forgedBinding as never,
-      next_current_payload_sha256: engineerCurrentPayloadSha256({
-        protocol: ENGINEER_PROFILE_PROTOCOL,
-        kind: ENGINEER_BINDING_CURRENT_KIND,
-        engineer_id: engineerId,
-        binding_generation: 1,
-        state: 'retired',
-        current_binding_id: active.current_binding_id,
-        engineer_contract_revision: revision,
-      }),
-      created_at: '2026-08-24T13:00:00.000Z',
-    });
-    writeFileSync(join(events, `${transitionId.slice('sha256:'.length)}.json`), canonicalEngineerBindingEventBytes(forgedEvent));
-
-    expect(errorCode(() => retireEngineer(root, {
-      engineer_id: engineerId,
-      idempotency_key: request.idempotency_key,
-      expected_current_digest: active.current_digest,
-      expected_binding_generation: 1,
-      expected_binding_id: active.current_binding_id!,
-      expected_engineer_contract_revision: revision,
-    }))).toBe('binding_state_corrupt');
-  });
-
-  test('replace event atomically retires the previous binding and publishes the next generation', () => {
-    const root = repository();
-    const first = bindEngineer(root, baseInput());
-    const replaced = bindEngineer(root, baseInput({
-      idempotency_key: 'replace-1',
-      expected_current_digest: first.current_digest,
-      expected_binding_generation: first.binding_generation,
-      expected_binding_id: first.current_binding_id,
-      binding_id: () => '22222222-2222-4222-8222-222222222222',
-      now: () => '2026-08-24T13:00:00.000Z',
-    }));
     const status = readEngineerBindingStatus(root, engineerId, revision);
-    expect(replaced.binding_generation).toBe(2);
-    expect(replaced.current_binding_id).toBe('22222222-2222-4222-8222-222222222222');
-    expect(status.event?.transition).toBe('replace');
-    expect(status.event?.previous_binding_id).toBe(first.current_binding_id);
-    expect(status.event?.created_at).toBe('2026-08-24T13:00:00.000Z');
-    expect(status.binding?.state).toBe('active');
-    expect(storeEvents(root)).toHaveLength(2);
+    expect(status.genesis).toBe(true);
+    expect(status.binding).toBeNull();
+    expect(status.current.binding_generation).toBe(0);
+    expect(existsSync(engineerBindingStoreRoot(root))).toBe(false);
   });
 
-  test('crash-replayed replace and retire recheck live Lease before publishing current', () => {
-    for (const transition of ['replace', 'retire'] as const) {
-      const root = repository();
-      const active = bindEngineer(root, baseInput());
-      const crash = (boundary: 'before_event' | 'after_event_fsync' | 'after_current_fsync'): void => {
-        if (boundary === 'after_event_fsync') throw new Error('crash:after_event_fsync');
-      };
-      if (transition === 'replace') {
-        expect(() => bindEngineer(root, baseInput({
-          idempotency_key: 'crash-replace',
-          expected_current_digest: active.current_digest,
-          expected_binding_generation: 1,
-          expected_binding_id: active.current_binding_id,
-          binding_id: () => '22222222-2222-4222-8222-222222222222',
-          crash_hook: crash,
-        }))).toThrow('crash:after_event_fsync');
-      } else {
-        expect(() => retireEngineer(root, {
-          engineer_id: engineerId,
-          idempotency_key: 'crash-retire',
-          expected_current_digest: active.current_digest,
-          expected_binding_generation: 1,
-          expected_binding_id: active.current_binding_id!,
-          expected_engineer_contract_revision: revision,
-          crash_hook: crash,
-        })).toThrow('crash:after_event_fsync');
-      }
-      publishBindingLease(root, active.current_binding_id!);
-      const retry = (): unknown => transition === 'replace'
-        ? bindEngineer(root, baseInput({
-            idempotency_key: 'crash-replace',
-            expected_current_digest: active.current_digest,
-            expected_binding_generation: 1,
-            expected_binding_id: active.current_binding_id,
-            binding_id: () => '22222222-2222-4222-8222-222222222222',
-          }))
-        : retireEngineer(root, {
-            engineer_id: engineerId,
-            idempotency_key: 'crash-retire',
-            expected_current_digest: active.current_digest,
-            expected_binding_generation: 1,
-            expected_binding_id: active.current_binding_id!,
-            expected_engineer_contract_revision: revision,
-          });
-      expect(retry).toThrow('release it explicitly');
-      expect(readEngineerBindingStatus(root, engineerId, revision).current.current_binding_id).toBe(active.current_binding_id);
-    }
+  test('a missing current event stays corrupt and is not repaired', () => {
+    const root = repository();
+    const current = seedEngineerBinding(root, baseInput());
+    const store = engineerBindingStoreRoot(root);
+    const key = readdirSync(store)[0]!;
+    const event = join(store, key, 'events', `${current.current_transition_id!.slice(7)}.json`);
+    const before = readFileSync(join(store, key, 'current.json'), 'utf8');
+    unlinkSync(event);
+    expect(errorCode(() => readEngineerBindingStatus(root, engineerId, revision))).toBe('binding_state_corrupt');
+    expect(existsSync(event)).toBe(false);
+    expect(readFileSync(join(store, key, 'current.json'), 'utf8')).toBe(before);
   });
 
   test('all linked worktrees read the exact same current bytes', () => {
@@ -354,25 +100,15 @@ describe('Engineer binding shared store', () => {
     const linked = `${root}-linked`;
     tempRoots.push(linked);
     git(root, ['worktree', 'add', '-q', '-b', 'linked-test', linked]);
-    const current = bindEngineer(root, baseInput());
+    const current = seedEngineerBinding(root, baseInput());
     const fromLinked = readEngineerBindingStatus(linked, engineerId, revision).current;
     expect(engineerBindingStoreRoot(linked)).toBe(engineerBindingStoreRoot(root));
     expect(canonicalEngineerBindingCurrentBytes(fromLinked)).toBe(canonicalEngineerBindingCurrentBytes(current));
   });
 
-  test('stale contract fences and symlinked authority fail closed', () => {
+  test('symlinked binding authority fails closed', () => {
     const root = repository();
-    const active = bindEngineer(root, baseInput());
-    const revisionV2 = engineerSha256('contract-v2');
-    expect(errorCode(() => bindEngineer(root, baseInput({
-      idempotency_key: 'replace-with-stale-contract',
-      engineer_contract_revision: revisionV2,
-      expected_current_digest: active.current_digest,
-      expected_binding_generation: 1,
-      expected_binding_id: active.current_binding_id,
-      expected_engineer_contract_revision: revisionV2,
-    })))).toBe('binding_stale');
-
+    seedEngineerBinding(root, baseInput());
     const store = engineerBindingStoreRoot(root);
     const engineerDir = readdirSync(store).find((entry) => entry !== 'locks')!;
     const currentPath = join(store, engineerDir, 'current.json');
@@ -381,85 +117,4 @@ describe('Engineer binding shared store', () => {
     expect(errorCode(() => readEngineerBindingStatus(root, engineerId, revision))).toBe('unsafe_engineer_path');
   });
 
-  test('an N-way linked-process bind race has one winner and no losing events', async () => {
-    const root = repository();
-    const modulePath = resolve(process.cwd(), 'src/effects/engineers/binding-store.ts');
-    const corePath = resolve(process.cwd(), 'src/core/engineers/profile-binding.ts');
-    const script = `
-      import { bindEngineer } from ${JSON.stringify(modulePath)};
-      import { EngineerProfileBindingError } from ${JSON.stringify(corePath)};
-      const [root, key, revision] = process.argv.slice(1);
-      try {
-        const current = bindEngineer(root, {
-          engineer_id: ${JSON.stringify(engineerId)}, idempotency_key: key,
-          provider: 'codex', provider_thread_id: key, host_id: 'local',
-          engineer_contract_revision: revision, expected_current_digest: null,
-          expected_binding_generation: 0, expected_binding_id: null,
-          expected_engineer_contract_revision: revision,
-        });
-        console.log(JSON.stringify({ok:true,digest:current.current_digest}));
-      } catch (error) {
-        console.log(JSON.stringify({ok:false,error:error instanceof EngineerProfileBindingError ? error.code : String(error)}));
-      }
-    `;
-    const children = Array.from({ length: 8 }, (_, index) => Bun.spawn([
-      process.execPath,
-      '-e',
-      script,
-      '--',
-      root,
-      `race-${index}`,
-      revision,
-    ], { stdout: 'pipe', stderr: 'pipe' }));
-    const outputs = await Promise.all(children.map(async (child) => {
-      const output = await new Response(child.stdout).text();
-      const stderr = await new Response(child.stderr).text();
-      await child.exited;
-      if (stderr) throw new Error(stderr);
-      return JSON.parse(output.trim()) as { ok: boolean; error?: string };
-    }));
-    expect(outputs.filter((item) => item.ok)).toHaveLength(1);
-    expect(outputs.filter((item) => item.error === 'binding_stale')).toHaveLength(7);
-    expect(storeEvents(root)).toHaveLength(1);
-  });
-
-  test('reclaims an old lock owned by a terminated process before retrying', async () => {
-    const root = repository();
-    const child = Bun.spawn([process.execPath, '-e', 'process.exit(0)']);
-    await child.exited;
-    const store = engineerBindingStoreRoot(root);
-    const key = createHash('sha256').update(Buffer.from(engineerId, 'utf8')).digest('hex');
-    const lockPath = join(store, 'locks', `${key}.lock`);
-    mkdirSync(lockPath, { recursive: true });
-    const createdAt = Date.now() - 60_000;
-    const token = `${child.pid}-${createdAt}-00000000-0000-4000-8000-000000000001`;
-    writeFileSync(join(lockPath, `${token}.json`), `${JSON.stringify({ pid: child.pid, created_at: createdAt, token })}\n`);
-
-    const current = bindEngineer(root, baseInput({ lock_wait_timeout_ms: 500 }));
-    expect(current.binding_generation).toBe(1);
-    expect(existsSync(lockPath)).toBe(false);
-  });
-
-  test('reclaims an old empty lock abandoned before owner publication', async () => {
-    const root = repository();
-    const store = engineerBindingStoreRoot(root);
-    const key = createHash('sha256').update(Buffer.from(engineerId, 'utf8')).digest('hex');
-    const lockPath = join(store, 'locks', `${key}.lock`);
-    const child = Bun.spawn([
-      process.execPath,
-      '-e',
-      'require("fs").mkdirSync(process.argv[1], { recursive: true })',
-      '--',
-      lockPath,
-    ], { stderr: 'pipe' });
-    const stderr = await new Response(child.stderr).text();
-    expect(await child.exited).toBe(0);
-    expect(stderr).toBe('');
-    const staleAt = new Date(Date.now() - 60_000);
-    utimesSync(lockPath, staleAt, staleAt);
-
-    const current = bindEngineer(root, baseInput({ lock_wait_timeout_ms: 500 }));
-    expect(current.binding_generation).toBe(1);
-    expect(existsSync(lockPath)).toBe(false);
-  });
 });

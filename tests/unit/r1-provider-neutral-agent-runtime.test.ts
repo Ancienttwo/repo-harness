@@ -1,10 +1,24 @@
+import { boundLeaseFixture } from '../helpers/sprint-fixture';
+import {
+  seedEngineerBinding,
+  claimActorReceiptFixture,
+  seedClaimActorReceipt,
+} from '../helpers/engineer-state-fixture';
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'child_process';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'fs';
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
-import { buildClaimActorReceipt, validateEngineerPrincipal } from '../../src/core/engineers/principal-claim';
 import {
   buildTaskMessageDeliveryReceipt,
   buildTaskMessageEvent,
@@ -12,7 +26,7 @@ import {
   transitionTaskMessageDeliveryReceipt,
   validateTaskMessageDeliveryReceipt,
 } from '../../src/core/fleet/task-message';
-import { bindLeaseRecord, buildLeaseOwnerRecord, deriveTaskRevision } from '../../src/core/state/coordination-identity';
+import { buildLeaseOwnerRecord, deriveTaskRevision } from '../../src/core/state/coordination-identity';
 import {
   buildAgentRuntimeCapabilityObservation,
   buildAgentRuntimeEffectCurrent,
@@ -25,9 +39,8 @@ import {
   validateAgentRuntimeCapabilityObservation,
   validateAgentRuntimeEffectIntent,
 } from '../../src/core/engineers/agent-runtime-effect';
-import { bindEngineer, readEngineerBindingStatus } from '../../src/effects/engineers/binding-store';
+import { readEngineerBindingStatus } from '../../src/effects/engineers/binding-store';
 import { loadEngineerProfile } from '../../src/effects/engineers/profile-store';
-import { publishClaimActorReceipt } from '../../src/effects/engineers/claim-actor-store';
 import { readAgentRuntimePolicy } from '../../src/effects/engineers/agent-runtime-feature';
 import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
 import { deliverTaskInbox, sendTaskMessage } from '../../src/effects/fleet/task-inbox';
@@ -66,7 +79,7 @@ function fixture(adapter: 'herdr-cli-agent' = 'herdr-cli-agent'): string {
 
 function bind(repoRoot: string, adapter: 'herdr-cli-agent', bindingId: string) {
   const profile = loadEngineerProfile(repoRoot, engineerId); const status = readEngineerBindingStatus(repoRoot, engineerId, profile.engineer_contract_revision); const previous = status.current;
-  return bindEngineer(repoRoot, {
+  return seedEngineerBinding(repoRoot, {
     engineer_id: engineerId, idempotency_key: `bind-${bindingId}`, provider: adapter, provider_thread_id: `endpoint-${bindingId.slice(0, 4)}`, host_id: 'local', engineer_contract_revision: profile.engineer_contract_revision,
     expected_current_digest: status.binding ? previous.current_digest : null, expected_binding_generation: status.binding ? previous.binding_generation : 0, expected_binding_id: status.binding ? previous.current_binding_id : null,
     expected_engineer_contract_revision: profile.engineer_contract_revision, binding_id: () => bindingId, now: () => bindingId === bindingOne ? '2026-08-30T10:00:00.000Z' : '2026-08-30T10:10:00.000Z',
@@ -131,11 +144,11 @@ describe('R1 provider-neutral Agent Runtime', () => {
     execFileSync('git', ['add', sprintPath], { cwd: repoRoot }); execFileSync('git', ['commit', '-qm', 'task authority'], { cwd: repoRoot });
     const taskId = fixtureTaskId(taskCell); const taskRevision = deriveTaskRevision({ taskCell: taskCell, taskId, modeCell: 'contract', acceptanceCell: 'exact receipt' }); const claimId = '44444444-4444-4444-8444-444444444444';
     const claimed = buildLeaseOwnerRecord({ claimId, taskId, taskRevision, sprintPath, targetRef: 'HEAD', generation: 1, sessionId: 'runtime-session', sourceWorktree: repoRoot });
-    const bound = bindLeaseRecord(claimed, { claimId, executionWorktree: repoRoot, branch: 'codex/runtime', unitRef: 'plans/runtime.md' }); if (!bound.ok) throw new Error(bound.error); createLeaseDirectory(repoRoot, taskId); writeLeaseOwnerDurably(repoRoot, taskId, bound.record);
+    const bound = boundLeaseFixture(claimed, { executionWorktree: repoRoot, branch: 'codex/runtime', unitRef: 'plans/runtime.md' }); createLeaseDirectory(repoRoot, taskId); writeLeaseOwnerDurably(repoRoot, taskId, bound);
     const profile = loadEngineerProfile(repoRoot, engineerId); const binding = readEngineerBindingStatus(repoRoot, engineerId, profile.engineer_contract_revision).binding!;
-    const principal = validateEngineerPrincipal({ protocol: 1, kind: 'repo-harness-engineer-principal', repository_id: repoHarnessRepoIdFor(repoRoot), engineer_id: engineerId, binding_id: binding.binding_id, binding_generation: binding.binding_generation, engineer_contract_revision: binding.engineer_contract_revision, carrier: 'mcp_oauth', auth_subject: '55555555-5555-4555-8555-555555555555', provider: binding.provider, provider_thread_id: binding.provider_thread_id });
+
     const envelope = { protocol: 1 as const, kind: 'repo-harness-work-envelope' as const, repo_id: repoHarnessRepoIdFor(repoRoot), task_id: taskId, task_revision: taskRevision, sprint_path: sprintPath, claim_id: claimId, generation: 1, worktree_path: repoRoot, branch: 'codex/runtime', unit_ref: 'plans/runtime.md', authorization_revision: 1 };
-    publishClaimActorReceipt(repoRoot, buildClaimActorReceipt({ envelope, principal, session_id: 'runtime-session', bound_at: '2026-08-30T11:00:00.000Z' }));
+    seedClaimActorReceipt(repoRoot, claimActorReceiptFixture({ envelope, binding, session_id: 'runtime-session', bound_at: '2026-08-30T11:00:00.000Z' }));
     const taskMessageId = '66666666-6666-4666-8666-666666666666';
     sendTaskMessage({ repo_root: repoRoot, canonical_source: { targetRef: 'HEAD', sprintPath }, event: buildTaskMessageEvent({ message_id: taskMessageId, task_id: taskId, task_revision: taskRevision, scope: 'claim', target_claim_id: claimId, target_generation: 1, sender_kind: 'operator', sender_id: 'runtime-test', sender_trust: 'local_operator', audience: 'owner', body: 'task body never enters runtime action', created_at: '2026-08-30T11:01:00.000Z', in_reply_to: null }) });
     const observed = capability(repoRoot); const prepared = prepareAgentRuntimeEffect({ repo_root: repoRoot, message_kind: 'task_message', task_id: taskId, message_id: taskMessageId, idempotency_key: 'task-runtime', expected_task_revision: taskRevision, expected_claim_id: claimId, expected_lease_generation: 1, expected_capability_sha256: observed.capability_sha256, created_at: '2026-08-30T11:02:00.000Z' });
@@ -177,11 +190,11 @@ describe('R1 provider-neutral Agent Runtime', () => {
     execFileSync('git', ['add', sprintPath], { cwd: repoRoot }); execFileSync('git', ['commit', '-qm', 'task authority'], { cwd: repoRoot });
     const taskId = fixtureTaskId(taskCell); const taskRevision = deriveTaskRevision({ taskCell: taskCell, taskId, modeCell: 'contract', acceptanceCell: 'exact receipt' }); const claimId = '44444444-4444-4444-8444-444444444444';
     const claimed = buildLeaseOwnerRecord({ claimId, taskId, taskRevision, sprintPath, targetRef: 'HEAD', generation: 1, sessionId: 'runtime-session', sourceWorktree: repoRoot });
-    const bound = bindLeaseRecord(claimed, { claimId, executionWorktree: repoRoot, branch: 'codex/runtime', unitRef: 'plans/runtime.md' }); if (!bound.ok) throw new Error(bound.error); createLeaseDirectory(repoRoot, taskId); writeLeaseOwnerDurably(repoRoot, taskId, bound.record);
+    const bound = boundLeaseFixture(claimed, { executionWorktree: repoRoot, branch: 'codex/runtime', unitRef: 'plans/runtime.md' }); createLeaseDirectory(repoRoot, taskId); writeLeaseOwnerDurably(repoRoot, taskId, bound);
     const profile = loadEngineerProfile(repoRoot, engineerId); const binding = readEngineerBindingStatus(repoRoot, engineerId, profile.engineer_contract_revision).binding!;
-    const principal = validateEngineerPrincipal({ protocol: 1, kind: 'repo-harness-engineer-principal', repository_id: repoHarnessRepoIdFor(repoRoot), engineer_id: engineerId, binding_id: binding.binding_id, binding_generation: binding.binding_generation, engineer_contract_revision: binding.engineer_contract_revision, carrier: 'mcp_oauth', auth_subject: '55555555-5555-4555-8555-555555555555', provider: binding.provider, provider_thread_id: binding.provider_thread_id });
+
     const envelope = { protocol: 1 as const, kind: 'repo-harness-work-envelope' as const, repo_id: repoHarnessRepoIdFor(repoRoot), task_id: taskId, task_revision: taskRevision, sprint_path: sprintPath, claim_id: claimId, generation: 1, worktree_path: repoRoot, branch: 'codex/runtime', unit_ref: 'plans/runtime.md', authorization_revision: 1 };
-    publishClaimActorReceipt(repoRoot, buildClaimActorReceipt({ envelope, principal, session_id: 'runtime-session', bound_at: '2026-08-30T11:00:00.000Z' }));
+    seedClaimActorReceipt(repoRoot, claimActorReceiptFixture({ envelope, binding, session_id: 'runtime-session', bound_at: '2026-08-30T11:00:00.000Z' }));
     const hookMessageId = '66666666-6666-4666-8666-666666666666';
     sendTaskMessage({ repo_root: repoRoot, canonical_source: { targetRef: 'HEAD', sprintPath }, event: buildTaskMessageEvent({ message_id: hookMessageId, task_id: taskId, task_revision: taskRevision, scope: 'claim', target_claim_id: claimId, target_generation: 1, sender_kind: 'operator', sender_id: 'runtime-test', sender_trust: 'local_operator', audience: 'owner', body: 'hook lane body', created_at: '2026-08-30T11:01:00.000Z', in_reply_to: null }) });
     const observed = capability(repoRoot); const prepared = prepareAgentRuntimeEffect({ repo_root: repoRoot, message_kind: 'task_message', task_id: taskId, message_id: hookMessageId, idempotency_key: 'task-hook-lane', expected_task_revision: taskRevision, expected_claim_id: claimId, expected_lease_generation: 1, expected_capability_sha256: observed.capability_sha256, created_at: '2026-08-30T11:02:00.000Z' });

@@ -1,3 +1,4 @@
+import { boundLeaseFixture } from './helpers/sprint-fixture';
 import { leaseOwnerPath } from './helpers/sprint-fixture';
 /**
  * Coordination plane primitives over a real git repository: lease election,
@@ -25,15 +26,12 @@ import {
 } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { randomUUID } from 'crypto';
 import {
-  bindLeaseRecord,
   buildLeaseOwnerRecord,
   deriveTaskRevision,
   parseLeaseOwnerRecord,
   projectCanonicalTasks,
   serializeLeaseOwnerRecord,
-  stealLeaseRecord,
   type LeaseOwnerRecordV1,
   type LeaseOwnerRecordV2,
 } from '../src/core/state/coordination-identity';
@@ -46,7 +44,21 @@ import {
   releaseSprintCommand,
   type SprintCommandDependencies,
 } from '../src/effects/state/coordination-sprint';
-import { COORDINATION_BACKLOG_LOCK_RELATIVE_PATH, COORDINATION_ROOT_RELATIVE_PATH, LEASE_OWNER_FILE_NAME, coordinationRoot, createLeaseDirectory, findLeaseByClaimId, leaseDirectory, readLease, removeLease, taskLockRelativePath, withBacklogLock, withTaskLock, writeLeaseOwnerDurably } from '../src/effects/state/coordination-lease-store';
+import {
+  COORDINATION_BACKLOG_LOCK_RELATIVE_PATH,
+  COORDINATION_ROOT_RELATIVE_PATH,
+  LEASE_OWNER_FILE_NAME,
+  coordinationRoot,
+  createLeaseDirectory,
+  findLeaseByClaimId,
+  leaseDirectory,
+  readLease,
+  removeLease,
+  taskLockRelativePath,
+  withBacklogLock,
+  withTaskLock,
+  writeLeaseOwnerDurably,
+} from '../src/effects/state/coordination-lease-store';
 import { resolveGitCommonDirectory } from '../src/effects/git/common-directory';
 import { withExclusiveDirectoryLock } from '../src/effects/locking/exclusive-directory-lock';
 import { deriveLegacyTaskId } from '../src/core/state/sprint-schema-v1';
@@ -89,7 +101,6 @@ test.skipIf(process.platform === 'win32')('POSIX directory flush failure leaves 
 });
 
 const REPO_ROOT = join(import.meta.dir, '..');
-const REPO_IDENTITY = '/tmp/lease-store-fixture/.git';
 const SPRINT_PATH = 'plans/sprints/lease-store.sprint.md';
 
 function taskIdFor(taskCell: string): string {
@@ -622,20 +633,11 @@ describe('claim verbs', () => {
     return found;
   }
 
-
   function repoWithSprint(rows: readonly string[] = [ROW_A, ROW_B]): string {
     const repo = createRepo();
     commitSprint(repo, rows);
     return repo;
   }
-
-
-
-
-
-
-
-
 
   test('readLease publishes the owner record bytes verbatim, or null', () => {
     const repo = repoWithSprint();
@@ -684,7 +686,6 @@ describe('claim verbs', () => {
     expect(readLease(repo, taskId).classification).toBe('available');
     expect(releaseSprintCommand({ claimId: 'claim-1' }, deps(repo)).exitCode).toBe(1);
   });
-
 
   test('reconcile reports without mutating, and clears only a released residue', () => {
     const repo = repoWithSprint();
@@ -802,10 +803,9 @@ describe('claim verbs', () => {
   /** Claim row B and bind it to `/tmp/wt`, the shape every finish gate needs. */
   function claimAndBind(repo: string, claimId = 'claim-1'): string {
     const record = seedClaim(repo, claimId);
-    const bound = bindLeaseRecord(record, { claimId, executionWorktree: '/tmp/wt',
+    const bound = boundLeaseFixture(record, { executionWorktree: '/tmp/wt',
       branch: 'codex/example', unitRef: 'plans/plan-x.md' });
-    if (!bound.ok) throw new Error(bound.error);
-    writeLeaseOwnerDurably(repo, record.task_id, bound.record);
+    writeLeaseOwnerDurably(repo, record.task_id, bound);
     return record.task_id;
   }
 
@@ -985,7 +985,6 @@ describe('claim verbs', () => {
     expect(still.record?.claim_id).toBe('claim-1');
     expect(still.record?.generation).toBe(1);
   });
-
 
 });
 
@@ -1172,7 +1171,7 @@ describe('complete-row is one locked transaction', () => {
 
   /** A claimed, bound row with the token this tree would hold. */
   function claimRow(repo: string, claimId: string): void {
-    const record = bindLeaseRecord(
+    const record = boundLeaseFixture(
       buildLeaseOwnerRecord({
         claimId,
         taskId: RACE_ID,
@@ -1183,11 +1182,10 @@ describe('complete-row is one locked transaction', () => {
         sessionId: 'race-session',
         sourceWorktree: repo,
       }),
-      { claimId, executionWorktree: repo, branch: 'codex/race', unitRef: 'plans/plan-race.md' },
+      { executionWorktree: repo, branch: 'codex/race', unitRef: 'plans/plan-race.md' },
     );
-    if (!record.ok) throw new Error(record.error);
     createLeaseDirectory(repo, RACE_ID);
-    writeLeaseOwnerDurably(repo, RACE_ID, record.record);
+    writeLeaseOwnerDurably(repo, RACE_ID, record);
     mkdirSync(join(repo, CLAIM_TOKEN_DIR), { recursive: true });
     writeFileSync(
       join(repo, CLAIM_TOKEN_DIR, `${RACE_ID}.claim`),
@@ -1291,20 +1289,18 @@ describe('complete-row is one locked transaction', () => {
     } finally { child.kill(); }
   }, 60_000);
 
-  test('a steal that lands mid-completion wins, and the row is not marked done', () => {
+  test('an owner replacement during completion fences the row update', () => {
     const repo = raceRepo();
     claimRow(repo, 'claim-original');
     const outcome = raceAgainst(repo, (root) => {
       const current = readLease(root, RACE_ID).record!;
-      const stolen = stealLeaseRecord(current, {
-        expectedClaimId: current.claim_id,
-        newClaimId: 'claim-thief',
-        sessionId: 'thief',
-        sourceWorktree: root,
-        reason: 'takeover under contention',
+      const replacement = buildLeaseOwnerRecord({
+        claimId: 'claim-thief', taskId: current.task_id, taskRevision: current.task_revision,
+        sprintPath: current.sprint_path, targetRef: current.target_ref, generation: current.generation + 1,
+        sessionId: 'thief', sourceWorktree: root,
+        stolenFrom: { claim_id: current.claim_id, reason: 'fixture ownership change' },
       });
-      if (!stolen.ok) throw new Error(stolen.error);
-      writeLeaseOwnerDurably(root, RACE_ID, stolen.record);
+      writeLeaseOwnerDurably(root, RACE_ID, replacement);
     });
 
     expect(outcome.exitCode).toBe(1);
@@ -1615,7 +1611,13 @@ test('a lease this completion could not release is refused before any write', ()
 
 import { dirname } from 'path';
 import { assertOwnedTrashDirectory, worktreeTrashNames } from '../src/effects/state/worktree-trash';
-import { cleanupExactWorktree, removeExactWorktree, recordCreatedWorktree, withWorktreeTopologyLock, sweepManagedWorktrees as productionSweep } from '../src/effects/state/coordination-worktree-topology';
+import {
+  cleanupExactWorktree,
+  removeExactWorktree,
+  recordCreatedWorktree,
+  withWorktreeTopologyLock,
+  sweepManagedWorktrees as productionSweep,
+} from '../src/effects/state/coordination-worktree-topology';
 
 const sweepManagedWorktrees: typeof productionSweep = (root, cwd, env, options) => productionSweep(root, cwd, env, { deadlineMs: 60_000, ...options });
 
@@ -1916,9 +1918,8 @@ describe('exact cleanup and contract-worktree start sweep', () => {
         const record = recordFor('sweep', 'sweep-claim');
         createLeaseDirectory(f.root, record.task_id);
         if (condition === 'leased') {
-          const transition = bindLeaseRecord(record, { claimId: record.claim_id, executionWorktree: f.path, branch: 'codex/demo', unitRef: 'fixture' });
-          if (!transition.ok) throw new Error(transition.error);
-          writeLeaseOwnerDurably(f.root, record.task_id, transition.record);
+          const transition = boundLeaseFixture(record, { executionWorktree: f.path, branch: 'codex/demo', unitRef: 'fixture' });
+          writeLeaseOwnerDurably(f.root, record.task_id, transition);
         }
       }
       if (condition === 'marker') { mkdirSync(join(f.root, '.ai/harness'), { recursive: true }); writeFileSync(join(f.root, '.ai/harness/active-worktree'), f.path); }

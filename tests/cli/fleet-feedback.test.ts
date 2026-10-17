@@ -1,15 +1,9 @@
+import { boundLeaseFixture } from '../helpers/sprint-fixture';
 import { candidate } from '../../scripts/merge-gate';
 import { deriveShipJournalKey } from '../../src/effects/publication/publication-lifecycle';
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync, spawnSync } from 'child_process';
-import {
-  chmodSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from 'fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join, resolve } from 'path';
 
@@ -27,7 +21,6 @@ import {
 } from '../../src/core/publication/feedback';
 import {
   beginLeaseCompletionRecord,
-  bindLeaseRecord,
   buildLeaseOwnerRecord,
   deriveTaskRevision,
   enterReviewingLeaseRecord,
@@ -45,7 +38,6 @@ import {
   readPublicationReceiptCache,
   writePublicationReceiptCache,
 } from '../../src/effects/publication/publication-receipt';
-import { resolveRepoIdentity } from '../../src/effects/state/coordination-canonical-source';
 import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
 import {
   createLeaseDirectory,
@@ -159,7 +151,6 @@ function fixture(): Fixture {
   git(root, 'add', '.');
   git(root, 'commit', '-m', 'seed feedback CLI fixture');
 
-  const repoIdentity = resolveRepoIdentity(root);
   const taskId = fixtureTaskId(TASK);
   const taskRevision = deriveTaskRevision({ taskCell: TASK, taskId, modeCell: 'contract', acceptanceCell: 'provider feedback passes' });
   git(root, 'switch', '-c', 'codex/feedback-cli');
@@ -203,14 +194,12 @@ function fixture(): Fixture {
     sessionId: 'feedback-cli-session',
     sourceWorktree: root,
   });
-  const bound = bindLeaseRecord(owner, {
-    claimId: CLAIM,
+  const bound = boundLeaseFixture(owner, {
     executionWorktree: root,
     branch: 'codex/feedback-cli',
     unitRef: 'plans/plan-feedback-cli.md',
   });
-  if (!bound.ok) throw new Error(bound.error);
-  const completing = beginLeaseCompletionRecord(bound.record, {
+  const completing = beginLeaseCompletionRecord(bound, {
     claimId: CLAIM,
     executionWorktree: root,
     finishTransactionKey: null,
@@ -254,7 +243,6 @@ function addAmbiguousReviewingPublication(subject: Fixture): void {
     '|---|----|--------|------|------|------------|------|',
     `| 1 | ${fixtureTaskId(`${task}`)} | [ ] | ${task} | contract | provider feedback passes | (pending) |`, '',
   ].join('\n'));
-  const repoIdentity = resolveRepoIdentity(subject.root);
   const taskId = fixtureTaskId(taskCell);
   const taskRevision = deriveTaskRevision({ taskCell,
     taskId,
@@ -291,14 +279,12 @@ function addAmbiguousReviewingPublication(subject: Fixture): void {
     sessionId: 'feedback-cli-ambiguous-session',
     sourceWorktree: subject.root,
   });
-  const bound = bindLeaseRecord(owner, {
-    claimId,
+  const bound = boundLeaseFixture(owner, {
     executionWorktree: subject.root,
     branch: receipt.branch,
     unitRef: 'plans/plan-feedback-cli-ambiguous.md',
   });
-  if (!bound.ok) throw new Error(bound.error);
-  const completing = beginLeaseCompletionRecord(bound.record, {
+  const completing = beginLeaseCompletionRecord(bound, {
     claimId,
     executionWorktree: subject.root,
     finishTransactionKey: null,

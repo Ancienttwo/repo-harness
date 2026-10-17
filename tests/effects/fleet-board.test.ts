@@ -1,6 +1,16 @@
+import { boundLeaseFixture } from '../helpers/sprint-fixture';
 import { describe, expect, onTestFinished, test } from 'bun:test';
 import { execFileSync } from 'child_process';
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs';
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
@@ -21,7 +31,6 @@ import {
 } from '../../src/core/publication/publication-receipt';
 import {
   beginLeaseCompletionRecord,
-  bindLeaseRecord,
   buildLeaseOwnerRecord,
   deriveTaskRevision,
   enterReviewingLeaseRecord,
@@ -128,9 +137,8 @@ function createReviewingProviderFixture(
       claimId, taskId, taskRevision, sprintPath, targetRef: 'main', generation: 1,
       sessionId: `fleet-provider-session-${index + 1}`, sourceWorktree: root,
     });
-    const bound = bindLeaseRecord(owner, { claimId, executionWorktree: root, branch: 'codex/fleet-provider', unitRef: 'plans/plan-fleet-provider.md' });
-    if (!bound.ok) throw new Error(bound.error);
-    const completing = beginLeaseCompletionRecord(bound.record, { claimId, executionWorktree: root, finishTransactionKey: null });
+    const bound = boundLeaseFixture(owner, { executionWorktree: root, branch: 'codex/fleet-provider', unitRef: 'plans/plan-fleet-provider.md' });
+    const completing = beginLeaseCompletionRecord(bound, { claimId, executionWorktree: root, finishTransactionKey: null });
     if (!completing.ok) throw new Error(completing.error);
     const reviewing = enterReviewingLeaseRecord(completing.record, {
       claimId,
@@ -181,7 +189,6 @@ function createReviewingProviderFixture(
     counter_dir: counterDir,
   };
 }
-
 
 function createPlainBoardFixture(root: string, rows: number, repoId: string): RepoHarnessRegisteredRepo {
   const sprintPath = 'plans/sprints/fleet-plain.sprint.md';
@@ -477,7 +484,6 @@ describe('fleet board collector', () => {
     expect(JSON.stringify(inbox)).not.toContain('/private/task-inbox');
     expect(JSON.stringify(inbox)).not.toContain('secret=redacted');
   });
-
 
   test('contains one card-internal observation failure and keeps every sibling card of that repository', async () => {
     const root = mkdtempSync(join(tmpdir(), 'fleet-board-card-containment-'));

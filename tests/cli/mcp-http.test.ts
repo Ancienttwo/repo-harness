@@ -1,28 +1,22 @@
 import { describe, expect, test } from 'bun:test';
-import { createHash, randomBytes, randomUUID } from 'crypto';
+import { createHash, randomBytes } from 'crypto';
 import { createServer } from 'net';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
-import { dirname, join } from 'path';
+import { join } from 'path';
 import { ServerError } from '@modelcontextprotocol/sdk/server/auth/errors.js';
 import { McpOAuthTokenStore } from '../../src/cli/mcp/oauth';
 import { McpSessionStore, type McpSessionClosableTransport } from '../../src/cli/mcp/session-store';
 import type { McpCodingRuntime } from '../../src/cli/mcp/server';
-import { resolveMcpRepoRoot } from '../../src/cli/mcp/repo';
 import { runMcpSetupChatgpt, runMcpLiveDoctor } from '../../src/cli/mcp/setup';
 import {
   CodingAuthorizationRuntimeStore,
   createOAuthRateLimitMiddleware,
   startMcpHttp,
 } from '../../src/cli/mcp/transports/http';
-import { engineerBindingStoreRoot } from '../../src/effects/engineers/binding-store';
-import { buildEngineerBindingCurrent, buildEngineerBindingEvent, canonicalEngineerBindingCurrentBytes, canonicalEngineerBindingEventBytes, deriveEngineerTransitionId, engineerCurrentPayloadSha256, engineerOperationFingerprint } from '../../src/core/engineers/profile-binding';
-import { buildEngineerPrincipalMapping, canonicalEngineerPrincipalMappingBytes } from '../../src/core/engineers/principal-claim';
-import { loadEngineerProfile } from '../../src/effects/engineers/profile-store';
-import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
 import { mcpOAuthDoctorClientPath, mcpOAuthTokenStorePath } from '../../src/cli/mcp/auth';
 import { repoHarnessPackageVersion } from '../../src/cli/mcp/version';
-import { readRegisteredRepoHarnessRepos, repoHarnessRegisteredReposPath, setRepoHarnessAccessMode } from '../../src/effects/repo-registry';
+import { readRegisteredRepoHarnessRepos, setRepoHarnessAccessMode } from '../../src/effects/repo-registry';
 
 function freePort(): Promise<number> {
   return new Promise((resolve, reject) => {

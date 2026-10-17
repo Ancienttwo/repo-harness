@@ -676,41 +676,6 @@ function claimMismatch(record: LeaseOwnerRecord, claimId: string): string {
   return `claim id mismatch for task ${record.task_id}: lease is owned by ${record.claim_id}, not ${claimId}`;
 }
 
-export interface BindLeaseInput {
-  readonly claimId: string;
-  readonly executionWorktree: string;
-  readonly branch: string;
-  readonly unitRef: string;
-}
-
-/**
- * `reserving -> bound`, filling the execution worktree, branch, and unit ref.
- * Only the holder of the same fencing token may bind, and only from
- * `reserving`: a `bound` lease rebinding to a second worktree would silently
- * move ownership without any record of the transfer.
- */
-export function bindLeaseRecord(
-  record: LeaseOwnerRecord,
-  input: BindLeaseInput,
-): LeaseTransition {
-  if (record.claim_id !== input.claimId) {
-    return { ok: false, error: claimMismatch(record, input.claimId) };
-  }
-  if (record.state !== 'reserving') {
-    return { ok: false, error: `cannot bind a lease in state ${record.state}; expected reserving` };
-  }
-  return {
-    ok: true,
-    record: {
-      ...record,
-      state: 'bound',
-      execution_worktree: input.executionWorktree,
-      branch: input.branch,
-      unit_ref: input.unitRef,
-    },
-  };
-}
-
 export interface BeginCompletionInput {
   readonly claimId: string;
   /** The worktree the completion runs in, already resolved to its real path. */
@@ -845,72 +810,6 @@ export function releaseLeaseRecord(
   return { ok: true, record: { ...record, state: 'released' } };
 }
 
-export interface StealLeaseInput {
-  readonly expectedClaimId: string;
-  readonly reason: string;
-  readonly newClaimId: string;
-  readonly sessionId: string;
-  readonly sourceWorktree: string;
-}
-
-/**
- * Preemption with provenance: the new owner record names the claim it took the
- * lease from and why. This is what `start-task --force` could not do, and the
- * reason `--force` is retired by this work package.
- *
- * The stolen lease keeps its observed `task_revision` and `target_ref`.
- * Re-validating the row against canonical is the caller's job, exactly as it is
- * for `claim`.
- *
- * `completing` is refused outright (spec 6). Once the completion split has
- * passed its gate the publication may already have landed, and a steal there
- * would erase the window marker that says so -- the new owner would find a
- * pending-looking row whose work is in fact already published.
- */
-export function stealLeaseRecord(
-  record: LeaseOwnerRecord,
-  input: StealLeaseInput,
-): LeaseTransition {
-  if (record.claim_id !== input.expectedClaimId) {
-    return {
-      ok: false,
-      error: `expected claim id ${input.expectedClaimId} for task ${record.task_id}, but the lease is owned by ${record.claim_id}`,
-    };
-  }
-  if (record.state === 'reviewing') {
-    return {
-      ok: false,
-      error: `cannot steal a lease in state reviewing for task ${record.task_id}; use publication takeover`,
-    };
-  }
-  if (record.state === 'completing') {
-    return {
-      ok: false,
-      error: `cannot steal a lease in state completing for task ${record.task_id}; `
-        + 'its publication window is open, so resolve the finish first with sprint reconcile',
-    };
-  }
-  if (input.newClaimId === record.claim_id) {
-    return { ok: false, error: 'a steal must mint a new claim id' };
-  }
-  return {
-    ok: true,
-    record: {
-      ...buildLeaseOwnerRecord({
-        claimId: input.newClaimId,
-        taskId: record.task_id,
-        taskRevision: record.task_revision,
-        sprintPath: record.sprint_path,
-        targetRef: record.target_ref,
-        generation: record.generation + 1,
-        sessionId: input.sessionId,
-        sourceWorktree: input.sourceWorktree,
-        stolenFrom: { claim_id: record.claim_id, reason: input.reason },
-      }),
-    },
-  };
-}
-
 function schema2Record(
   record: LeaseOwnerRecord,
   state: Exclude<PersistedLeaseState, 'reviewing'>,
@@ -999,8 +898,8 @@ export interface TakeoverPublicationLeaseInput {
 }
 
 /**
- * A review takeover deliberately ends at reserving. `bindLeaseRecord` stays
- * the unique writer of fresh bound execution fields and appends resumed proof.
+ * A retained publication takeover ends at reserving. It does not create an
+ * execution binding.
  */
 export function takeoverPublicationLeaseRecord(
   record: LeaseOwnerRecord,

@@ -1,4 +1,5 @@
-import { buildLeaseOwnerRecord, bindLeaseRecord, projectCanonicalTasks } from '../src/core/state/coordination-identity';
+import { boundLeaseFixture } from './helpers/sprint-fixture';
+import { buildLeaseOwnerRecord, projectCanonicalTasks } from '../src/core/state/coordination-identity';
 import { createLeaseDirectory, writeLeaseOwnerDurably } from '../src/effects/state/coordination-lease-store';
 import { describe, test, expect, setDefaultTimeout } from "bun:test";
 
@@ -20,7 +21,7 @@ import {
 } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { spawn, spawnSync } from "child_process";
+import { spawnSync } from "child_process";
 import { backlogRows, sprintBacklogSchema } from '../src/core/state/sprint-backlog-rows';
 import { readCanonicalSprint } from '../src/effects/state/coordination-canonical-source';
 import { fixtureTaskId } from './helpers/sprint-fixture';
@@ -42,16 +43,6 @@ const CLI_WRAPPER = (() => {
 })();
 
 const BACKLOG_LOCK_RELATIVE = ".git/repo-harness/coordination/v1/locks/backlog.lock";
-// Coordination wait metrics land in the primary worktree (the parent of the git
-// common directory), so a plain fixture repo sees them at its own root.
-const WAITS_LEDGER_RELATIVE = ".ai/harness/runs/coordination/waits.jsonl";
-
-function readJsonl(path: string): Array<Record<string, unknown>> {
-  return readFileSync(path, "utf-8")
-    .split("\n")
-    .filter((line) => line.trim().length > 0)
-    .map((line) => JSON.parse(line) as Record<string, unknown>);
-}
 
 function tmpWorkspace(prefix: string): string {
   const cwd = realpathSync(mkdtempSync(join(tmpdir(), `${prefix}-`)));
@@ -165,10 +156,9 @@ function seedBoundRow(cwd: string, sprintPath: string, taskCell: string): void {
   const unitRef = `inline:${sprintPath}#${task.row.index}`;
   const record = buildLeaseOwnerRecord({ claimId, taskId: task.task_id, taskRevision: task.task_revision,
     sprintPath, targetRef: 'main', generation: 1, sessionId: 'fixture', sourceWorktree: cwd });
-  const bound = bindLeaseRecord(record, { claimId, executionWorktree: cwd, branch: 'main', unitRef });
-  if (!bound.ok) throw new Error(bound.error);
+  const bound = boundLeaseFixture(record, { executionWorktree: cwd, branch: 'main', unitRef });
   createLeaseDirectory(cwd, task.task_id);
-  writeLeaseOwnerDurably(cwd, task.task_id, bound.record);
+  writeLeaseOwnerDurably(cwd, task.task_id, bound);
   const dir = join(cwd, '.ai/harness/sprint/claims');
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, `${task.task_id}.claim`),

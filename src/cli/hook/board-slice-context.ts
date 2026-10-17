@@ -17,10 +17,7 @@
 import { projectBoardSlice } from '../../core/state/project-board-slice';
 import type { BoardSliceV1 } from '../../core/state/types';
 import { findClaimTokenForActivePlan } from '../../effects/state/coordination-claim-token';
-import {
-  collectSliceInputs,
-  resolveSliceOptions,
-} from '../../effects/state/collect-slice-inputs';
+import { collectSliceInputs, resolveSliceOptions } from '../../effects/state/collect-slice-inputs';
 import type { StateInputCollector } from '../../effects/loop/state-input-collector';
 
 /** Idempotence marker; presence in a target string is authoritative. */
@@ -76,7 +73,6 @@ function selfLines(slice: BoardSliceV1): string[] {
   if (flags.length > 0) lines.push(`  warnings: ${flags.join(' ')}`);
   for (const [verb, command] of [
     ['release', self.actions.release],
-    ['steal', self.actions.steal],
     ['reconcile', self.actions.reconcile],
   ] as const) {
     if (command !== null) lines.push(`  ${verb}: ${command}`);

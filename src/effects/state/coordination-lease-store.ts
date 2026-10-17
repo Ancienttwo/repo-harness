@@ -28,15 +28,7 @@
  * and `unknown` is never silently deleted -- `removeLease` refuses to touch it.
  */
 import { randomUUID } from 'crypto';
-import {
-  lstatSync,
-  mkdirSync,
-  readFileSync,
-  readdirSync,
-  renameSync,
-  rmdirSync,
-  unlinkSync,
-} from 'fs';
+import { lstatSync, mkdirSync, readFileSync, readdirSync, renameSync, rmdirSync, unlinkSync } from 'fs';
 import { dirname, join } from 'path';
 import {
   TASK_DIGEST_PATTERN,
@@ -124,7 +116,6 @@ export function withTaskLock<T>(cwd: string, taskId: string, run: () => T): T {
   return withExclusiveDirectoryLock(commonDir, taskLockRelativePath(taskId), run);
 }
 
-
 /** How a reclaimed backlog lock is reported; overridable for tests. */
 export type BacklogLockReclaimReporter = (lockPath: string) => void;
 
@@ -138,7 +129,7 @@ const defaultBacklogLockReclaimReporter: BacklogLockReclaimReporter = (lockPath)
  * worktrees.
  *
  * `sprint-backlog.sh`'s `acquire_backlog_lock` still takes this same directory
- * for `start-task`, and publishes the same owner file this primitive writes, so
+ * for retained completion, and publishes the same owner file this primitive writes, so
  * a live shell holder is protected by PID liveness and a killed one is
  * reclaimed through `reclaimStaleOwner`, which is on by default. Both sides
  * also reclaim a stale *empty* directory -- a creator that stopped between

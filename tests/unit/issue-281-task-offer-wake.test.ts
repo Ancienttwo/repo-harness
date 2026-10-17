@@ -1,3 +1,4 @@
+import { seedEngineerBinding } from '../helpers/engineer-state-fixture';
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'child_process';
 import { cpSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'fs';
@@ -33,9 +34,11 @@ import {
   type EngineerOffersV1,
   type WorkPackageDependencyObservationV1,
 } from '../../src/core/engineers/scheduling';
-import type { EngineerPrincipalV1 } from '../../src/core/engineers/principal-claim';
-import { HERDR_CLI_AGENT_OPERATIONS, executeHerdrCliAgentAction } from '../../src/effects/engineers/agent-runtime-adapters/herdr-cli-agent';
-import { bindEngineer, readEngineerBindingStatus } from '../../src/effects/engineers/binding-store';
+import {
+  HERDR_CLI_AGENT_OPERATIONS,
+  executeHerdrCliAgentAction,
+} from '../../src/effects/engineers/agent-runtime-adapters/herdr-cli-agent';
+import { readEngineerBindingStatus } from '../../src/effects/engineers/binding-store';
 import { collectEngineeringBoard } from '../../src/effects/engineers/engineering-overlay';
 import { loadEngineerProfile } from '../../src/effects/engineers/profile-store';
 import {
@@ -51,10 +54,7 @@ import {
   startAgentRuntimeEffect,
   subscribeToOfferWakes,
 } from '../../src/effects/engineers/agent-runtime-effect-store';
-import {
-  bumpRepoHarnessAuthorizationRevision,
-  repoHarnessRepoIdFor,
-} from '../../src/effects/repo-registry';
+import { bumpRepoHarnessAuthorizationRevision, repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
 import { canonicalAgentRuntimeCapabilityBytes } from '../../src/core/engineers/agent-runtime-effect';
 import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
 
@@ -88,7 +88,7 @@ function bind(repoRoot: string, adapter: AgentRuntimeAdapterKind, bindingId: str
   const profile = loadEngineerProfile(repoRoot, engineerId);
   const status = readEngineerBindingStatus(repoRoot, engineerId, profile.engineer_contract_revision);
   const previous = status.current;
-  return bindEngineer(repoRoot, {
+  return seedEngineerBinding(repoRoot, {
     engineer_id: engineerId,
     idempotency_key: `bind-${bindingId}`,
     provider: adapter,
@@ -268,22 +268,6 @@ function record(
     },
     env: fx.env,
   });
-}
-
-function principal(fx: Fixture): EngineerPrincipalV1 {
-  return {
-    protocol: 1,
-    kind: 'repo-harness-engineer-principal',
-    repository_id: fx.repositoryId,
-    engineer_id: engineerId,
-    binding_id: fx.bindingId,
-    binding_generation: fx.bindingGeneration,
-    engineer_contract_revision: digest,
-    carrier: 'mcp_oauth',
-    auth_subject: '22222222-2222-4222-8222-222222222222',
-    provider: 'unknown',
-    provider_thread_id: null,
-  };
 }
 
 afterEach(() => {
@@ -720,7 +704,6 @@ describe('issue #281 adapters invoke exactly one bounded controller step', () =>
     const wake = record(fx, offers(fx), '2026-09-03T10:04:00.000Z');
     return startAgentRuntimeEffect({ repo_root: fx.repoRoot, effect_id: wake.status!.intent.effect_id, started_at: '2026-09-03T10:04:10.000Z', env: fx.env }).action!;
   }
-
 
   test('the herdr adapter sends exactly one bounded wake control reference and never a command', () => {
     const fx = fixture('herdr-cli-agent');

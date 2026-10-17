@@ -2,7 +2,11 @@ import { describe, expect, test } from 'bun:test';
 import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { InvalidGrantError, InvalidScopeError, InvalidTokenError } from '@modelcontextprotocol/sdk/server/auth/errors.js';
+import {
+  InvalidGrantError,
+  InvalidScopeError,
+  InvalidTokenError,
+} from '@modelcontextprotocol/sdk/server/auth/errors.js';
 import { createMcpOAuthProvider, McpOAuthTokenStore } from '../../src/cli/mcp/oauth';
 
 function redirectRecorder() {
@@ -181,60 +185,57 @@ describe('mcp oauth provider', () => {
     }
   });
 
-  for (const profile of ['coding'] as const) {
-    test(`${profile} code exchange keeps consent revision when authority changes after validation`, async () => {
-      const root = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-oauth-revision-race-'));
-      try {
-        const revisionPath = join(root, 'revision');
-        writeFileSync(revisionPath, '7');
-        let exchanging = false;
-        let advanced = false;
-        const store = new McpOAuthTokenStore(join(root, 'tokens.json'));
-        const provider = createMcpOAuthProvider(store, {
-          profile,
-          authorizationRevision: () => {
-            const revision = Number(readFileSync(revisionPath, 'utf8'));
-            // A registry writer can commit after the comparison read returns.
-            if (exchanging && !advanced) {
-              advanced = true;
-              writeFileSync(revisionPath, '8');
-            }
-            return revision;
-          },
-        });
-        const client = store.registerClient({
-          redirect_uris: ['http://localhost/callback'],
-          token_endpoint_auth_method: 'none',
-          grant_types: ['authorization_code', 'refresh_token'],
-          response_types: ['code'],
-        });
-        const authorize = async () => {
-          const redirect = redirectRecorder();
-          await provider.authorize(client, {
-            scopes: ['repo-harness', `repo-harness.${profile}`, 'offline_access'],
-            redirectUri: client.redirect_uris[0]!,
-            codeChallenge: 'revision-race',
-          }, redirect.response as never);
-          return new URL(redirect.state.url).searchParams.get('code')!;
-        };
-        const code = await authorize();
-        exchanging = true;
-        const tokens = await provider.exchangeAuthorizationCode(client, code, 'verifier', client.redirect_uris[0]);
-        expect(advanced).toBe(true);
-        expect(readFileSync(revisionPath, 'utf8')).toBe('8');
-        expect(store.getAccessToken(tokens.access_token)?.authorizationRevision).toBe(7);
-        await expect(provider.verifyAccessToken(tokens.access_token)).rejects.toBeInstanceOf(InvalidTokenError);
-        await expect(provider.exchangeRefreshToken(client, tokens.refresh_token!)).rejects.toBeInstanceOf(InvalidGrantError);
-        await expect(provider.exchangeAuthorizationCode(client, code, 'verifier', client.redirect_uris[0])).rejects.toBeInstanceOf(InvalidGrantError);
-        const freshCode = await authorize();
-        const fresh = await provider.exchangeAuthorizationCode(client, freshCode, 'verifier', client.redirect_uris[0]);
-        expect(await provider.verifyAccessToken(fresh.access_token)).toMatchObject({ authorizationRevision: 8, profile });
-      } finally {
-        rmSync(root, { recursive: true, force: true });
-      }
-    });
-  }
-
+  test('coding code exchange keeps consent revision when authority changes after validation', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-oauth-revision-race-'));
+    try {
+      const revisionPath = join(root, 'revision');
+      writeFileSync(revisionPath, '7');
+      let exchanging = false;
+      let advanced = false;
+      const store = new McpOAuthTokenStore(join(root, 'tokens.json'));
+      const provider = createMcpOAuthProvider(store, {
+        profile: 'coding',
+        authorizationRevision: () => {
+          const revision = Number(readFileSync(revisionPath, 'utf8'));
+          // A registry writer can commit after the comparison read returns.
+          if (exchanging && !advanced) {
+            advanced = true;
+            writeFileSync(revisionPath, '8');
+          }
+          return revision;
+        },
+      });
+      const client = store.registerClient({
+        redirect_uris: ['http://localhost/callback'],
+        token_endpoint_auth_method: 'none',
+        grant_types: ['authorization_code', 'refresh_token'],
+        response_types: ['code'],
+      });
+      const authorize = async () => {
+        const redirect = redirectRecorder();
+        await provider.authorize(client, {
+          scopes: ['repo-harness', 'repo-harness.coding', 'offline_access'],
+          redirectUri: client.redirect_uris[0]!,
+          codeChallenge: 'revision-race',
+        }, redirect.response as never);
+        return new URL(redirect.state.url).searchParams.get('code')!;
+      };
+      const code = await authorize();
+      exchanging = true;
+      const tokens = await provider.exchangeAuthorizationCode(client, code, 'verifier', client.redirect_uris[0]);
+      expect(advanced).toBe(true);
+      expect(readFileSync(revisionPath, 'utf8')).toBe('8');
+      expect(store.getAccessToken(tokens.access_token)?.authorizationRevision).toBe(7);
+      await expect(provider.verifyAccessToken(tokens.access_token)).rejects.toBeInstanceOf(InvalidTokenError);
+      await expect(provider.exchangeRefreshToken(client, tokens.refresh_token!)).rejects.toBeInstanceOf(InvalidGrantError);
+      await expect(provider.exchangeAuthorizationCode(client, code, 'verifier', client.redirect_uris[0])).rejects.toBeInstanceOf(InvalidGrantError);
+      const freshCode = await authorize();
+      const fresh = await provider.exchangeAuthorizationCode(client, freshCode, 'verifier', client.redirect_uris[0]);
+      expect(await provider.verifyAccessToken(fresh.access_token)).toMatchObject({ authorizationRevision: 8, profile: 'coding' });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 
   test('pending authorization codes are invalidated by an authorization revision change', async () => {
     const root = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-oauth-pending-rev-'));
@@ -296,7 +297,6 @@ describe('mcp oauth provider', () => {
       rmSync(root, { recursive: true, force: true });
     }
   });
-
 
   test('planner codes are not gated by the authorization revision', async () => {
     const root = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-oauth-pending-planner-'));

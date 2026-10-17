@@ -11,8 +11,6 @@ import { createHash } from 'crypto';
 
 export const TASK_OFFER_PROTOCOL = 1 as const;
 export const TASK_OFFER_KIND = 'repo-harness-task-offer' as const;
-export const FLEET_OFFERS_PROTOCOL = 1 as const;
-export const FLEET_OFFERS_KIND = 'repo-harness-fleet-offers' as const;
 
 export type TaskOfferExecutionReadiness =
   | 'execution_ready'
@@ -102,15 +100,6 @@ export interface TaskOfferV1 {
     readonly oid: string;
   } | null;
   readonly plan: TaskOfferPlanProofV1 | null;
-}
-
-export interface FleetOffersV1 {
-  readonly protocol: typeof FLEET_OFFERS_PROTOCOL;
-  readonly kind: typeof FLEET_OFFERS_KIND;
-  readonly authorization_revision: number;
-  readonly snapshot_consistency: TaskOfferSnapshotConsistency;
-  readonly offer_revision: string;
-  readonly offers: readonly TaskOfferV1[];
 }
 
 const BLOCKER_ATTENTION: Readonly<Record<TaskOfferBlockerCode, TaskOfferAttentionOwner>> = {

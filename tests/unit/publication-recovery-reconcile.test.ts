@@ -1,13 +1,22 @@
+import { boundLeaseFixture } from '../helpers/sprint-fixture';
 import { leaseOwnerPath } from '../helpers/sprint-fixture';
 import { describe, expect, test } from 'bun:test';
 import { execFileSync, spawnSync } from 'child_process';
-import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import {
+  chmodSync,
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
 import {
   buildPublicationReceipt,
-  publicationReceiptDigest,
   publicationSha256,
   replacePublicationMarker,
 } from '../../src/core/publication/publication-receipt';
@@ -18,15 +27,24 @@ import {
 } from '../../src/core/publication/publication-lifecycle';
 import {
   beginLeaseCompletionRecord,
-  bindLeaseRecord,
   buildLeaseOwnerRecord,
   deriveTaskRevision,
   enterReviewingLeaseRecord,
 } from '../../src/core/state/coordination-identity';
-import { readPublicationIntegrationObservations, reconcilePublication } from '../../src/effects/publication/publication-lifecycle';
-import { observeProviderPullRequestIntegration, providerIntegrationFromJson, writePublicationReceiptCache } from '../../src/effects/publication/publication-receipt';
-import { resolveRepoIdentity } from '../../src/effects/state/coordination-canonical-source';
-import { createLeaseDirectory, readLease, writeLeaseOwnerDurably } from '../../src/effects/state/coordination-lease-store';
+import {
+  readPublicationIntegrationObservations,
+  reconcilePublication,
+} from '../../src/effects/publication/publication-lifecycle';
+import {
+  observeProviderPullRequestIntegration,
+  providerIntegrationFromJson,
+  writePublicationReceiptCache,
+} from '../../src/effects/publication/publication-receipt';
+import {
+  createLeaseDirectory,
+  readLease,
+  writeLeaseOwnerDurably,
+} from '../../src/effects/state/coordination-lease-store';
 import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
 import { publicationPointerFromReceipt } from '../../src/core/publication/publication-lifecycle';
 import { fixtureTaskId } from '../helpers/sprint-fixture';
@@ -85,7 +103,6 @@ function installFixture(options: FixtureOptions = {}): Fixture {
   git(root, 'remote', 'add', 'origin', remote);
   git(root, 'push', 'origin', 'main');
 
-  const repoIdentity = resolveRepoIdentity(root);
   const taskId = fixtureTaskId(TASK);
   const revision = deriveTaskRevision({ taskCell: TASK, taskId, modeCell: 'contract', acceptanceCell: 'reconcile tests' });
   git(root, 'switch', '-c', 'codex/reconcile');
@@ -107,9 +124,8 @@ function installFixture(options: FixtureOptions = {}): Fixture {
     claimId: CLAIM, taskId, taskRevision: revision, sprintPath: SPRINT_PATH, targetRef: 'main', generation: 1,
     sessionId: 'session-reconcile', sourceWorktree: root,
   });
-  const bound = bindLeaseRecord(claimed, { claimId: CLAIM, executionWorktree: root, branch: 'codex/reconcile', unitRef: 'plans/plan-reconcile.md' });
-  if (!bound.ok) throw new Error(bound.error);
-  const completing = beginLeaseCompletionRecord(bound.record, { claimId: CLAIM, executionWorktree: root, finishTransactionKey: 'finish-reconcile' });
+  const bound = boundLeaseFixture(claimed, { executionWorktree: root, branch: 'codex/reconcile', unitRef: 'plans/plan-reconcile.md' });
+  const completing = beginLeaseCompletionRecord(bound, { claimId: CLAIM, executionWorktree: root, finishTransactionKey: 'finish-reconcile' });
   if (!completing.ok) throw new Error(completing.error);
   const reviewing = enterReviewingLeaseRecord(completing.record, { claimId: CLAIM, publication: pointer });
   if (!reviewing.ok) throw new Error(reviewing.error);
