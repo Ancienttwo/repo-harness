@@ -10,6 +10,9 @@ import { resolveOptionalRuntimeDeps, runCli, runTransactionalRuntimeRefresh } fr
 import { copyPackageRuntimeFixture, writeShellExecutableFixture } from '../helpers/repo-fixture';
 import { ARCHITECTURE_DOCS_RENDERER_VERSION } from 'archctx-contracts';
 import { dependencies, devDependencies } from '../../package.json';
+import { recordInstallOwnership } from '../helpers/install-ownership';
+import wazaRules from '../../assets/waza-shared-rules.json';
+import { managedInstallSurfaceIsCurrent, readInstalledProfile } from '../../src/cli/installer/install-profile';
 
 const ROOT = join(import.meta.dir, '..', '..');
 // The fake managed install follows the repository pins, so an upgrade needs no fixture edit.
@@ -796,10 +799,21 @@ exit 0
         writeFileSync(join(home, '.agents', 'rules', rule), '# stale rule\n');
         writeFileSync(join(home, '.codex', 'rules', rule), '# stale rule\n');
       }
+      recordInstallOwnership(['anti-patterns.md', 'chinese.md', 'durable-context.md', 'english.md']
+        .map((rule) => join(home, '.agents', 'rules', rule)), { HOME: home });
       writeFakeCodegraph(fakeBin, codegraphLog);
       writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.4.0; fi\nexit 0\n`);
       writeFakeSkillsCli(fakeBin);
-      writeExecutable(join(fakeBin, 'bunx'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunxLog}"\nif [[ " $* " == *" tw93/Waza "* ]]; then for rule in anti-patterns.md chinese.md durable-context.md english.md; do printf '# refreshed rule\\n' > "$HOME/.agents/rules/$rule"; done; fi\nexit 0\n`);
+      writeExecutable(join(fakeBin, 'bunx'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunxLog}"\nexit 0\n`);
+      writeExecutable(join(fakeBin, 'curl'), `#!/bin/bash
+set -euo pipefail
+output=''
+while [[ $# -gt 0 ]]; do
+  if [[ "$1" == '--output' ]]; then output="$2"; shift; fi
+  shift
+done
+if [[ -n "$output" ]]; then printf '# refreshed rule\\n' > "$output"; else printf '# refreshed rule\\n'; fi
+`);
 
       const result = runGlobalRuntimeSetup({
         sourceRoot: source,
@@ -828,6 +842,7 @@ exit 0
       expect(readFileSync(bunLog, 'utf-8')).toContain(`add -g @colbymchenry/codegraph@${CODEGRAPH_PIN}`);
       expect(result.steps.find((step) => step.step === 'ensure CodeGraph CLI')?.detail).toBe(`updated=${CODEGRAPH_PIN}`);
       expect(readFileSync(join(home, '.codex', 'rules', 'chinese.md'), 'utf-8')).toBe('# refreshed rule\n');
+      expect(readFileSync(join(home, '.agents', 'rules', 'chinese.md'), 'utf-8')).toBe('# refreshed rule\n');
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
@@ -2397,6 +2412,122 @@ test('daemon maintenance preserves the verified candidate and hoisted dependenci
     }
     expect(verifyInstalledManagedRuntime(options).status).toBe('failed');
   } finally { rmSync(tmp, { recursive: true, force: true }); }
+});
+
+describe('Waza shared rule refresh', () => {
+  function withRules(body: (fixture: {
+    home: string; upstream: string; fakeBin: string; env: NodeJS.ProcessEnv;
+    paths: string[]; run: (refresh?: boolean) => ReturnType<typeof runGlobalRuntimeSetup>;
+  }) => void): void {
+    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-waza-refresh-'));
+    const home = join(tmp, 'home');
+    const upstream = join(tmp, 'upstream');
+    const fakeBin = join(tmp, 'bin');
+    const paths: string[] = [];
+    try {
+      mkdirSync(fakeBin, { recursive: true });
+      mkdirSync(upstream, { recursive: true });
+      for (const root of ['.agents', '.claude', '.codex']) {
+        mkdirSync(join(home, root, 'rules'), { recursive: true });
+        for (const rule of wazaRules.files) {
+          const path = join(home, root, 'rules', rule);
+          writeFileSync(path, `# old ${rule}\n`);
+          paths.push(path);
+        }
+      }
+      for (const rule of wazaRules.files) writeFileSync(join(upstream, rule), `# new ${rule}\npassword=example\n`);
+      for (const skill of ['think', 'hunt', 'check', 'health', 'mermaid']) {
+        mkdirSync(join(home, '.agents', 'skills', skill), { recursive: true });
+        writeFileSync(join(home, '.agents', 'skills', skill, 'SKILL.md'), `# ${skill}\n`);
+      }
+      recordInstallOwnership(paths, { HOME: home });
+      writeExecutable(join(fakeBin, 'bun'), '#!/bin/bash\nif [[ "$1" == "--version" ]]; then echo 1.4.0; fi\n');
+      // Skills CLI does not write shared rules.
+      writeExecutable(join(fakeBin, 'bunx'), '#!/bin/bash\nexit 0\n');
+      writeFakeSkillsCli(fakeBin);
+      writeExecutable(join(fakeBin, 'curl'), `#!/bin/bash
+set -euo pipefail
+output=''
+url=''
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --output) output="$2"; shift ;;
+    https://*) url="$1" ;;
+  esac
+  shift
+done
+printf '%s\\n' "$url" >> "$HOME/fetch.log"
+case "$url" in
+  ${wazaRules.rawBaseUrl}/rules/*) source="$WAZA_FIXTURE_UPSTREAM/\${url##*/}" ;;
+  ${wazaRules.rawBaseUrl}/skills/*/SKILL.md) skill="\${url%/SKILL.md}"; source="$HOME/.agents/skills/\${skill##*/}/SKILL.md" ;;
+  *) echo 'unexpected URL' >&2; exit 2 ;;
+esac
+if [[ -f "$WAZA_FIXTURE_UPSTREAM/fail-\${url##*/}" ]]; then echo 'fixture HTTP 503' >&2; exit 22; fi
+if [[ -n "$output" ]]; then cat "$source" > "$output"; else cat "$source"; fi
+`);
+      const env = { ...sanitizedChildEnv(), HOME: home, WAZA_FIXTURE_UPSTREAM: upstream,
+        PATH: `${fakeBin}:${process.env.PATH ?? ''}`, REPO_HARNESS_BUN_EXECUTABLE: join(fakeBin, 'bun') };
+      body({ home, upstream, fakeBin, env, paths, run: (refresh = true) => runGlobalRuntimeSetup({
+        sourceRoot: ROOT, cwd: tmp, env, target: 'both', profile: 'minimal',
+        installCli: false, syncSkill: false, hostAdapters: false, codegraph: false,
+        externalSkills: true, updateMode: refresh,
+      }) });
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  }
+
+  test('refreshes both hosts and keeps ownership current for the next upstream revision', () => {
+    withRules(({ home, upstream, env, paths, run }) => {
+      expect(run().exitCode).toBe(0);
+      for (const path of paths) expect(readFileSync(path, 'utf-8')).toBe(`# new ${path.split('/').at(-1)}\npassword=example\n`);
+      expect(readFileSync(join(home, 'fetch.log'), 'utf-8').trim().split('\n'))
+        .toEqual(wazaRules.files.map((rule) => `${wazaRules.rawBaseUrl}/rules/${rule}`));
+      for (const receipt of readInstalledProfile(env)!.ownership_manifest) expect(managedInstallSurfaceIsCurrent(receipt)).toBe(true);
+      writeFileSync(join(upstream, 'english.md'), '# next English\n');
+      expect(run().exitCode).toBe(0);
+      expect(readFileSync(join(home, '.codex', 'rules', 'english.md'), 'utf-8')).toBe('# next English\n');
+      const probe = spawnSync('bash', [join(ROOT, 'scripts/check-agent-tooling.sh'), '--json', '--check-updates', '--host', 'both'], {
+        cwd: ROOT, env, encoding: 'utf-8',
+      });
+      expect(probe.status).toBe(0);
+      const waza = JSON.parse(probe.stdout).tools.waza;
+      expect(waza.update_status).toBe('up-to-date');
+      expect(waza.hosts.claude.shared_rules_stale_status).toBe('up-to-date');
+      expect(waza.hosts.codex.shared_rules_stale_status).toBe('up-to-date');
+    });
+  });
+
+  for (const failure of ['fetch', 'empty', 'staging edit', 'unowned staging', 'host edit'] as const) {
+    test(`${failure} fails before any staging or host rule changes`, () => {
+      withRules(({ home, upstream, paths, run }) => {
+        if (failure === 'fetch') writeFileSync(join(upstream, 'fail-english.md'), 'fail');
+        if (failure === 'empty') writeFileSync(join(upstream, 'english.md'), '');
+        if (failure === 'staging edit') writeFileSync(join(home, '.agents', 'rules', 'english.md'), '# local staging edit\n');
+        if (failure === 'unowned staging') rmSync(join(home, '.repo-harness', 'install-state.json'));
+        if (failure === 'host edit') writeFileSync(join(home, '.codex', 'rules', 'english.md'), '# local host edit\n');
+        const before = paths.map((path) => readFileSync(path, 'utf-8'));
+        const result = run();
+        expect(result.exitCode).toBe(1);
+        expect(result.steps.find(({ step }) => step === 'sync Waza shared rules')).toMatchObject({
+          status: 'failed', detail: expect.stringContaining(failure === 'fetch' ? 'fixture HTTP 503'
+            : failure === 'empty' ? 'empty response'
+              : failure === 'host edit' ? 'refusing to overwrite unowned rule'
+                : 'refusing to refresh unowned or drifted staging rule'),
+        });
+        expect(paths.map((path) => readFileSync(path, 'utf-8'))).toEqual(before);
+      });
+    });
+  }
+
+  test('non-update setup does not fetch or replace existing staging content', () => {
+    withRules(({ home, paths, run }) => {
+      const before = paths.map((path) => readFileSync(path, 'utf-8'));
+      expect(run(false).exitCode).toBe(0);
+      expect(existsSync(join(home, 'fetch.log'))).toBe(false);
+      expect(paths.map((path) => readFileSync(path, 'utf-8'))).toEqual(before);
+    });
+  });
 });
 
 describe('Codex Waza projection', () => {

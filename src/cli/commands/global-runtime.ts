@@ -5,6 +5,7 @@ import { homedir, tmpdir, userInfo } from "os";
 import { delimiter, dirname, join, relative, resolve, sep } from "path";
 import { fileURLToPath } from "url";
 import { ARCHCONTEXT_NODE_RANGE, productVersionManifest } from "archctx-contracts";
+import { syncWazaSharedRules } from "../installer/waza-rules";
 import { configureBrainRoot, defaultBrainRootChoice, expandHomePath } from "./brain-root";
 import {
   syncCrossReviewSkills,
@@ -93,7 +94,6 @@ export const MIN_BUN_VERSION = "1.4.0";
 const CODEGRAPH_VERSION = productVersionManifest().runtime.codeGraph.requiredVersion;
 const CODEGRAPH_PACKAGE = `@colbymchenry/codegraph@${CODEGRAPH_VERSION}`;
 const ARCHCTX_PACKAGES = ["archctx", "archctx-contracts"] as const;
-const WAZA_SHARED_RULES = ["anti-patterns.md", "chinese.md", "durable-context.md", "english.md"] as const;
 
 export function bunVersionIsSupported(version: string | undefined): boolean {
   if (!version) return false;
@@ -332,10 +332,6 @@ function targetFromHostIds(hosts: readonly ("codex" | "claude")[]): InstallTarge
 
 function homeDir(env?: NodeJS.ProcessEnv): string {
   return env?.HOME ?? process.env.HOME ?? homedir();
-}
-
-function hostRulesDir(host: "codex" | "claude", env?: NodeJS.ProcessEnv): string {
-  return join(homeDir(env), host === "codex" ? ".codex" : ".claude", "rules");
 }
 
 function isNpxCacheSource(sourceRoot: string): boolean {
@@ -1253,77 +1249,6 @@ function invalidProjectionRoot(root: string, expected: string): string | null {
     : `refusing non-directory host skill root ${root}`;
 }
 
-function captureWazaSharedRules(env?: NodeJS.ProcessEnv): ReadonlyMap<string, string> {
-  const sourceDir = join(homeDir(env), ".agents", "rules");
-  const captured = new Map<string, string>();
-  for (const rule of WAZA_SHARED_RULES) {
-    const source = join(sourceDir, rule);
-    if (existsSync(source)) captured.set(rule, readFileSync(source, "utf-8"));
-  }
-  return captured;
-}
-
-function syncWazaSharedRules(
-  target: InstallTargetSpec,
-  env?: NodeJS.ProcessEnv,
-  previousRules: ReadonlyMap<string, string> = new Map(),
-): GlobalRuntimeStep {
-  const sourceDir = join(homeDir(env), ".agents", "rules");
-  if (!existsSync(sourceDir)) {
-    return {
-      step: "sync Waza shared rules",
-      status: "skipped",
-      detail: `staging rules not found: ${sourceDir}`,
-    };
-  }
-
-  const synced: string[] = [];
-  const missing: string[] = [];
-  for (const host of hostIds(target)) {
-    const destDir = hostRulesDir(host, env);
-    for (const rule of WAZA_SHARED_RULES) {
-      const source = join(sourceDir, rule);
-      if (!existsSync(source)) {
-        missing.push(rule);
-        continue;
-      }
-      const destination = join(destDir, rule);
-      if (!existsSync(destination)) continue;
-      const destinationValue = readFileSync(destination, "utf-8");
-      const sourceValue = readFileSync(source, "utf-8");
-      const previousValue = previousRules.get(rule);
-      if (destinationValue !== sourceValue && destinationValue !== previousValue) {
-        return {
-          step: 'sync Waza shared rules',
-          status: 'failed',
-          detail: `refusing to overwrite unowned rule ${destination}`,
-        };
-      }
-    }
-  }
-  if (missing.length > 0) {
-    return { step: "sync Waza shared rules", status: "failed", detail: `missing ${[...new Set(missing)].join(", ")}` };
-  }
-
-  for (const host of hostIds(target)) {
-    const destDir = hostRulesDir(host, env);
-    mkdirSync(destDir, { recursive: true });
-    for (const rule of WAZA_SHARED_RULES) {
-      const source = join(sourceDir, rule);
-      if (!existsSync(source)) continue;
-      const destination = join(destDir, rule);
-      copyFileSync(source, destination);
-      synced.push(`${host}:${rule}`);
-    }
-  }
-
-  return {
-    step: "sync Waza shared rules",
-    status: "ok",
-    detail: `synced ${synced.length} files`,
-  };
-}
-
 function installMermaidSkill(sourceRoot: string, target: InstallTargetSpec, env?: NodeJS.ProcessEnv, refresh = false): GlobalRuntimeStep {
   const mermaidSkills = externalSkillGroupsFromCatalog(loadSkillSurfaceCatalog(sourceRoot)).get("BfdCampos/dotfiles") ?? [];
   const installed = join(homeDir(env), '.agents', 'skills', 'mermaid', 'SKILL.md');
@@ -1565,12 +1490,11 @@ export function runGlobalRuntimeSetup(
 
   const refreshExternalSkills = opts.externalSkills === true;
   if (refreshExternalSkills) {
-    const previousWazaRules = captureWazaSharedRules(env);
     const waza = installWazaSkills(sourceRoot, target, env, updateMode);
     steps.push(waza);
     if (waza.status === "failed") return finalizeRuntimeResult(steps);
     steps.push(waza.status === "ok"
-      ? syncWazaSharedRules(target, env, previousWazaRules)
+      ? { step: "sync Waza shared rules", ...syncWazaSharedRules(homeDir(env), hostIds(target), env, updateMode) }
       : { step: "sync Waza shared rules", status: "skipped", detail: "Waza install failed" });
     if (steps.at(-1)?.status === "failed") return finalizeRuntimeResult(steps);
     const mermaid = installMermaidSkill(sourceRoot, target, env, updateMode);

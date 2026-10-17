@@ -1,0 +1,4 @@
+{
+  "rawBaseUrl": "https://raw.githubusercontent.com/tw93/Waza/main",
+  "files": ["anti-patterns.md", "chinese.md", "durable-context.md", "english.md"]
+}

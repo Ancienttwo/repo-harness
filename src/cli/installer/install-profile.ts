@@ -1,3 +1,4 @@
+import wazaRules from "../../../assets/waza-shared-rules.json";
 import { bunGlobalPackageRoot, expectedSkillProjections, skillLinkMatches } from './skill-projection';
 import { configurationReceiptPath } from './configuration-ownership';
 import { createHash, randomUUID } from 'crypto';
@@ -731,7 +732,7 @@ export function installProfileHostMutationPaths(env: NodeJS.ProcessEnv = process
   for (const skill of externalSkills) {
     paths.push(join(home, '.agents', 'skills', skill));
   }
-  for (const rule of ['anti-patterns.md', 'chinese.md', 'durable-context.md', 'english.md']) {
+  for (const rule of wazaRules.files) {
     paths.push(
       join(home, '.agents', 'rules', rule),
       join(home, '.codex', 'rules', rule),
@@ -867,7 +868,7 @@ function componentsForTransactionPath(path: string): readonly InstallComponent[]
   if (AGENT_FLEET_FILE.test(normalized)) {
     return name.startsWith('gatekeeper.') ? ['agent-fleet', 'verifier'] : ['agent-fleet'];
   }
-  if (/\/(?:\.agents|\.codex|\.claude)\/rules\/(?:anti-patterns|chinese|durable-context|english)\.md$/.test(normalized)) {
+  if (wazaRules.files.includes(name) && /\/(?:\.agents|\.codex|\.claude)\/rules\/[^/]+$/.test(normalized)) {
     return ['planning-integrations'];
   }
   if (normalized.endsWith('/bin/codegraph')) return ['codegraph-conditional'];

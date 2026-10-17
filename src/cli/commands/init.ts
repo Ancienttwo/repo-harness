@@ -29,6 +29,7 @@ import {
 } from "fs";
 import { dirname, join, resolve } from "path";
 import { fileURLToPath } from "url";
+import { syncWazaSharedRules } from "../installer/waza-rules";
 import { runInstall, type InstallTargetSpec } from "./install";
 import { configureRequiredHerdrSkill } from "./herdr-skill";
 import { runBrain } from "./brain";
@@ -65,7 +66,6 @@ import type { DocumentationLanguage } from "../../core/adoption/standard-plan";
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(SCRIPT_DIR, "..", "..", "..");
-const WAZA_SHARED_RULES = ["anti-patterns.md", "chinese.md", "durable-context.md", "english.md"];
 const GLOBAL_RULES_BEGIN = "<!-- BEGIN: repo-harness global-working-rules -->";
 const GLOBAL_RULES_END = "<!-- END: repo-harness global-working-rules -->";
 const GLOBAL_RULES_SELF_NOTE =
@@ -539,44 +539,6 @@ export function syncCrossReviewSkills(
   return steps;
 }
 
-function syncWazaSharedRules(target: InstallTargetSpec, env?: NodeJS.ProcessEnv): InitStep {
-  const home = homeDir(env);
-  if (!home) {
-    return { step: "external skills Waza shared rules", status: "failed", detail: "HOME is required" };
-  }
-
-  const sourceDir = join(home, ".agents", "rules");
-  if (!existsSync(sourceDir)) {
-    return {
-      step: "external skills Waza shared rules",
-      status: "skipped",
-      detail: `staging rules not found: ${sourceDir}`,
-    };
-  }
-
-  const synced: string[] = [];
-  const missing: string[] = [];
-  for (const host of hostIds(target)) {
-    const destDir = join(home, host === "claude" ? ".claude" : ".codex", "rules");
-    mkdirSync(destDir, { recursive: true });
-    for (const rule of WAZA_SHARED_RULES) {
-      const source = join(sourceDir, rule);
-      if (!existsSync(source)) {
-        missing.push(rule);
-        continue;
-      }
-      cpSync(source, join(destDir, rule));
-      synced.push(`${host}:${rule}`);
-    }
-  }
-
-  return {
-    step: "external skills Waza shared rules",
-    status: missing.length > 0 ? "failed" : "ok",
-    detail: missing.length > 0 ? `missing ${missing.join(", ")}` : `synced ${synced.length} files`,
-  };
-}
-
 function installExternalSkills(sourceRoot: string, target: InstallTargetSpec, env?: NodeJS.ProcessEnv): InitStep[] {
   const steps: InitStep[] = [];
   const catalog = loadSkillSurfaceCatalog(sourceRoot);
@@ -610,7 +572,7 @@ function installExternalSkills(sourceRoot: string, target: InstallTargetSpec, en
     steps.push(withStepName(installed, stepName, `target=${groupTarget}`));
     if (provider === "tw93/Waza") {
       steps.push(installed.status === "ok"
-        ? syncWazaSharedRules(groupTarget, env)
+        ? { step: "external skills Waza shared rules", ...syncWazaSharedRules(homeDir(env), hostIds(groupTarget), env ?? process.env) }
         : { step: "external skills Waza shared rules", status: "skipped", detail: "Waza install failed" });
     }
   }

@@ -102,9 +102,7 @@ const REPO_ROOT = process.cwd();
 const SELECTED_HOSTS = hostMode === "both" ? ["claude", "codex"] : [hostMode];
 const WAZA_SOURCE_REPO = "tw93/Waza";
 const WAZA_SOURCE_URL = "https://github.com/tw93/Waza.git";
-const WAZA_RAW_BASE_URL = "https://raw.githubusercontent.com/tw93/Waza/main";
 const WAZA_MANAGED_SKILLS = ["think", "hunt", "check", "health"];
-const WAZA_SHARED_RULES = ["anti-patterns.md", "chinese.md", "durable-context.md", "english.md"];
 // Skills CLI reporting is opt-in, like `--check-updates`. PATH resolution is
 // cheap and always runs, so an absent binary is reported as `missing`; the
 // `ls -g --json` call itself measured 36.8s against a real global skill set
@@ -120,6 +118,7 @@ const CODEX_AUTOMATION_SKILLS = ["health", "check", "mermaid"];
 const OBSIDIAN_RUNTIME_CONSUMER = "obsidian-memory";
 const AGENT_FLEET_SOURCE_DIR = process.env.REPO_HARNESS_AGENT_FLEET_SOURCE_DIR;
 const PACKAGE_ROOT = path.dirname(path.dirname(AGENT_FLEET_SOURCE_DIR));
+const { rawBaseUrl: WAZA_RAW_BASE_URL, files: WAZA_SHARED_RULES } = require(path.join(PACKAGE_ROOT, "assets", "waza-shared-rules.json"));
 const SKILL_SURFACE_MANIFEST_PATH = path.join(PACKAGE_ROOT, "assets", "skill-commands", "manifest.json");
 const AGENT_FLEET_SOURCE_LABEL = "package:agents/fleet";
 const AGENT_FLEET_DEFAULT_MANAGED = ["explorer", "deep-reasoner", "fast-worker", "deep-worker", "gatekeeper", "root-cause-prover", "harness-evaluator"];
