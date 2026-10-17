@@ -12,7 +12,6 @@ source:
     - "src/cli/tools/codegraph.ts"
     - "src/cli/mcp/codegraph-adapter.ts"
     - "tests/cli/codegraph-resolver.test.ts"
-    - "docs/architecture/modules/verification/codegraph-readiness.md"
     - "src/cli/commands/tools.ts"
   entrypoints:
     - id: entrypoint.codegraph-readiness.primary
