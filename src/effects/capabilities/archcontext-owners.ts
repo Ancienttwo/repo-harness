@@ -4,14 +4,42 @@ import { join, resolve } from 'node:path';
 import { ARCHCTX_REQUIRED_VERSION } from '../../core/architecture/projection';
 import {
   capabilityPathResolutionFromArchcontextOwners,
+  capabilityIdentityFromNodeId,
+  capabilityRegistryFromNativeContext,
   normalizeCapabilityPath,
-  type ArchcontextCapabilityOwners,
+  type ArchcontextCapabilityResolution,
+  type Capability,
+  type CapabilityIdentity,
   type ArchcontextPathOwner,
   type CapabilityPathResolution,
   type CapabilityRegistryDiagnostic,
 } from '../../core/capabilities/registry';
-import { runPackageLocalArchctxJson, type ArchctxProviderOptions } from '../architecture/archctx-provider';
+import { ArchctxClientError, readArchitectureNativeContext, runPackageLocalArchctxJson, type ArchctxProviderOptions } from '../architecture/archctx-provider';
 import { currentReadonlyObservation } from '../state/readonly-observation';
+
+export interface ArchcontextOwnerLookup<C> {
+  get(nodeId: string): C | undefined;
+}
+
+export const ARCHCONTEXT_IDENTITY_OWNERS: ArchcontextOwnerLookup<CapabilityIdentity> = {
+  get: (nodeId) => capabilityIdentityFromNodeId(nodeId) ?? undefined,
+};
+
+/** Cold readers get the complete model from one worktree export. */
+export function readArchcontextCapabilityAuthority(
+  repoRoot: string,
+  options: ArchctxProviderOptions = {},
+): ArchcontextCapabilityResolution {
+  try {
+    return capabilityRegistryFromNativeContext(readArchitectureNativeContext(repoRoot, { kind: 'worktree' }, options), { repoRoot });
+  } catch (error) {
+    if (!(error instanceof ArchctxClientError)) throw error;
+    return {
+      status: 'invalid', registry: null, owners: null,
+      diagnostics: [{ code: 'ARCHCONTEXT_MODEL_REJECTED', path: '.archcontext/model/nodes', message: `${error.code}: ${error.message}` }],
+    };
+  }
+}
 
 // Stays well below the 30 s hook budget, so a stalled archctx becomes a recorded blocker.
 const RESOLVE_TIMEOUT_MS = 10_000;
@@ -84,12 +112,12 @@ export function archcontextResolveQueries(repoRoot: string, inputPaths: readonly
  * error envelope is an `invalid` result with `ARCHCONTEXT_MODEL_REJECTED`. Inside a read-only
  * observation archctx never starts: the result is `unavailable` instead.
  */
-export function resolveArchcontextCapabilityPaths(
+export function resolveArchcontextCapabilityPaths<C extends { readonly id: string } = Capability>(
   repoRoot: string,
-  owners: ArchcontextCapabilityOwners,
+  owners: ArchcontextOwnerLookup<C>,
   inputPaths: readonly string[],
   options: ArchctxProviderOptions = {},
-): CapabilityPathResolution {
+): CapabilityPathResolution<C> {
   const { diagnostics, paths, queries } = prepareQueries(repoRoot, inputPaths);
   let results: ArchctxResolveResult[] = [];
   if (queries.length > 0 && currentReadonlyObservation()) {

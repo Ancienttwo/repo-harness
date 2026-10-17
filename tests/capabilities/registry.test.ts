@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { readdirSync, readFileSync } from "fs";
+import { copyFileSync, cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "fs";
 import { join } from "path";
+import { tmpdir } from "os";
+import { execFileSync } from "child_process";
+import { readArchcontextCapabilityAuthority } from "../../src/effects/capabilities/archcontext-owners";
 import {
   archcontextIncludeAnchor,
   archcontextNodeId,
@@ -30,14 +33,18 @@ import { loadArchcontextAuthority } from "../../src/effects/state/resolve-effect
 const RECORDED = join(import.meta.dir, "../fixtures/archctx-resolve");
 
 function recordedOwners(): ArchcontextCapabilityOwners {
-  const dir = join(RECORDED, "ownership-0.7.2-model/nodes");
-  const files = readdirSync(dir).sort().map((name) => ({
-    path: `.archcontext/model/nodes/${name}`,
-    value: Bun.YAML.parse(readFileSync(join(dir, name), "utf-8")),
-  }));
-  const resolution = capabilityRegistryFromArchcontextNodes(files);
-  if (resolution.status !== "valid") throw new Error(`recorded model is invalid: ${JSON.stringify(resolution.diagnostics)}`);
-  return resolution.owners;
+  const cwd = mkdtempSync(join(tmpdir(), "capability-recorded-native-"));
+  try {
+    mkdirSync(join(cwd, ".archcontext/model"), { recursive: true });
+    cpSync(join(RECORDED, "ownership-0.7.2-model/nodes"), join(cwd, ".archcontext/model/nodes"), { recursive: true });
+    copyFileSync(join(import.meta.dir, "../../.archcontext/manifest.yaml"), join(cwd, ".archcontext/manifest.yaml"));
+    execFileSync("git", ["init", "-q"], { cwd });
+    execFileSync("git", ["add", "."], { cwd });
+    execFileSync("git", ["-c", "user.name=Fixture", "-c", "user.email=fixture@example.com", "commit", "-q", "-m", "model"], { cwd });
+    const resolution = readArchcontextCapabilityAuthority(cwd);
+    if (resolution.status !== "valid") throw new Error(`recorded model is invalid: ${JSON.stringify(resolution.diagnostics)}`);
+    return resolution.owners;
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
 }
 
 // The same field reduction as readOwners in src/effects/capabilities/archcontext-owners.ts.

@@ -6,14 +6,14 @@ import {
   CapabilitySourceError,
   capabilitySourceMode,
   findMatch,
-  readArchcontextNodeFiles,
-  readArchcontextOwners,
   readRegistry as readCapabilityRegistry,
   type Capability,
   type CapabilityRegistry,
   type ContractFiles,
 } from '../../../scripts/capability-resolver';
 import { resolveArchcontextCapabilityPaths } from '../../effects/capabilities/archcontext-owners';
+import { readArchitectureNativeContext } from '../../effects/architecture/archctx-provider';
+import { capabilityIdentityFromNodeId, capabilityRegistryFromNativeContext, type ArchcontextCapabilityOwners } from '../../core/capabilities/registry';
 
 export type { Capability, ContractFiles };
 
@@ -130,8 +130,23 @@ function writeJsonFile(file: string, value: unknown): void {
   fs.writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`);
 }
 
-function readRegistry(repo: string): CapabilityRegistry {
-  return readCapabilityRegistry(repo);
+function readCapabilityContext(repo: string): {
+  registry: CapabilityRegistry;
+  owners: ArchcontextCapabilityOwners | null;
+  summaries: Map<string, string>;
+} {
+  if (capabilitySourceMode(repo) !== 'archcontext') {
+    return { registry: readCapabilityRegistry(repo), owners: null, summaries: new Map() };
+  }
+  const context = readArchitectureNativeContext(repo, { kind: 'worktree' });
+  const authority = capabilityRegistryFromNativeContext(context, { repoRoot: repo });
+  if (authority.status !== 'valid') throw new CapabilitySourceError(authority.diagnostics.map((item) => item.message).join('; '));
+  const summaries = new Map<string, string>();
+  for (const node of context.model.nodes) {
+    const identity = node.kind === 'capability' ? capabilityIdentityFromNodeId(node.id) : null;
+    if (identity) summaries.set(identity.id, node.summary);
+  }
+  return { registry: authority.registry, owners: authority.owners, summaries };
 }
 
 /** The file or directory that owns capabilities under the active source mode. */
@@ -190,24 +205,12 @@ function targetContractFiles(repo: string, capability: Capability): ContractFile
   return capabilitySourceMode(repo) === 'archcontext' ? { ...capability.contract_files } : derivedContractFiles(repo, capability);
 }
 
-/** Node summaries by registry id. Under `archcontext` the block positioning comes from the node. */
-function archcontextSummaries(repo: string): Map<string, string> {
-  const summaries = new Map<string, string>();
-  for (const { value } of readArchcontextNodeFiles(repo)) {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
-    const node = value as Record<string, unknown>;
-    const parts = typeof node.id === 'string' ? node.id.split('.') : [];
-    if (node.kind === 'capability' && parts.length === 3 && typeof node.summary === 'string') summaries.set(`${parts[1]}-${parts[2]}`, node.summary);
-  }
-  return summaries;
-}
-
 // Delegates ownership to the selected authority: capability-resolver's findMatch
 // under `registry` (see .ai/harness/policy.json capability_match_rule), and
 // `archctx resolve` under `archcontext`. Nothing here re-implements either rule.
-function findCapabilityByPath(registry: CapabilityRegistry, repo: string, inputPath: string): Capability {
-  if (capabilitySourceMode(repo) === 'archcontext') {
-    const resolution = resolveArchcontextCapabilityPaths(repo, readArchcontextOwners(repo), [inputPath]);
+function findCapabilityByPath(registry: CapabilityRegistry, repo: string, inputPath: string, owners: ArchcontextCapabilityOwners | null): Capability {
+  if (owners) {
+    const resolution = resolveArchcontextCapabilityPaths(repo, owners, [inputPath]);
     if (resolution.status !== 'valid') throw new Error(resolution.diagnostics.map((item) => item.message).join('; '));
     if (resolution.matches.length === 1) return resolution.matches[0].capability;
   } else {
@@ -225,7 +228,7 @@ function findCapabilityById(registry: CapabilityRegistry, id: string): Capabilit
 
 export function runCapabilityContextStatus(repoInput = '.', manifestPath = DEFAULT_MANIFEST_PATH): CapabilityContextStatus {
   const repo = repoRoot(repoInput);
-  const registry = readRegistry(repo);
+  const { registry } = readCapabilityContext(repo);
   const manifest = readManifest(repo, manifestPath);
   return {
     repo,
@@ -322,9 +325,9 @@ function replaceBlock(source: string, block: string): string {
   return `${source.endsWith('\n') ? source : `${source}\n`}\n${block}`;
 }
 
-function selectCapabilities(registry: CapabilityRegistry, repo: string, opts: SyncOptions): Capability[] {
+function selectCapabilities(registry: CapabilityRegistry, repo: string, opts: SyncOptions, owners: ArchcontextCapabilityOwners | null): Capability[] {
   if (opts.capabilityId) return [findCapabilityById(registry, opts.capabilityId)];
-  if (opts.inputPath) return [findCapabilityByPath(registry, repo, opts.inputPath)];
+  if (opts.inputPath) return [findCapabilityByPath(registry, repo, opts.inputPath, owners)];
   throw new Error('sync requires --capability or --path');
 }
 
@@ -334,13 +337,12 @@ export function runCapabilityContextSync(opts: SyncOptions): SyncResult {
   const manifestPath = opts.sourceMapManifest || DEFAULT_MANIFEST_PATH;
   const authorityPath = capabilityAuthorityPath(repo);
   const archcontext = authorityPath === NODES_DIR;
-  const registry = readRegistry(repo);
+  const { registry, owners, summaries } = readCapabilityContext(repo);
   const manifest = readManifest(repo, manifestPath);
-  const capabilities = selectCapabilities(registry, repo, opts);
+  const capabilities = selectCapabilities(registry, repo, opts, owners);
   // Under archcontext the target is the declared extensions.contractFiles, never an
-  // anchor, so an anchorless capability still has a target. readRegistry already
+  // anchor, so an anchorless capability still has a target. readCapabilityContext already
   // refused a node that declares no contract files, before any write.
-  const summaries = archcontext ? archcontextSummaries(repo) : new Map<string, string>();
   const changedManifestIds = new Set<string>();
   const changes: SyncChange[] = [];
   const lines: string[] = [];

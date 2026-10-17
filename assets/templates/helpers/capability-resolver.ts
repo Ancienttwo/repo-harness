@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-// @generated-from src/core/capabilities/registry.ts sha256:406e39cb1c6a958aa976c57c4dd7c5a7c6d21d2c81d0b7fd91f45fd5b4691087
+// @generated-from src/core/capabilities/registry.ts sha256:c2d4192c8d4bd83c2f655bf611e04fca4a58ad48eeb3276886ed88cff2cbcd62
 // Standalone typed Bun projection. Regenerate from scripts/capability-resolver.ts; do not edit by hand.
 export const CAPABILITY_REGISTRY_VERSION = 1 as const;
 
@@ -103,8 +103,8 @@ export type CapabilityRegistryResolution =
       readonly diagnostics: readonly [];
     };
 
-export interface CapabilityPathMatch {
-  readonly capability: Capability;
+export interface CapabilityPathMatch<C = Capability> {
+  readonly capability: C;
   readonly prefix: string;
   readonly filePath: string;
 }
@@ -130,10 +130,10 @@ export type CapabilityPathMatchResult =
  * `unavailable` means ownership was not computed at all, for example inside a
  * read-only observation that must not start archctx. It is never a model fault.
  */
-export interface CapabilityPathResolution {
+export interface CapabilityPathResolution<C = Capability> {
   readonly status: "valid" | "invalid" | "unavailable";
   readonly capabilityIds: readonly string[];
-  readonly matches: readonly CapabilityPathMatch[];
+  readonly matches: readonly CapabilityPathMatch<C>[];
   readonly unmappedPaths: readonly string[];
   readonly diagnostics: readonly CapabilityRegistryDiagnostic[];
 }
@@ -942,12 +942,12 @@ export function capabilityRegistryFromArchcontextNodes(
  * (unowned). The match prefix is the owner's stable node id, because
  * ArchContext does not report which include entry matched.
  */
-export function capabilityPathResolutionFromArchcontextOwners(
-  owners: ArchcontextCapabilityOwners,
+export function capabilityPathResolutionFromArchcontextOwners<C extends { readonly id: string } = Capability>(
+  owners: { get(nodeId: string): C | undefined },
   results: readonly ArchcontextPathOwner[],
-): CapabilityPathResolution {
+): CapabilityPathResolution<C> {
   const diagnostics: CapabilityRegistryDiagnostic[] = [];
-  const matches: CapabilityPathMatch[] = [];
+  const matches: CapabilityPathMatch<C>[] = [];
   const unmappedPaths: string[] = [];
   const seenPaths = new Set<string>();
   for (const owner of results) {
@@ -986,6 +986,7 @@ export function capabilityPathResolutionFromArchcontextOwners(
 import { existsSync, readdirSync, readFileSync, statSync } from "fs";
 import { relative, resolve } from "path";
 import { spawnSync } from "child_process";
+import { createRequire } from "node:module";
 
 
 // Explicit one-shot registry -> ArchContext node/v2 migration projection. The
@@ -1208,7 +1209,16 @@ function capabilityAuthorityPath(mode: CapabilitySourceMode): string {
 // the JSON registry never falls back to archcontext nodes.
 function loadRegistry(repo: string, mode: CapabilitySourceMode): CapabilityRegistryResolution | ArchcontextCapabilityResolution {
   if (mode === "archcontext") {
-    return capabilityRegistryFromArchcontextNodes(readArchcontextNodeFiles(repo), { repoRoot: repo });
+    try {
+      const resolution = archcontextModule().readArchcontextCapabilityAuthority(repo);
+      if (resolution.status === "invalid") {
+        throw new CapabilitySourceError(resolution.diagnostics.map((item) => item.message).join("; "));
+      }
+      return resolution;
+    } catch (error) {
+      if (error instanceof CapabilitySourceError) throw error;
+      throw new CapabilitySourceError((error as Error).message);
+    }
   }
   const registryPath = resolve(repo, DEFAULT_REGISTRY);
   if (!existsSync(registryPath)) {
@@ -1238,7 +1248,7 @@ export function readRegistry(repo: string): CapabilityRegistry {
 
 /** Every archcontext capability node by node id, whatever its status: the owner join input. */
 export function readArchcontextOwners(repo: string): ArchcontextCapabilityOwners {
-  const resolution = capabilityRegistryFromArchcontextNodes(readArchcontextNodeFiles(repo), { repoRoot: repo });
+  const resolution = loadRegistry(repo, "archcontext") as ArchcontextCapabilityResolution;
   if (resolution.status === "invalid") {
     throw malformedRegistryError(resolution.diagnostics, ARCHCONTEXT_NODES_DIR);
   }
@@ -1360,14 +1370,15 @@ type ArchcontextPathResolver = (repo: string, owners: ArchcontextCapabilityOwner
 // specifier is not a literal, so the projection type-checks without that module.
 const ARCHCONTEXT_OWNERS_MODULE = "../src/effects/capabilities/archcontext-owners";
 
-async function archcontextPathResolver(): Promise<ArchcontextPathResolver> {
+function archcontextModule(): {
+  readArchcontextCapabilityAuthority(repo: string): ArchcontextCapabilityResolution;
+  resolveArchcontextCapabilityPaths: ArchcontextPathResolver;
+} {
   try {
-    const owners: { resolveArchcontextCapabilityPaths: ArchcontextPathResolver } = await import(ARCHCONTEXT_OWNERS_MODULE);
-    return owners.resolveArchcontextCapabilityPaths;
-  } catch (error) {
+    return createRequire(import.meta.url)(ARCHCONTEXT_OWNERS_MODULE);
+  } catch {
     throw new CapabilitySourceError(
-      `${CAPABILITY_SOURCE_KEY}="archcontext" resolves paths through the repo-harness package; ` +
-        `run repo-harness run capability-resolver (${(error as Error).message})`
+      'capability_source "archcontext" needs the packaged resolver; run repo-harness run capability-resolver'
     );
   }
 }
@@ -1382,7 +1393,7 @@ export type MatchAuthority =
  */
 export async function findMatches(authority: MatchAuthority, repo: string, paths: readonly string[]) {
   if (authority.mode === "registry") return paths.map((path) => findMatch(authority.registry, repo, path));
-  const resolution = (await archcontextPathResolver())(repo, authority.owners, paths);
+  const resolution = archcontextModule().resolveArchcontextCapabilityPaths(repo, authority.owners, paths);
   if (resolution.status !== "valid") {
     throw new Error(resolution.diagnostics.map((item) => item.message).join("; "));
   }

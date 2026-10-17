@@ -3,6 +3,7 @@ import { execFileSync, spawnSync } from 'child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import { resolveCompatibleNodeRuntime } from '../src/effects/architecture/archctx-provider';
 import { runHook } from '../src/cli/hook/runtime';
 import { buildTaskMessageEvent } from '../src/core/fleet/task-message';
 import { bindLeaseRecord, buildLeaseOwnerRecord, deriveTaskRevision } from '../src/core/state/coordination-identity';
@@ -207,14 +208,14 @@ describe('host envelopes on the real hook entry (#678)', () => {
   }
 
   /** The bytes the host reads from fd 1 and fd 2 of `repo-harness-hook`. */
-  function host(root: string, hostName: 'claude' | 'codex', event: string, route: string, input: unknown) {
+  function host(root: string, hostName: 'claude' | 'codex', event: string, route: string, input: unknown, extraEnv: NodeJS.ProcessEnv = {}) {
     const result = spawnSync(process.execPath, [HOOK_ENTRY, event, '--route', route], {
       cwd: root,
       input: JSON.stringify(input),
       encoding: 'utf8',
       env: {
         PATH: process.env.PATH, TMPDIR: process.env.TMPDIR, HOME: join(root, 'home'),
-        HOOK_HOST: hostName, HOOK_REPO_ROOT: root, REPO_HARNESS_TOOLING_ADVISORY: '0',
+        HOOK_HOST: hostName, HOOK_REPO_ROOT: root, REPO_HARNESS_TOOLING_ADVISORY: '0', ...extraEnv,
       },
     });
     return { status: result.status, stdout: result.stdout, stderr: result.stderr };
@@ -245,6 +246,55 @@ describe('host envelopes on the real hook entry (#678)', () => {
       }
     } finally { rmSync(root, { recursive: true, force: true }); }
   }, 120_000);
+
+  test('archcontext hooks use resolve once and never export native context', () => {
+    const root = owedFixture();
+    try {
+      writeFileSync(join(root, '.ai/harness/policy.json'), JSON.stringify({ context: { capability_source: 'archcontext' } }));
+      mkdirSync(join(root, '.archcontext/model/nodes'), { recursive: true });
+      writeFileSync(join(root, '.archcontext/model/nodes/capability.core.owned.yaml'), JSON.stringify({
+        schemaVersion: 'archcontext.node/v2', id: 'capability.core.owned', kind: 'capability',
+        name: 'Owned', status: 'active', summary: 'Own the test source.', responsibilities: ['Own the source.'],
+        source: { include: ['src/owned/**'] },
+        extensions: { contractFiles: { agents: 'AGENTS.md', claude: 'CLAUDE.md' }, lspProfile: 'typescript-lsp', verification: [] },
+      }));
+      execFileSync('git', ['add', '.ai/harness/policy.json', '.archcontext'], { cwd: root });
+      execFileSync('git', ['commit', '-q', '-m', 'archcontext authority'], { cwd: root });
+      const node = resolveCompatibleNodeRuntime(process.env);
+      const shim = join(root, 'home/node-probe');
+      const log = join(root, 'home/node-argv.jsonl');
+      writeFileSync(shim, `#!${node}
+const fs = require('node:fs');
+const { spawnSync } = require('node:child_process');
+const args = process.argv.slice(2);
+fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify(args) + '\\n');
+const child = spawnSync(${JSON.stringify(node)}, args, { stdio: 'inherit' });
+process.exit(child.status ?? 1);
+`, { mode: 0o755 });
+      for (const hostName of ['claude', 'codex'] as const) {
+        for (const [event, route, input] of [
+          ['PreToolUse', 'edit', { tool_name: 'Edit', tool_input: { file_path: 'src/owned/a.ts' } }],
+          ['SessionStart', 'default', { session_id: `archcontext-${hostName}` }],
+          ['Stop', 'default', { stop_hook_active: false }],
+        ] as const) {
+          writeFileSync(log, '');
+          const result = host(root, hostName, event, route, input, { REPO_HARNESS_NODE_BIN: shim });
+          expect(result.status, result.stderr).toBe(0);
+          const calls = readFileSync(log, 'utf8').trim().split('\n').filter(Boolean).map((line) => JSON.parse(line) as string[]);
+          const exports = calls.filter((argv) => argv.includes('export')).length;
+          const resolves = calls.filter((argv) => argv.includes('resolve')).length;
+          expect(exports, `${hostName} ${event}`).toBe(0);
+          expect(resolves, `${hostName} ${event}`).toBeLessThanOrEqual(1);
+          if (event === 'PreToolUse') {
+            expect(resolves).toBe(1);
+            expect(context(result.stdout, event)).toBe('[CapabilityOwner] src/owned/a.ts belongs to core-owned (docs/architecture/modules/core/owned.md).');
+          }
+          if (event === 'SessionStart') expect(context(result.stdout, event)).toContain('core-owned (docs/architecture/modules/core/owned.md)');
+          console.log(`[ArchctxHookProbe] ${hostName} ${event}: export=${exports} resolve=${resolves}`);
+        }
+      }
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  }, 60_000);
 
   test('a changed owned path gets no owner line, and a patch batch keeps its clean owned path', () => {
     const root = owedFixture();

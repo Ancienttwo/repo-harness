@@ -19,6 +19,7 @@ import {
   type ArchcontextCapabilityOwners,
   type ArchcontextCapabilityResolution,
   type ArchcontextNodeFile,
+  type CapabilityIdentity,
   type CapabilityPathMatch,
   type CapabilityPathResolution,
   type CapabilityRegistryDiagnostic,
@@ -26,7 +27,7 @@ import {
   type CapabilitySourceMode,
 } from '../../core/capabilities/registry';
 import { capabilityOwnershipBlocker, type CapabilityOwnershipBlocker } from '../../core/capabilities/ownership-blocker';
-import { archcontextResolveQueries, resolveArchcontextCapabilityPaths } from '../capabilities/archcontext-owners';
+import { ARCHCONTEXT_IDENTITY_OWNERS, archcontextResolveQueries, resolveArchcontextCapabilityPaths, type ArchcontextOwnerLookup } from '../capabilities/archcontext-owners';
 import type {
   CapabilityOwnership,
   EffectiveState,
@@ -394,7 +395,7 @@ export interface CapabilityResolution {
   readonly ids: readonly string[];
   readonly registryStatus: CapabilityRegistryStatus;
   /** One match per owned path. Empty when ownership failed. */
-  readonly matches: readonly CapabilityPathMatch[];
+  readonly matches: readonly CapabilityPathMatch<CapabilityIdentity>[];
   /** Paths whose owner the authority answered as "none". Empty when ownership failed. */
   readonly unmappedPaths: readonly string[];
   readonly malformedEntryCount: number;
@@ -450,15 +451,15 @@ export function loadRegistryAuthority(cwd: string, policy: WorkflowPolicy, readS
 
 // One resolve runs several unlocked passes. The archctx answer depends only on
 // the node files and the queried paths, so a pass with the same inputs reuses a success.
-let archcontextResolutionMemo: { key: string; resolution: CapabilityPathResolution } | null = null;
+let archcontextResolutionMemo: { key: string; resolution: CapabilityPathResolution<CapabilityIdentity> } | null = null;
 
 /** Under `archcontext`, ArchContext owns path ownership; a failed resolve fails closed. */
 function resolveArchcontextPaths(
   cwd: string,
-  owners: ArchcontextCapabilityOwners,
+  owners: ArchcontextOwnerLookup<CapabilityIdentity>,
   paths: readonly string[],
   readSource: (path: string) => string | null,
-): CapabilityPathResolution {
+): CapabilityPathResolution<CapabilityIdentity> {
   const nodes = archcontextNodePaths(cwd).map((path) => [path, readSource(path)]);
   // The queries carry each path's directory state, which changes what archctx answers.
   const key = sha256(JSON.stringify([safeRealpath(cwd), nodes, paths, archcontextResolveQueries(cwd, paths)]));
@@ -513,7 +514,7 @@ function capabilityIdsForPaths(
       blocker: capabilityOwnershipBlocker(diagnostics[0]!, mode),
     };
   };
-  let resolution: CapabilityPathResolution;
+  let resolution: CapabilityPathResolution<CapabilityIdentity>;
   if (mode === 'registry') {
     const registry = loadRegistryAuthority(cwd, policy, readSource);
     if (registry.status === 'absent') {
@@ -522,13 +523,14 @@ function capabilityIdsForPaths(
     if (registry.status === 'invalid') return invalidAuthority(registry.diagnostics);
     resolution = resolveCapabilityPaths(registry.registry, select(inRepoPaths), { repoRoot: cwd });
   } else {
-    const authority = loadArchcontextAuthority(cwd, readSource);
-    if (authority.status === 'invalid') return invalidAuthority(authority.diagnostics);
+    if (archcontextNodePaths(cwd).length === 0) {
+      return invalidAuthority([{ code: 'REGISTRY_MISSING', path: CAPABILITY_NODES_DIR, message: `capability nodes are missing: ${CAPABILITY_NODES_DIR}` }]);
+    }
     const selected = select(inRepoPaths);
     // No path to resolve means no `archctx resolve` and no owner.
     resolution = selected.length === 0
       ? { status: 'valid', capabilityIds: [], matches: [], unmappedPaths: [], diagnostics: [] }
-      : resolveArchcontextPaths(cwd, authority.owners, selected, readSource);
+      : resolveArchcontextPaths(cwd, ARCHCONTEXT_IDENTITY_OWNERS, selected, readSource);
   }
   if (resolution.status !== 'valid') {
     return {

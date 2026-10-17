@@ -3,26 +3,31 @@ import { errorEnvelope } from "archctx-contracts";
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { dirname, join } from "path";
-import { spawnSync } from "child_process";
+import { execFileSync, spawnSync } from "child_process";
 import {
   CapabilitySourceError,
   bunYamlParser,
 } from "../scripts/capability-resolver";
 import {
   capabilityRegistryFromArchcontextNodes,
+  capabilityRegistryFromNativeContext,
   type ArchcontextCapabilityOwners,
   type Capability,
   type CapabilityRegistryDiagnosticCode,
 } from "../src/core/capabilities/registry";
 
-import { resolveArchcontextCapabilityPaths } from "../src/effects/capabilities/archcontext-owners";
+import { readArchcontextCapabilityAuthority, resolveArchcontextCapabilityPaths } from "../src/effects/capabilities/archcontext-owners";
+import { readArchitectureNativeContext } from "../src/effects/architecture/archctx-provider";
 import { withReadonlyObservation } from "../src/effects/state/readonly-observation";
 
 const ROOT = join(import.meta.dir, "..");
 const NODES_DIR = ".archcontext/model/nodes";
 
 function tmpWorkspace(prefix: string): string {
-  return mkdtempSync(join(tmpdir(), `${prefix}-`));
+  const cwd = mkdtempSync(join(tmpdir(), `${prefix}-`));
+  execFileSync("git", ["init", "-q"], { cwd });
+  execFileSync("git", ["-c", "user.name=Fixture", "-c", "user.email=fixture@example.com", "commit", "-q", "--allow-empty", "-m", "fixture"], { cwd });
+  return cwd;
 }
 
 function writeFile(cwd: string, relPath: string, content: string): void {
@@ -209,6 +214,9 @@ function archcontextWorkspace(
   seedTree(cwd);
   writePolicy(cwd, "archcontext");
   for (const node of nodes) writeFile(cwd, `${NODES_DIR}/${node.file}`, yaml(node.lines));
+  writeFile(cwd, ".archcontext/manifest.yaml", readFileSync(join(ROOT, ".archcontext/manifest.yaml"), "utf-8"));
+  execFileSync("git", ["add", "."], { cwd });
+  execFileSync("git", ["-c", "user.name=Fixture", "-c", "user.email=fixture@example.com", "commit", "-q", "-m", "model"], { cwd });
   return cwd;
 }
 
@@ -258,26 +266,16 @@ describe("capability source: archcontext file-source parity", () => {
     }
   }, 60_000);
 
-  test("the standalone projected helper reads archcontext nodes identically and refuses to match", () => {
-    const sourceCwd = archcontextWorkspace("capability-source-standalone-source");
+  test("the standalone projected helper refuses every archcontext command", () => {
     const projectedCwd = archcontextWorkspace("capability-source-standalone-projected");
     try {
-      // Path ownership needs the package-local archctx, which a standalone copy does not have.
-      const refused = runStandaloneResolver(projectedCwd, ["match", "--path", "AGENTS.md", "--format", "json"]);
-      expect(refused.status).toBe(2);
-      expect(refused.stdout).toBe("");
-      expect(refused.stderr).toContain("run repo-harness run capability-resolver");
-      for (const command of PARITY_COMMANDS.filter((entry) => entry[0] !== "match")) {
-        const fromSource = runResolver(sourceCwd, [...command]);
-        const fromProjection = runStandaloneResolver(projectedCwd, [...command]);
-        expect(fromSource.status, fromSource.stderr).toBe(0);
-        expect(fromProjection.status, fromProjection.stderr).toBe(0);
-        expect(fromProjection.stdout, `projection parity for: ${command.join(" ")}`)
-          .toBe(fromSource.stdout);
-        expect(fromProjection.stderr).toBe(fromSource.stderr);
+      for (const command of PARITY_COMMANDS) {
+        const refused = runStandaloneResolver(projectedCwd, [...command]);
+        expect(refused.status, command.join(" ")).toBe(2);
+        expect(refused.stdout).toBe("");
+        expect(refused.stderr).toContain('capability_source "archcontext" needs the packaged resolver; run repo-harness run capability-resolver');
       }
     } finally {
-      rmSync(sourceCwd, { recursive: true, force: true });
       rmSync(projectedCwd, { recursive: true, force: true });
     }
   }, 60_000);
@@ -371,14 +369,13 @@ describe("capability source: archctx resolve envelope checks", () => {
   test("joins the recorded archctx 0.7.2 batch, exit 2 included, through the owner model", () => {
     const fixtures = join(ROOT, "tests/fixtures/archctx-resolve");
     const nodesDir = join(fixtures, "ownership-0.7.2-model/nodes");
-    const model = capabilityRegistryFromArchcontextNodes(readdirSync(nodesDir).sort().map((name) => ({
-      path: `${NODES_DIR}/${name}`,
-      value: Bun.YAML.parse(readFileSync(join(nodesDir, name), "utf-8")),
+    const cwd = archcontextWorkspace("capability-source-recorded", readdirSync(nodesDir).sort().map((name) => ({
+      file: name, lines: readFileSync(join(nodesDir, name), "utf-8").trimEnd().split("\n"),
     })));
-    if (model.status !== "valid") throw new Error(JSON.stringify(model.diagnostics));
     const paths = readFileSync(join(fixtures, "ownership-0.7.2-paths.txt"), "utf-8").trim().split("\n");
-    const cwd = tmpWorkspace("capability-source-recorded");
     try {
+      const model = readArchcontextCapabilityAuthority(cwd);
+      if (model.status !== "valid") throw new Error(JSON.stringify(model.diagnostics));
       const resolution = resolveArchcontextCapabilityPaths(cwd, model.owners, paths, {
         run: () => ({ status: 2, signal: null, stdout: readFileSync(join(fixtures, "ownership-0.7.2.json"), "utf-8"), stderr: "" }),
       });
@@ -424,7 +421,7 @@ describe("capability source: no fallback in either direction", () => {
       const res = runResolver(cwd, ["list", "--format", "json"]);
       expect(res.status).toBe(2);
       expect(res.stdout).toBe("");
-      expect(res.stderr).toContain(`missing archcontext model directory: ${NODES_DIR}`);
+      expect(res.stderr).toContain("AC_MODEL_ADOPTION_REQUIRED");
       expect(res.stderr).not.toContain("apps-web-account");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
@@ -478,7 +475,7 @@ describe("capability source: source-layer failures S1-S6", () => {
       writePolicy(cwd, "archcontext");
       const res = runResolver(cwd, ["validate", "--format", "text"]);
       expect(res.status).toBe(2);
-      expect(res.stderr).toContain(`missing archcontext model directory: ${NODES_DIR}`);
+      expect(res.stderr).toContain("AC_MODEL_ADOPTION_REQUIRED");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -491,12 +488,12 @@ describe("capability source: source-layer failures S1-S6", () => {
       mkdirSync(join(nested, NODES_DIR, "legacy"), { recursive: true });
       const nestedRes = runResolver(nested, ["validate", "--format", "text"]);
       expect(nestedRes.status).toBe(2);
-      expect(nestedRes.stderr).toContain(`unexpected entry in archcontext model directory: ${NODES_DIR}/legacy`);
+      expect(nestedRes.stderr).toContain("AC_SCHEMA_INVALID");
 
       writeFile(foreign, `${NODES_DIR}/notes.txt`, "not a node\n");
       const foreignRes = runResolver(foreign, ["validate", "--format", "text"]);
       expect(foreignRes.status).toBe(2);
-      expect(foreignRes.stderr).toContain(`unexpected entry in archcontext model directory: ${NODES_DIR}/notes.txt`);
+      expect(foreignRes.stderr).toContain("AC_SCHEMA_INVALID");
     } finally {
       rmSync(nested, { recursive: true, force: true });
       rmSync(foreign, { recursive: true, force: true });
@@ -509,7 +506,7 @@ describe("capability source: source-layer failures S1-S6", () => {
       writeFile(cwd, `${NODES_DIR}/broken.yaml`, "id: [unterminated\n");
       const res = runResolver(cwd, ["validate", "--format", "text"]);
       expect(res.status).toBe(2);
-      expect(res.stderr).toContain(`invalid archcontext node YAML: ${NODES_DIR}/broken.yaml`);
+      expect(res.stderr).toContain("AC_SCHEMA_INVALID");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -646,6 +643,43 @@ const NODE_CASES: ReadonlyArray<{
   },
 ];
 
+describe("capability source: native authority", () => {
+  test("an archctx-invalid node fails closed", () => {
+    const cwd = archcontextWorkspace("capability-source-native-invalid", [{
+      file: "invalid.yaml", lines: withoutLines(VALID_NODE_LINES, ["summary: Web application shell"]),
+    }]);
+    try {
+      const authority = readArchcontextCapabilityAuthority(cwd);
+      expect(authority.status).toBe("invalid");
+      expect(authority.diagnostics.map((item) => item.code)).toEqual(["ARCHCONTEXT_MODEL_REJECTED"]);
+      expect(authority.diagnostics[0].message).toContain("AC_SCHEMA_INVALID");
+      const result = runResolver(cwd, ["validate", "--format", "json"]);
+      expect(result.status).toBe(2);
+      expect(result.stdout).toBe("");
+      expect(result.stderr).toContain("AC_SCHEMA_INVALID");
+    } finally { rmSync(cwd, { recursive: true, force: true }); }
+  });
+
+  test("a drifted native identity fails closed", () => {
+    const cwd = archcontextWorkspace("capability-source-native-drift");
+    try {
+      const context = readArchitectureNativeContext(cwd, { kind: "worktree" });
+      const authority = capabilityRegistryFromNativeContext({ ...context, capabilityProfiles: context.capabilityProfiles.map((profile) => ({ ...profile, modulePath: "docs/architecture/modules/drift/wrong.md" })) }, { repoRoot: cwd });
+      expect(authority.status).toBe("invalid");
+      expect(authority.diagnostics.map((item) => item.code)).toEqual(TWIN_NODES.map(() => "ARCHCONTEXT_NODE_ID_INVALID"));
+    } finally { rmSync(cwd, { recursive: true, force: true }); }
+  });
+
+  test("a valid native model lists its capabilities", () => {
+    const cwd = archcontextWorkspace("capability-source-native-valid");
+    try {
+      const result = runResolver(cwd, ["list", "--format", "json"]);
+      expect(result.status, result.stderr).toBe(0);
+      expect(JSON.parse(result.stdout)).toEqual(TWIN_CAPABILITIES);
+    } finally { rmSync(cwd, { recursive: true, force: true }); }
+  });
+});
+
 describe("capability source: node-layer matrix N1-N16 (N7-N9 retired)", () => {
   for (const nodeCase of NODE_CASES) {
     test(`${nodeCase.label} fails closed`, () => {
@@ -676,9 +710,9 @@ describe("capability source: node-layer matrix N1-N16 (N7-N9 retired)", () => {
       {
         file: "module.yaml",
         lines: replaceLine(
-          replaceLine(VALID_NODE_LINES, "kind: capability", ["kind: module"]),
+          replaceLine(VALID_NODE_LINES, "kind: capability", ["kind: component"]),
           "id: capability.apps-web.web",
-          ["id: module.apps-web.legacy"],
+          ["id: component.apps-web.legacy"],
         ),
       },
       {

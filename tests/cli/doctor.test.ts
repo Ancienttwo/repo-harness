@@ -5,7 +5,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { fileURLToPath } from 'url';
-import { execSync, spawnSync } from 'child_process';
+import { execFileSync, execSync, spawnSync } from 'child_process';
 import {
   checkSkillProjection,
   clearRegisteredChecks,
@@ -263,9 +263,12 @@ describe('doctor command (Phase 1C)', () => {
       fs.mkdirSync(nodes, { recursive: true });
       // Node files exist, but this one has no status, so the model does not load.
       fs.writeFileSync(path.join(nodes, 'capability.a.b.yaml'), 'schemaVersion: archcontext.node/v2\nid: capability.a.b\nkind: capability\n');
+      fs.copyFileSync(path.join(import.meta.dir, '../../.archcontext/manifest.yaml'), path.join(repoRoot, '.archcontext/manifest.yaml'));
+      execFileSync('git', ['add', '.'], { cwd: repoRoot });
+      execFileSync('git', ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.com', 'commit', '-q', '-m', 'model'], { cwd: repoRoot });
       const invalid = registryCheck();
       expect(invalid.status).toBe('fail');
-      expect(invalid.detail).toContain('archcontext authority does not load: .archcontext/model/nodes/capability.a.b.yaml: status is required');
+      expect(invalid.detail).toContain('archcontext authority does not load: AC_SCHEMA_INVALID');
       expect(invalid.detail).toContain('Next: run repo-harness run capability-resolver validate');
 
       // A declared newer minimum names the upgrade, not the parse error.

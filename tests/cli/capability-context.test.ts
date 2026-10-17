@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { spawnSync } from 'child_process';
+import { execFileSync, spawnSync } from 'child_process';
 import {
   runCapabilityContextStatus,
   runCapabilityContextSync,
@@ -11,6 +11,13 @@ import type { Capability } from '../../src/core/capabilities/registry';
 
 function tmpWorkspace(prefix: string): string {
   return fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), `${prefix}-`)));
+}
+
+function commitArchcontextFixture(cwd: string): void {
+  fs.copyFileSync(path.join(import.meta.dir, '../../.archcontext/manifest.yaml'), path.join(cwd, '.archcontext/manifest.yaml'));
+  execFileSync('git', ['init', '-q'], { cwd });
+  execFileSync('git', ['add', '.'], { cwd });
+  execFileSync('git', ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.com', 'commit', '-q', '-m', 'model'], { cwd });
 }
 
 function writeRegistry(cwd: string, capabilities: Capability[]): void {
@@ -209,6 +216,8 @@ describe('capability-context command', () => {
       fs.writeFileSync(path.join(cwd, 'AGENTS.md'), rootContext);
       fs.writeFileSync(path.join(cwd, 'CLAUDE.md'), rootContext);
 
+      commitArchcontextFixture(cwd);
+
       // The target is the declared contract files, not an anchor: the root files stay unchanged.
       runCapabilityContextSync({ repo: cwd, capabilityId: 'probe-anchorless', apply: true });
       expect(fs.readFileSync(path.join(cwd, 'AGENTS.md'), 'utf-8')).toBe(rootContext);
@@ -220,7 +229,7 @@ describe('capability-context command', () => {
       fs.writeFileSync(nodePath, fs.readFileSync(nodePath, 'utf-8').replace(/  contractFiles:\n    agents: probes\/AGENTS\.md\n    claude: probes\/CLAUDE\.md\n/, ''));
       fs.rmSync(path.join(cwd, 'probes'), { recursive: true, force: true });
       expect(() => runCapabilityContextSync({ repo: cwd, capabilityId: 'probe-anchorless', apply: true }))
-        .toThrow('extensions.contractFiles.agents and extensions.contractFiles.claude are required');
+        .toThrow('contract_files.agents is required');
       expect(fs.readFileSync(path.join(cwd, 'AGENTS.md'), 'utf-8')).toBe(rootContext);
       expect(fs.readFileSync(path.join(cwd, 'CLAUDE.md'), 'utf-8')).toBe(rootContext);
       expect(fs.existsSync(path.join(cwd, 'probes'))).toBe(false);
@@ -342,5 +351,6 @@ function archcontextWorkspace(
       extensions: { contractFiles: node.contractFiles, lspProfile: 'typescript-lsp', verification: ['bun test'] },
     }, null, 2)}\n`);
   }
+  commitArchcontextFixture(cwd);
   return cwd;
 }

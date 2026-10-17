@@ -100,8 +100,8 @@ export type CapabilityRegistryResolution =
       readonly diagnostics: readonly [];
     };
 
-export interface CapabilityPathMatch {
-  readonly capability: Capability;
+export interface CapabilityPathMatch<C = Capability> {
+  readonly capability: C;
   readonly prefix: string;
   readonly filePath: string;
 }
@@ -127,10 +127,10 @@ export type CapabilityPathMatchResult =
  * `unavailable` means ownership was not computed at all, for example inside a
  * read-only observation that must not start archctx. It is never a model fault.
  */
-export interface CapabilityPathResolution {
+export interface CapabilityPathResolution<C = Capability> {
   readonly status: "valid" | "invalid" | "unavailable";
   readonly capabilityIds: readonly string[];
-  readonly matches: readonly CapabilityPathMatch[];
+  readonly matches: readonly CapabilityPathMatch<C>[];
   readonly unmappedPaths: readonly string[];
   readonly diagnostics: readonly CapabilityRegistryDiagnostic[];
 }
@@ -939,12 +939,12 @@ export function capabilityRegistryFromArchcontextNodes(
  * (unowned). The match prefix is the owner's stable node id, because
  * ArchContext does not report which include entry matched.
  */
-export function capabilityPathResolutionFromArchcontextOwners(
-  owners: ArchcontextCapabilityOwners,
+export function capabilityPathResolutionFromArchcontextOwners<C extends { readonly id: string } = Capability>(
+  owners: { get(nodeId: string): C | undefined },
   results: readonly ArchcontextPathOwner[],
-): CapabilityPathResolution {
+): CapabilityPathResolution<C> {
   const diagnostics: CapabilityRegistryDiagnostic[] = [];
-  const matches: CapabilityPathMatch[] = [];
+  const matches: CapabilityPathMatch<C>[] = [];
   const unmappedPaths: string[] = [];
   const seenPaths = new Set<string>();
   for (const owner of results) {
