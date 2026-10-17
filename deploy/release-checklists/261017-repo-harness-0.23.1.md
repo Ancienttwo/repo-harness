@@ -2,10 +2,10 @@
 
 ## Scope and authority
 
-- Base: `81fe6cf8` (#818 squash merge) on `main`. Parent: `16ea1272` (#821).
+- Base: `b6316120` (#823 squash merge) on `main`. Parent: `81fe6cf8` (#818).
 - The release contains every main commit after `v0.23.0` (`0d447d3be54f`):
   #793, #791, #794, #795, #796, #797, #798, #799, #800, #801, #806, #805,
-  #807, #819, #815, #816, #817, #820, #808, #809, #821 and #818.
+  #807, #819, #815, #816, #817, #820, #808, #809, #821, #818 and #823.
 - 0.23.1 has breaking changes: the PM and task-acquisition surface, the
   stateless Engineer stores, the contract fields of Effective State and the
   local architecture model readers are removed (#807, #820, #800, #801). See
@@ -16,8 +16,9 @@
 - On 2026-10-17 the owner asked to clean up the open issues and PRs, then
   publish 0.23.1. The owner said to wrap up after the in-flight PRs: #773 slice
   C is not part of this release. The owner then asked to merge #808, #809 and
-  #818 when CI was green and to include them. The release branch was rebased
-  onto the #818 merge.
+  #818 when CI was green and to include them. Then the owner asked to merge
+  #823 (archctx 0.8.1) and rebase. The release branch was rebased onto the
+  #823 merge.
 - The release branch adds these commits:
   - `chore(release): set the versions to 0.23.1 and write the changelog`.
   - `fix(release): run the coding OAuth E2E in the tarball smoke`. #820 removed

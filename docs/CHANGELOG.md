@@ -66,6 +66,11 @@ and `pm` profiles from any `mcp.local.json`.
   SessionStart and on the first Stop for a branch. Codex output is unchanged.
   (#802, #808)
 - The daily CI job now runs the expensive real pack/install benchmark cases in `tests/harness-benchmark-matrix.test.ts`. (#794)
+- `archctx` and `archctx-contracts` are now 0.8.1. The pre-edit hook and
+  `state resolve` now report `capability_registry:invalid` for a node that
+  breaks the node schema, and for an `archcontext` capability source without
+  `.archcontext/manifest.yaml`. archctx task commands refuse a CodeGraph index
+  that another version built; rebuild the index once. (#823)
 
 ### Fixed
 
