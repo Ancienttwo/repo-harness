@@ -12,13 +12,9 @@ import { buildReviewSubject, isImplementationSurfacePath, type ReviewSubject } f
 import { resolveWorkflowProfile, type WorkflowProfile } from '../../core/workflow/profile';
 import {
   CAPABILITY_SOURCE_MODES,
-  capabilityRegistryFromArchcontextNodes,
   isCapabilityPathOutsideRepo,
   parseCapabilityRegistry,
   resolveCapabilityPaths,
-  type ArchcontextCapabilityOwners,
-  type ArchcontextCapabilityResolution,
-  type ArchcontextNodeFile,
   type CapabilityIdentity,
   type CapabilityPathMatch,
   type CapabilityPathResolution,
@@ -279,21 +275,6 @@ function archcontextNodePaths(cwd: string): string[] {
 }
 
 /**
- * Structural access to Bun's YAML parser. The state layer must not grow an npm
- * YAML dependency, and a runtime without Bun.YAML cannot read the archcontext
- * authority at all, so it fails closed rather than reporting zero capabilities.
- */
-function parseNodeYaml(source: string): unknown {
-  const yaml = (globalThis as { Bun?: { YAML?: { parse?: (input: string) => unknown } } }).Bun?.YAML;
-  if (typeof yaml?.parse !== 'function') {
-    throw new Error(
-      'Bun.YAML is unavailable; .context.capability_source="archcontext" requires Bun >= 1.3',
-    );
-  }
-  return yaml.parse(source);
-}
-
-/**
  * Content hash of the selected capability authority. Registry mode keeps the
  * single-file hash byte-for-byte; archcontext mode folds the sorted node files
  * into one revision so any node edit still moves authority_revision.
@@ -416,29 +397,6 @@ function policyDeclaresCapabilityRegistry(policy: WorkflowPolicy): boolean {
     throw new Error('invalid workflow policy path .context.capability_registry_file');
   }
   return true;
-}
-
-function invalidArchcontextAuthority(code: CapabilityRegistryDiagnostic['code'], path: string, message: string): ArchcontextCapabilityResolution {
-  return { status: 'invalid', registry: null, owners: null, diagnostics: [{ code, path, message }] };
-}
-
-/** Under `archcontext` the policy switch is the declaration: missing or unreadable nodes are `invalid`, never `absent`. */
-export function loadArchcontextAuthority(cwd: string, readSource: (path: string) => string | null): ArchcontextCapabilityResolution {
-  const nodePaths = archcontextNodePaths(cwd);
-  if (nodePaths.length === 0) {
-    return invalidArchcontextAuthority('REGISTRY_MISSING', CAPABILITY_NODES_DIR, `capability nodes are missing: ${CAPABILITY_NODES_DIR}`);
-  }
-  const files: ArchcontextNodeFile[] = [];
-  for (const path of nodePaths) {
-    const text = readSource(path);
-    if (text === null) return invalidArchcontextAuthority('REGISTRY_MISSING', path, `capability node is unreadable: ${path}`);
-    try {
-      files.push({ path, value: parseNodeYaml(text) });
-    } catch (error) {
-      return invalidArchcontextAuthority('ARCHCONTEXT_NODE_NOT_OBJECT', path, `invalid capability node YAML: ${path}: ${(error as Error).message}`);
-    }
-  }
-  return capabilityRegistryFromArchcontextNodes(files, { repoRoot: cwd });
 }
 
 export function loadRegistryAuthority(cwd: string, policy: WorkflowPolicy, readSource: (path: string) => string | null): CapabilityRegistryResolution {

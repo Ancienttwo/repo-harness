@@ -5,15 +5,9 @@ import { tmpdir } from "os";
 import { dirname, join } from "path";
 import { execFileSync, spawnSync } from "child_process";
 import {
-  CapabilitySourceError,
-  bunYamlParser,
-} from "../scripts/capability-resolver";
-import {
-  capabilityRegistryFromArchcontextNodes,
   capabilityRegistryFromNativeContext,
   type ArchcontextCapabilityOwners,
   type Capability,
-  type CapabilityRegistryDiagnosticCode,
 } from "../src/core/capabilities/registry";
 
 import { formatArchcontextCapabilityError, readArchcontextCapabilityAuthority, resolveArchcontextCapabilityPaths } from "../src/effects/capabilities/archcontext-owners";
@@ -442,7 +436,7 @@ describe("capability source: no fallback in either direction", () => {
   }, 30_000);
 });
 
-describe("capability source: source-layer failures S1-S6", () => {
+describe("capability source: source-layer failures S1-S5", () => {
   test("S1 rejects an unknown capability_source value", () => {
     const cwd = archcontextWorkspace("capability-source-s1");
     try {
@@ -512,27 +506,11 @@ describe("capability source: source-layer failures S1-S6", () => {
     }
   }, 30_000);
 
-  test("S6 fails closed with upgrade guidance when Bun.YAML is unavailable", () => {
-    for (const host of [{}, { Bun: {} }, { Bun: { YAML: {} } }, { Bun: { YAML: { parse: "nope" } } }]) {
-      expect(() => bunYamlParser(host)).toThrow(/Bun\.YAML is unavailable/);
-      try {
-        bunYamlParser(host);
-        throw new Error("expected bunYamlParser to fail closed");
-      } catch (error) {
-        expect(error).toBeInstanceOf(CapabilitySourceError);
-        expect((error as CapabilitySourceError).exitCode).toBe(2);
-        expect((error as Error).message).toContain("Bun >= 1.3");
-      }
-    }
 
-    const parse = bunYamlParser(globalThis);
-    expect(typeof parse).toBe("function");
-    expect(parse("id: capability.a.b\n")).toEqual({ id: "capability.a.b" });
-  });
 });
 
 // ---------------------------------------------------------------------------
-// Node-layer matrix N1-N16.
+// Native authority fixtures.
 // ---------------------------------------------------------------------------
 
 const VALID_NODE_LINES = TWIN_NODES[0].lines;
@@ -544,104 +522,6 @@ function withoutLines(lines: readonly string[], drop: readonly string[]): string
 function replaceLine(lines: readonly string[], from: string, to: readonly string[]): string[] {
   return lines.flatMap((line) => (line === from ? [...to] : [line]));
 }
-
-const NODE_CASES: ReadonlyArray<{
-  readonly label: string;
-  readonly code: CapabilityRegistryDiagnosticCode;
-  readonly lines: readonly string[];
-  readonly fragment: string;
-}> = [
-  {
-    label: "N1 node is not a mapping",
-    code: "ARCHCONTEXT_NODE_NOT_OBJECT",
-    lines: ["- capability.apps-web.web"],
-    fragment: "archcontext node must be a YAML mapping",
-  },
-  {
-    label: "N2 unsupported schemaVersion",
-    code: "ARCHCONTEXT_SCHEMA_VERSION_UNSUPPORTED",
-    lines: replaceLine(VALID_NODE_LINES, "schemaVersion: archcontext.node/v2", ["schemaVersion: archcontext.node/v1"]),
-    fragment: "schemaVersion must be archcontext.node/v2",
-  },
-  {
-    label: "N3 id is not capability.<domain>.<name>",
-    code: "ARCHCONTEXT_NODE_ID_INVALID",
-    lines: replaceLine(VALID_NODE_LINES, "id: capability.apps-web.web", ["id: repo::capability.apps-web.web"]),
-    fragment: "id must be capability.<domain>.<name> without a namespace prefix",
-  },
-  {
-    label: "N4 kind is missing",
-    code: "ARCHCONTEXT_NODE_KIND_INVALID",
-    lines: withoutLines(VALID_NODE_LINES, ["kind: capability"]),
-    fragment: "kind is required",
-  },
-  {
-    label: "N5 status is missing",
-    code: "ARCHCONTEXT_NODE_STATUS_INVALID",
-    lines: withoutLines(VALID_NODE_LINES, ["status: active"]),
-    fragment: "status is required",
-  },
-  {
-    label: "N6 source.include is empty",
-    code: "ARCHCONTEXT_INCLUDE_REQUIRED",
-    lines: replaceLine(VALID_NODE_LINES, "  include:", ["  include: []"]).filter(
-      (line) => line !== "    - apps/web/**",
-    ),
-    fragment: "source.include must contain at least one entry",
-  },
-  {
-    label: "N10 extensions is missing",
-    code: "ARCHCONTEXT_EXTENSIONS_REQUIRED",
-    lines: [
-      ...VALID_NODE_LINES.slice(0, VALID_NODE_LINES.indexOf("extensions:")),
-    ],
-    fragment: "extensions is required",
-  },
-  {
-    label: "N11 extensions.lspProfile is missing",
-    code: "ARCHCONTEXT_LSP_PROFILE_REQUIRED",
-    lines: withoutLines(VALID_NODE_LINES, ["  lspProfile: typescript-lsp"]),
-    fragment: "extensions.lspProfile is required",
-  },
-  {
-    label: "N12 extensions.verification is not an array of strings",
-    code: "ARCHCONTEXT_VERIFICATION_REQUIRED",
-    lines: replaceLine(VALID_NODE_LINES, "  verification:", ["  verification: bun test apps/web"]).filter(
-      (line) => line !== "    - bun test apps/web",
-    ),
-    fragment: "extensions.verification must be an array of strings",
-  },
-  {
-    label: "N13 extensions.contractFiles is missing",
-    code: "ARCHCONTEXT_CONTRACT_FILES_REQUIRED",
-    lines: withoutLines(VALID_NODE_LINES, [
-      "  contractFiles:",
-      "    agents: apps/web/AGENTS.md",
-      "    claude: apps/web/CLAUDE.md",
-    ]),
-    fragment: "extensions.contractFiles.agents and extensions.contractFiles.claude are required",
-  },
-  {
-    label: "N14 node name is missing",
-    code: "ARCHCONTEXT_NODE_NAME_INVALID",
-    lines: withoutLines(VALID_NODE_LINES, ["name: web"]),
-    fragment: "name is required by archcontext.node/v2",
-  },
-  {
-    label: "N15 node summary is missing",
-    code: "ARCHCONTEXT_NODE_SUMMARY_INVALID",
-    lines: withoutLines(VALID_NODE_LINES, ["summary: Web application shell"]),
-    fragment: "summary is required by archcontext.node/v2",
-  },
-  {
-    label: "N16 node responsibilities are empty",
-    code: "ARCHCONTEXT_NODE_RESPONSIBILITIES_INVALID",
-    lines: replaceLine(VALID_NODE_LINES, "responsibilities:", ["responsibilities: []"]).filter(
-      (line) => line !== "  - Own the web shell",
-    ),
-    fragment: "responsibilities must contain at least one non-empty string",
-  },
-];
 
 describe("capability source: native diagnostics", () => {
   test("shows at most five native issues and counts the omitted issues", () => {
@@ -725,30 +605,7 @@ describe("capability source: native authority", () => {
   });
 });
 
-describe("capability source: node-layer matrix N1-N16 (N7-N9 retired)", () => {
-  for (const nodeCase of NODE_CASES) {
-    test(`${nodeCase.label} fails closed`, () => {
-      const parsed = Bun.YAML.parse(yaml(nodeCase.lines));
-      const resolution = capabilityRegistryFromArchcontextNodes([{ path: `${NODES_DIR}/case.yaml`, value: parsed }]);
-      expect(resolution.status).toBe("invalid");
-      expect(resolution.diagnostics.map((item) => item.code)).toEqual([nodeCase.code]);
-      expect(resolution.diagnostics[0].message).toContain(nodeCase.fragment);
-
-      const cwd = archcontextWorkspace("capability-source-node-case", [
-        { file: "case.yaml", lines: nodeCase.lines },
-      ]);
-      try {
-        const res = runResolver(cwd, ["validate", "--format", "text"]);
-        expect(res.status).toBe(1);
-        expect(res.stdout).toBe("");
-        expect(res.stderr).toContain(`malformed capability registry: ${NODES_DIR}`);
-        expect(res.stderr).toContain(nodeCase.fragment);
-      } finally {
-        rmSync(cwd, { recursive: true, force: true });
-      }
-    }, 30_000);
-  }
-
+describe("capability source: native status and ownership", () => {
   test("non-capability kinds are skipped and non-active capabilities are not listed", () => {
     const cwd = archcontextWorkspace("capability-source-skipped", [
       TWIN_NODES[0],

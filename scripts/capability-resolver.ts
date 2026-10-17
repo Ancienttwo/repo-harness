@@ -6,13 +6,11 @@ import { createRequire } from "node:module";
 import {
   CAPABILITY_SOURCE_MODES,
   archcontextNodeId,
-  capabilityRegistryFromArchcontextNodes,
   matchCapabilityPath,
   normalizeCapabilityPath,
   parseCapabilityRegistry,
   type ArchcontextCapabilityOwners,
   type ArchcontextCapabilityResolution,
-  type ArchcontextNodeFile,
   type Capability,
   type CapabilityPathMatch,
   type CapabilityPathResolution,
@@ -62,7 +60,6 @@ const DEFAULT_REGISTRY = ".ai/context/capabilities.json";
 const HARNESS_POLICY = ".ai/harness/policy.json";
 const CAPABILITY_SOURCE_KEY = `${HARNESS_POLICY}#context.capability_source`;
 const ARCHCONTEXT_NODES_DIR = ".archcontext/model/nodes";
-const ARCHCONTEXT_NODE_FILE = /\.ya?ml$/;
 
 /**
  * Capability source selection failures. These are configuration/authority
@@ -82,25 +79,6 @@ function plainRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown>
     : null;
-}
-
-/**
- * Structural accessor for Bun's native YAML parser. Keeping the lookup
- * structural avoids an npm YAML dependency in a helper that must run inside a
- * repo with no node_modules, and doubles as the fail-closed guard for Bun
- * runtimes older than 1.3.
- */
-export function bunYamlParser(host: unknown): (source: string) => unknown {
-  const runtime = plainRecord(host)?.Bun;
-  const yaml = plainRecord(runtime)?.YAML;
-  const parse = plainRecord(yaml)?.parse;
-  if (typeof parse !== "function") {
-    throw new CapabilitySourceError(
-      `Bun.YAML is unavailable; ${CAPABILITY_SOURCE_KEY}="archcontext" requires Bun >= 1.3 ` +
-        "(upgrade Bun, or set the capability source back to \"registry\")"
-    );
-  }
-  return (source: string) => (parse as (input: string) => unknown).call(yaml, source);
 }
 
 export function capabilitySourceMode(repo: string): CapabilitySourceMode {
@@ -123,38 +101,6 @@ export function capabilitySourceMode(repo: string): CapabilitySourceMode {
     `unknown capability source: ${JSON.stringify(value)}; ${CAPABILITY_SOURCE_KEY} must be one of ` +
       CAPABILITY_SOURCE_MODES.join(", ")
   );
-}
-
-export function readArchcontextNodeFiles(repo: string): ArchcontextNodeFile[] {
-  const nodesDir = resolve(repo, ARCHCONTEXT_NODES_DIR);
-  if (!existsSync(nodesDir)) {
-    throw new CapabilitySourceError(
-      `missing archcontext model directory: ${ARCHCONTEXT_NODES_DIR}; ` +
-        `${CAPABILITY_SOURCE_KEY}="archcontext" reads capabilities from that directory only`
-    );
-  }
-  const parseYaml = bunYamlParser(globalThis);
-  const entries = readdirSync(nodesDir, { withFileTypes: true })
-    .sort((left, right) => Buffer.compare(Buffer.from(left.name), Buffer.from(right.name)));
-  const files: ArchcontextNodeFile[] = [];
-  for (const entry of entries) {
-    const relPath = `${ARCHCONTEXT_NODES_DIR}/${entry.name}`;
-    if (!entry.isFile() || !ARCHCONTEXT_NODE_FILE.test(entry.name)) {
-      throw new CapabilitySourceError(
-        `unexpected entry in archcontext model directory: ${relPath}; expected only *.yaml or *.yml node files`
-      );
-    }
-    let value: unknown;
-    try {
-      value = parseYaml(readFileSync(resolve(nodesDir, entry.name), "utf-8"));
-    } catch (error) {
-      throw new CapabilitySourceError(
-        `invalid archcontext node YAML: ${relPath}: ${(error as Error).message}`
-      );
-    }
-    files.push({ path: relPath, value });
-  }
-  return files;
 }
 
 function usage(): never {
@@ -280,15 +226,6 @@ export function readRegistry(repo: string): CapabilityRegistry {
     throw malformedRegistryError(resolution.diagnostics, capabilityAuthorityPath(mode));
   }
   return resolution.registry;
-}
-
-/** Every archcontext capability node by node id, whatever its status: the owner join input. */
-export function readArchcontextOwners(repo: string): ArchcontextCapabilityOwners {
-  const resolution = loadRegistry(repo, "archcontext") as ArchcontextCapabilityResolution;
-  if (resolution.status === "invalid") {
-    throw malformedRegistryError(resolution.diagnostics, ARCHCONTEXT_NODES_DIR);
-  }
-  return resolution.owners;
 }
 
 // Anchors must exist only for listed (active) capabilities. Every capability
@@ -516,19 +453,6 @@ async function main(): Promise<void> {
         "UNSUPPORTED_VERSION",
         "CAPABILITIES_NOT_ARRAY",
         "CAPABILITY_NOT_OBJECT",
-        "ARCHCONTEXT_NODE_NOT_OBJECT",
-        "ARCHCONTEXT_SCHEMA_VERSION_UNSUPPORTED",
-        "ARCHCONTEXT_NODE_ID_INVALID",
-        "ARCHCONTEXT_NODE_KIND_INVALID",
-        "ARCHCONTEXT_NODE_STATUS_INVALID",
-        "ARCHCONTEXT_NODE_NAME_INVALID",
-        "ARCHCONTEXT_NODE_SUMMARY_INVALID",
-        "ARCHCONTEXT_NODE_RESPONSIBILITIES_INVALID",
-        "ARCHCONTEXT_INCLUDE_REQUIRED",
-        "ARCHCONTEXT_EXTENSIONS_REQUIRED",
-        "ARCHCONTEXT_LSP_PROFILE_REQUIRED",
-        "ARCHCONTEXT_VERIFICATION_REQUIRED",
-        "ARCHCONTEXT_CONTRACT_FILES_REQUIRED",
       ]);
       if (resolution.diagnostics.some((item) => structuralCodes.has(item.code))) {
         throw malformedRegistryError(resolution.diagnostics, authority);

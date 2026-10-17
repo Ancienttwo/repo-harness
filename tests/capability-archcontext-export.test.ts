@@ -1,12 +1,12 @@
 import { describe, expect, test } from 'bun:test';
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { readArchitectureNativeContext } from '../src/effects/architecture/archctx-provider';
 import { readArchcontextCapabilityAuthority, resolveArchcontextCapabilityPaths } from '../src/effects/capabilities/archcontext-owners';
 import { buildArchContextNodesV2, findMatch, type ArchContextNodeV2 } from '../scripts/capability-resolver';
-import { archcontextIncludeAnchor, capabilityRegistryFromArchcontextNodes, type Capability, type CapabilityRegistry } from '../src/core/capabilities/registry';
+import { type Capability, type CapabilityRegistry } from '../src/core/capabilities/registry';
 
 const ROOT = join(import.meta.dir, '..');
 const capability = (id: string, domain: string, name: string, prefixes: string[]): Capability => ({
@@ -22,15 +22,6 @@ const account = capability('apps-web-account', 'apps-web', 'account', ['apps/web
 const rootRouter = capability('public-surface-root-router', 'public-surface', 'root-router', ['AGENTS.md', 'CLAUDE.md']);
 const registry: CapabilityRegistry = { version: 1, capabilities: [web, account, rootRouter] };
 const directory = (path: string) => path === 'apps/web' || path === 'apps/web/src/routes/account';
-
-function prefixFromNode(node: ArchContextNodeV2, inputPath: string): string | null {
-  // Exported includes are `dir/**` or file paths, so the anchor is the old prefix.
-  const matches = node.source.include.flatMap((include) => {
-    const anchor = archcontextIncludeAnchor(include);
-    return anchor !== null && (inputPath === anchor || inputPath.startsWith(`${anchor}/`)) ? [anchor] : [];
-  });
-  return matches.sort((left, right) => right.length - left.length)[0] ?? null;
-}
 
 describe('capability-resolver archcontext-nodes-v2 export', () => {
   test('emits required node/v2 base fields and directory /** selectors', () => {
