@@ -253,6 +253,10 @@ describe("architecture owed section", () => {
       expect(body!.content).toContain("[ArchitectureOwed]");
       expect(body!.content).toContain("core-owned (docs/architecture/modules/core/owned.md)");
       expect(body!.content.split("\n").length).toBeLessThanOrEqual(3);
+      expect(body!.systemMessage).toBe("Architecture: 1 capability changed after the last projection (core-owned). Run: repo-harness architecture-projection check --json");
+      expect(owedCapabilitiesSessionBody(repo, {
+        ...state, capability_ownership: { ...state.capability_ownership!, review_base: "missing-review-base" },
+      })).toBeNull();
 
       writeFileSync(join(repo, "docs/architecture/.projection-manifest.json"), '{"refreshed":true}\n');
       git("commit", "-q", "-am", "refresh the projection");

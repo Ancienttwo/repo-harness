@@ -12,12 +12,13 @@ import type { SessionContextSection } from './session-context-budget';
  * it becomes additionalContext; stderr stays operator text. A failed run has
  * no model-facing output, so both streams become operator text.
  */
-function textResult(value: { readonly exitCode: number; readonly stdout: string; readonly stderr: string; readonly reason?: string }): HookHandlerResult {
+function textResult(value: { readonly exitCode: number; readonly stdout: string; readonly stderr: string; readonly reason?: string; readonly systemMessage?: string }): HookHandlerResult {
   const additionalContext = value.exitCode === 0 ? value.stdout.trimEnd() : '';
   const diagnostics = value.exitCode === 0 ? value.stderr : `${value.stderr}${value.stdout}`;
   return {
     exitCode: value.exitCode,
     ...(additionalContext ? { additionalContext } : {}),
+    ...(value.exitCode === 0 && value.systemMessage ? { systemMessage: value.systemMessage } : {}),
     ...(diagnostics ? { diagnostics } : {}),
     ...(value.reason ? { reason: value.reason } : {}),
   };
@@ -26,7 +27,8 @@ function textResult(value: { readonly exitCode: number; readonly stdout: string;
 function runSessionContext(context: HookHandlerContext): HookHandlerResult {
   const resolution = context.collector.getEffectiveState();
   const sections: SessionContextSection[] = buildSessionStartSections(context.repoRoot, resolution, context.now.getTime());
-  return { exitCode: 0, sessionContexts: sections, ...(resolution.ok ? {} : { reason: 'context-unavailable' }) };
+  const systemMessage = sections.map((section) => section.systemMessage).filter(Boolean).join('\n');
+  return { exitCode: 0, sessionContexts: sections, ...(systemMessage ? { systemMessage } : {}), ...(resolution.ok ? {} : { reason: 'context-unavailable' }) };
 }
 
 const handlers: Readonly<Record<HookHandlerId, TypedHookHandler>> = Object.freeze({

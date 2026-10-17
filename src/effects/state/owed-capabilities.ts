@@ -148,3 +148,12 @@ export function renderOwedCapabilities(owed: OwedCapabilities | null): string | 
   lines.push(`  Next: ${OWED_NEXT_COMMAND}, then the worker flow in ${OWED_WORKER_FLOW}.`);
   return lines.join('\n');
 }
+
+/** One human-facing line from the same owed result as the model context. */
+export function renderOwedCapabilitiesHuman(owed: OwedCapabilities | null): string | null {
+  if (!owed || owed.status !== 'owed' || owed.capabilities.length === 0) return null;
+  const count = owed.capabilities.length;
+  const first = owed.capabilities[0]!.id;
+  const rest = count > 1 ? `, +${count - 1}` : '';
+  return `Architecture: ${count} ${count === 1 ? 'capability' : 'capabilities'} changed after the last projection (${first}${rest}). Run: ${OWED_NEXT_COMMAND}`;
+}

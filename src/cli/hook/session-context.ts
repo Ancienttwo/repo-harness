@@ -14,7 +14,7 @@ import type { SessionContextSection } from './session-context-budget';
 import type { EffectiveStateResolution } from '../../effects/loop/state-input-collector';
 import { buildStateSnapshotFromEffectiveState } from '../../effects/state/resolve-effective-state';
 import type { EffectiveState } from '../../core/state/types';
-import { owedCapabilities, renderOwedCapabilities } from '../../effects/state/owed-capabilities';
+import { owedCapabilities, renderOwedCapabilities, renderOwedCapabilitiesHuman } from '../../effects/state/owed-capabilities';
 
 const STATE_SOURCE = 'repo-harness state resolve --json';
 /** The resolver reads the pending capture record at this default path. */
@@ -74,6 +74,7 @@ export interface SessionContextProviderInput {
 export interface SessionContextBody {
   readonly content: string;
   readonly source: string;
+  readonly systemMessage?: string;
 }
 
 export interface SessionContextProvider {
@@ -89,13 +90,14 @@ export interface SessionContextProvider {
  */
 export function owedCapabilitiesSessionBody(repoRoot: string, state: EffectiveState): SessionContextBody | null {
   if (!state.capability_ownership) return null;
-  let content: string | null = null;
   try {
-    content = renderOwedCapabilities(owedCapabilities(repoRoot, state.capability_ownership));
+    const owed = owedCapabilities(repoRoot, state.capability_ownership);
+    const content = renderOwedCapabilities(owed);
+    const systemMessage = renderOwedCapabilitiesHuman(owed);
+    return content ? { content, source: STATE_SOURCE, ...(systemMessage ? { systemMessage } : {}) } : null;
   } catch {
     return null;
   }
-  return content ? { content, source: STATE_SOURCE } : null;
 }
 
 /** A fresh pending plan capture with no active plan. Freshness is the resolver's own rule. */

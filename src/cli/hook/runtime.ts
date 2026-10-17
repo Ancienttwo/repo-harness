@@ -206,6 +206,7 @@ export function runHook(opts: RunHookOptions): RunHookResult {
     reason,
     permission: result.permission,
     additionalContext,
+    systemMessage: result.systemMessage,
     diagnostics: result.diagnostics ?? '',
   });
   telemetry.finalize({

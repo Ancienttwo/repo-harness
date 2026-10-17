@@ -16,6 +16,7 @@ export interface HookPermission {
  *
  * - `exitCode`: 0 success, 2 a policy block, any other value a failure.
  * - `additionalContext`: text for the model.
+ * - `systemMessage`: human-facing text for hosts that support it.
  * - `diagnostics`: text for the operator, never parsed.
  * - `reason`: telemetry detail; the runtime derives one when it is absent.
  * - `sessionContexts`: SessionStart sections for the context budgeter.
@@ -24,6 +25,7 @@ export interface HookHandlerResult {
   readonly exitCode: number;
   readonly permission?: HookPermission;
   readonly additionalContext?: string;
+  readonly systemMessage?: string;
   readonly diagnostics?: string;
   readonly reason?: string;
   readonly sessionContexts?: readonly SessionContextSection[];

@@ -14,7 +14,7 @@ import {
 import type { StateInputCollector } from '../../effects/loop/state-input-collector';
 import { resolveCapabilityOwnership } from '../../effects/state/resolve-effective-state';
 import { payloadValue, type HookIdentity, type HookPayload } from './hook-input';
-import { owedCapabilities, renderOwedCapabilities } from '../../effects/state/owed-capabilities';
+import { owedCapabilities, renderOwedCapabilities, renderOwedCapabilitiesHuman } from '../../effects/state/owed-capabilities';
 
 export type StopCollector = Pick<StateInputCollector, 'getRepoRoot' | 'getWorktreeOwnership' | 'getActivePlanMarker'>;
 
@@ -43,6 +43,7 @@ export interface StopHandlerResult {
   readonly exitCode: number;
   readonly stdout: string;
   readonly stderr: string;
+  readonly systemMessage?: string;
 }
 
 function assertSafeRepoWritePath(repoRoot: string, path: string): void {
@@ -109,10 +110,11 @@ function writeRecoveryViews(
 const OWED_SIGNAL_MARKER = '.ai/harness/state/stop-owed-signal';
 
 /**
- * The owed-architecture line for Claude Stop, once per branch, manifest change
+ * The owed-architecture lines for Claude Stop, once per branch, manifest change
  * and owed set.
  * Stop additionalContext continues the turn, so the marker keeps a repeated
  * Stop from asking again; `stop_hook_active` already ended this run earlier.
+ * The human line shares this new-set signal. SessionStart does not read the marker.
  * Codex Stop stays silent. Architecture diagnostics never block, so any
  * failure only drops the line.
  */
@@ -120,14 +122,15 @@ function owedStopSignal(
   repoRoot: string,
   host: HookIdentity['host'],
   observeWrite?: (target: StopProjectionTarget) => void,
-): string {
-  if (host !== 'claude') return '';
+): Pick<StopHandlerResult, 'stdout' | 'systemMessage'> {
+  if (host !== 'claude') return { stdout: '' };
   try {
     const ownership = resolveCapabilityOwnership(repoRoot);
-    if (!ownership) return '';
+    if (!ownership) return { stdout: '' };
     const owed = owedCapabilities(repoRoot, ownership);
     const content = renderOwedCapabilities(owed);
-    if (!content || !owed) return '';
+    const systemMessage = renderOwedCapabilitiesHuman(owed);
+    if (!content || !owed) return { stdout: '' };
     const branch = execFileSync('git', ['-C', repoRoot, 'rev-parse', '--abbrev-ref', 'HEAD'], {
       encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5_000,
     }).trim();
@@ -139,12 +142,12 @@ function owedStopSignal(
       owed.capabilities.map((capability) => capability.id),
     ])).digest('hex');
     const marker = join(repoRoot, OWED_SIGNAL_MARKER);
-    if (existsSync(marker) && readFileSync(marker, 'utf8').trim() === key) return '';
+    if (existsSync(marker) && readFileSync(marker, 'utf8').trim() === key) return { stdout: '' };
     atomicWrite(repoRoot, marker, `${key}\n`);
     observeWrite?.({ kind: 'owed-signal', path: OWED_SIGNAL_MARKER });
-    return `${content}\n`;
+    return { stdout: `${content}\n`, ...(systemMessage ? { systemMessage } : {}) };
   } catch {
-    return '';
+    return { stdout: '' };
   }
 }
 
@@ -166,5 +169,5 @@ export function runStopHandler(opts: StopHandlerInput): StopHandlerResult {
   // last published one.
   try { publishCheckpointFromLedger(repoRoot, () => now); } catch { /* see above */ }
   writeRecoveryViews(repoRoot, activePlan, env, opts.identity, now, dependencies);
-  return { exitCode: 0, stdout: owedStopSignal(repoRoot, opts.identity.host, dependencies.observeProjectionWrite), stderr: '' };
+  return { exitCode: 0, ...owedStopSignal(repoRoot, opts.identity.host, dependencies.observeProjectionWrite), stderr: '' };
 }
