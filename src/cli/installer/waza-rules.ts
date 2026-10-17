@@ -60,7 +60,7 @@ export function syncWazaSharedRules(
     const missing = wazaRules.files.filter((rule) => next.get(rule) === undefined);
     if (missing.length > 0) return { status: 'failed', detail: `missing ${missing.join(', ')}` };
 
-    const state = readInstalledProfile(env);
+    const state = refresh ? readInstalledProfile(env) : null;
     const adoptedPaths: string[] = [];
     if (refresh) {
       for (const rule of wazaRules.files) {

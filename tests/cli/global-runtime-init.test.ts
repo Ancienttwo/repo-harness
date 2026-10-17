@@ -2610,6 +2610,25 @@ if [[ -n "$output" ]]; then cat "$source" > "$output"; else cat "$source"; fi
     });
   }
 
+  test('targeted Waza refresh keeps non-update sync fail closed without changing receipts', () => {
+    withRules(({ home, upstream, env, paths, run }) => {
+      expect(run(true, 'codex').exitCode).toBe(0);
+      const before = paths.map((path) => readFileSync(path));
+      const statePath = join(home, '.repo-harness', 'install-state.json');
+      const beforeState = readFileSync(statePath);
+      expect(run(false, 'claude').exitCode).toBe(1);
+      expect(paths.map((path) => readFileSync(path))).toEqual(before);
+      expect(readFileSync(statePath)).toEqual(beforeState);
+      const destination = join(home, '.claude', 'rules', 'english.md');
+      const receipt = readInstalledProfile(env)!.ownership_manifest.find(({ path }) => path === destination);
+      expect(managedInstallSurfaceIsCurrent(receipt!)).toBe(true);
+      writeFileSync(join(upstream, 'english.md'), '# next English\n');
+      expect(run(true, 'codex').exitCode).toBe(0);
+      expect(run(true, 'claude').exitCode).toBe(0);
+      expect(readFileSync(destination, 'utf-8')).toBe('# next English\n');
+    });
+  });
+
   for (const upstreamState of ['stale', 'current'] as const) {
     test(`adopts ${upstreamState} legacy staging with matching host copies and records ownership`, () => {
       withRules(({ home, upstream, env, paths, run }) => {
