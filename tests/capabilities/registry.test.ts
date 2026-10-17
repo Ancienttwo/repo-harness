@@ -7,6 +7,9 @@ import {
   architectureModulePathFor,
   capabilityPathResolutionFromArchcontextOwners,
   capabilityRegistryFromArchcontextNodes,
+  capabilityRegistryFromNativeContext,
+  capabilityIdentityFromNodeId,
+  type NativeCapabilityProfileInput,
   isCapabilityPathOutsideRepo,
   matchCapabilityPath,
   workstreamDirFor,
@@ -19,6 +22,7 @@ import {
   type Capability,
   type CapabilityRegistry,
 } from "../../src/core/capabilities/registry";
+import { readArchitectureNativeContext } from "../../src/effects/architecture/archctx-provider";
 
 // Recorded with package-local archctx 0.7.2: `archctx resolve --paths-from
 // ownership-0.7.2-paths.txt --json` over the nodes in ownership-0.7.2-model/.
@@ -356,6 +360,95 @@ describe("capabilityRegistryFromArchcontextNodes", () => {
     const resolution = capabilityRegistryFromArchcontextNodes([{ path: "nodes/a.yaml", value: planned }]);
     expect(resolution.status).toBe("invalid");
     expect(resolution.diagnostics.map((item) => item.code)).toEqual(["ARCHCONTEXT_NODE_SUMMARY_INVALID"]);
+  });
+});
+
+describe("capabilityIdentityFromNodeId", () => {
+  test.each([
+    ["capability.engine.state", "engine", "state"],
+    ["capability.apps-web.web-v2", "apps-web", "web-v2"],
+    ["capability.0.9", "0", "9"],
+    ["capability.a-.b--c", "a-", "b--c"],
+  ])("projects %s", (nodeId, domain, name) => {
+    expect(capabilityIdentityFromNodeId(nodeId)).toEqual({
+      id: `${domain}-${name}`, domain, name,
+      architecture_module: `docs/architecture/modules/${domain}/${name}.md`,
+    });
+  });
+
+  test.each(["", "capability.a", "capability.a.b.c", "component.a.b", "namespace::capability.a.b", "capability..b", "capability.a.", "capability.A.b", "capability.a_b.c", "capability.-a.b", "capability.a.b/c", " capability.a.b"])("rejects %s", (nodeId) => {
+    expect(capabilityIdentityFromNodeId(nodeId)).toBeNull();
+  });
+});
+
+describe("capabilityRegistryFromNativeContext", () => {
+  const repoRoot = join(import.meta.dir, "../..");
+  const profile: NativeCapabilityProfileInput = {
+    nodeId: "capability.engine.state", status: "active", domain: "engine", name: "state",
+    modulePath: "docs/architecture/modules/engine/state.md",
+    contractFiles: { agents: "AGENTS.md", claude: "CLAUDE.md" },
+    includeAnchors: ["src/effects/state", "src/core/state"],
+    lspProfile: "typescript-lsp", verification: ["bun run check:type"],
+  };
+  const map = (profiles: readonly NativeCapabilityProfileInput[]) => capabilityRegistryFromNativeContext({ capabilityProfiles: profiles }, { repoRoot });
+
+  test("maps all 35 real repo capabilities without identity drift", () => {
+    const context = readArchitectureNativeContext(repoRoot, { kind: "worktree" });
+    const resolution = capabilityRegistryFromNativeContext(context, { repoRoot });
+    expect(resolution.status).toBe("valid");
+    expect(resolution.diagnostics).toEqual([]);
+    if (resolution.status !== "valid") throw new Error("expected a valid native registry");
+    expect(resolution.registry.capabilities).toHaveLength(35);
+    for (const native of context.capabilityProfiles) {
+      expect(capabilityIdentityFromNodeId(native.nodeId)).toEqual({
+        id: `${native.domain}-${native.name}`, domain: native.domain, name: native.name,
+        architecture_module: native.modulePath,
+      });
+      expect(resolution.owners.get(native.nodeId)).toEqual({
+        id: `${native.domain}-${native.name}`, domain: native.domain, name: native.name,
+        prefixes: native.includeAnchors, contract_files: native.contractFiles,
+        architecture_module: native.modulePath, workstream_dir: `tasks/workstreams/${native.domain}/${native.name}`,
+        lsp_profile: native.lspProfile, verification_hints: native.verification,
+      });
+    }
+  }, 30_000);
+
+  test.each(["domain", "name", "modulePath"] as const)("rejects identity drift in %s", (field) => {
+    const resolution = map([{ ...profile, [field]: "drifted" }]);
+    expect(resolution.status).toBe("invalid");
+    expect(resolution.diagnostics.map((item) => item.code)).toEqual(["ARCHCONTEXT_NODE_ID_INVALID"]);
+  });
+
+  test.each([
+    ["lspProfile", "ARCHCONTEXT_LSP_PROFILE_REQUIRED"],
+    ["verification", "ARCHCONTEXT_VERIFICATION_REQUIRED"],
+  ] as const)("rejects null %s", (field, code) => {
+    const resolution = map([{ ...profile, [field]: null }]);
+    expect(resolution.status).toBe("invalid");
+    expect(resolution.diagnostics.map((item) => item.code)).toEqual([code]);
+  });
+
+  test("keeps archctx anchor order and all owners, but lists only active capabilities", () => {
+    const profiles = [profile, ...["planned", "deprecated"].map((status) => ({
+      ...profile, status, nodeId: `capability.engine.${status}`, name: status,
+      modulePath: `docs/architecture/modules/engine/${status}.md`,
+    }))];
+    const resolution = map(profiles);
+    if (resolution.status !== "valid") throw new Error(`expected valid registry: ${JSON.stringify(resolution.diagnostics)}`);
+    expect(resolution.registry.capabilities.map((capability) => capability.id)).toEqual(["engine-state"]);
+    expect(resolution.registry.capabilities[0]!.prefixes).toEqual(["src/effects/state", "src/core/state"]);
+    expect([...resolution.owners.keys()].sort()).toEqual(profiles.map((item) => item.nodeId).sort());
+    const anchorless = map([{ ...profile, includeAnchors: [] }]);
+    expect(anchorless.status).toBe("valid");
+  });
+
+  test("uses canonical validation for duplicate identities and unsafe paths", () => {
+    const duplicate = map([profile, profile]);
+    expect(duplicate.status).toBe("invalid");
+    expect(duplicate.diagnostics.map((item) => item.code)).toEqual(["DUPLICATE_ID"]);
+    const unsafe = map([{ ...profile, includeAnchors: ["../outside"] }]);
+    expect(unsafe.status).toBe("invalid");
+    expect(unsafe.diagnostics.map((item) => item.code)).toEqual(["INVALID_PATH"]);
   });
 });
 

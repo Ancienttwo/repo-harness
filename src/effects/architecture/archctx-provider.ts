@@ -2,21 +2,25 @@ import { loadArchitectureProjectionPolicy, readGlobalArchitectureConfiguration }
 import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { userInfo } from 'node:os';
 import { isAbsolute, join, resolve, sep } from 'node:path';
-import { ARCHCONTEXT_NODE_RANGE, ERROR_CATALOG, architectureDocsProjectionCompatibilityIssues, PROJECTION_REQUEST_SCHEMA_VERSION, digestJson, type ArchContextError, type ArchctxCapabilitiesV1, type ArchitectureDebtReportV1, type DocsAnchorsReportV1, type Json, type ProjectionApplyReadbackResultV1, type ProjectionExpectedSnapshotV1, type ProjectionMode, type ProjectionRequestV1, type ProjectionResultV2 } from 'archctx-contracts';
+import { ARCHCONTEXT_NODE_RANGE, ERROR_CATALOG, NATIVE_CONTEXT_PROFILE, failureIssues, architectureDocsProjectionCompatibilityIssues, PROJECTION_REQUEST_SCHEMA_VERSION, digestJson, type ArchContextError, type ArchctxCapabilitiesV1, type ArchitectureDebtReportV1, type DocsAnchorsReportV1, type Json, type NativeContextExportV1, type ProjectionApplyReadbackResultV1, type ProjectionExpectedSnapshotV1, type ProjectionMode, type ProjectionRequestV1, type ProjectionResultV2 } from 'archctx-contracts';
 import { trustedNodeCandidates } from '../runtime/node-candidates';
 import { runProcess } from '../process-runner';
-import { readText } from '../state/collect-state-inputs';
-import { loadArchcontextAuthority } from '../state/resolve-effective-state';
+import { capabilityRegistryFromNativeContext } from '../../core/capabilities/registry';
 import {
   ARCHCTX_REQUIRED_VERSION,
+  ArchctxClientError,
   assertArchctxVersion,
   assertProjectionApplyReadbackResult,
   assertProjectionResult,
   decodeArchitectureDebtReport,
   decodeDocsAnchorsReport,
+  decodeNativeContextExport,
+  type NativeContextSource,
   type ArchitectureProjectionPolicy,
   type ArchitectureProjectionReadinessV1,
 } from '../../core/architecture/projection';
+
+export { ArchctxClientError, type NativeContextSource } from '../../core/architecture/projection';
 
 export interface ArchctxProcessResult { status: number | null; signal: NodeJS.Signals | null; stdout: string; stderr: string; error?: string; timedOut?: boolean }
 export type RunArchctxProcess = (binary: string, args: readonly string[], options: { cwd: string; timeoutMs: number; env: NodeJS.ProcessEnv }) => ArchctxProcessResult;
@@ -53,16 +57,17 @@ const DEFAULT_RUNNER: RunArchctxProcess = (binary, args, options) => {
   return { status: overflow ? 1 : result.status, signal: result.signal, timedOut: result.timedOut, stdout: result.stdout, stderr: result.stderr, ...((overflow ? 'archctx output exceeded maxBuffer' : result.error) ? { error: overflow ? 'archctx output exceeded maxBuffer' : result.error } : {}) };
 };
 
-
-/**
- * The model is ready when the hooks' capability loader accepts the nodes and
- * finds at least one active capability. An empty, sample-only or invalid nodes
- * directory is not ready, so apply stays off and status keeps the adoption step.
- */
-function architectureModelReady(repoRoot: string): boolean {
+/** A complete native model with an active capability is ready for projection. */
+function architectureModelReady(repoRoot: string, options: ArchctxProviderOptions): boolean {
   if (!existsSync(join(repoRoot, '.archcontext', 'manifest.yaml')) || !existsSync(join(repoRoot, '.archcontext', 'product.yaml'))) return false;
-  const authority = loadArchcontextAuthority(repoRoot, (path) => readText(repoRoot, path));
-  return authority.status === 'valid' && authority.registry.capabilities.length > 0;
+  try {
+    const context = readArchitectureNativeContext(repoRoot, { kind: 'worktree' }, options);
+    const authority = capabilityRegistryFromNativeContext(context, { repoRoot });
+    return authority.status === 'valid' && authority.registry.capabilities.length > 0;
+  } catch (error) {
+    if (error instanceof ArchctxClientError) return false;
+    throw error;
+  }
 }
 
 /** One rule for code facts: the checkout has a CodeGraph index directory. */
@@ -212,35 +217,16 @@ export class ArchctxClient {
   }
 }
 
-export class ArchctxClientError extends Error {
-  readonly code: string;
-  readonly action: string;
-  readonly reasonCode?: string;
-  readonly details?: ArchContextError['details'];
-  readonly retryable?: boolean;
-  readonly providerMessage: string;
-
-  constructor(error: Pick<ArchContextError, 'message' | 'action'> & { code: string } & Partial<Omit<ArchContextError, 'code' | 'message' | 'action'>>) {
-    const maintenance = error.code === 'AC_RUNTIME_VERSION_UNSUPPORTED' && error.action === 'upgrade-archctx-runtime' ? ` ${ARCHCTX_MAINTENANCE_REMINDER}` : '';
-    super(`${error.code}: ${error.message}${maintenance}${error.reasonCode ? ` (reasonCode: ${error.reasonCode})` : ''}; action: ${error.action}`);
-    this.name = 'ArchctxClientError';
-    this.code = error.code;
-    this.action = error.action;
-    this.reasonCode = error.reasonCode;
-    this.details = error.details;
-    this.retryable = error.retryable;
-    this.providerMessage = error.message;
-  }
-}
-
 function decodeArchctxError(value: unknown): ArchContextError {
-  if (!isRecord(value) || typeof value.code !== 'string' || typeof value.message !== 'string' || typeof value.action !== 'string'
-    || !Object.hasOwn(ERROR_CATALOG, value.code)
-    || value.action !== ERROR_CATALOG[value.code as ArchContextError['code']].action
-    || value.retryable !== ERROR_CATALOG[value.code as ArchContextError['code']].retryable
-    || value.severity !== ERROR_CATALOG[value.code as ArchContextError['code']].severity
-    || (value.reasonCode !== undefined && typeof value.reasonCode !== 'string')
-    || (value.details !== undefined && (!isRecord(value.details) || Buffer.byteLength(JSON.stringify(value.details), 'utf8') > 256 * 1024))) throw new Error('archctx returned an invalid error envelope');
+  if (!isRecord(value) || typeof value.code !== 'string' || !Object.hasOwn(ERROR_CATALOG, value.code)) throw new Error('archctx returned an invalid error envelope');
+  const defaults = ERROR_CATALOG[value.code as ArchContextError['code']];
+  const catalogDefault = typeof value.message === 'string'
+    && value.action === defaults.action
+    && value.retryable === defaults.retryable
+    && value.severity === defaults.severity
+    && (value.reasonCode === undefined || typeof value.reasonCode === 'string')
+    && (value.details === undefined || (isRecord(value.details) && Buffer.byteLength(JSON.stringify(value.details), 'utf8') <= 256 * 1024));
+  if (!catalogDefault && failureIssues(value).length !== 0) throw new Error('archctx returned an invalid error envelope');
   return value as unknown as ArchContextError;
 }
 
@@ -258,6 +244,37 @@ export function runPackageLocalArchctxJson(
   return { resolved: client.resolved, value: client.json(args, maximumMs, allowErrorEnvelope) };
 }
 
+const nativeContextRefs = new Map<string, NativeContextExportV1>();
+const NATIVE_CONTEXT_REF_LIMIT = 4;
+
+/** Worktree reads stay fresh. Immutable commit reads share a four-entry LRU. */
+export function readArchitectureNativeContext(
+  repoRoot: string,
+  source: NativeContextSource,
+  options: ArchctxProviderOptions = {},
+): NativeContextExportV1 {
+  if (source.kind === 'ref' && !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(source.commit)) {
+    throw new ArchctxClientError({ code: 'RH_ARCHCTX_NATIVE_CONTEXT_INVALID', action: 'update-repo-harness', message: 'native context ref must be a full commit SHA' });
+  }
+  const key = source.kind === 'ref' ? `${realpathSync(repoRoot)}\0${source.commit}` : null;
+  if (key !== null) {
+    const cached = nativeContextRefs.get(key);
+    if (cached) {
+      nativeContextRefs.delete(key);
+      nativeContextRefs.set(key, cached);
+      return cached;
+    }
+  }
+  const args = ['export', 'native', ...(source.kind === 'worktree' ? ['--worktree'] : ['--ref', source.commit]), '--profile', NATIVE_CONTEXT_PROFILE, '--json'];
+  const { value } = runPackageLocalArchctxJson(repoRoot, ARCHCTX_REQUIRED_VERSION, args, options, 30_000);
+  const context = decodeNativeContextExport((value as { data: unknown }).data, source);
+  if (key !== null) {
+    nativeContextRefs.set(key, context);
+    if (nativeContextRefs.size > NATIVE_CONTEXT_REF_LIMIT) nativeContextRefs.delete(nativeContextRefs.keys().next().value!);
+  }
+  return context;
+}
+
 export function archctxCapabilities(repoRoot: string, options: ArchctxProviderOptions = {}): { resolved: ResolvedArchctxPackage; capabilities: ArchctxCapabilitiesV1 } {
   const policy = options.policy ?? loadArchitectureProjectionPolicy(options.env);
   if (policy.provider === 'disabled') throw new Error('architecture projection provider is disabled');
@@ -266,8 +283,6 @@ export function archctxCapabilities(repoRoot: string, options: ArchctxProviderOp
   catch (error) { throw new ArchctxClientError({ code: 'RH_ARCHCTX_PACKAGE_MISMATCH', action: 'update-repo-harness', message: error instanceof Error ? error.message : String(error) }); }
   return { resolved, capabilities: value as ArchctxCapabilitiesV1 };
 }
-
-const ARCHCTX_MAINTENANCE_REMINDER = 'User authorization required: ask before replacing the shared daemon with daemon upgrade; this interrupts other clients. Use the same managed package-local archctx and Node runtime, then verify daemon status. After replacement, check the configured CodeGraph index for this repository; request authorization to rebuild only if it is missing or stale. Do not delete shared state or automatically restart/reindex.';
 
 /** Lifecycle readback is separate from the CLI-only capabilities handshake. */
 export function verifyArchctxDaemonRuntime(repoRoot: string, options: ArchctxProviderOptions = {}): void {
@@ -406,7 +421,7 @@ export function inspectArchitectureProjectionReadiness(repoRoot: string, options
     if (policy.provider === 'disabled') return {
       ...base(),
       projectionProvider: { provider: 'disabled', state: 'disabled', binaryPath: null, nodePath: null, command: null, version: null, reason: readGlobalArchitectureConfiguration(options.env).initialized ? 'global architecture.projection_provider=disabled' : 'global architecture configuration is missing; run repo-harness update once' },
-      next: source === 'archcontext' && architectureModelReady(repoRoot) ? null : architectureAdoptionStep(),
+      next: source === 'archcontext' && architectureModelReady(repoRoot, options) ? null : architectureAdoptionStep(),
     };
     if (source === 'unadopted') throw new ArchctxClientError({ code: 'RH_ARCHCTX_POLICY_MISSING', action: 'adopt-repository', message: 'repository policy is missing; run repo-harness init' });
     const nodePath = resolveCompatibleNodeRuntime(options.env ?? process.env, options.trustedNodeCandidateSource);
@@ -414,7 +429,7 @@ export function inspectArchitectureProjectionReadiness(repoRoot: string, options
     assertCommittedProjectionManifestCompatible(repoRoot, handshake.capabilities);
     try { verifyArchctxDaemonRuntime(repoRoot, options); daemonState = 'compatible'; }
     catch (error) { daemonState = error instanceof ArchctxClientError && error.code === 'AC_RUNTIME_VERSION_UNSUPPORTED' ? 'mismatch' : 'error'; throw error; }
-    const modelReady = architectureModelReady(repoRoot);
+    const modelReady = architectureModelReady(repoRoot, options);
     return {
       ...base(),
       projectionProvider: { provider: 'archctx', state: 'ready', binaryPath: handshake.resolved.binaryPath, nodePath, command: [nodePath, handshake.resolved.binaryPath], version: handshake.resolved.version, reason: 'exact package-local handshake and daemon runtime check passed; code facts are reported separately' },

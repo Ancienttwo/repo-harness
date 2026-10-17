@@ -1,5 +1,10 @@
 import {
   ARCHCTX_CAPABILITIES_SCHEMA_VERSION,
+  NATIVE_CONTEXT_PROFILE,
+  NATIVE_CONTEXT_SCHEMA_VERSION,
+  nativeContextSchemaResolver,
+  type ArchContextError,
+  type NativeContextExportV1,
   architectureDebtReportIssues,
   docsAnchorsReportIssues,
   projectionApplyReadbackResultInvariantIssues,
@@ -16,10 +21,58 @@ import projectionResultSchema from 'archctx-contracts/schemas/runtime/projection
 import projectionReadbackSchema from 'archctx-contracts/schemas/runtime/projection-apply-readback.schema.json';
 import docsAnchorsSchema from 'archctx-contracts/schemas/runtime/docs-anchors.schema.json';
 import architectureDebtSchema from 'archctx-contracts/schemas/runtime/architecture-debt.schema.json';
+import nativeContextExportSchema from 'archctx-contracts/schemas/runtime/native-context-export.schema.json';
+import nodeSchema from 'archctx-contracts/schemas/repo/architecture-node.schema.json';
+import relationSchema from 'archctx-contracts/schemas/repo/architecture-relation.schema.json';
+import flowSchema from 'archctx-contracts/schemas/repo/architecture-flow.schema.json';
 import type { GeneratedSummaryFreshness } from './module-view';
 import { dependencies } from '../../../package.json';
 
 export const ARCHCTX_REQUIRED_VERSION = dependencies.archctx;
+
+const ARCHCTX_MAINTENANCE_REMINDER = 'User authorization required: ask before replacing the shared daemon with daemon upgrade; this interrupts other clients. Use the same managed package-local archctx and Node runtime, then verify daemon status. After replacement, check the configured CodeGraph index for this repository; request authorization to rebuild only if it is missing or stale. Do not delete shared state or automatically restart/reindex.';
+
+export class ArchctxClientError extends Error {
+  readonly code: string;
+  readonly action: string;
+  readonly reasonCode?: string;
+  readonly details?: ArchContextError['details'];
+  readonly retryable?: boolean;
+  readonly providerMessage: string;
+
+  constructor(error: Pick<ArchContextError, 'message' | 'action'> & { code: string } & Partial<Omit<ArchContextError, 'code' | 'message' | 'action'>>) {
+    const maintenance = error.code === 'AC_RUNTIME_VERSION_UNSUPPORTED' && error.action === 'upgrade-archctx-runtime' ? ` ${ARCHCTX_MAINTENANCE_REMINDER}` : '';
+    super(`${error.code}: ${error.message}${maintenance}${error.reasonCode ? ` (reasonCode: ${error.reasonCode})` : ''}; action: ${error.action}`);
+    this.name = 'ArchctxClientError';
+    this.code = error.code;
+    this.action = error.action;
+    this.reasonCode = error.reasonCode;
+    this.details = error.details;
+    this.retryable = error.retryable;
+    this.providerMessage = error.message;
+  }
+}
+
+export type NativeContextSource = { readonly kind: 'worktree' } | { readonly kind: 'ref'; readonly commit: string };
+
+/** Validate the provider contract and bind its snapshot to the requested source. */
+export function decodeNativeContextExport(value: unknown, source: NativeContextSource): NativeContextExportV1 {
+  try {
+    type Schema = Parameters<typeof validateJsonSchema>[0];
+    const validation = validateJsonSchema(nativeContextExportSchema as Schema, value as Json, {
+      resolveSchema: nativeContextSchemaResolver({ node: nodeSchema as Schema, relation: relationSchema as Schema, flow: flowSchema as Schema }),
+    });
+    if (!validation.valid) throw new Error(validation.issues.slice(0, 5).map((issue) => `${issue.path} ${issue.message}`).join('; '));
+    const context = value as NativeContextExportV1;
+    if (context.schemaVersion !== NATIVE_CONTEXT_SCHEMA_VERSION || context.profile !== NATIVE_CONTEXT_PROFILE) throw new Error('schema version or profile mismatch');
+    if (source.kind === 'ref') {
+      if (context.snapshot.source !== 'ref' || context.snapshot.commitSha !== source.commit) throw new Error('ref snapshot mismatch');
+    } else if (context.snapshot.source !== 'worktree') throw new Error('worktree snapshot mismatch');
+    return context;
+  } catch (error) {
+    throw new ArchctxClientError({ code: 'RH_ARCHCTX_NATIVE_CONTEXT_INVALID', action: 'update-repo-harness', message: `native context invalid: ${error instanceof Error ? error.message : String(error)}` });
+  }
+}
 
 export type ProjectionProvider = 'disabled' | 'archctx';
 export type ProjectionApplyMode = 'disabled' | 'manual';
