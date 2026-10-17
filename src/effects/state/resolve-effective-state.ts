@@ -28,7 +28,6 @@ import type {
 import {
   artifactStemFromPlan,
   evidenceContractComplete,
-  planSlugFromPath,
   planStatusFromText,
 } from '../../core/state/artifact-parsers';
 import { projectEffectiveState } from '../../core/state/project-effective-state';
@@ -107,26 +106,6 @@ function policyValue(
     current = (current as Record<string, unknown>)[segment];
   }
   return current;
-}
-
-function preferredOrLegacyPath(
-  cwd: string,
-  preferred: string,
-  legacy: string,
-): string {
-  if (fileExists(cwd, preferred) || !fileExists(cwd, legacy)) return preferred;
-  return legacy;
-}
-
-function deriveContractPath(cwd: string, planPath: string, planText: string | null): string | null {
-  const stem = artifactStemFromPlan(planPath, planText);
-  const slug = planSlugFromPath(planPath);
-  if (!stem || !slug) return null;
-  return preferredOrLegacyPath(
-    cwd,
-    `tasks/contracts/${stem}.contract.md`,
-    `tasks/contracts/${slug}.contract.md`,
-  );
 }
 
 function policyPath(policy: WorkflowPolicy, jqPath: string, fallback: string, root = '.ai/harness'): string {
@@ -609,13 +588,10 @@ function collectStateSnapshotFacts(
   const policy = readWorkflowPolicy(cwd);
   const planPath = state.authoritative_plan?.path ?? null;
   const planText = readText(cwd, planPath);
-  const contractPath = planPath ? deriveContractPath(cwd, planPath, planText) : null;
   return {
-    contractPresent: Boolean(readText(cwd, contractPath)),
     spec: fileExists(cwd, 'docs/spec.md') ? 'present' : 'missing',
     pending: pendingState(cwd, nowMs, policy),
     activePlanMarker: readTrimmed(cwd, ACTIVE_PLAN_MARKER),
-    contractPath,
     evidence: planPath
       ? evidenceContractComplete(planText) ? 'complete' : 'incomplete'
       : 'unchecked',

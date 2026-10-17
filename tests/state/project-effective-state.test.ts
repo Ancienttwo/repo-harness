@@ -329,8 +329,6 @@ describe('state-snapshot compatibility projection', () => {
       spec: 'present',
       pending: 'none',
       activePlanMarker: PLAN,
-      contractPath: CONTRACT,
-      contractPresent: true,
       evidence: 'complete',
     } as const;
     const activeCases = [
@@ -355,7 +353,7 @@ describe('state-snapshot compatibility projection', () => {
       staleSources: ['active_plan_marker'],
     })), facts);
     expect(stale.states.plan).toBe('stale_marker');
-    expect(stale.paths).toEqual({ active_plan: PLAN, contract: null });
+    expect(stale.paths).toEqual({ active_plan: PLAN });
     expect(stale.marker.problem).toBe('deleted');
   });
 });

@@ -30,13 +30,10 @@ export interface StateSnapshot {
     readonly plan: SnapshotPlanState;
     readonly pending: 'none' | 'fresh' | 'stale';
     readonly worktree: 'current' | 'linked_target' | 'foreign_marker';
-    readonly contract: 'present' | 'missing';
-    readonly contract_path: 'present' | 'missing';
     readonly evidence: 'unchecked' | 'complete' | 'incomplete';
   };
   readonly paths: {
     readonly active_plan: string | null;
-    readonly contract: string | null;
   };
   readonly marker: {
     readonly problem: 'none' | 'deleted' | 'foreign_worktree';
