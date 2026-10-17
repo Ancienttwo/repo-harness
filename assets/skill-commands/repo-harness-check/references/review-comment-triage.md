@@ -7,10 +7,9 @@ This pass does not merge or push.
 
 ## Classes
 
-- `fix`: the comment names a plausible correctness, security, privacy, data,
-  auth, billing, migration, idempotency, race or shipped-behavior issue. Fix it
-  in the lowest PR that owns the code. Reply with the commit SHA. Resolve the
-  thread.
+- `fix`: the comment names a plausible correctness, race or shipped-behavior
+  issue that is not in an ask-by-default category. Fix it in the lowest PR that
+  owns the code. Reply with the commit SHA. Resolve the thread.
 - `dismiss`: the comment matches a documented low-risk pattern. The reply
   names the concrete reason.
 - `ask`: the comment is novel, high severity or ambiguous. Stop and ask the
@@ -18,12 +17,14 @@ This pass does not merge or push.
 
 ## Ask By Default
 
-- Ask for security, privacy, auth, billing, retention, permission boundaries,
-  migrations, schema, idempotency and concurrency.
-- Ask for any finding that the provider marks as high severity.
-- This list matches the stop-and-ask list in
-  `assets/reference-configs/agentic-development-flow.md`. Keep the two lists
-  equal.
+- The stop-and-ask list in `agentic-development-flow.md` (security,
+  authentication, data and migrations) is the one authority. This reference does
+  not redefine it.
+- This reference adds privacy, billing, retention, permission boundaries,
+  schema, idempotency, concurrency and any finding that the provider marks as
+  high severity.
+- `ask` takes precedence over `fix`. A comment in any of these categories is
+  `ask` until the user answers, also when the fix looks small and familiar.
 
 ## Dismissal Patterns
 
