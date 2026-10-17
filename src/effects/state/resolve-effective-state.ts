@@ -2,10 +2,12 @@ import { assertObservationPath, currentReadonlyObservation, withReadonlyObservat
 import { statSync } from 'fs';
 import { posix, win32 } from 'path';
 import { buildReviewSubject, isImplementationSurfacePath, type ReviewSubject } from '../review/diff-fingerprint';
+import { owedCapabilityBase } from './owed-capabilities';
 import { resolveWorkflowProfile } from '../../core/workflow/profile';
 import {
   CAPABILITY_SOURCE_MODES,
   isCapabilityPathOutsideRepo,
+  normalizeCapabilityPath,
   parseCapabilityRegistry,
   resolveCapabilityPaths,
   type CapabilityIdentity,
@@ -427,77 +429,87 @@ function resolveArchcontextPaths(
   }
 }
 
+/** Resolve one union, then keep each subject's owners and path errors separate. */
+function capabilityIdsForPathGroups(
+  cwd: string,
+  groups: readonly (readonly string[])[],
+  policy: WorkflowPolicy,
+  readSource = (path: string) => readText(cwd, path),
+  select: (paths: readonly string[]) => readonly string[] = (paths) => paths,
+): CapabilityResolution[] {
+  const mode = capabilitySourceMode(policy);
+  const inputs = groups.map((paths) => {
+    const inRepoPaths = paths.filter((path) => !isCapabilityPathOutsideRepo(path, cwd));
+    return { inRepoPaths, outOfRepoPathCount: paths.length - inRepoPaths.length };
+  });
+  const invalid = (diagnostics: readonly CapabilityRegistryDiagnostic[], outOfRepoPathCount: number): CapabilityResolution => ({
+    ids: [], registryStatus: 'invalid', matches: [], unmappedPaths: [],
+    malformedEntryCount: new Set(diagnostics.map((entry) => /^capabilities\[(\d+)\]/.exec(entry.path)?.[1]).filter(Boolean)).size,
+    outOfRepoPathCount,
+    blocker: capabilityOwnershipBlocker(diagnostics[0]!, mode),
+  });
+  const registry = mode === 'registry' ? loadRegistryAuthority(cwd, policy, readSource) : null;
+  if (registry?.status === 'absent') {
+    return inputs.map(({ outOfRepoPathCount }) => ({
+      ids: [], registryStatus: 'absent', matches: [], unmappedPaths: [], malformedEntryCount: 0, outOfRepoPathCount, blocker: null,
+    }));
+  }
+  const authorityErrors = registry?.status === 'invalid' ? registry.diagnostics
+    : mode === 'archcontext' && archcontextNodePaths(cwd).length === 0
+      ? [{ code: 'REGISTRY_MISSING' as const, path: CAPABILITY_NODES_DIR, message: `capability nodes are missing: ${CAPABILITY_NODES_DIR}` }]
+      : [];
+  if (authorityErrors.length > 0) return inputs.map(({ outOfRepoPathCount }) => invalid(authorityErrors, outOfRepoPathCount));
+
+  const subjects = inputs.map(({ inRepoPaths, outOfRepoPathCount }) => {
+    const paths = new Set<string>();
+    const diagnostics: CapabilityRegistryDiagnostic[] = [];
+    for (const path of select(inRepoPaths)) {
+      try { paths.add(normalizeCapabilityPath(path, cwd)); }
+      catch (error) { diagnostics.push({ code: 'INVALID_PATH', path: 'path', message: (error as Error).message }); }
+    }
+    return { paths, diagnostics, outOfRepoPathCount };
+  });
+  const union = Array.from(new Set(subjects.flatMap(({ paths }) => [...paths]))).sort();
+  const resolution: CapabilityPathResolution<CapabilityIdentity> = registry?.status === 'valid'
+    ? resolveCapabilityPaths(registry.registry, union, { repoRoot: cwd })
+    : union.length === 0
+      ? { status: 'valid', capabilityIds: [], matches: [], unmappedPaths: [], diagnostics: [] }
+      : resolveArchcontextPaths(cwd, ARCHCONTEXT_IDENTITY_OWNERS, union, readSource);
+  return subjects.map(({ paths, diagnostics: pathErrors, outOfRepoPathCount }): CapabilityResolution => {
+    const diagnostics = [...pathErrors, ...resolution.diagnostics.filter((entry) => {
+      // Empty subjects did not need archctx before this union query either.
+      if (paths.size === 0) return false;
+      return mode !== 'archcontext' || !['AMBIGUOUS_MATCH', 'ARCHCONTEXT_OWNER_UNKNOWN'].includes(entry.code)
+        || paths.has(entry.path);
+    })];
+    if (diagnostics.length > 0) return invalid(diagnostics, outOfRepoPathCount);
+    const matches = resolution.matches.filter((match) => paths.has(match.filePath));
+    return {
+      ids: Array.from(new Set(matches.map((match) => match.capability.id))).sort(),
+      registryStatus: 'valid', matches,
+      unmappedPaths: resolution.unmappedPaths.filter((path) => paths.has(path)),
+      malformedEntryCount: 0, outOfRepoPathCount, blocker: null,
+    };
+  });
+}
+
 function capabilityIdsForPaths(
   cwd: string,
   paths: readonly string[],
   policy: WorkflowPolicy,
-  readSource = (path: string) => readText(cwd, path),
-  select: (paths: readonly string[]) => readonly string[] = (paths) => paths,
+  readSource?: (path: string) => string | null,
+  select?: (paths: readonly string[]) => readonly string[],
 ): CapabilityResolution {
-  // Absolute paths outside the repo (user-level config such as ~/.pi/agent/*)
-  // are outside the registry's jurisdiction: prefixes are repo-relative, so
-  // they can never match, and feeding them into prefix matching used to fail
-  // the ENTIRE resolution as capability_registry:invalid even though the
-  // registry itself was valid. Partition them out and report them via their
-  // own capability:out-of-repo:<n> reason instead.
-  const inRepoPaths = paths.filter((path) => !isCapabilityPathOutsideRepo(path, cwd));
-  const outOfRepoPathCount = paths.length - inRepoPaths.length;
-  const mode = capabilitySourceMode(policy);
-  const invalidAuthority = (diagnostics: readonly CapabilityRegistryDiagnostic[]): CapabilityResolution => {
-    const malformedEntries = new Set(
-      diagnostics
-        .map((entry) => /^capabilities\[(\d+)\]/.exec(entry.path)?.[1])
-        .filter((index): index is string => Boolean(index)),
-    );
-    // Ownership is unknown here, so no path is reported as unowned.
-    return {
-      ids: [],
-      registryStatus: 'invalid',
-      matches: [],
-      unmappedPaths: [],
-      malformedEntryCount: malformedEntries.size,
-      outOfRepoPathCount,
-      blocker: capabilityOwnershipBlocker(diagnostics[0]!, mode),
-    };
-  };
-  let resolution: CapabilityPathResolution<CapabilityIdentity>;
-  if (mode === 'registry') {
-    const registry = loadRegistryAuthority(cwd, policy, readSource);
-    if (registry.status === 'absent') {
-      return { ids: [], registryStatus: 'absent', matches: [], unmappedPaths: [], malformedEntryCount: 0, outOfRepoPathCount, blocker: null };
-    }
-    if (registry.status === 'invalid') return invalidAuthority(registry.diagnostics);
-    resolution = resolveCapabilityPaths(registry.registry, select(inRepoPaths), { repoRoot: cwd });
-  } else {
-    if (archcontextNodePaths(cwd).length === 0) {
-      return invalidAuthority([{ code: 'REGISTRY_MISSING', path: CAPABILITY_NODES_DIR, message: `capability nodes are missing: ${CAPABILITY_NODES_DIR}` }]);
-    }
-    const selected = select(inRepoPaths);
-    // No path to resolve means no `archctx resolve` and no owner.
-    resolution = selected.length === 0
-      ? { status: 'valid', capabilityIds: [], matches: [], unmappedPaths: [], diagnostics: [] }
-      : resolveArchcontextPaths(cwd, ARCHCONTEXT_IDENTITY_OWNERS, selected, readSource);
-  }
-  if (resolution.status !== 'valid') {
-    return {
-      ids: [],
-      registryStatus: 'invalid',
-      matches: [],
-      unmappedPaths: [],
-      malformedEntryCount: 0,
-      outOfRepoPathCount,
-      blocker: capabilityOwnershipBlocker(resolution.diagnostics[0]!, mode),
-    };
-  }
-  return {
-    ids: resolution.capabilityIds,
-    registryStatus: 'valid',
-    matches: resolution.matches,
-    unmappedPaths: resolution.unmappedPaths,
-    malformedEntryCount: 0,
-    outOfRepoPathCount,
-    blocker: null,
-  };
+  return capabilityIdsForPathGroups(cwd, [paths], policy, readSource, select)[0]!;
+}
+
+/** The owed subject is independent of the subject used for risk and review. */
+function owedOwnershipSubject(cwd: string, reviewSubject: ReviewSubject): ReviewSubject {
+  if (reviewSubject.status !== 'ok') return reviewSubject;
+  const base = owedCapabilityBase(cwd, reviewSubject.target_rev, reviewSubject.head_rev);
+  return base.reviewBase === reviewSubject.target_rev
+    ? reviewSubject
+    : buildReviewSubject(cwd, { targetRef: base.reviewBase });
 }
 
 /** Groups the resolved owners by capability. Null when ownership was not computed. */
@@ -522,8 +534,10 @@ function capabilityOwnershipFrom(
 }
 
 /**
- * Capability ownership of the review subject against `targetRef`, or the
- * policy review base when it is omitted. It reads the same authority and runs
+ * Owed ownership against `targetRef`, or the policy review base when omitted.
+ * A checkout not ahead of that base uses its last manifest checkpoint. The
+ * returned review_base keeps the policy target so the owed rule can select
+ * the same checkpoint and its Stop delivery key. It reads the same authority and runs
  * the same ownership resolution as `state resolve`, without the state
  * lock, the cache or the version store. Null means the repository declares no
  * capability registry, so nothing is owned. It throws when the review subject
@@ -535,7 +549,9 @@ export function resolveCapabilityOwnership(cwd: string, targetRef?: string): Cap
   if (reviewSubject.status !== 'ok') {
     throw new Error(`review subject is unavailable: ${reviewSubject.reason ?? 'unknown reason'}`);
   }
-  const resolution = capabilityIdsForPaths(cwd, reviewSubject.paths.filter(isImplementationSurfacePath), policy);
+  const owedSubject = owedOwnershipSubject(cwd, reviewSubject);
+  if (owedSubject.status !== 'ok') throw new Error(`owed subject is unavailable: ${owedSubject.reason ?? 'unknown reason'}`);
+  const resolution = capabilityIdsForPaths(cwd, owedSubject.paths.filter(isImplementationSurfacePath), policy);
   if (resolution.blocker) {
     throw new Error(`${resolution.blocker.key} ${resolution.blocker.code}: ${resolution.blocker.message}; fix: ${resolution.blocker.fix}`);
   }
@@ -677,11 +693,22 @@ function resolveEffectiveStateUnlocked(
   // the caller declared explicitly is trusted as-is; otherwise resolve it
   // from the implementation-surface path set (capabilityIdsForPaths' contract
   // is stated in terms of "implementation paths").
+  let owedSubject: ReviewSubject | null = null;
+  // Owed ownership is advisory and does not feed state_revision or source_hashes.
+  // Bounded observers keep review/risk reads and do not request owed Git history.
+  if (!options.risk?.capabilityIds && !currentReadonlyObservation()) {
+    try { owedSubject = owedOwnershipSubject(cwd, reviewSubject); }
+    catch { /* Architecture diagnostics do not block risk resolution. */ }
+  }
+  const owedPaths = owedSubject
+    ? Array.from(new Set([...explicitTargetPaths, ...(owedSubject.status === 'ok' ? owedSubject.paths : [])])).sort().filter(isImplementationSurfacePath)
+    : [];
+  const [riskOwnership, owedOwnership] = options.risk?.capabilityIds || (!hasRawTargetPaths && owedPaths.length === 0)
+    ? []
+    : capabilityIdsForPathGroups(cwd, [implementationTargetPaths, owedPaths], policy, readSource);
   const capabilityResolution: CapabilityResolution | null = options.risk?.capabilityIds
     ? { ids: options.risk.capabilityIds, registryStatus: 'valid', matches: [], unmappedPaths: [], malformedEntryCount: 0, outOfRepoPathCount: 0, blocker: null }
-    : hasRawTargetPaths
-      ? capabilityIdsForPaths(cwd, implementationTargetPaths, policy, readSource)
-      : null;
+    : hasRawTargetPaths ? riskOwnership! : null;
   const observedCapabilityIds = capabilityResolution?.ids;
   const unmappedCapabilityCount = capabilityResolution?.unmappedPaths.length ?? 0;
   const outOfRepoPathCount = capabilityResolution?.outOfRepoPathCount ?? 0;
@@ -797,7 +824,7 @@ function resolveEffectiveStateUnlocked(
     capabilityReasons,
     capabilityBlocker,
     capabilityOwnership: capabilityOwnershipFrom(
-      capabilityResolution,
+      owedSubject ? owedOwnership ?? null : null,
       Boolean(options.risk?.capabilityIds),
       reviewSubject.status === 'ok' ? reviewSubject.target_rev : null,
     ),

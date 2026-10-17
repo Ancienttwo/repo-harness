@@ -263,6 +263,42 @@ describe('optional strategy and progressive memory', () => {
     expect(packet.stateRevision).toBe(ordinary.state_revision.replace('sha256:', ''));
     expect(validateProposal(proposal(packet), packet).status).toBe('reviewable');
   });
+  for (const branch of ['main', 'feature']) {
+    test(`projected strategy ${branch} keeps its canonical state revision without owed history`, () => {
+      const { root } = fixture();
+      write(root, '.ai/harness/policy.json', JSON.stringify({ context: { capability_registry_file: '.ai/context/capabilities.json' } }));
+      write(root, '.ai/context/capabilities.json', JSON.stringify({ version: 1, capabilities: [{
+        id: 'core-owned', domain: 'core', name: 'owned', prefixes: ['src/owned'],
+        contract_files: { agents: 'AGENTS.md', claude: 'CLAUDE.md' },
+        architecture_module: 'docs/architecture/modules/core/owned.md',
+        workstream_dir: 'tasks/workstreams/core/owned', lsp_profile: 'typescript-lsp', verification_hints: [],
+      }] }));
+      write(root, 'docs/architecture/.projection-manifest.json', '{}\n');
+      write(root, 'src/owned/a.ts', 'export const a = 1;\n');
+      git(root, 'add', '.'); git(root, 'commit', '-m', 'Projection checkpoint');
+      if (branch === 'feature') git(root, 'checkout', '-b', branch);
+      write(root, 'src/owned/a.ts', 'export const a = 2;\n');
+      git(root, 'commit', '-am', 'Owned code after the checkpoint');
+
+      const before = snapshot(root);
+      const packet = collectStrategyContext(root, { nowMs });
+      expect(packet.stateRevision).toMatch(/^[a-f0-9]{64}$/);
+      expect(packet.unknowns).toEqual([]);
+      expect(validateProposal(proposal(packet), packet).status).toBe('reviewable');
+
+      const risk = { targetPaths: [], operationKind: 'inspect' as const };
+      const ordinary = resolveEffectiveStateReadOnly(root, nowMs, risk);
+      const bounded = resolveEffectiveStateReadOnly(root, nowMs, risk, new StrategyReader(root).observationIO());
+      expect(ordinary.capability_ownership?.capability_ids).toEqual(['core-owned']);
+      expect(bounded.capability_ownership).toBeNull();
+      expect(bounded.state_revision).toBe(ordinary.state_revision);
+      expect(bounded.source_hashes).toEqual(ordinary.source_hashes);
+      expect(bounded.profile_signals).toEqual(ordinary.profile_signals);
+      expect(bounded.blockers).toEqual(ordinary.blockers);
+      expect(packet.stateRevision).toBe(ordinary.state_revision.replace('sha256:', ''));
+      expect(snapshot(root)).toEqual(before);
+    });
+  }
   test('read-only passes parse and hash the same policy and capability bytes', () => {
     const { root } = fixture(); const policy = '.ai/harness/policy.json';
     const node = '.archcontext/model/nodes/capability.fixture.yaml';

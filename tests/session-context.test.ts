@@ -221,6 +221,36 @@ describe("buildSessionStartSections", () => {
 });
 
 describe("architecture owed section", () => {
+  test("main sessions report committed debt and include a later working-tree capability", () => {
+    const f = fixture("session-main-owed", { context: { capability_registry_file: ".ai/context/capabilities.json" } });
+    const git = (...args: string[]) => execFileSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", ...args], { cwd: f.root, encoding: "utf8" }).trim();
+    try {
+      f.write(".ai/context/capabilities.json", JSON.stringify({ version: 1, capabilities: ["past", "current"].map(name => ({
+        id: `core-${name}`, domain: "core", name, prefixes: [`src/${name}`],
+        contract_files: { agents: "AGENTS.md", claude: "CLAUDE.md" },
+        architecture_module: `docs/architecture/modules/core/${name}.md`,
+        workstream_dir: `tasks/workstreams/core/${name}`, lsp_profile: "typescript-lsp", verification_hints: [],
+      })) }));
+      f.write("docs/architecture/.projection-manifest.json", "{}\n");
+      f.write("src/past/a.ts", "export const a = 1;\n");
+      f.write("src/current/b.ts", "export const b = 1;\n");
+      git("add", "-A"); git("commit", "-q", "-m", "projected");
+      f.write("src/past/a.ts", "export const a = 2;\n");
+      git("commit", "-q", "-am", "committed main debt");
+      for (const host of ["claude", "codex"] as const) {
+        const context = sessionStartContext(f, host);
+        expect(context).toContain("[ArchitectureOwed]");
+        expect(context).toContain("core-past (docs/architecture/modules/core/past.md)");
+      }
+      f.write("src/current/b.ts", "export const b = 2;\n");
+      for (const host of ["claude", "codex"] as const) {
+        const context = sessionStartContext(f, host);
+        expect(context).toContain("core-past (docs/architecture/modules/core/past.md)");
+        expect(context).toContain("core-current (docs/architecture/modules/core/current.md)");
+      }
+    } finally { f.cleanup(); }
+  });
+
   test("a branch that owes architecture updates gets one short section until the manifest changes", () => {
     const parent = realpathSync(mkdtempSync(join(tmpdir(), "architecture-owed-")));
     const repo = join(parent, "repo");

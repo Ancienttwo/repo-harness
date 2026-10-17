@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { spawnSync } from 'child_process';
+import { execFileSync, spawnSync } from 'child_process';
 import {
   chmodSync,
   existsSync,
@@ -21,6 +21,8 @@ import {
 import { stateVersionOwnerPath } from '../src/effects/state/git-state-version-store';
 import { projectEffectiveStateSessionSection } from '../src/cli/hook/session-context';
 import type { EffectiveState } from '../src/core/state/types';
+import { buildReviewSubject } from '../src/effects/review/diff-fingerprint';
+import { owedCapabilities } from '../src/effects/state/owed-capabilities';
 import {
   CONTRACT,
   PLAN,
@@ -371,6 +373,49 @@ describe('effective state resolver', () => {
       });
     }, 30_000);
 
+    test('main debt extends owed ownership without changing review or edit risk', () => {
+      withRepo((cwd) => {
+        write(cwd, '.ai/context/capabilities.json', JSON.stringify({
+          version: 1, capabilities: [capability('past', ['src/past']), capability('current', ['src/current'])],
+        }));
+        write(cwd, 'docs/architecture/.projection-manifest.json', '{}\n');
+        write(cwd, 'src/past/a.ts', 'export const a = 1;\n');
+        write(cwd, 'src/current/b.ts', 'export const b = 1;\n');
+        commitFixture(cwd, 'projected');
+        const checkpoint = execFileSync('git', ['rev-parse', 'HEAD'], { cwd, encoding: 'utf8' }).trim();
+        write(cwd, 'src/current/b.ts', 'export const b = 2;\n');
+        const risk = { targetPaths: ['src/current/b.ts'], operationKind: 'edit' as const };
+        const before = resolveEffectiveState(cwd, Date.now(), risk);
+
+        write(cwd, 'src/past/a.ts', 'export const a = 2;\n');
+        write(cwd, 'src/loose.ts', 'export const loose = 1;\n');
+        execFileSync('git', ['add', 'src/past/a.ts', 'src/loose.ts'], { cwd });
+        execFileSync('git', ['commit', '-qm', 'past owned and unowned debt'], { cwd });
+        const after = resolveEffectiveState(cwd, Date.now(), risk);
+        expect(after.capability_ownership?.capability_ids).toEqual(['current', 'past']);
+        expect(after.capability_ownership?.unowned_paths).toEqual(['src/loose.ts']);
+        expect(owedCapabilities(cwd, after.capability_ownership!)).toMatchObject({
+          status: 'owed', manifest_change: checkpoint,
+          capabilities: [{ id: 'current', paths: ['src/current/b.ts'] }, { id: 'past', paths: ['src/past/a.ts'] }],
+          new_unowned_paths: ['src/loose.ts'],
+        });
+        expect(after.profile_signals).toEqual(before.profile_signals);
+        expect(after.profile_signals?.capabilityCount).toBe(1);
+        expect(after.workflow_profile).toBe(before.workflow_profile);
+        expect(after.risk_floor).toBe(before.risk_floor);
+        expect(after.profile_reasons).toEqual(before.profile_reasons);
+        expect(after.blockers).toEqual(before.blockers);
+        const review = buildReviewSubject(cwd, { targetRef: 'main' });
+        expect(review.status).toBe('ok');
+        expect(review.paths).toEqual(['src/current/b.ts']);
+        expect(after.source_hashes.review_subject).toBe(review.review_subject_sha256);
+
+        const declared = resolveEffectiveState(cwd, Date.now(), { ...risk, capabilityIds: ['declared'] });
+        expect(declared.profile_signals?.capabilityCount).toBe(1);
+        expect(declared.capability_ownership).toBeNull();
+      });
+    }, 30_000);
+
     test('a NUL-bearing absolute path fails canonical validation instead of bypassing it', () => {
       withRepo((cwd) => {
         write(cwd, '.ai/context/capabilities.json', JSON.stringify({ version: 1, capabilities: [] }));
@@ -546,6 +591,65 @@ describe('effective state resolver', () => {
       ].join('\n'));
       commitFixture(cwd, 'seed archcontext capability');
     }
+
+    test('an ambiguous owed-only path does not block or inflate current edit risk', () => {
+      withRepo((cwd) => {
+        seedArchcontextCapability(cwd, ['  include:', '    - src/current/**']);
+        for (const name of ['left', 'right']) {
+          write(cwd, `.archcontext/model/nodes/capability.past.${name}.yaml`, JSON.stringify({
+            schemaVersion: 'archcontext.node/v2', id: `capability.past.${name}`, kind: 'capability',
+            name, status: 'active', summary: 'Own the past source.', responsibilities: ['Own past source.'],
+            source: { include: ['src/past/**'] },
+            extensions: { contractFiles: { agents: 'AGENTS.md', claude: 'CLAUDE.md' }, lspProfile: 'typescript-lsp', verification: [] },
+          }));
+        }
+        write(cwd, 'docs/architecture/.projection-manifest.json', '{}\n');
+        write(cwd, 'src/past/a.ts', 'export const a = 1;\n');
+        write(cwd, 'src/current/b.ts', 'export const b = 1;\n');
+        commitFixture(cwd, 'projected');
+        const risk = { targetPaths: ['src/current/b.ts'], operationKind: 'edit' as const };
+        const before = resolveEffectiveState(cwd, Date.now(), risk);
+        write(cwd, 'src/past/a.ts', 'export const a = 2;\n');
+        commitFixture(cwd, 'commit ambiguous past debt');
+        const after = resolveEffectiveState(cwd, Date.now(), risk);
+        expect(after.capability_ownership).toBeNull();
+        expect(after.profile_signals).toEqual(before.profile_signals);
+        expect(after.profile_signals?.capabilityCount).toBe(1);
+        expect(after.profile_reasons).toEqual(before.profile_reasons);
+        expect(after.blockers).toEqual(before.blockers);
+        expect(after.blockers).not.toContain('capability_registry:invalid');
+
+        // The same error must still block when the current edit selects that path.
+        const selected = resolveEffectiveState(cwd, Date.now(), { ...risk, targetPaths: ['src/past/a.ts'] });
+        expect(selected.blockers).toContain('capability_registry:invalid');
+        expect(selected.profile_reasons).toContain('capability:diagnostic:AMBIGUOUS_MATCH');
+      });
+    }, 60_000);
+
+    test('an owed-only runtime failure does not become a workflow-only risk blocker', () => {
+      withRepo((cwd) => {
+        seedArchcontextCapability(cwd);
+        write(cwd, 'docs/architecture/.projection-manifest.json', '{}\n');
+        write(cwd, 'src/a.ts', 'export const a = 1;\n');
+        commitFixture(cwd, 'projected');
+        const risk = { targetPaths: ['docs/guide.md'], operationKind: 'edit' as const };
+        const before = resolveEffectiveState(cwd, Date.now(), risk);
+        write(cwd, 'src/a.ts', 'export const a = 2;\n');
+        commitFixture(cwd, 'committed main debt');
+        const previous = process.env.REPO_HARNESS_NODE_BIN;
+        process.env.REPO_HARNESS_NODE_BIN = join(cwd, '.ai/harness/policy.json');
+        try {
+          const after = resolveEffectiveState(cwd, Date.now(), risk);
+          expect(after.capability_ownership).toBeNull();
+          expect(after.profile_signals).toEqual(before.profile_signals);
+          expect(after.profile_reasons).toEqual(before.profile_reasons);
+          expect(after.blockers).toEqual(before.blockers);
+        } finally {
+          if (previous === undefined) delete process.env.REPO_HARNESS_NODE_BIN;
+          else process.env.REPO_HARNESS_NODE_BIN = previous;
+        }
+      });
+    }, 60_000);
 
     test('archcontext ownership comes from archctx resolve, including source.exclude', () => {
       withRepo((cwd) => {

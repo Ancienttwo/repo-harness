@@ -296,6 +296,27 @@ describe('Stop reports owed architecture updates on Claude only (#678)', () => {
     expect(git(cwd, ['status', '--porcelain'])).toBe('');
   });
 
+  test('main reports committed debt once and renews it after a manifest checkpoint', () => {
+    const cwd = owedFixture();
+    git(cwd, ['checkout', 'main']);
+    git(cwd, ['merge', '--ff-only', 'feature']);
+    const stop = () => runStopHandler({ collector: collector(cwd), identity: hookIdentity({ host: 'claude' }) });
+    expect(stop().stdout).toContain('core-owned');
+    const marker = readFileSync(join(cwd, '.ai/harness/state/stop-owed-signal'), 'utf8');
+    expect(stop().stdout).toBe('');
+
+    writeFileSync(join(cwd, 'docs/architecture/.projection-manifest.json'), '{"refreshed":true}\n');
+    git(cwd, ['commit', '-am', 'refresh the main projection']);
+    expect(stop().stdout).toBe('');
+    writeFileSync(join(cwd, 'src/owned/a.ts'), 'export const a = 3;\n');
+    git(cwd, ['commit', '-am', 'change main again']);
+    const renewed = stop();
+    expect(renewed.stdout).toContain('core-owned');
+    expect(renewed.systemMessage).toContain('Architecture: 1 capability');
+    expect(readFileSync(join(cwd, '.ai/harness/state/stop-owed-signal'), 'utf8')).not.toBe(marker);
+    expect(stop().stdout).toBe('');
+  });
+
   test('a new obligation for the same capability after a manifest refresh is reported again', () => {
     const cwd = owedFixture();
     expect(runStopHandler({ collector: collector(cwd), identity: hookIdentity({ host: 'claude' }) }).stdout).toContain('[ArchitectureOwed]');
