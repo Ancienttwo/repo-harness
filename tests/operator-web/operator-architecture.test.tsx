@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { act, Profiler, type ReactElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { Window } from 'happy-dom';
-import { moduleDetail, moduleGraph, type ModelNode, type ModelRelation, type ModuleDetailV1, type ModuleIndexV1 } from '../../src/core/architecture/module-view';
+import { isGroupNode, moduleDetail, moduleGraph, type ModelNode, type ModelRelation, type ModuleDetailV1, type ModuleIndexV1 } from '../../src/core/architecture/module-view';
 import { buildModuleReviewPrompt, type ModuleReviewPromptV1 } from '../../src/core/review/module-review-prompt';
 import { OperatorApp } from '../../src/operator-web/App';
 import { ArchitectureWorkspace, reviewPromptCommand } from '../../src/operator-web/ArchitectureWorkspace';
@@ -298,7 +298,7 @@ describe('one-hop module graph', () => {
     await act(async () => group.dispatchEvent(new window.KeyboardEvent('keydown', { key: ' ', bubbles: true }) as unknown as Event));
     expect(group.getAttribute('aria-expanded')).toBe('true');
     const members = [...document.querySelectorAll('.module-graph__group li')];
-    expect(members.map(item => item.querySelector('code')?.textContent)).toEqual(graph.nodes.flatMap(item => item.kind === 'group' ? item.members.map(member => member.id) : []));
+    expect(members.map(item => item.querySelector('code')?.textContent)).toEqual(graph.nodes.flatMap(item => isGroupNode(item) ? item.members.map(member => member.id) : []));
     expect(members).toHaveLength(4);
     expect(document.querySelectorAll('.module-graph__node')).toHaveLength(shown);
     await act(async () => members[0]!.querySelector('button')!.click());
