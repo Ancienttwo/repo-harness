@@ -18,6 +18,7 @@ source:
     - "src/effects/evidence/**"
     - "scripts/evidence-gc.ts"
     - "scripts/recovery-view-cli.ts"
+    - "scripts/decision-trail.ts"
     - "scripts/prepare-handoff.sh"
     - "scripts/prepare-codex-handoff.sh"
     - "scripts/codex-handoff-resume.sh"

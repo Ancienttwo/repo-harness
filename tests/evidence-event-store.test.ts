@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync } from "fs";
 import { join } from "path";
-import { withTempRepo } from "./helpers/repo-fixture";
+import { initGitRepo, run, withTempRepo } from "./helpers/repo-fixture";
+import { recordDecision } from "../scripts/decision-trail";
 
 import { canonicalize } from "../src/core/evidence/canonical-json";
 import { computeIdempotencyKey } from "../src/core/evidence/idempotency";
@@ -46,6 +47,48 @@ function freshGenesisRepo(repoRoot: string, ledgerEpochStartSha = "5228d4ea0d798
   mkdirSync(repoRoot, { recursive: true });
   appendGenesisRecord(repoRoot, ledgerEpochStartSha, { worktreeId: "epc-01-evidence-event-store" });
 }
+
+describe("decision trail ledger events", () => {
+  test("normalizes cells, reuses genesis and appends a correction without changing old bytes", () => {
+    withTempRepo("decision-event", repoRoot => {
+      initGitRepo(repoRoot);
+      expect(run("git", ["commit", "--allow-empty", "-m", "fixture"], repoRoot).status).toBe(0);
+      freshGenesisRepo(repoRoot);
+      const input = { phase: " build\tstep ", decision: "Use\nledger", why: "One\r\nauthority",
+        evidence: ["src/core/evidence/types.ts:42", "#812"], result: "Implemented", run_id: "session-812" };
+      const first = recordDecision(repoRoot, input);
+      expect(first.event_type).toBe("decision.recorded");
+      expect(first.producer).toBe("decision-trail");
+      expect(first.trust_class).toBe("observed");
+      expect(first.worktree_id).toBe("epc-01-evidence-event-store");
+      expect(first.payload).toEqual({ ...input, phase: "build step", decision: "Use ledger", why: "One authority" });
+      const log = join(repoRoot, ".ai/harness/evidence/events/log.jsonl");
+      const before = readFileSync(log, "utf8");
+      const correction = recordDecision(repoRoot, { ...input, supersedes: first.event_id });
+      expect(correction.event_id).not.toBe(first.event_id);
+      expect(correction.supersedes).toEqual([first.event_id]);
+      expect(readFileSync(log, "utf8").startsWith(before)).toBe(true);
+      expect(readAcceptedEvents(repoRoot).accepted.map(row => row.event_id)).toEqual([correction.event_id]);
+    });
+  });
+
+  test("rejects prose and unsafe evidence before creating a ledger, and cannot replace a verification event", () => {
+    withTempRepo("decision-reject", repoRoot => {
+      initGitRepo(repoRoot);
+      expect(run("git", ["commit", "--allow-empty", "-m", "fixture"], repoRoot).status).toBe(0);
+      const input = { phase: "build", decision: "Use ledger", why: "One authority", evidence: ["#812"], result: "Done" };
+      for (const pointer of ["this is prose", "../private.txt", "/etc/passwd", "C:\\secret.txt", "./result.txt"]) {
+        expect(() => recordDecision(repoRoot, { ...input, evidence: [pointer] })).toThrow("evidence must be");
+      }
+      expect(() => recordDecision(repoRoot, { ...input, decision: "\n\t" })).toThrow("non-empty");
+      expect(existsSync(join(repoRoot, ".ai/harness/evidence/events/log.jsonl"))).toBe(false);
+      freshGenesisRepo(repoRoot);
+      const verification = appendEvidenceEvent(repoRoot, baseInput());
+      expect(() => recordDecision(repoRoot, { ...input, supersedes: verification.event_id })).toThrow("accepted decision-trail");
+      expect(readAcceptedEvents(repoRoot).accepted.map(row => row.event_id)).toEqual([verification.event_id]);
+    });
+  });
+});
 
 describe("evidence event schema and identity", () => {
   test("event_id is evt-<ULID>, lexicographically sortable and time-embedding", () => {

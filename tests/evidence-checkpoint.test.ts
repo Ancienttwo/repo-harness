@@ -14,7 +14,7 @@ import {
 import { dirname, join, sep } from "path";
 import { withTempRepo } from "./helpers/repo-fixture";
 
-import { buildCheckpointProjection, renderCheckpointMarkdown } from "../src/core/evidence/checkpoint";
+import { buildCheckpointProjection, checkpointBodyHashHex, renderCheckpointMarkdown } from "../src/core/evidence/checkpoint";
 import type { EvidenceEventRecord, SubjectIdentity, TrustClass } from "../src/core/evidence/types";
 import {
   CHECKPOINT_HUMAN_FILENAME,
@@ -83,6 +83,88 @@ function seedEvent(
     payload: { kind: "json", value: { marker: opts.marker ?? "default" } },
   });
 }
+
+describe("checkpoint: decision projection", () => {
+  test("reads only the retained decision window and ignores other producers", () => {
+    withTempRepo("checkpoint-decision-window", repoRoot => {
+      seedGenesis(repoRoot);
+      const appendDecision = (decision: string, why: string) => appendEvidenceEvent(repoRoot, {
+        worktreeId: "fixture", eventType: "decision.recorded", trustClass: "observed", producer: "decision-trail",
+        correlationRunId: "window-test", subjectIdentity: baseIdentity(),
+        payload: { kind: "json", value: { phase: "build", decision, why, evidence: ["#812"], result: "Done" } },
+      });
+      const old = appendDecision("Old choice", "word ".repeat(2000).trim());
+      expect(old.blob_sha256).toBeDefined();
+      rmSync(join(repoRoot, ".ai/harness/evidence/blobs", old.blob_sha256!));
+      const retained = Array.from({ length: 20 }, (_, index) => appendDecision(`Choice ${index}`, "Evidence"));
+      seedEvent(repoRoot, { eventType: "decision.recorded" });
+      expect(publishCheckpointFromLedger(repoRoot, FIXED_NOW).status).toBe("published");
+      const resolved = resolveLastPublishedCheckpoint(repoRoot);
+      expect(resolved.found).toBe(true);
+      if (!resolved.found) throw new Error("missing checkpoint");
+      expect(resolved.resolved.projection.covered_event_count).toBe(22);
+      expect(resolved.resolved.projection.decisions?.map(row => row.event_id)).toEqual(retained.map(event => event.event_id));
+    });
+  });
+
+  test("keeps the latest 20 decisions by created_at with stable ties and hashes the payload", () => {
+    withTempRepo("checkpoint-decisions", repoRoot => {
+      seedGenesis(repoRoot);
+      const events = Array.from({ length: 25 }, (_, index) => {
+        const event = appendEvidenceEvent(repoRoot, {
+          worktreeId: "fixture", eventType: "decision.recorded", trustClass: "observed", producer: "decision-trail",
+          correlationRunId: `decision-${index}`, subjectIdentity: baseIdentity(),
+          payload: { kind: "json", value: { phase: "build", decision: `Choice ${index}`, why: "Evidence",
+            evidence: ["#812"], result: "Done", run_id: `run-${index}` } },
+        });
+        return { ...event, created_at: new Date(Date.UTC(2026, 9, 17, 0, 0, 24 - index)).toISOString() };
+      });
+      const projection = buildCheckpointProjection({ worktreeId: "fixture", now: FIXED_NOW }, events);
+      expect(projection.decisions).toHaveLength(20);
+      expect(projection.decisions?.map(row => row.decision)).toEqual(Array.from({ length: 20 }, (_, index) => `Choice ${19 - index}`));
+      expect(projection.decisions?.[0].run_id).toBe("run-19");
+      expect(projection.covered_event_count).toBe(25);
+      const tied = events.slice(0, 2).map(event => ({ ...event, created_at: events[0].created_at }));
+      expect(buildCheckpointProjection({ worktreeId: "fixture" }, tied).decisions?.map(row => row.event_id))
+        .toEqual(tied.map(event => event.event_id));
+      const changed = { ...projection, decisions: projection.decisions!.map((row, index) => index === 0 ? { ...row, result: "Changed" } : row) };
+      expect(checkpointBodyHashHex(changed)).not.toBe(checkpointBodyHashHex(projection));
+      expect(renderCheckpointMarkdown(projection)).toContain("## Decisions\n");
+      expect(renderCheckpointMarkdown(projection)).not.toContain("Choice 24");
+    });
+  });
+
+  test("accepts an optional-field snapshot and rejects tampered or malformed decisions", () => {
+    withTempRepo("checkpoint-decision-validation", repoRoot => {
+      const current = buildCheckpointProjection({ worktreeId: "fixture", now: FIXED_NOW }, []);
+      const { decisions: _decisions, ...body } = current;
+      const hash = checkpointBodyHashHex(body);
+      const old = { ...body, checkpoint_id: `chk-${hash}`, provenance: { ...body.provenance,
+        source_checkpoint_id: `chk-${hash}`, content_hash: `sha256:${hash}`, materializer_version: "1" } };
+      expect(publishCheckpoint({ repoRoot, checkpointId: old.checkpoint_id,
+        machineJson: JSON.stringify(old), humanMarkdown: renderCheckpointMarkdown(old) }).status).toBe("published");
+      const resolved = resolveLastPublishedCheckpoint(repoRoot);
+      expect(resolved.found).toBe(true);
+      if (!resolved.found) throw new Error("missing checkpoint");
+      expect(resolved.resolved.projection.decisions).toBeUndefined();
+      const malformed = { ...current, decisions: [{ decision: "incomplete" }] };
+      const rejected = publishCheckpoint({ repoRoot, checkpointId: current.checkpoint_id,
+        machineJson: JSON.stringify(malformed), humanMarkdown: renderCheckpointMarkdown(current) });
+      expect(rejected.status).toBe("rejected");
+      if (rejected.status !== "rejected") throw new Error("accepted malformed decisions");
+      expect(rejected.reason).toBe("schema-incomplete");
+      const tampered = { ...current, decisions: [{ event_id: "evt-00000000000000000000000000",
+        created_at: FIXED_NOW().toISOString(), phase: "build", decision: "Injected choice", why: "No source",
+        evidence: ["#812"], result: "Done", supersedes: [] }] };
+      const hashRejected = publishCheckpoint({ repoRoot, checkpointId: current.checkpoint_id,
+        machineJson: JSON.stringify(tampered), humanMarkdown: renderCheckpointMarkdown(tampered) });
+      expect(hashRejected.status).toBe("rejected");
+      if (hashRejected.status !== "rejected") throw new Error("accepted tampered decisions");
+      expect(hashRejected.reason).toBe("content-hash-mismatch");
+      expect(resolveLastPublishedCheckpoint(repoRoot)).toEqual(resolved);
+    });
+  });
+});
 
 describe("checkpoint: pure projection determinism", () => {
   test("two independent folds of the same accepted set produce byte-identical machine JSON and human view", () => {

@@ -214,6 +214,48 @@ describe("recovery-materializer: evidence (single hop: checkpoint -> view)", () 
   });
 });
 
+describe("recovery-materializer: checkpoint decisions", () => {
+  test("shows no decisions without a checkpoint", () => {
+    withTempRepo("recovery-no-decisions", repoRoot => {
+      const context = buildRecoveryContext(repoRoot, null, {}, { reason: "unit-test", now: FIXED_NOW });
+      const handoff = renderRecoveryHandoff(context, resolveRecoveryEvidence(repoRoot), "");
+      expect(handoff).toContain("## Decisions\n\n- (none recorded)\n");
+    });
+  });
+
+  test("uses only published decisions and replaces a corrected row after publication", () => {
+    withTempRepo("recovery-decisions", repoRoot => {
+      seedGenesis(repoRoot);
+      const first = appendEvidenceEvent(repoRoot, {
+        worktreeId: "fixture", eventType: "decision.recorded", trustClass: "observed", producer: "decision-trail",
+        correlationRunId: "run-first", subjectIdentity: baseIdentity(),
+        payload: { kind: "json", value: { phase: "plan", decision: "Use first choice", why: "Prior evidence",
+          evidence: ["#812"], result: "Proposed" } },
+      });
+      expect(publishCheckpointFromLedger(repoRoot, FIXED_NOW).status).toBe("published");
+      const correction = appendEvidenceEvent(repoRoot, {
+        worktreeId: "fixture", eventType: "decision.recorded", trustClass: "observed", producer: "decision-trail",
+        correlationRunId: "run-correction", subjectIdentity: baseIdentity(), supersedes: [first.event_id],
+        payload: { kind: "json", value: { phase: "build", decision: "Use revised choice", why: "New evidence",
+          evidence: ["src/core/evidence/types.ts:42"], result: "Implemented" } },
+      });
+      const context = buildRecoveryContext(repoRoot, null, {}, { reason: "unit-test", now: FIXED_NOW });
+      const stale = renderRecoveryHandoff(context, resolveRecoveryEvidence(repoRoot), "");
+      expect(stale).toContain("Use first choice");
+      expect(stale).not.toContain("Use revised choice");
+      expect(publishCheckpointFromLedger(repoRoot, FIXED_NOW).status).toBe("published");
+      writeFileSync(join(repoRoot, ".ai/harness/evidence/events/log.jsonl"), "invalid raw log\n");
+      const handoff = renderRecoveryHandoff(context, resolveRecoveryEvidence(repoRoot), "");
+      const section = handoff.split("## Decisions\n\n")[1].split("\n\n## Files Touched")[0];
+      expect(section.split("\n")).toHaveLength(1);
+      expect(section).toContain("Use revised choice; Why: New evidence");
+      expect(section).toContain("Evidence: src/core/evidence/types.ts:42; Result: Implemented");
+      expect(section).toContain(`Event: ${correction.event_id}; Supersedes: ${first.event_id}`);
+      expect(section).not.toContain("Use first choice");
+    });
+  });
+});
+
 describe("recovery-materializer: resume view carries the preserved external-observable contract", () => {
   test("resume keeps the legacy marker and a Resume Prompt header the EPC-08 SessionStart reader depends on", () => {
     withTempRepo("recovery-resume-contract", (repoRoot) => {

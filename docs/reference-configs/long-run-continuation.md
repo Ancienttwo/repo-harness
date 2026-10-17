@@ -83,6 +83,37 @@ Attempt receipts must never look like material progress, or the circuit breaker 
 
 `tests/continuation-conformance.test.ts` binds both arms: it asserts `git check-ignore` covers the real repository's ledger path, and it asserts the classifier excludes that path in a repository that carries no ignore rule at all.
 
+## Decision Trail
+
+This decision trail is adapted from pstack (cursor/plugins, MIT, Lauren Tan).
+Record each choice in the existing evidence ledger:
+
+```sh
+repo-harness run decision-trail record --phase build --decision "Use the ledger" --why "Keep one authority" --evidence '#812' --evidence src/core/evidence/checkpoint.ts:1 --result "Implemented"
+repo-harness run decision-trail render --format tsv --limit 20
+```
+
+`record` prints one event ID. It writes a `decision.recorded` event with producer
+`decision-trail` and trust class `observed`. It binds the observation to HEAD.
+It does not verify uncommitted files. `--run-id` can name the agent conversation.
+Evidence must name a commit SHA, PR number, repo-relative `file:line`, or artifact
+path. Paths must have no spaces. Do not put prose or secrets in evidence pointers.
+Tabs and line breaks become spaces. The event writer applies its usual redaction
+and blob rules. TSV cells that start with `=`, `+`, `-`, or `@` get a leading quote.
+
+To correct a choice, record a new event with `--supersedes <event_id>`.
+The target must be an accepted decision from this worktree. The raw log keeps both
+events. The accepted-event fold removes the earlier row from every projection.
+`render` defaults to a Markdown table. Rows run from oldest to newest.
+`--since <event_id>` excludes that accepted row and all earlier rows.
+An unknown or replaced cursor fails. `--limit N` keeps the latest N remaining rows.
+Render output is a projection. It is not a second store.
+
+Checkpoint publication retains the latest 20 accepted decisions by `created_at`.
+Equal times keep append order. The handoff Decisions section reads only that
+published checkpoint. New decisions appear after the next checkpoint publication.
+An empty section shows `- (none recorded)`.
+
 ## Sources
 
 - Sprint (PRD of record): `plans/sprints/20260803-1810-long-run-anti-drift.sprint.md`

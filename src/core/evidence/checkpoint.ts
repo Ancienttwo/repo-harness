@@ -36,9 +36,94 @@ import { canonicalize } from "./canonical-json";
 
 /** Bumped only when this module's own projection shape changes. */
 export const CHECKPOINT_SCHEMA_VERSION = 1;
-export const CHECKPOINT_MATERIALIZER_VERSION = "1";
+export const CHECKPOINT_MATERIALIZER_VERSION = "2";
 export const CHECKPOINT_ID_PREFIX = "chk-";
 export const CHECKPOINT_SCHEMA_NAME = "repo-harness-checkpoint.v1";
+
+export const DECISION_EVENT_TYPE = "decision.recorded";
+export const DECISION_PRODUCER = "decision-trail";
+export const DECISION_EVENT_ID_PATTERN = /^evt-[0-9A-HJKMNP-TV-Z]{26}$/;
+export const CHECKPOINT_DECISION_LIMIT = 20;
+
+export interface DecisionPayload {
+  readonly phase: string;
+  readonly decision: string;
+  readonly why: string;
+  readonly evidence: readonly string[];
+  readonly result: string;
+  readonly run_id?: string;
+}
+
+export interface CheckpointDecision extends DecisionPayload {
+  readonly event_id: string;
+  readonly created_at: string;
+  readonly supersedes: readonly string[];
+}
+
+export function normalizeDecisionCell(value: string): string {
+  return value.replace(/[\t\r\n\u0085\u2028\u2029]+/g, " ").trim();
+}
+
+export function isDecisionPayload(value: unknown): value is DecisionPayload {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const row = value as Record<string, unknown>;
+  const cell = (item: unknown): item is string => typeof item === "string"
+    && item.length > 0 && normalizeDecisionCell(item) === item && !/[\x00-\x1f\x7f]/.test(item);
+  return [row.phase, row.decision, row.why, row.result].every(cell)
+    && Array.isArray(row.evidence) && row.evidence.length > 0 && row.evidence.every(cell)
+    && (row.run_id === undefined || cell(row.run_id));
+}
+
+export function isDecisionEvent(event: EvidenceEventRecord): boolean {
+  return event.event_type === DECISION_EVENT_TYPE && event.producer === DECISION_PRODUCER && event.trust_class === "observed";
+}
+
+/** Select metadata first. A bounded checkpoint reads at most 20 payloads. */
+export function projectDecisions(
+  accepted: readonly EvidenceEventRecord[],
+  payloadOf: (event: EvidenceEventRecord) => unknown = event => event.payload,
+  limit?: number,
+): CheckpointDecision[] {
+  // Stable sort preserves append order when two accepted events share a time.
+  const events = accepted.filter(isDecisionEvent)
+    .sort((left, right) => Date.parse(left.created_at) - Date.parse(right.created_at));
+  const selected = limit === undefined ? events : events.slice(-limit);
+  return selected.map(event => {
+      const payload = payloadOf(event);
+      if (!isDecisionPayload(payload)) throw new Error(`invalid decision payload: ${event.event_id}`);
+      return {
+        event_id: event.event_id,
+        created_at: event.created_at,
+        phase: payload.phase,
+        decision: payload.decision,
+        why: payload.why,
+        evidence: payload.evidence,
+        result: payload.result,
+        ...(payload.run_id === undefined ? {} : { run_id: payload.run_id }),
+        supersedes: event.supersedes ?? [],
+      };
+    });
+}
+
+export function escapeDecisionMarkdown(value: string): string {
+  return normalizeDecisionCell(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/[\\`*_[\]{}()|]/g, "\\$&");
+}
+
+export function renderDecisionTable(decisions: readonly CheckpointDecision[], format: "tsv" | "markdown"): string {
+  const header = ["ts", "phase", "decision", "why", "evidence", "result", "event_id", "supersedes"];
+  const cells = decisions.map(row => [row.created_at, row.phase, row.decision, row.why,
+    row.evidence.join("; "), row.result, row.event_id, row.supersedes.join("; ")]);
+  if (format === "tsv") {
+    const safeCell = (value: string): string => {
+      const cell = normalizeDecisionCell(value);
+      return /^[=+\-@]/.test(cell) ? `'${cell}` : cell;
+    };
+    return [header, ...cells].map(row => row.map(safeCell).join("\t")).join("\n") + "\n";
+  }
+  return [header, header.map(() => "---"), ...cells.map(row => row.map(escapeDecisionMarkdown))]
+    .map(row => `| ${row.join(" | ")} |`).join("\n") + "\n";
+}
 
 /**
  * One accepted event's contribution to the checkpoint (Goal 1: "covered
@@ -94,6 +179,7 @@ export interface CheckpointProjection {
   readonly covered_event_count: number;
   readonly covered_events: readonly CheckpointCoveredEvent[];
   readonly latest_by_event_type: readonly CheckpointEventTypeSummary[];
+  readonly decisions?: readonly CheckpointDecision[];
   readonly provenance: CheckpointProvenance;
 }
 
@@ -109,6 +195,8 @@ export interface BuildCheckpointInput {
   readonly worktreeId: string;
   /** Injectable for deterministic tests; defaults to the real clock. */
   readonly now?: () => Date;
+  /** The effects layer resolves redacted JSON blobs before projection. */
+  readonly decisionPayloadOf?: (event: EvidenceEventRecord) => unknown;
 }
 
 function sha256Hex(text: string): string {
@@ -149,6 +237,7 @@ interface CheckpointBody {
   readonly covered_event_count: number;
   readonly covered_events: readonly CheckpointCoveredEvent[];
   readonly latest_by_event_type: readonly CheckpointEventTypeSummary[];
+  readonly decisions?: readonly CheckpointDecision[];
 }
 
 /**
@@ -165,6 +254,7 @@ function bodyAsJson(body: CheckpointBody): JsonValue {
     covered_event_count: body.covered_event_count,
     covered_events: body.covered_events as unknown as JsonValue,
     latest_by_event_type: body.latest_by_event_type as unknown as JsonValue,
+    ...(body.decisions === undefined ? {} : { decisions: body.decisions as unknown as JsonValue }),
   };
 }
 
@@ -182,8 +272,7 @@ export function checkpointBodyHashHex(body: CheckpointBody): string {
 /**
  * Pure projection builder. `accepted` must already be the D5-folded accepted
  * set (see `src/effects/evidence/event-log.ts#readAcceptedEvents`) -- this
- * function performs no further fold/filter beyond deriving the covered-event
- * and per-event-type summaries.
+ * function derives event summaries and the latest 20 decision rows.
  */
 export function buildCheckpointProjection(
   input: BuildCheckpointInput,
@@ -193,12 +282,14 @@ export function buildCheckpointProjection(
   const coveredEvents = coveredEventsOf(accepted);
   const latestByType = latestByEventTypeOf(accepted);
   const sourceEventIds = accepted.map((event) => event.event_id);
+  const decisions = projectDecisions(accepted, input.decisionPayloadOf, CHECKPOINT_DECISION_LIMIT);
 
   const hashHex = checkpointBodyHashHex({
     worktree_id: input.worktreeId,
     covered_event_count: accepted.length,
     covered_events: coveredEvents,
     latest_by_event_type: latestByType,
+    decisions,
   });
   const checkpointId = `${CHECKPOINT_ID_PREFIX}${hashHex}`;
 
@@ -209,6 +300,7 @@ export function buildCheckpointProjection(
     covered_event_count: accepted.length,
     covered_events: coveredEvents,
     latest_by_event_type: latestByType,
+    decisions,
     provenance: {
       schema_version: CHECKPOINT_SCHEMA_VERSION,
       generated_at: now().toISOString(),
@@ -274,5 +366,10 @@ export function renderCheckpointMarkdown(projection: CheckpointProjection): stri
     }
   }
   lines.push("");
+  if (projection.decisions !== undefined) {
+    lines.push("## Decisions", "");
+    lines.push(projection.decisions.length === 0 ? "- (none recorded)" : renderDecisionTable(projection.decisions, "markdown").trimEnd());
+    lines.push("");
+  }
   return `${lines.join("\n")}\n`;
 }
