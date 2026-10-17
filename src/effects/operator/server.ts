@@ -1614,6 +1614,7 @@ export async function startOperatorServer(
 
     const repositoryRoute = OPERATOR_REPOSITORY_SNAPSHOT_ROUTE.exec(pathname);
     if (repositoryRoute !== null) {
+      if (url.searchParams.size > 0) {
         sendRefusal(request, response, 400, errorBody('invalid_request', 'Repository snapshots do not accept query parameters.'), headOnly);
         return;
       }

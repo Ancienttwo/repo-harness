@@ -119,7 +119,7 @@ describe('dev activity collector on real repositories', () => {
       const betaRepo = snapshot.repositories.find(repo => repo.display_name === 'beta')!;
       expect(alphaRepo).toMatchObject({ github: 'acme/widgets', default_branch: 'main' });
       expect(alphaRepo.sources.map(source => [source.kind, source.status, source.reason])).toEqual([
-        ['git', 'ok', null], ['github', 'ok', null], ['runtime', 'not_configured', 'runtime_not_configured'], ['decisions', 'ok', null],
+        ['git', 'ok', null], ['github', 'ok', null], ['runtime', 'not_configured', 'runtime_not_configured'],
       ]);
       expect(betaRepo.sources.find(source => source.kind === 'github')).toMatchObject({ status: 'unavailable', reason: 'gh_failed' });
       expect(betaRepo).toMatchObject({ github: null, default_branch: 'main' });
@@ -239,23 +239,6 @@ process.exit(0);
       expect(snapshot.repositories[0]!.sources.find(source => source.kind === 'github')).toMatchObject({ status: 'unavailable', reason: 'github_truncated' });
       expect(snapshot.status).toBe('partial');
       expect(snapshot.items.some(item => item.pull_request !== null)).toBe(false);
-    } finally {
-      rmSync(f.root, { recursive: true, force: true });
-    }
-  });
-
-  test('Decision wait clocks survive a failed read and clear after a complete one', async () => {
-    const f = fixture(['asks'], 0);
-    try {
-      const key = `${repoHarnessRepoIdFor(f.repos.asks!)}:dec_closed`;
-      const firstSeen = new Map([[key, '2026-10-01T00:00:00.000Z']]);
-      const failing: DevActivityProcessRunner = async () => ({ ok: false, code: 'failed' });
-      const failed = await collectDevActivity({ env: f.env, first_seen: firstSeen, run_process: failing });
-      expect(failed.repositories[0]!.sources.find(source => source.kind === 'decisions')).toMatchObject({ status: 'unavailable' });
-      expect(firstSeen.get(key)).toBe('2026-10-01T00:00:00.000Z');
-      const complete = await collectDevActivity({ env: f.env, first_seen: firstSeen });
-      expect(complete.repositories[0]!.sources.find(source => source.kind === 'decisions')).toMatchObject({ status: 'ok' });
-      expect(firstSeen.has(key)).toBe(false);
     } finally {
       rmSync(f.root, { recursive: true, force: true });
     }

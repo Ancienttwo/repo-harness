@@ -166,7 +166,7 @@ function projectRepositoryItems(repo: DevActivityRawRepository, input: DevActivi
 }
 
 /** §3.4: the single "needs you" definition. One merge ask per item. */
-function projectAttention(items: readonly DevActivityItem[], repositories: readonly DevActivityRawRepository[]): DevActivityAttention[] {
+function projectAttention(items: readonly DevActivityItem[]): DevActivityAttention[] {
   const attention: DevActivityAttention[] = [];
   for (const item of items) {
     const prUrl = item.pull_request?.url ?? null;
@@ -174,8 +174,6 @@ function projectAttention(items: readonly DevActivityItem[], repositories: reado
       attention.push({ kind: 'ready_to_merge', subject_id: item.id, repository_id: item.repository_id, summary: item.title,
         waiting_since: item.column_since, url: prUrl, command: null });
     }
-  }
-  for (const repo of repositories) {
   }
   return attention.sort((left, right) => time(left.waiting_since) - time(right.waiting_since)
     || left.kind.localeCompare(right.kind) || left.subject_id.localeCompare(right.subject_id));
@@ -206,6 +204,6 @@ export function projectDevActivity(input: DevActivityProjectionInput): DevActivi
     repositories,
     unreadable_registrations: input.unreadable_registrations,
     items,
-    attention: projectAttention(items, input.repositories),
+    attention: projectAttention(items),
   });
 }

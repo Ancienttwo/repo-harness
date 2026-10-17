@@ -104,7 +104,7 @@ export function decodeOperatorOrganizationSnapshot(value: unknown, repositoryId:
     if (support === 'available' ? before === null || after === null : before !== null || after !== null) invalid();
     return { component: one(c.component, componentNames), support, observation_before: before, observation_after: after };
   });
-  if (new Set(components.map(c => c.component)).size !== 5) invalid();
+  if (new Set(components.map(c => c.component)).size !== componentNames.length) invalid();
   const consistency = one(v.snapshot_consistency, ['stable', 'changed_during_read', 'degraded']);
   const expectedConsistency = components.some(c => c.support === 'unreadable') ? 'degraded' : components.some(c => c.observation_before !== c.observation_after) ? 'changed_during_read' : 'stable';
   if (consistency !== expectedConsistency) invalid();
@@ -116,7 +116,7 @@ export function decodeOperatorOrganizationSnapshot(value: unknown, repositoryId:
     const row = record(item, ['engineer_id', 'reason', 'owner', 'source_revision']);
     const id = engineerId(row.engineer_id);
     if (!engineers.some(e => e.engineer_id === id)) invalid();
-    return { engineer_id: id, reason: one(row.reason, reasons), owner: one(row.owner, ['maintainer', 'module_engineer', 'runtime_operator']), source_revision: digest(row.source_revision) };
+    return { engineer_id: id, reason: one(row.reason, reasons), owner: one(row.owner, ['maintainer', 'runtime_operator']), source_revision: digest(row.source_revision) };
   });
   if (new Set(attention.map(row => `${row.engineer_id}:${row.reason}`)).size !== attention.length) invalid();
   return { repository_id: repositoryId, registry_revision: digest(v.registry_revision), observed_at: instant(v.observed_at), source_snapshot_sha256: digest(v.source_snapshot_sha256), snapshot_consistency: consistency, components, engineers, attention: { protocol: 1, kind: 'repo-harness-organization-attention-snapshot', repository_id: repositoryId, overlay_snapshot_sha256: digest(a.overlay_snapshot_sha256), observed_at: instant(a.observed_at), snapshot_consistency: consistency, snapshot_sha256: digest(a.snapshot_sha256), attention } };

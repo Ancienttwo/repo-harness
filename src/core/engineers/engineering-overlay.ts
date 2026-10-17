@@ -115,7 +115,7 @@ export type OrganizationAttentionReason =
 export interface OrganizationAttentionItemV1 {
   readonly engineer_id: string;
   readonly reason: OrganizationAttentionReason;
-  readonly owner: 'maintainer' | 'module_engineer' | 'runtime_operator';
+  readonly owner: 'maintainer' | 'runtime_operator';
   readonly source_revision: string;
 }
 
@@ -274,7 +274,7 @@ function validateEngineer(value: unknown): EngineeringOverlayEngineerV1 {
 }
 
 function validateComponents(value: unknown): readonly OverlayComponentObservationV1[] {
-  if (!Array.isArray(value) || value.length !== 5) invalid('components are invalid');
+  if (!Array.isArray(value) || value.length !== COMPONENT_ORDER.length) invalid('components are invalid');
   const seen = new Set<string>();
   const components = value.map((candidate, index) => {
     const input = record(candidate, 'component');

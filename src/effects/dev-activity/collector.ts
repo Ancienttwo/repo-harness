@@ -147,7 +147,6 @@ interface CollectionContext {
   readonly signal: AbortSignal;
   readonly run: DevActivityProcessRunner;
   readonly now: () => number;
-  /** First observation time per open Decision, kept across cycles (see types.ts). */
 }
 
 function subprocessEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {

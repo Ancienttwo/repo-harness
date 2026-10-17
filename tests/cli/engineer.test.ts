@@ -1,3 +1,5 @@
+import { seedEngineerTaskMessage, releaseEngineerTaskMessage } from '../helpers/engineer-runtime-fixture';
+import { readTaskMessageDelivery } from '../../src/effects/fleet/task-inbox';
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'child_process';
 import { appendFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'fs';
@@ -330,33 +332,8 @@ describe('repo-harness engineer CLI', () => {
     expect(status.exitCode).toBe(0);
     expect(JSON.parse(status.stdout).current.current_digest).toBe(active.current_digest);
 
-    const sent = run(root, [
-      'engineer', 'message', 'send',
-      '--message-id', '33333333-3333-4333-8333-333333333333',
-      '--capability-id', 'capability.verification.evals-checks',
-      '--target-engineer-id', engineerId,
-      '--scope', 'assignment',
-      '--target-binding-id', active.current_binding_id,
-      '--target-binding-generation', String(active.binding_generation),
-      '--target-engineer-contract-revision', revision,
-      '--message-type', 'work_request',
-      '--subject-ref-json', 'null',
-      '--resource-refs-json', '[]',
-      '--sender-kind', 'program_orchestrator',
-      '--sender-principal', 'human:cli-test',
-      '--body', 'CLI durable message',
-      '--created-at', '2026-08-25T00:30:00.000Z',
-      '--json',
-    ]);
-    expect(sent.exitCode).toBe(0);
-    const sentMessage = JSON.parse(sent.stdout) as {
-      event: { event_digest: string; sender: { kind: string; principal_ref: string } };
-      receipt: { delivery_state: string };
-    };
-    expect(sentMessage).toMatchObject({
-      event: { sender: { kind: 'program_orchestrator', principal_ref: 'human:cli-test' } },
-      receipt: { delivery_state: 'pending' },
-    });
+    const target = seedEngineerTaskMessage(root, engineerId, '33333333-3333-4333-8333-333333333333');
+    const sentMessage = readTaskMessageDelivery({ repo_root: root, task_id: target.task_id, message_id: target.message_id, recipient: { kind: 'claim', claim_id: target.expected_claim_id, generation: target.expected_lease_generation } });
 
     const observedCapability = run(root, [
       'engineer', 'runtime-effect', 'capability',
@@ -370,13 +347,13 @@ describe('repo-harness engineer CLI', () => {
     expect(observedCapability.exitCode).toBe(0);
     const capability = JSON.parse(observedCapability.stdout) as { capability_sha256: string };
     const preparedEffect = run(root, [
-      'engineer', 'runtime-effect', 'prepare-module',
-      '--engineer-id', engineerId,
+      'engineer', 'runtime-effect', 'prepare-task',
+      '--task-id', target.task_id,
       '--message-id', '33333333-3333-4333-8333-333333333333',
       '--idempotency-key', 'cli-effect-1',
-      '--expected-binding-id', active.current_binding_id,
-      '--expected-binding-generation', String(active.binding_generation),
-      '--expected-engineer-contract-revision', revision,
+      '--expected-claim-id', target.expected_claim_id,
+      '--expected-lease-generation', String(target.expected_lease_generation),
+      '--expected-task-revision', target.expected_task_revision,
       '--expected-capability-sha256', capability.capability_sha256,
       '--created-at', '2026-08-25T00:32:00.000Z',
       '--json',
@@ -406,6 +383,7 @@ describe('repo-harness engineer CLI', () => {
       current: { state: 'reconciliation_required' },
     });
 
+    releaseEngineerTaskMessage(root, target.task_id);
     const capsuleResult = run(root, ['engineer', 'bootstrap-prompt', '--engineer-id', engineerId, '--json']);
     expect(capsuleResult.exitCode).toBe(0);
     const capsule = JSON.parse(capsuleResult.stdout) as { prompt: string; estimated_tokens: number };

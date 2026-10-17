@@ -102,14 +102,11 @@ describe('board page', () => {
     const snapshot = busy();
     await mount(<OperatorApp {...props(snapshot)} />);
     const count = snapshot.attention.length;
-    expect(count).toBe(2);
+    expect(count).toBe(1);
     expect(document.querySelector('.needs-you')?.getAttribute('data-attention-count')).toBe(String(count));
     expect(document.querySelectorAll('[data-attention-kind]')).toHaveLength(count);
     expect(document.querySelector('[data-needs-you]')?.getAttribute('data-needs-you')).toBe(String(count));
     expect(document.title).toBe(`(${count}) repo-harness`);
-    // A decision request is acted on with a copied command, a PR with a link out.
-    const decision = document.querySelector('[data-attention-kind="human_request"]')!;
-    expect(decision.querySelector('[data-command]')?.textContent).toContain('repo-harness verified-context read --kind decision');
     expect(document.querySelector('[data-attention-kind="ready_to_merge"] a[href^="https://github.com/"]')).not.toBeNull();
   });
 

@@ -363,11 +363,11 @@ describe('issue #281 durable task-offer wake protocol', () => {
   });
 
   test('receipt kinds are bound to their operation so a message receipt can never close a wake', () => {
-    expect(() => assertAgentRuntimeReceiptKindForOperation('wake_for_offer', 'module_message_delivery_receipt')).toThrow();
+    expect(() => assertAgentRuntimeReceiptKindForOperation('wake_for_offer', 'module_message_delivery_receipt' as never)).toThrow();
     expect(() => assertAgentRuntimeReceiptKindForOperation('wake_for_offer', 'task_message_delivery_receipt')).toThrow();
     expect(() => assertAgentRuntimeReceiptKindForOperation('notify_inbox', 'controller_step_receipt')).toThrow();
     expect(() => assertAgentRuntimeReceiptKindForOperation('wake_for_offer', 'controller_step_receipt')).not.toThrow();
-    expect(() => assertAgentRuntimeReceiptKindForOperation('notify_inbox', 'module_message_delivery_receipt')).not.toThrow();
+    expect(() => assertAgentRuntimeReceiptKindForOperation('notify_inbox', 'task_message_delivery_receipt')).not.toThrow();
   });
 
   test('a controller-step receipt is canonical, digest-sealed and bound to one control reference', () => {

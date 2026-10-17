@@ -41,7 +41,7 @@ function repo(overrides: Partial<DevActivityRawRepository> = {}): DevActivityRaw
       { kind: 'git', status: 'ok', reason: null, observed_at: iso(0) },
       { kind: 'github', status: 'ok', reason: null, observed_at: iso(0) },
     ],
-    worktrees: [], pull_requests: [], human_requests: [], ...overrides,
+    worktrees: [], pull_requests: [], ...overrides,
   };
 }
 
@@ -135,22 +135,17 @@ describe('dev activity identity and join (§3.2)', () => {
 });
 
 describe('dev activity attention queue (§3.4)', () => {
-  test('collects GitHub merge asks and Decision requests, oldest first', () => {
+  test('collects GitHub merge asks, oldest first', () => {
     const snapshot = project(repo({
       pull_requests: [
         pr('feat/ready', { merge_state: 'CLEAN', created_at: iso(4 * DAY) }),
         pr('feat/hidden-ready', { merge_state: 'CLEAN', state: 'closed', closed_at: iso(DAY) }),
         pr('feat/ask', { merge_state: 'BLOCKED' }),
       ],
-      human_requests: [{ decision_id: '123e4567-e89b-42d3-a456-426614174012', question: 'Ship /Users/me/secret now?', first_observed_at: iso(3 * DAY) }],
     }));
     expect(snapshot.attention.map(entry => [entry.kind, entry.waiting_since])).toEqual([
       ['ready_to_merge', iso(4 * DAY)],
-      ['human_request', iso(3 * DAY)],
     ]);
-    const human = snapshot.attention.find(entry => entry.kind === 'human_request')!;
-    expect(human.summary).toBe('Ship [private path] now?');
-    expect(human.command).toBe('repo-harness verified-context read --kind decision --id 123e4567-e89b-42d3-a456-426614174012');
     expect(snapshot.attention.find(entry => entry.kind === 'ready_to_merge')!.url).toMatch(/^https:\/\/github\.com\//u);
     expect(JSON.stringify(snapshot)).not.toContain('/Users/');
   });

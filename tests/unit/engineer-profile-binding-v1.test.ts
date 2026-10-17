@@ -42,7 +42,6 @@ const profile: ModuleEngineerProfileV1 = {
   },
   max_active_claims: 1,
   escalation_policy: {
-    cross_capability_change: 'interface_request',
     acceptance: 'independent_plane',
   },
 };
