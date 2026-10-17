@@ -5,8 +5,8 @@
 
 ## Current Snapshot
 
-- The architecture model lives in `.archcontext/model/`. It declares 35
-  capabilities in 6 domains, 63 components, 282 relations and 46 flows.
+- The architecture model lives in `.archcontext/model/`. It declares 28
+  capabilities in 6 domains, 56 components, 286 relations and 36 flows.
 - Every capability page under [modules](modules/) shows `Proof: proven` for its
   P1 map and its P2 flow.
 - The full generated graph is in [diagrams/architecture.mmd](diagrams/architecture.mmd),
@@ -80,7 +80,7 @@ Out of scope:
 | --- | --- | --- | --- |
 | public-surface | 4 | Routes user intent to CLI-backed command facades, adopts repositories, and collects strategy context. | [Public Surface](domains/public-surface.md) |
 | workflow-engine | 4 | Owns the workflow contract and templates, inspects and migrates repositories, resolves Effective State and the coordination plane, and provides process, lock and Git primitives. | [Workflow Engine](domains/workflow-engine.md) |
-| runtime-harness | 22 | Runs host hooks and the installed runtime, hosts task agents, records evidence and observations, serves the MCP sidecar, and runs the Module Engineer organization. | [Runtime Harness](domains/runtime-harness.md) |
+| runtime-harness | 13 | Runs host hooks and the installed runtime, hosts task agents, records evidence and observations, serves the MCP sidecar, and runs the Module Engineer organization. | [Runtime Harness](domains/runtime-harness.md) |
 | organization | 2 | Delivers tasks across repositories: task offers, acquire, the Task Inbox, and PR publication. | [Organization](domains/organization.md) |
 | runtime-mcp | 2 | Exposes bounded repository tools through MCP and runs the local ChatGPT browser consult. | [Runtime MCP](domains/runtime-mcp.md) |
 | verification | 3 | Runs tests, gates and evals, records the acceptance receipt, and checks CodeGraph readiness. | [Verification](domains/verification.md) |
