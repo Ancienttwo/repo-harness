@@ -30,6 +30,7 @@ import {
   renderBoardSlice,
 } from '../src/cli/hook/board-slice-context';
 import { runReturnChannel } from '../src/cli/hook/return-channel';
+import { STANDING_ORDERS_MARKER } from '../src/cli/hook/standing-orders-context';
 import { runSubagentContext } from '../src/cli/hook/subagent-context';
 import { createStateInputCollector, type StateInputCollector } from '../src/effects/loop/state-input-collector';
 import { resolveHookEffectiveState } from '../src/cli/hook/runtime';
@@ -416,6 +417,54 @@ describe('one slice, two hosts, identical bytes', () => {
   let fixture: Fixture;
   beforeEach(() => { fixture = buildFixture(); armFixture(fixture); });
   afterEach(() => fixture.cleanup());
+
+  test.each([
+    ['verbatim', '1. Keep the assigned scope.  \r\n2. Report 检查 results.\r\n'],
+    ['truncated', `1. ${'保留 🧭 '.repeat(300)}\n2. Run checks.\n`],
+  ])('%s standing orders match across hosts and keep the board slice unchanged', (_label, content) => {
+    const before = returnChannel({ tool_name: 'Agent', tool_input: { prompt: 'do the work' } });
+    const expectedSlice = extractSliceBlock(String(before.permission?.updatedInput?.prompt));
+    write(fixture.worktree, '.ai/harness/standing-orders.md', content);
+    const claude = returnChannel({ tool_name: 'Agent', tool_input: { prompt: 'do the work' } });
+    const codex = runSubagentContext({
+      collector: collectorFor(fixture.worktree),
+      identity: hookIdentity({ host: 'codex' }),
+      payload: { agent_type: 'default', model: 'gpt-x', agent_id: 'orders-agent', turn_id: 'orders-turn' },
+      env: { ...process.env, HOOK_HOST: 'codex' },
+    });
+    const prompt = String(claude.permission?.updatedInput?.prompt);
+    const context = String(codex.additionalContext);
+    const blocks = [prompt, context].map((text) => {
+      const start = text.indexOf(STANDING_ORDERS_MARKER);
+      const end = text.indexOf(`\n\n${BOARD_SLICE_MARKER}`);
+      expect(start).toBeGreaterThanOrEqual(0);
+      expect(end).toBeGreaterThan(start);
+      expect(text.split(STANDING_ORDERS_MARKER).length - 1).toBe(1);
+      expect(extractSliceBlock(text)).toBe(expectedSlice);
+      return text.slice(start, end);
+    });
+    expect(Buffer.from(blocks[0]!)).toEqual(Buffer.from(blocks[1]!));
+    expect(Buffer.byteLength(blocks[0]!)).toBeLessThanOrEqual(1500);
+    expect(prompt.indexOf('[repo-harness:return-channel]')).toBeLessThan(prompt.indexOf(STANDING_ORDERS_MARKER));
+    if (Buffer.byteLength(`${STANDING_ORDERS_MARKER}\n${content}`) <= 1500) {
+      expect(blocks[0]).toBe(`${STANDING_ORDERS_MARKER}\n${content}`);
+    } else {
+      expect(blocks[0]!.endsWith('... (truncated; read .ai/harness/standing-orders.md)')).toBe(true);
+    }
+    expect(returnChannel({ tool_name: 'Agent', tool_input: { prompt } })).toEqual({ exitCode: 0 });
+  });
+
+  test('a prompt with an existing board slice receives new orders before that slice', () => {
+    const first = returnChannel({ tool_name: 'Agent', tool_input: { prompt: 'do the work' } });
+    const stamped = String(first.permission?.updatedInput?.prompt);
+    write(fixture.worktree, '.ai/harness/standing-orders.md', '1. Keep scope.');
+    const second = returnChannel({ tool_name: 'Agent', tool_input: { prompt: stamped } });
+    const prompt = String(second.permission?.updatedInput?.prompt);
+    expect(prompt.indexOf('[repo-harness:return-channel]')).toBeLessThan(prompt.indexOf(STANDING_ORDERS_MARKER));
+    expect(prompt.indexOf(STANDING_ORDERS_MARKER)).toBeLessThan(prompt.indexOf(BOARD_SLICE_MARKER));
+    expect(extractSliceBlock(prompt)).toBe(extractSliceBlock(stamped));
+    expect(returnChannel({ tool_name: 'Agent', tool_input: { prompt } })).toEqual({ exitCode: 0 });
+  });
 
   test('Codex additionalContext and Claude updatedInput.prompt carry the same block', () => {
     const codex = runSubagentContext({

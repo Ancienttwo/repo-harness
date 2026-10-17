@@ -39,9 +39,9 @@ Other documents link here. They do not copy this table.
 | --- | --- | --- | --- | --- |
 | `SessionStart.default` | all sessions | Claude, Codex | `session-context` | Emit the Effective State section first, then the owed-architecture and pending-plan sections under one budget. |
 | `PreToolUse.edit` | `Edit\|Write` | Claude, Codex | `mutation-guard` | Block an edit outside the repository, under `_ref/` or `_ops/`, or without a parseable target path. |
-| `PreToolUse.subagent` | `Agent` | Claude | `return-channel` | Append the return-channel contract and the board slice to a Claude `Agent` prompt. |
+| `PreToolUse.subagent` | `Agent` | Claude | `return-channel` | Append the return-channel contract, standing orders and board slice to a Claude `Agent` prompt. |
 | `UserPromptSubmit.inbox` | all prompts | Claude, Codex | `task-inbox` | Deliver task messages at the turn boundary. |
-| `SubagentStart.context` | subagent start | Codex | `subagent-context` | Record the native role and model observation. Add the bounded child context and the board slice. |
+| `SubagentStart.context` | subagent start | Codex | `subagent-context` | Record the native role and model observation. Add the bounded child context, standing orders and board slice. |
 | `Stop.default` | session stop | Claude, Codex | `stop` | Publish the evidence checkpoint and render handoff and resume. Claude can get the owed-architecture line. |
 
 After upgrading the package, reinstall the host adapters. Codex must trust the
@@ -53,6 +53,20 @@ returns exit 2 for a removed tuple or an unsupported host route.
 Publication-command architecture and `[PostBash]` advisories no longer reach
 the Agent. Claude and Codex still get owed context at SessionStart. Claude
 also gets it at Stop. No route observes `PostToolUse`.
+
+## Standing orders
+
+The standing-orders register is adapted from pstack (cursor/plugins, MIT, Lauren Tan).
+The user or parent edits `.ai/harness/standing-orders.md` in each checkout.
+Git ignores this file. Use consecutive `N. text` lines from 1, with no headings.
+Missing, empty, invalid or unreadable files add no block and cause no error.
+Both routes above use one renderer and preserve the register text verbatim.
+The block starts with `[repo-harness:standing-orders]` and is at most 1500 UTF-8
+bytes, including the marker and any truncation line.
+A truncated block ends with `... (truncated; read .ai/harness/standing-orders.md)`.
+Claude inserts it after the return-channel text and before the board slice.
+Codex includes it in `additionalContext` before the board slice.
+An existing marker in the target context prevents a second block.
 
 ## Host Output
 

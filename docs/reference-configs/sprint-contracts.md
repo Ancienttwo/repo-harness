@@ -1,10 +1,34 @@
 # Task Scope and Optional Sprint Backlogs
 
 Ordinary work is described in its PR: goal, scope, changes, verification, risk and rollback.
-The delegation brief contains only Goal, Scope, Verify and Rollback. A separate plan,
+The delegation brief contains Goal, Scope, Context, Acceptance, Verify, Rollback,
+Timebox, Forbidden, Report and Standing. A separate plan,
 contract, review, notes file, machine block or promotion gate is not a prerequisite.
 Use notes only for non-obvious decisions. PRDs are for genuinely new products; an
 optional sprint backlog may coordinate dependent work without creating artifact chains.
+
+## Delegation Brief
+
+The brief and standing-orders pattern is adapted from pstack (cursor/plugins, MIT, Lauren Tan).
+Fill every field before a spawn or resume. A field the parent cannot fill means
+the unit is not yet scoped. Do not spawn that unit.
+
+| Field | Required content |
+| --- | --- |
+| Goal | State the result the worker must deliver. |
+| Scope | Name the files and behavior the worker owns. |
+| Context | Paste upstream reports in full when the unit depends on them. Workers cannot see sibling reports. State when no upstream report is needed. |
+| Acceptance | Give one checkable condition per line. |
+| Verify | Name the commands and expected results. Name who runs each command. |
+| Rollback | State how to undo the change. |
+| Timebox | Set the time limit and the action at expiry. |
+| Forbidden | Forbid retarget, merge, rebase, force-push and edits outside Scope unless the brief grants them. List other task limits. |
+| Report | Require status, branch, head SHA, PRs, what actually ran and deviations. |
+| Standing | Include the current numbered constraints from `.ai/harness/standing-orders.md` verbatim. State when no standing constraints apply. |
+
+The user or parent edits the register in the current checkout. Use one `N. text`
+constraint per line. Start at 1 and use consecutive numbers. Do not add headings.
+The hooks inject a bounded block. See [Standing orders](hook-operations.md#standing-orders).
 
 ## Risk and Review
 

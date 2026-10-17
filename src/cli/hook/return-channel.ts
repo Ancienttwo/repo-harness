@@ -1,11 +1,12 @@
 /**
- * PreToolUse.subagent: stamp the delivery contract and the board slice onto a
+ * PreToolUse.subagent: stamp the delivery contract, standing orders and board slice onto a
  * Claude Agent spawn prompt. The runtime decides which hosts run this route.
  */
 
 import { BOARD_SLICE_MARKER, resolveBoardSliceBlock, type BoardSliceCollector } from './board-slice-context';
 import type { HookHandlerResult } from './handler-contract';
 import { payloadString, payloadValue, type HookPayload } from './hook-input';
+import { resolveStandingOrdersBlock, STANDING_ORDERS_MARKER } from './standing-orders-context';
 
 export interface ReturnChannelInput {
   readonly collector: BoardSliceCollector;
@@ -28,10 +29,20 @@ function appendBoardSlice(collector: BoardSliceCollector, prompt: string): strin
   return block === null ? prompt : `${prompt}\n\n${block}`;
 }
 
+/** Keep new orders before a board slice that the parent already supplied. */
+function insertStandingOrders(repoRoot: string, prompt: string): string {
+  if (prompt.includes(STANDING_ORDERS_MARKER)) return prompt;
+  const block = resolveStandingOrdersBlock(repoRoot);
+  if (block === null) return prompt;
+  const boardStart = prompt.indexOf(BOARD_SLICE_MARKER);
+  return boardStart < 0
+    ? `${prompt}\n\n${block}`
+    : `${prompt.slice(0, boardStart)}${block}\n\n${prompt.slice(boardStart)}`;
+}
+
 /**
- * Two independent appendices, each gated by its own marker. A re-spawn that
- * carries an already-stamped contract still receives the slice, and the
- * envelope is emitted whenever either appendix changed the prompt.
+ * Each appendix has its own marker. A repeated spawn can receive a missing
+ * appendix. Emit the envelope whenever an appendix changes the prompt.
  */
 export function runReturnChannel(input: ReturnChannelInput): HookHandlerResult {
   const toolName = payloadString(input.payload, 'tool_name');
@@ -43,7 +54,8 @@ export function runReturnChannel(input: ReturnChannelInput): HookHandlerResult {
   const withContract = prompt.includes(RETURN_CONTRACT_MARKER)
     ? prompt
     : prompt + RETURN_CONTRACT_TEXT;
-  const updatedPrompt = appendBoardSlice(input.collector, withContract);
+  const withOrders = insertStandingOrders(input.collector.getRepoRoot(), withContract);
+  const updatedPrompt = appendBoardSlice(input.collector, withOrders);
   if (updatedPrompt === prompt) return NO_OUTPUT;
   return {
     exitCode: 0,

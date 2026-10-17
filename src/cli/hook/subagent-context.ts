@@ -24,6 +24,7 @@ import { withExclusiveDirectoryLock } from '../../effects/locking/exclusive-dire
 import { resolveBoardSliceBlock } from './board-slice-context';
 import type { HookHandlerResult } from './handler-contract';
 import { payloadIdentityField, type HookIdentity, type HookPayload } from './hook-input';
+import { appendStandingOrders } from './standing-orders-context';
 
 export interface SubagentContextInput {
   readonly collector: Pick<StateInputCollector, 'getRepoRoot' | 'getActivePlanMarker' | 'getEffectiveState'>;
@@ -442,7 +443,7 @@ export function runSubagentContext(input: SubagentContextInput): HookHandlerResu
   // no workflow artifact; unknown routing never fabricates a writable grant.
   const scopeMode: SandboxMode | null = routing.status === 'verified' ? routing.sandbox_mode : null;
   const startContext = appendLongCommandGuardrail([
-    '[repo-harness:subagent-context]',
+    appendStandingOrders(repoRoot, '[repo-harness:subagent-context]'),
     '',
     ...(boardSlice ? [boardSlice, ''] : []),
     `[repo-harness:native-role-routing] ${routing.status}: ${routing.reason}`,
