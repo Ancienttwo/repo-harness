@@ -1,6 +1,6 @@
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeAll, describe, expect, test } from 'bun:test';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { copyFileSync, chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -16,11 +16,12 @@ import {
   projectionResultReceiptDigest,
   type ArchitectureRefreshSignalV1,
   type Json,
+  type NativeContextExportV1,
   type ProjectionExpectedSnapshotV1,
   type ProjectionRequestV1,
   type ProjectionResultV2,
 } from 'archctx-contracts';
-import { ARCHCTX_REQUIRED_VERSION, type ArchitectureProjectionPolicy } from '../src/core/architecture/projection';
+import { ARCHCTX_REQUIRED_VERSION, decodeNativeContextExport, type NativeContextSource, type ArchitectureProjectionPolicy } from '../src/core/architecture/projection';
 import {
   archctxCapabilities,
   ArchctxClientError,
@@ -28,6 +29,7 @@ import {
   verifyArchctxDaemonRuntime,
   inspectArchitectureProjectionReadiness,
   readArchitectureProjectionSnapshot,
+  readArchitectureNativeContext,
   resolveCompatibleNodeRuntime,
   resolvePackageLocalArchctx,
   readArchitectureDocsAnchors,
@@ -344,6 +346,152 @@ buildArchitectureProjectionCommand().parse(['apply', '--json', '--request-id', $
 `);
   return spawnSync(process.execPath, [script], { cwd: f.repoRoot, env: { ...process.env, HOME: f.root }, encoding: 'utf8', timeout: 10000 });
 }
+
+describe('native architecture context', () => {
+  let exported: NativeContextExportV1;
+  const commit = 'a'.repeat(40);
+
+  beforeAll(() => {
+    exported = readArchitectureNativeContext(join(import.meta.dir, '..'), { kind: 'worktree' });
+  }, 30_000);
+
+  function context(source: NativeContextSource): NativeContextExportV1 {
+    const value = structuredClone(exported);
+    value.snapshot = source.kind === 'ref'
+      ? { source: 'ref', commitSha: source.commit, treeOid: 'b'.repeat(40), validation: 'immutable-tree' }
+      : { source: 'worktree', headSha: commit, headTreeOid: 'b'.repeat(40), validation: 'stable-read' };
+    return value;
+  }
+
+  function envelope(value: NativeContextExportV1): ArchctxProcessResult {
+    return { status: 0, signal: null, stdout: JSON.stringify({ schemaVersion: 'archcontext.envelope/v1', ok: true, requestId: 'export.native', data: value }), stderr: '' };
+  }
+
+  test('decodes a schema-valid worktree and a matching immutable ref', () => {
+    for (const source of [{ kind: 'worktree' }, { kind: 'ref', commit }] as const) {
+      const value = context(source);
+      expect(decodeNativeContextExport(value, source)).toBe(value);
+    }
+  });
+
+  test.each(['schema', 'profile', 'node schema', 'ref SHA', 'ref source', 'worktree source'])('rejects a native export with a mismatched %s', (kind) => {
+    const source: NativeContextSource = kind.startsWith('ref') ? { kind: 'ref', commit } : { kind: 'worktree' };
+    const value: Record<string, unknown> = { ...context(source) };
+    if (kind === 'schema') value.schemaVersion = 'archcontext.native-context-export/v0';
+    if (kind === 'profile') value.profile = 'other/v1';
+    if (kind === 'node schema') delete (value.model as NativeContextExportV1['model']).nodes[0]!.summary;
+    if (kind === 'ref SHA') value.snapshot = { source: 'ref', commitSha: 'c'.repeat(40), treeOid: 'b'.repeat(40), validation: 'immutable-tree' };
+    if (kind === 'ref source') value.snapshot = context({ kind: 'worktree' }).snapshot;
+    if (kind === 'worktree source') value.snapshot = context({ kind: 'ref', commit }).snapshot;
+    let error: unknown;
+    try { decodeNativeContextExport(value, source); } catch (caught) { error = caught; }
+    expect(error).toBeInstanceOf(ArchctxClientError);
+    expect(error).toMatchObject({ code: 'RH_ARCHCTX_NATIVE_CONTEXT_INVALID', action: 'update-repo-harness' });
+  });
+
+  test('preserves the registered strict native failure code and remedy', () => {
+    const f = fixture();
+    const failure = knownFailure('AC_MODEL_ADOPTION_REQUIRED', 'native-context-model-missing', { path: '.archcontext/manifest.yaml' });
+    const run: RunArchctxProcess = () => ({ status: 1, signal: null, stdout: JSON.stringify(failureEnvelope('export.native', failure)), stderr: '' });
+    let error: unknown;
+    try { readArchitectureNativeContext(f.repoRoot, { kind: 'worktree' }, { consumerRoot: f.consumerRoot, run }); } catch (caught) { error = caught; }
+    expect(error).toBeInstanceOf(ArchctxClientError);
+    expect(error).toMatchObject({ code: failure.code, action: failure.action, reasonCode: failure.reasonCode, details: failure.details });
+  });
+
+  test('refuses a strict native failure with unregistered field values', () => {
+    const f = fixture();
+    const failure = { ...knownFailure('AC_MODEL_ADOPTION_REQUIRED', 'native-context-model-missing'), message: 'unregistered message' };
+    const run: RunArchctxProcess = () => ({ status: 1, signal: null, stdout: JSON.stringify({ schemaVersion: 'archcontext.envelope/v1', ok: false, requestId: 'export.native', error: failure }), stderr: '' });
+    expect(() => readArchitectureNativeContext(f.repoRoot, { kind: 'worktree' }, { consumerRoot: f.consumerRoot, run })).toThrow('invalid error envelope');
+  });
+
+  test('reuses one ref object by real repository path without a handshake', () => {
+    const f = fixture();
+    const calls: Array<{ args: readonly string[]; timeoutMs: number }> = [];
+    const source = { kind: 'ref', commit } as const;
+    const run: RunArchctxProcess = (_binary, args, options) => {
+      calls.push({ args, timeoutMs: options.timeoutMs });
+      return envelope(context(source));
+    };
+    const options = { consumerRoot: f.consumerRoot, run };
+    const first = readArchitectureNativeContext(f.repoRoot, source, options);
+    const alias = join(f.root, 'repo-alias');
+    symlinkSync(f.repoRoot, alias, 'junction');
+    expect(readArchitectureNativeContext(alias, source, options)).toBe(first);
+    expect(calls).toEqual([{ args: ['export', 'native', '--ref', commit, '--profile', 'repo-harness/v1', '--json'], timeoutMs: 30_000 }]);
+    const other = fixture();
+    expect(readArchitectureNativeContext(other.repoRoot, source, options)).not.toBe(first);
+    expect(calls).toHaveLength(2);
+  });
+
+  test('keeps four refs and evicts the least recently read ref', () => {
+    const f = fixture();
+    const calls: string[] = [];
+    const run: RunArchctxProcess = (_binary, args) => {
+      const requested = args[args.indexOf('--ref') + 1]!;
+      calls.push(requested);
+      return envelope(context({ kind: 'ref', commit: requested }));
+    };
+    const read = (id: string) => readArchitectureNativeContext(f.repoRoot, { kind: 'ref', commit: id.repeat(40) }, { consumerRoot: f.consumerRoot, run });
+    const first = read('1');
+    read('2'); read('3'); read('4');
+    expect(read('1')).toBe(first);
+    read('5');
+    expect(read('1')).toBe(first);
+    read('2');
+    expect(calls).toEqual(['1', '2', '3', '4', '5', '2'].map((id) => id.repeat(40)));
+  });
+
+  test('does not memoize worktree reads and uses the caller deadline', () => {
+    const f = fixture();
+    const calls: Array<{ args: readonly string[]; timeoutMs: number }> = [];
+    const run: RunArchctxProcess = (_binary, args, options) => {
+      calls.push({ args, timeoutMs: options.timeoutMs });
+      return envelope(context({ kind: 'worktree' }));
+    };
+    const options = { consumerRoot: f.consumerRoot, run, nowMs: () => 1_000, deadlineMs: 2_250 };
+    const first = readArchitectureNativeContext(f.repoRoot, { kind: 'worktree' }, options);
+    expect(readArchitectureNativeContext(f.repoRoot, { kind: 'worktree' }, options)).not.toBe(first);
+    expect(calls).toEqual(Array.from({ length: 2 }, () => ({ args: ['export', 'native', '--worktree', '--profile', 'repo-harness/v1', '--json'], timeoutMs: 1_250 })));
+  });
+
+  test('does not cache a failed ref decode', () => {
+    const f = fixture();
+    const source = { kind: 'ref', commit } as const;
+    let calls = 0;
+    const run: RunArchctxProcess = () => envelope(context(++calls === 1 ? { kind: 'worktree' } : source));
+    const options = { consumerRoot: f.consumerRoot, run };
+    expect(() => readArchitectureNativeContext(f.repoRoot, source, options)).toThrow(ArchctxClientError);
+    const recovered = readArchitectureNativeContext(f.repoRoot, source, options);
+    expect(readArchitectureNativeContext(f.repoRoot, source, options)).toBe(recovered);
+    expect(calls).toBe(2);
+  });
+
+  test.each(['typed', 'precondition', 'unexpected'])('readiness handles a %s export failure', (kind) => {
+    const f = fixture();
+    copyFileSync(join(import.meta.dir, '..', '.archcontext', 'manifest.yaml'), join(f.repoRoot, '.archcontext', 'manifest.yaml'));
+    writeFileSync(join(f.repoRoot, '.archcontext', 'product.yaml'), 'name: fixture\n');
+    const run: RunArchctxProcess = () => {
+      if (kind === 'unexpected') throw new Error('export process failed');
+      const failure = kind === 'typed'
+        ? knownFailure('AC_SCHEMA_INVALID', 'native-context-model-invalid')
+        : knownFailure('AC_PRECONDITION_FAILED', 'native-context-input-missing');
+      return { status: 1, signal: null, stdout: JSON.stringify(failureEnvelope('export.native', failure)), stderr: '' };
+    };
+    const readiness = inspectArchitectureProjectionReadiness(f.repoRoot, { consumerRoot: f.consumerRoot, policy: { ...policy, provider: 'disabled', applyMode: 'disabled' }, run });
+    expect(readiness.apply.enabled).toBe(false);
+    if (kind === 'typed') {
+      expect(readiness.projectionProvider.state).toBe('disabled');
+      expect(readiness.next).toContain('Adopt ArchContext in a repository');
+    } else {
+      // A failure that is not a model fault keeps its own reason instead of the adoption step.
+      expect(readiness.projectionProvider.state).toBe('error');
+      expect(readiness.projectionProvider.reason).toContain(kind === 'unexpected' ? 'export process failed' : 'AC_PRECONDITION_FAILED');
+      expect(readiness.next).not.toContain('Adopt ArchContext in a repository');
+    }
+  });
+});
 
 describe('package-local ArchContext projection provider', () => {
   test('apply accepts only the major change observed by one archctx call', () => {
@@ -913,14 +1061,19 @@ describe('package-local ArchContext projection provider', () => {
 
   test('keeps the adoption step until the capability loader accepts the model', () => {
     const f = fixture();
-    writeFileSync(join(f.repoRoot, '.archcontext', 'manifest.yaml'), 'schema_version: archcontext/v1\n');
+    copyFileSync(join(import.meta.dir, '..', '.archcontext', 'manifest.yaml'), join(f.repoRoot, '.archcontext', 'manifest.yaml'));
     writeFileSync(join(f.repoRoot, '.archcontext', 'product.yaml'), 'name: fixture\n');
     const nodes = join(f.repoRoot, '.archcontext', 'model', 'nodes');
-    const inspect = () => inspectArchitectureProjectionReadiness(f.repoRoot, { consumerRoot: f.consumerRoot, policy: { ...policy, provider: 'disabled', applyMode: 'disabled' } });
-    // A valid capability node is a complete model, so status gives no next step.
+    const inspect = () => inspectArchitectureProjectionReadiness(f.repoRoot, { policy: { ...policy, provider: 'disabled', applyMode: 'disabled' } });
+    // A valid manifest and capability export leave no adoption step.
     expect(inspect().next).toBeNull();
-    // Empty nodes directory.
+    // An uncommitted node deletion is a worktree precondition fault, not an unadopted model.
     rmSync(join(nodes, 'capability.test.core.yaml'));
+    expect(inspect()).toMatchObject({ projectionProvider: { state: 'error' } });
+    expect(inspect().projectionProvider.reason).toContain('AC_PRECONDITION_FAILED');
+    // Empty nodes directory after the deletion is committed.
+    execFileSync('git', ['add', '-A'], { cwd: f.repoRoot });
+    execFileSync('git', ['commit', '-q', '-m', 'remove nodes'], { cwd: f.repoRoot });
     expect(inspect().next).toContain('Adopt ArchContext in a repository');
     // Only the sample node that `archctx init` writes; it has no responsibilities.
     writeFileSync(join(nodes, 'capability.architecture.context.yaml'), [
@@ -954,6 +1107,29 @@ describe('package-local ArchContext projection provider', () => {
     expect(readiness.projectionProvider.state).toBe('error');
     expect(readiness.projectionProvider.reason).toContain('requires Node >=22.22 <26');
     expect(readiness.projectionProvider.reason).toContain('trusted candidates ((none))');
+  });
+
+  test('a disabled provider still reports a missing Node runtime when it reads the model', () => {
+    const f = fixture();
+    copyFileSync(join(import.meta.dir, '..', '.archcontext', 'manifest.yaml'), join(f.repoRoot, '.archcontext', 'manifest.yaml'));
+    writeFileSync(join(f.repoRoot, '.archcontext', 'product.yaml'), 'name: fixture\n');
+    const fakeBin = join(f.root, 'bin');
+    mkdirSync(fakeBin, { recursive: true });
+    const node = join(fakeBin, 'node');
+    writeFileSync(node, '#!/bin/sh\necho v22.21.0\n');
+    chmodSync(node, 0o755);
+    const pathOnlyEnv: NodeJS.ProcessEnv = { ...process.env, PATH: fakeBin };
+    delete pathOnlyEnv.REPO_HARNESS_NODE_BIN;
+    const readiness = inspectArchitectureProjectionReadiness(f.repoRoot, {
+      consumerRoot: f.consumerRoot,
+      policy: { ...policy, provider: 'disabled', applyMode: 'disabled' },
+      env: pathOnlyEnv,
+      trustedNodeCandidateSource: () => [],
+    });
+    // Model reads need archctx even when projection is disabled; the runtime fault is not hidden as "not adopted".
+    expect(readiness.projectionProvider).toMatchObject({ provider: 'disabled', state: 'error' });
+    expect(readiness.projectionProvider.reason).toContain('requires Node >=22.22 <26');
+    expect(readiness.apply.enabled).toBe(false);
   });
 
   test('enumerates fixed system paths then sorted nvm versions in the shared trusted-candidate scan', () => {

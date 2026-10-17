@@ -233,9 +233,9 @@ describe('status command (Phase 1C)', () => {
         fs.mkdirSync(path.join(repo, '.ai/harness'), { recursive: true });
         fs.mkdirSync(path.join(repo, '.archcontext/model/nodes'), { recursive: true });
         fs.writeFileSync(path.join(repo, '.ai/harness/workflow-contract.json'), '{}');
-        fs.writeFileSync(path.join(repo, '.archcontext/manifest.yaml'), 'schema_version: archcontext/v1\n');
+        fs.copyFileSync(path.join(ROOT, '.archcontext/manifest.yaml'), path.join(repo, '.archcontext/manifest.yaml'));
         fs.writeFileSync(path.join(repo, '.archcontext/product.yaml'), 'name: fixture\n');
-        // The capability loader must accept the model, so `next` is null only with a valid node.
+        // The native export needs a valid model and a committed HEAD.
         fs.writeFileSync(path.join(repo, '.archcontext/model/nodes/capability.fixture.core.yaml'), [
           'schemaVersion: archcontext.node/v2',
           'kind: capability',
@@ -261,6 +261,8 @@ describe('status command (Phase 1C)', () => {
           JSON.stringify({ context: { capability_source: 'archcontext' } }),
         );
 
+        execSync('git add .', { cwd: repo, stdio: 'ignore' });
+        execSync('git -c user.name=Test -c user.email=test@example.com commit -m fixture', { cwd: repo, stdio: 'ignore' });
         const report = runStatus(repo);
         expect(report.architectureProjection).toEqual({
           schemaVersion: 'repo-harness.architecture-projection-readiness/v1',
