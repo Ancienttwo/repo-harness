@@ -12,33 +12,34 @@ responsibilities:
   - Project the cross-repository fleet board from authority readers without persisting any column or readiness flag.
 source:
   include:
-    - "src/core/fleet/**"
-    - "src/effects/fleet/**"
-    - "src/core/messages/document-handoff.ts"
-    - "src/cli/commands/fleet.ts"
+    - src/core/fleet/**
+    - src/effects/fleet/**
+    - src/core/messages/document-handoff.ts
+    - src/cli/commands/fleet.ts
+    - src/core/messages/mechanics.ts
   entrypoints:
     - id: entrypoint.task-fleet.command
-      path: "src/cli/commands/fleet.ts"
+      path: src/cli/commands/fleet.ts
       symbols:
-        - name: "buildFleetCommand"
+        - name: buildFleetCommand
           sinks:
             - id: sink.task-fleet.offers
-              path: "src/effects/fleet/acquire.ts"
-              symbol: "collectFleetOffers"
+              path: src/effects/fleet/acquire.ts
+              symbol: collectFleetOffers
             - id: sink.task-fleet.acquire
-              path: "src/effects/fleet/acquire.ts"
-              symbol: "acquireFleetTask"
+              path: src/effects/fleet/acquire.ts
+              symbol: acquireFleetTask
             - id: sink.task-fleet.send-message
-              path: "src/effects/fleet/task-inbox.ts"
-              symbol: "sendTaskMessage"
+              path: src/effects/fleet/task-inbox.ts
+              symbol: sendTaskMessage
             - id: sink.task-fleet.deliver-message
-              path: "src/effects/fleet/task-inbox.ts"
-              symbol: "deliverTaskInbox"
+              path: src/effects/fleet/task-inbox.ts
+              symbol: deliverTaskInbox
 extensions:
   contractFiles:
-    agents: "AGENTS.md"
-    claude: "CLAUDE.md"
-  lspProfile: "typescript-lsp"
+    agents: AGENTS.md
+    claude: CLAUDE.md
+  lspProfile: typescript-lsp
   verification:
-    - "bun run test:files tests/fleet-acquire-concurrency.test.ts tests/effects/fleet-board.test.ts tests/effects/task-inbox.test.ts tests/effects/task-inbox-layout-migration.test.ts tests/cli/fleet-offer-acquire.test.ts tests/cli/fleet-task-inbox.test.ts tests/unit/task-message-v1.test.ts --timeout 60000 --max-concurrency 1"
-    - "bun run check:type"
+    - bun run test:files tests/fleet-acquire-concurrency.test.ts tests/effects/fleet-board.test.ts tests/effects/task-inbox.test.ts tests/effects/task-inbox-layout-migration.test.ts tests/cli/fleet-offer-acquire.test.ts tests/cli/fleet-task-inbox.test.ts tests/unit/task-message-v1.test.ts --timeout 60000 --max-concurrency 1
+    - bun run check:type

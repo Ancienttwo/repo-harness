@@ -90,7 +90,7 @@ repos.
   evidence that never enter effective state or `progress_token`.
 - Agent Runtime effects are provider-neutral, at-most-once control-plane effects.
   An adapter receives only a bounded inbox-control reference after intent and
-  `effect_started` are durable; only the exact persisted Task or Module Inbox
+  `effect_started` are durable; only the exact persisted Task Inbox
   receipt proves delivery, and every ambiguous outcome requires reconciliation
   without an automatic retry.
 - repo-harness keeps no scheduler, budget ledger or unattended controller. The
@@ -303,12 +303,6 @@ readback is a separate release check, never a task AcceptanceReceipt field.
   declared old implementation, caller, fallback, test, document, and
   compatibility window of a replaced surface has an explicit disposition, and
   that nothing declared removed still exists at the candidate head.
-
-## Agent WorkDemand intake authority
-
-An authenticated current Engineer may create a bounded `WorkDemandV1` and submit it for Human review. The immutable request binds its exact Binding generation and contract revision, source and target capabilities, untrusted problem/outcome text, digest-bound resources, and advisory urgency/dependency hints. Messages and external issues may reference the demand but never become its authority.
-
-Only Human authority may accept or reject a submitted demand. Acceptance freezes the exact target Sprint commit, Work Graph revision, stable Task ID, Sprint row bytes, and full `WorkPackageDefinitionV1`. Materialization validates both fences and cross-live-Sprint Task ID uniqueness, constructs the new Sprint and Work Graph as one Git tree, and compare-and-swaps the canonical target ref. Before CAS it durably journals the exact commit and receipt. A pre-CAS crash leaves the ref unchanged; replay after CAS returns the same receipt without another ref mutation. Movement to any other commit fails closed. The receipt can then drive the existing materialized transition; it proves work creation only, and normal offer/acquire remains the sole Claim and Lease path.
 
 ## Execution boundary invariants
 

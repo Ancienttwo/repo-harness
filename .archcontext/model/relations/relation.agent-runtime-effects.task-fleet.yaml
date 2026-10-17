@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.agent-runtime-effects.task-fleet
+kind: calls
+source: capability.runtime-harness.agent-runtime-effects
+target: capability.organization.task-fleet
+intent: Read the exact Task message and delivery receipt before action admission and success.
