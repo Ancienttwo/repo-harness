@@ -246,6 +246,26 @@ describe('host envelopes on the real hook entry (#678)', () => {
     } finally { rmSync(root, { recursive: true, force: true }); }
   }, 120_000);
 
+  test('a changed owned path gets no owner line, and a patch batch keeps its clean owned path', () => {
+    const root = owedFixture();
+    try {
+      writeFileSync(join(root, 'src/owned/b.ts'), 'export const b = 1;\n');
+      execFileSync('git', ['add', 'src/owned/b.ts'], { cwd: root });
+      execFileSync('git', ['commit', '-q', '-m', 'add b'], { cwd: root });
+      writeFileSync(join(root, 'src/owned/a.ts'), 'export const a = 3;\n');
+
+      const edit = host(root, 'claude', 'PreToolUse', 'edit', { tool_name: 'Edit', tool_input: { file_path: 'src/owned/a.ts' } });
+      expect(edit.status).toBe(0);
+      expect(edit.stdout).toBe('');
+
+      const command = '*** Begin Patch\n*** Update File: src/owned/a.ts\n@@\n-x\n+y\n*** Update File: src/owned/b.ts\n@@\n-x\n+y\n*** End Patch';
+      const patch = host(root, 'codex', 'PreToolUse', 'edit', { tool_name: 'apply_patch', tool_input: { command } });
+      expect(patch.status).toBe(0);
+      expect(context(patch.stdout, 'PreToolUse'))
+        .toBe('[CapabilityOwner] src/owned/b.ts belongs to core-owned (docs/architecture/modules/core/owned.md).');
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  }, 60_000);
+
   test('PreToolUse.subagent keeps its updatedInput prompt rewrite on Claude', () => {
     const root = owedFixture();
     try {

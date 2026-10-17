@@ -485,6 +485,7 @@ function capabilityIdsForPaths(
   paths: readonly string[],
   policy: WorkflowPolicy,
   readSource = (path: string) => readText(cwd, path),
+  select: (paths: readonly string[]) => readonly string[] = (paths) => paths,
 ): CapabilityResolution {
   // Absolute paths outside the repo (user-level config such as ~/.pi/agent/*)
   // are outside the registry's jurisdiction: prefixes are repo-relative, so
@@ -519,11 +520,11 @@ function capabilityIdsForPaths(
       return { ids: [], registryStatus: 'absent', matches: [], unmappedPaths: [], malformedEntryCount: 0, outOfRepoPathCount, blocker: null };
     }
     if (registry.status === 'invalid') return invalidAuthority(registry.diagnostics);
-    resolution = resolveCapabilityPaths(registry.registry, inRepoPaths, { repoRoot: cwd });
+    resolution = resolveCapabilityPaths(registry.registry, select(inRepoPaths), { repoRoot: cwd });
   } else {
     const authority = loadArchcontextAuthority(cwd, readSource);
     if (authority.status === 'invalid') return invalidAuthority(authority.diagnostics);
-    resolution = resolveArchcontextPaths(cwd, authority.owners, inRepoPaths, readSource);
+    resolution = resolveArchcontextPaths(cwd, authority.owners, select(inRepoPaths), readSource);
   }
   if (resolution.status !== 'valid') {
     return {
@@ -601,14 +602,20 @@ export interface CapabilityPathOwner {
  * state lock and writes nothing. A path is absent from the map when it is not
  * an implementation surface or has no owner; the map is empty when the
  * repository declares no registry. One call resolves the whole batch, so an
- * archcontext repository starts one `archctx resolve`. It throws when
+ * archcontext repository starts one `archctx resolve`. `select` narrows the
+ * batch after the authority loads and before ownership resolves, so a caller
+ * pays for its own filter only when a registry exists. It throws when
  * ownership is unavailable.
  */
-export function capabilityOwnersForPaths(cwd: string, paths: readonly string[]): ReadonlyMap<string, CapabilityPathOwner> {
+export function capabilityOwnersForPaths(
+  cwd: string,
+  paths: readonly string[],
+  select?: (surfaces: readonly string[]) => readonly string[],
+): ReadonlyMap<string, CapabilityPathOwner> {
   const owners = new Map<string, CapabilityPathOwner>();
   const surfaces = paths.filter(isImplementationSurfacePath);
   if (surfaces.length === 0) return owners;
-  const resolution = capabilityIdsForPaths(cwd, surfaces, readWorkflowPolicy(cwd));
+  const resolution = capabilityIdsForPaths(cwd, surfaces, readWorkflowPolicy(cwd), undefined, select);
   if (resolution.blocker) {
     throw new Error(`${resolution.blocker.key} ${resolution.blocker.code}: ${resolution.blocker.message}; fix: ${resolution.blocker.fix}`);
   }
