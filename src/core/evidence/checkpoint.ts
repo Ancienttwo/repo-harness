@@ -41,6 +41,8 @@ export const CHECKPOINT_ID_PREFIX = "chk-";
 export const CHECKPOINT_SCHEMA_NAME = "repo-harness-checkpoint.v1";
 
 export const DECISION_EVENT_TYPE = "decision.recorded";
+export const DECISION_PRODUCER = "decision-trail";
+export const DECISION_EVENT_ID_PATTERN = /^evt-[0-9A-HJKMNP-TV-Z]{26}$/;
 export const CHECKPOINT_DECISION_LIMIT = 20;
 
 export interface DecisionPayload {
@@ -72,13 +74,21 @@ export function isDecisionPayload(value: unknown): value is DecisionPayload {
     && (row.run_id === undefined || cell(row.run_id));
 }
 
-/** Accepted events already exclude replaced rows. Equal times keep append order. */
+export function isDecisionEvent(event: EvidenceEventRecord): boolean {
+  return event.event_type === DECISION_EVENT_TYPE && event.producer === DECISION_PRODUCER && event.trust_class === "observed";
+}
+
+/** Select metadata first. A bounded checkpoint reads at most 20 payloads. */
 export function projectDecisions(
   accepted: readonly EvidenceEventRecord[],
   payloadOf: (event: EvidenceEventRecord) => unknown = event => event.payload,
+  limit?: number,
 ): CheckpointDecision[] {
-  return accepted.filter(event => event.event_type === DECISION_EVENT_TYPE)
-    .map(event => {
+  // Stable sort preserves append order when two accepted events share a time.
+  const events = accepted.filter(isDecisionEvent)
+    .sort((left, right) => Date.parse(left.created_at) - Date.parse(right.created_at));
+  const selected = limit === undefined ? events : events.slice(-limit);
+  return selected.map(event => {
       const payload = payloadOf(event);
       if (!isDecisionPayload(payload)) throw new Error(`invalid decision payload: ${event.event_id}`);
       return {
@@ -92,8 +102,7 @@ export function projectDecisions(
         ...(payload.run_id === undefined ? {} : { run_id: payload.run_id }),
         supersedes: event.supersedes ?? [],
       };
-    })
-    .sort((left, right) => Date.parse(left.created_at) - Date.parse(right.created_at));
+    });
 }
 
 export function escapeDecisionMarkdown(value: string): string {
@@ -273,7 +282,7 @@ export function buildCheckpointProjection(
   const coveredEvents = coveredEventsOf(accepted);
   const latestByType = latestByEventTypeOf(accepted);
   const sourceEventIds = accepted.map((event) => event.event_id);
-  const decisions = projectDecisions(accepted, input.decisionPayloadOf).slice(-CHECKPOINT_DECISION_LIMIT);
+  const decisions = projectDecisions(accepted, input.decisionPayloadOf, CHECKPOINT_DECISION_LIMIT);
 
   const hashHex = checkpointBodyHashHex({
     worktree_id: input.worktreeId,

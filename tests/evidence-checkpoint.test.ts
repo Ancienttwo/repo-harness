@@ -85,6 +85,28 @@ function seedEvent(
 }
 
 describe("checkpoint: decision projection", () => {
+  test("reads only the retained decision window and ignores other producers", () => {
+    withTempRepo("checkpoint-decision-window", repoRoot => {
+      seedGenesis(repoRoot);
+      const appendDecision = (decision: string, why: string) => appendEvidenceEvent(repoRoot, {
+        worktreeId: "fixture", eventType: "decision.recorded", trustClass: "observed", producer: "decision-trail",
+        correlationRunId: "window-test", subjectIdentity: baseIdentity(),
+        payload: { kind: "json", value: { phase: "build", decision, why, evidence: ["#812"], result: "Done" } },
+      });
+      const old = appendDecision("Old choice", "word ".repeat(2000).trim());
+      expect(old.blob_sha256).toBeDefined();
+      rmSync(join(repoRoot, ".ai/harness/evidence/blobs", old.blob_sha256!));
+      const retained = Array.from({ length: 20 }, (_, index) => appendDecision(`Choice ${index}`, "Evidence"));
+      seedEvent(repoRoot, { eventType: "decision.recorded" });
+      expect(publishCheckpointFromLedger(repoRoot, FIXED_NOW).status).toBe("published");
+      const resolved = resolveLastPublishedCheckpoint(repoRoot);
+      expect(resolved.found).toBe(true);
+      if (!resolved.found) throw new Error("missing checkpoint");
+      expect(resolved.resolved.projection.covered_event_count).toBe(22);
+      expect(resolved.resolved.projection.decisions?.map(row => row.event_id)).toEqual(retained.map(event => event.event_id));
+    });
+  });
+
   test("keeps the latest 20 decisions by created_at with stable ties and hashes the payload", () => {
     withTempRepo("checkpoint-decisions", repoRoot => {
       seedGenesis(repoRoot);

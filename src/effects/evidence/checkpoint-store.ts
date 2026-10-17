@@ -62,6 +62,7 @@ import {
   CHECKPOINT_ID_PREFIX,
   CHECKPOINT_SCHEMA_NAME,
   CHECKPOINT_DECISION_LIMIT,
+  DECISION_EVENT_ID_PATTERN,
   isDecisionPayload,
   type CheckpointProjection,
 } from "../../core/evidence/checkpoint";
@@ -247,9 +248,9 @@ function isSchemaCompleteCheckpoint(value: unknown): value is CheckpointProjecti
   if (value.decisions !== undefined) {
     if (!Array.isArray(value.decisions) || value.decisions.length > CHECKPOINT_DECISION_LIMIT) return false;
     if (!value.decisions.every(row => isRecord(row) && isDecisionPayload(row)
-      && typeof row.event_id === "string" && /^evt-[0-9A-HJKMNP-TV-Z]{26}$/.test(row.event_id)
+      && typeof row.event_id === "string" && DECISION_EVENT_ID_PATTERN.test(row.event_id)
       && typeof row.created_at === "string" && Number.isFinite(Date.parse(row.created_at))
-      && Array.isArray(row.supersedes) && row.supersedes.every(id => typeof id === "string" && /^evt-[0-9A-HJKMNP-TV-Z]{26}$/.test(id)))) return false;
+      && Array.isArray(row.supersedes) && row.supersedes.every(id => typeof id === "string" && DECISION_EVENT_ID_PATTERN.test(id)))) return false;
   }
   const provenance = value.provenance;
   if (!isRecord(provenance)) return false;

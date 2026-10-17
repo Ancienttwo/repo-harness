@@ -20,6 +20,29 @@ function init(repoRoot: string): void {
 }
 
 describe("decision-trail CLI", () => {
+  test("repeated record calls remain distinct accepted observations in the same run", () => {
+    withTempRepo("decision-repeat", repoRoot => {
+      init(repoRoot);
+      const first = cli(repoRoot, [...RECORD, "--run-id", "session-812"]);
+      const second = cli(repoRoot, [...RECORD, "--run-id", "session-812"]);
+      expect(first.status).toBe(0);
+      expect(second.status).toBe(0);
+      const ids = [first.stdout.trim(), second.stdout.trim()];
+      expect(ids[0]).not.toBe(ids[1]);
+      expect(readAcceptedEvents(repoRoot).accepted.map(event => event.event_id)).toEqual(ids);
+      const rendered = cli(repoRoot, ["render", "--format", "tsv"]);
+      expect(rendered.status).toBe(0);
+      expect(rendered.stdout.trimEnd().split("\n")).toHaveLength(3);
+      const since = cli(repoRoot, ["render", "--since", ids[1]]);
+      expect(since.status).toBe(0);
+      expect(publishCheckpointFromLedger(repoRoot).status).toBe("published");
+      const checkpoint = resolveLastPublishedCheckpoint(repoRoot);
+      expect(checkpoint.found).toBe(true);
+      if (!checkpoint.found) throw new Error("missing checkpoint");
+      expect(checkpoint.resolved.projection.decisions?.map(row => row.event_id)).toEqual(ids);
+    });
+  });
+
   test("registered helper records from a subdirectory and projects only accepted decisions", () => {
     withTempRepo("decision-cli", repoRoot => {
       init(repoRoot);

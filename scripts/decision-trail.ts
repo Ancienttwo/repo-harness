@@ -6,6 +6,9 @@ import { parseArgs } from "util";
 import { canonicalize } from "../src/core/evidence/canonical-json";
 import {
   DECISION_EVENT_TYPE,
+  DECISION_EVENT_ID_PATTERN,
+  DECISION_PRODUCER,
+  isDecisionEvent,
   isDecisionPayload,
   normalizeDecisionCell,
   projectDecisions,
@@ -18,8 +21,6 @@ import { readDecisionPayload } from "../src/effects/evidence/checkpoint-store";
 import { LEDGER_EPOCH_START_SHA } from "../src/effects/evidence/epoch";
 import { ensureRepoRelativePath } from "../src/effects/path-safety";
 
-const PRODUCER = "decision-trail";
-const EVENT_ID = /^evt-[0-9A-HJKMNP-TV-Z]{26}$/;
 const USAGE = `Usage:
   repo-harness run decision-trail record --phase <p> --decision <d> --why <w> --evidence <ptr> [--evidence <ptr>...] --result <r> [--supersedes <event_id>] [--run-id <id>]
   repo-harness run decision-trail render [--format tsv|markdown] [--since <event_id>] [--limit N]
@@ -67,8 +68,7 @@ export function recordDecision(repoRoot: string, input: RecordDecisionInput): Ev
   const supersedes = input.supersedes === undefined ? [] : [input.supersedes];
   if (supersedes.length > 0) {
     const target = readAcceptedEvents(repoRoot).accepted.find(event => event.event_id === input.supersedes);
-    if (!EVENT_ID.test(input.supersedes!) || !target || target.event_type !== DECISION_EVENT_TYPE
-      || target.producer !== PRODUCER || target.trust_class !== "observed") {
+    if (!DECISION_EVENT_ID_PATTERN.test(input.supersedes!) || !target || !isDecisionEvent(target)) {
       throw new Error("supersedes must name an accepted decision-trail event in this worktree");
     }
   }
@@ -76,12 +76,13 @@ export function recordDecision(repoRoot: string, input: RecordDecisionInput): Ev
     encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
   }).trim();
   const genesis = ensureGenesis(repoRoot);
+  const correlationRunId = randomUUID();
   return appendEvidenceEvent(repoRoot, {
     worktreeId: genesis.worktree_id,
     eventType: DECISION_EVENT_TYPE,
     trustClass: "observed",
-    producer: PRODUCER,
-    correlationRunId: randomUUID(),
+    producer: DECISION_PRODUCER,
+    correlationRunId,
     subjectIdentity: {
       authority_commit: head,
       base_commit: head,
@@ -89,7 +90,8 @@ export function recordDecision(repoRoot: string, input: RecordDecisionInput): Ev
       scope_hash: sha256("decision-trail:worktree"),
       subject_hash: sha256(canonicalize({ head, worktree_id: genesis.worktree_id })),
       contract_hash: sha256("decision-trail:no-contract"),
-      command_hash: sha256(canonicalize({ command: "repo-harness run decision-trail record", supersedes })),
+      // Each record call is a new observation, even with identical text and HEAD.
+      command_hash: sha256(canonicalize({ command: "repo-harness run decision-trail record", supersedes, correlation_run_id: correlationRunId })),
       env_provider_id: `decision-trail/bun-${process.versions.bun}`,
     },
     supersedes,
