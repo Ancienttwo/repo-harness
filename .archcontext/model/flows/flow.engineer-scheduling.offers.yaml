@@ -26,5 +26,51 @@
         "sinkId": "sink.engineer-scheduling.product-acceptance"
       }
     }
+  ],
+  "outcomes": [
+    {
+      "id": "success",
+      "kind": "success",
+      "label": "Return the retained observation",
+      "steps": [
+        {
+          "id": "success-read",
+          "from": "scheduling",
+          "to": "acceptance",
+          "label": "Read the exact current record",
+          "evidence": {
+            "entrypointId": "entrypoint.engineer-scheduling.dependency-readers",
+            "sourceSymbol": "defaultDependencyAuthorityReaders",
+            "sinkId": "sink.engineer-scheduling.product-acceptance"
+          }
+        }
+      ],
+      "terminal": {
+        "participant": "scheduling",
+        "label": "Return the read result"
+      }
+    },
+    {
+      "id": "error",
+      "kind": "error",
+      "label": "Refuse an unavailable or invalid observation",
+      "steps": [
+        {
+          "id": "error-read",
+          "from": "scheduling",
+          "to": "acceptance",
+          "label": "Keep a failed read unavailable",
+          "evidence": {
+            "entrypointId": "entrypoint.engineer-scheduling.dependency-readers",
+            "sourceSymbol": "defaultDependencyAuthorityReaders",
+            "sinkId": "sink.engineer-scheduling.product-acceptance"
+          }
+        }
+      ],
+      "terminal": {
+        "participant": "scheduling",
+        "label": "Report the read failure without task mutation"
+      }
+    }
   ]
 }

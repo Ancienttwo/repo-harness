@@ -26,5 +26,51 @@
         "sinkId": "sink.engineer-bindings.read"
       }
     }
+  ],
+  "outcomes": [
+    {
+      "id": "success",
+      "kind": "success",
+      "label": "Return the retained observation",
+      "steps": [
+        {
+          "id": "success-read",
+          "from": "engineer",
+          "to": "store",
+          "label": "Read the exact current record",
+          "evidence": {
+            "entrypointId": "entrypoint.engineer-bindings.read",
+            "sourceSymbol": "readEngineerBindingStatus",
+            "sinkId": "sink.engineer-bindings.read"
+          }
+        }
+      ],
+      "terminal": {
+        "participant": "engineer",
+        "label": "Return the read result"
+      }
+    },
+    {
+      "id": "error",
+      "kind": "error",
+      "label": "Refuse an unavailable or invalid observation",
+      "steps": [
+        {
+          "id": "error-read",
+          "from": "engineer",
+          "to": "store",
+          "label": "Keep a failed read unavailable",
+          "evidence": {
+            "entrypointId": "entrypoint.engineer-bindings.read",
+            "sourceSymbol": "readEngineerBindingStatus",
+            "sinkId": "sink.engineer-bindings.read"
+          }
+        }
+      ],
+      "terminal": {
+        "participant": "engineer",
+        "label": "Report the read failure without task mutation"
+      }
+    }
   ]
 }
