@@ -67,6 +67,10 @@ revision snapshot for prose and diagram. Keep planned, dispatched, implemented,
 verified, merged and released states separate. Do not invent completion
 percentages. A missing result is unknown, not success.
 
+For an interim check-in from a human who returns after time away, use the
+catch-up reply contract in the Report SOP of `agentic-development-flow.md`.
+The full report above stays for completion and full reviews.
+
 Host setup is separate. Hermes does not need to be recognized as a coding agent
 inside Herdr to act as a PM. Grok connectivity and later Dot support each need
 their own host readback; neither follows from another Bot's successful test.
