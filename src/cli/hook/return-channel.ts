@@ -14,7 +14,7 @@ export interface ReturnChannelInput {
 }
 
 const RETURN_CONTRACT_MARKER = '[repo-harness:return-channel]';
-const RETURN_CONTRACT_TEXT = '\n\n[repo-harness:return-channel] Your final text message is the only channel returned to your caller. Put the complete findings/report in final text. Do not call SendUserMessage for report delivery; content sent through SendUserMessage is delivered outside the Agent tool result.';
+const RETURN_CONTRACT_TEXT = '[repo-harness:return-channel] Your final text message is the only channel returned to your caller. Put the complete findings/report in final text. Do not call SendUserMessage for report delivery; content sent through SendUserMessage is delivered outside the Agent tool result.';
 
 const NO_OUTPUT: HookHandlerResult = { exitCode: 0 };
 
@@ -29,15 +29,20 @@ function appendBoardSlice(collector: BoardSliceCollector, prompt: string): strin
   return block === null ? prompt : `${prompt}\n\n${block}`;
 }
 
+/** Insert only at a block boundary. Keep inline marker references intact. */
+function insertBeforeBoardSlice(prompt: string, block: string): string {
+  if (prompt.startsWith(BOARD_SLICE_MARKER)) return `${block}\n\n${prompt}`;
+  const boardStart = prompt.indexOf(`\n\n${BOARD_SLICE_MARKER}`);
+  return boardStart < 0
+    ? `${prompt}\n\n${block}`
+    : `${prompt.slice(0, boardStart)}\n\n${block}${prompt.slice(boardStart)}`;
+}
+
 /** Keep new orders before a board slice that the parent already supplied. */
 function insertStandingOrders(repoRoot: string, prompt: string): string {
   if (prompt.includes(STANDING_ORDERS_MARKER)) return prompt;
   const block = resolveStandingOrdersBlock(repoRoot);
-  if (block === null) return prompt;
-  const boardStart = prompt.indexOf(BOARD_SLICE_MARKER);
-  return boardStart < 0
-    ? `${prompt}\n\n${block}`
-    : `${prompt.slice(0, boardStart)}${block}\n\n${prompt.slice(boardStart)}`;
+  return block === null ? prompt : insertBeforeBoardSlice(prompt, block);
 }
 
 /**
@@ -53,7 +58,7 @@ export function runReturnChannel(input: ReturnChannelInput): HookHandlerResult {
   if (typeof prompt !== 'string') return NO_OUTPUT;
   const withContract = prompt.includes(RETURN_CONTRACT_MARKER)
     ? prompt
-    : prompt + RETURN_CONTRACT_TEXT;
+    : insertBeforeBoardSlice(prompt, RETURN_CONTRACT_TEXT);
   const withOrders = insertStandingOrders(input.collector.getRepoRoot(), withContract);
   const updatedPrompt = appendBoardSlice(input.collector, withOrders);
   if (updatedPrompt === prompt) return NO_OUTPUT;

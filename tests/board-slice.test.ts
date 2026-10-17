@@ -466,6 +466,28 @@ describe('one slice, two hosts, identical bytes', () => {
     expect(returnChannel({ tool_name: 'Agent', tool_input: { prompt } })).toEqual({ exitCode: 0 });
   });
 
+  test('an inline board marker does not split the parent brief', () => {
+    write(fixture.worktree, '.ai/harness/standing-orders.md', '1. Keep scope.');
+    const brief = `Verify ${BOARD_SLICE_MARKER} renders correctly.`;
+    const result = returnChannel({ tool_name: 'Agent', tool_input: { prompt: brief } });
+    const prompt = String(result.permission?.updatedInput?.prompt);
+    expect(prompt.startsWith(`${brief}\n\n[repo-harness:return-channel]`)).toBe(true);
+    expect(prompt.indexOf('[repo-harness:return-channel]')).toBeLessThan(prompt.indexOf(STANDING_ORDERS_MARKER));
+    expect(returnChannel({ tool_name: 'Agent', tool_input: { prompt } })).toEqual({ exitCode: 0 });
+  });
+
+  test.each(['', 'Inspect the repo.\n\n'])('a board block without a return contract receives both appendices in order', (prefix) => {
+    const first = returnChannel({ tool_name: 'Agent', tool_input: { prompt: 'do the work' } });
+    const board = extractSliceBlock(String(first.permission?.updatedInput?.prompt));
+    write(fixture.worktree, '.ai/harness/standing-orders.md', '1. Keep scope.');
+    const result = returnChannel({ tool_name: 'Agent', tool_input: { prompt: prefix + board } });
+    const prompt = String(result.permission?.updatedInput?.prompt);
+    expect(prompt.indexOf('[repo-harness:return-channel]')).toBeLessThan(prompt.indexOf(STANDING_ORDERS_MARKER));
+    expect(prompt.indexOf(STANDING_ORDERS_MARKER)).toBeLessThan(prompt.indexOf(BOARD_SLICE_MARKER));
+    expect(extractSliceBlock(prompt)).toBe(board);
+    expect(returnChannel({ tool_name: 'Agent', tool_input: { prompt } })).toEqual({ exitCode: 0 });
+  });
+
   test('Codex additionalContext and Claude updatedInput.prompt carry the same block', () => {
     const codex = runSubagentContext({
       collector: collectorFor(fixture.worktree),

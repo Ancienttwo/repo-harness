@@ -253,6 +253,7 @@ describe('standing-orders register', () => {
     '2. Keep scope.', '01. Keep scope.', '1. ', '1.\tKeep scope.',
     '1. Keep scope.\n3. Run checks.', '1. Keep scope.\n1. Run checks.',
     '1. Keep scope.\n\n2. Run checks.', '1. Keep scope.\n2. Run checks.\n1. Stop.',
+    '1. Keep scope.\n\n',
     `1. ${'x'.repeat(2000)}\n3. Invalid beyond the cap.`,
   ])('omits empty or invalid input', (content) => {
     const root = tempDir();

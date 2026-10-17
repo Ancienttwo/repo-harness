@@ -66,7 +66,8 @@ bytes, including the marker and any truncation line.
 A truncated block ends with `... (truncated; read .ai/harness/standing-orders.md)`.
 Claude inserts it after the return-channel text and before the board slice.
 Codex includes it in `additionalContext` before the board slice.
-An existing marker in the target context prevents a second block.
+Claude skips the block when its prompt already has the marker.
+Codex adds one block to the fresh context it builds for each `SubagentStart` event.
 
 ## Host Output
 

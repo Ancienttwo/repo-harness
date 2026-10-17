@@ -24,7 +24,7 @@ the unit is not yet scoped. Do not spawn that unit.
 | Timebox | Set the time limit and the action at expiry. |
 | Forbidden | Forbid retarget, merge, rebase, force-push and edits outside Scope unless the brief grants them. List other task limits. |
 | Report | Require status, branch, head SHA, PRs, what actually ran and deviations. |
-| Standing | Include the current numbered constraints from `.ai/harness/standing-orders.md` verbatim. State when no standing constraints apply. |
+| Standing | Identify the current checkout's `.ai/harness/standing-orders.md`. The hook supplies its text. Do not paste a second copy. State when no standing constraints apply. |
 
 The user or parent edits the register in the current checkout. Use one `N. text`
 constraint per line. Start at 1 and use consecutive numbers. Do not add headings.
