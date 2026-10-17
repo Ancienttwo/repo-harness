@@ -221,10 +221,13 @@ describe('host envelopes on the real hook entry (#678)', () => {
     return { status: result.status, stdout: result.stdout, stderr: result.stderr };
   }
 
-  function context(stdout: string, event: string): string {
+  const HUMAN_OWED = 'Architecture: 1 capability changed after the last projection (core-owned). Run: repo-harness architecture-projection check --json';
+
+  function context(stdout: string, event: string, systemMessage?: string): string {
     expect(stdout.endsWith('\n')).toBe(true);
-    const envelope = JSON.parse(stdout) as { hookSpecificOutput: { hookEventName: string; additionalContext: string } };
-    expect(Object.keys(envelope)).toEqual(['hookSpecificOutput']);
+    const envelope = JSON.parse(stdout) as { systemMessage?: string; hookSpecificOutput: { hookEventName: string; additionalContext: string } };
+    expect(Object.keys(envelope)).toEqual(systemMessage ? ['hookSpecificOutput', 'systemMessage'] : ['hookSpecificOutput']);
+    expect(envelope.systemMessage).toBe(systemMessage);
     expect(envelope.hookSpecificOutput.hookEventName).toBe(event);
     return envelope.hookSpecificOutput.additionalContext;
   }
@@ -240,7 +243,7 @@ describe('host envelopes on the real hook entry (#678)', () => {
 
         const session = host(root, hostName, 'SessionStart', 'default', { session_id: `owed-${hostName}` });
         expect(session.status).toBe(0);
-        const sessionContext = context(session.stdout, 'SessionStart');
+        const sessionContext = context(session.stdout, 'SessionStart', hostName === 'claude' ? HUMAN_OWED : undefined);
         expect(sessionContext).toContain('[ArchitectureOwed]');
         expect(sessionContext).toContain('core-owned (docs/architecture/modules/core/owned.md)');
       }
@@ -289,7 +292,7 @@ process.exit(child.status ?? 1);
             expect(resolves).toBe(1);
             expect(context(result.stdout, event)).toBe('[CapabilityOwner] src/owned/a.ts belongs to core-owned (docs/architecture/modules/core/owned.md).');
           }
-          if (event === 'SessionStart') expect(context(result.stdout, event)).toContain('core-owned (docs/architecture/modules/core/owned.md)');
+          if (event === 'SessionStart') expect(context(result.stdout, event, hostName === 'claude' ? HUMAN_OWED : undefined)).toContain('core-owned (docs/architecture/modules/core/owned.md)');
           console.log(`[ArchctxHookProbe] ${hostName} ${event}: export=${exports} resolve=${resolves}`);
         }
       }
@@ -389,7 +392,14 @@ process.exit(child.status ?? 1);
 
       const claude = host(root, 'claude', 'Stop', 'default', { stop_hook_active: false });
       expect(claude.status).toBe(0);
-      expect(context(claude.stdout, 'Stop')).toContain('[ArchitectureOwed]');
+      expect(context(claude.stdout, 'Stop', HUMAN_OWED)).toContain('[ArchitectureOwed]');
+      expect(host(root, 'claude', 'Stop', 'default', { stop_hook_active: false }).stdout).toBe('');
+      // The Stop marker must not suppress the human line in a later session.
+      for (const sessionId of ['owed-session-one', 'owed-session-two']) {
+        const session = host(root, 'claude', 'SessionStart', 'default', { session_id: sessionId });
+        expect(session.status).toBe(0);
+        expect(context(session.stdout, 'SessionStart', HUMAN_OWED)).toContain('[ArchitectureOwed]');
+      }
       expect(host(root, 'claude', 'Stop', 'default', { stop_hook_active: false }).stdout).toBe('');
     } finally { rmSync(root, { recursive: true, force: true }); }
   }, 60_000);
@@ -403,6 +413,7 @@ process.exit(child.status ?? 1);
         const session = host(root, hostName, 'SessionStart', 'default', { session_id: `clear-${hostName}` });
         expect(session.status).toBe(0);
         expect(session.stdout).not.toContain('ArchitectureOwed');
+        expect(JSON.parse(session.stdout)).not.toHaveProperty('systemMessage');
       }
       expect(host(root, 'claude', 'Stop', 'default', { stop_hook_active: false }).stdout).toBe('');
     } finally { rmSync(root, { recursive: true, force: true }); }

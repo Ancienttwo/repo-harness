@@ -6,6 +6,7 @@ import { dirname, join } from 'path';
 import {
   owedCapabilities,
   renderOwedCapabilities,
+  renderOwedCapabilitiesHuman,
   PROJECTION_MANIFEST_PATH,
 } from '../src/effects/state/owed-capabilities';
 import { resolveCapabilityOwnership } from '../src/effects/state/resolve-effective-state';
@@ -86,6 +87,7 @@ describe('owed-capability rule', () => {
     expect(line).toContain('core-owned (docs/architecture/modules/core/owned.md)');
     expect(line).toContain('repo-harness architecture-projection check --json');
     expect(line).toContain('assets/skill-commands/repo-harness-architecture/references/worker.md');
+    expect(renderOwedCapabilitiesHuman(owed)).toBe('Architecture: 1 capability changed after the last projection (core-owned). Run: repo-harness architecture-projection check --json');
   });
 
   test('no line when the manifest changed later in the branch; a later edit owes again', () => {
@@ -99,6 +101,7 @@ describe('owed-capability rule', () => {
     expect(cleared.status).toBe('clear');
     expect(cleared.manifest_change).toBe(git(cwd, ['rev-parse', 'HEAD']));
     expect(renderOwedCapabilities(cleared)).toBeNull();
+    expect(renderOwedCapabilitiesHuman(cleared)).toBeNull();
 
     // An uncommitted edit after the manifest commit is after it.
     write(cwd, 'src/owned/a.ts', 'export const a = 3;\n');
@@ -130,5 +133,14 @@ describe('owed-capability rule', () => {
     write(cwd, 'src/owned/a.ts', 'export const a = 2;\n');
     expect(owedFor(cwd)).toMatchObject({ status: 'not_projected', capabilities: [] });
     expect(renderOwedCapabilities(owedFor(cwd))).toBeNull();
+    expect(renderOwedCapabilitiesHuman(owedFor(cwd))).toBeNull();
+  });
+
+  test('the human line counts all capabilities but names only the first', () => {
+    const capabilities = ['first', 'second', 'third', 'fourth'].map((id) => ({ id, module_document: `${id}.md`, paths: [`src/${id}.ts`] }));
+    expect(renderOwedCapabilitiesHuman({ status: 'owed', review_base: 'main', manifest_change: null, capabilities, new_unowned_paths: [] }))
+      .toBe('Architecture: 4 capabilities changed after the last projection (first, +3). Run: repo-harness architecture-projection check --json');
+    expect(renderOwedCapabilitiesHuman(null)).toBeNull();
+    expect(renderOwedCapabilitiesHuman({ status: 'clear', review_base: 'main', manifest_change: null, capabilities: [], new_unowned_paths: ['src/new.ts'] })).toBeNull();
   });
 });

@@ -288,9 +288,11 @@ describe('Stop reports owed architecture updates on Claude only (#678)', () => {
     expect(first.stdout).toContain('repo-harness architecture-projection check --json');
     expect(first.stdout.trimEnd().split('\n').length).toBeLessThanOrEqual(3);
     expect(first.stderr).toBe('');
+    expect(first.systemMessage).toBe('Architecture: 1 capability changed after the last projection (core-owned). Run: repo-harness architecture-projection check --json');
 
     const repeated = runStopHandler({ collector: collector(cwd), identity: hookIdentity({ host: 'claude' }) });
     expect(repeated.stdout).toBe('');
+    expect(repeated.systemMessage).toBeUndefined();
     expect(git(cwd, ['status', '--porcelain'])).toBe('');
   });
 
@@ -305,7 +307,39 @@ describe('Stop reports owed architecture updates on Claude only (#678)', () => {
     git(cwd, ['commit', '-am', 'change owned code again']);
     const renewed = runStopHandler({ collector: collector(cwd), identity: hookIdentity({ host: 'claude' }) });
     expect(renewed.stdout).toContain('core-owned (docs/architecture/modules/core/owned.md)');
+    expect(renewed.systemMessage).toBe('Architecture: 1 capability changed after the last projection (core-owned). Run: repo-harness architecture-projection check --json');
     expect(runStopHandler({ collector: collector(cwd), identity: hookIdentity({ host: 'claude' }) }).stdout).toBe('');
+  });
+
+  test('a changed owed set delivers a new human line without another marker', () => {
+    const cwd = owedFixture();
+    const first = runStopHandler({ collector: collector(cwd) });
+    expect(first.systemMessage).toContain('Architecture: 1 capability');
+    const registryPath = join(cwd, '.ai/context/capabilities.json');
+    const registry = JSON.parse(readFileSync(registryPath, 'utf8'));
+    registry.capabilities.push({ ...registry.capabilities[0], id: 'core-second', name: 'second', prefixes: ['src/second'] });
+    writeFileSync(registryPath, `${JSON.stringify(registry)}\n`);
+    mkdirSync(join(cwd, 'src/second'));
+    writeFileSync(join(cwd, 'src/second/b.ts'), 'export const b = 1;\n');
+    git(cwd, ['add', '-A']); git(cwd, ['commit', '-m', 'add a second capability']);
+
+    const writes: StopProjectionTarget[] = [];
+    const changed = runStopHandler({ collector: collector(cwd), dependencies: { observeProjectionWrite: (target) => writes.push(target) } });
+    expect(changed.systemMessage).toBe('Architecture: 2 capabilities changed after the last projection (core-owned, +1). Run: repo-harness architecture-projection check --json');
+    expect(changed.stdout).toContain('core-second');
+    expect(writes).toEqual([
+      { kind: 'handoff', path: '.ai/harness/handoff/current.md' },
+      { kind: 'resume', path: '.ai/harness/handoff/resume.md' },
+      { kind: 'owed-signal', path: '.ai/harness/state/stop-owed-signal' },
+    ]);
+    expect(runStopHandler({ collector: collector(cwd) })).toEqual({ exitCode: 0, stdout: '', stderr: '' });
+  });
+
+  test('an architecture marker read failure drops both lines and does not block', () => {
+    const cwd = owedFixture();
+    mkdirSync(join(cwd, '.ai/harness/state/stop-owed-signal'), { recursive: true });
+    expect(runStopHandler({ collector: collector(cwd) })).toEqual({ exitCode: 0, stdout: '', stderr: '' });
+    expect(existsSync(join(cwd, '.ai/harness/handoff/current.md'))).toBe(true);
   });
 
   test('a Stop continued by a Stop hook and Codex add nothing', () => {

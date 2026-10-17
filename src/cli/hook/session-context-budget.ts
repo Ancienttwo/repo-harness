@@ -7,6 +7,8 @@ export interface SessionContextSection {
   /** Lower values come first. */
   readonly priority: number;
   readonly content: string;
+  /** Human text is separate from the model context budget. */
+  readonly systemMessage?: string;
   /** A mandatory section is always kept verbatim. */
   readonly mandatory: boolean;
   /** Where the full content lives. An optional section that does not fit becomes a pointer to it. */

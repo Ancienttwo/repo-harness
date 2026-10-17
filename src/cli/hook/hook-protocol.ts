@@ -16,6 +16,7 @@ export interface HookOutcome {
   readonly reason: string;
   readonly permission?: HookPermission;
   readonly additionalContext: string | null;
+  readonly systemMessage?: string;
   readonly diagnostics: string;
 }
 
@@ -28,7 +29,7 @@ export interface HostOutput {
  * Claude and Codex read `hookSpecificOutput` from stdout on exit 0 and the
  * operator text from stderr. Neither host gives exit-0 stderr to the model.
  */
-function renderHookSpecificOutput(outcome: HookOutcome): HostOutput {
+function renderHookSpecificOutput(outcome: HookOutcome, systemMessage?: string): HostOutput {
   const specific: Record<string, unknown> = {};
   if (outcome.exitCode === 0 && outcome.permission) {
     specific.permissionDecision = outcome.permission.decision;
@@ -36,8 +37,11 @@ function renderHookSpecificOutput(outcome: HookOutcome): HostOutput {
     if (outcome.permission.updatedInput) specific.updatedInput = outcome.permission.updatedInput;
   }
   if (outcome.exitCode === 0 && outcome.additionalContext) specific.additionalContext = outcome.additionalContext;
-  const stdout = Object.keys(specific).length > 0
-    ? `${JSON.stringify({ hookSpecificOutput: { hookEventName: outcome.event, ...specific } })}\n`
+  const envelope: Record<string, unknown> = {};
+  if (Object.keys(specific).length > 0) envelope.hookSpecificOutput = { hookEventName: outcome.event, ...specific };
+  if (outcome.exitCode === 0 && systemMessage) envelope.systemMessage = systemMessage;
+  const stdout = Object.keys(envelope).length > 0
+    ? `${JSON.stringify(envelope)}\n`
     : '';
   return { stdout, stderr: outcome.diagnostics };
 }
@@ -52,6 +56,6 @@ function renderCodexOutput(outcome: HookOutcome): HostOutput {
 }
 
 export const HOST_RENDERERS: Readonly<Record<RouteHost, (outcome: HookOutcome) => HostOutput>> = Object.freeze({
-  claude: renderHookSpecificOutput,
+  claude: (outcome) => renderHookSpecificOutput(outcome, outcome.systemMessage),
   codex: renderCodexOutput,
 });

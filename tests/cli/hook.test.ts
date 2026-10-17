@@ -7,8 +7,43 @@ import { runHook } from '../../src/cli/hook/runtime';
 import { getRoute } from '../../src/cli/hook/route-registry';
 import { buildHookCommand } from '../../src/cli/installer/managed-entries';
 import { inspectWorkflowMarker } from '../../src/core/adoption/minimum-harness-version';
+import { HOST_RENDERERS, type HookOutcome } from '../../src/cli/hook/hook-protocol';
 
 const HOOK_ENTRY = join(import.meta.dir, '..', '..', 'src', 'cli', 'hook-entry.ts');
+
+describe('hook host output fields', () => {
+  const outcome: HookOutcome = {
+    event: 'SessionStart', routeId: 'default', repoRoot: null, exitCode: 0, reason: 'ok',
+    additionalContext: '[ArchitectureOwed] model context', systemMessage: 'Architecture: human context', diagnostics: '',
+  };
+
+  test('Claude renders model and human text in separate fields on SessionStart and Stop', () => {
+    for (const event of ['SessionStart', 'Stop'] as const) {
+      const output = HOST_RENDERERS.claude({ ...outcome, event });
+      expect(JSON.parse(output.stdout)).toEqual({
+        hookSpecificOutput: { hookEventName: event, additionalContext: outcome.additionalContext },
+        systemMessage: outcome.systemMessage,
+      });
+      expect(output.stderr).toBe('');
+      expect(JSON.parse(HOST_RENDERERS.claude({ ...outcome, event, additionalContext: null }).stdout))
+        .toEqual({ systemMessage: outcome.systemMessage });
+    }
+  });
+
+  test('Codex omits the human field and keeps Stop stdout empty', () => {
+    expect(JSON.parse(HOST_RENDERERS.codex(outcome).stdout)).toEqual({
+      hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: outcome.additionalContext },
+    });
+    expect(HOST_RENDERERS.codex({ ...outcome, event: 'Stop' })).toEqual({ stdout: '', stderr: '' });
+  });
+
+  test('failed hooks drop both context fields and keep diagnostics', () => {
+    for (const renderer of Object.values(HOST_RENDERERS)) {
+      expect(renderer({ ...outcome, exitCode: 1, diagnostics: 'failed\n' }))
+        .toEqual({ stdout: '', stderr: 'failed\n' });
+    }
+  });
+});
 
 function repo(optIn = true): string {
   const root = mkdtempSync(join(tmpdir(), 'hrd09-runtime-'));
