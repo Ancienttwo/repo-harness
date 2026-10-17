@@ -1,6 +1,6 @@
 # runtime-harness/external-source-intake 架构文档
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-external-source-intake" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:84a16c823c8f742a2ab6c54325740a096b8b85a67660b2a2ddbad76a40f469b4" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-external-source-intake" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:a8da37a4a367b08e6b86a36f10cc9f4f884dcf7e56d5f4c8f4391283512179fb" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.external-source-intake`(kind `capability`)
 > **Matched Prefixes**:`src/core/external-sources/**`、`src/effects/external-sources/**`、`src/cli/commands/external-source.ts`
@@ -32,9 +32,9 @@ flowchart LR
 | 宣告入口 | 錨點 | 職責 |
 | --- | --- | --- |
 | `entrypoint.external-source-intake.refresh` | `src/effects/external-sources/refresh.ts#refreshExternalSource` | `sink.external-source-intake.immutable-observation-store` → `src/effects/external-sources/store.ts#writeProviderIssueObservation`、`sink.external-source-intake.immutable-attempt-receipt` → `src/effects/external-sources/store.ts#writeExternalSourceRefreshReceipt` |
-| `entrypoint.external-source-intake.list` | `src/effects/external-sources/refresh.ts#listExternalSourceProjection` | `sink.external-source-intake.read-only-projection` → `src/core/external-sources/projection.ts#buildExternalSourceProjection` |
+| `entrypoint.external-source-intake.list` | `src/effects/external-sources/refresh.ts#projection` | `sink.external-source-intake.read-only-projection` → `src/core/external-sources/projection.ts#buildExternalSourceProjection` |
 | `entrypoint.external-source-intake.bind` | `src/effects/external-sources/binding.ts#bindExternalSource` | `sink.external-source-intake.binding-receipt` → `src/effects/external-sources/store.ts#writeExternalSourceBindingReceipt` |
-| `entrypoint.external-source-intake.bind` | `src/effects/external-sources/binding.ts#listExternalSourceBindings` | `sink.external-source-intake.binding-projection` → `src/core/external-sources/binding.ts#ExternalSourceBindingProjectionV1` |
+| `entrypoint.external-source-intake.bind` | `src/effects/external-sources/binding.ts#listExternalSourceBindings` | `sink.external-source-intake.binding-projection` → `src/core/external-sources/projection.ts#buildExternalSourceProjection` |
 
 組件入口:
 
@@ -56,6 +56,7 @@ flowchart LR
 
 入向關係:
 
+- `depends-on` ← `capability.verification.evals-checks` — Test External Source Intake behavior through its source modules.
 - `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the external-source command
 
 組件出向關係:

@@ -1,6 +1,6 @@
 # runtime-harness/engineering-overlay 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineering-overlay" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:3ab41acc31ab71ba719c1ed9fa42203efea6f254f1a4bdd44c0b071834c2afc0" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineering-overlay" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:b7d807f0b41d35dbbef2b255cb0f3e319523cb004f3275216e5e75a8ebb3e85e" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.engineering-overlay`(kind `capability`)
 > **Matched Prefixes**:`src/core/engineers/engineering-overlay.ts`、`src/effects/engineers/engineering-overlay.ts`
@@ -51,10 +51,13 @@ flowchart LR
 
 - `calls` → `capability.runtime-harness.agent-runtime-effects` — Observe exact current runtime-effect and reconciliation states without executing or repairing an effect
 - `calls` → `capability.runtime-harness.engineer-bindings` — Observe exact current Profile, Binding and live ClaimActor revisions without mutating their stores
+- `depends-on` → `capability.runtime-harness.engineer-scheduling` — Resolve the registered repository before reading the overlay.
+- `depends-on` → `capability.runtime-harness.mcp-sidecar` — Read the repository registry for overlay observations.
 - `calls` → `component.engineering-overlay.primary` — Validate and content-address the read-only Engineer and organization-attention projections
 
 入向關係:
 
+- `depends-on` ← `capability.verification.evals-checks` — Test Engineering Overlay behavior through its source modules.
 - `reads` ← `component.operator.primary` — Collect the engineering board for the Organization view
 
 組件出向關係:

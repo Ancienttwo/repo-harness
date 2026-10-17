@@ -1,5 +1,5 @@
 # runtime-harness/mcp-sidecar 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-mcp-sidecar" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:195aed0d2ea3ee311adb8a73a7ac6ec1622f1519cd1f9d992204da71736afbc1" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-mcp-sidecar" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:27f7a1c977a0349b0b3cbc090b611ab13d076639635ef4afde1a62ed8283e7fd" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.mcp-sidecar`(kind `capability`)
 > **Matched Prefixes**:`src/cli/mcp/**`、`src/cli/commands/mcp.ts`、`src/cli/chatgpt-browser/file-policy.ts`、`src/effects/repo-registry.ts`、`docs/repo-harness-chatgpt-mcp-setup.md`、`docs/reference-configs/chatgpt-coding-mcp.md`、`docs/researches/20260711-devspace-chatgpt-local-control.md`、`src/core/security/**`
@@ -66,11 +66,18 @@ flowchart LR
 出向關係:
 
 - `calls` → `capability.runtime-harness.agent-runtime-effects` — Expose read-only runtime capability and current-effect projections to the authenticated Engineer without Host mutation authority
+- `depends-on` → `capability.workflow-engine.contract-assets` — Run declared helpers from MCP tools.
 - `calls` → `component.mcp-sidecar.primary` — Dispatch an MCP tool call
 
 入向關係:
 
+- `depends-on` ← `capability.verification.acceptance-review` — Apply secret patterns to module review context.
+- `depends-on` ← `capability.public-surface.adoption` — Read registered repository identity for adoption planning.
 - `calls` ← `capability.runtime-harness.agent-runtime-effects` — Read the strict repo registry and the authorization revision for the wake fence
+- `depends-on` ← `capability.runtime-mcp.chatgpt-browser` — Apply shared file policy to browser prompts and sessions.
+- `depends-on` ← `capability.runtime-harness.engineer-scheduling` — Read registered repository identity for scheduling.
+- `depends-on` ← `capability.runtime-harness.engineering-overlay` — Read the repository registry for overlay observations.
+- `depends-on` ← `capability.verification.evals-checks` — Test MCP Sidecar behavior through its source modules.
 - `calls` ← `capability.runtime-harness.external-source-intake` — Read the strict repo registry snapshot for repository identity and authorization
 - `calls` ← `component.global-runtime-reconciliation.archctx-closure` — Resolve registered repositories for the model reader
 - `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the mcp command

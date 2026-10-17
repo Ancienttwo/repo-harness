@@ -1,6 +1,6 @@
 # runtime-mcp/chatgpt-browser 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-mcp-chatgpt-browser" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:21aede1b7c199588dd7c90886afdc992f001738e9ea41ddd585ad74ceded73e1" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-mcp-chatgpt-browser" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:d884a9a57f984e7c3f46e0df86db0cb78212b11940e219df0fba0d571b9db51f" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-mcp.chatgpt-browser`(kind `capability`)
 > **Matched Prefixes**:`src/cli/chatgpt-browser/**`、`src/cli/chatgpt-skill/**`、`src/cli/commands/chatgpt.ts`、`docs/repo-harness-chatgpt-browser-engine.md`
@@ -50,10 +50,12 @@ flowchart LR
 
 出向關係:
 
+- `depends-on` → `capability.runtime-harness.mcp-sidecar` — Apply shared file policy to browser prompts and sessions.
 - `calls` → `component.chatgpt-browser.primary` — Run a ChatGPT Web consult
 
 入向關係:
 
+- `depends-on` ← `capability.verification.evals-checks` — Test ChatGPT Browser Consult behavior through its source modules.
 - `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the chatgpt command
 - `calls` ← `component.mcp-sidecar.host-setup` — Read the canonical ChatGPT bridge reference from the packaged skill source
 - `calls` ← `component.mcp-sidecar.primary` — Run the opt-in browser consult tools through the ChatGPT browser engine

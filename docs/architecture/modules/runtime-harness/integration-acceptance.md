@@ -1,6 +1,6 @@
 # runtime-harness/integration-acceptance 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-integration-acceptance" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:98217ca34aee950a6e7efbd0cfcf40d8eb6b6edbcb185a3dbc82ae1a690f2278" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-integration-acceptance" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:935670728c9294e8b570c2c60b974e225961b71aba9354b39b2e11f7d5b1df6a" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.integration-acceptance`(kind `capability`)
 > **Matched Prefixes**:`src/core/integration/product-acceptance.ts`、`src/effects/integration/product-acceptance.ts`、`src/cli/commands/integration.ts`
@@ -34,7 +34,8 @@ flowchart LR
 | 宣告入口 | 錨點 | 職責 |
 | --- | --- | --- |
 | `entrypoint.integration-acceptance.contract` | `src/effects/integration/product-acceptance.ts#createIntegrationContract` | `sink.integration-acceptance.contract-schema` → `src/core/integration/product-acceptance.ts#buildIntegrationContract` |
-| `entrypoint.integration-acceptance.envelope` | `src/effects/integration/product-acceptance.ts#createIntegrationEnvelope` | `sink.integration-acceptance.lease` → `src/effects/state/coordination-lease-store.ts#readLease`、`sink.integration-acceptance.publication` → `src/effects/publication/publication-receipt.ts#readPublicationReceiptCache`、`sink.integration-acceptance.envelope-schema` → `src/core/integration/product-acceptance.ts#buildIntegrationEnvelope` |
+| `entrypoint.integration-acceptance.envelope` | `src/effects/integration/product-acceptance.ts#observeSelectedPublication` | `sink.integration-acceptance.lease` → `src/effects/state/coordination-lease-store.ts#readLease`、`sink.integration-acceptance.publication` → `src/effects/publication/publication-receipt.ts#readPublicationReceiptCache` |
+| `entrypoint.integration-acceptance.envelope` | `src/effects/integration/product-acceptance.ts#buildCurrentEnvelope` | `sink.integration-acceptance.envelope-schema` → `src/core/integration/product-acceptance.ts#buildIntegrationEnvelope` |
 | `entrypoint.integration-acceptance.publication-observation` | `src/effects/integration/product-acceptance.ts#observeSelectedPublication` | `sink.integration-acceptance.publication-cache` → `src/effects/publication/publication-receipt.ts#readPublicationReceiptCache` |
 | `entrypoint.integration-acceptance.matrix` | `src/effects/integration/product-acceptance.ts#createAcceptanceMatrix` | `sink.integration-acceptance.matrix-schema` → `src/core/integration/product-acceptance.ts#assertCompletePassingMatrix` |
 | `entrypoint.integration-acceptance.product` | `src/effects/integration/product-acceptance.ts#createProductAcceptanceProjection` | `sink.integration-acceptance.acceptance` → `scripts/acceptance-receipt.ts#verifyAcceptance`、`sink.integration-acceptance.product-schema` → `src/core/integration/product-acceptance.ts#buildProductAcceptanceProjection` |
@@ -63,6 +64,7 @@ flowchart LR
 入向關係:
 
 - `reads` ← `capability.runtime-harness.engineer-scheduling` — Read ME-4C product acceptance projections as one closed dependency authority and never reconstruct acceptance from prose
+- `depends-on` ← `capability.verification.evals-checks` — Test Integration Product Acceptance behavior through its source modules.
 - `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the integration command
 
 組件出向關係:

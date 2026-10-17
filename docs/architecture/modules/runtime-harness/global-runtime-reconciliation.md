@@ -1,6 +1,6 @@
 # runtime-harness/global-runtime-reconciliation 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-global-runtime-reconciliation" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:449bb84df001424dbec495fa673abc8f4f650aade933493cc601a7d14e0c3f92" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-global-runtime-reconciliation" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:899cbca7d6e909124975b8de3696174470dd6aba7245db107ccbbcadb524180a" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.global-runtime-reconciliation`(kind `capability`)
 > **Matched Prefixes**:`package.json`、`bun.lock`、`src/cli/index.ts`、`src/cli/commands/global-runtime.ts`、`scripts/check-managed-runtime.ts`、`scripts/sync-codex-installed-copies.sh`、`src/effects/architecture/**`、`tests/cli/global-runtime-init.test.ts`、`tests/cli/global-runtime.test.ts`、`tests/architecture-projection-provider.test.ts`、`assets/reference-configs/external-tooling.md`、`docs/reference-configs/external-tooling.md`、`docs/reference-configs/install-profiles.md`、`src/cli/runtime/**`、`src/cli/tty-prompt.ts`、`src/cli/commands/validators.ts`、`src/cli/commands/doctor.ts`、`src/cli/commands/init-hook.ts`、`src/cli/commands/upgrade.ts`、`src/core/upgrade/**`、`src/effects/runtime/node-candidates.ts`、`src/effects/runtime/protected-helper-platform.ts`、`src/effects/skill-tree-integrity.ts`、`src/effects/configuration/**`、`src/core/architecture/projection.ts`、`src/cli/commands/architecture-projection.ts`、`src/cli/commands/architecture-configuration.ts`、`scripts/axr5-archctx-clean-room.ts`、`src/core/release/**`、`src/effects/release/**`、`scripts/check-npm-release.sh`、`scripts/check-release-published.sh`、`scripts/check-tarball-install-smoke.sh`、`scripts/runtime-evidence-receipt.ts`、`install.sh`、`install.ps1`、`tsconfig.json`
@@ -62,16 +62,21 @@ flowchart LR
 
 出向關係:
 
+- `depends-on` → `capability.verification.evals-checks` — Use shared test fixtures for global runtime checks.
 - `calls` → `component.global-runtime-reconciliation.primary` — Reconcile and verify the selected global runtime closure
 
 入向關係:
 
+- `depends-on` ← `capability.public-surface.adoption` — Use the legacy inventory during adoption planning.
 - `calls` ← `component.contract-assets.template-projection` — Initialize the architecture projection provider preference
+- `depends-on` ← `capability.runtime-harness.engineer-bindings` — Read the architecture model for Engineer profiles.
+- `depends-on` ← `capability.verification.evals-checks` — Test Global Runtime Reconciliation behavior through its source modules.
 - `calls` ← `component.hook-adapters.host-installer` — Report architecture projection readiness in status
 - `calls` ← `component.hook-adapters.primary` — Write host output through the shared blocking writer
 - `reads` ← `component.operator.architecture-view` — List modules and export review prompts through the shared ArchitectureModelReader
 - `reads` ← `component.operator.primary` — Read the committed architecture model through the shared ArchitectureModelReader
 - `calls` ← `component.refactor-program.archctx-provider` — Run the pinned package-local archctx CLI through the shared architecture provider
+- `depends-on` ← `capability.workflow-engine.workflow-state` — Resolve the helper platform for coordination worktrees.
 
 組件出向關係:
 

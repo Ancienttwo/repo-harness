@@ -1,6 +1,6 @@
 # public-surface/strategy-reflection 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-strategy-reflection" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:971d8ac50490cf393e68eac9171c33da868cc4d69e4e4be68f86c7a7097d4876" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-strategy-reflection" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:8f1c5e28a948539cf6e86cba56a7e2de7dadfb3f800fc4ecd85084f3a03b84c5" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.public-surface.strategy-reflection`(kind `capability`)
 > **Matched Prefixes**:`src/core/strategy/**`、`src/effects/strategy/**`、`src/cli/commands/strategy.ts`、`docs/strategy/**`
@@ -51,6 +51,7 @@ flowchart LR
 
 入向關係:
 
+- `depends-on` ← `capability.verification.evals-checks` — Test Strategy Reflection behavior through its source modules.
 - `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the strategy command
 
 組件出向關係:

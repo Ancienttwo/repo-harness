@@ -1,5 +1,5 @@
 # verification/codegraph-readiness 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-codegraph-readiness" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:cdcd9c5cf5e3e7075dfffaf0bdb36b24557214695247f84b84d95cfa2c48559e" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-codegraph-readiness" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:195d83b5a13e4a0e43ccb84be679c49ebb7583a34102da3d51d2aa97709769ad" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.verification.codegraph-readiness`(kind `capability`)
 > **Matched Prefixes**:`scripts/ensure-codegraph.sh`、`src/cli/tools/codegraph.ts`、`src/cli/mcp/codegraph-adapter.ts`、`tests/cli/codegraph-resolver.test.ts`、`docs/architecture/modules/verification/codegraph-readiness.md`、`src/cli/commands/tools.ts`
@@ -46,11 +46,15 @@ flowchart LR
 
 出向關係:
 
+- `depends-on` → `capability.verification.evals-checks` — Use shared repository fixtures for CodeGraph resolver tests.
+- `depends-on` → `capability.workflow-engine.execution-primitives` — Run bounded CodeGraph processes.
+- `depends-on` → `capability.runtime-harness.hook-adapters` — Use host locks and configuration ownership for CodeGraph setup.
 - `calls` → `component.codegraph-readiness.primary` — Verify CodeGraph readiness
 
 入向關係:
 
 - `calls` ← `component.contract-assets.template-projection` — Ensure CodeGraph readiness during init
+- `depends-on` ← `capability.verification.evals-checks` — Test CodeGraph Readiness behavior through its source modules.
 - `calls` ← `component.general-repo-access.primary` — Read CodeGraph index metadata through the adapter after path authorization
 - `calls` ← `component.global-runtime-reconciliation.cli-root` — Probe CodeGraph readiness for doctor
 - `calls` ← `component.global-runtime-reconciliation.primary` — Configure the exact CodeGraph CLI and MCP registration

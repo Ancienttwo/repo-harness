@@ -1,5 +1,5 @@
 # verification/evals-checks 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-evals-checks" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:a99aa5d507ac3906be0c246533d6efd391a6d585c7c24b30b1d06053d63d3063" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-evals-checks" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:5e06c6c623d51580964840ca69a753a1d938760e1cbabec2e5ac9b9798b88816" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.verification.evals-checks`(kind `capability`)
 > **Matched Prefixes**:`tests/**`、`evals/**`、`scripts/run-skill-evals.ts`、`scripts/run-harness-profile-benchmark.ts`、`scripts/validate-harness-profile-benchmark.ts`、`scripts/run-bounded-verifier-command.ts`、`scripts/verify-contract.sh`、`scripts/verify-sprint.sh`、`scripts/check-task-workflow.sh`、`scripts/check-task-sync.sh`、`scripts/check-agent-tooling.sh`、`bunfig.toml`、`.github/**`、`scripts/test-file-durations.json`、`scripts/verification-plan.ts`、`scripts/migrate-verification-plan.ts`、`scripts/check-ci.sh`、`scripts/select-ci-coverage.ts`、`scripts/replay-ci-coverage.ts`、`scripts/report-ci.ts`、`scripts/select-test-suite.ts`、`scripts/ci-documentation-consumers.ts`、`scripts/harness-trace-grade.sh`
@@ -53,11 +53,34 @@ flowchart LR
 
 出向關係:
 
+- `depends-on` → `capability.verification.acceptance-review` — Test Acceptance Review behavior through its source modules.
+- `depends-on` → `capability.public-surface.action-commands` — Test Action Commands behavior through its source modules.
+- `depends-on` → `capability.public-surface.adoption` — Test Adoption behavior through its source modules.
+- `depends-on` → `capability.runtime-harness.agent-runtime-effects` — Test Agent Runtime Effects behavior through its source modules.
+- `depends-on` → `capability.runtime-mcp.chatgpt-browser` — Test ChatGPT Browser Consult behavior through its source modules.
+- `depends-on` → `capability.verification.codegraph-readiness` — Test CodeGraph Readiness behavior through its source modules.
+- `depends-on` → `capability.runtime-harness.engineer-bindings` — Test Engineer Bindings behavior through its source modules.
+- `depends-on` → `capability.runtime-harness.engineer-scheduling` — Test Engineer Scheduling behavior through its source modules.
+- `depends-on` → `capability.runtime-harness.engineering-overlay` — Test Engineering Overlay behavior through its source modules.
+- `depends-on` → `capability.runtime-harness.external-source-intake` — Test External Source Intake behavior through its source modules.
+- `depends-on` → `capability.runtime-harness.global-runtime-reconciliation` — Test Global Runtime Reconciliation behavior through its source modules.
+- `depends-on` → `capability.runtime-harness.integration-acceptance` — Test Integration Product Acceptance behavior through its source modules.
+- `depends-on` → `capability.runtime-harness.mcp-sidecar` — Test MCP Sidecar behavior through its source modules.
+- `depends-on` → `capability.runtime-harness.operator` — Test Operator Board behavior through its source modules.
+- `depends-on` → `capability.organization.publication` — Test PR Publication behavior through its source modules.
+- `depends-on` → `capability.runtime-harness.refactor-program` — Test Refactor Recommendations behavior through its source modules.
+- `depends-on` → `capability.public-surface.root-router` — Test Root Router behavior through its source modules.
+- `depends-on` → `capability.public-surface.strategy-reflection` — Test Strategy Reflection behavior through its source modules.
+- `depends-on` → `capability.runtime-harness.task-agent-host` — Test Task Agent Host behavior through its source modules.
+- `depends-on` → `capability.organization.task-fleet` — Test Task Fleet behavior through its source modules.
+- `depends-on` → `capability.workflow-engine.workflow-state` — Test Workflow State behavior through its source modules.
 - `calls` → `component.evals-checks.primary` — Execute a declared verification check
 
 入向關係:
 
-- 無。
+- `depends-on` ← `capability.public-surface.action-commands` — Run the skill evaluation engine for routing checks.
+- `depends-on` ← `capability.verification.codegraph-readiness` — Use shared repository fixtures for CodeGraph resolver tests.
+- `depends-on` ← `capability.runtime-harness.global-runtime-reconciliation` — Use shared test fixtures for global runtime checks.
 
 組件出向關係:
 

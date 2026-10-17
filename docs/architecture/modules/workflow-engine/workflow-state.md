@@ -1,6 +1,6 @@
 # workflow-engine/workflow-state 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-workflow-state" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:959bd662c2108373442f0385dfd7023688e73c4a70c14d51e297b2b203444022" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-workflow-state" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:4884acf7cad9bc676b726dcb695be5154f74d1564a1b9ba8f621985b6c9d28b7" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.workflow-engine.workflow-state`(kind `capability`)
 > **Matched Prefixes**:`src/core/state/**`、`src/effects/state/**`、`src/core/workflow/**`、`interfaces/**`、`src/core/worktree-location.mjs`、`src/core/worktree-location.d.mts`、`src/cli/commands/state.ts`、`src/cli/commands/sprint.ts`、`scripts/check-state-boundaries.ts`、`scripts/sprint-backlog.sh`
@@ -20,6 +20,7 @@ flowchart LR
   p1_component_workflow_state_continuation_ledger_379dbd7c["Continuation Ledger"]:::component
   p1_component_workflow_state_coordination_plane_01b22a1b["Shared Coordination Plane"]:::component
   p1_component_workflow_state_primary_d0fb4045["Effective State Resolver"]:::component
+  p1_capability_workflow_engine_execution_primitives_b3033934 -->|"Read the observation context for Git operations."| p1_capability_workflow_engine_workflow_state_c0df5f05
   p1_component_workflow_state_continuation_ledger_379dbd7c -->|"Serialize attempt ledger appends under a directory lock"| p1_capability_workflow_engine_execution_primitives_b3033934
   p1_component_workflow_state_continuation_ledger_379dbd7c -->|"Project the continuation envelope from read-only Effective State"| p1_component_workflow_state_primary_d0fb4045
   p1_capability_workflow_engine_workflow_state_c0df5f05 -->|"Serve the Sprint ownership verbs and the read-only board"| p1_component_workflow_state_coordination_plane_01b22a1b
@@ -34,8 +35,8 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:5277aa25769a0dccd118d6c166edcd2f71a12f3894551ca01bc718c2b8768ab9`).
-- Semantic nodes: `5`; declared relations: `8`.
+- Proof: `proven` (`sha256:f9d8fdfd0213964e5cb355ea3c01ca6cffbf918db7541167f50d5968f431c2ce`).
+- Semantic nodes: `5`; declared relations: `9`.
 
 ### 1.2 模組職責表
 
@@ -66,16 +67,23 @@ flowchart LR
 出向關係:
 
 - `calls` → `component.workflow-state.coordination-plane` — Serve the Sprint ownership verbs and the read-only board
+- `depends-on` → `capability.verification.acceptance-review` — Read the diff fingerprint for Effective State.
+- `depends-on` → `capability.runtime-harness.global-runtime-reconciliation` — Resolve the helper platform for coordination worktrees.
+- `depends-on` → `capability.organization.publication` — Read publication receipts for coordination worktree topology.
 - `calls` → `component.workflow-state.primary` — Resolve Effective State under the state lock
 
 入向關係:
 
 - `reads` ← `component.acceptance-review.primary` — Observe Git and files read-only and resolve the workflow profile for the review subject
+- `depends-on` ← `capability.public-surface.adoption` — Resolve worktree locations during adoption planning.
 - `reads` ← `component.agent-runtime-effects.journal` — Read the task lease before a runtime effect is recorded
 - `calls` ← `component.contract-assets.contract-worktree-lifecycle` — Create and remove task worktrees and sweep merged managed worktrees at start under the worktree topology lock
 - `calls` ← `component.contract-assets.template-projection` — Check cutover quiescence and record the coordination cutover during init
 - `calls` ← `capability.runtime-harness.engineer-bindings` — Process Sprint dependencies and release Sprint leases for bound engineer tasks
 - `reads` ← `capability.runtime-harness.engineer-scheduling` — Project canonical Sprint tasks into the work graph
+- `depends-on` ← `capability.verification.evals-checks` — Test Workflow State behavior through its source modules.
+- `depends-on` ← `capability.runtime-harness.evidence-ledger` — Read state artifacts and read-only observations for evidence.
+- `depends-on` ← `capability.workflow-engine.execution-primitives` — Read the observation context for Git operations.
 - `reads` ← `capability.runtime-harness.external-source-intake` — Look up the canonical task for an external source
 - `reads` ← `component.global-runtime-reconciliation.archctx-closure` — Parse Markdown headers of plans and contracts
 - `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the sprint and state commands
@@ -85,6 +93,7 @@ flowchart LR
 - `reads` ← `component.integration-acceptance.primary` — Read the task lease for the integration envelope
 - `calls` ← `component.mcp-sidecar.coding-profile` — Clean up exact worktrees under the system worktree root
 - `reads` ← `component.mcp-sidecar.primary` — Resolve effective state for the state MCP tools
+- `depends-on` ← `capability.runtime-harness.operator` — Read state types and artifacts for Operator projections.
 - `calls` ← `component.publication.primary` — Move the publication lease through review and takeover states under the task lock
 - `calls` ← `component.publication.provider-feedback` — Read canonical tasks and leases to evaluate provider feedback progress
 - `reads` ← `component.strategy-reflection.primary` — Resolve effective state read-only for strategy context
@@ -118,7 +127,7 @@ flowchart LR
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:5277aa25769a0dccd118d6c166edcd2f71a12f3894551ca01bc718c2b8768ab9`); selectors `10/10`.
+> **Proof**: `proven` (`sha256:f9d8fdfd0213964e5cb355ea3c01ca6cffbf918db7541167f50d5968f431c2ce`); selectors `10/10`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%

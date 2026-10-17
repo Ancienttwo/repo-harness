@@ -1,6 +1,6 @@
 # runtime-harness/engineer-scheduling 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineer-scheduling" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:5c289bf8d26af2ebf727577861707afea153f1067151bc5f61b5c78c23c324a5" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineer-scheduling" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:d094d73551eb1c9ca68a674e5f08f0330278788b42c5e3263534a7a328188379" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.engineer-scheduling`(kind `capability`)
 > **Matched Prefixes**:`src/core/engineers/scheduling.ts`、`src/effects/engineers/dependency-authority.ts`、`src/effects/engineers/scheduling.ts`
@@ -53,6 +53,7 @@ flowchart LR
 - `calls` → `capability.verification.acceptance-review` — Compute the acceptance authority fingerprint for a dependency
 - `calls` → `capability.runtime-harness.engineer-bindings` — Resolve declared graph capabilities through the Engineer profile authority reader
 - `calls` → `capability.workflow-engine.execution-primitives` — Hold exclusive directory locks under the Git common directory
+- `depends-on` → `capability.runtime-harness.mcp-sidecar` — Read registered repository identity for scheduling.
 - `reads` → `capability.runtime-harness.integration-acceptance` — Read ME-4C product acceptance projections as one closed dependency authority and never reconstruct acceptance from prose
 - `calls` → `component.engineer-scheduling.primary` — Revalidate the asserted offer against a fresh offer projection before and inside the concurrency lock
 - `reads` → `capability.organization.publication` — Read cached publication receipts as dependency authority
@@ -61,6 +62,8 @@ flowchart LR
 入向關係:
 
 - `calls` ← `capability.runtime-harness.agent-runtime-effects` — Validate the whole offers document with the scheduling validator before a wake is armed
+- `depends-on` ← `capability.runtime-harness.engineering-overlay` — Resolve the registered repository before reading the overlay.
+- `depends-on` ← `capability.verification.evals-checks` — Test Engineer Scheduling behavior through its source modules.
 - `reads` ← `component.operator.primary` — Read the tracked work graph projection for the Planning view
 
 組件出向關係:

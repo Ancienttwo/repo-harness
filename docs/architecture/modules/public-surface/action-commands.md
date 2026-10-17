@@ -1,5 +1,5 @@
 # public-surface/action-commands 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-action-commands" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:69a1420fd2d8f9eb8155c6cc2381f6b563f164933d8a80730df0c4aba76f4cce" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-action-commands" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:0c37afd5dff8541c238137cf41357d8b48a32dcf81a3b2a1a2185f1aa0ca0b1f" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.public-surface.action-commands`(kind `capability`)
 > **Matched Prefixes**:`assets/skill-commands/**`、`assets/skills/**`、`assets/skill-version.json`、`.claude/.skill-version`、`src/core/skill-surface/**`、`scripts/skill-surface-select.ts`、`scripts/run-skill-routing-eval.ts`、`scripts/check-skill-version.ts`
@@ -54,12 +54,15 @@ flowchart LR
 
 出向關係:
 
+- `depends-on` → `capability.workflow-engine.contract-assets` — Read the workflow contract during skill version checks.
+- `depends-on` → `capability.verification.evals-checks` — Run the skill evaluation engine for routing checks.
 - `calls` → `component.action-commands.primary` — Install action command skills
 - `calls` → `component.action-commands.skill-surface-catalog` — Select the facade and host placement projection for a profile
 
 入向關係:
 
-- 無。
+- `depends-on` ← `capability.verification.evals-checks` — Test Action Commands behavior through its source modules.
+- `depends-on` ← `capability.runtime-harness.operator` — Read the skill catalog for the setup snapshot.
 
 組件出向關係:
 

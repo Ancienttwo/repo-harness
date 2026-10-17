@@ -1,6 +1,6 @@
 # workflow-engine/execution-primitives 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-execution-primitives" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:6a176f7c3c396b8ab08cd180d3fd785a48047e783860a33bf332ca47134c6493" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-execution-primitives" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:7e83abe7f8afce76b22f79882eaf92e47d28e1b26ccf8d4f75b4088980a0c31a" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.workflow-engine.execution-primitives`(kind `capability`)
 > **Matched Prefixes**:`src/effects/process-runner.ts`、`src/effects/process-supervisor.ts`、`src/effects/process-group-launcher.ts`、`src/effects/expensive-run-lock.ts`、`src/effects/locking/**`、`src/effects/git/**`
@@ -50,12 +50,15 @@ flowchart LR
 
 出向關係:
 
+- `depends-on` → `capability.workflow-engine.workflow-state` — Read the observation context for Git operations.
 - `calls` → `component.execution-primitives.primary` — Run a bounded child process
 
 入向關係:
 
 - `calls` ← `component.acceptance-review.primary` — Hold an exclusive directory lock around one generic review run
+- `depends-on` ← `capability.public-surface.adoption` — Run bounded processes for adoption and file transactions.
 - `calls` ← `component.agent-runtime-effects.journal` — Hold exclusive directory locks under the Git common directory
+- `depends-on` ← `capability.verification.codegraph-readiness` — Run bounded CodeGraph processes.
 - `calls` ← `component.contract-assets.contract-worktree-lifecycle` — Resolve the configured Git binary for worktree lifecycle commands
 - `calls` ← `component.contract-assets.planning-helpers` — Run each helper as a bounded child process
 - `calls` ← `component.contract-assets.template-projection` — Run init steps as bounded child processes
@@ -76,6 +79,7 @@ flowchart LR
 - `calls` ← `component.mcp-sidecar.host-setup` — Hold the MCP setup ownership lock
 - `calls` ← `component.mcp-sidecar.primary` — Read the worktree topology for the PM server scope
 - `calls` ← `component.mcp-sidecar.repo-policy-registry` — Run Git for repository roots and lock guarded writes
+- `depends-on` ← `capability.runtime-harness.operator` — Read Git topology for task diffs and development activity.
 - `calls` ← `component.publication.primary` — Read the worktree topology and the Git common directory
 - `calls` ← `component.publication.provider-feedback` — Resolve the Git common directory for feedback records
 - `calls` ← `component.task-agent-host.primary` — Run Git through the process runner and hold task session locks

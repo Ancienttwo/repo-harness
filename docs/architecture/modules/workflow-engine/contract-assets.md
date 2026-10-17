@@ -1,5 +1,5 @@
 # workflow-engine/contract-assets 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-contract-assets" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:5685354cb6240a29b33469988b81093b17d52d84cec1609962f513b7d36dbf0e" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-contract-assets" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:4a3d79e29aa77860801c195ce50301617fb63b8baa10b33c2ce1e243a3db12ef" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.workflow-engine.contract-assets`(kind `capability`)
 > **Matched Prefixes**:`assets/workflow-contract.v1.json`、`.ai/context/**`、`.archcontext/model/nodes/**`、`scripts/capability-resolver.ts`、`scripts/capability-config.ts`、`scripts/contract-worktree.sh`、`scripts/archive-workflow.sh`、`scripts/merge-gate.ts`、`scripts/ship-worktrees.sh`、`src/cli/commands/init.ts`、`src/cli/commands/capability-context.ts`、`src/effects/runtime/helper-runner.ts`、`assets/templates/**`、`assets/reference-configs/**`、`docs/reference-configs/**`、`assets/AGENTS.md`、`assets/CLAUDE.md`、`.archcontext/**`、`src/core/capabilities/**`、`src/core/source-projection.ts`、`src/cli/commands/run.ts`、`src/cli/commands/brain.ts`、`src/cli/commands/brain-root.ts`、`assets/project-structures/**`、`assets/plan-map.json`、`assets/versions.json`、`.claude/templates/**`、`scripts/workflow-contract.ts`、`scripts/check-context-map.ts`、`scripts/check-context-files.sh`、`scripts/select-agent-context-blocks.sh`、`scripts/workstream-sync.sh`、`scripts/sync-helper-sources.ts`、`scripts/sync-reference-configs.ts`、`scripts/contract-worktree-runtime.ts`、`scripts/worktree-merge-lib.sh`、`scripts/cutover-closure.ts`、`scripts/new-spec.sh`、`scripts/new-plan.sh`、`scripts/capture-plan.sh`、`scripts/plan-to-todo.sh`、`scripts/switch-plan.sh`、`scripts/classify-historical-plans.ts`、`scripts/ensure-task-workflow.sh`、`scripts/refresh-current-status.sh`、`scripts/summarize-failures.sh`、`scripts/maintenance-triage.sh`、`scripts/heartbeat-triage.sh`、`scripts/check-deploy-sql-order.sh`、`scripts/factor-lab-new.sh`、`scripts/factor-lab-promote.sh`、`scripts/factor-lab-reject.sh`、`scripts/factor-lab-check.sh`
@@ -52,7 +52,7 @@ flowchart LR
 
 ### 1.3 規模信號
 
-- 規模量級:`200–500` 個文件 / `20k–50k` 行
+- 規模量級:`500–1000` 個文件 / `20k–50k` 行
 - 匹配前綴:`assets/workflow-contract.v1.json`、`.ai/context/**`、`.archcontext/model/nodes/**`、`scripts/capability-resolver.ts`、`scripts/capability-config.ts`、`scripts/contract-worktree.sh`、`scripts/archive-workflow.sh`、`scripts/merge-gate.ts`、`scripts/ship-worktrees.sh`、`src/cli/commands/init.ts`、`src/cli/commands/capability-context.ts`、`src/effects/runtime/helper-runner.ts`、`assets/templates/**`、`assets/reference-configs/**`、`docs/reference-configs/**`、`assets/AGENTS.md`、`assets/CLAUDE.md`、`.archcontext/**`、`src/core/capabilities/**`、`src/core/source-projection.ts`、`src/cli/commands/run.ts`、`src/cli/commands/brain.ts`、`src/cli/commands/brain-root.ts`、`assets/project-structures/**`、`assets/plan-map.json`、`assets/versions.json`、`.claude/templates/**`、`scripts/workflow-contract.ts`、`scripts/check-context-map.ts`、`scripts/check-context-files.sh`、`scripts/select-agent-context-blocks.sh`、`scripts/workstream-sync.sh`、`scripts/sync-helper-sources.ts`、`scripts/sync-reference-configs.ts`、`scripts/contract-worktree-runtime.ts`、`scripts/worktree-merge-lib.sh`、`scripts/cutover-closure.ts`、`scripts/new-spec.sh`、`scripts/new-plan.sh`、`scripts/capture-plan.sh`、`scripts/plan-to-todo.sh`、`scripts/switch-plan.sh`、`scripts/classify-historical-plans.ts`、`scripts/ensure-task-workflow.sh`、`scripts/refresh-current-status.sh`、`scripts/summarize-failures.sh`、`scripts/maintenance-triage.sh`、`scripts/heartbeat-triage.sh`、`scripts/check-deploy-sql-order.sh`、`scripts/factor-lab-new.sh`、`scripts/factor-lab-promote.sh`、`scripts/factor-lab-reject.sh`、`scripts/factor-lab-check.sh`
 - 排除前綴:`assets/reference-configs/external-tooling.md`、`docs/reference-configs/external-tooling.md`、`docs/reference-configs/install-profiles.md`、`docs/reference-configs/chatgpt-coding-mcp.md`、`docs/architecture/**`、`docs/researches/**`、`.ai/harness/**`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
@@ -61,16 +61,20 @@ flowchart LR
 
 出向關係:
 
+- `depends-on` → `capability.organization.publication` — Read publication merge readiness from the merge helper.
 - `calls` → `component.contract-assets.planning-helpers` — Run a contract-listed helper through repo-harness run
 - `calls` → `component.contract-assets.primary` — Project the workflow contract
 - `calls` → `component.contract-assets.template-projection` — Run the helper and reference config projection sync
 
 入向關係:
 
+- `depends-on` ← `capability.public-surface.action-commands` — Read the workflow contract during skill version checks.
+- `depends-on` ← `capability.runtime-harness.engineer-bindings` — Resolve capability contracts for Engineer profiles.
 - `calls` ← `component.evals-checks.primary` — Consume trusted PR checks for a base ref through the merge gate without rerunning commands
 - `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the init and capability-context commands
 - `calls` ← `component.global-runtime-reconciliation.primary` — Sync the cross-review skills through the init command
 - `reads` ← `component.inspection-migration.primary` — Read directory and legacy path inventory from the package workflow contract
+- `depends-on` ← `capability.runtime-harness.mcp-sidecar` — Run declared helpers from MCP tools.
 - `calls` ← `capability.organization.publication` — Recompute the candidate diff with the packaged merge gate and worktree merge helper
 - `calls` ← `component.workflow-state.primary` — Match changed paths to capability ids through the pure capability registry
 

@@ -1,5 +1,5 @@
 # runtime-harness/hook-adapters 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-hook-adapters" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:fe22767e6cb73fa095f6ad8302784ae4eac60e99f93f60ce6ac1d465d505a21a" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-hook-adapters" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:a437dacdc67c96864583bf62318a4c1ce33521e0838cbb50912e7f84faf1d4bb" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.hook-adapters`(kind `capability`)
 > **Matched Prefixes**:`src/cli/hook/**`、`src/cli/installer/**`、`src/cli/hook-entry.ts`、`src/effects/loop/**`、`src/effects/hook-event-log.ts`、`src/effects/run-summary-retention.ts`、`src/cli/commands/install.ts`、`src/cli/commands/status.ts`、`src/cli/commands/security.ts`
@@ -20,6 +20,7 @@ flowchart LR
   p1_component_hook_adapters_host_installer_cd378e80["Host Adapter Installer"]:::component
   p1_component_hook_adapters_primary_1659ffb9["Hook Route Runtime"]:::component
   p1_component_hook_adapters_session_lifecycle_e389d412["Session Lifecycle Handlers"]:::component
+  p1_capability_runtime_harness_evidence_ledger_2fe63ef5 -->|"Collect loop state inputs for recovery evidence."| p1_capability_runtime_harness_hook_adapters_75a11743
   p1_component_hook_adapters_edit_guards_019fd22c -->|"Implement the typed handler contract and read hook input through the shared parsers"| p1_component_hook_adapters_primary_1659ffb9
   p1_component_hook_adapters_host_installer_cd378e80 -->|"Project the route registry into managed adapter entries"| p1_component_hook_adapters_primary_1659ffb9
   p1_capability_runtime_harness_hook_adapters_75a11743 -->|"Dispatch a host hook route to its typed handler"| p1_component_hook_adapters_primary_1659ffb9
@@ -33,8 +34,8 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:d2d70abc712bda2caa9cd619d10ccdbcfc6ae3861faeec603f7dc4a27bf12a3e`).
-- Semantic nodes: `6`; declared relations: `7`.
+- Proof: `proven` (`sha256:503412e7b5f46b69b4f099076e6c2cb945edc5ce071aacd644e5be3a4e864852`).
+- Semantic nodes: `6`; declared relations: `8`.
 
 ### 1.2 模組職責表
 
@@ -60,18 +61,24 @@ flowchart LR
 
 出向關係:
 
+- `depends-on` → `capability.verification.acceptance-review` — Read the diff fingerprint for mutation guards.
+- `depends-on` → `capability.runtime-harness.task-agent-host` — Resolve task role profiles during host installation.
 - `calls` → `component.hook-adapters.primary` — Dispatch a host hook route to its typed handler
 
 入向關係:
 
 - `calls` ← `capability.verification.acceptance-review` — Admit at most one persistent semantic review session per work package through the circuit breaker
+- `depends-on` ← `capability.public-surface.adoption` — Use installer setup during repository migration.
+- `depends-on` ← `capability.verification.codegraph-readiness` — Use host locks and configuration ownership for CodeGraph setup.
 - `calls` ← `component.contract-assets.template-projection` — Read the install profile and project skills during init
 - `reads` ← `component.evals-checks.evals-and-benchmarks` — Read hook event telemetry records to measure hook cost in profile benchmarks
+- `depends-on` ← `capability.runtime-harness.evidence-ledger` — Collect loop state inputs for recovery evidence.
 - `calls` ← `component.global-runtime-reconciliation.archctx-closure` — Write the private global configuration through the installer ownership writer
 - `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the install and status and security and hook commands and run host transactions with the install profile
 - `calls` ← `component.global-runtime-reconciliation.primary` — Install host adapters and project skills through the install profile under the host lock
 - `calls` ← `component.mcp-sidecar.host-setup` — Reuse installer configuration ownership receipts and the runtime host lock
 - `reads` ← `component.operator.activity-feeds` — Read the hook route registry and install profile components for the Hooks and Agents pages
+- `depends-on` ← `capability.runtime-harness.task-agent-host` — Use host installation commands for Herdr skill setup.
 
 組件出向關係:
 
@@ -110,7 +117,7 @@ flowchart LR
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:d2d70abc712bda2caa9cd619d10ccdbcfc6ae3861faeec603f7dc4a27bf12a3e`); selectors `5/5`.
+> **Proof**: `proven` (`sha256:503412e7b5f46b69b4f099076e6c2cb945edc5ce071aacd644e5be3a4e864852`); selectors `5/5`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%

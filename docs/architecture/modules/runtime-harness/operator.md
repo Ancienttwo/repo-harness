@@ -1,6 +1,6 @@
 # runtime-harness/operator 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-operator" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:64be6c939e8d6015377e8fb77dfcceb2a4691e7bb86154c4a84a107d3987319f" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-operator" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:942b9b267ca6c1af110a89370dceaae83d8fd8253076e92262e73838033a314b" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.operator`(kind `capability`)
 > **Matched Prefixes**:`src/core/operator/**`、`src/effects/operator/**`、`src/operator-web/**`、`src/cli/commands/operator.ts`、`src/cli/commands/catch-up.ts`、`src/cli/commands/module.ts`、`src/core/architecture/module-view.ts`、`src/core/docs/**`、`src/core/setup/**`、`src/effects/setup/**`、`src/cli/commands/setup-snapshot.ts`、`src/cli/commands/setup-check-child.ts`、`src/core/dev-activity/**`、`src/effects/dev-activity/**`、`src/effects/terminal/herdr-observation.ts`、`assets/operator/**`、`vite.operator.config.ts`
@@ -66,10 +66,18 @@ flowchart LR
 
 出向關係:
 
+- `depends-on` → `capability.public-surface.action-commands` — Read the skill catalog for the setup snapshot.
+- `depends-on` → `capability.runtime-harness.engineer-bindings` — Use claim identity types for task activity.
+- `depends-on` → `capability.workflow-engine.execution-primitives` — Read Git topology for task diffs and development activity.
+- `depends-on` → `capability.organization.publication` — Use publication readiness types in the Operator fixture.
+- `depends-on` → `capability.runtime-harness.task-agent-host` — Read task role profiles for the setup snapshot.
+- `depends-on` → `capability.workflow-engine.workflow-state` — Read state types and artifacts for Operator projections.
 - `calls` → `component.operator.primary` — Return a read-only HTTP observation.
 
 入向關係:
 
+- `depends-on` ← `capability.verification.acceptance-review` — Use the architecture module view in review prompts.
+- `depends-on` ← `capability.verification.evals-checks` — Test Operator Board behavior through its source modules.
 - `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the operator command
 
 組件出向關係:

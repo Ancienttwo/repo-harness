@@ -1,6 +1,6 @@
 # runtime-harness/agent-runtime-effects 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-agent-runtime-effects" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:fc2b8f82ae248ad88f77e4cc6e1dac0924971ae30b0190075f8f34dd1b4c135a" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-agent-runtime-effects" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:3f940f20f903ff48fd35dafa6147fb95041b55985736dba28d01966d6e36c64a" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.agent-runtime-effects`(kind `capability`)
 > **Matched Prefixes**:`src/core/engineers/agent-runtime-effect.ts`、`src/effects/engineers/agent-runtime-effect-store.ts`、`src/effects/engineers/agent-runtime-feature.ts`、`src/effects/engineers/agent-runtime-adapters/**`
@@ -69,6 +69,7 @@ flowchart LR
 入向關係:
 
 - `calls` ← `capability.runtime-harness.engineering-overlay` — Observe exact current runtime-effect and reconciliation states without executing or repairing an effect
+- `depends-on` ← `capability.verification.evals-checks` — Test Agent Runtime Effects behavior through its source modules.
 - `calls` ← `capability.runtime-harness.mcp-sidecar` — Expose read-only runtime capability and current-effect projections to the authenticated Engineer without Host mutation authority
 - `calls` ← `capability.organization.task-fleet` — Read task agent runtime effects as board observations only
 
