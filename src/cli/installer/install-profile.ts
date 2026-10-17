@@ -674,11 +674,11 @@ export function recordVerifiedAgentFleetOwnership(
   writeState({ ...current, ownership_manifest: ownershipManifest }, env);
 }
 
-/** Refresh held receipts. Callers can also name paths that this operation created. */
+/** Refresh held receipts. Callers must prove ownership of each newly claimed path. */
 export function recordRefreshedInstallOwnership(
   paths: readonly string[],
   env: NodeJS.ProcessEnv = process.env,
-  createdPaths: readonly string[] = [],
+  newlyOwnedPaths: readonly string[] = [],
 ): void {
   const current = readInstalledProfile(env);
   if (current === null) return;
@@ -691,8 +691,8 @@ export function recordRefreshedInstallOwnership(
     if (!refreshed || refreshed.type !== surface.type) throw new Error(`cannot refresh install ownership: ${surface.path}`);
     return { ...surface, content_hash: refreshed.content_hash, symlink_target: refreshed.symlink_target };
   });
-  for (const path of new Set(createdPaths)) {
-    if (!selected.has(path)) throw new Error(`new install ownership path was not written: ${path}`);
+  for (const path of new Set(newlyOwnedPaths)) {
+    if (!selected.has(path)) throw new Error(`new install ownership path is outside this refresh: ${path}`);
     if (ownershipManifest.some((surface) => surface.path === path)) continue;
     const components = componentsForTransactionPath(path).filter((component) => current.components.includes(component));
     const created = captureOwnedPath(path, components, { allowEmptyComponents: true });

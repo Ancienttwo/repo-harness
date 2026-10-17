@@ -60,6 +60,7 @@ export function syncWazaSharedRules(
     const missing = wazaRules.files.filter((rule) => next.get(rule) === undefined);
     if (missing.length > 0) return { status: 'failed', detail: `missing ${missing.join(', ')}` };
 
+    const adoptedPaths: string[] = [];
     if (refresh) {
       const state = readInstalledProfile(env);
       for (const rule of wazaRules.files) {
@@ -67,13 +68,24 @@ export function syncWazaSharedRules(
         if (current === undefined && state === null) {
           return { status: 'failed', detail: 'an installed profile is required to own new Waza rules; run repo-harness install first' };
         }
-        if (current === undefined || current === next.get(rule)) continue;
+        if (current === undefined) continue;
         const source = join(sourceDir, rule);
         const receipt = state?.ownership_manifest.find((surface) => surface.path === source);
-        if (!receipt || !managedInstallSurfaceIsCurrent(receipt)) {
-          const hostCopies = hosts.map((host) => join(home, `.${host}`, 'rules', rule)).join(', ');
-          return { status: 'failed', detail: `refusing to refresh unowned or drifted staging rule ${source}; move this staging file and any existing host copies (${hostCopies}) to a backup directory before retrying` };
+        if (receipt && (current === next.get(rule) || managedInstallSurfaceIsCurrent(receipt))) continue;
+        const hostCopies = hosts.map((host) => join(home, `.${host}`, 'rules', rule));
+        if (!receipt) {
+          const existingHosts = hostCopies.filter((path) => readRule(path) !== undefined);
+          const stagedBytes = readFileSync(source);
+          // The old sync wrote this projection without a receipt. Adopt it only once.
+          if (existingHosts.length > 0 && existingHosts.every((path) => readFileSync(path).equals(stagedBytes))) {
+            if (state === null) {
+              return { status: 'failed', detail: 'an installed profile is required to own Waza rules; run repo-harness install first' };
+            }
+            adoptedPaths.push(source);
+            continue;
+          }
         }
+        return { status: 'failed', detail: `refusing to refresh unowned or drifted staging rule ${source}; move this staging file and any existing host copies (${hostCopies.join(', ')}) to a backup directory before retrying` };
       }
     }
 
@@ -107,7 +119,9 @@ export function syncWazaSharedRules(
     for (const [destination, value] of writes) atomicWriteFileSync(destination, value);
     // The candidate update path has no install transaction when it records its profile.
     // Keep existing receipts current so the next refresh can prove ownership again.
-    if (refresh) recordRefreshedInstallOwnership([...refreshedPaths, ...writes.keys()], env, createdPaths);
+    if (refresh) recordRefreshedInstallOwnership(
+      [...refreshedPaths, ...writes.keys(), ...adoptedPaths], env, [...createdPaths, ...adoptedPaths],
+    );
     return { status: 'ok', detail: `${refresh ? 'refreshed staging; ' : ''}synced ${hosts.length * wazaRules.files.length} files` };
   } catch (error) {
     return { status: 'failed', detail: (error as Error).message };

@@ -2419,7 +2419,7 @@ test('daemon maintenance preserves the verified candidate and hoisted dependenci
 describe('Waza shared rule refresh', () => {
   function withRules(body: (fixture: {
     home: string; upstream: string; fakeBin: string; env: NodeJS.ProcessEnv;
-    paths: string[]; run: (refresh?: boolean) => ReturnType<typeof runGlobalRuntimeSetup>;
+    paths: string[]; run: (refresh?: boolean, target?: 'both' | 'claude' | 'codex') => ReturnType<typeof runGlobalRuntimeSetup>;
   }) => void): void {
     const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-waza-refresh-'));
     const home = join(tmp, 'home');
@@ -2470,8 +2470,8 @@ if [[ -n "$output" ]]; then cat "$source" > "$output"; else cat "$source"; fi
 `);
       const env = { ...sanitizedChildEnv(), HOME: home, BUN_INSTALL: join(home, '.bun'), WAZA_FIXTURE_UPSTREAM: upstream,
         PATH: `${fakeBin}:${process.env.PATH ?? ''}`, REPO_HARNESS_BUN_EXECUTABLE: join(fakeBin, 'bun') };
-      body({ home, upstream, fakeBin, env, paths, run: (refresh = true) => runGlobalRuntimeSetup({
-        sourceRoot: ROOT, cwd: tmp, env, target: 'both', profile: 'minimal',
+      body({ home, upstream, fakeBin, env, paths, run: (refresh = true, target = 'both') => runGlobalRuntimeSetup({
+        sourceRoot: ROOT, cwd: tmp, env, target, profile: 'minimal',
         installCli: false, syncSkill: false, hostAdapters: false, codegraph: false,
         externalSkills: true, updateMode: refresh,
       }) });
@@ -2553,13 +2553,120 @@ if [[ -n "$output" ]]; then cat "$source" > "$output"; else cat "$source"; fi
     });
   });
 
-  for (const failure of ['fetch', 'empty', 'staging edit', 'unowned staging', 'host edit'] as const) {
+  for (const upstreamState of ['stale', 'current'] as const) {
+    test(`adopts ${upstreamState} legacy staging with matching host copies and records ownership`, () => {
+      withRules(({ home, upstream, env, paths, run }) => {
+        recordInstallOwnership([], env);
+        if (upstreamState === 'current') {
+          for (const rule of wazaRules.files) {
+            copyFileSync(join(home, '.agents', 'rules', rule), join(upstream, rule));
+          }
+        }
+        expect(run().exitCode).toBe(0);
+        const stagingPaths = wazaRules.files.map((rule) => join(home, '.agents', 'rules', rule));
+        expect(readInstalledProfile(env)!.ownership_manifest.map(({ path }) => path).sort()).toEqual([...stagingPaths].sort());
+        for (const receipt of readInstalledProfile(env)!.ownership_manifest) expect(managedInstallSurfaceIsCurrent(receipt)).toBe(true);
+        for (const path of paths) expect(readFileSync(path, 'utf-8')).toBe(readFileSync(join(upstream, path.split('/').at(-1)!), 'utf-8'));
+        writeFileSync(join(upstream, 'english.md'), '# next legacy English\n');
+        expect(run().exitCode).toBe(0);
+        expect(readFileSync(join(home, '.agents', 'rules', 'english.md'), 'utf-8')).toBe('# next legacy English\n');
+        expect(readFileSync(join(home, '.codex', 'rules', 'english.md'), 'utf-8')).toBe('# next legacy English\n');
+      });
+    });
+
+    for (const failure of ['mismatched host', 'no host copy'] as const) {
+      test(`rejects ${upstreamState} legacy staging with ${failure} before any rule or receipt changes`, () => {
+        withRules(({ home, upstream, env, paths, run }) => {
+          recordInstallOwnership([], env);
+          if (upstreamState === 'current') {
+            for (const rule of wazaRules.files) copyFileSync(join(home, '.agents', 'rules', rule), join(upstream, rule));
+          }
+          if (failure === 'mismatched host') writeFileSync(join(home, '.codex', 'rules', 'english.md'), '# local host edit\n');
+          else {
+            rmSync(join(home, '.claude', 'rules', 'english.md'));
+            rmSync(join(home, '.codex', 'rules', 'english.md'));
+          }
+          const snapshot = () => paths.map((path) => existsSync(path) ? readFileSync(path) : null);
+          const before = snapshot();
+          const statePath = join(home, '.repo-harness', 'install-state.json');
+          const beforeState = readFileSync(statePath);
+          const result = run();
+          expect(result.exitCode).toBe(1);
+          expect(result.steps.find(({ step }) => step === 'sync Waza shared rules')).toMatchObject({
+            status: 'failed', detail: expect.stringContaining('refusing to refresh unowned or drifted staging rule'),
+          });
+          expect(snapshot()).toEqual(before);
+          expect(readFileSync(statePath)).toEqual(beforeState);
+        });
+      });
+    }
+  }
+
+  test('adopts legacy staging with only one matching host copy', () => {
+    withRules(({ home, env, run }) => {
+      recordInstallOwnership([], env);
+      for (const rule of wazaRules.files) rmSync(join(home, '.claude', 'rules', rule));
+      expect(run().exitCode).toBe(0);
+      for (const rule of wazaRules.files) {
+        const source = join(home, '.agents', 'rules', rule);
+        expect(readInstalledProfile(env)!.ownership_manifest.some(({ path }) => path === source)).toBe(true);
+        expect(readFileSync(join(home, '.claude', 'rules', rule))).toEqual(readFileSync(source));
+      }
+    });
+  });
+
+  test('legacy staging ownership only uses selected hosts', () => {
+    withRules(({ home, env, run }) => {
+      recordInstallOwnership([], env);
+      const unselected = join(home, '.claude', 'rules', 'english.md');
+      writeFileSync(unselected, '# unselected local host edit\n');
+      expect(run(true, 'codex').exitCode).toBe(0);
+      expect(readFileSync(unselected, 'utf-8')).toBe('# unselected local host edit\n');
+      expect(readInstalledProfile(env)!.ownership_manifest).toHaveLength(wazaRules.files.length);
+    });
+  });
+
+  test('legacy staging needs a selected host copy even when an unselected copy matches', () => {
+    withRules(({ home, env, paths, run }) => {
+      recordInstallOwnership([], env);
+      for (const rule of wazaRules.files) rmSync(join(home, '.codex', 'rules', rule));
+      const before = paths.map((path) => existsSync(path) ? readFileSync(path) : null);
+      expect(run(true, 'codex').exitCode).toBe(1);
+      expect(paths.map((path) => existsSync(path) ? readFileSync(path) : null)).toEqual(before);
+      expect(readInstalledProfile(env)!.ownership_manifest).toHaveLength(0);
+    });
+  });
+
+  test('legacy staging evidence compares file bytes without UTF-8 replacement', () => {
+    withRules(({ home, env, paths, run }) => {
+      recordInstallOwnership([], env);
+      for (const root of ['.agents', '.claude', '.codex']) {
+        writeFileSync(join(home, root, 'rules', 'english.md'), Buffer.from([0x23, 0x20, root === '.codex' ? 0x81 : 0x80, 0x0a]));
+      }
+      const before = paths.map((path) => readFileSync(path));
+      expect(run().exitCode).toBe(1);
+      expect(paths.map((path) => readFileSync(path))).toEqual(before);
+      expect(readInstalledProfile(env)!.ownership_manifest).toHaveLength(0);
+    });
+  });
+
+  test('owned staging cannot use matching host copies to bypass a drifted receipt', () => {
+    withRules(({ home, env, paths, run }) => {
+      for (const root of ['.agents', '.claude', '.codex']) writeFileSync(join(home, root, 'rules', 'english.md'), '# local edit in all copies\n');
+      const before = paths.map((path) => readFileSync(path));
+      const beforeState = readInstalledProfile(env);
+      expect(run().exitCode).toBe(1);
+      expect(paths.map((path) => readFileSync(path))).toEqual(before);
+      expect(readInstalledProfile(env)).toEqual(beforeState);
+    });
+  });
+
+  for (const failure of ['fetch', 'empty', 'staging edit', 'host edit'] as const) {
     test(`${failure} fails before any staging or host rule changes`, () => {
       withRules(({ home, upstream, paths, run }) => {
         if (failure === 'fetch') writeFileSync(join(upstream, 'fail-english.md'), 'fail');
         if (failure === 'empty') writeFileSync(join(upstream, 'english.md'), '');
         if (failure === 'staging edit') writeFileSync(join(home, '.agents', 'rules', 'english.md'), '# local staging edit\n');
-        if (failure === 'unowned staging') recordInstallOwnership([], { HOME: home });
         if (failure === 'host edit') writeFileSync(join(home, '.codex', 'rules', 'english.md'), '# local host edit\n');
         const before = paths.map((path) => readFileSync(path, 'utf-8'));
         const result = run();
