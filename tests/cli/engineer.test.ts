@@ -595,7 +595,8 @@ describe('repo-harness engineer CLI', () => {
     expect(JSON.parse(conflict.stdout)).toMatchObject({ ok: false, error: 'engineer_acquire_next_conflict' });
     const afterClaim = run(root, ['engineer', 'offers', '--authorization-id', authorizationId, '--json']);
     expect(JSON.parse(afterClaim.stdout).offers).toHaveLength(0);
-  });
+    // About 28 CLI processes, each with one cold archctx export.
+  }, 120_000);
 
   test('two processes on different concurrency keys cannot exceed one Engineer active Claim limit', async () => {
     const authorizationId = '55555555-5555-4555-8555-555555555555';
