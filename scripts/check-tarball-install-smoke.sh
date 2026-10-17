@@ -545,6 +545,6 @@ cp "$ROOT/tests/cli/mcp-http.test.ts" "$INSTALLED_ROOT/tests/cli/mcp-http.test.t
 cp -R "$ROOT/.archcontext/model/nodes" "$INSTALLED_ROOT/.archcontext/model/nodes"
 cp "$ROOT/.archcontext/manifest.yaml" "$INSTALLED_ROOT/.archcontext/manifest.yaml"
 source "$ROOT/scripts/lib/ci-run-tests.sh"
-(cd "$INSTALLED_ROOT" && BUN_TEST_ISOLATE_FILES=0 run_bun_tests tests/cli/mcp-http.test.ts --test-name-pattern 'engineer OAuth E2E')
+(cd "$INSTALLED_ROOT" && BUN_TEST_ISOLATE_FILES=0 run_bun_tests tests/cli/mcp-http.test.ts --test-name-pattern 'coding OAuth E2E')
 
 echo "[tarball-smoke] OK: ${PACKAGE_NAME}-${PACKAGE_VERSION}.tgz installs, serves the packaged Operator, and packaged CLI bins start."
