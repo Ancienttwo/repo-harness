@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { analyzeAffectedTests, bundleInputPaths, discoverPlatformInputs, platformImportClosure, selectAffectedTests, selectCoverage, selectPlatformCoverage } from '../scripts/select-ci-coverage';
+import { analyzeAffectedTests, bundleInputPaths, discoverDailyInputs, discoverPlatformInputs, platformImportClosure, selectAffectedTests, selectCoverage, selectPlatformCoverage } from '../scripts/select-ci-coverage';
 import { auditDroppedTests } from '../scripts/ci-edge-audit';
 import { replayNeedsSource } from '../scripts/replay-ci-coverage';
 import { ARCHITECTURE_JOB, ARCHITECTURE_SUMMARY_PATH } from '../scripts/report-ci';
@@ -38,6 +38,56 @@ function writePlatformFixture(write: (path: string, content: string) => void) {
 const record = `:100644 100644 ${sha} ${sha} M\0src/feature.ts\0`;
 
 describe('single affected verification and daily fallback', () => {
+  test('rooted paths do not select suffix collisions and unknown roots keep consumers', async () => {
+    const sources = new Map([
+      ['scripts/tool.ts', 'export {};'], ['fixtures/scripts/tool.ts', 'export {};'],
+      ['assets/x.json', '{}'],
+      ['tests/rooted.test.ts', "readFileSync(join(import.meta.dir, '../scripts/tool.ts'));"],
+      ['tests/unknown.test.ts', "readFileSync(join(root(), 'assets', 'x.json'));"],
+      ['tests/concat.test.ts', "const ROOT = join(import.meta.dir, '..'); readFileSync(ROOT + '/scripts/tool.ts');"],
+      ['tests/fixture.test.ts', "readFileSync(join(import.meta.dir, '../fixtures/scripts/tool.ts'));"],
+    ]);
+    expect(await selectAffectedTests(['scripts/tool.ts'], sources, [])).toEqual(['tests/concat.test.ts', 'tests/rooted.test.ts']);
+    expect(await selectAffectedTests(['fixtures/scripts/tool.ts'], sources, [])).toEqual(['tests/fixture.test.ts']);
+    expect(await selectAffectedTests(['assets/x.json'], sources, [])).toEqual(['tests/unknown.test.ts']);
+  });
+
+  test('launcher arguments use child cwd and inherited or unknown cwd keeps execution aliases', async () => {
+    const sources = new Map([
+      ['src/base.ts', 'export {};'], ['src/other.ts', 'export {};'],
+      ['scripts/tasks/run.ts', "import '../../src/base';"],
+      ['scripts/other/run.ts', "import '../../src/other';"],
+      ['tests/direct.test.ts', "import '../src/base';"],
+      ['tests/cwd.test.ts', "spawnSync('bun', ['run.ts'], { cwd: join(import.meta.dir, '../scripts/tasks') });"],
+      ['tests/options.test.ts', "const cwd = join(import.meta.dir, '../scripts/tasks'); const options = { cwd }; spawnSync('bun', ['run.ts'], options);"],
+      ['tests/other.test.ts', "spawnSync('bun', ['run.ts'], { cwd: join(import.meta.dir, '../scripts/other') });"],
+      ['tests/inherited.test.ts', "spawnSync('bun', ['run.ts']);"],
+      ['tests/unknown.test.ts', "spawnSync('bun', ['run.ts'], { cwd: target() });"],
+    ]);
+    expect(await selectAffectedTests(['src/base.ts'], sources, [])).toEqual(['tests/cwd.test.ts', 'tests/direct.test.ts', 'tests/inherited.test.ts', 'tests/options.test.ts', 'tests/unknown.test.ts']);
+    expect(await selectAffectedTests(['src/other.ts'], sources, [])).toEqual(['tests/inherited.test.ts', 'tests/other.test.ts', 'tests/unknown.test.ts']);
+  });
+
+  test('opaque cwd wrappers, changed options and spreads keep execution coverage', async () => {
+    const sources = new Map([
+      ['src/base.ts', 'export {};'],
+      ['scripts/tasks/run.ts', "import '../../src/base';"],
+      ['tests/direct.test.ts', "import '../src/base';"],
+      ['tests/wrapper.test.ts', "spawnSync('bun', ['run.ts'], { cwd: choose(join(import.meta.dir, '../scripts/other')) });"],
+      ['tests/mutated.test.ts', "const options = { cwd: join(import.meta.dir, '../scripts/other') }; options.cwd = target(); spawnSync('bun', ['run.ts'], options);"],
+      ['tests/spread.test.ts', "Bun.spawn({ cmd: ['bun', 'run.ts'], cwd: join(import.meta.dir, '../scripts/other'), ...options });"],
+    ]);
+    expect(await selectAffectedTests(['src/base.ts'], sources, [])).toEqual(['tests/direct.test.ts', 'tests/mutated.test.ts', 'tests/spread.test.ts', 'tests/wrapper.test.ts']);
+  });
+
+  test('an unknown path wrapper cannot prove that a read is outside the checkout', async () => {
+    const sources = new Map([
+      ['scripts/tool.ts', 'export {};'],
+      ['tests/wrapper.test.ts', "readFileSync(join(choose('/outside'), 'scripts', 'tool.ts'));"],
+    ]);
+    expect(await selectAffectedTests(['scripts/tool.ts'], sources, [])).toEqual(['tests/wrapper.test.ts']);
+  });
+
   test('path values exclude words, comments and target-repository paths but keep anchored reads', async () => {
     const sources = new Map([
       ['assets/item.json', '{}'],
@@ -157,6 +207,25 @@ describe('single affected verification and daily fallback', () => {
     expect(audit.edges.find(edge => edge.consumer === 'src/string.ts')?.reason).toBe('unclassified');
   });
 
+  test('removed path fragments cite their full source expression and keep unresolved reads blocked', async () => {
+    const dependency = 'scripts/tasks/run.ts', test = 'tests/final.test.ts';
+    const consumers = new Map([
+      ['tests/other.ts', "spawnSync('bun', ['run.ts'], { cwd: join(import.meta.dir, '../scripts/other') });"],
+      ['tests/unresolved.ts', "spawnSync('bun', ['run.ts'], { cwd: unknown() });"],
+      ['tests/fragment.ts', "readFileSync(join(import.meta.dir, '../fixtures/scripts/tasks', 'run.ts'));"],
+    ]);
+    const baseline = new Map([[dependency, new Set(consumers.keys())], ...[...consumers.keys()].map(file => [file, new Set([test])] as const)]);
+    const audit = await auditDroppedTests([dependency], [test], baseline, { reverse: new Map(), data: new Map() }, consumers, new Map());
+    for (const consumer of ['tests/other.ts', 'tests/fragment.ts']) {
+      const edge = audit.edges.find(edge => edge.consumer === consumer)!;
+      expect(edge.reason).toBe('path-fragment-resolves-elsewhere');
+      expect(edge.evidence?.[0]?.source).toMatch(new RegExp(`^${consumer}:[a-f0-9]{64}$`));
+      expect(edge.evidence?.[0]?.line).toBe(1);
+      expect(edge.evidence?.[0]?.text).toContain('run.ts');
+    }
+    expect(audit.edges.find(edge => edge.consumer === 'tests/unresolved.ts')?.reason).toBe('unclassified');
+  });
+
   test('deleted paths retain old imports and only entirely retired closures need no test', async () => {
     await expect(selectAffectedTests(['src/standalone.ts'], new Map(), [], new Map([['src/standalone.ts', 'export {}']]))).rejects.toThrow('coverage is unknown');
     const old = new Map([['src/gone.ts', 'export const value = 1'], ['tests/gone.test.ts', "import '../src/gone';"]]);
@@ -189,6 +258,30 @@ describe('single affected verification and daily fallback', () => {
       expect((await analyzeAffectedTests([path], sources, [])).fullReasons).toEqual([path]);
     }
     await expect(selectAffectedTests(['tests/preload.ts', 'unknown/new.ts'], sources, [])).rejects.toThrow('coverage is unknown');
+  });
+
+  test('deleted preload helpers select every test from the base import closure', async () => {
+    const sources = new Map([
+      ['bunfig.toml', '[test]\npreload = ["./tests/preload.ts"]'],
+      ['tests/preload.ts', 'export {};'],
+      ['tests/a.test.ts', 'export {};'], ['tests/b.test.ts', 'export {};'],
+    ]);
+    const previous = new Map([
+      ['tests/preload.ts', "import '../scripts/lib/gone.ts';"],
+      ['scripts/lib/gone.ts', 'export {};'],
+    ]);
+    expect(await selectAffectedTests(['scripts/lib/gone.ts'], sources, [], previous)).toEqual(['tests/a.test.ts', 'tests/b.test.ts']);
+    await expect(selectAffectedTests(['scripts/lib/gone.ts', 'unknown/new.ts'], sources, [], previous)).rejects.toThrow('coverage is unknown');
+  });
+
+  test('daily inputs stop at the matching functional fi', async () => {
+    const sources = new Map([
+      ['scripts/check-ci.sh', 'if [[ "$lane" == all || "$lane" == functional ]]; then\n  if true; then\n    bash scripts/nested.sh\n  fi\n  echo "fi"\n  bash scripts/daily.sh\nfi\nbash scripts/after.sh'],
+      ['scripts/nested.sh', 'echo nested'], ['scripts/daily.sh', 'echo daily'], ['scripts/after.sh', 'echo after'],
+    ]);
+    expect([...discoverDailyInputs(sources)]).toEqual(['scripts/nested.sh', 'scripts/daily.sh']);
+    expect((await analyzeAffectedTests(['scripts/daily.sh'], sources, [])).dailyOnly).toEqual(['scripts/daily.sh']);
+    await expect(selectAffectedTests(['scripts/after.sh'], sources, [])).rejects.toThrow('coverage is unknown');
   });
 
   test('exact complete diff is required, including draft candidates', () => {

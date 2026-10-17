@@ -74,6 +74,10 @@ export async function analyzeAffectedTests(paths: readonly string[], sources: Re
   const files = [...sources.keys()];
   const allTests = files.filter(file => /^tests\/.*\.test\.tsx?$/.test(file)).sort();
   const globalInputs = platformImportClosure(configuredTestPreloads(sources), sources).add(CI_TEST_RUNNER);
+  if (previousSources.size) {
+    const baseSources = new Map([...sources, ...previousSources]);
+    for (const path of platformImportClosure(configuredTestPreloads(baseSources), baseSources)) globalInputs.add(path);
+  }
   const fullReasons = paths.filter(path => ['package.json', 'bun.lock', 'bunfig.toml', 'tsconfig.json'].includes(path) || globalInputs.has(path));
   const reverse = new Map<string, Set<string>>();
   const data = new Map<string, Set<string>>();
@@ -83,15 +87,18 @@ export async function analyzeAffectedTests(paths: readonly string[], sources: Re
   };
   const candidates = new Set([...files, ...paths, ...previousSources.keys()]);
   const references = new Map<string, Map<string, boolean>>();
-  const reference = (key: string, dependency: string, directory: boolean) => {
-    const entries = references.get(key) ?? new Map<string, boolean>(); entries.set(dependency, directory); references.set(key, entries);
+  const rootedReferences = new Map<string, Map<string, boolean>>();
+  const reference = (index: typeof references, key: string, dependency: string, directory: boolean) => {
+    const entries = index.get(key) ?? new Map<string, boolean>(); entries.set(dependency, directory); index.set(key, entries);
   };
   for (const dependency of candidates) {
-    reference(dependency, dependency, false);
+    reference(references, dependency, dependency, false);
+    reference(rootedReferences, dependency, dependency, false);
     const parts = dependency.split('/');
     for (let i = 1; i < parts.length; i++) {
-      reference(parts.slice(0, i).join('/'), dependency, true);
-      if (parts.at(-1)!.includes('.')) reference(parts.slice(i).join('/'), dependency, false);
+      reference(references, parts.slice(0, i).join('/'), dependency, true);
+      reference(rootedReferences, parts.slice(0, i).join('/'), dependency, true);
+      if (parts.at(-1)!.includes('.')) reference(references, parts.slice(i).join('/'), dependency, false);
     }
   }
   const pathReferences = await discoverPathReferences([...sources, ...previousSources]);
@@ -108,10 +115,11 @@ export async function analyzeAffectedTests(paths: readonly string[], sources: Re
       const wildcard = entry.path.indexOf('*');
       const literal = wildcard >= 0 ? entry.path.slice(0, wildcard).replace(/\/$/, '') : entry.path;
       if (!literal) continue;
-      for (const [dependency, directory] of references.get(literal) ?? []) {
+      for (const [dependency, directory] of (entry.rooted ? rootedReferences : references).get(literal) ?? []) {
         if (directory && entry.operation === 'constructed') continue;
         add(directory && entry.operation !== 'execute' ? data : reverse, dependency, file);
       }
+      if (entry.rooted) continue;
       const relativePath = posix.normalize(posix.join(dirname(file), literal));
       for (const dependency of [relativePath, `${relativePath}.ts`, `${relativePath}.tsx`, `${relativePath}/index.ts`, `${relativePath}/index.tsx`]) {
         if (candidates.has(dependency)) add(reverse, dependency, file);
@@ -145,10 +153,19 @@ export function discoverDailyInputs(sources: ReadonlyMap<string, string>): Set<s
   const start = script.indexOf('if [[ "$lane" == all || "$lane" == functional ]]');
   if (start < 0) return new Set();
   const inputs = new Set<string>();
-  for (const match of script.slice(start).matchAll(/(?:bash|bun)\s+(scripts\/[\w/.-]+\.(?:sh|ts))/g)) {
-    if (sources.has(match[1]!)) inputs.add(match[1]!);
+  let depth = 0;
+  // Only command-position control words count. Do not scan past the closing fi,
+  // including a command on the same line. Ignore quoted text and comments.
+  const code = script.slice(start).replace(/"(?:\\.|[^"\\])*"|'[^']*'|#[^\n]*/g, '');
+  for (const statement of code.split(/[;\n]/)) {
+    const command = statement.trim().replace(/^(?:then|else)\s+/, '');
+    if (/^if\b/.test(command)) depth++;
+    if (/^fi\b/.test(command) && --depth === 0) return inputs;
+    for (const match of command.matchAll(/(?:^|\s)(?:bash|bun)\s+(scripts\/[\w/.-]+\.(?:sh|ts))/g)) {
+      if (sources.has(match[1]!)) inputs.add(match[1]!);
+    }
   }
-  return inputs;
+  return new Set();
 }
 export type PlatformInputs = { native: ReadonlySet<string>; home: ReadonlySet<string> };
 export function selectPlatformCoverage(paths: readonly string[], inputs: PlatformInputs): { native_oar: boolean; home_isolation: boolean } {

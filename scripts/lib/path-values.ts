@@ -1,5 +1,5 @@
 import { dirname, resolve, join } from 'node:path';
-import { isConditionalExpression, isArrowFunction, isFunctionExpression, isTemplateExpression, isArrayLiteralExpression, isCallExpression, isForOfStatement, isFunctionDeclaration, isIdentifier, isImportDeclaration, isNewExpression, isPropertyAccessExpression, isStringLiteralLikeNode, isVariableDeclaration, SyntaxKind, type Node, type SourceFile } from 'typescript/unstable/ast';
+import { isBinaryExpression, isConditionalExpression, isArrowFunction, isFunctionExpression, isTemplateExpression, isArrayLiteralExpression, isCallExpression, isForOfStatement, isFunctionDeclaration, isIdentifier, isImportDeclaration, isNewExpression, isPropertyAccessExpression, isStringLiteralLikeNode, isVariableDeclaration, NodeFlags, SyntaxKind, type Node, type SourceFile } from 'typescript/unstable/ast';
 
 const nameOf = (node: Node): string => isIdentifier(node) ? node.text : isPropertyAccessExpression(node) ? node.name.text : '';
 export function walk(node: Node, visit: (node: Node) => void) { visit(node); node.forEachChild(child => { walk(child, visit); }); }
@@ -72,11 +72,17 @@ export function createPathEvaluator(source: SourceFile, repoRoot: string, file: 
         }
         return combinations.map(parts => operation === 'resolve' ? resolve(repoRoot, ...parts) : join(...parts));
       }
-      // Walk/list/read wrappers forward a path argument; filesystem temporaries do not.
+      // Unknown wrappers can forward an argument or return a different path.
+      // Filesystem temporaries do not inherit a caller's path argument.
       if (/^(?:mkdtemp|tmpdir|createTemp|withTemp)/i.test(operation)) return ['*'];
-      return args.flatMap(recur);
+      return [...new Set(['*', ...args.flatMap(recur)])];
     }
     if (isConditionalExpression(node)) return [...new Set([...recur(node.whenTrue), ...recur(node.whenFalse)])];
+    if (isBinaryExpression(node) && node.operatorToken.kind === SyntaxKind.PlusToken) {
+      const left = recur(node.left), right = recur(node.right);
+      if (left.length * right.length > 4096) throw new Error(`Path expansion exceeds bounded analysis in ${file}: ${node.getText().slice(0, 160)}`);
+      return left.flatMap(prefix => right.map(suffix => prefix + suffix));
+    }
     if (isTemplateExpression(node)) {
       let paths = [node.head.text];
       for (const span of node.templateSpans) {
@@ -96,5 +102,27 @@ export function createPathEvaluator(source: SourceFile, repoRoot: string, file: 
     if (!memo.has(node)) memo.set(node, values(node));
     return memo.get(node)!;
   };
-  return { nodes, calls, declarations, bindingFor, op, values: evaluate };
+  /** Unknown wrappers can forward candidates, but cannot prove a path root. */
+  const certain = (node: Node | undefined, seen = new Set<Node>()): boolean => {
+    if (!node || seen.has(node)) return false;
+    const next = new Set(seen).add(node);
+    const recur = (child: Node | undefined) => certain(child, next);
+    if (isStringLiteralLikeNode(node) || ['import.meta.dir', 'import.meta.url', '__dirname'].includes(node.getText())) return true;
+    if (isIdentifier(node)) {
+      const declaration = bindingFor(node);
+      return !!declaration && !!(declaration.parent.flags & NodeFlags.Const) && recur(declaration.initializer);
+    }
+    if (isArrayLiteralExpression(node)) return node.elements.every(recur);
+    if (isConditionalExpression(node)) return recur(node.whenTrue) && recur(node.whenFalse);
+    if (isTemplateExpression(node)) return node.templateSpans.every(span => recur(span.expression));
+    if (isBinaryExpression(node) && node.operatorToken.kind === SyntaxKind.PlusToken) return recur(node.left) && recur(node.right);
+    if (isCallExpression(node) || isNewExpression(node)) {
+      if (node.expression.getText() === 'process.cwd') return !calls.some(call => call.expression.getText() === 'process.chdir');
+      return ['join', 'resolve', 'dirname', 'fileURLToPath', 'URL'].includes(op(node.expression)) && (node.arguments ?? []).every(recur);
+    }
+    const children: Node[] = [];
+    node.forEachChild(child => { children.push(child); });
+    return children.length === 1 && recur(children[0]);
+  };
+  return { nodes, calls, declarations, bindingFor, op, values: evaluate, certain };
 }

@@ -2,12 +2,12 @@ import { resolve, dirname } from 'node:path';
 import { createHash } from 'node:crypto';
 import { API } from 'typescript/unstable/async';
 import { createVirtualFileSystem } from 'typescript/unstable/fs';
-import { isCallExpression, isPropertyAccessExpression, isIdentifier, isVariableDeclaration, isNewExpression, isStringLiteralLikeNode, SyntaxKind, type Node } from 'typescript/unstable/ast';
+import { isBinaryExpression, isCallExpression, isObjectLiteralExpression, isPropertyAssignment, isShorthandPropertyAssignment, isPropertyAccessExpression, isIdentifier, isVariableDeclaration, isNewExpression, isStringLiteralLikeNode, SyntaxKind, type Node } from 'typescript/unstable/ast';
 import { getLeadingCommentRanges, getTrailingCommentRanges } from 'typescript/unstable/ast/scanner';
 import { createPathEvaluator } from './lib/path-values';
 
-export type PathReference = { path: string; operation: 'data' | 'execute' | 'literal' | 'constructed' };
-export type SourceEvidence = { start: number; end: number; reason: string };
+export type PathReference = { path: string; operation: 'data' | 'execute' | 'literal' | 'constructed'; rooted: boolean; start: number; end: number };
+export type SourceEvidence = { start: number; end: number; reason: string; paths?: string[] };
 export const sourceEvidence = new Map<string, SourceEvidence[]>();
 const cache = new Map<string, PathReference[]>();
 const root = '/__repo_harness_ci__';
@@ -42,7 +42,7 @@ export async function discoverPathReferences(entries: readonly (readonly [string
       const source = await project.program.getSourceFile(`${root}/${names[index]}`);
       if (!source) throw new Error(`Path discovery could not parse ${file}`);
       const product = file.startsWith('src/');
-      const { nodes, bindingFor, op, values } = createPathEvaluator(source, root, file, product ? '/__target_repository__' : root);
+      const { nodes, bindingFor, op, values, certain } = createPathEvaluator(source, root, file, product ? '/__target_repository__' : root);
       const evidence: SourceEvidence[] = [];
       for (const node of nodes) {
         for (const range of [...(getLeadingCommentRanges(text, node.pos) ?? []), ...(getTrailingCommentRanges(text, node.getEnd()) ?? [])]) {
@@ -61,22 +61,25 @@ export async function discoverPathReferences(entries: readonly (readonly [string
       }
       sourceEvidence.set(key, evidence);
       const found = new Map<string, PathReference>();
-      const add = (value: string, operation: PathReference['operation']) => {
+      const add = (value: string, operation: PathReference['operation'], node: Node, proven = certain(node)) => {
         value = value.replaceAll('\\', '/');
+        const rooted = proven && value.startsWith(root + '/') && !value.startsWith(root + '/*');
         if (product && !value.startsWith(root + '/')) return;
         if (value.startsWith(root + '/')) value = value.slice(root.length + 1);
         else if (value.startsWith('/')) return;
         value = value.replace(/^(?:\.\/|\*\/)+/, '').replace(/\/$/, '');
         if (!value || value === '*' || value === '.' || value.startsWith('../') || value.includes('\n')) return;
-        const reference = { path: value, operation };
-        found.set(operation + ':' + value, reference);
+        const reference = { path: value, operation, rooted, start: node.getStart(), end: node.getEnd() };
+        found.set(operation + ':' + rooted + ':' + value, reference);
       };
       // Prune only a proven intermediate directory. Returned, exported, spread,
       // defaulted or otherwise opaque values retain their conservative data edge.
       const pathDerivation = (node: Node): boolean => {
         const parent = node.parent;
-        return !!parent && (isCallExpression(parent) || isNewExpression(parent))
-          && (pathOperations.has(op(parent.expression)) || pathInspections.has(op(parent.expression)));
+        if (!parent) return false;
+        return ((isCallExpression(parent) || isNewExpression(parent))
+          && (pathOperations.has(op(parent.expression)) || pathInspections.has(op(parent.expression))))
+          || (isBinaryExpression(parent) && parent.operatorToken.kind === SyntaxKind.PlusToken);
       };
       const intermediate = (node: Node): boolean => {
         if (pathDerivation(node)) return true;
@@ -86,20 +89,71 @@ export async function discoverPathReferences(entries: readonly (readonly [string
         return nodes.filter(candidate => isIdentifier(candidate) && candidate !== declaration.name
           && candidate.text === declaration.name.getText() && bindingFor(candidate) === declaration).every(pathDerivation);
       };
+      const object = (node: Node | undefined, seen = new Set<Node>()): Node | undefined => {
+        if (!node || seen.has(node)) return undefined;
+        seen.add(node);
+        if (isObjectLiteralExpression(node)) return node;
+        if (isIdentifier(node)) {
+          const declaration = bindingFor(node);
+          if (!declaration || nodes.some(candidate => isIdentifier(candidate) && candidate !== declaration.name
+            && bindingFor(candidate) === declaration && !(isCallExpression(candidate.parent) && launchers.has(op(candidate.parent.expression))))) return undefined;
+          return object(declaration.initializer, seen);
+        }
+        return undefined;
+      };
+      const property = (node: Node | undefined, name: string): Node | undefined => {
+        const value = object(node);
+        if (!value || !isObjectLiteralExpression(value)) return undefined;
+        // An opaque spread can replace cwd. Keep the inherited/unknown policy.
+        if (name === 'cwd' && value.properties.some(entry => (!isPropertyAssignment(entry) && !isShorthandPropertyAssignment(entry))
+          || entry.name.kind === SyntaxKind.ComputedPropertyName)) return undefined;
+        const entry = [...value.properties].reverse().find(entry => (isPropertyAssignment(entry) || isShorthandPropertyAssignment(entry))
+          && entry.name.getText().replace(/['"]/g, '') === name);
+        return entry && isPropertyAssignment(entry) ? entry.initializer : entry && isShorthandPropertyAssignment(entry) ? entry.name : undefined;
+      };
+      const launcherArguments = new Set<Node>();
+      const enclosedByLauncher = (node: Node): boolean => {
+        for (let parent: Node | undefined = node; parent; parent = parent.parent) {
+          if (launcherArguments.has(parent)) return true;
+        }
+        return false;
+      };
       for (const node of nodes) {
+        const concatenation = isBinaryExpression(node) && node.operatorToken.kind === SyntaxKind.PlusToken;
+        if (concatenation || ((isCallExpression(node) || isNewExpression(node)) && pathOperations.has(op(node.expression)))) {
+          const paths = values(node);
+          for (const value of paths) add(value, intermediate(node) ? 'constructed' : 'data', node);
+          evidence.push({ start: node.getStart(), end: node.getEnd(), reason: intermediate(node) ? 'resolved-construction' : 'resolved-path',
+            paths: paths.map(path => !certain(node) && path.startsWith(root + '/') ? '*/' + path.slice(root.length + 1) : path) });
+        }
         if (isCallExpression(node) || isNewExpression(node)) {
           const operation = op(node.expression);
           if (node.expression.kind === SyntaxKind.ImportKeyword) for (const value of values(node.arguments?.[0])) {
             if (value.startsWith('.')) {
               const target = resolve(root, dirname(file), value);
-              for (const path of [target, `${target}.ts`, `${target}.tsx`, `${target}/index.ts`, `${target}/index.tsx`]) add(path, 'execute');
+              for (const path of [target, `${target}.ts`, `${target}.tsx`, `${target}/index.ts`, `${target}/index.tsx`]) add(path, 'execute', node, certain(node.arguments?.[0]));
             }
           }
-          if (pathOperations.has(operation)) for (const value of values(node)) add(value, intermediate(node) ? 'constructed' : 'data');
-          if (readers.has(operation)) for (const value of values(node.arguments?.[0])) add(value, 'data');
-          if (launchers.has(operation)) for (const arg of node.arguments ?? []) for (const value of values(arg)) add(value, 'execute');
+          if (readers.has(operation)) for (const value of values(node.arguments?.[0])) add(value, 'data', node, certain(node.arguments?.[0]));
+          if (launchers.has(operation)) {
+            const args = [...(node.arguments ?? [])];
+            const options = args.find(arg => object(arg));
+            const cwdNode = property(options, 'cwd');
+            const cwd = values(cwdNode);
+            const knownCwd = certain(cwdNode) && cwd.length > 0 && cwd.every(value => value.startsWith('/') && !value.includes('*'));
+            const command = property(options, 'cmd');
+            const argumentsToResolve = [...args.filter(arg => arg !== options), ...(command ? [command] : [])];
+            for (const arg of argumentsToResolve) {
+              launcherArguments.add(arg);
+              const paths = values(arg).flatMap(value => value.startsWith('/') || !knownCwd ? [value] : cwd.map(directory => resolve(directory, value)));
+              for (const path of paths) add(path, 'execute', arg, certain(arg) && (knownCwd || values(arg).every(value => value.startsWith('/'))));
+              evidence.push({ start: arg.getStart(), end: arg.getEnd(), reason: 'resolved-launcher',
+                paths: paths.map(path => !certain(arg) && path.startsWith(root + '/') ? '*/' + path.slice(root.length + 1) : path) });
+            }
+          }
         }
-        if (!product && isStringLiteralLikeNode(node) && (/[\/\\]/.test(node.text) || /^[\w.-]+\.[\w]+$/.test(node.text))) add(node.text, 'literal');
+        if (!product && isStringLiteralLikeNode(node) && !intermediate(node) && !enclosedByLauncher(node)
+          && (/[\/\\]/.test(node.text) || /^[\w.-]+\.[\w]+$/.test(node.text))) add(node.text, 'literal', node);
       }
       cache.set(key, [...found.values()]);
     }
