@@ -8,7 +8,7 @@
  */
 
 import { spawnSync } from 'child_process';
-import { existsSync, readFileSync } from 'fs';
+import { existsSync, lstatSync, readFileSync } from 'fs';
 import * as os from 'os';
 import { dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
@@ -467,6 +467,8 @@ function globalRulesChecks(
     let content: string | null = null;
     if (exists) {
       try {
+        // A FIFO or special file would block or fail the read; never open it.
+        if (!lstatSync(filePath).isFile()) throw new Error('not a regular file');
         content = readFileSync(filePath, 'utf-8');
       } catch (error) {
         check('needs_agent', `unreadable (${(error as Error).message}): ${filePath}`);

@@ -2919,6 +2919,50 @@ describe('Global Working Rules refresh during install and update', () => {
     expect(readFileSync(target, 'utf-8')).toBe(mixedLegacy);
   }), 30_000);
 
+  test.skipIf(process.getuid?.() === 0)('an unreadable rules file stays out of the backup and is skipped inside the update transaction', () => withRulesRuntime(({ home, path }) => {
+    writeFileSync(path, mixedLegacy);
+    chmodSync(path, 0o000);
+    try {
+      const env = {
+        ...sanitizedChildEnv(),
+        HOME: home,
+        BUN_INSTALL: join(home, '.bun'),
+        PATH: `${join(home, '..', 'bin')}:${process.env.PATH ?? ''}`,
+        REPO_HARNESS_BUN_EXECUTABLE: join(home, '..', 'bin', 'bun'),
+      };
+      expect(installProfileHostMutationPaths(env)).not.toContain(path);
+      expect(installProfileHostMutationPaths(env)).toContain(join(home, '.claude', 'CLAUDE.md'));
+      const result = runTransactionalRuntimeRefresh({
+        sourceRoot: join(home, '..', 'source'), cwd: join(home, '..', 'repo'), target: 'codex', profile: 'minimal',
+        updateMode: true, installCli: false, syncSkill: false, hostAdapters: false, externalSkills: false,
+        codegraph: false, reportLanguage: 'en', env,
+      });
+      expect(result.exitCode).toBe(0);
+      expect(rulesStep(result)?.status).toBe('skipped');
+      expect(rulesStep(result)?.detail).toContain(`skipped-unreadable:${path} (`);
+      expect(rulesStep(result)?.detail).toContain('make it a readable regular file to enable managed sync');
+    } finally {
+      chmodSync(path, 0o644);
+    }
+    expect(readFileSync(path, 'utf-8')).toBe(mixedLegacy);
+  }), 30_000);
+
+  test('a CRLF file with a recorded header stays CRLF and a second update is a no-op', () => withRulesRuntime(({ path, run }) => {
+    const crlf = (text: string) => text.replace(/\n/g, '\r\n');
+    const expected = crlf(`${userBefore}${renderGlobalRulesBlock(ROOT, { preset: 'en', instruction: 'Use English to report to user.' })}\n${userAfter}`);
+    writeFileSync(path, expected);
+    expect(inspectGlobalContext(expected, ROOT).state).toBe('managed-current');
+    const unchanged = run();
+    expect(rulesStep(unchanged)).toMatchObject({ status: 'ok', detail: `unchanged:${path}` });
+    expect(readFileSync(path, 'utf-8')).toBe(expected);
+
+    writeFileSync(path, expected.replace('Rule 0:', 'Old rule 0:'));
+    const refreshed = run();
+    expect(rulesStep(refreshed)).toMatchObject({ status: 'ok', detail: `updated:${path}` });
+    expect(readFileSync(path, 'utf-8')).toBe(expected);
+    expect(rulesStep(run())).toMatchObject({ status: 'ok', detail: `unchanged:${path}` });
+  }), 60_000);
+
   test('a file that changes between preflight and apply fails with the re-run message', () => withRulesRuntime(({ home, path }) => {
     writeFileSync(path, mixedLegacy);
     const plan = preflightGlobalContextRefresh(ROOT, home, ['codex'], 'en');

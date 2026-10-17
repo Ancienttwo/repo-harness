@@ -204,6 +204,22 @@ describe('init-hook command', () => {
     });
   });
 
+  test('reports a current CRLF managed block as ok', () => {
+    withTempHome((home, repo) => {
+      mkdirSync(join(home, '.codex'), { recursive: true });
+      writeFileSync(join(home, '.codex', 'AGENTS.md'), `notes\r\n\r\n${currentRulesBlock().replace(/\n/g, '\r\n')}`);
+      const report = runInitHook({
+        cwd: repo,
+        target: 'codex',
+        env: { ...process.env, HOME: home },
+        statusReport: baseStatusReport(),
+        doctorReport: baseDoctorReport(),
+        toolingReport: baseToolingReport(),
+      });
+      expect(report.checks.find((entry) => entry.id === 'global-rules.codex')?.status).toBe('ok');
+    });
+  });
+
   test('reports a symlinked instruction file as a warning', () => {
     withTempHome((home, repo) => {
       const target = join(home, 'dotfiles-AGENTS.md');

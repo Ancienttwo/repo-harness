@@ -10,7 +10,7 @@
  * legacy copies of sections that repo-harness shipped.
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { accessSync, constants, lstatSync, mkdirSync, readFileSync, writeFileSync, type Stats } from 'fs';
 import { dirname, join } from 'path';
 import { assertConfigurationPath } from './configuration-ownership';
 
@@ -266,7 +266,11 @@ export interface MergedManagedBlock {
  * otherwise the block goes where the legacy H1 was, or at the end of a file
  * without a legacy span. Every other line keeps its bytes and order.
  */
-export function mergeManagedBlock(current: string, block: string): MergedManagedBlock {
+export function mergeManagedBlock(current: string, renderedBlock: string): MergedManagedBlock {
+  // A CRLF file keeps CRLF: the block is written in the file's line ending,
+  // so the current/stale compare is byte-exact and a second sync is a no-op.
+  const eol = current.includes('\r\n') ? '\r\n' : '\n';
+  const block = eol === '\n' ? renderedBlock : renderedBlock.replace(/\r?\n/g, eol);
   const layout = markerLayout(current);
   if (layout.kind === 'unbalanced') return { content: current, status: 'blocked-unbalanced', replaced: [], kept: [] };
   if (layout.kind === 'balanced') {
@@ -275,7 +279,7 @@ export function mergeManagedBlock(current: string, block: string): MergedManaged
     const before = scanLegacySpan(beforeLines);
     const after = scanLegacySpan(afterLines);
     const merged = `${keptText(beforeLines, before, 0, beforeLines.length)}${block.trimEnd()}${
-      keptText(afterLines, after, 0, afterLines.length).replace(/^\n?/, '\n')}`;
+      keptText(afterLines, after, 0, afterLines.length).replace(/^(\r?\n)?/, eol)}`;
     return {
       content: merged,
       status: 'written',
@@ -287,12 +291,12 @@ export function mergeManagedBlock(current: string, block: string): MergedManaged
   const scan = scanLegacySpan(lines);
   if (scan.anchor === null) {
     const trimmed = current.trimEnd();
-    return { content: `${trimmed}${trimmed ? '\n\n' : ''}${block}`, status: 'written', replaced: [], kept: scan.kept };
+    return { content: `${trimmed}${trimmed ? eol + eol : ''}${block}`, status: 'written', replaced: [], kept: scan.kept };
   }
   const before = keptText(lines, scan, 0, scan.anchor);
   const after = keptText(lines, scan, scan.anchor, lines.length);
   return {
-    content: `${before}${block}${after ? `\n${after}` : ''}`,
+    content: `${before}${block}${after ? `${eol}${after}` : ''}`,
     status: 'written',
     replaced: scan.replaced,
     kept: scan.kept,
@@ -334,7 +338,7 @@ export function inspectGlobalContext(content: string | null, sourceRoot: string)
   const unsynced = (state: GlobalContextState): GlobalContextInspection => ({ state, language: null, legacySpan, synced: null });
   if (layout.kind === 'unbalanced') return unsynced('unbalanced');
   if (layout.kind === 'none') return unsynced(legacySpan ? 'legacy-unmanaged' : 'no-rules');
-  const blockLines = content.slice(layout.start, layout.end).split('\n');
+  const blockLines = content.slice(layout.start, layout.end).split(/\r?\n/);
   const language = blockLines[1] === GLOBAL_RULES_SELF_NOTE ? decodeReportingLanguage(blockLines[2]) : null;
   if (language === null) return unsynced('managed-unrecorded');
   const synced = mergeManagedBlock(content, renderGlobalRulesBlock(sourceRoot, language));
@@ -376,6 +380,43 @@ export function globalContextPathRefusal(path: string, home: string): string | n
   }
 }
 
+function lstatOrNull(path: string): Stats | null {
+  try {
+    return lstatSync(path);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw error;
+  }
+}
+
+/**
+ * True for a readable regular file, false for a missing one. Throws for any
+ * other entry, so a FIFO or special file is never opened for reading.
+ */
+function readableGlobalContextFile(path: string): boolean {
+  const stat = lstatOrNull(path);
+  if (stat === null) return false;
+  if (!stat.isFile()) throw new Error('not a regular file');
+  accessSync(path, constants.R_OK);
+  return true;
+}
+
+/**
+ * The host transaction backs up a rules path only when the copy cannot fail:
+ * a missing path, a symlink (copied verbatim; the plan refuses it), or a
+ * readable regular file. Any other path is left out of the backup, and the
+ * plan never writes it.
+ */
+export function globalContextBackupEligible(path: string): boolean {
+  try {
+    const stat = lstatOrNull(path);
+    if (stat === null || stat.isSymbolicLink()) return true;
+    return readableGlobalContextFile(path);
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Plans one file for install or update. It is read-only. A valid recorded
  * header wins over the flag; without a header the flag supplies the inputs.
@@ -392,7 +433,7 @@ export function planGlobalContextFile(
   if (refusal) return { path, state: 'unsafe', outcome: 'skipped', current: null, next: null, detail: `skipped-unsafe:${path} (${refusal})` };
   let current: string | null;
   try {
-    current = existsSync(path) ? readFileSync(path, 'utf-8') : null;
+    current = readableGlobalContextFile(path) ? readFileSync(path, 'utf-8') : null;
   } catch (error) {
     return {
       path,
@@ -477,7 +518,9 @@ export function applyGlobalContextRefresh(plan: GlobalContextRefreshPlan, home: 
       continue;
     }
     try {
-      const now = existsSync(file.path) ? readFileSync(file.path, 'utf-8') : null;
+      // The plan wrote only a missing path or a readable regular file; the
+      // same entry type and bytes must still be there.
+      const now = readableGlobalContextFile(file.path) ? readFileSync(file.path, 'utf-8') : null;
       if (globalContextPathRefusal(file.path, home) !== null || now !== file.current) {
         failed = true;
         details.push(`failed:${file.path} (changed after preflight; re-run)`);
