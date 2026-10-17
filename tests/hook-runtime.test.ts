@@ -283,26 +283,31 @@ fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify(args) + '\\n');
 const child = spawnSync(${JSON.stringify(node)}, args, { stdio: 'inherit' });
 process.exit(child.status ?? 1);
 `, { mode: 0o755 });
-      for (const hostName of ['claude', 'codex'] as const) {
-        for (const [event, route, input] of [
-          ['PreToolUse', 'edit', { tool_name: 'Edit', tool_input: { file_path: 'src/owned/a.ts' } }],
-          ['SessionStart', 'default', { session_id: `archcontext-${hostName}` }],
-          ['Stop', 'default', { stop_hook_active: false }],
-        ] as const) {
-          writeFileSync(log, '');
-          const result = host(root, hostName, event, route, input, { REPO_HARNESS_NODE_BIN: shim });
-          expect(result.status, result.stderr).toBe(0);
-          const calls = readFileSync(log, 'utf8').trim().split('\n').filter(Boolean).map((line) => JSON.parse(line) as string[]);
-          const exports = calls.filter((argv) => argv.includes('export')).length;
-          const resolves = calls.filter((argv) => argv.includes('resolve')).length;
-          expect(exports, `${hostName} ${event}`).toBe(0);
-          expect(resolves, `${hostName} ${event}`).toBeLessThanOrEqual(1);
-          if (event === 'PreToolUse') {
-            expect(resolves).toBe(1);
-            expect(context(result.stdout, event)).toBe('[CapabilityOwner] src/owned/a.ts belongs to core-owned (docs/architecture/modules/core/owned.md).');
+      for (const checkout of ['feature', 'main', 'dirty-main']) {
+        if (checkout === 'main') execFileSync('git', ['checkout', '-q', '-B', 'main'], { cwd: root });
+        if (checkout === 'dirty-main') writeFileSync(join(root, 'src/owned/new.ts'), 'export const added = 1;\n');
+        for (const hostName of ['claude', 'codex'] as const) {
+          for (const [event, route, input] of [
+            ['PreToolUse', 'edit', { tool_name: 'Edit', tool_input: { file_path: 'src/owned/a.ts' } }],
+            ['SessionStart', 'default', { session_id: `archcontext-${hostName}` }],
+            ['Stop', 'default', { stop_hook_active: false }],
+          ] as const) {
+            writeFileSync(log, '');
+            const result = host(root, hostName, event, route, input, { REPO_HARNESS_NODE_BIN: shim });
+            expect(result.status, result.stderr).toBe(0);
+            const calls = readFileSync(log, 'utf8').trim().split('\n').filter(Boolean).map((line) => JSON.parse(line) as string[]);
+            const exports = calls.filter((argv) => argv.includes('export')).length;
+            const resolves = calls.filter((argv) => argv.includes('resolve')).length;
+            expect(exports, `${hostName} ${event}`).toBe(0);
+            expect(resolves, `${hostName} ${event}`).toBeLessThanOrEqual(1);
+            if (event === 'PreToolUse') {
+              expect(resolves).toBe(1);
+              expect(context(result.stdout, event)).toBe('[CapabilityOwner] src/owned/a.ts belongs to core-owned (docs/architecture/modules/core/owned.md).');
+            }
+            if (event === 'SessionStart' || (event === 'Stop' && hostName === 'claude')) expect(resolves).toBe(1);
+            if (event === 'SessionStart') expect(context(result.stdout, event, hostName === 'claude' ? HUMAN_OWED : undefined)).toContain('core-owned (docs/architecture/modules/core/owned.md)');
+            console.log(`[ArchctxHookProbe] ${checkout} ${hostName} ${event}: export=${exports} resolve=${resolves}`);
           }
-          if (event === 'SessionStart') expect(context(result.stdout, event, hostName === 'claude' ? HUMAN_OWED : undefined)).toContain('core-owned (docs/architecture/modules/core/owned.md)');
-          console.log(`[ArchctxHookProbe] ${hostName} ${event}: export=${exports} resolve=${resolves}`);
         }
       }
     } finally { rmSync(root, { recursive: true, force: true }); }

@@ -5,11 +5,11 @@
  * digests, so an owed capability is always stale.
  *
  * The rule reuses the ownership result that state resolution already
- * computed. It starts no archctx process and runs at most two Git commands:
- * one `git log` over the branch and one `git status` for the working tree.
+ * computed. It starts no archctx process. A checkout that is not ahead of the
+ * review base uses its newest manifest commit as the history boundary.
  * It never writes, queues or projects; it is evidence for the agent and CI.
  */
-import { execFileSync } from 'child_process';
+import { assertObservationPath, observationExecFileSync as execFileSync } from './readonly-observation';
 import { existsSync } from 'fs';
 import { join } from 'path';
 import type { CapabilityOwnership } from '../../core/state/types';
@@ -34,8 +34,9 @@ export interface OwedCapabilities {
   /** Null only when the repository declares no capability registry. */
   readonly review_base: string | null;
   /**
-   * The newest branch commit that changed the manifest, `working-tree` when the
-   * manifest has an uncommitted change, or null when the branch never changed it.
+   * The newest branch manifest change or the selected base checkpoint.
+   * `working-tree` means an uncommitted manifest change. Null means neither
+   * the branch nor the base selection supplied a manifest change.
    */
   readonly manifest_change: string | null;
   readonly capabilities: readonly OwedCapability[];
@@ -58,13 +59,29 @@ function git(repoRoot: string, args: readonly string[]): string {
   });
 }
 
+/** Keep branch review history; use the last projection checkpoint on the base. */
+export function owedCapabilityBase(repoRoot: string, reviewBase: string, headRev?: string): {
+  readonly reviewBase: string;
+  readonly manifestChange: string | null;
+} {
+  assertObservationPath(join(repoRoot, PROJECTION_MANIFEST_PATH));
+  if (existsSync(join(repoRoot, PROJECTION_MANIFEST_PATH))) {
+    const head = headRev ?? git(repoRoot, ['rev-parse', 'HEAD']).trim();
+    if (reviewBase === head || git(repoRoot, ['merge-base', reviewBase, head]).trim() === head) {
+      const checkpoint = git(repoRoot, ['log', '-1', '--format=%H', 'HEAD', '--', PROJECTION_MANIFEST_PATH]).trim();
+      if (checkpoint) return { reviewBase: checkpoint, manifestChange: checkpoint };
+    }
+  }
+  return { reviewBase, manifestChange: null };
+}
+
 /**
  * Paths changed after the last manifest change. Commits are walked newest
  * first and stop at the newest commit that changed the manifest; that commit's
  * own paths are not "after". The working tree is one change unit after every
  * commit. When it holds a manifest change, nothing is after the manifest.
  */
-function changedAfterManifest(repoRoot: string, reviewBase: string): ChangedAfterManifest {
+function changedAfterManifest(repoRoot: string, reviewBase: string, checkpoint: string | null): ChangedAfterManifest {
   const status = git(repoRoot, ['status', '--porcelain=v1', '-z', '--untracked-files=all', '--no-renames']).split('\0');
   const dirty = new Set<string>();
   const dirtyAdded = new Set<string>();
@@ -81,7 +98,7 @@ function changedAfterManifest(repoRoot: string, reviewBase: string): ChangedAfte
 
   const changed = new Set(dirty);
   const added = new Set(dirtyAdded);
-  let manifestChange: string | null = null;
+  let manifestChange = checkpoint;
   const log = git(repoRoot, ['log', '--format=%x01%H', '--name-status', '-z', '--no-renames', `${reviewBase}..HEAD`]);
   for (const chunk of log.split('\x01').slice(1)) {
     const [sha = '', ...rest] = chunk.split('\0');
@@ -108,7 +125,8 @@ export function owedCapabilities(repoRoot: string, ownership: CapabilityOwnershi
   if (!existsSync(join(repoRoot, PROJECTION_MANIFEST_PATH))) {
     return { status: 'not_projected', review_base: ownership.review_base, manifest_change: null, capabilities: [], new_unowned_paths: [] };
   }
-  const after = changedAfterManifest(repoRoot, ownership.review_base);
+  const base = owedCapabilityBase(repoRoot, ownership.review_base);
+  const after = changedAfterManifest(repoRoot, base.reviewBase, base.manifestChange);
   const capabilities = ownership.capabilities
     .map((capability) => ({
       id: capability.id,
@@ -118,7 +136,7 @@ export function owedCapabilities(repoRoot: string, ownership: CapabilityOwnershi
     .filter((capability) => capability.paths.length > 0);
   return {
     status: capabilities.length > 0 ? 'owed' : 'clear',
-    review_base: ownership.review_base,
+    review_base: base.reviewBase,
     manifest_change: after.manifestChange,
     capabilities,
     new_unowned_paths: ownership.unowned_paths.filter((path) => after.added.has(path)),

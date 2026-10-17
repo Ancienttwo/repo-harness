@@ -83,6 +83,74 @@ describe('owed-capability rule', () => {
     });
   });
 
+  test('main is clear at the manifest commit and includes later working-tree changes', () => {
+    const cwd = ownedRepo();
+    git(cwd, ['checkout', '-q', 'main']);
+    const checkpoint = git(cwd, ['rev-parse', 'HEAD']);
+    expect(owedFor(cwd)).toMatchObject({ status: 'clear', manifest_change: checkpoint });
+
+    write(cwd, 'src/owned/a.ts', 'export const a = 2;\n');
+    commit(cwd, 'change owned code on main');
+    write(cwd, 'src/owned/b.ts', 'export const b = 1;\n');
+    write(cwd, 'src/loose/new.ts', 'export const loose = 1;\n');
+    expect(owedFor(cwd)).toMatchObject({
+      status: 'owed', review_base: checkpoint, manifest_change: checkpoint,
+      capabilities: [{ id: 'core-owned', paths: ['src/owned/a.ts', 'src/owned/b.ts'] }],
+      new_unowned_paths: ['src/loose/new.ts'],
+    });
+
+    write(cwd, PROJECTION_MANIFEST_PATH, '{"projectionDigest":"two"}\n');
+    expect(owedFor(cwd)).toMatchObject({ status: 'clear', manifest_change: 'working-tree' });
+  });
+
+  test('a checkout behind its review base uses its own latest manifest commit', () => {
+    const cwd = ownedRepo();
+    git(cwd, ['checkout', '-q', 'main']);
+    const checkpoint = git(cwd, ['rev-parse', 'HEAD']);
+    write(cwd, 'src/owned/a.ts', 'export const a = 2;\n');
+    commit(cwd, 'change owned code');
+    git(cwd, ['branch', 'behind']);
+    write(cwd, PROJECTION_MANIFEST_PATH, '{"projectionDigest":"two"}\n');
+    commit(cwd, 'refresh main after the behind checkout');
+    git(cwd, ['checkout', '-q', 'behind']);
+    expect(owedFor(cwd)).toMatchObject({
+      status: 'owed', manifest_change: checkpoint,
+      capabilities: [{ id: 'core-owned', paths: ['src/owned/a.ts'] }],
+    });
+  });
+
+  test('an ahead branch does not include earlier debt on its review base', () => {
+    const cwd = ownedRepo();
+    git(cwd, ['checkout', '-q', 'main']);
+    write(cwd, 'src/owned/a.ts', 'export const a = 2;\n');
+    commit(cwd, 'earlier main debt');
+    const base = git(cwd, ['rev-parse', 'HEAD']);
+    git(cwd, ['checkout', '-q', '-b', 'ahead']);
+    write(cwd, 'src/owned/b.ts', 'export const b = 1;\n');
+    commit(cwd, 'branch edit');
+    expect(owedFor(cwd)).toMatchObject({
+      status: 'owed', review_base: base, manifest_change: null,
+      capabilities: [{ id: 'core-owned', paths: ['src/owned/b.ts'] }],
+    });
+  });
+
+  test('a manifest with no commit keeps the review base and current behavior', () => {
+    const cwd = ownedRepo({ manifest: false });
+    git(cwd, ['checkout', '-q', 'main']);
+    write(cwd, '.gitignore', `.ai/harness/state/\n${PROJECTION_MANIFEST_PATH}\n`);
+    write(cwd, 'src/owned/a.ts', 'export const a = 2;\n');
+    commit(cwd, 'main edit without a manifest checkpoint');
+    write(cwd, PROJECTION_MANIFEST_PATH, '{}\n');
+    const base = git(cwd, ['rev-parse', 'HEAD']);
+    expect(owedFor(cwd)).toMatchObject({ status: 'clear', review_base: base, manifest_change: null });
+
+    write(cwd, 'src/owned/b.ts', 'export const b = 1;\n');
+    expect(owedFor(cwd)).toMatchObject({
+      status: 'owed', review_base: base, manifest_change: null,
+      capabilities: [{ id: 'core-owned', paths: ['src/owned/b.ts'] }],
+    });
+  });
+
   test('an edit of an owned file makes its capability owed and renders the line', () => {
     const cwd = ownedRepo();
     write(cwd, 'src/owned/a.ts', 'export const a = 2;\n');
