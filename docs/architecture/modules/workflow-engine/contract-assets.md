@@ -241,10 +241,10 @@ template-projection 标记为可扩展。`assets/templates/helpers/` 现在只�
 | 2026-07-16 Closeout Runner Guardrails | 900 秒档只含 `contract-worktree`/`ship-worktrees` | 还包含 `merge-gate`；`PROTECTED_HELPERS` 另含 `acceptance-receipt` | `helper-runner.ts:20`、`:22` |
 | 2026-07-14 Helper Descriptions | 46 → 48 条描述 | 55 条（scripts 与 descriptions 均为 55） | `assets/workflow-contract.v1.json#helpers` |
 | 旧 §3.2 I1 | asset 契约与自宿主 runtime 副本 byte-identical | 自宿主文件是 opt-in marker（2026-10-05） | `.ai/harness/workflow-contract.json` |
-| 旧 §3.2 I4 | `.ai/context/capabilities.json` 是唯一 runtime 权威 | 该文件不存在；权威是 `.archcontext/model/nodes` | `.ai/harness/policy.json:101-102` |
+| 旧 §3.2 I4 | [archived capabilities.json](https://github.com/Ancienttwo/repo-harness/blob/1eaf63019aadd2129376987957170d8310b35c3f/.ai/context/capabilities.json) 是唯一 runtime 权威 | 该文件不存在；权威是 `.archcontext/model/nodes` | `.ai/harness/policy.json:101-102` |
 | 旧 §3.2 I8 | 51/52 helper 一致，唯一例外带 `@generated-from` 头 | 52/55 一致，3 个声明的例外 | `scripts/sync-helper-sources.ts` |
 | 旧 §3.4 | capability 11 个，policy 29 个顶层域，templates 27k 行 | 29 个节点，32 个顶层域，21,876 行 | 本节 §3.4 |
-| 2026-08-21 Windows Protected Helper Platform Contract | `src/cli/runtime/protected-helper-platform.ts` 拥有平台解析 | 文件在 `src/effects/runtime/protected-helper-platform.ts` | `helper-runner.ts` 导入路径 |
+| 2026-08-21 Windows Protected Helper Platform Contract | [archived protected-helper-platform.ts](https://github.com/Ancienttwo/repo-harness/blob/3982ebf5b4857b47b7655ce206ecbeb890ffb4c0/src/cli/runtime/protected-helper-platform.ts) 拥有平台解析 | 文件在 `src/effects/runtime/protected-helper-platform.ts` | `helper-runner.ts` 导入路径 |
 | 旧 entrypoint 与 flow | 入口是 adoption 的 `src/core/adoption/workflow-contract-asset.ts` | 该文件归 public-surface.adoption；flow 改为 `scripts/sync-helper-sources.ts#main` | 2026-10-11 历史条目 |
 
 另有两处已由后续 slice 取代，历史段落本身未改写：
@@ -308,7 +308,7 @@ template-projection 标记为可扩展。`assets/templates/helpers/` 现在只�
 ### 2026-08-21 Windows Protected Helper Platform Contract
 
 - P1: `src/effects/runtime/helper-runner.ts` remains the sole protected-helper
-  dispatcher; `src/cli/runtime/protected-helper-platform.ts` owns platform
+  dispatcher; `src/effects/runtime/protected-helper-platform.ts` owns platform
   resolution and the protocol-1 Windows schema; install/update owns discovery
   and persistence; Git for Windows supplies the Bash/POSIX runtime; and the
   existing process runner/supervisor pair owns bounded execution and receives
@@ -406,7 +406,7 @@ template-projection 标记为可扩展。`assets/templates/helpers/` 现在只�
 
 ### 2026-07-11 Capability Authority Closeout
 
-- `.ai/context/capabilities.json` is the only runtime capability authority. Resolver commands fail when it is missing or malformed and reject registered prefixes that do not exist.
+- [archived capabilities.json](https://github.com/Ancienttwo/repo-harness/blob/1eaf63019aadd2129376987957170d8310b35c3f/.ai/context/capabilities.json) was the runtime capability authority. The current authority is `.archcontext/model/`.
 - `capability-config add` remains the explicit creation path for a new registry; normal reads no longer derive capabilities from `agent-context-blocks.txt`, environment variables, or nested agent files.
 - Capability context files and the ArchContext boundary export remain deterministic, one-way projections of the registry. They do not become alternate authoring surfaces.
 
@@ -454,19 +454,7 @@ template-projection 标记为可扩展。`assets/templates/helpers/` 现在只�
 
 ### 2026-07-12 Agent Fleet Worker Routing Telemetry Closeout
 
-- `scripts/contract-run.ts` (mirrored byte-for-byte to `assets/templates/helpers/contract-run.ts` through the existing helper projection route) is now a matched prefix of this capability. It is the task-delegation contract runner: it reads a `tasks/contracts/*.contract.md` execution brief, preflights it, generates worker/verifier prompts, optionally dispatches them, and writes a run manifest. This is a distinct "contract" concept from `assets/workflow-contract.v1.json` (the install/workflow contract this capability already owned) — the two share the word by coincidence, not by schema or lifecycle, but both are contract-lifecycle tooling this capability already narrates (compare the pre-existing `scripts/contract-worktree.sh` mention in the 2026-05-29 closeout above).
-- Contract roles (`parent`/`explorer`/`worker`/`verifier`; existing generic mode/purpose defaults at `scripts/contract-run.ts:340-346`, unchanged) now also map to the four fixed, model-pinned fleet profiles (`explorer`, `fast-worker`, `deep-reasoner`, `gatekeeper`) through a new `delegation_plan.role_profiles` manifest field (`scripts/contract-run.ts:792-797`):
-  - `parent` -> `"orchestrator"`: never model-assigned; not one of the 4 profiles.
-  - `explorer` -> `"explorer"` (fixed).
-  - `worker` -> derived in `buildRun()` (`scripts/contract-run.ts:754-758`) from the resolved runner dispatch value, without renaming `RunnerContract.preferred`/`fallback`'s pre-existing dispatch-mechanism vocabulary (`subagent` / `codex-subagent` / `codex-exec` / `main-thread`): dispatch `main-thread` -> `"sol-high"`; dispatch `codex-subagent` or `codex-exec` -> the raw dispatch label passed through unchanged (Codex is an independent peer provider, not one of the 4 profiles); any other dispatch (e.g. `subagent`) -> `"fast-worker"`.
-  - `verifier` -> `"gatekeeper"` (fixed).
-  - `deep-reasoner` sits outside this role table entirely, as an independent escalation path not bound to any single contract role.
-- New `--effort <tier>` CLI flag (parsed at `scripts/contract-run.ts:148-151`; validated by the local `EFFORT_TIERS`/`parseEffort()` pair at `scripts/contract-run.ts:190-201` against the closed vocabulary `low`/`medium`/`high`/`xhigh`/`max`, the same tiers `buildFamilyEffortMap()` in `scripts/install-agent-fleet.sh` already uses — kept as a local literal list rather than a shared import because that copy lives inside an embedded Node.js heredoc, not an importable module). Record-only, matching the pre-existing `--runner` philosophy: `contract-run.ts` never itself selects, spawns, or degrades a runner or effort tier. Defaults to `"high"` only when the resolved dispatch is the contract's worker fallback and no explicit `--effort` is passed (`scripts/contract-run.ts:758`).
-- New manifest telemetry fields are additive only; `RunnerContract`, `parseRunner()`, `runChild()`, and the run-mode control flow are unchanged:
-  - `runner_usage.path`: `"worker_preferred"` | `"worker_fallback"` (`scripts/contract-run.ts:780`).
-  - `runner_usage.effort`: resolved effort tier string or `null` (`scripts/contract-run.ts:781`).
-  - `delegation_plan.role_profiles`: `{ parent, explorer, worker, verifier }` as derived above (`scripts/contract-run.ts:792-797`).
-- Regression coverage lives in `tests/contract-run.test.ts`: the preferred path, the `codex-subagent`/off-policy runner passthrough, the `main-thread` worker-fallback path (`sol-high` plus default effort `"high"`), the `codex-exec` passthrough, and an explicit `--effort xhigh` override sharing one scenario, `"runner metadata from the contract flows into the manifest"` (`tests/contract-run.test.ts:742-891`); invalid `--effort` rejection is `"invalid --effort value exits with usage error"` (`tests/contract-run.test.ts:893-897`).
+#820 retired the task-delegation contract runner and its tests. The historical implementation is in [archived contract-run.ts](https://github.com/Ancienttwo/repo-harness/blob/65d1d4f1bad4863dd0659f56a9fca8ea8a834667/scripts/contract-run.ts). The historical checks are in [archived contract-run.test.ts](https://github.com/Ancienttwo/repo-harness/blob/65d1d4f1bad4863dd0659f56a9fca8ea8a834667/tests/contract-run.test.ts). The helper mirror was removed in #791.
 
 ### 2026-07-12 Repo-owned Agent Fleet Authority Closeout
 
@@ -506,7 +494,7 @@ template-projection 标记为可扩展。`assets/templates/helpers/` 现在只�
   prompt, incremental merge, or second authored authority participates.
 - BDD2 and BDD3 evaluation data and the BDD2 runner are retired. The harness
   evaluator must fail closed on requests for `evals/bdd2/**` or
-  `scripts/run-bdd2-evals.ts`. It uses only the skills and adoption profiles.
+  [archived run-bdd2-evals.ts](https://github.com/Ancienttwo/repo-harness/blob/46fa65ef118baa355f660739f266a57a0889f5ae/scripts/run-bdd2-evals.ts). It uses only the skills and adoption profiles.
 - The first 10x failure would be adding persona names without updating package,
   policy seeds, projections, readiness, and HOME installation together. Exact
   six-role lists, all-source preflight, tarball assertions, and temporary-HOME

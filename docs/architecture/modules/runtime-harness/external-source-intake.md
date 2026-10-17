@@ -155,3 +155,10 @@ sequenceDiagram
 - append-only 存储的全量读取（§3.2）。在有实测记录数和延迟数据之前，不加可变缓存或索引。这与 §3.1 第 5 条一致。
 - capability 的 responsibilities 里写着 "Exclude ... UI, MCP"。Operator 和 MCP 目前确实没有调用方。如果以后要在 Operator 显示外部证据，需要先决定是否放宽这条排除。
 
+## Selector evidence (2026-10-18)
+
+`listExternalSourceBindings` calls `buildExternalSourceProjection`. Its return interface is a type, not a call target. The model now names the called function.
+
+`listExternalSourceProjection` calls the local projection helper in `src/effects/external-sources/refresh.ts:55-60`. That helper calls the projection builder. CodeGraph also indexes a property with the same name in this file. Archctx cannot select the helper uniquely, so this selector remains unproven.
+
+`bindExternalSource` calls the injected writer (`src/effects/external-sources/binding.ts:116`). Its default is the binding receipt writer. CodeGraph has no direct call edge through that dependency. The model keeps this proof gap visible.

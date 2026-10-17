@@ -207,7 +207,7 @@ sequenceDiagram
 | --- | --- | --- |
 | primary | `hook-adapters` | `installHostAdapters` 调用 `runInstall`（`global-runtime.ts:672`）；install-profile、skill-projection、runtime-host-lock |
 | primary | `public-surface.adoption` | `upgrade.ts` 使用 FsTransaction manifest 与 `withTargetLock`；`legacy-inventory.ts` 使用 adoption 指纹 |
-| primary | `workflow-engine.contract-assets` | `syncCrossReviewSkills`（`global-runtime.ts:1610`） |
+| primary | `workflow-engine.contract-assets` | `syncCrossReviewSkills`（`src/cli/commands/init.ts#syncCrossReviewSkills`） |
 | primary | `verification.codegraph-readiness` | `configureCodegraph`（`global-runtime.ts:1432`） |
 | archctx-closure | `hook-adapters` | `writePrivateConfiguration`（`architecture-configuration.ts:15`） |
 | archctx-closure | `mcp-sidecar` | `model-reader.ts` 引用 `effects/repo-registry.ts` |

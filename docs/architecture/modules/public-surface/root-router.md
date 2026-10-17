@@ -119,7 +119,6 @@ sequenceDiagram
 | 项 | 声明 | 工作树事实 | 判定 |
 | --- | --- | --- | --- |
 | verify 命令形态 | `docs/spec.md:58`、`:182` 规定 canonical helper 调用是 `repo-harness run <helper>` | `README.md:117` 写 `bash scripts/check-task-workflow.sh` | 本自托管仓库两种都能运行。README 是下游读者的入口，它展示的是非 canonical 形态。 |
-| 本文旧版的 workstream 漂移 | 旧版引用 `.ai/context/capabilities.json` 声明的 `tasks/workstreams/public-surface/root-router` | `.ai/context/capabilities.json` 已不存在；`.ai/context/context-map.json:92` 只声明 `tasks/workstreams/**/*.md` 模式 | 旧条目失效，已删除。 |
 
 ### 3.5 归属与开放问题（2026-10-11）
 
@@ -232,7 +231,7 @@ commands available without making them default model context.
 ### 2026-10-16 references/arch 退役
 
 - #768 删除 `references/arch/**`，并从 include 删除这一条。这关闭了 §3.5 的开放问题。
-- #768 也删除 `references/best-practices.md`、`references/evaluation-playbook.md` 和 `references/hooks-guide.md`。没有归属的松散文档从 10 个减少到 7 个。
+- #768 也删除 [archived best-practices.md](https://github.com/Ancienttwo/repo-harness/blob/f50c6d8c032cf6ec4776a8a671960a45ffe742af/references/best-practices.md)、[archived evaluation-playbook.md](https://github.com/Ancienttwo/repo-harness/blob/f50c6d8c032cf6ec4776a8a671960a45ffe742af/references/evaluation-playbook.md) 和 [archived hooks-guide.md](https://github.com/Ancienttwo/repo-harness/blob/f50c6d8c032cf6ec4776a8a671960a45ffe742af/references/hooks-guide.md)。没有归属的松散文档从 10 个减少到 7 个。
 
 ## Optimization Backlog
 

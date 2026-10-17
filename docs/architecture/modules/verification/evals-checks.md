@@ -145,8 +145,8 @@ test-suite 是 expandable 组件。需要独立 owner 时，按运行边界（cl
 
 ### 3.4 prose 与源码的冲突和开放问题
 
-- 本节以前的 §3 原文已移到 §4 末尾，原文不变。以下原文说法与当前源码不符：
-  - `verify-contract.sh` 的 `is_evidence_producer_command()` 和 3600 秒预算。当前文件只有 40 行，没有这两项。
+- 本节以前的 §3 原文已移到 §4 末尾。以下历史说法与当前源码不符：
+  - `verify-contract.sh` 的旧 evidence-producer guard 和 3600 秒预算。当前文件只有 40 行，没有这两项。
   - `verify-sprint --prepare-acceptance`、frozen-subject criterion retry 和 `--force-expensive-rerun`。当前 `verify-sprint.sh` 拒绝 workflow-stage acceptance 参数（`verify-sprint.sh:17`）。
   - `check-task-sync.sh` 的 digest 绑定。当前脚本不再要求 digest 行（`check-task-sync.sh:23`）。
   - 根 `## Required Checks` 是唯一清单来源。当前根 `AGENTS.md` 和 `CLAUDE.md` 没有这一节。
@@ -157,11 +157,11 @@ test-suite 是 expandable 组件。需要独立 owner 时，按运行边界（cl
 
 ## 4. 历史决策记录（append-only）
 
-以下段落逐字保留自本文件的历史版本，不翻译、不改写。
+以下段落记录历史决定。已退役文件的引用指向 Git 历史版本。
 
 ## 2026-08-05 Deployed-helper evidence binding
 
-- `scripts/emit-verify-evidence.ts` remains the single evidence-emitter
+- [archived emit-verify-evidence.ts](https://github.com/Ancienttwo/repo-harness/blob/b604858a020cc3995b2584bc4cd527ae2d2a5f21/scripts/emit-verify-evidence.ts) was the single evidence-emitter
   authority. It is already included by the package's declared `scripts/`
   publication surface.
 - The installed helper executes from `assets/templates/helpers/` and resolves
@@ -245,9 +245,9 @@ test-suite 是 expandable 组件。需要独立 owner 时，按运行边界（cl
 ## 2026-06-12 Architecture Queue Closeout
 
 - The strict workflow required-file surface now tracks
-  `scripts/architecture-queue.sh` instead of the retired
-  `scripts/architecture-drift.sh`.
-- Focused coverage for queue behavior lives in `tests/architecture-queue.test.ts`
+  [archived architecture-queue.sh](https://github.com/Ancienttwo/repo-harness/blob/942f3fca4195facb298ffc48dc5c7f3c804de8ce/scripts/architecture-queue.sh) instead of the retired
+  [archived architecture-drift.sh](https://github.com/Ancienttwo/repo-harness/blob/1cc0e1e5896f42693e22465176a588d16194210c/scripts/architecture-drift.sh).
+- Focused coverage for queue behavior lives in [archived architecture-queue.test.ts](https://github.com/Ancienttwo/repo-harness/blob/942f3fca4195facb298ffc48dc5c7f3c804de8ce/tests/architecture-queue.test.ts)
   and covers card merge, reindex self-heal, cutoff triage, gate modes, and
   archive roundtrip.
 - Existing hook/runtime/contract tests continue to assert hook parity and the
@@ -358,7 +358,7 @@ authority; missing or malformed evidence fails closed.
 
 **必须守住的不变量：**
 
-1. **生产者/消费者单向分离。** profile benchmark 生产证据，bounded verifier 与 `verify-sprint` 只消费。`is_evidence_producer_command()`（`scripts/verify-contract.sh:512`）把这条边界写成执行前拒绝，而不是靠约定——否则收口 gate 会退化成无界 job runner。
+1. **历史 producer guard 已退役。** 当前 `scripts/verify-contract.sh` 保留显式 preflight，其余参数交给 `scripts/verify-sprint.sh`。检查执行由 `src/effects/evidence/verification-execution.ts` 负责。
 2. **Execution evidence 单一权威。** `verification-plan execute` 记录实际检查。Native validator 校验 event、run、contract 和 snapshot。空计划或缺失证据不能通过。旧 emitter 和 materializer 已移除。
 3. **有界执行 + 进程组回收。** 每条契约命令跑在自己的 detached 进程组里，共享一个绝对截止点；force-kill 阶段寻址原始 PGID 而非当前 leader，堵住 TERM-resistant 后代的逃逸口。
 4. **昂贵通道串行化。** 权威 benchmark 在任何 run workspace/report 变更前取 Git-common-dir expensive-run lock 并跨 provider 生命周期持有；dry-run 与 regrade-only 不占该通道。owner 异常死亡时 token 不可回收，留给人工恢复而非自动重开通道。

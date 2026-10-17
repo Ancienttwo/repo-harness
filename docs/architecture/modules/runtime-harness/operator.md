@@ -156,7 +156,7 @@ sequenceDiagram
 
 1. **Operator 只读。** `OPERATOR_ROUTES` 是冻结的完整路由表，每条路由都是 `write: false`（`src/effects/operator/server.ts:102`）。`handleRequest` 对 GET 和 HEAD 以外的方法返回 405（`server.ts:1462`）。`tests/effects/operator-write-boundary.test.ts:59` 要求写路由集合为空。PR #482 删除了最后一个浏览器写入口（composer）。
 2. **请求先过身份检查，再进路由。** Host 必须等于 loopback authority，否则返回 421（`server.ts:1452`）。Origin 不匹配返回 403（`server.ts:1458`）。`/api/*` 的 `Sec-Fetch-Site` 只接受 `same-origin` 和 `none`（`server.ts:1481`）。
-3. **GET 不启动工作。** 开发活动和 setup 数据来自后台 collector 的内存缓存。`startOperatorServer` 只在启动时创建 collector（`server.ts:1690`、`server.ts:1695`）。collector 的 `read` 只读缓存（`src/effects/dev-activity/collector.ts:436`）。周期不重叠（`collector.ts:443`）。
+3. **GET 不启动工作。** 开发活动和 setup 数据来自后台 collector 的内存缓存。`startOperatorServer` 只在启动时创建 collector（`server.ts:1690`、`server.ts:1695`）。collector 的 `read` 只读缓存（`src/effects/dev-activity/collector.ts:384`）。周期不重叠（`src/effects/dev-activity/collector.ts:372-381`）。
 4. **一个 schema 只有一个 decoder。** `src/core/**` 下的严格 decoder 同时服务服务端和浏览器。服务端在发送前重新 decode 缓存（`server.ts:1547`）。浏览器在渲染前用同一个函数 decode（`src/operator-web/dev-activity.ts:20`）。decode 失败时服务端返回 unavailable 快照，不合成替代值（`server.ts:1549`）。
 5. **CLI 和 HTTP 输出一致。** `module review-prompt` 与 architecture 路由使用同一个 `ArchitectureModelReader`。`tests/cli/operator-serve.test.ts:1270` 比较 GET、HEAD 与 CLI 的 digest。来源：PR #590、plan-20261005-0405 不变量 I7。
 6. **UI 不触发动作。** 每个动作只显示链接或可复制的 Bot 命令。来源：PR #609、plan-20261005-0405 不变量 I9。命令通道保持 Bot → CLI → herdr。

@@ -94,8 +94,8 @@ sequenceDiagram
 ### 3.1 必须保持的不变量
 
 1. **只读。** 本能力不保存 status 或当前 owner，不推导 Fleet 列，不提供 mutation 入口（`plans/prds/20260824-1653-engineering-overlay-control-board.prd.md` Hard constraint）。它只读取 Profile、Binding、live Claim 和 runtime effect 四个组件。
-2. **每个组件读两次，混合代际的快照不能标为 stable。** `collectEngineeringBoard` 做两次读取，逐组件比较修订号。任一组件不可读，结果为 `degraded`；任一组件两次不同，结果为 `changed_during_read`；否则为 `stable`（`src/effects/engineers/engineering-overlay.ts:245-284`）。
-3. **Profile 权威丢失时返回空的 degraded 投影。** 任一次读取丢失 Profile 权威，两次读取都收敛到同一个空花名册（`engineering-overlay.ts:272-280`、`:189-191`）。一个存活的读取不能补回花名册。
+2. **每个组件读两次，混合代际的快照不能标为 stable。** `collectEngineeringBoard` 做两次读取，逐组件比较修订号。任一组件不可读，结果为 `degraded`；任一组件两次不同，结果为 `changed_during_read`；否则为 `stable`（`src/effects/engineers/engineering-overlay.ts#collectEngineeringBoard`）。
+3. **Profile 权威丢失时返回空的 degraded 投影。** 任一次读取丢失 Profile 权威，两次读取都收敛到同一个空花名册（`src/effects/engineers/engineering-overlay.ts:258-268`）。一个存活的读取不能补回花名册。
 4. **组织 attention 是封闭集合。** 原因只有四种，每种对应一个固定 owner：`binding_missing`、`binding_stale`、`engineer_contract_revision_changed`、`runtime_reconciliation_required`（`src/core/engineers/engineering-overlay.ts` 的 `projectOrganizationAttention` 和 `validateOrganizationAttentionSnapshot`）。
 5. **三个视图语义独立。** `sprint graph`、`fleet board` 和 `engineer board` 可以并排显示，但不能合并成一个状态字段（PRD Product Direction）。
 6. **当前工作树必须是精确注册的仓库。** 否则返回 `engineering_overlay_repository_unregistered`（`engineering-overlay.ts:253-258`）。
@@ -106,7 +106,7 @@ sequenceDiagram
 | --- | --- |
 | 双读加逐组件修订号，不锁住全部权威 | 读取不阻塞任何写入方；代价是并发写入时只能报告 `changed_during_read`，调用方需要重读 |
 | 依赖通过 `dependencies()` 注入（`engineering-overlay.ts:41-44`、`:85-88`） | 测试可以在两次读取之间注入修改；代价是 CodeGraph 看不到对 Binding、Claim 和 runtime effect 的直接调用，P2 flow 无法证明这些步骤（见 Backlog） |
-| 先交付 CLI/JSON 读模型，Human Board 页面后置 | 页面不能先于同一读模型的独立批准（PRD Suggested next step）；operator 后来通过 `src/effects/operator/collaboration.ts` 读取这个模型 |
+| 先交付 CLI/JSON 读模型，Human Board 页面后置 | 页面不能先于同一读模型的独立批准（PRD Suggested next step）；operator 后来通过 `src/effects/operator/repository-snapshot.ts` 读取这个模型 |
 
 ### 3.3 10x 规模下先坏的点
 
@@ -125,6 +125,6 @@ sequenceDiagram
 - after arch-context#296：`src/core/engineers/engineering-overlay.ts` 和 `src/effects/engineers/engineering-overlay.ts` 同时被 engineer-bindings 的 `src/{core,effects}/engineers/**` 认领。目标单一所有者是本能力（`ownership-proposal` §2）。
 - `COMPONENT_ORDER` 在 core（`src/core/engineers/engineering-overlay.ts:19`）和 effects（`src/effects/engineers/engineering-overlay.ts:243`）各定义一次。effects 可以从 core 导入，保持一个来源。
 - 声明的 sink（`readEngineerBindingStatus`、`listLiveClaimActorReceiptsForEngineer`、`observeAgentRuntimeEffects`）都经由注入的依赖调用，CodeGraph 没有直接 `calls` 边。到 engineer-bindings 和 agent-runtime-effects 的 relation 因此只有 P1 证据，P2 只证明了 schema 步骤。
-- `collectEngineeringBoard` 调用 engineer-scheduling 的 `resolveRegisteredRepoForWorktree` 解析注册仓库（`engineering-overlay.ts:255`）。它的职责是解析仓库注册表，与调度无关。当前不声明 engineering-overlay → engineer-scheduling 的 relation。建议把该函数移到仓库注册表的所有者。
-- operator 读取本能力（`src/effects/operator/collaboration.ts:15-16`）。operator 已经声明 `relation.operator.http-reader.engineering-overlay`。
+- `collectEngineeringBoard` 调用 engineer-scheduling 的 `resolveRegisteredRepoForWorktree` 解析注册仓库（`src/effects/engineers/engineering-overlay.ts:240`）。它的职责是解析仓库注册表，与调度无关。模型记录该依赖。是否移动解析函数仍需单独判断。
+- operator 读取本能力（`src/effects/operator/repository-snapshot.ts`）。operator 已经声明 `relation.operator.http-reader.engineering-overlay`。
 - 集成时没有发现本能力到 execution-primitives 的导入。模型不声明该关系。

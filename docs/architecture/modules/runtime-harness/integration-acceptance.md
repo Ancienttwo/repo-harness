@@ -142,5 +142,10 @@ sequenceDiagram
 
 ## Optimization Backlog
 
-- **一个已声明的 selector 无法证明。** `entrypoint.integration-acceptance.envelope` 声明 `createIntegrationEnvelope` → `readPublicationReceiptCache`。CodeGraph 没有这条直接 `calls` 边，真实调用者是私有函数 `observeSelectedPublication`。这次变更为 flow 新增了正确的入口，旧声明未改。下一次模型变更应删除或修正旧 sink。
 - **验证命令不符合仓库约定。** Capability 的 verification 用 `bun test ... --timeout 60000`。仓库约定是 `bun run test:files <files> --timeout 60000 --max-concurrency 1`（`CLAUDE.md` Testing）。
+
+## Selector evidence (2026-10-18)
+
+The envelope entry delegates to `buildCurrentEnvelope`. That helper calls the schema builder. `observeSelectedPublication` reads the lease and publication receipt. The model now locates these calls in their actual functions (`src/effects/integration/product-acceptance.ts:399-460`).
+
+Product acceptance selects an injected verifier or the default acceptance verifier, then calls the selected function (`src/effects/integration/product-acceptance.ts:543-551`). CodeGraph has no direct call edge through that selection. The model retains this unproven selector. It does not replace verification with a different call.

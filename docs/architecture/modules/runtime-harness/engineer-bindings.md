@@ -106,13 +106,13 @@ sequenceDiagram
 
 ### 2026-08-24 ME-0A authority foundation
 
-- Approved work-package: `plans/plan-20260824-2126-me0a-engineer-profile-binding.md`.
+- The original implementation plan is not tracked. The requirement is in `plans/prds/20260824-1653-engineer-profile-binding-projection.prd.md`.
 - Accepted architecture change: `changeset.plan-20260824-2126-me0a-engineer-profile-binding`, bound to archived external approval `event.review-20260824-2050-persistent-module-engineer-me0a-approval`.
 - EngineerPrincipal, Session mutation, ClaimActorReceipt, delegation, messaging, Worker Host, Provider lifecycle, handoff, Human Board, and remote access remain separate Draft children and receive no authority from this module.
 
 ### 2026-08-25 ME-0B principal and claim actor
 
-- Approved work-package: `plans/plan-20260825-0029-me0b-engineer-principal-claim-actor.md`.
+- Approved work-package: [archived plan-20260825-0029-me0b-engineer-principal-claim-actor.md](https://github.com/Ancienttwo/repo-harness/blob/ed438b88e71e8f7d1c753163d2a27bf7225e9d4c/plans/plan-20260825-0029-me0b-engineer-principal-claim-actor.md).
 - Accepted architecture change: `changeset.plan-20260825-0029-me0b-engineer-principal-claim-actor`, bound to Human approval `event.review-20260825-0029-me0b-engineer-principal-claim-actor-approval`; the final residual refresh covered `verified-flow-proof-changed` for `capability.runtime-harness.engineer-bindings` and `capability.runtime-harness.mcp-sidecar`.
 - EngineerPrincipal and ClaimActorReceipt are now in scope; Provider adapters, Session lifecycle, Worker Host, Work Package Graph, delegation, messaging, writer grant, handoff, interface request, Human Board, and remote access remain separate children.
 
