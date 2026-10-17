@@ -1160,20 +1160,20 @@ contents.
 | Capability field | Node source | Rule |
 |---|---|---|
 | `domain` / `name` | `id` segments 2 and 3 | `id` must be exactly `capability.<domain>.<name>`, with no `namespace::` prefix |
-| display `name` | `name` | required non-empty node/v2 field; validated but not translated into registry identity |
-| `summary` | `summary` | required non-empty node/v2 field; validated but not translated into registry semantics |
-| `responsibilities` | `responsibilities` | required non-empty string array; validated but not translated into registry semantics |
+| display `name` | `name` | required non-empty node/v2 field; archctx validates it; not translated into registry identity |
+| `summary` | `summary` | required non-empty node/v2 field; archctx validates it; not translated into registry semantics |
+| `responsibilities` | `responsibilities` | required non-empty string array; archctx validates it; not translated into registry semantics |
 | `id` | derived | `<domain>-<name>` |
 | `architecture_module` | derived | `docs/architecture/modules/<domain>/<name>.md` |
 | `workstream_dir` | derived | `tasks/workstreams/<domain>/<name>` |
-| `prefixes` | `source.include` | include anchors above; never used for ownership |
+| `prefixes` | `capabilityProfiles[].includeAnchors` | the archctx anchors of `source.include`, in sorted order; never used for ownership |
 | `contract_files` | `extensions.contractFiles.agents` / `.claude` | declared, never derived: root-facing capabilities deliberately do not follow their prefix |
 | `lsp_profile` | `extensions.lspProfile` | required |
 | `verification_hints` | `extensions.verification` | required array; explicit `[]` is allowed |
 
 Nodes whose `kind` is not `capability`, or whose `status` is not `active`, are
-skipped and claim no prefixes. Required node/v2 descriptive fields are validated
-even when they are not translated. Optional fields this bridge does not consume —
+skipped and claim no prefixes. archctx validates every node against the node/v2
+schema in the export, also the fields that are not translated. Optional fields this bridge does not consume —
 `source.entrypoints`, `ownership`, `interfaces`,
 `criticality`, `riskDomains`, `notes`, `parent` — are ignored rather than
 translated into local semantics.
@@ -1186,14 +1186,16 @@ Source-selection failures exit `2`:
 |---|---|
 | unknown `capability_source` value | error naming the policy key and legal values |
 | unreadable `.ai/harness/policy.json` | error naming the policy file |
-| missing `.archcontext/model/nodes` under `archcontext` | error; never falls back to the JSON registry |
-| subdirectory or non-`.yaml`/`.yml` entry in the model directory | error naming the entry |
-| unparseable node YAML | error naming the node file |
+| missing `.archcontext/model/nodes` under `archcontext` | `AC_MODEL_ADOPTION_REQUIRED`; never falls back to the JSON registry |
+| subdirectory or non-`.yaml`/`.yml` entry in the model directory | `AC_PATH_DENIED` |
+| unparseable node YAML | `AC_SCHEMA_INVALID` |
 
-Node-shape failures surface as `ARCHCONTEXT_*` registry diagnostics and make
-`capability-resolver validate` exit `1` with no stdout; missing/empty node/v2
-`name`, `summary`, or `responsibilities` is a structural error and never yields a
-partial registry. Derived registries then go through the same
+A model that archctx rejects also exits `2`. The message keeps the archctx code
+and adds at most five `<entityId> <field> <invariant>` issues, then `+<n> more`.
+A model that archctx accepts but repo-harness rejects (an identity that does not
+match the node id, a null `lspProfile` or a null `verification`) also exits `2`,
+with the message on stderr and no stdout. No case yields a partial registry.
+Derived registries then go through the same
 validation as the JSON registry, so duplicate ids and invalid paths keep their
 existing diagnostic codes. Shared anchors are not duplicates.
 
