@@ -1,4 +1,4 @@
-// Pure projection: collected Git, GitHub and Decision facts
+// Pure projection: collected Git and GitHub facts
 // -> DevActivitySnapshotV2. See plans/plan-20261010-0320-operator-console-kumo.md
 // §3.2 (identity), §3.3 (columns and authority table) and §3.4 (attention).
 // Every value comes from exactly one authority. A value without one is null.
@@ -34,12 +34,6 @@ export interface DevActivityRawPullRequest extends Omit<DevActivityPullRequest, 
   created_at: string;
 }
 
-export interface DevActivityRawHumanRequest {
-  decision_id: string;
-  question: string;
-  first_observed_at: string;
-}
-
 export interface DevActivityRawRepository {
   repository_id: string;
   display_name: string;
@@ -48,7 +42,6 @@ export interface DevActivityRawRepository {
   sources: DevActivitySourceHealth[];
   worktrees: DevActivityRawWorktree[];
   pull_requests: DevActivityRawPullRequest[];
-  human_requests: DevActivityRawHumanRequest[];
 }
 
 export interface DevActivityProjectionInput {
@@ -183,11 +176,6 @@ function projectAttention(items: readonly DevActivityItem[], repositories: reado
     }
   }
   for (const repo of repositories) {
-    for (const request of repo.human_requests) {
-      attention.push({ kind: 'human_request', subject_id: request.decision_id, repository_id: repo.repository_id,
-        summary: publicDevActivityText(request.question), waiting_since: request.first_observed_at, url: null,
-        command: `repo-harness verified-context read --kind decision --id ${request.decision_id}` });
-    }
   }
   return attention.sort((left, right) => time(left.waiting_since) - time(right.waiting_since)
     || left.kind.localeCompare(right.kind) || left.subject_id.localeCompare(right.subject_id));

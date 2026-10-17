@@ -56,7 +56,6 @@ import {
   type RuntimeMessageRefV2,
 } from '../../core/engineers/agent-runtime-effect';
 import { validateEngineerOffersDocument, type EngineerOffersV1 } from '../../core/engineers/scheduling';
-import { canonicalModuleMessageDeliveryReceiptBytes } from '../../core/engineers/module-message';
 import { canonicalTaskMessageDeliveryReceiptBytes } from '../../core/fleet/task-message';
 import { readRepoHarnessRegistryStrictSnapshot, repoHarnessAuthorizationRevision } from '../repo-registry';
 import { resolveGitCommonDirectory } from '../git/common-directory';
@@ -65,7 +64,6 @@ import { readLease } from '../state/coordination-lease-store';
 import { readEngineerBindingStatus } from './binding-store';
 import { readClaimActorReceipt } from './claim-actor-store';
 import { assertAgentRuntimeActionEnabled, assertAgentRuntimePrepareEnabled } from './agent-runtime-feature';
-import { readModuleMessageDelivery, readModuleMessageDeliveryObservations } from './module-inbox';
 import { loadEngineerProfile } from './profile-store';
 import { resolveRegisteredRepoForWorktree } from './scheduling';
 import { readTaskMessageDelivery } from '../fleet/task-inbox';
@@ -90,13 +88,9 @@ export class AgentRuntimeEffectStoreError extends Error {
 
 export type PrepareAgentRuntimeEffectInput = Readonly<{
   repo_root: string; idempotency_key: string; expected_capability_sha256: string; created_at: string;
-} & ({
-  message_kind: 'module_message'; engineer_id: string; message_id: string;
-  expected_binding_id: string; expected_binding_generation: number; expected_engineer_contract_revision: string;
-} | {
   message_kind: 'task_message'; task_id: string; message_id: string; expected_task_revision: string;
   expected_claim_id: string; expected_lease_generation: number;
-})>;
+}>;
 
 export interface AgentRuntimeEffectStatus {
   readonly intent: AgentRuntimeEffectIntentV2;
@@ -234,12 +228,7 @@ function notifyIntent(intent: AgentRuntimeEffectIntentV2): AgentRuntimeNotifyInb
 function wakeIntent(intent: AgentRuntimeEffectIntentV2): AgentRuntimeOfferWakeIntentV2 {
   if (intent.operation !== 'wake_for_offer') fail('agent_runtime_effect_invalid', 'effect is not a task-offer wake'); return intent;
 }
-function moduleReference(input: Extract<PrepareAgentRuntimeEffectInput, { message_kind: 'module_message' }>, endpoint: RuntimeEndpointFenceV2): RuntimeMessageRefV2 {
-  if (endpoint.engineer_id !== input.engineer_id || endpoint.binding_id !== input.expected_binding_id || endpoint.binding_generation !== input.expected_binding_generation || endpoint.engineer_contract_revision !== input.expected_engineer_contract_revision) fail('agent_runtime_effect_binding_stale', 'prepare fences do not match current Binding');
-  const message = readModuleMessageDelivery({ repo_root: input.repo_root, engineer_id: input.engineer_id, message_id: input.message_id }); if (message.event.scope !== 'assignment') fail('agent_runtime_effect_binding_stale', 'module-scope messages carry no Binding fence for a runtime effect'); if (message.receipt.delivery_state !== 'pending') fail('agent_runtime_effect_transition_invalid', `Module receipt is already ${message.receipt.delivery_state}`);
-  return Object.freeze({ kind: 'module_message', message_id: message.event.message_id, message_event_digest: message.event.event_digest, engineer_id: endpoint.engineer_id, binding_id: endpoint.binding_id, binding_generation: endpoint.binding_generation, engineer_contract_revision: endpoint.engineer_contract_revision, delivery_attempt: message.receipt.attempt + 1 });
-}
-function taskEndpointAndReference(input: Extract<PrepareAgentRuntimeEffectInput, { message_kind: 'task_message' }>): { endpoint: RuntimeEndpointFenceV2; message: RuntimeMessageRefV2 } {
+function taskEndpointAndReference(input: PrepareAgentRuntimeEffectInput): { endpoint: RuntimeEndpointFenceV2; message: RuntimeMessageRefV2 } {
   const lease = readLease(input.repo_root, input.task_id).record;
   if (!lease || lease.state !== 'bound' || lease.task_revision !== input.expected_task_revision || lease.claim_id !== input.expected_claim_id || lease.generation !== input.expected_lease_generation) fail('agent_runtime_effect_claim_stale', 'prepare fences do not match the exact bound Lease');
   const actor = readClaimActorReceipt(input.repo_root, input.task_id, input.expected_claim_id);
@@ -252,9 +241,6 @@ function taskEndpointAndReference(input: Extract<PrepareAgentRuntimeEffectInput,
 }
 function assertLiveMessage(repoRoot: string, intent: AgentRuntimeNotifyInboxIntentV2): void {
   assertBinding(repoRoot, intent.endpoint_fence); const ref = intent.message_ref;
-  if (ref.kind === 'module_message') {
-    const entry = readModuleMessageDelivery({ repo_root: repoRoot, engineer_id: ref.engineer_id, message_id: ref.message_id }); if (entry.event.scope !== 'assignment') fail('agent_runtime_effect_binding_stale', 'module-scope messages carry no Binding fence for a runtime effect'); if (entry.event.event_digest !== ref.message_event_digest || entry.receipt.delivery_state !== 'pending' || entry.receipt.attempt + 1 !== ref.delivery_attempt) fail('agent_runtime_effect_transition_invalid', 'Module message fence is stale'); return;
-  }
   const lease = readLease(repoRoot, ref.task_id).record; const actor = readClaimActorReceipt(repoRoot, ref.task_id, ref.claim_id);
   if (!lease || lease.state !== 'bound' || lease.task_revision !== ref.task_revision || lease.claim_id !== ref.claim_id || lease.generation !== ref.lease_generation || !actor || actor.engineer_id !== intent.endpoint_fence.engineer_id || actor.binding_id !== intent.endpoint_fence.binding_id || actor.binding_generation !== intent.endpoint_fence.binding_generation) fail('agent_runtime_effect_claim_stale', 'Task Claim/Lease/Binding fence rotated before Host action');
   const entry = readTaskMessageDelivery({ repo_root: repoRoot, task_id: ref.task_id, message_id: ref.message_id, recipient: { kind: 'claim', claim_id: ref.claim_id, generation: ref.lease_generation } }); if ((entry.receipt !== null && entry.receipt.delivery_state !== 'pending') || entry.event.event_digest !== ref.message_event_digest) fail('agent_runtime_effect_transition_invalid', 'Task message fence is stale');
@@ -262,14 +248,11 @@ function assertLiveMessage(repoRoot: string, intent: AgentRuntimeNotifyInboxInte
 
 /** A replay must name the same target the first request named. Message ids
  * are caller-generated UUIDs, so key, capability, timestamp and message id
- * alone do not identify a request: the full Engineer/Binding or Task/Claim
+ * alone do not identify a request: the full Task/Claim
  * fence is compared against the persisted intent before a replay is served. */
 function replayRequestIdentityMatches(input: PrepareAgentRuntimeEffectInput, existing: AgentRuntimeEffectIntentV2): boolean {
   if (existing.operation !== 'notify_inbox') return false;
   const ref = existing.message_ref;
-  if (input.message_kind === 'module_message') {
-    return ref.kind === 'module_message' && ref.engineer_id === input.engineer_id && ref.binding_id === input.expected_binding_id && ref.binding_generation === input.expected_binding_generation && ref.engineer_contract_revision === input.expected_engineer_contract_revision;
-  }
   return ref.kind === 'task_message' && ref.task_id === input.task_id && ref.task_revision === input.expected_task_revision && ref.claim_id === input.expected_claim_id && ref.lease_generation === input.expected_lease_generation;
 }
 
@@ -277,9 +260,7 @@ export function prepareAgentRuntimeEffect(input: PrepareAgentRuntimeEffectInput)
   assertAgentRuntimePrepareEnabled(input.repo_root); assertMigrationReady(input.repo_root); const paths = effectPaths(input.repo_root, deriveAgentRuntimeEffectId(input.idempotency_key));
   return lock(paths, () => {
     prepareEffect(paths); if (existsSync(paths.intent)) { const existing = parseIntent(readRaw(paths.intent, 'effect intent')); if (existing.idempotency_key !== input.idempotency_key || existing.capability_sha256 !== input.expected_capability_sha256 || existing.created_at !== input.created_at || !replayRequestIdentityMatches(input, existing) || notifyIntent(existing).message_ref.kind !== input.message_kind || notifyIntent(existing).message_ref.message_id !== input.message_id) fail('agent_runtime_effect_conflict', 'idempotency key names another prepare request'); return chain(paths, existing).length ? readLocked(paths, true) : initialize(paths, existing); }
-    let endpoint: RuntimeEndpointFenceV2; let message: RuntimeMessageRefV2;
-    if (input.message_kind === 'module_message') { endpoint = currentBinding(input.repo_root, input.engineer_id); message = moduleReference(input, endpoint); }
-    else ({ endpoint, message } = taskEndpointAndReference(input));
+    const { endpoint, message } = taskEndpointAndReference(input);
     assertCapability(input.repo_root, endpoint, input.expected_capability_sha256, 'notify_inbox');
     const intent = buildAgentRuntimeEffectIntent({ idempotency_key: input.idempotency_key, message_ref: message, endpoint_fence: endpoint, operation: 'notify_inbox', capability_sha256: input.expected_capability_sha256, created_at: input.created_at });
     const bytes = canonicalAgentRuntimeEffectIntentBytes(intent); if (!writeExclusive(paths.intent, bytes, 'effect intent') && readRaw(paths.intent, 'effect intent') !== bytes) fail('agent_runtime_effect_conflict', 'idempotency key names different intent bytes'); assertLiveMessage(input.repo_root, notifyIntent(intent)); return initialize(paths, intent);
@@ -342,17 +323,6 @@ function receiptEvidence(repoRoot: string, intentValue: AgentRuntimeEffectIntent
   // reference on the delivery evidence; anything else stays unproven and
   // reconciles instead of succeeding.
   const controlRef = agentRuntimeControlRef(intent);
-  if (ref.kind === 'module_message') {
-    const entry = readModuleMessageDelivery({ repo_root: repoRoot, engineer_id: ref.engineer_id, message_id: ref.message_id }); const receipt = entry.receipt;
-    if (entry.event.event_digest !== ref.message_event_digest || receipt.message_event_digest !== ref.message_event_digest || receipt.recipient_engineer_id !== ref.engineer_id || receipt.target_binding_generation !== ref.binding_generation || receipt.attempt > ref.delivery_attempt) fail('agent_runtime_effect_conflict', 'Module receipt mismatches the frozen effect reference');
-    // A receipt attempt below the frozen delivery attempt means this
-    // attempt's observation has not landed yet: that is unproven, not a
-    // conflict, so observation reconciles instead of throwing.
-    if (receipt.delivery_state !== 'delivered' && receipt.delivery_state !== 'acknowledged') return null;
-    const bound = readModuleMessageDeliveryObservations(repoRoot, ref.engineer_id, ref.message_id)
-      .some((observation) => observation.attempt === ref.delivery_attempt && observation.outcome === 'delivered' && observation.provider_delivery_ref === controlRef);
-    return bound ? { kind: 'module_message_delivery_receipt', sha256: receipt.receipt_digest } : null;
-  }
   const entry = readTaskMessageDelivery({ repo_root: repoRoot, task_id: ref.task_id, message_id: ref.message_id, recipient: { kind: 'claim', claim_id: ref.claim_id, generation: ref.lease_generation } }); const receipt = entry.receipt;
   if (!receipt) return null;
   if (entry.event.event_digest !== ref.message_event_digest || entry.event.task_revision !== ref.task_revision || receipt.recipient_task_revision !== ref.task_revision || receipt.recipient_claim_id !== ref.claim_id || receipt.recipient_generation !== ref.lease_generation) fail('agent_runtime_effect_conflict', 'Task receipt mismatches the frozen effect reference');

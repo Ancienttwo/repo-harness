@@ -11,7 +11,6 @@ export { OPERATOR_ARCHITECTURE_MODULES_ROUTE, OPERATOR_ARCHITECTURE_MODULE_ROUTE
 import { decodeNotifyStatus, type NotifyStatusV1 } from '../../core/operator/notify-status';
 import { readNotifyStatus, type NotifyStatusReadInput } from './notify-status';
 import { decodeOperatorTaskHistory, parseTaskHistoryRequest, TASK_HISTORY_FAILURES, type OperatorTaskHistoryRequest, type OperatorTaskHistory } from '../../core/operator/task-history';
-import { isDecisionCursor } from '../../core/operator/decision-inventory';
 import { createHash, randomUUID } from 'node:crypto';
 import { decodeOperatorTaskContext, parseTaskContextRequest, TASK_CONTEXT_FAILURES, type OperatorTaskContextRequest, type OperatorTaskContext } from '../../core/operator/task-context';
 import { Worker as ObservationWorker } from 'node:worker_threads';
@@ -506,7 +505,6 @@ function readDefaultRepositorySnapshot(
       workerData: {
         env: repositoryWorkerEnvironment(input.env),
         repository_id: input.repository_id,
-        decision_after: input.decision_after ?? null,
       },
       env: { ...process.env, ...OPERATOR_READ_ONLY_GIT_ENVIRONMENT },
     });
@@ -547,7 +545,7 @@ function readDefaultRepositorySnapshot(
         });
       } else if (response.ok) {
         try {
-          assertOperatorRepositorySnapshotIdentity(response.snapshot, input.repository_id, input.decision_after ?? null);
+          assertOperatorRepositorySnapshotIdentity(response.snapshot, input.repository_id);
         } catch (error) {
           finish({ ok: false, error });
           return;
@@ -1064,7 +1062,6 @@ export async function startOperatorServer(
 
   interface RepositoryObservation {
     readonly repositoryId: string;
-    readonly decisionAfter: string | null;
     readonly key: string;
     readonly controller: AbortController;
     readonly promise: Promise<OperatorRepositorySnapshotV1>;
@@ -1118,7 +1115,6 @@ export async function startOperatorServer(
       return readRepository({
       env: options.env,
       repository_id: observation.repositoryId,
-      decision_after: observation.decisionAfter,
       signal: observation.controller.signal,
       });
     }).then(
@@ -1133,9 +1129,9 @@ export async function startOperatorServer(
     repositoryCompletions.add(completion);
   };
 
-  const acquireRepositoryObservation = (repositoryId: string, decisionAfter: string | null): RepositoryObservation => {
+  const acquireRepositoryObservation = (repositoryId: string): RepositoryObservation => {
     if (closed) throw OPERATOR_REPOSITORY_REQUEST_ABORTED;
-    const key = JSON.stringify([repositoryId, decisionAfter]);
+    const key = repositoryId;
     const existing = repositoryObservations.get(key);
     if (existing !== undefined) {
       if (existing.settled) throw new OperatorRepositoryBusyError();
@@ -1148,7 +1144,7 @@ export async function startOperatorServer(
     let resolveObservation!: (snapshot: OperatorRepositorySnapshotV1) => void;
     let rejectObservation!: (error: unknown) => void;
     const observation: RepositoryObservation = {
-      repositoryId, decisionAfter, key,
+      repositoryId, key,
       controller: new AbortController(),
       promise: new Promise<OperatorRepositorySnapshotV1>((resolveObservationPromise, rejectObservationPromise) => {
         resolveObservation = resolveObservationPromise;
@@ -1309,12 +1305,11 @@ export async function startOperatorServer(
     request: IncomingMessage,
     response: ServerResponse,
     repositoryId: string,
-    decisionAfter: string | null,
     headOnly = false,
   ): Promise<void> => {
     let observation: RepositoryObservation;
     try {
-      observation = acquireRepositoryObservation(repositoryId, decisionAfter);
+      observation = acquireRepositoryObservation(repositoryId);
     } catch (error) {
       const failure = publicRepositoryError(error);
       sendRefusal(request, response, failure.status, failure.body, headOnly);
@@ -1356,7 +1351,7 @@ export async function startOperatorServer(
       ]);
       if (clientDisconnected || serverClosing || response.destroyed) return;
       finished = true;
-      assertOperatorRepositorySnapshotIdentity(repository, repositoryId, decisionAfter);
+      assertOperatorRepositorySnapshotIdentity(repository, repositoryId);
       sendJson(response, 200, repository, headOnly);
     } catch (error) {
       if (clientDisconnected || serverClosing || response.destroyed) return;
@@ -1619,12 +1614,10 @@ export async function startOperatorServer(
 
     const repositoryRoute = OPERATOR_REPOSITORY_SNAPSHOT_ROUTE.exec(pathname);
     if (repositoryRoute !== null) {
-      const decisionAfter = url.searchParams.get('decision_after');
-      if ([...url.searchParams.keys()].some(key => key !== 'decision_after') || url.searchParams.getAll('decision_after').length > 1 || !isDecisionCursor(decisionAfter)) {
-        sendRefusal(request, response, 400, errorBody('invalid_request', 'The Decision inventory cursor is invalid.'), headOnly);
+        sendRefusal(request, response, 400, errorBody('invalid_request', 'Repository snapshots do not accept query parameters.'), headOnly);
         return;
       }
-      await handleRepositorySnapshot(request, response, repositoryRoute[1]!, decisionAfter, headOnly);
+      await handleRepositorySnapshot(request, response, repositoryRoute[1]!, headOnly);
       return;
     }
 

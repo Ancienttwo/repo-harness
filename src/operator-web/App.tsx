@@ -81,7 +81,7 @@ export interface OperatorAppProps {
   readonly initialSnapshot?: OperatorFleetSnapshotV1;
   readonly fetchSnapshot?: (signal?: AbortSignal) => Promise<OperatorFleetSnapshotV1>;
   /** The read-only repository snapshot read, injectable on the same terms. */
-  readonly fetchRepositorySnapshot?: (repositoryId: string, signal: AbortSignal, decisionAfter: string | null) => Promise<OperatorRepositorySnapshotV1>;
+  readonly fetchRepositorySnapshot?: (repositoryId: string, signal: AbortSignal) => Promise<OperatorRepositorySnapshotV1>;
   /** A deterministic repository snapshot state for fixtures and server renders. */
   readonly initialRepositorySnapshot?: RepositoryViewState;
   /** Tests pin the locale; the browser resolves it from storage or navigator. */
@@ -370,7 +370,6 @@ export function OperatorApp({
   const searchRef = useRef(typeof window === 'undefined' ? '' : window.location.search);
   const [selection, setSelection] = useState<Selection | null>(location.selection);
   const [repositorySnapshot, setRepositorySnapshot] = useState<RepositoryViewState>(initialRepositorySnapshot ?? { kind: 'idle' });
-  const [decisionPage, setDecisionPage] = useState<{ repositoryId: string; after: string | null } | null>(null);
   const [refreshGeneration, setRefreshGeneration] = useState(0);
   const [filters, setFilters] = useState<BoardFilters>(() => ({ ...DEFAULT_BOARD_FILTERS, repositoryId: readStorage(OPERATOR_BOARD_REPOSITORY_STORAGE_KEY) }));
   const { locale, setLocale, t } = useLocale(initialLocale);
@@ -498,29 +497,23 @@ export function OperatorApp({
   }, [selection, selectedCard]);
   const revisionChangedFrom = selectedCard && selection && selectedCard.task_revision !== selection.revision ? selection.revision : null;
   const snapshotRepositoryId = activeRepository?.repository_id ?? null;
-  const decisionAfter = decisionPage?.repositoryId === snapshotRepositoryId ? decisionPage.after : null;
-  const changeDecisionPage = (after: string | null) => {
-    if (!snapshotRepositoryId) return;
-    setRepositorySnapshot({ kind: 'idle' });
-    setDecisionPage({ repositoryId: snapshotRepositoryId, after });
-  };
 
   // One observation belongs to the selected repository; task selection shares it.
   const readRepositorySnapshot = useCallback(async (signal: AbortSignal): Promise<boolean> => {
     if (snapshotRepositoryId === null) return false;
     setRepositorySnapshot({ kind: 'loading', repository_id: snapshotRepositoryId });
     try {
-      const next = await fetchRepositorySnapshot(snapshotRepositoryId, signal, decisionAfter);
+      const next = await fetchRepositorySnapshot(snapshotRepositoryId, signal);
       if (signal.aborted) return false;
-      setRepositorySnapshot({ kind: 'ready', snapshot: assertSnapshotRepository(decodeOperatorRepositorySnapshot(next), snapshotRepositoryId, decisionAfter) });
+      setRepositorySnapshot({ kind: 'ready', snapshot: assertSnapshotRepository(decodeOperatorRepositorySnapshot(next), snapshotRepositoryId) });
       return true;
     } catch (error) {
       if (signal.aborted) return false;
       setRepositorySnapshot({ kind: 'failed', repository_id: snapshotRepositoryId, error: asApiError(error, REPOSITORY_UNAVAILABLE_ERROR) });
       return false;
     }
-  }, [snapshotRepositoryId, decisionAfter, fetchRepositorySnapshot]);
-  useObservationRefresh(readRepositorySnapshot, JSON.stringify([snapshotRepositoryId, decisionAfter, refreshGeneration]), {
+  }, [snapshotRepositoryId, fetchRepositorySnapshot]);
+  useObservationRefresh(readRepositorySnapshot, JSON.stringify([snapshotRepositoryId, refreshGeneration]), {
     enabled: !initialRepositorySnapshot && snapshotRepositoryId !== null && workspace === 'repository',
   });
   const selectCard = (card: OperatorFleetCardV1) => navigate(card.repository_id, { key: taskKey(card), taskId: card.task_id, revision: card.task_revision, historical: false });
@@ -563,7 +556,7 @@ export function OperatorApp({
           {workspace === 'repository' && <RepositoryWorkspace
             state={state} activeRepository={activeRepository} activeRepositoryId={activeRepositoryId} onRepository={switchRepository}
             location={location} selection={selection} selectedCard={selectedCard} revisionChangedFrom={revisionChangedFrom}
-            view={view} onView={setView} repositorySnapshot={repositorySnapshot} decisionAfter={decisionAfter} onDecisionPage={changeDecisionPage}
+            view={view} onView={setView} repositorySnapshot={repositorySnapshot}
             refreshGeneration={refreshGeneration} onRefresh={refresh} onSelect={selectCard} onCloseSelection={closeSelection}
             readTaskContext={readTaskContext} readTaskActivity={readTaskActivity} readTaskHistory={readTaskHistory}
             onBack={() => openPlace({ workspace: 'repositories', module: null, item: null })} now={now} t={t} />}

@@ -13,7 +13,7 @@ import {
 import { DrawerFrame, useModalFocus } from './Drawer';
 import { localizeApiError } from './fleet-api';
 import { relativeAge, type OperatorMessageKey, type OperatorTranslate } from './i18n';
-import { DecisionSummary, OrganizationSummary } from './OrganizationSummary';
+import { OrganizationSummary } from './OrganizationSummary';
 import { PlanningView } from './PlanningView';
 import { TaskDiff } from './TaskDiff';
 import { TaskEvidence, type TaskActivityReader, type TaskContextReader } from './TaskEvidence';
@@ -789,8 +789,6 @@ export interface RepositoryWorkspaceProps {
   readonly view: ObservationView;
   readonly onView: (view: ObservationView) => void;
   readonly repositorySnapshot: RepositoryViewState;
-  readonly decisionAfter: string | null;
-  readonly onDecisionPage: (after: string | null) => void;
   readonly refreshGeneration: number;
   readonly onRefresh: () => void;
   readonly onSelect: (card: OperatorFleetCardV1) => void;
@@ -825,7 +823,6 @@ export function RepositoryWorkspace(props: RepositoryWorkspaceProps) {
         generation={props.refreshGeneration} read={props.readTaskHistory} onClose={props.onCloseSelection} t={t} />}
       {activeRepository && <ObservationTabs view={view} onChange={props.onView} t={t} />}
       <div role="tabpanel" id="view-panel-organization" aria-labelledby="view-tab-organization" hidden={!organizationActive} className="flex flex-col gap-6">
-        {activeRepository && <DecisionSummary state={repositorySnapshot} repositoryId={activeRepository.repository_id} after={props.decisionAfter} onPage={props.onDecisionPage} t={t} />}
         {activeRepository && <OrganizationSummary state={repositorySnapshot} repositoryId={activeRepository.repository_id} t={t} />}
         <SnapshotNotice state={state} onRetry={props.onRefresh} t={t} />
         {state.kind === 'loading' && state.previous === null ? <LoadingState t={t} />

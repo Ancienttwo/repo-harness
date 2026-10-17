@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Banner, Empty, Loader, cn } from '@cloudflare/kumo';
 import {
+  ChatCircleDotsIcon,
   ArrowDownIcon,
   ArrowUpIcon,
   BroomIcon,
-  ChatCircleDotsIcon,
   CheckCircleIcon,
   CircleDashedIcon,
   CircuitryIcon,
@@ -39,7 +39,6 @@ const RUNTIME_CONFIG_COMMAND = 'repo-harness operator serve --runtime-status-con
 
 const ATTENTION_ICON: Readonly<Record<DevActivityAttention['kind'], ReactNode>> = {
   ready_to_merge: <GitMergeIcon size={16} />,
-  human_request: <ChatCircleDotsIcon size={16} />,
 };
 
 function AttentionRow({ row, snapshot, now, onOpen, t }: {

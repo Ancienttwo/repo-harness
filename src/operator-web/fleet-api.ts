@@ -95,20 +95,16 @@ export async function fetchOperatorSnapshot(signal?: AbortSignal): Promise<Opera
 export function assertSnapshotRepository(
   snapshot: OperatorRepositorySnapshotV1,
   repositoryId: string,
-  decisionAfter: string | null = null,
 ): OperatorRepositorySnapshotV1 {
-  if (snapshot.repository_id !== repositoryId || snapshot.decision_after !== decisionAfter) throw REPOSITORY_MISMATCH_ERROR;
+  if (snapshot.repository_id !== repositoryId) throw REPOSITORY_MISMATCH_ERROR;
   return snapshot;
 }
 
 export async function fetchOperatorRepositorySnapshot(
   repositoryId: string,
   signal?: AbortSignal,
-  decisionAfter: string | null = null,
 ): Promise<OperatorRepositorySnapshotV1> {
-  if (decisionAfter !== null && !/^[0-9a-f]{64}$/u.test(decisionAfter)) throw OPERATOR_REPOSITORY_PAYLOAD_INVALID_ERROR;
-  const query = decisionAfter === null ? '' : `?decision_after=${decisionAfter}`;
-  const response = await fetch(`/api/v1/repositories/${encodeURIComponent(repositoryId)}/snapshot${query}`, {
+  const response = await fetch(`/api/v1/repositories/${encodeURIComponent(repositoryId)}/snapshot`, {
     headers: { Accept: 'application/json' },
     cache: 'no-store',
     signal,
@@ -128,5 +124,5 @@ export async function fetchOperatorRepositorySnapshot(
     // malformed repository response from borrowing Fleet diagnostics.
     throw OPERATOR_REPOSITORY_PAYLOAD_INVALID_ERROR;
   }
-  return assertSnapshotRepository(snapshot, repositoryId, decisionAfter);
+  return assertSnapshotRepository(snapshot, repositoryId);
 }

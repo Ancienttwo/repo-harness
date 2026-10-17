@@ -2,7 +2,6 @@ import type { OperatorRepositorySnapshotV1 } from '../core/operator/repository-s
 export type { OperatorRepositorySnapshotV1 } from '../core/operator/repository-snapshot';
 import { isOperatorServiceEpoch } from '../core/operator/observation-identity';
 import { decodeOperatorPlanningSnapshot } from '../core/operator/planning-snapshot';
-import { decodeOperatorDecisionInventory, isDecisionCursor } from '../core/operator/decision-inventory';
 import { decodeOperatorOrganizationSnapshot } from '../core/operator/organization-snapshot';
 export type {
   OperatorFleetCardV1,
@@ -494,7 +493,7 @@ function decodeCard(value: unknown, repositoryId: string): OperatorFleetCardV1 {
     latest: latest === null ? null : Object.freeze({
       adapter_kind: requireOneOf(latest.adapter_kind, ['herdr-cli-agent'] as const),
       effect_state: requireOneOf(latest.effect_state, ['intent_persisted', 'effect_started', 'observed_success', 'observed_failure', 'reconciliation_required', 'stopped', 'superseded'] as const),
-      receipt_kind: latest.receipt_kind === null ? null : requireOneOf(latest.receipt_kind, ['task_message_delivery_receipt', 'module_message_delivery_receipt', 'controller_step_receipt'] as const),
+      receipt_kind: latest.receipt_kind === null ? null : requireOneOf(latest.receipt_kind, ['task_message_delivery_receipt', 'controller_step_receipt'] as const),
       observed_at: requireNotificationInstant(latest.observed_at),
       observation_sequence: requireNonNegativeInteger(latest.observation_sequence),
       observation_sha256: requireSha256(latest.observation_sha256),
@@ -580,11 +579,9 @@ function requireInstant(value: unknown): string {
 export function decodeOperatorRepositorySnapshot(value: unknown): OperatorRepositorySnapshotV1 {
   try {
     const v = requireRecord(value);
-    requireExactKeys(v, ['protocol', 'kind', 'repository_id', 'decision_after', 'decisions', 'organization', 'planning']);
+    requireExactKeys(v, ['protocol', 'kind', 'repository_id', 'organization', 'planning']);
     if (v.protocol !== OPERATOR_REPOSITORY_PAYLOAD_PROTOCOL || v.kind !== 'operator_repository_snapshot') throw new OperatorPayloadError();
     const repositoryId = requireString(v.repository_id);
-    if (!isDecisionCursor(v.decision_after)) throw new OperatorPayloadError();
-    const decisionAfter = v.decision_after;
     const source = <T,>(value: unknown, decode: (snapshot: unknown) => T): import('../core/operator/repository-snapshot').RepositorySourceObservation<T> => {
       const s = requireRecord(value);
       const observed_at = requireInstant(s.observed_at);
@@ -601,8 +598,6 @@ export function decodeOperatorRepositorySnapshot(value: unknown): OperatorReposi
       protocol: OPERATOR_REPOSITORY_PAYLOAD_PROTOCOL, kind: 'operator_repository_snapshot', repository_id: repositoryId,
       organization: source(v.organization, raw => decodeOperatorOrganizationSnapshot(raw, repositoryId)),
       planning: source(v.planning, raw => decodeOperatorPlanningSnapshot(raw, repositoryId)),
-      decision_after: decisionAfter,
-      decisions: source(v.decisions, raw => decodeOperatorDecisionInventory(raw, repositoryId, decisionAfter)),
     };
   } catch { throw new OperatorRepositoryPayloadError(); }
 }

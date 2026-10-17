@@ -36,7 +36,7 @@ export type AgentRuntimeOfferWakeReason = 'new_eligible_offer' | 'dependency_unb
 export type AgentRuntimeCapabilityStatus = 'supported' | 'unsupported' | 'unavailable' | 'unverifiable';
 export type AgentRuntimeEffectState = 'intent_persisted' | 'effect_started' | 'observed_success' | 'observed_failure' | 'reconciliation_required' | 'stopped' | 'superseded';
 export type AgentRuntimeFailureClass = 'none' | 'binding_stale' | 'claim_stale' | 'capability_unsupported' | 'adapter_unavailable' | 'authorization_stale' | 'fence_conflict' | 'receipt_missing' | 'receipt_mismatch' | 'unknown';
-export type AgentRuntimeReceiptKind = 'task_message_delivery_receipt' | 'module_message_delivery_receipt' | 'controller_step_receipt';
+export type AgentRuntimeReceiptKind = 'task_message_delivery_receipt' | 'controller_step_receipt';
 export type AgentRuntimeAdapterOutcome = 'accepted' | 'unavailable' | 'unsupported' | 'failed' | 'unknown';
 
 export interface AgentRuntimeCapabilityEvidenceRefV2 { readonly ref: string; readonly sha256: string }
@@ -61,17 +61,7 @@ export interface TaskRuntimeMessageRefV2 {
   readonly lease_generation: number;
   readonly delivery_attempt: number;
 }
-export interface ModuleRuntimeMessageRefV2 {
-  readonly kind: 'module_message';
-  readonly message_id: string;
-  readonly message_event_digest: string;
-  readonly engineer_id: string;
-  readonly binding_id: string;
-  readonly binding_generation: number;
-  readonly engineer_contract_revision: string;
-  readonly delivery_attempt: number;
-}
-export type RuntimeMessageRefV2 = TaskRuntimeMessageRefV2 | ModuleRuntimeMessageRefV2;
+export type RuntimeMessageRefV2 = TaskRuntimeMessageRefV2;
 
 /** The wake subject. Engineer, Binding, generation and contract revision are
  * bound once by the endpoint fence; this reference adds only what the fence
@@ -304,18 +294,11 @@ export function validateRuntimeMessageRef(value: unknown): RuntimeMessageRefV2 {
     assertMessageExactKeys(input, ['kind', 'message_id', 'message_event_digest', 'task_id', 'task_revision', 'claim_id', 'lease_generation', 'delivery_attempt'], 'task message_ref', invalid);
     return Object.freeze({ kind: 'task_message', message_id: uuid(input.message_id, 'message_id'), message_event_digest: sha(input.message_event_digest, 'message_event_digest'), task_id: taskDigest(input.task_id, 'task_id'), task_revision: taskDigest(input.task_revision, 'task_revision'), claim_id: uuid(input.claim_id, 'claim_id'), lease_generation: integer(input.lease_generation, 'lease_generation'), delivery_attempt: integer(input.delivery_attempt, 'delivery_attempt') });
   }
-  if (input.kind === 'module_message') {
-    assertMessageExactKeys(input, ['kind', 'message_id', 'message_event_digest', 'engineer_id', 'binding_id', 'binding_generation', 'engineer_contract_revision', 'delivery_attempt'], 'module message_ref', invalid);
-    return Object.freeze({ kind: 'module_message', message_id: uuid(input.message_id, 'message_id'), message_event_digest: sha(input.message_event_digest, 'message_event_digest'), engineer_id: engineer(input.engineer_id, 'engineer_id'), binding_id: uuid(input.binding_id, 'binding_id'), binding_generation: integer(input.binding_generation, 'binding_generation'), engineer_contract_revision: sha(input.engineer_contract_revision, 'engineer_contract_revision'), delivery_attempt: integer(input.delivery_attempt, 'delivery_attempt') });
-  }
   return invalid('message_ref kind is invalid');
 }
 export function validateRuntimeEndpointFence(value: unknown): RuntimeEndpointFenceV2 {
   const input = record(value, 'endpoint_fence'); assertMessageExactKeys(input, ['engineer_id', 'binding_id', 'binding_generation', 'engineer_contract_revision', 'adapter_kind', 'host_id', 'endpoint_id'], 'endpoint_fence', invalid);
   return Object.freeze({ engineer_id: engineer(input.engineer_id, 'endpoint_fence.engineer_id'), binding_id: uuid(input.binding_id, 'endpoint_fence.binding_id'), binding_generation: integer(input.binding_generation, 'endpoint_fence.binding_generation'), engineer_contract_revision: sha(input.engineer_contract_revision, 'endpoint_fence.engineer_contract_revision'), adapter_kind: adapterKind(input.adapter_kind), host_id: bounded(input.host_id, 'endpoint_fence.host_id'), endpoint_id: bounded(input.endpoint_id, 'endpoint_fence.endpoint_id') });
-}
-function assertMessageEndpointJoin(message: RuntimeMessageRefV2, endpoint: RuntimeEndpointFenceV2): void {
-  if (message.kind === 'module_message' && (message.engineer_id !== endpoint.engineer_id || message.binding_id !== endpoint.binding_id || message.binding_generation !== endpoint.binding_generation || message.engineer_contract_revision !== endpoint.engineer_contract_revision)) invalid('module message_ref and endpoint_fence must be byte-equal at the Binding fence');
 }
 export function validateRuntimeOfferWakeRef(value: unknown): RuntimeOfferWakeRefV2 {
   const input = record(value, 'wake_ref'); assertMessageExactKeys(input, ['repository_id', 'authorization_revision', 'snapshot_revision', 'wake_reason'], 'wake_ref', invalid);
@@ -331,7 +314,7 @@ export function buildAgentRuntimeEffectIntent(input: BuildAgentRuntimeEffectInte
   let subject: { readonly message_ref: RuntimeMessageRefV2 } | { readonly wake_ref: RuntimeOfferWakeRefV2 };
   if (operation === 'notify_inbox') {
     const messageRef = validateRuntimeMessageRef((input as { message_ref: unknown }).message_ref);
-    assertMessageEndpointJoin(messageRef, endpointFence); subject = { message_ref: messageRef };
+    subject = { message_ref: messageRef };
   } else subject = { wake_ref: validateRuntimeOfferWakeRef((input as { wake_ref: unknown }).wake_ref) };
   const fingerprint = digest({ domain: 'repo-harness-agent-runtime-operation.v2', ...subject, endpoint_fence: endpointFence, operation, capability_sha256: capabilitySha });
   const basis = Object.freeze({ protocol: AGENT_RUNTIME_EFFECT_PROTOCOL, kind: AGENT_RUNTIME_EFFECT_INTENT_KIND, effect_id: deriveAgentRuntimeEffectId(key), idempotency_key: key, operation_fingerprint: fingerprint, ...subject, endpoint_fence: endpointFence, operation, capability_sha256: capabilitySha, created_at: input.created_at });
@@ -395,7 +378,7 @@ export function validateAgentRuntimeAdapterObservation(value: unknown): AgentRun
 }
 export function buildAgentRuntimeEffectObservation(input: Omit<AgentRuntimeEffectObservationV2, 'protocol' | 'kind' | 'observation_sha256'>): AgentRuntimeEffectObservationV2 {
   const state = effectState(input.state); const adapter = validateAgentRuntimeAdapterObservation(input.adapter); const receiptKind = input.receipt_kind;
-  if (receiptKind !== null && receiptKind !== 'task_message_delivery_receipt' && receiptKind !== 'module_message_delivery_receipt' && receiptKind !== 'controller_step_receipt') invalid('receipt_kind is invalid');
+  if (receiptKind !== null && receiptKind !== 'task_message_delivery_receipt' && receiptKind !== 'controller_step_receipt') invalid('receipt_kind is invalid');
   const receiptSha = input.receipt_sha256 === null ? null : sha(input.receipt_sha256, 'receipt_sha256'); const failure = failureClass(input.failure_class);
   if ((receiptKind === null) !== (receiptSha === null)) invalid('receipt_kind and receipt_sha256 must both be present or absent');
   if (state === 'observed_success' && (receiptKind === null || failure !== 'none')) invalid('observed_success requires one exact receipt and no failure');
@@ -436,7 +419,7 @@ export function validateAgentRuntimeEffectCurrent(value: unknown): AgentRuntimeE
 export function canonicalAgentRuntimeEffectCurrentBytes(value: AgentRuntimeEffectCurrentV2): string { return canonicalMessageBytes(validateAgentRuntimeEffectCurrent(value) as unknown as Readonly<Record<string, unknown>>); }
 
 const RECEIPT_KINDS_BY_OPERATION: Readonly<Record<AgentRuntimeOperation, readonly AgentRuntimeReceiptKind[]>> = Object.freeze({
-  notify_inbox: Object.freeze<AgentRuntimeReceiptKind[]>(['task_message_delivery_receipt', 'module_message_delivery_receipt']),
+  notify_inbox: Object.freeze<AgentRuntimeReceiptKind[]>(['task_message_delivery_receipt']),
   wake_for_offer: Object.freeze<AgentRuntimeReceiptKind[]>(['controller_step_receipt']),
 });
 /** A wake carries no message, so no delivery receipt may close it; a message

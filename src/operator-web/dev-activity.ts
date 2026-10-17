@@ -82,7 +82,6 @@ export function attentionSubjects(snapshot: DevActivitySnapshotV2): ReadonlySet<
 }
 
 export function attentionItem(snapshot: DevActivitySnapshotV2, row: DevActivityAttention): DevActivityItem | null {
-  if (row.kind === 'human_request') return null;
   return snapshot.items.find(item => item.id === row.subject_id) ?? null;
 }
 

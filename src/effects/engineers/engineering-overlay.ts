@@ -8,7 +8,6 @@ import {
   type OverlayBindingProjectionV1,
   type OverlayComponentName,
   type OverlayComponentObservationV1,
-  type OverlayMessageProjectionV1,
   type OverlayRuntimeEffectProjectionV1,
 } from '../../core/engineers/engineering-overlay';
 import { canonicalEngineerJson, engineerSha256 } from '../../core/engineers/profile-binding';
@@ -19,7 +18,6 @@ import {
 } from '../repo-registry';
 import { readEngineerBindingStatus, type EngineerBindingStatus } from './binding-store';
 import { listLiveClaimActorReceiptsForEngineer } from './claim-actor-store';
-import { observeModuleInboxSummary, type ModuleInboxObservationSummary } from './module-inbox';
 import { listEngineerProfiles, type ResolvedEngineerProfile } from './profile-store';
 import { observeAgentRuntimeEffects } from './agent-runtime-effect-store';
 import { resolveRegisteredRepoForWorktree } from './scheduling';
@@ -40,7 +38,6 @@ export interface EngineeringOverlayDependencies {
   readonly listProfiles: typeof listEngineerProfiles;
   readonly readBinding: typeof readEngineerBindingStatus;
   readonly listClaims: typeof listLiveClaimActorReceiptsForEngineer;
-  readonly readMessages: typeof observeModuleInboxSummary;
   readonly listRuntimeEffects: typeof observeAgentRuntimeEffects;
 }
 
@@ -67,7 +64,6 @@ interface EngineerRead {
   readonly profile: ResolvedEngineerProfile;
   readonly binding: ComponentRead<OverlayBindingProjectionV1>;
   readonly claim: ComponentRead<OverlayActiveClaimProjectionV1>;
-  readonly messages: ComponentRead<OverlayMessageProjectionV1>;
   readonly runtime_effects: ComponentRead<OverlayRuntimeEffectProjectionV1>;
 }
 
@@ -84,7 +80,6 @@ function dependencies(overrides: Partial<EngineeringOverlayDependencies> = {}): 
     listProfiles: listEngineerProfiles,
     readBinding: readEngineerBindingStatus,
     listClaims: listLiveClaimActorReceiptsForEngineer,
-    readMessages: observeModuleInboxSummary,
     listRuntimeEffects: observeAgentRuntimeEffects,
     ...overrides,
   };
@@ -153,10 +148,6 @@ function claimProjection(receipts: readonly ClaimActorReceiptV1[]): OverlayActiv
   });
 }
 
-function messageProjection(summary: ModuleInboxObservationSummary): OverlayMessageProjectionV1 {
-  return Object.freeze({ support: 'available', pending: summary.pending, delivery_failed: summary.delivery_failed, revision: summary.revision });
-}
-
 function runtimeEffectProjection(statuses: readonly AgentRuntimeEffectStatus[]): OverlayRuntimeEffectProjectionV1 {
   const current = statuses.map((status) => ({ effect_id: status.intent.effect_id, current_sha256: status.current.current_sha256, operation: status.intent.operation, state: status.current.state }))
     .sort((left, right) => left.effect_id.localeCompare(right.effect_id));
@@ -187,8 +178,8 @@ function readPass(repoRoot: string, deps: EngineeringOverlayDependencies): ReadP
     return { value, revision: digest(value.map((profile) => ({ engineer_id: profile.profile.engineer_id, capability_id: profile.profile.capability_id, engineer_contract_revision: profile.engineer_contract_revision }))) };
   });
   if (profiles.support === 'unreadable' || profiles.value === null) {
-    const support = Object.freeze({ profiles: 'unreadable', bindings: 'unreadable', claims: 'unreadable', messages: 'unreadable', runtime_effects: 'unreadable' } as const);
-    return Object.freeze({ profiles, engineers: Object.freeze([]), support, revisions: Object.freeze({ profiles: null, bindings: null, claims: null, messages: null, runtime_effects: null }) });
+    const support = Object.freeze({ profiles: 'unreadable', bindings: 'unreadable', claims: 'unreadable', runtime_effects: 'unreadable' } as const);
+    return Object.freeze({ profiles, engineers: Object.freeze([]), support, revisions: Object.freeze({ profiles: null, bindings: null, claims: null, runtime_effects: null }) });
   }
   const engineers = profiles.value.map((profile) => {
     const engineerId = profile.profile.engineer_id;
@@ -200,25 +191,20 @@ function readPass(repoRoot: string, deps: EngineeringOverlayDependencies): ReadP
       const value = claimProjection(deps.listClaims(repoRoot, engineerId));
       return { value, revision: value.revision! };
     });
-    const messages = observe(() => {
-      const value = messageProjection(deps.readMessages(repoRoot, engineerId));
-      return { value, revision: value.revision! };
-    });
     const runtimeEffects = observe(() => {
       const value = runtimeEffectProjection(deps.listRuntimeEffects(repoRoot, engineerId));
       return { value, revision: value.revision! };
     });
-    return Object.freeze({ profile, binding, claim, messages, runtime_effects: runtimeEffects });
+    return Object.freeze({ profile, binding, claim, runtime_effects: runtimeEffects });
   });
   const bindings = componentAggregate(engineers.map((item) => item.binding));
   const claims = componentAggregate(engineers.map((item) => item.claim));
-  const messages = componentAggregate(engineers.map((item) => item.messages));
   const runtimeEffects = componentAggregate(engineers.map((item) => item.runtime_effects));
   return Object.freeze({
     profiles,
     engineers: Object.freeze(engineers),
-    support: Object.freeze({ profiles: 'available', bindings: bindings.support, claims: claims.support, messages: messages.support, runtime_effects: runtimeEffects.support }),
-    revisions: Object.freeze({ profiles: profiles.revision, bindings: bindings.revision, claims: claims.revision, messages: messages.revision, runtime_effects: runtimeEffects.revision }),
+    support: Object.freeze({ profiles: 'available', bindings: bindings.support, claims: claims.support, runtime_effects: runtimeEffects.support }),
+    revisions: Object.freeze({ profiles: profiles.revision, bindings: bindings.revision, claims: claims.revision, runtime_effects: runtimeEffects.revision }),
   });
 }
 
@@ -234,13 +220,12 @@ function engineerProjection(read: EngineerRead): EngineeringOverlayEngineerV1 {
     binding: projectionOrUnreadable(read.binding, Object.freeze({ support: 'unreadable', state: null, value: null, revision: null })),
     active_claim: projectionOrUnreadable(read.claim, Object.freeze({ support: 'unreadable', value: null, revision: null })),
     delegations: Object.freeze({ support: 'unsupported', value: null }),
-    messages: projectionOrUnreadable(read.messages, Object.freeze({ support: 'unreadable', pending: null, delivery_failed: null, revision: null })),
     runtime_effects: projectionOrUnreadable(read.runtime_effects, Object.freeze({ support: 'unreadable', active: null, reconciliation_required: null, failed: null, wake: null, revision: null })),
     memory: Object.freeze({ support: 'unsupported', value: null }),
   });
 }
 
-const COMPONENT_ORDER: readonly OverlayComponentName[] = ['profiles', 'bindings', 'claims', 'messages', 'runtime_effects'];
+const COMPONENT_ORDER: readonly OverlayComponentName[] = ['profiles', 'bindings', 'claims', 'runtime_effects'];
 
 export function collectEngineeringBoard(options: CollectEngineeringOverlayOptions): EngineeringBoardReadV1 {
   const deps = dependencies(options.dependencies);

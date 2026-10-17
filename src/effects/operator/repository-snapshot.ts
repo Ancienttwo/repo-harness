@@ -9,8 +9,6 @@ import { resolveDependencyObservation } from '../engineers/dependency-authority'
 import { collectRepoTaskOffers } from '../fleet/acquire';
 import { resolveBoard } from '../state/resolve-board';
 import { isRepoHarnessAdoptedPath, type RepoHarnessRegisteredRepo, type RepoHarnessRegistrySnapshot } from '../repo-registry';
-import { decodeOperatorDecisionInventory, isDecisionCursor, projectOperatorDecisionInventory } from '../../core/operator/decision-inventory';
-import { readOpenDecisionInventory } from '../engineers/verified-context-store';
 import { decodeOperatorOrganizationSnapshot, projectOperatorOrganizationSnapshot } from '../../core/operator/organization-snapshot';
 import { validateEngineeringOverlaySnapshot, validateOrganizationAttentionSnapshot } from '../../core/engineers/engineering-overlay';
 import { collectEngineeringBoard } from '../engineers/engineering-overlay';
@@ -21,7 +19,7 @@ import {
 } from '../../core/operator/repository-snapshot';
 import { readRepoHarnessRegistryStrictSnapshot } from '../repo-registry';
 
-/** Resolve only registered repository IDs. Planning, Decision and Organization are
+/** Resolve only registered repository IDs. Planning and Organization are
  * independent stored observations; one unavailable source cannot become an
  * empty result or hide the other. Registry/identity failures refuse the whole
  * response. No reader acquires, binds, delivers, acknowledges or runs a provider.
@@ -46,7 +44,6 @@ export class OperatorRepositoryError extends Error {
 export interface ReadOperatorRepositorySnapshotInput {
   readonly env?: NodeJS.ProcessEnv;
   readonly repository_id: string;
-  readonly decision_after?: string | null;
 }
 
 /**
@@ -62,7 +59,6 @@ export interface ReadOperatorRepositorySnapshotInput {
 export function assertOperatorRepositorySnapshotIdentity(
   snapshot: OperatorRepositorySnapshotV1,
   repositoryId: string,
-  decisionAfter: string | null = null,
 ): void {
   if (snapshot === null
     || typeof snapshot !== 'object'
@@ -73,23 +69,21 @@ export function assertOperatorRepositorySnapshotIdentity(
       `repository snapshot for repository ${repositoryId} is not an operator repository snapshot`,
     );
   }
-  if (snapshot.repository_id !== repositoryId || snapshot.decision_after !== decisionAfter) {
+  if (snapshot.repository_id !== repositoryId) {
     throw new OperatorRepositoryError(
       'repository_mismatch',
       `repository snapshot answered repository ${snapshot.repository_id} for requested repository ${repositoryId}`,
     );
   }
   try {
-    if (Object.keys(snapshot).sort().join(',') !== 'decision_after,decisions,kind,organization,planning,protocol,repository_id') throw new Error('shape');
-    if (!isDecisionCursor(snapshot.decision_after)) throw new Error('cursor');
-    for (const source of [snapshot.organization, snapshot.decisions, snapshot.planning]) {
+    if (Object.keys(snapshot).sort().join(',') !== 'kind,organization,planning,protocol,repository_id') throw new Error('shape');
+    for (const source of [snapshot.organization, snapshot.planning]) {
       if (!source || !Number.isFinite(Date.parse(source.observed_at))) throw new Error('source');
       if (source.status === 'unavailable') {
         if (source.code !== 'source_unavailable' || Object.keys(source).sort().join(',') !== 'code,observed_at,status') throw new Error('failure');
       } else if (source.status !== 'observed' || source.snapshot.repository_id !== repositoryId || Object.keys(source).sort().join(',') !== 'observed_at,snapshot,status') throw new Error('identity');
     }
     if (snapshot.planning.status === 'observed') decodeOperatorPlanningSnapshot(snapshot.planning.snapshot, repositoryId);
-    if (snapshot.decisions.status === 'observed') decodeOperatorDecisionInventory(snapshot.decisions.snapshot, repositoryId, decisionAfter);
     if (snapshot.organization.status === 'observed') decodeOperatorOrganizationSnapshot(snapshot.organization.snapshot, repositoryId);
   } catch (error) {
     throw new OperatorRepositoryError('repository_mismatch', 'invalid scoped repository source', error);
@@ -114,8 +108,6 @@ function registeredRepositoryRoot(input: ReadOperatorRepositorySnapshotInput): s
 export function readOperatorRepositorySnapshot(
   input: ReadOperatorRepositorySnapshotInput,
 ): OperatorRepositorySnapshotV1 {
-  const decisionAfter = input.decision_after ?? null;
-  if (!isDecisionCursor(decisionAfter)) throw new OperatorRepositoryError('repository_mismatch', 'invalid Decision query');
   const repoRoot = registeredRepositoryRoot(input);
   const observe = <T>(reader: () => T): import('../../core/operator/repository-snapshot').RepositorySourceObservation<T> => {
     try { return { status: 'observed', snapshot: reader(), observed_at: new Date().toISOString() }; }
@@ -131,13 +123,12 @@ export function readOperatorRepositorySnapshot(
     if (overlay.repository_id !== input.repository_id) throw new OperatorRepositoryError('repository_mismatch', 'organization repository differs from request');
     return projectOperatorOrganizationSnapshot(overlay, attention);
   });
-  const decisions = observe(() => projectOperatorDecisionInventory(input.repository_id, readOpenDecisionInventory(repoRoot, { after: decisionAfter })));
   const planning = observe(() => readOperatorPlanningSnapshot(input));
   const projected: OperatorRepositorySnapshotV1 = {
     protocol: OPERATOR_REPOSITORY_PROTOCOL, kind: OPERATOR_REPOSITORY_SNAPSHOT_KIND,
-    repository_id: input.repository_id, decision_after: decisionAfter, decisions, organization, planning,
+    repository_id: input.repository_id, organization, planning,
   };
-  assertOperatorRepositorySnapshotIdentity(projected, input.repository_id, decisionAfter);
+  assertOperatorRepositorySnapshotIdentity(projected, input.repository_id);
   return projected;
 }
 

@@ -7,13 +7,13 @@ import {
   type DevActivitySnapshotV2,
 } from './types';
 
-const SOURCE_KINDS = ['git', 'github', 'runtime', 'decisions'];
+const SOURCE_KINDS = ['git', 'github', 'runtime'];
 const SOURCE_STATUSES = ['ok', 'unavailable', 'stale', 'not_configured'];
 const HIDDEN_REASONS = ['closed_unmerged'];
 const CI_STATES = ['success', 'failure', 'pending', 'none'];
 const REVIEW_STATES = ['approved', 'changes_requested', 'review_required', 'none'];
 const PR_STATES = ['open', 'merged', 'closed'];
-const ATTENTION_KINDS = ['ready_to_merge', 'human_request'];
+const ATTENTION_KINDS = ['ready_to_merge'];
 const SNAPSHOT_STATUSES = ['ready', 'partial', 'unavailable'];
 
 export function unavailableDevActivitySnapshot(): DevActivitySnapshotV2 {
@@ -154,13 +154,13 @@ export function decodeDevActivitySnapshot(value: unknown): DevActivitySnapshotV2
   let previous = Number.NEGATIVE_INFINITY;
   for (const raw of array(v.attention, 'attention')) {
     const a = obj(raw, ['kind', 'subject_id', 'repository_id', 'summary', 'waiting_since', 'url', 'command'], 'attention');
-    const kind = oneOf(a.kind, ATTENTION_KINDS, 'attention kind');
+    oneOf(a.kind, ATTENTION_KINDS, 'attention kind');
     const repo = repositoryId(a.repository_id);
     if (!repositoryIds.has(repo)) fail('attention repository');
     const subject = nonEmpty(a.subject_id, 'subject_id');
-    if (kind !== 'human_request' && !itemIds.has(subject)) fail('attention subject');
+    if (!itemIds.has(subject)) fail('attention subject');
     // A PR-backed item's attention summary is the PR title, shown verbatim.
-    if (kind !== 'human_request' && itemHasPullRequest.get(subject) === true) verbatimNonEmpty(a.summary, 'summary');
+    if (itemHasPullRequest.get(subject) === true) verbatimNonEmpty(a.summary, 'summary');
     else text(a.summary, 'summary');
     const at = Date.parse(time(a.waiting_since, 'waiting_since'));
     if (at < previous) fail('attention order');

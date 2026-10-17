@@ -8,7 +8,7 @@
 
 import { spawn } from 'node:child_process';
 import { lstatSync, realpathSync } from 'node:fs';
-import { basename, isAbsolute, join, resolve, sep } from 'node:path';
+import { basename, isAbsolute, sep } from 'node:path';
 
 import { DEV_ACTIVITY_SHIPPED_WINDOW_MS, type DevActivitySnapshotV2, type DevActivitySourceHealth } from '../../core/dev-activity/types';
 import { unavailableDevActivitySnapshot } from '../../core/dev-activity/decode';
@@ -17,14 +17,12 @@ import {
   reviewStateOf,
   runtimeSourceHealth,
   summarizeCiRollup,
-  type DevActivityRawHumanRequest,
   type DevActivityRawPullRequest,
   type DevActivityRawRepository,
   type DevActivityRawWorktree,
 } from '../../core/dev-activity/projection';
 import type { RuntimeOverlay } from '../../core/operator/runtime-status';
 import { parseWorktreeTopology } from '../git/worktree-topology';
-import { readOpenDecisionInventory, VERIFIED_CONTEXT_STORE_RELATIVE_ROOT } from '../engineers/verified-context-store';
 import {
   readRepoHarnessRegistryStrictSnapshot,
   type RepoHarnessRegisteredRepo,
@@ -39,7 +37,6 @@ export const DEV_ACTIVITY_GIT_WORKTREE_LIST_ARGV = Object.freeze(['--no-optional
 export const DEV_ACTIVITY_GIT_STATUS_ARGV = Object.freeze(['--no-optional-locks', 'status', '--porcelain=v2', '--branch'] as const);
 export const DEV_ACTIVITY_GIT_REMOTE_ARGV = Object.freeze(['--no-optional-locks', 'remote', '-v'] as const);
 export const DEV_ACTIVITY_GIT_ORIGIN_HEAD_ARGV = Object.freeze(['--no-optional-locks', 'symbolic-ref', '--quiet', '--short', 'refs/remotes/origin/HEAD'] as const);
-export const DEV_ACTIVITY_GIT_COMMON_DIR_ARGV = Object.freeze(['--no-optional-locks', 'rev-parse', '--git-common-dir'] as const);
 export const DEV_ACTIVITY_GH_REPO_VIEW_ARGV = Object.freeze(['repo', 'view', '--json', 'nameWithOwner,defaultBranchRef'] as const);
 const DEV_ACTIVITY_GH_PR_BASE_FIELDS = 'number,title,state,isDraft,headRefName,baseRefName,url,createdAt,updatedAt,mergedAt,closedAt,mergeStateStatus,reviewDecision';
 export const DEV_ACTIVITY_GH_OPEN_PR_FIELDS = `${DEV_ACTIVITY_GH_PR_BASE_FIELDS},statusCheckRollup`;
@@ -151,7 +148,6 @@ interface CollectionContext {
   readonly run: DevActivityProcessRunner;
   readonly now: () => number;
   /** First observation time per open Decision, kept across cycles (see types.ts). */
-  readonly first_seen: Map<string, string>;
 }
 
 function subprocessEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
@@ -307,56 +303,24 @@ async function gitDefaultBranch(repo: RepoHarnessRegisteredRepo, ctx: Collection
   return value.startsWith('origin/') && value.length > 'origin/'.length ? value.slice('origin/'.length) : null;
 }
 
-async function collectDecisions(repo: RepoHarnessRegisteredRepo, ctx: CollectionContext):
-Promise<{ health: DevActivitySourceHealth; requests: DevActivityRawHumanRequest[] }> {
-  const observedAt = new Date(ctx.now()).toISOString();
-  const common = await ctx.run('git', DEV_ACTIVITY_GIT_COMMON_DIR_ARGV, { cwd: repo.path, env: ctx.env, timeout_ms: ctx.timeout_ms, signal: ctx.signal });
-  if (!common.ok) return { health: { kind: 'decisions', status: 'unavailable', reason: failureReason('git', common.code), observed_at: observedAt }, requests: [] };
-  const directory = join(resolve(repo.path, common.stdout.trim()), VERIFIED_CONTEXT_STORE_RELATIVE_ROOT, 'decisions');
-  try {
-    lstatSync(directory);
-  } catch {
-    return { health: { kind: 'decisions', status: 'ok', reason: null, observed_at: observedAt }, requests: [] };
-  }
-  try {
-    const inventory = readOpenDecisionInventory(repo.path, { after: null, limit: 100 });
-    const requests = inventory.entries.map(({ request }) => {
-      const key = `${repo.id}:${request.decision_id}`;
-      const first = ctx.first_seen.get(key) ?? observedAt;
-      ctx.first_seen.set(key, first);
-      return { decision_id: request.decision_id, question: request.question, first_observed_at: first };
-    });
-    return {
-      health: inventory.coverage.complete
-        ? { kind: 'decisions', status: 'ok', reason: null, observed_at: observedAt }
-        : { kind: 'decisions', status: 'unavailable', reason: 'decisions_incomplete', observed_at: observedAt },
-      requests,
-    };
-  } catch {
-    return { health: { kind: 'decisions', status: 'unavailable', reason: 'decisions_unavailable', observed_at: observedAt }, requests: [] };
-  }
-}
-
 async function collectRepository(repo: RepoHarnessRegisteredRepo, runtime: DevActivitySourceHealth,
   ctx: CollectionContext): Promise<DevActivityRawRepository> {
   const github = await collectGitHub(repo, ctx);
   const defaultBranch = github.health.status === 'ok' ? github.default_branch : await gitDefaultBranch(repo, ctx);
   const git = await collectGit(repo, defaultBranch, ctx);
-  const decisions = await collectDecisions(repo, ctx);
   return {
     repository_id: repo.id,
     display_name: basename(repo.path),
     github: github.github,
     default_branch: defaultBranch,
-    sources: [git.health, github.health, runtime, decisions.health],
+    sources: [git.health, github.health, runtime],
     worktrees: git.worktrees,
     pull_requests: github.pull_requests,
-    human_requests: decisions.requests,
   };
 }
 
 /** One full collection cycle. Registry failure yields an unavailable snapshot. */
-export async function collectDevActivity(options: DevActivityCollectorOptions & { readonly signal?: AbortSignal; readonly first_seen?: Map<string, string> } = {}):
+export async function collectDevActivity(options: DevActivityCollectorOptions & { readonly signal?: AbortSignal } = {}):
 Promise<DevActivitySnapshotV2> {
   const now = options.now ?? Date.now;
   const env = options.env ?? process.env;
@@ -366,7 +330,6 @@ Promise<DevActivitySnapshotV2> {
     signal: options.signal ?? new AbortController().signal,
     run: options.run_process ?? runDevActivityProcess,
     now,
-    first_seen: options.first_seen ?? new Map(),
   };
   let repos: readonly RepoHarnessRegisteredRepo[];
   try {
@@ -383,15 +346,6 @@ Promise<DevActivitySnapshotV2> {
   }
   const repositories = await boundedMap(readable, options.max_concurrency ?? DEV_ACTIVITY_REPOSITORY_CONCURRENCY,
     repo => collectRepository(repo, runtime, ctx));
-  // Only a complete, successful inventory proves a request closed; a failed or
-  // partial read keeps that repository's wait clocks.
-  for (const repo of repositories) {
-    if (!repo.sources.some(source => source.kind === 'decisions' && source.status === 'ok')) continue;
-    const open = new Set(repo.human_requests.map(request => `${repo.repository_id}:${request.decision_id}`));
-    for (const key of [...ctx.first_seen.keys()]) {
-      if (key.startsWith(`${repo.repository_id}:`) && !open.has(key)) ctx.first_seen.delete(key);
-    }
-  }
   return projectDevActivity({
     collected_at: new Date(now()).toISOString(),
     now_ms: now(),
@@ -411,13 +365,12 @@ export interface DevActivityCollectorHandle {
 /** Collect at startup, then every interval after the previous cycle settles. Cycles never overlap. */
 export function startDevActivityCollector(options: DevActivityCollectorOptions = {}): DevActivityCollectorHandle {
   const controller = new AbortController();
-  const firstSeen = new Map<string, string>();
   let cache: DevActivitySnapshotV2 = unavailableDevActivitySnapshot();
   let closed = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let inflight: Promise<void> | null = null;
   const cycle = (): Promise<void> => {
-    inflight = collectDevActivity({ ...options, signal: controller.signal, first_seen: firstSeen })
+    inflight = collectDevActivity({ ...options, signal: controller.signal })
       .then(next => { if (!closed) cache = next; }, () => { /* keep the last cache; its collected_at shows its age */ })
       .finally(() => {
         inflight = null;

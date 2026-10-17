@@ -8,7 +8,5 @@ export interface OperatorRepositorySnapshotV1 {
   readonly kind: typeof OPERATOR_REPOSITORY_SNAPSHOT_KIND;
   readonly repository_id: string;
   readonly planning: RepositorySourceObservation<import('./planning-snapshot').OperatorPlanningSnapshot>;
-  readonly decision_after: string | null;
-  readonly decisions: RepositorySourceObservation<import('./decision-inventory').OperatorDecisionInventory>;
   readonly organization: RepositorySourceObservation<import('./organization-snapshot').OperatorOrganizationSnapshot>;
 }
