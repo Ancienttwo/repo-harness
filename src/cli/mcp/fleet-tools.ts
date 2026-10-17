@@ -7,34 +7,23 @@
  * same effects used by the CLI.
  */
 
-import { randomUUID } from 'crypto';
 import { realpathSync } from 'fs';
 import { resolve } from 'path';
 
 import { MergeReadinessError, resolvePublicationReadiness } from '../../effects/publication/merge-readiness';
-import { reopenPublication, takeoverPublication } from '../../effects/publication/publication-lifecycle';
-import { PublicationLifecycleError } from '../../core/publication/publication-lifecycle';
-import {
-  readRepoHarnessRegistrySnapshot,
-  type RepoHarnessRegisteredRepo,
-  type RepoHarnessRegistrySnapshot,
-} from '../../effects/repo-registry';
+import { readRepoHarnessRegistrySnapshot, type RepoHarnessRegisteredRepo, type RepoHarnessRegistrySnapshot } from '../../effects/repo-registry';
 import { hashMcpInput, tryWriteMcpAuditEntry } from './audit';
 import { redactMcpText } from './redaction';
 import type { McpPolicy } from './types';
 
 export const FLEET_MCP_TOOL_NAMES = [
   'publication_readiness',
-  'publication_reopen',
-  'publication_takeover',
 ] as const;
 
 export type FleetMcpToolName = typeof FLEET_MCP_TOOL_NAMES[number];
 
 const FLEET_MCP_PARAMETER_NAMES: Readonly<Record<FleetMcpToolName, readonly string[]>> = Object.freeze({
   publication_readiness: ['repo_id', 'repo_path', 'publication_id', 'pr_number'],
-  publication_reopen: ['repo_id', 'repo_path', 'task_id', 'claim_id', 'expected_generation', 'publication_id', 'expected_head_sha', 'authorization_revision'],
-  publication_takeover: ['repo_id', 'repo_path', 'task_id', 'expected_claim_id', 'expected_generation', 'publication_id', 'expected_head_sha', 'reason', 'session_id', 'authorization_revision'],
 });
 
 export interface FleetMcpToolDefinition {
@@ -81,20 +70,9 @@ const READ_ONLY_ANNOTATIONS = Object.freeze({
   openWorldHint: false,
 });
 
-const MUTATION_ANNOTATIONS = Object.freeze({
-  readOnlyHint: false,
-  destructiveHint: true,
-  idempotentHint: false,
-  openWorldHint: false,
-});
-
 const optionalRepoProperties = {
   repo_id: { type: 'string' },
   repo_path: { type: 'string' },
-};
-
-const authorizationProperty = {
-  authorization_revision: { type: 'number', minimum: 0 },
 };
 
 function textResult(value: unknown): FleetMcpToolResult {
@@ -223,71 +201,6 @@ function targetFromArgs(ctx: FleetMcpToolContext, args: Record<string, unknown>)
   };
 }
 
-function publicationAuthorizationFence(
-  repo: RepoHarnessRegisteredRepo,
-  expectedRevision: number,
-): () => void {
-  return () => {
-    const current = readRepoHarnessRegistrySnapshot({ adoptedOnly: true });
-    const currentRepo = current.repos.find((entry) => entry.id === repo.id);
-    const details = {
-      repo_id: repo.id,
-      expected_revision: String(expectedRevision),
-      current_revision: String(current.authorizationRevision),
-    };
-    if (currentRepo === undefined || currentRepo.path !== repo.path) {
-      throw new PublicationLifecycleError(
-        'publication_claim_mismatch',
-        'publication authorization target is no longer in the adopted repo registry',
-        undefined,
-        details,
-      );
-    }
-    if (currentRepo.accessMode !== 'read_write') {
-      throw new PublicationLifecycleError(
-        'publication_claim_mismatch',
-        'publication authorization target is no longer read_write',
-        undefined,
-        details,
-      );
-    }
-    if (current.authorizationRevision !== expectedRevision) {
-      throw new PublicationLifecycleError(
-        'publication_claim_mismatch',
-        'publication authorization revision changed before mutation',
-        undefined,
-        details,
-      );
-    }
-  };
-}
-
-function assertMutationAuthorization(
-  ctx: FleetMcpToolContext,
-  target: FleetTarget,
-  args: Record<string, unknown>,
-): () => void {
-  if (ctx.policy.profile !== 'coding' || !ctx.policy.capabilities.workspaceCoder || !ctx.policy.execution.codingShell) {
-    throw new FleetMcpError('POLICY_DENIED', 'fleet/publication mutations require the coding MCP profile');
-  }
-  if (target.registeredRepo === undefined) {
-    throw new FleetMcpError('REPO_NOT_ALLOWED', 'mutation target must be an adopted registered repository');
-  }
-  if (target.registeredRepo.accessMode !== 'read_write') {
-    throw new FleetMcpError('WRITE_DISABLED', 'mutation target is read_only; explicit read_write authorization is required', {
-      repo_id: target.registeredRepo.id,
-      access_mode: target.registeredRepo.accessMode,
-    });
-  }
-  const expectedRevision = nonNegativeInteger(args, 'authorization_revision');
-  if (expectedRevision !== target.registry.authorizationRevision) {
-    throw new FleetMcpError('AUTHORIZATION_STALE', 'authorization_revision is stale; re-read the repo capabilities and retry', {
-      expected_revision: expectedRevision,
-    });
-  }
-  return publicationAuthorizationFence(target.registeredRepo, expectedRevision);
-}
-
 function publicationEnvironment(): {
   readonly gh_bin?: string;
   readonly git_bin?: string;
@@ -312,54 +225,14 @@ function callPublicationReadiness(ctx: FleetMcpToolContext, args: Record<string,
   return textResult(result);
 }
 
-function callPublicationReopen(ctx: FleetMcpToolContext, args: Record<string, unknown>): FleetMcpToolResult {
-  const target = targetFromArgs(ctx, args);
-  const authorizationFence = assertMutationAuthorization(ctx, target, args);
-  const record = reopenPublication({
-    ...publicationEnvironment(),
-    repo_root: target.repoRoot,
-    task_id: nonEmptyString(args, 'task_id'),
-    claim_id: nonEmptyString(args, 'claim_id'),
-    expected_generation: positiveInteger(args, 'expected_generation'),
-    publication_id: nonEmptyString(args, 'publication_id'),
-    expected_head_sha: nonEmptyString(args, 'expected_head_sha'),
-    authorization_fence: authorizationFence,
-  });
-  audit(ctx, 'publication_reopen', 'ok', args);
-  return textResult({ ok: true, lease: record });
-}
-
-function callPublicationTakeover(ctx: FleetMcpToolContext, args: Record<string, unknown>): FleetMcpToolResult {
-  const target = targetFromArgs(ctx, args);
-  const authorizationFence = assertMutationAuthorization(ctx, target, args);
-  const record = takeoverPublication({
-    ...publicationEnvironment(),
-    repo_root: target.repoRoot,
-    task_id: nonEmptyString(args, 'task_id'),
-    expected_claim_id: nonEmptyString(args, 'expected_claim_id'),
-    expected_generation: positiveInteger(args, 'expected_generation'),
-    publication_id: nonEmptyString(args, 'publication_id'),
-    expected_head_sha: nonEmptyString(args, 'expected_head_sha'),
-    reason: nonEmptyString(args, 'reason'),
-    session_id: nonEmptyString(args, 'session_id'),
-    new_claim_id: randomUUID(),
-    source_worktree: target.repoRoot,
-    authorization_fence: authorizationFence,
-  });
-  audit(ctx, 'publication_takeover', 'ok', args);
-  return textResult({ ok: true, lease: record });
-}
-
 function errorFromUnknown(error: unknown): FleetMcpToolResult {
   if (error instanceof FleetMcpError) return errorResult(error.code, error.message, error.details);
   if (error instanceof MergeReadinessError) return errorResult(error.code, error.message);
-  if (error instanceof PublicationLifecycleError) return errorResult(error.code, error.message, error.details);
   if (error instanceof Error) return errorResult('TOOL_FAILED', error.message);
   return errorResult('TOOL_FAILED', String(error));
 }
 
 function isBlocked(error: unknown): boolean {
-  if (error instanceof PublicationLifecycleError) return true;
   return error instanceof FleetMcpError && [
     'INVALID_ARGUMENT',
     'POLICY_DENIED',
@@ -380,54 +253,12 @@ export function buildFleetToolDefinitions(): FleetMcpToolDefinition[] {
     },
     additionalProperties: false,
   };
-  const reopenSchema = {
-    type: 'object',
-    properties: {
-      ...optionalRepoProperties,
-      task_id: { type: 'string' },
-      claim_id: { type: 'string' },
-      expected_generation: { type: 'number', minimum: 1 },
-      publication_id: { type: 'string' },
-      expected_head_sha: { type: 'string' },
-      ...authorizationProperty,
-    },
-    required: ['task_id', 'claim_id', 'expected_generation', 'publication_id', 'expected_head_sha', 'authorization_revision'],
-    additionalProperties: false,
-  };
-  const takeoverSchema = {
-    type: 'object',
-    properties: {
-      ...optionalRepoProperties,
-      task_id: { type: 'string' },
-      expected_claim_id: { type: 'string' },
-      expected_generation: { type: 'number', minimum: 1 },
-      publication_id: { type: 'string' },
-      expected_head_sha: { type: 'string' },
-      reason: { type: 'string' },
-      session_id: { type: 'string' },
-      ...authorizationProperty,
-    },
-    required: ['task_id', 'expected_claim_id', 'expected_generation', 'publication_id', 'expected_head_sha', 'reason', 'session_id', 'authorization_revision'],
-    additionalProperties: false,
-  };
   return [
     {
       name: 'publication_readiness',
       description: 'Return one fenced MergeReadinessV1 verdict using the publication readiness effect.',
       inputSchema: readinessSchema,
       annotations: READ_ONLY_ANNOTATIONS,
-    },
-    {
-      name: 'publication_reopen',
-      description: 'Reopen one reviewing publication through the task-locked publication lifecycle effect.',
-      inputSchema: reopenSchema,
-      annotations: MUTATION_ANNOTATIONS,
-    },
-    {
-      name: 'publication_takeover',
-      description: 'Take over one reviewing publication through the task-locked publication lifecycle effect.',
-      inputSchema: takeoverSchema,
-      annotations: MUTATION_ANNOTATIONS,
     },
   ];
 }
@@ -446,8 +277,6 @@ export function callFleetTool(
     if (argumentError !== undefined) throw new FleetMcpError('INVALID_ARGUMENT', argumentError);
     switch (name) {
       case 'publication_readiness': return callPublicationReadiness(ctx, args);
-      case 'publication_reopen': return callPublicationReopen(ctx, args);
-      case 'publication_takeover': return callPublicationTakeover(ctx, args);
     }
     return errorResult('UNKNOWN_TOOL', `unknown fleet MCP tool: ${name}`);
   } catch (error) {

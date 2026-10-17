@@ -51,12 +51,11 @@ usage() {
   cat <<'USAGE_EOF'
 Usage:
   scripts/ship-worktrees.sh [--target <branch>] [--remote <name>] [--slug <slug>] [--ready] [--dry-run]
-  scripts/ship-worktrees.sh --local-merge [--target <branch>] [--slug <slug>] [--dry-run]
   scripts/ship-worktrees.sh --recover <inspect|abort|reconcile> [--key <transaction-key>]
 
 Default mode commits the authorized branch diff, scans it for private data,
 pushes its frozen head and opens a Draft PR. Workflow artifacts are optional.
-Existing managed lease writers retain their exact ownership fencing. It does not fast-forward main by default.
+The GitHub issue and PR own task state. This command does not merge main.
 USAGE_EOF
 }
 
@@ -88,20 +87,6 @@ policy_get() {
 
 normalize_slug() {
   printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//; s/-{2,}/-/g'
-}
-
-plan_slug_from_path() {
-  local plan_file="$1"
-  local base slug
-  base="$(basename "$plan_file")"
-  slug="$(printf '%s' "$base" | sed -E 's/^plan-[0-9]{8}-[0-9]{4}-//; s/\.md$//')"
-  normalize_slug "${slug:-contract-task}"
-}
-
-is_linked_worktree() {
-  local git_dir
-  git_dir="$(git rev-parse --git-dir 2>/dev/null || true)"
-  [[ "$git_dir" == *".git/worktrees/"* ]]
 }
 
 current_branch() {
@@ -368,14 +353,6 @@ closeout_journal_phase_ref() {
 # Publication payloads are emitted as one canonical JSON line by the trusted
 # CLI. This reads only that durable carrier; validation happens in the CLI
 # before any retry is allowed to reuse it.
-closeout_journal_phase_publication() {
-  local file="$1/status.json" name="$2"
-  [[ -f "$file" ]] || return 1
-  sed -n "/^    {\"phase\": \"${name}\", / { s/^.*\"publication\": //; s/,$//; s/}$//; p; }" "$file" | tail -1
-}
-
-# Rewrites the whole status document so the phase list has exactly one authority
-# and lands in one atomic rename. An empty phase name only flips the status.
 closeout_journal_record() {
   local dir="$1" status_value="$2" name="$3" ref="${4:-}" publication="${5:-}"
   local file="$dir/status.json"
@@ -592,12 +569,10 @@ ship_transaction_begin() {
   original_head="$(git rev-parse HEAD)"
   plan=""
   contract=""
-  key="$("$BUN_BIN" -e '
-const p=require("path"),{pathToFileURL}=require("url");
-const {deriveShipJournalKey}=await import(pathToFileURL(p.join(process.argv[1],"..","src","effects","publication","publication-lifecycle.ts")).href);
-const [,dir,root,repo,worktree,branch,remote,publication_mode,claim_id,claim_task_id,claim_generation,claim_task_revision,original_head,target_branch,base_sha,git]=process.argv;
-process.stdout.write(deriveShipJournalKey(root,{repo,worktree,branch,remote,publication_mode,claim_id,claim_task_id,claim_generation,claim_task_revision,original_head,target_branch,base_sha},git));
-' "$helper_dir" "$REPO_ROOT" "$(closeout_journal_root)" "$closeout_journal_worktree" "$branch" "$REMOTE_NAME" "$publication_mode" "$publication_claim_id" "$publication_task_id" "$publication_generation" "$publication_task_revision" "$original_head" "$TARGET_BRANCH" "$base_sha" "$GIT_BIN")"
+  key="$(closeout_journal_derive_key \
+    "repo=$(closeout_journal_root)" "worktree=$closeout_journal_worktree" \
+    "operation=ship" "branch=$branch" "remote=$REMOTE_NAME" \
+    "original_head=$original_head" "target_branch=$TARGET_BRANCH" "base_sha=$base_sha")"
   closeout_claim_bind_journal "$key"
   closeout_journal_begin "ship" "$key" \
     "branch=$branch" \
@@ -608,11 +583,7 @@ process.stdout.write(deriveShipJournalKey(root,{repo,worktree,branch,remote,publ
     "base_ref=$gate_base_ref" \
     "base_sha=$base_sha" \
     "remote=$REMOTE_NAME" \
-    "publication_mode=$publication_mode" \
-    "claim_id=$publication_claim_id" \
-    "claim_task_id=$publication_task_id" \
-    "claim_generation=$publication_generation" \
-    "claim_task_revision=$publication_task_revision" || begin_status=$?
+    "publication_mode=branch" || begin_status=$?
   case "$begin_status" in
     0) ;;
     2)
@@ -723,27 +694,6 @@ list_contract_worktrees() {
   '
 }
 
-active_plan_or_empty() {
-  local active_plan=""
-  if [[ -f ".ai/harness/active-plan" ]]; then
-    active_plan="$(cat ".ai/harness/active-plan" 2>/dev/null | xargs)"
-  fi
-  printf '%s' "$active_plan"
-}
-
-active_slug_or_empty() {
-  local active_plan
-  active_plan="$(active_plan_or_empty)"
-  [[ -n "$active_plan" ]] || return 0
-  plan_slug_from_path "$active_plan"
-}
-
-finish_contract_worktree() {
-  local merge_mode="$1"
-  [[ "$merge_mode" == "local" ]] || fail "PR preparation does not use contract-worktree finish"
-  run_cmd bash "$helper_dir/contract-worktree.sh" finish --target "$TARGET_BRANCH"
-}
-
 refresh_target_base() {
   git remote get-url "$REMOTE_NAME" >/dev/null 2>&1 || fail "remote not found: $REMOTE_NAME"
   run_cmd git fetch --no-tags "$REMOTE_NAME" "+refs/heads/$TARGET_BRANCH:refs/remotes/$REMOTE_NAME/$TARGET_BRANCH"
@@ -824,222 +774,7 @@ create_or_report_pr() {
   fail "gh pr create failed for $branch (exit $status)"
 }
 
-# A claim token is only a locator. The publication CLI re-reads the shared
-# common-dir lease owner record before it reads task_revision or generation.
-publication_claim_id=""
-publication_task_id=""
-publication_generation=""
-publication_task_revision=""
 publication_journal_payload=""
-publication_create_intent=""
-publication_create_intent_journal=""
-publication_cli_stdout=""
-publication_cli_stderr=""
-
-resolve_publication_claim_token() {
-  local marker dir token
-  publication_claim_id=""
-  publication_task_id=""
-  publication_token_file=""
-  marker="$(policy_get '.sprints.active_marker_file' '.ai/harness/sprint/active-sprint')"
-  dir="$(dirname "$marker")/claims"
-  [[ ! -L "$dir" ]] || return 1
-  if [[ ! -e "$dir" ]]; then return 2; fi
-  [[ -d "$dir" && -r "$dir" && -x "$dir" ]] || return 1
-  for token in "$dir"/*.claim; do
-    [[ ! -L "$token" ]] || return 1
-    [[ -f "$token" ]] || continue
-    [[ -z "$publication_token_file" ]] || return 1
-    publication_token_file="$token"
-  done
-  [[ -n "$publication_token_file" ]] || return 2
-  publication_claim_id="$(sed -n 's/^claim_id=//p' "$publication_token_file" | head -1)"
-  publication_task_id="$(sed -n 's/^task_id=//p' "$publication_token_file" | head -1)"
-  [[ -n "$publication_claim_id" && -n "$publication_task_id" ]]
-}
-
-read_publication_claim_identity() {
-  local identity
-  identity="$("$BUN_BIN" -e '
-const p=require("path"),{pathToFileURL}=require("url");
-const {readShipClaimIdentity}=await import(pathToFileURL(p.join(process.argv[1],"..","src","effects","publication","publication-lifecycle.ts")).href);
-process.stdout.write(JSON.stringify(readShipClaimIdentity({repo_root:process.argv[2],task_id:process.argv[3],claim_id:process.argv[4],branch:process.argv[5],target_ref:process.argv[6]})));
-' "$helper_dir" "$REPO_ROOT" "$publication_task_id" "$publication_claim_id" "$(current_branch)" "$TARGET_BRANCH")" || fail "live claim identity/binding unavailable"
-  publication_generation="$(printf '%s' "$identity" | jq -r '.generation | tostring')"
-  publication_task_revision="$(printf '%s' "$identity" | jq -r '.task_revision')"
-}
-
-publication_cli() {
-  publication_command_cli receipt "$@"
-}
-
-# Path existence is not identity: a downstream application can have its own
-# src/cli/index.ts. Only the repo-harness package runs its source CLI. A failed
-# package.json read selects no source CLI.
-repo_harness_source_checkout() {
-  [[ -n "$BUN_BIN" ]] && is_trusted_executable "$BUN_BIN" || return 1
-  [[ -f "src/cli/index.ts" && -f "package.json" ]] || return 1
-  [[ "$("$BUN_BIN" -e 'const pkg = JSON.parse(require("fs").readFileSync("package.json", "utf8")); process.stdout.write(typeof pkg?.name === "string" ? pkg.name : "")' 2>/dev/null)" == repo-harness ]]
-}
-
-publication_command_cli() {
-  if [[ -n "${REPO_HARNESS_CLI_BIN:-}" ]]; then
-    is_trusted_executable "$REPO_HARNESS_CLI_BIN" || return 1
-    "$REPO_HARNESS_CLI_BIN" publication "$@"
-  elif repo_harness_source_checkout; then
-    "$BUN_BIN" "src/cli/index.ts" publication "$@"
-  elif command -v repo-harness >/dev/null 2>&1; then
-    repo-harness publication "$@"
-  else
-    return 1
-  fi
-}
-
-# Keep trusted CLI stdout separate from diagnostics. The journal consumes only
-# a revalidated single JSON envelope; provider/tool log noise is never embedded.
-publication_cli_capture() {
-  local stdout_file stderr_file status
-  publication_cli_stdout=""
-  publication_cli_stderr=""
-  stdout_file="$(mktemp "${TMPDIR:-/tmp}/repo-harness-publication.stdout.XXXXXX")" || return 1
-  stderr_file="$(mktemp "${TMPDIR:-/tmp}/repo-harness-publication.stderr.XXXXXX")" || {
-    rm -f "$stdout_file"
-    return 1
-  }
-  if publication_cli "$@" >"$stdout_file" 2>"$stderr_file"; then
-    status=0
-  else
-    status=$?
-  fi
-  publication_cli_stdout="$(<"$stdout_file")"
-  publication_cli_stderr="$(<"$stderr_file")"
-  rm -f "$stdout_file" "$stderr_file"
-  return "$status"
-}
-
-validate_publication_journal_envelope() {
-  local kind="$1" payload="$2"
-  [[ -n "$payload" ]] || return 1
-  if ! publication_cli_capture validate-journal-envelope --kind "$kind" --json "$payload"; then
-    [[ -z "$publication_cli_stderr" ]] || printf '%s\n' "$publication_cli_stderr" >&2
-    return 1
-  fi
-  [[ -z "$publication_cli_stderr" ]] || printf '%s\n' "$publication_cli_stderr" >&2
-  [[ -n "$publication_cli_stdout" ]] || return 1
-  printf '%s' "$publication_cli_stdout"
-}
-
-prepare_publication_receipt() {
-  local branch="$1" output validated
-  publication_create_intent=""
-  publication_create_intent_journal=""
-  if ! resolve_publication_claim_token; then
-    printf '%s\n' '{"ok":false,"error":"publication_incomplete","message":"no unique local claim token can locate publication authority"}' >&2
-    return 1
-  fi
-  if ! publication_cli_capture prepare \
-    --task-id "$publication_task_id" \
-    --claim-id "$publication_claim_id" \
-    --branch "$branch" \
-    --target "$TARGET_BRANCH"; then
-    [[ -z "$publication_cli_stderr" ]] || printf '%s\n' "$publication_cli_stderr" >&2
-    return 1
-  fi
-  [[ -z "$publication_cli_stderr" ]] || printf '%s\n' "$publication_cli_stderr" >&2
-  output="$publication_cli_stdout"
-  if ! validated="$(validate_publication_journal_envelope prepare "$output")"; then
-    printf '%s\n' '{"ok":false,"error":"publication_incomplete","message":"publication prepare output is not one canonical journal envelope"}' >&2
-    return 1
-  fi
-  case "$validated" in
-    '{"action":"create","create_intent":{'*) publication_create_intent="$validated" ;;
-    '{"action":"existing","create_intent":null,'*) ;;
-    *)
-      printf '%s\n' '{"ok":false,"error":"publication_incomplete","message":"publication prepare envelope action is invalid"}' >&2
-      return 1
-      ;;
-  esac
-}
-
-load_publication_create_intent() {
-  local dir="$1" payload validated
-  publication_create_intent=""
-  publication_create_intent_journal=""
-  payload="$(closeout_journal_phase_publication "$dir" publication_create_intent)" || return 1
-  if ! validated="$(validate_publication_journal_envelope prepare "$payload")"; then
-    printf '%s\n' '{"ok":false,"error":"publication_incomplete","message":"journal publication create intent is malformed"}' >&2
-    return 1
-  fi
-  case "$validated" in
-    '{"action":"create","create_intent":{'*)
-      publication_create_intent="$validated"
-      publication_create_intent_journal="$dir/status.json"
-      ;;
-    *)
-      printf '%s\n' '{"ok":false,"error":"publication_incomplete","message":"journal publication create intent does not authorize creation"}' >&2
-      return 1
-      ;;
-  esac
-}
-
-# Cache first, then marker. Any failure after the PR exists stays an explicit,
-# non-zero publication_incomplete outcome; recover reconcile retries this path.
-ensure_publication_receipt() {
-  local branch="$1" output validated
-  local -a args
-  publication_journal_payload=""
-  if ! resolve_publication_claim_token; then
-    printf '%s\n' '{"ok":false,"error":"publication_incomplete","message":"no unique local claim token can locate publication authority"}' >&2
-    return 1
-  fi
-  args=(ensure --task-id "$publication_task_id" --claim-id "$publication_claim_id" --branch "$branch" --target "$TARGET_BRANCH")
-  if [[ -n "$publication_create_intent" ]]; then
-    [[ -n "$publication_create_intent_journal" ]] || {
-      printf '%s\n' '{"ok":false,"error":"publication_incomplete","message":"publication create intent lacks its durable journal"}' >&2
-      return 1
-    }
-    args+=(--create-intent "$publication_create_intent" --create-intent-journal "$publication_create_intent_journal")
-  fi
-  if ! publication_cli_capture "${args[@]}"; then
-    [[ -z "$publication_cli_stderr" ]] || printf '%s\n' "$publication_cli_stderr" >&2
-    return 1
-  fi
-  [[ -z "$publication_cli_stderr" ]] || printf '%s\n' "$publication_cli_stderr" >&2
-  output="$publication_cli_stdout"
-  [[ -n "$output" ]] || {
-    printf '%s\n' '{"ok":false,"error":"publication_incomplete","message":"publication CLI returned no journal evidence"}' >&2
-    return 1
-  }
-  if ! validated="$(validate_publication_journal_envelope evidence "$output")"; then
-    printf '%s\n' '{"ok":false,"error":"publication_incomplete","message":"publication ensure output is not one canonical journal envelope"}' >&2
-    return 1
-  fi
-  publication_journal_payload="$validated"
-}
-
-# This is deliberately after durable pr_observed and before complete. The raw
-# finish command runs before provider facts exist and remains completing.
-enter_publication_reviewing() {
-  local output key
-  [[ -n "$publication_task_id" && -n "$publication_claim_id" ]] || {
-    printf '%s\n' '{"ok":false,"error":"publication_incomplete","message":"publication claim token is unavailable for review entry"}' >&2
-    return 1
-  }
-  [[ -n "$closeout_journal_dir" && -f "$closeout_journal_dir/status.json" ]] || {
-    printf '%s\n' '{"ok":false,"error":"publication_incomplete","message":"ship journal is unavailable for review entry"}' >&2
-    return 1
-  }
-  key="$(basename "$closeout_journal_dir")"
-  if ! output="$(publication_command_cli mark-reviewing \
-    --task-id "$publication_task_id" \
-    --claim-id "$publication_claim_id" \
-    --ship-transaction-key "$key" \
-    --ship-journal "$closeout_journal_dir/status.json")"; then
-    return 1
-  fi
-  [[ -n "$output" ]] || return 1
-  printf '%s\n' "$output"
-}
 
 observe_plain_pr() {
   local branch="$1" expected_head="$2" expected_base="$3" result
@@ -1059,17 +794,6 @@ ship_linked_pr() {
 
   refresh_target_base
   gate_base_ref="refs/remotes/$REMOTE_NAME/$TARGET_BRANCH"
-  local claim_status=0
-  resolve_publication_claim_token || claim_status=$?
-  [[ "$claim_status" -eq 0 || "$claim_status" -eq 2 ]] || fail "invalid or ambiguous claim token; publication refused"
-  if [[ "$claim_status" -eq 0 ]]; then
-    read_publication_claim_identity
-    # A managed lease owns this writer, so use its existing fenced closeout.
-    # The same finish implementation has no planning/acceptance ceremony.
-    run_cmd bash "$helper_dir/contract-worktree.sh" finish --no-merge --target "$TARGET_BRANCH"
-  fi
-  publication_mode=branch
-  [[ "$claim_status" -ne 0 ]] || publication_mode=lease
   local begin_status=0
   ship_transaction_begin || begin_status=$?
   [[ "$begin_status" -ne 2 ]] || return 0
@@ -1086,36 +810,17 @@ ship_linked_pr() {
     [[ "$scanned_head" == "$verified_sha" ]] || fail "candidate changed during security scan"
   fi
   ship_transaction_phase candidate_frozen "$verified_sha"
-  if [[ "$DRY_RUN" -eq 0 && "$claim_status" -eq 0 ]]; then
-    prepare_publication_receipt "$branch" || fail "publication receipt preparation failed (publication_incomplete)"
-    if [[ -n "$publication_create_intent" ]]; then
-      ship_transaction_phase publication_create_intent "$verified_sha" "$publication_create_intent"
-      publication_create_intent_journal="$closeout_journal_dir/status.json"
-    fi
-  fi
   ship_transaction_phase push_started "$verified_sha"
   push_branch "$branch" "$verified_sha"
   ship_transaction_phase pushed "$verified_sha"
   ship_transaction_commit
   ship_transaction_phase pr_create_started "$verified_sha"
   create_or_report_pr "$branch"
-  if [[ "$DRY_RUN" -eq 0 && "$claim_status" -eq 0 ]]; then
-    ensure_publication_receipt "$branch" || fail "publication receipt persistence failed (publication_incomplete)"
-    ship_transaction_phase pr_observed "$verified_sha" "$publication_journal_payload"
-    enter_publication_reviewing || fail "publication review entry failed (publication_incomplete)"
-  elif [[ "$DRY_RUN" -eq 0 ]]; then
+  if [[ "$DRY_RUN" -eq 0 ]]; then
     observe_plain_pr "$branch" "$verified_sha" "$(closeout_journal_field "$closeout_journal_dir/meta.json" base_sha)"
     ship_transaction_phase pr_observed "$verified_sha" "$publication_journal_payload"
   fi
   ship_transaction_complete "$verified_sha"
-}
-
-ship_linked_local_merge() {
-  local branch
-  branch="$(current_branch)"
-  [[ -n "$branch" ]] || fail "detached HEAD is not supported"
-  [[ "$branch" != "$TARGET_BRANCH" ]] || fail "refusing to local-merge target branch as linked worktree"
-  finish_contract_worktree "local"
 }
 
 ship_primary_dirty_pr() {
@@ -1151,25 +856,6 @@ ship_primary_pr() {
 
   if [[ "$shipped" -eq 0 && -z "$(git status --porcelain=v1 --untracked-files=all)" ]]; then
     echo "[Ship] Nothing to ship."
-  fi
-}
-
-ship_primary_local_merge() {
-  local branch path slug shipped=0
-  local child_args=()
-  [[ "$DRY_RUN" -eq 1 ]] && child_args+=(--dry-run)
-  while IFS=$'\t' read -r branch path; do
-    [[ -n "$branch" && -n "$path" ]] || continue
-    [[ "$(cd "$path" && pwd -P)" != "$(pwd -P)" ]] || continue
-    slug="${branch#${BRANCH_PREFIX}}"
-    echo "[Ship] Shipping linked worktree $branch at $path with local merge mode"
-    (cd "$path" && REPO_HARNESS_TARGET_REPO_ROOT="$path" bash "$helper_dir/ship-worktrees.sh" --local-merge --target "$TARGET_BRANCH" ${child_args[@]+"${child_args[@]}"})
-    run_cmd bash "$helper_dir/contract-worktree.sh" cleanup --slug "$slug" --target "$TARGET_BRANCH"
-    shipped=1
-  done < <(list_contract_worktrees "$BRANCH_PREFIX")
-
-  if [[ "$shipped" -eq 0 ]]; then
-    echo "[Ship] No linked contract worktrees found for local merge."
   fi
 }
 
@@ -1258,7 +944,7 @@ recover_ship() {
   if [[ "$action" != "inspect" ]]; then
     local known_mode
     known_mode="$(closeout_journal_field "$dir/meta.json" publication_mode)"
-    [[ "$known_mode" == "branch" || "$known_mode" == "lease" ]] || fail "legacy/unknown journal requires explicit migration; no publication mode inferred"
+    [[ "$known_mode" == "branch" ]] || fail "retired or unknown ship journal mode; preserve the journal for manual recovery"
   fi
   branch="$(closeout_journal_field "$dir/meta.json" branch)"
 
@@ -1301,54 +987,15 @@ recover_ship() {
         || fail "no landed push to reconcile (last phase: $last_phase); run '--recover abort' instead"
       verified="$(closeout_journal_phase_ref "$dir" candidate_frozen)"
       closeout_journal_has_phase "$dir" pushed || closeout_journal_record "$dir" in_progress pushed "$verified"
-      local recorded_mode
-      recorded_mode="$(closeout_journal_field "$dir/meta.json" publication_mode)"
-      if [[ "$recorded_mode" == "branch" ]]; then
-        local current_claim_status=0
-        resolve_publication_claim_token || current_claim_status=$?
-        [[ "$current_claim_status" -eq 2 ]] || fail "branch recovery found a managed or invalid claim; retain journal"
-        create_or_report_pr "$branch"
-        observe_plain_pr "$branch" "$verified" "$(closeout_journal_field "$dir/meta.json" base_sha)"
-        if ! closeout_journal_has_phase "$dir" pr_observed; then
-          closeout_journal_record "$dir" in_progress pr_observed "$verified" "$publication_journal_payload"
-        fi
-        closeout_journal_record "$dir" complete complete "$verified"
-        rm -rf "$dir/snapshot"
-        closeout_claim_release
-        echo "[Ship] Reconciled ordinary PR from existing push; no push or receipt was replayed: $dir"
-        return 0
-      fi
-      [[ "$recorded_mode" == "lease" ]] || fail "legacy or unknown publication mode requires explicit journal migration; no identity inferred"
-      resolve_publication_claim_token || fail "live claim token unavailable during recovery"
-      read_publication_claim_identity
-      [[ "$(closeout_journal_field "$dir/meta.json" claim_id)" == "$publication_claim_id"
-        && "$(closeout_journal_field "$dir/meta.json" claim_task_id)" == "$publication_task_id"
-        && "$(closeout_journal_field "$dir/meta.json" claim_generation)" == "$publication_generation"
-        && "$(closeout_journal_field "$dir/meta.json" claim_task_revision)" == "$publication_task_revision" ]] || fail "claim identity changed; refusing wrong-claim journal replay"
+      create_or_report_pr "$branch"
+      observe_plain_pr "$branch" "$verified" "$(closeout_journal_field "$dir/meta.json" base_sha)"
       if ! closeout_journal_has_phase "$dir" pr_observed; then
-        if closeout_journal_has_phase "$dir" publication_create_intent; then
-          load_publication_create_intent "$dir" || fail "journal publication create intent is invalid (publication_incomplete)"
-        else
-          prepare_publication_receipt "$branch" || fail "publication receipt preparation failed (publication_incomplete)"
-          if [[ -n "$publication_create_intent" ]]; then
-            closeout_journal_record "$dir" in_progress publication_create_intent "$verified" "$publication_create_intent"
-            publication_create_intent_journal="$dir/status.json"
-          fi
-        fi
-        create_or_report_pr "$branch"
-        ensure_publication_receipt "$branch" || fail "publication receipt persistence failed (publication_incomplete)"
         closeout_journal_record "$dir" in_progress pr_observed "$verified" "$publication_journal_payload"
       fi
-      # Once pr_observed exists the lease may already be reviewing: replay the
-      # lifecycle proof directly instead of calling the completing-only receipt
-      # writer again. The transition is idempotent for the same pointer/key.
-      resolve_publication_claim_token || fail "publication claim token is unavailable for review recovery (publication_incomplete)"
-      closeout_journal_dir="$dir"
-      enter_publication_reviewing || fail "publication review entry failed (publication_incomplete)"
       closeout_journal_record "$dir" complete complete "$verified"
       rm -rf "$dir/snapshot"
       closeout_claim_release
-      echo "[Ship] Reconciled ship transaction; the push was already applied: $dir"
+      echo "[Ship] Reconciled ordinary PR from existing push; no push was replayed: $dir"
       ;;
   esac
 }
@@ -1361,7 +1008,6 @@ REMOTE_NAME="origin"
 SLUG_OVERRIDE=""
 DRAFT_PR=1
 DRY_RUN=0
-DISCARD_SCAFFOLD_ONLY=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -1390,10 +1036,6 @@ while [[ $# -gt 0 ]]; do
       ;;
     --dry-run)
       DRY_RUN=1
-      shift
-      ;;
-    --local-merge)
-      MODE="local-merge"
       shift
       ;;
     --recover)
@@ -1430,13 +1072,6 @@ case "$MODE" in
       ship_linked_pr
     else
       ship_primary_pr
-    fi
-    ;;
-  local-merge)
-    if is_linked_worktree; then
-      ship_linked_local_merge
-    else
-      ship_primary_local_merge
     fi
     ;;
   recover)
