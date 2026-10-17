@@ -138,16 +138,21 @@ function readCapabilityContext(repo: string): {
   if (capabilitySourceMode(repo) !== 'archcontext') {
     return { registry: readCapabilityRegistry(repo), owners: null, summaries: new Map() };
   }
-  const context = readArchitectureNativeContext(repo, { kind: 'worktree' });
-  const authority = capabilityRegistryFromNativeContext(context, { repoRoot: repo });
-  if (authority.status !== 'valid') throw new CapabilitySourceError(authority.diagnostics.map((item) => item.message).join('; '));
-  const summaries = new Map<string, string>();
-  for (const node of context.model.nodes) {
-    if (node.kind !== 'capability' || typeof node.id !== 'string' || typeof node.summary !== 'string') continue;
-    const identity = capabilityIdentityFromNodeId(node.id);
-    if (identity) summaries.set(identity.id, node.summary);
+  try {
+    const context = readArchitectureNativeContext(repo, { kind: 'worktree' });
+    const authority = capabilityRegistryFromNativeContext(context, { repoRoot: repo });
+    if (authority.status !== 'valid') throw new CapabilitySourceError(authority.diagnostics.map((item) => item.message).join('; '));
+    const summaries = new Map<string, string>();
+    for (const node of context.model.nodes) {
+      if (node.kind !== 'capability' || typeof node.id !== 'string' || typeof node.summary !== 'string') continue;
+      const identity = capabilityIdentityFromNodeId(node.id);
+      if (identity) summaries.set(identity.id, node.summary);
+    }
+    return { registry: authority.registry, owners: authority.owners, summaries };
+  } catch (error) {
+    if (error instanceof CapabilitySourceError) throw error;
+    throw new CapabilitySourceError((error as Error).message);
   }
-  return { registry: authority.registry, owners: authority.owners, summaries };
 }
 
 /** The file or directory that owns capabilities under the active source mode. */

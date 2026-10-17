@@ -229,7 +229,7 @@ describe('capability-context command', () => {
       fs.writeFileSync(nodePath, fs.readFileSync(nodePath, 'utf-8').replace(/  contractFiles:\n    agents: probes\/AGENTS\.md\n    claude: probes\/CLAUDE\.md\n/, ''));
       fs.rmSync(path.join(cwd, 'probes'), { recursive: true, force: true });
       expect(() => runCapabilityContextSync({ repo: cwd, capabilityId: 'probe-anchorless', apply: true }))
-        .toThrow('contract_files.agents is required');
+        .toThrow('AC_SCHEMA_INVALID');
       expect(fs.readFileSync(path.join(cwd, 'AGENTS.md'), 'utf-8')).toBe(rootContext);
       expect(fs.readFileSync(path.join(cwd, 'CLAUDE.md'), 'utf-8')).toBe(rootContext);
       expect(fs.existsSync(path.join(cwd, 'probes'))).toBe(false);
@@ -300,7 +300,7 @@ describe('capability-context command', () => {
     }
   }, 30_000);
 
-  test('archcontext sync refuses a contract file that another capability declares in the other slot', () => {
+  test('archctx rejects a contract file declared in the wrong slot before sync writes', () => {
     const cwd = archcontextWorkspace('capability-context-cross-slot', [
       { id: 'capability.apps.web', include: 'apps/web/**', contractFiles: { agents: 'apps/web/AGENTS.md', claude: 'apps/web/CLAUDE.md' } },
       { id: 'capability.apps.docs', include: 'apps/docs/**', contractFiles: { agents: 'apps/docs/AGENTS.md', claude: 'apps/web/AGENTS.md' } },
@@ -309,7 +309,7 @@ describe('capability-context command', () => {
       const shared = '# Web contract\n';
       fs.writeFileSync(path.join(cwd, 'apps/web/AGENTS.md'), shared);
       for (const capabilityId of ['apps-web', 'apps-docs']) {
-        expect(() => runCapabilityContextSync({ repo: cwd, capabilityId, apply: true })).toThrow('declares shared contract files');
+        expect(() => runCapabilityContextSync({ repo: cwd, capabilityId, apply: true })).toThrow('AC_SCHEMA_INVALID');
       }
       expect(fs.readFileSync(path.join(cwd, 'apps/web/AGENTS.md'), 'utf-8')).toBe(shared);
       for (const file of ['apps/web/CLAUDE.md', 'apps/docs/AGENTS.md']) expect(fs.existsSync(path.join(cwd, file))).toBe(false);
@@ -328,7 +328,7 @@ describe('capability-context command', () => {
         { cwd, encoding: 'utf-8' },
       );
       expect(res.status).toBe(2);
-      expect(res.stderr).toContain('.archcontext/model/nodes/broken.yaml');
+      expect(res.stderr).toContain('AC_SCHEMA_INVALID');
     } finally {
       fs.rmSync(cwd, { recursive: true, force: true });
     }

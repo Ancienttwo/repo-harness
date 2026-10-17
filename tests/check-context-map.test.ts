@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { dirname, join } from "path";
-import { spawnSync } from "child_process";
+import { execFileSync, spawnSync } from "child_process";
 
 const ROOT = join(import.meta.dir, "..");
 const SCRIPT = join(ROOT, "scripts/check-context-map.ts");
@@ -158,6 +158,10 @@ function makeFixture(): string {
     contractEntry({ path: "pkg/AGENTS.md", target_agent: "codex" }),
     GLOB_ENTRY,
   ]);
+  write(repo, ".archcontext/manifest.yaml", readFileSync(join(ROOT, ".archcontext/manifest.yaml"), "utf-8"));
+  execFileSync("git", ["init", "-q"], { cwd: repo });
+  execFileSync("git", ["add", "."], { cwd: repo });
+  execFileSync("git", ["-c", "user.name=Fixture", "-c", "user.email=fixture@example.com", "commit", "-q", "-m", "model"], { cwd: repo });
   return repo;
 }
 
