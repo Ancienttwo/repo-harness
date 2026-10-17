@@ -12,9 +12,9 @@ import { ARCHITECTURE_DOCS_RENDERER_VERSION } from 'archctx-contracts';
 import { dependencies, devDependencies } from '../../package.json';
 import { recordInstallOwnership } from '../helpers/install-ownership';
 import wazaRules from '../../src/core/skill-surface/waza-shared-rules.json';
-import { applyInstallProfile, managedInstallSurfaceIsCurrent, readInstalledProfile, recordRefreshedInstallOwnership } from '../../src/cli/installer/install-profile';
+import { applyInstallProfile, beginInstallHostTransaction, installProfileHostMutationPaths, managedInstallSurfaceIsCurrent, readInstalledProfile, recordRefreshedInstallOwnership, rollbackInstallHostTransaction } from '../../src/cli/installer/install-profile';
 import { buildManagedHooks } from '../../src/cli/installer/managed-entries';
-import { inspectGlobalContext, renderGlobalRulesBlock } from '../../src/cli/installer/global-context';
+import { applyGlobalContextRefresh, inspectGlobalContext, preflightGlobalContextRefresh, renderGlobalRulesBlock } from '../../src/cli/installer/global-context';
 import { encodeCandidateRequest, parseCandidateRequest } from '../../src/cli/runtime/candidate-reconciliation';
 
 const ROOT = join(import.meta.dir, '..', '..');
@@ -2832,8 +2832,13 @@ describe('Global Working Rules refresh during install and update', () => {
   ].join('');
 
   function withRulesRuntime(body: (fixture: {
+    home: string;
     path: string;
-    run: (reportLanguage?: 'follow' | 'zh-CN' | 'en', updateMode?: boolean) => ReturnType<typeof runGlobalRuntimeSetup>;
+    run: (
+      reportLanguage?: 'follow' | 'zh-CN' | 'en',
+      updateMode?: boolean,
+      target?: 'codex' | 'both',
+    ) => ReturnType<typeof runGlobalRuntimeSetup>;
   }) => void): void {
     const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-global-rules-refresh-'));
     const home = join(tmp, 'home');
@@ -2858,11 +2863,12 @@ describe('Global Working Rules refresh during install and update', () => {
         REPO_HARNESS_BUN_EXECUTABLE: join(fakeBin, 'bun'),
       };
       body({
+        home,
         path: join(home, '.codex', 'AGENTS.md'),
-        run: (reportLanguage, updateMode = true) => runGlobalRuntimeSetup({
+        run: (reportLanguage, updateMode = true, target = 'codex') => runGlobalRuntimeSetup({
           sourceRoot: source,
           cwd: repo,
-          target: 'codex',
+          target,
           profile: 'minimal',
           updateMode,
           installCli: false,
@@ -2882,15 +2888,63 @@ describe('Global Working Rules refresh during install and update', () => {
   const rulesStep = (result: ReturnType<typeof runGlobalRuntimeSetup>) =>
     result.steps.find((step) => step.step === 'refresh global working rules');
 
-  test('legacy rules without a language fail in preflight before any host write', () => withRulesRuntime(({ path, run }) => {
+  // An older parent CLI hands update to the candidate without a report language.
+  test('a candidate-style update without a language skips legacy and unrecorded files and exits 0', () => withRulesRuntime(({ home, path, run }) => {
+    const claudePath = join(home, '.claude', 'CLAUDE.md');
+    const unrecorded = renderGlobalRulesBlock(ROOT, { preset: 'en', instruction: 'Use English to report to user.' })
+      .replace(/^<!-- repo-harness reporting-language: .*\n/m, '');
+    mkdirSync(join(home, '.claude'), { recursive: true });
     writeFileSync(path, mixedLegacy);
-    const result = run();
-    expect(result.exitCode).toBe(1);
-    expect(result.steps.map((step) => step.step)).toEqual(['ensure Bun runtime', 'refresh global working rules']);
-    expect(rulesStep(result)?.status).toBe('failed');
-    expect(rulesStep(result)?.detail).toContain('pass --report-language follow|zh-CN|en');
+    writeFileSync(claudePath, unrecorded);
+    const result = run(undefined, true, 'both');
+    expect(result.exitCode).toBe(0);
+    const step = rulesStep(result);
+    expect(step?.status).toBe('skipped');
+    expect(step?.detail).toContain(`skipped-legacy:${path} (legacy repo-harness rules without markers; run \`repo-harness update --report-language follow|zh-CN|en\``);
+    expect(step?.detail).toContain(`skipped-unrecorded:${claudePath} (managed block has no recorded reporting language; run \`repo-harness update --report-language follow|zh-CN|en\`)`);
     expect(readFileSync(path, 'utf-8')).toBe(mixedLegacy);
+    expect(readFileSync(claudePath, 'utf-8')).toBe(unrecorded);
   }), 30_000);
+
+  test('a symlinked instruction file is skipped and its target is not written', () => withRulesRuntime(({ home, path, run }) => {
+    const target = join(home, 'dotfiles-AGENTS.md');
+    writeFileSync(target, mixedLegacy);
+    symlinkSync(target, path);
+    const result = run('zh-CN');
+    expect(result.exitCode).toBe(0);
+    expect(rulesStep(result)).toMatchObject({
+      status: 'skipped',
+      detail: `skipped-unsafe:${path} (${path} is a symlink or not a regular file; replace it with a regular file to enable managed sync)`,
+    });
+    expect(readFileSync(target, 'utf-8')).toBe(mixedLegacy);
+  }), 30_000);
+
+  test('a file that changes between preflight and apply fails with the re-run message', () => withRulesRuntime(({ home, path }) => {
+    writeFileSync(path, mixedLegacy);
+    const plan = preflightGlobalContextRefresh(ROOT, home, ['codex'], 'en');
+    expect(plan.files[0]?.outcome).toBe('write');
+    writeFileSync(path, `${mixedLegacy}\n## Added later\n`);
+    expect(applyGlobalContextRefresh(plan, home)).toEqual({
+      status: 'failed',
+      detail: `failed:${path} (changed after preflight; re-run)`,
+    });
+    expect(readFileSync(path, 'utf-8')).toBe(`${mixedLegacy}\n## Added later\n`);
+  }));
+
+  test('a failed install transaction restores both rules files from the backup', () => withRulesRuntime(({ home, path }) => {
+    const env = { ...process.env, HOME: home, BUN_INSTALL: join(home, '.bun') };
+    const claudePath = join(home, '.claude', 'CLAUDE.md');
+    mkdirSync(join(home, '.claude'), { recursive: true });
+    writeFileSync(path, mixedLegacy);
+    writeFileSync(claudePath, 'claude user notes\n');
+    const transaction = beginInstallHostTransaction(installProfileHostMutationPaths(env), env);
+    const applied = applyGlobalContextRefresh(preflightGlobalContextRefresh(ROOT, home, ['codex', 'claude'], 'en'), home);
+    expect(applied.status).toBe('ok');
+    expect(readFileSync(path, 'utf-8')).not.toBe(mixedLegacy);
+    rollbackInstallHostTransaction(transaction);
+    expect(readFileSync(path, 'utf-8')).toBe(mixedLegacy);
+    expect(readFileSync(claudePath, 'utf-8')).toBe('claude user notes\n');
+  }));
 
   test('a flag migrates the legacy span, keeps every user section, and a second update is a no-op', () => withRulesRuntime(({ path, run }) => {
     writeFileSync(path, mixedLegacy);
@@ -2925,7 +2979,8 @@ describe('Global Working Rules refresh during install and update', () => {
       .replace(/^<!-- repo-harness reporting-language: .*\n/m, '')}`;
     writeFileSync(path, unrecorded);
     const blocked = run(undefined, false);
-    expect(blocked.exitCode).toBe(1);
+    expect(blocked.exitCode).toBe(0);
+    expect(rulesStep(blocked)?.status).toBe('skipped');
     expect(rulesStep(blocked)?.detail).toContain('managed block has no recorded reporting language');
     expect(readFileSync(path, 'utf-8')).toBe(unrecorded);
 

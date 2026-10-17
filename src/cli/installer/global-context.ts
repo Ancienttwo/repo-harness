@@ -12,6 +12,7 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { dirname, join } from 'path';
+import { assertConfigurationPath } from './configuration-ownership';
 
 export const GLOBAL_RULES_BEGIN = '<!-- BEGIN: repo-harness global-working-rules -->';
 export const GLOBAL_RULES_END = '<!-- END: repo-harness global-working-rules -->';
@@ -47,8 +48,8 @@ export type GlobalContextState =
   | 'managed-stale'
   | 'managed-current';
 
-export const GLOBAL_RULES_FLAG_HINT = 'pass --report-language follow|zh-CN|en';
-export const GLOBAL_RULES_UNBALANCED = 'unbalanced repo-harness markers; repair manually, then re-run';
+export const GLOBAL_RULES_FLAG_HINT = 'run `repo-harness update --report-language follow|zh-CN|en`';
+export const GLOBAL_RULES_UNBALANCED = 'unbalanced repo-harness markers; repair the markers manually, then re-run';
 
 /**
  * Every section title that repo-harness ever shipped in
@@ -208,12 +209,21 @@ function scanLegacySpan(lines: readonly string[]): LegacyScan {
   const kept: string[] = [];
   let h1Anchor: number | null = null;
   let mode: 'keep' | 'h1-preamble' | 'section' = 'keep';
-  let inFence = false;
+  // CommonMark: a fence closes only on the same character with at least the
+  // opening length and nothing after it.
+  let fence: { readonly char: string; readonly length: number } | null = null;
   lines.forEach((line, index) => {
     const bare = line.replace(/\r?\n$/, '');
-    const fence = /^\s*(```|~~~)/.test(bare);
-    const heading = !inFence && !fence ? bare.match(/^(#{1,6}) (.+?)\s*$/) : null;
-    if (fence) inFence = !inFence;
+    const marker = bare.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
+    let fenceLine = false;
+    if (fence === null && marker) {
+      fence = { char: marker[1][0], length: marker[1].length };
+      fenceLine = true;
+    } else if (fence !== null && marker && marker[1][0] === fence.char && marker[1].length >= fence.length && marker[2].trim() === '') {
+      fence = null;
+      fenceLine = true;
+    }
+    const heading = fence === null && !fenceLine ? bare.match(/^(#{1,6}) (.+?)\s*$/) : null;
     if (heading) {
       const level = heading[1].length;
       const title = heading[2];
@@ -333,8 +343,8 @@ export function inspectGlobalContext(content: string | null, sourceRoot: string)
 
 export interface GlobalContextFilePlan {
   readonly path: string;
-  readonly state: GlobalContextState | 'unreadable';
-  readonly outcome: 'write' | 'unchanged' | 'skipped' | 'failed';
+  readonly state: GlobalContextState | 'unsafe' | 'unreadable';
+  readonly outcome: 'write' | 'unchanged' | 'skipped';
   /** The file content at preflight; null when the file did not exist. */
   readonly current: string | null;
   /** The content to write; set only when `outcome` is `write`. */
@@ -350,74 +360,100 @@ export function formatGlobalContextWrite(path: string, current: string | null, m
 }
 
 /**
- * Plans one file for install or update. A valid recorded header wins over the
- * flag. Without a header, the flag supplies the inputs; without both, a file
- * that holds rules fails and a file without rules is skipped.
+ * The instruction file must be reached without a symlink under HOME. The
+ * install transaction backs up the link itself, so a write through a link has
+ * no rollback. Returns the refusal message, or null. A path that is not a
+ * regular file fails the read and is reported as unreadable.
+ */
+export function globalContextPathRefusal(path: string, home: string): string | null {
+  try {
+    assertConfigurationPath(path, { HOME: home });
+    return null;
+  } catch {
+    return `${path} is a symlink or not a regular file; replace it with a regular file to enable managed sync`;
+  }
+}
+
+/**
+ * Plans one file for install or update. It is read-only. A valid recorded
+ * header wins over the flag; without a header the flag supplies the inputs.
+ * A file that cannot be synced is skipped with the next command; it never
+ * stops the run, so an older parent CLI without the flag can still update.
  */
 export function planGlobalContextFile(
   path: string,
+  home: string,
   sourceRoot: string,
   flag: ReportLanguageFlag | undefined,
 ): GlobalContextFilePlan {
-  let current: string | null = null;
-  const failed = (detail: string): GlobalContextFilePlan => ({ path, state: 'unreadable', outcome: 'failed', current, next: null, detail });
+  const refusal = globalContextPathRefusal(path, home);
+  if (refusal) return { path, state: 'unsafe', outcome: 'skipped', current: null, next: null, detail: `skipped-unsafe:${path} (${refusal})` };
+  let current: string | null;
   try {
     current = existsSync(path) ? readFileSync(path, 'utf-8') : null;
   } catch (error) {
-    return failed(`failed:${path} (${(error as Error).message})`);
+    return {
+      path,
+      state: 'unreadable',
+      outcome: 'skipped',
+      current: null,
+      next: null,
+      detail: `skipped-unreadable:${path} (${(error as Error).message}; make it a readable regular file to enable managed sync)`,
+    };
   }
+  let inspection: GlobalContextInspection;
   try {
-    const inspection = inspectGlobalContext(current, sourceRoot);
-    const plan = (outcome: GlobalContextFilePlan['outcome'], detail: string, next: string | null = null): GlobalContextFilePlan => (
-      { path, state: inspection.state, outcome, current, next, detail }
-    );
-    const write = (merged: MergedManagedBlock): GlobalContextFilePlan => plan('write', formatGlobalContextWrite(path, current, merged), merged.content);
-    const withFlag = (): MergedManagedBlock => mergeManagedBlock(current ?? '', renderGlobalRulesBlock(sourceRoot, reportLanguageFromFlag(flag!)));
-    switch (inspection.state) {
-      case 'managed-current':
-        return plan('unchanged', `unchanged:${path}`);
-      case 'managed-stale':
-        return write(inspection.synced!);
-      case 'unbalanced':
-        return plan('failed', `blocked:${path} (${GLOBAL_RULES_UNBALANCED})`);
-      case 'managed-unrecorded':
-        return flag
-          ? write(withFlag())
-          : plan('failed', `blocked:${path} (managed block has no recorded reporting language; ${GLOBAL_RULES_FLAG_HINT})`);
-      case 'legacy-unmanaged':
-        return flag
-          ? write(withFlag())
-          : plan('failed', `blocked:${path} (legacy repo-harness rules without markers; ${GLOBAL_RULES_FLAG_HINT} to replace them; user sections are kept)`);
-      case 'no-rules':
-      case 'missing-file':
-        return flag
-          ? write(withFlag())
-          : plan('skipped', `skipped-not-opted-in:${path} (not opted in; pass --report-language to install the rules)`);
-    }
+    inspection = inspectGlobalContext(current, sourceRoot);
   } catch (error) {
-    return failed(`failed:${path} (${(error as Error).message})`);
+    return {
+      path,
+      state: 'unreadable',
+      outcome: 'skipped',
+      current,
+      next: null,
+      detail: `skipped-template:${path} (cannot render the Global Working Rules template: ${(error as Error).message}; reinstall repo-harness)`,
+    };
+  }
+  const plan = (outcome: GlobalContextFilePlan['outcome'], detail: string, next: string | null = null): GlobalContextFilePlan => (
+    { path, state: inspection.state, outcome, current, next, detail }
+  );
+  const write = (merged: MergedManagedBlock): GlobalContextFilePlan => plan('write', formatGlobalContextWrite(path, current, merged), merged.content);
+  const withFlag = (): MergedManagedBlock => mergeManagedBlock(current ?? '', renderGlobalRulesBlock(sourceRoot, reportLanguageFromFlag(flag!)));
+  switch (inspection.state) {
+    case 'managed-current':
+      return plan('unchanged', `unchanged:${path}`);
+    case 'managed-stale':
+      return write(inspection.synced!);
+    case 'unbalanced':
+      return plan('skipped', `skipped-unbalanced:${path} (${GLOBAL_RULES_UNBALANCED})`);
+    case 'managed-unrecorded':
+      return flag
+        ? write(withFlag())
+        : plan('skipped', `skipped-unrecorded:${path} (managed block has no recorded reporting language; ${GLOBAL_RULES_FLAG_HINT})`);
+    case 'legacy-unmanaged':
+      return flag
+        ? write(withFlag())
+        : plan('skipped', `skipped-legacy:${path} (legacy repo-harness rules without markers; ${GLOBAL_RULES_FLAG_HINT}; user sections are kept)`);
+    case 'no-rules':
+    case 'missing-file':
+      return flag
+        ? write(withFlag())
+        : plan('skipped', `skipped-not-opted-in:${path} (not opted in; pass --report-language to install the rules)`);
   }
 }
 
 export interface GlobalContextRefreshPlan {
-  readonly status: 'ok' | 'failed';
-  readonly detail: string;
   readonly files: readonly GlobalContextFilePlan[];
 }
 
-/** Read-only. It runs before any host write, so a failure stops the run first. */
+/** Read-only. It runs before any host write and plans each selected file. */
 export function preflightGlobalContextRefresh(
   sourceRoot: string,
   home: string,
   hosts: readonly GlobalContextHost[],
   flag: ReportLanguageFlag | undefined,
 ): GlobalContextRefreshPlan {
-  const files = hosts.map((host) => planGlobalContextFile(globalContextPath(home, host), sourceRoot, flag));
-  return {
-    status: files.some((file) => file.outcome === 'failed') ? 'failed' : 'ok',
-    detail: files.map((file) => file.detail).join(', '),
-    files,
-  };
+  return { files: hosts.map((host) => planGlobalContextFile(globalContextPath(home, host), home, sourceRoot, flag)) };
 }
 
 export interface GlobalContextRefresh {
@@ -425,9 +461,12 @@ export interface GlobalContextRefresh {
   readonly detail: string;
 }
 
-/** Writes a passed preflight plan. A file that changed after preflight fails closed. */
-export function applyGlobalContextRefresh(plan: GlobalContextRefreshPlan): GlobalContextRefresh {
-  if (plan.status === 'failed') return { status: 'failed', detail: plan.detail };
+/**
+ * Writes the preflight plan. Status is ok only when every file is current or
+ * written, skipped when a file was not synced, and failed only for an error
+ * here: a file that changed after preflight, or a write error.
+ */
+export function applyGlobalContextRefresh(plan: GlobalContextRefreshPlan, home: string): GlobalContextRefresh {
   const details: string[] = [];
   let failed = false;
   for (const file of plan.files) {
@@ -437,7 +476,7 @@ export function applyGlobalContextRefresh(plan: GlobalContextRefreshPlan): Globa
     }
     try {
       const now = existsSync(file.path) ? readFileSync(file.path, 'utf-8') : null;
-      if (now !== file.current) {
+      if (globalContextPathRefusal(file.path, home) !== null || now !== file.current) {
         failed = true;
         details.push(`failed:${file.path} (changed after preflight; re-run)`);
         continue;
@@ -452,4 +491,19 @@ export function applyGlobalContextRefresh(plan: GlobalContextRefreshPlan): Globa
   }
   const skipped = plan.files.some((file) => file.outcome === 'skipped');
   return { status: failed ? 'failed' : skipped ? 'skipped' : 'ok', detail: details.join(', ') };
+}
+
+export type ManagedBlockRemoval =
+  | { readonly status: 'none' }
+  | { readonly status: 'unbalanced' }
+  | { readonly status: 'removed'; readonly content: string };
+
+/** Uninstall: removes only the marked block; the rest of the file keeps its bytes. */
+export function removeManagedBlock(content: string): ManagedBlockRemoval {
+  const layout = markerLayout(content);
+  if (layout.kind !== 'balanced') return { status: layout.kind };
+  return {
+    status: 'removed',
+    content: content.slice(0, layout.start) + content.slice(layout.end + GLOBAL_RULES_END.length),
+  };
 }

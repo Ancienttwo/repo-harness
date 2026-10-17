@@ -103,8 +103,13 @@ stay unchanged. A file without a recorded language needs the language once:
 repo-harness update --report-language zh-CN   # or follow, en
 ```
 
-Without it, the run stops before any host write. A file without rules is
-written only when the flag is given. The files are part of the install
+Without it, the run continues. The file is not written, and the rules step
+reports it as `skipped` with this command. An older CLI that updates to this
+version has no flag, so the first update reports the file; the next
+`repo-harness update --report-language <follow|zh-CN|en>` refreshes it. A file
+with unbalanced markers, a symlink, or a file that is not a regular file is
+also skipped with the next action. A file without rules is written only when
+the flag is given. The files are part of the install
 transaction backup. `repo-harness update --check` reports `ok` only when the
 block matches the current template.
 

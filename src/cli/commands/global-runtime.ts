@@ -1444,14 +1444,11 @@ export function runGlobalRuntimeSetup(
     return finalizeRuntimeResult(steps);
   }
 
-  // Read-only preflight before any host write. A file that cannot be synced
-  // stops the run here, before the CLI, hooks or fleet change. The process
+  // Read-only plan before any host write. A file that cannot be synced is
+  // reported as skipped and never stops the run, because an older parent CLI
+  // hands update to this candidate without --report-language. The process
   // that reaches the host-write section below applies this plan.
   const globalRules = preflightGlobalContextRefresh(sourceRoot, homeDir(env), hostIds(target), opts.reportLanguage);
-  if (globalRules.status === 'failed') {
-    steps.push({ step: GLOBAL_RULES_REFRESH_STEP, status: 'failed', detail: globalRules.detail });
-    return finalizeRuntimeResult(steps);
-  }
 
   const protectedHelperPlatform = configureProtectedHelperPlatform(cwd, bunExecutable, env);
   steps.push(protectedHelperPlatform);
@@ -1502,7 +1499,7 @@ export function runGlobalRuntimeSetup(
   else steps.push({ step: AGENT_FLEET_STEP, status: 'skipped', detail: 'disabled by install profile' });
   if (updateMode && agentFleetVerified({ steps })) steps.push(recordAgentFleetOwnership(profile, env));
 
-  steps.push({ step: GLOBAL_RULES_REFRESH_STEP, ...applyGlobalContextRefresh(globalRules) });
+  steps.push({ step: GLOBAL_RULES_REFRESH_STEP, ...applyGlobalContextRefresh(globalRules, homeDir(env)) });
   if (steps.at(-1)?.status === "failed") return finalizeRuntimeResult(steps);
 
   const refreshExternalSkills = opts.externalSkills === true;

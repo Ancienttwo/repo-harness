@@ -4,6 +4,9 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { writeGlobalContextFiles } from "../src/cli/commands/init";
 import {
+  inspectGlobalContext,
+  mergeManagedBlock,
+  renderGlobalRulesBlock,
   SHIPPED_GLOBAL_RULES_H1,
   SHIPPED_GLOBAL_RULES_SECTIONS,
   type ReportingLanguagePreset,
@@ -88,6 +91,15 @@ describe("global working rules distribution", () => {
     expect(h1).toEqual([SHIPPED_GLOBAL_RULES_H1]);
     expect(h2.length).toBeGreaterThan(0);
     for (const title of h2) expect(SHIPPED_GLOBAL_RULES_SECTIONS).toContain(title);
+  });
+
+  test("a heading inside a fence is not a section, and only the same fence closes it", () => {
+    const content = ["## Mine", "```", "~~~", "## Reporting", "```", "end", ""].join("\n");
+    expect(inspectGlobalContext(content, ROOT).state).toBe("no-rules");
+    const block = renderGlobalRulesBlock(ROOT, { preset: "en", instruction: "Use English to report to user." });
+    const merged = mergeManagedBlock(content, block);
+    expect(merged.replaced).toEqual([]);
+    expect(merged.content).toBe(`${content.trimEnd()}\n\n${block}`);
   });
 
   test("the rendered block records its reporting-language inputs", () => {

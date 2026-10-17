@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { spawnSync } from 'child_process';
@@ -201,6 +201,26 @@ describe('init-hook command', () => {
       expect(globalRules?.detail).toContain('repo-harness update --report-language <follow|zh-CN|en>');
       expect(report.agent_actions.find((entry) => entry.id === 'global-rules.insert')).toBeUndefined();
       expect(readFileSync(filePath, 'utf-8')).toContain('Existing user rule.');
+    });
+  });
+
+  test('reports a symlinked instruction file as a warning', () => {
+    withTempHome((home, repo) => {
+      const target = join(home, 'dotfiles-AGENTS.md');
+      writeFileSync(target, currentRulesBlock());
+      mkdirSync(join(home, '.codex'), { recursive: true });
+      symlinkSync(target, join(home, '.codex', 'AGENTS.md'));
+      const report = runInitHook({
+        cwd: repo,
+        target: 'codex',
+        env: { ...process.env, HOME: home },
+        statusReport: baseStatusReport(),
+        doctorReport: baseDoctorReport(),
+        toolingReport: baseToolingReport(),
+      });
+      const check = report.checks.find((entry) => entry.id === 'global-rules.codex');
+      expect(check?.status).toBe('warn');
+      expect(check?.detail).toContain('is a symlink or not a regular file; replace it with a regular file to enable managed sync');
     });
   });
 

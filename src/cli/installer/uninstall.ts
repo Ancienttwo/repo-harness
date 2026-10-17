@@ -4,7 +4,7 @@ import { dirname, join } from 'path';
 import { createHash } from 'crypto';
 import { MANAGED_TAG, stripRepoHarnessManagedHooks } from '../../core/adoption/managed-hook-config';
 import { deepEqual } from './shared';
-import { GLOBAL_RULES_BEGIN, GLOBAL_RULES_END, globalContextPath } from './global-context';
+import { globalContextPath, removeManagedBlock } from './global-context';
 import { installProfileStatePath, managedInstallSurfaceIsCurrent, readInstalledProfile, type ManagedInstallSurface } from './install-profile';
 import { assertConfigurationPath, configurationPaths, configurationReceiptPath, readConfigurationFragment, readConfigurationReceipt, replaceConfigurationFragment, writePrivateConfiguration } from './configuration-ownership';
 
@@ -104,13 +104,10 @@ export function runUserUninstall(opts: UninstallOptions): UninstallResult {
     try {
       assertConfigurationPath(contextPath, env);
       if (!existsSync(contextPath)) continue;
-      const raw = read(contextPath);
-      const starts = raw.split(GLOBAL_RULES_BEGIN).length - 1;
-      const ends = raw.split(GLOBAL_RULES_END).length - 1;
-      if (!starts && !ends) continue;
-      if (starts !== 1 || ends !== 1 || raw.indexOf(GLOBAL_RULES_END) < raw.indexOf(GLOBAL_RULES_BEGIN)) throw new Error('unbalanced managed global rules; preserved');
-      const next = raw.slice(0, raw.indexOf(GLOBAL_RULES_BEGIN)) + raw.slice(raw.indexOf(GLOBAL_RULES_END) + GLOBAL_RULES_END.length);
-      change(contextPath, next.trim() ? next : null, 'managed global working rules');
+      const removal = removeManagedBlock(read(contextPath));
+      if (removal.status === 'none') continue;
+      if (removal.status === 'unbalanced') throw new Error('unbalanced managed global rules; preserved');
+      change(contextPath, removal.content.trim() ? removal.content : null, 'managed global working rules');
     } catch (error) { unresolved(contextPath, String((error as Error).message)); }
   }
 

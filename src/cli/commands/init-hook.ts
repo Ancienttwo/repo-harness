@@ -27,6 +27,7 @@ import { isRepoHarnessSourceCheckout } from '../../core/adoption/source-checkout
 import {
   GLOBAL_RULES_UNBALANCED,
   globalContextPath,
+  globalContextPathRefusal,
   inspectGlobalContext,
   type GlobalContextInspection,
 } from '../installer/global-context';
@@ -458,6 +459,11 @@ function globalRulesChecks(
         detail,
       });
     };
+    const refusal = globalContextPathRefusal(filePath, home);
+    if (refusal) {
+      check('warn', refusal);
+      continue;
+    }
     let content: string | null = null;
     if (exists) {
       try {
