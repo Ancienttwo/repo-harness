@@ -1,3 +1,4 @@
+import { seedLeaseDirectory } from '../helpers/sprint-fixture';
 import { afterEach, expect, spyOn, test } from 'bun:test';
 import * as fs from 'node:fs';
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -11,7 +12,6 @@ import { migrateTaskInboxLayout, type InboxMigrationBoundary } from '../../src/e
 import { assertTaskInboxLayoutUnchanged, inboxLayoutPaths, inspectTaskInboxLayout } from '../../src/effects/fleet/task-inbox-layout';
 import { readTaskMessageDelivery, taskInboxTaskDirectory } from '../../src/effects/fleet/task-inbox';
 import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
-import { createLeaseDirectory } from '../../src/effects/state/coordination-lease-store';
 
 const roots: string[] = [];
 const TASK = '1'.repeat(64), REVISION = '2'.repeat(64), ID = '123e4567-e89b-42d3-a456-426614174000';
@@ -200,7 +200,7 @@ test('source changes, wrong digest, and unconfirmed operation fail closed', () =
 });
 
 test('unknown lease refuses mutation without interpreting historical recipients as live owners', () => {
-  const f = fixture(); createLeaseDirectory(f.root, TASK);
+  const f = fixture(); seedLeaseDirectory(f.root, TASK);
   expect(() => f.apply()).toThrow('quiescent');
   expect(tree(f.paths.legacy)).toEqual(f.original);
   expect(existsSync(f.paths.current)).toBeFalse();

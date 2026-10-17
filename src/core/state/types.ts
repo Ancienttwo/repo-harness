@@ -130,9 +130,8 @@ export type ContinuationRoute =
 
 /**
  * One deterministic per-turn answer to "what is next", projected from the
- * effective state plus the active sprint's own file. It is a read model, never
- * an authority: `command` names the existing command that owns the action (row
- * selection stays in `sprint-backlog`), and one call yields exactly one unit or
+ * effective state. It is a read model, never an authority.
+ * `command` names the command that owns the action. One call yields one unit or
  * one halt. Identical repo bytes yield byte-identical JSON -- no time, PID,
  * locale, or absolute path enters this document.
  */
@@ -209,7 +208,7 @@ export type BoardColumn = 'todo' | 'doing' | 'blocked' | 'done';
  * The canonical-row dimension. `missing` names a lease whose row no longer
  * exists on the canonical ref; `drifted` names a row whose definition no longer
  * matches what its owner claimed (or whose status cell is outside the `[ ]` /
- * `[x]` grammar `sprint-backlog.sh` writes).
+ * historical `[x]` grammar).
  */
 export type TaskState = 'pending' | 'done' | 'missing' | 'drifted';
 

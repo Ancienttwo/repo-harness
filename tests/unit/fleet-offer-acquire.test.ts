@@ -210,15 +210,6 @@ function card(taskId: string, rowIndex: string, task: string, mode: string, task
       lease_unknown_reason: null,
       progress_unreadable_reason: null,
     },
-    actions: {
-      release: null,
-      reconcile: null,
-      publication_reconcile: null,
-      publication_recover: null,
-      publication_reopen: null,
-      publication_takeover: null,
-      publication_abandon: null,
-    },
   };
 }
 

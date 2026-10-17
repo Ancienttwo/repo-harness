@@ -8,7 +8,6 @@ import { withExclusiveDirectoryLock } from '../locking/exclusive-directory-lock'
 /** Relative to the git common directory. */
 export const COORDINATION_ROOT_RELATIVE_PATH = 'repo-harness/coordination/v1';
 export const LEASE_OWNER_FILE_NAME = 'owner.json';
-/** Sibling of `leases/`, so no lease reader ever enumerates a removed lease. */
 
 /** Why a lease could not be classified into a lifecycle state. */
 export type LeaseUnknownReason =
@@ -65,19 +64,12 @@ export function leaseDirectory(cwd: string, taskId: string): string {
   return join(coordinationRoot(cwd), 'leases', taskId);
 }
 
-/**
- * Serialize every ownership mutation for one task. Each verb -- claim, bind,
- * release, steal, reconcile -- runs its read, compare, and write inside this
- * critical section, which is what makes fencing-token comparison safe: a bare
- * compare-and-mutate is still a TOCTOU when a concurrent steal lands between
- * the read and the write.
- */
+/** Serialize manual inbox and feedback writes for one historical task. */
 export function withTaskLock<T>(cwd: string, taskId: string, run: () => T): T {
   const commonDir = resolveGitCommonDirectory(cwd);
   return withExclusiveDirectoryLock(commonDir, taskLockRelativePath(taskId), run);
 }
 
-/** How a reclaimed backlog lock is reported; overridable for tests. */
 function classifyUnknown(
   taskId: string,
   reason: LeaseUnknownReason,

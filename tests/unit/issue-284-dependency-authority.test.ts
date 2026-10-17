@@ -1,4 +1,5 @@
-import { boundLeaseFixture } from '../helpers/sprint-fixture';
+import { seedLeaseDirectory, writeHistoricalLease, completingLeaseFixture, reviewingLeaseFixture, boundLeaseFixture, FIXTURE_SCHEMA_HEADER, fixtureBacklogTable, fixtureTaskId } from '../helpers/sprint-fixture';
+import { seedPublicationReceipt } from '../helpers/publication-fixture';
 import { executeVerificationContract } from '../../src/effects/evidence/verification-execution';
 import { prepareChangeAssessment } from '../../src/effects/review/change-assessment';
 import { recordFixtureAcceptance } from '../helpers/repo-fixture';
@@ -38,12 +39,7 @@ import {
   publicationReceiptDigest,
   publicationSha256,
 } from '../../src/core/publication/publication-receipt';
-import {
-  beginLeaseCompletionRecord,
-  buildLeaseOwnerRecord,
-  enterReviewingLeaseRecord,
-  projectCanonicalTasks,
-} from '../../src/core/state/coordination-identity';
+import { buildLeaseOwnerRecord, projectCanonicalTasks } from '../../src/core/state/coordination-identity';
 import {
   OBSERVATION_PATH_RULE_COVERAGE,
   resolveDependencyAuthority,
@@ -60,10 +56,7 @@ import {
   listProductAcceptanceProjections,
 } from '../../src/effects/integration/product-acceptance';
 import { readPublicationIntegrationObservations } from '../../src/effects/publication/publication-lifecycle';
-import { writePublicationReceiptCache } from '../../src/effects/publication/publication-receipt';
-import { createLeaseDirectory, writeLeaseOwnerDurably } from '../../src/effects/state/coordination-lease-store';
 import type { RepoHarnessRegisteredRepo, RepoHarnessRegistrySnapshot } from '../../src/effects/repo-registry';
-import { FIXTURE_SCHEMA_HEADER, fixtureBacklogTable, fixtureTaskId } from '../helpers/sprint-fixture';
 import {
   ACCEPTANCE_VALIDATOR_RULE_IDS,
   CONSUMED_RECEIPT_KEYS,
@@ -443,7 +436,7 @@ function reviewingPublication(subject: Fixture, head: string, base: string, numb
     pr_url: `https://example.invalid/pr/${number}`,
     created_at: `2026-09-02T00:00:0${number}Z`,
   });
-  writePublicationReceiptCache(subject.root, receipt);
+  seedPublicationReceipt(subject.root, receipt);
   const owner = buildLeaseOwnerRecord({
     claimId: `claim-${number}`,
     taskId: subject.target.task_id,
@@ -459,19 +452,19 @@ function reviewingPublication(subject: Fixture, head: string, base: string, numb
     branch: 'main',
     unitRef: `plans/plan-${number}.md`,
   });
-  const completing = beginLeaseCompletionRecord(bound, {
+  const completing = completingLeaseFixture(bound, {
     claimId: owner.claim_id,
     executionWorktree: subject.root,
     finishTransactionKey: null,
   });
   if (!completing.ok) throw new Error(completing.error);
-  const reviewing = enterReviewingLeaseRecord(completing.record, {
+  const reviewing = reviewingLeaseFixture(completing.record, {
     claimId: owner.claim_id,
     publication: publicationPointerFromReceipt(receipt, `ship-${number}`),
   });
   if (!reviewing.ok) throw new Error(reviewing.error);
-  if (!createLeaseDirectory(subject.root, subject.target.task_id)) throw new Error('lease election failed');
-  writeLeaseOwnerDurably(subject.root, subject.target.task_id, reviewing.record);
+  if (!seedLeaseDirectory(subject.root, subject.target.task_id)) throw new Error('lease election failed');
+  writeHistoricalLease(subject.root, subject.target.task_id, reviewing.record);
   return receipt;
 }
 

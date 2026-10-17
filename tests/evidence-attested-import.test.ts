@@ -1,4 +1,4 @@
-import { recordFixtureAcceptance, fixtureReviewResult } from './helpers/repo-fixture';
+import { fixtureReviewResult } from './helpers/repo-fixture';
 import { afterEach, describe, expect, test } from "bun:test";
 import { execFileSync } from "child_process";
 import { createHash } from "crypto";
@@ -7,14 +7,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { withTempRepo } from "./helpers/repo-fixture";
 
-import {
-  acceptanceReceiptPath,
-  archiveProjectionReceiptPath,
-  recordAcceptance,
-  recordUserWaiverGrant,
-  runAcceptanceReceiptCli,
-  sealArchiveProjection,
-} from "../scripts/acceptance-receipt";
+import { runAcceptanceReceiptCli } from "../scripts/acceptance-receipt";
 import { importAttestedEvidence, type AttestedReceiptInput } from "../src/effects/evidence/attested-import";
 import { LEDGER_EPOCH_START_SHA } from "../src/effects/evidence/epoch";
 import { readAcceptedEvents, readGenesisRecord } from "../src/effects/evidence/event-log";
@@ -513,81 +506,6 @@ describe("scripts/acceptance-receipt.ts record: attested-import wiring", () => {
     return { root, home };
   }
 
-  async function archiveCliFixture(root: string, home: string): Promise<{
-    archivedContract: string;
-    archivedReview: string;
-    liveContract: string;
-  }> {
-    const livePlan = "plans/plan-fixture.md";
-    const liveContract = "tasks/contracts/fixture-cli.contract.md";
-    const liveReview = "tasks/reviews/fixture-cli.review.md";
-    await recordFixtureAcceptance({
-      root,
-      authorityHome: home,
-      contract: liveContract,
-      verification: verificationReport,
-      disposition: "external_pass",
-      reviewer: "Claude",
-      source: "generic-review",
-      actor: null,
-      summary: "initial live acceptance",
-      findings: [],
-    });
-    recordUserWaiverGrant({
-      root,
-      authorityHome: home,
-      contract: liveContract,
-      actor: "fixture-owner",
-      summary: "approve archived acceptance",
-    });
-
-    const archivedPlan = "plans/archive/plan-fixture.md";
-    const archivedContract = "tasks/archive/contract-20260831-archived-cli.md";
-    const archivedReview = "tasks/archive/review-20260831-archived-cli.md";
-    mkdirSync(join(root, "plans", "archive"), { recursive: true });
-    mkdirSync(join(root, "tasks", "archive"), { recursive: true });
-    const projection = [
-      `> **Archive Projection V1**: \`${livePlan}\` => \`${archivedPlan}\``,
-      `> **Archive Projection V1**: \`${liveContract}\` => \`${archivedContract}\``,
-      `> **Archive Projection V1**: \`${liveReview}\` => \`${archivedReview}\``,
-    ];
-    const envelope = (lifecycle: "plan" | "contract" | "review") => [
-      "> **Archived**: 2026-08-31 09:45",
-      `> **Related Plan**: ${archivedPlan}`,
-      "> **Outcome**: Completed",
-      `> **Lifecycle**: ${lifecycle}`,
-      "> **Parent Run ID**: archived-cli-test",
-      ...projection,
-      "",
-    ];
-    writeFileSync(
-      join(root, archivedPlan),
-      [...envelope("plan"), readFileSync(join(root, livePlan), "utf-8")
-        .replace("> **Status**: Executing", "> **Status**: Archived")
-        .replaceAll(livePlan, archivedPlan)
-        .replaceAll(liveContract, archivedContract)].join("\n"),
-    );
-    writeFileSync(
-      join(root, archivedContract),
-      [...envelope("contract"), readFileSync(join(root, liveContract), "utf-8")
-        .replaceAll(livePlan, archivedPlan)
-        .replaceAll(liveContract, archivedContract)].join("\n"),
-    );
-    writeFileSync(
-      join(root, archivedReview),
-      [...envelope("review"), readFileSync(join(root, liveReview), "utf-8")
-        .replaceAll(livePlan, archivedPlan)
-        .replaceAll(liveReview, archivedReview)].join("\n"),
-    );
-    rmSync(join(root, livePlan));
-    rmSync(join(root, liveContract));
-    rmSync(join(root, liveReview));
-    git(root, ["add", "-A"]);
-    git(root, ["commit", "-q", "-m", "archive accepted workflow"]);
-    sealArchiveProjection({ root, authorityHome: home, contract: archivedContract });
-    return { archivedContract, archivedReview, liveContract };
-  }
-
   test("real record --disposition external_pass appends one accepted external_attested event", async () => {
     const { root, home } = setupCliFixture();
     cwdStack.push(process.cwd());
@@ -652,45 +570,4 @@ describe("scripts/acceptance-receipt.ts record: attested-import wiring", () => {
     expect(after.accepted.filter(event => event.event_type === "acceptance_receipt.attested_import")).toHaveLength(0);
   }, 30_000);
 
-  test("archived user waiver imports selected contract and leaves projection sealed", async () => {
-    const { root, home } = setupCliFixture();
-    const { archivedContract, archivedReview, liveContract } = await archiveCliFixture(root, home);
-    cwdStack.push(process.cwd());
-    process.chdir(root);
-
-    const before = ledgerState(root);
-    const exitCode = await runAcceptanceReceiptCli(
-      [
-        "record",
-        "--contract", archivedContract,
-        "--verification", verificationReport,
-        "--disposition", "user_waiver",
-        "--review", archivedReview,
-      ],
-      { authorityHome: home, now: () => new Date("2026-08-31T01:50:00.000Z") },
-    );
-    expect(exitCode).toBe(0);
-
-    const receipt = JSON.parse(readFileSync(acceptanceReceiptPath(root, home), "utf-8"));
-    expect(receipt.contract_file).toBe(liveContract);
-    const after = ledgerState(root);
-    expect(after.accepted.slice(0, before.accepted.length)).toEqual(Array.from(before.accepted));
-    expect(after.bytes.subarray(0, before.bytes.length)).toEqual(before.bytes);
-    expect(after.genesis).toEqual(before.genesis);
-    const accepted = after.accepted.slice(before.accepted.length);
-    expect(after.accepted.length).toBe(before.accepted.length + 1);
-    expect(accepted.length).toBe(1);
-    expect(accepted[0]!.trust_class).toBe("human_acceptance");
-    expect(accepted[0]!.subject_identity.contract_hash).toBe(
-      `sha256:${createHash("sha256").update(readFileSync(join(root, archivedContract))).digest("hex")}`,
-    );
-    expect(readFileSync(join(root, archivedReview), "utf-8")).toContain("## Acceptance Receipt Projection");
-    expect(readFileSync(archiveProjectionReceiptPath(root, home), "utf-8")).toContain(
-      '"kind": "repo-harness-archive-projection-receipt"',
-    );
-    expect(await runAcceptanceReceiptCli(
-      ["verify", "--contract", archivedContract, "--verification", verificationReport],
-      { authorityHome: home },
-    )).toBe(0);
-  }, 30_000);
 });

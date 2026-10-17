@@ -2,7 +2,7 @@
  * Pure coordination identity: sprint rows -> task identity, task revision, and
  * the lease owner record schema. No clock, PID, randomness, or filesystem
  * input reaches this layer; `src/effects/state/coordination-lease-store.ts`
- * owns every side effect and `src/cli/commands/sprint.ts` owns process I/O.
+ * reads historical records for the operator.
  *
  * Identity is read, not derived:
  *
@@ -35,8 +35,7 @@
  * derived value reaches `join()`.
  *
  * Schema 1 sprints carry no `ID` cell and therefore cannot mint identity here
- * at all. `src/core/state/sprint-schema-v1.ts` owns the one remaining v1
- * derivation and exists only to feed the migration command.
+ * at all. These records remain readable Markdown.
  */
 import { createHash } from 'crypto';
 import {
@@ -67,7 +66,7 @@ export const LEASE_OWNER_KIND = 'repo-harness-lease-owner';
 export const PENDING_ROW_STATUS = '[ ]';
 
 /**
- * The completed status cell, matching `sprint-backlog.sh`'s own
+ * The completed status cell, matching the historical backlog
  * `$2 ~ /^\[[xX]\]$/` counting rule. A completed canonical row is the one piece
  * of evidence that proves a residual lease has nothing left to protect.
  */
@@ -221,7 +220,7 @@ export type CanonicalTaskLookup =
 /**
  * Resolve one `task_id` against a canonical sprint. Duplicate Task cells fail
  * closed rather than picking the first match: the identity contract requires a
- * Task cell to be unique within a sprint, and `sprint-backlog.sh`'s own task-ref
+ * Task cell to be unique within a sprint, and historical task-ref
  * resolution already refuses ambiguous references.
  */
 export function lookupCanonicalTask(
@@ -250,16 +249,6 @@ export function lookupCanonicalTask(
   }
   return { ok: true, task: matches[0] };
 }
-
-/**
- * Resolve the caller-facing task reference `sprint-backlog.sh` already accepts
- * -- a backlog index or an exact Task cell -- against the canonical sprint.
- *
- * This is the only bridge from the shell's human reference to the coordination
- * `task_id`, and it deliberately reuses the script's own resolution rule,
- * including its refusal of ambiguous references. Nothing downstream may
- * re-derive an identity from a slug or a row position.
- */
 
 /**
  * States a lease owner record may carry on disk. `available` is deliberately

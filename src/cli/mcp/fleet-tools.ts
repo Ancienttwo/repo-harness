@@ -121,13 +121,6 @@ function canonicalPath(path: string): string {
   }
 }
 
-function nonEmptyString(args: Record<string, unknown>, name: string): string {
-  const value = args[name];
-  if (typeof value !== 'string' || value.trim() === '') {
-    throw new FleetMcpError('INVALID_ARGUMENT', `${name} is required`);
-  }
-  return value.trim();
-}
 
 function optionalString(args: Record<string, unknown>, name: string): string | undefined {
   const value = args[name];
@@ -146,13 +139,6 @@ function positiveInteger(args: Record<string, unknown>, name: string): number {
   return value;
 }
 
-function nonNegativeInteger(args: Record<string, unknown>, name: string): number {
-  const value = args[name];
-  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
-    throw new FleetMcpError('INVALID_ARGUMENT', `${name} must be a non-negative integer`);
-  }
-  return value;
-}
 
 /** Validate the actual MCP call envelope; inputSchema is only documentation. */
 export function fleetToolArgumentError(name: FleetMcpToolName, args: Record<string, unknown>): string | undefined {

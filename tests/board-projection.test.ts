@@ -320,7 +320,6 @@ describe('board column decision table', () => {
     expect(unreadable.claim).toEqual(readable.claim);
     expect(unreadable.lease_state).toBe(readable.lease_state);
     expect(unreadable.column).toBe(readable.column);
-    expect(unreadable.actions).toEqual(readable.actions);
   });
 
   test('a pending row with an active lease is doing, and with no lease is todo', () => {
@@ -366,13 +365,9 @@ describe('diagnostics', () => {
       const card = cardFor('done', lease, 'not_observed');
       expect(card.column).toBe('done');
       expect(card.diagnostics.lease_cleanup_required).toBe(true);
-      expect(card.actions.reconcile).toBe(
-        `repo-harness sprint reconcile --task-id ${TASK_ID} --target-ref ${CANONICAL_REF}`,
-      );
     }
     const clean = cardFor('done', 'available', 'not_observed');
     expect(clean.diagnostics.lease_cleanup_required).toBe(false);
-    expect(clean.actions.reconcile).toBeNull();
   });
 
   test('definition drift is the lease holding a revision canonical no longer has', () => {
@@ -461,20 +456,8 @@ describe('diagnostics', () => {
   });
 });
 
-describe('actions', () => {
-  test('release remains available for reserving and bound leases', () => {
-    for (const lease of ['reserving', 'bound'] as const) {
-      const card = cardFor('pending', lease, 'not_observed');
-      expect(card.actions.release).toBe('repo-harness sprint release --claim-id claim-1');
+describe('historical publication pointers', () => {
 
-    }
-  });
-
-  test('a completing lease offers no release action', () => {
-    const card = cardFor('pending', 'completing', 'active');
-    // Completion must keep its ownership until publication is resolved.
-    expect(card.actions.release).toBeNull();
-  });
 
   test('a reviewing lease is doing but offers no sprint mutation or reconcile bypass', () => {
     const reviewing: LeaseOwnerRecordV2 = {
@@ -497,30 +480,9 @@ describe('actions', () => {
     expect(card.lease_state).toBe('reviewing');
     expect(card.column).toBe('doing');
     expect(card.claim?.current_publication).toEqual(reviewing.current_publication);
-    expect(card.actions).toEqual({
-      release: null, reconcile: null,
-      publication_reconcile: `repo-harness publication reconcile --task-id ${TASK_ID} --expected-claim-id claim-1 --expected-generation 1 --publication-id ${reviewing.current_publication.publication_id} --expected-head-sha ${reviewing.current_publication.head_sha} --remote '<remote>'`,
-      publication_recover: null,
-      publication_reopen: `repo-harness publication reopen --task-id ${TASK_ID} --claim-id claim-1 --expected-generation 1 --publication-id ${reviewing.current_publication.publication_id} --expected-head-sha ${reviewing.current_publication.head_sha}`,
-      publication_takeover: `repo-harness publication takeover --task-id ${TASK_ID} --expected-claim-id claim-1 --expected-generation 1 --publication-id ${reviewing.current_publication.publication_id} --expected-head-sha ${reviewing.current_publication.head_sha} --reason '<reason>' --session-id '<session-id>'`,
-      publication_abandon: `repo-harness publication abandon --task-id ${TASK_ID} --expected-claim-id claim-1 --expected-generation 1 --publication-id ${reviewing.current_publication.publication_id} --expected-head-sha ${reviewing.current_publication.head_sha} --reason '<reason>'`,
-    });
   });
 
-  test('a card with no lease offers nothing', () => {
-    const card = cardFor('pending', 'available', 'not_observed');
-    expect(card.actions).toEqual({
-      release: null, reconcile: null,
-      publication_reconcile: null, publication_recover: null,
-      publication_reopen: null, publication_takeover: null, publication_abandon: null,
-    });
-  });
 
-  test('a completing lease routes recovery to the publication adapter', () => {
-    const card = cardFor('pending', 'completing', 'active');
-    expect(card.actions.publication_reconcile).toBeNull();
-    expect(card.actions.publication_recover).toBe('repo-harness publication recover inspect');
-  });
 });
 
 describe('determinism', () => {

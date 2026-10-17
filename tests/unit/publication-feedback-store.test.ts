@@ -1,3 +1,4 @@
+import { seedRepairProof, seedReactionReceipt } from '../helpers/publication-fixture';
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'child_process';
 import { mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync } from 'fs';
@@ -12,21 +13,7 @@ import {
   transitionRepairDispatchProof,
   transitionFeedbackDeliveryReceipt,
 } from '../../src/core/publication/feedback';
-import {
-  FeedbackStoreError,
-  appendReactionAttemptReceipt,
-  feedbackEventPath,
-  repairDispatchProofPath,
-  readFeedbackDeliveryReceipt,
-  readFeedbackEvents,
-  readReactionAttemptReceipts,
-  readRepairDispatchProof,
-  readRepairDispatchProofs,
-  transitionRepairDispatchProof as transitionStoredRepairDispatchProof,
-  writeFeedbackDeliveryReceipt,
-  writeFeedbackEvent,
-  writeRepairDispatchProof,
-} from '../../src/effects/publication/feedback-store';
+import { FeedbackStoreError, feedbackEventPath, repairDispatchProofPath, readFeedbackDeliveryReceipt, readFeedbackEvents, readReactionAttemptReceipts, readRepairDispatchProof, readRepairDispatchProofs, writeFeedbackDeliveryReceipt, writeFeedbackEvent } from '../../src/effects/publication/feedback-store';
 import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
 
 const roots: string[] = [];
@@ -143,7 +130,7 @@ describe('provider feedback common-directory store', () => {
     expect(readFeedbackEvents(root, PUBLICATION_ID)).toEqual([first]);
   });
 
-  test('rejects symlinked immutable records and keeps only dispatched, idempotent completion receipts', () => {
+  test('rejects symlinked immutable records and reads historical repair and completion receipts', () => {
     const root = repo();
     const first = event();
     const eventPath = feedbackEventPath(root, PUBLICATION_ID, first.provider_event_id);
@@ -152,22 +139,16 @@ describe('provider feedback common-directory store', () => {
     expect(() => readFeedbackEvents(root, PUBLICATION_ID)).toThrow('feedback event is unsafe');
 
     const prepared = preparedProof();
-    expect(() => writeRepairDispatchProof(root, PUBLICATION_ID, dispatchedProof())).toThrow('must start prepared');
-    const proofPath = writeRepairDispatchProof(root, PUBLICATION_ID, prepared);
+    const proofPath = seedRepairProof(root, PUBLICATION_ID, prepared);
     expect(readRepairDispatchProof(root, PUBLICATION_ID, prepared.repair_id)).toEqual(prepared);
-    expect(() => appendReactionAttemptReceipt(root, PUBLICATION_ID, reaction())).toThrow('no dispatched repair proof');
 
-    const dispatched = transitionStoredRepairDispatchProof(root, PUBLICATION_ID, prepared.repair_id, {
-      successor_claim_id: 'claim-feedback', successor_generation: 1, successor_state: 'bound',
-    });
+    const dispatched = dispatchedProof();
+    seedRepairProof(root, PUBLICATION_ID, dispatched);
     expect(readRepairDispatchProofs(root, PUBLICATION_ID)).toEqual([dispatched]);
-    expect(writeRepairDispatchProof(root, PUBLICATION_ID, dispatched)).toBe(proofPath);
 
     const completed = reaction();
-    const reactionPath = appendReactionAttemptReceipt(root, PUBLICATION_ID, completed);
-    expect(appendReactionAttemptReceipt(root, PUBLICATION_ID, completed)).toBe(reactionPath);
+    const reactionPath = seedReactionReceipt(root, PUBLICATION_ID, completed);
     expect(readReactionAttemptReceipts(root, PUBLICATION_ID)).toEqual([completed]);
-    expect(() => appendReactionAttemptReceipt(root, PUBLICATION_ID, reaction({ after_reaction_token: `sha256:${'4'.repeat(64)}` }))).toThrow('completion_id conflicts');
     const common = resolveGitCommonDirectory(root);
     const publicationDirectory = join(common, 'repo-harness', 'feedback', 'v1', PUBLICATION_ID.slice('sha256:'.length));
     expect(readdirSync(publicationDirectory)).toContain('reactions.jsonl');

@@ -1,5 +1,5 @@
-import { boundLeaseFixture } from '../helpers/sprint-fixture';
-import { leaseOwnerPath } from '../helpers/sprint-fixture';
+import { seedLeaseDirectory, writeHistoricalLease, completingLeaseFixture, reviewingLeaseFixture, boundLeaseFixture, leaseOwnerPath } from '../helpers/sprint-fixture';
+import { seedPublicationReceipt } from '../helpers/publication-fixture';
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'child_process';
 import {
@@ -27,11 +27,7 @@ import {
   publicationSha256,
   stablePublicationJson,
 } from '../../src/core/publication/publication-receipt';
-import {
-  beginLeaseCompletionRecord,
-  buildLeaseOwnerRecord,
-  enterReviewingLeaseRecord,
-} from '../../src/core/state/coordination-identity';
+import { buildLeaseOwnerRecord } from '../../src/core/state/coordination-identity';
 import {
   createAcceptanceMatrix,
   createIntegrationContract,
@@ -44,15 +40,8 @@ import {
   readProductAcceptanceProjection,
 } from '../../src/effects/integration/product-acceptance';
 import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
-import {
-  readPublicationReceiptCache,
-  writePublicationReceiptCache,
-} from '../../src/effects/publication/publication-receipt';
-import {
-  createLeaseDirectory,
-  readLease,
-  writeLeaseOwnerDurably,
-} from '../../src/effects/state/coordination-lease-store';
+import { readPublicationReceiptCache } from '../../src/effects/publication/publication-receipt';
+import { readLease } from '../../src/effects/state/coordination-lease-store';
 import type { AcceptanceReceipt } from '../../scripts/acceptance-receipt';
 
 const TASK_A = '1'.repeat(64);
@@ -107,7 +96,7 @@ function reviewingPublication(root: string, taskId: string, revision: string, he
     pr_url: `https://example.invalid/pr/${number}`,
     created_at: `2026-08-26T00:00:0${number}Z`,
   });
-  writePublicationReceiptCache(root, receipt);
+  seedPublicationReceipt(root, receipt);
   const owner = buildLeaseOwnerRecord({
     claimId: `claim-${number}`,
     taskId,
@@ -123,19 +112,19 @@ function reviewingPublication(root: string, taskId: string, revision: string, he
     branch: 'main',
     unitRef: `plans/plan-${number}.md`,
   });
-  const completing = beginLeaseCompletionRecord(bound, {
+  const completing = completingLeaseFixture(bound, {
     claimId: owner.claim_id,
     executionWorktree: root,
     finishTransactionKey: null,
   });
   if (!completing.ok) throw new Error(completing.error);
-  const reviewing = enterReviewingLeaseRecord(completing.record, {
+  const reviewing = reviewingLeaseFixture(completing.record, {
     claimId: owner.claim_id,
     publication: publicationPointerFromReceipt(receipt, `ship-${number}`),
   });
   if (!reviewing.ok) throw new Error(reviewing.error);
-  if (!createLeaseDirectory(root, taskId)) throw new Error('lease election failed');
-  writeLeaseOwnerDurably(root, taskId, reviewing.record);
+  if (!seedLeaseDirectory(root, taskId)) throw new Error('lease election failed');
+  writeHistoricalLease(root, taskId, reviewing.record);
   if (!('current_publication' in reviewing.record) || reviewing.record.current_publication === null) {
     throw new Error('reviewing transition did not retain its publication pointer');
   }
@@ -214,7 +203,7 @@ describe('ME-4C integration product acceptance', () => {
     const { candidate_diff_fingerprint, ...retained } = receipt;
     const oldDigest = publicationSha256(stablePublicationJson({ ...retained, protocol: 1,
       review_subject_sha256: SUBJECT, verification_evidence_sha256: DIGEST }));
-    writeLeaseOwnerDurably(value.root, TASK_A, { ...owner,
+    writeHistoricalLease(value.root, TASK_A, { ...owner,
       current_publication: { ...owner.current_publication, receipt_sha256: oldDigest } });
     const leaseBefore = readFileSync(leaseOwnerPath(value.root, TASK_A), 'utf8');
     const historicalEnvelope = readIntegrationEnvelope(value.root, value.envelope.envelope_sha256);

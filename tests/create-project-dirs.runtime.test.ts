@@ -228,7 +228,6 @@ describe("create-project-dirs runtime smoke", () => {
       expect(workflowContract.helpers.scripts).toContain("check-deploy-sql-order.sh");
       expect(workflowContract.helpers.scripts).not.toContain("check-architecture-sync.sh");
       expect(workflowContract.helpers.scripts).toContain("check-task-workflow.sh");
-      expect(workflowContract.helpers.scripts).toContain("sprint-backlog.sh");
       expect(workflowContract.helpers.scripts).toContain("contract-worktree.sh");
       expect(workflowContract.helpers.scripts).toContain("ship-worktrees.sh");
       expect(workflowContract.helpers.scripts).toContain("refresh-current-status.sh");
@@ -298,7 +297,6 @@ describe("create-project-dirs runtime smoke", () => {
       expect(policy.harness.helper_source).toBe("package");
       expect(policy.harness.helper_runtime_dir).toBe("package:scripts");
       expect(policy.harness.helper_compat_dir).toBeUndefined();
-      expect(policy.sprints.helper_script).toBe("repo-harness run sprint-backlog");
       expect(policy.external_tooling.routing).toEqual({
         simple: "waza",
       });
@@ -465,7 +463,6 @@ describe("create-project-dirs runtime smoke", () => {
       expect(policy.worktree_strategy.auto_on_conflict).toBe(true);
       expect(policy.worktree_strategy.auto_for_contract_tasks).toBe(true);
       expect(policy.worktree_strategy.start_script).toBe("repo-harness run contract-worktree start --plan <plan-file>");
-      expect(policy.worktree_strategy.finish_script).toBe("repo-harness run contract-worktree finish");
       expect(policy.worktree_strategy.cleanup_script).toBe("repo-harness run contract-worktree cleanup --slug <slug>");
       expect(policy.worktree_strategy.validation_route).toBe("waza:check");
       expect(policy.context_budget).toBeUndefined();

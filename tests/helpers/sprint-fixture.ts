@@ -1,4 +1,4 @@
-import type { LeaseOwnerRecord } from '../../src/core/state/coordination-identity';
+import type { LeaseOwnerRecord, CurrentPublicationPointerV1 } from '../../src/core/state/coordination-identity';
 import { leaseDirectory, LEASE_OWNER_FILE_NAME } from '../../src/effects/state/coordination-lease-store';
 /**
  * Fixture helpers for backlog schema 2 sprints.
@@ -14,7 +14,7 @@ import { leaseDirectory, LEASE_OWNER_FILE_NAME } from '../../src/effects/state/c
  * product code may do it.
  */
 import { createHash } from 'crypto';
-import { mkdirSync, writeFileSync } from 'fs';
+import { mkdirSync, writeFileSync, existsSync } from 'fs';
 import { join } from 'path';
 
 const FIXTURE_ID_DOMAIN = 'repo-harness-fixture-task-id';
@@ -74,4 +74,29 @@ export function boundLeaseFixture(record: LeaseOwnerRecord, input: {
 }): LeaseOwnerRecord {
   return { ...record, state: 'bound', execution_worktree: input.executionWorktree,
     branch: input.branch, unit_ref: input.unitRef };
+}
+
+/** Seed historical owner bytes. This helper does not implement lease transitions. */
+export function seedLeaseDirectory(cwd: string, taskId: string): boolean {
+  const path = leaseDirectory(cwd, taskId);
+  if (existsSync(path)) return false;
+  mkdirSync(path, { recursive: true });
+  return true;
+}
+export function writeHistoricalLease(cwd: string, taskId: string, record: LeaseOwnerRecord): void {
+  writeFileSync(leaseOwnerPath(cwd, taskId), `${JSON.stringify(record)}\n`);
+}
+type HistoricalLeaseResult = { ok: true; record: LeaseOwnerRecord } | { ok: false; error: string };
+export function completingLeaseFixture(record: LeaseOwnerRecord, input: {
+  claimId: string; executionWorktree: string; finishTransactionKey?: string | null;
+}): HistoricalLeaseResult {
+  return { ok: true, record: { ...record, state: 'completing', finish_transaction_key: input.finishTransactionKey ?? null,
+    ...('record_schema' in record ? { current_publication: null } : {}),
+  } as LeaseOwnerRecord };
+}
+export function reviewingLeaseFixture(record: LeaseOwnerRecord, input: {
+  claimId: string; publication: CurrentPublicationPointerV1;
+}): HistoricalLeaseResult {
+  return { ok: true, record: { ...record, record_schema: 2, state: 'reviewing',
+    finish_transaction_key: null, current_publication: input.publication } };
 }

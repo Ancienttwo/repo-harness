@@ -1,4 +1,5 @@
-import { boundLeaseFixture } from '../helpers/sprint-fixture';
+import { seedLeaseDirectory, writeHistoricalLease, completingLeaseFixture, reviewingLeaseFixture, boundLeaseFixture, fixtureTaskId } from '../helpers/sprint-fixture';
+import { seedPublicationReceipt } from '../helpers/publication-fixture';
 import { describe, expect, onTestFinished, test } from 'bun:test';
 import { execFileSync } from 'child_process';
 import {
@@ -29,22 +30,14 @@ import {
   encodePublicationMarker,
   publicationReceiptDigest,
 } from '../../src/core/publication/publication-receipt';
-import {
-  beginLeaseCompletionRecord,
-  buildLeaseOwnerRecord,
-  deriveTaskRevision,
-  enterReviewingLeaseRecord,
-} from '../../src/core/state/coordination-identity';
+import { buildLeaseOwnerRecord, deriveTaskRevision } from '../../src/core/state/coordination-identity';
 import {
   repoHarnessRepoIdFor,
   type RepoHarnessRegisteredRepo,
   type RepoHarnessRegistryStrictSnapshot,
 } from '../../src/effects/repo-registry';
-import { writePublicationReceiptCache } from '../../src/effects/publication/publication-receipt';
 import { buildReviewSubject } from '../../src/effects/review/diff-fingerprint';
 import { resolveRepoIdentity } from '../../src/effects/state/coordination-canonical-source';
-import { createLeaseDirectory, writeLeaseOwnerDurably } from '../../src/effects/state/coordination-lease-store';
-import { fixtureTaskId } from '../helpers/sprint-fixture';
 
 function repo(index: number): RepoHarnessRegisteredRepo {
   return {
@@ -132,15 +125,15 @@ function createReviewingProviderFixture(
     });
     // One card observes a publication whose receipt cache is absent: the
     // fixture's damaged card, not a damaged repository.
-    if (options.omit_receipt_for !== index + 1) writePublicationReceiptCache(root, receipt);
+    if (options.omit_receipt_for !== index + 1) seedPublicationReceipt(root, receipt);
     const owner = buildLeaseOwnerRecord({
       claimId, taskId, taskRevision, sprintPath, targetRef: 'main', generation: 1,
       sessionId: `fleet-provider-session-${index + 1}`, sourceWorktree: root,
     });
     const bound = boundLeaseFixture(owner, { executionWorktree: root, branch: 'codex/fleet-provider', unitRef: 'plans/plan-fleet-provider.md' });
-    const completing = beginLeaseCompletionRecord(bound, { claimId, executionWorktree: root, finishTransactionKey: null });
+    const completing = completingLeaseFixture(bound, { claimId, executionWorktree: root, finishTransactionKey: null });
     if (!completing.ok) throw new Error(completing.error);
-    const reviewing = enterReviewingLeaseRecord(completing.record, {
+    const reviewing = reviewingLeaseFixture(completing.record, {
       claimId,
       publication: {
         publication_id: receipt.publication_id,
@@ -150,8 +143,8 @@ function createReviewingProviderFixture(
       },
     });
     if (!reviewing.ok) throw new Error(reviewing.error);
-    if (!createLeaseDirectory(root, taskId)) throw new Error('lease creation failed');
-    writeLeaseOwnerDurably(root, taskId, reviewing.record);
+    if (!seedLeaseDirectory(root, taskId)) throw new Error('lease creation failed');
+    writeHistoricalLease(root, taskId, reviewing.record);
     const providerPr = JSON.stringify({
       number: index + 1, url: receipt.pr_url, state: 'OPEN', isDraft: false,
       headRefOid: head, headRefName: receipt.branch, baseRefOid: base, baseRefName: 'main',

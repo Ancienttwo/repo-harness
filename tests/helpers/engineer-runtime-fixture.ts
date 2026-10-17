@@ -1,22 +1,16 @@
+import { seedLeaseDirectory } from './sprint-fixture';
+import { writeHistoricalLease } from './sprint-fixture';
 import { boundLeaseFixture } from './sprint-fixture';
 import { claimActorReceiptFixture, seedClaimActorReceipt } from './engineer-state-fixture';
 import { execFileSync } from 'child_process';
 import { mkdirSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { buildTaskMessageEvent } from '../../src/core/fleet/task-message';
-import {
-  buildLeaseOwnerRecord,
-  deriveTaskRevision,
-  releaseLeaseRecord,
-} from '../../src/core/state/coordination-identity';
+import { buildLeaseOwnerRecord, deriveTaskRevision } from '../../src/core/state/coordination-identity';
 import { readEngineerBindingStatus } from '../../src/effects/engineers/binding-store';
 import { loadEngineerProfile } from '../../src/effects/engineers/profile-store';
 import { sendTaskMessage } from '../../src/effects/fleet/task-inbox';
-import {
-  createLeaseDirectory,
-  readLease,
-  writeLeaseOwnerDurably,
-} from '../../src/effects/state/coordination-lease-store';
+import { readLease } from '../../src/effects/state/coordination-lease-store';
 import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
 import { fixtureTaskId } from './sprint-fixture';
 
@@ -32,8 +26,8 @@ export function seedEngineerTaskMessage(repoRoot: string, engineerId: string, me
   const claimId = '44444444-4444-4444-8444-444444444444';
   const claimed = buildLeaseOwnerRecord({ claimId, taskId, taskRevision, sprintPath, targetRef: 'HEAD', generation: 1, sessionId: 'runtime-session', sourceWorktree: repoRoot });
   const bound = boundLeaseFixture(claimed, { executionWorktree: repoRoot, branch: 'codex/runtime', unitRef: 'plans/runtime.md' });
-  createLeaseDirectory(repoRoot, taskId);
-  writeLeaseOwnerDurably(repoRoot, taskId, bound);
+  seedLeaseDirectory(repoRoot, taskId);
+  writeHistoricalLease(repoRoot, taskId, bound);
   const profile = loadEngineerProfile(repoRoot, engineerId);
   const binding = readEngineerBindingStatus(repoRoot, engineerId, profile.engineer_contract_revision).binding!;
 
@@ -47,7 +41,5 @@ export function seedEngineerTaskMessage(repoRoot: string, engineerId: string, me
 export function releaseEngineerTaskMessage(repoRoot: string, taskId: string): void {
   const lease = readLease(repoRoot, taskId).record;
   if (!lease) throw new Error('Task fixture lease is missing');
-  const released = releaseLeaseRecord(lease, lease.claim_id);
-  if (!released.ok) throw new Error(released.error);
-  writeLeaseOwnerDurably(repoRoot, taskId, released.record);
+  writeHistoricalLease(repoRoot, taskId, { ...lease, state: 'released', ...('record_schema' in lease ? { current_publication: null } : {}) } as typeof lease);
 }

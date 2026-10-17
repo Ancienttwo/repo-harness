@@ -29,7 +29,7 @@
  *
  * Row 1 is unconditional on purpose: the tracked `[x]` row is the completion
  * authority, and a residual lease on a completed row is cleanup, not work. It
- * carries `lease_cleanup_required` plus an executable `actions.reconcile`
+ * carries `lease_cleanup_required` as historical cleanup information
  * instead of dragging the card back into `blocked`.
  *
  * Row 2 keeps a residual `released` lease in `blocked` until cleanup clears
@@ -181,13 +181,15 @@ export const ACTIVE_LEASE_STATES: ReadonlySet<BoardLeaseState> = new Set<BoardLe
   'reviewing',
 ]);
 
+const GIVABLE_LEASE_STATES: ReadonlySet<string> = new Set(['reserving', 'bound']);
+
 /** Lease states a fencing token may still give up or have taken from it. */
 
 /**
  * `drifted` covers both shapes of "the canonical definition is not what
  * execution is holding": the owner's recorded `task_revision` no longer
  * matches canonical, and a status cell outside the `[ ]` / `[x]` grammar
- * `sprint-backlog.sh` writes. Neither row is claimable and neither is done.
+ * historical Sprint records use. Neither row is claimable and neither is done.
  */
 export function deriveTaskState(task: BoardOwnershipInput): TaskState {
   const row = task.row;

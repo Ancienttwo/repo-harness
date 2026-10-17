@@ -11,7 +11,6 @@ import {
 import { tmpdir } from "os";
 import { dirname, join } from "path";
 import { spawnSync } from "child_process";
-import { fixtureTaskId } from './helpers/sprint-fixture';
 
 const ROOT = join(import.meta.dir, "..");
 
@@ -38,27 +37,6 @@ function helperSourcePath(repo: string): string {
   return join(repo, ".test-helper-source", "heartbeat-triage.sh");
 }
 
-function writeSprint(repo: string) {
-  const sprintPath = "plans/sprints/demo.sprint.md";
-  writeFileSync(
-    join(repo, sprintPath),
-    [
-      "# Sprint: Demo",
-      "",
-      "> **Status**: Executing",
-      "> **Backlog Schema**: 2",
-      "",
-      "## Backlog",
-      "",
-      "| # | ID | Status | Task | Mode | Acceptance | Plan |",
-      "|---|----|--------|------|------|------------|------|",
-      `| 1 | ${fixtureTaskId('done-task')} | [x] | done-task | contract | done | \`plans/archive/done.md\` |`,
-      `| 2 | ${fixtureTaskId('next-heartbeat-task')} | [ ] | next-heartbeat-task | contract | next acceptance | (pending) |`,
-      "",
-    ].join("\n"),
-  );
-  writeFileSync(join(repo, ".ai/harness/sprint/active-sprint"), sprintPath);
-}
 
 function writeWorkflowHelpers(repo: string, workflowExit = 0) {
   writeExecutable(repo, ".test-helper-source/heartbeat-triage.sh", "#!/bin/bash\n");
@@ -72,23 +50,7 @@ function writeWorkflowHelpers(repo: string, workflowExit = 0) {
       "",
     ].join("\n"),
   );
-  writeExecutable(
-    repo,
-    ".test-helper-source/sprint-backlog.sh",
-    [
-      "#!/bin/bash",
-      "set -euo pipefail",
-      "if [[ \"${1:-}\" != \"next\" ]]; then exit 2; fi",
-      "cat <<'NEXT_EOF'",
-      "index: 2",
-      "task: next-heartbeat-task",
-      "mode: contract",
-      "acceptance: next acceptance",
-      "plan: (pending)",
-      "NEXT_EOF",
-      "",
-    ].join("\n"),
-  );
+
 }
 
 function runHeartbeat(repo: string, args: string[] = []) {
@@ -104,10 +66,9 @@ function parseJson(stdout: string): Record<string, unknown> {
 }
 
 describe("heartbeat triage runner", () => {
-  test("three scheduled runs append workflow and sprint-next entries", () => {
+  test("three scheduled runs append workflow findings", () => {
     const repo = makeRepo();
     try {
-      writeSprint(repo);
       writeWorkflowHelpers(repo);
 
       for (const idx of [1, 2, 3]) {
@@ -118,16 +79,13 @@ describe("heartbeat triage runner", () => {
         expect(manifest.source).toBe("scheduled");
         expect((manifest.entries as Array<{ kind: string; status: string }>)).toEqual([
           expect.objectContaining({ kind: "workflow-check", status: "pass" }),
-          expect.objectContaining({ kind: "sprint-next", status: "action" }),
         ]);
       }
 
       const inbox = readFileSync(join(repo, ".ai/harness/triage/inbox.md"), "utf-8");
       expect((inbox.match(/^## Run scheduled-/gm) ?? [])).toHaveLength(3);
       expect((inbox.match(/workflow-check/g) ?? [])).toHaveLength(3);
-      expect((inbox.match(/sprint-next/g) ?? [])).toHaveLength(3);
       expect(inbox).not.toContain("drift-requests");
-      expect(inbox).toContain("next-heartbeat-task");
       expect(inbox).toContain("Adoption review due:");
       expect(existsSync(join(repo, ".ai/harness/runs/scheduled-3-heartbeat-triage.json"))).toBe(true);
     } finally {
@@ -138,7 +96,6 @@ describe("heartbeat triage runner", () => {
   test("workflow check failure is recorded as an inbox finding without failing the runner", () => {
     const repo = makeRepo("heartbeat-triage-fail-");
     try {
-      writeSprint(repo);
       writeWorkflowHelpers(repo, 1);
 
       const res = runHeartbeat(repo, ["--run-id", "workflow-failure", "--json"]);
@@ -158,26 +115,6 @@ describe("heartbeat triage runner", () => {
     }
   }, 30_000);
 
-  test("fallback finds the next pending row when no active-sprint marker exists", () => {
-    const repo = makeRepo("heartbeat-triage-fallback-");
-    try {
-      writeSprint(repo);
-      rmSync(join(repo, ".ai/harness/sprint/active-sprint"), { force: true });
-      writeWorkflowHelpers(repo);
-
-      const res = runHeartbeat(repo, ["--run-id", "fallback", "--json"]);
-      expect(res.status).toBe(0);
-      const manifest = parseJson(res.stdout);
-      expect((manifest.entries as Array<{ kind: string; summary: string }>)[1]).toEqual(
-        expect.objectContaining({
-          kind: "sprint-next",
-          summary: "next sprint task: next-heartbeat-task",
-        }),
-      );
-    } finally {
-      rmSync(repo, { recursive: true, force: true });
-    }
-  }, 30_000);
 
   test("unknown flags exit with usage error", () => {
     const res = spawnSync("bash", ["scripts/heartbeat-triage.sh", "run", "--bogus"], {

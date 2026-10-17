@@ -1,13 +1,25 @@
 /** Manual GitHub feedback observation and durable intake. */
 import { spawnSync } from 'child_process';
 
-import { buildFeedbackDeliveryReceipt, buildFeedbackEvent, canonicalFeedbackDeliveryReceiptBytes, canonicalFeedbackEventBytes, canonicalReactionAttemptReceiptBytes, deriveFeedbackRevision, deriveReactionToken, projectRepairOffer, transitionFeedbackDeliveryReceipt, type FeedbackDeliveryTransitionInput, type FeedbackCheckConclusion, type FeedbackEventV1, type FeedbackMergeability, type RepairOfferAction, type RepairOfferProjection } from '../../core/publication/feedback';
-import { lookupCanonicalTask, type LeaseOwnerRecord } from '../../core/state/coordination-identity';
+import { buildFeedbackDeliveryReceipt, buildFeedbackEvent, canonicalFeedbackDeliveryReceiptBytes, canonicalFeedbackEventBytes, canonicalReactionAttemptReceiptBytes, deriveFeedbackRevision, deriveReactionToken, projectRepairOffer, transitionFeedbackDeliveryReceipt, type FeedbackDeliveryTransitionInput, type FeedbackCheckConclusion, type FeedbackEventV1, type FeedbackFailingCheckV1, type FeedbackMergeability, type RepairOfferAction, type RepairOfferProjection } from '../../core/publication/feedback';
+import {
+  lookupCanonicalTask,
+  type LeaseOwnerRecord,
+} from '../../core/state/coordination-identity';
 import { readCanonicalSprint, resolveRepoIdentity } from '../state/coordination-canonical-source';
 import { readLease, withTaskLock } from '../state/coordination-lease-store';
 import { FeedbackStoreError, readFeedbackDeliveryReceipt, readFeedbackDeliveryReceipts, readFeedbackEvent, readFeedbackEvents, readReactionAttemptReceipts, writeFeedbackDeliveryReceipt, writeFeedbackEvent } from './feedback-store';
-import { PublicationReceiptError, readPublicationReceiptCache } from './publication-receipt';
-import { canonicalPublicationReceiptBytes, publicationSha256, publicationReceiptDigest, stablePublicationJson, type PublicationReceiptV3 } from '../../core/publication/publication-receipt';
+import {
+  PublicationReceiptError,
+  readPublicationReceiptCache,
+} from './publication-receipt';
+import {
+  canonicalPublicationReceiptBytes,
+  publicationSha256,
+  publicationReceiptDigest,
+  stablePublicationJson,
+  type PublicationReceiptV3,
+} from '../../core/publication/publication-receipt';
 
 export type FeedbackErrorCode =
   | 'feedback_provider_failed'
@@ -959,3 +971,40 @@ export function transitionFeedbackDelivery(
  * the frozen offer fences and only carries provider object identifiers; full
  * provider comment bodies never leave the feedback store through this path.
  */
+
+function actionableFeedbackFacts(events: readonly FeedbackEventV1[]): {
+  readonly failing_checks: readonly FeedbackFailingCheckV1[];
+  readonly failing_check_ids: readonly string[];
+  readonly unresolved_review_thread_ids: readonly string[];
+  readonly changes_requested_review_ids: readonly string[];
+  readonly mergeability: FeedbackMergeability;
+} {
+  const checks = new Map<string, FeedbackFailingCheckV1>();
+  const unresolved = new Set<string>();
+  const changesRequested = new Set<string>();
+  const mergeabilities = new Set<FeedbackMergeability>();
+  for (const event of events) {
+    mergeabilities.add(event.mergeability);
+    for (const check of event.failing_checks) {
+      const existing = checks.get(check.id);
+      if (existing !== undefined && existing.conclusion !== check.conclusion) {
+        throw new FeedbackError('feedback_unreadable', `failing check ${check.id} has conflicting conclusions`);
+      }
+      checks.set(check.id, check);
+    }
+    for (const id of event.unresolved_review_thread_ids) unresolved.add(id);
+    for (const id of event.changes_requested_review_ids) changesRequested.add(id);
+  }
+  if (mergeabilities.size !== 1) {
+    throw new FeedbackError('feedback_unreadable', 'feedback material does not carry one canonical mergeability');
+  }
+  const failingChecks = [...checks.values()].sort((left, right) => Buffer.compare(Buffer.from(left.id), Buffer.from(right.id)));
+  const failingCheckIds = failingChecks.map((check) => check.id);
+  return Object.freeze({
+    failing_checks: Object.freeze(failingChecks),
+    failing_check_ids: Object.freeze(failingCheckIds),
+    unresolved_review_thread_ids: Object.freeze([...unresolved].sort((left, right) => Buffer.compare(Buffer.from(left), Buffer.from(right)))),
+    changes_requested_review_ids: Object.freeze([...changesRequested].sort((left, right) => Buffer.compare(Buffer.from(left), Buffer.from(right)))),
+    mergeability: [...mergeabilities][0]!,
+  });
+}

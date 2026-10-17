@@ -216,14 +216,12 @@ describe('mcp policy and paths', () => {
       workspaceCoder: true,
     });
     expect(coding.execution).toMatchObject({ codingShell: true });
-    expect(definitions).toHaveLength(27);
+    expect(definitions).toHaveLength(25);
     expect(definitions.filter((tool) => codingNames.includes(tool.name)).map((tool) => tool.name)).toEqual(codingNames);
     expect(definitions.map((tool) => tool.name)).toContain('write_prd');
     expect(definitions.map((tool) => tool.name)).toContain('prepare_task_goal_from_sprint');
     expect(definitions.map((tool) => tool.name)).toEqual(expect.arrayContaining([
       'publication_readiness',
-      'publication_reopen',
-      'publication_takeover',
     ]));
     expect(new Set(definitions.map((tool) => tool.name)).size).toBe(definitions.length);
     expect(definitions.find((tool) => tool.name === 'exec_command')?.annotations).toMatchObject({

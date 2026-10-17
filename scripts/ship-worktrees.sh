@@ -367,7 +367,7 @@ closeout_journal_record() {
   stamp="$(date '+%Y-%m-%dT%H:%M:%S%z')"
   if [[ -n "$name" ]]; then
     if [[ -n "$publication" ]]; then
-      # The trusted publication CLI emits this canonical JSON object. It is
+      # The provider readback is serialized as one JSON object. It is
       # journal evidence, not workflow state, and supports crash convergence.
       lines+=("{\"phase\": \"$(json_escape "$name")\", \"at\": \"$stamp\", \"ref\": \"$(json_escape "$ref")\", \"publication\": $publication}")
     else
@@ -995,7 +995,7 @@ recover_ship() {
       closeout_journal_record "$dir" complete complete "$verified"
       rm -rf "$dir/snapshot"
       closeout_claim_release
-      echo "[Ship] Reconciled ordinary PR from existing push; no push was replayed: $dir"
+      echo "[Ship] Reconciled ship transaction; the push was already applied: $dir"
       ;;
   esac
 }
