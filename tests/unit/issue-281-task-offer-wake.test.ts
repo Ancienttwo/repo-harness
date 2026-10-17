@@ -25,14 +25,12 @@ import {
   type AgentRuntimeOfferWakeHostActionV2,
 } from '../../src/core/engineers/agent-runtime-effect';
 import {
-  buildEngineerOfferCandidate,
-  buildEngineerOffersDocument,
-  projectWorkGraph,
+  canonicalEngineerJson,
+  engineerSha256,
   validateEngineerOffersDocument,
-  validateWorkGraph,
-  type EngineerOfferCandidateResult,
+  type EngineerOfferV1,
+  type EngineerOfferExclusionV1,
   type EngineerOffersV1,
-  type WorkPackageDependencyObservationV1,
 } from '../../src/core/engineers/scheduling';
 import {
   HERDR_CLI_AGENT_OPERATIONS,
@@ -172,80 +170,48 @@ interface OfferOptions {
   readonly taskRevision?: string;
 }
 
-function candidate(fx: Fixture, options: OfferOptions = {}): EngineerOfferCandidateResult {
+// Historical records exercise the retained wake reader. No task offer producer runs.
+type HistoricalCandidate = { eligible: true; offer: EngineerOfferV1 } | { eligible: false; exclusion: EngineerOfferExclusionV1 };
+function candidate(fx: Fixture, options: OfferOptions = {}): HistoricalCandidate {
   const workPackageId = options.workPackageId ?? 'wp-a';
-  const revision = options.taskRevision ?? taskRevision;
-  const blocked = options.eligible === false;
-  const dependencies: readonly WorkPackageDependencyObservationV1[] = blocked && options.blocker === 'dependency'
-    ? [{ repository_id: fx.repositoryId, work_package_id: 'wp-upstream', required_state: 'canonical_done', acceptance_authority: null, status: 'unsatisfied', authority_revision: digest }]
-    : [];
-  const graph = projectWorkGraph(validateWorkGraph({
-    protocol: 1,
-    kind: 'repo-harness-work-graph',
-    repository_id: fx.repositoryId,
-    sprint_path: 'plans/sprints/demo.sprint.md',
-    lane: 'engineering-v2',
-    work_packages: [{
-      work_package_id: workPackageId,
-      task_id: taskId,
-      primary_capability: capabilityId,
-      depends_on: dependencies.map((entry) => ({
-        repository_id: entry.repository_id,
-        work_package_id: entry.work_package_id,
-        required_state: entry.required_state,
-        acceptance_authority: entry.acceptance_authority,
-      })),
-      priority: 50,
-      concurrency: { scope: 'repo', key: 'release' },
-      execution_surface: 'contract',
-      integration_group: null,
-      required_acceptance: [{ gate: 'module', policy_id: 'module', policy_ref: 'plans/policy.json', policy_revision: digest }],
-      retry_policy: { max_automated_attempts: 3, retryable_failure_classes: ['transient_failure'], backoff: { kind: 'exponential', initial_seconds: 30, maximum_seconds: 300 }, attention_after_seconds: 3600, revision_reset: 'reset_on_work_package_revision' } as const,
-    rollback_boundary: { kind: 'work_package', boundary_id: workPackageId, boundary_ref: 'plans/rollback.json', boundary_revision: digest },
-    }],
-  }), [{ task_id: taskId, task_revision: revision, task_ref: 'task A', status: '[ ]', row_order: 1 }]);
-  return buildEngineerOfferCandidate({
-    graph,
-    work_package: graph.work_packages[0]!,
-    engineer: { engineer_id: engineerId, capability_id: capabilityId, engineer_contract_revision: fx.engineerContractRevision, max_active_claims: 1 },
-    binding: { state: 'active', binding_id: fx.bindingId, binding_generation: fx.bindingGeneration },
-    fleet_offer: {
-      execution_readiness: 'execution_ready',
-      snapshot_consistency: 'stable',
-      task_id: taskId,
-      task_revision: revision,
-      offer_revision: `sha256:${'b'.repeat(64)}`,
-      authorization_revision: options.authorizationRevision ?? 1,
-    },
-    dependencies,
-    concurrency_available: !(blocked && options.blocker === 'concurrency'),
-    concurrency_revision: `sha256:${'c'.repeat(64)}`,
-    retry: { state: 'eligible', attempt_count: 0, last_outcome: null, next_eligible_at: null, eligible_since: '2026-09-04T00:00:00.000Z', attention_owner: 'none', starvation_attention: false, authority_revision: `sha256:${'9'.repeat(64)}` } as const,
-    active_claims: 0,
-  });
+  if (options.eligible === false) return { eligible: false, exclusion: {
+    repository_id: fx.repositoryId, work_package_id: workPackageId, engineer_id: engineerId,
+    blockers: [options.blocker === 'dependency' ? 'dependency_not_ready' : 'concurrency_unavailable'],
+    attempt_count: 0, last_outcome: null, next_eligible_at: null, blocker_owner: 'none',
+  } };
+  const basis: Omit<EngineerOfferV1, 'offer_revision'> = {
+    protocol: 1, kind: 'repo-harness-engineer-offer', repository_id: fx.repositoryId,
+    sprint_path: 'plans/sprints/demo.sprint.md', work_package_id: workPackageId,
+    work_package_revision: digest, work_graph_revision: digest,
+    task_id: taskId, task_revision: options.taskRevision ?? taskRevision,
+    primary_capability: capabilityId, priority: 50, dependency_state: 'ready', dependency_revision: digest,
+    concurrency_scope: 'repo', concurrency_key: 'release', concurrency_revision: digest,
+    engineer_id: engineerId, engineer_contract_revision: fx.engineerContractRevision,
+    binding_id: fx.bindingId, binding_generation: fx.bindingGeneration,
+    fleet_offer_revision: digest, authorization_revision: options.authorizationRevision ?? 1,
+    retry_policy: { max_automated_attempts: 3, retryable_failure_classes: ['transient_failure'], backoff: { kind: 'exponential', initial_seconds: 30, maximum_seconds: 300 }, attention_after_seconds: 3600, revision_reset: 'reset_on_work_package_revision' },
+    retry_revision: digest, eligible_since: '2026-09-04T00:00:00.000Z', attempt_count: 0,
+    last_outcome: null, next_eligible_at: null, blocker_owner: 'none', starvation_attention: false,
+  };
+  return { eligible: true, offer: { ...basis, offer_revision: engineerSha256(canonicalEngineerJson(basis)) } };
+}
+
+function historicalOffers(fx: Fixture, records: readonly HistoricalCandidate[]): EngineerOffersV1 {
+  const basis: Omit<EngineerOffersV1, 'snapshot_revision'> = {
+    protocol: 1, kind: 'repo-harness-engineer-offers', repository_id: fx.repositoryId,
+    engineer_id: engineerId, lane: 'engineering-v2', work_graph_revision: null,
+    offers: records.flatMap(record => record.eligible ? [record.offer] : []),
+    exclusions: records.flatMap(record => record.eligible ? [] : [record.exclusion]),
+  };
+  return { ...basis, snapshot_revision: engineerSha256(canonicalEngineerJson(basis)) };
 }
 
 function offers(fx: Fixture, options: OfferOptions = {}): EngineerOffersV1 {
-  const result = candidate(fx, options);
-  if (options.eligible === false && result.eligible) throw new Error('fixture candidate should be blocked');
-  if (options.eligible !== false && !result.eligible) throw new Error('fixture candidate should be eligible');
-  return buildEngineerOffersDocument({
-    repository_id: fx.repositoryId,
-    engineer_id: engineerId,
-    lane: 'engineering-v2',
-    work_graph_revision: result.eligible ? result.offer.work_graph_revision : `sha256:${'d'.repeat(64)}`,
-    candidates: [result],
-  });
+  return historicalOffers(fx, [candidate(fx, options)]);
 }
 
 function emptyOffers(fx: Fixture): EngineerOffersV1 {
-  return buildEngineerOffersDocument({
-    repository_id: fx.repositoryId,
-    engineer_id: engineerId,
-    lane: 'engineering-v2',
-    work_graph_revision: null,
-    candidates: [],
-  });
+  return historicalOffers(fx, []);
 }
 
 function record(
@@ -416,16 +382,8 @@ describe('issue #281 pure offer-transition observer', () => {
 
   test('a Work Package that becomes eligible beside an already eligible one names its own release cause', () => {
     const base = fx();
-    const previous = buildAgentRuntimeOfferWakeSnapshot(buildEngineerOffersDocument({
-      repository_id: base.repositoryId, engineer_id: engineerId, lane: 'engineering-v2',
-      work_graph_revision: null,
-      candidates: [candidate(base, { workPackageId: 'wp-a' }), candidate(base, { workPackageId: 'wp-b', eligible: false, blocker: 'dependency' })],
-    }));
-    const current = buildAgentRuntimeOfferWakeSnapshot(buildEngineerOffersDocument({
-      repository_id: base.repositoryId, engineer_id: engineerId, lane: 'engineering-v2',
-      work_graph_revision: null,
-      candidates: [candidate(base, { workPackageId: 'wp-a' }), candidate(base, { workPackageId: 'wp-b' })],
-    }));
+    const previous = buildAgentRuntimeOfferWakeSnapshot(historicalOffers(base, [candidate(base, { workPackageId: 'wp-a' }), candidate(base, { workPackageId: 'wp-b', eligible: false, blocker: 'dependency' })]));
+    const current = buildAgentRuntimeOfferWakeSnapshot(historicalOffers(base, [candidate(base, { workPackageId: 'wp-a' }), candidate(base, { workPackageId: 'wp-b' })]));
     expect(decideAgentRuntimeOfferWake(previous, current)).toMatchObject({ due: true, wake_reason: 'dependency_unblocked' });
   });
 

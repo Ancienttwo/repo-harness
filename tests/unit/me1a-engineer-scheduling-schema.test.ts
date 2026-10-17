@@ -2,11 +2,8 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   EngineerSchedulingError,
-  buildEngineerOfferCandidate,
-  buildEngineerOffersDocument,
   projectWorkGraph,
   schedulingCarrierPath,
-  validateEngineerOffer,
   validateWorkGraph,
   validateWorkGraphTopology,
   type SchedulingCanonicalTask,
@@ -138,138 +135,6 @@ describe('ME-1A closed scheduling schema', () => {
       workPackage('wp-a', 'task A'),
       workPackage('wp-b', 'task B'),
     ]), [task(), { ...task('task B', '1', '3', 2), task_id: fixtureTaskId('task A') }])).toThrow('duplicate task_id');
-  });
-
-  test('builds a revision-fenced offer only when every closed input is ready', () => {
-    const projected = projectWorkGraph(graph([workPackage()]), [task()]);
-    const candidate = buildEngineerOfferCandidate({
-      graph: projected,
-      work_package: projected.work_packages[0],
-      engineer: {
-        engineer_id: `engineer:${CAPABILITY}`,
-        capability_id: CAPABILITY,
-        engineer_contract_revision: DIGEST,
-        max_active_claims: 1,
-      },
-      binding: { state: 'active', binding_id: '11111111-1111-4111-8111-111111111111', binding_generation: 1 },
-      fleet_offer: {
-        execution_readiness: 'execution_ready', snapshot_consistency: 'stable',
-        task_id: fixtureTaskId('task A'), task_revision: '2'.repeat(64),
-        offer_revision: DIGEST, authorization_revision: 7,
-      },
-      dependencies: [],
-      concurrency_available: true,
-      concurrency_revision: DIGEST,
-      retry: { state: 'eligible', attempt_count: 0, last_outcome: null, next_eligible_at: null, eligible_since: '2026-09-04T00:00:00.000Z', attention_owner: 'none', starvation_attention: false, authority_revision: `sha256:${'9'.repeat(64)}` } as const,
-    active_claims: 0,
-    });
-    expect(candidate.eligible).toBe(true);
-    if (!candidate.eligible) throw new Error('expected offer');
-    expect(validateEngineerOffer(candidate.offer)).toEqual(candidate.offer);
-    expect(() => validateEngineerOffer({ ...candidate.offer, priority: 51 })).toThrow('revision is invalid');
-    const document = buildEngineerOffersDocument({
-      repository_id: REPO,
-      engineer_id: `engineer:${CAPABILITY}`,
-      lane: 'engineering-v2',
-      work_graph_revision: projected.work_graph_revision,
-      candidates: [candidate],
-    });
-    expect(document.offers).toHaveLength(1);
-    expect(document.snapshot_revision).toMatch(/^sha256:[0-9a-f]{64}$/);
-  });
-
-  test('emits closed exclusion reasons instead of partially eligible offers', () => {
-    const projected = projectWorkGraph(graph([
-      workPackage('wp-a', 'task A', [{ repository_id: REPO, work_package_id: 'wp-b', required_state: 'product_accepted', acceptance_authority: PRODUCT_AUTHORITY }]),
-      workPackage('wp-b', 'task B'),
-    ]), [task(), task('task B', '3', '4', 2)]);
-    const candidate = buildEngineerOfferCandidate({
-      graph: projected,
-      work_package: projected.work_packages[0],
-      engineer: {
-        engineer_id: `engineer:${CAPABILITY}`,
-        capability_id: CAPABILITY,
-        engineer_contract_revision: DIGEST,
-        max_active_claims: 1,
-      },
-      binding: { state: 'active', binding_id: '11111111-1111-4111-8111-111111111111', binding_generation: 1 },
-      fleet_offer: null,
-      dependencies: [{ repository_id: REPO, work_package_id: 'wp-b', required_state: 'product_accepted', acceptance_authority: PRODUCT_AUTHORITY, status: 'authority_unavailable', authority_revision: null }],
-      concurrency_available: false,
-      concurrency_revision: DIGEST,
-      retry: { state: 'eligible', attempt_count: 0, last_outcome: null, next_eligible_at: null, eligible_since: '2026-09-04T00:00:00.000Z', attention_owner: 'none', starvation_attention: false, authority_revision: `sha256:${'9'.repeat(64)}` } as const,
-    active_claims: 1,
-    });
-    expect(candidate.eligible).toBe(false);
-    if (candidate.eligible) throw new Error('expected exclusion');
-    expect(candidate.exclusion.blockers).toEqual([
-      'fleet_offer_unavailable',
-      'dependency_authority_unavailable',
-      'concurrency_unavailable',
-      'active_claim_limit',
-    ]);
-  });
-
-  test('isolates each ineligibility branch to its own closed blocker code', () => {
-    const solo = projectWorkGraph(graph([workPackage()]), [task()]);
-    const ready = {
-      graph: solo,
-      work_package: solo.work_packages[0],
-      engineer: {
-        engineer_id: `engineer:${CAPABILITY}`,
-        capability_id: CAPABILITY,
-        engineer_contract_revision: DIGEST,
-        max_active_claims: 1,
-      },
-      binding: { state: 'active' as const, binding_id: '11111111-1111-4111-8111-111111111111', binding_generation: 1 },
-      fleet_offer: {
-        execution_readiness: 'execution_ready', snapshot_consistency: 'stable',
-        task_id: fixtureTaskId('task A'), task_revision: '2'.repeat(64),
-        offer_revision: DIGEST, authorization_revision: 7,
-      },
-      dependencies: [],
-      concurrency_available: true,
-      concurrency_revision: DIGEST,
-      retry: { state: 'eligible', attempt_count: 0, last_outcome: null, next_eligible_at: null, eligible_since: '2026-09-04T00:00:00.000Z', attention_owner: 'none', starvation_attention: false, authority_revision: `sha256:${'9'.repeat(64)}` } as const,
-    active_claims: 0,
-    };
-    expect(buildEngineerOfferCandidate(ready).eligible).toBe(true);
-
-    const OTHER_CAPABILITY = 'capability.verification.evals-checks';
-    const mismatched = buildEngineerOfferCandidate({
-      ...ready,
-      engineer: { ...ready.engineer, engineer_id: `engineer:${OTHER_CAPABILITY}`, capability_id: OTHER_CAPABILITY },
-    });
-    expect(mismatched.eligible).toBe(false);
-    if (mismatched.eligible) throw new Error('expected exclusion');
-    expect(mismatched.exclusion.blockers).toEqual(['profile_capability_mismatch']);
-    expect(mismatched.exclusion.engineer_id).toBe(`engineer:${OTHER_CAPABILITY}`);
-
-    const retired = buildEngineerOfferCandidate({
-      ...ready,
-      binding: { state: 'retired', binding_id: '11111111-1111-4111-8111-111111111111', binding_generation: 1 },
-    });
-    expect(retired.eligible).toBe(false);
-    if (retired.eligible) throw new Error('expected exclusion');
-    expect(retired.exclusion.blockers).toEqual(['binding_inactive']);
-
-    const chained = projectWorkGraph(graph([
-      workPackage('wp-a', 'task A', [{ repository_id: REPO, work_package_id: 'wp-b', required_state: 'canonical_done', acceptance_authority: null }]),
-      workPackage('wp-b', 'task B'),
-    ]), [task(), task('task B', '3', '4', 2)]);
-    const unsatisfied = buildEngineerOfferCandidate({
-      ...ready,
-      graph: chained,
-      work_package: chained.work_packages.find((item) => item.work_package_id === 'wp-a')!,
-      dependencies: [{
-        repository_id: REPO, work_package_id: 'wp-b', required_state: 'canonical_done',
-        acceptance_authority: null, status: 'unsatisfied', authority_revision: DIGEST,
-      }],
-    });
-    expect(unsatisfied.eligible).toBe(false);
-    if (unsatisfied.eligible) throw new Error('expected exclusion');
-    expect(unsatisfied.exclusion.blockers).toEqual(['dependency_not_ready']);
-    expect(unsatisfied.exclusion.work_package_id).toBe('wp-a');
   });
 
   test('validates a 100-node acyclic graph within the P0 target', () => {
