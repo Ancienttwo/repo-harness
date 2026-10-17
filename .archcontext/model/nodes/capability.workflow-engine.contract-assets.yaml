@@ -13,8 +13,6 @@
   "source": {
     "include": [
       "assets/workflow-contract.v1.json",
-      ".ai/harness/workflow-contract.json",
-      ".ai/harness/policy.json",
       ".ai/context/**",
       ".archcontext/model/nodes/**",
       "scripts/capability-resolver.ts",
@@ -31,7 +29,6 @@
       "docs/reference-configs/**",
       "assets/AGENTS.md",
       "assets/CLAUDE.md",
-      ".ai/harness/brain-manifest.json",
       ".archcontext/**",
       "src/core/capabilities/**",
       "src/core/source-projection.ts",
@@ -73,7 +70,10 @@
       "assets/reference-configs/external-tooling.md",
       "docs/reference-configs/external-tooling.md",
       "docs/reference-configs/install-profiles.md",
-      "docs/reference-configs/chatgpt-coding-mcp.md"
+      "docs/reference-configs/chatgpt-coding-mcp.md",
+      "docs/architecture/**",
+      "docs/researches/**",
+      ".ai/harness/**"
     ],
     "entrypoints": [
       {
