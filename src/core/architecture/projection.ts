@@ -59,7 +59,7 @@ export type NativeContextSource = { readonly kind: 'worktree' } | { readonly kin
 export function decodeNativeContextExport(value: unknown, source: NativeContextSource): NativeContextExportV1 {
   try {
     type Schema = Parameters<typeof validateJsonSchema>[0];
-    const validation = validateJsonSchema(nativeContextExportSchema as Schema, value as Json, {
+    const validation = validateJsonSchema(nativeContextExportSchema as unknown as Schema, value as Json, {
       resolveSchema: nativeContextSchemaResolver({ node: nodeSchema as Schema, relation: relationSchema as Schema, flow: flowSchema as Schema }),
     });
     if (!validation.valid) throw new Error(validation.issues.slice(0, 5).map((issue) => `${issue.path} ${issue.message}`).join('; '));

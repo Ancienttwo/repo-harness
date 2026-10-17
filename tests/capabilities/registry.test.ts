@@ -408,7 +408,7 @@ describe("capabilityRegistryFromNativeContext", () => {
         id: `${native.domain}-${native.name}`, domain: native.domain, name: native.name,
         prefixes: native.includeAnchors, contract_files: native.contractFiles,
         architecture_module: native.modulePath, workstream_dir: `tasks/workstreams/${native.domain}/${native.name}`,
-        lsp_profile: native.lspProfile, verification_hints: native.verification,
+        lsp_profile: native.lspProfile as string, verification_hints: native.verification as string[],
       });
     }
   }, 30_000);

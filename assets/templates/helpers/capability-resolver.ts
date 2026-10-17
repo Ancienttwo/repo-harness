@@ -1,11 +1,31 @@
 #!/usr/bin/env bun
-// @generated-from src/core/capabilities/registry.ts sha256:d2bcf23665eba12f29f59d167b7e3d18c691011800d0d7d138e5296020cdf5da
+// @generated-from src/core/capabilities/registry.ts sha256:406e39cb1c6a958aa976c57c4dd7c5a7c6d21d2c81d0b7fd91f45fd5b4691087
 // Standalone typed Bun projection. Regenerate from scripts/capability-resolver.ts; do not edit by hand.
 export const CAPABILITY_REGISTRY_VERSION = 1 as const;
 
 export interface ContractFiles {
   agents: string;
   claude: string;
+}
+
+export interface CapabilityIdentity {
+  readonly id: string;
+  readonly domain: string;
+  readonly name: string;
+  readonly architecture_module: string;
+}
+
+/** The structural profile that archctx exports. This module has no imports. */
+export interface NativeCapabilityProfileInput {
+  readonly nodeId: string;
+  readonly status: string;
+  readonly domain: string;
+  readonly name: string;
+  readonly modulePath: string;
+  readonly contractFiles: Readonly<Record<string, string>>;
+  readonly includeAnchors: readonly string[];
+  readonly lspProfile: string | null;
+  readonly verification: readonly string[] | null;
 }
 
 export interface Capability {
@@ -613,6 +633,73 @@ function archcontextIdParts(value: unknown): { readonly domain: string; readonly
   if (parts.length !== 3 || parts[0] !== ARCHCONTEXT_ID_PREFIX) return null;
   if (!ARCHCONTEXT_ID_SEGMENT.test(parts[1]) || !ARCHCONTEXT_ID_SEGMENT.test(parts[2])) return null;
   return { domain: parts[1], name: parts[2] };
+}
+
+/** Project only the stable capability identity needed by ownership readers. */
+export function capabilityIdentityFromNodeId(nodeId: string): CapabilityIdentity | null {
+  const parts = archcontextIdParts(nodeId);
+  if (!parts) return null;
+  return {
+    id: `${parts.domain}-${parts.name}`,
+    domain: parts.domain,
+    name: parts.name,
+    architecture_module: architectureModulePathFor(parts.domain, parts.name),
+  };
+}
+
+/** Use archctx profiles for metadata and verify the identity projection. */
+export function capabilityRegistryFromNativeContext(
+  context: { readonly capabilityProfiles: readonly NativeCapabilityProfileInput[] },
+  options: { readonly repoRoot: string },
+): ArchcontextCapabilityResolution {
+  const diagnostics: CapabilityRegistryDiagnostic[] = [];
+  const capabilities: Capability[] = [];
+  const activeIds = new Set<string>();
+
+  for (const profile of context.capabilityProfiles) {
+    const identity = capabilityIdentityFromNodeId(profile.nodeId);
+    if (!identity || identity.domain !== profile.domain || identity.name !== profile.name || identity.architecture_module !== profile.modulePath) {
+      diagnostics.push(diagnostic(
+        "ARCHCONTEXT_NODE_ID_INVALID",
+        profile.nodeId,
+        `${profile.nodeId}: domain, name and modulePath must match the capability identity`,
+      ));
+      continue;
+    }
+    if (profile.lspProfile === null) {
+      diagnostics.push(diagnostic("ARCHCONTEXT_LSP_PROFILE_REQUIRED", `${profile.nodeId}#lspProfile`, `${profile.nodeId}: lspProfile is required`));
+    }
+    if (profile.verification === null) {
+      diagnostics.push(diagnostic("ARCHCONTEXT_VERIFICATION_REQUIRED", `${profile.nodeId}#verification`, `${profile.nodeId}: verification is required`));
+    }
+    if (profile.lspProfile === null || profile.verification === null) continue;
+    if (profile.status === ARCHCONTEXT_ACTIVE_STATUS) activeIds.add(identity.id);
+    capabilities.push({
+      id: identity.id,
+      domain: profile.domain,
+      name: profile.name,
+      prefixes: [...profile.includeAnchors],
+      contract_files: { agents: profile.contractFiles.agents, claude: profile.contractFiles.claude },
+      architecture_module: profile.modulePath,
+      workstream_dir: workstreamDirFor(profile.domain, profile.name),
+      lsp_profile: profile.lspProfile,
+      verification_hints: [...profile.verification],
+    });
+  }
+
+  if (diagnostics.length > 0) return { status: "invalid", registry: null, owners: null, diagnostics };
+  capabilities.sort((left, right) => byteCompare(left.id, right.id));
+  const validated = validateCapabilityRegistryValue(
+    { version: CAPABILITY_REGISTRY_VERSION, capabilities },
+    { repoRoot: options.repoRoot, sharedPrefixes: true, anchorless: true },
+  );
+  if (validated.status !== "valid") return { status: "invalid", registry: null, owners: null, diagnostics: validated.diagnostics };
+  return {
+    status: "valid",
+    registry: Object.freeze({ version: CAPABILITY_REGISTRY_VERSION, capabilities: capabilities.filter((capability) => activeIds.has(capability.id)) }),
+    owners: new Map(capabilities.map((capability) => [archcontextNodeId(capability), capability])),
+    diagnostics: [],
+  };
 }
 
 function nonEmptyString(value: unknown): value is string {
