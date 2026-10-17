@@ -200,7 +200,7 @@ describe('committed module review prompt', () => {
   test('rejects the whole model when one flow is invalid', () => {
     const root = repo();
     const flow = Bun.YAML.parse(readFileSync(join(root, MODULE_FLOW), 'utf8')) as { id: string };
-    flow.id = 'flow.Module.primary'; fixtureWrite(root, MODULE_FLOW, Bun.YAML.stringify(flow)); fixtureCommit(root);
+    flow.id = 'flow.Module.primary'; fixtureWrite(root, MODULE_FLOW, fixtureYaml(flow)); fixtureCommit(root);
     expect(() => new ArchitectureModelReader(root).list()).toThrow('model_invalid');
     expect(() => new ArchitectureModelReader(root).reviewPrompt(MODULE_ID)).toThrow('model_invalid');
   });
@@ -217,7 +217,7 @@ describe('committed module review prompt', () => {
   });
   test('reads the schema-valid not-applicable flow branch and its reason', () => {
     const root = repo();
-    fixtureWrite(root, MODULE_FLOW, Bun.YAML.stringify({ schemaVersion: 'archcontext.flow/v1', id: 'flow.module.primary',
+    fixtureWrite(root, MODULE_FLOW, fixtureYaml({ schemaVersion: 'archcontext.flow/v1', id: 'flow.module.primary',
       capabilityId: MODULE_ID, name: 'Optional flow', applicability: 'not-applicable', rationale: 'This module has no runtime flow.' }));
     fixtureCommit(root);
     const reader = new ArchitectureModelReader(root);
@@ -380,7 +380,7 @@ describe('issue 677 architecture readers', () => {
 
   test('the dirty scope covers the model directory; an uncommitted capability has its own error', () => {
     const root = repo(), next = 'capability.test.next';
-    const node = { ...moduleNode(root), id: next, name: 'Next Module' };
+    const node = { ...moduleNode(root), id: next, name: 'Next Module', source: { include: ['src/next/**'] } };
     fixtureWrite(root, '.archcontext/model/nodes/capability.test.next.yaml', fixtureYaml(node));
     const reader = new ArchitectureModelReader(root);
     expect(reader.list().modules.map(module => module.id)).toEqual([MODULE_ID]);
