@@ -1,6 +1,6 @@
 # Global Working Rules
 
-Source for the managed block in user-level `~/.codex/AGENTS.md` and `~/.claude/CLAUDE.md`. Keep personal preferences outside the markers and repo-specific contracts in the repo. Use the host's available tools; do not install cross-host tool-compatibility maps here. Remove equivalent personal rules only with user authorization; synchronization preserves content outside the markers. The fenced text below is the managed template. Herdr is the required peer terminal runtime; missing Herdr does not select another transport.
+Source for the managed block in user-level `~/.codex/AGENTS.md` and `~/.claude/CLAUDE.md`. Keep personal preferences outside the markers and repo-specific contracts in the repo. Use the host's available tools; do not install cross-host tool-compatibility maps here. Remove equivalent personal rules only with user authorization. Synchronization replaces the sections that repo-harness shipped, inside and outside the markers, and keeps user sections unchanged. The fenced text below is the managed template. Herdr is the required peer terminal runtime; missing Herdr does not select another transport.
 
 ```md
 # Global Working Rules

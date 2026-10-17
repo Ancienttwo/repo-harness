@@ -21,6 +21,7 @@ import { isAbsolute, join, relative, resolve, sep } from 'path';
 
 import type { InstallTargetSpec } from '../commands/install';
 import type { InstallProfile } from '../installer/install-profile';
+import { REPORT_LANGUAGE_FLAG_VALUES, type ReportLanguageFlag } from '../installer/global-context';
 import {
   buildManagedHooks,
   canonicalManagedHookProjection,
@@ -95,6 +96,7 @@ export interface CandidateReconciliationRequest {
   readonly obsidian_skills: boolean;
   readonly codegraph: boolean;
   readonly brain_root?: string;
+  readonly report_language?: ReportLanguageFlag;
 }
 
 export interface CandidateReceiptExpectation {
@@ -487,6 +489,8 @@ export function parseCandidateRequest(encoded: string): CandidateReconciliationR
     || !['minimal', 'full'].includes(String(request.profile))
     || booleans.some((key) => typeof request[key] !== 'boolean')
     || (request.brain_root !== undefined && typeof request.brain_root !== 'string')
+    || (request.report_language !== undefined
+      && !REPORT_LANGUAGE_FLAG_VALUES.includes(request.report_language as ReportLanguageFlag))
   ) {
     throw new Error('candidate reconciliation request has invalid shape');
   }

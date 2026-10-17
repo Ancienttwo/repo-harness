@@ -8,7 +8,7 @@
  */
 
 import { spawnSync } from 'child_process';
-import { existsSync, readFileSync } from 'fs';
+import { existsSync, lstatSync, readFileSync } from 'fs';
 import * as os from 'os';
 import { dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
@@ -24,6 +24,13 @@ import { planLegacyLeftovers } from '../../core/upgrade/legacy-inventory';
 import { stripRepoHarnessManagedHooks } from '../../core/adoption/managed-hook-config';
 import { planAdoption } from '../../core/adoption/plan';
 import { isRepoHarnessSourceCheckout } from '../../core/adoption/source-checkout';
+import {
+  GLOBAL_RULES_UNBALANCED,
+  globalContextPath,
+  globalContextPathRefusal,
+  inspectGlobalContext,
+  type GlobalContextInspection,
+} from '../installer/global-context';
 
 export type InitHookTarget = InstallTargetSpec;
 export type InitHookStatus = 'ok' | 'attention' | 'blocked';
@@ -115,7 +122,6 @@ export interface InitHookOptions {
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(SCRIPT_DIR, '..', '..', '..');
 const UPDATE_CHECK_ENV = 'REPO_HARNESS_CHECK_UPDATES';
-const GLOBAL_RULES_BEGIN = '<!-- BEGIN: repo-harness global-working-rules -->';
 const VALID_TARGETS: readonly InitHookTarget[] = ['codex', 'claude', 'both'];
 
 function withProcessEnv<T>(env: NodeJS.ProcessEnv | undefined, fn: () => T): T {
@@ -171,19 +177,6 @@ function addAction(actions: ActionLedger, action: InitHookAction, checkIds: read
 
 function linkCheck(actions: ActionLedger, checkId: string, actionId: string): void {
   if (!actions.byCheck.has(checkId)) actions.byCheck.set(checkId, actionId);
-}
-
-function hasGlobalWorkingRules(content: string): boolean {
-  return (
-    content.includes(GLOBAL_RULES_BEGIN) ||
-    /^# Global Working Rules\s*$/m.test(content) ||
-    (
-      content.includes('## Progressive Due Diligence') &&
-      content.includes('### P1: Architecture Map') &&
-      content.includes('### P2: Concrete Trace') &&
-      content.includes('### P3: Design Decision')
-    )
-  );
 }
 
 function statusChecks(
@@ -445,46 +438,77 @@ function doctorChecks(
 function globalRulesChecks(
   target: InitHookTarget,
   env: NodeJS.ProcessEnv | undefined,
+  sourceRoot: string,
   checkUpdates: boolean,
   actions: ActionLedger,
 ): InitHookCheck[] {
   const home = homeDir(env);
-  const files: Array<{ target: 'codex' | 'claude'; filePath: string }> = [];
-  for (const id of selectedTargets(target)) {
-    files.push({
-      target: id,
-      filePath: join(home, id === 'codex' ? '.codex/AGENTS.md' : '.claude/CLAUDE.md'),
-    });
-  }
-
   const checks: InitHookCheck[] = [];
   const missing: string[] = [];
   const missingChecks: string[] = [];
-  for (const entry of files) {
-    let content = '';
-    let readError: string | undefined;
-    if (existsSync(entry.filePath)) {
+  for (const host of selectedTargets(target)) {
+    const id = `global-rules.${host}`;
+    const filePath = globalContextPath(home, host);
+    const exists = existsSync(filePath);
+    const check = (status: InitHookCheckStatus, detail: string): void => {
+      checks.push({
+        id,
+        title: `${targetLabel(host)} user-level Global Working Rules`,
+        status,
+        source: 'global-rules',
+        detail,
+      });
+    };
+    const refusal = globalContextPathRefusal(filePath, home);
+    if (refusal) {
+      check('warn', refusal);
+      continue;
+    }
+    let content: string | null = null;
+    if (exists) {
       try {
-        content = readFileSync(entry.filePath, 'utf-8');
+        // A FIFO or special file would block or fail the read; never open it.
+        if (!lstatSync(filePath).isFile()) throw new Error('not a regular file');
+        content = readFileSync(filePath, 'utf-8');
       } catch (error) {
-        readError = (error as Error).message;
+        check('needs_agent', `unreadable (${(error as Error).message}): ${filePath}`);
+        missing.push(filePath);
+        missingChecks.push(id);
+        continue;
       }
     }
-    const present = content ? hasGlobalWorkingRules(content) : false;
-    checks.push({
-      id: `global-rules.${entry.target}`,
-      title: `${targetLabel(entry.target)} user-level Global Working Rules`,
-      status: present ? 'ok' : 'needs_agent',
-      source: 'global-rules',
-      detail: present
-        ? `present at ${entry.filePath}`
-        : readError
-          ? `unreadable (${readError}): ${entry.filePath}`
-          : `${existsSync(entry.filePath) ? 'not found in existing file' : 'file missing'}: ${entry.filePath}`,
-    });
-    if (!present) {
-      missing.push(entry.filePath);
-      missingChecks.push(`global-rules.${entry.target}`);
+    let inspection: GlobalContextInspection;
+    try {
+      inspection = inspectGlobalContext(content, sourceRoot);
+    } catch (error) {
+      check('fail', `cannot render the current Global Working Rules template from ${sourceRoot} (${(error as Error).message}): ${filePath}`);
+      continue;
+    }
+    const flagCommand = '`repo-harness update --report-language <follow|zh-CN|en>`';
+    switch (inspection.state) {
+      case 'managed-current':
+        check('ok', `managed block matches the current template at ${filePath}`);
+        break;
+      case 'managed-stale':
+        check('warn', inspection.legacySpan
+          ? `legacy repo-harness sections outside the markers at ${filePath}; run \`repo-harness update\``
+          : `managed block is stale at ${filePath}; run \`repo-harness update\``);
+        break;
+      case 'managed-unrecorded':
+        check('warn', `managed block has no recorded reporting language at ${filePath}; run ${flagCommand}`);
+        break;
+      case 'legacy-unmanaged':
+        check('warn', `legacy repo-harness rules without markers at ${filePath}; run ${flagCommand}`);
+        break;
+      case 'unbalanced':
+        check('fail', `${GLOBAL_RULES_UNBALANCED}: ${filePath}`);
+        break;
+      case 'no-rules':
+      case 'missing-file':
+        check('needs_agent', `${exists ? 'not found in existing file' : 'file missing'}: ${filePath}`);
+        missing.push(filePath);
+        missingChecks.push(id);
+        break;
     }
   }
 
@@ -781,7 +805,7 @@ export function buildSetupCheck(opts: InitHookOptions = {}): SetupCheckBuild {
     ...statusChecks(statusReport, target, checkUpdates, actions),
     adoptionRefreshCheck(statusReport, target, checkUpdates, actions),
     ...doctorChecks(doctorReport, target, checkUpdates, actions),
-    ...globalRulesChecks(target, opts.env, checkUpdates, actions),
+    ...globalRulesChecks(target, opts.env, sourceRoot, checkUpdates, actions),
     ...runtimeCapabilityChecks(toolingProbe.report, target, checkUpdates, actions),
     ...toolingChecks(toolingProbe.report, target, checkUpdates, actions, toolingProbe.error),
     ...legacyChecks(cwd, target, checkUpdates, actions),

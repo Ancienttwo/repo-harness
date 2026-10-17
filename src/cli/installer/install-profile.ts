@@ -1,6 +1,7 @@
 import wazaRules from "../../core/skill-surface/waza-shared-rules.json";
 import { bunGlobalPackageRoot, expectedSkillProjections, skillLinkMatches } from './skill-projection';
 import { configurationReceiptPath } from './configuration-ownership';
+import { globalContextBackupEligible, globalContextPath } from './global-context';
 import { createHash, randomUUID } from 'crypto';
 import {
   cpSync,
@@ -749,6 +750,13 @@ export function installProfileHostMutationPaths(env: NodeJS.ProcessEnv = process
     );
   }
   paths.push(...agentFleetTargetPaths(env));
+  // Install and update rewrite the managed Global Working Rules block. A path
+  // whose copy would fail (unreadable or special file) stays out of the
+  // backup; the rules plan skips that file and never writes it.
+  for (const host of ['codex', 'claude'] as const) {
+    const path = globalContextPath(home, host);
+    if (globalContextBackupEligible(path)) paths.push(path);
+  }
   return [...new Set(paths)];
 }
 

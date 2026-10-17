@@ -25,6 +25,7 @@ import {
   writeGlobalContextFiles,
 } from "../../src/cli/commands/init";
 import { withRuntimeHostTransactionLock } from "../../src/cli/installer/runtime-host-lock";
+import { inspectGlobalContext, renderGlobalRulesBlock } from "../../src/cli/installer/global-context";
 import { beginInstallHostTransaction, rollbackInstallHostTransaction } from "../../src/cli/installer/install-profile";
 import { configuredBrainRoot } from "../../src/cli/commands/brain-root";
 import { listHelperFiles } from "../../src/effects/runtime/helper-runner";
@@ -1035,6 +1036,10 @@ describe("init command", () => {
         "<!-- repo-harness manages this block; edits inside are overwritten on sync. Keep personal rules outside the markers. -->",
       );
       expect(codex).toContain("- Use Chinese to report to user.");
+      expect(codex).toContain(
+        '<!-- repo-harness reporting-language: {"preset":"zh-CN","instruction":"Use Chinese to report to user."} -->',
+      );
+      expect(inspectGlobalContext(codex, source).state).toBe("managed-current");
       expect(codex).toContain("Rule 0: You may spend as much time as needed thinking.");
       expect(codex).toContain("Reasoning: Prefer first principles over pattern matching.");
       expect(codex).toContain("Generality: These are general working rules.");
@@ -1106,7 +1111,7 @@ describe("init command", () => {
     }
   });
 
-  test("does not insert global working rules when the user already has them", () => {
+  test("replaces a legacy unmarked rules copy with the managed block", () => {
     const tmp = join(tmpdir(), `repo-harness-init-global-rules-existing-${Date.now()}`);
     const source = join(tmp, "source");
     const home = join(tmp, "home");
@@ -1130,11 +1135,55 @@ describe("init command", () => {
         { ...process.env, HOME: home },
       );
 
+      const path = join(home, ".codex", "AGENTS.md");
       expect(result.status).toBe("ok");
-      expect(result.detail).toContain(`skipped-legacy:${join(home, ".codex", "AGENTS.md")}`);
-      const codex = readFileSync(join(home, ".codex", "AGENTS.md"), "utf-8");
-      expect(codex).toBe(existing);
-      expect(codex).not.toContain("<!-- BEGIN: repo-harness global-working-rules -->");
+      expect(result.detail).toBe(`migrated-legacy:${path} (replaced: Global Working Rules; kept user sections: none)`);
+      const codex = readFileSync(path, "utf-8");
+      // The H1 preamble is part of the shipped legacy span.
+      expect(codex).not.toContain("- Custom user-owned rule.");
+      expect(codex).toBe(renderGlobalRulesBlock(source, { preset: "zh-CN", instruction: "Use Chinese to report to user." }));
+      expect(inspectGlobalContext(codex, source).state).toBe("managed-current");
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  test("init migrates a mixed legacy file and keeps a custom sentence refreshable", () => {
+    const tmp = join(tmpdir(), `repo-harness-init-global-rules-mixed-${Date.now()}`);
+    const home = join(tmp, "home");
+    const userBefore = "## CodeGraph\n\nUse codegraph first.\n\n";
+    const userAfter = "## Disk hygiene\n\nKeep the disk clean.\n";
+    const existing = [
+      userBefore,
+      "# Global Working Rules\n\nOld preamble.\n\n",
+      "## Reporting\n\n- Old reporting rule.\n\n",
+      userAfter,
+    ].join("");
+    const instruction = "Report in French --> keep code terms in English.";
+    try {
+      mkdirSync(join(home, ".codex"), { recursive: true });
+      writeFileSync(join(home, ".codex", "AGENTS.md"), existing);
+
+      const result = writeGlobalContextFiles(
+        ROOT,
+        "codex",
+        { reportLanguageInstruction: instruction, reportLanguagePreset: "custom" },
+        { ...process.env, HOME: home },
+      );
+
+      const path = join(home, ".codex", "AGENTS.md");
+      expect(result.status).toBe("ok");
+      expect(result.detail).toBe(
+        `migrated-legacy:${path} (replaced: Global Working Rules, Reporting; kept user sections: CodeGraph, Disk hygiene)`,
+      );
+      const codex = readFileSync(path, "utf-8");
+      const block = renderGlobalRulesBlock(ROOT, { preset: "custom", instruction });
+      expect(codex).toBe(`${userBefore}${block}\n${userAfter}`);
+      expect(codex).toContain(`- ${instruction}`);
+      expect(codex).not.toContain('"instruction":"Report in French -->');
+      const inspection = inspectGlobalContext(codex, ROOT);
+      expect(inspection.state).toBe("managed-current");
+      expect(inspection.language).toEqual({ preset: "custom", instruction });
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }

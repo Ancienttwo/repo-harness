@@ -49,6 +49,7 @@ import { buildExternalSourceCommand } from './commands/external-source';
 import { buildRetentionCommand } from './commands/retention';
 import { formatSecurityScan, runSecurityScan } from './commands/security';
 import {
+  GLOBAL_RULES_REFRESH_STEP,
   MIN_BUN_VERSION,
   agentFleetVerified,
   bunVersionIsSupported,
@@ -57,6 +58,7 @@ import {
   type GlobalRuntimeOptions,
   type GlobalRuntimeResult,
 } from './commands/global-runtime';
+import { REPORT_LANGUAGE_FLAG_VALUES, parseReportLanguageFlag, type ReportLanguageFlag } from './installer/global-context';
 import {
   assertCandidateReconciliationReceipt,
   assertInstalledAdapterProjection,
@@ -146,6 +148,7 @@ interface GlobalRuntimeCommandOptions {
   withObsidianSkills?: boolean;
   codegraph?: boolean;
   brainRoot?: string;
+  reportLanguage?: string;
   json?: boolean;
   profile?: string;
   dryRun?: boolean;
@@ -309,6 +312,7 @@ export function runCandidateRuntimeReconciliation(
     obsidianSkills: request.obsidian_skills,
     codegraph: request.codegraph,
     brainRoot: request.brain_root,
+    reportLanguage: request.report_language,
     updateMode: true,
   });
   if (runtime.exitCode !== 0) {
@@ -318,6 +322,10 @@ export function runCandidateRuntimeReconciliation(
   // changing the receipt parsed by an already released parent.
   const daemon = runtime.steps.find(step => step.step === 'check shared ArchContext daemon');
   if (daemon?.status === 'skipped') console.error(daemon.detail);
+  // The parent shows candidate stderr in its reconcile step. Files that update
+  // did not sync must stay visible with their next action.
+  const globalRules = runtime.steps.find(step => step.step === GLOBAL_RULES_REFRESH_STEP);
+  if (globalRules) console.error(`[runtime] ${globalRules.status}: ${globalRules.step} - ${globalRules.detail}`);
 
   const complete = request.sync_skill && request.host_adapters;
   const adapterDigests = request.host_adapters
@@ -467,6 +475,7 @@ async function runGlobalRuntimeBootstrap(
     obsidianSkills: rawOpts.withObsidianSkills === true,
     codegraph,
     brainRoot: rawOpts.brainRoot,
+    reportLanguage: rawOpts.reportLanguage === undefined ? undefined : parseReportLanguageFlag(rawOpts.reportLanguage),
     profile,
   }, (transaction, migrationSource, result) => (
     applyInstallProfile(
@@ -517,10 +526,14 @@ export function buildProgram(): Command {
     .option('--with-obsidian-skills', 'Explicitly install the pinned obsidian-markdown and obsidian-cli companion Skills')
     .option('--no-codegraph', 'Skip CodeGraph CLI/MCP configuration')
     .option('--brain-root <path>', 'Brain vault root to persist for repo-harness brain commands')
+    .option('--report-language <language>', `Reporting language for Global Working Rules that record none: ${REPORT_LANGUAGE_FLAG_VALUES.join('|')}`)
     .option('--json', 'Output JSON instead of human-readable text')
     .action(async (rawOpts: GlobalRuntimeCommandOptions & { location?: string; state?: boolean; rollback?: boolean }, cmd: Command) => {
       const target = assertTarget(rawOpts.target, 'install');
       const location = rawOpts.location === undefined ? undefined : assertLocation(rawOpts.location, 'install');
+      if (rawOpts.reportLanguage !== undefined && rawOpts.location !== undefined) {
+        throw new Error('--report-language cannot be combined with --location');
+      }
       if (
         rawOpts.migrateProfileState === true
         && (rawOpts.state === true || rawOpts.rollback === true || rawOpts.location !== undefined)
@@ -681,6 +694,7 @@ export function buildProgram(): Command {
     .option('--configure-codegraph', 'Refresh CodeGraph CLI/MCP (default during update)')
     .option('--no-codegraph', 'Skip refreshing the global CodeGraph CLI/MCP')
     .option('--brain-root <path>', 'Brain vault root for manifest sync')
+    .option('--report-language <language>', `Reporting language for Global Working Rules that record none: ${REPORT_LANGUAGE_FLAG_VALUES.join('|')}`)
     .option('--json', 'Output JSON instead of human-readable text')
     .action((rawOpts: {
       target: string;
@@ -699,11 +713,16 @@ export function buildProgram(): Command {
       codegraph?: boolean;
       configureCodegraph?: boolean;
       brainRoot?: string;
+      reportLanguage?: string;
       json?: boolean;
     }) => {
       const target = assertTarget(rawOpts.target, 'update');
       if (rawOpts.channel !== undefined && !['latest', 'next'].includes(rawOpts.channel)) {
         console.error('repo-harness update: invalid --channel (expected: latest, next)');
+        process.exit(2);
+      }
+      if (rawOpts.reportLanguage !== undefined && !REPORT_LANGUAGE_FLAG_VALUES.includes(rawOpts.reportLanguage as ReportLanguageFlag)) {
+        console.error(`repo-harness update: invalid --report-language (expected: ${REPORT_LANGUAGE_FLAG_VALUES.join(', ')})`);
         process.exit(2);
       }
       if (rawOpts.check === true || rawOpts.runtimeRefresh === false) {
@@ -731,6 +750,7 @@ export function buildProgram(): Command {
         obsidianSkills: rawOpts.withObsidianSkills === true,
         codegraph: rawOpts.codegraph === false ? false : rawOpts.configureCodegraph === true ? true : undefined,
         brainRoot: rawOpts.brainRoot,
+        reportLanguage: rawOpts.reportLanguage as ReportLanguageFlag | undefined,
       });
       if (result.exitCode === 0) result.lines.push(updateLeftoverSummary(process.cwd(), rawOpts.cli !== false));
       if (rawOpts.json === true) {

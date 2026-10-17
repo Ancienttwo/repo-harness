@@ -4,6 +4,7 @@ import { dirname, join } from 'path';
 import { createHash } from 'crypto';
 import { MANAGED_TAG, stripRepoHarnessManagedHooks } from '../../core/adoption/managed-hook-config';
 import { deepEqual } from './shared';
+import { globalContextPath, removeManagedBlock } from './global-context';
 import { installProfileStatePath, managedInstallSurfaceIsCurrent, readInstalledProfile, type ManagedInstallSurface } from './install-profile';
 import { assertConfigurationPath, configurationPaths, configurationReceiptPath, readConfigurationFragment, readConfigurationReceipt, replaceConfigurationFragment, writePrivateConfiguration } from './configuration-ownership';
 
@@ -99,19 +100,14 @@ export function runUserUninstall(opts: UninstallOptions): UninstallResult {
         }
       }
     } catch (error) { unresolved(path, String((error as Error).message)); }
-    const contextPath = join(home, host === 'codex' ? '.codex/AGENTS.md' : '.claude/CLAUDE.md');
+    const contextPath = globalContextPath(home, host);
     try {
       assertConfigurationPath(contextPath, env);
       if (!existsSync(contextPath)) continue;
-      const raw = read(contextPath);
-      const begin = '<!-- BEGIN: repo-harness global-working-rules -->';
-      const end = '<!-- END: repo-harness global-working-rules -->';
-      const starts = raw.split(begin).length - 1;
-      const ends = raw.split(end).length - 1;
-      if (!starts && !ends) continue;
-      if (starts !== 1 || ends !== 1 || raw.indexOf(end) < raw.indexOf(begin)) throw new Error('unbalanced managed global rules; preserved');
-      const next = raw.slice(0, raw.indexOf(begin)) + raw.slice(raw.indexOf(end) + end.length);
-      change(contextPath, next.trim() ? next : null, 'managed global working rules');
+      const removal = removeManagedBlock(read(contextPath));
+      if (removal.status === 'none') continue;
+      if (removal.status === 'unbalanced') throw new Error('unbalanced managed global rules; preserved');
+      change(contextPath, removal.content.trim() ? removal.content : null, 'managed global working rules');
     } catch (error) { unresolved(contextPath, String((error as Error).message)); }
   }
 
