@@ -268,17 +268,6 @@ export interface BoardDiagnosticsV1 extends BoardOwnershipDiagnosticsV1 {
   readonly progress_unreadable_reason: string | null;
 }
 
-/** Existing command strings, never re-implemented logic. Null means not offered. */
-export interface BoardActionsV1 {
-  readonly release: string | null;
-  readonly reconcile: string | null;
-  readonly publication_reconcile: string | null;
-  readonly publication_recover: string | null;
-  readonly publication_reopen: string | null;
-  readonly publication_takeover: string | null;
-  readonly publication_abandon: string | null;
-}
-
 export interface BoardCardV1 {
   readonly task_id: string;
   readonly task_revision: string;
@@ -301,7 +290,6 @@ export interface BoardCardV1 {
     readonly attention_owner: 'none' | 'operator';
   };
   readonly diagnostics: BoardDiagnosticsV1;
-  readonly actions: BoardActionsV1;
 }
 
 /**
@@ -380,7 +368,6 @@ export interface BoardSliceSelfV1 {
   readonly lease_state: BoardLeaseState;
   readonly claim: BoardClaimV1 | null;
   readonly diagnostics: BoardOwnershipDiagnosticsV1;
-  readonly actions: BoardActionsV1;
 }
 
 /**

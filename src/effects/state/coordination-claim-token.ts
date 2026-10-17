@@ -1,5 +1,5 @@
-/** Read and remove retained worktree claim tokens. Lease records own task identity. */
-import { readdirSync, unlinkSync } from 'fs';
+/** Read retained worktree claim tokens. Lease records own task identity. */
+import { readdirSync } from 'fs';
 import { join } from 'path';
 import { readText, repoPath } from './collect-state-inputs';
 
@@ -75,29 +75,6 @@ function parseToken(path: string, raw: string): ClaimTokenV1 | null {
     task: tokenField(raw, 'task'),
     unit_ref: unitRef,
   };
-}
-
-export function readClaimTokenForTask(cwd: string, taskId: string): ClaimTokenRead {
-  if (!/^[0-9a-f]{64}$/.test(taskId)) return { outcome: 'none' };
-  const relative = join(CLAIM_TOKEN_DIR, `${taskId}${CLAIM_TOKEN_SUFFIX}`);
-  const raw = readText(cwd, relative);
-  if (raw === null) return { outcome: 'none' };
-  const token = parseToken(relative, raw);
-  if (token === null || token.task_id !== taskId) {
-    return { outcome: 'ambiguous', matches: [relative] };
-  }
-  return { outcome: 'found', token };
-}
-
-/** Remove the token this tree holds for one task id, if any. */
-export function removeClaimTokenForTask(cwd: string, taskId: string): void {
-  if (!/^[0-9a-f]{64}$/.test(taskId)) return;
-  const target = repoPath(cwd, join(CLAIM_TOKEN_DIR, `${taskId}${CLAIM_TOKEN_SUFFIX}`));
-  try {
-    unlinkSync(target);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-  }
 }
 
 /**

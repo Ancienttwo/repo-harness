@@ -36,7 +36,6 @@ import { buildMcpCommand } from './commands/mcp';
 import { buildChatgptCommand } from './commands/chatgpt';
 import { buildRunCommand } from './commands/run';
 import { buildStateCommand } from './commands/state';
-import { buildSprintCommand } from './commands/sprint';
 import { buildPublicationCommand } from './commands/publication';
 import { buildFleetCommand } from './commands/fleet';
 import { buildRefactorCommand } from './commands/refactor';
@@ -842,7 +841,6 @@ export function buildProgram(): Command {
   program.addCommand(buildChatgptCommand());
   program.addCommand(buildRunCommand());
   program.addCommand(buildStateCommand());
-  program.addCommand(buildSprintCommand());
   program.addCommand(buildPublicationCommand());
   program.addCommand(buildFleetCommand());
   program.addCommand(buildOperatorCommand());

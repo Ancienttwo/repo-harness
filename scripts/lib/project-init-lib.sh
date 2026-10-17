@@ -1460,7 +1460,6 @@ pi_write_harness_policy() {
     "dir": "plans/sprints",
     "active_marker_file": ".ai/harness/sprint/active-sprint",
     "template_file": ".claude/templates/sprint.template.md",
-    "helper_script": "repo-harness run sprint-backlog",
     "statuses": ["Draft", "Approved", "Executing", "Done", "Archived"]
   },
   "reference_material": {
@@ -1599,7 +1598,6 @@ pi_write_harness_policy() {
     "review_base": "main",
     "worktree_dir_template": $worktree_template,
     "start_script": "repo-harness run contract-worktree start --plan <plan-file>",
-    "finish_script": "repo-harness run contract-worktree finish",
     "cleanup_script": "repo-harness run contract-worktree cleanup --slug <slug>",
     "conflict_signals": [
       "dirty_worktree_overlaps_task_files",

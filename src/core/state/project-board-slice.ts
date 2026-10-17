@@ -21,7 +21,6 @@
  */
 import {
   ACTIVE_LEASE_STATES,
-  deriveActions,
   deriveClaim,
   deriveColumn,
   deriveOwnershipDiagnostics,
@@ -72,7 +71,6 @@ function projectSelf(
     lease_state: lease,
     claim: deriveClaim(task.lease.record),
     diagnostics,
-    actions: deriveActions(task, lease, column, diagnostics, canonicalRef),
   };
 }
 

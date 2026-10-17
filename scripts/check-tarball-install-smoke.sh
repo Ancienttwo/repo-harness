@@ -481,14 +481,6 @@ cat > "$TARGET_REPO/plans/sprints/20991231-2359-tarball-root.sprint.md" <<'SPRIN
 SPRINT_EOF
 printf '%s' 'plans/sprints/20991231-2359-tarball-root.sprint.md' > "$TARGET_REPO/.ai/harness/sprint/active-sprint"
 
-(cd "$TARGET_REPO" && "$CLI" run sprint-backlog status) >"$TMP_DIR/sprint-status.txt"
-if ! grep -qx 'sprint: plans/sprints/20991231-2359-tarball-root.sprint.md' "$TMP_DIR/sprint-status.txt" \
-  || ! grep -qx 'tasks_total: 5' "$TMP_DIR/sprint-status.txt"; then
-  echo "[tarball-smoke] ERROR: packaged sprint-backlog helper did not read the target repo sprint state" >&2
-  cat "$TMP_DIR/sprint-status.txt" >&2
-  exit 1
-fi
-
 (cd "$TARGET_REPO" && printf '{"prompt":"inspect repository state"}\n' | \
   HOOK_REPO_ROOT="$TARGET_REPO" \
   HOOK_HOST="claude" \

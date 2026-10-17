@@ -138,7 +138,6 @@
       "summarize-failures.sh",
       "verify-sprint.sh",
       "harness-trace-grade.sh",
-      "sprint-backlog.sh",
       "factor-lab-new.sh",
       "factor-lab-promote.sh",
       "factor-lab-reject.sh",
