@@ -115,7 +115,7 @@ async function withTempRepoAsync(prefix: string, fn: (cwd: string) => Promise<vo
   }
 }
 
-function installCloseoutBarrier(container: string, operation: "finish" | "ship") {
+function installCloseoutBarrier(container: string, operation: "ship") {
   const barrierDir = join(container, `${operation}-closeout-barrier`);
   const shimDir = join(container, `${operation}-mkdir-shim`);
   mkdirSync(barrierDir, { recursive: true });
@@ -468,6 +468,83 @@ describe("ship-worktrees closeout journal", () => {
   }, 30_000);
 
 
+
+  test.each(['branch', 'head', 'dirty', 'clean'] as const)('fresh ship abort preserves foreign work: %s', change => {
+    withTempRepo(`fresh-ship-abort-${change}`, container => {
+      const fixture = installShipFixture(container);
+      const original = runProcess('git', ['rev-parse', 'HEAD'], fixture.linked).stdout.trim();
+      writeFileSync(join(fixture.linked, 'owned-change.txt'), 'owned implementation\n');
+      const env = { REPO_HARNESS_GH_BIN: fixture.ghBin, GH_LOG: fixture.ghLog };
+      const crashed = runHelperWithFault('scripts/ship-worktrees.sh', ['--target', 'main', '--remote', 'origin'], fixture.linked, fixture.pidFile, {
+        ...env, REPO_HARNESS_GIT_BIN: fixture.fakeGit, FAULT_AFTER_PHASE: 'implementation_committed',
+        FAULT_ON_GIT: 'rev-parse', FAULT_JOURNAL_DIR: join(fixture.journalRoot, 'ship'),
+      });
+      expect(crashed.status).not.toBe(0);
+      const dir = onlyJournal(fixture, 'ship');
+      const owned = runProcess('git', ['rev-parse', 'HEAD'], fixture.linked).stdout.trim();
+      expect(owned).not.toBe(original);
+      if (change === 'branch') expect(runProcess('git', ['switch', '-c', 'user/new-branch'], fixture.linked).status).toBe(0);
+      if (change === 'head') expect(runProcess('git', ['commit', '--allow-empty', '-m', 'new user commit'], fixture.linked).status).toBe(0);
+      if (change === 'dirty') writeFileSync(join(fixture.linked, 'user-wip.txt'), 'new user work\n');
+      const before = runProcess('git', ['rev-parse', 'HEAD'], fixture.linked).stdout.trim();
+      const branch = runProcess('git', ['branch', '--show-current'], fixture.linked).stdout.trim();
+      const recovered = runHelper('scripts/ship-worktrees.sh', ['--recover', 'abort'], fixture.linked, env);
+      if (change === 'clean') {
+        expect(recovered.status, `${recovered.stdout}\n${recovered.stderr}`).toBe(0);
+        expect(runProcess('git', ['rev-parse', 'HEAD'], fixture.linked).stdout.trim()).toBe(original);
+        expect(readJournal(dir).status).toBe('aborted');
+      } else {
+        expect(recovered.status).not.toBe(0);
+        expect(recovered.stderr).toContain('work preserved');
+        expect(runProcess('git', ['rev-parse', 'HEAD'], fixture.linked).stdout.trim()).toBe(before);
+        expect(runProcess('git', ['branch', '--show-current'], fixture.linked).stdout.trim()).toBe(branch);
+        expect(readJournal(dir).status).toBe('in_progress');
+        if (change === 'dirty') expect(readFileSync(join(fixture.linked, 'user-wip.txt'), 'utf8')).toBe('new user work\n');
+      }
+      expect(readFileSync(join(fixture.linked, 'owned-change.txt'), 'utf8')).toBe('owned implementation\n');
+      expect(runProcess('git', ['rev-parse', 'refs/heads/codex/demo'], fixture.remote).status).not.toBe(0);
+    });
+  }, 60_000);
+
+  test.each([false, true])('lease-mode journal permits only an unpushed local abort; pushed=%s', pushed => {
+    withTempRepo('legacy-ship-abort', container => {
+      const fixture = installShipFixture(container);
+      const original = runProcess('git', ['rev-parse', 'HEAD'], fixture.linked).stdout.trim();
+      writeFileSync(join(fixture.linked, 'owned-change.txt'), 'owned implementation\n');
+      const env = { REPO_HARNESS_GH_BIN: fixture.ghBin, GH_LOG: fixture.ghLog };
+      const crashed = runHelperWithFault('scripts/ship-worktrees.sh', ['--target', 'main', '--remote', 'origin'], fixture.linked, fixture.pidFile, {
+        ...env, REPO_HARNESS_GIT_BIN: fixture.fakeGit,
+        FAULT_AFTER_PHASE: pushed ? 'candidate_frozen' : 'implementation_committed',
+        FAULT_ON_GIT: pushed ? 'branch' : 'rev-parse', FAULT_JOURNAL_DIR: join(fixture.journalRoot, 'ship'),
+      });
+      expect(crashed.status).not.toBe(0);
+      const dir = onlyJournal(fixture, 'ship');
+      const metaPath = join(dir, 'meta.json');
+      const meta = JSON.parse(readFileSync(metaPath, 'utf8'));
+      writeFileSync(metaPath, JSON.stringify({ ...meta, publication_mode: 'lease', claim_id: 'historical-claim', claim_task_id: fixtureTaskId('demo'), claim_generation: '1', claim_task_revision: 'a'.repeat(64) }, null, 2) + '\n');
+      const head = runProcess('git', ['rev-parse', 'HEAD'], fixture.linked).stdout.trim();
+      const reconcile = runHelper('scripts/ship-worktrees.sh', ['--recover', 'reconcile'], fixture.linked, env);
+      expect(reconcile.status).not.toBe(0);
+      expect(reconcile.stderr).toContain('retired or unknown ship journal mode');
+      expect(reconcile.stderr).toContain(dir);
+      const abort = runHelper('scripts/ship-worktrees.sh', ['--recover', 'abort'], fixture.linked, env);
+      if (pushed) {
+        expect(abort.status).not.toBe(0);
+        expect(abort.stderr).toContain('refusing abort after the push landed');
+        expect(runProcess('git', ['rev-parse', 'HEAD'], fixture.linked).stdout.trim()).toBe(head);
+        expect(runProcess('git', ['rev-parse', 'refs/heads/codex/demo'], fixture.remote).stdout.trim()).toBe(head);
+        expect(readJournal(dir).status).toBe('in_progress');
+      } else {
+        expect(abort.status, `${abort.stdout}\n${abort.stderr}`).toBe(0);
+        expect(readJournal(dir).status).toBe('aborted');
+        expect(runProcess('git', ['rev-parse', 'HEAD'], fixture.linked).stdout.trim()).toBe(original);
+        const retry = runHelper('scripts/ship-worktrees.sh', ['--target', 'main', '--remote', 'origin'], fixture.linked, env);
+        expect(retry.status, `${retry.stdout}\n${retry.stderr}`).toBe(0);
+        expect(readJournal(onlyJournal(fixture, 'ship')).status).toBe('complete');
+      }
+      expect(readFileSync(join(fixture.linked, 'owned-change.txt'), 'utf8')).toBe('owned implementation\n');
+    });
+  }, 60_000);
 
   test("SIGKILL right after the prepared phase rolls back with nothing pushed", () => {
     withTempRepo("closeout-journal-ship-prepared", (container) => {

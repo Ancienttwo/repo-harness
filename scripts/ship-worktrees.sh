@@ -944,7 +944,8 @@ recover_ship() {
   if [[ "$action" != "inspect" ]]; then
     local known_mode
     known_mode="$(closeout_journal_field "$dir/meta.json" publication_mode)"
-    [[ "$known_mode" == "branch" ]] || fail "retired or unknown ship journal mode; preserve the journal for manual recovery"
+    [[ "$known_mode" == "branch" || ( "$action" == "abort" && "$known_mode" == "lease" ) ]] \
+      || fail "retired or unknown ship journal mode; preserve the journal for manual recovery: $dir"
   fi
   branch="$(closeout_journal_field "$dir/meta.json" branch)"
 
