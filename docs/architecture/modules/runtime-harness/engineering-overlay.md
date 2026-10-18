@@ -126,7 +126,7 @@ sequenceDiagram
 ## Optimization Backlog
 
 - after arch-context#296：`src/core/engineers/engineering-overlay.ts` 和 `src/effects/engineers/engineering-overlay.ts` 同时被 engineer-bindings 的 `src/{core,effects}/engineers/**` 认领。目标单一所有者是本能力（`ownership-proposal` §2）。
-- `COMPONENT_ORDER` 在 core（`src/core/engineers/engineering-overlay.ts:19`）和 effects（`src/effects/engineers/engineering-overlay.ts:243`）各定义一次。effects 可以从 core 导入，保持一个来源。
+- `COMPONENT_ORDER` 在 core（`src/core/engineers/engineering-overlay.ts:19`）和 effects（`src/effects/engineers/engineering-overlay.ts:228`）各定义一次。effects 可以从 core 导入，保持一个来源。
 - `collectEngineeringBoard` 直接调用 `readPass` 两次（`src/effects/engineers/engineering-overlay.ts:244-246`）。selector 只证明这一层。`readPass` 通过 `deps.readBinding`、`deps.listClaims` 和 `deps.listRuntimeEffects` 读取三个来源（`src/effects/engineers/engineering-overlay.ts:175-198`）。默认实现仍是 `readEngineerBindingStatus`、`listLiveClaimActorReceiptsForEngineer` 和 `observeAgentRuntimeEffects`。CodeGraph 未证明这些注入调用。P2 flow 仍只证明 schema 步骤。
 - `collectEngineeringBoard` 调用 engineer-scheduling 的 `resolveRegisteredRepoForWorktree` 解析注册仓库（`src/effects/engineers/engineering-overlay.ts:240`）。它的职责是解析仓库注册表，与调度无关。模型记录该依赖。是否移动解析函数仍需单独判断。
 - operator 读取本能力（`src/effects/operator/repository-snapshot.ts`）。operator 已经声明 `relation.operator.http-reader.engineering-overlay`。

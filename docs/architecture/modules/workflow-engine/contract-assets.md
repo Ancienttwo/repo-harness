@@ -242,7 +242,7 @@ template-projection 标记为可扩展。`assets/templates/helpers/` 现在只�
 | --- | --- | --- | --- |
 | 2026-07-16 Closeout Runner Guardrails | `verify-contract`/`verify-sprint` 720 秒 | 3,660 秒（`VERIFIER_HELPER_TIMEOUT_MS = 3_660_000`） | `src/effects/runtime/helper-runner.ts:21` |
 | 2026-07-16 Closeout Runner Guardrails | 900 秒档只含 `contract-worktree`/`ship-worktrees` | 还包含 `merge-gate`；`PROTECTED_HELPERS` 另含 `acceptance-receipt` | `helper-runner.ts:20`、`:22` |
-| 2026-07-14 Helper Descriptions | 46 → 48 条描述 | 55 条（scripts 与 descriptions 均为 55） | `assets/workflow-contract.v1.json` 的 `helpers` |
+| 2026-07-14 Helper Descriptions | 46 → 48 条描述 | 51 条（scripts 与 descriptions 均为 51） | `assets/workflow-contract.v1.json` 的 `helpers` |
 | 旧 §3.2 I1 | asset 契约与自宿主 runtime 副本 byte-identical | 自宿主文件是 opt-in marker（2026-10-05） | `.ai/harness/workflow-contract.json` |
 | 旧 §3.2 I4 | [archived capabilities.json](https://github.com/Ancienttwo/repo-harness/blob/1eaf63019aadd2129376987957170d8310b35c3f/.ai/context/capabilities.json) 是唯一 runtime 权威 | 该文件不存在；权威是 `.archcontext/model/nodes` | `.ai/harness/policy.json:101-102` |
 | 旧 §3.2 I8 | 51/52 helper 一致，唯一例外带 `@generated-from` 头 | 52/55 一致，3 个声明的例外 | `scripts/sync-helper-sources.ts` |
