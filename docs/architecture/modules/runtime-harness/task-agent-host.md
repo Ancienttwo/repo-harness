@@ -1,6 +1,6 @@
 # runtime-harness/task-agent-host 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-task-agent-host" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:ef75757b289fbd1152c224b249d60ebf5c6743bf56be76369d91f24f80f55486" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-task-agent-host" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:1803dc210c5ee97567db4a8d17e461bb694014227a554bd2e021e008fefdf10a" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.task-agent-host`(kind `capability`)
 > **Matched Prefixes**:`src/effects/terminal/herdr.ts`、`src/effects/terminal/task-session.ts`、`src/effects/terminal/task-runtime-observation.ts`、`src/effects/terminal/task-worktree.ts`、`src/effects/terminal/task-role-profiles.ts`、`src/cli/commands/herdr.ts`、`src/cli/commands/herdr-skill.ts`、`assets/herdr/**`、`agents/fleet/**`、`.codex/agents/**`、`scripts/install-agent-fleet.sh`、`src/effects/terminal/coding-isolation.ts`、`src/effects/terminal/coding-session.ts`、`src/effects/terminal/oar-coding-host.ts`
@@ -51,6 +51,7 @@ flowchart LR
 出向關係:
 
 - `calls` → `capability.runtime-harness.evidence-ledger` — Hash request context and result bytes with the evidence canonical JSON
+- `depends-on` → `capability.runtime-harness.hook-adapters` — Use host installation commands for Herdr skill setup.
 - `calls` → `component.task-agent-host.primary` — Start send and collect persistent Herdr task agents
 
 入向關係:
@@ -59,10 +60,13 @@ flowchart LR
 - `calls` ← `capability.runtime-harness.agent-runtime-effects` — Run Herdr commands for task agent runtime effects
 - `calls` ← `component.contract-assets.contract-worktree-lifecycle` — Register and clean up task worktrees and read session artifacts
 - `calls` ← `component.contract-assets.template-projection` — Install the required Herdr skill during init
+- `depends-on` ← `capability.verification.evals-checks` — Test Task Agent Host behavior through its source modules.
 - `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the herdr commands
 - `calls` ← `component.global-runtime-reconciliation.primary` — Configure the required Herdr skill during global runtime setup
+- `depends-on` ← `capability.runtime-harness.hook-adapters` — Resolve task role profiles during host installation.
 - `calls` ← `component.mcp-sidecar.coding-profile` — Clean up task worktrees for coding workspaces
 - `calls` ← `component.mcp-sidecar.primary` — Start task agents and send task requests through Herdr
+- `depends-on` ← `capability.runtime-harness.operator` — Read task role profiles for the setup snapshot.
 - `reads` ← `component.workflow-state.coordination-plane` — Confirm that the task runtime is closed before a worktree prune
 
 組件出向關係:

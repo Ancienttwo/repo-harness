@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "archcontext.relation/v1",
+  "id": "relation.evals-checks.imports.acceptance-review",
+  "kind": "depends-on",
+  "source": "capability.verification.evals-checks",
+  "target": "capability.verification.acceptance-review",
+  "intent": "Test Acceptance Review behavior through its source modules."
+}

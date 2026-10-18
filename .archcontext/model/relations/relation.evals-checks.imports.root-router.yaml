@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "archcontext.relation/v1",
+  "id": "relation.evals-checks.imports.root-router",
+  "kind": "depends-on",
+  "source": "capability.verification.evals-checks",
+  "target": "capability.public-surface.root-router",
+  "intent": "Test Root Router behavior through its source modules."
+}

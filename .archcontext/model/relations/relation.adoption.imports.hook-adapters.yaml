@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "archcontext.relation/v1",
+  "id": "relation.adoption.imports.hook-adapters",
+  "kind": "depends-on",
+  "source": "capability.public-surface.adoption",
+  "target": "capability.runtime-harness.hook-adapters",
+  "intent": "Use installer setup during repository migration."
+}

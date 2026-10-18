@@ -5,8 +5,8 @@
 
 ## Current Snapshot
 
-- The architecture model lives in `.archcontext/model/`. It declares 35
-  capabilities in 6 domains, 63 components, 282 relations and 46 flows.
+- The architecture model lives in `.archcontext/model/`. It declares 28
+  capabilities in 6 domains, 56 components, 286 relations and 36 flows.
 - Every capability page under [modules](modules/) shows `Proof: proven` for its
   P1 map and its P2 flow.
 - The full generated graph is in [diagrams/architecture.mmd](diagrams/architecture.mmd),
@@ -80,7 +80,7 @@ Out of scope:
 | --- | --- | --- | --- |
 | public-surface | 4 | Routes user intent to CLI-backed command facades, adopts repositories, and collects strategy context. | [Public Surface](domains/public-surface.md) |
 | workflow-engine | 4 | Owns the workflow contract and templates, inspects and migrates repositories, resolves Effective State and the coordination plane, and provides process, lock and Git primitives. | [Workflow Engine](domains/workflow-engine.md) |
-| runtime-harness | 22 | Runs host hooks and the installed runtime, hosts task agents, records evidence and observations, serves the MCP sidecar, and runs the Module Engineer organization. | [Runtime Harness](domains/runtime-harness.md) |
+| runtime-harness | 13 | Runs host hooks and the installed runtime, hosts task agents, records evidence and observations, serves the MCP sidecar, and runs the Module Engineer organization. | [Runtime Harness](domains/runtime-harness.md) |
 | organization | 2 | Delivers tasks across repositories: task offers, acquire, the Task Inbox, and PR publication. | [Organization](domains/organization.md) |
 | runtime-mcp | 2 | Exposes bounded repository tools through MCP and runs the local ChatGPT browser consult. | [Runtime MCP](domains/runtime-mcp.md) |
 | verification | 3 | Runs tests, gates and evals, records the acceptance receipt, and checks CodeGraph readiness. | [Verification](domains/verification.md) |
@@ -310,7 +310,7 @@ Project
 - Path ownership under `capability_source: archcontext` comes from `archctx resolve` (`src/effects/capabilities/archcontext-owners.ts`). Node includes and excludes can use any shape that ArchContext validation accepts.
 - Several capability pairs have declared relations in both directions (for example contract-assets and global-runtime-reconciliation). The module backlogs record each pair with its edge counts.
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.architecture.index" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:71fa3f220643d779a1f4ec3f554e2f4c366ba8098c125817656e012e80e54ca9" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.architecture.index" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:88134a44f257ab89c2df6e869e41356b600a95d3d59a99406859131d3a39f1dc" -->
 # Architecture Index
 
 ## Entities
@@ -347,15 +347,24 @@ Project
 ## Relations
 
 - capability.verification.acceptance-review -> capability.runtime-harness.hook-adapters — calls
+- capability.verification.acceptance-review -> capability.runtime-harness.mcp-sidecar — depends-on
+- capability.verification.acceptance-review -> capability.runtime-harness.operator — depends-on
 - capability.verification.acceptance-review -> component.acceptance-review.primary — calls
 - component.acceptance-review.primary -> capability.runtime-harness.evidence-ledger — calls
 - component.acceptance-review.primary -> capability.workflow-engine.execution-primitives — calls
 - component.acceptance-review.primary -> capability.runtime-harness.task-agent-host — calls
 - component.acceptance-review.primary -> capability.workflow-engine.workflow-state — reads
+- capability.public-surface.action-commands -> capability.workflow-engine.contract-assets — depends-on
+- capability.public-surface.action-commands -> capability.verification.evals-checks — depends-on
 - capability.public-surface.action-commands -> component.action-commands.primary — calls
 - component.action-commands.primary -> component.action-commands.bundled-skills — depends-on
 - capability.public-surface.action-commands -> component.action-commands.skill-surface-catalog — calls
 - component.action-commands.skill-surface-catalog -> component.action-commands.primary — reads
+- capability.public-surface.adoption -> capability.workflow-engine.execution-primitives — depends-on
+- capability.public-surface.adoption -> capability.runtime-harness.global-runtime-reconciliation — depends-on
+- capability.public-surface.adoption -> capability.runtime-harness.hook-adapters — depends-on
+- capability.public-surface.adoption -> capability.runtime-harness.mcp-sidecar — depends-on
+- capability.public-surface.adoption -> capability.workflow-engine.workflow-state — depends-on
 - capability.public-surface.adoption -> component.adoption.primary — calls
 - capability.runtime-harness.agent-runtime-effects -> capability.runtime-harness.engineer-bindings — calls
 - capability.runtime-harness.agent-runtime-effects -> capability.runtime-harness.engineer-scheduling — calls
@@ -365,13 +374,18 @@ Project
 - capability.runtime-harness.agent-runtime-effects -> capability.runtime-harness.mcp-sidecar — calls
 - capability.runtime-harness.agent-runtime-effects -> capability.runtime-harness.task-agent-host — calls
 - capability.runtime-harness.agent-runtime-effects -> capability.organization.task-fleet — calls
+- capability.runtime-mcp.chatgpt-browser -> capability.runtime-harness.mcp-sidecar — depends-on
 - capability.runtime-mcp.chatgpt-browser -> component.chatgpt-browser.primary — calls
+- capability.verification.codegraph-readiness -> capability.verification.evals-checks — depends-on
+- capability.verification.codegraph-readiness -> capability.workflow-engine.execution-primitives — depends-on
+- capability.verification.codegraph-readiness -> capability.runtime-harness.hook-adapters — depends-on
 - capability.verification.codegraph-readiness -> component.codegraph-readiness.primary — calls
 - component.contract-assets.contract-worktree-lifecycle -> capability.verification.acceptance-review — calls
 - component.contract-assets.contract-worktree-lifecycle -> component.global-runtime-reconciliation.archctx-closure — calls
 - component.contract-assets.contract-worktree-lifecycle -> capability.workflow-engine.execution-primitives — calls
 - component.contract-assets.contract-worktree-lifecycle -> capability.runtime-harness.task-agent-host — calls
 - component.contract-assets.contract-worktree-lifecycle -> capability.workflow-engine.workflow-state — calls
+- capability.workflow-engine.contract-assets -> capability.organization.publication — depends-on
 - capability.workflow-engine.contract-assets -> component.contract-assets.planning-helpers — calls
 - component.contract-assets.planning-helpers -> capability.verification.acceptance-review — calls
 - component.contract-assets.planning-helpers -> capability.workflow-engine.execution-primitives — calls
@@ -388,29 +402,59 @@ Project
 - component.contract-assets.template-projection -> capability.runtime-harness.task-agent-host — calls
 - component.contract-assets.template-projection -> capability.workflow-engine.workflow-state — calls
 - capability.runtime-harness.engineer-bindings -> capability.workflow-engine.execution-primitives — calls
+- capability.runtime-harness.engineer-bindings -> capability.workflow-engine.contract-assets — depends-on
+- capability.runtime-harness.engineer-bindings -> capability.runtime-harness.evidence-ledger — depends-on
+- capability.runtime-harness.engineer-bindings -> capability.runtime-harness.global-runtime-reconciliation — depends-on
 - capability.runtime-harness.engineer-bindings -> component.engineer-bindings.primary — calls
 - capability.runtime-harness.engineer-bindings -> capability.workflow-engine.workflow-state — calls
 - capability.runtime-harness.engineer-scheduling -> capability.verification.acceptance-review — calls
 - capability.runtime-harness.engineer-scheduling -> capability.runtime-harness.engineer-bindings — calls
 - capability.runtime-harness.engineer-scheduling -> capability.workflow-engine.execution-primitives — calls
+- capability.runtime-harness.engineer-scheduling -> capability.runtime-harness.mcp-sidecar — depends-on
 - capability.runtime-harness.engineer-scheduling -> capability.runtime-harness.integration-acceptance — reads
 - capability.runtime-harness.engineer-scheduling -> component.engineer-scheduling.primary — calls
 - capability.runtime-harness.engineer-scheduling -> capability.organization.publication — reads
 - capability.runtime-harness.engineer-scheduling -> capability.workflow-engine.workflow-state — reads
 - capability.runtime-harness.engineering-overlay -> capability.runtime-harness.agent-runtime-effects — calls
 - capability.runtime-harness.engineering-overlay -> capability.runtime-harness.engineer-bindings — calls
+- capability.runtime-harness.engineering-overlay -> capability.runtime-harness.engineer-scheduling — depends-on
+- capability.runtime-harness.engineering-overlay -> capability.runtime-harness.mcp-sidecar — depends-on
 - capability.runtime-harness.engineering-overlay -> component.engineering-overlay.primary — calls
 - component.evals-checks.ci-selection -> capability.workflow-engine.inspection-migration — calls
 - component.evals-checks.ci-selection -> component.evals-checks.test-suite — calls
 - component.evals-checks.ci-selection -> component.evals-checks.workflow-gates — calls
 - component.evals-checks.evals-and-benchmarks -> capability.workflow-engine.execution-primitives — calls
 - component.evals-checks.evals-and-benchmarks -> capability.runtime-harness.hook-adapters — reads
+- capability.verification.evals-checks -> capability.verification.acceptance-review — depends-on
+- capability.verification.evals-checks -> capability.public-surface.action-commands — depends-on
+- capability.verification.evals-checks -> capability.public-surface.adoption — depends-on
+- capability.verification.evals-checks -> capability.runtime-harness.agent-runtime-effects — depends-on
+- capability.verification.evals-checks -> capability.runtime-mcp.chatgpt-browser — depends-on
+- capability.verification.evals-checks -> capability.verification.codegraph-readiness — depends-on
+- capability.verification.evals-checks -> capability.runtime-harness.engineer-bindings — depends-on
+- capability.verification.evals-checks -> capability.runtime-harness.engineer-scheduling — depends-on
+- capability.verification.evals-checks -> capability.runtime-harness.engineering-overlay — depends-on
+- capability.verification.evals-checks -> capability.runtime-harness.external-source-intake — depends-on
+- capability.verification.evals-checks -> capability.runtime-harness.global-runtime-reconciliation — depends-on
+- capability.verification.evals-checks -> capability.runtime-harness.integration-acceptance — depends-on
+- capability.verification.evals-checks -> capability.runtime-harness.mcp-sidecar — depends-on
+- capability.verification.evals-checks -> capability.runtime-harness.operator — depends-on
+- capability.verification.evals-checks -> capability.organization.publication — depends-on
+- capability.verification.evals-checks -> capability.runtime-harness.refactor-program — depends-on
+- capability.verification.evals-checks -> capability.public-surface.root-router — depends-on
+- capability.verification.evals-checks -> capability.public-surface.strategy-reflection — depends-on
+- capability.verification.evals-checks -> capability.runtime-harness.task-agent-host — depends-on
+- capability.verification.evals-checks -> capability.organization.task-fleet — depends-on
+- capability.verification.evals-checks -> capability.workflow-engine.workflow-state — depends-on
 - capability.verification.evals-checks -> component.evals-checks.primary — calls
 - component.evals-checks.primary -> capability.workflow-engine.contract-assets — calls
 - component.evals-checks.primary -> capability.runtime-harness.evidence-ledger — calls
 - capability.runtime-harness.evidence-ledger -> capability.public-surface.adoption — calls
+- capability.runtime-harness.evidence-ledger -> capability.runtime-harness.hook-adapters — depends-on
+- capability.runtime-harness.evidence-ledger -> capability.workflow-engine.workflow-state — depends-on
 - capability.runtime-harness.evidence-ledger -> component.evidence-ledger.primary — calls
 - component.evidence-ledger.primary -> capability.workflow-engine.execution-primitives — calls
+- capability.workflow-engine.execution-primitives -> capability.workflow-engine.workflow-state — depends-on
 - capability.workflow-engine.execution-primitives -> component.execution-primitives.primary — calls
 - capability.runtime-harness.external-source-intake -> component.external-source-intake.immutable-evidence — calls
 - component.external-source-intake.immutable-evidence -> capability.workflow-engine.execution-primitives — calls
@@ -446,6 +490,7 @@ Project
 - component.global-runtime-reconciliation.cli-root -> capability.runtime-harness.task-agent-host — calls
 - component.global-runtime-reconciliation.cli-root -> capability.organization.task-fleet — calls
 - component.global-runtime-reconciliation.cli-root -> capability.workflow-engine.workflow-state — calls
+- capability.runtime-harness.global-runtime-reconciliation -> capability.verification.evals-checks — depends-on
 - capability.runtime-harness.global-runtime-reconciliation -> component.global-runtime-reconciliation.primary — calls
 - component.global-runtime-reconciliation.primary -> capability.public-surface.adoption — calls
 - component.global-runtime-reconciliation.primary -> component.global-runtime-reconciliation.archctx-closure — calls
@@ -465,6 +510,8 @@ Project
 - component.hook-adapters.host-installer -> capability.runtime-harness.global-runtime-reconciliation — calls
 - component.hook-adapters.host-installer -> component.hook-adapters.primary — calls
 - component.hook-adapters.host-installer -> component.action-commands.skill-surface-catalog — calls
+- capability.runtime-harness.hook-adapters -> capability.verification.acceptance-review — depends-on
+- capability.runtime-harness.hook-adapters -> capability.runtime-harness.task-agent-host — depends-on
 - capability.runtime-harness.hook-adapters -> component.hook-adapters.primary — calls
 - component.hook-adapters.primary -> capability.workflow-engine.execution-primitives — calls
 - component.hook-adapters.primary -> capability.workflow-engine.workflow-state — calls
@@ -497,6 +544,7 @@ Project
 - component.mcp-sidecar.host-setup -> component.mcp-sidecar.primary — calls
 - component.mcp-sidecar.host-setup -> component.mcp-sidecar.repo-policy-registry — writes
 - component.mcp-sidecar.host-setup -> component.mcp-sidecar.transport-auth — calls
+- capability.runtime-harness.mcp-sidecar -> capability.workflow-engine.contract-assets — depends-on
 - capability.runtime-harness.mcp-sidecar -> component.mcp-sidecar.primary — calls
 - component.mcp-sidecar.primary -> capability.runtime-mcp.chatgpt-browser — calls
 - component.mcp-sidecar.primary -> capability.verification.codegraph-readiness — calls
@@ -523,6 +571,12 @@ Project
 - component.operator.primary -> capability.runtime-harness.global-runtime-reconciliation — reads
 - component.operator.primary -> capability.runtime-harness.mcp-sidecar — reads
 - component.operator.primary -> component.operator.view-projections — calls
+- capability.runtime-harness.operator -> capability.public-surface.action-commands — depends-on
+- capability.runtime-harness.operator -> capability.runtime-harness.engineer-bindings — depends-on
+- capability.runtime-harness.operator -> capability.workflow-engine.execution-primitives — depends-on
+- capability.runtime-harness.operator -> capability.organization.publication — depends-on
+- capability.runtime-harness.operator -> capability.runtime-harness.task-agent-host — depends-on
+- capability.runtime-harness.operator -> capability.workflow-engine.workflow-state — depends-on
 - capability.runtime-harness.operator -> component.operator.primary — calls
 - component.operator.primary -> capability.organization.task-fleet — reads
 - component.operator.view-projections -> capability.verification.acceptance-review — depends-on
@@ -533,6 +587,7 @@ Project
 - component.operator.web-console -> component.operator.view-projections — calls
 - capability.organization.publication -> capability.workflow-engine.contract-assets — calls
 - capability.organization.publication -> capability.runtime-harness.evidence-ledger — calls
+- capability.organization.publication -> capability.verification.acceptance-review — depends-on
 - capability.organization.publication -> component.publication.primary — calls
 - component.publication.primary -> capability.workflow-engine.execution-primitives — calls
 - component.publication.primary -> capability.workflow-engine.workflow-state — calls
@@ -548,6 +603,7 @@ Project
 - component.strategy-reflection.primary -> component.action-commands.skill-surface-catalog — calls
 - component.strategy-reflection.primary -> capability.workflow-engine.workflow-state — reads
 - capability.runtime-harness.task-agent-host -> capability.runtime-harness.evidence-ledger — calls
+- capability.runtime-harness.task-agent-host -> capability.runtime-harness.hook-adapters — depends-on
 - capability.runtime-harness.task-agent-host -> component.task-agent-host.primary — calls
 - component.task-agent-host.primary -> capability.workflow-engine.execution-primitives — calls
 - capability.organization.task-fleet -> capability.runtime-harness.agent-runtime-effects — calls
@@ -569,6 +625,9 @@ Project
 - component.workflow-state.coordination-plane -> capability.workflow-engine.execution-primitives — calls
 - component.workflow-state.coordination-plane -> component.workflow-state.primary — calls
 - component.workflow-state.coordination-plane -> capability.runtime-harness.task-agent-host — reads
+- capability.workflow-engine.workflow-state -> capability.verification.acceptance-review — depends-on
+- capability.workflow-engine.workflow-state -> capability.runtime-harness.global-runtime-reconciliation — depends-on
+- capability.workflow-engine.workflow-state -> capability.organization.publication — depends-on
 - capability.workflow-engine.workflow-state -> component.workflow-state.primary — calls
 - component.workflow-state.primary -> capability.workflow-engine.contract-assets — calls
 - component.workflow-state.primary -> capability.runtime-harness.evidence-ledger — calls

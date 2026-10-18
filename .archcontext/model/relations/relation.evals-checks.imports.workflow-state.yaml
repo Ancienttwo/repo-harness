@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "archcontext.relation/v1",
+  "id": "relation.evals-checks.imports.workflow-state",
+  "kind": "depends-on",
+  "source": "capability.verification.evals-checks",
+  "target": "capability.workflow-engine.workflow-state",
+  "intent": "Test Workflow State behavior through its source modules."
+}

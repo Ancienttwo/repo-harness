@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "archcontext.relation/v1",
+  "id": "relation.evidence-ledger.imports.hook-adapters",
+  "kind": "depends-on",
+  "source": "capability.runtime-harness.evidence-ledger",
+  "target": "capability.runtime-harness.hook-adapters",
+  "intent": "Collect loop state inputs for recovery evidence."
+}

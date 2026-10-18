@@ -684,6 +684,18 @@
         "description": "calls"
       },
       {
+        "id": "relation.acceptance-review.imports.mcp-sidecar",
+        "sourceId": "capability.verification.acceptance-review",
+        "destinationId": "capability.runtime-harness.mcp-sidecar",
+        "description": "depends-on"
+      },
+      {
+        "id": "relation.acceptance-review.imports.operator",
+        "sourceId": "capability.verification.acceptance-review",
+        "destinationId": "capability.runtime-harness.operator",
+        "description": "depends-on"
+      },
+      {
         "id": "relation.acceptance-review.primary",
         "sourceId": "capability.verification.acceptance-review",
         "destinationId": "component.acceptance-review.primary",
@@ -714,6 +726,18 @@
         "description": "reads"
       },
       {
+        "id": "relation.action-commands.imports.contract-assets",
+        "sourceId": "capability.public-surface.action-commands",
+        "destinationId": "capability.workflow-engine.contract-assets",
+        "description": "depends-on"
+      },
+      {
+        "id": "relation.action-commands.imports.evals-checks",
+        "sourceId": "capability.public-surface.action-commands",
+        "destinationId": "capability.verification.evals-checks",
+        "description": "depends-on"
+      },
+      {
         "id": "relation.action-commands.primary",
         "sourceId": "capability.public-surface.action-commands",
         "destinationId": "component.action-commands.primary",
@@ -736,6 +760,36 @@
         "sourceId": "component.action-commands.skill-surface-catalog",
         "destinationId": "component.action-commands.primary",
         "description": "reads"
+      },
+      {
+        "id": "relation.adoption.imports.execution-primitives",
+        "sourceId": "capability.public-surface.adoption",
+        "destinationId": "capability.workflow-engine.execution-primitives",
+        "description": "depends-on"
+      },
+      {
+        "id": "relation.adoption.imports.global-runtime-reconciliation",
+        "sourceId": "capability.public-surface.adoption",
+        "destinationId": "capability.runtime-harness.global-runtime-reconciliation",
+        "description": "depends-on"
+      },
+      {
+        "id": "relation.adoption.imports.hook-adapters",
+        "sourceId": "capability.public-surface.adoption",
+        "destinationId": "capability.runtime-harness.hook-adapters",
+        "description": "depends-on"
+      },
+      {
+        "id": "relation.adoption.imports.mcp-sidecar",
+        "sourceId": "capability.public-surface.adoption",
+        "destinationId": "capability.runtime-harness.mcp-sidecar",
+        "description": "depends-on"
+      },
+      {
+        "id": "relation.adoption.imports.workflow-state",
+        "sourceId": "capability.public-surface.adoption",
+        "destinationId": "capability.workflow-engine.workflow-state",
+        "description": "depends-on"
       },
       {
         "id": "relation.adoption.primary",
@@ -792,10 +846,34 @@
         "description": "calls"
       },
       {
+        "id": "relation.chatgpt-browser.imports.mcp-sidecar",
+        "sourceId": "capability.runtime-mcp.chatgpt-browser",
+        "destinationId": "capability.runtime-harness.mcp-sidecar",
+        "description": "depends-on"
+      },
+      {
         "id": "relation.chatgpt-browser.primary",
         "sourceId": "capability.runtime-mcp.chatgpt-browser",
         "destinationId": "component.chatgpt-browser.primary",
         "description": "calls"
+      },
+      {
+        "id": "relation.codegraph-readiness.imports.evals-checks",
+        "sourceId": "capability.verification.codegraph-readiness",
+        "destinationId": "capability.verification.evals-checks",
+        "description": "depends-on"
+      },
+      {
+        "id": "relation.codegraph-readiness.imports.execution-primitives",
+        "sourceId": "capability.verification.codegraph-readiness",
+        "destinationId": "capability.workflow-engine.execution-primitives",
+        "description": "depends-on"
+      },
+      {
+        "id": "relation.codegraph-readiness.imports.hook-adapters",
+        "sourceId": "capability.verification.codegraph-readiness",
+        "destinationId": "capability.runtime-harness.hook-adapters",
+        "description": "depends-on"
       },
       {
         "id": "relation.codegraph-readiness.primary",
@@ -832,6 +910,12 @@
         "sourceId": "component.contract-assets.contract-worktree-lifecycle",
         "destinationId": "capability.workflow-engine.workflow-state",
         "description": "calls"
+      },
+      {
+        "id": "relation.contract-assets.imports.publication",
+        "sourceId": "capability.workflow-engine.contract-assets",
+        "destinationId": "capability.organization.publication",
+        "description": "depends-on"
       },
       {
         "id": "relation.contract-assets.planning-helpers",
@@ -930,6 +1014,24 @@
         "description": "calls"
       },
       {
+        "id": "relation.engineer-bindings.imports.contract-assets",
+        "sourceId": "capability.runtime-harness.engineer-bindings",
+        "destinationId": "capability.workflow-engine.contract-assets",
+        "description": "depends-on"
+      },
+      {
+        "id": "relation.engineer-bindings.imports.evidence-ledger",
+        "sourceId": "capability.runtime-harness.engineer-bindings",
+        "destinationId": "capability.runtime-harness.evidence-ledger",
+        "description": "depends-on"
+      },
+      {
+        "id": "relation.engineer-bindings.imports.global-runtime-reconciliation",
+        "sourceId": "capability.runtime-harness.engineer-bindings",
+        "destinationId": "capability.runtime-harness.global-runtime-reconciliation",
+        "description": "depends-on"
+      },
+      {
         "id": "relation.engineer-bindings.primary",
         "sourceId": "capability.runtime-harness.engineer-bindings",
         "destinationId": "component.engineer-bindings.primary",
@@ -958,6 +1060,12 @@
         "sourceId": "capability.runtime-harness.engineer-scheduling",
         "destinationId": "capability.workflow-engine.execution-primitives",
         "description": "calls"
+      },
+      {
+        "id": "relation.engineer-scheduling.imports.mcp-sidecar",
+        "sourceId": "capability.runtime-harness.engineer-scheduling",
+        "destinationId": "capability.runtime-harness.mcp-sidecar",
+        "description": "depends-on"
       },
       {
         "id": "relation.engineer-scheduling.integration-acceptance",
@@ -996,6 +1104,18 @@
         "description": "calls"
       },
       {
+        "id": "relation.engineering-overlay.imports.engineer-scheduling",
+        "sourceId": "capability.runtime-harness.engineering-overlay",
+        "destinationId": "capability.runtime-harness.engineer-scheduling",
+        "description": "depends-on"
+      },
+      {
+        "id": "relation.engineering-overlay.imports.mcp-sidecar",
+        "sourceId": "capability.runtime-harness.engineering-overlay",
+        "destinationId": "capability.runtime-harness.mcp-sidecar",
+        "description": "depends-on"
+      },
+      {
         "id": "relation.engineering-overlay.primary",
         "sourceId": "capability.runtime-harness.engineering-overlay",
         "destinationId": "component.engineering-overlay.primary",
@@ -1032,6 +1152,132 @@
         "description": "reads"
       },
       {
+        "id": "relation.evals-checks.imports.acceptance-review",
+        "sourceId": "capability.verification.evals-checks",
+        "destinationId": "capability.verification.acceptance-review",
+        "description": "depends-on"
+      },
+      {
+        "id": "relation.evals-checks.imports.action-commands",
+        "sourceId": "capability.verification.evals-checks",
+        "destinationId": "capability.public-surface.action-commands",
+        "description": "depends-on"
+      },
+      {
+        "id": "relation.evals-checks.imports.adoption",
+        "sourceId": "capability.verification.evals-checks",
+        "destinationId": "capability.public-surface.adoption",
+        "description": "depends-on"
+      },
+      {
+        "id": "relation.evals-checks.imports.agent-runtime-effects",
+        "sourceId": "capability.verification.evals-checks",
+        "destinationId": "capability.runtime-harness.agent-runtime-effects",
+        "description": "depends-on"
+      },
+      {
+        "id": "relation.evals-checks.imports.chatgpt-browser",
+        "sourceId": "capability.verification.evals-checks",
+        "destinationId": "capability.runtime-mcp.chatgpt-browser",
+        "description": "depends-on"
+      },
+      {
+        "id": "relation.evals-checks.imports.codegraph-readiness",
+        "sourceId": "capability.verification.evals-checks",
+        "destinationId": "capability.verification.codegraph-readiness",
+        "description": "depends-on"
+      },
+      {
+        "id": "relation.evals-checks.imports.engineer-bindings",
+        "sourceId": "capability.verification.evals-checks",
+        "destinationId": "capability.runtime-harness.engineer-bindings",
+        "description": "depends-on"
+      },
+      {
+        "id": "relation.evals-checks.imports.engineer-scheduling",
+        "sourceId": "capability.verification.evals-checks",
+        "destinationId": "capability.runtime-harness.engineer-scheduling",
+        "description": "depends-on"
+      },
+      {
+        "id": "relation.evals-checks.imports.engineering-overlay",
+        "sourceId": "capability.verification.evals-checks",
+        "destinationId": "capability.runtime-harness.engineering-overlay",
+        "description": "depends-on"
+      },
+      {
+        "id": "relation.evals-checks.imports.external-source-intake",
+        "sourceId": "capability.verification.evals-checks",
+        "destinationId": "capability.runtime-harness.external-source-intake",
+        "description": "depends-on"
+      },
+      {
+        "id": "relation.evals-checks.imports.global-runtime-reconciliation",
+        "sourceId": "capability.verification.evals-checks",
+        "destinationId": "capability.runtime-harness.global-runtime-reconciliation",
+        "description": "depends-on"
+      },
+      {
+        "id": "relation.evals-checks.imports.integration-acceptance",
+        "sourceId": "capability.verification.evals-checks",
+        "destinationId": "capability.runtime-harness.integration-acceptance",
+        "description": "depends-on"
+      },
+      {
+        "id": "relation.evals-checks.imports.mcp-sidecar",
+        "sourceId": "capability.verification.evals-checks",
+        "destinationId": "capability.runtime-harness.mcp-sidecar",
+        "description": "depends-on"
+      },
+      {
+        "id": "relation.evals-checks.imports.operator",
+        "sourceId": "capability.verification.evals-checks",
+        "destinationId": "capability.runtime-harness.operator",
+        "description": "depends-on"
+      },
+      {
+        "id": "relation.evals-checks.imports.publication",
+        "sourceId": "capability.verification.evals-checks",
+        "destinationId": "capability.organization.publication",
+        "description": "depends-on"
+      },
+      {
+        "id": "relation.evals-checks.imports.refactor-program",
+        "sourceId": "capability.verification.evals-checks",
+        "destinationId": "capability.runtime-harness.refactor-program",
+        "description": "depends-on"
+      },
+      {
+        "id": "relation.evals-checks.imports.root-router",
+        "sourceId": "capability.verification.evals-checks",
+        "destinationId": "capability.public-surface.root-router",
+        "description": "depends-on"
+      },
+      {
+        "id": "relation.evals-checks.imports.strategy-reflection",
+        "sourceId": "capability.verification.evals-checks",
+        "destinationId": "capability.public-surface.strategy-reflection",
+        "description": "depends-on"
+      },
+      {
+        "id": "relation.evals-checks.imports.task-agent-host",
+        "sourceId": "capability.verification.evals-checks",
+        "destinationId": "capability.runtime-harness.task-agent-host",
+        "description": "depends-on"
+      },
+      {
+        "id": "relation.evals-checks.imports.task-fleet",
+        "sourceId": "capability.verification.evals-checks",
+        "destinationId": "capability.organization.task-fleet",
+        "description": "depends-on"
+      },
+      {
+        "id": "relation.evals-checks.imports.workflow-state",
+        "sourceId": "capability.verification.evals-checks",
+        "destinationId": "capability.workflow-engine.workflow-state",
+        "description": "depends-on"
+      },
+      {
         "id": "relation.evals-checks.primary",
         "sourceId": "capability.verification.evals-checks",
         "destinationId": "component.evals-checks.primary",
@@ -1056,6 +1302,18 @@
         "description": "calls"
       },
       {
+        "id": "relation.evidence-ledger.imports.hook-adapters",
+        "sourceId": "capability.runtime-harness.evidence-ledger",
+        "destinationId": "capability.runtime-harness.hook-adapters",
+        "description": "depends-on"
+      },
+      {
+        "id": "relation.evidence-ledger.imports.workflow-state",
+        "sourceId": "capability.runtime-harness.evidence-ledger",
+        "destinationId": "capability.workflow-engine.workflow-state",
+        "description": "depends-on"
+      },
+      {
         "id": "relation.evidence-ledger.primary",
         "sourceId": "capability.runtime-harness.evidence-ledger",
         "destinationId": "component.evidence-ledger.primary",
@@ -1066,6 +1324,12 @@
         "sourceId": "component.evidence-ledger.primary",
         "destinationId": "capability.workflow-engine.execution-primitives",
         "description": "calls"
+      },
+      {
+        "id": "relation.execution-primitives.imports.workflow-state",
+        "sourceId": "capability.workflow-engine.execution-primitives",
+        "destinationId": "capability.workflow-engine.workflow-state",
+        "description": "depends-on"
       },
       {
         "id": "relation.execution-primitives.primary",
@@ -1278,6 +1542,12 @@
         "description": "calls"
       },
       {
+        "id": "relation.global-runtime-reconciliation.imports.evals-checks",
+        "sourceId": "capability.runtime-harness.global-runtime-reconciliation",
+        "destinationId": "capability.verification.evals-checks",
+        "description": "depends-on"
+      },
+      {
         "id": "relation.global-runtime-reconciliation.primary",
         "sourceId": "capability.runtime-harness.global-runtime-reconciliation",
         "destinationId": "component.global-runtime-reconciliation.primary",
@@ -1390,6 +1660,18 @@
         "sourceId": "component.hook-adapters.host-installer",
         "destinationId": "component.action-commands.skill-surface-catalog",
         "description": "calls"
+      },
+      {
+        "id": "relation.hook-adapters.imports.acceptance-review",
+        "sourceId": "capability.runtime-harness.hook-adapters",
+        "destinationId": "capability.verification.acceptance-review",
+        "description": "depends-on"
+      },
+      {
+        "id": "relation.hook-adapters.imports.task-agent-host",
+        "sourceId": "capability.runtime-harness.hook-adapters",
+        "destinationId": "capability.runtime-harness.task-agent-host",
+        "description": "depends-on"
       },
       {
         "id": "relation.hook-adapters.primary",
@@ -1584,6 +1866,12 @@
         "description": "calls"
       },
       {
+        "id": "relation.mcp-sidecar.imports.contract-assets",
+        "sourceId": "capability.runtime-harness.mcp-sidecar",
+        "destinationId": "capability.workflow-engine.contract-assets",
+        "description": "depends-on"
+      },
+      {
         "id": "relation.mcp-sidecar.primary",
         "sourceId": "capability.runtime-harness.mcp-sidecar",
         "destinationId": "component.mcp-sidecar.primary",
@@ -1740,6 +2028,42 @@
         "description": "calls"
       },
       {
+        "id": "relation.operator.imports.action-commands",
+        "sourceId": "capability.runtime-harness.operator",
+        "destinationId": "capability.public-surface.action-commands",
+        "description": "depends-on"
+      },
+      {
+        "id": "relation.operator.imports.engineer-bindings",
+        "sourceId": "capability.runtime-harness.operator",
+        "destinationId": "capability.runtime-harness.engineer-bindings",
+        "description": "depends-on"
+      },
+      {
+        "id": "relation.operator.imports.execution-primitives",
+        "sourceId": "capability.runtime-harness.operator",
+        "destinationId": "capability.workflow-engine.execution-primitives",
+        "description": "depends-on"
+      },
+      {
+        "id": "relation.operator.imports.publication",
+        "sourceId": "capability.runtime-harness.operator",
+        "destinationId": "capability.organization.publication",
+        "description": "depends-on"
+      },
+      {
+        "id": "relation.operator.imports.task-agent-host",
+        "sourceId": "capability.runtime-harness.operator",
+        "destinationId": "capability.runtime-harness.task-agent-host",
+        "description": "depends-on"
+      },
+      {
+        "id": "relation.operator.imports.workflow-state",
+        "sourceId": "capability.runtime-harness.operator",
+        "destinationId": "capability.workflow-engine.workflow-state",
+        "description": "depends-on"
+      },
+      {
         "id": "relation.operator.primary",
         "sourceId": "capability.runtime-harness.operator",
         "destinationId": "component.operator.primary",
@@ -1798,6 +2122,12 @@
         "sourceId": "capability.organization.publication",
         "destinationId": "capability.runtime-harness.evidence-ledger",
         "description": "calls"
+      },
+      {
+        "id": "relation.publication.imports.acceptance-review",
+        "sourceId": "capability.organization.publication",
+        "destinationId": "capability.verification.acceptance-review",
+        "description": "depends-on"
       },
       {
         "id": "relation.publication.primary",
@@ -1888,6 +2218,12 @@
         "sourceId": "capability.runtime-harness.task-agent-host",
         "destinationId": "capability.runtime-harness.evidence-ledger",
         "description": "calls"
+      },
+      {
+        "id": "relation.task-agent-host.imports.hook-adapters",
+        "sourceId": "capability.runtime-harness.task-agent-host",
+        "destinationId": "capability.runtime-harness.hook-adapters",
+        "description": "depends-on"
       },
       {
         "id": "relation.task-agent-host.primary",
@@ -2014,6 +2350,24 @@
         "sourceId": "component.workflow-state.coordination-plane",
         "destinationId": "capability.runtime-harness.task-agent-host",
         "description": "reads"
+      },
+      {
+        "id": "relation.workflow-state.imports.acceptance-review",
+        "sourceId": "capability.workflow-engine.workflow-state",
+        "destinationId": "capability.verification.acceptance-review",
+        "description": "depends-on"
+      },
+      {
+        "id": "relation.workflow-state.imports.global-runtime-reconciliation",
+        "sourceId": "capability.workflow-engine.workflow-state",
+        "destinationId": "capability.runtime-harness.global-runtime-reconciliation",
+        "description": "depends-on"
+      },
+      {
+        "id": "relation.workflow-state.imports.publication",
+        "sourceId": "capability.workflow-engine.workflow-state",
+        "destinationId": "capability.organization.publication",
+        "description": "depends-on"
       },
       {
         "id": "relation.workflow-state.primary",

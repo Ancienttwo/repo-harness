@@ -1,6 +1,6 @@
 # runtime-harness/evidence-ledger 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-evidence-ledger" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:a9ee1c328e554fae25ebb0232469753cea0f68a4cf0b42926f182d77cf493e7c" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-evidence-ledger" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:8aedb452950b892ddae64ee8c3b484c3eb1b3d1d441bd7bd03a91d0cff7a88a5" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.evidence-ledger`(kind `capability`)
 > **Matched Prefixes**:`src/core/evidence/**`、`src/effects/evidence/**`、`scripts/evidence-gc.ts`、`scripts/recovery-view-cli.ts`、`scripts/decision-trail.ts`、`scripts/prepare-handoff.sh`、`scripts/prepare-codex-handoff.sh`、`scripts/codex-handoff-resume.sh`
@@ -51,11 +51,14 @@ flowchart LR
 出向關係:
 
 - `calls` → `capability.public-surface.adoption` — Resolve blob and log paths inside the repository with the shared path-safety helper
+- `depends-on` → `capability.runtime-harness.hook-adapters` — Collect loop state inputs for recovery evidence.
+- `depends-on` → `capability.workflow-engine.workflow-state` — Read state artifacts and read-only observations for evidence.
 - `calls` → `component.evidence-ledger.primary` — Append fold and checkpoint evidence events through one writer path
 
 入向關係:
 
 - `calls` ← `component.acceptance-review.primary` — Canonicalize review records and load verification execution results
+- `depends-on` ← `capability.runtime-harness.engineer-bindings` — Use canonical evidence JSON and evidence types for bindings.
 - `calls` ← `component.evals-checks.primary` — Validate and execute verification plans through the evidence verification modules
 - `calls` ← `component.global-runtime-reconciliation.archctx-closure` — Canonicalize architecture closure records
 - `calls` ← `component.hook-adapters.session-lifecycle` — Publish the evidence checkpoint and render handoff and resume from it
@@ -146,7 +149,7 @@ sequenceDiagram
 
 ### PostBash importer 退役 (2026-10-13)
 
-- P1：`src/effects/evidence/post-bash-importer.ts` 已删除（#695）。它写的 `observed` 事件不满足任何门禁。`verification-execution.ts` 也过滤掉这类事件。Claude 与 Codex 的 Bash payload 没有退出码，所以这些事件都记成退出码 0。
+- P1：[archived post-bash-importer.ts](https://github.com/Ancienttwo/repo-harness/blob/2ed904ae9555482b4c5750457c3faa8b7804484c/src/effects/evidence/post-bash-importer.ts) 已删除（#695）。它写的 `observed` 事件不满足任何门禁。`verification-execution.ts` 也过滤掉这类事件。Claude 与 Codex 的 Bash payload 没有退出码，所以这些事件都记成退出码 0。
 - P2：本能力的 append 入口改为 `entrypoint.evidence-ledger.attested-import`（`importAttestedEvidence`）。`flow.evidence-ledger.append-and-recover` 的第一步改为 attested import。旧 ledger 里已有的 `post_bash.command_observed` 事件留在原处，fold 照常处理。
 - P3：Stop 先发布 checkpoint，再渲染 handoff 与 resume。视图不再有 "## Commands Run" 段。`scripts/recovery-view-cli.ts` 只是命令行适配器，每个视图都来自 `recovery-materializer.ts`。手写的第二个渲染器已删除。
 

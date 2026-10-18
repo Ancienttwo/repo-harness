@@ -1,8 +1,8 @@
 # verification/codegraph-readiness 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-codegraph-readiness" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:cdcd9c5cf5e3e7075dfffaf0bdb36b24557214695247f84b84d95cfa2c48559e" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-codegraph-readiness" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:940d44eb17f6132544e5117a92fe05d7b5a22e6f7723ea0f0c0bd0e6bee199c0" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.verification.codegraph-readiness`(kind `capability`)
-> **Matched Prefixes**:`scripts/ensure-codegraph.sh`、`src/cli/tools/codegraph.ts`、`src/cli/mcp/codegraph-adapter.ts`、`tests/cli/codegraph-resolver.test.ts`、`docs/architecture/modules/verification/codegraph-readiness.md`、`src/cli/commands/tools.ts`
+> **Matched Prefixes**:`scripts/ensure-codegraph.sh`、`src/cli/tools/codegraph.ts`、`src/cli/mcp/codegraph-adapter.ts`、`tests/cli/codegraph-resolver.test.ts`、`src/cli/commands/tools.ts`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
@@ -39,18 +39,22 @@ flowchart LR
 ### 1.3 規模信號
 
 - 規模量級:`5–10` 個文件 / `1000–2000` 行
-- 匹配前綴:`scripts/ensure-codegraph.sh`、`src/cli/tools/codegraph.ts`、`src/cli/mcp/codegraph-adapter.ts`、`tests/cli/codegraph-resolver.test.ts`、`docs/architecture/modules/verification/codegraph-readiness.md`、`src/cli/commands/tools.ts`
+- 匹配前綴:`scripts/ensure-codegraph.sh`、`src/cli/tools/codegraph.ts`、`src/cli/mcp/codegraph-adapter.ts`、`tests/cli/codegraph-resolver.test.ts`、`src/cli/commands/tools.ts`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
 ### 1.4 依賴邊界
 
 出向關係:
 
+- `depends-on` → `capability.verification.evals-checks` — Use shared repository fixtures for CodeGraph resolver tests.
+- `depends-on` → `capability.workflow-engine.execution-primitives` — Run bounded CodeGraph processes.
+- `depends-on` → `capability.runtime-harness.hook-adapters` — Use host locks and configuration ownership for CodeGraph setup.
 - `calls` → `component.codegraph-readiness.primary` — Verify CodeGraph readiness
 
 入向關係:
 
 - `calls` ← `component.contract-assets.template-projection` — Ensure CodeGraph readiness during init
+- `depends-on` ← `capability.verification.evals-checks` — Test CodeGraph Readiness behavior through its source modules.
 - `calls` ← `component.general-repo-access.primary` — Read CodeGraph index metadata through the adapter after path authorization
 - `calls` ← `component.global-runtime-reconciliation.cli-root` — Probe CodeGraph readiness for doctor
 - `calls` ← `component.global-runtime-reconciliation.primary` — Configure the exact CodeGraph CLI and MCP registration

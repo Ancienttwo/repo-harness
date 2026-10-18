@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "archcontext.relation/v1",
+  "id": "relation.operator.imports.task-agent-host",
+  "kind": "depends-on",
+  "source": "capability.runtime-harness.operator",
+  "target": "capability.runtime-harness.task-agent-host",
+  "intent": "Read task role profiles for the setup snapshot."
+}

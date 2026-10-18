@@ -1,6 +1,6 @@
 # runtime-harness/external-source-intake 架构文档
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-external-source-intake" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:84a16c823c8f742a2ab6c54325740a096b8b85a67660b2a2ddbad76a40f469b4" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-external-source-intake" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:a8da37a4a367b08e6b86a36f10cc9f4f884dcf7e56d5f4c8f4391283512179fb" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.external-source-intake`(kind `capability`)
 > **Matched Prefixes**:`src/core/external-sources/**`、`src/effects/external-sources/**`、`src/cli/commands/external-source.ts`
@@ -32,9 +32,9 @@ flowchart LR
 | 宣告入口 | 錨點 | 職責 |
 | --- | --- | --- |
 | `entrypoint.external-source-intake.refresh` | `src/effects/external-sources/refresh.ts#refreshExternalSource` | `sink.external-source-intake.immutable-observation-store` → `src/effects/external-sources/store.ts#writeProviderIssueObservation`、`sink.external-source-intake.immutable-attempt-receipt` → `src/effects/external-sources/store.ts#writeExternalSourceRefreshReceipt` |
-| `entrypoint.external-source-intake.list` | `src/effects/external-sources/refresh.ts#listExternalSourceProjection` | `sink.external-source-intake.read-only-projection` → `src/core/external-sources/projection.ts#buildExternalSourceProjection` |
+| `entrypoint.external-source-intake.list` | `src/effects/external-sources/refresh.ts#projection` | `sink.external-source-intake.read-only-projection` → `src/core/external-sources/projection.ts#buildExternalSourceProjection` |
 | `entrypoint.external-source-intake.bind` | `src/effects/external-sources/binding.ts#bindExternalSource` | `sink.external-source-intake.binding-receipt` → `src/effects/external-sources/store.ts#writeExternalSourceBindingReceipt` |
-| `entrypoint.external-source-intake.bind` | `src/effects/external-sources/binding.ts#listExternalSourceBindings` | `sink.external-source-intake.binding-projection` → `src/core/external-sources/binding.ts#ExternalSourceBindingProjectionV1` |
+| `entrypoint.external-source-intake.bind` | `src/effects/external-sources/binding.ts#listExternalSourceBindings` | `sink.external-source-intake.binding-projection` → `src/core/external-sources/projection.ts#buildExternalSourceProjection` |
 
 組件入口:
 
@@ -56,6 +56,7 @@ flowchart LR
 
 入向關係:
 
+- `depends-on` ← `capability.verification.evals-checks` — Test External Source Intake behavior through its source modules.
 - `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the external-source command
 
 組件出向關係:
@@ -155,3 +156,10 @@ sequenceDiagram
 - append-only 存储的全量读取（§3.2）。在有实测记录数和延迟数据之前，不加可变缓存或索引。这与 §3.1 第 5 条一致。
 - capability 的 responsibilities 里写着 "Exclude ... UI, MCP"。Operator 和 MCP 目前确实没有调用方。如果以后要在 Operator 显示外部证据，需要先决定是否放宽这条排除。
 
+## Selector evidence (2026-10-18)
+
+`listExternalSourceBindings` calls `buildExternalSourceProjection`. Its return interface is a type, not a call target. The model now names the called function.
+
+`listExternalSourceProjection` calls the local projection helper in `src/effects/external-sources/refresh.ts:55-60`. That helper calls the projection builder. CodeGraph also indexes a property with the same name in this file. Archctx cannot select the helper uniquely, so this selector remains unproven.
+
+`bindExternalSource` calls the injected writer (`src/effects/external-sources/binding.ts:116`). Its default is the binding receipt writer. CodeGraph has no direct call edge through that dependency. The model keeps this proof gap visible.

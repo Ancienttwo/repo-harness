@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "archcontext.relation/v1",
+  "id": "relation.operator.imports.workflow-state",
+  "kind": "depends-on",
+  "source": "capability.runtime-harness.operator",
+  "target": "capability.workflow-engine.workflow-state",
+  "intent": "Read state types and artifacts for Operator projections."
+}

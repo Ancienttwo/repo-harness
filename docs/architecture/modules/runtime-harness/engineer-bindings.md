@@ -1,6 +1,6 @@
 # runtime-harness/engineer-bindings 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineer-bindings" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:5344e0429bbc797be2818f5f69760fddd8bd01504c087942c755d93f23ec9b67" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineer-bindings" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:d17f9951e86feabeecb9f9f00f2c93c050da1ca8a610ae32ff8a214a51dfb174" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.engineer-bindings`(kind `capability`)
 > **Matched Prefixes**:`agents/engineers/**`、`src/core/engineers/**`、`src/effects/engineers/**`
@@ -49,6 +49,9 @@ flowchart LR
 出向關係:
 
 - `calls` → `capability.workflow-engine.execution-primitives` — Hold exclusive directory locks under the Git common directory
+- `depends-on` → `capability.workflow-engine.contract-assets` — Resolve capability contracts for Engineer profiles.
+- `depends-on` → `capability.runtime-harness.evidence-ledger` — Use canonical evidence JSON and evidence types for bindings.
+- `depends-on` → `capability.runtime-harness.global-runtime-reconciliation` — Read the architecture model for Engineer profiles.
 - `calls` → `component.engineer-bindings.primary` — Read retained Engineer binding records for the operator
 - `calls` → `capability.workflow-engine.workflow-state` — Process Sprint dependencies and release Sprint leases for bound engineer tasks
 
@@ -57,7 +60,9 @@ flowchart LR
 - `calls` ← `capability.runtime-harness.agent-runtime-effects` — Revalidate the exact current Engineer Binding endpoint before preparing or admitting one Host adapter action
 - `calls` ← `capability.runtime-harness.engineer-scheduling` — Resolve declared graph capabilities through the Engineer profile authority reader
 - `calls` ← `capability.runtime-harness.engineering-overlay` — Observe exact current Profile, Binding and live ClaimActor revisions without mutating their stores
+- `depends-on` ← `capability.verification.evals-checks` — Test Engineer Bindings behavior through its source modules.
 - `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the engineer command
+- `depends-on` ← `capability.runtime-harness.operator` — Use claim identity types for task activity.
 - `calls` ← `capability.organization.task-fleet` — Validate principal claims and claim actor receipts before a steer reply is recorded
 
 組件出向關係:
@@ -106,13 +111,13 @@ sequenceDiagram
 
 ### 2026-08-24 ME-0A authority foundation
 
-- Approved work-package: `plans/plan-20260824-2126-me0a-engineer-profile-binding.md`.
+- The original implementation plan is not tracked. The requirement is in `plans/prds/20260824-1653-engineer-profile-binding-projection.prd.md`.
 - Accepted architecture change: `changeset.plan-20260824-2126-me0a-engineer-profile-binding`, bound to archived external approval `event.review-20260824-2050-persistent-module-engineer-me0a-approval`.
 - EngineerPrincipal, Session mutation, ClaimActorReceipt, delegation, messaging, Worker Host, Provider lifecycle, handoff, Human Board, and remote access remain separate Draft children and receive no authority from this module.
 
 ### 2026-08-25 ME-0B principal and claim actor
 
-- Approved work-package: `plans/plan-20260825-0029-me0b-engineer-principal-claim-actor.md`.
+- Approved work-package: [archived plan-20260825-0029-me0b-engineer-principal-claim-actor.md](https://github.com/Ancienttwo/repo-harness/blob/ed438b88e71e8f7d1c753163d2a27bf7225e9d4c/plans/plan-20260825-0029-me0b-engineer-principal-claim-actor.md).
 - Accepted architecture change: `changeset.plan-20260825-0029-me0b-engineer-principal-claim-actor`, bound to Human approval `event.review-20260825-0029-me0b-engineer-principal-claim-actor-approval`; the final residual refresh covered `verified-flow-proof-changed` for `capability.runtime-harness.engineer-bindings` and `capability.runtime-harness.mcp-sidecar`.
 - EngineerPrincipal and ClaimActorReceipt are now in scope; Provider adapters, Session lifecycle, Worker Host, Work Package Graph, delegation, messaging, writer grant, handoff, interface request, Human Board, and remote access remain separate children.
 

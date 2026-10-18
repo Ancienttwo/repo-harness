@@ -1,6 +1,6 @@
 # organization/publication 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-organization-publication" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:dc66c14ffa22645f96a177b00f5ab1a8e066023ab39f2ff193617bb516017254" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-organization-publication" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:228444ea5765cf5ecad44a482027a38a8654e7edc6c55b1346f9a751ac5916d3" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.organization.publication`(kind `capability`)
 > **Matched Prefixes**:`src/core/publication/**`、`src/effects/publication/**`、`src/cli/commands/publication.ts`
@@ -51,15 +51,20 @@ flowchart LR
 
 - `calls` → `capability.workflow-engine.contract-assets` — Recompute the candidate diff with the packaged merge gate and worktree merge helper
 - `calls` → `capability.runtime-harness.evidence-ledger` — Append lifecycle journal records through the durable evidence append primitive
+- `depends-on` → `capability.verification.acceptance-review` — Read the acceptance receipt for publication evidence.
 - `calls` → `component.publication.primary` — Bind one claim generation to one PR receipt and derive fenced readiness at read time
 
 入向關係:
 
+- `depends-on` ← `capability.workflow-engine.contract-assets` — Read publication merge readiness from the merge helper.
 - `reads` ← `capability.runtime-harness.engineer-scheduling` — Read cached publication receipts as dependency authority
+- `depends-on` ← `capability.verification.evals-checks` — Test PR Publication behavior through its source modules.
 - `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the publication command
 - `reads` ← `capability.runtime-harness.integration-acceptance` — Read cached immutable publication receipts and reuse their canonical JSON digest
 - `calls` ← `component.mcp-sidecar.primary` — Reopen and take over publications and read merge readiness
+- `depends-on` ← `capability.runtime-harness.operator` — Use publication readiness types in the Operator fixture.
 - `calls` ← `capability.organization.task-fleet` — Read publication receipts readiness and provider feedback for fleet commands and board cards
+- `depends-on` ← `capability.workflow-engine.workflow-state` — Read publication receipts for coordination worktree topology.
 
 組件出向關係:
 

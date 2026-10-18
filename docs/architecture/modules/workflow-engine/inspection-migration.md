@@ -169,7 +169,7 @@ bun scripts/inspect-project-state.ts --repo . --format text
 - `scripts/sync-helper-sources.ts` reads the helper inventory only from the
   workflow contract, rejects unclassified package files, and preserves the one
   declared migration delegate.
-- `src/cli/runtime/helper-runner.ts` resolves only contract-listed helpers from
+- `src/effects/runtime/helper-runner.ts` resolves only contract-listed helpers from
   the package or an explicit source checkout. Missing contracts, malformed JSON,
   unsafe inventory entries, ambiguous helper IDs, and missing implementation
   files fail closed.
@@ -213,7 +213,7 @@ bun scripts/inspect-project-state.ts --repo . --format text
   their existing behavior. Missing or malformed packaged persona sources still
   fail before any user-level agent target is mutated.
 
-复验状态（main@13686d8d）：四段 closeout 的核心断言与当前源码一致——六角色清单见 `scripts/lib/project-init-lib.sh:1973` 与 `scripts/ensure-task-workflow.sh:1288`，`install_mode: "advisory"` 下游默认见 `project-init-lib.sh:1976`，`scripts/workflow-contract.ts` 的三源解析与 fail-closed 校验见 §1.2 与 §2.3。
+上述 closeout 记录的是历史实现。当前 `scripts/ensure-task-workflow.sh` 仅确保 runtime recovery 目录。安装配置由 `scripts/lib/project-init-lib.sh` 提供。
 
 ## Optimization Backlog
 

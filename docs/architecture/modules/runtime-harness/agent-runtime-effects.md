@@ -1,6 +1,6 @@
 # runtime-harness/agent-runtime-effects 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-agent-runtime-effects" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:fc2b8f82ae248ad88f77e4cc6e1dac0924971ae30b0190075f8f34dd1b4c135a" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-agent-runtime-effects" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:3f940f20f903ff48fd35dafa6147fb95041b55985736dba28d01966d6e36c64a" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.agent-runtime-effects`(kind `capability`)
 > **Matched Prefixes**:`src/core/engineers/agent-runtime-effect.ts`、`src/effects/engineers/agent-runtime-effect-store.ts`、`src/effects/engineers/agent-runtime-feature.ts`、`src/effects/engineers/agent-runtime-adapters/**`
@@ -69,6 +69,7 @@ flowchart LR
 入向關係:
 
 - `calls` ← `capability.runtime-harness.engineering-overlay` — Observe exact current runtime-effect and reconciliation states without executing or repairing an effect
+- `depends-on` ← `capability.verification.evals-checks` — Test Agent Runtime Effects behavior through its source modules.
 - `calls` ← `capability.runtime-harness.mcp-sidecar` — Expose read-only runtime capability and current-effect projections to the authenticated Engineer without Host mutation authority
 - `calls` ← `capability.organization.task-fleet` — Read task agent runtime effects as board observations only
 
@@ -151,7 +152,7 @@ wake 的 Host 动作只带 `repo-harness-wake:` 前缀的有界 control referenc
 - 换到另一个仍有 eligible 工作的 snapshot 都算 due，包括 A → B 这种原本就 eligible 的变化。
 - 更新的 snapshot 只在旧 wake 尚未 start 时取代它。新 wake 继承原来的 `requested_at` 和 `coalesce_until`，所以窗口有界，不会被连续变化一直推后。
 - 已 start 的 wake 不被取代，也不会开第二个并行 wake。
-- wake 执行期间记录的 snapshot 保持未消费。ledger 不把它写成已观察。只有 offer 权威在该 wake 结束后再次记录它，它才会触发 wake。这是 `engineer runtime-effect wake-record-offers` 调用方的责任（`src/cli/commands/engineer.ts:629`；PR #558 修复了相关缺陷）。
+- wake 执行期间记录的 snapshot 保持未消费。ledger 不把它写成已观察。只有 offer 权威在该 wake 结束后再次记录它，它才会触发 wake。这是 offer 记录调用方的责任。PR #558 修复了相关缺陷。#820 已退役 Engineer CLI；当前存储入口见 `src/effects/engineers/agent-runtime-effect-store.ts#recordEngineerOfferSnapshot`。
 - 被取代的 intent 在自己的链上写入终态 `superseded`（只能从 `intent_persisted` 到达）。它不会停在 `intent_persisted` 等 ledger 指针来解释。所以每个 Binding 任何时刻只有一个非终态 wake。Board 投影不读 ledger 也与指针一致。重启一个 superseded wake 会明确报错，不会静默无动作。
 - idempotency key 绑定 snapshot 和前一份 ledger 摘要。崩溃重放看到同一份未发布的前驱，沿用同一把 key。A → B → A 回到旧 snapshot 是新的转换，得到新的 wake，不会指回已 superseded 的 effect（PR #558）。
 - 没有无限重试面。同一次转换的 idempotency key 固定。失败后除非 offers 再次变化，否则不会自动重来。retry 属于 attempt receipt 的权威。
@@ -168,7 +169,7 @@ intent 先写，ledger 后发布。两者之间崩溃时，`created_at` 使用�
 
 ### 3.9 订阅面在 effect 层
 
-`listDueOfferWakes` 和 `subscribeToOfferWakes`（`agent-runtime-effect-store.ts:802`）读取 ledger 和 effect current。时钟由调用方提供，返回有界事件。非交互控制器不经过 CLI 也可以消费。ledger 用原子替换发布，读取不取锁，所以不会反向持有 effect 锁再去取 wake 锁。
+`listDueOfferWakes` 和 `subscribeToOfferWakes`（`src/effects/engineers/agent-runtime-effect-store.ts#listDueOfferWakes`）读取 ledger 和 effect current。时钟由调用方提供，返回有界事件。非交互控制器不经过 CLI 也可以消费。ledger 用原子替换发布，读取不取锁，所以不会反向持有 effect 锁再去取 wake 锁。
 
 ### 3.10 组件与关系（2026-10-11）
 

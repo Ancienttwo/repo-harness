@@ -15,9 +15,6 @@ source:
     - assets/workflow-contract.v1.json
     - assets/AGENTS.md
     - assets/CLAUDE.md
-    - .ai/harness/workflow-contract.json
-    - .ai/harness/policy.json
-    - .ai/harness/brain-manifest.json
     - .ai/context/**
     - scripts/workflow-contract.ts
     - scripts/check-context-*

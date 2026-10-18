@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "archcontext.relation/v1",
+  "id": "relation.workflow-state.imports.publication",
+  "kind": "depends-on",
+  "source": "capability.workflow-engine.workflow-state",
+  "target": "capability.organization.publication",
+  "intent": "Read publication receipts for coordination worktree topology."
+}
