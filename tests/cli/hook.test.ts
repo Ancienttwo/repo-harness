@@ -14,7 +14,7 @@ const HOOK_ENTRY = join(import.meta.dir, '..', '..', 'src', 'cli', 'hook-entry.t
 describe('hook host output fields', () => {
   const outcome: HookOutcome = {
     event: 'SessionStart', routeId: 'default', repoRoot: null, exitCode: 0, reason: 'ok',
-    additionalContext: '[ArchitectureOwed] model context', systemMessage: 'Architecture: human context', diagnostics: '',
+    additionalContext: '[ArchitectureDebt] model context', systemMessage: 'Architecture: human context', diagnostics: '',
   };
 
   test('Claude renders model and human text in separate fields on SessionStart and Stop', () => {
@@ -296,7 +296,7 @@ describe('typed hook runtime', () => {
         ['SessionStart', 'default', undefined, 'session-context'],
         ['PreToolUse', 'edit', JSON.stringify({ tool_input: { file_path: 'README.md' } }), 'mutation-guard'],
         ['PreToolUse', 'subagent', JSON.stringify({ tool_name: 'Agent', tool_input: { prompt: 'inspect' } }), 'return-channel'],
-        ['UserPromptSubmit', 'inbox', JSON.stringify({ prompt: 'continue' }), 'noop'],
+        ['UserPromptSubmit', 'inbox', JSON.stringify({ prompt: 'continue' }), 'agent-notice'],
         ['SubagentStart', 'context', JSON.stringify({ hook_event_name: 'SubagentStart' }), 'subagent-context'],
         ['Stop', 'default', JSON.stringify({ stop_hook_active: false }), 'stop'],
       ] as const;

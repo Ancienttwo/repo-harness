@@ -53,8 +53,8 @@ export function readArchcontextCapabilityAuthority(
   }
 }
 
-// Stays well below the 30 s hook budget, so a stalled archctx becomes a recorded blocker.
-const RESOLVE_TIMEOUT_MS = 10_000;
+// Ownership also runs in notice hooks. Each archctx call has a 3 s ceiling.
+const RESOLVE_TIMEOUT_MS = 3_000;
 
 type ArchctxResolveResult = Omit<ArchcontextPathOwner, 'path'>;
 

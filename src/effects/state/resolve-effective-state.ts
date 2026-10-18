@@ -1,8 +1,7 @@
-import { assertObservationPath, currentReadonlyObservation, withReadonlyObservation, type ReadonlyObservationIO, observationReadFileSync as readFileSync, observationReaddirSync as readdirSync } from './readonly-observation';
-import { statSync } from 'fs';
-import { posix, win32 } from 'path';
+import { assertObservationPath, currentReadonlyObservation, withReadonlyObservation, type ReadonlyObservationIO, observationReadFileSync as readFileSync, observationReaddirSync as readdirSync, observationExecFileSync as execFileSync } from './readonly-observation';
+import { statSync, existsSync } from 'fs';
+import { posix, win32, join } from 'path';
 import { buildReviewSubject, isImplementationSurfacePath, type ReviewSubject } from '../review/diff-fingerprint';
-import { owedCapabilityBase } from './owed-capabilities';
 import { resolveWorkflowProfile } from '../../core/workflow/profile';
 import {
   CAPABILITY_SOURCE_MODES,
@@ -476,6 +475,33 @@ function capabilityIdsForPaths(
   select?: (paths: readonly string[]) => readonly string[],
 ): CapabilityResolution {
   return capabilityIdsForPathGroups(cwd, [paths], policy, readSource, select)[0]!;
+}
+
+const PROJECTION_MANIFEST_PATH = 'docs/architecture/.projection-manifest.json';
+
+function git(repoRoot: string, args: readonly string[]): string {
+  return execFileSync('git', ['-C', repoRoot, '-c', 'core.quotepath=false', ...args], {
+    encoding: 'utf-8',
+    stdio: ['ignore', 'pipe', 'ignore'],
+    maxBuffer: 64 * 1024 * 1024,
+    timeout: 10_000,
+  });
+}
+
+/** Keep branch review history; use the last projection checkpoint on the base. */
+function owedCapabilityBase(repoRoot: string, reviewBase: string, headRev?: string): {
+  readonly reviewBase: string;
+  readonly manifestChange: string | null;
+} {
+  assertObservationPath(join(repoRoot, PROJECTION_MANIFEST_PATH));
+  if (existsSync(join(repoRoot, PROJECTION_MANIFEST_PATH))) {
+    const head = headRev ?? git(repoRoot, ['rev-parse', 'HEAD']).trim();
+    if (reviewBase === head || git(repoRoot, ['merge-base', reviewBase, head]).trim() === head) {
+      const checkpoint = git(repoRoot, ['log', '-1', '--format=%H', 'HEAD', '--', PROJECTION_MANIFEST_PATH]).trim();
+      if (checkpoint) return { reviewBase: checkpoint, manifestChange: checkpoint };
+    }
+  }
+  return { reviewBase, manifestChange: null };
 }
 
 /** The owed subject is independent of the subject used for risk and review. */

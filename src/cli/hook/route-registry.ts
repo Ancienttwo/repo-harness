@@ -41,7 +41,7 @@ export type HookHandlerId =
   | 'mutation-guard'
   | 'return-channel'
   | 'subagent-context'
-  | 'noop'
+  | 'agent-notice'
   | 'stop';
 
 export interface Route {
@@ -90,8 +90,8 @@ export const ROUTES: readonly Route[] = Object.freeze([
   Object.freeze({
     event: 'UserPromptSubmit' as const,
     routeId: 'inbox' as const,
-    // Keep the installed adapter tuple until the #737 host migration.
-    handler: 'noop',
+    // Preserve the installed tuple. Only Codex delivers notice text here.
+    handler: 'agent-notice',
     hosts: ['claude', 'codex'] as const,
   }),
   Object.freeze({

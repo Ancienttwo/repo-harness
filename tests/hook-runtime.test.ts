@@ -11,6 +11,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'fs';
+import { fixtureWrite } from './helpers/module-repository';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { resolveCompatibleNodeRuntime } from '../src/effects/architecture/archctx-provider';
@@ -204,12 +205,19 @@ describe('host envelopes on the real hook entry (#678)', () => {
     mkdirSync(join(root, 'docs/architecture'), { recursive: true });
     writeFileSync(join(root, 'src/owned/a.ts'), 'export const a = 1;\n');
     writeFileSync(join(root, 'src/owned/a.test.ts'), 'export {};\n');
-    writeFileSync(join(root, 'docs/architecture/.projection-manifest.json'), '{}\n');
+    writeFileSync(join(root, 'docs/architecture/.projection-manifest.json'), '{"profile":"repo-harness/v1"}\n');
+    fixtureWrite(root, 'docs/architecture/modules/core/owned.md', '## 3. Decisions\nRead `src/owned/a.ts:999`.\n');
+    fixtureWrite(root, '.archcontext/manifest.yaml', 'schemaVersion: archcontext.manifest/v1\nmodel:\n  layout: split\n  root: .archcontext/model\n');
+    fixtureWrite(root, '.archcontext/product.yaml', 'schemaVersion: archcontext.product/v1\nid: product.test\nname: Test\n');
+    fixtureWrite(root, '.archcontext/model/nodes/capability.core.owned.yaml', JSON.stringify({
+      schemaVersion: 'archcontext.node/v2', id: 'capability.core.owned', kind: 'capability', name: 'Owned', status: 'active', summary: 'Own source.', responsibilities: ['Own source.'],
+      source: { include: ['src/owned/**'] }, extensions: { contractFiles: { agents: 'AGENTS.md', claude: 'CLAUDE.md' }, lspProfile: 'typescript-lsp', verification: [] },
+    }));
     gitIn('add', '-A'); gitIn('commit', '-q', '-m', 'projected');
     gitIn('checkout', '-q', '-b', 'feature');
     writeFileSync(join(root, 'src/owned/a.ts'), 'export const a = 2;\n');
     gitIn('commit', '-q', '-am', 'change owned code');
-    mkdirSync(join(root, 'home'), { recursive: true });
+    fixtureWrite(root, 'home/.repo-harness/config.json', JSON.stringify({ architecture: { projection_provider: 'archctx', projection_apply: 'manual', projection_timeout_ms: 120000 } }));
     return root;
   }
 
@@ -227,7 +235,7 @@ describe('host envelopes on the real hook entry (#678)', () => {
     return { status: result.status, stdout: result.stdout, stderr: result.stderr };
   }
 
-  const HUMAN_OWED = 'Architecture: 1 capability changed after the last projection (core-owned). Run: repo-harness architecture-projection check --json';
+  const HUMAN_DEBT = 'Architecture: 1 debt item in capability.core.owned; run repo-harness architecture-debt --json.';
 
   function context(stdout: string, event: string, systemMessage?: string): string {
     expect(stdout.endsWith('\n')).toBe(true);
@@ -249,9 +257,11 @@ describe('host envelopes on the real hook entry (#678)', () => {
 
         const session = host(root, hostName, 'SessionStart', 'default', { session_id: `owed-${hostName}` });
         expect(session.status).toBe(0);
-        const sessionContext = context(session.stdout, 'SessionStart', hostName === 'claude' ? HUMAN_OWED : undefined);
-        expect(sessionContext).toContain('[ArchitectureOwed]');
-        expect(sessionContext).toContain('core-owned (docs/architecture/modules/core/owned.md)');
+        const sessionContext = context(session.stdout, 'SessionStart', hostName === 'claude' ? HUMAN_DEBT : undefined);
+        if (hostName === 'claude') {
+          expect(sessionContext).toContain('[ArchitectureDebt]');
+          expect(sessionContext).toContain('capability.core.owned');
+        } else expect(sessionContext).not.toContain('[ArchitectureDebt]');
       }
     } finally { rmSync(root, { recursive: true, force: true }); }
   }, 120_000);
@@ -290,6 +300,7 @@ process.exit(child.status ?? 1);
             ['PreToolUse', 'edit', { tool_name: 'Edit', tool_input: { file_path: 'src/owned/a.ts' } }],
             ['SessionStart', 'default', { session_id: `archcontext-${hostName}` }],
             ['Stop', 'default', { stop_hook_active: false }],
+            ['UserPromptSubmit', 'inbox', { prompt: 'continue' }],
           ] as const) {
             writeFileSync(log, '');
             const result = host(root, hostName, event, route, input, { REPO_HARNESS_NODE_BIN: shim });
@@ -303,8 +314,16 @@ process.exit(child.status ?? 1);
               expect(resolves).toBe(1);
               expect(context(result.stdout, event)).toBe('[CapabilityOwner] src/owned/a.ts belongs to core-owned (docs/architecture/modules/core/owned.md).');
             }
-            if (event === 'SessionStart' || (event === 'Stop' && hostName === 'claude')) expect(resolves).toBe(1);
-            if (event === 'SessionStart') expect(context(result.stdout, event, hostName === 'claude' ? HUMAN_OWED : undefined)).toContain('core-owned (docs/architecture/modules/core/owned.md)');
+            if (event === 'SessionStart' || (event === 'Stop' && hostName === 'claude') || (event === 'UserPromptSubmit' && hostName === 'codex')) expect(resolves).toBe(1);
+            const checkpoints = calls.filter(argv => argv.includes('checkpoint')).length;
+            const delivers = event === 'SessionStart' || (event === 'Stop' && hostName === 'claude') || (event === 'UserPromptSubmit' && hostName === 'codex');
+            expect(checkpoints).toBe(delivers && checkout !== 'main' ? 1 : 0);
+            expect(calls.some(argv => argv.includes('complete') || argv.includes('doctor') || argv.includes('apply'))).toBe(false);
+            if (event === 'SessionStart') {
+              const firstNotice = checkout !== 'main' && hostName === 'claude';
+              const body = context(result.stdout, event, firstNotice ? HUMAN_DEBT : undefined);
+              expect(body.includes('[ArchitectureDebt]')).toBe(firstNotice);
+            }
             console.log(`[ArchctxHookProbe] ${checkout} ${hostName} ${event}: export=${exports} resolve=${resolves}`);
           }
         }
@@ -387,12 +406,15 @@ process.exit(child.status ?? 1);
 
       const inbox = host(root, 'codex', 'UserPromptSubmit', 'inbox', { prompt: 'continue' });
       expect(inbox.status).toBe(0);
-      expect(inbox.stdout).toBe('');
+      expect(context(inbox.stdout, 'UserPromptSubmit')).toContain('[ArchitectureDebt]');
+      expect(inbox.stdout).not.toContain('peer body for the owner');
+      expect(host(root, 'codex', 'UserPromptSubmit', 'inbox', { prompt: 'continue' }).stdout).toBe('');
+      expect(host(root, 'claude', 'UserPromptSubmit', 'inbox', { prompt: 'continue' }).stdout).toBe('');
       expect(inbox.stderr).toBe('');
     } finally { rmSync(root, { recursive: true, force: true }); }
   }, 60_000);
 
-  test('Stop: Claude gets one envelope per owed set; Codex Stop writes no bytes', () => {
+  test('Stop: Claude gets one envelope per id set across events; Codex Stop writes no bytes', () => {
     const root = owedFixture();
     try {
       const codex = host(root, 'codex', 'Stop', 'default', { stop_hook_active: false });
@@ -401,28 +423,28 @@ process.exit(child.status ?? 1);
 
       const claude = host(root, 'claude', 'Stop', 'default', { stop_hook_active: false });
       expect(claude.status).toBe(0);
-      expect(context(claude.stdout, 'Stop', HUMAN_OWED)).toContain('[ArchitectureOwed]');
+      expect(context(claude.stdout, 'Stop', HUMAN_DEBT)).toContain('[ArchitectureDebt]');
       expect(host(root, 'claude', 'Stop', 'default', { stop_hook_active: false }).stdout).toBe('');
-      // The Stop marker must not suppress the human line in a later session.
+      // The notice marker dedupes the same ids across Stop and SessionStart.
       for (const sessionId of ['owed-session-one', 'owed-session-two']) {
         const session = host(root, 'claude', 'SessionStart', 'default', { session_id: sessionId });
         expect(session.status).toBe(0);
-        expect(context(session.stdout, 'SessionStart', HUMAN_OWED)).toContain('[ArchitectureOwed]');
+        expect(context(session.stdout, 'SessionStart')).not.toContain('[ArchitectureDebt]');
       }
       expect(host(root, 'claude', 'Stop', 'default', { stop_hook_active: false }).stdout).toBe('');
     } finally { rmSync(root, { recursive: true, force: true }); }
   }, 60_000);
 
-  test('no owed line once the manifest changed later in the branch', () => {
+  test('manifest refresh alone does not resolve citation debt', () => {
     const root = owedFixture();
     try {
-      writeFileSync(join(root, 'docs/architecture/.projection-manifest.json'), '{"refreshed":true}\n');
+      writeFileSync(join(root, 'docs/architecture/.projection-manifest.json'), '{"profile":"repo-harness/v1","refreshed":true}\n');
       execFileSync('git', ['commit', '-q', '-am', 'refresh the projection'], { cwd: root });
       for (const hostName of ['claude', 'codex'] as const) {
         const session = host(root, hostName, 'SessionStart', 'default', { session_id: `clear-${hostName}` });
         expect(session.status).toBe(0);
-        expect(session.stdout).not.toContain('ArchitectureOwed');
-        expect(JSON.parse(session.stdout)).not.toHaveProperty('systemMessage');
+        expect(session.stdout.includes('ArchitectureDebt')).toBe(hostName === 'claude');
+        expect(JSON.parse(session.stdout).systemMessage).toBe(hostName === 'claude' ? HUMAN_DEBT : undefined);
       }
       expect(host(root, 'claude', 'Stop', 'default', { stop_hook_active: false }).stdout).toBe('');
     } finally { rmSync(root, { recursive: true, force: true }); }

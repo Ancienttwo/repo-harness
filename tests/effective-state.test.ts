@@ -22,7 +22,6 @@ import { stateVersionOwnerPath } from '../src/effects/state/git-state-version-st
 import { projectEffectiveStateSessionSection } from '../src/cli/hook/session-context';
 import type { EffectiveState } from '../src/core/state/types';
 import { buildReviewSubject } from '../src/effects/review/diff-fingerprint';
-import { owedCapabilities } from '../src/effects/state/owed-capabilities';
 import {
   CONTRACT,
   PLAN,
@@ -382,7 +381,6 @@ describe('effective state resolver', () => {
         write(cwd, 'src/past/a.ts', 'export const a = 1;\n');
         write(cwd, 'src/current/b.ts', 'export const b = 1;\n');
         commitFixture(cwd, 'projected');
-        const checkpoint = execFileSync('git', ['rev-parse', 'HEAD'], { cwd, encoding: 'utf8' }).trim();
         write(cwd, 'src/current/b.ts', 'export const b = 2;\n');
         const risk = { targetPaths: ['src/current/b.ts'], operationKind: 'edit' as const };
         const before = resolveEffectiveState(cwd, Date.now(), risk);
@@ -394,11 +392,10 @@ describe('effective state resolver', () => {
         const after = resolveEffectiveState(cwd, Date.now(), risk);
         expect(after.capability_ownership?.capability_ids).toEqual(['current', 'past']);
         expect(after.capability_ownership?.unowned_paths).toEqual(['src/loose.ts']);
-        expect(owedCapabilities(cwd, after.capability_ownership!)).toMatchObject({
-          status: 'owed', manifest_change: checkpoint,
-          capabilities: [{ id: 'current', paths: ['src/current/b.ts'] }, { id: 'past', paths: ['src/past/a.ts'] }],
-          new_unowned_paths: ['src/loose.ts'],
-        });
+        expect(after.capability_ownership?.capabilities).toMatchObject([
+          { id: 'current', paths: ['src/current/b.ts'] }, { id: 'past', paths: ['src/past/a.ts'] },
+        ]);
+        expect(after.capability_ownership?.review_base).toBe(execFileSync('git', ['rev-parse', 'main'], { cwd, encoding: 'utf8' }).trim());
         expect(after.profile_signals).toEqual(before.profile_signals);
         expect(after.profile_signals?.capabilityCount).toBe(1);
         expect(after.workflow_profile).toBe(before.workflow_profile);

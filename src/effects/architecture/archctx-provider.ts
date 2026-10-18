@@ -5,6 +5,8 @@ import { isAbsolute, join, resolve, sep } from 'node:path';
 import { ARCHCONTEXT_NODE_RANGE, ERROR_CATALOG, NATIVE_CONTEXT_PROFILE, failureIssues, architectureDocsProjectionCompatibilityIssues, PROJECTION_REQUEST_SCHEMA_VERSION, digestJson, type ArchContextError, type ArchctxCapabilitiesV1, type ArchitectureDebtReportV1, type DocsAnchorsReportV1, type Json, type NativeContextExportV1, type ProjectionApplyReadbackResultV1, type ProjectionExpectedSnapshotV1, type ProjectionMode, type ProjectionRequestV1, type ProjectionResultV2 } from 'archctx-contracts';
 import { trustedNodeCandidates } from '../runtime/node-candidates';
 import { runProcess } from '../process-runner';
+import { execFileSync } from 'node:child_process';
+import type { CapabilityOwnership } from '../../core/state/types';
 import { capabilityRegistryFromNativeContext } from '../../core/capabilities/registry';
 import {
   ARCHCTX_REQUIRED_VERSION,
@@ -606,6 +608,38 @@ export function completeArchitectureDebt(repoRoot: string, headSha: string, opti
     });
   }
   return decodeCompleteArchitectureDebt(client.data(['complete', '--head-sha', headSha, '--json'], policy.timeoutMs), headSha);
+}
+
+/** Changed owned paths only. Q9 uses the policy target's merge-base, never the manifest checkpoint. */
+export function checkpointArchitectureDebt(repoRoot: string, ownership: CapabilityOwnership | null, options: ArchctxProviderOptions = {}): {
+  readonly branch: string;
+  readonly report: ArchitectureDebtReportV1;
+} | null {
+  if (!ownership?.review_base || !ownership.capabilities.some(capability => capability.paths.length > 0)) return null;
+  const now = options.nowMs ?? Date.now;
+  const bounded = { ...options, deadlineMs: Math.min(options.deadlineMs ?? Infinity, now() + 3_000) };
+  const git = (args: string[]) => execFileSync('git', ['-C', repoRoot, ...args], {
+    encoding: 'utf8', env: options.env ?? process.env, stdio: ['ignore', 'pipe', 'pipe'],
+    timeout: remainingTimeout(bounded, 3_000, 'notice git'), maxBuffer: 8 * 1024 * 1024,
+  });
+  const target = git(['rev-parse', '--verify', '--end-of-options', `${ownership.review_base}^{commit}`]).trim();
+  const base = git(['merge-base', 'HEAD', target]).trim();
+  const changed = new Set([
+    ...git(['diff', '--name-only', '--no-renames', '-z', base, '--']).split('\0'),
+    ...git(['ls-files', '--others', '--exclude-standard', '-z']).split('\0'),
+  ]);
+  const paths = [...new Set(ownership.capabilities.flatMap(capability => capability.paths).filter(path => changed.has(path)))].sort();
+  if (paths.length === 0) return null;
+  const branch = git(['rev-parse', '--abbrev-ref', 'HEAD']).trim();
+  const policy = options.policy ?? loadArchitectureProjectionPolicy(options.env);
+  if (policy.provider === 'disabled') throw new Error('architecture projection provider is disabled');
+  const client = new ArchctxClient(repoRoot, policy.requiredVersion, bounded);
+  const report = decodeArchitectureDebtReport(client.data(['checkpoint', ...paths.flatMap(path => ['--changed-path', path]), '--json'], 3_000));
+  remainingTimeout(bounded, 3_000, 'notice decode');
+  if (report.scope.kind !== 'changed-paths' || JSON.stringify(report.scope.changedPaths) !== JSON.stringify(paths)) {
+    throw new Error('architecture checkpoint returned a different path subject');
+  }
+  return { branch, report };
 }
 
 /** The client already refused an error envelope; this binds the review to the commit and decodes its debt. */

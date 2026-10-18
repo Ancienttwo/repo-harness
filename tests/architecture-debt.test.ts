@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { digestJson, errorEnvelope, type ArchitectureDebtItemV1, type ArchitectureDebtReportV1, type Json } from 'archctx-contracts';
 import { ARCHCTX_REQUIRED_VERSION, decodeArchitectureDebtReport, type ArchitectureProjectionPolicy } from '../src/core/architecture/projection';
-import { ArchctxClientError, completeArchitectureDebt, type ArchctxProcessResult, type RunArchctxProcess } from '../src/effects/architecture/archctx-provider';
+import { ArchctxClientError, completeArchitectureDebt, checkpointArchitectureDebt, type ArchctxProcessResult, type RunArchctxProcess } from '../src/effects/architecture/archctx-provider';
 import { architectureDebtReport, architectureDebtSummary } from '../src/cli/commands/architecture-debt';
 
 /**
@@ -309,5 +309,52 @@ describe('architecture-debt command', () => {
     const provider = fakeProvider(f, { head: recordedDebt, base: recordedDebt });
     expect(() => architectureDebtReport(f.repoRoot, 'no-such-ref', { consumerRoot: f.consumerRoot, policy, run: provider.run })).toThrow('RH_ARCHITECTURE_DEBT_REF_UNRESOLVED');
     expect(provider.calls).toEqual([]);
+  });
+});
+
+
+describe('checkpointArchitectureDebt', () => {
+  function ownership(f: ReturnType<typeof fixture>) {
+    return { review_base: f.baseSha, capability_ids: ['test-module'], capabilities: [{ id: 'test-module', module_document: 'docs/module.md', paths: ['src/a.ts', 'src/b.ts'] }], unowned_paths: [] };
+  }
+  function envelope(paths: string[]) {
+    return { schemaVersion: 'archcontext.envelope/v1', ok: true, requestId: 'checkpoint', data: redigest({
+      ...clone(recordedDebt), scope: { kind: 'changed-paths', changedPaths: paths, capabilityIds: [] }, items: [], actionsRequired: [],
+    }) };
+  }
+
+  test('uses the merge-base and changed owned paths, including dirty paths; never calls doctor or complete', () => {
+    const f = fixture();
+    git(f.repoRoot, ['branch', 'feature']);
+    git(f.repoRoot, ['checkout', '-qb', 'review', f.baseSha]);
+    writeFileSync(join(f.repoRoot, 'src/a.ts'), 'export const a = 99;\n');
+    git(f.repoRoot, ['-c', 'user.name=Test', '-c', 'user.email=t@t', 'commit', '-qam', 'review-only change']);
+    git(f.repoRoot, ['checkout', '-q', 'feature']);
+    writeFileSync(join(f.repoRoot, 'src/space name.ts'), 'export const added = 1;\n');
+    const owned = { ...ownership(f), review_base: 'review', capabilities: [{ ...ownership(f).capabilities[0]!, paths: ['src/a.ts', 'src/b.ts', 'src/space name.ts'] }] };
+    const calls: Array<readonly string[]> = [];
+    const run: RunArchctxProcess = (_binary, args, opts) => {
+      calls.push(args);
+      expect(opts.timeoutMs).toBeGreaterThan(0);
+      expect(opts.timeoutMs).toBeLessThanOrEqual(3_000);
+      return ok(envelope(['src/b.ts', 'src/space name.ts']));
+    };
+    expect(checkpointArchitectureDebt(f.repoRoot, owned, { consumerRoot: f.consumerRoot, policy, run })?.report.scope.changedPaths).toEqual(['src/b.ts', 'src/space name.ts']);
+    expect(calls).toEqual([['checkpoint', '--changed-path', 'src/b.ts', '--changed-path', 'src/space name.ts', '--json']]);
+  });
+
+  test('invalid bases, malformed reports, different subjects and expired deadlines fail closed', () => {
+    const f = fixture();
+    const owned = ownership(f);
+    let calls = 0;
+    const run: RunArchctxProcess = () => { calls++; return ok(envelope(['src/b.ts'])); };
+    const options = { consumerRoot: f.consumerRoot, policy, run };
+    expect(() => checkpointArchitectureDebt(f.repoRoot, { ...owned, review_base: 'absent' }, options)).toThrow();
+    expect(calls).toBe(0);
+    expect(() => checkpointArchitectureDebt(f.repoRoot, owned, { ...options, run: () => ok(envelope(['src/a.ts'])) })).toThrow('different path subject');
+    expect(() => checkpointArchitectureDebt(f.repoRoot, owned, { ...options, run: () => ok({ ...envelope(['src/b.ts']), data: {} }) })).toThrow();
+    let now = 0;
+    expect(() => checkpointArchitectureDebt(f.repoRoot, owned, { ...options, nowMs: () => now, run: () => { now = 3_001; return ok(envelope(['src/b.ts'])); } })).toThrow('timeout');
+    expect(() => checkpointArchitectureDebt(f.repoRoot, owned, { ...options, deadlineMs: 0 })).toThrow('timeout');
   });
 });

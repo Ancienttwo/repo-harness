@@ -1,3 +1,5 @@
+import { agentNoticeFixture, NOTICE_CAPABILITY } from './helpers/agent-notice';
+import { fixtureWrite, fixtureGit, fixtureCommit } from './helpers/module-repository';
 import { describe, expect, test } from "bun:test";
 import { execFileSync, spawnSync } from "child_process";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "fs";
@@ -6,7 +8,6 @@ import { dirname, join } from "path";
 import {
   SESSION_CONTEXT_PROVIDERS,
   buildSessionStartSections,
-  owedCapabilitiesSessionBody,
   type SessionContextProvider,
 } from "../src/cli/hook/session-context";
 import { budgetSessionContext } from "../src/cli/hook/session-context-budget";
@@ -162,7 +163,7 @@ describe("SessionStart host envelope", () => {
     try {
       mkdirSync(join(f.root, ".archcontext/model/nodes"), { recursive: true });
       const context = sessionStartContext(f);
-      expect(context).not.toContain("[ArchitectureOwed]");
+      expect(context).not.toContain("[ArchitectureDebt]");
       expect(readdirSync(join(f.root, ".archcontext/model/nodes"))).toEqual([]);
       expect(existsSync(join(f.root, "docs/architecture/requests"))).toBe(false);
     } finally { f.cleanup(); }
@@ -216,84 +217,46 @@ describe("buildSessionStartSections", () => {
   });
 
   test("the provider ids are stable and name no retired script", () => {
-    expect(SESSION_CONTEXT_PROVIDERS.map(({ id }) => id)).toEqual(["architecture-owed", "pending-plan-capture"]);
+    expect(SESSION_CONTEXT_PROVIDERS.map(({ id }) => id)).toEqual(["pending-plan-capture"]);
   });
 });
 
-describe("architecture owed section", () => {
-  test("main sessions report committed debt and include a later working-tree capability", () => {
-    const f = fixture("session-main-owed", { context: { capability_registry_file: ".ai/context/capabilities.json" } });
-    const git = (...args: string[]) => execFileSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", ...args], { cwd: f.root, encoding: "utf8" }).trim();
-    try {
-      f.write(".ai/context/capabilities.json", JSON.stringify({ version: 1, capabilities: ["past", "current"].map(name => ({
-        id: `core-${name}`, domain: "core", name, prefixes: [`src/${name}`],
-        contract_files: { agents: "AGENTS.md", claude: "CLAUDE.md" },
-        architecture_module: `docs/architecture/modules/core/${name}.md`,
-        workstream_dir: `tasks/workstreams/core/${name}`, lsp_profile: "typescript-lsp", verification_hints: [],
-      })) }));
-      f.write("docs/architecture/.projection-manifest.json", "{}\n");
-      f.write("src/past/a.ts", "export const a = 1;\n");
-      f.write("src/current/b.ts", "export const b = 1;\n");
-      git("add", "-A"); git("commit", "-q", "-m", "projected");
-      f.write("src/past/a.ts", "export const a = 2;\n");
-      git("commit", "-q", "-am", "committed main debt");
-      for (const host of ["claude", "codex"] as const) {
-        const context = sessionStartContext(f, host);
-        expect(context).toContain("[ArchitectureOwed]");
-        expect(context).toContain("core-past (docs/architecture/modules/core/past.md)");
-      }
-      f.write("src/current/b.ts", "export const b = 2;\n");
-      for (const host of ["claude", "codex"] as const) {
-        const context = sessionStartContext(f, host);
-        expect(context).toContain("core-past (docs/architecture/modules/core/past.md)");
-        expect(context).toContain("core-current (docs/architecture/modules/core/current.md)");
-      }
-    } finally { f.cleanup(); }
+describe("architecture debt section", () => {
+  function nativeFixture(): Fixture {
+    const root = agentNoticeFixture();
+    return { root, home: join(root, 'home'), write: (path, text) => fixtureWrite(root, path, text), cleanup: () => rmSync(root, { recursive: true, force: true }) };
+  }
+
+  test("main skips historical debt and a dirty owned path reaches each supported host", () => {
+    for (const host of ['claude', 'codex'] as const) {
+      const f = nativeFixture();
+      try {
+        fixtureCommit(f.root);
+        fixtureGit(f.root, ['branch', '-f', 'main', 'HEAD']);
+        expect(sessionStartContext(f, host)).not.toContain('[ArchitectureDebt]');
+        f.write('src/module/read.ts', 'export const read = () => 3;\n');
+        expect(sessionStartContext(f, host)).toContain(`[ArchitectureDebt] 1 new in ${NOTICE_CAPABILITY}`);
+      } finally { f.cleanup(); }
+    }
   });
 
-  test("a branch that owes architecture updates gets one short section until the manifest changes", () => {
-    const parent = realpathSync(mkdtempSync(join(tmpdir(), "architecture-owed-")));
-    const repo = join(parent, "repo");
-    mkdirSync(repo);
-    try {
-      const git = (...args: string[]) => execFileSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", ...args], { cwd: repo, encoding: "utf8" }).trim();
-      git("init", "-q", "-b", "main");
-      git("commit", "-q", "--allow-empty", "-m", "init");
-      writeFileSync(join(repo, ".gitignore"), ".ai/\n");
-      mkdirSync(join(repo, "docs/architecture"), { recursive: true });
-      mkdirSync(join(repo, "src/owned"), { recursive: true });
-      writeFileSync(join(repo, "docs/architecture/.projection-manifest.json"), "{}\n");
-      writeFileSync(join(repo, "src/owned/a.ts"), "export const a = 1;\n");
-      git("add", "-A"); git("commit", "-q", "-m", "projected");
-      const base = git("rev-parse", "HEAD");
-      git("checkout", "-q", "-b", "feature");
-      writeFileSync(join(repo, "src/owned/a.ts"), "export const a = 2;\n");
-      git("commit", "-q", "-am", "change owned code");
-      const state = {
-        capability_ownership: {
-          review_base: base,
-          capability_ids: ["core-owned"],
-          capabilities: [{ id: "core-owned", module_document: "docs/architecture/modules/core/owned.md", paths: ["src/owned/a.ts"] }],
-          unowned_paths: [],
-        },
-      } as unknown as EffectiveState;
-
-      const body = owedCapabilitiesSessionBody(repo, state);
-      expect(body?.source).toBe("repo-harness state resolve --json");
-      expect(body!.content).toContain("[ArchitectureOwed]");
-      expect(body!.content).toContain("core-owned (docs/architecture/modules/core/owned.md)");
-      expect(body!.content.split("\n").length).toBeLessThanOrEqual(3);
-      expect(body!.systemMessage).toBe("Architecture: 1 capability changed after the last projection (core-owned). Run: repo-harness architecture-projection check --json");
-      expect(owedCapabilitiesSessionBody(repo, {
-        ...state, capability_ownership: { ...state.capability_ownership!, review_base: "missing-review-base" },
-      })).toBeNull();
-
-      writeFileSync(join(repo, "docs/architecture/.projection-manifest.json"), '{"refreshed":true}\n');
-      git("commit", "-q", "-am", "refresh the projection");
-      expect(owedCapabilitiesSessionBody(repo, state)).toBeNull();
-      expect(git("status", "--porcelain")).toBe("");
-    } finally {
-      rmSync(parent, { recursive: true, force: true });
+  test("worker sessions receive notice text and a repeat session shares the id marker", () => {
+    for (const host of ['claude', 'codex'] as const) {
+      const f = nativeFixture();
+      try {
+        const result = spawnSync(process.execPath, [HOOK_ENTRY, 'SessionStart', '--route', 'default'], {
+          cwd: f.root, encoding: 'utf8', input: JSON.stringify({ session_id: 'worker-session', agent_type: 'worker' }),
+          env: { ...process.env, HOME: f.home, HOOK_REPO_ROOT: f.root, HOOK_HOST: host },
+        });
+        expect(result.status, result.stderr).toBe(0);
+        const envelope = JSON.parse(result.stdout);
+        expect(envelope.hookSpecificOutput.additionalContext).toContain('[ArchitectureDebt]');
+        expect(envelope.hookSpecificOutput.additionalContext).toContain(NOTICE_CAPABILITY);
+        expect(envelope.systemMessage).toBe(host === 'claude' ? `Architecture: 1 debt item in ${NOTICE_CAPABILITY}; run repo-harness architecture-debt --json.` : undefined);
+        expect(sessionStartContext(f, host)).not.toContain('[ArchitectureDebt]');
+        f.write('docs/architecture/.projection-manifest.json', '{"profile":"repo-harness/v1","refreshed":true}\n');
+        expect(sessionStartContext(f, host)).not.toContain('[ArchitectureDebt]');
+      } finally { f.cleanup(); }
     }
   });
 });
