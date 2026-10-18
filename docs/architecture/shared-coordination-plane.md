@@ -43,6 +43,9 @@ runtime close before checkout deletion.
 `ship-worktrees` ships a branch PR. Its journal records operation progress,
 not task authority. It keeps frozen-head checks, provider readback and explicit
 branch recovery. Local merge and contract finish/recover paths are removed.
+A historical lease-mode journal can be aborted before its push lands. The same
+branch, HEAD and dirty-work checks still apply. Reconcile for that retired mode
+returns the journal path for manual handling.
 
 ## P3: Invariants
 

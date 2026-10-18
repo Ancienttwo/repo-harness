@@ -618,3 +618,10 @@ Closed task records now use the same retention window as closed plans. Tracked,
 unchanged records can leave Git after the window. Modified, kept or recent
 records remain in place. The acceptance reader requires the exact live contract
 and does not search archives or re-accept an archived contract.
+
+### Review follow-through
+
+Archive operations keep document history without a host-side archive seal.
+Acceptance still requires the exact live contract. Historical acceptance
+observations keep their archived-proof field for read-time rejection; new
+observations always set that field to null.
