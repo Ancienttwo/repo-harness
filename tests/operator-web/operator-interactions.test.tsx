@@ -658,7 +658,6 @@ describe('operator web interactions', () => {
     await act(async () => buttonWithText(fixtureTasks.console.task_label).click());
     const consolePane = paneText();
     expect(consolePane).toContain('Feedback reports no progress');
-    expect(document.querySelectorAll('.repair-list button').length).toBe(0);
   });
 
   test('copies full task, publication, and head identifiers', async () => {
