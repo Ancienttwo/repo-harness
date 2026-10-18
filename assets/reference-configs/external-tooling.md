@@ -1048,12 +1048,17 @@ ChangeSet, and runs `repo-harness architecture-projection apply --json` in the
 same branch. `check` and `plan` show the effect without writes. The projected
 `docs/architecture/` files are committed with the change.
 
-`AgentNotice` reads ownership and human-citation debt from package-local
-archctx 0.8.1 `checkpoint --changed-path <path>... --json`. The effect selects
+`AgentNotice` reads package-local archctx 0.8.1
+`checkpoint --changed-path <path>... --json`. In practice, only citation debt
+(`stale-anchor`) reaches the session. Checkpoint receives only owned changed
+paths. An ambiguous owner stops the ownership resolve before checkpoint runs.
+The effect selects
 changed owned paths against the merge-base of the effective `review_base`.
 It includes staged, unstaged and untracked paths. With no changed owned path,
-it calls no checkpoint. Each checkpoint has a 3 s deadline and needs no
-CodeGraph index. Dependency and flow debt stay in CI.
+it calls no checkpoint. Each archctx call (ownership resolve or checkpoint)
+has a 3 s deadline. The Git calls that build the review subject keep their own
+timeouts. Checkpoint needs no CodeGraph index. Dependency and flow debt stay
+in CI.
 
 One module selects, formats and dedupes the notice. It emits at most three
 items and 800 UTF-8 bytes, with capability, model field and command on each

@@ -192,17 +192,20 @@ ids that the caller declared.
 
 `agent-notice.ts` selects and formats architecture debt. SessionStart reuses
 Effective State ownership. Claude Stop and Codex UserPromptSubmit make one
-ownership query without resolving workflow state. Those notice queries use a
-3 s deadline and the hook environment; other ownership callers keep 10 s.
+ownership query without resolving workflow state. Notice queries use the hook
+environment. Each archctx call (ownership resolve or checkpoint) has a 3 s
+deadline. The Git calls that build the review subject keep their own timeouts.
+Other ownership callers keep their 10 s default.
 The effect intersects owned paths with Git changes against the
 merge-base of `review_base`, including staged, unstaged and untracked paths.
 No changed owned path means no checkpoint call. The old manifest history subject
 in `state resolve` stays unchanged; it does not set the notice base.
 
 The package-local `checkpoint --changed-path <path>... --json` has a 3 s deadline.
-It needs no CodeGraph index. The 0.8.1 fallback covers ownership and human
-citations only. Dependency and flow debt stay in the PR lane. Checkpoint has no
-base classification or severity field. Partial coverage does not prove that
+It needs no CodeGraph index. In practice, only citation debt (`stale-anchor`)
+reaches the session. Checkpoint receives only owned changed paths. An ambiguous
+owner stops the ownership resolve before checkpoint runs. Dependency and flow
+debt stay in the PR lane. Checkpoint has no base classification or severity field. Partial coverage does not prove that
 all architecture debt is absent.
 
 Known limits:

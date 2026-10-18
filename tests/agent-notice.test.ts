@@ -6,13 +6,27 @@ import { collectAgentNotice, renderAgentNotice } from '../src/cli/hook/agent-not
 import { checkpointArchitectureDebt } from '../src/effects/architecture/archctx-provider';
 import { resolveCapabilityOwnership } from '../src/effects/state/resolve-effective-state';
 import { agentNoticeFixture, noticeOwnership, noticeEnv, NOTICE_CAPABILITY } from './helpers/agent-notice';
-import { fixtureGit, fixtureWrite } from './helpers/module-repository';
+import { fixtureCommit, fixtureGit, fixtureWrite } from './helpers/module-repository';
 
 const roots: string[] = [];
 function fixture() { const root = agentNoticeFixture(); roots.push(root); return root; }
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 
 describe('AgentNotice', () => {
+  test.each([false, true])('checkpoint accepts a deleted owned path (committed: %s)', committed => {
+    const root = fixture();
+    const ownership = noticeOwnership(root);
+    const path = 'src/module/read.ts';
+    rmSync(join(root, path));
+    if (committed) fixtureCommit(root);
+    expect(existsSync(join(root, path))).toBe(false);
+    const result = checkpointArchitectureDebt(root, ownership, { env: noticeEnv(root) });
+    expect(result).not.toBeNull();
+    expect(result!.report.scope.changedPaths).toEqual([path]);
+    expect(result!.report.checks.find(check => check.check === 'ownership')?.coverage).toBe('complete');
+    expect(result!.report.items.some(item => item.kind === 'stale-anchor' && item.reasonCode === 'missing-path' && item.paths.includes(path))).toBe(true);
+  });
+
   test('review round 1: notice ownership receives its own 3 s bound and hook environment', () => {
     const root = fixture();
     const env = noticeEnv(root);

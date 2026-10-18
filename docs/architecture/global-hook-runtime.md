@@ -95,19 +95,21 @@ runtime event record.
 
 `agent-notice.ts` owns selection, text and the ignored id marker. The effect in
 `archctx-provider.ts` resolves the review-base merge-base, intersects Git changes
-with ownership, and calls checkpoint with a 3 s deadline. It does not need a
-CodeGraph index. No changed owned path means no checkpoint call.
+with ownership, and calls checkpoint. Checkpoint needs no CodeGraph index. No changed owned path means no checkpoint call.
 
 SessionStart uses Effective State ownership. Claude Stop uses the existing
 standalone ownership query. Codex UserPromptSubmit uses the same query.
-These notice queries pass the hook environment and a 3 s deadline. Other
-ownership callers keep their 10 s default.
+These notice queries pass the hook environment. Each archctx call (ownership
+resolve or checkpoint) has a 3 s deadline. The Git calls that build the review
+subject keep their own timeouts. Other ownership callers keep their 10 s default.
 Every code-changing session can receive a notice, including workers. Claude
 Stop skips `stop_hook_active`; Codex Stop stays silent. Host rendering remains
 in `hook-protocol.ts`. Only Claude receives the human `systemMessage`.
 
-The checkpoint fallback reports ownership and human citations. Dependency and
-flow debt remain in CI. It has no introduced/existing or severity classification.
+In practice, only citation debt (`stale-anchor`) reaches the session. Checkpoint
+receives only owned changed paths. An ambiguous owner stops the ownership
+resolve before checkpoint runs. Dependency and flow debt remain in CI.
+Checkpoint has no introduced/existing or severity classification.
 The header's "new" means a new id set for delivery. The key is SHA-256 of JSON
 `[branch, sorted item ids]`, using the producer's `id` field. A manifest refresh
 does not renew the set. All delivery points share `.ai/harness/state/agent-notice`.
