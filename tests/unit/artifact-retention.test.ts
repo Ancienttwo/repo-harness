@@ -185,7 +185,7 @@ describe('artifact retention selection', () => {
 
     expect(report.skipped).toEqual([]);
     expect(report.archived.map(entry => [entry.path, entry.tracked])).toEqual([['tasks/archive/mixed', true]]);
-    expect(git(root, ['status', '--porcelain', '--untracked-files=no', '--', 'tasks'])).toBe(' D tasks/archive/mixed/tracked.md');
+    expect(git(root, ['status', '--porcelain', '--untracked-files=no', '--', 'tasks'])).toBe(' D tasks/archive/mixed/tracked.md\n');
     expect(existsSync(join(root, DEFAULT_ARCHIVE_ROOT, 'tasks/archive/mixed/local.md'))).toBe(true);
     expect(git(root, ['diff', '--cached', '--name-only'])).toBe('');
   });

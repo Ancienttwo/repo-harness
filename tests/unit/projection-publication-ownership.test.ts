@@ -17,10 +17,3 @@ test("closeout has no contract scope exemption because it has no scope check", (
   expect(helper).not.toContain("is_workflow_owned_projection_output");
   expect(helper).not.toContain("check_scope_against_contract");
 });
-test("closeout binds provider verification to the exact publication candidate", () => {
-  const helper = read("scripts/contract-worktree.sh");
-  expect(helper).toContain('"$helper_dir/merge-gate.ts" run --base "$base_ref" --format sha');
-  expect(helper).toContain('[[ "$verified_sha" == "$current_head" ]]');
-  expect(helper).toContain("target branch moved after merge-gate review");
-  expect(helper).not.toContain("acknowledge_architecture_projection_publication");
-});

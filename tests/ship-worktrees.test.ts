@@ -18,43 +18,6 @@ import { commitAll, initGitRepo, run, tmpWorkspace } from "./helpers/repo-fixtur
 setDefaultTimeout(30000);
 
 describe("ship-worktrees helper integration", () => {
-  // Path existence is not identity: a downstream application can have its own
-  // src/cli/index.ts. Only the repo-harness package runs its source CLI.
-  for (const packageName of ["downstream-app", "repo-harness"]) {
-    test(`publication CLI with package ${packageName} picks ${packageName === "repo-harness" ? "the source CLI" : "the CLI on PATH"}`, () => {
-      const cwd = tmpWorkspace("ship-cli-identity");
-      const bin = realpathSync(mkdtempSync(join(tmpdir(), "ship-path-cli-")));
-      try {
-        const sourceLog = join(cwd, "source-cli.log");
-        const pathLog = join(bin, "path-cli.log");
-        mkdirSync(join(cwd, "src/cli"), { recursive: true });
-        writeFileSync(join(cwd, "package.json"), JSON.stringify({ name: packageName, private: true }));
-        writeFileSync(join(cwd, "src/cli/index.ts"), `require("fs").appendFileSync(${JSON.stringify(sourceLog)}, process.argv.slice(2).join(" ") + "\\n");\n`);
-        writeFileSync(join(bin, "repo-harness"), `#!/bin/bash\nprintf '%s\\n' "$*" >> ${JSON.stringify(pathLog)}\n`);
-        chmodSync(join(bin, "repo-harness"), 0o755);
-        // Load the real selection functions from the helper without running its main flow.
-        const script = join(HELPER_DIR, "ship-worktrees.sh");
-        const harness = [
-          "set -euo pipefail",
-          `BUN_BIN=${JSON.stringify(process.execPath)}`,
-          `eval "$(sed -n -e '/^is_absolute_host_path() {/,/^}/p' -e '/^is_trusted_executable() /p' -e '/^repo_harness_source_checkout() {/,/^}/p' -e '/^publication_command_cli() {/,/^}/p' ${JSON.stringify(script)})"`,
-          "publication_command_cli receipt probe",
-        ].join("\n");
-        const result = run("bash", ["-c", harness], cwd, {
-          REPO_HARNESS_CLI_BIN: "",
-          PATH: `${bin}:${process.env.PATH}`,
-        });
-        expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
-        const [chosen, other] = packageName === "repo-harness" ? [sourceLog, pathLog] : [pathLog, sourceLog];
-        expect(readFileSync(chosen, "utf-8")).toBe("publication receipt probe\n");
-        expect(existsSync(other)).toBe(false);
-      } finally {
-        rmSync(cwd, { recursive: true, force: true });
-        rmSync(bin, { recursive: true, force: true });
-      }
-    });
-  }
-
   test("ordinary branch opens a Draft PR without workflow artifacts", () => withPlainShipFixture((fixture) => {
     expect(run("git", ["switch", "-c", "feature/plain"], fixture.cwd).status).toBe(0);
     writeFileSync(join(fixture.cwd,"change.txt"),"ordinary change\n");

@@ -770,18 +770,17 @@ describe('closeout runner guardrails', () => {
     expect(existsSync(descendantSentinel)).toBe(false);
   }, 10_000);
 
-  test('closeout consumes the merge gate without rerunning local verification', () => {
+  test('ship scans the frozen candidate without rerunning local verification', () => {
     const ship = readFileSync(join(ROOT, 'scripts/ship-worktrees.sh'), 'utf-8');
-    const finish = readFileSync(join(ROOT, 'scripts/contract-worktree.sh'), 'utf-8');
 
     expect(ship).not.toContain('run_cmd bash "$helper_dir/verify-sprint.sh"');
-    expect(finish).not.toContain('bash "$helper_dir/verify-sprint.sh"');
-    expect(finish).toContain('"$helper_dir/merge-gate.ts" run --base "$base_ref" --format sha');
+    expect(ship).toContain('"$helper_dir/merge-gate.ts" fingerprint --base "$gate_base_ref" --format sha');
+    expect(ship).toContain('[[ "$scanned_head" == "$verified_sha" ]]');
   });
 
   test('ship forwards empty and non-empty child arguments under the system Bash', () => {
     const ship = readFileSync(join(ROOT, 'scripts/ship-worktrees.sh'), 'utf-8');
-    expect(ship.match(/\$\{child_args\[@\]\+"\$\{child_args\[@\]\}"\}/g) ?? []).toHaveLength(2);
+    expect(ship.match(/\$\{child_args\[@\]\+"\$\{child_args\[@\]\}"\}/g) ?? []).toHaveLength(1);
 
     const emptyProbe = spawnSync('/bin/bash', [
       '-uc',

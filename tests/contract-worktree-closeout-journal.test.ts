@@ -729,7 +729,7 @@ describe("ship-worktrees closeout journal", () => {
       const dir = onlyJournal(fixture, "ship");
       const journal = readJournal(dir);
       expect(journal.status).toBe("in_progress");
-      expect(journal.phases).toEqual(["prepared","implementation_committed","candidate_frozen","publication_create_intent","push_started"]);
+      expect(journal.phases).toEqual(["prepared","implementation_committed","candidate_frozen","push_started"]);
       expect(journal.phases).not.toContain("pushed");
 
       const remoteSha = runProcess("git", ["rev-parse", "refs/heads/codex/demo"], fixture.remote).stdout.trim();
