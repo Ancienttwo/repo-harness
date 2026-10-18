@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "archcontext.relation/v1",
+  "id": "relation.contract-assets.imports.publication",
+  "kind": "depends-on",
+  "source": "capability.workflow-engine.contract-assets",
+  "target": "capability.organization.publication",
+  "intent": "Read publication merge readiness from the merge helper."
+}

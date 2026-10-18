@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "archcontext.relation/v1",
+  "id": "relation.task-agent-host.imports.hook-adapters",
+  "kind": "depends-on",
+  "source": "capability.runtime-harness.task-agent-host",
+  "target": "capability.runtime-harness.hook-adapters",
+  "intent": "Use host installation commands for Herdr skill setup."
+}

@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "archcontext.relation/v1",
+  "id": "relation.workflow-state.imports.acceptance-review",
+  "kind": "depends-on",
+  "source": "capability.workflow-engine.workflow-state",
+  "target": "capability.verification.acceptance-review",
+  "intent": "Read the diff fingerprint for Effective State."
+}

@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "archcontext.relation/v1",
+  "id": "relation.engineer-bindings.imports.global-runtime-reconciliation",
+  "kind": "depends-on",
+  "source": "capability.runtime-harness.engineer-bindings",
+  "target": "capability.runtime-harness.global-runtime-reconciliation",
+  "intent": "Read the architecture model for Engineer profiles."
+}

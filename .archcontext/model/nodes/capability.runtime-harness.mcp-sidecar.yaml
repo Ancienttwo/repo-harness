@@ -18,7 +18,6 @@
       "src/effects/repo-registry.ts",
       "docs/repo-harness-chatgpt-mcp-setup.md",
       "docs/reference-configs/chatgpt-coding-mcp.md",
-      "docs/researches/20260711-devspace-chatgpt-local-control.md",
       "src/core/security/**"
     ],
     "exclude": [

@@ -1,6 +1,6 @@
 # organization/task-fleet 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-organization-task-fleet" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:b6ba496ad7171a876afc1abde72ce14f4e324aaaf86812deeb2628b75c7236af" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-organization-task-fleet" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:1e795dbd71ea5bb457cea18a2675f08ecb4a2a265725da5d7a5bbd6d776124d7" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.organization.task-fleet`(kind `capability`)
 > **Matched Prefixes**:`src/core/fleet/**`、`src/effects/fleet/**`、`src/core/messages/document-handoff.ts`、`src/cli/commands/fleet.ts`、`src/core/messages/mechanics.ts`
@@ -59,6 +59,7 @@ flowchart LR
 入向關係:
 
 - `calls` ← `capability.runtime-harness.agent-runtime-effects` — Read the exact Task message and delivery receipt before action admission and success.
+- `depends-on` ← `capability.verification.evals-checks` — Test Task Fleet behavior through its source modules.
 - `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the fleet command
 - `calls` ← `component.hook-adapters.session-lifecycle` — Render task inbox messages as untrusted session context
 - `calls` ← `component.mcp-sidecar.primary` — Acquire fleet tasks and handle task steers from the MCP tools

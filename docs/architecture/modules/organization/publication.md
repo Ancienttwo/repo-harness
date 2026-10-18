@@ -1,6 +1,6 @@
 # organization/publication 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-organization-publication" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:5f561f7c726be9c5eb1dc6c586b5b8df1718cba71ef88e5cac69fd3307dc027b" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-organization-publication" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:1cba9ca2a06c0d432bc9e84da9fa1d57f429e588725adf7ae9af1a07f66dcdaa" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.organization.publication`(kind `capability`)
 > **Matched Prefixes**:`src/core/publication/**`、`src/effects/publication/**`、`src/cli/commands/publication.ts`
@@ -50,15 +50,20 @@ flowchart LR
 出向關係:
 
 - `calls` → `capability.workflow-engine.contract-assets` — Read integration proof through the packaged worktree merge helper
+- `depends-on` → `capability.verification.acceptance-review` — Read the acceptance receipt for publication evidence.
 - `calls` → `component.publication.primary` — Read historical publication records and derive fenced PR readiness without task ownership mutation
 
 入向關係:
 
+- `depends-on` ← `capability.workflow-engine.contract-assets` — Read publication merge readiness from the merge helper.
 - `reads` ← `capability.runtime-harness.engineer-scheduling` — Read cached publication receipts as dependency authority
+- `depends-on` ← `capability.verification.evals-checks` — Test PR Publication behavior through its source modules.
 - `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the publication command
 - `reads` ← `capability.runtime-harness.integration-acceptance` — Read cached immutable publication receipts and reuse their canonical JSON digest
 - `calls` ← `component.mcp-sidecar.primary` — Reopen and take over publications and read merge readiness
+- `depends-on` ← `capability.runtime-harness.operator` — Use publication readiness types in the Operator fixture.
 - `calls` ← `capability.organization.task-fleet` — Read publication receipts readiness and provider feedback for fleet commands and board cards
+- `depends-on` ← `capability.workflow-engine.workflow-state` — Read publication receipts for coordination worktree topology.
 
 組件出向關係:
 

@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "archcontext.relation/v1",
+  "id": "relation.codegraph-readiness.imports.evals-checks",
+  "kind": "depends-on",
+  "source": "capability.verification.codegraph-readiness",
+  "target": "capability.verification.evals-checks",
+  "intent": "Use shared repository fixtures for CodeGraph resolver tests."
+}

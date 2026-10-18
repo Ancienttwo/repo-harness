@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "archcontext.relation/v1",
+  "id": "relation.codegraph-readiness.imports.hook-adapters",
+  "kind": "depends-on",
+  "source": "capability.verification.codegraph-readiness",
+  "target": "capability.runtime-harness.hook-adapters",
+  "intent": "Use host locks and configuration ownership for CodeGraph setup."
+}

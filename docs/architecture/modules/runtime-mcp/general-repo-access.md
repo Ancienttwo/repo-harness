@@ -183,7 +183,7 @@ sequenceDiagram
 
 ## Verification
 
-来自 `.ai/context/capabilities.json` 的 `verification_hints`：
+当前验证命令来自 `.archcontext/model/nodes/capability.runtime-mcp.general-repo-access.yaml` 的 `extensions.verification`：
 
 ```bash
 bun test tests/cli/mcp-reader-tools.test.ts tests/cli/mcp-codegraph-contract.test.ts

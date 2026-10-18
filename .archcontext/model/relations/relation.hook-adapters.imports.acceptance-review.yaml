@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "archcontext.relation/v1",
+  "id": "relation.hook-adapters.imports.acceptance-review",
+  "kind": "depends-on",
+  "source": "capability.runtime-harness.hook-adapters",
+  "target": "capability.verification.acceptance-review",
+  "intent": "Read the diff fingerprint for mutation guards."
+}

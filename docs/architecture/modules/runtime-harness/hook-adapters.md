@@ -1,5 +1,5 @@
 # runtime-harness/hook-adapters 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-hook-adapters" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:fe22767e6cb73fa095f6ad8302784ae4eac60e99f93f60ce6ac1d465d505a21a" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-hook-adapters" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:a437dacdc67c96864583bf62318a4c1ce33521e0838cbb50912e7f84faf1d4bb" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.hook-adapters`(kind `capability`)
 > **Matched Prefixes**:`src/cli/hook/**`、`src/cli/installer/**`、`src/cli/hook-entry.ts`、`src/effects/loop/**`、`src/effects/hook-event-log.ts`、`src/effects/run-summary-retention.ts`、`src/cli/commands/install.ts`、`src/cli/commands/status.ts`、`src/cli/commands/security.ts`
@@ -20,6 +20,7 @@ flowchart LR
   p1_component_hook_adapters_host_installer_cd378e80["Host Adapter Installer"]:::component
   p1_component_hook_adapters_primary_1659ffb9["Hook Route Runtime"]:::component
   p1_component_hook_adapters_session_lifecycle_e389d412["Session Lifecycle Handlers"]:::component
+  p1_capability_runtime_harness_evidence_ledger_2fe63ef5 -->|"Collect loop state inputs for recovery evidence."| p1_capability_runtime_harness_hook_adapters_75a11743
   p1_component_hook_adapters_edit_guards_019fd22c -->|"Implement the typed handler contract and read hook input through the shared parsers"| p1_component_hook_adapters_primary_1659ffb9
   p1_component_hook_adapters_host_installer_cd378e80 -->|"Project the route registry into managed adapter entries"| p1_component_hook_adapters_primary_1659ffb9
   p1_capability_runtime_harness_hook_adapters_75a11743 -->|"Dispatch a host hook route to its typed handler"| p1_component_hook_adapters_primary_1659ffb9
@@ -33,8 +34,8 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:d2d70abc712bda2caa9cd619d10ccdbcfc6ae3861faeec603f7dc4a27bf12a3e`).
-- Semantic nodes: `6`; declared relations: `7`.
+- Proof: `proven` (`sha256:503412e7b5f46b69b4f099076e6c2cb945edc5ce071aacd644e5be3a4e864852`).
+- Semantic nodes: `6`; declared relations: `8`.
 
 ### 1.2 模組職責表
 
@@ -60,18 +61,24 @@ flowchart LR
 
 出向關係:
 
+- `depends-on` → `capability.verification.acceptance-review` — Read the diff fingerprint for mutation guards.
+- `depends-on` → `capability.runtime-harness.task-agent-host` — Resolve task role profiles during host installation.
 - `calls` → `component.hook-adapters.primary` — Dispatch a host hook route to its typed handler
 
 入向關係:
 
 - `calls` ← `capability.verification.acceptance-review` — Admit at most one persistent semantic review session per work package through the circuit breaker
+- `depends-on` ← `capability.public-surface.adoption` — Use installer setup during repository migration.
+- `depends-on` ← `capability.verification.codegraph-readiness` — Use host locks and configuration ownership for CodeGraph setup.
 - `calls` ← `component.contract-assets.template-projection` — Read the install profile and project skills during init
 - `reads` ← `component.evals-checks.evals-and-benchmarks` — Read hook event telemetry records to measure hook cost in profile benchmarks
+- `depends-on` ← `capability.runtime-harness.evidence-ledger` — Collect loop state inputs for recovery evidence.
 - `calls` ← `component.global-runtime-reconciliation.archctx-closure` — Write the private global configuration through the installer ownership writer
 - `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the install and status and security and hook commands and run host transactions with the install profile
 - `calls` ← `component.global-runtime-reconciliation.primary` — Install host adapters and project skills through the install profile under the host lock
 - `calls` ← `component.mcp-sidecar.host-setup` — Reuse installer configuration ownership receipts and the runtime host lock
 - `reads` ← `component.operator.activity-feeds` — Read the hook route registry and install profile components for the Hooks and Agents pages
+- `depends-on` ← `capability.runtime-harness.task-agent-host` — Use host installation commands for Herdr skill setup.
 
 組件出向關係:
 
@@ -110,7 +117,7 @@ flowchart LR
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:d2d70abc712bda2caa9cd619d10ccdbcfc6ae3861faeec603f7dc4a27bf12a3e`); selectors `5/5`.
+> **Proof**: `proven` (`sha256:503412e7b5f46b69b4f099076e6c2cb945edc5ce071aacd644e5be3a4e864852`); selectors `5/5`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
@@ -171,7 +178,7 @@ sequenceDiagram
 3. **ROUTES 顺序是稳定契约。** Codex 按 `(absolute-path, event-snake, i, j)` 哈希 adapter 条目，重排会重新弹出信任提示（`route-registry.ts:14-16`）。新增 route 只能追加。
 4. **handler 不碰 fd。** typed `HookHandlerResult` 是 handler 的唯一出口。`hook-protocol.ts` 的 `HOST_RENDERERS` 表是唯一入海口。Claude 与 Codex 的输出语义差异只能在这张表里表达。
 5. **opt-in marker 是硬门。** 没有 `.ai/harness/workflow-contract.json` 就静默退出 —— 装了 CLI 的用户在非 harness 仓库不应付出任何代价。
-6. **没有 shell operator library。** `assets/hooks/` 已删除。operator helper 经 `repo-harness run <helper>` 运行，policy 路径由 `resolveHarnessPaths` 一处解析，failure log 用 edit guard 写入的同一个 `FAILURE_LOG_FILE`（#696）。
+6. **没有 shell operator library。** [archived hooks](https://github.com/Ancienttwo/repo-harness/tree/13a589c0c07f886891add648f0a54852dede7323/assets/hooks) 已删除。operator helper 经 `repo-harness run <helper>` 运行，policy 路径由 `resolveHarnessPaths` 一处解析，failure log 用 edit guard 写入的同一个 `FAILURE_LOG_FILE`（#696）。
 7. **遥测非安全权威，但消费者 fail-closed。** 字段缺失、畸形、重复或混协议时消费者必须停，不得补零。
 8. **Hook 不做架构工作。** Hook 不记录架构漂移，不运行投影，不写 capability 块。架构更新在 PR 里显式完成：ChangeSet 加 `architecture-projection apply`。
 
@@ -256,7 +263,7 @@ host-installer 有 14 个文件、3670 行（2026-10-16），标记为 expandabl
 ### 3.5 安装范围与归属
 
 - #698 移除 `--location local`。CLI 在读取安装状态或取得 host lock 前拒绝该值。`src/cli/commands/install.ts` 也拒绝直接传入的 local 值。Claude target 只解析 user-level `~/.claude/settings.json`。Global uninstall 继续使用 ownership receipt。`AgentTarget` 接口保留，`Location` 只接受 `global`。
-- 本文档旧版 P1 把 `standard-plan.ts` / `fs-transaction.ts` 列为本 capability 模块。`.ai/context/capabilities.json` 已不存在。registry 现在只读 `.archcontext/model/nodes/` 里的 capability 节点（`src/core/capabilities/registry.ts:643`）。`capability-resolver match` 把这两个文件解析到 `public-surface-adoption`（2026-10-11 实测）。它们仍是跨 capability 的一次性迁移依赖。dispatch 路径不消费它们的结论。
+- 本文档旧版 P1 把 `standard-plan.ts` / `fs-transaction.ts` 列为本 capability 模块。[archived capabilities.json](https://github.com/Ancienttwo/repo-harness/blob/1eaf63019aadd2129376987957170d8310b35c3f/.ai/context/capabilities.json) 已不存在。registry 现在只读 `.archcontext/model/nodes/` 里的 capability 节点（`src/core/capabilities/registry.ts:643`）。`capability-resolver match` 把这两个文件解析到 `public-surface-adoption`（2026-10-11 实测）。它们仍是跨 capability 的一次性迁移依赖。dispatch 路径不消费它们的结论。
 
 ### 3.6 Typed durable-effect failure boundary (2026-08-14)
 
@@ -305,7 +312,7 @@ stripped prompt (`ctx.text`), so host-injected context cannot create UX
 intent. The fact is echo-only by invariant: it gates the `[UXFeatureGuard]`
 push in `prompt-handler.ts` and never enters routing or blocking decisions.
 The noun sets expand only with a real missed-case fixture first
-(`tests/cli/prompt-intents.test.ts` pins the positive/negative matrix).
+([archived prompt-intents.test.ts](https://github.com/Ancienttwo/repo-harness/blob/2ed904ae9555482b4c5750457c3faa8b7804484c/tests/cli/prompt-intents.test.ts) pins the positive/negative matrix).
 
 ### Edit safety and state context
 
@@ -362,7 +369,7 @@ does not inspect legacy command shapes, so there is no dual-read path.
 
 ### Stop-time git changed set as the architecture observation authority (2026-08-12)
 
-- P1: `src/cli/hook/architecture-drift.ts` owns the architecture changed set. The
+- P1: [archived architecture-drift.ts](https://github.com/Ancienttwo/repo-harness/blob/942f3fca4195facb298ffc48dc5c7f3c804de8ce/src/cli/hook/architecture-drift.ts) owned the architecture changed set. The
   post-edit journal keeps only edit-time trigger payloads (contract
   verification, minimal change, checkpoint); its `dirty.architecture` bit and
   the `skipArchitectureCascade`/`eventIds`/`retainEventFiles` handshake with the
@@ -431,7 +438,7 @@ does not inspect legacy command shapes, so there is no dual-read path.
 ### 组件拆分与 footprint 归属（2026-10-11）
 
 - P1：一个 ChangeSet 把本 capability 拆成 4 个组件。`component.hook-adapters.primary` 保留 id，改名为 Hook Route Runtime，并取得 footprint。新增 edit-guards、session-lifecycle、host-installer。
-- P2：capability include 增加了此前无归属的文件：`src/core/loop/**`、`src/effects/loop/**`、`hook-work-budget.ts`、`hook-event-log.ts`、`run-summary-retention.ts`、`commands/{install,status,security,hook,prompt-guard-decision}.ts`、`scripts/sync-hook-sources.ts`。依据是归属提议 §1b、§1c、§1d：这些文件只被 `src/cli/hook/**` 或 installer 引用。
+- P2：capability include 增加了此前无归属的文件：`src/core/loop/**`、`src/effects/loop/**`、`hook-work-budget.ts`、`hook-event-log.ts`、`run-summary-retention.ts`、`commands/{install,status,security,hook,prompt-guard-decision}.ts`、[archived sync-hook-sources.ts](https://github.com/Ancienttwo/repo-harness/blob/60744fb2389268d1ed2d068fd5b545cf52a1761e/scripts/sync-hook-sources.ts)。依据是归属提议 §1b、§1c、§1d：这些文件只被 `src/cli/hook/**` 或 installer 引用。
 - P3：`flow.hook-adapters.primary` 的成功分支改为 route-runtime → edit-guards。新增 `flow.hook-adapters.stop`（Stop 消费 post-edit journal）和 `flow.hook-adapters.install`（route 表投影成 managed entries）。全部 selector 都是 CodeGraph 中的直接调用。
 
 ### Hook wave 2：删除没有读者的 hook 工作（2026-10-13）

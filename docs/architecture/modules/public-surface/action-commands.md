@@ -1,5 +1,5 @@
 # public-surface/action-commands 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-action-commands" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:69a1420fd2d8f9eb8155c6cc2381f6b563f164933d8a80730df0c4aba76f4cce" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-action-commands" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:0c37afd5dff8541c238137cf41357d8b48a32dcf81a3b2a1a2185f1aa0ca0b1f" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.public-surface.action-commands`(kind `capability`)
 > **Matched Prefixes**:`assets/skill-commands/**`、`assets/skills/**`、`assets/skill-version.json`、`.claude/.skill-version`、`src/core/skill-surface/**`、`scripts/skill-surface-select.ts`、`scripts/run-skill-routing-eval.ts`、`scripts/check-skill-version.ts`
@@ -54,12 +54,15 @@ flowchart LR
 
 出向關係:
 
+- `depends-on` → `capability.workflow-engine.contract-assets` — Read the workflow contract during skill version checks.
+- `depends-on` → `capability.verification.evals-checks` — Run the skill evaluation engine for routing checks.
 - `calls` → `component.action-commands.primary` — Install action command skills
 - `calls` → `component.action-commands.skill-surface-catalog` — Select the facade and host placement projection for a profile
 
 入向關係:
 
-- 無。
+- `depends-on` ← `capability.verification.evals-checks` — Test Action Commands behavior through its source modules.
+- `depends-on` ← `capability.runtime-harness.operator` — Read the skill catalog for the setup snapshot.
 
 組件出向關係:
 
@@ -126,7 +129,7 @@ sequenceDiagram
 4. **shell 不复制选择逻辑。** 同步脚本调用一次 `scripts/skill-surface-select.ts profile-projection`，用它的输出决定 facade 与 host placement。
 5. **内部步骤永远不是公共命令。** `hooks-init`、`docs-init`、`create-project-dirs` 列在 `nonPublicInternalSteps`（`manifest.json:485-489`）。`tests/action-command-skills.test.ts:84`、`:267` 钉住这一点。
 6. **写 host skill 目录之前先证明归属。** 同步脚本只接受三种证明：指向包内目标的 symlink、三项全中的 owner marker（`owner`、`surface`、`content_hash`），或与包内源逐字节相同的目录。最后一种是 marker 引入前的一次性迁移分支（`scripts/sync-codex-installed-copies.sh:182-203`）。两个 host 根目录的 `preflight_skill_root` 在任何写入之前执行（`:406-407`）。未知或被改动的目录让整个同步以 exit 1 结束。
-7. **facade 必须编排多个 CLI 能力，或携带超出单个命令的领域规则。** 只给一个 CLI 子命令改名的 skill 不允许。每个 engine verb 一个 skill 也不允许。`repo-harness-chatgpt` 是 ChatGPT engine 唯一的 facade（`assets/skill-commands/CLAUDE.md:14-16`）。
+7. **facade 必须编排多个 CLI 能力，或携带超出单个命令的领域规则。** 只给一个 CLI 子命令改名的 skill 不允许。每个 engine verb 一个 skill 也不允许。`repo-harness-chatgpt` 是 ChatGPT engine 唯一的 facade（`assets/skill-commands/CLAUDE.md:7-9`）。
 8. **退役是数据。** `retiredPackages` 有 20 条记录。每条指向替代者，或者是 `null`（`repo-harness-autoplan`、`codex-review`）。它不参与投影，只回答"这个名字去哪了"，并给出清理动作和历史指纹。
 
 ### 3.2 关键权衡

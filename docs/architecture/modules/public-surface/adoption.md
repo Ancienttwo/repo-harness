@@ -1,5 +1,5 @@
 # public-surface/adoption 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-adoption" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:9e1f3dfe4e96d039898f65566b3afd06ef91675b371fea3ce51eb5a8e74edb4c" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-adoption" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:8b5f2d758aee17d8c3c4fbee503333f49ada4c270eeb2e61a6beb6b1692dec17" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.public-surface.adoption`(kind `capability`)
 > **Matched Prefixes**:`src/cli/commands/adoption-plan.ts`、`src/core/adoption/**`、`src/effects/fs-transaction.ts`、`src/effects/path-safety.ts`、`tests/cli/adoption-plan.test.ts`、`tests/fixtures/adoption/**`、`src/cli/repo-adoption/**`、`src/cli/commands/migrate.ts`
@@ -46,11 +46,17 @@ flowchart LR
 
 出向關係:
 
+- `depends-on` → `capability.workflow-engine.execution-primitives` — Run bounded processes for adoption and file transactions.
+- `depends-on` → `capability.runtime-harness.global-runtime-reconciliation` — Use the legacy inventory during adoption planning.
+- `depends-on` → `capability.runtime-harness.hook-adapters` — Use installer setup during repository migration.
+- `depends-on` → `capability.runtime-harness.mcp-sidecar` — Read registered repository identity for adoption planning.
+- `depends-on` → `capability.workflow-engine.workflow-state` — Resolve worktree locations during adoption planning.
 - `calls` → `component.adoption.primary` — Apply repository adoption
 
 入向關係:
 
 - `calls` ← `component.contract-assets.template-projection` — Plan and apply the transactional adoption for repository init
+- `depends-on` ← `capability.verification.evals-checks` — Test Adoption behavior through its source modules.
 - `calls` ← `capability.runtime-harness.evidence-ledger` — Resolve blob and log paths inside the repository with the shared path-safety helper
 - `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the adoption-plan command and run the adoption plan for the setup check
 - `calls` ← `component.global-runtime-reconciliation.primary` — Classify retired surfaces with the adoption fingerprints and back up removals in an FsTransaction manifest under the target lock

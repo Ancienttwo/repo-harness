@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "archcontext.relation/v1",
+  "id": "relation.operator.imports.publication",
+  "kind": "depends-on",
+  "source": "capability.runtime-harness.operator",
+  "target": "capability.organization.publication",
+  "intent": "Use publication readiness types in the Operator fixture."
+}

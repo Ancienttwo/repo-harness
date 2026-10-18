@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "archcontext.relation/v1",
+  "id": "relation.evals-checks.imports.codegraph-readiness",
+  "kind": "depends-on",
+  "source": "capability.verification.evals-checks",
+  "target": "capability.verification.codegraph-readiness",
+  "intent": "Test CodeGraph Readiness behavior through its source modules."
+}

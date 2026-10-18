@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "archcontext.relation/v1",
+  "id": "relation.engineering-overlay.imports.mcp-sidecar",
+  "kind": "depends-on",
+  "source": "capability.runtime-harness.engineering-overlay",
+  "target": "capability.runtime-harness.mcp-sidecar",
+  "intent": "Read the repository registry for overlay observations."
+}

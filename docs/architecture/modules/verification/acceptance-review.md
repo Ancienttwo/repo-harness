@@ -1,6 +1,6 @@
 # verification/acceptance-review 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-acceptance-review" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:c5625d51362dace2c8796d6113624ff921840f733e343a84ac2289946bbb362a" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-acceptance-review" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:b932888d3fb306edcf26717a46cd30f7e2b0b1c9554a209c28e4521b09f87c90" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.verification.acceptance-review`(kind `capability`)
 > **Matched Prefixes**:`src/core/review/**`、`src/effects/review/**`、`src/cli/commands/review.ts`、`scripts/acceptance-receipt.ts`、`scripts/change-assessment.ts`
@@ -20,14 +20,15 @@ flowchart LR
   p1_component_acceptance_review_primary_b86fb286["Generic Review Round"]:::component
   p1_capability_verification_acceptance_review_f80a24d6 -->|"Admit at most one persistent semantic review session per work package through the circuit breaker"| p1_capability_runtime_harness_hook_adapters_75a11743
   p1_capability_verification_acceptance_review_f80a24d6 -->|"Run one generic acceptance review round for a contract"| p1_component_acceptance_review_primary_b86fb286
+  p1_capability_runtime_harness_hook_adapters_75a11743 -->|"Read the diff fingerprint for mutation guards."| p1_capability_verification_acceptance_review_f80a24d6
   classDef actor fill:#111827,color:#ffffff,stroke:#f9fafb,stroke-width:2px
   classDef component fill:#075985,color:#ffffff,stroke:#bae6fd,stroke-width:2px
   classDef datastore fill:#3f6212,color:#ffffff,stroke:#d9f99d,stroke-width:2px
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:a1dff2d2a2be9197ed5a6543ae73fd6a654c790664501f8eb7b794cca651a7ff`).
-- Semantic nodes: `3`; declared relations: `2`.
+- Proof: `proven` (`sha256:af6dc3a9fe1a860e66b766011df33a6623c90dda702706d70da612e472a3c3b4`).
+- Semantic nodes: `3`; declared relations: `3`.
 
 ### 1.2 模組職責表
 
@@ -51,6 +52,8 @@ flowchart LR
 出向關係:
 
 - `calls` → `capability.runtime-harness.hook-adapters` — Admit at most one persistent semantic review session per work package through the circuit breaker
+- `depends-on` → `capability.runtime-harness.mcp-sidecar` — Apply secret patterns to module review context.
+- `depends-on` → `capability.runtime-harness.operator` — Use the architecture module view in review prompts.
 - `calls` → `component.acceptance-review.primary` — Run one generic acceptance review round for a contract
 
 入向關係:
@@ -58,12 +61,16 @@ flowchart LR
 - `calls` ← `component.contract-assets.contract-worktree-lifecycle` — Locate the acceptance receipt and the protected Git runtime
 - `calls` ← `component.contract-assets.planning-helpers` — Read the acceptance policy for planning helpers
 - `calls` ← `capability.runtime-harness.engineer-scheduling` — Compute the acceptance authority fingerprint for a dependency
+- `depends-on` ← `capability.verification.evals-checks` — Test Acceptance Review behavior through its source modules.
 - `calls` ← `component.global-runtime-reconciliation.archctx-closure` — Build the module review prompt from the committed architecture model
 - `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the review command
+- `depends-on` ← `capability.runtime-harness.hook-adapters` — Read the diff fingerprint for mutation guards.
 - `calls` ← `component.integration-acceptance.primary` — Locate the acceptance receipt for an integration candidate
 - `calls` ← `component.operator.architecture-view` — Report module CLI failures with the typed module read error of the review prompt builder
 - `calls` ← `component.operator.primary` — Raise and map the typed module read errors that the module review prompt builder declares
 - `depends-on` ← `component.operator.view-projections` — Decode the module review prompt shape that the review prompt builder declares
+- `depends-on` ← `capability.organization.publication` — Read the acceptance receipt for publication evidence.
+- `depends-on` ← `capability.workflow-engine.workflow-state` — Read the diff fingerprint for Effective State.
 
 組件出向關係:
 
@@ -81,7 +88,7 @@ flowchart LR
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:a1dff2d2a2be9197ed5a6543ae73fd6a654c790664501f8eb7b794cca651a7ff`); selectors `5/5`.
+> **Proof**: `proven` (`sha256:af6dc3a9fe1a860e66b766011df33a6623c90dda702706d70da612e472a3c3b4`); selectors `5/5`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%

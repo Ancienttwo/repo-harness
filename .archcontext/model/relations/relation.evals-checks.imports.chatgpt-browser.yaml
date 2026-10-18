@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "archcontext.relation/v1",
+  "id": "relation.evals-checks.imports.chatgpt-browser",
+  "kind": "depends-on",
+  "source": "capability.verification.evals-checks",
+  "target": "capability.runtime-mcp.chatgpt-browser",
+  "intent": "Test ChatGPT Browser Consult behavior through its source modules."
+}

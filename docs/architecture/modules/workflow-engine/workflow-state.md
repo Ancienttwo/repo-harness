@@ -1,6 +1,6 @@
 # workflow-engine/workflow-state 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-workflow-state" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:4596d1264135a66d27d2865505733c06673cb8056645b77f01efa85a3a972954" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-workflow-state" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:f94dd4ef52f694a5bcae4f864cda4751aa63cfd9deabf5f2d47cf7f3d5456aa1" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.workflow-engine.workflow-state`(kind `capability`)
 > **Matched Prefixes**:`src/core/state/**`、`src/effects/state/**`、`src/core/workflow/**`、`interfaces/**`、`src/core/worktree-location.mjs`、`src/core/worktree-location.d.mts`、`src/cli/commands/state.ts`、`scripts/check-state-boundaries.ts`
@@ -20,6 +20,7 @@ flowchart LR
   p1_component_workflow_state_continuation_ledger_379dbd7c["Continuation Ledger"]:::component
   p1_component_workflow_state_coordination_plane_01b22a1b["Historical Coordination and Worktree Safety"]:::component
   p1_component_workflow_state_primary_d0fb4045["Effective State Resolver"]:::component
+  p1_capability_workflow_engine_execution_primitives_b3033934 -->|"Read the observation context for Git operations."| p1_capability_workflow_engine_workflow_state_c0df5f05
   p1_component_workflow_state_continuation_ledger_379dbd7c -->|"Serialize attempt ledger appends under a directory lock"| p1_capability_workflow_engine_execution_primitives_b3033934
   p1_component_workflow_state_continuation_ledger_379dbd7c -->|"Project the continuation envelope from read-only Effective State"| p1_component_workflow_state_primary_d0fb4045
   p1_capability_workflow_engine_workflow_state_c0df5f05 -->|"Serve historical coordination and board reads with worktree safety"| p1_component_workflow_state_coordination_plane_01b22a1b
@@ -34,8 +35,8 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:7c51e9708cceecc9e3d62e794e7fb7253afb23228d2cb13252acfb0180cc0b76`).
-- Semantic nodes: `5`; declared relations: `8`.
+- Proof: `proven` (`sha256:74ff4dd2aafbe7672ce636e512c4d0506bb348ef46f1edd8c06ec1b8caf59295`).
+- Semantic nodes: `5`; declared relations: `9`.
 
 ### 1.2 模組職責表
 
@@ -66,16 +67,23 @@ flowchart LR
 出向關係:
 
 - `calls` → `component.workflow-state.coordination-plane` — Serve historical coordination and board reads with worktree safety
+- `depends-on` → `capability.verification.acceptance-review` — Read the diff fingerprint for Effective State.
+- `depends-on` → `capability.runtime-harness.global-runtime-reconciliation` — Resolve the helper platform for coordination worktrees.
+- `depends-on` → `capability.organization.publication` — Read publication receipts for coordination worktree topology.
 - `calls` → `component.workflow-state.primary` — Resolve Effective State under the state lock
 
 入向關係:
 
 - `reads` ← `component.acceptance-review.primary` — Observe Git and files read-only and resolve the workflow profile for the review subject
+- `depends-on` ← `capability.public-surface.adoption` — Resolve worktree locations during adoption planning.
 - `reads` ← `component.agent-runtime-effects.journal` — Read the task lease before a runtime effect is recorded
 - `calls` ← `component.contract-assets.contract-worktree-lifecycle` — Create and remove task worktrees and sweep merged managed worktrees at start under the worktree topology lock
 - `calls` ← `component.contract-assets.template-projection` — Check cutover quiescence and record the coordination cutover during init
 - `calls` ← `capability.runtime-harness.engineer-bindings` — Process Sprint dependencies and release Sprint leases for bound engineer tasks
 - `reads` ← `capability.runtime-harness.engineer-scheduling` — Project canonical Sprint tasks into the work graph
+- `depends-on` ← `capability.verification.evals-checks` — Test Workflow State behavior through its source modules.
+- `depends-on` ← `capability.runtime-harness.evidence-ledger` — Read state artifacts and read-only observations for evidence.
+- `depends-on` ← `capability.workflow-engine.execution-primitives` — Read the observation context for Git operations.
 - `reads` ← `capability.runtime-harness.external-source-intake` — Look up the canonical task for an external source
 - `reads` ← `component.global-runtime-reconciliation.archctx-closure` — Parse Markdown headers of plans and contracts
 - `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the sprint and state commands
@@ -85,6 +93,7 @@ flowchart LR
 - `reads` ← `component.integration-acceptance.primary` — Read the task lease for the integration envelope
 - `calls` ← `component.mcp-sidecar.coding-profile` — Clean up exact worktrees under the system worktree root
 - `reads` ← `component.mcp-sidecar.primary` — Resolve effective state for the state MCP tools
+- `depends-on` ← `capability.runtime-harness.operator` — Read state types and artifacts for Operator projections.
 - `calls` ← `component.publication.primary` — Read historical leases and the board to validate publication observations
 - `calls` ← `component.publication.provider-feedback` — Read canonical tasks and leases to evaluate provider feedback progress
 - `reads` ← `component.strategy-reflection.primary` — Resolve effective state read-only for strategy context
@@ -118,7 +127,7 @@ flowchart LR
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:7c51e9708cceecc9e3d62e794e7fb7253afb23228d2cb13252acfb0180cc0b76`); selectors `10/10`.
+> **Proof**: `proven` (`sha256:74ff4dd2aafbe7672ce636e512c4d0506bb348ef46f1edd8c06ec1b8caf59295`); selectors `10/10`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
@@ -226,6 +235,7 @@ coordination-plane 用文件名通配符声明 footprint（例如 `src/effects/s
 - **primary → coordination-plane 回边。** `src/core/state/types.ts:12` 导入 `coordination-identity.ts`，`:316` 内联导入 `lease-liveness.ts`。board DTO 类型因此住在 Effective State 的类型文件里。`src/cli/commands/state.ts:13-21` 还承载 `state board`。候选做法：把 board 类型移到协调面，或把 `state board` 适配器移到协调面。
 - **primary → continuation-ledger 回边。** `src/cli/commands/state.ts:15`、`:22` 承载 `state attempt` 与 `state next`。处理方式同上。
 - **continuation-ledger → coordination-plane 回边。** `src/core/state/project-continuation-envelope.ts:45` 导入 `sprint-backlog-rows.ts`。该文件是 Sprint backlog 的纯解析器。候选做法：把它和 `artifact-parsers.ts` 放在一起。
+- **历史 coordination-plane → engineer-scheduling 回边。** [archived sprint-schema-migration.ts](https://github.com/Ancienttwo/repo-harness/blob/65d1d4f1bad4863dd0659f56a9fca8ea8a834667/src/effects/state/sprint-schema-migration.ts) 曾导入 engineers scheduling。#820 已删除该迁移文件。
 - **coordination-plane → task-agent-host。** `src/effects/state/coordination-worktree-topology.ts:12` 导入 `src/effects/terminal/task-session.ts`，在 prune 前确认 task runtime 已关闭。集成时没有发现 task-agent-host → workflow-state 的边。模型因此声明 coordination-plane → task-agent-host（`reads`）。
 - **持久写原语在 evidence 目录。** 保留的 worktree 支持代码仍使用 `src/effects/evidence/atomic-append.ts`（例如 `src/effects/state/coordination-cutover.ts`）。lease store 已改为读取历史记录。它是通用持久写原语。候选做法：移到 execution-primitives。
 - **`readonly-observation.ts` 被下层导入。** `src/effects/git/common-directory.ts:1` 与 `readonly-virtual-tree.ts:4` 导入它，evidence 与 `scripts/acceptance-receipt.ts:3` 也导入它。候选做法：移到 execution-primitives。

@@ -1,6 +1,6 @@
 # public-surface/strategy-reflection 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-strategy-reflection" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:971d8ac50490cf393e68eac9171c33da868cc4d69e4e4be68f86c7a7097d4876" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-strategy-reflection" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:8f1c5e28a948539cf6e86cba56a7e2de7dadfb3f800fc4ecd85084f3a03b84c5" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.public-surface.strategy-reflection`(kind `capability`)
 > **Matched Prefixes**:`src/core/strategy/**`、`src/effects/strategy/**`、`src/cli/commands/strategy.ts`、`docs/strategy/**`
@@ -51,6 +51,7 @@ flowchart LR
 
 入向關係:
 
+- `depends-on` ← `capability.verification.evals-checks` — Test Strategy Reflection behavior through its source modules.
 - `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the strategy command
 
 組件出向關係:
@@ -91,7 +92,7 @@ sequenceDiagram
 ### 3.1 必须保持的不变量
 
 1. **策略数据是惰性数据。** `StrategyPacket` 和 `Validation` 的 `executionAuthorized` 字段类型是字面量 `false`（`src/core/strategy/contracts.ts:20`、`:33`）。没有函数能产生 `true`。最好的结果是 `reviewable`，它的理由文本是"Owner and Bot review required"（`contracts.ts:121`）。CLI 的错误输出也带 `executionAuthorized: false`（`src/cli/commands/strategy.ts:8`）。
-2. **只在显式请求时运行。** 本 capability 默认关闭。`strategy status` 只检查 `docs/strategy/context.json` 是否存在，不读文档，也不读 lesson（`src/effects/strategy/context.ts:227`）。skill 必须保持 `profiles: []` 和 `discoverability: explicit-setup`，否则投影直接失败（`src/effects/strategy/skill.ts:16`）。
+2. **只在显式请求时运行。** 本 capability 默认关闭。`strategy status` 只检查 `STRATEGY_DOCUMENT` 指定的文档是否存在，不读文档，也不读 lesson（`src/effects/strategy/context.ts#strategyStatus`）。skill 必须保持 `profiles: []` 和 `discoverability: explicit-setup`，否则投影直接失败（`src/effects/strategy/skill.ts:16`）。
 3. **一个请求只有一份 IO 预算。** 提议、文档、Git 历史、Effective State 和最终复核共用同一个 `StrategyReader`（`context.ts:304-310`）。默认上限是单文件 64 KiB、总量 1 MiB、输出 128 KiB；repository pilot 是 128 KiB、4 MiB、5 秒（`context.ts:12-15`）。超出预算就失败，不跳过输入。
 4. **只读仓库内的普通文件。** 路径不能是绝对路径，不能含 `..` 或 `.git`。任何一级是 symlink 就拒绝，中间目录是嵌套仓库也拒绝（`context.ts:25-44`）。
 5. **证据要同时对上工作树和历史。** 每条 evidence 的 SHA-256 必须等于工作树内容，也必须等于记录的 Git revision 中的 blob（`context.ts:191-203`）。对不上的证据进入 `unknowns`，不进入 `sources`。
@@ -120,7 +121,7 @@ sequenceDiagram
 ### 3.4 开放问题
 
 - `src/effects/strategy/wake.ts` 的 `exportStrategyWakePacket` 在 `src/` 和 `scripts/` 中没有调用方，只有 `tests/strategy.test.ts` 使用它。它是为后续 Bot wake 集成保留的边界，还是应该退役？没有记录。
-- 本仓库没有 `docs/strategy/context.json`，只有 `docs/strategy/repository-pilot.json`。所以 `strategy status` 在本仓库返回 `enabled: false`。PR #604 要求合并后在 main 上重跑一次 pilot。是否已经重跑？没有记录。
+- 本仓库没有默认策略文档（路径定义见 `src/effects/strategy/context.ts#STRATEGY_DOCUMENT`），只有 `docs/strategy/repository-pilot.json`。所以 `strategy status` 在本仓库返回 `enabled: false`。PR #604 要求合并后在 main 上重跑一次 pilot。是否已经重跑？没有记录。
 
 ## 4. 歷史決策記錄(append-only)
 
