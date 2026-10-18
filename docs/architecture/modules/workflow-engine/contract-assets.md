@@ -242,7 +242,7 @@ template-projection 标记为可扩展。`assets/templates/helpers/` 现在只�
 | --- | --- | --- | --- |
 | 2026-07-16 Closeout Runner Guardrails | `verify-contract`/`verify-sprint` 720 秒 | 3,660 秒（`VERIFIER_HELPER_TIMEOUT_MS = 3_660_000`） | `src/effects/runtime/helper-runner.ts:21` |
 | 2026-07-16 Closeout Runner Guardrails | 900 秒档只含 `contract-worktree`/`ship-worktrees` | 还包含 `merge-gate`；`PROTECTED_HELPERS` 另含 `acceptance-receipt` | `helper-runner.ts:20`、`:22` |
-| 2026-07-14 Helper Descriptions | 46 → 48 条描述 | 55 条（scripts 与 descriptions 均为 55） | `assets/workflow-contract.v1.json#helpers` |
+| 2026-07-14 Helper Descriptions | 46 → 48 条描述 | 55 条（scripts 与 descriptions 均为 55） | `assets/workflow-contract.v1.json` 的 `helpers` |
 | 旧 §3.2 I1 | asset 契约与自宿主 runtime 副本 byte-identical | 自宿主文件是 opt-in marker（2026-10-05） | `.ai/harness/workflow-contract.json` |
 | 旧 §3.2 I4 | [archived capabilities.json](https://github.com/Ancienttwo/repo-harness/blob/1eaf63019aadd2129376987957170d8310b35c3f/.ai/context/capabilities.json) 是唯一 runtime 权威 | 该文件不存在；权威是 `.archcontext/model/nodes` | `.ai/harness/policy.json:101-102` |
 | 旧 §3.2 I8 | 51/52 helper 一致，唯一例外带 `@generated-from` 头 | 52/55 一致，3 个声明的例外 | `scripts/sync-helper-sources.ts` |
@@ -451,7 +451,7 @@ template-projection 标记为可扩展。`assets/templates/helpers/` 现在只�
 
 ### 2026-07-13 Deploy SQL Policy Authority
 
-- Optional `.ai/harness/policy.json#operations.deploy_sql` is the sole authority for established alternate SQL roots, naming modes, and invariant files. Its absence keeps the generated `deploy/sql/` plus `ordered4` default.
+- The optional `operations.deploy_sql` key in `.ai/harness/policy.json` is the sole authority for established alternate SQL roots, naming modes, and invariant files. Its absence keeps the generated `deploy/sql/` plus `ordered4` default.
 - Policy generators deliberately do not seed the optional object. Their existing default merge preserves an explicit repo override while avoiding a second steady-state authority.
 - Root guidance, generated partials, deploy scaffolds, the deploy skill, and installed hooks are projections of that precedence. Existing parity and scaffold tests guard against self-host/generated drift; the module boundary and dependency direction are unchanged.
 
@@ -505,7 +505,7 @@ template-projection 标记为可扩展。`assets/templates/helpers/` 现在只�
 
 ### 2026-07-14 Helper Descriptions Contract Surface Closeout
 
-- `assets/workflow-contract.v1.json#helpers.descriptions` is the sole authority for the one-line description of every bundled helper (helper id, filename minus extension, mapped to description text). `helpers.scripts` keeps sole authority over which helpers exist; descriptions attach display data to those ids without introducing a second id list.
+- The `helpers.descriptions` key in `assets/workflow-contract.v1.json` is the sole authority for the one-line description of every bundled helper (helper id, filename minus extension, mapped to description text). `helpers.scripts` keeps sole authority over which helpers exist; descriptions attach display data to those ids without introducing a second id list.
 - The contract parser fails closed in `src/effects/runtime/helper-runner.ts` (`readContractHelperDescriptions`): a missing `descriptions` object, a scripts entry without a description, an empty or non-string value, or a description key with no matching script is a contract error, so the description map cannot drift from the script list.
 - `repo-harness run --help` now renders the full helper enumeration lazily through `listHelpers()` (`src/cli/commands/run.ts`), closing the discovery gap where the 46-helper surface was previously printed only on an unknown-helper failure. `.ai/harness/workflow-contract.json` remains the byte-identical installed mirror of the assets contract; no module boundary, dependency direction, or verification command changed.
 - Regression coverage: `tests/workflow-contract.test.ts` (descriptions cover `helpers.scripts` 1:1 with non-empty text) and `tests/cli/run.test.ts` (fail-closed validation plus `run --help` enumeration output).

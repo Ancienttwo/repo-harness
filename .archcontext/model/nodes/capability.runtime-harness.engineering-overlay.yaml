@@ -27,19 +27,9 @@
             "name": "collectEngineeringBoard",
             "sinks": [
               {
-                "id": "sink.engineering-overlay.binding",
-                "path": "src/effects/engineers/binding-store.ts",
-                "symbol": "readEngineerBindingStatus"
-              },
-              {
-                "id": "sink.engineering-overlay.claim",
-                "path": "src/effects/engineers/claim-actor-store.ts",
-                "symbol": "listLiveClaimActorReceiptsForEngineer"
-              },
-              {
-                "id": "sink.engineering-overlay.runtime-effects",
-                "path": "src/effects/engineers/agent-runtime-effect-store.ts",
-                "symbol": "observeAgentRuntimeEffects"
+                "id": "sink.engineering-overlay.read-pass",
+                "path": "src/effects/engineers/engineering-overlay.ts",
+                "symbol": "readPass"
               },
               {
                 "id": "sink.engineering-overlay.schema",

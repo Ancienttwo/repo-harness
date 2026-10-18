@@ -1,6 +1,6 @@
 # runtime-harness/external-source-intake 架构文档
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-external-source-intake" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:a8da37a4a367b08e6b86a36f10cc9f4f884dcf7e56d5f4c8f4391283512179fb" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-external-source-intake" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:90848116ac7f3a4ae8656dc216bde1d9a8b25b2a674066d0975a7bc61a52032d" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.external-source-intake`(kind `capability`)
 > **Matched Prefixes**:`src/core/external-sources/**`、`src/effects/external-sources/**`、`src/cli/commands/external-source.ts`
@@ -32,9 +32,9 @@ flowchart LR
 | 宣告入口 | 錨點 | 職責 |
 | --- | --- | --- |
 | `entrypoint.external-source-intake.refresh` | `src/effects/external-sources/refresh.ts#refreshExternalSource` | `sink.external-source-intake.immutable-observation-store` → `src/effects/external-sources/store.ts#writeProviderIssueObservation`、`sink.external-source-intake.immutable-attempt-receipt` → `src/effects/external-sources/store.ts#writeExternalSourceRefreshReceipt` |
-| `entrypoint.external-source-intake.list` | `src/effects/external-sources/refresh.ts#projection` | `sink.external-source-intake.read-only-projection` → `src/core/external-sources/projection.ts#buildExternalSourceProjection` |
-| `entrypoint.external-source-intake.bind` | `src/effects/external-sources/binding.ts#bindExternalSource` | `sink.external-source-intake.binding-receipt` → `src/effects/external-sources/store.ts#writeExternalSourceBindingReceipt` |
-| `entrypoint.external-source-intake.bind` | `src/effects/external-sources/binding.ts#listExternalSourceBindings` | `sink.external-source-intake.binding-projection` → `src/core/external-sources/projection.ts#buildExternalSourceProjection` |
+| `entrypoint.external-source-intake.list` | `src/cli/commands/external-source.ts#list` | `sink.external-source-intake.list-operation` → `src/effects/external-sources/refresh.ts#listExternalSourceProjection` |
+| `entrypoint.external-source-intake.bind` | `src/cli/commands/external-source.ts#bind` | `sink.external-source-intake.bind-operation` → `src/effects/external-sources/binding.ts#bindExternalSource` |
+| `entrypoint.external-source-intake.bindings` | `src/effects/external-sources/binding.ts#listExternalSourceBindings` | `sink.external-source-intake.binding-projection` → `src/core/external-sources/projection.ts#buildExternalSourceProjection` |
 
 組件入口:
 
@@ -130,7 +130,7 @@ sequenceDiagram
 
 对外关系：
 
-- capability → `mcp-sidecar`：CLI 和 `binding.ts` 读取严格的 repo registry 快照（`external-source.ts:3`、`binding.ts:9-13`）。
+- capability → `mcp-sidecar`：CLI 和 `binding.ts` 读取严格的 repo registry 快照（`external-source.ts:3`、`src/effects/external-sources/binding.ts:9-13`）。
 
 集成步骤补上的关系：
 
@@ -160,6 +160,14 @@ sequenceDiagram
 
 `listExternalSourceBindings` calls `buildExternalSourceProjection`. Its return interface is a type, not a call target. The model now names the called function.
 
-`listExternalSourceProjection` calls the local projection helper in `src/effects/external-sources/refresh.ts:55-60`. That helper calls the projection builder. CodeGraph also indexes a property with the same name in this file. Archctx cannot select the helper uniquely, so this selector remains unproven.
+The list selector proves the call from the CLI handler to the effects function.
+`src/cli/commands/external-source.ts:67-74` contains that handler and its call to `listExternalSourceProjection`.
+`src/effects/external-sources/refresh.ts:156-158` calls the local `projection` helper.
+`src/effects/external-sources/refresh.ts:55-60` calls `buildExternalSourceProjection`.
+A property has the same name as the helper. Archctx cannot select that downstream helper uniquely.
 
-`bindExternalSource` calls the injected writer (`src/effects/external-sources/binding.ts:116`). Its default is the binding receipt writer. CodeGraph has no direct call edge through that dependency. The model keeps this proof gap visible.
+The bind selector proves the call from the CLI handler to the effects function.
+`src/cli/commands/external-source.ts:76-89` contains that handler and its call to `bindExternalSource`.
+`src/effects/external-sources/binding.ts:95-135` checks authority twice, then calls `deps.write`.
+`src/effects/external-sources/binding.ts:48-59` selects `writeExternalSourceBindingReceipt` as the default writer.
+CodeGraph does not prove this injected persistence call. Neither selector proves the full downstream path.

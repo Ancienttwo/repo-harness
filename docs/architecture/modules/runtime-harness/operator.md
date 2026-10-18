@@ -176,12 +176,12 @@ sequenceDiagram
 
 | 决策 | 权衡 |
 | --- | --- |
-| 后台 collector 加内存缓存，GET 只读缓存 | GET 延迟固定，也不会因为请求启动 git 或 gh。代价是数据有延迟：开发活动最多 60 秒（`collector.ts:39`），setup 最多 10 分钟（`src/effects/setup/collector.ts:19`）。快照里的 `collected_at` 显示数据年龄。 |
+| 后台 collector 加内存缓存，GET 只读缓存 | GET 延迟固定，也不会因为请求启动 git 或 gh。代价是数据有延迟：开发活动最多 60 秒（`src/effects/dev-activity/collector.ts:31`），setup 最多 10 分钟（`src/effects/setup/collector.ts:19`）。快照里的 `collected_at` 显示数据年龄。 |
 | setup check builder 在子进程里运行 | builder 是同步代码。子进程让服务端事件循环保持空闲（PR #611）。代价是每个周期启动一个进程。子进程是新进程组的组长。90 秒期限或服务关闭时，整个进程组被 kill（`setup/collector.ts:8`）。 |
 | 慢读取放进受监督的 worker 进程 | 慢 git 不阻塞事件循环（PR #590 有对应测试）。代价是进程管理代码集中在 `server.ts`。该文件现在有 1766 行。 |
 | 严格 decoder 放在 core，前后端共用 | 一个契约，没有漂移。代价是 schema 版本升级时前后端必须同时修改，旧 schema 被拒绝（PR #606 的 overlay v4）。 |
 | 预构建 UI（`vite.operator.config.ts` → `dist/operator-ui`） | 运行时没有构建步骤。代价是 `prepack` 必须运行 `build:operator-web`（`package.json:77`）。 |
-| 开发活动 collector 只看当前 gh 用户的 PR | 范围与"一个人看自己的 agent 工作"一致（`collector.ts:54`）。代价是看不到别人的 PR。 |
+| 开发活动 collector 只看当前 gh 用户的 PR | 范围与"一个人看自己的 agent 工作"一致（`src/effects/dev-activity/collector.ts:61-67`）。代价是看不到别人的 PR。 |
 
 ### 3.3 组件拆分（2026-10-11）
 

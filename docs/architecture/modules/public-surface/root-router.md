@@ -112,7 +112,7 @@ sequenceDiagram
 先垮的是发现面，文件大小不会先垮。公开命令从约 10 个涨到 100 个时：
 
 - `SKILL.md` 不受影响。五个动作是常数，2048 字节预算与命令数无关。
-- `manifest.json#expectedProjections` 先出问题。它手写三张表（facade、external skill、host placement），覆盖 2 个 profile 和 3 个 host。命令数增长后，要么手写维护失败，要么改成从 package 条目派生。派生会削弱"新命令默认不可发现"。
+- `assets/skill-commands/manifest.json` 的 `expectedProjections` 先出问题。它手写三张表（facade、external skill、host placement），覆盖 2 个 profile 和 3 个 host。命令数增长后，要么手写维护失败，要么改成从 package 条目派生。派生会削弱"新命令默认不可发现"。
 - `retiredPackages` 只增不减（当前 20 条）。它最终会比 `packages` 本身大。
 
 ### 3.4 已知漂移

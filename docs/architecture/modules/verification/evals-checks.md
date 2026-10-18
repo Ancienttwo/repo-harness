@@ -414,7 +414,7 @@ The skill and adoption evaluation profiles remain available.
 ### Change Assessment v1 final-subject gate
 
 `verify-sprint --prepare-acceptance` now treats `buildReviewSubject` plus
-`.ai/harness/policy.json#worktree_strategy.review_base` as the sole selection
+the `worktree_strategy.review_base` key in `.ai/harness/policy.json` as the sole selection
 authority. It recomputes a deterministic `ChangeAssessment` and exact-target
 `ReviewSelectionPacket` after the final diff, then includes that envelope in
 the canonical verification-evidence hash consumed by AcceptanceReceipt.

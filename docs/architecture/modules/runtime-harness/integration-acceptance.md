@@ -1,6 +1,6 @@
 # runtime-harness/integration-acceptance 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-integration-acceptance" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:a574cb687baaef1bc0ebc44dc1fcc5f560ef13011b25f68292551eb2c352dcca" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-integration-acceptance" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:01f7bac5c2a41551b6995f0873af1eb9484d32c2217d4c823183cc02784ac205" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.integration-acceptance`(kind `capability`)
 > **Matched Prefixes**:`src/core/integration/product-acceptance.ts`、`src/effects/integration/product-acceptance.ts`、`src/cli/commands/integration.ts`
@@ -38,7 +38,8 @@ flowchart LR
 | `entrypoint.integration-acceptance.envelope` | `src/effects/integration/product-acceptance.ts#buildCurrentEnvelope` | `sink.integration-acceptance.envelope-schema` → `src/core/integration/product-acceptance.ts#buildIntegrationEnvelope` |
 | `entrypoint.integration-acceptance.publication-observation` | `src/effects/integration/product-acceptance.ts#observeSelectedPublication` | `sink.integration-acceptance.publication-cache` → `src/effects/publication/publication-receipt.ts#readPublicationReceiptCache` |
 | `entrypoint.integration-acceptance.matrix` | `src/effects/integration/product-acceptance.ts#createAcceptanceMatrix` | `sink.integration-acceptance.matrix-schema` → `src/core/integration/product-acceptance.ts#assertCompletePassingMatrix` |
-| `entrypoint.integration-acceptance.product` | `src/effects/integration/product-acceptance.ts#createProductAcceptanceProjection` | `sink.integration-acceptance.acceptance` → `scripts/acceptance-receipt.ts#verifyAcceptance`、`sink.integration-acceptance.product-schema` → `src/core/integration/product-acceptance.ts#buildProductAcceptanceProjection` |
+| `entrypoint.integration-acceptance.product` | `src/effects/integration/product-acceptance.ts#createProductAcceptanceProjection` | `sink.integration-acceptance.product-schema` → `src/core/integration/product-acceptance.ts#buildProductAcceptanceProjection` |
+| `entrypoint.integration-acceptance.product-command` | `src/cli/commands/integration.ts#buildIntegrationCommand` | `sink.integration-acceptance.product-operation` → `src/effects/integration/product-acceptance.ts#createProductAcceptanceProjection` |
 | `entrypoint.integration-acceptance.contract-canonical` | `src/core/integration/product-acceptance.ts#buildIntegrationContract` | `sink.integration-acceptance.contract-canonical` → `src/core/publication/publication-receipt.ts#stablePublicationJson` |
 | `entrypoint.integration-acceptance.envelope-canonical` | `src/core/integration/product-acceptance.ts#buildIntegrationEnvelope` | `sink.integration-acceptance.envelope-canonical` → `src/core/publication/publication-receipt.ts#stablePublicationJson` |
 | `entrypoint.integration-acceptance.matrix-canonical` | `src/core/integration/product-acceptance.ts#buildAcceptanceMatrix` | `sink.integration-acceptance.matrix-canonical` → `src/core/publication/publication-receipt.ts#stablePublicationJson` |
@@ -150,4 +151,10 @@ sequenceDiagram
 
 The envelope entry delegates to `buildCurrentEnvelope`. That helper calls the schema builder. `observeSelectedPublication` reads the lease and publication receipt. The model now locates these calls in their actual functions (`src/effects/integration/product-acceptance.ts:399-460`).
 
-Product acceptance selects an injected verifier or the default acceptance verifier, then calls the selected function (`src/effects/integration/product-acceptance.ts:543-551`). CodeGraph has no direct call edge through that selection. The model retains this unproven selector. It does not replace verification with a different call.
+The product command selector covers the accept action registered by `buildIntegrationCommand`.
+`src/cli/commands/integration.ts:168-177` contains the callback's call to `createProductAcceptanceProjection`.
+Command registration alone does not execute acceptance.
+`src/effects/integration/product-acceptance.ts:543-554` selects `dependencies.verify_acceptance` or `verifyAcceptance`, then calls that local verifier.
+CodeGraph does not prove this indirect verifier call.
+`src/effects/integration/product-acceptance.ts:567-574` contains the separate product schema selector's direct call to `buildProductAcceptanceProjection`.
+A proven command selector does not establish end-to-end acceptance proof.

@@ -1,6 +1,6 @@
 # runtime-harness/engineering-overlay 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineering-overlay" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:b7d807f0b41d35dbbef2b255cb0f3e319523cb004f3275216e5e75a8ebb3e85e" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineering-overlay" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:ef090fbf904fbba5f4df0f58e4d46651555445a537744e52150a8509f39bc5ef" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.engineering-overlay`(kind `capability`)
 > **Matched Prefixes**:`src/core/engineers/engineering-overlay.ts`、`src/effects/engineers/engineering-overlay.ts`
@@ -31,7 +31,7 @@ flowchart LR
 
 | 宣告入口 | 錨點 | 職責 |
 | --- | --- | --- |
-| `entrypoint.engineering-overlay.collect` | `src/effects/engineers/engineering-overlay.ts#collectEngineeringBoard` | `sink.engineering-overlay.binding` → `src/effects/engineers/binding-store.ts#readEngineerBindingStatus`、`sink.engineering-overlay.claim` → `src/effects/engineers/claim-actor-store.ts#listLiveClaimActorReceiptsForEngineer`、`sink.engineering-overlay.runtime-effects` → `src/effects/engineers/agent-runtime-effect-store.ts#observeAgentRuntimeEffects`、`sink.engineering-overlay.schema` → `src/core/engineers/engineering-overlay.ts#buildEngineeringOverlaySnapshot` |
+| `entrypoint.engineering-overlay.collect` | `src/effects/engineers/engineering-overlay.ts#collectEngineeringBoard` | `sink.engineering-overlay.read-pass` → `src/effects/engineers/engineering-overlay.ts#readPass`、`sink.engineering-overlay.schema` → `src/core/engineers/engineering-overlay.ts#buildEngineeringOverlaySnapshot` |
 | `entrypoint.engineering-overlay.attention` | `src/core/engineers/engineering-overlay.ts#projectOrganizationAttention` | `sink.engineering-overlay.attention-schema` → `src/core/engineers/engineering-overlay.ts#validateOrganizationAttentionSnapshot` |
 | `entrypoint.engineering-overlay.overlay-schema` | `src/core/engineers/engineering-overlay.ts#buildEngineeringOverlaySnapshot` | `sink.engineering-overlay.overlay-validation` → `src/core/engineers/engineering-overlay.ts#validateEngineeringOverlaySnapshot` |
 
@@ -101,14 +101,14 @@ sequenceDiagram
 3. **Profile 权威丢失时返回空的 degraded 投影。** 任一次读取丢失 Profile 权威，两次读取都收敛到同一个空花名册（`src/effects/engineers/engineering-overlay.ts:258-268`）。一个存活的读取不能补回花名册。
 4. **组织 attention 是封闭集合。** 原因只有四种，每种对应一个固定 owner：`binding_missing`、`binding_stale`、`engineer_contract_revision_changed`、`runtime_reconciliation_required`（`src/core/engineers/engineering-overlay.ts` 的 `projectOrganizationAttention` 和 `validateOrganizationAttentionSnapshot`）。
 5. **三个视图语义独立。** `sprint graph`、`fleet board` 和 `engineer board` 可以并排显示，但不能合并成一个状态字段（PRD Product Direction）。
-6. **当前工作树必须是精确注册的仓库。** 否则返回 `engineering_overlay_repository_unregistered`（`engineering-overlay.ts:253-258`）。
+6. **当前工作树必须是精确注册的仓库。** 否则返回 `engineering_overlay_repository_unregistered`（`src/effects/engineers/engineering-overlay.ts:238-243`）。
 
 ### 3.2 关键权衡
 
 | 决策 | 权衡 |
 | --- | --- |
 | 双读加逐组件修订号，不锁住全部权威 | 读取不阻塞任何写入方；代价是并发写入时只能报告 `changed_during_read`，调用方需要重读 |
-| 依赖通过 `dependencies()` 注入（`engineering-overlay.ts:41-44`、`:85-88`） | 测试可以在两次读取之间注入修改；代价是 CodeGraph 看不到对 Binding、Claim 和 runtime effect 的直接调用，P2 flow 无法证明这些步骤（见 Backlog） |
+| 依赖通过 `dependencies()` 注入（`src/effects/engineers/engineering-overlay.ts:37-42`、`src/effects/engineers/engineering-overlay.ts:77-85`） | 测试可以在两次读取之间注入修改；代价是 CodeGraph 看不到对 Binding、Claim 和 runtime effect 的直接调用，P2 flow 无法证明这些步骤（见 Backlog） |
 | 先交付 CLI/JSON 读模型，Human Board 页面后置 | 页面不能先于同一读模型的独立批准（PRD Suggested next step）；operator 后来通过 `src/effects/operator/repository-snapshot.ts` 读取这个模型 |
 
 ### 3.3 10x 规模下先坏的点
@@ -127,7 +127,7 @@ sequenceDiagram
 
 - after arch-context#296：`src/core/engineers/engineering-overlay.ts` 和 `src/effects/engineers/engineering-overlay.ts` 同时被 engineer-bindings 的 `src/{core,effects}/engineers/**` 认领。目标单一所有者是本能力（`ownership-proposal` §2）。
 - `COMPONENT_ORDER` 在 core（`src/core/engineers/engineering-overlay.ts:19`）和 effects（`src/effects/engineers/engineering-overlay.ts:243`）各定义一次。effects 可以从 core 导入，保持一个来源。
-- 声明的 sink（`readEngineerBindingStatus`、`listLiveClaimActorReceiptsForEngineer`、`observeAgentRuntimeEffects`）都经由注入的依赖调用，CodeGraph 没有直接 `calls` 边。到 engineer-bindings 和 agent-runtime-effects 的 relation 因此只有 P1 证据，P2 只证明了 schema 步骤。
+- `collectEngineeringBoard` 直接调用 `readPass` 两次（`src/effects/engineers/engineering-overlay.ts:244-246`）。selector 只证明这一层。`readPass` 通过 `deps.readBinding`、`deps.listClaims` 和 `deps.listRuntimeEffects` 读取三个来源（`src/effects/engineers/engineering-overlay.ts:175-198`）。默认实现仍是 `readEngineerBindingStatus`、`listLiveClaimActorReceiptsForEngineer` 和 `observeAgentRuntimeEffects`。CodeGraph 未证明这些注入调用。P2 flow 仍只证明 schema 步骤。
 - `collectEngineeringBoard` 调用 engineer-scheduling 的 `resolveRegisteredRepoForWorktree` 解析注册仓库（`src/effects/engineers/engineering-overlay.ts:240`）。它的职责是解析仓库注册表，与调度无关。模型记录该依赖。是否移动解析函数仍需单独判断。
 - operator 读取本能力（`src/effects/operator/repository-snapshot.ts`）。operator 已经声明 `relation.operator.http-reader.engineering-overlay`。
 - 集成时没有发现本能力到 execution-primitives 的导入。模型不声明该关系。
