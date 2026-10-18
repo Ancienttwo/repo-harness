@@ -274,7 +274,7 @@ describe('reaction and repair projection', () => {
       state: 'offered', attention_owner: 'agent',
       offer: {
         kind: 'repo-harness-repair-offer',
-        allowed_actions: ['resume_same_owner', 'explicit_takeover'],
+        allowed_actions: [],
       },
     });
   });

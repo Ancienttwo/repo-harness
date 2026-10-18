@@ -16,7 +16,6 @@ export const FEEDBACK_ROOT_RELATIVE_PATH = 'repo-harness/feedback/v1';
 export type FeedbackStoreErrorCode =
   | 'feedback_unreadable'
   | 'provider_event_conflict'
-  | 'repair_dispatch_conflict'
   | 'repair_not_dispatched'
   | 'reaction_receipt_conflict'
   | 'feedback_incomplete';

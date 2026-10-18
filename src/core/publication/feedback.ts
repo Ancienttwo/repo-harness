@@ -137,7 +137,6 @@ export interface ReactionTokenInput {
   readonly mergeability: FeedbackMergeability;
 }
 
-export type RepairOfferAction = 'resume_same_owner' | 'explicit_takeover';
 export type RepairOfferAttentionOwner = 'agent' | 'user';
 
 export interface RepairOfferV1 {
@@ -150,7 +149,7 @@ export interface RepairOfferV1 {
   readonly expected_head_sha: string;
   readonly feedback_revision: string;
   readonly attention_owner: RepairOfferAttentionOwner;
-  readonly allowed_actions: readonly [RepairOfferAction, RepairOfferAction];
+  readonly allowed_actions: readonly never[];
 }
 
 export type RepairOfferInput = Omit<RepairOfferV1, 'protocol' | 'kind'>;
@@ -629,8 +628,7 @@ export function deriveReactionToken(input: ReactionTokenInput): string {
 
 function validateRepairOfferInput(input: RepairOfferInput): RepairOfferInput {
   const allowed = input.allowed_actions;
-  if (!Array.isArray(allowed) || allowed.length !== 2
-    || allowed[0] !== 'resume_same_owner' || allowed[1] !== 'explicit_takeover') {
+  if (!Array.isArray(allowed) || allowed.length !== 0) {
     fail('feedback_provider_shape_invalid', 'repair offer allowed_actions is invalid');
   }
   if (input.attention_owner !== 'agent' && input.attention_owner !== 'user') {
@@ -647,7 +645,7 @@ function validateRepairOfferInput(input: RepairOfferInput): RepairOfferInput {
     expected_head_sha: requiredGitOid(input.expected_head_sha, 'expected_head_sha'),
     feedback_revision: requiredDigest(input.feedback_revision, 'feedback_revision'),
     attention_owner: input.attention_owner,
-    allowed_actions: Object.freeze(['resume_same_owner', 'explicit_takeover']) as readonly [RepairOfferAction, RepairOfferAction],
+    allowed_actions: Object.freeze([]),
   });
 }
 
@@ -708,7 +706,7 @@ export function projectRepairOffer(input: RepairOfferProjectionInput): RepairOff
       expected_head_sha: input.expected_head_sha,
       feedback_revision: feedbackRevision,
       attention_owner: 'agent',
-      allowed_actions: ['resume_same_owner', 'explicit_takeover'],
+      allowed_actions: [],
     }),
   });
 }

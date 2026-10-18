@@ -1,7 +1,7 @@
 /** Manual GitHub feedback observation and durable intake. */
 import { spawnSync } from 'child_process';
 
-import { buildFeedbackDeliveryReceipt, buildFeedbackEvent, canonicalFeedbackDeliveryReceiptBytes, canonicalFeedbackEventBytes, canonicalReactionAttemptReceiptBytes, deriveFeedbackRevision, deriveReactionToken, projectRepairOffer, transitionFeedbackDeliveryReceipt, type FeedbackDeliveryTransitionInput, type FeedbackCheckConclusion, type FeedbackEventV1, type FeedbackFailingCheckV1, type FeedbackMergeability, type RepairOfferAction, type RepairOfferProjection } from '../../core/publication/feedback';
+import { buildFeedbackDeliveryReceipt, buildFeedbackEvent, canonicalFeedbackDeliveryReceiptBytes, canonicalFeedbackEventBytes, canonicalReactionAttemptReceiptBytes, deriveFeedbackRevision, deriveReactionToken, projectRepairOffer, transitionFeedbackDeliveryReceipt, type FeedbackDeliveryTransitionInput, type FeedbackCheckConclusion, type FeedbackEventV1, type FeedbackFailingCheckV1, type FeedbackMergeability, type RepairOfferProjection } from '../../core/publication/feedback';
 import {
   lookupCanonicalTask,
   type LeaseOwnerRecord,
@@ -35,7 +35,6 @@ export type FeedbackErrorCode =
   | 'head_moved'
   | 'feedback_revision_mismatch'
   | 'repair_offer_stale'
-  | 'repair_dispatch_conflict'
   | 'repair_not_dispatched'
   | 'repair_completion_unverified'
   | 'repair_completion_not_distinct'
@@ -80,7 +79,7 @@ export type PendingFeedbackOffer =
 export interface FleetFeedbackProjection {
   readonly pending_count: number;
   readonly no_progress: boolean;
-  readonly repair_actions: readonly RepairOfferAction[];
+  readonly repair_actions: readonly never[];
   /** Event-set authority consumed by repair offers. */
   readonly feedback_revision: string;
   /** Digest of the publication, events, deliveries, and reaction attempts observed together. */

@@ -140,7 +140,7 @@ export class StrategyReader {
         if (packaged.has(absolute)) { scopedPath(packageRoot, relative(packageRoot, absolute), true); return; }
         if (authority && absolute.startsWith(`${authority}${sep}`)) {
           const leaf = relative(authority, absolute).split(sep).join('/');
-          if (!/^(acceptance\.latest|acceptance\.review-result|archive-projection\.latest|user-waiver-grant\.latest)\.json$/.test(leaf)
+          if (!/^(acceptance\.latest|acceptance\.review-result|user-waiver-grant\.latest)\.json$/.test(leaf)
             && !/^acceptance-observations\/[a-f0-9]{64}\.json$/.test(leaf)) throw new Error('Unrecognized project authority file');
           scopedPath(home!, relative(home!, absolute), true); return;
         }

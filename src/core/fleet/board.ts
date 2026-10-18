@@ -66,7 +66,7 @@ export interface FleetBoardInboxSummaryV1 {
 export interface FleetBoardFeedbackSummaryV1 {
   readonly pending_count: number;
   readonly no_progress: boolean;
-  readonly repair_actions: readonly ('resume_same_owner' | 'explicit_takeover')[];
+  readonly repair_actions: readonly never[];
 }
 
 export interface FleetBoardCardV1 {
@@ -210,7 +210,6 @@ function attention(...owners: readonly FleetBoardAttentionOwner[]): FleetBoardAt
 
 function feedbackAttention(summary: FleetBoardFeedbackSummaryV1): FleetBoardAttentionOwner {
   if (summary.no_progress) return 'user';
-  if (summary.repair_actions.length > 0) return 'agent';
   return 'none';
 }
 

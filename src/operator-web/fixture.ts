@@ -152,7 +152,7 @@ const stableRepositories: readonly OperatorFleetRepositoryV1[] = [
     }),
     card('repo-harness', fixtureTasks.working, 'working', {
       attention_owner: 'agent',
-      feedback: { pending_count: 1, no_progress: false, repair_actions: ['resume_same_owner'] },
+      feedback: { pending_count: 1, no_progress: false, repair_actions: [] },
       inbox: {
         ...baseInbox,
         delivery_state: 'reconciliation_required',
@@ -190,7 +190,7 @@ const stableRepositories: readonly OperatorFleetRepositoryV1[] = [
   repository('repo-console', [
     card('repo-console', fixtureTasks.console, 'working', {
       attention_owner: 'user',
-      feedback: { pending_count: 2, no_progress: true, repair_actions: ['resume_same_owner', 'explicit_takeover'] },
+      feedback: { pending_count: 2, no_progress: true, repair_actions: [] },
       inbox: { ...baseInbox, unread_count: 2, addressed_to_current_claim: true },
     }),
   ], { access_mode: 'read_only' }),

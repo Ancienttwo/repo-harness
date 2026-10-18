@@ -22,7 +22,6 @@ export function seedReactionReceipt(root: string, publicationId: string, receipt
 }
 
 import type { CurrentPublicationPointerV1 } from '../../src/core/state/coordination-identity';
-import type { RepairOfferAction } from '../../src/core/publication/feedback';
 
 export function historicalPublicationPointer(receipt: PublicationReceiptV3, key: string): CurrentPublicationPointerV1 {
   return { publication_id: receipt.publication_id, receipt_sha256: publicationReceiptDigest(receipt),
@@ -44,7 +43,7 @@ export interface HistoricalRepairProof {
   readonly ship_transaction_key: string;
   readonly feedback_revision: string;
   readonly before_reaction_token: string;
-  readonly action: RepairOfferAction;
+  readonly action: 'resume_same_owner' | 'explicit_takeover';
   readonly phase: 'prepared' | 'dispatched';
   readonly successor_claim_id: string | null;
   readonly successor_generation: number | null;

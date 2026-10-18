@@ -236,7 +236,7 @@ describe('provider feedback intake fences', () => {
       },
     });
     expect(projected).toMatchObject({ pending_count: 3, no_progress: false, snapshot_consistency: 'stable' });
-    expect(projected.repair_actions).toEqual(['resume_same_owner', 'explicit_takeover']);
+    expect(projected.repair_actions).toEqual([]);
     expect(reactionReads).toBe(4);
   });
 
