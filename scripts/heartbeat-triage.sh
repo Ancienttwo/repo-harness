@@ -184,83 +184,6 @@ run_workflow_check() {
   fi
 }
 
-extract_next_pending_from_sprint() {
-  local sprint_file="$1"
-  awk -F '|' '
-    function trim(s) {
-      gsub(/^[[:space:]]+|[[:space:]]+$/, "", s)
-      return s
-    }
-    !in_section && /^>[[:space:]]*\*\*Backlog Schema\*\*:[[:space:]]*2[[:space:]]*$/ { off = 1; next }
-    /^## Backlog[[:space:]]*$/ { in_section = 1; next }
-    in_section && /^## / { exit }
-    !in_section { next }
-    /^\|[[:space:]]*[0-9]+[[:space:]]*\|/ {
-      idx = trim($2)
-      status = trim($(3 + off))
-      task = trim($(4 + off))
-      mode = trim($(5 + off))
-      acceptance = trim($(6 + off))
-      plan = trim($(7 + off))
-      if (status == "[ ]") {
-        printf "index: %s\ntask: %s\nmode: %s\nacceptance: %s\nplan: %s\n", idx, task, mode, acceptance, plan
-        exit
-      }
-    }
-  ' "$sprint_file"
-}
-
-find_executing_sprint() {
-  local file status
-  local sprints_dir
-  sprints_dir="$(policy_get '.sprints.dir' 'plans/sprints')"
-  [[ -d "$sprints_dir" ]] || return 1
-  while IFS= read -r file; do
-    status="$(awk '/\*\*Status\*\*:/ { sub(/^.*\*\*Status\*\*: */, ""); gsub(/\r/, ""); print; exit }' "$file" | xargs)"
-    case "$status" in
-      Executing|Approved)
-        printf '%s\n' "$file"
-        return 0
-        ;;
-    esac
-  done < <(find "$sprints_dir" -maxdepth 1 -name '*.sprint.md' -type f | sort -r)
-  return 1
-}
-
-run_sprint_next() {
-  local output status summary sprint_file task
-  local sprint_helper
-  sprint_helper="$(helper_path "sprint-backlog.sh")"
-
-  if [[ -f ".ai/harness/sprint/active-sprint" && -f "$sprint_helper" ]]; then
-    set +e
-    output="$(bash "$sprint_helper" next 2>&1)"
-    status=$?
-    set -e
-    if [[ "$status" -eq 0 ]]; then
-      task="$(printf '%s\n' "$output" | awk -F ': ' '/^task:/ { print $2; exit }')"
-      add_entry "sprint-next" "action" "next sprint task: ${task:-unknown}" "$output"
-      return 0
-    fi
-    if [[ "$status" -eq 3 ]]; then
-      add_entry "sprint-next" "pass" "no pending sprint task" "$output"
-      return 0
-    fi
-  fi
-
-  if sprint_file="$(find_executing_sprint)"; then
-    output="$(extract_next_pending_from_sprint "$sprint_file")"
-    if [[ -n "$output" ]]; then
-      task="$(printf '%s\n' "$output" | awk -F ': ' '/^task:/ { print $2; exit }')"
-      add_entry "sprint-next" "action" "next sprint task: ${task:-unknown}" "$output"
-    else
-      add_entry "sprint-next" "pass" "no pending sprint task in $sprint_file" ""
-    fi
-  else
-    add_entry "sprint-next" "info" "no active or executing sprint found" ""
-  fi
-}
-
 write_json_snapshot() {
   local target="$1"
   local idx
@@ -325,7 +248,6 @@ write_inbox() {
 
 adoption_review_due="$(date_plus_14_days)"
 run_workflow_check
-run_sprint_next
 write_json_snapshot "$run_file"
 write_inbox
 

@@ -1,3 +1,4 @@
+import { seedLeaseDirectory } from '../helpers/sprint-fixture';
 import { readFileSync, writeFileSync } from 'fs';
 import {
   claimActorReceiptFixture,
@@ -21,7 +22,7 @@ import {
   listLiveClaimActorReceiptsForEngineer,
   readClaimActorReceipt,
 } from '../../src/effects/engineers/claim-actor-store';
-import { createLeaseDirectory, readLease } from '../../src/effects/state/coordination-lease-store';
+import { readLease } from '../../src/effects/state/coordination-lease-store';
 
 const engineerId = 'engineer:capability.verification.evals-checks';
 const binding: EngineerBindingV1 = {
@@ -161,7 +162,7 @@ describe('ME-0B principal and claim actor protocols', () => {
       const work = envelope();
       seedClaimActorReceipt(root, claimActorReceiptFixture({ envelope: work, binding, session_id: null, bound_at: '2026-08-25T00:02:00.000Z' }));
       // A lease directory without an owner record is the real unknown state.
-      expect(createLeaseDirectory(root, work.task_id)).toBeTrue();
+      expect(seedLeaseDirectory(root, work.task_id)).toBeTrue();
       expect(readLease(root, work.task_id)).toMatchObject({ classification: 'unknown', record: null });
       // The unavailable Lease state is named, so the operator repairs the
       // Lease instead of the valid receipt store.

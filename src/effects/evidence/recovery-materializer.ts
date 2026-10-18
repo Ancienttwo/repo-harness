@@ -11,7 +11,7 @@
  * `resolveLastPublishedCheckpoint`'s already-validated projection (EPC-06,
  * read-only import) -- this module never reads `.ai/harness/checks/*` or the
  * event ledger directly. Workflow CONTEXT (goal, next step, changed files,
- * active plan/contract/review/notes, active sprint row) is a different kind
+ * active plan/contract, active sprint row) is a different kind
  * of fact -- "where work stands," not "what was proven" -- and is read fresh
  * from the live repo on every call, exactly as the retired writers did.
  *
@@ -29,7 +29,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { basename, join } from 'path';
 import { escapeDecisionMarkdown, type CheckpointDecision } from '../../core/evidence/checkpoint';
 import { artifactStemFromPlan, planSlugFromPath } from '../../core/state/artifact-parsers';
-import { resolveHarnessPaths, type HarnessPaths } from '../state/resolve-effective-state';
+import { resolveHarnessPaths } from '../state/resolve-effective-state';
 import { createStateInputCollector, type StateInputCollector } from '../loop/state-input-collector';
 import {
   CheckpointResolutionError,
@@ -123,8 +123,6 @@ function worktreeIdFor(contractRelative: string): string {
 export interface RecoveryArtifactPaths {
   readonly plan: string;
   readonly contract: string;
-  readonly review: string;
-  readonly notes: string;
 }
 
 /** The preferred (stamped-stem) candidate wins if it exists; else the legacy
@@ -161,16 +159,15 @@ export interface RecoveryStatus extends RecoveryArtifactPaths {
 /** The active artifacts and view paths, without rendering a view. */
 export function recoveryStatus(repoRoot: string, activePlan: string | null): RecoveryStatus {
   const paths = resolveHarnessPaths(repoRoot);
-  return { ...recoveryArtifacts(repoRoot, activePlan, paths), handoff: paths.handoff, resume: paths.resume };
+  return { ...recoveryArtifacts(repoRoot, activePlan), handoff: paths.handoff, resume: paths.resume };
 }
 
 export function recoveryArtifacts(
   repoRoot: string,
   activePlan: string | null,
-  paths: Pick<HarnessPaths, 'reviewsDir' | 'notesDir'>,
 ): RecoveryArtifactPaths {
   const plan = activePlan && existsSync(join(repoRoot, activePlan)) ? activePlan : '';
-  if (!plan) return { plan: '', contract: '', review: '', notes: '' };
+  if (!plan) return { plan: '', contract: '' };
   const stem = artifactStemFromPlan(plan, readFileSync(join(repoRoot, plan), 'utf8'));
   const slug = planSlugFromPath(plan);
   const derived = (directory: string, suffix: string): string => {
@@ -180,8 +177,6 @@ export function recoveryArtifacts(
   return {
     plan,
     contract: declaredPath(repoRoot, plan, 'Task Contract') || declaredPath(repoRoot, plan, 'Sprint Contract') || derived('tasks/contracts', '.contract.md'),
-    review: declaredPath(repoRoot, plan, 'Task Review') || declaredPath(repoRoot, plan, 'Sprint Review') || derived(paths.reviewsDir, '.review.md'),
-    notes: declaredPath(repoRoot, plan, 'Implementation Notes') || declaredPath(repoRoot, plan, 'Notes File') || derived(paths.notesDir, '.notes.md'),
   };
 }
 
@@ -364,7 +359,7 @@ export function buildRecoveryContext(
   const reason = options.reason ?? 'session-stop';
   const harnessPaths = resolveHarnessPaths(repoRoot);
   const runId = options.runId ?? null;
-  const artifacts = recoveryArtifacts(repoRoot, activePlan, harnessPaths);
+  const artifacts = recoveryArtifacts(repoRoot, activePlan);
   const changed = changedFiles(repoRoot);
   const sourcePlan = todoSourcePlan(repoRoot, harnessPaths.todoFile);
   const action = nextAction(repoRoot, artifacts);
@@ -614,7 +609,6 @@ export function renderRecoveryHandoff(
     `- Active plan: ${context.artifacts.plan || '(none)'}`,
     `- Active contract: ${context.artifacts.contract || '(none)'}`,
     `- Active sprint row: ${context.activeSprintRowText}`,
-    `- Review file: ${context.artifacts.review || '(none)'}`,
     `- Resume packet: ${context.paths.resume}`,
     '',
     '## Exact Next Step',
@@ -632,8 +626,6 @@ export function renderRecoveryHandoff(
     `- Plan: ${context.artifacts.plan || '(none)'}`,
     `- Todo Source Plan: ${context.sourcePlan || '(none)'}`,
     `- Contract: ${context.artifacts.contract || '(none)'}`,
-    `- Review: ${context.artifacts.review || '(none)'}`,
-    `- Notes: ${context.artifacts.notes || '(none)'}`,
     `- Resume Packet: ${context.paths.resume}`,
     `- Policy: ${context.paths.policyFile}`,
     `- Context Map: ${context.paths.contextMap}`,
@@ -683,13 +675,11 @@ export function renderRecoveryResume(
     '- AGENTS.md',
     `- ${context.paths.handoff}`,
     `- ${context.paths.todoFile}`,
-    `- ${context.artifacts.notes || '(none)'}`,
     `- ${context.paths.researchDir}/`,
     '',
     'Conditional first reads:',
     `- Active plan: ${context.artifacts.plan || '(none)'}`,
     `- Active contract: ${context.artifacts.contract || '(none)'}`,
-    `- Implementation notes: ${context.artifacts.notes || '(none)'}`,
     `- Global handoff: ${context.globalHandoffPath || '(none)'}`,
     '',
     'Execution rules:',
@@ -707,7 +697,6 @@ export function renderRecoveryResume(
     `- Research: ${context.paths.researchDir}/`,
     `- Plan: ${context.artifacts.plan || '(none)'}`,
     `- Contract: ${context.artifacts.contract || '(none)'}`,
-    `- Notes: ${context.artifacts.notes || '(none)'}`,
     `- Global handoff: ${context.globalHandoffPath || '(none)'}`,
     '',
   ];

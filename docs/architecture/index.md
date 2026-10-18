@@ -6,7 +6,7 @@
 ## Current Snapshot
 
 - The architecture model lives in `.archcontext/model/`. It declares 28
-  capabilities in 6 domains, 56 components, 286 relations and 36 flows.
+  capabilities in 6 domains, 56 components, 285 relations and 36 flows.
 - Every capability page under [modules](modules/) shows `Proof: proven` for its
   P1 map and its P2 flow.
 - The full generated graph is in [diagrams/architecture.mmd](diagrams/architecture.mmd),
@@ -32,8 +32,8 @@ The product has two layers that share one set of files (`README.md`, "Two
 Layers"):
 
 - **Session contract.** One human, one agent session, one task. Plans,
-  contracts, checks, reviews and handoffs are the durable authority. Hooks keep
-  the session inside them.
+  checks, reviews and handoffs provide context and evidence. GitHub issues and
+  PRs own task identity, claim, status and dependency.
 - **Bot-scheduled programs.** The Bot is the entry point for long-running work.
   It drives the repo-harness CLI and Herdr task agents. repo-harness supplies
   the tools and the evidence. The Bot decides what runs next.
@@ -53,13 +53,11 @@ Authoritative surfaces:
   State carries no contract, review, acceptance, checks, readiness or sprint
   projection. The CLI, SessionStart and MCP read the same projection.
   `tests/state/adapter-parity.test.ts` checks these readers.
-- Shared coordination plane: lease identity and the four-state machine
-  (`src/core/state/coordination-identity.ts`,
-  `src/effects/state/coordination-lease-store.ts`, `src/cli/commands/sprint.ts`)
-  plus the read-only board projection (`src/core/state/project-board.ts`,
-  `src/effects/state/collect-board-inputs.ts`,
-  `src/effects/state/resolve-board.ts`, `repo-harness state board --json`). See
-  the [Shared Coordination Plane](shared-coordination-plane.md).
+- Historical coordination and worktree safety: `src/core/state/coordination-identity.ts`
+  and `src/effects/state/coordination-lease-store.ts` read historical owners.
+  The board and hook slice are read-only. Worktree start, cleanup and sweep keep
+  their exact deletion guards. Sprint completion and publication ownership
+  writers are removed. See [Historical Coordination](shared-coordination-plane.md).
 - Shared execution effects: `src/effects/process-runner.ts`,
   `src/effects/process-supervisor.ts`, `src/effects/process-group-launcher.ts`,
   `src/effects/locking/`, and `src/effects/git/` own bounded process lifecycle
@@ -81,7 +79,7 @@ Out of scope:
 | public-surface | 4 | Routes user intent to CLI-backed command facades, adopts repositories, and collects strategy context. | [Public Surface](domains/public-surface.md) |
 | workflow-engine | 4 | Owns the workflow contract and templates, inspects and migrates repositories, resolves Effective State and the coordination plane, and provides process, lock and Git primitives. | [Workflow Engine](domains/workflow-engine.md) |
 | runtime-harness | 13 | Runs host hooks and the installed runtime, hosts task agents, records evidence and observations, serves the MCP sidecar, and runs the Module Engineer organization. | [Runtime Harness](domains/runtime-harness.md) |
-| organization | 2 | Delivers tasks across repositories: task offers, acquire, the Task Inbox, and PR publication. | [Organization](domains/organization.md) |
+| organization | 2 | Reads historical tasks and publication records. Keeps manual Task Inbox and provider feedback operations. | [Organization](domains/organization.md) |
 | runtime-mcp | 2 | Exposes bounded repository tools through MCP and runs the local ChatGPT browser consult. | [Runtime MCP](domains/runtime-mcp.md) |
 | verification | 3 | Runs tests, gates and evals, records the acceptance receipt, and checks CodeGraph readiness. | [Verification](domains/verification.md) |
 
@@ -310,12 +308,12 @@ Project
 - Path ownership under `capability_source: archcontext` comes from `archctx resolve` (`src/effects/capabilities/archcontext-owners.ts`). Node includes and excludes can use any shape that ArchContext validation accepts.
 - Several capability pairs have declared relations in both directions (for example contract-assets and global-runtime-reconciliation). The module backlogs record each pair with its edge counts.
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.architecture.index" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:88134a44f257ab89c2df6e869e41356b600a95d3d59a99406859131d3a39f1dc" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.architecture.index" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:e8d2f7a7b52f299341a72cbd0cfbbab357cd2f19e91565331239366ccd6b6582" -->
 # Architecture Index
 
 ## Entities
 
-- [PR Publication](modules/organization/publication.md) — capability / active
+- [Publication Observations](modules/organization/publication.md) — capability / active
 - [Task Fleet](modules/organization/task-fleet.md) — capability / active
 - [Action Commands](modules/public-surface/action-commands.md) — capability / active
 - [Adoption](modules/public-surface/adoption.md) — capability / active
@@ -586,7 +584,6 @@ Project
 - component.operator.web-console -> component.operator.primary — calls
 - component.operator.web-console -> component.operator.view-projections — calls
 - capability.organization.publication -> capability.workflow-engine.contract-assets — calls
-- capability.organization.publication -> capability.runtime-harness.evidence-ledger — calls
 - capability.organization.publication -> capability.verification.acceptance-review — depends-on
 - capability.organization.publication -> component.publication.primary — calls
 - component.publication.primary -> capability.workflow-engine.execution-primitives — calls

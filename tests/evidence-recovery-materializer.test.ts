@@ -78,7 +78,7 @@ function seedEvent(
 
 
 describe("recovery-materializer: active artifact paths", () => {
-  test("a transient-slug plan with a title names the real-title contract, and policy directories hold the review and notes", () => {
+  test("a transient-slug plan with a title names the real-title historical contract", () => {
     withTempRepo("recovery-artifacts-transient", (repoRoot) => {
       const plan = "plans/plan-20260101-1200-think-plan-123.md";
       mkdirSync(join(repoRoot, "plans"), { recursive: true });
@@ -94,8 +94,6 @@ describe("recovery-materializer: active artifact paths", () => {
       expect(context.artifacts).toEqual({
         plan,
         contract: "tasks/contracts/20260101-1200-real-title.contract.md",
-        review: "tasks/custom-reviews/20260101-1200-real-title.review.md",
-        notes: "tasks/custom-notes/20260101-1200-real-title.notes.md",
       });
       expect(renderRecoveryHandoff(context, resolveRecoveryEvidence(repoRoot), context.artifacts.contract))
         .toContain("Contract: tasks/contracts/20260101-1200-real-title.contract.md");
@@ -104,9 +102,9 @@ describe("recovery-materializer: active artifact paths", () => {
 
   test("a policy path outside its root fails closed instead of taking the default", () => {
     withTempRepo("recovery-artifacts-unsafe-policy", (repoRoot) => {
-      writeFileSync(join(repoRoot, ".ai/harness/policy.json"), JSON.stringify({ tasks: { reviews_dir: "../reviews" } }));
+      writeFileSync(join(repoRoot, ".ai/harness/policy.json"), JSON.stringify({ harness: { handoff_file: "../handoff.md" } }));
       expect(() => buildRecoveryContext(repoRoot, null, {}, { reason: "unit-test", now: FIXED_NOW }))
-        .toThrow("unsafe workflow policy path .tasks.reviews_dir: ../reviews");
+        .toThrow("unsafe workflow policy path .harness.handoff_file: ../handoff.md");
     });
   });
 });

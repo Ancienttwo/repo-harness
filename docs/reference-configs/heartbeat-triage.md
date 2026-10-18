@@ -16,8 +16,6 @@ The command appends a run section to `.ai/harness/triage/inbox.md` and writes a
 JSON snapshot under `.ai/harness/runs/`. Each run records:
 
 - `workflow-check`: `repo-harness run check-task-workflow`
-- `sprint-next`: `repo-harness run sprint-backlog next` when an active sprint
-  marker exists, with a read-only sprint-file fallback when it does not
 
 ## cron
 

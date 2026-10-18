@@ -5,33 +5,14 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { darwinTest } from './helpers/darwin-test';
 import { existsSync, mkdtempSync, mkdirSync, realpathSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
-import { join, relative, resolve } from 'path';
+import { join, resolve } from 'path';
 import { spawnSync } from 'child_process';
 import { createHash } from 'crypto';
 import { buildReviewSubject } from '../src/effects/review/diff-fingerprint';
 import { prepareChangeAssessment } from '../src/effects/review/change-assessment';
 import { applyReviewerDisagreement, assessChange, buildReviewSelectionPacket } from '../src/core/review/change-assessment';
 import { executeVerificationContract, evaluateVerificationContract } from '../src/effects/evidence/verification-execution';
-import {
-  acceptanceAuthorityFingerprint,
-  acceptanceContext,
-  authorityFingerprint,
-  acceptanceReceiptPath,
-  acceptanceVerificationObservationPath,
-  archiveProjectionReceiptPath,
-  parseAcceptancePolicy,
-  acceptanceBenchmarkRequirement,
-  inspectAcceptanceEvidence,
-  inspectAcceptanceCurrentBinding,
-  projectAcceptance,
-  recordAcceptance,
-  recordUserWaiverAcceptance,
-  recordUserWaiverGrant,
-  revokeUserWaiverGrant,
-  sealArchiveProjection,
-  verifyAcceptance,
-  verifyUserWaiverGrant,
-} from '../scripts/acceptance-receipt';
+import { acceptanceContext, authorityFingerprint, acceptanceReceiptPath, acceptanceVerificationObservationPath, parseAcceptancePolicy, acceptanceBenchmarkRequirement, inspectAcceptanceEvidence, inspectAcceptanceCurrentBinding, projectAcceptance, recordAcceptance, recordUserWaiverAcceptance, recordUserWaiverGrant, revokeUserWaiverGrant, verifyAcceptance, verifyUserWaiverGrant } from '../scripts/acceptance-receipt';
 
 const tempDirs: string[] = [];
 
@@ -541,6 +522,18 @@ describe('AcceptanceReceipt', () => {
     expect(externalReceipt.waiver_grant_sha256).toBeNull();
   }, 30_000);
 
+  test('acceptance does not search archived records when the live contract is gone', async () => {
+    const { root, home } = makeFixture();
+    await externalPass(root, home);
+    const live = join(root, 'tasks/contracts/demo.contract.md');
+    mkdirSync(join(root, 'tasks/archive'), { recursive: true });
+    writeFileSync(join(root, 'tasks/archive/demo.md'), readFileSync(live));
+    rmSync(live);
+    await expect(verifyAcceptance({ root, authorityHome: home })).rejects.toThrow('contract is missing: tasks/contracts/demo.contract.md');
+    await expect(verifyAcceptance({ root, authorityHome: home, contract: 'tasks/archive/demo.md' }))
+      .rejects.toThrow('archived contracts cannot authorize acceptance');
+  }, 30_000);
+
   test('historical acceptance stays bound to its recorded target through unrelated and overlapping target movement', async () => {
     const { root, home } = makeFixture();
     await externalPass(root, home);
@@ -557,189 +550,8 @@ describe('AcceptanceReceipt', () => {
     expect((await verifyAcceptance({ root, authorityHome: home })).disposition).toBe('external_pass');
   }, 30_000);
 
-  test('strict archive envelopes preserve plan and contract receipt authority', async () => {
-    const { root, home } = makeFixture();
-    await externalPass(root, home);
-    mkdirSync(join(root, 'plans', 'archive'), { recursive: true });
-    mkdirSync(join(root, 'tasks', 'archive'), { recursive: true });
 
-    const plan = readFileSync(join(root, 'plans', 'plan-demo.md'), 'utf-8')
-      .replace('> **Status**: Executing', '> **Status**: Archived');
-    writeFileSync(join(root, 'plans', 'archive', 'plan-demo.md'), plan);
-    rmSync(join(root, 'plans', 'plan-demo.md'));
 
-    const liveContract = readFileSync(join(root, 'tasks', 'contracts', 'demo.contract.md'), 'utf-8');
-    writeFileSync(join(root, 'tasks', 'archive', 'contract-20260721-0800-demo.md'), [
-      '> **Archived**: 2026-07-21 08:00',
-      '> **Related Plan**: plans/archive/plan-demo.md',
-      '> **Outcome**: Completed',
-      '> **Lifecycle**: contract',
-      '> **Parent Run ID**: acceptance-test',
-      '',
-      liveContract,
-    ].join('\n'));
-    rmSync(join(root, 'tasks', 'contracts', 'demo.contract.md'));
-    commit(root, 'archive accepted workflow');
-
-    expect((await verifyAcceptance({ root, authorityHome: home })).disposition).toBe('external_pass');
-
-    const checksPath = join(root, '.ai', 'harness', 'runs', 'acceptance.report.json');
-    const checks = JSON.parse(readFileSync(checksPath, 'utf-8'));
-    checks.target.contract = 'tasks/contracts/different.contract.md';
-    writeFileSync(checksPath, `${JSON.stringify(checks, null, 2)}\n`);
-    writeFileSync(
-      join(root, 'plans', 'plan-demo.md'),
-      readFileSync(join(root, 'plans', 'archive', 'plan-demo.md'), 'utf-8'),
-    );
-    await expect(recordFixtureAcceptance({
-      root,
-      authorityHome: home,
-      contract: 'tasks/archive/contract-20260721-0800-demo.md',
-      verification: '.ai/harness/runs/acceptance.report.json',
-      disposition: 'external_pass',
-      reviewer: 'Claude',
-      source: 'generic-review',
-      actor: null,
-      summary: 'mismatched archive projection must fail',
-      findings: [],
-    })).rejects.toThrow('verification evidence contract is stale');
-  }, 30_000);
-
-  test('versioned archive path projection rewrites pointers without changing receipt authority', async () => {
-    const { root, home } = makeFixture();
-    const livePlanPath = 'plans/plan-demo.md';
-    const liveContractPath = 'tasks/contracts/demo.contract.md';
-    const liveReviewPath = 'tasks/reviews/demo.review.md';
-    mkdirSync(join(root, 'tasks', 'reviews'), { recursive: true });
-    writeFileSync(join(root, liveReviewPath), `# Review\n\nPlan: ${livePlanPath}\n`);
-    writeFileSync(
-      join(root, livePlanPath),
-      `${readFileSync(join(root, livePlanPath), 'utf-8')}\nContract: ${liveContractPath}\n`,
-    );
-    commit(root, 'bind workflow pointers');
-    writePassingChecks(root);
-    await externalPass(root, home);
-    mkdirSync(join(root, 'plans', 'archive'), { recursive: true });
-    mkdirSync(join(root, 'tasks', 'archive'), { recursive: true });
-
-    const archivePlanPath = 'plans/archive/plan-demo.md';
-    const archiveContractPath = 'tasks/archive/contract-20260721-0815-demo-v2.md';
-    const archiveReviewPath = 'tasks/archive/review-20260721-0815-demo.md';
-    writeFileSync(join(root, 'tasks', 'archive', 'contract-20260721-0815-demo.md'), 'pre-existing collision\n');
-    const projection = [
-      `> **Archive Projection V1**: \`${livePlanPath}\` => \`${archivePlanPath}\``,
-      `> **Archive Projection V1**: \`${liveContractPath}\` => \`${archiveContractPath}\``,
-      `> **Archive Projection V1**: \`${liveReviewPath}\` => \`${archiveReviewPath}\``,
-    ];
-    const envelope = (lifecycle: 'plan' | 'contract' | 'review') => [
-      '> **Archived**: 2026-07-21 08:15',
-      `> **Related Plan**: ${archivePlanPath}`,
-      '> **Outcome**: Completed',
-      `> **Lifecycle**: ${lifecycle}`,
-      '> **Parent Run ID**: projection-test',
-      ...projection,
-      '',
-    ];
-    const plan = readFileSync(join(root, livePlanPath), 'utf-8')
-      .replace('> **Status**: Executing', '> **Status**: Archived')
-      .replaceAll(livePlanPath, archivePlanPath)
-      .replaceAll(liveContractPath, archiveContractPath);
-    const archivedPlan = [...envelope('plan'), plan].join('\n');
-    writeFileSync(join(root, archivePlanPath), archivedPlan);
-    rmSync(join(root, livePlanPath));
-
-    const contractText = readFileSync(join(root, liveContractPath), 'utf-8')
-      .replaceAll(livePlanPath, archivePlanPath)
-      .replaceAll(liveContractPath, archiveContractPath);
-    const archivedContract = [...envelope('contract'), contractText].join('\n');
-    writeFileSync(join(root, archiveContractPath), archivedContract);
-    rmSync(join(root, liveContractPath));
-    const reviewText = readFileSync(join(root, liveReviewPath), 'utf-8')
-      .replaceAll(livePlanPath, archivePlanPath)
-      .replaceAll(liveReviewPath, archiveReviewPath);
-    const archivedReview = [...envelope('review'), reviewText].join('\n');
-    writeFileSync(join(root, archiveReviewPath), archivedReview);
-    rmSync(join(root, liveReviewPath));
-    commit(root, 'archive workflow with exact path projection');
-
-    sealArchiveProjection({ root, authorityHome: home, contract: archiveContractPath });
-    expect((await verifyAcceptance({ root, authorityHome: home })).disposition).toBe('external_pass');
-    expect(archivedPlan).toContain(`Contract: ${archiveContractPath}`);
-    expect(archivedContract).toContain(`> **Plan**: ${archivePlanPath}`);
-
-    const firstAuthority = acceptanceAuthorityFingerprint(root, home);
-    const renewed = await recordFixtureAcceptance({
-      root,
-      authorityHome: home,
-      contract: archiveContractPath,
-      verification: '.ai/harness/runs/acceptance.report.json',
-      disposition: 'external_pass',
-      reviewer: 'Claude',
-      source: 'generic-review',
-      actor: null,
-      summary: 'archived authority accepted again',
-      findings: [],
-      now: () => new Date('2026-07-21T08:30:00.000Z'),
-    });
-    expect((await verifyAcceptance({ root, authorityHome: home })).summary).toBe(renewed.summary);
-    const archiveSeal = JSON.parse(readFileSync(archiveProjectionReceiptPath(root, home), 'utf-8'));
-    expect(archiveSeal.acceptance_receipt_sha256).toBe(
-      `sha256:${createHash('sha256').update(readFileSync(acceptanceReceiptPath(root, home))).digest('hex')}`,
-    );
-    expect(acceptanceAuthorityFingerprint(root, home)).not.toBe(firstAuthority);
-
-    const redirectedReviewPath = 'tasks/archive/review-20260721-0815-demo-v2.md';
-    for (const path of [archivePlanPath, archiveContractPath, archiveReviewPath]) {
-      const redirected = readFileSync(join(root, path), 'utf-8').replaceAll(archiveReviewPath, redirectedReviewPath);
-      writeFileSync(join(root, path === archiveReviewPath ? redirectedReviewPath : path), redirected);
-    }
-    rmSync(join(root, archiveReviewPath));
-    await expect(verifyAcceptance({
-      root,
-      authorityHome: home,
-      contract: archiveContractPath,
-    })).rejects.toThrow('ArchiveProjectionReceipt is stale');
-  }, 30_000);
-
-  test('strict archive envelopes preserve the waiver grant and its exact receipt', async () => {
-    const { root, home } = makeFixture();
-    recordUserWaiverGrant({
-      root,
-      authorityHome: home,
-      contract: 'tasks/contracts/demo.contract.md',
-      actor: 'kito',
-      summary: 'archive-safe bounded decision',
-    });
-    await recordUserWaiverAcceptance({
-      root,
-      authorityHome: home,
-      contract: 'tasks/contracts/demo.contract.md',
-      verification: '.ai/harness/runs/acceptance.report.json',
-    });
-    mkdirSync(join(root, 'plans', 'archive'), { recursive: true });
-    mkdirSync(join(root, 'tasks', 'archive'), { recursive: true });
-
-    const plan = readFileSync(join(root, 'plans', 'plan-demo.md'), 'utf-8')
-      .replace('> **Status**: Executing', '> **Status**: Archived');
-    writeFileSync(join(root, 'plans', 'archive', 'plan-demo.md'), plan);
-    rmSync(join(root, 'plans', 'plan-demo.md'));
-
-    const liveContract = readFileSync(join(root, 'tasks', 'contracts', 'demo.contract.md'), 'utf-8');
-    writeFileSync(join(root, 'tasks', 'archive', 'contract-20260721-0900-demo.md'), [
-      '> **Archived**: 2026-07-21 09:00',
-      '> **Related Plan**: plans/archive/plan-demo.md',
-      '> **Outcome**: Completed',
-      '> **Lifecycle**: contract',
-      '> **Parent Run ID**: waiver-archive-test',
-      '',
-      liveContract,
-    ].join('\n'));
-    rmSync(join(root, 'tasks', 'contracts', 'demo.contract.md'));
-    commit(root, 'archive waived workflow');
-
-    expect(verifyUserWaiverGrant({ root, authorityHome: home }).actor).toBe('kito');
-    expect((await verifyAcceptance({ root, authorityHome: home })).disposition).toBe('user_waiver');
-  }, 30_000);
 });
 
 

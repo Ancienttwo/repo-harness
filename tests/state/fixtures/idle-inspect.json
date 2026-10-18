@@ -81,13 +81,10 @@
       "plan": "none",
       "pending": "none",
       "worktree": "current",
-      "contract": "missing",
-      "contract_path": "missing",
       "evidence": "unchecked"
     },
     "paths": {
-      "active_plan": null,
-      "contract": null
+      "active_plan": null
     },
     "marker": {
       "problem": "none"

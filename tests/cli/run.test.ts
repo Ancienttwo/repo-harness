@@ -308,33 +308,6 @@ describe("run command", () => {
     expect(res.stdout.trimEnd().split("\n").length).toBeLessThanOrEqual(RUN_HELP_MAX_LINES);
   }, 30_000);
 
-  test("package sprint-backlog helper resolves the target repo root from runHelper", () => {
-    const tmp = mkdtempSync(join(tmpdir(), "repo-harness-run-sprint-root-"));
-    try {
-      const sprintRelPath = writeActiveSprintFixture(tmp);
-
-      const status = spawnSync("bun", [CLI, "run", "sprint-backlog", "status"], {
-        cwd: tmp,
-        encoding: "utf-8",
-        env: packageRuntimeEnv(),
-      });
-
-      expect(status.status).toBe(0);
-      expect(status.stdout).toContain(`sprint: ${sprintRelPath}`);
-      expect(status.stdout).toContain("next_task: root-task");
-
-      const next = spawnSync("bun", [CLI, "run", "sprint-backlog", "next"], {
-        cwd: tmp,
-        encoding: "utf-8",
-        env: packageRuntimeEnv(),
-      });
-
-      expect(next.status).toBe(0);
-      expect(next.stdout).toContain("task: root-task");
-    } finally {
-      rmSync(tmp, { recursive: true, force: true });
-    }
-  }, 30_000);
 
   test("package prepare-handoff runs its recovery helper from the package and ignores a target library copy", () => {
     const tmp = mkdtempSync(join(tmpdir(), "repo-harness-run-prepare-handoff-"));

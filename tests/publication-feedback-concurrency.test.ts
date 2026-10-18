@@ -1,5 +1,7 @@
-import { boundLeaseFixture } from './helpers/sprint-fixture';
-import { leaseOwnerPath } from './helpers/sprint-fixture';
+import { historicalRepairProof } from './helpers/publication-fixture';
+import { dispatchedRepairFixture } from './helpers/publication-fixture';
+import { seedReactionReceipt, seedPublicationReceipt } from './helpers/publication-fixture';
+import { seedLeaseDirectory, writeHistoricalLease, completingLeaseFixture, reviewingLeaseFixture, boundLeaseFixture, leaseOwnerPath, fixtureTaskId } from './helpers/sprint-fixture';
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
@@ -11,35 +13,17 @@ import {
   buildFeedbackDeliveryReceipt,
   buildFeedbackEvent,
   buildReactionAttemptReceipt,
-  buildRepairDispatchProof,
   deriveReactionToken,
 } from '../src/core/publication/feedback';
-import {
-  beginLeaseCompletionRecord,
-  buildLeaseOwnerRecord,
-  deriveTaskRevision,
-  enterReviewingLeaseRecord,
-} from '../src/core/state/coordination-identity';
+import { buildLeaseOwnerRecord, deriveTaskRevision } from '../src/core/state/coordination-identity';
 import {
   intakeGitHubFeedback,
   projectFleetFeedback,
   projectPendingFeedbackOffer,
   type FeedbackObservationInput,
 } from '../src/effects/publication/feedback';
-import {
-  appendReactionAttemptReceipt,
-  readFeedbackDeliveryReceipts,
-  readFeedbackEvents,
-  readReactionAttemptReceipts,
-  transitionRepairDispatchProof,
-  writeFeedbackDeliveryReceipt,
-  writeFeedbackEvent,
-  writeRepairDispatchProof,
-} from '../src/effects/publication/feedback-store';
-import { writePublicationReceiptCache } from '../src/effects/publication/publication-receipt';
-import { createLeaseDirectory, writeLeaseOwnerDurably } from '../src/effects/state/coordination-lease-store';
+import { readFeedbackDeliveryReceipts, readFeedbackEvents, readReactionAttemptReceipts, writeFeedbackDeliveryReceipt, writeFeedbackEvent } from '../src/effects/publication/feedback-store';
 import { resolveGitCommonDirectory } from '../src/effects/git/common-directory';
-import { fixtureTaskId } from './helpers/sprint-fixture';
 
 const roots: string[] = [];
 const CLAIM = 'claim-feedback-concurrency';
@@ -92,15 +76,15 @@ function fixture(): Fixture {
     provider: 'github', provider_repo_id: 'R_feedback_concurrency', pr_number: 9,
     pr_url: 'https://example.invalid/pr/9', created_at: '2026-08-23T00:00:00Z',
   });
-  writePublicationReceiptCache(root, receipt);
+  seedPublicationReceipt(root, receipt);
   const owner = buildLeaseOwnerRecord({
     claimId: CLAIM, taskId, taskRevision, sprintPath: SPRINT, targetRef: 'main', generation: 1,
     sessionId: 'feedback-session', sourceWorktree: root,
   });
   const bound = boundLeaseFixture(owner, { executionWorktree: root, branch: 'codex/feedback', unitRef: 'plans/plan-feedback.md' });
-  const completing = beginLeaseCompletionRecord(bound, { claimId: CLAIM, executionWorktree: root, finishTransactionKey: null });
+  const completing = completingLeaseFixture(bound, { claimId: CLAIM, executionWorktree: root, finishTransactionKey: null });
   if (!completing.ok) throw new Error(completing.error);
-  const reviewing = enterReviewingLeaseRecord(completing.record, {
+  const reviewing = reviewingLeaseFixture(completing.record, {
     claimId: CLAIM,
     publication: {
       publication_id: receipt.publication_id,
@@ -110,8 +94,8 @@ function fixture(): Fixture {
     },
   });
   if (!reviewing.ok) throw new Error(reviewing.error);
-  if (!createLeaseDirectory(root, taskId)) throw new Error('lease creation failed');
-  writeLeaseOwnerDurably(root, taskId, reviewing.record);
+  if (!seedLeaseDirectory(root, taskId)) throw new Error('lease creation failed');
+  writeHistoricalLease(root, taskId, reviewing.record);
   return { root, task_id: taskId, publication_id: receipt.publication_id, receipt };
 }
 
@@ -187,7 +171,7 @@ describe('provider feedback intake fences', () => {
     });
     for (const [index, recordedAt] of ['2026-08-23T00:03:00Z', '2026-08-23T00:04:00Z'].entries()) {
       const takeover = index === 1;
-      const prepared = buildRepairDispatchProof({
+      const prepared = historicalRepairProof({
         publication_id: subject.publication_id,
         receipt_sha256: publicationReceiptDigest(subject.receipt),
         task_id: subject.task_id,
@@ -204,13 +188,12 @@ describe('provider feedback intake fences', () => {
         successor_generation: null,
         successor_state: null,
       });
-      writeRepairDispatchProof(subject.root, subject.publication_id, prepared);
-      const proof = transitionRepairDispatchProof(subject.root, subject.publication_id, prepared.repair_id, {
+      const proof = dispatchedRepairFixture(prepared, {
         successor_claim_id: takeover ? 'claim-feedback-next' : CLAIM,
         successor_generation: takeover ? 2 : 1,
         successor_state: takeover ? 'reserving' : 'bound',
       });
-      appendReactionAttemptReceipt(subject.root, subject.publication_id, buildReactionAttemptReceipt({
+      seedReactionReceipt(subject.root, subject.publication_id, buildReactionAttemptReceipt({
         publication_id: subject.publication_id,
         repair_id: proof.repair_id,
         successor_claim_id: proof.successor_claim_id!,
@@ -253,7 +236,7 @@ describe('provider feedback intake fences', () => {
       },
     });
     expect(projected).toMatchObject({ pending_count: 3, no_progress: false, snapshot_consistency: 'stable' });
-    expect(projected.repair_actions).toEqual(['resume_same_owner', 'explicit_takeover']);
+    expect(projected.repair_actions).toEqual([]);
     expect(reactionReads).toBe(4);
   });
 

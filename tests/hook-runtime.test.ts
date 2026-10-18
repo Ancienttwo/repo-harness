@@ -1,4 +1,4 @@
-import { boundLeaseFixture } from './helpers/sprint-fixture';
+import { seedLeaseDirectory, writeHistoricalLease, boundLeaseFixture, writeClaimTokenFixture, fixtureTaskId } from './helpers/sprint-fixture';
 import { describe, expect, test } from 'bun:test';
 import { execFileSync, spawnSync } from 'child_process';
 import {
@@ -18,9 +18,6 @@ import { runHook } from '../src/cli/hook/runtime';
 import { buildTaskMessageEvent } from '../src/core/fleet/task-message';
 import { buildLeaseOwnerRecord, deriveTaskRevision } from '../src/core/state/coordination-identity';
 import { sendTaskMessage } from '../src/effects/fleet/task-inbox';
-import { writeClaimTokenFixture } from './helpers/sprint-fixture';
-import { createLeaseDirectory, writeLeaseOwnerDurably } from '../src/effects/state/coordination-lease-store';
-import { fixtureTaskId } from './helpers/sprint-fixture';
 
 const RUNTIME_MODULE = join(import.meta.dir, '../src/cli/hook/runtime.ts');
 const GUARD_MODULE = join(import.meta.dir, '../src/cli/hook/mutation-guard.ts');
@@ -374,8 +371,8 @@ process.exit(child.status ?? 1);
       const worktree = realpathSync(root);
       const claimed = buildLeaseOwnerRecord({ claimId, taskId, taskRevision, sprintPath, targetRef: 'HEAD', generation: 1, sessionId: 'inbox-session', sourceWorktree: worktree });
       const bound = boundLeaseFixture(claimed, { executionWorktree: worktree, branch: 'feature', unitRef });
-      createLeaseDirectory(root, taskId);
-      writeLeaseOwnerDurably(root, taskId, bound);
+      seedLeaseDirectory(root, taskId);
+      writeHistoricalLease(root, taskId, bound);
       writeClaimTokenFixture({ task_id: taskId, claim_id: claimId, worktree, sprint: sprintPath, task: taskCell, unit_ref: unitRef });
       writeFileSync(join(root, '.ai/harness/active-plan'), `${unitRef}\n`);
       sendTaskMessage({

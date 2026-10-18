@@ -4,11 +4,11 @@ kind: component
 name: Provider Feedback
 status: active
 parent: capability.organization.publication
-summary: Owns manual GitHub feedback observation, immutable FeedbackEventV1 records, delivery receipts, repair attempts and the no-progress breaker.
+summary: Owns manual GitHub feedback observation, immutable feedback events, delivery receipts and historical repair-result projections.
 responsibilities:
-  - Persist provider facts as immutable events keyed by stable provider ids and keep mutable delivery state in separate files.
-  - Project pending repair offers for reopen or takeover without mutating the lease.
-  - Record completed repair attempts and report no_progress after repeated same-token attempts.
+  - Persist provider facts as immutable events keyed by stable provider ids and keep mutable manual delivery state in separate files.
+  - Project historical repair offers and no-progress outcomes without dispatching repairs or changing leases.
+  - Read prior repair and completion records without creating new repair lifecycle records.
 source:
   include:
     - "src/core/publication/feedback.ts"

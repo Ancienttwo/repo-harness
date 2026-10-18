@@ -175,7 +175,7 @@ describe('artifact retention selection', () => {
     expect(formatRetentionReport(report)).toContain('1 archived entries are tracked by Git. Retention does not stage or commit; commit their removal.');
   });
 
-  test('task records with a committed file stay in place', () => {
+  test('closed task records with a committed file leave Git after the window', () => {
     const root = fixture('.ai/harness/archive/\n');
     seed(root, 'tasks/archive/mixed/tracked.md', 90);
     seed(root, 'tasks/archive/mixed/local.md', 90);
@@ -183,10 +183,11 @@ describe('artifact retention selection', () => {
 
     const report = runArtifactRetention({ repoRoot: root, apply: true, now: NOW });
 
-    expect(report.archived).toEqual([]);
-    expect(report.skipped.map((entry) => [entry.path, entry.reason])).toEqual([['tasks/archive/mixed', 'tracked']]);
-    expect(git(root, ['status', '--porcelain', '--untracked-files=no', '--', 'tasks'])).toBe('');
-    expect(existsSync(join(root, 'tasks/archive/mixed/local.md'))).toBe(true);
+    expect(report.skipped).toEqual([]);
+    expect(report.archived.map(entry => [entry.path, entry.tracked])).toEqual([['tasks/archive/mixed', true]]);
+    expect(git(root, ['status', '--porcelain', '--untracked-files=no', '--', 'tasks'])).toBe(' D tasks/archive/mixed/tracked.md\n');
+    expect(existsSync(join(root, DEFAULT_ARCHIVE_ROOT, 'tasks/archive/mixed/local.md'))).toBe(true);
+    expect(git(root, ['diff', '--cached', '--name-only'])).toBe('');
   });
 
   test('a scanned directory reached through a symlink is refused before anything moves', () => {

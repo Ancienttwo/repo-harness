@@ -1,3 +1,5 @@
+import { serializeHistoricalLease } from './helpers/sprint-fixture';
+import { readFileSync } from 'fs';
 /**
  * WP3's falsifier: the hook board slice.
  *
@@ -17,7 +19,6 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import {
   deriveTaskRevision,
-  serializeLeaseOwnerRecord,
   type LeaseOwnerRecordV1,
   type NonReviewingPersistedLeaseState,
 } from '../src/core/state/coordination-identity';
@@ -159,7 +160,7 @@ function writeClaimToken(
 function writeLease(fixture: Fixture, record: LeaseOwnerRecordV1): void {
   const directory = join(coordinationRoot(fixture.primary), 'leases', record.task_id);
   mkdirSync(directory, { recursive: true });
-  writeFileSync(join(directory, LEASE_OWNER_FILE_NAME), serializeLeaseOwnerRecord(record));
+  writeFileSync(join(directory, LEASE_OWNER_FILE_NAME), serializeHistoricalLease(record));
 }
 
 function ownerRecord(
@@ -381,6 +382,18 @@ describe('claim tokens: ambiguity is never resolved by picking one', () => {
     const read = findClaimTokenByUnitRef(fixture.worktree, PLAN_PATH);
     expect(read.outcome).toBe('ambiguous');
     expect(read.outcome === 'ambiguous' && read.matches.length).toBe(2);
+  });
+
+  test('duplicate token fields are refused even when both values agree', () => {
+    const token = join(fixture.worktree, `.ai/harness/sprint/claims/${fixture.ownTaskId}.claim`);
+    for (const duplicated of [CLAIM_ID, 'claim-forged']) {
+      writeClaimToken(fixture.worktree, { taskId: fixture.ownTaskId, claimId: CLAIM_ID, taskCell: OWN_TASK_CELL, unitRef: PLAN_PATH });
+      expect(findClaimTokenByUnitRef(fixture.worktree, PLAN_PATH).outcome).toBe('found');
+      const raw = readFileSync(token, 'utf8') + `claim_id=${duplicated}\n`;
+      writeFileSync(token, raw);
+      expect(findClaimTokenByUnitRef(fixture.worktree, PLAN_PATH).outcome).toBe('none');
+      expect(readFileSync(token, 'utf8')).toBe(raw);
+    }
   });
 
   test('an inline unit_ref can never match a plan-path marker', () => {

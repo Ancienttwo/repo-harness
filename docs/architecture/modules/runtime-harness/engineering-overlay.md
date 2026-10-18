@@ -119,7 +119,7 @@ sequenceDiagram
 
 | 日期 | 决策 | 依据 |
 | --- | --- | --- |
-| 2026-08-26 | 建立 ME-1B Engineering Overlay 读模型和组织 attention 快照 | commit `e0dab6f6`；`plans/archive/plan-20260825-2339-me1b-engineering-overlay.md` |
+| 2026-08-26 | 建立 ME-1B Engineering Overlay 读模型和组织 attention 快照 | commit `e0dab6f6`；[historical record](https://github.com/Ancienttwo/repo-harness/blob/f3f2862df/plans/archive/plan-20260825-2339-me1b-engineering-overlay.md) |
 | 2026-08-31 | 增加 `runtime_effects` 组件和 `runtime_reconciliation_required` attention | PR #230（commit `4f7cb37e`） |
 | 2026-09-04 | `runtime_effects` 增加只观测的 wake 计数（pending、delivered、failed、reconciliation_required）。Agent Runtime effect journal 仍是权威 | PR #297（commit `ab6cc8a0`） |
 

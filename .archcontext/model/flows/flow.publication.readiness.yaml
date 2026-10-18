@@ -1,0 +1,50 @@
+schemaVersion: archcontext.flow/v1
+id: flow.publication.readiness
+capabilityId: capability.organization.publication
+name: Read fenced PR readiness
+applicability: required
+participants:
+  - id: publication
+    nodeId: capability.organization.publication
+  - id: reader
+    nodeId: component.publication.primary
+steps:
+  - id: derive-readiness
+    from: publication
+    to: reader
+    label: Read receipt and provider facts for the exact head and base
+    evidence:
+      entrypointId: entrypoint.publication.command
+      sourceSymbol: buildPublicationCommand
+      sinkId: sink.publication.readiness
+outcomes:
+  - id: success
+    kind: success
+    label: Report the read-only readiness verdict
+    steps:
+      - id: read-success
+        from: publication
+        to: reader
+        label: Resolve the exact provider facts and return the read-only verdict
+        evidence:
+          entrypointId: entrypoint.publication.command
+          sourceSymbol: buildPublicationCommand
+          sinkId: sink.publication.readiness
+    terminal:
+      participant: publication
+      label: Return readiness and leave publication authority with GitHub
+  - id: unavailable
+    kind: error
+    label: Provider or historical receipt facts are unavailable
+    steps:
+      - id: read-unavailable
+        from: publication
+        to: reader
+        label: Refuse missing or inconsistent provider and receipt facts with a typed error
+        evidence:
+          entrypointId: entrypoint.publication.command
+          sourceSymbol: buildPublicationCommand
+          sinkId: sink.publication.readiness
+    terminal:
+      participant: publication
+      label: Return the typed read error without changing task ownership

@@ -3,52 +3,19 @@ import { migrateTaskInboxLayout, TaskInboxMigrationError } from '../../effects/f
 import { TaskInboxLayoutError } from '../../effects/fleet/task-inbox-layout';
 import { pruneRepoHarnessRegistry } from '../../effects/repo-registry';
 import { randomUUID } from 'crypto';
-import { lstatSync, realpathSync, readdirSync, readFileSync } from 'fs';
+import { lstatSync, readdirSync, readFileSync } from 'fs';
 import { join } from 'path';
 
-import {
-  MergeReadinessError,
-  resolveFleetReadiness,
-} from '../../effects/publication/merge-readiness';
-import {
-  FleetOffersError,
-} from '../../effects/fleet/acquire';
-import {
-  collectFleetBoard,
-  FleetBoardError,
-  watchFleetBoard,
-} from '../../effects/fleet/board';
-import {
-  ackTaskInbox,
-  deliverTaskInbox,
-  listTaskInbox,
-  sendTaskMessage,
-  TaskInboxError,
-} from '../../effects/fleet/task-inbox';
-import {
-  buildTaskMessageEvent,
-  TaskMessageError,
-  type TaskMessageEventInput,
-  type TaskMessageRecipient,
-} from '../../core/fleet/task-message';
+import { MergeReadinessError, resolveFleetReadiness } from '../../effects/publication/merge-readiness';
+import { FleetOffersError } from '../../effects/fleet/acquire';
+import { collectFleetBoard, FleetBoardError, watchFleetBoard } from '../../effects/fleet/board';
+import { ackTaskInbox, deliverTaskInbox, listTaskInbox, sendTaskMessage, TaskInboxError } from '../../effects/fleet/task-inbox';
+import { buildTaskMessageEvent, TaskMessageError, type TaskMessageEventInput, type TaskMessageRecipient } from '../../core/fleet/task-message';
 import { readActiveSprintPath, readCanonicalTargetRef } from '../../effects/state/collect-board-inputs';
 import { readCanonicalSprint, resolveRepoIdentity } from '../../effects/state/coordination-canonical-source';
 import { lookupCanonicalTask } from '../../core/state/coordination-identity';
-import {
-  FeedbackError,
-  intakeGitHubFeedback,
-  projectPendingFeedbackOffer,
-  recordCompletedFeedbackRepair,
-  reopenFeedbackRepair,
-  showGitHubFeedback,
-  takeoverFeedbackRepair,
-  transitionFeedbackDelivery,
-} from '../../effects/publication/feedback';
-import {
-  FeedbackStoreError,
-  readFeedbackDeliveryReceipt,
-  readRepairDispatchProof,
-} from '../../effects/publication/feedback-store';
+import { FeedbackError, intakeGitHubFeedback, projectPendingFeedbackOffer, showGitHubFeedback, transitionFeedbackDelivery } from '../../effects/publication/feedback';
+import { FeedbackStoreError, readFeedbackDeliveryReceipt } from '../../effects/publication/feedback-store';
 import { publicationReceiptDigest } from '../../core/publication/publication-receipt';
 import { readPublicationReceiptCache } from '../../effects/publication/publication-receipt';
 import { coordinationRoot, readLease } from '../../effects/state/coordination-lease-store';
@@ -178,68 +145,6 @@ function optionalStringOption(value: string | undefined, name: string): string |
   return trimmed;
 }
 
-function requiredIntegerOption(value: string | undefined, name: string, minimum = 1): number {
-  const result = integerOption(value, name, minimum);
-  if (result === undefined) throw new Error(`--${name} is required`);
-  return result;
-}
-
-interface FeedbackRepairFence {
-  readonly publication_id: string;
-  readonly feedback_revision: string;
-  readonly task_id: string;
-  readonly claim_id: string;
-  readonly generation: number;
-  readonly head_sha: string;
-}
-
-interface FeedbackRepairFenceOptions {
-  readonly json?: boolean;
-  readonly publicationId?: string;
-  readonly feedbackRevision?: string;
-  readonly taskId?: string;
-  readonly claimId?: string;
-  readonly generation?: string;
-  readonly headSha?: string;
-}
-
-function parseFeedbackRepairFence(options: FeedbackRepairFenceOptions): FeedbackRepairFence {
-  requireJson(options.json);
-  return {
-    publication_id: requiredStringOption(options.publicationId, 'publication-id'),
-    feedback_revision: requiredStringOption(options.feedbackRevision, 'feedback-revision'),
-    task_id: requiredStringOption(options.taskId, 'task-id'),
-    claim_id: requiredStringOption(options.claimId, 'claim-id'),
-    generation: requiredIntegerOption(options.generation, 'generation'),
-    head_sha: requiredStringOption(options.headSha, 'head-sha'),
-  };
-}
-
-function projectFeedbackRepairOffer(fence: FeedbackRepairFence) {
-  const projected = projectPendingFeedbackOffer({
-    repo_root: process.cwd(),
-    publication_id: fence.publication_id,
-    git_bin: process.env.REPO_HARNESS_GIT_BIN,
-  });
-  if (projected.state === 'no_progress') {
-    throw new FeedbackError('no_progress', 'feedback repair is halted for user attention');
-  }
-  if (projected.state === 'none') {
-    throw new FeedbackError('feedback_incomplete', 'no pending provider feedback repair offer exists');
-  }
-  const offer = projected.offer;
-  if (
-    offer.publication_id !== fence.publication_id
-    || offer.feedback_revision !== fence.feedback_revision
-    || offer.task_id !== fence.task_id
-    || offer.expected_claim_id !== fence.claim_id
-    || offer.expected_generation !== fence.generation
-    || offer.expected_head_sha !== fence.head_sha
-  ) {
-    throw new FeedbackError('repair_offer_stale', 'feedback repair fences do not match the current projected offer');
-  }
-  return offer;
-}
 
 function resolveCurrentFeedbackPublication(): string {
   const repoRoot = process.cwd();
@@ -309,18 +214,6 @@ function failCurrentFeedbackPublication(
     'publication_claim_mismatch',
     `current reviewing publication is ambiguous: ${candidates.join(', ')}`,
   );
-}
-
-function outputRepairDispatchResult(result: ReturnType<typeof reopenFeedbackRepair>): void {
-  const repairId = result.envelope.repair_id;
-  const proof = readRepairDispatchProof(
-    process.cwd(),
-    result.envelope.publication_id,
-    repairId,
-    process.env.REPO_HARNESS_GIT_BIN,
-  );
-  if (proof === null) throw new FeedbackError('repair_not_dispatched', 'repair dispatch proof is unavailable after lifecycle dispatch');
-  process.stdout.write(`${JSON.stringify({ ok: true, ...result, repair_id: repairId, proof })}\n`);
 }
 
 function integerOption(
@@ -580,125 +473,6 @@ export function buildFleetCommand(): Command {
           provider_event_id: providerEventId,
         });
         process.stdout.write(`${JSON.stringify({ ok: true, ...result })}\n`);
-      } catch (error) {
-        outputError(error);
-      }
-    });
-
-  const repair = feedback
-    .command('repair')
-    .description('Re-enter an existing publication through the feedback repair lifecycle');
-
-  repair
-    .command('reopen')
-    .description('Reopen the current publication for its existing owner')
-    .option('--json', 'Output JSON')
-    .option('--publication-id <publicationId>', 'Publication identity fence')
-    .option('--feedback-revision <revision>', 'Feedback revision fence')
-    .option('--task-id <taskId>', 'Task identity fence')
-    .option('--claim-id <claimId>', 'Claim identity fence')
-    .option('--generation <generation>', 'Lease generation fence')
-    .option('--head-sha <sha>', 'Publication head fence')
-    .action((options: FeedbackRepairFenceOptions) => {
-      let fence: FeedbackRepairFence;
-      try {
-        fence = parseFeedbackRepairFence(options);
-      } catch (error) {
-        outputFeedbackValidation(error);
-        return;
-      }
-      try {
-        const offer = projectFeedbackRepairOffer(fence);
-        const result = reopenFeedbackRepair({
-          ...feedbackEnvironment(),
-          offer,
-          delivered_at: new Date().toISOString(),
-        });
-        outputRepairDispatchResult(result);
-      } catch (error) {
-        outputError(error);
-      }
-    });
-
-  repair
-    .command('takeover')
-    .description('Take over the current publication through reserving')
-    .option('--json', 'Output JSON')
-    .option('--publication-id <publicationId>', 'Publication identity fence')
-    .option('--feedback-revision <revision>', 'Feedback revision fence')
-    .option('--task-id <taskId>', 'Task identity fence')
-    .option('--claim-id <claimId>', 'Claim identity fence')
-    .option('--generation <generation>', 'Lease generation fence')
-    .option('--head-sha <sha>', 'Publication head fence')
-    .option('--reason <reason>', 'Human-readable takeover reason')
-    .option('--session-id <sessionId>', 'New owner session identity')
-    .action((options: FeedbackRepairFenceOptions & {
-      readonly reason?: string;
-      readonly sessionId?: string;
-    }) => {
-      let fence: FeedbackRepairFence;
-      let reason: string;
-      let sessionId: string;
-      try {
-        fence = parseFeedbackRepairFence(options);
-        reason = requiredStringOption(options.reason, 'reason');
-        sessionId = requiredStringOption(options.sessionId, 'session-id');
-      } catch (error) {
-        outputFeedbackValidation(error);
-        return;
-      }
-      try {
-        const offer = projectFeedbackRepairOffer(fence);
-        const result = takeoverFeedbackRepair({
-          ...feedbackEnvironment(),
-          offer,
-          reason,
-          session_id: sessionId,
-          new_claim_id: randomUUID(),
-          source_worktree: realpathSync(process.cwd()),
-          delivered_at: new Date().toISOString(),
-        });
-        outputRepairDispatchResult(result);
-      } catch (error) {
-        outputError(error);
-      }
-    });
-
-  repair
-    .command('complete')
-    .description('Record one shipped feedback repair completion by durable repair locator')
-    .option('--json', 'Output JSON')
-    .option('--publication-id <publicationId>', 'Source publication identity locator')
-    .option('--repair-id <repairId>', 'Durable dispatched repair proof locator')
-    .option('--recorded-at <timestamp>', 'Completion timestamp (defaults to now)')
-    .action((options: {
-      readonly json?: boolean;
-      readonly publicationId?: string;
-      readonly repairId?: string;
-      readonly recordedAt?: string;
-    }) => {
-      let publicationId: string;
-      let repairId: string;
-      let recordedAt: string;
-      try {
-        requireJson(options.json);
-        publicationId = requiredStringOption(options.publicationId, 'publication-id');
-        repairId = requiredStringOption(options.repairId, 'repair-id');
-        recordedAt = options.recordedAt === undefined
-          ? new Date().toISOString()
-          : requiredStringOption(options.recordedAt, 'recorded-at');
-      } catch (error) {
-        outputFeedbackValidation(error);
-        return;
-      }
-      try {
-        const receipt = recordCompletedFeedbackRepair({
-          ...feedbackEnvironment(),
-          publication_id: publicationId,
-          repair_id: repairId,
-          recorded_at: recordedAt,
-        });
-        process.stdout.write(`${JSON.stringify({ ok: true, receipt })}\n`);
       } catch (error) {
         outputError(error);
       }

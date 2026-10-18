@@ -34,9 +34,7 @@
     "current_status_file": "tasks/current.md",
     "lessons_file": "tasks/lessons.md",
     "research_dir": "docs/researches",
-    "workstreams_dir": "tasks/workstreams",
-    "reviews_dir": "tasks/reviews",
-    "notes_dir": "tasks/notes"
+    "workstreams_dir": "tasks/workstreams"
   },
   "prds": {
     "dir": "plans/prds",
@@ -52,7 +50,6 @@
     "dir": "plans/sprints",
     "active_marker_file": ".ai/harness/sprint/active-sprint",
     "template_file": ".claude/templates/sprint.template.md",
-    "helper_script": "repo-harness run sprint-backlog",
     "statuses": [
       "Draft",
       "Approved",
@@ -248,7 +245,6 @@
     "review_base": "origin/main",
     "worktree_dir_template": "/tmp/{{repo}}-wt-{{slug}}",
     "start_script": "repo-harness run contract-worktree start --plan <plan-file>",
-    "finish_script": "repo-harness run contract-worktree finish",
     "cleanup_script": "repo-harness run contract-worktree cleanup --slug <slug>",
     "conflict_signals": [
       "dirty_worktree_overlaps_task_files",

@@ -278,22 +278,6 @@ type ParsedArchiveProjection = {
   manifestSha256: string;
 };
 
-export type ArchiveProjectionReceipt = {
-  protocol: 1;
-  kind: 'repo-harness-archive-projection-receipt';
-  repository_root: string;
-  acceptance_receipt_sha256: string;
-  contract_sha256: string;
-  goal_sha256: string;
-  projection_sha256: string;
-  files: Array<{
-    kind: ArchiveProjectionKind;
-    path: string;
-    sha256: string;
-  }>;
-  issued_at: string;
-};
-
 function archiveProjectionKind(path: string, archived: boolean): ArchiveProjectionKind | null {
   const patterns: Array<[ArchiveProjectionKind, RegExp]> = archived
     ? [
@@ -515,7 +499,7 @@ export function inspectAcceptanceEvidence(args: {
   assessmentContract?: string;
 }): AcceptanceEvidence {
   const root = realpathSync(args.root);
-  const contractContent = args.contractContent ?? readRegular(root, args.contract, 'contract').content;
+  const contractContent = args.contractContent ?? readCurrentContract(root, args.contract).content;
   if (isRecord(args.report) && args.report.kind === 'verification_unavailable') fail('verification evidence is unavailable: ' + args.report.reason);
   const execution = requireFromHelper(join(PACKAGE_ROOT, 'src/effects/evidence/verification-execution.ts')) as typeof import('../src/effects/evidence/verification-execution');
   let report: import('../src/effects/evidence/verification-execution').VerificationExecutionReport;
@@ -569,32 +553,17 @@ export function inspectAcceptanceEvidence(args: {
 }
 
 function normalizedVerificationEvidence(content: string, subject: ReviewSubject, root: string, contractPath: string,
-  contractContent: string, historical = false): AcceptanceEvidence {
+  contractContent: string): AcceptanceEvidence {
   let report: unknown;
   try { report = JSON.parse(content); } catch (error) { fail('verification evidence is invalid JSON: ' + (error as Error).message); }
   const execution = requireFromHelper(join(PACKAGE_ROOT, 'src/effects/evidence/verification-execution.ts')) as typeof import('../src/effects/evidence/verification-execution');
-  if (!historical) {
-    if (!isRecord(report) || !isRecord(report.target) || report.target.contract !== contractPath) fail('verification evidence contract is stale for the active acceptance contract');
-    const current = execution.evaluateVerificationContract({ repoRoot: root, contractPath });
-    if (current.kind === 'verification_unavailable') fail('verification evidence is unavailable: ' + current.reason);
-    if (!current.passed) fail('verification evidence is stale: current passing evaluation is unavailable');
-    if (!isRecord(report) || !isRecord(report.target) || report.target.snapshot_hash !== current.target.snapshot_hash
-      || report.target.plan_hash !== current.target.plan_hash) fail('verification evidence is stale for the current source snapshot');
-  }
-  let declaredContract = contractPath;
-  let originalContract = contractContent;
-  if (historical) {
-    if (!isRecord(report) || !isRecord(report.target) || typeof report.target.contract !== 'string'
-      || typeof report.target.tree_hash !== 'string' || !/^[0-9a-f]{40,64}$/.test(report.target.tree_hash)) fail('historical verification report target is invalid');
-    declaredContract = report.target.contract;
-    if (unsafeRepoRelativePath(declaredContract)) fail('historical verification contract path is unsafe');
-    const runtime = resolveProtectedGitRuntime();
-    const blob = spawnSync(runtime.gitBin, ['-C', root, 'show', report.target.tree_hash + ':' + declaredContract], { encoding: 'utf8', env: runtime.env });
-    if (blob.status !== 0) fail('historical verification original contract bytes are unavailable');
-    originalContract = blob.stdout;
-    if (authorityFingerprint(originalContract) !== authorityFingerprint(contractContent)) fail('historical verification original contract authority is stale');
-  }
-  return inspectAcceptanceEvidence({ root, contract: declaredContract, contractContent: originalContract, report, subject, current: !historical, assessmentContract: contractPath });
+  if (!isRecord(report) || !isRecord(report.target) || report.target.contract !== contractPath) fail('verification evidence contract is stale for the active acceptance contract');
+  const current = execution.evaluateVerificationContract({ repoRoot: root, contractPath });
+  if (current.kind === 'verification_unavailable') fail('verification evidence is unavailable: ' + current.reason);
+  if (!current.passed) fail('verification evidence is stale: current passing evaluation is unavailable');
+  if (!isRecord(report) || !isRecord(report.target) || report.target.snapshot_hash !== current.target.snapshot_hash
+    || report.target.plan_hash !== current.target.plan_hash) fail('verification evidence is stale for the current source snapshot');
+  return inspectAcceptanceEvidence({ root, contract: contractPath, contractContent, report, subject, current: true, assessmentContract: contractPath });
 }
 
 function stateRoot(authorityHome: string): string {
@@ -613,64 +582,8 @@ export function acceptanceReceiptPath(root: string, authorityHome: string, creat
   return join(parent, 'acceptance.latest.json');
 }
 
-export function archiveProjectionReceiptPath(root: string, authorityHome: string, createParent = false): string {
-  const repoId = createHash('sha256').update(realpathSync(root)).digest('hex');
-  const parent = join(stateRoot(authorityHome), 'gates', repoId);
-  if (createParent) {
-    mkdirSync(parent, { recursive: true, mode: 0o700 });
-    chmodSync(parent, 0o700);
-  }
-  return join(parent, 'archive-projection.latest.json');
-}
 
-function readArchiveProjectionReceipt(path: string): ArchiveProjectionReceipt {
-  if (!existsSync(path)) fail(`ArchiveProjectionReceipt is missing: ${path}`);
-  let value: unknown;
-  try {
-    value = JSON.parse(readFileSync(path, 'utf-8'));
-  } catch (error) {
-    fail(`ArchiveProjectionReceipt is invalid JSON: ${(error as Error).message}`);
-  }
-  if (!isRecord(value) || value.protocol !== 1 || value.kind !== 'repo-harness-archive-projection-receipt') {
-    fail('ArchiveProjectionReceipt kind/protocol is invalid');
-  }
-  for (const field of [
-    'repository_root', 'acceptance_receipt_sha256', 'contract_sha256', 'goal_sha256',
-    'projection_sha256', 'issued_at',
-  ]) {
-    if (typeof value[field] !== 'string' || String(value[field]).trim() === '') {
-      fail(`ArchiveProjectionReceipt ${field} is required`);
-    }
-  }
-  for (const field of ['acceptance_receipt_sha256', 'contract_sha256', 'goal_sha256', 'projection_sha256']) {
-    if (!/^sha256:[0-9a-f]{64}$/.test(String(value[field]))) {
-      fail(`ArchiveProjectionReceipt ${field} is invalid`);
-    }
-  }
-  if (!Array.isArray(value.files) || value.files.length < 2) fail('ArchiveProjectionReceipt files are invalid');
-  const files = value.files.map((entry, index) => {
-    if (!isRecord(entry)
-      || !['plan', 'contract', 'review', 'notes'].includes(String(entry.kind))
-      || typeof entry.path !== 'string'
-      || archiveProjectionKind(entry.path, true) !== entry.kind
-      || typeof entry.sha256 !== 'string'
-      || !/^sha256:[0-9a-f]{64}$/.test(entry.sha256)) {
-      fail(`ArchiveProjectionReceipt file ${index} is invalid`);
-    }
-    return { kind: entry.kind, path: entry.path, sha256: entry.sha256 } as ArchiveProjectionReceipt['files'][number];
-  });
-  if (new Set(files.map((entry) => entry.path)).size !== files.length) {
-    fail('ArchiveProjectionReceipt files must be unique');
-  }
-  return { ...value, files } as ArchiveProjectionReceipt;
-}
 
-function writeArchiveProjectionReceipt(path: string, receipt: ArchiveProjectionReceipt): void {
-  const temporary = `${path}.${process.pid}.tmp`;
-  writeFileSync(temporary, `${JSON.stringify(receipt, null, 2)}\n`, { mode: 0o600 });
-  chmodSync(temporary, 0o600);
-  renameSync(temporary, path);
-}
 
 export function userWaiverGrantPath(root: string, authorityHome: string, createParent = false): string {
   const repoId = createHash('sha256').update(realpathSync(root)).digest('hex');
@@ -689,8 +602,8 @@ export const ACCEPTANCE_VERIFICATION_OBSERVATION_KIND = 'repo-harness-acceptance
  * The acceptance authority's own record-time observation of one verified
  * acceptance. It exists so a reader that needs an acceptance verdict does not
  * re-derive one: everything the asynchronous `verifyAcceptance` proved at
- * record time (live normalized subject, verification evidence fingerprint,
- * archive-projection seal) is frozen here by the authority that proved it.
+ * record time (live normalized subject and verification evidence fingerprint)
+ * is frozen here by the authority that proved it.
  * Readers verify identity and bytes; they never recompute the verdict.
  */
 export type AcceptanceVerificationObservationV1 = {
@@ -708,6 +621,7 @@ export type AcceptanceVerificationObservationV1 = {
   subject_sha256: string;
   verification_evidence_sha256: string;
   disposition: AcceptanceDisposition;
+  /** Historical reader field. Current acceptance writers always store null. */
   archive_projection_sha256: string | null;
   verified_at: string;
 };
@@ -778,7 +692,6 @@ export function writeAcceptanceVerificationObservation(args: {
   root: string;
   authorityHome: string;
   receipt: AcceptanceReceipt;
-  archiveProjectionSha256: string | null;
 }): AcceptanceVerificationObservationV1 {
   const root = realpathSync(args.root);
   const acceptancePath = acceptanceReceiptPath(root, args.authorityHome);
@@ -794,7 +707,7 @@ export function writeAcceptanceVerificationObservation(args: {
     subject_sha256: args.receipt.subject_sha256,
     verification_evidence_sha256: args.receipt.verification_evidence_sha256,
     disposition: args.receipt.disposition,
-    archive_projection_sha256: args.archiveProjectionSha256,
+    archive_projection_sha256: null,
     verified_at: args.receipt.issued_at,
   });
   const path = acceptanceVerificationObservationPath(
@@ -1160,134 +1073,18 @@ function writeUserWaiverGrant(path: string, grant: UserWaiverGrant): void {
   renameSync(temporary, path);
 }
 
-function resolveArchived(root: string, path: string, family: 'plans' | 'tasks', fingerprint: string): string {
-  if (existsSync(resolve(root, path))) return path;
-  const archiveRoot = join(root, family, 'archive');
-  if (!existsSync(archiveRoot)) fail(`receipt authority file is missing: ${path}`);
-  const runtime = resolveProtectedGitRuntime();
-  const tracked = spawnSync(runtime.gitBin, ['-C', root, 'ls-files', `${family}/archive`], { encoding: 'utf-8', env: runtime.env })
-    .stdout.split(/\r?\n/).filter(Boolean);
-  const matches = tracked.filter((candidate) => {
-    const absolute = resolve(root, candidate);
-    return existsSync(absolute) && lstatSync(absolute).isFile()
-      && authorityFingerprint(readFileSync(absolute, 'utf-8')) === fingerprint;
-  });
-  if (matches.length !== 1) fail(`cannot resolve archived authority file: ${path}`);
-  return matches[0];
+
+
+
+
+function readCurrentContract(root: string, path: string): { path: string; content: string } {
+  const contract = readRegular(root, path, 'contract');
+  if (contract.path.startsWith('tasks/archive/') || contractCarriesArchiveProjection(contract.content)) {
+    fail('archived contracts cannot authorize acceptance');
+  }
+  return contract;
 }
 
-function collectArchiveProjection(root: string, contract: { path: string; content: string }): {
-  parsed: ParsedArchiveProjection;
-  files: ArchiveProjectionReceipt['files'];
-  projectionSha256: string;
-  goal: { path: string; content: string };
-} {
-  const parsed = parseArchiveProjection(contract.content);
-  if (!parsed || parsed.lifecycle !== 'contract') fail('archived contract projection is unavailable');
-  const files = parsed.entries.map((entry) => {
-    const artifact = readRegular(root, entry.destination, `archive projection ${entry.kind}`);
-    const artifactProjection = parseArchiveProjection(artifact.content);
-    if (!artifactProjection
-      || artifactProjection.lifecycle !== entry.kind
-      || artifact.path !== entry.destination
-      || artifactProjection.relatedPlan !== parsed.relatedPlan
-      || artifactProjection.manifestSha256 !== parsed.manifestSha256) {
-      fail(`archive projection ${entry.kind} does not share the exact manifest`);
-    }
-    return { kind: entry.kind, path: artifact.path, sha256: sha256(artifact.content) };
-  }).sort((left, right) => left.path.localeCompare(right.path));
-  const contractEntry = parsed.entries.find((entry) => entry.kind === 'contract');
-  const planEntry = parsed.entries.find((entry) => entry.kind === 'plan');
-  if (!contractEntry || contractEntry.destination !== contract.path || !planEntry) {
-    fail('archive projection does not own the selected contract and plan');
-  }
-  const goal = readRegular(root, planEntry.destination, 'archive projection plan');
-  return {
-    parsed,
-    files,
-    projectionSha256: sha256(stableJson({
-      manifest_sha256: parsed.manifestSha256,
-      files,
-    })),
-    goal,
-  };
-}
-
-export function sealArchiveProjection(args: {
-  root: string;
-  authorityHome: string;
-  contract: string;
-  now?: () => Date;
-}): ArchiveProjectionReceipt {
-  const root = realpathSync(args.root);
-  const acceptancePath = acceptanceReceiptPath(root, args.authorityHome);
-  const acceptance = readReceipt(acceptancePath);
-  if (acceptance.repository_root !== root) fail('AcceptanceReceipt repository root is stale');
-  const contract = readRegular(root, args.contract, 'archived contract');
-  const projection = collectArchiveProjection(root, contract);
-  const contractEntry = projection.parsed.entries.find((entry) => entry.kind === 'contract');
-  const planEntry = projection.parsed.entries.find((entry) => entry.kind === 'plan');
-  if (contractEntry?.source !== acceptance.contract_file || planEntry?.source !== acceptance.goal_file) {
-    fail('archive projection sources do not match the accepted authorities');
-  }
-  if (authorityFingerprint(contract.content) !== acceptance.contract_sha256
-    || authorityFingerprint(projection.goal.content) !== acceptance.goal_sha256) {
-    fail('archive projection changes accepted contract or goal authority');
-  }
-  const receipt: ArchiveProjectionReceipt = {
-    protocol: 1,
-    kind: 'repo-harness-archive-projection-receipt',
-    repository_root: root,
-    acceptance_receipt_sha256: sha256(readFileSync(acceptancePath)),
-    contract_sha256: acceptance.contract_sha256,
-    goal_sha256: acceptance.goal_sha256,
-    projection_sha256: projection.projectionSha256,
-    files: projection.files,
-    issued_at: (args.now ?? (() => new Date()))().toISOString(),
-  };
-  writeArchiveProjectionReceipt(archiveProjectionReceiptPath(root, args.authorityHome, true), receipt);
-  return receipt;
-}
-
-function verifyArchiveProjectionAuthority(args: {
-  root: string;
-  authorityHome: string;
-  acceptance: AcceptanceReceipt;
-  contract: { path: string; content: string };
-}): void {
-  const parsed = parseArchiveProjection(args.contract.content);
-  if (!parsed) return;
-  const seal = readArchiveProjectionReceipt(archiveProjectionReceiptPath(args.root, args.authorityHome));
-  const acceptancePath = acceptanceReceiptPath(args.root, args.authorityHome);
-  const projection = collectArchiveProjection(args.root, args.contract);
-  const expected = {
-    repository_root: args.root,
-    acceptance_receipt_sha256: sha256(readFileSync(acceptancePath)),
-    contract_sha256: args.acceptance.contract_sha256,
-    goal_sha256: args.acceptance.goal_sha256,
-    projection_sha256: projection.projectionSha256,
-    files: projection.files,
-  };
-  if (seal.repository_root !== expected.repository_root
-    || seal.acceptance_receipt_sha256 !== expected.acceptance_receipt_sha256
-    || seal.contract_sha256 !== expected.contract_sha256
-    || seal.goal_sha256 !== expected.goal_sha256
-    || seal.projection_sha256 !== expected.projection_sha256
-    || stableJson(seal.files) !== stableJson(expected.files)) {
-    fail('ArchiveProjectionReceipt is stale');
-  }
-}
-
-export function acceptanceAuthorityFingerprint(root: string, authorityHome: string): string {
-  const acceptancePath = acceptanceReceiptPath(root, authorityHome);
-  if (!existsSync(acceptancePath)) fail(`AcceptanceReceipt is missing: ${acceptancePath}`);
-  const acceptanceBytes = readFileSync(acceptancePath);
-  const archivePath = archiveProjectionReceiptPath(root, authorityHome);
-  if (!existsSync(archivePath)) return sha256(acceptanceBytes);
-  const archive = readArchiveProjectionReceipt(archivePath);
-  if (archive.acceptance_receipt_sha256 !== sha256(acceptanceBytes)) return sha256(acceptanceBytes);
-  return sha256(Buffer.concat([acceptanceBytes, readFileSync(archivePath)]));
-}
 
 export function recordUserWaiverGrant(args: {
   root: string;
@@ -1299,7 +1096,7 @@ export function recordUserWaiverGrant(args: {
 }): UserWaiverGrant {
   if (args.summary.trim() === '') fail('waiver grant summary is required');
   const root = realpathSync(args.root);
-  const contract = readRegular(root, args.contract, 'contract');
+  const contract = readCurrentContract(root, args.contract);
   const policy = parseAcceptancePolicy(contract.content);
   if (policy.user_waiver !== 'allowed') fail('contract forbids user waiver');
   const owner = markdownHeader(contract.content, 'Owner');
@@ -1332,25 +1129,16 @@ export function verifyUserWaiverGrant(args: {
   const root = realpathSync(args.root);
   const grant = readUserWaiverGrant(userWaiverGrantPath(root, args.authorityHome));
   if (grant.repository_root !== root) fail('UserWaiverGrant repository root is stale');
-  const contractPath = args.contract ?? resolveArchived(root, grant.contract_file, 'tasks', grant.contract_sha256);
-  const contract = readRegular(root, contractPath, 'contract');
-  if (contract.path !== grant.contract_file) {
-    const originalStillExists = existsSync(resolve(root, grant.contract_file));
-    if (originalStillExists || !contract.path.startsWith('tasks/archive/')) {
-      fail('UserWaiverGrant contract file is stale');
-    }
-  }
+  const contractPath = args.contract ?? grant.contract_file;
+  const contract = readCurrentContract(root, contractPath);
+  if (contract.path !== grant.contract_file) fail('UserWaiverGrant contract file is stale');
   if (authorityFingerprint(contract.content) !== grant.contract_sha256) fail('UserWaiverGrant contract authority is stale');
   const policy = parseAcceptancePolicy(contract.content);
   if (policy.user_waiver !== 'allowed') fail('contract forbids user waiver');
   if (markdownHeader(contract.content, 'Owner') !== grant.actor) fail('UserWaiverGrant owner is stale');
-  const goalPath = resolveArchived(root, grant.goal_file, 'plans', grant.goal_sha256);
+  const goalPath = grant.goal_file;
   const goal = readRegular(root, goalPath, 'goal');
   if (authorityFingerprint(goal.content) !== grant.goal_sha256) fail('UserWaiverGrant goal authority is stale');
-  if (parseArchiveProjection(contract.content)) {
-    const acceptance = readReceipt(acceptanceReceiptPath(root, args.authorityHome));
-    verifyArchiveProjectionAuthority({ root, authorityHome: args.authorityHome, acceptance, contract });
-  }
   return grant;
 }
 
@@ -1366,7 +1154,7 @@ export async function acceptanceContext(args: {
   authorityHome?: string;
 }) {
   const root = realpathSync(args.root);
-  const contract = readRegular(root, args.contract, 'contract');
+  const contract = readCurrentContract(root, args.contract);
   const policy = parseAcceptancePolicy(contract.content);
   const owner = markdownHeader(contract.content, 'Owner');
   const goalPath = markdownHeader(contract.content, 'Plan');
@@ -1374,13 +1162,7 @@ export async function acceptanceContext(args: {
   const goal = readRegular(root, goalPath, 'goal');
   const verification = verificationReportFile(root, args.verification);
   const subject = await currentSubject(root);
-  const historical = contractCarriesArchiveProjection(contract.content);
-  if (historical) {
-    if (!args.authorityHome) fail('historical acceptance requires the recorded archive authority');
-    const receipt = readReceipt(acceptanceReceiptPath(root, args.authorityHome));
-    verifyArchiveProjectionAuthority({ root, authorityHome: args.authorityHome, acceptance: receipt, contract });
-  }
-  const evidence = normalizedVerificationEvidence(verification.content, subject, root, contract.path, contract.content, historical);
+  const evidence = normalizedVerificationEvidence(verification.content, subject, root, contract.path, contract.content);
   return { root, contract, policy, owner, goal, verification, subject, evidence };
 }
 
@@ -1395,18 +1177,13 @@ function buildReceipt(
   waiverGrantSha256: string | null,
   now: () => Date,
 ): AcceptanceReceipt {
-  const archiveProjection = parseArchiveProjection(context.contract.content);
-  const canonicalContract = archiveProjection?.entries.find((entry) => entry.kind === 'contract')?.source
-    ?? context.contract.path;
-  const canonicalGoal = archiveProjection?.entries.find((entry) => entry.kind === 'plan')?.source
-    ?? context.goal.path;
   return {
     protocol: 2,
     kind: 'repo-harness-acceptance-receipt',
     repository_root: context.root,
-    contract_file: canonicalContract,
+    contract_file: context.contract.path,
     contract_sha256: authorityFingerprint(context.contract.content),
-    goal_file: canonicalGoal,
+    goal_file: context.goal.path,
     goal_sha256: authorityFingerprint(context.goal.content),
     verification_file: context.verification.path,
     verification_evidence_sha256: context.evidence.fingerprint,
@@ -1430,10 +1207,9 @@ function buildReceipt(
   };
 }
 
-function writeAcceptanceWithArchiveProjection(
+function writeAcceptanceWithObservation(
   root: string,
   authorityHome: string,
-  contract: { path: string; content: string },
   receipt: AcceptanceReceipt,
 ): void {
   const acceptancePath = acceptanceReceiptPath(root, authorityHome, true);
@@ -1454,51 +1230,23 @@ function writeAcceptanceWithArchiveProjection(
     chmodSync(observationPath, 0o600);
   };
   const previousAcceptance = existsSync(acceptancePath) ? readFileSync(acceptancePath) : null;
-  if (!parseArchiveProjection(contract.content)) {
-    try {
-      writeReceipt(acceptancePath, receipt);
-      // The observation is part of the same acceptance transaction: an
-      // acceptance that cannot publish its verified observation is rolled back
-      // rather than left readable without one.
-      writeAcceptanceVerificationObservation({ root, authorityHome, receipt, archiveProjectionSha256: null });
-    } catch (error) {
-      if (previousAcceptance === null) {
-        if (existsSync(acceptancePath)) unlinkSync(acceptancePath);
-      } else {
-        writeFileSync(acceptancePath, previousAcceptance, { mode: 0o600 });
-        chmodSync(acceptancePath, 0o600);
-      }
-      restoreObservation();
-      throw error;
-    }
-    return;
-  }
-  const archivePath = archiveProjectionReceiptPath(root, authorityHome, true);
-  const previousArchive = existsSync(archivePath) ? readFileSync(archivePath) : null;
-  if (previousAcceptance === null) fail('projected archive acceptance requires an existing semantic receipt');
-  const currentAcceptance = readReceipt(acceptancePath);
-  verifyArchiveProjectionAuthority({ root, authorityHome, acceptance: currentAcceptance, contract });
   try {
     writeReceipt(acceptancePath, receipt);
-    const seal = sealArchiveProjection({ root, authorityHome, contract: contract.path });
-    writeAcceptanceVerificationObservation({
-      root,
-      authorityHome,
-      receipt,
-      archiveProjectionSha256: seal.projection_sha256,
-    });
+    // The observation is part of the same acceptance transaction: an
+    // acceptance that cannot publish its verified observation is rolled back
+    // rather than left readable without one.
+    writeAcceptanceVerificationObservation({ root, authorityHome, receipt });
   } catch (error) {
-    writeFileSync(acceptancePath, previousAcceptance, { mode: 0o600 });
-    chmodSync(acceptancePath, 0o600);
-    if (previousArchive === null) {
-      if (existsSync(archivePath)) unlinkSync(archivePath);
+    if (previousAcceptance === null) {
+      if (existsSync(acceptancePath)) unlinkSync(acceptancePath);
     } else {
-      writeFileSync(archivePath, previousArchive, { mode: 0o600 });
-      chmodSync(archivePath, 0o600);
+      writeFileSync(acceptancePath, previousAcceptance, { mode: 0o600 });
+      chmodSync(acceptancePath, 0o600);
     }
     restoreObservation();
     throw error;
   }
+
 }
 
 /**
@@ -1588,7 +1336,7 @@ export async function recordAcceptance(args: {
   assertRecordedReceiptPolicy(context, receipt, null);
   acceptanceReceiptPath(context.root,args.authorityHome,true);
   writeReceipt(reviewResultPath(context.root,args.authorityHome),review);
-  writeAcceptanceWithArchiveProjection(context.root, args.authorityHome, context.contract, receipt);
+  writeAcceptanceWithObservation(context.root, args.authorityHome, receipt);
   return receipt;
 }
 
@@ -1619,7 +1367,7 @@ export async function recordUserWaiverAcceptance(args: {
     args.now ?? (() => new Date()),
   );
   assertRecordedReceiptPolicy(context, receipt, grant);
-  writeAcceptanceWithArchiveProjection(context.root, args.authorityHome, context.contract, receipt);
+  writeAcceptanceWithObservation(context.root, args.authorityHome, receipt);
   return receipt;
 }
 
@@ -1632,17 +1380,16 @@ export async function verifyAcceptance(args: {
   const root = realpathSync(args.root);
   const receipt = readReceipt(acceptanceReceiptPath(root, args.authorityHome));
   if (receipt.repository_root !== root) fail('AcceptanceReceipt repository root is stale');
-  const contractPath = args.contract ?? resolveArchived(root, receipt.contract_file, 'tasks', receipt.contract_sha256);
-  const contract = readRegular(root, contractPath, 'contract');
+  const contractPath = args.contract ?? receipt.contract_file;
+  const contract = readCurrentContract(root, contractPath);
   if (authorityFingerprint(contract.content) !== receipt.contract_sha256) fail('AcceptanceReceipt contract is stale');
-  const goalPath = resolveArchived(root, receipt.goal_file, 'plans', receipt.goal_sha256);
+  const goalPath = receipt.goal_file;
   const goal = readRegular(root, goalPath, 'goal');
-  verifyArchiveProjectionAuthority({ root, authorityHome: args.authorityHome, acceptance: receipt, contract });
   const verificationPath = args.verification ?? receipt.verification_file;
   const verification = verificationReportFile(root, verificationPath);
   const subject = await currentSubject(root, receipt.target_ref, receipt.target_revision);
   if (subject.review_subject_sha256 !== receipt.subject_sha256) fail('AcceptanceReceipt semantic subject is stale');
-  const evidence = normalizedVerificationEvidence(verification.content, subject, root, contract.path, contract.content, contract.path !== receipt.contract_file || contractCarriesArchiveProjection(contract.content));
+  const evidence = normalizedVerificationEvidence(verification.content, subject, root, contract.path, contract.content);
   return inspectAcceptanceCurrentBinding({ root, authorityHome: args.authorityHome, contract: contract.path, subject, evidence });
 }
 
@@ -1656,11 +1403,9 @@ export function inspectAcceptanceCurrentBinding(args: {
 }): AcceptanceReceipt {
   const root = realpathSync(args.root);
   const receipt = readReceipt(acceptanceReceiptPath(root, args.authorityHome));
-  const contract = readRegular(root, args.contract, 'contract');
-  const goal = readRegular(root, resolveArchived(root, receipt.goal_file, 'plans', receipt.goal_sha256), 'goal');
-  verifyArchiveProjectionAuthority({ root, authorityHome: args.authorityHome, acceptance: receipt, contract });
-  if (contract.path !== receipt.contract_file && !contractCarriesArchiveProjection(contract.content)
-    && !contract.path.startsWith('tasks/archive/')) fail('AcceptanceReceipt contract path is stale');
+  const contract = readCurrentContract(root, args.contract);
+  const goal = readRegular(root, receipt.goal_file, 'goal');
+  if (contract.path !== receipt.contract_file) fail('AcceptanceReceipt contract path is stale');
   const subject = args.subject;
   if (subject.review_subject_sha256 !== receipt.subject_sha256 || subject.target_ref !== receipt.target_ref
     || subject.target_rev !== receipt.target_revision || stableJson(subject.paths) !== stableJson(receipt.reviewed_paths)) fail('AcceptanceReceipt semantic subject is stale');
@@ -1825,21 +1570,10 @@ async function importAttestedReceiptIfApplicable(
 
 function projectRecordedAcceptance(args: {
   root: string;
-  authorityHome: string;
-  contract: string;
   review: string | undefined;
   receipt: AcceptanceReceipt;
 }): void {
-  if (!args.review) return;
-  projectAcceptance(resolve(args.root, args.review), args.receipt);
-  const contract = readRegular(args.root, args.contract, 'contract');
-  if (parseArchiveProjection(contract.content)) {
-    sealArchiveProjection({
-      root: args.root,
-      authorityHome: args.authorityHome,
-      contract: contract.path,
-    });
-  }
+  if (args.review) projectAcceptance(resolve(args.root, args.review), args.receipt);
 }
 
 function isModuleUnresolvedError(error: unknown): boolean {
@@ -1872,19 +1606,6 @@ export async function runAcceptanceReceiptCli(argv: string[], opts: Options = {}
   }
   if (command === 'path') {
     console.log(acceptanceReceiptPath(root, authorityHome));
-    return 0;
-  }
-  if (command === 'archive-projection-path') {
-    console.log(archiveProjectionReceiptPath(root, authorityHome));
-    return 0;
-  }
-  if (command === 'seal-archive-projection') {
-    console.log(JSON.stringify(sealArchiveProjection({
-      root,
-      authorityHome,
-      contract: option(argv, '--contract')!,
-      now: opts.now,
-    })));
     return 0;
   }
   if (command === 'policy') {
@@ -1929,7 +1650,7 @@ export async function runAcceptanceReceiptCli(argv: string[], opts: Options = {}
         verification: option(argv, '--verification')!,
         now: opts.now,
       });
-      projectRecordedAcceptance({ root, authorityHome, contract, review, receipt });
+      projectRecordedAcceptance({ root, review, receipt });
       await importAttestedReceiptIfApplicable(root, receipt, contract);
       console.log(JSON.stringify(receipt));
       return 0;
@@ -1951,7 +1672,7 @@ export async function runAcceptanceReceiptCli(argv: string[], opts: Options = {}
       findings: validateFindings(JSON.parse(findingsRaw)),
       now: opts.now,
     });
-    projectRecordedAcceptance({ root, authorityHome, contract, review, receipt });
+    projectRecordedAcceptance({ root, review, receipt });
     await importAttestedReceiptIfApplicable(root, receipt, contract);
     console.log(JSON.stringify(receipt));
     return disposition === 'reject' ? 1 : 0;
@@ -1981,7 +1702,7 @@ export async function runAcceptanceReceiptCli(argv: string[], opts: Options = {}
     projectAcceptance(resolve(root, option(argv, '--review')!), receipt);
     return 0;
   }
-  fail('usage: acceptance-receipt.ts <policy|grant-waiver|verify-waiver-grant|revoke-waiver|record|verify|project|path|archive-projection-path|seal-archive-projection> ...', 2);
+  fail('usage: acceptance-receipt.ts <policy|grant-waiver|verify-waiver-grant|revoke-waiver|record|verify|project|path> ...', 2);
 }
 
 if (import.meta.main) {

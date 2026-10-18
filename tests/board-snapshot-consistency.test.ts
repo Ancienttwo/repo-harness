@@ -255,7 +255,6 @@ describe('board snapshot consistency', () => {
     expect(unreadable.cards[0].claim).toEqual(readable.cards[0].claim);
     expect(unreadable.cards[0].lease_state).toBe(readable.cards[0].lease_state);
     expect(unreadable.cards[0].column).toBe(readable.cards[0].column);
-    expect(unreadable.cards[0].actions).toEqual(readable.cards[0].actions);
   });
 
   test('an unresolvable owner state is named, not swallowed', () => {

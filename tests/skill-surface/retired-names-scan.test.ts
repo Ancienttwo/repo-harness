@@ -99,7 +99,7 @@ const FILE_ALLOWLIST: Record<string, string> = {
 };
 
 // R1: "Do NOT touch scripts/acceptance-receipt.ts,
-// scripts/harness-trace-grade.sh, scripts/sprint-backlog.sh,
+// scripts/harness-trace-grade.sh,
 // scripts/plan-to-todo.sh, scripts/capture-plan.sh,
 // scripts/lib/project-init-lib.sh enum usages" -- permanent provenance-enum
 // vocabulary (generic-review is the current Receipt source; retired provider sources are rejected;
@@ -111,7 +111,6 @@ const R1_PROVENANCE_ENUM_FILES = [
   "scripts/classify-historical-plans.ts",
   "scripts/ensure-task-workflow.sh",
   "scripts/harness-trace-grade.sh",
-  "scripts/sprint-backlog.sh",
   "scripts/plan-to-todo.sh",
   "scripts/capture-plan.sh",
   "scripts/lib/project-init-lib.sh",

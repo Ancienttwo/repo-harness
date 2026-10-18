@@ -7,7 +7,7 @@ parent: capability.workflow-engine.contract-assets
 summary: Runs contract-listed planning, triage and factor-lab helpers through the protected helper runner.
 responsibilities:
   - Resolve only helper ids that the workflow contract lists and run them as bounded children with a protected environment.
-  - Own the plan, spec, sprint, triage and factor-lab helper scripts.
+  - Own the plan, spec, workflow triage and factor-lab helper scripts.
   - Own the run and brain CLI commands.
 source:
   include:

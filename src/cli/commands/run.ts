@@ -15,7 +15,6 @@ export const RUN_HELP_GROUPS = [
       'cutover-closure',
       'contract-worktree',
       'contract-worktree-runtime',
-      'sprint-backlog',
       'switch-plan',
       'ensure-task-workflow',
     ],

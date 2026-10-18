@@ -4,12 +4,13 @@
   "kind": "capability",
   "name": "Workflow State",
   "status": "active",
-  "summary": "Resolves the one deterministic Effective State projection and owns the shared coordination plane and the continuation ledger.",
+  "summary": "Resolves deterministic Effective State and owns historical coordination reads, worktree safety and the continuation ledger.",
   "responsibilities": [
     "Project repository workflow artifacts into one deterministic Effective State. The JSON cache and tasks/current.md stay replaceable read models.",
-    "Own Sprint task identity, the four-state lease machine with claim fencing, and the lock-free read-only board.",
+    "Read historical Sprint task identity and lease records for the lock-free board. Preserve exact worktree cleanup and shared task-lock safety.",
     "Own the continuation envelope and the append-only attempt ledger with its no-progress breaker.",
-    "Keep src/core/state and src/core/workflow pure. Effects do IO under directory locks."
+    "Keep src/core/state and src/core/workflow pure. Effects do IO under directory locks.",
+    "Project state snapshots without task contract paths or presence. Resolve recovery paths without review or notes directory policy keys."
   ],
   "source": {
     "include": [
@@ -20,9 +21,7 @@
       "src/core/worktree-location.mjs",
       "src/core/worktree-location.d.mts",
       "src/cli/commands/state.ts",
-      "src/cli/commands/sprint.ts",
-      "scripts/check-state-boundaries.ts",
-      "scripts/sprint-backlog.sh"
+      "scripts/check-state-boundaries.ts"
     ],
     "entrypoints": [
       {

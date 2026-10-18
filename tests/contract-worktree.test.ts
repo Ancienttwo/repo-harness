@@ -23,12 +23,6 @@ import { commitAll, initGitRepo, run, tmpWorkspace } from "./helpers/repo-fixtur
 setDefaultTimeout(30000);
 
 describe("contract-worktree helper integration", () => {
-  test("finish has no architecture/verification/archive stage prerequisite", () => {
-    const script = readFileSync(join(ROOT, "scripts/contract-worktree.sh"), "utf-8");
-    expect(script).not.toContain('check_architecture_freshness "$target_branch"');
-    expect(script).not.toContain('bash "$helper_dir/verify-sprint.sh"');
-    expect(script).not.toContain('archive_finished_workflow "$active_plan"');
-  });
 
   test("contract-worktree cleanup should dry-run then remove merged worktree, branch, and metadata", () => {
     const cwd = tmpWorkspace("helper-contract-cleanup");

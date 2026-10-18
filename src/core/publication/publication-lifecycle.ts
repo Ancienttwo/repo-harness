@@ -4,15 +4,11 @@
  * receipt is current for execution.
  */
 import {
-  publicationReceiptDigest,
   publicationSha256,
   stablePublicationJson,
-  type PublicationReceiptV3,
 } from './publication-receipt';
-import { TASK_DIGEST_PATTERN, type CurrentPublicationPointerV1 } from '../state/coordination-identity';
+import { TASK_DIGEST_PATTERN } from '../state/coordination-identity';
 
-export const PUBLICATION_LINEAGE_PROTOCOL = 1 as const;
-export const PUBLICATION_LINEAGE_KIND = 'repo-harness-publication-lineage' as const;
 export const PUBLICATION_INTEGRATION_OBSERVATION_PROTOCOL = 1 as const;
 export const PUBLICATION_INTEGRATION_OBSERVATION_KIND = 'repo-harness-publication-integration-observation' as const;
 
@@ -42,19 +38,6 @@ export class PublicationLifecycleError extends Error {
     super(message);
     this.name = 'PublicationLifecycleError';
   }
-}
-
-export interface PublicationLineageV1 {
-  readonly protocol: typeof PUBLICATION_LINEAGE_PROTOCOL;
-  readonly kind: typeof PUBLICATION_LINEAGE_KIND;
-  readonly publication_id: string;
-  readonly task_id: string;
-  readonly claim_id: string;
-  readonly generation: number;
-  readonly receipt_sha256: string;
-  readonly head_sha: string;
-  readonly ship_transaction_key: string;
-  readonly reason: string;
 }
 
 /**
@@ -198,49 +181,4 @@ export function validatePublicationIntegrationObservation(value: unknown): Publi
 
 export function canonicalPublicationIntegrationObservationBytes(observation: PublicationIntegrationObservationV1): string {
   return stablePublicationJson(validatePublicationIntegrationObservation(observation));
-}
-
-export function publicationPointerFromReceipt(
-  receipt: PublicationReceiptV3,
-  shipTransactionKey: string,
-): CurrentPublicationPointerV1 {
-  if (shipTransactionKey.length === 0) throw new PublicationLifecycleError('publication_incomplete', 'ship transaction key is required');
-  return Object.freeze({
-    publication_id: receipt.publication_id,
-    receipt_sha256: publicationReceiptDigest(receipt),
-    head_sha: receipt.head_sha,
-    ship_transaction_key: shipTransactionKey,
-  });
-}
-
-export function publicationLineageFromPointer(
-  receipt: PublicationReceiptV3,
-  pointer: CurrentPublicationPointerV1,
-  reason: string,
-): PublicationLineageV1 {
-  if (reason.trim() === '') throw new PublicationLifecycleError('publication_incomplete', 'publication abandon reason is required');
-  const expected = publicationPointerFromReceipt(receipt, pointer.ship_transaction_key);
-  if (
-    expected.publication_id !== pointer.publication_id
-    || expected.receipt_sha256 !== pointer.receipt_sha256
-    || expected.head_sha !== pointer.head_sha
-  ) {
-    throw new PublicationLifecycleError('publication_pointer_mismatch', 'receipt does not match current publication pointer');
-  }
-  return Object.freeze({
-    protocol: PUBLICATION_LINEAGE_PROTOCOL,
-    kind: PUBLICATION_LINEAGE_KIND,
-    publication_id: receipt.publication_id,
-    task_id: receipt.task_id,
-    claim_id: receipt.claim_id,
-    generation: receipt.generation,
-    receipt_sha256: pointer.receipt_sha256,
-    head_sha: receipt.head_sha,
-    ship_transaction_key: pointer.ship_transaction_key,
-    reason,
-  });
-}
-
-export function canonicalPublicationLineageBytes(lineage: PublicationLineageV1): string {
-  return JSON.stringify(lineage);
 }

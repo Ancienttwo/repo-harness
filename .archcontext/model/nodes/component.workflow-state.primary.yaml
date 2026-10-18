@@ -4,12 +4,13 @@ kind: component
 name: Effective State Resolver
 status: active
 parent: capability.workflow-engine.workflow-state
-summary: Projects plan, contract, review and evidence artifacts into one Effective State and publishes the cache before the shared version owner.
+summary: Projects plan, worktree and capability facts into Effective State and publishes the cache before the shared version owner.
 responsibilities:
   - Parse workflow artifacts and resolve the deterministic risk profile in the pure core.
   - Collect sources with a stability re-read and fail closed on paths that leave the repository.
   - Publish the ignored cache first and commit the Git common-dir version owner last under locks.
   - Own the state CLI adapter, the public interfaces re-export and the state boundary gate.
+  - Build state snapshots without reading task contracts. Resolve handoff paths without review and notes directory policy keys.
 source:
   include:
     - src/core/state/types.ts

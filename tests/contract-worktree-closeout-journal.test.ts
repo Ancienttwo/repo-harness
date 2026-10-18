@@ -1,35 +1,13 @@
-import { boundLeaseFixture } from './helpers/sprint-fixture';
-import { buildLeaseOwnerRecord, deriveTaskRevision } from '../src/core/state/coordination-identity';
-import {
-  createLeaseDirectory,
-  readLease,
-  writeLeaseOwnerDurably,
-} from '../src/effects/state/coordination-lease-store';
-import { decodePublicationMarker } from '../src/core/publication/publication-receipt';
-import { writeClaimTokenFixture } from './helpers/sprint-fixture';
-import { resolveRepoIdentity } from '../src/effects/state/coordination-canonical-source';
 import { fixtureTaskId } from './helpers/sprint-fixture';
 import { describe, expect, test, setDefaultTimeout } from "bun:test";
-import {
-  chmodSync,
-  copyFileSync,
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  realpathSync,
-  readFileSync,
-  readdirSync,
-  rmSync,
-  symlinkSync,
-  writeFileSync,
-} from "fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, realpathSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
-import { dirname, join } from "path";
+import { join } from "path";
 import { spawn, spawnSync } from "child_process";
 import { withRepo, resolveFixtureState } from "./state/effective-state-fixture";
 
 // Regression guard for CloseoutJournalV1: the crash-durable closeout
-// transaction behind `contract-worktree finish` and `ship-worktrees`. See:
+// transaction behind `ship-worktrees`. See:
 //   plans/plan-20260803-1824-wp1-crash-durable-closeout-transaction.md
 //   tasks/contracts/20260803-1824-wp1-crash-durable-closeout-transaction.contract.md
 //   docs/researches/20260803-loopx-comparative-analysis.md (7.1 + addendum)
@@ -65,10 +43,6 @@ function runProcess(command: string, args: string[], cwd: string, env: NodeJS.Pr
   return spawnSync(command, args, { cwd, encoding: "utf-8", env: fixtureEnv(env) });
 }
 
-function fixtureCliEnv(cwd: string): NodeJS.ProcessEnv {
-  const cli = join(dirname(cwd), "fixture-publication-cli.sh");
-  return existsSync(cli) ? { REPO_HARNESS_CLI_BIN: cli } : {};
-}
 
 function runHelper(script: string, args: string[], cwd: string, env: NodeJS.ProcessEnv = {}) {
   return spawnSync("bash", [script, ...args], {
@@ -76,7 +50,6 @@ function runHelper(script: string, args: string[], cwd: string, env: NodeJS.Proc
     encoding: "utf-8",
     env: fixtureEnv({
       REPO_HARNESS_BUN_BIN: process.execPath,
-      ...fixtureCliEnv(cwd),
       ...env,
     }),
   });
@@ -88,7 +61,6 @@ function runHelperAsync(script: string, args: string[], cwd: string, env: NodeJS
       cwd,
       env: fixtureEnv({
         REPO_HARNESS_BUN_BIN: process.execPath,
-        ...fixtureCliEnv(cwd),
         ...env,
       }),
     });
@@ -118,7 +90,6 @@ function runHelperWithFault(
       encoding: "utf-8",
       env: fixtureEnv({
         REPO_HARNESS_BUN_BIN: process.execPath,
-        ...fixtureCliEnv(cwd),
         FAULT_PID_FILE: pidFile,
         ...env,
       }),
@@ -144,7 +115,7 @@ async function withTempRepoAsync(prefix: string, fn: (cwd: string) => Promise<vo
   }
 }
 
-function installCloseoutBarrier(container: string, operation: "finish" | "ship") {
+function installCloseoutBarrier(container: string, operation: "ship") {
   const barrierDir = join(container, `${operation}-closeout-barrier`);
   const shimDir = join(container, `${operation}-mkdir-shim`);
   mkdirSync(barrierDir, { recursive: true });
@@ -203,7 +174,7 @@ const FAKE_GIT = [
 // + rename streams the document through `dd`). It kills the helper only when the
 // *ship* journal's `complete` document is about to be written -- the one window
 // no git or gh call separates from the phase before it. Every other write,
-// including the nested contract-worktree finish journal, passes straight
+// including unrelated journal operations, passes straight
 // through to the real binary.
 const FAKE_DD = [
   "#!/bin/bash",
@@ -211,7 +182,6 @@ const FAKE_DD = [
   'if [[ -z "$payload" ]]; then /bin/dd "$@" </dev/null; exit $?; fi',
   'kill_on_complete=0',
   `[[ "\$payload" == *'"operation": "ship"'* && "\$payload" == *'"status": "complete"'* ]] && kill_on_complete=1`,
-  `[[ "\${FAULT_FINISH_COMPLETE:-0}" == "1" && "\$payload" == *'"operation": "finish"'* && "\$payload" == *'"status": "complete"'* ]] && kill_on_complete=1`,
   `[[ "\${FAULT_BEFORE_PUBLICATION_PREPARED:-0}" == "1" && "\$payload" == *'"phase": "publication_prepared"'* ]] && kill_on_complete=1`,
   `if [[ "\${FAULT_FAIL_MERGED_WRITE:-0}" == "1" && "\$payload" == *'"phase": "merged"'* ]]; then exit 74; fi`,
   'if [[ -f "${FAULT_PID_FILE:-/nonexistent}" && "$kill_on_complete" == "1" ]]; then',
@@ -299,19 +269,6 @@ function installFixture(container: string): Fixture {
     join(primary, "scripts/refresh-current-status.sh"),
     "#!/bin/bash\nprintf '# Current Status Snapshot\\n\\n> **Status**: Idle\\n' > tasks/current.md\n",
   );
-  writeExecutable(
-    join(primary, "scripts/sprint-backlog.sh"),
-    [
-      "#!/bin/bash",
-      "sprint=''",
-      "while [[ $# -gt 0 ]]; do",
-      "  if [[ \"$1\" == '--sprint' ]]; then sprint=\"$2\"; shift 2; else shift; fi",
-      "done",
-      "printf '\\n| closed | passed |\\n' >> \"$sprint\"",
-      "",
-    ].join("\n"),
-  );
-
   writeFileSync(
     join(primary, PLAN),
     [
@@ -428,468 +385,6 @@ function onlyJournal(fixture: Fixture, operation: string): string {
   return dirs[0]!;
 }
 
-describe("contract-worktree finish closeout journal", () => {
-  test("simultaneous finish calls elect exactly one closeout owner before journal writes", async () => {
-    await withTempRepoAsync("closeout-journal-concurrent", async (container) => {
-      const fixture = installFixture(container);
-      const { barrierDir, shimDir } = installCloseoutBarrier(container, "finish");
-
-      const env = {
-        PATH: `${shimDir}:${process.env.PATH ?? ""}`,
-        CLOSEOUT_BARRIER_DIR: barrierDir,
-      };
-      const results = await Promise.all([
-        runHelperAsync("scripts/contract-worktree.sh", ["finish", "--no-merge"], fixture.linked, env),
-        runHelperAsync("scripts/contract-worktree.sh", ["finish", "--no-merge"], fixture.linked, env),
-      ]);
-
-      // The rendezvous actually happened: both callers reached the claim path
-      // and registered an arrival file. Without this, a renamed claim path would
-      // silently stop matching the shim and downgrade the race to timing luck.
-      expect(readdirSync(barrierDir).length).toBeGreaterThanOrEqual(2);
-
-      expect(results.filter((result) => result.status === 0)).toHaveLength(1);
-      const loser = results.find((result) => result.status !== 0);
-      expect(loser).toBeDefined();
-      expect(loser!.stderr).toContain("closeout already owned for this worktree and operation");
-      expect(journalDirs(fixture, "finish")).toHaveLength(1);
-      expect(readJournal(onlyJournal(fixture, "finish")).status).toBe("complete");
-    });
-  }, 30_000);
-
-  test("explicit recover abort clears a dead owner claimed before journal preparation", () => {
-    withTempRepo("closeout-journal-orphan-claim", (container) => {
-      const fixture = installFixture(container);
-      const claimKey = spawnSync("/usr/bin/git", ["hash-object", "--stdin"], {
-        cwd: fixture.linked,
-        encoding: "utf-8",
-        input: `operation=finish\nworktree=${fixture.linked}\n`,
-      }).stdout.trim();
-      const claim = join(fixture.journalRoot, "claims", "finish", `${claimKey}.lock`);
-      mkdirSync(claim, { recursive: true });
-      writeFileSync(
-        join(claim, "owner.json"),
-        `${JSON.stringify({
-          version: 1,
-          operation: "finish",
-          worktree: fixture.linked,
-          pid: String(process.pid),
-          journal_key: "",
-        }, null, 2)}\n`,
-      );
-
-      const inspect = runHelper("scripts/contract-worktree.sh", ["recover", "inspect"], fixture.linked);
-      expect(inspect.status, `${inspect.stdout}\n${inspect.stderr}`).toBe(0);
-      expect(inspect.stdout).toContain(`ownership claim: ${claim}`);
-      expect(inspect.stdout).toContain(`owner pid: ${process.pid} (live)`);
-
-      const refused = runHelper("scripts/contract-worktree.sh", ["recover", "abort"], fixture.linked);
-      expect(refused.status).not.toBe(0);
-      expect(refused.stderr).toContain("closeout is still owned by a live process");
-      expect(existsSync(claim)).toBe(true);
-
-      writeFileSync(
-        join(claim, "owner.json"),
-        `${JSON.stringify({
-          version: 1,
-          operation: "finish",
-          worktree: fixture.linked,
-          pid: "999999",
-          journal_key: "",
-        }, null, 2)}\n`,
-      );
-      const deadInspect = runHelper("scripts/contract-worktree.sh", ["recover", "inspect"], fixture.linked);
-      expect(deadInspect.status, `${deadInspect.stdout}\n${deadInspect.stderr}`).toBe(0);
-      expect(deadInspect.stdout).toContain(`ownership claim: ${claim}`);
-      expect(deadInspect.stdout).toContain("owner pid: 999999 (not_live)");
-
-      const abort = runHelper("scripts/contract-worktree.sh", ["recover", "abort"], fixture.linked);
-      expect(abort.status, `${abort.stdout}\n${abort.stderr}`).toBe(0);
-      expect(abort.stdout).toContain("Aborted orphan closeout ownership claim");
-      expect(existsSync(claim)).toBe(false);
-      expect(journalDirs(fixture, "finish")).toHaveLength(0);
-    });
-  }, 30_000);
-
-  test("an uninterrupted finish journals every phase and clears its snapshot on completion", () => {
-    withTempRepo("closeout-journal-happy", (container) => {
-      const fixture = installFixture(container);
-      const before = readFileSync(join(fixture.linked, PLAN), "utf-8");
-      expect(before).toContain("# Plan: demo");
-
-      const finish = runHelper("scripts/contract-worktree.sh", ["finish", "--no-merge"], fixture.linked);
-      expect(finish.status, `${finish.stdout}\n${finish.stderr}`).toBe(0);
-      // Observable finish behavior is unchanged apart from journal writes.
-      expect(finish.stdout).toContain("no main merge or additional verification was performed");
-      expect(existsSync(join(fixture.linked, ARCHIVED_PLAN))).toBe(false);
-
-      const dir = onlyJournal(fixture, "finish");
-      const journal = readJournal(dir);
-      expect(journal.status).toBe("complete");
-      expect(journal.phases).toEqual([
-        "prepared",
-        "implementation_committed",
-        "complete",
-      ]);
-      // The journal outlives the process; the rollback payload does not outlive
-      // the transaction it could roll back.
-      expect(existsSync(join(dir, "meta.json"))).toBe(true);
-      expect(existsSync(join(dir, "snapshot"))).toBe(false);
-
-      const meta = JSON.parse(readFileSync(join(dir, "meta.json"), "utf-8")) as Record<string, string>;
-      expect(meta.operation).toBe("finish");
-      expect(meta.worktree).toBe(fixture.linked);
-      expect(meta.contract).toBe("");
-      expect(meta.original_head).toMatch(/^[0-9a-f]{40}$/);
-    });
-  }, 30_000);
-
-  test("a completed transaction is never re-run as a second closeout", () => {
-    withTempRepo("closeout-journal-replay", (container) => {
-      const fixture = installFixture(container);
-      expect(runHelper("scripts/contract-worktree.sh", ["finish", "--no-merge"], fixture.linked).status).toBe(0);
-      const dir = onlyJournal(fixture, "finish");
-      const statusBefore = readFileSync(join(dir, "status.json"), "utf-8");
-      const headBefore = runProcess("git", ["rev-parse", "HEAD"], fixture.linked).stdout.trim();
-      const planBefore = readFileSync(join(fixture.linked, PLAN), "utf8");
-
-      // Finish is not idempotent by accident -- it must not archive twice, move
-      // HEAD again, or open a second transaction against the completed one.
-      const rerun = runHelper("scripts/contract-worktree.sh", ["finish", "--no-merge"], fixture.linked);
-      expect(rerun.status).toBe(0);
-      expect(journalDirs(fixture, "finish")).toHaveLength(1);
-      expect(readFileSync(join(dir, "status.json"), "utf-8")).toBe(statusBefore);
-      expect(runProcess("git", ["rev-parse", "HEAD"], fixture.linked).stdout.trim()).toBe(headBefore);
-      expect(readFileSync(join(fixture.linked, PLAN), "utf8")).toBe(planBefore);
-
-      // A complete journal is not an unfinished one: it must not be reported as
-      // recoverable, and it must not block anything.
-      const inspect = runHelper("scripts/contract-worktree.sh", ["recover", "inspect"], fixture.linked);
-      expect(inspect.status).toBe(0);
-      expect(inspect.stdout).toContain("No unfinished closeout journal for this worktree.");
-    });
-  }, 30_000);
-
-  test("complete merge publication remains present after target advance but not after target reset", () => {
-    withTempRepo("closeout-journal-complete-effect", (container) => {
-      const fixture = installFixture(container);
-      expect(runProcess("git", ["commit", "--allow-empty", "-m", "publication"], fixture.primary).status).toBe(0);
-      const publication = runProcess("git", ["rev-parse", "main"], fixture.primary).stdout.trim();
-      expect(runProcess("git", ["commit", "--allow-empty", "-m", "later package"], fixture.primary).status).toBe(0);
-      const later = runProcess("git", ["rev-parse", "main"], fixture.primary).stdout.trim();
-      const dir = join(container, "complete-journal");
-      mkdirSync(dir, { recursive: true });
-      writeFileSync(
-        join(dir, "meta.json"),
-        [
-          "{",
-          '  "operation": "finish",',
-          '  "merge_back": "1",',
-          '  "target_branch": "main"',
-          "}",
-          "",
-        ].join("\n"),
-      );
-      writeFileSync(
-        join(dir, "status.json"),
-        [
-          "{",
-          '  "status": "complete",',
-          '  "phases": [',
-          `    {"phase": "complete", "at": "2026-08-14T00:00:00+0000", "ref": "${publication}"}`,
-          "  ]",
-          "}",
-          "",
-        ].join("\n"),
-      );
-      const predicate = [
-        'journal_dir="$1"',
-        "set -- help",
-        "source scripts/contract-worktree.sh >/dev/null",
-        'closeout_journal_complete_effect_present "$journal_dir"',
-      ].join("; ");
-
-      // $0 must name the sourced script: contract-worktree.sh resolves its
-      // sibling helpers (including worktree-merge-lib.sh) from dirname "$0".
-      const advanced = runProcess(
-        "bash",
-        ["-c", predicate, "scripts/contract-worktree.sh", dir],
-        fixture.linked,
-      );
-      expect(advanced.status, `${advanced.stdout}\n${advanced.stderr}`).toBe(0);
-
-      expect(runProcess("git", ["reset", "--hard", `${publication}^`], fixture.primary).status).toBe(0);
-      const reset = runProcess(
-        "bash",
-        ["-c", predicate, "scripts/contract-worktree.sh", dir],
-        fixture.linked,
-      );
-      expect(reset.status).not.toBe(0);
-      expect(later).not.toBe(publication);
-    });
-  }, 30_000);
-
-  // The core acceptance requirement: per-phase SIGKILL injection. Each case
-  // crashes the helper immediately after the named phase is durably recorded,
-  // then proves a fresh process can find and undo the half-applied closeout.
-  for (const phase of ["prepared", "implementation_committed"]) {
-    test(`SIGKILL after ${phase} leaves a discoverable journal that recover abort can roll back`, () => {
-      withTempRepo(`closeout-journal-kill-${phase}`, (container) => {
-        const fixture = installFixture(container);
-        const planBefore = readFileSync(join(fixture.linked, PLAN), "utf-8");
-        const sprintBefore = readFileSync(join(fixture.linked, SPRINT), "utf-8");
-        const headBefore = runProcess("git", ["rev-parse", "HEAD"], fixture.linked).stdout.trim();
-
-        const crashed = runHelperWithFault(
-          "scripts/contract-worktree.sh",
-          ["finish", "--no-merge"],
-          fixture.linked,
-          fixture.pidFile,
-          {
-            REPO_HARNESS_GIT_BIN: fixture.fakeGit,
-            FAULT_AFTER_PHASE: phase,
-            FAULT_JOURNAL_DIR: join(fixture.journalRoot, "finish"),
-          },
-        );
-        expect(crashed.status).not.toBe(0);
-        expect(crashed.signal ?? "SIGKILL").toBe("SIGKILL");
-
-        const dir = onlyJournal(fixture, "finish");
-        const journal = readJournal(dir);
-        expect(journal.status).toBe("in_progress");
-        expect(journal.phases[journal.phases.length - 1]).toBe(phase);
-        expect(journal.phases).not.toContain("complete");
-
-        // A fresh process locates the snapshot and the original HEAD -- the
-        // thing the mktemp + EXIT-trap shape could not provide.
-        const inspect = runHelper("scripts/contract-worktree.sh", ["recover", "inspect"], fixture.linked);
-        expect(inspect.status, `${inspect.stdout}\n${inspect.stderr}`).toBe(0);
-        expect(inspect.stdout).toContain(dir);
-        expect(inspect.stdout).toContain("status: in_progress");
-        expect(inspect.stdout).toContain(`last phase: ${phase}`);
-        expect(inspect.stdout).toContain(`original HEAD: ${headBefore}`);
-        expect(inspect.stdout).toContain("snapshot present: yes");
-        expect(existsSync(join(dir, "snapshot/paths.tsv"))).toBe(true);
-
-        // No auto-resume: a normal rerun fails closed on the unfinished journal.
-        const blocked = runHelper("scripts/contract-worktree.sh", ["finish", "--no-merge"], fixture.linked);
-        expect(blocked.status).toBe(1);
-        expect(blocked.stderr).toContain("unfinished closeout journal blocks this finish");
-        expect(blocked.stderr).toContain("recover inspect");
-
-        // Nothing external happened, so reconcile refuses and abort is the path.
-        const reconcile = runHelper("scripts/contract-worktree.sh", ["recover", "reconcile"], fixture.linked);
-        expect(reconcile.status).toBe(1);
-        expect(reconcile.stderr).toContain("no landed merge to reconcile");
-
-        const abort = runHelper("scripts/contract-worktree.sh", ["recover", "abort"], fixture.linked);
-        expect(abort.status, `${abort.stdout}\n${abort.stderr}`).toBe(0);
-        expect(abort.stdout).toContain("restored the pre-closeout state");
-
-        expect(readFileSync(join(fixture.linked, PLAN), "utf-8")).toBe(planBefore);
-        expect(readFileSync(join(fixture.linked, SPRINT), "utf-8")).toBe(sprintBefore);
-        expect(runProcess("git", ["rev-parse", "HEAD"], fixture.linked).stdout.trim()).toBe(headBefore);
-        expect(existsSync(join(fixture.linked, ARCHIVED_PLAN))).toBe(false);
-        expect(readJournal(dir).status).toBe("aborted");
-
-        // The rolled-back key is legitimately retryable and completes cleanly.
-        const retry = runHelper("scripts/contract-worktree.sh", ["finish", "--no-merge"], fixture.linked);
-        expect(retry.status, `${retry.stdout}\n${retry.stderr}`).toBe(0);
-        expect(existsSync(join(fixture.linked, ARCHIVED_PLAN))).toBe(false);
-        expect(readJournal(onlyJournal(fixture, "finish")).status).toBe("complete");
-      });
-    }, 30_000);
-  }
-
-  test("SIGKILL around publication rolls back before target mutation and reconciles after it", () => {
-    withTempRepo("closeout-journal-merge", (container) => {
-      const fixture = installFixture(container);
-      writeFileSync(join(fixture.linked,"implementation.txt"),"real implementation\n");
-      expect(runProcess("git",["add","implementation.txt"],fixture.linked).status).toBe(0);
-      expect(runProcess("git",["commit","-m","implementation"],fixture.linked).status).toBe(0);
-      const headBefore = runProcess("git", ["rev-parse", "HEAD"], fixture.linked).stdout.trim();
-      const mainBefore = runProcess("git", ["rev-parse", "main"], fixture.primary).stdout.trim();
-
-      const sealedCrash = runHelperWithFault(
-        "scripts/contract-worktree.sh",
-        ["finish", "--merge"],
-        fixture.linked,
-        fixture.pidFile,
-        {
-          REPO_HARNESS_GIT_BIN: fixture.fakeGit,
-          FAULT_AFTER_PHASE: "gate_sealed",
-          FAULT_JOURNAL_DIR: join(fixture.journalRoot, "finish"),
-        },
-      );
-      expect(sealedCrash.status).not.toBe(0);
-      let dir = onlyJournal(fixture, "finish");
-      expect(readJournal(dir).phases).toContain("gate_sealed");
-      expect(readJournal(dir).status).toBe("in_progress");
-      // The gate sealed but nothing merged: main must be untouched and abort allowed.
-      expect(runProcess("git", ["rev-parse", "main"], fixture.primary).stdout.trim()).toBe(mainBefore);
-      const abort = runHelper("scripts/contract-worktree.sh", ["recover", "abort"], fixture.linked);
-      expect(abort.status, `${abort.stdout}\n${abort.stderr}`).toBe(0);
-      expect(runProcess("git", ["rev-parse", "HEAD"], fixture.linked).stdout.trim()).toBe(headBefore);
-
-      // Second run: commit-tree has created the object, but the helper dies
-      // before publication_prepared is recorded. An unreachable object is not
-      // an external effect and must remain safely abortable.
-      const objectOnlyDdShim = join(container, "object-only-dd-shim");
-      mkdirSync(objectOnlyDdShim, { recursive: true });
-      writeExecutable(join(objectOnlyDdShim, "dd"), FAKE_DD);
-      const objectOnlyCrash = runHelperWithFault(
-        "scripts/contract-worktree.sh",
-        ["finish", "--merge"],
-        fixture.linked,
-        fixture.pidFile,
-        {
-          REPO_HARNESS_GIT_BIN: fixture.fakeGit,
-          FAULT_BEFORE_PUBLICATION_PREPARED: "1",
-          PATH: `${objectOnlyDdShim}:${process.env.PATH ?? ""}`,
-        },
-      );
-      expect(objectOnlyCrash.status).not.toBe(0);
-      dir = onlyJournal(fixture, "finish");
-      expect(readJournal(dir).phases).not.toContain("publication_prepared");
-      expect(runProcess("git", ["rev-parse", "main"], fixture.primary).stdout.trim()).toBe(mainBefore);
-      const objectOnlyAbort = runHelper("scripts/contract-worktree.sh", ["recover", "abort"], fixture.linked);
-      expect(objectOnlyAbort.status, `${objectOnlyAbort.stdout}\n${objectOnlyAbort.stderr}`).toBe(0);
-      expect(runProcess("git", ["rev-parse", "HEAD"], fixture.linked).stdout.trim()).toBe(headBefore);
-
-      // Third run: publication object and its journal identity exist, but the
-      // target update has not run. Object existence is not an external effect;
-      // recovery must still allow rollback and keep main byte-identical.
-      const preparedCrash = runHelperWithFault(
-        "scripts/contract-worktree.sh",
-        ["finish", "--merge"],
-        fixture.linked,
-        fixture.pidFile,
-        {
-          REPO_HARNESS_GIT_BIN: fixture.fakeGit,
-          FAULT_AFTER_PHASE: "publication_prepared",
-          FAULT_JOURNAL_DIR: join(fixture.journalRoot, "finish"),
-        },
-      );
-      expect(preparedCrash.status).not.toBe(0);
-      dir = onlyJournal(fixture, "finish");
-      expect(readJournal(dir).phases).toContain("publication_prepared");
-      expect(readJournal(dir).phases).not.toContain("merged");
-      expect(runProcess("git", ["rev-parse", "main"], fixture.primary).stdout.trim()).toBe(mainBefore);
-      const preparedAbort = runHelper("scripts/contract-worktree.sh", ["recover", "abort"], fixture.linked);
-      expect(preparedAbort.status, `${preparedAbort.stdout}\n${preparedAbort.stderr}`).toBe(0);
-      expect(runProcess("git", ["rev-parse", "HEAD"], fixture.linked).stdout.trim()).toBe(headBefore);
-
-      // Fourth run: crash right after the target publication landed but before
-      // `complete`. The source branch is deliberately not an ancestor of main;
-      // recovery must use publication_prepared's target commit identity.
-      const ddShim = join(container, "finish-dd-shim");
-      mkdirSync(ddShim, { recursive: true });
-      writeExecutable(join(ddShim, "dd"), FAKE_DD);
-      const mergedCrash = runHelperWithFault(
-        "scripts/contract-worktree.sh",
-        ["finish", "--merge"],
-        fixture.linked,
-        fixture.pidFile,
-        {
-          REPO_HARNESS_GIT_BIN: fixture.fakeGit,
-          FAULT_AFTER_PHASE: "merged",
-          FAULT_JOURNAL_DIR: join(fixture.journalRoot, "finish"),
-          FAULT_FINISH_COMPLETE: "1",
-          PATH: `${ddShim}:${process.env.PATH ?? ""}`,
-        },
-      );
-      expect(mergedCrash.status).not.toBe(0);
-      dir = onlyJournal(fixture, "finish");
-      const merged = readJournal(dir);
-      expect(merged.status).toBe("in_progress");
-      expect(merged.phases).toContain("merged");
-      expect(merged.phases).not.toContain("complete");
-
-      const mergedSha = runProcess("git", ["rev-parse", "main"], fixture.primary).stdout.trim();
-      expect(mergedSha).not.toBe(mainBefore);
-      const sourceHead = runProcess("git", ["rev-parse", "HEAD"], fixture.linked).stdout.trim();
-      expect(runProcess("git", ["merge-base", "--is-ancestor", sourceHead, "main"], fixture.primary).status).not.toBe(0);
-      expect(runProcess("git", ["rev-parse", "main^{tree}"], fixture.primary).stdout.trim()).toBe(
-        runProcess("git", ["rev-parse", "HEAD^{tree}"], fixture.linked).stdout.trim(),
-      );
-
-      // Abort is refused once the merge landed; it must never undo an applied
-      // external effect.
-      const refused = runHelper("scripts/contract-worktree.sh", ["recover", "abort"], fixture.linked);
-      expect(refused.status).toBe(1);
-      expect(refused.stderr).toContain("refusing abort after the merge landed");
-
-      const reconcile = runHelper("scripts/contract-worktree.sh", ["recover", "reconcile"], fixture.linked);
-      expect(reconcile.status, `${reconcile.stdout}\n${reconcile.stderr}`).toBe(0);
-      expect(reconcile.stdout).toContain("the merge was already applied");
-      expect(readJournal(dir).status).toBe("complete");
-      // Reconcile completes only the missing steps: no second merge, no move.
-      expect(runProcess("git", ["rev-parse", "main"], fixture.primary).stdout.trim()).toBe(mergedSha);
-      expect(existsSync(join(dir, "snapshot"))).toBe(false);
-    });
-  });
-
-  test("an in-process journal write failure after publication retains recovery authority", () => {
-    withTempRepo("closeout-journal-landed-write-failure", (container) => {
-      const fixture = installFixture(container);
-      writeFileSync(join(fixture.linked,"implementation.txt"),"real implementation\n");
-      expect(runProcess("git",["add","implementation.txt"],fixture.linked).status).toBe(0);
-      expect(runProcess("git",["commit","-m","implementation"],fixture.linked).status).toBe(0);
-      const mainBefore = runProcess("git", ["rev-parse", "main"], fixture.primary).stdout.trim();
-      const ddShim = join(container, "merged-write-dd-shim");
-      mkdirSync(ddShim, { recursive: true });
-      writeExecutable(join(ddShim, "dd"), FAKE_DD);
-
-      const failed = runHelper("scripts/contract-worktree.sh", ["finish", "--merge"], fixture.linked, {
-        FAULT_FAIL_MERGED_WRITE: "1",
-        PATH: `${ddShim}:${process.env.PATH ?? ""}`,
-      });
-      expect(failed.status).not.toBe(0);
-      expect(failed.stderr).toContain("target publication landed; journal retained for 'recover reconcile'");
-
-      const dir = onlyJournal(fixture, "finish");
-      const journal = readJournal(dir);
-      expect(journal.status).toBe("in_progress");
-      expect(journal.phases).toContain("publication_prepared");
-      expect(journal.phases).not.toContain("merged");
-      const published = runProcess("git", ["rev-parse", "main"], fixture.primary).stdout.trim();
-      expect(published).not.toBe(mainBefore);
-      expect(runProcess("git", ["rev-parse", "main^{tree}"], fixture.primary).stdout.trim()).toBe(
-        runProcess("git", ["rev-parse", "HEAD^{tree}"], fixture.linked).stdout.trim(),
-      );
-      expect(existsSync(join(fixture.linked, PLAN))).toBe(true);
-
-      const reconcile = runHelper("scripts/contract-worktree.sh", ["recover", "reconcile"], fixture.linked);
-      expect(reconcile.status, `${reconcile.stdout}\n${reconcile.stderr}`).toBe(0);
-      expect(readJournal(dir).status).toBe("complete");
-      expect(runProcess("git", ["rev-parse", "main"], fixture.primary).stdout.trim()).toBe(published);
-    });
-  }, 30_000);
-
-  test("an unfinished journal owned by another worktree does not block this one", () => {
-    withTempRepo("closeout-journal-other-worktree", (container) => {
-      const fixture = installFixture(container);
-      const foreign = join(fixture.journalRoot, "finish", "0000000000000000000000000000000000000000");
-      mkdirSync(join(foreign, "snapshot"), { recursive: true });
-      writeFileSync(
-        join(foreign, "meta.json"),
-        `{\n  "version": 1,\n  "operation": "finish",\n  "key": "0000000000000000000000000000000000000000",\n  "worktree": "${join(container, "somewhere-else")}",\n  "original_head": "deadbeef"\n}\n`,
-      );
-      writeFileSync(
-        join(foreign, "status.json"),
-        '{\n  "version": 1,\n  "operation": "finish",\n  "key": "0000000000000000000000000000000000000000",\n  "status": "in_progress",\n  "updated_at": "x",\n  "phases": [\n    {"phase": "prepared", "at": "x", "ref": "deadbeef"}\n  ]\n}\n',
-      );
-
-      const finish = runHelper("scripts/contract-worktree.sh", ["finish", "--no-merge"], fixture.linked);
-      expect(finish.status, `${finish.stdout}\n${finish.stderr}`).toBe(0);
-
-      const inspect = runHelper("scripts/contract-worktree.sh", ["recover", "inspect"], fixture.linked);
-      expect(inspect.status).toBe(0);
-      expect(inspect.stdout).toContain("No unfinished closeout journal for this worktree.");
-    });
-  }, 30_000);
-});
-
 describe("ship-worktrees closeout journal", () => {
   interface ShipFixture extends Fixture {
     readonly remote: string;
@@ -897,7 +392,7 @@ describe("ship-worktrees closeout journal", () => {
     readonly ghLog: string;
   }
 
-  function installShipFixture(container: string, managedLease=true): ShipFixture {
+  function installShipFixture(container: string): ShipFixture {
     const fixture = installFixture(container);
     mkdirSync(join(fixture.linked,"src"),{recursive:true});
     symlinkSync(join(ROOT,"src/effects"),join(fixture.linked,"src/effects"),"dir");
@@ -905,57 +400,6 @@ describe("ship-worktrees closeout journal", () => {
     symlinkSync(join(ROOT,"node_modules"),join(fixture.linked,"node_modules"),"dir");
     const exclude=runProcess("git",["rev-parse","--git-path","info/exclude"],fixture.linked).stdout.trim();
     writeFileSync(exclude,".ai/harness/\nnode_modules/\nsrc/effects\nsrc/core\n");
-    if(managedLease){
-      resolveRepoIdentity(fixture.linked);
-      const taskId=fixtureTaskId('demo');
-      const lease=buildLeaseOwnerRecord({claimId:'fixture-claim',taskId,taskRevision:deriveTaskRevision({taskId,taskCell:'demo',modeCell:'contract',acceptanceCell:'done'}),sprintPath:SPRINT,targetRef:'main',generation:1,sessionId:'fixture-session',sourceWorktree:fixture.linked});
-      const bound=boundLeaseFixture(lease,{executionWorktree:fixture.linked,branch:'codex/demo',unitRef:PLAN});
-      if(!createLeaseDirectory(fixture.linked,taskId))throw Error('fixture lease exists');
-      writeLeaseOwnerDurably(fixture.linked,taskId,bound);
-      writeClaimTokenFixture({task_id:taskId,claim_id:lease.claim_id,worktree:fixture.linked,sprint:SPRINT,task:'demo',unit_ref:PLAN});
-    }
-    writeExecutable(
-      join(container, "fixture-publication-cli.sh"),
-      [
-        "#!/bin/bash",
-        "set -euo pipefail",
-        '[[ -z "${PUBLICATION_CLI_LOG:-}" ]] || printf \'%s\\n\' "$*" >> "$PUBLICATION_CLI_LOG"',
-        `if [[ "\${1:-}" == "sprint" ]]; then exec ${JSON.stringify(process.execPath)} ${JSON.stringify(join(ROOT,"src/cli/index.ts"))} "$@"; fi`,
-        'if [[ "${1:-}" == "publication" && "${2:-}" == "receipt" && "${3:-}" == "prepare" ]]; then',
-        `  printf '%s\\n' '{"action":"create","create_intent":{"claim_id":"fixture-claim","generation":1,"head_sha":"${"c".repeat(40)}","kind":"repo-harness-publication-create-intent","protocol":1,"provider_repo_id":"R_fixture","publication_id":"sha256:${"a".repeat(64)}","task_id":"${fixtureTaskId("demo")}"},"kind":"repo-harness-publication-prepare","protocol":1}'`,
-        "  exit 0",
-        "fi",
-        'if [[ "${1:-}" == "publication" && "${2:-}" == "receipt" && "${3:-}" == "validate-journal-envelope" ]]; then',
-        '  [[ "${4:-}" == "--kind" && "${6:-}" == "--json" ]] || exit 2',
-        '  [[ "$7" != *"fixture-log-noise"* ]] || { echo "invalid journal envelope" >&2; exit 41; }',
-        '  printf \'%s\\n\' "$7"',
-        "  exit 0",
-        "fi",
-        'if [[ "${1:-}" == "publication" && "${2:-}" == "mark-reviewing" ]]; then',
-        '  journal=""; for ((index=1; index <= $#; index++)); do [[ "${!index}" != "--ship-journal" ]] || { next=$((index + 1)); journal="${!next}"; }; done',
-        '  [[ -n "$journal" && -f "$journal" ]] || { echo "missing ship journal" >&2; exit 42; }',
-        '  grep -q \'"phase": "pr_observed"\' "$journal" || { echo "mark-before-pr-observed" >&2; exit 43; }',
-        '  ! grep -q \'"phase": "complete"\' "$journal" || { echo "mark-after-complete" >&2; exit 44; }',
-        '  [[ -z "${PUBLICATION_MARK_STATE:-}" ]] || cp "$journal" "$PUBLICATION_MARK_STATE"',
-        '  [[ "${FAULT_ON_MARK_REVIEWING:-0}" != "1" ]] || { echo \'{"ok":false,"error":"publication_incomplete"}\' >&2; exit 45; }',
-        '  if [[ "${FAULT_KILL_AFTER_MARK_REVIEWING:-0}" == "1" && -n "${FAULT_PID_FILE:-}" && -f "$FAULT_PID_FILE" ]]; then kill -9 "$(cat "$FAULT_PID_FILE")" 2>/dev/null || true; exit 137; fi',
-        '  [[ -z "${PUBLICATION_LEASE_STATE:-}" ]] || printf \'reviewing\\n\' > "$PUBLICATION_LEASE_STATE"',
-        '  [[ -z "${PUBLICATION_MARK_POINTER:-}" ]] || printf \'fixture-pointer\\n\' > "$PUBLICATION_MARK_POINTER"',
-        '  printf \'{"ok":true,"current_publication":{"publication_id":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","receipt_sha256":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","head_sha":"cccccccccccccccccccccccccccccccccccccccc","ship_transaction_key":"fixture-ship"}}\\n\'',
-        "  exit 0",
-        "fi",
-        'if [[ "${1:-}" == "publication" && "${2:-}" == "receipt" && "${3:-}" == "ensure" ]]; then',
-        '  [[ ! -f "${PUBLICATION_LEASE_STATE:-}" || "$(cat "$PUBLICATION_LEASE_STATE")" != "reviewing" ]] || { echo "ensure requires completing lease but fixture lease is reviewing" >&2; exit 46; }',
-        '  if [[ "${FAULT_ON_PUBLICATION_ENSURE:-0}" == "1" && -n "${FAULT_PID_FILE:-}" && -f "$FAULT_PID_FILE" ]]; then kill -9 "$(cat "$FAULT_PID_FILE")" 2>/dev/null || true; exit 137; fi',
-        '  [[ "${FIXTURE_PUBLICATION_ENSURE_LOG_NOISE:-0}" != "1" ]] || printf \'fixture-log-noise\\n\'',
-        `  printf '%s\\n' '{"provider_repo_id":"R_fixture","provider_pr_number":1,"publication_id":"sha256:${"a".repeat(64)}","receipt_digest":"sha256:${"b".repeat(64)}"}'`,
-        "  exit 0",
-        "fi",
-        'echo "unexpected fixture CLI invocation: $*" >&2',
-        "exit 2",
-        "",
-      ].join("\n"),
-    );
     const remote = join(container, "remote.git");
     expect(runProcess("git", ["init", "--bare", "-b", "main", remote], container).status).toBe(0);
     expect(runProcess("git", ["remote", "add", "origin", remote], fixture.primary).status).toBe(0);
@@ -992,7 +436,7 @@ describe("ship-worktrees closeout journal", () => {
 
   test("simultaneous ship calls elect exactly one owner before push or PR", async () => {
     await withTempRepoAsync("closeout-journal-concurrent-ship", async (container) => {
-      const fixture = installShipFixture(container,false);
+      const fixture = installShipFixture(container);
       const { barrierDir, shimDir } = installCloseoutBarrier(container, "ship");
       const env = {
         PATH: `${shimDir}:${process.env.PATH ?? ""}`,
@@ -1023,156 +467,91 @@ describe("ship-worktrees closeout journal", () => {
     });
   }, 30_000);
 
-  test("review entry observes pr_observed before ship complete", () => {
-    withTempRepo("closeout-journal-ship-review-entry-order", (container) => {
-      const fixture = installShipFixture(container);
-      const markLog = join(container, "publication-mark.log");
-      const markState = join(container, "publication-mark-state.json");
-      const result = runHelper("scripts/ship-worktrees.sh", ["--target", "main", "--remote", "origin"], fixture.linked, {
-        REPO_HARNESS_GH_BIN: fixture.ghBin,
-        GH_LOG: fixture.ghLog,
-        PUBLICATION_CLI_LOG: markLog,
-        PUBLICATION_MARK_STATE: markState,
-      });
-      expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
-      expect(readFileSync(markLog, "utf-8").split("\n").filter(Boolean)
-        .filter((line) => line.startsWith("publication mark-reviewing"))).toHaveLength(1);
-      const observedAtMark = JSON.parse(readFileSync(markState, "utf-8")) as { status: string; phases: { phase: string }[] };
-      expect(observedAtMark.status).toBe("in_progress");
-      expect(observedAtMark.phases.map((phase) => phase.phase)).toContain("pr_observed");
-      expect(observedAtMark.phases.map((phase) => phase.phase)).not.toContain("complete");
-      expect(readJournal(onlyJournal(fixture, "ship")).phases).toEqual([
-        "prepared", "implementation_committed", "candidate_frozen", "publication_create_intent", "push_started", "pushed", "pr_create_started", "pr_observed", "complete",
-      ]);
-    });
-  }, 30_000);
 
-  test("a typed review-entry failure leaves ship in_progress and no reviewing success carrier", () => {
-    withTempRepo("closeout-journal-ship-review-entry-failure", (container) => {
-      const fixture = installShipFixture(container);
-      const markState = join(container, "publication-mark-state.json");
-      const pointer = join(container, "publication-pointer");
-      const result = runHelper("scripts/ship-worktrees.sh", ["--target", "main", "--remote", "origin"], fixture.linked, {
-        REPO_HARNESS_GH_BIN: fixture.ghBin,
-        GH_LOG: fixture.ghLog,
-        FAULT_ON_MARK_REVIEWING: "1",
-        PUBLICATION_MARK_STATE: markState,
-        PUBLICATION_MARK_POINTER: pointer,
-      });
-      expect(result.status).not.toBe(0);
-      expect(result.stderr).toContain("publication review entry failed");
-      const journal = readJournal(onlyJournal(fixture, "ship"));
-      expect(journal.status).toBe("in_progress");
-      expect(journal.phases).toEqual(["prepared", "implementation_committed", "candidate_frozen", "publication_create_intent", "push_started", "pushed", "pr_create_started", "pr_observed"]);
-      expect(existsSync(pointer)).toBe(false);
-      expect(JSON.parse(readFileSync(markState, "utf-8")).status).toBe("in_progress");
-    });
-  }, 30_000);
 
-  // Replace the publication CLI fixture with the real CLI, and the provider with
-  // a fake GitHub whose PR facts come from the bare remote. The merge seal store
-  // under the isolated HOME stays empty: only `merge-gate run` writes a seal.
-  function installRealPublication(container: string, fixture: ShipFixture): { readonly home: string; readonly body: string } {
-    writeExecutable(
-      join(container, "fixture-publication-cli.sh"),
-      `#!/bin/bash\nexec ${JSON.stringify(process.execPath)} ${JSON.stringify(join(ROOT, "src/cli/index.ts"))} "$@"\n`,
-    );
-    const body = join(container, "pr-body.md");
-    writeExecutable(
-      fixture.ghBin,
-      [
-        "#!/bin/bash",
-        "set -euo pipefail",
-        'printf \'%s\\n\' "$*" >> "$GH_LOG"',
-        "pr_json() {",
-        `  jq -cn --arg head "$(git -C ${JSON.stringify(fixture.remote)} rev-parse refs/heads/codex/demo)" --arg base "$(git -C ${JSON.stringify(fixture.remote)} rev-parse refs/heads/main)" \\`,
-        `    --rawfile body ${JSON.stringify(body)} '{number:1,url:"https://example.invalid/pr/1",headRefOid:$head,headRefName:"codex/demo",baseRefName:"main",baseRefOid:$base,body:$body,createdAt:"2026-08-22T04:05:55Z"}'`,
-        "}",
-        'case "${1:-} ${2:-}" in',
-        `  "repo view") printf '{"id":"R_fixture"}\\n' ;;`,
-        '  "pr list")',
-        `    if [[ ! -f ${JSON.stringify(body)} ]]; then [[ " $* " == *" --jq "* ]] && printf '\\n' || printf '[]\\n'`,
-        `    elif [[ " $* " == *" --jq "* ]]; then printf 'https://example.invalid/pr/1\\n'`,
-        "    else printf '[%s]\\n' \"$(pr_json)\"; fi ;;",
-        '  "pr create")',
-        '    while [[ $# -gt 0 ]]; do [[ "$1" != "--body" ]] || printf \'%s\' "$2" > ' + JSON.stringify(body) + '; shift; done',
-        '    if [[ "${FAULT_ON_PR_CREATE:-0}" == "1" && -f "${FAULT_PID_FILE:-/nonexistent}" ]]; then kill -9 "$(cat "$FAULT_PID_FILE")" 2>/dev/null || true; exit 137; fi',
-        "    printf 'https://example.invalid/pr/1\\n' ;;",
-        '  "pr edit") printf \'%s\' "$5" > ' + JSON.stringify(body) + " ;;",
-        "  \"pr view\") pr_json ;;",
-        '  *) echo "unexpected gh invocation: $*" >&2; exit 2 ;;',
-        "esac",
-        "",
-      ].join("\n"),
-    );
-    const home = join(container, "home");
-    mkdirSync(home);
-    return { home, body };
-  }
-
-  test("default Draft managed ship reaches reviewing with the real publication CLI and no merge seal", () => {
-    withTempRepo("closeout-journal-ship-real-publication", (container) => {
+  test.each(['branch', 'head', 'dirty', 'clean'] as const)('fresh ship abort preserves foreign work: %s', change => {
+    withTempRepo(`fresh-ship-abort-${change}`, container => {
       const fixture = installShipFixture(container);
-      const provider = installRealPublication(container, fixture);
-      const result = runHelper("scripts/ship-worktrees.sh", ["--target", "main", "--remote", "origin"], fixture.linked, {
-        HOME: provider.home,
-        REPO_HARNESS_GH_BIN: fixture.ghBin,
-        GH_LOG: fixture.ghLog,
+      const original = runProcess('git', ['rev-parse', 'HEAD'], fixture.linked).stdout.trim();
+      writeFileSync(join(fixture.linked, 'owned-change.txt'), 'owned implementation\n');
+      const env = { REPO_HARNESS_GH_BIN: fixture.ghBin, GH_LOG: fixture.ghLog };
+      const crashed = runHelperWithFault('scripts/ship-worktrees.sh', ['--target', 'main', '--remote', 'origin'], fixture.linked, fixture.pidFile, {
+        ...env, REPO_HARNESS_GIT_BIN: fixture.fakeGit, FAULT_AFTER_PHASE: 'implementation_committed',
+        FAULT_ON_GIT: 'rev-parse', FAULT_JOURNAL_DIR: join(fixture.journalRoot, 'ship'),
       });
-      expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
-      expect(readJournal(onlyJournal(fixture, "ship"))).toEqual({
-        status: "complete",
-        phases: ["prepared", "implementation_committed", "candidate_frozen", "publication_create_intent", "push_started", "pushed", "pr_create_started", "pr_observed", "complete"],
-      });
-      const ghLog = readFileSync(fixture.ghLog, "utf-8");
-      expect(ghLog.split("\n").filter((line) => line.startsWith("pr create"))).toHaveLength(1);
-      // The PR body spans several log lines; the Draft flag ends the create call.
-      expect(ghLog).toMatch(/ --draft$/m);
-      const lease = readLease(fixture.linked, fixtureTaskId("demo")).record;
-      expect(lease?.state).toBe("reviewing");
-      const receipt = decodePublicationMarker(readFileSync(provider.body, "utf-8"));
-      expect(receipt).not.toBeNull();
-      expect(receipt!.head_sha).toBe(runProcess("git", ["rev-parse", "refs/heads/codex/demo"], fixture.remote).stdout.trim());
-      expect(receipt!.base_sha).toBe(runProcess("git", ["rev-parse", "refs/heads/main"], fixture.remote).stdout.trim());
-      expect(lease && "current_publication" in lease ? lease.current_publication?.publication_id : null).toBe(receipt!.publication_id);
-      expect(existsSync(join(provider.home, ".repo-harness/gates"))).toBe(false);
+      expect(crashed.status).not.toBe(0);
+      const dir = onlyJournal(fixture, 'ship');
+      const owned = runProcess('git', ['rev-parse', 'HEAD'], fixture.linked).stdout.trim();
+      expect(owned).not.toBe(original);
+      if (change === 'branch') expect(runProcess('git', ['switch', '-c', 'user/new-branch'], fixture.linked).status).toBe(0);
+      if (change === 'head') expect(runProcess('git', ['commit', '--allow-empty', '-m', 'new user commit'], fixture.linked).status).toBe(0);
+      if (change === 'dirty') writeFileSync(join(fixture.linked, 'user-wip.txt'), 'new user work\n');
+      const before = runProcess('git', ['rev-parse', 'HEAD'], fixture.linked).stdout.trim();
+      const branch = runProcess('git', ['branch', '--show-current'], fixture.linked).stdout.trim();
+      const recovered = runHelper('scripts/ship-worktrees.sh', ['--recover', 'abort'], fixture.linked, env);
+      if (change === 'clean') {
+        expect(recovered.status, `${recovered.stdout}\n${recovered.stderr}`).toBe(0);
+        expect(runProcess('git', ['rev-parse', 'HEAD'], fixture.linked).stdout.trim()).toBe(original);
+        expect(readJournal(dir).status).toBe('aborted');
+      } else {
+        expect(recovered.status).not.toBe(0);
+        expect(recovered.stderr).toContain('work preserved');
+        expect(runProcess('git', ['rev-parse', 'HEAD'], fixture.linked).stdout.trim()).toBe(before);
+        expect(runProcess('git', ['branch', '--show-current'], fixture.linked).stdout.trim()).toBe(branch);
+        expect(readJournal(dir).status).toBe('in_progress');
+        if (change === 'dirty') expect(readFileSync(join(fixture.linked, 'user-wip.txt'), 'utf8')).toBe('new user work\n');
+      }
+      expect(readFileSync(join(fixture.linked, 'owned-change.txt'), 'utf8')).toBe('owned implementation\n');
+      expect(runProcess('git', ['rev-parse', 'refs/heads/codex/demo'], fixture.remote).status).not.toBe(0);
     });
   }, 60_000);
 
-  test("real publication recovery after a killed Draft PR creation finishes without a second push or PR", () => {
-    withTempRepo("closeout-journal-ship-real-publication-recovery", (container) => {
+  test.each([false, true])('lease-mode journal permits only an unpushed local abort; pushed=%s', pushed => {
+    withTempRepo('legacy-ship-abort', container => {
       const fixture = installShipFixture(container);
-      const provider = installRealPublication(container, fixture);
-      const env = { HOME: provider.home, REPO_HARNESS_GH_BIN: fixture.ghBin, GH_LOG: fixture.ghLog };
-      const crashed = runHelperWithFault("scripts/ship-worktrees.sh", ["--target", "main", "--remote", "origin"], fixture.linked, fixture.pidFile, {
-        ...env,
-        FAULT_ON_PR_CREATE: "1",
+      const original = runProcess('git', ['rev-parse', 'HEAD'], fixture.linked).stdout.trim();
+      writeFileSync(join(fixture.linked, 'owned-change.txt'), 'owned implementation\n');
+      const env = { REPO_HARNESS_GH_BIN: fixture.ghBin, GH_LOG: fixture.ghLog };
+      const crashed = runHelperWithFault('scripts/ship-worktrees.sh', ['--target', 'main', '--remote', 'origin'], fixture.linked, fixture.pidFile, {
+        ...env, REPO_HARNESS_GIT_BIN: fixture.fakeGit,
+        FAULT_AFTER_PHASE: pushed ? 'candidate_frozen' : 'implementation_committed',
+        FAULT_ON_GIT: pushed ? 'branch' : 'rev-parse', FAULT_JOURNAL_DIR: join(fixture.journalRoot, 'ship'),
       });
       expect(crashed.status).not.toBe(0);
-      const dir = onlyJournal(fixture, "ship");
-      expect(readJournal(dir).phases).toEqual(["prepared", "implementation_committed", "candidate_frozen", "publication_create_intent", "push_started", "pushed", "pr_create_started"]);
-      const remoteHead = runProcess("git", ["rev-parse", "refs/heads/codex/demo"], fixture.remote).stdout.trim();
-
-      const reconciled = runHelper("scripts/ship-worktrees.sh", ["--recover", "reconcile"], fixture.linked, env);
-      expect(reconciled.status, `${reconciled.stdout}\n${reconciled.stderr}`).toBe(0);
-      expect(reconciled.stdout).not.toContain("git push");
-      expect(readFileSync(fixture.ghLog, "utf-8").split("\n").filter((line) => line.startsWith("pr create"))).toHaveLength(1);
-      expect(runProcess("git", ["rev-parse", "refs/heads/codex/demo"], fixture.remote).stdout.trim()).toBe(remoteHead);
-      expect(readJournal(dir)).toEqual({
-        status: "complete",
-        phases: ["prepared", "implementation_committed", "candidate_frozen", "publication_create_intent", "push_started", "pushed", "pr_create_started", "pr_observed", "complete"],
-      });
-      expect(readLease(fixture.linked, fixtureTaskId("demo")).record?.state).toBe("reviewing");
-      expect(decodePublicationMarker(readFileSync(provider.body, "utf-8"))?.head_sha).toBe(remoteHead);
-      expect(existsSync(join(provider.home, ".repo-harness/gates"))).toBe(false);
+      const dir = onlyJournal(fixture, 'ship');
+      const metaPath = join(dir, 'meta.json');
+      const meta = JSON.parse(readFileSync(metaPath, 'utf8'));
+      writeFileSync(metaPath, JSON.stringify({ ...meta, publication_mode: 'lease', claim_id: 'historical-claim', claim_task_id: fixtureTaskId('demo'), claim_generation: '1', claim_task_revision: 'a'.repeat(64) }, null, 2) + '\n');
+      const head = runProcess('git', ['rev-parse', 'HEAD'], fixture.linked).stdout.trim();
+      const reconcile = runHelper('scripts/ship-worktrees.sh', ['--recover', 'reconcile'], fixture.linked, env);
+      expect(reconcile.status).not.toBe(0);
+      expect(reconcile.stderr).toContain('retired or unknown ship journal mode');
+      expect(reconcile.stderr).toContain(dir);
+      const abort = runHelper('scripts/ship-worktrees.sh', ['--recover', 'abort'], fixture.linked, env);
+      if (pushed) {
+        expect(abort.status).not.toBe(0);
+        expect(abort.stderr).toContain('refusing abort after the push landed');
+        expect(runProcess('git', ['rev-parse', 'HEAD'], fixture.linked).stdout.trim()).toBe(head);
+        expect(runProcess('git', ['rev-parse', 'refs/heads/codex/demo'], fixture.remote).stdout.trim()).toBe(head);
+        expect(readJournal(dir).status).toBe('in_progress');
+      } else {
+        expect(abort.status, `${abort.stdout}\n${abort.stderr}`).toBe(0);
+        expect(readJournal(dir).status).toBe('aborted');
+        expect(runProcess('git', ['rev-parse', 'HEAD'], fixture.linked).stdout.trim()).toBe(original);
+        const retry = runHelper('scripts/ship-worktrees.sh', ['--target', 'main', '--remote', 'origin'], fixture.linked, env);
+        expect(retry.status, `${retry.stdout}\n${retry.stderr}`).toBe(0);
+        expect(readJournal(onlyJournal(fixture, 'ship')).status).toBe('complete');
+      }
+      expect(readFileSync(join(fixture.linked, 'owned-change.txt'), 'utf8')).toBe('owned implementation\n');
     });
   }, 60_000);
 
   test("SIGKILL right after the prepared phase rolls back with nothing pushed", () => {
     withTempRepo("closeout-journal-ship-prepared", (container) => {
       const fixture = installShipFixture(container);
-      // Freeze the managed writer's commit before the distinct ship transaction.
-      expect(runHelper("scripts/contract-worktree.sh",["finish","--no-merge"],fixture.linked).status).toBe(0);
+      // Seed the committed branch before the independent ship transaction.
+      expect(runProcess('git', ['add', '-A'], fixture.linked).status).toBe(0);
+      expect(runProcess('git', ['commit', '-m', 'candidate'], fixture.linked).status).toBe(0);
       const planBefore = readFileSync(join(fixture.linked, PLAN), "utf-8");
       const sprintBefore = readFileSync(join(fixture.linked, SPRINT), "utf-8");
       const headBefore = runProcess("git", ["rev-parse", "HEAD"], fixture.linked).stdout.trim();
@@ -1250,8 +629,6 @@ describe("ship-worktrees closeout journal", () => {
     withTempRepo("closeout-journal-ship-pr-observed", (container) => {
       const fixture = installShipFixture(container);
       const shimDir = join(container, "dd-shim");
-      const markLog = join(container, "publication-mark.log");
-      const leaseState = join(container, "publication-lease-state");
       mkdirSync(shimDir, { recursive: true });
       writeExecutable(join(shimDir, "dd"), FAKE_DD);
 
@@ -1268,8 +645,6 @@ describe("ship-worktrees closeout journal", () => {
           PATH: `${shimDir}:${process.env.PATH ?? ""}`,
           REPO_HARNESS_GH_BIN: fixture.ghBin,
           GH_LOG: fixture.ghLog,
-          PUBLICATION_CLI_LOG: markLog,
-          PUBLICATION_LEASE_STATE: leaseState,
         },
       );
       expect(crashed.status).not.toBe(0);
@@ -1277,22 +652,15 @@ describe("ship-worktrees closeout journal", () => {
       const dir = onlyJournal(fixture, "ship");
       const journal = readJournal(dir);
       expect(journal.status).toBe("in_progress");
-      expect(journal.phases).toEqual(["prepared", "implementation_committed", "candidate_frozen", "publication_create_intent", "push_started", "pushed", "pr_create_started", "pr_observed"]);
+      expect(journal.phases).toEqual(["prepared", "implementation_committed", "candidate_frozen", "push_started", "pushed", "pr_create_started", "pr_observed"]);
       expect(journal.phases).not.toContain("complete");
-      expect(readFileSync(markLog, "utf-8").split("\n").filter(Boolean)
-        .filter((line) => line.startsWith("publication mark-reviewing"))).toHaveLength(1);
-      // The successful review entry makes the lease reviewing before the
-      // atomic complete write crashes. A completing-only receipt ensure would
-      // now reject recovery, so reconcile must replay review entry directly.
-      expect(readFileSync(leaseState, "utf-8").trim()).toBe("reviewing");
       const raw = JSON.parse(readFileSync(join(dir, "status.json"), "utf-8")) as {
         phases: { phase: string; publication?: Record<string, unknown> }[];
       };
       expect(raw.phases.find((entry) => entry.phase === "pr_observed")?.publication).toEqual({
-        provider_repo_id: "R_fixture",
-        provider_pr_number: 1,
-        publication_id: `sha256:${"a".repeat(64)}`,
-        receipt_digest: `sha256:${"b".repeat(64)}`,
+        kind: 'branch-pr-observation', pr_number: 1, url: 'https://example.invalid/pr/1',
+        head_sha: runProcess('git', ['rev-parse', 'HEAD'], fixture.linked).stdout.trim(),
+        base_sha: runProcess('git', ['rev-parse', 'origin/main'], fixture.linked).stdout.trim(),
       });
 
       // Both external effects already happened: the push landed and the PR exists.
@@ -1313,8 +681,6 @@ describe("ship-worktrees closeout journal", () => {
       const blocked = runHelper("scripts/ship-worktrees.sh", ["--target", "main", "--remote", "origin"], fixture.linked, {
         REPO_HARNESS_GH_BIN: fixture.ghBin,
         GH_LOG: fixture.ghLog,
-        PUBLICATION_CLI_LOG: markLog,
-        PUBLICATION_LEASE_STATE: leaseState,
       });
       expect(blocked.status).toBe(1);
       expect(blocked.stderr).toContain("unfinished ship journal blocks this ship");
@@ -1329,8 +695,6 @@ describe("ship-worktrees closeout journal", () => {
       const reconcile = runHelper("scripts/ship-worktrees.sh", ["--recover", "reconcile"], fixture.linked, {
         REPO_HARNESS_GH_BIN: fixture.ghBin,
         GH_LOG: fixture.ghLog,
-        PUBLICATION_CLI_LOG: markLog,
-        PUBLICATION_LEASE_STATE: leaseState,
       });
       expect(reconcile.status, `${reconcile.stdout}\n${reconcile.stderr}`).toBe(0);
       expect(reconcile.stdout).toContain("the push was already applied");
@@ -1344,83 +708,12 @@ describe("ship-worktrees closeout journal", () => {
 
       const done = readJournal(dir);
       expect(done.status).toBe("complete");
-      expect(done.phases).toEqual(["prepared", "implementation_committed", "candidate_frozen", "publication_create_intent", "push_started", "pushed", "pr_create_started", "pr_observed", "complete"]);
-      expect(readFileSync(markLog, "utf-8").split("\n").filter(Boolean)
-        .filter((line) => line.startsWith("publication mark-reviewing"))).toHaveLength(2);
-      expect(readFileSync(leaseState, "utf-8").trim()).toBe("reviewing");
+      expect(done.phases).toEqual(["prepared", "implementation_committed", "candidate_frozen", "push_started", "pushed", "pr_create_started", "pr_observed", "complete"]);
       expect(existsSync(join(dir, "snapshot"))).toBe(false);
     });
   }, 30_000);
 
-  test("crash after PR creation before first marker reuses only the durable create intent", () => {
-    withTempRepo("closeout-journal-ship-publication-intent", (container) => {
-      const fixture = installShipFixture(container);
-      const crashed = runHelperWithFault(
-        "scripts/ship-worktrees.sh",
-        ["--target", "main", "--remote", "origin"],
-        fixture.linked,
-        fixture.pidFile,
-        {
-          REPO_HARNESS_GH_BIN: fixture.ghBin,
-          GH_LOG: fixture.ghLog,
-          FAULT_ON_PUBLICATION_ENSURE: "1",
-        },
-      );
-      expect(crashed.status).not.toBe(0);
 
-      const dir = onlyJournal(fixture, "ship");
-      const before = JSON.parse(readFileSync(join(dir, "status.json"), "utf-8")) as {
-        phases: { phase: string; publication?: Record<string, unknown> }[];
-      };
-      expect(before.phases.map((phase) => phase.phase)).toEqual([
-        "prepared", "implementation_committed", "candidate_frozen", "publication_create_intent", "push_started", "pushed", "pr_create_started",
-      ]);
-      expect(before.phases.find((phase) => phase.phase === "publication_create_intent")?.publication).toEqual({
-        action: "create",
-        create_intent: {
-          claim_id: "fixture-claim",
-          generation: 1,
-          head_sha: "c".repeat(40),
-          kind: "repo-harness-publication-create-intent",
-          protocol: 1,
-          provider_repo_id: "R_fixture",
-          publication_id: `sha256:${"a".repeat(64)}`,
-          task_id: fixtureTaskId("demo"),
-        },
-        kind: "repo-harness-publication-prepare",
-        protocol: 1,
-      });
-
-      const reconciled = runHelper("scripts/ship-worktrees.sh", ["--recover", "reconcile"], fixture.linked, {
-        REPO_HARNESS_GH_BIN: fixture.ghBin,
-        GH_LOG: fixture.ghLog,
-      });
-      expect(reconciled.status, `${reconciled.stdout}\n${reconciled.stderr}`).toBe(0);
-      expect(readFileSync(fixture.ghLog, "utf-8").split("\n").filter((line) => line.startsWith("pr create"))).toHaveLength(1);
-      expect(readJournal(dir).phases).toEqual([
-        "prepared", "implementation_committed", "candidate_frozen", "publication_create_intent", "push_started", "pushed", "pr_create_started", "pr_observed", "complete",
-      ]);
-    });
-  }, 30_000);
-
-  test("rejects malformed publication CLI stdout instead of embedding tool noise in the journal", () => {
-    withTempRepo("closeout-journal-ship-publication-noise", (container) => {
-      const fixture = installShipFixture(container);
-      const failed = runHelper("scripts/ship-worktrees.sh", ["--target", "main", "--remote", "origin"], fixture.linked, {
-        REPO_HARNESS_GH_BIN: fixture.ghBin,
-        GH_LOG: fixture.ghLog,
-        FIXTURE_PUBLICATION_ENSURE_LOG_NOISE: "1",
-      });
-      expect(failed.status).toBe(1);
-      expect(failed.stderr).toContain("publication ensure output is not one canonical journal envelope");
-      const dir = onlyJournal(fixture, "ship");
-      const raw = readFileSync(join(dir, "status.json"), "utf-8");
-      expect(raw).not.toContain("fixture-log-noise");
-      expect(readJournal(dir).phases).toEqual([
-        "prepared", "implementation_committed", "candidate_frozen", "publication_create_intent", "push_started", "pushed", "pr_create_started",
-      ]);
-    });
-  }, 30_000);
 
   test("SIGKILL between push and PR creation reconciles to PR creation only", () => {
     withTempRepo("closeout-journal-ship", (container) => {
@@ -1442,7 +735,7 @@ describe("ship-worktrees closeout journal", () => {
       const dir = onlyJournal(fixture, "ship");
       const journal = readJournal(dir);
       expect(journal.status).toBe("in_progress");
-      expect(journal.phases).toEqual(["prepared", "implementation_committed", "candidate_frozen", "publication_create_intent", "push_started", "pushed", "pr_create_started"]);
+      expect(journal.phases).toEqual(["prepared", "implementation_committed", "candidate_frozen", "push_started", "pushed", "pr_create_started"]);
 
       // The external effect is real: the branch is on the remote already.
       const remoteSha = runProcess("git", ["rev-parse", "refs/heads/codex/demo"], fixture.remote).stdout.trim();
@@ -1483,7 +776,7 @@ describe("ship-worktrees closeout journal", () => {
 
       const done = readJournal(dir);
       expect(done.status).toBe("complete");
-      expect(done.phases).toEqual(["prepared", "implementation_committed", "candidate_frozen", "publication_create_intent", "push_started", "pushed", "pr_create_started", "pr_observed", "complete"]);
+      expect(done.phases).toEqual(["prepared", "implementation_committed", "candidate_frozen", "push_started", "pushed", "pr_create_started", "pr_observed", "complete"]);
     });
   }, 30_000);
 
@@ -1513,7 +806,7 @@ describe("ship-worktrees closeout journal", () => {
       const dir = onlyJournal(fixture, "ship");
       const journal = readJournal(dir);
       expect(journal.status).toBe("in_progress");
-      expect(journal.phases).toEqual(["prepared","implementation_committed","candidate_frozen","publication_create_intent","push_started"]);
+      expect(journal.phases).toEqual(["prepared","implementation_committed","candidate_frozen","push_started"]);
       expect(journal.phases).not.toContain("pushed");
 
       const remoteSha = runProcess("git", ["rev-parse", "refs/heads/codex/demo"], fixture.remote).stdout.trim();
@@ -1534,7 +827,7 @@ describe("ship-worktrees closeout journal", () => {
       });
       expect(reconcile.status, `${reconcile.stdout}\n${reconcile.stderr}`).toBe(0);
       expect(reconcile.stdout).not.toContain("git push");
-      expect(readJournal(dir).phases).toEqual(["prepared", "implementation_committed", "candidate_frozen", "publication_create_intent", "push_started", "pushed", "pr_observed", "complete"]);
+      expect(readJournal(dir).phases).toEqual(["prepared", "implementation_committed", "candidate_frozen", "push_started", "pushed", "pr_observed", "complete"]);
       expect(runProcess("git", ["rev-parse", "refs/heads/codex/demo"], fixture.remote).stdout.trim()).toBe(remoteSha);
     });
   }, 30_000);
@@ -1565,39 +858,4 @@ describe("closeout journal no-read guard", () => {
       expect(after).toBe(before);
     });
   }, 30_000);
-});
-
-describe('fresh recovery preserves foreign branch/head and user work',()=>{
-  for(const change of ['branch','head','dirty','clean'] as const){
-    test(`fresh pre-effect abort ${change==='clean'?'rolls back only its own commit':`refuses ${change} movement`}`,()=>withTempRepo(`fresh-recover-${change}`,(container)=>{
-      const fixture=installFixture(container);
-      const original=runProcess('git',['rev-parse','HEAD'],fixture.linked).stdout.trim();
-      writeFileSync(join(fixture.linked,'owned-change.txt'),'owned implementation\n');
-      const crashed=runHelperWithFault('scripts/contract-worktree.sh',['finish','--no-merge'],fixture.linked,fixture.pidFile,{
-        REPO_HARNESS_GIT_BIN:fixture.fakeGit,FAULT_AFTER_PHASE:'implementation_committed',FAULT_ON_GIT:'rev-parse',FAULT_JOURNAL_DIR:join(fixture.journalRoot,'finish'),
-      });
-      expect(crashed.status).not.toBe(0);
-      const dir=onlyJournal(fixture,'finish');
-      const ownHead=runProcess('git',['rev-parse','HEAD'],fixture.linked).stdout.trim();
-      expect(ownHead).not.toBe(original);
-      if(change==='branch')expect(runProcess('git',['switch','-c','user/new-branch'],fixture.linked).status).toBe(0);
-      if(change==='head')expect(runProcess('git',['commit','--allow-empty','-m','new user commit'],fixture.linked).status).toBe(0);
-      if(change==='dirty')writeFileSync(join(fixture.linked,'user-wip.txt'),'new user work\n');
-      const before=runProcess('git',['rev-parse','HEAD'],fixture.linked).stdout.trim();
-      const branch=runProcess('git',['branch','--show-current'],fixture.linked).stdout.trim();
-      const recovered=runHelper('scripts/contract-worktree.sh',['recover','abort'],fixture.linked);
-      if(change==='clean'){
-        expect(recovered.status,`${recovered.stdout}\n${recovered.stderr}`).toBe(0);
-        expect(runProcess('git',['rev-parse','HEAD'],fixture.linked).stdout.trim()).toBe(original);
-        expect(readJournal(dir).status).toBe('aborted');
-      }else{
-        expect(recovered.status).not.toBe(0);expect(recovered.stderr).toContain('work preserved');
-        expect(runProcess('git',['rev-parse','HEAD'],fixture.linked).stdout.trim()).toBe(before);
-        expect(runProcess('git',['branch','--show-current'],fixture.linked).stdout.trim()).toBe(branch);
-        expect(readJournal(dir).status).toBe('in_progress');
-        if(change==='dirty')expect(readFileSync(join(fixture.linked,'user-wip.txt'),'utf8')).toBe('new user work\n');
-      }
-      expect(readFileSync(join(fixture.linked,'owned-change.txt'),'utf8')).toBe('owned implementation\n');
-    }),60000);
-  }
 });

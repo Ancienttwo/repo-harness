@@ -257,7 +257,6 @@ const en = {
   'detail.blockerOwner': '{owner} owns this',
   'detail.noProgressTitle': 'Feedback reports no progress',
   'detail.noProgressBody': 'Fleet marked this task as not progressing. The snapshot carries the flag only, not how long it has been stalled.',
-  'detail.repairTitle': 'Recovery paths recorded by Fleet',
   'detail.identity': 'Identity and lease',
   'detail.deliveryRuntime': 'Message delivery evidence',
   'deliveryEvidence.explanation': 'Observations describe notification delivery, not worker activity or completion.',
@@ -444,9 +443,6 @@ const en = {
   'blocker.not_mergeable': 'The branch conflicts with its base',
   'blocker.task_revision_mismatch': 'The canonical task revision does not match the receipt',
   'blocker.already_integrated': 'The change is already integrated into the base',
-
-  'repair.resume_same_owner': 'Resume with the same owner.',
-  'repair.explicit_takeover': 'Take the task over explicitly.',
 
   'composer.toggleClaim': 'Message current owner',
   'composer.toggleTask': 'Queue message for next claimant',
@@ -1133,7 +1129,6 @@ const zh: Readonly<Record<OperatorMessageKey, string>> = {
   'detail.blockerOwner': '归{owner}处理',
   'detail.noProgressTitle': '反馈显示没有进展',
   'detail.noProgressBody': 'Fleet 把这个任务标成没有进展。快照只带这个标记，不带停了多久。',
-  'detail.repairTitle': 'Fleet 记录的恢复路径',
   'detail.identity': '身份与租约',
   'detail.deliveryRuntime': '消息投递证据',
   'deliveryEvidence.explanation': '观察记录只说明通知投递，不代表 worker 活动或任务完成。',
@@ -1320,9 +1315,6 @@ const zh: Readonly<Record<OperatorMessageKey, string>> = {
   'blocker.not_mergeable': '分支和 base 有冲突',
   'blocker.task_revision_mismatch': '任务的 revision 和回执对不上',
   'blocker.already_integrated': '改动已经进了 base',
-
-  'repair.resume_same_owner': '让原来的 owner 接着做。',
-  'repair.explicit_takeover': '显式接管这个任务。',
 
   'composer.toggleClaim': '给当前持有者发消息',
   'composer.toggleTask': '给下一个认领者留消息',

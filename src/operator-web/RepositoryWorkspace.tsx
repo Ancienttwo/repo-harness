@@ -575,16 +575,6 @@ function TaskCauses({ card, t }: { readonly card: OperatorFleetCardV1; readonly 
           <div>
             <strong>{t('detail.noProgressTitle')}</strong>
             <span>{t('detail.noProgressBody')}</span>
-            {card.feedback.repair_actions.length > 0 && (
-              <>
-                <span className="detail-repair-title">{t('detail.repairTitle')}</span>
-                <ul className="repair-list">
-                  {card.feedback.repair_actions.map((action) => (
-                    <li key={action}>{t(`repair.${action}` as OperatorMessageKey)} <code className="cause-code">{action}</code></li>
-                  ))}
-                </ul>
-              </>
-            )}
           </div>
         </div>
       )}

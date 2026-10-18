@@ -9,6 +9,7 @@ responsibilities:
   - Save the complete review packet before any reviewer pane starts.
   - Validate reviewer output against the closed review schema and prior findings.
   - Record the AcceptanceReceipt only after the worktrees are unchanged and no cancel request exists.
+  - Record acceptance only for the exact live contract. Leave archives as historical documents.
 source:
   include:
     - src/core/review/**

@@ -1,34 +1,4 @@
-/**
- * The sprint `## Backlog` row grammar, in exactly one place.
- *
- * `scripts/sprint-backlog.sh`'s `backlog_rows()` awk scan is the authority and
- * `tests/sprint-backlog-grammar-drift.test.ts` binds this projection to it.
- * Three consumers read rows through this module -- the continuation envelope
- * (status cells only), the session-context panel (status and task cells), and
- * the coordination identity derivation (id, task, mode, and acceptance cells)
- * -- so none re-implements the grammar.
- *
- * Cell extraction reproduces the awk field split exactly, including its known
- * behaviour on escaped pipes: `awk -F '|'` splits on every `|`, so a cell
- * containing `\|` is split there too. Matching that is the point; a "smarter"
- * split here would silently disagree with the script that owns the file.
- *
- * ## Schema versions
- *
- * Schema 1 rows are `| # | Status | Task | Mode | Acceptance | Plan |` and carry
- * no identity of their own: `task_id` used to be a digest of the Task cell, so a
- * title edit minted a new task. Schema 2 inserts one persisted `ID` cell --
- * `| # | ID | Status | Task | Mode | Acceptance | Plan |` -- which is the sole
- * task identity authority; the Task cell becomes display text again.
- *
- * The version is declared once, in the sprint header, as
- * `> **Backlog Schema**: 2`. It is read as a header field and never inferred
- * from the column count: a row that lost a cell must fail closed as a malformed
- * row, not silently reclassify the whole file as the other schema. Both this
- * module and the awk authority only look for the marker *before* the
- * `## Backlog` heading, so a stray marker inside or after the table cannot make
- * the two parsers disagree.
- */
+/** Read historical Sprint backlog rows for operator and task-history views. */
 
 /** Backlog schema without a persisted ID column; identity was derived. */
 export const SPRINT_BACKLOG_SCHEMA_V1 = 1;

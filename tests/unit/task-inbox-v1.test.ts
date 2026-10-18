@@ -1,4 +1,4 @@
-import { boundLeaseFixture } from '../helpers/sprint-fixture';
+import { seedLeaseDirectory, writeHistoricalLease, boundLeaseFixture, fixtureTaskId } from '../helpers/sprint-fixture';
 import { describe, expect, test } from 'bun:test';
 import { execFileSync } from 'child_process';
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'fs';
@@ -20,12 +20,7 @@ import {
   summarizeTaskInboxForFleet,
   readTaskMessageDelivery,
 } from '../../src/effects/fleet/task-inbox';
-import {
-  readLease,
-  createLeaseDirectory,
-  writeLeaseOwnerDurably,
-} from '../../src/effects/state/coordination-lease-store';
-import { fixtureTaskId } from '../helpers/sprint-fixture';
+import { readLease } from '../../src/effects/state/coordination-lease-store';
 
 const SPRINT_PATH = 'plans/sprints/inbox.sprint.md';
 const TASK_CELL = 'deliver peer messages safely';
@@ -79,8 +74,8 @@ function bind(fixture: Fixture, claim_id: string, generation: number): void {
     branch: `codex/inbox-${generation}`,
     unitRef: 'plans/plan-inbox.md',
   });
-  if (generation === 1 && !createLeaseDirectory(fixture.root, fixture.task_id)) throw new Error('lease election failed');
-  writeLeaseOwnerDurably(fixture.root, fixture.task_id, bound);
+  if (generation === 1 && !seedLeaseDirectory(fixture.root, fixture.task_id)) throw new Error('lease election failed');
+  writeHistoricalLease(fixture.root, fixture.task_id, bound);
 }
 
 function message(

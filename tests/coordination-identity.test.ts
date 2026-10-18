@@ -1,4 +1,5 @@
-import { boundLeaseFixture } from './helpers/sprint-fixture';
+import { serializeHistoricalLease } from './helpers/sprint-fixture';
+import { completingLeaseFixture, reviewingLeaseFixture, boundLeaseFixture, fixtureTaskId } from './helpers/sprint-fixture';
 /**
  * Identity and revision determinism for the shared lease protocol.
  *
@@ -7,28 +8,8 @@ import { boundLeaseFixture } from './helpers/sprint-fixture';
  * granularity is wrong and every verb built on it inherits the defect.
  */
 import { describe, expect, test } from 'bun:test';
-import {
-  COORDINATION_PROTOCOL,
-  FIRST_LEASE_GENERATION,
-  LEASE_OWNER_RECORD_SCHEMA_V2,
-  TASK_DIGEST_PATTERN,
-  abortLeaseCompletionRecord,
-  beginLeaseCompletionRecord,
-  buildLeaseOwnerRecord,
-  abandonPublicationLeaseRecord,
-  deriveTaskRevision,
-  lookupCanonicalTask,
-  parseLeaseOwnerRecord,
-  projectCanonicalTasks,
-  releaseLeaseRecord,
-  reopenPublicationLeaseRecord,
-  serializeLeaseOwnerRecord,
-  takeoverPublicationLeaseRecord,
-  enterReviewingLeaseRecord,
-  type LeaseOwnerRecordV1,
-} from '../src/core/state/coordination-identity';
+import { COORDINATION_PROTOCOL, FIRST_LEASE_GENERATION, LEASE_OWNER_RECORD_SCHEMA_V2, TASK_DIGEST_PATTERN, buildLeaseOwnerRecord, deriveTaskRevision, lookupCanonicalTask, parseLeaseOwnerRecord, projectCanonicalTasks, type LeaseOwnerRecordV1 } from '../src/core/state/coordination-identity';
 import { SprintSchemaError } from '../src/core/state/sprint-backlog-rows';
-import { fixtureTaskId } from './helpers/sprint-fixture';
 
 const REPO_IDENTITY = '/tmp/example-clone/.git';
 const SPRINT_PATH = 'plans/sprints/20260818-1156-shared-lease.sprint.md';
@@ -291,7 +272,7 @@ describe('owner record schema', () => {
     expect(record.generation).toBe(1);
     expect(record.target_ref).toBe('refs/heads/main');
     expect(record.finish_transaction_key).toBeNull();
-    expect(parseLeaseOwnerRecord(serializeLeaseOwnerRecord(record))).toEqual(record);
+    expect(parseLeaseOwnerRecord(serializeHistoricalLease(record))).toEqual(record);
   });
 
   test('parse rejects a record missing generation, target_ref, or finish_transaction_key', () => {
@@ -326,127 +307,11 @@ describe('owner record schema', () => {
       // Schema 1 historically validates fields, not cross-state execution tuples.
       unit_ref: 'plans/legacy-boundary.md',
     };
-    expect(parseLeaseOwnerRecord(serializeLeaseOwnerRecord(legacy))).toEqual(legacy);
+    expect(parseLeaseOwnerRecord(serializeHistoricalLease(legacy))).toEqual(legacy);
     expect(parseLeaseOwnerRecord(`${JSON.stringify({ ...legacy, current_publication: null })}\n`)).toBeNull();
     expect(parseLeaseOwnerRecord(`${JSON.stringify({ ...legacy, unknown_outer_field: true })}\n`)).toBeNull();
   });
 
-  test('begin-completion records the closeout journal key it was handed', () => {
-    const bound = boundLeaseFixture(owner(), {
-      executionWorktree: '/tmp/wt',
-      branch: 'codex/row',
-      unitRef: 'plans/plan-row.md',
-    });
-
-    const keyed = beginLeaseCompletionRecord(bound, {
-      claimId: 'claim-1',
-      executionWorktree: '/tmp/wt',
-      finishTransactionKey: 'finish/abc123',
-    });
-    expect(keyed.ok).toBe(true);
-    if (keyed.ok) {
-      expect(keyed.record.state).toBe('completing');
-      expect(keyed.record.finish_transaction_key).toBe('finish/abc123');
-    }
-
-    // No journal, no key: the field is never filled with a plausible stand-in.
-    const unkeyed = beginLeaseCompletionRecord(bound, {
-      claimId: 'claim-1',
-      executionWorktree: '/tmp/wt',
-      finishTransactionKey: null,
-    });
-    expect(unkeyed.ok).toBe(true);
-    if (unkeyed.ok) expect(unkeyed.record.finish_transaction_key).toBeNull();
-  });
-
-  test('abort-completion restores only the same fenced worktree and is idempotent', () => {
-    const bound = boundLeaseFixture(owner(), {
-      executionWorktree: '/tmp/wt',
-      branch: 'codex/row',
-      unitRef: 'plans/plan-row.md',
-    });
-    const completing = beginLeaseCompletionRecord(bound, {
-      claimId: 'claim-1',
-      executionWorktree: '/tmp/wt',
-      finishTransactionKey: 'finish/abc123',
-    });
-    expect(completing.ok).toBe(true);
-    if (!completing.ok) return;
-
-    expect(abortLeaseCompletionRecord(completing.record, {
-      claimId: 'stale-claim',
-      executionWorktree: '/tmp/wt',
-    }).ok).toBe(false);
-    expect(abortLeaseCompletionRecord(completing.record, {
-      claimId: 'claim-1',
-      executionWorktree: '/tmp/other',
-    }).ok).toBe(false);
-
-    const restored = abortLeaseCompletionRecord(completing.record, {
-      claimId: 'claim-1',
-      executionWorktree: '/tmp/wt',
-    });
-    expect(restored.ok).toBe(true);
-    if (!restored.ok) return;
-    expect(restored.record).toMatchObject({
-      state: 'bound',
-      claim_id: 'claim-1',
-      execution_worktree: '/tmp/wt',
-      finish_transaction_key: null,
-    });
-
-    const replay = abortLeaseCompletionRecord(restored.record, {
-      claimId: 'claim-1',
-      executionWorktree: '/tmp/wt',
-    });
-    expect(replay).toEqual(restored);
-    expect(abortLeaseCompletionRecord(owner(), {
-      claimId: 'claim-1',
-      executionWorktree: '/tmp/wt',
-    }).ok).toBe(false);
-  });
-
-});
-
-describe('lease state guards', () => {
-  const TASK = taskByCell(sprint([ROW_A, ROW_B]), 'build the lease store');
-
-  function inState(state: 'reserving' | 'bound' | 'completing' | 'released'): LeaseOwnerRecordV1 {
-    return {
-      ...buildLeaseOwnerRecord({
-        claimId: 'claim-1',
-        taskId: TASK.task_id,
-        taskRevision: TASK.task_revision,
-        sprintPath: SPRINT_PATH,
-        targetRef: 'main',
-        generation: FIRST_LEASE_GENERATION,
-        sessionId: 'session-1',
-        sourceWorktree: '/tmp/example-clone',
-      }),
-      state,
-    };
-  }
-
-  test('release accepts only reserving and bound', () => {
-    for (const state of ['reserving', 'bound'] as const) {
-      const released = releaseLeaseRecord(inState(state), 'claim-1');
-      expect(released.ok).toBe(true);
-      if (released.ok) expect(released.record.state).toBe('released');
-    }
-    for (const state of ['completing', 'released'] as const) {
-      const refused = releaseLeaseRecord(inState(state), 'claim-1');
-      expect(refused.ok).toBe(false);
-      if (!refused.ok) {
-        expect(refused.error).toContain(`cannot release a lease in state ${state}`);
-      }
-    }
-  });
-
-  test('release checks the fencing token before the state', () => {
-    const outcome = releaseLeaseRecord(inState('completing'), 'claim-other');
-    expect(outcome.ok).toBe(false);
-    if (!outcome.ok) expect(outcome.error).toContain('claim id mismatch');
-  });
 });
 
 describe('lease owner record schema 2 publication lifecycle', () => {
@@ -467,7 +332,7 @@ describe('lease owner record schema 2 publication lifecycle', () => {
     const bound = boundLeaseFixture(reserved, {
       executionWorktree: '/tmp/review-wt', branch: 'codex/review', unitRef: 'plans/review.md',
     });
-    const complete = beginLeaseCompletionRecord(bound, {
+    const complete = completingLeaseFixture(bound, {
       claimId: 'claim-1', executionWorktree: '/tmp/review-wt', finishTransactionKey: 'finish/fixture-key',
     });
     if (!complete.ok) throw new Error(complete.error);
@@ -475,7 +340,7 @@ describe('lease owner record schema 2 publication lifecycle', () => {
   }
 
   test('writes a strict schema-2 reviewing pointer without touching coordination digests', () => {
-    const entered = enterReviewingLeaseRecord(completing(), { claimId: 'claim-1', publication: pointer });
+    const entered = reviewingLeaseFixture(completing(), { claimId: 'claim-1', publication: pointer });
     expect(entered.ok).toBe(true);
     if (!entered.ok) return;
     expect(entered.record).toMatchObject({
@@ -484,55 +349,15 @@ describe('lease owner record schema 2 publication lifecycle', () => {
       current_publication: pointer,
       finish_transaction_key: null,
     });
-    expect(parseLeaseOwnerRecord(serializeLeaseOwnerRecord(entered.record))).toEqual(entered.record);
+    expect(parseLeaseOwnerRecord(serializeHistoricalLease(entered.record))).toEqual(entered.record);
     expect(parseLeaseOwnerRecord(`${JSON.stringify({ ...entered.record, current_publication: { ...pointer, extra: true } })}\n`)).toBeNull();
     expect(parseLeaseOwnerRecord(`${JSON.stringify({ ...entered.record, record_schema: 3 })}\n`)).toBeNull();
     expect(parseLeaseOwnerRecord(`${JSON.stringify({ ...entered.record, record_schema: undefined })}\n`)).toBeNull();
     expect(parseLeaseOwnerRecord(`${JSON.stringify({ ...entered.record, unexpected: true })}\n`)).toBeNull();
     expect(parseLeaseOwnerRecord(`${JSON.stringify({ ...entered.record, finish_transaction_key: 'finish/mixed-domains' })}\n`)).toBeNull();
     expect(parseLeaseOwnerRecord(`${JSON.stringify({ ...entered.record, execution_worktree: null, branch: null, unit_ref: null })}\n`)).toBeNull();
-    const reopened = reopenPublicationLeaseRecord(entered.record, {
-      claimId: 'claim-1', expectedGeneration: 1, expectedPublicationId: pointer.publication_id, expectedHeadSha: pointer.head_sha,
-    });
-    if (!reopened.ok) throw new Error(reopened.error);
-    expect(parseLeaseOwnerRecord(`${JSON.stringify({ ...reopened.record, current_publication: pointer })}\n`)).toBeNull();
+    expect(parseLeaseOwnerRecord(`${JSON.stringify({ ...entered.record, state: 'bound', current_publication: pointer })}\n`)).toBeNull();
     expect(COORDINATION_PROTOCOL).toBe(1);
   });
 
-  test('reviewing refuses ordinary steal and only lifecycle transitions clear its pointer', () => {
-    const entered = enterReviewingLeaseRecord(completing(), { claimId: 'claim-1', publication: pointer });
-    if (!entered.ok) throw new Error(entered.error);
-
-    const reopened = reopenPublicationLeaseRecord(entered.record, {
-      claimId: 'claim-1', expectedGeneration: 1, expectedPublicationId: pointer.publication_id, expectedHeadSha: pointer.head_sha,
-    });
-    expect(reopened.ok).toBe(true);
-    if (reopened.ok) expect(reopened.record).toMatchObject({ state: 'bound', current_publication: null, record_schema: 2 });
-
-    const taken = takeoverPublicationLeaseRecord(entered.record, {
-      expectedClaimId: 'claim-1', expectedGeneration: 1, expectedPublicationId: pointer.publication_id,
-      expectedHeadSha: pointer.head_sha,
-      reason: 'repair', newClaimId: 'claim-2', sessionId: 'session-2', sourceWorktree: '/tmp/two',
-    });
-    expect(taken.ok).toBe(true);
-    if (taken.ok) expect(taken.record).toMatchObject({
-      state: 'reserving', generation: 2, claim_id: 'claim-2', execution_worktree: null, branch: null, unit_ref: null, current_publication: null,
-    });
-    const abandoned = abandonPublicationLeaseRecord(entered.record, {
-      expectedClaimId: 'claim-1', expectedGeneration: 1, expectedPublicationId: pointer.publication_id,
-      expectedHeadSha: pointer.head_sha,
-    });
-    expect(abandoned.ok).toBe(true);
-    if (abandoned.ok) expect(abandoned.record).toMatchObject({ state: 'released', current_publication: null });
-
-    const staleGeneration = reopenPublicationLeaseRecord(entered.record, {
-      claimId: 'claim-1', expectedGeneration: 2, expectedPublicationId: pointer.publication_id, expectedHeadSha: pointer.head_sha,
-    });
-    expect(staleGeneration).toEqual({ ok: false, error: expect.stringContaining('expected generation') });
-    const staleHead = takeoverPublicationLeaseRecord(entered.record, {
-      expectedClaimId: 'claim-1', expectedGeneration: 1, expectedPublicationId: pointer.publication_id,
-      expectedHeadSha: 'd'.repeat(40), reason: 'repair', newClaimId: 'claim-2', sessionId: 'session-2', sourceWorktree: '/tmp/two',
-    });
-    expect(staleHead).toEqual({ ok: false, error: 'publication_pointer_mismatch' });
-  });
 });

@@ -66,7 +66,6 @@ archive_transaction_on_exit() {
 }
 
 archive_transaction_begin() {
-  local extra_path
   archive_transaction_dir="$(mktemp -d)"
   archive_transaction_active=1
   trap archive_transaction_on_exit EXIT
@@ -75,11 +74,7 @@ archive_transaction_begin() {
   archive_transaction_snapshot ".ai/harness/active-plan"
   archive_transaction_snapshot ".ai/harness/active-worktree"
   archive_transaction_snapshot ".claude/.plan-state"
-  for extra_path in "$@"; do
-    if [[ -n "$extra_path" ]]; then
-      archive_transaction_snapshot "$extra_path"
-    fi
-  done
+
 }
 
 archive_transaction_commit() {
@@ -692,7 +687,6 @@ apply_archive_workflow() {
   local completed_gate_mode="$1"
   local plan_status archive_plan_path archive_todo notes_file archive_notes
   local archive_contract archive_review cleared_active marker_file marker_value plan_key
-  local archive_projection_receipt_path=""
 
   resolve_archive_artifacts
   if [[ "$outcome" == "Completed" && "$completed_gate_mode" == "current-required" ]]; then
@@ -708,12 +702,7 @@ apply_archive_workflow() {
     return 1
   fi
 
-  if [[ "$outcome" == "Completed" && "$completed_gate_mode" == "current-required" ]]; then
-    archive_projection_receipt_path="$(
-      REPO_HARNESS_TARGET_REPO_ROOT="$PWD" "$BUN_BIN" "$helper_dir/acceptance-receipt.ts" archive-projection-path
-    )"
-  fi
-  archive_transaction_begin "$archive_projection_receipt_path"
+  archive_transaction_begin
   mkdir -p plans/archive tasks/archive tasks/notes
 
   plan_status="Archived"
@@ -811,11 +800,6 @@ apply_archive_workflow() {
   rm -f ".claude/.plan-state/${plan_key}.task-handoff.md.bak"
 
   bash "$helper_dir/refresh-current-status.sh" --clear --write --reason "archive-workflow"
-
-  if [[ "$outcome" == "Completed" && "$completed_gate_mode" == "current-required" ]]; then
-    REPO_HARNESS_TARGET_REPO_ROOT="$PWD" "$BUN_BIN" "$helper_dir/acceptance-receipt.ts" seal-archive-projection \
-      --contract "$archive_contract" >/dev/null
-  fi
 
   archive_transaction_commit
 

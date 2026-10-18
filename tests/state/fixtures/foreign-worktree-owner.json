@@ -85,13 +85,10 @@
       "plan": "foreign_worktree",
       "pending": "none",
       "worktree": "foreign_marker",
-      "contract": "missing",
-      "contract_path": "missing",
       "evidence": "unchecked"
     },
     "paths": {
-      "active_plan": "plans/plan-20260712-2327-effective-fixture.md",
-      "contract": null
+      "active_plan": "plans/plan-20260712-2327-effective-fixture.md"
     },
     "marker": {
       "problem": "foreign_worktree"

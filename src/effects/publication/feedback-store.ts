@@ -5,40 +5,10 @@
  * evidence live in distinct files so neither can change an event digest.
  */
 import { createHash, randomUUID } from 'crypto';
-import {
-  closeSync,
-  constants,
-  existsSync,
-  fsyncSync,
-  linkSync,
-  lstatSync,
-  mkdirSync,
-  openSync,
-  readFileSync,
-  readdirSync,
-  renameSync,
-  unlinkSync,
-  writeSync,
-} from 'fs';
+import { closeSync, constants, existsSync, fsyncSync, linkSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, unlinkSync, writeSync } from 'fs';
 import { join } from 'path';
 
-import {
-  canonicalFeedbackDeliveryReceiptBytes,
-  canonicalFeedbackEventBytes,
-  canonicalReactionAttemptReceiptBytes,
-  canonicalRepairDispatchProofBytes,
-  transitionFeedbackDeliveryReceipt,
-  transitionRepairDispatchProof as transitionRepairDispatchProofCore,
-  validateFeedbackDeliveryReceipt,
-  validateFeedbackEvent,
-  validateReactionAttemptReceipt,
-  validateRepairDispatchProof,
-  type FeedbackDeliveryReceiptV1,
-  type FeedbackEventV1,
-  type ReactionAttemptReceiptV1,
-  type RepairDispatchProofV1,
-  type RepairDispatchSuccessorInput,
-} from '../../core/publication/feedback';
+import { canonicalFeedbackDeliveryReceiptBytes, canonicalFeedbackEventBytes, transitionFeedbackDeliveryReceipt, validateFeedbackDeliveryReceipt, validateFeedbackEvent, validateReactionAttemptReceipt, type FeedbackDeliveryReceiptV1, type FeedbackEventV1, type ReactionAttemptReceiptV1 } from '../../core/publication/feedback';
 import { resolveGitCommonDirectory } from '../git/common-directory';
 
 export const FEEDBACK_ROOT_RELATIVE_PATH = 'repo-harness/feedback/v1';
@@ -46,7 +16,6 @@ export const FEEDBACK_ROOT_RELATIVE_PATH = 'repo-harness/feedback/v1';
 export type FeedbackStoreErrorCode =
   | 'feedback_unreadable'
   | 'provider_event_conflict'
-  | 'repair_dispatch_conflict'
   | 'repair_not_dispatched'
   | 'reaction_receipt_conflict'
   | 'feedback_incomplete';
@@ -90,7 +59,6 @@ interface PublicationLayout {
   readonly publication: string;
   readonly events: string;
   readonly deliveries: string;
-  readonly repairs: string;
   readonly reactions: string;
 }
 
@@ -108,7 +76,6 @@ function publicationLayout(repoRoot: string, publicationId: string, gitBin = 'gi
     publication,
     events: join(publication, 'events'),
     deliveries: join(publication, 'deliveries'),
-    repairs: join(publication, 'repairs'),
     reactions: join(publication, 'reactions.jsonl'),
   };
 }
@@ -121,9 +88,6 @@ function deliveryPathIn(layout: PublicationLayout, providerEventId: string): str
   return join(layout.deliveries, `${eventComponent(providerEventId)}.json`);
 }
 
-function repairProofPathIn(layout: PublicationLayout, repairId: string): string {
-  return join(layout.repairs, `${publicationComponent(repairId)}.json`);
-}
 
 export function feedbackEventPath(
   repoRoot: string,
@@ -147,14 +111,6 @@ export function feedbackReactionLedgerPath(repoRoot: string, publicationId: stri
   return publicationLayout(repoRoot, publicationId, gitBin).reactions;
 }
 
-export function repairDispatchProofPath(
-  repoRoot: string,
-  publicationId: string,
-  repairId: string,
-  gitBin = 'git',
-): string {
-  return repairProofPathIn(publicationLayout(repoRoot, publicationId, gitBin), repairId);
-}
 
 function ensureDirectory(path: string): void {
   try {
@@ -188,7 +144,6 @@ function preparePublicationDirectories(layout: PublicationLayout): void {
   ensureDirectory(layout.publication);
   ensureDirectory(layout.events);
   ensureDirectory(layout.deliveries);
-  ensureDirectory(layout.repairs);
 }
 
 /** Validate every owned ancestor before following a read path below it. */
@@ -267,13 +222,6 @@ function parseReaction(line: string, path: string, lineNumber: number): Reaction
   }
 }
 
-function parseRepairDispatchProof(bytes: Buffer, path: string): RepairDispatchProofV1 {
-  try {
-    return validateRepairDispatchProof(JSON.parse(bytes.toString('utf-8')));
-  } catch (error) {
-    throw unreadable(`repair dispatch proof is malformed: ${path}`, error);
-  }
-}
 
 function publishImmutable(path: string, bytes: Buffer, equivalent: () => boolean): void {
   if (existsSync(path)) {
@@ -476,197 +424,7 @@ export function readFeedbackDeliveryReceipts(
   return Object.freeze(receipts);
 }
 
-/** Read one evidence-only dispatch proof by its internally derived repair ID. */
-export function readRepairDispatchProof(
-  repoRoot: string,
-  publicationId: string,
-  repairId: string,
-  gitBin = 'git',
-): RepairDispatchProofV1 | null {
-  return readRepairDispatchProofIn(publicationLayout(repoRoot, publicationId, gitBin), publicationId, repairId);
-}
-
-function readRepairDispatchProofIn(
-  layout: PublicationLayout,
-  publicationId: string,
-  repairId: string,
-): RepairDispatchProofV1 | null {
-  if (!publicationTreeExists(layout)) return null;
-  if (!requireDirectory(layout.repairs, true)) return null;
-  const path = repairProofPathIn(layout, repairId);
-  const bytes = existingRegular(path, 'repair dispatch proof');
-  if (bytes === null) return null;
-  const proof = parseRepairDispatchProof(bytes, path);
-  if (proof.publication_id !== publicationId || proof.repair_id !== repairId) {
-    throw unreadable(`repair dispatch proof does not match its storage key: ${path}`);
-  }
-  return proof;
-}
-
-/**
- * Strict recovery locator for a source publication whose former pointer may no
- * longer be current. Selection remains the effect layer's fenced operation;
- * this function never guesses between multiple proofs.
- */
-export function readRepairDispatchProofs(
-  repoRoot: string,
-  publicationId: string,
-  gitBin = 'git',
-): readonly RepairDispatchProofV1[] {
-  const layout = publicationLayout(repoRoot, publicationId, gitBin);
-  if (!publicationTreeExists(layout)) return Object.freeze([]);
-  const directory = layout.repairs;
-  const proofs: RepairDispatchProofV1[] = [];
-  for (const name of listedFiles(directory, true)) {
-    if (!/^[0-9a-f]{64}\.json$/u.test(name)) throw unreadable(`unexpected repair dispatch filename: ${name}`);
-    const path = join(directory, name);
-    const proof = parseRepairDispatchProof(readRegular(path, 'repair dispatch proof'), path);
-    if (proof.publication_id !== publicationId || publicationComponent(proof.repair_id) !== name.slice(0, -'.json'.length)) {
-      throw unreadable(`repair dispatch proof does not match its storage key: ${path}`);
-    }
-    proofs.push(proof);
-  }
-  return Object.freeze(proofs);
-}
-
-/**
- * Persist a repair proof only as its legal state machine allows: first
- * `prepared`, then the one exact `dispatched` successor.  The proof records
- * observed lifecycle facts but is never an authority to perform them.
- */
-export function writeRepairDispatchProof(
-  repoRoot: string,
-  publicationId: string,
-  proof: RepairDispatchProofV1,
-  gitBin = 'git',
-): string {
-  const valid = validateRepairDispatchProof(proof);
-  if (valid.publication_id !== publicationId) {
-    throw new FeedbackStoreError('repair_dispatch_conflict', 'repair dispatch proof publication does not match its inbox');
-  }
-  const layout = publicationLayout(repoRoot, publicationId, gitBin);
-  preparePublicationDirectories(layout);
-  const path = repairProofPathIn(layout, valid.repair_id);
-  const previous = existingRegular(path, 'repair dispatch proof');
-  if (previous !== null) {
-    const current = parseRepairDispatchProof(previous, path);
-    const currentBytes = canonicalRepairDispatchProofBytes(current);
-    const nextBytes = canonicalRepairDispatchProofBytes(valid);
-    if (currentBytes === nextBytes) return path;
-    if (current.phase !== 'prepared' || valid.phase !== 'dispatched') {
-      throw new FeedbackStoreError('repair_dispatch_conflict', `repair dispatch proof is not a legal transition: ${path}`);
-    }
-    let transitioned: RepairDispatchProofV1;
-    try {
-      transitioned = transitionRepairDispatchProofCore(current, {
-        successor_claim_id: valid.successor_claim_id!,
-        successor_generation: valid.successor_generation!,
-        successor_state: valid.successor_state!,
-      });
-    } catch (error) {
-      throw new FeedbackStoreError('repair_dispatch_conflict', `repair dispatch proof successor is invalid: ${path}`, error);
-    }
-    if (canonicalRepairDispatchProofBytes(transitioned) !== nextBytes) {
-      throw new FeedbackStoreError('repair_dispatch_conflict', `repair dispatch proof immutable fields changed: ${path}`);
-    }
-  } else if (valid.phase !== 'prepared') {
-    throw new FeedbackStoreError('repair_dispatch_conflict', 'repair dispatch proof must start prepared');
-  }
-
-  const bytes = Buffer.from(`${canonicalRepairDispatchProofBytes(valid)}\n`, 'utf-8');
-  const parent = layout.repairs;
-  const temporary = join(parent, `.${hash(path)}.${process.pid}.${randomUUID()}.tmp`);
-  let fd: number | null = null;
-  try {
-    fd = openSync(temporary, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600);
-    writeAll(fd, bytes);
-    fsyncSync(fd);
-  } catch (error) {
-    throw incomplete(`cannot write repair dispatch proof: ${path}`, error);
-  } finally {
-    if (fd !== null) closeSync(fd);
-  }
-  try {
-    renameSync(temporary, path);
-    fsyncDirectory(parent);
-  } catch (error) {
-    throw incomplete(`cannot publish repair dispatch proof: ${path}`, error);
-  } finally {
-    try { unlinkSync(temporary); } catch { /* The publish error, if any, wins. */ }
-  }
-  return path;
-}
-
-export function transitionRepairDispatchProof(
-  repoRoot: string,
-  publicationId: string,
-  repairId: string,
-  successor: RepairDispatchSuccessorInput,
-  gitBin = 'git',
-): RepairDispatchProofV1 {
-  const current = readRepairDispatchProof(repoRoot, publicationId, repairId, gitBin);
-  if (current === null) {
-    throw new FeedbackStoreError('repair_not_dispatched', 'repair dispatch proof is unavailable');
-  }
-  let next: RepairDispatchProofV1;
-  try {
-    next = transitionRepairDispatchProofCore(current, successor);
-  } catch (error) {
-    throw new FeedbackStoreError('repair_dispatch_conflict', 'repair dispatch proof transition is invalid', error);
-  }
-  writeRepairDispatchProof(repoRoot, publicationId, next, gitBin);
-  return next;
-}
-
-/**
- * Append under the caller's already-held task lock.  `completion_id` is the
- * durable idempotency key: replaying identical canonical evidence is a no-op,
- * while any alternate completion fact for the same ID fails closed.
- */
-export function appendReactionAttemptReceipt(
-  repoRoot: string,
-  publicationId: string,
-  receipt: ReactionAttemptReceiptV1,
-  gitBin = 'git',
-): string {
-  const valid = validateReactionAttemptReceipt(receipt);
-  if (valid.publication_id !== publicationId) {
-    throw new FeedbackStoreError('reaction_receipt_conflict', 'reaction receipt publication does not match its ledger');
-  }
-  const layout = publicationLayout(repoRoot, publicationId, gitBin);
-  preparePublicationDirectories(layout);
-  const proof = readRepairDispatchProofIn(layout, publicationId, valid.repair_id);
-  if (proof === null || proof.phase !== 'dispatched') {
-    throw new FeedbackStoreError('repair_not_dispatched', 'reaction receipt has no dispatched repair proof');
-  }
-  if (proof.successor_claim_id !== valid.successor_claim_id
-    || proof.successor_generation !== valid.successor_generation) {
-    throw new FeedbackStoreError('reaction_receipt_conflict', 'reaction receipt successor does not match its dispatched proof');
-  }
-  const path = layout.reactions;
-  const current = existingRegular(path, 'feedback reaction ledger');
-  if (current !== null) {
-    const existing = readReactionAttemptReceiptsIn(layout, publicationId);
-    for (const receipt of existing) {
-      if (receipt.completion_id !== valid.completion_id) continue;
-      if (canonicalReactionAttemptReceiptBytes(receipt) === canonicalReactionAttemptReceiptBytes(valid)) return path;
-      throw new FeedbackStoreError('reaction_receipt_conflict', 'reaction completion_id conflicts with existing receipt');
-    }
-  }
-  const line = Buffer.from(`${canonicalReactionAttemptReceiptBytes(valid)}\n`, 'utf-8');
-  let fd: number | null = null;
-  try {
-    fd = openSync(path, constants.O_WRONLY | constants.O_CREAT | constants.O_APPEND, 0o600);
-    writeAll(fd, line);
-    fsyncSync(fd);
-  } catch (error) {
-    throw incomplete(`cannot append feedback reaction receipt: ${path}`, error);
-  } finally {
-    if (fd !== null) closeSync(fd);
-  }
-  return path;
-}
-
+/** Read historical completion receipts without restoring their retired writer. */
 export function readReactionAttemptReceipts(
   repoRoot: string,
   publicationId: string,

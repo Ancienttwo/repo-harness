@@ -58,7 +58,7 @@ The roles and the state flow below apply to contract-level work only.
 13. `.ai/context/context-map.json` indexes stable root context and discoverable capability context derived from the registry.
 14. `documentation` inside `.ai/harness/policy.json` keeps generated docs minimal and moves optional docs to agent-created, evidence-backed output.
 15. `lsp_profiles` inside policy and context-map files select tooling hints per capability.
-16. `worktree_strategy` inside policy tells agents when to isolate contract-level work in `codex/<slug>` worktrees, start execution through `repo-harness run contract-worktree start --plan <plan>`, and finish with Waza `/check` plus `repo-harness run contract-worktree finish`.
+16. `worktree_strategy` inside policy tells agents when to isolate contract-level work in `codex/<slug>` worktrees, start execution through `repo-harness run contract-worktree start --plan <plan>`, and use `/check` plus the GitHub PR for review and delivery.
 17. `.ai/harness/handoff/current.md` preserves resumable state across sessions.
 18. `.ai/harness/events.jsonl` and `.ai/harness/runs/*.json` retain lightweight execution traces.
 
@@ -106,7 +106,7 @@ The roles and the state flow below apply to contract-level work only.
   ```
 
   All fields are optional. A malformed or non-canonical field fails the command. The archive root and every destination must be gitignored. A scanned or archive path through a symlink fails the command. The default root is under `.ai/harness/archive/`, which the generated `.gitignore` block already ignores.
-- Plans stay committed: keep `plans/` tracked in Git. A closed plan stays in `plans/archive/` and in Git for the retention window. The window counts from the last commit of a tracked plan, and from the file time of an untracked plan. After the window, retention moves the plan to the archive root, and the plan leaves the working tree. Retention does not stage or commit; commit the removal. A plan with uncommitted changes is skipped. In the other classes, an entry with a Git-tracked file is skipped, because those classes are local-only.
+- Plans stay committed: keep `plans/` tracked in Git. A closed plan stays in `plans/archive/` and in Git for the retention window. The window counts from the last commit of a tracked artifact, and from the file time of an untracked plan. After the window, retention moves the plan to the archive root, and the plan leaves the working tree. Retention does not stage or commit; commit the removal. A plan with uncommitted changes is skipped. Closed task records use the same window and guards. Check logs and run records still skip tracked files.
 - Local-only process artifacts: a repository that does not commit its task records and run evidence can add these patterns below the generated `.gitignore` block. Do not ignore `plans/`; plans stay committed. The two negations keep the durable ledgers tracked. Leave out `*.jsonl` if the repository tracks JSONL data.
 
   ```gitignore

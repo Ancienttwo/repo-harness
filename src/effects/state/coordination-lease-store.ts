@@ -1,53 +1,13 @@
-/**
- * The coordination plane's filesystem primitives, rooted at
- * `$(git rev-parse --git-common-dir)/repo-harness/coordination/v1/`:
- *
- * ```
- * leases/<task-id>/owner.json
- * retired-leases/<task-id>-<uuid>/   (a removed lease, until its cleanup ends)
- * locks/tasks/<task-id>.lock/
- * locks/backlog.lock/
- * ```
- *
- * The git common directory is the point: it is shared by every linked worktree
- * of one clone, which is exactly the scope `sprint-backlog.sh`'s per-worktree
- * `in_flight_dir()` and `.backlog-lock` lack.
- * `scripts/contract-worktree.sh:513-537` already proves this shape here, with
- * one atomic `mkdir` election plus an owner record under the same common dir.
- *
- * Mutual exclusion reuses `withExclusiveDirectoryLock`, the house primitive
- * `src/effects/state/git-state-version-store.ts` already runs against this same
- * common directory. It is the same atomic-`mkdir` election with stale reclaim
- * that `acquire_backlog_lock()` performs, hardened with a published owner
- * token, PID liveness, and ancestor-identity checks; hand-rolling a second,
- * weaker mutex beside it would be a duplicate authority for the same datum.
- *
- * Nothing here classifies by guessing. A lease directory with no owner record
- * (the crash window between `mkdir` and the durable write), a malformed or
- * empty record, and a symlinked lease directory or record are all `unknown`,
- * and `unknown` is never silently deleted -- `removeLease` refuses to touch it.
- */
-import { randomUUID } from 'crypto';
-import { lstatSync, mkdirSync, readFileSync, readdirSync, renameSync, rmdirSync, unlinkSync } from 'fs';
-import { dirname, join } from 'path';
-import {
-  TASK_DIGEST_PATTERN,
-  parseLeaseOwnerRecord,
-  serializeLeaseOwnerRecord,
-  type LeaseOwnerRecord,
-  type LeaseState,
-} from '../../core/state/coordination-identity';
-import { syncDirectoryDurably, writeFileDurably } from '../evidence/atomic-append';
+/** Read historical lease owners and lock manual inbox operations in the Git common directory. */
+import { lstatSync, readFileSync, readdirSync } from 'fs';
+import { join } from 'path';
+import { TASK_DIGEST_PATTERN, parseLeaseOwnerRecord, type LeaseOwnerRecord, type LeaseState } from '../../core/state/coordination-identity';
 import { configuredGitBinary, resolveGitCommonDirectory } from '../git/common-directory';
 import { withExclusiveDirectoryLock } from '../locking/exclusive-directory-lock';
 
 /** Relative to the git common directory. */
 export const COORDINATION_ROOT_RELATIVE_PATH = 'repo-harness/coordination/v1';
-export const COORDINATION_BACKLOG_LOCK_RELATIVE_PATH = `${COORDINATION_ROOT_RELATIVE_PATH}/locks/backlog.lock`;
 export const LEASE_OWNER_FILE_NAME = 'owner.json';
-const LEASE_OWNER_TEMP_PREFIX = `.${LEASE_OWNER_FILE_NAME}.tmp-`;
-/** Sibling of `leases/`, so no lease reader ever enumerates a removed lease. */
-const RETIRED_LEASES_DIRECTORY_NAME = 'retired-leases';
 
 /** Why a lease could not be classified into a lifecycle state. */
 export type LeaseUnknownReason =
@@ -104,103 +64,10 @@ export function leaseDirectory(cwd: string, taskId: string): string {
   return join(coordinationRoot(cwd), 'leases', taskId);
 }
 
-/**
- * Serialize every ownership mutation for one task. Each verb -- claim, bind,
- * release, steal, reconcile -- runs its read, compare, and write inside this
- * critical section, which is what makes fencing-token comparison safe: a bare
- * compare-and-mutate is still a TOCTOU when a concurrent steal lands between
- * the read and the write.
- */
+/** Serialize manual inbox and feedback writes for one historical task. */
 export function withTaskLock<T>(cwd: string, taskId: string, run: () => T): T {
   const commonDir = resolveGitCommonDirectory(cwd);
   return withExclusiveDirectoryLock(commonDir, taskLockRelativePath(taskId), run);
-}
-
-/** How a reclaimed backlog lock is reported; overridable for tests. */
-export type BacklogLockReclaimReporter = (lockPath: string) => void;
-
-const defaultBacklogLockReclaimReporter: BacklogLockReclaimReporter = (lockPath) => {
-  process.stderr.write(`sprint-backlog: reclaiming stale backlog lock: ${lockPath}\n`);
-};
-
-/**
- * The backlog-wide lock, relocated from `sprint-backlog.sh`'s per-worktree
- * `.backlog-lock` onto the shared plane so back-fill serializes across
- * worktrees.
- *
- * `sprint-backlog.sh`'s `acquire_backlog_lock` still takes this same directory
- * for retained completion, and publishes the same owner file this primitive writes, so
- * a live shell holder is protected by PID liveness and a killed one is
- * reclaimed through `reclaimStaleOwner`, which is on by default. Both sides
- * also reclaim a stale *empty* directory -- a creator that stopped between
- * `mkdir` and publication -- and a creator resumed after that reclaim fails
- * the single-owner check before it runs. `reclaimStaleEmptyDirectory` brings
- * that shape to this side, so the two callers of one directory agree about
- * which locks are recoverable. The report reuses the shell's exact wording so
- * an operator reading either path's stderr sees one message.
- */
-export function withBacklogLock<T>(
-  cwd: string,
-  run: () => T,
-  reportReclaim: BacklogLockReclaimReporter = defaultBacklogLockReclaimReporter,
-): T {
-  const commonDir = resolveGitCommonDirectory(cwd);
-  return withExclusiveDirectoryLock(commonDir, COORDINATION_BACKLOG_LOCK_RELATIVE_PATH, run, {
-    reclaimStaleEmptyDirectory: true,
-    onStaleReclaim: reportReclaim,
-  });
-}
-
-/**
- * Atomic `mkdir` election of the lease directory. `false` means another caller
- * already elected it; the caller must then read the owner record under the
- * lock rather than assume anything about who won.
- */
-export function createLeaseDirectory(cwd: string, taskId: string): boolean {
-  const target = leaseDirectory(cwd, taskId);
-  mkdirSync(dirname(target), { recursive: true, mode: 0o700 });
-  try {
-    mkdirSync(target, { mode: 0o700 });
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'EEXIST') return false;
-    throw error;
-  }
-  syncDirectoryDurably(dirname(target));
-  return true;
-}
-
-/**
- * Publish an owner record durably: temp file, fsync, atomic rename, then fsync
- * the containing directory on POSIX. Windows retains file flushes and atomic
- * publication without claiming equivalent directory power-loss durability. A reader
- * therefore observes either the previous record or the new one, never a
- * partial write.
- */
-export function writeLeaseOwnerDurably(
-  cwd: string,
-  taskId: string,
-  record: LeaseOwnerRecord,
-): void {
-  if (record.task_id !== taskId) {
-    throw new Error(
-      `refusing to write owner record for task ${record.task_id} into lease ${taskId}`,
-    );
-  }
-  const directory = leaseDirectory(cwd, taskId);
-  const target = join(directory, LEASE_OWNER_FILE_NAME);
-  const temp = join(directory, `${LEASE_OWNER_TEMP_PREFIX}${process.pid}-${Date.now()}`);
-  try {
-    writeFileDurably(temp, serializeLeaseOwnerRecord(record));
-    renameSync(temp, target);
-  } catch (error) {
-    try {
-      unlinkSync(temp);
-    } catch {
-      // The temp file may never have been created; the original error wins.
-    }
-    throw error;
-  }
-  syncDirectoryDurably(directory);
 }
 
 function classifyUnknown(
@@ -292,78 +159,4 @@ export function listLeaseReads(cwd: string, gitTimeoutMs?: number, gitBin = conf
     .filter((entry) => TASK_DIGEST_PATTERN.test(entry))
     .sort()
     .map((entry) => readLeaseAt(join(leasesRoot, entry), entry)));
-}
-
-export interface LeaseByClaimId {
-  readonly task_id: string;
-  readonly record: LeaseOwnerRecord;
-}
-
-export type LeaseClaimLookup =
-  | { readonly ok: true; readonly lease: LeaseByClaimId }
-  | { readonly ok: false; readonly error: string };
-
-/**
- * Locate the lease a fencing token owns. The scan is a lookup only: the caller
- * still re-reads and re-compares the record under that task's lock, so a lease
- * that moves between the scan and the lock is caught there rather than here.
- *
- * Unknown leases are skipped, never repaired. Two leases carrying one claim id
- * is an impossible state, so it fails closed instead of picking one.
- */
-export function findLeaseByClaimId(cwd: string, claimId: string): LeaseClaimLookup {
-  const matches: LeaseByClaimId[] = [];
-  for (const read of listLeaseReads(cwd)) {
-    if (read.record !== null && read.record.claim_id === claimId) {
-      matches.push({ task_id: read.task_id, record: read.record });
-    }
-  }
-  if (matches.length === 0) return { ok: false, error: `no lease holds claim id ${claimId}` };
-  if (matches.length > 1) {
-    return {
-      ok: false,
-      error: `claim id ${claimId} is held by ${matches.length} leases: ${matches.map((match) => match.task_id).join(', ')}`,
-    };
-  }
-  return { ok: true, lease: matches[0] };
-}
-
-/**
- * Remove a lease whose owner record this caller has already validated under
- * the task lock. It refuses to remove anything it cannot see a matching owner
- * record for, so an `unknown` lease -- an empty directory, a malformed record,
- * a symlink -- always survives to explicit reconcile.
- */
-export function removeLease(cwd: string, taskId: string, expectedClaimId: string): void {
-  const read = readLease(cwd, taskId);
-  if (read.record === null) {
-    throw new Error(
-      `refusing to remove lease ${taskId}: classified ${read.classification}`
-      + `${read.unknown_reason ? ` (${read.unknown_reason})` : ''}`,
-    );
-  }
-  if (read.record.claim_id !== expectedClaimId) {
-    throw new Error(
-      `refusing to remove lease ${taskId}: owned by ${read.record.claim_id}, not ${expectedClaimId}`,
-    );
-  }
-  // One rename takes the lease off the live path. Deleting the record first
-  // and the directory second left a crash window, and a terminated owner
-  // write's temporary file made the rmdir fail: both left an ownerless lease
-  // that `claim` refuses and `reconcile` must not clear.
-  const directory = leaseDirectory(cwd, taskId);
-  const retiredRoot = join(coordinationRoot(cwd), RETIRED_LEASES_DIRECTORY_NAME);
-  mkdirSync(retiredRoot, { recursive: true, mode: 0o700 });
-  const retired = join(retiredRoot, `${taskId}-${randomUUID()}`);
-  renameSync(directory, retired);
-  syncDirectoryDurably(dirname(directory));
-
-  // Cleanup only. The retired copy is outside every lease read, so a crash
-  // here blocks nothing; an entry this store did not write is left in place.
-  for (const entry of readdirSync(retired)) {
-    if (entry === LEASE_OWNER_FILE_NAME || entry.startsWith(LEASE_OWNER_TEMP_PREFIX)) {
-      unlinkSync(join(retired, entry));
-    }
-  }
-  if (readdirSync(retired).length === 0) rmdirSync(retired);
 }

@@ -5,20 +5,15 @@ import {
   FeedbackProtocolError,
   buildFeedbackDeliveryReceipt,
   buildFeedbackEvent,
-  buildRepairDispatchProof,
   buildReactionAttemptReceipt,
   canonicalFeedbackEventBytes,
   deriveFeedbackRevision,
-  deriveRepairId,
   deriveReactionToken,
   projectRepairOffer,
   transitionFeedbackDeliveryReceipt,
-  transitionRepairDispatchProof,
   validateFeedbackDeliveryReceipt,
   validateFeedbackEvent,
   validateReactionAttemptReceipt,
-  validateRepairDispatchProof,
-  validateRepairOffer,
   type ReactionAttemptReceiptInput,
 } from '../../src/core/publication/feedback';
 
@@ -80,26 +75,6 @@ function reaction(overrides: Partial<ReactionAttemptReceiptInput> = {}) {
   });
 }
 
-function preparedProof(overrides: Partial<Parameters<typeof buildRepairDispatchProof>[0]> = {}) {
-  return buildRepairDispatchProof({
-    publication_id: PUBLICATION_ID,
-    receipt_sha256: RECEIPT,
-    task_id: TASK_ID,
-    task_revision: '3'.repeat(64),
-    claim_id: 'claim-fixture',
-    generation: 3,
-    head_sha: HEAD,
-    ship_transaction_key: 'ship-source-1',
-    feedback_revision: `sha256:${'4'.repeat(64)}`,
-    before_reaction_token: TOKEN,
-    action: 'resume_same_owner',
-    phase: 'prepared',
-    successor_claim_id: null,
-    successor_generation: null,
-    successor_state: null,
-    ...overrides,
-  });
-}
 
 describe('FeedbackEventV1', () => {
   test('normalizes provider object IDs once and validates only canonical persisted event bytes', () => {
@@ -196,45 +171,6 @@ describe('FeedbackDeliveryReceiptV1', () => {
 });
 
 describe('reaction and repair projection', () => {
-  test('freezes a deterministic prepared-to-dispatched proof with the exact lifecycle successor', () => {
-    const prepared = preparedProof();
-    expect(prepared.repair_id).toBe(deriveRepairId({
-      publication_id: prepared.publication_id,
-      receipt_sha256: prepared.receipt_sha256,
-      task_id: prepared.task_id,
-      task_revision: prepared.task_revision,
-      claim_id: prepared.claim_id,
-      generation: prepared.generation,
-      head_sha: prepared.head_sha,
-      ship_transaction_key: prepared.ship_transaction_key,
-      feedback_revision: prepared.feedback_revision,
-      before_reaction_token: prepared.before_reaction_token,
-      action: prepared.action,
-    }));
-    const dispatched = transitionRepairDispatchProof(prepared, {
-      successor_claim_id: 'claim-fixture',
-      successor_generation: 3,
-      successor_state: 'bound',
-    });
-    expect(validateRepairDispatchProof(dispatched)).toEqual(dispatched);
-    expect(() => transitionRepairDispatchProof(prepared, {
-      successor_claim_id: 'new-claim', successor_generation: 4, successor_state: 'reserving',
-    })).toThrow(FeedbackProtocolError);
-    const takeover = transitionRepairDispatchProof(preparedProof({ action: 'explicit_takeover' }), {
-      successor_claim_id: 'new-claim', successor_generation: 4, successor_state: 'reserving',
-    });
-    expect(takeover).toMatchObject({
-      action: 'explicit_takeover',
-      phase: 'dispatched',
-      successor_claim_id: 'new-claim',
-      successor_generation: 4,
-      successor_state: 'reserving',
-    });
-    expect(() => transitionRepairDispatchProof(preparedProof({ action: 'explicit_takeover' }), {
-      successor_claim_id: 'claim-fixture', successor_generation: 4, successor_state: 'reserving',
-    })).toThrow(FeedbackProtocolError);
-    expect(() => validateRepairDispatchProof({ ...prepared, operator_session: 'forbidden' })).toThrow(FeedbackProtocolError);
-  });
 
   test('reaction token includes only the frozen breaker domain, canonically', () => {
     const first = deriveReactionToken({
@@ -338,9 +274,8 @@ describe('reaction and repair projection', () => {
       state: 'offered', attention_owner: 'agent',
       offer: {
         kind: 'repo-harness-repair-offer',
-        allowed_actions: ['resume_same_owner', 'explicit_takeover'],
+        allowed_actions: [],
       },
     });
-    if (offered.state === 'offered') expect(validateRepairOffer(offered.offer)).toEqual(offered.offer);
   });
 });

@@ -1,4 +1,4 @@
-import { boundLeaseFixture } from '../helpers/sprint-fixture';
+import { seedLeaseDirectory, writeHistoricalLease, boundLeaseFixture, fixtureTaskId } from '../helpers/sprint-fixture';
 import {
   seedEngineerBinding,
   claimActorReceiptFixture,
@@ -44,7 +44,6 @@ import { loadEngineerProfile } from '../../src/effects/engineers/profile-store';
 import { readAgentRuntimePolicy } from '../../src/effects/engineers/agent-runtime-feature';
 import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
 import { deliverTaskInbox, sendTaskMessage } from '../../src/effects/fleet/task-inbox';
-import { createLeaseDirectory, writeLeaseOwnerDurably } from '../../src/effects/state/coordination-lease-store';
 import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
 import {
   AgentRuntimeEffectStoreError,
@@ -56,7 +55,6 @@ import {
   startAgentRuntimeEffect,
 } from '../../src/effects/engineers/agent-runtime-effect-store';
 import { seedEngineerTaskMessage, releaseEngineerTaskMessage } from '../helpers/engineer-runtime-fixture';
-import { fixtureTaskId } from '../helpers/sprint-fixture';
 
 const sourceRoot = process.cwd();
 const roots: string[] = [];
@@ -144,7 +142,7 @@ describe('R1 provider-neutral Agent Runtime', () => {
     execFileSync('git', ['add', sprintPath], { cwd: repoRoot }); execFileSync('git', ['commit', '-qm', 'task authority'], { cwd: repoRoot });
     const taskId = fixtureTaskId(taskCell); const taskRevision = deriveTaskRevision({ taskCell: taskCell, taskId, modeCell: 'contract', acceptanceCell: 'exact receipt' }); const claimId = '44444444-4444-4444-8444-444444444444';
     const claimed = buildLeaseOwnerRecord({ claimId, taskId, taskRevision, sprintPath, targetRef: 'HEAD', generation: 1, sessionId: 'runtime-session', sourceWorktree: repoRoot });
-    const bound = boundLeaseFixture(claimed, { executionWorktree: repoRoot, branch: 'codex/runtime', unitRef: 'plans/runtime.md' }); createLeaseDirectory(repoRoot, taskId); writeLeaseOwnerDurably(repoRoot, taskId, bound);
+    const bound = boundLeaseFixture(claimed, { executionWorktree: repoRoot, branch: 'codex/runtime', unitRef: 'plans/runtime.md' }); seedLeaseDirectory(repoRoot, taskId); writeHistoricalLease(repoRoot, taskId, bound);
     const profile = loadEngineerProfile(repoRoot, engineerId); const binding = readEngineerBindingStatus(repoRoot, engineerId, profile.engineer_contract_revision).binding!;
 
     const envelope = { protocol: 1 as const, kind: 'repo-harness-work-envelope' as const, repo_id: repoHarnessRepoIdFor(repoRoot), task_id: taskId, task_revision: taskRevision, sprint_path: sprintPath, claim_id: claimId, generation: 1, worktree_path: repoRoot, branch: 'codex/runtime', unit_ref: 'plans/runtime.md', authorization_revision: 1 };
@@ -190,7 +188,7 @@ describe('R1 provider-neutral Agent Runtime', () => {
     execFileSync('git', ['add', sprintPath], { cwd: repoRoot }); execFileSync('git', ['commit', '-qm', 'task authority'], { cwd: repoRoot });
     const taskId = fixtureTaskId(taskCell); const taskRevision = deriveTaskRevision({ taskCell: taskCell, taskId, modeCell: 'contract', acceptanceCell: 'exact receipt' }); const claimId = '44444444-4444-4444-8444-444444444444';
     const claimed = buildLeaseOwnerRecord({ claimId, taskId, taskRevision, sprintPath, targetRef: 'HEAD', generation: 1, sessionId: 'runtime-session', sourceWorktree: repoRoot });
-    const bound = boundLeaseFixture(claimed, { executionWorktree: repoRoot, branch: 'codex/runtime', unitRef: 'plans/runtime.md' }); createLeaseDirectory(repoRoot, taskId); writeLeaseOwnerDurably(repoRoot, taskId, bound);
+    const bound = boundLeaseFixture(claimed, { executionWorktree: repoRoot, branch: 'codex/runtime', unitRef: 'plans/runtime.md' }); seedLeaseDirectory(repoRoot, taskId); writeHistoricalLease(repoRoot, taskId, bound);
     const profile = loadEngineerProfile(repoRoot, engineerId); const binding = readEngineerBindingStatus(repoRoot, engineerId, profile.engineer_contract_revision).binding!;
 
     const envelope = { protocol: 1 as const, kind: 'repo-harness-work-envelope' as const, repo_id: repoHarnessRepoIdFor(repoRoot), task_id: taskId, task_revision: taskRevision, sprint_path: sprintPath, claim_id: claimId, generation: 1, worktree_path: repoRoot, branch: 'codex/runtime', unit_ref: 'plans/runtime.md', authorization_revision: 1 };

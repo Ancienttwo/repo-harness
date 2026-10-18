@@ -83,13 +83,10 @@
       "plan": "executing",
       "pending": "none",
       "worktree": "current",
-      "contract": "missing",
-      "contract_path": "present",
       "evidence": "complete"
     },
     "paths": {
-      "active_plan": "plans/plan-20260712-2327-effective-fixture.md",
-      "contract": "tasks/contracts/20260712-2327-effective-fixture.contract.md"
+      "active_plan": "plans/plan-20260712-2327-effective-fixture.md"
     },
     "marker": {
       "problem": "none"

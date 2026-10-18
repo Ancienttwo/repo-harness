@@ -28,7 +28,6 @@ import type {
 import {
   artifactStemFromPlan,
   evidenceContractComplete,
-  planSlugFromPath,
   planStatusFromText,
 } from '../../core/state/artifact-parsers';
 import { projectEffectiveState } from '../../core/state/project-effective-state';
@@ -109,26 +108,6 @@ function policyValue(
   return current;
 }
 
-function preferredOrLegacyPath(
-  cwd: string,
-  preferred: string,
-  legacy: string,
-): string {
-  if (fileExists(cwd, preferred) || !fileExists(cwd, legacy)) return preferred;
-  return legacy;
-}
-
-function deriveContractPath(cwd: string, planPath: string, planText: string | null): string | null {
-  const stem = artifactStemFromPlan(planPath, planText);
-  const slug = planSlugFromPath(planPath);
-  if (!stem || !slug) return null;
-  return preferredOrLegacyPath(
-    cwd,
-    `tasks/contracts/${stem}.contract.md`,
-    `tasks/contracts/${slug}.contract.md`,
-  );
-}
-
 function policyPath(policy: WorkflowPolicy, jqPath: string, fallback: string, root = '.ai/harness'): string {
   const value = policyValue(policy, jqPath);
   if (value === POLICY_FIELD_ABSENT) return fallback;
@@ -163,8 +142,6 @@ export interface HarnessPaths {
   readonly runsDir: string;
   readonly contextMap: string;
   readonly todoFile: string;
-  readonly reviewsDir: string;
-  readonly notesDir: string;
   /** Display text only; nothing reads or writes through it. */
   readonly researchDir: string;
 }
@@ -181,8 +158,6 @@ export function resolveHarnessPaths(cwd: string): HarnessPaths {
     runsDir: policyPath(policy, '.harness.runs_dir', '.ai/harness/runs'),
     contextMap: policyPath(policy, '.context.map_file', '.ai/context/context-map.json', '.ai/context'),
     todoFile: policyPath(policy, '.tasks.todo_file', 'tasks/todos.md', 'tasks'),
-    reviewsDir: policyPath(policy, '.tasks.reviews_dir', 'tasks/reviews', 'tasks'),
-    notesDir: policyPath(policy, '.tasks.notes_dir', 'tasks/notes', 'tasks'),
     researchDir: policyString(policy, '.tasks.research_dir', 'docs/researches'),
   };
 }
@@ -613,13 +588,10 @@ function collectStateSnapshotFacts(
   const policy = readWorkflowPolicy(cwd);
   const planPath = state.authoritative_plan?.path ?? null;
   const planText = readText(cwd, planPath);
-  const contractPath = planPath ? deriveContractPath(cwd, planPath, planText) : null;
   return {
-    contractPresent: Boolean(readText(cwd, contractPath)),
     spec: fileExists(cwd, 'docs/spec.md') ? 'present' : 'missing',
     pending: pendingState(cwd, nowMs, policy),
     activePlanMarker: readTrimmed(cwd, ACTIVE_PLAN_MARKER),
-    contractPath,
     evidence: planPath
       ? evidenceContractComplete(planText) ? 'complete' : 'incomplete'
       : 'unchecked',

@@ -719,8 +719,7 @@ pi_install_templates() {
     printf '%s\n' "$PI_TEMPLATE_IMPLEMENTATION_NOTES" > "$output_dir/implementation-notes.template.md"
   fi
 
-  # Sprint template ships when available; sprint-backlog.sh also carries an
-  # inline fallback, so older asset dirs degrade gracefully.
+  # Keep historical Sprint documents readable in downstream repositories.
   if [[ -f "$templates_dir/sprint.template.md" ]]; then
     cp "$templates_dir/sprint.template.md" "$output_dir/sprint.template.md"
   fi
@@ -1448,9 +1447,7 @@ pi_write_harness_policy() {
     "current_status_file": "tasks/current.md",
     "lessons_file": "tasks/lessons.md",
     "research_dir": "docs/researches",
-    "workstreams_dir": "tasks/workstreams",
-    "reviews_dir": "tasks/reviews",
-    "notes_dir": "tasks/notes"
+    "workstreams_dir": "tasks/workstreams"
   },
   "prds": {
     "dir": "plans/prds",
@@ -1462,7 +1459,6 @@ pi_write_harness_policy() {
     "dir": "plans/sprints",
     "active_marker_file": ".ai/harness/sprint/active-sprint",
     "template_file": ".claude/templates/sprint.template.md",
-    "helper_script": "repo-harness run sprint-backlog",
     "statuses": ["Draft", "Approved", "Executing", "Done", "Archived"]
   },
   "reference_material": {
@@ -1601,7 +1597,6 @@ pi_write_harness_policy() {
     "review_base": "main",
     "worktree_dir_template": $worktree_template,
     "start_script": "repo-harness run contract-worktree start --plan <plan-file>",
-    "finish_script": "repo-harness run contract-worktree finish",
     "cleanup_script": "repo-harness run contract-worktree cleanup --slug <slug>",
     "conflict_signals": [
       "dirty_worktree_overlaps_task_files",

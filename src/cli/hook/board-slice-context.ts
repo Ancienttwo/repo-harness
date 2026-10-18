@@ -71,12 +71,6 @@ function selfLines(slice: BoardSliceV1): string[] {
     flags.push(`lease_unknown=${self.diagnostics.lease_unknown_reason}`);
   }
   if (flags.length > 0) lines.push(`  warnings: ${flags.join(' ')}`);
-  for (const [verb, command] of [
-    ['release', self.actions.release],
-    ['reconcile', self.actions.reconcile],
-  ] as const) {
-    if (command !== null) lines.push(`  ${verb}: ${command}`);
-  }
   return lines;
 }
 

@@ -9,7 +9,7 @@
  * assertion vacuous.
  *
  * This module derives NOTHING itself. Every ownership decision -- task state,
- * diagnostics, offered actions, the projected claim -- is imported from
+ * diagnostics and the projected claim -- is imported from
  * `project-board.ts`, because a slice that classified a lease differently from
  * `repo-harness state board --json` would be a second, quieter authority
  * telling an agent it owns work the board says it does not. The only decisions
@@ -21,9 +21,7 @@
  */
 import {
   ACTIVE_LEASE_STATES,
-  deriveActions,
   deriveClaim,
-  deriveColumn,
   deriveOwnershipDiagnostics,
   deriveTaskState,
   type BoardOwnershipInput,
@@ -59,10 +57,6 @@ function projectSelf(
   const lease = task.lease.classification;
   const state = deriveTaskState(task);
   const diagnostics = deriveOwnershipDiagnostics(task, state, lease, canonicalRef);
-  // `not_observed` is the honest progress value for a projection that never
-  // reads a ledger. The resulting column decides only which actions are
-  // offered; it is deliberately never published (see `BoardSliceV1`).
-  const column = deriveColumn(state, lease, 'not_observed', diagnostics);
   return {
     task_id: task.task_id,
     task_revision: task.task_revision,
@@ -72,7 +66,6 @@ function projectSelf(
     lease_state: lease,
     claim: deriveClaim(task.lease.record),
     diagnostics,
-    actions: deriveActions(task, lease, column, diagnostics, canonicalRef),
   };
 }
 

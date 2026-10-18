@@ -1,9 +1,9 @@
-import { boundLeaseFixture } from '../helpers/sprint-fixture';
+import { seedLeaseDirectory, writeHistoricalLease, completingLeaseFixture, reviewingLeaseFixture, boundLeaseFixture, fixtureTaskId } from '../helpers/sprint-fixture';
+import { seedPublicationReceipt } from '../helpers/publication-fixture';
 import { candidate } from '../../scripts/merge-gate';
-import { deriveShipJournalKey } from '../../src/effects/publication/publication-lifecycle';
 import { describe, expect, test } from 'bun:test';
 import { execFileSync } from 'child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
@@ -13,51 +13,12 @@ import {
   publicationSha256,
   replacePublicationMarker,
 } from '../../src/core/publication/publication-receipt';
-import {
-  buildFeedbackDeliveryReceipt,
-  buildFeedbackEvent,
-  buildRepairDispatchProof,
-  deriveReactionToken,
-} from '../../src/core/publication/feedback';
-import {
-  beginLeaseCompletionRecord,
-  buildLeaseOwnerRecord,
-  deriveTaskRevision,
-  enterReviewingLeaseRecord,
-} from '../../src/core/state/coordination-identity';
-import {
-  FeedbackError,
-  observeGitHubFeedback,
-  projectPendingFeedbackOffer,
-  recordCompletedFeedbackRepair,
-  reopenFeedbackRepair,
-  showGitHubFeedback,
-  takeoverFeedbackRepair,
-  type FeedbackObservationInput,
-} from '../../src/effects/publication/feedback';
-import {
-  readFeedbackDeliveryReceipt,
-  readReactionAttemptReceipts,
-  readRepairDispatchProof,
-  feedbackDeliveryReceiptPath,
-  repairDispatchProofPath,
-  writeFeedbackDeliveryReceipt,
-  writeFeedbackEvent,
-  writeRepairDispatchProof,
-} from '../../src/effects/publication/feedback-store';
-import {
-  publicationJournalEvidence,
-  writePublicationReceiptCache,
-} from '../../src/effects/publication/publication-receipt';
-import { reopenPublication, takeoverPublication } from '../../src/effects/publication/publication-lifecycle';
-import {
-  createLeaseDirectory,
-  readLease,
-  taskLockRelativePath,
-  writeLeaseOwnerDurably,
-} from '../../src/effects/state/coordination-lease-store';
+import { buildFeedbackDeliveryReceipt, buildFeedbackEvent } from '../../src/core/publication/feedback';
+import { buildLeaseOwnerRecord, deriveTaskRevision } from '../../src/core/state/coordination-identity';
+import { FeedbackError, observeGitHubFeedback, projectPendingFeedbackOffer, showGitHubFeedback, type FeedbackObservationInput } from '../../src/effects/publication/feedback';
+import { readFeedbackDeliveryReceipt, readReactionAttemptReceipts, writeFeedbackDeliveryReceipt, writeFeedbackEvent } from '../../src/effects/publication/feedback-store';
+import { readLease } from '../../src/effects/state/coordination-lease-store';
 import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
-import { fixtureTaskId } from '../helpers/sprint-fixture';
 
 const HEAD = 'a'.repeat(40);
 const BASE = 'b'.repeat(40);
@@ -282,15 +243,15 @@ function installRepairFixture(): RepairFixture {
     provider: 'github',
     provider_repo_id: 'R_feedback_repair', pr_number: 12, pr_url: 'https://example.invalid/pr/12', created_at: '2026-08-23T06:30:00Z',
   });
-  writePublicationReceiptCache(root, receipt);
+  seedPublicationReceipt(root, receipt);
   const owner = buildLeaseOwnerRecord({
     claimId: receipt.claim_id, taskId, taskRevision: revision, sprintPath: REPAIR_SPRINT, targetRef: 'main', generation: 1,
     sessionId: 'feedback-repair-session', sourceWorktree: root,
   });
   const bound = boundLeaseFixture(owner, { executionWorktree: root, branch: receipt.branch, unitRef: 'plans/plan-feedback-repair.md' });
-  const completing = beginLeaseCompletionRecord(bound, { claimId: receipt.claim_id, executionWorktree: root, finishTransactionKey: 'finish-feedback-repair' });
+  const completing = completingLeaseFixture(bound, { claimId: receipt.claim_id, executionWorktree: root, finishTransactionKey: 'finish-feedback-repair' });
   if (!completing.ok) throw new Error(completing.error);
-  const reviewing = enterReviewingLeaseRecord(completing.record, {
+  const reviewing = reviewingLeaseFixture(completing.record, {
     claimId: receipt.claim_id,
     publication: {
       publication_id: receipt.publication_id,
@@ -300,8 +261,8 @@ function installRepairFixture(): RepairFixture {
     },
   });
   if (!reviewing.ok) throw new Error(reviewing.error);
-  if (!createLeaseDirectory(root, taskId)) throw new Error('lease creation failed');
-  writeLeaseOwnerDurably(root, taskId, reviewing.record);
+  if (!seedLeaseDirectory(root, taskId)) throw new Error('lease creation failed');
+  writeHistoricalLease(root, taskId, reviewing.record);
 
   const body = join(root, 'pr.md');
   writeFileSync(body, replacePublicationMarker('feedback repair\n', receipt));
@@ -342,65 +303,6 @@ function repairOffer(fixture: RepairFixture) {
   const projected = projectPendingFeedbackOffer({ repo_root: fixture.root, publication_id: fixture.receipt.publication_id });
   if (projected.state !== 'offered') throw new Error('expected a repair offer');
   return projected.offer;
-}
-
-function deriveCompletedShipKey(root: string, receipt: RepairFixture['receipt'], originalHead: string): string {
-  const transactionRoot = join(resolveGitCommonDirectory(root), 'repo-harness', 'transactions');
-  return deriveShipJournalKey(root,{repo:transactionRoot,worktree:root,branch:receipt.branch,remote:'origin',publication_mode:'lease',claim_id:receipt.claim_id,claim_task_id:receipt.task_id,claim_generation:String(receipt.generation),claim_task_revision:receipt.task_revision,original_head:originalHead,target_branch:receipt.target_ref,base_sha:receipt.base_sha});
-}
-
-function writeCompletedShipJournal(
-  root: string,
-  receipt: RepairFixture['receipt'],
-  shipKey: string,
-  originalHead: string,
-  status: 'complete' | 'in_progress' = 'complete',
-): void {
-  const transactionRoot = join(resolveGitCommonDirectory(root), 'repo-harness', 'transactions');
-  const directory = join(transactionRoot, 'ship', shipKey);
-  mkdirSync(directory, { recursive: true });
-  writeFileSync(join(directory, 'meta.json'), JSON.stringify({
-    operation: 'ship', key: shipKey, repo: transactionRoot, worktree: root, branch: receipt.branch,
-    remote:'origin',publication_mode:'lease',claim_id:receipt.claim_id,claim_task_id:receipt.task_id,claim_generation:String(receipt.generation),claim_task_revision:receipt.task_revision,
-    plan: '', contract: '', original_head: originalHead, target_branch: receipt.target_ref,
-    base_ref: `refs/remotes/origin/${receipt.target_ref}`, base_sha: receipt.base_sha,
-  }) + '\n');
-  writeFileSync(join(directory, 'status.json'), JSON.stringify({
-    operation: 'ship', key: shipKey, status, phases: [
-      { phase: 'candidate_frozen', ref: receipt.head_sha },
-      { phase: 'pushed', ref: receipt.head_sha },
-      { phase: 'pr_observed', ref: receipt.head_sha, publication: publicationJournalEvidence(receipt) },
-      ...(status === 'complete' ? [{ phase: 'complete', ref: receipt.head_sha }] : []),
-    ],
-  }) + '\n');
-}
-
-function enterCompletionReviewing(
-  fixture: RepairFixture,
-  source: RepairFixture['receipt'],
-  shipStatus: 'complete' | 'in_progress' = 'complete',
-) {
-  const bound = readLease(fixture.root, fixture.task_id).record;
-  if (bound === null || bound.state !== 'bound') throw new Error('fixture expected the repair successor to be bound');
-  const originalHead = 'e'.repeat(40);
-  const shipKey = deriveCompletedShipKey(fixture.root, source, originalHead);
-  writeCompletedShipJournal(fixture.root, source, shipKey, originalHead, shipStatus);
-  const completing = beginLeaseCompletionRecord(bound, {
-    claimId: source.claim_id, executionWorktree: fixture.root, finishTransactionKey: 'finish-feedback-completion',
-  });
-  if (!completing.ok) throw new Error(completing.error);
-  const reviewing = enterReviewingLeaseRecord(completing.record, {
-    claimId: source.claim_id,
-    publication: {
-      publication_id: source.publication_id,
-      receipt_sha256: publicationReceiptDigest(source),
-      head_sha: source.head_sha,
-      ship_transaction_key: shipKey,
-    },
-  });
-  if (!reviewing.ok) throw new Error(reviewing.error);
-  writeLeaseOwnerDurably(fixture.root, fixture.task_id, reviewing.record);
-  return { completion: source, ship_key: shipKey };
 }
 
 describe('feedback repair lifecycle integration', () => {
@@ -473,384 +375,4 @@ describe('feedback repair lifecycle integration', () => {
     }
   });
 
-  test('reuses reopen, then delivers pending feedback manually without rolling lease logic into the effect', () => {
-    const fixture = installRepairFixture();
-    try {
-      const result = reopenFeedbackRepair({
-        repo_root: fixture.root, offer: repairOffer(fixture), gh_bin: fixture.gh,
-        delivered_at: '2026-08-23T06:32:00Z',
-      });
-      expect(result.lease.state).toBe('bound');
-      expect(result.envelope).toMatchObject({ action: 'reopened', claim_id: fixture.receipt.claim_id, generation: 1 });
-      expect(readRepairDispatchProof(fixture.root, fixture.receipt.publication_id, result.envelope.repair_id)).toMatchObject({
-        phase: 'dispatched', successor_claim_id: fixture.receipt.claim_id, successor_generation: 1, successor_state: 'bound',
-      });
-      expect(readFeedbackDeliveryReceipt(fixture.root, fixture.receipt.publication_id, 'CHECK_REPAIR_12')).toMatchObject({
-        delivery_state: 'delivered', delivery_channel: 'manual', delivered_at: '2026-08-23T06:32:00Z',
-      });
-      expect(readLease(fixture.root, fixture.task_id).record?.state).toBe('bound');
-    } finally {
-      rmSync(fixture.root, { recursive: true, force: true });
-    }
-  });
-
-  test('requires a delivery receipt for every immutable event before projecting or mutating a repair lifecycle', () => {
-    const fixture = installRepairFixture();
-    try {
-      const offer = repairOffer(fixture);
-      const beforeLease = readLease(fixture.root, fixture.task_id).raw;
-      writeFeedbackEvent(fixture.root, buildFeedbackEvent({
-        provider: 'github', provider_event_id: 'CHECK_WITHOUT_DELIVERY', publication_id: fixture.receipt.publication_id,
-        head_sha: fixture.receipt.head_sha, failing_check_ids: ['CHECK_WITHOUT_DELIVERY'],
-        failing_checks: [{ id: 'CHECK_WITHOUT_DELIVERY', conclusion: 'FAILURE' }], unresolved_review_thread_ids: [],
-        changes_requested_review_ids: [], mergeability: 'MERGEABLE',
-        summary: 'orphaned immutable event', provider_url: fixture.receipt.pr_url, observed_at: '2026-08-23T06:32:01Z',
-      }));
-      for (const action of [
-        () => projectPendingFeedbackOffer({ repo_root: fixture.root, publication_id: fixture.receipt.publication_id }),
-        () => reopenFeedbackRepair({
-          repo_root: fixture.root, offer, delivered_at: '2026-08-23T06:32:02Z',
-        }),
-      ]) {
-        try {
-          action();
-          throw new Error('expected incomplete feedback to fail closed');
-        } catch (error) {
-          expect(error).toBeInstanceOf(FeedbackError);
-          expect((error as FeedbackError).code).toBe('feedback_incomplete');
-        }
-      }
-      expect(readLease(fixture.root, fixture.task_id).raw).toBe(beforeLease);
-      expect(readFeedbackDeliveryReceipt(fixture.root, fixture.receipt.publication_id, 'CHECK_REPAIR_12')).toMatchObject({
-        delivery_state: 'pending', delivery_channel: 'none',
-      });
-    } finally {
-      rmSync(fixture.root, { recursive: true, force: true });
-    }
-  });
-
-  test('reuses takeover and leaves the lifecycle endpoint reserving while delivering publication feedback', () => {
-    const fixture = installRepairFixture();
-    try {
-      const result = takeoverFeedbackRepair({
-        repo_root: fixture.root, offer: repairOffer(fixture), gh_bin: fixture.gh,
-        reason: 'repair CI failure',
-        session_id: 'replacement-session', new_claim_id: 'claim-feedback-replacement', source_worktree: fixture.root,
-        delivered_at: '2026-08-23T06:33:00Z',
-      });
-      expect(result.lease).toMatchObject({ state: 'reserving', claim_id: 'claim-feedback-replacement', generation: 2 });
-      expect(result.envelope).toMatchObject({ action: 'taken_over', claim_id: 'claim-feedback-replacement', generation: 2 });
-      expect(readRepairDispatchProof(fixture.root, fixture.receipt.publication_id, result.envelope.repair_id)).toMatchObject({
-        phase: 'dispatched', successor_claim_id: 'claim-feedback-replacement', successor_generation: 2, successor_state: 'reserving',
-      });
-      expect(readFeedbackDeliveryReceipt(fixture.root, fixture.receipt.publication_id, 'CHECK_REPAIR_12')).toMatchObject({
-        delivery_state: 'delivered', delivery_channel: 'manual',
-      });
-    } finally {
-      rmSync(fixture.root, { recursive: true, force: true });
-    }
-  });
-
-  test('recovers a prepared takeover from its observed reserving successor despite a retry claim id', () => {
-    const fixture = installRepairFixture();
-    try {
-      const offer = repairOffer(fixture);
-      const sourceLease = readLease(fixture.root, fixture.task_id).record;
-      if (sourceLease === null || sourceLease.state !== 'reviewing' || sourceLease.current_publication === null) {
-        throw new Error('fixture expected reviewing source lease');
-      }
-      const prepared = buildRepairDispatchProof({
-        publication_id: fixture.receipt.publication_id,
-        receipt_sha256: sourceLease.current_publication.receipt_sha256,
-        task_id: fixture.receipt.task_id, task_revision: fixture.receipt.task_revision,
-        claim_id: fixture.receipt.claim_id, generation: fixture.receipt.generation,
-        head_sha: fixture.receipt.head_sha, ship_transaction_key: sourceLease.current_publication.ship_transaction_key,
-        feedback_revision: offer.feedback_revision,
-        before_reaction_token: deriveReactionToken({
-          publication_id: fixture.receipt.publication_id, head_sha: fixture.receipt.head_sha,
-          failing_checks: [{ id: 'CHECK_REPAIR_12', conclusion: 'FAILURE' }], unresolved_review_thread_ids: [],
-          mergeability: 'MERGEABLE',
-        }),
-        action: 'explicit_takeover', phase: 'prepared',
-        successor_claim_id: null, successor_generation: null, successor_state: null,
-      });
-      writeRepairDispatchProof(fixture.root, fixture.receipt.publication_id, prepared);
-      takeoverPublication({
-        repo_root: fixture.root, task_id: fixture.task_id, expected_claim_id: fixture.receipt.claim_id,
-        expected_generation: fixture.receipt.generation, publication_id: fixture.receipt.publication_id,
-        expected_head_sha: fixture.receipt.head_sha, reason: 'first takeover', session_id: 'first-session',
-        new_claim_id: 'claim-first-takeover', source_worktree: fixture.root, gh_bin: fixture.gh,
-      });
-      const recovered = takeoverFeedbackRepair({
-        repo_root: fixture.root, offer, reason: 'retry must not choose successor', session_id: 'retry-session',
-        new_claim_id: 'claim-retry-uuid', source_worktree: fixture.root, delivered_at: '2026-08-23T06:33:10Z',
-      });
-      expect(recovered.lease).toMatchObject({ state: 'reserving', claim_id: 'claim-first-takeover', generation: 2 });
-      expect(recovered.envelope.claim_id).toBe('claim-first-takeover');
-      expect(readRepairDispatchProof(fixture.root, fixture.receipt.publication_id, prepared.repair_id)).toMatchObject({
-        phase: 'dispatched', successor_claim_id: 'claim-first-takeover', successor_generation: 2, successor_state: 'reserving',
-      });
-    } finally {
-      rmSync(fixture.root, { recursive: true, force: true });
-    }
-  });
-
-  test('rejects a forged task B before initial dispatch can touch its lock or durable evidence, while task A dispatches', () => {
-    const fixture = installRepairFixture();
-    try {
-      const offer = repairOffer(fixture);
-      const foreignReceipt = buildPublicationReceipt({
-        repo_id: fixture.receipt.repo_id,
-        task_id: fixture.foreign_task_id,
-        task_revision: fixture.foreign_task_revision,
-        claim_id: 'claim-foreign-task', generation: 1,
-        target_ref: fixture.receipt.target_ref, base_sha: fixture.receipt.base_sha,
-        branch: 'codex/foreign-task', head_sha: fixture.receipt.head_sha, tree_sha: fixture.receipt.tree_sha,
-        candidate_diff_fingerprint: fixture.receipt.candidate_diff_fingerprint,
-        provider: 'github', provider_repo_id: fixture.receipt.provider_repo_id,
-        pr_number: 13, pr_url: 'https://example.invalid/pr/13', created_at: '2026-08-23T06:33:11Z',
-      });
-      writePublicationReceiptCache(fixture.root, foreignReceipt);
-      const foreignLease = buildLeaseOwnerRecord({
-        claimId: foreignReceipt.claim_id,
-        taskId: fixture.foreign_task_id,
-        taskRevision: fixture.foreign_task_revision,
-        sprintPath: REPAIR_SPRINT,
-        targetRef: foreignReceipt.target_ref,
-        generation: foreignReceipt.generation,
-        sessionId: 'foreign-task-session',
-        sourceWorktree: fixture.root,
-      });
-      if (!createLeaseDirectory(fixture.root, fixture.foreign_task_id)) throw new Error('foreign lease creation failed');
-      writeLeaseOwnerDurably(fixture.root, fixture.foreign_task_id, foreignLease);
-      const foreignEvent = buildFeedbackEvent({
-        provider: 'github', provider_event_id: 'CHECK_FOREIGN_13', publication_id: foreignReceipt.publication_id,
-        head_sha: foreignReceipt.head_sha, failing_check_ids: ['CHECK_FOREIGN_13'],
-        failing_checks: [{ id: 'CHECK_FOREIGN_13', conclusion: 'FAILURE' }],
-        unresolved_review_thread_ids: [], changes_requested_review_ids: [], mergeability: 'MERGEABLE',
-        summary: 'foreign check failed', provider_url: foreignReceipt.pr_url, observed_at: '2026-08-23T06:33:12Z',
-      });
-      writeFeedbackEvent(fixture.root, foreignEvent);
-      writeFeedbackDeliveryReceipt(fixture.root, foreignReceipt.publication_id, buildFeedbackDeliveryReceipt({
-        provider_event_id: foreignEvent.provider_event_id, delivery_state: 'pending', delivery_channel: 'none',
-        delivered_at: null, acknowledged_at: null, superseded_at: null,
-      }));
-      const foreignProof = buildRepairDispatchProof({
-        publication_id: foreignReceipt.publication_id,
-        receipt_sha256: publicationReceiptDigest(foreignReceipt),
-        task_id: foreignReceipt.task_id, task_revision: foreignReceipt.task_revision,
-        claim_id: foreignReceipt.claim_id, generation: foreignReceipt.generation,
-        head_sha: foreignReceipt.head_sha, ship_transaction_key: 'ship-foreign-feedback',
-        feedback_revision: publicationSha256('foreign feedback revision'),
-        before_reaction_token: deriveReactionToken({
-          publication_id: foreignReceipt.publication_id, head_sha: foreignReceipt.head_sha,
-          failing_checks: [{ id: 'CHECK_FOREIGN_13', conclusion: 'FAILURE' }], unresolved_review_thread_ids: [],
-          mergeability: 'MERGEABLE',
-        }),
-        action: 'explicit_takeover', phase: 'prepared',
-        successor_claim_id: null, successor_generation: null, successor_state: null,
-      });
-      writeRepairDispatchProof(fixture.root, foreignReceipt.publication_id, foreignProof);
-
-      const foreignLeaseBefore = readLease(fixture.root, fixture.foreign_task_id).raw;
-      const foreignProofPath = repairDispatchProofPath(fixture.root, foreignReceipt.publication_id, foreignProof.repair_id);
-      const foreignDeliveryPath = feedbackDeliveryReceiptPath(fixture.root, foreignReceipt.publication_id, foreignEvent.provider_event_id);
-      const foreignProofBefore = readFileSync(foreignProofPath, 'utf-8');
-      const foreignDeliveryBefore = readFileSync(foreignDeliveryPath, 'utf-8');
-      const foreignLockPath = join(resolveGitCommonDirectory(fixture.root), taskLockRelativePath(fixture.foreign_task_id));
-      expect(existsSync(foreignLockPath)).toBe(false);
-
-      const forged = { ...offer, task_id: fixture.foreign_task_id };
-      try {
-        takeoverFeedbackRepair({
-          repo_root: fixture.root, offer: forged, reason: 'foreign task must not dispatch source', session_id: 'foreign-session',
-          new_claim_id: 'claim-foreign-retry', source_worktree: fixture.root, delivered_at: '2026-08-23T06:33:15Z',
-        });
-        throw new Error('expected cross-task dispatch rejection');
-      } catch (error) {
-        expect(error).toBeInstanceOf(FeedbackError);
-        expect((error as FeedbackError).code).toBe('repair_offer_stale');
-      }
-      expect(readLease(fixture.root, fixture.foreign_task_id).raw).toBe(foreignLeaseBefore);
-      expect(readFileSync(foreignProofPath, 'utf-8')).toBe(foreignProofBefore);
-      expect(readFileSync(foreignDeliveryPath, 'utf-8')).toBe(foreignDeliveryBefore);
-      expect(existsSync(foreignLockPath)).toBe(false);
-
-      const dispatched = takeoverFeedbackRepair({
-        repo_root: fixture.root, offer, gh_bin: fixture.gh,
-        reason: 'source task dispatch', session_id: 'source-session',
-        new_claim_id: 'claim-source-takeover', source_worktree: fixture.root, delivered_at: '2026-08-23T06:33:16Z',
-      });
-      expect(dispatched.lease).toMatchObject({ state: 'reserving', claim_id: 'claim-source-takeover', generation: 2 });
-    } finally {
-      rmSync(fixture.root, { recursive: true, force: true });
-    }
-  });
-
-  test('fails closed when a prepared takeover recovery observes the wrong successor generation', () => {
-    const fixture = installRepairFixture();
-    try {
-      const offer = repairOffer(fixture);
-      const sourceLease = readLease(fixture.root, fixture.task_id).record;
-      if (sourceLease === null || sourceLease.state !== 'reviewing' || sourceLease.current_publication === null) {
-        throw new Error('fixture expected reviewing source lease');
-      }
-      const prepared = buildRepairDispatchProof({
-        publication_id: fixture.receipt.publication_id,
-        receipt_sha256: sourceLease.current_publication.receipt_sha256,
-        task_id: fixture.receipt.task_id, task_revision: fixture.receipt.task_revision,
-        claim_id: fixture.receipt.claim_id, generation: fixture.receipt.generation,
-        head_sha: fixture.receipt.head_sha, ship_transaction_key: sourceLease.current_publication.ship_transaction_key,
-        feedback_revision: offer.feedback_revision,
-        before_reaction_token: deriveReactionToken({
-          publication_id: fixture.receipt.publication_id, head_sha: fixture.receipt.head_sha,
-          failing_checks: [{ id: 'CHECK_REPAIR_12', conclusion: 'FAILURE' }], unresolved_review_thread_ids: [],
-          mergeability: 'MERGEABLE',
-        }),
-        action: 'explicit_takeover', phase: 'prepared',
-        successor_claim_id: null, successor_generation: null, successor_state: null,
-      });
-      writeRepairDispatchProof(fixture.root, fixture.receipt.publication_id, prepared);
-      const successor = takeoverPublication({
-        repo_root: fixture.root, task_id: fixture.task_id, expected_claim_id: fixture.receipt.claim_id,
-        expected_generation: fixture.receipt.generation, publication_id: fixture.receipt.publication_id,
-        expected_head_sha: fixture.receipt.head_sha, reason: 'first takeover', session_id: 'first-session',
-        new_claim_id: 'claim-first-takeover', source_worktree: fixture.root, gh_bin: fixture.gh,
-      });
-      writeLeaseOwnerDurably(fixture.root, fixture.task_id, { ...successor, generation: successor.generation + 1 });
-      try {
-        takeoverFeedbackRepair({
-          repo_root: fixture.root, offer, reason: 'retry must reject wrong successor', session_id: 'retry-session',
-          new_claim_id: 'claim-retry-uuid', source_worktree: fixture.root, delivered_at: '2026-08-23T06:33:20Z',
-        });
-        throw new Error('expected wrong successor rejection');
-      } catch (error) {
-        expect(error).toBeInstanceOf(FeedbackError);
-        expect((error as FeedbackError).code).toBe('repair_offer_stale');
-      }
-      expect(readRepairDispatchProof(fixture.root, fixture.receipt.publication_id, prepared.repair_id)).toMatchObject({ phase: 'prepared' });
-      expect(readFeedbackDeliveryReceipt(fixture.root, fixture.receipt.publication_id, 'CHECK_REPAIR_12')).toMatchObject({
-        delivery_state: 'pending', delivery_channel: 'none',
-      });
-    } finally {
-      rmSync(fixture.root, { recursive: true, force: true });
-    }
-  });
-
-  test('rejects a completion request without a dispatched repair proof', () => {
-    const fixture = installRepairFixture();
-    try {
-      expect(() => recordCompletedFeedbackRepair({
-        repo_root: fixture.root,
-        publication_id: fixture.receipt.publication_id,
-        repair_id: `sha256:${'f'.repeat(64)}`,
-        recorded_at: '2026-08-23T06:34:00Z',
-      })).toThrow(FeedbackError);
-      expect(readReactionAttemptReceipts(fixture.root, fixture.receipt.publication_id)).toEqual([]);
-    } finally {
-      rmSync(fixture.root, { recursive: true, force: true });
-    }
-  });
-
-  test('recovers a prepared proof after the lifecycle write and promotes only its exact successor', () => {
-    const fixture = installRepairFixture();
-    try {
-      const offer = repairOffer(fixture);
-      const sourceLease = readLease(fixture.root, fixture.task_id).record;
-      if (sourceLease === null || sourceLease.state !== 'reviewing' || sourceLease.current_publication === null) {
-        throw new Error('fixture expected reviewing source lease');
-      }
-      const token = deriveReactionToken({
-        publication_id: fixture.receipt.publication_id, head_sha: fixture.receipt.head_sha,
-        failing_checks: [{ id: 'CHECK_REPAIR_12', conclusion: 'FAILURE' }], unresolved_review_thread_ids: [],
-        mergeability: 'MERGEABLE',
-      });
-      const prepared = buildRepairDispatchProof({
-        publication_id: fixture.receipt.publication_id,
-        receipt_sha256: sourceLease.current_publication.receipt_sha256,
-        task_id: fixture.receipt.task_id, task_revision: fixture.receipt.task_revision,
-        claim_id: fixture.receipt.claim_id, generation: fixture.receipt.generation,
-        head_sha: fixture.receipt.head_sha, ship_transaction_key: sourceLease.current_publication.ship_transaction_key,
-        feedback_revision: offer.feedback_revision, before_reaction_token: token, action: 'resume_same_owner',
-        phase: 'prepared', successor_claim_id: null, successor_generation: null, successor_state: null,
-      });
-      writeRepairDispatchProof(fixture.root, fixture.receipt.publication_id, prepared);
-      reopenPublication({
-        repo_root: fixture.root, task_id: fixture.task_id, claim_id: fixture.receipt.claim_id,
-        expected_generation: fixture.receipt.generation, publication_id: fixture.receipt.publication_id,
-        expected_head_sha: fixture.receipt.head_sha, gh_bin: fixture.gh,
-      });
-      const recovered = reopenFeedbackRepair({
-        repo_root: fixture.root, offer, delivered_at: '2026-08-23T06:32:30Z',
-      });
-      expect(recovered.envelope.repair_id).toBe(prepared.repair_id);
-      expect(readRepairDispatchProof(fixture.root, fixture.receipt.publication_id, prepared.repair_id)).toMatchObject({
-        phase: 'dispatched', successor_claim_id: fixture.receipt.claim_id, successor_generation: 1, successor_state: 'bound',
-      });
-      expect(readFeedbackDeliveryReceipt(fixture.root, fixture.receipt.publication_id, 'CHECK_REPAIR_12')).toMatchObject({
-        delivery_state: 'delivered', delivery_channel: 'manual', delivered_at: '2026-08-23T06:32:30Z',
-      });
-    } finally {
-      rmSync(fixture.root, { recursive: true, force: true });
-    }
-  });
-
-  test('records one completion only after a distinct verified final ship, including a same-head re-ship', () => {
-    const fixture = installRepairFixture();
-    try {
-      const dispatch = reopenFeedbackRepair({
-        repo_root: fixture.root, offer: repairOffer(fixture), gh_bin: fixture.gh,
-        delivered_at: '2026-08-23T06:33:30Z',
-      });
-      expect(() => recordCompletedFeedbackRepair({
-        repo_root: fixture.root, publication_id: fixture.receipt.publication_id,
-        repair_id: dispatch.envelope.repair_id, recorded_at: '2026-08-23T06:34:00Z',
-      })).toThrow(FeedbackError);
-      expect(readReactionAttemptReceipts(fixture.root, fixture.receipt.publication_id)).toEqual([]);
-      const final = enterCompletionReviewing(fixture, fixture.receipt);
-      expect(final.completion.head_sha).toBe(fixture.receipt.head_sha);
-      const first = recordCompletedFeedbackRepair({
-        repo_root: fixture.root, publication_id: fixture.receipt.publication_id,
-        repair_id: dispatch.envelope.repair_id, recorded_at: '2026-08-23T06:34:01Z',
-      });
-      expect(first).toMatchObject({
-        outcome: 'completed', repair_id: dispatch.envelope.repair_id,
-        successor_claim_id: fixture.receipt.claim_id, successor_generation: 1,
-        completion_publication_id: final.completion.publication_id,
-        completion_ship_transaction_key: final.ship_key,
-      });
-      const retried = recordCompletedFeedbackRepair({
-        repo_root: fixture.root, publication_id: fixture.receipt.publication_id,
-        repair_id: dispatch.envelope.repair_id, recorded_at: '2026-08-23T06:34:02Z',
-      });
-      expect(retried).toEqual(first);
-      expect(readReactionAttemptReceipts(fixture.root, fixture.receipt.publication_id)).toEqual([first]);
-    } finally {
-      rmSync(fixture.root, { recursive: true, force: true });
-    }
-  });
-
-  test('rejects a reviewing successor whose distinct final ship journal is not complete', () => {
-    const fixture = installRepairFixture();
-    try {
-      const dispatch = reopenFeedbackRepair({
-        repo_root: fixture.root, offer: repairOffer(fixture), gh_bin: fixture.gh,
-        delivered_at: '2026-08-23T06:33:40Z',
-      });
-      enterCompletionReviewing(fixture, fixture.receipt, 'in_progress');
-      try {
-        recordCompletedFeedbackRepair({
-          repo_root: fixture.root, publication_id: fixture.receipt.publication_id,
-          repair_id: dispatch.envelope.repair_id, recorded_at: '2026-08-23T06:34:03Z',
-        });
-        throw new Error('expected incomplete final ship journal rejection');
-      } catch (error) {
-        expect(error).toBeInstanceOf(FeedbackError);
-        expect((error as FeedbackError).code).toBe('repair_completion_unverified');
-      }
-      expect(readReactionAttemptReceipts(fixture.root, fixture.receipt.publication_id)).toEqual([]);
-    } finally {
-      rmSync(fixture.root, { recursive: true, force: true });
-    }
-  });
 });

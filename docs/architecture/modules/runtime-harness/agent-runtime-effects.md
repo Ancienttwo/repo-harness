@@ -142,7 +142,7 @@ wake 的 Host 动作只带 `repo-harness-wake:` 前缀的有界 control referenc
 
 ### 3.5 offers 文档来自外部权威，先验证再使用
 
-`recordEngineerOfferSnapshot` 收到的 `EngineerOffersV1` 是调度权威的产物，不是可信输入。进入 ledger 之前，它先通过 `validateEngineerOffersDocument`（调度 core 唯一的整份文档校验器，与 `validateEngineerOffer` 并列；`src/core/engineers/scheduling.ts:734`）。校验内容：封闭键集，每个 offer 和 exclusion 都合法且属于本文档，`snapshot_revision` 按相同 basis 重算。摘要覆盖数组本身，所以改字段、换顺序或伪造 revision 都在这里失败。通过之后再检查两道 fence。文档的 `repository_id` 必须等于本 worktree 解析出的注册仓库。每个 offer 的 `binding_id`、`binding_generation` 和 `engineer_contract_revision` 必须等于**当前** Binding。旧 Binding generation 收集的 snapshot 只会被拒绝，不会被重新绑定到当前 Binding。
+`recordEngineerOfferSnapshot` 收到的 `EngineerOffersV1` 是调度权威的产物，不是可信输入。进入 ledger 之前，它先通过 `validateEngineerOffersDocument`（调度 core 唯一的整份文档校验器，与 `validateEngineerOffer` 并列；`src/core/engineers/scheduling.ts#validateEngineerOffersDocument`）。校验内容：封闭键集，每个 offer 和 exclusion 都合法且属于本文档，`snapshot_revision` 按相同 basis 重算。摘要覆盖数组本身，所以改字段、换顺序或伪造 revision 都在这里失败。通过之后再检查两道 fence。文档的 `repository_id` 必须等于本 worktree 解析出的注册仓库。每个 offer 的 `binding_id`、`binding_generation` 和 `engineer_contract_revision` 必须等于**当前** Binding。旧 Binding generation 收集的 snapshot 只会被拒绝，不会被重新绑定到当前 Binding。
 
 ### 3.6 每个 Binding 一个 wake 指针
 

@@ -8,7 +8,7 @@ responsibilities:
   - Run one bounded generic review round per request through the fleet reviewer role on a Herdr task agent and the OAR host.
   - Isolate the reviewer process and its credentials and fail closed when isolation is unavailable.
   - Prepare the deterministic final-subject change assessment and review selection packet.
-  - Record and verify the single structured AcceptanceReceipt.
+  - Record and verify the structured AcceptanceReceipt against the exact live contract. Reject archived contracts and do not search archives for receipt authority.
   - Build bounded module review prompts for the module CLI and the operator architecture view.
 source:
   include:

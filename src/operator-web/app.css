@@ -47,8 +47,7 @@
   .detail-callout { @apply flex items-start gap-2 rounded-lg bg-kumo-recessed p-3 text-sm; }
   .detail-callout > div { @apply flex flex-col gap-0.5; }
   .detail-callout--warning { @apply bg-kumo-warning-tint text-kumo-default; }
-  .detail-repair-title { @apply mt-1 font-medium; }
-  .repair-list, .cause-list { @apply m-0 flex list-none flex-col gap-1.5 p-0; }
+  .cause-list { @apply m-0 flex list-none flex-col gap-1.5 p-0; }
   .cause-item { @apply flex flex-wrap items-baseline gap-x-2 gap-y-0.5 rounded-md border-l-2 border-kumo-line bg-kumo-recessed px-3 py-2 text-sm; }
   .cause-owner { @apply text-xs text-kumo-subtle; }
   .cause-code { @apply rounded bg-kumo-recessed px-1 text-xs text-kumo-subtle; overflow-wrap: anywhere; }

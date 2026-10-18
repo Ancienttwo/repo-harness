@@ -637,7 +637,7 @@ describe('operator web interactions', () => {
     expect(document.body.style.overflow).toBe('');
   });
 
-  test('detail pane shows every blocker, the no-progress flag, and its repair actions as text', async () => {
+  test('detail pane shows every blocker and the no-progress flag as text', async () => {
     await mount(<OperatorApp initialState={projectSnapshotViewState(stableSnapshot)} initialLocale="en" />);
 
     await act(async () => buttonWithText(fixtureTasks.blocked.task_label).click());
@@ -658,9 +658,6 @@ describe('operator web interactions', () => {
     await act(async () => buttonWithText(fixtureTasks.console.task_label).click());
     const consolePane = paneText();
     expect(consolePane).toContain('Feedback reports no progress');
-    expect(consolePane).toContain('Resume with the same owner.');
-    expect(consolePane).toContain('Take the task over explicitly.');
-    expect(document.querySelectorAll('.repair-list button').length).toBe(0);
   });
 
   test('copies full task, publication, and head identifiers', async () => {

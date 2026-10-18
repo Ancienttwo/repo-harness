@@ -264,7 +264,6 @@ export const OPERATOR_REPOSITORY_ERROR_CODES = [
 ] as const;
 const EXECUTION_READINESS = ['execution_ready', 'planning_required', 'inline_ready', 'unsupported'] as const;
 const LEASE_STATES = ['available', 'reserving', 'bound', 'completing', 'reviewing', 'released', 'unknown'] as const;
-const FEEDBACK_REPAIRS = ['resume_same_owner', 'explicit_takeover'] as const;
 const MERGE_BLOCKERS = [
   'receipt_unavailable',
   'publication_claim_mismatch',
@@ -466,7 +465,7 @@ function decodeCard(value: unknown, repositoryId: string): OperatorFleetCardV1 {
   const feedback = requireRecord(card.feedback);
   const pendingCount = requireNonNegativeInteger(feedback.pending_count);
   const noProgress = requireBoolean(feedback.no_progress);
-  const repairActions = requireArray(feedback.repair_actions).map((repair) => requireOneOf(repair, FEEDBACK_REPAIRS));
+  if (requireArray(feedback.repair_actions).length !== 0) throw new OperatorPayloadError();
   const inbox = requireRecord(card.inbox);
   const unreadCount = requireNonNegativeInteger(inbox.unread_count);
   const addressedToCurrentClaim = requireBoolean(inbox.addressed_to_current_claim);
@@ -520,7 +519,7 @@ function decodeCard(value: unknown, repositoryId: string): OperatorFleetCardV1 {
     feedback: Object.freeze({
       pending_count: pendingCount,
       no_progress: noProgress,
-      repair_actions: Object.freeze(repairActions),
+      repair_actions: Object.freeze([]),
     }),
     inbox: Object.freeze({
       unread_count: unreadCount,

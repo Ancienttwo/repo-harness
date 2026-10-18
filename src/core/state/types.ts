@@ -30,13 +30,10 @@ export interface StateSnapshot {
     readonly plan: SnapshotPlanState;
     readonly pending: 'none' | 'fresh' | 'stale';
     readonly worktree: 'current' | 'linked_target' | 'foreign_marker';
-    readonly contract: 'present' | 'missing';
-    readonly contract_path: 'present' | 'missing';
     readonly evidence: 'unchecked' | 'complete' | 'incomplete';
   };
   readonly paths: {
     readonly active_plan: string | null;
-    readonly contract: string | null;
   };
   readonly marker: {
     readonly problem: 'none' | 'deleted' | 'foreign_worktree';
@@ -133,9 +130,8 @@ export type ContinuationRoute =
 
 /**
  * One deterministic per-turn answer to "what is next", projected from the
- * effective state plus the active sprint's own file. It is a read model, never
- * an authority: `command` names the existing command that owns the action (row
- * selection stays in `sprint-backlog`), and one call yields exactly one unit or
+ * effective state. It is a read model, never an authority.
+ * `command` names the command that owns the action. One call yields one unit or
  * one halt. Identical repo bytes yield byte-identical JSON -- no time, PID,
  * locale, or absolute path enters this document.
  */
@@ -212,7 +208,7 @@ export type BoardColumn = 'todo' | 'doing' | 'blocked' | 'done';
  * The canonical-row dimension. `missing` names a lease whose row no longer
  * exists on the canonical ref; `drifted` names a row whose definition no longer
  * matches what its owner claimed (or whose status cell is outside the `[ ]` /
- * `[x]` grammar `sprint-backlog.sh` writes).
+ * historical `[x]` grammar).
  */
 export type TaskState = 'pending' | 'done' | 'missing' | 'drifted';
 
@@ -271,17 +267,6 @@ export interface BoardDiagnosticsV1 extends BoardOwnershipDiagnosticsV1 {
   readonly progress_unreadable_reason: string | null;
 }
 
-/** Existing command strings, never re-implemented logic. Null means not offered. */
-export interface BoardActionsV1 {
-  readonly release: string | null;
-  readonly reconcile: string | null;
-  readonly publication_reconcile: string | null;
-  readonly publication_recover: string | null;
-  readonly publication_reopen: string | null;
-  readonly publication_takeover: string | null;
-  readonly publication_abandon: string | null;
-}
-
 export interface BoardCardV1 {
   readonly task_id: string;
   readonly task_revision: string;
@@ -304,7 +289,6 @@ export interface BoardCardV1 {
     readonly attention_owner: 'none' | 'operator';
   };
   readonly diagnostics: BoardDiagnosticsV1;
-  readonly actions: BoardActionsV1;
 }
 
 /**
@@ -383,7 +367,6 @@ export interface BoardSliceSelfV1 {
   readonly lease_state: BoardLeaseState;
   readonly claim: BoardClaimV1 | null;
   readonly diagnostics: BoardOwnershipDiagnosticsV1;
-  readonly actions: BoardActionsV1;
 }
 
 /**

@@ -1,6 +1,9 @@
-import { boundLeaseFixture } from '../helpers/sprint-fixture';
+import { historicalRepairProof } from '../helpers/publication-fixture';
+import { dispatchedRepairFixture } from '../helpers/publication-fixture';
+import { seedReactionReceipt, seedPublicationReceipt } from '../helpers/publication-fixture';
+import { buildReactionAttemptReceipt } from '../../src/core/publication/feedback';
+import { seedLeaseDirectory, writeHistoricalLease, completingLeaseFixture, reviewingLeaseFixture, boundLeaseFixture, fixtureTaskId } from '../helpers/sprint-fixture';
 import { candidate } from '../../scripts/merge-gate';
-import { deriveShipJournalKey } from '../../src/effects/publication/publication-lifecycle';
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync, spawnSync } from 'child_process';
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
@@ -13,39 +16,12 @@ import {
   publicationSha256,
   publicationReceiptDigest,
 } from '../../src/core/publication/publication-receipt';
-import {
-  buildRepairDispatchProof,
-  buildReactionAttemptReceipt,
-  deriveReactionToken,
-  transitionRepairDispatchProof,
-} from '../../src/core/publication/feedback';
-import {
-  beginLeaseCompletionRecord,
-  buildLeaseOwnerRecord,
-  deriveTaskRevision,
-  enterReviewingLeaseRecord,
-} from '../../src/core/state/coordination-identity';
-import {
-  appendReactionAttemptReceipt,
-  feedbackEventPath,
-  readFeedbackDeliveryReceipts,
-  readFeedbackEvents,
-  readReactionAttemptReceipts,
-  writeRepairDispatchProof,
-} from '../../src/effects/publication/feedback-store';
-import {
-  publicationJournalEvidence,
-  readPublicationReceiptCache,
-  writePublicationReceiptCache,
-} from '../../src/effects/publication/publication-receipt';
+import { deriveReactionToken } from '../../src/core/publication/feedback';
+import { buildLeaseOwnerRecord, deriveTaskRevision } from '../../src/core/state/coordination-identity';
+import { feedbackEventPath, readFeedbackDeliveryReceipts, readFeedbackEvents } from '../../src/effects/publication/feedback-store';
+import { readPublicationReceiptCache } from '../../src/effects/publication/publication-receipt';
 import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
-import {
-  createLeaseDirectory,
-  leaseDirectory,
-  readLease,
-  writeLeaseOwnerDurably,
-} from '../../src/effects/state/coordination-lease-store';
-import { fixtureTaskId } from '../helpers/sprint-fixture';
+import { leaseDirectory } from '../../src/effects/state/coordination-lease-store';
 
 const CLI = resolve(import.meta.dir, '../../src/cli/index.ts');
 const CLAIM = 'claim-feedback-cli';
@@ -180,7 +156,7 @@ function fixture(): Fixture {
     pr_url: 'https://example.invalid/pr/7',
     created_at: '2026-08-23T00:00:00Z',
   });
-  writePublicationReceiptCache(root, receipt);
+  seedPublicationReceipt(root, receipt);
   const bodyPath = join(root, 'pr-body.md');
   writeFileSync(bodyPath, `PR body\n\n${encodePublicationMarker(receipt)}\n`);
 
@@ -199,13 +175,13 @@ function fixture(): Fixture {
     branch: 'codex/feedback-cli',
     unitRef: 'plans/plan-feedback-cli.md',
   });
-  const completing = beginLeaseCompletionRecord(bound, {
+  const completing = completingLeaseFixture(bound, {
     claimId: CLAIM,
     executionWorktree: root,
     finishTransactionKey: null,
   });
   if (!completing.ok) throw new Error(completing.error);
-  const reviewing = enterReviewingLeaseRecord(completing.record, {
+  const reviewing = reviewingLeaseFixture(completing.record, {
     claimId: CLAIM,
     publication: {
       publication_id: receipt.publication_id,
@@ -215,8 +191,8 @@ function fixture(): Fixture {
     },
   });
   if (!reviewing.ok) throw new Error(reviewing.error);
-  if (!createLeaseDirectory(root, taskId)) throw new Error('feedback CLI lease creation failed');
-  writeLeaseOwnerDurably(root, taskId, reviewing.record);
+  if (!seedLeaseDirectory(root, taskId)) throw new Error('feedback CLI lease creation failed');
+  writeHistoricalLease(root, taskId, reviewing.record);
 
   return {
     root,
@@ -268,7 +244,7 @@ function addAmbiguousReviewingPublication(subject: Fixture): void {
     pr_url: 'https://example.invalid/pr/8',
     created_at: '2026-08-23T00:00:01Z',
   });
-  writePublicationReceiptCache(subject.root, receipt);
+  seedPublicationReceipt(subject.root, receipt);
   const owner = buildLeaseOwnerRecord({
     claimId,
     taskId,
@@ -284,13 +260,13 @@ function addAmbiguousReviewingPublication(subject: Fixture): void {
     branch: receipt.branch,
     unitRef: 'plans/plan-feedback-cli-ambiguous.md',
   });
-  const completing = beginLeaseCompletionRecord(bound, {
+  const completing = completingLeaseFixture(bound, {
     claimId,
     executionWorktree: subject.root,
     finishTransactionKey: null,
   });
   if (!completing.ok) throw new Error(completing.error);
-  const reviewing = enterReviewingLeaseRecord(completing.record, {
+  const reviewing = reviewingLeaseFixture(completing.record, {
     claimId,
     publication: {
       publication_id: receipt.publication_id,
@@ -300,8 +276,8 @@ function addAmbiguousReviewingPublication(subject: Fixture): void {
     },
   });
   if (!reviewing.ok) throw new Error(reviewing.error);
-  if (!createLeaseDirectory(subject.root, taskId)) throw new Error('ambiguous lease creation failed');
-  writeLeaseOwnerDurably(subject.root, taskId, reviewing.record);
+  if (!seedLeaseDirectory(subject.root, taskId)) throw new Error('ambiguous lease creation failed');
+  writeHistoricalLease(subject.root, taskId, reviewing.record);
 }
 
 function runCli(fixture: Fixture, args: readonly string[], envOverrides: Record<string, string> = {}) {
@@ -318,21 +294,10 @@ function runCli(fixture: Fixture, args: readonly string[], envOverrides: Record<
   });
 }
 
-function repairFenceArgs(subject: Fixture, offer: Record<string, unknown>): string[] {
-  return [
-    '--publication-id', subject.publicationId,
-    '--feedback-revision', String(offer.feedback_revision),
-    '--task-id', subject.taskId,
-    '--claim-id', subject.claimId,
-    '--generation', String(subject.generation),
-    '--head-sha', subject.headSha,
-  ];
-}
-
 function dispatchedProofForOffer(subject: Fixture, offer: Record<string, unknown>, reactionToken: string) {
   const receipt = readPublicationReceiptCache(subject.root, subject.publicationId);
   if (receipt === null) throw new Error('fixture publication receipt is unavailable');
-  const prepared = buildRepairDispatchProof({
+  const prepared = historicalRepairProof({
     publication_id: receipt.publication_id,
     receipt_sha256: publicationReceiptDigest(receipt),
     task_id: receipt.task_id,
@@ -349,20 +314,18 @@ function dispatchedProofForOffer(subject: Fixture, offer: Record<string, unknown
     successor_generation: null,
     successor_state: null,
   });
-  const dispatched = transitionRepairDispatchProof(prepared, {
+  const dispatched = dispatchedRepairFixture(prepared, {
     successor_claim_id: subject.claimId,
     successor_generation: subject.generation,
     successor_state: 'bound',
   });
-  writeRepairDispatchProof(subject.root, subject.publicationId, prepared);
-  writeRepairDispatchProof(subject.root, subject.publicationId, dispatched);
   return dispatched;
 }
 
 function appendCompletedReaction(subject: Fixture, proof: ReturnType<typeof dispatchedProofForOffer>, token: string, recordedAt: string): void {
   const receipt = readPublicationReceiptCache(subject.root, subject.publicationId);
   if (receipt === null) throw new Error('fixture publication receipt is unavailable');
-  appendReactionAttemptReceipt(subject.root, subject.publicationId, buildReactionAttemptReceipt({
+  seedReactionReceipt(subject.root, subject.publicationId, buildReactionAttemptReceipt({
     publication_id: subject.publicationId,
     repair_id: proof.repair_id,
     successor_claim_id: proof.successor_claim_id!,
@@ -376,85 +339,6 @@ function appendCompletedReaction(subject: Fixture, proof: ReturnType<typeof disp
     outcome: 'completed',
     recorded_at: recordedAt,
   }));
-}
-
-function prepareCompletionPublication(subject: Fixture) {
-  const source = readPublicationReceiptCache(subject.root, subject.publicationId);
-  if (source === null) throw new Error('fixture source receipt is unavailable');
-  writeFileSync(join(subject.root, 'repair-complete.txt'), 'completed\n');
-  git(subject.root, 'add', 'repair-complete.txt');
-  git(subject.root, 'commit', '-m', 'complete feedback repair');
-  const completionHead = git(subject.root, 'rev-parse', 'HEAD');
-  const completionTree = git(subject.root, 'rev-parse', 'HEAD^{tree}');
-  const completion = buildPublicationReceipt({
-    repo_id: source.repo_id,
-    task_id: source.task_id,
-    task_revision: source.task_revision,
-    claim_id: source.claim_id,
-    generation: source.generation,
-    target_ref: source.target_ref,
-    base_sha: source.base_sha,
-    branch: source.branch,
-    head_sha: completionHead,
-    tree_sha: completionTree,
-    candidate_diff_fingerprint: source.candidate_diff_fingerprint,
-    provider: source.provider,
-    provider_repo_id: source.provider_repo_id,
-    pr_number: source.pr_number,
-    pr_url: source.pr_url,
-    created_at: '2026-08-23T00:10:00Z',
-  });
-  writePublicationReceiptCache(subject.root, completion);
-  const transactionRoot = join(resolveGitCommonDirectory(subject.root), 'repo-harness/transactions');
-  const metadata = {
-    operation: 'ship',
-    repo: transactionRoot,
-    worktree: subject.root,
-    branch: source.branch,
-    plan: '',
-    contract: '',
-    remote: 'origin', publication_mode: 'lease', claim_id:completion.claim_id, claim_task_id:completion.task_id,
-    claim_generation:String(completion.generation), claim_task_revision:completion.task_revision,
-    original_head: completionHead,
-    target_branch: source.target_ref,
-    base_ref: 'refs/remotes/origin/main',
-    base_sha: source.base_sha,
-  };
-  const shipTransactionKey = deriveShipJournalKey(subject.root,metadata);
-  const journalDirectory = join(transactionRoot, 'ship', shipTransactionKey);
-  mkdirSync(journalDirectory, { recursive: true });
-  writeFileSync(join(journalDirectory, 'meta.json'), JSON.stringify({ key: shipTransactionKey, ...metadata }) + '\n');
-  writeFileSync(join(journalDirectory, 'status.json'), JSON.stringify({
-    operation: 'ship',
-    key: shipTransactionKey,
-    status: 'complete',
-    phases: [
-      { phase: 'candidate_frozen', ref: completion.head_sha },
-      { phase: 'pushed', ref: completion.head_sha },
-      { phase: 'pr_observed', ref: completion.head_sha, publication: publicationJournalEvidence(completion) },
-      { phase: 'complete', ref: completion.head_sha },
-    ],
-  }) + '\n');
-  const lease = readLease(subject.root, subject.taskId).record;
-  if (lease === null || lease.state !== 'bound') throw new Error('fixture expected bound successor before completion');
-  const completing = beginLeaseCompletionRecord(lease, {
-    claimId: source.claim_id,
-    executionWorktree: subject.root,
-    finishTransactionKey: shipTransactionKey,
-  });
-  if (!completing.ok) throw new Error(completing.error);
-  const reviewing = enterReviewingLeaseRecord(completing.record, {
-    claimId: subject.claimId,
-    publication: {
-      publication_id: completion.publication_id,
-      receipt_sha256: publicationReceiptDigest(completion),
-      head_sha: completion.head_sha,
-      ship_transaction_key: shipTransactionKey,
-    },
-  });
-  if (!reviewing.ok) throw new Error(reviewing.error);
-  writeLeaseOwnerDurably(subject.root, subject.taskId, reviewing.record);
-  return completion;
 }
 
 describe('fleet feedback CLI', () => {
@@ -584,122 +468,4 @@ describe('fleet feedback CLI', () => {
     expect(JSON.parse(result.stderr)).toMatchObject({ ok: false, error: 'invalid_argument' });
   });
 
-  test('repair reopen projects and fences the offer, then returns bound lease state', () => {
-    const subject = fixture();
-    const intake = runCli(subject, ['fleet', 'feedback', 'intake', '--json', '--publication-id', subject.publicationId]);
-    expect(intake.status, intake.stderr).toBe(0);
-    const offers = runCli(subject, ['fleet', 'feedback', 'offers', '--json', '--publication-id', subject.publicationId]);
-    const projection = JSON.parse(offers.stdout) as { offer: Record<string, unknown> };
-    const reopened = runCli(subject, [
-      'fleet', 'feedback', 'repair', 'reopen', '--json', ...repairFenceArgs(subject, projection.offer),
-    ]);
-    expect(reopened.status, reopened.stderr).toBe(0);
-    expect(JSON.parse(reopened.stdout)).toMatchObject({
-      ok: true,
-      repair_id: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
-      proof: { phase: 'dispatched', repair_id: expect.stringMatching(/^sha256:[0-9a-f]{64}$/) },
-      lease: { state: 'bound', claim_id: subject.claimId, generation: subject.generation },
-      envelope: { action: 'reopened', publication_id: subject.publicationId, repair_id: expect.any(String) },
-    });
-  });
-
-  test('repair takeover projects and fences the offer, then stops at reserving', () => {
-    const subject = fixture();
-    const intake = runCli(subject, ['fleet', 'feedback', 'intake', '--json', '--publication-id', subject.publicationId]);
-    expect(intake.status, intake.stderr).toBe(0);
-    const offers = runCli(subject, ['fleet', 'feedback', 'offers', '--json', '--publication-id', subject.publicationId]);
-    const projection = JSON.parse(offers.stdout) as { offer: Record<string, unknown> };
-    const taken = runCli(subject, [
-      'fleet', 'feedback', 'repair', 'takeover', '--json', ...repairFenceArgs(subject, projection.offer),
-      '--reason', 'provider feedback repair', '--session-id', 'feedback-cli-takeover',
-    ]);
-    expect(taken.status, taken.stderr).toBe(0);
-    const result = JSON.parse(taken.stdout) as { lease: { claim_id: string; generation: number; state: string }; envelope: Record<string, unknown> };
-    expect(result).toMatchObject({
-      ok: true,
-      repair_id: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
-      proof: { phase: 'dispatched', repair_id: expect.stringMatching(/^sha256:[0-9a-f]{64}$/) },
-      lease: { state: 'reserving', generation: 2 },
-      envelope: { action: 'taken_over', publication_id: subject.publicationId, repair_id: expect.any(String) },
-    });
-    expect(result.lease.claim_id).not.toBe(subject.claimId);
-  });
-
-  test('repair takeover rejects caller-selected claim and worktree identities', () => {
-    const subject = fixture();
-    const intake = runCli(subject, ['fleet', 'feedback', 'intake', '--json', '--publication-id', subject.publicationId]);
-    expect(intake.status, intake.stderr).toBe(0);
-    const offers = runCli(subject, ['fleet', 'feedback', 'offers', '--json', '--publication-id', subject.publicationId]);
-    const projection = JSON.parse(offers.stdout) as { offer: Record<string, unknown> };
-    for (const spoofed of [
-      ['--new-claim-id', 'caller-claim'],
-      ['--source-worktree', subject.root],
-    ]) {
-      const result = runCli(subject, [
-        'fleet', 'feedback', 'repair', 'takeover', '--json', ...repairFenceArgs(subject, projection.offer),
-        '--reason', 'provider feedback repair', '--session-id', 'feedback-cli-takeover', ...spoofed,
-      ]);
-      expect(result.status).not.toBe(0);
-      expect(`${result.stdout}${result.stderr}`).toContain('unknown option');
-    }
-  });
-
-  test('repair complete writes exactly one completed reaction receipt', () => {
-    const subject = fixture();
-    const intake = runCli(subject, ['fleet', 'feedback', 'intake', '--json', '--publication-id', subject.publicationId]);
-    expect(intake.status, intake.stderr).toBe(0);
-    const offers = runCli(subject, ['fleet', 'feedback', 'offers', '--json', '--publication-id', subject.publicationId]);
-    const projection = JSON.parse(offers.stdout) as { offer: Record<string, unknown> };
-    const reopened = runCli(subject, [
-      'fleet', 'feedback', 'repair', 'reopen', '--json', ...repairFenceArgs(subject, projection.offer),
-    ]);
-    expect(reopened.status, reopened.stderr).toBe(0);
-    const dispatch = JSON.parse(reopened.stdout) as { repair_id: string };
-
-    const spoofed = runCli(subject, [
-      'fleet', 'feedback', 'repair', 'complete', '--json',
-      '--publication-id', subject.publicationId, '--repair-id', dispatch.repair_id,
-      '--before-reaction-token', 'sha256:spoofed', '--after-reaction-token', 'sha256:spoofed',
-    ]);
-    expect(spoofed.status).not.toBe(0);
-    expect(`${spoofed.stdout}${spoofed.stderr}`).toContain('unknown option');
-    expect(readReactionAttemptReceipts(subject.root, subject.publicationId)).toHaveLength(0);
-
-    const premature = runCli(subject, [
-      'fleet', 'feedback', 'repair', 'complete', '--json',
-      '--publication-id', subject.publicationId, '--repair-id', dispatch.repair_id,
-      '--recorded-at', '2026-08-23T00:05:00Z',
-    ]);
-    expect(premature.status, premature.stderr).toBe(1);
-    expect(JSON.parse(premature.stderr)).toMatchObject({ ok: false });
-    expect(readReactionAttemptReceipts(subject.root, subject.publicationId)).toHaveLength(0);
-
-    const completion = prepareCompletionPublication(subject);
-    const completionIntake = runCli(
-      subject,
-      ['fleet', 'feedback', 'intake', '--json', '--publication-id', completion.publication_id],
-      { GH_HEAD_OVERRIDE: completion.head_sha },
-    );
-    expect(completionIntake.status, completionIntake.stderr).toBe(0);
-    const completed = runCli(subject, [
-      'fleet', 'feedback', 'repair', 'complete', '--json',
-      '--publication-id', subject.publicationId, '--repair-id', dispatch.repair_id,
-      '--recorded-at', '2026-08-23T00:05:00Z',
-    ]);
-    expect(completed.status, completed.stderr).toBe(0);
-    const completedOutput = JSON.parse(completed.stdout) as { ok: boolean; receipt: Record<string, unknown> };
-    expect(completedOutput).toMatchObject({
-      ok: true,
-      receipt: { publication_id: subject.publicationId, outcome: 'completed', repair_id: dispatch.repair_id },
-    });
-    const firstReceipt = completedOutput.receipt;
-    const replay = runCli(subject, [
-      'fleet', 'feedback', 'repair', 'complete', '--json',
-      '--publication-id', subject.publicationId, '--repair-id', dispatch.repair_id,
-      '--recorded-at', '2026-08-23T00:05:00Z',
-    ]);
-    expect(replay.status, replay.stderr).toBe(0);
-    expect(JSON.parse(replay.stdout).receipt).toEqual(firstReceipt);
-    expect(readReactionAttemptReceipts(subject.root, subject.publicationId)).toHaveLength(1);
-  }, 30_000);
 });
