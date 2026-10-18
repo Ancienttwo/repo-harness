@@ -85,7 +85,7 @@ export function runStopHandler(opts: StopHandlerInput): StopHandlerResult {
   try { publishCheckpointFromLedger(repoRoot, () => now); } catch { /* see above */ }
   writeRecoveryViews(repoRoot, activePlan, env, opts.identity, now, dependencies);
   const notice = opts.identity.host === 'claude'
-    ? collectAgentNotice(repoRoot, () => resolveCapabilityOwnership(repoRoot), { env })
+    ? collectAgentNotice(repoRoot, options => resolveCapabilityOwnership(repoRoot, undefined, options), { env })
     : {};
   return { exitCode: 0, stdout: notice.content ?? '', stderr: notice.diagnostics ?? '', ...(notice.systemMessage ? { systemMessage: notice.systemMessage } : {}) };
 }

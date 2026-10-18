@@ -53,8 +53,8 @@ export function readArchcontextCapabilityAuthority(
   }
 }
 
-// Ownership also runs in notice hooks. Each archctx call has a 3 s ceiling.
-const RESOLVE_TIMEOUT_MS = 3_000;
+// Notice callers can supply a shorter deadline through ArchctxProviderOptions.
+const RESOLVE_TIMEOUT_MS = 10_000;
 
 type ArchctxResolveResult = Omit<ArchcontextPathOwner, 'path'>;
 

@@ -24,7 +24,10 @@ export interface AgentNotice {
 export function renderAgentNotice(report: ArchitectureDebtReportV1): AgentNotice | null {
   const items = noticeItems(report);
   if (items.length === 0) return null;
-  const capability = singleLine(items[0]!.capabilityIds[0] ?? report.scope.capabilityIds[0] ?? 'unowned');
+  const itemCapabilities = items.map(item => item.capabilityIds.length > 0 ? item.capabilityIds : [report.scope.capabilityIds[0] ?? 'unowned']);
+  const capabilities = [...new Set(itemCapabilities.flat())];
+  const rest = capabilities.length > 1 ? ` (+${capabilities.length - 1} capabilities)` : '';
+  const capability = `${singleLine(capabilities[0]!)}${rest}`;
   const header = `[ArchitectureDebt] ${items.length} new in ${capability}`;
   const overflow = (count: number) => `(+${count} more: ${COMMAND})`;
   const lines: string[] = [];
@@ -33,7 +36,7 @@ export function renderAgentNotice(report: ArchitectureDebtReportV1): AgentNotice
       : item.details.origin === 'node-summary' ? 'summary'
       : item.details.origin === 'node-responsibility' ? `responsibilities[${item.details.responsibilityIndex}]`
       : 'human citations';
-    const line = `- ${item.kind} ${singleLine(item.capabilityIds[0] ?? capability)}; ${singleLine(field)}. Run: ${singleLine(item.action)}`;
+    const line = `- ${item.kind} ${singleLine(item.capabilityIds[0] ?? report.scope.capabilityIds[0] ?? 'unowned')}; ${singleLine(field)}. Run: ${singleLine(item.action)}`;
     const remainder = items.length - lines.length - 1;
     const candidate = [header, ...lines, line, ...(remainder > 0 ? [overflow(remainder)] : [])].join('\n');
     if (Buffer.byteLength(candidate, 'utf8') > MAX_BYTES) break;
@@ -50,9 +53,12 @@ export function renderAgentNotice(report: ArchitectureDebtReportV1): AgentNotice
 }
 
 /** Shared by all host delivery points. A failure cannot consume the dedupe key. */
-export function collectAgentNotice(repoRoot: string, ownership: () => CapabilityOwnership | null, options: ArchctxProviderOptions = {}): AgentNotice {
+export function collectAgentNotice(repoRoot: string, ownership: (options: ArchctxProviderOptions) => CapabilityOwnership | null, options: ArchctxProviderOptions = {}): AgentNotice {
   try {
-    const measured = checkpointArchitectureDebt(repoRoot, ownership(), options);
+    const now = options.nowMs ?? Date.now;
+    const ownerOptions = { ...options, deadlineMs: Math.min(options.deadlineMs ?? Infinity, now() + 3_000) };
+    // Ownership and checkpoint each get one bounded call. SessionStart reuses ownership.
+    const measured = checkpointArchitectureDebt(repoRoot, ownership(ownerOptions), options);
     if (!measured) return {};
     const notice = renderAgentNotice(measured.report);
     if (!notice) return {};

@@ -7,6 +7,7 @@ import { runStopHandler as runStopHandlerRuntime, type StopProjectionTarget } fr
 import { agentNoticeFixture, noticeEnv, NOTICE_CAPABILITY } from './helpers/agent-notice';
 import { fixtureWrite, fixtureCommit } from './helpers/module-repository';
 import { hookIdentity } from './helpers/hook-identity';
+import { resolveCompatibleNodeRuntime } from '../src/effects/architecture/archctx-provider';
 
 const fixtures: string[] = [];
 
@@ -263,6 +264,21 @@ describe('Stop architecture debt notice', () => {
   function stop(cwd: string, options: Partial<StopRuntimeInput> = {}) {
     return runStopHandler({ collector: collector(cwd), env: noticeEnv(cwd), ...options });
   }
+
+  test('review round 1: Stop uses the hook Node environment for ownership and checkpoint', () => {
+    const cwd = noticeFixture();
+    const env = { ...noticeEnv(cwd), REPO_HARNESS_NODE_BIN: resolveCompatibleNodeRuntime(process.env) };
+    const previous = process.env.REPO_HARNESS_NODE_BIN;
+    process.env.REPO_HARNESS_NODE_BIN = join(cwd, 'missing-process-node');
+    try {
+      const result = stop(cwd, { env });
+      expect(result.stderr).toBe('');
+      expect(result.stdout).toContain('[ArchitectureDebt]');
+    } finally {
+      if (previous === undefined) delete process.env.REPO_HARNESS_NODE_BIN;
+      else process.env.REPO_HARNESS_NODE_BIN = previous;
+    }
+  });
 
   test('Claude Stop names citation debt once per branch and id set', () => {
     const cwd = noticeFixture();

@@ -14,6 +14,11 @@ import { budgetSessionContext } from "../src/cli/hook/session-context-budget";
 import type { EffectiveState } from "../src/core/state/types";
 import type { EffectiveStateResolution } from "../src/effects/loop/state-input-collector";
 import { fixtureTaskId } from "./helpers/sprint-fixture";
+import { getHandlerForRoute } from '../src/cli/hook/handler-registry';
+import { getRoute } from '../src/cli/hook/route-registry';
+import { createStateInputCollector } from '../src/effects/loop/state-input-collector';
+import { resolveEffectiveState } from '../src/effects/state/resolve-effective-state';
+import { hookIdentity } from './helpers/hook-identity';
 
 const HOOK_ENTRY = join(import.meta.dir, "../src/cli/hook-entry.ts");
 const RESUME = ".ai/harness/handoff/resume.md";
@@ -222,6 +227,24 @@ describe("buildSessionStartSections", () => {
 });
 
 describe("architecture debt section", () => {
+  test('review round 1: a large mandatory state cannot replace a consumed notice with a pointer', () => {
+    const root = realpathSync(agentNoticeFixture());
+    try {
+      const state = { ...resolveEffectiveState(root), guidance: 'x'.repeat(7_000) };
+      const collector = createStateInputCollector({ repoRoot: root, resolveEffectiveState: () => ({ ok: true, state }) });
+      const result = getHandlerForRoute(getRoute('SessionStart', 'default')!).run({
+        event: 'SessionStart', repoRoot: root, payload: {}, identity: hookIdentity({ host: 'codex' }),
+        env: { ...process.env, HOME: join(root, 'home') }, now: new Date(), collector,
+      });
+      const notice = result.sessionContexts!.find(section => section.id === 'architecture-debt')!;
+      expect(notice.content).toContain('[ArchitectureDebt]');
+      const budgeted = budgetSessionContext(result.sessionContexts!);
+      expect(budgeted).toContain(notice.content);
+      expect(budgeted).not.toContain('[ContextRef:architecture-debt]');
+      expect(existsSync(join(root, '.ai/harness/state/agent-notice'))).toBe(true);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
   function nativeFixture(): Fixture {
     const root = agentNoticeFixture();
     return { root, home: join(root, 'home'), write: (path, text) => fixtureWrite(root, path, text), cleanup: () => rmSync(root, { recursive: true, force: true }) };

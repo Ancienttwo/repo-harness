@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { collectAgentNotice, renderAgentNotice } from '../src/cli/hook/agent-notice';
 import { checkpointArchitectureDebt } from '../src/effects/architecture/archctx-provider';
+import { resolveCapabilityOwnership } from '../src/effects/state/resolve-effective-state';
 import { agentNoticeFixture, noticeOwnership, noticeEnv, NOTICE_CAPABILITY } from './helpers/agent-notice';
 import { fixtureGit, fixtureWrite } from './helpers/module-repository';
 
@@ -12,6 +13,59 @@ function fixture() { const root = agentNoticeFixture(); roots.push(root); return
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 
 describe('AgentNotice', () => {
+  test('review round 1: notice ownership receives its own 3 s bound and hook environment', () => {
+    const root = fixture();
+    const env = noticeEnv(root);
+    const report = checkpointArchitectureDebt(root, noticeOwnership(root), { env })!.report;
+    const calls: string[] = [];
+    const notice = collectAgentNotice(root, options => resolveCapabilityOwnership(root, undefined, options), {
+      env, nowMs: () => 100,
+      run: (_binary, args, options) => {
+        calls.push(args[0]!);
+        expect(options.env).toBe(env);
+        expect(options.timeoutMs).toBe(3_000);
+        const paths = args[0] === 'resolve' ? readFileSync(args[2]!, 'utf8').trim().split('\n') : [];
+        const data = args[0] === 'resolve' ? { results: paths.map(path => ({ path, matched: true, ambiguous: false, owningCapabilityId: NOTICE_CAPABILITY })) } : report;
+        return { status: 0, signal: null, stdout: JSON.stringify({ schemaVersion: 'archcontext.envelope/v1', ok: true, requestId: args[0], data }), stderr: '' };
+      },
+    });
+    expect(calls).toEqual(['resolve', 'checkpoint']);
+    expect(notice.content).toContain('[ArchitectureDebt]');
+  });
+
+  test('review round 1: multi-capability headers count unique ids and rows use scope then unowned', () => {
+    const root = fixture();
+    const report = checkpointArchitectureDebt(root, noticeOwnership(root), { env: noticeEnv(root) })!.report;
+    const item = report.items[0]!;
+    const items = [
+      { ...item, id: 'first', capabilityIds: ['capability.test.first', 'capability.test.second'] },
+      { ...item, id: 'second', capabilityIds: ['capability.test.second'] },
+      { ...item, id: 'third', capabilityIds: [] },
+    ];
+    const rendered = renderAgentNotice({ ...report, scope: { ...report.scope, capabilityIds: ['capability.test.scope'] }, items })!;
+    expect(rendered.content).toStartWith('[ArchitectureDebt] 3 new in capability.test.first (+2 capabilities)\n');
+    expect(rendered.systemMessage).toContain('capability.test.first (+2 capabilities)');
+    expect(rendered.content).toContain('- stale-anchor capability.test.scope;');
+    expect(Buffer.byteLength(rendered.content!)).toBeLessThanOrEqual(800);
+    const empty = renderAgentNotice({ ...report, scope: { ...report.scope, capabilityIds: [] }, items: [{ ...item, capabilityIds: [] }] })!;
+    expect(empty.content).toStartWith('[ArchitectureDebt] 1 new in unowned\n');
+    expect(empty.content).toContain('- stale-anchor unowned;');
+    expect(empty.systemMessage).toContain('in unowned;');
+    const scope = renderAgentNotice({ ...report, items: [{ ...item, capabilityIds: [] }] })!;
+    expect(scope.content).toStartWith(`[ArchitectureDebt] 1 new in ${NOTICE_CAPABILITY}\n`);
+  });
+
+  test('review round 1: checkpoint timeout points to debt inspection without a request id', () => {
+    const root = fixture();
+    const result = collectAgentNotice(root, () => noticeOwnership(root), {
+      env: noticeEnv(root), run: () => ({ status: null, signal: 'SIGTERM', stdout: '', stderr: '', timedOut: true }),
+    });
+    expect(result.diagnostics).toContain('architecture notice timed out after 3 s; run repo-harness architecture-debt --json');
+    expect(result.diagnostics).not.toContain('request id');
+    expect(result.diagnostics).not.toContain('architecture-projection');
+    expect(result.content).toBeUndefined();
+  });
+
   test('real citation debt is bounded, uses producer ids and dedupes across delivery points', () => {
     const root = fixture();
     const ownership = noticeOwnership(root);
