@@ -326,9 +326,9 @@ describe('Tools page', () => {
     await mount('#tools', props(readySetup(NOW)));
     expect(all('[data-tool-group]').map(group => group.getAttribute('data-tool-group'))).toEqual(['local_tool', 'resource']);
     expect(text('#tools-local_tool-heading')).toBe('Local tools4');
-    expect(text('#tools-resource-heading')).toBe('Recommended resources2');
+    expect(text('#tools-resource-heading')).toBe('Recommended resources3');
     const status = Object.fromEntries(all('[data-tool]').map(item => [item.getAttribute('data-tool'), item.querySelector('[data-tool-status]')!.getAttribute('data-tool-status')]));
-    expect(status).toEqual({ waza: 'unknown', codegraph: 'unknown', 'herdr-skill': 'unknown', 'hai-stack': 'na', shaders: 'na', 'awesome-design-md': 'na' });
+    expect(status).toEqual({ waza: 'unknown', codegraph: 'unknown', 'herdr-skill': 'unknown', 'hai-stack': 'na', shaders: 'na', 'awesome-design-md': 'na', 'claude-quickstarts': 'na' });
     expect(text('[data-tool="hai-stack"] [data-tool-status]')).toBe('N/A');
     // hai-stack declares no SPDX license; the license cell says so.
     expect(text('[data-tool="hai-stack"]')).toContain('Unknown');

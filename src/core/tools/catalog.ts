@@ -9,7 +9,7 @@ import catalogJson from '../../../assets/tool-catalog.v1.json';
 
 export const TOOL_CATALOG_VERSION = 'repo-harness.tool-catalog.v1';
 export const TOOL_KINDS = ['resource', 'local_tool'] as const;
-export const TOOL_CATEGORIES = ['frontend', 'design', 'agent_skills', 'code_navigation', 'orchestration'] as const;
+export const TOOL_CATEGORIES = ['frontend', 'design', 'agent_skills', 'code_navigation', 'orchestration', 'agent_reference'] as const;
 /** Also the `#tools/<id>` path parameter. */
 const TOOL_ID = /^[a-z0-9][a-z0-9-]{0,63}$/u;
 /** `docs_anchor` values are anchors in this document. */

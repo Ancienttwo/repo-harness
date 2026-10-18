@@ -69,7 +69,7 @@
         "zh": "WebGPU shader 组件，支持 React、Vue、Svelte、Solid、原生 JavaScript 和 Framer"
       },
       "detector": null,
-      "docs_anchor": "#recommended-frontend-and-design-resources"
+      "docs_anchor": "#recommended-resources"
     },
     {
       "id": "awesome-design-md",
@@ -83,7 +83,21 @@
         "zh": "来自知名品牌设计系统的 DESIGN.md 文件。把一份放进项目，coding agent 做出的 UI 就会和它一致"
       },
       "detector": null,
-      "docs_anchor": "#recommended-frontend-and-design-resources"
+      "docs_anchor": "#recommended-resources"
+    },
+    {
+      "id": "claude-quickstarts",
+      "name": "anthropics/claude-quickstarts",
+      "kind": "resource",
+      "category": "agent_reference",
+      "url": "https://github.com/anthropics/claude-quickstarts",
+      "license": "MIT",
+      "summary": {
+        "en": "Anthropic reference projects for the Claude API: agents, computer use, browser use, autonomous coding and managed agents",
+        "zh": "Anthropic 的 Claude API 参考项目：agent、computer use、browser use、autonomous coding 和 managed agents"
+      },
+      "detector": null,
+      "docs_anchor": "#recommended-resources"
     }
   ]
 }

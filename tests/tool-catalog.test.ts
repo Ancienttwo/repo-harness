@@ -30,6 +30,7 @@ describe("tool catalog decode", () => {
       ["hai-stack", "local_tool", null],
       ["shaders", "resource", null],
       ["awesome-design-md", "resource", null],
+      ["claude-quickstarts", "resource", null],
     ]);
   });
 
@@ -78,7 +79,7 @@ describe("tool status", () => {
   test("a tool with a detector key is unknown; resources and tools without a detector are n/a", () => {
     const status = Object.fromEntries(TOOL_CATALOG.tools.map((tool) => [tool.id, toolStatus(tool)]));
     expect(status).toEqual({
-      waza: "unknown", codegraph: "unknown", "herdr-skill": "unknown", "hai-stack": "na", shaders: "na", "awesome-design-md": "na",
+      waza: "unknown", codegraph: "unknown", "herdr-skill": "unknown", "hai-stack": "na", shaders: "na", "awesome-design-md": "na", "claude-quickstarts": "na",
     });
   });
 });
