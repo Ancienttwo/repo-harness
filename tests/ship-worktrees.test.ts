@@ -28,6 +28,19 @@ describe("ship-worktrees helper integration", () => {
     expect(existsSync(join(fixture.cwd,"tasks/contracts"))).toBe(false);
     expect(existsSync(join(fixture.cwd,".ai/harness/checks/latest.json"))).toBe(false);
   }));
+  test("the active plan title names the PR", () => withPlainShipFixture((fixture) => {
+    expect(run("git", ["switch", "-c", "feature/titled"], fixture.cwd).status).toBe(0);
+    mkdirSync(join(fixture.cwd, "plans"), { recursive: true });
+    writeFileSync(join(fixture.cwd, "plans/demo.md"), "# Plan: Demo title\n");
+    mkdirSync(join(fixture.cwd, ".ai/harness"), { recursive: true });
+    writeFileSync(join(fixture.cwd, ".ai/harness/active-plan"), "plans/demo.md\n");
+    writeFileSync(join(fixture.cwd, "change.txt"), "titled change\n");
+    const result = fixture.ship([]);
+    expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
+    expect(result.stderr).not.toContain("command not found");
+    const create = readFileSync(fixture.log, "utf8").split("\n").find((line) => line.startsWith("pr create "));
+    expect(create).toContain("Demo title");
+  }));
   test("dirty main opens its named PR branch without a workflow plan", () => withPlainShipFixture((fixture) => {
     writeFileSync(join(fixture.cwd,"main-change.txt"),"main change\n");
     const result=fixture.ship(["--slug","plain"]);

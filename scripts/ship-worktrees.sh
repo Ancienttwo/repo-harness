@@ -699,6 +699,14 @@ refresh_target_base() {
   run_cmd git fetch --no-tags "$REMOTE_NAME" "+refs/heads/$TARGET_BRANCH:refs/remotes/$REMOTE_NAME/$TARGET_BRANCH"
 }
 
+active_plan_or_empty() {
+  local active_plan=""
+  if [[ -f ".ai/harness/active-plan" ]]; then
+    active_plan="$(cat ".ai/harness/active-plan" 2>/dev/null | xargs)"
+  fi
+  printf '%s' "$active_plan"
+}
+
 pr_title_for_branch() {
   local branch="$1"
   local active_plan title
