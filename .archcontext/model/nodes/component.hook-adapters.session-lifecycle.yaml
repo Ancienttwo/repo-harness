@@ -5,12 +5,13 @@
   "name": "Session Lifecycle Handlers",
   "status": "active",
   "parent": "capability.runtime-harness.hook-adapters",
-  "summary": "Typed handlers for SessionStart context, Stop recovery views and subagent routes.",
+  "summary": "Typed handlers for session context, architecture debt, Stop recovery and subagent routes.",
   "responsibilities": [
-    "Build the SessionStart sections from Effective State and the session providers.",
-    "Publish the evidence checkpoint and render handoff and resume at Stop, with the Claude owed-architecture line.",
-    "Record native subagent starts and stamp the return-channel contract onto Claude Agent spawn prompts.",
-    "Keep the UserPromptSubmit inbox adapter tuple as a no-op."
+    "Build SessionStart sections from Effective State and the session providers.",
+    "Publish the evidence checkpoint and render handoff and resume at Stop.",
+    "Select, bound and dedupe architecture debt for SessionStart, Claude Stop and Codex UserPromptSubmit, including worker sessions.",
+    "Keep host rendering separate and preserve the installed UserPromptSubmit inbox tuple.",
+    "Record native subagent starts and stamp the return-channel contract onto Claude Agent spawn prompts."
   ],
   "source": {
     "include": [
@@ -20,7 +21,9 @@
       "src/cli/hook/subagent-context.ts",
       "src/cli/hook/board-slice-context.ts",
       "src/cli/hook/state-snapshot.ts",
-      "src/effects/run-summary-retention.ts"
+      "src/effects/run-summary-retention.ts",
+      "src/cli/hook/agent-notice.ts",
+      "src/effects/hook-state-file.ts"
     ],
     "entrypoints": [
       {

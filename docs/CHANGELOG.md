@@ -2,6 +2,14 @@
 
 All notable changes to this skill are documented here.
 
+## Unreleased
+
+- Replace owed hook text with one architecture debt notice at SessionStart,
+  Claude Stop and Codex UserPromptSubmit. Include worker sessions. Use archctx
+  checkpoint for changed owned paths with a 3 s deadline. Share id-based
+  dedupe and a three-item, 800-byte limit. Keep Claude human messages and
+  silent Codex Stop. Keep full dependency and flow debt in CI. (#737)
+
 ## [0.23.1] - 2026-10-17
 
 This release has breaking changes. It retires the in-repo task plane: the

@@ -37,12 +37,12 @@ Other documents link here. They do not copy this table.
 
 | Route | Matcher | Host | Typed handler | Responsibility |
 | --- | --- | --- | --- | --- |
-| `SessionStart.default` | all sessions | Claude, Codex | `session-context` | Emit the Effective State section first, then the owed-architecture and pending-plan sections under one budget. |
+| `SessionStart.default` | all sessions | Claude, Codex | `session-context` | Emit the Effective State section first, then the architecture-debt and pending-plan sections under one budget. |
 | `PreToolUse.edit` | `Edit\|Write` | Claude, Codex | `mutation-guard` | Block an edit outside the repository, under `_ref/` or `_ops/`, or without a parseable target path. |
 | `PreToolUse.subagent` | `Agent` | Claude | `return-channel` | Append the return-channel contract, standing orders and board slice to a Claude `Agent` prompt. |
-| `UserPromptSubmit.inbox` | all prompts | Claude, Codex | `task-inbox` | Deliver task messages at the turn boundary. |
+| `UserPromptSubmit.inbox` | all prompts | Claude, Codex | `agent-notice` | Deliver architecture debt on Codex; Claude emits nothing. |
 | `SubagentStart.context` | subagent start | Codex | `subagent-context` | Record the native role and model observation. Add the bounded child context, standing orders and board slice. |
-| `Stop.default` | session stop | Claude, Codex | `stop` | Publish the evidence checkpoint and render handoff and resume. Claude can get the owed-architecture line. |
+| `Stop.default` | session stop | Claude, Codex | `stop` | Publish the evidence checkpoint and render handoff and resume. Claude can get architecture debt. |
 
 After upgrading the package, reinstall the host adapters. Codex must trust the
 new command tuples once. Old adapters invoke removed routes and get exit 2.
@@ -51,8 +51,8 @@ Doctor reports projection mismatch and a missing hook bin. The new runtime
 returns exit 2 for a removed tuple or an unsupported host route.
 
 Publication-command architecture and `[PostBash]` advisories no longer reach
-the Agent. Claude and Codex still get owed context at SessionStart. Claude
-also gets it at Stop. No route observes `PostToolUse`.
+the Agent. Claude and Codex get debt context at SessionStart. Claude
+also gets it at Stop. Codex gets it at UserPromptSubmit. No route observes `PostToolUse`.
 
 ## Standing orders
 
@@ -82,7 +82,7 @@ a host file descriptor.
 - Codex `Stop` writes no bytes. Codex Desktop renders Stop JSON as
   "Unsupported content type".
 - stderr is for operators. No host gives stderr of a successful hook to the
-  model. A successful Stop writes nothing to stderr.
+  model. A failed debt observation writes one diagnostic line and keeps exit 0.
 - A non-zero exit keeps its refusal channel. Claude reads stdout and stderr.
   Codex gets both on stderr.
 
@@ -102,8 +102,9 @@ only the native-role evidence.
 
 `SessionStart` resolves Effective State once. The `[HarnessState]` section, or
 `[HarnessStateUnavailable]` when the resolution fails, comes first and always.
-Optional sections follow in priority order: `architecture-owed` and
-`pending-plan-capture`. Each section names its source. SessionStart does not
+The `architecture-debt` section follows at priority 2 and is mandatory when
+present. Its 800-byte limit keeps it bounded. `pending-plan-capture` remains
+optional. Each section names its source. SessionStart does not
 inject the resume body. `references.resume` points to its file. Effective
 State carries no sprint pointer or task contract evidence. A provider that
 throws becomes one `[SessionContextProviderFailed] <id>` line.
@@ -189,32 +190,56 @@ projection of the ownership answer that state resolution already computed:
 implementation path, an absent registry, an ownership blocker, or capability
 ids that the caller declared.
 
-A capability is owed when one of its owned implementation paths in the review
-subject changed after the last change to
-`docs/architecture/.projection-manifest.json`. ArchContext is the only
-ownership authority, and Git gives the changed set: one `git log` and one
-`git status`. `SessionStart` uses the ownership answer of its own state
-resolution. `PreToolUse.edit` resolves the owners of the edited paths only. It
-takes no state lock and runs `git status` only for an owned path. `Stop` runs
-one read-only ownership resolution of its own for the
-review subject. An uncommitted manifest change counts as the
-newest change. A checkout without the manifest, or a repository without a
-capability registry, is `not_projected`. The owed report has at most
-three lines: the capability and its module document, new unowned source paths,
-and the next step (`repo-harness architecture-projection check --json`, then
-the worker flow of the `repo-harness-architecture` skill). It is evidence, not
-a gate.
+`agent-notice.ts` selects and formats architecture debt. SessionStart reuses
+Effective State ownership. Claude Stop and Codex UserPromptSubmit make one
+ownership query without resolving workflow state. Those notice queries use a
+3 s deadline and the hook environment; other ownership callers keep 10 s.
+The effect intersects owned paths with Git changes against the
+merge-base of `review_base`, including staged, unstaged and untracked paths.
+No changed owned path means no checkpoint call. The old manifest history subject
+in `state resolve` stays unchanged; it does not set the notice base.
 
-The Agent gets the report at these points:
+The package-local `checkpoint --changed-path <path>... --json` has a 3 s deadline.
+It needs no CodeGraph index. The 0.8.1 fallback covers ownership and human
+citations only. Dependency and flow debt stay in the PR lane. Checkpoint has no
+base classification or severity field. Partial coverage does not prove that
+all architecture debt is absent.
+
+Known limits:
+
+- While owned paths are dirty, each Codex prompt and each Claude Stop pays one
+  ownership resolve and one checkpoint before the dedupe check.
+- Checkpoint receives only owned changed paths, so new unowned files reach
+  the CI lane, not the session.
+- `new` means a new delivery id set, not newly introduced debt.
+
+The text starts with `[ArchitectureDebt] N new in <capability>`. Each item names
+the capability, model field and command. At most three items fit within 800
+UTF-8 bytes. An overflow line gives the remaining count and
+`repo-harness architecture-debt --json`. A line that cannot fit stays in that
+count; commands are never cut. No debt means no model text.
+
+The marker `.ai/harness/state/agent-notice` must be Git-ignored. Its key is
+SHA-256 of JSON `[branch, sorted item ids]`. archctx calls the stable identity
+field `id`. All delivery points share the marker. A manifest refresh does not
+renew an unchanged set. A failed checkpoint or marker operation emits no notice
+and one stderr diagnostic at exit 0. Hooks never project or apply architecture.
 
 | Point | Hosts | When |
 | --- | --- | --- |
-| `PreToolUse.edit` | Claude, Codex | `[CapabilityOwner]` line on the first edit of an owned path after its last commit |
-| `SessionStart.default` | Claude, Codex | the branch already owes updates |
-| `Stop.default` | Claude only | once per branch and owed set; nothing when `stop_hook_active` is true |
+| `PreToolUse.edit` | Claude, Codex | Existing `[CapabilityOwner]` line; no debt call |
+| `SessionStart.default` | Claude, Codex | Changed owned paths and a new id set, including worker sessions |
+| `Stop.default` | Claude | Same rule; skip when `stop_hook_active` is true |
+| `UserPromptSubmit.inbox` | Codex | Same rule; the installed tuple stays unchanged |
 
-The owed rule is a hook signal only. CI and operators use the ArchContext
-debt report for a pull request:
+Claude receives one human `systemMessage` from the same notice: count, first
+capability and one command. Multi-capability notices append `(+K capabilities)`
+to the first capability in both the header and human line. An item without
+capability ids uses the first scope capability, then `unowned`. Codex receives no human line, and Codex Stop emits
+no stdout. The [Codex hooks documentation](https://developers.openai.com/codex/hooks#userpromptsubmit)
+permits `hookSpecificOutput.additionalContext` at UserPromptSubmit.
+
+CI and operators use the full debt comparison:
 
 ```bash
 repo-harness architecture-debt --json --base origin/main

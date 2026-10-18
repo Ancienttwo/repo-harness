@@ -475,12 +475,9 @@ edges, so run the repo verification commands instead.
 
 ### Bash Output and RTK
 
-`PostToolUse:Bash` stores no command output and writes no command record. It
-counts a known failing test run in the RepairLimit circuit when the payload
-carries an exit status, which only Pi sends. After a publication command it can
-report owed architecture updates. Verification evidence comes from explicit
-check commands, not from the Bash hook.
-
+No PostToolUse route is installed. Verification evidence comes from explicit
+check commands. Architecture notices use SessionStart, Claude Stop and Codex
+UserPromptSubmit.
 RTK can be useful as a user-level compression tool for noisy successful shell
 commands, but it is optional. Hooks do not suggest `rtk`, rewrite Bash
 commands or require RTK. Keep failed command output raw so test, build, and
@@ -1051,16 +1048,25 @@ ChangeSet, and runs `repo-harness architecture-projection apply --json` in the
 same branch. `check` and `plan` show the effect without writes. The projected
 `docs/architecture/` files are committed with the change.
 
-A capability is owed when one of its owned implementation paths in the review
-subject changed after the last change to
-`docs/architecture/.projection-manifest.json`. Hooks that already resolve
-state reuse its ownership answer; `PostToolUse.bash` runs one ownership
-resolution of its own. The rule then runs at most two Git commands. It writes no
-queue and no drift cursor. Hooks report it to the Agent as evidence, never as a
-gate. The report names the capability, its module document, new unowned source
-paths and the next step: `repo-harness architecture-projection check --json`,
-then the worker flow of the `repo-harness-architecture` skill.
+`AgentNotice` reads ownership and human-citation debt from package-local
+archctx 0.8.1 `checkpoint --changed-path <path>... --json`. The effect selects
+changed owned paths against the merge-base of the effective `review_base`.
+It includes staged, unstaged and untracked paths. With no changed owned path,
+it calls no checkpoint. Each checkpoint has a 3 s deadline and needs no
+CodeGraph index. Dependency and flow debt stay in CI.
 
+One module selects, formats and dedupes the notice. It emits at most three
+items and 800 UTF-8 bytes, with capability, model field and command on each
+item. Overflow points to `repo-harness architecture-debt --json`. The marker
+`.ai/harness/state/agent-notice` is Git-ignored. It stores SHA-256 of JSON
+`[branch, sorted item ids]`. The producer field is `id`. Checkpoint has no base
+classification or severity. "New" in the header means a new notice set.
+The full PR comparison remains the source for introduced debt.
+
+The old manifest-based owed rule is removed from hooks. `state resolve` keeps
+its existing ownership subject. No hook projects architecture or changes the
+model. A failed observation emits no notice and one operator diagnostic on
+stderr at exit 0.
 CI checks architecture in two jobs. The PR job `PR architecture freshness
 (advisory)` runs `repo-harness architecture-debt --json --base <PR base>`. It
 prints one warning for each ArchContext debt item whose id is new at the PR
@@ -1077,15 +1083,18 @@ row from the `repo-harness-check` architecture evidence reference.
 Hook advisories for the Agent go out as `hookSpecificOutput.additionalContext`
 on Claude and Codex. Neither host gives plain stdout of `PreToolUse`,
 `PostToolUse` or `Stop` to the model. stderr of a successful hook is an operator
-diagnostic only. The owed report reaches the Agent at these points:
+diagnostic only. The debt notice reaches every session with changed owned paths,
+including workers. Delivery is gated by host, not role:
 
-- `PreToolUse` edit: the owner line on the first edit of an owned path after
-  its last commit.
-- `SessionStart` on Claude, Codex and Pi: a short section when the branch
-  already owes updates.
-- `Stop` on Claude: once per branch and owed set. A Stop that runs because of
-  a Stop hook (`stop_hook_active`) adds nothing. Codex Stop stays silent,
-  because Codex Desktop renders Stop JSON as "Unsupported content type".
+- `PreToolUse` edit keeps the owner line and makes no debt call.
+- `SessionStart` on Claude and Codex uses the existing 1,500-token context budget.
+- `Stop` on Claude skips `stop_hook_active`. Codex Stop emits no stdout.
+- `UserPromptSubmit.inbox` on Codex uses the existing adapter tuple. Claude's
+  tuple emits nothing. The [official Codex hooks page](https://developers.openai.com/codex/hooks#userpromptsubmit)
+  documents `hookSpecificOutput.additionalContext` for this event.
+
+All delivery points share the id marker. Claude also gets a one-sentence
+`systemMessage` from the same notice. Codex gets no human line.
 
 `apply` accepts a major change in the same call. When ArchContext returns an
 unresolved-major signal, `apply` copies its reason codes and affected node ids

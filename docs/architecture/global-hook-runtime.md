@@ -72,9 +72,9 @@ lists the matcher, host and typed handler of each tuple.
 
 The tuple order and membership are a stable public contract that Codex trust-
 hashes, so additions require an explicit installer projection and trust
-transition. Task Inbox uses a dedicated `UserPromptSubmit.inbox` row because
-peer bodies are untrusted and must remain outside prompt handling and
-authorization. Two pre-existing rows carry the board slice:
+transition. The existing `UserPromptSubmit.inbox` tuple now selects
+`agent-notice`. It delivers architecture debt on Codex and emits nothing on
+Claude. It reads no peer message body. Two existing rows carry the board slice:
 
 | Route | WP3 addition | Failure mode |
 | --- | --- | --- |
@@ -90,6 +90,33 @@ its measured cost basis.
 The event result is fail-closed for unknown routes and missing handler
 bindings. A non-git or non-opt-in repository exits quietly without creating a
 runtime event record.
+
+## Architecture debt notice
+
+`agent-notice.ts` owns selection, text and the ignored id marker. The effect in
+`archctx-provider.ts` resolves the review-base merge-base, intersects Git changes
+with ownership, and calls checkpoint with a 3 s deadline. It does not need a
+CodeGraph index. No changed owned path means no checkpoint call.
+
+SessionStart uses Effective State ownership. Claude Stop uses the existing
+standalone ownership query. Codex UserPromptSubmit uses the same query.
+These notice queries pass the hook environment and a 3 s deadline. Other
+ownership callers keep their 10 s default.
+Every code-changing session can receive a notice, including workers. Claude
+Stop skips `stop_hook_active`; Codex Stop stays silent. Host rendering remains
+in `hook-protocol.ts`. Only Claude receives the human `systemMessage`.
+
+The checkpoint fallback reports ownership and human citations. Dependency and
+flow debt remain in CI. It has no introduced/existing or severity classification.
+The header's "new" means a new id set for delivery. The key is SHA-256 of JSON
+`[branch, sorted item ids]`, using the producer's `id` field. A manifest refresh
+does not renew the set. All delivery points share `.ai/harness/state/agent-notice`.
+
+The model text has at most three items and 800 UTF-8 bytes. The SessionStart
+section is mandatory, so a budget cut cannot consume an unseen notice. Each item gives a
+capability, model field and command. Overflow gives a count and the full debt
+command. Failure emits one stderr diagnostic at exit 0 and no notice. Shared
+hook state writes reject symlink paths and replace files atomically.
 
 ## Telemetry contract
 
