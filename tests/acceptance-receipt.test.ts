@@ -529,7 +529,7 @@ describe('AcceptanceReceipt', () => {
     mkdirSync(join(root, 'tasks/archive'), { recursive: true });
     writeFileSync(join(root, 'tasks/archive/demo.md'), readFileSync(live));
     rmSync(live);
-    await expect(verifyAcceptance({ root, authorityHome: home })).rejects.toThrow();
+    await expect(verifyAcceptance({ root, authorityHome: home })).rejects.toThrow('contract is missing: tasks/contracts/demo.contract.md');
     await expect(verifyAcceptance({ root, authorityHome: home, contract: 'tasks/archive/demo.md' }))
       .rejects.toThrow('archived contracts cannot authorize acceptance');
   }, 30_000);

@@ -155,6 +155,22 @@ describe('unknown classification: never silently deleted', () => {
     expect(readLease(repo, taskId).unknown_reason).toBe('owner_record_malformed');
   });
 
+  test('duplicate claim_id fields stay unknown even when both values agree', () => {
+    for (const duplicated of ['claim-1', 'claim-forged']) {
+      const repo = createRepo();
+      const record = recordFor(`duplicate-${duplicated}`, 'claim-1');
+      seedLeaseDirectory(repo, record.task_id);
+      const raw = JSON.stringify(record).replace('"claim_id":', `"claim_id":"${duplicated}","claim_id":`);
+      writeFileSync(leaseOwnerPath(repo, record.task_id), raw);
+      const read = readLease(repo, record.task_id);
+      expect(read.classification).toBe('unknown');
+      expect(read.unknown_reason).toBe('owner_record_malformed');
+      expect(read.record).toBeNull();
+      expect(read.raw).toBe(raw);
+      expect(readFileSync(leaseOwnerPath(repo, record.task_id), 'utf8')).toBe(raw);
+    }
+  });
+
   test('a record naming a different task is unknown', () => {
     const repo = createRepo();
     const foreign = recordFor('foreign record', 'claim-1');
