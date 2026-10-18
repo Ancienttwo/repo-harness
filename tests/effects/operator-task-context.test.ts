@@ -1,3 +1,4 @@
+import { serializeHistoricalLease } from '../helpers/sprint-fixture';
 import { leaseOwnerPath } from '../helpers/sprint-fixture';
 import { afterEach, expect, spyOn, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
@@ -6,7 +7,7 @@ import { constants, closeSync, openSync, renameSync, writeSync, mkdirSync, mkdte
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { decodeOperatorTaskContext, parseTaskContextRequest } from '../../src/core/operator/task-context';
-import { buildLeaseOwnerRecord, deriveTaskRevision, serializeLeaseOwnerRecord } from '../../src/core/state/coordination-identity';
+import { buildLeaseOwnerRecord, deriveTaskRevision } from '../../src/core/state/coordination-identity';
 import { readOperatorTaskContext } from '../../src/effects/operator/task-context';
 import { startOperatorServer } from '../../src/effects/operator/server';
 import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
@@ -74,7 +75,7 @@ test('healthy A remains readable with unavailable B; corrupted registry fails cl
 test('recorded claim is allowlisted without session/worktree or invented execution status',()=>{
   const f=fixture(),current=readOperatorTaskContext(f.input);
   const owner=buildLeaseOwnerRecord({taskId:f.input.task_id,taskRevision:current.task_revision,claimId:'123e4567-e89b-42d3-a456-426614174001',generation:1,sprintPath:f.sprint,targetRef:'main',sourceWorktree:f.root,sessionId:'private-session'});
-  put(leaseOwnerPath(f.root,f.input.task_id),serializeLeaseOwnerRecord(owner));const before=tree(f.root),r=readOperatorTaskContext(f.input);
+  put(leaseOwnerPath(f.root,f.input.task_id),serializeHistoricalLease(owner));const before=tree(f.root),r=readOperatorTaskContext(f.input);
   expect(r.execution.lease_state).toBe('reserving');expect(r.execution.claim?.claim_id).toBe(owner.claim_id);
   expect(JSON.stringify(r)).not.toContain('private-session');expect(JSON.stringify(r)).not.toContain(f.root);expect(tree(f.root)).toBe(before);
 });

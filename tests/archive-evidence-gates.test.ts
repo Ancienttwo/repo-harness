@@ -809,9 +809,8 @@ describe("archive-workflow helper integration", () => {
 
   // R-E (fix 5): a --timestamp value passed to archive-workflow.sh is used
   // verbatim for every archive-family filename instead of a fresh internal
-  // `date` call (the seam contract-worktree.sh finish now relies on so its
-  // allowlist predictions and archive's actual output cannot disagree across
-  // a minute boundary); a standalone invocation without --timestamp keeps
+  // `date` call. Explicit callers can bind predictions and archive output
+  // across a minute boundary. A standalone invocation without --timestamp keeps
   // making its own single `date` call, unchanged.
 
   test("archive-workflow uses a caller-supplied --timestamp for every archive filename; a standalone run keeps its own date call", () => {

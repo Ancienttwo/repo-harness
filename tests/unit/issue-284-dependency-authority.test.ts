@@ -1,3 +1,4 @@
+import { historicalPublicationPointer } from '../helpers/publication-fixture';
 import { seedLeaseDirectory, writeHistoricalLease, completingLeaseFixture, reviewingLeaseFixture, boundLeaseFixture, FIXTURE_SCHEMA_HEADER, fixtureBacklogTable, fixtureTaskId } from '../helpers/sprint-fixture';
 import { seedPublicationReceipt } from '../helpers/publication-fixture';
 import { executeVerificationContract } from '../../src/effects/evidence/verification-execution';
@@ -32,7 +33,6 @@ import {
 import {
   buildPublicationIntegrationObservation,
   canonicalPublicationIntegrationObservationBytes,
-  publicationPointerFromReceipt,
 } from '../../src/core/publication/publication-lifecycle';
 import {
   buildPublicationReceipt,
@@ -397,14 +397,12 @@ function stableJson(value: unknown): string {
 function recordAcceptanceObservation(
   subject: Fixture,
   receipt: AcceptanceReceipt = acceptanceReceipt(subject),
-  archiveProjectionSha256: string | null = null,
 ): AcceptanceVerificationObservationV1 {
   writeAcceptanceReceipt(subject, receipt);
   return writeAcceptanceVerificationObservation({
     root: subject.root,
     authorityHome: subject.root,
     receipt,
-    archiveProjectionSha256,
   });
 }
 
@@ -460,7 +458,7 @@ function reviewingPublication(subject: Fixture, head: string, base: string, numb
   if (!completing.ok) throw new Error(completing.error);
   const reviewing = reviewingLeaseFixture(completing.record, {
     claimId: owner.claim_id,
-    publication: publicationPointerFromReceipt(receipt, `ship-${number}`),
+    publication: historicalPublicationPointer(receipt, `ship-${number}`),
   });
   if (!reviewing.ok) throw new Error(reviewing.error);
   if (!seedLeaseDirectory(subject.root, subject.target.task_id)) throw new Error('lease election failed');
@@ -832,7 +830,6 @@ describe('issue #284 closed dependency authority', () => {
       root: subject.root,
       authorityHome: subject.root,
       receipt: { ...acceptanceReceipt(subject), disposition: 'conditional_pass' as AcceptanceReceipt['disposition'] },
-      archiveProjectionSha256: null,
     });
     expect(forged.disposition).toBe('conditional_pass' as AcceptanceReceipt['disposition']);
     const unknown = resolveDependencyAuthority(input(subject, 'module_accepted'));

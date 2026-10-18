@@ -1,5 +1,7 @@
-import { seedRepairProof, seedReactionReceipt, seedPublicationReceipt } from '../helpers/publication-fixture';
-import { buildRepairDispatchProof, transitionRepairDispatchProof, buildReactionAttemptReceipt } from '../../src/core/publication/feedback';
+import { historicalRepairProof } from '../helpers/publication-fixture';
+import { dispatchedRepairFixture } from '../helpers/publication-fixture';
+import { seedReactionReceipt, seedPublicationReceipt } from '../helpers/publication-fixture';
+import { buildReactionAttemptReceipt } from '../../src/core/publication/feedback';
 import { seedLeaseDirectory, writeHistoricalLease, completingLeaseFixture, reviewingLeaseFixture, boundLeaseFixture, fixtureTaskId } from '../helpers/sprint-fixture';
 import { candidate } from '../../scripts/merge-gate';
 import { afterEach, describe, expect, test } from 'bun:test';
@@ -295,7 +297,7 @@ function runCli(fixture: Fixture, args: readonly string[], envOverrides: Record<
 function dispatchedProofForOffer(subject: Fixture, offer: Record<string, unknown>, reactionToken: string) {
   const receipt = readPublicationReceiptCache(subject.root, subject.publicationId);
   if (receipt === null) throw new Error('fixture publication receipt is unavailable');
-  const prepared = buildRepairDispatchProof({
+  const prepared = historicalRepairProof({
     publication_id: receipt.publication_id,
     receipt_sha256: publicationReceiptDigest(receipt),
     task_id: receipt.task_id,
@@ -312,13 +314,11 @@ function dispatchedProofForOffer(subject: Fixture, offer: Record<string, unknown
     successor_generation: null,
     successor_state: null,
   });
-  const dispatched = transitionRepairDispatchProof(prepared, {
+  const dispatched = dispatchedRepairFixture(prepared, {
     successor_claim_id: subject.claimId,
     successor_generation: subject.generation,
     successor_state: 'bound',
   });
-  seedRepairProof(subject.root, subject.publicationId, prepared);
-  seedRepairProof(subject.root, subject.publicationId, dispatched);
   return dispatched;
 }
 

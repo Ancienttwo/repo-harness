@@ -1,5 +1,6 @@
-import { transitionRepairDispatchProof } from '../src/core/publication/feedback';
-import { seedRepairProof, seedReactionReceipt, seedPublicationReceipt } from './helpers/publication-fixture';
+import { historicalRepairProof } from './helpers/publication-fixture';
+import { dispatchedRepairFixture } from './helpers/publication-fixture';
+import { seedReactionReceipt, seedPublicationReceipt } from './helpers/publication-fixture';
 import { seedLeaseDirectory, writeHistoricalLease, completingLeaseFixture, reviewingLeaseFixture, boundLeaseFixture, leaseOwnerPath, fixtureTaskId } from './helpers/sprint-fixture';
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'child_process';
@@ -12,7 +13,6 @@ import {
   buildFeedbackDeliveryReceipt,
   buildFeedbackEvent,
   buildReactionAttemptReceipt,
-  buildRepairDispatchProof,
   deriveReactionToken,
 } from '../src/core/publication/feedback';
 import { buildLeaseOwnerRecord, deriveTaskRevision } from '../src/core/state/coordination-identity';
@@ -171,7 +171,7 @@ describe('provider feedback intake fences', () => {
     });
     for (const [index, recordedAt] of ['2026-08-23T00:03:00Z', '2026-08-23T00:04:00Z'].entries()) {
       const takeover = index === 1;
-      const prepared = buildRepairDispatchProof({
+      const prepared = historicalRepairProof({
         publication_id: subject.publication_id,
         receipt_sha256: publicationReceiptDigest(subject.receipt),
         task_id: subject.task_id,
@@ -188,13 +188,11 @@ describe('provider feedback intake fences', () => {
         successor_generation: null,
         successor_state: null,
       });
-      seedRepairProof(subject.root, subject.publication_id, prepared);
-      const proof = transitionRepairDispatchProof(prepared, {
+      const proof = dispatchedRepairFixture(prepared, {
         successor_claim_id: takeover ? 'claim-feedback-next' : CLAIM,
         successor_generation: takeover ? 2 : 1,
         successor_state: takeover ? 'reserving' : 'bound',
       });
-      seedRepairProof(subject.root, subject.publication_id, proof);
       seedReactionReceipt(subject.root, subject.publication_id, buildReactionAttemptReceipt({
         publication_id: subject.publication_id,
         repair_id: proof.repair_id,

@@ -8,7 +8,6 @@ import {
 export const FEEDBACK_PROTOCOL = 1 as const;
 export const FEEDBACK_EVENT_KIND = 'repo-harness-feedback-event' as const;
 export const FEEDBACK_DELIVERY_RECEIPT_KIND = 'repo-harness-feedback-delivery-receipt' as const;
-export const REPAIR_DISPATCH_PROOF_KIND = 'repo-harness-repair-dispatch-proof' as const;
 export const REACTION_ATTEMPT_RECEIPT_KIND = 'repo-harness-reaction-attempt-receipt' as const;
 export const REPAIR_OFFER_KIND = 'repo-harness-repair-offer' as const;
 export const FEEDBACK_SUMMARY_MAX_BYTES = 16 * 1024;
@@ -102,46 +101,6 @@ export interface FeedbackDeliveryTransitionInput {
 }
 
 export type ReactionAttemptOutcome = 'completed' | 'abandoned';
-
-export type RepairDispatchPhase = 'prepared' | 'dispatched';
-export type RepairSuccessorState = 'bound' | 'reserving';
-
-/**
- * Crash-recoverable, evidence-only bridge from a source feedback revision to
- * one real lifecycle successor.  It never grants a lease transition: effects
- * must still call and revalidate the existing publication lifecycle commands.
- */
-export interface RepairDispatchProofV1 {
-  readonly protocol: typeof FEEDBACK_PROTOCOL;
-  readonly kind: typeof REPAIR_DISPATCH_PROOF_KIND;
-  /** Derived from immutable source fences, not supplied by a caller. */
-  readonly repair_id: string;
-  readonly publication_id: string;
-  readonly receipt_sha256: string;
-  readonly task_id: string;
-  readonly task_revision: string;
-  readonly claim_id: string;
-  readonly generation: number;
-  readonly head_sha: string;
-  readonly ship_transaction_key: string;
-  readonly feedback_revision: string;
-  readonly before_reaction_token: string;
-  readonly action: RepairOfferAction;
-  readonly phase: RepairDispatchPhase;
-  readonly successor_claim_id: string | null;
-  readonly successor_generation: number | null;
-  readonly successor_state: RepairSuccessorState | null;
-}
-
-export type RepairDispatchProofInput = Omit<RepairDispatchProofV1, 'protocol' | 'kind' | 'repair_id'>;
-export type RepairDispatchProofIdentityInput = Omit<RepairDispatchProofInput,
-  'phase' | 'successor_claim_id' | 'successor_generation' | 'successor_state'>;
-
-export interface RepairDispatchSuccessorInput {
-  readonly successor_claim_id: string;
-  readonly successor_generation: number;
-  readonly successor_state: RepairSuccessorState;
-}
 
 export interface ReactionAttemptReceiptV1 {
   readonly protocol: typeof FEEDBACK_PROTOCOL;
@@ -559,167 +518,6 @@ function requireGeneration(value: unknown, label: string): number {
   return value as number;
 }
 
-function validateDispatchIdentity(input: RepairDispatchProofIdentityInput): RepairDispatchProofIdentityInput {
-  if (input.action !== 'resume_same_owner' && input.action !== 'explicit_takeover') {
-    fail('feedback_provider_shape_invalid', 'repair action is invalid');
-  }
-  return Object.freeze({
-    publication_id: requiredPublicationId(input.publication_id),
-    receipt_sha256: requiredDigest(input.receipt_sha256, 'receipt_sha256'),
-    task_id: requiredTaskId(input.task_id),
-    task_revision: requiredTaskId(input.task_revision),
-    claim_id: requiredString(input.claim_id, 'claim_id'),
-    generation: requireGeneration(input.generation, 'generation'),
-    head_sha: requiredGitOid(input.head_sha, 'head_sha'),
-    ship_transaction_key: requiredString(input.ship_transaction_key, 'ship_transaction_key'),
-    feedback_revision: requiredDigest(input.feedback_revision, 'feedback_revision'),
-    before_reaction_token: requiredDigest(input.before_reaction_token, 'before_reaction_token'),
-    action: input.action,
-  });
-}
-
-/** Stable key for one source publication/feedback/action repair intent. */
-export function deriveRepairId(input: RepairDispatchProofIdentityInput): string {
-  const valid = validateDispatchIdentity(input);
-  return publicationSha256(stablePublicationJson([
-    REPAIR_DISPATCH_PROOF_KIND,
-    valid.publication_id,
-    valid.receipt_sha256,
-    valid.task_id,
-    valid.task_revision,
-    valid.claim_id,
-    valid.generation,
-    valid.head_sha,
-    valid.ship_transaction_key,
-    valid.feedback_revision,
-    valid.before_reaction_token,
-    valid.action,
-  ]));
-}
-
-function validateDispatchProofInput(input: RepairDispatchProofInput): RepairDispatchProofInput {
-  const identity = validateDispatchIdentity(input);
-  if (input.phase !== 'prepared' && input.phase !== 'dispatched') {
-    fail('feedback_provider_shape_invalid', 'repair dispatch phase is invalid');
-  }
-  const successorClaim = input.successor_claim_id;
-  const successorGeneration = input.successor_generation;
-  const successorState = input.successor_state;
-  if (input.phase === 'prepared') {
-    if (successorClaim !== null || successorGeneration !== null || successorState !== null) {
-      fail('feedback_provider_shape_invalid', 'prepared repair dispatch cannot contain a successor');
-    }
-  } else {
-    if (typeof successorClaim !== 'string' || successorClaim.trim() === ''
-      || typeof successorGeneration !== 'number' || !Number.isInteger(successorGeneration) || successorGeneration < 1
-      || (successorState !== 'bound' && successorState !== 'reserving')) {
-      fail('feedback_provider_shape_invalid', 'dispatched repair successor is invalid');
-    }
-    if (identity.action === 'resume_same_owner' && (
-      successorClaim !== identity.claim_id
-      || successorGeneration !== identity.generation
-      || successorState !== 'bound'
-    )) {
-      fail('feedback_provider_shape_invalid', 'same-owner repair successor does not match the source lease');
-    }
-    if (identity.action === 'explicit_takeover' && (
-      successorClaim === identity.claim_id
-      || successorGeneration !== identity.generation + 1
-      || successorState !== 'reserving'
-    )) {
-      fail('feedback_provider_shape_invalid', 'takeover repair successor does not match lifecycle fencing');
-    }
-  }
-  return Object.freeze({
-    ...identity,
-    phase: input.phase,
-    successor_claim_id: successorClaim,
-    successor_generation: successorGeneration,
-    successor_state: successorState,
-  });
-}
-
-export function buildRepairDispatchProof(input: RepairDispatchProofInput): RepairDispatchProofV1 {
-  const valid = validateDispatchProofInput(input);
-  return Object.freeze({
-    protocol: FEEDBACK_PROTOCOL,
-    kind: REPAIR_DISPATCH_PROOF_KIND,
-    repair_id: deriveRepairId(valid),
-    ...valid,
-  });
-}
-
-export function validateRepairDispatchProof(value: unknown): RepairDispatchProofV1 {
-  const record = object(value, 'repair dispatch proof');
-  requireExactKeys(record, [
-    'protocol', 'kind', 'repair_id', 'publication_id', 'receipt_sha256', 'task_id', 'task_revision',
-    'claim_id', 'generation', 'head_sha', 'ship_transaction_key', 'feedback_revision',
-    'before_reaction_token', 'action', 'phase', 'successor_claim_id', 'successor_generation', 'successor_state',
-  ], 'repair dispatch proof');
-  if (record.protocol !== FEEDBACK_PROTOCOL || record.kind !== REPAIR_DISPATCH_PROOF_KIND) {
-    fail('feedback_unreadable', 'repair dispatch proof protocol or kind is invalid');
-  }
-  try {
-    const proof = buildRepairDispatchProof({
-      publication_id: record.publication_id as string,
-      receipt_sha256: record.receipt_sha256 as string,
-      task_id: record.task_id as string,
-      task_revision: record.task_revision as string,
-      claim_id: record.claim_id as string,
-      generation: record.generation as number,
-      head_sha: record.head_sha as string,
-      ship_transaction_key: record.ship_transaction_key as string,
-      feedback_revision: record.feedback_revision as string,
-      before_reaction_token: record.before_reaction_token as string,
-      action: record.action as RepairOfferAction,
-      phase: record.phase as RepairDispatchPhase,
-      successor_claim_id: record.successor_claim_id as string | null,
-      successor_generation: record.successor_generation as number | null,
-      successor_state: record.successor_state as RepairSuccessorState | null,
-    });
-    if (record.repair_id !== proof.repair_id) fail('feedback_unreadable', 'repair dispatch proof repair_id is stale');
-    return proof;
-  } catch (error) {
-    if (error instanceof FeedbackProtocolError) throw new FeedbackProtocolError('feedback_unreadable', error.message);
-    throw error;
-  }
-}
-
-export function canonicalRepairDispatchProofBytes(proof: RepairDispatchProofV1): string {
-  return stablePublicationJson(validateRepairDispatchProof(proof));
-}
-
-/** The only pure proof phase transition: `prepared` records its real lifecycle successor once. */
-export function transitionRepairDispatchProof(
-  proof: RepairDispatchProofV1,
-  successor: RepairDispatchSuccessorInput,
-): RepairDispatchProofV1 {
-  const current = validateRepairDispatchProof(proof);
-  if (current.phase === 'dispatched') {
-    if (current.successor_claim_id === successor.successor_claim_id
-      && current.successor_generation === successor.successor_generation
-      && current.successor_state === successor.successor_state) return current;
-    fail('feedback_provider_shape_invalid', 'repair dispatch proof successor cannot change');
-  }
-  return buildRepairDispatchProof({
-    publication_id: current.publication_id,
-    receipt_sha256: current.receipt_sha256,
-    task_id: current.task_id,
-    task_revision: current.task_revision,
-    claim_id: current.claim_id,
-    generation: current.generation,
-    head_sha: current.head_sha,
-    ship_transaction_key: current.ship_transaction_key,
-    feedback_revision: current.feedback_revision,
-    before_reaction_token: current.before_reaction_token,
-    action: current.action,
-    phase: 'dispatched',
-    successor_claim_id: successor.successor_claim_id,
-    successor_generation: successor.successor_generation,
-    successor_state: successor.successor_state,
-  });
-}
-
 function validateCompletionIdentity(input: CompletionIdentityInput): CompletionIdentityInput {
   return Object.freeze({
     repair_id: requiredDigest(input.repair_id, 'repair_id'),
@@ -861,31 +659,6 @@ export function buildRepairOffer(input: RepairOfferInput): RepairOfferV1 {
   });
 }
 
-export function validateRepairOffer(value: unknown): RepairOfferV1 {
-  const record = object(value, 'repair offer');
-  requireExactKeys(record, [
-    'protocol', 'kind', 'task_id', 'publication_id', 'expected_claim_id', 'expected_generation',
-    'expected_head_sha', 'feedback_revision', 'attention_owner', 'allowed_actions',
-  ], 'repair offer');
-  if (record.protocol !== FEEDBACK_PROTOCOL || record.kind !== REPAIR_OFFER_KIND) {
-    fail('feedback_unreadable', 'repair offer protocol or kind is invalid');
-  }
-  try {
-    return buildRepairOffer({
-      task_id: record.task_id as string,
-      publication_id: record.publication_id as string,
-      expected_claim_id: record.expected_claim_id as string,
-      expected_generation: record.expected_generation as number,
-      expected_head_sha: record.expected_head_sha as string,
-      feedback_revision: record.feedback_revision as string,
-      attention_owner: record.attention_owner as RepairOfferAttentionOwner,
-      allowed_actions: record.allowed_actions as [RepairOfferAction, RepairOfferAction],
-    });
-  } catch (error) {
-    if (error instanceof FeedbackProtocolError) throw new FeedbackProtocolError('feedback_unreadable', error.message);
-    throw error;
-  }
-}
 
 /** The set hash is independent of provider response order and delivery receipts. */
 export function deriveFeedbackRevision(events: readonly FeedbackEventV1[]): string {

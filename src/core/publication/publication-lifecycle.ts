@@ -4,12 +4,10 @@
  * receipt is current for execution.
  */
 import {
-  publicationReceiptDigest,
   publicationSha256,
   stablePublicationJson,
-  type PublicationReceiptV3,
 } from './publication-receipt';
-import { TASK_DIGEST_PATTERN, type CurrentPublicationPointerV1 } from '../state/coordination-identity';
+import { TASK_DIGEST_PATTERN } from '../state/coordination-identity';
 
 export const PUBLICATION_INTEGRATION_OBSERVATION_PROTOCOL = 1 as const;
 export const PUBLICATION_INTEGRATION_OBSERVATION_KIND = 'repo-harness-publication-integration-observation' as const;
@@ -183,17 +181,4 @@ export function validatePublicationIntegrationObservation(value: unknown): Publi
 
 export function canonicalPublicationIntegrationObservationBytes(observation: PublicationIntegrationObservationV1): string {
   return stablePublicationJson(validatePublicationIntegrationObservation(observation));
-}
-
-export function publicationPointerFromReceipt(
-  receipt: PublicationReceiptV3,
-  shipTransactionKey: string,
-): CurrentPublicationPointerV1 {
-  if (shipTransactionKey.length === 0) throw new PublicationLifecycleError('publication_incomplete', 'ship transaction key is required');
-  return Object.freeze({
-    publication_id: receipt.publication_id,
-    receipt_sha256: publicationReceiptDigest(receipt),
-    head_sha: receipt.head_sha,
-    ship_transaction_key: shipTransactionKey,
-  });
 }

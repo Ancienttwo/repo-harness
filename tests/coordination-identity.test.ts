@@ -1,3 +1,4 @@
+import { serializeHistoricalLease } from './helpers/sprint-fixture';
 import { completingLeaseFixture, reviewingLeaseFixture, boundLeaseFixture, fixtureTaskId } from './helpers/sprint-fixture';
 /**
  * Identity and revision determinism for the shared lease protocol.
@@ -7,7 +8,7 @@ import { completingLeaseFixture, reviewingLeaseFixture, boundLeaseFixture, fixtu
  * granularity is wrong and every verb built on it inherits the defect.
  */
 import { describe, expect, test } from 'bun:test';
-import { COORDINATION_PROTOCOL, FIRST_LEASE_GENERATION, LEASE_OWNER_RECORD_SCHEMA_V2, TASK_DIGEST_PATTERN, buildLeaseOwnerRecord, deriveTaskRevision, lookupCanonicalTask, parseLeaseOwnerRecord, projectCanonicalTasks, serializeLeaseOwnerRecord, type LeaseOwnerRecordV1 } from '../src/core/state/coordination-identity';
+import { COORDINATION_PROTOCOL, FIRST_LEASE_GENERATION, LEASE_OWNER_RECORD_SCHEMA_V2, TASK_DIGEST_PATTERN, buildLeaseOwnerRecord, deriveTaskRevision, lookupCanonicalTask, parseLeaseOwnerRecord, projectCanonicalTasks, type LeaseOwnerRecordV1 } from '../src/core/state/coordination-identity';
 import { SprintSchemaError } from '../src/core/state/sprint-backlog-rows';
 
 const REPO_IDENTITY = '/tmp/example-clone/.git';
@@ -271,7 +272,7 @@ describe('owner record schema', () => {
     expect(record.generation).toBe(1);
     expect(record.target_ref).toBe('refs/heads/main');
     expect(record.finish_transaction_key).toBeNull();
-    expect(parseLeaseOwnerRecord(serializeLeaseOwnerRecord(record))).toEqual(record);
+    expect(parseLeaseOwnerRecord(serializeHistoricalLease(record))).toEqual(record);
   });
 
   test('parse rejects a record missing generation, target_ref, or finish_transaction_key', () => {
@@ -306,7 +307,7 @@ describe('owner record schema', () => {
       // Schema 1 historically validates fields, not cross-state execution tuples.
       unit_ref: 'plans/legacy-boundary.md',
     };
-    expect(parseLeaseOwnerRecord(serializeLeaseOwnerRecord(legacy))).toEqual(legacy);
+    expect(parseLeaseOwnerRecord(serializeHistoricalLease(legacy))).toEqual(legacy);
     expect(parseLeaseOwnerRecord(`${JSON.stringify({ ...legacy, current_publication: null })}\n`)).toBeNull();
     expect(parseLeaseOwnerRecord(`${JSON.stringify({ ...legacy, unknown_outer_field: true })}\n`)).toBeNull();
   });
@@ -348,7 +349,7 @@ describe('lease owner record schema 2 publication lifecycle', () => {
       current_publication: pointer,
       finish_transaction_key: null,
     });
-    expect(parseLeaseOwnerRecord(serializeLeaseOwnerRecord(entered.record))).toEqual(entered.record);
+    expect(parseLeaseOwnerRecord(serializeHistoricalLease(entered.record))).toEqual(entered.record);
     expect(parseLeaseOwnerRecord(`${JSON.stringify({ ...entered.record, current_publication: { ...pointer, extra: true } })}\n`)).toBeNull();
     expect(parseLeaseOwnerRecord(`${JSON.stringify({ ...entered.record, record_schema: 3 })}\n`)).toBeNull();
     expect(parseLeaseOwnerRecord(`${JSON.stringify({ ...entered.record, record_schema: undefined })}\n`)).toBeNull();

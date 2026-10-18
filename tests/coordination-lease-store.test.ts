@@ -1,3 +1,4 @@
+import { serializeHistoricalLease } from './helpers/sprint-fixture';
 import { seedLeaseDirectory, writeHistoricalLease, boundLeaseFixture, leaseOwnerPath, fixtureTaskId } from './helpers/sprint-fixture';
 /**
  * Coordination plane primitives over a real git repository: lease election,
@@ -25,7 +26,7 @@ import {
 } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { buildLeaseOwnerRecord, deriveTaskRevision, projectCanonicalTasks, serializeLeaseOwnerRecord, type LeaseOwnerRecordV1 } from '../src/core/state/coordination-identity';
+import { buildLeaseOwnerRecord, deriveTaskRevision, projectCanonicalTasks, type LeaseOwnerRecordV1 } from '../src/core/state/coordination-identity';
 import { COORDINATION_ROOT_RELATIVE_PATH, coordinationRoot, leaseDirectory, readLease, taskLockRelativePath, withTaskLock } from '../src/effects/state/coordination-lease-store';
 import { resolveGitCommonDirectory } from '../src/effects/git/common-directory';
 import { withExclusiveDirectoryLock } from '../src/effects/locking/exclusive-directory-lock';
@@ -176,7 +177,7 @@ describe('unknown classification: never silently deleted', () => {
     const foreign = recordFor('foreign record', 'claim-1');
     const taskId = taskIdFor('host lease');
     seedLeaseDirectory(repo, taskId);
-    writeFileSync(leaseOwnerPath(repo, taskId), serializeLeaseOwnerRecord(foreign));
+    writeFileSync(leaseOwnerPath(repo, taskId), serializeHistoricalLease(foreign));
     expect(readLease(repo, taskId).unknown_reason).toBe('owner_record_task_id_mismatch');
   });
 
@@ -420,7 +421,7 @@ describe('historical lease bytes', () => {
     expect(live.raw).toBe(readFileSync(leaseOwnerPath(repo, taskId), 'utf-8'));
     // Bytes, not a re-serialization of the parse: the digest that consumes
     // this must be able to see two records that parse the same but differ.
-    expect(live.raw).toBe(serializeLeaseOwnerRecord(live.record!));
+    expect(live.raw).toBe(serializeHistoricalLease(live.record!));
 
     // A malformed record is still bytes, and classification is unchanged.
     writeFileSync(leaseOwnerPath(repo, taskId), '{ not json');

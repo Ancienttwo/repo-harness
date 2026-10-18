@@ -1,3 +1,4 @@
+import { serializeHistoricalLease } from '../helpers/sprint-fixture';
 import { boundLeaseFixture } from '../helpers/sprint-fixture';
 import { leaseOwnerPath } from '../helpers/sprint-fixture';
 import { afterEach, beforeEach, expect, test } from 'bun:test';
@@ -8,7 +9,6 @@ import { tmpdir } from 'node:os';
 import {
   buildLeaseOwnerRecord,
   deriveTaskRevision,
-  serializeLeaseOwnerRecord,
   type LeaseOwnerRecord,
 } from '../../src/core/state/coordination-identity';
 import { decodeOperatorTaskDiff, TASK_DIFF_MAX_BYTES } from '../../src/core/operator/task-diff';
@@ -39,7 +39,7 @@ const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd,
 // Reader fixtures use the canonical serialized bytes without invoking write durability.
 function seedLease(root: string, taskId: string, owner: LeaseOwnerRecord): void {
   mkdirSync(leaseDirectory(root, taskId), { recursive: true });
-  writeFileSync(leaseOwnerPath(root, taskId), serializeLeaseOwnerRecord(owner));
+  writeFileSync(leaseOwnerPath(root, taskId), serializeHistoricalLease(owner));
 }
 function fixture() {
   const parent = realpathSync(mkdtempSync(join(tmpdir(), 'operator-diff-'))); cleanup.push(parent);

@@ -1,3 +1,4 @@
+import { historicalPublicationPointer } from '../helpers/publication-fixture';
 import { seedLeaseDirectory, writeHistoricalLease, completingLeaseFixture, reviewingLeaseFixture, boundLeaseFixture, leaseOwnerPath } from '../helpers/sprint-fixture';
 import { seedPublicationReceipt } from '../helpers/publication-fixture';
 import { afterEach, describe, expect, test } from 'bun:test';
@@ -20,7 +21,6 @@ import {
   buildAcceptanceMatrix,
   validateIntegrationContract,
 } from '../../src/core/integration/product-acceptance';
-import { publicationPointerFromReceipt } from '../../src/core/publication/publication-lifecycle';
 import {
   buildPublicationReceipt,
   publicationReceiptDigest,
@@ -120,7 +120,7 @@ function reviewingPublication(root: string, taskId: string, revision: string, he
   if (!completing.ok) throw new Error(completing.error);
   const reviewing = reviewingLeaseFixture(completing.record, {
     claimId: owner.claim_id,
-    publication: publicationPointerFromReceipt(receipt, `ship-${number}`),
+    publication: historicalPublicationPointer(receipt, `ship-${number}`),
   });
   if (!reviewing.ok) throw new Error(reviewing.error);
   if (!seedLeaseDirectory(root, taskId)) throw new Error('lease election failed');

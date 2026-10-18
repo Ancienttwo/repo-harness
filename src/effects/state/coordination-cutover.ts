@@ -101,8 +101,8 @@ export function listWorktreePaths(repoRoot: string): string[] {
 }
 
 /**
- * The legacy marker directory, resolved through the same policy key
- * `sprint-backlog.sh` reads. A repo that moved its active-sprint marker moved
+ * The legacy marker directory follows its recorded policy key.
+ * A repo that moved its active-sprint marker moved
  * its in-flight markers with it, and a gate that only knew the default would
  * fail open on exactly that repo.
  */

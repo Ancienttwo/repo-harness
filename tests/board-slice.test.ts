@@ -1,3 +1,4 @@
+import { serializeHistoricalLease } from './helpers/sprint-fixture';
 import { readFileSync } from 'fs';
 /**
  * WP3's falsifier: the hook board slice.
@@ -18,7 +19,6 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import {
   deriveTaskRevision,
-  serializeLeaseOwnerRecord,
   type LeaseOwnerRecordV1,
   type NonReviewingPersistedLeaseState,
 } from '../src/core/state/coordination-identity';
@@ -160,7 +160,7 @@ function writeClaimToken(
 function writeLease(fixture: Fixture, record: LeaseOwnerRecordV1): void {
   const directory = join(coordinationRoot(fixture.primary), 'leases', record.task_id);
   mkdirSync(directory, { recursive: true });
-  writeFileSync(join(directory, LEASE_OWNER_FILE_NAME), serializeLeaseOwnerRecord(record));
+  writeFileSync(join(directory, LEASE_OWNER_FILE_NAME), serializeHistoricalLease(record));
 }
 
 function ownerRecord(

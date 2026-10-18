@@ -401,9 +401,6 @@ export function buildLeaseOwnerRecord(input: BuildLeaseOwnerInput): LeaseOwnerRe
   };
 }
 
-export function serializeLeaseOwnerRecord(record: LeaseOwnerRecord): string {
-  return `${JSON.stringify(record, null, 2)}\n`;
-}
 
 function nonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0;

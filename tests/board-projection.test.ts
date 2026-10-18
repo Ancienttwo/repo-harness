@@ -212,7 +212,7 @@ function taskInput(
       ? backlogRow('[x]')
       // With a lease, drift is a revision mismatch; without one there is no
       // record to mismatch, so the drifted shape is a status cell outside the
-      // `[ ]` / `[x]` grammar `sprint-backlog.sh` writes.
+      // historical `[ ]` / `[x]` backlog grammar.
       : state === 'drifted' && !hasRecord
         ? backlogRow('[~]')
         : backlogRow('[ ]');
