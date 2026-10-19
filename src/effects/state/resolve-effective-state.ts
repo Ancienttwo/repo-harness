@@ -1,8 +1,7 @@
-import { assertObservationPath, currentReadonlyObservation, withReadonlyObservation, type ReadonlyObservationIO, observationReadFileSync as readFileSync, observationReaddirSync as readdirSync } from './readonly-observation';
-import { statSync } from 'fs';
-import { posix, win32 } from 'path';
+import { assertObservationPath, currentReadonlyObservation, withReadonlyObservation, type ReadonlyObservationIO, observationReadFileSync as readFileSync, observationReaddirSync as readdirSync, observationExecFileSync as execFileSync } from './readonly-observation';
+import { statSync, existsSync } from 'fs';
+import { posix, win32, join } from 'path';
 import { buildReviewSubject, isImplementationSurfacePath, type ReviewSubject } from '../review/diff-fingerprint';
-import { owedCapabilityBase } from './owed-capabilities';
 import { resolveWorkflowProfile } from '../../core/workflow/profile';
 import {
   CAPABILITY_SOURCE_MODES,
@@ -19,6 +18,7 @@ import {
 } from '../../core/capabilities/registry';
 import { capabilityOwnershipBlocker, type CapabilityOwnershipBlocker } from '../../core/capabilities/ownership-blocker';
 import { ARCHCONTEXT_IDENTITY_OWNERS, archcontextResolveQueries, resolveArchcontextCapabilityPaths, type ArchcontextOwnerLookup } from '../capabilities/archcontext-owners';
+import type { ArchctxProviderOptions } from '../architecture/archctx-provider';
 import type {
   CapabilityOwnership,
   EffectiveState,
@@ -382,15 +382,18 @@ function resolveArchcontextPaths(
   owners: ArchcontextOwnerLookup<CapabilityIdentity>,
   paths: readonly string[],
   readSource: (path: string) => string | null,
+  options?: ArchctxProviderOptions,
 ): CapabilityPathResolution<CapabilityIdentity> {
   const nodes = archcontextNodePaths(cwd).map((path) => [path, readSource(path)]);
   // The queries carry each path's directory state, which changes what archctx answers.
   const key = sha256(JSON.stringify([safeRealpath(cwd), nodes, paths, archcontextResolveQueries(cwd, paths)]));
-  if (archcontextResolutionMemo?.key === key) return archcontextResolutionMemo.resolution;
+  // Scoped transport options can select another environment or deadline.
+  // Only ordinary state passes share the default transport's memo.
+  if (!options && archcontextResolutionMemo?.key === key) return archcontextResolutionMemo.resolution;
   try {
-    const resolution = resolveArchcontextCapabilityPaths(cwd, owners, paths);
+    const resolution = resolveArchcontextCapabilityPaths(cwd, owners, paths, options);
     // An unavailable answer is not memoized: a later pass outside observation computes it.
-    if (resolution.status !== 'unavailable') archcontextResolutionMemo = { key, resolution };
+    if (!options && resolution.status !== 'unavailable') archcontextResolutionMemo = { key, resolution };
     return resolution;
   } catch (error) {
     // A process failure is not memoized: the next resolve tries archctx again.
@@ -411,6 +414,7 @@ function capabilityIdsForPathGroups(
   policy: WorkflowPolicy,
   readSource = (path: string) => readText(cwd, path),
   select: (paths: readonly string[]) => readonly string[] = (paths) => paths,
+  options?: ArchctxProviderOptions,
 ): CapabilityResolution[] {
   const mode = capabilitySourceMode(policy);
   const inputs = groups.map((paths) => {
@@ -449,7 +453,7 @@ function capabilityIdsForPathGroups(
     ? resolveCapabilityPaths(registry.registry, union, { repoRoot: cwd })
     : union.length === 0
       ? { status: 'valid', capabilityIds: [], matches: [], unmappedPaths: [], diagnostics: [] }
-      : resolveArchcontextPaths(cwd, ARCHCONTEXT_IDENTITY_OWNERS, union, readSource);
+      : resolveArchcontextPaths(cwd, ARCHCONTEXT_IDENTITY_OWNERS, union, readSource, options);
   return subjects.map(({ paths, diagnostics: pathErrors, outOfRepoPathCount }): CapabilityResolution => {
     const diagnostics = [...pathErrors, ...resolution.diagnostics.filter((entry) => {
       // Empty subjects did not need archctx before this union query either.
@@ -474,8 +478,36 @@ function capabilityIdsForPaths(
   policy: WorkflowPolicy,
   readSource?: (path: string) => string | null,
   select?: (paths: readonly string[]) => readonly string[],
+  options?: ArchctxProviderOptions,
 ): CapabilityResolution {
-  return capabilityIdsForPathGroups(cwd, [paths], policy, readSource, select)[0]!;
+  return capabilityIdsForPathGroups(cwd, [paths], policy, readSource, select, options)[0]!;
+}
+
+const PROJECTION_MANIFEST_PATH = 'docs/architecture/.projection-manifest.json';
+
+function git(repoRoot: string, args: readonly string[]): string {
+  return execFileSync('git', ['-C', repoRoot, '-c', 'core.quotepath=false', ...args], {
+    encoding: 'utf-8',
+    stdio: ['ignore', 'pipe', 'ignore'],
+    maxBuffer: 64 * 1024 * 1024,
+    timeout: 10_000,
+  });
+}
+
+/** Keep branch review history; use the last projection checkpoint on the base. */
+function owedCapabilityBase(repoRoot: string, reviewBase: string, headRev?: string): {
+  readonly reviewBase: string;
+  readonly manifestChange: string | null;
+} {
+  assertObservationPath(join(repoRoot, PROJECTION_MANIFEST_PATH));
+  if (existsSync(join(repoRoot, PROJECTION_MANIFEST_PATH))) {
+    const head = headRev ?? git(repoRoot, ['rev-parse', 'HEAD']).trim();
+    if (reviewBase === head || git(repoRoot, ['merge-base', reviewBase, head]).trim() === head) {
+      const checkpoint = git(repoRoot, ['log', '-1', '--format=%H', 'HEAD', '--', PROJECTION_MANIFEST_PATH]).trim();
+      if (checkpoint) return { reviewBase: checkpoint, manifestChange: checkpoint };
+    }
+  }
+  return { reviewBase, manifestChange: null };
 }
 
 /** The owed subject is independent of the subject used for risk and review. */
@@ -509,16 +541,16 @@ function capabilityOwnershipFrom(
 }
 
 /**
- * Owed ownership against `targetRef`, or the policy review base when omitted.
+ * Ownership against `targetRef`, or the policy review base when omitted.
  * A checkout not ahead of that base uses its last manifest checkpoint. The
- * returned review_base keeps the policy target so the owed rule can select
- * the same checkpoint and its Stop delivery key. It reads the same authority and runs
+ * returned review_base keeps the policy target so notice callers can filter
+ * these paths against its merge-base. It reads the same authority and runs
  * the same ownership resolution as `state resolve`, without the state
  * lock, the cache or the version store. Null means the repository declares no
  * capability registry, so nothing is owned. It throws when the review subject
  * or ownership is unavailable.
  */
-export function resolveCapabilityOwnership(cwd: string, targetRef?: string): CapabilityOwnership | null {
+export function resolveCapabilityOwnership(cwd: string, targetRef?: string, options?: ArchctxProviderOptions): CapabilityOwnership | null {
   const policy = readWorkflowPolicy(cwd);
   const reviewSubject = buildReviewSubject(cwd, { targetRef: targetRef ?? policyReviewBase(policy) });
   if (reviewSubject.status !== 'ok') {
@@ -526,7 +558,7 @@ export function resolveCapabilityOwnership(cwd: string, targetRef?: string): Cap
   }
   const owedSubject = owedOwnershipSubject(cwd, reviewSubject);
   if (owedSubject.status !== 'ok') throw new Error(`owed subject is unavailable: ${owedSubject.reason ?? 'unknown reason'}`);
-  const resolution = capabilityIdsForPaths(cwd, owedSubject.paths.filter(isImplementationSurfacePath), policy);
+  const resolution = capabilityIdsForPaths(cwd, owedSubject.paths.filter(isImplementationSurfacePath), policy, undefined, undefined, options);
   if (resolution.blocker) {
     throw new Error(`${resolution.blocker.key} ${resolution.blocker.code}: ${resolution.blocker.message}; fix: ${resolution.blocker.fix}`);
   }

@@ -1,8 +1,7 @@
 /** Stop renders the recovery views; it never grants publication permission. */
-import { existsSync, lstatSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'fs';
-import { createHash, randomBytes } from 'crypto';
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'path';
-import { execFileSync } from 'child_process';
+import { join } from 'path';
+import { writeHookStateFile } from '../../effects/hook-state-file';
+import { collectAgentNotice } from './agent-notice';
 import { publishCheckpointFromLedger } from '../../effects/evidence/checkpoint-store';
 import {
   activePlanForRecovery,
@@ -14,13 +13,11 @@ import {
 import type { StateInputCollector } from '../../effects/loop/state-input-collector';
 import { resolveCapabilityOwnership } from '../../effects/state/resolve-effective-state';
 import { payloadValue, type HookIdentity, type HookPayload } from './hook-input';
-import { owedCapabilities, renderOwedCapabilities, renderOwedCapabilitiesHuman } from '../../effects/state/owed-capabilities';
 
 export type StopCollector = Pick<StateInputCollector, 'getRepoRoot' | 'getWorktreeOwnership' | 'getActivePlanMarker'>;
 
 export interface StopProjectionTarget {
-  /** `owed-signal` is the delivery marker of the owed-architecture line; it is not a projection phase. */
-  readonly kind: 'handoff' | 'resume' | 'owed-signal';
+  readonly kind: 'handoff' | 'resume';
   readonly path: string;
 }
 
@@ -46,44 +43,6 @@ export interface StopHandlerResult {
   readonly systemMessage?: string;
 }
 
-function assertSafeRepoWritePath(repoRoot: string, path: string): void {
-  const root = resolve(repoRoot);
-  const target = resolve(path);
-  const rel = relative(root, target);
-  if (!rel || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
-    throw new Error(`stop-handler: write path escapes repository: ${path}`);
-  }
-  let current = root;
-  for (const part of rel.split(sep)) {
-    current = join(current, part);
-    if (!existsSync(current)) continue;
-    const entry = lstatSync(current);
-    if (entry.isSymbolicLink()) throw new Error(`stop-handler: symlinked write path is forbidden: ${current}`);
-    if (current !== target && !entry.isDirectory()) {
-      throw new Error(`stop-handler: non-directory write ancestor: ${current}`);
-    }
-  }
-}
-
-function atomicWrite(repoRoot: string, path: string, content: string): void {
-  assertSafeRepoWritePath(repoRoot, path);
-  mkdirSync(dirname(path), { recursive: true });
-  const temporary = `${path}.tmp-${process.pid}-${randomBytes(6).toString('hex')}`;
-  try {
-    assertSafeRepoWritePath(repoRoot, temporary);
-    writeFileSync(temporary, content, { mode: 0o600 });
-    assertSafeRepoWritePath(repoRoot, path);
-    renameSync(temporary, path);
-  } catch (error) {
-    try {
-      unlinkSync(temporary);
-    } catch {
-      // No temporary file was committed, or another fault already removed it.
-    }
-    throw error;
-  }
-}
-
 /** Writes handoff then resume; each write replaces the whole file, so a retry converges. */
 function writeRecoveryViews(
   repoRoot: string,
@@ -101,53 +60,9 @@ function writeRecoveryViews(
     [{ kind: 'resume', path: context.paths.resume }, renderRecoveryResume(context, evidence, contractPath)],
   ];
   for (const [target, content] of views) {
-    atomicWrite(repoRoot, join(repoRoot, target.path), content);
+    writeHookStateFile(repoRoot, join(repoRoot, target.path), content);
     dependencies.observeProjectionWrite?.(target);
     dependencies.afterProjectionWrite?.(target);
-  }
-}
-
-const OWED_SIGNAL_MARKER = '.ai/harness/state/stop-owed-signal';
-
-/**
- * The owed-architecture lines for Claude Stop, once per branch, manifest change
- * and owed set.
- * Stop additionalContext continues the turn, so the marker keeps a repeated
- * Stop from asking again; `stop_hook_active` already ended this run earlier.
- * The human line shares this new-set signal. SessionStart does not read the marker.
- * Codex Stop stays silent. Architecture diagnostics never block, so any
- * failure only drops the line.
- */
-function owedStopSignal(
-  repoRoot: string,
-  host: HookIdentity['host'],
-  observeWrite?: (target: StopProjectionTarget) => void,
-): Pick<StopHandlerResult, 'stdout' | 'systemMessage'> {
-  if (host !== 'claude') return { stdout: '' };
-  try {
-    const ownership = resolveCapabilityOwnership(repoRoot);
-    if (!ownership) return { stdout: '' };
-    const owed = owedCapabilities(repoRoot, ownership);
-    const content = renderOwedCapabilities(owed);
-    const systemMessage = renderOwedCapabilitiesHuman(owed);
-    if (!content || !owed) return { stdout: '' };
-    const branch = execFileSync('git', ['-C', repoRoot, 'rev-parse', '--abbrev-ref', 'HEAD'], {
-      encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5_000,
-    }).trim();
-    // The manifest change bounds one obligation: after a projection refresh,
-    // a new change to the same capability is a new owed set.
-    const key = createHash('sha256').update(JSON.stringify([
-      branch,
-      owed.manifest_change,
-      owed.capabilities.map((capability) => capability.id),
-    ])).digest('hex');
-    const marker = join(repoRoot, OWED_SIGNAL_MARKER);
-    if (existsSync(marker) && readFileSync(marker, 'utf8').trim() === key) return { stdout: '' };
-    atomicWrite(repoRoot, marker, `${key}\n`);
-    observeWrite?.({ kind: 'owed-signal', path: OWED_SIGNAL_MARKER });
-    return { stdout: `${content}\n`, ...(systemMessage ? { systemMessage } : {}) };
-  } catch {
-    return { stdout: '' };
   }
 }
 
@@ -169,5 +84,8 @@ export function runStopHandler(opts: StopHandlerInput): StopHandlerResult {
   // last published one.
   try { publishCheckpointFromLedger(repoRoot, () => now); } catch { /* see above */ }
   writeRecoveryViews(repoRoot, activePlan, env, opts.identity, now, dependencies);
-  return { exitCode: 0, ...owedStopSignal(repoRoot, opts.identity.host, dependencies.observeProjectionWrite), stderr: '' };
+  const notice = opts.identity.host === 'claude'
+    ? collectAgentNotice(repoRoot, options => resolveCapabilityOwnership(repoRoot, undefined, options), { env })
+    : {};
+  return { exitCode: 0, stdout: notice.content ?? '', stderr: notice.diagnostics ?? '', ...(notice.systemMessage ? { systemMessage: notice.systemMessage } : {}) };
 }

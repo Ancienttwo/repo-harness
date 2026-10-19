@@ -4,7 +4,10 @@ import { spawnSync } from 'child_process';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { runStopHandler as runStopHandlerRuntime, type StopProjectionTarget } from '../src/cli/hook/stop-handler';
+import { agentNoticeFixture, noticeEnv, NOTICE_CAPABILITY } from './helpers/agent-notice';
+import { fixtureWrite, fixtureCommit } from './helpers/module-repository';
 import { hookIdentity } from './helpers/hook-identity';
+import { resolveCompatibleNodeRuntime } from '../src/effects/architecture/archctx-provider';
 
 const fixtures: string[] = [];
 
@@ -20,7 +23,7 @@ function runStopHandler(options: Omit<StopRuntimeInput, 'payload' | 'identity'> 
     payload: {},
     identity: hookIdentity(),
     ...options,
-    env: { ...process.env, ...options.env, HOME: join(options.collector.getRepoRoot(), '.ai/harness/test-home') },
+    env: { ...process.env, ...options.env, HOME: options.env?.HOME ?? join(options.collector.getRepoRoot(), '.ai/harness/test-home') },
   });
 }
 
@@ -30,6 +33,10 @@ function fixture(): string {
   mkdirSync(join(cwd, '.ai/harness'), { recursive: true });
   mkdirSync(join(cwd, '.ai/harness/test-home/.repo-harness'), { recursive: true });
   writeFileSync(join(cwd, '.ai/harness/policy.json'), '{}\n');
+  git(cwd, ['init', '-b', 'main']);
+  writeFileSync(join(cwd, '.gitignore'), '.ai/\n');
+  git(cwd, ['add', '.gitignore']);
+  git(cwd, ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '--allow-empty', '-m', 'fixture']);
   return cwd;
 }
 
@@ -252,136 +259,104 @@ describe('Stop recovery and safety invariants', () => {
 });
 
 
-describe('Stop reports owed architecture updates on Claude only (#678)', () => {
-  /** Registry-mode repo: `main` holds the manifest; `feature` changed the owned file after it. */
-  function owedFixture(): string {
-    const { cwd, head } = gitFixture();
-    writeFileSync(join(cwd, '.ai/harness/policy.json'), `${JSON.stringify({ context: { capability_registry_file: '.ai/context/capabilities.json' } })}\n`);
-    mkdirSync(join(cwd, '.ai/context'), { recursive: true });
-    writeFileSync(join(cwd, '.ai/context/capabilities.json'), `${JSON.stringify({
-      version: 1,
-      capabilities: [{
-        id: 'core-owned', domain: 'core', name: 'owned', prefixes: ['src/owned'],
-        contract_files: { agents: 'AGENTS.md', claude: 'CLAUDE.md' },
-        architecture_module: 'docs/architecture/modules/core/owned.md',
-        workstream_dir: 'tasks/workstreams/core/owned', lsp_profile: 'typescript-lsp', verification_hints: [],
-      }],
-    })}\n`);
-    mkdirSync(join(cwd, 'docs/architecture'), { recursive: true });
-    mkdirSync(join(cwd, 'src/owned'), { recursive: true });
-    writeFileSync(join(cwd, 'docs/architecture/.projection-manifest.json'), '{}\n');
-    writeFileSync(join(cwd, 'src/owned/a.ts'), 'export const a = 1;\n');
-    git(cwd, ['add', '-A']); git(cwd, ['commit', '-m', 'projected']);
-    expect(git(cwd, ['rev-parse', 'HEAD'])).not.toBe(head);
-    git(cwd, ['checkout', '-b', 'feature']);
-    writeFileSync(join(cwd, 'src/owned/a.ts'), 'export const a = 2;\n');
-    git(cwd, ['commit', '-am', 'change owned code']);
-    return cwd;
+describe('Stop architecture debt notice', () => {
+  function noticeFixture() { const root = agentNoticeFixture(); fixtures.push(root); return root; }
+  function stop(cwd: string, options: Partial<StopRuntimeInput> = {}) {
+    return runStopHandler({ collector: collector(cwd), env: noticeEnv(cwd), ...options });
   }
 
-  test('Claude Stop names the owed capability once per branch and owed set', () => {
-    const cwd = owedFixture();
-    const first = runStopHandler({ collector: collector(cwd), identity: hookIdentity({ host: 'claude' }) });
+  test('review round 1: Stop uses the hook Node environment for ownership and checkpoint', () => {
+    const cwd = noticeFixture();
+    const env = { ...noticeEnv(cwd), REPO_HARNESS_NODE_BIN: resolveCompatibleNodeRuntime(process.env) };
+    const previous = process.env.REPO_HARNESS_NODE_BIN;
+    process.env.REPO_HARNESS_NODE_BIN = join(cwd, 'missing-process-node');
+    try {
+      const result = stop(cwd, { env });
+      expect(result.stderr).toBe('');
+      expect(result.stdout).toContain('[ArchitectureDebt]');
+    } finally {
+      if (previous === undefined) delete process.env.REPO_HARNESS_NODE_BIN;
+      else process.env.REPO_HARNESS_NODE_BIN = previous;
+    }
+  });
+
+  test('Claude Stop names citation debt once per branch and id set', () => {
+    const cwd = noticeFixture();
+    const first = stop(cwd);
     expect(first.exitCode).toBe(0);
-    expect(first.stdout).toContain('[ArchitectureOwed]');
-    expect(first.stdout).toContain('core-owned (docs/architecture/modules/core/owned.md)');
-    expect(first.stdout).toContain('repo-harness architecture-projection check --json');
-    expect(first.stdout.trimEnd().split('\n').length).toBeLessThanOrEqual(3);
+    expect(first.stdout).toContain(`[ArchitectureDebt] 1 new in ${NOTICE_CAPABILITY}`);
+    expect(first.stdout).toContain('Run:');
+    expect(Buffer.byteLength(first.stdout)).toBeLessThanOrEqual(800);
     expect(first.stderr).toBe('');
-    expect(first.systemMessage).toBe('Architecture: 1 capability changed after the last projection (core-owned). Run: repo-harness architecture-projection check --json');
-
-    const repeated = runStopHandler({ collector: collector(cwd), identity: hookIdentity({ host: 'claude' }) });
-    expect(repeated.stdout).toBe('');
-    expect(repeated.systemMessage).toBeUndefined();
-    expect(git(cwd, ['status', '--porcelain'])).toBe('');
+    expect(first.systemMessage).toBe(`Architecture: 1 debt item in ${NOTICE_CAPABILITY}; run repo-harness architecture-debt --json.`);
+    expect(stop(cwd)).toEqual({ exitCode: 0, stdout: '', stderr: '' });
+    expect(git(cwd, ['status', '--porcelain'])).toBe('M src/module/read.ts');
   });
 
-  test('main reports committed debt once and renews it after a manifest checkpoint', () => {
-    const cwd = owedFixture();
+  test('clean main skips debt and a dirty owned main path delivers it', () => {
+    const cwd = noticeFixture();
+    fixtureCommit(cwd);
+    git(cwd, ['branch', '-f', 'main', 'HEAD']);
     git(cwd, ['checkout', 'main']);
-    git(cwd, ['merge', '--ff-only', 'feature']);
-    const stop = () => runStopHandler({ collector: collector(cwd), identity: hookIdentity({ host: 'claude' }) });
-    expect(stop().stdout).toContain('core-owned');
-    const marker = readFileSync(join(cwd, '.ai/harness/state/stop-owed-signal'), 'utf8');
-    expect(stop().stdout).toBe('');
-
-    writeFileSync(join(cwd, 'docs/architecture/.projection-manifest.json'), '{"refreshed":true}\n');
-    git(cwd, ['commit', '-am', 'refresh the main projection']);
-    expect(stop().stdout).toBe('');
-    writeFileSync(join(cwd, 'src/owned/a.ts'), 'export const a = 3;\n');
-    git(cwd, ['commit', '-am', 'change main again']);
-    const renewed = stop();
-    expect(renewed.stdout).toContain('core-owned');
-    expect(renewed.systemMessage).toContain('Architecture: 1 capability');
-    expect(readFileSync(join(cwd, '.ai/harness/state/stop-owed-signal'), 'utf8')).not.toBe(marker);
-    expect(stop().stdout).toBe('');
+    expect(stop(cwd)).toEqual({ exitCode: 0, stdout: '', stderr: '' });
+    expect(existsSync(join(cwd, '.ai/harness/state/agent-notice'))).toBe(false);
+    fixtureWrite(cwd, 'src/module/read.ts', 'export const read = () => 3;\n');
+    expect(stop(cwd).stdout).toContain('[ArchitectureDebt]');
   });
 
-  test('a new obligation for the same capability after a manifest refresh is reported again', () => {
-    const cwd = owedFixture();
-    expect(runStopHandler({ collector: collector(cwd), identity: hookIdentity({ host: 'claude' }) }).stdout).toContain('[ArchitectureOwed]');
-    writeFileSync(join(cwd, 'docs/architecture/.projection-manifest.json'), '{"refreshed":true}\n');
-    git(cwd, ['commit', '-am', 'refresh the projection']);
-    expect(runStopHandler({ collector: collector(cwd), identity: hookIdentity({ host: 'claude' }) }).stdout).toBe('');
-
-    writeFileSync(join(cwd, 'src/owned/a.ts'), 'export const a = 3;\n');
-    git(cwd, ['commit', '-am', 'change owned code again']);
-    const renewed = runStopHandler({ collector: collector(cwd), identity: hookIdentity({ host: 'claude' }) });
-    expect(renewed.stdout).toContain('core-owned (docs/architecture/modules/core/owned.md)');
-    expect(renewed.systemMessage).toBe('Architecture: 1 capability changed after the last projection (core-owned). Run: repo-harness architecture-projection check --json');
-    expect(runStopHandler({ collector: collector(cwd), identity: hookIdentity({ host: 'claude' }) }).stdout).toBe('');
+  test('manifest changes do not clear debt or renew an unchanged id set', () => {
+    const cwd = noticeFixture();
+    fixtureWrite(cwd, 'docs/architecture/.projection-manifest.json', '{"profile":"repo-harness/v1"}\n');
+    expect(stop(cwd).stdout).toContain('[ArchitectureDebt]');
+    const marker = readFileSync(join(cwd, '.ai/harness/state/agent-notice'), 'utf8');
+    fixtureWrite(cwd, 'docs/architecture/.projection-manifest.json', '{"profile":"repo-harness/v1","refreshed":true}\n');
+    expect(stop(cwd)).toEqual({ exitCode: 0, stdout: '', stderr: '' });
+    expect(readFileSync(join(cwd, '.ai/harness/state/agent-notice'), 'utf8')).toBe(marker);
   });
 
-  test('a changed owed set delivers a new human line without another marker', () => {
-    const cwd = owedFixture();
-    const first = runStopHandler({ collector: collector(cwd) });
-    expect(first.systemMessage).toContain('Architecture: 1 capability');
-    const registryPath = join(cwd, '.ai/context/capabilities.json');
-    const registry = JSON.parse(readFileSync(registryPath, 'utf8'));
-    registry.capabilities.push({ ...registry.capabilities[0], id: 'core-second', name: 'second', prefixes: ['src/second'] });
-    writeFileSync(registryPath, `${JSON.stringify(registry)}\n`);
-    mkdirSync(join(cwd, 'src/second'));
-    writeFileSync(join(cwd, 'src/second/b.ts'), 'export const b = 1;\n');
-    git(cwd, ['add', '-A']); git(cwd, ['commit', '-m', 'add a second capability']);
-
+  test('a changed debt id set delivers both lines; notice writes are separate from recovery writes', () => {
+    const cwd = noticeFixture();
+    expect(stop(cwd).systemMessage).toContain('Architecture: 1 debt item');
+    fixtureWrite(cwd, 'docs/architecture/modules/test/module.md', '## 3. Decisions\nRead `src/module/read.ts:998` and `src/module/read.ts:997`.\n');
     const writes: StopProjectionTarget[] = [];
-    const changed = runStopHandler({ collector: collector(cwd), dependencies: { observeProjectionWrite: (target) => writes.push(target) } });
-    expect(changed.systemMessage).toBe('Architecture: 2 capabilities changed after the last projection (core-owned, +1). Run: repo-harness architecture-projection check --json');
-    expect(changed.stdout).toContain('core-second');
+    const changed = stop(cwd, { dependencies: { observeProjectionWrite: target => writes.push(target) } });
+    expect(changed.systemMessage).toBe(`Architecture: 2 debt items in ${NOTICE_CAPABILITY}; run repo-harness architecture-debt --json.`);
+    expect(changed.stdout).toContain('[ArchitectureDebt] 2 new');
     expect(writes).toEqual([
       { kind: 'handoff', path: '.ai/harness/handoff/current.md' },
       { kind: 'resume', path: '.ai/harness/handoff/resume.md' },
-      { kind: 'owed-signal', path: '.ai/harness/state/stop-owed-signal' },
     ]);
-    expect(runStopHandler({ collector: collector(cwd) })).toEqual({ exitCode: 0, stdout: '', stderr: '' });
+    expect(stop(cwd)).toEqual({ exitCode: 0, stdout: '', stderr: '' });
   });
 
-  test('an architecture marker read failure drops both lines and does not block', () => {
-    const cwd = owedFixture();
-    mkdirSync(join(cwd, '.ai/harness/state/stop-owed-signal'), { recursive: true });
-    expect(runStopHandler({ collector: collector(cwd) })).toEqual({ exitCode: 0, stdout: '', stderr: '' });
+  test('a marker read failure drops both lines and emits one operator diagnostic', () => {
+    const cwd = noticeFixture();
+    mkdirSync(join(cwd, '.ai/harness/state/agent-notice'), { recursive: true });
+    const result = stop(cwd);
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toBe('');
+    expect(result.systemMessage).toBeUndefined();
+    expect(result.stderr.trim().split('\n')).toHaveLength(1);
     expect(existsSync(join(cwd, '.ai/harness/handoff/current.md'))).toBe(true);
   });
 
-  test('a Stop continued by a Stop hook and Codex add nothing', () => {
-    const cwd = owedFixture();
-    const continued = runStopHandler({
-      collector: collector(cwd),
-      identity: hookIdentity({ host: 'claude' }),
-      payload: { stop_hook_active: true },
-    });
-    expect(continued.stdout).toBe('');
-    expect(runStopHandler({ collector: collector(cwd), identity: hookIdentity({ host: 'codex' }) }).stdout).toBe('');
-    // The once-per-set marker was never written, so Claude still gets the line.
-    expect(runStopHandler({ collector: collector(cwd), identity: hookIdentity({ host: 'claude' }) }).stdout).toContain('[ArchitectureOwed]');
+  test('a continued Stop and Codex stay silent and do not consume the notice', () => {
+    const cwd = noticeFixture();
+    expect(stop(cwd, { payload: { stop_hook_active: true } })).toEqual({ exitCode: 0, stdout: '', stderr: '' });
+    expect(stop(cwd, { identity: hookIdentity({ host: 'codex' }) })).toEqual({ exitCode: 0, stdout: '', stderr: '' });
+    expect(existsSync(join(cwd, '.ai/harness/state/agent-notice'))).toBe(false);
+    expect(stop(cwd).stdout).toContain('[ArchitectureDebt]');
   });
 
-  test('a broken capability registry drops the line only', () => {
-    const cwd = owedFixture();
-    writeFileSync(join(cwd, '.ai/context/capabilities.json'), '{not json');
-    git(cwd, ['commit', '-am', 'break the registry']);
-    const result = runStopHandler({ collector: collector(cwd), identity: hookIdentity({ host: 'claude' }) });
-    expect(result).toEqual({ exitCode: 0, stdout: '', stderr: '' });
+  test('an ownership failure drops both lines and preserves recovery', () => {
+    const cwd = noticeFixture();
+    fixtureWrite(cwd, '.archcontext/model/nodes/capability.test.module.yaml', '{not json');
+    const result = stop(cwd);
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toBe('');
+    expect(result.systemMessage).toBeUndefined();
+    expect(result.stderr.trim().split('\n')).toHaveLength(1);
+    expect(result.stderr).toContain('architecture notice unavailable');
     expect(existsSync(join(cwd, '.ai/harness/handoff/current.md'))).toBe(true);
   });
 });
@@ -398,7 +373,7 @@ describe('Stop observes workflow gaps without permission gates', () => {
   test('Stop writes no architecture or capability runtime state', () => {
     const { cwd } = gitFixture();
     mkdirSync(join(cwd, 'src'), { recursive: true }); writeFileSync(join(cwd, 'src/change.ts'), 'export const x = 1;');
-    // #678: stdout is the Claude Stop channel for owed architecture updates.
+    // #737: stdout is the Claude Stop channel for architecture debt.
     // This repository declares no capability registry, so the channel stays
     // empty; Stop never starts projection or records drift.
     const result = runStopHandler({ collector: collector(cwd), identity: hookIdentity({ host: 'claude' }) });

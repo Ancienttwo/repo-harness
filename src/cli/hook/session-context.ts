@@ -14,7 +14,6 @@ import type { SessionContextSection } from './session-context-budget';
 import type { EffectiveStateResolution } from '../../effects/loop/state-input-collector';
 import { buildStateSnapshotFromEffectiveState } from '../../effects/state/resolve-effective-state';
 import type { EffectiveState } from '../../core/state/types';
-import { owedCapabilities, renderOwedCapabilities, renderOwedCapabilitiesHuman } from '../../effects/state/owed-capabilities';
 
 const STATE_SOURCE = 'repo-harness state resolve --json';
 /** The resolver reads the pending capture record at this default path. */
@@ -83,23 +82,6 @@ export interface SessionContextProvider {
   readonly render: (input: SessionContextProviderInput) => SessionContextBody | null;
 }
 
-/**
- * The short section for a branch that already owes architecture updates. It
- * reuses the ownership result of the session state resolution. Architecture
- * diagnostics never block, so a Git failure only drops it.
- */
-export function owedCapabilitiesSessionBody(repoRoot: string, state: EffectiveState): SessionContextBody | null {
-  if (!state.capability_ownership) return null;
-  try {
-    const owed = owedCapabilities(repoRoot, state.capability_ownership);
-    const content = renderOwedCapabilities(owed);
-    const systemMessage = renderOwedCapabilitiesHuman(owed);
-    return content ? { content, source: STATE_SOURCE, ...(systemMessage ? { systemMessage } : {}) } : null;
-  } catch {
-    return null;
-  }
-}
-
 /** A fresh pending plan capture with no active plan. Freshness is the resolver's own rule. */
 function pendingPlanCaptureBody({ repoRoot, state, nowMs }: SessionContextProviderInput): SessionContextBody | null {
   if (state.authoritative_plan) return null;
@@ -119,7 +101,6 @@ function pendingPlanCaptureBody({ repoRoot, state, nowMs }: SessionContextProvid
 }
 
 export const SESSION_CONTEXT_PROVIDERS: readonly SessionContextProvider[] = Object.freeze([
-  { id: 'architecture-owed', priority: 2, render: ({ repoRoot, state }) => owedCapabilitiesSessionBody(repoRoot, state) },
   { id: 'pending-plan-capture', priority: 3, render: pendingPlanCaptureBody },
 ]);
 

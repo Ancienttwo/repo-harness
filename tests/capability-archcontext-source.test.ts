@@ -323,6 +323,17 @@ describe("capability source: ArchContext owns path ownership", () => {
 describe("capability source: archctx resolve envelope checks", () => {
   const owners: ArchcontextCapabilityOwners = new Map([["capability.apps-web.account", TWIN_CAPABILITIES[0] as Capability]]);
   const envelope = (results: unknown) => JSON.stringify({ schemaVersion: "archcontext.envelope/v1", ok: true, requestId: "resolve", data: { results } });
+  test('review round 1: the default ownership resolver retains its 10 s timeout', () => {
+    let timeoutMs = 0;
+    const result = resolveArchcontextCapabilityPaths(ROOT, owners, ['apps/web/page.tsx'], {
+      run: (_binary, _args, options) => {
+        timeoutMs = options.timeoutMs;
+        return { status: 0, signal: null, stdout: envelope([{ path: 'apps/web/page.tsx', matched: false, ambiguous: false, owningCapabilityId: null }]), stderr: '' };
+      },
+    });
+    expect(result.status).toBe('valid');
+    expect(timeoutMs).toBe(10_000);
+  });
   const resolveWith = (stdout: string, status = 0) => resolveArchcontextCapabilityPaths(ROOT, owners, ["apps/web/page.tsx"], {
     run: (_binary, args) => {
       expect(args.slice(0, 2)).toEqual(["resolve", "--paths-from"]);
