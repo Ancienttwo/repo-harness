@@ -5,7 +5,7 @@
 
 ## Purpose
 
-The runtime harness gives Claude, Codex and Pi a file-backed workflow shell.
+The runtime harness gives Claude and Codex a file-backed workflow shell.
 User-level host hooks call the `repo-harness-hook` binary. Its typed route
 registry selects one in-process handler. Repo-local hook adapters are retired.
 No shell operator library exists. Operator helpers run from the package through
@@ -17,7 +17,7 @@ The domain has 13 capabilities. They are grouped by theme.
 
 ### Host integration
 
-- `runtime-harness-hook-adapters` -> `docs/architecture/modules/runtime-harness/hook-adapters.md`: installs and runs the typed Claude, Codex and Pi hook routes.
+- `runtime-harness-hook-adapters` -> `docs/architecture/modules/runtime-harness/hook-adapters.md`: installs and runs the typed Claude and Codex hook routes.
 - `runtime-harness-global-runtime-reconciliation` -> `docs/architecture/modules/runtime-harness/global-runtime-reconciliation.md`: reconciles the installed runtime, its ArchContext closure and profile-owned external tooling, and owns the CLI root.
 - `runtime-harness-mcp-sidecar` -> `docs/architecture/modules/runtime-harness/mcp-sidecar.md`: serves the local MCP sidecar and its repository access policy.
 
