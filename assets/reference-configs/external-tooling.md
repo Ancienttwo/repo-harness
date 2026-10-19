@@ -486,7 +486,7 @@ commands, but it is optional. Hooks do not suggest `rtk`, rewrite Bash
 commands or require RTK. Keep failed command output raw so test, build, and
 review evidence is not hidden by a compressor.
 
-## Recommended Frontend and Design Resources
+## Recommended Resources
 
 These resources are optional. repo-harness does not install, detect or update
 them. Read the upstream README and license before you add one to a project.
@@ -496,11 +496,16 @@ them. Read the upstream README and license before you add one to a project.
 | --- | --- | --- |
 | [`shader-effects-inc/shaders`](https://github.com/shader-effects-inc/shaders) | WebGPU shader components for React, Vue, Svelte, Solid, plain JavaScript and Framer | MIT |
 | [`VoltAgent/awesome-design-md`](https://github.com/VoltAgent/awesome-design-md) | DESIGN.md files from popular brand design systems. Put one in a project, and coding agents make UI that matches it | MIT |
+| [`anthropics/claude-quickstarts`](https://github.com/anthropics/claude-quickstarts) | Anthropic reference projects for the Claude API: agents, computer use, browser use, autonomous coding and managed agents | MIT |
 <!-- tool-catalog:resources:end -->
 
 The user selects a `DESIGN.md`. The agent does not select one. A selected file
 is a decided direction, so [design options](design-options.md) do not apply to
 it.
+
+When a project builds on the Claude API, an agent can read
+`anthropics/claude-quickstarts` as reference code. Cite the upstream commit
+that the agent followed.
 
 ## External Verification Evidence
 
