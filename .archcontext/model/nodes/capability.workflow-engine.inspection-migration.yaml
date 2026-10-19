@@ -8,6 +8,8 @@ responsibilities:
   - Own project inspection, scaffold creation, and bounded migration behavior.
 source:
   include:
+    - "references/migration-guide.md"
+    - "references/tech-stacks.md"
     - "scripts/inspect-project-state.ts"
     - "scripts/create-project-dirs.sh"
     - "scripts/init-project.sh"

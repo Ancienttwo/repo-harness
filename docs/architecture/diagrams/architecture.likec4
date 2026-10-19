@@ -144,6 +144,7 @@ model {
   component_contract_assets_template_projection -> capability_workflow_engine_execution_primitives "calls"
   component_contract_assets_template_projection -> capability_runtime_harness_global_runtime_reconciliation "calls"
   component_contract_assets_template_projection -> capability_runtime_harness_hook_adapters "calls"
+  component_contract_assets_template_projection -> capability_runtime_harness_operator "depends-on"
   component_contract_assets_template_projection -> component_contract_assets_planning_helpers "calls"
   component_contract_assets_template_projection -> component_action_commands_skill_surface_catalog "calls"
   component_contract_assets_template_projection -> capability_runtime_harness_task_agent_host "calls"

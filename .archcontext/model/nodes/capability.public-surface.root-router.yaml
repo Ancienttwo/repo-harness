@@ -8,6 +8,12 @@ responsibilities:
   - Own the root public contract, product entry documentation, and top-level agent routing.
 source:
   include:
+    - "agents/openai.yaml"
+    - "docs/CHANGELOG.md"
+    - "docs/images/**"
+    - "references/bot-control.md"
+    - "references/handoff.md"
+    - "references/workflow-packaging-rubric.md"
     - "SKILL.md"
     - "references/pm-boundary.md"
     - "README.md"

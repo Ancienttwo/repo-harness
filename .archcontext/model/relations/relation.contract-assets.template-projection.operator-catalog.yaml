@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "archcontext.relation/v1",
+  "id": "relation.contract-assets.template-projection.operator-catalog",
+  "kind": "depends-on",
+  "source": "component.contract-assets.template-projection",
+  "target": "capability.runtime-harness.operator",
+  "intent": "Read the tool catalog to project the reference tooling table"
+}

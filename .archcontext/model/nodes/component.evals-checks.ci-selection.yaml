@@ -11,6 +11,8 @@ responsibilities:
   - Run the affected, governance and functional lanes and report CI results.
 source:
   include:
+    - "scripts/ci-edge-audit.ts"
+    - "scripts/ci-path-consumers.ts"
     - ".github/**"
     - "scripts/check-ci.sh"
     - "scripts/select-*.ts"

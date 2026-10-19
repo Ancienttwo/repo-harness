@@ -64,7 +64,9 @@
       "scripts/factor-lab-new.sh",
       "scripts/factor-lab-promote.sh",
       "scripts/factor-lab-reject.sh",
-      "scripts/factor-lab-check.sh"
+      "scripts/factor-lab-check.sh",
+      "src/cli/commands/retention.ts",
+      "src/effects/artifact-retention.ts"
     ],
     "exclude": [
       "assets/reference-configs/external-tooling.md",
@@ -73,7 +75,9 @@
       "docs/reference-configs/chatgpt-coding-mcp.md",
       "docs/architecture/**",
       "docs/researches/**",
-      ".ai/harness/**"
+      ".ai/harness/**",
+      "docs/design/**",
+      "references/plugins-core.md"
     ],
     "entrypoints": [
       {

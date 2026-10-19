@@ -11,6 +11,9 @@ responsibilities:
   - Keep commands in the Bot and CLI channel.
 source:
   include:
+    - "assets/tool-catalog.v1.json"
+    - "docs/kanban-runtime-status.md"
+    - "src/core/tools/catalog.ts"
     - src/core/operator/**
     - src/effects/operator/**
     - src/operator-web/**
