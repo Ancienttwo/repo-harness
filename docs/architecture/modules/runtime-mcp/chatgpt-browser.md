@@ -120,7 +120,7 @@ sequenceDiagram
 
 本 capability 只有一个组件 `component.chatgpt-browser.primary`（Browser Consult Engine），12 个代码文件约 3644 行，加 1 份引擎文档（359 行）。规模在拆分阈值以下。
 
-入向调用来自 mcp-sidecar：primary 组件的 5 个 browser 工具（`tools.ts:1128-1159`），以及 host-setup 读取 bridge 参考（`src/cli/mcp/setup.ts:69-80`）。出向依赖只有 `file-policy.ts`。这个文件目前归 mcp-sidecar 所有（见 Optimization Backlog）。
+入向调用来自 mcp-sidecar：primary 组件的 5 个 browser 工具（`src/cli/mcp/tools.ts:991-1036`），以及 host-setup 读取 bridge 参考（`src/cli/mcp/setup.ts:69-80`）。出向依赖只有 `file-policy.ts`。这个文件目前归 mcp-sidecar 所有（见 Optimization Backlog）。
 
 ### 3.4 开放问题
 

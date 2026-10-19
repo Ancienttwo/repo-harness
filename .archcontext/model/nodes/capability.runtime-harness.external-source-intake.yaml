@@ -30,21 +30,24 @@ source:
               path: "src/effects/external-sources/store.ts"
               symbol: "writeExternalSourceRefreshReceipt"
     - id: entrypoint.external-source-intake.list
-      path: "src/effects/external-sources/refresh.ts"
+      path: "src/cli/commands/external-source.ts"
       symbols:
-        - name: "projection"
+        - name: "list"
           sinks:
-            - id: sink.external-source-intake.read-only-projection
-              path: "src/core/external-sources/projection.ts"
-              symbol: "buildExternalSourceProjection"
+            - id: sink.external-source-intake.list-operation
+              path: "src/effects/external-sources/refresh.ts"
+              symbol: "listExternalSourceProjection"
     - id: entrypoint.external-source-intake.bind
+      path: "src/cli/commands/external-source.ts"
+      symbols:
+        - name: "bind"
+          sinks:
+            - id: sink.external-source-intake.bind-operation
+              path: "src/effects/external-sources/binding.ts"
+              symbol: "bindExternalSource"
+    - id: entrypoint.external-source-intake.bindings
       path: "src/effects/external-sources/binding.ts"
       symbols:
-        - name: "bindExternalSource"
-          sinks:
-            - id: sink.external-source-intake.binding-receipt
-              path: "src/effects/external-sources/store.ts"
-              symbol: "writeExternalSourceBindingReceipt"
         - name: "listExternalSourceBindings"
           sinks:
             - id: sink.external-source-intake.binding-projection

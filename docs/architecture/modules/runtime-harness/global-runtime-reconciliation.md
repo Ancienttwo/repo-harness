@@ -228,7 +228,7 @@ CLI 根的扇出是真实的组合根结构，所以如实建模。`index.ts` �
 ### 3.4 开放问题
 
 - `scripts/axr5-archctx-clean-room.ts` 归入 archctx-closure 的依据只有文件名和归属提议 §1d。它是否仍被 CI 或发布流程调用？没有记录。
-- `package.json` 的版本被多个模块直接读取（`model-reader.ts:14`、`status.ts:37`、`install-profile.ts:1333`、`src/cli/mcp/version.ts:5`）。这些读取没有建模为关系。是否需要一个版本读取入口？没有记录。
+- `package.json` 的版本被多个模块直接读取（`model-reader.ts:14`、`src/cli/commands/status.ts:37`、`install-profile.ts:1333`、`src/cli/mcp/version.ts:5`）。这些读取没有建模为关系。是否需要一个版本读取入口？没有记录。
 
 ## 4. 歷史決策記錄(append-only)
 

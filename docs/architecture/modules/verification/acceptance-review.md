@@ -119,9 +119,9 @@ sequenceDiagram
 3. **reviewer 不能复用 owner pane。** 绑定的 pane 等于 owner pane 时，round 失败（`src/effects/review/generic-review.ts:261`）。
 4. **packet 先保存，reviewer 后启动。** `composeReviewPacket` 在任何 reviewer pane 启动前生成完整 packet（`src/core/review/review-packet.ts:16`）。packet 上限是 10 MiB UTF-8（`review-packet.ts:25`）。启动失败后 packet 保留。内容不变的重试复用原字节；内容改变的重试在再次启动前失败（PR #578）。
 5. **reviewer 输出使用封闭 schema。** `validateReviewOutput` 要求字段集合完全一致，并检查 identity 字段。它拒绝冲突的 PASS，也拒绝没有处理的旧 finding（`src/core/review/generic-review.ts:29`）。
-6. **receipt 只在稳定状态下记录。** 在 `recordAcceptance` 前，round 再次检查 `close.request`，并比较两个 worktree 的指纹。worktree 改变时 round 失败（`generic-review.ts:288`、`generic-review.ts:289`）。cancel 与 accept 的线性化点写在 `generic-review.ts:284` 的注释里。
+6. **receipt 只在稳定状态下记录。** 在 `recordAcceptance` 前，round 再次检查 `close.request`，并比较两个 worktree 的指纹。worktree 改变时 round 失败（`src/effects/review/generic-review.ts:368`、`src/effects/review/generic-review.ts:369`）。cancel 与 accept 的线性化点写在 `src/effects/review/generic-review.ts:364-367` 的注释里。
 7. **隔离失败不能降级。** reviewer 在 macOS Seatbelt launcher 里运行（`src/effects/review/review-isolation.ts:160`）。隔离不可用时结果是 `unsupported`，不能退回到无隔离运行（PR #476 回滚说明）。
-8. **只有可验证模型的 harness 能生成 receipt。** Claude reviewer 或没有观测到实际模型时，round 以 `review_actual_model_unverified` 失败（`generic-review.ts:85`）。
+8. **只有可验证模型的 harness 能生成 receipt。** Claude reviewer 或没有观测到实际模型时，round 以 `review_actual_model_unverified` 失败（`src/effects/review/generic-review.ts:88`）。
 9. **脚本是源。** `scripts/acceptance-receipt.ts` 是唯一副本。`assets/templates/helpers/` 只投影 `capability-resolver.ts`。
 
 ### 3.2 关键权衡

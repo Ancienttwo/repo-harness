@@ -61,12 +61,17 @@ source:
       symbols:
         - name: "createProductAcceptanceProjection"
           sinks:
-            - id: sink.integration-acceptance.acceptance
-              path: "scripts/acceptance-receipt.ts"
-              symbol: "verifyAcceptance"
             - id: sink.integration-acceptance.product-schema
               path: "src/core/integration/product-acceptance.ts"
               symbol: "buildProductAcceptanceProjection"
+    - id: entrypoint.integration-acceptance.product-command
+      path: "src/cli/commands/integration.ts"
+      symbols:
+        - name: "buildIntegrationCommand"
+          sinks:
+            - id: sink.integration-acceptance.product-operation
+              path: "src/effects/integration/product-acceptance.ts"
+              symbol: "createProductAcceptanceProjection"
     - id: entrypoint.integration-acceptance.contract-canonical
       path: "src/core/integration/product-acceptance.ts"
       symbols:
