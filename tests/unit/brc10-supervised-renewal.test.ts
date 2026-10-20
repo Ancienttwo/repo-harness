@@ -62,6 +62,46 @@ test('expired deadline refuses command admission before any side effect', async 
 });
 
 for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const) {
+  test(`supervisor preserves ${signal} cancellation during command startup`, async () => {
+    const root = mkdtempSync(join(tmpdir(), 'brc-startup-cancel-')); roots.push(root);
+    const ready = join(root, 'ready'); const result = join(root, 'result.json');
+    const gatedRunner = join(root, 'gated-runner.ts');
+    const source = readFileSync(runner, 'utf8');
+    const gateAnchor = "const stdoutHash = createHash('sha256');";
+    expect(source.split(gateAnchor)).toHaveLength(2);
+    // Hold the real supervisor after spawn so cancellation reaches the startup window.
+    const gate = "process.stdout.write('spawned\\n'); await new Promise<void>(resolve => process.stdin.once('data', () => resolve()));\n";
+    writeFileSync(gatedRunner, source.replace(gateAnchor, gate + gateAnchor));
+    const code = `process.on('SIGTERM', () => { process.stdout.write('done'); process.exit(0); }); await Bun.write(${JSON.stringify(ready)}, String(process.pid)); await Bun.sleep(15000);`;
+    const child = Bun.spawn([process.execPath, gatedRunner, '--deadline-ms', String(Date.now() + 5000), '--log', join(root, 'out'), '--stderr-log', join(root, 'err'), '--result', result,
+      '--', process.execPath, '-e', code], { stdin: 'pipe', stdout: 'pipe', stderr: 'pipe' });
+    const stderr = new Response(child.stderr).text();
+    try {
+      const reader = child.stdout.getReader();
+      const startup = await reader.read();
+      reader.releaseLock();
+      expect(new TextDecoder().decode(startup.value)).toBe('spawned\n');
+      const limit = Date.now() + 3000;
+      while (!existsSync(ready) && Date.now() < limit && child.exitCode === null) await Bun.sleep(10);
+      expect(existsSync(ready)).toBe(true);
+      child.kill(signal);
+      child.stdin.end('continue');
+      expect(await child.exited, await stderr).toBe({ SIGINT: 130, SIGTERM: 143, SIGHUP: 129 }[signal]);
+      expect(JSON.parse(readFileSync(result, 'utf8'))).toMatchObject({
+        termination_cause: 'cancelled', signal, timed_out: false, output_complete: true,
+        process_group_quiescence: process.platform === 'win32'
+          ? { scope: 'unsupported', state: 'unknown' } : { scope: 'posix_process_group', state: 'quiescent' },
+      });
+    } finally {
+      if (child.exitCode === null) { child.kill('SIGKILL'); await child.exited; }
+      if (existsSync(ready)) {
+        const pid = Number(readFileSync(ready, 'utf8'));
+        try { process.kill(process.platform === 'win32' ? pid : -pid, 'SIGKILL'); }
+        catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error; }
+      }
+    }
+  }, 10000);
+
   test(`supervisor preserves ${signal} cancellation when child exits successfully`, async () => {
     const root = mkdtempSync(join(tmpdir(), 'brc-cancel-')); roots.push(root);
     const ready = join(root, 'ready'); const result = join(root, 'result.json');
