@@ -102,6 +102,17 @@ describe("global working rules distribution", () => {
     expect(merged.content).toBe(`${content.trimEnd()}\n\n${block}`);
   });
 
+  test.each(["$$", "$&", "$`", "$'"])("custom instructions preserve literal replacement token %s", (token) => {
+    const instruction = `Use English. Preserve literal ${token} in code examples.`;
+    const rendered = renderedManagedBlock("custom", instruction);
+    expect(rendered.split("\n")).toContain(`- ${instruction}`);
+    expect(countOccurrences(rendered, "# Global Working Rules")).toBe(1);
+    const inspection = inspectGlobalContext(rendered, ROOT);
+    expect(inspection.state).toBe("managed-current");
+    expect(inspection.language).toEqual({ preset: "custom", instruction });
+    expect(mergeManagedBlock(rendered, renderGlobalRulesBlock(ROOT, inspection.language!)).content).toBe(rendered);
+  });
+
   test("the rendered block records its reporting-language inputs", () => {
     const rendered = renderedManagedBlock("zh-CN", "Use Chinese to report to user.");
     expect(rendered).toContain(
