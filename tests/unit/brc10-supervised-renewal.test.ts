@@ -85,7 +85,8 @@ for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const) {
       while (!existsSync(ready) && Date.now() < limit && child.exitCode === null) await Bun.sleep(10);
       expect(existsSync(ready)).toBe(true);
       child.kill(signal);
-      child.stdin.end('continue');
+      child.stdin.write('continue');
+      child.stdin.end();
       expect(await child.exited, await stderr).toBe({ SIGINT: 130, SIGTERM: 143, SIGHUP: 129 }[signal]);
       expect(JSON.parse(readFileSync(result, 'utf8'))).toMatchObject({
         termination_cause: 'cancelled', signal, timed_out: false, output_complete: true,
