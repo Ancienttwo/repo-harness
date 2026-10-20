@@ -6,7 +6,7 @@
 ## Current Snapshot
 
 - The architecture model lives in `.archcontext/model/`. It declares 28
-  capabilities in 6 domains, 56 components, 285 relations and 36 flows.
+  capabilities in 6 domains, 56 components, 286 relations and 36 flows.
 - Every capability page under [modules](modules/) shows `Proof: proven` for its
   P1 map and its P2 flow.
 - The full generated graph is in [diagrams/architecture.mmd](diagrams/architecture.mmd),
@@ -308,7 +308,7 @@ Project
 - Path ownership under `capability_source: archcontext` comes from `archctx resolve` (`src/effects/capabilities/archcontext-owners.ts`). Node includes and excludes can use any shape that ArchContext validation accepts.
 - Several capability pairs have declared relations in both directions (for example contract-assets and global-runtime-reconciliation). The module backlogs record each pair with its edge counts.
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.architecture.index" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:e8d2f7a7b52f299341a72cbd0cfbbab357cd2f19e91565331239366ccd6b6582" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.architecture.index" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:ae8bf3caebe771de9666335adb1f06b3f0bce74d9470461a8ab57a27ebaead1a" -->
 # Architecture Index
 
 ## Entities
@@ -395,6 +395,7 @@ Project
 - component.contract-assets.template-projection -> capability.workflow-engine.execution-primitives — calls
 - component.contract-assets.template-projection -> capability.runtime-harness.global-runtime-reconciliation — calls
 - component.contract-assets.template-projection -> capability.runtime-harness.hook-adapters — calls
+- component.contract-assets.template-projection -> capability.runtime-harness.operator — depends-on
 - component.contract-assets.template-projection -> component.contract-assets.planning-helpers — calls
 - component.contract-assets.template-projection -> component.action-commands.skill-surface-catalog — calls
 - component.contract-assets.template-projection -> capability.runtime-harness.task-agent-host — calls

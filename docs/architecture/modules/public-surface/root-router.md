@@ -1,8 +1,8 @@
 # public-surface/root-router 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-root-router" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:6e1ba051e26b9c9790d5663b1210417f91db9464d675885f3152abe78883333c" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-root-router" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:1a1e3ee1d340b2aedd40c6dc6439d2b1d58218987e2218356deb33145fd69ab6" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.public-surface.root-router`(kind `capability`)
-> **Matched Prefixes**:`SKILL.md`、`references/pm-boundary.md`、`README.md`、`AGENTS.md`、`CLAUDE.md`、`docs/spec.md`、`README.es.md`、`README.fr.md`、`README.ja.md`、`README.zh-CN.md`、`src/cli/commands/docs.ts`
+> **Matched Prefixes**:`agents/openai.yaml`、`docs/CHANGELOG.md`、`docs/images/**`、`references/bot-control.md`、`references/handoff.md`、`references/workflow-packaging-rubric.md`、`SKILL.md`、`references/pm-boundary.md`、`README.md`、`AGENTS.md`、`CLAUDE.md`、`docs/spec.md`、`README.es.md`、`README.fr.md`、`README.ja.md`、`README.zh-CN.md`、`src/cli/commands/docs.ts`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
@@ -38,8 +38,8 @@ flowchart LR
 
 ### 1.3 規模信號
 
-- 規模量級:`10–20` 個文件 / `1000–2000` 行
-- 匹配前綴:`SKILL.md`、`references/pm-boundary.md`、`README.md`、`AGENTS.md`、`CLAUDE.md`、`docs/spec.md`、`README.es.md`、`README.fr.md`、`README.ja.md`、`README.zh-CN.md`、`src/cli/commands/docs.ts`
+- 規模量級:`20–50` 個文件 / `20k–50k` 行
+- 匹配前綴:`agents/openai.yaml`、`docs/CHANGELOG.md`、`docs/images/**`、`references/bot-control.md`、`references/handoff.md`、`references/workflow-packaging-rubric.md`、`SKILL.md`、`references/pm-boundary.md`、`README.md`、`AGENTS.md`、`CLAUDE.md`、`docs/spec.md`、`README.es.md`、`README.fr.md`、`README.ja.md`、`README.zh-CN.md`、`src/cli/commands/docs.ts`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
 ### 1.4 依賴邊界

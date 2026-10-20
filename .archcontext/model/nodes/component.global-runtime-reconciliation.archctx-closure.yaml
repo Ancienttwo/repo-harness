@@ -23,7 +23,8 @@
       "src/cli/commands/architecture-*.ts",
       "src/effects/configuration/**",
       "src/effects/runtime/node-candidates.ts",
-      "scripts/axr5-archctx-clean-room.ts"
+      "scripts/axr5-archctx-clean-room.ts",
+      "docs/verification/**"
     ]
   }
 }

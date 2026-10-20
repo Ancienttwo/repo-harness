@@ -984,6 +984,12 @@
         "description": "calls"
       },
       {
+        "id": "relation.contract-assets.template-projection.operator-catalog",
+        "sourceId": "component.contract-assets.template-projection",
+        "destinationId": "capability.runtime-harness.operator",
+        "description": "depends-on"
+      },
+      {
         "id": "relation.contract-assets.template-projection.planning-helpers",
         "sourceId": "component.contract-assets.template-projection",
         "destinationId": "component.contract-assets.planning-helpers",

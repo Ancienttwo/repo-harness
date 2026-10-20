@@ -1,8 +1,8 @@
 # workflow-engine/inspection-migration 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-inspection-migration" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:f4082d1a4e916307424e3b6d5ebad550d660bf982eb16178125c3b3124630c03" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-inspection-migration" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:f3ba20cbf3c1ea790008335fc5469f52ebcb9900f61f5159f03025a58217c0d0" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.workflow-engine.inspection-migration`(kind `capability`)
-> **Matched Prefixes**:`scripts/inspect-project-state.ts`、`scripts/create-project-dirs.sh`、`scripts/init-project.sh`、`scripts/lib/**`、`scripts/AGENTS.md`、`scripts/CLAUDE.md`
+> **Matched Prefixes**:`references/migration-guide.md`、`references/tech-stacks.md`、`scripts/inspect-project-state.ts`、`scripts/create-project-dirs.sh`、`scripts/init-project.sh`、`scripts/lib/**`、`scripts/AGENTS.md`、`scripts/CLAUDE.md`
 > **Local Contracts**:`scripts/AGENTS.md`、`scripts/CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
@@ -41,7 +41,7 @@ flowchart LR
 ### 1.3 規模信號
 
 - 規模量級:`10–20` 個文件 / `2000–5000` 行
-- 匹配前綴:`scripts/inspect-project-state.ts`、`scripts/create-project-dirs.sh`、`scripts/init-project.sh`、`scripts/lib/**`、`scripts/AGENTS.md`、`scripts/CLAUDE.md`
+- 匹配前綴:`references/migration-guide.md`、`references/tech-stacks.md`、`scripts/inspect-project-state.ts`、`scripts/create-project-dirs.sh`、`scripts/init-project.sh`、`scripts/lib/**`、`scripts/AGENTS.md`、`scripts/CLAUDE.md`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
 ### 1.4 依賴邊界
