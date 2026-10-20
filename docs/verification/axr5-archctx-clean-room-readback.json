@@ -3,20 +3,20 @@
   "status": "verified",
   "source": {
     "repository": "Ancienttwo/arch-context",
-    "revision": "2be9dcd231a3124ab4c5c89fb8af12abc4d8b6e7",
+    "revision": "8951c56b3aa7831e03347d267feec93bd3079397",
     "archiveMode": "git-archive",
     "dirtySourceUsed": false
   },
   "packages": {
     "contracts": {
       "name": "archctx-contracts",
-      "version": "0.8.1",
-      "file": "archctx-contracts-0.8.1.tgz"
+      "version": "0.9.0",
+      "file": "archctx-contracts-0.9.0.tgz"
     },
     "archctx": {
       "name": "archctx",
-      "version": "0.8.1",
-      "file": "archctx-0.8.1.tgz"
+      "version": "0.9.0",
+      "file": "archctx-0.9.0.tgz"
     }
   },
   "consumer": {
@@ -31,7 +31,7 @@
       "schemaVersion": "archcontext.capabilities/v1",
       "package": {
         "name": "archctx",
-        "version": "0.8.1"
+        "version": "0.9.0"
       },
       "protocols": {
         "projectionRequest": "archcontext.projection-request/v1",
@@ -72,7 +72,9 @@
         "projection-preview-v1",
         "projection-prior-committed-applies-v1",
         "projection-protocol-v2",
+        "projection-publish-v1",
         "projection-snapshot-v1",
+        "projection-verify-pr-v1",
         "recommendation-scan-decision-v1",
         "recommendation-v3",
         "refactor-assessment-v1",
