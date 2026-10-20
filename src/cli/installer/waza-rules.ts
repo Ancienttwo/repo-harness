@@ -115,23 +115,23 @@ export function syncWazaSharedRules(
         if (current === undefined) createdPaths.push(destination);
       }
     }
-    const refreshedPaths: string[] = [];
     if (refresh) {
       for (const rule of wazaRules.files) {
         const value = next.get(rule)!;
         if (previous.get(rule) !== value) {
           const source = join(sourceDir, rule);
           atomicWriteFileSync(source, value);
-          refreshedPaths.push(source);
           if (previous.get(rule) === undefined) createdPaths.push(source);
         }
       }
     }
     for (const [destination, value] of writes) atomicWriteFileSync(destination, value);
     // The candidate update path has no install transaction when it records its profile.
-    // Keep existing receipts current so the next refresh can prove ownership again.
+    // Reconcile existing receipts even when upstream bytes need no write (for example,
+    // a retry after rule writes completed but receipt persistence did not).
     if (refresh) recordRefreshedInstallOwnership(
-      [...refreshedPaths, ...writes.keys(), ...adoptedPaths], env, [...createdPaths, ...adoptedPaths],
+      [...wazaRules.files.flatMap(rule => [join(sourceDir, rule), ...hosts.map(host => join(home, `.${host}`, 'rules', rule))]), ...adoptedPaths],
+      env, [...createdPaths, ...adoptedPaths],
     );
     return { status: 'ok', detail: `${refresh ? 'refreshed staging; ' : ''}synced ${hosts.length * wazaRules.files.length} files` };
   } catch (error) {
