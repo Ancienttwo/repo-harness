@@ -68,6 +68,23 @@ describe('single affected verification and daily fallback', () => {
     expect(await selectAffectedTests(['src/other.ts'], sources, [])).toEqual(['tests/inherited.test.ts', 'tests/other.test.ts', 'tests/unknown.test.ts']);
   });
 
+  test('absolute launcher targets retain their root for inherited and unknown child cwd', async () => {
+    const sources = new Map([
+      ['src/base.ts', 'export {};'], ['src/other.ts', 'export {};'],
+      ['scripts/tasks/run.ts', "import '../../src/base';"],
+      ['fixtures/scripts/tasks/run.ts', "import '../../../src/other';"],
+      ['tests/inherited.test.ts', "spawnSync('bun', [join(import.meta.dir, '../scripts/tasks/run.ts')]);"],
+      ['tests/unknown.test.ts', "const ENTRY = join(import.meta.dir, '../scripts/tasks/run.ts'); spawnSync(process.execPath, [ENTRY], { cwd: target() });"],
+      ['tests/executable.test.ts', "spawnSync(join(import.meta.dir, '../scripts/tasks/run.ts'), [], { cwd: target() });"],
+      ['tests/relative.test.ts', "spawnSync('bun', ['run.ts'], { cwd: target() });"],
+      ['tests/fixture.test.ts', "spawnSync('bun', [join(import.meta.dir, '../fixtures/scripts/tasks/run.ts')]);"],
+    ]);
+    expect(await selectAffectedTests(['src/base.ts'], sources, [])).toEqual([
+      'tests/executable.test.ts', 'tests/inherited.test.ts', 'tests/relative.test.ts', 'tests/unknown.test.ts',
+    ]);
+    expect(await selectAffectedTests(['src/other.ts'], sources, [])).toEqual(['tests/fixture.test.ts', 'tests/relative.test.ts']);
+  });
+
   test('opaque cwd wrappers, changed options and spreads keep execution coverage', async () => {
     const sources = new Map([
       ['src/base.ts', 'export {};'],

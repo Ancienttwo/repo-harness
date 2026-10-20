@@ -161,11 +161,13 @@ export async function discoverPathReferences(entries: readonly (readonly [string
             const target = interpreter ? script : executable;
             const explicitTarget = !!target && certain(target) && values(target).every(value =>
               !value.startsWith('-') && (value.includes('/') || (interpreter && /\.[\w]+$/.test(value))));
+            // Absolute entrypoints do not depend on the child's working directory.
+            const absoluteTarget = explicitTarget && values(target).every(value => value.startsWith('/') && !value.includes('*'));
             for (const arg of argumentsToResolve.flatMap(arg => isArrayLiteralExpression(arg) ? [...arg.elements] : [arg])) {
               launcherArguments.add(arg);
               // A script may resolve its data arguments through another root.
               // Shell command strings and opaque argv arrays also keep aliases.
-              const rootedTarget = !['exec', 'execSync'].includes(operation) && knownCwd && explicitTarget && arg === target;
+              const rootedTarget = !['exec', 'execSync'].includes(operation) && explicitTarget && arg === target && (knownCwd || absoluteTarget);
               const paths = values(arg).flatMap(value => !rootedTarget || value.startsWith('/') ? [value] : cwd.map(directory => resolve(directory, value)));
               for (const path of paths) add(path, 'execute', arg, rootedTarget);
               if (rootedTarget) evidence.push({ start: arg.getStart(), end: arg.getEnd(), reason: 'resolved-launcher', paths });
