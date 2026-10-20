@@ -105,31 +105,6 @@ if (Date.now() >= deadlineMs) {
   writeFileSync(resultPath, `${JSON.stringify(result)}\n`, { flag: 'wx', mode: 0o600 });
   process.exit(124);
 }
-const child = spawn(command, args, {
-  detached: process.platform !== 'win32',
-  stdio: stderrPath === null ? ['ignore', logFd, stderrFd] : ['ignore', 'pipe', 'pipe'],
-  env: scrubHarnessEnv(process.env),
-});
-
-const stdoutHash = createHash('sha256');
-const stderrHash = createHash('sha256');
-let outputError = false;
-let outputBytes = 0;
-let outputClosed = false;
-const closed = new Promise<void>(resolve => child.once('close', () => { outputClosed = true; resolve(); }));
-if (stderrPath !== null) {
-  for (const [stream, fd, hash] of [[child.stdout!, logFd, stdoutHash], [child.stderr!, stderrFd, stderrHash]] as const) {
-    stream.on('data', (bytes: Buffer) => {
-      outputBytes += bytes.length;
-      if (outputLimit !== null && outputBytes > outputLimit) { outputError = true; beginTermination(); return; }
-      hash.update(bytes);
-      try { let offset = 0; while (offset < bytes.length) offset += writeSync(fd, bytes, offset, bytes.length - offset); }
-      catch { outputError = true; beginTermination(); }
-    });
-    stream.on('error', () => { outputError = true; beginTermination(); });
-  }
-}
-
 function terminate(signal: NodeJS.Signals): void {
   if (!child.pid) return;
   try {
@@ -187,11 +162,42 @@ function beginTermination(): void {
   });
 }
 
+// Install cancellation handlers before the command can report readiness.
 for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const) {
   process.on(signal, () => {
     cancellationSignal ??= signal;
     beginTermination();
   });
+}
+
+const child = spawn(command, args, {
+  detached: process.platform !== 'win32',
+  stdio: stderrPath === null ? ['ignore', logFd, stderrFd] : ['ignore', 'pipe', 'pipe'],
+  env: scrubHarnessEnv(process.env),
+});
+
+let outputClosed = false;
+const closed = new Promise<void>(resolve => child.once('close', () => { outputClosed = true; resolve(); }));
+const leaderCompletion = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => {
+  child.once('error', () => resolve({ code: 127, signal: null }));
+  child.once('exit', (code, signal) => resolve({ code, signal }));
+});
+
+const stdoutHash = createHash('sha256');
+const stderrHash = createHash('sha256');
+let outputError = false;
+let outputBytes = 0;
+if (stderrPath !== null) {
+  for (const [stream, fd, hash] of [[child.stdout!, logFd, stdoutHash], [child.stderr!, stderrFd, stderrHash]] as const) {
+    stream.on('data', (bytes: Buffer) => {
+      outputBytes += bytes.length;
+      if (outputLimit !== null && outputBytes > outputLimit) { outputError = true; beginTermination(); return; }
+      hash.update(bytes);
+      try { let offset = 0; while (offset < bytes.length) offset += writeSync(fd, bytes, offset, bytes.length - offset); }
+      catch { outputError = true; beginTermination(); }
+    });
+    stream.on('error', () => { outputError = true; beginTermination(); });
+  }
 }
 
 const remainingMs = Math.max(0, deadlineMs - Date.now());
@@ -200,10 +206,6 @@ const deadlineTimer = setTimeout(() => {
   beginTermination();
 }, remainingMs);
 
-const leaderCompletion = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => {
-  child.once('error', () => resolve({ code: 127, signal: null }));
-  child.once('exit', (code, signal) => resolve({ code, signal }));
-});
 const completion = await leaderCompletion.then(async (result) => {
   await waitForProcessGroupQuiescence();
   return result;
