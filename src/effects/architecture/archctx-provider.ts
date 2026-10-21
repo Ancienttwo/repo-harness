@@ -427,6 +427,8 @@ export function stopWorkspaceArchitectureDaemons(repoRoot: string, canonicalWork
 
 const PROJECTION_MANIFEST_INCOMPATIBLE = 'projection-manifest-incompatible';
 const COMMITTED_PROJECTION_MANIFEST = 'docs/architecture/.projection-manifest.json';
+/** The archctx model entry. archctx 0.9.0 checkpoint refuses a repository without it. */
+export const ARCHCONTEXT_MANIFEST = '.archcontext/manifest.yaml';
 
 /**
  * archctx owns the manifest compatibility rule. The committed manifest must pass
@@ -750,7 +752,7 @@ function findConsumerRoot(): string {
   }
 }
 
-function capabilitySource(repoRoot: string): ArchitectureProjectionReadinessV1['modelAuthority']['source'] {
+export function capabilitySource(repoRoot: string): ArchitectureProjectionReadinessV1['modelAuthority']['source'] {
   const path = join(repoRoot, '.ai/harness/policy.json');
   if (!existsSync(path)) return 'unadopted';
   const policy = JSON.parse(readFileSync(path, 'utf8')) as { context?: { capability_source?: unknown } };

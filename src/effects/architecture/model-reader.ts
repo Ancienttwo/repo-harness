@@ -9,11 +9,10 @@ import { canonicalize } from '../../core/evidence/canonical-json';
 import { markdownHeader } from '../../core/state/artifact-parsers';
 import { repoHarnessRepoIdFor } from '../repo-registry';
 import { resolveArchcontextCapabilityPaths } from '../capabilities/archcontext-owners';
-import { ArchctxClientError, readArchitectureNativeContext, type ArchctxProviderOptions } from './archctx-provider';
+import { ARCHCONTEXT_MANIFEST, ArchctxClientError, readArchitectureNativeContext, type ArchctxProviderOptions } from './archctx-provider';
 import { version as PACKAGE_VERSION } from '../../../package.json';
 
 const MODEL_ROOT = '.archcontext/model';
-const MANIFEST = '.archcontext/manifest.yaml';
 const DOC_INDEX = [['plans', 'plan'], ['tasks/contracts', 'contract']] as const;
 const REGULAR_FILE = new Set(['100644', '100755']);
 const SNAPSHOT_CACHE_SIZE = 4;
@@ -181,7 +180,7 @@ export class ArchitectureModelReader {
     const docIndex = DOC_INDEX.flatMap(([dir, kind]) => this.snapshot.regularFiles(path => path.startsWith(`${dir}/`) && !path.includes('/', dir.length + 1) && path.endsWith('.md'))
       .sort((a, b) => a.localeCompare(b, 'en')).map(path => ({ path, kind })));
     this.snapshot.load(docIndex.map(doc => doc.path));
-    this.safePath(MANIFEST);
+    this.safePath(ARCHCONTEXT_MANIFEST);
     this.budget = this.context.contextBudgetBytes;
     const { model } = this.context;
     // The native decoder validates every record against the published model schemas.
@@ -374,18 +373,18 @@ export class ArchitectureModelReader {
     const staleCitations = options.anchors === undefined ? null : moduleStaleCitations(options.anchors, local);
     const anchorsText = staleCitations === null ? null : canonicalize(staleCitations as unknown as Parameters<typeof canonicalize>[0]);
     const sources: PromptSource[] = [
-      { ...this.requiredInput(MANIFEST), class: 'required' as const, disposition: 'included' as const },
+      { ...this.requiredInput(ARCHCONTEXT_MANIFEST), class: 'required' as const, disposition: 'included' as const },
       ...model.map(file => ({ ...this.requiredInput(file.path), class: file.path.includes('/flows/') ? 'optional' as const : 'required' as const, disposition: 'included' as const })),
       ...(doc ? [{ ...doc, class: 'optional' as const, disposition: 'included' as const }] : []),
       ...linked.map(file => ({ path: file.path, bytes: file.bytes.length, sha256: sha256(file.bytes), class: 'optional' as const, disposition: 'included' as const })),
       ...(diff === null ? [] : [{ path: 'diff', bytes: Buffer.byteLength(diff), sha256: sha256(diff), class: 'required' as const, disposition: 'included' as const }]),
       ...(anchorsText === null ? [] : [{ path: 'anchors', bytes: Buffer.byteLength(anchorsText), sha256: sha256(anchorsText), class: 'optional' as const, disposition: 'included' as const }]),
     ].sort((a, b) => a.path.localeCompare(b.path, 'en'));
-    const sourceSections: Record<string, string[]> = { [MANIFEST]: ['identity'], [docPath]: ['section3', 'backlog'], diff: ['diff'], anchors: ['stale_citations'] };
+    const sourceSections: Record<string, string[]> = { [ARCHCONTEXT_MANIFEST]: ['identity'], [docPath]: ['section3', 'backlog'], diff: ['diff'], anchors: ['stale_citations'] };
     for (const file of model) sourceSections[file.path] = file.path.includes('/flows/') ? ['flows'] : file.path.includes('/relations/') ? ['relations'] : ['model', 'relations'];
     for (const file of linked) sourceSections[file.path] = ['linked_docs'];
     // The whole model directory is in scope, so new and deleted model files show as dirty too.
-    const scope = [...new Set([...this.anchors(node), MANIFEST, MODEL_ROOT, docPath, ...linked.map(file => file.path)])].sort();
+    const scope = [...new Set([...this.anchors(node), ARCHCONTEXT_MANIFEST, MODEL_ROOT, docPath, ...linked.map(file => file.path)])].sort();
     for (let attempt = 0; attempt < 2; attempt++) {
       const before = this.dirty(scope);
       const packet = buildModuleReviewPrompt({ detail, package_version: PACKAGE_VERSION, repository_id: repoHarnessRepoIdFor(this.root), input_cap_bytes: this.budget,

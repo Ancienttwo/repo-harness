@@ -47,3 +47,10 @@ with either the accepted reason or the concrete repair command, including Waza
 staging drift, CodeGraph version drift, or non-authoritative
 skill eval evidence. Do not rely only on npm or GitHub release metadata for this
 local audit trail.
+
+The filing also records the consumer architecture smoke. A new consumer with a
+capability registry, no `.codegraph/`, no projection manifest and a branch
+that adds an unowned path must show one architecture line at SessionStart or
+Stop, not silence. The automated evidence is the `tests/hook-runtime.test.ts`
+test "a registry consumer without code facts or a projection manifest gets
+one architecture line (#850)".
