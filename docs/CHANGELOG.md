@@ -9,7 +9,7 @@ All notable changes to this skill are documented here.
 - Add the `repo-harness-setup` ci-scope mode. It sets up impact-scoped PR CI
   in a target repo: family owners select platform jobs, an owner drift test
   checks the workflow, and only an exact-SHA dispatch on an allowlisted release
-  ref runs the complete matrix. Repository settings stay with the user.
+  ref runs the complete matrix. Repository settings stay with the user. (#854)
 
 ## [0.24.0] - 2026-10-21
 
