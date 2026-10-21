@@ -42,6 +42,7 @@ const CANONICAL_PACKAGES: ReadonlyArray<{
       "repair.md",
       "scaffold.md",
       "capability.md",
+      "ci-scope.md",
     ],
   },
   {

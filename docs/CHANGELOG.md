@@ -4,6 +4,13 @@ All notable changes to this skill are documented here.
 
 ## Unreleased
 
+### Added
+
+- Add the `repo-harness-setup` ci-scope mode. It sets up impact-scoped PR CI
+  in a target repo: family owners select platform jobs, an owner drift test
+  checks the workflow, and only an exact-SHA dispatch on an allowlisted release
+  ref runs the complete matrix. Repository settings stay with the user.
+
 ## [0.24.0] - 2026-10-21
 
 This minor release includes the archctx 0.9.0 upgrade and the hook and task
