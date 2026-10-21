@@ -257,4 +257,29 @@ describe('AgentNotice', () => {
     // Recovery ends the failure state, so the same failure prints again.
     expect(collectAgentNotice(root, () => ownership, { env, run: timedOut }).content).toContain('notice unavailable (RH_ARCHCTX_TIMEOUT)');
   });
+
+  test('#850: a CodeGraph index that is not ready is a setup state', () => {
+    const root = fixture();
+    const catalog = ERROR_CATALOG.AC_CODE_FACTS_NOT_READY;
+    const error = { ...catalog, message: 'code facts are not ready', reasonCode: 'code-facts-not-ready', action: 'codegraph-index' };
+    const notice = collectAgentNotice(root, () => noticeOwnership(root), {
+      env: noticeEnv(root),
+      run: () => ({ status: 1, signal: null, stdout: JSON.stringify({ schemaVersion: 'archcontext.envelope/v1', ok: false, requestId: 'checkpoint', error }), stderr: '' }),
+    });
+    expect(notice.content).toBe(`[Architecture] inactive: AC_CODE_FACTS_NOT_READY, action codegraph-index. Run: ${STATUS}`);
+    expect(notice.diagnostics).toBeUndefined();
+  });
+
+  test('#850: a checkpoint failure with registry unowned paths does not consume the debt marker', () => {
+    const root = fixture();
+    fixtureWrite(root, '.ai/harness/policy.json', JSON.stringify({ context: { capability_source: 'registry' } }));
+    const ownership = { ...noticeOwnership(root), unowned_paths: ['packages/new-core/index.ts'] };
+    const env = noticeEnv(root);
+    const failed = collectAgentNotice(root, () => ownership, { env, run: timedOut });
+    expect(failed.content).toBe('[Architecture] notice unavailable (RH_ARCHCTX_TIMEOUT): architecture notice timed out after 3 s; run repo-harness architecture-debt --json');
+    expect(existsSync(join(root, '.ai/harness/state/agent-notice'))).toBe(false);
+    const recovered = collectAgentNotice(root, () => ownership, { env });
+    expect(recovered.content).toStartWith('[ArchitectureDebt] 1 unowned changed path\n');
+    expect(recovered.content).toContain(`[ArchitectureDebt] 1 new in ${NOTICE_CAPABILITY}\n`);
+  });
 });

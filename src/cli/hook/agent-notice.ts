@@ -4,7 +4,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { ArchitectureDebtReportV1 } from 'archctx-contracts';
 import type { CapabilityOwnership } from '../../core/state/types';
-import { ArchctxClientError, capabilitySource, checkpointArchitectureDebt, type ArchctxProviderOptions } from '../../effects/architecture/archctx-provider';
+import { ARCHCONTEXT_MANIFEST, ArchctxClientError, capabilitySource, checkpointArchitectureDebt, type ArchctxProviderOptions } from '../../effects/architecture/archctx-provider';
 import { readGlobalArchitectureConfiguration } from '../../effects/architecture/projection-config';
 import { assertSafeRepoWritePath, writeHookStateFile } from '../../effects/hook-state-file';
 import { boundedHookDiagnostic } from './hook-protocol';
@@ -15,9 +15,10 @@ const COMMAND = 'repo-harness architecture-debt --json';
 const STATUS_COMMAND = 'repo-harness architecture-projection status --json';
 const MAX_BYTES = 800;
 const MAX_MESSAGE_BYTES = 200;
-// These codes report a setup step that the operator has not done. They are not faults.
+// The codes that archctx 0.9.0 checkpoint and package resolution throw for a setup step
+// that the operator has not done. They are not faults.
 const INACTIVE_CODES: ReadonlySet<string> = new Set([
-  'AC_MODEL_ADOPTION_REQUIRED', 'AC_CODE_FACTS_UNAVAILABLE', 'AC_INDEX_STALE', 'RH_ARCHCTX_CODE_FACTS_NOT_READY', 'RH_ARCHCTX_PACKAGE_MISSING',
+  'AC_MODEL_ADOPTION_REQUIRED', 'AC_CODE_FACTS_UNAVAILABLE', 'AC_CODE_FACTS_NOT_READY', 'RH_ARCHCTX_PACKAGE_MISSING',
 ]);
 const REGISTRY_FILE = '.ai/context/capabilities.json';
 const singleLine = (text: string) => text.replace(/[\r\n\t]+/g, ' ');
@@ -125,7 +126,7 @@ function readiness(repoRoot: string, env: NodeJS.ProcessEnv | undefined): Status
   const global = readGlobalArchitectureConfiguration(env);
   if (global.initialized && global.policy.provider === 'disabled') return { kind: 'disabled' };
   // archctx 0.9.0 checkpoint refuses a repository without this file (AC_MODEL_ADOPTION_REQUIRED, model-missing).
-  if (!existsSync(join(repoRoot, '.archcontext/manifest.yaml'))) return { kind: 'inactive', cause: 'no ArchContext model (.archcontext/manifest.yaml is missing)' };
+  if (!existsSync(join(repoRoot, ARCHCONTEXT_MANIFEST))) return { kind: 'inactive', cause: `no ArchContext model (${ARCHCONTEXT_MANIFEST} is missing)` };
   if (!global.initialized) return { kind: 'inactive', cause: 'global architecture configuration is missing; run repo-harness update' };
   return { kind: 'active' };
 }
@@ -195,7 +196,9 @@ function statusNotice(repoRoot: string, env: NodeJS.ProcessEnv | undefined, stat
 /** Ownership and citation debt share one marker. Their key changes when a debt item or an unowned path changes. */
 function debtNotice(repoRoot: string, env: NodeJS.ProcessEnv | undefined, observation: Observation): NoticeBlock[] {
   const { unowned, debt } = observation;
-  if (!unowned && !debt) return [];
+  // A failed checkpoint has no measured set. Claiming the unowned paths alone would
+  // make every recovery print them again.
+  if (observation.status.kind === 'failure' || (!unowned && !debt)) return [];
   const key = digest([debt?.branch ?? currentBranch(repoRoot, env), debt?.ids ?? [], unowned?.paths ?? []]);
   if (!claim(repoRoot, MARKER, key, env)) return [];
   return [unowned?.block, debt?.block].filter((block): block is NoticeBlock => block !== undefined);

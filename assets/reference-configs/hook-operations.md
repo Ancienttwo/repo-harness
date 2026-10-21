@@ -237,7 +237,7 @@ A setup state gives one `[Architecture] inactive: <cause>` line and one human
 `systemMessage`, also at SessionStart without a diff. The causes are a missing
 `.archcontext/manifest.yaml` (the archctx checkpoint precondition; no checkpoint
 runs), a missing global architecture configuration, and archctx setup errors
-such as `AC_MODEL_ADOPTION_REQUIRED` or `RH_ARCHCTX_CODE_FACTS_NOT_READY`. An
+such as `AC_MODEL_ADOPTION_REQUIRED` or `AC_CODE_FACTS_NOT_READY`. An
 explicit `projection_provider=disabled` gives no line. Another failure gives one
 `[Architecture] notice unavailable (<code>)` line and keeps the one-line stderr
 diagnostic at exit 0. The Git-ignored marker `.ai/harness/state/agent-notice-status`

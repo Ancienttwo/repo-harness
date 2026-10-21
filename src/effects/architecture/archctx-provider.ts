@@ -427,6 +427,8 @@ export function stopWorkspaceArchitectureDaemons(repoRoot: string, canonicalWork
 
 const PROJECTION_MANIFEST_INCOMPATIBLE = 'projection-manifest-incompatible';
 const COMMITTED_PROJECTION_MANIFEST = 'docs/architecture/.projection-manifest.json';
+/** The archctx model entry. archctx 0.9.0 checkpoint refuses a repository without it. */
+export const ARCHCONTEXT_MANIFEST = '.archcontext/manifest.yaml';
 
 /**
  * archctx owns the manifest compatibility rule. The committed manifest must pass
