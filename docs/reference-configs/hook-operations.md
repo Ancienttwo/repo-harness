@@ -212,8 +212,8 @@ Known limits:
 
 - While owned paths are dirty, each Codex prompt and each Claude Stop pays one
   ownership resolve and one checkpoint before the dedupe check.
-- Checkpoint receives only owned changed paths, so new unowned files reach
-  the CI lane, not the session.
+- Under archcontext, checkpoint receives only owned changed paths, so new
+  unowned files reach the CI lane, not the session.
 - `new` means a new delivery id set, not newly introduced debt.
 
 The text starts with `[ArchitectureDebt] N new in <capability>`. Each item names
@@ -223,10 +223,28 @@ UTF-8 bytes. An overflow line gives the remaining count and
 count; commands are never cut. No debt means no model text.
 
 The marker `.ai/harness/state/agent-notice` must be Git-ignored. Its key is
-SHA-256 of JSON `[branch, sorted item ids]`. archctx calls the stable identity
-field `id`. All delivery points share the marker. A manifest refresh does not
-renew an unchanged set. A failed checkpoint or marker operation emits no notice
-and one stderr diagnostic at exit 0. Hooks never project or apply architecture.
+SHA-256 of JSON `[branch, sorted item ids, sorted unowned paths]`. archctx calls
+the stable identity field `id`. All delivery points share the marker. A manifest
+refresh does not renew an unchanged set. Hooks never project or apply architecture.
+
+Registry repositories also get `[ArchitectureDebt] N unowned changed path(s)`
+from the registry ownership answer, with no checkpoint call. Under archcontext,
+the unowned judgment stays with archctx, because it counts only paths inside
+declared source roots. A repository without a declared capability authority gets no
+architecture text.
+
+A setup state gives one `[Architecture] inactive: <cause>` line and one human
+`systemMessage`, also at SessionStart without a diff. The causes are a missing
+`.archcontext/manifest.yaml` (the archctx checkpoint precondition; no checkpoint
+runs), a missing global architecture configuration, and archctx setup errors
+such as `AC_MODEL_ADOPTION_REQUIRED` or `AC_CODE_FACTS_NOT_READY`. An
+explicit `projection_provider=disabled` gives no line. Another failure gives one
+`[Architecture] notice unavailable (<code>)` line and keeps the one-line stderr
+diagnostic at exit 0. The Git-ignored marker `.ai/harness/state/agent-notice-status`
+dedupes these lines: once per cause, and once per branch and code for a failure.
+A working notice records an active key, so a returning cause prints again. A
+failure never writes the debt marker. A marker that cannot be written drops only
+its own text and adds to the stderr diagnostic.
 
 | Point | Hosts | When |
 | --- | --- | --- |

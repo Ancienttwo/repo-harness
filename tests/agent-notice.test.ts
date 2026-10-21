@@ -2,14 +2,20 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
+import { ERROR_CATALOG } from 'archctx-contracts';
 import { collectAgentNotice, renderAgentNotice } from '../src/cli/hook/agent-notice';
-import { checkpointArchitectureDebt } from '../src/effects/architecture/archctx-provider';
+import { checkpointArchitectureDebt, type ArchctxProviderOptions } from '../src/effects/architecture/archctx-provider';
 import { resolveCapabilityOwnership } from '../src/effects/state/resolve-effective-state';
-import { agentNoticeFixture, noticeOwnership, noticeEnv, NOTICE_CAPABILITY } from './helpers/agent-notice';
+import { agentNoticeFixture, noticeOwnership, noticeEnv, registryNoticeFixture, writeNoticeRegistry, NOTICE_CAPABILITY } from './helpers/agent-notice';
 import { fixtureCommit, fixtureGit, fixtureWrite } from './helpers/module-repository';
 
 const roots: string[] = [];
 function fixture() { const root = agentNoticeFixture(); roots.push(root); return root; }
+function registryFixture() { const root = registryNoticeFixture(); roots.push(root); return root; }
+const noCheckpoint = () => { throw new Error('checkpoint must not run'); };
+const timedOut = () => ({ status: null, signal: 'SIGTERM' as const, stdout: '', stderr: '', timedOut: true });
+const STATUS = 'repo-harness architecture-projection status --json';
+const NO_MODEL = 'no ArchContext model (.archcontext/manifest.yaml is missing)';
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 
 describe('AgentNotice', () => {
@@ -77,7 +83,7 @@ describe('AgentNotice', () => {
     expect(result.diagnostics).toContain('architecture notice timed out after 3 s; run repo-harness architecture-debt --json');
     expect(result.diagnostics).not.toContain('request id');
     expect(result.diagnostics).not.toContain('architecture-projection');
-    expect(result.content).toBeUndefined();
+    expect(result.content).toBe('[Architecture] notice unavailable (RH_ARCHCTX_TIMEOUT): architecture notice timed out after 3 s; run repo-harness architecture-debt --json');
   });
 
   test('real citation debt is bounded, uses producer ids and dedupes across delivery points', () => {
@@ -94,7 +100,7 @@ describe('AgentNotice', () => {
     expect(Buffer.byteLength(first.content!)).toBeLessThanOrEqual(800);
     expect(first.systemMessage).toBe(`Architecture: 1 debt item in ${NOTICE_CAPABILITY}; run repo-harness architecture-debt --json.`);
     expect(first.diagnostics).toBeUndefined();
-    const key = createHash('sha256').update(JSON.stringify(['feature', measured.report.items.map(item => item.id).sort()])).digest('hex');
+    const key = createHash('sha256').update(JSON.stringify(['feature', measured.report.items.map(item => item.id).sort(), []])).digest('hex');
     expect(readFileSync(join(root, '.ai/harness/state/agent-notice'), 'utf8').trim()).toBe(key);
     expect(collectAgentNotice(root, () => ownership, options)).toEqual({});
     fixtureWrite(root, 'docs/architecture/.projection-manifest.json', '{"profile":"repo-harness/v1"}\n');
@@ -112,7 +118,7 @@ describe('AgentNotice', () => {
     fixtureWrite(root, 'src/unowned.ts', 'export const unrelated = 1;\n');
     const ownership = noticeOwnership(root);
     expect(checkpointArchitectureDebt(root, ownership, { run: () => { throw new Error('must not run'); } })).toBeNull();
-    expect(collectAgentNotice(root, () => null)).toEqual({});
+    expect(collectAgentNotice(root, () => null, { env: noticeEnv(root), run: () => { throw new Error('must not run'); } })).toEqual({});
     expect(existsSync(join(root, '.ai/harness/state/agent-notice'))).toBe(false);
   });
 
@@ -120,8 +126,8 @@ describe('AgentNotice', () => {
     const root = fixture();
     const ownership = noticeOwnership(root);
     const failed = collectAgentNotice(root, () => ownership, { env: noticeEnv(root), run: () => ({ status: null, signal: 'SIGTERM', stdout: '', stderr: '', timedOut: true }) });
-    expect(failed.content).toBeUndefined();
-    expect(failed.systemMessage).toBeUndefined();
+    expect(failed.content).toStartWith('[Architecture] notice unavailable (RH_ARCHCTX_TIMEOUT): ');
+    expect(failed.systemMessage).toBe('Architecture: notice unavailable (RH_ARCHCTX_TIMEOUT); run repo-harness architecture-debt --json.');
     expect(failed.diagnostics!.trim().split('\n')).toHaveLength(1);
     expect(failed.diagnostics).toContain('RH_ARCHCTX_TIMEOUT');
     expect(existsSync(join(root, '.ai/harness/state/agent-notice'))).toBe(false);
@@ -149,5 +155,133 @@ describe('AgentNotice', () => {
     expect(huge.content).toContain('(+1 more: repo-harness architecture-debt --json)');
     expect(huge.content).not.toContain('Run: x');
     expect(renderAgentNotice({ ...report, items: [] })).toBeNull();
+  });
+
+  test('#850: a registry consumer sees the inactive model line and its unowned path without a checkpoint', () => {
+    const root = registryFixture();
+    const options = { env: noticeEnv(root), run: noCheckpoint };
+    const ownership = (scoped: ArchctxProviderOptions) => resolveCapabilityOwnership(root, undefined, scoped);
+    const first = collectAgentNotice(root, ownership, options);
+    expect(first.diagnostics).toBeUndefined();
+    expect(first.content).toBe([
+      `[Architecture] inactive: ${NO_MODEL}. Run: ${STATUS}`,
+      '[ArchitectureDebt] 1 unowned changed path',
+      '- unowned-path packages/new-core/index.ts; no capability owns it. Fix: add an owner in .ai/context/capabilities.json',
+    ].join('\n'));
+    expect(first.systemMessage).toBe([
+      `Architecture: inactive (${NO_MODEL}); run ${STATUS}.`,
+      'Architecture: 1 unowned changed path; add an owner in .ai/context/capabilities.json.',
+    ].join('\n'));
+    expect(collectAgentNotice(root, ownership, options)).toEqual({});
+    fixtureWrite(root, 'packages/new-core/extra.ts', 'export const extra = 1;\n');
+    const second = collectAgentNotice(root, ownership, options);
+    expect(second.content).toStartWith('[ArchitectureDebt] 2 unowned changed paths\n');
+    expect(second.content).toContain('- unowned-path packages/new-core/extra.ts;');
+    expect(second.content).not.toContain('[Architecture]');
+  });
+
+  test('#850: a registry consumer without a diff sees the inactive line once', () => {
+    const root = registryFixture();
+    rmSync(join(root, 'packages'), { recursive: true, force: true });
+    const options = { env: noticeEnv(root), run: noCheckpoint };
+    const ownership = (scoped: ArchctxProviderOptions) => resolveCapabilityOwnership(root, undefined, scoped);
+    expect(collectAgentNotice(root, ownership, options)).toEqual({
+      content: `[Architecture] inactive: ${NO_MODEL}. Run: ${STATUS}`,
+      systemMessage: `Architecture: inactive (${NO_MODEL}); run ${STATUS}.`,
+    });
+    expect(collectAgentNotice(root, ownership, options)).toEqual({});
+    expect(existsSync(join(root, '.ai/harness/state/agent-notice'))).toBe(false);
+  });
+
+  test('#850: a registry-source repository with an adopted model still receives checkpoint debt', () => {
+    const root = fixture();
+    fixtureWrite(root, '.ai/harness/policy.json', JSON.stringify({ context: { capability_source: 'registry' } }));
+    writeNoticeRegistry(root);
+    const notice = collectAgentNotice(root, () => noticeOwnership(root), { env: noticeEnv(root) });
+    expect(notice.content).toStartWith(`[ArchitectureDebt] 1 new in ${NOTICE_CAPABILITY}\n`);
+    expect(notice.content).not.toContain('[Architecture]');
+    expect(notice.diagnostics).toBeUndefined();
+  });
+
+  test('#850: an archcontext repository leaves unowned-path judgment to archctx', () => {
+    const root = fixture();
+    const ownership = { ...noticeOwnership(root), unowned_paths: ['.archcontext/model/nodes/capability.test.module.yaml'] };
+    const notice = collectAgentNotice(root, () => ownership, { env: noticeEnv(root) });
+    expect(notice.content).toStartWith(`[ArchitectureDebt] 1 new in ${NOTICE_CAPABILITY}\n`);
+    expect(notice.content).not.toContain('unowned changed path');
+    expect(notice.systemMessage).not.toContain('unowned changed path');
+  });
+
+  test('#850: an explicitly disabled provider prints no inactive line but keeps unowned paths', () => {
+    const root = registryFixture();
+    fixtureWrite(root, 'home/.repo-harness/config.json', JSON.stringify({ architecture: { projection_provider: 'disabled', projection_apply: 'disabled' } }));
+    const notice = collectAgentNotice(root, scoped => resolveCapabilityOwnership(root, undefined, scoped), { env: noticeEnv(root), run: noCheckpoint });
+    expect(notice.content).toStartWith('[ArchitectureDebt] 1 unowned changed path\n');
+    expect(notice.content).not.toContain('[Architecture]');
+    expect(existsSync(join(root, '.ai/harness/state/agent-notice-status'))).toBe(false);
+  });
+
+  test('#850: missing global configuration and a model adoption refusal are setup states', () => {
+    const root = fixture();
+    const ownership = noticeOwnership(root);
+    rmSync(join(root, 'home/.repo-harness/config.json'));
+    const missing = collectAgentNotice(root, () => ownership, { env: noticeEnv(root), run: noCheckpoint });
+    expect(missing.content).toBe(`[Architecture] inactive: global architecture configuration is missing; run repo-harness update. Run: ${STATUS}`);
+    fixtureWrite(root, 'home/.repo-harness/config.json', JSON.stringify({ architecture: { projection_provider: 'archctx', projection_apply: 'manual' } }));
+    const catalog = ERROR_CATALOG.AC_MODEL_ADOPTION_REQUIRED;
+    const error = { ...catalog, message: 'adopt the model', reasonCode: 'model-missing' };
+    const refused = collectAgentNotice(root, () => ownership, {
+      env: noticeEnv(root),
+      run: () => ({ status: 1, signal: null, stdout: JSON.stringify({ schemaVersion: 'archcontext.envelope/v1', ok: false, requestId: 'checkpoint', error }), stderr: '' }),
+    });
+    expect(refused.content).toBe(`[Architecture] inactive: AC_MODEL_ADOPTION_REQUIRED, action ${catalog.action}. Run: ${STATUS}`);
+    expect(refused.diagnostics).toBeUndefined();
+    expect(existsSync(join(root, '.ai/harness/state/agent-notice'))).toBe(false);
+  });
+
+  test('#850: a notice failure is visible once and does not consume the debt', () => {
+    const root = fixture();
+    const ownership = noticeOwnership(root);
+    const env = noticeEnv(root);
+    const failed = collectAgentNotice(root, () => ownership, { env, run: timedOut });
+    expect(failed.content).toBe('[Architecture] notice unavailable (RH_ARCHCTX_TIMEOUT): architecture notice timed out after 3 s; run repo-harness architecture-debt --json');
+    expect(failed.systemMessage).toBe('Architecture: notice unavailable (RH_ARCHCTX_TIMEOUT); run repo-harness architecture-debt --json.');
+    expect(failed.diagnostics!.trim().split('\n')).toHaveLength(1);
+    expect(existsSync(join(root, '.ai/harness/state/agent-notice'))).toBe(false);
+    const repeated = collectAgentNotice(root, () => ownership, { env, run: timedOut });
+    expect(repeated.content).toBeUndefined();
+    expect(repeated.systemMessage).toBeUndefined();
+    expect(repeated.diagnostics).toContain('RH_ARCHCTX_TIMEOUT');
+    const recovered = collectAgentNotice(root, () => ownership, { env });
+    expect(recovered.content).toStartWith(`[ArchitectureDebt] 1 new in ${NOTICE_CAPABILITY}\n`);
+    expect(recovered.content).not.toContain('[Architecture]');
+    // Recovery ends the failure state, so the same failure prints again.
+    expect(collectAgentNotice(root, () => ownership, { env, run: timedOut }).content).toContain('notice unavailable (RH_ARCHCTX_TIMEOUT)');
+  });
+
+  test('#850: a CodeGraph index that is not ready is a setup state', () => {
+    const root = fixture();
+    const catalog = ERROR_CATALOG.AC_CODE_FACTS_NOT_READY;
+    const error = { ...catalog, message: 'code facts are not ready', reasonCode: 'code-facts-not-ready', action: 'codegraph-index' };
+    const notice = collectAgentNotice(root, () => noticeOwnership(root), {
+      env: noticeEnv(root),
+      run: () => ({ status: 1, signal: null, stdout: JSON.stringify({ schemaVersion: 'archcontext.envelope/v1', ok: false, requestId: 'checkpoint', error }), stderr: '' }),
+    });
+    expect(notice.content).toBe(`[Architecture] inactive: AC_CODE_FACTS_NOT_READY, action codegraph-index. Run: ${STATUS}`);
+    expect(notice.diagnostics).toBeUndefined();
+  });
+
+  test('#850: a checkpoint failure with registry unowned paths does not consume the debt marker', () => {
+    const root = fixture();
+    fixtureWrite(root, '.ai/harness/policy.json', JSON.stringify({ context: { capability_source: 'registry' } }));
+    writeNoticeRegistry(root);
+    const ownership = { ...noticeOwnership(root), unowned_paths: ['packages/new-core/index.ts'] };
+    const env = noticeEnv(root);
+    const failed = collectAgentNotice(root, () => ownership, { env, run: timedOut });
+    expect(failed.content).toBe('[Architecture] notice unavailable (RH_ARCHCTX_TIMEOUT): architecture notice timed out after 3 s; run repo-harness architecture-debt --json');
+    expect(existsSync(join(root, '.ai/harness/state/agent-notice'))).toBe(false);
+    const recovered = collectAgentNotice(root, () => ownership, { env });
+    expect(recovered.content).toStartWith('[ArchitectureDebt] 1 unowned changed path\n');
+    expect(recovered.content).toContain(`[ArchitectureDebt] 1 new in ${NOTICE_CAPABILITY}\n`);
   });
 });
