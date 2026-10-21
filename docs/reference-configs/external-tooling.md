@@ -1048,7 +1048,7 @@ ChangeSet, and runs `repo-harness architecture-projection apply --json` in the
 same branch. `check` and `plan` show the effect without writes. The projected
 `docs/architecture/` files are committed with the change.
 
-`AgentNotice` reads package-local archctx 0.8.1
+`AgentNotice` reads package-local archctx 0.9.0
 `checkpoint --changed-path <path>... --json`. In practice, only citation debt
 (`stale-anchor`) reaches the session. Checkpoint receives only owned changed
 paths. An ambiguous owner stops the ownership resolve before checkpoint runs.
@@ -1064,7 +1064,10 @@ One module selects, formats and dedupes the notice. It emits at most three
 items and 800 UTF-8 bytes, with capability, model field and command on each
 item. Overflow points to `repo-harness architecture-debt --json`. The marker
 `.ai/harness/state/agent-notice` is Git-ignored. It stores SHA-256 of JSON
-`[branch, sorted item ids]`. The producer field is `id`. Checkpoint has no base
+`[branch, sorted item ids, sorted unowned paths]`. Registry repositories also
+get unowned changed paths. Setup states such as a missing
+`.archcontext/manifest.yaml` give one deduplicated `[Architecture] inactive`
+line, and other failures give one `[Architecture] notice unavailable` line. The producer field is `id`. Checkpoint has no base
 classification or severity. "New" in the header means a new notice set.
 The full PR comparison remains the source for introduced debt.
 
@@ -1291,7 +1294,7 @@ repo-harness refactor decide <recommendation-id> accept|defer|reject --reason "<
 and bounded `evidence` of its observation (`kind`, `totalCount`, `truncated`
 and the first items) and the statistics of every affected module (files, lines,
 fan-in, fan-out, cycles, direction violations, unresolved imports). Direction
-violations are filled only when the model declares constraints. archctx 0.8.1
+violations are filled only when the model declares constraints. archctx 0.9.0
 does not measure instability or test files, so they are not shown. A suggestion
 recorded by an earlier scan has `snapshot: "earlier"`, keeps its recorded
 metrics and evidence, and shows no module statistics.

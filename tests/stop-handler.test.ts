@@ -348,13 +348,14 @@ describe('Stop architecture debt notice', () => {
     expect(stop(cwd).stdout).toContain('[ArchitectureDebt]');
   });
 
-  test('an ownership failure drops both lines and preserves recovery', () => {
+  test('an ownership failure shows one failure line and preserves recovery', () => {
     const cwd = noticeFixture();
     fixtureWrite(cwd, '.archcontext/model/nodes/capability.test.module.yaml', '{not json');
     const result = stop(cwd);
     expect(result.exitCode).toBe(0);
-    expect(result.stdout).toBe('');
-    expect(result.systemMessage).toBeUndefined();
+    expect(result.stdout).toStartWith('[Architecture] notice unavailable (error): ');
+    expect(result.stdout).not.toContain('[ArchitectureDebt]');
+    expect(result.systemMessage).toBe('Architecture: notice unavailable (error); run repo-harness architecture-debt --json.');
     expect(result.stderr.trim().split('\n')).toHaveLength(1);
     expect(result.stderr).toContain('architecture notice unavailable');
     expect(existsSync(join(cwd, '.ai/harness/handoff/current.md'))).toBe(true);

@@ -4,11 +4,57 @@ All notable changes to this skill are documented here.
 
 ## Unreleased
 
+## [0.24.0] - 2026-10-21
+
+This minor release includes the archctx 0.9.0 upgrade and the hook and task
+plane changes. It has breaking removals in #834. Run `repo-harness update`
+after the upgrade. For legacy global rules without a recorded language, run
+`repo-harness update --report-language <x>` once.
+
+### Changed
+
+- Upgrade `archctx` and `archctx-contracts` from 0.8.1 to exact 0.9.0.
+  Refresh the clean-room evidence and current version labels. CodeGraph
+  stays at 1.6.2. (#846)
 - Replace owed hook text with one architecture debt notice at SessionStart,
   Claude Stop and Codex UserPromptSubmit. Include worker sessions. Use archctx
   checkpoint for changed owned paths with a 3 s deadline. Share id-based
   dedupe and a three-item, 800-byte limit. Keep Claude human messages and
-  silent Codex Stop. Keep full dependency and flow debt in CI. (#737)
+  silent Codex Stop. Keep full dependency and flow debt in CI. (#837, #737)
+- Retire the task contract, publication and Sprint lifecycle writers. Remove
+  Fleet feedback repair mutations, lease writers and archived acceptance.
+  Keep provider observation, historical readers and worktree deletion guards.
+  Removed CLI commands, MCP tools and JSON fields are breaking changes.
+  Retention removes expired tracked archive records; Git history keeps them.
+  (#834, #773)
+
+### Fixed
+
+- Keep proven absolute launcher targets rooted when child CWD is unknown.
+  This removes false CI test selections from suffix collisions. The replay
+  code median is 225; the target of 200 remains unmet. (#841, #761)
+- Install cancellation handlers before bounded verifier startup. Register
+  child listeners immediately after spawn. Preserve result files and process
+  cleanup for startup SIGINT, SIGTERM and SIGHUP. (#840, #839)
+- Refresh managed global working rules during update. Preserve user sections
+  outside the managed block. Report legacy or unrecorded files that need an
+  explicit report language. (#830, #829)
+- Report owed capabilities on clean main from the last projection boundary.
+  Keep risk inputs separate from historical owed paths. #837 later replaces
+  this in-session owed notice with architecture debt notices. (#825, #803)
+- Fetch the four Waza shared rules from upstream before host writes. Share
+  the upstream source with drift checks. Preserve host edits and track
+  managed copies with install receipts. (#827, #822)
+
+### Documentation
+
+- Assign the remaining 27 unowned paths and clear the last model drift.
+  (#838, #824)
+- Correct remaining architecture citations and selectors. (#836, #824)
+- Add claude-quickstarts as a recommended agent reference. (#835)
+- Reduce architecture model drift on main. (#833, #824)
+- Refresh architecture projection source stamps. (#832, #831)
+- Record the verified 0.23.1 npm and GitHub publication. (#828)
 
 ## [0.23.1] - 2026-10-17
 
