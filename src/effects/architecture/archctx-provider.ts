@@ -750,7 +750,7 @@ function findConsumerRoot(): string {
   }
 }
 
-function capabilitySource(repoRoot: string): ArchitectureProjectionReadinessV1['modelAuthority']['source'] {
+export function capabilitySource(repoRoot: string): ArchitectureProjectionReadinessV1['modelAuthority']['source'] {
   const path = join(repoRoot, '.ai/harness/policy.json');
   if (!existsSync(path)) return 'unadopted';
   const policy = JSON.parse(readFileSync(path, 'utf8')) as { context?: { capability_source?: unknown } };
