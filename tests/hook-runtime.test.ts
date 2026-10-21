@@ -12,6 +12,7 @@ import {
   writeFileSync,
 } from 'fs';
 import { fixtureWrite } from './helpers/module-repository';
+import { registryConsumerFixture } from './helpers/agent-notice';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { resolveCompatibleNodeRuntime } from '../src/effects/architecture/archctx-provider';
@@ -447,6 +448,32 @@ process.exit(child.status ?? 1);
         expect(JSON.parse(session.stdout).systemMessage).toBe(hostName === 'claude' ? HUMAN_DEBT : undefined);
       }
       expect(host(root, 'claude', 'Stop', 'default', { stop_hook_active: false }).stdout).toBe('');
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  }, 60_000);
+
+  test('a registry consumer without code facts or a projection manifest gets one architecture line (#850)', () => {
+    const root = registryConsumerFixture();
+    const INACTIVE = '[Architecture] inactive: registry capability source has no ArchContext model. Run: repo-harness architecture-projection status --json';
+    const architectureLines = /\[Architecture\] inactive|\[ArchitectureDebt\]|Architecture: inactive/;
+    try {
+      // Codex Stop is silent and does not consume the dedupe markers.
+      const codex = host(root, 'codex', 'Stop', 'default', { stop_hook_active: false });
+      expect(codex.status, codex.stderr).toBe(0);
+      expect(codex.stdout).toBe('');
+
+      const session = host(root, 'claude', 'SessionStart', 'default', { session_id: 'consumer-session' });
+      expect(session.status, session.stderr).toBe(0);
+      const systemMessage = (JSON.parse(session.stdout) as { systemMessage?: string }).systemMessage;
+      expect(systemMessage).toContain('Architecture: inactive (');
+      const sessionContext = context(session.stdout, 'SessionStart', systemMessage);
+      expect(sessionContext).toContain(INACTIVE);
+      expect(sessionContext).toMatch(/^\[ArchitectureDebt\] .*unowned changed path/m);
+      expect(sessionContext).toContain('- unowned-path packages/new-core/index.ts;');
+      expect(session.stderr).not.toContain('architecture notice unavailable');
+
+      const stop = host(root, 'claude', 'Stop', 'default', { stop_hook_active: false });
+      expect(stop.status, stop.stderr).toBe(0);
+      expect(stop.stdout).not.toMatch(architectureLines);
     } finally { rmSync(root, { recursive: true, force: true }); }
   }, 60_000);
 });

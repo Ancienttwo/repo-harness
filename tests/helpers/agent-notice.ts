@@ -56,3 +56,38 @@ export function noticeOwnership(root: string) {
 
 export const NOTICE_CAPABILITY = MODULE_ID;
 export const noticeEnv = (root: string) => ({ ...process.env, HOME: join(root, 'home') });
+
+import { mkdtempSync } from 'node:fs';
+
+/**
+ * A new consumer (#850): the registry owns only `src/module/`. There is no
+ * `.archcontext/`, `.codegraph/` or projection manifest. Branch `feature`
+ * commits the unowned path `packages/new-core/index.ts`.
+ */
+export function registryConsumerFixture(): string {
+  const root = mkdtempSync('/tmp/rh-consumer-');
+  fixtureGit(root, ['init', '-q', '-b', 'main']);
+  fixtureGit(root, ['config', 'maintenance.auto', 'false']);
+  fixtureGit(root, ['config', 'gc.auto', '0']);
+  fixtureWrite(root, 'AGENTS.md', 'Consumer rules.\n');
+  fixtureWrite(root, 'CLAUDE.md', 'Consumer rules.\n');
+  fixtureWrite(root, '.ai/harness/workflow-contract.json', '{}\n');
+  fixtureWrite(root, '.ai/harness/policy.json', JSON.stringify({ context: { capability_source: 'registry', capability_registry_file: '.ai/context/capabilities.json' } }));
+  fixtureWrite(root, '.ai/context/capabilities.json', `${JSON.stringify({
+    version: 1,
+    capabilities: [{
+      id: 'consumer-module', domain: 'consumer', name: 'module', prefixes: ['src/module'],
+      contract_files: { agents: 'AGENTS.md', claude: 'CLAUDE.md' },
+      architecture_module: 'docs/architecture/modules/consumer/module.md',
+      workstream_dir: 'tasks/workstreams/consumer/module', lsp_profile: 'typescript-lsp', verification_hints: [],
+    }],
+  })}\n`);
+  fixtureWrite(root, 'src/module/index.ts', 'export const value = 1;\n');
+  fixtureWrite(root, '.gitignore', '.ai/harness/state/\n.ai/harness/runs/\n.ai/harness/handoff/\n.ai/harness/journal/\n.ai/harness/checks/\n.ai/harness/events.jsonl\nhome/\n');
+  fixtureWrite(root, 'home/.repo-harness/config.json', JSON.stringify({ architecture: { projection_provider: 'archctx', projection_apply: 'manual', projection_timeout_ms: 120000 } }));
+  fixtureCommit(root);
+  fixtureGit(root, ['checkout', '-qb', 'feature']);
+  fixtureWrite(root, 'packages/new-core/index.ts', 'export const core = 1;\n');
+  fixtureCommit(root);
+  return root;
+}
