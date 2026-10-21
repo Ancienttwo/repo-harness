@@ -6,7 +6,7 @@ import { ERROR_CATALOG } from 'archctx-contracts';
 import { collectAgentNotice, renderAgentNotice } from '../src/cli/hook/agent-notice';
 import { checkpointArchitectureDebt, type ArchctxProviderOptions } from '../src/effects/architecture/archctx-provider';
 import { resolveCapabilityOwnership } from '../src/effects/state/resolve-effective-state';
-import { agentNoticeFixture, noticeOwnership, noticeEnv, registryNoticeFixture, NOTICE_CAPABILITY } from './helpers/agent-notice';
+import { agentNoticeFixture, noticeOwnership, noticeEnv, registryNoticeFixture, writeNoticeRegistry, NOTICE_CAPABILITY } from './helpers/agent-notice';
 import { fixtureCommit, fixtureGit, fixtureWrite } from './helpers/module-repository';
 
 const roots: string[] = [];
@@ -196,6 +196,7 @@ describe('AgentNotice', () => {
   test('#850: a registry-source repository with an adopted model still receives checkpoint debt', () => {
     const root = fixture();
     fixtureWrite(root, '.ai/harness/policy.json', JSON.stringify({ context: { capability_source: 'registry' } }));
+    writeNoticeRegistry(root);
     const notice = collectAgentNotice(root, () => noticeOwnership(root), { env: noticeEnv(root) });
     expect(notice.content).toStartWith(`[ArchitectureDebt] 1 new in ${NOTICE_CAPABILITY}\n`);
     expect(notice.content).not.toContain('[Architecture]');
@@ -273,6 +274,7 @@ describe('AgentNotice', () => {
   test('#850: a checkpoint failure with registry unowned paths does not consume the debt marker', () => {
     const root = fixture();
     fixtureWrite(root, '.ai/harness/policy.json', JSON.stringify({ context: { capability_source: 'registry' } }));
+    writeNoticeRegistry(root);
     const ownership = { ...noticeOwnership(root), unowned_paths: ['packages/new-core/index.ts'] };
     const env = noticeEnv(root);
     const failed = collectAgentNotice(root, () => ownership, { env, run: timedOut });

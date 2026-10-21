@@ -476,4 +476,19 @@ process.exit(child.status ?? 1);
       expect(stop.stdout).not.toMatch(architectureLines);
     } finally { rmSync(root, { recursive: true, force: true }); }
   }, 60_000);
+
+  test('a clean registry consumer still gets the inactive line at SessionStart (#850)', () => {
+    const root = registryNoticeFixture();
+    try {
+      // Effective State leaves capability ownership null on a clean tree.
+      rmSync(join(root, 'packages'), { recursive: true, force: true });
+      const session = host(root, 'claude', 'SessionStart', 'default', { session_id: 'clean-consumer-session' });
+      expect(session.status, session.stderr).toBe(0);
+      const systemMessage = (JSON.parse(session.stdout) as { systemMessage?: string }).systemMessage;
+      expect(systemMessage).toContain('Architecture: inactive (');
+      const sessionContext = context(session.stdout, 'SessionStart', systemMessage);
+      expect(sessionContext).toContain('[Architecture] inactive: no ArchContext model (.archcontext/manifest.yaml is missing).');
+      expect(sessionContext).not.toContain('[ArchitectureDebt]');
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  }, 60_000);
 });

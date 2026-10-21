@@ -229,8 +229,8 @@ refresh does not renew an unchanged set. Hooks never project or apply architectu
 
 Registry repositories also get `[ArchitectureDebt] N unowned changed path(s)`
 from the registry ownership answer, with no checkpoint call. Under archcontext,
-archctx keeps the unowned judgment, because it counts only paths inside declared
-source roots. A repository without a declared capability authority gets no
+the unowned judgment stays with archctx, because it counts only paths inside
+declared source roots. A repository without a declared capability authority gets no
 architecture text.
 
 A setup state gives one `[Architecture] inactive: <cause>` line and one human

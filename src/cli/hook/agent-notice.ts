@@ -7,6 +7,7 @@ import type { CapabilityOwnership } from '../../core/state/types';
 import { ARCHCONTEXT_MANIFEST, ArchctxClientError, capabilitySource, checkpointArchitectureDebt, type ArchctxProviderOptions } from '../../effects/architecture/archctx-provider';
 import { readGlobalArchitectureConfiguration } from '../../effects/architecture/projection-config';
 import { assertSafeRepoWritePath, writeHookStateFile } from '../../effects/hook-state-file';
+import { loadRegistryAuthority, readWorkflowPolicy } from '../../effects/state/resolve-effective-state';
 import { boundedHookDiagnostic } from './hook-protocol';
 
 const MARKER = '.ai/harness/state/agent-notice';
@@ -131,24 +132,35 @@ function readiness(repoRoot: string, env: NodeJS.ProcessEnv | undefined): Status
   return { kind: 'active' };
 }
 
+/** A registry repository declares no capability authority when the registry authority reports it absent. */
+function registryAbsent(repoRoot: string): boolean {
+  const read = (path: string): string | null => {
+    try { return readFileSync(join(repoRoot, path), 'utf8'); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null; throw error; }
+  };
+  return loadRegistryAuthority(repoRoot, readWorkflowPolicy(repoRoot), read).status === 'absent';
+}
+
 function observe(repoRoot: string, ownership: (options: ArchctxProviderOptions) => CapabilityOwnership | null, options: ArchctxProviderOptions): Observation | null {
   let source: ReturnType<typeof capabilitySource>;
   try { source = capabilitySource(repoRoot); }
   catch (error) { return { status: statusOf(error), unowned: null, debt: null }; }
   if (source === 'unadopted') return null;
+  // No declared capability authority: the architecture loop does not apply (#737).
+  // Ownership cannot prove this, because Effective State leaves it null on a clean tree.
+  try { if (source === 'registry' && registryAbsent(repoRoot)) return null; }
+  catch (error) { return { status: statusOf(error), unowned: null, debt: null }; }
   const now = options.nowMs ?? Date.now;
   let owned: CapabilityOwnership | null;
   // Ownership and checkpoint each get one bounded call. SessionStart reuses ownership.
   try { owned = ownership({ ...options, deadlineMs: Math.min(options.deadlineMs ?? Infinity, now() + 3_000) }); }
   catch (error) { return { status: statusOf(error), unowned: null, debt: null }; }
-  // No declared capability authority: the architecture loop does not apply (#737).
-  if (!owned) return null;
   let unowned: Observation['unowned'] = null;
   try {
     // Only the registry is its own unowned-path authority. Under archcontext,
     // archctx counts a path as unowned only inside declared source roots, so
     // the broader resolver list would give the same fact a second meaning.
-    const paths = source === 'registry' ? [...owned.unowned_paths].sort() : [];
+    const paths = source === 'registry' ? [...(owned?.unowned_paths ?? [])].sort() : [];
     const ownerBlock = unownedBlock(paths);
     unowned = ownerBlock && { paths, block: ownerBlock };
     const status = readiness(repoRoot, options.env);
