@@ -305,6 +305,13 @@ describe('AgentNotice', () => {
       '[ArchitectureDebt] 1 unowned changed path',
       '- unowned-path packages/new-core/index.ts; no capability owns it. Fix: add an owner in .ai/context/capabilities.json',
     ].join('\n'));
+    // On a branch ahead of main, committed unowned paths stay in the notice.
+    fixtureWrite(root, 'packages/new-core/extra.ts', 'export const extra = 1;\n');
+    fixtureCommit(root);
+    const ahead = collectAgentNotice(root, ownership, options).content!;
+    expect(ahead).toStartWith('[ArchitectureDebt] 2 unowned changed paths\n');
+    expect(ahead).toContain('- unowned-path packages/new-core/extra.ts;');
+    expect(ahead).not.toContain('packages/old-core');
   });
 
   test('#852: a state directory that Git does not ignore gives a visible line at SessionStart only', () => {
@@ -323,5 +330,41 @@ describe('AgentNotice', () => {
     }
     expect(existsSync(join(root, '.ai/harness/state/agent-notice-status'))).toBe(false);
     expect(existsSync(join(root, '.ai/harness/state/agent-notice'))).toBe(false);
+  });
+
+  test('#855 review: SessionStart checks the ignore rule even when it writes no marker', () => {
+    // Markers that are already current. The rule lives in .git/info/exclude, so
+    // removing it after the first delivery changes no tracked path and no notice key.
+    const registry = registryFixture();
+    unignoreNoticeState(registry);
+    fixtureWrite(registry, '.git/info/exclude', '.ai/harness/state/\n');
+    const options = { env: noticeEnv(registry), run: noCheckpoint };
+    const ownership = (scoped: ArchctxProviderOptions) => resolveCapabilityOwnership(registry, undefined, scoped);
+    expect(collectAgentNotice(registry, ownership, options, 'session-start').content).toStartWith('[Architecture] inactive:');
+    fixtureWrite(registry, '.git/info/exclude', '');
+    expect(collectAgentNotice(registry, ownership, options, 'session-start')).toEqual({ content: UNIGNORED, systemMessage: UNIGNORED_MESSAGE });
+    expect(collectAgentNotice(registry, ownership, options)).toEqual({});
+    // An active loop with no debt and no marker.
+    const active = fixture();
+    fixtureCommit(active);
+    fixtureGit(active, ['branch', '-f', 'main', 'HEAD']);
+    unignoreNoticeState(active);
+    const quiet = { env: noticeEnv(active), run: noCheckpoint };
+    expect(collectAgentNotice(active, () => noticeOwnership(active), quiet)).toEqual({});
+    expect(collectAgentNotice(active, () => noticeOwnership(active), quiet, 'session-start')).toEqual({ content: UNIGNORED, systemMessage: UNIGNORED_MESSAGE });
+  });
+
+  test('#855 review: a failed unowned filter keeps the setup state and reports on stderr only', () => {
+    const root = registryFixture();
+    const broken = () => ({ review_base: 'refs/heads/absent', capability_ids: [], capabilities: [], unowned_paths: ['packages/new-core/index.ts'] });
+    const inactive = collectAgentNotice(root, broken, { env: noticeEnv(root), run: noCheckpoint });
+    expect(inactive.content).toBe(`[Architecture] inactive: ${NO_MODEL}. Run: ${STATUS}`);
+    expect(inactive.diagnostics).toContain('refs/heads/absent');
+    expect(existsSync(join(root, '.ai/harness/state/agent-notice'))).toBe(false);
+    fixtureWrite(root, 'home/.repo-harness/config.json', JSON.stringify({ architecture: { projection_provider: 'disabled', projection_apply: 'disabled' } }));
+    const disabled = collectAgentNotice(root, broken, { env: noticeEnv(root), run: noCheckpoint });
+    expect(disabled.content).toBeUndefined();
+    expect(disabled.systemMessage).toBeUndefined();
+    expect(disabled.diagnostics).toContain('refs/heads/absent');
   });
 });

@@ -285,19 +285,22 @@ runs), a missing global architecture configuration, and archctx setup errors
 such as `AC_MODEL_ADOPTION_REQUIRED` or `AC_CODE_FACTS_NOT_READY`. An
 explicit `projection_provider=disabled` gives no line. Another failure gives one
 `[Architecture] notice unavailable (<code>)` line and keeps the one-line stderr
-diagnostic at exit 0. The Git-ignored marker `.ai/harness/state/agent-notice-status`
+diagnostic at exit 0. A failed unowned-path filter in a setup state keeps the
+setup state, and only stderr gets the error. The Git-ignored marker `.ai/harness/state/agent-notice-status`
 dedupes these lines: once per cause, and once per branch and code for a failure.
 A working notice records an active key, so a returning cause prints again. A
 failure never writes the debt marker. A marker that cannot be written drops only
 its own text and adds to the stderr diagnostic.
 
 When Git does not ignore `.ai/harness/state/`, no marker can record a delivery.
-Each SessionStart then gives one `[Architecture] notice unavailable:
-.ai/harness/state/ is not Git-ignored` line and one human `systemMessage`.
-Claude Stop and Codex UserPromptSubmit keep only the stderr diagnostic. Without
-a marker, the line would repeat at each turn, and each Claude Stop line starts
-one more turn. Add `.ai/harness/state/` to `.gitignore`; the `repo-harness init`
-ignore block has it.
+SessionStart checks both markers in each session, also when it writes none. It
+then gives one `[Architecture] notice unavailable: .ai/harness/state/ is not
+Git-ignored` line and one human `systemMessage`. This line takes the place of
+the notice text, because no marker can deduplicate that text. Claude Stop and
+Codex UserPromptSubmit keep only the stderr diagnostic of a failed marker write.
+Without a marker, the line would repeat at each turn, and each Claude Stop line
+starts one more turn. Add `.ai/harness/state/` to `.gitignore`; the
+`repo-harness init` ignore block has it.
 
 | Point | Hosts | When |
 | --- | --- | --- |
