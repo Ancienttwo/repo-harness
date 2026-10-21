@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync, mkdirSync, symlinkSync } from 'fs';
 import { spawnSync } from 'child_process';
-import { join } from 'path';
+import { dirname, join } from 'path';
 import { tmpdir } from 'os';
 import { runStopHandler as runStopHandlerRuntime, type StopProjectionTarget } from '../src/cli/hook/stop-handler';
+import { runMutationGuard } from '../src/cli/hook/mutation-guard';
 import { agentNoticeFixture, noticeEnv, NOTICE_CAPABILITY } from './helpers/agent-notice';
 import { fixtureWrite, fixtureCommit } from './helpers/module-repository';
 import { hookIdentity } from './helpers/hook-identity';
@@ -383,5 +384,106 @@ describe('Stop observes workflow gaps without permission gates', () => {
     expect(existsSync(join(cwd, '.ai/harness/state/architecture-drift-cursor.json'))).toBe(false);
     expect(existsSync(join(cwd, '.ai/harness/runs/unplanned-implementation.jsonl'))).toBe(false);
     expect(existsSync(join(cwd, '.ai/harness/capability-context/requests.jsonl'))).toBe(false);
+  });
+});
+
+describe('Stop protected path report (#851)', () => {
+  const STATE = '.ai/harness/state/protected-paths.json';
+
+  function write(cwd: string, path: string, content: string): void {
+    mkdirSync(dirname(join(cwd, path)), { recursive: true });
+    writeFileSync(join(cwd, path), content);
+  }
+
+  function stop(cwd: string, host: 'claude' | 'codex' = 'claude') {
+    return runStopHandler({ collector: collector(cwd), identity: hookIdentity({ host }) });
+  }
+
+  /** A repository with existing private state; the first Stop records it silently. */
+  function baselined(host: 'claude' | 'codex' = 'claude'): string {
+    const { cwd } = gitFixture();
+    write(cwd, '_ops/env/a.env', 'A=1\n');
+    write(cwd, '_ops/env/b.env', 'B=1\n');
+    write(cwd, '_ref/upstream/README.md', '# upstream\n');
+    expect(stop(cwd, host)).toEqual({ exitCode: 0, stdout: '', stderr: '' });
+    expect(existsSync(join(cwd, STATE))).toBe(true);
+    return cwd;
+  }
+
+  test('a Bash write, a delete and a new file under _ops/ or _ref/ are reported', () => {
+    const cwd = baselined();
+    write(cwd, '_ops/env/a.env', 'A=changed-by-bash\n');
+    rmSync(join(cwd, '_ops/env/b.env'));
+    write(cwd, '_ref/upstream/notes.md', 'new\n');
+
+    const result = stop(cwd);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(result.stdout).toContain('[ProtectedPathChange] 3 paths under _ops/ or _ref/ changed since the last Stop.');
+    expect(result.stdout).toContain('- modified _ops/env/a.env');
+    expect(result.stdout).toContain('- deleted _ops/env/b.env');
+    expect(result.stdout).toContain('- added _ref/upstream/notes.md');
+    expect(Buffer.byteLength(result.stdout)).toBeLessThanOrEqual(800);
+    expect(result.systemMessage).toStartWith('Protected paths: 3 changes under _ops/ or _ref/ since the last Stop');
+  });
+
+  test('an edit the guard allows and an edit the guard denies produce no report', () => {
+    const cwd = baselined();
+    const identity = hookIdentity();
+    const allowed = runMutationGuard({ repoRoot: cwd, payload: { tool_input: { file_path: 'src/x.ts' } }, identity });
+    expect(allowed.exitCode).toBe(0);
+    write(cwd, 'src/x.ts', 'export const x = 1;\n');
+    const denied = runMutationGuard({ repoRoot: cwd, payload: { tool_input: { file_path: '_ops/env/a.env' } }, identity });
+    expect(denied.exitCode).toBe(2);
+
+    const result = stop(cwd);
+
+    expect(result).toEqual({ exitCode: 0, stdout: '', stderr: '' });
+  });
+
+  test('the same path set on the same branch is reported once', () => {
+    const cwd = baselined();
+    write(cwd, '_ops/logs/run.log', 'first\n');
+    expect(stop(cwd).stdout).toContain('- added _ops/logs/run.log');
+
+    write(cwd, '_ops/logs/run.log', 'second run, longer\n');
+    expect(stop(cwd)).toEqual({ exitCode: 0, stdout: '', stderr: '' });
+    expect(stop(cwd)).toEqual({ exitCode: 0, stdout: '', stderr: '' });
+
+    write(cwd, '_ops/logs/other.log', 'other\n');
+    expect(stop(cwd).stdout).toContain('- added _ops/logs/other.log');
+  });
+
+  test('Codex Stop writes the report as one stderr line and no stdout', () => {
+    const cwd = baselined('codex');
+    write(cwd, '_ops/env/a.env', 'A=changed-by-bash\n');
+
+    const result = stop(cwd, 'codex');
+
+    expect(result.stdout).toBe('');
+    expect(result.systemMessage).toBeUndefined();
+    expect(result.stderr.trimEnd().split('\n')).toHaveLength(1);
+    expect(result.stderr).toContain('Protected paths: 1 change under _ops/ or _ref/ since the last Stop (_ops/env/a.env)');
+  });
+
+  test('a state path that Git does not ignore writes no state and one diagnostic', () => {
+    const { cwd } = gitFixture();
+    writeFileSync(join(cwd, '.gitignore'), '.ai/harness/handoff/\n');
+    write(cwd, '_ops/env/a.env', 'A=1\n');
+
+    const result = stop(cwd);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toBe('');
+    expect(result.stderr.trimEnd().split('\n')).toHaveLength(1);
+    expect(result.stderr).toContain('protected path check unavailable');
+    expect(existsSync(join(cwd, STATE))).toBe(false);
+  });
+
+  test('a repository without _ops/ or _ref/ writes no state', () => {
+    const { cwd } = gitFixture();
+    expect(stop(cwd)).toEqual({ exitCode: 0, stdout: '', stderr: '' });
+    expect(existsSync(join(cwd, STATE))).toBe(false);
   });
 });

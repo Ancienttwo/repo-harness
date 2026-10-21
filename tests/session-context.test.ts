@@ -23,6 +23,7 @@ import { hookIdentity } from './helpers/hook-identity';
 const HOOK_ENTRY = join(import.meta.dir, "../src/cli/hook-entry.ts");
 const RESUME = ".ai/harness/handoff/resume.md";
 const SPRINT = "plans/sprints/fixture.sprint.md";
+const EDIT_GUARD_SCOPE = "[EditGuardScope] The edit guard checks Edit, Write and apply_patch only. Bash writes skip it. Use the edit tools to change repository files. Use Bash to run commands.";
 
 interface Fixture {
   readonly root: string;
@@ -92,6 +93,29 @@ function stateReferences(context: string): Record<string, string | null> {
 }
 
 describe("SessionStart host envelope", () => {
+  test("both hosts state the edit guard scope right after the state section", () => {
+    const f = fixture("session-edit-guard-scope");
+    try {
+      for (const host of ["claude", "codex"] as const) {
+        expect(sessionStartContext(f, host).split("\n")[1]).toBe(EDIT_GUARD_SCOPE);
+      }
+    } finally { f.cleanup(); }
+  }, 30_000);
+
+  test("an unavailable state still states the edit guard scope as a mandatory section", () => {
+    const f = fixture("session-edit-guard-scope-unavailable");
+    try {
+      const collector = createStateInputCollector({ repoRoot: f.root, resolveEffectiveState: () => ({
+        ok: false, reason_code: "state_resolution_failed", error_hash: `sha256:${"c".repeat(64)}`, message: "boom",
+      }) });
+      const result = getHandlerForRoute(getRoute("SessionStart", "default")!).run({
+        event: "SessionStart", repoRoot: f.root, payload: {}, identity: hookIdentity(),
+        env: { ...process.env, HOME: f.home }, now: new Date(), collector,
+      });
+      expect(result.sessionContexts!.find(({ id }) => id === "edit-guard-scope")).toMatchObject({ mandatory: true, content: EDIT_GUARD_SCOPE });
+    } finally { f.cleanup(); }
+  });
+
   test("a resume file adds no resume text; the state section points to it", () => {
     const f = fixture("session-resume-only");
     try {
