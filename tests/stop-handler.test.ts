@@ -495,8 +495,19 @@ describe('Stop protected path report (#851)', () => {
     expect(existsSync(join(cwd, STATE))).toBe(false);
   });
 
-  test('a repository without _ops/ or _ref/ writes no state', () => {
+  test('the first file under _ops/ after a Stop with no _ops/ or _ref/ is reported', () => {
     const { cwd } = gitFixture();
+    expect(stop(cwd)).toEqual({ exitCode: 0, stdout: '', stderr: '' });
+    expect(JSON.parse(readFileSync(join(cwd, STATE), 'utf8'))).toEqual({ entries: {}, notified: null });
+
+    write(cwd, '_ops/env/a.env', 'A=1\n');
+
+    expect(stop(cwd).stdout).toContain('- added _ops/env/a.env');
+  });
+
+  test('an empty baseline on a state path that Git does not ignore stays silent and writes no state', () => {
+    const { cwd } = gitFixture();
+    writeFileSync(join(cwd, '.gitignore'), '.ai/harness/handoff/\n');
     expect(stop(cwd)).toEqual({ exitCode: 0, stdout: '', stderr: '' });
     expect(existsSync(join(cwd, STATE))).toBe(false);
   });

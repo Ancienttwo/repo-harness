@@ -76,11 +76,28 @@ function currentBranch(repoRoot: string, env: NodeJS.ProcessEnv): string {
   }).trim();
 }
 
+function stateIgnored(repoRoot: string, env: NodeJS.ProcessEnv): boolean {
+  try {
+    execFileSync('git', ['-C', repoRoot, 'check-ignore', '-q', '--', STATE], { env, stdio: 'ignore', timeout: 3_000 });
+    return true;
+  } catch { return false; }
+}
+
 /** The state file holds private path names, so it must be Git-ignored before the first write. */
 function writeState(repoRoot: string, state: ProtectedPathState, env: NodeJS.ProcessEnv): void {
   assertSafeRepoWritePath(repoRoot, join(repoRoot, STATE));
-  execFileSync('git', ['-C', repoRoot, 'check-ignore', '-q', '--', STATE], { env, stdio: 'ignore', timeout: 3_000 });
+  if (!stateIgnored(repoRoot, env)) throw new Error(`${STATE} is not Git-ignored`);
   writeHookStateFile(repoRoot, join(repoRoot, STATE), `${JSON.stringify(state)}\n`);
+}
+
+/**
+ * An empty baseline is still a baseline: without it, the first file that Bash
+ * creates under _ops/ would become the silent initial manifest. It holds no
+ * private names, so a state path that Git does not ignore skips it silently.
+ */
+function recordEmptyBaseline(repoRoot: string, env: NodeJS.ProcessEnv): ProtectedPathNotice {
+  if (stateIgnored(repoRoot, env)) writeState(repoRoot, { entries: {}, notified: null }, env);
+  return {};
 }
 
 /** Up to five rows and an exact overflow count inside 800 bytes. The header and footer are never cut. */
@@ -108,15 +125,17 @@ function render(changes: readonly Change[]): Required<Pick<ProtectedPathNotice, 
 
 /**
  * Compare `_ops/` and `_ref/` with the manifest of the previous Stop. The first
- * Stop records the baseline silently. One path set is reported once per branch.
- * Report only: a failure writes no state and returns one diagnostic.
+ * Stop records the baseline silently, also when both directories are absent.
+ * One path set is reported once per branch. An unchanged manifest is not
+ * rewritten. Report only: a failure writes no state and returns one diagnostic.
  */
 export function collectProtectedPathNotice(repoRoot: string, env: NodeJS.ProcessEnv): ProtectedPathNotice {
   try {
     const current = scan(repoRoot);
     const previous = readState(repoRoot);
-    if (!previous && Object.keys(current).length === 0) return {};
+    if (!previous && Object.keys(current).length === 0) return recordEmptyBaseline(repoRoot, env);
     const changes = previous ? compare(previous.entries, current) : [];
+    if (previous && changes.length === 0) return {};
     const key = changes.length === 0 ? null
       : createHash('sha256').update(JSON.stringify([currentBranch(repoRoot, env), changes.map(change => change.path)])).digest('hex');
     const report = key !== null && key !== previous?.notified;

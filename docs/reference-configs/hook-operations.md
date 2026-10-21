@@ -186,7 +186,10 @@ Bash, a script or the person. The report cannot tell which one. It does not bloc
   ignore gets no write and one stderr diagnostic.
 - Stop compares the walk with the manifest of the previous Stop, and reports
   added, modified and deleted paths. The first Stop records the baseline and
-  reports nothing. A repository without `_ops/` and `_ref/` gets no state file.
+  reports nothing. When both directories are absent, the baseline is an empty
+  manifest, so the first file that Bash creates there is reported. An empty
+  baseline on a state path that Git does not ignore is skipped without a
+  diagnostic. An unchanged manifest is not rewritten.
 - The dedupe key is SHA-256 of JSON `[branch, sorted changed paths]`. Stop keeps
   only the last reported key. The same path set on the same branch is not
   reported again until a different path set is reported, also when a script
