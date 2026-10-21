@@ -1064,7 +1064,10 @@ One module selects, formats and dedupes the notice. It emits at most three
 items and 800 UTF-8 bytes, with capability, model field and command on each
 item. Overflow points to `repo-harness architecture-debt --json`. The marker
 `.ai/harness/state/agent-notice` is Git-ignored. It stores SHA-256 of JSON
-`[branch, sorted item ids]`. The producer field is `id`. Checkpoint has no base
+`[branch, sorted item ids, sorted unowned paths]`. Registry repositories also
+get unowned changed paths. Setup states such as a missing
+`.archcontext/manifest.yaml` give one deduplicated `[Architecture] inactive`
+line, and other failures give one `[Architecture] notice unavailable` line. The producer field is `id`. Checkpoint has no base
 classification or severity. "New" in the header means a new notice set.
 The full PR comparison remains the source for introduced debt.
 

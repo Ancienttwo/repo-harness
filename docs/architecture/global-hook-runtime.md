@@ -111,13 +111,17 @@ receives only owned changed paths. An ambiguous owner stops the ownership
 resolve before checkpoint runs. Dependency and flow debt remain in CI.
 Checkpoint has no introduced/existing or severity classification.
 The header's "new" means a new id set for delivery. The key is SHA-256 of JSON
-`[branch, sorted item ids]`, using the producer's `id` field. A manifest refresh
+`[branch, sorted item ids, sorted unowned paths]`, using the producer's `id` field.
+Registry repositories also get unowned changed paths from registry ownership.
+Setup states and other failures use the separate ignored marker
+`.ai/harness/state/agent-notice-status`; see the hook operations reference. A manifest refresh
 does not renew the set. All delivery points share `.ai/harness/state/agent-notice`.
 
 The model text has at most three items and 800 UTF-8 bytes. The SessionStart
 section is mandatory, so a budget cut cannot consume an unseen notice. Each item gives a
 capability, model field and command. Overflow gives a count and the full debt
-command. Failure emits one stderr diagnostic at exit 0 and no notice. Shared
+command. A failure emits one stderr diagnostic at exit 0 and one deduplicated
+`[Architecture]` line. Shared
 hook state writes reject symlink paths and replace files atomically.
 
 ## Telemetry contract
