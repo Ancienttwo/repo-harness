@@ -1,9 +1,9 @@
 # Plan: Bash 写入绕过 edit guard 的限制说明和 Stop 事后检查（#851）
 
-> **Status**: DRAFT。等 owner 批准。批准前不写代码。
+> **Status**: APPROVED（20261022）。owner 选定：测试 2 用 2a；基线用选项 A（Stop→Stop 清单）；Codex 运行检查，只写 stderr；噪声按 1.3 处理。
 > **Created**: 20261021-2117
 > **Slug**: bash-write-limit-851
-> **Baseline**: `origin/main@a6826bc7a`（0.24.0）
+> **Baseline**: `origin/main@2ca49d258`（0.24.0 之后，含 #852）
 > **Branch**: `fix/851-bash-write-limit`
 > **Refs**: #851（方向 A 和 C）。不做 B（Bash 预过滤）和 D（git 层拦截）。#850 不在范围内。相关：#678、#692、#764、#766、#737/#837。
 > **Rollback Surface**: `git revert <squash-commit>`。新增的状态文件在被忽略的 `.ai/harness/state/` 下，删掉即可。
@@ -87,7 +87,7 @@ AstroZi 的 `_ops/` 下有 `logs/`、`artifacts/`、`scratch/`、`state/`。agen
 - 遍历：`_ops/`、`_ref/`。lstat，不跟随符号链接，只记录非目录项。上限 5,000 项。超过上限：不比较、不写清单、stderr 一行诊断。
 - 状态文件：`.ai/harness/state/protected-paths.json`，内容 `{ entries: {path: [size, mtimeMs]}, notified: <key> }`。写前用 `git check-ignore` 确认被忽略（同 agent-notice）。用 `writeHookStateFile` 原子替换。
 - 比较：新增 / 删除 / size 或 mtimeMs 变化 → 改动路径集合。
-- 去重：key = `sha256(JSON.stringify([branch, sortedChangedPaths]))`。branch 来自 `git symbolic-ref --short -q HEAD`，detached 时用 `HEAD`。key 等于上次的 `notified` 就不报。每次 Stop 都更新清单。
+- 去重：key = `sha256(JSON.stringify([branch, sortedChangedPaths]))`。branch 来自 `git rev-parse --abbrev-ref HEAD`（与 agent-notice 相同），detached 时为 `HEAD`。key 等于上次的 `notified` 就不报。每次 Stop 都更新清单。
 - 首次（无状态文件）：只写清单，不报。
 - 失败：任何 I/O 或 git 失败 → 不报、不写、stderr 一行诊断，exit 0。Stop 绝不 exit 2。
 - `stop_hook_active` 为 true 时跳过（沿用现有逻辑）。
@@ -118,8 +118,9 @@ AstroZi 的 `_ops/` 下有 `logs/`、`artifacts/`、`scratch/`、`state/`。agen
 SessionStart：扩展 `tests/session-context.test.ts`，断言 `edit-guard-scope` 段存在且 mandatory，状态不可用时也存在。
 
 需要改的既有断言（逐条在 PR 里说明）：
-- `tests/session-context.test.ts:150`、`:215` 断言了完整段列表，加入新段后要更新期望值。
-- `tests/fixtures/session-start/state-authority-baseline.json` 若包含完整 SessionStart 输出，要更新。
+- 新段由 `runSessionContext` 追加，不进 `buildSessionStartSections`，所以 `:215` 和 provider 列表断言不变。
+- 端到端断言（只有状态一行、provider 失败行的位置、不可用状态只有一行）要加上新的一行。
+- `tests/fixtures/session-start/state-authority-baseline.json` 的 context、output_bytes 和 estimated_tokens 要更新；测试只解析第一行 JSON。
 - 现有 Stop 测试在全新 fixture 上断言 `{exitCode:0, stdout:'', stderr:''}`。首次 Stop 静默建基线，这些断言不需要改。
 
 ## 5. 验证
