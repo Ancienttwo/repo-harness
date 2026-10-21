@@ -2482,6 +2482,25 @@ if [[ -n "$output" ]]; then cat "$source" > "$output"; else cat "$source"; fi
     }
   }
 
+  test.each(['both', 'codex'] as const)('refresh repairs stale receipts for %s without claiming unselected files', (target) => {
+    withRules(({ upstream, env, paths, run }) => {
+      // Model an interrupted refresh: rule writes finished, receipt persistence did not.
+      for (const path of paths) writeFileSync(path, readFileSync(join(upstream, path.split('/').at(-1)!)));
+      const selected = paths.filter(path => target === 'both' || !path.includes('/.claude/'));
+      const unselectedBefore = readInstalledProfile(env)!.ownership_manifest.filter(receipt => !selected.includes(receipt.path));
+      expect(readInstalledProfile(env)!.ownership_manifest.some(receipt => !managedInstallSurfaceIsCurrent(receipt))).toBe(true);
+      expect(run(true, target).exitCode).toBe(0);
+      for (const receipt of readInstalledProfile(env)!.ownership_manifest.filter(receipt => selected.includes(receipt.path))) {
+        expect(managedInstallSurfaceIsCurrent(receipt)).toBe(true);
+      }
+      expect(readInstalledProfile(env)!.ownership_manifest.filter(receipt => !selected.includes(receipt.path))).toEqual(unselectedBefore);
+      writeFileSync(join(upstream, 'english.md'), '# next English\n');
+      expect(run(true, target).exitCode).toBe(0);
+      for (const path of selected.filter(path => path.endsWith('/english.md'))) expect(readFileSync(path, 'utf8')).toBe('# next English\n');
+      expect(readInstalledProfile(env)!.ownership_manifest.filter(receipt => !selected.includes(receipt.path))).toEqual(unselectedBefore);
+    });
+  });
+
   test('refreshes both hosts and keeps ownership current for the next upstream revision', () => {
     withRules(({ home, upstream, env, paths, run }) => {
       expect(run().exitCode).toBe(0);
