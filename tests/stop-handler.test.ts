@@ -481,6 +481,20 @@ describe('Stop protected path report (#851)', () => {
     expect(existsSync(join(cwd, STATE))).toBe(false);
   });
 
+  test('more than 5,000 entries under _ops/ and _ref/ writes no state and one diagnostic', () => {
+    const { cwd } = gitFixture();
+    mkdirSync(join(cwd, '_ref/clone'), { recursive: true });
+    for (let index = 0; index < 5_001; index += 1) writeFileSync(join(cwd, '_ref/clone', `f${index}`), '');
+
+    const result = stop(cwd);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toBe('');
+    expect(result.stderr.trimEnd().split('\n')).toHaveLength(1);
+    expect(result.stderr).toContain('more than 5000 entries under _ops/ and _ref/');
+    expect(existsSync(join(cwd, STATE))).toBe(false);
+  });
+
   test('a repository without _ops/ or _ref/ writes no state', () => {
     const { cwd } = gitFixture();
     expect(stop(cwd)).toEqual({ exitCode: 0, stdout: '', stderr: '' });

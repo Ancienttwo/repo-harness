@@ -187,9 +187,11 @@ Bash, a script or the person. The report cannot tell which one. It does not bloc
 - Stop compares the walk with the manifest of the previous Stop, and reports
   added, modified and deleted paths. The first Stop records the baseline and
   reports nothing. A repository without `_ops/` and `_ref/` gets no state file.
-- The dedupe key is SHA-256 of JSON `[branch, sorted changed paths]`. The same
-  path set on the same branch is reported once, also when a script writes the
-  same log again.
+- The dedupe key is SHA-256 of JSON `[branch, sorted changed paths]`. Stop keeps
+  only the last reported key. The same path set on the same branch is not
+  reported again until a different path set is reported, also when a script
+  writes the same log again. The key has no change kind, so a delete that
+  follows a reported change of the same path is not reported.
 - More than 5,000 entries, or an I/O or Git failure, gives no report, no state
   write and one stderr diagnostic at exit 0.
 - Claude gets one `[ProtectedPathChange]` block in `additionalContext` (at most
