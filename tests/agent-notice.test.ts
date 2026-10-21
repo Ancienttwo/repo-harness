@@ -202,6 +202,15 @@ describe('AgentNotice', () => {
     expect(notice.diagnostics).toBeUndefined();
   });
 
+  test('#850: an archcontext repository leaves unowned-path judgment to archctx', () => {
+    const root = fixture();
+    const ownership = { ...noticeOwnership(root), unowned_paths: ['.archcontext/model/nodes/capability.test.module.yaml'] };
+    const notice = collectAgentNotice(root, () => ownership, { env: noticeEnv(root) });
+    expect(notice.content).toStartWith(`[ArchitectureDebt] 1 new in ${NOTICE_CAPABILITY}\n`);
+    expect(notice.content).not.toContain('unowned changed path');
+    expect(notice.systemMessage).not.toContain('unowned changed path');
+  });
+
   test('#850: an explicitly disabled provider prints no inactive line but keeps unowned paths', () => {
     const root = registryFixture();
     fixtureWrite(root, 'home/.repo-harness/config.json', JSON.stringify({ architecture: { projection_provider: 'disabled', projection_apply: 'disabled' } }));

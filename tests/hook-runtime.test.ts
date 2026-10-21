@@ -12,7 +12,7 @@ import {
   writeFileSync,
 } from 'fs';
 import { fixtureWrite } from './helpers/module-repository';
-import { registryConsumerFixture } from './helpers/agent-notice';
+import { registryNoticeFixture } from './helpers/agent-notice';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { resolveCompatibleNodeRuntime } from '../src/effects/architecture/archctx-provider';
@@ -452,8 +452,8 @@ process.exit(child.status ?? 1);
   }, 60_000);
 
   test('a registry consumer without code facts or a projection manifest gets one architecture line (#850)', () => {
-    const root = registryConsumerFixture();
-    const INACTIVE = '[Architecture] inactive: registry capability source has no ArchContext model. Run: repo-harness architecture-projection status --json';
+    const root = registryNoticeFixture();
+    const INACTIVE = '[Architecture] inactive: no ArchContext model (.archcontext/manifest.yaml is missing). Run: repo-harness architecture-projection status --json';
     const architectureLines = /\[Architecture\] inactive|\[ArchitectureDebt\]|Architecture: inactive/;
     try {
       // Codex Stop is silent and does not consume the dedupe markers.

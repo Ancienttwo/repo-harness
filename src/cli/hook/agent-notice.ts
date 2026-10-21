@@ -19,7 +19,7 @@ const MAX_MESSAGE_BYTES = 200;
 const INACTIVE_CODES: ReadonlySet<string> = new Set([
   'AC_MODEL_ADOPTION_REQUIRED', 'AC_CODE_FACTS_UNAVAILABLE', 'AC_INDEX_STALE', 'RH_ARCHCTX_CODE_FACTS_NOT_READY', 'RH_ARCHCTX_PACKAGE_MISSING',
 ]);
-const OWNER_AUTHORITY = { registry: '.ai/context/capabilities.json', archcontext: '.archcontext/model/nodes/*.yaml' } as const;
+const REGISTRY_FILE = '.ai/context/capabilities.json';
 const singleLine = (text: string) => text.replace(/[\r\n\t]+/g, ' ');
 const clip = (text: string, bytes: number) => Buffer.from(text).subarray(0, bytes).toString('utf8').replace(/\uFFFD$/u, '');
 const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
@@ -86,14 +86,14 @@ export function renderAgentNotice(report: ArchitectureDebtReportV1): NoticeBlock
   };
 }
 
-/** Changed implementation paths that no capability owns. The ownership answer holds them; no checkpoint is needed. */
-function unownedBlock(paths: readonly string[], authority: string): NoticeBlock | null {
+/** Changed implementation paths that no registry capability owns. The ownership answer holds them; no checkpoint is needed. */
+function unownedBlock(paths: readonly string[]): NoticeBlock | null {
   if (paths.length === 0) return null;
   const subject = `unowned changed ${paths.length === 1 ? 'path' : 'paths'}`;
-  const rows = paths.slice(0, 3).map(path => `- unowned-path ${singleLine(path)}; no capability owns it. Fix: add an owner in ${authority}`);
+  const rows = paths.slice(0, 3).map(path => `- unowned-path ${singleLine(path)}; no capability owns it. Fix: add an owner in ${REGISTRY_FILE}`);
   return {
     content: boundedBlock(`[ArchitectureDebt] ${paths.length} ${subject}`, rows, paths.length, count => `(+${count} more unowned changed paths)`),
-    systemMessage: `Architecture: ${paths.length} ${subject}; add an owner in ${authority}.`,
+    systemMessage: `Architecture: ${paths.length} ${subject}; add an owner in ${REGISTRY_FILE}.`,
   };
 }
 
@@ -140,10 +140,15 @@ function observe(repoRoot: string, ownership: (options: ArchctxProviderOptions) 
   // Ownership and checkpoint each get one bounded call. SessionStart reuses ownership.
   try { owned = ownership({ ...options, deadlineMs: Math.min(options.deadlineMs ?? Infinity, now() + 3_000) }); }
   catch (error) { return { status: statusOf(error), unowned: null, debt: null }; }
+  // No declared capability authority: the architecture loop does not apply (#737).
+  if (!owned) return null;
   let unowned: Observation['unowned'] = null;
   try {
-    const paths = [...(owned?.unowned_paths ?? [])].sort();
-    const ownerBlock = unownedBlock(paths, OWNER_AUTHORITY[source]);
+    // Only the registry is its own unowned-path authority. Under archcontext,
+    // archctx counts a path as unowned only inside declared source roots, so
+    // the broader resolver list would give the same fact a second meaning.
+    const paths = source === 'registry' ? [...owned.unowned_paths].sort() : [];
+    const ownerBlock = unownedBlock(paths);
     unowned = ownerBlock && { paths, block: ownerBlock };
     const status = readiness(repoRoot, options.env);
     if (status.kind !== 'active') return { status, unowned, debt: null };
