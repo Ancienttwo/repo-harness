@@ -14,7 +14,7 @@ Load only the reference for the assigned mode.
 ## Shared Preflight
 
 1. Confirm the target repo path (`pwd`, or an explicit `--repo` argument).
-2. Inspect the proposed changes with `repo-harness init --repo <repo> --dry-run`.
+2. Inspect the proposed changes with `repo-harness init --repo <repo> --dry-run` (not `ci-scope`).
 
 ## Mode Selection
 
