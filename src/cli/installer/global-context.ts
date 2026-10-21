@@ -147,7 +147,7 @@ export function renderGlobalRulesBlock(sourceRoot: string, language: ReportingLa
   const template = readGlobalRulesTemplate(sourceRoot);
   const rendered = renderCompletionSummaryLabel(template, language.preset).replace(
     /^- Use the user's language for reports; keep technical terms in English\.$/m,
-    `- ${language.instruction}`,
+    () => `- ${language.instruction}`,
   );
   return [
     GLOBAL_RULES_BEGIN,
