@@ -1,4 +1,4 @@
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { moduleRepository, fixtureWrite, fixtureGit, fixtureCommit, MODULE_ID, MODULE_DOC } from './module-repository';
 
@@ -35,6 +35,28 @@ export function registryNoticeFixture(): string {
   fixtureGit(root, ['checkout', '-qb', 'feature']);
   fixtureWrite(root, 'packages/new-core/index.ts', 'export const core = 1;\n');
   return root;
+}
+
+/**
+ * A registry consumer whose main changed an unowned path after the last
+ * projection manifest commit. The `clean` branch starts at main and changes
+ * nothing, so the ownership answer measures from the manifest commit.
+ */
+export function registryProjectedFixture(): string {
+  const root = registryNoticeFixture();
+  rmSync(join(root, 'packages'), { recursive: true, force: true });
+  fixtureGit(root, ['checkout', '-q', 'main']);
+  fixtureWrite(root, 'docs/architecture/.projection-manifest.json', JSON.stringify({ profile: 'repo-harness/v1' }));
+  fixtureCommit(root);
+  fixtureWrite(root, 'packages/old-core/index.ts', 'export const old = 1;\n');
+  fixtureCommit(root);
+  fixtureGit(root, ['checkout', '-qb', 'clean']);
+  return root;
+}
+
+/** Drops `.ai/harness/state/` from the fixture ignore rules, as in a legacy consumer. */
+export function unignoreNoticeState(root: string): void {
+  fixtureWrite(root, '.gitignore', NOTICE_IGNORE.replace('.ai/harness/state/\n', ''));
 }
 
 /** Real native model and broken human citation. Checkpoint needs no index. */

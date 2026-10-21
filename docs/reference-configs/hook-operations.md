@@ -270,7 +270,10 @@ the stable identity field `id`. All delivery points share the marker. A manifest
 refresh does not renew an unchanged set. Hooks never project or apply architecture.
 
 Registry repositories also get `[ArchitectureDebt] N unowned changed path(s)`
-from the registry ownership answer, with no checkpoint call. Under archcontext,
+from the registry ownership answer, with no checkpoint call. A branch that is
+not ahead of its review base gets ownership from the last projection manifest
+commit, so that answer can list paths that main changed. Like checkpoint, the
+notice keeps only the paths that differ from the review-base merge-base. Under archcontext,
 the unowned judgment stays with archctx, because it counts only paths inside
 declared source roots. A repository without a declared capability authority gets no
 architecture text.
@@ -287,6 +290,14 @@ dedupes these lines: once per cause, and once per branch and code for a failure.
 A working notice records an active key, so a returning cause prints again. A
 failure never writes the debt marker. A marker that cannot be written drops only
 its own text and adds to the stderr diagnostic.
+
+When Git does not ignore `.ai/harness/state/`, no marker can record a delivery.
+Each SessionStart then gives one `[Architecture] notice unavailable:
+.ai/harness/state/ is not Git-ignored` line and one human `systemMessage`.
+Claude Stop and Codex UserPromptSubmit keep only the stderr diagnostic. Without
+a marker, the line would repeat at each turn, and each Claude Stop line starts
+one more turn. Add `.ai/harness/state/` to `.gitignore`; the `repo-harness init`
+ignore block has it.
 
 | Point | Hosts | When |
 | --- | --- | --- |

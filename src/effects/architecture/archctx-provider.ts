@@ -615,7 +615,31 @@ export function completeArchitectureDebt(repoRoot: string, headSha: string, opti
   return decodeCompleteArchitectureDebt(client.data(['complete', '--head-sha', headSha, '--json'], policy.timeoutMs), headSha);
 }
 
-/** Changed owned paths only. Q9 uses the policy target's merge-base, never the manifest checkpoint. */
+/** One notice phase: each Git call gets the time left before the caller's deadline, at most 3 s. */
+function noticeGit(repoRoot: string, bounded: ArchctxProviderOptions): (args: string[]) => string {
+  return args => execFileSync('git', ['-C', repoRoot, ...args], {
+    encoding: 'utf8', env: bounded.env ?? process.env, stdio: ['ignore', 'pipe', 'pipe'],
+    timeout: remainingTimeout(bounded, 3_000, 'notice git'), maxBuffer: 8 * 1024 * 1024,
+  });
+}
+
+/**
+ * Committed, staged, unstaged and untracked paths that differ from the merge-base
+ * of HEAD and the review base. Q9 uses the policy target's merge-base, never the
+ * manifest checkpoint.
+ */
+export function changedSinceReviewBase(repoRoot: string, reviewBase: string, options: ArchctxProviderOptions = {}): ReadonlySet<string> {
+  const now = options.nowMs ?? Date.now;
+  const git = noticeGit(repoRoot, { ...options, deadlineMs: Math.min(options.deadlineMs ?? Infinity, now() + 3_000) });
+  const target = git(['rev-parse', '--verify', '--end-of-options', `${reviewBase}^{commit}`]).trim();
+  const base = git(['merge-base', 'HEAD', target]).trim();
+  return new Set([
+    ...git(['diff', '--name-only', '--no-renames', '-z', base, '--']).split('\0'),
+    ...git(['ls-files', '--others', '--exclude-standard', '-z']).split('\0'),
+  ]);
+}
+
+/** Changed owned paths only. */
 export function checkpointArchitectureDebt(repoRoot: string, ownership: CapabilityOwnership | null, options: ArchctxProviderOptions = {}): {
   readonly branch: string;
   readonly report: ArchitectureDebtReportV1;
@@ -623,19 +647,10 @@ export function checkpointArchitectureDebt(repoRoot: string, ownership: Capabili
   if (!ownership?.review_base || !ownership.capabilities.some(capability => capability.paths.length > 0)) return null;
   const now = options.nowMs ?? Date.now;
   const bounded = { ...options, deadlineMs: Math.min(options.deadlineMs ?? Infinity, now() + 3_000) };
-  const git = (args: string[]) => execFileSync('git', ['-C', repoRoot, ...args], {
-    encoding: 'utf8', env: options.env ?? process.env, stdio: ['ignore', 'pipe', 'pipe'],
-    timeout: remainingTimeout(bounded, 3_000, 'notice git'), maxBuffer: 8 * 1024 * 1024,
-  });
-  const target = git(['rev-parse', '--verify', '--end-of-options', `${ownership.review_base}^{commit}`]).trim();
-  const base = git(['merge-base', 'HEAD', target]).trim();
-  const changed = new Set([
-    ...git(['diff', '--name-only', '--no-renames', '-z', base, '--']).split('\0'),
-    ...git(['ls-files', '--others', '--exclude-standard', '-z']).split('\0'),
-  ]);
+  const changed = changedSinceReviewBase(repoRoot, ownership.review_base, bounded);
   const paths = [...new Set(ownership.capabilities.flatMap(capability => capability.paths).filter(path => changed.has(path)))].sort();
   if (paths.length === 0) return null;
-  const branch = git(['rev-parse', '--abbrev-ref', 'HEAD']).trim();
+  const branch = noticeGit(repoRoot, bounded)(['rev-parse', '--abbrev-ref', 'HEAD']).trim();
   const policy = options.policy ?? loadArchitectureProjectionPolicy(options.env);
   if (policy.provider === 'disabled') throw new Error('architecture projection provider is disabled');
   const client = new ArchctxClient(repoRoot, policy.requiredVersion, bounded);

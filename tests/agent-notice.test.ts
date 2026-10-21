@@ -6,16 +6,19 @@ import { ERROR_CATALOG } from 'archctx-contracts';
 import { collectAgentNotice, renderAgentNotice } from '../src/cli/hook/agent-notice';
 import { checkpointArchitectureDebt, type ArchctxProviderOptions } from '../src/effects/architecture/archctx-provider';
 import { resolveCapabilityOwnership } from '../src/effects/state/resolve-effective-state';
-import { agentNoticeFixture, noticeOwnership, noticeEnv, registryNoticeFixture, writeNoticeRegistry, NOTICE_CAPABILITY } from './helpers/agent-notice';
+import { agentNoticeFixture, noticeOwnership, noticeEnv, registryNoticeFixture, registryProjectedFixture, unignoreNoticeState, writeNoticeRegistry, NOTICE_CAPABILITY } from './helpers/agent-notice';
 import { fixtureCommit, fixtureGit, fixtureWrite } from './helpers/module-repository';
 
 const roots: string[] = [];
 function fixture() { const root = agentNoticeFixture(); roots.push(root); return root; }
 function registryFixture() { const root = registryNoticeFixture(); roots.push(root); return root; }
+function projectedFixture() { const root = registryProjectedFixture(); roots.push(root); return root; }
 const noCheckpoint = () => { throw new Error('checkpoint must not run'); };
 const timedOut = () => ({ status: null, signal: 'SIGTERM' as const, stdout: '', stderr: '', timedOut: true });
 const STATUS = 'repo-harness architecture-projection status --json';
 const NO_MODEL = 'no ArchContext model (.archcontext/manifest.yaml is missing)';
+const UNIGNORED = '[Architecture] notice unavailable: .ai/harness/state/ is not Git-ignored. Fix: add .ai/harness/state/ to .gitignore';
+const UNIGNORED_MESSAGE = 'Architecture: notice unavailable (.ai/harness/state/ is not Git-ignored); add it to .gitignore.';
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 
 describe('AgentNotice', () => {
@@ -275,6 +278,7 @@ describe('AgentNotice', () => {
     const root = fixture();
     fixtureWrite(root, '.ai/harness/policy.json', JSON.stringify({ context: { capability_source: 'registry' } }));
     writeNoticeRegistry(root);
+    fixtureWrite(root, 'packages/new-core/index.ts', 'export const core = 1;\n');
     const ownership = { ...noticeOwnership(root), unowned_paths: ['packages/new-core/index.ts'] };
     const env = noticeEnv(root);
     const failed = collectAgentNotice(root, () => ownership, { env, run: timedOut });
@@ -283,5 +287,41 @@ describe('AgentNotice', () => {
     const recovered = collectAgentNotice(root, () => ownership, { env });
     expect(recovered.content).toStartWith('[ArchitectureDebt] 1 unowned changed path\n');
     expect(recovered.content).toContain(`[ArchitectureDebt] 1 new in ${NOTICE_CAPABILITY}\n`);
+  });
+
+  test('#852: registry unowned paths that this branch did not change stay out of the notice', () => {
+    const root = projectedFixture();
+    const env = noticeEnv(root);
+    const ownership = (scoped: ArchctxProviderOptions) => resolveCapabilityOwnership(root, undefined, scoped);
+    // The ownership answer measures from the manifest commit, so it still lists the path that main changed.
+    expect(ownership({ env })!.unowned_paths).toEqual(['packages/old-core/index.ts']);
+    const options = { env, run: noCheckpoint };
+    expect(collectAgentNotice(root, ownership, options)).toEqual({
+      content: `[Architecture] inactive: ${NO_MODEL}. Run: ${STATUS}`,
+      systemMessage: `Architecture: inactive (${NO_MODEL}); run ${STATUS}.`,
+    });
+    fixtureWrite(root, 'packages/new-core/index.ts', 'export const core = 1;\n');
+    expect(collectAgentNotice(root, ownership, options).content).toBe([
+      '[ArchitectureDebt] 1 unowned changed path',
+      '- unowned-path packages/new-core/index.ts; no capability owns it. Fix: add an owner in .ai/context/capabilities.json',
+    ].join('\n'));
+  });
+
+  test('#852: a state directory that Git does not ignore gives a visible line at SessionStart only', () => {
+    const root = registryFixture();
+    unignoreNoticeState(root);
+    const options = { env: noticeEnv(root), run: noCheckpoint };
+    const ownership = (scoped: ArchctxProviderOptions) => resolveCapabilityOwnership(root, undefined, scoped);
+    const turn = collectAgentNotice(root, ownership, options);
+    expect(turn.content).toBeUndefined();
+    expect(turn.systemMessage).toBeUndefined();
+    expect(turn.diagnostics!.trim().split('\n')).toHaveLength(1);
+    expect(turn.diagnostics).toContain('.ai/harness/state/agent-notice-status is not Git-ignored');
+    // No marker can record a delivery, so each SessionStart repeats the line.
+    for (const session of [1, 2]) {
+      expect(collectAgentNotice(root, ownership, options, 'session-start'), `session ${session}`).toMatchObject({ content: UNIGNORED, systemMessage: UNIGNORED_MESSAGE });
+    }
+    expect(existsSync(join(root, '.ai/harness/state/agent-notice-status'))).toBe(false);
+    expect(existsSync(join(root, '.ai/harness/state/agent-notice'))).toBe(false);
   });
 });
