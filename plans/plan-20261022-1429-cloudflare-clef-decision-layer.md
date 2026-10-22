@@ -1,6 +1,6 @@
 # Plan: Cloudflare Clef decision layer (Herdr pane status first)
 
-> **Status**: DRAFT. It needs Aimpact's GO before any code. Claude drafted this architecture. Codex implements it only after the plan is locked. This PR is a Draft PR and contains only this plan.
+> **Status**: DRAFT. It needs Aimpact's GO before any code. Claude drafted this architecture. Codex implements it only after the plan is locked. This PR is a Draft PR and contains only this plan. Aimpact closed Q1–Q6 with the permissive lock on 20261022 (section 10).
 > **Created**: 20261022-1429 (Asia/Taipei)
 > **Slug**: cloudflare-clef-decision-layer
 > **Baseline**: `origin/main@5c2dfad43`
@@ -36,7 +36,7 @@
 
 - The decision layer sits at step 3, inside the Herdr plugin. It reads the pane tail and asks Clef one typed question. It adds a label. It never removes a notification.
 - Single authority: the Herdr `agent_status` stays the recorded fact. The Clef answer is a separate, versioned `decision` record. Only an `applied: true` decision changes routing.
-- The layer does not run where a typed authority exists (OAR `FailureClass`, OSC 7501, `report-agent --source repo-harness`). A model label there would be a second authority for the same datum.
+- The layer must not run where a typed authority exists (OAR `FailureClass`, OSC 7501, `report-agent --source repo-harness`). A model label there would be a second authority for the same datum. Slice 1 approximates this with an agent allow-list (`claude`, `codex`). That allow-list does not exclude OAR task panes. This is an accepted known risk (section 10, Q5).
 - No local regex or keyword list classifies quota or errors. Clef is the only classifier. When Clef is absent, slow, invalid or unsure, the current Herdr status decides. This is the same task contract with an observable degradation, not a semantic fallback.
 - Why the current shape exists: the plugin is a standalone Node script that Herdr runs per event. It must work after the package cache is removed (`herdr-notify.md`, "Install"). So the pure decision core must be projected into the plugin like `worktree-location.mjs`, not imported from the package.
 - At 10x events, the first failure is cost and the Workers AI free allowance (section 4.4), then Herdr's per-event process time. Both have bounds in this plan.
@@ -50,7 +50,7 @@ Search date: 20261022. Clef launched on 20261001. TypeSafe Jev launched in Septe
 | [devagrawal09/stanley-code](https://github.com/devagrawal09/stanley-code) (MIT, 118★) | 20260917 | "Code, not a model, makes the decisions." Deterministic workflows gather bounded evidence and ask small fixed-choice questions. Unsupported cases go to a general agent. | Self-written workflows. Unreleased (`0.1.0` not on npm). |
 | [devagrawal09/jev-review](https://github.com/devagrawal09/jev-review) (MIT, 686★) | 20260916 | Thresholds and workflow policy live in code, not in the model. Explicit decision boundaries and counterexamples in criteria. | Multi-stage review chain. Too large for slice 1. |
 | [TriDefender/openclaw-cloudflare-clef](https://github.com/TriDefender/openclaw-cloudflare-clef) (no license, 0★) | 20261020 | Clef as a decision provider beside the chat model. Token only through a secret store, no env or plaintext fallback, stdin input. Token permission "Workers AI → Run", account-scoped. Cost in Neurons: Clef-flash 3,455 Neurons per M input tokens, 10,000 free Neurons per UTC day. | No license, so copy no code. |
-| [HighlyLoadedEgo/ClefMCP](https://github.com/HighlyLoadedEgo/ClefMCP) (Apache-2.0, 7★) | 20261003 | Runs open-weight Clef-flash locally through llama.cpp (about 6 GB). This is a local alternative with no data egress and no token (open question Q3). | MCP tool surface. Agents would call it freely. That is the opposite of a bounded gate. |
+| [HighlyLoadedEgo/ClefMCP](https://github.com/HighlyLoadedEgo/ClefMCP) (Apache-2.0, 7★) | 20261003 | Runs open-weight Clef-flash locally through llama.cpp (about 6 GB). Not used: Q3 locks Cloudflare REST as the only route. | MCP tool surface. Agents would call it freely. That is the opposite of a bounded gate. |
 | [TokenTrim/jev-routing-experiment](https://github.com/TokenTrim/jev-routing-experiment) (Apache-2.0) | 20260917 | Honest ablation. The Jev router's gain came from retrieval evidence. A no-Jev ablation matched it. Lesson: measure the model against the status quo before promotion. | — |
 | [AbdelStark/awesome-typesafe-jev](https://github.com/AbdelStark/awesome-typesafe-jev), [aaddrick/building-with-typesafe-jev](https://github.com/aaddrick/building-with-typesafe-jev), [typesafe-ai/skills](https://github.com/typesafe-ai/skills) | Sep 2026 | Index of community projects and the official skill. Three-band gating pattern (act / review / escalate) with thresholds in the caller's code. | Vendor-adjacent claims. |
 
@@ -82,9 +82,9 @@ Herdr event pane.agent_status_changed (done)
 | Pure core (source of truth) | `src/core/decision/pane-status.mjs` (new) | Question set, request builder, response decoder, band policy, `POLICY_VERSION`. No I/O, no clock, no env. Plain `.mjs`, same precedent as `src/core/worktree-location.mjs`. |
 | Plugin copy | `assets/herdr/webhook-notify/pane-status.mjs` (generated) | Byte copy written by `scripts/sync-helper-sources.ts`. Drift checked by `tests/unit/helper-projection-drift.test.ts`. Installed by the file list at `src/cli/commands/herdr.ts:153`. |
 | Transport | `assets/herdr/webhook-notify/notify.mjs` | Tail read, redaction, Clef REST call through the injected `send`, shadow record write, (Phase 3) payload `decision` field. |
-| Config | Plugin `.env` in the Herdr plugin config dir; `repo-harness herdr notify install` | `CLEF_MODE=off|shadow|apply` (default `off`), `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`. New flags `--clef-mode`, `--cloudflare-account-id`; token by masked prompt or env only (no flag). |
+| Config | Plugin `.env` in the Herdr plugin config dir; `repo-harness herdr notify install` | `CLEF_MODE=off|shadow|copilot|autopilot` (default `off`; section 6.1), `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`. New flags `--clef-mode`, `--cloudflare-account-id`; token by masked prompt or env only (no flag). |
 | Status | `src/core/operator/notify-status.ts`, `src/effects/operator/notify-status.ts` | Presence of the two Cloudflare keys and the mode value. Never the token value. |
-| Report | `repo-harness herdr decision report` (new CLI, Phase 2) | Reads the shadow log and a local label file. Prints band precision per label. Read-only on the log. |
+| Report and labels | `repo-harness herdr decision report`, `repo-harness herdr decision label` (new CLI, Phase 2) | `report` reads the shadow log and a local label file. It prints band precision per label. `label` gives the Bot one unlabeled record and writes its label. Both are read-only on the log. |
 
 Decisions in this boundary:
 
@@ -92,7 +92,8 @@ Decisions in this boundary:
 - **No shared TypeScript client in slice 1.** The plugin is the only consumer. A `src/effects/decision/` client is extracted only when a second bucket (section 9) has an approved plan. This follows "share components only for observed reuse".
 - **Thresholds are code, not config.** `POLICY` in the core module holds the bands. A threshold change is a reviewed PR with shadow evidence, not an `.env` edit.
 - **Callers in slice 1:** only the `done` branch of `notify()`. `blocked` events are not classified in slice 1 (Herdr already routes them to every channel).
-- **Excluded panes:** panes whose status comes from a typed authority (OAR task agents, OSC 7501 programs, `report-agent --source repo-harness`). Phase 0 must find the event field that identifies them. If the plugin cannot identify them, Phase 1 does not ship (see Q5).
+- **Scope:** every repo in the Mini's Herdr session (Q1). No repo allow-list.
+- **Agent allow-list:** Clef runs only when the event `agent` is `claude` or `codex` (Q5). Other agents get no tail read, no call and no record. Known risk: OAR task panes report `--agent codex` or `--agent claude` (`src/effects/terminal/task-session.ts:546-547`), so Clef can label a pane that already has a typed status. Phase 0 records whether a typed-authority marker exists. The mitigation is deferred.
 - Architecture model: Phase 1 adds a responsibility to the operator notify capability. Run `repo-harness architecture-projection check --json` in that PR.
 
 ## 3. Question schema (pane status)
@@ -143,21 +144,21 @@ Rules for the request builder (`paneStatusRequest`):
 
 The decoder (`decodeClefAnswer`) fails closed. A missing answer, an option outside the five, probabilities that do not sum to 1 ± 0.01, or `confidence` outside [0, 1] all give `{ status: "invalid" }`. An invalid answer is recorded and the Herdr status decides.
 
-## 4. Confidence thresholds and the shadow week
+## 4. Confidence thresholds and the shadow period
 
 ### 4.1 Bands (provisional, shadow only)
 
 | Band | Rule | Effect after promotion |
 | --- | --- | --- |
-| `act` | `choice ≠ unclear` and `confidence ≥ T_label` | Label applies (section 6). |
+| `act` | `choice ≠ unclear` and `confidence ≥ T_label` | Copilot: suggestion. Autopilot: label applies (section 6.1). |
 | `review` | `choice ≠ unclear` and `0.60 ≤ confidence < T_label` | Herdr status decides. Phase 3 may escalate to `clef` (27B) once. |
 | `abstain` | `choice = unclear`, or `confidence < 0.60`, or `invalid` / `unavailable` | Herdr status decides. |
 
-Provisional `T_label = 0.85` for every label. It is not binding. Shadow data sets the real value per label.
+`T_label` is `suggest_L` in Copilot and `apply_L` in Autopilot (section 4.3). Provisional value 0.85 for every label. It is not binding. Shadow data sets the real values per label.
 
-### 4.2 Shadow week (label only; the old path decides)
+### 4.2 Shadow period (label only; the old path decides)
 
-- Starts when the Phase 1 PR is merged and `CLEF_MODE=shadow` is set on the Mini. It lasts 7 calendar days.
+- Starts when the Phase 1 PR is merged and `CLEF_MODE=shadow` is set on the Mini. It lasts at least 3 calendar days.
 - The plugin delivers every notification exactly as today. Delivery happens first. The Clef call runs after delivery, so notification latency does not change.
 - For every `done` event in scope, the plugin calls **both** `clef-flash` and `clef`. This measures whether escalation adds value. Cost is in 4.4.
 - Each event writes one JSONL record: `event_id`, `ts`, `pane_id`, `agent`, `herdr_status`, `policy_version`, `tail_sha256`, redacted `tail`, and per model `{ model, choice, probabilities, confidence, band, latency_ms, input_tokens }` or `{ status: "invalid" | "unavailable" | "skipped_cap" }`.
@@ -165,26 +166,32 @@ Provisional `T_label = 0.85` for every label. It is not binding. Shadow data set
 
 ### 4.3 Labels and promotion rule
 
-- Ground truth: Aimpact (or the Bot, see Q2) labels records with `repo-harness herdr decision report --label`. The command shows the redacted tail and asks for one of the five options. Labels go to a local file beside the shadow log.
-- Promotion is per label `L ∈ {stuck, model_error, quota}`. Choose the smallest `T_L` in `{0.70, 0.75, …, 0.95}` such that, over labeled records with `clef-flash` choice `L` and `confidence ≥ T_L`:
-  - at least 20 records, and
-  - precision ≥ 0.95 (at most 1 wrong in 20).
-- A label that does not meet the rule stays in shadow. If the week has fewer than 20 events for a label, extend the shadow by one week. Do not lower the bar.
+- Ground truth: the Bot labels every shadow record itself (Q2). On the Mini, `repo-harness herdr decision label --next` prints one unlabeled record as JSON: `event_id`, `agent`, `herdr_status` and the redacted tail. It does not show the Clef answer. `repo-harness herdr decision label <event_id> <option>` writes one of the five options with `labeler: bot` to a local file beside the shadow log. The Bot labels at least once per day.
+- Known risk: the Bot is also a model that reads the same tail. Its errors can correlate with Clef's, so measured precision is agreement with the Bot. The `labeler` field keeps a later human spot check possible.
+- `POLICY` holds two thresholds per label `L ∈ {stuck, model_error, quota}`: `suggest_L` (Copilot) and `apply_L` (Autopilot). `null` means not promoted. For each, choose the smallest value in `{0.70, 0.75, …, 0.95}` that meets its bar over labeled records with `clef-flash` choice `L` and `confidence ≥` that value:
+
+| Threshold | Minimum shadow | Records with choice `L` | Precision | If the bar is not met |
+| --- | --- | --- | --- | --- |
+| `suggest_L` | 3 days | at least 10 | ≥ 0.80 (at most 2 wrong in 10) | Extend the shadow by 2 days once. Still short: the label stays shadow. |
+| `apply_L` | 3 days | at least 15 | ≥ 0.90 (at most 1 wrong in 15) | Extend the shadow by 2 days once. Still short: the label stays Copilot-only. |
+
+- The Autopilot bar replaces the earlier 7 days, 20 records and 0.95. A 15-record sample at 0.90 has a wide error band. Aimpact accepts that trade. The worst case stays inside the hard floor (section 6.1).
+- Do not lower a bar inside a window. A bar change is its own PR.
 - `done` is never "promoted". A `done` answer changes nothing.
-- Escalation to `clef` is enabled only if, on records where `clef-flash` is in `review`, `clef` reaches the same precision bar at its own `T_L`.
-- The report also prints the motivating number: the share of Herdr `done` events whose human label is not `done` (the current false-done rate). If that rate is below 5% for the week, recommend stopping the work here (the layer does not pay for itself).
+- Escalation to `clef` is enabled only if, on records where `clef-flash` is in `review`, `clef` reaches the same bar at its own threshold.
+- The report also prints the motivating number: the share of Herdr `done` events whose label is not `done` (the current false-done rate). If that rate is below 5% for the shadow period, recommend stopping the work here (the layer does not pay for itself).
 - Promotion is a PR that changes `POLICY` and `POLICY_VERSION` and attaches the report output. Aimpact approves it.
 
 ### 4.4 Cost bound
 
 - One call is about 3,500 input tokens. `clef-flash`: 3,500 × $0.038/M ≈ $0.00013. `clef`: 3,500 × $0.24/M ≈ $0.00084.
 - In Neurons (per the openclaw README, confirm in Phase 0): `clef-flash` ≈ 12 per call, `clef` ≈ 76 per call. 10,000 free Neurons per day cover about 110 shadow events (both models) or about 820 apply-mode events (flash only).
-- At an assumed 300 `done` events per day, the shadow week costs about $0.25 per day. Phase 0 measures the real event count from `herdr plugin log list`.
+- At an assumed 300 `done` events per day, the shadow period costs about $0.25 per day. Phase 0 measures the real event count from `herdr plugin log list`.
 - Hard cap: 2,000 Clef calls per UTC day, counted in the plugin state dir. Above the cap the record is `skipped_cap` and the Herdr status decides.
 
 ## 5. Secrets
 
-- `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` live only on the Mini. Default location: the Herdr plugin `.env` (mode `600`, Herdr plugin config dir), the same store that holds `WEBHOOK_KEY` today. Alternative: macOS Keychain (Q4).
+- `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` live only on the Mini, in the Herdr plugin `.env` (mode `600`, Herdr plugin config dir), the same store that holds `WEBHOOK_KEY` today (Q4). No Keychain in slice 1.
 - The token is an account-scoped API token with only the Workers AI permission that allows `ai/run`. No Workers deploy, no DNS, no R2, no account settings. Phase 0 records the exact permission name and a token check (`GET /user/tokens/verify`).
 - Input paths: masked prompt in `repo-harness herdr notify install`, or `CLOUDFLARE_API_TOKEN` from the caller's secret environment for `--non-interactive`. No CLI flag for the token (flags enter shell history).
 - The token never appears in stderr, `herdr plugin log`, the shadow log, the operator UI, the Bot payload or test fixtures. The operator status shows `configured` or `missing` only.
@@ -201,7 +208,25 @@ Provisional `T_label = 0.85` for every label. It is not binding. Shadow data set
 | Decoder rejects the response | Record `invalid`. Herdr status decides. |
 | Band `review` or `abstain` | Herdr status decides. Phase 3: one optional `clef` escalation, only if 4.3 enabled it. |
 | Daily cap reached | Record `skipped_cap`. Herdr status decides. |
-| Band `act` with label `stuck`, `model_error` or `quota` (apply mode only) | The notification is still sent. It is routed like `blocked` (every channel), the text shows the label and confidence, and the Bot payload carries `decision.applied: true`. The Bot reads the pane instead of running `repo-harness-check`. |
+| Label not promoted for the current mode | Same as `CLEF_MODE=shadow` for that label: record only. |
+| Copilot, `confidence ≥ suggest_L` | Section 6.1, Copilot. |
+| Autopilot, `confidence ≥ apply_L` | Section 6.1, Autopilot. |
+| Autopilot, `suggest_L ≤ confidence < apply_L` | Section 6.1, Copilot. |
+
+### 6.1 Operating mode (setup-time choice)
+
+`repo-harness herdr notify install` asks for the Clef mode: `off`, `shadow`, `copilot` or `autopilot`. `--clef-mode` sets it non-interactively. The value goes to `CLEF_MODE` in the plugin `.env`. A changed mode takes effect on the next event. A fresh install has no promoted thresholds, so every mode behaves as `shadow` until a promotion PR lands.
+
+| Mode | What Clef does | Who confirms | Routing change |
+| --- | --- | --- | --- |
+| Copilot | Suggests. The notification text gets `Clef suggests: <label> (<confidence>)`. The Bot payload gets `decision` with `applied: false`. | A human on the channel, or the existing path: the Bot still runs `repo-harness-check` on `done`. | None. Routing is exactly today's. |
+| Autopilot | Applies a decision at or above `apply_L`. The Bot payload gets `decision` with `applied: true`. The Bot reads the pane instead of running `repo-harness-check`. | No one for minor labels. Major issues escalate to humans. | Only for major issues: labels in `POLICY.escalate` (provisional: `stuck`, because it needs an operator answer) are routed like `blocked` to every channel. `quota` and `model_error` go to the Bot only, plus the channels that receive `done` today. |
+
+Hard floor in both modes:
+
+- No mode ever triggers merge, push, deploy, delete, release, retry, pane close or any other irreversible action or command. `decision.applied: true` gives the Bot no new authority: it may read the pane and notify. Its existing approval boundaries stay.
+- Invariants 1–4 below hold in every mode.
+- `POLICY.escalate` and both threshold sets are code. A change is a reviewed PR with report evidence, not an `.env` edit.
 
 Invariants (each has a test in Phase 1 or Phase 3):
 
@@ -210,7 +235,7 @@ Invariants (each has a test in Phase 1 or Phase 3):
 3. The decision layer never triggers merge, push, deploy, delete, release, retry, pane close or any command. Its only outputs are a record and notification routing.
 4. The Herdr `agent_status` in the payload is never changed. The label is a separate `decision` object.
 
-Worst case: Clef is wrong on every `act` answer. Then real `done` events reach every channel with a wrong label, and the Bot reads the pane instead of checking the branch. No notification is lost and no action runs. So the worst case is today's behavior plus extra human attention. Rollback is `CLEF_MODE=shadow` or `off` on the Mini, which takes effect on the next event.
+Worst case in Copilot: every suggestion is wrong. Routing is today's, so the cost is a wrong line of text. Worst case in Autopilot: Clef is wrong on every `act` answer. Then real `stuck`-labeled `done` events reach every channel, and for every wrong label the Bot reads the pane instead of checking the branch, so finished work waits unchecked until a human or the next event looks. No notification is lost and no irreversible action runs. Rollback is `CLEF_MODE=copilot`, `shadow` or `off` on the Mini, which takes effect on the next event.
 
 "Current rules / LLM" fallback, made concrete: the current rule is Herdr's status and today's routing. The current LLM path is the Bot routine, which already reads the pane on `blocked`. This plan adds no new LLM call.
 
@@ -222,11 +247,12 @@ No coding starts before Aimpact approves this plan. Codex implements Phases 1–
 
 - Confirm the price, context and token permission name on the Cloudflare pages.
 - From a Herdr plugin event process on the Mini, confirm that `herdr pane read <pane_id> --source recent --lines 120` works and returns within 2 s.
-- Find the `pane.agent_status_changed` field that tells a typed-authority status (`report-agent --source repo-harness`, OSC 7501) from a detector status. Record a real event JSON for each.
+- Record a real `pane.agent_status_changed` event JSON for a detector status, a `report-agent --source repo-harness` pane and an OSC 7501 program. Record whether any event field or `herdr pane get` readback marks the typed source. This is evidence for the deferred Q5 mitigation. It does not block Phase 1.
 - Confirm how a CLI outside the plugin finds `HERDR_PLUGIN_STATE_DIR` (for the report command).
 - Count `done` events per day from `herdr plugin log list --plugin aimpact.webhook-notify` for the last 7 days.
 - Run 10 hand-picked real tails (2 per label) through `clef-flash` by `curl` with a token from the Mini env. Record answers in a note under `tasks/notes/`. No tail text in the note.
-- Exit: a short note with each fact and its command. If the typed-authority field does not exist, stop and ask Aimpact (Q5).
+- No local model spike (Q3).
+- Exit: a short note with each fact and its command.
 
 ### Phase 1: shadow mode (one PR)
 
@@ -237,43 +263,44 @@ Acceptance checks:
 - `bun run check:type` passes.
 - `bun run test:files tests/herdr-runtime-pin.test.ts tests/unit/helper-projection-drift.test.ts <new core test> --timeout 60000 --max-concurrency 1` passes.
 - Every existing `shipped Herdr notify event handler` test passes with no assertion change (`CLEF_MODE` absent equals `off`).
-- New core tests: the request builder output for a fixed input is stable; the decoder rejects each malformed shape; band boundaries at 0.60 and `T_L` exactly.
+- New core tests: the request builder output for a fixed input is stable; the decoder rejects each malformed shape; band boundaries at 0.60, `suggest_L` and `apply_L` exactly.
 - New plugin tests with a fake `send`:
   - `shadow`: channel calls are identical (count, order, bodies) to `off`; one Clef call per model happens after delivery; one JSONL record is written with mode `600`.
   - Cloudflare 500, timeout and invalid JSON: delivery unchanged, record `unavailable` or `invalid`.
-  - Typed-authority pane and `blocked` event: no Clef call, no record.
+  - Agent outside `{claude, codex}` and `blocked` event: no Clef call, no record.
   - The placeholder token appears in no stderr line, record or payload.
   - The redacted tail contains no fixture secret.
 - Drift check fails when the plugin copy differs from the core file.
 - `repo-harness architecture-projection check --json` result is recorded in the PR.
 - Rollback: `CLEF_MODE=off` on the Mini, or `git revert <squash-commit>` and reinstall the plugin.
 
-### Phase 2: shadow week and report (one PR for the report CLI, then 7 days)
+### Phase 2: shadow period and report (one PR for the report and label CLI, then at least 3 days)
 
-- Add `repo-harness herdr decision report [--label]`. Add Cloudflare key presence and mode to `notify-status`.
-- Acceptance: the report runs on a fixture log and prints per-label counts, precision per threshold step, the false-done rate and the escalation comparison. It never prints the token. It does not modify the shadow log.
-- Exit: one report output for the 7-day window, attached to the promotion PR or to a stop recommendation.
+- Add `repo-harness herdr decision report` and `repo-harness herdr decision label [--next | <event_id> <option>]`. Add Cloudflare key presence and mode to `notify-status`.
+- Acceptance: the report runs on a fixture log and prints per-label counts, precision per threshold step for both bars, the false-done rate and the escalation comparison. `label --next` output has no Clef answer. Neither command prints the token or modifies the shadow log.
+- Exit: one report output for the shadow window, attached to the promotion PR or to a stop recommendation.
 
-### Phase 3: apply promoted bands (one PR, needs Aimpact approval of the report)
+### Phase 3: Copilot and Autopilot (one PR, needs Aimpact approval of the report)
 
-- `POLICY` gets the promoted `T_L` values and a new `POLICY_VERSION`. `CLEF_MODE=apply` enables section 6 routing. The Bot payload gets `decision: { label, confidence, band, model, policy_version, applied }`.
-- The Clef call moves before delivery with a 3 s budget (5 s with escalation). On timeout the Herdr status decides.
-- Acceptance: tests for invariants 1–4; an `act` quota answer on a `done` event reaches a channel with `NOTIFY_DONE=0`; a `review` answer routes exactly as today; payload `agent_status` stays `done`.
-- The Bot routine is updated to read `decision.applied` (outside this repo, Q2).
-- Rollback: set `CLEF_MODE=shadow` on the Mini. The next event uses today's routing.
+- `POLICY` gets the promoted `suggest_L` and `apply_L` values, `escalate` and a new `POLICY_VERSION`. Install accepts `copilot` and `autopilot`. The Bot payload gets `decision: { label, confidence, band, model, policy_version, applied }`.
+- In `copilot` and `autopilot` the Clef call moves before delivery with a 3 s budget (5 s with escalation). On timeout the Herdr status decides.
+- Acceptance: tests for invariants 1–4 in both modes. Copilot: channel set and order equal today's, text carries the suggestion, `applied: false`. Autopilot: a promoted `stuck` answer on a `done` event reaches a channel with `NOTIFY_DONE=0`; a promoted `quota` answer reaches the Bot with `applied: true` and no extra human channel; an answer between `suggest_L` and `apply_L` behaves as Copilot. A `review` answer routes exactly as today in both modes. Payload `agent_status` stays `done`.
+- The Bot routine is updated to read `decision.applied` (outside this repo).
+- Rollback: set `CLEF_MODE=copilot`, `shadow` or `off` on the Mini. The next event uses that mode.
 
 ### First-slice acceptance criteria (whole slice)
 
 1. With `CLEF_MODE=off`, the plugin behavior is byte-identical to `origin/main@5c2dfad43`.
 2. With `CLEF_MODE=shadow`, no channel receives a different message, and every in-scope `done` event has one shadow record.
 3. The token exists only on the Mini, and no test, log, record or payload contains it.
-4. The 7-day report shows per-label precision and the false-done rate from human labels.
-5. Only labels that meet the 4.3 rule change routing in apply mode. No decision path triggers merge, deploy, delete or any command.
-6. Turning `CLEF_MODE` back to `shadow` or `off` restores today's routing on the next event.
+4. The shadow-period report shows per-label precision for both bars and the false-done rate from Bot labels.
+5. Copilot never changes routing. In Autopilot only labels that meet the `apply_L` bar change routing, and only labels in `POLICY.escalate` add human channels. No decision path triggers merge, deploy, delete or any command.
+6. Turning `CLEF_MODE` back to `copilot`, `shadow` or `off` restores that mode's routing on the next event.
 
 ## 8. Roles and approval
 
 - Claude (deep tier) drafted this architecture. This PR is a Draft PR with this plan only. It must not merge without Aimpact's explicit GO.
+- Before lock, Codex reviews this plan read-only (Q6). No dual-track second solution.
 - After the plan is locked, Codex implements Phases 1–3 against it. Claude reviews each implementation PR read-only. Each phase is its own PR with its own approval.
 - A plan change after lock goes back through Aimpact before Codex continues.
 
@@ -290,11 +317,15 @@ Each bucket needs its own plan. Each keeps invariant 3 (no irreversible action) 
 
 A shared `src/effects/decision/` client is extracted when the second bucket starts. Not before.
 
-## 10. Open questions for Aimpact
+## 10. Closed questions (Aimpact permissive lock, 20261022)
 
-- **Q1 Data egress.** Phase 1 sends redacted pane tails to Cloudflare. Is that acceptable for all repos that run in the Mini's Herdr session, or only for an allow-list of workspaces?
-- **Q2 Ground truth and the Bot.** Who labels the shadow records: Aimpact by hand (about 5 minutes per day), or the Bot routine after it reads the pane? The Bot is outside this repo and needs the `decision` payload change in Phase 3.
-- **Q3 Local weights.** Clef-flash is Apache-2.0 and runs locally (about 6 GB, see ClefMCP). Local removes egress and the token but adds a model process on the Mini. Keep Cloudflare REST as the first route, or spike local in Phase 0 too?
-- **Q4 Secret store.** Plugin `.env` with mode `600` (same as today's webhook key) or macOS Keychain?
-- **Q5 Typed-authority panes.** If Herdr's event does not mark typed-authority statuses, should Phase 1 limit the layer to an explicit agent allow-list (`claude`, `codex`), or wait for a Herdr change?
-- **Q6 Cross-model review of this plan.** Should Codex give an independent second solution before lock (dual-track), or is a Codex read-only review of this document enough?
+| Q | Locked answer |
+| --- | --- |
+| Q1 Data egress | All repos in the Mini's Herdr session. No repo allow-list. Redaction (section 3) still runs before egress. |
+| Q2 Ground truth | The Bot labels the shadow records itself through `repo-harness herdr decision label` (section 4.3). Known risk: Bot and Clef errors can correlate. |
+| Q3 Local weights | Cloudflare Workers AI REST only, `clef-flash` first. No local Clef, ClefMCP or Mini/Max weights. No local spike in Phase 0. |
+| Q4 Secret store | Plugin `.env`, mode `600`. |
+| Q5 Typed-authority panes | Ship with the `claude`, `codex` agent allow-list. Known risk: OAR typed panes report `--agent codex` or `--agent claude` (`src/effects/terminal/task-session.ts:546-547`), so Clef can double-source their status. Mitigation deferred; Phase 0 records whether a marker exists. |
+| Q6 Cross-model review | Codex read-only review of this plan only. No dual-track. |
+
+Added with this lock: the setup-time Copilot or Autopilot mode (section 6.1), a 3-day minimum shadow period, and a faster Autopilot promotion bar (section 4.3).
