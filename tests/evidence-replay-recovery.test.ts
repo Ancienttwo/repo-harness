@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "child_process";
-import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, rmSync, writeSync } from "fs";
+import { appendFileSync, closeSync, existsSync, ftruncateSync, mkdirSync, openSync, readFileSync, readdirSync, rmSync, writeSync } from "fs";
 import { join } from "path";
 import { tmpWorkspace, withTempRepo } from "./helpers/repo-fixture";
 
@@ -10,6 +10,7 @@ import {
   appendEvidenceEvent,
   appendGenesisRecord,
   readAcceptedEvents,
+  readGenesisRecord,
   type EvidenceEventInput,
 } from "../src/effects/evidence/event-log";
 
@@ -183,6 +184,46 @@ describe("replay determinism across the append-only store", () => {
 });
 
 describe("corrupt-tail recovery and quarantine", () => {
+  test("an unterminated genesis cannot authorize an append and can be recovered", () => {
+    withTempRepo("evidence-genesis-newline", (repoRoot) => {
+      freshGenesisRepo(repoRoot);
+      const path = logPathFor(repoRoot);
+      const raw = readFileSync(path, "utf-8");
+      const fd = openSync(path, "r+");
+      try { ftruncateSync(fd, Buffer.byteLength(raw) - 1); } finally { closeSync(fd); }
+      expect(readGenesisRecord(repoRoot)).toBeNull();
+      expect(() => appendEvidenceEvent(repoRoot, baseInput())).toThrow("no genesis record");
+      expect(() => freshGenesisRepo(repoRoot)).toThrow("cannot write genesis record");
+      expect(readFileSync(path, "utf-8")).toBe(raw.slice(0, -1));
+      const recovery = readAcceptedEvents(repoRoot);
+      expect(recovery.genesis).toBeNull();
+      expect(readFileSync(recovery.quarantinedPath!, "utf-8")).toBe(raw.slice(0, -1));
+      freshGenesisRepo(repoRoot);
+      const next = appendEvidenceEvent(repoRoot, baseInput());
+      expect(readAcceptedEvents(repoRoot).accepted.map(event => event.event_id)).toEqual([next.event_id]);
+    });
+  });
+
+  test("a complete JSON record without its newline is quarantined before the next append", () => {
+    withTempRepo("evidence-missing-newline", (repoRoot) => {
+      freshGenesisRepo(repoRoot);
+      const path = logPathFor(repoRoot);
+      const prefix = readFileSync(path, "utf-8");
+      const first = appendEvidenceEvent(repoRoot, baseInput({ payload: { kind: "json", value: { v: 1 } } }));
+      const before = readFileSync(path, "utf-8");
+      const fd = openSync(path, "r+");
+      try { ftruncateSync(fd, Buffer.byteLength(before) - 1); } finally { closeSync(fd); }
+      const result = readAcceptedEvents(repoRoot);
+      expect(result.accepted).toEqual([]);
+      expect(result.quarantinedPath).not.toBeNull();
+      expect(readFileSync(result.quarantinedPath!, "utf-8")).toBe(before.slice(prefix.length, -1));
+      expect(readFileSync(path, "utf-8")).toBe(prefix);
+      const next = appendEvidenceEvent(repoRoot, baseInput({ payload: { kind: "json", value: { v: 2 } } }));
+      expect(readAcceptedEvents(repoRoot).accepted.map(event => event.event_id)).toEqual([next.event_id]);
+      expect(next.event_id).not.toBe(first.event_id);
+    });
+  });
+
   test("a truncated final record is quarantined and excluded from the accepted view", () => {
     withTempRepo("evidence-corrupt-tail-end", (repoRoot) => {
       freshGenesisRepo(repoRoot);

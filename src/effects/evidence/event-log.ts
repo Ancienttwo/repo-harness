@@ -26,21 +26,21 @@ function withLogLock<T>(repoRoot: string, operation: () => T): T {
   return withExclusiveDirectoryLock(realpathSync(repoRoot), LOG_LOCK, operation, { reclaimStaleEmptyDirectory: true });
 }
 
-function readRawLines(logPath: string): string[] {
-  if (!existsSync(logPath)) return [];
-  const raw = readFileSync(logPath, "utf-8");
-  if (raw.length === 0) return [];
+function readRawLog(logPath: string): { raw: string; lines: string[] } {
+  const raw = existsSync(logPath) ? readFileSync(logPath, "utf-8") : "";
+  if (raw.length === 0) return { raw, lines: [] };
   const lines = raw.split("\n");
   // Every complete record line ends with "\n" by construction (appendLineDurably
   // always writes one), so a non-empty final split element means the last
   // write was truncated mid-line; keep it so it is detected as corrupt.
   if (lines[lines.length - 1] === "") lines.pop();
-  return lines;
+  return { raw, lines };
 }
 
 /** Read and validate exactly the first record as a genesis record; null if the store is empty or malformed. */
 export function readGenesisRecord(repoRoot: string): GenesisRecord | null {
-  const lines = readRawLines(resolveLogPath(repoRoot));
+  const { raw, lines } = readRawLog(resolveLogPath(repoRoot));
+  if (lines.length === 1 && !raw.endsWith("\n")) return null;
   if (lines.length === 0) return null;
   const parsed = parseLogLine(lines[0]!);
   if (!parsed.ok || parsed.record.kind !== "evidence_genesis") return null;
@@ -70,11 +70,11 @@ function appendGenesisRecordLocked(
   opts: AppendGenesisOptions,
 ): GenesisRecord {
   const logPath = resolveLogPath(repoRoot);
-  const lines = readRawLines(logPath);
+  const { raw, lines } = readRawLog(logPath);
 
   if (lines.length > 0) {
     const parsed = parseLogLine(lines[0]!);
-    if (!parsed.ok || parsed.record.kind !== "evidence_genesis") {
+    if (!parsed.ok || parsed.record.kind !== "evidence_genesis" || (lines.length === 1 && !raw.endsWith("\n"))) {
       throw new Error(`cannot write genesis record: store at ${logPath} already has non-genesis content`);
     }
     if (parsed.record.ledger_epoch_start_sha !== ledgerEpochStartSha) {
@@ -126,15 +126,19 @@ export interface ReadAcceptedEventsResult {
  * set.
  */
 interface LogSnapshot {
+  readonly raw: string;
   readonly rawLines: readonly string[];
   readonly parsedLines: readonly ReturnType<typeof parseLogLine>[];
   readonly corruptTail: ReturnType<typeof findCorruptTail>;
 }
 
 function readLogSnapshot(logPath: string): LogSnapshot {
-  const rawLines = readRawLines(logPath);
-  const parsedLines = rawLines.map((line) => parseLogLine(line));
-  return { rawLines, parsedLines, corruptTail: findCorruptTail(parsedLines) };
+  const { raw, lines: rawLines } = readRawLog(logPath);
+  const parsedLines = rawLines.map((line, index) =>
+    index === rawLines.length - 1 && !raw.endsWith("\n")
+      ? { ok: false as const, error: "unterminated record" }
+      : parseLogLine(line));
+  return { raw, rawLines, parsedLines, corruptTail: findCorruptTail(parsedLines) };
 }
 
 /** Re-read under the log lock, so the quarantine holds every byte that the truncation removes. */
@@ -143,11 +147,9 @@ function repairCorruptTail(repoRoot: string, logPath: string): LogSnapshot & { r
     const snapshot = readLogSnapshot(logPath);
     const { rawLines, corruptTail } = snapshot;
     if (corruptTail.corruptStartIndex === null) return { ...snapshot, quarantinedPath: null };
-    const corruptLines = rawLines.slice(corruptTail.corruptStartIndex);
     const quarantinedPath = join(resolveEventsDir(repoRoot), `events.corrupt-${Date.now()}`);
-    writeFileDurably(quarantinedPath, `${corruptLines.join("\n")}\n`);
-
     const validPrefix = rawLines.slice(0, corruptTail.validLineCount).map((line) => `${line}\n`).join("");
+    writeFileDurably(quarantinedPath, snapshot.raw.slice(validPrefix.length));
     truncateSync(logPath, Buffer.byteLength(validPrefix, "utf-8"));
     return { ...snapshot, quarantinedPath };
   });
