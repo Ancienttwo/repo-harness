@@ -1,11 +1,15 @@
 // Adapted from ~/herdr-plugins/webhook-notify. Config and identity come from Herdr.
-import { existsSync, lstatSync, readFileSync, realpathSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
+import { constants, closeSync, fchmodSync, fstatSync, mkdirSync, openSync, readSync, rmdirSync, existsSync, lstatSync, readFileSync, realpathSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { systemWorktreeRoot } from './worktree-location.mjs';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { hostname, tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import { parseEnv } from 'node:util';
 import { pathToFileURL } from 'node:url';
+
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { POLICY_VERSION, paneStatusRequest, decodeClefAnswer, decisionBand } from './pane-status.mjs';
 
 const DEBOUNCE_MS = 120_000;
 const TIMEOUT_MS = 5_000;
@@ -131,6 +135,181 @@ export async function notify(env = process.env, send = fetch, options = {}) {
       }
     } catch { log(`${target.channel}: delivery failed.`); }
   }
+  // Shadow work starts only after all existing notification attempts finish.
+  if (config.CLEF_MODE === 'shadow' && config.CLOUDFLARE_ACCOUNT_ID && config.CLOUDFLARE_API_TOKEN
+    && data.agent_status === 'done' && ['claude', 'codex'].includes(data.agent)) {
+    try { await shadowDecision(env, config, data, send); }
+    catch { log('Shadow record failed.'); }
+  }
+}
+
+const runFile = promisify(execFile);
+const SHADOW_LIMIT = 20 * 1024 * 1024;
+const RETENTION_MS = 14 * 24 * 60 * 60 * 1000;
+const MODELS = ['clef-flash', 'clef'];
+
+// Fixed data-safety rules. These patterns never classify the pane outcome.
+export function redactTail(text, config = {}) {
+  let value = text.replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, '').replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '');
+  for (const [key, secret] of Object.entries(config)) {
+    if (secret && /(?:TOKEN|KEY|URL|ACCOUNT_ID|CHAT_ID)$/.test(key)) value = value.replaceAll(secret, '[redacted]');
+  }
+  return value
+    .replace(/\b[A-Z][A-Z0-9_]*(?:\s*=\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s]+)/gi, '[redacted]')
+    .replace(/\bBearer\s+[^\s"'<>]+/gi, 'Bearer [redacted]')
+    .replace(/\b(?:sk-[A-Za-z0-9_-]+|gh[pousr]_[A-Za-z0-9_]+|github_pat_[A-Za-z0-9_]+)/g, '[redacted]')
+    .replace(/\b[0-9a-fA-F]{32,}\b/g, '[redacted]')
+    .replace(/[A-Za-z0-9+/_-]{40,}={0,2}/g, '[redacted]');
+}
+
+function boundedTail(raw, config) {
+  const lines = raw.replace(/\r\n/g, '\n').split('\n');
+  if (lines.at(-1) === '') lines.pop();
+  const redacted = redactTail(lines.slice(-120).join('\n'), config);
+  const bytes = Buffer.from(redacted);
+  // Avoid splitting a UTF-8 character at the start of the retained suffix.
+  let start = Math.max(0, bytes.length - 16 * 1024);
+  while (start < bytes.length && (bytes[start] & 0xc0) === 0x80) start++;
+  const tail = bytes.subarray(start).toString('utf8');
+  return { tail, tail_lines: tail ? tail.split('\n').length : 0, tail_truncated: lines.length >= 120 || start > 0 };
+}
+
+function privateRead(path, limit) {
+  let fd;
+  try {
+    fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    const stat = fstatSync(fd);
+    if (!stat.isFile() || stat.size > limit || stat.uid !== process.getuid?.()) throw new Error('Invalid shadow file.');
+    fchmodSync(fd, 0o600);
+    const bytes = Buffer.alloc(stat.size);
+    let count = 0;
+    while (count < bytes.length) {
+      const read = readSync(fd, bytes, count, bytes.length - count, count);
+      if (!read) throw new Error('Incomplete shadow file.');
+      count += read;
+    }
+    return bytes.toString('utf8');
+  } catch (error) { if (error.code === 'ENOENT') return ''; throw error; }
+  finally { if (fd !== undefined) closeSync(fd); }
+}
+
+function privateWrite(path, text) {
+  const temporary = `${path}-${randomUUID()}`;
+  try {
+    writeFileSync(temporary, text, { mode: 0o600, flag: 'wx' });
+    renameSync(temporary, path);
+  } finally { try { unlinkSync(temporary); } catch (error) { if (error.code !== 'ENOENT') throw error; } }
+}
+
+async function withShadowLock(dir, action) {
+  const lock = join(dir, 'decision-shadow.lock');
+  const deadline = Date.now() + 2000;
+  for (;;) {
+    try { mkdirSync(lock, { mode: 0o700 }); break; }
+    catch (error) {
+      if (error.code !== 'EEXIST' || Date.now() >= deadline) throw error;
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+  }
+  try { return action(); } finally { rmdirSync(lock); }
+}
+
+async function reserveCalls(dir, now) {
+  return withShadowLock(dir, () => {
+    const path = join(dir, 'decision-budget.json');
+    const raw = privateRead(path, 1024);
+    const day = new Date(now).toISOString().slice(0, 10);
+    const saved = raw ? JSON.parse(raw) : { day, calls: 0 };
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(saved.day) || !Number.isSafeInteger(saved.calls)
+      || saved.calls < 0 || saved.calls > 2000 || saved.day > day) throw new Error('Invalid call budget.');
+    const count = saved.day === day ? saved.calls : 0;
+    const allowed = Math.min(MODELS.length, 2000 - count);
+    privateWrite(path, JSON.stringify({ day, calls: count + allowed }));
+    return allowed;
+  });
+}
+
+async function saveShadow(dir, record) {
+  await withShadowLock(dir, () => {
+    const path = join(dir, 'decision-shadow.jsonl');
+    const raw = privateRead(path, SHADOW_LIMIT);
+    const cutoff = Date.now() - RETENTION_MS;
+    const lines = raw.split('\n').filter(Boolean).filter(line => {
+      const ts = Date.parse(JSON.parse(line).ts);
+      if (!Number.isFinite(ts)) throw new Error('Invalid shadow timestamp.');
+      return ts >= cutoff;
+    });
+    lines.push(JSON.stringify(record));
+    let size = lines.reduce((sum, line) => sum + Buffer.byteLength(line) + 1, 0);
+    let start = 0;
+    while (size > SHADOW_LIMIT && start < lines.length) size -= Buffer.byteLength(lines[start++]) + 1;
+    privateWrite(path, lines.slice(start).join('\n') + '\n');
+  });
+}
+
+async function saveRecord(env, record) {
+  await saveShadow(env.HERDR_PLUGIN_STATE_DIR, record);
+  privateWrite(join(env.HERDR_PLUGIN_CONFIG_DIR, 'decision-state.json'), JSON.stringify({ protocol: 1, state_dir: env.HERDR_PLUGIN_STATE_DIR }));
+}
+
+async function modelDecision(model, state, config, send) {
+  const started = performance.now();
+  const controller = new AbortController();
+  let timer;
+  try {
+    const response = await Promise.race([
+      (async () => {
+        const reply = await send(`https://api.cloudflare.com/client/v4/accounts/${config.CLOUDFLARE_ACCOUNT_ID}/ai/run/@cf/cloudflare/${model}`, {
+          method: 'POST', redirect: 'error', signal: controller.signal,
+          headers: { 'content-type': 'application/json', authorization: `Bearer ${config.CLOUDFLARE_API_TOKEN}` },
+          body: JSON.stringify(paneStatusRequest(state, model)),
+        });
+        if (!reply.ok || reply.redirected) throw new Error('Clef unavailable.');
+        const envelope = await reply.json();
+        if (envelope?.success !== true) throw new Error('Clef unavailable.');
+        return decodeClefAnswer(envelope.result, model);
+      })(),
+      new Promise((_, reject) => { timer = setTimeout(() => { controller.abort(); reject(new Error('Clef timeout.')); }, 3000); }),
+    ]);
+    return { model, ...response, band: decisionBand(response), latency_ms: Math.round(performance.now() - started) };
+  } catch { return { model, status: 'unavailable', latency_ms: Math.round(performance.now() - started) }; }
+  finally { clearTimeout(timer); }
+}
+
+async function shadowDecision(env, config, data, send) {
+  const record = {
+    event_id: randomUUID(), ts: new Date().toISOString(), pane_id: data.pane_id,
+    agent: data.agent, herdr_status: data.agent_status, policy_version: POLICY_VERSION,
+    tail_sha256: null, tail: null, models: [],
+  };
+  let state;
+  try {
+    if (!/^[a-f0-9]{32}$/i.test(config.CLOUDFLARE_ACCOUNT_ID)) throw new Error('Invalid account id.');
+    if (typeof env.HERDR_BIN_PATH !== 'string' || !isAbsolute(env.HERDR_BIN_PATH)) throw new Error('Herdr binary path is missing.');
+    // Do not pass channel or Cloudflare secrets to the read-only Herdr child.
+    const childEnv = { ...env };
+    for (const key of Object.keys(childEnv)) if (key.startsWith('CLOUDFLARE_') || /^(WEBHOOK_|SLACK_|DISCORD_|TELEGRAM_)/.test(key)) delete childEnv[key];
+    const raw = (await runFile(env.HERDR_BIN_PATH, ['pane', 'read', data.pane_id, '--source', 'recent', '--lines', '120'], {
+        env: childEnv, encoding: 'utf8', timeout: 2000, maxBuffer: 1024 * 1024,
+      })).stdout;
+    state = { agent: data.agent, herdr_status: data.agent_status, pane_title: redactTail(String(data.title ?? ''), config).slice(0, 512), ...boundedTail(raw, config) };
+    record.tail = state.tail;
+    record.tail_sha256 = createHash('sha256').update(state.tail).digest('hex');
+  } catch {
+    record.models = MODELS.map(model => ({ model, status: 'unavailable' }));
+    await saveRecord(env, record);
+    return;
+  }
+  let allowed;
+  try { allowed = await reserveCalls(env.HERDR_PLUGIN_STATE_DIR, Date.now()); }
+  catch {
+    record.models = MODELS.map(model => ({ model, status: 'unavailable' }));
+    await saveRecord(env, record);
+    return;
+  }
+  record.models = await Promise.all(MODELS.map((model, index) => index < allowed
+    ? modelDecision(model, state, config, send) : { model, status: 'skipped_cap' }));
+  await saveRecord(env, record);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

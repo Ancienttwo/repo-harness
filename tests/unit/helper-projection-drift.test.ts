@@ -28,11 +28,12 @@ describe('single executable helper authority', () => {
   test('check rejects byte and mode drift; write repairs only the disposable projection', () => {
     const root = mkdtempSync(join(tmpdir(), 'helper-projection-'));
     try {
-      for (const dir of ['scripts', 'src/core/capabilities', 'assets/templates/helpers', 'assets/herdr/webhook-notify']) mkdirSync(join(root, dir), { recursive: true });
-      for (const path of ['scripts/sync-helper-sources.ts', 'scripts/capability-resolver.ts', 'src/core/source-projection.ts', 'src/core/worktree-location.mjs', 'src/core/capabilities/registry.ts']) {
+      for (const dir of ['scripts', 'src/core/capabilities', 'src/core/decision', 'assets/templates/helpers', 'assets/herdr/webhook-notify']) mkdirSync(join(root, dir), { recursive: true });
+      for (const path of ['scripts/sync-helper-sources.ts', 'scripts/capability-resolver.ts', 'src/core/source-projection.ts', 'src/core/worktree-location.mjs', 'src/core/decision/pane-status.mjs', 'src/core/capabilities/registry.ts']) {
         copyFileSync(join(ROOT, path), join(root, path));
       }
       copyFileSync(join(ROOT, 'src/core/worktree-location.mjs'), join(root, 'assets/herdr/webhook-notify/worktree-location.mjs'));
+      copyFileSync(join(ROOT, 'src/core/decision/pane-status.mjs'), join(root, 'assets/herdr/webhook-notify/pane-status.mjs'));
       const target = join(root, 'assets/templates/helpers/capability-resolver.ts');
       writeFileSync(target, '#!/usr/bin/env bun\n// stale\n', { mode: 0o755 });
       const invoke = (mode: string) => spawnSync(process.execPath, [join(root, 'scripts/sync-helper-sources.ts'), mode], {
@@ -42,6 +43,11 @@ describe('single executable helper authority', () => {
       expect(drift.status, drift.stderr).toBe(1);
       expect(drift.stderr).toContain('content drift');
       expect(readFileSync(target, 'utf8')).toContain('stale');
+      expect(invoke('--write').status).toBe(0);
+      expect(invoke('--check').status).toBe(0);
+      const paneTarget = join(root, 'assets/herdr/webhook-notify/pane-status.mjs');
+      writeFileSync(paneTarget, '// drift\n');
+      expect(invoke('--check').stderr).toContain('pane-status.mjs projection drift');
       expect(invoke('--write').status).toBe(0);
       expect(invoke('--check').status).toBe(0);
       chmodSync(target, 0o644);
