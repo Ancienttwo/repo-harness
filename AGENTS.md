@@ -73,6 +73,9 @@
 - Prefer real companies, products, contracts, prices and user behavior as examples. Use a table for multi-object or multi-metric comparison. Split sections by question; drop introductions, transitions and summaries that exist only for completeness.
 - Paragraph deletion test: if removing a paragraph leaves the reader's understanding of facts, numbers, mechanism, cause, conditions and conclusion unchanged, remove it. Check first the paragraphs that start with "this shows", "note that", "therefore", "however" or "it must be stressed".
 
+## UI
+- Avoid unnecessary secondary labels and descriptions. Let the layout do the explaining.
+
 ## Codex
 - Own backend implementation and testing; Claude owns frontend implementation and interaction, and the parent coordinates scope and integration.
 - User-level `~/.codex/hooks.json` hooks invoke `repo-harness-hook`; its typed route registry selects one in-process handler. Operator helpers run from the package through `repo-harness run <helper>`.

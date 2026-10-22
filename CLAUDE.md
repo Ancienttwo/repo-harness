@@ -73,6 +73,9 @@
 - Prefer real companies, products, contracts, prices and user behavior as examples. Use a table for multi-object or multi-metric comparison. Split sections by question; drop introductions, transitions and summaries that exist only for completeness.
 - Paragraph deletion test: if removing a paragraph leaves the reader's understanding of facts, numbers, mechanism, cause, conditions and conclusion unchanged, remove it. Check first the paragraphs that start with "this shows", "note that", "therefore", "however" or "it must be stressed".
 
+## UI
+- Avoid unnecessary secondary labels and descriptions. Let the layout do the explaining.
+
 ## Claude Code
 - Own frontend implementation and interaction; Codex owns backend implementation and testing, and the parent coordinates scope and integration.
 - Use Claude Code's available tools within granted permissions; changes to tool grants, hooks or confirmation bypass require approval of the exact change.
