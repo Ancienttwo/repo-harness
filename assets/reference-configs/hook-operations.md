@@ -183,15 +183,18 @@ protected directory also triggers the check.
 A known `_ops/`, `_ref/` or outside-repository destination gets exit 2 and the
 same guard diagnostic and failure record as an edit. Bash uses a repository-only
 boundary; Edit/Write retains its verified external absolute-path allowance.
-`/dev/null`, `/dev/stdout` and `/dev/stderr` are output descriptors and pass.
+`/dev/null`, `/dev/stdout`, `/dev/stderr`, `/dev/tty` and numeric `/dev/fd/N`
+targets are output streams and pass.
 
 Missing absolute host `cwd`, commands above 64 KiB, variable expansion,
 grouping, unsupported options, indirect scripts, code generators, `eval`,
 `sh -c`, `git checkout`, `find` and `xargs` can skip the tripwire. Symlink aliases
 without a protected or external path token can also skip it. Interpreter checks
 recognize literal call text; they do not evaluate Python or JavaScript control
-flow. An unparsed command passes. A handler failure exits 1 and does not block.
-This is a tripwire, not proof that an allowed command cannot write private files.
+flow. The unparsed remainder passes. A handler failure exits 1 and does not block.
+More than one heredoc on a line or an unresolved delimiter leaves the remaining
+command unchecked. Earlier parsed targets still get checked. This is a tripwire,
+not proof that an allowed command cannot write private files.
 
 The `edit-guard-scope` SessionStart section tells the Agent this limit on every
 host, also when Effective State is unavailable: Claude Bash has only a literal
@@ -230,7 +233,9 @@ Bash, a script or the person. The report cannot tell which one. It does not bloc
 `repo-harness run check-protected-paths` checks staged changes. It rejects root
 `_ops` and `_ref` entries and their descendants, including deletions and rename
 sources. Other directories with those names are outside this boundary. Paths
-come from NUL-delimited Git output, with rename detection disabled.
+come from NUL-delimited Git output, scoped to the protected roots, with rename
+detection disabled. Output above Git's 1 MiB capture bound fails closed; unrelated
+repository paths do not consume this bound.
 
 A repository can call this command from its own `pre-commit` hook. Repo-harness
 does not install a Git hook or replace an existing hook. CI runs

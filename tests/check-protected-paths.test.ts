@@ -73,6 +73,7 @@ describe('Git protected path boundary', () => {
     const root = mkdtempSync(join(tmpdir(), 'protected-no-git-'));
     try {
       expect(check(root).status).not.toBe(0);
+      expect(check(root, [], '1').status).not.toBe(0);
       expect(check(root, ['--unknown']).status).not.toBe(0);
     } finally { rmSync(root, { recursive: true, force: true }); }
   });

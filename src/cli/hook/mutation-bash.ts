@@ -9,26 +9,30 @@ interface Word { value: string; literal: boolean; operator?: true }
 /** Quotes are removed only to locate literal operands. Expansions stay unresolved. */
 function words(line: string): Word[] | null {
   const result: Word[] = [];
-  let value = '', literal = true, active = false, quote = '';
+  let value = '', literal = true, plain = true, active = false, quote = '';
   const flush = () => {
     if (active) result.push({ value, literal });
-    value = ''; literal = true; active = false;
+    value = ''; literal = true; plain = true; active = false;
   };
   for (let i = 0; i < line.length; i++) {
     const ch = line[i]!;
     if (!quote && ch === '#' && !active) break;
     if (ch === '\\' && quote !== "'") {
       if (i + 1 === line.length) return null;
-      value += line[++i]; active = true; continue;
+      value += line[++i]; active = true; plain = false; continue;
     }
     if (quote) {
       if (ch === quote) quote = '';
       else { value += ch; if (quote === '"' && /[$`]/.test(ch)) literal = false; }
       continue;
     }
-    if (ch === "'" || ch === '"') { quote = ch; active = true; continue; }
+    if (ch === "'" || ch === '"') { quote = ch; active = true; plain = false; continue; }
     if (/\s/.test(ch)) { flush(); continue; }
     if (';|&<>'.includes(ch)) {
+      // In 2>file, 2 is a descriptor. In "2">file it remains an argument.
+      if ((ch === '<' || ch === '>') && active && plain && /^\d+$/.test(value)) {
+        value = ''; active = false;
+      }
       flush();
       let op = ch;
       if (line[i + 1] === ch && ch !== ';') op += line[++i];
@@ -86,7 +90,8 @@ export function bashWriteTargets(command: string, repoRoot: string, cwd: string)
   const candidates: string[] = [];
   let commandCwd: string | null = cwd;
   const add = (candidate: string) => {
-    if (!candidate || /[$`{}~\n\r]/.test(candidate) || ['/dev/null', '/dev/stdout', '/dev/stderr'].includes(candidate)) return;
+    if (!candidate || /[$`{}~\n\r]/.test(candidate) || ['/dev/null', '/dev/stdout', '/dev/stderr', '/dev/tty'].includes(candidate)
+      || /^\/dev\/fd\/\d+$/.test(candidate)) return;
     // A glob under a known literal directory can only mutate that directory.
     if (/[*?\[]/.test(candidate)) {
       const prefix = candidate.split(/[*?\[]/, 1)[0]!;
@@ -103,12 +108,13 @@ export function bashWriteTargets(command: string, repoRoot: string, cwd: string)
   for (let line = 0; line < lines.length; line++) {
     const tokens = words(lines[line]!);
     // A later physical line can still be inside this command's quoted argument.
-    if (!tokens) return [];
+    if (!tokens) return [...new Set(candidates)];
     let body = '';
     const here = tokens.findIndex(token => token.operator && token.value.startsWith('<<'));
     if (here >= 0) {
       const delimiter = tokens[here + 1];
-      if (!delimiter?.literal || delimiter.operator) continue;
+      if (!delimiter?.literal || delimiter.operator
+        || tokens.filter(token => token.operator && token.value.startsWith('<<')).length !== 1) return [...new Set(candidates)];
       const content: string[] = [];
       while (++line < lines.length) {
         const current = tokens[here]!.value === '<<-' ? lines[line]!.replace(/^\t+/, '') : lines[line]!;
@@ -134,6 +140,10 @@ export function bashWriteTargets(command: string, repoRoot: string, cwd: string)
       if (token.operator && [';', '|', '||', '&', '&&'].includes(token.value)) { flush(token.value); continue; }
       if (token.operator && ['>', '>>', '<', '<<', '<<-'].includes(token.value)) {
         const target = tokens[++i];
+        if (target?.operator && target.value === '&' && (token.value === '>' || token.value === '<')) {
+          i++; // Descriptor duplication/closure, such as 2>&1, has no file operand.
+          continue;
+        }
         if ((token.value === '>' || token.value === '>>') && target?.literal && !target.operator) add(target.value);
         continue;
       }

@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 /** Git is the authority: NUL-delimited paths, with rename detection disabled. */
 import { execFileSync } from 'node:child_process';
-import { protectedRepoDir } from '../src/cli/hook/mutation-protected-dirs';
+import { protectedRepoDir, PROTECTED_REPO_DIRS } from '../src/cli/hook/mutation-protected-dirs';
 
 export function checkProtectedPaths(args: readonly string[], cwd = process.cwd(), env = process.env): number {
   if (args.length > 1 || (args.length === 1 && !['--staged', '--tracked'].includes(args[0]!))) {
@@ -10,9 +10,10 @@ export function checkProtectedPaths(args: readonly string[], cwd = process.cwd()
   }
   try {
     const root = execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+    const pathspecs = PROTECTED_REPO_DIRS.map(dir => `:(top,literal)${dir}`);
     const gitArgs = args[0] === '--tracked'
-      ? ['ls-files', '--cached', '--full-name', '-z']
-      : ['-c', 'diff.relative=false', 'diff', '--cached', '--name-only', '--no-renames', '-z', '--'];
+      ? ['ls-files', '--cached', '--full-name', '-z', '--', ...pathspecs]
+      : ['-c', 'diff.relative=false', 'diff', '--cached', '--name-only', '--no-renames', '-z', '--', ...pathspecs];
     const output = execFileSync('git', gitArgs, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 5_000 });
     const paths = output.split('\0').filter(path => protectedRepoDir(path));
     if (!paths.length) return 0;

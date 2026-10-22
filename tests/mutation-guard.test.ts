@@ -63,6 +63,9 @@ describe('Bash write tripwire host route', () => {
         'printf value | tee -a ./_ops/log.txt', "sed -i '' 's/a/b/' _ref/file.txt",
         'rm -rf _ops/cache', 'mv _ref/source.txt safe.txt', 'cp safe.txt _ops/copy.txt',
         'rm -rf _ops/*', 'cd _ops && rm file.txt',
+        'cp safe.txt _ops/copy.txt 2>/dev/null', 'sed -i "" s/a/b/ _ref/x.txt 2>/dev/null',
+        'cp safe.txt _ops/copy.txt 2>&1', 'sed -i "" s/a/b/ _ref/x.txt 2>&1',
+        'echo value > _ops/file\nv=$(date)',
         `echo value > '${root}/outside.txt'`,
         `python3 -c "open('_ops/a.env', 'w').write('x')"`,
         `node -e "require('fs').writeFileSync('_ref/a.txt', 'x')"`,
@@ -77,10 +80,13 @@ describe('Bash write tripwire host route', () => {
         'echo "rm _ops/cache > /tmp/example"', 'rg "_ops/" docs',
         'echo value > src/file.txt', `echo value > '${cwd}/src/file.txt'`,
         'echo value > "$TARGET"', 'python3 generator.py', 'echo value > /dev/null',
+        'echo value > /dev/fd/2', 'echo value > /dev/tty', 'cp _ops/input safe.txt "2">/dev/null',
         'cd src && echo value > _ops/local.txt', 'cd "$TARGET" && rm _ops/file',
         'cd _ops | cat; echo value > report.txt',
         'cd $(printf src)\necho value > _ops/local.txt',
         "printf '%s\\n' 'example:\nrm -rf /tmp/example\n'",
+        'cat <<"$D" > report.txt\nrm -rf /tmp/example\n$D',
+        'cat <<A > a.txt; cat <<B > b.txt\nx\nA\nrm -rf /tmp/example\nB',
         "cat <<'EOF' > report.txt\nrm -rf _ops/cache\nEOF",
       ]) {
         const result = invokeBash(command);
