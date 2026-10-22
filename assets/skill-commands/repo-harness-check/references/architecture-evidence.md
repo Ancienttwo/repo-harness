@@ -51,26 +51,21 @@ The prompt then has a STALE CITATIONS section.
 
 ## Architecture documents
 
-Run `repo-harness architecture-projection check --json`. The result is an
-ArchContext `ProjectionResultV2`. The command exits 1 when the status is not
-`noop`. Use `repo-harness architecture-projection status --json` when the
-provider state is unclear.
-The check needs CodeGraph code facts. In a new worktree, have the worker run
-`codegraph init -y .` first, or `codegraph sync .` when `.codegraph/` exists.
-Before `apply`, the worker runs archctx `flows check` through the managed
-command in `repo-harness-architecture`. A flow selector error then shows in
-seconds, not in the slower check.
-When `status` returns a `next` step, the repository has no complete model.
-Assign the adoption flow in `repo-harness-architecture` before other model work.
+Run `repo-harness architecture-projection render-check --json`. It consumes
+archctx per-target output decisions. Source-stamp changes do not fail it.
+`renderEquivalent: null` means the check could not cover all targets; it is not
+a clean result. The command exits 1 for false or null. It needs CodeGraph facts.
+Use `repo-harness architecture-projection status --json` for provider readiness.
+Agents fix model debt and human prose in their feature PR. The upstream rolling
+writer publishes generated files. Do not run apply to refresh a feature PR.
 
 | Result | Meaning | Bot decision |
 | --- | --- | --- |
-| `noop` | Documents match the model and the source. | Schedule nothing. |
-| `planned`, only `docs/architecture/.projection-manifest.json` in `files` | Source changed; rendered content did not. | Have the branch worker run `repo-harness architecture-projection apply --json` and commit the manifest. |
-| `planned`, other `docs/architecture/` files | Rendered content changed. | Assign a `repo-harness-architecture` worker in the same branch. It checks the model, then runs `apply` and commits the documents. |
-| `human-action-required` with `unresolved-major-change` | ArchContext observed a major change. | The same worker runs `apply`. `apply` accepts the observed change; the pull request review is the human gate. |
-| Other `humanActions` reason codes, or `adoption-required` | Ownership, conflict or proof needs a decision. | Assign a `repo-harness-architecture` worker. Report to the user when ownership is ambiguous. |
-| Command error, `blocked` or a failure status | Environment or provider problem. | Fix the environment first. For missing code facts, run `codegraph init`. Do not schedule model work from this result. |
+| `renderEquivalent: true` | Generated output matches; source stamps may differ. | Schedule nothing. |
+| `renderEquivalent: false` | archctx reports changed output in `differingPaths`. | Inspect `bun run architecture:writer status`, its error and rolling PR. Repair the writer or reported model debt. The writer publishes generated output. |
+| `human-action-required` with `unresolved-major-change` | ArchContext observed a major change. | Review the model decision. An authorized operator can accept it through the upstream writer; a feature worker does not commit generated docs. |
+| Other `humanActions` reason codes, or `adoption-required` | Ownership, conflict or proof needs a decision; coverage is incomplete. | Assign the bounded model or adoption repair. Preserve the writer as owner of subsequent generated updates. |
+| Command error, `blocked` or a failure status | Environment, provider or incomplete render check. | Read the check and writer logs. Fix the reported cause; do not synthesize output or refresh stamps. |
 
 ## Refactor suggestions
 
@@ -81,7 +76,7 @@ Each candidate gives its kind, subject, risk, confidence, uncertainty,
 `kind`, a `totalCount`, a `truncated` flag and the first items. Module
 statistics are files, lines, fan-in, fan-out, cycles, direction violations
 (filled only when the model declares constraints) and unresolved imports.
-archctx 0.9.0 does not measure instability or test files, so they are not shown.
+archctx 0.9.1 does not measure instability or test files, so they are not shown.
 A suggestion recorded by an earlier scan has `snapshot: "earlier"` and its own
 `baselineSnapshotDigest`. It keeps its recorded metrics and evidence and shows
 no module statistics, because the current scan measured a different snapshot.

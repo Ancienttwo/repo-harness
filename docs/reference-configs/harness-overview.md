@@ -240,7 +240,7 @@ rather than inferring those values from turns, tool names, or timestamps.
 - `.ai/context/capability-source-map.json` is the optional human-edited source-map manifest for capability positioning and source pointers. Missing entries fall back to registry/architecture/workstream metadata; `--auto-fill-positioning` writes deterministic draft entries explicitly, not from hooks.
 - Under `capability_source: archcontext`, the sync target is the node's declared `extensions.contractFiles`. The block positioning is the node summary. Sync refuses a contract file that another capability also declares, for example the root `AGENTS.md`. It then writes no file.
 - No hook queues capability-context work. Under `capability_source: registry`, the Agent runs `repo-harness capability-context sync --capability <id> --apply` or `--path <path> --apply` when a change needs it.
-- Under `capability_source: archcontext`, the Agent runs `repo-harness architecture-projection apply --json` for a model change. It runs `capability-context sync --apply` only to write the declared contract files of one capability, as the item above describes. It does not run sync to repair the root contract.
+- Under `capability_source: archcontext`, the Agent fixes debt in the model and human prose. The archctx rolling writer publishes generated output. It runs `capability-context sync --apply` only to write the declared contract files of one capability, as the item above describes. It does not run sync to repair the root contract.
 
 ## Initializer and Runtime Model
 

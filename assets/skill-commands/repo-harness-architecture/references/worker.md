@@ -5,17 +5,14 @@ Worker reference. Use only within the assigned architecture scope.
 ## Protocol
 
 1. Confirm the target repo path and architecture scope.
-   Projection `check` and `apply` need CodeGraph code facts. In a new worktree run `codegraph init -y .`; when `.codegraph/` exists, run `codegraph sync .`.
+   Projection diagnostics need CodeGraph code facts. In a new worktree run `codegraph init -y .`; when `.codegraph/` exists, run `codegraph sync .`.
 2. Inspect `docs/architecture/index.md` and `.archcontext/model/nodes/`. For a coverage or registration scope, follow the coverage procedure below.
 3. When the scope maps to repo code or config, resolve the capability with:
    - `repo-harness run capability-resolver match --repo <repo> --path <path> --format json`
-4. Update the smallest relevant architecture artifact:
-   - umbrella status in `docs/architecture/index.md`
-   - module or snapshot docs under `docs/architecture/`
-   - Mermaid fenced block in the relevant module or snapshot Markdown when a visual flow materially helps
+4. Update the model and human-owned prose for the changed responsibility. Generated regions, diagrams and the projection manifest belong to the archctx rolling writer. Do not apply or commit generated output in a feature PR.
 5. Use Markdown Mermaid as the only architecture diagram artifact. Do not generate standalone HTML; use the external `mermaid` skill only to review layout and renderability before shipping the Markdown source.
 6. Verify with:
-   - `repo-harness architecture-projection check --json` (expect `noop` after the projection is committed)
+   - `repo-harness architecture-debt --json --base <review-base>` (handle debt in scope)
    - `repo-harness architecture-projection anchors --json` (read-only; see "Drift signals")
    - `repo-harness run capability-resolver validate --repo <repo> --format text`
    - `repo-harness run check-task-workflow` when repo workflow surfaces changed
@@ -34,14 +31,13 @@ success. Do not install a repo-local archctx.
 ## Drift signals
 
 - Generated sections: `repo-harness architecture-projection check --json`.
-  `freshness.staleNodes` names the stale capabilities.
+  `changes[].outputChanged` reports render changes. Source stamps alone need no Agent action. Inspect the rolling writer when generated output differs.
 - Human-written sections: `repo-harness architecture-projection anchors --json`.
   It runs `docs anchors` and writes no file. It lists cited paths that are
   missing, line numbers out of range, symbols that are missing and lines that
   moved. Fix the citations in your scope. Report the others.
 - Flow selectors: `"$NODE" "$ARCHCTX" flows check --json`. It checks the flow
-  selectors in seconds. Run it before `apply`, so that a flow error does not
-  first show in the slower projection check. It needs CodeGraph code facts.
+  selectors in seconds. Use its reported proof failures to repair the model in scope. It needs CodeGraph code facts.
 
 ## Coverage and Agent-owned registration
 
@@ -70,14 +66,11 @@ write nodes.
    model YAML by hand when a ChangeSet route exists.
 5. Run `"$NODE" "$ARCHCTX" validate --format json` and
    `"$NODE" "$ARCHCTX" flows check --json`. Verify source matching with
-   capability-resolver. Then run `repo-harness architecture-projection apply --json`
-   and `repo-harness architecture-projection check --json` (expect `noop`).
-   Verify the expected module document exists and shows `Proof: proven`. Missing docs
-   for an unchanged node need projection, not a duplicate node. Generated module
-   regions belong to archctx; preserve human-owned prose. Commit the model and the
-   projected documents in the same pull request.
+   capability-resolver. Commit the model and human prose. The rolling writer
+   publishes the generated module documents after merge. Missing docs for an
+   unchanged node need writer repair, not a duplicate node.
 
-## Model ChangeSets (archctx 0.9.0)
+## Model ChangeSets (archctx 0.9.1)
 
 - `plan` creates, updates and deletes entities. The operations are `create_entity`,
   `update_entity_fields` and `delete_entity`. A body is the complete new YAML
@@ -110,20 +103,18 @@ write nodes.
   that become owned, contested or unowned, or change owner.
 - A flow step is proven only with a relation for the exact step, a source symbol that is
   unique in its file, and a direct CodeGraph `calls` edge from source to sink.
-- Do not pass `--request-id` to `architecture-projection apply`. When ArchContext
-  reports a major change, `apply` derives the request id of the accepted change from
-  the ArchContext signal. A large model can exceed the configured
-  `projection_timeout_ms`. The archctx run can still finish, so run `check` before
-  you apply again.
-- A relation to another capability rewrites that capability's module page. When several
-  workers change the model in parallel, restore generated pages and shared projection
-  outputs outside your scope before commit. The integrator projects once.
+- A relation to another capability can change its generated page. Leave that
+  output to the rolling writer. Workers commit only their model and human prose.
 - `repo-harness module list`, `module review-prompt` and Engineer contract
   revisions read the committed HEAD snapshot. Commit the model before you verify
   them. An uncommitted model change shows in `worktree_dirty_paths`. An
   uncommitted new capability returns `capability_uncommitted`.
 
 ## Adopt ArchContext in a repository
+
+Initial adoption is an explicit ownership migration. Its first approved generated
+baseline is separate from steady-state feature work. Subsequent generated updates
+belong to the rolling writer.
 
 Use this flow when `architecture-projection status --json` returns a `next` step.
 Then the repository has no complete ArchContext model, and `apply.enabled` is

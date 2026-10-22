@@ -52,13 +52,7 @@ with_architecture_home() {
 
 # Runs the read-only architecture check and writes its JSON result to $1.
 run_architecture_check() {
-  with_architecture_home bun src/cli/index.ts architecture-projection check --json > "$1"
-}
-
-# Prints the summary that the daily repair issue carries: status, stale nodes,
-# files and human actions. It fails when the check printed no JSON result.
-architecture_summary() {
-  bun -e 'const r = JSON.parse(await Bun.file(process.argv[1]).text()); console.log(JSON.stringify({ status: r.status, staleNodes: (r.freshness?.staleNodes ?? []).map(n => n.nodeId), files: (r.files ?? []).map(f => f.path), humanActions: r.humanActions ?? [] }, null, 2));' "$1"
+  with_architecture_home bun src/cli/index.ts architecture-projection render-check --json > "$1"
 }
 
 # Prints a GitHub Actions warning annotation. The title must not contain ':' or ','.
@@ -100,7 +94,7 @@ if [[ "$lane" == affected ]]; then
 fi
 
 # PR advisory: warn about architecture debt that is new since the PR base, and
-# about stale architecture documents. Architecture diagnostics never fail the
+# about hand-edited generated regions. Architecture diagnostics never fail the
 # PR, so every outcome here exits 0.
 if [[ "$lane" == architecture-advisory ]]; then
   echo "[ci] architecture debt"
@@ -130,19 +124,23 @@ if [[ "$lane" == architecture-advisory ]]; then
   fi
   rm -f "$debt_json" "$debt_err"
 
-  echo "[ci] architecture projection"
+  echo "[ci] architecture hand edits"
   arch_json="$(mktemp /tmp/rh-arch-check-XXXXXX)"
-  run_architecture_check "$arch_json" || true
-  arch_line="$(bun -e 'const r = JSON.parse(await Bun.file(process.argv[1]).text()); console.log([r.status, (r.freshness?.staleNodes ?? []).map(n => n.nodeId).join(", ") || "none"].join("\t"));' "$arch_json")" || arch_line=""
-  printf '%s\n' "$(cat "$arch_json")"
-  rm -f "$arch_json"
-  if [[ -z "$arch_line" ]]; then
-    warn "Architecture check failed" "repo-harness architecture-projection check --json returned no result. Read the job log."
-  elif [[ "${arch_line%%$'\t'*}" == noop ]]; then
-    echo "[ci] Architecture documents are current."
-  else
-    warn "Architecture documents stale" "Status: ${arch_line%%$'\t'*}. Stale nodes: ${arch_line#*$'\t'}. In this PR run: repo-harness architecture-projection apply --json. Then commit docs/architecture/."
+  arch_status=0
+  with_architecture_home bun src/cli/index.ts architecture-projection hand-edits --json --base "$base" > "$arch_json" || arch_status=$?
+  if [[ "$arch_status" -eq 0 ]]; then
+    arch_lines="$(bun -e 'const r = JSON.parse(await Bun.file(process.argv[1]).text()); if (!Array.isArray(r.edits) || r.edits.some(e => typeof e.path !== "string" || typeof e.reasonCode !== "string")) throw Error("Invalid hand-edit report"); console.log(r.edits.map(e => `${e.path}: ${e.reasonCode}`.replace(/\s+/g, " ")).join("\n"));' "$arch_json")" || arch_status=$?
   fi
+  if [[ "$arch_status" -ne 0 ]]; then
+    warn "Architecture check failed" "repo-harness architecture-projection hand-edits --json --base $base failed. Read the job log."
+  elif [[ -n "$arch_lines" ]]; then
+    while IFS= read -r edit; do
+      warn "Architecture generated output hand edited" "$edit. Keep model and human prose changes in this PR; the archctx rolling writer owns generated output."
+    done <<< "$arch_lines"
+  else
+    echo "[ci] No hand-edited generated output in this PR."
+  fi
+  rm -f "$arch_json"
   echo "[ci] OK"
   exit 0
 fi
@@ -195,14 +193,14 @@ if [[ "$lane" == all || "$lane" == governance ]]; then
   bun src/cli/index.ts init --repo . --dry-run >/dev/null
 fi
 
-# Daily lane: stale architecture documents fail it, so the daily report opens
-# a repair issue. ARCHITECTURE_SUMMARY names the file for that report.
+# Daily lane: only render drift or an incomplete check fails. Source stamps do not.
+# The daily report routes the failure to the upstream rolling writer. ARCHITECTURE_SUMMARY names the file for that report.
 if [[ "$lane" == all || "$lane" == architecture ]]; then
   echo "[ci] architecture projection"
   arch_json="$(mktemp /tmp/rh-arch-check-XXXXXX)"
   arch_status=0
   run_architecture_check "$arch_json" || arch_status=$?
-  if arch_summary="$(architecture_summary "$arch_json")"; then
+  if arch_summary="$(cat "$arch_json")" && [[ -n "$arch_summary" ]]; then
     printf '%s\n' "$arch_summary"
     if [[ -n "${ARCHITECTURE_SUMMARY:-}" ]]; then
       mkdir -p "$(dirname "$ARCHITECTURE_SUMMARY")"
@@ -213,7 +211,7 @@ if [[ "$lane" == all || "$lane" == architecture ]]; then
   fi
   rm -f "$arch_json"
   if [[ "$arch_status" -ne 0 ]]; then
-    echo "[ci] Architecture projection is not noop. Fix the provider error, or run repo-harness architecture-projection apply in a PR." >&2
+    echo "[ci] Architecture render differs or is incomplete. Inspect archctx writer status and the reported debt or provider error." >&2
     exit 1
   fi
 fi

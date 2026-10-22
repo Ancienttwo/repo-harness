@@ -2,7 +2,8 @@ import { readGlobalArchitectureConfiguration } from '../../effects/architecture/
 import { execFileSync } from 'node:child_process';
 import { Command } from 'commander';
 import type { ProjectionMode } from 'archctx-contracts';
-import { architectureProjectionRequest, inspectArchitectureProjectionReadiness, readArchitectureDocsAnchors, runArchitectureProjection } from '../../effects/architecture/archctx-provider';
+import { architectureProjectionRequest, inspectArchitectureProjectionReadiness, readArchitectureDocsAnchors, readArchitectureHandEdits, runArchitectureProjection } from '../../effects/architecture/archctx-provider';
+import { summarizeArchitectureRender } from '../../core/architecture/projection';
 import { applyArchitectureProjection } from '../../effects/architecture/projection-apply';
 
 export interface ProjectionCommandOptions {
@@ -49,6 +50,24 @@ export function buildArchitectureProjectionCommand(): Command {
     try { write(readArchitectureDocsAnchors(repositoryRoot())); }
     catch (error) { fail(error); }
   });
+  command.command('render-check').requiredOption('--json', 'Compare generated output using archctx target decisions; ignore source stamps').action(() => {
+    try {
+      const root = repositoryRoot();
+      const summary = summarizeArchitectureRender(runArchitectureProjection(architectureProjectionRequest('check', root), root));
+      write(summary);
+      if (summary.renderEquivalent !== true) process.exitCode = 1;
+    } catch (error) { fail(error); }
+  });
+  command.command('hand-edits').requiredOption('--json', 'Report archctx generated-region hand edits')
+    .option('--base <ref>', 'Limit warnings to paths changed in this PR')
+    .action((options: { base?: string }) => {
+      try {
+        const root = repositoryRoot();
+        const base = options.base ? git(root, ['rev-parse', '--verify', `${options.base}^{commit}`]) : null;
+        const paths = base ? new Set(execFileSync('git', ['-C', root, 'diff', '--name-only', '-z', `${base}...HEAD`, '--'], { encoding: 'utf8' }).split('\0').filter(Boolean)) : null;
+        write({ edits: readArchitectureHandEdits(root).filter(edit => paths === null || paths.has(edit.path)) });
+      } catch (error) { fail(error); }
+    });
   return command;
 }
 

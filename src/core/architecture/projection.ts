@@ -30,6 +30,34 @@ import { dependencies } from '../../../package.json';
 
 export const ARCHCTX_REQUIRED_VERSION = dependencies.archctx;
 
+/** A delivery view of archctx's per-target output decisions. Stamps are not render drift. */
+export function summarizeArchitectureRender(result: ProjectionResultV2) {
+  if (!result.changes) throw new Error('archctx check omitted per-target changes');
+  const differingPaths = result.changes.filter(change => change.outputChanged).map(change => change.path);
+  const complete = (result.status === 'noop' || result.status === 'planned')
+    && result.coverage === undefined && result.humanActions.length === 0;
+  return {
+    status: result.status,
+    renderEquivalent: complete ? differingPaths.length === 0 : null,
+    differingPaths,
+    humanActions: result.humanActions,
+  };
+}
+
+/** docs drift has no published JSON schema. Validate the fields this reader consumes. */
+export function decodeArchitectureHandEdits(value: unknown): Array<{ path: string; reasonCode: string }> {
+  const report = record(value, 'archctx docs drift');
+  if (report.schemaVersion !== 'archcontext.docs-drift/v1') throw new Error('archctx docs drift schema mismatch');
+  const drift = record(report.drift, 'archctx docs drift.drift');
+  if (!Array.isArray(drift.diffs)) throw new Error('archctx docs drift omitted diffs');
+  return drift.diffs.map(value => {
+    const diff = record(value, 'archctx docs drift diff');
+    if (typeof diff.path !== 'string' || !diff.path || typeof diff.reasonCode !== 'string') throw new Error('archctx docs drift diff is invalid');
+    return { path: diff.path, reasonCode: diff.reasonCode };
+  }).filter(diff => diff.reasonCode === 'projection-generated-region-manually-edited'
+    || diff.reasonCode === 'projection-generated-file-manually-edited');
+}
+
 const ARCHCTX_MAINTENANCE_REMINDER = 'User authorization required: ask before replacing the shared daemon with daemon upgrade; this interrupts other clients. Use the same managed package-local archctx and Node runtime, then verify daemon status. After replacement, check the configured CodeGraph index for this repository; request authorization to rebuild only if it is missing or stale. Do not delete shared state or automatically restart/reindex.';
 
 export class ArchctxClientError extends Error {
