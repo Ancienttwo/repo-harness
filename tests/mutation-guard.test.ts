@@ -80,6 +80,7 @@ describe('Bash write tripwire host route', () => {
         'cd src && echo value > _ops/local.txt', 'cd "$TARGET" && rm _ops/file',
         'cd _ops | cat; echo value > report.txt',
         'cd $(printf src)\necho value > _ops/local.txt',
+        "printf '%s\\n' 'example:\nrm -rf /tmp/example\n'",
         "cat <<'EOF' > report.txt\nrm -rf _ops/cache\nEOF",
       ]) {
         const result = invokeBash(command);

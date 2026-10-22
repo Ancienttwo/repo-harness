@@ -102,7 +102,8 @@ export function bashWriteTargets(command: string, repoRoot: string, cwd: string)
   const lines = command.split('\n');
   for (let line = 0; line < lines.length; line++) {
     const tokens = words(lines[line]!);
-    if (!tokens) { commandCwd = null; continue; }
+    // A later physical line can still be inside this command's quoted argument.
+    if (!tokens) return [];
     let body = '';
     const here = tokens.findIndex(token => token.operator && token.value.startsWith('<<'));
     if (here >= 0) {
