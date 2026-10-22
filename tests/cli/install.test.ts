@@ -463,7 +463,7 @@ describe('install command (Phase 1B)', () => {
     });
   });
 
-  test('claude --location global creates ~/.claude/settings.json with 5 shared hooks', () => {
+  test('claude --location global creates ~/.claude/settings.json with 6 hooks including the Bash tripwire', () => {
     withTempHome((home) => {
       const result = runInstall({ target: 'claude', location: 'global' });
       expect(result.exitCode).toBe(0);
@@ -471,7 +471,8 @@ describe('install command (Phase 1B)', () => {
         fs.readFileSync(path.join(home, '.claude/settings.json'), 'utf-8'),
       );
       const total = Object.values(data.hooks as Record<string, unknown[]>).flat().length;
-      expect(total).toBe(5);
+      expect(total).toBe(6);
+      expect(data.hooks.PreToolUse.map((entry: { matcher: string }) => entry.matcher)).toEqual(['Edit|Write', 'Agent', 'Bash']);
       expect(data.hooks.UserPromptSubmit.length).toBe(1);
       expect(data.hooks.SubagentStart).toBeUndefined();
       expect(data.hooks.SubagentStop).toBeUndefined();
@@ -484,7 +485,7 @@ describe('install command (Phase 1B)', () => {
     });
   });
 
-  test('claude install self-heals legacy Codex-only managed entries back to 5 shared hooks', () => {
+  test('claude install self-heals legacy Codex-only managed entries back to 6 hooks', () => {
     withTempHome((home) => {
       const filePath = path.join(home, '.claude/settings.json');
       fs.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -509,7 +510,7 @@ describe('install command (Phase 1B)', () => {
       expect(result.exitCode).toBe(0);
       const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
       const total = Object.values(data.hooks as Record<string, unknown[]>).flat().length;
-      expect(total).toBe(5);
+      expect(total).toBe(6);
       expect(data.hooks.UserPromptSubmit.length).toBe(1);
       expect(data.hooks.SubagentStart).toBeUndefined();
       expect(data.hooks.SubagentStop).toBeUndefined();
@@ -534,12 +535,13 @@ describe('install command (Phase 1B)', () => {
       runInstall({ target: 'claude', location: 'global' });
       const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
       const pre = data.hooks.PreToolUse as { hooks: { command: string }[] }[];
-      // 2 siblings + 2 managed
-      expect(pre.length).toBe(4);
+      // 2 siblings + 3 managed, including the Bash tripwire.
+      expect(pre.length).toBe(5);
       expect(pre[0].hooks[0].command).toContain('repo-harness-hook PreToolUse');
       expect(pre[1].hooks[0].command).toContain('repo-harness-hook PreToolUse');
-      expect(pre[2].hooks[0].command).toBe('rtk hook claude');
-      expect(pre[3].hooks[0].command).toBe('echo repo-harness hook is documented');
+      expect(pre[2].hooks[0].command).toContain('repo-harness-hook PreToolUse --route bash');
+      expect(pre[3].hooks[0].command).toBe('rtk hook claude');
+      expect(pre[4].hooks[0].command).toBe('echo repo-harness hook is documented');
     });
   });
 

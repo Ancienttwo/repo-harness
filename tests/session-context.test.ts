@@ -23,7 +23,7 @@ import { hookIdentity } from './helpers/hook-identity';
 const HOOK_ENTRY = join(import.meta.dir, "../src/cli/hook-entry.ts");
 const RESUME = ".ai/harness/handoff/resume.md";
 const SPRINT = "plans/sprints/fixture.sprint.md";
-const EDIT_GUARD_SCOPE = "[EditGuardScope] The edit guard checks Edit, Write and apply_patch only. Bash writes skip it. Use the edit tools to change repository files. Use Bash to run commands.";
+const EDIT_GUARD_SCOPE = "[EditGuardScope] The edit guard checks Edit, Write and apply_patch. Claude Bash has a literal-write tripwire only; other shell writes skip it. Use the edit tools to change repository files. Use Bash to run commands.";
 
 interface Fixture {
   readonly root: string;

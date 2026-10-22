@@ -15,7 +15,7 @@ function matchers(event: HookEvent): (string | undefined)[] {
 describe('typed hook route registry', () => {
   test('routes are frozen, ordered, and carry no legacy script field', () => {
     expect(Object.isFrozen(ROUTES)).toBe(true);
-    expect(ROUTES).toHaveLength(6);
+    expect(ROUTES).toHaveLength(7);
     for (const route of ROUTES) {
       expect(Object.isFrozen(route)).toBe(true);
       expect('scripts' in route).toBe(false);
@@ -35,6 +35,7 @@ describe('typed hook route registry', () => {
       'SessionStart.default',
       'PreToolUse.edit',
       'PreToolUse.subagent',
+      'PreToolUse.bash',
       'UserPromptSubmit.inbox',
       'Stop.default',
     ]);
@@ -43,11 +44,11 @@ describe('typed hook route registry', () => {
   });
 
   test('matcher partitions remain disjoint', () => {
-    expect(matchers('PreToolUse')).toEqual(['Edit|Write', 'Agent']);
+    expect(matchers('PreToolUse')).toEqual(['Edit|Write', 'Agent', 'Bash']);
   });
 
   test('every route has exactly one exhaustive typed handler binding', () => {
-    expect(new Set(ROUTES.map((route) => `${route.event}.${route.routeId}`)).size).toBe(6);
+    expect(new Set(ROUTES.map((route) => `${route.event}.${route.routeId}`)).size).toBe(7);
     for (const route of ROUTES) expect(getHandlerForRoute(route).id).toBe(route.handler);
   });
 

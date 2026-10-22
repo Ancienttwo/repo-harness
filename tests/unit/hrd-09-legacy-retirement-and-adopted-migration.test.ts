@@ -37,6 +37,7 @@ function routeInput(event: HookEvent, routeId: RouteId): { readonly host: 'claud
   switch (`${event}.${routeId}`) {
     case 'SessionStart.default': return { host: 'claude' };
     case 'PreToolUse.edit': return { host: 'claude', input: JSON.stringify({ tool_input: { file_path: 'src/example.ts' } }) };
+    case 'PreToolUse.bash': return { host: 'claude', input: JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'git status --short' } }) };
     case 'PreToolUse.subagent': return { host: 'claude', input: JSON.stringify({ tool_name: 'Agent', tool_input: { prompt: 'Inspect the fixture and report evidence.' } }) };
     case 'UserPromptSubmit.inbox': return { host: 'claude', input: JSON.stringify({ prompt: 'check task inbox' }) };
     case 'SubagentStart.context': return { host: 'codex', input: JSON.stringify({ hook_event_name: 'SubagentStart', session_id: 'hrd09-fixture' }) };

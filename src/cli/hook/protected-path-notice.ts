@@ -4,13 +4,14 @@ import { lstatSync, readdirSync, readFileSync, type Stats } from 'node:fs';
 import { join } from 'node:path';
 import { assertSafeRepoWritePath, writeHookStateFile } from '../../effects/hook-state-file';
 import { boundedHookDiagnostic } from './hook-protocol';
+import { PROTECTED_REPO_DIRS } from './mutation-protected-dirs';
 
 /**
  * The edit guard denies every Edit, Write and apply_patch target under these
  * directories, so a change here came from Bash, a script or the person (#851).
  * Git ignores both directories, so Stop keeps its own manifest to compare.
  */
-const ROOTS = ['_ops', '_ref'] as const;
+const ROOTS = PROTECTED_REPO_DIRS;
 const STATE = '.ai/harness/state/protected-paths.json';
 const MAX_ENTRIES = 5_000;
 const MAX_ROWS = 5;

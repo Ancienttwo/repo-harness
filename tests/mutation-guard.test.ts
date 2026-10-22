@@ -43,6 +43,55 @@ function failureRecords(cwd: string): Array<Record<string, unknown>> {
 
 const HOOK_ENTRY = join(import.meta.dir, '../src/cli/hook-entry.ts');
 
+describe('Bash write tripwire host route', () => {
+  test('literal protected destinations block; reads, ordinary writes and unresolved targets pass', () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'bash-write-guard-')));
+    const cwd = join(root, 'repo');
+    const home = join(root, 'home');
+    try {
+      mkdirSync(cwd); mkdirSync(home);
+      initRepo(cwd);
+      mkdirSync(join(cwd, 'src'));
+      const invokeBash = (command: string, hookCwd = cwd) => spawnSync(process.execPath,
+        [HOOK_ENTRY, 'PreToolUse', '--route', 'bash'], {
+          cwd: hookCwd, encoding: 'utf8',
+          input: JSON.stringify({ tool_name: 'Bash', cwd: hookCwd, tool_input: { command } }),
+          env: { PATH: process.env.PATH, HOME: home, HOOK_HOST: 'claude', HOOK_REPO_ROOT: cwd },
+        });
+      for (const command of [
+        'echo value > _ops/env/a.env', 'cat <<EOF >> "_ref/upstream.txt"\ntext\nEOF',
+        'printf value | tee -a ./_ops/log.txt', "sed -i '' 's/a/b/' _ref/file.txt",
+        'rm -rf _ops/cache', 'mv _ref/source.txt safe.txt', 'cp safe.txt _ops/copy.txt',
+        'rm -rf _ops/*', 'cd _ops && rm file.txt',
+        `echo value > '${root}/outside.txt'`,
+        `python3 -c "open('_ops/a.env', 'w').write('x')"`,
+        `node -e "require('fs').writeFileSync('_ref/a.txt', 'x')"`,
+        "python3 - <<'PY'\nopen('_ops/a.env', 'w').write('x')\nPY",
+      ]) {
+        const result = invokeBash(command);
+        expect({ command, status: result.status, stderr: result.stderr }).toMatchObject({ command, status: 2 });
+        expect(result.stderr).toMatch(/\[(OpsPrivateGuard|ExternalReferenceGuard|RepoScopeGuard)\]/);
+      }
+      for (const command of [
+        'git status --short', 'cat _ops/env/a.env > report.txt', 'cp _ref/source.txt safe.txt',
+        'echo "rm _ops/cache > /tmp/example"', 'rg "_ops/" docs',
+        'echo value > src/file.txt', `echo value > '${cwd}/src/file.txt'`,
+        'echo value > "$TARGET"', 'python3 generator.py', 'echo value > /dev/null',
+        'cd src && echo value > _ops/local.txt', 'cd "$TARGET" && rm _ops/file',
+        'cd _ops | cat; echo value > report.txt',
+        'cd $(printf src)\necho value > _ops/local.txt',
+        "cat <<'EOF' > report.txt\nrm -rf _ops/cache\nEOF",
+      ]) {
+        const result = invokeBash(command);
+        expect({ command, status: result.status, stderr: result.stderr }).toMatchObject({ command, status: 0 });
+      }
+      expect(invokeBash('echo value > _ops/local.txt', join(cwd, 'src')).status).toBe(0);
+      expect(invokeBash('echo value > ../_ops/a.env', join(cwd, 'src')).status).toBe(2);
+      expect(existsSync(join(cwd, '_ops'))).toBe(false);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  }, 60_000);
+});
+
 /** The installed host path: `repo-harness-hook PreToolUse --route edit` in a child process with an isolated HOME. */
 function hostEdit(cwd: string, home: string, toolInput: Record<string, string>, host: 'claude' | 'codex' = 'claude') {
   const result = spawnSync(process.execPath, [HOOK_ENTRY, 'PreToolUse', '--route', 'edit'], {

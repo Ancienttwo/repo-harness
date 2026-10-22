@@ -7,6 +7,8 @@ parent: capability.runtime-harness.hook-adapters
 summary: "The typed handler that guards edit paths, and the circuit breaker store."
 responsibilities:
   - Decide PreToolUse.edit with the mutation guard from the repository, _ref, _ops and target path boundaries.
+  - Check literal Bash write targets on Claude with the same private path boundaries and a repository-only scope.
+  - Share the protected root directory inventory with Stop and the Git path check.
   - Keep the semantic review circuit breaker that the review command records attempts in.
 source:
   include:

@@ -174,6 +174,9 @@ if [[ "$lane" == all || "$lane" == governance ]]; then
   echo "[ci] state boundaries"
   bun run check:state-boundaries
 
+  echo "[ci] protected Git paths"
+  bun scripts/check-protected-paths.ts --tracked
+
   echo "[ci] helper projection"
   bun run check:helpers
 
