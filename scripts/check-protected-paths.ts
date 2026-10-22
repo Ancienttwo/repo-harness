@@ -10,10 +10,9 @@ export function checkProtectedPaths(args: readonly string[], cwd = process.cwd()
   }
   try {
     const root = execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-    const pathspecs = PROTECTED_REPO_DIRS.map(dir => `:(top,literal)${dir}`);
     const gitArgs = args[0] === '--tracked'
-      ? ['ls-files', '--cached', '--full-name', '-z', '--', ...pathspecs]
-      : ['-c', 'diff.relative=false', 'diff', '--cached', '--name-only', '--no-renames', '-z', '--', ...pathspecs];
+      ? ['--literal-pathspecs', 'ls-files', '--cached', '--full-name', '-z', '--', ...PROTECTED_REPO_DIRS]
+      : ['--literal-pathspecs', '-c', 'diff.relative=false', 'diff', '--cached', '--name-only', '--no-renames', '-z', '--', ...PROTECTED_REPO_DIRS];
     const output = execFileSync('git', gitArgs, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 5_000 });
     const paths = output.split('\0').filter(path => protectedRepoDir(path));
     if (!paths.length) return 0;

@@ -18,10 +18,10 @@ function fixture(run: (root: string, git: (...args: string[]) => void) => void) 
   } finally { rmSync(root, { recursive: true, force: true }); }
 }
 
-function check(root: string, args: string[] = [], override?: string) {
+function check(root: string, args: string[] = [], override?: string, pathspecEnv: NodeJS.ProcessEnv = {}) {
   return spawnSync(process.execPath, [SCRIPT, ...args], {
     cwd: root, encoding: 'utf8',
-    env: { ...process.env, REPO_HARNESS_ALLOW_PROTECTED_PATHS: override },
+    env: { ...process.env, ...pathspecEnv, REPO_HARNESS_ALLOW_PROTECTED_PATHS: override },
   });
 }
 
@@ -46,6 +46,16 @@ describe('Git protected path boundary', () => {
       expect(check(root).status).toBe(0);
       const blocked = check(root, ['--tracked']);
       expect(blocked.status).toBe(1); expect(blocked.stderr).toContain('_ref/source\\nname');
+    });
+  });
+
+  test('literal-pathspec mode inherited by Git hooks cannot hide protected paths', () => {
+    fixture((root, git) => {
+      mkdirSync(join(root, '_ops')); writeFileSync(join(root, '_ops/fixture'), 'fixture');
+      git('add', '-f', '_ops/fixture');
+      const literalEnv = { GIT_LITERAL_PATHSPECS: '1' };
+      expect(check(root, [], undefined, literalEnv).status).toBe(1);
+      expect(check(root, ['--tracked'], undefined, literalEnv).status).toBe(1);
     });
   });
 
