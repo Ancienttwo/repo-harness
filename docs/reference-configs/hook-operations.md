@@ -269,7 +269,7 @@ Hooks do not record architecture drift. They keep no queue and no drift cursor,
 and they run no projection or LLM work. Architecture updates are explicit:
 
 - `repo-harness run workstream-sync` maintains durable capability workstreams.
-- Agents read architecture documents on demand and update real boundaries explicitly.
+- Agents read architecture documents on demand, fix debt, and update the model and human prose. The archctx rolling writer publishes generated regions and the manifest.
 
 `repo-harness state resolve --json` reports `capability_ownership`. It is a
 projection of the ownership answer that state resolution already computed:

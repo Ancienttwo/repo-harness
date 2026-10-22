@@ -1040,15 +1040,45 @@ checks it and owns the result contract. repo-harness decodes each result with
 the published `archctx-contracts` schema and invariants and keeps no local copy
 of the wire contract. The exact archctx version pin is the compatibility check.
 
-No hook runs architecture projection or records architecture drift. The pull
-request is the update unit. When a change alters a capability's
-responsibilities, entrypoints, relations or flows, the Agent uses the
-`repo-harness-architecture` skill, writes the model change through an archctx
-ChangeSet, and runs `repo-harness architecture-projection apply --json` in the
-same branch. `check` and `plan` show the effect without writes. The projected
-`docs/architecture/` files are committed with the change.
+No hook runs architecture projection or records architecture drift. When a
+change alters responsibilities, entrypoints, relations or flows, the Agent uses
+`repo-harness-architecture`, changes the model through a ChangeSet, and fixes
+human prose and debt. Feature PRs do not apply or commit generated regions or
+the projection manifest. The archctx rolling writer publishes those outputs.
 
-`AgentNotice` reads package-local archctx 0.9.0
+### Rolling writer (this repository)
+
+`bun run architecture:writer <status|once|follow>` resolves the pinned package
+and a compatible Node runtime. It fixes the upstream target to `origin`, base
+`main`, branch `archctx/projection`, publisher `gh`. `follow` delegates the
+300-second loop to archctx. archctx owns the shared lock, worktree, render,
+commit, push and rolling PR. It never pushes main. No GitHub App, new secret,
+Actions writer or repo-harness publication loop is used. The operator supplies
+existing Git and gh authentication. The resulting PR runs normal CI; the Bot
+merges only with the owner's publication authorization and green checks.
+
+Set `ARCHCONTEXT_STATE_DIR` to one explicit absolute path shared by this
+repository's writer invocations. Keep it stable across restarts. On the Mini,
+put the writer checkout and state under `/tmp/`. Do not run a second service
+with a different state root. Inspect `bun run architecture:writer status`.
+For initial setup, run `once`; if archctx reports missing code facts, read
+`data.worktreePath` from `status`, run `codegraph init -y <worktreePath>`, then
+run `once` again. Initialize only that writer-owned worktree. Do not replace a
+shared daemon or index other workspaces. Inspect facts again if archctx reports
+a stale index after the base moves; the launcher does not invent a repair.
+
+Run `follow` under the operator's process supervisor after setup. Inspect each
+JSON run result and `status`: `busy` means another writer holds the lock;
+`human-action-required` needs the reported model or ownership decision;
+`failed` carries the upstream error. The launcher does not pass
+`--accept-observed-major-change`. Acceptance requires a separate authorized
+upstream invocation. Do not interpret a live process as successful publication.
+Use `"$NODE" "$ARCHCTX" projection verify-pr --base origin/main --json` to
+verify a generated-only rolling PR. `humanEditedPaths` in that result means
+changes to human-owned text, not hand edits inside generated regions.
+Service installation and activation are operator steps, not package-install effects.
+
+`AgentNotice` reads package-local archctx 0.9.1
 `checkpoint --changed-path <path>... --json`. In practice, only citation debt
 (`stale-anchor`) reaches the session. Checkpoint receives only owned changed
 paths. An ambiguous owner stops the ownership resolve before checkpoint runs.
@@ -1077,18 +1107,16 @@ The old manifest-based owed rule is removed from hooks. `state resolve` keeps
 its existing ownership subject. No hook projects architecture or changes the
 model. A failed observation emits no notice and one operator diagnostic on
 stderr at exit 0.
-CI checks architecture in two jobs. The PR job `PR architecture freshness
-(advisory)` runs `repo-harness architecture-debt --json --base <PR base>`. It
-prints one warning for each ArchContext debt item whose id is new at the PR
-head, at most 20. Each warning names the item kind, its capability ids or paths
-and its action. One more warning gives the count of the other new items. When
-the head or base coverage is not `complete`, the job log shows the coverage
-reason codes. A coverage gap is not a report of no debt. The job then runs
-`architecture-projection check --json` and warns with the stale node ids and
-the apply command. It never fails the PR and is not part of `Required / CI`. The daily job `Daily architecture
-freshness` fails when the check status is not `noop`. Its repair issue names
-architecture freshness and contains the JSON summary and the matching action
-row from the `repo-harness-check` architecture evidence reference.
+CI checks architecture in two jobs. The PR advisory reports new debt relative
+to the PR base, at most 20 items, and prints coverage gaps. It then runs
+`architecture-projection hand-edits --json --base <PR base>`. This reads
+archctx `docs drift` manual-edit reason codes and warns only for paths changed
+in the PR. It does not parse generated markers. All advisory outcomes exit 0.
+The daily job runs `architecture-projection render-check --json`. It uses
+archctx `changes[].outputChanged`; source stamps alone pass. Real render drift
+or an incomplete check fails. The repair issue contains differing paths and
+human actions, and routes repair to the writer or model owner. It does not ask
+a feature worker to apply and commit a manifest.
 
 Hook advisories for the Agent go out as `hookSpecificOutput.additionalContext`
 on Claude and Codex. Neither host gives plain stdout of `PreToolUse`,
@@ -1106,13 +1134,10 @@ including workers. Delivery is gated by host, not role:
 All delivery points share the id marker. Claude also gets a one-sentence
 `systemMessage` from the same notice. Codex gets no human line.
 
-`apply` accepts a major change in the same call. When ArchContext returns an
-unresolved-major signal, `apply` copies its reason codes and affected node ids
-into `acceptedChange` and applies again. The Agent that runs `apply` owns the
-decision; the pull request review is the human gate. If the provider response
-of a committed accepted apply is lost, `apply` reads the committed result back
-through `projection-apply-readback-v1` and does not apply twice. No local
-candidate, receipt or approval store exists.
+Manual projection apply remains available for explicitly authorized adoption
+and repair. It is not a feature-PR freshness step. archctx owns observed-change
+acceptance and committed-result readback; repo-harness keeps no second
+candidate, receipt or approval store.
 
 Managed install/update also verifies `daemon status --json` through the same
 exact package-local CLI and compatible Node runtime after static capabilities.
@@ -1296,7 +1321,7 @@ repo-harness refactor decide <recommendation-id> accept|defer|reject --reason "<
 and bounded `evidence` of its observation (`kind`, `totalCount`, `truncated`
 and the first items) and the statistics of every affected module (files, lines,
 fan-in, fan-out, cycles, direction violations, unresolved imports). Direction
-violations are filled only when the model declares constraints. archctx 0.9.0
+violations are filled only when the model declares constraints. archctx 0.9.1
 does not measure instability or test files, so they are not shown. A suggestion
 recorded by an earlier scan has `snapshot: "earlier"`, keeps its recorded
 metrics and evidence, and shows no module statistics.
