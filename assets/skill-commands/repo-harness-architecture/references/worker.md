@@ -116,6 +116,9 @@ Initial adoption is an explicit ownership migration. Its first approved generate
 baseline is separate from steady-state feature work. Subsequent generated updates
 belong to the rolling writer.
 
+Do not pass `--request-id` to the projection commands in this authorized adoption
+flow. repo-harness derives the default request identity from the request body.
+
 Use this flow when `architecture-projection status --json` returns a `next` step.
 Then the repository has no complete ArchContext model, and `apply.enabled` is
 `false`. Do the flow in one branch. Commit the result in one pull request.

@@ -51,8 +51,8 @@ The prompt then has a STALE CITATIONS section.
 
 ## Architecture documents
 
-Run `repo-harness architecture-projection render-check --json`. It consumes
-archctx per-target output decisions. Source-stamp changes do not fail it.
+Run `repo-harness architecture-projection render-check --json`. It reads the
+per-target output decisions from the managed provider. Source-stamp changes do not fail it.
 `renderEquivalent: null` means the check could not cover all targets; it is not
 a clean result. The command exits 1 for false or null. It needs CodeGraph facts.
 Use `repo-harness architecture-projection status --json` for provider readiness.

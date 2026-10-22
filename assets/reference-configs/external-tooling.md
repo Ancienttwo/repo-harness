@@ -1073,7 +1073,7 @@ JSON run result and `status`: `busy` means another writer holds the lock;
 `failed` carries the upstream error. The launcher does not pass
 `--accept-observed-major-change`. Acceptance requires a separate authorized
 upstream invocation. Do not interpret a live process as successful publication.
-Use the managed `archctx projection verify-pr --base origin/main --json` to
+Use `"$NODE" "$ARCHCTX" projection verify-pr --base origin/main --json` to
 verify a generated-only rolling PR. `humanEditedPaths` in that result means
 changes to human-owned text, not hand edits inside generated regions.
 Service installation and activation are operator steps, not package-install effects.
