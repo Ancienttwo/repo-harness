@@ -5,7 +5,7 @@
   "name": "Herdr Task Session Host",
   "status": "active",
   "parent": "capability.runtime-harness.task-agent-host",
-  "summary": "Owns the Herdr transport, task sessions, task worktrees, role profiles, the Herdr commands and the installed persona and plugin assets.",
+  "summary": "Owns the Herdr transport, task sessions, task worktrees, role profiles, the Herdr commands and the installed persona and plugin assets. Owns the pure pane-status contract, its plugin projection, and local blind-label I/O.",
   "source": {
     "include": [
       "src/effects/terminal/herdr.ts",
@@ -18,7 +18,9 @@
       "scripts/install-agent-fleet.sh",
       "src/effects/terminal/coding-isolation.ts",
       "src/effects/terminal/coding-session.ts",
-      "src/effects/terminal/oar-coding-host.ts"
+      "src/effects/terminal/oar-coding-host.ts",
+      "src/core/decision/**",
+      "src/effects/terminal/herdr-decision.ts"
     ]
   }
 }

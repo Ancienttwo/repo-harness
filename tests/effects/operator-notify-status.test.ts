@@ -246,7 +246,7 @@ describe('notify plugin status', () => {
       const spy = spyOn(console, 'error').mockImplementation((line: unknown) => { stderr.push(String(line)); });
       try {
         await notify({ ...f.env, HERDR_SESSION: 'notify-test', HERDR_PLUGIN_CONFIG_DIR: f.config, HERDR_PLUGIN_STATE_DIR: state,
-          HERDR_PLUGIN_EVENT_JSON: JSON.stringify({ event: 'pane.agent_status_changed', data: { pane_id: 'pane-1', workspace_id: 'workspace-1', agent_status: 'blocked' } }),
+          HERDR_PLUGIN_EVENT_JSON: JSON.stringify({ event: 'pane_agent_status_changed', data: { pane_id: 'pane-1', workspace_id: 'workspace-1', agent_status: 'blocked' } }),
           HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify({ workspace_cwd: workspace }),
         }, (async (url: string | URL | Request) => new Response(JSON.stringify({ ok: !String(url).includes('telegram.org') || telegramOk }), { status: 200 })) as typeof fetch);
       } finally { spy.mockRestore(); }
@@ -273,7 +273,7 @@ describe('notify plugin status', () => {
     const spy = spyOn(console, 'error').mockImplementation((line: unknown) => { stderr.push(String(line)); });
     try {
       await notify({ ...f.env, HERDR_SESSION: 'notify-test', HERDR_PLUGIN_CONFIG_DIR: f.config, HERDR_PLUGIN_STATE_DIR: state,
-        HERDR_PLUGIN_EVENT_JSON: JSON.stringify({ event: 'pane.agent_status_changed', data: { pane_id: 'pane-1', workspace_id: 'workspace-1', agent_status: 'blocked' } }),
+        HERDR_PLUGIN_EVENT_JSON: JSON.stringify({ event: 'pane_agent_status_changed', data: { pane_id: 'pane-1', workspace_id: 'workspace-1', agent_status: 'blocked' } }),
         HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify({ workspace_cwd: workspace }),
       }, (async (_url: string | URL | Request) => new Response('{}', { status: 200 })) as typeof fetch);
     } finally { spy.mockRestore(); }

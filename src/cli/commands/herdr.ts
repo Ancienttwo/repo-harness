@@ -1,3 +1,4 @@
+import { labelDecision } from '../../effects/terminal/herdr-decision.ts';
 import { Command } from 'commander';
 import { spawnSync } from 'node:child_process';
 import { constants, fchmodSync, closeSync, copyFileSync, fsyncSync, lstatSync, mkdirSync, openSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
@@ -7,9 +8,11 @@ import { fileURLToPath } from 'node:url';
 
 const PLUGIN_ID = 'aimpact.webhook-notify';
 const ASSETS = fileURLToPath(new URL('../../../assets/herdr/webhook-notify/', import.meta.url));
-const SECRETS = ['WEBHOOK_URL', 'WEBHOOK_KEY', 'SLACK_WEBHOOK_URL', 'DISCORD_WEBHOOK_URL', 'TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID'] as const;
+const SECRETS = ['WEBHOOK_URL', 'WEBHOOK_KEY', 'SLACK_WEBHOOK_URL', 'DISCORD_WEBHOOK_URL', 'TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID', 'CLOUDFLARE_ACCOUNT_ID', 'CLOUDFLARE_API_TOKEN'] as const;
 interface NotifyOptions {
   session: string;
+  clefMode?: string;
+  cloudflareAccountId?: string;
   nonInteractive?: boolean;
   webhookUrl?: string;
   webhookKey?: string;
@@ -52,6 +55,8 @@ function validateConfig(config: Record<string, string>): void {
   for (const [key, value] of Object.entries(config)) {
     if (/[\x00-\x1f\x7f'"\\]/.test(value)) throw new Error(`${key} contains an unsupported character.`);
   }
+  if (!['off', 'shadow'].includes(config.CLEF_MODE!)) throw new Error('CLEF_MODE must be off or shadow.');
+  if (config.CLEF_MODE === 'shadow' && (!/^[a-f0-9]{32}$/i.test(config.CLOUDFLARE_ACCOUNT_ID ?? '') || !config.CLOUDFLARE_API_TOKEN)) throw new Error('Shadow mode needs a Cloudflare account id and API token.');
   if (!config.WEBHOOK_URL || !config.WEBHOOK_KEY) throw new Error('WEBHOOK_URL and WEBHOOK_KEY are required.');
   if (Boolean(config.TELEGRAM_BOT_TOKEN) !== Boolean(config.TELEGRAM_CHAT_ID)) throw new Error('Telegram needs a bot token and a chat id.');
   for (const key of ['WEBHOOK_URL', 'SLACK_WEBHOOK_URL', 'DISCORD_WEBHOOK_URL']) {
@@ -103,13 +108,20 @@ export async function installNotify(options: NotifyOptions): Promise<void> {
     TELEGRAM_BOT_TOKEN: options.telegramBotToken ?? process.env.TELEGRAM_BOT_TOKEN ?? '',
     TELEGRAM_CHAT_ID: options.telegramChatId ?? process.env.TELEGRAM_CHAT_ID ?? '',
     NOTIFY_SESSION: options.session,
+    CLEF_MODE: options.clefMode ?? process.env.CLEF_MODE ?? 'off',
+    CLOUDFLARE_ACCOUNT_ID: options.cloudflareAccountId ?? process.env.CLOUDFLARE_ACCOUNT_ID ?? '',
+    CLOUDFLARE_API_TOKEN: process.env.CLOUDFLARE_API_TOKEN ?? '',
     WEBHOOK_NOTIFY_DONE: options.webhookNotifyDone ? '1' : '0',
     SLACK_NOTIFY_DONE: options.slackNotifyDone ? '1' : '0',
     DISCORD_NOTIFY_DONE: options.discordNotifyDone ? '1' : '0',
     TELEGRAM_NOTIFY_DONE: options.telegramNotifyDone ? '1' : '0',
   };
   if (!options.nonInteractive) {
+    if (options.clefMode === undefined && process.env.CLEF_MODE === undefined) {
+      config.CLEF_MODE = (await askMasked('Clef mode [off/shadow; Enter for off]')).trim() || 'off';
+    }
     for (const key of SECRETS) {
+      if (key.startsWith('CLOUDFLARE_') && config.CLEF_MODE !== 'shadow') continue;
       if (!config[key]) config[key] = (await askMasked(`${key}${key === 'WEBHOOK_URL' || key === 'WEBHOOK_KEY' ? ' (required)' : ' (optional; Enter to skip)'}`)).trim();
     }
     for (const channel of ['WEBHOOK', 'SLACK', 'DISCORD', 'TELEGRAM']) {
@@ -121,6 +133,7 @@ export async function installNotify(options: NotifyOptions): Promise<void> {
       }
     }
   }
+  if (config.CLEF_MODE === 'off') { config.CLOUDFLARE_ACCOUNT_ID = ''; config.CLOUDFLARE_API_TOKEN = ''; }
   validateConfig(config);
   const env = { ...process.env };
   for (const name of Object.keys(env)) if (name.startsWith('HERDR_') || SECRETS.includes(name as typeof SECRETS[number])) delete env[name];
@@ -150,7 +163,7 @@ export async function installNotify(options: NotifyOptions): Promise<void> {
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   mkdirSync(source, { recursive: true, mode: 0o700 });
   if (lstatSync(dir).isSymbolicLink() || lstatSync(source).isSymbolicLink()) throw new Error('Plugin directories must not be symbolic links.');
-  for (const name of ['worktree-location.mjs', 'herdr-plugin.toml', 'notify.mjs']) {
+  for (const name of ['pane-status.mjs', 'worktree-location.mjs', 'herdr-plugin.toml', 'notify.mjs']) {
     const target = join(source, name);
     try {
       const stat = lstatSync(target);
@@ -177,6 +190,8 @@ export function buildHerdrCommand(): Command {
   command.command('notify').description('Set up Bot and human notifications')
     .command('install').description('Install and enable the shipped webhook plugin')
     .requiredOption('--session <name>', 'Herdr session to notify')
+    .option('--clef-mode <mode>', 'Clef mode: off or shadow (default: off)')
+    .option('--cloudflare-account-id <id>', 'Cloudflare account id for shadow mode')
     .option('--non-interactive', 'Use flags or environment values without prompts')
     .option('--webhook-url <url>', 'Required Bot routine webhook URL')
     .option('--webhook-key <key>', 'Required Bot routine webhook key')
@@ -195,6 +210,14 @@ export function buildHerdrCommand(): Command {
         const message = error instanceof Error && !('code' in error) ? error.message : 'Cannot write the plugin config.';
         process.stderr.write(`Herdr notify: ${message}\n`); process.exitCode = 1;
       }
+    });
+  command.command('decision').description('Label local shadow decisions')
+    .command('label [event_id] [option]').description('Read the next blind record or write one Bot label')
+    .option('--next', 'Print one unlabeled record without model answers')
+    .option('--state-dir <path>', 'Explicit Herdr plugin state directory')
+    .action(async (eventId: string | undefined, option: string | undefined, options: { next?: boolean; stateDir?: string }) => {
+      try { process.stdout.write(JSON.stringify(await labelDecision({ eventId, option, ...options })) + '\n'); }
+      catch { process.stderr.write('Herdr decision: label failed. Check arguments, plugin state and file access.\n'); process.exitCode = 1; }
     });
   return command;
 }

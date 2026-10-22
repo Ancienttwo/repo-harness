@@ -4,7 +4,7 @@
   "kind": "capability",
   "name": "Task Agent Host",
   "status": "active",
-  "summary": "Hosts persistent task-agent participants in Herdr panes with role profiles, task worktrees, request send, request-bound result collection and OAR runtime observation, and installs the Herdr notify plugin and the agent fleet personas.",
+  "summary": "Hosts persistent task-agent participants in Herdr panes with role profiles, task worktrees, request send, request-bound result collection and OAR runtime observation, and installs the Herdr notify plugin and the agent fleet personas. Records pane-status shadow decisions and blind Bot labels without applying model output.",
   "responsibilities": [
     "Start one persistent task agent per repository, task and role in a Herdr pane and record its binding.",
     "Save each request before delivery and treat a lost response as unknown delivery that is never replayed.",
@@ -12,7 +12,8 @@
     "Fold OAR records in the owned hosts with the SDK reducer and expose bounded request-bound snapshots without task acceptance.",
     "Close Herdr workspaces and panes without removing Git checkouts.",
     "Install the shipped Herdr notify plugin, the release-matched Herdr skill and the fleet persona definitions.",
-    "Start and isolate the fixed OAR coding host through the task session boundary."
+    "Start and isolate the fixed OAR coding host through the task session boundary.",
+    "Record bounded, redacted Clef shadow decisions after Herdr notification delivery and store blind Bot labels without changing notification routing or agent status."
   ],
   "source": {
     "include": [
@@ -29,7 +30,9 @@
       "scripts/install-agent-fleet.sh",
       "src/effects/terminal/coding-isolation.ts",
       "src/effects/terminal/coding-session.ts",
-      "src/effects/terminal/oar-coding-host.ts"
+      "src/effects/terminal/oar-coding-host.ts",
+      "src/core/decision/**",
+      "src/effects/terminal/herdr-decision.ts"
     ],
     "entrypoints": [
       {

@@ -1,5 +1,5 @@
 import { defaultPolicy } from "../src/core/adoption/standard-plan";
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test, spyOn } from "bun:test";
 import { readFileSync } from "fs";
 import { dirname, join } from "path";
 import { configureRequiredHerdrSkill } from "../src/cli/commands/herdr-skill";
@@ -283,7 +283,7 @@ test.each(["claude", "codex"] as const)("%s skill cleanup recovers old stages an
 import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, realpathSync, rmSync, statSync, symlinkSync, utimesSync, renameSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { parseEnv } from 'node:util';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { PassThrough } from 'node:stream';
 import { askMasked } from '../src/cli/commands/herdr';
 
@@ -296,12 +296,14 @@ function notifyFixture() {
   const state = join(root, 'state');
   const bin = join(root, 'bin');
   for (const dir of [home, config, state, bin]) mkdirSync(dir);
+  const tail = join(root, 'tail.txt');
+  writeFileSync(tail, 'Result: complete.', { encoding: 'utf8', mode: 0o600 });
   const env = { ...process.env, HOME: home, XDG_CONFIG_HOME: join(home, '.config'),
     PATH: `${bin}${process.platform === 'win32' ? ';' : ':'}${process.env.PATH}`,
-    FIXTURE_CONFIG: config, FIXTURE_CALLS: join(root, 'calls.jsonl') };
+    FIXTURE_CONFIG: config, FIXTURE_CALLS: join(root, 'calls.jsonl'), FIXTURE_TAIL_FILE: tail };
   for (const key of Object.keys(env)) if (key.startsWith('HERDR_') || /^(WEBHOOK_|SLACK_|DISCORD_|TELEGRAM_)/.test(key)) delete (env as NodeJS.ProcessEnv)[key];
   const shim = join(bin, 'herdr');
-  writeFileSync(shim, `#!${process.execPath}\nimport {appendFileSync,mkdirSync} from 'node:fs';\nconst args=process.argv.slice(2);\nappendFileSync(process.env.FIXTURE_CALLS,JSON.stringify({args,secret:process.env.WEBHOOK_KEY??null})+'\\n');\nif(process.env.FIXTURE_FAIL===args[3]) { console.error('private '+process.env.FIXTURE_PRIVATE);process.exit(1); }\nif(args[3]==='config-dir') { mkdirSync(process.env.FIXTURE_CONFIG,{recursive:true}); console.log(process.env.FIXTURE_CONFIG); }\nif(args[3]==='list') console.log(process.env.FIXTURE_LIST_OUTPUT??JSON.stringify({id:'cli:plugin',result:{type:'plugin_list',plugins:JSON.parse(process.env.FIXTURE_PLUGINS??'[]')}}));\n`);
+  writeFileSync(shim, `#!${process.execPath}\nimport {appendFileSync,mkdirSync,readFileSync} from 'node:fs';\nconst args=process.argv.slice(2);\nappendFileSync(process.env.FIXTURE_CALLS,JSON.stringify({args,secret:process.env.WEBHOOK_KEY??null})+'\\n');\nif(process.env.FIXTURE_FAIL&&process.env.FIXTURE_FAIL===args[3]) { console.error('private '+process.env.FIXTURE_PRIVATE);process.exit(1); }\nif(args[0]==='pane'&&args[1]==='read') { if(process.env.FIXTURE_PANE_FAIL)process.exit(1); console.log(readFileSync(process.env.FIXTURE_TAIL_FILE,'utf8')); }\nif(args[3]==='config-dir'||(args[0]==='plugin'&&args[1]==='config-dir')) { mkdirSync(process.env.FIXTURE_CONFIG,{recursive:true}); console.log(process.env.FIXTURE_CONFIG); }\nif(args[3]==='list') console.log(process.env.FIXTURE_LIST_OUTPUT??JSON.stringify({id:'cli:plugin',result:{type:'plugin_list',plugins:JSON.parse(process.env.FIXTURE_PLUGINS??'[]')}}));\n`);
   chmodSync(shim, 0o755);
   const run = (args: string[] = [], extra: NodeJS.ProcessEnv = {}) => spawnSync(process.execPath,
     [join(ROOT, 'src/cli/index.ts'), 'herdr', 'notify', 'install', '--session', 'notify-test', '--non-interactive', ...args],
@@ -409,7 +411,7 @@ describe('Herdr notify install', () => {
       const delivered: string[] = [];
       await installedNotify({ ...fixture.env, HERDR_SESSION: 'notify-test', HERDR_PLUGIN_CONFIG_DIR: fixture.config,
         HERDR_PLUGIN_STATE_DIR: fixture.state,
-        HERDR_PLUGIN_EVENT_JSON: JSON.stringify({ event: 'pane.agent_status_changed', data: { pane_id: 'pane-1', workspace_id: 'workspace-1', agent_status: 'done' } }),
+        HERDR_PLUGIN_EVENT_JSON: JSON.stringify({ event: 'pane_agent_status_changed', data: { pane_id: 'pane-1', workspace_id: 'workspace-1', agent_status: 'done' } }),
         HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify({ workspace_cwd: fixture.workspace }),
       }, async (url: string) => { delivered.push(url); return new Response('{"ok":true}'); });
       expect(delivered).toEqual(['https://slack.example/secret']);
@@ -418,6 +420,25 @@ describe('Herdr notify install', () => {
       expect(statSync(path).mode & 0o777).toBe(0o600);
       expect(parseEnv(readFileSync(path, 'utf8')).WEBHOOK_KEY).toBe('changed-key');
     } finally { fixture.cleanup(); }
+  });
+
+  test('shadow install uses env-only token, installs the projection and rejects future modes', () => {
+    const f = notifyFixture();
+    try {
+      const extra = { CLOUDFLARE_API_TOKEN: 'fixture-clef-token' };
+      const args = [...botFlags, '--clef-mode', 'shadow', '--cloudflare-account-id', 'a'.repeat(32)];
+      const result = f.run(args, extra);
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.stdout + result.stderr).not.toContain('fixture-clef-token');
+      expect(parseEnv(readFileSync(join(f.config, '.env'), 'utf8'))).toMatchObject({ CLEF_MODE: 'shadow', CLOUDFLARE_ACCOUNT_ID: 'a'.repeat(32), CLOUDFLARE_API_TOKEN: 'fixture-clef-token' });
+      expect(readFileSync(join(f.config, 'source/pane-status.mjs'), 'utf8')).toBe(readFileSync(join(ROOT, 'src/core/decision/pane-status.mjs'), 'utf8'));
+      for (const mode of ['copilot', 'autopilot', 'bad']) expect(f.run([...botFlags, '--clef-mode', mode], extra).status).toBe(1);
+      expect(f.run(args).status).toBe(1);
+      expect(f.run(botFlags, { ...extra, CLEF_MODE: 'off', CLOUDFLARE_ACCOUNT_ID: 'a'.repeat(32) }).status).toBe(0);
+      expect(parseEnv(readFileSync(join(f.config, '.env'), 'utf8')).CLOUDFLARE_API_TOKEN).toBe('');
+      expect(parseEnv(readFileSync(join(f.config, '.env'), 'utf8')).CLOUDFLARE_ACCOUNT_ID).toBe('');
+      expect(parseEnv(readFileSync(join(f.config, '.env'), 'utf8')).CLEF_MODE).toBe('off');
+    } finally { f.cleanup(); }
   });
 
   test('invalid or missing credentials fail before Herdr I/O and do not disclose their values', () => {
@@ -525,7 +546,7 @@ describe('shipped Herdr notify event handler', () => {
     const fixture = notifyFixture();
     writeFileSync(join(fixture.config, '.env'), "WEBHOOK_URL='https://bot.example/routine'\nWEBHOOK_KEY='fixture-secret-key'\nNOTIFY_SESSION='notify-test'\nSLACK_WEBHOOK_URL='https://slack.example/hook'\nDISCORD_WEBHOOK_URL='https://discord.example/hook'\nTELEGRAM_BOT_TOKEN='123:token'\nTELEGRAM_CHAT_ID='-42'\n", { mode: 0o600 });
     const env = { ...fixture.env, HERDR_SESSION: 'notify-test', HERDR_PLUGIN_CONFIG_DIR: fixture.config,
-      HERDR_PLUGIN_STATE_DIR: fixture.state, HERDR_PLUGIN_EVENT_JSON: JSON.stringify({ event: 'pane.agent_status_changed',
+      HERDR_PLUGIN_STATE_DIR: fixture.state, HERDR_PLUGIN_EVENT_JSON: JSON.stringify({ event: 'pane_agent_status_changed',
         data: { type: 'pane_agent_status_changed', pane_id: 'pane-1', workspace_id: 'workspace-1', agent_status: status, agent: 'codex', title: 'Needs input' } }),
       HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify({ workspace_cwd: fixture.workspace, focused_pane_cwd: fixture.workspace, workspace_label: 'project' }) };
     const calls: Array<{url: string; init: RequestInit}> = [];
@@ -535,6 +556,263 @@ describe('shipped Herdr notify event handler', () => {
     }) as typeof fetch;
     return { ...fixture, env, calls, send };
   }
+
+  test.each([
+    ['pane_agent_status_changed', 4],
+    ['pane.agent_status_changed', 0],
+    ['pane_updated', 0],
+  ] as const)('Herdr wire event contract accepts only the emitted body name: %s', async (name, count) => {
+    const f = eventFixture('blocked');
+    try {
+      const event = JSON.parse(f.env.HERDR_PLUGIN_EVENT_JSON);
+      event.event = name;
+      f.env.HERDR_PLUGIN_EVENT_JSON = JSON.stringify(event);
+      await notify(f.env, f.send);
+      expect(f.calls).toHaveLength(count);
+      expect(existsSync(join(f.state, 'decision-shadow.jsonl'))).toBe(false);
+    } finally { f.cleanup(); }
+  });
+
+  function shadowFixture() {
+    const f = eventFixture('done');
+    Object.assign(f.env, { HERDR_BIN_PATH: join(f.root, 'bin/herdr') });
+    writeFileSync(join(f.config, '.env'), readFileSync(join(f.config, '.env'), 'utf8')
+      + "CLEF_MODE=shadow\nCLOUDFLARE_ACCOUNT_ID=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nCLOUDFLARE_API_TOKEN=fixture-clef-token\nWEBHOOK_NOTIFY_DONE=1\nSLACK_NOTIFY_DONE=1\nDISCORD_NOTIFY_DONE=1\nTELEGRAM_NOTIFY_DONE=1\n");
+    const records = () => readFileSync(join(f.state, 'decision-shadow.jsonl'), 'utf8').trim().split('\n').map(line => JSON.parse(line));
+    const answer = (model: string) => ({ success: true, result: { model,
+      answers: { 'pane.outcome': { type: 'choice', choice: 'quota', confidence: 0.9,
+        probabilities: { done: 0.025, stuck: 0.025, model_error: 0.025, quota: 0.9, unclear: 0.025 } },
+      'pane.result_present': { type: 'noul', noul: 0.1 }, 'pane.provider_message': { type: 'noul', noul: 0.9 } },
+      usage: { input_tokens: 3500, output_tokens: 0 }, private: 'fixture-clef-token' } });
+    const send = (async (url: string | URL | Request, init: RequestInit) => {
+      f.calls.push({ url: String(url), init });
+      return new Response(JSON.stringify(String(url).startsWith('https://api.cloudflare.com/') ? answer(JSON.parse(String(init.body)).model) : { ok: true }));
+    }) as typeof fetch;
+    return { ...f, send, records, configText: readFileSync(join(f.config, '.env'), 'utf8') };
+  }
+
+  test('shadow delivers identical channel requests before both models and writes a private redacted record', async () => {
+    const f = shadowFixture();
+    const clock = spyOn(Date, 'now').mockReturnValue(1792663200000);
+    const stderr: string[] = []; const consoleSpy = spyOn(console, 'error').mockImplementation(message => { stderr.push(String(message)); });
+    try {
+      writeFileSync(f.env.FIXTURE_TAIL_FILE, Array.from({ length: 125 }, (_, i) => `line ${i}`).join('\n')
+        + '\nsk-fixtureSecret ghp_fixtureSecret Bearer credential API_KEY="private value" '
+        + 'a'.repeat(48) + ' QWErTyZxCvBnMsDfGhJkLqWeRtYuIoPaSdFgHjKlZXCV123456 fixture-clef-token', 'utf8');
+      await notify(f.env, f.send);
+      expect(f.calls.slice(0, 4).map(call => call.url)).toEqual(['https://bot.example/routine', 'https://slack.example/hook', 'https://discord.example/hook', 'https://api.telegram.org/bot123:token/sendMessage']);
+      expect(f.calls.slice(4).map(call => call.url.split('/').at(-1))).toEqual(['clef-flash', 'clef']);
+      const delivered = f.calls.slice(0, 4);
+      const body = JSON.parse(String(f.calls[4]!.init.body));
+      expect(Object.keys(body.state).sort()).toEqual(['agent', 'herdr_status', 'pane_title', 'tail', 'tail_lines', 'tail_truncated']);
+      expect(body.state.tail_lines).toBe(120);
+      expect(body.state.tail_truncated).toBe(true);
+      for (const secret of ['sk-fixtureSecret', 'ghp_fixtureSecret', 'credential', 'private value', 'fixture-clef-token', 'a'.repeat(48), 'QWErTyZxCvBnMsDfGhJkLqWeRtYuIoPaSdFgHjKlZXCV123456']) {
+        expect(body.state.tail).not.toContain(secret);
+        expect(JSON.stringify(f.records()) + stderr.join('\n')).not.toContain(secret);
+      }
+      expect(f.records()).toHaveLength(1);
+      expect(f.records()[0].models.map((model: any) => [model.model, model.choice, model.band, model.evidence])).toEqual([
+        ['clef-flash', 'quota', 'act', { 'pane.result_present': 0.1, 'pane.provider_message': 0.9 }],
+        ['clef', 'quota', 'act', { 'pane.result_present': 0.1, 'pane.provider_message': 0.9 }],
+      ]);
+      expect(statSync(join(f.state, 'decision-shadow.jsonl')).mode & 0o777).toBe(0o600);
+      expect(statSync(join(f.config, 'decision-state.json')).mode & 0o777).toBe(0o600);
+      expect(JSON.parse(String(delivered[0]!.init.body)).agent_status).toBe('done');
+      expect(JSON.parse(String(delivered[0]!.init.body)).decision).toBeUndefined();
+      rmSync(join(f.state, 'debounce-state.json'));
+      writeFileSync(join(f.config, '.env'), f.configText.replace('CLEF_MODE=shadow', 'CLEF_MODE=off'));
+      f.calls.length = 0;
+      await notify(f.env, f.send);
+      expect(f.calls.map(call => [call.url, call.init.body, call.init.headers])).toEqual(delivered.map(call => [call.url, call.init.body, call.init.headers]));
+      expect(f.records()).toHaveLength(1);
+      const calls = readFileSync(f.env.FIXTURE_CALLS, 'utf8').trim().split('\n').map(line => JSON.parse(line));
+      expect(calls.map(call => call.args)).toEqual([['pane', 'read', 'pane-1', '--source', 'recent', '--lines', '120']]);
+    } finally { clock.mockRestore(); consoleSpy.mockRestore(); f.cleanup(); }
+  });
+
+  test.each(['http', 'timeout', 'json', 'invalid', 'redirect', 'pane', 'binary'])('shadow failure keeps delivery unchanged: %s', async failure => {
+    const f = shadowFixture();
+    try {
+      if (failure === 'pane') (f.env as NodeJS.ProcessEnv).FIXTURE_PANE_FAIL = '1';
+      if (failure === 'binary') delete (f.env as NodeJS.ProcessEnv).HERDR_BIN_PATH;
+      const send = (async (url: string | URL | Request, init: RequestInit) => {
+        if (!String(url).startsWith('https://api.cloudflare.com/')) return f.send(url, init);
+        f.calls.push({ url: String(url), init });
+        if (failure === 'timeout') return new Promise<Response>(() => {});
+        if (failure === 'http') return new Response('private failure fixture-clef-token', { status: 500 });
+        if (failure === 'json') return new Response('private invalid json fixture-clef-token');
+        if (failure === 'redirect') { const reply = new Response('{}'); Object.defineProperty(reply, 'redirected', { value: true }); return reply; }
+        return new Response(JSON.stringify({ success: true, result: {} }));
+      }) as typeof fetch;
+      await notify(f.env, send);
+      expect(f.calls.slice(0, 4).map(call => call.url)).toEqual(['https://bot.example/routine', 'https://slack.example/hook', 'https://discord.example/hook', 'https://api.telegram.org/bot123:token/sendMessage']);
+      expect(f.records()).toHaveLength(1);
+      expect(f.records()[0].models.map((model: any) => model.status)).toEqual(Array(2).fill(failure === 'invalid' ? 'invalid' : 'unavailable'));
+      expect(JSON.stringify(f.records())).not.toContain('fixture-clef-token');
+      if (failure === 'pane' || failure === 'binary') { expect(f.calls).toHaveLength(4); expect(f.records()[0].tail).toBeNull(); }
+    } finally { f.cleanup(); }
+  });
+
+  test.each(['agent', 'blocked', 'off', 'missing-mode', 'missing-token', 'missing-account'])('out-of-scope shadow does no read, call or record: %s', async condition => {
+    const f = shadowFixture();
+    try {
+      if (condition === 'agent') f.env.HERDR_PLUGIN_EVENT_JSON = f.env.HERDR_PLUGIN_EVENT_JSON.replace('codex', 'pi');
+      else if (condition === 'blocked') f.env.HERDR_PLUGIN_EVENT_JSON = f.env.HERDR_PLUGIN_EVENT_JSON.replace('done', 'blocked');
+      else writeFileSync(join(f.config, '.env'), f.configText.replace(
+        condition === 'off' ? 'CLEF_MODE=shadow' : condition === 'missing-mode' ? 'CLEF_MODE=shadow' : condition === 'missing-token' ? 'CLOUDFLARE_API_TOKEN=fixture-clef-token' : 'CLOUDFLARE_ACCOUNT_ID=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        condition === 'off' ? 'CLEF_MODE=off' : ''));
+      await notify(f.env, f.send);
+      expect(f.calls).toHaveLength(4);
+      expect(existsSync(f.env.FIXTURE_CALLS)).toBe(false);
+      expect(existsSync(join(f.state, 'decision-shadow.jsonl'))).toBe(false);
+    } finally { f.cleanup(); }
+  });
+
+  test('two concurrent events reserve the UTC budget once and retain both records', async () => {
+    const f = shadowFixture();
+    try {
+      writeFileSync(join(f.state, 'decision-budget.json'), JSON.stringify({ day: new Date().toISOString().slice(0, 10), calls: 1999 }), { mode: 0o600 });
+      const existing = { event_id: 'old', ts: '2000-01-01T00:00:00Z' };
+      writeFileSync(join(f.state, 'decision-shadow.jsonl'), JSON.stringify(existing) + '\n', { mode: 0o600 });
+      await Promise.all([notify(f.env, f.send), notify(f.env, f.send)]);
+      expect(f.records()).toHaveLength(2);
+      expect(f.calls.filter(call => call.url.startsWith('https://api.cloudflare.com/'))).toHaveLength(1);
+      expect(f.records().flatMap(record => record.models).filter((model: any) => model.status === 'skipped_cap')).toHaveLength(3);
+      expect(JSON.parse(readFileSync(join(f.state, 'decision-budget.json'), 'utf8')).calls).toBe(2000);
+      const run = (args: string[]) => spawnSync(process.execPath, [join(ROOT, 'src/cli/index.ts'), 'herdr', 'decision', 'label', ...args], { env: f.env, encoding: 'utf8', timeout: 10_000 });
+      const original = readFileSync(join(f.state, 'decision-shadow.jsonl'), 'utf8');
+      const first = run(['--next']);
+      expect(first.status, first.stderr).toBe(0);
+      const blind = JSON.parse(first.stdout);
+      expect(Object.keys(blind).sort()).toEqual(['agent', 'event_id', 'herdr_status', 'tail']);
+      const written = run([blind.event_id, 'quota']);
+      expect(written.status, written.stderr).toBe(0);
+      expect(JSON.parse(written.stdout).labeler).toBe('bot');
+      expect(statSync(join(f.state, 'decision-labels.jsonl')).mode & 0o777).toBe(0o600);
+      expect(run([blind.event_id, 'done']).status).toBe(1);
+      expect(run([blind.event_id, 'invalid']).status).toBe(1);
+      expect(JSON.parse(run(['--next']).stdout).event_id).not.toBe(blind.event_id);
+      expect(readFileSync(join(f.state, 'decision-shadow.jsonl'), 'utf8')).toBe(original);
+    } finally { f.cleanup(); }
+  });
+
+  test('OSC redaction keeps the result between ST-terminated hyperlinks', async () => {
+    const f = shadowFixture();
+    try {
+      const link = (text: string) => `\x1b]8;;https://example.invalid\x1b\\${text}\x1b]8;;\x1b\\`;
+      writeFileSync(f.env.FIXTURE_TAIL_FILE, `start ${link('link1')} KEEP-THIS-RESULT ${link('link2')} end`, 'utf8');
+      await notify(f.env, f.send);
+      expect(f.records()[0].tail).toBe('start link1 KEEP-THIS-RESULT link2 end');
+    } finally { f.cleanup(); }
+  });
+
+  test('separate event processes contend on the real lock and reserve only one remaining call', async () => {
+    const f = shadowFixture();
+    const children: ReturnType<typeof spawn>[] = [];
+    const lock = join(f.state, 'decision-shadow.lock');
+    try {
+      mkdirSync(lock);
+      writeFileSync(join(f.state, 'decision-budget.json'), JSON.stringify({ day: new Date().toISOString().slice(0, 10), calls: 1999 }), { mode: 0o600 });
+      const driver = join(f.root, 'event.mjs');
+      writeFileSync(driver, `import fs from 'node:fs'; import {syncBuiltinESMExports} from 'node:module';
+const mkdir=fs.mkdirSync; fs.mkdirSync=(...args)=>{try{return mkdir(...args);}catch(error){if(String(args[0])===process.env.FIXTURE_LOCK&&error.code==='EEXIST')fs.writeFileSync(process.env.FIXTURE_CONTENDED,'ready');throw error;}};
+syncBuiltinESMExports();
+const {notify}=await import(${JSON.stringify(pluginPath)});
+await notify(process.env, async()=>new Response(JSON.stringify({ok:true,success:true,result:{}})));
+`);
+      const exits = [1, 2].map(id => {
+        const child = spawn('node', [driver], { env: { ...f.env, FIXTURE_LOCK: lock, FIXTURE_CONTENDED: join(f.root, `contended-${id}`) }, stdio: ['ignore', 'ignore', 'pipe'] });
+        children.push(child);
+        let stderr = ''; child.stderr!.on('data', chunk => { stderr += chunk.toString(); });
+        return new Promise<{ code: number | null; stderr: string }>(resolve => child.once('exit', code => resolve({ code, stderr })));
+      });
+      const deadline = Date.now() + 1500;
+      while (![1, 2].every(id => existsSync(join(f.root, `contended-${id}`)))) {
+        if (Date.now() >= deadline) throw new Error('Event processes did not reach the held lock.');
+        await Bun.sleep(5);
+      }
+      expect(readFileSync(join(f.state, 'decision-budget.json'), 'utf8')).toContain('1999');
+      rmSync(lock, { recursive: true });
+      const results = await Promise.all(exits);
+      for (const result of results) { expect(result.code, result.stderr).toBe(0); expect(result.stderr).not.toContain('Shadow record failed'); }
+      expect(JSON.parse(readFileSync(join(f.state, 'decision-budget.json'), 'utf8')).calls).toBe(2000);
+      expect(f.records()).toHaveLength(2);
+      expect(f.records().flatMap(record => record.models).filter((model: any) => model.status === 'skipped_cap')).toHaveLength(3);
+    } finally {
+      for (const child of children) if (child.exitCode === null) child.kill('SIGTERM');
+      await Promise.all(children.map(child => new Promise<void>(resolve => child.exitCode !== null || child.signalCode !== null ? resolve() : child.once('exit', () => resolve()))));
+      f.cleanup();
+    }
+  });
+
+  test('a stale lock exhausts the acquire budget after delivery without stealing the lock', async () => {
+    const f = shadowFixture();
+    const stderr: string[] = [];
+    const consoleSpy = spyOn(console, 'error').mockImplementation(message => { stderr.push(String(message)); });
+    try {
+      const lock = join(f.state, 'decision-shadow.lock'); mkdirSync(lock);
+      await notify(f.env, f.send);
+      expect(f.calls).toHaveLength(4);
+      expect(existsSync(lock)).toBe(true);
+      expect(existsSync(join(f.state, 'decision-shadow.jsonl'))).toBe(false);
+      expect(stderr.at(-1)).toBe('[webhook-notify] Shadow record failed.');
+    } finally { consoleSpy.mockRestore(); f.cleanup(); }
+  });
+
+  test('corrupt budgets fail closed and a shadow symlink cannot modify its target', async () => {
+    const f = shadowFixture();
+    try {
+      writeFileSync(join(f.state, 'decision-budget.json'), '{corrupt', { mode: 0o600 });
+      await notify(f.env, f.send);
+      expect(f.calls).toHaveLength(4);
+      expect(f.records()[0].models.every((model: any) => model.status === 'unavailable')).toBe(true);
+      expect(readFileSync(join(f.state, 'decision-budget.json'), 'utf8')).toBe('{corrupt');
+      const target = join(f.root, 'untouched'); writeFileSync(target, 'keep');
+      rmSync(join(f.state, 'decision-shadow.jsonl'));
+      symlinkSync(target, join(f.state, 'decision-shadow.jsonl'));
+      const stderr: string[] = [];
+      const consoleSpy = spyOn(console, 'error').mockImplementation(message => { stderr.push(String(message)); });
+      try { await notify(f.env, f.send); } finally { consoleSpy.mockRestore(); }
+      expect(readFileSync(target, 'utf8')).toBe('keep');
+      expect(stderr).toEqual(['[webhook-notify] Shadow record failed.']);
+    } finally { f.cleanup(); }
+  });
+
+  test('retention evicts the oldest row at the 20 MiB byte cap', async () => {
+    const f = shadowFixture();
+    try {
+      const path = join(f.state, 'decision-shadow.jsonl');
+      const old = JSON.stringify({ ts: new Date().toISOString(), padding: '' });
+      const padding = ' '.repeat(20 * 1024 * 1024 - Buffer.byteLength(old) - 2);
+      writeFileSync(path, JSON.stringify({ ts: new Date().toISOString(), padding }) + '\n', { mode: 0o600 });
+      await notify(f.env, f.send);
+      expect(statSync(path).size).toBeLessThanOrEqual(20 * 1024 * 1024);
+      expect(f.records()).toHaveLength(1);
+      expect(f.records()[0].models).toHaveLength(2);
+    } finally { f.cleanup(); }
+  });
+
+  test('tail is capped by UTF-8 bytes after redaction and no model text is executed', async () => {
+    const f = shadowFixture();
+    try {
+      const tail = Array.from({ length: 120 }, () => '漢 '.repeat(300)).join('\n');
+      // Keep the original large input. Linux cannot spawn with this text in one env entry.
+      expect(Buffer.byteLength(tail)).toBe(144119);
+      writeFileSync(f.env.FIXTURE_TAIL_FILE, tail, 'utf8');
+      await notify(f.env, f.send);
+      const record = f.records()[0];
+      expect(typeof record.tail).toBe('string');
+      expect(tail.endsWith(record.tail)).toBe(true);
+      expect(Buffer.byteLength(record.tail)).toBeGreaterThanOrEqual(16 * 1024 - 3);
+      expect(Buffer.byteLength(record.tail)).toBeLessThanOrEqual(16 * 1024);
+      expect(record.tail).not.toContain('�');
+      expect(record.models.every((model: any) => model.status === 'ok')).toBe(true);
+      const calls = readFileSync(f.env.FIXTURE_CALLS, 'utf8').trim().split('\n').map(line => JSON.parse(line));
+      expect(calls).toHaveLength(1);
+      expect(calls[0].args.slice(0, 2)).toEqual(['pane', 'read']);
+    } finally { f.cleanup(); }
+  });
 
   test.each(['cwd', 'nested-cwd', 'worktree-path'])('managed default task notifications are delivered: %s', async field => {
     for (const status of ['done', 'blocked']) {
