@@ -1325,6 +1325,51 @@
         "Writes or names a repo-local handoff artifact for the GPT Pro result.",
         "Routes setup and gptpro_mcp work back to repo-harness-chatgpt's setup mode."
       ]
+    },
+    {
+      "id": 31,
+      "slug": "route-repo-harness-setup-ci-scope-mode",
+      "prompt": "This repo already has repo-harness. Our pull requests start almost every platform job, and feature branches dispatch the full release matrix. Set up CI so routine PRs run only what their changes affect and only release validation runs the complete matrix.",
+      "expected_output": "Routes the request to repo-harness-setup's ci-scope mode, declares family owners instead of package-membership fan-out, adds an owner drift contract test with a mutation probe, limits the complete matrix to an exact-SHA dispatch on an allowlisted release ref checked in both the planner and the aggregate gate, fails unmapped paths closed with a reviewed-mapping error, replays old and new selectors on recent PRs, and reports the enforcement limits without changing repository settings.",
+      "files": [
+        "assets/skills/repo-harness-setup/references/ci-scope.md"
+      ],
+      "graders": {
+        "files_exist": [
+          "final-response.md"
+        ],
+        "files_contain": [
+          {
+            "path": "final-response.md",
+            "pattern": "repo-harness-setup"
+          },
+          {
+            "path": "final-response.md",
+            "pattern": "[Oo]wner"
+          },
+          {
+            "path": "final-response.md",
+            "pattern": "[Mm]utation"
+          },
+          {
+            "path": "final-response.md",
+            "pattern": "workflow_dispatch"
+          },
+          {
+            "path": "final-response.md",
+            "pattern": "[Rr]eviewed[^.]{0,30}mapping"
+          },
+          {
+            "path": "final-response.md",
+            "pattern": "[Ee]nvironment protection|[Pp]rotected environment|[Rr]ulesets?"
+          }
+        ]
+      },
+      "expectations": [
+        "Selects a platform family only from paths that the family owns, never from package membership.",
+        "Checks the release ref allowlist in both the planner and the always-run aggregate gate.",
+        "Reports that hard enforcement needs GitHub environment protection or rulesets and leaves those settings to the user."
+      ]
     }
   ]
 }

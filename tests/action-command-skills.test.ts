@@ -213,6 +213,26 @@ describe("repo-harness action command skills", () => {
     expect(capability.toLowerCase()).toContain("prefix");
   });
 
+  test("setup's ci-scope mode keeps the complete matrix release-only and repository settings user-owned", () => {
+    const setup = readSkillPackage("repo-harness-setup");
+    const ciScope = readReference("repo-harness-setup", "ci-scope.md").replace(/\s+/g, " ");
+
+    expect(setup).toContain("Impact-scoped PR CI with a release-only full matrix -> `references/ci-scope.md`");
+    expect(ciScope).toContain("Package or workspace membership alone never selects a platform family");
+    expect(ciScope).toContain("<family> runs <path> but does not own it");
+    expect(ciScope).toContain("For a dispatch run only, the ref (`github.ref`) must be on an allowlist");
+    expect(ciScope).toContain("Both the planner and the aggregate gate check the ref. Routine runs do not check it");
+    expect(ciScope).toContain("It never tells the author to use release validation");
+    expect(ciScope).toContain("Each unselected job must have `skipped`");
+    expect(ciScope).toContain("A missing or empty plan, or a plan for another SHA, fails the gate");
+    expect(ciScope).toContain("Never change repository settings, environments, rulesets");
+    expect(ciScope).toContain("Never dispatch release validation");
+    expect(ciScope).toContain("Hard enforcement needs user-owned settings");
+    expect(ciScope).toContain("Justify each changed test assertion item by item");
+    // Reusable guidance carries placeholders, not one project's names, issue numbers or SHAs.
+    expect(ciScope).not.toMatch(/#\d{2,}|\b[0-9a-f]{7,40}\b|byok|familyOwners|select-impact/i);
+  });
+
   test("architecture stays focused and root handoff reference stays scoped to handoff packet files", () => {
     const architecture = readFileSync(join(COMMAND_ROOT, "repo-harness-architecture/references/worker.md"), "utf-8");
     const handoff = readFileSync(join(ROOT, "references", "handoff.md"), "utf-8");

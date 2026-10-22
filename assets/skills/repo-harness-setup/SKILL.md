@@ -1,7 +1,7 @@
 ---
 name: repo-harness-setup
 description: Canonical rule owner for installing, migrating, upgrading, repairing, scaffolding, and capability-configuring the repo-harness workflow in a repository.
-when_to_use: "repo-harness-setup, initialize existing repo, migrate legacy repo, upgrade harness, repair harness, scaffold new project, add capability boundary"
+when_to_use: "repo-harness-setup, initialize existing repo, migrate legacy repo, upgrade harness, repair harness, scaffold new project, add capability boundary, impact-scoped CI"
 ---
 
 # repo-harness-setup
@@ -14,7 +14,7 @@ Load only the reference for the assigned mode.
 ## Shared Preflight
 
 1. Confirm the target repo path (`pwd`, or an explicit `--repo` argument).
-2. Inspect the proposed changes with `repo-harness init --repo <repo> --dry-run`.
+2. Inspect the proposed changes with `repo-harness init --repo <repo> --dry-run` (not `ci-scope`).
 
 ## Mode Selection
 
@@ -24,6 +24,7 @@ Load only the reference for the assigned mode.
 - A specific workflow surface is broken -> `references/repair.md`.
 - New project/app/module skeleton, no existing repo workflow -> `references/scaffold.md`.
 - Add or sync one capability boundary only -> `references/capability.md`.
+- Impact-scoped PR CI with a release-only full matrix -> `references/ci-scope.md`.
 
 ## Boundaries
 
