@@ -2,6 +2,7 @@
 import { join } from 'path';
 import { writeHookStateFile } from '../../effects/hook-state-file';
 import { collectAgentNotice } from './agent-notice';
+import { collectProtectedPathNotice } from './protected-path-notice';
 import { publishCheckpointFromLedger } from '../../effects/evidence/checkpoint-store';
 import {
   activePlanForRecovery,
@@ -68,6 +69,7 @@ function writeRecoveryViews(
 
 /**
  * Stop publishes the evidence checkpoint and renders handoff.md and resume.md.
+ * It then reports changes under _ops/ and _ref/ that no edit guard decision covered.
  * A recovery write that would leave the repository or follow a symlink throws.
  */
 export function runStopHandler(opts: StopHandlerInput): StopHandlerResult {
@@ -84,8 +86,28 @@ export function runStopHandler(opts: StopHandlerInput): StopHandlerResult {
   // last published one.
   try { publishCheckpointFromLedger(repoRoot, () => now); } catch { /* see above */ }
   writeRecoveryViews(repoRoot, activePlan, env, opts.identity, now, dependencies);
-  const notice = opts.identity.host === 'claude'
-    ? collectAgentNotice(repoRoot, options => resolveCapabilityOwnership(repoRoot, undefined, options), { env })
-    : {};
-  return { exitCode: 0, stdout: notice.content ?? '', stderr: notice.diagnostics ?? '', ...(notice.systemMessage ? { systemMessage: notice.systemMessage } : {}) };
+  return opts.identity.host === 'claude' ? claudeNotices(repoRoot, env) : codexNotices(repoRoot, env);
+}
+
+/** The architecture and protected path notices fail independently. */
+function claudeNotices(repoRoot: string, env: NodeJS.ProcessEnv): StopHandlerResult {
+  const notices = [
+    collectAgentNotice(repoRoot, options => resolveCapabilityOwnership(repoRoot, undefined, options), { env }),
+    collectProtectedPathNotice(repoRoot, env),
+  ];
+  const joined = (field: 'content' | 'systemMessage') => notices.map(notice => notice[field]).filter(Boolean).join('\n');
+  const systemMessage = joined('systemMessage');
+  return {
+    exitCode: 0,
+    stdout: joined('content'),
+    stderr: notices.map(notice => notice.diagnostics ?? '').join(''),
+    ...(systemMessage ? { systemMessage } : {}),
+  };
+}
+
+/** Codex Stop writes no stdout, so the protected path report is one operator line on stderr. */
+function codexNotices(repoRoot: string, env: NodeJS.ProcessEnv): StopHandlerResult {
+  const notice = collectProtectedPathNotice(repoRoot, env);
+  const line = notice.systemMessage ? `repo-harness: ${notice.systemMessage}\n` : '';
+  return { exitCode: 0, stdout: '', stderr: `${notice.diagnostics ?? ''}${line}` };
 }

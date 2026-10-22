@@ -23,6 +23,7 @@ import { hookIdentity } from './helpers/hook-identity';
 const HOOK_ENTRY = join(import.meta.dir, "../src/cli/hook-entry.ts");
 const RESUME = ".ai/harness/handoff/resume.md";
 const SPRINT = "plans/sprints/fixture.sprint.md";
+const EDIT_GUARD_SCOPE = "[EditGuardScope] The edit guard checks Edit, Write and apply_patch only. Bash writes skip it. Use the edit tools to change repository files. Use Bash to run commands.";
 
 interface Fixture {
   readonly root: string;
@@ -92,13 +93,36 @@ function stateReferences(context: string): Record<string, string | null> {
 }
 
 describe("SessionStart host envelope", () => {
+  test("both hosts state the edit guard scope right after the state section", () => {
+    const f = fixture("session-edit-guard-scope");
+    try {
+      for (const host of ["claude", "codex"] as const) {
+        expect(sessionStartContext(f, host).split("\n")[1]).toBe(EDIT_GUARD_SCOPE);
+      }
+    } finally { f.cleanup(); }
+  }, 30_000);
+
+  test("an unavailable state still states the edit guard scope as a mandatory section", () => {
+    const f = fixture("session-edit-guard-scope-unavailable");
+    try {
+      const collector = createStateInputCollector({ repoRoot: f.root, resolveEffectiveState: () => ({
+        ok: false, reason_code: "state_resolution_failed", error_hash: `sha256:${"c".repeat(64)}`, message: "boom",
+      }) });
+      const result = getHandlerForRoute(getRoute("SessionStart", "default")!).run({
+        event: "SessionStart", repoRoot: f.root, payload: {}, identity: hookIdentity(),
+        env: { ...process.env, HOME: f.home }, now: new Date(), collector,
+      });
+      expect(result.sessionContexts!.find(({ id }) => id === "edit-guard-scope")).toMatchObject({ mandatory: true, content: EDIT_GUARD_SCOPE });
+    } finally { f.cleanup(); }
+  });
+
   test("a resume file adds no resume text; the state section points to it", () => {
     const f = fixture("session-resume-only");
     try {
       f.write(RESUME, "# Codex Resume Packet\n\nContinue the widget work.\n");
       for (const host of ["claude", "codex"] as const) {
         const context = sessionStartContext(f, host);
-        expect(context.split("\n")).toHaveLength(1);
+        expect(context.split("\n").slice(1)).toEqual([EDIT_GUARD_SCOPE]);
         expect(stateReferences(context).resume).toBe(RESUME);
         expect(context).not.toContain("# Resume");
         expect(context).not.toContain("Recovery context only");
@@ -107,12 +131,12 @@ describe("SessionStart host envelope", () => {
     } finally { f.cleanup(); }
   }, 30_000);
 
-  test("an idle repository still gets the state section and nothing else, with no side files", () => {
+  test("an idle repository still gets the state and edit guard scope sections and nothing else, with no side files", () => {
     const f = fixture("session-idle");
     try {
       const context = sessionStartContext(f);
       expect(context).toStartWith("[HarnessState] ");
-      expect(context.split("\n")).toHaveLength(1);
+      expect(context.split("\n").slice(1)).toEqual([EDIT_GUARD_SCOPE]);
       expect(existsSync(join(f.root, ".ai/harness/state/session-context-budget.json"))).toBe(false);
       expect(existsSync(join(f.root, ".ai/harness/state/session-run-identity.json"))).toBe(false);
       expect(existsSync(join(f.root, ".ai/harness/security"))).toBe(false);
@@ -126,7 +150,7 @@ describe("SessionStart host envelope", () => {
       const body = Array.from({ length: 400 }, (_, index) => `- resume line ${index} with recovery detail`).join("\n");
       f.write(RESUME, `# Codex Resume Packet\n\n${body}\n`);
       const context = sessionStartContext(f);
-      expect(context.split("\n")).toHaveLength(1);
+      expect(context.split("\n").slice(1)).toEqual([EDIT_GUARD_SCOPE]);
       const references = stateReferences(context);
       expect(references.resume).toBe(RESUME);
       expect(Object.hasOwn(references, "sprint")).toBe(false);
@@ -147,7 +171,7 @@ describe("SessionStart host envelope", () => {
       const context = sessionStartContext(f);
       const lines = context.split("\n");
       expect(lines[0]).toStartWith("[HarnessState] ");
-      expect(lines).toEqual([lines[0], "[SessionContextProviderFailed] pending-plan-capture"]);
+      expect(lines).toEqual([lines[0], EDIT_GUARD_SCOPE, "[SessionContextProviderFailed] pending-plan-capture"]);
     } finally { f.cleanup(); }
   }, 30_000);
 

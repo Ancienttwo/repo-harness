@@ -64,6 +64,19 @@ export function projectUnavailableStateSessionSection(
   };
 }
 
+/**
+ * PreToolUse.edit matches Edit|Write and Codex apply_patch only. No Bash route
+ * exists, because #764 removed the per-call Bash cost (#851). Every host and
+ * every state gets this line, because the limit does not depend on state.
+ */
+export const EDIT_GUARD_SCOPE_SECTION: SessionContextSection = Object.freeze({
+  id: 'edit-guard-scope',
+  priority: 1,
+  content: '[EditGuardScope] The edit guard checks Edit, Write and apply_patch only. Bash writes skip it. Use the edit tools to change repository files. Use Bash to run commands.',
+  mandatory: true,
+  source: 'docs/reference-configs/hook-operations.md',
+});
+
 export interface SessionContextProviderInput {
   readonly repoRoot: string;
   readonly state: EffectiveState;
