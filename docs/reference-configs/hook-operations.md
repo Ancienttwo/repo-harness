@@ -31,9 +31,9 @@ Measure `Stop.default` using
 `.ai/harness/runs/hook-events.jsonl` `elapsed_ms`. The terminal's Working
 time is the whole turn, not the duration of its currently displayed hook.
 
-This table is the one route inventory. It lists the 6 entries of `ROUTES` in
+This table is the one route inventory. It lists the 7 entries of `ROUTES` in
 `src/cli/hook/route-registry.ts`, in registry order. The Host column follows the
-`hosts` field of each route: Claude installs 5 routes and Codex installs 5.
+`hosts` field of each route: Claude installs 6 routes and Codex installs 5.
 Other documents link here. They do not copy this table.
 
 | Route | Matcher | Host | Typed handler | Responsibility |
@@ -41,6 +41,7 @@ Other documents link here. They do not copy this table.
 | `SessionStart.default` | all sessions | Claude, Codex | `session-context` | Emit the Effective State section first, then the edit-guard-scope, architecture-debt and pending-plan sections under one budget. |
 | `PreToolUse.edit` | `Edit\|Write` | Claude, Codex | `mutation-guard` | Block an `Edit`, `Write` or Codex `apply_patch` target outside the repository, under `_ref/` or `_ops/`, or without a parseable target path. Bash writes skip it; see [Edit guard coverage](#edit-guard-coverage). |
 | `PreToolUse.subagent` | `Agent` | Claude | `return-channel` | Append the return-channel contract, standing orders and board slice to a Claude `Agent` prompt. |
+| `PreToolUse.bash` | `Bash` | Claude | `bash-mutation-guard` | Check literal write destinations under `_ops/`, `_ref/` or outside the repository. Unsupported shell syntax remains unchecked. |
 | `UserPromptSubmit.inbox` | all prompts | Claude, Codex | `agent-notice` | Deliver architecture debt on Codex; Claude emits nothing. |
 | `SubagentStart.context` | subagent start | Codex | `subagent-context` | Record the native role and model observation. Add the bounded child context, standing orders and board slice. |
 | `Stop.default` | session stop | Claude, Codex | `stop` | Publish the evidence checkpoint and render handoff and resume. Report protected path changes. Claude can get architecture debt. |
@@ -121,8 +122,8 @@ sweep. It writes no run identity. Run `repo-harness security scan --json` or
 The hook identity is the payload `session_id`, `run_id` and `turn_id`. A missing
 value stays null. No hook mints or stores an id.
 
-`UserPromptSubmit` output is advisory. `PreToolUse.edit` is the only blocking
-edit check, and no policy mode changes it. Stop and observer handlers never
+`UserPromptSubmit` output is advisory. `PreToolUse.edit` blocks invalid edit
+targets. `PreToolUse.bash` blocks known protected write targets. No policy mode changes them. Stop and observer handlers never
 spawn an LLM or a long-running worker.
 
 ## Host and Adoption Operations
@@ -165,15 +166,39 @@ Edit guards:
 ### Edit guard coverage
 
 `PreToolUse.edit` matches `Edit|Write`. On Codex it also reads `apply_patch`
-input. No route reads a Bash command. A file write through Bash, such as
-`sed -i`, a heredoc, `python3 -`, `rm`, `git checkout -- <path>` or a code
-generator, does not reach the guard. So `RepoScopeGuard`,
-`ExternalReferenceGuard`, `OpsPrivateGuard` and the `[CapabilityOwner]` line do
-not apply to Bash writes. #764 and #766 removed `PostToolUse.bash` because each
-Bash call paid about 5 seconds, and no per-call Bash check replaces it.
+input. Claude also has a separate `PreToolUse.bash` tripwire in both install
+profiles. Codex shell tools have no Bash route. The tripwire is not a complete
+shell parser. Bash writes get no `[CapabilityOwner]` line. #764 and #766 removed
+`PostToolUse.bash` after each call paid about 5 seconds. That route stays absent.
+
+The Bash handler checks command strings without Effective State, Git or owner
+resolution. Only a suspicious literal destination runs the shared path guard.
+It recognizes `>` and `>>`, `tee -a`, single-file `sed -i`, `rm`, `mv`, `cp`
+destinations, and literal Python `open`/`Path` and Node file-write calls in
+`-c`/`-e` source or a heredoc. Read operands and quoted shell examples do not
+count as writes. A literal `cd DIR &&` changes the target base. Other `cd` forms
+leave subsequent relative targets unchecked. A glob below a literal
+protected directory also triggers the check.
+
+A known `_ops/`, `_ref/` or outside-repository destination gets exit 2 and the
+same guard diagnostic and failure record as an edit. Bash uses a repository-only
+boundary; Edit/Write retains its verified external absolute-path allowance.
+`/dev/null`, `/dev/stdout`, `/dev/stderr`, `/dev/tty` and numeric `/dev/fd/N`
+targets are output streams and pass.
+
+Missing absolute host `cwd`, commands above 64 KiB, variable expansion,
+grouping, unsupported options, indirect scripts, code generators, `eval`,
+`sh -c`, `git checkout`, `find` and `xargs` can skip the tripwire. Symlink aliases
+without a protected or external path token can also skip it. Interpreter checks
+recognize literal call text; they do not evaluate Python or JavaScript control
+flow. The unparsed remainder passes. A handler failure exits 1 and does not block.
+More than one heredoc on a line or an unresolved delimiter leaves the remaining
+command unchecked. Earlier parsed targets still get checked. This is a tripwire,
+not proof that an allowed command cannot write private files.
 
 The `edit-guard-scope` SessionStart section tells the Agent this limit on every
-host, also when Effective State is unavailable: use the edit tools to change
+host, also when Effective State is unavailable: Claude Bash has only a literal
+tripwire; use the edit tools to change
 repository files, and use Bash to run commands.
 
 Stop reports a change under `_ops/` or `_ref/` after the fact. The guard denies
@@ -202,6 +227,27 @@ Bash, a script or the person. The report cannot tell which one. It does not bloc
   stdout, so Codex gets one `repo-harness: Protected paths: ...` line on stderr
   for the operator. The Codex model does not see it.
 - A continued Stop (`stop_hook_active`) skips the check.
+
+### Git boundary
+
+`repo-harness run check-protected-paths` checks staged changes. It rejects root
+`_ops` and `_ref` entries and their descendants, including deletions and rename
+sources. Other directories with those names are outside this boundary. Paths
+come from NUL-delimited Git output, scoped to the protected roots, with rename
+detection disabled. Output above Git's 1 MiB capture bound fails closed; unrelated
+repository paths do not consume this bound.
+
+A repository can call this command from its own `pre-commit` hook. Repo-harness
+does not install a Git hook or replace an existing hook. CI runs
+`bun scripts/check-protected-paths.ts --tracked` before coverage selection and
+in daily governance. This checks the index tree, so committed private paths
+cannot pass because the staged diff is empty. Ignore negations do not grant an
+exception. Ignored local files that are not tracked or staged pass.
+
+Only `REPO_HARNESS_ALLOW_PROTECTED_PATHS=1` permits flagged paths for that
+invocation. The check prints the override on stderr. An agent must have human
+authorization before setting it. No override is set by installation or CI.
+Violations exit 1. Invalid arguments or Git inspection failures exit 2.
 
 Circuit-breaker updates lock the complete read-modify-write and wait at most
 two seconds. An update reclaims the lock only when the owner record is complete

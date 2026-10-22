@@ -17,6 +17,7 @@ function fixtureInput(event: HookEvent, routeId: RouteId): FixtureRoute {
     case 'SessionStart.default': return { host: 'claude', input: JSON.stringify({ session_id: 'characterization-session' }) };
     case 'PreToolUse.edit': return { host: 'claude', input: JSON.stringify({ tool_input: { file_path: 'src/example.ts' } }) };
     case 'PreToolUse.subagent': return { host: 'claude', input: JSON.stringify({ tool_name: 'Agent', tool_input: { prompt: 'Inspect the repository and report findings.' } }) };
+    case 'PreToolUse.bash': return { host: 'claude', input: JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'git status --short' } }) };
     case 'UserPromptSubmit.inbox': return { host: 'claude', input: JSON.stringify({ prompt: 'Check the task inbox.' }) };
     case 'SubagentStart.context': return { host: 'codex', input: JSON.stringify({ hook_event_name: 'SubagentStart', session_id: 'characterization-session' }) };
     case 'Stop.default': return { host: 'claude', input: JSON.stringify({ hook_event_name: 'Stop', stop_hook_active: false }) };

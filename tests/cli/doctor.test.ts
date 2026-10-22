@@ -248,7 +248,7 @@ describe('doctor command (Phase 1C)', () => {
       const r = runDoctor(repoRoot);
       const hooks = r.checks.find((c) => c.id === 'typed-hook-routes')!;
       expect(hooks.status).toBe('ok');
-      expect(hooks.detail).toContain('all 6 public routes');
+      expect(hooks.detail).toContain('all 7 public routes');
       expect(hooks.detail).toContain('typed in-process handler');
     });
   }, DOCTOR_CHECK_TIMEOUT_MS);

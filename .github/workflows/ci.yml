@@ -38,6 +38,8 @@ jobs:
           bun-version: 1.4.3
       # The documentation consumer scanner parses tests with the installed TypeScript API.
       - run: bun install --frozen-lockfile
+      - name: Reject protected Git paths
+        run: bun scripts/check-protected-paths.ts --tracked
       - id: select
         run: bun scripts/select-ci-coverage.ts
       - uses: actions/upload-artifact@v4

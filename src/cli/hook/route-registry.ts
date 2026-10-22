@@ -31,6 +31,7 @@ export type RouteHost = 'claude' | 'codex';
 export type RouteId =
   | 'default'
   | 'edit'
+  | 'bash'
   | 'subagent'
   | 'inbox'
   | 'context';
@@ -39,6 +40,7 @@ export type RouteId =
 export type HookHandlerId =
   | 'session-context'
   | 'mutation-guard'
+  | 'bash-mutation-guard'
   | 'return-channel'
   | 'subagent-context'
   | 'agent-notice'
@@ -86,6 +88,14 @@ export const ROUTES: readonly Route[] = Object.freeze([
     matcher: 'Agent',
     hosts: ['claude'] as const,
     handler: 'return-channel',
+  }),
+  Object.freeze({
+    event: 'PreToolUse' as const,
+    routeId: 'bash' as const,
+    matcher: 'Bash',
+    hosts: ['claude'] as const,
+    handler: 'bash-mutation-guard',
+    // A tripwire is advisory on unparsed input or failure; a known path denial exits 2.
   }),
   Object.freeze({
     event: 'UserPromptSubmit' as const,

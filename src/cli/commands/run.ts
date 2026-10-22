@@ -60,6 +60,7 @@ export const RUN_HELP_GROUPS = [
       'check-deploy-sql-order',
       'check-agent-tooling',
       'check-context-files',
+      'check-protected-paths',
       'check-skill-version',
       'check-task-workflow',
       'maintenance-triage',

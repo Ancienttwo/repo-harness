@@ -41,12 +41,12 @@ function writeInstalledProfileFixture(profile: InstallProfile): void {
 }
 
 describe('status command (Phase 1C)', () => {
-  test('reports CLI version + 6 routes with correct per-event breakdown', () => {
+  test('reports CLI version + 7 routes with correct per-event breakdown', () => {
     withTempHome(() => {
       const r = runStatus();
       expect(r.cli.version).toBeTruthy();
-      expect(r.routes.total).toBe(6);
-      expect(r.routes.byEvent.PreToolUse).toBe(2);
+      expect(r.routes.total).toBe(7);
+      expect(r.routes.byEvent.PreToolUse).toBe(3);
       expect(r.routes.byEvent.PostToolUse).toBeUndefined();
       expect(r.routes.byEvent.SessionStart).toBe(1);
       expect(r.routes.byEvent.UserPromptSubmit).toBe(1);
@@ -77,7 +77,7 @@ describe('status command (Phase 1C)', () => {
       expect(codex.managedEntryCount).toBe(5);
       const claude = r.targets.find((t) => t.id === 'claude')!;
       expect(claude.managedEntryCount).toBe(claude.expectedEntryCount);
-      expect(claude.managedEntryCount).toBe(5);
+      expect(claude.managedEntryCount).toBe(6);
     });
   });
 
@@ -321,7 +321,7 @@ describe('status command (Phase 1C)', () => {
       expect(() => JSON.parse(json)).not.toThrow();
       const parsed = JSON.parse(json);
       expect(parsed.cli).toBeDefined();
-      expect(parsed.routes.total).toBe(6);
+      expect(parsed.routes.total).toBe(7);
     });
   });
 

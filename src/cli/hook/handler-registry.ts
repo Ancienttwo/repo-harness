@@ -1,5 +1,6 @@
 import { buildSessionStartSections, EDIT_GUARD_SCOPE_SECTION } from './session-context';
 import { runMutationGuard } from './mutation-guard';
+import { runBashMutationGuard } from './mutation-bash';
 import { runStopHandler } from './stop-handler';
 import { runReturnChannel } from './return-channel';
 import { runSubagentContext } from './subagent-context';
@@ -40,6 +41,14 @@ const handlers: Readonly<Record<HookHandlerId, TypedHookHandler>> = Object.freez
   'mutation-guard': {
     id: 'mutation-guard',
     run: (context: HookHandlerContext) => textResult(runMutationGuard({
+      repoRoot: context.repoRoot,
+      payload: context.payload,
+      identity: context.identity,
+    })),
+  },
+  'bash-mutation-guard': {
+    id: 'bash-mutation-guard',
+    run: (context: HookHandlerContext) => textResult(runBashMutationGuard({
       repoRoot: context.repoRoot,
       payload: context.payload,
       identity: context.identity,

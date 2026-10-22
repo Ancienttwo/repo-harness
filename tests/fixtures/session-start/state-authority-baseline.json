@@ -1,9 +1,9 @@
 {
   "protocol": 1,
   "fixture_root": "(temporary)",
-  "context": "[HarnessState] {\"task_id\":\"20260726-0000-baseline\",\"phase\":\"blocked\",\"state_version\":1,\"state_revision\":\"sha256:d72cd5dd2657690740f4629594c6a0a241306a21b07093f5a0491de1e69f551f\",\"workflow_profile\":null,\"next_action\":\"resolve blockers\",\"guidance\":null,\"blockers\":[\"workflow_profile:invalid_risk_input\"],\"references\":{\"plan\":\"plans/plan-20260726-0000-baseline.md\",\"handoff\":\".ai/harness/handoff/current.md\",\"resume\":\".ai/harness/handoff/resume.md\"}}\n[EditGuardScope] The edit guard checks Edit, Write and apply_patch only. Bash writes skip it. Use the edit tools to change repository files. Use Bash to run commands.",
-  "output_bytes": 614,
-  "estimated_tokens": 154,
+  "context": "[HarnessState] {\"task_id\":\"20260726-0000-baseline\",\"phase\":\"blocked\",\"state_version\":1,\"state_revision\":\"sha256:d72cd5dd2657690740f4629594c6a0a241306a21b07093f5a0491de1e69f551f\",\"workflow_profile\":null,\"next_action\":\"resolve blockers\",\"guidance\":null,\"blockers\":[\"workflow_profile:invalid_risk_input\"],\"references\":{\"plan\":\"plans/plan-20260726-0000-baseline.md\",\"handoff\":\".ai/harness/handoff/current.md\",\"resume\":\".ai/harness/handoff/resume.md\"}}\n[EditGuardScope] The edit guard checks Edit, Write and apply_patch. Claude Bash has a literal-write tripwire only; other shell writes skip it. Use the edit tools to change repository files. Use Bash to run commands.",
+  "output_bytes": 663,
+  "estimated_tokens": 166,
   "telemetry": {
     "session_id": "session-state-authority-baseline",
     "exit_code": 0,

@@ -72,7 +72,7 @@ export function projectUnavailableStateSessionSection(
 export const EDIT_GUARD_SCOPE_SECTION: SessionContextSection = Object.freeze({
   id: 'edit-guard-scope',
   priority: 1,
-  content: '[EditGuardScope] The edit guard checks Edit, Write and apply_patch only. Bash writes skip it. Use the edit tools to change repository files. Use Bash to run commands.',
+  content: '[EditGuardScope] The edit guard checks Edit, Write and apply_patch. Claude Bash has a literal-write tripwire only; other shell writes skip it. Use the edit tools to change repository files. Use Bash to run commands.',
   mandatory: true,
   source: 'docs/reference-configs/hook-operations.md',
 });

@@ -91,6 +91,45 @@ function crashGuard(root: string, host: 'claude' | 'codex'): {
 }
 
 describe('hook runtime typed dispatch', () => {
+  test('Bash skips Effective State and a tripwire crash stays non-blocking', () => {
+    const root = fixture();
+    try {
+      const worker = `
+        import { mock } from 'bun:test';
+        const state = await import(process.env.STATE_MODULE);
+        let calls = 0;
+        mock.module(process.env.STATE_MODULE, () => ({ ...state,
+          resolveEffectiveState() { calls++; throw new Error('unexpected state resolution'); }
+        }));
+        const guard = await import(process.env.BASH_MODULE);
+        const originalRun = guard.runBashMutationGuard;
+        let crash = false;
+        mock.module(process.env.BASH_MODULE, () => ({ ...guard,
+          runBashMutationGuard(opts) { if (crash) throw new Error('injected tripwire crash'); return originalRun(opts); }
+        }));
+        const { runHook } = await import(process.env.RUNTIME_MODULE);
+        const opts = { event: 'PreToolUse', routeId: 'bash', cwd: process.env.FIXTURE_ROOT,
+          env: { ...process.env, HOOK_HOST: 'claude', HOOK_REPO_ROOT: process.env.FIXTURE_ROOT },
+          input: JSON.stringify({ cwd: process.env.FIXTURE_ROOT, tool_input: { command: 'git status --short' } }) };
+        const ordinary = runHook(opts);
+        crash = true;
+        const failed = runHook(opts);
+        console.log(JSON.stringify({ ordinary, failed, calls }));
+      `;
+      const child = spawnSync(process.execPath, ['-e', worker], { cwd: root, encoding: 'utf8', timeout: 10_000, env: {
+        ...process.env, FIXTURE_ROOT: root, RUNTIME_MODULE,
+        STATE_MODULE: join(import.meta.dir, '../src/effects/state/resolve-effective-state.ts'),
+        BASH_MODULE: join(import.meta.dir, '../src/cli/hook/mutation-bash.ts'),
+      } });
+      expect(child.status, child.stderr).toBe(0);
+      expect(JSON.parse(child.stdout)).toMatchObject({
+        ordinary: { exitCode: 0, handler: 'bash-mutation-guard' },
+        failed: { exitCode: 1, reason: 'handler-failed' }, calls: 0,
+      });
+      expect(child.stderr).toContain('injected tripwire crash');
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
   test('an edit guard crash exits 2 on Claude and Codex', () => {
     const root = fixture();
     try {

@@ -20,6 +20,7 @@ import {
 import { parseStatusZ, splitNul } from '../../effects/review/diff-fingerprint';
 import { capabilityOwnersForPaths, FAILURE_LOG_FILE, type CapabilityPathOwner } from '../../effects/state/resolve-effective-state';
 import { payloadString, type HookIdentity, type HookPayload } from './hook-input';
+import { protectedRepoDir } from './mutation-protected-dirs';
 
 export interface MutationGuardInput {
   readonly repoRoot: string;
@@ -65,7 +66,14 @@ export function runMutationGuard(opts: MutationGuardInput): MutationGuardResult 
   return { exitCode: 0, stdout: capabilityOwnerLines(repoRoot, paths), stderr: '' };
 }
 
-function firstDenial(repoRoot: string, paths: readonly string[]): Denial | null {
+/** Bash uses the same private path authority and adds a repository-only boundary. */
+export function runMutationPathGuard(opts: MutationGuardInput, rawPaths: readonly string[]): MutationGuardResult {
+  const paths = rawPaths.map(raw => normalizeFilePath(opts.repoRoot, raw));
+  const denial = firstDenial(opts.repoRoot, paths, true);
+  return denial ? deny(opts.repoRoot, denial, opts.identity.runId) : { exitCode: 0, stdout: '', stderr: '' };
+}
+
+function firstDenial(repoRoot: string, paths: readonly string[], repoOnly = false): Denial | null {
   for (const filePath of paths) {
     // normalizeFilePath leaves an absolute path raw both for a verified external
     // target and for input it could not resolve (e.g. `/repo/src/../_ops/x`);
@@ -73,22 +81,22 @@ function firstDenial(repoRoot: string, paths: readonly string[]): Denial | null 
     // boundary checks below.
     if (isRepoScopedPath(filePath)
       ? canonicalRepoRelativePath(repoRoot, filePath) !== filePath
-      : canonicalExternalPath(repoRoot, filePath) === null
-        && !isForeignDriveAbsolutePath(repoRoot, filePath)) {
+      : repoOnly || (canonicalExternalPath(repoRoot, filePath) === null
+        && !isForeignDriveAbsolutePath(repoRoot, filePath))) {
       return {
         guard: 'RepoScopeGuard',
         reason: `${filePath} is not a canonical path contained by the current repository.`,
         fix: 'Use a canonical repository-relative path without traversal or symlink escape.',
       };
     }
-    if (isUnderRepoDir(filePath, '_ref')) {
+    if (protectedRepoDir(filePath) === '_ref') {
       return {
         guard: 'ExternalReferenceGuard',
         reason: `${filePath} is under _ref/, external comparison material that is not a product edit surface.`,
         fix: 'Refresh _ref/ from upstream sources when needed, keep it ignored, and do not edit it as repo implementation.',
       };
     }
-    if (isUnderRepoDir(filePath, '_ops')) {
+    if (protectedRepoDir(filePath) === '_ops') {
       return {
         guard: 'OpsPrivateGuard',
         reason: `${filePath} is under _ops/, the ignored local private operations state for secrets, real env files, provider state, artifacts, logs, and scratch files.`,
@@ -155,11 +163,6 @@ function pathsWithNoUncommittedChange(repoRoot: string, paths: readonly string[]
 // ---------------------------------------------------------------------------
 // Path classification
 // ---------------------------------------------------------------------------
-
-/** The directory itself or any path below it; a target named `_ops` is as private as `_ops/x`. */
-function isUnderRepoDir(filePath: string, dir: string): boolean {
-  return filePath === dir || filePath.startsWith(`${dir}/`);
-}
 
 function isRepoScopedPath(filePath: string): boolean {
   return filePath.length > 0 && !isAbsolutePathInAnyGrammar(filePath);
