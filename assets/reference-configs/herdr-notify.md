@@ -151,3 +151,38 @@ If install fails, check the reported stage and run install again.
 A failure after linking can leave the plugin disabled.
 
 The command and environment contract come from the [Herdr plugin guide](https://github.com/herdrdev/herdr/blob/master/docs/next/website/src/content/docs/plugins.mdx).
+
+
+## Clef shadow mode
+
+The candidate supports `CLEF_MODE=off|shadow`. The default is `off`.
+Supply `CLOUDFLARE_API_TOKEN` through the secret environment or masked prompt.
+There is no token flag. Set the account with `--cloudflare-account-id` or
+`CLOUDFLARE_ACCOUNT_ID`. Use `--clef-mode shadow` to select shadow at install.
+Copilot and Autopilot are not accepted in this phase.
+
+Shadow processing starts after all channel delivery attempts. It reads only
+`claude` and `codex` done panes. It redacts the last 120 lines, caps the tail at
+16 KiB, and calls Clef-flash and Clef with separate three-second deadlines.
+It saves records in `HERDR_PLUGIN_STATE_DIR/decision-shadow.jsonl`, with mode
+`600`, a 14-day retention window and a 20 MiB cap. A shared UTC counter limits
+all event processes to 2,000 reserved calls per day. Invalid answers, timeouts
+and cap skips never alter the notification payload or routing.
+
+The Bot reads one blind record with `repo-harness herdr decision label --next`.
+It writes a label with `repo-harness herdr decision label <event_id> <option>`.
+Options are `done`, `stuck`, `model_error`, `quota` and `unclear`.
+Labels have `labeler: bot` in a separate private `decision-labels.jsonl` file.
+Neither command changes the shadow log. An existing label cannot be replaced.
+The CLI finds the runtime directory through private `decision-state.json` in
+the plugin config directory. The plugin writes that pointer with its first
+shadow record. `--state-dir <absolute-path>` supplies a known directory directly.
+
+The manifest subscribes to `pane.agent_status_changed`. Herdr emits the JSON
+body field `event: "pane_agent_status_changed"`. The handler accepts that exact
+body name and rejects the dotted subscription name in the body. The Phase 0
+probe verified both names in one real plugin invocation. See
+[the runtime evidence](../../tasks/notes/clef-shadow-phase0.notes.md).
+The approved follow-up fixes this event contract in both off and shadow modes.
+The default stays off. Live provider acceptance and the shadow window remain
+separate verification steps.

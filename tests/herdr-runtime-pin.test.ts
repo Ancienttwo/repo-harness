@@ -296,12 +296,14 @@ function notifyFixture() {
   const state = join(root, 'state');
   const bin = join(root, 'bin');
   for (const dir of [home, config, state, bin]) mkdirSync(dir);
+  const tail = join(root, 'tail.txt');
+  writeFileSync(tail, 'Result: complete.', { encoding: 'utf8', mode: 0o600 });
   const env = { ...process.env, HOME: home, XDG_CONFIG_HOME: join(home, '.config'),
     PATH: `${bin}${process.platform === 'win32' ? ';' : ':'}${process.env.PATH}`,
-    FIXTURE_CONFIG: config, FIXTURE_CALLS: join(root, 'calls.jsonl') };
+    FIXTURE_CONFIG: config, FIXTURE_CALLS: join(root, 'calls.jsonl'), FIXTURE_TAIL_FILE: tail };
   for (const key of Object.keys(env)) if (key.startsWith('HERDR_') || /^(WEBHOOK_|SLACK_|DISCORD_|TELEGRAM_)/.test(key)) delete (env as NodeJS.ProcessEnv)[key];
   const shim = join(bin, 'herdr');
-  writeFileSync(shim, `#!${process.execPath}\nimport {appendFileSync,mkdirSync} from 'node:fs';\nconst args=process.argv.slice(2);\nappendFileSync(process.env.FIXTURE_CALLS,JSON.stringify({args,secret:process.env.WEBHOOK_KEY??null})+'\\n');\nif(process.env.FIXTURE_FAIL&&process.env.FIXTURE_FAIL===args[3]) { console.error('private '+process.env.FIXTURE_PRIVATE);process.exit(1); }\nif(args[0]==='pane'&&args[1]==='read') { if(process.env.FIXTURE_PANE_FAIL)process.exit(1); console.log(process.env.FIXTURE_TAIL??'Result: complete.'); }\nif(args[3]==='config-dir'||(args[0]==='plugin'&&args[1]==='config-dir')) { mkdirSync(process.env.FIXTURE_CONFIG,{recursive:true}); console.log(process.env.FIXTURE_CONFIG); }\nif(args[3]==='list') console.log(process.env.FIXTURE_LIST_OUTPUT??JSON.stringify({id:'cli:plugin',result:{type:'plugin_list',plugins:JSON.parse(process.env.FIXTURE_PLUGINS??'[]')}}));\n`);
+  writeFileSync(shim, `#!${process.execPath}\nimport {appendFileSync,mkdirSync,readFileSync} from 'node:fs';\nconst args=process.argv.slice(2);\nappendFileSync(process.env.FIXTURE_CALLS,JSON.stringify({args,secret:process.env.WEBHOOK_KEY??null})+'\\n');\nif(process.env.FIXTURE_FAIL&&process.env.FIXTURE_FAIL===args[3]) { console.error('private '+process.env.FIXTURE_PRIVATE);process.exit(1); }\nif(args[0]==='pane'&&args[1]==='read') { if(process.env.FIXTURE_PANE_FAIL)process.exit(1); console.log(readFileSync(process.env.FIXTURE_TAIL_FILE,'utf8')); }\nif(args[3]==='config-dir'||(args[0]==='plugin'&&args[1]==='config-dir')) { mkdirSync(process.env.FIXTURE_CONFIG,{recursive:true}); console.log(process.env.FIXTURE_CONFIG); }\nif(args[3]==='list') console.log(process.env.FIXTURE_LIST_OUTPUT??JSON.stringify({id:'cli:plugin',result:{type:'plugin_list',plugins:JSON.parse(process.env.FIXTURE_PLUGINS??'[]')}}));\n`);
   chmodSync(shim, 0o755);
   const run = (args: string[] = [], extra: NodeJS.ProcessEnv = {}) => spawnSync(process.execPath,
     [join(ROOT, 'src/cli/index.ts'), 'herdr', 'notify', 'install', '--session', 'notify-test', '--non-interactive', ...args],
@@ -594,9 +596,9 @@ describe('shipped Herdr notify event handler', () => {
     const clock = spyOn(Date, 'now').mockReturnValue(1792663200000);
     const stderr: string[] = []; const consoleSpy = spyOn(console, 'error').mockImplementation(message => { stderr.push(String(message)); });
     try {
-      (f.env as NodeJS.ProcessEnv).FIXTURE_TAIL = Array.from({ length: 125 }, (_, i) => `line ${i}`).join('\n')
+      writeFileSync(f.env.FIXTURE_TAIL_FILE, Array.from({ length: 125 }, (_, i) => `line ${i}`).join('\n')
         + '\nsk-fixtureSecret ghp_fixtureSecret Bearer credential API_KEY="private value" '
-        + 'a'.repeat(48) + ' QWErTyZxCvBnMsDfGhJkLqWeRtYuIoPaSdFgHjKlZXCV123456 fixture-clef-token';
+        + 'a'.repeat(48) + ' QWErTyZxCvBnMsDfGhJkLqWeRtYuIoPaSdFgHjKlZXCV123456 fixture-clef-token', 'utf8');
       await notify(f.env, f.send);
       expect(f.calls.slice(0, 4).map(call => call.url)).toEqual(['https://bot.example/routine', 'https://slack.example/hook', 'https://discord.example/hook', 'https://api.telegram.org/bot123:token/sendMessage']);
       expect(f.calls.slice(4).map(call => call.url.split('/').at(-1))).toEqual(['clef-flash', 'clef']);
@@ -699,7 +701,7 @@ describe('shipped Herdr notify event handler', () => {
     const f = shadowFixture();
     try {
       const link = (text: string) => `\x1b]8;;https://example.invalid\x1b\\${text}\x1b]8;;\x1b\\`;
-      (f.env as NodeJS.ProcessEnv).FIXTURE_TAIL = `start ${link('link1')} KEEP-THIS-RESULT ${link('link2')} end`;
+      writeFileSync(f.env.FIXTURE_TAIL_FILE, `start ${link('link1')} KEEP-THIS-RESULT ${link('link2')} end`, 'utf8');
       await notify(f.env, f.send);
       expect(f.records()[0].tail).toBe('start link1 KEEP-THIS-RESULT link2 end');
     } finally { f.cleanup(); }
@@ -794,9 +796,15 @@ await notify(process.env, async()=>new Response(JSON.stringify({ok:true,success:
   test('tail is capped by UTF-8 bytes after redaction and no model text is executed', async () => {
     const f = shadowFixture();
     try {
-      (f.env as NodeJS.ProcessEnv).FIXTURE_TAIL = Array.from({ length: 120 }, () => '漢 '.repeat(300)).join('\n');
+      const tail = Array.from({ length: 120 }, () => '漢 '.repeat(300)).join('\n');
+      // Keep the original large input. Linux cannot spawn with this text in one env entry.
+      expect(Buffer.byteLength(tail)).toBe(144119);
+      writeFileSync(f.env.FIXTURE_TAIL_FILE, tail, 'utf8');
       await notify(f.env, f.send);
       const record = f.records()[0];
+      expect(typeof record.tail).toBe('string');
+      expect(tail.endsWith(record.tail)).toBe(true);
+      expect(Buffer.byteLength(record.tail)).toBeGreaterThanOrEqual(16 * 1024 - 3);
       expect(Buffer.byteLength(record.tail)).toBeLessThanOrEqual(16 * 1024);
       expect(record.tail).not.toContain('�');
       expect(record.models.every((model: any) => model.status === 'ok')).toBe(true);

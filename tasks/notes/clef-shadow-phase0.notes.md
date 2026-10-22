@@ -124,3 +124,44 @@ The masked mode prompt reuses the installer's existing terminal input contract.
 Rollback: set `CLEF_MODE=off` for an installed candidate. For a merged change,
 revert its squash commit and reinstall the shipped plugin. This task does not
 merge, install on the live session, release or apply model decisions.
+
+## Hosted CI repair on main 919b66d0
+
+Run `39763734877` failed in two affected-test shards. The branch was rebased to
+`919b66d0d55e1758f2f08e5dd8a8353c336f0723` before repair and final verification.
+
+Shard 0 exposed an authority error: the approved Clef section was added only to
+`docs/reference-configs/herdr-notify.md`. Its actual authoring source is
+`assets/reference-configs/herdr-notify.md`. The unchanged projection test failed.
+The source now contains that section. `bun run sync:reference-configs` regenerates
+the projection without changing its approved bytes. The original assertions pass.
+
+Shard 2 exposed a fixture IPC error before the product's UTF-8 cap could run.
+The test stored its 144,119-byte pane output in `FIXTURE_TAIL`. On Linux with
+4 KiB pages, a single environment entry can contain at most 131,072 bytes;
+this entry was 144,133 bytes including its name, separator and NUL. Real Linux
+`execFile` failed with `E2BIG` before the shim started. The unchanged plugin
+correctly recorded `unavailable` and a null tail. The next assertion then raised
+the reported `Buffer.byteLength(null)` error.
+
+A disposable, offline container with cached Node 24.21.0 on Linux arm64 reproduced
+the full failure path. Boundary probes accepted a 131,072-byte entry and rejected
+131,073. The exact same 144,119-byte payload, SHA256
+`aca38b0f6bdc6fc84acef271ad0371fe8d5a10f2022178b5e0d56ed6aca10281`,
+passed through a file-reading shim and the unchanged plugin: one pane read,
+an exact 16,382-byte Unicode suffix, and both models valid. This lower-layer
+proof is separate from the final hosted Bun/Ubuntu test run.
+
+The fixture now has one tail file, initialized with its original default text.
+All three custom-tail cases write their original UTF-8 bytes there. Only the short
+file path enters the child environment. The shim still adds the same newline.
+The production read, failure handling and truncation code did not change.
+Every existing assertion remains. New assertions pin the original input size,
+require a string suffix of that input, and require the 16 KiB bound to be filled
+within the maximum three-byte UTF-8 boundary adjustment. No input, timeout or
+coverage was reduced, and no fallback or skip was added.
+
+Sibling sweep found three uses of the old env-payload channel, all in the same
+fixture file; all now use its single file channel. Projection checks cover all
+25 canonical reference documents. Exact RED/GREEN commands, source hashes and
+hosted verification remain in the PR evidence, not in a second acceptance store.
