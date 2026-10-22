@@ -112,7 +112,9 @@ resolve before checkpoint runs. Dependency and flow debt remain in CI.
 Checkpoint has no introduced/existing or severity classification.
 The header's "new" means a new id set for delivery. The key is SHA-256 of JSON
 `[branch, sorted item ids, sorted unowned paths]`, using the producer's `id` field.
-Registry repositories also get unowned changed paths from registry ownership.
+Registry repositories also get unowned paths from registry ownership, limited
+to the paths that differ from the review-base merge-base. A state directory
+that Git does not ignore gives one SessionStart line and stderr elsewhere.
 Setup states and other failures use the separate ignored marker
 `.ai/harness/state/agent-notice-status`; see the hook operations reference. A manifest refresh
 does not renew the set. All delivery points share `.ai/harness/state/agent-notice`.

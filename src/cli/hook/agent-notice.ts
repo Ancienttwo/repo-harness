@@ -4,14 +4,15 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { ArchitectureDebtReportV1 } from 'archctx-contracts';
 import type { CapabilityOwnership } from '../../core/state/types';
-import { ARCHCONTEXT_MANIFEST, ArchctxClientError, capabilitySource, checkpointArchitectureDebt, type ArchctxProviderOptions } from '../../effects/architecture/archctx-provider';
+import { ARCHCONTEXT_MANIFEST, ArchctxClientError, capabilitySource, changedSinceReviewBase, checkpointArchitectureDebt, type ArchctxProviderOptions } from '../../effects/architecture/archctx-provider';
 import { readGlobalArchitectureConfiguration } from '../../effects/architecture/projection-config';
 import { assertSafeRepoWritePath, writeHookStateFile } from '../../effects/hook-state-file';
 import { loadRegistryAuthority, readWorkflowPolicy } from '../../effects/state/resolve-effective-state';
 import { boundedHookDiagnostic } from './hook-protocol';
 
-const MARKER = '.ai/harness/state/agent-notice';
-const STATUS_MARKER = '.ai/harness/state/agent-notice-status';
+const STATE_DIR = '.ai/harness/state/';
+const MARKER = `${STATE_DIR}agent-notice`;
+const STATUS_MARKER = `${STATE_DIR}agent-notice-status`;
 const COMMAND = 'repo-harness architecture-debt --json';
 const STATUS_COMMAND = 'repo-harness architecture-projection status --json';
 const MAX_BYTES = 800;
@@ -49,6 +50,8 @@ interface Observation {
   readonly status: Status;
   readonly unowned: { readonly paths: readonly string[]; readonly block: NoticeBlock } | null;
   readonly debt: { readonly branch: string; readonly ids: readonly string[]; readonly block: NoticeBlock } | null;
+  /** The unowned-path filter failed in a setup state. Only stderr gets it. */
+  readonly unmeasured?: unknown;
 }
 
 /** Up to three rows and an exact overflow count. The overflow line is never cut. */
@@ -96,6 +99,24 @@ function unownedBlock(paths: readonly string[]): NoticeBlock | null {
   return {
     content: boundedBlock(`[ArchitectureDebt] ${paths.length} ${subject}`, rows, paths.length, count => `(+${count} more unowned changed paths)`),
     systemMessage: `Architecture: ${paths.length} ${subject}; add an owner in ${REGISTRY_FILE}.`,
+  };
+}
+
+/**
+ * Ownership can measure from the last projection manifest commit, so its
+ * unowned list can hold paths that main changed. As in checkpoint, only the
+ * paths that differ from the review-base merge-base are this branch's changes.
+ */
+function changedUnownedPaths(repoRoot: string, owned: CapabilityOwnership | null, options: ArchctxProviderOptions): string[] {
+  if (!owned?.review_base || owned.unowned_paths.length === 0) return [];
+  const changed = changedSinceReviewBase(repoRoot, owned.review_base, options);
+  return owned.unowned_paths.filter(path => changed.has(path)).sort();
+}
+
+function unignoredBlock(): NoticeBlock {
+  return {
+    content: `[Architecture] notice unavailable: ${STATE_DIR} is not Git-ignored. Fix: add ${STATE_DIR} to .gitignore`,
+    systemMessage: `Architecture: notice unavailable (${STATE_DIR} is not Git-ignored); add it to .gitignore.`,
   };
 }
 
@@ -157,13 +178,20 @@ function observe(repoRoot: string, ownership: (options: ArchctxProviderOptions) 
   catch (error) { return { status: statusOf(error), unowned: null, debt: null }; }
   let unowned: Observation['unowned'] = null;
   try {
+    const status = readiness(repoRoot, options.env);
+    let paths: string[];
     // Only the registry is its own unowned-path authority. Under archcontext,
     // archctx counts a path as unowned only inside declared source roots, so
     // the broader resolver list would give the same fact a second meaning.
-    const paths = source === 'registry' ? [...(owned?.unowned_paths ?? [])].sort() : [];
+    try { paths = source === 'registry' ? changedUnownedPaths(repoRoot, owned, options) : []; }
+    catch (error) {
+      // A setup state runs no checkpoint, so a filter failure must not replace
+      // it with a failure line. The paths stay unmeasured for this hook.
+      if (status.kind !== 'active') return { status, unowned: null, debt: null, unmeasured: error };
+      throw error;
+    }
     const ownerBlock = unownedBlock(paths);
     unowned = ownerBlock && { paths, block: ownerBlock };
-    const status = readiness(repoRoot, options.env);
     if (status.kind !== 'active') return { status, unowned, debt: null };
     const measured = checkpointArchitectureDebt(repoRoot, owned, options);
     const debtBlock = measured && renderAgentNotice(measured.report);
@@ -178,13 +206,23 @@ function currentBranch(repoRoot: string, env: NodeJS.ProcessEnv | undefined): st
   }).trim();
 }
 
+function ignored(repoRoot: string, path: string, env: NodeJS.ProcessEnv | undefined): boolean {
+  try { execFileSync('git', ['-C', repoRoot, 'check-ignore', '-q', '--', path], { env: env ?? process.env, stdio: 'ignore', timeout: 3_000 }); }
+  catch (error) {
+    // check-ignore exits 1 when no rule ignores the path.
+    if ((error as { status?: unknown }).status === 1) return false;
+    throw error;
+  }
+  return true;
+}
+
 /** True when the key is new. The key is written before delivery, so a failed write delivers nothing. */
 function claim(repoRoot: string, path: string, key: string, env: NodeJS.ProcessEnv | undefined): boolean {
   const marker = join(repoRoot, path);
   assertSafeRepoWritePath(repoRoot, marker);
   try { if (readFileSync(marker, 'utf8').trim() === key) return false; }
   catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
-  execFileSync('git', ['-C', repoRoot, 'check-ignore', '-q', '--', path], { env: env ?? process.env, stdio: 'ignore', timeout: 3_000 });
+  if (!ignored(repoRoot, path, env)) throw new Error(`${path} is not Git-ignored`);
   writeHookStateFile(repoRoot, marker, `${key}\n`);
   return true;
 }
@@ -216,18 +254,29 @@ function debtNotice(repoRoot: string, env: NodeJS.ProcessEnv | undefined, observ
   return [unowned?.block, debt?.block].filter((block): block is NoticeBlock => block !== undefined);
 }
 
-/** Shared by all host delivery points. The status and debt markers fail independently. */
-export function collectAgentNotice(repoRoot: string, ownership: (options: ArchctxProviderOptions) => CapabilityOwnership | null, options: ArchctxProviderOptions = {}): AgentNotice {
+/**
+ * Shared by all host delivery points. The status and debt markers fail independently.
+ * Without an ignored marker path nothing is deduplicated, so only SessionStart,
+ * which runs once per session, names the cause. It checks both markers even when
+ * it writes none: a current marker or a quiet loop does not hide a removed rule.
+ * A Claude Stop line would start one more turn at each stop.
+ */
+export function collectAgentNotice(repoRoot: string, ownership: (options: ArchctxProviderOptions) => CapabilityOwnership | null, options: ArchctxProviderOptions = {}, point: 'session-start' | 'turn' = 'turn'): AgentNotice {
   const observation = observe(repoRoot, ownership, options);
   if (!observation) return {};
   const blocks: NoticeBlock[] = [];
   const problems: string[] = observation.status.kind === 'failure' ? [errorText(observation.status.error)] : [];
+  if (observation.unmeasured !== undefined) problems.push(errorText(observation.unmeasured));
   try {
     const block = statusNotice(repoRoot, options.env, observation.status);
     if (block) blocks.push(block);
   } catch (error) { problems.push(errorText(error)); }
   try { blocks.push(...debtNotice(repoRoot, options.env, observation)); }
   catch (error) { problems.push(errorText(error)); }
+  if (point === 'session-start') {
+    try { if (![STATUS_MARKER, MARKER].every(path => ignored(repoRoot, path, options.env))) blocks.push(unignoredBlock()); }
+    catch (error) { problems.push(errorText(error)); }
+  }
   return {
     ...(blocks.length > 0 ? { content: blocks.map(block => block.content).join('\n'), systemMessage: blocks.map(block => block.systemMessage).join('\n') } : {}),
     ...(problems.length > 0 ? { diagnostics: `${boundedHookDiagnostic(`repo-harness: architecture notice unavailable: ${problems.join('; ')}`)}\n` } : {}),

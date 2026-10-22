@@ -12,7 +12,7 @@ import {
   writeFileSync,
 } from 'fs';
 import { fixtureWrite } from './helpers/module-repository';
-import { registryNoticeFixture } from './helpers/agent-notice';
+import { registryNoticeFixture, registryProjectedFixture, unignoreNoticeState } from './helpers/agent-notice';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { resolveCompatibleNodeRuntime } from '../src/effects/architecture/archctx-provider';
@@ -489,6 +489,45 @@ process.exit(child.status ?? 1);
       const sessionContext = context(session.stdout, 'SessionStart', systemMessage);
       expect(sessionContext).toContain('[Architecture] inactive: no ArchContext model (.archcontext/manifest.yaml is missing).');
       expect(sessionContext).not.toContain('[ArchitectureDebt]');
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  }, 60_000);
+
+  test('a clean branch does not report unowned paths that main changed after the last projection (#852)', () => {
+    const root = registryProjectedFixture();
+    try {
+      const session = host(root, 'claude', 'SessionStart', 'default', { session_id: 'clean-branch-session' });
+      expect(session.status, session.stderr).toBe(0);
+      const systemMessage = (JSON.parse(session.stdout) as { systemMessage?: string }).systemMessage;
+      expect(systemMessage).toBe('Architecture: inactive (no ArchContext model (.archcontext/manifest.yaml is missing)); run repo-harness architecture-projection status --json.');
+      const sessionContext = context(session.stdout, 'SessionStart', systemMessage);
+      expect(sessionContext).toContain('[Architecture] inactive: no ArchContext model (.archcontext/manifest.yaml is missing).');
+      expect(sessionContext).not.toContain('[ArchitectureDebt]');
+      expect(sessionContext).not.toContain('packages/old-core');
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  }, 60_000);
+
+  test('a consumer whose state directory is not Git-ignored sees one SessionStart line and no turn text (#852)', () => {
+    const root = registryNoticeFixture();
+    const UNIGNORED = '[Architecture] notice unavailable: .ai/harness/state/ is not Git-ignored. Fix: add .ai/harness/state/ to .gitignore';
+    const HUMAN_UNIGNORED = 'Architecture: notice unavailable (.ai/harness/state/ is not Git-ignored); add it to .gitignore.';
+    try {
+      unignoreNoticeState(root);
+      for (const sessionId of ['unignored-one', 'unignored-two']) {
+        const session = host(root, 'claude', 'SessionStart', 'default', { session_id: sessionId });
+        expect(session.status, session.stderr).toBe(0);
+        expect(context(session.stdout, 'SessionStart', HUMAN_UNIGNORED)).toContain(UNIGNORED);
+      }
+      const codexSession = host(root, 'codex', 'SessionStart', 'default', { session_id: 'unignored-codex' });
+      expect(codexSession.status, codexSession.stderr).toBe(0);
+      expect(context(codexSession.stdout, 'SessionStart')).toContain(UNIGNORED);
+
+      const stop = host(root, 'claude', 'Stop', 'default', { stop_hook_active: false });
+      expect(stop.status, stop.stderr).toBe(0);
+      expect(stop.stdout).toBe('');
+      expect(stop.stderr).toContain('is not Git-ignored');
+      const inbox = host(root, 'codex', 'UserPromptSubmit', 'inbox', { prompt: 'continue' });
+      expect(inbox.status, inbox.stderr).toBe(0);
+      expect(inbox.stdout).toBe('');
     } finally { rmSync(root, { recursive: true, force: true }); }
   }, 60_000);
 });
