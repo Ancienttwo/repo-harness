@@ -12,6 +12,7 @@
 **P1: current map**
 
 - `assets/herdr/webhook-notify/notify.mjs:61` is the only producer of "done" and "blocked" notifications. Herdr runs it on every `pane.agent_status_changed` event (`herdr-plugin.toml`).
+- The manifest subscription is `pane.agent_status_changed`. The emitted `HERDR_PLUGIN_EVENT_JSON.event` is `pane_agent_status_changed`, confirmed by a real Herdr 0.9.3 plugin probe. The approved PR #860 follow-up aligns the handler to that exact wire name. The dotted subscription is not a wire-body alias.
 - `notify.mjs:66` accepts only `agent_status` `done` or `blocked`. The status value comes from Herdr's own agent detection. The plugin forwards it unchanged. It does not read the pane.
 - `notify.mjs:99` routing: `blocked` goes to every configured channel. `done` goes only to channels with `<CHANNEL>_NOTIFY_DONE=1`.
 - `notify.mjs:61` takes `send = fetch` as an injected parameter. `tests/herdr-runtime-pin.test.ts:523` drives the handler through this parameter.
@@ -27,7 +28,7 @@
 **P2: traced path (false "done")**
 
 1. A Claude or Codex CLI runs in a Herdr pane. The provider returns "usage limit reached" or an API error. The CLI prints the error and returns to its input prompt.
-2. Herdr's detector sees an idle input prompt. It emits `pane.agent_status_changed` with `agent_status: done`.
+2. Herdr's detector sees an idle input prompt. It emits a `pane_agent_status_changed` JSON body with `agent_status: done`; the plugin subscribes under `pane.agent_status_changed`.
 3. `notify.mjs` passes its filters and sends `Herdr done: codex @ <workspace>` to the Bot (and to human channels with `NOTIFY_DONE=1`).
 4. The Bot routine treats `done` as finished work and runs `repo-harness-check` on the branch (`docs/reference-configs/herdr-notify.md`, "Bot routine webhook"). The check finds no result. A human finds out later that the pane hit a quota.
 5. Pressure point: step 3. The plugin has the pane identity but never reads the pane tail. The only signal is a screen heuristic that cannot tell "finished" from "stopped".
@@ -67,7 +68,7 @@ Facts from the Cloudflare docs ([clef-flash](https://developers.cloudflare.com/w
 ## 2. Module boundary
 
 ```text
-Herdr event pane.agent_status_changed (done)
+Herdr subscription pane.agent_status_changed (wire body: pane_agent_status_changed, done)
   └─ assets/herdr/webhook-notify/notify.mjs          (transport + I/O; existing)
        ├─ herdr pane read <pane> --source recent      (new: bounded tail read)
        ├─ pane-status.mjs                             (new: pure core, projected copy)
@@ -247,7 +248,7 @@ No coding starts before Aimpact approves this plan. Codex implements Phases 1–
 
 - Confirm the price, context and token permission name on the Cloudflare pages.
 - From a Herdr plugin event process on the Mini, confirm that `herdr pane read <pane_id> --source recent --lines 120` works and returns within 2 s.
-- Record a real `pane.agent_status_changed` event JSON for a detector status, a `report-agent --source repo-harness` pane and an OSC 7501 program. Record whether any event field or `herdr pane get` readback marks the typed source. This is evidence for the deferred Q5 mitigation. It does not block Phase 1.
+- Record a real `pane_agent_status_changed` wire-event JSON for a detector status, a `report-agent --source repo-harness` pane and an OSC 7501 program. Record whether any event field or `herdr pane get` readback marks the typed source. This is evidence for the deferred Q5 mitigation. It does not block Phase 1.
 - Confirm how a CLI outside the plugin finds `HERDR_PLUGIN_STATE_DIR` (for the report command).
 - Count `done` events per day from `herdr plugin log list --plugin aimpact.webhook-notify` for the last 7 days.
 - Run 10 hand-picked real tails (2 per label) through `clef-flash` by `curl` with a token from the Mini env. Record answers in a note under `tasks/notes/`. No tail text in the note.
@@ -290,7 +291,7 @@ Acceptance checks:
 
 ### First-slice acceptance criteria (whole slice)
 
-1. With `CLEF_MODE=off`, the plugin behavior is byte-identical to `origin/main@5c2dfad43`.
+1. With `CLEF_MODE=off`, channel routing, payloads and debounce stay unchanged, and no Clef read, call or record runs. Approved PR #860 follow-up exception: parse the actual `pane_agent_status_changed` wire-body name instead of the incorrect dotted subscription name. Reject the dotted name in the body.
 2. With `CLEF_MODE=shadow`, no channel receives a different message, and every in-scope `done` event has one shadow record.
 3. The token exists only on the Mini, and no test, log, record or payload contains it.
 4. The shadow-period report shows per-label precision for both bars and the false-done rate from Bot labels.

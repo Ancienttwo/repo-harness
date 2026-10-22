@@ -409,7 +409,7 @@ describe('Herdr notify install', () => {
       const delivered: string[] = [];
       await installedNotify({ ...fixture.env, HERDR_SESSION: 'notify-test', HERDR_PLUGIN_CONFIG_DIR: fixture.config,
         HERDR_PLUGIN_STATE_DIR: fixture.state,
-        HERDR_PLUGIN_EVENT_JSON: JSON.stringify({ event: 'pane.agent_status_changed', data: { pane_id: 'pane-1', workspace_id: 'workspace-1', agent_status: 'done' } }),
+        HERDR_PLUGIN_EVENT_JSON: JSON.stringify({ event: 'pane_agent_status_changed', data: { pane_id: 'pane-1', workspace_id: 'workspace-1', agent_status: 'done' } }),
         HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify({ workspace_cwd: fixture.workspace }),
       }, async (url: string) => { delivered.push(url); return new Response('{"ok":true}'); });
       expect(delivered).toEqual(['https://slack.example/secret']);
@@ -544,7 +544,7 @@ describe('shipped Herdr notify event handler', () => {
     const fixture = notifyFixture();
     writeFileSync(join(fixture.config, '.env'), "WEBHOOK_URL='https://bot.example/routine'\nWEBHOOK_KEY='fixture-secret-key'\nNOTIFY_SESSION='notify-test'\nSLACK_WEBHOOK_URL='https://slack.example/hook'\nDISCORD_WEBHOOK_URL='https://discord.example/hook'\nTELEGRAM_BOT_TOKEN='123:token'\nTELEGRAM_CHAT_ID='-42'\n", { mode: 0o600 });
     const env = { ...fixture.env, HERDR_SESSION: 'notify-test', HERDR_PLUGIN_CONFIG_DIR: fixture.config,
-      HERDR_PLUGIN_STATE_DIR: fixture.state, HERDR_PLUGIN_EVENT_JSON: JSON.stringify({ event: 'pane.agent_status_changed',
+      HERDR_PLUGIN_STATE_DIR: fixture.state, HERDR_PLUGIN_EVENT_JSON: JSON.stringify({ event: 'pane_agent_status_changed',
         data: { type: 'pane_agent_status_changed', pane_id: 'pane-1', workspace_id: 'workspace-1', agent_status: status, agent: 'codex', title: 'Needs input' } }),
       HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify({ workspace_cwd: fixture.workspace, focused_pane_cwd: fixture.workspace, workspace_label: 'project' }) };
     const calls: Array<{url: string; init: RequestInit}> = [];
@@ -554,6 +554,22 @@ describe('shipped Herdr notify event handler', () => {
     }) as typeof fetch;
     return { ...fixture, env, calls, send };
   }
+
+  test.each([
+    ['pane_agent_status_changed', 4],
+    ['pane.agent_status_changed', 0],
+    ['pane_updated', 0],
+  ] as const)('Herdr wire event contract accepts only the emitted body name: %s', async (name, count) => {
+    const f = eventFixture('blocked');
+    try {
+      const event = JSON.parse(f.env.HERDR_PLUGIN_EVENT_JSON);
+      event.event = name;
+      f.env.HERDR_PLUGIN_EVENT_JSON = JSON.stringify(event);
+      await notify(f.env, f.send);
+      expect(f.calls).toHaveLength(count);
+      expect(existsSync(join(f.state, 'decision-shadow.jsonl'))).toBe(false);
+    } finally { f.cleanup(); }
+  });
 
   function shadowFixture() {
     const f = eventFixture('done');

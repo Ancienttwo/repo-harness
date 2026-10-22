@@ -68,16 +68,24 @@ Exact event bodies from the disposable runtime:
 {"event":"pane_agent_status_changed","data":{"type":"pane_agent_status_changed","pane_id":"w1:p1","workspace_id":"w1","agent_status":"idle","agent":"codex"}}
 ```
 
-## Activation blocker
+## Event contract (resolved by the approved PR #860 follow-up)
 
-The observed Herdr event body uses `pane_agent_status_changed`. The existing
-handler accepts only `pane.agent_status_changed`. The manifest subscription uses
-the dotted name, but that is not the emitted body field. This task preserves the
-existing filter because Phase 1 requires unchanged `off` behavior and unchanged
-existing event-handler assertions. The probe is runtime evidence, not a mock.
-No alias or dual parser was added. Correcting this producer/consumer contract
-needs a bounded follow-up before live shadow activation. The implementation PR
-must stay Draft while this blocker remains.
+Herdr 0.9.3 uses two distinct names. The manifest subscription key is
+`pane.agent_status_changed`. The emitted JSON body has
+`event: "pane_agent_status_changed"`. The same real probe above proves both:
+the dotted subscription dispatched the plugin process that captured the
+underscore body. The handler now accepts only the underscore body name.
+It does not accept a dotted alias. Both off and shadow fixtures use the real
+wire name. Notification routing and `CLEF_MODE=off` as the default stay intact.
+
+The first implementation preserved the old filter to keep the original off
+contract. The user then approved this exact producer/consumer correction.
+A focused regression failed on the old code: the real name produced no delivery,
+and the wrong dotted body name produced four deliveries. The fixed code accepts
+the real name and rejects both the dotted name and unrelated events. Existing
+notification assertions remain unchanged; only their event inputs now match
+the producer. This closes the event-name blocker, without proving live provider
+acceptance, a detector done event, or an OSC 7501 event.
 
 ## Scope decisions and verification limits
 

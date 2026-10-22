@@ -178,7 +178,11 @@ The CLI finds the runtime directory through private `decision-state.json` in
 the plugin config directory. The plugin writes that pointer with its first
 shadow record. `--state-dir <absolute-path>` supplies a known directory directly.
 
-Live activation is blocked by the event-name mismatch observed in Phase 0.
-See [the Phase 0 evidence](../../tasks/notes/clef-shadow-phase0.notes.md).
-Keep the candidate off until that contract is corrected. No live shadow window
-or provider acceptance is claimed by this implementation.
+The manifest subscribes to `pane.agent_status_changed`. Herdr emits the JSON
+body field `event: "pane_agent_status_changed"`. The handler accepts that exact
+body name and rejects the dotted subscription name in the body. The Phase 0
+probe verified both names in one real plugin invocation. See
+[the runtime evidence](../../tasks/notes/clef-shadow-phase0.notes.md).
+The approved follow-up fixes this event contract in both off and shadow modes.
+The default stays off. Live provider acceptance and the shadow window remain
+separate verification steps.

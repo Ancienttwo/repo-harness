@@ -65,7 +65,7 @@ function isTemporary(path, managedRoot) {
 export async function notify(env = process.env, send = fetch, options = {}) {
   const event = objectJson(env.HERDR_PLUGIN_EVENT_JSON);
   const context = objectJson(env.HERDR_PLUGIN_CONTEXT_JSON);
-  if (event.event !== 'pane.agent_status_changed') return;
+  if (event.event !== 'pane_agent_status_changed') return;
   const data = event.data;
   if (!data || !['done', 'blocked'].includes(data.agent_status)) return;
   if (typeof data.pane_id !== 'string' || !data.pane_id || typeof data.workspace_id !== 'string') throw new Error('Invalid event identity.');
