@@ -13,6 +13,7 @@ import { join, resolve } from 'path';
 import type { EffectiveState, EffectiveStateRiskInput } from '../src/core/state/types';
 import { resolveHookEffectiveState } from '../src/cli/hook/runtime';
 import {
+  EDIT_GUARD_SCOPE_SECTION,
   projectEffectiveStateSessionSection,
   projectUnavailableStateSessionSection,
 } from '../src/cli/hook/session-context';
@@ -133,7 +134,7 @@ function captureHealthyBaseline(): Record<string, unknown> {
     if (hook.status !== 0) throw new Error(hook.stderr);
     const envelope = JSON.parse(hook.stdout);
     const context = envelope.hookSpecificOutput.additionalContext as string;
-    const observed = JSON.parse(context.slice('[HarnessState] '.length));
+    const observed = JSON.parse(context.split('\n')[0]!.slice('[HarnessState] '.length));
     expect(observed.state_revision).toBe(state.state_revision);
     expect(observed.blockers).toEqual(state.blockers);
     const event = JSON.parse(readFileSync(join(root, '.ai/harness/runs/hook-events.jsonl'), 'utf8').trim());
@@ -305,13 +306,14 @@ describe('SessionStart Effective State authority', () => {
       'utf8',
     ));
     const actual = captureHealthyBaseline();
-    const context = actual.context as string;
-    const payload = JSON.parse(context.slice('[HarnessState] '.length));
+    const stateLine = (actual.context as string).split('\n')[0]!;
+    const payload = JSON.parse(stateLine.slice('[HarnessState] '.length));
     expect(payload.state_revision).toMatch(/^sha256:[0-9a-f]{64}$/);
     // Profile vocabulary changes the authority bytes and therefore the revision;
     // preserve the complete context/telemetry comparison apart from that derived hash.
-    const previous = JSON.parse(expected.context.slice('[HarnessState] '.length));
-    expected.context = '[HarnessState] ' + JSON.stringify({ ...previous, state_revision: payload.state_revision });
+    const [expectedState, ...expectedSections] = (expected.context as string).split('\n');
+    const previous = JSON.parse(expectedState!.slice('[HarnessState] '.length));
+    expected.context = ['[HarnessState] ' + JSON.stringify({ ...previous, state_revision: payload.state_revision }), ...expectedSections].join('\n');
     expect(actual).toEqual(expected);
   }, 30_000);
 
@@ -389,8 +391,9 @@ describe('SessionStart Effective State authority', () => {
       expect(captured.attempts).toBe(attempts);
       const context = ((captured.envelope.hookSpecificOutput as Record<string, unknown>).additionalContext as string);
       expect(context).toStartWith('[HarnessStateUnavailable] ');
-      expect(context.split('\n')).toHaveLength(1);
-      expect(JSON.parse(context.slice('[HarnessStateUnavailable] '.length))).toMatchObject({
+      const [unavailableLine, ...rest] = context.split('\n');
+      expect(rest).toEqual([EDIT_GUARD_SCOPE_SECTION.content]);
+      expect(JSON.parse(unavailableLine!.slice('[HarnessStateUnavailable] '.length))).toMatchObject({
         reason_code: reason,
         error_hash: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
       });

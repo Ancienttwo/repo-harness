@@ -23,8 +23,9 @@ runs. Handlers do not check the host.
 Codex must trust `~/.codex/hooks.json` in Settings before it executes the
 adapter. All managed entries use a 30-second deadline.
 Stop has no deferred work: it publishes the evidence
-checkpoint and renders the handoff and resume views. Stop does not run
-architecture projection and does not record architecture drift.
+checkpoint, renders the handoff and resume views, and reports protected path
+changes. Stop does not run architecture projection and does not record
+architecture drift.
 
 Measure `Stop.default` using
 `.ai/harness/runs/hook-events.jsonl` `elapsed_ms`. The terminal's Working
@@ -37,12 +38,12 @@ Other documents link here. They do not copy this table.
 
 | Route | Matcher | Host | Typed handler | Responsibility |
 | --- | --- | --- | --- | --- |
-| `SessionStart.default` | all sessions | Claude, Codex | `session-context` | Emit the Effective State section first, then the architecture-debt and pending-plan sections under one budget. |
-| `PreToolUse.edit` | `Edit\|Write` | Claude, Codex | `mutation-guard` | Block an edit outside the repository, under `_ref/` or `_ops/`, or without a parseable target path. |
+| `SessionStart.default` | all sessions | Claude, Codex | `session-context` | Emit the Effective State section first, then the edit-guard-scope, architecture-debt and pending-plan sections under one budget. |
+| `PreToolUse.edit` | `Edit\|Write` | Claude, Codex | `mutation-guard` | Block an `Edit`, `Write` or Codex `apply_patch` target outside the repository, under `_ref/` or `_ops/`, or without a parseable target path. Bash writes skip it; see [Edit guard coverage](#edit-guard-coverage). |
 | `PreToolUse.subagent` | `Agent` | Claude | `return-channel` | Append the return-channel contract, standing orders and board slice to a Claude `Agent` prompt. |
 | `UserPromptSubmit.inbox` | all prompts | Claude, Codex | `agent-notice` | Deliver architecture debt on Codex; Claude emits nothing. |
 | `SubagentStart.context` | subagent start | Codex | `subagent-context` | Record the native role and model observation. Add the bounded child context, standing orders and board slice. |
-| `Stop.default` | session stop | Claude, Codex | `stop` | Publish the evidence checkpoint and render handoff and resume. Claude can get architecture debt. |
+| `Stop.default` | session stop | Claude, Codex | `stop` | Publish the evidence checkpoint and render handoff and resume. Report protected path changes. Claude can get architecture debt. |
 
 After upgrading the package, reinstall the host adapters. Codex must trust the
 new command tuples once. Old adapters invoke removed routes and get exit 2.
@@ -160,6 +161,47 @@ Edit guards:
 - `ApplyPatchScopeGuard`: Codex `apply_patch` input has no parseable target
   path.
 - `EditScopeGuard`: an `Edit` or `Write` call has no `tool_input.file_path`.
+
+### Edit guard coverage
+
+`PreToolUse.edit` matches `Edit|Write`. On Codex it also reads `apply_patch`
+input. No route reads a Bash command. A file write through Bash, such as
+`sed -i`, a heredoc, `python3 -`, `rm`, `git checkout -- <path>` or a code
+generator, does not reach the guard. So `RepoScopeGuard`,
+`ExternalReferenceGuard`, `OpsPrivateGuard` and the `[CapabilityOwner]` line do
+not apply to Bash writes. #764 and #766 removed `PostToolUse.bash` because each
+Bash call paid about 5 seconds, and no per-call Bash check replaces it.
+
+The `edit-guard-scope` SessionStart section tells the Agent this limit on every
+host, also when Effective State is unavailable: use the edit tools to change
+repository files, and use Bash to run commands.
+
+Stop reports a change under `_ops/` or `_ref/` after the fact. The guard denies
+every `Edit`, `Write` and `apply_patch` target there, so a change there came from
+Bash, a script or the person. The report cannot tell which one. It does not block.
+
+- Stop walks `_ops/` and `_ref/` with `lstat`. It does not follow symbolic links.
+  It records the size and mtime of each entry in the Git-ignored
+  `.ai/harness/state/protected-paths.json`. A state path that Git does not
+  ignore gets no write and one stderr diagnostic.
+- Stop compares the walk with the manifest of the previous Stop, and reports
+  added, modified and deleted paths. The first Stop records the baseline and
+  reports nothing. When both directories are absent, the baseline is an empty
+  manifest, so the first file that Bash creates there is reported. An empty
+  baseline on a state path that Git does not ignore is skipped without a
+  diagnostic. An unchanged manifest is not rewritten.
+- The dedupe key is SHA-256 of JSON `[branch, sorted changed paths]`. Stop keeps
+  only the last reported key. The same path set on the same branch is not
+  reported again until a different path set is reported, also when a script
+  writes the same log again. The key has no change kind, so a delete that
+  follows a reported change of the same path is not reported.
+- More than 5,000 entries, or an I/O or Git failure, gives no report, no state
+  write and one stderr diagnostic at exit 0.
+- Claude gets one `[ProtectedPathChange]` block in `additionalContext` (at most
+  five paths and 800 bytes) and one human `systemMessage`. Codex Stop writes no
+  stdout, so Codex gets one `repo-harness: Protected paths: ...` line on stderr
+  for the operator. The Codex model does not see it.
+- A continued Stop (`stop_hook_active`) skips the check.
 
 Circuit-breaker updates lock the complete read-modify-write and wait at most
 two seconds. An update reclaims the lock only when the owner record is complete

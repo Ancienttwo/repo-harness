@@ -1,4 +1,4 @@
-import { buildSessionStartSections } from './session-context';
+import { buildSessionStartSections, EDIT_GUARD_SCOPE_SECTION } from './session-context';
 import { runMutationGuard } from './mutation-guard';
 import { runStopHandler } from './stop-handler';
 import { runReturnChannel } from './return-channel';
@@ -28,7 +28,7 @@ function textResult(value: { readonly exitCode: number; readonly stdout: string;
 
 function runSessionContext(context: HookHandlerContext): HookHandlerResult {
   const resolution = context.collector.getEffectiveState();
-  const sections: SessionContextSection[] = buildSessionStartSections(context.repoRoot, resolution, context.now.getTime());
+  const sections: SessionContextSection[] = [...buildSessionStartSections(context.repoRoot, resolution, context.now.getTime()), EDIT_GUARD_SCOPE_SECTION];
   const notice = resolution.ok ? collectAgentNotice(context.repoRoot, () => resolution.state.capability_ownership, { env: context.env }) : {};
   if (notice.content) sections.push({ id: 'architecture-debt', priority: 2, mandatory: true, content: notice.content, source: 'repo-harness architecture-debt --json', systemMessage: notice.systemMessage });
   const systemMessage = sections.map((section) => section.systemMessage).filter(Boolean).join('\n');
