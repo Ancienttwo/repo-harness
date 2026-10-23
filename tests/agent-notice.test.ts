@@ -152,12 +152,27 @@ describe('AgentNotice', () => {
     expect(rendered.content!.split('\n').filter(line => line.startsWith('- '))).toHaveLength(3);
     expect(rendered.content).toContain('(+5 more: repo-harness architecture-debt --json)');
     expect(rendered.content).toContain('human prose');
-    expect(rendered.content).toContain('Run: archctx docs anchors --json');
+    expect(rendered.content).toContain('Run: repo-harness architecture-projection anchors --json');
     const huge = renderAgentNotice({ ...report, items: [{ ...item, action: 'x'.repeat(1024) }] })!;
     expect(Buffer.byteLength(huge.content!)).toBeLessThanOrEqual(800);
     expect(huge.content).toContain('(+1 more: repo-harness architecture-debt --json)');
     expect(huge.content).not.toContain('Run: x');
     expect(renderAgentNotice({ ...report, items: [] })).toBeNull();
+  });
+
+  test('a debt row names a repo-harness command, never a bare archctx from PATH', () => {
+    const root = fixture();
+    const report = checkpointArchitectureDebt(root, noticeOwnership(root), { env: noticeEnv(root) })!.report;
+    const item = report.items.find(entry => entry.kind === 'stale-anchor')!;
+    const anchors = renderAgentNotice({ ...report, items: [{ ...item, action: 'archctx docs anchors --json' }] })!;
+    expect(anchors.content).toContain('Run: repo-harness architecture-projection anchors --json');
+    expect(anchors.content).not.toContain('archctx docs anchors');
+    expect(anchors.content).not.toMatch(/Run: archctx /);
+    // archctx 0.9.1 gives ownership items this action. repo-harness has no equivalent command.
+    const plan = 'archctx plan --id changeset.<id> --operations-file <ownership-operations.json>';
+    const owner = renderAgentNotice({ ...report, items: [{ ...item, kind: 'unowned-path', action: plan, details: { modelField: 'source.include/source.exclude/parent' } }] })!;
+    expect(owner.content).toContain('Run: repo-harness architecture-debt --json');
+    expect(owner.content).not.toContain('archctx plan');
   });
 
   test('#850: a registry consumer sees the inactive model line and its unowned path without a checkpoint', () => {
