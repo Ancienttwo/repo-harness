@@ -658,7 +658,7 @@ describe('package-local ArchContext projection provider', () => {
     expect(existsSync(join(f.repoRoot, 'docs/architecture/index.md'))).toBe(false);
   });
 
-  test('declined-unprovable-proof reaches the CLI with the flows check next step', () => {
+  test('declined-unprovable-proof reaches the CLI with the debt report next step', () => {
     const f = fixture();
     // Recorded from a real archctx 0.8.0 single-request apply (acceptObservedMajorChange) in a disposable repository.
     const declined = JSON.parse(readFileSync(join(import.meta.dir, 'fixtures/architecture-projection/declined-unprovable-proof-0.8.0.json'), 'utf8')) as ProjectionResultV2;
@@ -666,7 +666,8 @@ describe('package-local ArchContext projection provider', () => {
     const result = projectionCli(f, { schemaVersion: 'archcontext.envelope/v1', ok: true, requestId: 'projection.run', data: declined }, declined.requestId);
     expect(result.status).toBe(1);
     expect(JSON.parse(result.stdout).majorChangeAcceptance).toBe('declined-unprovable-proof');
-    expect(result.stderr).toContain('archctx flows check --json');
+    expect(result.stderr).toContain('next: repo-harness architecture-debt --json');
+    expect(result.stderr).not.toMatch(/next: archctx /);
   });
 
   test('a timeout reports outcome unknown and the same id without the request JSON', () => {

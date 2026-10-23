@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { Command } from 'commander';
 import type { ProjectionMode } from 'archctx-contracts';
 import { architectureProjectionRequest, inspectArchitectureProjectionReadiness, readArchitectureDocsAnchors, readArchitectureHandEdits, runArchitectureProjection } from '../../effects/architecture/archctx-provider';
-import { summarizeArchitectureRender } from '../../core/architecture/projection';
+import { ARCHITECTURE_DEBT_COMMAND, summarizeArchitectureRender } from '../../core/architecture/projection';
 import { applyArchitectureProjection } from '../../effects/architecture/projection-apply';
 
 export interface ProjectionCommandOptions {
@@ -80,7 +80,7 @@ function execute(mode: ProjectionMode, options: ProjectionCommandOptions): void 
       : runArchitectureProjection(architectureProjectionRequest(mode, root, requestOptions), root);
 
     write(result);
-    if (result.majorChangeAcceptance === 'declined-unprovable-proof') process.stderr.write('archctx declined an unprovable major change; next: archctx flows check --json\n');
+    if (result.majorChangeAcceptance === 'declined-unprovable-proof') process.stderr.write(`archctx declined an unprovable major change; next: ${ARCHITECTURE_DEBT_COMMAND}, then add the missing P1/P2 proof (repo-harness-architecture worker, "Adopt ArchContext" step 4)\n`);
     if (architectureProjectionExitCode(mode, result.status) !== 0) process.exitCode = 1;
   } catch (error) {
     fail(error);

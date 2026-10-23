@@ -1112,7 +1112,9 @@ its existing ownership subject. No hook projects architecture or changes the
 model. A failed observation emits no notice and one operator diagnostic on
 stderr at exit 0.
 CI checks architecture in two jobs. The PR advisory reports new debt relative
-to the PR base, at most 20 items, and prints coverage gaps. It then runs
+to the PR base, at most 20 items, and prints coverage gaps. Its item actions
+and the `apply`/`adopt` hint for a declined unprovable major change name
+repo-harness commands by the notice rule above. It then runs
 `architecture-projection hand-edits --json --base <PR base>`. This reads
 archctx `docs drift` manual-edit reason codes and warns only for paths changed
 in the PR. It does not parse generated markers. All advisory outcomes exit 0.

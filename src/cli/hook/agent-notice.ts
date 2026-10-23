@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { ArchitectureDebtReportV1 } from 'archctx-contracts';
+import { ARCHITECTURE_DEBT_COMMAND, managedArchctxAction } from '../../core/architecture/projection';
 import type { CapabilityOwnership } from '../../core/state/types';
 import { ARCHCONTEXT_MANIFEST, ArchctxClientError, capabilitySource, changedSinceReviewBase, checkpointArchitectureDebt, type ArchctxProviderOptions } from '../../effects/architecture/archctx-provider';
 import { readGlobalArchitectureConfiguration } from '../../effects/architecture/projection-config';
@@ -13,7 +14,6 @@ import { boundedHookDiagnostic } from './hook-protocol';
 const STATE_DIR = '.ai/harness/state/';
 const MARKER = `${STATE_DIR}agent-notice`;
 const STATUS_MARKER = `${STATE_DIR}agent-notice-status`;
-const COMMAND = 'repo-harness architecture-debt --json';
 const STATUS_COMMAND = 'repo-harness architecture-projection status --json';
 const MAX_BYTES = 800;
 const MAX_MESSAGE_BYTES = 200;
@@ -28,14 +28,6 @@ const clip = (text: string, bytes: number) => Buffer.from(text).subarray(0, byte
 const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const errorText = (error: unknown) => singleLine(error instanceof Error ? error.message : String(error));
 const noticeItems = (report: ArchitectureDebtReportV1) => report.items.filter(item => ['unowned-path', 'ambiguous-owner', 'stale-anchor'].includes(item.kind));
-// archctx names its own CLI in item actions, but a global install has no archctx
-// on PATH. Name the repo-harness command that runs the same report. An archctx
-// action without one points to the full debt report instead.
-const MANAGED_ACTIONS: ReadonlyMap<string, string> = new Map([['archctx docs anchors --json', 'repo-harness architecture-projection anchors --json']]);
-const runAction = (raw: string) => {
-  const action = singleLine(raw).trim();
-  return MANAGED_ACTIONS.get(action) ?? (/^archctx(\s|$)/.test(action) ? COMMAND : action);
-};
 
 export interface AgentNotice {
   readonly content?: string;
@@ -91,11 +83,11 @@ export function renderAgentNotice(report: ArchitectureDebtReportV1): NoticeBlock
       : item.details.origin === 'node-summary' ? 'summary'
       : item.details.origin === 'node-responsibility' ? `responsibilities[${item.details.responsibilityIndex}]`
       : 'human citations';
-    return `- ${item.kind} ${singleLine(item.capabilityIds[0] ?? report.scope.capabilityIds[0] ?? 'unowned')}; ${singleLine(field)}. Run: ${runAction(item.action)}`;
+    return `- ${item.kind} ${singleLine(item.capabilityIds[0] ?? report.scope.capabilityIds[0] ?? 'unowned')}; ${singleLine(field)}. Run: ${managedArchctxAction(item.action)}`;
   });
   return {
-    content: boundedBlock(`[ArchitectureDebt] ${items.length} new in ${capability}`, rows, items.length, count => `(+${count} more: ${COMMAND})`),
-    systemMessage: `Architecture: ${items.length} debt ${items.length === 1 ? 'item' : 'items'} in ${capability}; run ${COMMAND}.`,
+    content: boundedBlock(`[ArchitectureDebt] ${items.length} new in ${capability}`, rows, items.length, count => `(+${count} more: ${ARCHITECTURE_DEBT_COMMAND})`),
+    systemMessage: `Architecture: ${items.length} debt ${items.length === 1 ? 'item' : 'items'} in ${capability}; run ${ARCHITECTURE_DEBT_COMMAND}.`,
   };
 }
 
@@ -142,7 +134,7 @@ function failureBlock(error: unknown): NoticeBlock {
   const text = error instanceof ArchctxClientError ? singleLine(error.providerMessage) : errorText(error);
   return {
     content: `[Architecture] notice unavailable (${code}): ${clip(text, MAX_MESSAGE_BYTES)}`,
-    systemMessage: `Architecture: notice unavailable (${code}); run ${COMMAND}.`,
+    systemMessage: `Architecture: notice unavailable (${code}); run ${ARCHITECTURE_DEBT_COMMAND}.`,
   };
 }
 
