@@ -922,9 +922,11 @@ describe('architecture lanes', () => {
   });
 
   test('writer delegates a fixed rolling target and loop to archctx with explicit state', () => {
-    expect(architectureWriterArgs('status', '/tmp/writer-state')).toEqual(['projection', 'publish-status', '--remote', 'origin', '--base', 'main', '--json']);
+    const status = architectureWriterArgs('status', '/tmp/writer-state');
+    expect(status).toEqual(['projection', 'publish-status', '--remote', 'origin', '--base', 'main', '--json']);
+    expect(status).not.toContain('--accept-observed-major-change');
     const once = architectureWriterArgs('once', '/tmp/writer-state');
-    expect(once).toEqual(['projection', 'publish', '--remote', 'origin', '--base', 'main', '--branch', 'archctx/projection', '--publisher', 'gh', '--json']);
+    expect(once).toEqual(['projection', 'publish', '--remote', 'origin', '--base', 'main', '--branch', 'archctx/projection', '--publisher', 'gh', '--accept-observed-major-change', '--json']);
     expect(architectureWriterArgs('follow', '/tmp/writer-state')).toEqual([...once.slice(0, -1), '--follow', '--interval', '300', '--json']);
     expect(() => architectureWriterArgs('once', undefined)).toThrow('ARCHCONTEXT_STATE_DIR');
     expect(() => architectureWriterArgs('once', 'relative')).toThrow('absolute');
