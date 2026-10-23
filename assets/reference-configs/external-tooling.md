@@ -1077,16 +1077,19 @@ The launcher passes `--accept-observed-major-change` to `once` and `follow`,
 not to `status`. The writer accepts an observed major change only when archctx
 can prove it. archctx declines the acceptance while any capability has an
 unprovable P1 or P2 proof. The run result is then `human-action-required` with
-a `humanActions` entry `reasonCode: "unprovable-required-flow"`, and nothing
-unproven is published. Add the missing proof in a model PR; start from
+a `humanActions` entry `reasonCode: "unprovable-required-flow"`. When archctx
+can still publish the unaffected targets, the run result is `published` with
+`projectionStatus: "applied-partial"`; the blocked targets keep their committed
+bytes. Treat both results as incomplete. Nothing unproven is published, and the
+model still needs the missing proof. Add it in a model PR; start from
 `repo-harness architecture-debt --json`. The owner's GO to merge the rolling PR
 is the acceptance. repo-harness keeps no separate accept step. The rolling PR
 body records `Base: main at <sha>`. The Bot merges the rolling PR only with the
 owner's GO for its reviewed head, green checks, a passing
 `"$NODE" "$ARCHCTX" projection verify-pr --base origin/main --json`, and
-`gh pr merge --match-head-commit <reviewed head>`. `humanEditedPaths` in the
-`verify-pr` result means changes to human-owned text, not hand edits inside
-generated regions.
+`gh pr merge <rolling-pr> --squash --match-head-commit <reviewed-sha>`.
+`humanEditedPaths` in the `verify-pr` result means changes to human-owned text,
+not hand edits inside generated regions.
 Service installation and activation are operator steps, not package-install effects.
 
 `AgentNotice` reads package-local archctx 0.9.1
