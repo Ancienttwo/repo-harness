@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "child_process";
-import { appendFileSync, closeSync, existsSync, ftruncateSync, mkdirSync, openSync, readFileSync, readdirSync, rmSync, writeSync } from "fs";
+import { appendFileSync, closeSync, existsSync, ftruncateSync, mkdirSync, openSync, readFileSync, readdirSync, rmSync, writeFileSync, writeSync } from "fs";
 import { join } from "path";
 import { tmpWorkspace, withTempRepo } from "./helpers/repo-fixture";
 
@@ -275,11 +275,17 @@ describe("corrupt-tail recovery and quarantine", () => {
       const first = appendEvidenceEvent(repoRoot, baseInput({ payload: { kind: "json", value: { v: 1 } } }));
 
       const path = logPathFor(repoRoot);
+      const beforeCorruption = readFileSync(path);
+      const third = appendEvidenceEvent(repoRoot, baseInput({ payload: { kind: "json", value: { v: 3 } } }));
       // Inject a corrupt middle record directly (bypassing the safe writer),
       // simulating on-disk corruption between two otherwise-valid appends.
-      appendFileSync(path, "this line is not json at all\n");
-
-      const third = appendEvidenceEvent(repoRoot, baseInput({ payload: { kind: "json", value: { v: 3 } } }));
+      // An append cannot follow a corrupt record (#880), so the third record
+      // is written first and the corrupt line is placed in front of it.
+      writeFileSync(path, Buffer.concat([
+        beforeCorruption,
+        Buffer.from("this line is not json at all\n"),
+        readFileSync(path).subarray(beforeCorruption.length),
+      ]));
 
       const result = readAcceptedEvents(repoRoot);
       const ids = result.accepted.map((e) => e.event_id);
@@ -291,6 +297,74 @@ describe("corrupt-tail recovery and quarantine", () => {
       // The well-formed record written after the corruption must also be
       // quarantined, not silently accepted by skipping the bad line.
       expect(quarantined).toContain(third.event_id);
+    });
+  });
+
+  for (const position of ["last", "middle"] as const) {
+    test(`an append after a terminated corrupt ${position} line fails closed and leaves the log bytes unchanged`, () => {
+      withTempRepo(`evidence-append-corrupt-${position}`, (repoRoot) => {
+        freshGenesisRepo(repoRoot);
+        const kept = appendEvidenceEvent(repoRoot, baseInput({ payload: { kind: "json", value: { v: 1 } } }));
+        const path = logPathFor(repoRoot);
+        const prefix = readFileSync(path);
+        appendEvidenceEvent(repoRoot, baseInput({ payload: { kind: "json", value: { v: 2 } } }));
+        appendEvidenceEvent(repoRoot, baseInput({ payload: { kind: "json", value: { v: 3 } } }));
+        if (position === "middle") appendEvidenceEvent(repoRoot, baseInput({ payload: { kind: "json", value: { v: 4 } } }));
+        // #862 joined two records on one terminated line: {e2}{e3}\n.
+        const written = readFileSync(path);
+        const joinAt = written.indexOf(0x0a, prefix.length);
+        writeFileSync(path, Buffer.concat([written.subarray(0, joinAt), written.subarray(joinAt + 1)]));
+        const corrupt = readFileSync(path);
+
+        expect(() => appendEvidenceEvent(repoRoot, baseInput({ payload: { kind: "json", value: { v: 5 } } })))
+          .toThrow(/cannot append: .* has a corrupt record at line 3; run a recovery read first/);
+        expect(() => freshGenesisRepo(repoRoot))
+          .toThrow(/cannot write genesis record: .* has a corrupt record at line 3; run a recovery read first/);
+        expect(readFileSync(path).equals(corrupt)).toBe(true);
+
+        const recovery = readAcceptedEvents(repoRoot);
+        expect(recovery.accepted.map((event) => event.event_id)).toEqual([kept.event_id]);
+        expect(readFileSync(recovery.quarantinedPath!).equals(corrupt.subarray(prefix.length))).toBe(true);
+        expect(readFileSync(path).equals(prefix)).toBe(true);
+        const next = appendEvidenceEvent(repoRoot, baseInput({ payload: { kind: "json", value: { v: 6 } } }));
+        expect(readAcceptedEvents(repoRoot).accepted.map((event) => event.event_id)).toEqual([kept.event_id, next.event_id]);
+      });
+    });
+  }
+
+  test("a repair after invalid UTF-8 in the valid prefix truncates at the record's byte boundary", () => {
+    withTempRepo("evidence-repair-invalid-utf8-prefix", (repoRoot) => {
+      freshGenesisRepo(repoRoot);
+      const kept = appendEvidenceEvent(repoRoot, baseInput({ payload: { kind: "json", value: { note: "hello" } } }));
+      const path = logPathFor(repoRoot);
+      const written = readFileSync(path);
+      // Disk damage puts one invalid UTF-8 byte inside a JSON string. The line still parses.
+      const at = written.indexOf("hello") + 2;
+      const prefix = Buffer.concat([written.subarray(0, at), Buffer.from([0xff]), written.subarray(at)]);
+      const tail = Buffer.from("garbage\n");
+      writeFileSync(path, Buffer.concat([prefix, tail]));
+
+      const result = readAcceptedEvents(repoRoot);
+      expect(result.accepted.map((event) => event.event_id)).toEqual([kept.event_id]);
+      expect(readFileSync(path).equals(prefix)).toBe(true);
+      expect(readFileSync(result.quarantinedPath!).equals(tail)).toBe(true);
+    });
+  });
+
+  test("a repair quarantines the exact bytes of a torn multi-byte character in the tail", () => {
+    withTempRepo("evidence-repair-torn-utf8-tail", (repoRoot) => {
+      freshGenesisRepo(repoRoot);
+      const kept = appendEvidenceEvent(repoRoot, baseInput());
+      const path = logPathFor(repoRoot);
+      const prefix = readFileSync(path);
+      // A crash tore the 3-byte character U+4E2D after its first two bytes.
+      const tail = Buffer.concat([Buffer.from('{"kind":"evidence_event","note":"'), Buffer.from([0xe4, 0xb8])]);
+      writeFileSync(path, Buffer.concat([prefix, tail]));
+
+      const result = readAcceptedEvents(repoRoot);
+      expect(result.accepted.map((event) => event.event_id)).toEqual([kept.event_id]);
+      expect(readFileSync(path).equals(prefix)).toBe(true);
+      expect(readFileSync(result.quarantinedPath!).equals(tail)).toBe(true);
     });
   });
 

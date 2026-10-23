@@ -38,27 +38,50 @@ export class UnterminatedEvidenceLogError extends Error {
   }
 }
 
-function assertTerminatedLog(logPath: string, raw: string, operation: string): void {
-  if (raw.length > 0 && !raw.endsWith("\n")) throw new UnterminatedEvidenceLogError(logPath, operation);
+/**
+ * A terminated record does not parse. D5 truncates the log at that record, so
+ * the next read would quarantine an append made now (#880). Appends do not
+ * repair, for the same lock reason as above.
+ */
+export class CorruptEvidenceLogError extends Error {
+  constructor(readonly logPath: string, operation: string, readonly line: number) {
+    super(`${operation}: store at ${logPath} has a corrupt record at line ${line}; run a recovery read first, for example \`repo-harness run decision-trail render\``);
+    this.name = "CorruptEvidenceLogError";
+  }
 }
 
-function readRawLog(logPath: string): { raw: string; lines: string[] } {
-  const raw = existsSync(logPath) ? readFileSync(logPath, "utf-8") : "";
-  if (raw.length === 0) return { raw, lines: [] };
-  const lines = raw.split("\n");
-  // Every complete record line ends with "\n" by construction (appendLineDurably
-  // always writes one), so a non-empty final split element means the last
-  // write was truncated mid-line; keep it so it is detected as corrupt.
-  if (lines[lines.length - 1] === "") lines.pop();
-  return { raw, lines };
+/** The raw log bytes, split at each 0x0a; `ends[i]` is the byte offset after line i and its "\n". */
+interface RawLog {
+  readonly bytes: Buffer;
+  readonly lines: readonly Buffer[];
+  readonly ends: readonly number[];
+  readonly terminated: boolean;
+}
+
+function readRawLog(logPath: string): RawLog {
+  const bytes = existsSync(logPath) ? readFileSync(logPath) : Buffer.alloc(0);
+  const lines: Buffer[] = [];
+  const ends: number[] = [];
+  let start = 0;
+  while (start < bytes.length) {
+    const newline = bytes.indexOf(0x0a, start);
+    // Every complete record line ends with "\n" by construction (appendLineDurably
+    // always writes one), so bytes after the last "\n" mean the last write was
+    // truncated mid-line; keep them so they are detected as corrupt.
+    const end = newline === -1 ? bytes.length : newline + 1;
+    lines.push(bytes.subarray(start, newline === -1 ? end : newline));
+    ends.push(end);
+    start = end;
+  }
+  return { bytes, lines, ends, terminated: bytes.length === 0 || bytes[bytes.length - 1] === 0x0a };
 }
 
 /** Read and validate exactly the first record as a genesis record; null if the store is empty or malformed. */
 export function readGenesisRecord(repoRoot: string): GenesisRecord | null {
-  const { raw, lines } = readRawLog(resolveLogPath(repoRoot));
-  if (lines.length === 1 && !raw.endsWith("\n")) return null;
+  const { lines, terminated } = readRawLog(resolveLogPath(repoRoot));
+  if (lines.length === 1 && !terminated) return null;
   if (lines.length === 0) return null;
-  const parsed = parseLogLine(lines[0]!);
+  const parsed = parseLogLine(lines[0]!.toString("utf-8"));
   if (!parsed.ok || parsed.record.kind !== "evidence_genesis") return null;
   return parsed.record;
 }
@@ -86,11 +109,10 @@ function appendGenesisRecordLocked(
   opts: AppendGenesisOptions,
 ): GenesisRecord {
   const logPath = resolveLogPath(repoRoot);
-  const { raw, lines } = readRawLog(logPath);
-  assertTerminatedLog(logPath, raw, "cannot write genesis record");
+  const { parsedLines } = readAppendableLog(logPath, "cannot write genesis record");
 
-  if (lines.length > 0) {
-    const parsed = parseLogLine(lines[0]!);
+  if (parsedLines.length > 0) {
+    const parsed = parsedLines[0]!;
     if (!parsed.ok || parsed.record.kind !== "evidence_genesis") {
       throw new Error(`cannot write genesis record: store at ${logPath} already has non-genesis content`);
     }
@@ -116,14 +138,14 @@ function appendGenesisRecordLocked(
 /**
  * Append one evidence event. Always goes through `buildEvidenceEvent`'s
  * construction path -- there is no way to append a hand-built record that
- * skipped D6's invariants. Fails closed if the store has no genesis record
- * or ends with an unterminated record.
+ * skipped D6's invariants. Fails closed if the store has no genesis record,
+ * ends with an unterminated record, or holds a record that does not parse.
  */
 export function appendEvidenceEvent(repoRoot: string, input: EvidenceEventInput): EvidenceEventRecord {
   const logPath = resolveLogPath(repoRoot);
   return withLogLock(repoRoot, () => {
-    assertTerminatedLog(logPath, readRawLog(logPath).raw, "cannot append");
-    if (!readGenesisRecord(repoRoot)) {
+    const first = readAppendableLog(logPath, "cannot append").parsedLines[0];
+    if (!first?.ok || first.record.kind !== "evidence_genesis") {
       throw new Error(`cannot append: store at ${logPath} has no genesis record; call appendGenesisRecord first`);
     }
     const record = buildEvidenceEvent(repoRoot, input);
@@ -145,31 +167,43 @@ export interface ReadAcceptedEventsResult {
  * set.
  */
 interface LogSnapshot {
-  readonly raw: string;
-  readonly rawLines: readonly string[];
+  readonly raw: RawLog;
   readonly parsedLines: readonly ReturnType<typeof parseLogLine>[];
   readonly corruptTail: ReturnType<typeof findCorruptTail>;
 }
 
 function readLogSnapshot(logPath: string): LogSnapshot {
-  const { raw, lines: rawLines } = readRawLog(logPath);
-  const parsedLines = rawLines.map((line, index) =>
-    index === rawLines.length - 1 && !raw.endsWith("\n")
+  const raw = readRawLog(logPath);
+  // A lenient UTF-8 decode keeps the accepted set as before; byte offsets keep the repair exact.
+  const parsedLines = raw.lines.map((line, index) =>
+    index === raw.lines.length - 1 && !raw.terminated
       ? { ok: false as const, error: "unterminated record" }
-      : parseLogLine(line));
-  return { raw, rawLines, parsedLines, corruptTail: findCorruptTail(parsedLines) };
+      : parseLogLine(line.toString("utf-8")));
+  return { raw, parsedLines, corruptTail: findCorruptTail(parsedLines) };
+}
+
+/**
+ * Call under the log lock before an append. Every record must parse: D5 drops
+ * all records from the first corrupt one, so a later append would be lost.
+ */
+function readAppendableLog(logPath: string, operation: string): LogSnapshot {
+  const snapshot = readLogSnapshot(logPath);
+  if (!snapshot.raw.terminated) throw new UnterminatedEvidenceLogError(logPath, operation);
+  const { corruptStartIndex } = snapshot.corruptTail;
+  if (corruptStartIndex !== null) throw new CorruptEvidenceLogError(logPath, operation, corruptStartIndex + 1);
+  return snapshot;
 }
 
 /** Re-read under the log lock, so the quarantine holds every byte that the truncation removes. */
 function repairCorruptTail(repoRoot: string, logPath: string): LogSnapshot & { readonly quarantinedPath: string | null } {
   return withLogLock(repoRoot, () => {
     const snapshot = readLogSnapshot(logPath);
-    const { rawLines, corruptTail } = snapshot;
+    const { raw, corruptTail } = snapshot;
     if (corruptTail.corruptStartIndex === null) return { ...snapshot, quarantinedPath: null };
     const quarantinedPath = join(resolveEventsDir(repoRoot), `events.corrupt-${Date.now()}`);
-    const validPrefix = rawLines.slice(0, corruptTail.validLineCount).map((line) => `${line}\n`).join("");
-    writeFileDurably(quarantinedPath, snapshot.raw.slice(validPrefix.length));
-    truncateSync(logPath, Buffer.byteLength(validPrefix, "utf-8"));
+    const validEnd = corruptTail.validLineCount === 0 ? 0 : raw.ends[corruptTail.validLineCount - 1]!;
+    writeFileDurably(quarantinedPath, raw.bytes.subarray(validEnd));
+    truncateSync(logPath, validEnd);
     return { ...snapshot, quarantinedPath };
   });
 }

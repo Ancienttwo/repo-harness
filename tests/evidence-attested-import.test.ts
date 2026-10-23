@@ -392,6 +392,29 @@ describe("importAttestedEvidence: unterminated log tail", () => {
   }
 });
 
+describe("importAttestedEvidence: corrupt terminated log line", () => {
+  test("a terminated line that does not parse fails closed as corrupt_log_tail and does not append", () => {
+    withTempRepo("attested-import-corrupt-line", (repoRoot) => {
+      const { contractRelative } = setupFixtureRepo(repoRoot);
+      expect(importAttestedEvidence({ repoRoot, authorityContractFile: contractRelative, receipt: baseReceipt(contractRelative) }).ok).toBe(true);
+      const logPath = join(repoRoot, ".ai", "harness", "evidence", "events", "log.jsonl");
+      writeFileSync(logPath, Buffer.concat([readFileSync(logPath), Buffer.from("{\"kind\":\"evidence_event\"}{\n")]));
+      const corrupt = readFileSync(logPath);
+
+      const result = importAttestedEvidence({
+        repoRoot,
+        authorityContractFile: contractRelative,
+        receipt: baseReceipt(contractRelative, { subject_sha256: `sha256:${"e".repeat(64)}` }),
+      });
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.reason).toBe("corrupt_log_tail");
+      expect(result.message).toContain("has a corrupt record at line 3; run a recovery read first");
+      expect(readFileSync(logPath).equals(corrupt)).toBe(true);
+    });
+  }, 30_000);
+});
+
 describe("scripts/acceptance-receipt.ts record: attested-import wiring", () => {
   const cwdStack: string[] = [];
   const cleanupDirs: string[] = [];
