@@ -2,7 +2,14 @@
 
 All notable changes to this skill are documented here.
 
-## Unreleased
+## [0.24.0] - 2026-10-21
+
+This minor release includes the archctx 0.9.1 upgrade, hook and task plane
+changes, Clef shadow records (#860), and setup CI scope (#854). It expands
+the unpublished #847 preparation with work merged through #864. It has
+breaking removals in #834. Run `repo-harness update` after the upgrade.
+For legacy global rules without a recorded language, run
+`repo-harness update --report-language <x>` once.
 
 ### Added
 
@@ -10,19 +17,17 @@ All notable changes to this skill are documented here.
   in a target repo: family owners select platform jobs, an owner drift test
   checks the workflow, and only an exact-SHA dispatch on an allowlisted release
   ref runs the complete matrix. Repository settings stay with the user. (#854)
-
-## [0.24.0] - 2026-10-21
-
-This minor release includes the archctx 0.9.0 upgrade and the hook and task
-plane changes. It has breaking removals in #834. Run `repo-harness update`
-after the upgrade. For legacy global rules without a recorded language, run
-`repo-harness update --report-language <x>` once.
+- Add Clef shadow records and blind Bot labels for Herdr pane status events.
+  Shadow mode records observations without taking control of dispatch.
+  The default stays off. (#860)
 
 ### Changed
 
-- Upgrade `archctx` and `archctx-contracts` from 0.8.1 to exact 0.9.0.
-  Refresh the clean-room evidence and current version labels. CodeGraph
-  stays at 1.6.2. (#846)
+- Upgrade `archctx` and `archctx-contracts` from 0.8.1 to exact 0.9.1.
+  Complete the R3 single-writer cutover: the archctx rolling writer owns
+  generated architecture regions and the projection manifest. Feature PRs
+  change the model and human prose. Refresh the clean-room evidence and
+  current version labels. CodeGraph stays at 1.6.2. (#846, #864, #736)
 - Replace owed hook text with one architecture debt notice at SessionStart,
   Claude Stop and Codex UserPromptSubmit. Include worker sessions. Use archctx
   checkpoint for changed owned paths with a 3 s deadline. Share id-based
@@ -37,6 +42,20 @@ after the upgrade. For legacy global rules without a recorded language, run
 
 ### Fixed
 
+- Preserve literal custom reporting instructions during managed global rule
+  updates. (#843)
+- Repair Waza install receipts when upstream bytes already match the local
+  files. (#845)
+- Make an inactive architecture loop visible in hooks. Report missing setup,
+  registry unowned paths and notice failures with separate status dedupe.
+  (#852, #850)
+- State the edit guard limit and report Bash changes under `_ops/` and `_ref/`
+  at Stop. Persist an empty baseline so the first new file is visible.
+  (#853, #851)
+- Scope unowned notice paths to the branch changes. Report when Git does not
+  ignore the harness state directory. (#855)
+- Guard literal Bash writes and protected Git paths. Keep quoted examples,
+  file descriptor redirects and heredoc boundaries distinct. (#861)
 - Keep proven absolute launcher targets rooted when child CWD is unknown.
   This removes false CI test selections from suffix collisions. The replay
   code median is 225; the target of 200 remains unmet. (#841, #761)
@@ -55,6 +74,11 @@ after the upgrade. For legacy global rules without a recorded language, run
 
 ### Documentation
 
+- Refresh architecture source stamps and daily freshness evidence.
+  (#849, #859, #856)
+- Add a UI rule against extra helper text. (#857)
+- Record the Cloudflare Clef decision layer plan, starting with pane status.
+  (#858)
 - Assign the remaining 27 unowned paths and clear the last model drift.
   (#838, #824)
 - Correct remaining architecture citations and selectors. (#836, #824)
