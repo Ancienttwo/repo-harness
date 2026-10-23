@@ -1092,7 +1092,11 @@ in CI.
 
 One module selects, formats and dedupes the notice. It emits at most three
 items and 800 UTF-8 bytes, with capability, model field and command on each
-item. Overflow points to `repo-harness architecture-debt --json`. The marker
+item. The command is a repo-harness command, because a global install has no
+archctx on PATH. A citation item names
+`repo-harness architecture-projection anchors --json`. Another archctx action
+names `repo-harness architecture-debt --json`.
+Overflow points to `repo-harness architecture-debt --json`. The marker
 `.ai/harness/state/agent-notice` is Git-ignored. It stores SHA-256 of JSON
 `[branch, sorted item ids, sorted unowned paths]`. Registry repositories also
 get the unowned paths that differ from the review-base merge-base. When Git

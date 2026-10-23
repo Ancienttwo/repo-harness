@@ -28,6 +28,14 @@ const clip = (text: string, bytes: number) => Buffer.from(text).subarray(0, byte
 const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const errorText = (error: unknown) => singleLine(error instanceof Error ? error.message : String(error));
 const noticeItems = (report: ArchitectureDebtReportV1) => report.items.filter(item => ['unowned-path', 'ambiguous-owner', 'stale-anchor'].includes(item.kind));
+// archctx names its own CLI in item actions, but a global install has no archctx
+// on PATH. Name the repo-harness command that runs the same report. An archctx
+// action without one points to the full debt report instead.
+const MANAGED_ACTIONS: ReadonlyMap<string, string> = new Map([['archctx docs anchors --json', 'repo-harness architecture-projection anchors --json']]);
+const runAction = (raw: string) => {
+  const action = singleLine(raw).trim();
+  return MANAGED_ACTIONS.get(action) ?? (/^archctx(\s|$)/.test(action) ? COMMAND : action);
+};
 
 export interface AgentNotice {
   readonly content?: string;
@@ -83,7 +91,7 @@ export function renderAgentNotice(report: ArchitectureDebtReportV1): NoticeBlock
       : item.details.origin === 'node-summary' ? 'summary'
       : item.details.origin === 'node-responsibility' ? `responsibilities[${item.details.responsibilityIndex}]`
       : 'human citations';
-    return `- ${item.kind} ${singleLine(item.capabilityIds[0] ?? report.scope.capabilityIds[0] ?? 'unowned')}; ${singleLine(field)}. Run: ${singleLine(item.action)}`;
+    return `- ${item.kind} ${singleLine(item.capabilityIds[0] ?? report.scope.capabilityIds[0] ?? 'unowned')}; ${singleLine(field)}. Run: ${runAction(item.action)}`;
   });
   return {
     content: boundedBlock(`[ArchitectureDebt] ${items.length} new in ${capability}`, rows, items.length, count => `(+${count} more: ${COMMAND})`),

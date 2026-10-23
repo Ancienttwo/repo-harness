@@ -99,6 +99,8 @@ describe('AgentNotice', () => {
     const first = collectAgentNotice(root, () => ownership, options);
     expect(first.content).toContain(`[ArchitectureDebt] 1 new in ${NOTICE_CAPABILITY}`);
     expect(first.content).toContain('Run:');
+    expect(first.content).toContain('Run: repo-harness architecture-projection anchors --json');
+    expect(first.content).not.toMatch(/Run: archctx /);
     expect(first.content).toContain('human');
     expect(Buffer.byteLength(first.content!)).toBeLessThanOrEqual(800);
     expect(first.systemMessage).toBe(`Architecture: 1 debt item in ${NOTICE_CAPABILITY}; run repo-harness architecture-debt --json.`);
@@ -152,12 +154,32 @@ describe('AgentNotice', () => {
     expect(rendered.content!.split('\n').filter(line => line.startsWith('- '))).toHaveLength(3);
     expect(rendered.content).toContain('(+5 more: repo-harness architecture-debt --json)');
     expect(rendered.content).toContain('human prose');
-    expect(rendered.content).toContain('Run: archctx docs anchors --json');
+    expect(rendered.content).toContain('Run: repo-harness architecture-projection anchors --json');
     const huge = renderAgentNotice({ ...report, items: [{ ...item, action: 'x'.repeat(1024) }] })!;
     expect(Buffer.byteLength(huge.content!)).toBeLessThanOrEqual(800);
     expect(huge.content).toContain('(+1 more: repo-harness architecture-debt --json)');
     expect(huge.content).not.toContain('Run: x');
     expect(renderAgentNotice({ ...report, items: [] })).toBeNull();
+  });
+
+  test('a debt row names a repo-harness command, never a bare archctx from PATH', () => {
+    const root = fixture();
+    const report = checkpointArchitectureDebt(root, noticeOwnership(root), { env: noticeEnv(root) })!.report;
+    const item = report.items.find(entry => entry.kind === 'stale-anchor')!;
+    const anchors = renderAgentNotice({ ...report, items: [{ ...item, action: 'archctx docs anchors --json' }] })!;
+    expect(anchors.content).toContain('Run: repo-harness architecture-projection anchors --json');
+    expect(anchors.content).not.toContain('archctx docs anchors');
+    expect(anchors.content).not.toMatch(/Run: archctx /);
+    const padded = renderAgentNotice({ ...report, items: [{ ...item, action: '  archctx docs anchors --json\n' }] })!;
+    expect(padded.content).toContain('Run: repo-harness architecture-projection anchors --json');
+    expect(padded.content).not.toContain('archctx docs anchors');
+    const bare = renderAgentNotice({ ...report, items: [{ ...item, action: '\tarchctx\n' }] })!;
+    expect(bare.content).toEndWith('Run: repo-harness architecture-debt --json');
+    // archctx 0.9.1 gives ownership items this action. repo-harness has no equivalent command.
+    const plan = 'archctx plan --id changeset.<id> --operations-file <ownership-operations.json>';
+    const owner = renderAgentNotice({ ...report, items: [{ ...item, kind: 'unowned-path', action: plan, details: { modelField: 'source.include/source.exclude/parent' } }] })!;
+    expect(owner.content).toContain('Run: repo-harness architecture-debt --json');
+    expect(owner.content).not.toContain('archctx plan');
   });
 
   test('#850: a registry consumer sees the inactive model line and its unowned path without a checkpoint', () => {
