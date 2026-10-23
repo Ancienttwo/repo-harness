@@ -8,15 +8,24 @@ import { parseFleetCollectorRequest } from '../../src/effects/operator/fleet-col
 
 const ROOT = join(import.meta.dir, '../..');
 const testWindows = process.platform === 'win32' ? test : test.skip;
+const RESPONSE_TIMEOUT_MS = 15_000;
+// The CI runner gives each test file a fresh LOCALAPPDATA. The first
+// powershell.exe of a file then starts without a module analysis cache.
+// The first Job controller test took 3.6-13.9 s on windows-latest; warm ones take <1 s.
+const COLD_CONTROLLER_RESPONSE_TIMEOUT_MS = 30_000;
 
-function nextJsonLine(child: ChildProcessWithoutNullStreams, label: string): Promise<Record<string, unknown>> {
+function nextJsonLine(
+  child: ChildProcessWithoutNullStreams,
+  label: string,
+  timeoutMs = RESPONSE_TIMEOUT_MS,
+): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
     let buffered = '';
     let stderr = '';
     const timer = setTimeout(() => {
       cleanup();
       reject(new Error(`timed out waiting for ${label}${stderr ? `: ${stderr.trim()}` : ''}`));
-    }, 15_000);
+    }, timeoutMs);
     const cleanup = (): void => {
       clearTimeout(timer);
       child.stdout.removeListener('data', onData);
@@ -179,7 +188,7 @@ describe('Fleet collector supervision protocol', () => {
     let collectorPid = 0;
     let descendantPid = 0;
     try {
-      const assigned = nextJsonLine(controller, 'controller assignment response');
+      const assigned = nextJsonLine(controller, 'controller assignment response', COLD_CONTROLLER_RESPONSE_TIMEOUT_MS);
       controller.stdin.write(`${JSON.stringify({ type: 'launch', executable: process.execPath, collector_path: fixture })}\n`);
       expect(await assigned).toEqual({ type: 'assigned' });
 
