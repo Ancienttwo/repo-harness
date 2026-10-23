@@ -76,6 +76,14 @@ source:
             - id: sink.global-runtime-reconciliation.candidate-readback
               path: "src/cli/commands/global-runtime.ts"
               symbol: "reconcileManagedRuntime"
+    - id: entrypoint.global-runtime-reconciliation.architecture-writer
+      path: "src/cli/commands/architecture-projection.ts"
+      symbols:
+        - name: "publish"
+          sinks:
+            - id: sink.global-runtime-reconciliation.architecture-writer
+              path: "src/effects/architecture/projection-writer.ts"
+              symbol: "runArchitectureWriter"
 extensions:
   contractFiles:
     agents: "AGENTS.md"
