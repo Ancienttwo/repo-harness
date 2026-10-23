@@ -192,8 +192,10 @@ describe("corrupt-tail recovery and quarantine", () => {
       const fd = openSync(path, "r+");
       try { ftruncateSync(fd, Buffer.byteLength(raw) - 1); } finally { closeSync(fd); }
       expect(readGenesisRecord(repoRoot)).toBeNull();
-      expect(() => appendEvidenceEvent(repoRoot, baseInput())).toThrow("no genesis record");
-      expect(() => freshGenesisRepo(repoRoot)).toThrow("cannot write genesis record");
+      expect(() => appendEvidenceEvent(repoRoot, baseInput()))
+        .toThrow(/cannot append: .* ends with an unterminated record; run a recovery read first/);
+      expect(() => freshGenesisRepo(repoRoot))
+        .toThrow(/cannot write genesis record: .* ends with an unterminated record; run a recovery read first/);
       expect(readFileSync(path, "utf-8")).toBe(raw.slice(0, -1));
       const recovery = readAcceptedEvents(repoRoot);
       expect(recovery.genesis).toBeNull();

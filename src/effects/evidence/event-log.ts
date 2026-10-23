@@ -122,10 +122,10 @@ function appendGenesisRecordLocked(
 export function appendEvidenceEvent(repoRoot: string, input: EvidenceEventInput): EvidenceEventRecord {
   const logPath = resolveLogPath(repoRoot);
   return withLogLock(repoRoot, () => {
+    assertTerminatedLog(logPath, readRawLog(logPath).raw, "cannot append");
     if (!readGenesisRecord(repoRoot)) {
       throw new Error(`cannot append: store at ${logPath} has no genesis record; call appendGenesisRecord first`);
     }
-    assertTerminatedLog(logPath, readRawLog(logPath).raw, "cannot append");
     const record = buildEvidenceEvent(repoRoot, input);
     appendLineDurably(logPath, JSON.stringify(record));
     return record;

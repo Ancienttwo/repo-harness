@@ -535,7 +535,7 @@ describe("verification execution lifecycle", () => {
       const unterminated = readFileSync(ledger);
       // A force reason skips the reuse read, so no recovery read runs before the append.
       expect(() => executeVerificationContract({ repoRoot, contractPath, env, forceReason: "rerun onto a torn ledger tail" }))
-        .toThrow("ends with an unterminated record; run a recovery read first");
+        .toThrow(/cannot append: .* ends with an unterminated record; run a recovery read first/);
       expect(readFileSync(ledger).equals(unterminated)).toBe(true);
     });
   }, 30_000);
