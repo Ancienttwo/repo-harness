@@ -9,6 +9,8 @@
   #840, #841, #846, #847, #852 (#850), #849, #843, #845, #853 (#851),
   #855, #854, #857, #858, #859 (#856), #861, #860, #864 (#736 R3), #865,
   #869, #870 (#867), #872 (#866) and #874.
+- The tag target adds only release preparation commits to these 33. See
+  "Readiness check (2026-10-23)", section "Subject".
 - #847 prepared 0.24.0 but did not publish it. #865 expanded the notes
   through #864 at base `19832259e57de81fe7644f91b10cabe6a321d1b5`. This batch expands them through #874.
   The changelog keeps its 2026-10-21 date.
@@ -146,8 +148,136 @@ Each item is evidence for its own SHA. It is not a pass for `b6d272cf0`.
   one architecture line (#850)". It passed in the `test:files` gate above.
 - Skill eval evidence: unavailable. This batch has no `full_test_count`,
   `dry_run_ratio`, `grader_pass_rate` or `effectiveness_authority` data.
-- Readiness yellow flags: this batch did not run `repo-harness-check`.
-  No yellow flag is recorded.
+  The flag table below records why the tracked eval reports do not apply.
+- Readiness yellow flags: recorded in "Readiness check (2026-10-23)" below.
+
+## Readiness check (2026-10-23)
+
+### Subject
+
+- Release candidate: `origin/main` `949b8b7498aee84ebfe66a0d0900fc183e72f53c`
+  (squash of #876). Its tree is `be30bb56cdd0d925809a9c5d97b4c76eb4930c6d`.
+- The gated head `fc068ae72` has the same tree `be30bb56`. The gates in
+  "Acceptance status" apply to this tree.
+- The readiness PR changes only this record. After it merges, the tree of
+  `main` is not `be30bb56`. The gate evidence carries over because the diff
+  is this record only.
+- On 2026-10-23 the owner selected the squash commit of the readiness PR
+  (#877) as the tag target. The two options were:
+  - `949b8b749`: `git log v0.23.1..949b8b749` has 34 commits. They are the
+    33 commits in "Scope and authority" and #876. #876 is the release
+    preparation batch that this record describes as "this batch": the
+    changelog, this record and the `external-tooling.md` line wrap.
+  - The squash commit of the readiness PR: those 34 commits and the
+    readiness commit. The readiness commit changes only this record.
+  - #876 and the readiness commit are release preparation. They have no
+    changelog entry, as with #847 and #865. The coverage receipt counts the
+    33 commits through `b6d272cf0`. It remains exact for both options,
+    because the extra commits are only these preparation commits.
+- The check ran in a disposable worktree of `949b8b749` after
+  `bun install --frozen-lockfile` (exit 0; 339 packages). It used the
+  candidate source: `doctor.cli-version` reports 0.24.0. The installed global
+  runtime on this host is 0.23.1.
+
+### Sources and commands
+
+- Rules: `release-deploy.md` "Release Filings", the `repo-harness-check`
+  skill and its `references/deploy-readiness.md`.
+- Repo commands used a temporary HOME and `REPO_HARNESS_HOME` under `/tmp`,
+  `TMPDIR=/tmp`, and removed `CLAUDECODE`, `AI_AGENT`, `AGENT`, `REPL_ID`
+  and `REPO_HARNESS_SOURCE_ROOT`.
+- Waza staging and CodeGraph drift exist only in the owner's real install.
+  These commands ran against the real HOME. They are read-only by contract:
+  - `bun src/cli/index.ts setup check --target both --check-updates --json`
+  - `bash scripts/check-agent-tooling.sh --json --host both --check-updates`
+  - `bun src/cli/index.ts security scan --json`
+- Real-HOME side effects: a write detector compared file times after a marker.
+  No repo-harness managed file changed. The doctor probe runs
+  `codex --version` (`src/cli/commands/doctor.ts` line 154). The Codex CLI
+  then made its own `~/.codex/tmp/arg0-macos/codex-arg0*` directory.
+  Two `~/.codex/*.sqlite-wal` files also changed. The running Codex app is
+  the probable cause; this is not confirmed. These files were not removed.
+- The same `setup check` with a temporary HOME reported only the gaps of an
+  empty host. It is not a flag source.
+- Logs: `/tmp/rh-0240-readiness-logs/`.
+
+### Signals
+
+| Signal | Command | Observed result | Flag |
+| --- | --- | --- | --- |
+| Waza staging drift | `check-agent-tooling.sh --json --host both --check-updates` | Claude and Codex: 4/4 skills and 4/4 shared rules; `staging_sync: synced`; `update_status: up-to-date` against upstream `tw93/Waza` | no |
+| CodeGraph version drift | same | local 1.6.2, global 1.6.2, npm latest 1.6.2; `drift: null`; MCP configured on both hosts | no |
+| CodeGraph project index | `setup check --target both --check-updates --json` | Exit 1, `status: blocked`. The only `fail` is `doctor.codegraph-index`: `index=not-initialized` in the release worktree. The owner's main checkout has `.codegraph/`. | yes |
+| Claude adapter projection | same | `status.adapter.claude`: 5/6 managed entries; `PreToolUse.bash` missing. #861 adds this route in 0.24.0; the host runs 0.23.1. | yes |
+| Global rules markers | same | `global-rules.claude` and `global-rules.codex`: legacy repo-harness rules without markers | yes |
+| Security config | `security scan --json` | `status: warn`; 2 active `unmanaged-hook-command` findings: the SessionStart hook `herdr-agent-state.sh` in `~/.claude/settings.json` and in `~/.codex/hooks.json`. No reviewed exception matches them. 2 other hooks are reviewed exceptions in `reviewedFindings`. | yes |
+| Skills CLI | `setup check` | `runtime.skills_cli`: missing, optional; Waza bootstrap runs through `bunx` | yes |
+| Deploy SQL order | `repo-harness run check-deploy-sql-order` | exit 0, `[deploy-sql] OK`; no `operations.deploy_sql` in policy, so `deploy/sql/` with `ordered4` applies | no |
+| Deploy surface | read `deploy/` | README, runbooks and release checklists are present. `deploy/env/` holds only `.gitkeep`; `deploy/env/.env.example` is absent. | yes |
+| `_ops/` boundary | `git check-ignore`, `git ls-files _ops` | `_ops/` is ignored; 0 tracked files; the main checkout has `_ops/`; contents not read. No tracked real env file; the only `.env*` file is a test fixture. | no |
+| Skill eval evidence | read `evals/` | `evals/benchmark.md` is from 2026-06-14 (0.5.1 iteration): 1 eval, 4 full tests, 9/16 graders. `evals/harness/reports/profile-comparison.*` is a profile benchmark from 2026-07-21 (source `b32b3282`) with no skill eval fields. No current evidence. | yes |
+
+### Yellow flags
+
+These proposals came before the owner's decision. "Owner decisions
+(2026-10-23)" records the result.
+
+1. CodeGraph project index. Proposed acceptance, pending owner acceptance:
+   the index belongs to one checkout and is not in the packaged tree.
+   The release worktree is disposable. Repair, only with owner approval for
+   an index: `bash scripts/ensure-codegraph.sh --init` in the release
+   worktree.
+2. Claude adapter projection drift. Host drift before the upgrade, not a
+   candidate defect. Repair after publication: `repo-harness update`, which
+   installs hooks by default. Direct repair:
+   `repo-harness install --target claude --location global`. Both write
+   user-level config, so the owner runs or approves them.
+3. Global rules without markers. Repair:
+   `repo-harness update --report-language <follow|zh-CN|en>`. It writes the
+   real HOME, so it is the owner's action. Proposed acceptance, pending owner
+   acceptance: the owner maintains these files by hand, and the release
+   package does not read them.
+4. Security config: 2 active findings. They are unresolved and have no
+   recorded review. Repair: the owner reviews the two `herdr-agent-state.sh`
+   SessionStart commands. For each command, the owner adds a reviewed
+   exception (`filePath`, `ruleId`, `command`, `reason`, `reviewedAt`,
+   `reviewedBy`) to `~/.repo-harness/config.json`, where the other two
+   reviewed exceptions are. Then `repo-harness security scan --json` must
+   report `status: ok`. The hooks are host config and are not in the
+   release package.
+5. Skills CLI missing. Proposed acceptance, pending owner acceptance: the
+   tool is optional and Waza reports synced and up to date without it.
+   Repair: install the external Skills CLI, then run
+   `repo-harness setup check --target both --check-updates --json`.
+6. `deploy/env/.env.example` absent. Proposed acceptance, pending owner
+   acceptance: the package has no deploy runtime and no deploy environment
+   variables; npm publication uses Web Auth. Repair if the owner wants the
+   file: add a shape-only `deploy/env/.env.example`.
+7. Skill eval evidence unavailable. Proposed acceptance, pending owner
+   acceptance: 0.24.0 makes no skill-effectiveness claim. Repair: on this
+   candidate, run `bun run benchmark:skills -- --home <temp-dir>
+   --require-disposable` without `--dry-run`, then record `full_test_count`, `dry_run_ratio`, `grader_pass_rate` and
+   `effectiveness_authority`.
+
+### Owner decisions (2026-10-23)
+
+Owner's words: "接受 4 个建议接受的黄灯（CodeGraph 索引、Skills CLI、deploy
+env、skill eval）。adapter 和规则标记在发布后本机 update 时处理；安全 hook
+我另行审查，不阻塞发布。#877 CI 绿后合并，tag 打在 #877 的 squash 提交上，
+然后建 Release、npm publish，我在浏览器批准。"
+
+- Accepted, each with its reason in "Yellow flags": flag 1 (CodeGraph
+  project index), flag 5 (Skills CLI), flag 6 (`deploy/env/.env.example`)
+  and flag 7 (skill eval evidence unavailable).
+- Flags 2 and 3 (Claude adapter projection, global rules markers): the owner
+  repairs them with the local `repo-harness update` after publication.
+- Flag 4 (security config): still unresolved. The owner reviews the two
+  `herdr-agent-state.sh` hooks separately. This host-level finding does not
+  block the package publication.
+- Tag target: the squash commit of #877.
+- GO: merge #877 after green CI, then tag, GitHub Release and
+  `npm publish`. The owner approves the npm web authentication in the
+  browser.
 
 ## Publication checklist
 
@@ -161,6 +291,7 @@ Each item is evidence for its own SHA. It is not a pass for `b6d272cf0`.
   the package version. It also checks the tarball, the tag and the local
   version files.
 - Create tag `v0.24.0` and the GitHub Release only after the owner's GO.
+- Tag target: the squash commit of #877 (owner decision, 2026-10-23).
 
 ## Rollback evidence
 
@@ -171,5 +302,7 @@ Each item is evidence for its own SHA. It is not a pass for `b6d272cf0`.
 
 ## Publication status
 
-- Status: preparation only. No merge or publication is authorized.
-- No tag or GitHub Release was created. No npm package was published.
+- Status: on 2026-10-23 the owner authorized the merge of #877, tag
+  `v0.24.0`, the GitHub Release and the npm publication.
+- At this commit, no tag or GitHub Release exists, and no npm package is
+  published.
