@@ -32,7 +32,10 @@ const noticeItems = (report: ArchitectureDebtReportV1) => report.items.filter(it
 // on PATH. Name the repo-harness command that runs the same report. An archctx
 // action without one points to the full debt report instead.
 const MANAGED_ACTIONS: ReadonlyMap<string, string> = new Map([['archctx docs anchors --json', 'repo-harness architecture-projection anchors --json']]);
-const runAction = (action: string) => MANAGED_ACTIONS.get(action) ?? (action.startsWith('archctx ') ? COMMAND : action);
+const runAction = (raw: string) => {
+  const action = singleLine(raw).trim();
+  return MANAGED_ACTIONS.get(action) ?? (/^archctx(\s|$)/.test(action) ? COMMAND : action);
+};
 
 export interface AgentNotice {
   readonly content?: string;
@@ -88,7 +91,7 @@ export function renderAgentNotice(report: ArchitectureDebtReportV1): NoticeBlock
       : item.details.origin === 'node-summary' ? 'summary'
       : item.details.origin === 'node-responsibility' ? `responsibilities[${item.details.responsibilityIndex}]`
       : 'human citations';
-    return `- ${item.kind} ${singleLine(item.capabilityIds[0] ?? report.scope.capabilityIds[0] ?? 'unowned')}; ${singleLine(field)}. Run: ${singleLine(runAction(item.action))}`;
+    return `- ${item.kind} ${singleLine(item.capabilityIds[0] ?? report.scope.capabilityIds[0] ?? 'unowned')}; ${singleLine(field)}. Run: ${runAction(item.action)}`;
   });
   return {
     content: boundedBlock(`[ArchitectureDebt] ${items.length} new in ${capability}`, rows, items.length, count => `(+${count} more: ${COMMAND})`),

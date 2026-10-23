@@ -99,6 +99,8 @@ describe('AgentNotice', () => {
     const first = collectAgentNotice(root, () => ownership, options);
     expect(first.content).toContain(`[ArchitectureDebt] 1 new in ${NOTICE_CAPABILITY}`);
     expect(first.content).toContain('Run:');
+    expect(first.content).toContain('Run: repo-harness architecture-projection anchors --json');
+    expect(first.content).not.toMatch(/Run: archctx /);
     expect(first.content).toContain('human');
     expect(Buffer.byteLength(first.content!)).toBeLessThanOrEqual(800);
     expect(first.systemMessage).toBe(`Architecture: 1 debt item in ${NOTICE_CAPABILITY}; run repo-harness architecture-debt --json.`);
@@ -168,6 +170,11 @@ describe('AgentNotice', () => {
     expect(anchors.content).toContain('Run: repo-harness architecture-projection anchors --json');
     expect(anchors.content).not.toContain('archctx docs anchors');
     expect(anchors.content).not.toMatch(/Run: archctx /);
+    const padded = renderAgentNotice({ ...report, items: [{ ...item, action: '  archctx docs anchors --json\n' }] })!;
+    expect(padded.content).toContain('Run: repo-harness architecture-projection anchors --json');
+    expect(padded.content).not.toContain('archctx docs anchors');
+    const bare = renderAgentNotice({ ...report, items: [{ ...item, action: '\tarchctx\n' }] })!;
+    expect(bare.content).toEndWith('Run: repo-harness architecture-debt --json');
     // archctx 0.9.1 gives ownership items this action. repo-harness has no equivalent command.
     const plan = 'archctx plan --id changeset.<id> --operations-file <ownership-operations.json>';
     const owner = renderAgentNotice({ ...report, items: [{ ...item, kind: 'unowned-path', action: plan, details: { modelField: 'source.include/source.exclude/parent' } }] })!;
