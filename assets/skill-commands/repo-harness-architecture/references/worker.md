@@ -9,7 +9,7 @@ Worker reference. Use only within the assigned architecture scope.
 2. Inspect `docs/architecture/index.md` and `.archcontext/model/nodes/`. For a coverage or registration scope, follow the coverage procedure below.
 3. When the scope maps to repo code or config, resolve the capability with:
    - `repo-harness run capability-resolver match --repo <repo> --path <path> --format json`
-4. Update the model and human-owned prose for the changed responsibility. Generated regions, diagrams and the projection manifest belong to the archctx rolling writer. Do not apply or commit generated output in a feature PR.
+4. Update the model and human-owned prose for the changed responsibility. Generated regions, diagrams and the projection manifest belong to the archctx rolling writer (see "Rolling writer"). Do not apply or commit generated output in a feature PR.
 5. Use Markdown Mermaid as the only architecture diagram artifact. Do not generate standalone HTML; use the external `mermaid` skill only to review layout and renderability before shipping the Markdown source.
 6. Verify with:
    - `repo-harness architecture-debt --json --base <review-base>` (handle debt in scope)
@@ -28,10 +28,26 @@ Do not run a bare archctx from PATH. A PATH copy can have another version. A wro
 version can print a help envelope with `"ok": true`, so a failure looks like
 success. Do not install a repo-local archctx.
 
+## Rolling writer
+
+The rolling writer publishes generated regions, diagrams and the projection
+manifest after a model PR merges. Publication is an operator step. A worker does
+not run it unless its task authorizes the push. An operator with Git and gh
+authentication for the target repo sets `ARCHCONTEXT_STATE_DIR` to one stable
+absolute path. The operator then runs
+`repo-harness architecture-projection publish once` in the target repo, or runs
+`repo-harness architecture-projection publish follow` under a process
+supervisor. `repo-harness architecture-projection publish status` reports the
+last run. The writer pushes only the `archctx/projection` branch and opens or
+updates one rolling PR. Before that PR merges, check out its head in a clean
+worktree and run
+`"$NODE" "$ARCHCTX" projection verify-pr --base origin/main --json`. The merge
+of the rolling PR accepts the proven major changes in it.
+
 ## Drift signals
 
 - Generated sections: `repo-harness architecture-projection check --json`.
-  `changes[].outputChanged` reports render changes. Source stamps alone need no Agent action. Inspect the rolling writer when generated output differs.
+  `changes[].outputChanged` reports render changes. Source stamps alone need no Agent action. When generated output differs, inspect `repo-harness architecture-projection publish status` and the open rolling PR.
 - Human-written sections: `repo-harness architecture-projection anchors --json`.
   It runs `docs anchors` and writes no file. It lists cited paths that are
   missing, line numbers out of range, symbols that are missing and lines that
@@ -66,9 +82,11 @@ write nodes.
    model YAML by hand when a ChangeSet route exists.
 5. Run `"$NODE" "$ARCHCTX" validate --format json` and
    `"$NODE" "$ARCHCTX" flows check --json`. Verify source matching with
-   capability-resolver. Commit the model and human prose. The rolling writer
-   publishes the generated module documents after merge. Missing docs for an
-   unchanged node need writer repair, not a duplicate node.
+   capability-resolver. Commit the model and human prose. After merge, an
+   operator runs `repo-harness architecture-projection publish once` or a
+   supervised `follow`, as "Rolling writer" describes, to publish the generated
+   module documents. Missing docs for an unchanged node need writer repair, not
+   a duplicate node.
 
 ## Model ChangeSets (archctx 0.9.1)
 
@@ -104,7 +122,8 @@ write nodes.
 - A flow step is proven only with a relation for the exact step, a source symbol that is
   unique in its file, and a direct CodeGraph `calls` edge from source to sink.
 - A relation to another capability can change its generated page. Leave that
-  output to the rolling writer. Workers commit only their model and human prose.
+  output to the rolling writer (`repo-harness architecture-projection publish`
+  after merge). Workers commit only their model and human prose.
 - `repo-harness module list`, `module review-prompt` and Engineer contract
   revisions read the committed HEAD snapshot. Commit the model before you verify
   them. An uncommitted model change shows in `worktree_dirty_paths`. An
@@ -114,7 +133,8 @@ write nodes.
 
 Initial adoption is an explicit ownership migration. Its first approved generated
 baseline is separate from steady-state feature work. Subsequent generated updates
-belong to the rolling writer.
+belong to the rolling writer: after each merge, an operator runs
+`repo-harness architecture-projection publish once` or a supervised `follow`.
 
 Do not pass `--request-id` to the projection commands in this authorized adoption
 flow. repo-harness derives the default request identity from the request body.

@@ -5,6 +5,7 @@ import type { ProjectionMode } from 'archctx-contracts';
 import { architectureProjectionRequest, inspectArchitectureProjectionReadiness, readArchitectureDocsAnchors, readArchitectureHandEdits, runArchitectureProjection } from '../../effects/architecture/archctx-provider';
 import { ARCHITECTURE_DEBT_COMMAND, summarizeArchitectureRender } from '../../core/architecture/projection';
 import { applyArchitectureProjection } from '../../effects/architecture/projection-apply';
+import { runArchitectureWriter } from '../../effects/architecture/projection-writer';
 
 export interface ProjectionCommandOptions {
   json?: boolean;
@@ -68,7 +69,15 @@ export function buildArchitectureProjectionCommand(): Command {
         write({ edits: readArchitectureHandEdits(root).filter(edit => paths === null || paths.has(edit.path)) });
       } catch (error) { fail(error); }
     });
+  command.command('publish').argument('<mode>', 'status, once or follow')
+    .description('Run the archctx rolling writer for this repository: remote origin, base main, branch archctx/projection, publisher gh')
+    .action((mode: string) => publish(mode));
   return command;
+}
+
+async function publish(mode: string): Promise<void> {
+  try { process.exitCode = await runArchitectureWriter(repositoryRoot(), mode, process.env); }
+  catch (error) { fail(error); }
 }
 
 function execute(mode: ProjectionMode, options: ProjectionCommandOptions): void {

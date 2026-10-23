@@ -258,6 +258,7 @@ describe("repo-harness action command skills", () => {
     expect(architecture).toContain("`projectionProvider.command[1]`");
     expect(architecture).toContain('`"$NODE" "$ARCHCTX" flows check --json`');
     expect(architecture).toContain("`repo-harness architecture-projection anchors --json`");
+    expect(architecture).toContain("repo-harness architecture-projection publish once");
     // projection-apply derives the accepted request id; a per-apply id rule is obsolete.
     expect(architecture).toContain("Do not pass `--request-id`");
     expect(architecture.match(/--request-id/g)).toHaveLength(1);

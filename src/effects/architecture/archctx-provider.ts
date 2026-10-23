@@ -762,7 +762,7 @@ function findPackageRoot(startRoot: string, name: string): string | null {
   }
 }
 
-function findConsumerRoot(): string {
+export function findConsumerRoot(): string {
   let current = resolve(import.meta.dir);
   while (true) {
     try {

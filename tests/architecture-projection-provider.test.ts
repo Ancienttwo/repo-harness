@@ -43,7 +43,10 @@ import {
 import { trustedNodeCandidates } from '../src/effects/runtime/node-candidates';
 import { architectureProjectionExitCode, buildArchitectureProjectionCommand } from '../src/cli/commands/architecture-projection';
 import { applyArchitectureProjection } from '../src/effects/architecture/projection-apply';
+import { architectureWriterArgs } from '../src/effects/architecture/projection-writer';
 
+const PACKAGE_ROOT = join(import.meta.dir, '..');
+const CLI_ENTRY = join(PACKAGE_ROOT, 'src', 'cli', 'index.ts');
 const roots: string[] = [];
 const digest = (value: string) => `sha256:${value.repeat(64).slice(0, 64)}` as const;
 const digestProjectionJson = (value: unknown) => digestJson(value as Json) as `sha256:${string}`;
@@ -980,13 +983,79 @@ describe('package-local ArchContext projection provider', () => {
 
   test('exposes projection commands without a separate acceptance authority', () => {
     const command = buildArchitectureProjectionCommand();
-    expect(command.commands.map((entry) => entry.name())).toEqual(['policy', 'status', 'check', 'plan', 'apply', 'adopt', 'anchors', 'render-check', 'hand-edits']);
-    for (const name of ['check', 'plan', 'apply', 'adopt']) {
+    expect(command.commands.map((entry) => entry.name())).toEqual(['policy', 'status', 'check', 'plan', 'apply', 'adopt', 'anchors', 'render-check', 'hand-edits', 'publish']);
+    for (const name of ['check', 'plan', 'apply', 'adopt', 'publish']) {
       const subcommand = command.commands.find((candidate) => candidate.name() === name);
       expect(subcommand!.options.map((option) => option.long)).not.toContain('--accepted-change-set-id');
       expect(subcommand!.options.map((option) => option.long)).not.toContain('--approval-reference');
     }
+    // The rolling target and the acceptance flag are fixed in architectureWriterArgs.
+    expect(command.commands.find((candidate) => candidate.name() === 'publish')!.options).toEqual([]);
+  });
 
+  test('writer delegates a fixed rolling target and loop to archctx with explicit state', () => {
+    const status = architectureWriterArgs('status', '/tmp/writer-state');
+    expect(status).toEqual(['projection', 'publish-status', '--remote', 'origin', '--base', 'main', '--json']);
+    expect(status).not.toContain('--accept-observed-major-change');
+    const once = architectureWriterArgs('once', '/tmp/writer-state');
+    expect(once).toEqual(['projection', 'publish', '--remote', 'origin', '--base', 'main', '--branch', 'archctx/projection', '--publisher', 'gh', '--accept-observed-major-change', '--json']);
+    expect(architectureWriterArgs('follow', '/tmp/writer-state')).toEqual([...once.slice(0, -1), '--follow', '--interval', '300', '--json']);
+    expect(() => architectureWriterArgs('once', undefined)).toThrow('ARCHCONTEXT_STATE_DIR');
+    expect(() => architectureWriterArgs('once', 'relative')).toThrow('absolute');
+    expect(() => architectureWriterArgs('push-main', '/tmp/writer-state')).toThrow('Usage');
+  });
+
+  test('publish status runs the package-local archctx writer status in the target repository', () => {
+    const root = mkdtempSync(join(tmpdir(), 'repo-harness-publish-'));
+    roots.push(root);
+    const [home, stateDir] = ['home', 'state'].map((name) => join(root, name));
+    for (const dir of [home, stateDir]) mkdirSync(dir);
+    const env: NodeJS.ProcessEnv = { ...process.env, HOME: home, ARCHCONTEXT_STATE_DIR: stateDir };
+    const git = (cwd: string, args: string[]) => execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', ...args], { cwd, env, stdio: 'ignore' });
+    const repository = (name: string) => {
+      const repo = join(root, name);
+      mkdirSync(repo);
+      git(root, ['init', '-q', '--bare', `${repo}.git`]);
+      git(repo, ['init', '-q', '-b', 'main']);
+      git(repo, ['commit', '-q', '--allow-empty', '-m', name]);
+      git(repo, ['remote', 'add', 'origin', `${repo}.git`]);
+      git(repo, ['push', '-q', 'origin', 'main']);
+      return repo;
+    };
+    const repo = repository('repo');
+    const other = repository('other');
+
+    const cli = spawnSync(process.execPath, [CLI_ENTRY, 'architecture-projection', 'publish', 'status'], { cwd: repo, env, encoding: 'utf8', timeout: 60_000 });
+    expect(cli.status, cli.stderr).toBe(0);
+    const published = JSON.parse(cli.stdout) as { ok: boolean; data: { schemaVersion: string; remote: string; base: string; worktreePath: string } };
+    expect(published.ok).toBe(true);
+    expect(published.data).toMatchObject({ schemaVersion: 'archcontext.projection-publish-status/v1', remote: 'origin', base: 'main' });
+    expect([stateDir, realpathSync(stateDir)].some((dir) => published.data.worktreePath.startsWith(join(dir, 'repositories')))).toBe(true);
+
+    // archctx derives the writer repository id from its cwd: the direct run from the target repo matches, one from another repo does not.
+    const archctx = resolvePackageLocalArchctx(PACKAGE_ROOT);
+    const direct = (cwd: string) => JSON.parse(execFileSync(resolveCompatibleNodeRuntime(env), [archctx.binaryPath, ...architectureWriterArgs('status', stateDir)], { cwd, env, encoding: 'utf8' })) as unknown;
+    expect(published).toEqual(direct(repo) as never);
+    expect(published).not.toEqual(direct(other) as never);
+  });
+
+  test.each([
+    ['no state dir', undefined, 'status', 'ARCHCONTEXT_STATE_DIR must be an explicit absolute path'],
+    ['a relative state dir', 'writer-state', 'status', 'ARCHCONTEXT_STATE_DIR must be an explicit absolute path'],
+    ['an unknown mode', '/tmp/repo-harness-unused-writer-state', 'push-main', 'Usage: repo-harness architecture-projection publish <status|once|follow>'],
+  ])('publish refuses %s before it resolves archctx', (_case, stateDir, mode, message) => {
+    const cwd = mkdtempSync(join(tmpdir(), 'repo-harness-publish-refusal-'));
+    roots.push(cwd);
+    execFileSync('git', ['init', '-q', '-b', 'main'], { cwd, stdio: 'ignore' });
+    const env: NodeJS.ProcessEnv = { ...process.env, HOME: cwd };
+    delete env.ARCHCONTEXT_STATE_DIR;
+    if (stateDir) env.ARCHCONTEXT_STATE_DIR = stateDir;
+    const result = spawnSync(process.execPath, [CLI_ENTRY, 'architecture-projection', 'publish', mode], { cwd, env, encoding: 'utf8', timeout: 60_000 });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(message);
+    expect(result.stdout).toBe('');
+    expect(existsSync(join(cwd, 'writer-state'))).toBe(false);
+    expect(existsSync('/tmp/repo-harness-unused-writer-state')).toBe(false);
   });
 
   test('docs anchors runs read-only archctx docs anchors after the handshake and decodes its report', () => {
