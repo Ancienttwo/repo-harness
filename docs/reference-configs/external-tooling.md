@@ -1092,8 +1092,8 @@ in CI.
 
 One module selects, formats and dedupes the notice. It emits at most three
 items and 800 UTF-8 bytes, with capability, model field and command on each
-item. The command is a repo-harness command, because a global install has no
-archctx on PATH. A citation item names
+item. The command is a repo-harness command, because a global install has
+no archctx on PATH. A citation item names
 `repo-harness architecture-projection anchors --json`. Another archctx action
 names `repo-harness architecture-debt --json`.
 Overflow points to `repo-harness architecture-debt --json`. The marker
