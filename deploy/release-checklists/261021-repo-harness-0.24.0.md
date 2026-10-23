@@ -146,8 +146,99 @@ Each item is evidence for its own SHA. It is not a pass for `b6d272cf0`.
   one architecture line (#850)". It passed in the `test:files` gate above.
 - Skill eval evidence: unavailable. This batch has no `full_test_count`,
   `dry_run_ratio`, `grader_pass_rate` or `effectiveness_authority` data.
-- Readiness yellow flags: this batch did not run `repo-harness-check`.
-  No yellow flag is recorded.
+  The flag table below records why the tracked eval reports do not apply.
+- Readiness yellow flags: recorded in "Readiness check (2026-10-23)" below.
+
+## Readiness check (2026-10-23)
+
+### Subject
+
+- Release candidate: `origin/main` `949b8b7498aee84ebfe66a0d0900fc183e72f53c`
+  (squash of #876). Its tree is `be30bb56cdd0d925809a9c5d97b4c76eb4930c6d`.
+- The gated head `fc068ae72` has the same tree `be30bb56`. The gates in
+  "Acceptance status" apply to this tree.
+- The readiness PR changes only this record. After it merges, the tree of
+  `main` is not `be30bb56`. The gate evidence carries over because the diff
+  is this record only. The owner selects the tag target: `949b8b749` or the
+  new squash commit.
+- The check ran in a disposable worktree of `949b8b749` after
+  `bun install --frozen-lockfile` (exit 0; 339 packages). It used the
+  candidate source: `doctor.cli-version` reports 0.24.0. The installed global
+  runtime on this host is 0.23.1.
+
+### Sources and commands
+
+- Rules: `release-deploy.md` "Release Filings", the `repo-harness-check`
+  skill and its `references/deploy-readiness.md`.
+- Repo commands used a temporary HOME and `REPO_HARNESS_HOME` under `/tmp`,
+  `TMPDIR=/tmp`, and removed `CLAUDECODE`, `AI_AGENT`, `AGENT`, `REPL_ID`
+  and `REPO_HARNESS_SOURCE_ROOT`.
+- Waza staging and CodeGraph drift exist only in the owner's real install.
+  These commands ran against the real HOME. They are read-only by contract:
+  - `bun src/cli/index.ts setup check --target both --check-updates --json`
+  - `bash scripts/check-agent-tooling.sh --json --host both --check-updates`
+  - `bun src/cli/index.ts security scan --json`
+- Real-HOME side effects: a write detector compared file times after a marker.
+  No repo-harness managed file changed. The doctor probe runs
+  `codex --version` (`src/cli/commands/doctor.ts` line 154). The Codex CLI
+  then made its own `~/.codex/tmp/arg0-macos/codex-arg0*` directory.
+  Two `~/.codex/*.sqlite-wal` files also changed. The running Codex app is
+  the probable cause; this is not confirmed. These files were not removed.
+- The same `setup check` with a temporary HOME reported only the gaps of an
+  empty host. It is not a flag source.
+- Logs: `/tmp/rh-0240-readiness-logs/`.
+
+### Signals
+
+| Signal | Command | Observed result | Flag |
+| --- | --- | --- | --- |
+| Waza staging drift | `check-agent-tooling.sh --json --host both --check-updates` | Claude and Codex: 4/4 skills and 4/4 shared rules; `staging_sync: synced`; `update_status: up-to-date` against upstream `tw93/Waza` | no |
+| CodeGraph version drift | same | local 1.6.2, global 1.6.2, npm latest 1.6.2; `drift: null`; MCP configured on both hosts | no |
+| CodeGraph project index | `setup check --target both --check-updates --json` | Exit 1, `status: blocked`. The only `fail` is `doctor.codegraph-index`: `index=not-initialized` in the release worktree. The owner's main checkout has `.codegraph/`. | yes |
+| Claude adapter projection | same | `status.adapter.claude`: 5/6 managed entries; `PreToolUse.bash` missing. #861 adds this route in 0.24.0; the host runs 0.23.1. | yes |
+| Global rules markers | same | `global-rules.claude` and `global-rules.codex`: legacy repo-harness rules without markers | yes |
+| Security config | `security scan --json` | `status: warn`; 2 `unmanaged-hook-command` warnings in `~/.claude/settings.json`; both are reviewed exceptions (2026-07-09 and 2026-06-15) | yes |
+| Skills CLI | `setup check` | `runtime.skills_cli`: missing, optional; Waza bootstrap runs through `bunx` | yes |
+| Deploy SQL order | `repo-harness run check-deploy-sql-order` | exit 0, `[deploy-sql] OK`; no `operations.deploy_sql` in policy, so `deploy/sql/` with `ordered4` applies | no |
+| Deploy surface | read `deploy/` | README, runbooks and release checklists are present. `deploy/env/` holds only `.gitkeep`; `deploy/env/.env.example` is absent. | yes |
+| `_ops/` boundary | `git check-ignore`, `git ls-files _ops` | `_ops/` is ignored; 0 tracked files; the main checkout has `_ops/`; contents not read. No tracked real env file; the only `.env*` file is a test fixture. | no |
+| Skill eval evidence | read `evals/` | `evals/benchmark.md` is from 2026-06-14 (0.5.1 iteration): 1 eval, 4 full tests, 9/16 graders. `evals/harness/reports/profile-comparison.*` is a profile benchmark from 2026-07-21 (source `b32b3282`) with no skill eval fields. No current evidence. | yes |
+
+### Yellow flags
+
+The owner decides acceptance. No flag below is accepted yet.
+
+1. CodeGraph project index. Proposed acceptance, pending owner acceptance:
+   the index belongs to one checkout and is not in the packaged tree.
+   The release worktree is disposable. Repair, only with owner approval for
+   an index: `bash scripts/ensure-codegraph.sh --init` in the release
+   worktree.
+2. Claude adapter projection drift. Host drift before the upgrade, not a
+   candidate defect. Repair after publication: `repo-harness update`, which
+   installs hooks by default. Direct repair:
+   `repo-harness install --target claude --location global`. Both write
+   user-level config, so the owner runs or approves them.
+3. Global rules without markers. Repair:
+   `repo-harness update --report-language <follow|zh-CN|en>`. It writes the
+   real HOME, so it is the owner's action. Proposed acceptance, pending owner
+   acceptance: the owner maintains these files by hand, and the release
+   package does not read them.
+4. Security config warnings. Proposed acceptance, pending owner acceptance:
+   both hooks are local safety hooks with recorded reviews in the user
+   config. Verification: `repo-harness security scan --json`.
+5. Skills CLI missing. Proposed acceptance, pending owner acceptance: the
+   tool is optional and Waza reports synced and up to date without it.
+   Repair: install the external Skills CLI, then run
+   `repo-harness setup check --target both --check-updates --json`.
+6. `deploy/env/.env.example` absent. Proposed acceptance, pending owner
+   acceptance: the package has no deploy runtime and no deploy environment
+   variables; npm publication uses Web Auth. Repair if the owner wants the
+   file: add a shape-only `deploy/env/.env.example`.
+7. Skill eval evidence unavailable. Proposed acceptance, pending owner
+   acceptance: 0.24.0 makes no skill-effectiveness claim. Repair: on this
+   candidate, run `bun run benchmark:skills -- --home <temp-dir>
+   --require-disposable` without `--dry-run`, then record `full_test_count`, `dry_run_ratio`, `grader_pass_rate` and
+   `effectiveness_authority`.
 
 ## Publication checklist
 
