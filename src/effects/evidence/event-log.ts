@@ -138,14 +138,14 @@ function appendGenesisRecordLocked(
 /**
  * Append one evidence event. Always goes through `buildEvidenceEvent`'s
  * construction path -- there is no way to append a hand-built record that
- * skipped D6's invariants. Fails closed if the store has no genesis record
- * or ends with an unterminated record.
+ * skipped D6's invariants. Fails closed if the store has no genesis record,
+ * ends with an unterminated record, or holds a record that does not parse.
  */
 export function appendEvidenceEvent(repoRoot: string, input: EvidenceEventInput): EvidenceEventRecord {
   const logPath = resolveLogPath(repoRoot);
   return withLogLock(repoRoot, () => {
-    readAppendableLog(logPath, "cannot append");
-    if (!readGenesisRecord(repoRoot)) {
+    const first = readAppendableLog(logPath, "cannot append").parsedLines[0];
+    if (!first?.ok || first.record.kind !== "evidence_genesis") {
       throw new Error(`cannot append: store at ${logPath} has no genesis record; call appendGenesisRecord first`);
     }
     const record = buildEvidenceEvent(repoRoot, input);
