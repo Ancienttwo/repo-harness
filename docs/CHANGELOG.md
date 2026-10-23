@@ -6,10 +6,28 @@ All notable changes to this skill are documented here.
 
 This minor release includes the archctx 0.9.1 upgrade, hook and task plane
 changes, Clef shadow records (#860), and setup CI scope (#854). It expands
-the unpublished #847 preparation with work merged through #864. It has
-breaking removals in #834. Run `repo-harness update` after the upgrade.
+the unpublished #847 and #865 preparation with work merged through #874.
+It has breaking removals in #834. Run `repo-harness update` after the upgrade.
 For legacy global rules without a recorded language, run
 `repo-harness update --report-language <x>` once.
+
+### Upgrade
+
+- `repo-harness update` does not replace a running archctx background daemon.
+  The daemon stays on the old version until you authorize `daemon upgrade`.
+- When the daemon version does not match, `update` still exits 0. The
+  `check shared ArchContext daemon` step reports `skipped` with
+  "Daemon readiness pending; verified packages retained." The reminder goes
+  to stderr. Verified packages stay installed.
+- Until the upgrade, `repo-harness architecture-projection status --json`
+  shows `mismatch` in `projectionProvider.state` and `daemonRuntime.state`,
+  and `next` is `upgrade-archctx-runtime`.
+- To finish, tell the agent that it can run `daemon upgrade` through the
+  managed package-local archctx and its Node runtime. A global install has no
+  `archctx` on PATH. The upgrade replaces the shared daemon and interrupts
+  other clients. Then the agent verifies the daemon status and checks this
+  repository's CodeGraph index. It asks again before a rebuild, and only when
+  the index is missing or stale.
 
 ### Added
 
@@ -20,6 +38,10 @@ For legacy global rules without a recorded language, run
 - Add Clef shadow records and blind Bot labels for Herdr pane status events.
   Shadow mode records observations without taking control of dispatch.
   The default stays off. (#860)
+- Add the `repo-harness-herdr-portal` Skill for the Claude host in the `full`
+  profile. On explicit invoke, it starts or reuses a named Claude CLI worker
+  in a visible Herdr pane. Task traffic then uses Claude Code messaging.
+  Codex placements do not change. (#869)
 
 ### Changed
 
@@ -42,6 +64,13 @@ For legacy global rules without a recorded language, run
 
 ### Fixed
 
+- Name a repo-harness command in architecture debt notice rows. A global
+  install has no `archctx` on PATH. A stale-anchor row now prints
+  `repo-harness architecture-projection anchors --json`. Other archctx
+  actions print `repo-harness architecture-debt --json`. (#874)
+- Give the first Windows Job controller response in the daily MCP path
+  matrix a 30 s deadline. A cold `powershell.exe` start took up to 13.9 s.
+  Warm steps keep 15 s. Product code does not change. (#870, #867)
 - Preserve literal custom reporting instructions during managed global rule
   updates. (#843)
 - Repair Waza install receipts when upstream bytes already match the local
@@ -74,6 +103,9 @@ For legacy global rules without a recorded language, run
 
 ### Documentation
 
+- Refresh generated architecture outputs for main `eea1f1d26` through the
+  archctx rolling writer. This clears the daily architecture freshness
+  failure. (#872, #866)
 - Refresh architecture source stamps and daily freshness evidence.
   (#849, #859, #856)
 - Add a UI rule against extra helper text. (#857)
