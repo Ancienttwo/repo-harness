@@ -162,7 +162,8 @@ Each item is evidence for its own SHA. It is not a pass for `b6d272cf0`.
 - The readiness PR changes only this record. After it merges, the tree of
   `main` is not `be30bb56`. The gate evidence carries over because the diff
   is this record only.
-- The owner selects one tag target. Each option is exact:
+- On 2026-10-23 the owner selected the squash commit of the readiness PR
+  (#877) as the tag target. The two options were:
   - `949b8b749`: `git log v0.23.1..949b8b749` has 34 commits. They are the
     33 commits in "Scope and authority" and #876. #876 is the release
     preparation batch that this record describes as "this batch": the
@@ -173,8 +174,6 @@ Each item is evidence for its own SHA. It is not a pass for `b6d272cf0`.
     changelog entry, as with #847 and #865. The coverage receipt counts the
     33 commits through `b6d272cf0`. It remains exact for both options,
     because the extra commits are only these preparation commits.
-  - After the owner selects the target, update "Publication checklist" with
-    that SHA before the tag is created.
 - The check ran in a disposable worktree of `949b8b749` after
   `bun install --frozen-lockfile` (exit 0; 339 packages). It used the
   candidate source: `doctor.cli-version` reports 0.24.0. The installed global
@@ -220,7 +219,8 @@ Each item is evidence for its own SHA. It is not a pass for `b6d272cf0`.
 
 ### Yellow flags
 
-The owner decides acceptance. No flag below is accepted yet.
+These proposals came before the owner's decision. "Owner decisions
+(2026-10-23)" records the result.
 
 1. CodeGraph project index. Proposed acceptance, pending owner acceptance:
    the index belongs to one checkout and is not in the packaged tree.
@@ -259,6 +259,26 @@ The owner decides acceptance. No flag below is accepted yet.
    --require-disposable` without `--dry-run`, then record `full_test_count`, `dry_run_ratio`, `grader_pass_rate` and
    `effectiveness_authority`.
 
+### Owner decisions (2026-10-23)
+
+Owner's words: "接受 4 个建议接受的黄灯（CodeGraph 索引、Skills CLI、deploy
+env、skill eval）。adapter 和规则标记在发布后本机 update 时处理；安全 hook
+我另行审查，不阻塞发布。#877 CI 绿后合并，tag 打在 #877 的 squash 提交上，
+然后建 Release、npm publish，我在浏览器批准。"
+
+- Accepted, each with its reason in "Yellow flags": flag 1 (CodeGraph
+  project index), flag 5 (Skills CLI), flag 6 (`deploy/env/.env.example`)
+  and flag 7 (skill eval evidence unavailable).
+- Flags 2 and 3 (Claude adapter projection, global rules markers): the owner
+  repairs them with the local `repo-harness update` after publication.
+- Flag 4 (security config): still unresolved. The owner reviews the two
+  `herdr-agent-state.sh` hooks separately. This host-level finding does not
+  block the package publication.
+- Tag target: the squash commit of #877.
+- GO: merge #877 after green CI, then tag, GitHub Release and
+  `npm publish`. The owner approves the npm web authentication in the
+  browser.
+
 ## Publication checklist
 
 - Merge only after the owner's explicit GO and green hosted CI on the PR head.
@@ -271,6 +291,7 @@ The owner decides acceptance. No flag below is accepted yet.
   the package version. It also checks the tarball, the tag and the local
   version files.
 - Create tag `v0.24.0` and the GitHub Release only after the owner's GO.
+- Tag target: the squash commit of #877 (owner decision, 2026-10-23).
 
 ## Rollback evidence
 
@@ -281,5 +302,7 @@ The owner decides acceptance. No flag below is accepted yet.
 
 ## Publication status
 
-- Status: preparation only. No merge or publication is authorized.
-- No tag or GitHub Release was created. No npm package was published.
+- Status: on 2026-10-23 the owner authorized the merge of #877, tag
+  `v0.24.0`, the GitHub Release and the npm publication.
+- At this commit, no tag or GitHub Release exists, and no npm package is
+  published.
