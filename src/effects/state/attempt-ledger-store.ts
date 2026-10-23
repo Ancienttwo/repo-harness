@@ -14,21 +14,71 @@
  * `src/effects/evidence/atomic-append.ts`.
  *
  * Reading is `readText`, exactly like every other state source: repository
- * confined, absent-tolerant, and write-free.
+ * confined, absent-tolerant, and write-free. Only the explicit repair writes
+ * outside an append, and it takes the same lock.
  */
-import { realpathSync } from 'fs';
-import { resolve } from 'path';
+import {
+  closeSync,
+  constants,
+  fstatSync,
+  fsyncSync,
+  ftruncateSync,
+  openSync,
+  readFileSync,
+  readSync,
+  realpathSync,
+} from 'fs';
+import { dirname, posix, resolve } from 'path';
 import {
   parseAttemptLedger,
   type AttemptLedgerRead,
 } from '../../core/state/attempt-ledger';
 import type { AttemptReceiptV1 } from '../../core/state/types';
-import { appendLineDurably } from '../evidence/atomic-append';
+import {
+  appendLineDurably,
+  createFileExclusiveDurably,
+  syncDirectoryDurably,
+} from '../evidence/atomic-append';
 import { withExclusiveDirectoryLock } from '../locking/exclusive-directory-lock';
 import { readText, repoPath } from './collect-state-inputs';
 
 export const ATTEMPT_LEDGER_PATH = '.ai/harness/runs/continuation/attempts.jsonl';
 const ATTEMPT_LEDGER_LOCK_PATH = '.ai/harness/runs/continuation/attempts.lock';
+const ATTEMPT_LEDGER_REPAIR_COMMAND = 'repo-harness state attempt-repair --json';
+
+const NEWLINE = 0x0a;
+
+/**
+ * The last receipt has no "\n", so an append now would join two receipts on
+ * one line (#881). The append does not repair: discarding bytes is an explicit
+ * operator step.
+ */
+export class UnterminatedAttemptLedgerError extends Error {
+  constructor(readonly ledgerPath: string) {
+    super(`cannot append attempt receipt: ledger at ${ledgerPath} ends with an unterminated line; run \`${ATTEMPT_LEDGER_REPAIR_COMMAND}\` to quarantine it`);
+    this.name = 'UnterminatedAttemptLedgerError';
+  }
+}
+
+/** Reads only the last byte, because the ledger grows without bound. */
+function endsWithUnterminatedLine(ledgerPath: string): boolean {
+  let fd: number;
+  try {
+    fd = openSync(ledgerPath, constants.O_RDONLY);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
+    throw error;
+  }
+  try {
+    const { size } = fstatSync(fd);
+    if (size === 0) return false;
+    const last = Buffer.alloc(1);
+    readSync(fd, last, 0, 1, size - 1);
+    return last[0] !== NEWLINE;
+  } finally {
+    closeSync(fd);
+  }
+}
 
 /**
  * Append exactly one receipt line. Dumb by contract: no state resolution, no
@@ -39,6 +89,7 @@ export function appendAttemptReceipt(cwd: string, receipt: AttemptReceiptV1): vo
   const canonicalRoot = realpathSync(resolve(cwd));
   const ledgerPath = repoPath(canonicalRoot, ATTEMPT_LEDGER_PATH);
   withExclusiveDirectoryLock(canonicalRoot, ATTEMPT_LEDGER_LOCK_PATH, () => {
+    if (endsWithUnterminatedLine(ledgerPath)) throw new UnterminatedAttemptLedgerError(ledgerPath);
     appendLineDurably(ledgerPath, JSON.stringify(receipt));
   });
 }
@@ -46,4 +97,51 @@ export function appendAttemptReceipt(cwd: string, receipt: AttemptReceiptV1): vo
 /** Read-only ledger load for the continuation envelope. */
 export function readAttemptLedger(cwd: string): AttemptLedgerRead {
   return parseAttemptLedger(readText(cwd, ATTEMPT_LEDGER_PATH));
+}
+
+export interface AttemptLedgerRepair {
+  /** Repo-relative quarantine file, or null when the ledger had no torn tail. */
+  readonly quarantinedPath: string | null;
+  /** The ledger read after the repair; a malformed middle line stays unreadable. */
+  readonly ledger: AttemptLedgerRead;
+}
+
+function truncateDurably(path: string, length: number): void {
+  const fd = openSync(path, constants.O_WRONLY);
+  try {
+    ftruncateSync(fd, length);
+    fsyncSync(fd);
+  } finally {
+    closeSync(fd);
+  }
+}
+
+/**
+ * Move the bytes after the last "\n" to a new quarantine file, then truncate
+ * the ledger to its last complete line. The quarantine is durable before the
+ * truncate, so a crash between the two leaves at most a duplicate quarantine.
+ */
+function quarantineUnterminatedTail(canonicalRoot: string, nowMs: number): string | null {
+  const ledgerPath = repoPath(canonicalRoot, ATTEMPT_LEDGER_PATH);
+  if (!endsWithUnterminatedLine(ledgerPath)) return null;
+  const bytes = readFileSync(ledgerPath);
+  // 0x0a never occurs inside a UTF-8 multi-byte sequence, so this is a line boundary.
+  const keepLength = bytes.lastIndexOf(NEWLINE) + 1;
+  const quarantinedPath = posix.join(posix.dirname(ATTEMPT_LEDGER_PATH), `attempts.torn-${nowMs}`);
+  createFileExclusiveDurably(repoPath(canonicalRoot, quarantinedPath), bytes.subarray(keepLength));
+  syncDirectoryDurably(dirname(ledgerPath));
+  truncateDurably(ledgerPath, keepLength);
+  return quarantinedPath;
+}
+
+/**
+ * Explicit repair for a torn tail. It changes only the bytes after the last
+ * complete receipt and keeps them in the quarantine file.
+ */
+export function repairAttemptLedgerTail(cwd: string, nowMs: number): AttemptLedgerRepair {
+  const canonicalRoot = realpathSync(resolve(cwd));
+  return withExclusiveDirectoryLock(canonicalRoot, ATTEMPT_LEDGER_LOCK_PATH, () => ({
+    quarantinedPath: quarantineUnterminatedTail(canonicalRoot, nowMs),
+    ledger: readAttemptLedger(canonicalRoot),
+  }));
 }

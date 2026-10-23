@@ -183,6 +183,9 @@ function parseReceiptLine(raw: string): AttemptReceiptV1 | null {
  * Parse the ledger's own bytes. `null` is an absent ledger. The empty segment
  * after the trailing newline every append writes is JSONL framing, not a
  * record; any other unparseable or malformed line makes the ledger unreadable.
+ * A final line without its newline is unreadable even when it parses: the
+ * recorder refuses to append onto it, so reading it as `ok` would let the
+ * breaker run with no new receipts.
  */
 export function parseAttemptLedger(text: string | null): AttemptLedgerRead {
   if (text === null) return { status: 'ok', receipts: [] };
@@ -190,8 +193,9 @@ export function parseAttemptLedger(text: string | null): AttemptLedgerRead {
   const lines = text.split('\n');
   for (let index = 0; index < lines.length; index += 1) {
     const raw = lines[index];
-    if (raw === '' && index === lines.length - 1) continue;
-    const receipt = parseReceiptLine(raw);
+    const isFinalSegment = index === lines.length - 1;
+    if (raw === '' && isFinalSegment) continue;
+    const receipt = isFinalSegment ? null : parseReceiptLine(raw);
     if (receipt === null) return { status: 'unreadable', line: index + 1 };
     receipts.push(receipt);
   }

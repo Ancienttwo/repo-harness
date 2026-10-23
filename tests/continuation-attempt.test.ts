@@ -9,8 +9,8 @@
  */
 import { describe, expect, test } from 'bun:test';
 import { createHash } from 'crypto';
-import { existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'fs';
-import { join, relative } from 'path';
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'fs';
+import { dirname, join, relative } from 'path';
 import { spawn, spawnSync } from 'child_process';
 import type { AttemptReceiptV1, ContinuationEnvelopeV1 } from '../src/core/state/types';
 import {
@@ -432,6 +432,146 @@ describe('circuit breaker scope', () => {
 
       write(cwd, LEDGER, '{not json\n');
       expect(envelopeFrom(cwd)).toEqual(blocked);
+    });
+  }, 30_000);
+});
+
+const REPAIR_COMMAND = 'repo-harness state attempt-repair --json';
+const QUARANTINE = /^\.ai\/harness\/runs\/continuation\/attempts\.torn-\d+$/;
+
+interface RepairDocument {
+  readonly ledger_path: string;
+  readonly quarantined_path: string | null;
+  readonly ledger_status: 'ok' | 'unreadable';
+  readonly unreadable_line: number | null;
+}
+
+function ledgerBytes(cwd: string): Buffer {
+  return readFileSync(join(cwd, LEDGER));
+}
+
+function receiptLine(unitRef = PLAN): string {
+  return JSON.stringify({
+    protocol: 1,
+    kind: 'repo-harness-attempt-receipt',
+    unit_ref: unitRef,
+    before_progress_token: null,
+    after_progress_token: null,
+    outcome: 'resumed',
+    recorded_at: '2026-10-23T00:00:00.000Z',
+  });
+}
+
+/** A receipt cut inside a multi-byte character, as a crashed append can leave it. */
+function tornReceiptBytes(): Buffer {
+  const line = Buffer.from(receiptLine('plans/計畫.md'), 'utf-8');
+  return line.subarray(0, line.indexOf(Buffer.from('計', 'utf-8')) + 1);
+}
+
+/** Append raw bytes after the complete receipts; returns the bytes before the tear. */
+function tearLedger(cwd: string, torn: Buffer): Buffer {
+  const intact = existsSync(join(cwd, LEDGER)) ? ledgerBytes(cwd) : Buffer.alloc(0);
+  mkdirSync(dirname(join(cwd, LEDGER)), { recursive: true });
+  writeFileSync(join(cwd, LEDGER), Buffer.concat([intact, torn]));
+  return intact;
+}
+
+function repair(cwd: string): RepairDocument {
+  const run = runStateCli(cwd, ['state', 'attempt-repair', '--json']);
+  expect(run.stderr).toBe('');
+  expect(run.status).toBe(0);
+  return JSON.parse(run.stdout) as RepairDocument;
+}
+
+describe('unterminated ledger tail', () => {
+  test('an append onto a torn tail is refused and leaves the ledger bytes unchanged', () => {
+    withLedgerRepo((cwd) => {
+      const token = envelopeFrom(cwd).progress_token;
+      recordStalled(cwd, token);
+      tearLedger(cwd, tornReceiptBytes());
+      const before = ledgerBytes(cwd);
+
+      for (const args of [
+        { outcome: 'completed', before: token, after: token },
+        { outcome: 'resumed' },
+      ]) {
+        const run = runStateCli(cwd, attemptArgv(args));
+        expect(run.status).toBe(1);
+        expect(run.stdout).toBe('');
+        expect(run.stderr).toContain(LEDGER);
+        expect(run.stderr).toContain(REPAIR_COMMAND);
+        expect(ledgerBytes(cwd).equals(before)).toBe(true);
+      }
+    });
+  }, 30_000);
+
+  test('a complete receipt without its newline is unreadable, so the breaker cannot go blind', () => {
+    const line = receiptLine();
+    expect(parseAttemptLedger(`${line}\n${line}`)).toEqual({ status: 'unreadable', line: 2 });
+    expect(parseAttemptLedger(line)).toEqual({ status: 'unreadable', line: 1 });
+
+    withLedgerRepo((cwd) => {
+      tearLedger(cwd, Buffer.from(line, 'utf-8'));
+      const halted = envelopeFrom(cwd);
+      expect(halted.route).toBe('halt');
+      expect(halted.reason).toBe('attempt_ledger_unreadable');
+
+      const repaired = repair(cwd);
+      expect(repaired.ledger_status).toBe('ok');
+      expect(ledgerBytes(cwd).length).toBe(0);
+      expect(readFileSync(join(cwd, repaired.quarantined_path ?? '')).toString('utf-8')).toBe(line);
+      expect(envelopeFrom(cwd).route).toBe('continue_active_plan');
+    });
+  }, 30_000);
+
+  test('the repair quarantines the torn bytes and keeps every complete receipt', () => {
+    withLedgerRepo((cwd) => {
+      const token = envelopeFrom(cwd).progress_token;
+      recordStalled(cwd, token);
+      record(cwd, { outcome: 'halted', before: token, after: token });
+      const torn = tornReceiptBytes();
+      const intact = tearLedger(cwd, torn);
+      expect(envelopeFrom(cwd).reason).toBe('attempt_ledger_unreadable');
+
+      const repaired = repair(cwd);
+      expect(repaired).toEqual({
+        ledger_path: LEDGER,
+        quarantined_path: repaired.quarantined_path,
+        ledger_status: 'ok',
+        unreadable_line: null,
+      });
+      expect(repaired.quarantined_path).toMatch(QUARANTINE);
+      expect(ledgerBytes(cwd).equals(intact)).toBe(true);
+      expect(readFileSync(join(cwd, repaired.quarantined_path ?? '')).equals(torn)).toBe(true);
+      expect(envelopeFrom(cwd).route).toBe('continue_active_plan');
+
+      recordStalled(cwd, token);
+      expect(ledgerLines(cwd)).toHaveLength(3);
+
+      const settled = ledgerBytes(cwd);
+      expect(repair(cwd)).toEqual({
+        ledger_path: LEDGER,
+        quarantined_path: null,
+        ledger_status: 'ok',
+        unreadable_line: null,
+      });
+      expect(ledgerBytes(cwd).equals(settled)).toBe(true);
+    });
+  }, 30_000);
+
+  test('the repair removes only the torn tail; a malformed middle line stays unreadable', () => {
+    withLedgerRepo((cwd) => {
+      const intact = Buffer.from(`{not json\n${receiptLine()}\n`, 'utf-8');
+      const torn = tornReceiptBytes();
+      tearLedger(cwd, Buffer.concat([intact, torn]));
+
+      const repaired = repair(cwd);
+      expect(repaired.ledger_status).toBe('unreadable');
+      expect(repaired.unreadable_line).toBe(1);
+      expect(repaired.quarantined_path).toMatch(QUARANTINE);
+      expect(ledgerBytes(cwd).equals(intact)).toBe(true);
+      expect(readFileSync(join(cwd, repaired.quarantined_path ?? '')).equals(torn)).toBe(true);
+      expect(envelopeFrom(cwd).reason).toBe('attempt_ledger_unreadable');
     });
   }, 30_000);
 });
