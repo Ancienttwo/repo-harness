@@ -15,13 +15,15 @@ For legacy global rules without a recorded language, run
 
 - `repo-harness update` does not replace a running archctx background daemon.
   The daemon stays on the old version until you authorize `daemon upgrade`.
-- When the daemon version does not match, `update` still exits 0. The
-  `check shared ArchContext daemon` step reports `skipped` with
-  "Daemon readiness pending; verified packages retained." The reminder goes
-  to stderr. Verified packages stay installed.
+- When the daemon version does not match, `update` still exits 0 and keeps
+  the verified packages. The update output shows "Daemon readiness pending;
+  verified packages retained." with the version difference, the
+  authorization reminder and `action: upgrade-archctx-runtime`. This text is
+  in the successful `reconcile installed candidate runtime` step on stdout.
+  It is not on the stderr of `update`.
 - Until the upgrade, `repo-harness architecture-projection status --json`
-  shows `mismatch` in `projectionProvider.state` and `daemonRuntime.state`,
-  and `next` is `upgrade-archctx-runtime`.
+  in an adopted repository shows `mismatch` in `projectionProvider.state`
+  and `daemonRuntime.state`, and `next` is `upgrade-archctx-runtime`.
 - To finish, tell the agent that it can run `daemon upgrade` through the
   managed package-local archctx and its Node runtime. A global install has no
   `archctx` on PATH. The upgrade replaces the shared daemon and interrupts

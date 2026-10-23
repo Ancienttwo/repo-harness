@@ -21,7 +21,8 @@
 - Authorized scope: release documentation, version mirror checks, local
   pre-publish gates, one commit, a push and a ready-for-review PR. No merge,
   npm publish, tag or GitHub Release.
-- This batch changes the changelog and this record. `package.json`,
+- This batch changes the changelog, this record and one line wrap in both
+  `external-tooling.md` copies. `package.json`,
   `assets/skill-version.json` and README references stay at 0.24.0.
   `archctx` and `archctx-contracts` stay at exact 0.9.1.
 
@@ -29,18 +30,25 @@
 
 - After `repo-harness update`, a running archctx background daemon stays on
   the old version. The user must authorize `daemon upgrade`.
-- On a daemon version mismatch, `update` exits 0. The
-  `check shared ArchContext daemon` step reports `skipped` with
-  "Daemon readiness pending; verified packages retained." The step stays
-  pending with the `upgrade-archctx-runtime` action.
+- On a daemon version mismatch, `update` exits 0. In the candidate runtime,
+  the `check shared ArchContext daemon` step reports `skipped` with
+  "Daemon readiness pending; verified packages retained." The detail adds
+  the version difference, the authorization reminder and
+  `action: upgrade-archctx-runtime`. The candidate writes it to its stderr.
+- The parent `update` puts that candidate stderr into the `ok` detail of the
+  `reconcile installed candidate runtime` step. That step prints on stdout.
+  The stderr of `update` carries only failed steps, so the reminder is not
+  there.
 - Until the upgrade, `repo-harness architecture-projection status --json`
-  shows `mismatch` in `projectionProvider.state` and `daemonRuntime.state`.
+  in an adopted repository shows `mismatch` in `projectionProvider.state`
+  and `daemonRuntime.state`.
 - The agent runs `daemon upgrade` through the managed package-local archctx
   and its Node runtime, after user authorization. The upgrade interrupts
   other daemon clients. The agent then verifies the daemon status and checks
   the repository CodeGraph index.
 - Sources: `docs/reference-configs/external-tooling.md` lines 1146-1167,
-  `src/cli/commands/global-runtime.ts` lines 1479-1485 and
+  `src/cli/commands/global-runtime.ts` lines 282-298, 813-818 and
+  1479-1485, `src/cli/index.ts` lines 320-324 and
   `src/effects/architecture/archctx-provider.ts` lines 486-501.
 - The changelog `### Upgrade` section gives the same step.
 
@@ -83,19 +91,35 @@ Each item is evidence for its own SHA. It is not a pass for `b6d272cf0`.
   release documentation diff. Only this record was completed after the
   gates. The changelog, runtime files and test inputs did not change
   afterward.
-- Changelog SHA-256 at verification, the same before and after the gates:
+- Why the gates ran twice: hosted CI on the first PR head `381c1cac1`
+  failed `tests/action-command-skills.test.ts` ("shipped guidance runs
+  archctx only through the managed command"). The cause is a line wrap from
+  #874 in `external-tooling.md`: a line started with `archctx on PATH`, and
+  the bare-command check matched it. A Codex review also found that the
+  upgrade text put the daemon reminder on stderr. The parent `update` prints
+  it on stdout. This batch rewrapped the line in both `external-tooling.md`
+  copies and corrected the upgrade text. The changelog and a shipped file
+  changed, so every gate ran again. The first run is historical evidence for
+  the first head only.
+- Changelog SHA-256 at verification, the same before and after the second
+  gate run:
+  `36f5b855ee82770177640fef4a024ad172ef74830266dd82240f3f70b3e58126`.
+  The first run hashed
   `a129563640ae937ffb568f9e4d0f087eef3e5e5b93cffef739b56be4ebea9263`.
 - `bun run check:type`: exit 0.
 - `bun run check:helpers`: exit 0; helper projection matches.
 - `bun run check:reference-configs`: exit 0; 25 documents match.
 - `bun run test:files tests/installed-copy-sync.test.ts
   tests/readme-dx.test.ts tests/skill-version.test.ts
-  tests/effective-state.test.ts tests/hook-runtime.test.ts --timeout 60000
-  --max-concurrency 1`: exit 0; 107 pass, 0 fail across five files
-  (29, 4, 10, 46 and 18).
+  tests/effective-state.test.ts tests/hook-runtime.test.ts
+  tests/action-command-skills.test.ts
+  tests/reference-configs-projection.test.ts --timeout 60000
+  --max-concurrency 1`: exit 0; 133 pass, 0 fail across seven files
+  (29, 4, 10, 46, 18, 24 and 2). The last two files cover the CI failure
+  and the two document copies.
 - `bash scripts/check-npm-release.sh --prepublish`: exit 0; the registry
   lookup returns 404 for repo-harness 0.24.0, so it is unpublished.
-- `bun run check:release`: exit 0 in 136 seconds. Benchmark matrix:
+- `bun run check:release`: exit 0 in 175 seconds. Benchmark matrix:
   31 pass, 0 fail. The package and install smoke uses one shared tarball.
   `check-tarball-install-smoke.sh` installs `repo-harness-0.24.0.tgz`,
   serves the packaged Operator and starts the packaged CLI bins.
@@ -110,9 +134,10 @@ Each item is evidence for its own SHA. It is not a pass for `b6d272cf0`.
   version) and README show 0.24.0. `package.json` and `bun.lock` pin
   `archctx` and `archctx-contracts` at exact 0.9.1.
 - `git diff --check`: exit 0, run last on the final text.
+- Logs of the second run: `/tmp/rh-release-0240-refresh-IVoJ9i/rerun-1/`.
 - No test assertion, timeout or release tool changed.
-- The full suite is outside this gate sequence. Hosted CI for the PR head
-  is pending.
+- The full suite is outside this gate sequence. Hosted CI for the new PR
+  head is pending.
 
 ## Release readiness items
 
