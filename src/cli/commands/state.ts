@@ -12,7 +12,12 @@ import type {
 } from '../../core/state/types';
 import type { CommandOutcome } from '../../core/state/command-outcome';
 import type { WorkflowOperationKind, WorkflowProfile } from '../../core/workflow/profile';
-import { appendAttemptReceipt } from '../../effects/state/attempt-ledger-store';
+import {
+  appendAttemptReceipt,
+  ATTEMPT_LEDGER_PATH,
+  repairAttemptLedgerTail,
+  type AttemptLedgerRepair,
+} from '../../effects/state/attempt-ledger-store';
 import {
   readActiveSprintPath,
   readCanonicalTargetRef,
@@ -157,6 +162,33 @@ export function attemptStateCommand(
   return { exitCode: 0, stdout: `${JSON.stringify(built.receipt, null, 2)}\n`, stderr: '' };
 }
 
+export interface AttemptRepairCommandDependencies {
+  readonly repoRoot: string;
+  readonly nowMs: number;
+  readonly repair: (repoRoot: string, nowMs: number) => AttemptLedgerRepair;
+}
+
+/**
+ * Pure command projection for `state attempt-repair`. A repair that leaves a
+ * malformed middle line is still a document: `ledger_status` reports it, and
+ * that line needs a manual fix.
+ */
+export function attemptRepairStateCommand(deps: AttemptRepairCommandDependencies): CommandOutcome {
+  let result: AttemptLedgerRepair;
+  try {
+    result = deps.repair(deps.repoRoot, deps.nowMs);
+  } catch (error) {
+    return operationalFailure(error);
+  }
+  const document = {
+    ledger_path: ATTEMPT_LEDGER_PATH,
+    quarantined_path: result.quarantinedPath,
+    ledger_status: result.ledger.status,
+    unreadable_line: result.ledger.status === 'unreadable' ? result.ledger.line : null,
+  };
+  return { exitCode: 0, stdout: `${JSON.stringify(document, null, 2)}\n`, stderr: '' };
+}
+
 export interface BoardCommandOptions {
   readonly sprint?: string;
   readonly targetRef?: string;
@@ -275,6 +307,18 @@ export function buildStateCommand(): Command {
         repoRoot: process.cwd(),
         nowMs: Date.now(),
         append: appendAttemptReceipt,
+      }));
+    });
+
+  state
+    .command('attempt-repair')
+    .description('Quarantine an unterminated last line of the attempt ledger and truncate to the last complete receipt')
+    .requiredOption('--json', 'Output the repair result as JSON')
+    .action(() => {
+      writeOutcome(attemptRepairStateCommand({
+        repoRoot: process.cwd(),
+        nowMs: Date.now(),
+        repair: repairAttemptLedgerTail,
       }));
     });
 

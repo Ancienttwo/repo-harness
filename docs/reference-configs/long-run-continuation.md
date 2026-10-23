@@ -69,7 +69,7 @@ A closeout ownership conflict is a helper-level refusal, not an envelope halt re
 | Halt reason | Remedy |
 |---|---|
 | `no_progress` | Investigate why the unit stopped moving. Then either make real progress (a token change clears the breaker by itself), or, if the turns were legitimately non-material, record `repo-harness state attempt --unit-ref <unit> --outcome resumed` to override explicitly |
-| `attempt_ledger_unreadable` | Inspect `.ai/harness/runs/continuation/attempts.jsonl`, then truncate it. The ledger is liveness evidence, not authority: resetting it loses nothing durable and the loop resumes from the same envelope |
+| `attempt_ledger_unreadable` | Run `repo-harness state attempt-repair --json`. It moves an unterminated last line (a torn append) to `attempts.torn-<ms>` beside the ledger and truncates the ledger to its last complete receipt. `state attempt` refuses to append until this repair runs. If `ledger_status` is still `unreadable`, `unreadable_line` names a malformed complete line: inspect `.ai/harness/runs/continuation/attempts.jsonl` and remove that line by hand. The ledger is liveness evidence, not authority: resetting it loses nothing durable and the loop resumes from the same envelope |
 | `blockers:*`, `plan_status:*`, `stale:active_plan_marker` | Fix the named authority artifact. These are the existing Effective State vocabulary; the envelope does not add remedies of its own |
 
 ## The Receipt-Invisibility Invariant

@@ -8,6 +8,7 @@ summary: Routes the next loop action from read-only Effective State and stops a 
 responsibilities:
   - Project one continuation envelope from Effective State and the active Sprint text with a first-match route table.
   - Append attempt receipts to the ignored per-worktree ledger and fail closed on an unparseable line.
+  - Refuse an append onto an unterminated last line, and on explicit `state attempt-repair` move that line to a quarantine file and truncate to the last complete receipt.
   - Convert an actionable route to halt after two trailing completed attempts with an unchanged progress token.
 source:
   include:
