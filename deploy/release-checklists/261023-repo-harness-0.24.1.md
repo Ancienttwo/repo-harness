@@ -41,6 +41,35 @@
 - Version: "#871 关闭后发 0.24.1：保留 v0.24.0 的 tag 和 Release 不动，npm
   从 0.23.1 直接到 0.24.1。"
 
+### Owner decisions (2026-10-24)
+
+Owner's words:
+
+> 接受黄灯 1、5、6、7。黄灯 2、3、8 发布后本机 update 时处理。黄灯 4 的安全
+> hook 我另行审查，不阻塞发布。给 CodeGraph 索引误报开一个 follow-up
+> issue。#885 的 CI 和 Codex review 都通过后，用 --match-head-commit
+> 2c53ac8a36ebe144d6cf3e8d77493bfedd62e628 squash-merge，记录两个 SHA。tag
+> v0.24.1 打在 #885 的 squash 提交上，然后建 GitHub Release。npm publish
+> 我自己跑 web auth。
+
+Result for each flag in "Yellow flags":
+
+- Accepted: flag 1 (CodeGraph project index), flag 5 (Skills CLI), flag 6
+  (PATH archctx and `deploy/env/.env.example`) and flag 7 (skill eval
+  evidence unavailable). Each has its reason in "Yellow flags".
+- Flags 2, 3 and 8 (Claude adapter projection, global rules markers,
+  leftovers): they wait for the owner's local `repo-harness update` after
+  publication.
+- Flag 4 (security config): the owner reviews the two `herdr-agent-state.sh`
+  hooks separately. It does not block the publication.
+- The flag 1 follow-up is #888
+  (https://github.com/Ancienttwo/repo-harness/issues/888), opened
+  2026-10-23T16:38:13Z.
+- GO: squash-merge #885 with `--match-head-commit
+  2c53ac8a36ebe144d6cf3e8d77493bfedd62e628` after green CI and Codex review,
+  tag `v0.24.1` on that squash commit, then the GitHub Release. The owner
+  runs `npm publish` with web authentication.
+
 ### Hold
 
 - Gate issues: #862, #871, #873, #875, #880 and #881. All are closed.
@@ -299,3 +328,55 @@ owner's decision for 0.24.1.
 
 - Status on 2026-10-23: phase 2 complete. No `v0.24.1` tag, no GitHub
   Release and no npm publication.
+- Status on 2026-10-23 (UTC), after the owner's GO: npm and GitHub
+  publication verified. The parent session read back each fact. This batch
+  read back again the merge commit, the tags, both Releases, the registry
+  fields, the two CI runs and #888.
+  - Merge: #885 squash commit `c21aa3079495bdefb163e0ebaf9a79062abfe7da`,
+    parent `599d492c802cf7a265e7f1d515b74f3ef5988b91`, reviewed head
+    `2c53ac8a36ebe144d6cf3e8d77493bfedd62e628`. Rollback:
+    `git revert c21aa3079495bdefb163e0ebaf9a79062abfe7da`. A revert does not
+    undo the npm publication.
+  - Daily report: the main push CI run 39987761330 at `c21aa3079` passed
+    (https://github.com/Ancienttwo/repo-harness/actions/runs/39987761330).
+    The "CI report and recovery" run 39987808629 passed and uploaded the
+    artifact `daily-report-39987761330-1`
+    (https://github.com/Ancienttwo/repo-harness/actions/runs/39987808629).
+  - Tag `v0.24.1`: annotated, tag object
+    `72805d5553d6d6f475ada875d5a01b81c1576bae`, target
+    `c21aa3079495bdefb163e0ebaf9a79062abfe7da`, tagger Ancienttwo at
+    2026-10-23T16:35:01Z, message "repo-harness 0.24.1". Tag `v0.24.0`
+    still points to tag object `8bc8b79e2f296dc9c8abe0f5b614a5c3e5e5d8d2`.
+  - GitHub Release:
+    https://github.com/Ancienttwo/repo-harness/releases/tag/v0.24.1, title
+    "repo-harness 0.24.1", published 2026-10-23T16:36:26Z, latest, not a
+    draft, not a prerelease. Asset `repo-harness-0.24.1.tgz`, 10507490
+    bytes, `sha256:5bcd6c2cf9e2cc5fd35cb9ca8a30d6ed02146055c954720371d0cf6ad6a54ffa`.
+    The `v0.24.0` Release did not change (published
+    2026-10-23T09:43:18Z).
+  - npm: the owner ran `npm publish <tarball> --auth-type=web` in the
+    foreground, and npm printed "+ repo-harness@0.24.1". Registry time
+    2026-10-23T16:47:21.858Z. `dist-tags.latest` is 0.24.1.
+    `dist.shasum` `517d43771debe12708d7fe199122e88f8c12df37`.
+    `dist.integrity`
+    `sha512-J70khwjDvTtmsXYE4UsSjyjEZJ0UwqG8s9D3Qjj2KVitOUY5i+sg28R6jokF2bmKeQmxdfhsz8bnBC7GMvm71w==`.
+    `fileCount` 645, `unpackedSize` 16803160. The versions list goes from
+    0.23.1 to 0.24.1. 0.24.0 is not on npm.
+  - Tarball: packed in a `/tmp` clone at the tag. 645 entries, 10507490
+    bytes. Its SHA-256 equals the Release asset digest. Its SHA-1 and
+    SHA-512 equal the registry values.
+  - `bun run check:release-published 0.24.1` with a fresh temporary HOME
+    and `CLAUDECODE` and `AI_AGENT` unset: exit 0 in 57 s. Output:
+    "runtime-evidence-receipt: valid published_tarball, clean_install,
+    installed_hook_readback" and "[release-published] OK: registry,
+    dist-tag, tarball, tag, and local version files agree."
+  - Clean install warning: npm 11.19.1 warned that 3 transitive packages
+    have install scripts that `allowScripts` does not cover: koffi 3.1.6
+    (from archctx), protobufjs 7.6.6 and @google/genai 2.21.0 (from the
+    @botiverse/oar dependency tree). These versions are not new: 0.23.1
+    has the same @botiverse/oar 0.62.1, and its archctx 0.8.1 has the same
+    koffi 3.1.6. On this host (macOS arm64), koffi loads in a bun install.
+    No other platform was tested.
+  - Open owner actions: the local `repo-harness update` for flags 2, 3 and
+    8, then `repo-harness update --report-language <follow|zh-CN|en>` and
+    `repo-harness upgrade`. The flag 4 hook review.
