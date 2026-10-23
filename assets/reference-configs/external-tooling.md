@@ -1046,26 +1046,35 @@ change alters responsibilities, entrypoints, relations or flows, the Agent uses
 human prose and debt. Feature PRs do not apply or commit generated regions or
 the projection manifest. The archctx rolling writer publishes those outputs.
 
-### Rolling writer (this repository)
+### Rolling writer
 
-`bun run architecture:writer <status|once|follow>` resolves the pinned package
-and a compatible Node runtime. It fixes the upstream target to `origin`, base
-`main`, branch `archctx/projection`, publisher `gh`. `follow` delegates the
-300-second loop to archctx. archctx owns the shared lock, worktree, render,
+Run `repo-harness architecture-projection publish <status|once|follow>` in the
+target repository. From a source checkout of repo-harness, run
+`bun <checkout>/src/cli/index.ts architecture-projection publish <mode>`, also
+in the target repository. Run `bun install --frozen-lockfile` in the checkout
+first: a stale `node_modules` fails the archctx version check. The command
+resolves the archctx pinned by the repo-harness package and a compatible Node
+runtime. It runs archctx in the target repository root, and archctx derives the
+writer repository from that directory. It fixes the upstream target to `origin`,
+base `main`, branch `archctx/projection`, publisher `gh`. `follow` delegates the
+300-second loop to archctx. The command forwards SIGINT and SIGTERM to archctx
+and returns its exit code. archctx owns the shared lock, worktree, render,
 commit, push and rolling PR. It never pushes main. No GitHub App, new secret,
 Actions writer or repo-harness publication loop is used. The operator supplies
 existing Git and gh authentication. The resulting PR runs normal CI. The merge
 rule for that PR is below.
 
 Set `ARCHCONTEXT_STATE_DIR` to one explicit absolute path shared by this
-repository's writer invocations. Keep it stable across restarts. On the Mini,
-put the writer checkout and state under `/tmp/`. Do not run a second service
-with a different state root. Inspect `bun run architecture:writer status`.
-For initial setup, run `once`; if archctx reports missing code facts, read
-`data.worktreePath` from `status`, run `codegraph init -y <worktreePath>`, then
-run `once` again. Initialize only that writer-owned worktree. Do not replace a
-shared daemon or index other workspaces. Inspect facts again if archctx reports
-a stale index after the base moves; the launcher does not invent a repair.
+repository's writer invocations. Keep it stable across restarts. On the
+repo-harness Mini only, put the writer checkout and state under `/tmp/`. Do not
+run a second service with a different state root. Inspect
+`repo-harness architecture-projection publish status` with that same state dir;
+another state dir reports an empty state. For initial setup, run `once`. If
+the archctx result reports missing code facts, read `data.worktreePath` from
+`status`, run `codegraph init -y <worktreePath>`, then run `once` again. Initialize only that
+writer-owned worktree. Do not replace a shared daemon or index other workspaces.
+Inspect facts again if archctx reports a stale index after the base moves; the
+command does not invent a repair.
 
 Run `follow` under the operator's process supervisor after setup. Inspect each
 JSON run result and `status`: `busy` means another writer holds the lock;
@@ -1073,7 +1082,7 @@ JSON run result and `status`: `busy` means another writer holds the lock;
 `failed` carries the upstream error. Do not interpret a live process as
 successful publication.
 
-The launcher passes `--accept-observed-major-change` to `once` and `follow`,
+The command passes `--accept-observed-major-change` to `once` and `follow`,
 not to `status`. The writer accepts an observed major change only when archctx
 can prove it. archctx declines the acceptance while any capability has an
 unprovable P1 or P2 proof. The run result is then `human-action-required` with

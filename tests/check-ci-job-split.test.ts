@@ -6,7 +6,6 @@ import { spawnSync } from 'node:child_process';
 import { analyzeAffectedTests, bundleInputPaths, discoverDailyInputs, discoverPlatformInputs, platformImportClosure, selectAffectedTests, selectCoverage, selectPlatformCoverage } from '../scripts/select-ci-coverage';
 import { auditDroppedTests } from '../scripts/ci-edge-audit';
 import { replayNeedsSource } from '../scripts/replay-ci-coverage';
-import { architectureWriterArgs } from '../src/effects/architecture/projection-writer';
 import { ARCHITECTURE_JOB, ARCHITECTURE_SUMMARY_PATH } from '../scripts/report-ci';
 
 const ROOT = resolve(import.meta.dir, '..');
@@ -919,18 +918,6 @@ describe('architecture lanes', () => {
     expect(result.summary).toEqual(summary);
     expect(result.stdout).not.toContain('[ci] typecheck');
     expect(result.stderr).not.toContain('apply in a PR');
-  });
-
-  test('writer delegates a fixed rolling target and loop to archctx with explicit state', () => {
-    const status = architectureWriterArgs('status', '/tmp/writer-state');
-    expect(status).toEqual(['projection', 'publish-status', '--remote', 'origin', '--base', 'main', '--json']);
-    expect(status).not.toContain('--accept-observed-major-change');
-    const once = architectureWriterArgs('once', '/tmp/writer-state');
-    expect(once).toEqual(['projection', 'publish', '--remote', 'origin', '--base', 'main', '--branch', 'archctx/projection', '--publisher', 'gh', '--accept-observed-major-change', '--json']);
-    expect(architectureWriterArgs('follow', '/tmp/writer-state')).toEqual([...once.slice(0, -1), '--follow', '--interval', '300', '--json']);
-    expect(() => architectureWriterArgs('once', undefined)).toThrow('ARCHCONTEXT_STATE_DIR');
-    expect(() => architectureWriterArgs('once', 'relative')).toThrow('absolute');
-    expect(() => architectureWriterArgs('push-main', '/tmp/writer-state')).toThrow('Usage');
   });
 
 });
