@@ -1,6 +1,6 @@
 # Plan: herdr-portal Skill (Claude App → Claude CLI in Herdr)
 
-> **Status**: DRAFT. Design only. It needs Aimpact's GO before any Skill file, CLI code or test. This Draft PR contains only this plan.
+> **Status**: APPROVED. Aimpact locked Q1–Q5 at the recommended defaults on 2026-10-23. The implementation PR on `claude/herdr-portal-skill-impl` carries this plan and the v1 Skill.
 > **Created**: 20261023-0942 (Asia/Taipei)
 > **Slug**: herdr-portal-skill
 > **Baseline**: `origin/main@61a8a9d8e`

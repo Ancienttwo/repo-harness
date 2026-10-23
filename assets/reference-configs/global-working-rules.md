@@ -87,6 +87,7 @@ When a task requires broad research, repo archaeology, multi-source synthesis, o
 - Agents may inspect each other's history with `herdr agent read <name> --source recent-unwrapped` in the explicit session. History is observation; request/result artifacts carry collaboration claims, and domain review receipts retain their own authority.
 - After the whole task completes, close the panes you created with `herdr pane close`. Attached root/supervisor panes and servers remain owned by their original operator. Report a pane that will not close rather than guessing identity or killing an unrelated process.
 - Missing or unusable herdr stops terminal collaboration with a clear error. Do not fall back to tmux or nest terminal multiplexers. Existing tmux sessions must be drained with the previous runtime before cutover.
+- `repo-harness-herdr-portal` runs only on explicit invocation. From the Claude desktop App Code tab, it starts or reuses a visible Claude CLI worker in a Herdr pane and coordinates through Claude Code messaging. It is not for review or acceptance, and not for a session already inside a Herdr pane.
 
 ## Review Trigger Discipline
 
