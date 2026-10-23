@@ -312,11 +312,13 @@ env、skill eval）。adapter 和规则标记在发布后本机 update 时处理
     `2d5ac2a034956dfd546d8b288144bfb7fa22fa82` (#877 squash). Read with
     `git cat-file` and `git rev-parse`.
   - GitHub Release `v0.24.0`: published 2026-10-23T09:43:18Z, not a draft,
-    not a prerelease. Asset `repo-harness-0.24.0.tgz`, 10503697 bytes,
-    SHA-256 `72cbcd0279dfdcc0c338e367394636d708e1996a8da658f5e5f681a719f1eac9`.
-    Read with `gh api repos/Ancienttwo/repo-harness/releases/tags/v0.24.0`;
-    the asset was not downloaded. The parent release session reported 645
-    tarball entries; this entry did not check that count again.
+    not a prerelease. Asset `repo-harness-0.24.0.tgz`, 10503697 bytes.
+  - SHA-256 `72cbcd0279dfdcc0c338e367394636d708e1996a8da658f5e5f681a719f1eac9`:
+    verified through the API. The asset `digest` from
+    `gh api repos/Ancienttwo/repo-harness/releases/tags/v0.24.0` is equal to
+    it. The asset was not downloaded.
+  - Tarball entry count 645: recorded by the release session at
+    publication, not verified here.
   - npm: the owner held the publication until the gate issues #862, #871,
     #873, #875, #880 and #881 closed. `npm view repo-harness dist-tags`
     shows `{ latest: '0.23.1' }`, and 0.24.0 is not in the version list.
