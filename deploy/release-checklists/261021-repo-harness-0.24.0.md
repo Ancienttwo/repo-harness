@@ -9,6 +9,8 @@
   #840, #841, #846, #847, #852 (#850), #849, #843, #845, #853 (#851),
   #855, #854, #857, #858, #859 (#856), #861, #860, #864 (#736 R3), #865,
   #869, #870 (#867), #872 (#866) and #874.
+- The tag target adds only release preparation commits to these 33. See
+  "Readiness check (2026-10-23)", section "Subject".
 - #847 prepared 0.24.0 but did not publish it. #865 expanded the notes
   through #864 at base `19832259e57de81fe7644f91b10cabe6a321d1b5`. This batch expands them through #874.
   The changelog keeps its 2026-10-21 date.
@@ -159,8 +161,20 @@ Each item is evidence for its own SHA. It is not a pass for `b6d272cf0`.
   "Acceptance status" apply to this tree.
 - The readiness PR changes only this record. After it merges, the tree of
   `main` is not `be30bb56`. The gate evidence carries over because the diff
-  is this record only. The owner selects the tag target: `949b8b749` or the
-  new squash commit.
+  is this record only.
+- The owner selects one tag target. Each option is exact:
+  - `949b8b749`: `git log v0.23.1..949b8b749` has 34 commits. They are the
+    33 commits in "Scope and authority" and #876. #876 is the release
+    preparation batch that this record describes as "this batch": the
+    changelog, this record and the `external-tooling.md` line wrap.
+  - The squash commit of the readiness PR: those 34 commits and the
+    readiness commit. The readiness commit changes only this record.
+  - #876 and the readiness commit are release preparation. They have no
+    changelog entry, as with #847 and #865. The coverage receipt counts the
+    33 commits through `b6d272cf0`. It remains exact for both options,
+    because the extra commits are only these preparation commits.
+  - After the owner selects the target, update "Publication checklist" with
+    that SHA before the tag is created.
 - The check ran in a disposable worktree of `949b8b749` after
   `bun install --frozen-lockfile` (exit 0; 339 packages). It used the
   candidate source: `doctor.cli-version` reports 0.24.0. The installed global
@@ -197,7 +211,7 @@ Each item is evidence for its own SHA. It is not a pass for `b6d272cf0`.
 | CodeGraph project index | `setup check --target both --check-updates --json` | Exit 1, `status: blocked`. The only `fail` is `doctor.codegraph-index`: `index=not-initialized` in the release worktree. The owner's main checkout has `.codegraph/`. | yes |
 | Claude adapter projection | same | `status.adapter.claude`: 5/6 managed entries; `PreToolUse.bash` missing. #861 adds this route in 0.24.0; the host runs 0.23.1. | yes |
 | Global rules markers | same | `global-rules.claude` and `global-rules.codex`: legacy repo-harness rules without markers | yes |
-| Security config | `security scan --json` | `status: warn`; 2 `unmanaged-hook-command` warnings in `~/.claude/settings.json`; both are reviewed exceptions (2026-07-09 and 2026-06-15) | yes |
+| Security config | `security scan --json` | `status: warn`; 2 active `unmanaged-hook-command` findings: the SessionStart hook `herdr-agent-state.sh` in `~/.claude/settings.json` and in `~/.codex/hooks.json`. No reviewed exception matches them. 2 other hooks are reviewed exceptions in `reviewedFindings`. | yes |
 | Skills CLI | `setup check` | `runtime.skills_cli`: missing, optional; Waza bootstrap runs through `bunx` | yes |
 | Deploy SQL order | `repo-harness run check-deploy-sql-order` | exit 0, `[deploy-sql] OK`; no `operations.deploy_sql` in policy, so `deploy/sql/` with `ordered4` applies | no |
 | Deploy surface | read `deploy/` | README, runbooks and release checklists are present. `deploy/env/` holds only `.gitkeep`; `deploy/env/.env.example` is absent. | yes |
@@ -223,9 +237,14 @@ The owner decides acceptance. No flag below is accepted yet.
    real HOME, so it is the owner's action. Proposed acceptance, pending owner
    acceptance: the owner maintains these files by hand, and the release
    package does not read them.
-4. Security config warnings. Proposed acceptance, pending owner acceptance:
-   both hooks are local safety hooks with recorded reviews in the user
-   config. Verification: `repo-harness security scan --json`.
+4. Security config: 2 active findings. They are unresolved and have no
+   recorded review. Repair: the owner reviews the two `herdr-agent-state.sh`
+   SessionStart commands. For each command, the owner adds a reviewed
+   exception (`filePath`, `ruleId`, `command`, `reason`, `reviewedAt`,
+   `reviewedBy`) to `~/.repo-harness/config.json`, where the other two
+   reviewed exceptions are. Then `repo-harness security scan --json` must
+   report `status: ok`. The hooks are host config and are not in the
+   release package.
 5. Skills CLI missing. Proposed acceptance, pending owner acceptance: the
    tool is optional and Waza reports synced and up to date without it.
    Repair: install the external Skills CLI, then run
