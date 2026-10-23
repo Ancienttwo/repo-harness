@@ -1231,7 +1231,9 @@ describe('skill projection ownership', () => {
     writePath(join(packageRoot, 'package.json'), JSON.stringify({ name: 'repo-harness', version: '0.20.0' }));
     mkdirSync(join(packageRoot, 'assets/skill-commands'), { recursive: true });
     cpSync(join(ROOT, 'assets/skill-commands/manifest.json'), join(packageRoot, 'assets/skill-commands/manifest.json'));
-    cpSync(join(ROOT, 'assets/skills/repo-harness-cross-review'), join(packageRoot, 'assets/skills/repo-harness-cross-review'), { recursive: true });
+    for (const skill of ['repo-harness-cross-review', 'repo-harness-herdr-portal']) {
+      cpSync(join(ROOT, 'assets/skills', skill), join(packageRoot, 'assets/skills', skill), { recursive: true });
+    }
     return packageRoot;
   }
 
@@ -1274,13 +1276,16 @@ describe('skill projection ownership', () => {
     const { canonical, source } = writeManagedHostSurfaces(env, 'full');
     const packageRoot = packageAt(env.HOME!, source);
     rmSync(canonical); symlinkSync(packageRoot, canonical);
-    const paths = ['.claude', '.codex'].map(host => join(env.HOME!, host, 'skills/repo-harness-cross-review'));
+    const paths = [
+      ...['.claude', '.codex'].map(host => join(env.HOME!, host, 'skills/repo-harness-cross-review')),
+      join(env.HOME!, '.claude/skills/repo-harness-herdr-portal'),
+    ];
     for (const dest of paths) rmSync(dest, { recursive: true, force: true });
     expect(syncCrossReviewSkills(packageRoot, 'both', env).every(step => step.status === 'ok')).toBe(true);
     const first = applyInstallProfile('full', env).state;
     const links = paths.map(dest => ({ inode: lstatSync(dest).ino, target: readlinkSync(dest) }));
     const steps = syncCrossReviewSkills(packageRoot, 'both', env);
-    expect(steps).toHaveLength(2);
+    expect(steps).toHaveLength(paths.length);
     expect(steps.every(step => step.status === 'ok' && step.detail === 'already present')).toBe(true);
     const second = applyInstallProfile('full', env).state;
     for (const [index, dest] of paths.entries()) {
@@ -1296,10 +1301,15 @@ describe('skill projection ownership', () => {
     const { source } = writeManagedHostSurfaces(env, 'full');
     mkdirSync(join(source, 'assets/skill-commands'), { recursive: true });
     cpSync(join(ROOT, 'assets/skill-commands/manifest.json'), join(source, 'assets/skill-commands/manifest.json'));
-    const bundled = join(source, 'assets/skills/repo-harness-cross-review');
-    cpSync(join(ROOT, 'assets/skills/repo-harness-cross-review'), bundled, { recursive: true });
-    const paths = ['.claude', '.codex'].map(host => join(env.HOME!, host, 'skills/repo-harness-cross-review'));
-    for (const dest of paths) {
+    const links = [
+      ...['.claude', '.codex'].map(host => ({ skill: 'repo-harness-cross-review', dest: join(env.HOME!, host, 'skills/repo-harness-cross-review') })),
+      { skill: 'repo-harness-herdr-portal', dest: join(env.HOME!, '.claude/skills/repo-harness-herdr-portal') },
+    ].map(({ skill, dest }) => ({ dest, bundled: join(source, 'assets/skills', skill) }));
+    for (const skill of ['repo-harness-cross-review', 'repo-harness-herdr-portal']) {
+      cpSync(join(ROOT, 'assets/skills', skill), join(source, 'assets/skills', skill), { recursive: true });
+    }
+    const paths = links.map(link => link.dest);
+    for (const { dest, bundled } of links) {
       rmSync(dest, { recursive: true, force: true });
       mkdirSync(join(dest, '..'), { recursive: true });
       symlinkSync(bundled, dest);
@@ -1307,11 +1317,11 @@ describe('skill projection ownership', () => {
     const transaction = beginInstallHostTransaction(paths, env);
     try {
       const steps = syncCrossReviewSkills(source, 'both', env);
-      expect(steps).toHaveLength(2);
+      expect(steps).toHaveLength(paths.length);
       expect(steps.every(step => step.status === 'ok' && step.detail === 'already present')).toBe(true);
       const state = applyInstallProfile('full', env, new Date(), transaction).state;
       expect(state.ownership_manifest.filter(surface => paths.includes(surface.path))).toEqual([]);
-      for (const dest of paths) expect(readlinkSync(dest)).toBe(bundled);
+      for (const { dest, bundled } of links) expect(readlinkSync(dest)).toBe(bundled);
     } finally { commitInstallHostTransaction(transaction); }
   }));
 

@@ -15,6 +15,7 @@ import {
   assertProjectionApplyReadbackResult,
   assertProjectionResult,
   decodeArchitectureDebtReport,
+  decodeArchitectureHandEdits,
   decodeDocsAnchorsReport,
   decodeNativeContextExport,
   type NativeContextSource,
@@ -265,7 +266,7 @@ function codeFactsFixCommand(state: DoctorCodeFacts['state']): string {
   return state === 'index-missing' ? `codegraph ${CODEGRAPH_INIT_ARGS.join(' ')}` : 'codegraph index .';
 }
 
-/** Decode the code facts contract from archctx@0.9.0 doctor for both CLI callers. */
+/** Decode the code facts contract from archctx@0.9.1 doctor for both CLI callers. */
 function readArchitectureCodeFacts(client: ArchctxClient, maximumMs: number): DoctorCodeFacts {
   const value = client.json(['doctor', '--json'], maximumMs);
   const facts = isRecord(value) && isRecord(value.data) ? value.data.codeFacts : null;
@@ -330,6 +331,13 @@ export function archctxCapabilities(repoRoot: string, options: ArchctxProviderOp
   try { assertArchctxVersion(value, policy.requiredVersion); }
   catch (error) { throw new ArchctxClientError({ code: 'RH_ARCHCTX_PACKAGE_MISMATCH', action: 'update-repo-harness', message: error instanceof Error ? error.message : String(error) }); }
   return { resolved, capabilities: value as ArchctxCapabilitiesV1 };
+}
+
+export function readArchitectureHandEdits(repoRoot: string, options: ArchctxProviderOptions = {}) {
+  const policy = options.policy ?? loadArchitectureProjectionPolicy(options.env);
+  if (policy.provider === 'disabled') throw new Error('architecture projection provider is disabled');
+  const client = new ArchctxClient(repoRoot, policy.requiredVersion, options);
+  return decodeArchitectureHandEdits(client.data(['docs', 'drift', '--profile', 'repo-harness/v1', '--json'], policy.timeoutMs));
 }
 
 /** Lifecycle readback is separate from the CLI-only capabilities handshake. */
@@ -427,7 +435,7 @@ export function stopWorkspaceArchitectureDaemons(repoRoot: string, canonicalWork
 
 const PROJECTION_MANIFEST_INCOMPATIBLE = 'projection-manifest-incompatible';
 const COMMITTED_PROJECTION_MANIFEST = 'docs/architecture/.projection-manifest.json';
-/** The archctx model entry. archctx 0.9.0 checkpoint refuses a repository without it. */
+/** The archctx model entry. archctx 0.9.1 checkpoint refuses a repository without it. */
 export const ARCHCONTEXT_MANIFEST = '.archcontext/manifest.yaml';
 
 /**

@@ -33,6 +33,6 @@ Create these only when the agent has concrete repo evidence or the user asks:
 - Let capability `CLAUDE.md` and `AGENTS.md` carry local contract projections; root docs stay concise.
 - Keep complete workstream TODOs in `tasks/workstreams/<domain>/<capability>/`; contract blocks should link to them instead of becoming task logs.
 - Keep onboarding docs split by reader: agents read active source artifacts first; humans review the Human Review Card, diff, latest trace, and rollback first.
-- `.archcontext/model/` owns architecture boundaries. After a model change, run `repo-harness architecture-projection apply --json` to regenerate the machine sections of `docs/architecture/`. Agents own semantic snapshots, the hand-written module sections and embedded Mermaid source.
+- `.archcontext/model/` owns architecture boundaries. Agents change the model, semantic decisions and human-written sections. The archctx rolling writer publishes generated regions and diagrams. Do not apply and commit generated output in feature PRs.
 - Treat Markdown Mermaid as the only architecture diagram artifact; do not generate standalone HTML.
 - Treat `mermaid` as an external authoring/review skill at `~/.codex/skills/mermaid`; do not copy or inline its assets into generated repos.

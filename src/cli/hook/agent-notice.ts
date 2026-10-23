@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { ArchitectureDebtReportV1 } from 'archctx-contracts';
+import { ARCHITECTURE_DEBT_COMMAND, managedArchctxAction } from '../../core/architecture/projection';
 import type { CapabilityOwnership } from '../../core/state/types';
 import { ARCHCONTEXT_MANIFEST, ArchctxClientError, capabilitySource, changedSinceReviewBase, checkpointArchitectureDebt, type ArchctxProviderOptions } from '../../effects/architecture/archctx-provider';
 import { readGlobalArchitectureConfiguration } from '../../effects/architecture/projection-config';
@@ -13,11 +14,10 @@ import { boundedHookDiagnostic } from './hook-protocol';
 const STATE_DIR = '.ai/harness/state/';
 const MARKER = `${STATE_DIR}agent-notice`;
 const STATUS_MARKER = `${STATE_DIR}agent-notice-status`;
-const COMMAND = 'repo-harness architecture-debt --json';
 const STATUS_COMMAND = 'repo-harness architecture-projection status --json';
 const MAX_BYTES = 800;
 const MAX_MESSAGE_BYTES = 200;
-// The codes that archctx 0.9.0 checkpoint and package resolution throw for a setup step
+// The codes that archctx 0.9.1 checkpoint and package resolution throw for a setup step
 // that the operator has not done. They are not faults.
 const INACTIVE_CODES: ReadonlySet<string> = new Set([
   'AC_MODEL_ADOPTION_REQUIRED', 'AC_CODE_FACTS_UNAVAILABLE', 'AC_CODE_FACTS_NOT_READY', 'RH_ARCHCTX_PACKAGE_MISSING',
@@ -83,11 +83,11 @@ export function renderAgentNotice(report: ArchitectureDebtReportV1): NoticeBlock
       : item.details.origin === 'node-summary' ? 'summary'
       : item.details.origin === 'node-responsibility' ? `responsibilities[${item.details.responsibilityIndex}]`
       : 'human citations';
-    return `- ${item.kind} ${singleLine(item.capabilityIds[0] ?? report.scope.capabilityIds[0] ?? 'unowned')}; ${singleLine(field)}. Run: ${singleLine(item.action)}`;
+    return `- ${item.kind} ${singleLine(item.capabilityIds[0] ?? report.scope.capabilityIds[0] ?? 'unowned')}; ${singleLine(field)}. Run: ${managedArchctxAction(item.action)}`;
   });
   return {
-    content: boundedBlock(`[ArchitectureDebt] ${items.length} new in ${capability}`, rows, items.length, count => `(+${count} more: ${COMMAND})`),
-    systemMessage: `Architecture: ${items.length} debt ${items.length === 1 ? 'item' : 'items'} in ${capability}; run ${COMMAND}.`,
+    content: boundedBlock(`[ArchitectureDebt] ${items.length} new in ${capability}`, rows, items.length, count => `(+${count} more: ${ARCHITECTURE_DEBT_COMMAND})`),
+    systemMessage: `Architecture: ${items.length} debt ${items.length === 1 ? 'item' : 'items'} in ${capability}; run ${ARCHITECTURE_DEBT_COMMAND}.`,
   };
 }
 
@@ -134,7 +134,7 @@ function failureBlock(error: unknown): NoticeBlock {
   const text = error instanceof ArchctxClientError ? singleLine(error.providerMessage) : errorText(error);
   return {
     content: `[Architecture] notice unavailable (${code}): ${clip(text, MAX_MESSAGE_BYTES)}`,
-    systemMessage: `Architecture: notice unavailable (${code}); run ${COMMAND}.`,
+    systemMessage: `Architecture: notice unavailable (${code}); run ${ARCHITECTURE_DEBT_COMMAND}.`,
   };
 }
 
@@ -147,7 +147,7 @@ function statusOf(error: unknown): Status {
 function readiness(repoRoot: string, env: NodeJS.ProcessEnv | undefined): Status {
   const global = readGlobalArchitectureConfiguration(env);
   if (global.initialized && global.policy.provider === 'disabled') return { kind: 'disabled' };
-  // archctx 0.9.0 checkpoint refuses a repository without this file (AC_MODEL_ADOPTION_REQUIRED, model-missing).
+  // archctx 0.9.1 checkpoint refuses a repository without this file (AC_MODEL_ADOPTION_REQUIRED, model-missing).
   if (!existsSync(join(repoRoot, ARCHCONTEXT_MANIFEST))) return { kind: 'inactive', cause: `no ArchContext model (${ARCHCONTEXT_MANIFEST} is missing)` };
   if (!global.initialized) return { kind: 'inactive', cause: 'global architecture configuration is missing; run repo-harness update' };
   return { kind: 'active' };

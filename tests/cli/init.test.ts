@@ -1452,6 +1452,11 @@ describe("bundled host runtimes", () => {
       join(root, "assets", "skills", "repo-harness-cross-review", "SKILL.md"),
       "---\nname: repo-harness-cross-review\n---\n",
     );
+    mkdirSync(join(root, "assets", "skills", "repo-harness-herdr-portal"), { recursive: true });
+    writeFileSync(
+      join(root, "assets", "skills", "repo-harness-herdr-portal", "SKILL.md"),
+      "---\nname: repo-harness-herdr-portal\n---\n",
+    );
     mkdirSync(join(root, "assets", "skills", "claude-plan"), { recursive: true });
     writeFileSync(
       join(root, "assets", "skills", "claude-plan", "SKILL.md"),

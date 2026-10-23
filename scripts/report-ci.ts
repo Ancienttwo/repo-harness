@@ -72,23 +72,21 @@ async function ensureRepairIssue(api: GitHubAPI, root: string, key: string, titl
   return { issue_url: winner.html_url, delivery: 'reused' };
 }
 
-/** The daily CI job whose failure means stale architecture documents. */
+/** The daily CI job that checks render equivalence. Keep its provider identity stable. */
 export const ARCHITECTURE_JOB = 'Daily architecture freshness';
 /** The daily architecture job uploads this file; ci-report.yml downloads it here. */
 export const ARCHITECTURE_SUMMARY_PATH = '.ci-architecture/summary.json';
 /** The Bot decision table for each architecture check result. */
 export const ARCHITECTURE_EVIDENCE = 'assets/skill-commands/repo-harness-check/references/architecture-evidence.md';
-const ARCHITECTURE_MANIFEST = 'docs/architecture/.projection-manifest.json';
 /** First cell of each row in the architecture evidence table. */
 const ARCHITECTURE_ROWS = {
-  noop: '`noop`',
-  manifest: '`planned`, only `docs/architecture/.projection-manifest.json` in `files`',
-  rendered: '`planned`, other `docs/architecture/` files',
+  equivalent: '`renderEquivalent: true`',
+  drift: '`renderEquivalent: false`',
   major: '`human-action-required` with `unresolved-major-change`',
   decision: 'Other `humanActions` reason codes, or `adoption-required`',
   error: 'Command error, `blocked` or a failure status',
 } as const;
-export interface ArchitectureSummary { status: string; staleNodes: string[]; files: string[]; humanActions: Record<string, unknown>[] }
+export interface ArchitectureSummary { status: string; renderEquivalent: boolean | null; differingPaths: string[]; humanActions: Record<string, unknown>[] }
 /** summaryText is null when the daily job uploaded no summary. */
 export interface ArchitectureInput { summaryText: string | null; evidence: string }
 
@@ -100,7 +98,8 @@ export function parseArchitectureSummary(text: string): ArchitectureSummary {
   };
   if (typeof summary.status !== 'string' || !summary.status) throw new Error('Architecture summary status must be a string');
   if (!Array.isArray(summary.humanActions)) throw new Error('Architecture summary humanActions must be an array');
-  return { status: summary.status, staleNodes: strings(summary.staleNodes, 'staleNodes'), files: strings(summary.files, 'files'),
+  if (summary.renderEquivalent !== null && typeof summary.renderEquivalent !== 'boolean') throw new Error('Architecture summary renderEquivalent must be boolean or null');
+  return { status: summary.status, renderEquivalent: summary.renderEquivalent, differingPaths: strings(summary.differingPaths, 'differingPaths'),
     humanActions: summary.humanActions.map(action => record(action, 'Architecture human action')) };
 }
 
@@ -108,8 +107,8 @@ export function parseArchitectureSummary(text: string): ArchitectureSummary {
 export function architectureActionRow(summary: ArchitectureSummary | null, evidence: string): string {
   const status = summary?.status;
   const kind: keyof typeof ARCHITECTURE_ROWS = !summary ? 'error'
-    : status === 'noop' ? 'noop'
-    : status === 'planned' ? (summary.files.every(file => file === ARCHITECTURE_MANIFEST) ? 'manifest' : 'rendered')
+    : summary.renderEquivalent === true ? 'equivalent'
+    : summary.renderEquivalent === false ? 'drift'
     : status === 'human-action-required' && summary.humanActions.length > 0
       && summary.humanActions.every(action => action.reasonCode === 'unresolved-major-change') ? 'major'
     : status === 'human-action-required' || status === 'adoption-required' ? 'decision'
@@ -161,14 +160,14 @@ export async function reportCI(repo: string, runId: number, api: GitHubAPI, arch
         report.errors.push(`Architecture summary invalid: ${message(error)}`);
       }
     }
-    if (summary) lines.push('Architecture summary:', '', '```json', JSON.stringify(summary, null, 2), '```', '', `Stale nodes: ${summary.staleNodes.join(', ') || 'none'}`);
+    if (summary) lines.push('Architecture summary:', '', '```json', JSON.stringify(summary, null, 2), '```', '', `Render differences: ${summary.differingPaths.join(', ') || 'none'}`);
     try {
       lines.push('', `Action from \`${ARCHITECTURE_EVIDENCE}\`:`, '', '| Result | Meaning | Bot decision |', '| --- | --- | --- |', architectureActionRow(summary, architecture?.evidence ?? ''));
     } catch (error) {
       lines.push(safeText(message(error)));
       report.errors.push(`Architecture action unavailable: ${message(error)}`);
     }
-    return { subject: `architecture freshness ${summary?.status ?? 'without summary'}`, body: lines.join('\n') };
+    return { subject: `architecture render ${summary?.status ?? 'without summary'}`, body: lines.join('\n') };
   };
   if (run.conclusion !== 'success') {
     try {

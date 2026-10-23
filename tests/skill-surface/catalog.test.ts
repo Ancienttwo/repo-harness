@@ -373,11 +373,11 @@ describe("skill-surface catalog: the real manifest.json on disk", () => {
   });
 
   // Current closed catalog excludes the retired headless plan skill.
-  test("covers all 13 repo-owned entries plus the 9 external skills (22 packages)", () => {
+  test("covers all 14 repo-owned entries plus the 9 external skills (23 packages)", () => {
     if (resolution.status !== "valid") throw new Error("expected valid catalog");
-    expect(resolution.catalog.packages.length).toBe(22);
+    expect(resolution.catalog.packages.length).toBe(23);
     const repoOwned = resolution.catalog.packages.filter((p) => p.kind !== "external");
-    expect(repoOwned.length).toBe(13);
+    expect(repoOwned.length).toBe(14);
     expect(repoOwned.map(p => p.name)).not.toContain("claude-plan");
     const external = resolution.catalog.packages.filter((p) => p.kind === "external");
     expect(external.map((p) => p.name).sort()).toEqual([
@@ -478,17 +478,20 @@ describe("skill-surface catalog: target post-cutover discovery matrix", () => {
     expect(facadesForProfile(catalog, "minimal")).not.toContain("repo-harness-architecture");
   });
 
-  test("hostSkillPlacements: full places repo-harness-cross-review on both hosts without retired plan skill", () => {
+  test("hostSkillPlacements: full places repo-harness-cross-review on both hosts and repo-harness-herdr-portal on claude only", () => {
     expect(hostSkillPlacements(catalog, "minimal")).toEqual({ claude: [], codex: [] });
     expect(hostSkillPlacements(catalog, "full")).toEqual({
-      claude: ["repo-harness-cross-review"],
+      claude: ["repo-harness-cross-review", "repo-harness-herdr-portal"],
       codex: ["repo-harness-cross-review"],
     });
   });
 
   test("hostSkillPlacements without a profile (init.ts's init flow) is the unconditional full-tier bundle", () => {
     const unconditional = hostSkillPlacements(catalog);
-    expect(unconditional).toEqual({ claude: ["repo-harness-cross-review"], codex: ["repo-harness-cross-review"] });
+    expect(unconditional).toEqual({
+      claude: ["repo-harness-cross-review", "repo-harness-herdr-portal"],
+      codex: ["repo-harness-cross-review"],
+    });
   });
 
   test("explicit ChatGPT setup is never implied by either install profile", () => {
@@ -578,14 +581,14 @@ describe("skill-surface catalog: target post-cutover discovery matrix", () => {
       "repo-harness-ship", "repo-harness-architecture", "obsidian-memory", "windows-python-first",
     ]);
     expect(externalSkills).toEqual([
-      "repo-harness-cross-review", "herdr", "think", "hunt", "check", "health", "mermaid", "reverse-skill-router",
+      "repo-harness-cross-review", "repo-harness-herdr-portal", "herdr", "think", "hunt", "check", "health", "mermaid", "reverse-skill-router",
       "obsidian-markdown", "obsidian-cli",
     ]);
   });
 
   test("profileOwnedSkillNames matches the post-cutover cross-model-acceptance + external set", () => {
     expect([...profileOwnedSkillNames(catalog)].sort()).toEqual(
-      ["think", "hunt", "check", "health", "mermaid", "repo-harness-cross-review"].sort(),
+      ["think", "hunt", "check", "health", "mermaid", "repo-harness-cross-review", "repo-harness-herdr-portal"].sort(),
     );
   });
 
@@ -595,7 +598,7 @@ describe("skill-surface catalog: target post-cutover discovery matrix", () => {
     expect(expectations.planningCapabilityPaths).toEqual([
       "assets/skills/repo-harness-product/SKILL.md",
     ]);
-    expect(expectations.crossModel).toEqual(["repo-harness-cross-review"]);
+    expect(expectations.crossModel).toEqual(["repo-harness-cross-review", "repo-harness-herdr-portal"]);
   });
 });
 
@@ -672,7 +675,8 @@ test("audience source selection returns disjoint complete load groups and reject
   const lines = (body: string) => body.trim().split("\n");
   expect(lines(bot.stdout).map((line) => line.split("\t")[0])).toEqual([
     "repo-harness", "repo-harness-check", "repo-harness-product", "repo-harness-ship",
-    "obsidian-memory", "repo-harness-cross-review", "repo-harness-chatgpt", "repo-harness-strategy",
+    "obsidian-memory", "repo-harness-cross-review", "repo-harness-herdr-portal", "repo-harness-chatgpt",
+    "repo-harness-strategy",
   ]);
   expect(lines(worker.stdout).map((line) => line.split("\t")[0])).toEqual([
     "repo-harness-setup", "repo-harness-test", "repo-harness-architecture", "windows-python-first",

@@ -1,5 +1,7 @@
 # Plan: 以「架构债」重建架构闭环（epic #690）
 
+> **R3 owner override (2026-10-20, reconfirmed 2026-10-23)**: No GitHub App or new secrets. archctx 0.9.1 owns the rolling writer (upstream #380 and #387). §4.3 and Q3 below use this decision. R4 already shipped separately; do not redo it to enforce the historical same-version constraint.
+>
 > **Status**: LOCKED（Aimpact 2026-10-14 决定 §8 Q1–Q9，全部采用推荐默认值）。只是设计，不含实现代码。每个子 issue 开工前还要单独 GO。
 > **Created**: 20261014-0209
 > **Slug**: architecture-debt-loop-690
@@ -223,19 +225,17 @@ DebtItemV1
 - A 让 Agent 完全不再跑 apply。PR 只改模型和人写文字。
 - 用滚动 PR，不直接 push main。分支保护不用开 bypass。生成提交照样过 Required / CI，并有审计记录。
 
-job 设计：
-1. 触发：`push` 到 main、每日 schedule、`workflow_dispatch`。`concurrency: architecture-render`，不取消正在运行的 job。
-2. 在 main 的这个 SHA 上：`bun install --frozen-lockfile`，`codegraph init`，`repo-harness architecture-projection apply --json`。
-3. 没有文件变化：结束。有变化：从这个 SHA 创建或重置 `bot/architecture-render` 分支，提交，强推这个 bot 分支，创建或更新唯一的 PR，打开 squash auto-merge。
-4. main 在 job 运行期间前进：下一次 job 重新生成，覆盖 bot 分支。job 是幂等的。
-5. 某个 capability 被 `proof-failure` 或 `render-blocked` 挡住：其他 capability 照常写（需要 #327 的 capability 隔离）。被挡的 capability 进入 job summary 和 daily repair issue，issue 写明 debtId 和修复命令。
-6. job 只写生成区和 manifest。人写区由 archctx 的 region 合同保护。
+writer 设计（更新后的 R3）：
+1. 本仓库的 `bun run architecture:writer follow` 委托 archctx 0.9.1 的 `projection publish --follow --interval 300`。固定 remote `origin`、base `main`、branch `archctx/projection`、publisher `gh`。
+2. archctx 独占锁、writer worktree、render、commit、push 和滚动 PR。只推 `archctx/*`，不推 main。上游 #387 绑定实际 push destination 的 base。
+3. 操作者提供已有 Git/gh 身份和固定 `ARCHCONTEXT_STATE_DIR`。不引入 App、secret 或 Actions writer。先通过 `publish-status` 定位 worktree 并初始化 CodeGraph；服务启动由操作者执行。
+4. repo-harness 不运行第二个循环，不解析 generated markers，不自动接受 major change。失败和 human actions 保留为上游输出。Bot 按已授权的正常 CI/merge 流程处理 rolling PR。
 
 PR 一侧的规则：
 - PR 不改生成区和 manifest。PR check 用 archctx 判断 diff 是否手改了生成区（上游需求，见 U2），手改时给 `::warning::`。repo-harness 不自己解析标记。
 - main 上的 freshness 定义为「渲染结果等于已提交字节」。daily lane 检查这个等式。不相等时，repair issue 报告写入者失败（job 失败、bot PR 未合入或被挡的 capability），不列 stale 节点。
 
-Q3 已决定使用只授权本仓库的 GitHub App token。App 的创建、安装和 secret 由 owner 执行，必须在 R3 开工前完成。不选 B，不保留 C。
+Q3 已被 owner 的 no-App 决定替代。已有操作者身份发布 rolling PR；不新增凭据，不直接 push main。
 
 ## 5. 会话内信号路径
 
@@ -348,7 +348,7 @@ repo-harness：
 
 - **R1 升级 pin，删除快照副本**。依赖 U1。删除 §6.1 第 1、2、4、5 项。验收：hook bundle、`architecture-projection` 测试、clean-room 脚本改用 archctx 快照。
 - **R2 消费债务报告**。依赖 U3、R1。删除 §6.1 第 3 项（最低 renderer 声明随 U3 的合同一起交付）。`ArchctxClient` 的债务解码；`repo-harness architecture debt --json`；PR lane 改用 `complete`；删除 `state owed` 和 `owed-capabilities.ts` 的 CLI 与 CI 消费者。
-- **R3 唯一写入者**。依赖 U2、R1，以及 owner 创建的 GitHub App 和 secret（Q2、Q3 已决定）。render workflow、bot PR、PR 手改生成区警告、daily 改为渲染等价检查；删除 §6.1 第 10 项的 stale 失败和第 11 项的指导文字。
+- **R3 唯一写入者**。依赖已发布的 U2、R1 和 archctx rolling writer。消费上游 writer、rolling PR、PR 手改生成区警告、daily 改为渲染等价检查；删除 §6.1 第 10 项的 stale 失败和第 11 项的指导文字。
 - **R4 会话内 `AgentNotice`**。依赖 R2（Q1、Q4 已决定）。替换 SessionStart、Stop、Pi PostToolUse 的 owed 投递，新增 Codex UserPromptSubmit；删除 §6.1 第 9 项剩余部分；更新 #617 相关测试。
 - **R5 生命周期绑定**。依赖 U1（#322）。closeout 时按 state 目录 `daemon stop`。
 - **R6 读者经 archctx**（#677 剩余部分）。依赖 U4。删除 §6.1 第 6–8 项。
@@ -365,10 +365,10 @@ graph LR
   R1 --> R3
   R2 --> R4["R4 AgentNotice in session"]
   U4["U4 read API fit"] --> R6["R6 readers through archctx"]
-  APP{{"owner action: GitHub App + secret (Q3)"}} --> R3
+  WRITER["archctx 0.9.1 rolling writer, no App"] --> R3
 ```
 
-建议顺序：R1 → R2 → R4；R3 在 U2 和 GitHub App 就绪之后与 R2 并行开发；R5 在 R1 之后任意时间；R6 独立。
+建议顺序：R1 → R2 → R4；R3 在 U2 和 archctx rolling writer 就绪之后与 R2 并行开发；R5 在 R1 之后任意时间；R6 独立。
 
 发布约束：R3 和 R4 进同一个版本（§8 Q6）。R3 让 PR 不再改 manifest；如果 R4 还没发布，hook 里的 owed 规则会对每次编辑报 owed，并让 Agent 跑 apply，与唯一写入者冲突。
 
@@ -396,7 +396,7 @@ graph LR
 2. **唯一写入者选哪个**。
    决定（采用推荐，2026-10-14）：A，post-merge job，用滚动 bot PR 加 squash auto-merge（§4.3）。不直接 push main。
 3. **bot 凭据**。`GITHUB_TOKEN` 开的 PR 不触发 CI，所以需要别的凭据。
-   决定（采用推荐，2026-10-14）：只授权本仓库的 GitHub App installation token，权限 `contents: write` 和 `pull_requests: write`，secret 由 owner 创建和保管。这属于凭据和权限边界，owner 已批准这个方向。App 的创建和安装也由 owner 执行。
+   更新决定（owner，2026-10-20）：不用 GitHub App，不新增 secrets。archctx rolling writer 使用操作者已有的 Git/gh 身份。R3 消费 archctx 0.9.1，不创建 repo-harness Actions bot。
 4. **Codex 的投递事件**。Codex Stop 必须静默，`PostToolUse.bash` 只给 Pi。
    决定（采用推荐，2026-10-14）：Codex 用 UserPromptSubmit，带同样的 3 s 预算和去重。不加跨事件的待投递缓存。
 5. **PR 债务检查是否变成 required**。
@@ -404,7 +404,7 @@ graph LR
 6. **`minimum_harness_version`**。0.22.1 已经是 npm `latest`，epic 的「发布 0.22.x」已完成。仓库 marker（`.ai/harness/workflow-contract.json`）还没有声明最低版本。
    决定（采用推荐，2026-10-14）：R3 和 R4 放进同一个版本发布，marker 的 `minimum_harness_version` 设为这个版本。原因：R3 之后 PR 不再改 manifest，旧 hook 的 owed 规则会对每次编辑都报 owed，并让 Agent 去跑 apply。设了最低版本，旧 hook 只提示升级。
 7. **下游仓库**。render workflow 是否随模板发给下游？
-   决定（采用推荐，2026-10-14）：先只在本仓库运行一个发布周期。之后作为可选模板提供，默认不启用，因为它需要 Q3 的凭据。
+   决定（采用推荐，2026-10-14）：先只在本仓库运行一个发布周期。之后作为可选模板提供，默认不启用；操作者需配置现有身份、固定状态目录和 writer 服务。
 8. **`stale-citation` 的会话投递**。
    决定（采用推荐，2026-10-14）：上游修好误报（U2）之前只进 daily。之后只在被触及 capability 的文档中作为 medium 投递。
 9. **债务计算的 base**。

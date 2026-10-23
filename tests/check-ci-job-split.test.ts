@@ -1,11 +1,12 @@
 import { describe, expect, test } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { analyzeAffectedTests, bundleInputPaths, discoverDailyInputs, discoverPlatformInputs, platformImportClosure, selectAffectedTests, selectCoverage, selectPlatformCoverage } from '../scripts/select-ci-coverage';
 import { auditDroppedTests } from '../scripts/ci-edge-audit';
 import { replayNeedsSource } from '../scripts/replay-ci-coverage';
+import { architectureWriterArgs } from '../src/effects/architecture/projection-writer';
 import { ARCHITECTURE_JOB, ARCHITECTURE_SUMMARY_PATH } from '../scripts/report-ci';
 
 const ROOT = resolve(import.meta.dir, '..');
@@ -793,9 +794,8 @@ describe('architecture lanes', () => {
     head: { sha: 'a'.repeat(40), debt: { coverage: coverage.head ?? 'complete', coverageReasonCodes: coverage.headCodes ?? [], items: introduced } },
     base: { ref: 'abc123', sha: 'b'.repeat(40), debtDigest: 'sha256:base', coverage: coverage.base ?? 'complete', coverageReasonCodes: coverage.baseCodes ?? [] },
     introduced, resolvedIds: ['debt.gone'] });
-  const planned = JSON.stringify({ status: 'planned', freshness: { staleNodes: [{ nodeId: 'capability.workflow-engine.workflow-state' }, { nodeId: 'capability.verification.evals-checks' }] },
-    files: [{ path: 'docs/architecture/.projection-manifest.json' }], humanActions: [] });
-  const noop = JSON.stringify({ status: 'noop', freshness: { ok: true, staleNodes: [] }, files: [], humanActions: [] });
+  const planned = JSON.stringify({ edits: [{ path: 'docs/architecture/a.md', reasonCode: 'projection-generated-region-manually-edited' }] });
+  const noop = JSON.stringify({ edits: [] });
 
   // Real check-ci.sh with stub CLI results. `bun -e` and the shell logic stay real.
   function runLane(args: string[], fixture: { debt?: string; debtExit?: number; check?: string; checkExit?: number; codegraphExit?: number; summary?: boolean }) {
@@ -804,6 +804,8 @@ describe('architecture lanes', () => {
     try {
       mkdirSync(join(root, 'repo/scripts/lib'), { recursive: true }); mkdirSync(bin);
       for (const path of ['scripts/check-ci.sh', 'scripts/lib/ci-run-tests.sh']) writeFileSync(join(root, 'repo', path), readFileSync(join(ROOT, path)));
+      // The advisory imports the action map from the real source tree.
+      symlinkSync(join(ROOT, 'src'), join(root, 'repo/src'));
       writeFileSync(join(root, 'debt.json'), fixture.debt ?? '');
       writeFileSync(join(root, 'check.json'), fixture.check ?? '');
       writeFileSync(join(bin, 'bun'), [
@@ -825,20 +827,33 @@ describe('architecture lanes', () => {
         debtArgs: existsSync(join(root, 'debt-args')) ? readFileSync(join(root, 'debt-args'), 'utf8').trim() : null,
         summary: existsSync(summaryPath) ? JSON.parse(readFileSync(summaryPath, 'utf8')) : null,
       };
-    } finally { rmSync(root, { recursive: true, force: true }); }
+    } finally {
+      // Remove the link first, so the recursive delete cannot reach the real source tree.
+      if (existsSync(join(root, 'repo/src'))) unlinkSync(join(root, 'repo/src'));
+      rmSync(root, { recursive: true, force: true });
+    }
   }
   const warnings = (stdout: string) => stdout.split('\n').filter(line => line.startsWith('::warning '));
 
-  test('new PR debt warns once per item with its subjects and action, then the stale documents warn, and the lane exits 0', () => {
-    const result = runLane(['architecture-advisory', '--base', 'abc123'], { debt: debt([debtItem(1), debtItem(2, [])]), check: planned });
+  test('new PR debt warns once per item with its subjects and action, then hand-edited generated output warns, and the lane exits 0', () => {
+    const result = runLane(['architecture-advisory', '--base', 'abc123'], { debt: debt([debtItem(1), debtItem(2, [])]), check: planned, checkExit: 0 });
     expect(result.status, result.stderr).toBe(0);
     expect(result.debtArgs).toBe('src/cli/index.ts architecture-debt --json --base abc123');
     expect(result.checked).toBe(true);
     expect(result.stdout).toContain('[ci] Architecture debt: head coverage complete. Introduced 2. Resolved 1.');
     expect(warnings(result.stdout)).toEqual([
-      '::warning title=Architecture debt introduced::flow-proof-failed (no-direct-call) in capability.module-1. Action: archctx flows check --json',
-      '::warning title=Architecture debt introduced::flow-proof-failed (no-direct-call) in src/module-2.ts. Action: archctx flows check --json',
-      '::warning title=Architecture documents stale::Status: planned. Stale nodes: capability.workflow-engine.workflow-state, capability.verification.evals-checks. In this PR run: repo-harness architecture-projection apply --json. Then commit docs/architecture/.',
+      '::warning title=Architecture debt introduced::flow-proof-failed (no-direct-call) in capability.module-1. Action: repo-harness architecture-debt --json',
+      '::warning title=Architecture debt introduced::flow-proof-failed (no-direct-call) in src/module-2.ts. Action: repo-harness architecture-debt --json',
+      '::warning title=Architecture generated output hand edited::docs/architecture/a.md: projection-generated-region-manually-edited. Keep model and human prose changes in this PR; the archctx rolling writer owns generated output.',
+    ]);
+  });
+
+  test('a stale-anchor action names the repo-harness anchors command, never a bare archctx from PATH', () => {
+    const staleAnchor = { ...debtItem(1), kind: 'stale-anchor', reasonCode: 'missing-path', action: 'archctx docs anchors --json' };
+    const result = runLane(['architecture-advisory', '--base', 'abc123'], { debt: debt([staleAnchor]), check: noop, checkExit: 0 });
+    expect(result.status, result.stderr).toBe(0);
+    expect(warnings(result.stdout)).toEqual([
+      '::warning title=Architecture debt introduced::stale-anchor (missing-path) in capability.module-1. Action: repo-harness architecture-projection anchors --json',
     ]);
   });
 
@@ -848,7 +863,7 @@ describe('architecture lanes', () => {
     expect(result.checked).toBe(true);
     expect(warnings(result.stdout)).toEqual([]);
     expect(result.stdout).toContain('[ci] No new architecture debt.');
-    expect(result.stdout).toContain('[ci] Architecture documents are current.');
+    expect(result.stdout).toContain('[ci] No hand-edited generated output in this PR.');
   });
 
   test('debt annotations stop at 20 and one more warning counts the rest', () => {
@@ -892,30 +907,30 @@ describe('architecture lanes', () => {
     expect(warnings(noFacts.stdout).map(line => line.split('::')[1])).toEqual(['warning title=Architecture debt check failed', 'warning title=Architecture check failed']);
   });
 
-  test('the daily lane fails on stale documents and writes the summary for the report', () => {
-    const result = runLane(['architecture'], { check: planned, summary: true });
-    expect(result.status).toBe(1);
+  test.each([
+    [{ status: 'planned', renderEquivalent: true, differingPaths: [], humanActions: [] }, 0],
+    [{ status: 'planned', renderEquivalent: false, differingPaths: ['docs/architecture/a.md'], humanActions: [] }, 1],
+    [{ status: 'human-action-required', renderEquivalent: null, differingPaths: [], humanActions: [{ reasonCode: 'unprovable-required-flow' }] }, 1],
+  ])('daily consumes render equivalence, preserves incomplete results, and saves the writer repair summary: %j', (summary, exit) => {
+    const result = runLane(['architecture'], { check: JSON.stringify(summary), checkExit: exit as number, summary: true });
+    expect(result.status, result.stderr).toBe(exit);
     expect(result.checked).toBe(true);
     expect(result.debtArgs).toBeNull();
-    expect(result.summary).toEqual({ status: 'planned', staleNodes: ['capability.workflow-engine.workflow-state', 'capability.verification.evals-checks'],
-      files: ['docs/architecture/.projection-manifest.json'], humanActions: [] });
+    expect(result.summary).toEqual(summary);
     expect(result.stdout).not.toContain('[ci] typecheck');
+    expect(result.stderr).not.toContain('apply in a PR');
   });
 
-  test('the daily lane passes after a manifest-only refresh and reports no remaining stale nodes', () => {
-    const result = runLane(['architecture'], {
-      check: JSON.stringify({ status: 'noop', freshness: { ok: true, staleNodes: [] }, files: [], humanActions: [] }),
-      checkExit: 0,
-      summary: true,
-    });
-    expect(result.status, result.stderr).toBe(0);
-    expect(result.checked).toBe(true);
-    expect(result.debtArgs).toBeNull();
-    expect(result.summary).toEqual({ status: 'noop', staleNodes: [], files: [], humanActions: [] });
-    expect(warnings(result.stdout)).toEqual([]);
-    expect(result.stdout).toContain('[ci] OK');
-    expect(result.stdout).not.toContain('[ci] typecheck');
+  test('writer delegates a fixed rolling target and loop to archctx with explicit state', () => {
+    expect(architectureWriterArgs('status', '/tmp/writer-state')).toEqual(['projection', 'publish-status', '--remote', 'origin', '--base', 'main', '--json']);
+    const once = architectureWriterArgs('once', '/tmp/writer-state');
+    expect(once).toEqual(['projection', 'publish', '--remote', 'origin', '--base', 'main', '--branch', 'archctx/projection', '--publisher', 'gh', '--json']);
+    expect(architectureWriterArgs('follow', '/tmp/writer-state')).toEqual([...once.slice(0, -1), '--follow', '--interval', '300', '--json']);
+    expect(() => architectureWriterArgs('once', undefined)).toThrow('ARCHCONTEXT_STATE_DIR');
+    expect(() => architectureWriterArgs('once', 'relative')).toThrow('absolute');
+    expect(() => architectureWriterArgs('push-main', '/tmp/writer-state')).toThrow('Usage');
   });
+
 });
 
 describe('historical replay source loading', () => {

@@ -21,7 +21,7 @@ import {
   type ProjectionRequestV1,
   type ProjectionResultV2,
 } from 'archctx-contracts';
-import { ARCHCTX_REQUIRED_VERSION, decodeNativeContextExport, type NativeContextSource, type ArchitectureProjectionPolicy } from '../src/core/architecture/projection';
+import { ARCHCTX_REQUIRED_VERSION, decodeNativeContextExport, summarizeArchitectureRender, decodeArchitectureHandEdits, type NativeContextSource, type ArchitectureProjectionPolicy } from '../src/core/architecture/projection';
 import {
   archctxCapabilities,
   ArchctxClientError,
@@ -33,6 +33,7 @@ import {
   resolveCompatibleNodeRuntime,
   resolvePackageLocalArchctx,
   readArchitectureDocsAnchors,
+  readArchitectureHandEdits,
   readArchitectureProjectionApply,
   runArchitectureProjection,
   stopWorkspaceArchitectureDaemons,
@@ -657,7 +658,7 @@ describe('package-local ArchContext projection provider', () => {
     expect(existsSync(join(f.repoRoot, 'docs/architecture/index.md'))).toBe(false);
   });
 
-  test('declined-unprovable-proof reaches the CLI with the flows check next step', () => {
+  test('declined-unprovable-proof reaches the CLI with the debt report next step', () => {
     const f = fixture();
     // Recorded from a real archctx 0.8.0 single-request apply (acceptObservedMajorChange) in a disposable repository.
     const declined = JSON.parse(readFileSync(join(import.meta.dir, 'fixtures/architecture-projection/declined-unprovable-proof-0.8.0.json'), 'utf8')) as ProjectionResultV2;
@@ -665,7 +666,8 @@ describe('package-local ArchContext projection provider', () => {
     const result = projectionCli(f, { schemaVersion: 'archcontext.envelope/v1', ok: true, requestId: 'projection.run', data: declined }, declined.requestId);
     expect(result.status).toBe(1);
     expect(JSON.parse(result.stdout).majorChangeAcceptance).toBe('declined-unprovable-proof');
-    expect(result.stderr).toContain('archctx flows check --json');
+    expect(result.stderr).toContain('next: repo-harness architecture-debt --json');
+    expect(result.stderr).not.toMatch(/next: archctx /);
   });
 
   test('a timeout reports outcome unknown and the same id without the request JSON', () => {
@@ -978,7 +980,7 @@ describe('package-local ArchContext projection provider', () => {
 
   test('exposes projection commands without a separate acceptance authority', () => {
     const command = buildArchitectureProjectionCommand();
-    expect(command.commands.map((entry) => entry.name())).toEqual(['policy', 'status', 'check', 'plan', 'apply', 'adopt', 'anchors']);
+    expect(command.commands.map((entry) => entry.name())).toEqual(['policy', 'status', 'check', 'plan', 'apply', 'adopt', 'anchors', 'render-check', 'hand-edits']);
     for (const name of ['check', 'plan', 'apply', 'adopt']) {
       const subcommand = command.commands.find((candidate) => candidate.name() === name);
       expect(subcommand!.options.map((option) => option.long)).not.toContain('--accepted-change-set-id');
@@ -1580,5 +1582,46 @@ describe('ArchContext maintenance reminders', () => {
       expect(() => runArchitectureProjection(request(), f.repoRoot, { consumerRoot: f.consumerRoot, policy, run }))
         .toThrow('invalid envelope');
     }
+  });
+});
+
+
+describe('single-writer observations', () => {
+  test('render equivalence ignores source stamps but rejects output drift and incomplete coverage', () => {
+    const result: ProjectionResultV2 = projectionEnvelope(request().expected).data;
+    result.status = 'planned';
+    result.humanActions = [];
+    result.changes = [{ targetId: 'target.a', path: 'docs/architecture/a.md', affectedCapabilityIds: [],
+      stampChanged: true, outputChanged: false, semanticChanged: false, proofChanged: false,
+      plannedAction: 'none', classification: 'stamp-only', reasonCodes: ['source-stamp-changed'] }];
+    expect(summarizeArchitectureRender(result)).toMatchObject({ renderEquivalent: true, differingPaths: [] });
+    result.changes[0]!.outputChanged = true;
+    expect(summarizeArchitectureRender(result)).toMatchObject({ renderEquivalent: false, differingPaths: ['docs/architecture/a.md'] });
+    result.status = 'planned-partial';
+    expect(summarizeArchitectureRender(result).renderEquivalent).toBeNull();
+    result.status = 'human-action-required';
+    expect(summarizeArchitectureRender(result).renderEquivalent).toBeNull();
+    delete result.changes;
+    expect(() => summarizeArchitectureRender(result)).toThrow('omitted per-target changes');
+  });
+
+  test('hand-edit warnings consume only upstream manual-edit codes through the existing client', () => {
+    const f = fixture();
+    const data = { schemaVersion: 'archcontext.docs-drift/v1', drift: { diffs: [
+      { path: 'docs/architecture/a.md', reasonCode: 'projection-generated-region-manually-edited' },
+      { path: 'docs/architecture/map.md', reasonCode: 'projection-generated-file-manually-edited' },
+      { path: 'docs/architecture/b.md', reasonCode: 'projection-generated-region-stale' },
+      { path: 'docs/architecture/.projection-manifest.json', reasonCode: 'projection-manifest-stale' },
+    ] } };
+    const calls: string[][] = [];
+    const result = readArchitectureHandEdits(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: (_bin, args) => {
+      calls.push([...args]);
+      return { status: 0, signal: null, stderr: '', stdout: JSON.stringify({ schemaVersion: 'archcontext.envelope/v1', ok: true, requestId: 'docs.drift', data }) };
+    } });
+    expect(calls).toEqual([['docs', 'drift', '--profile', 'repo-harness/v1', '--json']]);
+    expect(result).toEqual(data.drift.diffs.slice(0, 2));
+    expect(() => decodeArchitectureHandEdits({ schemaVersion: data.schemaVersion, drift: {} })).toThrow('omitted diffs');
+    expect(() => decodeArchitectureHandEdits({ ...data, drift: { diffs: [{ path: 4, reasonCode: 'projection-generated-file-manually-edited' }] } })).toThrow('invalid');
+    expect(() => decodeArchitectureHandEdits({ ...data, schemaVersion: 'other' })).toThrow('schema mismatch');
   });
 });

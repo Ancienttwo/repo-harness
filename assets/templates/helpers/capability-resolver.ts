@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-// @generated-from src/core/capabilities/registry.ts sha256:a3058d7a9635adbb85f020da919b3e3a017d30693366b4a10619dc15ac3eacd0
+// @generated-from src/core/capabilities/registry.ts sha256:68d11540967639ad476223b02f19d4190bf46800d0395ad4fa66f83bbc09e300
 // Standalone typed Bun projection. Regenerate from scripts/capability-resolver.ts; do not edit by hand.
 export const CAPABILITY_REGISTRY_VERSION = 1 as const;
 
@@ -665,7 +665,7 @@ export function capabilityRegistryFromNativeContext(
 /**
  * Maps `archctx resolve` owners onto capability nodes. ArchContext decides the
  * owner; this function only joins its capability id to node metadata.
- * `owningCapabilityId` decides first: archctx 0.9.0 reports `matched: false`
+ * `owningCapabilityId` decides first: archctx 0.9.1 reports `matched: false`
  * for every ambiguous result, also when all candidates share one owning
  * capability, so `matched` is not read. An ambiguous result without an owning
  * capability fails closed, and any other result without one is unmapped
