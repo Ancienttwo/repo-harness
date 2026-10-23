@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -804,6 +804,8 @@ describe('architecture lanes', () => {
     try {
       mkdirSync(join(root, 'repo/scripts/lib'), { recursive: true }); mkdirSync(bin);
       for (const path of ['scripts/check-ci.sh', 'scripts/lib/ci-run-tests.sh']) writeFileSync(join(root, 'repo', path), readFileSync(join(ROOT, path)));
+      // The advisory imports the action map from the real source tree.
+      symlinkSync(join(ROOT, 'src'), join(root, 'repo/src'));
       writeFileSync(join(root, 'debt.json'), fixture.debt ?? '');
       writeFileSync(join(root, 'check.json'), fixture.check ?? '');
       writeFileSync(join(bin, 'bun'), [
@@ -825,7 +827,11 @@ describe('architecture lanes', () => {
         debtArgs: existsSync(join(root, 'debt-args')) ? readFileSync(join(root, 'debt-args'), 'utf8').trim() : null,
         summary: existsSync(summaryPath) ? JSON.parse(readFileSync(summaryPath, 'utf8')) : null,
       };
-    } finally { rmSync(root, { recursive: true, force: true }); }
+    } finally {
+      // Remove the link first, so the recursive delete cannot reach the real source tree.
+      if (existsSync(join(root, 'repo/src'))) unlinkSync(join(root, 'repo/src'));
+      rmSync(root, { recursive: true, force: true });
+    }
   }
   const warnings = (stdout: string) => stdout.split('\n').filter(line => line.startsWith('::warning '));
 
@@ -836,9 +842,18 @@ describe('architecture lanes', () => {
     expect(result.checked).toBe(true);
     expect(result.stdout).toContain('[ci] Architecture debt: head coverage complete. Introduced 2. Resolved 1.');
     expect(warnings(result.stdout)).toEqual([
-      '::warning title=Architecture debt introduced::flow-proof-failed (no-direct-call) in capability.module-1. Action: archctx flows check --json',
-      '::warning title=Architecture debt introduced::flow-proof-failed (no-direct-call) in src/module-2.ts. Action: archctx flows check --json',
+      '::warning title=Architecture debt introduced::flow-proof-failed (no-direct-call) in capability.module-1. Action: repo-harness architecture-debt --json',
+      '::warning title=Architecture debt introduced::flow-proof-failed (no-direct-call) in src/module-2.ts. Action: repo-harness architecture-debt --json',
       '::warning title=Architecture generated output hand edited::docs/architecture/a.md: projection-generated-region-manually-edited. Keep model and human prose changes in this PR; the archctx rolling writer owns generated output.',
+    ]);
+  });
+
+  test('a stale-anchor action names the repo-harness anchors command, never a bare archctx from PATH', () => {
+    const staleAnchor = { ...debtItem(1), kind: 'stale-anchor', reasonCode: 'missing-path', action: 'archctx docs anchors --json' };
+    const result = runLane(['architecture-advisory', '--base', 'abc123'], { debt: debt([staleAnchor]), check: noop, checkExit: 0 });
+    expect(result.status, result.stderr).toBe(0);
+    expect(warnings(result.stdout)).toEqual([
+      '::warning title=Architecture debt introduced::stale-anchor (missing-path) in capability.module-1. Action: repo-harness architecture-projection anchors --json',
     ]);
   });
 
