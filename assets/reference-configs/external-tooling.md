@@ -1074,11 +1074,11 @@ JSON run result and `status`: `busy` means another writer holds the lock;
 successful publication.
 
 The launcher passes `--accept-observed-major-change` to `once` and `follow`,
-not to `status`. The writer accepts each observed major change that archctx can
-prove. archctx declines an unprovable change: the run reports
-`majorChangeAcceptance: "declined-unprovable-proof"` with an
-`unprovable-required-flow` human action, stops at `human-action-required` and
-pushes nothing. Add the missing proof in a model PR; start from
+not to `status`. The writer accepts an observed major change only when archctx
+can prove it. archctx declines the acceptance while any capability has an
+unprovable P1 or P2 proof. The run result is then `human-action-required` with
+a `humanActions` entry `reasonCode: "unprovable-required-flow"`, and nothing
+unproven is published. Add the missing proof in a model PR; start from
 `repo-harness architecture-debt --json`. The owner's GO to merge the rolling PR
 is the acceptance. repo-harness keeps no separate accept step. The rolling PR
 body records `Base: main at <sha>`. The Bot merges the rolling PR only with the
