@@ -1065,9 +1065,10 @@ existing Git and gh authentication. The resulting PR runs normal CI. The merge
 rule for that PR is below.
 
 Set `ARCHCONTEXT_STATE_DIR` to one explicit absolute path shared by this
-repository's writer invocations. Keep it stable across restarts. On the
-repo-harness Mini only, put the writer checkout and state under `/tmp/`. Do not
-run a second service with a different state root. Inspect
+repository's writer invocations. Keep the writer checkout and the state dir in
+one stable path that survives a reboot. Do not use a directory that the OS can
+clear, such as `/tmp/`. Do not run a second service with a different state
+root. Inspect
 `repo-harness architecture-projection publish status` with that same state dir;
 another state dir reports an empty state. For initial setup, run `once`. If
 the archctx result reports missing code facts, read `data.worktreePath` from

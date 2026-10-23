@@ -47,6 +47,15 @@ writer as a repo-harness command.
   --json` moves the torn bytes to `attempts.torn-<ms>` and truncates the
   ledger to its last complete receipt. (#882, #881)
 
+### Documentation
+
+- Refresh generated architecture outputs for main `3a2124341` through the
+  archctx rolling writer. This is the first rolling PR after the writer
+  started to run as a service. (#886, #871)
+- Keep the rolling writer checkout and `ARCHCONTEXT_STATE_DIR` in one stable
+  path that survives a reboot. The guidance no longer puts them under
+  `/tmp/`, which the OS can clear.
+
 ## [0.24.0] - 2026-10-21
 
 This minor release includes the archctx 0.9.1 upgrade, hook and task plane
