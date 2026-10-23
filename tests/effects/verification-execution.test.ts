@@ -522,6 +522,24 @@ describe("verification execution lifecycle", () => {
     });
   }, 30_000);
 
+  test("a forced normal check does not append onto an unterminated ledger tail", () => {
+    withRepo("verification-force-unterminated-tail", (repoRoot, contractPath, counterPath) => {
+      writeFileSync(join(repoRoot, contractPath), contract({ protocol: 1, checks: [commandCheck({ cost: "normal" })] }));
+      git(repoRoot, "add", contractPath);
+      git(repoRoot, "commit", "-q", "-m", "normal check");
+      const env = { ...process.env, COUNTER_PATH: counterPath };
+      expect(executeVerificationContract({ repoRoot, contractPath, env }).status).toBe("passed");
+      const ledger = join(repoRoot, ".ai/harness/evidence/events/log.jsonl");
+      const terminated = readFileSync(ledger);
+      writeFileSync(ledger, terminated.subarray(0, terminated.length - 1));
+      const unterminated = readFileSync(ledger);
+      // A force reason skips the reuse read, so no recovery read runs before the append.
+      expect(() => executeVerificationContract({ repoRoot, contractPath, env, forceReason: "rerun onto a torn ledger tail" }))
+        .toThrow(/cannot append: .* ends with an unterminated record; run a recovery read first/);
+      expect(readFileSync(ledger).equals(unterminated)).toBe(true);
+    });
+  }, 30_000);
+
   test("the latest same-key failure supersedes an older pass and a normal check reruns", () => {
     withRepo("verification-latest-failure", (repoRoot, contractPath, counterPath) => {
       const failureMarker = `${counterPath}.fail`;
