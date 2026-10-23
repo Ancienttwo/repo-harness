@@ -224,6 +224,23 @@ describe("corrupt-tail recovery and quarantine", () => {
     });
   });
 
+  test("an append onto an unterminated event record fails closed and leaves the log bytes unchanged", () => {
+    withTempRepo("evidence-append-unterminated-tail", (repoRoot) => {
+      freshGenesisRepo(repoRoot);
+      appendEvidenceEvent(repoRoot, baseInput({ payload: { kind: "json", value: { v: 1 } } }));
+      const path = logPathFor(repoRoot);
+      const terminated = readFileSync(path);
+      const fd = openSync(path, "r+");
+      try { ftruncateSync(fd, terminated.length - 1); } finally { closeSync(fd); }
+      const unterminated = readFileSync(path);
+      expect(() => appendEvidenceEvent(repoRoot, baseInput({ payload: { kind: "json", value: { v: 2 } } })))
+        .toThrow(/cannot append: .* ends with an unterminated record; run a recovery read first/);
+      expect(() => freshGenesisRepo(repoRoot))
+        .toThrow(/cannot write genesis record: .* ends with an unterminated record; run a recovery read first/);
+      expect(readFileSync(path).equals(unterminated)).toBe(true);
+    });
+  });
+
   test("a truncated final record is quarantined and excluded from the accepted view", () => {
     withTempRepo("evidence-corrupt-tail-end", (repoRoot) => {
       freshGenesisRepo(repoRoot);

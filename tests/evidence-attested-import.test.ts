@@ -10,7 +10,7 @@ import { withTempRepo } from "./helpers/repo-fixture";
 import { runAcceptanceReceiptCli } from "../scripts/acceptance-receipt";
 import { importAttestedEvidence, type AttestedReceiptInput } from "../src/effects/evidence/attested-import";
 import { LEDGER_EPOCH_START_SHA } from "../src/effects/evidence/epoch";
-import { readAcceptedEvents, readGenesisRecord } from "../src/effects/evidence/event-log";
+import { appendGenesisRecord, readAcceptedEvents, readGenesisRecord } from "../src/effects/evidence/event-log";
 import { prepareChangeAssessment } from "../src/effects/review/change-assessment";
 import { buildReviewSubject } from "../src/effects/review/diff-fingerprint";
 import { executeVerificationContract } from "../src/effects/evidence/verification-execution";
@@ -360,6 +360,36 @@ describe("importAttestedEvidence: idempotency and genesis", () => {
       expect(JSON.parse(genesisLines[0]!).ledger_epoch_start_sha).toBe(LEDGER_EPOCH_START_SHA);
     });
   }, 30_000);
+});
+
+describe("importAttestedEvidence: unterminated log tail", () => {
+  for (const tail of ["sole genesis", "event"] as const) {
+    test(`an unterminated ${tail} record fails closed as unterminated_log_tail, not genesis_epoch_conflict`, () => {
+      withTempRepo("attested-import-unterminated-tail", (repoRoot) => {
+        const { contractRelative } = setupFixtureRepo(repoRoot);
+        if (tail === "sole genesis") {
+          appendGenesisRecord(repoRoot, LEDGER_EPOCH_START_SHA, { worktreeId: "attested-import-unterminated-tail" });
+        } else {
+          expect(importAttestedEvidence({ repoRoot, authorityContractFile: contractRelative, receipt: baseReceipt(contractRelative) }).ok).toBe(true);
+        }
+        const logPath = join(repoRoot, ".ai", "harness", "evidence", "events", "log.jsonl");
+        const terminated = readFileSync(logPath);
+        writeFileSync(logPath, terminated.subarray(0, terminated.length - 1));
+        const unterminated = readFileSync(logPath);
+
+        const result = importAttestedEvidence({
+          repoRoot,
+          authorityContractFile: contractRelative,
+          receipt: baseReceipt(contractRelative, { subject_sha256: `sha256:${"e".repeat(64)}` }),
+        });
+        expect(result.ok).toBe(false);
+        if (result.ok) return;
+        expect(result.reason).toBe("unterminated_log_tail");
+        expect(result.message).toContain("ends with an unterminated record; run a recovery read first");
+        expect(readFileSync(logPath).equals(unterminated)).toBe(true);
+      });
+    }, 30_000);
+  }
 });
 
 describe("scripts/acceptance-receipt.ts record: attested-import wiring", () => {

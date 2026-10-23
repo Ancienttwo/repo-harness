@@ -26,6 +26,22 @@ function withLogLock<T>(repoRoot: string, operation: () => T): T {
   return withExclusiveDirectoryLock(realpathSync(repoRoot), LOG_LOCK, operation, { reclaimStaleEmptyDirectory: true });
 }
 
+/**
+ * The final record has no "\n", so an append now would join two records on one
+ * line (#862). Appends do not repair: they already hold the log lock, and the
+ * repair takes the same lock.
+ */
+export class UnterminatedEvidenceLogError extends Error {
+  constructor(readonly logPath: string, operation: string) {
+    super(`${operation}: store at ${logPath} ends with an unterminated record; run a recovery read first, for example \`repo-harness run decision-trail render\``);
+    this.name = "UnterminatedEvidenceLogError";
+  }
+}
+
+function assertTerminatedLog(logPath: string, raw: string, operation: string): void {
+  if (raw.length > 0 && !raw.endsWith("\n")) throw new UnterminatedEvidenceLogError(logPath, operation);
+}
+
 function readRawLog(logPath: string): { raw: string; lines: string[] } {
   const raw = existsSync(logPath) ? readFileSync(logPath, "utf-8") : "";
   if (raw.length === 0) return { raw, lines: [] };
@@ -71,10 +87,11 @@ function appendGenesisRecordLocked(
 ): GenesisRecord {
   const logPath = resolveLogPath(repoRoot);
   const { raw, lines } = readRawLog(logPath);
+  assertTerminatedLog(logPath, raw, "cannot write genesis record");
 
   if (lines.length > 0) {
     const parsed = parseLogLine(lines[0]!);
-    if (!parsed.ok || parsed.record.kind !== "evidence_genesis" || (lines.length === 1 && !raw.endsWith("\n"))) {
+    if (!parsed.ok || parsed.record.kind !== "evidence_genesis") {
       throw new Error(`cannot write genesis record: store at ${logPath} already has non-genesis content`);
     }
     if (parsed.record.ledger_epoch_start_sha !== ledgerEpochStartSha) {
@@ -99,7 +116,8 @@ function appendGenesisRecordLocked(
 /**
  * Append one evidence event. Always goes through `buildEvidenceEvent`'s
  * construction path -- there is no way to append a hand-built record that
- * skipped D6's invariants. Fails closed if the store has no genesis record.
+ * skipped D6's invariants. Fails closed if the store has no genesis record
+ * or ends with an unterminated record.
  */
 export function appendEvidenceEvent(repoRoot: string, input: EvidenceEventInput): EvidenceEventRecord {
   const logPath = resolveLogPath(repoRoot);
@@ -107,6 +125,7 @@ export function appendEvidenceEvent(repoRoot: string, input: EvidenceEventInput)
     if (!readGenesisRecord(repoRoot)) {
       throw new Error(`cannot append: store at ${logPath} has no genesis record; call appendGenesisRecord first`);
     }
+    assertTerminatedLog(logPath, readRawLog(logPath).raw, "cannot append");
     const record = buildEvidenceEvent(repoRoot, input);
     appendLineDurably(logPath, JSON.stringify(record));
     return record;

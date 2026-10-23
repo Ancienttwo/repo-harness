@@ -36,7 +36,7 @@ import type {
   SubjectIdentity,
   TrustClass,
 } from "../../core/evidence/types";
-import { appendEvidenceEvent, appendGenesisRecord } from "./event-log";
+import { appendEvidenceEvent, appendGenesisRecord, UnterminatedEvidenceLogError } from "./event-log";
 import { LEDGER_EPOCH_START_SHA } from "./epoch";
 import { stripYamlInlineComment } from "../../core/state/artifact-parsers";
 
@@ -64,7 +64,8 @@ export type AttestedImportFailureReason =
   | "missing_actor"
   | "missing_reason"
   | "missing_subject"
-  | "genesis_epoch_conflict";
+  | "genesis_epoch_conflict"
+  | "unterminated_log_tail";
 
 export interface AttestedImportFailure {
   readonly ok: false;
@@ -292,6 +293,9 @@ export function importAttestedEvidence(input: AttestedImportInput): AttestedImpo
   try {
     genesis = appendGenesisRecord(repoRoot, LEDGER_EPOCH_START_SHA, { worktreeId });
   } catch (error) {
+    if (error instanceof UnterminatedEvidenceLogError) {
+      return { ok: false, reason: "unterminated_log_tail", message: error.message };
+    }
     return {
       ok: false,
       reason: "genesis_epoch_conflict",
