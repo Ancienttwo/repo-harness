@@ -1025,7 +1025,10 @@ describe('package-local ArchContext projection provider', () => {
     const repo = repository('repo');
     const other = repository('other');
 
-    const cli = spawnSync(process.execPath, [CLI_ENTRY, 'architecture-projection', 'publish', 'status'], { cwd: repo, env, encoding: 'utf8', timeout: 60_000 });
+    // Run from a subdirectory: the command must target the git top level.
+    const nested = join(repo, 'nested');
+    mkdirSync(nested);
+    const cli = spawnSync(process.execPath, [CLI_ENTRY, 'architecture-projection', 'publish', 'status'], { cwd: nested, env, encoding: 'utf8', timeout: 60_000 });
     expect(cli.status, cli.stderr).toBe(0);
     const published = JSON.parse(cli.stdout) as { ok: boolean; data: { schemaVersion: string; remote: string; base: string; worktreePath: string } };
     expect(published.ok).toBe(true);
@@ -1042,20 +1045,19 @@ describe('package-local ArchContext projection provider', () => {
   test.each([
     ['no state dir', undefined, 'status', 'ARCHCONTEXT_STATE_DIR must be an explicit absolute path'],
     ['a relative state dir', 'writer-state', 'status', 'ARCHCONTEXT_STATE_DIR must be an explicit absolute path'],
-    ['an unknown mode', '/tmp/repo-harness-unused-writer-state', 'push-main', 'Usage: repo-harness architecture-projection publish <status|once|follow>'],
-  ])('publish refuses %s before it resolves archctx', (_case, stateDir, mode, message) => {
+    ['an unknown mode', 'absolute', 'push-main', 'Usage: repo-harness architecture-projection publish <status|once|follow>'],
+  ])('publish refuses %s without creating writer state', (_case, stateDir, mode, message) => {
     const cwd = mkdtempSync(join(tmpdir(), 'repo-harness-publish-refusal-'));
     roots.push(cwd);
     execFileSync('git', ['init', '-q', '-b', 'main'], { cwd, stdio: 'ignore' });
     const env: NodeJS.ProcessEnv = { ...process.env, HOME: cwd };
     delete env.ARCHCONTEXT_STATE_DIR;
-    if (stateDir) env.ARCHCONTEXT_STATE_DIR = stateDir;
+    if (stateDir) env.ARCHCONTEXT_STATE_DIR = stateDir === 'absolute' ? join(cwd, 'writer-state') : stateDir;
     const result = spawnSync(process.execPath, [CLI_ENTRY, 'architecture-projection', 'publish', mode], { cwd, env, encoding: 'utf8', timeout: 60_000 });
     expect(result.status).toBe(1);
     expect(result.stderr).toContain(message);
     expect(result.stdout).toBe('');
     expect(existsSync(join(cwd, 'writer-state'))).toBe(false);
-    expect(existsSync('/tmp/repo-harness-unused-writer-state')).toBe(false);
   });
 
   test('docs anchors runs read-only archctx docs anchors after the handshake and decodes its report', () => {
