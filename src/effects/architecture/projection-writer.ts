@@ -5,7 +5,11 @@ import { PROJECTION_WRITER_DEFAULT_BRANCH } from 'archctx-contracts';
 import { ARCHCTX_REQUIRED_VERSION } from '../../core/architecture/projection';
 import { resolveCompatibleNodeRuntime, resolvePackageLocalArchctx } from './archctx-provider';
 
-/** Repository policy only. archctx owns locking, rendering, Git writes and PR publication. */
+/**
+ * Repository policy only. archctx owns locking, rendering, Git writes and PR publication.
+ * The writer accepts proven observed major changes; archctx still declines unprovable ones.
+ * The owner's GO to merge the rolling PR is the acceptance.
+ */
 export function architectureWriterArgs(mode: string, stateDir: string | undefined): string[] {
   if (!stateDir || !isAbsolute(stateDir)) throw new Error('ARCHCONTEXT_STATE_DIR must be an explicit absolute path for the shared writer state');
   if (!['status', 'once', 'follow'].includes(mode)) throw new Error('Usage: bun run architecture:writer <status|once|follow>');
@@ -13,7 +17,7 @@ export function architectureWriterArgs(mode: string, stateDir: string | undefine
   return mode === 'status'
     ? ['projection', 'publish-status', ...target, '--json']
     : ['projection', 'publish', ...target, '--branch', PROJECTION_WRITER_DEFAULT_BRANCH, '--publisher', 'gh',
-      ...(mode === 'follow' ? ['--follow', '--interval', '300'] : []), '--json'];
+      '--accept-observed-major-change', ...(mode === 'follow' ? ['--follow', '--interval', '300'] : []), '--json'];
 }
 
 if (import.meta.main) {

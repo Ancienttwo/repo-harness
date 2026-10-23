@@ -1054,8 +1054,8 @@ and a compatible Node runtime. It fixes the upstream target to `origin`, base
 300-second loop to archctx. archctx owns the shared lock, worktree, render,
 commit, push and rolling PR. It never pushes main. No GitHub App, new secret,
 Actions writer or repo-harness publication loop is used. The operator supplies
-existing Git and gh authentication. The resulting PR runs normal CI; the Bot
-merges only with the owner's publication authorization and green checks.
+existing Git and gh authentication. The resulting PR runs normal CI. The merge
+rule for that PR is below.
 
 Set `ARCHCONTEXT_STATE_DIR` to one explicit absolute path shared by this
 repository's writer invocations. Keep it stable across restarts. On the Mini,
@@ -1069,13 +1069,27 @@ a stale index after the base moves; the launcher does not invent a repair.
 
 Run `follow` under the operator's process supervisor after setup. Inspect each
 JSON run result and `status`: `busy` means another writer holds the lock;
-`human-action-required` needs the reported model or ownership decision;
-`failed` carries the upstream error. The launcher does not pass
-`--accept-observed-major-change`. Acceptance requires a separate authorized
-upstream invocation. Do not interpret a live process as successful publication.
-Use `"$NODE" "$ARCHCTX" projection verify-pr --base origin/main --json` to
-verify a generated-only rolling PR. `humanEditedPaths` in that result means
-changes to human-owned text, not hand edits inside generated regions.
+`human-action-required` needs the reported model, proof or ownership decision;
+`failed` carries the upstream error. Do not interpret a live process as
+successful publication.
+
+The launcher passes `--accept-observed-major-change` to `once` and `follow`,
+not to `status`. The writer accepts an observed major change only when archctx
+can prove it. archctx declines the acceptance while any capability has an
+unprovable P1 or P2 proof. The run result is then `human-action-required` with
+a `humanActions` entry `reasonCode: "unprovable-required-flow"`. When archctx
+can still publish the unaffected targets, the run result is `published` with
+`projectionStatus: "applied-partial"`; the blocked targets keep their committed
+bytes. Treat both results as incomplete. Nothing unproven is published, and the
+model still needs the missing proof. Add it in a model PR; start from
+`repo-harness architecture-debt --json`. The owner's GO to merge the rolling PR
+is the acceptance. repo-harness keeps no separate accept step. The rolling PR
+body records `Base: main at <sha>`. The Bot merges the rolling PR only with the
+owner's GO for its reviewed head, green checks, a passing
+`"$NODE" "$ARCHCTX" projection verify-pr --base origin/main --json`, and
+`gh pr merge <rolling-pr> --squash --match-head-commit <reviewed-sha>`.
+`humanEditedPaths` in the `verify-pr` result means changes to human-owned text,
+not hand edits inside generated regions.
 Service installation and activation are operator steps, not package-install effects.
 
 `AgentNotice` reads package-local archctx 0.9.1
