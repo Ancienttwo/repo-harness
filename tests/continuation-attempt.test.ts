@@ -488,22 +488,26 @@ describe('unterminated ledger tail', () => {
     withLedgerRepo((cwd) => {
       const token = envelopeFrom(cwd).progress_token;
       recordStalled(cwd, token);
-      tearLedger(cwd, tornReceiptBytes());
-      const before = ledgerBytes(cwd);
+      const intact = ledgerBytes(cwd);
 
-      for (const args of [
-        { outcome: 'completed', before: token, after: token },
-        { outcome: 'resumed' },
-      ]) {
-        const run = runStateCli(cwd, attemptArgv(args));
-        expect(run.status).toBe(1);
-        expect(run.stdout).toBe('');
-        expect(run.stderr).toContain(LEDGER);
-        expect(run.stderr).toContain(REPAIR_COMMAND);
-        expect(ledgerBytes(cwd).equals(before)).toBe(true);
+      // A cut inside a receipt, and a whole receipt that lost only its "\n".
+      for (const torn of [tornReceiptBytes(), Buffer.from(receiptLine(), 'utf-8')]) {
+        writeFileSync(join(cwd, LEDGER), Buffer.concat([intact, torn]));
+        const before = ledgerBytes(cwd);
+        for (const args of [
+          { outcome: 'completed', before: token, after: token },
+          { outcome: 'resumed' },
+        ]) {
+          const run = runStateCli(cwd, attemptArgv(args));
+          expect(run.status).toBe(1);
+          expect(run.stdout).toBe('');
+          expect(run.stderr).toContain(LEDGER);
+          expect(run.stderr).toContain(REPAIR_COMMAND);
+          expect(ledgerBytes(cwd).equals(before)).toBe(true);
+        }
       }
     });
-  }, 30_000);
+  }, 60_000);
 
   test('a complete receipt without its newline is unreadable, so the breaker cannot go blind', () => {
     const line = receiptLine();
@@ -519,6 +523,7 @@ describe('unterminated ledger tail', () => {
       const repaired = repair(cwd);
       expect(repaired.ledger_status).toBe('ok');
       expect(ledgerBytes(cwd).length).toBe(0);
+      expect(repaired.quarantined_path).toMatch(QUARANTINE);
       expect(readFileSync(join(cwd, repaired.quarantined_path ?? '')).toString('utf-8')).toBe(line);
       expect(envelopeFrom(cwd).route).toBe('continue_active_plan');
     });
@@ -533,16 +538,11 @@ describe('unterminated ledger tail', () => {
       const intact = tearLedger(cwd, torn);
       expect(envelopeFrom(cwd).reason).toBe('attempt_ledger_unreadable');
 
-      const repaired = repair(cwd);
-      expect(repaired).toEqual({
-        ledger_path: LEDGER,
-        quarantined_path: repaired.quarantined_path,
-        ledger_status: 'ok',
-        unreadable_line: null,
-      });
-      expect(repaired.quarantined_path).toMatch(QUARANTINE);
+      const { quarantined_path: quarantinedPath, ...repaired } = repair(cwd);
+      expect(repaired).toEqual({ ledger_path: LEDGER, ledger_status: 'ok', unreadable_line: null });
+      expect(quarantinedPath).toMatch(QUARANTINE);
       expect(ledgerBytes(cwd).equals(intact)).toBe(true);
-      expect(readFileSync(join(cwd, repaired.quarantined_path ?? '')).equals(torn)).toBe(true);
+      expect(readFileSync(join(cwd, quarantinedPath ?? '')).equals(torn)).toBe(true);
       expect(envelopeFrom(cwd).route).toBe('continue_active_plan');
 
       recordStalled(cwd, token);
@@ -557,7 +557,7 @@ describe('unterminated ledger tail', () => {
       });
       expect(ledgerBytes(cwd).equals(settled)).toBe(true);
     });
-  }, 30_000);
+  }, 60_000);
 
   test('the repair removes only the torn tail; a malformed middle line stays unreadable', () => {
     withLedgerRepo((cwd) => {

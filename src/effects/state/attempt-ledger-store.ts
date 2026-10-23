@@ -55,7 +55,7 @@ const NEWLINE = 0x0a;
  */
 export class UnterminatedAttemptLedgerError extends Error {
   constructor(readonly ledgerPath: string) {
-    super(`cannot append attempt receipt: ledger at ${ledgerPath} ends with an unterminated line; run \`${ATTEMPT_LEDGER_REPAIR_COMMAND}\` to quarantine it`);
+    super(`cannot append attempt receipt: ledger ${ATTEMPT_LEDGER_PATH} (${ledgerPath}) ends with an unterminated line; run \`${ATTEMPT_LEDGER_REPAIR_COMMAND}\` to quarantine it`);
     this.name = 'UnterminatedAttemptLedgerError';
   }
 }
