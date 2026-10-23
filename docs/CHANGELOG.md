@@ -2,6 +2,51 @@
 
 All notable changes to this skill are documented here.
 
+## [0.24.1] - 2026-10-23
+
+0.24.1 is the first npm release after 0.23.1. v0.24.0 exists only as a Git
+tag and a GitHub Release; npm never published it. If you upgrade from 0.23.1,
+also read [0.24.0](#0240---2026-10-21) and do its upgrade steps. That section
+has the archctx daemon upgrade, the report-language step for legacy global
+rules and the breaking removals in #834. This release fixes the evidence log
+and the attempt ledger after a torn write, and ships the architecture rolling
+writer as a repo-harness command.
+
+### Changed
+
+- The architecture rolling writer accepts proven observed major changes. The
+  merge of its rolling PR is the acceptance. archctx still declines an
+  unprovable change with `unprovable-required-flow`, and the run then needs a
+  model PR. This replaces the #864 rule "No automatic major-change
+  acceptance". (#879, #871)
+
+### Fixed
+
+- Ship the rolling writer as `repo-harness architecture-projection publish
+  <status|once|follow>`. It runs archctx in the git top level of the current
+  directory. Before, the writer ran archctx in the package root, so a global
+  install could not publish for a downstream repo. The source-repo script
+  `bun run architecture:writer` is removed with no alias. It is not a
+  breaking change: the script was never a CLI command, MCP tool or JSON field,
+  and no npm release had it. (#884, #873)
+- Name repo-harness commands in the declined major-change hint of
+  `architecture-projection apply|adopt` and in the PR architecture advisory.
+  A global install has no `archctx` on PATH. The hint now prints
+  `repo-harness architecture-debt --json`. (#878, #875)
+- Refuse an evidence log append when the log ends with an unterminated
+  record. Recovery reads mark that record as corrupt and quarantine its exact
+  text. Attested import reports `unterminated_log_tail`. A recovery read, for
+  example `repo-harness run decision-trail render`, repairs the log. (#863,
+  #862)
+- Refuse an evidence log append when any record does not parse, not only the
+  last one. Before, the next read dropped the acknowledged append. The tail
+  repair now truncates at the exact byte offset and keeps the raw removed
+  bytes. Attested import reports `corrupt_log_tail`. (#883, #880)
+- Refuse an attempt ledger append onto a torn last line. A final line without
+  `"\n"` now reads as `unreadable`. The new `repo-harness state attempt-repair
+  --json` moves the torn bytes to `attempts.torn-<ms>` and truncates the
+  ledger to its last complete receipt. (#882, #881)
+
 ## [0.24.0] - 2026-10-21
 
 This minor release includes the archctx 0.9.1 upgrade, hook and task plane

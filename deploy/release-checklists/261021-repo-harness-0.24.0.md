@@ -306,3 +306,20 @@ env、skill eval）。adapter 和规则标记在发布后本机 update 时处理
   `v0.24.0`, the GitHub Release and the npm publication.
 - At this commit, no tag or GitHub Release exists, and no npm package is
   published.
+- 2026-10-23, Git and GitHub publication verified, npm held:
+  - Annotated tag `v0.24.0`: object
+    `8bc8b79e2f296dc9c8abe0f5b614a5c3e5e5d8d2`, target
+    `2d5ac2a034956dfd546d8b288144bfb7fa22fa82` (#877 squash). Read with
+    `git cat-file` and `git rev-parse`.
+  - GitHub Release `v0.24.0`: published 2026-10-23T09:43:18Z, not a draft,
+    not a prerelease. Asset `repo-harness-0.24.0.tgz`, 10503697 bytes,
+    SHA-256 `72cbcd0279dfdcc0c338e367394636d708e1996a8da658f5e5f681a719f1eac9`.
+    Read with `gh api repos/Ancienttwo/repo-harness/releases/tags/v0.24.0`;
+    the asset was not downloaded. The parent release session reported 645
+    tarball entries; this entry did not check that count again.
+  - npm: the owner held the publication until the gate issues #862, #871,
+    #873, #875, #880 and #881 closed. `npm view repo-harness dist-tags`
+    shows `{ latest: '0.23.1' }`, and 0.24.0 is not in the version list.
+  - The owner decided that npm skips 0.24.0. 0.24.1 supersedes 0.24.0 on
+    npm. The `v0.24.0` tag and GitHub Release stay as they are. See
+    `261023-repo-harness-0.24.1.md`.
