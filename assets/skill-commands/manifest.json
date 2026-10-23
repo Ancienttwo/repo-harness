@@ -212,6 +212,25 @@
       "audience": "bot"
     },
     {
+      "name": "repo-harness-herdr-portal",
+      "kind": "provider-skill",
+      "source": "assets/skills/repo-harness-herdr-portal",
+      "provider": null,
+      "hosts": [
+        "claude"
+      ],
+      "profiles": [
+        "full"
+      ],
+      "discoverability": "cross-model",
+      "component": "cross-model-acceptance",
+      "requires": [],
+      "mutatesRepoByDefault": false,
+      "summary": "Start or reuse a named Claude CLI worker in a visible Herdr pane from a Claude Code session (App Code tab first), return its portal record, then coordinate through Claude Code cross-session messaging.",
+      "retirementCandidate": null,
+      "audience": "bot"
+    },
+    {
       "name": "merge-gate",
       "kind": "judge",
       "source": null,
@@ -472,7 +491,8 @@
       },
       "full": {
         "claude": [
-          "repo-harness-cross-review"
+          "repo-harness-cross-review",
+          "repo-harness-herdr-portal"
         ],
         "codex": [
           "repo-harness-cross-review"

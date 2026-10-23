@@ -256,12 +256,13 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
       expect(buildDiscoveredSkillSurface(catalog, "minimal", "claude").find(e => e.name === "repo-harness-strategy")?.reason).toBe("explicit-setup");
     });
 
-    test("full exposes the same catalog without the retired plan skill", () => {
+    test("full exposes the same catalog on both hosts except the Claude-only herdr portal, without the retired plan skill", () => {
       const claudeNames = buildDiscoveredSkillSurface(catalog, "full", "claude").map((e) => e.name).sort();
       const codexNames = buildDiscoveredSkillSurface(catalog, "full", "codex").map((e) => e.name).sort();
       expect(claudeNames).not.toContain("claude-plan");
       expect(codexNames).not.toContain("claude-plan");
-      expect(codexNames).toEqual(claudeNames);
+      expect(claudeNames).toContain("repo-harness-herdr-portal");
+      expect(codexNames).toEqual(claudeNames.filter((name) => name !== "repo-harness-herdr-portal"));
     });
 
     test("full discovers both product and ship while minimal discovers neither", () => {
@@ -507,7 +508,7 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
       expect(report.metrics.double_trigger).toEqual({ count: 0, denominator: 68, rate: 0 });
       expect(report.metrics.provider_error_count).toBe(0);
       expect(report.discovered_surface.map((d) => d.name).sort()).toEqual(
-        ["obsidian-memory", "repo-harness", "repo-harness-architecture", "repo-harness-check", "repo-harness-chatgpt", "repo-harness-cross-review", "repo-harness-product", "repo-harness-ship", "repo-harness-strategy", "repo-harness-test", "windows-python-first"].sort(),
+        ["obsidian-memory", "repo-harness", "repo-harness-architecture", "repo-harness-check", "repo-harness-chatgpt", "repo-harness-cross-review", "repo-harness-herdr-portal", "repo-harness-product", "repo-harness-ship", "repo-harness-strategy", "repo-harness-test", "windows-python-first"].sort(),
       );
     }, 30_000);
 
