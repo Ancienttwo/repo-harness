@@ -295,7 +295,8 @@ readback is a separate release check, never a task AcceptanceReceipt field.
   affected modules. Open suggestions are the ArchContext `open` records plus
   unrecorded scan candidates. `repo-harness refactor decide` records the
   user's accept, defer or reject decision in one ArchContext call.
-  `--import-node-limit` applies to both commands. repo-harness never
+  `--import-node-limit` applies to both commands. `--timeout-ms <ms>` (default
+  120000, range 1000..600000) also applies to both commands. repo-harness never
   executes a refactor and keeps no local delivery state. An accepted suggestion
   enters the normal plan and pull request workflow. Incomplete code facts are
   reported, never synthesized.

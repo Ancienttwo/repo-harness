@@ -1343,8 +1343,8 @@ instead. The command never creates an index, a model, a plan or a code edit.
 Read evidence and record a decision with:
 
 ```bash
-repo-harness refactor recommendations [--json] [--import-node-limit <n>]
-repo-harness refactor decide <recommendation-id> accept|defer|reject --reason "<text>" [--import-node-limit <n>]
+repo-harness refactor recommendations [--json] [--import-node-limit <n>] [--timeout-ms <ms>]
+repo-harness refactor decide <recommendation-id> accept|defer|reject --reason "<text>" [--import-node-limit <n>] [--timeout-ms <ms>]
 ```
 
 `recommendations` shows each open suggestion with its explanation, the metrics

@@ -164,6 +164,17 @@ test('a provider error keeps its code, action and full message', () => {
   expect(formatRefactorRecommendations(failed)).toBe(`[RefactorRecommendations] unavailable: AC_REFACTOR_STALE: ${message} (action: rerun-refactor-scan)\n`);
 });
 
+test('a refactor scan timeout stays unavailable with its code and action', () => {
+  const f = fixture();
+  const message = 'archctx refactor scan timed out after 120000 ms. Retry with --timeout-ms <larger value> (max 600000).';
+  const failed = observeRefactorRecommendations(f.repo, { env: f.env, discover: () => { throw new RefactorProviderError('refactor_provider_timeout', message, 'raise-timeout-and-retry'); } });
+  expect(failed).toMatchObject({ status: 'unavailable', candidates: [], code: 'refactor_provider_timeout', action: 'raise-timeout-and-retry', message });
+  expect(formatRefactorRecommendations(failed)).toBe(`[RefactorRecommendations] unavailable: refactor_provider_timeout: ${message} (action: raise-timeout-and-retry)\n`);
+  const times: Array<number | undefined> = [];
+  observeRefactorRecommendations(f.repo, { env: f.env, timeoutMs: 300_000, discover: (_root, _provider, _limit, timeoutMs) => { times.push(timeoutMs); return discovery(); } });
+  expect(times).toEqual([300_000]);
+});
+
 test('an unavailable provider or a missing model reports unavailable without a scan', () => {
   const f = fixture();
   const failed = observeRefactorRecommendations(f.repo, { env: f.env, discover: () => { throw new Error('archctx missing'); } });

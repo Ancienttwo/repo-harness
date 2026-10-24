@@ -54,6 +54,41 @@ describe("refactor archctx provider", () => {
     expect(limited!.slice(-3)).toEqual(["--import-node-limit", "100", "--json"]);
   });
 
+  test("reports a scan timeout with a timeout-specific code and action", () => {
+    const timedOut = () => ({ status: null, signal: null, stdout: "", stderr: "", timedOut: true });
+    try {
+      runRefactorScan(repo(), { consumerRoot: process.cwd(), run: timedOut }, undefined, 5000);
+      throw new Error("expected failure");
+    } catch (error) {
+      expect(error).toBeInstanceOf(RefactorProviderError);
+      expect(error).toMatchObject({ code: "refactor_provider_timeout", action: "raise-timeout-and-retry" });
+      const message = (error as Error).message;
+      expect(message).toContain("archctx refactor scan timed out after 5000 ms");
+      expect(message).toContain("--timeout-ms");
+      expect(message).not.toContain("architecture-projection");
+      expect(message).not.toContain("request id");
+    }
+    try {
+      decideRecommendation("rec.x", "accept", "reason", repo(), { consumerRoot: process.cwd(), run: timedOut }, undefined, 5000);
+      throw new Error("expected failure");
+    } catch (error) {
+      expect(error).toMatchObject({ code: "refactor_provider_timeout", action: "raise-timeout-and-retry" });
+      expect((error as Error).message).toContain("outcome unknown");
+    }
+  });
+
+  test("passes the timeout to the archctx runner and defaults to 120000 ms", () => {
+    const seen: number[] = [];
+    const run = (_binary: string, args: readonly string[], runOptions: { timeoutMs: number }) => {
+      seen.push(runOptions.timeoutMs);
+      return { status: 0, signal: null, stderr: "", stdout: JSON.stringify(args[0] === "refactor" ? envelope("refactor.scan", shippedScan()) : lifecycle("reject", "rejected")) };
+    };
+    runRefactorScan(repo(), { consumerRoot: process.cwd(), run });
+    runRefactorScan(repo(), { consumerRoot: process.cwd(), run }, undefined, 300_000);
+    decideRecommendation("rec.x", "reject", "no", repo(), { consumerRoot: process.cwd(), run }, undefined, 45_000);
+    expect(seen).toEqual([120_000, 300_000, 45_000]);
+  });
+
   test("fails on another installed archctx version before any call and preserves upstream error code, action and message", () => {
     const consumerRoot = repo(); const calls: string[][] = [];
     const packageRoot = join(consumerRoot, "node_modules", "archctx");
