@@ -1,7 +1,7 @@
 import { readGlobalArchitectureConfiguration } from '../../effects/architecture/projection-config';
 import { execFileSync } from 'node:child_process';
 import { Command } from 'commander';
-import type { ProjectionHumanActionV1, ProjectionMode } from 'archctx-contracts';
+import type { ProjectionHumanActionReasonCode, ProjectionHumanActionV1, ProjectionMode } from 'archctx-contracts';
 import { architectureProjectionRequest, inspectArchitectureProjectionReadiness, readArchitectureDocsAnchors, readArchitectureHandEdits, runArchitectureProjection } from '../../effects/architecture/archctx-provider';
 import { ARCHITECTURE_DEBT_COMMAND, summarizeArchitectureRender } from '../../core/architecture/projection';
 import { applyArchitectureProjection } from '../../effects/architecture/projection-apply';
@@ -89,7 +89,6 @@ function execute(mode: ProjectionMode, options: ProjectionCommandOptions): void 
       : runArchitectureProjection(architectureProjectionRequest(mode, root, requestOptions), root);
 
     write(result);
-    if (result.majorChangeAcceptance === 'declined-unprovable-proof') process.stderr.write(`archctx declined an unprovable major change; next: ${ARCHITECTURE_DEBT_COMMAND}, then add the missing P1/P2 proof (repo-harness-architecture worker, "Adopt ArchContext" step 4)\n`);
     for (const action of result.humanActions) process.stderr.write(`${humanActionLine(action)}\n`);
     if (architectureProjectionExitCode(mode, result.status) !== 0) process.exitCode = 1;
   } catch (error) {
@@ -97,12 +96,31 @@ function execute(mode: ProjectionMode, options: ProjectionCommandOptions): void 
   }
 }
 
-const ADOPTION_NEXT = 'preview "archctx docs adopt --profile repo-harness/v1", then repo-harness architecture-projection adopt --json --adoption-plan-id <id> (repo-harness-architecture worker, "Adopt ArchContext" step 8)';
-const MODEL_CHANGE_NEXT = `inspect ${ARCHITECTURE_DEBT_COMMAND}, write the model change as one ChangeSet (repo-harness-architecture worker, "Model ChangeSets"), then rerun repo-harness architecture-projection apply --json`;
+const ADOPTION_NEXT = 'resolve "$NODE" and "$ARCHCTX" from repo-harness architecture-projection status --json, preview "$NODE" "$ARCHCTX" docs adopt --profile repo-harness/v1, then run repo-harness architecture-projection adopt --json --adoption-plan-id <id> (repo-harness-architecture worker, "Managed archctx command" and "Adopt ArchContext" step 8)';
+const ROLLING_PR_NEXT = 'inspect repo-harness architecture-projection publish status (with the writer\'s own ARCHCONTEXT_STATE_DIR) and the open rolling PR; its merge is the acceptance; a feature worker does not apply or commit generated docs (repo-harness-architecture worker, "Rolling writer")';
+const UNPROVABLE_FLOW_NEXT = `${ARCHITECTURE_DEBT_COMMAND}, then add the missing P1/P2 proof in a model PR; the rolling PR merge is the acceptance (repo-harness-architecture worker, "Adopt ArchContext" step 4)`;
+const OWNER_DECISION_NEXT = 'the reported model, proof or ownership decision (external-tooling, "Rolling writer"); a feature worker does not apply or commit generated docs';
 
-function humanActionLine(action: ProjectionHumanActionV1): string {
+export function humanActionLine(action: ProjectionHumanActionV1): string {
   const subject = [...action.affectedNodeIds, ...(action.path ? [action.path] : [])].join(', ');
-  return `archctx needs human action: ${action.reasonCode} [${subject}]; next: ${action.reasonCode === 'adoption-required' ? ADOPTION_NEXT : MODEL_CHANGE_NEXT}`;
+  return `archctx needs human action: ${action.reasonCode} [${subject}]; next: ${humanActionRemedy(action)}`;
+}
+
+function humanActionRemedy(action: ProjectionHumanActionV1): string {
+  const code: ProjectionHumanActionReasonCode = action.reasonCode;
+  switch (code) {
+    case 'adoption-required': return ADOPTION_NEXT;
+    case 'unresolved-major-change': return ROLLING_PR_NEXT;
+    case 'unprovable-required-flow': return UNPROVABLE_FLOW_NEXT;
+    case 'orphaned-document-review': return `a human must review, move or remove ${action.path ?? 'the orphaned document'}; apply never deletes it`;
+    case 'manual-region-conflict': return 'inspect repo-harness architecture-projection hand-edits --json; the writer or model owner repairs generated regions, and a feature worker does not apply or commit generated docs (external-tooling, "architecture checks in CI")';
+    case 'target-collision': return OWNER_DECISION_NEXT;
+    default: return assertNever(code);
+  }
+}
+
+function assertNever(value: never): never {
+  throw new Error(`unhandled projection human-action reason code: ${String(value)}`);
 }
 
 export function architectureProjectionExitCode(mode: ProjectionMode, status: string): 0 | 1 {

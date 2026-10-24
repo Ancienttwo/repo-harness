@@ -4,6 +4,7 @@ import { copyFileSync, chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSy
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+  PROJECTION_HUMAN_ACTION_REASON_CODES,
   PROJECTION_REQUEST_SCHEMA_VERSION,
   errorEnvelope,
   failureEnvelope,
@@ -41,7 +42,7 @@ import {
   type RunArchctxProcess,
 } from '../src/effects/architecture/archctx-provider';
 import { trustedNodeCandidates } from '../src/effects/runtime/node-candidates';
-import { architectureProjectionExitCode, buildArchitectureProjectionCommand } from '../src/cli/commands/architecture-projection';
+import { architectureProjectionExitCode, buildArchitectureProjectionCommand, humanActionLine } from '../src/cli/commands/architecture-projection';
 import { applyArchitectureProjection } from '../src/effects/architecture/projection-apply';
 import { architectureWriterArgs } from '../src/effects/architecture/projection-writer';
 
@@ -671,9 +672,10 @@ describe('package-local ArchContext projection provider', () => {
     expect(JSON.parse(result.stdout).majorChangeAcceptance).toBe('declined-unprovable-proof');
     expect(result.stderr).toContain('next: repo-harness architecture-debt --json');
     expect(result.stderr).not.toMatch(/next: archctx /);
+    expect(result.stderr.trim().split('\n').filter(line => line.startsWith('archctx '))).toHaveLength(1);
   });
 
-  test('unresolved-major-change prints the capability and the model ChangeSet next step', () => {
+  test('unresolved-major-change points to the rolling PR and never to apply', () => {
     const f = fixture();
     const { majorChangeAcceptance: _accepted, receiptDigest: _digest, ...recorded } = JSON.parse(readFileSync(join(import.meta.dir, 'fixtures/architecture-projection/declined-unprovable-proof-0.8.0.json'), 'utf8')) as ProjectionResultV2;
     const payload = { ...recorded, humanActions: recorded.humanActions.map(action => ({ ...action, reasonCode: 'unresolved-major-change' as const })) };
@@ -684,8 +686,20 @@ describe('package-local ArchContext projection provider', () => {
     expect(result.status).toBe(1);
     expect(JSON.parse(result.stdout).humanActions[0].reasonCode).toBe('unresolved-major-change');
     expect(result.stderr).toContain('unresolved-major-change [capability.test.core]');
-    expect(result.stderr).toContain('"Model ChangeSets"');
-    expect(result.stderr).toContain('repo-harness architecture-projection apply --json');
+    expect(result.stderr).toContain('repo-harness architecture-projection publish status');
+    expect(result.stderr).toContain('rolling PR');
+    expect(result.stderr).not.toContain('architecture-projection apply');
+  });
+
+  test('every human-action reason code names itself and never suggests apply', () => {
+    for (const reasonCode of PROJECTION_HUMAN_ACTION_REASON_CODES) {
+      const line = humanActionLine({ reasonCode, affectedNodeIds: ['capability.test.core'], path: reasonCode === 'orphaned-document-review' ? 'docs/architecture/old.md' : undefined, requestPayloadDigest: `sha256:${'0'.repeat(64)}` });
+      expect(line).toContain(`human action: ${reasonCode} [capability.test.core`);
+      expect(line).toContain('; next: ');
+      expect(line).not.toContain('architecture-projection apply');
+      expect(line).not.toMatch(/next: archctx /);
+      expect(line).not.toContain('\n');
+    }
   });
 
   test('a timeout reports outcome unknown and the same id without the request JSON', () => {
