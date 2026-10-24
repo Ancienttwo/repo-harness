@@ -1,7 +1,7 @@
 import { Command, InvalidArgumentError } from 'commander';
 import { RefactorProviderError } from '../../core/refactor/provider-contract';
 import { canonicalRepoPath } from '../../effects/repo-registry';
-import { decideRecommendation, type RefactorDecision } from '../../effects/refactor/archctx-provider';
+import { decideRecommendation, REFACTOR_MAX_TIMEOUT_MS, type RefactorDecision } from '../../effects/refactor/archctx-provider';
 import {
   observeRefactorRecommendations,
   type RefactorRecommendation,
@@ -54,12 +54,17 @@ function formatCandidate(entry: RefactorRecommendation, index: number): string {
 }
 
 /** One archctx call decides a recorded suggestion or a fresh scan candidate. The limit must match the scan that produced the suggestion. */
-export function decideRefactorRecommendation(root: string, recommendationId: string, decision: RefactorDecision, reason: string, importNodeLimit?: number): string {
-  return decideRecommendation(recommendationId, decision, reason, root, {}, importNodeLimit).status;
+export function decideRefactorRecommendation(root: string, recommendationId: string, decision: RefactorDecision, reason: string, importNodeLimit?: number, timeoutMs?: number): string {
+  return decideRecommendation(recommendationId, decision, reason, root, {}, importNodeLimit, timeoutMs).status;
 }
 
 function parseImportNodeLimit(value: string): number {
   if (!/^[0-9]+$/.test(value) || Number(value) < 1) throw new InvalidArgumentError('must be a positive integer');
+  return Number(value);
+}
+
+function parseTimeoutMs(value: string): number {
+  if (!/^[0-9]+$/.test(value) || Number(value) < 1000 || Number(value) > REFACTOR_MAX_TIMEOUT_MS) throw new InvalidArgumentError(`must be an integer from 1000 to ${REFACTOR_MAX_TIMEOUT_MS}`);
   return Number(value);
 }
 
@@ -75,9 +80,10 @@ export function buildRefactorCommand(): Command {
     .description('Show measured suggestions with evidence; never executes a refactor')
     .option('--repo <path>', 'Repository root', '.')
     .option('--import-node-limit <n>', 'Raise the CodeGraph import read cap; use the same value for decide', parseImportNodeLimit)
+    .option('--timeout-ms <ms>', 'Per archctx call timeout in ms (default 120000, max 600000)', parseTimeoutMs)
     .option('--json', 'Output machine-readable JSON')
-    .action((options: { repo: string; importNodeLimit?: number; json?: boolean }) => {
-      const value = observeRefactorRecommendations(canonicalRepoPath(options.repo), { importNodeLimit: options.importNodeLimit });
+    .action((options: { repo: string; importNodeLimit?: number; timeoutMs?: number; json?: boolean }) => {
+      const value = observeRefactorRecommendations(canonicalRepoPath(options.repo), { importNodeLimit: options.importNodeLimit, timeoutMs: options.timeoutMs });
       process.stdout.write(options.json ? `${JSON.stringify(value, null, 2)}\n` : formatRefactorRecommendations(value));
       if (value.status === 'unavailable' || value.status === 'proof_required') process.exitCode = 1;
     });
@@ -88,10 +94,11 @@ export function buildRefactorCommand(): Command {
     .requiredOption('--reason <text>', 'Why the user decided this way')
     .option('--repo <path>', 'Repository root', '.')
     .option('--import-node-limit <n>', 'Same limit the suggestion was scanned with', parseImportNodeLimit)
-    .action((recommendationId: string, decision: string, options: { reason: string; repo: string; importNodeLimit?: number }) => {
+    .option('--timeout-ms <ms>', 'Per archctx call timeout in ms (default 120000, max 600000)', parseTimeoutMs)
+    .action((recommendationId: string, decision: string, options: { reason: string; repo: string; importNodeLimit?: number; timeoutMs?: number }) => {
       try {
         if (!DECISIONS.includes(decision as RefactorDecision)) throw new Error(`decision must be one of ${DECISIONS.join('|')}`);
-        const status = decideRefactorRecommendation(canonicalRepoPath(options.repo), recommendationId, decision as RefactorDecision, options.reason, options.importNodeLimit);
+        const status = decideRefactorRecommendation(canonicalRepoPath(options.repo), recommendationId, decision as RefactorDecision, options.reason, options.importNodeLimit, options.timeoutMs);
         process.stdout.write(`${JSON.stringify({ recommendationId, status }, null, 2)}\n`);
       } catch (error) { fail(error); }
     });

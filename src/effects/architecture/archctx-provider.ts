@@ -240,7 +240,7 @@ function decodeArchctxError(value: unknown): ArchContextError {
   return value as unknown as ArchContextError;
 }
 
-function commandLabel(args: readonly string[]): string { return `archctx ${args.slice(0, args[1]?.startsWith('-') ? 1 : 2).join(' ')}`; }
+export function commandLabel(args: readonly string[]): string { return `archctx ${args.slice(0, args[1]?.startsWith('-') ? 1 : 2).join(' ')}`; }
 
 export function runPackageLocalArchctxJson(
   repoRoot: string,

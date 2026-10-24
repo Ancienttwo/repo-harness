@@ -56,15 +56,17 @@ export interface RefactorRecommendationOptions {
   env?: NodeJS.ProcessEnv;
   /** Raises the CodeGraph import read cap. `refactor decide` must pass the same value. */
   importNodeLimit?: number;
-  discover?: (repoRoot: string, provider: ArchctxProviderOptions, importNodeLimit?: number) => RefactorDiscovery;
+  /** Per archctx call limit in ms; the default is 120000. `refactor decide` takes the same option. */
+  timeoutMs?: number;
+  discover?: (repoRoot: string, provider: ArchctxProviderOptions, importNodeLimit?: number, timeoutMs?: number) => RefactorDiscovery;
 }
 
 const result = (status: RefactorRecommendationResult['status'], message?: string): RefactorRecommendationResult => ({
   schemaVersion: 'repo-harness.refactor-recommendations/v2', status, candidates: [], ...(message ? { message } : {}),
 });
 
-export function discoverRefactorRecommendations(repoRoot: string, provider: ArchctxProviderOptions, importNodeLimit?: number): RefactorDiscovery {
-  return { scan: runRefactorScan(repoRoot, provider, importNodeLimit), open: listOpenRecommendations(repoRoot, provider) };
+export function discoverRefactorRecommendations(repoRoot: string, provider: ArchctxProviderOptions, importNodeLimit?: number, timeoutMs?: number): RefactorDiscovery {
+  return { scan: runRefactorScan(repoRoot, provider, importNodeLimit, timeoutMs), open: listOpenRecommendations(repoRoot, provider, timeoutMs) };
 }
 
 export function refactorCandidates({ scan, open }: RefactorDiscovery): RefactorRecommendation[] {
@@ -107,7 +109,7 @@ export function observeRefactorRecommendations(repoRoot: string, options: Refact
   try {
     const root = realpathSync(repoRoot);
     if (!existsSync(join(root, '.archcontext/manifest.yaml'))) return result('unavailable', 'repository architecture model is not initialized');
-    const discovery = (options.discover ?? discoverRefactorRecommendations)(root, { env: options.env }, options.importNodeLimit);
+    const discovery = (options.discover ?? discoverRefactorRecommendations)(root, { env: options.env }, options.importNodeLimit, options.timeoutMs);
     const { codeFacts: facts, repositorySummary } = discovery.scan.snapshot;
     if (facts.reasonCodes.includes('code-facts-import-limit')) {
       return result('proof_required', importLimitRemedy(facts));
