@@ -106,7 +106,8 @@ function diskContractFiles(repo: string, rootContextFiles: ReadonlySet<string>):
       const absolute = join(current, entry.name);
       if (entry.isSymbolicLink()) continue;
       if (entry.isDirectory()) {
-        if (!SKIPPED_DIRECTORIES.has(entry.name)) stack.push(absolute);
+        // A nested checkout (agent or linked worktree) owns its own contracts.
+        if (!SKIPPED_DIRECTORIES.has(entry.name) && !existsSync(join(absolute, ".git"))) stack.push(absolute);
         continue;
       }
       if (!entry.isFile()) continue;

@@ -315,6 +315,16 @@ describe("check-context-map", () => {
     });
   }, 30_000);
 
+  test("ignores contracts inside nested git checkouts such as agent worktrees", () => {
+    withFixture((repo) => {
+      write(repo, ".claude/worktrees/agent-1/.git", "gitdir: /elsewhere/.git/worktrees/agent-1\n");
+      write(repo, ".claude/worktrees/agent-1/extra/CLAUDE.md", contractFile("extra"));
+      const result = runCheck(repo);
+      expect(result.status).toBe(0);
+      expect(result.output).not.toContain("agent-1");
+    });
+  }, 30_000);
+
   test("fails closed when the map cannot be parsed", () => {
     withFixture((repo) => {
       write(repo, ".ai/context/context-map.json", "{ not json\n");
