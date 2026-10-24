@@ -18,7 +18,7 @@ The boundary has four layers:
 2. The installed command resolves the repository, checks the opt-in marker
    `.ai/harness/workflow-contract.json`, and invokes the hook-only CLI entry
    point. Opted-in repositories require this bin on PATH.
-3. `ROUTES` contains the 6 public `(event, routeId, matcher)` tuples. Every
+3. `ROUTES` contains the 7 public `(event, routeId, matcher)` tuples. Every
    tuple has exactly one `handler`; there is no `scripts` field and no Bash
    host-event dispatcher.
 4. `handler-registry.ts` runs one typed in-process handler. The handler
@@ -65,7 +65,7 @@ A thrown handler exits 1, except the edit guard. The edit guard route is
 fail-closed: a throw exits 2 on Claude and Codex. A missing `HOOK_HOST`, an unknown route and a route that is not
 installed for the host also stop before a handler runs.
 
-The public route inventory has 6 `(event, routeId, matcher)` tuples. The
+The public route inventory has 7 `(event, routeId, matcher)` tuples. The
 Host column of the route table in
 [`hook-operations.md`](../reference-configs/hook-operations.md#hook-authority-map)
 lists the matcher, host and typed handler of each tuple.
