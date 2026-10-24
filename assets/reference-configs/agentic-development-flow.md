@@ -13,6 +13,20 @@
 6. Run the full suite daily, automatically open a repair task on failure, and produce the daily merge/check/rollback report. Run the [Lessons Retro](#lessons-retro) in the same nightly window.
 7. Use the [Report SOP](#report-sop) for formal progress, phase and final reports to the user, including the daily user summary. Raw automated CI reports are evidence inputs; they do not replace that summary and do not require this format.
 
+## CI cost
+Size PR CI by the diff, the same as step 4. A full suite on each small PR spends runner time and adds no evidence that the affected tests and the daily run do not already give. The repo-harness source repository uses this shape in `.github/workflows/ci.yml`.
+
+- Triggers: run PR checks on `pull_request`. Do not also trigger `push` on feature branches; that runs each commit twice. A `push` to the default branch runs the affected selection for the merged diff, not the full suite.
+- Superseded runs: set `concurrency` to one group per PR number with `cancel-in-progress: true` for `pull_request` events only. Do not cancel scheduled runs.
+- Selection: a first job reads the diff against the PR base and outputs a mode. Later jobs read the mode in a job-level `if:`.
+  - A docs-only diff (`docs/**/*.md`, README, CHANGELOG, `tasks/`, `plans/`) skips build and test jobs. Keep link and format checks.
+  - A code diff runs typecheck plus the tests that the diff affects. Use the runner's change detection (`vitest --changed`, `jest --changedSince`, `nx affected`, `turbo run --filter=...[<base>]`, `pytest --testmon`) or an import-graph selector.
+  - A change to a shared input (lockfile, root build or test config, CI workflow, a test helper with no mapped consumer) runs the full suite on that PR. A selector that cannot map a changed file widens the run; it never shrinks it.
+- Required checks: skip a job with a job-level `if:`, not with workflow-level `paths` or `paths-ignore`. GitHub counts a skipped job as passing for a required check. A workflow that never starts leaves its required check pending and blocks the merge.
+- Full suite: run it on `schedule` (daily) and `workflow_dispatch` against one default-branch SHA, and on the release SHA before a release. A daily failure opens a repair task (step 6).
+- Matrix: run multi-OS or multi-version jobs on a PR only when the diff touches platform-specific code; always run them in the daily run. Set `fail-fast: false` so one platform failure does not hide the others.
+- Limits: set `timeout-minutes` on each job; the GitHub default of 360 minutes lets a hung job spend all of it. Cache dependencies keyed on the lockfile.
+
 ## Report SOP
 - Give a Feynman report: explain the work to a reader who does not know this project. Use plain language. Explain the goal, user value, how it works, completed work and remaining gaps. Explain each technical term at first use.
 - State the conclusion, changes, reasons, verification and remaining risks. Link each claim to its source or label it as an inference. Use observed results. Name failed, incomplete and omitted checks.
