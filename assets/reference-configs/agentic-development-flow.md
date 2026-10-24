@@ -19,7 +19,7 @@ Size PR CI by the diff, the same as step 4. A full suite on each small PR spends
 - Triggers: run PR checks on `pull_request`. Do not also trigger `push` on feature branches; that runs each commit twice. A `push` to the default branch runs the affected selection for the merged diff, not the full suite.
 - Superseded runs: set `concurrency` to one group per PR number with `cancel-in-progress: true` for `pull_request` events only. Do not cancel scheduled runs.
 - Selection: a first job reads the diff against the PR base and outputs a mode. Later jobs read the mode in a job-level `if:`.
-  - A docs-only diff (`docs/**/*.md`, README, CHANGELOG, `tasks/`, `plans/`) skips build and test jobs. Keep link and format checks.
+  - A docs-only diff (`docs/**/*.md`, README, CHANGELOG, `tasks/`, `plans/`) skips build and test jobs when no test or script reads the changed files. Keep link and format checks. A document that is program input, such as a projected copy, a parsed contract or a generated region, runs its consumer tests.
   - A code diff runs typecheck plus the tests that the diff affects. Use the runner's change detection (`vitest --changed`, `jest --changedSince`, `nx affected`, `turbo run --filter=...[<base>]`, `pytest --testmon`) or an import-graph selector.
   - A change to a shared input (lockfile, root build or test config, CI workflow, a test helper with no mapped consumer) runs the full suite on that PR. A selector that cannot map a changed file widens the run; it never shrinks it.
 - Required checks: skip a job with a job-level `if:`, not with workflow-level `paths` or `paths-ignore`. GitHub counts a skipped job as passing for a required check. A workflow that never starts leaves its required check pending and blocks the merge.
