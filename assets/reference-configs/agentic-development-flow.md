@@ -24,7 +24,7 @@ Size PR CI by the diff, the same as step 4. A full suite on each small PR spends
   - A change to a shared input (lockfile, root build or test config, CI workflow, a test helper with no mapped consumer) runs the full suite on that PR. A selector that cannot map a changed file widens the run; it never shrinks it.
 - Required checks: skip a job with a job-level `if:`, not with workflow-level `paths` or `paths-ignore`. GitHub counts a skipped job as passing for a required check. A workflow that never starts leaves its required check pending and blocks the merge.
 - Full suite: run it on `schedule` (daily) and `workflow_dispatch` against one default-branch SHA, and on the release SHA before a release. A daily failure opens a repair task (step 6).
-- Matrix: run multi-OS or multi-version jobs on a PR only when the diff touches platform-specific code; always run them in the daily run. Set `fail-fast: false` so one platform failure does not hide the others.
+- Matrix: each axis must change the runtime that the tests run on. When the test runner is pinned, for example one Bun version, a Node-version axis reaches only the scripts and tests that spawn Node. Run only that subset on the axis; a full suite on 3 OS × 3 Node versions repeats each OS run three times. On a PR, run a matrix cell only when the diff touches code that depends on its axis. The daily run covers each cell with its dependent subset. Set `fail-fast: false` so one cell failure does not hide the others.
 - Limits: set `timeout-minutes` on each job; the GitHub default of 360 minutes lets a hung job spend all of it. Cache dependencies keyed on the lockfile.
 
 ## Report SOP
