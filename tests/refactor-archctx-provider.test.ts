@@ -68,6 +68,13 @@ describe("refactor archctx provider", () => {
       expect(message).not.toContain("architecture-projection");
       expect(message).not.toContain("request id");
     }
+    try {
+      decideRecommendation("rec.x", "accept", "reason", repo(), { consumerRoot: process.cwd(), run: timedOut }, undefined, 5000);
+      throw new Error("expected failure");
+    } catch (error) {
+      expect(error).toMatchObject({ code: "refactor_provider_timeout", action: "raise-timeout-and-retry" });
+      expect((error as Error).message).toContain("outcome unknown");
+    }
   });
 
   test("passes the timeout to the archctx runner and defaults to 120000 ms", () => {

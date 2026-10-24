@@ -1,7 +1,7 @@
 import { Command, InvalidArgumentError } from 'commander';
 import { RefactorProviderError } from '../../core/refactor/provider-contract';
 import { canonicalRepoPath } from '../../effects/repo-registry';
-import { decideRecommendation, REFACTOR_MAX_TIMEOUT_MS, type RefactorDecision } from '../../effects/refactor/archctx-provider';
+import { decideRecommendation, REFACTOR_DEFAULT_TIMEOUT_MS, REFACTOR_MAX_TIMEOUT_MS, REFACTOR_MIN_TIMEOUT_MS, type RefactorDecision } from '../../effects/refactor/archctx-provider';
 import {
   observeRefactorRecommendations,
   type RefactorRecommendation,
@@ -64,7 +64,7 @@ function parseImportNodeLimit(value: string): number {
 }
 
 function parseTimeoutMs(value: string): number {
-  if (!/^[0-9]+$/.test(value) || Number(value) < 1000 || Number(value) > REFACTOR_MAX_TIMEOUT_MS) throw new InvalidArgumentError(`must be an integer from 1000 to ${REFACTOR_MAX_TIMEOUT_MS}`);
+  if (!/^[0-9]+$/.test(value) || Number(value) < REFACTOR_MIN_TIMEOUT_MS || Number(value) > REFACTOR_MAX_TIMEOUT_MS) throw new InvalidArgumentError(`must be an integer from ${REFACTOR_MIN_TIMEOUT_MS} to ${REFACTOR_MAX_TIMEOUT_MS}`);
   return Number(value);
 }
 
@@ -80,7 +80,7 @@ export function buildRefactorCommand(): Command {
     .description('Show measured suggestions with evidence; never executes a refactor')
     .option('--repo <path>', 'Repository root', '.')
     .option('--import-node-limit <n>', 'Raise the CodeGraph import read cap; use the same value for decide', parseImportNodeLimit)
-    .option('--timeout-ms <ms>', 'Per archctx call timeout in ms (default 120000, max 600000)', parseTimeoutMs)
+    .option('--timeout-ms <ms>', `Per archctx call timeout in ms (default ${REFACTOR_DEFAULT_TIMEOUT_MS}, max ${REFACTOR_MAX_TIMEOUT_MS})`, parseTimeoutMs)
     .option('--json', 'Output machine-readable JSON')
     .action((options: { repo: string; importNodeLimit?: number; timeoutMs?: number; json?: boolean }) => {
       const value = observeRefactorRecommendations(canonicalRepoPath(options.repo), { importNodeLimit: options.importNodeLimit, timeoutMs: options.timeoutMs });
@@ -94,7 +94,7 @@ export function buildRefactorCommand(): Command {
     .requiredOption('--reason <text>', 'Why the user decided this way')
     .option('--repo <path>', 'Repository root', '.')
     .option('--import-node-limit <n>', 'Same limit the suggestion was scanned with', parseImportNodeLimit)
-    .option('--timeout-ms <ms>', 'Per archctx call timeout in ms (default 120000, max 600000)', parseTimeoutMs)
+    .option('--timeout-ms <ms>', `Per archctx call timeout in ms (default ${REFACTOR_DEFAULT_TIMEOUT_MS}, max ${REFACTOR_MAX_TIMEOUT_MS})`, parseTimeoutMs)
     .action((recommendationId: string, decision: string, options: { reason: string; repo: string; importNodeLimit?: number; timeoutMs?: number }) => {
       try {
         if (!DECISIONS.includes(decision as RefactorDecision)) throw new Error(`decision must be one of ${DECISIONS.join('|')}`);

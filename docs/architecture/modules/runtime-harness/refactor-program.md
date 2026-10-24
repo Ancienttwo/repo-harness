@@ -113,7 +113,7 @@ sequenceDiagram
 4. **证据不完整时不给建议。** code facts 不完整或被截断时返回 `proof_required`（`recommendations.ts:103-105`）。任何文件有多个归属 capability 时也返回 `proof_required`，因为模块统计会重复计数这些文件（`recommendations.ts:106-110`）。模型未初始化时返回 `unavailable`（`:100`）。
 5. **只记录用户决定，从不执行重构。** `refactor decide` 在建议尚未记录时先记录扫描，再把 accept、defer 或 reject 连同理由交给 ArchContext（`src/cli/commands/refactor.ts:33-40`）。接受的建议走普通的 plan 和 PR 流程。
 6. **建议是按需证据，不是推送。** 没有 hook 扫描建议。Bot 调用 `repo-harness refactor recommendations --json` 读取证据，再决定是否调度工作（PR #617；`assets/skill-commands/repo-harness-check/references/architecture-evidence.md`）。
-7. **包内 archctx 先过版本检查。** 每个仓库根第一次调用时检查 `capabilities --json` 的精确版本（`archctx-provider.ts:17-20`）。provider 错误统一转成 `refactor_provider_unavailable`（`:24`）。
+7. **包内 archctx 先过版本检查。** 每个仓库根第一次调用时检查 `capabilities --json` 的精确版本（`archctx-provider.ts:17-20`）。provider 错误统一转成 `refactor_provider_unavailable`（`:24`）。archctx 超时转成 `refactor_provider_timeout`，动作为 `raise-timeout-and-retry`。
 
 ### 3.2 关键权衡
 
@@ -121,7 +121,7 @@ sequenceDiagram
 | --- | --- |
 | 删除 Refactor Program 执行栈（PR #617） | 没有 skill 或 MCP 工具使用它，Stop 也只打印 `recommended: undefined`。删除后本 capability 只剩 4 个文件、约 285 行。代价是接受的建议要由 Bot 或人重新写成 plan。 |
 | 多归属文件存在时一律 `proof_required` | 不会给出基于重复计数的建议。代价是本仓库目前有 45 个多归属文件，所以 `refactor recommendations` 在本仓库总是返回 `proof_required`，直到 arch-context#296 和 resolver 改动完成。 |
-| `decide` 每次重新扫描 | 决定总是针对当前扫描里存在的建议，未知 id 直接报错（`refactor.ts:36`）。代价是每次决定都付一次完整扫描（provider 超时 120 秒，`archctx-provider.ts:21`）。 |
+| `decide` 每次重新扫描 | 决定总是针对当前扫描里存在的建议，未知 id 直接报错（`refactor.ts:36`）。代价是每次决定都付一次完整扫描（provider 超时默认 120 秒，`--timeout-ms` 可覆盖）。 |
 | CLI 退出码区分证据状态 | `unavailable` 和 `proof_required` 退出码为 1（`refactor.ts:56`），Bot 可以不解析 JSON 就知道证据不可用。代价是"没有建议"与"无法给建议"在退出码层面不同，调用方必须区分。 |
 
 ### 3.3 组件与关系（2026-10-11）

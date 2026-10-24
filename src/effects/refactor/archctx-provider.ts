@@ -10,6 +10,7 @@ import { ArchctxClientError, commandLabel, runPackageLocalArchctxJson, type Arch
 
 export type RefactorDecision = "accept" | "defer" | "reject";
 
+export const REFACTOR_MIN_TIMEOUT_MS = 1_000;
 export const REFACTOR_DEFAULT_TIMEOUT_MS = 120_000;
 export const REFACTOR_MAX_TIMEOUT_MS = 600_000;
 
@@ -20,7 +21,10 @@ function invoke(repoRoot: string, args: readonly string[], options: ArchctxProvi
   } catch (error) {
     if (error instanceof RefactorProviderError) throw error;
     if (error instanceof ArchctxClientError && error.code === "RH_ARCHCTX_TIMEOUT") {
-      throw new RefactorProviderError("refactor_provider_timeout", `${commandLabel(args)} timed out after ${timeoutMs} ms. Retry with --timeout-ms <larger value> (max ${REFACTOR_MAX_TIMEOUT_MS}).`, "raise-timeout-and-retry");
+      // A decision call can finish inside archctx after repo-harness stops waiting.
+      const isDecision = args[0] === "recommendations" && args[1] !== "list";
+      const outcome = isDecision ? " Decision outcome unknown: archctx may already have recorded the decision. Run `repo-harness refactor recommendations` to check before retrying." : "";
+      throw new RefactorProviderError("refactor_provider_timeout", `${commandLabel(args)} timed out after ${timeoutMs} ms.${outcome} Retry with --timeout-ms <larger value> (max ${REFACTOR_MAX_TIMEOUT_MS}).`, "raise-timeout-and-retry");
     }
     throw new RefactorProviderError("refactor_provider_unavailable", error instanceof Error ? error.message : String(error));
   }
