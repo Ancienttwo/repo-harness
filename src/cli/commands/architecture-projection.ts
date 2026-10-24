@@ -1,7 +1,7 @@
 import { readGlobalArchitectureConfiguration } from '../../effects/architecture/projection-config';
 import { execFileSync } from 'node:child_process';
 import { Command } from 'commander';
-import type { ProjectionMode } from 'archctx-contracts';
+import type { ProjectionHumanActionV1, ProjectionMode } from 'archctx-contracts';
 import { architectureProjectionRequest, inspectArchitectureProjectionReadiness, readArchitectureDocsAnchors, readArchitectureHandEdits, runArchitectureProjection } from '../../effects/architecture/archctx-provider';
 import { ARCHITECTURE_DEBT_COMMAND, summarizeArchitectureRender } from '../../core/architecture/projection';
 import { applyArchitectureProjection } from '../../effects/architecture/projection-apply';
@@ -90,10 +90,19 @@ function execute(mode: ProjectionMode, options: ProjectionCommandOptions): void 
 
     write(result);
     if (result.majorChangeAcceptance === 'declined-unprovable-proof') process.stderr.write(`archctx declined an unprovable major change; next: ${ARCHITECTURE_DEBT_COMMAND}, then add the missing P1/P2 proof (repo-harness-architecture worker, "Adopt ArchContext" step 4)\n`);
+    for (const action of result.humanActions) process.stderr.write(`${humanActionLine(action)}\n`);
     if (architectureProjectionExitCode(mode, result.status) !== 0) process.exitCode = 1;
   } catch (error) {
     fail(error);
   }
+}
+
+const ADOPTION_NEXT = 'preview "archctx docs adopt --profile repo-harness/v1", then repo-harness architecture-projection adopt --json --adoption-plan-id <id> (repo-harness-architecture worker, "Adopt ArchContext" step 8)';
+const MODEL_CHANGE_NEXT = `inspect ${ARCHITECTURE_DEBT_COMMAND}, write the model change as one ChangeSet (repo-harness-architecture worker, "Model ChangeSets"), then rerun repo-harness architecture-projection apply --json`;
+
+function humanActionLine(action: ProjectionHumanActionV1): string {
+  const subject = [...action.affectedNodeIds, ...(action.path ? [action.path] : [])].join(', ');
+  return `archctx needs human action: ${action.reasonCode} [${subject}]; next: ${action.reasonCode === 'adoption-required' ? ADOPTION_NEXT : MODEL_CHANGE_NEXT}`;
 }
 
 export function architectureProjectionExitCode(mode: ProjectionMode, status: string): 0 | 1 {

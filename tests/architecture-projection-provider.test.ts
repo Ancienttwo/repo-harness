@@ -673,6 +673,21 @@ describe('package-local ArchContext projection provider', () => {
     expect(result.stderr).not.toMatch(/next: archctx /);
   });
 
+  test('unresolved-major-change prints the capability and the model ChangeSet next step', () => {
+    const f = fixture();
+    const { majorChangeAcceptance: _accepted, receiptDigest: _digest, ...recorded } = JSON.parse(readFileSync(join(import.meta.dir, 'fixtures/architecture-projection/declined-unprovable-proof-0.8.0.json'), 'utf8')) as ProjectionResultV2;
+    const payload = { ...recorded, humanActions: recorded.humanActions.map(action => ({ ...action, reasonCode: 'unresolved-major-change' as const })) };
+    const receiptDigest = projectionResultReceiptDigest(payload);
+    const major: ProjectionResultV2 = { ...payload, receiptDigest, refreshSignals: payload.refreshSignals.map(signal => ({ ...signal, projectionReceiptDigest: receiptDigest })) };
+    expect(projectionResultInvariantIssues(major)).toEqual([]);
+    const result = projectionCli(f, { schemaVersion: 'archcontext.envelope/v1', ok: true, requestId: 'projection.run', data: major }, major.requestId);
+    expect(result.status).toBe(1);
+    expect(JSON.parse(result.stdout).humanActions[0].reasonCode).toBe('unresolved-major-change');
+    expect(result.stderr).toContain('unresolved-major-change [capability.test.core]');
+    expect(result.stderr).toContain('"Model ChangeSets"');
+    expect(result.stderr).toContain('repo-harness architecture-projection apply --json');
+  });
+
   test('a timeout reports outcome unknown and the same id without the request JSON', () => {
     const f = fixture();
     const run: RunArchctxProcess = withSnapshot((_binary, args) => args[0] === 'capabilities'
