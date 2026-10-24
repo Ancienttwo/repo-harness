@@ -36,6 +36,8 @@ Before non-trivial design or edits, complete P1/P2/P3:
 - Keep one source of truth for each datum. Other representations must be deterministic projections with drift checks; an authority cutover removes the old authoring path in the same approved work-package.
 - Add an abstraction only when it removes observed duplicate authority or complexity, serves at least two real consumers, or protects a cross-module invariant.
 - Create shared components only for observed reuse or invariants. When independently meaningful consumers need a shared package, prefer an existing monorepo workspace; do not convert a single-package repository into a monorepo without a second independently released or deployed consumer.
+- Validate an unknown value once, at the boundary that owns it, and pass the typed value inward. Do not check again a value that a schema, constructor or internal type already guarantees.
+- Before you add complexity for a speculative or very unlikely race, security or failure case, tell the user the concrete failure mode, its likelihood and the complexity cost, and get their approval. Do not expand scope silently for theoretical robustness.
 
 ## No Compatibility Fallbacks in Product Code
 

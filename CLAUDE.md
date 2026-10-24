@@ -53,6 +53,8 @@
 - Isolate mutable HOME, repositories and process state; use real synchronization signals and preserve complete failure output.
 - Report failed, timed-out, incomplete or omitted coverage explicitly; do not manufacture receipts, waiver files or pre-fix logs.
 - Never modify or delete test assertions just to make tests pass; justify every necessary test change item by item in the PR description.
+- Before you write or change tests, load the `repo-harness-test` skill (`assets/skills/repo-harness-test/SKILL.md`).
+- When a local check and CI disagree, CI is the authority. Reproduce the failure with `bash scripts/check-ci.sh <lane>` before you change code; a global `repo-harness` or `repo-harness-hook` on `PATH` can hide a missing test setup.
 
 ## Handoff
 - Create a checkpoint only when context/session rollover or unresolved work needs it; ordinary completion stays in the PR description.
