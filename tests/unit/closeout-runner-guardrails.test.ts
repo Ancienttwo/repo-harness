@@ -254,10 +254,22 @@ describe('closeout runner guardrails', () => {
     const processGroupPidPath = join(root, 'process-group-pid');
     const resultPath = join(root, 'result.json');
     const workerPath = join(root, 'hard-timeout-worker.ts');
+    // A redirect creates the file before its PID is written, and `ps` can print
+    // nothing under load. Retry `ps`, and publish each PID by rename so that a
+    // visible file always holds a complete, non-empty PID.
+    const command = [
+      `publish() { [ -n "$2" ] && printf '%s\\n' "$2" > "$1.tmp" && mv "$1.tmp" "$1"; }`,
+      `publish "${processGroupPidPath}" "$PPID"`,
+      'supervisor_pid=""',
+      `for _ in {1..100}; do supervisor_pid=$(ps -o ppid= -p "$PPID" | tr -d '[:space:]'); [ -n "$supervisor_pid" ] && break; sleep 0.01; done`,
+      `publish "${supervisorPidPath}" "$supervisor_pid"`,
+      'kill -STOP "$supervisor_pid"',
+      'sleep 60',
+    ].join('; ');
     writeFileSync(workerPath, [
       `import { runProcess } from ${JSON.stringify(join(ROOT, 'src/effects/process-runner.ts'))};`,
       "import { writeFileSync } from 'fs';",
-      `const command = ${JSON.stringify(`echo "$PPID" > "${processGroupPidPath}"; supervisor_pid=$(ps -o ppid= -p "$PPID" | tr -d '[:space:]'); echo "$supervisor_pid" > "${supervisorPidPath}"; kill -STOP "$supervisor_pid"; sleep 60`)};`,
+      `const command = ${JSON.stringify(command)};`,
       `const result = runProcess('bash', ['-c', command], { cwd: ${JSON.stringify(root)}, timeoutMs: 500, processGroup: true });`,
       `writeFileSync(${JSON.stringify(resultPath)}, JSON.stringify(result));`,
       '',
