@@ -19,6 +19,7 @@ import type { ReviewHostSpec, HostRoundObservation } from './oar-review-host';
 import type { SessionOptions, InstallationSnapshot } from '@botiverse/oar';
 import { acceptanceContext, acceptanceReviewContextDigest, authorityFingerprint, GENERIC_REVIEW_ROLE,
   projectAcceptance, recordAcceptance, verifyAcceptance, type AcceptanceReceipt } from './acceptance-receipt';
+import { gitExecFileSync } from '../git/runner';
 
 type Harness = 'claude' | 'codex';
 interface ReviewSession {
@@ -55,8 +56,8 @@ export interface ReviewOptions {
 }
 
 function fingerprint(root: string): string {
-  return authorityFingerprint(execFileSync('git', ['status', '--porcelain=v1', '--untracked-files=all'], { cwd: root, encoding: 'utf8' })
-    + execFileSync('git', ['diff', 'HEAD', '--no-ext-diff', '--no-textconv', '--binary'], { cwd: root, encoding: 'utf8', maxBuffer: 12 * 1024 * 1024 }));
+  return authorityFingerprint(gitExecFileSync(['status', '--porcelain=v1', '--untracked-files=all'], { cwd: root, encoding: 'utf8' })
+    + gitExecFileSync(['diff', 'HEAD', '--no-ext-diff', '--no-textconv', '--binary'], { cwd: root, encoding: 'utf8', maxBuffer: 12 * 1024 * 1024 }));
 }
 // Owner inference consumes existing typed task bindings only. Interactive
 // parents without a binding require an explicit --harness; never guess from TUI.
@@ -180,13 +181,13 @@ function contextIdentity(context: Awaited<ReturnType<typeof acceptanceContext>>)
 }
 
 function sourcePacket(root: string, paths: readonly string[], target: string): string {
-  const pieces = [execFileSync('git', ['diff', '--no-ext-diff', '--no-textconv', '--binary', target, '--'], { cwd: root, encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 })];
+  const pieces = [gitExecFileSync(['diff', '--no-ext-diff', '--no-textconv', '--binary', target, '--'], { cwd: root, encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 })];
   for (const path of paths) {
     const file = resolve(root, path);
     if (relative(root, file).split('/').includes('..')) throw new Error('review_unsafe_subject_path');
     if (!existsSync(file)) { pieces.push(`Deleted path: ${JSON.stringify(path)}`); continue; }
     if (lstatSync(file).isSymbolicLink() || !lstatSync(file).isFile() || !realpathSync(file).startsWith(root + '/')) throw new Error('review_unsupported_subject_entry');
-    if (execFileSync('git', ['--literal-pathspecs', 'ls-files', '--', path], { cwd: root, encoding: 'utf8' }).trim()) continue;
+    if (gitExecFileSync(['--literal-pathspecs', 'ls-files', '--', path], { cwd: root, encoding: 'utf8' }).trim()) continue;
     if (lstatSync(file).size > 8 * 1024 * 1024) throw new Error('review_subject_too_large');
     pieces.push(`Complete untracked file ${JSON.stringify(path)}:\n${new TextDecoder('utf8', { fatal: true }).decode(readFileSync(file))}`);
   }

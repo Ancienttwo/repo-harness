@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { spawnSync } from 'child_process';
-import { createHash } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -9,6 +9,7 @@ import { getMcpPolicy } from '../../src/cli/mcp/policy';
 import { buildReaderToolDefinitions, callReaderTool, createReaderToolContext, type ReaderToolContext } from '../../src/cli/mcp/reader-tools';
 import { WorkspaceManager } from '../../src/cli/mcp/workspaces';
 import type { GeneralRepoCodeGraphAdapter } from '../../src/cli/mcp/codegraph-adapter';
+import { currentProcessStartTime } from '../../src/effects/locking/process-start-time';
 
 async function jsonTool(ctx: ReaderToolContext, name: string, args: Record<string, unknown> = {}) {
   const result = await callReaderTool(ctx, name, args);
@@ -34,9 +35,14 @@ function mutationLockPath(repoId: string, relativePath: string): string {
   return join(harnessHome, 'mcp', 'mutation-locks', repoId, `${sha256(relativePath).slice(0, 32)}.lock`);
 }
 
-function writeMutationLockOwner(lockPath: string, owner: Record<string, unknown>): void {
+/** Publish one shared-primitive owner record in a mutation lock directory. */
+function writeMutationLockOwner(lockPath: string, owner: { readonly pid: number; readonly start_time: string }): void {
+  const token = `${owner.pid}-${Date.now()}-${randomUUID()}`;
   mkdirSync(lockPath, { recursive: true, mode: 0o700 });
-  writeFileSync(join(lockPath, 'owner.json'), `${JSON.stringify(owner)}\n`, { encoding: 'utf-8', mode: 0o600 });
+  writeFileSync(join(lockPath, `${token}.json`), `${JSON.stringify({ ...owner, created_at: Date.now(), token })}\n`, {
+    encoding: 'utf-8',
+    mode: 0o600,
+  });
 }
 
 function exitedProcessPid(): number {
@@ -1084,13 +1090,7 @@ describe('MCP reader tools', () => {
 	      const repoId = (await jsonTool(ctx, 'list_allowed_roots')).roots[0].repo_id;
 	      const relativePath = 'docs/stale-lock.txt';
 	      const lockPath = mutationLockPath(repoId, relativePath);
-	      writeMutationLockOwner(lockPath, {
-	        repo_id: repoId,
-	        path: relativePath,
-	        pid: exitedProcessPid(),
-	        token: 'dead-owner',
-	        created_at: '2026-06-23T00:00:00.000Z',
-	      });
+	      writeMutationLockOwner(lockPath, { pid: exitedProcessPid(), start_time: 'fixture-exited-owner' });
 
 	      const created = await jsonTool(ctx, 'write_file', {
 	        repo_id: repoId,
@@ -1105,18 +1105,40 @@ describe('MCP reader tools', () => {
 	    }, { accessMode: 'read_write' });
 	  }, 30_000);
 
-	  test('write mutation does not reclaim dead owner locks for a different path', async () => {
+	  test('write mutation reclaims a lock whose owner PID now runs a different process', async () => {
 	    await withReaderRepo(async (repoRoot, ctx) => {
 	      const repoId = (await jsonTool(ctx, 'list_allowed_roots')).roots[0].repo_id;
-	      const relativePath = 'docs/mismatched-lock.txt';
+	      const relativePath = 'docs/reused-pid-lock.txt';
 	      const lockPath = mutationLockPath(repoId, relativePath);
-	      writeMutationLockOwner(lockPath, {
+	      // This live PID started at another time than the record says: the PID was reused.
+	      writeMutationLockOwner(lockPath, { pid: process.pid, start_time: `${currentProcessStartTime()}-earlier-process` });
+
+	      const created = await jsonTool(ctx, 'write_file', {
 	        repo_id: repoId,
-	        path: 'docs/other-lock.txt',
-	        pid: exitedProcessPid(),
-	        token: 'mismatched-owner',
-	        created_at: '2026-06-23T00:00:00.000Z',
+	        path: relativePath,
+	        content: 'recovered\n',
+	        must_not_exist: true,
 	      });
+
+	      expect(created.error).toBeUndefined();
+	      expect(readFileSync(join(repoRoot, relativePath), 'utf-8')).toBe('recovered\n');
+	      expect(existsSync(lockPath)).toBe(false);
+	    }, { accessMode: 'read_write' });
+	  }, 30_000);
+
+	  test('write mutation keeps a lock left by an older owner record shape fail-closed', async () => {
+	    await withReaderRepo(async (repoRoot, ctx) => {
+	      const repoId = (await jsonTool(ctx, 'list_allowed_roots')).roots[0].repo_id;
+	      const relativePath = 'docs/older-shape-lock.txt';
+	      const lockPath = mutationLockPath(repoId, relativePath);
+	      mkdirSync(lockPath, { recursive: true, mode: 0o700 });
+	      writeFileSync(join(lockPath, 'owner.json'), `${JSON.stringify({
+	        repo_id: repoId,
+	        path: relativePath,
+	        pid: exitedProcessPid(),
+	        token: 'older-shape-owner',
+	        created_at: '2026-06-23T00:00:00.000Z',
+	      })}\n`, { encoding: 'utf-8', mode: 0o600 });
 
 	      const blocked = await jsonTool(ctx, 'write_file', {
 	        repo_id: repoId,
@@ -1127,7 +1149,7 @@ describe('MCP reader tools', () => {
 
 	      expect(blocked.error.code).toBe('REVISION_CONFLICT');
 	      expect(existsSync(join(repoRoot, relativePath))).toBe(false);
-	      expect(existsSync(lockPath)).toBe(true);
+	      expect(existsSync(join(lockPath, 'owner.json'))).toBe(true);
 	      rmSync(lockPath, { recursive: true, force: true });
 	    }, { accessMode: 'read_write' });
 	  }, 30_000);
@@ -1137,13 +1159,7 @@ describe('MCP reader tools', () => {
 	      const repoId = (await jsonTool(ctx, 'list_allowed_roots')).roots[0].repo_id;
 	      const relativePath = 'docs/live-lock.txt';
 	      const lockPath = mutationLockPath(repoId, relativePath);
-	      writeMutationLockOwner(lockPath, {
-	        repo_id: repoId,
-	        path: relativePath,
-	        pid: process.pid,
-	        token: 'live-owner',
-	        created_at: '2026-06-23T00:00:00.000Z',
-	      });
+	      writeMutationLockOwner(lockPath, { pid: process.pid, start_time: currentProcessStartTime() });
 
 	      const blocked = await jsonTool(ctx, 'write_file', {
 	        repo_id: repoId,

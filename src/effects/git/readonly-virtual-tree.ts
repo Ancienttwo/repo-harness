@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { lstatSync } from 'node:fs';
-import { assertObservationPath, observationReadFileSync, observationExecFileSync, currentReadonlyObservation, rejectObservation } from '../state/readonly-observation';
+import { assertObservationPath, observationReadFileSync, currentReadonlyObservation, rejectObservation } from '../state/readonly-observation';
+import { gitExecFileSync } from './runner';
 
 /** Git object identity only. No index, object store, ledger or code is written. */
 function objectHash(type: 'blob' | 'tree', body: Buffer): Buffer {
@@ -19,7 +20,7 @@ function hashTree(tree: Tree): Buffer {
 }
 export function captureReadonlyGitTree(root: string): string {
   const io = currentReadonlyObservation(); if (!io) throw new Error('Readonly Git tree requires an observation scope');
-  const git = (args: string[]) => observationExecFileSync('git', ['-C', root, '--literal-pathspecs', ...args]) as Buffer;
+  const git = (args: string[]) => gitExecFileSync(['-C', root, '--literal-pathspecs', ...args]) as Buffer;
   const booleanConfig = (key: string, fallback: boolean): boolean => {
     try { return git(['config', '--bool', '--get', key]).toString().trim() === 'true'; }
     catch (error) { if ((error as { status?: number }).status === 1) return fallback; throw error; }

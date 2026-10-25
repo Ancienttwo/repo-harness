@@ -122,6 +122,7 @@ function setupFakeEnvironment(prefix: string) {
   const fakeBin = join(root, "fakebin");
 
   mkdirSync(home, { recursive: true });
+  mkdirSync(join(root, ".codegraph"));
   mkdirSync(fakeBin, { recursive: true });
   writeExecutable(join(fakeBin, "herdr"), `#!/bin/sh\nif [ "${'${1:-}'}" = --skill ]; then printf '%s' '${HERDR_SKILL.replaceAll("'", "'\\''")}'; else printf 'herdr 0.9.3\\n'; fi\n`);
   for (const host of [".claude", ".codex"]) {
@@ -435,6 +436,9 @@ describe("check-agent-tooling", () => {
   test("reports active tooling without the retired planning provider", () => {
     const envRoot = setupFakeEnvironment("check-agent-tooling");
     try {
+      mkdirSync(join(envRoot.root, ".ai", "harness"), { recursive: true });
+      copyFileSync(join(ROOT, ".ai", "harness", "policy.json"), join(envRoot.root, ".ai", "harness", "policy.json"));
+      copyFileSync(join(ROOT, "package.json"), join(envRoot.root, "package.json"));
       mkdirSync(join(envRoot.home, ".agents", "skills"), { recursive: true });
       mkdirSync(join(envRoot.home, ".claude"), { recursive: true });
       mkdirSync(join(envRoot.home, ".codex"), { recursive: true });
@@ -453,7 +457,7 @@ describe("check-agent-tooling", () => {
       writeFakeCodeGraph(envRoot.fakeBin);
 
       const res = spawnSync("bash", [SCRIPT, "--json", "--host", "both"], {
-        cwd: ROOT,
+        cwd: envRoot.root,
         encoding: "utf-8",
         env: {
           ...process.env,
@@ -518,7 +522,7 @@ describe("check-agent-tooling", () => {
       expect(report.tools.codegraph.impact.code_navigation).toBe("missing");
 
       const textRes = spawnSync("bash", [SCRIPT, "--host", "both"], {
-        cwd: ROOT,
+        cwd: envRoot.root,
         encoding: "utf-8",
         env: {
           ...process.env,
@@ -703,7 +707,7 @@ describe("check-agent-tooling", () => {
       writeFakeCodeGraph(envRoot.fakeBin);
 
       const res = spawnSync("bash", [SCRIPT, "--json", "--host", "claude"], {
-        cwd: ROOT,
+        cwd: envRoot.root,
         encoding: "utf-8",
         env: {
           ...process.env,
@@ -942,7 +946,7 @@ describe("check-agent-tooling", () => {
       writeFakeCodeGraph(envRoot.fakeBin, { version: "0.8.0" });
 
       const res = spawnSync("bash", [SCRIPT, "--json", "--host", "codex"], {
-        cwd: ROOT,
+        cwd: envRoot.root,
         encoding: "utf-8",
         env: {
           ...process.env,
@@ -1016,7 +1020,7 @@ describe("check-agent-tooling", () => {
       writeFakeCodeGraph(envRoot.fakeBin);
 
       const res = spawnSync("bash", [SCRIPT, "--json", "--host", "claude", "--strict-readiness"], {
-        cwd: ROOT,
+        cwd: envRoot.root,
         encoding: "utf-8",
         env: {
           ...process.env,
@@ -1053,7 +1057,7 @@ describe("check-agent-tooling", () => {
       }
 
       const res = spawnSync("bash", [SCRIPT, "--json", "--host", "claude", "--strict-readiness"], {
-        cwd: ROOT,
+        cwd: envRoot.root,
         encoding: "utf-8",
         env: {
           ...process.env,
@@ -1865,3 +1869,34 @@ test.each([undefined, "invalid"])("Herdr missing or malformed version policy is 
     expect(result.stderr).toContain("repo-harness init --repo .");
   } finally { rmSync(fixture.root, { recursive: true, force: true }); }
 }, 20000);
+
+test("does not borrow a parent CodeGraph index for a nested checkout", () => {
+  const fixture = setupFakeEnvironment("codegraph-nested-checkout");
+  const nested = join(fixture.root, ".claude", "worktrees", "child");
+  try {
+    mkdirSync(nested, { recursive: true });
+    mkdirSync(join(fixture.root, ".codegraph"), { recursive: true });
+    writeFakeSkillsCli(fixture.fakeBin);
+    writeFakeCodeGraph(fixture.fakeBin);
+    const probe = () => {
+      const result = spawnSync("bash", [SCRIPT, "--json", "--host", "codex"], {
+        cwd: nested, encoding: "utf8",
+        env: { ...process.env, HOME: fixture.home, PATH: `${fixture.fakeBin}:${process.env.PATH ?? ""}`,
+          AGENTIC_DEV_CODEGRAPH_LOCAL_BIN: join(fixture.fakeBin, "codegraph") },
+      });
+      expect(result.status).toBe(0);
+      return JSON.parse(result.stdout).tools.codegraph.project_index;
+    };
+    const inherited = probe();
+    expect(inherited.initialized).toBe(false);
+    expect(inherited.status).toBe("not-initialized");
+    expect(inherited.path).toBe(join(nested, ".codegraph"));
+    expect(inherited.detail).toContain(join(fixture.root, ".codegraph"));
+    mkdirSync(join(nested, ".codegraph"));
+    const own = probe();
+    expect(own.initialized).toBe(true);
+    expect(own.status).toBe("up-to-date");
+  } finally {
+    rmSync(fixture.root, { recursive: true, force: true });
+  }
+}, 15000);

@@ -1,9 +1,10 @@
 import { existsSync, lstatSync, readFileSync, realpathSync } from 'fs';
 import { dirname, extname, isAbsolute, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
-import { ARCHCONTEXT_NODE_RANGE } from 'archctx-contracts';
 import { runProcess as runBoundedProcess } from '../process-runner';
+import { runGit } from '../git/run-git';
 import { trustedNodeCandidates } from './node-candidates';
+import { selectCompatibleNode } from './node-runtime';
 import {
   protectedHelperRuntimeEnv,
   resolveProtectedHelperPlatform,
@@ -32,20 +33,18 @@ function protectedPath(runtime: ProtectedHelperPlatform): string {
 }
 
 function trustedNodeRuntime(runtime: ProtectedHelperPlatform): string | undefined {
-  for (const candidate of trustedNodeCandidates(runtime.accountHome)) {
-    if (!isAbsolute(candidate) || !existsSync(candidate)) continue;
-    const actual = realpathSync(candidate);
-    const stat = lstatSync(actual);
-    if (!stat.isFile() || (stat.mode & 0o111) === 0) continue;
-    const result = runBoundedProcess(actual, ['--version'], {
-      env: { PATH: protectedPath(runtime) },
-      inheritEnv: false,
-      timeoutMs: 5_000,
-    });
-    const version = result.stdout.trim().replace(/^v/, '');
-    if (result.status === 0 && Bun.semver.satisfies(version, ARCHCONTEXT_NODE_RANGE)) return actual;
-  }
-  return undefined;
+  const selected = selectCompatibleNode({
+    candidates: trustedNodeCandidates(runtime.accountHome),
+    versionOf(actual) {
+      const result = runBoundedProcess(actual, ['--version'], {
+        env: { PATH: protectedPath(runtime) },
+        inheritEnv: false,
+        timeoutMs: 5_000,
+      });
+      return result.status === 0 ? result.stdout.trim().replace(/^v/, '') : null;
+    },
+  });
+  return selected.status === 'selected' ? selected.path : undefined;
 }
 
 function copyAllowedEnv(source: NodeJS.ProcessEnv, target: NodeJS.ProcessEnv, keys: readonly string[]): void {
@@ -309,7 +308,8 @@ function resolveRepoRoot(
   protectedHelper: boolean,
   runtime: ProtectedHelperPlatform | null,
 ): string {
-  const result = runBoundedProcess(runtime?.gitBin ?? 'git', ['-C', cwd, 'rev-parse', '--show-toplevel'], {
+  const result = runGit(['-C', cwd, 'rev-parse', '--show-toplevel'], {
+    gitBin: runtime?.gitBin,
     env: protectedHelper ? protectedChildEnv(env, runtime!) : env,
     inheritEnv: !protectedHelper,
     timeoutMs: 5000,

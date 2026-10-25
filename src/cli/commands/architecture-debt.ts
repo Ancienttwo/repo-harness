@@ -1,4 +1,3 @@
-import { spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, realpathSync, rmdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -11,6 +10,7 @@ import {
   stopWorkspaceArchitectureDaemons,
   type ArchctxProviderOptions,
 } from '../../effects/architecture/archctx-provider';
+import { gitSpawnSync } from '../../effects/git/runner';
 
 export interface ArchitectureDebtOutputV1 {
   kind: 'repo-harness-architecture-debt';
@@ -83,7 +83,7 @@ export function architectureDebtSummary(output: ArchitectureDebtOutputV1): strin
 }
 
 function resolveCommit(repoRoot: string, ref: string): string {
-  const result = spawnSync('git', ['-C', repoRoot, 'rev-parse', '--verify', '--quiet', '--end-of-options', `${ref}^{commit}`], { encoding: 'utf8' });
+  const result = gitSpawnSync(['-C', repoRoot, 'rev-parse', '--verify', '--quiet', '--end-of-options', `${ref}^{commit}`], { encoding: 'utf8' });
   const sha = result.status === 0 ? result.stdout.trim() : '';
   if (!/^[a-f0-9]{40,64}$/.test(sha)) {
     throw new ArchctxClientError({ code: 'RH_ARCHITECTURE_DEBT_REF_UNRESOLVED', action: 'pass-a-commit-ref', reasonCode: 'ref-unresolved', details: { ref }, message: `${ref} does not resolve to a commit` });
@@ -101,7 +101,7 @@ function withBaseCheckout<T>(repoRoot: string, sha: string, options: ArchctxProv
   const checkout = join(parent, 'checkout');
   let outcome: { ok: true; value: T } | { ok: false; error: unknown };
   // Hooks of the measured repository do not run in the temporary checkout.
-  const added = spawnSync('git', ['-C', repoRoot, '-c', 'core.hooksPath=/dev/null', 'worktree', 'add', '--detach', checkout, sha], { encoding: 'utf8' });
+  const added = gitSpawnSync(['-C', repoRoot, '-c', 'core.hooksPath=/dev/null', 'worktree', 'add', '--detach', checkout, sha], { encoding: 'utf8' });
   if (added.status !== 0) {
     outcome = { ok: false, error: new ArchctxClientError({ code: 'RH_ARCHITECTURE_DEBT_CHECKOUT_FAILED', action: 'inspect-git-worktree', reasonCode: 'worktree-add-failed', details: { sha }, message: `git worktree add for ${sha} failed: ${added.stderr.trim()}` }) };
   } else {
@@ -128,7 +128,7 @@ function closeBaseCheckout(repoRoot: string, parent: string, checkout: string, o
       const report = stopWorkspaceArchitectureDaemons(repoRoot, realpathSync(checkout), options);
       for (const failure of report.failures) issues.push(`archctx daemon stop ${failure.stateDir ?? '(listing)'}: ${failure.code} ${failure.action}: ${failure.message}`);
     } catch (error) { issues.push(`archctx daemon stop: ${error instanceof Error ? error.message : String(error)}`); }
-    const removed = spawnSync('git', ['-C', repoRoot, 'worktree', 'remove', '--force', checkout], { encoding: 'utf8' });
+    const removed = gitSpawnSync(['-C', repoRoot, 'worktree', 'remove', '--force', checkout], { encoding: 'utf8' });
     if (removed.status !== 0) issues.push(`git worktree remove: ${removed.stderr.trim()}`);
   }
   try { rmdirSync(parent); }
@@ -137,7 +137,7 @@ function closeBaseCheckout(repoRoot: string, parent: string, checkout: string, o
 }
 
 function git(cwd: string, args: string[]): string {
-  const result = spawnSync('git', ['-C', cwd, ...args], { encoding: 'utf8' });
+  const result = gitSpawnSync(['-C', cwd, ...args], { encoding: 'utf8' });
   if (result.status !== 0) throw new Error(`git ${args.join(' ')} failed: ${result.stderr.trim()}`);
   return result.stdout.trim();
 }

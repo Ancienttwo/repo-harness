@@ -1,5 +1,6 @@
 import { randomBytes, randomUUID } from 'crypto';
 import { spawnSync } from 'child_process';
+import { gitSpawnSync } from '../../effects/git/runner';
 import {
   existsSync,
   lstatSync,
@@ -294,7 +295,7 @@ function writeState(env: NodeJS.ProcessEnv, state: CodingWorkspaceStateFile): vo
 }
 
 function git(root: string, args: string[], opts: { allowFailure?: boolean; gitBin?: string } = {}): string {
-  const result = spawnSync(opts.gitBin ?? configuredGitBinary(), ['-C', root, ...args], { encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 });
+  const result = gitSpawnSync(['-C', root, ...args], { gitBin: opts.gitBin, encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 });
   if (result.status !== 0 && !opts.allowFailure) {
     throw new CodingWorkspaceError('GIT_COMMAND_FAILED', (result.stderr || result.stdout || `git exited ${result.status}`).trim(), {
       operation: args[0],
@@ -316,7 +317,7 @@ function resolveIntegrationTargetRef(root: string, value: string): string {
   const args = requested === 'HEAD'
     ? ['-C', root, 'symbolic-ref', '--quiet', 'HEAD']
     : ['-C', root, 'rev-parse', '--symbolic-full-name', '--verify', requested];
-  const result = spawnSync(configuredGitBinary(), args, { encoding: 'utf-8', maxBuffer: 1024 * 1024 });
+  const result = gitSpawnSync(args, { encoding: 'utf-8', maxBuffer: 1024 * 1024 });
   const targetRef = result.status === 0 ? result.stdout.trim() : '';
   if (!targetRef || targetRef.includes('\n') || (!targetRef.startsWith('refs/heads/') && !targetRef.startsWith('refs/remotes/'))) {
     throw new CodingWorkspaceError(
@@ -357,7 +358,8 @@ function worktreeMergeMode(sourceRoot: string, branchCommit: string, targetCommi
 
 function workspaceBranchSnapshot(sourceRoot: string, branch: string, gitBin = configuredGitBinary()): { branchRef: string; branchCommit: string } {
   const branchRef = `refs/heads/${branch}`;
-  const result = spawnSync(gitBin, ['-C', sourceRoot, 'rev-parse', '--symbolic-full-name', '--verify', branchRef], {
+  const result = gitSpawnSync(['-C', sourceRoot, 'rev-parse', '--symbolic-full-name', '--verify', branchRef], {
+    gitBin,
     encoding: 'utf-8',
     maxBuffer: 1024 * 1024,
   });
@@ -388,7 +390,8 @@ export function deleteCodingWorkspaceBranchAtSnapshot(
     'commit',
     '',
   ].join('\n');
-  const result = spawnSync(gitBin, ['-C', sourceRoot, 'update-ref', '--stdin'], {
+  const result = gitSpawnSync(['-C', sourceRoot, 'update-ref', '--stdin'], {
+    gitBin,
     input: transaction,
     encoding: 'utf-8',
     maxBuffer: 1024 * 1024,

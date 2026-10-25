@@ -32,6 +32,7 @@ import {
   CheckpointResolutionError,
   resolveLastPublishedCheckpoint,
 } from './checkpoint-store';
+import { gitExecFileSync } from '../git/runner';
 
 export const RECOVERY_SCHEMA_VERSION = 1;
 export const RECOVERY_MATERIALIZER_VERSION = '1';
@@ -200,11 +201,11 @@ function supersededPlan(repoRoot: string): string {
 
 function changedFiles(repoRoot: string): { files: string; summary: string } {
   try {
-    const tracked = execFileSync('git', ['-C', repoRoot, 'diff', '--name-only', 'HEAD'], {
+    const tracked = gitExecFileSync(['-C', repoRoot, 'diff', '--name-only', 'HEAD'], {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
     });
-    const untrackedRaw = execFileSync('git', ['-C', repoRoot, 'ls-files', '--others', '--exclude-standard'], {
+    const untrackedRaw = gitExecFileSync(['-C', repoRoot, 'ls-files', '--others', '--exclude-standard'], {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
     });
@@ -215,7 +216,7 @@ function changedFiles(repoRoot: string): { files: string; summary: string } {
     // count, not a flat "N changed/untracked paths" total.
     let diffStat = '';
     try {
-      diffStat = execFileSync('git', ['-C', repoRoot, 'diff', '--shortstat', 'HEAD'], {
+      diffStat = gitExecFileSync(['-C', repoRoot, 'diff', '--shortstat', 'HEAD'], {
         encoding: 'utf8',
         stdio: ['ignore', 'pipe', 'ignore'],
       }).replace(/\n/g, '');

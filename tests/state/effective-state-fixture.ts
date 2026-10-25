@@ -51,7 +51,7 @@ export function writeFixture(cwd: string, path: string, content: string): void {
 
 export function writeFixtureStateLock(
   cwd: string,
-  record: { readonly pid: number; readonly created_at: number; readonly token: string },
+  record: { readonly pid: number; readonly start_time?: string; readonly created_at: number; readonly token: string },
   raw?: string,
 ): { readonly lockPath: string; readonly ownerPath: string } {
   const lockPath = join(cwd, '.ai/harness/state/effective.lock');
@@ -345,6 +345,7 @@ export const EFFECTIVE_STATE_SCENARIOS: readonly EffectiveStateScenario[] = [
     risk: { targetPaths: ['src/feature.ts'], operationKind: 'feature' },
     setup: (cwd, nowMs) => writeFixtureStateLock(cwd, {
       pid: 99999999,
+      start_time: 'fixture-exited-owner',
       created_at: nowMs - 60_000,
       token: '99999999-0-00000000-0000-4000-8000-000000000003',
     }),

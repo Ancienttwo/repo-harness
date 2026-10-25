@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "fs";
 import { relative, resolve } from "path";
-import { spawnSync } from "child_process";
+import { gitSpawnSync } from "../git/runner";
 import { createRequire } from "node:module";
 import {
   archcontextNodeId,
@@ -123,7 +123,7 @@ function parseArgs(argv: string[]): Args {
 
 function repoRoot(input: string): string {
   const cwd = resolve(input);
-  const result = spawnSync("git", ["rev-parse", "--show-toplevel"], {
+  const result = gitSpawnSync(["rev-parse", "--show-toplevel"], {
     cwd,
     encoding: "utf-8",
   });

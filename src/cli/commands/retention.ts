@@ -1,8 +1,8 @@
-import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { Command } from 'commander';
 import { TASK_INBOX_V2_RELATIVE_PATH } from '../../core/fleet/task-inbox-layout';
 import { RETENTION_CLASSES, runArtifactRetention, type RetentionConfig, type RetentionReport } from '../../effects/artifact-retention';
+import { gitExecFileSync } from '../../effects/git/runner';
 import { INTEGRATION_EVIDENCE_ROOT_RELATIVE_PATH } from '../../effects/integration/product-acceptance';
 import { FEEDBACK_ROOT_RELATIVE_PATH } from '../../effects/publication/feedback-store';
 import { SEGMENTED_LOG_ARCHIVE_BYTES, SEGMENTED_LOG_ARCHIVE_SEGMENTS, SEGMENTED_LOG_SEGMENT_BYTES } from '../../effects/segmented-log';
@@ -59,7 +59,7 @@ export function buildRetentionCommand(): Command {
     .option('--json', 'Output the report and every storage root with its retention rule as JSON')
     .action((options: RetentionCommandOptions) => {
       try {
-        const repoRoot = execFileSync('git', ['-C', resolve(options.repo ?? process.cwd()), 'rev-parse', '--show-toplevel'], {
+        const repoRoot = gitExecFileSync(['-C', resolve(options.repo ?? process.cwd()), 'rev-parse', '--show-toplevel'], {
           encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
         }).trim();
         const report = runArtifactRetention({ repoRoot, apply: options.apply === true });

@@ -1,7 +1,7 @@
 import { homedir } from "os";
 import { realpathSync } from "fs";
 import { resolve } from "path";
-import { runProcess } from "../../effects/process-runner";
+import { runGit } from '../../effects/git/run-git';
 
 export interface RepoAdoptionTargetError {
   readonly step: "validate repo target";
@@ -22,7 +22,7 @@ function samePath(a: string, b: string): boolean {
 }
 
 function isGitWorkTree(repoRoot: string, env?: NodeJS.ProcessEnv): boolean {
-  const result = runProcess("git", ["-C", repoRoot, "rev-parse", "--is-inside-work-tree"], { env });
+  const result = runGit(["-C", repoRoot, "rev-parse", "--is-inside-work-tree"], { env });
   return result.ok && result.stdout.trim() === "true";
 }
 

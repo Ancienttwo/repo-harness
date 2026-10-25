@@ -1,4 +1,3 @@
-import { execFileSync } from 'node:child_process';
 import { existsSync, lstatSync, readFileSync, realpathSync } from 'node:fs';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
 import type { DocsAnchorsReportV1, NativeContextExportV1 } from 'archctx-contracts';
@@ -11,6 +10,7 @@ import { repoHarnessRepoIdFor } from '../repo-registry';
 import { resolveArchcontextCapabilityPaths } from '../capabilities/archcontext-owners';
 import { ARCHCONTEXT_MANIFEST, ArchctxClientError, readArchitectureNativeContext, type ArchctxProviderOptions } from './archctx-provider';
 import { version as PACKAGE_VERSION } from '../../../package.json';
+import { gitExecFileSync } from '../git/runner';
 
 const MODEL_ROOT = '.archcontext/model';
 const DOC_INDEX = [['plans', 'plan'], ['tasks/contracts', 'contract']] as const;
@@ -21,7 +21,7 @@ type SnapshotEntry = { mode: string; type: 'blob' | 'tree' | 'commit'; oid: stri
 
 function runGit(cwd: string, args: string[], input?: Buffer): Buffer {
   try {
-    return execFileSync('git', ['--no-optional-locks', '-c', 'core.fsmonitor=false', '-c', 'diff.submodule=short', ...args], {
+    return gitExecFileSync(['--no-optional-locks', '-c', 'core.fsmonitor=false', '-c', 'diff.submodule=short', ...args], {
       cwd, input, stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'], timeout: 10_000, maxBuffer: 256 * 1024 * 1024,
       env: { ...process.env, GIT_LITERAL_PATHSPECS: '1', GIT_NO_LAZY_FETCH: '1' },
     });
