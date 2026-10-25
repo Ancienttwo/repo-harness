@@ -28,7 +28,8 @@
     ],
     "exclude": [
       "src/effects/architecture/archcontext-owners.ts",
-      "src/effects/architecture/archcontext-resolve-cache.ts"
+      "src/effects/architecture/archcontext-resolve-cache.ts",
+      "src/effects/architecture/capability-resolver.ts"
     ]
   }
 }

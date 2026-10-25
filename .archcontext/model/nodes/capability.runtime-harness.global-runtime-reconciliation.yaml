@@ -56,6 +56,7 @@ source:
   exclude:
     - src/effects/architecture/archcontext-owners.ts
     - src/effects/architecture/archcontext-resolve-cache.ts
+    - src/effects/architecture/capability-resolver.ts
   entrypoints:
     - id: entrypoint.global-runtime-reconciliation.update
       path: "src/cli/commands/global-runtime.ts"
