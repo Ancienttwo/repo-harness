@@ -1,0 +1,57 @@
+{
+  "schemaVersion": "archcontext.capabilities/v1",
+  "package": {
+    "name": "archctx",
+    "version": "0.9.3"
+  },
+  "protocols": {
+    "projectionRequest": "archcontext.projection-request/v1",
+    "projectionResult": "archcontext.projection-result/v2",
+    "architectureRefreshSignal": "archcontext.architecture-refresh-signal/v1"
+  },
+  "renderers": {
+    "architectureDocs": "archcontext.docs-renderer/v6",
+    "agentContext": "archcontext.agent-context-renderer/v1"
+  },
+  "features": [
+    "architecture-change-capabilities-v1",
+    "architecture-debt-v1",
+    "architecture-docs-renderer-v2",
+    "architecture-refresh-signal-v1",
+    "capability-dependencies-declared-v1",
+    "capability-dependencies-v1",
+    "changeset-entity-operations-v1",
+    "changeset-ownership-delta-v1",
+    "code-facts-unavailable-error-v1",
+    "docs-anchors-v1",
+    "flow-selector-check-v1",
+    "module-statistics-v1",
+    "native-context-export-v1",
+    "projection-apply-readback-v1",
+    "projection-apply-receipt-v1",
+    "projection-apply-recovery-v1",
+    "projection-apply-replay-restore-v1",
+    "projection-apply-replay-v1",
+    "projection-architecture-debt-v1",
+    "projection-capability-isolation-v1",
+    "projection-change-classification-v1",
+    "projection-check-freshness-v1",
+    "projection-freshness-v1",
+    "projection-manifest-contract-v3",
+    "projection-observed-major-change-acceptance-v1",
+    "projection-orphan-review-v1",
+    "projection-preview-v1",
+    "projection-prior-committed-applies-v1",
+    "projection-protocol-v2",
+    "projection-publish-v1",
+    "projection-snapshot-v1",
+    "projection-verify-pr-v1",
+    "recommendation-scan-decision-v1",
+    "recommendation-v3",
+    "refactor-assessment-v1",
+    "refactor-observation-evidence-v1",
+    "refactor-resolution-v1",
+    "refactor-scan-limits-v1",
+    "refactor-scan-untracked-count-v1"
+  ]
+}

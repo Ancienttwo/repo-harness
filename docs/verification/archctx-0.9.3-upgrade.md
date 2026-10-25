@@ -106,3 +106,29 @@ Candidate Git blobs, read after commit:
 | bun.lock | `16d2b0050da97a42799593f5019c56b521bb7ad8` |
 | tests/architecture-projection-e2e.test.ts | `3521418aebfddd8b22103e26f249193d8d2237a3` |
 | tests/architecture-projection-provider.test.ts | `d7f1131312c39f31e53686730d776a904285ff90` |
+
+## Installed CLI static capability readback
+
+At candidate `cf820bbe8fce7c469ab5a6638166b55b44fc7db1` (tree
+`eb0129e0044d1fafc94aa76fff90f378fdf5dfcd`), ran:
+
+```sh
+node node_modules/archctx/bin/archctx.mjs capabilities --json > /tmp/rh-archctx-093-evidence/capabilities.json
+```
+
+The command succeeded. Its unedited output is in
+`archctx-0.9.3-capabilities.json`: package 0.9.3, capabilities/v1,
+projection request/v1, result/v2, docs renderer/v6, and the advertised feature
+list. The installed bundle's capabilities branch (lines 61795–61804 and
+65633–65644) returns the static contract via runCapabilitiesCommand (61858),
+before runtime creation. This is a real installed CLI execution, not a fake
+provider test. It does not prove projection, daemon readiness, model migration,
+or a clean-room integration pass. No daemon command or listen attempt ran.
+
+The old clean-room script remains unrun. It records daemonRoot only after the
+snapshot returns (lines 122–126); an exception during snapshot can skip cleanup.
+Its final stop also lacks the startup environment and ignores the stop result.
+These existing cleanup limits must be resolved or covered by an approved
+isolated execution plan before using it as current integration evidence.
+
+Raw capability output SHA-256: `849eb1a98e6eb9bd7e47e9e48b7ce238249c33b08533f4092e4eda4afc66a0d2`.
